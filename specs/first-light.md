@@ -744,35 +744,44 @@ DROP TABLE devices;
 
 Strict typed-ID, slug, and UTC timestamp parsing occurs at the module/transport edge; SQLite reinforces prefixes, enums, booleans, ownership uniqueness, and foreign keys.
 
-Required sqlc queries, organized by `registration.sql`, `state.sql`, `receipts.sql`, and `commands.sql`, are:
+Required sqlc queries are split into four generation units with separate generated packages and focused `Querier` interfaces:
 
 ```text
-GetBinding
-GetBindingByExternalDeviceID
-CreateDevice
-UpdateDeviceDescriptor
-CreateEntity
-UpdateEntityDescriptor
-UpsertEntityOperation
-CreateBinding
-UpdateBindingExternalID
-GetEntityMapping
-GetEntityMappingByExternalID
-CreateEntityMapping
-UpdateEntityMappingExternalID
-GetEntityView
-GetEntityState
-CreateCommand
-GetCommand
-MarkCommandAccepted
-CompleteCommand
-SatisfyCommandFromObservation
-InterruptActiveCommands
-GetObservationReceipt
-InsertObservationReceipt
-UpsertEntityState
-DeleteExpiredObservationReceipts
+registration:
+  GetBinding
+  GetBindingByExternalDeviceID
+  CreateDevice
+  UpdateDeviceDescriptor
+  CreateEntity
+  UpdateEntityDescriptor
+  UpsertEntityOperation
+  CreateBinding
+  UpdateBindingExternalID
+  GetEntityMapping
+  GetEntityMappingByExternalID
+  CreateEntityMapping
+  UpdateEntityMappingExternalID
+
+state:
+  GetEntityView
+  GetEntityState
+  UpsertEntityState
+
+commands:
+  CreateCommand
+  GetCommand
+  MarkCommandAccepted
+  CompleteCommand
+  SatisfyCommandFromObservation
+  InterruptActiveCommands
+
+receipts:
+  GetObservationReceipt
+  InsertObservationReceipt
+  DeleteExpiredObservationReceipts
 ```
+
+`sqlc.yaml` has one SQLite generation entry per query directory, all using the same migrations and emitting to distinct packages under `internal/platform/db/sqlc`. The concrete `devices` repository composes those generated packages; transactions bind every package they need to the same SQLite transaction. Generated interfaces and types remain persistence details; they are not combined into one generated `Querier` and never leak into the module-facing `Repository`.
 
 The pruning query excludes the receipt referenced by current State:
 
@@ -903,8 +912,8 @@ internal/
     ├── config/                      # new — strict per-process YAML loading
     ├── db/
     │   ├── migrations/              # new — Goose SQLite migrations
-    │   ├── queries/                 # new — sqlc query sources
-    │   └── sqlc/                    # new/generated — query package
+    │   ├── queries/                 # new — registration/state/commands/receipts query directories
+    │   └── sqlc/                    # new/generated — matching focused query packages
     └── nats/                        # new — core NATS/JetStream transport
 sdk/
 └── adapter/                         # new — public, stateless Go session facade
