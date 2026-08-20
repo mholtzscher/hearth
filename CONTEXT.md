@@ -45,7 +45,7 @@ The current value Hearthd has accepted for an entity. It is the observation with
 _Avoid_: Desired state, target
 
 **Command**:
-A request to change one controllable entity before a deadline. Its outcome is satisfied only after a fresh post-dispatch observation matches the requested value; dispatch or acceptance alone is not satisfaction, an unavailable owner causes failure rather than deferred delivery, and only one command may be in flight per entity.
+A request to change one controllable entity before a deadline. Its outcome is satisfied only after a fresh post-dispatch observation matches the requested value; dispatch or acceptance alone is not satisfaction, an unavailable owner causes failure rather than deferred delivery, and only one command may be in flight per entity. The core durably records each attempt and outcome for history, but the record is not executable work: unfinished attempts become interrupted after restart and are never replayed.
 _Avoid_: Action, service call, queued job
 
 **Canonical ID**:

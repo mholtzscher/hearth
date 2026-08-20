@@ -38,7 +38,7 @@ The slice must deliver visible household utility and meaningful NATS learning wh
 - Encode all wire times as UTC RFC3339Nano and reject malformed or non-UTC values.
 - Have the SDK generate adapter publication IDs and envelope metadata while adapter code supplies domain data and source times.
 - Retain adapter observations in a file-backed JetStream Limits stream for seven days or one GiB, discard oldest messages, and consume with explicit acknowledgements, a 30-second ack wait, one pending acknowledgement, and unlimited redelivery; retain processed Observation IDs in SQLite for at least eight days and keep the receipt backing current State until superseded.
-- Store canonical state and identity mappings transactionally in the core's SQLite database using Goose migrations and sqlc-generated queries; keep generated types behind module persistence adapters.
+- Store canonical state, identity mappings, Observation receipts, and a minimal Command attempt history transactionally in the core's SQLite database using Goose migrations and sqlc-generated queries; keep generated types behind module persistence adapters.
 - Record adapter acquisition time as `observed_at`, optional upstream last-change time as `source_updated_at`, and core receive time as `received_at`.
 - Order canonical State by `observed_at`, break ties deterministically by receive order, and reject timestamps more than one minute ahead of the core clock.
 - Advance State evidence and timestamps for a newer same-value observation while classifying it as unchanged.
@@ -47,8 +47,8 @@ The slice must deliver visible household utility and meaningful NATS learning wh
 - Diagnose permanently invalid input in structured logs with safe metadata and acknowledge it while its raw message remains in the seven-day stream; leave transient infrastructure failures unacknowledged for redelivery; acknowledge valid outcomes only after commit.
 - Send immediate commands on adapter-scoped Core NATS request/reply subjects with one fixed ten-second end-to-end deadline; never queue them for later delivery.
 - Permit one in-flight command per entity and reject overlaps as conflicts.
-- Keep Command lifecycle and one-active-per-Entity enforcement in memory only, with no SQLite audit or recovery.
-- After dispatch, keep the in-memory guard until linked outcome or the ten-second deadline even if the HTTP client disconnects; core restart loses the wait and guard.
+- Keep Command delivery, outcome waits, and one-active-per-Entity enforcement ephemeral and in memory, while recording each attempt and terminal outcome in SQLite for diagnosis and future history; the record is audit data, not a queue.
+- Commit the `requested` record before dispatch, mark it `satisfied` transactionally with the matching linked Observation, and persist terminal failures. After the `requested` record commits, proceed with dispatch and keep the in-memory guard until linked outcome or the ten-second deadline even if the HTTP client disconnects; core restart loses the wait and guard, marks active records `interrupted`, and never redispatches them.
 - Hold the command HTTP request until outcome satisfaction or deadline failure.
 - Dispatch even when canonical state already matches the target.
 - After acceptance, have the adapter refresh upstream state and publish a fresh observation linked to the command ID.

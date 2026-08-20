@@ -21,7 +21,7 @@
 
 Build three Go processes: the Hearthd core, a disposable Home Assistant migration adapter, and a fault-injecting simulator. A thin, stateless Go SDK hides NATS protocol mechanics for adapters. Authoritative JSON Schemas remain usable by non-Go adapters.
 
-Adapters register configured Devices and Entities over Core NATS request/reply, publish Observations durably to JetStream, and serve ephemeral Commands over Core NATS request/reply. The core projects canonical State into SQLite and exposes a loopback Echo/Huma HTTP interface. Commands remain synchronous and in memory; only Observations are durable.
+Adapters register configured Devices and Entities over Core NATS request/reply, publish Observations durably to JetStream, and serve ephemeral Commands over Core NATS request/reply. The core projects canonical State into SQLite, records each Command attempt and outcome there for diagnosis and future history, and exposes a loopback Echo/Huma HTTP interface. Command delivery, guards, and outcome waits remain synchronous and ephemeral; the audit record never causes replay or redispatch.
 
 ## Scope
 
@@ -34,7 +34,7 @@ Adapters register configured Devices and Entities over Core NATS request/reply, 
 - Disposable Home Assistant migration adapter
 - Simulator implementing the same adapter contract
 - Durable JetStream Observation intake
-- SQLite registration, current State, and Observation deduplication
+- SQLite registration, current State, Observation deduplication, and Command attempt history
 - Runtime JSON Schema validation
 - Causal IDs and W3C trace-context propagation
 - Explicit liveness and readiness endpoints
@@ -46,7 +46,7 @@ Adapters register configured Devices and Entities over Core NATS request/reply, 
 - Adapter manifests, feature negotiation, checkpoints, or a full adapter framework
 - Automations, scheduling, browser UI, or history UI
 - Adapter or Entity availability and heartbeats
-- Command audit, durable Commands, or Command recovery
+- Durable Command delivery, replay, or recovery
 - Authentication or non-loopback HTTP exposure
 - NATS KV
 - Container deployment
@@ -57,7 +57,7 @@ Adapters register configured Devices and Entities over Core NATS request/reply, 
 
 | Chose | Over | Because |
 | --- | --- | --- |
-| Durable Observations only | Durable adapter SDK or Command stream | JetStream provides the needed recovery without local outboxes or stale Commands |
+| Durable Observation delivery plus SQLite Command history | Durable Command stream or no Command record | JetStream recovers evidence, while a non-replayable SQLite ledger supports diagnosis and future history without executing stale intent |
 | SQLite canonical projection | NATS KV or replay-only State | Only the core needs transactional query ownership |
 | Thin session SDK | Raw NATS in every adapter or full runtime framework | Repeated protocol mechanics earn reuse; vendor behavior does not |
 | One `devices` module | Registry/State/Commands modules | One slice does not yet justify three seams |
@@ -174,9 +174,54 @@ const (
 )
 
 type ProjectionResult struct {
-    Disposition ObservationDisposition
-    State       *State
-    Rejection   *ObservationRejection
+    Disposition      ObservationDisposition
+    State            *State
+    Rejection        *ObservationRejection
+    SatisfiedCommand *CommandResult
+}
+
+type CommandStatus string
+const (
+    CommandStatusRequested          CommandStatus = "requested"
+    CommandStatusAccepted           CommandStatus = "accepted"
+    CommandStatusSatisfied          CommandStatus = "satisfied"
+    CommandStatusRejected           CommandStatus = "rejected"
+    CommandStatusAdapterUnavailable CommandStatus = "adapter_unavailable"
+    CommandStatusOutcomeTimeout     CommandStatus = "outcome_timeout"
+    CommandStatusInternalFailure    CommandStatus = "internal_failure"
+    CommandStatusInterrupted        CommandStatus = "interrupted"
+)
+
+type CommandFailureCode string
+const (
+    CommandFailureAdapterUnavailable CommandFailureCode = "adapter_unavailable"
+    CommandFailureUpstreamRejected   CommandFailureCode = "upstream_rejected"
+    CommandFailureOutcomeTimeout     CommandFailureCode = "outcome_timeout"
+    CommandFailureInternalError      CommandFailureCode = "internal_error"
+    CommandFailureCoreRestarted      CommandFailureCode = "core_restarted"
+)
+
+type CommandRecord struct {
+    ID                   CommandID
+    EntityID             EntityID
+    AdapterID            string
+    Operation            Operation
+    Value                bool
+    CorrelationID        CorrelationID
+    Status               CommandStatus
+    RequestedAt          time.Time
+    DeadlineAt           time.Time
+    AcceptedAt           *time.Time
+    CompletedAt          *time.Time
+    OutcomeObservationID *ObservationID
+    FailureCode          *CommandFailureCode
+}
+
+type CommandCompletion struct {
+    ID          CommandID
+    Status      CommandStatus // rejected, adapter_unavailable, outcome_timeout, or internal_failure
+    CompletedAt time.Time
+    FailureCode CommandFailureCode
 }
 
 type CommandResult struct {
@@ -185,6 +230,8 @@ type CommandResult struct {
     Value         bool
 }
 ```
+
+`adapter_id` records the owner selected for dispatch even if ownership changes later. `requested_at`, `accepted_at`, and `completed_at` are core-clock UTC times for the corresponding committed lifecycle transitions; `deadline_at` is exactly ten seconds after `requested_at`. The record stores normalized domain intent and stable failure codes, not raw HTTP bodies, headers, client addresses, adapter error text, or credentials.
 
 IDs use lowercase UUIDv7 strings with type prefixes:
 
@@ -413,7 +460,7 @@ type SimulatorConfig struct {
 }
 ```
 
-Protocol limits are fixed constants in v1, not YAML fields: ten-second Command deadline, one-minute future skew, seven-day/one-GiB stream, 30-second acknowledgement wait, one pending acknowledgement, and at least eight-day receipt retention with current-State receipt pinning.
+Protocol limits are fixed constants in v1, not YAML fields: ten-second Command deadline, one-minute future skew, seven-day/one-GiB stream, 30-second acknowledgement wait, one pending acknowledgement, and at least eight-day receipt retention with current-State receipt pinning. Command records are retained without pruning in the first slice; a bounded retention policy is deferred until a history interface establishes its requirements.
 
 ## Interfaces
 
@@ -454,6 +501,10 @@ Owner: `internal/modules/devices/service.go`.
 type Repository interface {
     RegisterBinding(context.Context, RegisterBindingParams) (Binding, error)
     GetEntityView(context.Context, EntityID) (EntityView, error)
+    CreateCommand(context.Context, CommandRecord) error
+    MarkCommandAccepted(context.Context, CommandID, time.Time) error
+    CompleteCommand(context.Context, CommandCompletion) error
+    InterruptActiveCommands(context.Context, time.Time) error
     ProjectObservation(context.Context, ProjectObservationParams) (ProjectionResult, error)
     DeleteExpiredObservationReceipts(context.Context, time.Time) error
 }
@@ -475,14 +526,19 @@ func (*Service) SetPower(context.Context, EntityID, bool) (CommandResult, error)
 
 1. Resolve Entity and owning adapter.
 2. Acquire an in-memory Entity-keyed guard or return `ErrCommandInFlight`.
-3. Create a `cmd_` ID and independent ten-second lifecycle context.
+3. Create a `cmd_` ID, correlation ID, and independent ten-second lifecycle context.
 4. Register the linked-Observation waiter before dispatch.
-5. Send Core NATS request/reply.
-6. Return adapter-unavailable or upstream-rejected errors as applicable.
-7. After acceptance, wait for a committed matching Observation linked to the Command.
-8. Return `CommandResult` or `ErrOutcomeTimeout`.
-9. If HTTP cancellation occurs after dispatch, abandon the response but retain the guard and lifecycle goroutine until linked outcome or deadline.
-10. Always release the guard at lifecycle completion. Core restart loses all in-memory waits and guards.
+5. Commit a `requested` Command record before attempting NATS dispatch; a creation failure prevents dispatch and returns an internal error. This commit is the point of no return: subsequent HTTP cancellation does not cancel dispatch or the independent lifecycle.
+6. Send Core NATS request/reply.
+7. Persist `adapter_unavailable`, `rejected`, or `internal_failure` when dispatch or the adapter response fails; never retry or replay the Command.
+8. On acceptance, set `accepted_at` without regressing a terminal status if a fast linked Observation was already committed.
+9. Wait for `ProjectObservation` to commit an `applied` or `unchanged` matching Observation linked to the Command and transactionally mark the record `satisfied`.
+10. At the deadline, persist `outcome_timeout` unless the Command is already terminal.
+11. Return `CommandResult` or the mapped stable error.
+12. If HTTP cancellation occurs after the `requested` record commits, abandon the response but retain the guard and lifecycle goroutine until linked outcome or deadline, recording the eventual terminal status.
+13. Always release the guard at lifecycle completion. Core restart loses all in-memory waits and guards; startup marks persisted `requested` and `accepted` records `interrupted` and never redispatches them.
+
+Command lifecycle writes are monotonic and idempotent. A linked Observation may be projected before the core processes the adapter's acceptance reply; satisfaction wins, and a later acceptance update may fill `accepted_at` but must not replace the terminal status.
 
 ### HTTP
 
@@ -515,7 +571,7 @@ It waits synchronously for a linked outcome or deadline. Status mapping is:
 | No matching linked Observation by deadline | 504 | `outcome_timeout` |
 | Internal failure | 500 | `internal_error` |
 
-Echo v5 and Huma v2 are constructed by `internal/app/hearthd`. The `devices/api` package registers its own operations with stable operation IDs. `/healthz` and `/readyz` are plain loopback Echo routes. Huma exposes OpenAPI at runtime; no generated OpenAPI file is committed.
+Echo v5 and Huma v2 are constructed by `internal/app/hearthd`. The `devices/api` package registers its own operations with stable operation IDs. `/healthz` and `/readyz` are plain loopback Echo routes. Huma exposes OpenAPI at runtime; no generated OpenAPI file is committed. The first slice persists Command history but exposes no Command-history HTTP operation or history UI.
 
 ### NATS protocol
 
@@ -529,6 +585,7 @@ hearth.v1.adapter.<adapter>.command.<entity>.set
 - `<entity>` is the canonical Entity ID.
 - Core validates that subject adapter/entity tokens match payload and current ownership.
 - Registration and Commands use Core NATS request/reply.
+- Persisting a Command record does not put the Command in a stream and never causes replay or redispatch.
 - Observations use JetStream and require a publish acknowledgement.
 
 Stream `HEARTH_OBSERVATIONS_V1`:
@@ -588,6 +645,54 @@ CREATE TABLE entity_operations (
     operation TEXT NOT NULL CHECK (operation = 'set'),
     PRIMARY KEY (entity_id, operation)
 );
+
+CREATE TABLE commands (
+    id                     TEXT PRIMARY KEY CHECK (id LIKE 'cmd_%'),
+    entity_id              TEXT NOT NULL REFERENCES entities(id) ON DELETE RESTRICT,
+    adapter_id             TEXT NOT NULL CHECK (length(adapter_id) BETWEEN 1 AND 63),
+    operation              TEXT NOT NULL CHECK (operation = 'set'),
+    value_boolean          INTEGER NOT NULL CHECK (value_boolean IN (0, 1)),
+    correlation_id         TEXT NOT NULL CHECK (correlation_id LIKE 'cor_%'),
+    status                 TEXT NOT NULL CHECK (
+        status IN (
+            'requested', 'accepted', 'satisfied', 'rejected',
+            'adapter_unavailable', 'outcome_timeout',
+            'internal_failure', 'interrupted'
+        )
+    ),
+    requested_at           TEXT NOT NULL,
+    deadline_at            TEXT NOT NULL,
+    accepted_at            TEXT,
+    completed_at           TEXT,
+    outcome_observation_id TEXT UNIQUE CHECK (
+        outcome_observation_id IS NULL OR outcome_observation_id LIKE 'obs_%'
+    ),
+    failure_code           TEXT CHECK (
+        failure_code IS NULL OR failure_code IN (
+            'adapter_unavailable', 'upstream_rejected', 'outcome_timeout',
+            'internal_error', 'core_restarted'
+        )
+    ),
+    CHECK (
+        (status IN ('requested', 'accepted') AND completed_at IS NULL)
+        OR (status NOT IN ('requested', 'accepted') AND completed_at IS NOT NULL)
+    ),
+    CHECK (
+        (status = 'satisfied' AND outcome_observation_id IS NOT NULL)
+        OR (status <> 'satisfied' AND outcome_observation_id IS NULL)
+    ),
+    CHECK (
+        (status IN ('requested', 'accepted', 'satisfied') AND failure_code IS NULL)
+        OR (status = 'rejected' AND failure_code = 'upstream_rejected')
+        OR (status = 'adapter_unavailable' AND failure_code = 'adapter_unavailable')
+        OR (status = 'outcome_timeout' AND failure_code = 'outcome_timeout')
+        OR (status = 'internal_failure' AND failure_code = 'internal_error')
+        OR (status = 'interrupted' AND failure_code = 'core_restarted')
+    )
+);
+
+CREATE INDEX commands_entity_requested_idx
+    ON commands(entity_id, requested_at DESC);
 
 CREATE TABLE adapter_bindings (
     adapter_id        TEXT NOT NULL,
@@ -656,6 +761,8 @@ DROP INDEX observation_receipts_expiry_idx;
 DROP TABLE observation_receipts;
 DROP TABLE adapter_entity_mappings;
 DROP TABLE adapter_bindings;
+DROP INDEX commands_entity_requested_idx;
+DROP TABLE commands;
 DROP TABLE entity_operations;
 DROP TABLE entities;
 DROP TABLE devices;
@@ -663,7 +770,7 @@ DROP TABLE devices;
 
 Strict typed-ID, slug, and UTC timestamp parsing occurs at the module/transport edge; SQLite reinforces prefixes, enums, booleans, ownership uniqueness, and foreign keys.
 
-Required sqlc queries, organized by `registration.sql`, `state.sql`, and `receipts.sql`, are:
+Required sqlc queries, organized by `registration.sql`, `state.sql`, `receipts.sql`, and `commands.sql`, are:
 
 ```text
 GetBinding
@@ -681,6 +788,12 @@ CreateEntityMapping
 UpdateEntityMappingExternalID
 GetEntityView
 GetEntityState
+CreateCommand
+GetCommand
+MarkCommandAccepted
+CompleteCommand
+SatisfyCommandFromObservation
+InterruptActiveCommands
 GetObservationReceipt
 InsertObservationReceipt
 UpsertEntityState
@@ -702,7 +815,9 @@ WHERE expires_at < ?
 
 Checking `observation_id` protects both foreign keys because `entity_states.observation_id` and `entity_states.receive_order` reference the same receipt row. After a newer Observation advances State, the superseded receipt becomes eligible for the next pruning pass.
 
-`RegisterBinding` and `ProjectObservation` own their complete SQLite transactions behind the repository interface. Generated sqlc types never cross the repository seam.
+`RegisterBinding` and `ProjectObservation` own their complete SQLite transactions behind the repository interface. `ProjectObservation` updates a matching active Command to `satisfied` in the same transaction as its receipt and State projection. Command creation and all other lifecycle transitions also remain behind the repository interface. Generated sqlc types never cross the repository seam.
+
+`outcome_observation_id` deliberately has no foreign key to `observation_receipts`: receipts are pruned after their idempotency window, while Command history is retained. It remains a typed immutable identifier, and satisfaction writes it only after inserting the corresponding receipt in the same transaction.
 
 ### Observation projection rules
 
@@ -716,8 +831,9 @@ For each schema-valid Observation, one transaction:
 6. Record `stale` without changing State when older.
 7. Record `unchanged` and advance State evidence/timestamps for a newer same value.
 8. Record `applied` and replace State for a newer different value.
-9. Set receipt expiry to `received_at + 192h`.
-10. Commit before JetStream acknowledgement.
+9. For an `applied` or `unchanged` Observation carrying `refresh_for_command_id`, find an active `requested` or `accepted` Command for the same Entity and adapter. When the observed value matches its requested value, mark it `satisfied`, set `completed_at` and `outcome_observation_id`, and return the satisfied result for the in-memory waiter. A stale, rejected, wrong-value, unknown, or already-terminal Command link never satisfies an outcome.
+10. Set receipt expiry to `received_at + 192h`.
+11. Commit the receipt, State projection, and any Command satisfaction atomically before JetStream acknowledgement.
 
 A startup task and hourly task delete expired receipts that are not referenced by current State. A current-State receipt remains past its nominal expiry until a newer Observation supersedes it.
 
@@ -784,12 +900,13 @@ Core startup order:
 
 1. Parse and validate YAML.
 2. Open SQLite; enable foreign keys/WAL/busy timeout; apply Goose migrations.
-3. Delete expired Observation receipts not referenced by current State.
-4. Connect to NATS.
-5. Idempotently provision/validate the stream and durable consumer.
-6. Start the Observation consumer.
-7. Construct the `devices` module and Echo/Huma transport.
-8. Listen on loopback.
+3. Mark any `requested` or `accepted` Command records `interrupted` with failure code `core_restarted`; do not redispatch them.
+4. Delete expired Observation receipts not referenced by current State.
+5. Connect to NATS.
+6. Idempotently provision/validate the stream and durable consumer.
+7. Start the Observation consumer.
+8. Construct the `devices` module and Echo/Huma transport.
+9. Listen on loopback.
 
 `GET /healthz` returns 200 whenever the HTTP process can serve. `GET /readyz` returns 200 only while SQLite responds, NATS is connected, JetStream resources match required configuration, and the Observation consumer is active; otherwise 503.
 
@@ -812,8 +929,8 @@ internal/
 │       ├── api/                     # new — Huma operations and transport mapping
 │       ├── model.go                 # new — Device, Entity, State, Command types
 │       ├── service.go               # new — registration, projection, Command behavior
-│       ├── repository.go            # new — persistence seam and sqlc adapter
-│       ├── command.go               # new — in-memory guard and linked-outcome waits
+│       ├── repository.go            # new — identity, State, receipt, and Command-record persistence seam
+│       ├── command.go               # new — durable lifecycle transitions plus in-memory guard and outcome waits
 │       └── errors.go                # new — domain errors
 ├── adapters/
 │   ├── homeassistant/               # new — WebSocket client and HA mapping
@@ -852,9 +969,9 @@ No `api/openapi.yaml` is created. Huma's runtime OpenAPI document is covered by 
 | --- | --- | --- | --- |
 | D1 | Go/devenv foundation, dependency lock, typed IDs, embedded JSON Schemas, YAML loaders | L | - |
 | D2 | Stateless adapter SDK, NATS subjects/envelopes, schema validation, registration/Observation/Command contract tests | L | D1 |
-| D3 | SQLite migration/sqlc layer and idempotent binding registration in `devices` | L | D1, D2 |
+| D3 | SQLite migration/sqlc layer, Command ledger, and idempotent binding registration in `devices` | L | D1, D2 |
 | D4 | JetStream provisioning, durable Observation projection, receipt pruning, GET Entity, readiness | XL | D2, D3 |
-| D5 | In-memory Command orchestration, POST endpoint, simulator happy path and complete failure matrix | XL | D4 |
+| D5 | Audited ephemeral Command orchestration, POST endpoint, simulator happy path and complete failure matrix | XL | D4 |
 | D6 | Disposable Home Assistant WebSocket adapter and real-light verification | L | D2, D5 |
 | D7 | Broad checks, runtime OpenAPI assertions, recovery tests, docs reconciliation | L | D1–D6 |
 
@@ -872,12 +989,15 @@ Total relative effort is **XL**. No calendar estimate is asserted.
 - [ ] Receipt pruning deletes expired unreferenced receipts, retains the receipt backing current State without a foreign-key error, and deletes it after State advances.
 - [ ] Older, same-value, future-skewed, wrong-owner, unknown-Entity, and malformed Observations produce the specified dispositions/diagnostics and acknowledgement behavior.
 - [ ] A newer same-value Observation advances State timestamps and evidence.
-- [ ] Two simultaneous Commands for one Entity produce one active lifecycle and one HTTP 409.
-- [ ] Missing adapter, upstream rejection, and unsatisfied deadline map to HTTP 503, 502, and 504 with stable codes.
-- [ ] An already-matched target is still dispatched, accepted, explicitly refreshed, and satisfied only by its linked Observation.
-- [ ] HTTP disconnect after dispatch retains the in-memory guard until linked outcome or deadline.
-- [ ] Core restart after SQLite commit but before JetStream acknowledgement redelivers harmlessly.
-- [ ] Simulator passes duplicate, stale, malformed, unavailable-adapter, upstream-rejection, no-op-refresh, outcome-timeout, and restart-before-ack scenarios.
+- [ ] Every dispatched Command has a committed `requested` record first; failure to create that record prevents dispatch.
+- [ ] Two simultaneous Commands for one Entity produce one active lifecycle, one durable Command record, and one HTTP 409.
+- [ ] Missing adapter, upstream rejection, and unsatisfied deadline persist the matching terminal status and stable failure code while mapping to HTTP 503, 502, and 504; unexpected failures after record creation persist `internal_failure` when SQLite remains writable and map to HTTP 500.
+- [ ] An already-matched target is still dispatched, accepted, explicitly refreshed, and satisfied only by its linked Observation; the State projection and `satisfied` Command record reference the same Observation in one transaction.
+- [ ] A linked Observation that wins the race with acceptance processing may satisfy the Command, and the later acceptance update records `accepted_at` without regressing its status.
+- [ ] HTTP disconnect after the `requested` record commits does not cancel dispatch; it retains the in-memory guard until linked outcome or deadline and records the eventual terminal status.
+- [ ] Core restart marks `requested` and `accepted` Commands `interrupted`, never redispatches them, and does not let a later linked Observation change that terminal status even though the Observation may still advance State.
+- [ ] Core restart after SQLite commit of State and Command satisfaction but before JetStream acknowledgement redelivers harmlessly without changing either record.
+- [ ] Simulator passes duplicate, stale, malformed, unavailable-adapter, upstream-rejection, no-op-refresh, outcome-timeout, interrupted-command, and restart-before-ack scenarios.
 - [ ] The configured real Home Assistant light can be read and set both on and off through Hearthd, with each HTTP 200 tied to a matching linked Observation.
 - [ ] Core and wire fixtures contain no Home Assistant service names or payload shapes.
 - [ ] HTTP listens only on configured loopback and `/readyz` fails when SQLite, NATS, JetStream configuration, or the consumer is unavailable.
@@ -886,8 +1006,8 @@ Total relative effort is **XL**. No calendar estimate is asserted.
 
 | Layer | What | How |
 | --- | --- | --- |
-| Pure module | ID validation, registration conflicts, projection ordering, same-value advancement, in-memory guard, deadline/result mapping | Inject in-memory Repository, CommandSender, clock, and ID generator |
-| Repository | Transactions, constraints, idempotency, tie ordering, receipt pruning, current-State retention | Temporary real SQLite; apply Goose; use generated sqlc queries |
+| Pure module | ID validation, registration conflicts, projection ordering, same-value advancement, Command transition monotonicity, in-memory guard, deadline/result mapping | Inject in-memory Repository, CommandSender, clock, and ID generator |
+| Repository | Transactions, constraints, idempotency, tie ordering, receipt pruning, current-State retention, Command lifecycle persistence, atomic outcome satisfaction, startup interruption | Temporary real SQLite; apply Goose; use generated sqlc queries |
 | SDK/NATS | Subjects, envelopes, schema validation, publish acknowledgement/retry, request/reply, responder invariants, W3C headers | In-process NATS Server with JetStream |
 | HTTP | Huma validation, operation IDs, nullable State, bodies, error/status mapping, runtime OpenAPI | Echo/Huma test server with fake module dependencies |
 | Home Assistant adapter | Snapshot/event mapping, service calls, no-op refresh, reconnect | Scripted WebSocket server using captured minimal fixtures; one manual/live verification |
@@ -905,14 +1025,16 @@ CI regenerates sqlc output and fails on diff. OpenAPI is inspected at runtime in
 | Three-process failure tests become slow or flaky | Medium | High | Keep most risk tests at module/repository/SDK seams; reserve a small process suite for integration-only behavior |
 | Thin SDK expands into vendor framework | Medium | Medium | Freeze interface to registration, durable publication, command serving, and shutdown; keep vendor behavior outside |
 | Home Assistant details leak into canonical contracts | Medium | High | Schema fixtures and package tests assert canonical Device/Entity/State/Command vocabulary only |
-| In-memory Command guard is lost on core restart | Accepted | Low for a light | Commands are intentionally ephemeral; later Observation still updates State; client retries manually |
+| Persisted Command history is mistaken for a delivery queue | Medium | High | Keep delivery on expiring Core NATS request/reply, mark active rows interrupted at startup, and forbid replay or redispatch |
+| Core restart loses the in-memory guard and waiter | Accepted | Low for a light | Persist the attempt as interrupted for diagnosis; later Observation still updates State; client retries manually |
+| Command satisfaction races adapter acceptance processing | Medium | Medium | Make transitions monotonic; allow a matching linked Observation to satisfy an active record and let later acceptance fill its timestamp without status regression |
 
 ## Success metrics
 
 - The entire simulator failure matrix passes deterministically.
 - One real configured light can be read and controlled on/off through Hearthd.
-- Every successful HTTP Command is tied to a matching command-linked Observation.
-- Core restart and JetStream redelivery do not corrupt or regress canonical State.
+- Every Command attempt has a durable terminal history record, and every successful HTTP Command is tied to the matching command-linked Observation in both State and Command history.
+- Core restart marks unfinished Commands interrupted without redispatch, and JetStream redelivery does not corrupt or regress canonical State or Command history.
 - Home Assistant can later be removed without changing canonical Device/Entity IDs or the adapter wire contract.
 
 ## Open items
