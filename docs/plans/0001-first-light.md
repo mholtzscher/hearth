@@ -20,14 +20,14 @@ The slice must deliver visible household utility and meaningful NATS learning wh
 - Expose a concrete, stateless thin SDK `Session` with `Connect`, `Register`, durable `PublishObservation`, blocking ephemeral `ServeCommands`, and idempotent `Close` methods.
 - Have `PublishObservation` retry one generated envelope through transient disconnects and return only after JetStream acknowledgement or context expiry; do not add a local outbox.
 - Keep vendor behavior, discovery, upstream calls, refresh rules, credentials, and checkpoints outside the SDK.
-- Serve Commands through a one-shot SDK responder: adapter code calls `Accept` before refresh or `Reject`; after acceptance it publishes the linked refresh Observation through the session.
+- Serve Commands through independent, potentially concurrent SDK handler invocations with one-shot responders: adapter code calls `Accept` before refresh or `Reject`; after acceptance it publishes the linked refresh Observation through the session. Adapters must be concurrency-safe and may serialize internally only when their vendor protocol requires it.
 - Propagate message, correlation, causation, and command IDs in JSON and W3C trace context in NATS headers.
 - Use composition roots under `internal/app`, one cohesive `internal/modules/devices` product module, domain-neutral `internal/platform` packages, vendor code under `internal/adapters`, a public `sdk/adapter`, and checked-in `contracts/v1`; expose OpenAPI at runtime without a committed artifact.
 - Serve HTTP with Echo v5 and Huma v2, with application assembly constructing the transport and the `devices` module owning operation registration; expose OpenAPI at runtime without committing a generated artifact.
 - Bind the unauthenticated development API to loopback only.
 - Return Entity metadata and nullable current State from `GET /v1/entities/{entity_id}`.
 - Accept `{"operation":"set","value":true}` at `POST /v1/entities/{entity_id}/commands` and wait synchronously for the outcome.
-- Return stable JSON error codes mapped to 409 overlap, 503 missing adapter, 502 upstream rejection, 504 outcome timeout, and 500 internal failure.
+- Return stable JSON error codes mapped to 503 missing adapter, 502 upstream rejection, 504 outcome timeout, and 500 internal failure.
 - Model independently addressable entities grouped by devices.
 - Give the Home Assistant adapter instance a configured subject-safe slug.
 - Register Device kind `light` and Entity kind `power` with boolean value type, writability, and `set`; reply with canonical IDs only after the binding and mappings commit. Defer manifests, discovery lifecycle, feature negotiation, configuration schemas, and checkpoints.
@@ -46,9 +46,10 @@ The slice must deliver visible household utility and meaningful NATS learning wh
 - Record and acknowledge stale observations without changing current state.
 - Diagnose permanently invalid input in structured logs with safe metadata and acknowledge it while its raw message remains in the seven-day stream; leave transient infrastructure failures unacknowledged for redelivery; acknowledge valid outcomes only after commit.
 - Send immediate commands on adapter-scoped Core NATS request/reply subjects with one fixed ten-second end-to-end deadline; never queue them for later delivery.
-- Permit one in-flight command per entity and reject overlaps as conflicts.
-- Keep Command delivery, outcome waits, and one-active-per-Entity enforcement ephemeral and in memory, while recording each attempt and terminal outcome in SQLite for diagnosis and future history; the record is audit data, not a queue.
-- Commit the `requested` record before dispatch, mark it `satisfied` transactionally with the matching linked Observation, and persist terminal failures. After the `requested` record commits, proceed with dispatch and keep the in-memory guard until linked outcome or the ten-second deadline even if the HTTP client disconnects; core restart loses the wait and guard, marks active records `interrupted`, and never redispatches them.
+- Allow Commands for one Entity to overlap without a guard, queue, or supersession policy; give each an independent ID, durable record, in-memory waiter, and deadline, and allow only its own linked matching Observation to satisfy it.
+- Accept that interleaved Commands may both be satisfied at different observation times, one may time out after another changes the Entity, and a successful outcome may be immediately superseded; canonical State continues to follow Observation ordering.
+- Keep Command delivery and outcome waits ephemeral and in memory while recording each attempt and terminal outcome in SQLite for diagnosis and future history; the record is audit data, not a queue.
+- Commit the `requested` record before dispatch, mark only that Command `satisfied` transactionally with its matching linked Observation, and persist terminal failures. After the `requested` record commits, proceed with dispatch and retain that lifecycle until linked outcome or the ten-second deadline even if the HTTP client disconnects; core restart loses active waits, marks active records `interrupted`, and never redispatches them.
 - Hold the command HTTP request until outcome satisfaction or deadline failure.
 - Dispatch even when canonical state already matches the target.
 - After acceptance, have the adapter refresh upstream state and publish a fresh observation linked to the command ID.
@@ -58,8 +59,8 @@ The slice must deliver visible household utility and meaningful NATS learning wh
 - Expose loopback `/healthz` and `/readyz`; report ready only after SQLite migration, NATS connection, JetStream provisioning, and observation-consumer startup. Adapters retry registration.
 - Give the core, Home Assistant adapter, and simulator separate YAML files containing only their owned non-secret configuration; read the Home Assistant token from a separate local secret file.
 - Defer adapter and Entity availability; expose last State timestamps and detect a missing adapter during command request/reply.
-- Have the disposable Home Assistant adapter fetch a startup/reconnect snapshot, subscribe to state-change events, and explicitly refresh after accepted commands.
-- Require the simulator to prove duplicate, stale, malformed, unavailable-adapter, upstream-rejection, no-op-refresh, outcome-timeout, and core-restart-before-ack cases.
+- Have the disposable Home Assistant adapter fetch a startup/reconnect snapshot, subscribe to state-change events, handle concurrent WebSocket requests by request ID, and explicitly publish each accepted Command's own linked refresh.
+- Require the simulator to prove duplicate, stale, malformed, unavailable-adapter, upstream-rejection, no-op-refresh, overlapping-opposite-command, outcome-timeout, and core-restart-before-ack cases.
 - Verify behavior with pure `devices` module tests, temporary-SQLite repository and migration tests, Huma transport tests, SDK tests against in-process NATS, and a small process-level simulator suite.
 
 ## Task breakdown

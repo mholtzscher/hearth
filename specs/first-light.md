@@ -21,7 +21,7 @@
 
 Build three Go processes: the Hearthd core, a disposable Home Assistant migration adapter, and a fault-injecting simulator. A thin, stateless Go SDK hides NATS protocol mechanics for adapters. Authoritative JSON Schemas remain usable by non-Go adapters.
 
-Adapters register configured Devices and Entities over Core NATS request/reply, publish Observations durably to JetStream, and serve ephemeral Commands over Core NATS request/reply. The core projects canonical State into SQLite, records each Command attempt and outcome there for diagnosis and future history, and exposes a loopback Echo/Huma HTTP interface. Command delivery, guards, and outcome waits remain synchronous and ephemeral; the audit record never causes replay or redispatch.
+Adapters register configured Devices and Entities over Core NATS request/reply, publish Observations durably to JetStream, and serve ephemeral Commands over Core NATS request/reply. The core projects canonical State into SQLite, records each Command attempt and outcome there for diagnosis and future history, and exposes a loopback Echo/Huma HTTP interface. Command delivery and outcome waits remain synchronous and ephemeral; the audit record never causes replay or redispatch. Commands for the same Entity may overlap and are correlated independently by Command ID.
 
 ## Scope
 
@@ -47,6 +47,7 @@ Adapters register configured Devices and Entities over Core NATS request/reply, 
 - Automations, scheduling, browser UI, or history UI
 - Adapter or Entity availability and heartbeats
 - Durable Command delivery, replay, or recovery
+- Per-Entity Command serialization, queuing, or supersession
 - Authentication or non-loopback HTTP exposure
 - NATS KV
 - Container deployment
@@ -63,6 +64,7 @@ Adapters register configured Devices and Entities over Core NATS request/reply, 
 | One `devices` module | Registry/State/Commands modules | One slice does not yet justify three seams |
 | Source acquisition ordering | JetStream arrival ordering | Delayed delivery is not source chronology |
 | Explicit linked refresh | Acceptance-only success | Upstream acceptance does not prove the requested outcome is present |
+| Concurrent Commands per Entity | Guard, queue, or supersession policy | This matches common ecosystem behavior and keeps each Command independent; interleaved outcomes and immediately superseded successes are accepted |
 | Runtime-only OpenAPI | Committed generated artifact | There is no external HTTP consumer requiring compatibility review yet |
 
 ## Runtime topology
@@ -414,7 +416,6 @@ Stable API error codes are:
 ```text
 invalid_request
 entity_not_found
-command_in_flight
 adapter_unavailable
 upstream_rejected
 outcome_timeout
@@ -488,7 +489,7 @@ Interface contract:
 - `Connect` validates the adapter slug, compiles embedded schemas, connects to NATS, and installs W3C propagation. It does not provision core-owned streams.
 - `Register` performs one request/reply attempt. The adapter application retries it with bounded exponential backoff until context cancellation.
 - `PublishObservation` generates one Observation envelope and retries that same bytes/ID across transient NATS disconnects. It returns the generated ID after JetStream publish acknowledgement, or returns that ID with an error when the context expires. There is no local outbox.
-- `ServeCommands` subscribes to the adapter-scoped wildcard and blocks until context cancellation or terminal serving failure.
+- `ServeCommands` subscribes to the adapter-scoped wildcard, starts an independent handler invocation for each valid request, and blocks until context cancellation or terminal serving failure. Handler invocations may overlap, including for the same Entity, so adapter code must be concurrency-safe. An adapter may serialize internally when its vendor protocol requires it, but the SDK and core provide no ordering guarantee.
 - A `Responder` is one-shot. `Accept` or `Reject` sends the Core NATS reply. A second reply returns `ErrAlreadyResponded`. Returning without a reply returns/logs `ErrMissingResponse` and lets the core request time out.
 - `Close` is idempotent and drains subscriptions within the caller's shutdown budget.
 - Vendor calls, credentials, polling, state refresh, mapping, and checkpoints remain outside the SDK.
@@ -525,20 +526,21 @@ func (*Service) SetPower(context.Context, EntityID, bool) (CommandResult, error)
 `SetPower` behavior:
 
 1. Resolve Entity and owning adapter.
-2. Acquire an in-memory Entity-keyed guard or return `ErrCommandInFlight`.
-3. Create a `cmd_` ID, correlation ID, and independent ten-second lifecycle context.
-4. Register the linked-Observation waiter before dispatch.
-5. Commit a `requested` Command record before attempting NATS dispatch; a creation failure prevents dispatch and returns an internal error. This commit is the point of no return: subsequent HTTP cancellation does not cancel dispatch or the independent lifecycle.
-6. Send Core NATS request/reply.
-7. Persist `adapter_unavailable`, `rejected`, or `internal_failure` when dispatch or the adapter response fails; never retry or replay the Command.
-8. On acceptance, set `accepted_at` without regressing a terminal status if a fast linked Observation was already committed.
-9. Wait for `ProjectObservation` to commit an `applied` or `unchanged` matching Observation linked to the Command and transactionally mark the record `satisfied`.
-10. At the deadline, persist `outcome_timeout` unless the Command is already terminal.
-11. Return `CommandResult` or the mapped stable error.
-12. If HTTP cancellation occurs after the `requested` record commits, abandon the response but retain the guard and lifecycle goroutine until linked outcome or deadline, recording the eventual terminal status.
-13. Always release the guard at lifecycle completion. Core restart loses all in-memory waits and guards; startup marks persisted `requested` and `accepted` records `interrupted` and never redispatches them.
+2. Create a `cmd_` ID, correlation ID, and independent ten-second lifecycle context.
+3. Register a Command-ID-keyed linked-Observation waiter before dispatch.
+4. Commit a `requested` Command record before attempting NATS dispatch; a creation failure prevents dispatch and returns an internal error. This commit is the point of no return: subsequent HTTP cancellation does not cancel dispatch or the independent lifecycle.
+5. Send Core NATS request/reply.
+6. Persist `adapter_unavailable`, `rejected`, or `internal_failure` when dispatch or the adapter response fails; never retry or replay the Command.
+7. On acceptance, set `accepted_at` without regressing a terminal status if a fast linked Observation was already committed.
+8. Wait for `ProjectObservation` to commit an `applied` or `unchanged` matching Observation linked to the Command and transactionally mark only that record `satisfied`.
+9. At the deadline, persist `outcome_timeout` unless the Command is already terminal.
+10. Return `CommandResult` or the mapped stable error.
+11. If HTTP cancellation occurs after the `requested` record commits, abandon the response but retain that lifecycle goroutine until linked outcome or deadline, recording the eventual terminal status.
+12. Unregister the Command-ID-keyed waiter at lifecycle completion. Core restart loses all in-memory waits; startup marks persisted `requested` and `accepted` records `interrupted` and never redispatches them.
 
 Command lifecycle writes are monotonic and idempotent. A linked Observation may be projected before the core processes the adapter's acceptance reply; satisfaction wins, and a later acceptance update may fill `accepted_at` but must not replace the terminal status.
+
+Multiple `SetPower` calls for one Entity run concurrently without a guard, queue, or supersession. Each has an independent ID, record, waiter, and deadline. An Observation can satisfy only the Command named by its `refresh_for_command_id`; it cannot satisfy another active Command for the same Entity. Successful Commands may be immediately superseded by later Observations, and canonical State continues to follow the normal `observed_at` plus receive-order rules.
 
 ### HTTP
 
@@ -565,7 +567,6 @@ It waits synchronously for a linked outcome or deadline. Status mapping is:
 | --- | ---: | --- |
 | Invalid body, ID, operation | 400 | `invalid_request` |
 | Unknown Entity | 404 | `entity_not_found` |
-| Existing in-memory guard | 409 | `command_in_flight` |
 | No adapter responder | 503 | `adapter_unavailable` |
 | Adapter rejects upstream call | 502 | `upstream_rejected` |
 | No matching linked Observation by deadline | 504 | `outcome_timeout` |
@@ -855,7 +856,7 @@ The adapter uses Home Assistant's WebSocket API directly:
 10. Accept after Home Assistant reports successful service-call completion.
 11. Explicitly call `get_states`, then durably publish a linked refresh Observation.
 
-`observed_at` is adapter acquisition time. Home Assistant `last_updated` becomes optional `source_updated_at`. Home Assistant entity IDs, service names, contexts, and payloads do not leave this package. The adapter is deleted after migration completes.
+`observed_at` is adapter acquisition time. Home Assistant `last_updated` becomes optional `source_updated_at`. Home Assistant entity IDs, service names, contexts, and payloads do not leave this package. WebSocket request IDs, pending responses, and refresh publications are concurrency-safe: overlapping handlers may issue service calls and `get_states` requests concurrently, and each refresh Observation retains its own Command ID and correlation ID. The adapter does not serialize by Entity unless a demonstrated Home Assistant protocol constraint requires it. The adapter is deleted after migration completes.
 
 ## Configuration
 
@@ -930,7 +931,7 @@ internal/
 │       ├── model.go                 # new — Device, Entity, State, Command types
 │       ├── service.go               # new — registration, projection, Command behavior
 │       ├── repository.go            # new — identity, State, receipt, and Command-record persistence seam
-│       ├── command.go               # new — durable lifecycle transitions plus in-memory guard and outcome waits
+│       ├── command.go               # new — durable lifecycle transitions plus concurrent in-memory outcome waits
 │       └── errors.go                # new — domain errors
 ├── adapters/
 │   ├── homeassistant/               # new — WebSocket client and HA mapping
@@ -990,14 +991,15 @@ Total relative effort is **XL**. No calendar estimate is asserted.
 - [ ] Older, same-value, future-skewed, wrong-owner, unknown-Entity, and malformed Observations produce the specified dispositions/diagnostics and acknowledgement behavior.
 - [ ] A newer same-value Observation advances State timestamps and evidence.
 - [ ] Every dispatched Command has a committed `requested` record first; failure to create that record prevents dispatch.
-- [ ] Two simultaneous Commands for one Entity produce one active lifecycle, one durable Command record, and one HTTP 409.
+- [ ] Two simultaneous Commands for one Entity create distinct durable records, both dispatch without HTTP 409, and each can be satisfied only by its own linked Observation; the SDK invokes both handlers independently without imposing per-Entity ordering.
+- [ ] Controlled opposite-value interleavings prove that both Commands may be satisfied at different observation times or one may time out when its linked Observation is stale or mismatched; final State follows `observed_at` and receive-order rules.
 - [ ] Missing adapter, upstream rejection, and unsatisfied deadline persist the matching terminal status and stable failure code while mapping to HTTP 503, 502, and 504; unexpected failures after record creation persist `internal_failure` when SQLite remains writable and map to HTTP 500.
 - [ ] An already-matched target is still dispatched, accepted, explicitly refreshed, and satisfied only by its linked Observation; the State projection and `satisfied` Command record reference the same Observation in one transaction.
 - [ ] A linked Observation that wins the race with acceptance processing may satisfy the Command, and the later acceptance update records `accepted_at` without regressing its status.
-- [ ] HTTP disconnect after the `requested` record commits does not cancel dispatch; it retains the in-memory guard until linked outcome or deadline and records the eventual terminal status.
+- [ ] HTTP disconnect after the `requested` record commits does not cancel dispatch; its independent lifecycle remains active until linked outcome or deadline and records the eventual terminal status.
 - [ ] Core restart marks `requested` and `accepted` Commands `interrupted`, never redispatches them, and does not let a later linked Observation change that terminal status even though the Observation may still advance State.
 - [ ] Core restart after SQLite commit of State and Command satisfaction but before JetStream acknowledgement redelivers harmlessly without changing either record.
-- [ ] Simulator passes duplicate, stale, malformed, unavailable-adapter, upstream-rejection, no-op-refresh, outcome-timeout, interrupted-command, and restart-before-ack scenarios.
+- [ ] Simulator passes duplicate, stale, malformed, unavailable-adapter, upstream-rejection, no-op-refresh, overlapping-opposite-command, outcome-timeout, interrupted-command, and restart-before-ack scenarios.
 - [ ] The configured real Home Assistant light can be read and set both on and off through Hearthd, with each HTTP 200 tied to a matching linked Observation.
 - [ ] Core and wire fixtures contain no Home Assistant service names or payload shapes.
 - [ ] HTTP listens only on configured loopback and `/readyz` fails when SQLite, NATS, JetStream configuration, or the consumer is unavailable.
@@ -1006,11 +1008,11 @@ Total relative effort is **XL**. No calendar estimate is asserted.
 
 | Layer | What | How |
 | --- | --- | --- |
-| Pure module | ID validation, registration conflicts, projection ordering, same-value advancement, Command transition monotonicity, in-memory guard, deadline/result mapping | Inject in-memory Repository, CommandSender, clock, and ID generator |
+| Pure module | ID validation, registration conflicts, projection ordering, same-value advancement, Command transition monotonicity, concurrent waiter isolation, interleaved outcomes, deadline/result mapping | Inject in-memory Repository, CommandSender, clock, and ID generator |
 | Repository | Transactions, constraints, idempotency, tie ordering, receipt pruning, current-State retention, Command lifecycle persistence, atomic outcome satisfaction, startup interruption | Temporary real SQLite; apply Goose; use generated sqlc queries |
-| SDK/NATS | Subjects, envelopes, schema validation, publish acknowledgement/retry, request/reply, responder invariants, W3C headers | In-process NATS Server with JetStream |
+| SDK/NATS | Subjects, envelopes, schema validation, publish acknowledgement/retry, concurrent Command handler invocation, request/reply, responder invariants, W3C headers | In-process NATS Server with JetStream |
 | HTTP | Huma validation, operation IDs, nullable State, bodies, error/status mapping, runtime OpenAPI | Echo/Huma test server with fake module dependencies |
-| Home Assistant adapter | Snapshot/event mapping, service calls, no-op refresh, reconnect | Scripted WebSocket server using captured minimal fixtures; one manual/live verification |
+| Home Assistant adapter | Snapshot/event mapping, concurrent request/response correlation, service calls, command-linked no-op refresh, reconnect | Scripted WebSocket server using captured minimal fixtures and controlled interleavings; one manual/live verification |
 | Process | Full failure matrix and restart behavior | Native devenv processes plus simulator and disposable SQLite/NATS state |
 
 CI regenerates sqlc output and fails on diff. OpenAPI is inspected at runtime in tests but is not committed.
@@ -1025,8 +1027,10 @@ CI regenerates sqlc output and fails on diff. OpenAPI is inspected at runtime in
 | Three-process failure tests become slow or flaky | Medium | High | Keep most risk tests at module/repository/SDK seams; reserve a small process suite for integration-only behavior |
 | Thin SDK expands into vendor framework | Medium | Medium | Freeze interface to registration, durable publication, command serving, and shutdown; keep vendor behavior outside |
 | Home Assistant details leak into canonical contracts | Medium | High | Schema fixtures and package tests assert canonical Device/Entity/State/Command vocabulary only |
+| Concurrent SDK handlers expose unsafe adapter or vendor-client state | Medium | High | Require concurrency-safe adapters, correlate upstream calls by request ID, test interleavings, and let adapters serialize only where their protocol requires it |
 | Persisted Command history is mistaken for a delivery queue | Medium | High | Keep delivery on expiring Core NATS request/reply, mark active rows interrupted at startup, and forbid replay or redispatch |
-| Core restart loses the in-memory guard and waiter | Accepted | Low for a light | Persist the attempt as interrupted for diagnosis; later Observation still updates State; client retries manually |
+| Concurrent Commands produce timing-dependent outcomes or immediately superseded successes | Accepted | Medium | Keep Command IDs, records, waiters, and linked Observations independent; order State by observation chronology and expose the full history rather than implying serialization |
+| Core restart loses in-memory waiters | Accepted | Low for a light | Persist each attempt as interrupted for diagnosis; later Observations still update State; clients retry manually |
 | Command satisfaction races adapter acceptance processing | Medium | Medium | Make transitions monotonic; allow a matching linked Observation to satisfy an active record and let later acceptance fill its timestamp without status regression |
 
 ## Success metrics
