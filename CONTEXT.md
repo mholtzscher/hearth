@@ -37,11 +37,11 @@ One independently addressable state or control point belonging to a device. Stat
 _Avoid_: Device capability, endpoint
 
 **Observation**:
-A fresh value report obtained by an adapter from an external system or device. It records when the adapter acquired the value, may preserve when the upstream source says the value last changed, and records when Hearthd received it; it does not by itself prove what caused the outcome.
+A fresh value report Hearthd durably receives from an adapter. It records when Hearthd received the report, when the adapter acquired the value, and optionally when the upstream source says the value last changed; it does not by itself prove physical truth or causation.
 _Avoid_: Physical confirmation, proof of causation
 
 **State**:
-The current value Hearthd has accepted for an entity. It is the observation with the latest adapter acquisition time, using receive order to break ties; a newer same-value observation advances its evidence and timestamps, and State is not a requested or desired value.
+The current value Hearthd has accepted for an entity. It is the latest first-seen valid Observation from the owning adapter by core-assigned receive order; a same-value Observation advances its evidence and timestamps, and State is not a requested or desired value.
 _Avoid_: Desired state, target
 
 **Command**:

@@ -1,27 +1,20 @@
 # First Light — Implementation Spec
 
-**Status:** Ready for task breakdown
-
-**Approved by:** Michael
-
-**Approved:** 2026-08-19
-
-**Type:** Feature plan
-
-**Effort:** XL (relative estimate only)
+- **Status:** Ready for task breakdown
+- **Approved by:** Michael
+- **Approved:** 2026-08-19
+- **Type:** Feature plan
+- **Effort:** XL (relative estimate only)
 
 ## Problem statement
 
-- **Who:** A technical self-hoster migrating one household away from Home Assistant.
-- **What:** Hearthd needs its first useful vertical slice without making Home Assistant part of the permanent architecture.
-- **Why it matters:** The household must remain operable during migration, while the project proves that NATS earns its production role through process isolation, durable observations, recovery, and explicit command semantics.
-- **Evidence:** The current household runs through Home Assistant, and the project goal is to eliminate Home Assistant after native adapters take ownership.
+Hearthd needs a useful first vertical slice for a technical self-hoster migrating one household from Home Assistant. The household must remain operable while the project proves NATS through process isolation, durable Observations, recovery, and explicit Command semantics, without making Home Assistant permanent architecture.
 
 ## Proposed solution
 
-Build three Go processes: the Hearthd core, a disposable Home Assistant migration adapter, and a fault-injecting simulator. A thin, stateless Go SDK hides NATS protocol mechanics for adapters. Authoritative JSON Schemas remain usable by non-Go adapters.
+Build three Go processes: the Hearthd core, a disposable Home Assistant migration adapter, and a fault-injecting simulator. A thin, stateless Go SDK hides NATS protocol mechanics; authoritative JSON Schemas support non-Go adapters.
 
-Adapters register configured Devices and Entities over Core NATS request/reply, publish Observations durably to JetStream, and serve ephemeral Commands over Core NATS request/reply. The core projects canonical State into SQLite, records each Command attempt and outcome there for diagnosis and future history, and exposes a loopback Echo/Huma HTTP interface. Command delivery and outcome waits remain synchronous and ephemeral; the audit record never causes replay or redispatch. Commands for the same Entity may overlap and are correlated independently by Command ID.
+Adapters register configured Devices and Entities over Core NATS request/reply, publish Observations durably to JetStream, and serve ephemeral Commands over Core NATS request/reply. The core projects canonical State and records every dispatched Command attempt and outcome in SQLite, then exposes a loopback Echo/Huma HTTP interface. Command delivery and outcome waits remain synchronous and ephemeral; records never cause replay or redispatch. Commands for the same Entity may overlap and are correlated independently by Command ID.
 
 ## Scope
 
@@ -41,31 +34,19 @@ Adapters register configured Devices and Entities over Core NATS request/reply, 
 
 ### Non-goals
 
-- Brightness, color, transitions, or effects
-- General discovery or approval
-- Adapter manifests, feature negotiation, checkpoints, or a full adapter framework
-- Automations, scheduling, browser UI, or history UI
-- Adapter or Entity availability and heartbeats
-- Durable Command delivery, replay, or recovery
-- Per-Entity Command serialization, queuing, or supersession
+- Light capabilities beyond boolean power `set`
+- Discovery, approval, availability, heartbeats, automations, scheduling, or UI
+- Adapter manifests, feature negotiation, checkpoints, or a vendor framework in the SDK
+- Durable Command delivery/recovery or core-managed serialization, queuing, and supersession
 - Authentication or non-loopback HTTP exposure
-- NATS KV
-- Container deployment
-- Committed/generated OpenAPI artifacts
-- Permanent support for the Home Assistant adapter
+- Permanent Home Assistant support
 
 ## Key trade-offs
 
-| Chose | Over | Because |
-| --- | --- | --- |
-| Durable Observation delivery plus SQLite Command history | Durable Command stream or no Command record | JetStream recovers evidence, while a non-replayable SQLite ledger supports diagnosis and future history without executing stale intent |
-| SQLite canonical projection | NATS KV or replay-only State | Only the core needs transactional query ownership |
-| Thin session SDK | Raw NATS in every adapter or full runtime framework | Repeated protocol mechanics earn reuse; vendor behavior does not |
-| One `devices` module | Registry/State/Commands modules | One slice does not yet justify three seams |
-| Source acquisition ordering | JetStream arrival ordering | Delayed delivery is not source chronology |
-| Explicit linked refresh | Acceptance-only success | Upstream acceptance does not prove the requested outcome is present |
-| Concurrent Commands per Entity | Guard, queue, or supersession policy | This matches common ecosystem behavior and keeps each Command independent; interleaved outcomes and immediately superseded successes are accepted |
-| Runtime-only OpenAPI | Committed generated artifact | There is no external HTTP consumer requiring compatibility review yet |
+- JetStream durably recovers Observation evidence; SQLite owns transactional canonical State and non-replayable Command history.
+- State follows core receive order while source times remain diagnostic metadata; Command success requires an explicit linked refresh rather than upstream acceptance alone.
+- A thin SDK centralizes protocol mechanics while vendor behavior stays in adapters; the first slice remains one `devices` module.
+- Commands overlap independently by ID, accepting interleaved outcomes and immediately superseded successes.
 
 ## Runtime topology
 
@@ -145,13 +126,13 @@ type Entity struct {
 }
 
 type State struct {
-    EntityID        EntityID
-    Value           bool
-    ObservationID   ObservationID
-    ObservedAt      time.Time
-    SourceUpdatedAt *time.Time
-    ReceivedAt      time.Time
-    ReceiveOrder    int64
+    EntityID          EntityID
+    Value             bool
+    ObservationID     ObservationID
+    AdapterReceivedAt time.Time
+    SourceUpdatedAt   *time.Time
+    ObservedAt        time.Time
+    ReceiveOrder      int64
 }
 
 type EntityView struct {
@@ -163,16 +144,14 @@ type ObservationDisposition string
 const (
     DispositionApplied   ObservationDisposition = "applied"
     DispositionUnchanged ObservationDisposition = "unchanged"
-    DispositionStale     ObservationDisposition = "stale"
     DispositionRejected  ObservationDisposition = "rejected"
     DispositionDuplicate ObservationDisposition = "duplicate" // processing result; no second receipt row
 )
 
 type ObservationRejection string
 const (
-    RejectionFutureObservedAt ObservationRejection = "future_observed_at"
-    RejectionUnknownEntity    ObservationRejection = "unknown_entity"
-    RejectionWrongAdapter     ObservationRejection = "wrong_adapter"
+    RejectionUnknownEntity ObservationRejection = "unknown_entity"
+    RejectionWrongAdapter  ObservationRejection = "wrong_adapter"
 )
 
 type ProjectionResult struct {
@@ -326,16 +305,17 @@ Constraints:
 
 ```go
 type Observation struct {
-    EntityID           string  `json:"entity_id"`
-    Value              bool    `json:"value"`
-    ObservedAt         string  `json:"observed_at"`
-    SourceUpdatedAt    *string `json:"source_updated_at,omitempty"`
-    RefreshForCommand  *string `json:"refresh_for_command_id,omitempty"`
+    EntityID          string  `json:"entity_id"`
+    Value             bool    `json:"value"`
+    AdapterReceivedAt string  `json:"adapter_received_at"`
+    SourceUpdatedAt   *string `json:"source_updated_at,omitempty"`
+    RefreshForCommand *string `json:"refresh_for_command_id,omitempty"`
 }
 ```
 
-- `observed_at` is when the adapter freshly acquired the value.
+- `adapter_received_at` is when the adapter freshly acquired the value.
 - `source_updated_at` preserves an optional upstream last-change claim.
+- The core adds `observed_at` from the JetStream server timestamp when the message was durably received.
 - A command refresh carries both `refresh_for_command_id = cmd_...` and envelope `causation_id = cmd_...`, and reuses the Command correlation ID.
 - The SDK generates the `obs_...` envelope ID once per `PublishObservation` call.
 
@@ -381,11 +361,11 @@ type EntityBody struct {
 }
 
 type StateBody struct {
-    Value           bool    `json:"value"`
-    ObservationID   string  `json:"observation_id"`
-    ObservedAt      string  `json:"observed_at"`
-    SourceUpdatedAt *string `json:"source_updated_at,omitempty"`
-    ReceivedAt      string  `json:"received_at"`
+    Value             bool    `json:"value"`
+    ObservationID     string  `json:"observation_id"`
+    AdapterReceivedAt string  `json:"adapter_received_at"`
+    SourceUpdatedAt   *string `json:"source_updated_at,omitempty"`
+    ObservedAt        string  `json:"observed_at"`
 }
 
 type SetCommandBody struct {
@@ -461,7 +441,7 @@ type SimulatorConfig struct {
 }
 ```
 
-Protocol limits are fixed constants in v1, not YAML fields: ten-second Command deadline, one-minute future skew, seven-day/one-GiB stream, 30-second acknowledgement wait, one pending acknowledgement, and at least eight-day receipt retention with current-State receipt pinning. Command records are retained without pruning in the first slice; a bounded retention policy is deferred until a history interface establishes its requirements.
+Protocol limits are fixed v1 constants, not YAML fields: ten-second Command deadline; one-minute future-clock diagnostic threshold; seven-day/one-GiB stream; 30-second acknowledgement wait; one pending acknowledgement; and `observed_at + 192h` receipt expiry, with the current-State receipt pinned. Command records are not pruned in this slice; retention policy awaits a history interface.
 
 ## Interfaces
 
@@ -525,26 +505,19 @@ func (*Service) SetPower(context.Context, EntityID, bool) (CommandResult, error)
 
 `SetPower` behavior:
 
-1. Resolve Entity and owning adapter.
-2. Create a `cmd_` ID, correlation ID, and independent ten-second lifecycle context.
-3. Register a Command-ID-keyed linked-Observation waiter before dispatch.
-4. Commit a `requested` Command record before attempting NATS dispatch; a creation failure prevents dispatch and returns an internal error. This commit is the point of no return: subsequent HTTP cancellation does not cancel dispatch or the independent lifecycle.
-5. Send Core NATS request/reply.
-6. Persist `adapter_unavailable`, `rejected`, or `internal_failure` when dispatch or the adapter response fails; never retry or replay the Command.
-7. On acceptance, set `accepted_at` without regressing a terminal status if a fast linked Observation was already committed.
-8. Wait for `ProjectObservation` to commit an `applied` or `unchanged` matching Observation linked to the Command and transactionally mark only that record `satisfied`.
-9. At the deadline, persist `outcome_timeout` unless the Command is already terminal.
-10. Return `CommandResult` or the mapped stable error.
-11. If HTTP cancellation occurs after the `requested` record commits, abandon the response but retain that lifecycle goroutine until linked outcome or deadline, recording the eventual terminal status.
-12. Unregister the Command-ID-keyed waiter at lifecycle completion. Core restart loses all in-memory waits; startup marks persisted `requested` and `accepted` records `interrupted` and never redispatches them.
+1. Resolve the Entity and owner; create Command/correlation IDs, an independent ten-second lifecycle context, and a Command-ID-keyed Observation waiter.
+2. Commit `requested` before dispatch. Failure prevents dispatch and returns an internal error. This commit is the point of no return: later HTTP cancellation does not cancel the lifecycle.
+3. Send one Core NATS request/reply without retry or replay. Persist dispatch/response failures as `adapter_unavailable`, `rejected`, or `internal_failure`.
+4. On acceptance, set `accepted_at`. If a linked Observation already made the record terminal, preserve its status while filling the timestamp.
+5. Wait for `ProjectObservation` to atomically commit an `applied` or `unchanged` matching Observation and satisfy only the linked Command; otherwise persist `outcome_timeout` at the deadline.
+6. Return `CommandResult` or the mapped stable error. After HTTP cancellation, abandon only the response and continue recording the lifecycle through outcome/deadline.
+7. Remove the waiter at completion. On restart, lose in-memory waits, mark persisted `requested`/`accepted` records `interrupted`, and never redispatch them.
 
-Command lifecycle writes are monotonic and idempotent. A linked Observation may be projected before the core processes the adapter's acceptance reply; satisfaction wins, and a later acceptance update may fill `accepted_at` but must not replace the terminal status.
-
-Multiple `SetPower` calls for one Entity run concurrently without a guard, queue, or supersession. Each has an independent ID, record, waiter, and deadline. An Observation can satisfy only the Command named by its `refresh_for_command_id`; it cannot satisfy another active Command for the same Entity. Successful Commands may be immediately superseded by later Observations, and canonical State continues to follow the normal `observed_at` plus receive-order rules.
+Lifecycle writes are monotonic and idempotent. Multiple calls for one Entity run concurrently without a guard, queue, or supersession; each has an independent ID, record, waiter, and deadline. An Observation satisfies only its `refresh_for_command_id`. Success may be immediately superseded, while canonical State follows core receive order.
 
 ### HTTP
 
-Owner: `internal/modules/devices/api`.
+Device operations are owned by `internal/modules/devices/api`; `internal/app/hearthd` owns the server and plain Echo health/readiness routes.
 
 ```http
 GET /v1/entities/{entity_id}
@@ -572,7 +545,7 @@ It waits synchronously for a linked outcome or deadline. Status mapping is:
 | No matching linked Observation by deadline | 504 | `outcome_timeout` |
 | Internal failure | 500 | `internal_error` |
 
-Echo v5 and Huma v2 are constructed by `internal/app/hearthd`. The `devices/api` package registers its own operations with stable operation IDs. `/healthz` and `/readyz` are plain loopback Echo routes. Huma exposes OpenAPI at runtime; no generated OpenAPI file is committed. The first slice persists Command history but exposes no Command-history HTTP operation or history UI.
+`devices/api` registers stable Huma operation IDs. Huma exposes runtime OpenAPI; no generated file is committed. Command history has no HTTP operation or UI.
 
 ### NATS protocol
 
@@ -611,7 +584,7 @@ Max ack pending: 1
 Max deliver:     unlimited
 ```
 
-The core acknowledges applied, unchanged, stale, duplicate, and durably recorded rejected Observations only after the SQLite transaction commits. Schema-invalid input is logged with subject, stream sequence, validation error, and safe metadata, then acknowledged. Transient SQLite/infrastructure errors remain unacknowledged.
+The core acknowledges applied, unchanged, duplicate, and durably recorded rejected Observations only after the SQLite transaction completes. Schema-invalid input is logged with subject, stream sequence, validation error, and safe metadata, then acknowledged. Transient SQLite/infrastructure errors remain unacknowledged.
 
 ## Persistence
 
@@ -722,21 +695,21 @@ CREATE TABLE adapter_entity_mappings (
 );
 
 CREATE TABLE observation_receipts (
-    receive_order  INTEGER PRIMARY KEY AUTOINCREMENT,
-    observation_id TEXT NOT NULL UNIQUE CHECK (observation_id LIKE 'obs_%'),
-    adapter_id     TEXT NOT NULL,
-    entity_id      TEXT NOT NULL,
-    disposition    TEXT NOT NULL CHECK (
-        disposition IN ('applied', 'unchanged', 'stale', 'rejected')
+    receive_order       INTEGER PRIMARY KEY AUTOINCREMENT,
+    observation_id      TEXT NOT NULL UNIQUE CHECK (observation_id LIKE 'obs_%'),
+    adapter_id          TEXT NOT NULL,
+    entity_id           TEXT NOT NULL,
+    disposition         TEXT NOT NULL CHECK (
+        disposition IN ('applied', 'unchanged', 'rejected')
     ),
-    rejection_code TEXT CHECK (
+    rejection_code      TEXT CHECK (
         rejection_code IS NULL OR rejection_code IN (
-            'future_observed_at', 'unknown_entity', 'wrong_adapter'
+            'unknown_entity', 'wrong_adapter'
         )
     ),
-    observed_at    TEXT NOT NULL,
-    received_at    TEXT NOT NULL,
-    expires_at     TEXT NOT NULL,
+    adapter_received_at TEXT NOT NULL,
+    observed_at         TEXT NOT NULL,
+    expires_at          TEXT NOT NULL,
     CHECK (
         (disposition = 'rejected' AND rejection_code IS NOT NULL)
         OR (disposition <> 'rejected' AND rejection_code IS NULL)
@@ -747,13 +720,13 @@ CREATE INDEX observation_receipts_expiry_idx
     ON observation_receipts(expires_at);
 
 CREATE TABLE entity_states (
-    entity_id         TEXT PRIMARY KEY REFERENCES entities(id) ON DELETE CASCADE,
-    observation_id    TEXT NOT NULL UNIQUE REFERENCES observation_receipts(observation_id),
-    value_boolean     INTEGER NOT NULL CHECK (value_boolean IN (0, 1)),
-    observed_at       TEXT NOT NULL,
-    source_updated_at TEXT,
-    received_at       TEXT NOT NULL,
-    receive_order     INTEGER NOT NULL UNIQUE REFERENCES observation_receipts(receive_order)
+    entity_id          TEXT PRIMARY KEY REFERENCES entities(id) ON DELETE CASCADE,
+    observation_id     TEXT NOT NULL UNIQUE REFERENCES observation_receipts(observation_id),
+    value_boolean      INTEGER NOT NULL CHECK (value_boolean IN (0, 1)),
+    adapter_received_at TEXT NOT NULL,
+    source_updated_at  TEXT,
+    observed_at        TEXT NOT NULL,
+    receive_order      INTEGER NOT NULL UNIQUE REFERENCES observation_receipts(receive_order)
 );
 
 -- +goose Down
@@ -814,29 +787,24 @@ WHERE expires_at < ?
   );
 ```
 
-Checking `observation_id` protects both foreign keys because `entity_states.observation_id` and `entity_states.receive_order` reference the same receipt row. After a newer Observation advances State, the superseded receipt becomes eligible for the next pruning pass.
+Checking `observation_id` protects both State foreign keys because they reference the same receipt. Superseded State receipts become eligible at the next pruning pass.
 
-`RegisterBinding` and `ProjectObservation` own their complete SQLite transactions behind the repository interface. `ProjectObservation` updates a matching active Command to `satisfied` in the same transaction as its receipt and State projection. Command creation and all other lifecycle transitions also remain behind the repository interface. Generated sqlc types never cross the repository seam.
+`RegisterBinding`, `ProjectObservation`, and all Command transitions own their SQLite transactions behind the repository; generated sqlc types never cross that seam. Projection atomically inserts the receipt, updates State, and satisfies a matching active Command.
 
-`outcome_observation_id` deliberately has no foreign key to `observation_receipts`: receipts are pruned after their idempotency window, while Command history is retained. It remains a typed immutable identifier, and satisfaction writes it only after inserting the corresponding receipt in the same transaction.
+`outcome_observation_id` intentionally has no receipt foreign key because receipts expire while Command history remains. Satisfaction writes this typed, immutable ID only after inserting its receipt in the same transaction.
 
 ### Observation projection rules
 
 For each schema-valid Observation, one transaction:
 
-1. Return `duplicate` if the Observation ID already has a receipt.
-2. Resolve Entity and adapter ownership.
-3. Record `rejected/future_observed_at` if `observed_at` is more than one minute ahead of core time.
-4. Record `rejected/unknown_entity` or `rejected/wrong_adapter` for identity failures.
-5. Compare `observed_at`; use new `receive_order` as the equal-time tie-breaker.
-6. Record `stale` without changing State when older.
-7. Record `unchanged` and advance State evidence/timestamps for a newer same value.
-8. Record `applied` and replace State for a newer different value.
-9. For an `applied` or `unchanged` Observation carrying `refresh_for_command_id`, find an active `requested` or `accepted` Command for the same Entity and adapter. When the observed value matches its requested value, mark it `satisfied`, set `completed_at` and `outcome_observation_id`, and return the satisfied result for the in-memory waiter. A stale, rejected, wrong-value, unknown, or already-terminal Command link never satisfies an outcome.
-10. Set receipt expiry to `received_at + 192h`.
-11. Commit the receipt, State projection, and any Command satisfaction atomically before JetStream acknowledgement.
+1. Read core-owned `observed_at` from the JetStream server timestamp; return `duplicate` when the Observation ID already has a receipt.
+2. When `adapter_received_at > observed_at + 1m`, log a structured clock-skew diagnostic containing Observation, adapter, Entity, `adapter_received_at`, and `observed_at`; continue normally.
+3. Resolve Entity/owner; record `rejected/unknown_entity` or `rejected/wrong_adapter` for identity failures.
+4. Insert the receipt with the next internal `receive_order`. For a known, correctly owned Entity, advance State regardless of timestamps: no current State or a different value is `applied`; the same value is `unchanged`.
+5. An `applied`/`unchanged` Observation with `refresh_for_command_id` satisfies only an active `requested`/`accepted` Command for the same Entity/adapter and value. Set `completed_at`/`outcome_observation_id` and notify its waiter. No rejected, wrong-value, wrong-identity, or terminal link satisfies a Command.
+6. Set receipt expiry to `observed_at + 192h`, then atomically commit receipt, State, and satisfaction before JetStream acknowledgement.
 
-A startup task and hourly task delete expired receipts that are not referenced by current State. A current-State receipt remains past its nominal expiry until a newer Observation supersedes it.
+At startup and hourly, delete expired receipts except the current-State receipt; it becomes eligible after State advances.
 
 ## Home Assistant adapter
 
@@ -844,19 +812,13 @@ Owner: `internal/adapters/homeassistant`.
 
 The adapter uses Home Assistant's WebSocket API directly:
 
-1. Read per-process YAML and token file.
-2. Connect and authenticate.
-3. Register the configured binding through the SDK; retry with bounded exponential backoff and jitter until shutdown.
-4. Call `get_states` after startup and reconnect.
-5. Publish the configured light's power Observation.
-6. Subscribe to `state_changed`.
-7. Map `on`/`off` to boolean; reject unsupported/unavailable upstream values rather than inventing State.
-8. For `set=true`, call `light.turn_on`; for `set=false`, call `light.turn_off`.
-9. Reject the Command if the Home Assistant call fails.
-10. Accept after Home Assistant reports successful service-call completion.
-11. Explicitly call `get_states`, then durably publish a linked refresh Observation.
+1. Read YAML/token, connect/authenticate, and register through the SDK with bounded exponential backoff and jitter until shutdown.
+2. After startup/reconnect, call `get_states`, publish configured light power, and subscribe to `state_changed`.
+3. Map `on`/`off` to boolean; reject unsupported/unavailable values rather than inventing State.
+4. Map `set=true`/`false` to `light.turn_on`/`light.turn_off`. Reject failed calls; accept after successful service-call completion.
+5. Call `get_states` and durably publish a linked refresh Observation.
 
-`observed_at` is adapter acquisition time. Home Assistant `last_updated` becomes optional `source_updated_at`. Home Assistant entity IDs, service names, contexts, and payloads do not leave this package. WebSocket request IDs, pending responses, and refresh publications are concurrency-safe: overlapping handlers may issue service calls and `get_states` requests concurrently, and each refresh Observation retains its own Command ID and correlation ID. The adapter does not serialize by Entity unless a demonstrated Home Assistant protocol constraint requires it. The adapter is deleted after migration completes.
+Adapter acquisition time is `adapter_received_at`; Home Assistant `last_updated` is optional `source_updated_at`. Core `observed_at` comes from the JetStream server timestamp. Home Assistant identifiers, service names, contexts, and payloads stay in this package. WebSocket request IDs, pending responses, and refresh publications are concurrency-safe: overlapping handlers may issue calls concurrently, and each refresh retains its Command/correlation IDs. The adapter serializes by Entity only if the protocol requires it and is deleted after migration.
 
 ## Configuration
 
@@ -905,9 +867,10 @@ Core startup order:
 4. Delete expired Observation receipts not referenced by current State.
 5. Connect to NATS.
 6. Idempotently provision/validate the stream and durable consumer.
-7. Start the Observation consumer.
-8. Construct the `devices` module and Echo/Huma transport.
-9. Listen on loopback.
+7. Construct the `devices` module.
+8. Start the Observation consumer wired to the module's projection handler.
+9. Construct the Echo/Huma transport.
+10. Listen on loopback.
 
 `GET /healthz` returns 200 whenever the HTTP process can serve. `GET /readyz` returns 200 only while SQLite responds, NATS is connected, JetStream resources match required configuration, and the Observation consumer is active; otherwise 503.
 
@@ -957,12 +920,9 @@ devenv.nix                            # modify — Go/NATS/sqlc/Goose and native
 devenv.yaml                           # modify — project process/task definitions if needed
 .gitignore                            # modify — local YAML, .data, and .secrets
 go.mod                                # new — github.com/mholtzscher/hearthd
-
 go.sum                                # new — pinned Go dependency graph
 sqlc.yaml                             # new — root SQLite generation config
 ```
-
-No `api/openapi.yaml` is created. Huma's runtime OpenAPI document is covered by transport tests.
 
 ## Deliverables
 
@@ -978,38 +938,33 @@ No `api/openapi.yaml` is created. Huma's runtime OpenAPI document is covered by 
 
 Total relative effort is **XL**. No calendar estimate is asserted.
 
-## Acceptance criteria
+## Acceptance and success criteria
 
-- [ ] `devenv test` (or the documented equivalent task) runs generation checks, tests, vet, and schema/OpenAPI assertions from a clean checkout.
-- [ ] Every authoritative JSON Schema compiles and cross-binary fixtures validate.
-- [ ] Repeating registration with the same adapter/binding/Entity keys returns identical canonical IDs.
-- [ ] Conflicting binding and external mappings reject atomically without partial rows.
-- [ ] A registered but unobserved Entity returns HTTP 200 with `state: null`.
-- [ ] A JetStream-acknowledged Observation survives a core restart and projects after consumer recovery.
-- [ ] Exact redelivery changes neither State nor receipt count.
-- [ ] Receipt pruning deletes expired unreferenced receipts, retains the receipt backing current State without a foreign-key error, and deletes it after State advances.
-- [ ] Older, same-value, future-skewed, wrong-owner, unknown-Entity, and malformed Observations produce the specified dispositions/diagnostics and acknowledgement behavior.
-- [ ] A newer same-value Observation advances State timestamps and evidence.
-- [ ] Every dispatched Command has a committed `requested` record first; failure to create that record prevents dispatch.
-- [ ] Two simultaneous Commands for one Entity create distinct durable records, both dispatch without HTTP 409, and each can be satisfied only by its own linked Observation; the SDK invokes both handlers independently without imposing per-Entity ordering.
-- [ ] Controlled opposite-value interleavings prove that both Commands may be satisfied at different observation times or one may time out when its linked Observation is stale or mismatched; final State follows `observed_at` and receive-order rules.
-- [ ] Missing adapter, upstream rejection, and unsatisfied deadline persist the matching terminal status and stable failure code while mapping to HTTP 503, 502, and 504; unexpected failures after record creation persist `internal_failure` when SQLite remains writable and map to HTTP 500.
-- [ ] An already-matched target is still dispatched, accepted, explicitly refreshed, and satisfied only by its linked Observation; the State projection and `satisfied` Command record reference the same Observation in one transaction.
-- [ ] A linked Observation that wins the race with acceptance processing may satisfy the Command, and the later acceptance update records `accepted_at` without regressing its status.
-- [ ] HTTP disconnect after the `requested` record commits does not cancel dispatch; its independent lifecycle remains active until linked outcome or deadline and records the eventual terminal status.
-- [ ] Core restart marks `requested` and `accepted` Commands `interrupted`, never redispatches them, and does not let a later linked Observation change that terminal status even though the Observation may still advance State.
-- [ ] Core restart after SQLite commit of State and Command satisfaction but before JetStream acknowledgement redelivers harmlessly without changing either record.
-- [ ] Simulator passes duplicate, stale, malformed, unavailable-adapter, upstream-rejection, no-op-refresh, overlapping-opposite-command, outcome-timeout, interrupted-command, and restart-before-ack scenarios.
-- [ ] The configured real Home Assistant light can be read and set both on and off through Hearthd, with each HTTP 200 tied to a matching linked Observation.
-- [ ] Core and wire fixtures contain no Home Assistant service names or payload shapes.
-- [ ] HTTP listens only on configured loopback and `/readyz` fails when SQLite, NATS, JetStream configuration, or the consumer is unavailable.
+- [ ] From a clean checkout, `devenv test` (or its documented replacement) checks generation, tests, vet, runtime OpenAPI, compilation of every authoritative JSON Schema, and validation of cross-binary fixtures.
+- [ ] Re-registration returns identical IDs; conflicting binding/external mappings reject atomically without partial rows.
+- [ ] A registered, unobserved Entity returns HTTP 200 with `state: null`.
+- [ ] A JetStream-acknowledged Observation survives restart; exact redelivery changes neither State nor receipt count.
+- [ ] Pruning deletes expired unreferenced receipts, pins the current-State receipt without foreign-key errors, then deletes it after State advances.
+- [ ] A later-received Observation advances State even when its `adapter_received_at` is older; a same-value report advances State evidence/timestamps as `unchanged`; adapter clock skew beyond the threshold is logged but accepted; wrong-owner, unknown-Entity, and malformed input produce the specified rejection/diagnostic/acknowledgement behavior.
+- [ ] Every dispatched Command first commits `requested`; record-creation failure prevents dispatch.
+- [ ] Two simultaneous Commands for one Entity create distinct durable records, both dispatch, and invoke independent SDK handlers without SDK-imposed ordering; each is satisfiable only by its own linked Observation. Opposite-value interleavings allow both to satisfy at different receive orders or one to time out on a mismatched link; final State follows core receive order.
+- [ ] Missing adapter, upstream rejection, deadline, and unexpected post-creation failures persist the specified terminal status/failure code and map respectively to HTTP 503, 502, 504, and 500 (`internal_failure` when SQLite remains writable).
+- [ ] An already-matched target is dispatched, accepted, explicitly refreshed, and satisfied only by its linked Observation; State and Command satisfaction reference that Observation in one transaction.
+- [ ] A linked Observation may win the acceptance race; later acceptance fills `accepted_at` without status regression.
+- [ ] HTTP disconnect after `requested` commit leaves the lifecycle active through outcome/deadline and records its terminal status.
+- [ ] Restart marks `requested`/`accepted` Commands `interrupted`, never redispatches them, and prevents later linked Observations from changing terminal status while still allowing State advancement.
+- [ ] Restart after atomic State/Command commit but before JetStream acknowledgement redelivers without changing either record.
+- [ ] The simulator passes duplicate, delayed-source-time, future-clock-skew, malformed, unavailable-adapter, upstream-rejection, no-op-refresh, overlapping-opposite-command, outcome-timeout, interrupted-command, and restart-before-ack scenarios deterministically.
+- [ ] A configured Home Assistant light reads and sets on/off through Hearthd; every HTTP 200 is tied to its linked Observation.
+- [ ] Core/wire fixtures contain no Home Assistant service names or payload shapes, and removing the migration adapter preserves canonical Device/Entity IDs and the wire contract.
+- [ ] HTTP listens only on configured loopback; `/readyz` fails for unavailable SQLite, NATS, required JetStream configuration, or consumer.
 
 ## Test strategy
 
 | Layer | What | How |
 | --- | --- | --- |
-| Pure module | ID validation, registration conflicts, projection ordering, same-value advancement, Command transition monotonicity, concurrent waiter isolation, interleaved outcomes, deadline/result mapping | Inject in-memory Repository, CommandSender, clock, and ID generator |
-| Repository | Transactions, constraints, idempotency, tie ordering, receipt pruning, current-State retention, Command lifecycle persistence, atomic outcome satisfaction, startup interruption | Temporary real SQLite; apply Goose; use generated sqlc queries |
+| Pure module | ID validation, registration conflicts, receive-order projection, source-time diagnostics, same-value advancement, Command transition monotonicity, concurrent waiter isolation, interleaved outcomes, deadline/result mapping | Inject in-memory Repository, CommandSender, clock, and ID generator |
+| Repository | Transactions, constraints, idempotency, receive ordering, receipt pruning, current-State retention, Command lifecycle persistence, atomic outcome satisfaction, startup interruption | Temporary real SQLite; apply Goose; use generated sqlc queries |
 | SDK/NATS | Subjects, envelopes, schema validation, publish acknowledgement/retry, concurrent Command handler invocation, request/reply, responder invariants, W3C headers | In-process NATS Server with JetStream |
 | HTTP | Huma validation, operation IDs, nullable State, bodies, error/status mapping, runtime OpenAPI | Echo/Huma test server with fake module dependencies |
 | Home Assistant adapter | Snapshot/event mapping, concurrent request/response correlation, service calls, command-linked no-op refresh, reconnect | Scripted WebSocket server using captured minimal fixtures and controlled interleavings; one manual/live verification |
@@ -1021,26 +976,12 @@ CI regenerates sqlc output and fails on diff. OpenAPI is inspected at runtime in
 
 | Risk | Likelihood | Impact | Mitigation |
 | --- | --- | --- | --- |
-| Lost JetStream publish acknowledgement creates an uncertain adapter result | Medium | Medium | SDK retries identical envelope bytes/ID within context; core deduplicates by Observation ID |
-| Home Assistant unchanged state has old `last_updated` | High | Medium | Separate adapter acquisition `observed_at` from optional `source_updated_at`; explicit command refresh |
-| Adapter/core clock skew rejects valid input or poisons ordering | Medium | Medium | One-minute future bound, structured rejection diagnostics, preserve all three times |
-| Three-process failure tests become slow or flaky | Medium | High | Keep most risk tests at module/repository/SDK seams; reserve a small process suite for integration-only behavior |
-| Thin SDK expands into vendor framework | Medium | Medium | Freeze interface to registration, durable publication, command serving, and shutdown; keep vendor behavior outside |
-| Home Assistant details leak into canonical contracts | Medium | High | Schema fixtures and package tests assert canonical Device/Entity/State/Command vocabulary only |
-| Concurrent SDK handlers expose unsafe adapter or vendor-client state | Medium | High | Require concurrency-safe adapters, correlate upstream calls by request ID, test interleavings, and let adapters serialize only where their protocol requires it |
-| Persisted Command history is mistaken for a delivery queue | Medium | High | Keep delivery on expiring Core NATS request/reply, mark active rows interrupted at startup, and forbid replay or redispatch |
-| Concurrent Commands produce timing-dependent outcomes or immediately superseded successes | Accepted | Medium | Keep Command IDs, records, waiters, and linked Observations independent; order State by observation chronology and expose the full history rather than implying serialization |
-| Core restart loses in-memory waiters | Accepted | Low for a light | Persist each attempt as interrupted for diagnosis; later Observations still update State; clients retry manually |
-| Command satisfaction races adapter acceptance processing | Medium | Medium | Make transitions monotonic; allow a matching linked Observation to satisfy an active record and let later acceptance fill its timestamp without status regression |
-
-## Success metrics
-
-- The entire simulator failure matrix passes deterministically.
-- One real configured light can be read and controlled on/off through Hearthd.
-- Every Command attempt has a durable terminal history record, and every successful HTTP Command is tied to the matching command-linked Observation in both State and Command history.
-- Core restart marks unfinished Commands interrupted without redispatch, and JetStream redelivery does not corrupt or regress canonical State or Command history.
-- Home Assistant can later be removed without changing canonical Device/Entity IDs or the adapter wire contract.
+| Lost JetStream publish acknowledgement leaves an uncertain result | Medium | Medium | Retry identical bytes/ID within context; deduplicate by Observation ID |
+| Home Assistant unchanged State has old `last_updated` | High | Medium | Separate `adapter_received_at` from optional `source_updated_at`; explicitly refresh Commands |
+| Adapter clock skew misleads operators or history consumers | Medium | Low | Keep `adapter_received_at`/`source_updated_at` diagnostic-only, expose core `observed_at`, and log future-clock skew |
+| Three-process tests become slow or flaky | Medium | High | Keep most cases at module/repository/SDK seams; reserve process tests for integration behavior |
+| Concurrent handlers expose unsafe adapter/vendor state | Medium | High | Require concurrency safety, correlate vendor calls by request ID, test interleavings, and permit protocol-required adapter serialization |
 
 ## Open items
 
-No blocking design questions remain. Before live verification, the repository owner supplies local Home Assistant URL, token file, Device identifier when available, Entity ID, display names, and binding key through ignored YAML/secret files.
+No blocking design questions remain. Before live verification, the repository owner supplies the Home Assistant URL, token file, optional Device identifier, Entity ID, display names, and binding key through ignored YAML/secret files.

@@ -36,18 +36,17 @@ The slice must deliver visible household utility and meaningful NATS learning wh
 - Assign typed, UUIDv7-based canonical and message IDs in the core and map Home Assistant external IDs onto them.
 - Encode versioned wire messages with exact envelope fields `id`, `schema`, `emitted_at`, required `correlation_id`, optional `causation_id`, and `data`; validate against JSON Schemas and declare incompatible major versions in both subjects and payload schema IDs.
 - Encode all wire times as UTC RFC3339Nano and reject malformed or non-UTC values.
-- Have the SDK generate adapter publication IDs and envelope metadata while adapter code supplies domain data and source times.
+- Have the SDK generate adapter publication IDs and envelope metadata while adapter code supplies domain data and diagnostic source times.
 - Retain adapter observations in a file-backed JetStream Limits stream for seven days or one GiB, discard oldest messages, and consume with explicit acknowledgements, a 30-second ack wait, one pending acknowledgement, and unlimited redelivery; retain processed Observation IDs in SQLite for at least eight days and keep the receipt backing current State until superseded.
 - Store canonical state, identity mappings, Observation receipts, and a minimal Command attempt history transactionally in the core's SQLite database using Goose migrations and sqlc-generated queries; keep generated types behind module persistence adapters.
-- Record adapter acquisition time as `observed_at`, optional upstream last-change time as `source_updated_at`, and core receive time as `received_at`.
-- Order canonical State by `observed_at`, break ties deterministically by receive order, and reject timestamps more than one minute ahead of the core clock.
-- Advance State evidence and timestamps for a newer same-value observation while classifying it as unchanged.
+- Record adapter acquisition time as `adapter_received_at`, optional upstream last-change time as `source_updated_at`, JetStream's server-assigned durable-receipt time as core-owned `observed_at`, and an internal SQLite logical sequence as `receive_order`.
+- Order canonical State only by tie-free `receive_order`; use timestamps for operators/history. Accept an `adapter_received_at` more than one minute ahead of `observed_at` and log clock skew.
+- Advance State evidence and timestamps for every first-seen, valid, correctly owned Observation; classify a same-value report as `unchanged` and a different value as `applied`.
 - Give each observation an immutable ID and record it transactionally with its disposition and SQLite projection so exact redelivery is a no-op.
-- Record and acknowledge stale observations without changing current state.
 - Diagnose permanently invalid input in structured logs with safe metadata and acknowledge it while its raw message remains in the seven-day stream; leave transient infrastructure failures unacknowledged for redelivery; acknowledge valid outcomes only after commit.
 - Send immediate commands on adapter-scoped Core NATS request/reply subjects with one fixed ten-second end-to-end deadline; never queue them for later delivery.
 - Allow Commands for one Entity to overlap without a guard, queue, or supersession policy; give each an independent ID, durable record, in-memory waiter, and deadline, and allow only its own linked matching Observation to satisfy it.
-- Accept that interleaved Commands may both be satisfied at different observation times, one may time out after another changes the Entity, and a successful outcome may be immediately superseded; canonical State continues to follow Observation ordering.
+- Accept that interleaved Commands may both be satisfied at different receive orders, one may time out after another changes the Entity, and a successful outcome may be immediately superseded; canonical State continues to follow core receive order.
 - Keep Command delivery and outcome waits ephemeral and in memory while recording each attempt and terminal outcome in SQLite for diagnosis and future history; the record is audit data, not a queue.
 - Commit the `requested` record before dispatch, mark only that Command `satisfied` transactionally with its matching linked Observation, and persist terminal failures. After the `requested` record commits, proceed with dispatch and retain that lifecycle until linked outcome or the ten-second deadline even if the HTTP client disconnects; core restart loses active waits, marks active records `interrupted`, and never redispatches them.
 - Hold the command HTTP request until outcome satisfaction or deadline failure.
@@ -60,8 +59,8 @@ The slice must deliver visible household utility and meaningful NATS learning wh
 - Give the core, Home Assistant adapter, and simulator separate YAML files containing only their owned non-secret configuration; read the Home Assistant token from a separate local secret file.
 - Defer adapter and Entity availability; expose last State timestamps and detect a missing adapter during command request/reply.
 - Have the disposable Home Assistant adapter fetch a startup/reconnect snapshot, subscribe to state-change events, handle concurrent WebSocket requests by request ID, and explicitly publish each accepted Command's own linked refresh.
-- Require the simulator to prove duplicate, stale, malformed, unavailable-adapter, upstream-rejection, no-op-refresh, overlapping-opposite-command, outcome-timeout, and core-restart-before-ack cases.
-- Verify behavior with pure `devices` module tests, temporary-SQLite repository and migration tests, Huma transport tests, SDK tests against in-process NATS, and a small process-level simulator suite.
+- Require the simulator to prove duplicate, delayed-source-time, future-clock-skew, malformed, unavailable-adapter, upstream-rejection, no-op-refresh, overlapping-opposite-command, outcome-timeout, and core-restart-before-ack cases.
+- Verify receive-order projection and source-time diagnostics with pure `devices` module tests, plus temporary-SQLite repository/migration tests, Huma transport tests, SDK tests against in-process NATS, and a small process-level simulator suite.
 
 ## Task breakdown
 

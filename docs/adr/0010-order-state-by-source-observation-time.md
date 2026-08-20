@@ -1,3 +1,0 @@
-# Order canonical state by source observation time
-
-When distinct observations for an entity disagree, the core will treat `observed_at`—when the adapter freshly acquired the value—as chronology and use core receive order only as a deterministic tie-breaker. Optional `source_updated_at` preserves when an upstream system says the value last changed without making an unchanged command refresh appear stale. Observations more than one minute ahead of the core clock are rejected so one bad source clock cannot freeze canonical State; acquisition, upstream-update, and receive times remain available for diagnosis.
