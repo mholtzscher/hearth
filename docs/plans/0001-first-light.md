@@ -37,7 +37,7 @@ The slice must deliver visible household utility and meaningful NATS learning wh
 - Encode versioned wire messages with exact envelope fields `id`, `schema`, `emitted_at`, required `correlation_id`, optional `causation_id`, and `data`; validate against JSON Schemas and declare incompatible major versions in both subjects and payload schema IDs.
 - Encode all wire times as UTC RFC3339Nano and reject malformed or non-UTC values.
 - Have the SDK generate adapter publication IDs and envelope metadata while adapter code supplies domain data and source times.
-- Retain adapter observations in a file-backed JetStream Limits stream for seven days or one GiB, discard oldest messages, and consume with explicit acknowledgements, a 30-second ack wait, one pending acknowledgement, and unlimited redelivery; retain processed Observation IDs in SQLite for eight days.
+- Retain adapter observations in a file-backed JetStream Limits stream for seven days or one GiB, discard oldest messages, and consume with explicit acknowledgements, a 30-second ack wait, one pending acknowledgement, and unlimited redelivery; retain processed Observation IDs in SQLite for at least eight days and keep the receipt backing current State until superseded.
 - Store canonical state and identity mappings transactionally in the core's SQLite database using Goose migrations and sqlc-generated queries; keep generated types behind module persistence adapters.
 - Record adapter acquisition time as `observed_at`, optional upstream last-change time as `source_updated_at`, and core receive time as `received_at`.
 - Order canonical State by `observed_at`, break ties deterministically by receive order, and reject timestamps more than one minute ahead of the core clock.

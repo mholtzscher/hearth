@@ -413,7 +413,7 @@ type SimulatorConfig struct {
 }
 ```
 
-Protocol limits are fixed constants in v1, not YAML fields: ten-second Command deadline, one-minute future skew, seven-day/one-GiB stream, 30-second acknowledgement wait, one pending acknowledgement, and eight-day receipt retention.
+Protocol limits are fixed constants in v1, not YAML fields: ten-second Command deadline, one-minute future skew, seven-day/one-GiB stream, 30-second acknowledgement wait, one pending acknowledgement, and at least eight-day receipt retention with current-State receipt pinning.
 
 ## Interfaces
 
@@ -687,6 +687,21 @@ UpsertEntityState
 DeleteExpiredObservationReceipts
 ```
 
+The pruning query excludes the receipt referenced by current State:
+
+```sql
+-- name: DeleteExpiredObservationReceipts :exec
+DELETE FROM observation_receipts
+WHERE expires_at < ?
+  AND NOT EXISTS (
+      SELECT 1
+      FROM entity_states
+      WHERE entity_states.observation_id = observation_receipts.observation_id
+  );
+```
+
+Checking `observation_id` protects both foreign keys because `entity_states.observation_id` and `entity_states.receive_order` reference the same receipt row. After a newer Observation advances State, the superseded receipt becomes eligible for the next pruning pass.
+
 `RegisterBinding` and `ProjectObservation` own their complete SQLite transactions behind the repository interface. Generated sqlc types never cross the repository seam.
 
 ### Observation projection rules
@@ -704,7 +719,7 @@ For each schema-valid Observation, one transaction:
 9. Set receipt expiry to `received_at + 192h`.
 10. Commit before JetStream acknowledgement.
 
-A startup task and hourly task delete expired receipts.
+A startup task and hourly task delete expired receipts that are not referenced by current State. A current-State receipt remains past its nominal expiry until a newer Observation supersedes it.
 
 ## Home Assistant adapter
 
@@ -769,7 +784,7 @@ Core startup order:
 
 1. Parse and validate YAML.
 2. Open SQLite; enable foreign keys/WAL/busy timeout; apply Goose migrations.
-3. Delete expired Observation receipts.
+3. Delete expired Observation receipts not referenced by current State.
 4. Connect to NATS.
 5. Idempotently provision/validate the stream and durable consumer.
 6. Start the Observation consumer.
@@ -854,6 +869,7 @@ Total relative effort is **XL**. No calendar estimate is asserted.
 - [ ] A registered but unobserved Entity returns HTTP 200 with `state: null`.
 - [ ] A JetStream-acknowledged Observation survives a core restart and projects after consumer recovery.
 - [ ] Exact redelivery changes neither State nor receipt count.
+- [ ] Receipt pruning deletes expired unreferenced receipts, retains the receipt backing current State without a foreign-key error, and deletes it after State advances.
 - [ ] Older, same-value, future-skewed, wrong-owner, unknown-Entity, and malformed Observations produce the specified dispositions/diagnostics and acknowledgement behavior.
 - [ ] A newer same-value Observation advances State timestamps and evidence.
 - [ ] Two simultaneous Commands for one Entity produce one active lifecycle and one HTTP 409.
@@ -871,7 +887,7 @@ Total relative effort is **XL**. No calendar estimate is asserted.
 | Layer | What | How |
 | --- | --- | --- |
 | Pure module | ID validation, registration conflicts, projection ordering, same-value advancement, in-memory guard, deadline/result mapping | Inject in-memory Repository, CommandSender, clock, and ID generator |
-| Repository | Transactions, constraints, idempotency, tie ordering, receipt expiry | Temporary real SQLite; apply Goose; use generated sqlc queries |
+| Repository | Transactions, constraints, idempotency, tie ordering, receipt pruning, current-State retention | Temporary real SQLite; apply Goose; use generated sqlc queries |
 | SDK/NATS | Subjects, envelopes, schema validation, publish acknowledgement/retry, request/reply, responder invariants, W3C headers | In-process NATS Server with JetStream |
 | HTTP | Huma validation, operation IDs, nullable State, bodies, error/status mapping, runtime OpenAPI | Echo/Huma test server with fake module dependencies |
 | Home Assistant adapter | Snapshot/event mapping, service calls, no-op refresh, reconnect | Scripted WebSocket server using captured minimal fixtures; one manual/live verification |
