@@ -4,15 +4,15 @@
 
 ## Purpose
 
-Hearthd is a dependable home automation system that also provides meaningful, production-grounded experience with NATS. Neither goal alone is sufficient: milestones must advance both.
+Hearth is a dependable home automation system that also provides meaningful, production-grounded experience with NATS. Neither goal alone is sufficient: milestones must advance both.
 
 ## Audience
 
-Hearthd initially serves technical self-hosters. Each trusted deployment owns one household; version 1 does not model a separate Site or Home object. Making installation reproducible for other households matters, but multi-tenant hosting and one-deployment/many-home operation do not.
+Hearth initially serves technical self-hosters. Each trusted deployment owns one household; version 1 does not model a separate Site or Home object. Making installation reproducible for other households matters, but multi-tenant hosting and one-deployment/many-home operation do not.
 
 ## Product boundary
 
-Hearthd aims to become a [functional replacement](../CONTEXT.md) for Home Assistant. The Home Assistant adapter is disposable migration infrastructure that keeps this household running while native adapters take ownership device by device. It is deleted after migration and is not a permanently supported bridge or part of the intended final deployment. Hearthd may retain mature specialist protocol services rather than reimplementing their device protocols.
+Hearth aims to become a [functional replacement](../CONTEXT.md) for Home Assistant. The Home Assistant adapter is disposable migration infrastructure that keeps this household running while native adapters take ownership device by device. It is deleted after migration and is not a permanently supported bridge or part of the intended final deployment. Hearth may retain mature specialist protocol services rather than reimplementing their device protocols.
 
 Every production use of NATS must solve a concrete need involving durability, isolation, routing, or observability. Exercising a NATS capability is not by itself a reason to put that capability into the product.
 

@@ -14,7 +14,7 @@ The slice must deliver visible household utility and meaningful NATS learning wh
 
 ## Resolved shape
 
-- Use Go module `github.com/mholtzscher/hearthd` for the core, Home Assistant adapter, simulator, and thin adapter SDK.
+- Use Go module `github.com/mholtzscher/hearth` for the core, Home Assistant adapter, simulator, and thin adapter SDK.
 - Fix the implementation stack to official `nats.go`, Echo v5, Huma v2, `modernc.org/sqlite`, Goose, sqlc, `coder/websocket`, `jsonschema/v6`, YAML v3, Google UUID, and OpenTelemetry propagation.
 - Keep JSON Schemas plus a tiny Go `embed.FS` wrapper together in importable `contracts/v1`; core and SDK validate the same authoritative embedded schemas at runtime.
 - Expose a concrete, stateless thin SDK `Session` with `Connect`, `Register`, durable `PublishObservation`, blocking ephemeral `ServeCommands`, and idempotent `Close` methods.

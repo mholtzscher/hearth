@@ -1,12 +1,14 @@
-# Hearthd
+# Hearth
 
-Hearthd is a home automation system for technical self-hosters. It is being designed to replace Home Assistant functionally for one household per deployment while retaining mature specialist protocol services where useful.
+Hearth is a home automation system for technical self-hosters. It is being designed to replace Home Assistant functionally for one household per deployment while retaining mature specialist protocol services where useful.
+
+**Naming:** Hearth is the product and user-facing namespace. `hearthd` is reserved for the core daemon; companion processes use `hearth-` names.
 
 The project has two equal gates: work must advance a useful home automation system and meaningful NATS learning, while every production use of NATS must solve a real system need.
 
 ## Status
 
-Hearthd is in design. The approved first vertical slice will observe and control one Home Assistant-managed light; a simulator will exercise failures against the same contracts.
+Hearth is in design. The approved first vertical slice will observe and control one Home Assistant-managed light; a simulator will exercise failures against the same contracts.
 
 ## Documentation
 

@@ -3,17 +3,17 @@
 - **Status:** Ready for task breakdown
 - **Approved by:** Michael
 - **Approved:** 2026-08-19
-- **Amended:** 2026-08-20 — generalized Entity values and Command parameters behind a closed Entity-type catalog
+- **Amended:** 2026-08-20 — generalized Entity values and Command parameters behind a closed Entity-type catalog; renamed the product Hearth and reserved `hearthd` for the core daemon
 - **Type:** Feature plan
 - **Effort:** XL (relative estimate only)
 
 ## Problem statement
 
-Hearthd needs a useful first vertical slice for a technical self-hoster migrating one household from Home Assistant. The household must remain operable while the project proves NATS through process isolation, durable Observations, recovery, and explicit Command semantics, without making Home Assistant permanent architecture.
+Hearth needs a useful first vertical slice for a technical self-hoster migrating one household from Home Assistant. The household must remain operable while the project proves NATS through process isolation, durable Observations, recovery, and explicit Command semantics, without making Home Assistant permanent architecture.
 
 ## Proposed solution
 
-Build three Go processes: the Hearthd core, a disposable Home Assistant migration adapter, and a fault-injecting simulator. A thin, stateless Go SDK hides NATS protocol mechanics; authoritative JSON Schemas support non-Go adapters.
+Build three Go processes: the Hearth core daemon `hearthd`, a disposable Home Assistant migration adapter, and a fault-injecting simulator. A thin, stateless Go SDK hides NATS protocol mechanics; authoritative JSON Schemas support non-Go adapters.
 
 Adapters register configured Devices and Entities over Core NATS request/reply, publish Observations durably to JetStream, and serve ephemeral Commands over Core NATS request/reply. Entity descriptors reference a core-owned, versioned Entity-type catalog; generic JSON values and Command parameters pass through the transport and persistence plumbing, while the catalog validates their semantics. The first-light catalog remains closed to one `hearth.power/v1` definition. The core projects canonical State and records every dispatched Command attempt and outcome in SQLite, then exposes a loopback Echo/Huma HTTP interface. Command delivery and outcome waits remain synchronous and ephemeral; records never cause replay or redispatch. Commands for the same Entity may overlap and are correlated independently by Command ID.
 
@@ -65,7 +65,7 @@ The simulator replaces the Home Assistant adapter during fault scenarios. Local 
 
 ## Dependencies
 
-The Go module path is `github.com/mholtzscher/hearthd`.
+The Go module path is `github.com/mholtzscher/hearth`.
 
 | Concern | Dependency |
 | --- | --- |
@@ -1009,7 +1009,7 @@ configs/
 devenv.nix                            # modify — Go/NATS/sqlc/Goose and native processes
 devenv.yaml                           # modify — project process/task definitions if needed
 .gitignore                            # modify — local YAML, .data, and .secrets
-go.mod                                # new — github.com/mholtzscher/hearthd
+go.mod                                # new — github.com/mholtzscher/hearth
 go.sum                                # new — pinned Go dependency graph
 sqlc.yaml                             # new — root SQLite generation config
 ```
@@ -1046,7 +1046,7 @@ Total relative effort is **XL**. No calendar estimate is asserted.
 - [ ] Restart marks `requested`/`accepted` Commands `interrupted`, never redispatches them, and prevents later linked Observations from changing terminal status while still allowing State advancement.
 - [ ] Restart after atomic State/Command commit but before JetStream acknowledgement redelivers without changing either record.
 - [ ] The simulator passes duplicate, delayed-source-time, future-clock-skew, malformed, unavailable-adapter, upstream-rejection, no-op-refresh, overlapping-opposite-command, outcome-timeout, interrupted-command, and restart-before-ack scenarios deterministically.
-- [ ] A configured Home Assistant light reads and sets on/off through Hearthd; every HTTP 200 is tied to its linked Observation.
+- [ ] A configured Home Assistant light reads and sets on/off through Hearth; every HTTP 200 is tied to its linked Observation.
 - [ ] Core/wire fixtures contain no Home Assistant service names or payload shapes, and removing the migration adapter preserves canonical Device/Entity IDs and the wire contract.
 - [ ] HTTP listens only on configured loopback; `/readyz` fails for unavailable SQLite, NATS, required JetStream configuration, or consumer.
 

@@ -1,15 +1,15 @@
-# Hearthd
+# Hearth
 
-Hearthd is a home automation system intended to operate independently of Home Assistant while remaining compatible with specialist protocol services.
+Hearth is a home automation system intended to operate independently of Home Assistant while remaining compatible with specialist protocol services.
 
 ## Language
 
 **Functional replacement**:
-A Hearthd installation that provides all required household behavior with Home Assistant eliminated from operation. It may continue to depend on specialist protocol services.
+A Hearth installation that provides all required household behavior with Home Assistant eliminated from operation. It may continue to depend on specialist protocol services.
 _Avoid_: Full-stack replacement, Home Assistant parity
 
 **Adapter**:
-A process that translates between one configured external system and Hearthd's wire protocol.
+A process that translates between one configured external system and Hearth's wire protocol.
 _Avoid_: Integration, plugin
 
 **Adapter instance**:
@@ -17,19 +17,19 @@ One configured occurrence of an adapter, identified by a stable subject-safe slu
 _Avoid_: Adapter type, process ID
 
 **Binding**:
-The durable association between an adapter's external object and its canonical Hearthd Device and Entities. An adapter-scoped stable binding key preserves the association when an external identifier changes; ambiguous identity conflicts require explicit reconciliation.
+The durable association between an adapter's external object and its canonical Hearth Device and Entities. An adapter-scoped stable binding key preserves the association when an external identifier changes; ambiguous identity conflicts require explicit reconciliation.
 _Avoid_: Discovery result, entity name
 
 **Migration adapter**:
-A disposable adapter that keeps a household operational while devices move from Home Assistant to native ownership in Hearthd. It must not introduce Home Assistant concepts or dependencies into the core and is removed after migration.
+A disposable adapter that keeps a household operational while devices move from Home Assistant to native ownership in Hearth. It must not introduce Home Assistant concepts or dependencies into the core and is removed after migration.
 _Avoid_: Compatibility layer, foundational integration
 
 **Household**:
-The single home automation environment administered by one Hearthd installation.
+The single home automation environment administered by one Hearth installation.
 _Avoid_: Site, tenant
 
 **Device**:
-A physical or virtual thing represented in Hearthd that groups related entities.
+A physical or virtual thing represented in Hearth that groups related entities.
 _Avoid_: Accessory, node
 
 **Entity**:
@@ -37,11 +37,11 @@ One independently addressable state or control point belonging to a device. Stat
 _Avoid_: Device capability, endpoint
 
 **Observation**:
-A fresh value report Hearthd durably receives from an adapter. It records when Hearthd received the report, when the adapter acquired the value, and optionally when the upstream source says the value last changed; it does not by itself prove physical truth or causation.
+A fresh value report Hearth durably receives from an adapter. It records when Hearth received the report, when the adapter acquired the value, and optionally when the upstream source says the value last changed; it does not by itself prove physical truth or causation.
 _Avoid_: Physical confirmation, proof of causation
 
 **State**:
-The current value Hearthd has accepted for an entity. It is the latest first-seen valid Observation from the owning adapter by core-assigned receive order; a same-value Observation advances its evidence and timestamps, and State is not a requested or desired value.
+The current value Hearth has accepted for an entity. It is the latest first-seen valid Observation from the owning adapter by core-assigned receive order; a same-value Observation advances its evidence and timestamps, and State is not a requested or desired value.
 _Avoid_: Desired state, target
 
 **Command**:
@@ -49,5 +49,5 @@ A request to change one controllable entity before a deadline. Its outcome is sa
 _Avoid_: Action, service call, queued job
 
 **Canonical ID**:
-An immutable Hearthd-assigned identity for a device or entity that remains stable when names, external identifiers, or owning adapters change.
+An immutable Hearth-assigned identity for a device or entity that remains stable when names, external identifiers, or owning adapters change.
 _Avoid_: Name, external ID
