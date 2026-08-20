@@ -10,7 +10,7 @@ Observe and control the boolean power entity of one light currently managed by H
 
 ## Why this slice
 
-The slice must deliver visible household utility and meaningful NATS learning while validating a temporary migration seam. It is deliberately narrower than the simulator-to-automation platform proposed by the imported draft and must not leak Home Assistant concepts into core contracts.
+The slice must deliver visible household utility and meaningful NATS learning while validating a temporary migration seam. It must not leak Home Assistant concepts into core contracts.
 
 ## Resolved shape
 

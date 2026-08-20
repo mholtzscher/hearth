@@ -16,6 +16,5 @@ Hearthd is in design. The approved first vertical slice will observe and control
 - [`docs/adr/`](./docs/adr/): durable architectural decisions and their rationale
 - [`docs/plans/`](./docs/plans/): implementation plans
 - [`specs/`](./specs/): approved implementation-ready specifications
-- [`docs/drafts/`](./docs/drafts/): non-authoritative source material and proposals
 
 The approved first-slice contract is [`specs/first-light.md`](./specs/first-light.md).

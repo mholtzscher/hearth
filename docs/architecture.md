@@ -51,7 +51,3 @@
 ## Undecided
 
 Exact message and HTTP contracts, production deployment topology, automation semantics, frontend architecture, native adapter scope, and all later roadmap technology choices remain proposals until reviewed.
-
-## Source material
-
-The original web-chat proposal is preserved as a [non-authoritative draft](./drafts/Hearthd_Architecture.md). It must not be used as evidence that a decision has been accepted.
