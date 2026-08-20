@@ -3,7 +3,7 @@
 - **Status:** Ready for task breakdown
 - **Approved by:** Michael
 - **Approved:** 2026-08-19
-- **Amended:** 2026-08-20 — generalized Entity values and Command parameters behind a closed Entity-type catalog; renamed the product Hearth and reserved `hearthd` for the core daemon
+- **Amended:** 2026-08-20 — generalized Entity values and Command parameters behind a closed Entity-type catalog; renamed the product Hearth and reserved `hearthd` for the core daemon; persisted Entity names; defined permanent registration rejections and subscribe-first snapshot reconciliation
 - **Type:** Feature plan
 - **Effort:** XL (relative estimate only)
 
@@ -125,6 +125,7 @@ type Entity struct {
     ID          EntityID
     DeviceID    DeviceID
     AdapterID   string
+    Name        string
     TypeID      EntityTypeID
     Constraints json.RawMessage
     Operations  []Operation
@@ -357,10 +358,24 @@ type EntityBinding struct {
     Key      string `json:"key"`
     EntityID string `json:"entity_id"`
 }
+
+type RegistrationResponse struct {
+    Status  string             `json:"status"` // accepted | rejected
+    Binding *Binding           `json:"binding,omitempty"`
+    Error   *RegistrationError `json:"error,omitempty"`
+}
+
+type RegistrationError struct {
+    Code    string `json:"code"` // invalid_descriptor | immutable_type_change | identity_conflict
+    Message string `json:"message"`
+}
 ```
 
 Constraints:
 
+- `accepted` requires `binding` and omits `error`; `rejected` requires `error` and omits `binding`. A rejection never exposes partially committed IDs.
+- Registration rejection codes are permanent: `invalid_descriptor` covers module/catalog-invalid descriptors, `immutable_type_change` covers a changed Entity type, and `identity_conflict` covers binding or external-ID conflicts. Messages are safe for operator display and contain at most 512 characters.
+- Transient core, SQLite, NATS, timeout, and no-responder failures do not use `rejected`; they remain request errors so the adapter can retry them.
 - `binding_key` and Entity `key` use the slug pattern.
 - Device and Entity names contain 1–128 Unicode characters.
 - External IDs contain 1–256 characters when present.
@@ -424,6 +439,7 @@ Owner: `internal/modules/devices/api/types.go`.
 type EntityBody struct {
     ID          string         `json:"id"`
     DeviceID    string         `json:"device_id"`
+    Name        string         `json:"name"`
     Type        string         `json:"type"`
     Constraints map[string]any `json:"constraints"`
     Operations  []string       `json:"operations"`
@@ -528,6 +544,20 @@ func (*Session) PublishObservation(context.Context, Observation) (ObservationID,
 func (*Session) ServeCommands(context.Context, CommandHandler) error
 func (*Session) Close() error
 
+type RegistrationRejectionCode string
+const (
+    RegistrationInvalidDescriptor   RegistrationRejectionCode = "invalid_descriptor"
+    RegistrationImmutableTypeChange RegistrationRejectionCode = "immutable_type_change"
+    RegistrationIdentityConflict    RegistrationRejectionCode = "identity_conflict"
+)
+
+type RegistrationRejectedError struct {
+    Code    RegistrationRejectionCode
+    Message string
+}
+
+func (*RegistrationRejectedError) Error() string
+
 type CommandHandler func(context.Context, Command, Responder) error
 
 type Responder interface {
@@ -539,7 +569,7 @@ type Responder interface {
 Interface contract:
 
 - `Connect` validates the adapter slug, compiles embedded schemas, connects to NATS, and installs W3C propagation. It does not provision core-owned streams.
-- `Register` performs one request/reply attempt. The adapter application retries it with bounded exponential backoff until context cancellation.
+- `Register` validates the request and performs one request/reply attempt. An accepted response returns its `Binding`; a rejected response returns `*RegistrationRejectedError`, suitable for `errors.As`. Local validation and registration rejection are permanent failures. The adapter application retries only timeout, no-responder, transient NATS, and transient core/infrastructure errors with bounded exponential backoff until success or context cancellation.
 - `PublishObservation` generates one Observation envelope and retries that same bytes/ID across transient NATS disconnects. It returns the generated ID after JetStream publish acknowledgement, or returns that ID with an error when the context expires. There is no local outbox.
 - `ServeCommands` subscribes to the adapter-scoped wildcard, starts an independent handler invocation for each valid request, and blocks until context cancellation or terminal serving failure. Handler invocations may overlap, including for the same Entity, so adapter code must be concurrency-safe. An adapter may serialize internally when its vendor protocol requires it, but the SDK and core provide no ordering guarantee.
 - A `Responder` is one-shot. `Accept` or `Reject` sends the Core NATS reply. A second reply returns `ErrAlreadyResponded`. Returning without a reply returns/logs `ErrMissingResponse` and lets the core request time out.
@@ -681,6 +711,7 @@ CREATE TABLE devices (
 CREATE TABLE entities (
     id               TEXT PRIMARY KEY CHECK (id LIKE 'ent_%'),
     device_id        TEXT NOT NULL REFERENCES devices(id) ON DELETE CASCADE,
+    name             TEXT NOT NULL CHECK (length(name) BETWEEN 1 AND 128),
     type_id          TEXT NOT NULL CHECK (length(type_id) BETWEEN 1 AND 128),
     constraints_json TEXT NOT NULL CHECK (
         json_valid(constraints_json) AND json_type(constraints_json) = 'object'
@@ -900,13 +931,14 @@ Owner: `internal/adapters/homeassistant`.
 
 The adapter uses Home Assistant's WebSocket API directly:
 
-1. Read YAML/token, connect/authenticate, and register through the SDK with bounded exponential backoff and jitter until shutdown.
-2. After startup/reconnect, call `get_states`, publish configured light power, and subscribe to `state_changed`.
-3. Map `on`/`off` to the JSON booleans accepted by `hearth.power/v1`; reject unsupported/unavailable values rather than inventing State.
-4. Map `set` parameters `{"value":true}`/`{"value":false}` to `light.turn_on`/`light.turn_off`. Reject failed calls; accept after successful service-call completion.
-5. Call `get_states` and durably publish a linked refresh Observation.
+1. Read YAML/token, connect/authenticate, and register through the SDK. Retry transient registration failures with bounded exponential backoff and jitter until shutdown; stop with a clear configuration error on local validation or `RegistrationRejectedError`.
+2. After startup/reconnect, subscribe to `state_changed` and wait for its acknowledgement before requesting `get_states`. Buffer configured-Entity events while the snapshot request is pending.
+3. Publish the configured light's snapshot, then replay buffered events whose Home Assistant `last_updated` is later than the snapshot's `last_updated`, in WebSocket arrival order, before switching to live event publication. This closes the snapshot-to-subscription gap without letting pre-snapshot events overwrite the snapshot.
+4. Map `on`/`off` to the JSON booleans accepted by `hearth.power/v1`; reject unsupported/unavailable values rather than inventing State.
+5. Map `set` parameters `{"value":true}`/`{"value":false}` to `light.turn_on`/`light.turn_off`. Reject failed calls; accept after successful service-call completion.
+6. Call `get_states` and durably publish a linked refresh Observation.
 
-Adapter acquisition time is `adapter_received_at`; Home Assistant `last_updated` is optional `source_updated_at`. Core `observed_at` comes from the JetStream server timestamp. Home Assistant identifiers, service names, contexts, and payloads stay in this package. WebSocket request IDs, pending responses, and refresh publications are concurrency-safe: overlapping handlers may issue calls concurrently, and each refresh retains its Command/correlation IDs. The adapter serializes by Entity only if the protocol requires it and is deleted after migration.
+Adapter acquisition time is `adapter_received_at`; Home Assistant `last_updated` is optional `source_updated_at` and is used only by the adapter to reconcile buffered startup/reconnect events. Core `observed_at` comes from the JetStream server timestamp. Home Assistant identifiers, service names, contexts, and payloads stay in this package. WebSocket request IDs, pending responses, event buffering, and refresh publications are concurrency-safe: overlapping handlers may issue calls concurrently, and each refresh retains its Command/correlation IDs. The adapter serializes by Entity only if the protocol requires it and is deleted after migration.
 
 ## Configuration
 
@@ -963,7 +995,7 @@ Core startup order:
 
 `GET /healthz` returns 200 whenever the HTTP process can serve. `GET /readyz` returns 200 only while SQLite responds, NATS is connected, JetStream resources match required configuration, and the Observation consumer is active; otherwise 503.
 
-Adapters do not depend on process startup order. They reconnect to NATS and retry registration until the core responds.
+Adapters do not depend on process startup order. They reconnect to NATS and retry transient registration failures until the core responds, but stop on local validation or a schema-defined permanent registration rejection.
 
 ## Project layout
 
@@ -1031,8 +1063,8 @@ Total relative effort is **XL**. No calendar estimate is asserted.
 ## Acceptance and success criteria
 
 - [ ] From a clean checkout, `devenv test` (or its documented replacement) checks generation, tests, vet, runtime OpenAPI, compilation of every authoritative JSON Schema, and validation of cross-binary fixtures.
-- [ ] Re-registration returns identical IDs; conflicting binding/external mappings, an Entity type change, or catalog-invalid constraints/operations reject atomically without partial rows.
-- [ ] A registered, unobserved Entity returns HTTP 200 with `state: null`.
+- [ ] Re-registration returns identical IDs and updates the Entity name returned by HTTP; the name persists across restart. Conflicting binding/external mappings, an Entity type change, or catalog-invalid constraints/operations return their schema-defined permanent rejection codes atomically without partial rows, and adapters do not retry them.
+- [ ] A registered, unobserved Entity returns HTTP 200 with its configured metadata and `state: null`.
 - [ ] A JetStream-acknowledged Observation survives restart; exact redelivery changes neither State nor receipt count.
 - [ ] Pruning deletes expired unreferenced receipts, pins the current-State receipt without foreign-key errors, then deletes it after State advances.
 - [ ] The generic wire and persistence paths round-trip the first-light JSON boolean without boolean-specific columns or DTO fields; the catalog rejects a schema-valid non-boolean Observation as `invalid_value` and rejects invalid `set` parameters before Command creation or dispatch.
@@ -1046,7 +1078,7 @@ Total relative effort is **XL**. No calendar estimate is asserted.
 - [ ] Restart marks `requested`/`accepted` Commands `interrupted`, never redispatches them, and prevents later linked Observations from changing terminal status while still allowing State advancement.
 - [ ] Restart after atomic State/Command commit but before JetStream acknowledgement redelivers without changing either record.
 - [ ] The simulator passes duplicate, delayed-source-time, future-clock-skew, malformed, unavailable-adapter, upstream-rejection, no-op-refresh, overlapping-opposite-command, outcome-timeout, interrupted-command, and restart-before-ack scenarios deterministically.
-- [ ] A configured Home Assistant light reads and sets on/off through Hearth; every HTTP 200 is tied to its linked Observation.
+- [ ] A configured Home Assistant light reads and sets on/off through Hearth; every HTTP 200 is tied to its linked Observation. A controlled state transition after snapshot acquisition but before live event processing is published after reconciliation and becomes canonical State.
 - [ ] Core/wire fixtures contain no Home Assistant service names or payload shapes, and removing the migration adapter preserves canonical Device/Entity IDs and the wire contract.
 - [ ] HTTP listens only on configured loopback; `/readyz` fails for unavailable SQLite, NATS, required JetStream configuration, or consumer.
 
@@ -1056,9 +1088,9 @@ Total relative effort is **XL**. No calendar estimate is asserted.
 | --- | --- | --- |
 | Pure module | ID validation, catalog registration/State/parameter validation, type-aware equality and outcome matching, registration conflicts, receive-order projection, source-time diagnostics, same-value advancement, Command transition monotonicity, concurrent waiter isolation, interleaved outcomes, deadline/result mapping | Inject in-memory Repository, CommandSender, closed catalog, clock, and ID generator |
 | Repository | Transactions, constraints, idempotency, receive ordering, receipt pruning, current-State retention, Command lifecycle persistence, atomic outcome satisfaction, startup interruption | Temporary real SQLite; apply Goose; use generated sqlc queries |
-| SDK/NATS | Subjects, envelopes, schema validation, publish acknowledgement/retry, concurrent Command handler invocation, request/reply, responder invariants, W3C headers | In-process NATS Server with JetStream |
+| SDK/NATS | Subjects, envelopes, schema validation, accepted/rejected registration responses and retry classification, publish acknowledgement/retry, concurrent Command handler invocation, request/reply, responder invariants, W3C headers | In-process NATS Server with JetStream |
 | HTTP | Huma validation, operation IDs, nullable State, bodies, error/status mapping, runtime OpenAPI | Echo/Huma test server with fake module dependencies |
-| Home Assistant adapter | Snapshot/event mapping, concurrent request/response correlation, service calls, command-linked no-op refresh, reconnect | Scripted WebSocket server using captured minimal fixtures and controlled interleavings; one manual/live verification |
+| Home Assistant adapter | Subscribe-first snapshot/event reconciliation, concurrent request/response correlation, service calls, command-linked no-op refresh, reconnect | Scripted WebSocket server using captured minimal fixtures and controlled snapshot/event interleavings; one manual/live verification |
 | Process | Full failure matrix and restart behavior | Native devenv processes plus simulator and disposable SQLite/NATS state |
 
 CI regenerates sqlc output and fails on diff. OpenAPI is inspected at runtime in tests but is not committed.
