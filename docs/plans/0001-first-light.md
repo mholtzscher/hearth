@@ -26,11 +26,11 @@ The slice must deliver visible household utility and meaningful NATS learning wh
 - Serve HTTP with Echo v5 and Huma v2, with application assembly constructing the transport and the `devices` module owning operation registration; expose OpenAPI at runtime without committing a generated artifact.
 - Bind the unauthenticated development API to loopback only.
 - Return Entity metadata and nullable current State from `GET /v1/entities/{entity_id}`.
-- Accept `{"operation":"set","value":true}` at `POST /v1/entities/{entity_id}/commands` and wait synchronously for the outcome.
+- Accept `{"operation":"set","parameters":{"value":true}}` at `POST /v1/entities/{entity_id}/commands` and wait synchronously for the outcome.
 - Return stable JSON error codes mapped to 503 missing adapter, 502 upstream rejection, 504 outcome timeout, and 500 internal failure.
 - Model independently addressable entities grouped by devices.
 - Give the Home Assistant adapter instance a configured subject-safe slug.
-- Register Device kind `light` and Entity kind `power` with boolean value type, writability, and `set`; reply with canonical IDs only after the binding and mappings commit. Defer manifests, discovery lifecycle, feature negotiation, configuration schemas, and checkpoints.
+- Register Device kind `light` and Entity type `hearth.power/v1` with empty constraints and `set`; reply with canonical IDs only after the binding and mappings commit. Carry generic JSON State values and Command parameters through transport and persistence, and validate their semantics through a concrete core-owned catalog closed to the built-in boolean power definition. Defer runtime Entity-type registration, extension loading, manifests, discovery lifecycle, feature negotiation, configuration schemas, and checkpoints.
 - Bind one configured Home Assistant light with a stable adapter-scoped binding key and a boolean power entity; preserve canonical IDs when its external identifier changes, and defer brightness, color, transitions, effects, and general discovery.
 - Treat the Home Assistant adapter as disposable migration code and delete it after this household completes migration.
 - Assign typed, UUIDv7-based canonical and message IDs in the core and map Home Assistant external IDs onto them.
@@ -41,18 +41,18 @@ The slice must deliver visible household utility and meaningful NATS learning wh
 - Store canonical state, identity mappings, Observation receipts, and a minimal Command attempt history transactionally in the core's SQLite database using Goose migrations and sqlc-generated queries; keep generated types behind module persistence adapters.
 - Record adapter acquisition time as `adapter_received_at`, optional upstream last-change time as `source_updated_at`, JetStream's server-assigned durable-receipt time as core-owned `observed_at`, and an internal SQLite logical sequence as `receive_order`.
 - Order canonical State only by tie-free `receive_order`; use timestamps for operators/history. Accept an `adapter_received_at` more than one minute ahead of `observed_at` and log clock skew.
-- Advance State evidence and timestamps for every first-seen, valid, correctly owned Observation; classify a same-value report as `unchanged` and a different value as `applied`.
+- Advance State evidence and timestamps for every first-seen, valid, correctly owned Observation; use the Entity-type catalog to classify an equivalent value as `unchanged` and a different value as `applied`.
 - Give each observation an immutable ID and record it transactionally with its disposition and SQLite projection so exact redelivery is a no-op.
 - Diagnose permanently invalid input in structured logs with safe metadata and acknowledge it while its raw message remains in the seven-day stream; leave transient infrastructure failures unacknowledged for redelivery; acknowledge valid outcomes only after commit.
-- Send immediate commands on adapter-scoped Core NATS request/reply subjects with one fixed ten-second end-to-end deadline; never queue them for later delivery.
-- Allow Commands for one Entity to overlap without a guard, queue, or supersession policy; give each an independent ID, durable record, in-memory waiter, and deadline, and allow only its own linked matching Observation to satisfy it.
+- Send immediate commands on adapter-scoped Core NATS request/reply subjects with an operation-defined end-to-end deadline; the first `hearth.power/v1` `set` definition uses ten seconds. Never queue Commands for later delivery.
+- Allow Commands for one Entity to overlap without a guard, queue, or supersession policy; give each an independent ID, durable record, in-memory waiter, and deadline, and allow only its own linked Observation satisfying the catalog outcome policy to complete it.
 - Accept that interleaved Commands may both be satisfied at different receive orders, one may time out after another changes the Entity, and a successful outcome may be immediately superseded; canonical State continues to follow core receive order.
 - Keep Command delivery and outcome waits ephemeral and in memory while recording each attempt and terminal outcome in SQLite for diagnosis and future history; the record is audit data, not a queue.
-- Commit the `requested` record before dispatch, mark only that Command `satisfied` transactionally with its matching linked Observation, and persist terminal failures. After the `requested` record commits, proceed with dispatch and retain that lifecycle until linked outcome or the ten-second deadline even if the HTTP client disconnects; core restart loses active waits, marks active records `interrupted`, and never redispatches them.
+- Commit the `requested` record before dispatch, mark only that Command `satisfied` transactionally when its linked Observation satisfies the catalog outcome policy, and persist terminal failures. After the `requested` record commits, proceed with dispatch and retain that lifecycle until linked outcome or the operation-defined deadline even if the HTTP client disconnects; core restart loses active waits, marks active records `interrupted`, and never redispatches them.
 - Hold the command HTTP request until outcome satisfaction or deadline failure.
 - Dispatch even when canonical state already matches the target.
 - After acceptance, have the adapter refresh upstream state and publish a fresh observation linked to the command ID.
-- Call the requested outcome satisfied when that linked post-dispatch canonical observation matches it, without claiming the command caused that outcome.
+- Call the requested outcome satisfied when that linked post-dispatch canonical Observation satisfies the registered operation's catalog outcome policy, without claiming the Command caused that outcome.
 - Use adapter-scoped version 1 subjects for registration, entity observations, and entity commands.
 - Run NATS and Go processes natively through devenv during local development; defer containers until deployment work.
 - Expose loopback `/healthz` and `/readyz`; report ready only after SQLite migration, NATS connection, JetStream provisioning, and observation-consumer startup. Adapters retry registration.

@@ -3,6 +3,7 @@
 - **Status:** Ready for task breakdown
 - **Approved by:** Michael
 - **Approved:** 2026-08-19
+- **Amended:** 2026-08-20 — generalized Entity values and Command parameters behind a closed Entity-type catalog
 - **Type:** Feature plan
 - **Effort:** XL (relative estimate only)
 
@@ -14,15 +15,15 @@ Hearthd needs a useful first vertical slice for a technical self-hoster migratin
 
 Build three Go processes: the Hearthd core, a disposable Home Assistant migration adapter, and a fault-injecting simulator. A thin, stateless Go SDK hides NATS protocol mechanics; authoritative JSON Schemas support non-Go adapters.
 
-Adapters register configured Devices and Entities over Core NATS request/reply, publish Observations durably to JetStream, and serve ephemeral Commands over Core NATS request/reply. The core projects canonical State and records every dispatched Command attempt and outcome in SQLite, then exposes a loopback Echo/Huma HTTP interface. Command delivery and outcome waits remain synchronous and ephemeral; records never cause replay or redispatch. Commands for the same Entity may overlap and are correlated independently by Command ID.
+Adapters register configured Devices and Entities over Core NATS request/reply, publish Observations durably to JetStream, and serve ephemeral Commands over Core NATS request/reply. Entity descriptors reference a core-owned, versioned Entity-type catalog; generic JSON values and Command parameters pass through the transport and persistence plumbing, while the catalog validates their semantics. The first-light catalog remains closed to one `hearth.power/v1` definition. The core projects canonical State and records every dispatched Command attempt and outcome in SQLite, then exposes a loopback Echo/Huma HTTP interface. Command delivery and outcome waits remain synchronous and ephemeral; records never cause replay or redispatch. Commands for the same Entity may overlap and are correlated independently by Command ID.
 
 ## Scope
 
 ### In scope
 
 - One configured Device of kind `light`
-- One writable Entity of kind `power`
-- Boolean State and operation `set`
+- One Entity of type `hearth.power/v1`
+- Boolean State and operation `set`, validated by the closed first-light Entity-type catalog
 - Core HTTP read and synchronous Command endpoints
 - Disposable Home Assistant migration adapter
 - Simulator implementing the same adapter contract
@@ -34,9 +35,9 @@ Adapters register configured Devices and Entities over Core NATS request/reply, 
 
 ### Non-goals
 
-- Light capabilities beyond boolean power `set`
+- Light behavior beyond boolean power `set`
 - Discovery, approval, availability, heartbeats, automations, scheduling, or UI
-- Adapter manifests, feature negotiation, checkpoints, or a vendor framework in the SDK
+- Adapter manifests, feature negotiation, runtime Entity-type registration or extension loading, checkpoints, or a vendor framework in the SDK
 - Durable Command delivery/recovery or core-managed serialization, queuing, and supersession
 - Authentication or non-loopback HTTP exposure
 - Permanent Home Assistant support
@@ -46,6 +47,8 @@ Adapters register configured Devices and Entities over Core NATS request/reply, 
 - JetStream durably recovers Observation evidence; SQLite owns transactional canonical State and non-replayable Command history.
 - State follows core receive order while source times remain diagnostic metadata; Command success requires an explicit linked refresh rather than upstream acceptance alone.
 - A thin SDK centralizes protocol mechanics while vendor behavior stays in adapters; the first slice remains one `devices` module.
+- Generic JSON State values and Command parameters avoid boolean-specific transport and persistence, at the cost of moving semantic validation from structural wire schemas into a core-owned Entity-type catalog.
+- The catalog is deliberately closed and concrete in this slice: it establishes the seam for later built-in or explicitly installed definitions without implementing runtime extension loading.
 - Commands overlap independently by ID, accepting interleaved outcomes and immediately superseded successes.
 
 ## Runtime topology
@@ -89,7 +92,10 @@ Owner: `internal/modules/devices/model.go`
 ```go
 package devices
 
-import "time"
+import (
+    "encoding/json"
+    "time"
+)
 
 type DeviceID string
 type EntityID string
@@ -100,14 +106,14 @@ type CorrelationID string
 type DeviceKind string
 const DeviceKindLight DeviceKind = "light"
 
-type EntityKind string
-const EntityKindPower EntityKind = "power"
-
-type ValueType string
-const ValueTypeBoolean ValueType = "boolean"
+type EntityTypeID string
+const EntityTypePowerV1 EntityTypeID = "hearth.power/v1"
 
 type Operation string
 const OperationSet Operation = "set"
+
+type Value json.RawMessage
+type CommandParameters json.RawMessage
 
 type Device struct {
     ID   DeviceID
@@ -116,18 +122,17 @@ type Device struct {
 }
 
 type Entity struct {
-    ID         EntityID
-    DeviceID   DeviceID
-    AdapterID  string
-    Kind       EntityKind
-    ValueType  ValueType
-    Writable   bool
-    Operations []Operation
+    ID          EntityID
+    DeviceID    DeviceID
+    AdapterID   string
+    TypeID      EntityTypeID
+    Constraints json.RawMessage
+    Operations  []Operation
 }
 
 type State struct {
     EntityID          EntityID
-    Value             bool
+    Value             Value
     ObservationID     ObservationID
     AdapterReceivedAt time.Time
     SourceUpdatedAt   *time.Time
@@ -152,6 +157,7 @@ type ObservationRejection string
 const (
     RejectionUnknownEntity ObservationRejection = "unknown_entity"
     RejectionWrongAdapter  ObservationRejection = "wrong_adapter"
+    RejectionInvalidValue  ObservationRejection = "invalid_value"
 )
 
 type ProjectionResult struct {
@@ -187,7 +193,7 @@ type CommandRecord struct {
     EntityID             EntityID
     AdapterID            string
     Operation            Operation
-    Value                bool
+    Parameters           CommandParameters
     CorrelationID        CorrelationID
     Status               CommandStatus
     RequestedAt          time.Time
@@ -208,11 +214,73 @@ type CommandCompletion struct {
 type CommandResult struct {
     CommandID     CommandID
     ObservationID ObservationID
-    Value         bool
+    Value         Value
 }
 ```
 
-`adapter_id` records the owner selected for dispatch even if ownership changes later. `requested_at`, `accepted_at`, and `completed_at` are core-clock UTC times for the corresponding committed lifecycle transitions; `deadline_at` is exactly ten seconds after `requested_at`. The record stores normalized domain intent and stable failure codes, not raw HTTP bodies, headers, client addresses, adapter error text, or credentials.
+`Value` contains one complete valid JSON value and `CommandParameters` contains one complete valid JSON object. They are copied defensively at module edges. The module never determines State equality or Command satisfaction by comparing encoded bytes; it delegates both to the Entity-type catalog so object key ordering and future type-specific normalization cannot change semantics.
+
+`adapter_id` records the owner selected for dispatch even if ownership changes later. `requested_at`, `accepted_at`, and `completed_at` are core-clock UTC times for the corresponding committed lifecycle transitions; for the first `set` operation, `deadline_at` is exactly ten seconds after `requested_at` as defined by the catalog. The record stores normalized operation parameters and stable failure codes, not raw HTTP bodies, headers, client addresses, adapter error text, or credentials.
+
+### Entity-type catalog
+
+Owner: `internal/modules/devices/catalog.go`.
+
+A concrete `TypeCatalog` is constructed by the application and passed to the `devices` module. It resolves immutable, versioned Entity type IDs and owns semantic validation, State equality, operation availability, Command outcome matching, and operation deadlines. Structural JSON Schemas continue to validate wire shape; the catalog validates the meaning of generic values and parameters after the Entity is resolved.
+
+```go
+type OutcomePolicy string
+const OutcomeParameterEqualsState OutcomePolicy = "parameter_equals_state"
+
+type OperationDefinition struct {
+    Name             Operation
+    ParametersSchema json.RawMessage
+    OutcomePolicy    OutcomePolicy
+    OutcomeParameter string
+    Deadline         time.Duration
+}
+
+type EntityTypeDefinition struct {
+    ID                EntityTypeID
+    StateSchema       json.RawMessage
+    ConstraintsSchema json.RawMessage
+    Operations        map[Operation]OperationDefinition
+}
+
+type ResolvedCommand struct {
+    Parameters CommandParameters // validated and normalized defensive copy
+    Deadline   time.Duration
+}
+
+func NewTypeCatalog([]EntityTypeDefinition) (*TypeCatalog, error)
+func NewFirstLightTypeCatalog() (*TypeCatalog, error)
+func (*TypeCatalog) ValidateEntity(EntityTypeID, json.RawMessage, []Operation) error
+func (*TypeCatalog) NormalizeState(Entity, Value) (Value, error)
+func (*TypeCatalog) EqualState(Entity, Value, Value) (bool, error)
+func (*TypeCatalog) ResolveCommand(Entity, Operation, CommandParameters) (ResolvedCommand, error)
+func (*TypeCatalog) Satisfies(Entity, CommandRecord, Value) (bool, error)
+```
+
+`NewTypeCatalog` rejects duplicate IDs or operations, malformed schemas, unsupported outcome policies, missing outcome parameters, and non-positive deadlines. It compiles all definition schemas once. `NewFirstLightTypeCatalog` supplies the only production definitions in this slice; the general constructor also permits focused catalog tests without making definitions runtime-configurable.
+
+The first-light catalog contains exactly one built-in definition:
+
+```text
+type: hearth.power/v1
+state schema: boolean
+constraints schema: object with no properties
+operations:
+  set:
+    parameters schema: {"value": boolean}, no additional properties
+    outcome policy: linked Observation value equals parameters.value
+    deadline: 10s
+```
+
+Registration accepts only catalog-known type IDs, constraints valid for that type, and an operation subset allowed by that type. For `hearth.power/v1`, the descriptor must contain `{}` constraints and exactly `set`. An Entity's `type_id` is immutable across re-registration; names, external IDs, constraints, and the available operation subset may change transactionally. Type definitions are immutable for their versioned ID.
+
+The catalog compares decoded, schema-valid values according to the type definition rather than raw JSON bytes. The first definition uses exact boolean equality. It rejects an Observation whose value does not satisfy the Entity's State schema and rejects a Command before record creation or dispatch when its operation is unavailable or its parameters do not satisfy the operation schema.
+
+Runtime type registration, manifest loading, arbitrary matching code, and persistence of type definitions are out of scope. Later built-in or explicitly installed definitions may populate the same catalog seam without changing transport, persistence, or Command orchestration interfaces.
 
 IDs use lowercase UUIDv7 strings with type prefixes:
 
@@ -238,7 +306,7 @@ type Envelope[T any] struct {
 }
 ```
 
-Every schema uses `additionalProperties: false`. All timestamps are UTC RFC3339Nano strings ending in `Z`. `correlation_id` is required. `causation_id` is omitted for a root message.
+Every protocol-owned JSON object uses `additionalProperties: false`. The generic `constraints` and `parameters` objects are structural extension points whose contents are validated by the resolved catalog definition, and Observation `value` may be any structurally valid JSON value before catalog validation. All timestamps are UTC RFC3339Nano strings ending in `Z`. `correlation_id` is required. `causation_id` is omitted for a root message.
 
 Canonical schema files and IDs are:
 
@@ -267,17 +335,16 @@ type Registration struct {
 type DeviceDescriptor struct {
     ExternalID *string `json:"external_id,omitempty"`
     Name       string  `json:"name"`
-    Kind       string  `json:"kind"` // const "light" in v1
+    Kind       string  `json:"kind"` // "light" accepted by this slice
 }
 
 type EntityDescriptor struct {
-    Key        string   `json:"key"`
-    ExternalID string   `json:"external_id"`
-    Name       string   `json:"name"`
-    Kind       string   `json:"kind"`       // const "power"
-    ValueType  string   `json:"value_type"` // const "boolean"
-    Writable   bool     `json:"writable"`   // const true
-    Operations []string `json:"operations"` // exactly ["set"]
+    Key         string          `json:"key"`
+    ExternalID  string          `json:"external_id"`
+    Name        string          `json:"name"`
+    Type        string          `json:"type"`        // catalog ID; "hearth.power/v1" in this slice
+    Constraints json.RawMessage `json:"constraints"` // {} in this slice
+    Operations  []string        `json:"operations"`  // exactly ["set"] in this slice
 }
 
 type Binding struct {
@@ -297,22 +364,26 @@ Constraints:
 - `binding_key` and Entity `key` use the slug pattern.
 - Device and Entity names contain 1–128 Unicode characters.
 - External IDs contain 1–256 characters when present.
+- Device `kind` is a 1–128 character string; the structural wire schema does not enumerate kinds, but the first-slice module accepts only `light`.
+- Entity `type` is a 1–128 character versioned catalog identifier; the structural wire schema does not enumerate catalog contents.
+- `constraints` is a JSON object and `operations` contains unique subject-safe operation names. The catalog performs type-specific validation.
 - `entities` contains exactly one Entity in this slice; its key is unique within the binding.
-- Re-registration with the same adapter ID, binding key, and Entity key returns the same canonical IDs.
+- Re-registration with the same adapter ID, binding key, and Entity key returns the same canonical IDs. Changing its Entity type rejects the whole registration; valid descriptor, constraint, operation, name, and external-ID updates commit transactionally.
 - A conflicting external mapping rejects the whole registration transaction.
 
 ### Observation payload
 
 ```go
 type Observation struct {
-    EntityID          string  `json:"entity_id"`
-    Value             bool    `json:"value"`
-    AdapterReceivedAt string  `json:"adapter_received_at"`
-    SourceUpdatedAt   *string `json:"source_updated_at,omitempty"`
-    RefreshForCommand *string `json:"refresh_for_command_id,omitempty"`
+    EntityID          string          `json:"entity_id"`
+    Value             json.RawMessage `json:"value"`
+    AdapterReceivedAt string          `json:"adapter_received_at"`
+    SourceUpdatedAt   *string         `json:"source_updated_at,omitempty"`
+    RefreshForCommand *string         `json:"refresh_for_command_id,omitempty"`
 }
 ```
 
+- `value` is one structurally valid JSON value. After resolving the Entity, the core validates it against the registered Entity type; the first-light type accepts only JSON booleans.
 - `adapter_received_at` is when the adapter freshly acquired the value.
 - `source_updated_at` preserves an optional upstream last-change claim.
 - The core adds `observed_at` from the JetStream server timestamp when the message was durably received.
@@ -325,10 +396,10 @@ type Observation struct {
 type Command struct {
     ID            string
     CorrelationID string
-    EntityID      string `json:"entity_id"`
-    Operation     string `json:"operation"` // const "set"
-    Value         bool   `json:"value"`
-    Deadline      string `json:"deadline"`
+    EntityID      string          `json:"entity_id"`
+    Operation     string          `json:"operation"`
+    Parameters    json.RawMessage `json:"parameters"`
+    Deadline      string          `json:"deadline"`
 }
 
 type CommandResponse struct {
@@ -343,7 +414,7 @@ type CommandError struct {
 }
 ```
 
-The Command ID is the request envelope ID. `error` is required only for `rejected` and omitted for `accepted`. Error messages are safe for operator display and at most 512 characters.
+The Command ID is the request envelope ID. `parameters` is a JSON object validated by the core against the resolved Entity type and operation before dispatch; the first-light `set` operation requires `{"value":true}` or `{"value":false}`. `deadline` comes from the resolved operation definition. `error` is required only for `rejected` and omitted for `accepted`. Error messages are safe for operator display and at most 512 characters.
 
 ### HTTP types
 
@@ -351,33 +422,32 @@ Owner: `internal/modules/devices/api/types.go`.
 
 ```go
 type EntityBody struct {
-    ID         string     `json:"id"`
-    DeviceID   string     `json:"device_id"`
-    Kind       string     `json:"kind"`
-    ValueType  string     `json:"value_type"`
-    Writable   bool       `json:"writable"`
-    Operations []string   `json:"operations"`
-    State      *StateBody `json:"state"`
+    ID          string         `json:"id"`
+    DeviceID    string         `json:"device_id"`
+    Type        string         `json:"type"`
+    Constraints map[string]any `json:"constraints"`
+    Operations  []string       `json:"operations"`
+    State       *StateBody     `json:"state"`
 }
 
 type StateBody struct {
-    Value             bool    `json:"value"`
+    Value             any     `json:"value"`
     ObservationID     string  `json:"observation_id"`
     AdapterReceivedAt string  `json:"adapter_received_at"`
     SourceUpdatedAt   *string `json:"source_updated_at,omitempty"`
     ObservedAt        string  `json:"observed_at"`
 }
 
-type SetCommandBody struct {
-    Operation string `json:"operation"` // const "set"
-    Value     bool   `json:"value"`
+type CommandBody struct {
+    Operation  string         `json:"operation"`
+    Parameters map[string]any `json:"parameters"`
 }
 
 type CommandResultBody struct {
     CommandID     string `json:"command_id"`
     Status        string `json:"status"` // const "satisfied"
     ObservationID string `json:"observation_id"`
-    Value         bool   `json:"value"`
+    Value         any    `json:"value"`
 }
 
 type ErrorBody struct {
@@ -390,6 +460,8 @@ type APIError struct {
     CommandID *string `json:"command_id,omitempty"`
 }
 ```
+
+The HTTP mapper decodes normalized domain JSON into these generic transport fields and encodes `parameters` back to one JSON object before calling the module. Huma/OpenAPI therefore describes structural JSON values and objects; Entity-type-specific schemas remain catalog semantics rather than being expanded into the first-slice OpenAPI document.
 
 Stable API error codes are:
 
@@ -441,7 +513,7 @@ type SimulatorConfig struct {
 }
 ```
 
-Protocol limits are fixed v1 constants, not YAML fields: ten-second Command deadline; one-minute future-clock diagnostic threshold; seven-day/one-GiB stream; 30-second acknowledgement wait; one pending acknowledgement; and `observed_at + 192h` receipt expiry, with the current-State receipt pinned. Command records are not pruned in this slice; retention policy awaits a history interface.
+Protocol limits are not YAML fields: the built-in `hearth.power/v1` `set` definition supplies its ten-second Command deadline; fixed v1 transport/storage constants are the one-minute future-clock diagnostic threshold, seven-day/one-GiB stream, 30-second acknowledgement wait, one pending acknowledgement, and `observed_at + 192h` receipt expiry with the current-State receipt pinned. Command records are not pruned in this slice; retention policy awaits a history interface.
 
 ## Interfaces
 
@@ -494,24 +566,25 @@ type CommandSender interface {
     Send(context.Context, string, CommandRequest) (CommandAcceptance, error)
 }
 
-func NewService(Repository, CommandSender, Dependencies) *Service
+func NewService(Repository, CommandSender, *TypeCatalog, Dependencies) *Service
 func (*Service) Register(context.Context, string, Registration) (Binding, error)
 func (*Service) ProjectObservation(context.Context, string, Observation, time.Time) (ProjectionResult, error)
 func (*Service) GetEntity(context.Context, EntityID) (EntityView, error)
-func (*Service) SetPower(context.Context, EntityID, bool) (CommandResult, error)
+func (*Service) ExecuteCommand(context.Context, EntityID, Operation, CommandParameters) (CommandResult, error)
 ```
 
-`Dependencies` contains an injected clock and UUIDv7 generator for deterministic module tests. Interfaces are defined in the consuming `devices` package; production sqlc/NATS adapters and test adapters satisfy them.
+`Dependencies` contains an injected clock and UUIDv7 generator for deterministic module tests. `TypeCatalog` is a required concrete dependency selected by application assembly; it is not a runtime plugin interface. Interfaces are defined in the consuming `devices` package; production sqlc/NATS adapters and test adapters satisfy them.
 
-`SetPower` behavior:
+`ExecuteCommand` behavior:
 
-1. Resolve the Entity and owner; create Command/correlation IDs, an independent ten-second lifecycle context, and a Command-ID-keyed Observation waiter.
-2. Commit `requested` before dispatch. Failure prevents dispatch and returns an internal error. This commit is the point of no return: later HTTP cancellation does not cancel the lifecycle.
-3. Send one Core NATS request/reply without retry or replay. Persist dispatch/response failures as `adapter_unavailable`, `rejected`, or `internal_failure`.
-4. On acceptance, set `accepted_at`. If a linked Observation already made the record terminal, preserve its status while filling the timestamp.
-5. Wait for `ProjectObservation` to atomically commit an `applied` or `unchanged` matching Observation and satisfy only the linked Command; otherwise persist `outcome_timeout` at the deadline.
-6. Return `CommandResult` or the mapped stable error. After HTTP cancellation, abandon only the response and continue recording the lifecycle through outcome/deadline.
-7. Remove the waiter at completion. On restart, lose in-memory waits, mark persisted `requested`/`accepted` records `interrupted`, and never redispatch them.
+1. Resolve the Entity and owner. Resolve the Entity type and operation in the catalog, validate the parameters, and obtain the outcome policy and deadline. Unknown operations, unavailable operations, and invalid parameters fail before a Command record is created or dispatched.
+2. Create Command/correlation IDs, an independent lifecycle context using the operation deadline, and a Command-ID-keyed Observation waiter.
+3. Commit `requested` before dispatch. Failure prevents dispatch and returns an internal error. This commit is the point of no return: later HTTP cancellation does not cancel the lifecycle.
+4. Send one Core NATS request/reply without retry or replay. Persist dispatch/response failures as `adapter_unavailable`, `rejected`, or `internal_failure`.
+5. On acceptance, set `accepted_at`. If a linked Observation already made the record terminal, preserve its status while filling the timestamp.
+6. Wait for `ProjectObservation` to atomically commit an `applied` or `unchanged` Observation that the catalog's outcome policy matches to this Command; otherwise persist `outcome_timeout` at the deadline.
+7. Return `CommandResult` or the mapped stable error. After HTTP cancellation, abandon only the response and continue recording the lifecycle through outcome/deadline.
+8. Remove the waiter at completion. On restart, lose in-memory waits, mark persisted `requested`/`accepted` records `interrupted`, and never redispatch them.
 
 Lifecycle writes are monotonic and idempotent. Multiple calls for one Entity run concurrently without a guard, queue, or supersession; each has an independent ID, record, waiter, and deadline. An Observation satisfies only its `refresh_for_command_id`. Success may be immediately superseded, while canonical State follows core receive order.
 
@@ -531,10 +604,10 @@ GET /readyz
 `POST /v1/entities/{entity_id}/commands` accepts:
 
 ```json
-{"operation":"set","value":true}
+{"operation":"set","parameters":{"value":true}}
 ```
 
-It waits synchronously for a linked outcome or deadline. Status mapping is:
+It waits synchronously for a linked outcome or deadline. Huma validates the structural body; the `devices` module validates `parameters` against the resolved Entity type and operation before creating a Command record. Status mapping is:
 
 | Condition | HTTP | Error code |
 | --- | ---: | --- |
@@ -552,12 +625,13 @@ It waits synchronously for a linked outcome or deadline. Status mapping is:
 ```text
 hearth.v1.adapter.<adapter>.register
 hearth.v1.adapter.<adapter>.observation.<entity>
-hearth.v1.adapter.<adapter>.command.<entity>.set
+hearth.v1.adapter.<adapter>.command.<entity>.<operation>
 ```
 
 - `<adapter>` is the configured adapter slug.
 - `<entity>` is the canonical Entity ID.
-- Core validates that subject adapter/entity tokens match payload and current ownership.
+- `<operation>` is the registered subject-safe operation name; it is `set` in this slice.
+- Core validates that subject adapter/entity/operation tokens match the payload, registered Entity operations, and current ownership.
 - Registration and Commands use Core NATS request/reply.
 - Persisting a Command record does not put the Command in a stream and never causes replay or redispatch.
 - Observations use JetStream and require a publish acknowledgement.
@@ -598,25 +672,26 @@ PRAGMA foreign_keys = ON;
 
 CREATE TABLE devices (
     id         TEXT PRIMARY KEY CHECK (id LIKE 'dev_%'),
-    kind       TEXT NOT NULL CHECK (kind = 'light'),
+    kind       TEXT NOT NULL CHECK (length(kind) BETWEEN 1 AND 128),
     name       TEXT NOT NULL CHECK (length(name) BETWEEN 1 AND 128),
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL
 );
 
 CREATE TABLE entities (
-    id         TEXT PRIMARY KEY CHECK (id LIKE 'ent_%'),
-    device_id  TEXT NOT NULL REFERENCES devices(id) ON DELETE CASCADE,
-    kind       TEXT NOT NULL CHECK (kind = 'power'),
-    value_type TEXT NOT NULL CHECK (value_type = 'boolean'),
-    writable   INTEGER NOT NULL CHECK (writable = 1),
-    created_at TEXT NOT NULL,
-    updated_at TEXT NOT NULL
+    id               TEXT PRIMARY KEY CHECK (id LIKE 'ent_%'),
+    device_id        TEXT NOT NULL REFERENCES devices(id) ON DELETE CASCADE,
+    type_id          TEXT NOT NULL CHECK (length(type_id) BETWEEN 1 AND 128),
+    constraints_json TEXT NOT NULL CHECK (
+        json_valid(constraints_json) AND json_type(constraints_json) = 'object'
+    ),
+    created_at       TEXT NOT NULL,
+    updated_at       TEXT NOT NULL
 );
 
 CREATE TABLE entity_operations (
     entity_id TEXT NOT NULL REFERENCES entities(id) ON DELETE CASCADE,
-    operation TEXT NOT NULL CHECK (operation = 'set'),
+    operation TEXT NOT NULL CHECK (length(operation) BETWEEN 1 AND 63),
     PRIMARY KEY (entity_id, operation)
 );
 
@@ -624,8 +699,10 @@ CREATE TABLE commands (
     id                     TEXT PRIMARY KEY CHECK (id LIKE 'cmd_%'),
     entity_id              TEXT NOT NULL REFERENCES entities(id) ON DELETE RESTRICT,
     adapter_id             TEXT NOT NULL CHECK (length(adapter_id) BETWEEN 1 AND 63),
-    operation              TEXT NOT NULL CHECK (operation = 'set'),
-    value_boolean          INTEGER NOT NULL CHECK (value_boolean IN (0, 1)),
+    operation              TEXT NOT NULL CHECK (length(operation) BETWEEN 1 AND 63),
+    parameters_json        TEXT NOT NULL CHECK (
+        json_valid(parameters_json) AND json_type(parameters_json) = 'object'
+    ),
     correlation_id         TEXT NOT NULL CHECK (correlation_id LIKE 'cor_%'),
     status                 TEXT NOT NULL CHECK (
         status IN (
@@ -704,7 +781,7 @@ CREATE TABLE observation_receipts (
     ),
     rejection_code      TEXT CHECK (
         rejection_code IS NULL OR rejection_code IN (
-            'unknown_entity', 'wrong_adapter'
+            'unknown_entity', 'wrong_adapter', 'invalid_value'
         )
     ),
     adapter_received_at TEXT NOT NULL,
@@ -720,13 +797,13 @@ CREATE INDEX observation_receipts_expiry_idx
     ON observation_receipts(expires_at);
 
 CREATE TABLE entity_states (
-    entity_id          TEXT PRIMARY KEY REFERENCES entities(id) ON DELETE CASCADE,
-    observation_id     TEXT NOT NULL UNIQUE REFERENCES observation_receipts(observation_id),
-    value_boolean      INTEGER NOT NULL CHECK (value_boolean IN (0, 1)),
+    entity_id           TEXT PRIMARY KEY REFERENCES entities(id) ON DELETE CASCADE,
+    observation_id      TEXT NOT NULL UNIQUE REFERENCES observation_receipts(observation_id),
+    value_json          TEXT NOT NULL CHECK (json_valid(value_json)),
     adapter_received_at TEXT NOT NULL,
-    source_updated_at  TEXT,
-    observed_at        TEXT NOT NULL,
-    receive_order      INTEGER NOT NULL UNIQUE REFERENCES observation_receipts(receive_order)
+    source_updated_at   TEXT,
+    observed_at         TEXT NOT NULL,
+    receive_order       INTEGER NOT NULL UNIQUE REFERENCES observation_receipts(receive_order)
 );
 
 -- +goose Down
@@ -742,7 +819,7 @@ DROP TABLE entities;
 DROP TABLE devices;
 ```
 
-Strict typed-ID, slug, and UTC timestamp parsing occurs at the module/transport edge; SQLite reinforces prefixes, enums, booleans, ownership uniqueness, and foreign keys.
+Strict typed-ID, slug, catalog, operation, generic JSON, and UTC timestamp validation occurs at the module/transport edge. SQLite reinforces ID prefixes, JSON validity and object shape where applicable, lifecycle enums, ownership uniqueness, and foreign keys; it deliberately does not duplicate the catalog's Entity-type, value, constraint, operation, or outcome semantics.
 
 Required sqlc queries are split into four generation units with separate generated packages and focused `Querier` interfaces:
 
@@ -754,6 +831,7 @@ registration:
   UpdateDeviceDescriptor
   CreateEntity
   UpdateEntityDescriptor
+  DeleteEntityOperations
   UpsertEntityOperation
   CreateBinding
   UpdateBindingExternalID
@@ -798,7 +876,7 @@ WHERE expires_at < ?
 
 Checking `observation_id` protects both State foreign keys because they reference the same receipt. Superseded State receipts become eligible at the next pruning pass.
 
-`RegisterBinding`, `ProjectObservation`, and all Command transitions own their SQLite transactions behind the repository; generated sqlc types never cross that seam. Projection atomically inserts the receipt, updates State, and satisfies a matching active Command.
+`RegisterBinding`, `ProjectObservation`, and all Command transitions own their SQLite transactions behind the repository; generated sqlc types never cross that seam. The concrete `devices` repository receives the same required `TypeCatalog` instance as the service so projection can validate values, compare State, and evaluate a linked Command's outcome policy inside the transaction. Projection atomically inserts the receipt, updates State, and satisfies a matching active Command. Registration replaces an Entity's operation rows transactionally after catalog validation so removed operations do not remain advertised.
 
 `outcome_observation_id` intentionally has no receipt foreign key because receipts expire while Command history remains. Satisfaction writes this typed, immutable ID only after inserting its receipt in the same transaction.
 
@@ -809,9 +887,10 @@ For each schema-valid Observation, one transaction:
 1. Read core-owned `observed_at` from the JetStream server timestamp; return `duplicate` when the Observation ID already has a receipt.
 2. When `adapter_received_at > observed_at + 1m`, log a structured clock-skew diagnostic containing Observation, adapter, Entity, `adapter_received_at`, and `observed_at`; continue normally.
 3. Resolve Entity/owner; record `rejected/unknown_entity` or `rejected/wrong_adapter` for identity failures.
-4. Insert the receipt with the next internal `receive_order`. For a known, correctly owned Entity, advance State regardless of timestamps: no current State or a different value is `applied`; the same value is `unchanged`.
-5. An `applied`/`unchanged` Observation with `refresh_for_command_id` satisfies only an active `requested`/`accepted` Command for the same Entity/adapter and value. Set `completed_at`/`outcome_observation_id` and notify its waiter. No rejected, wrong-value, wrong-identity, or terminal link satisfies a Command.
-6. Set receipt expiry to `observed_at + 192h`, then atomically commit receipt, State, and satisfaction before JetStream acknowledgement.
+4. Validate the generic JSON value through the Entity-type catalog; record `rejected/invalid_value` when it violates the registered State schema. Unknown catalog IDs in persisted Entities are an internal configuration failure, not an adapter-input rejection.
+5. Insert the receipt with the next internal `receive_order`. For a known, correctly owned Entity with a valid value, advance State regardless of timestamps: no current State or a value the catalog considers different is `applied`; a value the catalog considers equivalent is `unchanged`.
+6. An `applied`/`unchanged` Observation with `refresh_for_command_id` satisfies only an active `requested`/`accepted` Command for the same Entity/adapter when its catalog outcome policy matches the Command operation and parameters. Set `completed_at`/`outcome_observation_id` and notify its waiter. No rejected, nonmatching, wrong-identity, or terminal link satisfies a Command.
+7. Set receipt expiry to `observed_at + 192h`, then atomically commit receipt, State, and satisfaction before JetStream acknowledgement.
 
 At startup and hourly, delete expired receipts except the current-State receipt; it becomes eligible after State advances.
 
@@ -823,8 +902,8 @@ The adapter uses Home Assistant's WebSocket API directly:
 
 1. Read YAML/token, connect/authenticate, and register through the SDK with bounded exponential backoff and jitter until shutdown.
 2. After startup/reconnect, call `get_states`, publish configured light power, and subscribe to `state_changed`.
-3. Map `on`/`off` to boolean; reject unsupported/unavailable values rather than inventing State.
-4. Map `set=true`/`false` to `light.turn_on`/`light.turn_off`. Reject failed calls; accept after successful service-call completion.
+3. Map `on`/`off` to the JSON booleans accepted by `hearth.power/v1`; reject unsupported/unavailable values rather than inventing State.
+4. Map `set` parameters `{"value":true}`/`{"value":false}` to `light.turn_on`/`light.turn_off`. Reject failed calls; accept after successful service-call completion.
 5. Call `get_states` and durably publish a linked refresh Observation.
 
 Adapter acquisition time is `adapter_received_at`; Home Assistant `last_updated` is optional `source_updated_at`. Core `observed_at` comes from the JetStream server timestamp. Home Assistant identifiers, service names, contexts, and payloads stay in this package. WebSocket request IDs, pending responses, and refresh publications are concurrency-safe: overlapping handlers may issue calls concurrently, and each refresh retains its Command/correlation IDs. The adapter serializes by Entity only if the protocol requires it and is deleted after migration.
@@ -876,10 +955,11 @@ Core startup order:
 4. Delete expired Observation receipts not referenced by current State.
 5. Connect to NATS.
 6. Idempotently provision/validate the stream and durable consumer.
-7. Construct the `devices` module.
-8. Start the Observation consumer wired to the module's projection handler.
-9. Construct the Echo/Huma transport.
-10. Listen on loopback.
+7. Construct and validate the closed first-light Entity-type catalog.
+8. Construct the concrete `devices` repository and service with the same catalog instance.
+9. Start the Observation consumer wired to the module's projection handler.
+10. Construct the Echo/Huma transport.
+11. Listen on loopback.
 
 `GET /healthz` returns 200 whenever the HTTP process can serve. `GET /readyz` returns 200 only while SQLite responds, NATS is connected, JetStream resources match required configuration, and the Observation consumer is active; otherwise 503.
 
@@ -900,7 +980,8 @@ internal/
 ├── modules/
 │   └── devices/
 │       ├── api/                     # new — Huma operations and transport mapping
-│       ├── model.go                 # new — Device, Entity, State, Command types
+│       ├── model.go                 # new — Device, Entity, generic State value, and Command types
+│       ├── catalog.go               # new — closed first-light Entity-type definitions and semantic policies
 │       ├── service.go               # new — registration, projection, Command behavior
 │       ├── repository.go            # new — identity, State, receipt, and Command-record persistence seam
 │       ├── command.go               # new — durable lifecycle transitions plus concurrent in-memory outcome waits
@@ -937,7 +1018,7 @@ sqlc.yaml                             # new — root SQLite generation config
 
 | ID | Deliverable | Effort | Depends on |
 | --- | --- | --- | --- |
-| D1 | Go/devenv foundation, dependency lock, typed IDs, embedded JSON Schemas, YAML loaders | L | - |
+| D1 | Go/devenv foundation, dependency lock, typed IDs, closed first-light Entity-type catalog, embedded JSON Schemas, YAML loaders | L | - |
 | D2 | Stateless adapter SDK, NATS subjects/envelopes, schema validation, registration/Observation/Command contract tests | L | D1 |
 | D3 | SQLite migration/sqlc layer, Command ledger, and idempotent binding registration in `devices` | L | D1, D2 |
 | D4 | JetStream provisioning, durable Observation projection, receipt pruning, GET Entity, readiness | XL | D2, D3 |
@@ -950,11 +1031,12 @@ Total relative effort is **XL**. No calendar estimate is asserted.
 ## Acceptance and success criteria
 
 - [ ] From a clean checkout, `devenv test` (or its documented replacement) checks generation, tests, vet, runtime OpenAPI, compilation of every authoritative JSON Schema, and validation of cross-binary fixtures.
-- [ ] Re-registration returns identical IDs; conflicting binding/external mappings reject atomically without partial rows.
+- [ ] Re-registration returns identical IDs; conflicting binding/external mappings, an Entity type change, or catalog-invalid constraints/operations reject atomically without partial rows.
 - [ ] A registered, unobserved Entity returns HTTP 200 with `state: null`.
 - [ ] A JetStream-acknowledged Observation survives restart; exact redelivery changes neither State nor receipt count.
 - [ ] Pruning deletes expired unreferenced receipts, pins the current-State receipt without foreign-key errors, then deletes it after State advances.
-- [ ] A later-received Observation advances State even when its `adapter_received_at` is older; a same-value report advances State evidence/timestamps as `unchanged`; adapter clock skew beyond the threshold is logged but accepted; wrong-owner, unknown-Entity, and malformed input produce the specified rejection/diagnostic/acknowledgement behavior.
+- [ ] The generic wire and persistence paths round-trip the first-light JSON boolean without boolean-specific columns or DTO fields; the catalog rejects a schema-valid non-boolean Observation as `invalid_value` and rejects invalid `set` parameters before Command creation or dispatch.
+- [ ] A later-received Observation advances State even when its `adapter_received_at` is older; a catalog-equivalent value advances State evidence/timestamps as `unchanged`; adapter clock skew beyond the threshold is logged but accepted; wrong-owner, unknown-Entity, invalid-value, and malformed input produce the specified rejection/diagnostic/acknowledgement behavior.
 - [ ] Every dispatched Command first commits `requested`; record-creation failure prevents dispatch.
 - [ ] Two simultaneous Commands for one Entity create distinct durable records, both dispatch, and invoke independent SDK handlers without SDK-imposed ordering; each is satisfiable only by its own linked Observation. Opposite-value interleavings allow both to satisfy at different receive orders or one to time out on a mismatched link; final State follows core receive order.
 - [ ] Missing adapter, upstream rejection, deadline, and unexpected post-creation failures persist the specified terminal status/failure code and map respectively to HTTP 503, 502, 504, and 500 (`internal_failure` when SQLite remains writable).
@@ -972,7 +1054,7 @@ Total relative effort is **XL**. No calendar estimate is asserted.
 
 | Layer | What | How |
 | --- | --- | --- |
-| Pure module | ID validation, registration conflicts, receive-order projection, source-time diagnostics, same-value advancement, Command transition monotonicity, concurrent waiter isolation, interleaved outcomes, deadline/result mapping | Inject in-memory Repository, CommandSender, clock, and ID generator |
+| Pure module | ID validation, catalog registration/State/parameter validation, type-aware equality and outcome matching, registration conflicts, receive-order projection, source-time diagnostics, same-value advancement, Command transition monotonicity, concurrent waiter isolation, interleaved outcomes, deadline/result mapping | Inject in-memory Repository, CommandSender, closed catalog, clock, and ID generator |
 | Repository | Transactions, constraints, idempotency, receive ordering, receipt pruning, current-State retention, Command lifecycle persistence, atomic outcome satisfaction, startup interruption | Temporary real SQLite; apply Goose; use generated sqlc queries |
 | SDK/NATS | Subjects, envelopes, schema validation, publish acknowledgement/retry, concurrent Command handler invocation, request/reply, responder invariants, W3C headers | In-process NATS Server with JetStream |
 | HTTP | Huma validation, operation IDs, nullable State, bodies, error/status mapping, runtime OpenAPI | Echo/Huma test server with fake module dependencies |
@@ -990,6 +1072,7 @@ CI regenerates sqlc output and fails on diff. OpenAPI is inspected at runtime in
 | Adapter clock skew misleads operators or history consumers | Medium | Low | Keep `adapter_received_at`/`source_updated_at` diagnostic-only, expose core `observed_at`, and log future-clock skew |
 | Three-process tests become slow or flaky | Medium | High | Keep most cases at module/repository/SDK seams; reserve process tests for integration behavior |
 | Concurrent handlers expose unsafe adapter/vendor state | Medium | High | Require concurrency safety, correlate vendor calls by request ID, test interleavings, and permit protocol-required adapter serialization |
+| Generic JSON passes structural validation but violates Entity semantics | Medium | High | Resolve the registered Entity first, validate through the closed catalog before State projection or Command creation, and test invalid values and parameters at module and process seams |
 
 ## Open items
 
