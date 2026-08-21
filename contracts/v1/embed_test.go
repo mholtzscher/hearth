@@ -69,6 +69,23 @@ func TestSchemaFixtures(t *testing.T) {
 	}
 }
 
+func TestRegistrationResponseRequiresCausationID(t *testing.T) {
+	schema := compileSchemas(t)[RegistrationResponseSchemaID]
+	var value any
+	if err := json.Unmarshal([]byte(`{
+		"id":"rep_01890f47-7a6b-7c4d-8e9f-0123456789ab",
+		"schema":"urn:hearth:schema:registration-response:v1",
+		"emitted_at":"2026-08-20T12:34:56Z",
+		"correlation_id":"cor_01890f47-7a6b-7c4d-8e9f-0123456789ab",
+		"data":{"status":"rejected","error":{"code":"invalid_descriptor","message":"invalid descriptor"}}
+	}`), &value); err != nil {
+		t.Fatal(err)
+	}
+	if err := schema.Validate(value); err == nil {
+		t.Fatal("registration response without causation_id unexpectedly accepted")
+	}
+}
+
 func TestObservationSchemaLeavesValueSemanticsToCatalog(t *testing.T) {
 	schema := compileSchemas(t)[ObservationSchemaID]
 	var value any
