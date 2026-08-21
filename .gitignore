@@ -8,3 +8,9 @@ devenv.local.yaml
 
 # pre-commit
 .pre-commit-config.yaml
+
+# Hearth local runtime files
+.data/
+.secrets/
+configs/*.yaml
+!configs/*.example.yaml

@@ -1,0 +1,4 @@
+adapter_id: simulator
+nats_url: nats://127.0.0.1:4222
+binding_key: simulated-light
+scenario: happy

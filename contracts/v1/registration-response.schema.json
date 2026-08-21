@@ -1,0 +1,67 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:hearth:schema:registration-response:v1",
+  "title": "Hearth v1 registration response",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["id", "schema", "emitted_at", "correlation_id", "data"],
+  "properties": {
+    "id": { "$ref": "urn:hearth:schema:common:v1#/$defs/rep_id" },
+    "schema": { "const": "urn:hearth:schema:registration-response:v1" },
+    "emitted_at": { "$ref": "urn:hearth:schema:common:v1#/$defs/utc_timestamp" },
+    "correlation_id": { "$ref": "urn:hearth:schema:common:v1#/$defs/cor_id" },
+    "causation_id": { "$ref": "urn:hearth:schema:common:v1#/$defs/reg_id" },
+    "data": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status"],
+      "properties": {
+        "status": { "enum": ["accepted", "rejected"] },
+        "binding": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["binding_key", "device_id", "entities"],
+          "properties": {
+            "binding_key": { "$ref": "urn:hearth:schema:common:v1#/$defs/slug" },
+            "device_id": { "$ref": "urn:hearth:schema:common:v1#/$defs/dev_id" },
+            "entities": {
+              "type": "array",
+              "minItems": 1,
+              "maxItems": 1,
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["key", "entity_id"],
+                "properties": {
+                  "key": { "$ref": "urn:hearth:schema:common:v1#/$defs/slug" },
+                  "entity_id": { "$ref": "urn:hearth:schema:common:v1#/$defs/ent_id" }
+                }
+              }
+            }
+          }
+        },
+        "error": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["code", "message"],
+          "properties": {
+            "code": { "enum": ["invalid_descriptor", "immutable_type_change", "identity_conflict"] },
+            "message": { "$ref": "urn:hearth:schema:common:v1#/$defs/safe_message" }
+          }
+        }
+      },
+      "oneOf": [
+        {
+          "properties": { "status": { "const": "accepted" } },
+          "required": ["binding"],
+          "not": { "required": ["error"] }
+        },
+        {
+          "properties": { "status": { "const": "rejected" } },
+          "required": ["error"],
+          "not": { "required": ["binding"] }
+        }
+      ]
+    }
+  }
+}

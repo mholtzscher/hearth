@@ -1,0 +1,37 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:hearth:schema:observation:v1",
+  "title": "Hearth v1 observation",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["id", "schema", "emitted_at", "correlation_id", "data"],
+  "properties": {
+    "id": { "$ref": "urn:hearth:schema:common:v1#/$defs/obs_id" },
+    "schema": { "const": "urn:hearth:schema:observation:v1" },
+    "emitted_at": { "$ref": "urn:hearth:schema:common:v1#/$defs/utc_timestamp" },
+    "correlation_id": { "$ref": "urn:hearth:schema:common:v1#/$defs/cor_id" },
+    "causation_id": { "$ref": "urn:hearth:schema:common:v1#/$defs/cmd_id" },
+    "data": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["entity_id", "value", "adapter_received_at"],
+      "properties": {
+        "entity_id": { "$ref": "urn:hearth:schema:common:v1#/$defs/ent_id" },
+        "value": true,
+        "adapter_received_at": { "$ref": "urn:hearth:schema:common:v1#/$defs/utc_timestamp" },
+        "source_updated_at": { "$ref": "urn:hearth:schema:common:v1#/$defs/utc_timestamp" },
+        "refresh_for_command_id": { "$ref": "urn:hearth:schema:common:v1#/$defs/cmd_id" }
+      }
+    }
+  },
+  "allOf": [
+    {
+      "if": { "properties": { "data": { "required": ["refresh_for_command_id"] } } },
+      "then": { "required": ["causation_id"] }
+    },
+    {
+      "if": { "required": ["causation_id"] },
+      "then": { "properties": { "data": { "required": ["refresh_for_command_id"] } } }
+    }
+  ]
+}

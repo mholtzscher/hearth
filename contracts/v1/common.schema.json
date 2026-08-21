@@ -1,0 +1,76 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:hearth:schema:common:v1",
+  "title": "Hearth v1 common definitions",
+  "$defs": {
+    "utc_timestamp": {
+      "type": "string",
+      "format": "date-time",
+      "pattern": "Z$"
+    },
+    "slug": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9_-]{0,62}$"
+    },
+    "operation": {
+      "$ref": "#/$defs/slug"
+    },
+    "catalog_type": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "pattern": "^[a-z0-9][a-z0-9._-]*/v[1-9][0-9]*$"
+    },
+    "name": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128
+    },
+    "external_id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 256
+    },
+    "safe_message": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 512
+    },
+    "dev_id": {
+      "type": "string",
+      "pattern": "^dev_[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+    },
+    "ent_id": {
+      "type": "string",
+      "pattern": "^ent_[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+    },
+    "obs_id": {
+      "type": "string",
+      "pattern": "^obs_[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+    },
+    "cmd_id": {
+      "type": "string",
+      "pattern": "^cmd_[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+    },
+    "reg_id": {
+      "type": "string",
+      "pattern": "^reg_[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+    },
+    "rep_id": {
+      "type": "string",
+      "pattern": "^rep_[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+    },
+    "cor_id": {
+      "type": "string",
+      "pattern": "^cor_[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+    },
+    "causation_id": {
+      "oneOf": [
+        { "$ref": "#/$defs/reg_id" },
+        { "$ref": "#/$defs/obs_id" },
+        { "$ref": "#/$defs/cmd_id" },
+        { "$ref": "#/$defs/rep_id" }
+      ]
+    }
+  }
+}

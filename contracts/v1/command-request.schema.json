@@ -1,0 +1,26 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:hearth:schema:command-request:v1",
+  "title": "Hearth v1 command request",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["id", "schema", "emitted_at", "correlation_id", "data"],
+  "properties": {
+    "id": { "$ref": "urn:hearth:schema:common:v1#/$defs/cmd_id" },
+    "schema": { "const": "urn:hearth:schema:command-request:v1" },
+    "emitted_at": { "$ref": "urn:hearth:schema:common:v1#/$defs/utc_timestamp" },
+    "correlation_id": { "$ref": "urn:hearth:schema:common:v1#/$defs/cor_id" },
+    "causation_id": { "$ref": "urn:hearth:schema:common:v1#/$defs/causation_id" },
+    "data": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["entity_id", "operation", "parameters", "deadline"],
+      "properties": {
+        "entity_id": { "$ref": "urn:hearth:schema:common:v1#/$defs/ent_id" },
+        "operation": { "$ref": "urn:hearth:schema:common:v1#/$defs/operation" },
+        "parameters": { "type": "object" },
+        "deadline": { "$ref": "urn:hearth:schema:common:v1#/$defs/utc_timestamp" }
+      }
+    }
+  }
+}

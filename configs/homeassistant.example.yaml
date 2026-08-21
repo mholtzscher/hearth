@@ -1,0 +1,11 @@
+adapter_id: homeassistant-migration
+nats_url: nats://127.0.0.1:4222
+binding:
+  key: office-light
+  device_external_id: ha-device-id
+  device_name: Office Light
+  entity_id: light.office
+  entity_name: Power
+home_assistant:
+  url: http://homeassistant.local:8123
+  token_file: .secrets/homeassistant-token
