@@ -1,0 +1,3 @@
+http_addr: 127.0.0.1:8080
+nats_url: nats://127.0.0.1:4222
+sqlite_path: .data/hearthd.db

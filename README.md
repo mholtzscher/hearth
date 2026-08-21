@@ -8,7 +8,11 @@ The project has two equal gates: work must advance a useful home automation syst
 
 ## Status
 
-Hearth is in design. The approved first vertical slice will observe and control one Home Assistant-managed light; a simulator will exercise failures against the same contracts.
+Hearth is implementing its first vertical slice to observe and control one Home Assistant-managed light; a simulator will exercise failures against the same contracts.
+
+## Development
+
+Enter the devenv shell with `devenv shell`, start local NATS/JetStream with `devenv up`, and run the current checks with `devenv test`.
 
 ## Documentation
 
