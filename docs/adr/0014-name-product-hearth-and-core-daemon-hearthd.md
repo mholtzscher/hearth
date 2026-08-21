@@ -1,0 +1,3 @@
+# Name the product Hearth and reserve hearthd for the core daemon
+
+The product and user-facing namespace will be **Hearth**, while `hearthd` refers only to the core daemon executable. The planned management CLI is `hearth`; companion processes use `hearth-` names such as `hearth-adapter-zigbee2mqtt`; NATS subjects, schema identifiers, Entity type IDs, and the Go module use the `hearth` namespace. This follows the Unix `d` convention, gives each name one role, and avoids the ambiguity of calling both the product and one process Hearthd. Using Hearthd everywhere or adding a separate `hearthctl` name would preserve or add naming distinctions without improving the product model.

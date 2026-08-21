@@ -1,0 +1,3 @@
+# Provide a thin Go adapter SDK behind schema-defined contracts
+
+First-party Go adapters will use a thin session facade for registration, observation publication, and command serving. The SDK hides NATS connection lifecycle, subject construction, envelopes, schema checks, request/reply mechanics, and graceful shutdown, while vendor discovery, upstream calls, refresh rules, credentials, and checkpoints remain in each adapter. Checked-in JSON Schemas—not shared Go types—remain the compatibility boundary so non-Go adapters can implement the protocol and the SDK does not grow into an application framework.
