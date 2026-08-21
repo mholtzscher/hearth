@@ -16,11 +16,15 @@
   };
 
   tasks."hearth:test".exec = ''
+    sqlc generate
+    git diff --exit-code -- internal/platform/db/sqlc
     go test ./...
     go vet ./...
   '';
 
   enterTest = ''
+    sqlc generate
+    git diff --exit-code -- internal/platform/db/sqlc
     go test ./...
     go vet ./...
   '';

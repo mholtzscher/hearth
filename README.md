@@ -12,7 +12,7 @@ Hearth is implementing its first vertical slice to observe and control one Home 
 
 ## Development
 
-Enter the devenv shell with `devenv shell`, start local NATS/JetStream with `devenv up`, and run the current checks with `devenv test`.
+Enter the devenv shell with `devenv shell`, start local NATS/JetStream with `devenv up`, and run migration and sqlc generation checks, tests, and vetting with `devenv test`. Regenerate database access code after changing migrations or queries with `devenv shell -- sqlc generate`.
 
 ## Documentation
 
