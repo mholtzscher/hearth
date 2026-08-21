@@ -280,6 +280,64 @@ func TestServeCommandsInvokesHandlersConcurrentlyAndRespondsOnce(t *testing.T) {
 	}
 }
 
+func TestCommandRejectionUsesUpstreamRejectedCode(t *testing.T) {
+	server := startServer(t, -1, t.TempDir())
+	core := connectNATS(t, server.ClientURL())
+	session := connectSession(t, server.ClientURL())
+	serveContext, cancelServe := context.WithCancel(context.Background())
+	defer cancelServe()
+	serveDone := make(chan error, 1)
+	subscriptions := server.NumSubscriptions()
+	go func() {
+		serveDone <- session.ServeCommands(serveContext, func(_ context.Context, _ Command, responder Responder) error {
+			return responder.Reject("vendor declined the command")
+		})
+	}()
+	waitForSubscription(t, server, subscriptions, serveDone)
+
+	reply, err := sendCommand(context.Background(), core, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	response, err := corewire.Decode[corewire.CommandResponse](compileValidator(t), contractsv1.CommandResponseSchemaID, reply.Data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if response.Data.Status != "rejected" || response.Data.Error == nil || response.Data.Error.Code != "upstream_rejected" {
+		t.Fatalf("command response = %#v", response)
+	}
+
+	cancelServe()
+	if err := <-serveDone; !errors.Is(err, context.Canceled) {
+		t.Fatalf("ServeCommands error = %v", err)
+	}
+}
+
+func TestCommandPublishFailureDoesNotConsumeResponder(t *testing.T) {
+	server := startServer(t, -1, t.TempDir())
+	session := connectSession(t, server.ClientURL())
+	responder := &commandResponder{
+		context:       context.Background(),
+		connection:    session.connection,
+		replySubject:  "_INBOX.command-response",
+		validator:     compileValidator(t),
+		propagator:    propagation.TraceContext{},
+		commandID:     mustID(t, "cmd"),
+		correlationID: mustID(t, "cor"),
+	}
+	session.connection.Close()
+
+	if err := responder.Accept(); err == nil || errors.Is(err, ErrAlreadyResponded) {
+		t.Fatalf("first response error = %v, want publish error", err)
+	}
+	if responder.didRespond() {
+		t.Fatal("failed publish consumed responder")
+	}
+	if err := responder.Accept(); err == nil || errors.Is(err, ErrAlreadyResponded) {
+		t.Fatalf("retry response error = %v, want publish error", err)
+	}
+}
+
 func TestLinkedObservationReusesCommandCausality(t *testing.T) {
 	server := startServer(t, -1, t.TempDir())
 	core := connectNATS(t, server.ClientURL())

@@ -323,11 +323,11 @@ func (responder *commandResponder) Accept() error {
 	return responder.respond(CommandResponse{CommandID: responder.commandID, Status: "accepted"})
 }
 
-func (responder *commandResponder) Reject(code, message string) error {
+func (responder *commandResponder) Reject(message string) error {
 	return responder.respond(CommandResponse{
 		CommandID: responder.commandID,
 		Status:    "rejected",
-		Error:     &CommandError{Code: code, Message: message},
+		Error:     &CommandError{Code: "upstream_rejected", Message: message},
 	})
 }
 
@@ -358,12 +358,12 @@ func (responder *commandResponder) respond(response CommandResponse) error {
 	if responder.responded {
 		return ErrAlreadyResponded
 	}
-	responder.responded = true
 	message := &natsgo.Msg{Subject: responder.replySubject, Header: make(natsgo.Header), Data: payload}
 	responder.propagator.Inject(responder.context, headerCarrier(message.Header))
 	if err := responder.connection.PublishMsg(message); err != nil {
 		return fmt.Errorf("publish command response: %w", err)
 	}
+	responder.responded = true
 	return nil
 }
 

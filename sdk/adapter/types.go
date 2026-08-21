@@ -87,5 +87,5 @@ type CommandHandler func(context.Context, Command, Responder) error
 
 type Responder interface {
 	Accept() error
-	Reject(code, message string) error
+	Reject(message string) error
 }
