@@ -273,8 +273,19 @@ func (session *Session) handleCommand(parent context.Context, message *natsgo.Ms
 		slog.Error("discarding command with mismatched routing", "subject", message.Subject, "command_id", request.ID)
 		return
 	}
+	deadline, err := time.Parse(time.RFC3339Nano, request.Data.Deadline)
+	if err != nil {
+		slog.Error("discarding command with invalid deadline", "subject", message.Subject, "command_id", request.ID, "error", err)
+		return
+	}
 
 	ctx := session.propagator.Extract(parent, headerCarrier(message.Header))
+	ctx, cancel := context.WithDeadline(ctx, deadline)
+	defer cancel()
+	if err := ctx.Err(); err != nil {
+		slog.Error("discarding expired command", "subject", message.Subject, "command_id", request.ID, "error", err)
+		return
+	}
 	ctx = context.WithValue(ctx, commandMetadataKey{}, commandMetadata{id: request.ID, correlationID: request.CorrelationID})
 	command := request.Data
 	command.ID = request.ID

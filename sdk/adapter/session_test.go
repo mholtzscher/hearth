@@ -280,6 +280,67 @@ func TestServeCommandsInvokesHandlersConcurrentlyAndRespondsOnce(t *testing.T) {
 	}
 }
 
+func TestCommandHandlerUsesTransmittedDeadline(t *testing.T) {
+	server := startServer(t, -1, t.TempDir())
+	core := connectNATS(t, server.ClientURL())
+	session := connectSession(t, server.ClientURL())
+	serveContext, cancelServe := context.WithCancel(context.Background())
+	defer cancelServe()
+	type deadlineResult struct {
+		deadline time.Time
+		ok       bool
+	}
+	observedDeadline := make(chan deadlineResult, 1)
+	handlerDone := make(chan error, 1)
+	serveDone := make(chan error, 1)
+	subscriptions := server.NumSubscriptions()
+	go func() {
+		serveDone <- session.ServeCommands(serveContext, func(ctx context.Context, _ Command, _ Responder) error {
+			deadline, ok := ctx.Deadline()
+			observedDeadline <- deadlineResult{deadline: deadline, ok: ok}
+			if !ok {
+				return errors.New("command context has no deadline")
+			}
+			<-ctx.Done()
+			handlerDone <- ctx.Err()
+			return nil
+		})
+	}()
+	waitForSubscription(t, server, subscriptions, serveDone)
+
+	commandDeadline := time.Now().UTC().Add(250 * time.Millisecond)
+	requestDone := make(chan error, 1)
+	go func() {
+		_, err := sendCommandWithDeadline(context.Background(), core, true, time.Second, commandDeadline)
+		requestDone <- err
+	}()
+
+	select {
+	case observed := <-observedDeadline:
+		if !observed.ok || !observed.deadline.Equal(commandDeadline) {
+			t.Fatalf("handler deadline = %v, %t; want %v, true", observed.deadline, observed.ok, commandDeadline)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("command handler was not invoked")
+	}
+	select {
+	case err := <-handlerDone:
+		if !errors.Is(err, context.DeadlineExceeded) {
+			t.Fatalf("handler context error = %v, want deadline exceeded", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("command handler context was not canceled at the transmitted deadline")
+	}
+	if err := <-requestDone; !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("request error = %v, want deadline exceeded", err)
+	}
+
+	cancelServe()
+	if err := <-serveDone; !errors.Is(err, context.Canceled) {
+		t.Fatalf("ServeCommands error = %v", err)
+	}
+}
+
 func TestCommandRejectionUsesUpstreamRejectedCode(t *testing.T) {
 	server := startServer(t, -1, t.TempDir())
 	core := connectNATS(t, server.ClientURL())
@@ -442,6 +503,10 @@ func sendCommand(ctx context.Context, connection *natsgo.Conn, value bool) (*nat
 }
 
 func sendCommandWithTimeout(ctx context.Context, connection *natsgo.Conn, value bool, timeout time.Duration) (*natsgo.Msg, error) {
+	return sendCommandWithDeadline(ctx, connection, value, timeout, time.Now().UTC().Add(10*time.Second))
+}
+
+func sendCommandWithDeadline(ctx context.Context, connection *natsgo.Conn, value bool, timeout time.Duration, deadline time.Time) (*natsgo.Msg, error) {
 	validator, err := contractsv1.Compile()
 	if err != nil {
 		return nil, err
@@ -460,7 +525,7 @@ func sendCommandWithTimeout(ctx context.Context, connection *natsgo.Conn, value 
 	}
 	payload, err := corewire.Encode(validator, contractsv1.CommandRequestSchemaID, corewire.Envelope[corewire.Command]{
 		ID: commandID, Schema: contractsv1.CommandRequestSchemaID, EmittedAt: nowString(), CorrelationID: correlationID,
-		Data: corewire.Command{EntityID: testEntityID, Operation: "set", Parameters: json.RawMessage(mustJSON(value)), Deadline: time.Now().UTC().Add(10 * time.Second).Format(time.RFC3339Nano)},
+		Data: corewire.Command{EntityID: testEntityID, Operation: "set", Parameters: json.RawMessage(mustJSON(value)), Deadline: deadline.UTC().Format(time.RFC3339Nano)},
 	})
 	if err != nil {
 		return nil, err
