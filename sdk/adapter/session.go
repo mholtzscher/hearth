@@ -23,14 +23,17 @@ const subjectPrefix = "hearth.v1.adapter"
 var slugPattern = regexp.MustCompile(`^[a-z0-9][a-z0-9_-]{0,62}$`)
 
 type Session struct {
-	adapterID  string
-	connection *natsgo.Conn
-	jetstream  jetstream.JetStream
-	validator  *contractsv1.Validator
-	propagator propagation.TextMapPropagator
-	closed     chan struct{}
-	closeOnce  sync.Once
-	closeErr   error
+	adapterID    string
+	connection   *natsgo.Conn
+	jetstream    jetstream.JetStream
+	validator    *contractsv1.Validator
+	propagator   propagation.TextMapPropagator
+	closed       chan struct{}
+	closeOnce    sync.Once
+	closeErr     error
+	handlerMutex sync.Mutex
+	handlerWait  sync.WaitGroup
+	closing      bool
 }
 
 type envelope[T any] struct {
@@ -219,7 +222,7 @@ func (session *Session) ServeCommands(ctx context.Context, handler CommandHandle
 	}
 	wildcard := commandWildcard(session.adapterID)
 	subscription, err := session.connection.Subscribe(wildcard, func(message *natsgo.Msg) {
-		go session.handleCommand(ctx, message, handler)
+		session.startCommandHandler(ctx, message, handler)
 	})
 	if err != nil {
 		return fmt.Errorf("subscribe to commands: %w", err)
@@ -245,6 +248,10 @@ func (session *Session) ServeCommands(ctx context.Context, handler CommandHandle
 // Close idempotently drains the NATS connection.
 func (session *Session) Close() error {
 	session.closeOnce.Do(func() {
+		session.handlerMutex.Lock()
+		session.closing = true
+		session.handlerMutex.Unlock()
+		session.handlerWait.Wait()
 		close(session.closed)
 		session.closeErr = session.connection.Drain()
 		if session.closeErr != nil {
@@ -252,6 +259,20 @@ func (session *Session) Close() error {
 		}
 	})
 	return session.closeErr
+}
+
+func (session *Session) startCommandHandler(parent context.Context, message *natsgo.Msg, handler CommandHandler) {
+	session.handlerMutex.Lock()
+	if session.closing {
+		session.handlerMutex.Unlock()
+		return
+	}
+	session.handlerWait.Add(1)
+	session.handlerMutex.Unlock()
+	go func() {
+		defer session.handlerWait.Done()
+		session.handleCommand(parent, message, handler)
+	}()
 }
 
 func (session *Session) handleCommand(parent context.Context, message *natsgo.Msg, handler CommandHandler) {
@@ -343,6 +364,9 @@ func (responder *commandResponder) Reject(message string) error {
 }
 
 func (responder *commandResponder) respond(response CommandResponse) error {
+	if responder.didRespond() {
+		return ErrAlreadyResponded
+	}
 	replyID, err := newID("rep")
 	if err != nil {
 		return err

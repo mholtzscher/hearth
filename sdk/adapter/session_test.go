@@ -225,7 +225,7 @@ func TestServeCommandsInvokesHandlersConcurrentlyAndRespondsOnce(t *testing.T) {
 			if err := responder.Accept(); err != nil {
 				return err
 			}
-			secondReplies <- responder.Accept()
+			secondReplies <- responder.Reject("")
 			return nil
 		})
 	}()
@@ -473,6 +473,53 @@ func TestMissingCommandResponseLetsRequestTimeOut(t *testing.T) {
 	case <-handled:
 	default:
 		t.Fatal("command handler was not invoked")
+	}
+}
+
+func TestCloseWaitsForCommandHandlers(t *testing.T) {
+	server := startServer(t, -1, t.TempDir())
+	core := connectNATS(t, server.ClientURL())
+	session := connectSession(t, server.ClientURL())
+	serveContext, cancelServe := context.WithCancel(context.Background())
+	defer cancelServe()
+	entered := make(chan struct{})
+	release := make(chan struct{})
+	serveDone := make(chan error, 1)
+	subscriptions := server.NumSubscriptions()
+	go func() {
+		serveDone <- session.ServeCommands(serveContext, func(_ context.Context, _ Command, responder Responder) error {
+			close(entered)
+			<-release
+			return responder.Accept()
+		})
+	}()
+	waitForSubscription(t, server, subscriptions, serveDone)
+
+	requestDone := make(chan error, 1)
+	go func() {
+		_, err := sendCommand(context.Background(), core, true)
+		requestDone <- err
+	}()
+	<-entered
+	closeDone := make(chan error, 1)
+	go func() {
+		closeDone <- session.Close()
+	}()
+	select {
+	case err := <-closeDone:
+		t.Fatalf("Close returned while command handler was running: %v", err)
+	case <-time.After(100 * time.Millisecond):
+	}
+	close(release)
+
+	if err := <-requestDone; err != nil {
+		t.Fatalf("command request failed during Close: %v", err)
+	}
+	if err := <-closeDone; err != nil {
+		t.Fatal(err)
+	}
+	if err := <-serveDone; !errors.Is(err, ErrClosed) {
+		t.Fatalf("ServeCommands error = %v, want closed", err)
 	}
 }
 
