@@ -43,12 +43,7 @@ SELECT
     m.adapter_id,
     e.name,
     e.type_id,
-    e.constraints_json,
-    CAST((
-        SELECT json_group_array(operation)
-        FROM entity_operations
-        WHERE entity_id = e.id
-    ) AS TEXT) AS operations_json,
+    e.support_json,
     s.observation_id,
     s.value_json,
     s.adapter_received_at,
@@ -71,8 +66,7 @@ type GetEntityViewRow struct {
 	AdapterID         string
 	Name              string
 	TypeID            string
-	ConstraintsJson   string
-	OperationsJson    string
+	SupportJson       string
 	ObservationID     sql.NullString
 	ValueJson         sql.NullString
 	AdapterReceivedAt sql.NullString
@@ -90,8 +84,7 @@ func (q *Queries) GetEntityView(ctx context.Context, arg GetEntityViewParams) (G
 		&i.AdapterID,
 		&i.Name,
 		&i.TypeID,
-		&i.ConstraintsJson,
-		&i.OperationsJson,
+		&i.SupportJson,
 		&i.ObservationID,
 		&i.ValueJson,
 		&i.AdapterReceivedAt,

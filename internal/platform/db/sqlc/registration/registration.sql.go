@@ -63,18 +63,18 @@ func (q *Queries) CreateDevice(ctx context.Context, arg CreateDeviceParams) erro
 
 const createEntity = `-- name: CreateEntity :exec
 INSERT INTO entities (
-    id, device_id, name, type_id, constraints_json, created_at, updated_at
+    id, device_id, name, type_id, support_json, created_at, updated_at
 ) VALUES (?, ?, ?, ?, ?, ?, ?)
 `
 
 type CreateEntityParams struct {
-	ID              string
-	DeviceID        string
-	Name            string
-	TypeID          string
-	ConstraintsJson string
-	CreatedAt       string
-	UpdatedAt       string
+	ID          string
+	DeviceID    string
+	Name        string
+	TypeID      string
+	SupportJson string
+	CreatedAt   string
+	UpdatedAt   string
 }
 
 func (q *Queries) CreateEntity(ctx context.Context, arg CreateEntityParams) error {
@@ -83,7 +83,7 @@ func (q *Queries) CreateEntity(ctx context.Context, arg CreateEntityParams) erro
 		arg.DeviceID,
 		arg.Name,
 		arg.TypeID,
-		arg.ConstraintsJson,
+		arg.SupportJson,
 		arg.CreatedAt,
 		arg.UpdatedAt,
 	)
@@ -117,19 +117,6 @@ func (q *Queries) CreateEntityMapping(ctx context.Context, arg CreateEntityMappi
 		arg.CreatedAt,
 		arg.UpdatedAt,
 	)
-	return err
-}
-
-const deleteEntityOperations = `-- name: DeleteEntityOperations :exec
-DELETE FROM entity_operations WHERE entity_id = ?
-`
-
-type DeleteEntityOperationsParams struct {
-	EntityID string
-}
-
-func (q *Queries) DeleteEntityOperations(ctx context.Context, arg DeleteEntityOperationsParams) error {
-	_, err := q.db.ExecContext(ctx, deleteEntityOperations, arg.EntityID)
 	return err
 }
 
@@ -214,7 +201,7 @@ SELECT
     e.device_id,
     e.name AS entity_name,
     e.type_id,
-    e.constraints_json
+    e.support_json
 FROM adapter_entity_mappings AS m
 JOIN entities AS e ON e.id = m.entity_id
 WHERE m.adapter_id = ? AND m.binding_key = ? AND m.entity_key = ?
@@ -235,7 +222,7 @@ type GetEntityMappingRow struct {
 	DeviceID         string
 	EntityName       string
 	TypeID           string
-	ConstraintsJson  string
+	SupportJson      string
 }
 
 func (q *Queries) GetEntityMapping(ctx context.Context, arg GetEntityMappingParams) (GetEntityMappingRow, error) {
@@ -250,7 +237,7 @@ func (q *Queries) GetEntityMapping(ctx context.Context, arg GetEntityMappingPara
 		&i.DeviceID,
 		&i.EntityName,
 		&i.TypeID,
-		&i.ConstraintsJson,
+		&i.SupportJson,
 	)
 	return i, err
 }
@@ -335,21 +322,21 @@ func (q *Queries) UpdateDeviceDescriptor(ctx context.Context, arg UpdateDeviceDe
 
 const updateEntityDescriptor = `-- name: UpdateEntityDescriptor :exec
 UPDATE entities
-SET name = ?, constraints_json = ?, updated_at = ?
+SET name = ?, support_json = ?, updated_at = ?
 WHERE id = ?
 `
 
 type UpdateEntityDescriptorParams struct {
-	Name            string
-	ConstraintsJson string
-	UpdatedAt       string
-	ID              string
+	Name        string
+	SupportJson string
+	UpdatedAt   string
+	ID          string
 }
 
 func (q *Queries) UpdateEntityDescriptor(ctx context.Context, arg UpdateEntityDescriptorParams) error {
 	_, err := q.db.ExecContext(ctx, updateEntityDescriptor,
 		arg.Name,
-		arg.ConstraintsJson,
+		arg.SupportJson,
 		arg.UpdatedAt,
 		arg.ID,
 	)
@@ -378,21 +365,5 @@ func (q *Queries) UpdateEntityMappingExternalID(ctx context.Context, arg UpdateE
 		arg.BindingKey,
 		arg.EntityKey,
 	)
-	return err
-}
-
-const upsertEntityOperation = `-- name: UpsertEntityOperation :exec
-INSERT INTO entity_operations (entity_id, operation)
-VALUES (?, ?)
-ON CONFLICT (entity_id, operation) DO NOTHING
-`
-
-type UpsertEntityOperationParams struct {
-	EntityID  string
-	Operation string
-}
-
-func (q *Queries) UpsertEntityOperation(ctx context.Context, arg UpsertEntityOperationParams) error {
-	_, err := q.db.ExecContext(ctx, upsertEntityOperation, arg.EntityID, arg.Operation)
 	return err
 }

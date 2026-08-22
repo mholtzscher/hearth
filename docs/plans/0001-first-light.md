@@ -1,6 +1,6 @@
 # First light vertical slice
 
-**Status:** Ready for task breakdown
+**Status:** In progress
 
 **Implementation spec:** [`../../specs/first-light.md`](../../specs/first-light.md)
 
@@ -17,7 +17,7 @@ The slice must deliver visible household utility and meaningful NATS learning wh
 - Use Go module `github.com/mholtzscher/hearth` for the core, Home Assistant adapter, simulator, and thin adapter SDK.
 - Fix the implementation stack to official `nats.go`, Echo v5, Huma v2, `modernc.org/sqlite`, Goose, sqlc, `coder/websocket`, `jsonschema/v6`, YAML v3, Google UUID, and OpenTelemetry propagation.
 - Keep JSON Schemas plus a tiny Go `embed.FS` wrapper together in importable `contracts/v1`; core and SDK validate the same authoritative embedded schemas at runtime.
-- Expose a concrete, stateless thin SDK `Session` with `Connect`, `Register`, durable `PublishObservation`, blocking ephemeral `ServeCommands`, and idempotent `Close` methods.
+- Preserve the concrete, stateless SDK `Session` with `Connect`, generic `Register`, durable `PublishObservation`, blocking ephemeral `ServeCommands`, and idempotent `Close`; add typed routing and a power/v1 facade that hides raw JSON and operation-name switching from Go adapter consumers.
 - Have `PublishObservation` retry one generated envelope through transient disconnects and return only after JetStream acknowledgement or context expiry; do not add a local outbox.
 - Keep vendor behavior, discovery, upstream calls, refresh rules, credentials, and checkpoints outside the SDK.
 - Serve Commands through independent, potentially concurrent SDK handler invocations with one-shot responders: adapter code calls `Accept` before refresh or `Reject`; after acceptance it publishes the linked refresh Observation through the session. Adapters must be concurrency-safe and may serialize internally only when their vendor protocol requires it.
@@ -30,7 +30,7 @@ The slice must deliver visible household utility and meaningful NATS learning wh
 - Return stable JSON error codes mapped to 503 missing adapter, 502 upstream rejection, 504 outcome timeout, and 500 internal failure.
 - Model independently addressable entities grouped by devices.
 - Give the Home Assistant adapter instance a configured subject-safe slug.
-- Register Device kind `light` and Entity type `hearth.power/v1` with persisted Device/Entity names, empty constraints, and `set`; return canonical IDs only after the binding and mappings commit. Return schema-defined permanent rejections for invalid descriptors, immutable Entity-type changes, and identity conflicts so adapters can stop instead of retrying invalid configuration. Carry generic JSON State values and Command parameters through transport and persistence, and validate their semantics through a concrete core-owned catalog closed to the built-in boolean power definition. Defer runtime Entity-type registration, extension loading, manifests, discovery lifecycle, feature negotiation, configuration schemas, and checkpoints.
+- Register Device kind `light` and Entity type `hearth.power/v1` with persisted names and support `{"state":{},"operations":{"set":{}}}`; operation-key presence means support. Return canonical IDs only after the binding, normalized `support_json`, and mappings commit. Return schema-defined permanent rejections for invalid descriptors, immutable Entity-type changes, and identity conflicts. Keep JSON Schemas authoritative for support, State, and parameters; carry generic JSON through transport/persistence while erasing typed definitions behind the concrete catalog. Resolve Commands against current support but preserve active outcomes through immutable callbacks, normalized parameters, and absolute deadlines. Defer runtime type loading, manifests, discovery lifecycle, feature negotiation, configuration schemas, and checkpoints.
 - Bind one configured Home Assistant light with a stable adapter-scoped binding key and a boolean power entity; preserve canonical IDs when its external identifier changes, and defer brightness, color, transitions, effects, and general discovery.
 - Treat the Home Assistant adapter as disposable migration code and delete it after this household completes migration.
 - Assign typed, UUIDv7-based canonical and message IDs in the core and map Home Assistant external IDs onto them.
@@ -64,4 +64,4 @@ The slice must deliver visible household utility and meaningful NATS learning wh
 
 ## Task breakdown
 
-The approved implementation contract, acceptance criteria, test strategy, ordered deliverables, and relative estimates are defined in [`specs/first-light.md`](../../specs/first-light.md). Implementation has not started.
+The approved implementation contract, acceptance criteria, test strategy, ordered deliverables, and relative estimates are defined in [`specs/first-light.md`](../../specs/first-light.md). The unified Entity-support amendment is implemented; the broader first-light slice remains in progress.

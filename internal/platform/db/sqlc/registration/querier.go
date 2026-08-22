@@ -13,7 +13,6 @@ type Querier interface {
 	CreateDevice(ctx context.Context, arg CreateDeviceParams) error
 	CreateEntity(ctx context.Context, arg CreateEntityParams) error
 	CreateEntityMapping(ctx context.Context, arg CreateEntityMappingParams) error
-	DeleteEntityOperations(ctx context.Context, arg DeleteEntityOperationsParams) error
 	GetBinding(ctx context.Context, arg GetBindingParams) (GetBindingRow, error)
 	GetBindingByExternalDeviceID(ctx context.Context, arg GetBindingByExternalDeviceIDParams) (GetBindingByExternalDeviceIDRow, error)
 	GetEntityMapping(ctx context.Context, arg GetEntityMappingParams) (GetEntityMappingRow, error)
@@ -22,7 +21,6 @@ type Querier interface {
 	UpdateDeviceDescriptor(ctx context.Context, arg UpdateDeviceDescriptorParams) error
 	UpdateEntityDescriptor(ctx context.Context, arg UpdateEntityDescriptorParams) error
 	UpdateEntityMappingExternalID(ctx context.Context, arg UpdateEntityMappingExternalIDParams) error
-	UpsertEntityOperation(ctx context.Context, arg UpsertEntityOperationParams) error
 }
 
 var _ Querier = (*Queries)(nil)

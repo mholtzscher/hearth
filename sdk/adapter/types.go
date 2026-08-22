@@ -10,6 +10,12 @@ type Config struct {
 	NATSURL   string
 }
 
+type EntityMetadata struct {
+	Key        string
+	ExternalID string
+	Name       string
+}
+
 type Registration struct {
 	BindingKey string             `json:"binding_key"`
 	Device     DeviceDescriptor   `json:"device"`
@@ -23,12 +29,11 @@ type DeviceDescriptor struct {
 }
 
 type EntityDescriptor struct {
-	Key                 string          `json:"key"`
-	ExternalID          string          `json:"external_id"`
-	Name                string          `json:"name"`
-	Type                string          `json:"type"`
-	Constraints         json.RawMessage `json:"constraints"`
-	SupportedOperations []string        `json:"operations"`
+	Key        string          `json:"key"`
+	ExternalID string          `json:"external_id"`
+	Name       string          `json:"name"`
+	Type       string          `json:"type"`
+	Support    json.RawMessage `json:"support"`
 }
 
 type Binding struct {

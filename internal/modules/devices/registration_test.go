@@ -10,10 +10,12 @@ type stubRegistrationRepository struct {
 	binding Binding
 	err     error
 	calls   int
+	params  RegisterBindingParams
 }
 
-func (repository *stubRegistrationRepository) RegisterBinding(context.Context, RegisterBindingParams) (Binding, error) {
+func (repository *stubRegistrationRepository) RegisterBinding(_ context.Context, params RegisterBindingParams) (Binding, error) {
 	repository.calls++
+	repository.params = params
 	return repository.binding, repository.err
 }
 
@@ -33,13 +35,32 @@ func TestRegisterClassifiesOnlyDescriptorAndIdentityFailuresAsPermanent(t *testi
 	}
 
 	invalid := validDomainRegistration()
-	invalid.Entities[0].SupportedOperations = nil
+	invalid.Entities[0].Support = EntitySupport(`{"state":{},"operations":{}}`)
 	_, err = service.Register(context.Background(), "homeassistant", invalid)
 	if !errors.As(err, &rejected) || rejected.Code != RegistrationInvalidDescriptor {
 		t.Fatalf("invalid descriptor error = %v", err)
 	}
 	if repository.calls != 1 {
 		t.Fatalf("repository calls = %d, want only the valid attempt", repository.calls)
+	}
+}
+
+func TestRegisterPersistsNormalizedSupportWithoutMutatingInput(t *testing.T) {
+	catalog := firstLightCatalog(t)
+	repository := &stubRegistrationRepository{}
+	service := NewService(repository, catalog, Dependencies{})
+	registration := validDomainRegistration()
+	registration.Entities[0].Support = EntitySupport(" \n { \"state\" : {}, \"operations\" : { \"set\" : {} } } ")
+	original := string(registration.Entities[0].Support)
+
+	if _, err := service.Register(context.Background(), "homeassistant", registration); err != nil {
+		t.Fatal(err)
+	}
+	if got := string(repository.params.Entity.Support); got != `{"state":{},"operations":{"set":{}}}` {
+		t.Fatalf("repository support = %s", got)
+	}
+	if got := string(registration.Entities[0].Support); got != original {
+		t.Fatalf("input support mutated to %s", got)
 	}
 }
 

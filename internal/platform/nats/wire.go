@@ -24,12 +24,11 @@ type DeviceDescriptor struct {
 }
 
 type EntityDescriptor struct {
-	Key                 string          `json:"key"`
-	ExternalID          string          `json:"external_id"`
-	Name                string          `json:"name"`
-	Type                string          `json:"type"`
-	Constraints         json.RawMessage `json:"constraints"`
-	SupportedOperations []string        `json:"operations"`
+	Key        string          `json:"key"`
+	ExternalID string          `json:"external_id"`
+	Name       string          `json:"name"`
+	Type       string          `json:"type"`
+	Support    json.RawMessage `json:"support"`
 }
 
 type Binding struct {

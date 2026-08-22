@@ -26,21 +26,13 @@ WHERE id = ?;
 
 -- name: CreateEntity :exec
 INSERT INTO entities (
-    id, device_id, name, type_id, constraints_json, created_at, updated_at
+    id, device_id, name, type_id, support_json, created_at, updated_at
 ) VALUES (?, ?, ?, ?, ?, ?, ?);
 
 -- name: UpdateEntityDescriptor :exec
 UPDATE entities
-SET name = ?, constraints_json = ?, updated_at = ?
+SET name = ?, support_json = ?, updated_at = ?
 WHERE id = ?;
-
--- name: DeleteEntityOperations :exec
-DELETE FROM entity_operations WHERE entity_id = ?;
-
--- name: UpsertEntityOperation :exec
-INSERT INTO entity_operations (entity_id, operation)
-VALUES (?, ?)
-ON CONFLICT (entity_id, operation) DO NOTHING;
 
 -- name: CreateBinding :exec
 INSERT INTO adapter_bindings (
@@ -62,7 +54,7 @@ SELECT
     e.device_id,
     e.name AS entity_name,
     e.type_id,
-    e.constraints_json
+    e.support_json
 FROM adapter_entity_mappings AS m
 JOIN entities AS e ON e.id = m.entity_id
 WHERE m.adapter_id = ? AND m.binding_key = ? AND m.entity_key = ?;

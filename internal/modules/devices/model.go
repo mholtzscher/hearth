@@ -23,6 +23,7 @@ type OperationName string
 
 const OperationNameSet OperationName = "set"
 
+type EntitySupport json.RawMessage
 type Value json.RawMessage
 type CommandParameters json.RawMessage
 
@@ -33,13 +34,12 @@ type Device struct {
 }
 
 type Entity struct {
-	ID                  EntityID
-	DeviceID            DeviceID
-	AdapterID           string
-	Name                string
-	TypeID              EntityTypeID
-	Constraints         json.RawMessage
-	SupportedOperations []OperationName
+	ID        EntityID
+	DeviceID  DeviceID
+	AdapterID string
+	Name      string
+	TypeID    EntityTypeID
+	Support   EntitySupport
 }
 
 type State struct {

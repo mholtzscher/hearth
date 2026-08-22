@@ -37,7 +37,7 @@ func TestMigrateEmptySQLiteDatabase(t *testing.T) {
 	}
 
 	for _, table := range []string{
-		"devices", "entities", "entity_operations", "commands",
+		"devices", "entities", "commands",
 		"adapter_bindings", "adapter_entity_mappings", "observation_receipts", "entity_states",
 	} {
 		var found string
@@ -47,6 +47,22 @@ func TestMigrateEmptySQLiteDatabase(t *testing.T) {
 		if err != nil {
 			t.Fatalf("table %s: %v", table, err)
 		}
+	}
+
+	var supportColumn string
+	if err := database.QueryRowContext(ctx, `
+		SELECT name FROM pragma_table_info('entities') WHERE name = 'support_json'
+	`).Scan(&supportColumn); err != nil {
+		t.Fatalf("entities.support_json: %v", err)
+	}
+	var operationTableCount int
+	if err := database.QueryRowContext(ctx, `
+		SELECT count(*) FROM sqlite_master WHERE type = 'table' AND name = 'entity_operations'
+	`).Scan(&operationTableCount); err != nil {
+		t.Fatal(err)
+	}
+	if operationTableCount != 0 {
+		t.Fatal("entity_operations table still exists")
 	}
 }
 

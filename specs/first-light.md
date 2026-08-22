@@ -1,9 +1,9 @@
 # First Light — Implementation Spec
 
-- **Status:** Ready for task breakdown
+- **Status:** In progress
 - **Approved by:** Michael
 - **Approved:** 2026-08-19
-- **Amended:** 2026-08-20 — generalized Entity values and Command parameters behind a closed Entity-type catalog; renamed the product Hearth and reserved `hearthd` for the core daemon; persisted Entity names; defined permanent registration rejections and subscribe-first snapshot reconciliation
+- **Amended:** 2026-08-22 — unified Entity constraints and operation availability as schema-backed typed support; added typed SDK facades; 2026-08-20 — generalized Entity values and Command parameters behind a closed Entity-type catalog, renamed the product Hearth, persisted Entity names, and defined permanent registration rejections and subscribe-first snapshot reconciliation
 - **Type:** Feature plan
 - **Effort:** XL (relative estimate only)
 
@@ -112,6 +112,7 @@ const EntityTypePowerV1 EntityTypeID = "hearth.power/v1"
 type OperationName string
 const OperationNameSet OperationName = "set"
 
+type EntitySupport json.RawMessage
 type Value json.RawMessage
 type CommandParameters json.RawMessage
 
@@ -122,13 +123,12 @@ type Device struct {
 }
 
 type Entity struct {
-    ID          EntityID
-    DeviceID    DeviceID
-    AdapterID   string
-    Name        string
-    TypeID      EntityTypeID
-    Constraints json.RawMessage
-    SupportedOperations []OperationName
+    ID        EntityID
+    DeviceID  DeviceID
+    AdapterID string
+    Name      string
+    TypeID    EntityTypeID
+    Support   EntitySupport
 }
 
 type State struct {
@@ -219,7 +219,7 @@ type CommandResult struct {
 }
 ```
 
-`Value` contains one complete valid JSON value and `CommandParameters` contains one complete valid JSON object. They are copied defensively at module edges. The module never determines State equality or Command satisfaction by comparing encoded bytes; it delegates both to the Entity-type catalog so object key ordering and future type-specific normalization cannot change semantics.
+`EntitySupport`, `Value`, and `CommandParameters` each contain one complete valid JSON value; Command parameters are objects. They are normalized and copied defensively at module edges. The module never determines State equality or Command satisfaction by comparing encoded bytes; it delegates both to the Entity-type catalog so object key ordering and future type-specific normalization cannot change semantics.
 
 `adapter_id` records the owner selected for dispatch even if ownership changes later. `requested_at`, `accepted_at`, and `completed_at` are core-clock UTC times for the corresponding committed lifecycle transitions; for the first `set` operation, `deadline_at` is exactly ten seconds after `requested_at` as defined by the catalog. The record stores normalized operation parameters and stable failure codes, not raw HTTP bodies, headers, client addresses, adapter error text, or credentials.
 
@@ -227,60 +227,49 @@ type CommandResult struct {
 
 Owner: `internal/modules/devices/catalog.go`.
 
-A concrete `TypeCatalog` is constructed by the application and passed to the `devices` module. It resolves immutable, versioned Entity type IDs and owns semantic validation, State equality, operation availability, Command outcome matching, and operation deadlines. Structural JSON Schemas continue to validate wire shape; the catalog validates the meaning of generic values and parameters after the Entity is resolved.
+A concrete `TypeCatalog` is constructed by the application and passed to the `devices` module. JSON Schemas in public `entitytypes` packages are authoritative for support, State, and parameters. Generic factories retain compile-time Go types, then erase definitions behind catalog closures so transport, persistence, and orchestration continue to carry generic JSON.
 
 ```go
-type OutcomePolicy string
-const OutcomeParameterEqualsState OutcomePolicy = "parameter_equals_state"
+func DefineOperation[State, Support, OperationSupport, Parameters any](
+    name OperationName,
+    parameters *entitytypes.JSONCodec[Parameters],
+    selectSupport func(Support) (OperationSupport, bool),
+    validateParameters func(Support, OperationSupport, Parameters) error,
+    deadline time.Duration,
+    satisfies func(Parameters, State) bool,
+) OperationDefinition[State, Support]
 
-type OperationDefinition struct {
-    ParametersSchema json.RawMessage
-    OutcomePolicy    OutcomePolicy
-    OutcomeParameter string
-    Deadline         time.Duration
-}
-
-type EntityTypeDefinition struct {
-    ID                   EntityTypeID
-    StateSchema          json.RawMessage
-    ConstraintsSchema    json.RawMessage
-    OperationDefinitions map[OperationName]OperationDefinition
-}
-
-type ResolvedCommand struct {
-    Parameters CommandParameters // validated and normalized defensive copy
-    Deadline   time.Duration
-}
+func DefineEntityType[State, Support any](
+    id EntityTypeID,
+    state *entitytypes.JSONCodec[State],
+    support *entitytypes.JSONCodec[Support],
+    validateSupportedState func(Support, State) error,
+    equalState func(State, State) bool,
+    operations ...OperationDefinition[State, Support],
+) (EntityTypeDefinition, error)
 
 func NewTypeCatalog([]EntityTypeDefinition) (*TypeCatalog, error)
 func NewFirstLightTypeCatalog() (*TypeCatalog, error)
-func (*TypeCatalog) ValidateEntity(EntityTypeID, json.RawMessage, []OperationName) error
+func (*TypeCatalog) NormalizeSupport(EntityTypeID, EntitySupport) (EntitySupport, error)
 func (*TypeCatalog) NormalizeState(Entity, Value) (Value, error)
 func (*TypeCatalog) EqualState(Entity, Value, Value) (bool, error)
 func (*TypeCatalog) ResolveCommand(Entity, OperationName, CommandParameters) (ResolvedCommand, error)
 func (*TypeCatalog) Satisfies(Entity, CommandRecord, Value) (bool, error)
 ```
 
-`NewTypeCatalog` rejects duplicate type IDs, unnamed operations, malformed schemas, unsupported outcome policies, missing outcome parameters, and non-positive deadlines. It compiles all definition schemas once. `NewFirstLightTypeCatalog` supplies the only production definitions in this slice; the general constructor also permits focused catalog tests without making definitions runtime-configurable.
+Construction rejects empty or duplicate type IDs, duplicate or non-subject-safe operation names, missing codecs/functions, and non-positive deadlines. `NewFirstLightTypeCatalog` supplies the only production definition; the generic factories also support focused typed tests without enabling runtime type loading.
 
-The first-light catalog contains exactly one built-in definition:
+The built-in `entitytypes/powerv1` package defines boolean State, exact `{"value": boolean}` set parameters, and this exact support document:
 
-```text
-type: hearth.power/v1
-state schema: boolean
-constraints schema: object with no properties
-operations:
-  set:
-    parameters schema: {"value": boolean}, no additional properties
-    outcome policy: linked Observation value equals parameters.value
-    deadline: 10s
+```json
+{"state": {}, "operations": {"set": {}}}
 ```
 
-Registration accepts only catalog-known type IDs, constraints valid for that type, and a supported-operation subset allowed by that type. For `hearth.power/v1`, the descriptor must contain `{}` constraints and support exactly `set`. An Entity's `type_id` is immutable across re-registration; names, external IDs, constraints, and supported operations may change transactionally. Type definitions are immutable for their versioned ID.
+An operation key's presence means the Entity supports it. `ResolveCommand` decodes current typed support, selects operation support, validates typed parameters against both schemas and cross-document rules, and returns normalized parameters plus the immutable ten-second deadline. `NormalizeState` applies State schema and support compatibility; equality uses typed boolean equality.
 
-The catalog compares decoded, schema-valid values according to the type definition rather than raw JSON bytes. The first definition uses exact boolean equality. It rejects an Observation whose value does not satisfy the Entity's State schema and rejects a Command before record creation or dispatch when its operation is unavailable or its parameters do not satisfy the operation schema.
+`Satisfies` deliberately excludes current support. It decodes the recorded normalized parameters and candidate State, then applies the immutable operation outcome callback; for power/v1, `parameters.Value == bool(state)`. Combined with immutable type IDs/definitions and persisted absolute deadlines, this preserves active and historical Command meaning when re-registration replaces support. Entity `type_id` remains immutable; valid names, external IDs, and normalized support may change transactionally.
 
-Runtime type registration, manifest loading, arbitrary matching code, and persistence of type definitions are out of scope. Later built-in or explicitly installed definitions may populate the same catalog seam without changing transport, persistence, or Command orchestration interfaces.
+Runtime type registration, manifest loading, arbitrary matching code, and persistence of type definitions remain out of scope. Later built-in or explicitly installed definitions may populate the catalog without changing generic transport, persistence, or Command orchestration interfaces.
 
 IDs use lowercase UUIDv7 strings with type prefixes:
 
@@ -306,7 +295,7 @@ type Envelope[T any] struct {
 }
 ```
 
-Every protocol-owned JSON object uses `additionalProperties: false`. The generic `constraints` and `parameters` objects are structural extension points whose contents are validated by the resolved catalog definition, and Observation `value` may be any structurally valid JSON value before catalog validation. All timestamps are UTC RFC3339Nano strings ending in `Z`. `correlation_id` is required. `causation_id` is omitted for a root message.
+Every protocol-owned JSON object uses `additionalProperties: false`. Registration support has the common closed outer shape `{"state": {...}, "operations": {...}}`; the structural schema accepts subject-safe operation keys with object values, while the resolved Entity-type schema closes their contents. Command `parameters` and Observation `value` remain generic until catalog validation. All timestamps are UTC RFC3339Nano strings ending in `Z`. `correlation_id` is required. `causation_id` is omitted for a root message.
 
 Canonical schema files and IDs are:
 
@@ -319,7 +308,7 @@ Canonical schema files and IDs are:
 | `contracts/v1/command-response.schema.json` | `urn:hearth:schema:command-response:v1` |
 | `contracts/v1/common.schema.json` | `urn:hearth:schema:common:v1` |
 
-`contracts/v1/embed.go` exposes these same files through `embed.FS`. The core and SDK compile them with `jsonschema/v6` at startup; non-Go adapters consume the JSON files directly.
+`contracts/v1/embed.go` exposes these same files through `embed.FS`. The core and SDK compile them with `jsonschema/v6` at startup; non-Go adapters consume the JSON files directly. `entitytypes/powerv1` similarly embeds the authoritative power/v1 support, State, and set-parameter schemas and provides schema-backed Go bindings.
 
 ### Registration payloads
 
@@ -339,12 +328,11 @@ type DeviceDescriptor struct {
 }
 
 type EntityDescriptor struct {
-    Key         string          `json:"key"`
-    ExternalID  string          `json:"external_id"`
-    Name        string          `json:"name"`
-    Type        string          `json:"type"`        // catalog ID; "hearth.power/v1" in this slice
-    Constraints json.RawMessage `json:"constraints"` // {} in this slice
-    SupportedOperations []string        `json:"operations"` // exactly ["set"] in this slice
+    Key        string          `json:"key"`
+    ExternalID string          `json:"external_id"`
+    Name       string          `json:"name"`
+    Type       string          `json:"type"` // "hearth.power/v1" in this slice
+    Support    json.RawMessage `json:"support"`
 }
 
 type Binding struct {
@@ -380,9 +368,9 @@ Constraints:
 - External IDs contain 1–256 characters when present.
 - Device `kind` is a 1–128 character string; the structural wire schema does not enumerate kinds, but the first-slice module accepts only `light`.
 - Entity `type` is a 1–128 character versioned catalog identifier; the structural wire schema does not enumerate catalog contents.
-- `constraints` is a JSON object and `operations` contains unique subject-safe operation names. The catalog performs type-specific validation.
+- `support` has required object fields `state` and `operations`; operation keys are subject-safe and each operation-support value is an object. The resolved catalog schema performs exact type-specific validation.
 - `entities` contains exactly one Entity in this slice; its key is unique within the binding.
-- Re-registration with the same adapter ID, binding key, and Entity key returns the same canonical IDs. Changing its Entity type rejects the whole registration; valid descriptor, constraint, operation, name, and external-ID updates commit transactionally.
+- Re-registration with the same adapter ID, binding key, and Entity key returns the same canonical IDs. Changing its Entity type rejects the whole registration; valid normalized support, name, and external-ID updates commit transactionally.
 - A conflicting external mapping rejects the whole registration transaction.
 
 ### Observation payload
@@ -436,13 +424,12 @@ Owner: `internal/modules/devices/api/types.go`.
 
 ```go
 type EntityBody struct {
-    ID          string         `json:"id"`
-    DeviceID    string         `json:"device_id"`
-    Name        string         `json:"name"`
-    Type        string         `json:"type"`
-    Constraints map[string]any `json:"constraints"`
-    SupportedOperations []string       `json:"operations"`
-    State               *StateBody     `json:"state"`
+    ID       string         `json:"id"`
+    DeviceID string         `json:"device_id"`
+    Name     string         `json:"name"`
+    Type     string         `json:"type"`
+    Support  map[string]any `json:"support"`
+    State    *StateBody     `json:"state"`
 }
 
 type StateBody struct {
@@ -534,7 +521,7 @@ Protocol limits are not YAML fields: the built-in `hearth.power/v1` `set` defini
 
 ### Adapter SDK
 
-Owner: `sdk/adapter`.
+Owner: generic transport in `sdk/adapter`, typed routing in `sdk/adapter/typed`, and the built-in facade in `sdk/adapter/powerv1`.
 
 ```go
 func Connect(context.Context, Config) (*Session, error)
@@ -564,6 +551,29 @@ type Responder interface {
     Reject(message string) error
 }
 ```
+
+The generic Session methods remain unchanged. Typed routing converts one `(entity ID, operation name)` route into the same `CommandHandler` interface:
+
+```go
+// sdk/adapter/typed
+type Command[P any] struct {
+    ID, CorrelationID, EntityID string
+    Parameters P
+    Deadline   time.Time
+}
+
+type Handler[P any] func(context.Context, Command[P], adapter.Responder) error
+
+func Operation[P any](entityID, operationName string, decode ParameterDecoder[P], handler Handler[P]) (Route, error)
+func NewCommandHandler(routes ...Route) (adapter.CommandHandler, error)
+
+// sdk/adapter/powerv1
+func NewEntityDescriptor(adapter.EntityMetadata, Support) (adapter.EntityDescriptor, error)
+func NewCommandHandler(string, Support, Handlers) (adapter.CommandHandler, error)
+func NewObservation(ObservationInput) (adapter.Observation, error)
+```
+
+The power facade validates and normalizes support, exposes typed `SetParameters`, validates/encodes boolean State, and formats Observation timestamps as UTC. A Go adapter can therefore register, route Commands, and publish Observations without constructing `json.RawMessage` or switching on operation strings. The generic Session retains concurrency, one-shot responder, acknowledgement/retry, and trace/correlation/causation behavior.
 
 Interface contract:
 
@@ -606,7 +616,7 @@ func (*Service) ExecuteCommand(context.Context, EntityID, OperationName, Command
 
 `ExecuteCommand` behavior:
 
-1. Resolve the Entity and owner. Resolve the operation name against the Entity type's catalog definitions and the Entity's supported operations, validate the parameters, and obtain the outcome policy and deadline. Unknown or unsupported operation names and invalid parameters fail before a Command record is created or dispatched.
+1. Resolve the Entity and owner. Resolve the operation name against its current typed support and immutable type definition, validate the parameters, and obtain the outcome matcher and deadline. Unknown or unsupported operation names and invalid parameters fail before a Command record is created or dispatched.
 2. Create Command/correlation IDs, an independent lifecycle context using the operation deadline, and a Command-ID-keyed Observation waiter.
 3. Commit `requested` before dispatch. Failure prevents dispatch and returns an internal error. This commit is the point of no return: later HTTP cancellation does not cancel the lifecycle.
 4. Send one Core NATS request/reply without retry or replay. Persist dispatch/response failures as `adapter_unavailable`, `rejected`, or `internal_failure`.
@@ -660,7 +670,7 @@ hearth.v1.adapter.<adapter>.command.<entity>.<operation>
 - `<adapter>` is the configured adapter slug.
 - `<entity>` is the canonical Entity ID.
 - `<operation>` is the registered subject-safe operation name; it is `set` in this slice.
-- Core validates that subject adapter/entity/operation tokens match the payload, the Entity's supported operations, and current ownership.
+- Core validates that subject adapter/entity/operation tokens match the payload, the operation is present in current Entity support, and ownership is current.
 - Registration and Commands use Core NATS request/reply.
 - Persisting a Command record does not put the Command in a stream and never causes replay or redispatch.
 - Observations use JetStream and require a publish acknowledgement.
@@ -708,21 +718,15 @@ CREATE TABLE devices (
 );
 
 CREATE TABLE entities (
-    id               TEXT PRIMARY KEY CHECK (id LIKE 'ent_%'),
-    device_id        TEXT NOT NULL REFERENCES devices(id) ON DELETE CASCADE,
-    name             TEXT NOT NULL CHECK (length(name) BETWEEN 1 AND 128),
-    type_id          TEXT NOT NULL CHECK (length(type_id) BETWEEN 1 AND 128),
-    constraints_json TEXT NOT NULL CHECK (
-        json_valid(constraints_json) AND json_type(constraints_json) = 'object'
+    id           TEXT PRIMARY KEY CHECK (id LIKE 'ent_%'),
+    device_id    TEXT NOT NULL REFERENCES devices(id) ON DELETE CASCADE,
+    name         TEXT NOT NULL CHECK (length(name) BETWEEN 1 AND 128),
+    type_id      TEXT NOT NULL CHECK (length(type_id) BETWEEN 1 AND 128),
+    support_json TEXT NOT NULL CHECK (
+        json_valid(support_json) AND json_type(support_json) = 'object'
     ),
-    created_at       TEXT NOT NULL,
-    updated_at       TEXT NOT NULL
-);
-
-CREATE TABLE entity_operations (
-    entity_id TEXT NOT NULL REFERENCES entities(id) ON DELETE CASCADE,
-    operation TEXT NOT NULL CHECK (length(operation) BETWEEN 1 AND 63),
-    PRIMARY KEY (entity_id, operation)
+    created_at   TEXT NOT NULL,
+    updated_at   TEXT NOT NULL
 );
 
 CREATE TABLE commands (
@@ -844,12 +848,11 @@ DROP TABLE adapter_entity_mappings;
 DROP TABLE adapter_bindings;
 DROP INDEX commands_entity_requested_idx;
 DROP TABLE commands;
-DROP TABLE entity_operations;
 DROP TABLE entities;
 DROP TABLE devices;
 ```
 
-Strict typed-ID, slug, catalog, operation, generic JSON, and UTC timestamp validation occurs at the module/transport edge. SQLite reinforces ID prefixes, JSON validity and object shape where applicable, lifecycle enums, ownership uniqueness, and foreign keys; it deliberately does not duplicate the catalog's Entity-type, value, constraint, operation, or outcome semantics.
+Strict typed-ID, slug, catalog, operation, generic JSON, and UTC timestamp validation occurs at the module/transport edge. SQLite reinforces ID prefixes, JSON validity and object shape where applicable, lifecycle enums, ownership uniqueness, and foreign keys; it deliberately does not duplicate the catalog's Entity-type, support, State, parameter, or outcome semantics.
 
 Required sqlc queries are split into four generation units with separate generated packages and focused `Querier` interfaces:
 
@@ -861,8 +864,6 @@ registration:
   UpdateDeviceDescriptor
   CreateEntity
   UpdateEntityDescriptor
-  DeleteEntityOperations
-  UpsertEntityOperation
   CreateBinding
   UpdateBindingExternalID
   GetEntityMapping
@@ -906,7 +907,7 @@ WHERE expires_at < ?
 
 Checking `observation_id` protects both State foreign keys because they reference the same receipt. Superseded State receipts become eligible at the next pruning pass.
 
-`RegisterBinding`, `ProjectObservation`, and all Command transitions own their SQLite transactions behind the repository; generated sqlc types never cross that seam. The concrete `devices` repository receives the same required `TypeCatalog` instance as the service so projection can validate values, compare State, and evaluate a linked Command's outcome policy inside the transaction. Projection atomically inserts the receipt, updates State, and satisfies a matching active Command. Registration replaces an Entity's operation rows transactionally after catalog validation so removed operations do not remain advertised.
+`RegisterBinding`, `ProjectObservation`, and all Command transitions own their SQLite transactions behind the repository; generated sqlc types never cross that seam. The concrete `devices` repository receives the same required `TypeCatalog` instance as the service so projection can validate values, compare State, and evaluate a linked Command's outcome policy inside the transaction. Projection atomically inserts the receipt, updates State, and satisfies a matching active Command. Registration stores the catalog-normalized `support_json` in the existing binding transaction; re-registration replaces that one document atomically.
 
 `outcome_observation_id` intentionally has no receipt foreign key because receipts expire while Command history remains. Satisfaction writes this typed, immutable ID only after inserting its receipt in the same transaction.
 
@@ -1027,8 +1028,13 @@ internal/
     │   ├── queries/                 # new — registration/state/commands/receipts query directories
     │   └── sqlc/                    # new/generated — matching focused query packages
     └── nats/                        # new — core NATS/JetStream transport
+entitytypes/
+├── codec.go                         # new — schema-backed typed JSON codec
+└── powerv1/                         # new — authoritative semantic schemas and Go bindings
 sdk/
 └── adapter/                         # new — public, stateless Go session facade
+    ├── typed/                       # new — typed Command routing
+    └── powerv1/                     # new — typed power registration/Command/Observation facade
 contracts/
 └── v1/
     ├── embed.go                     # new — canonical embedded schema FS
@@ -1062,7 +1068,7 @@ Total relative effort is **XL**. No calendar estimate is asserted.
 ## Acceptance and success criteria
 
 - [ ] From a clean checkout, `devenv test` (or its documented replacement) checks generation, tests, vet, runtime OpenAPI, compilation of every authoritative JSON Schema, and validation of cross-binary fixtures.
-- [ ] Re-registration returns identical IDs and updates the Entity name returned by HTTP; the name persists across restart. Conflicting binding/external mappings, an Entity type change, or catalog-invalid constraints/operations return their schema-defined permanent rejection codes atomically without partial rows, and adapters do not retry them.
+- [ ] Re-registration returns identical IDs, replaces normalized Entity support, and updates the Entity name returned by HTTP; both persist across restart. Conflicting binding/external mappings, an Entity type change, or catalog-invalid support return their schema-defined permanent rejection codes atomically without partial rows, and adapters do not retry them.
 - [ ] A registered, unobserved Entity returns HTTP 200 with its configured metadata and `state: null`.
 - [ ] A JetStream-acknowledged Observation survives restart; exact redelivery changes neither State nor receipt count.
 - [ ] Pruning deletes expired unreferenced receipts, pins the current-State receipt without foreign-key errors, then deletes it after State advances.
@@ -1085,9 +1091,9 @@ Total relative effort is **XL**. No calendar estimate is asserted.
 
 | Layer | What | How |
 | --- | --- | --- |
-| Pure module | ID validation, catalog registration/State/parameter validation, type-aware equality and outcome matching, registration conflicts, receive-order projection, source-time diagnostics, same-value advancement, Command transition monotonicity, concurrent waiter isolation, interleaved outcomes, deadline/result mapping | Inject in-memory Repository, CommandSender, closed catalog, clock, and ID generator |
+| Pure module | ID validation, typed catalog support/State/parameter validation and erasure, type-aware equality and immutable outcome matching, registration conflicts, receive-order projection, source-time diagnostics, same-value advancement, Command transition monotonicity, concurrent waiter isolation, interleaved outcomes, deadline/result mapping | Inject in-memory Repository, CommandSender, closed catalog, clock, and ID generator |
 | Repository | Transactions, constraints, idempotency, receive ordering, receipt pruning, current-State retention, Command lifecycle persistence, atomic outcome satisfaction, startup interruption | Temporary real SQLite; apply Goose; use generated sqlc queries |
-| SDK/NATS | Subjects, envelopes, schema validation, accepted/rejected registration responses and retry classification, publish acknowledgement/retry, concurrent Command handler invocation, request/reply, responder invariants, W3C headers | In-process NATS Server with JetStream |
+| SDK/NATS | Subjects, envelopes, schema validation, typed power registration/Command/Observation facade, accepted/rejected registration responses and retry classification, publish acknowledgement/retry, concurrent Command handler invocation, request/reply, responder invariants, W3C headers | Typed facade tests plus in-process NATS Server with JetStream |
 | HTTP | Huma validation, operation IDs, nullable State, bodies, error/status mapping, runtime OpenAPI | Echo/Huma test server with fake module dependencies |
 | Home Assistant adapter | Subscribe-first snapshot/event reconciliation, concurrent request/response correlation, service calls, command-linked no-op refresh, reconnect | Scripted WebSocket server using captured minimal fixtures and controlled snapshot/event interleavings; one manual/live verification |
 | Process | Full failure matrix and restart behavior | Native devenv processes plus simulator and disposable SQLite/NATS state |

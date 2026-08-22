@@ -52,18 +52,13 @@ type Device struct {
 }
 
 type Entity struct {
-	ID              string
-	DeviceID        string
-	Name            string
-	TypeID          string
-	ConstraintsJson string
-	CreatedAt       string
-	UpdatedAt       string
-}
-
-type EntityOperation struct {
-	EntityID  string
-	Operation string
+	ID          string
+	DeviceID    string
+	Name        string
+	TypeID      string
+	SupportJson string
+	CreatedAt   string
+	UpdatedAt   string
 }
 
 type EntityState struct {

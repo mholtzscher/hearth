@@ -540,7 +540,7 @@ func validRegistration(bindingKey string) Registration {
 		Device:     DeviceDescriptor{Name: "Office Light", Kind: "light"},
 		Entities: []EntityDescriptor{{
 			Key: "power", ExternalID: "light.office", Name: "Power", Type: "hearth.power/v1",
-			Constraints: json.RawMessage(`{}`), SupportedOperations: []string{"set"},
+			Support: json.RawMessage(`{"state":{},"operations":{"set":{}}}`),
 		}},
 	}
 }

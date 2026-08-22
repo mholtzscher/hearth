@@ -2,8 +2,11 @@ package devices
 
 import (
 	"encoding/json"
+	"errors"
 	"testing"
 	"time"
+
+	"github.com/mholtzscher/hearth/entitytypes"
 )
 
 func TestFirstLightCatalog(t *testing.T) {
@@ -12,15 +15,18 @@ func TestFirstLightCatalog(t *testing.T) {
 		t.Fatal(err)
 	}
 	entity := Entity{
-		ID:                  EntityID("ent_01890f47-7a6b-7c4d-8e9f-0123456789ab"),
-		TypeID:              EntityTypePowerV1,
-		Constraints:         json.RawMessage(`{}`),
-		SupportedOperations: []OperationName{OperationNameSet},
-	}
-	if err := catalog.ValidateEntity(entity.TypeID, entity.Constraints, entity.SupportedOperations); err != nil {
-		t.Fatalf("validate first-light entity: %v", err)
+		ID:      EntityID("ent_01890f47-7a6b-7c4d-8e9f-0123456789ab"),
+		TypeID:  EntityTypePowerV1,
+		Support: EntitySupport(`{"state":{},"operations":{"set":{}}}`),
 	}
 
+	support, err := catalog.NormalizeSupport(entity.TypeID, EntitySupport(" \n {\"state\":{},\"operations\":{\"set\":{}}} "))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(support) != `{"state":{},"operations":{"set":{}}}` {
+		t.Fatalf("normalized support = %s", support)
+	}
 	state, err := catalog.NormalizeState(entity, Value(` true `))
 	if err != nil {
 		t.Fatal(err)
@@ -36,125 +42,189 @@ func TestFirstLightCatalog(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if string(command.Parameters) != `{"value":true}` {
-		t.Fatalf("normalized parameters = %s", command.Parameters)
-	}
-	if command.Deadline != 10*time.Second {
-		t.Fatalf("deadline = %s", command.Deadline)
+	if string(command.Parameters) != `{"value":true}` || command.Deadline != 10*time.Second {
+		t.Fatalf("resolved command = %#v", command)
 	}
 	if _, err := catalog.ResolveCommand(entity, OperationNameSet, CommandParameters(`{"value":true,"transition":1}`)); err == nil {
 		t.Fatal("additional parameter unexpectedly accepted")
 	}
 
 	record := CommandRecord{OperationName: OperationNameSet, Parameters: command.Parameters}
+	for _, test := range []struct {
+		state Value
+		want  bool
+	}{{Value(`true`), true}, {Value(`false`), false}} {
+		satisfied, err := catalog.Satisfies(entity, record, test.state)
+		if err != nil || satisfied != test.want {
+			t.Fatalf("state %s: satisfied=%v err=%v", test.state, satisfied, err)
+		}
+	}
+
+	entity.Support = EntitySupport(`{"state":{},"operations":{}}`)
 	satisfied, err := catalog.Satisfies(entity, record, Value(`true`))
 	if err != nil || !satisfied {
-		t.Fatalf("matching outcome: satisfied=%v err=%v", satisfied, err)
-	}
-	satisfied, err = catalog.Satisfies(entity, record, Value(`false`))
-	if err != nil || satisfied {
-		t.Fatalf("nonmatching outcome: satisfied=%v err=%v", satisfied, err)
-	}
-
-	entity.SupportedOperations = nil
-	satisfied, err = catalog.Satisfies(entity, record, Value(`true`))
-	if err != nil || !satisfied {
-		t.Fatalf("recorded command after descriptor update: satisfied=%v err=%v", satisfied, err)
+		t.Fatalf("recorded command after support update: satisfied=%v err=%v", satisfied, err)
 	}
 }
 
-func TestFirstLightCatalogRejectsInvalidDescriptors(t *testing.T) {
-	catalog, err := NewFirstLightTypeCatalog()
+func TestGenericCatalogCarriesTypedBehaviorAcrossErasure(t *testing.T) {
+	type state struct {
+		Level int `json:"level"`
+	}
+	type stateSupport struct {
+		Maximum int `json:"maximum"`
+	}
+	type operationSupport struct {
+		Minimum int `json:"minimum"`
+	}
+	type operations struct {
+		Set *operationSupport `json:"set,omitempty"`
+	}
+	type support struct {
+		State      stateSupport `json:"state"`
+		Operations operations   `json:"operations"`
+	}
+	type parameters struct {
+		Target int `json:"target"`
+	}
+
+	stateCodec := compileTestCodec[state](t, "state", `{"type":"object","required":["level"],"properties":{"level":{"type":"integer"}},"additionalProperties":false}`)
+	supportCodec := compileTestCodec[support](t, "support", `{
+		"type":"object","required":["state","operations"],"additionalProperties":false,
+		"properties":{
+			"state":{"type":"object","required":["maximum"],"properties":{"maximum":{"type":"integer"}},"additionalProperties":false},
+			"operations":{"type":"object","properties":{"set":{"type":"object","required":["minimum"],"properties":{"minimum":{"type":"integer"}},"additionalProperties":false}},"additionalProperties":false}
+		}}`)
+	parametersCodec := compileTestCodec[parameters](t, "parameters", `{"type":"object","required":["target"],"properties":{"target":{"type":"integer"}},"additionalProperties":false}`)
+
+	set := DefineOperation(
+		OperationNameSet,
+		parametersCodec,
+		func(value support) (operationSupport, bool) {
+			if value.Operations.Set == nil {
+				return operationSupport{}, false
+			}
+			return *value.Operations.Set, true
+		},
+		func(entitySupport support, operation operationSupport, parameters parameters) error {
+			if parameters.Target < operation.Minimum || parameters.Target > entitySupport.State.Maximum {
+				return errors.New("target is outside supported range")
+			}
+			return nil
+		},
+		3*time.Second,
+		func(parameters parameters, state state) bool { return parameters.Target == state.Level },
+	)
+	definition, err := DefineEntityType(
+		"test.level/v1",
+		stateCodec,
+		supportCodec,
+		func(support support, state state) error {
+			if state.Level > support.State.Maximum {
+				return errors.New("level exceeds maximum")
+			}
+			return nil
+		},
+		func(left, right state) bool { return left.Level == right.Level },
+		set,
+	)
 	if err != nil {
 		t.Fatal(err)
-	}
-	for _, test := range []struct {
-		name                string
-		typeID              EntityTypeID
-		constraints         json.RawMessage
-		supportedOperations []OperationName
-	}{
-		{"unknown type", "vendor.power/v1", json.RawMessage(`{}`), []OperationName{OperationNameSet}},
-		{"constraints", EntityTypePowerV1, json.RawMessage(`{"minimum":1}`), []OperationName{OperationNameSet}},
-		{"missing operation", EntityTypePowerV1, json.RawMessage(`{}`), nil},
-		{"unknown operation", EntityTypePowerV1, json.RawMessage(`{}`), []OperationName{"toggle"}},
-		{"duplicate operation", EntityTypePowerV1, json.RawMessage(`{}`), []OperationName{OperationNameSet, OperationNameSet}},
-	} {
-		t.Run(test.name, func(t *testing.T) {
-			if err := catalog.ValidateEntity(test.typeID, test.constraints, test.supportedOperations); err == nil {
-				t.Fatal("descriptor unexpectedly accepted")
-			}
-		})
-	}
-}
-
-func TestCatalogRejectsInvalidDefinitions(t *testing.T) {
-	validOperation := OperationDefinition{
-		ParametersSchema: json.RawMessage(`{"type":"object"}`),
-		OutcomePolicy:    OutcomeParameterEqualsState,
-		OutcomeParameter: "value",
-		Deadline:         time.Second,
-	}
-	valid := EntityTypeDefinition{
-		ID:                   "test.value/v1",
-		StateSchema:          json.RawMessage(`{"type":"boolean"}`),
-		ConstraintsSchema:    json.RawMessage(`{"type":"object"}`),
-		OperationDefinitions: map[OperationName]OperationDefinition{OperationNameSet: validOperation},
-	}
-
-	tests := []struct {
-		name        string
-		definitions []EntityTypeDefinition
-	}{
-		{"duplicate type", []EntityTypeDefinition{valid, valid}},
-		{"malformed schema", []EntityTypeDefinition{{ID: "test.bad/v1", StateSchema: json.RawMessage(`{`), ConstraintsSchema: valid.ConstraintsSchema}}},
-		{"unsupported policy", []EntityTypeDefinition{definitionWithOperation(valid, func(operation *OperationDefinition) { operation.OutcomePolicy = "custom" })}},
-		{"missing outcome parameter", []EntityTypeDefinition{definitionWithOperation(valid, func(operation *OperationDefinition) { operation.OutcomeParameter = "" })}},
-		{"non-positive deadline", []EntityTypeDefinition{definitionWithOperation(valid, func(operation *OperationDefinition) { operation.Deadline = 0 })}},
-	}
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			if _, err := NewTypeCatalog(test.definitions); err == nil {
-				t.Fatal("definition unexpectedly accepted")
-			}
-		})
-	}
-}
-
-func TestCatalogDefensivelyCopiesInputsAndNormalizesObjects(t *testing.T) {
-	stateSchema := json.RawMessage(`{"type":"object","required":["a","b"],"additionalProperties":false,"properties":{"a":{"type":"boolean"},"b":{"type":"boolean"}}}`)
-	definition := EntityTypeDefinition{
-		ID:                "test.object/v1",
-		StateSchema:       stateSchema,
-		ConstraintsSchema: json.RawMessage(`{"type":"object"}`),
-		OperationDefinitions: map[OperationName]OperationDefinition{
-			OperationNameSet: {
-				ParametersSchema: json.RawMessage(`{"type":"object","required":["value"],"properties":{"value":{"type":"object"}}}`),
-				OutcomePolicy:    OutcomeParameterEqualsState, OutcomeParameter: "value", Deadline: time.Second,
-			},
-		},
 	}
 	catalog, err := NewTypeCatalog([]EntityTypeDefinition{definition})
 	if err != nil {
 		t.Fatal(err)
 	}
-	stateSchema[0] = '['
-	delete(definition.OperationDefinitions, OperationNameSet)
+	entity := Entity{TypeID: "test.level/v1", Support: EntitySupport(`{"state":{"maximum":10},"operations":{"set":{"minimum":2}}}`)}
 
-	entity := Entity{TypeID: "test.object/v1", SupportedOperations: []OperationName{OperationNameSet}}
-	equal, err := catalog.EqualState(entity, Value(`{"b":false,"a":true}`), Value(`{"a":true,"b":false}`))
-	if err != nil || !equal {
-		t.Fatalf("semantic object equality: equal=%v err=%v", equal, err)
+	normalized, err := catalog.NormalizeState(entity, Value(`{ "level": 5 }`))
+	if err != nil || string(normalized) != `{"level":5}` {
+		t.Fatalf("normalized state = %s, %v", normalized, err)
 	}
-	if _, err := catalog.ResolveCommand(entity, OperationNameSet, CommandParameters(`{"value":{}}`)); err != nil {
-		t.Fatalf("catalog changed after caller mutation: %v", err)
+	if _, err := catalog.NormalizeState(entity, Value(`{"level":11}`)); err == nil {
+		t.Fatal("unsupported state unexpectedly accepted")
+	}
+	equal, err := catalog.EqualState(entity, Value(`{"level":5}`), Value(`{ "level": 5 }`))
+	if err != nil || !equal {
+		t.Fatalf("state equality = %v, %v", equal, err)
+	}
+	resolved, err := catalog.ResolveCommand(entity, OperationNameSet, CommandParameters(`{ "target": 5 }`))
+	if err != nil || string(resolved.Parameters) != `{"target":5}` || resolved.Deadline != 3*time.Second {
+		t.Fatalf("resolved command = %#v, %v", resolved, err)
+	}
+	if _, err := catalog.ResolveCommand(entity, OperationNameSet, CommandParameters(`{"target":1}`)); err == nil {
+		t.Fatal("support-incompatible parameters unexpectedly accepted")
+	}
+
+	withoutOperation := entity
+	withoutOperation.Support = EntitySupport(`{"state":{"maximum":10},"operations":{}}`)
+	if _, err := catalog.ResolveCommand(withoutOperation, OperationNameSet, CommandParameters(`{"target":5}`)); err == nil {
+		t.Fatal("absent operation support unexpectedly accepted")
+	}
+
+	record := CommandRecord{OperationName: OperationNameSet, Parameters: resolved.Parameters}
+	withoutOperation.Support = EntitySupport(`{"state":{"maximum":1},"operations":{}}`)
+	satisfied, err := catalog.Satisfies(withoutOperation, record, Value(`{"level":5}`))
+	if err != nil || !satisfied {
+		t.Fatalf("immutable outcome behavior = %v, %v", satisfied, err)
 	}
 }
 
-func definitionWithOperation(base EntityTypeDefinition, mutate func(*OperationDefinition)) EntityTypeDefinition {
-	copy := base
-	operationDefinition := base.OperationDefinitions[OperationNameSet]
-	mutate(&operationDefinition)
-	copy.OperationDefinitions = map[OperationName]OperationDefinition{OperationNameSet: operationDefinition}
-	return copy
+func TestCatalogRejectsInvalidDefinitions(t *testing.T) {
+	state := compileTestCodec[bool](t, "state", `{"type":"boolean"}`)
+	support := compileTestCodec[struct{}](t, "support", `{"type":"object","maxProperties":0}`)
+	parameters := compileTestCodec[struct{}](t, "parameters", `{"type":"object","maxProperties":0}`)
+	validOperation := DefineOperation(
+		OperationNameSet,
+		parameters,
+		func(struct{}) (struct{}, bool) { return struct{}{}, true },
+		func(struct{}, struct{}, struct{}) error { return nil },
+		time.Second,
+		func(struct{}, bool) bool { return true },
+	)
+	valid, err := DefineEntityType("test.value/v1", state, support, func(struct{}, bool) error { return nil }, func(left, right bool) bool { return left == right }, validOperation)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := NewTypeCatalog([]EntityTypeDefinition{valid, valid}); err == nil {
+		t.Fatal("duplicate type unexpectedly accepted")
+	}
+	if _, err := NewTypeCatalog([]EntityTypeDefinition{{}}); err == nil {
+		t.Fatal("zero definition unexpectedly accepted")
+	}
+	duplicateOperation := DefineOperation(
+		OperationNameSet,
+		parameters,
+		func(struct{}) (struct{}, bool) { return struct{}{}, true },
+		func(struct{}, struct{}, struct{}) error { return nil },
+		time.Second,
+		func(struct{}, bool) bool { return true },
+	)
+	if _, err := DefineEntityType("test.duplicate/v1", state, support, func(struct{}, bool) error { return nil }, func(bool, bool) bool { return true }, validOperation, duplicateOperation); err == nil {
+		t.Fatal("duplicate operation unexpectedly accepted")
+	}
+	invalidOperation := DefineOperation(
+		OperationName("bad.name"),
+		parameters,
+		func(struct{}) (struct{}, bool) { return struct{}{}, true },
+		func(struct{}, struct{}, struct{}) error { return nil },
+		time.Second,
+		func(struct{}, bool) bool { return true },
+	)
+	if _, err := DefineEntityType("test.invalid/v1", state, support, func(struct{}, bool) error { return nil }, func(bool, bool) bool { return true }, invalidOperation); err == nil {
+		t.Fatal("unsafe operation name unexpectedly accepted")
+	}
+	if _, err := DefineEntityType("test.nil/v1", state, support, nil, func(bool, bool) bool { return true }); err == nil {
+		t.Fatal("nil supported-state validator unexpectedly accepted")
+	}
+}
+
+func compileTestCodec[T any](t *testing.T, name, schema string) *entitytypes.JSONCodec[T] {
+	t.Helper()
+	codec, err := entitytypes.CompileJSONCodec[T]("urn:test:"+name, json.RawMessage(schema), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return codec
 }

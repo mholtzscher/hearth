@@ -10,21 +10,15 @@ CREATE TABLE devices (
 );
 
 CREATE TABLE entities (
-    id               TEXT PRIMARY KEY CHECK (id LIKE 'ent_%'),
-    device_id        TEXT NOT NULL REFERENCES devices(id) ON DELETE CASCADE,
-    name             TEXT NOT NULL CHECK (length(name) BETWEEN 1 AND 128),
-    type_id          TEXT NOT NULL CHECK (length(type_id) BETWEEN 1 AND 128),
-    constraints_json TEXT NOT NULL CHECK (
-        json_valid(constraints_json) AND json_type(constraints_json) = 'object'
+    id           TEXT PRIMARY KEY CHECK (id LIKE 'ent_%'),
+    device_id    TEXT NOT NULL REFERENCES devices(id) ON DELETE CASCADE,
+    name         TEXT NOT NULL CHECK (length(name) BETWEEN 1 AND 128),
+    type_id      TEXT NOT NULL CHECK (length(type_id) BETWEEN 1 AND 128),
+    support_json TEXT NOT NULL CHECK (
+        json_valid(support_json) AND json_type(support_json) = 'object'
     ),
-    created_at       TEXT NOT NULL,
-    updated_at       TEXT NOT NULL
-);
-
-CREATE TABLE entity_operations (
-    entity_id TEXT NOT NULL REFERENCES entities(id) ON DELETE CASCADE,
-    operation TEXT NOT NULL CHECK (length(operation) BETWEEN 1 AND 63),
-    PRIMARY KEY (entity_id, operation)
+    created_at   TEXT NOT NULL,
+    updated_at   TEXT NOT NULL
 );
 
 CREATE TABLE commands (
@@ -146,6 +140,5 @@ DROP TABLE adapter_entity_mappings;
 DROP TABLE adapter_bindings;
 DROP INDEX commands_entity_requested_idx;
 DROP TABLE commands;
-DROP TABLE entity_operations;
 DROP TABLE entities;
 DROP TABLE devices;

@@ -1,0 +1,137 @@
+// Package powerv1 provides typed SDK helpers for hearth.power/v1 Entities.
+package powerv1
+
+import (
+	"encoding/json"
+	"errors"
+	"fmt"
+	"sync"
+	"time"
+
+	contractpowerv1 "github.com/mholtzscher/hearth/entitytypes/powerv1"
+	"github.com/mholtzscher/hearth/sdk/adapter"
+	"github.com/mholtzscher/hearth/sdk/adapter/typed"
+)
+
+type Support = contractpowerv1.Support
+type State = contractpowerv1.State
+type SetParameters = contractpowerv1.SetParameters
+type SetCommand = typed.Command[SetParameters]
+
+type Handlers struct {
+	Set typed.Handler[SetParameters]
+}
+
+type ObservationInput struct {
+	EntityID          string
+	State             State
+	AdapterReceivedAt time.Time
+	SourceUpdatedAt   *time.Time
+	RefreshForCommand *string
+}
+
+var (
+	compileOnce  sync.Once
+	sharedCodecs *contractpowerv1.Codecs
+	compileErr   error
+)
+
+func NewEntityDescriptor(metadata adapter.EntityMetadata, support Support) (adapter.EntityDescriptor, error) {
+	codecs, err := codecs()
+	if err != nil {
+		return adapter.EntityDescriptor{}, err
+	}
+	normalized, err := codecs.Support.Encode(support)
+	if err != nil {
+		return adapter.EntityDescriptor{}, validationError(fmt.Errorf("invalid power/v1 support: %w", err))
+	}
+	return adapter.EntityDescriptor{
+		Key: metadata.Key, ExternalID: metadata.ExternalID, Name: metadata.Name,
+		Type: contractpowerv1.TypeID, Support: normalized,
+	}, nil
+}
+
+func NewCommandHandler(entityID string, support Support, handlers Handlers) (adapter.CommandHandler, error) {
+	codecs, err := codecs()
+	if err != nil {
+		return nil, err
+	}
+	if _, err := codecs.Support.Encode(support); err != nil {
+		return nil, validationError(fmt.Errorf("invalid power/v1 support: %w", err))
+	}
+	if handlers.Set == nil {
+		return nil, validationError(errors.New("power/v1 Set handler is required"))
+	}
+	setSupport := support.Operations.Set
+	route, err := typed.Operation(
+		entityID,
+		contractpowerv1.OperationSet,
+		func(raw json.RawMessage) (SetParameters, error) {
+			parameters, _, err := codecs.SetParameters.Decode(raw)
+			if err != nil {
+				return SetParameters{}, err
+			}
+			if err := validateSetParameters(setSupport, parameters); err != nil {
+				return SetParameters{}, err
+			}
+			return parameters, nil
+		},
+		handlers.Set,
+	)
+	if err != nil {
+		return nil, validationError(err)
+	}
+	handler, err := typed.NewCommandHandler(route)
+	if err != nil {
+		return nil, validationError(err)
+	}
+	return handler, nil
+}
+
+func NewObservation(input ObservationInput) (adapter.Observation, error) {
+	if input.EntityID == "" {
+		return adapter.Observation{}, validationError(errors.New("power/v1 Observation entity ID is required"))
+	}
+	if input.AdapterReceivedAt.IsZero() {
+		return adapter.Observation{}, validationError(errors.New("power/v1 Observation adapter received time is required"))
+	}
+	if input.SourceUpdatedAt != nil && input.SourceUpdatedAt.IsZero() {
+		return adapter.Observation{}, validationError(errors.New("power/v1 Observation source updated time must be non-zero"))
+	}
+	codecs, err := codecs()
+	if err != nil {
+		return adapter.Observation{}, err
+	}
+	value, err := codecs.State.Encode(input.State)
+	if err != nil {
+		return adapter.Observation{}, validationError(fmt.Errorf("invalid power/v1 State: %w", err))
+	}
+	observation := adapter.Observation{
+		EntityID: input.EntityID, Value: value,
+		AdapterReceivedAt: input.AdapterReceivedAt.UTC().Format(time.RFC3339Nano),
+		RefreshForCommand: input.RefreshForCommand,
+	}
+	if input.SourceUpdatedAt != nil {
+		formatted := input.SourceUpdatedAt.UTC().Format(time.RFC3339Nano)
+		observation.SourceUpdatedAt = &formatted
+	}
+	return observation, nil
+}
+
+func validateSetParameters(contractpowerv1.SetSupport, SetParameters) error {
+	return nil
+}
+
+func codecs() (*contractpowerv1.Codecs, error) {
+	compileOnce.Do(func() {
+		sharedCodecs, compileErr = contractpowerv1.Compile()
+	})
+	if compileErr != nil {
+		return nil, fmt.Errorf("compile power/v1 schemas: %w", compileErr)
+	}
+	return sharedCodecs, nil
+}
+
+func validationError(err error) error {
+	return &adapter.ValidationError{Err: err}
+}

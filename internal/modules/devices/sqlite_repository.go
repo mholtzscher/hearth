@@ -93,7 +93,7 @@ func (repository *SQLiteRepository) RegisterBinding(ctx context.Context, params 
 			return Binding{}, err
 		}
 		if err := queries.UpdateEntityDescriptor(ctx, registrationsqlc.UpdateEntityDescriptorParams{
-			Name: params.Entity.Name, ConstraintsJson: string(params.Entity.Constraints), UpdatedAt: updatedAt, ID: mapping.EntityID,
+			Name: params.Entity.Name, SupportJson: string(params.Entity.Support), UpdatedAt: updatedAt, ID: mapping.EntityID,
 		}); err != nil {
 			return Binding{}, fmt.Errorf("update entity descriptor: %w", err)
 		}
@@ -110,7 +110,7 @@ func (repository *SQLiteRepository) RegisterBinding(ctx context.Context, params 
 		}
 		if err := queries.CreateEntity(ctx, registrationsqlc.CreateEntityParams{
 			ID: string(entityID), DeviceID: string(deviceID), Name: params.Entity.Name,
-			TypeID: string(params.Entity.TypeID), ConstraintsJson: string(params.Entity.Constraints),
+			TypeID: string(params.Entity.TypeID), SupportJson: string(params.Entity.Support),
 			CreatedAt: updatedAt, UpdatedAt: updatedAt,
 		}); err != nil {
 			return Binding{}, fmt.Errorf("create entity: %w", err)
@@ -126,16 +126,6 @@ func (repository *SQLiteRepository) RegisterBinding(ctx context.Context, params 
 		return Binding{}, fmt.Errorf("get entity mapping: %w", err)
 	}
 
-	if err := queries.DeleteEntityOperations(ctx, registrationsqlc.DeleteEntityOperationsParams{EntityID: string(entityID)}); err != nil {
-		return Binding{}, fmt.Errorf("replace entity operations: %w", err)
-	}
-	for _, operationName := range params.Entity.SupportedOperations {
-		if err := queries.UpsertEntityOperation(ctx, registrationsqlc.UpsertEntityOperationParams{
-			EntityID: string(entityID), Operation: string(operationName),
-		}); err != nil {
-			return Binding{}, fmt.Errorf("store entity operation: %w", err)
-		}
-	}
 	if err := tx.Commit(); err != nil {
 		return Binding{}, fmt.Errorf("commit registration: %w", err)
 	}
