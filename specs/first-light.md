@@ -562,7 +562,7 @@ type CommandHandler func(context.Context, Command, Responder) error
 
 type Responder interface {
     Accept() error
-    Reject(code, message string) error
+    Reject(message string) error
 }
 ```
 
@@ -572,7 +572,7 @@ Interface contract:
 - `Register` validates the request and performs one request/reply attempt. An accepted response returns its `Binding`; a rejected response returns `*RegistrationRejectedError`, suitable for `errors.As`. Local validation and registration rejection are permanent failures. The adapter application retries only timeout, no-responder, transient NATS, and transient core/infrastructure errors with bounded exponential backoff until success or context cancellation.
 - `PublishObservation` generates one Observation envelope and retries that same bytes/ID across transient NATS disconnects. It returns the generated ID after JetStream publish acknowledgement, or returns that ID with an error when the context expires. There is no local outbox.
 - `ServeCommands` subscribes to the adapter-scoped wildcard, starts an independent handler invocation for each valid request, and blocks until context cancellation or terminal serving failure. Handler invocations may overlap, including for the same Entity, so adapter code must be concurrency-safe. An adapter may serialize internally when its vendor protocol requires it, but the SDK and core provide no ordering guarantee.
-- A `Responder` is one-shot. `Accept` or `Reject` sends the Core NATS reply. A second reply returns `ErrAlreadyResponded`. Returning without a reply returns/logs `ErrMissingResponse` and lets the core request time out.
+- A `Responder` is one-shot. `Accept` or `Reject` sends the Core NATS reply; `Reject` emits the fixed v1 code `upstream_rejected`. A second reply returns `ErrAlreadyResponded`. Returning without a reply returns/logs `ErrMissingResponse` and lets the core request time out.
 - `Close` is idempotent and drains subscriptions within the caller's shutdown budget.
 - Vendor calls, credentials, polling, state refresh, mapping, and checkpoints remain outside the SDK.
 
