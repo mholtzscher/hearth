@@ -1,0 +1,27 @@
+{
+  "cases": [
+    {
+      "name": "boolean-power",
+      "support": {
+        "state": {},
+        "operations": {"set": {}}
+      },
+      "states": [
+        {"value": true, "valid": true},
+        {"value": "on", "valid": false}
+      ],
+      "operations": {
+        "set": {
+          "parameters": [
+            {"value": {"value": true}, "valid": true},
+            {"value": {"value": "on"}, "valid": false}
+          ],
+          "outcomes": [
+            {"parameters": {"value": true}, "state": true, "satisfied": true},
+            {"parameters": {"value": true}, "state": false, "satisfied": false}
+          ]
+        }
+      }
+    }
+  ]
+}

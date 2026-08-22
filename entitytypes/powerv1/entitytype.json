@@ -1,0 +1,18 @@
+{
+  "manifest_version": 1,
+  "type": "hearth.power/v1",
+  "state_schema": "state.schema.json",
+  "support_schema": "support.schema.json",
+  "operations": {
+    "set": {
+      "parameters_schema": "set-parameters.schema.json",
+      "deadline_ms": 10000,
+      "satisfied_when": {
+        "op": "eq",
+        "left": {"root": "parameters", "path": "/value"},
+        "right": {"root": "state", "path": ""}
+      }
+    }
+  },
+  "examples": "examples.json"
+}

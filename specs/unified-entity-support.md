@@ -3,6 +3,7 @@
 - **Status:** Implemented 2026-08-22
 - **Type:** D1-D3 refactoring
 - **Effort:** XL
+- **Behavior generation:** Superseded by [`generated-entity-type-behavior.md`](./generated-entity-type-behavior.md); the support model remains current.
 
 ## Problem and decision
 
@@ -16,9 +17,9 @@ The approved design is:
 4. SQLite stores normalized `support_json` and no operation projection.
 5. Generic typed definitions are erased behind the concrete `TypeCatalog`.
 6. Operation support participates in Command resolution, but not outcome matching. Immutable type behavior, normalized parameters, and the absolute deadline preserve an active Command's meaning across re-registration.
-7. The stateless generic SDK gains typed routing primitives and a power/v1 facade for registration, Commands, and Observations.
+7. The stateless generic SDK gains typed routing primitives and generated power/v1 and brightness/v1 facades for registration, Commands, and Observations.
 
-This reworks D1-D3 and their schemas, fixtures, tests, and documentation. It establishes the typed framework with only `hearth.power/v1`; D4-D6 behavior, runtime type loading, and Command/Observation wire payloads remain unchanged.
+This reworks D1-D3 and their schemas, fixtures, tests, and documentation. The built-in catalog contains `hearth.power/v1` plus `hearth.brightness/v1` as generator/catalog validation; D4-D6 behavior, runtime type loading, and Command/Observation wire payloads remain unchanged.
 
 ## Public JSON contracts
 
@@ -133,12 +134,13 @@ The package embeds and exposes stable IDs for these authoritative schemas:
 
 ```text
 entitytypes/powerv1/
+├── entitytype.json              # schema/operation association manifest
 ├── state.schema.json            # boolean
 ├── support.schema.json          # exact state/operations/set shape
 └── set-parameters.schema.json   # exact {"value": boolean}
 ```
 
-It owns semantic data shapes and codecs. `devices` continues to own deadlines, outcome behavior, and registration policy; transport DTOs remain local to each binary.
+The versioned language-neutral manifest, schemas, and conformance examples generate bindings, codecs, behavior, typed SDK facades, tests, and aggregate core catalog assembly. Concrete Entity types contain no handwritten Go. Transport DTOs remain local to each binary.
 
 ## Domain and catalog contracts
 
@@ -197,7 +199,7 @@ func DefineEntityType[State, Support any](
 ) (EntityTypeDefinition, error)
 
 func NewTypeCatalog([]EntityTypeDefinition) (*TypeCatalog, error)
-func NewFirstLightTypeCatalog() (*TypeCatalog, error)
+func NewBuiltinTypeCatalog() (*TypeCatalog, error)
 
 func (*TypeCatalog) NormalizeSupport(EntityTypeID, EntitySupport) (EntitySupport, error)
 func (*TypeCatalog) NormalizeState(Entity, Value) (Value, error)
@@ -211,6 +213,8 @@ Construction rejects duplicate or empty Entity type IDs, duplicate or non-subjec
 `ResolveCommand` decodes typed Entity support, selects typed operation support, decodes typed parameters, applies cross-document validation, and returns normalized parameters plus the immutable deadline. `Satisfies` resolves the immutable type and recorded operation, decodes persisted parameters and State, and calls `satisfies(parameters, state)` without current support.
 
 For power/v1, schema validation is sufficient for support and State. `set` is always present, has a ten-second deadline, and is satisfied exactly when `parameters.Value == bool(state)`.
+
+Brightness/v1 generates integer State and support bindings from `{"state":{"maximum":N},"operations":{"set":{"step":S}}}`. State and parameters are schema-bounded to 0–100; generated DSL behavior requires State and `set.value` not to exceed `N`, requires `set.value` to align with `S`, and matches outcomes by exact integer equality.
 
 ## Registration and persistence
 
@@ -331,18 +335,21 @@ func NewObservation(ObservationInput) (adapter.Observation, error)
 ```text
 entitytypes/
 ├── codec.go, codec_test.go                         # new — schema-backed typed JSON
-└── powerv1/
-    ├── types.go, schemas.go, schemas_test.go       # new — bindings and schema access
-    └── *.schema.json                               # new — support, State, set parameters
+├── generate.go, entitytype-manifest.schema.json   # repository generation entrypoint/contract
+├── powerv1/                                        # declarative inputs and generated outputs
+└── brightnessv1/                                   # declarative inputs and generated outputs
 contracts/v1/
 ├── registration-request.schema.json                # modify — support field
 └── embed_test.go                                   # modify — fixtures
 sdk/adapter/
 ├── types.go, session_test.go                       # modify — support DTO/fixtures
 ├── typed/handler.go, handler_test.go               # new — typed routing
-└── powerv1/facade.go, facade_test.go               # new — typed power facade
+├── powerv1/zz_generated_facade.go                  # generated — typed power facade
+└── brightnessv1/zz_generated_facade.go             # generated — typed brightness facade
+internal/cmd/entitytypegen/                         # new — complete build-time generator
 internal/modules/devices/
-├── model.go, catalog.go, catalog_test.go            # modify — support and typed catalog
+├── catalog.go, catalog_test.go                      # modify — generic typed catalog
+├── zz_generated_entitytypes*.go                    # generated — built-ins and conformance
 ├── registration.go, registration_test.go            # modify — normalization
 └── sqlite_repository.go, sqlite_repository_test.go  # modify — support persistence
 internal/platform/db/
@@ -352,7 +359,7 @@ internal/platform/db/
 CONTEXT.md, docs/architecture.md, specs/first-light.md  # modify — reconcile language/contracts
 ```
 
-`devices` owns product behavior, `internal/platform/db` owns persistence implementation, `sdk/adapter` owns adapter transport/facades, and public `entitytypes` owns semantic schemas and Go bindings. No new product module or repository seam is introduced.
+Entity-type manifests own built-in behavior, `devices` owns generic catalog and orchestration policy, `internal/platform/db` owns persistence implementation, `sdk/adapter` owns adapter transport/facades, and public `entitytypes` owns semantic contracts and generated bindings. No new product module or repository seam is introduced.
 
 ## Deliverables
 
@@ -372,7 +379,8 @@ CONTEXT.md, docs/architecture.md, specs/first-light.md  # modify — reconcile l
 - [x] A test-only typed definition proves State, Entity support, operation support, parameters, validation, equality, and outcome callbacks cross the erased catalog without raw JSON in typed callbacks.
 - [x] `ResolveCommand` rejects unsupported operations and support/parameter incompatibility before Command creation; `Satisfies` still matches a recorded Command after Entity support changes.
 - [x] Registration persists normalized support, re-registration replaces it without changing canonical IDs, and restart reads the same support. SQLite contains `entities.support_json` and no `entity_operations` table.
-- [x] A Go SDK consumer registers power/v1, handles typed `SetParameters`, and creates a typed boolean Observation without constructing `json.RawMessage` or switching on operation strings.
+- [x] Go SDK consumers register power/v1 and brightness/v1, handle typed `SetParameters`, and create typed Observations without constructing `json.RawMessage` or switching on operation strings.
+- [x] Brightness/v1 generation proves non-empty State/operation support, integer State/parameters, and support-dependent maximum/step validation.
 - [x] Existing generic Session behavior remains unchanged, including Command/Observation JSON, concurrent handlers, one-shot responders, publication acknowledgement/retry, and trace/correlation/causation propagation.
 
 Tests remain local to the owning seam:

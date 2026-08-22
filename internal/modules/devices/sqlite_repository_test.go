@@ -349,7 +349,7 @@ func openMigratedDatabase(t *testing.T, path string) *sql.DB {
 
 func firstLightCatalog(t *testing.T) *TypeCatalog {
 	t.Helper()
-	catalog, err := NewFirstLightTypeCatalog()
+	catalog, err := NewBuiltinTypeCatalog()
 	if err != nil {
 		t.Fatal(err)
 	}

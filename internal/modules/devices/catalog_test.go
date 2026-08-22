@@ -9,64 +9,6 @@ import (
 	"github.com/mholtzscher/hearth/entitytypes"
 )
 
-func TestFirstLightCatalog(t *testing.T) {
-	catalog, err := NewFirstLightTypeCatalog()
-	if err != nil {
-		t.Fatal(err)
-	}
-	entity := Entity{
-		ID:      EntityID("ent_01890f47-7a6b-7c4d-8e9f-0123456789ab"),
-		TypeID:  EntityTypePowerV1,
-		Support: EntitySupport(`{"state":{},"operations":{"set":{}}}`),
-	}
-
-	support, err := catalog.NormalizeSupport(entity.TypeID, EntitySupport(" \n {\"state\":{},\"operations\":{\"set\":{}}} "))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if string(support) != `{"state":{},"operations":{"set":{}}}` {
-		t.Fatalf("normalized support = %s", support)
-	}
-	state, err := catalog.NormalizeState(entity, Value(` true `))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if string(state) != "true" {
-		t.Fatalf("normalized state = %s", state)
-	}
-	if _, err := catalog.NormalizeState(entity, Value(`"on"`)); err == nil {
-		t.Fatal("non-boolean state unexpectedly accepted")
-	}
-
-	command, err := catalog.ResolveCommand(entity, OperationNameSet, CommandParameters(`{ "value": true }`))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if string(command.Parameters) != `{"value":true}` || command.Deadline != 10*time.Second {
-		t.Fatalf("resolved command = %#v", command)
-	}
-	if _, err := catalog.ResolveCommand(entity, OperationNameSet, CommandParameters(`{"value":true,"transition":1}`)); err == nil {
-		t.Fatal("additional parameter unexpectedly accepted")
-	}
-
-	record := CommandRecord{OperationName: OperationNameSet, Parameters: command.Parameters}
-	for _, test := range []struct {
-		state Value
-		want  bool
-	}{{Value(`true`), true}, {Value(`false`), false}} {
-		satisfied, err := catalog.Satisfies(entity, record, test.state)
-		if err != nil || satisfied != test.want {
-			t.Fatalf("state %s: satisfied=%v err=%v", test.state, satisfied, err)
-		}
-	}
-
-	entity.Support = EntitySupport(`{"state":{},"operations":{}}`)
-	satisfied, err := catalog.Satisfies(entity, record, Value(`true`))
-	if err != nil || !satisfied {
-		t.Fatalf("recorded command after support update: satisfied=%v err=%v", satisfied, err)
-	}
-}
-
 func TestGenericCatalogCarriesTypedBehaviorAcrossErasure(t *testing.T) {
 	type state struct {
 		Level int `json:"level"`

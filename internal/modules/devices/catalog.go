@@ -7,7 +7,6 @@ import (
 	"time"
 
 	"github.com/mholtzscher/hearth/entitytypes"
-	contractpowerv1 "github.com/mholtzscher/hearth/entitytypes/powerv1"
 )
 
 var operationNamePattern = regexp.MustCompile(`^[a-z0-9][a-z0-9_-]{0,62}$`)
@@ -205,47 +204,6 @@ func NewTypeCatalog(definitions []EntityTypeDefinition) (*TypeCatalog, error) {
 		catalog.types[definition.id] = copy
 	}
 	return catalog, nil
-}
-
-func NewFirstLightTypeCatalog() (*TypeCatalog, error) {
-	definition, err := newPowerV1TypeDefinition(EntityTypePowerV1)
-	if err != nil {
-		return nil, err
-	}
-	return NewTypeCatalog([]EntityTypeDefinition{definition})
-}
-
-func newPowerV1TypeDefinition(id EntityTypeID) (EntityTypeDefinition, error) {
-	codecs, err := contractpowerv1.Compile()
-	if err != nil {
-		return EntityTypeDefinition{}, fmt.Errorf("compile power/v1 codecs: %w", err)
-	}
-	set := DefineOperation(
-		OperationNameSet,
-		codecs.SetParameters,
-		func(support contractpowerv1.Support) (contractpowerv1.SetSupport, bool) {
-			return support.Operations.Set, true
-		},
-		func(contractpowerv1.Support, contractpowerv1.SetSupport, contractpowerv1.SetParameters) error {
-			return nil
-		},
-		10*time.Second,
-		func(parameters contractpowerv1.SetParameters, state contractpowerv1.State) bool {
-			return parameters.Value == bool(state)
-		},
-	)
-	definition, err := DefineEntityType(
-		id,
-		codecs.State,
-		codecs.Support,
-		func(contractpowerv1.Support, contractpowerv1.State) error { return nil },
-		func(left, right contractpowerv1.State) bool { return left == right },
-		set,
-	)
-	if err != nil {
-		return EntityTypeDefinition{}, err
-	}
-	return definition, nil
 }
 
 func (catalog *TypeCatalog) NormalizeSupport(typeID EntityTypeID, support EntitySupport) (EntitySupport, error) {

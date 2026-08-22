@@ -17,8 +17,6 @@ const DeviceKindLight DeviceKind = "light"
 
 type EntityTypeID string
 
-const EntityTypePowerV1 EntityTypeID = "hearth.power/v1"
-
 type OperationName string
 
 const OperationNameSet OperationName = "set"

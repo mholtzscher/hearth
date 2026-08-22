@@ -3,7 +3,7 @@
 - **Status:** In progress
 - **Approved by:** Michael
 - **Approved:** 2026-08-19
-- **Amended:** 2026-08-22 — unified Entity constraints and operation availability as schema-backed typed support; added typed SDK facades; 2026-08-20 — generalized Entity values and Command parameters behind a closed Entity-type catalog, renamed the product Hearth, persisted Entity names, and defined permanent registration rejections and subscribe-first snapshot reconciliation
+- **Amended:** 2026-08-22 — unified Entity support, generated typed SDK facades, and added built-in brightness/v1 as generator/catalog validation; 2026-08-20 — generalized Entity values and Command parameters behind a closed Entity-type catalog, renamed the product Hearth, persisted Entity names, and defined permanent registration rejections and subscribe-first snapshot reconciliation
 - **Type:** Feature plan
 - **Effort:** XL (relative estimate only)
 
@@ -15,7 +15,7 @@ Hearth needs a useful first vertical slice for a technical self-hoster migrating
 
 Build three Go processes: the Hearth core daemon `hearthd`, a disposable Home Assistant migration adapter, and a fault-injecting simulator. A thin, stateless Go SDK hides NATS protocol mechanics; authoritative JSON Schemas support non-Go adapters.
 
-Adapters register configured Devices and Entities over Core NATS request/reply, publish Observations durably to JetStream, and serve ephemeral Commands over Core NATS request/reply. Entity descriptors reference a core-owned, versioned Entity-type catalog; generic JSON values and Command parameters pass through the transport and persistence plumbing, while the catalog validates their semantics. The first-light catalog remains closed to one `hearth.power/v1` definition. The core projects canonical State and records every dispatched Command attempt and outcome in SQLite, then exposes a loopback Echo/Huma HTTP interface. Command delivery and outcome waits remain synchronous and ephemeral; records never cause replay or redispatch. Commands for the same Entity may overlap and are correlated independently by Command ID.
+Adapters register configured Devices and Entities over Core NATS request/reply, publish Observations durably to JetStream, and serve ephemeral Commands over Core NATS request/reply. Entity descriptors reference a core-owned, versioned Entity-type catalog; generic JSON values and Command parameters pass through the transport and persistence plumbing, while the catalog validates their semantics. The built-in catalog contains `hearth.power/v1` plus `hearth.brightness/v1` as generator/catalog validation; the first-light adapter and HTTP scenario continue to use only power. The core projects canonical State and records every dispatched Command attempt and outcome in SQLite, then exposes a loopback Echo/Huma HTTP interface. Command delivery and outcome waits remain synchronous and ephemeral; records never cause replay or redispatch. Commands for the same Entity may overlap and are correlated independently by Command ID.
 
 ## Scope
 
@@ -107,7 +107,10 @@ type DeviceKind string
 const DeviceKindLight DeviceKind = "light"
 
 type EntityTypeID string
-const EntityTypePowerV1 EntityTypeID = "hearth.power/v1"
+const (
+    EntityTypePowerV1      EntityTypeID = "hearth.power/v1"
+    EntityTypeBrightnessV1 EntityTypeID = "hearth.brightness/v1"
+)
 
 type OperationName string
 const OperationNameSet OperationName = "set"
@@ -249,7 +252,7 @@ func DefineEntityType[State, Support any](
 ) (EntityTypeDefinition, error)
 
 func NewTypeCatalog([]EntityTypeDefinition) (*TypeCatalog, error)
-func NewFirstLightTypeCatalog() (*TypeCatalog, error)
+func NewBuiltinTypeCatalog() (*TypeCatalog, error)
 func (*TypeCatalog) NormalizeSupport(EntityTypeID, EntitySupport) (EntitySupport, error)
 func (*TypeCatalog) NormalizeState(Entity, Value) (Value, error)
 func (*TypeCatalog) EqualState(Entity, Value, Value) (bool, error)
@@ -257,7 +260,7 @@ func (*TypeCatalog) ResolveCommand(Entity, OperationName, CommandParameters) (Re
 func (*TypeCatalog) Satisfies(Entity, CommandRecord, Value) (bool, error)
 ```
 
-Construction rejects empty or duplicate type IDs, duplicate or non-subject-safe operation names, missing codecs/functions, and non-positive deadlines. `NewFirstLightTypeCatalog` supplies the only production definition; the generic factories also support focused typed tests without enabling runtime type loading.
+Construction rejects empty or duplicate type IDs, duplicate or non-subject-safe operation names, missing codecs/functions, and non-positive deadlines. `NewBuiltinTypeCatalog` supplies power/v1 and brightness/v1 definitions; the generic factories also support focused typed tests without enabling runtime type loading.
 
 The built-in `entitytypes/powerv1` package defines boolean State, exact `{"value": boolean}` set parameters, and this exact support document:
 
@@ -267,7 +270,9 @@ The built-in `entitytypes/powerv1` package defines boolean State, exact `{"value
 
 An operation key's presence means the Entity supports it. `ResolveCommand` decodes current typed support, selects operation support, validates typed parameters against both schemas and cross-document rules, and returns normalized parameters plus the immutable ten-second deadline. `NormalizeState` applies State schema and support compatibility; equality uses typed boolean equality.
 
-`Satisfies` deliberately excludes current support. It decodes the recorded normalized parameters and candidate State, then applies the immutable operation outcome callback; for power/v1, `parameters.Value == bool(state)`. Combined with immutable type IDs/definitions and persisted absolute deadlines, this preserves active and historical Command meaning when re-registration replaces support. Entity `type_id` remains immutable; valid names, external IDs, and normalized support may change transactionally.
+The generated brightness/v1 binding uses integer State from 0–100 and support `{"state":{"maximum":N},"operations":{"set":{"step":S}}}`. Its `set.value` must not exceed `N` and must be aligned to `S`; supported State must not exceed `N`.
+
+`Satisfies` deliberately excludes current support. It decodes the recorded normalized parameters and candidate State, then applies the immutable operation outcome callback; power/v1 uses `parameters.Value == bool(state)` and brightness/v1 uses exact integer equality. Combined with immutable type IDs/definitions and persisted absolute deadlines, this preserves active and historical Command meaning when re-registration replaces support. Entity `type_id` remains immutable; valid names, external IDs, and normalized support may change transactionally.
 
 Runtime type registration, manifest loading, arbitrary matching code, and persistence of type definitions remain out of scope. Later built-in or explicitly installed definitions may populate the catalog without changing generic transport, persistence, or Command orchestration interfaces.
 
@@ -308,7 +313,7 @@ Canonical schema files and IDs are:
 | `contracts/v1/command-response.schema.json` | `urn:hearth:schema:command-response:v1` |
 | `contracts/v1/common.schema.json` | `urn:hearth:schema:common:v1` |
 
-`contracts/v1/embed.go` exposes these same files through `embed.FS`. The core and SDK compile them with `jsonschema/v6` at startup; non-Go adapters consume the JSON files directly. `entitytypes/powerv1` similarly embeds the authoritative power/v1 support, State, and set-parameter schemas and provides schema-backed Go bindings.
+`contracts/v1/embed.go` exposes these same files through `embed.FS`. The core and SDK compile them with `jsonschema/v6` at startup; non-Go adapters consume the JSON files directly. `entitytypes/powerv1` and `entitytypes/brightnessv1` similarly embed authoritative support, State, and set-parameter schemas. Each versioned language-neutral `entitytype.json` associates those schemas with operation names and defines deadlines, cross-document validation, and outcome matching through a small schema-checked relation DSL; `examples.json` supplies conformance cases. `entitytypegen` derives all per-type Go, typed SDK facades, tests, and aggregate core catalog assembly.
 
 ### Registration payloads
 
@@ -1005,6 +1010,7 @@ cmd/
 ├── hearth-adapter-homeassistant/    # new — thin disposable-adapter entry point
 └── hearth-simulator/                # new — thin simulator entry point
 internal/
+├── cmd/entitytypegen/               # new — complete build-time Entity-type generator
 ├── app/
 │   ├── hearthd/                     # new — core composition, HTTP, lifecycle
 │   ├── homeassistant/               # new — migration-adapter composition
@@ -1030,11 +1036,13 @@ internal/
     └── nats/                        # new — core NATS/JetStream transport
 entitytypes/
 ├── codec.go                         # new — schema-backed typed JSON codec
-└── powerv1/                         # new — authoritative semantic schemas and Go bindings
+├── powerv1/                         # new — declarative power inputs and generated outputs
+└── brightnessv1/                    # new — declarative brightness inputs and generated outputs
 sdk/
 └── adapter/                         # new — public, stateless Go session facade
     ├── typed/                       # new — typed Command routing
-    └── powerv1/                     # new — typed power registration/Command/Observation facade
+    ├── powerv1/                     # new/generated — typed power facade
+    └── brightnessv1/                # new/generated — typed brightness facade
 contracts/
 └── v1/
     ├── embed.go                     # new — canonical embedded schema FS
