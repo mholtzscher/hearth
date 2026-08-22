@@ -34,18 +34,24 @@
           "items": {
             "type": "object",
             "additionalProperties": false,
-            "required": ["key", "external_id", "name", "type", "constraints", "operations"],
+            "required": ["key", "external_id", "name", "type", "support"],
             "properties": {
               "key": { "$ref": "urn:hearth:schema:common:v1#/$defs/slug" },
               "external_id": { "$ref": "urn:hearth:schema:common:v1#/$defs/external_id" },
               "name": { "$ref": "urn:hearth:schema:common:v1#/$defs/name" },
               "type": { "$ref": "urn:hearth:schema:common:v1#/$defs/catalog_type" },
-              "constraints": { "type": "object" },
-              "operations": {
-                "type": "array",
-                "minItems": 1,
-                "uniqueItems": true,
-                "items": { "$ref": "urn:hearth:schema:common:v1#/$defs/operation" }
+              "support": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["state", "operations"],
+                "properties": {
+                  "state": { "type": "object" },
+                  "operations": {
+                    "type": "object",
+                    "propertyNames": { "$ref": "urn:hearth:schema:common:v1#/$defs/operation_name" },
+                    "additionalProperties": { "type": "object" }
+                  }
+                }
               }
             }
           }

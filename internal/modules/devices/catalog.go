@@ -1,32 +1,178 @@
 package devices
 
 import (
-	"bytes"
 	"encoding/json"
 	"fmt"
-	"io"
+	"regexp"
 	"time"
 
-	"github.com/santhosh-tekuri/jsonschema/v6"
+	"github.com/mholtzscher/hearth/entitytypes"
 )
 
-type OutcomePolicy string
+var operationNamePattern = regexp.MustCompile(`^[a-z0-9][a-z0-9_-]{0,62}$`)
 
-const OutcomeParameterEqualsState OutcomePolicy = "parameter_equals_state"
+type OperationDefinition[State, Support any] struct {
+	name  OperationName
+	build func(*entitytypes.JSONCodec[State], *entitytypes.JSONCodec[Support]) erasedOperationDefinition
+	err   error
+}
 
-type OperationDefinition struct {
-	Name             Operation
-	ParametersSchema json.RawMessage
-	OutcomePolicy    OutcomePolicy
-	OutcomeParameter string
-	Deadline         time.Duration
+func DefineOperation[State, Support, OperationSupport, Parameters any](
+	name OperationName,
+	parameters *entitytypes.JSONCodec[Parameters],
+	selectSupport func(Support) (OperationSupport, bool),
+	validateParameters func(Support, OperationSupport, Parameters) error,
+	deadline time.Duration,
+	satisfies func(Parameters, State) bool,
+) OperationDefinition[State, Support] {
+	definition := OperationDefinition[State, Support]{name: name}
+	switch {
+	case !operationNamePattern.MatchString(string(name)):
+		definition.err = fmt.Errorf("operation name %q is not subject-safe", name)
+	case parameters == nil:
+		definition.err = fmt.Errorf("operation %q has no parameter codec", name)
+	case selectSupport == nil:
+		definition.err = fmt.Errorf("operation %q has no support selector", name)
+	case validateParameters == nil:
+		definition.err = fmt.Errorf("operation %q has no parameter validator", name)
+	case deadline <= 0:
+		definition.err = fmt.Errorf("operation %q has a non-positive deadline", name)
+	case satisfies == nil:
+		definition.err = fmt.Errorf("operation %q has no outcome matcher", name)
+	default:
+		definition.build = func(state *entitytypes.JSONCodec[State], support *entitytypes.JSONCodec[Support]) erasedOperationDefinition {
+			return erasedOperationDefinition{
+				resolve: func(rawSupport EntitySupport, rawParameters CommandParameters) (CommandParameters, error) {
+					typedSupport, _, err := support.Decode(json.RawMessage(rawSupport))
+					if err != nil {
+						return nil, fmt.Errorf("decode entity support: %w", err)
+					}
+					operationSupport, supported := selectSupport(typedSupport)
+					if !supported {
+						return nil, fmt.Errorf("operation %q is not supported", name)
+					}
+					typedParameters, normalized, err := parameters.Decode(json.RawMessage(rawParameters))
+					if err != nil {
+						return nil, fmt.Errorf("decode parameters for operation %q: %w", name, err)
+					}
+					if err := validateParameters(typedSupport, operationSupport, typedParameters); err != nil {
+						return nil, fmt.Errorf("validate parameters for operation %q: %w", name, err)
+					}
+					return CommandParameters(normalized), nil
+				},
+				deadline: deadline,
+				satisfies: func(rawParameters CommandParameters, rawState Value) (bool, error) {
+					typedParameters, _, err := parameters.Decode(json.RawMessage(rawParameters))
+					if err != nil {
+						return false, fmt.Errorf("decode recorded parameters for operation %q: %w", name, err)
+					}
+					typedState, _, err := state.Decode(json.RawMessage(rawState))
+					if err != nil {
+						return false, fmt.Errorf("decode state for operation %q: %w", name, err)
+					}
+					return satisfies(typedParameters, typedState), nil
+				},
+			}
+		}
+	}
+	return definition
 }
 
 type EntityTypeDefinition struct {
-	ID                EntityTypeID
-	StateSchema       json.RawMessage
-	ConstraintsSchema json.RawMessage
-	Operations        map[Operation]OperationDefinition
+	id               EntityTypeID
+	normalizeSupport func(EntitySupport) (EntitySupport, error)
+	normalizeState   func(EntitySupport, Value) (Value, error)
+	equalState       func(EntitySupport, Value, Value) (bool, error)
+	operations       map[OperationName]erasedOperationDefinition
+}
+
+type erasedOperationDefinition struct {
+	resolve   func(EntitySupport, CommandParameters) (CommandParameters, error)
+	deadline  time.Duration
+	satisfies func(CommandParameters, Value) (bool, error)
+}
+
+func DefineEntityType[State, Support any](
+	id EntityTypeID,
+	state *entitytypes.JSONCodec[State],
+	support *entitytypes.JSONCodec[Support],
+	validateSupportedState func(Support, State) error,
+	equalState func(State, State) bool,
+	operations ...OperationDefinition[State, Support],
+) (EntityTypeDefinition, error) {
+	if id == "" {
+		return EntityTypeDefinition{}, fmt.Errorf("entity type ID is required")
+	}
+	if state == nil {
+		return EntityTypeDefinition{}, fmt.Errorf("entity type %q has no state codec", id)
+	}
+	if support == nil {
+		return EntityTypeDefinition{}, fmt.Errorf("entity type %q has no support codec", id)
+	}
+	if validateSupportedState == nil {
+		return EntityTypeDefinition{}, fmt.Errorf("entity type %q has no supported-state validator", id)
+	}
+	if equalState == nil {
+		return EntityTypeDefinition{}, fmt.Errorf("entity type %q has no state equality function", id)
+	}
+
+	definition := EntityTypeDefinition{
+		id:         id,
+		operations: make(map[OperationName]erasedOperationDefinition, len(operations)),
+	}
+	for _, operation := range operations {
+		if operation.err != nil {
+			return EntityTypeDefinition{}, fmt.Errorf("define entity type %q: %w", id, operation.err)
+		}
+		if operation.build == nil {
+			return EntityTypeDefinition{}, fmt.Errorf("entity type %q has an invalid operation %q", id, operation.name)
+		}
+		if _, duplicate := definition.operations[operation.name]; duplicate {
+			return EntityTypeDefinition{}, fmt.Errorf("entity type %q has duplicate operation %q", id, operation.name)
+		}
+		definition.operations[operation.name] = operation.build(state, support)
+	}
+
+	definition.normalizeSupport = func(raw EntitySupport) (EntitySupport, error) {
+		_, normalized, err := support.Decode(json.RawMessage(raw))
+		if err != nil {
+			return nil, fmt.Errorf("invalid support for entity type %q: %w", id, err)
+		}
+		return EntitySupport(normalized), nil
+	}
+	definition.normalizeState = func(rawSupport EntitySupport, rawState Value) (Value, error) {
+		typedSupport, _, err := support.Decode(json.RawMessage(rawSupport))
+		if err != nil {
+			return nil, fmt.Errorf("invalid support for entity type %q: %w", id, err)
+		}
+		typedState, normalized, err := state.Decode(json.RawMessage(rawState))
+		if err != nil {
+			return nil, fmt.Errorf("invalid state for entity type %q: %w", id, err)
+		}
+		if err := validateSupportedState(typedSupport, typedState); err != nil {
+			return nil, fmt.Errorf("state is unsupported by entity type %q: %w", id, err)
+		}
+		return Value(normalized), nil
+	}
+	definition.equalState = func(rawSupport EntitySupport, persisted, incoming Value) (bool, error) {
+		typedSupport, _, err := support.Decode(json.RawMessage(rawSupport))
+		if err != nil {
+			return false, fmt.Errorf("invalid support for entity type %q: %w", id, err)
+		}
+		typedPersisted, _, err := state.Decode(json.RawMessage(persisted))
+		if err != nil {
+			return false, fmt.Errorf("invalid persisted state for entity type %q: %w", id, err)
+		}
+		typedIncoming, _, err := state.Decode(json.RawMessage(incoming))
+		if err != nil {
+			return false, fmt.Errorf("invalid incoming state for entity type %q: %w", id, err)
+		}
+		if err := validateSupportedState(typedSupport, typedIncoming); err != nil {
+			return false, fmt.Errorf("incoming state is unsupported by entity type %q: %w", id, err)
+		}
+		return equalState(typedPersisted, typedIncoming), nil
+	}
+	return definition, nil
 }
 
 type ResolvedCommand struct {
@@ -34,123 +180,35 @@ type ResolvedCommand struct {
 	Deadline   time.Duration
 }
 
-type compiledOperation struct {
-	definition OperationDefinition
-	parameters *jsonschema.Schema
-}
-
-type compiledType struct {
-	state       *jsonschema.Schema
-	constraints *jsonschema.Schema
-	operations  map[Operation]compiledOperation
-}
-
 type TypeCatalog struct {
-	types map[EntityTypeID]compiledType
+	types map[EntityTypeID]EntityTypeDefinition
 }
 
 func NewTypeCatalog(definitions []EntityTypeDefinition) (*TypeCatalog, error) {
-	catalog := &TypeCatalog{types: make(map[EntityTypeID]compiledType, len(definitions))}
+	catalog := &TypeCatalog{types: make(map[EntityTypeID]EntityTypeDefinition, len(definitions))}
 	for _, definition := range definitions {
-		if definition.ID == "" {
-			return nil, fmt.Errorf("entity type ID is required")
+		if definition.id == "" || definition.normalizeSupport == nil || definition.normalizeState == nil || definition.equalState == nil || definition.operations == nil {
+			return nil, fmt.Errorf("invalid entity type definition")
 		}
-		if _, exists := catalog.types[definition.ID]; exists {
-			return nil, fmt.Errorf("duplicate entity type %q", definition.ID)
+		if _, duplicate := catalog.types[definition.id]; duplicate {
+			return nil, fmt.Errorf("duplicate entity type %q", definition.id)
 		}
-
-		state, err := compileSchema(definition.ID, "state", definition.StateSchema)
-		if err != nil {
-			return nil, err
+		copy := definition
+		copy.operations = make(map[OperationName]erasedOperationDefinition, len(definition.operations))
+		for name, operation := range definition.operations {
+			copy.operations[name] = operation
 		}
-		constraints, err := compileSchema(definition.ID, "constraints", definition.ConstraintsSchema)
-		if err != nil {
-			return nil, err
-		}
-
-		compiled := compiledType{
-			state:       state,
-			constraints: constraints,
-			operations:  make(map[Operation]compiledOperation, len(definition.Operations)),
-		}
-		operationNames := make(map[Operation]struct{}, len(definition.Operations))
-		for key, operation := range definition.Operations {
-			if key == "" || operation.Name == "" {
-				return nil, fmt.Errorf("entity type %q has an operation without a name", definition.ID)
-			}
-			if key != operation.Name {
-				return nil, fmt.Errorf("entity type %q operation key %q does not match name %q", definition.ID, key, operation.Name)
-			}
-			if _, exists := operationNames[operation.Name]; exists {
-				return nil, fmt.Errorf("entity type %q has duplicate operation %q", definition.ID, operation.Name)
-			}
-			operationNames[operation.Name] = struct{}{}
-			if operation.OutcomePolicy != OutcomeParameterEqualsState {
-				return nil, fmt.Errorf("entity type %q operation %q has unsupported outcome policy %q", definition.ID, operation.Name, operation.OutcomePolicy)
-			}
-			if operation.OutcomeParameter == "" {
-				return nil, fmt.Errorf("entity type %q operation %q has no outcome parameter", definition.ID, operation.Name)
-			}
-			if operation.Deadline <= 0 {
-				return nil, fmt.Errorf("entity type %q operation %q has a non-positive deadline", definition.ID, operation.Name)
-			}
-			parameters, err := compileSchema(definition.ID, string(operation.Name)+" parameters", operation.ParametersSchema)
-			if err != nil {
-				return nil, err
-			}
-			compiled.operations[key] = compiledOperation{definition: operation, parameters: parameters}
-		}
-		catalog.types[definition.ID] = compiled
+		catalog.types[definition.id] = copy
 	}
 	return catalog, nil
 }
 
-func NewFirstLightTypeCatalog() (*TypeCatalog, error) {
-	return NewTypeCatalog([]EntityTypeDefinition{{
-		ID:                EntityTypePowerV1,
-		StateSchema:       json.RawMessage(`{"type":"boolean"}`),
-		ConstraintsSchema: json.RawMessage(`{"type":"object","maxProperties":0,"additionalProperties":false}`),
-		Operations: map[Operation]OperationDefinition{
-			OperationSet: {
-				Name:             OperationSet,
-				ParametersSchema: json.RawMessage(`{"type":"object","properties":{"value":{"type":"boolean"}},"required":["value"],"additionalProperties":false}`),
-				OutcomePolicy:    OutcomeParameterEqualsState,
-				OutcomeParameter: "value",
-				Deadline:         10 * time.Second,
-			},
-		},
-	}})
-}
-
-func (catalog *TypeCatalog) ValidateEntity(typeID EntityTypeID, constraints json.RawMessage, operations []Operation) error {
+func (catalog *TypeCatalog) NormalizeSupport(typeID EntityTypeID, support EntitySupport) (EntitySupport, error) {
 	definition, err := catalog.resolve(typeID)
 	if err != nil {
-		return err
+		return nil, err
 	}
-	value, _, err := decodeJSON(constraints)
-	if err != nil {
-		return fmt.Errorf("invalid constraints for entity type %q: %w", typeID, err)
-	}
-	if err := definition.constraints.Validate(value); err != nil {
-		return fmt.Errorf("invalid constraints for entity type %q: %w", typeID, err)
-	}
-	if len(operations) == 0 {
-		return fmt.Errorf("entity type %q requires at least one operation", typeID)
-	}
-	seen := make(map[Operation]struct{}, len(operations))
-	for _, operation := range operations {
-		if _, duplicate := seen[operation]; duplicate {
-			return fmt.Errorf("entity type %q has duplicate operation %q", typeID, operation)
-		}
-		seen[operation] = struct{}{}
-		if _, allowed := definition.operations[operation]; !allowed {
-			return fmt.Errorf("entity type %q does not allow operation %q", typeID, operation)
-		}
-	}
-	if typeID == EntityTypePowerV1 && (len(operations) != 1 || operations[0] != OperationSet) {
-		return fmt.Errorf("entity type %q requires exactly operation %q", typeID, OperationSet)
-	}
-	return nil
+	return definition.normalizeSupport(support)
 }
 
 func (catalog *TypeCatalog) NormalizeState(entity Entity, value Value) (Value, error) {
@@ -158,48 +216,31 @@ func (catalog *TypeCatalog) NormalizeState(entity Entity, value Value) (Value, e
 	if err != nil {
 		return nil, err
 	}
-	decoded, normalized, err := decodeJSON(json.RawMessage(value))
-	if err != nil {
-		return nil, fmt.Errorf("invalid state for entity type %q: %w", entity.TypeID, err)
-	}
-	if err := definition.state.Validate(decoded); err != nil {
-		return nil, fmt.Errorf("invalid state for entity type %q: %w", entity.TypeID, err)
-	}
-	return Value(normalized), nil
+	return definition.normalizeState(entity.Support, value)
 }
 
-func (catalog *TypeCatalog) EqualState(entity Entity, left, right Value) (bool, error) {
-	normalizedLeft, err := catalog.NormalizeState(entity, left)
+func (catalog *TypeCatalog) EqualState(entity Entity, persisted, incoming Value) (bool, error) {
+	definition, err := catalog.resolve(entity.TypeID)
 	if err != nil {
 		return false, err
 	}
-	normalizedRight, err := catalog.NormalizeState(entity, right)
-	if err != nil {
-		return false, err
-	}
-	return bytes.Equal(normalizedLeft, normalizedRight), nil
+	return definition.equalState(entity.Support, persisted, incoming)
 }
 
-func (catalog *TypeCatalog) ResolveCommand(entity Entity, operation Operation, parameters CommandParameters) (ResolvedCommand, error) {
+func (catalog *TypeCatalog) ResolveCommand(entity Entity, operationName OperationName, parameters CommandParameters) (ResolvedCommand, error) {
 	definition, err := catalog.resolve(entity.TypeID)
 	if err != nil {
 		return ResolvedCommand{}, err
 	}
-	if !containsOperation(entity.Operations, operation) {
-		return ResolvedCommand{}, fmt.Errorf("operation %q is unavailable for entity %q", operation, entity.ID)
-	}
-	compiled, exists := definition.operations[operation]
+	operation, exists := definition.operations[operationName]
 	if !exists {
-		return ResolvedCommand{}, fmt.Errorf("entity type %q does not define operation %q", entity.TypeID, operation)
+		return ResolvedCommand{}, fmt.Errorf("entity type %q does not define operation %q", entity.TypeID, operationName)
 	}
-	decoded, normalized, err := decodeJSON(json.RawMessage(parameters))
+	normalized, err := operation.resolve(entity.Support, parameters)
 	if err != nil {
-		return ResolvedCommand{}, fmt.Errorf("invalid parameters for operation %q: %w", operation, err)
+		return ResolvedCommand{}, fmt.Errorf("resolve operation %q for entity %q: %w", operationName, entity.ID, err)
 	}
-	if err := compiled.parameters.Validate(decoded); err != nil {
-		return ResolvedCommand{}, fmt.Errorf("invalid parameters for operation %q: %w", operation, err)
-	}
-	return ResolvedCommand{Parameters: CommandParameters(normalized), Deadline: compiled.definition.Deadline}, nil
+	return ResolvedCommand{Parameters: normalized, Deadline: operation.deadline}, nil
 }
 
 func (catalog *TypeCatalog) Satisfies(entity Entity, command CommandRecord, value Value) (bool, error) {
@@ -207,88 +248,20 @@ func (catalog *TypeCatalog) Satisfies(entity Entity, command CommandRecord, valu
 	if err != nil {
 		return false, err
 	}
-	operation, exists := definition.operations[command.Operation]
+	operation, exists := definition.operations[command.OperationName]
 	if !exists {
-		return false, fmt.Errorf("entity type %q does not define operation %q", entity.TypeID, command.Operation)
+		return false, fmt.Errorf("entity type %q does not define operation %q", entity.TypeID, command.OperationName)
 	}
-	decoded, normalized, err := decodeJSON(json.RawMessage(command.Parameters))
-	if err != nil {
-		return false, fmt.Errorf("invalid parameters for operation %q: %w", command.Operation, err)
-	}
-	if err := operation.parameters.Validate(decoded); err != nil {
-		return false, fmt.Errorf("invalid parameters for operation %q: %w", command.Operation, err)
-	}
-	var parameters map[string]json.RawMessage
-	if err := json.Unmarshal(normalized, &parameters); err != nil {
-		return false, fmt.Errorf("decode normalized parameters: %w", err)
-	}
-	outcome, exists := parameters[operation.definition.OutcomeParameter]
-	if !exists {
-		return false, fmt.Errorf("operation %q outcome parameter %q is absent", command.Operation, operation.definition.OutcomeParameter)
-	}
-	return catalog.EqualState(entity, Value(outcome), value)
+	return operation.satisfies(command.Parameters, value)
 }
 
-func (catalog *TypeCatalog) resolve(typeID EntityTypeID) (compiledType, error) {
+func (catalog *TypeCatalog) resolve(typeID EntityTypeID) (EntityTypeDefinition, error) {
 	if catalog == nil {
-		return compiledType{}, fmt.Errorf("entity type catalog is nil")
+		return EntityTypeDefinition{}, fmt.Errorf("entity type catalog is nil")
 	}
 	definition, exists := catalog.types[typeID]
 	if !exists {
-		return compiledType{}, fmt.Errorf("unknown entity type %q", typeID)
+		return EntityTypeDefinition{}, fmt.Errorf("unknown entity type %q", typeID)
 	}
 	return definition, nil
-}
-
-func compileSchema(typeID EntityTypeID, name string, raw json.RawMessage) (*jsonschema.Schema, error) {
-	if len(raw) == 0 {
-		return nil, fmt.Errorf("entity type %q has no %s schema", typeID, name)
-	}
-	document, err := jsonschema.UnmarshalJSON(bytes.NewReader(raw))
-	if err != nil {
-		return nil, fmt.Errorf("compile entity type %q %s schema: %w", typeID, name, err)
-	}
-	compiler := jsonschema.NewCompiler()
-	const location = "schema.json"
-	if err := compiler.AddResource(location, document); err != nil {
-		return nil, fmt.Errorf("compile entity type %q %s schema: %w", typeID, name, err)
-	}
-	schema, err := compiler.Compile(location)
-	if err != nil {
-		return nil, fmt.Errorf("compile entity type %q %s schema: %w", typeID, name, err)
-	}
-	return schema, nil
-}
-
-func decodeJSON(raw json.RawMessage) (any, []byte, error) {
-	if len(raw) == 0 {
-		return nil, nil, fmt.Errorf("JSON value is required")
-	}
-	decoder := json.NewDecoder(bytes.NewReader(raw))
-	decoder.UseNumber()
-	var value any
-	if err := decoder.Decode(&value); err != nil {
-		return nil, nil, err
-	}
-	var trailing any
-	if err := decoder.Decode(&trailing); err != io.EOF {
-		if err == nil {
-			return nil, nil, fmt.Errorf("multiple JSON values")
-		}
-		return nil, nil, err
-	}
-	normalized, err := json.Marshal(value)
-	if err != nil {
-		return nil, nil, err
-	}
-	return value, normalized, nil
-}
-
-func containsOperation(operations []Operation, target Operation) bool {
-	for _, operation := range operations {
-		if operation == target {
-			return true
-		}
-	}
-	return false
 }

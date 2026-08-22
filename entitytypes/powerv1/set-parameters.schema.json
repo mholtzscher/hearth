@@ -1,0 +1,11 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:hearth:schema:entity-type:power:v1:set-parameters",
+  "title": "Hearth power/v1 set parameters",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["value"],
+  "properties": {
+    "value": { "type": "boolean" }
+  }
+}

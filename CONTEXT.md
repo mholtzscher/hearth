@@ -36,6 +36,14 @@ _Avoid_: Accessory, node
 One independently addressable state or control point belonging to a device. State reads and commands target entities.
 _Avoid_: Device capability, endpoint
 
+**Entity support**:
+An Entity's type-specific statement of its supported State space and Operations. An Operation is supported exactly when it is present in Entity support; support may change without changing the Entity's identity or the meaning of active Commands.
+_Avoid_: Constraints, capability list
+
+**Operation**:
+A named command capability within an Entity type. The type defines its support shape, valid parameters, deadline, and outcome-matching rule; invoking a currently supported Operation creates a Command.
+_Avoid_: Command, service call
+
 **Observation**:
 A fresh value report Hearth durably receives from an adapter. It records when Hearth received the report, when the adapter acquired the value, and optionally when the upstream source says the value last changed; it does not by itself prove physical truth or causation.
 _Avoid_: Physical confirmation, proof of causation

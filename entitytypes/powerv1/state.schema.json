@@ -1,0 +1,6 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:hearth:schema:entity-type:power:v1:state",
+  "title": "Hearth power/v1 State",
+  "type": "boolean"
+}

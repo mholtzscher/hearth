@@ -19,9 +19,9 @@ type ObservationRoute struct {
 }
 
 type CommandRoute struct {
-	AdapterID string
-	EntityID  string
-	Operation string
+	AdapterID     string
+	EntityID      string
+	OperationName string
 }
 
 func RegistrationWildcard() string {
@@ -49,17 +49,17 @@ func ObservationSubject(adapterID, entityID string) (string, error) {
 	return subjectPrefix + "." + adapterID + ".observation." + entityID, nil
 }
 
-func CommandSubject(adapterID, entityID, operation string) (string, error) {
+func CommandSubject(adapterID, entityID, operationName string) (string, error) {
 	if err := validateSlug("adapter ID", adapterID); err != nil {
 		return "", err
 	}
 	if !entityIDPattern.MatchString(entityID) {
 		return "", fmt.Errorf("invalid entity ID %q", entityID)
 	}
-	if err := validateSlug("operation", operation); err != nil {
+	if err := validateSlug("operation name", operationName); err != nil {
 		return "", err
 	}
-	return subjectPrefix + "." + adapterID + ".command." + entityID + "." + operation, nil
+	return subjectPrefix + "." + adapterID + ".command." + entityID + "." + operationName, nil
 }
 
 func CommandWildcard(adapterID string) (string, error) {
@@ -88,7 +88,7 @@ func ParseCommandSubject(subject string) (CommandRoute, error) {
 	if _, err := CommandSubject(parts[3], parts[5], parts[6]); err != nil {
 		return CommandRoute{}, fmt.Errorf("invalid command subject %q: %w", subject, err)
 	}
-	return CommandRoute{AdapterID: parts[3], EntityID: parts[5], Operation: parts[6]}, nil
+	return CommandRoute{AdapterID: parts[3], EntityID: parts[5], OperationName: parts[6]}, nil
 }
 
 func validateSlug(name, value string) error {

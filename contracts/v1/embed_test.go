@@ -23,7 +23,7 @@ func TestSchemaFixtures(t *testing.T) {
 			"schema":"urn:hearth:schema:registration-request:v1",
 			"emitted_at":"2026-08-20T12:34:56.123Z",
 			"correlation_id":"cor_01890f47-7a6b-7c4d-8e9f-0123456789ab",
-			"data":{"binding_key":"office-light","device":{"name":"Office Light","kind":"light"},"entities":[{"key":"power","external_id":"light.office","name":"Power","type":"hearth.power/v1","constraints":{},"operations":["set"]}]}
+			"data":{"binding_key":"office-light","device":{"name":"Office Light","kind":"light"},"entities":[{"key":"power","external_id":"light.office","name":"Power","type":"hearth.power/v1","support":{"state":{},"operations":{"set":{}}}}]}
 		}`,
 		RegistrationResponseSchemaID: `{
 			"id":"rep_01890f47-7a6b-7c4d-8e9f-0123456789ab",
@@ -64,6 +64,38 @@ func TestSchemaFixtures(t *testing.T) {
 			}
 			if err := schemas[schemaID].Validate(value); err != nil {
 				t.Fatal(err)
+			}
+		})
+	}
+}
+
+func TestRegistrationSchemaRequiresUnifiedSupport(t *testing.T) {
+	schema := compileSchemas(t)[RegistrationRequestSchemaID]
+	for _, test := range []struct {
+		name   string
+		entity string
+	}{
+		{"old parallel fields", `"constraints":{},"operations":["set"]`},
+		{"missing state", `"support":{"operations":{"set":{}}}`},
+		{"invalid operation name", `"support":{"state":{},"operations":{"bad.name":{}}}`},
+		{"non-object operation support", `"support":{"state":{},"operations":{"set":true}}`},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			payload := `{
+				"id":"reg_01890f47-7a6b-7c4d-8e9f-0123456789ab",
+				"schema":"urn:hearth:schema:registration-request:v1",
+				"emitted_at":"2026-08-20T12:34:56Z",
+				"correlation_id":"cor_01890f47-7a6b-7c4d-8e9f-0123456789ab",
+				"data":{"binding_key":"office-light","device":{"name":"Office Light","kind":"light"},"entities":[{
+					"key":"power","external_id":"light.office","name":"Power","type":"hearth.power/v1",` + test.entity + `
+				}]}
+			}`
+			var value any
+			if err := json.Unmarshal([]byte(payload), &value); err != nil {
+				t.Fatal(err)
+			}
+			if err := schema.Validate(value); err == nil {
+				t.Fatal("registration unexpectedly accepted")
 			}
 		})
 	}
