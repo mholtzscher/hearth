@@ -10,6 +10,7 @@ import (
 	"go/format"
 	"go/token"
 	"io"
+	"math/big"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -21,8 +22,9 @@ import (
 )
 
 var (
-	typeIDPattern    = regexp.MustCompile(`^[a-z0-9][a-z0-9._-]*/v[1-9][0-9]*$`)
-	operationPattern = regexp.MustCompile(`^[a-z0-9][a-z0-9_-]{0,62}$`)
+	typeIDPattern      = regexp.MustCompile(`^[a-z0-9][a-z0-9._-]*/v[1-9][0-9]*$`)
+	operationPattern   = regexp.MustCompile(`^[a-z0-9][a-z0-9_-]{0,62}$`)
+	packageNamePattern = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
 )
 
 type manifest struct {
@@ -61,6 +63,8 @@ type schemaNode struct {
 	Items                *schemaNode           `json:"items"`
 	AdditionalProperties json.RawMessage       `json:"additionalProperties"`
 	MaxProperties        *int                  `json:"maxProperties"`
+	Minimum              *json.Number          `json:"minimum"`
+	Maximum              *json.Number          `json:"maximum"`
 }
 
 type operationModel struct {
@@ -181,15 +185,15 @@ func loadModel(path string) (entityTypeModel, error) {
 	if definition.ManifestVersion != 1 {
 		return entityTypeModel{}, fmt.Errorf("unsupported manifest_version %d", definition.ManifestVersion)
 	}
-	if !typeIDPattern.MatchString(definition.TypeID) {
+	if !typeIDPattern.MatchString(definition.TypeID) || len(definition.TypeID) > 128 {
 		return entityTypeModel{}, fmt.Errorf("invalid Entity type ID %q", definition.TypeID)
 	}
 	if definition.StateSchema == "" || definition.SupportSchema == "" {
 		return entityTypeModel{}, errors.New("state_schema and support_schema are required")
 	}
 	packageName := filepath.Base(directory)
-	if !token.IsIdentifier(packageName) || token.Lookup(packageName).IsKeyword() {
-		return entityTypeModel{}, fmt.Errorf("manifest directory %q is not a Go package name", packageName)
+	if !packageNamePattern.MatchString(packageName) || !token.IsIdentifier(packageName) || token.Lookup(packageName).IsKeyword() || packageName == "main" || packageName == "internal" || packageName == "_" {
+		return entityTypeModel{}, fmt.Errorf("manifest directory %q is not an importable Go package name", packageName)
 	}
 	state, err := loadSchema(directory, definition.StateSchema)
 	if err != nil {
@@ -210,6 +214,11 @@ func loadModel(path string) (entityTypeModel, error) {
 	}
 	if !required(support, "state") || !required(support, "operations") {
 		return entityTypeModel{}, errors.New("support schema must require state and operations")
+	}
+	for _, property := range sortedProperties(support.Properties) {
+		if property != "state" && property != "operations" {
+			return entityTypeModel{}, fmt.Errorf("support schema has unsupported top-level property %q", property)
+		}
 	}
 	stateSupport, exists := support.Properties["state"]
 	if !exists || stateSupport.Type != "object" {
@@ -302,6 +311,9 @@ func loadModel(path string) (entityTypeModel, error) {
 			return entityTypeModel{}, fmt.Errorf("support operation %q is absent from manifest", name)
 		}
 	}
+	if err := requireUniqueSchemaIDs(state, support, operations); err != nil {
+		return entityTypeModel{}, err
+	}
 	stateValidation, err := compileRules(definition.StateValidation, map[string]referenceRoot{
 		"state":   {Schema: state, GoExpression: "state"},
 		"support": {Schema: support, GoExpression: "support"},
@@ -366,7 +378,68 @@ func loadSchema(directory, relative string) (schemaNode, error) {
 	if schema.Type == "" {
 		return schemaNode{}, fmt.Errorf("schema %s has no type", relative)
 	}
+	if err := requireInt64Bindings(schema); err != nil {
+		return schemaNode{}, err
+	}
 	return schema, nil
+}
+
+func requireInt64Bindings(schema schemaNode) error {
+	switch schema.Type {
+	case "integer":
+		if schema.Minimum == nil || schema.Maximum == nil {
+			return errors.New("integer schema must set minimum and maximum within int64")
+		}
+		minimum, ok := new(big.Rat).SetString(schema.Minimum.String())
+		if !ok {
+			return fmt.Errorf("invalid integer minimum %q", schema.Minimum)
+		}
+		maximum, ok := new(big.Rat).SetString(schema.Maximum.String())
+		if !ok {
+			return fmt.Errorf("invalid integer maximum %q", schema.Maximum)
+		}
+		minimumInt64 := new(big.Rat).SetInt64(-1 << 63)
+		maximumInt64 := new(big.Rat).SetInt64(1<<63 - 1)
+		if minimum.Cmp(minimumInt64) < 0 || maximum.Cmp(maximumInt64) > 0 {
+			return errors.New("integer schema minimum and maximum must fit int64")
+		}
+	case "object":
+		for _, property := range sortedProperties(schema.Properties) {
+			if err := requireInt64Bindings(schema.Properties[property]); err != nil {
+				return fmt.Errorf("property %q: %w", property, err)
+			}
+		}
+	case "array":
+		if schema.Items != nil {
+			if err := requireInt64Bindings(*schema.Items); err != nil {
+				return fmt.Errorf("items: %w", err)
+			}
+		}
+	}
+	return nil
+}
+
+func requireUniqueSchemaIDs(state, support schemaNode, operations []operationModel) error {
+	seen := make(map[string]string, len(operations)+2)
+	add := func(id, location string) error {
+		if previous, duplicate := seen[id]; duplicate {
+			return fmt.Errorf("duplicate schema ID %q in %s and %s", id, previous, location)
+		}
+		seen[id] = location
+		return nil
+	}
+	if err := add(state.ID, "state schema"); err != nil {
+		return err
+	}
+	if err := add(support.ID, "support schema"); err != nil {
+		return err
+	}
+	for _, operation := range operations {
+		if err := add(operation.ParametersSchema.ID, fmt.Sprintf("operation %q parameters schema", operation.Name)); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func localPath(directory, relative string) (string, error) {

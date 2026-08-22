@@ -80,6 +80,85 @@ func TestLoadModelEnforcesAuthoritativeManifestSchema(t *testing.T) {
 	}
 }
 
+func TestLoadModelRejectsIntegerSchemasOutsideInt64(t *testing.T) {
+	for name, bounds := range map[string]map[string]any{
+		"unbounded":     {},
+		"below minimum": {"minimum": json.Number("-9223372036854775809"), "maximum": 0},
+		"above maximum": {"minimum": 0, "maximum": json.Number("9223372036854775808")},
+	} {
+		t.Run(name, func(t *testing.T) {
+			directory, manifestPath := writeMinimalEntityTypeFixture(t, "examplev1")
+			schema := map[string]any{"$id": "urn:test:state", "type": "integer"}
+			for key, value := range bounds {
+				schema[key] = value
+			}
+			writeJSON(t, filepath.Join(directory, "state.schema.json"), schema)
+
+			_, err := loadModel(manifestPath)
+			if err == nil || !strings.Contains(err.Error(), "int64") {
+				t.Fatalf("integer binding error = %v", err)
+			}
+		})
+	}
+}
+
+func TestLoadModelRejectsLongTypeID(t *testing.T) {
+	directory, manifestPath := writeMinimalEntityTypeFixture(t, "examplev1")
+	writeJSON(t, filepath.Join(directory, "entitytype.json"), minimalManifest(strings.Repeat("a", 126)+"/v1"))
+
+	if _, err := loadModel(manifestPath); err == nil {
+		t.Fatal("long Entity type ID unexpectedly accepted")
+	}
+}
+
+func TestLoadModelRejectsDuplicateSchemaIDs(t *testing.T) {
+	directory, manifestPath := writeMinimalEntityTypeFixture(t, "examplev1")
+	writeJSON(t, filepath.Join(directory, "support.schema.json"), minimalSupportSchema("urn:test:state"))
+
+	_, err := loadModel(manifestPath)
+	if err == nil || !strings.Contains(err.Error(), "duplicate schema ID") {
+		t.Fatalf("duplicate schema ID error = %v", err)
+	}
+}
+
+func TestRequireUniqueSchemaIDsIncludesOperationParameters(t *testing.T) {
+	err := requireUniqueSchemaIDs(
+		schemaNode{ID: "urn:test:state"},
+		schemaNode{ID: "urn:test:support"},
+		[]operationModel{
+			{Name: "first", ParametersSchema: schemaNode{ID: "urn:test:parameters"}},
+			{Name: "second", ParametersSchema: schemaNode{ID: "urn:test:parameters"}},
+		},
+	)
+	if err == nil || !strings.Contains(err.Error(), "duplicate schema ID") {
+		t.Fatalf("duplicate operation schema ID error = %v", err)
+	}
+}
+
+func TestLoadModelRejectsExtraTopLevelSupportProperties(t *testing.T) {
+	directory, manifestPath := writeMinimalEntityTypeFixture(t, "examplev1")
+	support := minimalSupportSchema("urn:test:support")
+	support["properties"].(map[string]any)["extra"] = map[string]any{"type": "boolean"}
+	writeJSON(t, filepath.Join(directory, "support.schema.json"), support)
+
+	_, err := loadModel(manifestPath)
+	if err == nil || !strings.Contains(err.Error(), "unsupported top-level property") {
+		t.Fatalf("extra support property error = %v", err)
+	}
+}
+
+func TestLoadModelRejectsNonImportablePackageNames(t *testing.T) {
+	for _, packageName := range []string{"main", "internal", "_", "é"} {
+		t.Run(packageName, func(t *testing.T) {
+			_, manifestPath := writeMinimalEntityTypeFixture(t, packageName)
+			_, err := loadModel(manifestPath)
+			if err == nil || !strings.Contains(err.Error(), "not an importable Go package name") {
+				t.Fatalf("package name error = %v", err)
+			}
+		})
+	}
+}
+
 func TestBehaviorRulesAreSchemaChecked(t *testing.T) {
 	integer := schemaNode{Type: "integer"}
 	boolean := schemaNode{Type: "boolean"}
@@ -245,11 +324,13 @@ func TestRootGenerationAddsATypeWithoutPerTypeGo(t *testing.T) {
 		t.Fatal(err)
 	}
 	writeJSON(t, filepath.Join(directory, "schemas", "state.json"), map[string]any{
-		"$id": "urn:test:switch:state", "type": "integer",
+		"$id": "urn:test:switch:state", "type": "integer", "minimum": 0, "maximum": 100,
 	})
 	writeJSON(t, filepath.Join(directory, "parameters.schema.json"), map[string]any{
 		"$id": "urn:test:switch:parameters", "type": "object", "additionalProperties": false,
-		"required": []string{"value"}, "properties": map[string]any{"value": map[string]any{"type": "integer"}},
+		"required": []string{"value"}, "properties": map[string]any{
+			"value": map[string]any{"type": "integer", "minimum": 0, "maximum": 100},
+		},
 	})
 	writeJSON(t, filepath.Join(directory, "support.schema.json"), map[string]any{
 		"$id": "urn:test:switch:support", "type": "object", "additionalProperties": false,
@@ -326,6 +407,59 @@ func TestRootGenerationAddsATypeWithoutPerTypeGo(t *testing.T) {
 	}
 	if _, err := os.Stat(orphan); !os.IsNotExist(err) {
 		t.Fatalf("orphan still exists: %v", err)
+	}
+}
+
+func writeMinimalEntityTypeFixture(t *testing.T, packageName string) (string, string) {
+	t.Helper()
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "go.mod"), []byte("module example.test\n\ngo 1.26\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	writeManifestSchema(t, root)
+	directory := filepath.Join(root, "entitytypes", packageName)
+	if err := os.MkdirAll(directory, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	writeJSON(t, filepath.Join(directory, "state.schema.json"), map[string]any{
+		"$id": "urn:test:state", "type": "boolean",
+	})
+	writeJSON(t, filepath.Join(directory, "support.schema.json"), minimalSupportSchema("urn:test:support"))
+	writeJSON(t, filepath.Join(directory, "examples.json"), map[string]any{
+		"cases": []any{map[string]any{
+			"name": "minimal", "support": map[string]any{"state": map[string]any{}, "operations": map[string]any{}},
+			"states": []any{
+				map[string]any{"value": true, "valid": true},
+				map[string]any{"value": 1, "valid": false},
+			},
+			"operations": map[string]any{},
+		}},
+	})
+	writeJSON(t, filepath.Join(directory, "entitytype.json"), minimalManifest("example.value/v1"))
+	return directory, filepath.Join(directory, "entitytype.json")
+}
+
+func minimalManifest(typeID string) map[string]any {
+	return map[string]any{
+		"manifest_version": 1,
+		"type":             typeID,
+		"state_schema":     "state.schema.json",
+		"support_schema":   "support.schema.json",
+		"operations":       map[string]any{},
+		"examples":         "examples.json",
+	}
+}
+
+func minimalSupportSchema(id string) map[string]any {
+	return map[string]any{
+		"$id": id, "type": "object", "additionalProperties": false,
+		"required": []string{"state", "operations"},
+		"properties": map[string]any{
+			"state": map[string]any{"type": "object", "maxProperties": 0, "additionalProperties": false},
+			"operations": map[string]any{
+				"type": "object", "maxProperties": 0, "additionalProperties": false,
+			},
+		},
 	}
 }
 
