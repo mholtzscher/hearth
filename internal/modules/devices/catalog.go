@@ -154,26 +154,23 @@ func DefineEntityType[State, Support any](
 		}
 		return Value(normalized), nil
 	}
-	definition.equalState = func(rawSupport EntitySupport, left, right Value) (bool, error) {
+	definition.equalState = func(rawSupport EntitySupport, persisted, incoming Value) (bool, error) {
 		typedSupport, _, err := support.Decode(json.RawMessage(rawSupport))
 		if err != nil {
 			return false, fmt.Errorf("invalid support for entity type %q: %w", id, err)
 		}
-		typedLeft, _, err := state.Decode(json.RawMessage(left))
+		typedPersisted, _, err := state.Decode(json.RawMessage(persisted))
 		if err != nil {
-			return false, fmt.Errorf("invalid left state for entity type %q: %w", id, err)
+			return false, fmt.Errorf("invalid persisted state for entity type %q: %w", id, err)
 		}
-		if err := validateSupportedState(typedSupport, typedLeft); err != nil {
-			return false, fmt.Errorf("left state is unsupported by entity type %q: %w", id, err)
-		}
-		typedRight, _, err := state.Decode(json.RawMessage(right))
+		typedIncoming, _, err := state.Decode(json.RawMessage(incoming))
 		if err != nil {
-			return false, fmt.Errorf("invalid right state for entity type %q: %w", id, err)
+			return false, fmt.Errorf("invalid incoming state for entity type %q: %w", id, err)
 		}
-		if err := validateSupportedState(typedSupport, typedRight); err != nil {
-			return false, fmt.Errorf("right state is unsupported by entity type %q: %w", id, err)
+		if err := validateSupportedState(typedSupport, typedIncoming); err != nil {
+			return false, fmt.Errorf("incoming state is unsupported by entity type %q: %w", id, err)
 		}
-		return equalState(typedLeft, typedRight), nil
+		return equalState(typedPersisted, typedIncoming), nil
 	}
 	return definition, nil
 }
@@ -222,12 +219,12 @@ func (catalog *TypeCatalog) NormalizeState(entity Entity, value Value) (Value, e
 	return definition.normalizeState(entity.Support, value)
 }
 
-func (catalog *TypeCatalog) EqualState(entity Entity, left, right Value) (bool, error) {
+func (catalog *TypeCatalog) EqualState(entity Entity, persisted, incoming Value) (bool, error) {
 	definition, err := catalog.resolve(entity.TypeID)
 	if err != nil {
 		return false, err
 	}
-	return definition.equalState(entity.Support, left, right)
+	return definition.equalState(entity.Support, persisted, incoming)
 }
 
 func (catalog *TypeCatalog) ResolveCommand(entity Entity, operationName OperationName, parameters CommandParameters) (ResolvedCommand, error) {

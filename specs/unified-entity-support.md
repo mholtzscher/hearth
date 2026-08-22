@@ -210,7 +210,7 @@ func (*TypeCatalog) Satisfies(Entity, CommandRecord, Value) (bool, error)
 
 Construction rejects duplicate or empty Entity type IDs, duplicate or non-subject-safe operation names, missing codecs/functions, and non-positive deadlines.
 
-`ResolveCommand` decodes typed Entity support, selects typed operation support, decodes typed parameters, applies cross-document validation, and returns normalized parameters plus the immutable deadline. `Satisfies` resolves the immutable type and recorded operation, decodes persisted parameters and State, and calls `satisfies(parameters, state)` without current support.
+`ResolveCommand` decodes typed Entity support, selects typed operation support, decodes typed parameters, applies cross-document validation, and returns normalized parameters plus the immutable deadline. `EqualState` schema-decodes a persisted value without revalidating it against support that may have narrowed, while still requiring the incoming value to satisfy current support. `Satisfies` resolves the immutable type and recorded operation, decodes persisted parameters and State, and calls `satisfies(parameters, state)` without current support.
 
 For power/v1, schema validation is sufficient for support and State. `set` is always present, has a ten-second deadline, and is satisfied exactly when `parameters.Value == bool(state)`.
 
@@ -319,6 +319,7 @@ func NewCommandHandler(
 
 type ObservationInput struct {
     EntityID          string
+    Support           Support
     State             State
     AdapterReceivedAt time.Time
     SourceUpdatedAt   *time.Time
@@ -328,7 +329,7 @@ type ObservationInput struct {
 func NewObservation(ObservationInput) (adapter.Observation, error)
 ```
 
-`NewEntityDescriptor` validates and normalizes support and sets type `hearth.power/v1`. `NewCommandHandler` validates support, requires `Handlers.Set`, and closes parameter validation over that support. `NewObservation` validates and encodes State and UTC timestamps. `Session.PublishObservation` retains publication, correlation, causation, and linked-command context rules. No configuration fields change.
+`NewEntityDescriptor` validates and normalizes support and sets type `hearth.power/v1`. `NewCommandHandler` validates support, requires `Handlers.Set`, and closes parameter validation over that support. `NewObservation` validates support, applies support-dependent State rules, encodes State, and formats UTC timestamps. `Session.PublishObservation` retains publication, correlation, causation, and linked-command context rules. No configuration fields change.
 
 ## Ownership and layout
 
@@ -344,8 +345,8 @@ contracts/v1/
 sdk/adapter/
 ├── types.go, session_test.go                       # modify — support DTO/fixtures
 ├── typed/handler.go, handler_test.go               # new — typed routing
-├── powerv1/zz_generated_facade.go                  # generated — typed power facade
-└── brightnessv1/zz_generated_facade.go             # generated — typed brightness facade
+├── powerv1/zz_generated_facade*.go                 # generated — typed power facade/conformance
+└── brightnessv1/zz_generated_facade*.go            # generated — typed brightness facade/conformance
 internal/cmd/entitytypegen/                         # new — complete build-time generator
 internal/modules/devices/
 ├── catalog.go, catalog_test.go                      # modify — generic typed catalog

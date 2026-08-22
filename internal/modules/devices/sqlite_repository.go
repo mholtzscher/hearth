@@ -327,7 +327,6 @@ func validCommandCompletion(completion CommandCompletion) bool {
 		CommandStatusAdapterUnavailable: CommandFailureAdapterUnavailable,
 		CommandStatusOutcomeTimeout:     CommandFailureOutcomeTimeout,
 		CommandStatusInternalFailure:    CommandFailureInternalError,
-		CommandStatusInterrupted:        CommandFailureCoreRestarted,
 	}
 	return !completion.CompletedAt.IsZero() && expected[completion.Status] == completion.FailureCode && completion.FailureCode != ""
 }

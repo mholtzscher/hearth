@@ -90,6 +90,15 @@ func TestGenericCatalogCarriesTypedBehaviorAcrossErasure(t *testing.T) {
 	if err != nil || !equal {
 		t.Fatalf("state equality = %v, %v", equal, err)
 	}
+	narrowed := entity
+	narrowed.Support = EntitySupport(`{"state":{"maximum":4},"operations":{"set":{"minimum":2}}}`)
+	equal, err = catalog.EqualState(narrowed, Value(`{"level":5}`), Value(`{"level":4}`))
+	if err != nil || equal {
+		t.Fatalf("equality after support narrowed = %v, %v", equal, err)
+	}
+	if _, err := catalog.EqualState(narrowed, Value(`{"level":4}`), Value(`{"level":5}`)); err == nil {
+		t.Fatal("support-incompatible incoming State unexpectedly accepted by equality")
+	}
 	resolved, err := catalog.ResolveCommand(entity, OperationNameSet, CommandParameters(`{ "target": 5 }`))
 	if err != nil || string(resolved.Parameters) != `{"target":5}` || resolved.Deadline != 3*time.Second {
 		t.Fatalf("resolved command = %#v, %v", resolved, err)

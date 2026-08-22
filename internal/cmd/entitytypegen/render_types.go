@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"sort"
 	"strconv"
 	"strings"
 )
@@ -181,7 +182,21 @@ func renderCodecs(model entityTypeModel) ([]byte, error) {
 		fmt.Fprintf(&source, "\t%sParametersSchemaID = %s\n", operation.GoName, strconv.Quote(operation.ParametersSchema.ID))
 	}
 	source.WriteString(")\n\n")
-	source.WriteString("// FS contains the authoritative Entity-type JSON Schemas.\n//\n//go:embed *.schema.json\nvar FS embed.FS\n\n")
+	schemaFiles := []string{model.StateFile, model.SupportFile}
+	for _, operation := range model.Operations {
+		schemaFiles = append(schemaFiles, operation.ParametersFile)
+	}
+	sort.Strings(schemaFiles)
+	source.WriteString("// FS contains the authoritative Entity-type JSON Schemas.\n//\n//go:embed")
+	previous := ""
+	for _, path := range schemaFiles {
+		if path == previous {
+			continue
+		}
+		fmt.Fprintf(&source, " %s", strconv.Quote(path))
+		previous = path
+	}
+	source.WriteString("\nvar FS embed.FS\n\n")
 	source.WriteString("func SchemaFiles() map[string]string {\n\treturn map[string]string{\n")
 	fmt.Fprintf(&source, "\t\tStateSchemaID: %s,\n", strconv.Quote(model.StateFile))
 	fmt.Fprintf(&source, "\t\tSupportSchemaID: %s,\n", strconv.Quote(model.SupportFile))

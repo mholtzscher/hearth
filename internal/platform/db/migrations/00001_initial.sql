@@ -91,6 +91,7 @@ CREATE TABLE adapter_entity_mappings (
     created_at         TEXT NOT NULL,
     updated_at         TEXT NOT NULL,
     PRIMARY KEY (adapter_id, binding_key, entity_key),
+    UNIQUE (adapter_id, binding_key),
     UNIQUE (adapter_id, external_entity_id),
     FOREIGN KEY (adapter_id, binding_key)
         REFERENCES adapter_bindings(adapter_id, binding_key)

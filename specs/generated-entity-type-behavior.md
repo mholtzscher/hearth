@@ -221,7 +221,7 @@ func ValidateSetParameters(Support, SetSupport, SetParameters) error
 func SetSatisfied(SetParameters, State) bool
 ```
 
-Names are derived from operation names. These functions are the single semantic implementation used by both the core catalog and typed SDK facade.
+Names are derived from operation names. These functions are the single semantic implementation used by both the core catalog and typed SDK facade. Generated `ObservationInput` includes typed `Support`; Observation construction validates that support and applies `ValidateState` before encoding. Generated SDK conformance tests exercise valid and support-incompatible State examples.
 
 `zz_generated_codecs.go` continues to own document-local JSON Schema validation and normalization. Support-dependent State and parameter rules run after both participating documents have passed their own codecs.
 
@@ -256,7 +256,7 @@ go run ./internal/cmd/entitytypegen -root . -check
 
 `go generate ./...` continues to work. Per-type `generate.go` files and the single-manifest generation mode are removed.
 
-The root pass loads and validates all manifests before writing any output. It then renders per-type files plus aggregate outputs deterministically. In write mode it removes obsolete files only when they contain the generator ownership header. In check mode, missing, stale, or orphaned owned files fail the command.
+The root pass loads and validates all manifests before writing any output. It then renders per-type files plus aggregate outputs deterministically. Generated codec files embed the exact schema paths declared by each manifest, including nested paths and filenames outside the `*.schema.json` convention. In write mode it removes obsolete files only when they contain the generator ownership header. In check mode, missing, stale, or orphaned owned files fail the command.
 
 ## Generator module layout
 
@@ -271,6 +271,7 @@ internal/cmd/entitytypegen/
 ├── render_types.go                 # move — bindings and codecs
 ├── render_behavior.go              # new — semantic functions and conformance tests
 ├── render_sdk.go                   # move — typed facade
+├── render_sdk_conformance.go       # new — typed Observation conformance tests
 ├── render_catalog.go               # new — aggregate core definitions/registry
 ├── render_catalog_conformance.go   # new — aggregate core conformance tests
 ├── output.go                       # new — deterministic writes/check/orphan cleanup
@@ -360,6 +361,8 @@ devenv test
 - [x] No concrete Entity-type or typed-facade directory contains handwritten Go.
 - [x] Power/v1 and brightness/v1 behavior remains equivalent to the current implementation.
 - [x] The generated SDK and core call the same generated parameter validator.
+- [x] Generated Observations require support and reject support-incompatible State before publication.
+- [x] Generated codecs embed every exact manifest schema path, including nested paths.
 - [x] Brightness State above `support.state.maximum` is rejected.
 - [x] Brightness `set.value` above the maximum or misaligned to the step is rejected.
 - [x] Power and brightness outcomes remain exact equality and do not read current support.

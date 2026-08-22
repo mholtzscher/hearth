@@ -268,7 +268,7 @@ The built-in `entitytypes/powerv1` package defines boolean State, exact `{"value
 {"state": {}, "operations": {"set": {}}}
 ```
 
-An operation key's presence means the Entity supports it. `ResolveCommand` decodes current typed support, selects operation support, validates typed parameters against both schemas and cross-document rules, and returns normalized parameters plus the immutable ten-second deadline. `NormalizeState` applies State schema and support compatibility; equality uses typed boolean equality.
+An operation key's presence means the Entity supports it. `ResolveCommand` decodes current typed support, selects operation support, validates typed parameters against both schemas and cross-document rules, and returns normalized parameters plus the immutable ten-second deadline. `NormalizeState` applies State schema and current-support compatibility. Equality schema-decodes both values but applies current-support compatibility only to the incoming value, allowing comparison with a previously valid persisted State after support narrows.
 
 The generated brightness/v1 binding uses integer State from 0–100 and support `{"state":{"maximum":N},"operations":{"set":{"step":S}}}`. Its `set.value` must not exceed `N` and must be aligned to `S`; supported State must not exceed `N`.
 
@@ -374,8 +374,8 @@ Constraints:
 - Device `kind` is a 1–128 character string; the structural wire schema does not enumerate kinds, but the first-slice module accepts only `light`.
 - Entity `type` is a 1–128 character versioned catalog identifier; the structural wire schema does not enumerate catalog contents.
 - `support` has required object fields `state` and `operations`; operation keys are subject-safe and each operation-support value is an object. The resolved catalog schema performs exact type-specific validation.
-- `entities` contains exactly one Entity in this slice; its key is unique within the binding.
-- Re-registration with the same adapter ID, binding key, and Entity key returns the same canonical IDs. Changing its Entity type rejects the whole registration; valid normalized support, name, and external-ID updates commit transactionally.
+- `entities` contains exactly one Entity in this slice; the database permits only one Entity mapping per binding.
+- Re-registration with the same adapter ID, binding key, and Entity key returns the same canonical IDs. Changing the Entity key for an existing binding is an identity conflict; changing its Entity type rejects the whole registration. Valid normalized support, name, and external-ID updates commit transactionally.
 - A conflicting external mapping rejects the whole registration transaction.
 
 ### Observation payload
@@ -578,7 +578,7 @@ func NewCommandHandler(string, Support, Handlers) (adapter.CommandHandler, error
 func NewObservation(ObservationInput) (adapter.Observation, error)
 ```
 
-The power facade validates and normalizes support, exposes typed `SetParameters`, validates/encodes boolean State, and formats Observation timestamps as UTC. A Go adapter can therefore register, route Commands, and publish Observations without constructing `json.RawMessage` or switching on operation strings. The generic Session retains concurrency, one-shot responder, acknowledgement/retry, and trace/correlation/causation behavior.
+The generated facades validate and normalize support, expose typed parameters, and require Observation support so support-dependent State rules run before encoding; they also format Observation timestamps as UTC. A Go adapter can therefore register, route Commands, and publish Observations without constructing `json.RawMessage` or switching on operation strings. The generic Session retains concurrency, one-shot responder, acknowledgement/retry, and trace/correlation/causation behavior.
 
 Interface contract:
 
@@ -630,7 +630,7 @@ func (*Service) ExecuteCommand(context.Context, EntityID, OperationName, Command
 7. Return `CommandResult` or the mapped stable error. After HTTP cancellation, abandon only the response and continue recording the lifecycle through outcome/deadline.
 8. Remove the waiter at completion. On restart, lose in-memory waits, mark persisted `requested`/`accepted` records `interrupted`, and never redispatch them.
 
-Lifecycle writes are monotonic and idempotent. Multiple calls for one Entity run concurrently without a guard, queue, or supersession; each has an independent ID, record, waiter, and deadline. An Observation satisfies only its `refresh_for_command_id`. Success may be immediately superseded, while canonical State follows core receive order.
+Lifecycle writes are monotonic and idempotent. `CompleteCommand` accepts only ordinary runtime failure outcomes; only startup-wide `InterruptActiveCommands` may record `interrupted/core_restarted`. Multiple calls for one Entity run concurrently without a guard, queue, or supersession; each has an independent ID, record, waiter, and deadline. An Observation satisfies only its `refresh_for_command_id`. Success may be immediately superseded, while canonical State follows core receive order.
 
 ### HTTP
 

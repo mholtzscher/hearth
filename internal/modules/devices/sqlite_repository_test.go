@@ -182,10 +182,17 @@ func TestRegistrationRejectionsAreAtomic(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	secondEntity := validDomainRegistration()
+	secondEntity.Entities[0].Key = "alternate-power"
+	secondEntity.Entities[0].ExternalID = "light.office-alternate"
+	_, err := service.Register(ctx, "homeassistant", secondEntity)
+	assertRegistrationRejection(t, err, RegistrationIdentityConflict)
+	assertCounts(t, database, 1, 1)
+
 	typeChange := validDomainRegistration()
 	typeChange.Device.Name = "must roll back"
 	typeChange.Entities[0].TypeID = "example.changed/v1"
-	_, err := service.Register(ctx, "homeassistant", typeChange)
+	_, err = service.Register(ctx, "homeassistant", typeChange)
 	assertRegistrationRejection(t, err, RegistrationInvalidDescriptor)
 
 	// Inject a catalog-known alternate type so the repository, rather than catalog
@@ -315,6 +322,19 @@ func TestCommandLedgerTransitionsAreMonotonicAndIdempotent(t *testing.T) {
 		t.Fatal(err)
 	}
 	restartedAt := requestedAt.Add(3 * time.Minute)
+	if err := repository.CompleteCommand(ctx, CommandCompletion{
+		ID: requested.ID, Status: CommandStatusInterrupted, CompletedAt: restartedAt,
+		FailureCode: CommandFailureCoreRestarted,
+	}); err == nil {
+		t.Fatal("per-command interruption unexpectedly accepted")
+	}
+	stillRequested, err := repository.GetCommand(ctx, requested.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if stillRequested.Status != CommandStatusRequested {
+		t.Fatalf("rejected per-command interruption changed status to %q", stillRequested.Status)
+	}
 	if err := repository.InterruptActiveCommands(ctx, restartedAt); err != nil {
 		t.Fatal(err)
 	}

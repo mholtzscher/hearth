@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"regexp"
 	"runtime"
 	"strings"
 	"testing"
@@ -146,6 +147,45 @@ func TestTypeEmitterPreservesOptionalObjectPresence(t *testing.T) {
 	}
 }
 
+func TestRenderedObservationUsesSupportDependentStateValidation(t *testing.T) {
+	source, err := renderFacade(entityTypeModel{Package: "examplev1"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !regexp.MustCompile(`Support\s+Support`).Match(source) {
+		t.Error("generated Observation input has no Support field")
+	}
+	for _, expected := range []string{
+		"codecs.Support.Encode(input.Support)",
+		"contractexamplev1.ValidateState(input.Support, input.State)",
+	} {
+		if !strings.Contains(string(source), expected) {
+			t.Errorf("generated facade does not contain %q", expected)
+		}
+	}
+}
+
+func TestRenderedCodecsEmbedExactManifestPaths(t *testing.T) {
+	source, err := renderCodecs(entityTypeModel{
+		Package:       "examplev1",
+		StateFile:     "schemas/state.json",
+		StateSchema:   schemaNode{ID: "urn:test:state"},
+		SupportFile:   "support.schema.json",
+		SupportSchema: schemaNode{ID: "urn:test:support"},
+		Operations: []operationModel{{
+			GoName: "Set", ParametersFile: "schemas/set-parameters.json",
+			ParametersSchema: schemaNode{ID: "urn:test:set-parameters"},
+		}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	directive := `//go:embed "schemas/set-parameters.json" "schemas/state.json" "support.schema.json"`
+	if !strings.Contains(string(source), directive) {
+		t.Errorf("generated codecs do not contain %s", directive)
+	}
+}
+
 func TestRootGenerationAddsATypeWithoutPerTypeGo(t *testing.T) {
 	root := t.TempDir()
 	if err := os.WriteFile(filepath.Join(root, "go.mod"), []byte("module example.test\n\ngo 1.26\n"), 0o644); err != nil {
@@ -155,7 +195,10 @@ func TestRootGenerationAddsATypeWithoutPerTypeGo(t *testing.T) {
 	if err := os.MkdirAll(directory, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	writeJSON(t, filepath.Join(directory, "state.schema.json"), map[string]any{
+	if err := os.MkdirAll(filepath.Join(directory, "schemas"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	writeJSON(t, filepath.Join(directory, "schemas", "state.json"), map[string]any{
 		"$id": "urn:test:switch:state", "type": "boolean",
 	})
 	writeJSON(t, filepath.Join(directory, "parameters.schema.json"), map[string]any{
@@ -184,7 +227,7 @@ func TestRootGenerationAddsATypeWithoutPerTypeGo(t *testing.T) {
 		}},
 	})
 	writeJSON(t, filepath.Join(directory, "entitytype.json"), map[string]any{
-		"manifest_version": 1, "type": "example.switch/v1", "state_schema": "state.schema.json", "support_schema": "support.schema.json", "examples": "examples.json",
+		"manifest_version": 1, "type": "example.switch/v1", "state_schema": "schemas/state.json", "support_schema": "support.schema.json", "examples": "examples.json",
 		"operations": map[string]any{"set": map[string]any{
 			"parameters_schema": "parameters.schema.json", "deadline_ms": 1000,
 			"satisfied_when": map[string]any{
@@ -201,11 +244,19 @@ func TestRootGenerationAddsATypeWithoutPerTypeGo(t *testing.T) {
 		filepath.Join(directory, "zz_generated_behavior.go"),
 		filepath.Join(directory, "zz_generated_conformance_test.go"),
 		filepath.Join(root, "sdk", "adapter", "switchv1", "zz_generated_facade.go"),
+		filepath.Join(root, "sdk", "adapter", "switchv1", "zz_generated_facade_test.go"),
 		filepath.Join(root, "internal", "modules", "devices", "zz_generated_entitytypes.go"),
 	} {
 		if _, err := os.Stat(path); err != nil {
 			t.Fatalf("generated output %s: %v", path, err)
 		}
+	}
+	codecs, err := os.ReadFile(filepath.Join(directory, "zz_generated_codecs.go"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(codecs), `"schemas/state.json"`) {
+		t.Fatalf("generated codecs do not embed the nested State schema:\n%s", codecs)
 	}
 	catalog, err := os.ReadFile(filepath.Join(root, "internal", "modules", "devices", "zz_generated_entitytypes.go"))
 	if err != nil {

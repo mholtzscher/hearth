@@ -28,6 +28,7 @@ type Handlers struct {
 
 type ObservationInput struct {
 	EntityID          string
+	Support           Support
 	State             State
 	AdapterReceivedAt time.Time
 	SourceUpdatedAt   *time.Time
@@ -99,6 +100,12 @@ func NewObservation(input ObservationInput) (adapter.Observation, error) {
 	codecs, err := codecs()
 	if err != nil {
 		return adapter.Observation{}, err
+	}
+	if _, err := codecs.Support.Encode(input.Support); err != nil {
+		return adapter.Observation{}, validationError(fmt.Errorf("invalid Entity support: %w", err))
+	}
+	if err := contractpowerv1.ValidateState(input.Support, input.State); err != nil {
+		return adapter.Observation{}, validationError(fmt.Errorf("unsupported State: %w", err))
 	}
 	value, err := codecs.State.Encode(input.State)
 	if err != nil {

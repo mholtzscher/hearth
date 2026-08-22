@@ -18,7 +18,7 @@ const (
 
 // FS contains the authoritative Entity-type JSON Schemas.
 //
-//go:embed *.schema.json
+//go:embed "set-parameters.schema.json" "state.schema.json" "support.schema.json"
 var FS embed.FS
 
 func SchemaFiles() map[string]string {
