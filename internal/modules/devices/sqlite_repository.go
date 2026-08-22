@@ -129,9 +129,9 @@ func (repository *SQLiteRepository) RegisterBinding(ctx context.Context, params 
 	if err := queries.DeleteEntityOperations(ctx, registrationsqlc.DeleteEntityOperationsParams{EntityID: string(entityID)}); err != nil {
 		return Binding{}, fmt.Errorf("replace entity operations: %w", err)
 	}
-	for _, operation := range params.Entity.Operations {
+	for _, operationName := range params.Entity.SupportedOperations {
 		if err := queries.UpsertEntityOperation(ctx, registrationsqlc.UpsertEntityOperationParams{
-			EntityID: string(entityID), Operation: string(operation),
+			EntityID: string(entityID), Operation: string(operationName),
 		}); err != nil {
 			return Binding{}, fmt.Errorf("store entity operation: %w", err)
 		}
@@ -205,7 +205,7 @@ func (repository *SQLiteRepository) CreateCommand(ctx context.Context, command C
 	queries := commandsqlc.New(repository.database)
 	if err := queries.CreateCommand(ctx, commandsqlc.CreateCommandParams{
 		ID: string(command.ID), EntityID: string(command.EntityID), AdapterID: command.AdapterID,
-		Operation: string(command.Operation), ParametersJson: string(command.Parameters),
+		Operation: string(command.OperationName), ParametersJson: string(command.Parameters),
 		CorrelationID: string(command.CorrelationID), Status: string(command.Status),
 		RequestedAt: formatTime(command.RequestedAt), DeadlineAt: formatTime(command.DeadlineAt),
 	}); err != nil {
@@ -316,7 +316,7 @@ func commandFromRow(row commandsqlc.Command) (CommandRecord, error) {
 	}
 	command := CommandRecord{
 		ID: CommandID(row.ID), EntityID: EntityID(row.EntityID), AdapterID: row.AdapterID,
-		Operation: Operation(row.Operation), Parameters: CommandParameters(json.RawMessage(row.ParametersJson)),
+		OperationName: OperationName(row.Operation), Parameters: CommandParameters(json.RawMessage(row.ParametersJson)),
 		CorrelationID: CorrelationID(row.CorrelationID), Status: CommandStatus(row.Status),
 		RequestedAt: requestedAt, DeadlineAt: deadlineAt, AcceptedAt: acceptedAt, CompletedAt: completedAt,
 	}

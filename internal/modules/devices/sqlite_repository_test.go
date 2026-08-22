@@ -115,9 +115,9 @@ func TestRegistrationRejectionsAreAtomic(t *testing.T) {
 		{
 			ID: "example.changed/v1", StateSchema: json.RawMessage(`{"type":"boolean"}`),
 			ConstraintsSchema: json.RawMessage(`{"type":"object","maxProperties":0}`),
-			Operations: map[Operation]OperationDefinition{OperationSet: {
-				Name: OperationSet, ParametersSchema: json.RawMessage(`{"type":"object","properties":{"value":{"type":"boolean"}},"required":["value"],"additionalProperties":false}`),
-				OutcomePolicy: OutcomeParameterEqualsState, OutcomeParameter: "value", Deadline: 10 * time.Second,
+			OperationDefinitions: map[OperationName]OperationDefinition{OperationNameSet: {
+				ParametersSchema: json.RawMessage(`{"type":"object","properties":{"value":{"type":"boolean"}},"required":["value"],"additionalProperties":false}`),
+				OutcomePolicy:    OutcomeParameterEqualsState, OutcomeParameter: "value", Deadline: 10 * time.Second,
 			}},
 		},
 	})
@@ -282,9 +282,9 @@ func firstLightDefinition() EntityTypeDefinition {
 	return EntityTypeDefinition{
 		ID: EntityTypePowerV1, StateSchema: json.RawMessage(`{"type":"boolean"}`),
 		ConstraintsSchema: json.RawMessage(`{"type":"object","maxProperties":0,"additionalProperties":false}`),
-		Operations: map[Operation]OperationDefinition{OperationSet: {
-			Name: OperationSet, ParametersSchema: json.RawMessage(`{"type":"object","properties":{"value":{"type":"boolean"}},"required":["value"],"additionalProperties":false}`),
-			OutcomePolicy: OutcomeParameterEqualsState, OutcomeParameter: "value", Deadline: 10 * time.Second,
+		OperationDefinitions: map[OperationName]OperationDefinition{OperationNameSet: {
+			ParametersSchema: json.RawMessage(`{"type":"object","properties":{"value":{"type":"boolean"}},"required":["value"],"additionalProperties":false}`),
+			OutcomePolicy:    OutcomeParameterEqualsState, OutcomeParameter: "value", Deadline: 10 * time.Second,
 		}},
 	}
 }
@@ -296,7 +296,7 @@ func validDomainRegistration() Registration {
 		Device:     DeviceDescriptor{ExternalID: &externalID, Name: "Office light", Kind: DeviceKindLight},
 		Entities: []EntityDescriptor{{
 			Key: "power", ExternalID: "light.office", Name: "Power", TypeID: EntityTypePowerV1,
-			Constraints: json.RawMessage(`{}`), Operations: []Operation{OperationSet},
+			Constraints: json.RawMessage(`{}`), SupportedOperations: []OperationName{OperationNameSet},
 		}},
 	}
 }
@@ -333,7 +333,7 @@ func newCommandRecord(t *testing.T, entityID EntityID, requestedAt time.Time) Co
 		t.Fatal(err)
 	}
 	return CommandRecord{
-		ID: id, EntityID: entityID, AdapterID: "simulator", Operation: OperationSet,
+		ID: id, EntityID: entityID, AdapterID: "simulator", OperationName: OperationNameSet,
 		Parameters: CommandParameters(`{"value":true}`), CorrelationID: correlationID,
 		Status: CommandStatusRequested, RequestedAt: requestedAt, DeadlineAt: requestedAt.Add(10 * time.Second),
 	}

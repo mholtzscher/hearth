@@ -12,12 +12,12 @@ func TestFirstLightCatalog(t *testing.T) {
 		t.Fatal(err)
 	}
 	entity := Entity{
-		ID:          EntityID("ent_01890f47-7a6b-7c4d-8e9f-0123456789ab"),
-		TypeID:      EntityTypePowerV1,
-		Constraints: json.RawMessage(`{}`),
-		Operations:  []Operation{OperationSet},
+		ID:                  EntityID("ent_01890f47-7a6b-7c4d-8e9f-0123456789ab"),
+		TypeID:              EntityTypePowerV1,
+		Constraints:         json.RawMessage(`{}`),
+		SupportedOperations: []OperationName{OperationNameSet},
 	}
-	if err := catalog.ValidateEntity(entity.TypeID, entity.Constraints, entity.Operations); err != nil {
+	if err := catalog.ValidateEntity(entity.TypeID, entity.Constraints, entity.SupportedOperations); err != nil {
 		t.Fatalf("validate first-light entity: %v", err)
 	}
 
@@ -32,7 +32,7 @@ func TestFirstLightCatalog(t *testing.T) {
 		t.Fatal("non-boolean state unexpectedly accepted")
 	}
 
-	command, err := catalog.ResolveCommand(entity, OperationSet, CommandParameters(`{ "value": true }`))
+	command, err := catalog.ResolveCommand(entity, OperationNameSet, CommandParameters(`{ "value": true }`))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -42,11 +42,11 @@ func TestFirstLightCatalog(t *testing.T) {
 	if command.Deadline != 10*time.Second {
 		t.Fatalf("deadline = %s", command.Deadline)
 	}
-	if _, err := catalog.ResolveCommand(entity, OperationSet, CommandParameters(`{"value":true,"transition":1}`)); err == nil {
+	if _, err := catalog.ResolveCommand(entity, OperationNameSet, CommandParameters(`{"value":true,"transition":1}`)); err == nil {
 		t.Fatal("additional parameter unexpectedly accepted")
 	}
 
-	record := CommandRecord{Operation: OperationSet, Parameters: command.Parameters}
+	record := CommandRecord{OperationName: OperationNameSet, Parameters: command.Parameters}
 	satisfied, err := catalog.Satisfies(entity, record, Value(`true`))
 	if err != nil || !satisfied {
 		t.Fatalf("matching outcome: satisfied=%v err=%v", satisfied, err)
@@ -56,7 +56,7 @@ func TestFirstLightCatalog(t *testing.T) {
 		t.Fatalf("nonmatching outcome: satisfied=%v err=%v", satisfied, err)
 	}
 
-	entity.Operations = nil
+	entity.SupportedOperations = nil
 	satisfied, err = catalog.Satisfies(entity, record, Value(`true`))
 	if err != nil || !satisfied {
 		t.Fatalf("recorded command after descriptor update: satisfied=%v err=%v", satisfied, err)
@@ -69,19 +69,19 @@ func TestFirstLightCatalogRejectsInvalidDescriptors(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, test := range []struct {
-		name        string
-		typeID      EntityTypeID
-		constraints json.RawMessage
-		operations  []Operation
+		name                string
+		typeID              EntityTypeID
+		constraints         json.RawMessage
+		supportedOperations []OperationName
 	}{
-		{"unknown type", "vendor.power/v1", json.RawMessage(`{}`), []Operation{OperationSet}},
-		{"constraints", EntityTypePowerV1, json.RawMessage(`{"minimum":1}`), []Operation{OperationSet}},
+		{"unknown type", "vendor.power/v1", json.RawMessage(`{}`), []OperationName{OperationNameSet}},
+		{"constraints", EntityTypePowerV1, json.RawMessage(`{"minimum":1}`), []OperationName{OperationNameSet}},
 		{"missing operation", EntityTypePowerV1, json.RawMessage(`{}`), nil},
-		{"unknown operation", EntityTypePowerV1, json.RawMessage(`{}`), []Operation{"toggle"}},
-		{"duplicate operation", EntityTypePowerV1, json.RawMessage(`{}`), []Operation{OperationSet, OperationSet}},
+		{"unknown operation", EntityTypePowerV1, json.RawMessage(`{}`), []OperationName{"toggle"}},
+		{"duplicate operation", EntityTypePowerV1, json.RawMessage(`{}`), []OperationName{OperationNameSet, OperationNameSet}},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			if err := catalog.ValidateEntity(test.typeID, test.constraints, test.operations); err == nil {
+			if err := catalog.ValidateEntity(test.typeID, test.constraints, test.supportedOperations); err == nil {
 				t.Fatal("descriptor unexpectedly accepted")
 			}
 		})
@@ -90,17 +90,16 @@ func TestFirstLightCatalogRejectsInvalidDescriptors(t *testing.T) {
 
 func TestCatalogRejectsInvalidDefinitions(t *testing.T) {
 	validOperation := OperationDefinition{
-		Name:             OperationSet,
 		ParametersSchema: json.RawMessage(`{"type":"object"}`),
 		OutcomePolicy:    OutcomeParameterEqualsState,
 		OutcomeParameter: "value",
 		Deadline:         time.Second,
 	}
 	valid := EntityTypeDefinition{
-		ID:                "test.value/v1",
-		StateSchema:       json.RawMessage(`{"type":"boolean"}`),
-		ConstraintsSchema: json.RawMessage(`{"type":"object"}`),
-		Operations:        map[Operation]OperationDefinition{OperationSet: validOperation},
+		ID:                   "test.value/v1",
+		StateSchema:          json.RawMessage(`{"type":"boolean"}`),
+		ConstraintsSchema:    json.RawMessage(`{"type":"object"}`),
+		OperationDefinitions: map[OperationName]OperationDefinition{OperationNameSet: validOperation},
 	}
 
 	tests := []struct {
@@ -128,10 +127,10 @@ func TestCatalogDefensivelyCopiesInputsAndNormalizesObjects(t *testing.T) {
 		ID:                "test.object/v1",
 		StateSchema:       stateSchema,
 		ConstraintsSchema: json.RawMessage(`{"type":"object"}`),
-		Operations: map[Operation]OperationDefinition{
-			OperationSet: {
-				Name: OperationSet, ParametersSchema: json.RawMessage(`{"type":"object","required":["value"],"properties":{"value":{"type":"object"}}}`),
-				OutcomePolicy: OutcomeParameterEqualsState, OutcomeParameter: "value", Deadline: time.Second,
+		OperationDefinitions: map[OperationName]OperationDefinition{
+			OperationNameSet: {
+				ParametersSchema: json.RawMessage(`{"type":"object","required":["value"],"properties":{"value":{"type":"object"}}}`),
+				OutcomePolicy:    OutcomeParameterEqualsState, OutcomeParameter: "value", Deadline: time.Second,
 			},
 		},
 	}
@@ -140,22 +139,22 @@ func TestCatalogDefensivelyCopiesInputsAndNormalizesObjects(t *testing.T) {
 		t.Fatal(err)
 	}
 	stateSchema[0] = '['
-	delete(definition.Operations, OperationSet)
+	delete(definition.OperationDefinitions, OperationNameSet)
 
-	entity := Entity{TypeID: "test.object/v1", Operations: []Operation{OperationSet}}
+	entity := Entity{TypeID: "test.object/v1", SupportedOperations: []OperationName{OperationNameSet}}
 	equal, err := catalog.EqualState(entity, Value(`{"b":false,"a":true}`), Value(`{"a":true,"b":false}`))
 	if err != nil || !equal {
 		t.Fatalf("semantic object equality: equal=%v err=%v", equal, err)
 	}
-	if _, err := catalog.ResolveCommand(entity, OperationSet, CommandParameters(`{"value":{}}`)); err != nil {
+	if _, err := catalog.ResolveCommand(entity, OperationNameSet, CommandParameters(`{"value":{}}`)); err != nil {
 		t.Fatalf("catalog changed after caller mutation: %v", err)
 	}
 }
 
 func definitionWithOperation(base EntityTypeDefinition, mutate func(*OperationDefinition)) EntityTypeDefinition {
 	copy := base
-	operation := base.Operations[OperationSet]
-	mutate(&operation)
-	copy.Operations = map[Operation]OperationDefinition{OperationSet: operation}
+	operationDefinition := base.OperationDefinitions[OperationNameSet]
+	mutate(&operationDefinition)
+	copy.OperationDefinitions = map[OperationName]OperationDefinition{OperationNameSet: operationDefinition}
 	return copy
 }

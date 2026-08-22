@@ -12,7 +12,7 @@
       "type": "string",
       "pattern": "^[a-z0-9][a-z0-9_-]{0,62}$"
     },
-    "operation": {
+    "operation_name": {
       "$ref": "#/$defs/slug"
     },
     "catalog_type": {

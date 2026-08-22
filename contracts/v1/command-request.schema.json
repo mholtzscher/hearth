@@ -17,7 +17,7 @@
       "required": ["entity_id", "operation", "parameters", "deadline"],
       "properties": {
         "entity_id": { "$ref": "urn:hearth:schema:common:v1#/$defs/ent_id" },
-        "operation": { "$ref": "urn:hearth:schema:common:v1#/$defs/operation" },
+        "operation": { "$ref": "urn:hearth:schema:common:v1#/$defs/operation_name" },
         "parameters": { "type": "object" },
         "deadline": { "$ref": "urn:hearth:schema:common:v1#/$defs/utc_timestamp" }
       }

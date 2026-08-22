@@ -37,7 +37,7 @@ func TestSubjectsRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if commandRoute.AdapterID != "simulator" || commandRoute.EntityID != testEntityID || commandRoute.Operation != "set" {
+	if commandRoute.AdapterID != "simulator" || commandRoute.EntityID != testEntityID || commandRoute.OperationName != "set" {
 		t.Fatalf("command route = %#v", commandRoute)
 	}
 }

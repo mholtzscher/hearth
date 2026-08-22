@@ -540,7 +540,7 @@ func validRegistration(bindingKey string) Registration {
 		Device:     DeviceDescriptor{Name: "Office Light", Kind: "light"},
 		Entities: []EntityDescriptor{{
 			Key: "power", ExternalID: "light.office", Name: "Power", Type: "hearth.power/v1",
-			Constraints: json.RawMessage(`{}`), Operations: []string{"set"},
+			Constraints: json.RawMessage(`{}`), SupportedOperations: []string{"set"},
 		}},
 	}
 }
@@ -572,7 +572,7 @@ func sendCommandWithDeadline(ctx context.Context, connection *natsgo.Conn, value
 	}
 	payload, err := corewire.Encode(validator, contractsv1.CommandRequestSchemaID, corewire.Envelope[corewire.Command]{
 		ID: commandID, Schema: contractsv1.CommandRequestSchemaID, EmittedAt: nowString(), CorrelationID: correlationID,
-		Data: corewire.Command{EntityID: testEntityID, Operation: "set", Parameters: json.RawMessage(mustJSON(value)), Deadline: deadline.UTC().Format(time.RFC3339Nano)},
+		Data: corewire.Command{EntityID: testEntityID, OperationName: "set", Parameters: json.RawMessage(mustJSON(value)), Deadline: deadline.UTC().Format(time.RFC3339Nano)},
 	})
 	if err != nil {
 		return nil, err

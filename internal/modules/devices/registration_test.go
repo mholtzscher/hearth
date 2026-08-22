@@ -33,7 +33,7 @@ func TestRegisterClassifiesOnlyDescriptorAndIdentityFailuresAsPermanent(t *testi
 	}
 
 	invalid := validDomainRegistration()
-	invalid.Entities[0].Operations = nil
+	invalid.Entities[0].SupportedOperations = nil
 	_, err = service.Register(context.Background(), "homeassistant", invalid)
 	if !errors.As(err, &rejected) || rejected.Code != RegistrationInvalidDescriptor {
 		t.Fatalf("invalid descriptor error = %v", err)

@@ -19,9 +19,9 @@ type EntityTypeID string
 
 const EntityTypePowerV1 EntityTypeID = "hearth.power/v1"
 
-type Operation string
+type OperationName string
 
-const OperationSet Operation = "set"
+const OperationNameSet OperationName = "set"
 
 type Value json.RawMessage
 type CommandParameters json.RawMessage
@@ -33,13 +33,13 @@ type Device struct {
 }
 
 type Entity struct {
-	ID          EntityID
-	DeviceID    DeviceID
-	AdapterID   string
-	Name        string
-	TypeID      EntityTypeID
-	Constraints json.RawMessage
-	Operations  []Operation
+	ID                  EntityID
+	DeviceID            DeviceID
+	AdapterID           string
+	Name                string
+	TypeID              EntityTypeID
+	Constraints         json.RawMessage
+	SupportedOperations []OperationName
 }
 
 type State struct {
@@ -108,7 +108,7 @@ type CommandRecord struct {
 	ID                   CommandID
 	EntityID             EntityID
 	AdapterID            string
-	Operation            Operation
+	OperationName        OperationName
 	Parameters           CommandParameters
 	CorrelationID        CorrelationID
 	Status               CommandStatus

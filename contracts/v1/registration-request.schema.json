@@ -45,7 +45,7 @@
                 "type": "array",
                 "minItems": 1,
                 "uniqueItems": true,
-                "items": { "$ref": "urn:hearth:schema:common:v1#/$defs/operation" }
+                "items": { "$ref": "urn:hearth:schema:common:v1#/$defs/operation_name" }
               }
             }
           }

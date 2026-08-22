@@ -289,8 +289,8 @@ func (session *Session) handleCommand(parent context.Context, message *natsgo.Ms
 		slog.Error("discarding undecodable command", "subject", message.Subject, "error", err)
 		return
 	}
-	entityID, operation, ok := parseCommandSubject(session.adapterID, message.Subject)
-	if !ok || entityID != request.Data.EntityID || operation != request.Data.Operation || request.CausationID != nil {
+	entityID, operationName, ok := parseCommandSubject(session.adapterID, message.Subject)
+	if !ok || entityID != request.Data.EntityID || operationName != request.Data.OperationName || request.CausationID != nil {
 		slog.Error("discarding command with mismatched routing", "subject", message.Subject, "command_id", request.ID)
 		return
 	}

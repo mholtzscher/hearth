@@ -23,12 +23,12 @@ type DeviceDescriptor struct {
 }
 
 type EntityDescriptor struct {
-	Key         string          `json:"key"`
-	ExternalID  string          `json:"external_id"`
-	Name        string          `json:"name"`
-	Type        string          `json:"type"`
-	Constraints json.RawMessage `json:"constraints"`
-	Operations  []string        `json:"operations"`
+	Key                 string          `json:"key"`
+	ExternalID          string          `json:"external_id"`
+	Name                string          `json:"name"`
+	Type                string          `json:"type"`
+	Constraints         json.RawMessage `json:"constraints"`
+	SupportedOperations []string        `json:"operations"`
 }
 
 type Binding struct {
@@ -67,7 +67,7 @@ type Command struct {
 	ID            string          `json:"-"`
 	CorrelationID string          `json:"-"`
 	EntityID      string          `json:"entity_id"`
-	Operation     string          `json:"operation"`
+	OperationName string          `json:"operation"`
 	Parameters    json.RawMessage `json:"parameters"`
 	Deadline      string          `json:"deadline"`
 }

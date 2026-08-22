@@ -109,8 +109,8 @@ const DeviceKindLight DeviceKind = "light"
 type EntityTypeID string
 const EntityTypePowerV1 EntityTypeID = "hearth.power/v1"
 
-type Operation string
-const OperationSet Operation = "set"
+type OperationName string
+const OperationNameSet OperationName = "set"
 
 type Value json.RawMessage
 type CommandParameters json.RawMessage
@@ -128,7 +128,7 @@ type Entity struct {
     Name        string
     TypeID      EntityTypeID
     Constraints json.RawMessage
-    Operations  []Operation
+    SupportedOperations []OperationName
 }
 
 type State struct {
@@ -193,7 +193,7 @@ type CommandRecord struct {
     ID                   CommandID
     EntityID             EntityID
     AdapterID            string
-    Operation            Operation
+    OperationName        OperationName
     Parameters           CommandParameters
     CorrelationID        CorrelationID
     Status               CommandStatus
@@ -234,7 +234,6 @@ type OutcomePolicy string
 const OutcomeParameterEqualsState OutcomePolicy = "parameter_equals_state"
 
 type OperationDefinition struct {
-    Name             Operation
     ParametersSchema json.RawMessage
     OutcomePolicy    OutcomePolicy
     OutcomeParameter string
@@ -242,10 +241,10 @@ type OperationDefinition struct {
 }
 
 type EntityTypeDefinition struct {
-    ID                EntityTypeID
-    StateSchema       json.RawMessage
-    ConstraintsSchema json.RawMessage
-    Operations        map[Operation]OperationDefinition
+    ID                   EntityTypeID
+    StateSchema          json.RawMessage
+    ConstraintsSchema    json.RawMessage
+    OperationDefinitions map[OperationName]OperationDefinition
 }
 
 type ResolvedCommand struct {
@@ -255,14 +254,14 @@ type ResolvedCommand struct {
 
 func NewTypeCatalog([]EntityTypeDefinition) (*TypeCatalog, error)
 func NewFirstLightTypeCatalog() (*TypeCatalog, error)
-func (*TypeCatalog) ValidateEntity(EntityTypeID, json.RawMessage, []Operation) error
+func (*TypeCatalog) ValidateEntity(EntityTypeID, json.RawMessage, []OperationName) error
 func (*TypeCatalog) NormalizeState(Entity, Value) (Value, error)
 func (*TypeCatalog) EqualState(Entity, Value, Value) (bool, error)
-func (*TypeCatalog) ResolveCommand(Entity, Operation, CommandParameters) (ResolvedCommand, error)
+func (*TypeCatalog) ResolveCommand(Entity, OperationName, CommandParameters) (ResolvedCommand, error)
 func (*TypeCatalog) Satisfies(Entity, CommandRecord, Value) (bool, error)
 ```
 
-`NewTypeCatalog` rejects duplicate IDs or operations, malformed schemas, unsupported outcome policies, missing outcome parameters, and non-positive deadlines. It compiles all definition schemas once. `NewFirstLightTypeCatalog` supplies the only production definitions in this slice; the general constructor also permits focused catalog tests without making definitions runtime-configurable.
+`NewTypeCatalog` rejects duplicate type IDs, unnamed operations, malformed schemas, unsupported outcome policies, missing outcome parameters, and non-positive deadlines. It compiles all definition schemas once. `NewFirstLightTypeCatalog` supplies the only production definitions in this slice; the general constructor also permits focused catalog tests without making definitions runtime-configurable.
 
 The first-light catalog contains exactly one built-in definition:
 
@@ -277,7 +276,7 @@ operations:
     deadline: 10s
 ```
 
-Registration accepts only catalog-known type IDs, constraints valid for that type, and an operation subset allowed by that type. For `hearth.power/v1`, the descriptor must contain `{}` constraints and exactly `set`. An Entity's `type_id` is immutable across re-registration; names, external IDs, constraints, and the available operation subset may change transactionally. Type definitions are immutable for their versioned ID.
+Registration accepts only catalog-known type IDs, constraints valid for that type, and a supported-operation subset allowed by that type. For `hearth.power/v1`, the descriptor must contain `{}` constraints and support exactly `set`. An Entity's `type_id` is immutable across re-registration; names, external IDs, constraints, and supported operations may change transactionally. Type definitions are immutable for their versioned ID.
 
 The catalog compares decoded, schema-valid values according to the type definition rather than raw JSON bytes. The first definition uses exact boolean equality. It rejects an Observation whose value does not satisfy the Entity's State schema and rejects a Command before record creation or dispatch when its operation is unavailable or its parameters do not satisfy the operation schema.
 
@@ -345,7 +344,7 @@ type EntityDescriptor struct {
     Name        string          `json:"name"`
     Type        string          `json:"type"`        // catalog ID; "hearth.power/v1" in this slice
     Constraints json.RawMessage `json:"constraints"` // {} in this slice
-    Operations  []string        `json:"operations"`  // exactly ["set"] in this slice
+    SupportedOperations []string        `json:"operations"` // exactly ["set"] in this slice
 }
 
 type Binding struct {
@@ -412,7 +411,7 @@ type Command struct {
     ID            string
     CorrelationID string
     EntityID      string          `json:"entity_id"`
-    Operation     string          `json:"operation"`
+    OperationName string          `json:"operation"`
     Parameters    json.RawMessage `json:"parameters"`
     Deadline      string          `json:"deadline"`
 }
@@ -442,8 +441,8 @@ type EntityBody struct {
     Name        string         `json:"name"`
     Type        string         `json:"type"`
     Constraints map[string]any `json:"constraints"`
-    Operations  []string       `json:"operations"`
-    State       *StateBody     `json:"state"`
+    SupportedOperations []string       `json:"operations"`
+    State               *StateBody     `json:"state"`
 }
 
 type StateBody struct {
@@ -455,8 +454,8 @@ type StateBody struct {
 }
 
 type CommandBody struct {
-    Operation  string         `json:"operation"`
-    Parameters map[string]any `json:"parameters"`
+    OperationName string         `json:"operation"`
+    Parameters    map[string]any `json:"parameters"`
 }
 
 type CommandResultBody struct {
@@ -600,14 +599,14 @@ func NewService(Repository, CommandSender, *TypeCatalog, Dependencies) *Service
 func (*Service) Register(context.Context, string, Registration) (Binding, error)
 func (*Service) ProjectObservation(context.Context, string, Observation, time.Time) (ProjectionResult, error)
 func (*Service) GetEntity(context.Context, EntityID) (EntityView, error)
-func (*Service) ExecuteCommand(context.Context, EntityID, Operation, CommandParameters) (CommandResult, error)
+func (*Service) ExecuteCommand(context.Context, EntityID, OperationName, CommandParameters) (CommandResult, error)
 ```
 
 `Dependencies` contains an injected clock and UUIDv7 generator for deterministic module tests. `TypeCatalog` is a required concrete dependency selected by application assembly; it is not a runtime plugin interface. Interfaces are defined in the consuming `devices` package; production sqlc/NATS adapters and test adapters satisfy them.
 
 `ExecuteCommand` behavior:
 
-1. Resolve the Entity and owner. Resolve the Entity type and operation in the catalog, validate the parameters, and obtain the outcome policy and deadline. Unknown operations, unavailable operations, and invalid parameters fail before a Command record is created or dispatched.
+1. Resolve the Entity and owner. Resolve the operation name against the Entity type's catalog definitions and the Entity's supported operations, validate the parameters, and obtain the outcome policy and deadline. Unknown or unsupported operation names and invalid parameters fail before a Command record is created or dispatched.
 2. Create Command/correlation IDs, an independent lifecycle context using the operation deadline, and a Command-ID-keyed Observation waiter.
 3. Commit `requested` before dispatch. Failure prevents dispatch and returns an internal error. This commit is the point of no return: later HTTP cancellation does not cancel the lifecycle.
 4. Send one Core NATS request/reply without retry or replay. Persist dispatch/response failures as `adapter_unavailable`, `rejected`, or `internal_failure`.
@@ -661,7 +660,7 @@ hearth.v1.adapter.<adapter>.command.<entity>.<operation>
 - `<adapter>` is the configured adapter slug.
 - `<entity>` is the canonical Entity ID.
 - `<operation>` is the registered subject-safe operation name; it is `set` in this slice.
-- Core validates that subject adapter/entity/operation tokens match the payload, registered Entity operations, and current ownership.
+- Core validates that subject adapter/entity/operation tokens match the payload, the Entity's supported operations, and current ownership.
 - Registration and Commands use Core NATS request/reply.
 - Persisting a Command record does not put the Command in a stream and never causes replay or redispatch.
 - Observations use JetStream and require a publish acknowledgement.

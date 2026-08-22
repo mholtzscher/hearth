@@ -24,12 +24,12 @@ type DeviceDescriptor struct {
 }
 
 type EntityDescriptor struct {
-	Key         string
-	ExternalID  string
-	Name        string
-	TypeID      EntityTypeID
-	Constraints json.RawMessage
-	Operations  []Operation
+	Key                 string
+	ExternalID          string
+	Name                string
+	TypeID              EntityTypeID
+	Constraints         json.RawMessage
+	SupportedOperations []OperationName
 }
 
 type Binding struct {
@@ -132,7 +132,7 @@ func (service *Service) validateRegistration(adapterID string, registration Regi
 	if !validLength(string(entity.TypeID), 1, 128) {
 		return errors.New("entity type must contain 1 to 128 characters")
 	}
-	if err := service.catalog.ValidateEntity(entity.TypeID, entity.Constraints, entity.Operations); err != nil {
+	if err := service.catalog.ValidateEntity(entity.TypeID, entity.Constraints, entity.SupportedOperations); err != nil {
 		return fmt.Errorf("entity descriptor is incompatible with its type: %w", err)
 	}
 	return nil
@@ -167,6 +167,6 @@ func copyDeviceDescriptor(device DeviceDescriptor) DeviceDescriptor {
 func copyEntityDescriptor(entity EntityDescriptor) EntityDescriptor {
 	copy := entity
 	copy.Constraints = append(json.RawMessage(nil), entity.Constraints...)
-	copy.Operations = append([]Operation(nil), entity.Operations...)
+	copy.SupportedOperations = append([]OperationName(nil), entity.SupportedOperations...)
 	return copy
 }
