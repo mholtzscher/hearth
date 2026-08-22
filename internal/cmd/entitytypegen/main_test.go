@@ -130,6 +130,26 @@ func TestMultipleOfGuardsZeroDivisor(t *testing.T) {
 	}
 }
 
+func TestTypeEmitterRejectsLossyNumberBindings(t *testing.T) {
+	for name, schema := range map[string]schemaNode{
+		"root": {Type: "number"},
+		"property": {
+			Type:                 "object",
+			AdditionalProperties: json.RawMessage("false"),
+			Properties: map[string]schemaNode{
+				"value": {Type: "number"},
+			},
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			emitter := &typeEmitter{declarations: make(map[string]string)}
+			if err := emitter.define("Value", schema); err == nil || !strings.Contains(err.Error(), "lossless binding") {
+				t.Fatalf("number binding error = %v", err)
+			}
+		})
+	}
+}
+
 func TestTypeEmitterPreservesOptionalObjectPresence(t *testing.T) {
 	emitter := &typeEmitter{declarations: make(map[string]string)}
 	schema := schemaNode{

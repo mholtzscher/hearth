@@ -12,7 +12,7 @@ import (
 
 const deleteExpiredObservationReceipts = `-- name: DeleteExpiredObservationReceipts :execrows
 DELETE FROM observation_receipts
-WHERE expires_at < ?
+WHERE julianday(expires_at) < julianday(CAST(?1 AS TEXT))
   AND NOT EXISTS (
       SELECT 1
       FROM entity_states

@@ -2,7 +2,7 @@
 PRAGMA foreign_keys = ON;
 
 CREATE TABLE devices (
-    id         TEXT PRIMARY KEY CHECK (id LIKE 'dev_%'),
+    id         TEXT PRIMARY KEY CHECK (substr(id, 1, 4) = 'dev_'),
     kind       TEXT NOT NULL CHECK (length(kind) BETWEEN 1 AND 128),
     name       TEXT NOT NULL CHECK (length(name) BETWEEN 1 AND 128),
     created_at TEXT NOT NULL,
@@ -10,7 +10,7 @@ CREATE TABLE devices (
 );
 
 CREATE TABLE entities (
-    id           TEXT PRIMARY KEY CHECK (id LIKE 'ent_%'),
+    id           TEXT PRIMARY KEY CHECK (substr(id, 1, 4) = 'ent_'),
     device_id    TEXT NOT NULL REFERENCES devices(id) ON DELETE CASCADE,
     name         TEXT NOT NULL CHECK (length(name) BETWEEN 1 AND 128),
     type_id      TEXT NOT NULL CHECK (length(type_id) BETWEEN 1 AND 128),
@@ -22,14 +22,14 @@ CREATE TABLE entities (
 );
 
 CREATE TABLE commands (
-    id                     TEXT PRIMARY KEY CHECK (id LIKE 'cmd_%'),
+    id                     TEXT PRIMARY KEY CHECK (substr(id, 1, 4) = 'cmd_'),
     entity_id              TEXT NOT NULL REFERENCES entities(id) ON DELETE RESTRICT,
     adapter_id             TEXT NOT NULL CHECK (length(adapter_id) BETWEEN 1 AND 63),
     operation              TEXT NOT NULL CHECK (length(operation) BETWEEN 1 AND 63),
     parameters_json        TEXT NOT NULL CHECK (
         json_valid(parameters_json) AND json_type(parameters_json) = 'object'
     ),
-    correlation_id         TEXT NOT NULL CHECK (correlation_id LIKE 'cor_%'),
+    correlation_id         TEXT NOT NULL CHECK (substr(correlation_id, 1, 4) = 'cor_'),
     status                 TEXT NOT NULL CHECK (
         status IN (
             'requested', 'accepted', 'satisfied', 'rejected',
@@ -42,7 +42,7 @@ CREATE TABLE commands (
     accepted_at            TEXT,
     completed_at           TEXT,
     outcome_observation_id TEXT UNIQUE CHECK (
-        outcome_observation_id IS NULL OR outcome_observation_id LIKE 'obs_%'
+        outcome_observation_id IS NULL OR substr(outcome_observation_id, 1, 4) = 'obs_'
     ),
     failure_code           TEXT CHECK (
         failure_code IS NULL OR failure_code IN (
@@ -100,7 +100,7 @@ CREATE TABLE adapter_entity_mappings (
 
 CREATE TABLE observation_receipts (
     receive_order       INTEGER PRIMARY KEY AUTOINCREMENT,
-    observation_id      TEXT NOT NULL UNIQUE CHECK (observation_id LIKE 'obs_%'),
+    observation_id      TEXT NOT NULL UNIQUE CHECK (substr(observation_id, 1, 4) = 'obs_'),
     adapter_id          TEXT NOT NULL,
     entity_id           TEXT NOT NULL,
     disposition         TEXT NOT NULL CHECK (

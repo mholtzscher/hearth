@@ -59,6 +59,46 @@ func TestJSONCodecNormalizesAndValidates(t *testing.T) {
 	}
 }
 
+func TestJSONCodecDecodesEquivalentIntegerRepresentations(t *testing.T) {
+	scalar, err := CompileJSONCodec[int64](
+		"urn:test:integer",
+		json.RawMessage(`{"type":"integer"}`),
+		nil,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, raw := range []string{"75", "75.0", "75e0"} {
+		value, normalized, err := scalar.Decode(json.RawMessage(raw))
+		if err != nil {
+			t.Errorf("Decode(%s): %v", raw, err)
+			continue
+		}
+		if value != 75 || string(normalized) != "75" {
+			t.Errorf("Decode(%s) = %d, %s", raw, value, normalized)
+		}
+	}
+
+	type integerFixture struct {
+		Value int64 `json:"value"`
+	}
+	object, err := CompileJSONCodec[integerFixture](
+		"urn:test:integer-object",
+		json.RawMessage(`{"type":"object","required":["value"],"properties":{"value":{"type":"integer"}},"additionalProperties":false}`),
+		nil,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	value, normalized, err := object.Decode(json.RawMessage(`{"value":75e0}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if value.Value != 75 || string(normalized) != `{"value":75}` {
+		t.Fatalf("object Decode = %#v, %s", value, normalized)
+	}
+}
+
 func TestJSONCodecRejectsBindingDrift(t *testing.T) {
 	type driftedBinding struct{}
 	codec, err := CompileJSONCodec[driftedBinding](

@@ -2,8 +2,11 @@ package db
 
 import (
 	"context"
+	"database/sql"
 	"path/filepath"
 	"testing"
+
+	receiptsqlc "github.com/mholtzscher/hearth/internal/platform/db/sqlc/receipts"
 )
 
 func TestMigrateEmptySQLiteDatabase(t *testing.T) {
@@ -63,6 +66,86 @@ func TestMigrateEmptySQLiteDatabase(t *testing.T) {
 	}
 	if operationTableCount != 0 {
 		t.Fatal("entity_operations table still exists")
+	}
+}
+
+func TestIDPrefixConstraintsRequireLiteralUnderscore(t *testing.T) {
+	ctx := context.Background()
+	database, err := Open(ctx, filepath.Join(t.TempDir(), "hearth.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = database.Close() })
+	if err := Migrate(ctx, database); err != nil {
+		t.Fatal(err)
+	}
+
+	assertWriteRejected(t, database, `INSERT INTO devices (id, kind, name, created_at, updated_at) VALUES ('devXbad', 'light', 'Bad', 'now', 'now')`)
+	if _, err := database.ExecContext(ctx, `INSERT INTO devices (id, kind, name, created_at, updated_at) VALUES ('dev_valid', 'light', 'Valid', 'now', 'now')`); err != nil {
+		t.Fatal(err)
+	}
+	assertWriteRejected(t, database, `INSERT INTO entities (id, device_id, name, type_id, support_json, created_at, updated_at) VALUES ('entXbad', 'dev_valid', 'Bad', 'test/v1', '{}', 'now', 'now')`)
+	if _, err := database.ExecContext(ctx, `INSERT INTO entities (id, device_id, name, type_id, support_json, created_at, updated_at) VALUES ('ent_valid', 'dev_valid', 'Valid', 'test/v1', '{}', 'now', 'now')`); err != nil {
+		t.Fatal(err)
+	}
+	assertWriteRejected(t, database, `INSERT INTO commands (id, entity_id, adapter_id, operation, parameters_json, correlation_id, status, requested_at, deadline_at) VALUES ('cmdXbad', 'ent_valid', 'adapter', 'set', '{}', 'cor_valid', 'requested', 'now', 'later')`)
+	assertWriteRejected(t, database, `INSERT INTO commands (id, entity_id, adapter_id, operation, parameters_json, correlation_id, status, requested_at, deadline_at) VALUES ('cmd_correlation', 'ent_valid', 'adapter', 'set', '{}', 'corXbad', 'requested', 'now', 'later')`)
+	assertWriteRejected(t, database, `INSERT INTO commands (id, entity_id, adapter_id, operation, parameters_json, correlation_id, status, requested_at, deadline_at, completed_at, outcome_observation_id) VALUES ('cmd_outcome', 'ent_valid', 'adapter', 'set', '{}', 'cor_valid', 'satisfied', 'now', 'later', 'now', 'obsXbad')`)
+	assertWriteRejected(t, database, `INSERT INTO observation_receipts (observation_id, adapter_id, entity_id, disposition, adapter_received_at, observed_at, expires_at) VALUES ('obsXbad', 'adapter', 'ent_valid', 'applied', 'now', 'now', 'later')`)
+}
+
+func TestDeleteExpiredObservationReceiptsComparesTimestampsChronologically(t *testing.T) {
+	ctx := context.Background()
+	database, err := Open(ctx, filepath.Join(t.TempDir(), "hearth.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = database.Close() })
+	if err := Migrate(ctx, database); err != nil {
+		t.Fatal(err)
+	}
+
+	for _, receipt := range []struct {
+		id        string
+		expiresAt string
+	}{
+		{id: "obs_past", expiresAt: "2026-08-22T11:59:59.5Z"},
+		{id: "obs_future", expiresAt: "2026-08-22T12:00:00.5Z"},
+	} {
+		_, err := database.ExecContext(ctx, `
+			INSERT INTO observation_receipts (
+				observation_id, adapter_id, entity_id, disposition,
+				adapter_received_at, observed_at, expires_at
+			) VALUES (?, 'adapter', 'ent_entity', 'applied', ?, ?, ?)`,
+			receipt.id, "2026-08-22T11:00:00Z", "2026-08-22T11:00:00Z", receipt.expiresAt,
+		)
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	deleted, err := receiptsqlc.New(database).DeleteExpiredObservationReceipts(ctx, receiptsqlc.DeleteExpiredObservationReceiptsParams{
+		ExpiresAt: "2026-08-22T12:00:00Z",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if deleted != 1 {
+		t.Fatalf("deleted receipts = %d, want 1", deleted)
+	}
+	var remaining string
+	if err := database.QueryRowContext(ctx, `SELECT observation_id FROM observation_receipts`).Scan(&remaining); err != nil {
+		t.Fatal(err)
+	}
+	if remaining != "obs_future" {
+		t.Fatalf("remaining receipt = %q, want obs_future", remaining)
+	}
+}
+
+func assertWriteRejected(t *testing.T, database *sql.DB, query string) {
+	t.Helper()
+	if _, err := database.ExecContext(context.Background(), query); err == nil {
+		t.Fatalf("write unexpectedly passed: %s", query)
 	}
 }
 

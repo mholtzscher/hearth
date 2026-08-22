@@ -19,6 +19,7 @@
     go run ./internal/cmd/entitytypegen -root . -check
     sqlc generate
     git diff --exit-code -- internal/platform/db/sqlc
+    test -z "$(git ls-files --others --exclude-standard -- internal/platform/db/sqlc)"
     go test ./...
     go vet ./...
   '';
@@ -27,6 +28,7 @@
     go run ./internal/cmd/entitytypegen -root . -check
     sqlc generate
     git diff --exit-code -- internal/platform/db/sqlc
+    test -z "$(git ls-files --others --exclude-standard -- internal/platform/db/sqlc)"
     go test ./...
     go vet ./...
   '';

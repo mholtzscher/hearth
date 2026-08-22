@@ -13,7 +13,7 @@ RETURNING receive_order;
 
 -- name: DeleteExpiredObservationReceipts :execrows
 DELETE FROM observation_receipts
-WHERE expires_at < ?
+WHERE julianday(expires_at) < julianday(CAST(sqlc.arg(expires_at) AS TEXT))
   AND NOT EXISTS (
       SELECT 1
       FROM entity_states

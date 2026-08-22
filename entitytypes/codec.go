@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"math/big"
 
 	"github.com/santhosh-tekuri/jsonschema/v6"
 )
@@ -54,7 +55,11 @@ func (codec *JSONCodec[T]) Decode(raw json.RawMessage) (T, json.RawMessage, erro
 		return zero, nil, fmt.Errorf("validate %q: %w", codec.schemaID, err)
 	}
 
-	decoder := json.NewDecoder(bytes.NewReader(raw))
+	bindingRaw, err := json.Marshal(normalizeIntegralNumbers(value))
+	if err != nil {
+		return zero, nil, fmt.Errorf("normalize binding for %q: %w", codec.schemaID, err)
+	}
+	decoder := json.NewDecoder(bytes.NewReader(bindingRaw))
 	decoder.UseNumber()
 	var typed T
 	if err := decoder.Decode(&typed); err != nil {
@@ -87,6 +92,25 @@ func (codec *JSONCodec[T]) Encode(value T) (json.RawMessage, error) {
 	}
 	_, normalized, err := codec.Decode(raw)
 	return normalized, err
+}
+
+func normalizeIntegralNumbers(value any) any {
+	switch value := value.(type) {
+	case json.Number:
+		rational, ok := new(big.Rat).SetString(value.String())
+		if ok && rational.IsInt() {
+			return json.Number(rational.Num().String())
+		}
+	case []any:
+		for index, item := range value {
+			value[index] = normalizeIntegralNumbers(item)
+		}
+	case map[string]any:
+		for key, item := range value {
+			value[key] = normalizeIntegralNumbers(item)
+		}
+	}
+	return value
 }
 
 func decodeOne(raw json.RawMessage) (any, error) {

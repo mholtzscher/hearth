@@ -83,7 +83,7 @@ func (emitter *typeEmitter) define(name string, schema schemaNode) error {
 	case "integer":
 		declaration = "type " + name + " int64\n"
 	case "number":
-		declaration = "type " + name + " float64\n"
+		return errors.New("number schemas require a lossless binding and are not supported")
 	case "array":
 		if schema.Items == nil {
 			return errors.New("array schema requires items")
@@ -136,7 +136,7 @@ func (emitter *typeEmitter) propertyType(name string, schema schemaNode) (string
 	case "integer":
 		return "int64", nil
 	case "number":
-		return "float64", nil
+		return "", errors.New("number schemas require a lossless binding and are not supported")
 	case "object", "array":
 		if err := emitter.define(name, schema); err != nil {
 			return "", err
