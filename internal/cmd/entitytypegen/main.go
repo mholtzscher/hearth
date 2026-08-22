@@ -16,6 +16,8 @@ import (
 	"sort"
 	"strings"
 	"unicode"
+
+	"github.com/santhosh-tekuri/jsonschema/v6"
 )
 
 var (
@@ -163,6 +165,15 @@ func generateRoot(root string, check bool) error {
 }
 
 func loadModel(path string) (entityTypeModel, error) {
+	directory := filepath.Dir(path)
+	moduleRoot, err := findModuleRoot(directory)
+	if err != nil {
+		return entityTypeModel{}, err
+	}
+	if err := validateManifest(moduleRoot, path); err != nil {
+		return entityTypeModel{}, err
+	}
+
 	var definition manifest
 	if err := decodeStrictFile(path, &definition); err != nil {
 		return entityTypeModel{}, err
@@ -176,14 +187,9 @@ func loadModel(path string) (entityTypeModel, error) {
 	if definition.StateSchema == "" || definition.SupportSchema == "" {
 		return entityTypeModel{}, errors.New("state_schema and support_schema are required")
 	}
-	directory := filepath.Dir(path)
 	packageName := filepath.Base(directory)
 	if !token.IsIdentifier(packageName) || token.Lookup(packageName).IsKeyword() {
 		return entityTypeModel{}, fmt.Errorf("manifest directory %q is not a Go package name", packageName)
-	}
-	moduleRoot, err := findModuleRoot(directory)
-	if err != nil {
-		return entityTypeModel{}, err
 	}
 	state, err := loadSchema(directory, definition.StateSchema)
 	if err != nil {
@@ -276,9 +282,6 @@ func loadModel(path string) (entityTypeModel, error) {
 		if err != nil {
 			return entityTypeModel{}, fmt.Errorf("operation %q satisfied_when: %w", name, err)
 		}
-		if satisfied.Op != "eq" {
-			return entityTypeModel{}, fmt.Errorf("operation %q satisfied_when only supports eq in manifest v1", name)
-		}
 		goName, err := exportedName(name)
 		if err != nil {
 			return entityTypeModel{}, err
@@ -316,6 +319,39 @@ func loadModel(path string) (entityTypeModel, error) {
 		SupportFile: definition.SupportSchema, SupportSchema: support, StateSupport: stateSupport,
 		StateValidation: stateValidation, Operations: operations, Examples: examples,
 	}, nil
+}
+
+func validateManifest(moduleRoot, path string) error {
+	const schemaID = "urn:hearth:schema:entity-type-manifest:v1"
+	schemaPath := filepath.Join(moduleRoot, "entitytypes", "entitytype-manifest.schema.json")
+	rawSchema, err := os.ReadFile(schemaPath)
+	if err != nil {
+		return fmt.Errorf("read manifest schema: %w", err)
+	}
+	document, err := jsonschema.UnmarshalJSON(bytes.NewReader(rawSchema))
+	if err != nil {
+		return fmt.Errorf("decode manifest schema: %w", err)
+	}
+	compiler := jsonschema.NewCompiler()
+	if err := compiler.AddResource(schemaID, document); err != nil {
+		return fmt.Errorf("add manifest schema: %w", err)
+	}
+	compiled, err := compiler.Compile(schemaID)
+	if err != nil {
+		return fmt.Errorf("compile manifest schema: %w", err)
+	}
+	rawManifest, err := os.ReadFile(path)
+	if err != nil {
+		return err
+	}
+	value, err := jsonschema.UnmarshalJSON(bytes.NewReader(rawManifest))
+	if err != nil {
+		return fmt.Errorf("decode manifest: %w", err)
+	}
+	if err := compiled.Validate(value); err != nil {
+		return fmt.Errorf("validate manifest schema: %w", err)
+	}
+	return nil
 }
 
 func loadSchema(directory, relative string) (schemaNode, error) {
