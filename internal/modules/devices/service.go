@@ -9,12 +9,12 @@ type Dependencies struct {
 }
 
 type Service struct {
-	registration RegistrationRepository
+	repository   Repository
 	catalog      *TypeCatalog
 	dependencies Dependencies
 }
 
-func NewService(repository RegistrationRepository, catalog *TypeCatalog, dependencies Dependencies) *Service {
+func NewService(repository Repository, catalog *TypeCatalog, dependencies Dependencies) *Service {
 	if dependencies.Now == nil {
 		dependencies.Now = time.Now
 	}
@@ -24,5 +24,5 @@ func NewService(repository RegistrationRepository, catalog *TypeCatalog, depende
 	if dependencies.NewEntityID == nil {
 		dependencies.NewEntityID = NewEntityID
 	}
-	return &Service{registration: repository, catalog: catalog, dependencies: dependencies}
+	return &Service{repository: repository, catalog: catalog, dependencies: dependencies}
 }

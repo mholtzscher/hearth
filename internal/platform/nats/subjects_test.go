@@ -16,6 +16,10 @@ func TestSubjectsRoundTrip(t *testing.T) {
 	if err != nil || registration != "hearth.v1.adapter.simulator.register" {
 		t.Fatalf("registration subject = %q, err = %v", registration, err)
 	}
+	registrationRoute, err := ParseRegistrationSubject(registration)
+	if err != nil || registrationRoute.AdapterID != "simulator" {
+		t.Fatalf("registration route = %#v, err = %v", registrationRoute, err)
+	}
 
 	observation, err := ObservationSubject("simulator", testEntityID)
 	if err != nil {

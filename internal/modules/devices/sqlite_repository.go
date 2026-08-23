@@ -13,16 +13,17 @@ import (
 )
 
 var (
-	_ RegistrationRepository = (*SQLiteRepository)(nil)
-	_ CommandLedger          = (*SQLiteRepository)(nil)
+	_ Repository    = (*SQLiteRepository)(nil)
+	_ CommandLedger = (*SQLiteRepository)(nil)
 )
 
 type SQLiteRepository struct {
 	database *sql.DB
+	catalog  *TypeCatalog
 }
 
-func NewSQLiteRepository(database *sql.DB) *SQLiteRepository {
-	return &SQLiteRepository{database: database}
+func NewSQLiteRepository(database *sql.DB, catalog *TypeCatalog) *SQLiteRepository {
+	return &SQLiteRepository{database: database, catalog: catalog}
 }
 
 func (repository *SQLiteRepository) RegisterBinding(ctx context.Context, params RegisterBindingParams) (Binding, error) {
