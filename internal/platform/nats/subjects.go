@@ -13,6 +13,10 @@ var (
 	entityIDPattern = regexp.MustCompile(`^ent_[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$`)
 )
 
+type RegistrationRoute struct {
+	AdapterID string
+}
+
 type ObservationRoute struct {
 	AdapterID string
 	EntityID  string
@@ -67,6 +71,17 @@ func CommandWildcard(adapterID string) (string, error) {
 		return "", err
 	}
 	return subjectPrefix + "." + adapterID + ".command.*.*", nil
+}
+
+func ParseRegistrationSubject(subject string) (RegistrationRoute, error) {
+	parts := strings.Split(subject, ".")
+	if len(parts) != 5 || strings.Join(parts[:3], ".") != subjectPrefix || parts[4] != "register" {
+		return RegistrationRoute{}, fmt.Errorf("invalid registration subject %q", subject)
+	}
+	if _, err := RegistrationSubject(parts[3]); err != nil {
+		return RegistrationRoute{}, fmt.Errorf("invalid registration subject %q: %w", subject, err)
+	}
+	return RegistrationRoute{AdapterID: parts[3]}, nil
 }
 
 func ParseObservationSubject(subject string) (ObservationRoute, error) {

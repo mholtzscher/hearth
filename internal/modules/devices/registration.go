@@ -82,7 +82,7 @@ func (service *Service) Register(ctx context.Context, adapterID string, registra
 		Entity:     copyEntityDescriptor(entity),
 		UpdatedAt:  registeredAt,
 	}
-	binding, err := service.registration.RegisterBinding(ctx, params)
+	binding, err := service.repository.RegisterBinding(ctx, params)
 	if errors.Is(err, errImmutableTypeChange) {
 		return Binding{}, &RegistrationRejectedError{
 			Code: RegistrationImmutableTypeChange, Message: "an existing entity cannot change type",

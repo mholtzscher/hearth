@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"time"
 )
 
 type stubRegistrationRepository struct {
@@ -17,6 +18,18 @@ func (repository *stubRegistrationRepository) RegisterBinding(_ context.Context,
 	repository.calls++
 	repository.params = params
 	return repository.binding, repository.err
+}
+
+func (*stubRegistrationRepository) GetEntityView(context.Context, EntityID) (EntityView, error) {
+	panic("unexpected GetEntityView call")
+}
+
+func (*stubRegistrationRepository) ProjectObservation(context.Context, ProjectObservationParams) (ProjectionResult, error) {
+	panic("unexpected ProjectObservation call")
+}
+
+func (*stubRegistrationRepository) DeleteExpiredObservationReceipts(context.Context, time.Time) error {
+	panic("unexpected DeleteExpiredObservationReceipts call")
 }
 
 func TestRegisterClassifiesOnlyDescriptorAndIdentityFailuresAsPermanent(t *testing.T) {

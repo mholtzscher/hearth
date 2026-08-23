@@ -55,6 +55,15 @@ type EntityView struct {
 	State  *State
 }
 
+type Observation struct {
+	ID                ObservationID
+	EntityID          EntityID
+	Value             Value
+	AdapterReceivedAt time.Time
+	SourceUpdatedAt   *time.Time
+	RefreshForCommand *CommandID
+}
+
 type ObservationDisposition string
 
 const (
