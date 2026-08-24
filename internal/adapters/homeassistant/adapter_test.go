@@ -135,7 +135,7 @@ func TestSubscribeFirstReconcilesBufferedTransitionAfterSnapshot(t *testing.T) {
 	}
 }
 
-func TestSetReacquiresStateWhenFirstLinkedRefreshIsStale(t *testing.T) {
+func TestSetRetainsMatchingRefreshWhenImmediatelySuperseded(t *testing.T) {
 	publisher := newRecordingPublisher()
 	initialTime := time.Date(2026, 8, 19, 12, 0, 0, 0, time.UTC)
 	refreshTime := initialTime.Add(time.Second)
@@ -181,16 +181,7 @@ func TestSetReacquiresStateWhenFirstLinkedRefreshIsStale(t *testing.T) {
 		if err := writeStateEvent(ctx, connection, "on", refreshTime); err != nil {
 			return err
 		}
-		secondRefresh, err := readRequest(ctx, connection)
-		if err != nil {
-			return err
-		}
-		if secondRefresh.Type != "get_states" {
-			return errors.New("stale refresh was not reacquired after the target event")
-		}
-		if err := writeResult(ctx, connection, secondRefresh.ID, []upstreamState{{
-			EntityID: testExternalEntityID, State: "on", LastUpdated: refreshTime.Format(time.RFC3339Nano),
-		}}); err != nil {
+		if err := writeStateEvent(ctx, connection, "off", refreshTime.Add(time.Second)); err != nil {
 			return err
 		}
 		_, _, _ = connection.Read(ctx)
@@ -266,6 +257,57 @@ func TestUnavailableAndUnsupportedUpstreamStatesAreRejected(t *testing.T) {
 	accepted, rejected := responder.result()
 	if accepted || !rejected || len(publisher.values()) != 0 {
 		t.Fatalf("accepted = %t, rejected = %t, publications = %d", accepted, rejected, len(publisher.values()))
+	}
+}
+
+func TestWaitForStateAfterRetainsImmediatelySupersededMatch(t *testing.T) {
+	client := &client{
+		latestStates: make(map[string]stateChange),
+		stateSignal:  make(chan struct{}),
+		done:         make(chan struct{}),
+	}
+	matching := stateChange{State: upstreamState{State: "on"}, Sequence: 1}
+	client.recordState(matching)
+	client.recordState(stateChange{State: upstreamState{State: "off"}, Sequence: 2})
+
+	result, err := client.WaitForStateAfter(context.Background(), 0, "on")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Sequence != matching.Sequence || result.State.State != matching.State.State {
+		t.Fatalf("matching State = %#v, want %#v", result, matching)
+	}
+}
+
+func TestPublishOmitsMalformedLastUpdated(t *testing.T) {
+	publisher := newRecordingPublisher()
+	migrationAdapter := newTestAdapter(t, publisher, "http://127.0.0.1:1")
+	if err := migrationAdapter.publish(context.Background(), upstreamState{
+		EntityID: testExternalEntityID, State: "on", LastUpdated: "not-a-timestamp",
+	}, time.Now().UTC(), nil); err != nil {
+		t.Fatal(err)
+	}
+	observations := publisher.values()
+	if len(observations) != 1 || observations[0].SourceUpdatedAt != nil || string(observations[0].Value) != "true" {
+		t.Fatalf("Observation = %#v", observations)
+	}
+}
+
+func TestDeliveredResponseWinsDisconnect(t *testing.T) {
+	connectionError := errors.New("connection closed")
+	for range 100 {
+		client := &client{done: make(chan struct{}), err: connectionError}
+		response := make(chan resultMessage, 1)
+		response <- resultMessage{ID: 42, Success: true}
+		close(client.done)
+
+		result, err := client.waitForResult(context.Background(), response)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if result.ID != 42 {
+			t.Fatalf("result ID = %d, want 42", result.ID)
+		}
 	}
 }
 

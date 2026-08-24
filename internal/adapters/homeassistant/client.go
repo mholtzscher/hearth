@@ -88,9 +88,9 @@ type client struct {
 	pending map[int64]chan resultMessage
 	err     error
 
-	stateMutex  sync.Mutex
-	latestState stateChange
-	stateSignal chan struct{}
+	stateMutex   sync.Mutex
+	latestStates map[string]stateChange
+	stateSignal  chan struct{}
 
 	eventInput chan stateChange
 	events     chan stateChange
@@ -146,13 +146,14 @@ func dialClient(ctx context.Context, rawURL, token, entityID string) (*client, e
 	}
 
 	value := &client{
-		connection:  connection,
-		entityID:    entityID,
-		pending:     make(map[int64]chan resultMessage),
-		stateSignal: make(chan struct{}),
-		eventInput:  make(chan stateChange),
-		events:      make(chan stateChange),
-		done:        make(chan struct{}),
+		connection:   connection,
+		entityID:     entityID,
+		pending:      make(map[int64]chan resultMessage),
+		latestStates: make(map[string]stateChange),
+		stateSignal:  make(chan struct{}),
+		eventInput:   make(chan stateChange),
+		events:       make(chan stateChange),
+		done:         make(chan struct{}),
 	}
 	closeOnError = false
 	go value.relayEvents()
@@ -223,21 +224,21 @@ func (client *client) Done() <-chan struct{}      { return client.done }
 
 func (client *client) EventSequence() int64 { return client.eventCount.Load() }
 
-func (client *client) WaitForStateAfter(ctx context.Context, sequence int64, state string) error {
+func (client *client) WaitForStateAfter(ctx context.Context, sequence int64, state string) (stateChange, error) {
 	for {
 		client.stateMutex.Lock()
-		latest := client.latestState
+		matching := client.latestStates[state]
 		signal := client.stateSignal
 		client.stateMutex.Unlock()
-		if latest.Sequence > sequence && latest.State.State == state {
-			return nil
+		if matching.Sequence > sequence {
+			return matching, nil
 		}
 		select {
 		case <-signal:
 		case <-client.done:
-			return client.Err()
+			return stateChange{}, client.Err()
 		case <-ctx.Done():
-			return ctx.Err()
+			return stateChange{}, ctx.Err()
 		}
 	}
 }
@@ -276,20 +277,44 @@ func (client *client) request(ctx context.Context, request requestMessage) (resu
 		client.removePending(request.ID)
 		return resultMessage{}, fmt.Errorf("write Home Assistant request: %w", err)
 	}
+	result, err := client.waitForResult(ctx, response)
+	if err != nil {
+		client.removePending(request.ID)
+		return resultMessage{}, err
+	}
+	if !result.Success {
+		if result.Error == nil {
+			return resultMessage{}, errors.New("Home Assistant request failed")
+		}
+		return resultMessage{}, fmt.Errorf("Home Assistant request failed (%s): %s", result.Error.Code, result.Error.Message)
+	}
+	return result, nil
+}
+
+func (client *client) waitForResult(ctx context.Context, response <-chan resultMessage) (resultMessage, error) {
+	receive := func() (resultMessage, bool) {
+		select {
+		case result := <-response:
+			return result, true
+		default:
+			return resultMessage{}, false
+		}
+	}
+	if result, ok := receive(); ok {
+		return result, nil
+	}
 	select {
 	case result := <-response:
-		if !result.Success {
-			if result.Error == nil {
-				return resultMessage{}, errors.New("Home Assistant request failed")
-			}
-			return resultMessage{}, fmt.Errorf("Home Assistant request failed (%s): %s", result.Error.Code, result.Error.Message)
-		}
 		return result, nil
 	case <-ctx.Done():
-		client.removePending(request.ID)
+		if result, ok := receive(); ok {
+			return result, nil
+		}
 		return resultMessage{}, ctx.Err()
 	case <-client.done:
-		client.removePending(request.ID)
+		if result, ok := receive(); ok {
+			return result, nil
+		}
 		return resultMessage{}, client.Err()
 	}
 }
@@ -344,7 +369,10 @@ func (client *client) read(ctx context.Context) {
 
 func (client *client) recordState(state stateChange) {
 	client.stateMutex.Lock()
-	client.latestState = state
+	if client.latestStates == nil {
+		client.latestStates = make(map[string]stateChange)
+	}
+	client.latestStates[state.State.State] = state
 	close(client.stateSignal)
 	client.stateSignal = make(chan struct{})
 	client.stateMutex.Unlock()

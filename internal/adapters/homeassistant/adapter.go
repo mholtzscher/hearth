@@ -17,9 +17,8 @@ import (
 )
 
 const (
-	reconnectMinimum    = 250 * time.Millisecond
-	reconnectMaximum    = 5 * time.Second
-	refreshPollInterval = 50 * time.Millisecond
+	reconnectMinimum = 250 * time.Millisecond
+	reconnectMaximum = 5 * time.Second
 )
 
 type ObservationPublisher interface {
@@ -175,10 +174,7 @@ snapshotReady:
 	if !found {
 		return fmt.Errorf("configured Home Assistant Entity %q was absent from get_states", homeAssistant.config.ExternalEntityID)
 	}
-	snapshotUpdatedAt, updatedErr := sourceUpdatedAt(state)
-	if updatedErr != nil {
-		homeAssistant.logger.Warn("Home Assistant snapshot has invalid last_updated", "entity_id", state.EntityID, "error", updatedErr)
-	}
+	snapshotUpdatedAt, _ := sourceUpdatedAt(state)
 	if err := homeAssistant.publish(ctx, state, snapshot.receivedAt, nil); err != nil {
 		if !errors.Is(err, errUnsupportedState) {
 			return err
@@ -253,28 +249,11 @@ func (homeAssistant *Adapter) set(
 			return err
 		}
 	}
-	if err := client.WaitForStateAfter(ctx, eventSequence, desiredState); err != nil {
+	matching, err := client.WaitForStateAfter(ctx, eventSequence, desiredState)
+	if err != nil {
 		return err
 	}
-	for {
-		state, receivedAt, err = homeAssistant.getState(ctx, client)
-		if err != nil {
-			return err
-		}
-		if state.State == desiredState {
-			return homeAssistant.publish(ctx, state, receivedAt, &commandID)
-		}
-		timer := time.NewTimer(refreshPollInterval)
-		select {
-		case <-ctx.Done():
-			timer.Stop()
-			return ctx.Err()
-		case <-client.Done():
-			timer.Stop()
-			return client.Err()
-		case <-timer.C:
-		}
-	}
+	return homeAssistant.publish(ctx, matching.State, matching.ReceivedAt, &commandID)
 }
 
 func (homeAssistant *Adapter) getState(ctx context.Context, client *client) (upstreamState, time.Time, error) {
@@ -308,7 +287,8 @@ func (homeAssistant *Adapter) publish(
 	}
 	updatedAt, err := sourceUpdatedAt(state)
 	if err != nil {
-		return err
+		homeAssistant.logger.Warn("Home Assistant State has invalid last_updated", "entity_id", state.EntityID, "error", err)
+		updatedAt = nil
 	}
 	observation, err := sdkpowerv1.NewObservation(sdkpowerv1.ObservationInput{
 		EntityID:          homeAssistant.config.EntityID,
