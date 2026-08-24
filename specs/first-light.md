@@ -1122,4 +1122,4 @@ CI regenerates sqlc output and fails on diff. OpenAPI is inspected at runtime in
 
 ## Open items
 
-No blocking design questions remain. Before live verification, the repository owner supplies the Home Assistant URL, token file, optional Device identifier, Entity ID, display names, and binding key through ignored YAML/secret files.
+No open items remain. Live verification against the configured Home Assistant light succeeded using ignored YAML/secret files.
