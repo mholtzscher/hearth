@@ -1,8 +1,9 @@
 # First Light — Implementation Spec
 
-- **Status:** In progress
+- **Status:** Implemented
 - **Approved by:** Michael
 - **Approved:** 2026-08-19
+- **Completed:** 2026-08-23
 - **Amended:** 2026-08-22 — unified Entity support, generated typed SDK facades, and added built-in brightness/v1 as generator/catalog validation; 2026-08-20 — generalized Entity values and Command parameters behind a closed Entity-type catalog, renamed the product Hearth, persisted Entity names, and defined permanent registration rejections and subscribe-first snapshot reconciliation
 - **Type:** Feature plan
 - **Effort:** XL (relative estimate only)
@@ -1075,25 +1076,25 @@ Total relative effort is **XL**. No calendar estimate is asserted.
 
 ## Acceptance and success criteria
 
-- [ ] From a clean checkout, `devenv test` (or its documented replacement) checks generation, tests, vet, runtime OpenAPI, compilation of every authoritative JSON Schema, and validation of cross-binary fixtures.
-- [ ] Re-registration returns identical IDs, replaces normalized Entity support, and updates the Entity name returned by HTTP; both persist across restart. Conflicting binding/external mappings, an Entity type change, or catalog-invalid support return their schema-defined permanent rejection codes atomically without partial rows, and adapters do not retry them.
-- [ ] A registered, unobserved Entity returns HTTP 200 with its configured metadata and `state: null`.
-- [ ] A JetStream-acknowledged Observation survives restart; exact redelivery changes neither State nor receipt count.
-- [ ] Pruning deletes expired unreferenced receipts, pins the current-State receipt without foreign-key errors, then deletes it after State advances.
-- [ ] The generic wire and persistence paths round-trip the first-light JSON boolean without boolean-specific columns or DTO fields; the catalog rejects a schema-valid non-boolean Observation as `invalid_value` and rejects invalid `set` parameters before Command creation or dispatch.
-- [ ] A later-received Observation advances State even when its `adapter_received_at` is older; a catalog-equivalent value advances State evidence/timestamps as `unchanged`; adapter clock skew beyond the threshold is logged but accepted; wrong-owner, unknown-Entity, invalid-value, and malformed input produce the specified rejection/diagnostic/acknowledgement behavior.
-- [ ] Every dispatched Command first commits `requested`; record-creation failure prevents dispatch.
-- [ ] Two simultaneous Commands for one Entity create distinct durable records, both dispatch, and invoke independent SDK handlers without SDK-imposed ordering; each is satisfiable only by its own linked Observation. Opposite-value interleavings allow both to satisfy at different receive orders or one to time out on a mismatched link; final State follows core receive order.
-- [ ] Missing adapter, upstream rejection, deadline, and unexpected post-creation failures persist the specified terminal status/failure code and map respectively to HTTP 503, 502, 504, and 500 (`internal_failure` when SQLite remains writable).
-- [ ] An already-matched target is dispatched, accepted, explicitly refreshed, and satisfied only by its linked Observation; State and Command satisfaction reference that Observation in one transaction.
-- [ ] A linked Observation may win the acceptance race; later acceptance fills `accepted_at` without status regression.
-- [ ] HTTP disconnect after `requested` commit leaves the lifecycle active through outcome/deadline and records its terminal status.
-- [ ] Restart marks `requested`/`accepted` Commands `interrupted`, never redispatches them, and prevents later linked Observations from changing terminal status while still allowing State advancement.
-- [ ] Restart after atomic State/Command commit but before JetStream acknowledgement redelivers without changing either record.
-- [ ] The simulator passes duplicate, delayed-source-time, future-clock-skew, malformed, unavailable-adapter, upstream-rejection, no-op-refresh, overlapping-opposite-command, outcome-timeout, interrupted-command, and restart-before-ack scenarios deterministically.
-- [ ] A configured Home Assistant light reads and sets on/off through Hearth; every HTTP 200 is tied to its linked Observation. A controlled state transition after snapshot acquisition but before live event processing is published after reconciliation and becomes canonical State.
-- [ ] Core/wire fixtures contain no Home Assistant service names or payload shapes, and removing the migration adapter preserves canonical Device/Entity IDs and the wire contract.
-- [ ] HTTP listens only on configured loopback; `/readyz` fails for unavailable SQLite, NATS, required JetStream configuration, or consumer.
+- [x] From a clean checkout, `devenv test` (or its documented replacement) checks generation, tests, vet, runtime OpenAPI, compilation of every authoritative JSON Schema, and validation of cross-binary fixtures.
+- [x] Re-registration returns identical IDs, replaces normalized Entity support, and updates the Entity name returned by HTTP; both persist across restart. Conflicting binding/external mappings, an Entity type change, or catalog-invalid support return their schema-defined permanent rejection codes atomically without partial rows, and adapters do not retry them.
+- [x] A registered, unobserved Entity returns HTTP 200 with its configured metadata and `state: null`.
+- [x] A JetStream-acknowledged Observation survives restart; exact redelivery changes neither State nor receipt count.
+- [x] Pruning deletes expired unreferenced receipts, pins the current-State receipt without foreign-key errors, then deletes it after State advances.
+- [x] The generic wire and persistence paths round-trip the first-light JSON boolean without boolean-specific columns or DTO fields; the catalog rejects a schema-valid non-boolean Observation as `invalid_value` and rejects invalid `set` parameters before Command creation or dispatch.
+- [x] A later-received Observation advances State even when its `adapter_received_at` is older; a catalog-equivalent value advances State evidence/timestamps as `unchanged`; adapter clock skew beyond the threshold is logged but accepted; wrong-owner, unknown-Entity, invalid-value, and malformed input produce the specified rejection/diagnostic/acknowledgement behavior.
+- [x] Every dispatched Command first commits `requested`; record-creation failure prevents dispatch.
+- [x] Two simultaneous Commands for one Entity create distinct durable records, both dispatch, and invoke independent SDK handlers without SDK-imposed ordering; each is satisfiable only by its own linked Observation. Opposite-value interleavings allow both to satisfy at different receive orders or one to time out on a mismatched link; final State follows core receive order.
+- [x] Missing adapter, upstream rejection, deadline, and unexpected post-creation failures persist the specified terminal status/failure code and map respectively to HTTP 503, 502, 504, and 500 (`internal_failure` when SQLite remains writable).
+- [x] An already-matched target is dispatched, accepted, explicitly refreshed, and satisfied only by its linked Observation; State and Command satisfaction reference that Observation in one transaction.
+- [x] A linked Observation may win the acceptance race; later acceptance fills `accepted_at` without status regression.
+- [x] HTTP disconnect after `requested` commit leaves the lifecycle active through outcome/deadline and records its terminal status.
+- [x] Restart marks `requested`/`accepted` Commands `interrupted`, never redispatches them, and prevents later linked Observations from changing terminal status while still allowing State advancement.
+- [x] Restart after atomic State/Command commit but before JetStream acknowledgement redelivers without changing either record.
+- [x] The simulator passes duplicate, delayed-source-time, future-clock-skew, malformed, unavailable-adapter, upstream-rejection, no-op-refresh, overlapping-opposite-command, outcome-timeout, interrupted-command, and restart-before-ack scenarios deterministically.
+- [x] A configured Home Assistant light reads and sets on/off through Hearth; every HTTP 200 is tied to its linked Observation. A controlled state transition after snapshot acquisition but before live event processing is published after reconciliation and becomes canonical State.
+- [x] Core/wire fixtures contain no Home Assistant service names or payload shapes, and removing the migration adapter preserves canonical Device/Entity IDs and the wire contract.
+- [x] HTTP listens only on configured loopback; `/readyz` fails for unavailable SQLite, NATS, required JetStream configuration, or consumer.
 
 ## Test strategy
 
