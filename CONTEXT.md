@@ -16,6 +16,10 @@ _Avoid_: Integration, plugin
 One configured occurrence of an adapter, identified by a stable subject-safe slug within a household.
 _Avoid_: Adapter type, process ID
 
+**Registration**:
+An Adapter instance request to establish or refresh a Binding from its Device and Entity descriptions. Repeated Registrations preserve unambiguous Canonical IDs and reject identity conflicts rather than guessing.
+_Avoid_: Discovery, pairing
+
 **Binding**:
 The durable association between an adapter's external object and its canonical Hearth Device and Entities. An adapter-scoped stable binding key preserves the association when an external identifier changes; ambiguous identity conflicts require explicit reconciliation.
 _Avoid_: Discovery result, entity name
