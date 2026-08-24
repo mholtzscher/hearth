@@ -1,0 +1,6 @@
+{"url": "sqlite:.data/hearthd.db", "table": "commands", "elapsed_ms": 17, "ts": 1787535333, "type": "query", "sql": "SELECT * FROM \"commands\" LIMIT 100"}
+{"url": "sqlite:.data/hearthd.db", "table": "devices", "elapsed_ms": 16, "ts": 1787535357, "type": "query", "sql": "SELECT * FROM \"devices\" LIMIT 100"}
+{"url": "sqlite:.data/hearthd.db", "table": "entities", "elapsed_ms": 16, "ts": 1787535363, "type": "query", "sql": "SELECT * FROM \"entities\" LIMIT 100"}
+{"url": "sqlite:.data/hearthd.db", "table": "entity_states", "elapsed_ms": 15, "ts": 1787535380, "type": "query", "sql": "SELECT * FROM \"entity_states\" LIMIT 100"}
+{"url": "sqlite:.data/hearthd.db", "table": "observation_receipts", "elapsed_ms": 17, "ts": 1787535387, "type": "query", "sql": "SELECT * FROM \"observation_receipts\" LIMIT 100"}
+{"url": "sqlite:.data/hearthd.db", "table": "commands", "elapsed_ms": 14, "ts": 1787535404, "type": "query", "sql": "SELECT * FROM \"commands\" LIMIT 100"}
