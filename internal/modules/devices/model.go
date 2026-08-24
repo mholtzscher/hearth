@@ -111,6 +111,19 @@ const (
 	CommandFailureCoreRestarted      CommandFailureCode = "core_restarted"
 )
 
+type CommandRequest struct {
+	ID            CommandID
+	CorrelationID CorrelationID
+	EntityID      EntityID
+	OperationName OperationName
+	Parameters    CommandParameters
+	Deadline      time.Time
+}
+
+type CommandAcceptance struct {
+	Accepted bool
+}
+
 type CommandRecord struct {
 	ID                   CommandID
 	EntityID             EntityID

@@ -17,7 +17,7 @@ func TestRegistrationIsIdempotentAndUpdatesDescriptors(t *testing.T) {
 	database := openMigratedDatabase(t, path)
 	catalog := firstLightCatalog(t)
 	now := time.Date(2026, 8, 20, 20, 0, 0, 123, time.FixedZone("test", -5*60*60))
-	service := NewService(NewSQLiteRepository(database, catalog), catalog, Dependencies{Now: func() time.Time { return now }})
+	service := NewService(NewSQLiteRepository(database, catalog), nil, catalog, Dependencies{Now: func() time.Time { return now }})
 	registration := validDomainRegistration()
 
 	first, err := service.Register(ctx, "homeassistant", registration)
@@ -112,7 +112,7 @@ func TestReRegistrationReplacesNormalizedSupport(t *testing.T) {
 	ctx := context.Background()
 	path := filepath.Join(t.TempDir(), "hearth.db")
 	database := openMigratedDatabase(t, path)
-	service := NewService(NewSQLiteRepository(database, catalog), catalog, Dependencies{})
+	service := NewService(NewSQLiteRepository(database, catalog), nil, catalog, Dependencies{})
 	registration := validDomainRegistration()
 	registration.Entities[0].TypeID = "test.mutable/v1"
 	registration.Entities[0].Support = EntitySupport(`{"state":{"mode":"first"},"operations":{"set":{}}}`)
@@ -146,7 +146,7 @@ func TestConcurrentRegistrationReturnsOneBinding(t *testing.T) {
 	ctx := context.Background()
 	database := openMigratedDatabase(t, filepath.Join(t.TempDir(), "hearth.db"))
 	catalog := firstLightCatalog(t)
-	service := NewService(NewSQLiteRepository(database, catalog), catalog, Dependencies{})
+	service := NewService(NewSQLiteRepository(database, catalog), nil, catalog, Dependencies{})
 	const attempts = 8
 	results := make(chan Binding, attempts)
 	errors := make(chan error, attempts)
@@ -178,7 +178,7 @@ func TestRegistrationRejectionsAreAtomic(t *testing.T) {
 	ctx := context.Background()
 	database := openMigratedDatabase(t, filepath.Join(t.TempDir(), "hearth.db"))
 	catalog := firstLightCatalog(t)
-	service := NewService(NewSQLiteRepository(database, catalog), catalog, Dependencies{})
+	service := NewService(NewSQLiteRepository(database, catalog), nil, catalog, Dependencies{})
 	original := validDomainRegistration()
 	if _, err := service.Register(ctx, "homeassistant", original); err != nil {
 		t.Fatal(err)
@@ -211,7 +211,7 @@ func TestRegistrationRejectionsAreAtomic(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	service = NewService(NewSQLiteRepository(database, alternateCatalog), alternateCatalog, Dependencies{})
+	service = NewService(NewSQLiteRepository(database, alternateCatalog), nil, alternateCatalog, Dependencies{})
 	_, err = service.Register(ctx, "homeassistant", typeChange)
 	assertRegistrationRejection(t, err, RegistrationImmutableTypeChange)
 	assertCounts(t, database, 1, 1)
@@ -243,7 +243,7 @@ func TestCommandLedgerTransitionsAreMonotonicAndIdempotent(t *testing.T) {
 	database := openMigratedDatabase(t, filepath.Join(t.TempDir(), "hearth.db"))
 	catalog := firstLightCatalog(t)
 	repository := NewSQLiteRepository(database, catalog)
-	binding, err := NewService(repository, catalog, Dependencies{}).Register(ctx, "simulator", validDomainRegistration())
+	binding, err := NewService(repository, nil, catalog, Dependencies{}).Register(ctx, "simulator", validDomainRegistration())
 	if err != nil {
 		t.Fatal(err)
 	}

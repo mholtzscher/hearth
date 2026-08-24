@@ -32,11 +32,27 @@ func (*stubRegistrationRepository) DeleteExpiredObservationReceipts(context.Cont
 	panic("unexpected DeleteExpiredObservationReceipts call")
 }
 
+func (*stubRegistrationRepository) CreateCommand(context.Context, CommandRecord) error {
+	panic("unexpected CreateCommand call")
+}
+
+func (*stubRegistrationRepository) MarkCommandAccepted(context.Context, CommandID, time.Time) error {
+	panic("unexpected MarkCommandAccepted call")
+}
+
+func (*stubRegistrationRepository) CompleteCommand(context.Context, CommandCompletion) error {
+	panic("unexpected CompleteCommand call")
+}
+
+func (*stubRegistrationRepository) InterruptActiveCommands(context.Context, time.Time) error {
+	panic("unexpected InterruptActiveCommands call")
+}
+
 func TestRegisterClassifiesOnlyDescriptorAndIdentityFailuresAsPermanent(t *testing.T) {
 	catalog := firstLightCatalog(t)
 	infrastructureFailure := errors.New("SQLite busy")
 	repository := &stubRegistrationRepository{err: infrastructureFailure}
-	service := NewService(repository, catalog, Dependencies{})
+	service := NewService(repository, nil, catalog, Dependencies{})
 
 	_, err := service.Register(context.Background(), "homeassistant", validDomainRegistration())
 	if !errors.Is(err, infrastructureFailure) {
@@ -61,7 +77,7 @@ func TestRegisterClassifiesOnlyDescriptorAndIdentityFailuresAsPermanent(t *testi
 func TestRegisterPersistsNormalizedSupportWithoutMutatingInput(t *testing.T) {
 	catalog := firstLightCatalog(t)
 	repository := &stubRegistrationRepository{}
-	service := NewService(repository, catalog, Dependencies{})
+	service := NewService(repository, nil, catalog, Dependencies{})
 	registration := validDomainRegistration()
 	registration.Entities[0].Support = EntitySupport(" \n { \"state\" : {}, \"operations\" : { \"set\" : {} } } ")
 	original := string(registration.Entities[0].Support)

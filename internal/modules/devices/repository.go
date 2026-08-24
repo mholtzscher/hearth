@@ -12,6 +12,10 @@ var (
 	ErrEntityNotFound      = errors.New("entity not found")
 	ErrCommandNotFound     = errors.New("command not found")
 	ErrCommandTerminal     = errors.New("command is already terminal")
+	ErrInvalidCommand      = errors.New("invalid command")
+	ErrAdapterUnavailable  = errors.New("adapter unavailable")
+	ErrUpstreamRejected    = errors.New("upstream rejected")
+	ErrOutcomeTimeout      = errors.New("command outcome timeout")
 )
 
 type RegisterBindingParams struct {
@@ -38,6 +42,7 @@ type RegistrationRepository interface {
 
 type Repository interface {
 	RegistrationRepository
+	CommandLedger
 	GetEntityView(context.Context, EntityID) (EntityView, error)
 	ProjectObservation(context.Context, ProjectObservationParams) (ProjectionResult, error)
 	DeleteExpiredObservationReceipts(context.Context, time.Time) error
@@ -48,4 +53,8 @@ type CommandLedger interface {
 	MarkCommandAccepted(context.Context, CommandID, time.Time) error
 	CompleteCommand(context.Context, CommandCompletion) error
 	InterruptActiveCommands(context.Context, time.Time) error
+}
+
+type CommandSender interface {
+	Send(context.Context, string, CommandRequest) (CommandAcceptance, error)
 }

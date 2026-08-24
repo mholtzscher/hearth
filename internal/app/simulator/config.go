@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strings"
 
+	simulatoradapter "github.com/mholtzscher/hearth/internal/adapters/simulator"
 	platformconfig "github.com/mholtzscher/hearth/internal/platform/config"
 )
 
@@ -37,6 +38,9 @@ func (value Config) Validate() error {
 	}
 	if strings.TrimSpace(value.Scenario) == "" {
 		return fmt.Errorf("scenario is required")
+	}
+	if !simulatoradapter.ValidScenario(value.Scenario) {
+		return fmt.Errorf("unknown scenario %q", value.Scenario)
 	}
 	return nil
 }

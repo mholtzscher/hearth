@@ -72,6 +72,7 @@ func Connect(ctx context.Context, config Config) (*Session, error) {
 		natsgo.Name("hearth-adapter-" + config.AdapterID),
 		natsgo.MaxReconnects(-1),
 		natsgo.ReconnectWait(250 * time.Millisecond),
+		natsgo.RetryOnFailedConnect(true),
 	}
 	if deadline, ok := ctx.Deadline(); ok {
 		remaining := time.Until(deadline)

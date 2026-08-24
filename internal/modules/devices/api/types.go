@@ -17,6 +17,18 @@ type StateBody struct {
 	ObservedAt        string  `json:"observed_at"`
 }
 
+type CommandBody struct {
+	OperationName string         `json:"operation"`
+	Parameters    map[string]any `json:"parameters"`
+}
+
+type CommandResultBody struct {
+	CommandID     string `json:"command_id"`
+	Status        string `json:"status"`
+	ObservationID string `json:"observation_id"`
+	Value         any    `json:"value"`
+}
+
 type ErrorBody struct {
 	Error APIError `json:"error"`
 }

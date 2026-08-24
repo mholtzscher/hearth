@@ -44,6 +44,22 @@ func (*testRepository) DeleteExpiredObservationReceipts(context.Context, time.Ti
 	panic("unexpected DeleteExpiredObservationReceipts call")
 }
 
+func (*testRepository) CreateCommand(context.Context, devices.CommandRecord) error {
+	panic("unexpected CreateCommand call")
+}
+
+func (*testRepository) MarkCommandAccepted(context.Context, devices.CommandID, time.Time) error {
+	panic("unexpected MarkCommandAccepted call")
+}
+
+func (*testRepository) CompleteCommand(context.Context, devices.CommandCompletion) error {
+	panic("unexpected CompleteCommand call")
+}
+
+func (*testRepository) InterruptActiveCommands(context.Context, time.Time) error {
+	panic("unexpected InterruptActiveCommands call")
+}
+
 func TestHTTPHandlerServesHealthReadinessAndDeviceOperations(t *testing.T) {
 	catalog, err := devices.NewBuiltinTypeCatalog()
 	if err != nil {
@@ -53,7 +69,7 @@ func TestHTTPHandlerServesHealthReadinessAndDeviceOperations(t *testing.T) {
 		ID: testHTTPEntityID, DeviceID: testHTTPDeviceID, AdapterID: "simulator", Name: "Power",
 		TypeID: devices.EntityTypePowerV1, Support: devices.EntitySupport(`{"state":{},"operations":{"set":{}}}`),
 	}}}
-	service := devices.NewService(repository, catalog, devices.Dependencies{})
+	service := devices.NewService(repository, nil, catalog, devices.Dependencies{})
 	readiness := &testReadiness{}
 	handler, api := NewHTTPHandler(service, readiness)
 
@@ -76,6 +92,10 @@ func TestHTTPHandlerServesHealthReadinessAndDeviceOperations(t *testing.T) {
 	operation := api.OpenAPI().Paths["/v1/entities/{entity_id}"].Get
 	if operation == nil || operation.OperationID != "get-entity" {
 		t.Fatalf("GET operation = %#v", operation)
+	}
+	commandOperation := api.OpenAPI().Paths["/v1/entities/{entity_id}/commands"].Post
+	if commandOperation == nil || commandOperation.OperationID != "execute-entity-command" {
+		t.Fatalf("POST operation = %#v", commandOperation)
 	}
 }
 
