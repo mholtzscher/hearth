@@ -1,6 +1,6 @@
 # First light vertical slice
 
-**Status:** In progress
+**Status:** Complete
 
 **Implementation spec:** [`../../specs/first-light.md`](../../specs/first-light.md)
 
@@ -64,4 +64,4 @@ The slice must deliver visible household utility and meaningful NATS learning wh
 
 ## Task breakdown
 
-The approved implementation contract, acceptance criteria, test strategy, ordered deliverables, and relative estimates are defined in [`specs/first-light.md`](../../specs/first-light.md). The unified Entity-support amendment is implemented; the broader first-light slice remains in progress.
+The approved implementation contract, acceptance criteria, test strategy, ordered deliverables, and relative estimates are defined in [`specs/first-light.md`](../../specs/first-light.md). The complete first-light slice, including the unified Entity-support amendment, runtime OpenAPI checks, recovery coverage, simulator matrix, and disposable Home Assistant adapter, is implemented.

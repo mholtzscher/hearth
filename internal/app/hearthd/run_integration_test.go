@@ -26,7 +26,8 @@ func TestCoreNATSTransportRegistersAndProjectsDurableObservation(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	logger := slog.New(slog.NewJSONHandler(io.Discard, nil))
-	database, err := platformdb.Open(ctx, filepath.Join(t.TempDir(), "hearth.db"))
+	databasePath := filepath.Join(t.TempDir(), "hearth.db")
+	database, err := platformdb.Open(ctx, databasePath)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -103,14 +104,17 @@ func TestCoreNATSTransportRegistersAndProjectsDurableObservation(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	observationID, err := session.PublishObservation(ctx, adapter.Observation{
+	adapterReceivedAt := time.Now().UTC()
+	wireObservation := adapter.Observation{
 		EntityID: binding.Entities[0].EntityID, Value: json.RawMessage(`true`),
-		AdapterReceivedAt: time.Now().UTC().Format(time.RFC3339Nano),
-	})
+		AdapterReceivedAt: adapterReceivedAt.Format(time.RFC3339Nano),
+	}
+	observationID, err := session.PublishObservation(ctx, wireObservation)
 	if err != nil {
 		t.Fatal(err)
 	}
 
+	var projected devices.State
 	deadline := time.Now().Add(3 * time.Second)
 	for time.Now().Before(deadline) {
 		view, getErr := service.GetEntity(ctx, entityID)
@@ -118,17 +122,77 @@ func TestCoreNATSTransportRegistersAndProjectsDurableObservation(t *testing.T) {
 			t.Fatal(getErr)
 		}
 		if view.State != nil {
-			if view.State.ObservationID != devices.ObservationID(observationID) || string(view.State.Value) != "true" {
-				t.Fatalf("projected state = %#v", view.State)
-			}
-			if err := NewRuntimeReadiness(database, coreConnection, js, observations).Check(ctx); err != nil {
-				t.Fatal(err)
-			}
-			return
+			projected = *view.State
+			break
 		}
 		time.Sleep(10 * time.Millisecond)
 	}
-	t.Fatal("observation was not projected")
+	if projected.ObservationID == "" {
+		t.Fatal("observation was not projected")
+	}
+	if projected.ObservationID != devices.ObservationID(observationID) || string(projected.Value) != "true" {
+		t.Fatalf("projected state = %#v", projected)
+	}
+	if err := NewRuntimeReadiness(database, coreConnection, js, observations).Check(ctx); err != nil {
+		t.Fatal(err)
+	}
+	for time.Now().Before(deadline) {
+		info, infoErr := durable.Info(ctx)
+		if infoErr != nil {
+			t.Fatal(infoErr)
+		}
+		if info.NumAckPending == 0 {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	info, err := durable.Info(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info.NumAckPending != 0 {
+		t.Fatalf("observation remained unacknowledged: %#v", info)
+	}
+
+	observations.Stop()
+	select {
+	case <-observations.Closed():
+	case <-time.After(time.Second):
+		t.Fatal("observation consumer did not stop")
+	}
+	if err := database.Close(); err != nil {
+		t.Fatal(err)
+	}
+	database, err = platformdb.Open(ctx, databasePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	recoveredService := devices.NewService(devices.NewSQLiteRepository(database, catalog), nil, catalog, devices.Dependencies{})
+	recovered, err := recoveredService.GetEntity(ctx, entityID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if recovered.State == nil || recovered.State.ObservationID != projected.ObservationID ||
+		recovered.State.ReceiveOrder != projected.ReceiveOrder || string(recovered.State.Value) != "true" {
+		t.Fatalf("recovered state = %#v, want %#v", recovered.State, projected)
+	}
+	result, err := recoveredService.ProjectObservation(ctx, "simulator", devices.Observation{
+		ID: devices.ObservationID(observationID), EntityID: entityID, Value: devices.Value(`true`),
+		AdapterReceivedAt: adapterReceivedAt,
+	}, projected.ObservedAt)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Disposition != devices.DispositionDuplicate || result.State != nil {
+		t.Fatalf("recovered redelivery = %#v", result)
+	}
+	var receipts int
+	if err := database.QueryRowContext(ctx, "SELECT count(*) FROM observation_receipts").Scan(&receipts); err != nil {
+		t.Fatal(err)
+	}
+	if receipts != 1 {
+		t.Fatalf("receipt count after recovered redelivery = %d", receipts)
+	}
 }
 
 func TestCoreCommandRoundTripRequiresLinkedSimulatorObservation(t *testing.T) {

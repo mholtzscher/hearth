@@ -35,6 +35,9 @@ var (
 func Register(api huma.API, service *devices.Service) {
 	configureErrorsOnce.Do(func() {
 		huma.NewError = func(status int, message string, details ...error) huma.StatusError {
+			if status == 0 {
+				return apiError(status, "internal_error", message).(*statusError)
+			}
 			switch status {
 			case http.StatusBadRequest, http.StatusRequestEntityTooLarge,
 				http.StatusUnsupportedMediaType, http.StatusUnprocessableEntity:
@@ -64,6 +67,26 @@ func Register(api huma.API, service *devices.Service) {
 			http.StatusServiceUnavailable, http.StatusGatewayTimeout, http.StatusInternalServerError,
 		},
 	}, handler.ExecuteCommand)
+	removeAutoValidationResponses(api, "get-entity", "execute-entity-command")
+}
+
+func removeAutoValidationResponses(api huma.API, operationIDs ...string) {
+	selected := make(map[string]struct{}, len(operationIDs))
+	for _, operationID := range operationIDs {
+		selected[operationID] = struct{}{}
+	}
+	for _, path := range api.OpenAPI().Paths {
+		for _, operation := range []*huma.Operation{path.Get, path.Post} {
+			if operation == nil {
+				continue
+			}
+			if _, ok := selected[operation.OperationID]; ok {
+				// Huma defaults structural validation to 422. Hearth maps those
+				// failures to its stable invalid_request HTTP 400 response.
+				delete(operation.Responses, "422")
+			}
+		}
+	}
 }
 
 func (handler *Handler) GetEntity(ctx context.Context, input *GetEntityInput) (*GetEntityOutput, error) {

@@ -10,11 +10,13 @@ type EntityBody struct {
 }
 
 type StateBody struct {
-	Value             any     `json:"value"`
-	ObservationID     string  `json:"observation_id"`
-	AdapterReceivedAt string  `json:"adapter_received_at"`
-	SourceUpdatedAt   *string `json:"source_updated_at,omitempty"`
-	ObservedAt        string  `json:"observed_at"`
+	// Huma uses this ignored marker to emit StateBody as an object-or-null schema.
+	_                 struct{} `json:"-" nullable:"true"`
+	Value             any      `json:"value"`
+	ObservationID     string   `json:"observation_id"`
+	AdapterReceivedAt string   `json:"adapter_received_at"`
+	SourceUpdatedAt   *string  `json:"source_updated_at,omitempty"`
+	ObservedAt        string   `json:"observed_at"`
 }
 
 type CommandBody struct {

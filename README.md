@@ -8,11 +8,11 @@ The project has two equal gates: work must advance a useful home automation syst
 
 ## Status
 
-Hearth is implementing its first vertical slice to observe and control one Home Assistant-managed light; a simulator will exercise failures against the same contracts.
+Hearth's first vertical slice observes and controls one Home Assistant-managed light; the simulator exercises recovery and the complete failure matrix against the same contracts.
 
 ## Development
 
-Enter the devenv shell with `devenv shell`, start local NATS/JetStream with `devenv up`, and run Entity-type generation checks, migration and sqlc generation checks, tests, and vetting with `devenv test`. Regenerate complete built-in Entity-type bindings, behavior, conformance tests, typed SDK facades, and catalog assembly after changing a manifest, examples, or semantic schema with `go generate ./entitytypes`; regenerate database access code after changing migrations or queries with `devenv shell -- sqlc generate`.
+Enter the devenv shell with `devenv shell` and start local NATS/JetStream with `devenv up`. The clean-checkout gate is `devenv test`; it checks formatting, Entity-type and sqlc generation, all authoritative schemas and cross-binary fixtures, race-enabled tests (including runtime OpenAPI and recovery), and vetting. Regenerate complete built-in Entity-type bindings, behavior, conformance tests, typed SDK facades, and catalog assembly after changing a manifest, examples, or semantic schema with `go generate ./entitytypes`; regenerate database access code after changing migrations or queries with `devenv shell -- sqlc generate`.
 
 Run the first-light simulator with `go run ./cmd/hearth-simulator -config configs/simulator.yaml` after copying `configs/simulator.example.yaml`. Its `scenario` may be `happy`, `duplicate`, `delayed-source-time`, `future-clock-skew`, `malformed`, `unavailable-adapter`, `upstream-rejection`, `no-op-refresh`, `overlapping-opposite-command`, `outcome-timeout`, `interrupted-command`, or `restart-before-ack`.
 
