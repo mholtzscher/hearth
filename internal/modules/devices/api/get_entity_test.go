@@ -42,6 +42,22 @@ func (*stubRepository) DeleteExpiredObservationReceipts(context.Context, time.Ti
 	panic("unexpected DeleteExpiredObservationReceipts call")
 }
 
+func (*stubRepository) CreateCommand(context.Context, devices.CommandRecord) error {
+	panic("unexpected CreateCommand call")
+}
+
+func (*stubRepository) MarkCommandAccepted(context.Context, devices.CommandID, time.Time) error {
+	panic("unexpected MarkCommandAccepted call")
+}
+
+func (*stubRepository) CompleteCommand(context.Context, devices.CommandCompletion) error {
+	panic("unexpected CompleteCommand call")
+}
+
+func (*stubRepository) InterruptActiveCommands(context.Context, time.Time) error {
+	panic("unexpected InterruptActiveCommands call")
+}
+
 func TestGetEntityReturnsMetadataAndNullableState(t *testing.T) {
 	repository := &stubRepository{view: apiEntityView(nil)}
 	router, openapi := testAPI(t, repository)
@@ -137,7 +153,7 @@ func testAPI(t *testing.T, repository *stubRepository) (*echo.Echo, huma.API) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	service := devices.NewService(repository, catalog, devices.Dependencies{})
+	service := devices.NewService(repository, nil, catalog, devices.Dependencies{})
 	router := echo.New()
 	openapi := humaecho.New(router, huma.DefaultConfig("Hearth", "1.0.0"))
 	group := huma.NewGroup(openapi, "/v1/entities")

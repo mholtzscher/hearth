@@ -14,3 +14,13 @@ func TestLoadExampleConfig(t *testing.T) {
 		t.Fatalf("scenario = %q", value.Scenario)
 	}
 }
+
+func TestConfigRejectsUnknownScenario(t *testing.T) {
+	config := Config{
+		AdapterID: "simulator", NATSURL: "nats://127.0.0.1:4222",
+		BindingKey: "simulated-light", Scenario: "unknown",
+	}
+	if err := config.Validate(); err == nil {
+		t.Fatal("unknown scenario was accepted")
+	}
+}

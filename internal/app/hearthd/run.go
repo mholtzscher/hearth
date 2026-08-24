@@ -42,12 +42,11 @@ func Run(ctx context.Context, config Config, logger *slog.Logger) error {
 		return err
 	}
 	repository := devices.NewSQLiteRepository(database, catalog)
-	service := devices.NewService(repository, catalog, devices.Dependencies{})
 	startupTime := time.Now().UTC()
 	if err := repository.InterruptActiveCommands(ctx, startupTime); err != nil {
 		return fmt.Errorf("interrupt active commands: %w", err)
 	}
-	if err := service.DeleteExpiredObservationReceipts(ctx, startupTime); err != nil {
+	if err := repository.DeleteExpiredObservationReceipts(ctx, startupTime); err != nil {
 		return fmt.Errorf("prune observation receipts: %w", err)
 	}
 
@@ -68,6 +67,8 @@ func Run(ctx context.Context, config Config, logger *slog.Logger) error {
 	if err != nil {
 		return fmt.Errorf("compile wire schemas: %w", err)
 	}
+	commandClient := platformnats.NewCommandClient(connection, validator)
+	service := devices.NewService(repository, &natsCommandSender{client: commandClient}, catalog, devices.Dependencies{})
 
 	registrations, err := platformnats.StartRegistrationServer(connection, validator, registrationHandler(service), logger)
 	if err != nil {
@@ -138,6 +139,29 @@ func connectCoreNATS(ctx context.Context, url string) (*natsgo.Conn, error) {
 		return nil, fmt.Errorf("connect to NATS: %w", err)
 	}
 	return connection, nil
+}
+
+type natsCommandSender struct {
+	client *platformnats.CommandClient
+}
+
+func (sender *natsCommandSender) Send(
+	ctx context.Context,
+	adapterID string,
+	request devices.CommandRequest,
+) (devices.CommandAcceptance, error) {
+	acceptance, err := sender.client.Send(ctx, adapterID, platformnats.CommandRequest{
+		ID: string(request.ID), CorrelationID: string(request.CorrelationID),
+		EntityID: string(request.EntityID), OperationName: string(request.OperationName),
+		Parameters: append([]byte(nil), request.Parameters...), Deadline: request.Deadline,
+	})
+	if errors.Is(err, platformnats.ErrCommandUnavailable) {
+		return devices.CommandAcceptance{}, fmt.Errorf("%w: %v", devices.ErrAdapterUnavailable, err)
+	}
+	if err != nil {
+		return devices.CommandAcceptance{}, err
+	}
+	return devices.CommandAcceptance{Accepted: acceptance.Accepted}, nil
 }
 
 func registrationHandler(service *devices.Service) platformnats.RegistrationHandler {

@@ -14,7 +14,7 @@ func TestObservationProjectionAdvancesStateByReceiveOrderAndDeduplicates(t *test
 	database := openMigratedDatabase(t, path)
 	catalog := firstLightCatalog(t)
 	repository := NewSQLiteRepository(database, catalog)
-	service := NewService(repository, catalog, Dependencies{})
+	service := NewService(repository, nil, catalog, Dependencies{})
 	binding, err := service.Register(ctx, "simulator", validDomainRegistration())
 	if err != nil {
 		t.Fatal(err)
@@ -68,7 +68,7 @@ func TestObservationProjectionAdvancesStateByReceiveOrderAndDeduplicates(t *test
 		t.Fatal(err)
 	}
 	database = openMigratedDatabase(t, path)
-	restarted := NewService(NewSQLiteRepository(database, catalog), catalog, Dependencies{})
+	restarted := NewService(NewSQLiteRepository(database, catalog), nil, catalog, Dependencies{})
 	view, err = restarted.GetEntity(ctx, entityID)
 	if err != nil {
 		t.Fatal(err)
@@ -82,7 +82,7 @@ func TestObservationProjectionDurablyRejectsIdentityAndValueFailures(t *testing.
 	ctx := context.Background()
 	database := openMigratedDatabase(t, filepath.Join(t.TempDir(), "hearth.db"))
 	catalog := firstLightCatalog(t)
-	service := NewService(NewSQLiteRepository(database, catalog), catalog, Dependencies{})
+	service := NewService(NewSQLiteRepository(database, catalog), nil, catalog, Dependencies{})
 	binding, err := service.Register(ctx, "simulator", validDomainRegistration())
 	if err != nil {
 		t.Fatal(err)
@@ -132,7 +132,7 @@ func TestObservationProjectionSatisfiesOnlyMatchingActiveLinkedCommand(t *testin
 	repository := NewSQLiteRepository(database, catalog)
 	completedAt := time.Date(2026, 8, 22, 12, 0, 2, 0, time.UTC)
 	now := completedAt
-	service := NewService(repository, catalog, Dependencies{Now: func() time.Time { return now }})
+	service := NewService(repository, nil, catalog, Dependencies{Now: func() time.Time { return now }})
 	binding, err := service.Register(ctx, "simulator", validDomainRegistration())
 	if err != nil {
 		t.Fatal(err)
@@ -231,7 +231,7 @@ func TestReceiptPruningPinsCurrentStateUntilItAdvances(t *testing.T) {
 	ctx := context.Background()
 	database := openMigratedDatabase(t, filepath.Join(t.TempDir(), "hearth.db"))
 	catalog := firstLightCatalog(t)
-	service := NewService(NewSQLiteRepository(database, catalog), catalog, Dependencies{})
+	service := NewService(NewSQLiteRepository(database, catalog), nil, catalog, Dependencies{})
 	binding, err := service.Register(ctx, "simulator", validDomainRegistration())
 	if err != nil {
 		t.Fatal(err)

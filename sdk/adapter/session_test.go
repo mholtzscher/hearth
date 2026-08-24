@@ -20,6 +20,31 @@ import (
 
 const testEntityID = "ent_01890f47-7a6b-7c4d-8e9f-0123456789ab"
 
+func TestConnectRetriesWhenNATSStartsLater(t *testing.T) {
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	address := listener.Addr().String()
+	port := listener.Addr().(*net.TCPAddr).Port
+	if err := listener.Close(); err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	session, err := Connect(ctx, Config{AdapterID: "simulator", NATSURL: "nats://" + address})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = session.Close() })
+	if session.connection.Status() != natsgo.RECONNECTING {
+		t.Fatalf("initial NATS status = %s, want %s", session.connection.Status(), natsgo.RECONNECTING)
+	}
+
+	startServer(t, port, t.TempDir())
+	waitForConnectionStatus(t, session.connection, natsgo.CONNECTED)
+}
+
 func TestRegisterAcceptedRejectedAndLocalValidation(t *testing.T) {
 	server := startServer(t, -1, t.TempDir())
 	core := connectNATS(t, server.ClientURL())

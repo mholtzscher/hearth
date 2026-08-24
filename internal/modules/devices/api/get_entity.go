@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"sync"
 	"time"
 
 	"github.com/danielgtaylor/huma/v2"
@@ -26,7 +27,23 @@ type GetEntityOutput struct {
 	Body EntityBody
 }
 
+var (
+	configureErrorsOnce = sync.Once{}
+	defaultHumaNewError = huma.NewError
+)
+
 func Register(api huma.API, service *devices.Service) {
+	configureErrorsOnce.Do(func() {
+		huma.NewError = func(status int, message string, details ...error) huma.StatusError {
+			switch status {
+			case http.StatusBadRequest, http.StatusRequestEntityTooLarge,
+				http.StatusUnsupportedMediaType, http.StatusUnprocessableEntity:
+				return apiError(http.StatusBadRequest, "invalid_request", "invalid request").(*statusError)
+			default:
+				return defaultHumaNewError(status, message, details...)
+			}
+		}
+	})
 	handler := &Handler{devices: service}
 	huma.Register(api, huma.Operation{
 		OperationID: "get-entity",
@@ -34,7 +51,19 @@ func Register(api huma.API, service *devices.Service) {
 		Path:        "/{entity_id}",
 		Summary:     "Get an Entity and its current State",
 		Tags:        []string{"Entities"},
+		Errors:      []int{http.StatusBadRequest, http.StatusNotFound, http.StatusInternalServerError},
 	}, handler.GetEntity)
+	huma.Register(api, huma.Operation{
+		OperationID: "execute-entity-command",
+		Method:      http.MethodPost,
+		Path:        "/{entity_id}/commands",
+		Summary:     "Execute an Entity Command",
+		Tags:        []string{"Entities"},
+		Errors: []int{
+			http.StatusBadRequest, http.StatusNotFound, http.StatusBadGateway,
+			http.StatusServiceUnavailable, http.StatusGatewayTimeout, http.StatusInternalServerError,
+		},
+	}, handler.ExecuteCommand)
 }
 
 func (handler *Handler) GetEntity(ctx context.Context, input *GetEntityInput) (*GetEntityOutput, error) {

@@ -3,6 +3,7 @@ package hearthd
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"log/slog"
 	"path/filepath"
@@ -10,10 +11,12 @@ import (
 	"time"
 
 	contractsv1 "github.com/mholtzscher/hearth/contracts/v1"
+	contractpowerv1 "github.com/mholtzscher/hearth/entitytypes/powerv1"
 	"github.com/mholtzscher/hearth/internal/modules/devices"
 	platformdb "github.com/mholtzscher/hearth/internal/platform/db"
 	platformnats "github.com/mholtzscher/hearth/internal/platform/nats"
 	"github.com/mholtzscher/hearth/sdk/adapter"
+	sdkpowerv1 "github.com/mholtzscher/hearth/sdk/adapter/powerv1"
 	natsserver "github.com/nats-io/nats-server/v2/server"
 	natsgo "github.com/nats-io/nats.go"
 	"github.com/nats-io/nats.go/jetstream"
@@ -36,7 +39,7 @@ func TestCoreNATSTransportRegistersAndProjectsDurableObservation(t *testing.T) {
 		t.Fatal(err)
 	}
 	repository := devices.NewSQLiteRepository(database, catalog)
-	service := devices.NewService(repository, catalog, devices.Dependencies{})
+	service := devices.NewService(repository, nil, catalog, devices.Dependencies{})
 
 	server, err := natsserver.NewServer(&natsserver.Options{
 		Host: "127.0.0.1", Port: -1, JetStream: true, StoreDir: t.TempDir(), NoSigs: true,
@@ -126,4 +129,165 @@ func TestCoreNATSTransportRegistersAndProjectsDurableObservation(t *testing.T) {
 		time.Sleep(10 * time.Millisecond)
 	}
 	t.Fatal("observation was not projected")
+}
+
+func TestCoreCommandRoundTripRequiresLinkedSimulatorObservation(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	logger := slog.New(slog.NewJSONHandler(io.Discard, nil))
+	database, err := platformdb.Open(ctx, filepath.Join(t.TempDir(), "hearth.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = database.Close() })
+	if err := platformdb.Migrate(ctx, database); err != nil {
+		t.Fatal(err)
+	}
+	catalog, err := devices.NewBuiltinTypeCatalog()
+	if err != nil {
+		t.Fatal(err)
+	}
+	repository := devices.NewSQLiteRepository(database, catalog)
+
+	server, err := natsserver.NewServer(&natsserver.Options{
+		Host: "127.0.0.1", Port: -1, JetStream: true, StoreDir: t.TempDir(), NoSigs: true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	go server.Start()
+	if !server.ReadyForConnections(10 * time.Second) {
+		t.Fatal("NATS server did not become ready")
+	}
+	t.Cleanup(func() {
+		server.Shutdown()
+		server.WaitForShutdown()
+	})
+	coreConnection, err := natsgo.Connect(server.ClientURL())
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(coreConnection.Close)
+	js, err := jetstream.New(coreConnection)
+	if err != nil {
+		t.Fatal(err)
+	}
+	durable, err := platformnats.ProvisionObservationResources(ctx, js)
+	if err != nil {
+		t.Fatal(err)
+	}
+	validator, err := contractsv1.Compile()
+	if err != nil {
+		t.Fatal(err)
+	}
+	service := devices.NewService(
+		repository,
+		&natsCommandSender{client: platformnats.NewCommandClient(coreConnection, validator)},
+		catalog,
+		devices.Dependencies{},
+	)
+	registrations, err := platformnats.StartRegistrationServer(coreConnection, validator, registrationHandler(service), logger)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = registrations.Drain() })
+	observations, err := platformnats.StartObservationConsumer(ctx, durable, validator, observationHandler(service), logger)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(observations.Stop)
+
+	session, err := adapter.Connect(ctx, adapter.Config{AdapterID: "simulator", NATSURL: server.ClientURL()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = session.Close() })
+	support := contractpowerv1.Support{
+		State: contractpowerv1.StateSupport{},
+		Operations: contractpowerv1.OperationSupport{
+			Set: contractpowerv1.SetSupport{},
+		},
+	}
+	descriptor, err := sdkpowerv1.NewEntityDescriptor(adapter.EntityMetadata{
+		Key: "power", ExternalID: "sim.light", Name: "Power",
+	}, support)
+	if err != nil {
+		t.Fatal(err)
+	}
+	binding, err := session.Register(ctx, adapter.Registration{
+		BindingKey: "office-light",
+		Device:     adapter.DeviceDescriptor{Name: "Office light", Kind: "light"},
+		Entities:   []adapter.EntityDescriptor{descriptor},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	entityID, err := devices.ParseEntityID(binding.Entities[0].EntityID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	handler, err := sdkpowerv1.NewCommandHandler(string(entityID), support, sdkpowerv1.Handlers{
+		Set: func(commandContext context.Context, command sdkpowerv1.SetCommand, responder adapter.Responder) error {
+			if err := responder.Accept(); err != nil {
+				return err
+			}
+			commandID := command.ID
+			observation, err := sdkpowerv1.NewObservation(sdkpowerv1.ObservationInput{
+				EntityID: string(entityID), Support: support, State: contractpowerv1.State(command.Parameters.Value),
+				AdapterReceivedAt: time.Now().UTC(), RefreshForCommand: &commandID,
+			})
+			if err != nil {
+				return err
+			}
+			_, err = session.PublishObservation(commandContext, observation)
+			return err
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	serveContext, stopServing := context.WithCancel(ctx)
+	defer stopServing()
+	baselineSubscriptions := server.NumSubscriptions()
+	serveErrors := make(chan error, 1)
+	go func() { serveErrors <- session.ServeCommands(serveContext, handler) }()
+	deadline := time.Now().Add(time.Second)
+	for server.NumSubscriptions() <= baselineSubscriptions && time.Now().Before(deadline) {
+		time.Sleep(time.Millisecond)
+	}
+	if server.NumSubscriptions() <= baselineSubscriptions {
+		t.Fatal("simulator command subscription did not become active")
+	}
+
+	result, err := service.ExecuteCommand(ctx, entityID, devices.OperationNameSet, devices.CommandParameters(`{"value":true}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(result.Value) != "true" {
+		t.Fatalf("command result = %#v", result)
+	}
+	stored, err := repository.GetCommand(ctx, result.CommandID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if stored.Status != devices.CommandStatusSatisfied || stored.AcceptedAt == nil ||
+		stored.OutcomeObservationID == nil || *stored.OutcomeObservationID != result.ObservationID {
+		t.Fatalf("stored command = %#v", stored)
+	}
+	view, err := service.GetEntity(ctx, entityID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if view.State == nil || view.State.ObservationID != result.ObservationID || string(view.State.Value) != "true" {
+		t.Fatalf("entity view = %#v", view)
+	}
+	stopServing()
+	select {
+	case err := <-serveErrors:
+		if !errors.Is(err, context.Canceled) {
+			t.Fatalf("serve commands: %v", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("simulator command server did not stop")
+	}
 }

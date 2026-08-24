@@ -14,6 +14,8 @@ Hearth is implementing its first vertical slice to observe and control one Home 
 
 Enter the devenv shell with `devenv shell`, start local NATS/JetStream with `devenv up`, and run Entity-type generation checks, migration and sqlc generation checks, tests, and vetting with `devenv test`. Regenerate complete built-in Entity-type bindings, behavior, conformance tests, typed SDK facades, and catalog assembly after changing a manifest, examples, or semantic schema with `go generate ./entitytypes`; regenerate database access code after changing migrations or queries with `devenv shell -- sqlc generate`.
 
+Run the first-light simulator with `go run ./cmd/hearth-simulator -config configs/simulator.yaml` after copying `configs/simulator.example.yaml`. Its `scenario` may be `happy`, `duplicate`, `delayed-source-time`, `future-clock-skew`, `malformed`, `unavailable-adapter`, `upstream-rejection`, `no-op-refresh`, `overlapping-opposite-command`, `outcome-timeout`, `interrupted-command`, or `restart-before-ack`.
+
 ## Documentation
 
 - [`CONTEXT.md`](./CONTEXT.md): canonical project language

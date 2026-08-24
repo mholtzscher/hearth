@@ -52,6 +52,9 @@ func (service *Service) ProjectObservation(
 	if err != nil {
 		return ProjectionResult{}, err
 	}
+	if result.SatisfiedCommand != nil {
+		service.notifyCommand(*result.SatisfiedCommand)
+	}
 	return copyProjectionResult(result), nil
 }
 
