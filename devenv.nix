@@ -16,6 +16,7 @@
   };
 
   tasks."hearth:test".exec = ''
+    scripts/check-device-module-shape.sh
     test -z "$(gofmt -l $(git ls-files --cached --others --exclude-standard -- '*.go'))"
     go run ./internal/cmd/entitytypegen -root . -check
     sqlc generate
@@ -26,6 +27,7 @@
   '';
 
   enterTest = ''
+    scripts/check-device-module-shape.sh
     test -z "$(gofmt -l $(git ls-files --cached --others --exclude-standard -- '*.go'))"
     go run ./internal/cmd/entitytypegen -root . -check
     sqlc generate

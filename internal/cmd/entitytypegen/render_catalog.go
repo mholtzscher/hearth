@@ -26,24 +26,24 @@ func renderCatalog(models []entityTypeModel, modulePath string, moduleRoot strin
 	}
 	source.WriteString(")\n\n")
 
-	source.WriteString("func NewBuiltinTypeCatalog() (*TypeCatalog, error) {\n")
-	source.WriteString("\tdefinitions := make([]EntityTypeDefinition, 0, ")
+	source.WriteString("func newBuiltinTypeCatalog() (*typeCatalog, error) {\n")
+	source.WriteString("\tdefinitions := make([]entityTypeDefinition, 0, ")
 	fmt.Fprintf(&source, "%d)\n", len(ordered))
 	for _, model := range ordered {
 		variable := lowerFirst(entityTypeGoName(model))
 		fmt.Fprintf(&source, "\t%s, err := new%sTypeDefinition(EntityType%s)\n", variable, entityTypeGoName(model), entityTypeGoName(model))
 		fmt.Fprintf(&source, "\tif err != nil { return nil, err }\n\tdefinitions = append(definitions, %s)\n", variable)
 	}
-	source.WriteString("\treturn NewTypeCatalog(definitions)\n}\n\n")
+	source.WriteString("\treturn newTypeCatalog(definitions)\n}\n\n")
 
 	for _, model := range ordered {
 		goName := entityTypeGoName(model)
-		fmt.Fprintf(&source, "func new%sTypeDefinition(id EntityTypeID) (EntityTypeDefinition, error) {\n", goName)
+		fmt.Fprintf(&source, "func new%sTypeDefinition(id EntityTypeID) (entityTypeDefinition, error) {\n", goName)
 		fmt.Fprintf(&source, "\tcodecs, err := contract%s.Compile()\n", model.Package)
-		fmt.Fprintf(&source, "\tif err != nil { return EntityTypeDefinition{}, fmt.Errorf(%s, err) }\n", strconv.Quote("compile "+model.TypeID+" codecs: %w"))
+		fmt.Fprintf(&source, "\tif err != nil { return entityTypeDefinition{}, fmt.Errorf(%s, err) }\n", strconv.Quote("compile "+model.TypeID+" codecs: %w"))
 		for _, operation := range model.Operations {
 			variable := lowerFirst(operation.GoName)
-			fmt.Fprintf(&source, "\t%s := DefineOperation(\n", variable)
+			fmt.Fprintf(&source, "\t%s := defineOperation(\n", variable)
 			fmt.Fprintf(&source, "\t\tOperationName(contract%s.Operation%s),\n", model.Package, operation.GoName)
 			fmt.Fprintf(&source, "\t\tcodecs.%sParameters,\n", operation.GoName)
 			fmt.Fprintf(&source, "\t\tfunc(support contract%s.Support) (contract%s.%sSupport, bool) {\n", model.Package, model.Package, operation.GoName)
@@ -59,12 +59,12 @@ func renderCatalog(models []entityTypeModel, modulePath string, moduleRoot strin
 			fmt.Fprintf(&source, "\t\tcontract%s.%sSatisfied,\n", model.Package, operation.GoName)
 			source.WriteString("\t)\n")
 		}
-		fmt.Fprintf(&source, "\tdefinition, err := DefineEntityType(id, codecs.State, codecs.Support, contract%s.ValidateState, contract%s.EqualState", model.Package, model.Package)
+		fmt.Fprintf(&source, "\tdefinition, err := defineEntityType(id, codecs.State, codecs.Support, contract%s.ValidateState, contract%s.EqualState", model.Package, model.Package)
 		for _, operation := range model.Operations {
 			fmt.Fprintf(&source, ", %s", lowerFirst(operation.GoName))
 		}
 		source.WriteString(")\n")
-		source.WriteString("\tif err != nil { return EntityTypeDefinition{}, err }\n\treturn definition, nil\n}\n\n")
+		source.WriteString("\tif err != nil { return entityTypeDefinition{}, err }\n\treturn definition, nil\n}\n\n")
 	}
 
 	formatted, err := formatGenerated(source.String())

@@ -59,21 +59,32 @@ func (err *RegistrationRejectedError) Error() string {
 }
 
 func (service *Service) Register(ctx context.Context, adapterID string, registration Registration) (Binding, error) {
+	done, err := service.beginWork(ctx, false)
+	if err != nil {
+		return Binding{}, err
+	}
+	defer done()
+	requestContext, cancelRequest := service.requestContext(ctx)
+	defer cancelRequest()
+
 	normalized, err := service.normalizeRegistration(adapterID, registration)
 	if err != nil {
 		return Binding{}, &RegistrationRejectedError{Code: RegistrationInvalidDescriptor, Message: operatorMessage(err.Error())}
 	}
-	deviceID, err := service.dependencies.NewDeviceID()
+	deviceID, err := service.controls.newDeviceID()
 	if err != nil {
 		return Binding{}, fmt.Errorf("generate device ID: %w", err)
 	}
-	entityID, err := service.dependencies.NewEntityID()
+	entityID, err := service.controls.newEntityID()
 	if err != nil {
 		return Binding{}, fmt.Errorf("generate entity ID: %w", err)
 	}
-	registeredAt := service.dependencies.Now().UTC()
+	registeredAt, err := serviceNow(service.controls.now, "registration")
+	if err != nil {
+		return Binding{}, err
+	}
 	entity := normalized.Entities[0]
-	params := RegisterBindingParams{
+	binding, err := service.registerBinding(requestContext, registerBindingParams{
 		AdapterID:  adapterID,
 		BindingKey: normalized.BindingKey,
 		DeviceID:   deviceID,
@@ -81,8 +92,7 @@ func (service *Service) Register(ctx context.Context, adapterID string, registra
 		Device:     copyDeviceDescriptor(normalized.Device),
 		Entity:     copyEntityDescriptor(entity),
 		UpdatedAt:  registeredAt,
-	}
-	binding, err := service.repository.RegisterBinding(ctx, params)
+	})
 	if errors.Is(err, errImmutableTypeChange) {
 		return Binding{}, &RegistrationRejectedError{
 			Code: RegistrationImmutableTypeChange, Message: "an existing entity cannot change type",
@@ -94,7 +104,7 @@ func (service *Service) Register(ctx context.Context, adapterID string, registra
 		}
 	}
 	if err != nil {
-		return Binding{}, err
+		return Binding{}, operationError(requestContext, err)
 	}
 	return binding, nil
 }
@@ -132,7 +142,7 @@ func (service *Service) normalizeRegistration(adapterID string, registration Reg
 	if !validLength(string(entity.TypeID), 1, 128) {
 		return Registration{}, errors.New("entity type must contain 1 to 128 characters")
 	}
-	support, err := service.catalog.NormalizeSupport(entity.TypeID, entity.Support)
+	support, err := service.catalog.normalizeSupport(entity.TypeID, entity.Support)
 	if err != nil {
 		return Registration{}, fmt.Errorf("entity descriptor is incompatible with its type: %w", err)
 	}

@@ -165,55 +165,24 @@ const (
     RejectionInvalidValue  ObservationRejection = "invalid_value"
 )
 
-type ProjectionResult struct {
-    Disposition      ObservationDisposition
-    State            *State
-    Rejection        *ObservationRejection
-    SatisfiedCommand *CommandResult
+type ReceivedObservation struct {
+    AdapterID   string
+    Observation Observation
+    ObservedAt  time.Time
 }
 
-type CommandStatus string
-const (
-    CommandStatusRequested          CommandStatus = "requested"
-    CommandStatusAccepted           CommandStatus = "accepted"
-    CommandStatusSatisfied          CommandStatus = "satisfied"
-    CommandStatusRejected           CommandStatus = "rejected"
-    CommandStatusAdapterUnavailable CommandStatus = "adapter_unavailable"
-    CommandStatusOutcomeTimeout     CommandStatus = "outcome_timeout"
-    CommandStatusInternalFailure    CommandStatus = "internal_failure"
-    CommandStatusInterrupted        CommandStatus = "interrupted"
-)
-
-type CommandFailureCode string
-const (
-    CommandFailureAdapterUnavailable CommandFailureCode = "adapter_unavailable"
-    CommandFailureUpstreamRejected   CommandFailureCode = "upstream_rejected"
-    CommandFailureOutcomeTimeout     CommandFailureCode = "outcome_timeout"
-    CommandFailureInternalError      CommandFailureCode = "internal_error"
-    CommandFailureCoreRestarted      CommandFailureCode = "core_restarted"
-)
-
-type CommandRecord struct {
-    ID                   CommandID
-    EntityID             EntityID
-    AdapterID            string
-    OperationName        OperationName
-    Parameters           CommandParameters
-    CorrelationID        CorrelationID
-    Status               CommandStatus
-    RequestedAt          time.Time
-    DeadlineAt           time.Time
-    AcceptedAt           *time.Time
-    CompletedAt          *time.Time
-    OutcomeObservationID *ObservationID
-    FailureCode          *CommandFailureCode
+type ObservationReceipt struct {
+    Disposition ObservationDisposition
+    Rejection   *ObservationRejection
 }
 
-type CommandCompletion struct {
-    ID          CommandID
-    Status      CommandStatus // rejected, adapter_unavailable, outcome_timeout, or internal_failure
-    CompletedAt time.Time
-    FailureCode CommandFailureCode
+type CommandDispatch struct {
+    ID            CommandID
+    CorrelationID CorrelationID
+    EntityID      EntityID
+    OperationName OperationName
+    Parameters    CommandParameters
+    Deadline      time.Time
 }
 
 type CommandResult struct {
@@ -225,43 +194,13 @@ type CommandResult struct {
 
 `EntitySupport`, `Value`, and `CommandParameters` each contain one complete valid JSON value; Command parameters are objects. They are normalized and copied defensively at module edges. The module never determines State equality or Command satisfaction by comparing encoded bytes; it delegates both to the Entity-type catalog so object key ordering and future type-specific normalization cannot change semantics.
 
-`adapter_id` records the owner selected for dispatch even if ownership changes later. `requested_at`, `accepted_at`, and `completed_at` are core-clock UTC times for the corresponding committed lifecycle transitions; for the first `set` operation, `deadline_at` is exactly ten seconds after `requested_at` as defined by the catalog. The record stores normalized operation parameters and stable failure codes, not raw HTTP bodies, headers, client addresses, adapter error text, or credentials.
+Command records, transitions, failure codes, projected State, and linked waiter details are private SQLite implementation types. `adapter_id` records the owner selected for dispatch even if ownership changes later. `requested_at`, `accepted_at`, and `completed_at` are core-clock UTC times for committed lifecycle transitions; `deadline_at` is fixed by the catalog. Records store normalized parameters and stable failure codes, not transport or credential data.
 
 ### Entity-type catalog
 
 Owner: `internal/modules/devices/catalog.go`.
 
-A concrete `TypeCatalog` is constructed by the application and passed to the `devices` module. JSON Schemas in public `entitytypes` packages are authoritative for support, State, and parameters. Generic factories retain compile-time Go types, then erase definitions behind catalog closures so transport, persistence, and orchestration continue to carry generic JSON.
-
-```go
-func DefineOperation[State, Support, OperationSupport, Parameters any](
-    name OperationName,
-    parameters *entitytypes.JSONCodec[Parameters],
-    selectSupport func(Support) (OperationSupport, bool),
-    validateParameters func(Support, OperationSupport, Parameters) error,
-    deadline time.Duration,
-    satisfies func(Parameters, State) bool,
-) OperationDefinition[State, Support]
-
-func DefineEntityType[State, Support any](
-    id EntityTypeID,
-    state *entitytypes.JSONCodec[State],
-    support *entitytypes.JSONCodec[Support],
-    validateSupportedState func(Support, State) error,
-    equalState func(State, State) bool,
-    operations ...OperationDefinition[State, Support],
-) (EntityTypeDefinition, error)
-
-func NewTypeCatalog([]EntityTypeDefinition) (*TypeCatalog, error)
-func NewBuiltinTypeCatalog() (*TypeCatalog, error)
-func (*TypeCatalog) NormalizeSupport(EntityTypeID, EntitySupport) (EntitySupport, error)
-func (*TypeCatalog) NormalizeState(Entity, Value) (Value, error)
-func (*TypeCatalog) EqualState(Entity, Value, Value) (bool, error)
-func (*TypeCatalog) ResolveCommand(Entity, OperationName, CommandParameters) (ResolvedCommand, error)
-func (*TypeCatalog) Satisfies(Entity, CommandRecord, Value) (bool, error)
-```
-
-Construction rejects empty or duplicate type IDs, duplicate or non-subject-safe operation names, missing codecs/functions, and non-positive deadlines. `NewBuiltinTypeCatalog` supplies power/v1 and brightness/v1 definitions; the generic factories also support focused typed tests without enabling runtime type loading.
+The module constructs its private built-in catalog exactly once in `devices.New`; application assembly does not select or author catalog behavior. JSON Schemas in public `entitytypes` packages remain authoritative for support, State, and parameters. Private generic factories retain compile-time Go types, then erase definitions behind private catalog closures so transport and persistence continue to carry generic JSON. Construction rejects empty or duplicate type IDs, duplicate or non-subject-safe operation names, missing codecs/functions, and non-positive deadlines. The built-in catalog supplies power/v1 and brightness/v1; same-package tests may construct private definitions without enabling runtime type loading.
 
 The built-in `entitytypes/powerv1` package defines boolean State, exact `{"value": boolean}` set parameters, and this exact support document:
 
@@ -269,11 +208,11 @@ The built-in `entitytypes/powerv1` package defines boolean State, exact `{"value
 {"state": {}, "operations": {"set": {}}}
 ```
 
-An operation key's presence means the Entity supports it. `ResolveCommand` decodes current typed support, selects operation support, validates typed parameters against both schemas and cross-document rules, and returns normalized parameters plus the immutable ten-second deadline. `NormalizeState` applies State schema and current-support compatibility. Equality schema-decodes both values but applies current-support compatibility only to the incoming value, allowing comparison with a previously valid persisted State after support narrows.
+An operation key's presence means the Entity supports it. Private Command resolution decodes current typed support, selects operation support, validates typed parameters against schemas and cross-document rules, and returns normalized parameters plus the immutable deadline. Private State normalization applies State schema and current-support compatibility. Equality schema-decodes both values but applies current-support compatibility only to the incoming value, allowing comparison with a previously valid persisted State after support narrows.
 
 The generated brightness/v1 binding uses integer State from 0–100 and support `{"state":{"maximum":N},"operations":{"set":{"step":S}}}`. Its `set.value` must not exceed `N` and must be aligned to `S`; supported State must not exceed `N`.
 
-`Satisfies` deliberately excludes current support. It decodes the recorded normalized parameters and candidate State, then applies the immutable operation outcome callback; power/v1 uses `parameters.Value == bool(state)` and brightness/v1 uses exact integer equality. Combined with immutable type IDs/definitions and persisted absolute deadlines, this preserves active and historical Command meaning when re-registration replaces support. Entity `type_id` remains immutable; valid names, external IDs, and normalized support may change transactionally.
+Private outcome matching deliberately excludes current support. It decodes recorded normalized parameters and candidate State, then applies the immutable operation outcome callback; power/v1 uses `parameters.Value == bool(state)` and brightness/v1 uses exact integer equality. Combined with immutable type IDs/definitions and persisted absolute deadlines, this preserves active and historical Command meaning when re-registration replaces support. Entity `type_id` remains immutable; valid names, external IDs, and normalized support may change transactionally.
 
 Runtime type registration, manifest loading, arbitrary matching code, and persistence of type definitions remain out of scope. Later built-in or explicitly installed definitions may populate the catalog without changing generic transport, persistence, or Command orchestration interfaces.
 
@@ -596,29 +535,19 @@ Interface contract:
 Owner: `internal/modules/devices/service.go`.
 
 ```go
-type Repository interface {
-    RegisterBinding(context.Context, RegisterBindingParams) (Binding, error)
-    GetEntityView(context.Context, EntityID) (EntityView, error)
-    CreateCommand(context.Context, CommandRecord) error
-    MarkCommandAccepted(context.Context, CommandID, time.Time) error
-    CompleteCommand(context.Context, CommandCompletion) error
-    InterruptActiveCommands(context.Context, time.Time) error
-    ProjectObservation(context.Context, ProjectObservationParams) (ProjectionResult, error)
-    DeleteExpiredObservationReceipts(context.Context, time.Time) error
+type CommandDelivery interface {
+    Deliver(context.Context, string, CommandDispatch) (CommandAcceptance, error)
 }
 
-type CommandSender interface {
-    Send(context.Context, string, CommandRequest) (CommandAcceptance, error)
-}
-
-func NewService(Repository, CommandSender, *TypeCatalog, Dependencies) *Service
+func New(context.Context, *sql.DB, *slog.Logger) (*Service, error)
+func (*Service) Run(context.Context, CommandDelivery) error
 func (*Service) Register(context.Context, string, Registration) (Binding, error)
-func (*Service) ProjectObservation(context.Context, string, Observation, time.Time) (ProjectionResult, error)
+func (*Service) ReceiveObservation(context.Context, ReceivedObservation) (ObservationReceipt, error)
 func (*Service) GetEntity(context.Context, EntityID) (EntityView, error)
 func (*Service) ExecuteCommand(context.Context, EntityID, OperationName, CommandParameters) (CommandResult, error)
 ```
 
-`Dependencies` contains an injected clock and UUIDv7 generator for deterministic module tests. `TypeCatalog` is a required concrete dependency selected by application assembly; it is not a runtime plugin interface. Interfaces are defined in the consuming `devices` package; production sqlc/NATS adapters and test adapters satisfy them.
+The concrete module owns Registration, Observation/State, and Command SQLite behavior; SQLite is the local test substitute, so there is no persistence interface. `New` performs atomic NATS-independent recovery and receipt pruning. `Run` installs the consumer-owned Command delivery seam once, owns maintenance and in-memory work, gates product methods until operational, and drains tracked work on shutdown. Clocks, IDs, deadlines, catalog factories, and schedules are private same-package test controls rather than caller configuration.
 
 `ExecuteCommand` behavior:
 
@@ -627,11 +556,11 @@ func (*Service) ExecuteCommand(context.Context, EntityID, OperationName, Command
 3. Commit `requested` before dispatch. Failure prevents dispatch and returns an internal error. This commit is the point of no return: later HTTP cancellation does not cancel the lifecycle.
 4. Send one Core NATS request/reply without retry or replay. Persist dispatch/response failures as `adapter_unavailable`, `rejected`, or `internal_failure`.
 5. On acceptance, set `accepted_at`. If a linked Observation already made the record terminal, preserve its status while filling the timestamp.
-6. Wait for `ProjectObservation` to atomically commit an `applied` or `unchanged` Observation that the catalog's outcome policy matches to this Command; otherwise persist `outcome_timeout` at the deadline.
+6. Wait for `ReceiveObservation` to atomically commit an `applied` or `unchanged` Observation that the catalog's outcome policy matches to this Command; otherwise persist `outcome_timeout` at the deadline.
 7. Return `CommandResult` or the mapped stable error. After HTTP cancellation, abandon only the response and continue recording the lifecycle through outcome/deadline.
-8. Remove the waiter at completion. On restart, lose in-memory waits, mark persisted `requested`/`accepted` records `interrupted`, and never redispatch them.
+8. Remove the waiter at completion. Graceful or ungraceful module stop writes no false terminal outcome: unfinished active records remain for the next `New` to mark `interrupted/core_restarted`, and are never redispatched.
 
-Lifecycle writes are monotonic and idempotent. `CompleteCommand` accepts only ordinary runtime failure outcomes; only startup-wide `InterruptActiveCommands` may record `interrupted/core_restarted`. Multiple calls for one Entity run concurrently without a guard, queue, or supersession; each has an independent ID, record, waiter, and deadline. An Observation satisfies only its `refresh_for_command_id`. Success may be immediately superseded, while canonical State follows core receive order.
+Lifecycle writes are monotonic and idempotent. Multiple calls for one Entity run concurrently without a guard, queue, or supersession; each has an independent ID, record, waiter, and deadline. An Observation satisfies only its `refresh_for_command_id`. Success may be immediately superseded, while canonical State follows core receive order.
 
 ### HTTP
 
@@ -896,7 +825,7 @@ receipts:
   DeleteExpiredObservationReceipts
 ```
 
-`sqlc.yaml` has one SQLite generation entry per query directory, all using the same migrations and emitting to distinct packages under `internal/platform/db/sqlc`. The concrete `devices` repository composes those generated packages; transactions bind every package they need to the same SQLite transaction. Generated interfaces and types remain persistence details; they are not combined into one generated `Querier` and never leak into the module-facing `Repository`.
+`sqlc.yaml` has one SQLite generation entry per query directory, all using the same migrations and emitting to distinct packages under `internal/platform/db/sqlc`. Behavior-specific SQLite companions inside `devices` compose those generated packages; transactions bind every package they need to the same SQLite transaction. Generated interfaces and types remain private persistence details and never leak through the module interface.
 
 The pruning query excludes the receipt referenced by current State:
 
@@ -913,7 +842,7 @@ WHERE expires_at < ?
 
 Checking `observation_id` protects both State foreign keys because they reference the same receipt. Superseded State receipts become eligible at the next pruning pass.
 
-`RegisterBinding`, `ProjectObservation`, and all Command transitions own their SQLite transactions behind the repository; generated sqlc types never cross that seam. The concrete `devices` repository receives the same required `TypeCatalog` instance as the service so projection can validate values, compare State, and evaluate a linked Command's outcome policy inside the transaction. Projection atomically inserts the receipt, updates State, and satisfies a matching active Command. Registration stores the catalog-normalized `support_json` in the existing binding transaction; re-registration replaces that one document atomically.
+`Register`, `ReceiveObservation`, and all Command transitions own their SQLite transactions inside the concrete module; generated sqlc types never cross its seam. The module's private catalog validates values, compares State, and evaluates a linked Command outcome inside the Observation transaction. Receipt insertion, State projection, and matching Command satisfaction commit atomically. Registration stores normalized `support_json` in its binding transaction; re-registration replaces that document atomically.
 
 `outcome_observation_id` intentionally has no receipt foreign key because receipts expire while Command history remains. Satisfaction writes this typed, immutable ID only after inserting its receipt in the same transaction.
 
@@ -988,16 +917,13 @@ Actual local files and `.secrets/` are ignored by Git. No environment override l
 Core startup order:
 
 1. Parse and validate YAML.
-2. Open SQLite; enable foreign keys/WAL/busy timeout; apply Goose migrations.
-3. Mark any `requested` or `accepted` Command records `interrupted` with failure code `core_restarted`; do not redispatch them.
-4. Delete expired Observation receipts not referenced by current State.
-5. Connect to NATS.
-6. Idempotently provision/validate the stream and durable consumer.
-7. Construct and validate the closed first-light Entity-type catalog.
-8. Construct the concrete `devices` repository and service with the same catalog instance.
-9. Start the Observation consumer wired to the module's projection handler.
-10. Construct the Echo/Huma transport.
-11. Listen on loopback.
+2. Open application-owned SQLite; enable foreign keys/WAL/busy timeout; apply Goose migrations.
+3. Call `devices.New`, which constructs its private catalog and atomically interrupts active persisted Commands and prunes expired, unpinned receipts before NATS is required.
+4. Connect to NATS and idempotently provision/validate the stream and durable consumer.
+5. Construct the module-local NATS Command delivery adapter and launch `Service.Run` with a dedicated context.
+6. Start Registration and Observation ingress through module-local domain mappers.
+7. Construct the Echo/Huma transport with narrow Entity-reader and Command-executor interfaces, then listen on loopback.
+8. On shutdown, quiesce ingress, cancel and join the module and ingress handlers, then close NATS and SQLite in that order.
 
 `GET /healthz` returns 200 whenever the HTTP process can serve. `GET /readyz` returns 200 only while SQLite responds, NATS is connected, JetStream resources match required configuration, and the Observation consumer is active; otherwise 503.
 
@@ -1100,8 +1026,8 @@ Total relative effort is **XL**. No calendar estimate is asserted.
 
 | Layer | What | How |
 | --- | --- | --- |
-| Pure module | ID validation, typed catalog support/State/parameter validation and erasure, type-aware equality and immutable outcome matching, registration conflicts, receive-order projection, source-time diagnostics, same-value advancement, Command transition monotonicity, concurrent waiter isolation, interleaved outcomes, deadline/result mapping | Inject in-memory Repository, CommandSender, closed catalog, clock, and ID generator |
-| Repository | Transactions, constraints, idempotency, receive ordering, receipt pruning, current-State retention, Command lifecycle persistence, atomic outcome satisfaction, startup interruption | Temporary real SQLite; apply Goose; use generated sqlc queries |
+| Device / Entity module | ID and catalog validation, registration conflicts, receive-order State, lifecycle gating, Command races, shutdown/recovery, and result mapping | Exercise the concrete `Service` through its interface with migrated SQLite and an in-memory Command delivery adapter; private controls provide deterministic clocks, IDs, deadlines, and ticks |
+| SQLite implementation | Transactions, constraints, idempotency, receipt pruning/pinning, monotonic Command persistence, atomic outcome satisfaction, startup interruption | Temporary migrated SQLite with direct SQL inspection limited to persistence facts absent from the module interface |
 | SDK/NATS | Subjects, envelopes, schema validation, typed power registration/Command/Observation facade, accepted/rejected registration responses and retry classification, publish acknowledgement/retry, concurrent Command handler invocation, request/reply, responder invariants, W3C headers | Typed facade tests plus in-process NATS Server with JetStream |
 | HTTP | Huma validation, operation IDs, nullable State, bodies, error/status mapping, runtime OpenAPI | Echo/Huma test server with fake module dependencies |
 | Home Assistant adapter | Subscribe-first snapshot/event reconciliation, concurrent request/response correlation, service calls, command-linked no-op refresh, reconnect | Scripted WebSocket server using captured minimal fixtures and controlled snapshot/event interleavings; one manual/live verification |

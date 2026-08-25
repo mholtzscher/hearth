@@ -14,8 +14,8 @@ const (
 	EntityTypePowerV1      EntityTypeID = "hearth.power/v1"
 )
 
-func NewBuiltinTypeCatalog() (*TypeCatalog, error) {
-	definitions := make([]EntityTypeDefinition, 0, 2)
+func newBuiltinTypeCatalog() (*typeCatalog, error) {
+	definitions := make([]entityTypeDefinition, 0, 2)
 	brightnessV1, err := newBrightnessV1TypeDefinition(EntityTypeBrightnessV1)
 	if err != nil {
 		return nil, err
@@ -26,15 +26,15 @@ func NewBuiltinTypeCatalog() (*TypeCatalog, error) {
 		return nil, err
 	}
 	definitions = append(definitions, powerV1)
-	return NewTypeCatalog(definitions)
+	return newTypeCatalog(definitions)
 }
 
-func newBrightnessV1TypeDefinition(id EntityTypeID) (EntityTypeDefinition, error) {
+func newBrightnessV1TypeDefinition(id EntityTypeID) (entityTypeDefinition, error) {
 	codecs, err := contractbrightnessv1.Compile()
 	if err != nil {
-		return EntityTypeDefinition{}, fmt.Errorf("compile hearth.brightness/v1 codecs: %w", err)
+		return entityTypeDefinition{}, fmt.Errorf("compile hearth.brightness/v1 codecs: %w", err)
 	}
-	set := DefineOperation(
+	set := defineOperation(
 		OperationName(contractbrightnessv1.OperationSet),
 		codecs.SetParameters,
 		func(support contractbrightnessv1.Support) (contractbrightnessv1.SetSupport, bool) {
@@ -44,19 +44,19 @@ func newBrightnessV1TypeDefinition(id EntityTypeID) (EntityTypeDefinition, error
 		contractbrightnessv1.SetDeadline,
 		contractbrightnessv1.SetSatisfied,
 	)
-	definition, err := DefineEntityType(id, codecs.State, codecs.Support, contractbrightnessv1.ValidateState, contractbrightnessv1.EqualState, set)
+	definition, err := defineEntityType(id, codecs.State, codecs.Support, contractbrightnessv1.ValidateState, contractbrightnessv1.EqualState, set)
 	if err != nil {
-		return EntityTypeDefinition{}, err
+		return entityTypeDefinition{}, err
 	}
 	return definition, nil
 }
 
-func newPowerV1TypeDefinition(id EntityTypeID) (EntityTypeDefinition, error) {
+func newPowerV1TypeDefinition(id EntityTypeID) (entityTypeDefinition, error) {
 	codecs, err := contractpowerv1.Compile()
 	if err != nil {
-		return EntityTypeDefinition{}, fmt.Errorf("compile hearth.power/v1 codecs: %w", err)
+		return entityTypeDefinition{}, fmt.Errorf("compile hearth.power/v1 codecs: %w", err)
 	}
-	set := DefineOperation(
+	set := defineOperation(
 		OperationName(contractpowerv1.OperationSet),
 		codecs.SetParameters,
 		func(support contractpowerv1.Support) (contractpowerv1.SetSupport, bool) {
@@ -66,9 +66,9 @@ func newPowerV1TypeDefinition(id EntityTypeID) (EntityTypeDefinition, error) {
 		contractpowerv1.SetDeadline,
 		contractpowerv1.SetSatisfied,
 	)
-	definition, err := DefineEntityType(id, codecs.State, codecs.Support, contractpowerv1.ValidateState, contractpowerv1.EqualState, set)
+	definition, err := defineEntityType(id, codecs.State, codecs.Support, contractpowerv1.ValidateState, contractpowerv1.EqualState, set)
 	if err != nil {
-		return EntityTypeDefinition{}, err
+		return entityTypeDefinition{}, err
 	}
 	return definition, nil
 }

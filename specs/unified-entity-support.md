@@ -15,7 +15,7 @@ The approved design is:
 2. Every support document is `{"state": {...}, "operations": {...}}`; presence of an operation-name key means the Entity supports it.
 3. Registration and GET Entity expose `support`; separate `constraints` and `operations` fields are removed before v1 ships.
 4. SQLite stores normalized `support_json` and no operation projection.
-5. Generic typed definitions are erased behind the concrete `TypeCatalog`.
+5. Generic typed definitions are erased behind the module's private concrete catalog.
 6. Operation support participates in Command resolution, but not outcome matching. Immutable type behavior, normalized parameters, and the absolute deadline preserve an active Command's meaning across re-registration.
 7. The stateless generic SDK gains typed routing primitives and generated power/v1 and brightness/v1 facades for registration, Commands, and Observations.
 
@@ -162,55 +162,11 @@ Owner: `internal/modules/devices`.
  }
 ```
 
-`OperationName`, `CommandRecord.OperationName`, `Value`, and `CommandParameters` remain generic.
+`OperationName`, private persisted Command operation names, `Value`, and `CommandParameters` remain generic.
 
-Catalog construction is typed; `EntityTypeDefinition` erases the concrete types into sealed closures so one catalog can hold heterogeneous definitions:
+Catalog construction and authoring are private to `internal/modules/devices`. Typed generic factories erase concrete types into sealed closures so one private catalog can hold heterogeneous definitions. `devices.New` constructs the generated built-in catalog exactly once; application assembly does not select it, and runtime type loading remains out of scope. Same-package catalog tests may supply private definitions. Construction still rejects duplicate or empty Entity type IDs, duplicate or non-subject-safe operation names, missing codecs/functions, and non-positive deadlines.
 
-```go
-type OperationDefinition[State, Support any] struct {
-    // sealed typed closures
-}
-
-func DefineOperation[
-    State,
-    Support,
-    OperationSupport,
-    Parameters any,
-](
-    name OperationName,
-    parameters *entitytypes.JSONCodec[Parameters],
-    selectSupport func(Support) (OperationSupport, bool),
-    validateParameters func(Support, OperationSupport, Parameters) error,
-    deadline time.Duration,
-    satisfies func(Parameters, State) bool,
-) OperationDefinition[State, Support]
-
-type EntityTypeDefinition struct {
-    // erased type ID and typed closures
-}
-
-func DefineEntityType[State, Support any](
-    id EntityTypeID,
-    state *entitytypes.JSONCodec[State],
-    support *entitytypes.JSONCodec[Support],
-    validateSupportedState func(Support, State) error,
-    equalState func(State, State) bool,
-    operations ...OperationDefinition[State, Support],
-) (EntityTypeDefinition, error)
-
-func NewTypeCatalog([]EntityTypeDefinition) (*TypeCatalog, error)
-func NewBuiltinTypeCatalog() (*TypeCatalog, error)
-
-func (*TypeCatalog) NormalizeSupport(EntityTypeID, EntitySupport) (EntitySupport, error)
-func (*TypeCatalog) NormalizeState(Entity, Value) (Value, error)
-func (*TypeCatalog) EqualState(Entity, Value, Value) (bool, error)
-func (*TypeCatalog) ResolveCommand(Entity, OperationName, CommandParameters) (ResolvedCommand, error)
-func (*TypeCatalog) Satisfies(Entity, CommandRecord, Value) (bool, error)
-```
-
-Construction rejects duplicate or empty Entity type IDs, duplicate or non-subject-safe operation names, missing codecs/functions, and non-positive deadlines.
-
-`ResolveCommand` decodes typed Entity support, selects typed operation support, decodes typed parameters, applies cross-document validation, and returns normalized parameters plus the immutable deadline. `EqualState` schema-decodes a persisted value without revalidating it against support that may have narrowed, while still requiring the incoming value to satisfy current support. `Satisfies` resolves the immutable type and recorded operation, decodes persisted parameters and State, and calls `satisfies(parameters, state)` without current support.
+Private Command resolution decodes typed Entity support, selects typed operation support, decodes typed parameters, applies cross-document validation, and returns normalized parameters plus the immutable deadline. Private equality schema-decodes a persisted value without revalidating it against narrowed support while still requiring the incoming value to satisfy current support. Private outcome matching resolves the immutable type and recorded operation, decodes persisted parameters and State, and calls `satisfies(parameters, state)` without current support.
 
 For power/v1, schema validation is sufficient for support and State. `set` is always present, has a ten-second deadline, and is satisfied exactly when `parameters.Value == bool(state)`.
 
@@ -218,7 +174,7 @@ Brightness/v1 generates integer State and support bindings from `{"state":{"maxi
 
 ## Registration and persistence
 
-Registration normalizes support before any repository write:
+Registration normalizes support before any SQLite write:
 
 ```go
 func (service *Service) normalizeRegistration(
@@ -227,7 +183,7 @@ func (service *Service) normalizeRegistration(
 ) (Registration, error)
 ```
 
-It copies the input, validates descriptor fields, replaces support with `catalog.NormalizeSupport` output, and passes only the normalized copy to the repository. Invalid support is `RegistrationInvalidDescriptor`. Re-registration transactionally replaces support while preserving canonical IDs and rejecting an Entity type change.
+It copies the input, validates descriptor fields, replaces support with private catalog normalization output, and passes only the normalized copy into the module-owned Registration transaction. Invalid support is `RegistrationInvalidDescriptor`. Re-registration transactionally replaces support while preserving canonical IDs and rejecting an Entity type change.
 
 The unshipped initial migration is rewritten; existing local development databases must be recreated:
 
@@ -349,10 +305,10 @@ sdk/adapter/
 └── brightnessv1/zz_generated_facade*.go            # generated — typed brightness facade/conformance
 internal/cmd/entitytypegen/                         # new — complete build-time generator
 internal/modules/devices/
-├── catalog.go, catalog_test.go                      # modify — generic typed catalog
-├── zz_generated_entitytypes*.go                    # generated — built-ins and conformance
-├── registration.go, registration_test.go            # modify — normalization
-└── sqlite_repository.go, sqlite_repository_test.go  # modify — support persistence
+├── catalog.go, catalog_test.go                       # modify — private generic typed catalog
+├── zz_generated_entitytypes*.go                     # generated — private built-ins and conformance
+├── registration.go, registration_test.go            # modify — normalization behavior
+└── registration_sqlite.go                           # module-owned support persistence
 internal/platform/db/
 ├── migrations/00001_initial.sql                    # modify — support_json
 ├── queries/{registration,state}/*.sql              # modify — support_json
@@ -360,7 +316,7 @@ internal/platform/db/
 CONTEXT.md, docs/architecture.md, specs/first-light.md  # modify — reconcile language/contracts
 ```
 
-Entity-type manifests own built-in behavior, `devices` owns generic catalog and orchestration policy, `internal/platform/db` owns persistence implementation, `sdk/adapter` owns adapter transport/facades, and public `entitytypes` owns semantic contracts and generated bindings. No new product module or repository seam is introduced.
+Entity-type manifests own built-in behavior, `devices` owns its private generic catalog, orchestration policy, and behavior-specific SQLite implementation, application assembly owns database lifetime/migrations, `sdk/adapter` owns adapter transport/facades, and public `entitytypes` owns semantic contracts and generated bindings. No persistence seam is introduced.
 
 ## Deliverables
 
@@ -369,7 +325,7 @@ Entity-type manifests own built-in behavior, `devices` owns generic catalog and 
 | U1 | Authoritative schemas, typed codec, and power/v1 bindings | L | - |
 | U2 | Generic typed catalog and concrete power/v1 definition | L | U1 |
 | U3 | Unified registration contract and typed SDK facade | L | U1 |
-| U4 | Domain normalization, `support_json`, sqlc regeneration, repository behavior | L | U2, U3 |
+| U4 | Domain normalization, `support_json`, sqlc regeneration, and SQLite behavior | L | U2, U3 |
 | U5 | First-light/architecture reconciliation and broad validation | M | U1-U4 |
 
 ## Acceptance and verification
@@ -391,7 +347,7 @@ Tests remain local to the owning seam:
 | Entity-type contracts | Embedded schema compilation, codec strictness/normalization, Go-binding conformance |
 | Catalog | Generic erasure, power behavior, support-aware validation, immutable outcomes |
 | SDK | Typed routing/facade plus existing in-process NATS contract and concurrency tests |
-| Repository | Temporary migrated SQLite registration, update, rollback, restart, and schema assertions |
+| Device / Entity SQLite implementation | Temporary migrated SQLite registration, update, rollback, restart, and schema assertions through the concrete module |
 | Documentation/contracts | Cross-binary fixtures and first-light/API reconciliation |
 
 Required validation is `devenv test`; it must regenerate sqlc without diff and pass formatting, schema compilation, fixtures, tests, and vetting.
@@ -400,7 +356,7 @@ Required validation is `devenv test`; it must regenerate sqlc without diff and p
 
 | Risk | Mitigation |
 | --- | --- |
-| Generic construction obscures the single concrete type | Keep erasure local to `catalog.go`, expose only the two constructors, and prove them with one focused generic test definition. |
+| Generic construction obscures the single concrete type | Keep erasure and authoring private to `catalog.go`, and prove them with one focused same-package generic test definition. |
 | Go bindings drift from authoritative schemas | Validate both input and normalized encoded output and retain schema/binding conformance fixtures. |
 | Mutable support changes active Command meaning | Exclude support from outcome callbacks and persist normalized parameters plus absolute deadlines. |
 | Pre-release v1 consumers or local databases retain the old shape | Update fixtures atomically and recreate local databases when the rewritten initial migration lands. |

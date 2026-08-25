@@ -15,8 +15,18 @@ import (
 	"github.com/mholtzscher/hearth/internal/modules/devices"
 )
 
+type EntityReader interface {
+	GetEntity(context.Context, devices.EntityID) (devices.EntityView, error)
+}
+
+type Dependencies struct {
+	Entities EntityReader
+	Commands CommandExecutor
+}
+
 type Handler struct {
-	devices *devices.Service
+	entities EntityReader
+	commands CommandExecutor
 }
 
 type GetEntityInput struct {
@@ -32,7 +42,7 @@ var (
 	defaultHumaNewError = huma.NewError
 )
 
-func Register(api huma.API, service *devices.Service) {
+func Register(api huma.API, dependencies Dependencies) {
 	configureErrorsOnce.Do(func() {
 		huma.NewError = func(status int, message string, details ...error) huma.StatusError {
 			if status == 0 {
@@ -47,7 +57,7 @@ func Register(api huma.API, service *devices.Service) {
 			}
 		}
 	})
-	handler := &Handler{devices: service}
+	handler := &Handler{entities: dependencies.Entities, commands: dependencies.Commands}
 	huma.Register(api, huma.Operation{
 		OperationID: "get-entity",
 		Method:      http.MethodGet,
@@ -94,7 +104,7 @@ func (handler *Handler) GetEntity(ctx context.Context, input *GetEntityInput) (*
 	if err != nil {
 		return nil, apiError(http.StatusBadRequest, "invalid_request", "entity_id must be a canonical Hearth Entity ID")
 	}
-	view, err := handler.devices.GetEntity(ctx, entityID)
+	view, err := handler.entities.GetEntity(ctx, entityID)
 	if errors.Is(err, devices.ErrEntityNotFound) {
 		return nil, apiError(http.StatusNotFound, "entity_not_found", "entity not found")
 	}

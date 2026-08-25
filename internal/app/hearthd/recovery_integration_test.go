@@ -2,6 +2,7 @@ package hearthd
 
 import (
 	"context"
+	"database/sql"
 	"io"
 	"log/slog"
 	"net"
@@ -27,12 +28,11 @@ func TestCoreStartupInterruptsActiveCommandsWithoutRedispatch(t *testing.T) {
 	if err := platformdb.Migrate(ctx, database); err != nil {
 		t.Fatal(err)
 	}
-	catalog, err := devices.NewBuiltinTypeCatalog()
+	service, err := devices.New(ctx, database, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	repository := devices.NewSQLiteRepository(database, catalog)
-	service := devices.NewService(repository, nil, catalog, devices.Dependencies{})
+	stopModule := runIntegrationDeviceService(t, service, recoveryDelivery{})
 	binding, err := service.Register(ctx, "simulator", devices.Registration{
 		BindingKey: "recovery-light",
 		Device:     devices.DeviceDescriptor{Name: "Recovery light", Kind: devices.DeviceKindLight},
@@ -45,17 +45,10 @@ func TestCoreStartupInterruptsActiveCommandsWithoutRedispatch(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	requested := recoveryCommandRecord(t, binding.Entities[0].EntityID, time.Now().UTC())
-	accepted := recoveryCommandRecord(t, binding.Entities[0].EntityID, requested.RequestedAt.Add(time.Second))
-	if err := repository.CreateCommand(ctx, requested); err != nil {
-		t.Fatal(err)
-	}
-	if err := repository.CreateCommand(ctx, accepted); err != nil {
-		t.Fatal(err)
-	}
-	if err := repository.MarkCommandAccepted(ctx, accepted.ID, accepted.RequestedAt.Add(time.Millisecond)); err != nil {
-		t.Fatal(err)
-	}
+	requestedAt := time.Now().UTC()
+	insertRecoveryCommand(t, database, binding.Entities[0].EntityID, requestedAt, "requested")
+	insertRecoveryCommand(t, database, binding.Entities[0].EntityID, requestedAt.Add(time.Second), "accepted")
+	stopModule()
 	if err := database.Close(); err != nil {
 		t.Fatal(err)
 	}
@@ -138,7 +131,13 @@ func TestCoreStartupInterruptsActiveCommandsWithoutRedispatch(t *testing.T) {
 	}
 }
 
-func recoveryCommandRecord(t *testing.T, entityID devices.EntityID, requestedAt time.Time) devices.CommandRecord {
+type recoveryDelivery struct{}
+
+func (recoveryDelivery) Deliver(context.Context, string, devices.CommandDispatch) (devices.CommandAcceptance, error) {
+	return devices.CommandAcceptance{Accepted: true}, nil
+}
+
+func insertRecoveryCommand(t *testing.T, database *sql.DB, entityID devices.EntityID, requestedAt time.Time, status string) {
 	t.Helper()
 	commandID, err := devices.NewCommandID()
 	if err != nil {
@@ -148,11 +147,20 @@ func recoveryCommandRecord(t *testing.T, entityID devices.EntityID, requestedAt 
 	if err != nil {
 		t.Fatal(err)
 	}
-	return devices.CommandRecord{
-		ID: commandID, EntityID: entityID, AdapterID: "simulator",
-		OperationName: devices.OperationNameSet, Parameters: devices.CommandParameters(`{"value":true}`),
-		CorrelationID: correlationID, Status: devices.CommandStatusRequested,
-		RequestedAt: requestedAt, DeadlineAt: requestedAt.Add(10 * time.Second),
+	var acceptedAt any
+	if status == "accepted" {
+		acceptedAt = requestedAt.Add(time.Millisecond).Format(time.RFC3339Nano)
+	}
+	if _, err := database.Exec(`
+		INSERT INTO commands (
+			id, entity_id, adapter_id, operation, parameters_json, correlation_id,
+			status, requested_at, deadline_at, accepted_at, completed_at,
+			outcome_observation_id, failure_code
+		) VALUES (?, ?, 'simulator', 'set', '{"value":true}', ?, ?, ?, ?, ?, NULL, NULL, NULL)`,
+		commandID, entityID, correlationID, status, requestedAt.Format(time.RFC3339Nano),
+		requestedAt.Add(10*time.Second).Format(time.RFC3339Nano), acceptedAt,
+	); err != nil {
+		t.Fatal(err)
 	}
 }
 

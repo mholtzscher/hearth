@@ -9,6 +9,15 @@ import (
 	"github.com/mholtzscher/hearth/internal/modules/devices"
 )
 
+type CommandExecutor interface {
+	ExecuteCommand(
+		context.Context,
+		devices.EntityID,
+		devices.OperationName,
+		devices.CommandParameters,
+	) (devices.CommandResult, error)
+}
+
 type ExecuteCommandInput struct {
 	EntityID string      `path:"entity_id" doc:"Canonical Hearth Entity ID"`
 	Body     CommandBody `doc:"Entity operation and parameters"`
@@ -27,7 +36,7 @@ func (handler *Handler) ExecuteCommand(ctx context.Context, input *ExecuteComman
 	if err != nil {
 		return nil, apiError(http.StatusBadRequest, "invalid_request", "parameters must be a JSON object")
 	}
-	result, err := handler.devices.ExecuteCommand(
+	result, err := handler.commands.ExecuteCommand(
 		ctx, entityID, devices.OperationName(input.Body.OperationName), devices.CommandParameters(parameters),
 	)
 	if err != nil {

@@ -5,75 +5,84 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"time"
 )
 
-const ObservationReceiptRetention = 192 * time.Hour
-
-func (service *Service) ProjectObservation(
+func (service *Service) ReceiveObservation(
 	ctx context.Context,
-	adapterID string,
-	observation Observation,
-	observedAt time.Time,
-) (ProjectionResult, error) {
-	if !registrationSlugPattern.MatchString(adapterID) {
-		return ProjectionResult{}, errors.New("adapter ID must be a subject-safe slug")
+	received ReceivedObservation,
+) (ObservationReceipt, error) {
+	done, err := service.beginWork(ctx, true)
+	if err != nil {
+		return ObservationReceipt{}, err
 	}
+	defer done()
+	requestContext, cancelRequest := service.requestContext(ctx)
+	defer cancelRequest()
+
+	if !registrationSlugPattern.MatchString(received.AdapterID) {
+		return ObservationReceipt{}, errors.New("adapter ID must be a subject-safe slug")
+	}
+	observation := received.Observation
 	if _, err := ParseObservationID(string(observation.ID)); err != nil {
-		return ProjectionResult{}, fmt.Errorf("parse observation ID: %w", err)
+		return ObservationReceipt{}, fmt.Errorf("parse observation ID: %w", err)
 	}
 	if _, err := ParseEntityID(string(observation.EntityID)); err != nil {
-		return ProjectionResult{}, fmt.Errorf("parse observation entity ID: %w", err)
+		return ObservationReceipt{}, fmt.Errorf("parse observation entity ID: %w", err)
 	}
 	if !json.Valid(observation.Value) {
-		return ProjectionResult{}, errors.New("observation value must contain one valid JSON value")
+		return ObservationReceipt{}, errors.New("observation value must contain one valid JSON value")
 	}
 	if observation.AdapterReceivedAt.IsZero() {
-		return ProjectionResult{}, errors.New("observation adapter_received_at is required")
+		return ObservationReceipt{}, errors.New("observation adapter_received_at is required")
 	}
-	if observedAt.IsZero() {
-		return ProjectionResult{}, errors.New("observation observed_at is required")
+	if received.ObservedAt.IsZero() {
+		return ObservationReceipt{}, errors.New("observation observed_at is required")
 	}
 	if observation.RefreshForCommand != nil {
 		if _, err := ParseCommandID(string(*observation.RefreshForCommand)); err != nil {
-			return ProjectionResult{}, fmt.Errorf("parse refresh command ID: %w", err)
+			return ObservationReceipt{}, fmt.Errorf("parse refresh command ID: %w", err)
 		}
 	}
 
-	observedAt = observedAt.UTC()
-	params := ProjectObservationParams{
-		AdapterID:        adapterID,
-		Observation:      copyObservation(observation),
-		ObservedAt:       observedAt,
-		Now:              service.dependencies.Now,
-		ReceiptExpiresAt: observedAt.Add(ObservationReceiptRetention),
-	}
-	result, err := service.repository.ProjectObservation(ctx, params)
+	received = copyReceivedObservation(received)
+	received.ObservedAt = received.ObservedAt.UTC()
+	projection, err := service.projectObservation(
+		requestContext,
+		received,
+		received.ObservedAt.Add(service.controls.receiptRetention),
+	)
 	if err != nil {
-		return ProjectionResult{}, err
+		return ObservationReceipt{}, operationError(requestContext, err)
 	}
-	if result.SatisfiedCommand != nil {
-		service.notifyCommand(*result.SatisfiedCommand)
+	if projection.satisfiedCommand != nil {
+		service.notifyCommand(*projection.satisfiedCommand)
 	}
-	return copyProjectionResult(result), nil
+	return copyObservationReceipt(projection.receipt), nil
 }
 
 func (service *Service) GetEntity(ctx context.Context, id EntityID) (EntityView, error) {
+	done, err := service.beginWork(ctx, false)
+	if err != nil {
+		return EntityView{}, err
+	}
+	defer done()
+	requestContext, cancelRequest := service.requestContext(ctx)
+	defer cancelRequest()
+
 	if _, err := ParseEntityID(string(id)); err != nil {
 		return EntityView{}, fmt.Errorf("parse entity ID: %w", err)
 	}
-	view, err := service.repository.GetEntityView(ctx, id)
+	view, err := getEntityView(requestContext, service.database, id)
 	if err != nil {
-		return EntityView{}, err
+		return EntityView{}, operationError(requestContext, err)
 	}
 	return copyEntityView(view), nil
 }
 
-func (service *Service) DeleteExpiredObservationReceipts(ctx context.Context, before time.Time) error {
-	if before.IsZero() {
-		return errors.New("receipt expiry cutoff is required")
-	}
-	return service.repository.DeleteExpiredObservationReceipts(ctx, before.UTC())
+func copyReceivedObservation(received ReceivedObservation) ReceivedObservation {
+	copy := received
+	copy.Observation = copyObservation(received.Observation)
+	return copy
 }
 
 func copyObservation(observation Observation) Observation {
@@ -90,20 +99,11 @@ func copyObservation(observation Observation) Observation {
 	return copy
 }
 
-func copyProjectionResult(result ProjectionResult) ProjectionResult {
-	copy := result
-	if result.State != nil {
-		state := copyState(*result.State)
-		copy.State = &state
-	}
-	if result.Rejection != nil {
-		rejection := *result.Rejection
+func copyObservationReceipt(receipt ObservationReceipt) ObservationReceipt {
+	copy := receipt
+	if receipt.Rejection != nil {
+		rejection := *receipt.Rejection
 		copy.Rejection = &rejection
-	}
-	if result.SatisfiedCommand != nil {
-		command := *result.SatisfiedCommand
-		command.Value = append(Value(nil), result.SatisfiedCommand.Value...)
-		copy.SatisfiedCommand = &command
 	}
 	return copy
 }

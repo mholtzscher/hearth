@@ -2,7 +2,6 @@ package hearthd
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -11,111 +10,269 @@ import (
 
 	contractsv1 "github.com/mholtzscher/hearth/contracts/v1"
 	"github.com/mholtzscher/hearth/internal/modules/devices"
+	devicesapi "github.com/mholtzscher/hearth/internal/modules/devices/api"
+	devicesnats "github.com/mholtzscher/hearth/internal/modules/devices/nats"
 	platformdb "github.com/mholtzscher/hearth/internal/platform/db"
 	platformnats "github.com/mholtzscher/hearth/internal/platform/nats"
 	natsgo "github.com/nats-io/nats.go"
 	"github.com/nats-io/nats.go/jetstream"
 )
 
+const shutdownTimeout = 5 * time.Second
+
+type appShutdownStep uint8
+
 const (
-	receiptPruneInterval = time.Hour
-	shutdownTimeout      = 5 * time.Second
+	shutdownIngressQuiesced appShutdownStep = iota + 1
+	shutdownModuleCanceled
+	shutdownModuleJoined
+	shutdownIngressJoined
+	shutdownNATSClosed
+	shutdownDatabaseClosed
 )
 
+type appControls struct {
+	beforeRegistrationStart func() error
+	beforeObservationStart  func() error
+	serveHTTP               func(*http.Server) error
+	onShutdownStep          func(appShutdownStep)
+}
+
+func productionAppControls() appControls {
+	return appControls{
+		beforeRegistrationStart: func() error { return nil },
+		beforeObservationStart:  func() error { return nil },
+		serveHTTP:               func(server *http.Server) error { return server.ListenAndServe() },
+		onShutdownStep:          func(appShutdownStep) {},
+	}
+}
+
 func Run(ctx context.Context, config Config, logger *slog.Logger) error {
+	return run(ctx, config, logger, productionAppControls())
+}
+
+func run(ctx context.Context, config Config, logger *slog.Logger, controls appControls) error {
 	if err := config.Validate(); err != nil {
 		return err
 	}
 	if logger == nil {
 		logger = slog.Default()
 	}
-	catalog, err := devices.NewBuiltinTypeCatalog()
-	if err != nil {
-		return fmt.Errorf("construct entity type catalog: %w", err)
+	if err := validateAppControls(controls); err != nil {
+		return err
+	}
+
+	if ctx.Err() != nil {
+		return nil
 	}
 	database, err := platformdb.Open(ctx, config.SQLitePath)
 	if err != nil {
-		return err
+		return startupRunError(ctx, err)
 	}
-	defer database.Close()
 	if err := platformdb.Migrate(ctx, database); err != nil {
-		return err
+		return joinRunErrors(startupRunError(ctx, err), database.Close())
 	}
-	repository := devices.NewSQLiteRepository(database, catalog)
-	startupTime := time.Now().UTC()
-	if err := repository.InterruptActiveCommands(ctx, startupTime); err != nil {
-		return fmt.Errorf("interrupt active commands: %w", err)
-	}
-	if err := repository.DeleteExpiredObservationReceipts(ctx, startupTime); err != nil {
-		return fmt.Errorf("prune observation receipts: %w", err)
+	service, err := devices.New(ctx, database, logger)
+	if err != nil {
+		return joinRunErrors(startupRunError(ctx, err), database.Close())
 	}
 
-	connection, err := connectCoreNATS(ctx, config.NATSURL)
-	if err != nil {
-		return err
+	var connection *natsgo.Conn
+	var registrations *platformnats.RegistrationServer
+	var observations *platformnats.ObservationConsumer
+	var server *http.Server
+	var moduleCancel context.CancelFunc
+	var moduleErrors chan error
+	var serverErrors chan error
+	serverResultConsumed := false
+
+	cleanup := func(primary error) error {
+		var ingressErrors []error
+		var moduleCleanupErrors []error
+		var joinErrors []error
+		var natsErrors []error
+		var databaseErrors []error
+
+		registrationClosed := closedChannel()
+		if registrations != nil {
+			registrationClosed = registrations.Closed()
+		}
+		observationClosed := closedChannel()
+		if observations != nil {
+			observationClosed = observations.Closed()
+			observations.Drain()
+		}
+		if registrations != nil {
+			if err := registrations.Drain(); err != nil {
+				ingressErrors = append(ingressErrors, err)
+			}
+		}
+
+		httpShutdown := make(chan error, 1)
+		if server != nil {
+			go func() {
+				shutdownContext, cancel := context.WithTimeout(context.Background(), shutdownTimeout)
+				defer cancel()
+				err := server.Shutdown(shutdownContext)
+				if errors.Is(err, http.ErrServerClosed) {
+					err = nil
+				} else if err != nil {
+					closeErr := server.Close()
+					if errors.Is(closeErr, http.ErrServerClosed) {
+						closeErr = nil
+					}
+					err = joinRunErrors(err, closeErr)
+				}
+				httpShutdown <- err
+			}()
+		} else {
+			httpShutdown <- nil
+		}
+		controls.onShutdownStep(shutdownIngressQuiesced)
+
+		if moduleCancel != nil {
+			moduleCancel()
+		}
+		controls.onShutdownStep(shutdownModuleCanceled)
+		if moduleErrors != nil {
+			if err := <-moduleErrors; err != nil {
+				moduleCleanupErrors = append(moduleCleanupErrors, fmt.Errorf("run Device / Entity module: %w", err))
+			}
+		}
+		controls.onShutdownStep(shutdownModuleJoined)
+
+		<-registrationClosed
+		<-observationClosed
+		if err := <-httpShutdown; err != nil {
+			joinErrors = append(joinErrors, fmt.Errorf("shutdown HTTP: %w", err))
+		}
+		if serverErrors != nil && !serverResultConsumed {
+			if err := <-serverErrors; err != nil && !errors.Is(err, http.ErrServerClosed) {
+				joinErrors = append(joinErrors, fmt.Errorf("serve HTTP: %w", err))
+			}
+		}
+		controls.onShutdownStep(shutdownIngressJoined)
+
+		if connection != nil {
+			if err := connection.Drain(); err != nil && !errors.Is(err, natsgo.ErrConnectionClosed) {
+				natsErrors = append(natsErrors, fmt.Errorf("drain NATS connection: %w", err))
+			}
+			connection.Close()
+		}
+		controls.onShutdownStep(shutdownNATSClosed)
+		if err := database.Close(); err != nil {
+			databaseErrors = append(databaseErrors, fmt.Errorf("close SQLite: %w", err))
+		}
+		controls.onShutdownStep(shutdownDatabaseClosed)
+
+		cleanupErrors := append(ingressErrors, moduleCleanupErrors...)
+		cleanupErrors = append(cleanupErrors, joinErrors...)
+		cleanupErrors = append(cleanupErrors, natsErrors...)
+		cleanupErrors = append(cleanupErrors, databaseErrors...)
+		return joinRunErrors(primary, cleanupErrors...)
 	}
-	defer connection.Close()
+
+	connection, err = connectCoreNATS(ctx, config.NATSURL)
+	if err != nil {
+		return cleanup(startupRunError(ctx, err))
+	}
 	js, err := jetstream.New(connection)
 	if err != nil {
-		return fmt.Errorf("create JetStream client: %w", err)
+		return cleanup(fmt.Errorf("create JetStream client: %w", err))
 	}
 	durable, err := platformnats.ProvisionObservationResources(ctx, js)
 	if err != nil {
-		return err
+		return cleanup(startupRunError(ctx, err))
 	}
 	validator, err := contractsv1.Compile()
 	if err != nil {
-		return fmt.Errorf("compile wire schemas: %w", err)
+		return cleanup(fmt.Errorf("compile wire schemas: %w", err))
 	}
-	commandClient := platformnats.NewCommandClient(connection, validator)
-	service := devices.NewService(repository, &natsCommandSender{client: commandClient}, catalog, devices.Dependencies{})
+	delivery := devicesnats.NewCommandDelivery(platformnats.NewCommandClient(connection, validator))
+	moduleContext, cancelModule := context.WithCancel(context.WithoutCancel(ctx))
+	moduleCancel = cancelModule
+	moduleErrors = make(chan error, 1)
+	go func() { moduleErrors <- service.Run(moduleContext, delivery) }()
 
-	registrations, err := platformnats.StartRegistrationServer(connection, validator, registrationHandler(service), logger)
-	if err != nil {
-		return err
+	if err := controls.beforeRegistrationStart(); err != nil {
+		return cleanup(err)
 	}
-	defer registrations.Drain()
-	observations, err := platformnats.StartObservationConsumer(ctx, durable, validator, observationHandler(service), logger)
+	registrations, err = platformnats.StartRegistrationServer(
+		connection, validator, devicesnats.RegistrationHandler(service), logger,
+	)
 	if err != nil {
-		return err
+		return cleanup(startupRunError(ctx, err))
 	}
-	defer observations.Stop()
+	if err := controls.beforeObservationStart(); err != nil {
+		return cleanup(err)
+	}
+	observations, err = platformnats.StartObservationConsumer(
+		ctx, durable, validator, devicesnats.ObservationHandler(service), logger,
+	)
+	if err != nil {
+		return cleanup(startupRunError(ctx, err))
+	}
 
 	readiness := NewRuntimeReadiness(database, connection, js, observations)
-	handler, _ := NewHTTPHandler(service, readiness)
-	server := &http.Server{Addr: config.HTTPAddr, Handler: handler}
-	serverErrors := make(chan error, 1)
-	go func() {
-		serverErrors <- server.ListenAndServe()
-	}()
-	go pruneObservationReceipts(ctx, service, logger)
+	handler, _ := NewHTTPHandler(devicesapi.Dependencies{Entities: service, Commands: service}, readiness)
+	server = &http.Server{Addr: config.HTTPAddr, Handler: handler}
+	serverErrors = make(chan error, 1)
+	go func() { serverErrors <- controls.serveHTTP(server) }()
 
+	var primary error
 	select {
 	case err := <-serverErrors:
-		if !errors.Is(err, http.ErrServerClosed) {
-			return fmt.Errorf("serve HTTP: %w", err)
+		serverResultConsumed = true
+		if err != nil && !errors.Is(err, http.ErrServerClosed) {
+			primary = fmt.Errorf("serve HTTP: %w", err)
 		}
-		return nil
 	case <-ctx.Done():
-		shutdownContext, cancel := context.WithTimeout(context.Background(), shutdownTimeout)
-		defer cancel()
-		if err := server.Shutdown(shutdownContext); err != nil {
-			return fmt.Errorf("shutdown HTTP: %w", err)
-		}
-		observations.Drain()
-		select {
-		case <-observations.Closed():
-		case <-shutdownContext.Done():
-			observations.Stop()
-		}
-		if err := registrations.Drain(); err != nil {
-			return err
-		}
-		if err := connection.Drain(); err != nil && !errors.Is(err, natsgo.ErrConnectionClosed) {
-			return fmt.Errorf("drain NATS connection: %w", err)
-		}
+	}
+	return cleanup(primary)
+}
+
+func startupRunError(ctx context.Context, err error) error {
+	if ctx.Err() != nil {
 		return nil
 	}
+	return err
+}
+
+func validateAppControls(controls appControls) error {
+	switch {
+	case controls.beforeRegistrationStart == nil:
+		return errors.New("Registration startup control is required")
+	case controls.beforeObservationStart == nil:
+		return errors.New("Observation startup control is required")
+	case controls.serveHTTP == nil:
+		return errors.New("HTTP serve control is required")
+	case controls.onShutdownStep == nil:
+		return errors.New("shutdown observer is required")
+	default:
+		return nil
+	}
+}
+
+func joinRunErrors(primary error, cleanup ...error) error {
+	errorsToJoin := make([]error, 0, len(cleanup)+1)
+	if primary != nil {
+		errorsToJoin = append(errorsToJoin, primary)
+	}
+	for _, err := range cleanup {
+		if err != nil {
+			errorsToJoin = append(errorsToJoin, err)
+		}
+	}
+	if len(errorsToJoin) == 0 {
+		return nil
+	}
+	return errors.Join(errorsToJoin...)
+}
+
+func closedChannel() <-chan struct{} {
+	closed := make(chan struct{})
+	close(closed)
+	return closed
 }
 
 func connectCoreNATS(ctx context.Context, url string) (*natsgo.Conn, error) {
@@ -139,134 +296,4 @@ func connectCoreNATS(ctx context.Context, url string) (*natsgo.Conn, error) {
 		return nil, fmt.Errorf("connect to NATS: %w", err)
 	}
 	return connection, nil
-}
-
-type natsCommandSender struct {
-	client *platformnats.CommandClient
-}
-
-func (sender *natsCommandSender) Send(
-	ctx context.Context,
-	adapterID string,
-	request devices.CommandRequest,
-) (devices.CommandAcceptance, error) {
-	acceptance, err := sender.client.Send(ctx, adapterID, platformnats.CommandRequest{
-		ID: string(request.ID), CorrelationID: string(request.CorrelationID),
-		EntityID: string(request.EntityID), OperationName: string(request.OperationName),
-		Parameters: append([]byte(nil), request.Parameters...), Deadline: request.Deadline,
-	})
-	if errors.Is(err, platformnats.ErrCommandUnavailable) {
-		return devices.CommandAcceptance{}, fmt.Errorf("%w: %v", devices.ErrAdapterUnavailable, err)
-	}
-	if err != nil {
-		return devices.CommandAcceptance{}, err
-	}
-	return devices.CommandAcceptance{Accepted: acceptance.Accepted}, nil
-}
-
-func registrationHandler(service *devices.Service) platformnats.RegistrationHandler {
-	return func(ctx context.Context, adapterID string, registration platformnats.Registration) (platformnats.RegistrationResponse, error) {
-		domainRegistration := devices.Registration{
-			BindingKey: registration.BindingKey,
-			Device: devices.DeviceDescriptor{
-				ExternalID: copyStringPointer(registration.Device.ExternalID),
-				Name:       registration.Device.Name,
-				Kind:       devices.DeviceKind(registration.Device.Kind),
-			},
-			Entities: make([]devices.EntityDescriptor, len(registration.Entities)),
-		}
-		for index, entity := range registration.Entities {
-			domainRegistration.Entities[index] = devices.EntityDescriptor{
-				Key: entity.Key, ExternalID: entity.ExternalID, Name: entity.Name,
-				TypeID: devices.EntityTypeID(entity.Type), Support: devices.EntitySupport(append(json.RawMessage(nil), entity.Support...)),
-			}
-		}
-		binding, err := service.Register(ctx, adapterID, domainRegistration)
-		var rejected *devices.RegistrationRejectedError
-		if errors.As(err, &rejected) {
-			return platformnats.RegistrationResponse{
-				Status: "rejected",
-				Error:  &platformnats.RegistrationError{Code: string(rejected.Code), Message: rejected.Message},
-			}, nil
-		}
-		if err != nil {
-			return platformnats.RegistrationResponse{}, err
-		}
-		wireBinding := platformnats.Binding{
-			BindingKey: binding.BindingKey, DeviceID: string(binding.DeviceID),
-			Entities: make([]platformnats.EntityBinding, len(binding.Entities)),
-		}
-		for index, entity := range binding.Entities {
-			wireBinding.Entities[index] = platformnats.EntityBinding{Key: entity.Key, EntityID: string(entity.EntityID)}
-		}
-		return platformnats.RegistrationResponse{Status: "accepted", Binding: &wireBinding}, nil
-	}
-}
-
-func observationHandler(service *devices.Service) platformnats.ObservationHandler {
-	return func(ctx context.Context, delivery platformnats.ObservationDelivery) error {
-		observation, err := domainObservation(delivery.Envelope)
-		if err != nil {
-			return err
-		}
-		_, err = service.ProjectObservation(ctx, delivery.Route.AdapterID, observation, delivery.ObservedAt)
-		return err
-	}
-}
-
-func domainObservation(envelope platformnats.Envelope[platformnats.Observation]) (devices.Observation, error) {
-	observationID, err := devices.ParseObservationID(envelope.ID)
-	if err != nil {
-		return devices.Observation{}, err
-	}
-	entityID, err := devices.ParseEntityID(envelope.Data.EntityID)
-	if err != nil {
-		return devices.Observation{}, err
-	}
-	adapterReceivedAt, err := time.Parse(time.RFC3339Nano, envelope.Data.AdapterReceivedAt)
-	if err != nil {
-		return devices.Observation{}, err
-	}
-	observation := devices.Observation{
-		ID: observationID, EntityID: entityID, Value: devices.Value(append(json.RawMessage(nil), envelope.Data.Value...)),
-		AdapterReceivedAt: adapterReceivedAt,
-	}
-	if envelope.Data.SourceUpdatedAt != nil {
-		sourceUpdatedAt, err := time.Parse(time.RFC3339Nano, *envelope.Data.SourceUpdatedAt)
-		if err != nil {
-			return devices.Observation{}, err
-		}
-		observation.SourceUpdatedAt = &sourceUpdatedAt
-	}
-	if envelope.Data.RefreshForCommand != nil {
-		commandID, err := devices.ParseCommandID(*envelope.Data.RefreshForCommand)
-		if err != nil {
-			return devices.Observation{}, err
-		}
-		observation.RefreshForCommand = &commandID
-	}
-	return observation, nil
-}
-
-func pruneObservationReceipts(ctx context.Context, service *devices.Service, logger *slog.Logger) {
-	ticker := time.NewTicker(receiptPruneInterval)
-	defer ticker.Stop()
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		case now := <-ticker.C:
-			if err := service.DeleteExpiredObservationReceipts(ctx, now.UTC()); err != nil {
-				logger.Error("prune observation receipts", "error", err)
-			}
-		}
-	}
-}
-
-func copyStringPointer(value *string) *string {
-	if value == nil {
-		return nil
-	}
-	copy := *value
-	return &copy
 }

@@ -8,74 +8,74 @@ import (
 )
 
 func TestGeneratedBuiltinCatalogConformance(t *testing.T) {
-	catalog, err := NewBuiltinTypeCatalog()
+	catalog, err := newBuiltinTypeCatalog()
 	if err != nil {
 		t.Fatal(err)
 	}
 	t.Run("hearth.brightness/v1/maximum-80-step-5", func(t *testing.T) {
 		entity := Entity{ID: EntityID("generated_brightnessv1"), TypeID: EntityTypeBrightnessV1, Support: EntitySupport("{\n        \"state\": {\"maximum\": 80},\n        \"operations\": {\"set\": {\"step\": 5}}\n      }")}
-		if _, err := catalog.NormalizeSupport(entity.TypeID, entity.Support); err != nil {
+		if _, err := catalog.normalizeSupport(entity.TypeID, entity.Support); err != nil {
 			t.Fatalf("support: %v", err)
 		}
-		if _, err := catalog.NormalizeState(entity, Value("75")); (err == nil) != true {
+		if _, err := catalog.normalizeState(entity, Value("75")); (err == nil) != true {
 			t.Errorf("State example 1 error = %v", err)
 		}
-		if _, err := catalog.NormalizeState(entity, Value("85")); (err == nil) != false {
+		if _, err := catalog.normalizeState(entity, Value("85")); (err == nil) != false {
 			t.Errorf("State example 2 error = %v", err)
 		}
-		if _, err := catalog.NormalizeState(entity, Value("101")); (err == nil) != false {
+		if _, err := catalog.normalizeState(entity, Value("101")); (err == nil) != false {
 			t.Errorf("State example 3 error = %v", err)
 		}
-		if resolved, err := catalog.ResolveCommand(entity, OperationName("set"), CommandParameters("{\"value\": 75}")); (err == nil) != true {
+		if resolved, err := catalog.resolveCommand(entity, OperationName("set"), CommandParameters("{\"value\": 75}")); (err == nil) != true {
 			t.Errorf("set parameter example 1 error = %v", err)
-		} else if err == nil && resolved.Deadline != 10000*time.Millisecond {
-			t.Errorf("set parameter example 1 deadline = %v", resolved.Deadline)
+		} else if err == nil && resolved.deadline != 10000*time.Millisecond {
+			t.Errorf("set parameter example 1 deadline = %v", resolved.deadline)
 		}
-		if resolved, err := catalog.ResolveCommand(entity, OperationName("set"), CommandParameters("{\"value\": 76}")); (err == nil) != false {
+		if resolved, err := catalog.resolveCommand(entity, OperationName("set"), CommandParameters("{\"value\": 76}")); (err == nil) != false {
 			t.Errorf("set parameter example 2 error = %v", err)
-		} else if err == nil && resolved.Deadline != 10000*time.Millisecond {
-			t.Errorf("set parameter example 2 deadline = %v", resolved.Deadline)
+		} else if err == nil && resolved.deadline != 10000*time.Millisecond {
+			t.Errorf("set parameter example 2 deadline = %v", resolved.deadline)
 		}
-		if resolved, err := catalog.ResolveCommand(entity, OperationName("set"), CommandParameters("{\"value\": 85}")); (err == nil) != false {
+		if resolved, err := catalog.resolveCommand(entity, OperationName("set"), CommandParameters("{\"value\": 85}")); (err == nil) != false {
 			t.Errorf("set parameter example 3 error = %v", err)
-		} else if err == nil && resolved.Deadline != 10000*time.Millisecond {
-			t.Errorf("set parameter example 3 deadline = %v", resolved.Deadline)
+		} else if err == nil && resolved.deadline != 10000*time.Millisecond {
+			t.Errorf("set parameter example 3 deadline = %v", resolved.deadline)
 		}
-		if satisfied, err := catalog.Satisfies(entity, CommandRecord{OperationName: OperationName("set"), Parameters: CommandParameters("{\"value\": 75}")}, Value("75")); err != nil || satisfied != true {
+		if satisfied, err := catalog.satisfies(entity, commandRecord{operationName: OperationName("set"), parameters: CommandParameters("{\"value\": 75}")}, Value("75")); err != nil || satisfied != true {
 			t.Errorf("set outcome 1: satisfied = %v, error = %v", satisfied, err)
 		}
-		if satisfied, err := catalog.Satisfies(entity, CommandRecord{OperationName: OperationName("set"), Parameters: CommandParameters("{\"value\": 75}")}, Value("70")); err != nil || satisfied != false {
+		if satisfied, err := catalog.satisfies(entity, commandRecord{operationName: OperationName("set"), parameters: CommandParameters("{\"value\": 75}")}, Value("70")); err != nil || satisfied != false {
 			t.Errorf("set outcome 2: satisfied = %v, error = %v", satisfied, err)
 		}
-		if satisfied, err := catalog.Satisfies(entity, CommandRecord{OperationName: OperationName("set"), Parameters: CommandParameters("{\"value\": 85}")}, Value("85")); err != nil || satisfied != true {
+		if satisfied, err := catalog.satisfies(entity, commandRecord{operationName: OperationName("set"), parameters: CommandParameters("{\"value\": 85}")}, Value("85")); err != nil || satisfied != true {
 			t.Errorf("set outcome 3: satisfied = %v, error = %v", satisfied, err)
 		}
 	})
 	t.Run("hearth.power/v1/boolean-power", func(t *testing.T) {
 		entity := Entity{ID: EntityID("generated_powerv1"), TypeID: EntityTypePowerV1, Support: EntitySupport("{\n        \"state\": {},\n        \"operations\": {\"set\": {}}\n      }")}
-		if _, err := catalog.NormalizeSupport(entity.TypeID, entity.Support); err != nil {
+		if _, err := catalog.normalizeSupport(entity.TypeID, entity.Support); err != nil {
 			t.Fatalf("support: %v", err)
 		}
-		if _, err := catalog.NormalizeState(entity, Value("true")); (err == nil) != true {
+		if _, err := catalog.normalizeState(entity, Value("true")); (err == nil) != true {
 			t.Errorf("State example 1 error = %v", err)
 		}
-		if _, err := catalog.NormalizeState(entity, Value("\"on\"")); (err == nil) != false {
+		if _, err := catalog.normalizeState(entity, Value("\"on\"")); (err == nil) != false {
 			t.Errorf("State example 2 error = %v", err)
 		}
-		if resolved, err := catalog.ResolveCommand(entity, OperationName("set"), CommandParameters("{\"value\": true}")); (err == nil) != true {
+		if resolved, err := catalog.resolveCommand(entity, OperationName("set"), CommandParameters("{\"value\": true}")); (err == nil) != true {
 			t.Errorf("set parameter example 1 error = %v", err)
-		} else if err == nil && resolved.Deadline != 10000*time.Millisecond {
-			t.Errorf("set parameter example 1 deadline = %v", resolved.Deadline)
+		} else if err == nil && resolved.deadline != 10000*time.Millisecond {
+			t.Errorf("set parameter example 1 deadline = %v", resolved.deadline)
 		}
-		if resolved, err := catalog.ResolveCommand(entity, OperationName("set"), CommandParameters("{\"value\": \"on\"}")); (err == nil) != false {
+		if resolved, err := catalog.resolveCommand(entity, OperationName("set"), CommandParameters("{\"value\": \"on\"}")); (err == nil) != false {
 			t.Errorf("set parameter example 2 error = %v", err)
-		} else if err == nil && resolved.Deadline != 10000*time.Millisecond {
-			t.Errorf("set parameter example 2 deadline = %v", resolved.Deadline)
+		} else if err == nil && resolved.deadline != 10000*time.Millisecond {
+			t.Errorf("set parameter example 2 deadline = %v", resolved.deadline)
 		}
-		if satisfied, err := catalog.Satisfies(entity, CommandRecord{OperationName: OperationName("set"), Parameters: CommandParameters("{\"value\": true}")}, Value("true")); err != nil || satisfied != true {
+		if satisfied, err := catalog.satisfies(entity, commandRecord{operationName: OperationName("set"), parameters: CommandParameters("{\"value\": true}")}, Value("true")); err != nil || satisfied != true {
 			t.Errorf("set outcome 1: satisfied = %v, error = %v", satisfied, err)
 		}
-		if satisfied, err := catalog.Satisfies(entity, CommandRecord{OperationName: OperationName("set"), Parameters: CommandParameters("{\"value\": true}")}, Value("false")); err != nil || satisfied != false {
+		if satisfied, err := catalog.satisfies(entity, commandRecord{operationName: OperationName("set"), parameters: CommandParameters("{\"value\": true}")}, Value("false")); err != nil || satisfied != false {
 			t.Errorf("set outcome 2: satisfied = %v, error = %v", satisfied, err)
 		}
 	})

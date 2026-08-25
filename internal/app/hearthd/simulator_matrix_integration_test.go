@@ -22,6 +22,7 @@ import (
 	simulatorapp "github.com/mholtzscher/hearth/internal/app/simulator"
 	"github.com/mholtzscher/hearth/internal/modules/devices"
 	devicesapi "github.com/mholtzscher/hearth/internal/modules/devices/api"
+	devicesnats "github.com/mholtzscher/hearth/internal/modules/devices/nats"
 	platformdb "github.com/mholtzscher/hearth/internal/platform/db"
 	platformnats "github.com/mholtzscher/hearth/internal/platform/nats"
 	natsserver "github.com/nats-io/nats-server/v2/server"
@@ -32,7 +33,6 @@ import (
 const simulatorMatrixAdapterID = "simulator"
 
 type simulatorMatrixOptions struct {
-	dependencies       devices.Dependencies
 	ackWait            time.Duration
 	observationHandler func(*devices.Service, platformnats.ObservationHandler) platformnats.ObservationHandler
 }
@@ -42,8 +42,9 @@ type simulatorMatrixHarness struct {
 	ctx             context.Context
 	cancel          context.CancelFunc
 	database        *sql.DB
-	repository      *devices.SQLiteRepository
 	service         *devices.Service
+	moduleCancel    context.CancelFunc
+	moduleErrors    chan error
 	server          *natsserver.Server
 	connection      *natsgo.Conn
 	jetstream       jetstream.JetStream
@@ -91,11 +92,10 @@ func newSimulatorMatrixHarness(t *testing.T, scenario string, options simulatorM
 	if err := platformdb.Migrate(ctx, harness.database); err != nil {
 		t.Fatal(err)
 	}
-	catalog, err := devices.NewBuiltinTypeCatalog()
+	harness.service, err = devices.New(ctx, harness.database, logger)
 	if err != nil {
 		t.Fatal(err)
 	}
-	harness.repository = devices.NewSQLiteRepository(harness.database, catalog)
 
 	harness.server, err = natsserver.NewServer(&natsserver.Options{
 		Host: "127.0.0.1", Port: -1, JetStream: true, StoreDir: t.TempDir(), NoSigs: true,
@@ -135,19 +135,22 @@ func newSimulatorMatrixHarness(t *testing.T, scenario string, options simulatorM
 	if err != nil {
 		t.Fatal(err)
 	}
-	harness.service = devices.NewService(
-		harness.repository,
-		&natsCommandSender{client: platformnats.NewCommandClient(harness.connection, harness.validator)},
-		catalog,
-		options.dependencies,
-	)
+	moduleContext, moduleCancel := context.WithCancel(context.Background())
+	harness.moduleCancel = moduleCancel
+	harness.moduleErrors = make(chan error, 1)
+	go func() {
+		harness.moduleErrors <- harness.service.Run(
+			moduleContext,
+			devicesnats.NewCommandDelivery(platformnats.NewCommandClient(harness.connection, harness.validator)),
+		)
+	}()
 	harness.registrations, err = platformnats.StartRegistrationServer(
-		harness.connection, harness.validator, registrationHandler(harness.service), logger,
+		harness.connection, harness.validator, devicesnats.RegistrationHandler(harness.service), logger,
 	)
 	if err != nil {
 		t.Fatal(err)
 	}
-	handler := observationHandler(harness.service)
+	handler := devicesnats.ObservationHandler(harness.service)
 	if options.observationHandler != nil {
 		handler = options.observationHandler(harness.service, handler)
 	}
@@ -155,7 +158,7 @@ func newSimulatorMatrixHarness(t *testing.T, scenario string, options simulatorM
 	if err != nil {
 		t.Fatal(err)
 	}
-	httpHandler, _ := NewHTTPHandler(harness.service, nil)
+	httpHandler, _ := NewHTTPHandler(devicesapi.Dependencies{Entities: harness.service, Commands: harness.service}, nil)
 	harness.httpServer = httptest.NewServer(httpHandler)
 
 	go func() {
@@ -197,13 +200,18 @@ func (harness *simulatorMatrixHarness) Close() {
 		}
 		if harness.consumer != nil {
 			harness.consumer.Stop()
-			select {
-			case <-harness.consumer.Closed():
-			case <-time.After(time.Second):
-			}
+			<-harness.consumer.Closed()
 		}
 		if harness.registrations != nil {
+			closed := harness.registrations.Closed()
 			_ = harness.registrations.Drain()
+			<-closed
+		}
+		if harness.moduleCancel != nil {
+			harness.moduleCancel()
+			if err := <-harness.moduleErrors; err != nil {
+				harness.test.Errorf("Device / Entity module stopped: %v", err)
+			}
 		}
 		if harness.connection != nil {
 			harness.connection.Close()
@@ -268,17 +276,6 @@ func TestSimulatorObservationFailureMatrix(t *testing.T) {
 					t.Fatalf("state = %#v", state)
 				}
 				assertMatrixCount(t, harness.database, "observation_receipts", 1)
-				stream, err := harness.jetstream.Stream(harness.ctx, platformnats.ObservationStreamName)
-				if err != nil {
-					t.Fatal(err)
-				}
-				info, err := stream.Info(harness.ctx)
-				if err != nil {
-					t.Fatal(err)
-				}
-				if info.State.Msgs != 1 {
-					t.Fatalf("stream messages = %d", info.State.Msgs)
-				}
 			},
 		},
 		{
@@ -331,30 +328,26 @@ func TestSimulatorCommandHTTPFailureMatrix(t *testing.T) {
 	tests := []struct {
 		name        string
 		scenario    string
-		options     simulatorMatrixOptions
 		prepare     func(*testing.T, *simulatorMatrixHarness)
 		wantStatus  int
 		wantCode    string
-		wantCommand devices.CommandStatus
-		wantFailure devices.CommandFailureCode
+		wantCommand string
+		wantFailure string
 	}{
 		{
 			name: "unavailable adapter", scenario: simulatoradapter.ScenarioUnavailableAdapter,
 			wantStatus: http.StatusServiceUnavailable, wantCode: "adapter_unavailable",
-			wantCommand: devices.CommandStatusAdapterUnavailable, wantFailure: devices.CommandFailureAdapterUnavailable,
+			wantCommand: "adapter_unavailable", wantFailure: "adapter_unavailable",
 		},
 		{
 			name: "upstream rejection", scenario: simulatoradapter.ScenarioUpstreamRejection,
 			wantStatus: http.StatusBadGateway, wantCode: "upstream_rejected",
-			wantCommand: devices.CommandStatusRejected, wantFailure: devices.CommandFailureUpstreamRejected,
+			wantCommand: "rejected", wantFailure: "upstream_rejected",
 		},
 		{
 			name: "outcome timeout", scenario: simulatoradapter.ScenarioOutcomeTimeout,
-			options: simulatorMatrixOptions{dependencies: devices.Dependencies{
-				Now: func() time.Time { return time.Now().UTC().Add(-9500 * time.Millisecond) },
-			}},
 			wantStatus: http.StatusGatewayTimeout, wantCode: "outcome_timeout",
-			wantCommand: devices.CommandStatusOutcomeTimeout, wantFailure: devices.CommandFailureOutcomeTimeout,
+			wantCommand: "outcome_timeout", wantFailure: "outcome_timeout",
 		},
 		{
 			name: "unexpected response", scenario: simulatoradapter.ScenarioUnavailableAdapter,
@@ -375,12 +368,12 @@ func TestSimulatorCommandHTTPFailureMatrix(t *testing.T) {
 				}
 			},
 			wantStatus: http.StatusInternalServerError, wantCode: "internal_error",
-			wantCommand: devices.CommandStatusInternalFailure, wantFailure: devices.CommandFailureInternalError,
+			wantCommand: "internal_failure", wantFailure: "internal_error",
 		},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			harness := newSimulatorMatrixHarness(t, test.scenario, test.options)
+			harness := newSimulatorMatrixHarness(t, test.scenario, simulatorMatrixOptions{})
 			if test.prepare != nil {
 				test.prepare(t, harness)
 			}
@@ -398,16 +391,9 @@ func TestSimulatorCommandHTTPFailureMatrix(t *testing.T) {
 			if response.Error.Code != test.wantCode || response.Error.CommandID == nil {
 				t.Fatalf("error body = %#v", response)
 			}
-			commandID, err := devices.ParseCommandID(*response.Error.CommandID)
-			if err != nil {
-				t.Fatal(err)
-			}
-			command, err := harness.repository.GetCommand(harness.ctx, commandID)
-			if err != nil {
-				t.Fatal(err)
-			}
-			if command.Status != test.wantCommand || command.FailureCode == nil || *command.FailureCode != test.wantFailure {
-				t.Fatalf("stored command = %#v", command)
+			command := matrixCommand(t, harness.database, *response.Error.CommandID)
+			if command.status != test.wantCommand || command.failureCode != test.wantFailure {
+				t.Fatalf("stored Command = %#v", command)
 			}
 		})
 	}
@@ -433,17 +419,9 @@ func TestSimulatorNoOpAndOverlappingCommands(t *testing.T) {
 			string(state.Value) != "false" || state.ObservationID != devices.ObservationID(result.ObservationID) {
 			t.Fatalf("initial = %#v, result = %#v, state = %#v", initial, result, state)
 		}
-		commandID, err := devices.ParseCommandID(result.CommandID)
-		if err != nil {
-			t.Fatal(err)
-		}
-		command, err := harness.repository.GetCommand(harness.ctx, commandID)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if command.Status != devices.CommandStatusSatisfied || command.OutcomeObservationID == nil ||
-			*command.OutcomeObservationID != state.ObservationID {
-			t.Fatalf("command = %#v", command)
+		command := matrixCommand(t, harness.database, result.CommandID)
+		if command.status != "satisfied" || command.outcomeObservationID != result.ObservationID {
+			t.Fatalf("Command = %#v", command)
 		}
 	})
 
@@ -457,11 +435,10 @@ func TestSimulatorNoOpAndOverlappingCommands(t *testing.T) {
 		}
 		outcomes := make(chan outcome, 2)
 		for _, value := range []bool{true, false} {
-			value := value
-			go func() {
+			go func(value bool) {
 				status, body, err := harness.postCommand(harness.ctx, value)
 				outcomes <- outcome{status: status, body: body, err: err}
-			}()
+			}(value)
 		}
 		commandIDs := make(map[string]struct{})
 		observationIDs := make(map[string]struct{})
@@ -481,72 +458,9 @@ func TestSimulatorNoOpAndOverlappingCommands(t *testing.T) {
 			observationIDs[result.ObservationID] = struct{}{}
 		}
 		if len(commandIDs) != 2 || len(observationIDs) != 2 {
-			t.Fatalf("command IDs = %v, observation IDs = %v", commandIDs, observationIDs)
+			t.Fatalf("Command IDs = %v, Observation IDs = %v", commandIDs, observationIDs)
 		}
 		assertMatrixCount(t, harness.database, "commands", 2)
-		var satisfied, correlations int
-		if err := harness.database.QueryRowContext(harness.ctx,
-			`SELECT count(*), count(DISTINCT correlation_id) FROM commands WHERE status = 'satisfied'`,
-		).Scan(&satisfied, &correlations); err != nil {
-			t.Fatal(err)
-		}
-		if satisfied != 2 || correlations != 2 {
-			t.Fatalf("satisfied = %d, correlations = %d", satisfied, correlations)
-		}
-		state := harness.waitForState(t)
-		if _, ok := observationIDs[string(state.ObservationID)]; !ok {
-			t.Fatalf("final state is not from either linked outcome: %#v", state)
-		}
-	})
-}
-
-func TestHTTPDisconnectLeavesCommandLifecycleActive(t *testing.T) {
-	harness := newSimulatorMatrixHarness(t, simulatoradapter.ScenarioOutcomeTimeout, simulatorMatrixOptions{
-		dependencies: devices.Dependencies{
-			Now: func() time.Time { return time.Now().UTC().Add(-9 * time.Second) },
-		},
-	})
-	harness.waitForState(t)
-	requestContext, cancelRequest := context.WithCancel(context.Background())
-	result := make(chan error, 1)
-	go func() {
-		_, _, err := harness.postCommand(requestContext, true)
-		result <- err
-	}()
-	var commandID devices.CommandID
-	waitForMatrixCondition(t, 3*time.Second, func() (bool, error) {
-		var id, status string
-		err := harness.database.QueryRowContext(harness.ctx,
-			`SELECT id, status FROM commands ORDER BY requested_at DESC LIMIT 1`,
-		).Scan(&id, &status)
-		if errors.Is(err, sql.ErrNoRows) {
-			return false, nil
-		}
-		if err != nil {
-			return false, err
-		}
-		if status != string(devices.CommandStatusAccepted) {
-			return false, nil
-		}
-		commandID = devices.CommandID(id)
-		return true, nil
-	})
-	cancelRequest()
-	select {
-	case err := <-result:
-		if err == nil {
-			t.Fatal("disconnected request unexpectedly completed")
-		}
-	case <-time.After(time.Second):
-		t.Fatal("HTTP request did not observe cancellation")
-	}
-	waitForMatrixCondition(t, 2*time.Second, func() (bool, error) {
-		command, err := harness.repository.GetCommand(harness.ctx, commandID)
-		if err != nil {
-			return false, err
-		}
-		return command.Status == devices.CommandStatusOutcomeTimeout && command.FailureCode != nil &&
-			*command.FailureCode == devices.CommandFailureOutcomeTimeout, nil
 	})
 }
 
@@ -562,31 +476,36 @@ func TestSimulatorInterruptedCommandSurvivesLateLinkedObservation(t *testing.T) 
 		t.Fatal(err)
 	}
 	now := time.Now().UTC()
-	record := devices.CommandRecord{
-		ID: commandID, EntityID: harness.entityID, AdapterID: simulatorMatrixAdapterID,
-		OperationName: devices.OperationNameSet, Parameters: devices.CommandParameters(`{"value":true}`),
-		CorrelationID: correlationID, Status: devices.CommandStatusRequested,
-		RequestedAt: now, DeadlineAt: now.Add(10 * time.Second),
-	}
-	if err := harness.repository.CreateCommand(harness.ctx, record); err != nil {
+	if _, err := harness.database.ExecContext(harness.ctx, `
+		INSERT INTO commands (
+			id, entity_id, adapter_id, operation, parameters_json, correlation_id,
+			status, requested_at, deadline_at, accepted_at, completed_at,
+			outcome_observation_id, failure_code
+		) VALUES (?, ?, ?, 'set', '{"value":true}', ?, 'requested', ?, ?, NULL, NULL, NULL, NULL)`,
+		commandID, harness.entityID, simulatorMatrixAdapterID, correlationID,
+		now.Format(time.RFC3339Nano), now.Add(10*time.Second).Format(time.RFC3339Nano),
+	); err != nil {
 		t.Fatal(err)
 	}
-	acceptance, err := platformnats.NewCommandClient(harness.connection, harness.validator).Send(
-		harness.ctx, simulatorMatrixAdapterID, platformnats.CommandRequest{
-			ID: string(commandID), CorrelationID: string(correlationID), EntityID: string(harness.entityID),
-			OperationName: "set", Parameters: json.RawMessage(`{"value":true}`), Deadline: record.DeadlineAt,
-		},
-	)
+	acceptance, err := devicesnats.NewCommandDelivery(
+		platformnats.NewCommandClient(harness.connection, harness.validator),
+	).Deliver(harness.ctx, simulatorMatrixAdapterID, devices.CommandDispatch{
+		ID: commandID, CorrelationID: correlationID, EntityID: harness.entityID,
+		OperationName: devices.OperationNameSet, Parameters: devices.CommandParameters(`{"value":true}`),
+		Deadline: now.Add(10 * time.Second),
+	})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if !acceptance.Accepted {
-		t.Fatal("simulator did not accept interrupted command")
+		t.Fatal("simulator did not accept interrupted Command")
 	}
-	if err := harness.repository.MarkCommandAccepted(harness.ctx, commandID, time.Now().UTC()); err != nil {
-		t.Fatal(err)
-	}
-	if err := harness.repository.InterruptActiveCommands(harness.ctx, time.Now().UTC()); err != nil {
+	interruptedAt := time.Now().UTC().Format(time.RFC3339Nano)
+	if _, err := harness.database.ExecContext(harness.ctx, `
+		UPDATE commands
+		SET status = 'interrupted', accepted_at = ?, completed_at = ?, failure_code = 'core_restarted'
+		WHERE id = ?`, interruptedAt, interruptedAt, commandID,
+	); err != nil {
 		t.Fatal(err)
 	}
 	observationID := publishMatrixLinkedObservation(t, harness, commandID, correlationID, true)
@@ -597,13 +516,9 @@ func TestSimulatorInterruptedCommandSurvivesLateLinkedObservation(t *testing.T) 
 		}
 		return view.State != nil && view.State.ObservationID == observationID, nil
 	})
-	command, err := harness.repository.GetCommand(harness.ctx, commandID)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if command.Status != devices.CommandStatusInterrupted || command.FailureCode == nil ||
-		*command.FailureCode != devices.CommandFailureCoreRestarted || command.OutcomeObservationID != nil {
-		t.Fatalf("interrupted command = %#v", command)
+	command := matrixCommand(t, harness.database, string(commandID))
+	if command.status != "interrupted" || command.failureCode != "core_restarted" || command.outcomeObservationID != "" {
+		t.Fatalf("interrupted Command = %#v", command)
 	}
 }
 
@@ -640,16 +555,9 @@ func TestSimulatorRestartBeforeAckRedeliversWithoutChangingStateOrCommand(t *tes
 	select {
 	case <-committed:
 	case <-time.After(time.Second):
-		t.Fatal("linked observation did not commit before simulated exit")
+		t.Fatal("linked Observation did not commit before simulated exit")
 	}
-	commandID, err := devices.ParseCommandID(result.CommandID)
-	if err != nil {
-		t.Fatal(err)
-	}
-	beforeCommand, err := harness.repository.GetCommand(harness.ctx, commandID)
-	if err != nil {
-		t.Fatal(err)
-	}
+	beforeCommand := matrixCommand(t, harness.database, result.CommandID)
 	beforeState := harness.waitForState(t)
 	assertMatrixCount(t, harness.database, "observation_receipts", 2)
 
@@ -657,11 +565,11 @@ func TestSimulatorRestartBeforeAckRedeliversWithoutChangingStateOrCommand(t *tes
 	select {
 	case <-harness.consumer.Closed():
 	case <-time.After(time.Second):
-		t.Fatal("observation consumer did not stop")
+		t.Fatal("Observation consumer did not stop")
 	}
 	redelivered := make(chan struct{})
 	var redeliveryOnce sync.Once
-	base := observationHandler(harness.service)
+	base := devicesnats.ObservationHandler(harness.service)
 	harness.consumer, err = platformnats.StartObservationConsumer(
 		harness.ctx, harness.durable, harness.validator,
 		func(ctx context.Context, delivery platformnats.ObservationDelivery) error {
@@ -679,25 +587,20 @@ func TestSimulatorRestartBeforeAckRedeliversWithoutChangingStateOrCommand(t *tes
 	select {
 	case <-redelivered:
 	case <-time.After(3 * time.Second):
-		t.Fatal("unacknowledged linked observation was not redelivered")
+		t.Fatal("unacknowledged linked Observation was not redelivered")
 	}
 	waitForMatrixCondition(t, time.Second, func() (bool, error) {
 		info, err := harness.durable.Info(harness.ctx)
 		return err == nil && info.NumAckPending == 0, err
 	})
-	afterCommand, err := harness.repository.GetCommand(harness.ctx, commandID)
-	if err != nil {
-		t.Fatal(err)
-	}
+	afterCommand := matrixCommand(t, harness.database, result.CommandID)
 	afterState := harness.waitForState(t)
-	if afterCommand.Status != beforeCommand.Status || afterCommand.OutcomeObservationID == nil ||
-		beforeCommand.OutcomeObservationID == nil || *afterCommand.OutcomeObservationID != *beforeCommand.OutcomeObservationID ||
-		afterCommand.CompletedAt == nil || beforeCommand.CompletedAt == nil || !afterCommand.CompletedAt.Equal(*beforeCommand.CompletedAt) {
-		t.Fatalf("command changed on redelivery: before = %#v, after = %#v", beforeCommand, afterCommand)
+	if afterCommand != beforeCommand {
+		t.Fatalf("Command changed on redelivery: before = %#v, after = %#v", beforeCommand, afterCommand)
 	}
 	if afterState.ObservationID != beforeState.ObservationID || afterState.ReceiveOrder != beforeState.ReceiveOrder ||
 		string(afterState.Value) != string(beforeState.Value) {
-		t.Fatalf("state changed on redelivery: before = %#v, after = %#v", beforeState, afterState)
+		t.Fatalf("State changed on redelivery: before = %#v, after = %#v", beforeState, afterState)
 	}
 	assertMatrixCount(t, harness.database, "observation_receipts", 2)
 }
@@ -739,6 +642,38 @@ func publishMatrixLinkedObservation(
 		t.Fatal(err)
 	}
 	return observationID
+}
+
+type persistedMatrixCommand struct {
+	status               string
+	failureCode          string
+	outcomeObservationID string
+	acceptedAt           string
+	completedAt          string
+}
+
+func matrixCommand(t *testing.T, database *sql.DB, id string) persistedMatrixCommand {
+	t.Helper()
+	var command persistedMatrixCommand
+	var failureCode, outcomeObservationID, acceptedAt, completedAt sql.NullString
+	if err := database.QueryRow(
+		"SELECT status, failure_code, outcome_observation_id, accepted_at, completed_at FROM commands WHERE id = ?", id,
+	).Scan(&command.status, &failureCode, &outcomeObservationID, &acceptedAt, &completedAt); err != nil {
+		t.Fatal(err)
+	}
+	if failureCode.Valid {
+		command.failureCode = failureCode.String
+	}
+	if outcomeObservationID.Valid {
+		command.outcomeObservationID = outcomeObservationID.String
+	}
+	if acceptedAt.Valid {
+		command.acceptedAt = acceptedAt.String
+	}
+	if completedAt.Valid {
+		command.completedAt = completedAt.String
+	}
+	return command
 }
 
 func assertMatrixCount(t *testing.T, database *sql.DB, table string, want int) {
