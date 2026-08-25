@@ -1,4 +1,4 @@
-package nats
+package natswire
 
 import "testing"
 
@@ -43,6 +43,10 @@ func TestSubjectsRoundTrip(t *testing.T) {
 	}
 	if commandRoute.AdapterID != "simulator" || commandRoute.EntityID != testEntityID || commandRoute.OperationName != "set" {
 		t.Fatalf("command route = %#v", commandRoute)
+	}
+	wildcard, err := CommandWildcard("simulator")
+	if err != nil || wildcard != "hearth.v1.adapter.simulator.command.*.*" {
+		t.Fatalf("command wildcard = %q, err = %v", wildcard, err)
 	}
 }
 

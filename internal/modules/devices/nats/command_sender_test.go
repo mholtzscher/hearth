@@ -2,12 +2,12 @@ package nats
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"testing"
 	"time"
 
 	contractsv1 "github.com/mholtzscher/hearth/contracts/v1"
+	"github.com/mholtzscher/hearth/internal/modules/devices"
 	"github.com/mholtzscher/hearth/sdk/adapter"
 )
 
@@ -16,7 +16,7 @@ const (
 	commandClientCorrelationID = "cor_01890f47-7a6b-7c4d-8e9f-0123456789ab"
 )
 
-func TestCommandClientDispatchesValidatedCorrelatedRequests(t *testing.T) {
+func TestCommandSenderDispatchesValidatedCorrelatedRequests(t *testing.T) {
 	server, connection, _ := startJetStream(t)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -42,23 +42,24 @@ func TestCommandClientDispatchesValidatedCorrelatedRequests(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	client := NewCommandClient(connection, validator)
-	request := CommandRequest{
-		ID: commandClientCommandID, CorrelationID: commandClientCorrelationID,
-		EntityID: testEntityID, OperationName: "set", Parameters: json.RawMessage(`{"value":true}`),
-		Deadline: time.Now().Add(time.Second),
+	sender := NewCommandSender(connection, validator)
+	request := devices.CommandRequest{
+		ID: devices.CommandID(commandClientCommandID), CorrelationID: devices.CorrelationID(commandClientCorrelationID),
+		EntityID: devices.EntityID(testEntityID), OperationName: devices.OperationNameSet,
+		Parameters: devices.CommandParameters(`{"value":true}`), Deadline: time.Now().Add(time.Second),
 	}
-	acceptance, err := client.Send(ctx, "simulator", request)
+	acceptance, err := sender.Send(ctx, "simulator", request)
 	if err != nil || !acceptance.Accepted {
 		t.Fatalf("accepted response = %#v, %v", acceptance, err)
 	}
 	command := <-served
-	if command.ID != request.ID || command.CorrelationID != request.CorrelationID || command.EntityID != request.EntityID || command.OperationName != request.OperationName {
+	if command.ID != string(request.ID) || command.CorrelationID != string(request.CorrelationID) ||
+		command.EntityID != string(request.EntityID) || command.OperationName != string(request.OperationName) {
 		t.Fatalf("received command = %#v", command)
 	}
 
-	request.Parameters = json.RawMessage(`{"value":false}`)
-	acceptance, err = client.Send(ctx, "simulator", request)
+	request.Parameters = devices.CommandParameters(`{"value":false}`)
+	acceptance, err = sender.Send(ctx, "simulator", request)
 	if err != nil || acceptance.Accepted {
 		t.Fatalf("rejected response = %#v, %v", acceptance, err)
 	}
@@ -73,21 +74,21 @@ func TestCommandClientDispatchesValidatedCorrelatedRequests(t *testing.T) {
 	}
 }
 
-func TestCommandClientClassifiesMissingAdapterAsUnavailable(t *testing.T) {
+func TestCommandSenderClassifiesMissingAdapterAsUnavailable(t *testing.T) {
 	_, connection, _ := startJetStream(t)
 	validator, err := contractsv1.Compile()
 	if err != nil {
 		t.Fatal(err)
 	}
-	client := NewCommandClient(connection, validator)
+	sender := NewCommandSender(connection, validator)
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
-	_, err = client.Send(ctx, "missing-adapter", CommandRequest{
-		ID: commandClientCommandID, CorrelationID: commandClientCorrelationID,
-		EntityID: testEntityID, OperationName: "set", Parameters: json.RawMessage(`{"value":true}`),
-		Deadline: time.Now().Add(time.Second),
+	_, err = sender.Send(ctx, "missing-adapter", devices.CommandRequest{
+		ID: devices.CommandID(commandClientCommandID), CorrelationID: devices.CorrelationID(commandClientCorrelationID),
+		EntityID: devices.EntityID(testEntityID), OperationName: devices.OperationNameSet,
+		Parameters: devices.CommandParameters(`{"value":true}`), Deadline: time.Now().Add(time.Second),
 	})
-	if !errors.Is(err, ErrCommandUnavailable) {
+	if !errors.Is(err, devices.ErrAdapterUnavailable) {
 		t.Fatalf("error = %v", err)
 	}
 }

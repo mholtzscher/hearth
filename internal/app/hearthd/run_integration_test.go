@@ -13,8 +13,8 @@ import (
 	contractsv1 "github.com/mholtzscher/hearth/contracts/v1"
 	contractpowerv1 "github.com/mholtzscher/hearth/entitytypes/powerv1"
 	"github.com/mholtzscher/hearth/internal/modules/devices"
+	devicesnats "github.com/mholtzscher/hearth/internal/modules/devices/nats"
 	platformdb "github.com/mholtzscher/hearth/internal/platform/db"
-	platformnats "github.com/mholtzscher/hearth/internal/platform/nats"
 	"github.com/mholtzscher/hearth/sdk/adapter"
 	sdkpowerv1 "github.com/mholtzscher/hearth/sdk/adapter/powerv1"
 	natsserver "github.com/nats-io/nats-server/v2/server"
@@ -65,7 +65,7 @@ func TestCoreNATSTransportRegistersAndProjectsDurableObservation(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	durable, err := platformnats.ProvisionObservationResources(ctx, js)
+	durable, err := devicesnats.ProvisionObservationResources(ctx, js)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -73,12 +73,12 @@ func TestCoreNATSTransportRegistersAndProjectsDurableObservation(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	registrations, err := platformnats.StartRegistrationServer(coreConnection, validator, registrationHandler(service), logger)
+	registrations, err := devicesnats.StartRegistrationServer(coreConnection, validator, service, logger)
 	if err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = registrations.Drain() })
-	observations, err := platformnats.StartObservationConsumer(ctx, durable, validator, observationHandler(service), logger)
+	observations, err := devicesnats.StartObservationConsumer(ctx, durable, validator, service, logger)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -236,7 +236,7 @@ func TestCoreCommandRoundTripRequiresLinkedSimulatorObservation(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	durable, err := platformnats.ProvisionObservationResources(ctx, js)
+	durable, err := devicesnats.ProvisionObservationResources(ctx, js)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -246,16 +246,16 @@ func TestCoreCommandRoundTripRequiresLinkedSimulatorObservation(t *testing.T) {
 	}
 	service := devices.NewService(
 		repository,
-		&natsCommandSender{client: platformnats.NewCommandClient(coreConnection, validator)},
+		devicesnats.NewCommandSender(coreConnection, validator),
 		catalog,
 		devices.Dependencies{},
 	)
-	registrations, err := platformnats.StartRegistrationServer(coreConnection, validator, registrationHandler(service), logger)
+	registrations, err := devicesnats.StartRegistrationServer(coreConnection, validator, service, logger)
 	if err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = registrations.Drain() })
-	observations, err := platformnats.StartObservationConsumer(ctx, durable, validator, observationHandler(service), logger)
+	observations, err := devicesnats.StartObservationConsumer(ctx, durable, validator, service, logger)
 	if err != nil {
 		t.Fatal(err)
 	}

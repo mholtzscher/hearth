@@ -9,8 +9,9 @@ import (
 	"time"
 
 	contractsv1 "github.com/mholtzscher/hearth/contracts/v1"
+	"github.com/mholtzscher/hearth/internal/modules/devices"
+	devicesnats "github.com/mholtzscher/hearth/internal/modules/devices/nats"
 	platformdb "github.com/mholtzscher/hearth/internal/platform/db"
-	platformnats "github.com/mholtzscher/hearth/internal/platform/nats"
 	natsserver "github.com/nats-io/nats-server/v2/server"
 	natsgo "github.com/nats-io/nats.go"
 	"github.com/nats-io/nats.go/jetstream"
@@ -41,7 +42,7 @@ func TestRuntimeReadinessChecksEveryRequiredDependency(t *testing.T) {
 	})
 	t.Run("resources mismatched", func(t *testing.T) {
 		fixture := newReadinessFixture(t)
-		stream, err := fixture.jetstream.Stream(context.Background(), platformnats.ObservationStreamName)
+		stream, err := fixture.jetstream.Stream(context.Background(), devicesnats.ObservationStreamName)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -72,11 +73,22 @@ func TestRuntimeReadinessChecksEveryRequiredDependency(t *testing.T) {
 	})
 }
 
+type discardObservationProjector struct{}
+
+func (discardObservationProjector) ProjectObservation(
+	context.Context,
+	string,
+	devices.Observation,
+	time.Time,
+) (devices.ProjectionResult, error) {
+	return devices.ProjectionResult{}, nil
+}
+
 type readinessFixture struct {
 	database   interface{ Close() error }
 	connection *natsgo.Conn
 	jetstream  jetstream.JetStream
-	consumer   *platformnats.ObservationConsumer
+	consumer   *devicesnats.ObservationConsumer
 	readiness  *RuntimeReadiness
 }
 
@@ -111,7 +123,7 @@ func newReadinessFixture(t *testing.T) readinessFixture {
 	if err != nil {
 		t.Fatal(err)
 	}
-	durable, err := platformnats.ProvisionObservationResources(ctx, js)
+	durable, err := devicesnats.ProvisionObservationResources(ctx, js)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -119,9 +131,9 @@ func newReadinessFixture(t *testing.T) readinessFixture {
 	if err != nil {
 		t.Fatal(err)
 	}
-	consumer, err := platformnats.StartObservationConsumer(ctx, durable, validator, func(context.Context, platformnats.ObservationDelivery) error {
-		return nil
-	}, slog.New(slog.NewJSONHandler(io.Discard, nil)))
+	consumer, err := devicesnats.StartObservationConsumer(
+		ctx, durable, validator, discardObservationProjector{}, slog.New(slog.NewJSONHandler(io.Discard, nil)),
+	)
 	if err != nil {
 		t.Fatal(err)
 	}

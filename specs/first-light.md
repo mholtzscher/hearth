@@ -318,7 +318,7 @@ Canonical schema files and IDs are:
 
 ### Registration payloads
 
-Owner: local wire DTOs in `sdk/adapter/types.go` and `internal/platform/nats/wire.go`.
+Owner: local wire DTOs in `sdk/adapter/types.go` and `internal/modules/devices/nats/wire.go`; shared envelope, codec, subject, route, and trace mechanics in `internal/contracts/v1/natswire`.
 
 ```go
 type Registration struct {

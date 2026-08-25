@@ -2,7 +2,6 @@ package hearthd
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -11,8 +10,8 @@ import (
 
 	contractsv1 "github.com/mholtzscher/hearth/contracts/v1"
 	"github.com/mholtzscher/hearth/internal/modules/devices"
+	devicesnats "github.com/mholtzscher/hearth/internal/modules/devices/nats"
 	platformdb "github.com/mholtzscher/hearth/internal/platform/db"
-	platformnats "github.com/mholtzscher/hearth/internal/platform/nats"
 	natsgo "github.com/nats-io/nats.go"
 	"github.com/nats-io/nats.go/jetstream"
 )
@@ -59,7 +58,7 @@ func Run(ctx context.Context, config Config, logger *slog.Logger) error {
 	if err != nil {
 		return fmt.Errorf("create JetStream client: %w", err)
 	}
-	durable, err := platformnats.ProvisionObservationResources(ctx, js)
+	durable, err := devicesnats.ProvisionObservationResources(ctx, js)
 	if err != nil {
 		return err
 	}
@@ -67,15 +66,15 @@ func Run(ctx context.Context, config Config, logger *slog.Logger) error {
 	if err != nil {
 		return fmt.Errorf("compile wire schemas: %w", err)
 	}
-	commandClient := platformnats.NewCommandClient(connection, validator)
-	service := devices.NewService(repository, &natsCommandSender{client: commandClient}, catalog, devices.Dependencies{})
+	commandSender := devicesnats.NewCommandSender(connection, validator)
+	service := devices.NewService(repository, commandSender, catalog, devices.Dependencies{})
 
-	registrations, err := platformnats.StartRegistrationServer(connection, validator, registrationHandler(service), logger)
+	registrations, err := devicesnats.StartRegistrationServer(connection, validator, service, logger)
 	if err != nil {
 		return err
 	}
 	defer registrations.Drain()
-	observations, err := platformnats.StartObservationConsumer(ctx, durable, validator, observationHandler(service), logger)
+	observations, err := devicesnats.StartObservationConsumer(ctx, durable, validator, service, logger)
 	if err != nil {
 		return err
 	}
@@ -141,113 +140,6 @@ func connectCoreNATS(ctx context.Context, url string) (*natsgo.Conn, error) {
 	return connection, nil
 }
 
-type natsCommandSender struct {
-	client *platformnats.CommandClient
-}
-
-func (sender *natsCommandSender) Send(
-	ctx context.Context,
-	adapterID string,
-	request devices.CommandRequest,
-) (devices.CommandAcceptance, error) {
-	acceptance, err := sender.client.Send(ctx, adapterID, platformnats.CommandRequest{
-		ID: string(request.ID), CorrelationID: string(request.CorrelationID),
-		EntityID: string(request.EntityID), OperationName: string(request.OperationName),
-		Parameters: append([]byte(nil), request.Parameters...), Deadline: request.Deadline,
-	})
-	if errors.Is(err, platformnats.ErrCommandUnavailable) {
-		return devices.CommandAcceptance{}, fmt.Errorf("%w: %v", devices.ErrAdapterUnavailable, err)
-	}
-	if err != nil {
-		return devices.CommandAcceptance{}, err
-	}
-	return devices.CommandAcceptance{Accepted: acceptance.Accepted}, nil
-}
-
-func registrationHandler(service *devices.Service) platformnats.RegistrationHandler {
-	return func(ctx context.Context, adapterID string, registration platformnats.Registration) (platformnats.RegistrationResponse, error) {
-		domainRegistration := devices.Registration{
-			BindingKey: registration.BindingKey,
-			Device: devices.DeviceDescriptor{
-				ExternalID: copyStringPointer(registration.Device.ExternalID),
-				Name:       registration.Device.Name,
-				Kind:       devices.DeviceKind(registration.Device.Kind),
-			},
-			Entities: make([]devices.EntityDescriptor, len(registration.Entities)),
-		}
-		for index, entity := range registration.Entities {
-			domainRegistration.Entities[index] = devices.EntityDescriptor{
-				Key: entity.Key, ExternalID: entity.ExternalID, Name: entity.Name,
-				TypeID: devices.EntityTypeID(entity.Type), Support: devices.EntitySupport(append(json.RawMessage(nil), entity.Support...)),
-			}
-		}
-		binding, err := service.Register(ctx, adapterID, domainRegistration)
-		var rejected *devices.RegistrationRejectedError
-		if errors.As(err, &rejected) {
-			return platformnats.RegistrationResponse{
-				Status: "rejected",
-				Error:  &platformnats.RegistrationError{Code: string(rejected.Code), Message: rejected.Message},
-			}, nil
-		}
-		if err != nil {
-			return platformnats.RegistrationResponse{}, err
-		}
-		wireBinding := platformnats.Binding{
-			BindingKey: binding.BindingKey, DeviceID: string(binding.DeviceID),
-			Entities: make([]platformnats.EntityBinding, len(binding.Entities)),
-		}
-		for index, entity := range binding.Entities {
-			wireBinding.Entities[index] = platformnats.EntityBinding{Key: entity.Key, EntityID: string(entity.EntityID)}
-		}
-		return platformnats.RegistrationResponse{Status: "accepted", Binding: &wireBinding}, nil
-	}
-}
-
-func observationHandler(service *devices.Service) platformnats.ObservationHandler {
-	return func(ctx context.Context, delivery platformnats.ObservationDelivery) error {
-		observation, err := domainObservation(delivery.Envelope)
-		if err != nil {
-			return err
-		}
-		_, err = service.ProjectObservation(ctx, delivery.Route.AdapterID, observation, delivery.ObservedAt)
-		return err
-	}
-}
-
-func domainObservation(envelope platformnats.Envelope[platformnats.Observation]) (devices.Observation, error) {
-	observationID, err := devices.ParseObservationID(envelope.ID)
-	if err != nil {
-		return devices.Observation{}, err
-	}
-	entityID, err := devices.ParseEntityID(envelope.Data.EntityID)
-	if err != nil {
-		return devices.Observation{}, err
-	}
-	adapterReceivedAt, err := time.Parse(time.RFC3339Nano, envelope.Data.AdapterReceivedAt)
-	if err != nil {
-		return devices.Observation{}, err
-	}
-	observation := devices.Observation{
-		ID: observationID, EntityID: entityID, Value: devices.Value(append(json.RawMessage(nil), envelope.Data.Value...)),
-		AdapterReceivedAt: adapterReceivedAt,
-	}
-	if envelope.Data.SourceUpdatedAt != nil {
-		sourceUpdatedAt, err := time.Parse(time.RFC3339Nano, *envelope.Data.SourceUpdatedAt)
-		if err != nil {
-			return devices.Observation{}, err
-		}
-		observation.SourceUpdatedAt = &sourceUpdatedAt
-	}
-	if envelope.Data.RefreshForCommand != nil {
-		commandID, err := devices.ParseCommandID(*envelope.Data.RefreshForCommand)
-		if err != nil {
-			return devices.Observation{}, err
-		}
-		observation.RefreshForCommand = &commandID
-	}
-	return observation, nil
-}
-
 func pruneObservationReceipts(ctx context.Context, service *devices.Service, logger *slog.Logger) {
 	ticker := time.NewTicker(receiptPruneInterval)
 	defer ticker.Stop()
@@ -261,12 +153,4 @@ func pruneObservationReceipts(ctx context.Context, service *devices.Service, log
 			}
 		}
 	}
-}
-
-func copyStringPointer(value *string) *string {
-	if value == nil {
-		return nil
-	}
-	copy := *value
-	return &copy
 }

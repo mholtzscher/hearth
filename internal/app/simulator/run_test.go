@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	platformnats "github.com/mholtzscher/hearth/internal/platform/nats"
+	devicesnats "github.com/mholtzscher/hearth/internal/modules/devices/nats"
 	natsserver "github.com/nats-io/nats-server/v2/server"
 	natsgo "github.com/nats-io/nats.go"
 	"github.com/nats-io/nats.go/jetstream"
@@ -39,14 +39,14 @@ func TestFaultPublishersProduceDuplicateAndMalformedStreamEvidence(t *testing.T)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := platformnats.ProvisionObservationResources(ctx, js); err != nil {
+	if _, err := devicesnats.ProvisionObservationResources(ctx, js); err != nil {
 		t.Fatal(err)
 	}
 	config := Config{AdapterID: "simulator", NATSURL: server.ClientURL(), BindingKey: "simulated-light", Scenario: "duplicate"}
 	if err := publishFaultObservation(ctx, config, simulatorTestEntityID); err != nil {
 		t.Fatal(err)
 	}
-	stream, err := js.Stream(ctx, platformnats.ObservationStreamName)
+	stream, err := js.Stream(ctx, devicesnats.ObservationStreamName)
 	if err != nil {
 		t.Fatal(err)
 	}

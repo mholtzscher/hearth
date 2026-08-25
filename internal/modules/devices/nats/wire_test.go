@@ -1,4 +1,4 @@
-package v1_test
+package nats
 
 import (
 	"bytes"
@@ -8,8 +8,7 @@ import (
 	"testing"
 
 	contractsv1 "github.com/mholtzscher/hearth/contracts/v1"
-	platformnats "github.com/mholtzscher/hearth/internal/platform/nats"
-	"github.com/mholtzscher/hearth/sdk/adapter"
+	sdkadapter "github.com/mholtzscher/hearth/sdk/adapter"
 )
 
 func TestCrossBinaryFixtures(t *testing.T) {
@@ -33,7 +32,7 @@ func TestCrossBinaryFixtures(t *testing.T) {
 				"correlation_id":"cor_01890f47-7a6b-7c4d-8e9f-0123456789ab",
 				"data":{"binding_key":"office-light","device":{"name":"Office Light","kind":"light"},"entities":[{"key":"power","external_id":"light.office","name":"Power","type":"hearth.power/v1","support":{"state":{},"operations":{"set":{}}}}]}
 			}`,
-			sdkData: &adapter.Registration{}, coreData: &platformnats.Registration{},
+			sdkData: &sdkadapter.Registration{}, coreData: &registration{},
 		},
 		{
 			name: "registration response", schemaID: contractsv1.RegistrationResponseSchemaID,
@@ -45,7 +44,7 @@ func TestCrossBinaryFixtures(t *testing.T) {
 				"causation_id":"reg_01890f47-7a6b-7c4d-8e9f-0123456789ab",
 				"data":{"status":"accepted","binding":{"binding_key":"office-light","device_id":"dev_01890f47-7a6b-7c4d-8e9f-0123456789ab","entities":[{"key":"power","entity_id":"ent_01890f47-7a6b-7c4d-8e9f-0123456789ab"}]}}
 			}`,
-			sdkData: &adapter.RegistrationResponse{}, coreData: &platformnats.RegistrationResponse{},
+			sdkData: &sdkadapter.RegistrationResponse{}, coreData: &registrationResponse{},
 		},
 		{
 			name: "observation", schemaID: contractsv1.ObservationSchemaID,
@@ -56,7 +55,7 @@ func TestCrossBinaryFixtures(t *testing.T) {
 				"correlation_id":"cor_01890f47-7a6b-7c4d-8e9f-0123456789ab",
 				"data":{"entity_id":"ent_01890f47-7a6b-7c4d-8e9f-0123456789ab","value":false,"adapter_received_at":"2026-08-20T12:34:56Z"}
 			}`,
-			sdkData: &adapter.Observation{}, coreData: &platformnats.Observation{},
+			sdkData: &sdkadapter.Observation{}, coreData: &observation{},
 		},
 		{
 			name: "command request", schemaID: contractsv1.CommandRequestSchemaID,
@@ -67,7 +66,7 @@ func TestCrossBinaryFixtures(t *testing.T) {
 				"correlation_id":"cor_01890f47-7a6b-7c4d-8e9f-0123456789ab",
 				"data":{"entity_id":"ent_01890f47-7a6b-7c4d-8e9f-0123456789ab","operation":"set","parameters":{"value":true},"deadline":"2026-08-20T12:35:06Z"}
 			}`,
-			sdkData: &adapter.Command{}, coreData: &platformnats.Command{},
+			sdkData: &sdkadapter.Command{}, coreData: &command{},
 		},
 		{
 			name: "command response", schemaID: contractsv1.CommandResponseSchemaID,
@@ -79,7 +78,7 @@ func TestCrossBinaryFixtures(t *testing.T) {
 				"causation_id":"cmd_01890f47-7a6b-7c4d-8e9f-0123456789ab",
 				"data":{"command_id":"cmd_01890f47-7a6b-7c4d-8e9f-0123456789ab","status":"accepted"}
 			}`,
-			sdkData: &adapter.CommandResponse{}, coreData: &platformnats.CommandResponse{},
+			sdkData: &sdkadapter.CommandResponse{}, coreData: &commandResponse{},
 		},
 	}
 
