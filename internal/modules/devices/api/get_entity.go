@@ -8,15 +8,24 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"sync"
 	"time"
 
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/mholtzscher/hearth/internal/modules/devices"
 )
 
+type Devices interface {
+	GetEntity(context.Context, devices.EntityID) (devices.EntityView, error)
+	ExecuteCommand(
+		context.Context,
+		devices.EntityID,
+		devices.OperationName,
+		devices.CommandParameters,
+	) (devices.CommandResult, error)
+}
+
 type Handler struct {
-	devices *devices.Service
+	devices Devices
 }
 
 type GetEntityInput struct {
@@ -27,27 +36,8 @@ type GetEntityOutput struct {
 	Body EntityBody
 }
 
-var (
-	configureErrorsOnce = sync.Once{}
-	defaultHumaNewError = huma.NewError
-)
-
-func Register(api huma.API, service *devices.Service) {
-	configureErrorsOnce.Do(func() {
-		huma.NewError = func(status int, message string, details ...error) huma.StatusError {
-			if status == 0 {
-				return apiError(status, "internal_error", message).(*statusError)
-			}
-			switch status {
-			case http.StatusBadRequest, http.StatusRequestEntityTooLarge,
-				http.StatusUnsupportedMediaType, http.StatusUnprocessableEntity:
-				return apiError(http.StatusBadRequest, "invalid_request", "invalid request").(*statusError)
-			default:
-				return defaultHumaNewError(status, message, details...)
-			}
-		}
-	})
-	handler := &Handler{devices: service}
+func Register(api huma.API, devices Devices) {
+	handler := &Handler{devices: devices}
 	huma.Register(api, huma.Operation{
 		OperationID: "get-entity",
 		Method:      http.MethodGet,
@@ -157,10 +147,7 @@ func decodeJSON(raw []byte, target any) error {
 }
 
 func apiError(status int, code, message string) error {
-	return &statusError{
-		status:    status,
-		ErrorBody: ErrorBody{Error: APIError{Code: code, Message: message}},
-	}
+	return NewStatusError(status, code, message)
 }
 
 func formatTime(value time.Time) string {

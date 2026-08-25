@@ -9,7 +9,6 @@ import (
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/danielgtaylor/huma/v2/adapters/humaecho"
 	"github.com/labstack/echo/v5"
-	"github.com/mholtzscher/hearth/internal/modules/devices"
 	devicesapi "github.com/mholtzscher/hearth/internal/modules/devices/api"
 	devicesnats "github.com/mholtzscher/hearth/internal/modules/devices/nats"
 	natsgo "github.com/nats-io/nats.go"
@@ -57,7 +56,31 @@ func (readiness *RuntimeReadiness) Check(ctx context.Context) error {
 	return nil
 }
 
-func NewHTTPHandler(service *devices.Service, readiness ReadinessChecker) (http.Handler, huma.API) {
+var defaultHumaNewError = huma.NewError
+
+func newHumaError(status int, message string, details ...error) huma.StatusError {
+	if status == 0 {
+		return devicesapi.NewStatusError(status, "internal_error", message)
+	}
+	switch status {
+	case http.StatusBadRequest,
+		http.StatusRequestEntityTooLarge,
+		http.StatusUnsupportedMediaType,
+		http.StatusUnprocessableEntity:
+		return devicesapi.NewStatusError(
+			http.StatusBadRequest,
+			"invalid_request",
+			"invalid request",
+		)
+	default:
+		return defaultHumaNewError(status, message, details...)
+	}
+}
+
+// NewHTTPHandler configures process-global Huma error behavior and must only
+// be called during single-threaded application or test setup.
+func NewHTTPHandler(devices devicesapi.Devices, readiness ReadinessChecker) (http.Handler, huma.API) {
+	huma.NewError = newHumaError
 	router := echo.New()
 	router.GET("/healthz", func(ctx *echo.Context) error {
 		return ctx.JSON(http.StatusOK, map[string]string{"status": "ok"})
@@ -71,6 +94,6 @@ func NewHTTPHandler(service *devices.Service, readiness ReadinessChecker) (http.
 
 	api := humaecho.New(router, huma.DefaultConfig("Hearth", "1.0.0"))
 	entities := huma.NewGroup(api, "/v1/entities")
-	devicesapi.Register(entities, service)
+	devicesapi.Register(entities, devices)
 	return router, api
 }

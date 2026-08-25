@@ -1,5 +1,7 @@
 package api
 
+import "github.com/danielgtaylor/huma/v2"
+
 type EntityBody struct {
 	ID       string         `json:"id"`
 	DeviceID string         `json:"device_id"`
@@ -44,6 +46,13 @@ type APIError struct {
 type statusError struct {
 	ErrorBody
 	status int
+}
+
+func NewStatusError(status int, code, message string) huma.StatusError {
+	return &statusError{
+		status:    status,
+		ErrorBody: ErrorBody{Error: APIError{Code: code, Message: message}},
+	}
 }
 
 func (err *statusError) Error() string {
