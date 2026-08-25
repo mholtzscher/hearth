@@ -64,6 +64,14 @@ type Observation struct {
 	RefreshForCommand *CommandID
 }
 
+// ReceivedObservation combines Adapter ownership and the Core-assigned
+// durable receive time with one Adapter-reported Observation.
+type ReceivedObservation struct {
+	AdapterID   string
+	Observation Observation
+	ObservedAt  time.Time
+}
+
 type ObservationDisposition string
 
 const (
@@ -81,37 +89,14 @@ const (
 	RejectionInvalidValue  ObservationRejection = "invalid_value"
 )
 
-type ProjectionResult struct {
-	Disposition      ObservationDisposition
-	State            *State
-	Rejection        *ObservationRejection
-	SatisfiedCommand *CommandResult
+// ObservationReceipt describes only the durable disposition of a received
+// Observation. State and Command effects remain behind Service.
+type ObservationReceipt struct {
+	Disposition ObservationDisposition
+	Rejection   *ObservationRejection
 }
 
-type CommandStatus string
-
-const (
-	CommandStatusRequested          CommandStatus = "requested"
-	CommandStatusAccepted           CommandStatus = "accepted"
-	CommandStatusSatisfied          CommandStatus = "satisfied"
-	CommandStatusRejected           CommandStatus = "rejected"
-	CommandStatusAdapterUnavailable CommandStatus = "adapter_unavailable"
-	CommandStatusOutcomeTimeout     CommandStatus = "outcome_timeout"
-	CommandStatusInternalFailure    CommandStatus = "internal_failure"
-	CommandStatusInterrupted        CommandStatus = "interrupted"
-)
-
-type CommandFailureCode string
-
-const (
-	CommandFailureAdapterUnavailable CommandFailureCode = "adapter_unavailable"
-	CommandFailureUpstreamRejected   CommandFailureCode = "upstream_rejected"
-	CommandFailureOutcomeTimeout     CommandFailureCode = "outcome_timeout"
-	CommandFailureInternalError      CommandFailureCode = "internal_error"
-	CommandFailureCoreRestarted      CommandFailureCode = "core_restarted"
-)
-
-type CommandRequest struct {
+type CommandDispatch struct {
 	ID            CommandID
 	CorrelationID CorrelationID
 	EntityID      EntityID
@@ -122,29 +107,6 @@ type CommandRequest struct {
 
 type CommandAcceptance struct {
 	Accepted bool
-}
-
-type CommandRecord struct {
-	ID                   CommandID
-	EntityID             EntityID
-	AdapterID            string
-	OperationName        OperationName
-	Parameters           CommandParameters
-	CorrelationID        CorrelationID
-	Status               CommandStatus
-	RequestedAt          time.Time
-	DeadlineAt           time.Time
-	AcceptedAt           *time.Time
-	CompletedAt          *time.Time
-	OutcomeObservationID *ObservationID
-	FailureCode          *CommandFailureCode
-}
-
-type CommandCompletion struct {
-	ID          CommandID
-	Status      CommandStatus
-	CompletedAt time.Time
-	FailureCode CommandFailureCode
 }
 
 type CommandResult struct {

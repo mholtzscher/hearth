@@ -4,80 +4,17 @@ import (
 	"context"
 	"errors"
 	"testing"
-	"time"
 )
 
-type stubRegistrationRepository struct {
-	binding Binding
-	err     error
-	calls   int
-	params  RegisterBindingParams
-}
-
-func (repository *stubRegistrationRepository) RegisterBinding(_ context.Context, params RegisterBindingParams) (Binding, error) {
-	repository.calls++
-	repository.params = params
-	return repository.binding, repository.err
-}
-
-func (*stubRegistrationRepository) GetEntityView(context.Context, EntityID) (EntityView, error) {
-	panic("unexpected GetEntityView call")
-}
-
-func (*stubRegistrationRepository) ProjectObservation(context.Context, ProjectObservationParams) (ProjectionResult, error) {
-	panic("unexpected ProjectObservation call")
-}
-
-func (*stubRegistrationRepository) DeleteExpiredObservationReceipts(context.Context, time.Time) error {
-	panic("unexpected DeleteExpiredObservationReceipts call")
-}
-
-func (*stubRegistrationRepository) CreateCommand(context.Context, CommandRecord) error {
-	panic("unexpected CreateCommand call")
-}
-
-func (*stubRegistrationRepository) MarkCommandAccepted(context.Context, CommandID, time.Time) error {
-	panic("unexpected MarkCommandAccepted call")
-}
-
-func (*stubRegistrationRepository) CompleteCommand(context.Context, CommandCompletion) error {
-	panic("unexpected CompleteCommand call")
-}
-
-func (*stubRegistrationRepository) InterruptActiveCommands(context.Context, time.Time) error {
-	panic("unexpected InterruptActiveCommands call")
-}
-
-func TestRegisterClassifiesOnlyDescriptorAndIdentityFailuresAsPermanent(t *testing.T) {
-	catalog := firstLightCatalog(t)
-	infrastructureFailure := errors.New("SQLite busy")
-	repository := &stubRegistrationRepository{err: infrastructureFailure}
-	service := NewService(repository, nil, catalog, Dependencies{})
-
-	_, err := service.Register(context.Background(), "homeassistant", validDomainRegistration())
-	if !errors.Is(err, infrastructureFailure) {
-		t.Fatalf("infrastructure error = %v, want original error", err)
+func TestRegisterNormalizesWithoutMutatingInput(t *testing.T) {
+	catalog, err := newBuiltinTypeCatalog()
+	if err != nil {
+		t.Fatal(err)
 	}
-	var rejected *RegistrationRejectedError
-	if errors.As(err, &rejected) {
-		t.Fatalf("infrastructure error was classified as permanent: %v", err)
-	}
-
-	invalid := validDomainRegistration()
-	invalid.Entities[0].Support = EntitySupport(`{"state":{},"operations":{}}`)
-	_, err = service.Register(context.Background(), "homeassistant", invalid)
-	if !errors.As(err, &rejected) || rejected.Code != RegistrationInvalidDescriptor {
-		t.Fatalf("invalid descriptor error = %v", err)
-	}
-	if repository.calls != 1 {
-		t.Fatalf("repository calls = %d, want only the valid attempt", repository.calls)
-	}
-}
-
-func TestRegisterPersistsNormalizedSupportWithoutMutatingInput(t *testing.T) {
-	catalog := firstLightCatalog(t)
-	repository := &stubRegistrationRepository{}
-	service := NewService(repository, nil, catalog, Dependencies{})
+	service, database := newDeviceTestService(t, controlsWithCatalog(catalog))
+	runDeviceTestService(t, service, testDelivery(func(context.Context, string, CommandDispatch) (CommandAcceptance, error) {
+		return CommandAcceptance{}, errors.New("unexpected delivery")
+	}))
 	registration := validDomainRegistration()
 	registration.Entities[0].Support = EntitySupport(" \n { \"state\" : {}, \"operations\" : { \"set\" : {} } } ")
 	original := string(registration.Entities[0].Support)
@@ -85,11 +22,40 @@ func TestRegisterPersistsNormalizedSupportWithoutMutatingInput(t *testing.T) {
 	if _, err := service.Register(context.Background(), "homeassistant", registration); err != nil {
 		t.Fatal(err)
 	}
-	if got := string(repository.params.Entity.Support); got != `{"state":{},"operations":{"set":{}}}` {
-		t.Fatalf("repository support = %s", got)
+	var stored string
+	if err := database.QueryRow("SELECT support_json FROM entities").Scan(&stored); err != nil {
+		t.Fatal(err)
 	}
-	if got := string(registration.Entities[0].Support); got != original {
-		t.Fatalf("input support mutated to %s", got)
+	if stored != `{"state":{},"operations":{"set":{}}}` {
+		t.Fatalf("stored support = %s", stored)
+	}
+	if string(registration.Entities[0].Support) != original {
+		t.Fatalf("input support mutated to %s", registration.Entities[0].Support)
+	}
+}
+
+func TestRegisterClassifiesDescriptorAndIdentityFailures(t *testing.T) {
+	service, _ := newDeviceTestService(t, productionServiceControls())
+	runDeviceTestService(t, service, testDelivery(func(context.Context, string, CommandDispatch) (CommandAcceptance, error) {
+		return CommandAcceptance{}, errors.New("unexpected delivery")
+	}))
+
+	invalid := validDomainRegistration()
+	invalid.Entities[0].Support = EntitySupport(`{"state":{},"operations":{}}`)
+	_, err := service.Register(context.Background(), "homeassistant", invalid)
+	var rejected *RegistrationRejectedError
+	if !errors.As(err, &rejected) || rejected.Code != RegistrationInvalidDescriptor {
+		t.Fatalf("invalid descriptor error = %v", err)
+	}
+
+	if _, err := service.Register(context.Background(), "homeassistant", validDomainRegistration()); err != nil {
+		t.Fatal(err)
+	}
+	conflict := validDomainRegistration()
+	conflict.BindingKey = "another-light"
+	_, err = service.Register(context.Background(), "homeassistant", conflict)
+	if !errors.As(err, &rejected) || rejected.Code != RegistrationIdentityConflict {
+		t.Fatalf("identity conflict error = %v", err)
 	}
 }
 

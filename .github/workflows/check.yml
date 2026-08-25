@@ -12,11 +12,16 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
       - uses: cachix/install-nix-action@v31
       - uses: cachix/cachix-action@v16
         with:
           name: devenv
       - name: Install devenv
         run: nix profile add nixpkgs#devenv
+      - name: Check preserved surfaces
+        if: github.event_name == 'pull_request'
+        run: scripts/check-device-module-compat.sh '${{ github.event.pull_request.base.sha }}'
       - name: Run checks
         run: devenv test

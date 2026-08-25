@@ -2,38 +2,82 @@ package hearthd
 
 import (
 	"context"
+	"database/sql"
+	"errors"
 	"io"
 	"log/slog"
 	"net"
 	"path/filepath"
-	"sync/atomic"
 	"testing"
-	"time"
 
 	"github.com/mholtzscher/hearth/internal/modules/devices"
 	platformdb "github.com/mholtzscher/hearth/internal/platform/db"
-	natsserver "github.com/nats-io/nats-server/v2/server"
-	natsgo "github.com/nats-io/nats.go"
 )
 
-func TestCoreStartupInterruptsActiveCommandsWithoutRedispatch(t *testing.T) {
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
-	databasePath := filepath.Join(t.TempDir(), "hearth.db")
-	database, err := platformdb.Open(ctx, databasePath)
+type blockingRecoveryDelivery struct {
+	calls chan devices.CommandDispatch
+}
+
+func (delivery *blockingRecoveryDelivery) Deliver(
+	ctx context.Context,
+	_ string,
+	dispatch devices.CommandDispatch,
+) (devices.CommandAcceptance, error) {
+	delivery.calls <- dispatch
+	<-ctx.Done()
+	return devices.CommandAcceptance{}, ctx.Err()
+}
+
+func TestGracefulStopDefersInterruptionUntilNextStartup(t *testing.T) {
+	path, commandID := leaveActiveCommand(t)
+	database, err := platformdb.Open(context.Background(), path)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := platformdb.Migrate(ctx, database); err != nil {
+	defer database.Close()
+	assertCommandStatus(t, database, commandID, "requested")
+	if _, err := devices.New(context.Background(), database, nil); err != nil {
 		t.Fatal(err)
 	}
-	catalog, err := devices.NewBuiltinTypeCatalog()
+	assertCommandStatus(t, database, commandID, "interrupted")
+}
+
+func TestRunRecoversCommandsBeforeNATSConnectionFailure(t *testing.T) {
+	path, commandID := leaveActiveCommand(t)
+	address := unusedLoopbackAddress(t)
+	err := Run(context.Background(), Config{
+		HTTPAddr: unusedLoopbackAddress(t), NATSURL: "nats://" + address, SQLitePath: path,
+	}, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	if err == nil {
+		t.Fatal("Run unexpectedly connected to absent NATS")
+	}
+	database, openErr := platformdb.Open(context.Background(), path)
+	if openErr != nil {
+		t.Fatal(openErr)
+	}
+	defer database.Close()
+	assertCommandStatus(t, database, commandID, "interrupted")
+}
+
+func leaveActiveCommand(t *testing.T) (string, devices.CommandID) {
+	t.Helper()
+	path := filepath.Join(t.TempDir(), "hearth.db")
+	database, err := platformdb.Open(context.Background(), path)
 	if err != nil {
 		t.Fatal(err)
 	}
-	repository := devices.NewSQLiteRepository(database, catalog)
-	service := devices.NewService(repository, nil, catalog, devices.Dependencies{})
-	binding, err := service.Register(ctx, "simulator", devices.Registration{
+	if err := platformdb.Migrate(context.Background(), database); err != nil {
+		t.Fatal(err)
+	}
+	service, err := devices.New(context.Background(), database, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	delivery := &blockingRecoveryDelivery{calls: make(chan devices.CommandDispatch, 1)}
+	runContext, stop := context.WithCancel(context.Background())
+	runDone := make(chan error, 1)
+	go func() { runDone <- service.Run(runContext, delivery) }()
+	binding, err := service.Register(context.Background(), "simulator", devices.Registration{
 		BindingKey: "recovery-light",
 		Device:     devices.DeviceDescriptor{Name: "Recovery light", Kind: devices.DeviceKindLight},
 		Entities: []devices.EntityDescriptor{{
@@ -45,114 +89,37 @@ func TestCoreStartupInterruptsActiveCommandsWithoutRedispatch(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	requested := recoveryCommandRecord(t, binding.Entities[0].EntityID, time.Now().UTC())
-	accepted := recoveryCommandRecord(t, binding.Entities[0].EntityID, requested.RequestedAt.Add(time.Second))
-	if err := repository.CreateCommand(ctx, requested); err != nil {
+	executeDone := make(chan error, 1)
+	go func() {
+		_, err := service.ExecuteCommand(
+			context.Background(), binding.Entities[0].EntityID,
+			devices.OperationNameSet, devices.CommandParameters(`{"value":true}`),
+		)
+		executeDone <- err
+	}()
+	dispatch := <-delivery.calls
+	stop()
+	if err := <-runDone; err != nil {
 		t.Fatal(err)
 	}
-	if err := repository.CreateCommand(ctx, accepted); err != nil {
-		t.Fatal(err)
+	if err := <-executeDone; !errors.Is(err, devices.ErrServiceStopped) {
+		t.Fatalf("command error = %v", err)
 	}
-	if err := repository.MarkCommandAccepted(ctx, accepted.ID, accepted.RequestedAt.Add(time.Millisecond)); err != nil {
-		t.Fatal(err)
-	}
+	assertCommandStatus(t, database, dispatch.ID, "requested")
 	if err := database.Close(); err != nil {
 		t.Fatal(err)
 	}
-
-	server, err := natsserver.NewServer(&natsserver.Options{
-		Host: "127.0.0.1", Port: -1, JetStream: true, StoreDir: t.TempDir(), NoSigs: true,
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	go server.Start()
-	if !server.ReadyForConnections(5 * time.Second) {
-		t.Fatal("NATS server did not become ready")
-	}
-	t.Cleanup(func() {
-		server.Shutdown()
-		server.WaitForShutdown()
-	})
-	observer, err := natsgo.Connect(server.ClientURL())
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(observer.Close)
-	var dispatches atomic.Int64
-	subscription, err := observer.Subscribe("hearth.v1.adapter.simulator.command.>", func(*natsgo.Msg) {
-		dispatches.Add(1)
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = subscription.Drain() })
-	if err := observer.Flush(); err != nil {
-		t.Fatal(err)
-	}
-
-	httpAddress := unusedLoopbackAddress(t)
-	runContext, stopCore := context.WithCancel(ctx)
-	defer stopCore()
-	runErrors := make(chan error, 1)
-	go func() {
-		runErrors <- Run(runContext, Config{
-			HTTPAddr: httpAddress, NATSURL: server.ClientURL(), SQLitePath: databasePath,
-		}, slog.New(slog.NewJSONHandler(io.Discard, nil)))
-	}()
-
-	observerDatabase, err := platformdb.Open(ctx, databasePath)
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = observerDatabase.Close() })
-	waitForMatrixCondition(t, 5*time.Second, func() (bool, error) {
-		select {
-		case err := <-runErrors:
-			if err != nil {
-				return false, err
-			}
-			return false, context.Canceled
-		default:
-		}
-		var interrupted, restarted int
-		err := observerDatabase.QueryRowContext(ctx, `
-			SELECT count(*), coalesce(sum(CASE WHEN failure_code = 'core_restarted' THEN 1 ELSE 0 END), 0)
-			FROM commands WHERE status = 'interrupted'`,
-		).Scan(&interrupted, &restarted)
-		return interrupted == 2 && restarted == 2, err
-	})
-	time.Sleep(100 * time.Millisecond)
-	if got := dispatches.Load(); got != 0 {
-		t.Fatalf("startup redispatched %d persisted commands", got)
-	}
-
-	stopCore()
-	select {
-	case err := <-runErrors:
-		if err != nil {
-			t.Fatal(err)
-		}
-	case <-time.After(5 * time.Second):
-		t.Fatal("hearthd did not stop")
-	}
+	return path, dispatch.ID
 }
 
-func recoveryCommandRecord(t *testing.T, entityID devices.EntityID, requestedAt time.Time) devices.CommandRecord {
+func assertCommandStatus(t *testing.T, database *sql.DB, id devices.CommandID, want string) {
 	t.Helper()
-	commandID, err := devices.NewCommandID()
-	if err != nil {
+	var status string
+	if err := database.QueryRow("SELECT status FROM commands WHERE id = ?", id).Scan(&status); err != nil {
 		t.Fatal(err)
 	}
-	correlationID, err := devices.NewCorrelationID()
-	if err != nil {
-		t.Fatal(err)
-	}
-	return devices.CommandRecord{
-		ID: commandID, EntityID: entityID, AdapterID: "simulator",
-		OperationName: devices.OperationNameSet, Parameters: devices.CommandParameters(`{"value":true}`),
-		CorrelationID: correlationID, Status: devices.CommandStatusRequested,
-		RequestedAt: requestedAt, DeadlineAt: requestedAt.Add(10 * time.Second),
+	if status != want {
+		t.Fatalf("command %s status = %q, want %q", id, status, want)
 	}
 }
 

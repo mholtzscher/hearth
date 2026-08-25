@@ -6,23 +6,11 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"time"
 )
 
-const commandPersistenceTimeout = 5 * time.Second
-
-// CommandExecutionError identifies a Command that was durably created before
-// its lifecycle failed.
-type CommandExecutionError struct {
-	CommandID CommandID
-	Err       error
+type CommandDelivery interface {
+	Deliver(context.Context, string, CommandDispatch) (CommandAcceptance, error)
 }
-
-func (err *CommandExecutionError) Error() string {
-	return fmt.Sprintf("command %s: %v", err.CommandID, err.Err)
-}
-
-func (err *CommandExecutionError) Unwrap() error { return err.Err }
 
 func (service *Service) ExecuteCommand(
 	ctx context.Context,
@@ -30,6 +18,17 @@ func (service *Service) ExecuteCommand(
 	operationName OperationName,
 	parameters CommandParameters,
 ) (CommandResult, error) {
+	requestContext, moduleContext, release, err := service.beginWork(ctx)
+	if err != nil {
+		return CommandResult{}, err
+	}
+	transferred := false
+	defer func() {
+		if !transferred {
+			release()
+		}
+	}()
+
 	if _, err := ParseEntityID(string(entityID)); err != nil {
 		return CommandResult{}, fmt.Errorf("%w: parse entity ID: %v", ErrInvalidCommand, err)
 	}
@@ -39,22 +38,22 @@ func (service *Service) ExecuteCommand(
 	if err := validateCommandParameters(parameters); err != nil {
 		return CommandResult{}, fmt.Errorf("%w: %v", ErrInvalidCommand, err)
 	}
-	view, err := service.repository.GetEntityView(ctx, entityID)
+	view, err := getEntityView(requestContext, service.database, entityID)
 	if err != nil {
-		return CommandResult{}, err
+		return CommandResult{}, normalizeServiceError(requestContext, err)
 	}
-	resolved, err := service.catalog.ResolveCommand(view.Entity, operationName, parameters)
+	resolved, err := service.catalog.resolveCommand(view.Entity, operationName, parameters)
 	if err != nil {
 		return CommandResult{}, fmt.Errorf("%w: %v", ErrInvalidCommand, err)
 	}
-	commandID, err := service.dependencies.NewCommandID()
+	commandID, err := service.controls.newCommandID()
 	if err != nil {
 		return CommandResult{}, fmt.Errorf("generate command ID: %w", err)
 	}
 	if _, err := ParseCommandID(string(commandID)); err != nil {
 		return CommandResult{}, fmt.Errorf("generate command ID: %w", err)
 	}
-	correlationID, err := service.dependencies.NewCorrelationID()
+	correlationID, err := service.controls.newCorrelationID()
 	if err != nil {
 		return CommandResult{}, fmt.Errorf("generate correlation ID: %w", err)
 	}
@@ -65,25 +64,28 @@ func (service *Service) ExecuteCommand(
 	if err != nil {
 		return CommandResult{}, err
 	}
-	command := CommandRecord{
-		ID: commandID, EntityID: entityID, AdapterID: view.Entity.AdapterID,
-		OperationName: operationName, Parameters: append(CommandParameters(nil), resolved.Parameters...),
-		CorrelationID: correlationID, Status: CommandStatusRequested,
-		RequestedAt: requestedAt, DeadlineAt: requestedAt.Add(resolved.Deadline),
+	command := commandRecord{
+		id: commandID, entityID: entityID, adapterID: view.Entity.AdapterID,
+		operationName: operationName, parameters: append(CommandParameters(nil), resolved.parameters...),
+		correlationID: correlationID, status: commandStatusRequested,
+		requestedAt: requestedAt, deadlineAt: requestedAt.Add(resolved.deadline),
 	}
-	waiter := service.addCommandWaiter(command.ID)
-	if err := service.repository.CreateCommand(ctx, command); err != nil {
-		service.removeCommandWaiter(command.ID)
-		return CommandResult{}, err
+	waiter := service.addCommandWaiter(command.id)
+	if err := service.createCommand(requestContext, command); err != nil {
+		service.removeCommandWaiter(command.id)
+		return CommandResult{}, normalizeServiceError(requestContext, err)
 	}
 
+	workContext, cancelWork := withModuleCancellation(context.WithoutCancel(ctx), moduleContext)
+	deadlineContext, cancelDeadline := service.controls.withDeadline(workContext, command.deadlineAt)
 	completed := make(chan commandOutcome, 1)
-	lifecycleParent := context.WithoutCancel(ctx)
-	lifecycleContext, cancel := context.WithDeadline(lifecycleParent, command.DeadlineAt)
+	transferred = true
 	go func() {
-		defer cancel()
-		defer service.removeCommandWaiter(command.ID)
-		completed <- service.runCommand(lifecycleContext, command, waiter)
+		defer release()
+		defer cancelWork()
+		defer cancelDeadline()
+		defer service.removeCommandWaiter(command.id)
+		completed <- service.runCommand(deadlineContext, workContext, command, waiter)
 	}()
 
 	select {
@@ -104,34 +106,46 @@ type commandOutcome struct {
 	err    error
 }
 
-func (service *Service) runCommand(ctx context.Context, command CommandRecord, waiter <-chan CommandResult) commandOutcome {
-	if service.sender == nil {
-		return service.failCommand(command.ID, CommandStatusInternalFailure, CommandFailureInternalError, errors.New("command sender is not configured"), waiter)
-	}
-	acceptance, err := service.sender.Send(ctx, command.AdapterID, CommandRequest{
-		ID: command.ID, CorrelationID: command.CorrelationID, EntityID: command.EntityID,
-		OperationName: command.OperationName, Parameters: append(CommandParameters(nil), command.Parameters...),
-		Deadline: command.DeadlineAt,
+func (service *Service) runCommand(
+	deadlineContext context.Context,
+	workContext context.Context,
+	command commandRecord,
+	waiter <-chan CommandResult,
+) commandOutcome {
+	acceptance, err := service.delivery.Deliver(deadlineContext, command.adapterID, CommandDispatch{
+		ID: command.id, CorrelationID: command.correlationID, EntityID: command.entityID,
+		OperationName: command.operationName, Parameters: append(CommandParameters(nil), command.parameters...),
+		Deadline: command.deadlineAt,
 	})
 	if err != nil {
-		if errors.Is(err, ErrAdapterUnavailable) || errors.Is(err, context.DeadlineExceeded) {
-			return service.failCommand(command.ID, CommandStatusAdapterUnavailable, CommandFailureAdapterUnavailable, ErrAdapterUnavailable, waiter)
+		if errors.Is(context.Cause(workContext), ErrServiceStopped) {
+			return service.stoppedCommandOutcome(command.id, waiter)
 		}
-		return service.failCommand(command.ID, CommandStatusInternalFailure, CommandFailureInternalError, err, waiter)
+		if errors.Is(err, ErrAdapterUnavailable) || errors.Is(err, context.DeadlineExceeded) ||
+			errors.Is(context.Cause(deadlineContext), context.DeadlineExceeded) {
+			return service.failCommand(workContext, command.id, commandStatusAdapterUnavailable, commandFailureAdapterUnavailable, ErrAdapterUnavailable, waiter)
+		}
+		return service.failCommand(workContext, command.id, commandStatusInternalFailure, commandFailureInternalError, err, waiter)
 	}
 	if !acceptance.Accepted {
-		return service.failCommand(command.ID, CommandStatusRejected, CommandFailureUpstreamRejected, ErrUpstreamRejected, waiter)
+		return service.failCommand(workContext, command.id, commandStatusRejected, commandFailureUpstreamRejected, ErrUpstreamRejected, waiter)
 	}
 
 	acceptedAt, err := service.now()
 	if err != nil {
-		return service.failCommand(command.ID, CommandStatusInternalFailure, CommandFailureInternalError, err, waiter)
+		return service.failCommand(workContext, command.id, commandStatusInternalFailure, commandFailureInternalError, err, waiter)
 	}
-	writeContext, cancel := persistenceContext(ctx)
-	err = service.repository.MarkCommandAccepted(writeContext, command.ID, acceptedAt)
+	writeContext, cancel := context.WithTimeout(workContext, service.controls.persistenceTimeout)
+	err = service.markCommandAccepted(writeContext, command.id, acceptedAt)
 	cancel()
-	if err != nil && !errors.Is(err, ErrCommandTerminal) {
-		return service.failCommand(command.ID, CommandStatusInternalFailure, CommandFailureInternalError, err, waiter)
+	if errors.Is(err, errCommandTerminal) {
+		return service.terminalCommandOutcome(command.id, waiter)
+	}
+	if err != nil {
+		if errors.Is(normalizeServiceError(workContext, err), ErrServiceStopped) {
+			return service.stoppedCommandOutcome(command.id, waiter)
+		}
+		return service.failCommand(workContext, command.id, commandStatusInternalFailure, commandFailureInternalError, err, waiter)
 	}
 
 	select {
@@ -142,39 +156,19 @@ func (service *Service) runCommand(ctx context.Context, command CommandRecord, w
 	select {
 	case result := <-waiter:
 		return commandOutcome{result: result}
-	case <-ctx.Done():
-		completedAt, nowErr := service.now()
-		if nowErr != nil {
-			return service.failCommand(command.ID, CommandStatusInternalFailure, CommandFailureInternalError, nowErr, waiter)
+	case <-deadlineContext.Done():
+		if errors.Is(context.Cause(workContext), ErrServiceStopped) {
+			return service.stoppedCommandOutcome(command.id, waiter)
 		}
-		completion := CommandCompletion{
-			ID: command.ID, Status: CommandStatusOutcomeTimeout, CompletedAt: completedAt,
-			FailureCode: CommandFailureOutcomeTimeout,
-		}
-		writeContext, cancel := persistenceContext(ctx)
-		err := service.repository.CompleteCommand(writeContext, completion)
-		cancel()
-		if errors.Is(err, ErrCommandTerminal) {
-			// A matching Observation committed first and its notification follows
-			// that transaction. Preserve the satisfying terminal result.
-			select {
-			case result := <-waiter:
-				return commandOutcome{result: result}
-			case <-time.After(commandPersistenceTimeout):
-				return commandOutcome{err: commandExecutionError(command.ID, errors.New("terminal command outcome was not delivered"))}
-			}
-		}
-		if err != nil {
-			return service.failCommand(command.ID, CommandStatusInternalFailure, CommandFailureInternalError, err, waiter)
-		}
-		return commandOutcome{err: commandExecutionError(command.ID, ErrOutcomeTimeout)}
+		return service.failCommand(workContext, command.id, commandStatusOutcomeTimeout, commandFailureOutcomeTimeout, ErrOutcomeTimeout, waiter)
 	}
 }
 
 func (service *Service) failCommand(
+	workContext context.Context,
 	id CommandID,
-	status CommandStatus,
-	failureCode CommandFailureCode,
+	status commandStatus,
+	failureCode commandFailureCode,
 	outcome error,
 	waiter <-chan CommandResult,
 ) commandOutcome {
@@ -182,33 +176,80 @@ func (service *Service) failCommand(
 	if err != nil {
 		return commandOutcome{err: commandExecutionError(id, err)}
 	}
-	writeContext, cancel := persistenceContext(context.Background())
-	err = service.repository.CompleteCommand(writeContext, CommandCompletion{
-		ID: id, Status: status, CompletedAt: completedAt, FailureCode: failureCode,
+	writeContext, cancel := context.WithTimeout(workContext, service.controls.persistenceTimeout)
+	err = service.completeCommand(writeContext, commandCompletion{
+		id: id, status: status, completedAt: completedAt, failureCode: failureCode,
 	})
 	cancel()
-	if errors.Is(err, ErrCommandTerminal) {
-		// A matching Observation committed first and its notification follows
-		// that transaction. Preserve the satisfying terminal result.
-		select {
-		case result := <-waiter:
-			return commandOutcome{result: result}
-		case <-time.After(commandPersistenceTimeout):
-			return commandOutcome{err: commandExecutionError(id, errors.New("terminal command outcome was not delivered"))}
-		}
+	if errors.Is(err, errCommandTerminal) {
+		return service.terminalCommandOutcome(id, waiter)
 	}
 	if err != nil {
+		if errors.Is(normalizeServiceError(workContext, err), ErrServiceStopped) {
+			return service.stoppedCommandOutcome(id, waiter)
+		}
 		return commandOutcome{err: commandExecutionError(id, err)}
 	}
 	return commandOutcome{err: commandExecutionError(id, outcome)}
 }
 
-func (service *Service) now() (time.Time, error) {
-	now := service.dependencies.Now().UTC()
-	if now.IsZero() {
-		return time.Time{}, errors.New("command clock returned zero time")
+func (service *Service) stoppedCommandOutcome(id CommandID, waiter <-chan CommandResult) commandOutcome {
+	select {
+	case result := <-waiter:
+		return commandOutcome{result: result}
+	default:
 	}
-	return now, nil
+	lookupContext, cancel := context.WithTimeout(context.Background(), service.controls.persistenceTimeout)
+	command, err := getCommand(lookupContext, service.database, id)
+	cancel()
+	if err == nil && command.status == commandStatusSatisfied {
+		return service.waitForTerminalNotification(id, waiter)
+	}
+	return commandOutcome{err: commandExecutionError(id, ErrServiceStopped)}
+}
+
+func (service *Service) terminalCommandOutcome(id CommandID, waiter <-chan CommandResult) commandOutcome {
+	select {
+	case result := <-waiter:
+		return commandOutcome{result: result}
+	default:
+	}
+	lookupContext, cancel := context.WithTimeout(context.Background(), service.controls.persistenceTimeout)
+	command, err := getCommand(lookupContext, service.database, id)
+	cancel()
+	if err != nil {
+		return commandOutcome{err: commandExecutionError(id, err)}
+	}
+	if command.status == commandStatusSatisfied {
+		return service.waitForTerminalNotification(id, waiter)
+	}
+	return commandOutcome{err: commandExecutionError(id, commandFailure(command))}
+}
+
+func (service *Service) waitForTerminalNotification(id CommandID, waiter <-chan CommandResult) commandOutcome {
+	ctx, cancel := context.WithTimeout(context.Background(), service.controls.persistenceTimeout)
+	defer cancel()
+	select {
+	case result := <-waiter:
+		return commandOutcome{result: result}
+	case <-ctx.Done():
+		return commandOutcome{err: commandExecutionError(id, errors.New("terminal command outcome was not delivered"))}
+	}
+}
+
+func commandFailure(command commandRecord) error {
+	switch command.status {
+	case commandStatusRejected:
+		return ErrUpstreamRejected
+	case commandStatusAdapterUnavailable:
+		return ErrAdapterUnavailable
+	case commandStatusOutcomeTimeout:
+		return ErrOutcomeTimeout
+	case commandStatusInterrupted:
+		return ErrServiceStopped
+	default:
+		return errors.New("command failed internally")
+	}
 }
 
 func (service *Service) addCommandWaiter(id CommandID) chan CommandResult {
@@ -236,10 +277,6 @@ func (service *Service) notifyCommand(result CommandResult) {
 	case waiter <- result:
 	default:
 	}
-}
-
-func persistenceContext(parent context.Context) (context.Context, context.CancelFunc) {
-	return context.WithTimeout(context.WithoutCancel(parent), commandPersistenceTimeout)
 }
 
 func commandExecutionError(id CommandID, err error) error {

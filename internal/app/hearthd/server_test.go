@@ -8,9 +8,9 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/mholtzscher/hearth/internal/modules/devices"
+	devicesapi "github.com/mholtzscher/hearth/internal/modules/devices/api"
 )
 
 const (
@@ -26,54 +26,32 @@ func (readiness *testReadiness) Check(context.Context) error {
 	return readiness.err
 }
 
-type testRepository struct {
+type testEntityReader struct {
 	view devices.EntityView
 }
 
-func (*testRepository) RegisterBinding(context.Context, devices.RegisterBindingParams) (devices.Binding, error) {
-	panic("unexpected RegisterBinding call")
+func (reader *testEntityReader) GetEntity(context.Context, devices.EntityID) (devices.EntityView, error) {
+	return reader.view, nil
 }
 
-func (repository *testRepository) GetEntityView(context.Context, devices.EntityID) (devices.EntityView, error) {
-	return repository.view, nil
-}
+type testCommandExecutor struct{}
 
-func (*testRepository) ProjectObservation(context.Context, devices.ProjectObservationParams) (devices.ProjectionResult, error) {
-	panic("unexpected ProjectObservation call")
-}
-
-func (*testRepository) DeleteExpiredObservationReceipts(context.Context, time.Time) error {
-	panic("unexpected DeleteExpiredObservationReceipts call")
-}
-
-func (*testRepository) CreateCommand(context.Context, devices.CommandRecord) error {
-	panic("unexpected CreateCommand call")
-}
-
-func (*testRepository) MarkCommandAccepted(context.Context, devices.CommandID, time.Time) error {
-	panic("unexpected MarkCommandAccepted call")
-}
-
-func (*testRepository) CompleteCommand(context.Context, devices.CommandCompletion) error {
-	panic("unexpected CompleteCommand call")
-}
-
-func (*testRepository) InterruptActiveCommands(context.Context, time.Time) error {
-	panic("unexpected InterruptActiveCommands call")
+func (*testCommandExecutor) ExecuteCommand(
+	context.Context,
+	devices.EntityID,
+	devices.OperationName,
+	devices.CommandParameters,
+) (devices.CommandResult, error) {
+	return devices.CommandResult{}, errors.New("unexpected ExecuteCommand call")
 }
 
 func TestHTTPHandlerServesHealthReadinessAndDeviceOperations(t *testing.T) {
-	catalog, err := devices.NewBuiltinTypeCatalog()
-	if err != nil {
-		t.Fatal(err)
-	}
-	repository := &testRepository{view: devices.EntityView{Entity: devices.Entity{
+	reader := &testEntityReader{view: devices.EntityView{Entity: devices.Entity{
 		ID: testHTTPEntityID, DeviceID: testHTTPDeviceID, AdapterID: "simulator", Name: "Power",
 		TypeID: devices.EntityTypePowerV1, Support: devices.EntitySupport(`{"state":{},"operations":{"set":{}}}`),
 	}}}
-	service := devices.NewService(repository, nil, catalog, devices.Dependencies{})
 	readiness := &testReadiness{}
-	handler, api := NewHTTPHandler(service, readiness)
+	handler, api := NewHTTPHandler(devicesapi.Dependencies{Entities: reader, Commands: &testCommandExecutor{}}, readiness)
 
 	if response := appRequest(handler, "/healthz"); response.Code != http.StatusOK {
 		t.Fatalf("health status = %d", response.Code)
@@ -102,15 +80,11 @@ func TestHTTPHandlerServesHealthReadinessAndDeviceOperations(t *testing.T) {
 }
 
 func TestRuntimeOpenAPIContract(t *testing.T) {
-	catalog, err := devices.NewBuiltinTypeCatalog()
-	if err != nil {
-		t.Fatal(err)
-	}
-	repository := &testRepository{view: devices.EntityView{Entity: devices.Entity{
+	reader := &testEntityReader{view: devices.EntityView{Entity: devices.Entity{
 		ID: testHTTPEntityID, DeviceID: testHTTPDeviceID, AdapterID: "simulator", Name: "Power",
 		TypeID: devices.EntityTypePowerV1, Support: devices.EntitySupport(`{"state":{},"operations":{"set":{}}}`),
 	}}}
-	handler, _ := NewHTTPHandler(devices.NewService(repository, nil, catalog, devices.Dependencies{}), &testReadiness{})
+	handler, _ := NewHTTPHandler(devicesapi.Dependencies{Entities: reader, Commands: &testCommandExecutor{}}, &testReadiness{})
 	response := appRequest(handler, "/openapi.json")
 	if response.Code != http.StatusOK {
 		t.Fatalf("OpenAPI status = %d, body = %s", response.Code, response.Body.String())

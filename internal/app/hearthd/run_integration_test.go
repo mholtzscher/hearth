@@ -13,6 +13,7 @@ import (
 	contractsv1 "github.com/mholtzscher/hearth/contracts/v1"
 	contractpowerv1 "github.com/mholtzscher/hearth/entitytypes/powerv1"
 	"github.com/mholtzscher/hearth/internal/modules/devices"
+	devicesnats "github.com/mholtzscher/hearth/internal/modules/devices/nats"
 	platformdb "github.com/mholtzscher/hearth/internal/platform/db"
 	platformnats "github.com/mholtzscher/hearth/internal/platform/nats"
 	"github.com/mholtzscher/hearth/sdk/adapter"
@@ -35,12 +36,10 @@ func TestCoreNATSTransportRegistersAndProjectsDurableObservation(t *testing.T) {
 	if err := platformdb.Migrate(ctx, database); err != nil {
 		t.Fatal(err)
 	}
-	catalog, err := devices.NewBuiltinTypeCatalog()
+	service, err := devices.New(ctx, database, logger)
 	if err != nil {
 		t.Fatal(err)
 	}
-	repository := devices.NewSQLiteRepository(database, catalog)
-	service := devices.NewService(repository, nil, catalog, devices.Dependencies{})
 
 	server, err := natsserver.NewServer(&natsserver.Options{
 		Host: "127.0.0.1", Port: -1, JetStream: true, StoreDir: t.TempDir(), NoSigs: true,
@@ -73,12 +72,17 @@ func TestCoreNATSTransportRegistersAndProjectsDurableObservation(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	registrations, err := platformnats.StartRegistrationServer(coreConnection, validator, registrationHandler(service), logger)
+	serviceContext, stopService := context.WithCancel(ctx)
+	serviceDone := make(chan error, 1)
+	go func() {
+		serviceDone <- service.Run(serviceContext, devicesnats.NewCommandDelivery(platformnats.NewCommandClient(coreConnection, validator)))
+	}()
+	registrations, err := platformnats.StartRegistrationServer(coreConnection, validator, devicesnats.RegistrationHandler(service), logger)
 	if err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = registrations.Drain() })
-	observations, err := platformnats.StartObservationConsumer(ctx, durable, validator, observationHandler(service), logger)
+	observations, err := platformnats.StartObservationConsumer(ctx, durable, validator, devicesnats.ObservationHandler(service), logger)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -160,6 +164,15 @@ func TestCoreNATSTransportRegistersAndProjectsDurableObservation(t *testing.T) {
 	case <-time.After(time.Second):
 		t.Fatal("observation consumer did not stop")
 	}
+	registrationClosed := registrations.Closed()
+	if err := registrations.Drain(); err != nil {
+		t.Fatal(err)
+	}
+	stopService()
+	if err := <-serviceDone; err != nil {
+		t.Fatal(err)
+	}
+	<-registrationClosed
 	if err := database.Close(); err != nil {
 		t.Fatal(err)
 	}
@@ -167,7 +180,21 @@ func TestCoreNATSTransportRegistersAndProjectsDurableObservation(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	recoveredService := devices.NewService(devices.NewSQLiteRepository(database, catalog), nil, catalog, devices.Dependencies{})
+	recoveredService, err := devices.New(ctx, database, logger)
+	if err != nil {
+		t.Fatal(err)
+	}
+	recoveredContext, stopRecovered := context.WithCancel(ctx)
+	recoveredDone := make(chan error, 1)
+	go func() {
+		recoveredDone <- recoveredService.Run(recoveredContext, devicesnats.NewCommandDelivery(platformnats.NewCommandClient(coreConnection, validator)))
+	}()
+	defer func() {
+		stopRecovered()
+		if err := <-recoveredDone; err != nil {
+			t.Errorf("stop recovered service: %v", err)
+		}
+	}()
 	recovered, err := recoveredService.GetEntity(ctx, entityID)
 	if err != nil {
 		t.Fatal(err)
@@ -176,14 +203,18 @@ func TestCoreNATSTransportRegistersAndProjectsDurableObservation(t *testing.T) {
 		recovered.State.ReceiveOrder != projected.ReceiveOrder || string(recovered.State.Value) != "true" {
 		t.Fatalf("recovered state = %#v, want %#v", recovered.State, projected)
 	}
-	result, err := recoveredService.ProjectObservation(ctx, "simulator", devices.Observation{
-		ID: devices.ObservationID(observationID), EntityID: entityID, Value: devices.Value(`true`),
-		AdapterReceivedAt: adapterReceivedAt,
-	}, projected.ObservedAt)
+	result, err := recoveredService.ReceiveObservation(ctx, devices.ReceivedObservation{
+		AdapterID: "simulator",
+		Observation: devices.Observation{
+			ID: devices.ObservationID(observationID), EntityID: entityID, Value: devices.Value(`true`),
+			AdapterReceivedAt: adapterReceivedAt,
+		},
+		ObservedAt: projected.ObservedAt,
+	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if result.Disposition != devices.DispositionDuplicate || result.State != nil {
+	if result.Disposition != devices.DispositionDuplicate {
 		t.Fatalf("recovered redelivery = %#v", result)
 	}
 	var receipts int
@@ -207,11 +238,10 @@ func TestCoreCommandRoundTripRequiresLinkedSimulatorObservation(t *testing.T) {
 	if err := platformdb.Migrate(ctx, database); err != nil {
 		t.Fatal(err)
 	}
-	catalog, err := devices.NewBuiltinTypeCatalog()
+	service, err := devices.New(ctx, database, logger)
 	if err != nil {
 		t.Fatal(err)
 	}
-	repository := devices.NewSQLiteRepository(database, catalog)
 
 	server, err := natsserver.NewServer(&natsserver.Options{
 		Host: "127.0.0.1", Port: -1, JetStream: true, StoreDir: t.TempDir(), NoSigs: true,
@@ -244,18 +274,23 @@ func TestCoreCommandRoundTripRequiresLinkedSimulatorObservation(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	service := devices.NewService(
-		repository,
-		&natsCommandSender{client: platformnats.NewCommandClient(coreConnection, validator)},
-		catalog,
-		devices.Dependencies{},
-	)
-	registrations, err := platformnats.StartRegistrationServer(coreConnection, validator, registrationHandler(service), logger)
+	serviceContext, stopService := context.WithCancel(ctx)
+	serviceDone := make(chan error, 1)
+	go func() {
+		serviceDone <- service.Run(serviceContext, devicesnats.NewCommandDelivery(platformnats.NewCommandClient(coreConnection, validator)))
+	}()
+	t.Cleanup(func() {
+		stopService()
+		if err := <-serviceDone; err != nil {
+			t.Errorf("stop service: %v", err)
+		}
+	})
+	registrations, err := platformnats.StartRegistrationServer(coreConnection, validator, devicesnats.RegistrationHandler(service), logger)
 	if err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = registrations.Drain() })
-	observations, err := platformnats.StartObservationConsumer(ctx, durable, validator, observationHandler(service), logger)
+	observations, err := platformnats.StartObservationConsumer(ctx, durable, validator, devicesnats.ObservationHandler(service), logger)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -330,13 +365,16 @@ func TestCoreCommandRoundTripRequiresLinkedSimulatorObservation(t *testing.T) {
 	if string(result.Value) != "true" {
 		t.Fatalf("command result = %#v", result)
 	}
-	stored, err := repository.GetCommand(ctx, result.CommandID)
-	if err != nil {
+	var status string
+	var acceptedAt, outcomeObservationID *string
+	if err := database.QueryRowContext(ctx,
+		"SELECT status, accepted_at, outcome_observation_id FROM commands WHERE id = ?", result.CommandID,
+	).Scan(&status, &acceptedAt, &outcomeObservationID); err != nil {
 		t.Fatal(err)
 	}
-	if stored.Status != devices.CommandStatusSatisfied || stored.AcceptedAt == nil ||
-		stored.OutcomeObservationID == nil || *stored.OutcomeObservationID != result.ObservationID {
-		t.Fatalf("stored command = %#v", stored)
+	if status != "satisfied" || acceptedAt == nil || outcomeObservationID == nil ||
+		*outcomeObservationID != string(result.ObservationID) {
+		t.Fatalf("stored command = %q, %v, %v", status, acceptedAt, outcomeObservationID)
 	}
 	view, err := service.GetEntity(ctx, entityID)
 	if err != nil {

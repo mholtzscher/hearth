@@ -21,47 +21,31 @@ const (
 	apiObservationID = devices.ObservationID("obs_01890f47-7a6b-7c4d-8e9f-0123456789ab")
 )
 
-type stubRepository struct {
+type stubEntityReader struct {
 	view devices.EntityView
 	err  error
 }
 
-func (*stubRepository) RegisterBinding(context.Context, devices.RegisterBindingParams) (devices.Binding, error) {
-	panic("unexpected RegisterBinding call")
+func (reader *stubEntityReader) GetEntity(context.Context, devices.EntityID) (devices.EntityView, error) {
+	return reader.view, reader.err
 }
 
-func (repository *stubRepository) GetEntityView(context.Context, devices.EntityID) (devices.EntityView, error) {
-	return repository.view, repository.err
+type stubCommandExecutor struct {
+	result devices.CommandResult
+	err    error
 }
 
-func (*stubRepository) ProjectObservation(context.Context, devices.ProjectObservationParams) (devices.ProjectionResult, error) {
-	panic("unexpected ProjectObservation call")
-}
-
-func (*stubRepository) DeleteExpiredObservationReceipts(context.Context, time.Time) error {
-	panic("unexpected DeleteExpiredObservationReceipts call")
-}
-
-func (*stubRepository) CreateCommand(context.Context, devices.CommandRecord) error {
-	panic("unexpected CreateCommand call")
-}
-
-func (*stubRepository) MarkCommandAccepted(context.Context, devices.CommandID, time.Time) error {
-	panic("unexpected MarkCommandAccepted call")
-}
-
-func (*stubRepository) CompleteCommand(context.Context, devices.CommandCompletion) error {
-	panic("unexpected CompleteCommand call")
-}
-
-func (*stubRepository) InterruptActiveCommands(context.Context, time.Time) error {
-	panic("unexpected InterruptActiveCommands call")
+func (executor *stubCommandExecutor) ExecuteCommand(
+	context.Context,
+	devices.EntityID,
+	devices.OperationName,
+	devices.CommandParameters,
+) (devices.CommandResult, error) {
+	return executor.result, executor.err
 }
 
 func TestGetEntityReturnsMetadataAndNullableState(t *testing.T) {
-	repository := &stubRepository{view: apiEntityView(nil)}
-	router, openapi := testAPI(t, repository)
-
+	router, openapi := testAPI(t, &stubEntityReader{view: apiEntityView(nil)}, &stubCommandExecutor{})
 	response := performRequest(router, "/v1/entities/"+string(apiEntityID))
 	if response.Code != http.StatusOK {
 		t.Fatalf("status = %d, body = %s", response.Code, response.Body.String())
@@ -87,12 +71,12 @@ func TestGetEntityReturnsMetadataAndNullableState(t *testing.T) {
 func TestGetEntityMapsCurrentState(t *testing.T) {
 	adapterReceivedAt := time.Date(2026, 8, 22, 12, 0, 0, 123, time.UTC)
 	sourceUpdatedAt := adapterReceivedAt.Add(-time.Minute)
-	observedAt := adapterReceivedAt.Add(time.Second)
 	state := &devices.State{
 		EntityID: apiEntityID, Value: devices.Value(`true`), ObservationID: apiObservationID,
-		AdapterReceivedAt: adapterReceivedAt, SourceUpdatedAt: &sourceUpdatedAt, ObservedAt: observedAt, ReceiveOrder: 4,
+		AdapterReceivedAt: adapterReceivedAt, SourceUpdatedAt: &sourceUpdatedAt,
+		ObservedAt: adapterReceivedAt.Add(time.Second), ReceiveOrder: 4,
 	}
-	router, _ := testAPI(t, &stubRepository{view: apiEntityView(state)})
+	router, _ := testAPI(t, &stubEntityReader{view: apiEntityView(state)}, &stubCommandExecutor{})
 	response := performRequest(router, "/v1/entities/"+string(apiEntityID))
 	if response.Code != http.StatusOK {
 		t.Fatalf("status = %d, body = %s", response.Code, response.Body.String())
@@ -109,31 +93,28 @@ func TestGetEntityMapsCurrentState(t *testing.T) {
 
 func TestGetEntityMapsStableErrors(t *testing.T) {
 	tests := []struct {
-		name       string
-		path       string
-		repository *stubRepository
-		status     int
-		code       string
+		path   string
+		reader *stubEntityReader
+		status int
+		code   string
 	}{
-		{"invalid ID", "/v1/entities/not-an-id", &stubRepository{}, http.StatusBadRequest, "invalid_request"},
-		{"not found", "/v1/entities/" + string(apiEntityID), &stubRepository{err: devices.ErrEntityNotFound}, http.StatusNotFound, "entity_not_found"},
-		{"internal", "/v1/entities/" + string(apiEntityID), &stubRepository{err: errors.New("SQLite unavailable")}, http.StatusInternalServerError, "internal_error"},
+		{"/v1/entities/not-an-id", &stubEntityReader{}, http.StatusBadRequest, "invalid_request"},
+		{"/v1/entities/" + string(apiEntityID), &stubEntityReader{err: devices.ErrEntityNotFound}, http.StatusNotFound, "entity_not_found"},
+		{"/v1/entities/" + string(apiEntityID), &stubEntityReader{err: errors.New("SQLite unavailable")}, http.StatusInternalServerError, "internal_error"},
 	}
 	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			router, _ := testAPI(t, test.repository)
-			response := performRequest(router, test.path)
-			if response.Code != test.status {
-				t.Fatalf("status = %d, body = %s", response.Code, response.Body.String())
-			}
-			var body ErrorBody
-			if err := json.Unmarshal(response.Body.Bytes(), &body); err != nil {
-				t.Fatal(err)
-			}
-			if body.Error.Code != test.code {
-				t.Fatalf("error body = %#v", body)
-			}
-		})
+		router, _ := testAPI(t, test.reader, &stubCommandExecutor{})
+		response := performRequest(router, test.path)
+		if response.Code != test.status {
+			t.Fatalf("status = %d, body = %s", response.Code, response.Body.String())
+		}
+		var body ErrorBody
+		if err := json.Unmarshal(response.Body.Bytes(), &body); err != nil {
+			t.Fatal(err)
+		}
+		if body.Error.Code != test.code {
+			t.Fatalf("error body = %#v", body)
+		}
 	}
 }
 
@@ -147,17 +128,11 @@ func apiEntityView(state *devices.State) devices.EntityView {
 	}
 }
 
-func testAPI(t *testing.T, repository *stubRepository) (*echo.Echo, huma.API) {
+func testAPI(t *testing.T, entities EntityReader, commands CommandExecutor) (*echo.Echo, huma.API) {
 	t.Helper()
-	catalog, err := devices.NewBuiltinTypeCatalog()
-	if err != nil {
-		t.Fatal(err)
-	}
-	service := devices.NewService(repository, nil, catalog, devices.Dependencies{})
 	router := echo.New()
 	openapi := humaecho.New(router, huma.DefaultConfig("Hearth", "1.0.0"))
-	group := huma.NewGroup(openapi, "/v1/entities")
-	Register(group, service)
+	Register(huma.NewGroup(openapi, "/v1/entities"), Dependencies{Entities: entities, Commands: commands})
 	return router, openapi
 }
 
