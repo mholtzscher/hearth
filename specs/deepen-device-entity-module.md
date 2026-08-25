@@ -206,9 +206,9 @@ Command cancellation uses four contexts:
 
 A committed terminal database write wins. A terminal result committed before stopping is retained and returned. If module cancellation first prevents or rolls back the terminal update, the Command remains active and the caller receives `*CommandExecutionError` wrapping `ErrServiceStopped`. A satisfaction commit preceding stop is published before its lifecycle may return stopped. Reads inside an open transaction use that transaction's sqlc handle, never an independent `*sql.DB` query on the single SQLite connection.
 
-### Private implementation controls
+### Private implementation dependencies
 
-Owners: `serviceControls` and `serviceTicker` in `service.go`; `sqliteDBTX` in `sqlite.go`. Same-package tests access them only through `newService`.
+Owners: `serviceControls` and `serviceTicker` in `service.go`; `sqliteDBTX` in `sqlite.go`. Same-package tests access the controls only through `newService`.
 
 ```go
 type sqliteDBTX interface {
@@ -231,25 +231,20 @@ type serviceControls struct {
     newCorrelationID        func() (CorrelationID, error)
     newCatalog              func() (*typeCatalog, error)
     withDeadline            func(context.Context, time.Time) (context.Context, context.CancelFunc)
-    newTicker               func(time.Duration) serviceTicker
-    pruneReceipts           func(context.Context, sqliteDBTX, time.Time) error
-    receiptRetention        time.Duration
-    pruneInterval           time.Duration
-    persistenceTimeout      time.Duration
-    beforeObservationCommit func()
-    afterObservationCommit  func()
+    newTicker          func(time.Duration) serviceTicker
+    receiptRetention   time.Duration
+    pruneInterval      time.Duration
+    persistenceTimeout time.Duration
 }
 ```
 
-`productionServiceControls()` returns the complete production value. `newService` rejects an incomplete set; only the before/after Observation hooks may be nil. Production callers cannot override controls.
+`productionServiceControls()` returns the complete production value, and `newService` rejects an incomplete set. Production callers cannot override controls.
 
 - `withDeadline` preserves parent cancellation and reports `context.DeadlineExceeded` for deadline expiry.
 - `newTicker` provides deterministic maintenance ticks.
-- `pruneReceipts` defaults to the real SQLite implementation and accepts either the startup transaction or module database. Tests may inject a one-shot fault and then delegate to the real implementation.
-- `beforeObservationCommit` runs after transaction writes and immediately before `Commit`.
-- `afterObservationCommit` runs immediately after successful commit, before waiter notification and token release.
+- Startup and periodic maintenance call the concrete private SQLite pruning function directly. It accepts either the startup transaction or Service database through `sqliteDBTX`.
 
-No exported options or general clock interface are added.
+The controls remain private and limited to nondeterminism and fixed production configuration; SQLite behavior and transaction sequencing stay concrete.
 
 ### Stable errors
 
@@ -669,18 +664,18 @@ Existing behavior tests are rewritten through `Service`:
 - Observation applied/unchanged/duplicate/rejected behavior, receive ordering, durable receipts, pruning, and State reads.
 - Command commit-before-delivery, acceptance, rejection, unavailable/internal failures, outcome timeout, overlapping Commands, linked mismatch, and caller cancellation.
 
-Deterministic tests use private controls rather than sleeps or polling. Exact ownership:
+Deterministic tests use private time/lifecycle controls, real SQLite failure conditions, and externally observable synchronization rather than sleeps or polling. Exact ownership:
 
 | Path | Required test and coverage |
 |---|---|
 | `service_lifecycle_test.go` | `TestNewRequiresDatabaseAndDefaultsLogger` — nil database, logger default, no goroutine, and no database close/reconfiguration. |
-| `service_lifecycle_test.go` | `TestNewRecoversAndPrunesAtomicallyBeforeNATS` — interruption, pruning, rollback/retry, no redispatch, and later NATS failure. |
+| `service_lifecycle_test.go` | `TestNewRecoversAndPrunesAtomicallyBeforeNATS` — a temporary SQLite `BEFORE DELETE` trigger aborts real receipt pruning; verify interruption rolls back, remove the trigger, retry, and prove pruning/interruption complete before a later NATS failure without redispatch. |
 | `service_lifecycle_test.go` | `TestRunRequiresDeliveryAndIsOneShot` — nil, repeated, and concurrent `Run`. |
-| `service_lifecycle_test.go` | `TestRunRetriesPruning` — deterministic tick and logged transient failure. |
+| `service_lifecycle_test.go` | `TestRunRetriesPruning` — a temporary SQLite `BEFORE DELETE` trigger makes a deterministic ticker event fail and log; after removing the trigger, the next tick deletes the expired receipt. |
 | `service_lifecycle_test.go` | `TestRunStopsWorkAndWaitsForDatabaseUse` — blocked delivery, accepted wait, database work, transferred tokens, and no false terminal write. |
 | `service_lifecycle_test.go` | `TestServiceMethodsWaitForRunAndRejectAfterStop` — all four product methods, context cancellation, and no post-stop writes. |
 | `service_lifecycle_test.go` | `TestNewInterruptsCommandsLeftByGracefulStop` — active record recovery without redispatch. |
-| `observation_test.go` | `TestReceiveObservationCancellationAroundCommit` — rollback before commit and preserved State/notification after commit. |
+| `observation_test.go` | `TestReceiveObservationCancellationAndShutdown` — canceled calls leave no writes; in concurrent receive/shutdown races, an error implies rollback while a returned receipt implies preserved State and waiter notification before `Run` returns. |
 | `command_test.go` | `TestExecuteCommandCommitsBeforeDeliveryAndHandlesAcceptanceRace` — immediate Observation and late acceptance. |
 | `command_test.go` | `TestExecuteCommandReturnsSatisfiedWhenObservationWinsDeliveryFailureRace` — unavailable, rejection, and internal-error orderings. |
 | `command_test.go` | `TestExecuteCommandSerializesDeadlineAndObservation` — both commit orders. |
@@ -793,7 +788,7 @@ All normative contracts above are acceptance criteria. Completion additionally r
 | D1 | Characterize exact HTTP/OpenAPI and existing `hearthd` NATS mappings without moving production code. | M | — | `test(devices): characterize module contracts and mappings` |
 | D2 | Deepen `devices.Service` with private controls, atomic `New`, `Run`, work-token transfer, and shutdown semantics with temporary compatibility aliases. | L | D1 | `refactor(devices): deepen service lifecycle` |
 | D3 | Move Registration, Observation/State, and Command SQLite implementation onto `Service`, retaining temporary forwarding needed by unmigrated callers/tests. | L | D2 | `refactor(devices): absorb SQLite implementation` |
-| D4 | Replace persistence fakes with migrated SQLite, in-memory delivery, and deterministic lifecycle/race controls. | L | D3 | `test(devices): replace persistence fakes` |
+| D4 | Replace persistence fakes with migrated SQLite, in-memory delivery, deterministic time controls, and observable race assertions. | L | D3 | `test(devices): replace persistence fakes` |
 | D5 | Add Registration callback joining, relocate NATS mapping, add narrow HTTP interfaces, and migrate application/integration callers. | L | D2, D4 | `refactor(devices): relocate adapters and migrate callers` |
 | D6 | Remove temporary seams, privatize/regenerate the catalog, add static/compatibility gates, and prove no stale symbols. | M | D5 | `refactor(devices): remove shallow compatibility seams` |
 | D7 | Update current architecture/specs and run full compatibility and validation gates. | M | D6 | `docs(devices): record deep module ownership` |
@@ -815,8 +810,8 @@ Update obsolete shallow-Service, repository, Observation projection, and catalog
 | Risk | Required control |
 |---|---|
 | Shutdown races terminal writes or `WaitGroup` registration | Commit linearizes outcomes; lifecycle mutex serializes token registration and stopping; deterministic tests cover both orders. |
-| Single-connection SQLite tests deadlock | Gate at commit hooks and query through the active transaction. |
-| Deadline and notification tests flake | Inject private deadlines/tickers/hooks; use no sleeps or polling. |
+| Single-connection SQLite tests deadlock | Never inspect the database while a Service call may hold its transaction; assert state after the call or shutdown join. |
+| Deadline and notification tests flake | Inject private deadlines/tickers and synchronize through delivery calls, method results, and shutdown joins; use no sleeps or polling. |
 | NATS or external contracts drift during relocation | Characterize first, guard preserved paths, and retain transport/integration tests. |
 | Temporary compatibility code or stale generated names survive | D6 shape gate plus generator checks reject them. |
 | Behavior files become a new monolith | Keep behavior-first files with fixed SQLite companions; do not recreate a shared repository seam. |
