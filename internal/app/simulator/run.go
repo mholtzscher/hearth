@@ -11,7 +11,7 @@ import (
 	"github.com/google/uuid"
 	contractsv1 "github.com/mholtzscher/hearth/contracts/v1"
 	simulatoradapter "github.com/mholtzscher/hearth/internal/adapters/simulator"
-	platformnats "github.com/mholtzscher/hearth/internal/platform/nats"
+	"github.com/mholtzscher/hearth/internal/contracts/v1/natswire"
 	"github.com/mholtzscher/hearth/sdk/adapter"
 	sdkpowerv1 "github.com/mholtzscher/hearth/sdk/adapter/powerv1"
 	natsgo "github.com/nats-io/nats.go"
@@ -138,9 +138,9 @@ func publishFaultObservation(ctx context.Context, config Config, entityID string
 		return err
 	}
 	now := time.Now().UTC().Format(time.RFC3339Nano)
-	payload, err := platformnats.Encode(validator, contractsv1.ObservationSchemaID, platformnats.Envelope[platformnats.Observation]{
+	payload, err := natswire.Encode(validator, contractsv1.ObservationSchemaID, natswire.Envelope[adapter.Observation]{
 		ID: observationID, Schema: contractsv1.ObservationSchemaID, EmittedAt: now, CorrelationID: correlationID,
-		Data: platformnats.Observation{
+		Data: adapter.Observation{
 			EntityID: entityID, Value: json.RawMessage(`false`), AdapterReceivedAt: now,
 		},
 	})
@@ -175,7 +175,7 @@ func publishRawObservation(
 	if err != nil {
 		return fmt.Errorf("create simulator fault publisher: %w", err)
 	}
-	subject, err := platformnats.ObservationSubject(config.AdapterID, entityID)
+	subject, err := natswire.ObservationSubject(config.AdapterID, entityID)
 	if err != nil {
 		return err
 	}

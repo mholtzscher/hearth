@@ -11,12 +11,15 @@ import (
 	"time"
 
 	contractsv1 "github.com/mholtzscher/hearth/contracts/v1"
+	"github.com/mholtzscher/hearth/internal/contracts/v1/natswire"
+	"github.com/mholtzscher/hearth/internal/modules/devices"
 	natsserver "github.com/nats-io/nats-server/v2/server"
 	natsgo "github.com/nats-io/nats.go"
 	"github.com/nats-io/nats.go/jetstream"
 )
 
 const (
+	testEntityID            = "ent_01890f47-7a6b-7c4d-8e9f-0123456789ab"
 	testObservationID       = "obs_01890f47-7a6b-7c4d-8e9f-0123456789ab"
 	testSecondObservationID = "obs_01890f47-7a6b-7c4d-8e9f-0123456789ac"
 	testThirdObservationID  = "obs_01890f47-7a6b-7c4d-8e9f-0123456789ad"
@@ -24,51 +27,24 @@ const (
 	testCorrelationID       = "cor_01890f47-7a6b-7c4d-8e9f-0123456789ab"
 )
 
-func TestProvisionObservationResourcesCreatesAndValidatesRequiredConfiguration(t *testing.T) {
-	_, _, js := startJetStream(t)
-	consumer, err := ProvisionObservationResources(context.Background(), js)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if consumer.CachedInfo().Config.Name != ObservationConsumerName {
-		t.Fatalf("consumer = %#v", consumer.CachedInfo().Config)
-	}
-	if _, err := ProvisionObservationResources(context.Background(), js); err != nil {
-		t.Fatalf("second provisioning: %v", err)
-	}
-	if err := ValidateObservationResources(context.Background(), js); err != nil {
-		t.Fatal(err)
-	}
+type projectorFunc func(context.Context, string, devices.Observation, time.Time) (devices.ProjectionResult, error)
+
+func (projector projectorFunc) ProjectObservation(
+	ctx context.Context,
+	adapterID string,
+	observation devices.Observation,
+	observedAt time.Time,
+) (devices.ProjectionResult, error) {
+	return projector(ctx, adapterID, observation, observedAt)
 }
 
-func TestProvisionObservationResourcesRejectsMismatchedExistingConfiguration(t *testing.T) {
-	tests := []struct {
-		name   string
-		mutate func(*jetstream.StreamConfig)
-	}{
-		{"max bytes", func(config *jetstream.StreamConfig) { config.MaxBytes = 42 }},
-		{"max messages", func(config *jetstream.StreamConfig) { config.MaxMsgs = 1 }},
-		{"max messages per subject", func(config *jetstream.StreamConfig) { config.MaxMsgsPerSubject = 1 }},
-		{"max message size", func(config *jetstream.StreamConfig) { config.MaxMsgSize = 1024 }},
-		{"no acknowledgements", func(config *jetstream.StreamConfig) { config.NoAck = true }},
-	}
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			_, _, js := startJetStream(t)
-			config := observationStreamConfig()
-			test.mutate(&config)
-			if _, err := js.CreateStream(context.Background(), config); err != nil {
-				t.Fatal(err)
-			}
-			_, err := ProvisionObservationResources(context.Background(), js)
-			if err == nil || !strings.Contains(err.Error(), "does not match") {
-				t.Fatalf("provisioning error = %v", err)
-			}
-		})
-	}
+type projectedObservation struct {
+	adapterID   string
+	observation devices.Observation
+	observedAt  time.Time
 }
 
-func TestObservationConsumerAcknowledgesCommittedAndMalformedMessages(t *testing.T) {
+func TestObservationConsumerMapsProjectsAndAcknowledgesByFailureClass(t *testing.T) {
 	_, connection, js := startJetStream(t)
 	consumer, err := ProvisionObservationResources(context.Background(), js)
 	if err != nil {
@@ -80,14 +56,19 @@ func TestObservationConsumerAcknowledgesCommittedAndMalformedMessages(t *testing
 	}
 	var logs bytes.Buffer
 	logger := slog.New(slog.NewJSONHandler(&logs, nil))
-	deliveries := make(chan ObservationDelivery, 3)
-	running, err := StartObservationConsumer(context.Background(), consumer, validator, func(_ context.Context, delivery ObservationDelivery) error {
-		deliveries <- delivery
-		if delivery.Envelope.ID == testFourthObservationID {
-			return errors.New("temporary SQLite failure")
+	projections := make(chan projectedObservation, 3)
+	running, err := StartObservationConsumer(context.Background(), consumer, validator, projectorFunc(func(
+		_ context.Context,
+		adapterID string,
+		observation devices.Observation,
+		observedAt time.Time,
+	) (devices.ProjectionResult, error) {
+		projections <- projectedObservation{adapterID: adapterID, observation: observation, observedAt: observedAt}
+		if observation.ID == devices.ObservationID(testFourthObservationID) {
+			return devices.ProjectionResult{}, errors.New("temporary SQLite failure")
 		}
-		return nil
-	}, logger)
+		return devices.ProjectionResult{}, nil
+	}), logger)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -98,13 +79,15 @@ func TestObservationConsumerAcknowledgesCommittedAndMalformedMessages(t *testing
 
 	publishObservationEnvelope(t, js, testObservationID, `true`)
 	select {
-	case delivery := <-deliveries:
-		if delivery.Envelope.ID != testObservationID || delivery.Route.AdapterID != "simulator" ||
-			delivery.Route.EntityID != testEntityID || delivery.StreamSequence != 1 || delivery.ObservedAt.IsZero() {
-			t.Fatalf("delivery = %#v", delivery)
+	case projection := <-projections:
+		if projection.observation.ID != devices.ObservationID(testObservationID) ||
+			projection.observation.EntityID != devices.EntityID(testEntityID) ||
+			string(projection.observation.Value) != "true" || projection.adapterID != "simulator" ||
+			projection.observedAt.IsZero() || projection.observedAt.Location() != time.UTC {
+			t.Fatalf("projection = %#v", projection)
 		}
 	case <-time.After(3 * time.Second):
-		t.Fatal("timed out waiting for observation delivery")
+		t.Fatal("timed out waiting for observation projection")
 	}
 	waitForConsumer(t, consumer, func(info *jetstream.ConsumerInfo) bool {
 		return info.AckFloor.Consumer >= 1 && info.NumAckPending == 0
@@ -126,8 +109,8 @@ func TestObservationConsumerAcknowledgesCommittedAndMalformedMessages(t *testing
 		return info.AckFloor.Consumer >= 2 && info.NumAckPending == 0
 	})
 	select {
-	case unexpected := <-deliveries:
-		t.Fatalf("malformed message reached handler: %#v", unexpected)
+	case unexpected := <-projections:
+		t.Fatalf("malformed message reached projector: %#v", unexpected)
 	default:
 	}
 
@@ -137,8 +120,8 @@ func TestObservationConsumerAcknowledgesCommittedAndMalformedMessages(t *testing
 		return info.NumAckPending == 0 && info.AckFloor.Consumer >= 3
 	})
 	select {
-	case unexpected := <-deliveries:
-		t.Fatalf("unparseable source_updated_at reached handler: %#v", unexpected)
+	case unexpected := <-projections:
+		t.Fatalf("unparseable source_updated_at reached projector: %#v", unexpected)
 	default:
 	}
 	if output := logs.String(); !strings.Contains(output, "parse source_updated_at") || !strings.Contains(output, testThirdObservationID) {
@@ -147,9 +130,9 @@ func TestObservationConsumerAcknowledgesCommittedAndMalformedMessages(t *testing
 
 	publishObservationEnvelope(t, js, testFourthObservationID, `false`)
 	select {
-	case <-deliveries:
+	case <-projections:
 	case <-time.After(3 * time.Second):
-		t.Fatal("timed out waiting for transiently failed observation delivery")
+		t.Fatal("timed out waiting for transiently failed observation projection")
 	}
 	waitForConsumer(t, consumer, func(info *jetstream.ConsumerInfo) bool {
 		return info.NumAckPending == 1 && info.AckFloor.Consumer == 3
@@ -167,6 +150,29 @@ func TestObservationConsumerAcknowledgesCommittedAndMalformedMessages(t *testing
 	_ = connection
 }
 
+func TestDomainObservationCopiesWireDataAndPointers(t *testing.T) {
+	commandID := "cmd_01890f47-7a6b-7c4d-8e9f-0123456789ab"
+	wire := natswire.Envelope[observation]{
+		ID: testObservationID,
+		Data: observation{
+			EntityID: testEntityID, Value: json.RawMessage(`true`), RefreshForCommand: &commandID,
+		},
+	}
+	sourceUpdatedAt := time.Date(2026, 8, 20, 12, 34, 56, 0, time.UTC)
+	mapped, err := domainObservation(wire, sourceUpdatedAt.Add(time.Second), &sourceUpdatedAt)
+	if err != nil {
+		t.Fatal(err)
+	}
+	wire.Data.Value[0] = 'x'
+	commandID = "changed"
+	sourceUpdatedAt = time.Time{}
+	if string(mapped.Value) != "true" || mapped.RefreshForCommand == nil ||
+		*mapped.RefreshForCommand != devices.CommandID("cmd_01890f47-7a6b-7c4d-8e9f-0123456789ab") ||
+		mapped.SourceUpdatedAt == nil || mapped.SourceUpdatedAt.IsZero() {
+		t.Fatalf("mapped observation = %#v", mapped)
+	}
+}
+
 func publishObservationEnvelope(t *testing.T, js jetstream.JetStream, observationID, value string) {
 	t.Helper()
 	publishObservationEnvelopeWithSource(t, js, observationID, value, nil)
@@ -176,18 +182,19 @@ func publishObservationEnvelopeWithSource(t *testing.T, js jetstream.JetStream, 
 	t.Helper()
 	emittedAt := time.Now().UTC()
 	adapterReceivedAt := emittedAt.Add(2 * time.Minute)
-	envelope := Envelope[Observation]{
-		ID: observationID, Schema: contractsv1.ObservationSchemaID, EmittedAt: emittedAt.Format(time.RFC3339Nano), CorrelationID: testCorrelationID,
-		Data: Observation{
-			EntityID: testEntityID, Value: json.RawMessage(value), AdapterReceivedAt: adapterReceivedAt.Format(time.RFC3339Nano),
-			SourceUpdatedAt: sourceUpdatedAt,
+	envelope := natswire.Envelope[observation]{
+		ID: observationID, Schema: contractsv1.ObservationSchemaID,
+		EmittedAt: emittedAt.Format(time.RFC3339Nano), CorrelationID: testCorrelationID,
+		Data: observation{
+			EntityID: testEntityID, Value: json.RawMessage(value),
+			AdapterReceivedAt: adapterReceivedAt.Format(time.RFC3339Nano), SourceUpdatedAt: sourceUpdatedAt,
 		},
 	}
 	validator, err := contractsv1.Compile()
 	if err != nil {
 		t.Fatal(err)
 	}
-	payload, err := Encode(validator, contractsv1.ObservationSchemaID, envelope)
+	payload, err := natswire.Encode(validator, contractsv1.ObservationSchemaID, envelope)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -203,7 +210,7 @@ func publishObservationEnvelopeWithSource(t *testing.T, js jetstream.JetStream, 
 
 func mustObservationSubject(t *testing.T) string {
 	t.Helper()
-	subject, err := ObservationSubject("simulator", testEntityID)
+	subject, err := natswire.ObservationSubject("simulator", testEntityID)
 	if err != nil {
 		t.Fatal(err)
 	}

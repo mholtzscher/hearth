@@ -7,6 +7,7 @@ import (
 	"slices"
 	"time"
 
+	"github.com/mholtzscher/hearth/internal/contracts/v1/natswire"
 	"github.com/nats-io/nats.go/jetstream"
 )
 
@@ -61,7 +62,7 @@ func ValidateObservationResources(ctx context.Context, js jetstream.JetStream) e
 func observationStreamConfig() jetstream.StreamConfig {
 	return jetstream.StreamConfig{
 		Name:              ObservationStreamName,
-		Subjects:          []string{ObservationWildcard()},
+		Subjects:          []string{natswire.ObservationWildcard()},
 		Storage:           jetstream.FileStorage,
 		Retention:         jetstream.LimitsPolicy,
 		MaxMsgs:           -1,
@@ -84,7 +85,7 @@ func observationConsumerConfig() jetstream.ConsumerConfig {
 		MaxDeliver:    -1,
 		MaxAckPending: 1,
 		ReplayPolicy:  jetstream.ReplayInstantPolicy,
-		FilterSubject: ObservationWildcard(),
+		FilterSubject: natswire.ObservationWildcard(),
 	}
 }
 
@@ -95,7 +96,7 @@ func validateObservationStream(ctx context.Context, stream jetstream.Stream) err
 	}
 	config := info.Config
 	if config.Name != ObservationStreamName ||
-		!slices.Equal(config.Subjects, []string{ObservationWildcard()}) ||
+		!slices.Equal(config.Subjects, []string{natswire.ObservationWildcard()}) ||
 		config.Storage != jetstream.FileStorage ||
 		config.Retention != jetstream.LimitsPolicy ||
 		config.MaxMsgs != -1 ||
@@ -124,7 +125,7 @@ func validateObservationConsumer(ctx context.Context, consumer jetstream.Consume
 		config.MaxDeliver != -1 ||
 		config.MaxAckPending != 1 ||
 		config.ReplayPolicy != jetstream.ReplayInstantPolicy ||
-		config.FilterSubject != ObservationWildcard() {
+		config.FilterSubject != natswire.ObservationWildcard() {
 		return fmt.Errorf("observation consumer configuration does not match required v1 settings")
 	}
 	return nil

@@ -10,11 +10,10 @@ import (
 	"time"
 
 	contractsv1 "github.com/mholtzscher/hearth/contracts/v1"
-	corewire "github.com/mholtzscher/hearth/internal/platform/nats"
+	"github.com/mholtzscher/hearth/internal/contracts/v1/natswire"
 	natsserver "github.com/nats-io/nats-server/v2/server"
 	natsgo "github.com/nats-io/nats.go"
 	"github.com/nats-io/nats.go/jetstream"
-	"go.opentelemetry.io/otel/propagation"
 	"go.opentelemetry.io/otel/trace"
 )
 
@@ -49,7 +48,7 @@ func TestRegisterAcceptedRejectedAndLocalValidation(t *testing.T) {
 	server := startServer(t, -1, t.TempDir())
 	core := connectNATS(t, server.ClientURL())
 	validator := compileValidator(t)
-	subject, err := corewire.RegistrationSubject("simulator")
+	subject, err := natswire.RegistrationSubject("simulator")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -58,27 +57,27 @@ func TestRegisterAcceptedRejectedAndLocalValidation(t *testing.T) {
 	_, err = core.Subscribe(subject, func(message *natsgo.Msg) {
 		requests.Add(1)
 		traceHeaders <- message.Header.Get("traceparent")
-		request, decodeErr := corewire.Decode[corewire.Registration](validator, contractsv1.RegistrationRequestSchemaID, message.Data)
+		request, decodeErr := natswire.Decode[Registration](validator, contractsv1.RegistrationRequestSchemaID, message.Data)
 		if decodeErr != nil {
 			t.Errorf("decode registration request: %v", decodeErr)
 			return
 		}
 		responseID := mustID(t, "rep")
 		causationID := request.ID
-		response := corewire.Envelope[corewire.RegistrationResponse]{
+		response := natswire.Envelope[RegistrationResponse]{
 			ID: responseID, Schema: contractsv1.RegistrationResponseSchemaID, EmittedAt: nowString(),
 			CorrelationID: request.CorrelationID, CausationID: &causationID,
 		}
 		if request.Data.BindingKey == "rejected-light" {
-			response.Data = corewire.RegistrationResponse{Status: "rejected", Error: &corewire.RegistrationError{Code: "identity_conflict", Message: "binding is already owned"}}
+			response.Data = RegistrationResponse{Status: "rejected", Error: &RegistrationError{Code: "identity_conflict", Message: "binding is already owned"}}
 		} else {
-			response.Data = corewire.RegistrationResponse{Status: "accepted", Binding: &corewire.Binding{
+			response.Data = RegistrationResponse{Status: "accepted", Binding: &Binding{
 				BindingKey: request.Data.BindingKey,
 				DeviceID:   "dev_01890f47-7a6b-7c4d-8e9f-0123456789ab",
-				Entities:   []corewire.EntityBinding{{Key: "power", EntityID: testEntityID}},
+				Entities:   []EntityBinding{{Key: "power", EntityID: testEntityID}},
 			}}
 		}
-		payload, encodeErr := corewire.Encode(validator, contractsv1.RegistrationResponseSchemaID, response)
+		payload, encodeErr := natswire.Encode(validator, contractsv1.RegistrationResponseSchemaID, response)
 		if encodeErr != nil {
 			t.Errorf("encode registration response: %v", encodeErr)
 			return
@@ -165,7 +164,7 @@ func TestPublishObservationWaitsForAcknowledgement(t *testing.T) {
 		t.Fatal("observation omitted W3C trace context")
 	}
 	validator := compileValidator(t)
-	envelope, err := corewire.Decode[corewire.Observation](validator, contractsv1.ObservationSchemaID, stored.Data)
+	envelope, err := natswire.Decode[Observation](validator, contractsv1.ObservationSchemaID, stored.Data)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -221,7 +220,7 @@ func TestPublishObservationRetriesSameIDAfterReconnect(t *testing.T) {
 	if stored.Header.Get(natsgo.MsgIdHdr) != string(published.id) {
 		t.Fatalf("retried Nats-Msg-Id = %q, want %q", stored.Header.Get(natsgo.MsgIdHdr), published.id)
 	}
-	observation, err := corewire.Decode[corewire.Observation](compileValidator(t), contractsv1.ObservationSchemaID, stored.Data)
+	observation, err := natswire.Decode[Observation](compileValidator(t), contractsv1.ObservationSchemaID, stored.Data)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -281,7 +280,7 @@ func TestServeCommandsInvokesHandlersConcurrentlyAndRespondsOnce(t *testing.T) {
 			t.Fatal(requestErr)
 		}
 		reply := <-replies
-		response, decodeErr := corewire.Decode[corewire.CommandResponse](validator, contractsv1.CommandResponseSchemaID, reply.Data)
+		response, decodeErr := natswire.Decode[CommandResponse](validator, contractsv1.CommandResponseSchemaID, reply.Data)
 		if decodeErr != nil {
 			t.Fatal(decodeErr)
 		}
@@ -385,7 +384,7 @@ func TestCommandRejectionUsesUpstreamRejectedCode(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	response, err := corewire.Decode[corewire.CommandResponse](compileValidator(t), contractsv1.CommandResponseSchemaID, reply.Data)
+	response, err := natswire.Decode[CommandResponse](compileValidator(t), contractsv1.CommandResponseSchemaID, reply.Data)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -407,7 +406,6 @@ func TestCommandPublishFailureDoesNotConsumeResponder(t *testing.T) {
 		connection:    session.connection,
 		replySubject:  "_INBOX.command-response",
 		validator:     compileValidator(t),
-		propagator:    propagation.TraceContext{},
 		commandID:     mustID(t, "cmd"),
 		correlationID: mustID(t, "cor"),
 	}
@@ -456,7 +454,7 @@ func TestLinkedObservationReusesCommandCausality(t *testing.T) {
 		t.Fatal(err)
 	}
 	validator := compileValidator(t)
-	response, err := corewire.Decode[corewire.CommandResponse](validator, contractsv1.CommandResponseSchemaID, reply.Data)
+	response, err := natswire.Decode[CommandResponse](validator, contractsv1.CommandResponseSchemaID, reply.Data)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -464,7 +462,7 @@ func TestLinkedObservationReusesCommandCausality(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	observation, err := corewire.Decode[corewire.Observation](validator, contractsv1.ObservationSchemaID, stored.Data)
+	observation, err := natswire.Decode[Observation](validator, contractsv1.ObservationSchemaID, stored.Data)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -591,19 +589,19 @@ func sendCommandWithDeadline(ctx context.Context, connection *natsgo.Conn, value
 	if err != nil {
 		return nil, err
 	}
-	subject, err := corewire.CommandSubject("simulator", testEntityID, "set")
+	subject, err := natswire.CommandSubject("simulator", testEntityID, "set")
 	if err != nil {
 		return nil, err
 	}
-	payload, err := corewire.Encode(validator, contractsv1.CommandRequestSchemaID, corewire.Envelope[corewire.Command]{
+	payload, err := natswire.Encode(validator, contractsv1.CommandRequestSchemaID, natswire.Envelope[Command]{
 		ID: commandID, Schema: contractsv1.CommandRequestSchemaID, EmittedAt: nowString(), CorrelationID: correlationID,
-		Data: corewire.Command{EntityID: testEntityID, OperationName: "set", Parameters: json.RawMessage(mustJSON(value)), Deadline: deadline.UTC().Format(time.RFC3339Nano)},
+		Data: Command{EntityID: testEntityID, OperationName: "set", Parameters: json.RawMessage(mustJSON(value)), Deadline: deadline.UTC().Format(time.RFC3339Nano)},
 	})
 	if err != nil {
 		return nil, err
 	}
 	message := &natsgo.Msg{Subject: subject, Header: make(natsgo.Header), Data: payload}
-	propagation.TraceContext{}.Inject(ctx, corewire.HeaderCarrier(message.Header))
+	natswire.InjectTrace(ctx, message.Header)
 	requestContext, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 	return connection.RequestMsgWithContext(requestContext, message)

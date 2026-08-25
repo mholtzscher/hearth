@@ -11,7 +11,7 @@ import (
 	"github.com/labstack/echo/v5"
 	"github.com/mholtzscher/hearth/internal/modules/devices"
 	devicesapi "github.com/mholtzscher/hearth/internal/modules/devices/api"
-	platformnats "github.com/mholtzscher/hearth/internal/platform/nats"
+	devicesnats "github.com/mholtzscher/hearth/internal/modules/devices/nats"
 	natsgo "github.com/nats-io/nats.go"
 	"github.com/nats-io/nats.go/jetstream"
 )
@@ -24,14 +24,14 @@ type RuntimeReadiness struct {
 	database            *sql.DB
 	connection          *natsgo.Conn
 	jetstream           jetstream.JetStream
-	observationConsumer *platformnats.ObservationConsumer
+	observationConsumer *devicesnats.ObservationConsumer
 }
 
 func NewRuntimeReadiness(
 	database *sql.DB,
 	connection *natsgo.Conn,
 	js jetstream.JetStream,
-	consumer *platformnats.ObservationConsumer,
+	consumer *devicesnats.ObservationConsumer,
 ) *RuntimeReadiness {
 	return &RuntimeReadiness{
 		database: database, connection: connection, jetstream: js, observationConsumer: consumer,
@@ -48,7 +48,7 @@ func (readiness *RuntimeReadiness) Check(ctx context.Context) error {
 	if !readiness.connection.IsConnected() {
 		return errors.New("NATS is disconnected")
 	}
-	if err := platformnats.ValidateObservationResources(ctx, readiness.jetstream); err != nil {
+	if err := devicesnats.ValidateObservationResources(ctx, readiness.jetstream); err != nil {
 		return err
 	}
 	if !readiness.observationConsumer.Active() {

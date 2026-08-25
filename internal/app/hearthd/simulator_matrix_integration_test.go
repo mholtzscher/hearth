@@ -20,10 +20,12 @@ import (
 	contractsv1 "github.com/mholtzscher/hearth/contracts/v1"
 	simulatoradapter "github.com/mholtzscher/hearth/internal/adapters/simulator"
 	simulatorapp "github.com/mholtzscher/hearth/internal/app/simulator"
+	"github.com/mholtzscher/hearth/internal/contracts/v1/natswire"
 	"github.com/mholtzscher/hearth/internal/modules/devices"
 	devicesapi "github.com/mholtzscher/hearth/internal/modules/devices/api"
+	devicesnats "github.com/mholtzscher/hearth/internal/modules/devices/nats"
 	platformdb "github.com/mholtzscher/hearth/internal/platform/db"
-	platformnats "github.com/mholtzscher/hearth/internal/platform/nats"
+	"github.com/mholtzscher/hearth/sdk/adapter"
 	natsserver "github.com/nats-io/nats-server/v2/server"
 	natsgo "github.com/nats-io/nats.go"
 	"github.com/nats-io/nats.go/jetstream"
@@ -32,9 +34,25 @@ import (
 const simulatorMatrixAdapterID = "simulator"
 
 type simulatorMatrixOptions struct {
-	dependencies       devices.Dependencies
-	ackWait            time.Duration
-	observationHandler func(*devices.Service, platformnats.ObservationHandler) platformnats.ObservationHandler
+	dependencies         devices.Dependencies
+	ackWait              time.Duration
+	observationProjector func(*devices.Service, devicesnats.ObservationProjector) devicesnats.ObservationProjector
+}
+
+type observationProjectorFunc func(
+	context.Context,
+	string,
+	devices.Observation,
+	time.Time,
+) (devices.ProjectionResult, error)
+
+func (projector observationProjectorFunc) ProjectObservation(
+	ctx context.Context,
+	adapterID string,
+	observation devices.Observation,
+	observedAt time.Time,
+) (devices.ProjectionResult, error) {
+	return projector(ctx, adapterID, observation, observedAt)
 }
 
 type simulatorMatrixHarness struct {
@@ -48,8 +66,8 @@ type simulatorMatrixHarness struct {
 	connection      *natsgo.Conn
 	jetstream       jetstream.JetStream
 	durable         jetstream.Consumer
-	consumer        *platformnats.ObservationConsumer
-	registrations   *platformnats.RegistrationServer
+	consumer        *devicesnats.ObservationConsumer
+	registrations   *devicesnats.RegistrationServer
 	validator       *contractsv1.Validator
 	httpServer      *httptest.Server
 	logs            *lockedBuffer
@@ -115,7 +133,7 @@ func newSimulatorMatrixHarness(t *testing.T, scenario string, options simulatorM
 	if err != nil {
 		t.Fatal(err)
 	}
-	harness.durable, err = platformnats.ProvisionObservationResources(ctx, harness.jetstream)
+	harness.durable, err = devicesnats.ProvisionObservationResources(ctx, harness.jetstream)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -126,7 +144,7 @@ func newSimulatorMatrixHarness(t *testing.T, scenario string, options simulatorM
 		}
 		config := info.Config
 		config.AckWait = options.ackWait
-		harness.durable, err = harness.jetstream.UpdateConsumer(ctx, platformnats.ObservationStreamName, config)
+		harness.durable, err = harness.jetstream.UpdateConsumer(ctx, devicesnats.ObservationStreamName, config)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -137,21 +155,21 @@ func newSimulatorMatrixHarness(t *testing.T, scenario string, options simulatorM
 	}
 	harness.service = devices.NewService(
 		harness.repository,
-		&natsCommandSender{client: platformnats.NewCommandClient(harness.connection, harness.validator)},
+		devicesnats.NewCommandSender(harness.connection, harness.validator),
 		catalog,
 		options.dependencies,
 	)
-	harness.registrations, err = platformnats.StartRegistrationServer(
-		harness.connection, harness.validator, registrationHandler(harness.service), logger,
+	harness.registrations, err = devicesnats.StartRegistrationServer(
+		harness.connection, harness.validator, harness.service, logger,
 	)
 	if err != nil {
 		t.Fatal(err)
 	}
-	handler := observationHandler(harness.service)
-	if options.observationHandler != nil {
-		handler = options.observationHandler(harness.service, handler)
+	var projector devicesnats.ObservationProjector = harness.service
+	if options.observationProjector != nil {
+		projector = options.observationProjector(harness.service, projector)
 	}
-	harness.consumer, err = platformnats.StartObservationConsumer(ctx, harness.durable, harness.validator, handler, logger)
+	harness.consumer, err = devicesnats.StartObservationConsumer(ctx, harness.durable, harness.validator, projector, logger)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -268,7 +286,7 @@ func TestSimulatorObservationFailureMatrix(t *testing.T) {
 					t.Fatalf("state = %#v", state)
 				}
 				assertMatrixCount(t, harness.database, "observation_receipts", 1)
-				stream, err := harness.jetstream.Stream(harness.ctx, platformnats.ObservationStreamName)
+				stream, err := harness.jetstream.Stream(harness.ctx, devicesnats.ObservationStreamName)
 				if err != nil {
 					t.Fatal(err)
 				}
@@ -359,7 +377,7 @@ func TestSimulatorCommandHTTPFailureMatrix(t *testing.T) {
 		{
 			name: "unexpected response", scenario: simulatoradapter.ScenarioUnavailableAdapter,
 			prepare: func(t *testing.T, harness *simulatorMatrixHarness) {
-				subject, err := platformnats.CommandSubject(simulatorMatrixAdapterID, string(harness.entityID), "set")
+				subject, err := natswire.CommandSubject(simulatorMatrixAdapterID, string(harness.entityID), "set")
 				if err != nil {
 					t.Fatal(err)
 				}
@@ -571,10 +589,10 @@ func TestSimulatorInterruptedCommandSurvivesLateLinkedObservation(t *testing.T) 
 	if err := harness.repository.CreateCommand(harness.ctx, record); err != nil {
 		t.Fatal(err)
 	}
-	acceptance, err := platformnats.NewCommandClient(harness.connection, harness.validator).Send(
-		harness.ctx, simulatorMatrixAdapterID, platformnats.CommandRequest{
-			ID: string(commandID), CorrelationID: string(correlationID), EntityID: string(harness.entityID),
-			OperationName: "set", Parameters: json.RawMessage(`{"value":true}`), Deadline: record.DeadlineAt,
+	acceptance, err := devicesnats.NewCommandSender(harness.connection, harness.validator).Send(
+		harness.ctx, simulatorMatrixAdapterID, devices.CommandRequest{
+			ID: commandID, CorrelationID: correlationID, EntityID: harness.entityID,
+			OperationName: devices.OperationNameSet, Parameters: devices.CommandParameters(`{"value":true}`), Deadline: record.DeadlineAt,
 		},
 	)
 	if err != nil {
@@ -612,17 +630,23 @@ func TestSimulatorRestartBeforeAckRedeliversWithoutChangingStateOrCommand(t *tes
 	var failOnce atomic.Bool
 	harness := newSimulatorMatrixHarness(t, simulatoradapter.ScenarioRestartBeforeAck, simulatorMatrixOptions{
 		ackWait: 500 * time.Millisecond,
-		observationHandler: func(_ *devices.Service, base platformnats.ObservationHandler) platformnats.ObservationHandler {
-			return func(ctx context.Context, delivery platformnats.ObservationDelivery) error {
-				if err := base(ctx, delivery); err != nil {
-					return err
+		observationProjector: func(_ *devices.Service, base devicesnats.ObservationProjector) devicesnats.ObservationProjector {
+			return observationProjectorFunc(func(
+				ctx context.Context,
+				adapterID string,
+				observation devices.Observation,
+				observedAt time.Time,
+			) (devices.ProjectionResult, error) {
+				result, err := base.ProjectObservation(ctx, adapterID, observation, observedAt)
+				if err != nil {
+					return result, err
 				}
-				if delivery.Envelope.Data.RefreshForCommand != nil && failOnce.CompareAndSwap(false, true) {
+				if observation.RefreshForCommand != nil && failOnce.CompareAndSwap(false, true) {
 					close(committed)
-					return errors.New("simulated core exit before acknowledgement")
+					return result, errors.New("simulated core exit before acknowledgement")
 				}
-				return nil
-			}
+				return result, nil
+			})
 		},
 	})
 	harness.waitForState(t)
@@ -661,16 +685,20 @@ func TestSimulatorRestartBeforeAckRedeliversWithoutChangingStateOrCommand(t *tes
 	}
 	redelivered := make(chan struct{})
 	var redeliveryOnce sync.Once
-	base := observationHandler(harness.service)
-	harness.consumer, err = platformnats.StartObservationConsumer(
+	harness.consumer, err = devicesnats.StartObservationConsumer(
 		harness.ctx, harness.durable, harness.validator,
-		func(ctx context.Context, delivery platformnats.ObservationDelivery) error {
-			err := base(ctx, delivery)
-			if delivery.Envelope.ID == result.ObservationID {
+		observationProjectorFunc(func(
+			ctx context.Context,
+			adapterID string,
+			observation devices.Observation,
+			observedAt time.Time,
+		) (devices.ProjectionResult, error) {
+			projected, err := harness.service.ProjectObservation(ctx, adapterID, observation, observedAt)
+			if observation.ID == devices.ObservationID(result.ObservationID) {
 				redeliveryOnce.Do(func() { close(redelivered) })
 			}
-			return err
-		},
+			return projected, err
+		}),
 		slog.New(slog.NewJSONHandler(harness.logs, nil)),
 	)
 	if err != nil {
@@ -716,11 +744,11 @@ func publishMatrixLinkedObservation(
 	}
 	now := time.Now().UTC().Format(time.RFC3339Nano)
 	commandIDString := string(commandID)
-	payload, err := platformnats.Encode(harness.validator, contractsv1.ObservationSchemaID,
-		platformnats.Envelope[platformnats.Observation]{
+	payload, err := natswire.Encode(harness.validator, contractsv1.ObservationSchemaID,
+		natswire.Envelope[adapter.Observation]{
 			ID: string(observationID), Schema: contractsv1.ObservationSchemaID, EmittedAt: now,
 			CorrelationID: string(correlationID), CausationID: &commandIDString,
-			Data: platformnats.Observation{
+			Data: adapter.Observation{
 				EntityID: string(harness.entityID), Value: json.RawMessage(fmt.Sprintf("%t", value)),
 				AdapterReceivedAt: now, RefreshForCommand: &commandIDString,
 			},
@@ -729,7 +757,7 @@ func publishMatrixLinkedObservation(
 	if err != nil {
 		t.Fatal(err)
 	}
-	subject, err := platformnats.ObservationSubject(simulatorMatrixAdapterID, string(harness.entityID))
+	subject, err := natswire.ObservationSubject(simulatorMatrixAdapterID, string(harness.entityID))
 	if err != nil {
 		t.Fatal(err)
 	}
