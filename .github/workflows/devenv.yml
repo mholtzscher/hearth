@@ -1,4 +1,4 @@
-name: Check
+name: devenv
 
 on:
   pull_request:
