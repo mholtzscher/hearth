@@ -12,13 +12,13 @@ Hearth initially serves technical self-hosters. Each trusted deployment owns one
 
 ## Product boundary
 
-Hearth aims to become a [functional replacement](../CONTEXT.md) for Home Assistant. The Home Assistant adapter is disposable migration infrastructure that keeps this household running while native adapters take ownership device by device. It is deleted after migration and is not a permanently supported bridge or part of the intended final deployment. Hearth may retain mature specialist protocol services rather than reimplementing their device protocols.
+Hearth aims to become a [functional replacement](../CONTEXT.md) for Home Assistant without requiring every Household to eliminate it. The Home Assistant Bridge is a permanently supported inbound Adapter for objects whose configuration and lifecycle remain owned by Home Assistant. A bridged object may remain there indefinitely or later move to native ownership without changing its canonical Hearth IDs. Hearth may also retain mature specialist protocol services rather than reimplementing their device protocols.
 
 Every production use of NATS must solve a concrete need involving durability, isolation, routing, or observability. Exercising a NATS capability is not by itself a reason to put that capability into the product.
 
 ## First vertical slice
 
-Observe and control one light still managed by Home Assistant through an HTTP API. This validates the temporary migration seam while keeping the house operational. The Home Assistant adapter runs separately from the core, and a simulator injects failures against the same contracts. Configurable automations and a browser interface are deferred. See [`plans/0001-first-light.md`](./plans/0001-first-light.md).
+Observe and control one light still managed by Home Assistant through an HTTP API. This first slice validated the isolated Adapter seam while keeping the house operational. The Home Assistant Bridge runs separately from the core, and a simulator injects failures against the same contracts. The next foundation makes that Bridge permanently supportable; see [`specs/home-assistant-bridge.md`](../specs/home-assistant-bridge.md). Configurable automations and a browser interface remain deferred.
 
 ## Explicit non-goals
 

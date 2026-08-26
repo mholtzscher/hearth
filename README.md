@@ -8,7 +8,7 @@ The project has two equal gates: work must advance a useful home automation syst
 
 ## Status
 
-Hearth's first vertical slice observes and controls one Home Assistant-managed light; the simulator exercises recovery and the complete failure matrix against the same contracts.
+Hearth's first vertical slice observes and controls one Home Assistant-managed light; the simulator exercises recovery and the complete failure matrix against the same contracts. The next approved direction turns that isolated process into a permanently supported inbound Home Assistant Bridge.
 
 ## Development
 
@@ -16,9 +16,9 @@ Enter the devenv shell with `devenv shell` and start local NATS/JetStream with `
 
 Run the first-light simulator with `go run ./cmd/hearth-simulator -config configs/simulator.yaml` after copying `configs/simulator.example.yaml`. Its `scenario` may be `happy`, `duplicate`, `delayed-source-time`, `future-clock-skew`, `malformed`, `unavailable-adapter`, `upstream-rejection`, `no-op-refresh`, `overlapping-opposite-command`, `outcome-timeout`, `interrupted-command`, or `restart-before-ack`.
 
-### Home Assistant migration adapter
+### Home Assistant adapter
 
-Copy `configs/homeassistant.example.yaml` to the ignored `configs/homeassistant.yaml`, configure one Home Assistant light, and place a long-lived access token at the configured ignored `token_file` path. With NATS and `hearthd` running, start the disposable adapter:
+The currently implemented first-light config still uses one explicit Binding. Copy `configs/homeassistant.example.yaml` to the ignored `configs/homeassistant.yaml`, configure one Home Assistant light, and place a long-lived access token at the configured ignored `token_file` path. With NATS and `hearthd` running, start the Adapter:
 
 ```sh
 go run ./cmd/hearth-adapter-homeassistant -config configs/homeassistant.yaml
@@ -42,4 +42,4 @@ curl -X POST http://127.0.0.1:8080/v1/entities/ent_.../commands \
 - [`docs/plans/`](./docs/plans/): implementation plans
 - [`specs/`](./specs/): approved implementation-ready specifications
 
-The approved first-slice contract is [`specs/first-light.md`](./specs/first-light.md).
+The implemented first-slice contract is [`specs/first-light.md`](./specs/first-light.md). The permanent Bridge foundation is specified in [`specs/home-assistant-bridge.md`](./specs/home-assistant-bridge.md).

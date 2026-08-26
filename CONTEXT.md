@@ -16,12 +16,24 @@ _Avoid_: Integration, plugin
 One configured occurrence of an adapter, identified by a stable subject-safe slug within a household.
 _Avoid_: Adapter type, process ID
 
+**Adapter presence**:
+Hearth's current evidence that an Adapter instance is running, established by a renewable lease. Presence is either online or offline and does not imply that the Adapter can communicate with its external system.
+_Avoid_: Upstream status, Entity availability, NATS connection
+
+**Upstream status**:
+An Adapter instance's report of whether it can communicate with its configured external system. Upstream status is separate from Adapter presence so Hearth can distinguish an absent Adapter from a running Adapter whose external system is disconnected or rejects authentication.
+_Avoid_: Adapter presence, Entity availability
+
+**Bridge**:
+A permanently supported Adapter that represents objects managed by an external system as Hearth Devices and Entities. The external system remains responsible for those objects' configuration and lifecycle, while Hearth assigns their canonical identities.
+_Avoid_: Migration adapter, native adapter
+
 **Binding**:
 The durable association between an adapter's external object and its canonical Hearth Device and Entities. An adapter-scoped stable binding key preserves the association when an external identifier changes; ambiguous identity conflicts require explicit reconciliation.
 _Avoid_: Discovery result, entity name
 
 **Migration adapter**:
-A disposable adapter that keeps a household operational while devices move from Home Assistant to native ownership in Hearth. It must not introduce Home Assistant concepts or dependencies into the core and is removed after migration.
+A disposable Adapter that keeps a household operational while devices move from an external system to native ownership in Hearth. It must not introduce external-system concepts or dependencies into the core and is removed after migration.
 _Avoid_: Compatibility layer, foundational integration
 
 **Household**:
@@ -35,6 +47,14 @@ _Avoid_: Accessory, node
 **Entity**:
 One independently addressable state or control point belonging to a device. State reads and commands target entities.
 _Avoid_: Device capability, endpoint
+
+**Availability**:
+An active Entity's current ability to provide fresh observations and, when controllable, accept supported Operations. An unavailable Entity retains its last State but rejects new Commands. Availability may reflect Adapter presence, Upstream status, or the external object's own status.
+_Avoid_: State, Adapter presence, Upstream status
+
+**Retired**:
+The lifecycle of a Device or Entity that is no longer actively represented by its owning Adapter. Retirement reserves canonical identity and history, excludes the resource from active listings, permits direct retrieval, and rejects Commands.
+_Avoid_: Unavailable, deleted, missing
 
 **Entity support**:
 An Entity's type-specific statement of its supported State space and Operations. An Operation is supported exactly when it is present in Entity support; support may change without changing the Entity's identity or the meaning of active Commands.

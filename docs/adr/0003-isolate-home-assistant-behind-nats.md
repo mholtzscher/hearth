@@ -1,3 +1,5 @@
 # Isolate the temporary Home Assistant adapter behind NATS
 
+**Superseded by:** [ADR 0016](./0016-support-home-assistant-as-a-permanent-bridge.md)
+
 Home Assistant connectivity will run in a temporary migration adapter process separate from the Hearth core and communicate through a versioned NATS contract. This keeps the house operational while devices transfer to native adapters, gives vendor code independent failure isolation, and prevents Home Assistant identifiers, service calls, payloads, and lifecycle assumptions from entering the core. The extra process and distributed failure modes are accepted because the adapter must be removable from the final deployment without redesigning canonical devices, entities, or commands. It is disposable migration code and will be deleted after this household completes migration rather than maintained as a permanent bridge.
