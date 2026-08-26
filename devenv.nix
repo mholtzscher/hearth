@@ -8,6 +8,7 @@
     pkgs.golangci-lint
     pkgs.goose
     pkgs.nats-server
+    pkgs.ko
     pkgs.sqlc
   ];
 
@@ -59,7 +60,7 @@
   tasks."hearth:ko-build" = {
     after = [ "hearth:tidy" ];
     exec = ''
-      KO_DOCKER_REPO=example.invalid/hearth go tool ko build --base-import-paths --tags validation --push=false \
+      KO_DOCKER_REPO=example.invalid/hearth ko build --base-import-paths --tags validation --push=false \
         ./cmd/hearthd ./cmd/hearth-adapter-homeassistant ./cmd/hearth-simulator
     '';
   };

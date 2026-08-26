@@ -39,16 +39,14 @@ jobs:
         with:
           go-version-file: go.mod
           cache: true
-      - name: Log in to GHCR
-        env:
-          GITHUB_TOKEN: ${{ github.token }}
-        run: printf '%s' "${GITHUB_TOKEN}" | go tool ko login ghcr.io --username "${GITHUB_ACTOR}" --password-stdin
+      - uses: ko-build/setup-ko@v0.8
+        with:
+          version: v0.19.1
       - name: Publish images
         env:
-          KO_DOCKER_REPO: ghcr.io/${{ github.repository }}
           TAG: ${{ needs.release.outputs.tag_name }}
         run: |
-          go tool ko build --base-import-paths --tags "${TAG}" \
+          ko build --base-import-paths --tags "${TAG}" \
             ./cmd/hearthd \
             ./cmd/hearth-adapter-homeassistant \
             ./cmd/hearth-simulator
