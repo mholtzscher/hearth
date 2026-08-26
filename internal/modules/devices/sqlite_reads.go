@@ -126,7 +126,7 @@ func (repository *SQLiteRepository) ListEntityCommands(ctx context.Context, para
 			EntityID: string(params.EntityID), Limit: int64(params.Limit + 1),
 		})
 	} else {
-		requestedAt := formatTime(*params.BeforeRequestedAt)
+		requestedAt := formatSortableTime(*params.BeforeRequestedAt)
 		rows, err = queries.ListEntityCommandsAfter(ctx, commandsqlc.ListEntityCommandsAfterParams{
 			EntityID: string(params.EntityID), RequestedAt: requestedAt, RequestedAt_2: requestedAt,
 			ID: string(*params.BeforeID), Limit: int64(params.Limit + 1),

@@ -98,11 +98,68 @@ func TestResourceReadIndexMigrationReversesAndReapplies(t *testing.T) {
 	}
 	assertIndexColumns(t, database, "entities_device_id_idx", "")
 	assertIndexColumns(t, database, "commands_entity_requested_idx", "entity_id,requested_at")
+	if _, err := database.ExecContext(ctx, `
+		INSERT INTO devices (id, kind, name, created_at, updated_at)
+		VALUES ('dev_migration', 'light', 'Migration', '2026-08-26T12:00:00Z', '2026-08-26T12:00:00Z')`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := database.ExecContext(ctx, `
+		INSERT INTO entities (id, device_id, name, type_id, support_json, created_at, updated_at)
+		VALUES ('ent_migration', 'dev_migration', 'Power', 'hearth.power/v1', '{}',
+		        '2026-08-26T12:00:00Z', '2026-08-26T12:00:00Z')`); err != nil {
+		t.Fatal(err)
+	}
+	for _, command := range []struct {
+		id          string
+		requestedAt string
+	}{
+		{id: "cmd_exact", requestedAt: "2026-08-26T12:00:00Z"},
+		{id: "cmd_fraction", requestedAt: "2026-08-26T12:00:00.1Z"},
+	} {
+		if _, err := database.ExecContext(ctx, `
+			INSERT INTO commands (
+				id, entity_id, adapter_id, operation, parameters_json, correlation_id,
+				status, requested_at, deadline_at
+			) VALUES (?, 'ent_migration', 'adapter', 'set', '{}', 'cor_migration',
+			          'requested', ?, '2026-08-26T12:00:10Z')`, command.id, command.requestedAt); err != nil {
+			t.Fatal(err)
+		}
+	}
 	if _, err := provider.Up(ctx); err != nil {
 		t.Fatal(err)
 	}
 	assertIndexColumns(t, database, "entities_device_id_idx", "device_id,id")
 	assertIndexColumns(t, database, "commands_entity_requested_idx", "entity_id,requested_at,id")
+
+	rows, err := database.QueryContext(ctx, "SELECT id, requested_at FROM commands ORDER BY requested_at DESC")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer rows.Close()
+	for index, want := range []struct {
+		id          string
+		requestedAt string
+	}{
+		{id: "cmd_fraction", requestedAt: "2026-08-26T12:00:00.100000000Z"},
+		{id: "cmd_exact", requestedAt: "2026-08-26T12:00:00.000000000Z"},
+	} {
+		if !rows.Next() {
+			t.Fatalf("missing migrated command %d", index)
+		}
+		var id, requestedAt string
+		if err := rows.Scan(&id, &requestedAt); err != nil {
+			t.Fatal(err)
+		}
+		if id != want.id || requestedAt != want.requestedAt {
+			t.Fatalf("migrated command %d = (%q, %q), want (%q, %q)", index, id, requestedAt, want.id, want.requestedAt)
+		}
+	}
+	if rows.Next() {
+		t.Fatal("migration returned an unexpected command")
+	}
+	if err := rows.Err(); err != nil {
+		t.Fatal(err)
+	}
 }
 
 func assertIndexColumns(t *testing.T, database *sql.DB, name, want string) {

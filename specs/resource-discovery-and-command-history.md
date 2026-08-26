@@ -33,6 +33,8 @@ No new product data is persisted. Add only read queries and supporting indexes, 
 
 ## Public HTTP Contract
 
+Errors use Huma's standard RFC 9457 Problem Details model. Malformed JSON and handler-level semantic validation return HTTP 400; Huma structural validation returns HTTP 422; handlers preserve the endpoint-specific 404 and 5xx status mappings below. The API defines no custom error codes or Command-ID extension fields.
+
 ### Collection pagination
 
 `GET /v1/entities`, `GET /v1/devices`, and `GET /v1/entities/{entity_id}/commands` accept:
@@ -44,7 +46,7 @@ No new product data is persisted. Add only read queries and supporting indexes, 
 
 Each response has an `items` array, including when empty, and omits `next_cursor` when no later page exists. No endpoint returns a total count.
 
-Cursors are base64url-without-padding encodings of versioned JSON position documents. A cursor is valid only for its endpoint, parent Entity, and optional Entity `device_id` filter. Invalid encoding, version, scope, canonical ID, fields, UTC timestamp, or trailing JSON returns HTTP 400 `invalid_request`. Cursors are unsigned because this API remains trusted and loopback-bound; they convey position, not authority.
+Cursors are base64url-without-padding encodings of versioned JSON position documents. A cursor is valid only for its endpoint, parent Entity, and optional Entity `device_id` filter. Invalid encoding, version, scope, canonical ID, fields, UTC timestamp, or trailing JSON returns an HTTP 400 Problem Details response. Cursors are unsigned because this API remains trusted and loopback-bound; they convey position, not authority.
 
 Private cursor types owned by `internal/modules/devices/api/pagination.go`:
 
@@ -74,7 +76,7 @@ The repository fetches `limit + 1` rows, returns at most `limit`, and sets `Page
 - **Operation ID:** `list-entities`
 - **Tag:** `Entities`
 - **Summary:** `List Entities and their current State`
-- **Errors:** HTTP 400 `invalid_request`; HTTP 500 `internal_error`
+- **Errors:** HTTP 400 for invalid cursors or Device IDs; HTTP 422 for structural validation; HTTP 500 for internal failures
 
 Optional `device_id` is a canonical Hearth Device ID. Omission lists all household Entities; an unknown valid Device ID returns an empty collection.
 
@@ -85,7 +87,7 @@ Items use the existing `EntityBody` exactly, including full `support` and nullab
 - **Operation ID:** `list-devices`
 - **Tag:** `Devices`
 - **Summary:** `List Devices`
-- **Errors:** HTTP 400 `invalid_request`; HTTP 500 `internal_error`
+- **Errors:** HTTP 400 for invalid cursors; HTTP 422 for structural validation; HTTP 500 for internal failures
 
 Items contain only `id`, `kind`, and `name`. Results are ordered by canonical `id ASC`; subsequent pages select `id > cursor.id`.
 
@@ -95,13 +97,14 @@ Items contain only `id`, `kind`, and `name`. Results are ordered by canonical `i
 - **Tag:** `Devices`
 - **Summary:** `Get a Device and its Entities`
 - **Errors:**
-  - Invalid ID: HTTP 400 `invalid_request`, `device_id must be a canonical Hearth Device ID`
-  - Unknown valid ID: HTTP 404 `device_not_found`, `device not found`
-  - Other: HTTP 500 `internal_error`
+  - Invalid ID: HTTP 400 Problem Details, `device_id must be a canonical Hearth Device ID`
+  - Structural validation: HTTP 422 Problem Details
+  - Unknown valid ID: HTTP 404 Problem Details, `device not found`
+  - Other: HTTP 500 Problem Details, `internal error`
 
 The response contains `id`, `kind`, `name`, and `entities`. Entities use `EntityBody` exactly and are ordered by canonical `id ASC`.
 
-The embedded collection is unpaginated: registrations currently submit at most 64 Entities and household Devices are expected to remain small. Revisit this contract before supporting very large virtual Devices.
+The embedded collection is unpaginated and bounded to 64 Entities. Registration remains additive, but a transaction that would increase a Device beyond 64 persisted Entities is rejected as `invalid_descriptor` without committing descriptor or mapping changes. Revisit this contract before supporting very large virtual Devices.
 
 ### Command representation
 
@@ -133,9 +136,10 @@ Timestamps are UTC RFC3339Nano, and `parameters` is the normalized persisted ope
 - **Tag:** `Commands`
 - **Summary:** `Get a Command record`
 - **Errors:**
-  - Invalid ID: HTTP 400 `invalid_request`, `command_id must be a canonical Hearth Command ID`
-  - Unknown valid ID: HTTP 404 `command_not_found`, `command not found`
-  - Other: HTTP 500 `internal_error`
+  - Invalid ID: HTTP 400 Problem Details, `command_id must be a canonical Hearth Command ID`
+  - Structural validation: HTTP 422 Problem Details
+  - Unknown valid ID: HTTP 404 Problem Details, `command not found`
+  - Other: HTTP 500 Problem Details, `internal error`
 
 Returns `CommandRecordBody` as audit evidence without changing or replaying the Command.
 
@@ -144,7 +148,7 @@ Returns `CommandRecordBody` as audit evidence without changing or replaying the 
 - **Operation ID:** `list-entity-commands`
 - **Tag:** `Commands`
 - **Summary:** `List an Entity's Command history`
-- **Errors:** HTTP 400 `invalid_request`; HTTP 404 `entity_not_found`; HTTP 500 `internal_error`
+- **Errors:** HTTP 400 for invalid IDs or cursors; HTTP 422 for structural validation; HTTP 404 for an unknown Entity; HTTP 500 for internal failures
 
 Items use `CommandRecordBody` and are ordered by `(requested_at DESC, id DESC)`. A subsequent page selects:
 
@@ -153,7 +157,7 @@ requested_at < cursor.requested_at
 OR (requested_at = cursor.requested_at AND id < cursor.id)
 ```
 
-The ID tie-breaker makes equal timestamps deterministic. The service verifies the parent Entity before listing: an unknown valid Entity returns HTTP 404, while an existing Entity without Commands returns HTTP 200 with `items: []`.
+Persisted `requested_at` values use a fixed nine-digit fractional-second UTC representation so SQLite text ordering preserves nanosecond instants; migration 00002 normalizes existing RFC3339Nano values before rebuilding the index. The ID tie-breaker makes equal timestamps deterministic. The service verifies the parent Entity before listing: an unknown valid Entity returns HTTP 404, while an existing Entity without Commands returns HTTP 200 with `items: []`.
 
 ## Domain Contract
 
@@ -277,7 +281,7 @@ Application assembly changes from an `/v1/entities` group to `/v1`:
 +devicesapi.Register(v1, devices)
 ```
 
-`devicesapi.Register` registers `/entities`, `/entities/{entity_id}`, `/entities/{entity_id}/commands`, `/devices`, `/devices/{device_id}`, and `/commands/{command_id}` on that group. Existing Entity-detail and Command-execution methods, paths, operation IDs, tags, summaries, validation, errors, and schemas remain unchanged. Apply `removeAutoValidationResponses` to all seven operations so Huma validation continues to use Hearth's HTTP 400 policy.
+`devicesapi.Register` registers `/entities`, `/entities/{entity_id}`, `/entities/{entity_id}/commands`, `/devices`, `/devices/{device_id}`, and `/commands/{command_id}` on that group. Existing Entity-detail and Command-execution methods, paths, operation IDs, tags, summaries, and schemas remain unchanged. All seven operations retain Huma's generated HTTP 422 structural-validation response and use the standard `ErrorModel`; malformed JSON remains HTTP 400.
 
 Echo/Huma construction and the version prefix remain owned by `hearthd`; the `devices` API package owns its operations. OpenAPI remains runtime-generated and is verified through runtime compatibility tests rather than a committed artifact.
 
@@ -325,6 +329,9 @@ Add immutable Goose migration `internal/platform/db/migrations/00002_resource_re
 
 ```sql
 -- +goose Up
+-- Normalize RFC3339Nano requested_at values to nine fractional digits.
+UPDATE commands SET requested_at = /* fixed-width UTC expression */;
+
 CREATE INDEX entities_device_id_idx ON entities(device_id, id);
 DROP INDEX commands_entity_requested_idx;
 CREATE INDEX commands_entity_requested_idx
@@ -337,7 +344,7 @@ CREATE INDEX commands_entity_requested_idx
 DROP INDEX entities_device_id_idx;
 ```
 
-Primary keys already support direct lookups and household-wide ID pagination. The Entity index supports Device-filtered lists and Device aggregate joins; the extended Command index supports deterministic history ordering.
+Primary keys already support direct lookups and household-wide ID pagination. The Entity index supports Device-filtered lists and Device aggregate joins; the extended Command index supports deterministic history ordering. New Command writes use the same fixed-width UTC representation normalized by the migration.
 
 ### sqlc query sources
 
@@ -354,7 +361,7 @@ Modify `internal/platform/db/queries/commands/commands.sql`:
 - `ListEntityCommandsFirstPage`: Entity-constrained, newest first.
 - `ListEntityCommandsAfter`: Entity-constrained with strict `(requested_at, id)` keyset position.
 
-Use explicit select lists. Regenerate `internal/platform/db/sqlc/state` and `internal/platform/db/sqlc/commands`; never hand-edit generated files. Command, registration, projection, receipt-retention, and transaction behavior remain unchanged.
+Use explicit select lists. Add a registration query that counts persisted Entities for the Device inside the existing reconciliation transaction, and reject additions above 64 before writes commit. Regenerate affected sqlc packages; never hand-edit generated files. Command orchestration, projection, receipt-retention, and transaction ownership remain unchanged.
 
 ## Project Layout
 
@@ -413,7 +420,7 @@ Total: XL, approximately 2–4 focused days. The main estimate risk is public Op
 | Service unit | ID/page validation; unknown parent; repository parameters; owned copies; read-only behavior. |
 | Repository integration | Domain-only interface contract; ordering and ties; `limit + 1`; Device filtering; nullable State and JSON mapping; Device aggregate; unknown records; indexes. |
 | API unit | Routes and metadata; query defaults/bounds; empty arrays; cursors; domain-to-body mapping; DTOs; statuses/errors; omitted internal fields. |
-| Application integration | Existing route compatibility; all seven runtime OpenAPI operations; Huma 400 normalization; unchanged health/readiness. |
+| Application integration | Existing route compatibility; all seven runtime OpenAPI operations; native Huma 400/422 Problem Details; unchanged health/readiness. |
 | Generation/migration | sqlc reproducibility; empty and upgraded database migration; down migration restores prior indexes. |
 
 Use table-driven API/service tests and migrated temporary SQLite databases for persistence. Do not duplicate registration, State-projection, or Command-orchestration coverage through read handlers.
@@ -423,11 +430,11 @@ Use table-driven API/service tests and migrated temporary SQLite databases for p
 - [ ] A client with only the base URL can enumerate Devices and Entities, navigate from a Device to full Entity support/current State, use existing Entity commands, retrieve a Command by returned ID, and traverse an Entity's Command history.
 - [ ] All five endpoints match the specified methods, paths, operation metadata, DTOs, ordering, cursor behavior, and declared errors; existing Entity detail and Command execution remain HTTP/OpenAPI compatible.
 - [ ] Collection limits default to 50 and accept 1–200; pages fetch one extra row, return deterministic keyset order, always encode `items` as an array, and omit `next_cursor` on the last page.
-- [ ] Cursor validation enforces encoding, version, endpoint, Device filter, parent Entity, canonical IDs, complete fields, and UTC timestamps with HTTP 400 `invalid_request`.
-- [ ] Entity listing returns full `EntityBody` values and an unknown valid Device filter returns an empty page. Device listing returns metadata; Device detail loads all ordered full Entities in one statement and returns the specified 400/404 errors.
+- [ ] Cursor validation enforces encoding, version, endpoint, Device filter, parent Entity, canonical IDs, complete fields, and UTC timestamps with an HTTP 400 Problem Details response.
+- [ ] Entity listing returns full `EntityBody` values and an unknown valid Device filter returns an empty page. Device listing returns metadata; Device detail loads at most 64 ordered full Entities in one statement, additive registration rejects a 65th persisted Entity atomically, and Device detail returns the specified 400/404 errors.
 - [ ] Command responses expose only specified product fields and persisted state, without internal IDs or synthesized outcomes. History distinguishes unknown Entity from empty history and remains deterministic for equal timestamps.
 - [ ] Service and repository reads preserve context cancellation, return owned domain data, perform no writes, and emit no NATS messages; API DTOs and sqlc types do not cross the repository seam, and only API mappers shape HTTP response bodies.
-- [ ] The migration applies to empty and current databases and reverses its index changes; sqlc output is regenerated from source.
+- [ ] The migration normalizes existing Command request timestamps, applies to empty and current databases, and reverses its index changes; sqlc output is regenerated from source.
 - [ ] `docs/architecture.md` records the accepted behavior, and focused module/API/application/database tests cover the verification table.
 - [ ] Under a stable database snapshot, Command-history traversal visits every matching record exactly once. Existing simulator, Home Assistant adapter, health/readiness, and current endpoint contracts remain unchanged.
 - [ ] Repository gate passes: `devenv test`, then `git diff --check` and `git status --short` inspection.
@@ -439,7 +446,7 @@ Use table-driven API/service tests and migrated temporary SQLite databases for p
 | Device join mapping duplicates or drops aggregate data | Medium | Medium | Explicit nullable-row handling and real SQLite tests for empty, stateless, stateful, and multi-Entity Devices. |
 | Command parameters reveal household behavior if network exposure changes | Low on loopback | Medium | Preserve loopback scope; require authentication/authorization review before network exposure. |
 | Concurrent registration changes data between pages | Medium | Low | Keyset ordering avoids insertion-before-cursor duplicates; no cross-request snapshot isolation is promised. |
-| Registration regrouping changes existing OpenAPI | Medium | High | Assert runtime metadata, response schemas, and normalized errors for both existing operations. |
+| Registration regrouping changes existing OpenAPI | Medium | High | Assert runtime metadata, response schemas, and standard Problem Details for both existing operations. |
 
 No unresolved product or architecture decisions remain.
 

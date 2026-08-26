@@ -24,6 +24,9 @@ UPDATE devices
 SET kind = ?, name = ?, updated_at = ?
 WHERE id = ?;
 
+-- name: CountDeviceEntities :one
+SELECT count(*) FROM entities WHERE device_id = ?;
+
 -- name: CreateEntity :exec
 INSERT INTO entities (
     id, device_id, name, type_id, support_json, created_at, updated_at

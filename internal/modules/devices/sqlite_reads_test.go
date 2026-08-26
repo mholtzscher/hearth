@@ -85,6 +85,50 @@ func TestSQLiteResourceReadsUseDeterministicKeysetPages(t *testing.T) {
 	}
 }
 
+func TestSQLiteCommandHistoryOrdersWholeAndFractionalSecondsChronologically(t *testing.T) {
+	ctx := context.Background()
+	database := openMigratedDatabase(t, filepath.Join(t.TempDir(), "hearth.db"))
+	repository := NewSQLiteRepository(database, nil)
+	exactSecond := time.Date(2026, 8, 26, 12, 0, 0, 0, time.UTC)
+	seedResourceReads(t, database, exactSecond)
+	if _, err := database.ExecContext(ctx, "DELETE FROM commands"); err != nil {
+		t.Fatal(err)
+	}
+
+	earlier := newCommandRecord(t, readEntityA, exactSecond)
+	later := newCommandRecord(t, readEntityA, exactSecond.Add(100*time.Millisecond))
+	for _, command := range []CommandRecord{earlier, later} {
+		if err := repository.CreateCommand(ctx, command); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	first, err := repository.ListEntityCommands(ctx, ListEntityCommandsParams{EntityID: readEntityA, Limit: 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(first.Items) != 1 || first.Items[0].ID != later.ID || !first.HasMore {
+		t.Fatalf("first command page = %#v", first)
+	}
+	second, err := repository.ListEntityCommands(ctx, ListEntityCommandsParams{
+		EntityID: readEntityA, BeforeRequestedAt: &later.RequestedAt, BeforeID: &later.ID, Limit: 1,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(second.Items) != 1 || second.Items[0].ID != earlier.ID || second.HasMore {
+		t.Fatalf("second command page = %#v", second)
+	}
+
+	var stored string
+	if err := database.QueryRowContext(ctx, "SELECT requested_at FROM commands WHERE id = ?", earlier.ID).Scan(&stored); err != nil {
+		t.Fatal(err)
+	}
+	if stored != "2026-08-26T12:00:00.000000000Z" {
+		t.Fatalf("stored requested_at = %q", stored)
+	}
+}
+
 func seedResourceReads(t *testing.T, database *sql.DB, requestedAt time.Time) {
 	t.Helper()
 	ctx := context.Background()
