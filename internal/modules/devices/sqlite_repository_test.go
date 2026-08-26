@@ -62,6 +62,171 @@ func TestRegistrationIsIdempotentAndUpdatesDescriptors(t *testing.T) {
 	}
 }
 
+func TestMultiEntityRegistrationIsAdditiveAndReturnsSubmittedOrder(t *testing.T) {
+	ctx := context.Background()
+	database := openMigratedDatabase(t, filepath.Join(t.TempDir(), "hearth.db"))
+	catalog := firstLightCatalog(t)
+	now := time.Date(2026, 8, 25, 12, 0, 0, 0, time.UTC)
+	service := NewService(NewSQLiteRepository(database, catalog), nil, catalog, Dependencies{Now: func() time.Time { return now }})
+
+	power, err := service.Register(ctx, "homeassistant", validDomainRegistration())
+	if err != nil {
+		t.Fatal(err)
+	}
+	multi := multiEntityRegistration()
+	combined, err := service.Register(ctx, "homeassistant", multi)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(combined.Entities) != 2 || combined.Entities[0].Key != "power" || combined.Entities[1].Key != "brightness" {
+		t.Fatalf("combined binding = %#v", combined)
+	}
+	if combined.DeviceID != power.DeviceID || combined.Entities[0].EntityID != power.Entities[0].EntityID {
+		t.Fatalf("adding brightness changed existing IDs: power=%#v combined=%#v", power, combined)
+	}
+
+	reordered := copyRegistration(multi)
+	reordered.Entities[0], reordered.Entities[1] = reordered.Entities[1], reordered.Entities[0]
+	now = now.Add(time.Minute)
+	reorderedBinding, err := service.Register(ctx, "homeassistant", reordered)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(reorderedBinding.Entities) != 2 || reorderedBinding.Entities[0].Key != "brightness" ||
+		reorderedBinding.Entities[0].EntityID != combined.Entities[1].EntityID ||
+		reorderedBinding.Entities[1].Key != "power" || reorderedBinding.Entities[1].EntityID != combined.Entities[0].EntityID {
+		t.Fatalf("reordered binding = %#v", reorderedBinding)
+	}
+	var powerEntityUpdatedAt, powerMappingUpdatedAt string
+	if err := database.QueryRowContext(ctx, `
+		SELECT e.updated_at, m.updated_at
+		FROM entities e JOIN adapter_entity_mappings m ON m.entity_id = e.id
+		WHERE e.id = ?`, power.Entities[0].EntityID,
+	).Scan(&powerEntityUpdatedAt, &powerMappingUpdatedAt); err != nil {
+		t.Fatal(err)
+	}
+
+	brightnessOnly := copyRegistration(multi)
+	brightnessOnly.Entities = brightnessOnly.Entities[1:]
+	now = now.Add(time.Minute)
+	omitted, err := service.Register(ctx, "homeassistant", brightnessOnly)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(omitted.Entities) != 1 || omitted.Entities[0] != combined.Entities[1] {
+		t.Fatalf("submitted-only binding = %#v", omitted)
+	}
+	assertCounts(t, database, 1, 2)
+	var powerName string
+	if err := database.QueryRowContext(ctx, "SELECT name FROM entities WHERE id = ?", power.Entities[0].EntityID).Scan(&powerName); err != nil {
+		t.Fatal(err)
+	}
+	if powerName != "Power" {
+		t.Fatalf("omitted power name = %q", powerName)
+	}
+	var omittedEntityUpdatedAt, omittedMappingUpdatedAt string
+	if err := database.QueryRowContext(ctx, `
+		SELECT e.updated_at, m.updated_at
+		FROM entities e JOIN adapter_entity_mappings m ON m.entity_id = e.id
+		WHERE e.id = ?`, power.Entities[0].EntityID,
+	).Scan(&omittedEntityUpdatedAt, &omittedMappingUpdatedAt); err != nil {
+		t.Fatal(err)
+	}
+	if omittedEntityUpdatedAt != powerEntityUpdatedAt || omittedMappingUpdatedAt != powerMappingUpdatedAt {
+		t.Fatalf("omitted power was updated: entity %q -> %q, mapping %q -> %q",
+			powerEntityUpdatedAt, omittedEntityUpdatedAt, powerMappingUpdatedAt, omittedMappingUpdatedAt)
+	}
+}
+
+func TestRegistrationRejectsExternalIDTransfersIndependentOfOrder(t *testing.T) {
+	ctx := context.Background()
+	database := openMigratedDatabase(t, filepath.Join(t.TempDir(), "hearth.db"))
+	catalog := firstLightCatalog(t)
+	service := NewService(NewSQLiteRepository(database, catalog), nil, catalog, Dependencies{})
+	original := multiEntityRegistration()
+	if _, err := service.Register(ctx, "homeassistant", original); err != nil {
+		t.Fatal(err)
+	}
+
+	swap := copyRegistration(original)
+	swap.Device.Name = "must roll back"
+	swap.Entities[0].ExternalID, swap.Entities[1].ExternalID = swap.Entities[1].ExternalID, swap.Entities[0].ExternalID
+	transfer := copyRegistration(original)
+	transfer.Device.Name = "must roll back"
+	transfer.Entities[0].ExternalID = "light.office.new"
+	transfer.Entities = append(transfer.Entities, registrationEntity("alternate", "light.office"))
+	for _, registration := range []Registration{
+		swap,
+		{BindingKey: swap.BindingKey, Device: swap.Device, Entities: []EntityDescriptor{swap.Entities[1], swap.Entities[0]}},
+		transfer,
+		{BindingKey: transfer.BindingKey, Device: transfer.Device, Entities: []EntityDescriptor{transfer.Entities[2], transfer.Entities[1], transfer.Entities[0]}},
+	} {
+		_, err := service.Register(ctx, "homeassistant", registration)
+		assertRegistrationRejection(t, err, RegistrationIdentityConflict)
+	}
+	assertCounts(t, database, 1, 2)
+	var deviceName string
+	if err := database.QueryRowContext(ctx, "SELECT name FROM devices").Scan(&deviceName); err != nil {
+		t.Fatal(err)
+	}
+	if deviceName != original.Device.Name {
+		t.Fatalf("failed identity reconciliation changed device name to %q", deviceName)
+	}
+}
+
+func TestExternalIDCanTransferAcrossRegistrations(t *testing.T) {
+	ctx := context.Background()
+	database := openMigratedDatabase(t, filepath.Join(t.TempDir(), "hearth.db"))
+	catalog := firstLightCatalog(t)
+	service := NewService(NewSQLiteRepository(database, catalog), nil, catalog, Dependencies{})
+	original, err := service.Register(ctx, "homeassistant", validDomainRegistration())
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	release := validDomainRegistration()
+	release.Entities[0].ExternalID = "light.office.new"
+	released, err := service.Register(ctx, "homeassistant", release)
+	if err != nil {
+		t.Fatal(err)
+	}
+	claim := validDomainRegistration()
+	claim.Entities = []EntityDescriptor{registrationEntity("alternate", "light.office")}
+	claimed, err := service.Register(ctx, "homeassistant", claim)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if released.Entities[0].EntityID != original.Entities[0].EntityID ||
+		claimed.Entities[0].EntityID == original.Entities[0].EntityID {
+		t.Fatalf("release and claim bindings: original=%#v released=%#v claimed=%#v", original, released, claimed)
+	}
+	assertCounts(t, database, 1, 2)
+}
+
+func TestRegistrationRollsBackWhenLaterEntityWriteFails(t *testing.T) {
+	ctx := context.Background()
+	database := openMigratedDatabase(t, filepath.Join(t.TempDir(), "hearth.db"))
+	catalog := firstLightCatalog(t)
+	service := NewService(NewSQLiteRepository(database, catalog), nil, catalog, Dependencies{
+		NewEntityID: func() (EntityID, error) {
+			return EntityID("ent_01890f47-7a6b-7c4d-8e9f-0123456789ab"), nil
+		},
+	})
+
+	if _, err := service.Register(ctx, "homeassistant", multiEntityRegistration()); err == nil {
+		t.Fatal("registration unexpectedly succeeded with duplicate generated Entity IDs")
+	}
+	for _, table := range []string{"devices", "entities", "adapter_bindings", "adapter_entity_mappings"} {
+		var count int
+		if err := database.QueryRowContext(ctx, "SELECT count(*) FROM "+table).Scan(&count); err != nil {
+			t.Fatal(err)
+		}
+		if count != 0 {
+			t.Fatalf("%s count = %d after rollback", table, count)
+		}
+	}
+}
+
 func TestReRegistrationReplacesNormalizedSupport(t *testing.T) {
 	type stateSupport struct {
 		Mode string `json:"mode"`
@@ -152,7 +317,7 @@ func TestConcurrentRegistrationReturnsOneBinding(t *testing.T) {
 	errors := make(chan error, attempts)
 	for range attempts {
 		go func() {
-			binding, err := service.Register(ctx, "homeassistant", validDomainRegistration())
+			binding, err := service.Register(ctx, "homeassistant", multiEntityRegistration())
 			results <- binding
 			errors <- err
 		}()
@@ -167,11 +332,13 @@ func TestConcurrentRegistrationReturnsOneBinding(t *testing.T) {
 			first = binding
 			continue
 		}
-		if binding.DeviceID != first.DeviceID || binding.Entities[0].EntityID != first.Entities[0].EntityID {
+		if binding.DeviceID != first.DeviceID || len(binding.Entities) != 2 ||
+			binding.Entities[0].EntityID != first.Entities[0].EntityID ||
+			binding.Entities[1].EntityID != first.Entities[1].EntityID {
 			t.Fatalf("concurrent registration changed IDs: first=%#v got=%#v", first, binding)
 		}
 	}
-	assertCounts(t, database, 1, 1)
+	assertCounts(t, database, 1, 2)
 }
 
 func TestRegistrationRejectionsAreAtomic(t *testing.T) {
@@ -184,17 +351,10 @@ func TestRegistrationRejectionsAreAtomic(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	secondEntity := validDomainRegistration()
-	secondEntity.Entities[0].Key = "alternate-power"
-	secondEntity.Entities[0].ExternalID = "light.office-alternate"
-	_, err := service.Register(ctx, "homeassistant", secondEntity)
-	assertRegistrationRejection(t, err, RegistrationIdentityConflict)
-	assertCounts(t, database, 1, 1)
-
 	typeChange := validDomainRegistration()
 	typeChange.Device.Name = "must roll back"
 	typeChange.Entities[0].TypeID = "example.changed/v1"
-	_, err = service.Register(ctx, "homeassistant", typeChange)
+	_, err := service.Register(ctx, "homeassistant", typeChange)
 	assertRegistrationRejection(t, err, RegistrationInvalidDescriptor)
 
 	// Inject a catalog-known alternate type so the repository, rather than catalog
@@ -389,6 +549,15 @@ func validDomainRegistration() Registration {
 			Support: EntitySupport(`{"state":{},"operations":{"set":{}}}`),
 		}},
 	}
+}
+
+func multiEntityRegistration() Registration {
+	registration := validDomainRegistration()
+	registration.Entities = append(registration.Entities, EntityDescriptor{
+		Key: "brightness", ExternalID: "light.office.brightness", Name: "Brightness", TypeID: EntityTypeBrightnessV1,
+		Support: EntitySupport(`{"state":{"maximum":100},"operations":{"set":{"step":1}}}`),
+	})
+	return registration
 }
 
 func assertRegistrationRejection(t *testing.T, err error, code RegistrationRejectionCode) {

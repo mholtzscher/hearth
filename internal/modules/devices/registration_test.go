@@ -3,6 +3,7 @@ package devices
 import (
 	"context"
 	"errors"
+	"fmt"
 	"testing"
 	"time"
 )
@@ -85,7 +86,7 @@ func TestRegisterPersistsNormalizedSupportWithoutMutatingInput(t *testing.T) {
 	if _, err := service.Register(context.Background(), "homeassistant", registration); err != nil {
 		t.Fatal(err)
 	}
-	if got := string(repository.params.Entity.Support); got != `{"state":{},"operations":{"set":{}}}` {
+	if got := string(repository.params.Entities[0].Entity.Support); got != `{"state":{},"operations":{"set":{}}}` {
 		t.Fatalf("repository support = %s", got)
 	}
 	if got := string(registration.Entities[0].Support); got != original {
@@ -93,9 +94,88 @@ func TestRegisterPersistsNormalizedSupportWithoutMutatingInput(t *testing.T) {
 	}
 }
 
+func TestRegisterRejectsInvalidEntitySetsBeforeGeneratingIDsOrCallingRepository(t *testing.T) {
+	tests := map[string]func(Registration) Registration{
+		"empty": func(registration Registration) Registration {
+			registration.Entities = nil
+			return registration
+		},
+		"more than 64": func(registration Registration) Registration {
+			registration.Entities = make([]EntityDescriptor, 65)
+			for index := range registration.Entities {
+				registration.Entities[index] = registrationEntity(
+					fmt.Sprintf("power-%d", index),
+					fmt.Sprintf("light.office.%d", index),
+				)
+			}
+			return registration
+		},
+		"duplicate key": func(registration Registration) Registration {
+			registration.Entities = append(registration.Entities, registrationEntity("power", "light.office.brightness"))
+			return registration
+		},
+		"duplicate external ID": func(registration Registration) Registration {
+			registration.Entities = append(registration.Entities, registrationEntity("brightness", "light.office"))
+			return registration
+		},
+		"invalid later descriptor": func(registration Registration) Registration {
+			invalid := registrationEntity("brightness", "light.office.brightness")
+			invalid.Support = EntitySupport(`{"state":{},"operations":{}}`)
+			registration.Entities = append(registration.Entities, invalid)
+			return registration
+		},
+	}
+	for name, mutate := range tests {
+		t.Run(name, func(t *testing.T) {
+			repository := &stubRegistrationRepository{}
+			generatedIDs := 0
+			service := NewService(repository, nil, firstLightCatalog(t), Dependencies{
+				NewDeviceID: func() (DeviceID, error) { generatedIDs++; return "", nil },
+				NewEntityID: func() (EntityID, error) { generatedIDs++; return "", nil },
+			})
+
+			_, err := service.Register(context.Background(), "homeassistant", mutate(validDomainRegistration()))
+			var rejected *RegistrationRejectedError
+			if !errors.As(err, &rejected) || rejected.Code != RegistrationInvalidDescriptor {
+				t.Fatalf("registration error = %v", err)
+			}
+			if generatedIDs != 0 || repository.calls != 0 {
+				t.Fatalf("generated IDs = %d, repository calls = %d", generatedIDs, repository.calls)
+			}
+		})
+	}
+}
+
+func TestRegisterAccepts64Entities(t *testing.T) {
+	repository := &stubRegistrationRepository{}
+	service := NewService(repository, nil, firstLightCatalog(t), Dependencies{})
+	registration := validDomainRegistration()
+	registration.Entities = make([]EntityDescriptor, 64)
+	for index := range registration.Entities {
+		registration.Entities[index] = registrationEntity(
+			fmt.Sprintf("power-%d", index),
+			fmt.Sprintf("light.office.%d", index),
+		)
+	}
+
+	if _, err := service.Register(context.Background(), "homeassistant", registration); err != nil {
+		t.Fatal(err)
+	}
+	if len(repository.params.Entities) != 64 {
+		t.Fatalf("repository entities = %d", len(repository.params.Entities))
+	}
+}
+
 func TestRegistrationOperatorMessagesAreBounded(t *testing.T) {
 	message := operatorMessage(string(make([]rune, 600)))
 	if len([]rune(message)) != 512 {
 		t.Fatalf("message length = %d, want 512", len([]rune(message)))
+	}
+}
+
+func registrationEntity(key, externalID string) EntityDescriptor {
+	return EntityDescriptor{
+		Key: key, ExternalID: externalID, Name: "Power", TypeID: EntityTypePowerV1,
+		Support: EntitySupport(`{"state":{},"operations":{"set":{}}}`),
 	}
 }

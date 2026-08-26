@@ -44,7 +44,10 @@ func TestRegistrationServerMapsDomainRegistrationAndReturnsCorrelatedResponse(t 
 		return devices.Binding{
 			BindingKey: registration.BindingKey,
 			DeviceID:   devices.DeviceID("dev_01890f47-7a6b-7c4d-8e9f-0123456789ab"),
-			Entities:   []devices.EntityBinding{{Key: "power", EntityID: devices.EntityID(testEntityID)}},
+			Entities: []devices.EntityBinding{
+				{Key: "power", EntityID: devices.EntityID(testEntityID)},
+				{Key: "brightness", EntityID: devices.EntityID("ent_01890f47-7a6b-7c4d-8e9f-1123456789ab")},
+			},
 		}, nil
 	}), slog.New(slog.NewJSONHandler(io.Discard, nil)))
 	if err != nil {
@@ -59,21 +62,30 @@ func TestRegistrationServerMapsDomainRegistrationAndReturnsCorrelatedResponse(t 
 		Data: registration{
 			BindingKey: "office-light",
 			Device:     deviceDescriptor{ExternalID: &externalID, Name: "Office light", Kind: "light"},
-			Entities: []entityDescriptor{{
-				Key: "power", ExternalID: "light.office", Name: "Power", Type: "hearth.power/v1",
-				Support: []byte(`{"state":{},"operations":{"set":{}}}`),
-			}},
+			Entities: []entityDescriptor{
+				{
+					Key: "power", ExternalID: "light.office", Name: "Power", Type: "hearth.power/v1",
+					Support: []byte(`{"state":{},"operations":{"set":{}}}`),
+				},
+				{
+					Key: "brightness", ExternalID: "light.office.brightness", Name: "Brightness", Type: "hearth.brightness/v1",
+					Support: []byte(`{"state":{"maximum":100},"operations":{"set":{"step":1}}}`),
+				},
+			},
 		},
 	}
 	response := requestRegistration(t, connection, validator, request)
 	if response.CausationID == nil || *response.CausationID != requestID ||
 		response.CorrelationID != testCorrelationID || response.Data.Binding == nil ||
-		response.Data.Binding.Entities[0].EntityID != testEntityID {
+		len(response.Data.Binding.Entities) != 2 || response.Data.Binding.Entities[0].EntityID != testEntityID ||
+		response.Data.Binding.Entities[1].Key != "brightness" {
 		t.Fatalf("response = %#v", response)
 	}
 	mapped := <-handled
 	if mapped.Device.Kind != devices.DeviceKindLight || mapped.Device.ExternalID == nil ||
-		*mapped.Device.ExternalID != externalID || mapped.Entities[0].TypeID != devices.EntityTypeID("hearth.power/v1") ||
+		*mapped.Device.ExternalID != externalID || len(mapped.Entities) != 2 ||
+		mapped.Entities[0].TypeID != devices.EntityTypeID("hearth.power/v1") ||
+		mapped.Entities[1].TypeID != devices.EntityTypeID("hearth.brightness/v1") ||
 		string(mapped.Entities[0].Support) != `{"state":{},"operations":{"set":{}}}` {
 		t.Fatalf("mapped registration = %#v", mapped)
 	}

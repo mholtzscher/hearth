@@ -18,13 +18,17 @@ var (
 	ErrOutcomeTimeout      = errors.New("command outcome timeout")
 )
 
+type RegisterEntityParams struct {
+	EntityID EntityID
+	Entity   EntityDescriptor
+}
+
 type RegisterBindingParams struct {
 	AdapterID  string
 	BindingKey string
 	DeviceID   DeviceID
-	EntityID   EntityID
 	Device     DeviceDescriptor
-	Entity     EntityDescriptor
+	Entities   []RegisterEntityParams
 	UpdatedAt  time.Time
 }
 
