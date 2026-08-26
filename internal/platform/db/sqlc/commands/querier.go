@@ -13,6 +13,8 @@ type Querier interface {
 	CreateCommand(ctx context.Context, arg CreateCommandParams) error
 	GetCommand(ctx context.Context, arg GetCommandParams) (Command, error)
 	InterruptActiveCommands(ctx context.Context, arg InterruptActiveCommandsParams) (int64, error)
+	ListEntityCommandsAfter(ctx context.Context, arg ListEntityCommandsAfterParams) ([]Command, error)
+	ListEntityCommandsFirstPage(ctx context.Context, arg ListEntityCommandsFirstPageParams) ([]Command, error)
 	MarkCommandAccepted(ctx context.Context, arg MarkCommandAcceptedParams) (int64, error)
 	SatisfyCommandFromObservation(ctx context.Context, arg SatisfyCommandFromObservationParams) (int64, error)
 }

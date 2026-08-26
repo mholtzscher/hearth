@@ -58,17 +58,6 @@ func (service *Service) ProjectObservation(
 	return copyProjectionResult(result), nil
 }
 
-func (service *Service) GetEntity(ctx context.Context, id EntityID) (EntityView, error) {
-	if _, err := ParseEntityID(string(id)); err != nil {
-		return EntityView{}, fmt.Errorf("parse entity ID: %w", err)
-	}
-	view, err := service.repository.GetEntityView(ctx, id)
-	if err != nil {
-		return EntityView{}, err
-	}
-	return copyEntityView(view), nil
-}
-
 func (service *Service) DeleteExpiredObservationReceipts(ctx context.Context, before time.Time) error {
 	if before.IsZero() {
 		return errors.New("receipt expiry cutoff is required")
@@ -108,7 +97,7 @@ func copyProjectionResult(result ProjectionResult) ProjectionResult {
 	return copy
 }
 
-func copyEntityView(view EntityView) EntityView {
+func copyEntityWithState(view EntityWithState) EntityWithState {
 	copy := view
 	copy.Entity.Support = append(EntitySupport(nil), view.Entity.Support...)
 	if view.State != nil {

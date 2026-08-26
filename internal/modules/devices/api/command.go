@@ -21,11 +21,11 @@ type ExecuteCommandOutput struct {
 func (handler *Handler) ExecuteCommand(ctx context.Context, input *ExecuteCommandInput) (*ExecuteCommandOutput, error) {
 	entityID, err := devices.ParseEntityID(input.EntityID)
 	if err != nil {
-		return nil, apiError(http.StatusBadRequest, "invalid_request", "entity_id must be a canonical Hearth Entity ID")
+		return nil, apiError(http.StatusBadRequest, "entity_id must be a canonical Hearth Entity ID")
 	}
 	parameters, err := json.Marshal(input.Body.Parameters)
 	if err != nil {
-		return nil, apiError(http.StatusBadRequest, "invalid_request", "parameters must be a JSON object")
+		return nil, apiError(http.StatusBadRequest, "parameters must be a JSON object")
 	}
 	result, err := handler.devices.ExecuteCommand(
 		ctx, entityID, devices.OperationName(input.Body.OperationName), devices.CommandParameters(parameters),
@@ -35,7 +35,7 @@ func (handler *Handler) ExecuteCommand(ctx context.Context, input *ExecuteComman
 	}
 	var value any
 	if err := decodeJSON(result.Value, &value); err != nil {
-		return nil, apiError(http.StatusInternalServerError, "internal_error", "internal error")
+		return nil, apiError(http.StatusInternalServerError, "internal error")
 	}
 	return &ExecuteCommandOutput{Body: CommandResultBody{
 		CommandID: string(result.CommandID), Status: "satisfied",
@@ -44,33 +44,18 @@ func (handler *Handler) ExecuteCommand(ctx context.Context, input *ExecuteComman
 }
 
 func mapCommandError(err error) error {
-	var executionError *devices.CommandExecutionError
-	var commandID *string
-	if errors.As(err, &executionError) {
-		value := string(executionError.CommandID)
-		commandID = &value
-	}
 	switch {
 	case errors.Is(err, devices.ErrInvalidCommand):
-		return apiCommandError(http.StatusBadRequest, "invalid_request", "invalid command", commandID)
+		return apiError(http.StatusBadRequest, "invalid command")
 	case errors.Is(err, devices.ErrEntityNotFound):
-		return apiCommandError(http.StatusNotFound, "entity_not_found", "entity not found", commandID)
+		return apiError(http.StatusNotFound, "entity not found")
 	case errors.Is(err, devices.ErrAdapterUnavailable):
-		return apiCommandError(http.StatusServiceUnavailable, "adapter_unavailable", "adapter unavailable", commandID)
+		return apiError(http.StatusServiceUnavailable, "adapter unavailable")
 	case errors.Is(err, devices.ErrUpstreamRejected):
-		return apiCommandError(http.StatusBadGateway, "upstream_rejected", "upstream rejected command", commandID)
+		return apiError(http.StatusBadGateway, "upstream rejected command")
 	case errors.Is(err, devices.ErrOutcomeTimeout):
-		return apiCommandError(http.StatusGatewayTimeout, "outcome_timeout", "command outcome timed out", commandID)
+		return apiError(http.StatusGatewayTimeout, "command outcome timed out")
 	default:
-		return apiCommandError(http.StatusInternalServerError, "internal_error", "internal error", commandID)
-	}
-}
-
-func apiCommandError(status int, code, message string, commandID *string) error {
-	return &statusError{
-		status: status,
-		ErrorBody: ErrorBody{Error: APIError{
-			Code: code, Message: message, CommandID: commandID,
-		}},
+		return apiError(http.StatusInternalServerError, "internal error")
 	}
 }

@@ -39,7 +39,7 @@ func (service *Service) ExecuteCommand(
 	if err := validateCommandParameters(parameters); err != nil {
 		return CommandResult{}, fmt.Errorf("%w: %v", ErrInvalidCommand, err)
 	}
-	view, err := service.repository.GetEntityView(ctx, entityID)
+	view, err := service.repository.GetEntity(ctx, entityID)
 	if err != nil {
 		return CommandResult{}, err
 	}

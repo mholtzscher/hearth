@@ -10,6 +10,151 @@ import (
 	"database/sql"
 )
 
+const getDevice = `-- name: GetDevice :many
+SELECT
+    d.id AS device_id,
+    d.kind AS device_kind,
+    d.name AS device_name,
+    e.id AS entity_id,
+    e.device_id AS entity_device_id,
+    m.adapter_id,
+    e.name AS entity_name,
+    e.type_id,
+    e.support_json,
+    s.observation_id,
+    s.value_json,
+    s.adapter_received_at,
+    s.source_updated_at,
+    s.observed_at,
+    s.receive_order
+FROM devices AS d
+LEFT JOIN entities AS e ON e.device_id = d.id
+LEFT JOIN adapter_entity_mappings AS m ON m.entity_id = e.id
+LEFT JOIN entity_states AS s ON s.entity_id = e.id
+WHERE d.id = ?
+ORDER BY e.id ASC
+`
+
+type GetDeviceParams struct {
+	ID string
+}
+
+type GetDeviceRow struct {
+	DeviceID          string
+	DeviceKind        string
+	DeviceName        string
+	EntityID          sql.NullString
+	EntityDeviceID    sql.NullString
+	AdapterID         sql.NullString
+	EntityName        sql.NullString
+	TypeID            sql.NullString
+	SupportJson       sql.NullString
+	ObservationID     sql.NullString
+	ValueJson         sql.NullString
+	AdapterReceivedAt sql.NullString
+	SourceUpdatedAt   sql.NullString
+	ObservedAt        sql.NullString
+	ReceiveOrder      sql.NullInt64
+}
+
+func (q *Queries) GetDevice(ctx context.Context, arg GetDeviceParams) ([]GetDeviceRow, error) {
+	rows, err := q.db.QueryContext(ctx, getDevice, arg.ID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []GetDeviceRow
+	for rows.Next() {
+		var i GetDeviceRow
+		if err := rows.Scan(
+			&i.DeviceID,
+			&i.DeviceKind,
+			&i.DeviceName,
+			&i.EntityID,
+			&i.EntityDeviceID,
+			&i.AdapterID,
+			&i.EntityName,
+			&i.TypeID,
+			&i.SupportJson,
+			&i.ObservationID,
+			&i.ValueJson,
+			&i.AdapterReceivedAt,
+			&i.SourceUpdatedAt,
+			&i.ObservedAt,
+			&i.ReceiveOrder,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const getEntity = `-- name: GetEntity :one
+SELECT
+    e.id,
+    e.device_id,
+    m.adapter_id,
+    e.name,
+    e.type_id,
+    e.support_json,
+    s.observation_id,
+    s.value_json,
+    s.adapter_received_at,
+    s.source_updated_at,
+    s.observed_at,
+    s.receive_order
+FROM entities AS e
+JOIN adapter_entity_mappings AS m ON m.entity_id = e.id
+LEFT JOIN entity_states AS s ON s.entity_id = e.id
+WHERE e.id = ?
+`
+
+type GetEntityParams struct {
+	ID string
+}
+
+type GetEntityRow struct {
+	ID                string
+	DeviceID          string
+	AdapterID         string
+	Name              string
+	TypeID            string
+	SupportJson       string
+	ObservationID     sql.NullString
+	ValueJson         sql.NullString
+	AdapterReceivedAt sql.NullString
+	SourceUpdatedAt   sql.NullString
+	ObservedAt        sql.NullString
+	ReceiveOrder      sql.NullInt64
+}
+
+func (q *Queries) GetEntity(ctx context.Context, arg GetEntityParams) (GetEntityRow, error) {
+	row := q.db.QueryRowContext(ctx, getEntity, arg.ID)
+	var i GetEntityRow
+	err := row.Scan(
+		&i.ID,
+		&i.DeviceID,
+		&i.AdapterID,
+		&i.Name,
+		&i.TypeID,
+		&i.SupportJson,
+		&i.ObservationID,
+		&i.ValueJson,
+		&i.AdapterReceivedAt,
+		&i.SourceUpdatedAt,
+		&i.ObservedAt,
+		&i.ReceiveOrder,
+	)
+	return i, err
+}
+
 const getEntityState = `-- name: GetEntityState :one
 SELECT entity_id, observation_id, value_json, adapter_received_at,
        source_updated_at, observed_at, receive_order
@@ -36,7 +181,49 @@ func (q *Queries) GetEntityState(ctx context.Context, arg GetEntityStateParams) 
 	return i, err
 }
 
-const getEntityView = `-- name: GetEntityView :one
+const listDevices = `-- name: ListDevices :many
+SELECT id, kind, name
+FROM devices
+WHERE id > ?
+ORDER BY id ASC
+LIMIT ?
+`
+
+type ListDevicesParams struct {
+	ID    string
+	Limit int64
+}
+
+type ListDevicesRow struct {
+	ID   string
+	Kind string
+	Name string
+}
+
+func (q *Queries) ListDevices(ctx context.Context, arg ListDevicesParams) ([]ListDevicesRow, error) {
+	rows, err := q.db.QueryContext(ctx, listDevices, arg.ID, arg.Limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListDevicesRow
+	for rows.Next() {
+		var i ListDevicesRow
+		if err := rows.Scan(&i.ID, &i.Kind, &i.Name); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listEntities = `-- name: ListEntities :many
 SELECT
     e.id,
     e.device_id,
@@ -53,14 +240,17 @@ SELECT
 FROM entities AS e
 JOIN adapter_entity_mappings AS m ON m.entity_id = e.id
 LEFT JOIN entity_states AS s ON s.entity_id = e.id
-WHERE e.id = ?
+WHERE e.id > ?
+ORDER BY e.id ASC
+LIMIT ?
 `
 
-type GetEntityViewParams struct {
-	ID string
+type ListEntitiesParams struct {
+	ID    string
+	Limit int64
 }
 
-type GetEntityViewRow struct {
+type ListEntitiesRow struct {
 	ID                string
 	DeviceID          string
 	AdapterID         string
@@ -75,24 +265,119 @@ type GetEntityViewRow struct {
 	ReceiveOrder      sql.NullInt64
 }
 
-func (q *Queries) GetEntityView(ctx context.Context, arg GetEntityViewParams) (GetEntityViewRow, error) {
-	row := q.db.QueryRowContext(ctx, getEntityView, arg.ID)
-	var i GetEntityViewRow
-	err := row.Scan(
-		&i.ID,
-		&i.DeviceID,
-		&i.AdapterID,
-		&i.Name,
-		&i.TypeID,
-		&i.SupportJson,
-		&i.ObservationID,
-		&i.ValueJson,
-		&i.AdapterReceivedAt,
-		&i.SourceUpdatedAt,
-		&i.ObservedAt,
-		&i.ReceiveOrder,
-	)
-	return i, err
+func (q *Queries) ListEntities(ctx context.Context, arg ListEntitiesParams) ([]ListEntitiesRow, error) {
+	rows, err := q.db.QueryContext(ctx, listEntities, arg.ID, arg.Limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListEntitiesRow
+	for rows.Next() {
+		var i ListEntitiesRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.DeviceID,
+			&i.AdapterID,
+			&i.Name,
+			&i.TypeID,
+			&i.SupportJson,
+			&i.ObservationID,
+			&i.ValueJson,
+			&i.AdapterReceivedAt,
+			&i.SourceUpdatedAt,
+			&i.ObservedAt,
+			&i.ReceiveOrder,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listEntitiesByDevice = `-- name: ListEntitiesByDevice :many
+SELECT
+    e.id,
+    e.device_id,
+    m.adapter_id,
+    e.name,
+    e.type_id,
+    e.support_json,
+    s.observation_id,
+    s.value_json,
+    s.adapter_received_at,
+    s.source_updated_at,
+    s.observed_at,
+    s.receive_order
+FROM entities AS e
+JOIN adapter_entity_mappings AS m ON m.entity_id = e.id
+LEFT JOIN entity_states AS s ON s.entity_id = e.id
+WHERE e.device_id = ? AND e.id > ?
+ORDER BY e.id ASC
+LIMIT ?
+`
+
+type ListEntitiesByDeviceParams struct {
+	DeviceID string
+	ID       string
+	Limit    int64
+}
+
+type ListEntitiesByDeviceRow struct {
+	ID                string
+	DeviceID          string
+	AdapterID         string
+	Name              string
+	TypeID            string
+	SupportJson       string
+	ObservationID     sql.NullString
+	ValueJson         sql.NullString
+	AdapterReceivedAt sql.NullString
+	SourceUpdatedAt   sql.NullString
+	ObservedAt        sql.NullString
+	ReceiveOrder      sql.NullInt64
+}
+
+func (q *Queries) ListEntitiesByDevice(ctx context.Context, arg ListEntitiesByDeviceParams) ([]ListEntitiesByDeviceRow, error) {
+	rows, err := q.db.QueryContext(ctx, listEntitiesByDevice, arg.DeviceID, arg.ID, arg.Limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListEntitiesByDeviceRow
+	for rows.Next() {
+		var i ListEntitiesByDeviceRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.DeviceID,
+			&i.AdapterID,
+			&i.Name,
+			&i.TypeID,
+			&i.SupportJson,
+			&i.ObservationID,
+			&i.ValueJson,
+			&i.AdapterReceivedAt,
+			&i.SourceUpdatedAt,
+			&i.ObservedAt,
+			&i.ReceiveOrder,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const upsertEntityState = `-- name: UpsertEntityState :exec

@@ -20,14 +20,14 @@ const (
 
 type commandRepository struct {
 	mutex     sync.Mutex
-	view      EntityView
+	view      EntityWithState
 	commands  map[CommandID]CommandRecord
 	createErr error
 }
 
 func newCommandRepository() *commandRepository {
 	return &commandRepository{
-		view: EntityView{Entity: Entity{
+		view: EntityWithState{Entity: Entity{
 			ID: commandTestEntityID, DeviceID: commandTestDeviceID, AdapterID: "simulator", Name: "Power",
 			TypeID: EntityTypePowerV1, Support: EntitySupport(`{"state":{},"operations":{"set":{}}}`),
 		}},
@@ -39,8 +39,28 @@ func (*commandRepository) RegisterBinding(context.Context, RegisterBindingParams
 	panic("unexpected RegisterBinding call")
 }
 
-func (repository *commandRepository) GetEntityView(context.Context, EntityID) (EntityView, error) {
+func (*commandRepository) ListDevices(context.Context, ListDevicesParams) (Page[Device], error) {
+	panic("unexpected ListDevices call")
+}
+
+func (*commandRepository) GetDevice(context.Context, DeviceID) (DeviceAggregate, error) {
+	panic("unexpected GetDevice call")
+}
+
+func (*commandRepository) ListEntities(context.Context, ListEntitiesParams) (Page[EntityWithState], error) {
+	panic("unexpected ListEntities call")
+}
+
+func (repository *commandRepository) GetEntity(context.Context, EntityID) (EntityWithState, error) {
 	return repository.view, nil
+}
+
+func (*commandRepository) GetCommand(context.Context, CommandID) (CommandRecord, error) {
+	panic("unexpected GetCommand call")
+}
+
+func (*commandRepository) ListEntityCommands(context.Context, ListEntityCommandsParams) (Page[CommandRecord], error) {
+	panic("unexpected ListEntityCommands call")
 }
 
 func (repository *commandRepository) CreateCommand(_ context.Context, command CommandRecord) error {

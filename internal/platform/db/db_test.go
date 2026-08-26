@@ -3,10 +3,13 @@ package db
 import (
 	"context"
 	"database/sql"
+	"io/fs"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	receiptsqlc "github.com/mholtzscher/hearth/internal/platform/db/sqlc/receipts"
+	"github.com/pressly/goose/v3"
 )
 
 func TestMigrateEmptySQLiteDatabase(t *testing.T) {
@@ -52,6 +55,9 @@ func TestMigrateEmptySQLiteDatabase(t *testing.T) {
 		}
 	}
 
+	assertIndexColumns(t, database, "entities_device_id_idx", "device_id,id")
+	assertIndexColumns(t, database, "commands_entity_requested_idx", "entity_id,requested_at,id")
+
 	var supportColumn string
 	if err := database.QueryRowContext(ctx, `
 		SELECT name FROM pragma_table_info('entities') WHERE name = 'support_json'
@@ -66,6 +72,59 @@ func TestMigrateEmptySQLiteDatabase(t *testing.T) {
 	}
 	if operationTableCount != 0 {
 		t.Fatal("entity_operations table still exists")
+	}
+}
+
+func TestResourceReadIndexMigrationReversesAndReapplies(t *testing.T) {
+	ctx := context.Background()
+	database, err := Open(ctx, filepath.Join(t.TempDir(), "hearth.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = database.Close() })
+	if err := Migrate(ctx, database); err != nil {
+		t.Fatal(err)
+	}
+	migrations, err := fs.Sub(migrationFiles, "migrations")
+	if err != nil {
+		t.Fatal(err)
+	}
+	provider, err := goose.NewProvider(goose.DialectSQLite3, database, migrations)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := provider.Down(ctx); err != nil {
+		t.Fatal(err)
+	}
+	assertIndexColumns(t, database, "entities_device_id_idx", "")
+	assertIndexColumns(t, database, "commands_entity_requested_idx", "entity_id,requested_at")
+	if _, err := provider.Up(ctx); err != nil {
+		t.Fatal(err)
+	}
+	assertIndexColumns(t, database, "entities_device_id_idx", "device_id,id")
+	assertIndexColumns(t, database, "commands_entity_requested_idx", "entity_id,requested_at,id")
+}
+
+func assertIndexColumns(t *testing.T, database *sql.DB, name, want string) {
+	t.Helper()
+	rows, err := database.Query("SELECT name FROM pragma_index_info(?) ORDER BY seqno", name)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer rows.Close()
+	var columns []string
+	for rows.Next() {
+		var column string
+		if err := rows.Scan(&column); err != nil {
+			t.Fatal(err)
+		}
+		columns = append(columns, column)
+	}
+	if err := rows.Err(); err != nil {
+		t.Fatal(err)
+	}
+	if got := strings.Join(columns, ","); got != want {
+		t.Fatalf("index %s columns = %q, want %q", name, got, want)
 	}
 }
 

@@ -1,7 +1,5 @@
 package api
 
-import "github.com/danielgtaylor/huma/v2"
-
 type EntityBody struct {
 	ID       string         `json:"id"`
 	DeviceID string         `json:"device_id"`
@@ -21,6 +19,48 @@ type StateBody struct {
 	ObservedAt        string   `json:"observed_at"`
 }
 
+type DeviceBody struct {
+	ID   string `json:"id"`
+	Kind string `json:"kind"`
+	Name string `json:"name"`
+}
+
+type DeviceDetailBody struct {
+	ID       string       `json:"id"`
+	Kind     string       `json:"kind"`
+	Name     string       `json:"name"`
+	Entities []EntityBody `json:"entities"`
+}
+
+type EntityCollectionBody struct {
+	Items      []EntityBody `json:"items"`
+	NextCursor *string      `json:"next_cursor,omitempty"`
+}
+
+type DeviceCollectionBody struct {
+	Items      []DeviceBody `json:"items"`
+	NextCursor *string      `json:"next_cursor,omitempty"`
+}
+
+type CommandRecordBody struct {
+	ID                   string         `json:"id"`
+	EntityID             string         `json:"entity_id"`
+	Operation            string         `json:"operation"`
+	Parameters           map[string]any `json:"parameters"`
+	Status               string         `json:"status"`
+	RequestedAt          string         `json:"requested_at"`
+	DeadlineAt           string         `json:"deadline_at"`
+	AcceptedAt           *string        `json:"accepted_at,omitempty"`
+	CompletedAt          *string        `json:"completed_at,omitempty"`
+	OutcomeObservationID *string        `json:"outcome_observation_id,omitempty"`
+	FailureCode          *string        `json:"failure_code,omitempty"`
+}
+
+type CommandCollectionBody struct {
+	Items      []CommandRecordBody `json:"items"`
+	NextCursor *string             `json:"next_cursor,omitempty"`
+}
+
 type CommandBody struct {
 	OperationName string         `json:"operation"`
 	Parameters    map[string]any `json:"parameters"`
@@ -31,34 +71,4 @@ type CommandResultBody struct {
 	Status        string `json:"status"`
 	ObservationID string `json:"observation_id"`
 	Value         any    `json:"value"`
-}
-
-type ErrorBody struct {
-	Error APIError `json:"error"`
-}
-
-type APIError struct {
-	Code      string  `json:"code"`
-	Message   string  `json:"message"`
-	CommandID *string `json:"command_id,omitempty"`
-}
-
-type statusError struct {
-	ErrorBody
-	status int
-}
-
-func NewStatusError(status int, code, message string) huma.StatusError {
-	return &statusError{
-		status:    status,
-		ErrorBody: ErrorBody{Error: APIError{Code: code, Message: message}},
-	}
-}
-
-func (err *statusError) Error() string {
-	return err.ErrorBody.Error.Message
-}
-
-func (err *statusError) GetStatus() int {
-	return err.status
 }

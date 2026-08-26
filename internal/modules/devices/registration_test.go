@@ -21,8 +21,28 @@ func (repository *stubRegistrationRepository) RegisterBinding(_ context.Context,
 	return repository.binding, repository.err
 }
 
-func (*stubRegistrationRepository) GetEntityView(context.Context, EntityID) (EntityView, error) {
-	panic("unexpected GetEntityView call")
+func (*stubRegistrationRepository) ListDevices(context.Context, ListDevicesParams) (Page[Device], error) {
+	panic("unexpected ListDevices call")
+}
+
+func (*stubRegistrationRepository) GetDevice(context.Context, DeviceID) (DeviceAggregate, error) {
+	panic("unexpected GetDevice call")
+}
+
+func (*stubRegistrationRepository) ListEntities(context.Context, ListEntitiesParams) (Page[EntityWithState], error) {
+	panic("unexpected ListEntities call")
+}
+
+func (*stubRegistrationRepository) GetEntity(context.Context, EntityID) (EntityWithState, error) {
+	panic("unexpected GetEntity call")
+}
+
+func (*stubRegistrationRepository) GetCommand(context.Context, CommandID) (CommandRecord, error) {
+	panic("unexpected GetCommand call")
+}
+
+func (*stubRegistrationRepository) ListEntityCommands(context.Context, ListEntityCommandsParams) (Page[CommandRecord], error) {
+	panic("unexpected ListEntityCommands call")
 }
 
 func (*stubRegistrationRepository) ProjectObservation(context.Context, ProjectObservationParams) (ProjectionResult, error) {

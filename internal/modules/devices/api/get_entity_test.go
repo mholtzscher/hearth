@@ -22,8 +22,13 @@ const (
 )
 
 type stubDevices struct {
-	getEntity      func(context.Context, devices.EntityID) (devices.EntityView, error)
-	executeCommand func(
+	getEntity          func(context.Context, devices.EntityID) (devices.EntityWithState, error)
+	listDevices        func(context.Context, devices.ListDevicesParams) (devices.Page[devices.Device], error)
+	getDevice          func(context.Context, devices.DeviceID) (devices.DeviceAggregate, error)
+	listEntities       func(context.Context, devices.ListEntitiesParams) (devices.Page[devices.EntityWithState], error)
+	getCommand         func(context.Context, devices.CommandID) (devices.CommandRecord, error)
+	listEntityCommands func(context.Context, devices.ListEntityCommandsParams) (devices.Page[devices.CommandRecord], error)
+	executeCommand     func(
 		context.Context,
 		devices.EntityID,
 		devices.OperationName,
@@ -31,11 +36,46 @@ type stubDevices struct {
 	) (devices.CommandResult, error)
 }
 
-func (stub *stubDevices) GetEntity(ctx context.Context, entityID devices.EntityID) (devices.EntityView, error) {
+func (stub *stubDevices) GetEntity(ctx context.Context, entityID devices.EntityID) (devices.EntityWithState, error) {
 	if stub.getEntity == nil {
 		panic("unexpected GetEntity call")
 	}
 	return stub.getEntity(ctx, entityID)
+}
+
+func (stub *stubDevices) ListDevices(ctx context.Context, params devices.ListDevicesParams) (devices.Page[devices.Device], error) {
+	if stub.listDevices == nil {
+		panic("unexpected ListDevices call")
+	}
+	return stub.listDevices(ctx, params)
+}
+
+func (stub *stubDevices) GetDevice(ctx context.Context, id devices.DeviceID) (devices.DeviceAggregate, error) {
+	if stub.getDevice == nil {
+		panic("unexpected GetDevice call")
+	}
+	return stub.getDevice(ctx, id)
+}
+
+func (stub *stubDevices) ListEntities(ctx context.Context, params devices.ListEntitiesParams) (devices.Page[devices.EntityWithState], error) {
+	if stub.listEntities == nil {
+		panic("unexpected ListEntities call")
+	}
+	return stub.listEntities(ctx, params)
+}
+
+func (stub *stubDevices) GetCommand(ctx context.Context, id devices.CommandID) (devices.CommandRecord, error) {
+	if stub.getCommand == nil {
+		panic("unexpected GetCommand call")
+	}
+	return stub.getCommand(ctx, id)
+}
+
+func (stub *stubDevices) ListEntityCommands(ctx context.Context, params devices.ListEntityCommandsParams) (devices.Page[devices.CommandRecord], error) {
+	if stub.listEntityCommands == nil {
+		panic("unexpected ListEntityCommands call")
+	}
+	return stub.listEntityCommands(ctx, params)
 }
 
 func (stub *stubDevices) ExecuteCommand(
@@ -52,9 +92,9 @@ func (stub *stubDevices) ExecuteCommand(
 
 func TestGetEntityReturnsMetadataAndNullableState(t *testing.T) {
 	var requestedEntityID devices.EntityID
-	stub := &stubDevices{getEntity: func(_ context.Context, entityID devices.EntityID) (devices.EntityView, error) {
+	stub := &stubDevices{getEntity: func(_ context.Context, entityID devices.EntityID) (devices.EntityWithState, error) {
 		requestedEntityID = entityID
-		return apiEntityView(nil), nil
+		return apiEntityWithState(nil), nil
 	}}
 	router, openapi := testAPI(t, stub)
 
@@ -91,8 +131,8 @@ func TestGetEntityMapsCurrentState(t *testing.T) {
 		EntityID: apiEntityID, Value: devices.Value(`true`), ObservationID: apiObservationID,
 		AdapterReceivedAt: adapterReceivedAt, SourceUpdatedAt: &sourceUpdatedAt, ObservedAt: observedAt, ReceiveOrder: 4,
 	}
-	router, _ := testAPI(t, &stubDevices{getEntity: func(context.Context, devices.EntityID) (devices.EntityView, error) {
-		return apiEntityView(state), nil
+	router, _ := testAPI(t, &stubDevices{getEntity: func(context.Context, devices.EntityID) (devices.EntityWithState, error) {
+		return apiEntityWithState(state), nil
 	}})
 	response := performRequest(router, "/v1/entities/"+string(apiEntityID))
 	if response.Code != http.StatusOK {
@@ -108,21 +148,21 @@ func TestGetEntityMapsCurrentState(t *testing.T) {
 	}
 }
 
-func TestGetEntityMapsStableErrors(t *testing.T) {
+func TestGetEntityMapsStandardErrors(t *testing.T) {
 	tests := []struct {
 		name    string
 		path    string
 		devices *stubDevices
 		status  int
-		code    string
+		detail  string
 	}{
-		{"invalid ID", "/v1/entities/not-an-id", &stubDevices{}, http.StatusBadRequest, "invalid_request"},
-		{"not found", "/v1/entities/" + string(apiEntityID), &stubDevices{getEntity: func(context.Context, devices.EntityID) (devices.EntityView, error) {
-			return devices.EntityView{}, devices.ErrEntityNotFound
-		}}, http.StatusNotFound, "entity_not_found"},
-		{"internal", "/v1/entities/" + string(apiEntityID), &stubDevices{getEntity: func(context.Context, devices.EntityID) (devices.EntityView, error) {
-			return devices.EntityView{}, errors.New("SQLite unavailable")
-		}}, http.StatusInternalServerError, "internal_error"},
+		{"invalid ID", "/v1/entities/not-an-id", &stubDevices{}, http.StatusBadRequest, "entity_id must be a canonical Hearth Entity ID"},
+		{"not found", "/v1/entities/" + string(apiEntityID), &stubDevices{getEntity: func(context.Context, devices.EntityID) (devices.EntityWithState, error) {
+			return devices.EntityWithState{}, devices.ErrEntityNotFound
+		}}, http.StatusNotFound, "entity not found"},
+		{"internal", "/v1/entities/" + string(apiEntityID), &stubDevices{getEntity: func(context.Context, devices.EntityID) (devices.EntityWithState, error) {
+			return devices.EntityWithState{}, errors.New("SQLite unavailable")
+		}}, http.StatusInternalServerError, "internal error"},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -131,19 +171,19 @@ func TestGetEntityMapsStableErrors(t *testing.T) {
 			if response.Code != test.status {
 				t.Fatalf("status = %d, body = %s", response.Code, response.Body.String())
 			}
-			var body ErrorBody
+			var body huma.ErrorModel
 			if err := json.Unmarshal(response.Body.Bytes(), &body); err != nil {
 				t.Fatal(err)
 			}
-			if body.Error.Code != test.code {
+			if body.Status != test.status || body.Detail != test.detail {
 				t.Fatalf("error body = %#v", body)
 			}
 		})
 	}
 }
 
-func apiEntityView(state *devices.State) devices.EntityView {
-	return devices.EntityView{
+func apiEntityWithState(state *devices.State) devices.EntityWithState {
+	return devices.EntityWithState{
 		Entity: devices.Entity{
 			ID: apiEntityID, DeviceID: apiDeviceID, AdapterID: "simulator", Name: "Power",
 			TypeID: devices.EntityTypePowerV1, Support: devices.EntitySupport(`{"state":{},"operations":{"set":{}}}`),
@@ -156,7 +196,7 @@ func testAPI(t *testing.T, devices Devices) (*echo.Echo, huma.API) {
 	t.Helper()
 	router := echo.New()
 	openapi := humaecho.New(router, huma.DefaultConfig("Hearth", "1.0.0"))
-	group := huma.NewGroup(openapi, "/v1/entities")
+	group := huma.NewGroup(openapi, "/v1")
 	Register(group, devices)
 	return router, openapi
 }
@@ -164,23 +204,19 @@ func testAPI(t *testing.T, devices Devices) (*echo.Echo, huma.API) {
 func TestRegisterDoesNotChangeHumaErrorFactory(t *testing.T) {
 	original := huma.NewError
 	called := false
-	huma.NewError = func(status int, message string, _ ...error) huma.StatusError {
+	huma.NewError = func(status int, message string, details ...error) huma.StatusError {
 		called = true
-		return NewStatusError(status, "sentinel", message)
+		return original(status, message, details...)
 	}
 	t.Cleanup(func() { huma.NewError = original })
 
 	router := echo.New()
 	openapi := humaecho.New(router, huma.DefaultConfig("Hearth", "1.0.0"))
-	Register(huma.NewGroup(openapi, "/v1/entities"), &stubDevices{})
+	Register(huma.NewGroup(openapi, "/v1"), &stubDevices{})
 	called = false
 	status := huma.NewError(http.StatusTeapot, "sentinel message")
-	if !called {
-		t.Fatal("Register replaced huma.NewError")
-	}
-	var sentinel *statusError
-	if !errors.As(status, &sentinel) || sentinel.ErrorBody.Error.Code != "sentinel" {
-		t.Fatalf("huma.NewError result = %#v", status)
+	if !called || status.GetStatus() != http.StatusTeapot {
+		t.Fatalf("Register changed huma.NewError behavior: %#v", status)
 	}
 }
 

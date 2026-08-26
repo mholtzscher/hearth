@@ -9,8 +9,12 @@ import (
 )
 
 type Querier interface {
+	GetDevice(ctx context.Context, arg GetDeviceParams) ([]GetDeviceRow, error)
+	GetEntity(ctx context.Context, arg GetEntityParams) (GetEntityRow, error)
 	GetEntityState(ctx context.Context, arg GetEntityStateParams) (EntityState, error)
-	GetEntityView(ctx context.Context, arg GetEntityViewParams) (GetEntityViewRow, error)
+	ListDevices(ctx context.Context, arg ListDevicesParams) ([]ListDevicesRow, error)
+	ListEntities(ctx context.Context, arg ListEntitiesParams) ([]ListEntitiesRow, error)
+	ListEntitiesByDevice(ctx context.Context, arg ListEntitiesByDeviceParams) ([]ListEntitiesByDeviceRow, error)
 	UpsertEntityState(ctx context.Context, arg UpsertEntityStateParams) error
 }
 

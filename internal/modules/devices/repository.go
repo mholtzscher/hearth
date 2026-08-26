@@ -9,8 +9,10 @@ import (
 var (
 	errIdentityConflict    = errors.New("registration identity conflict")
 	errImmutableTypeChange = errors.New("entity type is immutable")
+	ErrDeviceNotFound      = errors.New("device not found")
 	ErrEntityNotFound      = errors.New("entity not found")
 	ErrCommandNotFound     = errors.New("command not found")
+	ErrInvalidPage         = errors.New("invalid page")
 	ErrCommandTerminal     = errors.New("command is already terminal")
 	ErrInvalidCommand      = errors.New("invalid command")
 	ErrAdapterUnavailable  = errors.New("adapter unavailable")
@@ -47,7 +49,12 @@ type RegistrationRepository interface {
 type Repository interface {
 	RegistrationRepository
 	CommandLedger
-	GetEntityView(context.Context, EntityID) (EntityView, error)
+	ListDevices(context.Context, ListDevicesParams) (Page[Device], error)
+	GetDevice(context.Context, DeviceID) (DeviceAggregate, error)
+	ListEntities(context.Context, ListEntitiesParams) (Page[EntityWithState], error)
+	GetEntity(context.Context, EntityID) (EntityWithState, error)
+	GetCommand(context.Context, CommandID) (CommandRecord, error)
+	ListEntityCommands(context.Context, ListEntityCommandsParams) (Page[CommandRecord], error)
 	ProjectObservation(context.Context, ProjectObservationParams) (ProjectionResult, error)
 	DeleteExpiredObservationReceipts(context.Context, time.Time) error
 }
