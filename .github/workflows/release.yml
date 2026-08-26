@@ -41,12 +41,9 @@ jobs:
       - uses: ko-build/setup-ko@v0.8
       - name: Publish images
         env:
-          PLATFORMS: linux/amd64,linux/arm64
           TAG: ${{ needs.release.outputs.tag_name }}
         run: |
-          KO_DOCKER_REPO="ghcr.io/${GITHUB_REPOSITORY}/hearthd" \
-            ko build --bare --platform="${PLATFORMS}" --tags "${TAG}" ./cmd/hearthd
-          KO_DOCKER_REPO="ghcr.io/${GITHUB_REPOSITORY}/hearth-adapter-homeassistant" \
-            ko build --bare --platform="${PLATFORMS}" --tags "${TAG}" ./cmd/hearth-adapter-homeassistant
-          KO_DOCKER_REPO="ghcr.io/${GITHUB_REPOSITORY}/hearth-simulator" \
-            ko build --bare --platform="${PLATFORMS}" --tags "${TAG}" ./cmd/hearth-simulator
+          ko build --base-import-paths --tags "${TAG}" \
+            ./cmd/hearthd \
+            ./cmd/hearth-adapter-homeassistant \
+            ./cmd/hearth-simulator
