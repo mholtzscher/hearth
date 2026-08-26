@@ -50,9 +50,43 @@ type State struct {
 	ReceiveOrder      int64
 }
 
-type EntityView struct {
+type EntityWithState struct {
 	Entity Entity
 	State  *State
+}
+
+type DeviceAggregate struct {
+	Device   Device
+	Entities Page[EntityWithState]
+}
+
+type GetDeviceParams struct {
+	ID            DeviceID
+	AfterEntityID *EntityID
+	EntityLimit   int
+}
+
+type ListDevicesParams struct {
+	AfterID *DeviceID
+	Limit   int
+}
+
+type ListEntitiesParams struct {
+	DeviceID *DeviceID
+	AfterID  *EntityID
+	Limit    int
+}
+
+type ListEntityCommandsParams struct {
+	EntityID          EntityID
+	BeforeRequestedAt *time.Time
+	BeforeID          *CommandID
+	Limit             int
+}
+
+type Page[T any] struct {
+	Items   []T
+	HasMore bool
 }
 
 type Observation struct {

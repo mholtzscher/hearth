@@ -12,15 +12,19 @@ import (
 	statesqlc "github.com/mholtzscher/hearth/internal/platform/db/sqlc/state"
 )
 
-func (repository *SQLiteRepository) GetEntityView(ctx context.Context, id EntityID) (EntityView, error) {
-	row, err := statesqlc.New(repository.database).GetEntityView(ctx, statesqlc.GetEntityViewParams{ID: string(id)})
+func (repository *SQLiteRepository) GetEntity(ctx context.Context, id EntityID) (EntityWithState, error) {
+	row, err := statesqlc.New(repository.database).GetEntity(ctx, statesqlc.GetEntityParams{ID: string(id)})
 	if errors.Is(err, sql.ErrNoRows) {
-		return EntityView{}, ErrEntityNotFound
+		return EntityWithState{}, ErrEntityNotFound
 	}
 	if err != nil {
-		return EntityView{}, fmt.Errorf("get entity view: %w", err)
+		return EntityWithState{}, fmt.Errorf("get entity: %w", err)
 	}
-	return entityViewFromRow(row)
+	return entityWithStateFromValues(
+		row.ID, row.DeviceID, row.AdapterID, row.Name, row.TypeID, row.SupportJson,
+		row.ObservationID, row.ValueJson, row.AdapterReceivedAt, row.SourceUpdatedAt,
+		row.ObservedAt, row.ReceiveOrder,
+	)
 }
 
 func (repository *SQLiteRepository) ProjectObservation(ctx context.Context, params ProjectObservationParams) (ProjectionResult, error) {
@@ -48,8 +52,8 @@ func (repository *SQLiteRepository) ProjectObservation(ctx context.Context, para
 	}
 
 	stateQueries := statesqlc.New(tx)
-	row, err := stateQueries.GetEntityView(ctx, statesqlc.GetEntityViewParams{ID: string(params.Observation.EntityID)})
-	var view EntityView
+	row, err := stateQueries.GetEntity(ctx, statesqlc.GetEntityParams{ID: string(params.Observation.EntityID)})
+	var view EntityWithState
 	var rejection *ObservationRejection
 	switch {
 	case errors.Is(err, sql.ErrNoRows):
@@ -58,7 +62,11 @@ func (repository *SQLiteRepository) ProjectObservation(ctx context.Context, para
 	case err != nil:
 		return ProjectionResult{}, fmt.Errorf("get entity for observation: %w", err)
 	default:
-		view, err = entityViewFromRow(row)
+		view, err = entityWithStateFromValues(
+			row.ID, row.DeviceID, row.AdapterID, row.Name, row.TypeID, row.SupportJson,
+			row.ObservationID, row.ValueJson, row.AdapterReceivedAt, row.SourceUpdatedAt,
+			row.ObservedAt, row.ReceiveOrder,
+		)
 		if err != nil {
 			return ProjectionResult{}, err
 		}
@@ -214,33 +222,37 @@ func (repository *SQLiteRepository) DeleteExpiredObservationReceipts(ctx context
 	return nil
 }
 
-func entityViewFromRow(row statesqlc.GetEntityViewRow) (EntityView, error) {
-	view := EntityView{Entity: Entity{
-		ID: EntityID(row.ID), DeviceID: DeviceID(row.DeviceID), AdapterID: row.AdapterID,
-		Name: row.Name, TypeID: EntityTypeID(row.TypeID), Support: EntitySupport(row.SupportJson),
+func entityWithStateFromValues(
+	id, deviceID, adapterID, name, typeID, supportJSON string,
+	observationID, valueJSON, adapterReceivedAt, sourceUpdatedAt, observedAt sql.NullString,
+	receiveOrder sql.NullInt64,
+) (EntityWithState, error) {
+	view := EntityWithState{Entity: Entity{
+		ID: EntityID(id), DeviceID: DeviceID(deviceID), AdapterID: adapterID,
+		Name: name, TypeID: EntityTypeID(typeID), Support: EntitySupport(supportJSON),
 	}}
-	if !row.ObservationID.Valid {
+	if !observationID.Valid {
 		return view, nil
 	}
-	if !row.ValueJson.Valid || !row.AdapterReceivedAt.Valid || !row.ObservedAt.Valid || !row.ReceiveOrder.Valid {
-		return EntityView{}, errors.New("entity state row is incomplete")
+	if !valueJSON.Valid || !adapterReceivedAt.Valid || !observedAt.Valid || !receiveOrder.Valid {
+		return EntityWithState{}, errors.New("entity state row is incomplete")
 	}
-	adapterReceivedAt, err := parseTime(row.AdapterReceivedAt.String)
+	adapterTime, err := parseTime(adapterReceivedAt.String)
 	if err != nil {
-		return EntityView{}, fmt.Errorf("parse state adapter_received_at: %w", err)
+		return EntityWithState{}, fmt.Errorf("parse state adapter_received_at: %w", err)
 	}
-	observedAt, err := parseTime(row.ObservedAt.String)
+	observedTime, err := parseTime(observedAt.String)
 	if err != nil {
-		return EntityView{}, fmt.Errorf("parse state observed_at: %w", err)
+		return EntityWithState{}, fmt.Errorf("parse state observed_at: %w", err)
 	}
-	sourceUpdatedAt, err := parseOptionalTime(row.SourceUpdatedAt)
+	sourceTime, err := parseOptionalTime(sourceUpdatedAt)
 	if err != nil {
-		return EntityView{}, fmt.Errorf("parse state source_updated_at: %w", err)
+		return EntityWithState{}, fmt.Errorf("parse state source_updated_at: %w", err)
 	}
 	view.State = &State{
-		EntityID: EntityID(row.ID), Value: Value(row.ValueJson.String), ObservationID: ObservationID(row.ObservationID.String),
-		AdapterReceivedAt: adapterReceivedAt, SourceUpdatedAt: sourceUpdatedAt, ObservedAt: observedAt,
-		ReceiveOrder: row.ReceiveOrder.Int64,
+		EntityID: EntityID(id), Value: Value(valueJSON.String), ObservationID: ObservationID(observationID.String),
+		AdapterReceivedAt: adapterTime, SourceUpdatedAt: sourceTime, ObservedAt: observedTime,
+		ReceiveOrder: receiveOrder.Int64,
 	}
 	return view, nil
 }

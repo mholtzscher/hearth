@@ -17,6 +17,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/danielgtaylor/huma/v2"
 	contractsv1 "github.com/mholtzscher/hearth/contracts/v1"
 	simulatoradapter "github.com/mholtzscher/hearth/internal/adapters/simulator"
 	simulatorapp "github.com/mholtzscher/hearth/internal/app/simulator"
@@ -352,18 +353,18 @@ func TestSimulatorCommandHTTPFailureMatrix(t *testing.T) {
 		options     simulatorMatrixOptions
 		prepare     func(*testing.T, *simulatorMatrixHarness)
 		wantStatus  int
-		wantCode    string
+		wantDetail  string
 		wantCommand devices.CommandStatus
 		wantFailure devices.CommandFailureCode
 	}{
 		{
 			name: "unavailable adapter", scenario: simulatoradapter.ScenarioUnavailableAdapter,
-			wantStatus: http.StatusServiceUnavailable, wantCode: "adapter_unavailable",
+			wantStatus: http.StatusServiceUnavailable, wantDetail: "adapter unavailable",
 			wantCommand: devices.CommandStatusAdapterUnavailable, wantFailure: devices.CommandFailureAdapterUnavailable,
 		},
 		{
 			name: "upstream rejection", scenario: simulatoradapter.ScenarioUpstreamRejection,
-			wantStatus: http.StatusBadGateway, wantCode: "upstream_rejected",
+			wantStatus: http.StatusBadGateway, wantDetail: "upstream rejected command",
 			wantCommand: devices.CommandStatusRejected, wantFailure: devices.CommandFailureUpstreamRejected,
 		},
 		{
@@ -371,7 +372,7 @@ func TestSimulatorCommandHTTPFailureMatrix(t *testing.T) {
 			options: simulatorMatrixOptions{dependencies: devices.Dependencies{
 				Now: func() time.Time { return time.Now().UTC().Add(-9500 * time.Millisecond) },
 			}},
-			wantStatus: http.StatusGatewayTimeout, wantCode: "outcome_timeout",
+			wantStatus: http.StatusGatewayTimeout, wantDetail: "command outcome timed out",
 			wantCommand: devices.CommandStatusOutcomeTimeout, wantFailure: devices.CommandFailureOutcomeTimeout,
 		},
 		{
@@ -392,7 +393,7 @@ func TestSimulatorCommandHTTPFailureMatrix(t *testing.T) {
 					t.Fatal(err)
 				}
 			},
-			wantStatus: http.StatusInternalServerError, wantCode: "internal_error",
+			wantStatus: http.StatusInternalServerError, wantDetail: "internal error",
 			wantCommand: devices.CommandStatusInternalFailure, wantFailure: devices.CommandFailureInternalError,
 		},
 	}
@@ -409,21 +410,23 @@ func TestSimulatorCommandHTTPFailureMatrix(t *testing.T) {
 			if status != test.wantStatus {
 				t.Fatalf("status = %d, body = %s", status, body)
 			}
-			var response devicesapi.ErrorBody
+			var response huma.ErrorModel
 			if err := json.Unmarshal(body, &response); err != nil {
 				t.Fatal(err)
 			}
-			if response.Error.Code != test.wantCode || response.Error.CommandID == nil {
+			if response.Status != test.wantStatus || response.Detail != test.wantDetail {
 				t.Fatalf("error body = %#v", response)
 			}
-			commandID, err := devices.ParseCommandID(*response.Error.CommandID)
+			history, err := harness.repository.ListEntityCommands(harness.ctx, devices.ListEntityCommandsParams{
+				EntityID: harness.entityID, Limit: 1,
+			})
 			if err != nil {
 				t.Fatal(err)
 			}
-			command, err := harness.repository.GetCommand(harness.ctx, commandID)
-			if err != nil {
-				t.Fatal(err)
+			if len(history.Items) != 1 {
+				t.Fatalf("command history = %#v", history)
 			}
+			command := history.Items[0]
 			if command.Status != test.wantCommand || command.FailureCode == nil || *command.FailureCode != test.wantFailure {
 				t.Fatalf("stored command = %#v", command)
 			}

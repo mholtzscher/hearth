@@ -9,6 +9,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	"github.com/danielgtaylor/huma/v2"
 	"github.com/mholtzscher/hearth/internal/modules/devices"
 )
 
@@ -55,29 +56,28 @@ func TestExecuteCommandReturnsSatisfiedResultAndRegistersOpenAPI(t *testing.T) {
 		operation.Summary != "Execute an Entity Command" || len(operation.Tags) != 1 || operation.Tags[0] != "Entities" {
 		t.Fatalf("POST operation = %#v", operation)
 	}
-	if _, ok := operation.Responses["422"]; ok {
-		t.Fatalf("POST operation has automatic 422 response: %#v", operation.Responses)
+	if _, ok := operation.Responses["422"]; !ok {
+		t.Fatalf("POST operation is missing standard 422 response: %#v", operation.Responses)
 	}
 }
 
-func TestCommandErrorMappingUsesStableStatusCodeAndCommandID(t *testing.T) {
+func TestCommandErrorMappingUsesStandardHumaErrors(t *testing.T) {
 	tests := []struct {
 		cause  error
 		status int
-		code   string
+		detail string
 	}{
-		{devices.ErrInvalidCommand, http.StatusBadRequest, "invalid_request"},
-		{devices.ErrEntityNotFound, http.StatusNotFound, "entity_not_found"},
-		{devices.ErrAdapterUnavailable, http.StatusServiceUnavailable, "adapter_unavailable"},
-		{devices.ErrUpstreamRejected, http.StatusBadGateway, "upstream_rejected"},
-		{devices.ErrOutcomeTimeout, http.StatusGatewayTimeout, "outcome_timeout"},
-		{errors.New("SQLite unavailable"), http.StatusInternalServerError, "internal_error"},
+		{devices.ErrInvalidCommand, http.StatusBadRequest, "invalid command"},
+		{devices.ErrEntityNotFound, http.StatusNotFound, "entity not found"},
+		{devices.ErrAdapterUnavailable, http.StatusServiceUnavailable, "adapter unavailable"},
+		{devices.ErrUpstreamRejected, http.StatusBadGateway, "upstream rejected command"},
+		{devices.ErrOutcomeTimeout, http.StatusGatewayTimeout, "command outcome timed out"},
+		{errors.New("SQLite unavailable"), http.StatusInternalServerError, "internal error"},
 	}
 	for _, test := range tests {
 		err := mapCommandError(&devices.CommandExecutionError{CommandID: apiCommandID, Err: test.cause})
-		var status *statusError
-		if !errors.As(err, &status) || status.GetStatus() != test.status || status.ErrorBody.Error.Code != test.code ||
-			status.ErrorBody.Error.CommandID == nil || *status.ErrorBody.Error.CommandID != string(apiCommandID) {
+		status, ok := err.(huma.StatusError)
+		if !ok || status.GetStatus() != test.status || status.Error() != test.detail {
 			t.Fatalf("mapped %v = %#v", test.cause, status)
 		}
 	}

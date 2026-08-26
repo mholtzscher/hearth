@@ -130,6 +130,120 @@ func (q *Queries) InterruptActiveCommands(ctx context.Context, arg InterruptActi
 	return result.RowsAffected()
 }
 
+const listEntityCommandsAfter = `-- name: ListEntityCommandsAfter :many
+SELECT id, entity_id, adapter_id, operation, parameters_json, correlation_id,
+       status, requested_at, deadline_at, accepted_at, completed_at,
+       outcome_observation_id, failure_code
+FROM commands
+WHERE entity_id = ?
+  AND (requested_at < ? OR (requested_at = ? AND id < ?))
+ORDER BY requested_at DESC, id DESC
+LIMIT ?
+`
+
+type ListEntityCommandsAfterParams struct {
+	EntityID      string
+	RequestedAt   string
+	RequestedAt_2 string
+	ID            string
+	Limit         int64
+}
+
+func (q *Queries) ListEntityCommandsAfter(ctx context.Context, arg ListEntityCommandsAfterParams) ([]Command, error) {
+	rows, err := q.db.QueryContext(ctx, listEntityCommandsAfter,
+		arg.EntityID,
+		arg.RequestedAt,
+		arg.RequestedAt_2,
+		arg.ID,
+		arg.Limit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Command
+	for rows.Next() {
+		var i Command
+		if err := rows.Scan(
+			&i.ID,
+			&i.EntityID,
+			&i.AdapterID,
+			&i.Operation,
+			&i.ParametersJson,
+			&i.CorrelationID,
+			&i.Status,
+			&i.RequestedAt,
+			&i.DeadlineAt,
+			&i.AcceptedAt,
+			&i.CompletedAt,
+			&i.OutcomeObservationID,
+			&i.FailureCode,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listEntityCommandsFirstPage = `-- name: ListEntityCommandsFirstPage :many
+SELECT id, entity_id, adapter_id, operation, parameters_json, correlation_id,
+       status, requested_at, deadline_at, accepted_at, completed_at,
+       outcome_observation_id, failure_code
+FROM commands
+WHERE entity_id = ?
+ORDER BY requested_at DESC, id DESC
+LIMIT ?
+`
+
+type ListEntityCommandsFirstPageParams struct {
+	EntityID string
+	Limit    int64
+}
+
+func (q *Queries) ListEntityCommandsFirstPage(ctx context.Context, arg ListEntityCommandsFirstPageParams) ([]Command, error) {
+	rows, err := q.db.QueryContext(ctx, listEntityCommandsFirstPage, arg.EntityID, arg.Limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Command
+	for rows.Next() {
+		var i Command
+		if err := rows.Scan(
+			&i.ID,
+			&i.EntityID,
+			&i.AdapterID,
+			&i.Operation,
+			&i.ParametersJson,
+			&i.CorrelationID,
+			&i.Status,
+			&i.RequestedAt,
+			&i.DeadlineAt,
+			&i.AcceptedAt,
+			&i.CompletedAt,
+			&i.OutcomeObservationID,
+			&i.FailureCode,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const markCommandAccepted = `-- name: MarkCommandAccepted :execrows
 UPDATE commands
 SET accepted_at = COALESCE(accepted_at, ?),

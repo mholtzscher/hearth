@@ -232,7 +232,7 @@ Total effort is **L (1-2 days)**. Persistence reconciliation is the highest-risk
 | Additive omission | Authoritative replacement | Omission cannot safely imply deletion without retirement semantics |
 | Submitted-only response | Complete Binding inventory | Adapters need mappings for submitted descriptors, not stale omitted Entities |
 | Reject same-request ID transfers | Atomic swaps and moves | Deterministic identity behavior is more valuable than an unused complex operation |
-| 64-Entity limit | Unbounded registration | Bounded validation and transaction work comfortably covers household devices |
+| 64-Entity per-request limit | Unbounded request size | Bounded validation and transaction work comfortably covers registration batches without limiting the persisted Device aggregate |
 | Rewrite migration `00001` | Add migration `00002` | The accepted project policy treats the initial migration as unshipped |
 
 ## Acceptance Criteria

@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"fmt"
 	"path/filepath"
 	"testing"
 	"time"
@@ -136,6 +137,30 @@ func TestMultiEntityRegistrationIsAdditiveAndReturnsSubmittedOrder(t *testing.T)
 		t.Fatalf("omitted power was updated: entity %q -> %q, mapping %q -> %q",
 			powerEntityUpdatedAt, omittedEntityUpdatedAt, powerMappingUpdatedAt, omittedMappingUpdatedAt)
 	}
+}
+
+func TestRegistrationAllowsDeviceAggregateBeyondRequestLimit(t *testing.T) {
+	ctx := context.Background()
+	database := openMigratedDatabase(t, filepath.Join(t.TempDir(), "hearth.db"))
+	catalog := firstLightCatalog(t)
+	service := NewService(NewSQLiteRepository(database, catalog), nil, catalog, Dependencies{})
+	registration := validDomainRegistration()
+	registration.Entities = make([]EntityDescriptor, 64)
+	for index := range registration.Entities {
+		registration.Entities[index] = registrationEntity(
+			fmt.Sprintf("power-%d", index), fmt.Sprintf("light.office.%d", index),
+		)
+	}
+	if _, err := service.Register(ctx, "homeassistant", registration); err != nil {
+		t.Fatal(err)
+	}
+
+	additional := validDomainRegistration()
+	additional.Entities = []EntityDescriptor{registrationEntity("power-additional", "light.office.additional")}
+	if _, err := service.Register(ctx, "homeassistant", additional); err != nil {
+		t.Fatal(err)
+	}
+	assertCounts(t, database, 1, 65)
 }
 
 func TestRegistrationRejectsExternalIDTransfersIndependentOfOrder(t *testing.T) {

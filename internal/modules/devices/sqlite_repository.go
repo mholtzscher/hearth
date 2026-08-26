@@ -206,7 +206,7 @@ func (repository *SQLiteRepository) CreateCommand(ctx context.Context, command C
 		ID: string(command.ID), EntityID: string(command.EntityID), AdapterID: command.AdapterID,
 		Operation: string(command.OperationName), ParametersJson: string(command.Parameters),
 		CorrelationID: string(command.CorrelationID), Status: string(command.Status),
-		RequestedAt: formatTime(command.RequestedAt), DeadlineAt: formatTime(command.DeadlineAt),
+		RequestedAt: formatSortableTime(command.RequestedAt), DeadlineAt: formatTime(command.DeadlineAt),
 	}); err != nil {
 		return fmt.Errorf("create command: %w", err)
 	}
@@ -355,6 +355,10 @@ func nullableString(value *string) sql.NullString {
 
 func formatTime(value time.Time) string {
 	return value.UTC().Format(time.RFC3339Nano)
+}
+
+func formatSortableTime(value time.Time) string {
+	return value.UTC().Format("2006-01-02T15:04:05.000000000Z")
 }
 
 func parseTime(value string) (time.Time, error) {

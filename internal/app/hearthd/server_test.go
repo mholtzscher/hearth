@@ -12,7 +12,6 @@ import (
 
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/mholtzscher/hearth/internal/modules/devices"
-	devicesapi "github.com/mholtzscher/hearth/internal/modules/devices/api"
 )
 
 const (
@@ -29,7 +28,7 @@ func (readiness *testReadiness) Check(context.Context) error {
 }
 
 type stubDevices struct {
-	getEntity      func(context.Context, devices.EntityID) (devices.EntityView, error)
+	getEntity      func(context.Context, devices.EntityID) (devices.EntityWithState, error)
 	executeCommand func(
 		context.Context,
 		devices.EntityID,
@@ -38,11 +37,31 @@ type stubDevices struct {
 	) (devices.CommandResult, error)
 }
 
-func (stub *stubDevices) GetEntity(ctx context.Context, entityID devices.EntityID) (devices.EntityView, error) {
+func (stub *stubDevices) GetEntity(ctx context.Context, entityID devices.EntityID) (devices.EntityWithState, error) {
 	if stub.getEntity == nil {
 		panic("unexpected GetEntity call")
 	}
 	return stub.getEntity(ctx, entityID)
+}
+
+func (*stubDevices) ListDevices(context.Context, devices.ListDevicesParams) (devices.Page[devices.Device], error) {
+	panic("unexpected ListDevices call")
+}
+
+func (*stubDevices) GetDevice(context.Context, devices.GetDeviceParams) (devices.DeviceAggregate, error) {
+	panic("unexpected GetDevice call")
+}
+
+func (*stubDevices) ListEntities(context.Context, devices.ListEntitiesParams) (devices.Page[devices.EntityWithState], error) {
+	panic("unexpected ListEntities call")
+}
+
+func (*stubDevices) GetCommand(context.Context, devices.CommandID) (devices.CommandRecord, error) {
+	panic("unexpected GetCommand call")
+}
+
+func (*stubDevices) ListEntityCommands(context.Context, devices.ListEntityCommandsParams) (devices.Page[devices.CommandRecord], error) {
+	panic("unexpected ListEntityCommands call")
 }
 
 func (stub *stubDevices) ExecuteCommand(
@@ -58,8 +77,8 @@ func (stub *stubDevices) ExecuteCommand(
 }
 
 func TestHTTPHandlerServesHealthReadinessAndDeviceOperations(t *testing.T) {
-	stub := &stubDevices{getEntity: func(context.Context, devices.EntityID) (devices.EntityView, error) {
-		return devices.EntityView{Entity: devices.Entity{
+	stub := &stubDevices{getEntity: func(context.Context, devices.EntityID) (devices.EntityWithState, error) {
+		return devices.EntityWithState{Entity: devices.Entity{
 			ID: testHTTPEntityID, DeviceID: testHTTPDeviceID, AdapterID: "simulator", Name: "Power",
 			TypeID: devices.EntityTypePowerV1, Support: devices.EntitySupport(`{"state":{},"operations":{"set":{}}}`),
 		}}, nil
@@ -123,24 +142,37 @@ func TestRuntimeOpenAPIContract(t *testing.T) {
 	if document.OpenAPI != "3.1.0" || document.Info.Title != "Hearth" || document.Info.Version != "1.0.0" {
 		t.Fatalf("OpenAPI metadata = %#v", document)
 	}
-	if len(document.Paths) != 2 {
+	if len(document.Paths) != 6 {
 		t.Fatalf("OpenAPI paths = %v", document.Paths)
 	}
+	assertRuntimeOpenAPIOperation(t, document.Paths["/v1/entities"].Get, "list-entities", "200", "400", "422", "500")
 	getEntity := document.Paths["/v1/entities/{entity_id}"].Get
-	assertRuntimeOpenAPIOperation(t, getEntity, "get-entity", "200", "400", "404", "500")
+	assertRuntimeOpenAPIOperation(t, getEntity, "get-entity", "200", "400", "404", "422", "500")
 	executeCommand := document.Paths["/v1/entities/{entity_id}/commands"].Post
-	assertRuntimeOpenAPIOperation(t, executeCommand, "execute-entity-command", "200", "400", "404", "502", "503", "504", "500")
+	assertRuntimeOpenAPIOperation(t, executeCommand, "execute-entity-command", "200", "400", "404", "422", "502", "503", "504", "500")
+	assertRuntimeOpenAPIOperation(t, document.Paths["/v1/entities/{entity_id}/commands"].Get, "list-entity-commands", "200", "400", "404", "422", "500")
+	assertRuntimeOpenAPIOperation(t, document.Paths["/v1/devices"].Get, "list-devices", "200", "400", "422", "500")
+	assertRuntimeOpenAPIOperation(t, document.Paths["/v1/devices/{device_id}"].Get, "get-device", "200", "400", "404", "422", "500")
+	assertRuntimeOpenAPIOperation(t, document.Paths["/v1/commands/{command_id}"].Get, "get-command", "200", "400", "404", "422", "500")
 	if executeCommand.RequestBody == nil || !executeCommand.RequestBody.Required {
 		t.Fatalf("command request body = %#v", executeCommand.RequestBody)
 	}
 
 	for schemaName, properties := range map[string][]string{
-		"EntityBody":        {"id", "device_id", "name", "type", "support", "state"},
-		"StateBody":         {"value", "observation_id", "adapter_received_at", "source_updated_at", "observed_at"},
-		"CommandBody":       {"operation", "parameters"},
-		"CommandResultBody": {"command_id", "status", "observation_id", "value"},
-		"StatusError":       {"error"},
-		"APIError":          {"code", "message", "command_id"},
+		"EntityBody":           {"id", "device_id", "name", "type", "support", "state"},
+		"StateBody":            {"value", "observation_id", "adapter_received_at", "source_updated_at", "observed_at"},
+		"CommandBody":          {"operation", "parameters"},
+		"CommandResultBody":    {"command_id", "status", "observation_id", "value"},
+		"DeviceBody":           {"id", "kind", "name"},
+		"DeviceDetailBody":     {"id", "kind", "name", "entities", "next_entity_cursor"},
+		"EntityCollectionBody": {"items", "next_cursor"},
+		"DeviceCollectionBody": {"items", "next_cursor"},
+		"CommandRecordBody": {
+			"id", "entity_id", "operation", "parameters", "status", "requested_at", "deadline_at",
+			"accepted_at", "completed_at", "outcome_observation_id", "failure_code",
+		},
+		"CommandCollectionBody": {"items", "next_cursor"},
+		"ErrorModel":            {"type", "title", "status", "detail", "instance", "errors"},
 	} {
 		raw, ok := document.Components.Schemas[schemaName]
 		if !ok {
@@ -175,76 +207,47 @@ func TestRuntimeOpenAPIContract(t *testing.T) {
 	}
 }
 
-func TestHTTPHandlerNormalizesMalformedCommandRequests(t *testing.T) {
+func TestHTTPHandlerUsesStandardHumaValidationErrors(t *testing.T) {
 	handler, _ := NewHTTPHandler(&stubDevices{}, nil)
-	for _, body := range []string{`{`, `{"operation":"set"}`} {
+	for _, test := range []struct {
+		body   string
+		status int
+	}{{`{`, http.StatusBadRequest}, {`{"operation":"set"}`, http.StatusUnprocessableEntity}} {
 		request := httptest.NewRequest(
 			http.MethodPost,
 			"/v1/entities/"+string(testHTTPEntityID)+"/commands",
-			bytes.NewBufferString(body),
+			bytes.NewBufferString(test.body),
 		)
 		request.Header.Set("Content-Type", "application/json")
 		response := httptest.NewRecorder()
 		handler.ServeHTTP(response, request)
-		if response.Code != http.StatusBadRequest {
-			t.Fatalf("body %q: status = %d, response = %s", body, response.Code, response.Body.String())
+		if response.Code != test.status {
+			t.Fatalf("body %q: status = %d, response = %s", test.body, response.Code, response.Body.String())
 		}
-		var errorBody devicesapi.ErrorBody
+		var errorBody huma.ErrorModel
 		if err := json.Unmarshal(response.Body.Bytes(), &errorBody); err != nil {
 			t.Fatal(err)
 		}
-		if errorBody.Error.Code != "invalid_request" || errorBody.Error.Message != "invalid request" {
-			t.Fatalf("body %q: error = %#v", body, errorBody.Error)
+		if errorBody.Status != test.status {
+			t.Fatalf("body %q: error = %#v", test.body, errorBody)
 		}
 	}
 }
 
-func TestNewHTTPHandlerInstallsHumaErrorPolicy(t *testing.T) {
+func TestNewHTTPHandlerPreservesHumaErrorFactory(t *testing.T) {
 	original := huma.NewError
-	sentinelCalled := false
-	huma.NewError = func(status int, message string, _ ...error) huma.StatusError {
-		sentinelCalled = true
-		return devicesapi.NewStatusError(status, "sentinel", message)
+	called := false
+	huma.NewError = func(status int, message string, details ...error) huma.StatusError {
+		called = true
+		return original(status, message, details...)
 	}
 	t.Cleanup(func() { huma.NewError = original })
 
 	NewHTTPHandler(&stubDevices{}, nil)
-	sentinelCalled = false
-	for _, status := range []int{
-		http.StatusBadRequest,
-		http.StatusRequestEntityTooLarge,
-		http.StatusUnsupportedMediaType,
-		http.StatusUnprocessableEntity,
-	} {
-		assertHumaError(t, huma.NewError(status, "validation failed"), http.StatusBadRequest, "invalid_request", "invalid request")
-	}
-	if sentinelCalled {
-		t.Fatal("NewHTTPHandler did not replace huma.NewError")
-	}
-	assertHumaError(t, huma.NewError(0, "schema error"), 0, "internal_error", "schema error")
-
-	fallback := huma.NewError(http.StatusTeapot, "teapot")
-	wantFallback := defaultHumaNewError(http.StatusTeapot, "teapot")
-	if fallback.GetStatus() != wantFallback.GetStatus() || fallback.Error() != wantFallback.Error() {
-		t.Fatalf("fallback = %#v, want %#v", fallback, wantFallback)
-	}
-}
-
-func assertHumaError(t *testing.T, err huma.StatusError, status int, code, message string) {
-	t.Helper()
-	if err.GetStatus() != status {
-		t.Fatalf("status = %d, want %d", err.GetStatus(), status)
-	}
-	encoded, marshalErr := json.Marshal(err)
-	if marshalErr != nil {
-		t.Fatal(marshalErr)
-	}
-	var body devicesapi.ErrorBody
-	if unmarshalErr := json.Unmarshal(encoded, &body); unmarshalErr != nil {
-		t.Fatal(unmarshalErr)
-	}
-	if body.Error.Code != code || body.Error.Message != message {
-		t.Fatalf("error = %#v", body.Error)
+	called = false
+	err := huma.NewError(http.StatusTeapot, "teapot")
+	if !called || err.GetStatus() != http.StatusTeapot || err.Error() != "teapot" {
+		t.Fatalf("NewHTTPHandler changed huma.NewError behavior: %#v", err)
 	}
 }
 
@@ -272,8 +275,8 @@ func assertRuntimeOpenAPIOperation(t *testing.T, operation *runtimeOpenAPIOperat
 			t.Errorf("OpenAPI operation %q is missing response %s", operationID, status)
 			continue
 		}
-		if status != "200" && !strings.Contains(string(response), "#/components/schemas/StatusError") {
-			t.Errorf("OpenAPI operation %q response %s does not use the stable error body: %s", operationID, status, response)
+		if status != "200" && !strings.Contains(string(response), "#/components/schemas/ErrorModel") {
+			t.Errorf("OpenAPI operation %q response %s does not use Huma's standard error body: %s", operationID, status, response)
 		}
 	}
 }
