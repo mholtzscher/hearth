@@ -16,7 +16,7 @@ Hearth needs a useful first vertical slice for a technical self-hoster migrating
 
 Build three Go processes: the Hearth core daemon `hearthd`, a disposable Home Assistant migration adapter, and a fault-injecting simulator. A thin, stateless Go SDK hides NATS protocol mechanics; authoritative JSON Schemas support non-Go adapters.
 
-Adapters register configured Devices and Entities over Core NATS request/reply, publish Observations durably to JetStream, and serve ephemeral Commands over Core NATS request/reply. Entity descriptors reference a core-owned, versioned Entity-type catalog; generic JSON values and Command parameters pass through the transport and persistence plumbing, while the catalog validates their semantics. The built-in catalog contains `hearth.power/v1` plus `hearth.brightness/v1` as generator/catalog validation; the first-light adapter and HTTP scenario continue to use only power. The core projects canonical State and records every dispatched Command attempt and outcome in SQLite, then exposes a loopback Echo/Huma HTTP interface. Command delivery and outcome waits remain synchronous and ephemeral; records never cause replay or redispatch. Commands for the same Entity may overlap and are correlated independently by Command ID.
+Adapters register configured Devices and Entities over Core NATS request/reply, publish Observations durably to JetStream, and serve ephemeral Commands over Core NATS request/reply. Entity descriptors reference a core-owned, versioned Entity-type catalog; generic JSON values and Command parameters pass through the transport and persistence plumbing, while the catalog validates their semantics. The built-in catalog contains `hearth.power/v1` plus `hearth.brightness/v1` as generator/catalog validation; the first-light adapter and HTTP scenario continue to use only power. The core projects canonical State and records every dispatched Command attempt and outcome in SQLite, then exposes an Echo/Huma HTTP interface on its configured address. Command delivery and outcome waits remain synchronous and ephemeral; records never cause replay or redispatch. Commands for the same Entity may overlap and are correlated independently by Command ID.
 
 ## Scope
 
@@ -40,7 +40,7 @@ Adapters register configured Devices and Entities over Core NATS request/reply, 
 - Discovery, approval, availability, heartbeats, automations, scheduling, or UI
 - Adapter manifests, feature negotiation, runtime Entity-type registration or extension loading, checkpoints, or a vendor framework in the SDK
 - Durable Command delivery/recovery or core-managed serialization, queuing, and supersession
-- Authentication or non-loopback HTTP exposure
+- HTTP authentication
 - Permanent Home Assistant support
 
 ## Key trade-offs
@@ -997,7 +997,7 @@ Core startup order:
 8. Construct the concrete `devices` repository and service with the same catalog instance.
 9. Start the Observation consumer wired to the module's projection handler.
 10. Construct the Echo/Huma transport.
-11. Listen on loopback.
+11. Listen on the configured HTTP address.
 
 `GET /healthz` returns 200 whenever the HTTP process can serve. `GET /readyz` returns 200 only while SQLite responds, NATS is connected, JetStream resources match required configuration, and the Observation consumer is active; otherwise 503.
 
@@ -1094,7 +1094,7 @@ Total relative effort is **XL**. No calendar estimate is asserted.
 - [x] The simulator passes duplicate, delayed-source-time, future-clock-skew, malformed, unavailable-adapter, upstream-rejection, no-op-refresh, overlapping-opposite-command, outcome-timeout, interrupted-command, and restart-before-ack scenarios deterministically.
 - [x] A configured Home Assistant light reads and sets on/off through Hearth; every HTTP 200 is tied to its linked Observation. A controlled state transition after snapshot acquisition but before live event processing is published after reconciliation and becomes canonical State.
 - [x] Core/wire fixtures contain no Home Assistant service names or payload shapes, and removing the migration adapter preserves canonical Device/Entity IDs and the wire contract.
-- [x] HTTP listens only on configured loopback; `/readyz` fails for unavailable SQLite, NATS, required JetStream configuration, or consumer.
+- [x] HTTP listens on its configured address, with a loopback-only example configuration; `/readyz` fails for unavailable SQLite, NATS, required JetStream configuration, or consumer.
 
 ## Test strategy
 

@@ -27,15 +27,9 @@ func LoadConfig(path string) (Config, error) {
 }
 
 func (value Config) Validate() error {
-	host, portText, err := net.SplitHostPort(value.HTTPAddr)
+	_, portText, err := net.SplitHostPort(value.HTTPAddr)
 	if err != nil {
-		return fmt.Errorf("http_addr must contain a loopback host and port: %w", err)
-	}
-	if host != "localhost" {
-		ip := net.ParseIP(strings.Trim(host, "[]"))
-		if ip == nil || !ip.IsLoopback() {
-			return fmt.Errorf("http_addr host must be loopback")
-		}
+		return fmt.Errorf("http_addr must contain a host and port: %w", err)
 	}
 	port, err := strconv.Atoi(portText)
 	if err != nil || port < 1 || port > 65535 {

@@ -36,10 +36,10 @@
 - `GET /v1/entities/{entity_id}` returns Entity metadata and current State; a registered but never-observed Entity returns `state: null` rather than 404 or synthetic state.
 - Resource discovery adds `GET /v1/entities`, `GET /v1/devices`, and `GET /v1/devices/{device_id}`. Entities remain top-level canonical resources, Entity listing may filter by `device_id`, and Device detail embeds a page of associated Entities with nullable current State. Collection reads use opaque endpoint-scoped keyset cursors, default to 50 items, accept limits from 1 through 200, omit totals, and return no continuation cursor on the last page; Device detail uses `entity_limit`, `entity_cursor`, and `next_entity_cursor` for its embedded collection.
 - Durable Command audit reads add `GET /v1/commands/{command_id}` and `GET /v1/entities/{entity_id}/commands`. History is ordered by fixed-width persisted request time and Command ID newest-first, distinguishes an unknown Entity from empty history, and exposes persisted operation parameters and outcomes without adapter or correlation identifiers or synthesized historical values.
-- HTTP pagination cursors are unsigned, versioned base64url JSON positions scoped to their endpoint, optional Device filter, parent Device, and parent Entity. They provide position rather than authority because the API remains trusted and loopback-bound.
+- HTTP pagination cursors are unsigned, versioned base64url JSON positions scoped to their endpoint, optional Device filter, parent Device, and parent Entity. They provide position rather than authority and are not security credentials.
 - `POST /v1/entities/{entity_id}/commands` accepts `{"operation":"set","parameters":{"value":true}}` for the first power Entity and waits synchronously for outcome satisfaction or deadline failure.
 - HTTP errors use Huma's standard RFC 9457 Problem Details model and validation conventions. Command status mappings remain: missing adapter 503, upstream rejection 502, outcome timeout 504, and internal failure 500.
-- During native development the unauthenticated HTTP API binds only to loopback; network exposure requires a later authentication and deployment decision.
+- The unauthenticated HTTP API binds to its configured address. Configuration examples remain loopback-only; non-loopback binding is an explicit operator choice for trusted networks, and untrusted network exposure requires authentication and a deployment decision.
 - Each first-slice process owns a separate YAML file for non-secret configuration; the Home Assistant adapter reads its token from a separate local secret file.
 - The first slice does not model adapter or Entity availability; reads expose the last State and observation time, while command request/reply detects a missing adapter.
 - At startup and reconnect, the disposable Home Assistant adapter establishes its state-change subscription before requesting a current snapshot, buffers events during snapshot acquisition, and reconciles them by Home Assistant `last_updated` before live publication so no transition is lost or allowed to overwrite a newer snapshot. It correlates concurrent WebSocket requests by request ID and explicitly publishes each accepted Command's own linked refresh.
@@ -50,7 +50,7 @@
 
 - Echo v5 and Huma v2 provide HTTP transport; application assembly constructs them and owns process-global HTTP framework policy, while the `devices` module owns operation registration and transport mapping. OpenAPI is exposed at runtime and is not committed as a generated artifact.
 - Local development runs Go binaries and NATS natively through devenv; container packaging is deferred until deployment work.
-- The core exposes loopback `/healthz` and `/readyz`; readiness requires migrated SQLite, NATS connectivity, provisioned JetStream resources, and an active observation consumer. Adapters retry transient registration failures until the core is available and stop on schema-defined permanent rejection.
+- The core exposes `/healthz` and `/readyz` on its configured HTTP address; readiness requires migrated SQLite, NATS connectivity, provisioned JetStream resources, and an active observation consumer. Adapters retry transient registration failures until the core is available and stop on schema-defined permanent rejection.
 
 ## Undecided
 

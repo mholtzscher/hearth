@@ -15,9 +15,9 @@ func TestLoadExampleConfig(t *testing.T) {
 	}
 }
 
-func TestConfigRejectsNonLoopbackHTTP(t *testing.T) {
+func TestConfigAcceptsNonLoopbackHTTP(t *testing.T) {
 	value := Config{HTTPAddr: "0.0.0.0:8080", NATSURL: "nats://127.0.0.1:4222", SQLitePath: "hearth.db"}
-	if err := value.Validate(); err == nil {
-		t.Fatal("non-loopback HTTP address unexpectedly accepted")
+	if err := value.Validate(); err != nil {
+		t.Fatalf("validate non-loopback HTTP address: %v", err)
 	}
 }
