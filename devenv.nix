@@ -1,6 +1,8 @@
 { pkgs, ... }:
 
 {
+  env.GOMODCACHE = "${builtins.getEnv "HOME"}/go/pkg/mod";
+
   packages = [
     pkgs.git
     pkgs.goose
