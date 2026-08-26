@@ -56,6 +56,14 @@
     '';
   };
 
+  tasks."hearth:ko-build" = {
+    after = [ "hearth:tidy" ];
+    exec = ''
+      KO_DOCKER_REPO=example.invalid/hearth go tool ko build --base-import-paths --tags validation --push=false \
+        ./cmd/hearthd ./cmd/hearth-adapter-homeassistant ./cmd/hearth-simulator
+    '';
+  };
+
   tasks."hearth:lint" = {
     after = [ "hearth:tidy" ];
     exec = ''
@@ -94,6 +102,7 @@
   tasks."hearth:validate".after = [
     "hearth:format-check"
     "hearth:generate-check"
+    "hearth:ko-build"
     "hearth:lint"
     "hearth:tidy-check"
     "hearth:test"
