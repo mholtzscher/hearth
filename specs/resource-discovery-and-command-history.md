@@ -46,7 +46,7 @@ Errors use Huma's standard RFC 9457 Problem Details model. Malformed JSON and ha
 
 Each response has an `items` array, including when empty, and omits `next_cursor` when no later page exists. Device detail applies the same 1–200 bounds to `entity_limit` (default 50), accepts `entity_cursor`, and omits `next_entity_cursor` when no later embedded Entity exists. No endpoint returns a total count.
 
-Cursors are base64url-without-padding encodings of versioned JSON position documents. A cursor is valid only for its endpoint and applicable parent Device, parent Entity, or optional Entity `device_id` filter. Invalid encoding, version, scope, canonical ID, fields, UTC timestamp, or trailing JSON returns an HTTP 400 Problem Details response. Cursors are unsigned because this API remains trusted and loopback-bound; they convey position, not authority.
+Cursors are base64url-without-padding encodings of versioned JSON position documents. A cursor is valid only for its endpoint and applicable parent Device, parent Entity, or optional Entity `device_id` filter. Invalid encoding, version, scope, canonical ID, fields, UTC timestamp, or trailing JSON returns an HTTP 400 Problem Details response. Cursors are unsigned because they convey position, not authority, and are not security credentials.
 
 Private cursor types owned by `internal/modules/devices/api/pagination.go`:
 
@@ -451,7 +451,7 @@ Use table-driven API/service tests and migrated temporary SQLite databases for p
 | Risk | Likelihood | Impact | Mitigation |
 |---|---:|---:|---|
 | Device join mapping duplicates or drops aggregate data | Medium | Medium | Explicit nullable-row handling and real SQLite tests for empty, stateless, stateful, and multi-Entity Devices. |
-| Command parameters reveal household behavior if network exposure changes | Low on loopback | Medium | Preserve loopback scope; require authentication/authorization review before network exposure. |
+| Command parameters reveal household behavior on an exposed interface | Low with the loopback default or a trusted network | Medium | Bind non-loopback only on trusted networks; require authentication and authorization before untrusted exposure. |
 | Concurrent registration changes data between pages | Medium | Low | Keyset ordering avoids insertion-before-cursor duplicates; no cross-request snapshot isolation is promised. |
 | Registration regrouping changes existing OpenAPI | Medium | High | Assert runtime metadata, response schemas, and standard Problem Details for both existing operations. |
 
