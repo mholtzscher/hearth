@@ -5,6 +5,7 @@
 
   packages = [
     pkgs.git
+    pkgs.golangci-lint
     pkgs.goose
     pkgs.nats-server
     pkgs.sqlc
@@ -17,23 +18,89 @@
     jetstream.enable = true;
   };
 
-  tasks."hearth:test".exec = ''
-    test -z "$(gofmt -l $(git ls-files --cached --others --exclude-standard -- '*.go'))"
-    go run ./internal/cmd/entitytypegen -root . -check
+  tasks."hearth:format" = {
+    after = [ "hearth:generate" ];
+    exec = ''
+      git ls-files -z --cached --others --exclude-standard -- '*.go' | xargs -0 -r gofmt -w
+    '';
+  };
+
+  tasks."hearth:format-check" = {
+    after = [ "hearth:tidy" ];
+    exec = ''
+      unformatted="$(git ls-files -z --cached --others --exclude-standard -- '*.go' | xargs -0 -r gofmt -l)"
+      if test -n "$unformatted"; then
+        printf 'The following Go files need formatting:\n%s\n' "$unformatted"
+        exit 1
+      fi
+    '';
+  };
+
+  tasks."hearth:generate".exec = ''
+    go generate ./entitytypes
     sqlc generate
-    git diff --exit-code -- internal/platform/db/sqlc
-    test -z "$(git ls-files --others --exclude-standard -- internal/platform/db/sqlc)"
-    go test -race ./...
-    go vet ./...
   '';
 
+  tasks."hearth:generate-check" = {
+    after = [ "hearth:tidy" ];
+    exec = ''
+      go run ./internal/cmd/entitytypegen -root . -check
+
+      tmp="$(mktemp -d)"
+      trap 'rm -rf "$tmp"' EXIT
+      mkdir -p "$tmp/internal/platform/db"
+      cp sqlc.yaml "$tmp/"
+      cp -R internal/platform/db/migrations internal/platform/db/queries internal/platform/db/sqlc "$tmp/internal/platform/db/"
+      (cd "$tmp" && sqlc generate)
+      diff -ru internal/platform/db/sqlc "$tmp/internal/platform/db/sqlc"
+    '';
+  };
+
+  tasks."hearth:lint" = {
+    after = [ "hearth:tidy" ];
+    exec = ''
+      golangci-lint run ./...
+    '';
+  };
+
+  tasks."hearth:tidy" = {
+    after = [ "hearth:format" ];
+    exec = ''
+      go mod tidy
+    '';
+  };
+
+  tasks."hearth:tidy-check" = {
+    after = [ "hearth:tidy" ];
+    exec = ''
+      go mod tidy -diff
+    '';
+  };
+
+  tasks."hearth:test" = {
+    after = [ "hearth:tidy" ];
+    exec = ''
+      go test -race ./...
+    '';
+  };
+
+  tasks."hearth:vet" = {
+    after = [ "hearth:tidy" ];
+    exec = ''
+      go vet ./...
+    '';
+  };
+
+  tasks."hearth:validate".after = [
+    "hearth:format-check"
+    "hearth:generate-check"
+    "hearth:lint"
+    "hearth:tidy-check"
+    "hearth:test"
+    "hearth:vet"
+  ];
+
   enterTest = ''
-    test -z "$(gofmt -l $(git ls-files --cached --others --exclude-standard -- '*.go'))"
-    go run ./internal/cmd/entitytypegen -root . -check
-    sqlc generate
-    git diff --exit-code -- internal/platform/db/sqlc
-    test -z "$(git ls-files --others --exclude-standard -- internal/platform/db/sqlc)"
-    go test -race ./...
-    go vet ./...
+    devenv tasks run --no-reload hearth:validate
   '';
 }

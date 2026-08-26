@@ -1,8 +1,10 @@
-name: Check
+name: devenv
 
 on:
   pull_request:
   push:
+    branches:
+      - main
 
 permissions:
   contents: read
@@ -19,4 +21,7 @@ jobs:
       - name: Install devenv
         run: nix profile add nixpkgs#devenv
       - name: Run checks
-        run: devenv test
+        run: |
+          devenv test
+          git diff --exit-code
+          test -z "$(git ls-files --others --exclude-standard)"
