@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.0](https://github.com/mholtzscher/hearth/compare/v0.1.0...v0.2.0) (2026-08-26)
+
+
+### Features
+
+* **hearthd:** allow non-loopback http binding ([#22](https://github.com/mholtzscher/hearth/issues/22)) ([4ebcec0](https://github.com/mholtzscher/hearth/commit/4ebcec05b1f199dbbc111ee76f2c55807ac90277))
+
 ## 0.1.0 (2026-08-26)
 
 
