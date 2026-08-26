@@ -12,7 +12,7 @@ Hearth's first vertical slice observes and controls one Home Assistant-managed l
 
 ## Development
 
-Enter the devenv shell with `devenv shell` and start local NATS/JetStream with `devenv up`. The clean-checkout gate is `devenv test`; it checks formatting, Entity-type and sqlc generation, all authoritative schemas and cross-binary fixtures, race-enabled tests (including runtime OpenAPI and recovery), and vetting. Regenerate complete built-in Entity-type bindings, behavior, conformance tests, typed SDK facades, and catalog assembly after changing a manifest, examples, or semantic schema with `go generate ./entitytypes`; regenerate database access code after changing migrations or queries with `devenv shell -- sqlc generate`.
+Enter the devenv shell with `devenv shell` and start local NATS/JetStream with `devenv up`. The validation gate is `devenv tasks run hearth:validate`; it regenerates checked-in code, formats Go files, tidies module metadata, and then checks generation, formatting, module tidiness, linting, all authoritative schemas and cross-binary fixtures, race-enabled tests (including runtime OpenAPI and recovery), and vetting. Regenerate checked-in Entity-type and database access code after changing its inputs with `devenv tasks run hearth:generate`.
 
 Run the first-light simulator with `go run ./cmd/hearth-simulator -config configs/simulator.yaml` after copying `configs/simulator.example.yaml`. Its `scenario` may be `happy`, `duplicate`, `delayed-source-time`, `future-clock-skew`, `malformed`, `unavailable-adapter`, `upstream-rejection`, `no-op-refresh`, `overlapping-opposite-command`, `outcome-timeout`, `interrupted-command`, or `restart-before-ack`.
 

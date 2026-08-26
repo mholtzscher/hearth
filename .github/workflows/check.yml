@@ -19,4 +19,7 @@ jobs:
       - name: Install devenv
         run: nix profile add nixpkgs#devenv
       - name: Run checks
-        run: devenv test
+        run: |
+          devenv test
+          git diff --exit-code
+          test -z "$(git ls-files --others --exclude-standard)"
