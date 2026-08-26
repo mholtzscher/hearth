@@ -1,6 +1,7 @@
 package hearthd
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -8,9 +9,10 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
-	"time"
 
+	"github.com/danielgtaylor/huma/v2"
 	"github.com/mholtzscher/hearth/internal/modules/devices"
+	devicesapi "github.com/mholtzscher/hearth/internal/modules/devices/api"
 )
 
 const (
@@ -26,54 +28,44 @@ func (readiness *testReadiness) Check(context.Context) error {
 	return readiness.err
 }
 
-type testRepository struct {
-	view devices.EntityView
+type stubDevices struct {
+	getEntity      func(context.Context, devices.EntityID) (devices.EntityView, error)
+	executeCommand func(
+		context.Context,
+		devices.EntityID,
+		devices.OperationName,
+		devices.CommandParameters,
+	) (devices.CommandResult, error)
 }
 
-func (*testRepository) RegisterBinding(context.Context, devices.RegisterBindingParams) (devices.Binding, error) {
-	panic("unexpected RegisterBinding call")
+func (stub *stubDevices) GetEntity(ctx context.Context, entityID devices.EntityID) (devices.EntityView, error) {
+	if stub.getEntity == nil {
+		panic("unexpected GetEntity call")
+	}
+	return stub.getEntity(ctx, entityID)
 }
 
-func (repository *testRepository) GetEntityView(context.Context, devices.EntityID) (devices.EntityView, error) {
-	return repository.view, nil
-}
-
-func (*testRepository) ProjectObservation(context.Context, devices.ProjectObservationParams) (devices.ProjectionResult, error) {
-	panic("unexpected ProjectObservation call")
-}
-
-func (*testRepository) DeleteExpiredObservationReceipts(context.Context, time.Time) error {
-	panic("unexpected DeleteExpiredObservationReceipts call")
-}
-
-func (*testRepository) CreateCommand(context.Context, devices.CommandRecord) error {
-	panic("unexpected CreateCommand call")
-}
-
-func (*testRepository) MarkCommandAccepted(context.Context, devices.CommandID, time.Time) error {
-	panic("unexpected MarkCommandAccepted call")
-}
-
-func (*testRepository) CompleteCommand(context.Context, devices.CommandCompletion) error {
-	panic("unexpected CompleteCommand call")
-}
-
-func (*testRepository) InterruptActiveCommands(context.Context, time.Time) error {
-	panic("unexpected InterruptActiveCommands call")
+func (stub *stubDevices) ExecuteCommand(
+	ctx context.Context,
+	entityID devices.EntityID,
+	operation devices.OperationName,
+	parameters devices.CommandParameters,
+) (devices.CommandResult, error) {
+	if stub.executeCommand == nil {
+		panic("unexpected ExecuteCommand call")
+	}
+	return stub.executeCommand(ctx, entityID, operation, parameters)
 }
 
 func TestHTTPHandlerServesHealthReadinessAndDeviceOperations(t *testing.T) {
-	catalog, err := devices.NewBuiltinTypeCatalog()
-	if err != nil {
-		t.Fatal(err)
-	}
-	repository := &testRepository{view: devices.EntityView{Entity: devices.Entity{
-		ID: testHTTPEntityID, DeviceID: testHTTPDeviceID, AdapterID: "simulator", Name: "Power",
-		TypeID: devices.EntityTypePowerV1, Support: devices.EntitySupport(`{"state":{},"operations":{"set":{}}}`),
-	}}}
-	service := devices.NewService(repository, nil, catalog, devices.Dependencies{})
+	stub := &stubDevices{getEntity: func(context.Context, devices.EntityID) (devices.EntityView, error) {
+		return devices.EntityView{Entity: devices.Entity{
+			ID: testHTTPEntityID, DeviceID: testHTTPDeviceID, AdapterID: "simulator", Name: "Power",
+			TypeID: devices.EntityTypePowerV1, Support: devices.EntitySupport(`{"state":{},"operations":{"set":{}}}`),
+		}}, nil
+	}}
 	readiness := &testReadiness{}
-	handler, api := NewHTTPHandler(service, readiness)
+	handler, api := NewHTTPHandler(stub, readiness)
 
 	if response := appRequest(handler, "/healthz"); response.Code != http.StatusOK {
 		t.Fatalf("health status = %d", response.Code)
@@ -102,15 +94,7 @@ func TestHTTPHandlerServesHealthReadinessAndDeviceOperations(t *testing.T) {
 }
 
 func TestRuntimeOpenAPIContract(t *testing.T) {
-	catalog, err := devices.NewBuiltinTypeCatalog()
-	if err != nil {
-		t.Fatal(err)
-	}
-	repository := &testRepository{view: devices.EntityView{Entity: devices.Entity{
-		ID: testHTTPEntityID, DeviceID: testHTTPDeviceID, AdapterID: "simulator", Name: "Power",
-		TypeID: devices.EntityTypePowerV1, Support: devices.EntitySupport(`{"state":{},"operations":{"set":{}}}`),
-	}}}
-	handler, _ := NewHTTPHandler(devices.NewService(repository, nil, catalog, devices.Dependencies{}), &testReadiness{})
+	handler, _ := NewHTTPHandler(&stubDevices{}, &testReadiness{})
 	response := appRequest(handler, "/openapi.json")
 	if response.Code != http.StatusOK {
 		t.Fatalf("OpenAPI status = %d, body = %s", response.Code, response.Body.String())
@@ -188,6 +172,79 @@ func TestRuntimeOpenAPIContract(t *testing.T) {
 	}
 	if !nullable {
 		t.Fatalf("OpenAPI StateBody is not nullable: %s", document.Components.Schemas["StateBody"])
+	}
+}
+
+func TestHTTPHandlerNormalizesMalformedCommandRequests(t *testing.T) {
+	handler, _ := NewHTTPHandler(&stubDevices{}, nil)
+	for _, body := range []string{`{`, `{"operation":"set"}`} {
+		request := httptest.NewRequest(
+			http.MethodPost,
+			"/v1/entities/"+string(testHTTPEntityID)+"/commands",
+			bytes.NewBufferString(body),
+		)
+		request.Header.Set("Content-Type", "application/json")
+		response := httptest.NewRecorder()
+		handler.ServeHTTP(response, request)
+		if response.Code != http.StatusBadRequest {
+			t.Fatalf("body %q: status = %d, response = %s", body, response.Code, response.Body.String())
+		}
+		var errorBody devicesapi.ErrorBody
+		if err := json.Unmarshal(response.Body.Bytes(), &errorBody); err != nil {
+			t.Fatal(err)
+		}
+		if errorBody.Error.Code != "invalid_request" || errorBody.Error.Message != "invalid request" {
+			t.Fatalf("body %q: error = %#v", body, errorBody.Error)
+		}
+	}
+}
+
+func TestNewHTTPHandlerInstallsHumaErrorPolicy(t *testing.T) {
+	original := huma.NewError
+	sentinelCalled := false
+	huma.NewError = func(status int, message string, _ ...error) huma.StatusError {
+		sentinelCalled = true
+		return devicesapi.NewStatusError(status, "sentinel", message)
+	}
+	t.Cleanup(func() { huma.NewError = original })
+
+	NewHTTPHandler(&stubDevices{}, nil)
+	sentinelCalled = false
+	for _, status := range []int{
+		http.StatusBadRequest,
+		http.StatusRequestEntityTooLarge,
+		http.StatusUnsupportedMediaType,
+		http.StatusUnprocessableEntity,
+	} {
+		assertHumaError(t, huma.NewError(status, "validation failed"), http.StatusBadRequest, "invalid_request", "invalid request")
+	}
+	if sentinelCalled {
+		t.Fatal("NewHTTPHandler did not replace huma.NewError")
+	}
+	assertHumaError(t, huma.NewError(0, "schema error"), 0, "internal_error", "schema error")
+
+	fallback := huma.NewError(http.StatusTeapot, "teapot")
+	wantFallback := defaultHumaNewError(http.StatusTeapot, "teapot")
+	if fallback.GetStatus() != wantFallback.GetStatus() || fallback.Error() != wantFallback.Error() {
+		t.Fatalf("fallback = %#v, want %#v", fallback, wantFallback)
+	}
+}
+
+func assertHumaError(t *testing.T, err huma.StatusError, status int, code, message string) {
+	t.Helper()
+	if err.GetStatus() != status {
+		t.Fatalf("status = %d, want %d", err.GetStatus(), status)
+	}
+	encoded, marshalErr := json.Marshal(err)
+	if marshalErr != nil {
+		t.Fatal(marshalErr)
+	}
+	var body devicesapi.ErrorBody
+	if unmarshalErr := json.Unmarshal(encoded, &body); unmarshalErr != nil {
+		t.Fatal(unmarshalErr)
+	}
+	if body.Error.Code != code || body.Error.Message != message {
+		t.Fatalf("error = %#v", body.Error)
 	}
 }
 

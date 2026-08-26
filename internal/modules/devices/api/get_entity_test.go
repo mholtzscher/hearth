@@ -21,46 +21,42 @@ const (
 	apiObservationID = devices.ObservationID("obs_01890f47-7a6b-7c4d-8e9f-0123456789ab")
 )
 
-type stubRepository struct {
-	view devices.EntityView
-	err  error
+type stubDevices struct {
+	getEntity      func(context.Context, devices.EntityID) (devices.EntityView, error)
+	executeCommand func(
+		context.Context,
+		devices.EntityID,
+		devices.OperationName,
+		devices.CommandParameters,
+	) (devices.CommandResult, error)
 }
 
-func (*stubRepository) RegisterBinding(context.Context, devices.RegisterBindingParams) (devices.Binding, error) {
-	panic("unexpected RegisterBinding call")
+func (stub *stubDevices) GetEntity(ctx context.Context, entityID devices.EntityID) (devices.EntityView, error) {
+	if stub.getEntity == nil {
+		panic("unexpected GetEntity call")
+	}
+	return stub.getEntity(ctx, entityID)
 }
 
-func (repository *stubRepository) GetEntityView(context.Context, devices.EntityID) (devices.EntityView, error) {
-	return repository.view, repository.err
-}
-
-func (*stubRepository) ProjectObservation(context.Context, devices.ProjectObservationParams) (devices.ProjectionResult, error) {
-	panic("unexpected ProjectObservation call")
-}
-
-func (*stubRepository) DeleteExpiredObservationReceipts(context.Context, time.Time) error {
-	panic("unexpected DeleteExpiredObservationReceipts call")
-}
-
-func (*stubRepository) CreateCommand(context.Context, devices.CommandRecord) error {
-	panic("unexpected CreateCommand call")
-}
-
-func (*stubRepository) MarkCommandAccepted(context.Context, devices.CommandID, time.Time) error {
-	panic("unexpected MarkCommandAccepted call")
-}
-
-func (*stubRepository) CompleteCommand(context.Context, devices.CommandCompletion) error {
-	panic("unexpected CompleteCommand call")
-}
-
-func (*stubRepository) InterruptActiveCommands(context.Context, time.Time) error {
-	panic("unexpected InterruptActiveCommands call")
+func (stub *stubDevices) ExecuteCommand(
+	ctx context.Context,
+	entityID devices.EntityID,
+	operation devices.OperationName,
+	parameters devices.CommandParameters,
+) (devices.CommandResult, error) {
+	if stub.executeCommand == nil {
+		panic("unexpected ExecuteCommand call")
+	}
+	return stub.executeCommand(ctx, entityID, operation, parameters)
 }
 
 func TestGetEntityReturnsMetadataAndNullableState(t *testing.T) {
-	repository := &stubRepository{view: apiEntityView(nil)}
-	router, openapi := testAPI(t, repository)
+	var requestedEntityID devices.EntityID
+	stub := &stubDevices{getEntity: func(_ context.Context, entityID devices.EntityID) (devices.EntityView, error) {
+		requestedEntityID = entityID
+		return apiEntityView(nil), nil
+	}}
+	router, openapi := testAPI(t, stub)
 
 	response := performRequest(router, "/v1/entities/"+string(apiEntityID))
 	if response.Code != http.StatusOK {
@@ -74,6 +70,9 @@ func TestGetEntityReturnsMetadataAndNullableState(t *testing.T) {
 	}
 	if err := json.Unmarshal(response.Body.Bytes(), &body); err != nil {
 		t.Fatal(err)
+	}
+	if requestedEntityID != apiEntityID {
+		t.Fatalf("GetEntity ID = %q", requestedEntityID)
 	}
 	if body.ID != string(apiEntityID) || body.Name != "Power" || body.State != nil || body.Support["state"] == nil {
 		t.Fatalf("body = %#v", body)
@@ -92,7 +91,9 @@ func TestGetEntityMapsCurrentState(t *testing.T) {
 		EntityID: apiEntityID, Value: devices.Value(`true`), ObservationID: apiObservationID,
 		AdapterReceivedAt: adapterReceivedAt, SourceUpdatedAt: &sourceUpdatedAt, ObservedAt: observedAt, ReceiveOrder: 4,
 	}
-	router, _ := testAPI(t, &stubRepository{view: apiEntityView(state)})
+	router, _ := testAPI(t, &stubDevices{getEntity: func(context.Context, devices.EntityID) (devices.EntityView, error) {
+		return apiEntityView(state), nil
+	}})
 	response := performRequest(router, "/v1/entities/"+string(apiEntityID))
 	if response.Code != http.StatusOK {
 		t.Fatalf("status = %d, body = %s", response.Code, response.Body.String())
@@ -109,19 +110,23 @@ func TestGetEntityMapsCurrentState(t *testing.T) {
 
 func TestGetEntityMapsStableErrors(t *testing.T) {
 	tests := []struct {
-		name       string
-		path       string
-		repository *stubRepository
-		status     int
-		code       string
+		name    string
+		path    string
+		devices *stubDevices
+		status  int
+		code    string
 	}{
-		{"invalid ID", "/v1/entities/not-an-id", &stubRepository{}, http.StatusBadRequest, "invalid_request"},
-		{"not found", "/v1/entities/" + string(apiEntityID), &stubRepository{err: devices.ErrEntityNotFound}, http.StatusNotFound, "entity_not_found"},
-		{"internal", "/v1/entities/" + string(apiEntityID), &stubRepository{err: errors.New("SQLite unavailable")}, http.StatusInternalServerError, "internal_error"},
+		{"invalid ID", "/v1/entities/not-an-id", &stubDevices{}, http.StatusBadRequest, "invalid_request"},
+		{"not found", "/v1/entities/" + string(apiEntityID), &stubDevices{getEntity: func(context.Context, devices.EntityID) (devices.EntityView, error) {
+			return devices.EntityView{}, devices.ErrEntityNotFound
+		}}, http.StatusNotFound, "entity_not_found"},
+		{"internal", "/v1/entities/" + string(apiEntityID), &stubDevices{getEntity: func(context.Context, devices.EntityID) (devices.EntityView, error) {
+			return devices.EntityView{}, errors.New("SQLite unavailable")
+		}}, http.StatusInternalServerError, "internal_error"},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			router, _ := testAPI(t, test.repository)
+			router, _ := testAPI(t, test.devices)
 			response := performRequest(router, test.path)
 			if response.Code != test.status {
 				t.Fatalf("status = %d, body = %s", response.Code, response.Body.String())
@@ -147,18 +152,36 @@ func apiEntityView(state *devices.State) devices.EntityView {
 	}
 }
 
-func testAPI(t *testing.T, repository *stubRepository) (*echo.Echo, huma.API) {
+func testAPI(t *testing.T, devices Devices) (*echo.Echo, huma.API) {
 	t.Helper()
-	catalog, err := devices.NewBuiltinTypeCatalog()
-	if err != nil {
-		t.Fatal(err)
-	}
-	service := devices.NewService(repository, nil, catalog, devices.Dependencies{})
 	router := echo.New()
 	openapi := humaecho.New(router, huma.DefaultConfig("Hearth", "1.0.0"))
 	group := huma.NewGroup(openapi, "/v1/entities")
-	Register(group, service)
+	Register(group, devices)
 	return router, openapi
+}
+
+func TestRegisterDoesNotChangeHumaErrorFactory(t *testing.T) {
+	original := huma.NewError
+	called := false
+	huma.NewError = func(status int, message string, _ ...error) huma.StatusError {
+		called = true
+		return NewStatusError(status, "sentinel", message)
+	}
+	t.Cleanup(func() { huma.NewError = original })
+
+	router := echo.New()
+	openapi := humaecho.New(router, huma.DefaultConfig("Hearth", "1.0.0"))
+	Register(huma.NewGroup(openapi, "/v1/entities"), &stubDevices{})
+	called = false
+	status := huma.NewError(http.StatusTeapot, "sentinel message")
+	if !called {
+		t.Fatal("Register replaced huma.NewError")
+	}
+	var sentinel *statusError
+	if !errors.As(status, &sentinel) || sentinel.ErrorBody.Error.Code != "sentinel" {
+		t.Fatalf("huma.NewError result = %#v", status)
+	}
 }
 
 func performRequest(router http.Handler, path string) *httptest.ResponseRecorder {
