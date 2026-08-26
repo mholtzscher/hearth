@@ -67,19 +67,21 @@ func (service *Service) Register(ctx context.Context, adapterID string, registra
 	if err != nil {
 		return Binding{}, fmt.Errorf("generate device ID: %w", err)
 	}
-	entityID, err := service.dependencies.NewEntityID()
-	if err != nil {
-		return Binding{}, fmt.Errorf("generate entity ID: %w", err)
+	entities := make([]RegisterEntityParams, len(normalized.Entities))
+	for index, entity := range normalized.Entities {
+		entityID, err := service.dependencies.NewEntityID()
+		if err != nil {
+			return Binding{}, fmt.Errorf("generate entity ID: %w", err)
+		}
+		entities[index] = RegisterEntityParams{EntityID: entityID, Entity: copyEntityDescriptor(entity)}
 	}
 	registeredAt := service.dependencies.Now().UTC()
-	entity := normalized.Entities[0]
 	params := RegisterBindingParams{
 		AdapterID:  adapterID,
 		BindingKey: normalized.BindingKey,
 		DeviceID:   deviceID,
-		EntityID:   entityID,
 		Device:     copyDeviceDescriptor(normalized.Device),
-		Entity:     copyEntityDescriptor(entity),
+		Entities:   entities,
 		UpdatedAt:  registeredAt,
 	}
 	binding, err := service.repository.RegisterBinding(ctx, params)
@@ -116,27 +118,38 @@ func (service *Service) normalizeRegistration(adapterID string, registration Reg
 	if normalized.Device.ExternalID != nil && !validLength(*normalized.Device.ExternalID, 1, 256) {
 		return Registration{}, errors.New("device external ID must contain 1 to 256 characters")
 	}
-	if len(normalized.Entities) != 1 {
-		return Registration{}, errors.New("registration must contain exactly one entity")
+	if len(normalized.Entities) < 1 || len(normalized.Entities) > 64 {
+		return Registration{}, errors.New("registration must contain 1 to 64 entities")
 	}
-	entity := normalized.Entities[0]
-	if !registrationSlugPattern.MatchString(entity.Key) {
-		return Registration{}, errors.New("entity key must be a subject-safe slug")
+	keys := make(map[string]struct{}, len(normalized.Entities))
+	externalIDs := make(map[string]struct{}, len(normalized.Entities))
+	for index, entity := range normalized.Entities {
+		if !registrationSlugPattern.MatchString(entity.Key) {
+			return Registration{}, errors.New("entity key must be a subject-safe slug")
+		}
+		if _, exists := keys[entity.Key]; exists {
+			return Registration{}, errors.New("entity keys must be unique within a registration")
+		}
+		keys[entity.Key] = struct{}{}
+		if !validLength(entity.ExternalID, 1, 256) {
+			return Registration{}, errors.New("entity external ID must contain 1 to 256 characters")
+		}
+		if _, exists := externalIDs[entity.ExternalID]; exists {
+			return Registration{}, errors.New("entity external IDs must be unique within a registration")
+		}
+		externalIDs[entity.ExternalID] = struct{}{}
+		if !validLength(entity.Name, 1, 128) {
+			return Registration{}, errors.New("entity name must contain 1 to 128 characters")
+		}
+		if !validLength(string(entity.TypeID), 1, 128) {
+			return Registration{}, errors.New("entity type must contain 1 to 128 characters")
+		}
+		support, err := service.catalog.NormalizeSupport(entity.TypeID, entity.Support)
+		if err != nil {
+			return Registration{}, fmt.Errorf("entity descriptor is incompatible with its type: %w", err)
+		}
+		normalized.Entities[index].Support = support
 	}
-	if !validLength(entity.ExternalID, 1, 256) {
-		return Registration{}, errors.New("entity external ID must contain 1 to 256 characters")
-	}
-	if !validLength(entity.Name, 1, 128) {
-		return Registration{}, errors.New("entity name must contain 1 to 128 characters")
-	}
-	if !validLength(string(entity.TypeID), 1, 128) {
-		return Registration{}, errors.New("entity type must contain 1 to 128 characters")
-	}
-	support, err := service.catalog.NormalizeSupport(entity.TypeID, entity.Support)
-	if err != nil {
-		return Registration{}, fmt.Errorf("entity descriptor is incompatible with its type: %w", err)
-	}
-	normalized.Entities[0].Support = support
 	return normalized, nil
 }
 

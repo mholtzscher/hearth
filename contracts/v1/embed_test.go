@@ -101,6 +101,51 @@ func TestRegistrationSchemaRequiresUnifiedSupport(t *testing.T) {
 	}
 }
 
+func TestRegistrationSchemaEntityBounds(t *testing.T) {
+	schemas := compileSchemas(t)
+	for _, test := range []struct {
+		name     string
+		schemaID string
+		payload  string
+	}{
+		{
+			name: "request", schemaID: RegistrationRequestSchemaID,
+			payload: `{"id":"reg_01890f47-7a6b-7c4d-8e9f-0123456789ab","schema":"urn:hearth:schema:registration-request:v1","emitted_at":"2026-08-20T12:34:56Z","correlation_id":"cor_01890f47-7a6b-7c4d-8e9f-0123456789ab","data":{"binding_key":"office-light","device":{"name":"Office Light","kind":"light"},"entities":[{"key":"power","external_id":"light.office","name":"Power","type":"hearth.power/v1","support":{"state":{},"operations":{"set":{}}}}]}}`,
+		},
+		{
+			name: "response", schemaID: RegistrationResponseSchemaID,
+			payload: `{"id":"rep_01890f47-7a6b-7c4d-8e9f-0123456789ab","schema":"urn:hearth:schema:registration-response:v1","emitted_at":"2026-08-20T12:34:56Z","correlation_id":"cor_01890f47-7a6b-7c4d-8e9f-0123456789ab","causation_id":"reg_01890f47-7a6b-7c4d-8e9f-0123456789ab","data":{"status":"accepted","binding":{"binding_key":"office-light","device_id":"dev_01890f47-7a6b-7c4d-8e9f-0123456789ab","entities":[{"key":"power","entity_id":"ent_01890f47-7a6b-7c4d-8e9f-0123456789ab"}]}}}`,
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			var payload map[string]any
+			if err := json.Unmarshal([]byte(test.payload), &payload); err != nil {
+				t.Fatal(err)
+			}
+			binding := payload["data"].(map[string]any)
+			if test.schemaID == RegistrationResponseSchemaID {
+				binding = binding["binding"].(map[string]any)
+			}
+			entity := binding["entities"].([]any)[0]
+			for _, count := range []int{0, 1, 2, 64, 65} {
+				entities := make([]any, count)
+				for index := range entities {
+					entities[index] = entity
+				}
+				binding["entities"] = entities
+				err := schemas[test.schemaID].Validate(payload)
+				valid := count >= 1 && count <= 64
+				if valid && err != nil {
+					t.Fatalf("%d entities rejected: %v", count, err)
+				}
+				if !valid && err == nil {
+					t.Fatalf("%d entities accepted", count)
+				}
+			}
+		})
+	}
+}
+
 func TestRegistrationResponseRequiresCausationID(t *testing.T) {
 	schema := compileSchemas(t)[RegistrationResponseSchemaID]
 	var value any
