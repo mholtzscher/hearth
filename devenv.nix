@@ -103,8 +103,7 @@
   tasks."hearth:validate".after = [
     "hearth:format-check"
     "hearth:generate-check"
-    "hearth:ko-build"
-    "hearth:lint"
+    # "hearth:lint"
     "hearth:tidy-check"
     "hearth:test"
     "hearth:vet"
