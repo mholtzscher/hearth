@@ -1,0 +1,11 @@
+defaultPlatforms:
+  - linux/amd64
+  - linux/arm64
+
+builds:
+  - id: hearthd
+    main: ./cmd/hearthd
+  - id: hearth-adapter-homeassistant
+    main: ./cmd/hearth-adapter-homeassistant
+  - id: hearth-simulator
+    main: ./cmd/hearth-simulator
