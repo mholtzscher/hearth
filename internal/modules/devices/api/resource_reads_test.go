@@ -60,14 +60,26 @@ func TestListDevicesDefaultsLimitAndReturnsScopedCursor(t *testing.T) {
 
 func TestDeviceDetailAndEntityListUseFullEntityBodies(t *testing.T) {
 	view := apiEntityWithState(nil)
+	secondEntityID := devices.EntityID("ent_01890f47-7a6b-7c4d-8e9f-0123456789ac")
+	secondView := apiEntityWithState(nil)
+	secondView.Entity.ID = secondEntityID
+	deviceCalls := 0
 	stub := &stubDevices{
-		getDevice: func(_ context.Context, id devices.DeviceID) (devices.DeviceAggregate, error) {
-			if id != apiDeviceID {
-				t.Fatalf("device ID = %q", id)
+		getDevice: func(_ context.Context, params devices.GetDeviceParams) (devices.DeviceAggregate, error) {
+			deviceCalls++
+			if params.ID != apiDeviceID || params.EntityLimit != 50 {
+				t.Fatalf("device params = %#v", params)
+			}
+			page := devices.Page[devices.EntityWithState]{Items: []devices.EntityWithState{view}, HasMore: true}
+			if deviceCalls == 2 {
+				if params.AfterEntityID == nil || *params.AfterEntityID != apiEntityID {
+					t.Fatalf("second device params = %#v", params)
+				}
+				page = devices.Page[devices.EntityWithState]{Items: []devices.EntityWithState{secondView}}
 			}
 			return devices.DeviceAggregate{
 				Device:   devices.Device{ID: apiDeviceID, Kind: devices.DeviceKindLight, Name: "Office"},
-				Entities: []devices.EntityWithState{view},
+				Entities: page,
 			}, nil
 		},
 		listEntities: func(_ context.Context, params devices.ListEntitiesParams) (devices.Page[devices.EntityWithState], error) {
@@ -86,8 +98,20 @@ func TestDeviceDetailAndEntityListUseFullEntityBodies(t *testing.T) {
 	if err := json.Unmarshal(response.Body.Bytes(), &detail); err != nil {
 		t.Fatal(err)
 	}
-	if len(detail.Entities) != 1 || detail.Entities[0].ID != string(apiEntityID) || detail.Entities[0].State != nil {
+	if len(detail.Entities) != 1 || detail.Entities[0].ID != string(apiEntityID) || detail.Entities[0].State != nil ||
+		detail.NextEntityCursor == nil {
 		t.Fatalf("device detail = %#v", detail)
+	}
+	response = performRequest(router, "/v1/devices/"+string(apiDeviceID)+"?entity_cursor="+*detail.NextEntityCursor)
+	if response.Code != http.StatusOK {
+		t.Fatalf("second detail status = %d, body = %s", response.Code, response.Body.String())
+	}
+	detail = DeviceDetailBody{}
+	if err := json.Unmarshal(response.Body.Bytes(), &detail); err != nil {
+		t.Fatal(err)
+	}
+	if len(detail.Entities) != 1 || detail.Entities[0].ID != string(secondEntityID) || detail.NextEntityCursor != nil {
+		t.Fatalf("second device detail = %#v", detail)
 	}
 	response = performRequest(router, "/v1/entities?device_id="+string(apiDeviceID)+"&limit=2")
 	if response.Code != http.StatusOK {

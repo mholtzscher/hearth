@@ -44,9 +44,9 @@ Errors use Huma's standard RFC 9457 Problem Details model. Malformed JSON and ha
 | `limit` | no | Integer; default 50; minimum 1; maximum 200. |
 | `cursor` | no | Opaque endpoint-specific continuation token returned by the preceding page. |
 
-Each response has an `items` array, including when empty, and omits `next_cursor` when no later page exists. No endpoint returns a total count.
+Each response has an `items` array, including when empty, and omits `next_cursor` when no later page exists. Device detail applies the same 1–200 bounds to `entity_limit` (default 50), accepts `entity_cursor`, and omits `next_entity_cursor` when no later embedded Entity exists. No endpoint returns a total count.
 
-Cursors are base64url-without-padding encodings of versioned JSON position documents. A cursor is valid only for its endpoint, parent Entity, and optional Entity `device_id` filter. Invalid encoding, version, scope, canonical ID, fields, UTC timestamp, or trailing JSON returns an HTTP 400 Problem Details response. Cursors are unsigned because this API remains trusted and loopback-bound; they convey position, not authority.
+Cursors are base64url-without-padding encodings of versioned JSON position documents. A cursor is valid only for its endpoint and applicable parent Device, parent Entity, or optional Entity `device_id` filter. Invalid encoding, version, scope, canonical ID, fields, UTC timestamp, or trailing JSON returns an HTTP 400 Problem Details response. Cursors are unsigned because this API remains trusted and loopback-bound; they convey position, not authority.
 
 Private cursor types owned by `internal/modules/devices/api/pagination.go`:
 
@@ -67,7 +67,7 @@ type commandCursor struct {
 }
 ```
 
-`Version` is exactly `1`. `Resource` is `devices`, `entities`, or `entity_commands`. Entity cursors copy the request's optional `device_id`; Command cursors copy the path Entity ID. Cursor codecs remain private to transport and do not enter service or repository interfaces.
+`Version` is exactly `1`. `Resource` is `devices`, `entities`, `device_entities`, or `entity_commands`. Entity-list cursors copy the request's optional `device_id`; Device-detail Entity cursors copy the path Device ID and use their distinct resource scope; Command cursors copy the path Entity ID. Cursor codecs remain private to transport and do not enter service or repository interfaces.
 
 The repository fetches `limit + 1` rows, returns at most `limit`, and sets `Page.HasMore` from the extra row. Transport derives `next_cursor` from the final returned item when `HasMore` is true; cursor response fields use `omitempty`.
 
@@ -97,14 +97,14 @@ Items contain only `id`, `kind`, and `name`. Results are ordered by canonical `i
 - **Tag:** `Devices`
 - **Summary:** `Get a Device and its Entities`
 - **Errors:**
-  - Invalid ID: HTTP 400 Problem Details, `device_id must be a canonical Hearth Device ID`
+  - Invalid ID or Entity cursor: HTTP 400 Problem Details
   - Structural validation: HTTP 422 Problem Details
   - Unknown valid ID: HTTP 404 Problem Details, `device not found`
   - Other: HTTP 500 Problem Details, `internal error`
 
-The response contains `id`, `kind`, `name`, and `entities`. Entities use `EntityBody` exactly and are ordered by canonical `id ASC`.
+The response contains `id`, `kind`, `name`, `entities`, and optional `next_entity_cursor`. Entities use `EntityBody` exactly and are ordered by canonical `id ASC`. `entity_limit` defaults to 50 and accepts 1–200; `entity_cursor` continues after the final Entity from the preceding Device-detail page. Device-detail cursors are scoped to this endpoint and Device and cannot be exchanged with `GET /v1/entities` cursors.
 
-The embedded collection is unpaginated and bounded to 64 Entities. Registration remains additive, but a transaction that would increase a Device beyond 64 persisted Entities is rejected as `invalid_descriptor` without committing descriptor or mapping changes. Revisit this contract before supporting very large virtual Devices.
+Registration remains additive without a persisted aggregate limit. Device detail fetches only `entity_limit + 1` associated Entities, so query and response work remain bounded regardless of aggregate size.
 
 ### Command representation
 
@@ -171,7 +171,13 @@ type EntityWithState struct {
 
 type DeviceAggregate struct {
 	Device   Device
-	Entities []EntityWithState
+	Entities Page[EntityWithState]
+}
+
+type GetDeviceParams struct {
+	ID            DeviceID
+	AfterEntityID *EntityID
+	EntityLimit   int
 }
 
 type ListDevicesParams struct {
@@ -200,7 +206,7 @@ type Page[T any] struct {
 
 `EntityWithState` models an Entity and its nullable current State; `DeviceAggregate` models a Device with those domain compositions. Both are transport-independent domain read objects: they contain no JSON tags, HTTP field choices, or response-shaping behavior. The API package alone translates them into `EntityBody`, `DeviceBody`, and `DeviceDetailBody`.
 
-`Page` is shared internal domain vocabulary for the three collection use cases and never carries HTTP cursors. Service results own their slices, raw JSON bytes, and pointer fields; repository/sqlc storage must not alias returned mutable data.
+`Page` is shared internal domain vocabulary for collection use cases, including the embedded Device-detail Entity page, and never carries HTTP cursors. Service results own their slices, raw JSON bytes, and pointer fields; repository/sqlc storage must not alias returned mutable data.
 
 Add to `internal/modules/devices/repository.go`:
 
@@ -222,7 +228,7 @@ Owner: new `internal/modules/devices/read.go`.
 
 ```go
 func (service *Service) ListDevices(context.Context, ListDevicesParams) (Page[Device], error)
-func (service *Service) GetDevice(context.Context, DeviceID) (DeviceAggregate, error)
+func (service *Service) GetDevice(context.Context, GetDeviceParams) (DeviceAggregate, error)
 func (service *Service) ListEntities(context.Context, ListEntitiesParams) (Page[EntityWithState], error)
 func (service *Service) GetCommand(context.Context, CommandID) (CommandRecord, error)
 func (service *Service) ListEntityCommands(context.Context, ListEntityCommandsParams) (Page[CommandRecord], error)
@@ -243,7 +249,7 @@ Add to the existing `Repository` in `internal/modules/devices/repository.go`:
 
 ```go
 ListDevices(context.Context, ListDevicesParams) (Page[Device], error)
-GetDevice(context.Context, DeviceID) (DeviceAggregate, error)
+GetDevice(context.Context, GetDeviceParams) (DeviceAggregate, error)
 ListEntities(context.Context, ListEntitiesParams) (Page[EntityWithState], error)
 GetEntity(context.Context, EntityID) (EntityWithState, error)
 GetCommand(context.Context, CommandID) (CommandRecord, error)
@@ -252,7 +258,7 @@ ListEntityCommands(context.Context, ListEntityCommandsParams) (Page[CommandRecor
 
 Repository methods are named for domain resources and return only domain models or transport-independent domain compositions. They do not expose API DTOs or encode endpoint response shapes. The existing Entity/current-State lookup is renamed to `GetEntity` and remains the parent-existence lookup. The SQLite implementation owns `limit + 1` querying, row mapping, `HasMore`, truncation, context propagation, and persistence-error mapping; sqlc types remain inside the adapter.
 
-`GetDevice` uses one `LEFT JOIN` statement so Device metadata, Entities, and current States share one SQLite snapshot, unknown Devices remain distinguishable, and State loading does not become N+1. The concrete `SQLiteRepository.GetCommand` already exists; expose it through the domain repository and service.
+`GetDevice` reads Device metadata for existence and then uses the indexed Device-filtered Entity query with `limit + 1`; this keeps each response bounded, distinguishes unknown Devices from empty or exhausted Entity pages, and avoids N+1 State loading. The concrete `SQLiteRepository.GetCommand` already exists; expose it through the domain repository and service.
 
 ### HTTP consumer and registration
 
@@ -263,7 +269,7 @@ type Devices interface {
 	GetEntity(context.Context, devices.EntityID) (devices.EntityWithState, error)
 	ExecuteCommand(context.Context, devices.EntityID, devices.OperationName, devices.CommandParameters) (devices.CommandResult, error)
 	ListDevices(context.Context, devices.ListDevicesParams) (devices.Page[devices.Device], error)
-	GetDevice(context.Context, devices.DeviceID) (devices.DeviceAggregate, error)
+	GetDevice(context.Context, devices.GetDeviceParams) (devices.DeviceAggregate, error)
 	ListEntities(context.Context, devices.ListEntitiesParams) (devices.Page[devices.EntityWithState], error)
 	GetCommand(context.Context, devices.CommandID) (devices.CommandRecord, error)
 	ListEntityCommands(context.Context, devices.ListEntityCommandsParams) (devices.Page[devices.CommandRecord], error)
@@ -300,7 +306,8 @@ type DeviceDetailBody struct {
 	ID       string       `json:"id"`
 	Kind     string       `json:"kind"`
 	Name     string       `json:"name"`
-	Entities []EntityBody `json:"entities"`
+	Entities         []EntityBody `json:"entities"`
+	NextEntityCursor *string      `json:"next_entity_cursor,omitempty"`
 }
 
 type EntityCollectionBody struct {
@@ -344,14 +351,14 @@ CREATE INDEX commands_entity_requested_idx
 DROP INDEX entities_device_id_idx;
 ```
 
-Primary keys already support direct lookups and household-wide ID pagination. The Entity index supports Device-filtered lists and Device aggregate joins; the extended Command index supports deterministic history ordering. New Command writes use the same fixed-width UTC representation normalized by the migration.
+Primary keys already support direct lookups and household-wide ID pagination. The Entity index supports Device-filtered lists and embedded Device-detail pages; the extended Command index supports deterministic history ordering. New Command writes use the same fixed-width UTC representation normalized by the migration.
 
 ### sqlc query sources
 
 Modify `internal/platform/db/queries/state/state.sql`:
 
 - `ListDevices`: `id > after_id`, `ORDER BY id ASC`, caller-provided `limit + 1`.
-- `GetDevice`: Device `LEFT JOIN` Entities, mappings, and State, ordered by Entity ID; `:many` yields zero rows for an unknown Device.
+- `GetDevice`: direct Device metadata lookup for existence and detail fields; embedded Entities use `ListEntitiesByDevice` pagination.
 - `ListEntities`: household Entities and current States after an Entity ID.
 - `ListEntitiesByDevice`: the same domain data constrained by Device ID.
 - Rename the existing Entity/current-State query to `GetEntity` so generated persistence names follow the domain repository vocabulary.
@@ -361,7 +368,7 @@ Modify `internal/platform/db/queries/commands/commands.sql`:
 - `ListEntityCommandsFirstPage`: Entity-constrained, newest first.
 - `ListEntityCommandsAfter`: Entity-constrained with strict `(requested_at, id)` keyset position.
 
-Use explicit select lists. Add a registration query that counts persisted Entities for the Device inside the existing reconciliation transaction, and reject additions above 64 before writes commit. Regenerate affected sqlc packages; never hand-edit generated files. Command orchestration, projection, receipt-retention, and transaction ownership remain unchanged.
+Use explicit select lists. Regenerate affected sqlc packages; never hand-edit generated files. Command orchestration, projection, receipt-retention, and transaction ownership remain unchanged.
 
 ## Project Layout
 
@@ -431,7 +438,7 @@ Use table-driven API/service tests and migrated temporary SQLite databases for p
 - [ ] All five endpoints match the specified methods, paths, operation metadata, DTOs, ordering, cursor behavior, and declared errors; existing Entity detail and Command execution remain HTTP/OpenAPI compatible.
 - [ ] Collection limits default to 50 and accept 1–200; pages fetch one extra row, return deterministic keyset order, always encode `items` as an array, and omit `next_cursor` on the last page.
 - [ ] Cursor validation enforces encoding, version, endpoint, Device filter, parent Entity, canonical IDs, complete fields, and UTC timestamps with an HTTP 400 Problem Details response.
-- [ ] Entity listing returns full `EntityBody` values and an unknown valid Device filter returns an empty page. Device listing returns metadata; Device detail loads at most 64 ordered full Entities in one statement, additive registration rejects a 65th persisted Entity atomically, and Device detail returns the specified 400/404 errors.
+- [ ] Entity listing returns full `EntityBody` values and an unknown valid Device filter returns an empty page. Device listing returns metadata; Device detail returns bounded ordered Entity pages with endpoint- and Device-scoped cursors, and returns the specified 400/404 errors.
 - [ ] Command responses expose only specified product fields and persisted state, without internal IDs or synthesized outcomes. History distinguishes unknown Entity from empty history and remains deterministic for equal timestamps.
 - [ ] Service and repository reads preserve context cancellation, return owned domain data, perform no writes, and emit no NATS messages; API DTOs and sqlc types do not cross the repository seam, and only API mappers shape HTTP response bodies.
 - [ ] The migration normalizes existing Command request timestamps, applies to empty and current databases, and reverses its index changes; sqlc output is regenerated from source.

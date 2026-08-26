@@ -43,7 +43,7 @@ func (*commandRepository) ListDevices(context.Context, ListDevicesParams) (Page[
 	panic("unexpected ListDevices call")
 }
 
-func (*commandRepository) GetDevice(context.Context, DeviceID) (DeviceAggregate, error) {
+func (*commandRepository) GetDevice(context.Context, GetDeviceParams) (DeviceAggregate, error) {
 	panic("unexpected GetDevice call")
 }
 

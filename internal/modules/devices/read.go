@@ -23,19 +23,32 @@ func (service *Service) ListDevices(ctx context.Context, params ListDevicesParam
 	return Page[Device]{Items: items, HasMore: page.HasMore}, nil
 }
 
-func (service *Service) GetDevice(ctx context.Context, id DeviceID) (DeviceAggregate, error) {
-	if _, err := ParseDeviceID(string(id)); err != nil {
+func (service *Service) GetDevice(ctx context.Context, params GetDeviceParams) (DeviceAggregate, error) {
+	if !validPageLimit(params.EntityLimit) {
+		return DeviceAggregate{}, ErrInvalidPage
+	}
+	if _, err := ParseDeviceID(string(params.ID)); err != nil {
 		return DeviceAggregate{}, fmt.Errorf("parse device ID: %w", err)
 	}
-	aggregate, err := service.repository.GetDevice(ctx, id)
+	if params.AfterEntityID != nil {
+		if _, err := ParseEntityID(string(*params.AfterEntityID)); err != nil {
+			return DeviceAggregate{}, fmt.Errorf("%w: parse entity position: %v", ErrInvalidPage, err)
+		}
+	}
+	aggregate, err := service.repository.GetDevice(ctx, params)
 	if err != nil {
 		return DeviceAggregate{}, err
 	}
-	copy := DeviceAggregate{Device: aggregate.Device, Entities: make([]EntityWithState, len(aggregate.Entities))}
-	for index, entity := range aggregate.Entities {
-		copy.Entities[index] = copyEntityWithState(entity)
+	items := make([]EntityWithState, len(aggregate.Entities.Items))
+	for index, entity := range aggregate.Entities.Items {
+		items[index] = copyEntityWithState(entity)
 	}
-	return copy, nil
+	return DeviceAggregate{
+		Device: aggregate.Device,
+		Entities: Page[EntityWithState]{
+			Items: items, HasMore: aggregate.Entities.HasMore,
+		},
+	}, nil
 }
 
 func (service *Service) ListEntities(ctx context.Context, params ListEntitiesParams) (Page[EntityWithState], error) {

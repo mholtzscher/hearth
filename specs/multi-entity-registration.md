@@ -19,7 +19,7 @@ Allow one registration request to describe 1-64 Entities belonging to one Device
 Registration remains additive and atomic:
 
 - an existing Entity key preserves its canonical Entity ID;
-- a new Entity key creates an Entity under the existing Device while the persisted Device aggregate remains at or below 64 Entities;
+- a new Entity key creates an Entity under the existing Device;
 - an omitted Entity remains persisted and unchanged;
 - an accepted response maps only the submitted descriptors, in request order;
 - validation or reconciliation failure rejects the complete request without partial database writes.
@@ -37,7 +37,6 @@ The initial migration remains unshipped under the policy established by `unified
 - Duplicate keys or external IDs are `invalid_descriptor` when the request reaches the domain service.
 - The service validates and normalizes every Entity descriptor before generating IDs or calling the repository.
 - One invalid descriptor rejects the complete registration.
-- A wire-valid additive registration that would exceed 64 persisted Entities for the Device is `invalid_descriptor` and rolls back atomically.
 - Normalization operates on a copy and does not mutate adapter input.
 
 The wire schemas reject requests containing 0 or 65 Entities before `Service.Register` runs. Such requests follow existing transport validation behavior rather than producing a registration rejection response. Direct domain calls still classify invalid cardinality as `RegistrationInvalidDescriptor`.
@@ -68,7 +67,7 @@ An accepted `binding.entities` contains exactly one mapping for each submitted d
 
 Existing permanent rejection codes retain their meanings for wire-valid requests:
 
-- `invalid_descriptor`: request or persisted-aggregate cardinality, duplicate, field, catalog, or support validation failure;
+- `invalid_descriptor`: domain cardinality, duplicate, field, catalog, or support validation failure;
 - `immutable_type_change`: an existing Entity key is submitted with a different type;
 - `identity_conflict`: a Binding or external ID belongs to another canonical object.
 
@@ -233,7 +232,7 @@ Total effort is **L (1-2 days)**. Persistence reconciliation is the highest-risk
 | Additive omission | Authoritative replacement | Omission cannot safely imply deletion without retirement semantics |
 | Submitted-only response | Complete Binding inventory | Adapters need mappings for submitted descriptors, not stale omitted Entities |
 | Reject same-request ID transfers | Atomic swaps and moves | Deterministic identity behavior is more valuable than an unused complex operation |
-| 64-Entity Device aggregate limit | Unbounded additive registration | Bounded validation, persistence, and Device-detail work comfortably covers household devices |
+| 64-Entity per-request limit | Unbounded request size | Bounded validation and transaction work comfortably covers registration batches without limiting the persisted Device aggregate |
 | Rewrite migration `00001` | Add migration `00002` | The accepted project policy treats the initial migration as unshipped |
 
 ## Acceptance Criteria
@@ -244,7 +243,6 @@ Total effort is **L (1-2 days)**. Persistence reconciliation is the highest-risk
 - [ ] The accepted response contains exactly one mapping for each submitted descriptor, in request order.
 - [ ] Re-registration and descriptor reordering preserve canonical IDs.
 - [ ] Adding brightness to a power-only Binding preserves the Device and power IDs.
-- [ ] Additive registration rejects a 65th persisted Entity without changing Device descriptors or mappings.
 - [ ] Omitting power later leaves it unchanged and excludes it from the response.
 - [ ] Duplicate request keys or external IDs are rejected before repository access.
 - [ ] External-ID transfers or swaps between keys are rejected independent of request order.
@@ -267,7 +265,7 @@ Total effort is **L (1-2 days)**. Persistence reconciliation is the highest-risk
 |---|---|
 | Contract | Generate request and response fixtures at 0, 1, 2, 64, and 65 items |
 | Service | Validate all descriptors, bounds, duplicates, support normalization, and input copying with the stub repository |
-| Repository | Use migrated SQLite for initial multi-Entity registration, additive registration, aggregate-bound rejection, omission, reordering, external-ID transfer rejection, and rollback on a later-Entity failure |
+| Repository | Use migrated SQLite for initial multi-Entity registration, additive registration, omission, reordering, external-ID transfer rejection, and rollback on a later-Entity failure |
 | Concurrency | Repeat the existing eight-call test with identical two-Entity descriptors under the current database configuration |
 | NATS | Round-trip a two-Entity registration and verify ordered response mappings |
 | Regression | Run the existing race-enabled full suite and clean-checkout gate |

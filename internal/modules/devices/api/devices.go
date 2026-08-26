@@ -18,7 +18,9 @@ type ListDevicesOutput struct {
 }
 
 type GetDeviceInput struct {
-	DeviceID string `path:"device_id" doc:"Canonical Hearth Device ID"`
+	DeviceID     string `path:"device_id" doc:"Canonical Hearth Device ID"`
+	EntityLimit  int    `query:"entity_limit" default:"50" minimum:"1" maximum:"200"`
+	EntityCursor string `query:"entity_cursor"`
 }
 
 type GetDeviceOutput struct {
@@ -60,16 +62,35 @@ func (handler *Handler) GetDevice(ctx context.Context, input *GetDeviceInput) (*
 	if err != nil {
 		return nil, apiError(http.StatusBadRequest, "device_id must be a canonical Hearth Device ID")
 	}
-	aggregate, err := handler.devices.GetDevice(ctx, deviceID)
-	if errors.Is(err, devices.ErrDeviceNotFound) {
-		return nil, apiError(http.StatusNotFound, "device not found")
+	params := devices.GetDeviceParams{ID: deviceID, EntityLimit: input.EntityLimit}
+	if input.EntityCursor != "" {
+		afterID, err := decodeDeviceEntitiesCursor(input.EntityCursor, deviceID)
+		if err != nil {
+			return nil, apiError(http.StatusBadRequest, "invalid entity cursor")
+		}
+		params.AfterEntityID = afterID
 	}
-	if err != nil {
+	aggregate, err := handler.devices.GetDevice(ctx, params)
+	switch {
+	case errors.Is(err, devices.ErrInvalidPage):
+		return nil, apiError(http.StatusBadRequest, "invalid page")
+	case errors.Is(err, devices.ErrDeviceNotFound):
+		return nil, apiError(http.StatusNotFound, "device not found")
+	case err != nil:
 		return nil, apiError(http.StatusInternalServerError, "internal error")
 	}
 	body, err := deviceDetailBody(aggregate)
 	if err != nil {
 		return nil, apiError(http.StatusInternalServerError, "internal error")
+	}
+	if aggregate.Entities.HasMore && len(aggregate.Entities.Items) > 0 {
+		cursor, err := encodeDeviceEntitiesCursor(
+			aggregate.Entities.Items[len(aggregate.Entities.Items)-1].Entity.ID, deviceID,
+		)
+		if err != nil {
+			return nil, apiError(http.StatusInternalServerError, "internal error")
+		}
+		body.NextEntityCursor = &cursor
 	}
 	return &GetDeviceOutput{Body: body}, nil
 }

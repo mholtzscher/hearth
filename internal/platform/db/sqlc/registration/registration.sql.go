@@ -10,21 +10,6 @@ import (
 	"database/sql"
 )
 
-const countDeviceEntities = `-- name: CountDeviceEntities :one
-SELECT count(*) FROM entities WHERE device_id = ?
-`
-
-type CountDeviceEntitiesParams struct {
-	DeviceID string
-}
-
-func (q *Queries) CountDeviceEntities(ctx context.Context, arg CountDeviceEntitiesParams) (int64, error) {
-	row := q.db.QueryRowContext(ctx, countDeviceEntities, arg.DeviceID)
-	var count int64
-	err := row.Scan(&count)
-	return count, err
-}
-
 const createBinding = `-- name: CreateBinding :exec
 INSERT INTO adapter_bindings (
     adapter_id, binding_key, device_id, external_device_id, created_at, updated_at

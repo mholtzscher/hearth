@@ -8,8 +8,6 @@ import (
 	"unicode/utf8"
 )
 
-const maximumEntitiesPerDevice = 64
-
 var registrationSlugPattern = regexp.MustCompile(`^[a-z0-9][a-z0-9_-]{0,62}$`)
 
 type Registration struct {
@@ -97,11 +95,6 @@ func (service *Service) Register(ctx context.Context, adapterID string, registra
 			Code: RegistrationIdentityConflict, Message: "the binding or external ID is already assigned",
 		}
 	}
-	if errors.Is(err, errEntityLimitExceeded) {
-		return Binding{}, &RegistrationRejectedError{
-			Code: RegistrationInvalidDescriptor, Message: "a device cannot contain more than 64 entities",
-		}
-	}
 	if err != nil {
 		return Binding{}, err
 	}
@@ -125,7 +118,7 @@ func (service *Service) normalizeRegistration(adapterID string, registration Reg
 	if normalized.Device.ExternalID != nil && !validLength(*normalized.Device.ExternalID, 1, 256) {
 		return Registration{}, errors.New("device external ID must contain 1 to 256 characters")
 	}
-	if len(normalized.Entities) < 1 || len(normalized.Entities) > maximumEntitiesPerDevice {
+	if len(normalized.Entities) < 1 || len(normalized.Entities) > 64 {
 		return Registration{}, errors.New("registration must contain 1 to 64 entities")
 	}
 	keys := make(map[string]struct{}, len(normalized.Entities))

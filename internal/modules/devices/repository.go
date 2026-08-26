@@ -9,7 +9,6 @@ import (
 var (
 	errIdentityConflict    = errors.New("registration identity conflict")
 	errImmutableTypeChange = errors.New("entity type is immutable")
-	errEntityLimitExceeded = errors.New("device entity limit exceeded")
 	ErrDeviceNotFound      = errors.New("device not found")
 	ErrEntityNotFound      = errors.New("entity not found")
 	ErrCommandNotFound     = errors.New("command not found")
@@ -51,7 +50,7 @@ type Repository interface {
 	RegistrationRepository
 	CommandLedger
 	ListDevices(context.Context, ListDevicesParams) (Page[Device], error)
-	GetDevice(context.Context, DeviceID) (DeviceAggregate, error)
+	GetDevice(context.Context, GetDeviceParams) (DeviceAggregate, error)
 	ListEntities(context.Context, ListEntitiesParams) (Page[EntityWithState], error)
 	GetEntity(context.Context, EntityID) (EntityWithState, error)
 	GetCommand(context.Context, CommandID) (CommandRecord, error)

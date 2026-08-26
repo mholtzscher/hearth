@@ -9,7 +9,6 @@ import (
 )
 
 type Querier interface {
-	CountDeviceEntities(ctx context.Context, arg CountDeviceEntitiesParams) (int64, error)
 	CreateBinding(ctx context.Context, arg CreateBindingParams) error
 	CreateDevice(ctx context.Context, arg CreateDeviceParams) error
 	CreateEntity(ctx context.Context, arg CreateEntityParams) error

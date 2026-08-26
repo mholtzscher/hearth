@@ -12,7 +12,7 @@ type Devices interface {
 	GetEntity(context.Context, devices.EntityID) (devices.EntityWithState, error)
 	ExecuteCommand(context.Context, devices.EntityID, devices.OperationName, devices.CommandParameters) (devices.CommandResult, error)
 	ListDevices(context.Context, devices.ListDevicesParams) (devices.Page[devices.Device], error)
-	GetDevice(context.Context, devices.DeviceID) (devices.DeviceAggregate, error)
+	GetDevice(context.Context, devices.GetDeviceParams) (devices.DeviceAggregate, error)
 	ListEntities(context.Context, devices.ListEntitiesParams) (devices.Page[devices.EntityWithState], error)
 	GetCommand(context.Context, devices.CommandID) (devices.CommandRecord, error)
 	ListEntityCommands(context.Context, devices.ListEntityCommandsParams) (devices.Page[devices.CommandRecord], error)

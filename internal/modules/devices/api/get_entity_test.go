@@ -24,7 +24,7 @@ const (
 type stubDevices struct {
 	getEntity          func(context.Context, devices.EntityID) (devices.EntityWithState, error)
 	listDevices        func(context.Context, devices.ListDevicesParams) (devices.Page[devices.Device], error)
-	getDevice          func(context.Context, devices.DeviceID) (devices.DeviceAggregate, error)
+	getDevice          func(context.Context, devices.GetDeviceParams) (devices.DeviceAggregate, error)
 	listEntities       func(context.Context, devices.ListEntitiesParams) (devices.Page[devices.EntityWithState], error)
 	getCommand         func(context.Context, devices.CommandID) (devices.CommandRecord, error)
 	listEntityCommands func(context.Context, devices.ListEntityCommandsParams) (devices.Page[devices.CommandRecord], error)
@@ -50,11 +50,11 @@ func (stub *stubDevices) ListDevices(ctx context.Context, params devices.ListDev
 	return stub.listDevices(ctx, params)
 }
 
-func (stub *stubDevices) GetDevice(ctx context.Context, id devices.DeviceID) (devices.DeviceAggregate, error) {
+func (stub *stubDevices) GetDevice(ctx context.Context, params devices.GetDeviceParams) (devices.DeviceAggregate, error) {
 	if stub.getDevice == nil {
 		panic("unexpected GetDevice call")
 	}
-	return stub.getDevice(ctx, id)
+	return stub.getDevice(ctx, params)
 }
 
 func (stub *stubDevices) ListEntities(ctx context.Context, params devices.ListEntitiesParams) (devices.Page[devices.EntityWithState], error) {

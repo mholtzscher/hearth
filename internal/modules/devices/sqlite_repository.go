@@ -117,21 +117,6 @@ func (repository *SQLiteRepository) RegisterBinding(ctx context.Context, params 
 		reconciliations[index] = reconciliation
 	}
 
-	entityCount, err := queries.CountDeviceEntities(ctx, registrationsqlc.CountDeviceEntitiesParams{
-		DeviceID: string(deviceID),
-	})
-	if err != nil {
-		return Binding{}, fmt.Errorf("count device entities: %w", err)
-	}
-	for _, reconciliation := range reconciliations {
-		if !reconciliation.exists {
-			entityCount++
-		}
-	}
-	if entityCount > maximumEntitiesPerDevice {
-		return Binding{}, errEntityLimitExceeded
-	}
-
 	entityBindings := make([]EntityBinding, len(reconciliations))
 	for index, reconciliation := range reconciliations {
 		entity := reconciliation.params.Entity

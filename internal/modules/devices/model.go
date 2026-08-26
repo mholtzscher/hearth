@@ -57,7 +57,13 @@ type EntityWithState struct {
 
 type DeviceAggregate struct {
 	Device   Device
-	Entities []EntityWithState
+	Entities Page[EntityWithState]
+}
+
+type GetDeviceParams struct {
+	ID            DeviceID
+	AfterEntityID *EntityID
+	EntityLimit   int
 }
 
 type ListDevicesParams struct {

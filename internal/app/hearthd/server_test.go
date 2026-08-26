@@ -48,7 +48,7 @@ func (*stubDevices) ListDevices(context.Context, devices.ListDevicesParams) (dev
 	panic("unexpected ListDevices call")
 }
 
-func (*stubDevices) GetDevice(context.Context, devices.DeviceID) (devices.DeviceAggregate, error) {
+func (*stubDevices) GetDevice(context.Context, devices.GetDeviceParams) (devices.DeviceAggregate, error) {
 	panic("unexpected GetDevice call")
 }
 
@@ -164,7 +164,7 @@ func TestRuntimeOpenAPIContract(t *testing.T) {
 		"CommandBody":          {"operation", "parameters"},
 		"CommandResultBody":    {"command_id", "status", "observation_id", "value"},
 		"DeviceBody":           {"id", "kind", "name"},
-		"DeviceDetailBody":     {"id", "kind", "name", "entities"},
+		"DeviceDetailBody":     {"id", "kind", "name", "entities", "next_entity_cursor"},
 		"EntityCollectionBody": {"items", "next_cursor"},
 		"DeviceCollectionBody": {"items", "next_cursor"},
 		"CommandRecordBody": {

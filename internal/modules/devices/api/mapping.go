@@ -51,9 +51,9 @@ func deviceBody(device devices.Device) DeviceBody {
 func deviceDetailBody(aggregate devices.DeviceAggregate) (DeviceDetailBody, error) {
 	body := DeviceDetailBody{
 		ID: string(aggregate.Device.ID), Kind: string(aggregate.Device.Kind), Name: aggregate.Device.Name,
-		Entities: make([]EntityBody, len(aggregate.Entities)),
+		Entities: make([]EntityBody, len(aggregate.Entities.Items)),
 	}
-	for index, entity := range aggregate.Entities {
+	for index, entity := range aggregate.Entities.Items {
 		mapped, err := entityBody(entity)
 		if err != nil {
 			return DeviceDetailBody{}, err

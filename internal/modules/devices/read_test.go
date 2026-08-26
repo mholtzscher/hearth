@@ -9,6 +9,9 @@ import (
 
 type readRepository struct {
 	*stubRegistrationRepository
+	device             DeviceAggregate
+	deviceErr          error
+	getDeviceParams    GetDeviceParams
 	entity             EntityWithState
 	entityErr          error
 	entitiesPage       Page[EntityWithState]
@@ -16,6 +19,7 @@ type readRepository struct {
 	command            CommandRecord
 	commandPage        Page[CommandRecord]
 	listCommandsParams ListEntityCommandsParams
+	getDeviceCalls     int
 	getEntityCalls     int
 	listEntityCalls    int
 	listCommandsCalls  int
@@ -23,6 +27,12 @@ type readRepository struct {
 
 func newReadRepository() *readRepository {
 	return &readRepository{stubRegistrationRepository: &stubRegistrationRepository{}}
+}
+
+func (repository *readRepository) GetDevice(_ context.Context, params GetDeviceParams) (DeviceAggregate, error) {
+	repository.getDeviceCalls++
+	repository.getDeviceParams = params
+	return repository.device, repository.deviceErr
 }
 
 func (repository *readRepository) GetEntity(context.Context, EntityID) (EntityWithState, error) {
@@ -65,6 +75,16 @@ func TestReadServiceValidatesPagesBeforeRepositoryCalls(t *testing.T) {
 			_, err := service.ListDevices(context.Background(), ListDevicesParams{AfterID: &invalidDeviceID, Limit: 1})
 			return err
 		}},
+		{"device entity limit", func() error {
+			_, err := service.GetDevice(context.Background(), GetDeviceParams{ID: commandTestDeviceID})
+			return err
+		}},
+		{"device entity position", func() error {
+			_, err := service.GetDevice(context.Background(), GetDeviceParams{
+				ID: commandTestDeviceID, AfterEntityID: &invalidEntityID, EntityLimit: 1,
+			})
+			return err
+		}},
 		{"entity filter", func() error {
 			_, err := service.ListEntities(context.Background(), ListEntitiesParams{DeviceID: &invalidDeviceID, Limit: 1})
 			return err
@@ -90,8 +110,11 @@ func TestReadServiceValidatesPagesBeforeRepositoryCalls(t *testing.T) {
 			}
 		})
 	}
-	if repository.listEntityCalls != 0 || repository.listCommandsCalls != 0 {
-		t.Fatalf("repository list calls = entities %d, commands %d", repository.listEntityCalls, repository.listCommandsCalls)
+	if repository.getDeviceCalls != 0 || repository.listEntityCalls != 0 || repository.listCommandsCalls != 0 {
+		t.Fatalf(
+			"repository calls = device %d, entities %d, commands %d",
+			repository.getDeviceCalls, repository.listEntityCalls, repository.listCommandsCalls,
+		)
 	}
 }
 
@@ -104,6 +127,10 @@ func TestReadServiceReturnsOwnedDataAndNormalizesCommandPosition(t *testing.T) {
 		Entity: Entity{ID: commandTestEntityID, DeviceID: commandTestDeviceID, Support: EntitySupport(`{"state":{}}`)},
 		State:  &State{EntityID: commandTestEntityID, Value: Value(`true`), SourceUpdatedAt: &sourceUpdatedAt},
 	}
+	repository.device = DeviceAggregate{
+		Device:   Device{ID: commandTestDeviceID, Kind: DeviceKindLight, Name: "Office"},
+		Entities: Page[EntityWithState]{Items: []EntityWithState{repository.entity}, HasMore: true},
+	}
 	repository.entitiesPage = Page[EntityWithState]{Items: []EntityWithState{repository.entity}, HasMore: true}
 	repository.command = CommandRecord{
 		ID: commandTestID, EntityID: commandTestEntityID, Parameters: CommandParameters(`{"value":true}`),
@@ -111,6 +138,22 @@ func TestReadServiceReturnsOwnedDataAndNormalizesCommandPosition(t *testing.T) {
 	}
 	repository.commandPage = Page[CommandRecord]{Items: []CommandRecord{repository.command}}
 	service := NewService(repository, nil, nil, Dependencies{})
+
+	device, err := service.GetDevice(context.Background(), GetDeviceParams{
+		ID: commandTestDeviceID, AfterEntityID: pointerTo(commandTestEntityID), EntityLimit: 1,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if repository.getDeviceParams.ID != commandTestDeviceID || repository.getDeviceParams.EntityLimit != 1 ||
+		repository.getDeviceParams.AfterEntityID == nil || *repository.getDeviceParams.AfterEntityID != commandTestEntityID ||
+		!device.Entities.HasMore {
+		t.Fatalf("device params/result = %#v, %#v", repository.getDeviceParams, device)
+	}
+	device.Entities.Items[0].Entity.Support[0] = 'x'
+	if string(repository.entity.Entity.Support) != `{"state":{}}` {
+		t.Fatal("GetDevice result aliases repository data")
+	}
 
 	entities, err := service.ListEntities(context.Background(), ListEntitiesParams{Limit: 1})
 	if err != nil {

@@ -49,23 +49,41 @@ func decodeDevicesCursor(value string) (*devices.DeviceID, error) {
 }
 
 func encodeEntitiesCursor(id devices.EntityID, deviceID *devices.DeviceID) (string, error) {
-	cursor := idCursor{Version: cursorVersion, Resource: "entities", ID: string(id)}
-	if deviceID != nil {
-		cursor.DeviceID = string(*deviceID)
-	}
-	return encodeCursor(cursor)
-}
-
-func decodeEntitiesCursor(value string, deviceID *devices.DeviceID) (*devices.EntityID, error) {
-	var cursor idCursor
-	if err := decodeCursor(value, &cursor); err != nil {
-		return nil, err
-	}
 	requestedDeviceID := ""
 	if deviceID != nil {
 		requestedDeviceID = string(*deviceID)
 	}
-	if cursor.Version != cursorVersion || cursor.Resource != "entities" || cursor.DeviceID != requestedDeviceID {
+	return encodeEntityCursor("entities", id, requestedDeviceID)
+}
+
+func decodeEntitiesCursor(value string, deviceID *devices.DeviceID) (*devices.EntityID, error) {
+	requestedDeviceID := ""
+	if deviceID != nil {
+		requestedDeviceID = string(*deviceID)
+	}
+	return decodeEntityCursor(value, "entities", requestedDeviceID)
+}
+
+func encodeDeviceEntitiesCursor(id devices.EntityID, deviceID devices.DeviceID) (string, error) {
+	return encodeEntityCursor("device_entities", id, string(deviceID))
+}
+
+func decodeDeviceEntitiesCursor(value string, deviceID devices.DeviceID) (*devices.EntityID, error) {
+	return decodeEntityCursor(value, "device_entities", string(deviceID))
+}
+
+func encodeEntityCursor(resource string, id devices.EntityID, deviceID string) (string, error) {
+	return encodeCursor(idCursor{
+		Version: cursorVersion, Resource: resource, ID: string(id), DeviceID: deviceID,
+	})
+}
+
+func decodeEntityCursor(value, resource, deviceID string) (*devices.EntityID, error) {
+	var cursor idCursor
+	if err := decodeCursor(value, &cursor); err != nil {
+		return nil, err
+	}
+	if cursor.Version != cursorVersion || cursor.Resource != resource || cursor.DeviceID != deviceID {
 		return nil, errors.New("invalid entity cursor scope")
 	}
 	id, err := devices.ParseEntityID(cursor.ID)

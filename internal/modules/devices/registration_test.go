@@ -25,7 +25,7 @@ func (*stubRegistrationRepository) ListDevices(context.Context, ListDevicesParam
 	panic("unexpected ListDevices call")
 }
 
-func (*stubRegistrationRepository) GetDevice(context.Context, DeviceID) (DeviceAggregate, error) {
+func (*stubRegistrationRepository) GetDevice(context.Context, GetDeviceParams) (DeviceAggregate, error) {
 	panic("unexpected GetDevice call")
 }
 

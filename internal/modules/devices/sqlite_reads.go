@@ -2,6 +2,7 @@ package devices
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"fmt"
 
@@ -30,38 +31,29 @@ func (repository *SQLiteRepository) ListDevices(ctx context.Context, params List
 	return pageFromExtra(items, params.Limit), nil
 }
 
-func (repository *SQLiteRepository) GetDevice(ctx context.Context, id DeviceID) (DeviceAggregate, error) {
-	rows, err := statesqlc.New(repository.database).GetDevice(ctx, statesqlc.GetDeviceParams{ID: string(id)})
+func (repository *SQLiteRepository) GetDevice(ctx context.Context, params GetDeviceParams) (DeviceAggregate, error) {
+	if !validPageLimit(params.EntityLimit) {
+		return DeviceAggregate{}, ErrInvalidPage
+	}
+	queries := statesqlc.New(repository.database)
+	row, err := queries.GetDevice(ctx, statesqlc.GetDeviceParams{ID: string(params.ID)})
+	if errors.Is(err, sql.ErrNoRows) {
+		return DeviceAggregate{}, ErrDeviceNotFound
+	}
 	if err != nil {
 		return DeviceAggregate{}, fmt.Errorf("get device: %w", err)
 	}
-	if len(rows) == 0 {
-		return DeviceAggregate{}, ErrDeviceNotFound
+	deviceID := params.ID
+	entities, err := repository.ListEntities(ctx, ListEntitiesParams{
+		DeviceID: &deviceID, AfterID: params.AfterEntityID, Limit: params.EntityLimit,
+	})
+	if err != nil {
+		return DeviceAggregate{}, err
 	}
-	aggregate := DeviceAggregate{
-		Device:   Device{ID: DeviceID(rows[0].DeviceID), Kind: DeviceKind(rows[0].DeviceKind), Name: rows[0].DeviceName},
-		Entities: make([]EntityWithState, 0, len(rows)),
-	}
-	for _, row := range rows {
-		if !row.EntityID.Valid {
-			continue
-		}
-		if !row.EntityDeviceID.Valid || !row.AdapterID.Valid || !row.EntityName.Valid ||
-			!row.TypeID.Valid || !row.SupportJson.Valid {
-			return DeviceAggregate{}, errors.New("device entity row is incomplete")
-		}
-		view, err := entityWithStateFromValues(
-			row.EntityID.String, row.EntityDeviceID.String, row.AdapterID.String,
-			row.EntityName.String, row.TypeID.String, row.SupportJson.String,
-			row.ObservationID, row.ValueJson, row.AdapterReceivedAt, row.SourceUpdatedAt,
-			row.ObservedAt, row.ReceiveOrder,
-		)
-		if err != nil {
-			return DeviceAggregate{}, fmt.Errorf("map device entity: %w", err)
-		}
-		aggregate.Entities = append(aggregate.Entities, view)
-	}
-	return aggregate, nil
+	return DeviceAggregate{
+		Device:   Device{ID: DeviceID(row.ID), Kind: DeviceKind(row.Kind), Name: row.Name},
+		Entities: entities,
+	}, nil
 }
 
 func (repository *SQLiteRepository) ListEntities(ctx context.Context, params ListEntitiesParams) (Page[EntityWithState], error) {

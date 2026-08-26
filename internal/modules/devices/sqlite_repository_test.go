@@ -139,13 +139,13 @@ func TestMultiEntityRegistrationIsAdditiveAndReturnsSubmittedOrder(t *testing.T)
 	}
 }
 
-func TestRegistrationRejectsDeviceEntityLimitAtomically(t *testing.T) {
+func TestRegistrationAllowsDeviceAggregateBeyondRequestLimit(t *testing.T) {
 	ctx := context.Background()
 	database := openMigratedDatabase(t, filepath.Join(t.TempDir(), "hearth.db"))
 	catalog := firstLightCatalog(t)
 	service := NewService(NewSQLiteRepository(database, catalog), nil, catalog, Dependencies{})
 	registration := validDomainRegistration()
-	registration.Entities = make([]EntityDescriptor, maximumEntitiesPerDevice)
+	registration.Entities = make([]EntityDescriptor, 64)
 	for index := range registration.Entities {
 		registration.Entities[index] = registrationEntity(
 			fmt.Sprintf("power-%d", index), fmt.Sprintf("light.office.%d", index),
@@ -155,20 +155,12 @@ func TestRegistrationRejectsDeviceEntityLimitAtomically(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	overflow := validDomainRegistration()
-	overflow.Device.Name = "must roll back"
-	overflow.Entities = []EntityDescriptor{registrationEntity("power-overflow", "light.office.overflow")}
-	_, err := service.Register(ctx, "homeassistant", overflow)
-	assertRegistrationRejection(t, err, RegistrationInvalidDescriptor)
-	assertCounts(t, database, 1, maximumEntitiesPerDevice)
-
-	var deviceName string
-	if err := database.QueryRowContext(ctx, "SELECT name FROM devices").Scan(&deviceName); err != nil {
+	additional := validDomainRegistration()
+	additional.Entities = []EntityDescriptor{registrationEntity("power-additional", "light.office.additional")}
+	if _, err := service.Register(ctx, "homeassistant", additional); err != nil {
 		t.Fatal(err)
 	}
-	if deviceName != registration.Device.Name {
-		t.Fatalf("failed registration changed device name to %q", deviceName)
-	}
+	assertCounts(t, database, 1, 65)
 }
 
 func TestRegistrationRejectsExternalIDTransfersIndependentOfOrder(t *testing.T) {

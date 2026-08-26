@@ -13,6 +13,7 @@ const (
 	readDeviceB  = DeviceID("dev_01890f47-7a6b-7c4d-8e9f-0123456789ab")
 	readEntityA  = EntityID("ent_01890f47-7a6b-7c4d-8e9f-0123456789a1")
 	readEntityB  = EntityID("ent_01890f47-7a6b-7c4d-8e9f-0123456789a2")
+	readEntityC  = EntityID("ent_01890f47-7a6b-7c4d-8e9f-0123456789a3")
 	readCommandA = CommandID("cmd_01890f47-7a6b-7c4d-8e9f-0123456789a1")
 	readCommandB = CommandID("cmd_01890f47-7a6b-7c4d-8e9f-0123456789a2")
 )
@@ -44,7 +45,7 @@ func TestSQLiteResourceReadsUseDeterministicKeysetPages(t *testing.T) {
 		t.Fatal(err)
 	}
 	if len(entitiesPage.Items) != 1 || entitiesPage.Items[0].Entity.ID != readEntityA || entitiesPage.Items[0].State == nil ||
-		string(entitiesPage.Items[0].State.Value) != "true" || entitiesPage.HasMore {
+		string(entitiesPage.Items[0].State.Value) != "true" || !entitiesPage.HasMore {
 		t.Fatalf("filtered entities = %#v", entitiesPage)
 	}
 	unknownDevice := DeviceID("dev_01890f47-7a6b-7c4d-8e9f-0123456789ff")
@@ -56,14 +57,24 @@ func TestSQLiteResourceReadsUseDeterministicKeysetPages(t *testing.T) {
 		t.Fatalf("unknown device entities = %#v", empty)
 	}
 
-	aggregate, err := repository.GetDevice(ctx, readDeviceA)
+	aggregate, err := repository.GetDevice(ctx, GetDeviceParams{ID: readDeviceA, EntityLimit: 1})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if aggregate.Device.Name != "Alpha" || len(aggregate.Entities) != 1 || aggregate.Entities[0].Entity.ID != readEntityA {
-		t.Fatalf("device aggregate = %#v", aggregate)
+	if aggregate.Device.Name != "Alpha" || len(aggregate.Entities.Items) != 1 ||
+		aggregate.Entities.Items[0].Entity.ID != readEntityA || !aggregate.Entities.HasMore {
+		t.Fatalf("first device aggregate page = %#v", aggregate)
 	}
-	if _, err := repository.GetDevice(ctx, unknownDevice); err != ErrDeviceNotFound {
+	aggregate, err = repository.GetDevice(ctx, GetDeviceParams{
+		ID: readDeviceA, AfterEntityID: pointerTo(readEntityA), EntityLimit: 1,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(aggregate.Entities.Items) != 1 || aggregate.Entities.Items[0].Entity.ID != readEntityC || aggregate.Entities.HasMore {
+		t.Fatalf("second device aggregate page = %#v", aggregate)
+	}
+	if _, err := repository.GetDevice(ctx, GetDeviceParams{ID: unknownDevice, EntityLimit: 50}); err != ErrDeviceNotFound {
 		t.Fatalf("unknown device error = %v", err)
 	}
 
@@ -153,7 +164,7 @@ func seedResourceReads(t *testing.T, database *sql.DB, requestedAt time.Time) {
 		id       EntityID
 		deviceID DeviceID
 		key      string
-	}{{readEntityA, readDeviceA, "power-a"}, {readEntityB, readDeviceB, "power-b"}} {
+	}{{readEntityA, readDeviceA, "power-a"}, {readEntityB, readDeviceB, "power-b"}, {readEntityC, readDeviceA, "power-c"}} {
 		if _, err := database.ExecContext(ctx, `
 			INSERT INTO entities (id, device_id, name, type_id, support_json, created_at, updated_at)
 			VALUES (?, ?, 'Power', 'hearth.power/v1', '{"state":{},"operations":{"set":{}}}', ?, ?)`,

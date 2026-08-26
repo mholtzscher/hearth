@@ -26,10 +26,11 @@ type DeviceBody struct {
 }
 
 type DeviceDetailBody struct {
-	ID       string       `json:"id"`
-	Kind     string       `json:"kind"`
-	Name     string       `json:"name"`
-	Entities []EntityBody `json:"entities"`
+	ID               string       `json:"id"`
+	Kind             string       `json:"kind"`
+	Name             string       `json:"name"`
+	Entities         []EntityBody `json:"entities"`
+	NextEntityCursor *string      `json:"next_entity_cursor,omitempty"`
 }
 
 type EntityCollectionBody struct {

@@ -10,29 +10,10 @@ import (
 	"database/sql"
 )
 
-const getDevice = `-- name: GetDevice :many
-SELECT
-    d.id AS device_id,
-    d.kind AS device_kind,
-    d.name AS device_name,
-    e.id AS entity_id,
-    e.device_id AS entity_device_id,
-    m.adapter_id,
-    e.name AS entity_name,
-    e.type_id,
-    e.support_json,
-    s.observation_id,
-    s.value_json,
-    s.adapter_received_at,
-    s.source_updated_at,
-    s.observed_at,
-    s.receive_order
-FROM devices AS d
-LEFT JOIN entities AS e ON e.device_id = d.id
-LEFT JOIN adapter_entity_mappings AS m ON m.entity_id = e.id
-LEFT JOIN entity_states AS s ON s.entity_id = e.id
-WHERE d.id = ?
-ORDER BY e.id ASC
+const getDevice = `-- name: GetDevice :one
+SELECT id, kind, name
+FROM devices
+WHERE id = ?
 `
 
 type GetDeviceParams struct {
@@ -40,60 +21,16 @@ type GetDeviceParams struct {
 }
 
 type GetDeviceRow struct {
-	DeviceID          string
-	DeviceKind        string
-	DeviceName        string
-	EntityID          sql.NullString
-	EntityDeviceID    sql.NullString
-	AdapterID         sql.NullString
-	EntityName        sql.NullString
-	TypeID            sql.NullString
-	SupportJson       sql.NullString
-	ObservationID     sql.NullString
-	ValueJson         sql.NullString
-	AdapterReceivedAt sql.NullString
-	SourceUpdatedAt   sql.NullString
-	ObservedAt        sql.NullString
-	ReceiveOrder      sql.NullInt64
+	ID   string
+	Kind string
+	Name string
 }
 
-func (q *Queries) GetDevice(ctx context.Context, arg GetDeviceParams) ([]GetDeviceRow, error) {
-	rows, err := q.db.QueryContext(ctx, getDevice, arg.ID)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var items []GetDeviceRow
-	for rows.Next() {
-		var i GetDeviceRow
-		if err := rows.Scan(
-			&i.DeviceID,
-			&i.DeviceKind,
-			&i.DeviceName,
-			&i.EntityID,
-			&i.EntityDeviceID,
-			&i.AdapterID,
-			&i.EntityName,
-			&i.TypeID,
-			&i.SupportJson,
-			&i.ObservationID,
-			&i.ValueJson,
-			&i.AdapterReceivedAt,
-			&i.SourceUpdatedAt,
-			&i.ObservedAt,
-			&i.ReceiveOrder,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Close(); err != nil {
-		return nil, err
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
+func (q *Queries) GetDevice(ctx context.Context, arg GetDeviceParams) (GetDeviceRow, error) {
+	row := q.db.QueryRowContext(ctx, getDevice, arg.ID)
+	var i GetDeviceRow
+	err := row.Scan(&i.ID, &i.Kind, &i.Name)
+	return i, err
 }
 
 const getEntity = `-- name: GetEntity :one
