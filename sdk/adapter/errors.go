@@ -28,6 +28,22 @@ func (err *RegistrationRejectedError) Error() string {
 	return fmt.Sprintf("registration rejected (%s): %s", err.Code, err.Message)
 }
 
+type EntityEnablementRejectionCode string
+
+const (
+	EntityEnablementUnknownEntity EntityEnablementRejectionCode = "unknown_entity"
+	EntityEnablementWrongAdapter  EntityEnablementRejectionCode = "wrong_adapter"
+)
+
+type EntityEnablementRejectedError struct {
+	Code    EntityEnablementRejectionCode
+	Message string
+}
+
+func (err *EntityEnablementRejectedError) Error() string {
+	return fmt.Sprintf("entity enablement rejected (%s): %s", err.Code, err.Message)
+}
+
 type ValidationError struct {
 	Err error
 }

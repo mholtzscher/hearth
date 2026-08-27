@@ -40,6 +40,7 @@
               "external_id": { "$ref": "urn:hearth:schema:common:v1#/$defs/external_id" },
               "name": { "$ref": "urn:hearth:schema:common:v1#/$defs/name" },
               "type": { "$ref": "urn:hearth:schema:common:v1#/$defs/catalog_type" },
+              "initially_enabled": { "type": "boolean", "default": true },
               "support": {
                 "type": "object",
                 "additionalProperties": false,

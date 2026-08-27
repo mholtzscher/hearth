@@ -75,7 +75,7 @@ func (repository *SQLiteRepository) ListEntities(ctx context.Context, params Lis
 		}
 		for _, row := range rows {
 			view, err := entityWithStateFromValues(
-				row.ID, row.DeviceID, row.AdapterID, row.Name, row.TypeID, row.SupportJson,
+				row.ID, row.DeviceID, row.AdapterID, row.Name, row.TypeID, row.SupportJson, row.Enabled,
 				row.ObservationID, row.ValueJson, row.AdapterReceivedAt, row.SourceUpdatedAt,
 				row.ObservedAt, row.ReceiveOrder,
 			)
@@ -93,7 +93,7 @@ func (repository *SQLiteRepository) ListEntities(ctx context.Context, params Lis
 		}
 		for _, row := range rows {
 			view, err := entityWithStateFromValues(
-				row.ID, row.DeviceID, row.AdapterID, row.Name, row.TypeID, row.SupportJson,
+				row.ID, row.DeviceID, row.AdapterID, row.Name, row.TypeID, row.SupportJson, row.Enabled,
 				row.ObservationID, row.ValueJson, row.AdapterReceivedAt, row.SourceUpdatedAt,
 				row.ObservedAt, row.ReceiveOrder,
 			)

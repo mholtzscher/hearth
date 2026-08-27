@@ -15,6 +15,7 @@ type Querier interface {
 	ListDevices(ctx context.Context, arg ListDevicesParams) ([]ListDevicesRow, error)
 	ListEntities(ctx context.Context, arg ListEntitiesParams) ([]ListEntitiesRow, error)
 	ListEntitiesByDevice(ctx context.Context, arg ListEntitiesByDeviceParams) ([]ListEntitiesByDeviceRow, error)
+	UpdateEntityEnablement(ctx context.Context, arg UpdateEntityEnablementParams) (int64, error)
 	UpsertEntityState(ctx context.Context, arg UpsertEntityStateParams) error
 }
 

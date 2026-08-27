@@ -125,6 +125,121 @@ func TestObservationProjectionDurablyRejectsIdentityAndValueFailures(t *testing.
 	}
 }
 
+func TestDisabledEntityRejectsUnlinkedObservationAndAllowsActiveCommandRefresh(t *testing.T) {
+	ctx := context.Background()
+	database := openMigratedDatabase(t, filepath.Join(t.TempDir(), "hearth.db"))
+	catalog := firstLightCatalog(t)
+	repository := NewSQLiteRepository(database, catalog)
+	now := time.Date(2026, 8, 26, 12, 0, 0, 0, time.UTC)
+	service := NewService(repository, nil, catalog, Dependencies{Now: func() time.Time { return now }})
+	binding, err := service.Register(ctx, "simulator", validDomainRegistration())
+	if err != nil {
+		t.Fatal(err)
+	}
+	entityID := binding.Entities[0].EntityID
+	baseline := newObservation(t, entityID, `true`, now)
+	if _, err := service.ProjectObservation(ctx, "simulator", baseline, now); err != nil {
+		t.Fatal(err)
+	}
+
+	active := newCommandRecord(t, entityID, now.Add(time.Second))
+	active.Parameters = CommandParameters(`{"value":false}`)
+	if _, err := repository.CreateCommand(ctx, active); err != nil {
+		t.Fatal(err)
+	}
+	now = now.Add(2 * time.Second)
+	if _, err := service.SetEntityEnabled(ctx, entityID, false); err != nil {
+		t.Fatal(err)
+	}
+
+	rejected := newObservation(t, entityID, `1`, now)
+	result, err := service.ProjectObservation(ctx, "simulator", rejected, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Disposition != DispositionRejected || result.Rejection == nil ||
+		*result.Rejection != RejectionEntityDisabled || result.State != nil {
+		t.Fatalf("disabled projection = %#v", result)
+	}
+	duplicate, err := service.ProjectObservation(ctx, "simulator", rejected, now.Add(time.Second))
+	if err != nil || duplicate.Disposition != DispositionDuplicate {
+		t.Fatalf("disabled duplicate = %#v, %v", duplicate, err)
+	}
+	view, err := service.GetEntity(ctx, entityID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if view.State == nil || view.State.ObservationID != baseline.ID || string(view.State.Value) != "true" {
+		t.Fatalf("State after disabled rejection = %#v", view.State)
+	}
+
+	refresh := newObservation(t, entityID, `false`, now)
+	refresh.RefreshForCommand = &active.ID
+	result, err = service.ProjectObservation(ctx, "simulator", refresh, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Disposition != DispositionApplied || result.State == nil || result.SatisfiedCommand == nil ||
+		result.SatisfiedCommand.CommandID != active.ID {
+		t.Fatalf("active refresh projection = %#v", result)
+	}
+	stored, err := repository.GetCommand(ctx, active.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if stored.Status != CommandStatusSatisfied || stored.OutcomeObservationID == nil ||
+		*stored.OutcomeObservationID != refresh.ID {
+		t.Fatalf("active Command = %#v", stored)
+	}
+}
+
+func TestDisabledEntityDoesNotExemptUnknownExpiredOrTerminalCommandLinks(t *testing.T) {
+	ctx := context.Background()
+	database := openMigratedDatabase(t, filepath.Join(t.TempDir(), "hearth.db"))
+	catalog := firstLightCatalog(t)
+	repository := NewSQLiteRepository(database, catalog)
+	now := time.Date(2026, 8, 26, 12, 0, 20, 0, time.UTC)
+	service := NewService(repository, nil, catalog, Dependencies{Now: func() time.Time { return now }})
+	binding, err := service.Register(ctx, "simulator", validDomainRegistration())
+	if err != nil {
+		t.Fatal(err)
+	}
+	entityID := binding.Entities[0].EntityID
+	expired := newCommandRecord(t, entityID, now.Add(-20*time.Second))
+	if _, err := repository.CreateCommand(ctx, expired); err != nil {
+		t.Fatal(err)
+	}
+	terminal := newCommandRecord(t, entityID, now.Add(-time.Second))
+	if _, err := repository.CreateCommand(ctx, terminal); err != nil {
+		t.Fatal(err)
+	}
+	if err := repository.CompleteCommand(ctx, CommandCompletion{
+		ID: terminal.ID, Status: CommandStatusOutcomeTimeout, CompletedAt: now,
+		FailureCode: CommandFailureOutcomeTimeout,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := service.SetEntityEnabled(ctx, entityID, false); err != nil {
+		t.Fatal(err)
+	}
+	unknown, err := NewCommandID()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for index, id := range []CommandID{unknown, expired.ID, terminal.ID} {
+		observation := newObservation(t, entityID, `true`, now)
+		observation.RefreshForCommand = &id
+		result, err := service.ProjectObservation(ctx, "simulator", observation, now.Add(time.Duration(index)*time.Second))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if result.Disposition != DispositionRejected || result.Rejection == nil ||
+			*result.Rejection != RejectionEntityDisabled || result.State != nil || result.SatisfiedCommand != nil {
+			t.Fatalf("linked disabled projection %d = %#v", index, result)
+		}
+	}
+}
+
 func TestObservationProjectionSatisfiesOnlyMatchingActiveLinkedCommand(t *testing.T) {
 	ctx := context.Background()
 	database := openMigratedDatabase(t, filepath.Join(t.TempDir(), "hearth.db"))
@@ -140,7 +255,7 @@ func TestObservationProjectionSatisfiesOnlyMatchingActiveLinkedCommand(t *testin
 	entityID := binding.Entities[0].EntityID
 	requestedAt := completedAt.Add(-time.Second)
 	command := newCommandRecord(t, entityID, requestedAt)
-	if err := repository.CreateCommand(ctx, command); err != nil {
+	if _, err := repository.CreateCommand(ctx, command); err != nil {
 		t.Fatal(err)
 	}
 
@@ -181,7 +296,7 @@ func TestObservationProjectionSatisfiesOnlyMatchingActiveLinkedCommand(t *testin
 	}
 
 	late := newCommandRecord(t, entityID, requestedAt.Add(2*time.Minute))
-	if err := repository.CreateCommand(ctx, late); err != nil {
+	if _, err := repository.CreateCommand(ctx, late); err != nil {
 		t.Fatal(err)
 	}
 	now = late.DeadlineAt.Add(time.Nanosecond)
@@ -203,7 +318,7 @@ func TestObservationProjectionSatisfiesOnlyMatchingActiveLinkedCommand(t *testin
 	}
 
 	terminal := newCommandRecord(t, entityID, requestedAt.Add(time.Minute))
-	if err := repository.CreateCommand(ctx, terminal); err != nil {
+	if _, err := repository.CreateCommand(ctx, terminal); err != nil {
 		t.Fatal(err)
 	}
 	if err := repository.InterruptActiveCommands(ctx, completedAt.Add(time.Minute)); err != nil {

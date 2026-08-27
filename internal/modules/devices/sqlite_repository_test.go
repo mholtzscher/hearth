@@ -423,6 +423,168 @@ func TestRegistrationRejectionsAreAtomic(t *testing.T) {
 	assertCounts(t, database, 1, 1)
 }
 
+func TestRegistrationInitialEnablementAndRetryPreservesCurrentValue(t *testing.T) {
+	ctx := context.Background()
+	database := openMigratedDatabase(t, filepath.Join(t.TempDir(), "hearth.db"))
+	catalog := firstLightCatalog(t)
+	now := time.Date(2026, 8, 26, 12, 0, 0, 0, time.UTC)
+	service := NewService(NewSQLiteRepository(database, catalog), nil, catalog, Dependencies{Now: func() time.Time { return now }})
+
+	registration := validDomainRegistration()
+	initiallyEnabled := false
+	registration.Entities[0].InitiallyEnabled = &initiallyEnabled
+	binding, err := service.Register(ctx, "simulator", registration)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if binding.Entities[0].Enabled {
+		t.Fatalf("initial binding = %#v", binding.Entities[0])
+	}
+	view, err := service.GetEntity(ctx, binding.Entities[0].EntityID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if view.Entity.Enabled {
+		t.Fatalf("initial Entity = %#v", view.Entity)
+	}
+
+	now = now.Add(time.Minute)
+	if _, err := service.SetEntityEnabled(ctx, view.Entity.ID, true); err != nil {
+		t.Fatal(err)
+	}
+	now = now.Add(time.Minute)
+	retried, err := service.Register(ctx, "simulator", registration)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !retried.Entities[0].Enabled || retried.Entities[0].EntityID != binding.Entities[0].EntityID {
+		t.Fatalf("retried binding = %#v", retried.Entities[0])
+	}
+}
+
+func TestSetEntityEnabledIsIdempotentAndOwnerScoped(t *testing.T) {
+	ctx := context.Background()
+	database := openMigratedDatabase(t, filepath.Join(t.TempDir(), "hearth.db"))
+	catalog := firstLightCatalog(t)
+	now := time.Date(2026, 8, 26, 12, 0, 0, 0, time.UTC)
+	service := NewService(NewSQLiteRepository(database, catalog), nil, catalog, Dependencies{Now: func() time.Time { return now }})
+	binding, err := service.Register(ctx, "simulator", validDomainRegistration())
+	if err != nil {
+		t.Fatal(err)
+	}
+	entityID := binding.Entities[0].EntityID
+
+	var registeredAt string
+	if err := database.QueryRowContext(ctx, "SELECT updated_at FROM entities WHERE id = ?", entityID).Scan(&registeredAt); err != nil {
+		t.Fatal(err)
+	}
+	now = now.Add(time.Minute)
+	confirmed, err := service.SetOwnedEntityEnabled(ctx, "simulator", entityID, false)
+	if err != nil || confirmed {
+		t.Fatalf("owner disable = %t, %v", confirmed, err)
+	}
+	var disabledAt string
+	if err := database.QueryRowContext(ctx, "SELECT updated_at FROM entities WHERE id = ?", entityID).Scan(&disabledAt); err != nil {
+		t.Fatal(err)
+	}
+	if disabledAt == registeredAt {
+		t.Fatal("changed enablement did not update updated_at")
+	}
+
+	now = now.Add(time.Minute)
+	view, err := service.SetEntityEnabled(ctx, entityID, false)
+	if err != nil || view.Entity.Enabled {
+		t.Fatalf("management no-op = %#v, %v", view, err)
+	}
+	var afterNoop string
+	if err := database.QueryRowContext(ctx, "SELECT updated_at FROM entities WHERE id = ?", entityID).Scan(&afterNoop); err != nil {
+		t.Fatal(err)
+	}
+	if afterNoop != disabledAt {
+		t.Fatalf("no-op updated_at = %q, want %q", afterNoop, disabledAt)
+	}
+	if _, err := service.SetOwnedEntityEnabled(ctx, "other-adapter", entityID, true); !errors.Is(err, ErrEntityWrongAdapter) {
+		t.Fatalf("wrong owner error = %v", err)
+	}
+	unknown, err := NewEntityID()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := service.SetEntityEnabled(ctx, unknown, true); !errors.Is(err, ErrEntityNotFound) {
+		t.Fatalf("unknown Entity error = %v", err)
+	}
+}
+
+func TestCreateCommandDurablyClassifiesDisabledEntity(t *testing.T) {
+	ctx := context.Background()
+	database := openMigratedDatabase(t, filepath.Join(t.TempDir(), "hearth.db"))
+	catalog := firstLightCatalog(t)
+	repository := NewSQLiteRepository(database, catalog)
+	service := NewService(repository, nil, catalog, Dependencies{})
+	binding, err := service.Register(ctx, "simulator", validDomainRegistration())
+	if err != nil {
+		t.Fatal(err)
+	}
+	entityID := binding.Entities[0].EntityID
+	if _, err := service.SetEntityEnabled(ctx, entityID, false); err != nil {
+		t.Fatal(err)
+	}
+	requestedAt := time.Date(2026, 8, 26, 12, 0, 0, 123, time.UTC)
+	candidate := newCommandRecord(t, entityID, requestedAt)
+	created, err := repository.CreateCommand(ctx, candidate)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if created.Status != CommandStatusEntityDisabled || created.AcceptedAt != nil ||
+		created.CompletedAt == nil || !created.CompletedAt.Equal(requestedAt) ||
+		created.OutcomeObservationID != nil || created.FailureCode == nil ||
+		*created.FailureCode != CommandFailureEntityDisabled {
+		t.Fatalf("created Command = %#v", created)
+	}
+	stored, err := repository.GetCommand(ctx, candidate.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if stored.Status != created.Status || stored.CompletedAt == nil || !stored.CompletedAt.Equal(requestedAt) ||
+		stored.FailureCode == nil || *stored.FailureCode != CommandFailureEntityDisabled ||
+		string(stored.Parameters) != string(candidate.Parameters) || stored.AdapterID != candidate.AdapterID {
+		t.Fatalf("stored Command = %#v", stored)
+	}
+}
+
+func TestCommandCreationAndEnablementFollowCommitOrder(t *testing.T) {
+	ctx := context.Background()
+	database := openMigratedDatabase(t, filepath.Join(t.TempDir(), "hearth.db"))
+	catalog := firstLightCatalog(t)
+	repository := NewSQLiteRepository(database, catalog)
+	service := NewService(repository, nil, catalog, Dependencies{})
+	binding, err := service.Register(ctx, "simulator", validDomainRegistration())
+	if err != nil {
+		t.Fatal(err)
+	}
+	entityID := binding.Entities[0].EntityID
+	requestedAt := time.Date(2026, 8, 26, 12, 0, 0, 0, time.UTC)
+
+	commandFirst := newCommandRecord(t, entityID, requestedAt)
+	created, err := repository.CreateCommand(ctx, commandFirst)
+	if err != nil || created.Status != CommandStatusRequested {
+		t.Fatalf("Command-first creation = %#v, %v", created, err)
+	}
+	if _, err := service.SetEntityEnabled(ctx, entityID, false); err != nil {
+		t.Fatal(err)
+	}
+	stored, err := repository.GetCommand(ctx, commandFirst.ID)
+	if err != nil || stored.Status != CommandStatusRequested {
+		t.Fatalf("Command after later disable = %#v, %v", stored, err)
+	}
+
+	disableFirst := newCommandRecord(t, entityID, requestedAt.Add(time.Second))
+	created, err = repository.CreateCommand(ctx, disableFirst)
+	if err != nil || created.Status != CommandStatusEntityDisabled {
+		t.Fatalf("disable-first creation = %#v, %v", created, err)
+	}
+}
+
 func TestCommandLedgerTransitionsAreMonotonicAndIdempotent(t *testing.T) {
 	ctx := context.Background()
 	database := openMigratedDatabase(t, filepath.Join(t.TempDir(), "hearth.db"))
@@ -434,7 +596,7 @@ func TestCommandLedgerTransitionsAreMonotonicAndIdempotent(t *testing.T) {
 	}
 	requestedAt := time.Date(2026, 8, 20, 12, 0, 0, 0, time.UTC)
 	command := newCommandRecord(t, binding.Entities[0].EntityID, requestedAt)
-	if err := repository.CreateCommand(ctx, command); err != nil {
+	if _, err := repository.CreateCommand(ctx, command); err != nil {
 		t.Fatal(err)
 	}
 	acceptedAt := requestedAt.Add(time.Second)
@@ -473,7 +635,7 @@ func TestCommandLedgerTransitionsAreMonotonicAndIdempotent(t *testing.T) {
 	}
 
 	satisfied := newCommandRecord(t, binding.Entities[0].EntityID, requestedAt.Add(30*time.Second))
-	if err := repository.CreateCommand(ctx, satisfied); err != nil {
+	if _, err := repository.CreateCommand(ctx, satisfied); err != nil {
 		t.Fatal(err)
 	}
 	observationID, err := NewObservationID()
@@ -500,10 +662,10 @@ func TestCommandLedgerTransitionsAreMonotonicAndIdempotent(t *testing.T) {
 
 	requested := newCommandRecord(t, binding.Entities[0].EntityID, requestedAt.Add(time.Minute))
 	accepted := newCommandRecord(t, binding.Entities[0].EntityID, requestedAt.Add(2*time.Minute))
-	if err := repository.CreateCommand(ctx, requested); err != nil {
+	if _, err := repository.CreateCommand(ctx, requested); err != nil {
 		t.Fatal(err)
 	}
-	if err := repository.CreateCommand(ctx, accepted); err != nil {
+	if _, err := repository.CreateCommand(ctx, accepted); err != nil {
 		t.Fatal(err)
 	}
 	if err := repository.MarkCommandAccepted(ctx, accepted.ID, accepted.RequestedAt.Add(time.Second)); err != nil {

@@ -31,10 +31,11 @@
               "items": {
                 "type": "object",
                 "additionalProperties": false,
-                "required": ["key", "entity_id"],
+                "required": ["key", "entity_id", "enabled"],
                 "properties": {
                   "key": { "$ref": "urn:hearth:schema:common:v1#/$defs/slug" },
-                  "entity_id": { "$ref": "urn:hearth:schema:common:v1#/$defs/ent_id" }
+                  "entity_id": { "$ref": "urn:hearth:schema:common:v1#/$defs/ent_id" },
+                  "enabled": { "type": "boolean" }
                 }
               }
             }

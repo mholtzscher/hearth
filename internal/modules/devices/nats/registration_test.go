@@ -31,6 +31,7 @@ func TestRegistrationServerMapsDomainRegistrationAndReturnsCorrelatedResponse(t 
 		t.Fatal(err)
 	}
 	externalID := "device.office"
+	initiallyEnabled := false
 	handled := make(chan devices.Registration, 1)
 	server, err := StartRegistrationServer(connection, validator, registrarFunc(func(
 		_ context.Context,
@@ -45,8 +46,8 @@ func TestRegistrationServerMapsDomainRegistrationAndReturnsCorrelatedResponse(t 
 			BindingKey: registration.BindingKey,
 			DeviceID:   devices.DeviceID("dev_01890f47-7a6b-7c4d-8e9f-0123456789ab"),
 			Entities: []devices.EntityBinding{
-				{Key: "power", EntityID: devices.EntityID(testEntityID)},
-				{Key: "brightness", EntityID: devices.EntityID("ent_01890f47-7a6b-7c4d-8e9f-1123456789ab")},
+				{Key: "power", EntityID: devices.EntityID(testEntityID), Enabled: true},
+				{Key: "brightness", EntityID: devices.EntityID("ent_01890f47-7a6b-7c4d-8e9f-1123456789ab"), Enabled: true},
 			},
 		}, nil
 	}), slog.New(slog.NewJSONHandler(io.Discard, nil)))
@@ -65,7 +66,7 @@ func TestRegistrationServerMapsDomainRegistrationAndReturnsCorrelatedResponse(t 
 			Entities: []entityDescriptor{
 				{
 					Key: "power", ExternalID: "light.office", Name: "Power", Type: "hearth.power/v1",
-					Support: []byte(`{"state":{},"operations":{"set":{}}}`),
+					Support: []byte(`{"state":{},"operations":{"set":{}}}`), InitiallyEnabled: &initiallyEnabled,
 				},
 				{
 					Key: "brightness", ExternalID: "light.office.brightness", Name: "Brightness", Type: "hearth.brightness/v1",
@@ -78,7 +79,7 @@ func TestRegistrationServerMapsDomainRegistrationAndReturnsCorrelatedResponse(t 
 	if response.CausationID == nil || *response.CausationID != requestID ||
 		response.CorrelationID != testCorrelationID || response.Data.Binding == nil ||
 		len(response.Data.Binding.Entities) != 2 || response.Data.Binding.Entities[0].EntityID != testEntityID ||
-		response.Data.Binding.Entities[1].Key != "brightness" {
+		!response.Data.Binding.Entities[0].Enabled || response.Data.Binding.Entities[1].Key != "brightness" {
 		t.Fatalf("response = %#v", response)
 	}
 	mapped := <-handled
@@ -86,12 +87,15 @@ func TestRegistrationServerMapsDomainRegistrationAndReturnsCorrelatedResponse(t 
 		*mapped.Device.ExternalID != externalID || len(mapped.Entities) != 2 ||
 		mapped.Entities[0].TypeID != devices.EntityTypeID("hearth.power/v1") ||
 		mapped.Entities[1].TypeID != devices.EntityTypeID("hearth.brightness/v1") ||
-		string(mapped.Entities[0].Support) != `{"state":{},"operations":{"set":{}}}` {
+		string(mapped.Entities[0].Support) != `{"state":{},"operations":{"set":{}}}` ||
+		mapped.Entities[0].InitiallyEnabled == nil || *mapped.Entities[0].InitiallyEnabled {
 		t.Fatalf("mapped registration = %#v", mapped)
 	}
 	externalID = "mutated"
+	initiallyEnabled = true
 	request.Data.Entities[0].Support[0] = 'x'
-	if *mapped.Device.ExternalID != "device.office" || string(mapped.Entities[0].Support) != `{"state":{},"operations":{"set":{}}}` {
+	if *mapped.Device.ExternalID != "device.office" || string(mapped.Entities[0].Support) != `{"state":{},"operations":{"set":{}}}` ||
+		*mapped.Entities[0].InitiallyEnabled {
 		t.Fatalf("registrar inputs were not copied: %#v", mapped)
 	}
 }

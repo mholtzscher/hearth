@@ -26,8 +26,8 @@ WHERE id = ?;
 
 -- name: CreateEntity :exec
 INSERT INTO entities (
-    id, device_id, name, type_id, support_json, created_at, updated_at
-) VALUES (?, ?, ?, ?, ?, ?, ?);
+    id, device_id, name, type_id, support_json, enabled, created_at, updated_at
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?);
 
 -- name: UpdateEntityDescriptor :exec
 UPDATE entities
@@ -54,7 +54,8 @@ SELECT
     e.device_id,
     e.name AS entity_name,
     e.type_id,
-    e.support_json
+    e.support_json,
+    e.enabled
 FROM adapter_entity_mappings AS m
 JOIN entities AS e ON e.id = m.entity_id
 WHERE m.adapter_id = ? AND m.binding_key = ? AND m.entity_key = ?;

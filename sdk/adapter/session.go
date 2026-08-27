@@ -132,6 +132,65 @@ func (session *Session) Register(ctx context.Context, registration Registration)
 	return *response.Data.Binding, nil
 }
 
+// SetEntityEnabled performs one schema-validated Core NATS request/reply attempt.
+func (session *Session) SetEntityEnabled(ctx context.Context, entityID string, enabled bool) (bool, error) {
+	requestID, err := newID("ena")
+	if err != nil {
+		return false, err
+	}
+	correlationID, err := newID("cor")
+	if err != nil {
+		return false, err
+	}
+	request := natswire.Envelope[EntityEnablementRequest]{
+		ID: requestID, Schema: contractsv1.EntityEnablementRequestSchemaID,
+		EmittedAt: nowString(), CorrelationID: correlationID,
+		Data: EntityEnablementRequest{EntityID: entityID, Enabled: enabled},
+	}
+	payload, err := natswire.Encode(session.validator, contractsv1.EntityEnablementRequestSchemaID, request)
+	if err != nil {
+		return false, &ValidationError{Err: err}
+	}
+	subject, err := natswire.EntityEnablementSubject(session.adapterID, entityID)
+	if err != nil {
+		return false, &ValidationError{Err: err}
+	}
+	route, err := natswire.ParseEntityEnablementSubject(subject)
+	if err != nil || route.AdapterID != session.adapterID || route.EntityID != request.Data.EntityID {
+		if err == nil {
+			err = errors.New("entity enablement route does not match request")
+		}
+		return false, &ValidationError{Err: err}
+	}
+	message := &natsgo.Msg{Subject: subject, Header: make(natsgo.Header), Data: payload}
+	natswire.InjectTrace(ctx, message.Header)
+	reply, err := session.connection.RequestMsgWithContext(ctx, message)
+	if err != nil {
+		return false, err
+	}
+	response, err := natswire.Decode[EntityEnablementResponse](
+		session.validator, contractsv1.EntityEnablementResponseSchemaID, reply.Data,
+	)
+	if err != nil {
+		return false, fmt.Errorf("invalid entity enablement response: %w", err)
+	}
+	if response.CausationID == nil || *response.CausationID != requestID {
+		return false, errors.New("entity enablement response causation ID does not match request")
+	}
+	if response.CorrelationID != correlationID {
+		return false, errors.New("entity enablement response correlation ID does not match request")
+	}
+	if response.Data.Status == "rejected" {
+		return false, &EntityEnablementRejectedError{
+			Code: response.Data.Error.Code, Message: response.Data.Error.Message,
+		}
+	}
+	if response.Data.EntityID != entityID || response.Data.Enabled == nil {
+		return false, errors.New("entity enablement response identity does not match request")
+	}
+	return *response.Data.Enabled, nil
+}
+
 // PublishObservation publishes one envelope through JetStream and waits for its
 // acknowledgement. A command-linked observation must use the context received
 // by that command's handler so its causation and correlation IDs are preserved.

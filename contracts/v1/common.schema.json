@@ -60,6 +60,10 @@
       "type": "string",
       "pattern": "^rep_[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
     },
+    "ena_id": {
+      "type": "string",
+      "pattern": "^ena_[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+    },
     "cor_id": {
       "type": "string",
       "pattern": "^cor_[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
@@ -69,7 +73,8 @@
         { "$ref": "#/$defs/reg_id" },
         { "$ref": "#/$defs/obs_id" },
         { "$ref": "#/$defs/cmd_id" },
-        { "$ref": "#/$defs/rep_id" }
+        { "$ref": "#/$defs/rep_id" },
+        { "$ref": "#/$defs/ena_id" }
       ]
     }
   }

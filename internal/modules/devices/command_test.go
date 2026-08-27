@@ -29,7 +29,7 @@ func newCommandRepository() *commandRepository {
 	return &commandRepository{
 		view: EntityWithState{Entity: Entity{
 			ID: commandTestEntityID, DeviceID: commandTestDeviceID, AdapterID: "simulator", Name: "Power",
-			TypeID: EntityTypePowerV1, Support: EntitySupport(`{"state":{},"operations":{"set":{}}}`),
+			TypeID: EntityTypePowerV1, Support: EntitySupport(`{"state":{},"operations":{"set":{}}}`), Enabled: true,
 		}},
 		commands: make(map[CommandID]CommandRecord),
 	}
@@ -63,14 +63,31 @@ func (*commandRepository) ListEntityCommands(context.Context, ListEntityCommands
 	panic("unexpected ListEntityCommands call")
 }
 
-func (repository *commandRepository) CreateCommand(_ context.Context, command CommandRecord) error {
+func (repository *commandRepository) CreateCommand(_ context.Context, command CommandRecord) (CommandRecord, error) {
 	repository.mutex.Lock()
 	defer repository.mutex.Unlock()
 	if repository.createErr != nil {
-		return repository.createErr
+		return CommandRecord{}, repository.createErr
+	}
+	if !repository.view.Entity.Enabled {
+		completedAt := command.RequestedAt
+		failureCode := CommandFailureEntityDisabled
+		command.Status = CommandStatusEntityDisabled
+		command.CompletedAt = &completedAt
+		command.FailureCode = &failureCode
 	}
 	repository.commands[command.ID] = command
-	return nil
+	return copyCommandRecord(command), nil
+}
+
+func (repository *commandRepository) SetEntityEnabled(_ context.Context, params SetEntityEnabledParams) (EntityWithState, error) {
+	repository.mutex.Lock()
+	defer repository.mutex.Unlock()
+	if params.RequiredOwner != nil && *params.RequiredOwner != repository.view.Entity.AdapterID {
+		return EntityWithState{}, ErrEntityWrongAdapter
+	}
+	repository.view.Entity.Enabled = params.Enabled
+	return copyEntityWithState(repository.view), nil
 }
 
 func (repository *commandRepository) MarkCommandAccepted(_ context.Context, id CommandID, acceptedAt time.Time) error {
@@ -289,6 +306,52 @@ func TestExecuteCommandRejectsInvalidParametersAndCreationFailureBeforeDispatch(
 	}
 	if dispatches != 0 {
 		t.Fatalf("dispatches = %d", dispatches)
+	}
+}
+
+func TestExecuteCommandCreatesTerminalRecordWithoutWaiterOrDispatchWhenDisabled(t *testing.T) {
+	repository := newCommandRepository()
+	repository.view.Entity.Enabled = false
+	dispatches := 0
+	sender := commandSenderFunc(func(context.Context, string, CommandRequest) (CommandAcceptance, error) {
+		dispatches++
+		return CommandAcceptance{}, nil
+	})
+	service := NewService(repository, sender, commandCatalog(t, time.Second), commandDependencies())
+
+	_, err := service.ExecuteCommand(
+		context.Background(), commandTestEntityID, OperationNameSet, CommandParameters(`{"value":true}`),
+	)
+	if !errors.Is(err, ErrEntityDisabled) {
+		t.Fatalf("disabled Command error = %v", err)
+	}
+	var executionError *CommandExecutionError
+	if !errors.As(err, &executionError) || executionError.CommandID != commandTestID {
+		t.Fatalf("execution error = %#v", executionError)
+	}
+	stored := repository.command(commandTestID)
+	if stored.Status != CommandStatusEntityDisabled || stored.CompletedAt == nil ||
+		stored.FailureCode == nil || *stored.FailureCode != CommandFailureEntityDisabled {
+		t.Fatalf("stored Command = %#v", stored)
+	}
+	if dispatches != 0 {
+		t.Fatalf("dispatches = %d", dispatches)
+	}
+	service.waiters.mutex.Lock()
+	waiters := len(service.waiters.byID)
+	service.waiters.mutex.Unlock()
+	if waiters != 0 {
+		t.Fatalf("waiters = %d", waiters)
+	}
+
+	repository.commands = make(map[CommandID]CommandRecord)
+	if _, err := service.ExecuteCommand(
+		context.Background(), commandTestEntityID, OperationNameSet, CommandParameters(`{"value":1}`),
+	); !errors.Is(err, ErrInvalidCommand) {
+		t.Fatalf("invalid disabled Command error = %v", err)
+	}
+	if len(repository.commands) != 0 {
+		t.Fatalf("invalid disabled Command created records: %#v", repository.commands)
 	}
 }
 

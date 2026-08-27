@@ -24,6 +24,9 @@ func TestSQLiteResourceReadsUseDeterministicKeysetPages(t *testing.T) {
 	repository := NewSQLiteRepository(database, nil)
 	requestedAt := time.Date(2026, 8, 26, 12, 0, 0, 123, time.UTC)
 	seedResourceReads(t, database, requestedAt)
+	if _, err := database.ExecContext(ctx, "UPDATE entities SET enabled = 0 WHERE id = ?", readEntityC); err != nil {
+		t.Fatal(err)
+	}
 
 	devicesPage, err := repository.ListDevices(ctx, ListDevicesParams{Limit: 1})
 	if err != nil {
@@ -71,7 +74,8 @@ func TestSQLiteResourceReadsUseDeterministicKeysetPages(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(aggregate.Entities.Items) != 1 || aggregate.Entities.Items[0].Entity.ID != readEntityC || aggregate.Entities.HasMore {
+	if len(aggregate.Entities.Items) != 1 || aggregate.Entities.Items[0].Entity.ID != readEntityC ||
+		aggregate.Entities.Items[0].Entity.Enabled || aggregate.Entities.HasMore {
 		t.Fatalf("second device aggregate page = %#v", aggregate)
 	}
 	if _, err := repository.GetDevice(ctx, GetDeviceParams{ID: unknownDevice, EntityLimit: 50}); err != ErrDeviceNotFound {
@@ -109,7 +113,7 @@ func TestSQLiteCommandHistoryOrdersWholeAndFractionalSecondsChronologically(t *t
 	earlier := newCommandRecord(t, readEntityA, exactSecond)
 	later := newCommandRecord(t, readEntityA, exactSecond.Add(100*time.Millisecond))
 	for _, command := range []CommandRecord{earlier, later} {
-		if err := repository.CreateCommand(ctx, command); err != nil {
+		if _, err := repository.CreateCommand(ctx, command); err != nil {
 			t.Fatal(err)
 		}
 	}

@@ -21,7 +21,7 @@ func (repository *SQLiteRepository) GetEntity(ctx context.Context, id EntityID) 
 		return EntityWithState{}, fmt.Errorf("get entity: %w", err)
 	}
 	return entityWithStateFromValues(
-		row.ID, row.DeviceID, row.AdapterID, row.Name, row.TypeID, row.SupportJson,
+		row.ID, row.DeviceID, row.AdapterID, row.Name, row.TypeID, row.SupportJson, row.Enabled,
 		row.ObservationID, row.ValueJson, row.AdapterReceivedAt, row.SourceUpdatedAt,
 		row.ObservedAt, row.ReceiveOrder,
 	)
@@ -63,7 +63,7 @@ func (repository *SQLiteRepository) ProjectObservation(ctx context.Context, para
 		return ProjectionResult{}, fmt.Errorf("get entity for observation: %w", err)
 	default:
 		view, err = entityWithStateFromValues(
-			row.ID, row.DeviceID, row.AdapterID, row.Name, row.TypeID, row.SupportJson,
+			row.ID, row.DeviceID, row.AdapterID, row.Name, row.TypeID, row.SupportJson, row.Enabled,
 			row.ObservationID, row.ValueJson, row.AdapterReceivedAt, row.SourceUpdatedAt,
 			row.ObservedAt, row.ReceiveOrder,
 		)
@@ -74,6 +74,19 @@ func (repository *SQLiteRepository) ProjectObservation(ctx context.Context, para
 			value := RejectionWrongAdapter
 			rejection = &value
 		}
+	}
+
+	var linkedCommand *CommandRecord
+	var projectionNow time.Time
+	if rejection == nil && params.Observation.RefreshForCommand != nil {
+		linkedCommand, projectionNow, err = repository.activeLinkedCommand(ctx, tx, params)
+		if err != nil {
+			return ProjectionResult{}, err
+		}
+	}
+	if rejection == nil && !view.Entity.Enabled && linkedCommand == nil {
+		value := RejectionEntityDisabled
+		rejection = &value
 	}
 
 	var normalized Value
@@ -139,8 +152,10 @@ func (repository *SQLiteRepository) ProjectObservation(ctx context.Context, para
 		}
 		result.State = &state
 
-		if params.Observation.RefreshForCommand != nil {
-			satisfied, satisfyErr := repository.satisfyCommand(ctx, tx, view.Entity, params, normalized)
+		if linkedCommand != nil {
+			satisfied, satisfyErr := repository.satisfyCommand(
+				ctx, tx, view.Entity, *linkedCommand, params.Observation.ID, normalized, projectionNow,
+			)
 			if satisfyErr != nil {
 				return ProjectionResult{}, satisfyErr
 			}
@@ -154,30 +169,46 @@ func (repository *SQLiteRepository) ProjectObservation(ctx context.Context, para
 	return result, nil
 }
 
+func (repository *SQLiteRepository) activeLinkedCommand(
+	ctx context.Context,
+	tx *sql.Tx,
+	params ProjectObservationParams,
+) (*CommandRecord, time.Time, error) {
+	id := *params.Observation.RefreshForCommand
+	row, err := commandsqlc.New(tx).GetCommand(ctx, commandsqlc.GetCommandParams{ID: string(id)})
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, time.Time{}, nil
+	}
+	if err != nil {
+		return nil, time.Time{}, fmt.Errorf("get linked command: %w", err)
+	}
+	command, err := commandFromRow(row)
+	if err != nil {
+		return nil, time.Time{}, fmt.Errorf("map linked command: %w", err)
+	}
+	if (command.Status != CommandStatusRequested && command.Status != CommandStatusAccepted) ||
+		command.EntityID != params.Observation.EntityID || command.AdapterID != params.AdapterID {
+		return nil, time.Time{}, nil
+	}
+	completedAt := params.Now().UTC()
+	if completedAt.IsZero() {
+		return nil, time.Time{}, errors.New("complete linked command: clock returned zero time")
+	}
+	if completedAt.After(command.DeadlineAt) {
+		return nil, time.Time{}, nil
+	}
+	return &command, completedAt, nil
+}
+
 func (repository *SQLiteRepository) satisfyCommand(
 	ctx context.Context,
 	tx *sql.Tx,
 	entity Entity,
-	params ProjectObservationParams,
+	command CommandRecord,
+	observationID ObservationID,
 	value Value,
+	completedAt time.Time,
 ) (*CommandResult, error) {
-	id := *params.Observation.RefreshForCommand
-	queries := commandsqlc.New(tx)
-	row, err := queries.GetCommand(ctx, commandsqlc.GetCommandParams{ID: string(id)})
-	if errors.Is(err, sql.ErrNoRows) {
-		return nil, nil
-	}
-	if err != nil {
-		return nil, fmt.Errorf("get linked command: %w", err)
-	}
-	command, err := commandFromRow(row)
-	if err != nil {
-		return nil, fmt.Errorf("map linked command: %w", err)
-	}
-	if (command.Status != CommandStatusRequested && command.Status != CommandStatusAccepted) ||
-		command.EntityID != params.Observation.EntityID || command.AdapterID != params.AdapterID {
-		return nil, nil
-	}
 	matches, err := repository.catalog.Satisfies(entity, command, value)
 	if err != nil {
 		return nil, fmt.Errorf("evaluate linked command outcome: %w", err)
@@ -185,18 +216,9 @@ func (repository *SQLiteRepository) satisfyCommand(
 	if !matches {
 		return nil, nil
 	}
-	// The receipt and State writes already hold SQLite's writer lock, so this
-	// deadline decision and the Command update are atomic with timeout writes.
-	completedAt := params.Now().UTC()
-	if completedAt.IsZero() {
-		return nil, errors.New("complete linked command: clock returned zero time")
-	}
-	if completedAt.After(command.DeadlineAt) {
-		return nil, nil
-	}
-	rows, err := queries.SatisfyCommandFromObservation(ctx, commandsqlc.SatisfyCommandFromObservationParams{
+	rows, err := commandsqlc.New(tx).SatisfyCommandFromObservation(ctx, commandsqlc.SatisfyCommandFromObservationParams{
 		CompletedAt:          sql.NullString{String: formatTime(completedAt), Valid: true},
-		OutcomeObservationID: sql.NullString{String: string(params.Observation.ID), Valid: true},
+		OutcomeObservationID: sql.NullString{String: string(observationID), Valid: true},
 		ID:                   string(command.ID),
 		EntityID:             string(command.EntityID),
 		AdapterID:            command.AdapterID,
@@ -208,7 +230,7 @@ func (repository *SQLiteRepository) satisfyCommand(
 		return nil, nil
 	}
 	return &CommandResult{
-		CommandID: command.ID, ObservationID: params.Observation.ID, Value: append(Value(nil), value...),
+		CommandID: command.ID, ObservationID: observationID, Value: append(Value(nil), value...),
 	}, nil
 }
 
@@ -223,13 +245,13 @@ func (repository *SQLiteRepository) DeleteExpiredObservationReceipts(ctx context
 }
 
 func entityWithStateFromValues(
-	id, deviceID, adapterID, name, typeID, supportJSON string,
+	id, deviceID, adapterID, name, typeID, supportJSON string, enabled int64,
 	observationID, valueJSON, adapterReceivedAt, sourceUpdatedAt, observedAt sql.NullString,
 	receiveOrder sql.NullInt64,
 ) (EntityWithState, error) {
 	view := EntityWithState{Entity: Entity{
 		ID: EntityID(id), DeviceID: DeviceID(deviceID), AdapterID: adapterID,
-		Name: name, TypeID: EntityTypeID(typeID), Support: EntitySupport(supportJSON),
+		Name: name, TypeID: EntityTypeID(typeID), Support: EntitySupport(supportJSON), Enabled: enabled != 0,
 	}}
 	if !observationID.Valid {
 		return view, nil

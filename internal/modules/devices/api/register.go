@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"net/http"
+	"reflect"
 
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/mholtzscher/hearth/internal/modules/devices"
@@ -10,6 +11,7 @@ import (
 
 type Devices interface {
 	GetEntity(context.Context, devices.EntityID) (devices.EntityWithState, error)
+	SetEntityEnabled(context.Context, devices.EntityID, bool) (devices.EntityWithState, error)
 	ExecuteCommand(context.Context, devices.EntityID, devices.OperationName, devices.CommandParameters) (devices.CommandResult, error)
 	ListDevices(context.Context, devices.ListDevicesParams) (devices.Page[devices.Device], error)
 	GetDevice(context.Context, devices.GetDeviceParams) (devices.DeviceAggregate, error)
@@ -24,6 +26,9 @@ type Handler struct {
 
 func Register(api huma.API, service Devices) {
 	handler := &Handler{devices: service}
+	disabledProblemSchema := huma.SchemaFromType(
+		api.OpenAPI().Components.Schemas, reflect.TypeFor[disabledCommandProblem](),
+	)
 	huma.Register(api, huma.Operation{
 		OperationID: "list-entities", Method: http.MethodGet, Path: "/entities",
 		Summary: "List Entities and their current State", Tags: []string{"Entities"},
@@ -35,11 +40,24 @@ func Register(api huma.API, service Devices) {
 		Errors: []int{http.StatusBadRequest, http.StatusNotFound, http.StatusInternalServerError},
 	}, handler.GetEntity)
 	huma.Register(api, huma.Operation{
+		OperationID: "update-entity", Method: http.MethodPatch, Path: "/entities/{entity_id}",
+		Summary: "Update an Entity", Tags: []string{"Entities"},
+		Errors: []int{http.StatusBadRequest, http.StatusNotFound, http.StatusInternalServerError},
+	}, handler.PatchEntity)
+	huma.Register(api, huma.Operation{
 		OperationID: "execute-entity-command", Method: http.MethodPost, Path: "/entities/{entity_id}/commands",
 		Summary: "Execute an Entity Command", Tags: []string{"Entities"},
 		Errors: []int{
 			http.StatusBadRequest, http.StatusNotFound, http.StatusBadGateway,
 			http.StatusServiceUnavailable, http.StatusGatewayTimeout, http.StatusInternalServerError,
+		},
+		Responses: map[string]*huma.Response{
+			"409": {
+				Description: http.StatusText(http.StatusConflict),
+				Content: map[string]*huma.MediaType{
+					"application/problem+json": {Schema: disabledProblemSchema},
+				},
+			},
 		},
 	}, handler.ExecuteCommand)
 	huma.Register(api, huma.Operation{

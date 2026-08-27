@@ -47,10 +47,10 @@ func TestCoreStartupInterruptsActiveCommandsWithoutRedispatch(t *testing.T) {
 	}
 	requested := recoveryCommandRecord(t, binding.Entities[0].EntityID, time.Now().UTC())
 	accepted := recoveryCommandRecord(t, binding.Entities[0].EntityID, requested.RequestedAt.Add(time.Second))
-	if err := repository.CreateCommand(ctx, requested); err != nil {
+	if _, err := repository.CreateCommand(ctx, requested); err != nil {
 		t.Fatal(err)
 	}
-	if err := repository.CreateCommand(ctx, accepted); err != nil {
+	if _, err := repository.CreateCommand(ctx, accepted); err != nil {
 		t.Fatal(err)
 	}
 	if err := repository.MarkCommandAccepted(ctx, accepted.ID, accepted.RequestedAt.Add(time.Millisecond)); err != nil {

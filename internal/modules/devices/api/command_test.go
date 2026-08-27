@@ -61,6 +61,40 @@ func TestExecuteCommandReturnsSatisfiedResultAndRegistersOpenAPI(t *testing.T) {
 	}
 }
 
+func TestExecuteDisabledCommandReturnsDurableProblemDetailsExtension(t *testing.T) {
+	stub := &stubDevices{executeCommand: func(
+		context.Context,
+		devices.EntityID,
+		devices.OperationName,
+		devices.CommandParameters,
+	) (devices.CommandResult, error) {
+		return devices.CommandResult{}, &devices.CommandExecutionError{
+			CommandID: apiCommandID, Err: devices.ErrEntityDisabled,
+		}
+	}}
+	router, _ := testAPI(t, stub)
+	request := httptest.NewRequest(
+		http.MethodPost,
+		"/v1/entities/"+string(apiEntityID)+"/commands",
+		bytes.NewBufferString(`{"operation":"set","parameters":{"value":true}}`),
+	)
+	request.Header.Set("Content-Type", "application/json")
+	response := httptest.NewRecorder()
+	router.ServeHTTP(response, request)
+	if response.Code != http.StatusConflict || response.Header().Get("Content-Type") != "application/problem+json" {
+		t.Fatalf("status/content type = %d/%q, body = %s", response.Code, response.Header().Get("Content-Type"), response.Body.String())
+	}
+	var problem disabledCommandProblem
+	if err := json.Unmarshal(response.Body.Bytes(), &problem); err != nil {
+		t.Fatal(err)
+	}
+	if problem.Type != "about:blank" || problem.Title != "Conflict" || problem.Status != http.StatusConflict ||
+		problem.Detail != "entity is disabled" || problem.Code != "entity_disabled" ||
+		problem.CommandID != string(apiCommandID) {
+		t.Fatalf("problem = %#v", problem)
+	}
+}
+
 func TestCommandErrorMappingUsesStandardHumaErrors(t *testing.T) {
 	tests := []struct {
 		cause  error

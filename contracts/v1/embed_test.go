@@ -10,8 +10,8 @@ import (
 
 func TestEmbeddedSchemasCompile(t *testing.T) {
 	schemas := compileSchemas(t)
-	if len(schemas) != 6 {
-		t.Fatalf("compiled %d schemas, want 6", len(schemas))
+	if len(schemas) != 8 {
+		t.Fatalf("compiled %d schemas, want 8", len(schemas))
 	}
 }
 
@@ -31,7 +31,7 @@ func TestSchemaFixtures(t *testing.T) {
 			"emitted_at":"2026-08-20T12:34:56Z",
 			"correlation_id":"cor_01890f47-7a6b-7c4d-8e9f-0123456789ab",
 			"causation_id":"reg_01890f47-7a6b-7c4d-8e9f-0123456789ab",
-			"data":{"status":"accepted","binding":{"binding_key":"office-light","device_id":"dev_01890f47-7a6b-7c4d-8e9f-0123456789ab","entities":[{"key":"power","entity_id":"ent_01890f47-7a6b-7c4d-8e9f-0123456789ab"}]}}
+			"data":{"status":"accepted","binding":{"binding_key":"office-light","device_id":"dev_01890f47-7a6b-7c4d-8e9f-0123456789ab","entities":[{"key":"power","entity_id":"ent_01890f47-7a6b-7c4d-8e9f-0123456789ab","enabled":true}]}}
 		}`,
 		ObservationSchemaID: `{
 			"id":"obs_01890f47-7a6b-7c4d-8e9f-0123456789ab",
@@ -54,6 +54,21 @@ func TestSchemaFixtures(t *testing.T) {
 			"correlation_id":"cor_01890f47-7a6b-7c4d-8e9f-0123456789ab",
 			"causation_id":"cmd_01890f47-7a6b-7c4d-8e9f-0123456789ab",
 			"data":{"command_id":"cmd_01890f47-7a6b-7c4d-8e9f-0123456789ab","status":"accepted"}
+		}`,
+		EntityEnablementRequestSchemaID: `{
+			"id":"ena_01890f47-7a6b-7c4d-8e9f-0123456789ab",
+			"schema":"urn:hearth:schema:entity-enablement-request:v1",
+			"emitted_at":"2026-08-20T12:34:56Z",
+			"correlation_id":"cor_01890f47-7a6b-7c4d-8e9f-0123456789ab",
+			"data":{"entity_id":"ent_01890f47-7a6b-7c4d-8e9f-0123456789ab","enabled":false}
+		}`,
+		EntityEnablementResponseSchemaID: `{
+			"id":"rep_01890f47-7a6b-7c4d-8e9f-0123456789ab",
+			"schema":"urn:hearth:schema:entity-enablement-response:v1",
+			"emitted_at":"2026-08-20T12:34:57Z",
+			"correlation_id":"cor_01890f47-7a6b-7c4d-8e9f-0123456789ab",
+			"causation_id":"ena_01890f47-7a6b-7c4d-8e9f-0123456789ab",
+			"data":{"status":"accepted","entity_id":"ent_01890f47-7a6b-7c4d-8e9f-0123456789ab","enabled":false}
 		}`,
 	}
 	for schemaID, fixture := range fixtures {
@@ -114,7 +129,7 @@ func TestRegistrationSchemaEntityBounds(t *testing.T) {
 		},
 		{
 			name: "response", schemaID: RegistrationResponseSchemaID,
-			payload: `{"id":"rep_01890f47-7a6b-7c4d-8e9f-0123456789ab","schema":"urn:hearth:schema:registration-response:v1","emitted_at":"2026-08-20T12:34:56Z","correlation_id":"cor_01890f47-7a6b-7c4d-8e9f-0123456789ab","causation_id":"reg_01890f47-7a6b-7c4d-8e9f-0123456789ab","data":{"status":"accepted","binding":{"binding_key":"office-light","device_id":"dev_01890f47-7a6b-7c4d-8e9f-0123456789ab","entities":[{"key":"power","entity_id":"ent_01890f47-7a6b-7c4d-8e9f-0123456789ab"}]}}}`,
+			payload: `{"id":"rep_01890f47-7a6b-7c4d-8e9f-0123456789ab","schema":"urn:hearth:schema:registration-response:v1","emitted_at":"2026-08-20T12:34:56Z","correlation_id":"cor_01890f47-7a6b-7c4d-8e9f-0123456789ab","causation_id":"reg_01890f47-7a6b-7c4d-8e9f-0123456789ab","data":{"status":"accepted","binding":{"binding_key":"office-light","device_id":"dev_01890f47-7a6b-7c4d-8e9f-0123456789ab","entities":[{"key":"power","entity_id":"ent_01890f47-7a6b-7c4d-8e9f-0123456789ab","enabled":true}]}}}`,
 		},
 	} {
 		t.Run(test.name, func(t *testing.T) {
@@ -195,6 +210,61 @@ func TestSchemaRejectsUnknownEnvelopeProperty(t *testing.T) {
 	}
 	if err := schema.Validate(value); err == nil {
 		t.Fatal("unknown envelope property unexpectedly accepted")
+	}
+}
+
+func TestEntityEnablementAndRegistrationBooleanShapes(t *testing.T) {
+	schemas := compileSchemas(t)
+	var registration map[string]any
+	if err := json.Unmarshal([]byte(`{
+		"id":"reg_01890f47-7a6b-7c4d-8e9f-0123456789ab",
+		"schema":"urn:hearth:schema:registration-request:v1",
+		"emitted_at":"2026-08-20T12:34:56Z",
+		"correlation_id":"cor_01890f47-7a6b-7c4d-8e9f-0123456789ab",
+		"data":{"binding_key":"office-light","device":{"name":"Office Light","kind":"light"},"entities":[{"key":"power","external_id":"light.office","name":"Power","type":"hearth.power/v1","support":{"state":{},"operations":{"set":{}}}}]}
+	}`), &registration); err != nil {
+		t.Fatal(err)
+	}
+	entity := registration["data"].(map[string]any)["entities"].([]any)[0].(map[string]any)
+	for _, value := range []any{nil, true, false, "false"} {
+		if value == nil {
+			delete(entity, "initially_enabled")
+		} else {
+			entity["initially_enabled"] = value
+		}
+		err := schemas[RegistrationRequestSchemaID].Validate(registration)
+		if value == "false" && err == nil {
+			t.Fatal("non-boolean initially_enabled unexpectedly accepted")
+		}
+		if value != "false" && err != nil {
+			t.Fatalf("initially_enabled %v rejected: %v", value, err)
+		}
+	}
+
+	var response map[string]any
+	if err := json.Unmarshal([]byte(`{
+		"id":"rep_01890f47-7a6b-7c4d-8e9f-0123456789ab",
+		"schema":"urn:hearth:schema:entity-enablement-response:v1",
+		"emitted_at":"2026-08-20T12:34:57Z",
+		"correlation_id":"cor_01890f47-7a6b-7c4d-8e9f-0123456789ab",
+		"causation_id":"ena_01890f47-7a6b-7c4d-8e9f-0123456789ab",
+		"data":{"status":"accepted","entity_id":"ent_01890f47-7a6b-7c4d-8e9f-0123456789ab","enabled":false}
+	}`), &response); err != nil {
+		t.Fatal(err)
+	}
+	data := response["data"].(map[string]any)
+	if err := schemas[EntityEnablementResponseSchemaID].Validate(response); err != nil {
+		t.Fatal(err)
+	}
+	delete(data, "enabled")
+	if err := schemas[EntityEnablementResponseSchemaID].Validate(response); err == nil {
+		t.Fatal("accepted response without enabled unexpectedly accepted")
+	}
+	data["status"] = "rejected"
+	data["error"] = map[string]any{"code": "unknown_entity", "message": "entity not found"}
+	delete(data, "entity_id")
+	if err := schemas[EntityEnablementResponseSchemaID].Validate(response); err != nil {
+		t.Fatalf("rejected response rejected: %v", err)
 	}
 }
 

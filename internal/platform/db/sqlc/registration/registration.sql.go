@@ -63,8 +63,8 @@ func (q *Queries) CreateDevice(ctx context.Context, arg CreateDeviceParams) erro
 
 const createEntity = `-- name: CreateEntity :exec
 INSERT INTO entities (
-    id, device_id, name, type_id, support_json, created_at, updated_at
-) VALUES (?, ?, ?, ?, ?, ?, ?)
+    id, device_id, name, type_id, support_json, enabled, created_at, updated_at
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
 `
 
 type CreateEntityParams struct {
@@ -73,6 +73,7 @@ type CreateEntityParams struct {
 	Name        string
 	TypeID      string
 	SupportJson string
+	Enabled     int64
 	CreatedAt   string
 	UpdatedAt   string
 }
@@ -84,6 +85,7 @@ func (q *Queries) CreateEntity(ctx context.Context, arg CreateEntityParams) erro
 		arg.Name,
 		arg.TypeID,
 		arg.SupportJson,
+		arg.Enabled,
 		arg.CreatedAt,
 		arg.UpdatedAt,
 	)
@@ -201,7 +203,8 @@ SELECT
     e.device_id,
     e.name AS entity_name,
     e.type_id,
-    e.support_json
+    e.support_json,
+    e.enabled
 FROM adapter_entity_mappings AS m
 JOIN entities AS e ON e.id = m.entity_id
 WHERE m.adapter_id = ? AND m.binding_key = ? AND m.entity_key = ?
@@ -223,6 +226,7 @@ type GetEntityMappingRow struct {
 	EntityName       string
 	TypeID           string
 	SupportJson      string
+	Enabled          int64
 }
 
 func (q *Queries) GetEntityMapping(ctx context.Context, arg GetEntityMappingParams) (GetEntityMappingRow, error) {
@@ -238,6 +242,7 @@ func (q *Queries) GetEntityMapping(ctx context.Context, arg GetEntityMappingPara
 		&i.EntityName,
 		&i.TypeID,
 		&i.SupportJson,
+		&i.Enabled,
 	)
 	return i, err
 }

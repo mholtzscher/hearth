@@ -44,6 +44,10 @@ func (handler *Handler) ExecuteCommand(ctx context.Context, input *ExecuteComman
 }
 
 func mapCommandError(err error) error {
+	var executionError *devices.CommandExecutionError
+	if errors.Is(err, devices.ErrEntityDisabled) && errors.As(err, &executionError) {
+		return entityDisabledProblem(executionError.CommandID)
+	}
 	switch {
 	case errors.Is(err, devices.ErrInvalidCommand):
 		return apiError(http.StatusBadRequest, "invalid command")

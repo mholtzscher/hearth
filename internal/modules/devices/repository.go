@@ -18,6 +18,8 @@ var (
 	ErrAdapterUnavailable  = errors.New("adapter unavailable")
 	ErrUpstreamRejected    = errors.New("upstream rejected")
 	ErrOutcomeTimeout      = errors.New("command outcome timeout")
+	ErrEntityDisabled      = errors.New("entity disabled")
+	ErrEntityWrongAdapter  = errors.New("entity belongs to another adapter")
 )
 
 type RegisterEntityParams struct {
@@ -32,6 +34,13 @@ type RegisterBindingParams struct {
 	Device     DeviceDescriptor
 	Entities   []RegisterEntityParams
 	UpdatedAt  time.Time
+}
+
+type SetEntityEnabledParams struct {
+	EntityID      EntityID
+	Enabled       bool
+	RequiredOwner *string
+	UpdatedAt     time.Time
 }
 
 type ProjectObservationParams struct {
@@ -53,6 +62,7 @@ type Repository interface {
 	GetDevice(context.Context, GetDeviceParams) (DeviceAggregate, error)
 	ListEntities(context.Context, ListEntitiesParams) (Page[EntityWithState], error)
 	GetEntity(context.Context, EntityID) (EntityWithState, error)
+	SetEntityEnabled(context.Context, SetEntityEnabledParams) (EntityWithState, error)
 	GetCommand(context.Context, CommandID) (CommandRecord, error)
 	ListEntityCommands(context.Context, ListEntityCommandsParams) (Page[CommandRecord], error)
 	ProjectObservation(context.Context, ProjectObservationParams) (ProjectionResult, error)
@@ -60,7 +70,7 @@ type Repository interface {
 }
 
 type CommandLedger interface {
-	CreateCommand(context.Context, CommandRecord) error
+	CreateCommand(context.Context, CommandRecord) (CommandRecord, error)
 	MarkCommandAccepted(context.Context, CommandID, time.Time) error
 	CompleteCommand(context.Context, CommandCompletion) error
 	InterruptActiveCommands(context.Context, time.Time) error

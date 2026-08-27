@@ -38,6 +38,7 @@ type Entity struct {
 	Name      string
 	TypeID    EntityTypeID
 	Support   EntitySupport
+	Enabled   bool
 }
 
 type State struct {
@@ -110,9 +111,10 @@ const (
 type ObservationRejection string
 
 const (
-	RejectionUnknownEntity ObservationRejection = "unknown_entity"
-	RejectionWrongAdapter  ObservationRejection = "wrong_adapter"
-	RejectionInvalidValue  ObservationRejection = "invalid_value"
+	RejectionUnknownEntity  ObservationRejection = "unknown_entity"
+	RejectionWrongAdapter   ObservationRejection = "wrong_adapter"
+	RejectionEntityDisabled ObservationRejection = "entity_disabled"
+	RejectionInvalidValue   ObservationRejection = "invalid_value"
 )
 
 type ProjectionResult struct {
@@ -131,6 +133,7 @@ const (
 	CommandStatusRejected           CommandStatus = "rejected"
 	CommandStatusAdapterUnavailable CommandStatus = "adapter_unavailable"
 	CommandStatusOutcomeTimeout     CommandStatus = "outcome_timeout"
+	CommandStatusEntityDisabled     CommandStatus = "entity_disabled"
 	CommandStatusInternalFailure    CommandStatus = "internal_failure"
 	CommandStatusInterrupted        CommandStatus = "interrupted"
 )
@@ -141,6 +144,7 @@ const (
 	CommandFailureAdapterUnavailable CommandFailureCode = "adapter_unavailable"
 	CommandFailureUpstreamRejected   CommandFailureCode = "upstream_rejected"
 	CommandFailureOutcomeTimeout     CommandFailureCode = "outcome_timeout"
+	CommandFailureEntityDisabled     CommandFailureCode = "entity_disabled"
 	CommandFailureInternalError      CommandFailureCode = "internal_error"
 	CommandFailureCoreRestarted      CommandFailureCode = "core_restarted"
 )

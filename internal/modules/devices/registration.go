@@ -23,11 +23,12 @@ type DeviceDescriptor struct {
 }
 
 type EntityDescriptor struct {
-	Key        string
-	ExternalID string
-	Name       string
-	TypeID     EntityTypeID
-	Support    EntitySupport
+	Key              string
+	ExternalID       string
+	Name             string
+	TypeID           EntityTypeID
+	Support          EntitySupport
+	InitiallyEnabled *bool
 }
 
 type Binding struct {
@@ -39,6 +40,7 @@ type Binding struct {
 type EntityBinding struct {
 	Key      string
 	EntityID EntityID
+	Enabled  bool
 }
 
 type RegistrationRejectionCode string
@@ -192,5 +194,9 @@ func copyDeviceDescriptor(device DeviceDescriptor) DeviceDescriptor {
 func copyEntityDescriptor(entity EntityDescriptor) EntityDescriptor {
 	copy := entity
 	copy.Support = append(EntitySupport(nil), entity.Support...)
+	if entity.InitiallyEnabled != nil {
+		initiallyEnabled := *entity.InitiallyEnabled
+		copy.InitiallyEnabled = &initiallyEnabled
+	}
 	return copy
 }

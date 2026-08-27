@@ -11,6 +11,9 @@ func TestSubjectsRoundTrip(t *testing.T) {
 	if got := ObservationWildcard(); got != "hearth.v1.adapter.*.observation.>" {
 		t.Fatalf("observation wildcard = %q", got)
 	}
+	if got := EntityEnablementWildcard(); got != "hearth.v1.adapter.*.enablement.*" {
+		t.Fatalf("Entity enablement wildcard = %q", got)
+	}
 
 	registration, err := RegistrationSubject("simulator")
 	if err != nil || registration != "hearth.v1.adapter.simulator.register" {
@@ -31,6 +34,15 @@ func TestSubjectsRoundTrip(t *testing.T) {
 	}
 	if observationRoute.AdapterID != "simulator" || observationRoute.EntityID != testEntityID {
 		t.Fatalf("observation route = %#v", observationRoute)
+	}
+
+	enablement, err := EntityEnablementSubject("simulator", testEntityID)
+	if err != nil || enablement != "hearth.v1.adapter.simulator.enablement."+testEntityID {
+		t.Fatalf("Entity enablement subject = %q, err = %v", enablement, err)
+	}
+	enablementRoute, err := ParseEntityEnablementSubject(enablement)
+	if err != nil || enablementRoute.AdapterID != "simulator" || enablementRoute.EntityID != testEntityID {
+		t.Fatalf("Entity enablement route = %#v, err = %v", enablementRoute, err)
 	}
 
 	command, err := CommandSubject("simulator", testEntityID, "set")
@@ -56,6 +68,12 @@ func TestSubjectsRejectUnsafeTokens(t *testing.T) {
 	}
 	if _, err := ObservationSubject("simulator", "ent_not-a-uuid"); err == nil {
 		t.Fatal("invalid entity ID unexpectedly accepted")
+	}
+	if _, err := EntityEnablementSubject("bad.adapter", testEntityID); err == nil {
+		t.Fatal("unsafe Entity enablement adapter unexpectedly accepted")
+	}
+	if _, err := ParseEntityEnablementSubject("hearth.v1.adapter.simulator.enablement.extra." + testEntityID); err == nil {
+		t.Fatal("malformed Entity enablement subject unexpectedly accepted")
 	}
 	if _, err := CommandSubject("simulator", testEntityID, "bad.operation"); err == nil {
 		t.Fatal("operation containing a period unexpectedly accepted")

@@ -10,6 +10,7 @@ import (
 
 	commandsqlc "github.com/mholtzscher/hearth/internal/platform/db/sqlc/commands"
 	registrationsqlc "github.com/mholtzscher/hearth/internal/platform/db/sqlc/registration"
+	statesqlc "github.com/mholtzscher/hearth/internal/platform/db/sqlc/state"
 )
 
 var (
@@ -133,9 +134,13 @@ func (repository *SQLiteRepository) RegisterBinding(ctx context.Context, params 
 				return Binding{}, mapRegistrationWriteError("update entity external ID", err)
 			}
 		} else {
+			initiallyEnabled := true
+			if entity.InitiallyEnabled != nil {
+				initiallyEnabled = *entity.InitiallyEnabled
+			}
 			if err := queries.CreateEntity(ctx, registrationsqlc.CreateEntityParams{
 				ID: string(reconciliation.entityID), DeviceID: string(deviceID), Name: entity.Name,
-				TypeID: string(entity.TypeID), SupportJson: string(entity.Support),
+				TypeID: string(entity.TypeID), SupportJson: string(entity.Support), Enabled: boolToInt64(initiallyEnabled),
 				CreatedAt: updatedAt, UpdatedAt: updatedAt,
 			}); err != nil {
 				return Binding{}, fmt.Errorf("create entity: %w", err)
@@ -148,7 +153,13 @@ func (repository *SQLiteRepository) RegisterBinding(ctx context.Context, params 
 				return Binding{}, mapRegistrationWriteError("create entity mapping", err)
 			}
 		}
-		entityBindings[index] = EntityBinding{Key: entity.Key, EntityID: reconciliation.entityID}
+		enabled := true
+		if reconciliation.exists {
+			enabled = reconciliation.mapping.Enabled != 0
+		} else if entity.InitiallyEnabled != nil {
+			enabled = *entity.InitiallyEnabled
+		}
+		entityBindings[index] = EntityBinding{Key: entity.Key, EntityID: reconciliation.entityID, Enabled: enabled}
 	}
 
 	if err := tx.Commit(); err != nil {
@@ -197,20 +208,86 @@ func isUniqueConstraint(err error) bool {
 	return code == 1555 || code == 2067
 }
 
-func (repository *SQLiteRepository) CreateCommand(ctx context.Context, command CommandRecord) error {
-	if command.Status != CommandStatusRequested || command.AcceptedAt != nil || command.CompletedAt != nil || command.OutcomeObservationID != nil || command.FailureCode != nil {
-		return errors.New("new command must be in requested status without terminal fields")
+func (repository *SQLiteRepository) SetEntityEnabled(ctx context.Context, params SetEntityEnabledParams) (EntityWithState, error) {
+	tx, err := repository.database.BeginTx(ctx, &sql.TxOptions{Isolation: sql.LevelSerializable})
+	if err != nil {
+		return EntityWithState{}, fmt.Errorf("begin entity enablement update: %w", err)
 	}
-	queries := commandsqlc.New(repository.database)
+	defer tx.Rollback()
+	queries := statesqlc.New(tx)
+	row, err := queries.GetEntity(ctx, statesqlc.GetEntityParams{ID: string(params.EntityID)})
+	if errors.Is(err, sql.ErrNoRows) {
+		return EntityWithState{}, ErrEntityNotFound
+	}
+	if err != nil {
+		return EntityWithState{}, fmt.Errorf("get entity for enablement update: %w", err)
+	}
+	if params.RequiredOwner != nil && row.AdapterID != *params.RequiredOwner {
+		return EntityWithState{}, ErrEntityWrongAdapter
+	}
+	if row.Enabled != boolToInt64(params.Enabled) {
+		if _, err := queries.UpdateEntityEnablement(ctx, statesqlc.UpdateEntityEnablementParams{
+			Enabled: boolToInt64(params.Enabled), UpdatedAt: formatTime(params.UpdatedAt),
+			ID: string(params.EntityID),
+		}); err != nil {
+			return EntityWithState{}, fmt.Errorf("update entity enablement: %w", err)
+		}
+		row, err = queries.GetEntity(ctx, statesqlc.GetEntityParams{ID: string(params.EntityID)})
+		if err != nil {
+			return EntityWithState{}, fmt.Errorf("get updated entity: %w", err)
+		}
+	}
+	view, err := entityWithStateFromValues(
+		row.ID, row.DeviceID, row.AdapterID, row.Name, row.TypeID, row.SupportJson, row.Enabled,
+		row.ObservationID, row.ValueJson, row.AdapterReceivedAt, row.SourceUpdatedAt,
+		row.ObservedAt, row.ReceiveOrder,
+	)
+	if err != nil {
+		return EntityWithState{}, fmt.Errorf("map updated entity: %w", err)
+	}
+	if err := tx.Commit(); err != nil {
+		return EntityWithState{}, fmt.Errorf("commit entity enablement update: %w", err)
+	}
+	return copyEntityWithState(view), nil
+}
+
+func (repository *SQLiteRepository) CreateCommand(ctx context.Context, command CommandRecord) (CommandRecord, error) {
+	if command.Status != CommandStatusRequested || command.AcceptedAt != nil || command.CompletedAt != nil || command.OutcomeObservationID != nil || command.FailureCode != nil {
+		return CommandRecord{}, errors.New("new command must be in requested status without terminal fields")
+	}
+	tx, err := repository.database.BeginTx(ctx, &sql.TxOptions{Isolation: sql.LevelSerializable})
+	if err != nil {
+		return CommandRecord{}, fmt.Errorf("begin command creation: %w", err)
+	}
+	defer tx.Rollback()
+	entity, err := statesqlc.New(tx).GetEntity(ctx, statesqlc.GetEntityParams{ID: string(command.EntityID)})
+	if errors.Is(err, sql.ErrNoRows) {
+		return CommandRecord{}, ErrEntityNotFound
+	}
+	if err != nil {
+		return CommandRecord{}, fmt.Errorf("get entity for command: %w", err)
+	}
+	if entity.Enabled == 0 {
+		completedAt := command.RequestedAt
+		failureCode := CommandFailureEntityDisabled
+		command.Status = CommandStatusEntityDisabled
+		command.CompletedAt = &completedAt
+		command.FailureCode = &failureCode
+	}
+	queries := commandsqlc.New(tx)
 	if err := queries.CreateCommand(ctx, commandsqlc.CreateCommandParams{
 		ID: string(command.ID), EntityID: string(command.EntityID), AdapterID: command.AdapterID,
 		Operation: string(command.OperationName), ParametersJson: string(command.Parameters),
 		CorrelationID: string(command.CorrelationID), Status: string(command.Status),
 		RequestedAt: formatSortableTime(command.RequestedAt), DeadlineAt: formatTime(command.DeadlineAt),
+		CompletedAt: nullableTime(command.CompletedAt), FailureCode: nullableCommandFailure(command.FailureCode),
 	}); err != nil {
-		return fmt.Errorf("create command: %w", err)
+		return CommandRecord{}, fmt.Errorf("create command: %w", err)
 	}
-	return nil
+	if err := tx.Commit(); err != nil {
+		return CommandRecord{}, fmt.Errorf("commit command creation: %w", err)
+	}
+	return copyCommandRecord(command), nil
 }
 
 func (repository *SQLiteRepository) GetCommand(ctx context.Context, id CommandID) (CommandRecord, error) {
@@ -344,6 +421,20 @@ func sameCompletion(command CommandRecord, completion CommandCompletion) bool {
 	return command.Status == completion.Status && command.FailureCode != nil &&
 		*command.FailureCode == completion.FailureCode && command.CompletedAt != nil &&
 		command.CompletedAt.Equal(completion.CompletedAt)
+}
+
+func boolToInt64(value bool) int64 {
+	if value {
+		return 1
+	}
+	return 0
+}
+
+func nullableCommandFailure(value *CommandFailureCode) sql.NullString {
+	if value == nil {
+		return sql.NullString{}
+	}
+	return sql.NullString{String: string(*value), Valid: true}
 }
 
 func nullableString(value *string) sql.NullString {

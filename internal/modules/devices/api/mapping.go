@@ -22,6 +22,7 @@ func entityBody(view devices.EntityWithState) (EntityBody, error) {
 		Name:     view.Entity.Name,
 		Type:     string(view.Entity.TypeID),
 		Support:  support,
+		Enabled:  view.Entity.Enabled,
 	}
 	if view.State == nil {
 		return body, nil
