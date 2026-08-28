@@ -11,7 +11,7 @@ func (service *Service) ListDevices(ctx context.Context, params ListDevicesParam
 	}
 	if params.AfterID != nil {
 		if _, err := ParseDeviceID(string(*params.AfterID)); err != nil {
-			return Page[Device]{}, fmt.Errorf("%w: parse device position: %v", ErrInvalidPage, err)
+			return Page[Device]{}, fmt.Errorf("%w: parse device position: %w", ErrInvalidPage, err)
 		}
 	}
 	page, err := service.repository.ListDevices(ctx, params)
@@ -32,7 +32,7 @@ func (service *Service) GetDevice(ctx context.Context, params GetDeviceParams) (
 	}
 	if params.AfterEntityID != nil {
 		if _, err := ParseEntityID(string(*params.AfterEntityID)); err != nil {
-			return DeviceAggregate{}, fmt.Errorf("%w: parse entity position: %v", ErrInvalidPage, err)
+			return DeviceAggregate{}, fmt.Errorf("%w: parse entity position: %w", ErrInvalidPage, err)
 		}
 	}
 	aggregate, err := service.repository.GetDevice(ctx, params)
@@ -57,12 +57,12 @@ func (service *Service) ListEntities(ctx context.Context, params ListEntitiesPar
 	}
 	if params.DeviceID != nil {
 		if _, err := ParseDeviceID(string(*params.DeviceID)); err != nil {
-			return Page[EntityWithState]{}, fmt.Errorf("%w: parse device filter: %v", ErrInvalidPage, err)
+			return Page[EntityWithState]{}, fmt.Errorf("%w: parse device filter: %w", ErrInvalidPage, err)
 		}
 	}
 	if params.AfterID != nil {
 		if _, err := ParseEntityID(string(*params.AfterID)); err != nil {
-			return Page[EntityWithState]{}, fmt.Errorf("%w: parse entity position: %v", ErrInvalidPage, err)
+			return Page[EntityWithState]{}, fmt.Errorf("%w: parse entity position: %w", ErrInvalidPage, err)
 		}
 	}
 	page, err := service.repository.ListEntities(ctx, params)
@@ -98,19 +98,22 @@ func (service *Service) GetCommand(ctx context.Context, id CommandID) (CommandRe
 	return copyCommandRecord(command), nil
 }
 
-func (service *Service) ListEntityCommands(ctx context.Context, params ListEntityCommandsParams) (Page[CommandRecord], error) {
+func (service *Service) ListEntityCommands(
+	ctx context.Context,
+	params ListEntityCommandsParams,
+) (Page[CommandRecord], error) {
 	if !validPageLimit(params.Limit) || (params.BeforeRequestedAt == nil) != (params.BeforeID == nil) {
 		return Page[CommandRecord]{}, ErrInvalidPage
 	}
 	if _, err := ParseEntityID(string(params.EntityID)); err != nil {
-		return Page[CommandRecord]{}, fmt.Errorf("%w: parse entity ID: %v", ErrInvalidPage, err)
+		return Page[CommandRecord]{}, fmt.Errorf("%w: parse entity ID: %w", ErrInvalidPage, err)
 	}
 	if params.BeforeRequestedAt != nil {
 		if params.BeforeRequestedAt.IsZero() {
 			return Page[CommandRecord]{}, fmt.Errorf("%w: command position timestamp is required", ErrInvalidPage)
 		}
 		if _, err := ParseCommandID(string(*params.BeforeID)); err != nil {
-			return Page[CommandRecord]{}, fmt.Errorf("%w: parse command position: %v", ErrInvalidPage, err)
+			return Page[CommandRecord]{}, fmt.Errorf("%w: parse command position: %w", ErrInvalidPage, err)
 		}
 		utc := params.BeforeRequestedAt.UTC()
 		params.BeforeRequestedAt = &utc
@@ -130,23 +133,23 @@ func (service *Service) ListEntityCommands(ctx context.Context, params ListEntit
 }
 
 func copyCommandRecord(command CommandRecord) CommandRecord {
-	copy := command
-	copy.Parameters = append(CommandParameters(nil), command.Parameters...)
+	cloned := command
+	cloned.Parameters = append(CommandParameters(nil), command.Parameters...)
 	if command.AcceptedAt != nil {
 		value := *command.AcceptedAt
-		copy.AcceptedAt = &value
+		cloned.AcceptedAt = &value
 	}
 	if command.CompletedAt != nil {
 		value := *command.CompletedAt
-		copy.CompletedAt = &value
+		cloned.CompletedAt = &value
 	}
 	if command.OutcomeObservationID != nil {
 		value := *command.OutcomeObservationID
-		copy.OutcomeObservationID = &value
+		cloned.OutcomeObservationID = &value
 	}
 	if command.FailureCode != nil {
 		value := *command.FailureCode
-		copy.FailureCode = &value
+		cloned.FailureCode = &value
 	}
-	return copy
+	return cloned
 }

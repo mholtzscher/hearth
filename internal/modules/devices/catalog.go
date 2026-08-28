@@ -3,6 +3,7 @@ package devices
 import (
 	"encoding/json"
 	"fmt"
+	"maps"
 	"regexp"
 	"time"
 
@@ -17,6 +18,7 @@ type OperationDefinition[State, Support any] struct {
 	err   error
 }
 
+//nolint:gocognit // Generic boundary validation is kept with the operation definition it protects.
 func DefineOperation[State, Support, OperationSupport, Parameters any](
 	name OperationName,
 	parameters *entitytypes.JSONCodec[Parameters],
@@ -55,8 +57,10 @@ func DefineOperation[State, Support, OperationSupport, Parameters any](
 					if err != nil {
 						return nil, fmt.Errorf("decode parameters for operation %q: %w", name, err)
 					}
-					if err := validateParameters(typedSupport, operationSupport, typedParameters); err != nil {
-						return nil, fmt.Errorf("validate parameters for operation %q: %w", name, err)
+					if validationErr := validateParameters(
+						typedSupport, operationSupport, typedParameters,
+					); validationErr != nil {
+						return nil, fmt.Errorf("validate parameters for operation %q: %w", name, validationErr)
 					}
 					return CommandParameters(normalized), nil
 				},
@@ -92,6 +96,7 @@ type erasedOperationDefinition struct {
 	satisfies func(CommandParameters, Value) (bool, error)
 }
 
+//nolint:gocognit // Generic boundary validation is kept with the Entity type definition it protects.
 func DefineEntityType[State, Support any](
 	id EntityTypeID,
 	state *entitytypes.JSONCodec[State],
@@ -149,8 +154,8 @@ func DefineEntityType[State, Support any](
 		if err != nil {
 			return nil, fmt.Errorf("invalid state for entity type %q: %w", id, err)
 		}
-		if err := validateSupportedState(typedSupport, typedState); err != nil {
-			return nil, fmt.Errorf("state is unsupported by entity type %q: %w", id, err)
+		if validationErr := validateSupportedState(typedSupport, typedState); validationErr != nil {
+			return nil, fmt.Errorf("state is unsupported by entity type %q: %w", id, validationErr)
 		}
 		return Value(normalized), nil
 	}
@@ -167,8 +172,8 @@ func DefineEntityType[State, Support any](
 		if err != nil {
 			return false, fmt.Errorf("invalid incoming state for entity type %q: %w", id, err)
 		}
-		if err := validateSupportedState(typedSupport, typedIncoming); err != nil {
-			return false, fmt.Errorf("incoming state is unsupported by entity type %q: %w", id, err)
+		if validationErr := validateSupportedState(typedSupport, typedIncoming); validationErr != nil {
+			return false, fmt.Errorf("incoming state is unsupported by entity type %q: %w", id, validationErr)
 		}
 		return equalState(typedPersisted, typedIncoming), nil
 	}
@@ -187,18 +192,18 @@ type TypeCatalog struct {
 func NewTypeCatalog(definitions []EntityTypeDefinition) (*TypeCatalog, error) {
 	catalog := &TypeCatalog{types: make(map[EntityTypeID]EntityTypeDefinition, len(definitions))}
 	for _, definition := range definitions {
-		if definition.id == "" || definition.normalizeSupport == nil || definition.normalizeState == nil || definition.equalState == nil || definition.operations == nil {
+		if definition.id == "" || definition.normalizeSupport == nil || definition.normalizeState == nil ||
+			definition.equalState == nil ||
+			definition.operations == nil {
 			return nil, fmt.Errorf("invalid entity type definition")
 		}
 		if _, duplicate := catalog.types[definition.id]; duplicate {
 			return nil, fmt.Errorf("duplicate entity type %q", definition.id)
 		}
-		copy := definition
-		copy.operations = make(map[OperationName]erasedOperationDefinition, len(definition.operations))
-		for name, operation := range definition.operations {
-			copy.operations[name] = operation
-		}
-		catalog.types[definition.id] = copy
+		cloned := definition
+		cloned.operations = make(map[OperationName]erasedOperationDefinition, len(definition.operations))
+		maps.Copy(cloned.operations, definition.operations)
+		catalog.types[definition.id] = cloned
 	}
 	return catalog, nil
 }
@@ -227,14 +232,22 @@ func (catalog *TypeCatalog) EqualState(entity Entity, persisted, incoming Value)
 	return definition.equalState(entity.Support, persisted, incoming)
 }
 
-func (catalog *TypeCatalog) ResolveCommand(entity Entity, operationName OperationName, parameters CommandParameters) (ResolvedCommand, error) {
+func (catalog *TypeCatalog) ResolveCommand(
+	entity Entity,
+	operationName OperationName,
+	parameters CommandParameters,
+) (ResolvedCommand, error) {
 	definition, err := catalog.resolve(entity.TypeID)
 	if err != nil {
 		return ResolvedCommand{}, err
 	}
 	operation, exists := definition.operations[operationName]
 	if !exists {
-		return ResolvedCommand{}, fmt.Errorf("entity type %q does not define operation %q", entity.TypeID, operationName)
+		return ResolvedCommand{}, fmt.Errorf(
+			"entity type %q does not define operation %q",
+			entity.TypeID,
+			operationName,
+		)
 	}
 	normalized, err := operation.resolve(entity.Support, parameters)
 	if err != nil {

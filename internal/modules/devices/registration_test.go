@@ -1,4 +1,4 @@
-package devices
+package devices //nolint:testpackage // Tests exercise package-private domain seams and repository fixtures.
 
 import (
 	"context"
@@ -15,7 +15,10 @@ type stubRegistrationRepository struct {
 	params  RegisterBindingParams
 }
 
-func (repository *stubRegistrationRepository) RegisterBinding(_ context.Context, params RegisterBindingParams) (Binding, error) {
+func (repository *stubRegistrationRepository) RegisterBinding(
+	_ context.Context,
+	params RegisterBindingParams,
+) (Binding, error) {
 	repository.calls++
 	repository.params = params
 	return repository.binding, repository.err
@@ -45,11 +48,17 @@ func (*stubRegistrationRepository) GetCommand(context.Context, CommandID) (Comma
 	panic("unexpected GetCommand call")
 }
 
-func (*stubRegistrationRepository) ListEntityCommands(context.Context, ListEntityCommandsParams) (Page[CommandRecord], error) {
+func (*stubRegistrationRepository) ListEntityCommands(
+	context.Context,
+	ListEntityCommandsParams,
+) (Page[CommandRecord], error) {
 	panic("unexpected ListEntityCommands call")
 }
 
-func (*stubRegistrationRepository) ProjectObservation(context.Context, ProjectObservationParams) (ProjectionResult, error) {
+func (*stubRegistrationRepository) ProjectObservation(
+	context.Context,
+	ProjectObservationParams,
+) (ProjectionResult, error) {
 	panic("unexpected ProjectObservation call")
 }
 
@@ -74,6 +83,7 @@ func (*stubRegistrationRepository) InterruptActiveCommands(context.Context, time
 }
 
 func TestRegisterClassifiesOnlyDescriptorAndIdentityFailuresAsPermanent(t *testing.T) {
+	t.Parallel()
 	catalog := firstLightCatalog(t)
 	infrastructureFailure := errors.New("SQLite busy")
 	repository := &stubRegistrationRepository{err: infrastructureFailure}
@@ -100,6 +110,7 @@ func TestRegisterClassifiesOnlyDescriptorAndIdentityFailuresAsPermanent(t *testi
 }
 
 func TestRegisterPersistsNormalizedSupportWithoutMutatingInput(t *testing.T) {
+	t.Parallel()
 	catalog := firstLightCatalog(t)
 	repository := &stubRegistrationRepository{}
 	service := NewService(repository, nil, catalog, Dependencies{})
@@ -119,6 +130,7 @@ func TestRegisterPersistsNormalizedSupportWithoutMutatingInput(t *testing.T) {
 }
 
 func TestRegisterRejectsInvalidEntitySetsBeforeGeneratingIDsOrCallingRepository(t *testing.T) {
+	t.Parallel()
 	tests := map[string]func(Registration) Registration{
 		"empty": func(registration Registration) Registration {
 			registration.Entities = nil
@@ -135,7 +147,10 @@ func TestRegisterRejectsInvalidEntitySetsBeforeGeneratingIDsOrCallingRepository(
 			return registration
 		},
 		"duplicate key": func(registration Registration) Registration {
-			registration.Entities = append(registration.Entities, registrationEntity("power", "light.office.brightness"))
+			registration.Entities = append(
+				registration.Entities,
+				registrationEntity("power", "light.office.brightness"),
+			)
 			return registration
 		},
 		"duplicate external ID": func(registration Registration) Registration {
@@ -151,6 +166,7 @@ func TestRegisterRejectsInvalidEntitySetsBeforeGeneratingIDsOrCallingRepository(
 	}
 	for name, mutate := range tests {
 		t.Run(name, func(t *testing.T) {
+			t.Parallel()
 			repository := &stubRegistrationRepository{}
 			generatedIDs := 0
 			service := NewService(repository, nil, firstLightCatalog(t), Dependencies{
@@ -171,6 +187,7 @@ func TestRegisterRejectsInvalidEntitySetsBeforeGeneratingIDsOrCallingRepository(
 }
 
 func TestRegisterAccepts64Entities(t *testing.T) {
+	t.Parallel()
 	repository := &stubRegistrationRepository{}
 	service := NewService(repository, nil, firstLightCatalog(t), Dependencies{})
 	registration := validDomainRegistration()
@@ -191,6 +208,7 @@ func TestRegisterAccepts64Entities(t *testing.T) {
 }
 
 func TestRegistrationOperatorMessagesAreBounded(t *testing.T) {
+	t.Parallel()
 	message := operatorMessage(string(make([]rune, 600)))
 	if len([]rune(message)) != 512 {
 		t.Fatalf("message length = %d, want 512", len([]rune(message)))

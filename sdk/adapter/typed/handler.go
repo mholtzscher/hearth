@@ -80,14 +80,22 @@ func NewCommandHandler(routes ...Route) (adapter.CommandHandler, error) {
 		}
 		key := routeKey{entityID: route.entityID, operationName: route.operationName}
 		if _, duplicate := byKey[key]; duplicate {
-			return nil, fmt.Errorf("duplicate typed command route for entity %q operation %q", route.entityID, route.operationName)
+			return nil, fmt.Errorf(
+				"duplicate typed command route for entity %q operation %q",
+				route.entityID,
+				route.operationName,
+			)
 		}
 		byKey[key] = route
 	}
 	return func(ctx context.Context, command adapter.Command, responder adapter.Responder) error {
 		route, exists := byKey[routeKey{entityID: command.EntityID, operationName: command.OperationName}]
 		if !exists {
-			return fmt.Errorf("no typed command route for entity %q operation %q", command.EntityID, command.OperationName)
+			return fmt.Errorf(
+				"no typed command route for entity %q operation %q",
+				command.EntityID,
+				command.OperationName,
+			)
 		}
 		return route.invoke(ctx, command, responder)
 	}, nil

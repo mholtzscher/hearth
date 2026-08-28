@@ -9,10 +9,19 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	contractsv1 "github.com/mholtzscher/hearth/contracts/v1"
-	"github.com/mholtzscher/hearth/internal/contracts/v1/natswire"
 	natsgo "github.com/nats-io/nats.go"
 	"github.com/nats-io/nats.go/jetstream"
+
+	contractsv1 "github.com/mholtzscher/hearth/contracts/v1"
+	"github.com/mholtzscher/hearth/internal/contracts/v1/natswire"
+)
+
+const (
+	statusAccepted        = "accepted"
+	statusRejected        = "rejected"
+	natsReconnectWait     = 250 * time.Millisecond
+	requestRetryWait      = 100 * time.Millisecond
+	jetStreamFlushTimeout = 5 * time.Second
 )
 
 type Session struct {
@@ -20,6 +29,7 @@ type Session struct {
 	connection   *natsgo.Conn
 	jetstream    jetstream.JetStream
 	validator    *contractsv1.Validator
+	logger       *slog.Logger
 	closed       chan struct{}
 	closeOnce    sync.Once
 	closeErr     error
@@ -50,11 +60,15 @@ func Connect(ctx context.Context, config Config) (*Session, error) {
 	if err != nil {
 		return nil, fmt.Errorf("compile wire schemas: %w", err)
 	}
+	logger := config.Logger
+	if logger == nil {
+		logger = slog.Default()
+	}
 
 	options := []natsgo.Option{
 		natsgo.Name("hearth-adapter-" + config.AdapterID),
 		natsgo.MaxReconnects(-1),
-		natsgo.ReconnectWait(250 * time.Millisecond),
+		natsgo.ReconnectWait(natsReconnectWait),
 		natsgo.RetryOnFailedConnect(true),
 	}
 	if deadline, ok := ctx.Deadline(); ok {
@@ -78,6 +92,7 @@ func Connect(ctx context.Context, config Config) (*Session, error) {
 		connection: connection,
 		jetstream:  js,
 		validator:  validator,
+		logger:     logger,
 		closed:     make(chan struct{}),
 	}, nil
 }
@@ -144,7 +159,7 @@ func (session *Session) Register(ctx context.Context, registration Registration)
 	if err != nil {
 		return Binding{}, err
 	}
-	if response.Data.Status == "rejected" {
+	if response.Data.Status == statusRejected {
 		return Binding{}, &RegistrationRejectedError{
 			Code:    RegistrationRejectionCode(response.Data.Error.Code),
 			Message: response.Data.Error.Message,
@@ -174,7 +189,7 @@ func (session *Session) SetEntityEnabled(ctx context.Context, entityID string, e
 	if err != nil {
 		return false, err
 	}
-	if response.Data.Status == "rejected" {
+	if response.Data.Status == statusRejected {
 		return false, &EntityEnablementRejectedError{
 			Code: response.Data.Error.Code, Message: response.Data.Error.Message,
 		}
@@ -202,7 +217,9 @@ func (session *Session) PublishObservation(ctx context.Context, observation Obse
 	if observation.RefreshForCommand != nil {
 		metadata, ok := ctx.Value(commandMetadataKey{}).(commandMetadata)
 		if !ok || metadata.id != *observation.RefreshForCommand {
-			return observationID, &ValidationError{Err: errors.New("linked observation requires its command handler context")}
+			return observationID, &ValidationError{
+				Err: errors.New("linked observation requires its command handler context"),
+			}
 		}
 		correlationID = metadata.correlationID
 		causationID = observation.RefreshForCommand
@@ -238,7 +255,7 @@ func (session *Session) PublishObservation(ctx context.Context, observation Obse
 		if !isTransientPublishError(err) {
 			return observationID, err
 		}
-		timer := time.NewTimer(100 * time.Millisecond)
+		timer := time.NewTimer(requestRetryWait)
 		select {
 		case <-ctx.Done():
 			timer.Stop()
@@ -266,7 +283,7 @@ func (session *Session) ServeCommands(ctx context.Context, handler CommandHandle
 	if err != nil {
 		return fmt.Errorf("subscribe to commands: %w", err)
 	}
-	flushContext, cancelFlush := context.WithTimeout(ctx, 5*time.Second)
+	flushContext, cancelFlush := context.WithTimeout(ctx, jetStreamFlushTimeout)
 	err = session.connection.FlushWithContext(flushContext)
 	cancelFlush()
 	if err != nil {
@@ -275,8 +292,8 @@ func (session *Session) ServeCommands(ctx context.Context, handler CommandHandle
 	}
 	select {
 	case <-ctx.Done():
-		if err := subscription.Drain(); err != nil && !errors.Is(err, natsgo.ErrConnectionClosed) {
-			return fmt.Errorf("drain command subscription: %w", err)
+		if drainErr := subscription.Drain(); drainErr != nil && !errors.Is(drainErr, natsgo.ErrConnectionClosed) {
+			return fmt.Errorf("drain command subscription: %w", drainErr)
 		}
 		return ctx.Err()
 	case <-session.closed:
@@ -316,34 +333,63 @@ func (session *Session) startCommandHandler(parent context.Context, message *nat
 
 func (session *Session) handleCommand(parent context.Context, message *natsgo.Msg, handler CommandHandler) {
 	if message.Reply == "" {
-		slog.Error("discarding command without reply subject", "subject", message.Subject)
+		session.logger.ErrorContext(parent, "discarding command without reply subject", "subject", message.Subject)
 		return
 	}
 	request, err := natswire.Decode[Command](session.validator, contractsv1.CommandRequestSchemaID, message.Data)
 	if err != nil {
-		slog.Error("discarding invalid command", "subject", message.Subject, "error", err)
+		session.logger.ErrorContext(parent, "discarding invalid command", "subject", message.Subject, "error", err)
 		return
 	}
 	route, err := natswire.ParseCommandSubject(message.Subject)
 	if err != nil || route.AdapterID != session.adapterID || route.EntityID != request.Data.EntityID ||
 		route.OperationName != request.Data.OperationName || request.CausationID != nil {
-		slog.Error("discarding command with mismatched routing", "subject", message.Subject, "command_id", request.ID)
+		session.logger.ErrorContext(
+			parent,
+			"discarding command with mismatched routing",
+			"subject",
+			message.Subject,
+			"command_id",
+			request.ID,
+		)
 		return
 	}
 	deadline, err := time.Parse(time.RFC3339Nano, request.Data.Deadline)
 	if err != nil {
-		slog.Error("discarding command with invalid deadline", "subject", message.Subject, "command_id", request.ID, "error", err)
+		session.logger.ErrorContext(
+			parent,
+			"discarding command with invalid deadline",
+			"subject",
+			message.Subject,
+			"command_id",
+			request.ID,
+			"error",
+			err,
+		)
 		return
 	}
 
 	ctx := natswire.ExtractTrace(parent, message.Header)
 	ctx, cancel := context.WithDeadline(ctx, deadline)
 	defer cancel()
-	if err := ctx.Err(); err != nil {
-		slog.Error("discarding expired command", "subject", message.Subject, "command_id", request.ID, "error", err)
+	if contextErr := ctx.Err(); contextErr != nil {
+		session.logger.ErrorContext(
+			parent,
+			"discarding expired command",
+			"subject",
+			message.Subject,
+			"command_id",
+			request.ID,
+			"error",
+			contextErr,
+		)
 		return
 	}
-	ctx = context.WithValue(ctx, commandMetadataKey{}, commandMetadata{id: request.ID, correlationID: request.CorrelationID})
+	ctx = context.WithValue(
+		ctx,
+		commandMetadataKey{},
+		commandMetadata{id: request.ID, correlationID: request.CorrelationID},
+	)
 	command := request.Data
 	command.ID = request.ID
 	command.CorrelationID = request.CorrelationID
@@ -355,11 +401,11 @@ func (session *Session) handleCommand(parent context.Context, message *natsgo.Ms
 		commandID:     request.ID,
 		correlationID: request.CorrelationID,
 	}
-	if err := handler(ctx, command, responder); err != nil {
-		slog.Error("command handler failed", "command_id", request.ID, "error", err)
+	if handlerErr := handler(ctx, command, responder); handlerErr != nil {
+		session.logger.ErrorContext(parent, "command handler failed", "command_id", request.ID, "error", handlerErr)
 	}
 	if !responder.didRespond() {
-		slog.Error(ErrMissingResponse.Error(), "command_id", request.ID)
+		session.logger.ErrorContext(parent, ErrMissingResponse.Error(), "command_id", request.ID)
 	}
 }
 
@@ -375,13 +421,13 @@ type commandResponder struct {
 }
 
 func (responder *commandResponder) Accept() error {
-	return responder.respond(CommandResponse{CommandID: responder.commandID, Status: "accepted"})
+	return responder.respond(CommandResponse{CommandID: responder.commandID, Status: statusAccepted})
 }
 
 func (responder *commandResponder) Reject(message string) error {
 	return responder.respond(CommandResponse{
 		CommandID: responder.commandID,
-		Status:    "rejected",
+		Status:    statusRejected,
 		Error:     &CommandError{Code: "upstream_rejected", Message: message},
 	})
 }
@@ -415,8 +461,8 @@ func (responder *commandResponder) respond(response CommandResponse) error {
 	}
 	message := &natsgo.Msg{Subject: responder.replySubject, Header: make(natsgo.Header), Data: payload}
 	natswire.InjectTrace(responder.context, message.Header)
-	if err := responder.connection.PublishMsg(message); err != nil {
-		return fmt.Errorf("publish command response: %w", err)
+	if publishErr := responder.connection.PublishMsg(message); publishErr != nil {
+		return fmt.Errorf("publish command response: %w", publishErr)
 	}
 	responder.responded = true
 	return nil

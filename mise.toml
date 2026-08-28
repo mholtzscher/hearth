@@ -64,6 +64,22 @@ KO_DOCKER_REPO=example.invalid/hearth ko build --base-import-paths --tags valida
   ./cmd/hearthd ./cmd/hearth-adapter-homeassistant ./cmd/hearth-simulator
 '''
 
+[tasks."update-lint-config"]
+description = "Update .golangci.yml to match the installed golangci-lint version"
+run = '''
+version="$(mise current golangci-lint)"
+url="https://raw.githubusercontent.com/maratori/golangci-lint-config/v${version}/.golangci.yml"
+tmp="$(mktemp)"
+trap 'rm -f "$tmp"' EXIT
+
+curl --fail --silent --show-error --location "$url" --output "$tmp"
+if ! grep -q -- '- github.com/my/project' "$tmp"; then
+  echo "Upstream config no longer contains the expected module placeholder" >&2
+  exit 1
+fi
+sed 's|github.com/my/project|github.com/mholtzscher/hearth|' "$tmp" > .golangci.yml
+'''
+
 [tasks."lint"]
 description = "Lint"
 depends = ["tidy"]
@@ -88,7 +104,7 @@ description = "Run all validation"
 depends = [
   "format-check",
   "generate-check",
-  # "lint"
+  "lint",
   "tidy-check",
   "test",
   "vet",

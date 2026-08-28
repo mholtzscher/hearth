@@ -4,6 +4,7 @@ import (
 	"net/http"
 
 	"github.com/danielgtaylor/huma/v2"
+
 	"github.com/mholtzscher/hearth/internal/modules/devices"
 )
 
@@ -11,8 +12,8 @@ func apiError(status int, message string) error {
 	return huma.NewError(status, message)
 }
 
-type disabledCommandProblem struct {
-	Type      string `json:"type" format:"uri" default:"about:blank"`
+type disabledCommandError struct {
+	Type      string `json:"type"       format:"uri" default:"about:blank"`
 	Title     string `json:"title"`
 	Status    int    `json:"status"`
 	Detail    string `json:"detail"`
@@ -20,9 +21,9 @@ type disabledCommandProblem struct {
 	CommandID string `json:"command_id"`
 }
 
-func (problem *disabledCommandProblem) Error() string  { return problem.Detail }
-func (problem *disabledCommandProblem) GetStatus() int { return problem.Status }
-func (problem *disabledCommandProblem) ContentType(contentType string) string {
+func (problem *disabledCommandError) Error() string  { return problem.Detail }
+func (problem *disabledCommandError) GetStatus() int { return problem.Status }
+func (problem *disabledCommandError) ContentType(contentType string) string {
 	if contentType == "application/json" {
 		return "application/problem+json"
 	}
@@ -30,7 +31,7 @@ func (problem *disabledCommandProblem) ContentType(contentType string) string {
 }
 
 func entityDisabledProblem(commandID devices.CommandID) error {
-	return &disabledCommandProblem{
+	return &disabledCommandError{
 		Type: "about:blank", Title: http.StatusText(http.StatusConflict), Status: http.StatusConflict,
 		Detail: "entity is disabled", Code: "entity_disabled", CommandID: string(commandID),
 	}

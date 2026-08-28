@@ -1,4 +1,4 @@
-package nats
+package nats //nolint:testpackage // Tests exercise package-private NATS wire behavior and fixtures.
 
 import (
 	"context"
@@ -9,10 +9,11 @@ import (
 )
 
 func TestProvisionObservationResourcesCreatesAndValidatesRequiredConfiguration(t *testing.T) {
+	t.Parallel()
 	_, _, js := startJetStream(t)
-	consumer, err := ProvisionObservationResources(context.Background(), js)
-	if err != nil {
-		t.Fatal(err)
+	consumer, provisionErr := ProvisionObservationResources(context.Background(), js)
+	if provisionErr != nil {
+		t.Fatal(provisionErr)
 	}
 	if consumer.CachedInfo().Config.Name != ObservationConsumerName {
 		t.Fatalf("consumer = %#v", consumer.CachedInfo().Config)
@@ -26,6 +27,7 @@ func TestProvisionObservationResourcesCreatesAndValidatesRequiredConfiguration(t
 }
 
 func TestProvisionObservationResourcesRejectsMismatchedExistingConfiguration(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name   string
 		mutate func(*jetstream.StreamConfig)
@@ -38,6 +40,7 @@ func TestProvisionObservationResourcesRejectsMismatchedExistingConfiguration(t *
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
 			_, _, js := startJetStream(t)
 			config := observationStreamConfig()
 			test.mutate(&config)

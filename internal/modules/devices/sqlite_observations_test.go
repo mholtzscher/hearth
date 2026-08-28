@@ -1,4 +1,4 @@
-package devices
+package devices //nolint:testpackage // Tests exercise package-private domain seams and repository fixtures.
 
 import (
 	"context"
@@ -9,6 +9,7 @@ import (
 )
 
 func TestObservationProjectionAdvancesStateByReceiveOrderAndDeduplicates(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	path := filepath.Join(t.TempDir(), "hearth.db")
 	database := openMigratedDatabase(t, path)
@@ -64,8 +65,8 @@ func TestObservationProjectionAdvancesStateByReceiveOrderAndDeduplicates(t *test
 	}
 	assertReceiptCount(t, database, 2)
 
-	if err := database.Close(); err != nil {
-		t.Fatal(err)
+	if closeErr := database.Close(); closeErr != nil {
+		t.Fatal(closeErr)
 	}
 	database = openMigratedDatabase(t, path)
 	restarted := NewService(NewSQLiteRepository(database, catalog), nil, catalog, Dependencies{})
@@ -73,12 +74,14 @@ func TestObservationProjectionAdvancesStateByReceiveOrderAndDeduplicates(t *test
 	if err != nil {
 		t.Fatal(err)
 	}
-	if view.State == nil || view.State.ObservationID != second.ID || view.State.ReceiveOrder != resultReceiveOrder(t, database, second.ID) {
+	if view.State == nil || view.State.ObservationID != second.ID ||
+		view.State.ReceiveOrder != resultReceiveOrder(t, database, second.ID) {
 		t.Fatalf("restarted entity view = %#v", view)
 	}
 }
 
 func TestObservationProjectionDurablyRejectsIdentityAndValueFailures(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	database := openMigratedDatabase(t, filepath.Join(t.TempDir(), "hearth.db"))
 	catalog := firstLightCatalog(t)
@@ -105,15 +108,19 @@ func TestObservationProjectionDurablyRejectsIdentityAndValueFailures(t *testing.
 		{"invalid value", "simulator", newObservation(t, entityID, `1`, observedAt), RejectionInvalidValue},
 	}
 	for index, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			result, err := service.ProjectObservation(ctx, test.adapterID, test.observation, observedAt.Add(time.Duration(index)*time.Second))
-			if err != nil {
-				t.Fatal(err)
-			}
-			if result.Disposition != DispositionRejected || result.Rejection == nil || *result.Rejection != test.want || result.State != nil {
-				t.Fatalf("projection = %#v", result)
-			}
-		})
+		result, projectionErr := service.ProjectObservation(
+			ctx,
+			test.adapterID,
+			test.observation,
+			observedAt.Add(time.Duration(index)*time.Second),
+		)
+		if projectionErr != nil {
+			t.Fatalf("%s: %v", test.name, projectionErr)
+		}
+		if result.Disposition != DispositionRejected || result.Rejection == nil || *result.Rejection != test.want ||
+			result.State != nil {
+			t.Fatalf("%s: projection = %#v", test.name, result)
+		}
 	}
 	assertReceiptCount(t, database, len(tests))
 	view, err := service.GetEntity(ctx, entityID)
@@ -126,6 +133,7 @@ func TestObservationProjectionDurablyRejectsIdentityAndValueFailures(t *testing.
 }
 
 func TestDisabledEntityRejectsUnlinkedObservationAndAllowsActiveCommandRefresh(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	database := openMigratedDatabase(t, filepath.Join(t.TempDir(), "hearth.db"))
 	catalog := firstLightCatalog(t)
@@ -138,18 +146,18 @@ func TestDisabledEntityRejectsUnlinkedObservationAndAllowsActiveCommandRefresh(t
 	}
 	entityID := binding.Entities[0].EntityID
 	baseline := newObservation(t, entityID, `true`, now)
-	if _, err := service.ProjectObservation(ctx, "simulator", baseline, now); err != nil {
-		t.Fatal(err)
+	if _, projectionErr := service.ProjectObservation(ctx, "simulator", baseline, now); projectionErr != nil {
+		t.Fatal(projectionErr)
 	}
 
 	active := newCommandRecord(t, entityID, now.Add(time.Second))
 	active.Parameters = CommandParameters(`{"value":false}`)
-	if _, err := repository.CreateCommand(ctx, active); err != nil {
-		t.Fatal(err)
+	if _, createErr := repository.CreateCommand(ctx, active); createErr != nil {
+		t.Fatal(createErr)
 	}
 	now = now.Add(2 * time.Second)
-	if _, err := service.SetEntityEnabled(ctx, entityID, false); err != nil {
-		t.Fatal(err)
+	if _, enablementErr := service.SetEntityEnabled(ctx, entityID, false); enablementErr != nil {
+		t.Fatal(enablementErr)
 	}
 
 	rejected := newObservation(t, entityID, `1`, now)
@@ -194,6 +202,7 @@ func TestDisabledEntityRejectsUnlinkedObservationAndAllowsActiveCommandRefresh(t
 }
 
 func TestDisabledEntityDoesNotExemptUnknownExpiredOrTerminalCommandLinks(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	database := openMigratedDatabase(t, filepath.Join(t.TempDir(), "hearth.db"))
 	catalog := firstLightCatalog(t)
@@ -206,21 +215,21 @@ func TestDisabledEntityDoesNotExemptUnknownExpiredOrTerminalCommandLinks(t *test
 	}
 	entityID := binding.Entities[0].EntityID
 	expired := newCommandRecord(t, entityID, now.Add(-20*time.Second))
-	if _, err := repository.CreateCommand(ctx, expired); err != nil {
-		t.Fatal(err)
+	if _, createErr := repository.CreateCommand(ctx, expired); createErr != nil {
+		t.Fatal(createErr)
 	}
 	terminal := newCommandRecord(t, entityID, now.Add(-time.Second))
-	if _, err := repository.CreateCommand(ctx, terminal); err != nil {
-		t.Fatal(err)
+	if _, createErr := repository.CreateCommand(ctx, terminal); createErr != nil {
+		t.Fatal(createErr)
 	}
-	if err := repository.CompleteCommand(ctx, CommandCompletion{
+	if completionErr := repository.CompleteCommand(ctx, CommandCompletion{
 		ID: terminal.ID, Status: CommandStatusOutcomeTimeout, CompletedAt: now,
 		FailureCode: CommandFailureOutcomeTimeout,
-	}); err != nil {
-		t.Fatal(err)
+	}); completionErr != nil {
+		t.Fatal(completionErr)
 	}
-	if _, err := service.SetEntityEnabled(ctx, entityID, false); err != nil {
-		t.Fatal(err)
+	if _, enablementErr := service.SetEntityEnabled(ctx, entityID, false); enablementErr != nil {
+		t.Fatal(enablementErr)
 	}
 	unknown, err := NewCommandID()
 	if err != nil {
@@ -229,9 +238,14 @@ func TestDisabledEntityDoesNotExemptUnknownExpiredOrTerminalCommandLinks(t *test
 	for index, id := range []CommandID{unknown, expired.ID, terminal.ID} {
 		observation := newObservation(t, entityID, `true`, now)
 		observation.RefreshForCommand = &id
-		result, err := service.ProjectObservation(ctx, "simulator", observation, now.Add(time.Duration(index)*time.Second))
-		if err != nil {
-			t.Fatal(err)
+		result, projectionErr := service.ProjectObservation(
+			ctx,
+			"simulator",
+			observation,
+			now.Add(time.Duration(index)*time.Second),
+		)
+		if projectionErr != nil {
+			t.Fatal(projectionErr)
 		}
 		if result.Disposition != DispositionRejected || result.Rejection == nil ||
 			*result.Rejection != RejectionEntityDisabled || result.State != nil || result.SatisfiedCommand != nil {
@@ -240,7 +254,9 @@ func TestDisabledEntityDoesNotExemptUnknownExpiredOrTerminalCommandLinks(t *test
 	}
 }
 
+//nolint:gocognit,gocyclo,cyclop // The linked-command transition matrix is clearer as one persistence test.
 func TestObservationProjectionSatisfiesOnlyMatchingActiveLinkedCommand(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	database := openMigratedDatabase(t, filepath.Join(t.TempDir(), "hearth.db"))
 	catalog := firstLightCatalog(t)
@@ -255,8 +271,8 @@ func TestObservationProjectionSatisfiesOnlyMatchingActiveLinkedCommand(t *testin
 	entityID := binding.Entities[0].EntityID
 	requestedAt := completedAt.Add(-time.Second)
 	command := newCommandRecord(t, entityID, requestedAt)
-	if _, err := repository.CreateCommand(ctx, command); err != nil {
-		t.Fatal(err)
+	if _, createErr := repository.CreateCommand(ctx, command); createErr != nil {
+		t.Fatal(createErr)
 	}
 
 	mismatch := newObservation(t, entityID, `false`, requestedAt)
@@ -296,8 +312,8 @@ func TestObservationProjectionSatisfiesOnlyMatchingActiveLinkedCommand(t *testin
 	}
 
 	late := newCommandRecord(t, entityID, requestedAt.Add(2*time.Minute))
-	if _, err := repository.CreateCommand(ctx, late); err != nil {
-		t.Fatal(err)
+	if _, createErr := repository.CreateCommand(ctx, late); createErr != nil {
+		t.Fatal(createErr)
 	}
 	now = late.DeadlineAt.Add(time.Nanosecond)
 	lateObservation := newObservation(t, entityID, `true`, now)
@@ -318,11 +334,11 @@ func TestObservationProjectionSatisfiesOnlyMatchingActiveLinkedCommand(t *testin
 	}
 
 	terminal := newCommandRecord(t, entityID, requestedAt.Add(time.Minute))
-	if _, err := repository.CreateCommand(ctx, terminal); err != nil {
-		t.Fatal(err)
+	if _, createErr := repository.CreateCommand(ctx, terminal); createErr != nil {
+		t.Fatal(createErr)
 	}
-	if err := repository.InterruptActiveCommands(ctx, completedAt.Add(time.Minute)); err != nil {
-		t.Fatal(err)
+	if interruptErr := repository.InterruptActiveCommands(ctx, completedAt.Add(time.Minute)); interruptErr != nil {
+		t.Fatal(interruptErr)
 	}
 	linked := newObservation(t, entityID, `true`, completedAt.Add(time.Minute))
 	linked.RefreshForCommand = &terminal.ID
@@ -343,6 +359,7 @@ func TestObservationProjectionSatisfiesOnlyMatchingActiveLinkedCommand(t *testin
 }
 
 func TestReceiptPruningPinsCurrentStateUntilItAdvances(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	database := openMigratedDatabase(t, filepath.Join(t.TempDir(), "hearth.db"))
 	catalog := firstLightCatalog(t)
@@ -355,25 +372,27 @@ func TestReceiptPruningPinsCurrentStateUntilItAdvances(t *testing.T) {
 	start := time.Date(2026, 8, 1, 0, 0, 0, 0, time.UTC)
 	first := newObservation(t, entityID, `false`, start)
 	second := newObservation(t, entityID, `true`, start.Add(time.Hour))
-	if _, err := service.ProjectObservation(ctx, "simulator", first, start); err != nil {
-		t.Fatal(err)
+	if _, projectionErr := service.ProjectObservation(ctx, "simulator", first, start); projectionErr != nil {
+		t.Fatal(projectionErr)
 	}
-	if _, err := service.ProjectObservation(ctx, "simulator", second, start.Add(time.Hour)); err != nil {
-		t.Fatal(err)
+	if _, projectionErr := service.ProjectObservation(
+		ctx, "simulator", second, start.Add(time.Hour),
+	); projectionErr != nil {
+		t.Fatal(projectionErr)
 	}
 
 	cutoff := start.Add(ObservationReceiptRetention + 2*time.Hour)
-	if err := service.DeleteExpiredObservationReceipts(ctx, cutoff); err != nil {
-		t.Fatal(err)
+	if pruneErr := service.DeleteExpiredObservationReceipts(ctx, cutoff); pruneErr != nil {
+		t.Fatal(pruneErr)
 	}
 	assertReceiptIDs(t, database, []ObservationID{second.ID})
 
 	third := newObservation(t, entityID, `false`, cutoff)
-	if _, err := service.ProjectObservation(ctx, "simulator", third, cutoff); err != nil {
-		t.Fatal(err)
+	if _, projectionErr := service.ProjectObservation(ctx, "simulator", third, cutoff); projectionErr != nil {
+		t.Fatal(projectionErr)
 	}
-	if err := service.DeleteExpiredObservationReceipts(ctx, cutoff.Add(time.Second)); err != nil {
-		t.Fatal(err)
+	if pruneErr := service.DeleteExpiredObservationReceipts(ctx, cutoff.Add(time.Second)); pruneErr != nil {
+		t.Fatal(pruneErr)
 	}
 	assertReceiptIDs(t, database, []ObservationID{third.ID})
 }
@@ -408,13 +427,13 @@ func assertReceiptIDs(t *testing.T, database *sql.DB, want []ObservationID) {
 	var got []ObservationID
 	for rows.Next() {
 		var id ObservationID
-		if err := rows.Scan(&id); err != nil {
-			t.Fatal(err)
+		if scanErr := rows.Scan(&id); scanErr != nil {
+			t.Fatal(scanErr)
 		}
 		got = append(got, id)
 	}
-	if err := rows.Err(); err != nil {
-		t.Fatal(err)
+	if rowsErr := rows.Err(); rowsErr != nil {
+		t.Fatal(rowsErr)
 	}
 	if len(got) != len(want) {
 		t.Fatalf("receipt IDs = %v, want %v", got, want)
@@ -429,7 +448,8 @@ func assertReceiptIDs(t *testing.T, database *sql.DB, want []ObservationID) {
 func resultReceiveOrder(t *testing.T, database *sql.DB, id ObservationID) int64 {
 	t.Helper()
 	var order int64
-	if err := database.QueryRow("SELECT receive_order FROM observation_receipts WHERE observation_id = ?", id).Scan(&order); err != nil {
+	if err := database.QueryRow("SELECT receive_order FROM observation_receipts WHERE observation_id = ?", id).
+		Scan(&order); err != nil {
 		t.Fatal(err)
 	}
 	return order

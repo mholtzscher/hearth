@@ -53,7 +53,10 @@ func (value Config) Validate() error {
 		return err
 	}
 	if value.Binding.DeviceExternalID != nil {
-		if err := platformconfig.ValidateExternalID("binding.device_external_id", *value.Binding.DeviceExternalID); err != nil {
+		if err := platformconfig.ValidateExternalID(
+			"binding.device_external_id",
+			*value.Binding.DeviceExternalID,
+		); err != nil {
 			return err
 		}
 	}
@@ -64,7 +67,8 @@ func (value Config) Validate() error {
 		return err
 	}
 	parsed, err := url.Parse(value.Upstream.URL)
-	if err != nil || parsed.Host == "" || (parsed.Scheme != "http" && parsed.Scheme != "https" && parsed.Scheme != "ws" && parsed.Scheme != "wss") {
+	if err != nil || parsed.Host == "" ||
+		(parsed.Scheme != "http" && parsed.Scheme != "https" && parsed.Scheme != "ws" && parsed.Scheme != "wss") {
 		return fmt.Errorf("home_assistant.url must be an absolute HTTP or WebSocket URL")
 	}
 	if strings.TrimSpace(value.Upstream.TokenFile) == "" {

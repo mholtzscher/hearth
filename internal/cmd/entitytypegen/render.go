@@ -32,7 +32,10 @@ func render(model entityTypeModel) ([]output, error) {
 		{path: filepath.Join(model.Directory, "zz_generated_codecs.go"), content: codecsSource},
 		{path: filepath.Join(model.Directory, "zz_generated_behavior.go"), content: behaviorSource},
 		{path: filepath.Join(model.Directory, "zz_generated_conformance_test.go"), content: conformanceSource},
-		{path: filepath.Join(model.ModuleRoot, "sdk", "adapter", model.Package, "zz_generated_facade.go"), content: facadeSource},
+		{
+			path:    filepath.Join(model.ModuleRoot, "sdk", "adapter", model.Package, "zz_generated_facade.go"),
+			content: facadeSource,
+		},
 		facadeTest,
 	}, nil
 }

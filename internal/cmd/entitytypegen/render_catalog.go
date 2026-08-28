@@ -17,7 +17,12 @@ func renderCatalog(models []entityTypeModel, modulePath string, moduleRoot strin
 	source.WriteString("package devices\n\n")
 	source.WriteString("import (\n\t\"fmt\"\n\n")
 	for _, model := range ordered {
-		fmt.Fprintf(&source, "\tcontract%s %s\n", model.Package, strconv.Quote(modulePath+"/entitytypes/"+model.Package))
+		fmt.Fprintf(
+			&source,
+			"\tcontract%s %s\n",
+			model.Package,
+			strconv.Quote(modulePath+"/entitytypes/"+model.Package),
+		)
 	}
 	source.WriteString(")\n\n")
 	source.WriteString("const (\n")
@@ -31,7 +36,13 @@ func renderCatalog(models []entityTypeModel, modulePath string, moduleRoot strin
 	fmt.Fprintf(&source, "%d)\n", len(ordered))
 	for _, model := range ordered {
 		variable := lowerFirst(entityTypeGoName(model))
-		fmt.Fprintf(&source, "\t%s, err := new%sTypeDefinition(EntityType%s)\n", variable, entityTypeGoName(model), entityTypeGoName(model))
+		fmt.Fprintf(
+			&source,
+			"\t%s, err := new%sTypeDefinition(EntityType%s)\n",
+			variable,
+			entityTypeGoName(model),
+			entityTypeGoName(model),
+		)
 		fmt.Fprintf(&source, "\tif err != nil { return nil, err }\n\tdefinitions = append(definitions, %s)\n", variable)
 	}
 	source.WriteString("\treturn NewTypeCatalog(definitions)\n}\n\n")
@@ -40,17 +51,33 @@ func renderCatalog(models []entityTypeModel, modulePath string, moduleRoot strin
 		goName := entityTypeGoName(model)
 		fmt.Fprintf(&source, "func new%sTypeDefinition(id EntityTypeID) (EntityTypeDefinition, error) {\n", goName)
 		fmt.Fprintf(&source, "\tcodecs, err := contract%s.Compile()\n", model.Package)
-		fmt.Fprintf(&source, "\tif err != nil { return EntityTypeDefinition{}, fmt.Errorf(%s, err) }\n", strconv.Quote("compile "+model.TypeID+" codecs: %w"))
+		fmt.Fprintf(
+			&source,
+			"\tif err != nil { return EntityTypeDefinition{}, fmt.Errorf(%s, err) }\n",
+			strconv.Quote("compile "+model.TypeID+" codecs: %w"),
+		)
 		for _, operation := range model.Operations {
 			variable := lowerFirst(operation.GoName)
 			fmt.Fprintf(&source, "\t%s := DefineOperation(\n", variable)
 			fmt.Fprintf(&source, "\t\tOperationName(contract%s.Operation%s),\n", model.Package, operation.GoName)
 			fmt.Fprintf(&source, "\t\tcodecs.%sParameters,\n", operation.GoName)
-			fmt.Fprintf(&source, "\t\tfunc(support contract%s.Support) (contract%s.%sSupport, bool) {\n", model.Package, model.Package, operation.GoName)
+			fmt.Fprintf(
+				&source,
+				"\t\tfunc(support contract%s.Support) (contract%s.%sSupport, bool) {\n",
+				model.Package,
+				model.Package,
+				operation.GoName,
+			)
 			if operation.Required {
 				fmt.Fprintf(&source, "\t\t\treturn support.Operations.%s, true\n", operation.GoName)
 			} else {
-				fmt.Fprintf(&source, "\t\t\tif support.Operations.%s == nil { return contract%s.%sSupport{}, false }\n", operation.GoName, model.Package, operation.GoName)
+				fmt.Fprintf(
+					&source,
+					"\t\t\tif support.Operations.%s == nil { return contract%s.%sSupport{}, false }\n",
+					operation.GoName,
+					model.Package,
+					operation.GoName,
+				)
 				fmt.Fprintf(&source, "\t\t\treturn *support.Operations.%s, true\n", operation.GoName)
 			}
 			source.WriteString("\t\t},\n")
@@ -59,7 +86,12 @@ func renderCatalog(models []entityTypeModel, modulePath string, moduleRoot strin
 			fmt.Fprintf(&source, "\t\tcontract%s.%sSatisfied,\n", model.Package, operation.GoName)
 			source.WriteString("\t)\n")
 		}
-		fmt.Fprintf(&source, "\tdefinition, err := DefineEntityType(id, codecs.State, codecs.Support, contract%s.ValidateState, contract%s.EqualState", model.Package, model.Package)
+		fmt.Fprintf(
+			&source,
+			"\tdefinition, err := DefineEntityType(id, codecs.State, codecs.Support, contract%s.ValidateState, contract%s.EqualState",
+			model.Package,
+			model.Package,
+		)
 		for _, operation := range model.Operations {
 			fmt.Fprintf(&source, ", %s", lowerFirst(operation.GoName))
 		}
@@ -71,17 +103,20 @@ func renderCatalog(models []entityTypeModel, modulePath string, moduleRoot strin
 	if err != nil {
 		return output{}, err
 	}
-	return output{path: filepath.Join(moduleRoot, "internal", "modules", "devices", "zz_generated_entitytypes.go"), content: formatted}, nil
+	return output{
+		path:    filepath.Join(moduleRoot, "internal", "modules", "devices", "zz_generated_entitytypes.go"),
+		content: formatted,
+	}, nil
 }
 
 func entityTypeGoName(model entityTypeModel) string {
 	packageName := model.Package
 	if index := strings.LastIndex(packageName, "v"); index > 0 && index < len(packageName)-1 {
 		version := packageName[index+1:]
-		if _, err := strconv.Atoi(version); err == nil {
-			prefix, err := exportedName(packageName[:index])
-			if err != nil {
-				panic(err)
+		if _, conversionErr := strconv.Atoi(version); conversionErr == nil {
+			prefix, nameErr := exportedName(packageName[:index])
+			if nameErr != nil {
+				panic(nameErr)
 			}
 			return prefix + "V" + version
 		}

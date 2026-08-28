@@ -1,18 +1,18 @@
-package nats
+package nats //nolint:testpackage // Tests exercise package-private NATS wire behavior and fixtures.
 
 import (
 	"context"
 	"errors"
-	"io"
 	"log/slog"
 	"sync/atomic"
 	"testing"
 	"time"
 
+	natsgo "github.com/nats-io/nats.go"
+
 	contractsv1 "github.com/mholtzscher/hearth/contracts/v1"
 	"github.com/mholtzscher/hearth/internal/contracts/v1/natswire"
 	"github.com/mholtzscher/hearth/internal/modules/devices"
-	natsgo "github.com/nats-io/nats.go"
 )
 
 type entityEnablementSetterFunc func(context.Context, string, devices.EntityID, bool) (bool, error)
@@ -27,6 +27,7 @@ func (setter entityEnablementSetterFunc) SetOwnedEntityEnabled(
 }
 
 func TestEntityEnablementServerReturnsCorrelatedAcceptedAndRejectedResponses(t *testing.T) {
+	t.Parallel()
 	_, connection, _ := startJetStream(t)
 	validator, err := contractsv1.Compile()
 	if err != nil {
@@ -45,7 +46,7 @@ func TestEntityEnablementServerReturnsCorrelatedAcceptedAndRejectedResponses(t *
 			return false, devices.ErrEntityWrongAdapter
 		}
 		return false, nil
-	}), slog.New(slog.NewJSONHandler(io.Discard, nil)))
+	}), slog.New(slog.DiscardHandler))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -66,6 +67,7 @@ func TestEntityEnablementServerReturnsCorrelatedAcceptedAndRejectedResponses(t *
 }
 
 func TestEntityEnablementServerDiscardsRoutePayloadMismatchWithoutInvokingSetter(t *testing.T) {
+	t.Parallel()
 	_, connection, _ := startJetStream(t)
 	validator, err := contractsv1.Compile()
 	if err != nil {
@@ -80,7 +82,7 @@ func TestEntityEnablementServerDiscardsRoutePayloadMismatchWithoutInvokingSetter
 	) (bool, error) {
 		calls.Add(1)
 		return false, nil
-	}), slog.New(slog.NewJSONHandler(io.Discard, nil)))
+	}), slog.New(slog.DiscardHandler))
 	if err != nil {
 		t.Fatal(err)
 	}

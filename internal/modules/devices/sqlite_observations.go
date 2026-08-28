@@ -27,7 +27,10 @@ func (repository *SQLiteRepository) GetEntity(ctx context.Context, id EntityID) 
 	)
 }
 
-func (repository *SQLiteRepository) ProjectObservation(ctx context.Context, params ProjectObservationParams) (ProjectionResult, error) {
+func (repository *SQLiteRepository) ProjectObservation(
+	ctx context.Context,
+	params ProjectObservationParams,
+) (ProjectionResult, error) {
 	if repository.catalog == nil {
 		return ProjectionResult{}, errors.New("project observation: entity type catalog is required")
 	}
@@ -38,80 +41,29 @@ func (repository *SQLiteRepository) ProjectObservation(ctx context.Context, para
 	if err != nil {
 		return ProjectionResult{}, fmt.Errorf("begin observation projection: %w", err)
 	}
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }()
 
 	receiptQueries := receiptsqlc.New(tx)
-	_, err = receiptQueries.GetObservationReceipt(ctx, receiptsqlc.GetObservationReceiptParams{
-		ObservationID: string(params.Observation.ID),
-	})
-	switch {
-	case err == nil:
+	duplicate, err := observationReceiptExists(ctx, receiptQueries, params.Observation.ID)
+	if err != nil {
+		return ProjectionResult{}, err
+	}
+	if duplicate {
 		return ProjectionResult{Disposition: DispositionDuplicate}, nil
-	case !errors.Is(err, sql.ErrNoRows):
-		return ProjectionResult{}, fmt.Errorf("get observation receipt: %w", err)
 	}
 
 	stateQueries := statesqlc.New(tx)
-	row, err := stateQueries.GetEntity(ctx, statesqlc.GetEntityParams{ID: string(params.Observation.EntityID)})
-	var view EntityWithState
-	var rejection *ObservationRejection
-	switch {
-	case errors.Is(err, sql.ErrNoRows):
-		value := RejectionUnknownEntity
-		rejection = &value
-	case err != nil:
-		return ProjectionResult{}, fmt.Errorf("get entity for observation: %w", err)
-	default:
-		view, err = entityWithStateFromValues(
-			row.ID, row.DeviceID, row.AdapterID, row.Name, row.TypeID, row.SupportJson, row.Enabled,
-			row.ObservationID, row.ValueJson, row.AdapterReceivedAt, row.SourceUpdatedAt,
-			row.ObservedAt, row.ReceiveOrder,
-		)
-		if err != nil {
-			return ProjectionResult{}, err
-		}
-		if view.Entity.AdapterID != params.AdapterID {
-			value := RejectionWrongAdapter
-			rejection = &value
-		}
+	view, rejection, err := loadObservationEntity(ctx, stateQueries, params)
+	if err != nil {
+		return ProjectionResult{}, err
 	}
-
-	var linkedCommand *CommandRecord
-	var projectionNow time.Time
-	if rejection == nil && params.Observation.RefreshForCommand != nil {
-		linkedCommand, projectionNow, err = repository.activeLinkedCommand(ctx, tx, params)
-		if err != nil {
-			return ProjectionResult{}, err
-		}
+	linkedCommand, projectionNow, rejection, err := repository.resolveObservationLink(ctx, tx, params, view, rejection)
+	if err != nil {
+		return ProjectionResult{}, err
 	}
-	if rejection == nil && !view.Entity.Enabled && linkedCommand == nil {
-		value := RejectionEntityDisabled
-		rejection = &value
-	}
-
-	var normalized Value
-	disposition := DispositionRejected
-	if rejection == nil {
-		if _, err := repository.catalog.NormalizeSupport(view.Entity.TypeID, view.Entity.Support); err != nil {
-			return ProjectionResult{}, fmt.Errorf("validate persisted entity support: %w", err)
-		}
-		normalized, err = repository.catalog.NormalizeState(view.Entity, params.Observation.Value)
-		if err != nil {
-			value := RejectionInvalidValue
-			rejection = &value
-		} else if view.State == nil {
-			disposition = DispositionApplied
-		} else {
-			equal, equalErr := repository.catalog.EqualState(view.Entity, view.State.Value, normalized)
-			if equalErr != nil {
-				return ProjectionResult{}, fmt.Errorf("compare observation state: %w", equalErr)
-			}
-			if equal {
-				disposition = DispositionUnchanged
-			} else {
-				disposition = DispositionApplied
-			}
-		}
+	normalized, disposition, rejection, err := repository.classifyObservation(view, params.Observation.Value, rejection)
+	if err != nil {
+		return ProjectionResult{}, err
 	}
 
 	receiveOrder, err := receiptQueries.InsertObservationReceipt(ctx, receiptsqlc.InsertObservationReceiptParams{
@@ -128,45 +80,163 @@ func (repository *SQLiteRepository) ProjectObservation(ctx context.Context, para
 		return ProjectionResult{}, fmt.Errorf("insert observation receipt: %w", err)
 	}
 
-	result := ProjectionResult{Disposition: disposition, Rejection: rejection}
-	if rejection == nil {
-		state := State{
-			EntityID:          params.Observation.EntityID,
-			Value:             append(Value(nil), normalized...),
-			ObservationID:     params.Observation.ID,
-			AdapterReceivedAt: params.Observation.AdapterReceivedAt.UTC(),
-			SourceUpdatedAt:   copyTimePointer(params.Observation.SourceUpdatedAt),
-			ObservedAt:        params.ObservedAt.UTC(),
-			ReceiveOrder:      receiveOrder,
-		}
-		if err := stateQueries.UpsertEntityState(ctx, statesqlc.UpsertEntityStateParams{
-			EntityID:          string(state.EntityID),
-			ObservationID:     string(state.ObservationID),
-			ValueJson:         string(state.Value),
-			AdapterReceivedAt: formatTime(state.AdapterReceivedAt),
-			SourceUpdatedAt:   nullableTime(state.SourceUpdatedAt),
-			ObservedAt:        formatTime(state.ObservedAt),
-			ReceiveOrder:      state.ReceiveOrder,
-		}); err != nil {
-			return ProjectionResult{}, fmt.Errorf("upsert entity state: %w", err)
-		}
-		result.State = &state
+	state, satisfied, err := repository.persistObservationState(
+		ctx, tx, stateQueries, params, view, normalized, rejection, linkedCommand, projectionNow, receiveOrder,
+	)
+	if err != nil {
+		return ProjectionResult{}, err
+	}
+	if commitErr := tx.Commit(); commitErr != nil {
+		return ProjectionResult{}, fmt.Errorf("commit observation projection: %w", commitErr)
+	}
+	return ProjectionResult{
+		Disposition: disposition, Rejection: rejection, State: state, SatisfiedCommand: satisfied,
+	}, nil
+}
 
-		if linkedCommand != nil {
-			satisfied, satisfyErr := repository.satisfyCommand(
-				ctx, tx, view.Entity, *linkedCommand, params.Observation.ID, normalized, projectionNow,
-			)
-			if satisfyErr != nil {
-				return ProjectionResult{}, satisfyErr
-			}
-			result.SatisfiedCommand = satisfied
+func observationReceiptExists(
+	ctx context.Context,
+	queries *receiptsqlc.Queries,
+	observationID ObservationID,
+) (bool, error) {
+	_, err := queries.GetObservationReceipt(ctx, receiptsqlc.GetObservationReceiptParams{
+		ObservationID: string(observationID),
+	})
+	if err == nil {
+		return true, nil
+	}
+	if errors.Is(err, sql.ErrNoRows) {
+		return false, nil
+	}
+	return false, fmt.Errorf("get observation receipt: %w", err)
+}
+
+func loadObservationEntity(
+	ctx context.Context,
+	queries *statesqlc.Queries,
+	params ProjectObservationParams,
+) (EntityWithState, *ObservationRejection, error) {
+	row, err := queries.GetEntity(ctx, statesqlc.GetEntityParams{ID: string(params.Observation.EntityID)})
+	if errors.Is(err, sql.ErrNoRows) {
+		rejection := RejectionUnknownEntity
+		return EntityWithState{}, &rejection, nil
+	}
+	if err != nil {
+		return EntityWithState{}, nil, fmt.Errorf("get entity for observation: %w", err)
+	}
+	view, err := entityWithStateFromValues(
+		row.ID, row.DeviceID, row.AdapterID, row.Name, row.TypeID, row.SupportJson, row.Enabled,
+		row.ObservationID, row.ValueJson, row.AdapterReceivedAt, row.SourceUpdatedAt,
+		row.ObservedAt, row.ReceiveOrder,
+	)
+	if err != nil {
+		return EntityWithState{}, nil, err
+	}
+	if view.Entity.AdapterID != params.AdapterID {
+		rejection := RejectionWrongAdapter
+		return view, &rejection, nil
+	}
+	return view, nil, nil
+}
+
+func (repository *SQLiteRepository) resolveObservationLink(
+	ctx context.Context,
+	tx *sql.Tx,
+	params ProjectObservationParams,
+	view EntityWithState,
+	rejection *ObservationRejection,
+) (*CommandRecord, time.Time, *ObservationRejection, error) {
+	if rejection != nil {
+		return nil, time.Time{}, rejection, nil
+	}
+	var linkedCommand *CommandRecord
+	var projectionNow time.Time
+	var err error
+	if params.Observation.RefreshForCommand != nil {
+		linkedCommand, projectionNow, err = repository.activeLinkedCommand(ctx, tx, params)
+		if err != nil {
+			return nil, time.Time{}, nil, err
 		}
 	}
-
-	if err := tx.Commit(); err != nil {
-		return ProjectionResult{}, fmt.Errorf("commit observation projection: %w", err)
+	if !view.Entity.Enabled && linkedCommand == nil {
+		disabled := RejectionEntityDisabled
+		rejection = &disabled
 	}
-	return result, nil
+	return linkedCommand, projectionNow, rejection, nil
+}
+
+func (repository *SQLiteRepository) classifyObservation(
+	view EntityWithState,
+	value Value,
+	rejection *ObservationRejection,
+) (Value, ObservationDisposition, *ObservationRejection, error) {
+	if rejection != nil {
+		return nil, DispositionRejected, rejection, nil
+	}
+	if _, err := repository.catalog.NormalizeSupport(view.Entity.TypeID, view.Entity.Support); err != nil {
+		return nil, "", nil, fmt.Errorf("validate persisted entity support: %w", err)
+	}
+	normalized, valid := repository.normalizeObservationState(view.Entity, value)
+	if !valid {
+		invalid := RejectionInvalidValue
+		return nil, DispositionRejected, &invalid, nil
+	}
+	if view.State == nil {
+		return normalized, DispositionApplied, nil, nil
+	}
+	equal, err := repository.catalog.EqualState(view.Entity, view.State.Value, normalized)
+	if err != nil {
+		return nil, "", nil, fmt.Errorf("compare observation state: %w", err)
+	}
+	if equal {
+		return normalized, DispositionUnchanged, nil, nil
+	}
+	return normalized, DispositionApplied, nil, nil
+}
+
+func (repository *SQLiteRepository) normalizeObservationState(entity Entity, value Value) (Value, bool) {
+	normalized, err := repository.catalog.NormalizeState(entity, value)
+	return normalized, err == nil
+}
+
+func (repository *SQLiteRepository) persistObservationState(
+	ctx context.Context,
+	tx *sql.Tx,
+	queries *statesqlc.Queries,
+	params ProjectObservationParams,
+	view EntityWithState,
+	normalized Value,
+	rejection *ObservationRejection,
+	linkedCommand *CommandRecord,
+	projectionNow time.Time,
+	receiveOrder int64,
+) (*State, *CommandResult, error) {
+	if rejection != nil {
+		return nil, nil, nil
+	}
+	state := State{
+		EntityID: params.Observation.EntityID, Value: append(Value(nil), normalized...),
+		ObservationID: params.Observation.ID, AdapterReceivedAt: params.Observation.AdapterReceivedAt.UTC(),
+		SourceUpdatedAt: copyTimePointer(params.Observation.SourceUpdatedAt), ObservedAt: params.ObservedAt.UTC(),
+		ReceiveOrder: receiveOrder,
+	}
+	if err := queries.UpsertEntityState(ctx, statesqlc.UpsertEntityStateParams{
+		EntityID: string(state.EntityID), ObservationID: string(state.ObservationID), ValueJson: string(state.Value),
+		AdapterReceivedAt: formatTime(state.AdapterReceivedAt), SourceUpdatedAt: nullableTime(state.SourceUpdatedAt),
+		ObservedAt: formatTime(state.ObservedAt), ReceiveOrder: state.ReceiveOrder,
+	}); err != nil {
+		return nil, nil, fmt.Errorf("upsert entity state: %w", err)
+	}
+	if linkedCommand == nil {
+		return &state, nil, nil
+	}
+	satisfied, err := repository.satisfyCommand(
+		ctx, tx, view.Entity, *linkedCommand, params.Observation.ID, normalized, projectionNow,
+	)
+	if err != nil {
+		return nil, nil, err
+	}
+	return &state, satisfied, nil
 }
 
 func (repository *SQLiteRepository) activeLinkedCommand(
@@ -214,7 +284,7 @@ func (repository *SQLiteRepository) satisfyCommand(
 		return nil, fmt.Errorf("evaluate linked command outcome: %w", err)
 	}
 	if !matches {
-		return nil, nil
+		return nil, nil //nolint:nilnil // No matching outcome is a successful projection.
 	}
 	rows, err := commandsqlc.New(tx).SatisfyCommandFromObservation(ctx, commandsqlc.SatisfyCommandFromObservationParams{
 		CompletedAt:          sql.NullString{String: formatTime(completedAt), Valid: true},
@@ -227,7 +297,7 @@ func (repository *SQLiteRepository) satisfyCommand(
 		return nil, fmt.Errorf("satisfy linked command: %w", err)
 	}
 	if rows != 1 {
-		return nil, nil
+		return nil, nil //nolint:nilnil // A concurrently completed command has no result.
 	}
 	return &CommandResult{
 		CommandID: command.ID, ObservationID: observationID, Value: append(Value(nil), value...),
@@ -235,9 +305,10 @@ func (repository *SQLiteRepository) satisfyCommand(
 }
 
 func (repository *SQLiteRepository) DeleteExpiredObservationReceipts(ctx context.Context, before time.Time) error {
-	_, err := receiptsqlc.New(repository.database).DeleteExpiredObservationReceipts(ctx, receiptsqlc.DeleteExpiredObservationReceiptsParams{
-		ExpiresAt: formatTime(before),
-	})
+	_, err := receiptsqlc.New(repository.database).
+		DeleteExpiredObservationReceipts(ctx, receiptsqlc.DeleteExpiredObservationReceiptsParams{
+			ExpiresAt: formatTime(before),
+		})
 	if err != nil {
 		return fmt.Errorf("delete expired observation receipts: %w", err)
 	}
@@ -297,6 +368,6 @@ func copyTimePointer(value *time.Time) *time.Time {
 	if value == nil {
 		return nil
 	}
-	copy := value.UTC()
-	return &copy
+	cloned := value.UTC()
+	return &cloned
 }

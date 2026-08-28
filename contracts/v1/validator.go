@@ -28,8 +28,8 @@ func Compile() (*Validator, error) {
 		if err != nil {
 			return nil, fmt.Errorf("decode schema %q: %w", schemaID, err)
 		}
-		if err := compiler.AddResource(schemaID, document); err != nil {
-			return nil, fmt.Errorf("add schema %q: %w", schemaID, err)
+		if addErr := compiler.AddResource(schemaID, document); addErr != nil {
+			return nil, fmt.Errorf("add schema %q: %w", schemaID, addErr)
 		}
 	}
 

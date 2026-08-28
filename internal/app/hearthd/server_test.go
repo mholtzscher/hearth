@@ -1,4 +1,4 @@
-package hearthd
+package hearthd //nolint:testpackage // Tests exercise package-private assembly and lifecycle behavior.
 
 import (
 	"bytes"
@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/danielgtaylor/huma/v2"
+
 	"github.com/mholtzscher/hearth/internal/modules/devices"
 )
 
@@ -45,7 +46,11 @@ func (stub *stubDevices) GetEntity(ctx context.Context, entityID devices.EntityI
 	return stub.getEntity(ctx, entityID)
 }
 
-func (stub *stubDevices) SetEntityEnabled(ctx context.Context, entityID devices.EntityID, enabled bool) (devices.EntityWithState, error) {
+func (stub *stubDevices) SetEntityEnabled(
+	ctx context.Context,
+	entityID devices.EntityID,
+	enabled bool,
+) (devices.EntityWithState, error) {
 	if stub.setEntityEnabled == nil {
 		panic("unexpected SetEntityEnabled call")
 	}
@@ -60,7 +65,10 @@ func (*stubDevices) GetDevice(context.Context, devices.GetDeviceParams) (devices
 	panic("unexpected GetDevice call")
 }
 
-func (*stubDevices) ListEntities(context.Context, devices.ListEntitiesParams) (devices.Page[devices.EntityWithState], error) {
+func (*stubDevices) ListEntities(
+	context.Context,
+	devices.ListEntitiesParams,
+) (devices.Page[devices.EntityWithState], error) {
 	panic("unexpected ListEntities call")
 }
 
@@ -68,7 +76,10 @@ func (*stubDevices) GetCommand(context.Context, devices.CommandID) (devices.Comm
 	panic("unexpected GetCommand call")
 }
 
-func (*stubDevices) ListEntityCommands(context.Context, devices.ListEntityCommandsParams) (devices.Page[devices.CommandRecord], error) {
+func (*stubDevices) ListEntityCommands(
+	context.Context,
+	devices.ListEntityCommandsParams,
+) (devices.Page[devices.CommandRecord], error) {
 	panic("unexpected ListEntityCommands call")
 }
 
@@ -85,6 +96,7 @@ func (stub *stubDevices) ExecuteCommand(
 }
 
 func TestHTTPHandlerServesHealthReadinessAndDeviceOperations(t *testing.T) {
+	t.Parallel()
 	stub := &stubDevices{getEntity: func(context.Context, devices.EntityID) (devices.EntityWithState, error) {
 		return devices.EntityWithState{Entity: devices.Entity{
 			ID: testHTTPEntityID, DeviceID: testHTTPDeviceID, AdapterID: "simulator", Name: "Power",
@@ -120,7 +132,9 @@ func TestHTTPHandlerServesHealthReadinessAndDeviceOperations(t *testing.T) {
 	}
 }
 
+//nolint:gocognit // The OpenAPI contract matrix is intentionally verified in one place.
 func TestRuntimeOpenAPIContract(t *testing.T) {
+	t.Parallel()
 	handler, _ := NewHTTPHandler(&stubDevices{}, &testReadiness{})
 	response := appRequest(handler, "/openapi.json")
 	if response.Code != http.StatusOK {
@@ -160,11 +174,51 @@ func TestRuntimeOpenAPIContract(t *testing.T) {
 	patchEntity := document.Paths["/v1/entities/{entity_id}"].Patch
 	assertRuntimeOpenAPIOperation(t, patchEntity, "update-entity", "200", "400", "404", "422", "500")
 	executeCommand := document.Paths["/v1/entities/{entity_id}/commands"].Post
-	assertRuntimeOpenAPIOperation(t, executeCommand, "execute-entity-command", "200", "400", "404", "409", "422", "502", "503", "504", "500")
-	assertRuntimeOpenAPIOperation(t, document.Paths["/v1/entities/{entity_id}/commands"].Get, "list-entity-commands", "200", "400", "404", "422", "500")
+	assertRuntimeOpenAPIOperation(
+		t,
+		executeCommand,
+		"execute-entity-command",
+		"200",
+		"400",
+		"404",
+		"409",
+		"422",
+		"502",
+		"503",
+		"504",
+		"500",
+	)
+	assertRuntimeOpenAPIOperation(
+		t,
+		document.Paths["/v1/entities/{entity_id}/commands"].Get,
+		"list-entity-commands",
+		"200",
+		"400",
+		"404",
+		"422",
+		"500",
+	)
 	assertRuntimeOpenAPIOperation(t, document.Paths["/v1/devices"].Get, "list-devices", "200", "400", "422", "500")
-	assertRuntimeOpenAPIOperation(t, document.Paths["/v1/devices/{device_id}"].Get, "get-device", "200", "400", "404", "422", "500")
-	assertRuntimeOpenAPIOperation(t, document.Paths["/v1/commands/{command_id}"].Get, "get-command", "200", "400", "404", "422", "500")
+	assertRuntimeOpenAPIOperation(
+		t,
+		document.Paths["/v1/devices/{device_id}"].Get,
+		"get-device",
+		"200",
+		"400",
+		"404",
+		"422",
+		"500",
+	)
+	assertRuntimeOpenAPIOperation(
+		t,
+		document.Paths["/v1/commands/{command_id}"].Get,
+		"get-command",
+		"200",
+		"400",
+		"404",
+		"422",
+		"500",
+	)
 	if executeCommand.RequestBody == nil || !executeCommand.RequestBody.Required {
 		t.Fatalf("command request body = %#v", executeCommand.RequestBody)
 	}
@@ -197,7 +251,7 @@ func TestRuntimeOpenAPIContract(t *testing.T) {
 			t.Fatal(err)
 		}
 		for _, property := range properties {
-			if _, ok := schema.Properties[property]; !ok {
+			if _, propertyExists := schema.Properties[property]; !propertyExists {
 				t.Errorf("OpenAPI %s schema is missing %q", schemaName, property)
 			}
 		}
@@ -220,6 +274,7 @@ func TestRuntimeOpenAPIContract(t *testing.T) {
 }
 
 func TestHTTPHandlerUsesStandardHumaValidationErrors(t *testing.T) {
+	t.Parallel()
 	handler, _ := NewHTTPHandler(&stubDevices{}, nil)
 	for _, test := range []struct {
 		body   string
@@ -246,6 +301,7 @@ func TestHTTPHandlerUsesStandardHumaValidationErrors(t *testing.T) {
 	}
 }
 
+//nolint:paralleltest,reassign // Temporarily replaces the process-wide Huma error factory.
 func TestNewHTTPHandlerPreservesHumaErrorFactory(t *testing.T) {
 	original := huma.NewError
 	called := false
@@ -273,7 +329,12 @@ type runtimeOpenAPIRequestBody struct {
 	Required bool `json:"required"`
 }
 
-func assertRuntimeOpenAPIOperation(t *testing.T, operation *runtimeOpenAPIOperation, operationID string, statuses ...string) {
+func assertRuntimeOpenAPIOperation(
+	t *testing.T,
+	operation *runtimeOpenAPIOperation,
+	operationID string,
+	statuses ...string,
+) {
 	t.Helper()
 	if operation == nil || operation.OperationID != operationID {
 		t.Fatalf("OpenAPI operation = %#v, want %q", operation, operationID)
@@ -289,12 +350,22 @@ func assertRuntimeOpenAPIOperation(t *testing.T, operation *runtimeOpenAPIOperat
 		}
 		if status == "409" && operationID == "execute-entity-command" {
 			if !strings.Contains(string(response), `"code"`) || !strings.Contains(string(response), `"command_id"`) {
-				t.Errorf("OpenAPI operation %q response %s is missing disabled Command fields: %s", operationID, status, response)
+				t.Errorf(
+					"OpenAPI operation %q response %s is missing disabled Command fields: %s",
+					operationID,
+					status,
+					response,
+				)
 			}
 			continue
 		}
 		if status != "200" && !strings.Contains(string(response), "#/components/schemas/ErrorModel") {
-			t.Errorf("OpenAPI operation %q response %s does not use Huma's standard error body: %s", operationID, status, response)
+			t.Errorf(
+				"OpenAPI operation %q response %s does not use Huma's standard error body: %s",
+				operationID,
+				status,
+				response,
+			)
 		}
 	}
 }

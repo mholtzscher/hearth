@@ -9,7 +9,7 @@ import (
 	"strings"
 
 	"github.com/pressly/goose/v3"
-	_ "modernc.org/sqlite"
+	_ "modernc.org/sqlite" // Register the SQLite database/sql driver.
 )
 
 // Open opens the core SQLite database with the required connection policy.
@@ -27,9 +27,9 @@ func Open(ctx context.Context, path string) (*sql.DB, error) {
 		return nil, fmt.Errorf("open SQLite: %w", err)
 	}
 	database.SetMaxOpenConns(1)
-	if err := database.PingContext(ctx); err != nil {
-		database.Close()
-		return nil, fmt.Errorf("ping SQLite: %w", err)
+	if pingErr := database.PingContext(ctx); pingErr != nil {
+		_ = database.Close()
+		return nil, fmt.Errorf("ping SQLite: %w", pingErr)
 	}
 	return database, nil
 }
@@ -44,8 +44,8 @@ func Migrate(ctx context.Context, database *sql.DB) error {
 	if err != nil {
 		return fmt.Errorf("create migration provider: %w", err)
 	}
-	if _, err := provider.Up(ctx); err != nil {
-		return fmt.Errorf("apply migrations: %w", err)
+	if _, migrationErr := provider.Up(ctx); migrationErr != nil {
+		return fmt.Errorf("apply migrations: %w", migrationErr)
 	}
 	return nil
 }

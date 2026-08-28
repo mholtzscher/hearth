@@ -8,11 +8,12 @@ import (
 	"sync/atomic"
 	"time"
 
+	natsgo "github.com/nats-io/nats.go"
+	"github.com/nats-io/nats.go/jetstream"
+
 	contractsv1 "github.com/mholtzscher/hearth/contracts/v1"
 	"github.com/mholtzscher/hearth/internal/contracts/v1/natswire"
 	"github.com/mholtzscher/hearth/internal/modules/devices"
-	natsgo "github.com/nats-io/nats.go"
-	"github.com/nats-io/nats.go/jetstream"
 )
 
 const observationFutureClockThreshold = time.Minute
@@ -52,7 +53,7 @@ func StartObservationConsumer(
 			handleObservationMessage(baseContext, message, validator, projector, logger)
 		},
 		jetstream.ConsumeErrHandler(func(_ jetstream.ConsumeContext, err error) {
-			logger.Error("observation consumer error", "error", err)
+			logger.ErrorContext(baseContext, "observation consumer error", "error", err)
 		}),
 	)
 	if err != nil {
@@ -96,6 +97,7 @@ func (consumer *ObservationConsumer) Closed() <-chan struct{} {
 	return consumer.consume.Closed()
 }
 
+//nolint:funlen // The handler is a linear decode, validate, project, and acknowledge pipeline.
 func handleObservationMessage(
 	baseContext context.Context,
 	message jetstream.Msg,
@@ -103,9 +105,12 @@ func handleObservationMessage(
 	projector ObservationProjector,
 	logger *slog.Logger,
 ) {
-	metadata, err := message.Metadata()
-	if err != nil {
-		logger.Error("cannot read observation metadata", "subject", message.Subject(), "error", err)
+	metadata, metadataErr := message.Metadata()
+	if metadataErr != nil {
+		logger.ErrorContext(
+			baseContext, "cannot read observation metadata",
+			"subject", message.Subject(), "error", metadataErr,
+		)
 		return
 	}
 	permanentFailure := func(err error, observationID string) {
@@ -117,20 +122,29 @@ func handleObservationMessage(
 		if observationID != "" {
 			attributes = append(attributes, "observation_id", observationID)
 		}
-		logger.Error("acknowledging invalid observation", attributes...)
+		logger.ErrorContext(baseContext, "acknowledging invalid observation", attributes...)
 		if ackErr := message.Ack(); ackErr != nil {
-			logger.Error("acknowledge invalid observation", "subject", message.Subject(), "stream_sequence", metadata.Sequence.Stream, "error", ackErr)
+			logger.ErrorContext(
+				baseContext,
+				"acknowledge invalid observation",
+				"subject",
+				message.Subject(),
+				"stream_sequence",
+				metadata.Sequence.Stream,
+				"error",
+				ackErr,
+			)
 		}
 	}
 
-	envelope, err := natswire.Decode[observation](validator, contractsv1.ObservationSchemaID, message.Data())
-	if err != nil {
-		permanentFailure(err, "")
+	envelope, decodeErr := natswire.Decode[observation](validator, contractsv1.ObservationSchemaID, message.Data())
+	if decodeErr != nil {
+		permanentFailure(decodeErr, "")
 		return
 	}
-	route, err := natswire.ParseObservationSubject(message.Subject())
-	if err != nil {
-		permanentFailure(err, envelope.ID)
+	route, routeErr := natswire.ParseObservationSubject(message.Subject())
+	if routeErr != nil {
+		permanentFailure(routeErr, envelope.ID)
 		return
 	}
 	if route.EntityID != envelope.Data.EntityID {
@@ -147,22 +161,22 @@ func handleObservationMessage(
 		return
 	}
 
-	adapterReceivedAt, err := time.Parse(time.RFC3339Nano, envelope.Data.AdapterReceivedAt)
-	if err != nil {
-		permanentFailure(fmt.Errorf("parse adapter_received_at: %w", err), envelope.ID)
+	adapterReceivedAt, parseErr := time.Parse(time.RFC3339Nano, envelope.Data.AdapterReceivedAt)
+	if parseErr != nil {
+		permanentFailure(fmt.Errorf("parse adapter_received_at: %w", parseErr), envelope.ID)
 		return
 	}
 	var sourceUpdatedAt *time.Time
 	if envelope.Data.SourceUpdatedAt != nil {
-		parsed, err := time.Parse(time.RFC3339Nano, *envelope.Data.SourceUpdatedAt)
-		if err != nil {
-			permanentFailure(fmt.Errorf("parse source_updated_at: %w", err), envelope.ID)
+		parsed, sourceTimeErr := time.Parse(time.RFC3339Nano, *envelope.Data.SourceUpdatedAt)
+		if sourceTimeErr != nil {
+			permanentFailure(fmt.Errorf("parse source_updated_at: %w", sourceTimeErr), envelope.ID)
 			return
 		}
 		sourceUpdatedAt = &parsed
 	}
 	if adapterReceivedAt.After(metadata.Timestamp.Add(observationFutureClockThreshold)) {
-		logger.Warn("adapter observation clock is ahead of core receipt time",
+		logger.WarnContext(baseContext, "adapter observation clock is ahead of core receipt time",
 			"observation_id", envelope.ID,
 			"adapter_id", route.AdapterID,
 			"entity_id", route.EntityID,
@@ -171,27 +185,29 @@ func handleObservationMessage(
 		)
 	}
 
-	domain, err := domainObservation(envelope, adapterReceivedAt, sourceUpdatedAt)
-	if err != nil {
-		permanentFailure(err, envelope.ID)
+	domain, domainErr := domainObservation(envelope, adapterReceivedAt, sourceUpdatedAt)
+	if domainErr != nil {
+		permanentFailure(domainErr, envelope.ID)
 		return
 	}
 	ctx := natswire.ExtractTrace(baseContext, message.Headers())
-	if _, err := projector.ProjectObservation(ctx, route.AdapterID, domain, metadata.Timestamp.UTC()); err != nil {
-		logger.Error("project observation",
+	if _, projectionErr := projector.ProjectObservation(
+		ctx, route.AdapterID, domain, metadata.Timestamp.UTC(),
+	); projectionErr != nil {
+		logger.ErrorContext(baseContext, "project observation",
 			"subject", message.Subject(),
 			"stream_sequence", metadata.Sequence.Stream,
 			"observation_id", envelope.ID,
-			"error", err,
+			"error", projectionErr,
 		)
 		return
 	}
-	if err := message.Ack(); err != nil {
-		logger.Error("acknowledge projected observation",
+	if ackErr := message.Ack(); ackErr != nil {
+		logger.ErrorContext(baseContext, "acknowledge projected observation",
 			"subject", message.Subject(),
 			"stream_sequence", metadata.Sequence.Stream,
 			"observation_id", envelope.ID,
-			"error", err,
+			"error", ackErr,
 		)
 	}
 }
@@ -201,13 +217,13 @@ func domainObservation(
 	adapterReceivedAt time.Time,
 	sourceUpdatedAt *time.Time,
 ) (devices.Observation, error) {
-	observationID, err := devices.ParseObservationID(envelope.ID)
-	if err != nil {
-		return devices.Observation{}, err
+	observationID, observationIDErr := devices.ParseObservationID(envelope.ID)
+	if observationIDErr != nil {
+		return devices.Observation{}, observationIDErr
 	}
-	entityID, err := devices.ParseEntityID(envelope.Data.EntityID)
-	if err != nil {
-		return devices.Observation{}, err
+	entityID, entityIDErr := devices.ParseEntityID(envelope.Data.EntityID)
+	if entityIDErr != nil {
+		return devices.Observation{}, entityIDErr
 	}
 	domain := devices.Observation{
 		ID:                observationID,
@@ -216,13 +232,13 @@ func domainObservation(
 		AdapterReceivedAt: adapterReceivedAt,
 	}
 	if sourceUpdatedAt != nil {
-		copy := *sourceUpdatedAt
-		domain.SourceUpdatedAt = &copy
+		cloned := *sourceUpdatedAt
+		domain.SourceUpdatedAt = &cloned
 	}
 	if envelope.Data.RefreshForCommand != nil {
-		commandID, err := devices.ParseCommandID(*envelope.Data.RefreshForCommand)
-		if err != nil {
-			return devices.Observation{}, err
+		commandID, commandIDErr := devices.ParseCommandID(*envelope.Data.RefreshForCommand)
+		if commandIDErr != nil {
+			return devices.Observation{}, commandIDErr
 		}
 		domain.RefreshForCommand = &commandID
 	}

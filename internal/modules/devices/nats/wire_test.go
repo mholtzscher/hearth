@@ -1,4 +1,4 @@
-package nats
+package nats //nolint:testpackage // Tests exercise package-private NATS wire behavior and fixtures.
 
 import (
 	"bytes"
@@ -12,6 +12,7 @@ import (
 )
 
 func TestCrossBinaryFixtures(t *testing.T) {
+	t.Parallel()
 	validator, err := contractsv1.Compile()
 	if err != nil {
 		t.Fatal(err)
@@ -107,9 +108,10 @@ func TestCrossBinaryFixtures(t *testing.T) {
 
 	for _, fixture := range fixtures {
 		t.Run(fixture.name, func(t *testing.T) {
+			t.Parallel()
 			payload := []byte(fixture.payload)
-			if err := validator.Validate(fixture.schemaID, payload); err != nil {
-				t.Fatal(err)
+			if validationErr := validator.Validate(fixture.schemaID, payload); validationErr != nil {
+				t.Fatal(validationErr)
 			}
 			lowerPayload := strings.ToLower(fixture.payload)
 			for _, forbidden := range []string{"light.turn_on", "light.turn_off", "call_service", "home_assistant"} {
@@ -121,8 +123,8 @@ func TestCrossBinaryFixtures(t *testing.T) {
 			var envelope struct {
 				Data json.RawMessage `json:"data"`
 			}
-			if err := json.Unmarshal(payload, &envelope); err != nil {
-				t.Fatal(err)
+			if decodeErr := json.Unmarshal(payload, &envelope); decodeErr != nil {
+				t.Fatal(decodeErr)
 			}
 			assertDataRoundTrip(t, envelope.Data, fixture.sdkData)
 			assertDataRoundTrip(t, envelope.Data, fixture.coreData)

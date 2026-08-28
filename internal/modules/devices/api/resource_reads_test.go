@@ -1,4 +1,4 @@
-package api
+package api //nolint:testpackage // Tests exercise package-private transport mappings and fixtures.
 
 import (
 	"context"
@@ -11,24 +11,32 @@ import (
 )
 
 func TestListDevicesDefaultsLimitAndReturnsScopedCursor(t *testing.T) {
+	t.Parallel()
 	secondDeviceID := devices.DeviceID("dev_01890f47-7a6b-7c4d-8e9f-0123456789ac")
 	calls := 0
-	stub := &stubDevices{listDevices: func(_ context.Context, params devices.ListDevicesParams) (devices.Page[devices.Device], error) {
-		calls++
-		if params.Limit != 50 {
-			t.Fatalf("limit = %d", params.Limit)
-		}
-		if calls == 1 {
-			if params.AfterID != nil {
-				t.Fatalf("first AfterID = %v", params.AfterID)
+	stub := &stubDevices{
+		listDevices: func(_ context.Context, params devices.ListDevicesParams) (devices.Page[devices.Device], error) {
+			calls++
+			if params.Limit != 50 {
+				t.Fatalf("limit = %d", params.Limit)
 			}
-			return devices.Page[devices.Device]{Items: []devices.Device{{ID: apiDeviceID, Kind: devices.DeviceKindLight, Name: "Office"}}, HasMore: true}, nil
-		}
-		if params.AfterID == nil || *params.AfterID != apiDeviceID {
-			t.Fatalf("second AfterID = %v", params.AfterID)
-		}
-		return devices.Page[devices.Device]{Items: []devices.Device{{ID: secondDeviceID, Kind: devices.DeviceKindLight, Name: "Kitchen"}}}, nil
-	}}
+			if calls == 1 {
+				if params.AfterID != nil {
+					t.Fatalf("first AfterID = %v", params.AfterID)
+				}
+				return devices.Page[devices.Device]{
+					Items:   []devices.Device{{ID: apiDeviceID, Kind: devices.DeviceKindLight, Name: "Office"}},
+					HasMore: true,
+				}, nil
+			}
+			if params.AfterID == nil || *params.AfterID != apiDeviceID {
+				t.Fatalf("second AfterID = %v", params.AfterID)
+			}
+			return devices.Page[devices.Device]{
+				Items: []devices.Device{{ID: secondDeviceID, Kind: devices.DeviceKindLight, Name: "Kitchen"}},
+			}, nil
+		},
+	}
 	router, openapi := testAPI(t, stub)
 	response := performRequest(router, "/v1/devices")
 	if response.Code != http.StatusOK {
@@ -58,7 +66,9 @@ func TestListDevicesDefaultsLimitAndReturnsScopedCursor(t *testing.T) {
 	}
 }
 
+//nolint:gocognit // The related response-shape assertions are intentionally kept together.
 func TestDeviceDetailAndEntityListUseFullEntityBodies(t *testing.T) {
+	t.Parallel()
 	view := apiEntityWithState(nil)
 	secondEntityID := devices.EntityID("ent_01890f47-7a6b-7c4d-8e9f-0123456789ac")
 	secondView := apiEntityWithState(nil)
@@ -127,6 +137,7 @@ func TestDeviceDetailAndEntityListUseFullEntityBodies(t *testing.T) {
 }
 
 func TestCommandReadBodiesOmitInternalIdentifiers(t *testing.T) {
+	t.Parallel()
 	requestedAt := time.Date(2026, 8, 26, 12, 0, 0, 123, time.UTC)
 	acceptedAt := requestedAt.Add(time.Second)
 	command := devices.CommandRecord{

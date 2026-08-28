@@ -19,6 +19,8 @@ const (
 	registrationRetryMinimum = 100 * time.Millisecond
 	registrationRetryMaximum = 2 * time.Second
 	powerEntityKey           = "power"
+	concurrentComponents     = 2
+	jitterDivisor            = 2
 )
 
 func Run(ctx context.Context, config Config, logger *slog.Logger) error {
@@ -34,10 +36,14 @@ func Run(ctx context.Context, config Config, logger *slog.Logger) error {
 	}
 	token := strings.TrimSpace(string(tokenBytes))
 	if token == "" {
-		return errors.New("Home Assistant token file is empty")
+		return errors.New("home assistant token file is empty")
 	}
 
-	session, err := adapter.Connect(ctx, adapter.Config{AdapterID: config.AdapterID, NATSURL: config.NATSURL})
+	session, err := adapter.Connect(ctx, adapter.Config{
+		AdapterID: config.AdapterID,
+		NATSURL:   config.NATSURL,
+		Logger:    logger,
+	})
 	if err != nil {
 		return err
 	}
@@ -67,7 +73,7 @@ func Run(ctx context.Context, config Config, logger *slog.Logger) error {
 	if err != nil {
 		return err
 	}
-	logger.Info("registered Home Assistant light", "device_id", binding.DeviceID, "entity_id", entityID)
+	logger.InfoContext(ctx, "registered Home Assistant light", "device_id", binding.DeviceID, "entity_id", entityID)
 
 	migrationAdapter, err := homeassistantadapter.New(session, homeassistantadapter.Config{
 		URL:              config.Upstream.URL,
@@ -85,7 +91,7 @@ func Run(ctx context.Context, config Config, logger *slog.Logger) error {
 
 	runContext, cancel := context.WithCancel(ctx)
 	defer cancel()
-	results := make(chan error, 2)
+	results := make(chan error, concurrentComponents)
 	go func() { results <- migrationAdapter.Run(runContext) }()
 	go func() { results <- session.ServeCommands(runContext, handler) }()
 
@@ -103,7 +109,12 @@ func Run(ctx context.Context, config Config, logger *slog.Logger) error {
 	return nil
 }
 
-func register(ctx context.Context, session *adapter.Session, registration adapter.Registration, logger *slog.Logger) (adapter.Binding, error) {
+func register(
+	ctx context.Context,
+	session *adapter.Session,
+	registration adapter.Registration,
+	logger *slog.Logger,
+) (adapter.Binding, error) {
 	delay := registrationRetryMinimum
 	for {
 		binding, err := session.Register(ctx, registration)
@@ -116,7 +127,7 @@ func register(ctx context.Context, session *adapter.Session, registration adapte
 			return adapter.Binding{}, err
 		}
 		wait := registrationJitter(delay)
-		logger.Warn("retry Home Assistant adapter registration", "error", err, "retry_in", wait)
+		logger.WarnContext(ctx, "retry Home Assistant adapter registration", "error", err, "retry_in", wait)
 		timer := time.NewTimer(wait)
 		select {
 		case <-ctx.Done():
@@ -141,9 +152,10 @@ func entityIDForKey(binding adapter.Binding, key string) (string, error) {
 }
 
 func registrationJitter(delay time.Duration) time.Duration {
-	half := delay / 2
+	half := delay / jitterDivisor
 	if half <= 0 {
 		return delay
 	}
+	//nolint:gosec // Backoff jitter does not require cryptographic randomness.
 	return half + time.Duration(rand.Int64N(int64(delay-half)+1))
 }

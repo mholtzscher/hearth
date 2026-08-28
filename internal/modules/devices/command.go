@@ -31,13 +31,13 @@ func (service *Service) ExecuteCommand(
 	parameters CommandParameters,
 ) (CommandResult, error) {
 	if _, err := ParseEntityID(string(entityID)); err != nil {
-		return CommandResult{}, fmt.Errorf("%w: parse entity ID: %v", ErrInvalidCommand, err)
+		return CommandResult{}, fmt.Errorf("%w: parse entity ID: %w", ErrInvalidCommand, err)
 	}
 	if !operationNamePattern.MatchString(string(operationName)) {
 		return CommandResult{}, fmt.Errorf("%w: operation name is not subject-safe", ErrInvalidCommand)
 	}
 	if err := validateCommandParameters(parameters); err != nil {
-		return CommandResult{}, fmt.Errorf("%w: %v", ErrInvalidCommand, err)
+		return CommandResult{}, fmt.Errorf("%w: %w", ErrInvalidCommand, err)
 	}
 	view, err := service.repository.GetEntity(ctx, entityID)
 	if err != nil {
@@ -45,21 +45,21 @@ func (service *Service) ExecuteCommand(
 	}
 	resolved, err := service.catalog.ResolveCommand(view.Entity, operationName, parameters)
 	if err != nil {
-		return CommandResult{}, fmt.Errorf("%w: %v", ErrInvalidCommand, err)
+		return CommandResult{}, fmt.Errorf("%w: %w", ErrInvalidCommand, err)
 	}
 	commandID, err := service.dependencies.NewCommandID()
 	if err != nil {
 		return CommandResult{}, fmt.Errorf("generate command ID: %w", err)
 	}
-	if _, err := ParseCommandID(string(commandID)); err != nil {
-		return CommandResult{}, fmt.Errorf("generate command ID: %w", err)
+	if _, parseErr := ParseCommandID(string(commandID)); parseErr != nil {
+		return CommandResult{}, fmt.Errorf("generate command ID: %w", parseErr)
 	}
 	correlationID, err := service.dependencies.NewCorrelationID()
 	if err != nil {
 		return CommandResult{}, fmt.Errorf("generate correlation ID: %w", err)
 	}
-	if _, err := ParseCorrelationID(string(correlationID)); err != nil {
-		return CommandResult{}, fmt.Errorf("generate correlation ID: %w", err)
+	if _, parseErr := ParseCorrelationID(string(correlationID)); parseErr != nil {
+		return CommandResult{}, fmt.Errorf("generate correlation ID: %w", parseErr)
 	}
 	requestedAt, err := service.now()
 	if err != nil {
@@ -107,9 +107,19 @@ type commandOutcome struct {
 	err    error
 }
 
-func (service *Service) runCommand(ctx context.Context, command CommandRecord, waiter <-chan CommandResult) commandOutcome {
+func (service *Service) runCommand(
+	ctx context.Context,
+	command CommandRecord,
+	waiter <-chan CommandResult,
+) commandOutcome {
 	if service.sender == nil {
-		return service.failCommand(command.ID, CommandStatusInternalFailure, CommandFailureInternalError, errors.New("command sender is not configured"), waiter)
+		return service.failCommand(
+			command.ID,
+			CommandStatusInternalFailure,
+			CommandFailureInternalError,
+			errors.New("command sender is not configured"),
+			waiter,
+		)
 	}
 	acceptance, err := service.sender.Send(ctx, command.AdapterID, CommandRequest{
 		ID: command.ID, CorrelationID: command.CorrelationID, EntityID: command.EntityID,
@@ -118,12 +128,24 @@ func (service *Service) runCommand(ctx context.Context, command CommandRecord, w
 	})
 	if err != nil {
 		if errors.Is(err, ErrAdapterUnavailable) || errors.Is(err, context.DeadlineExceeded) {
-			return service.failCommand(command.ID, CommandStatusAdapterUnavailable, CommandFailureAdapterUnavailable, ErrAdapterUnavailable, waiter)
+			return service.failCommand(
+				command.ID,
+				CommandStatusAdapterUnavailable,
+				CommandFailureAdapterUnavailable,
+				ErrAdapterUnavailable,
+				waiter,
+			)
 		}
 		return service.failCommand(command.ID, CommandStatusInternalFailure, CommandFailureInternalError, err, waiter)
 	}
 	if !acceptance.Accepted {
-		return service.failCommand(command.ID, CommandStatusRejected, CommandFailureUpstreamRejected, ErrUpstreamRejected, waiter)
+		return service.failCommand(
+			command.ID,
+			CommandStatusRejected,
+			CommandFailureUpstreamRejected,
+			ErrUpstreamRejected,
+			waiter,
+		)
 	}
 
 	acceptedAt, err := service.now()
@@ -148,27 +170,41 @@ func (service *Service) runCommand(ctx context.Context, command CommandRecord, w
 	case <-ctx.Done():
 		completedAt, nowErr := service.now()
 		if nowErr != nil {
-			return service.failCommand(command.ID, CommandStatusInternalFailure, CommandFailureInternalError, nowErr, waiter)
+			return service.failCommand(
+				command.ID,
+				CommandStatusInternalFailure,
+				CommandFailureInternalError,
+				nowErr,
+				waiter,
+			)
 		}
 		completion := CommandCompletion{
 			ID: command.ID, Status: CommandStatusOutcomeTimeout, CompletedAt: completedAt,
 			FailureCode: CommandFailureOutcomeTimeout,
 		}
-		writeContext, cancel := persistenceContext(ctx)
-		err := service.repository.CompleteCommand(writeContext, completion)
-		cancel()
-		if errors.Is(err, ErrCommandTerminal) {
+		completionContext, cancelCompletion := persistenceContext(ctx)
+		completionErr := service.repository.CompleteCommand(completionContext, completion)
+		cancelCompletion()
+		if errors.Is(completionErr, ErrCommandTerminal) {
 			// A matching Observation committed first and its notification follows
 			// that transaction. Preserve the satisfying terminal result.
 			select {
 			case result := <-waiter:
 				return commandOutcome{result: result}
 			case <-time.After(commandPersistenceTimeout):
-				return commandOutcome{err: commandExecutionError(command.ID, errors.New("terminal command outcome was not delivered"))}
+				return commandOutcome{
+					err: commandExecutionError(command.ID, errors.New("terminal command outcome was not delivered")),
+				}
 			}
 		}
-		if err != nil {
-			return service.failCommand(command.ID, CommandStatusInternalFailure, CommandFailureInternalError, err, waiter)
+		if completionErr != nil {
+			return service.failCommand(
+				command.ID,
+				CommandStatusInternalFailure,
+				CommandFailureInternalError,
+				completionErr,
+				waiter,
+			)
 		}
 		return commandOutcome{err: commandExecutionError(command.ID, ErrOutcomeTimeout)}
 	}
@@ -197,7 +233,9 @@ func (service *Service) failCommand(
 		case result := <-waiter:
 			return commandOutcome{result: result}
 		case <-time.After(commandPersistenceTimeout):
-			return commandOutcome{err: commandExecutionError(id, errors.New("terminal command outcome was not delivered"))}
+			return commandOutcome{
+				err: commandExecutionError(id, errors.New("terminal command outcome was not delivered")),
+			}
 		}
 	}
 	if err != nil {

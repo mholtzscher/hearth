@@ -1,10 +1,9 @@
-package homeassistant
+package homeassistant //nolint:testpackage // Tests exercise package-private protocol and reconnect behavior.
 
 import (
 	"context"
 	"encoding/json"
 	"errors"
-	"io"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
@@ -15,6 +14,7 @@ import (
 
 	"github.com/coder/websocket"
 	"github.com/coder/websocket/wsjson"
+
 	"github.com/mholtzscher/hearth/sdk/adapter"
 )
 
@@ -34,7 +34,10 @@ func newRecordingPublisher() *recordingPublisher {
 	return &recordingPublisher{published: make(chan struct{}, 16)}
 }
 
-func (publisher *recordingPublisher) PublishObservation(_ context.Context, observation adapter.Observation) (adapter.ObservationID, error) {
+func (publisher *recordingPublisher) PublishObservation(
+	_ context.Context,
+	observation adapter.Observation,
+) (adapter.ObservationID, error) {
 	publisher.mutex.Lock()
 	publisher.observations = append(publisher.observations, observation)
 	publisher.mutex.Unlock()
@@ -74,14 +77,16 @@ func (responder *recordingResponder) result() (bool, bool) {
 	return responder.accepted, responder.rejected
 }
 
+//nolint:gocognit // The event-ordering scenario is clearer as one end-to-end test.
 func TestSubscribeFirstReconcilesBufferedTransitionAfterSnapshot(t *testing.T) {
+	t.Parallel()
 	publisher := newRecordingPublisher()
 	snapshotTime := time.Date(2026, 8, 19, 12, 0, 0, 0, time.UTC)
 	eventTime := snapshotTime.Add(time.Second)
 	server, serverErrors := newScriptedServer(t, func(ctx context.Context, connection *websocket.Conn) error {
-		subscribe, err := readRequest(ctx, connection)
-		if err != nil {
-			return err
+		subscribe, requestErr := readRequest(ctx, connection)
+		if requestErr != nil {
+			return requestErr
 		}
 		if subscribe.Type != "subscribe_events" || subscribe.EventType != "state_changed" {
 			return errors.New("first request was not the state_changed subscription")
@@ -89,9 +94,9 @@ func TestSubscribeFirstReconcilesBufferedTransitionAfterSnapshot(t *testing.T) {
 		if err := writeResult(ctx, connection, subscribe.ID, nil); err != nil {
 			return err
 		}
-		snapshot, err := readRequest(ctx, connection)
-		if err != nil {
-			return err
+		snapshot, requestErr := readRequest(ctx, connection)
+		if requestErr != nil {
+			return requestErr
 		}
 		if snapshot.Type != "get_states" {
 			return errors.New("snapshot was not requested after subscription acknowledgement")
@@ -130,45 +135,50 @@ func TestSubscribeFirstReconcilesBufferedTransitionAfterSnapshot(t *testing.T) {
 	if got := string(observations[1].Value); got != "true" {
 		t.Fatalf("reconciled event value = %s, want true", got)
 	}
-	if observations[1].SourceUpdatedAt == nil || *observations[1].SourceUpdatedAt != eventTime.Format(time.RFC3339Nano) {
+	if observations[1].SourceUpdatedAt == nil ||
+		*observations[1].SourceUpdatedAt != eventTime.Format(time.RFC3339Nano) {
 		t.Fatalf("reconciled source_updated_at = %v", observations[1].SourceUpdatedAt)
 	}
 }
 
+//nolint:gocognit // The event-ordering scenario is clearer as one end-to-end test.
 func TestSetRetainsMatchingRefreshWhenImmediatelySuperseded(t *testing.T) {
+	t.Parallel()
 	publisher := newRecordingPublisher()
 	initialTime := time.Date(2026, 8, 19, 12, 0, 0, 0, time.UTC)
 	refreshTime := initialTime.Add(time.Second)
 	server, serverErrors := newScriptedServer(t, func(ctx context.Context, connection *websocket.Conn) error {
-		subscribe, err := readRequest(ctx, connection)
-		if err != nil {
-			return err
+		subscribe, requestErr := readRequest(ctx, connection)
+		if requestErr != nil {
+			return requestErr
 		}
 		if err := writeResult(ctx, connection, subscribe.ID, nil); err != nil {
 			return err
 		}
-		snapshot, err := readRequest(ctx, connection)
-		if err != nil {
-			return err
+		snapshot, requestErr := readRequest(ctx, connection)
+		if requestErr != nil {
+			return requestErr
 		}
 		if err := writeResult(ctx, connection, snapshot.ID, []upstreamState{{
 			EntityID: testExternalEntityID, State: "off", LastUpdated: initialTime.Format(time.RFC3339Nano),
 		}}); err != nil {
 			return err
 		}
-		service, err := readRequest(ctx, connection)
-		if err != nil {
-			return err
+		service, requestErr := readRequest(ctx, connection)
+		if requestErr != nil {
+			return requestErr
 		}
-		if service.Type != "call_service" || service.Domain != "light" || service.Service != "turn_on" || service.Target == nil || service.Target.EntityID != testExternalEntityID {
+		if service.Type != "call_service" || service.Domain != "light" || service.Service != "turn_on" ||
+			service.Target == nil ||
+			service.Target.EntityID != testExternalEntityID {
 			return errors.New("set did not call light.turn_on for the configured Entity")
 		}
 		if err := writeResult(ctx, connection, service.ID, nil); err != nil {
 			return err
 		}
-		firstRefresh, err := readRequest(ctx, connection)
-		if err != nil {
-			return err
+		firstRefresh, requestErr := readRequest(ctx, connection)
+		if requestErr != nil {
+			return requestErr
 		}
 		if firstRefresh.Type != "get_states" {
 			return errors.New("accepted command did not request a fresh State")
@@ -195,9 +205,9 @@ func TestSetRetainsMatchingRefreshWhenImmediatelySuperseded(t *testing.T) {
 	go func() { runResult <- migrationAdapter.Run(ctx) }()
 	waitForPublications(t, publisher, 1)
 
-	handler, err := migrationAdapter.CommandHandler()
-	if err != nil {
-		t.Fatal(err)
+	handler, handlerErr := migrationAdapter.CommandHandler()
+	if handlerErr != nil {
+		t.Fatal(handlerErr)
 	}
 	responder := &recordingResponder{}
 	if err := handler(ctx, adapter.Command{
@@ -235,6 +245,7 @@ func TestSetRetainsMatchingRefreshWhenImmediatelySuperseded(t *testing.T) {
 }
 
 func TestUnavailableAndUnsupportedUpstreamStatesAreRejected(t *testing.T) {
+	t.Parallel()
 	publisher := newRecordingPublisher()
 	migrationAdapter := newTestAdapter(t, publisher, "http://127.0.0.1:1")
 	if err := migrationAdapter.publish(context.Background(), upstreamState{
@@ -242,9 +253,9 @@ func TestUnavailableAndUnsupportedUpstreamStatesAreRejected(t *testing.T) {
 	}, time.Now().UTC(), nil); !errors.Is(err, errUnsupportedState) {
 		t.Fatalf("publish unavailable State error = %v", err)
 	}
-	handler, err := migrationAdapter.CommandHandler()
-	if err != nil {
-		t.Fatal(err)
+	handler, handlerErr := migrationAdapter.CommandHandler()
+	if handlerErr != nil {
+		t.Fatal(handlerErr)
 	}
 	responder := &recordingResponder{}
 	if err := handler(context.Background(), adapter.Command{
@@ -261,6 +272,7 @@ func TestUnavailableAndUnsupportedUpstreamStatesAreRejected(t *testing.T) {
 }
 
 func TestWaitForStateAfterRetainsImmediatelySupersededMatch(t *testing.T) {
+	t.Parallel()
 	client := &client{
 		latestStates: make(map[string]stateChange),
 		stateSignal:  make(chan struct{}),
@@ -280,6 +292,7 @@ func TestWaitForStateAfterRetainsImmediatelySupersededMatch(t *testing.T) {
 }
 
 func TestPublishOmitsMalformedLastUpdated(t *testing.T) {
+	t.Parallel()
 	publisher := newRecordingPublisher()
 	migrationAdapter := newTestAdapter(t, publisher, "http://127.0.0.1:1")
 	if err := migrationAdapter.publish(context.Background(), upstreamState{
@@ -294,6 +307,7 @@ func TestPublishOmitsMalformedLastUpdated(t *testing.T) {
 }
 
 func TestDeliveredResponseWinsDisconnect(t *testing.T) {
+	t.Parallel()
 	connectionError := errors.New("connection closed")
 	for range 100 {
 		client := &client{done: make(chan struct{}), err: connectionError}
@@ -312,14 +326,15 @@ func TestDeliveredResponseWinsDisconnect(t *testing.T) {
 }
 
 func TestClientCorrelatesConcurrentRequestsByID(t *testing.T) {
+	t.Parallel()
 	server, serverErrors := newScriptedServer(t, func(ctx context.Context, connection *websocket.Conn) error {
-		first, err := readRequest(ctx, connection)
-		if err != nil {
-			return err
+		first, requestErr := readRequest(ctx, connection)
+		if requestErr != nil {
+			return requestErr
 		}
-		second, err := readRequest(ctx, connection)
-		if err != nil {
-			return err
+		second, requestErr := readRequest(ctx, connection)
+		if requestErr != nil {
+			return requestErr
 		}
 		requests := map[string]requestMessage{first.Type: first, second.Type: second}
 		service := requests["call_service"]
@@ -327,11 +342,16 @@ func TestClientCorrelatesConcurrentRequestsByID(t *testing.T) {
 		if service.ID == 0 || states.ID == 0 {
 			return errors.New("did not receive both concurrent requests")
 		}
-		if err := writeResult(ctx, connection, states.ID, []upstreamState{{EntityID: testExternalEntityID, State: "on"}}); err != nil {
-			return err
+		if writeErr := writeResult(
+			ctx,
+			connection,
+			states.ID,
+			[]upstreamState{{EntityID: testExternalEntityID, State: "on"}},
+		); writeErr != nil {
+			return writeErr
 		}
-		if err := writeResult(ctx, connection, service.ID, nil); err != nil {
-			return err
+		if writeErr := writeResult(ctx, connection, service.ID, nil); writeErr != nil {
+			return writeErr
 		}
 		_, _, _ = connection.Read(ctx)
 		return nil
@@ -340,9 +360,9 @@ func TestClientCorrelatesConcurrentRequestsByID(t *testing.T) {
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	client, err := dialClient(ctx, server.URL, "test-token", testExternalEntityID)
-	if err != nil {
-		t.Fatal(err)
+	client, dialErr := dialClient(ctx, server.URL, "test-token", testExternalEntityID)
+	if dialErr != nil {
+		t.Fatal(dialErr)
 	}
 	defer client.Close()
 
@@ -364,20 +384,21 @@ func TestClientCorrelatesConcurrentRequestsByID(t *testing.T) {
 }
 
 func TestAdapterReconnectsAndAcquiresANewSnapshot(t *testing.T) {
+	t.Parallel()
 	publisher := newRecordingPublisher()
 	var connections atomic.Int64
 	server, serverErrors := newScriptedServer(t, func(ctx context.Context, connection *websocket.Conn) error {
 		connectionNumber := connections.Add(1)
-		subscribe, err := readRequest(ctx, connection)
-		if err != nil {
-			return err
+		subscribe, requestErr := readRequest(ctx, connection)
+		if requestErr != nil {
+			return requestErr
 		}
 		if err := writeResult(ctx, connection, subscribe.ID, nil); err != nil {
 			return err
 		}
-		snapshot, err := readRequest(ctx, connection)
-		if err != nil {
-			return err
+		snapshot, requestErr := readRequest(ctx, connection)
+		if requestErr != nil {
+			return requestErr
 		}
 		state := "off"
 		if connectionNumber > 1 {
@@ -418,14 +439,17 @@ func newTestAdapter(t *testing.T, publisher ObservationPublisher, upstreamURL st
 	t.Helper()
 	value, err := New(publisher, Config{
 		URL: upstreamURL, Token: "test-token", ExternalEntityID: testExternalEntityID, EntityID: testEntityID,
-	}, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	}, slog.New(slog.DiscardHandler))
 	if err != nil {
 		t.Fatal(err)
 	}
 	return value
 }
 
-func newScriptedServer(t *testing.T, script func(context.Context, *websocket.Conn) error) (*httptest.Server, <-chan error) {
+func newScriptedServer(
+	t *testing.T,
+	script func(context.Context, *websocket.Conn) error,
+) (*httptest.Server, <-chan error) {
 	t.Helper()
 	errorsChannel := make(chan error, 8)
 	server := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
@@ -433,9 +457,9 @@ func newScriptedServer(t *testing.T, script func(context.Context, *websocket.Con
 			http.NotFound(response, request)
 			return
 		}
-		connection, err := websocket.Accept(response, request, nil)
-		if err != nil {
-			errorsChannel <- err
+		connection, acceptErr := websocket.Accept(response, request, nil)
+		if acceptErr != nil {
+			errorsChannel <- acceptErr
 			return
 		}
 		defer connection.CloseNow()

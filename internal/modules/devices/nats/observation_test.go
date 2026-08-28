@@ -1,4 +1,4 @@
-package nats
+package nats //nolint:testpackage // Tests exercise package-private NATS wire behavior and fixtures.
 
 import (
 	"bytes"
@@ -10,12 +10,13 @@ import (
 	"testing"
 	"time"
 
-	contractsv1 "github.com/mholtzscher/hearth/contracts/v1"
-	"github.com/mholtzscher/hearth/internal/contracts/v1/natswire"
-	"github.com/mholtzscher/hearth/internal/modules/devices"
 	natsserver "github.com/nats-io/nats-server/v2/server"
 	natsgo "github.com/nats-io/nats.go"
 	"github.com/nats-io/nats.go/jetstream"
+
+	contractsv1 "github.com/mholtzscher/hearth/contracts/v1"
+	"github.com/mholtzscher/hearth/internal/contracts/v1/natswire"
+	"github.com/mholtzscher/hearth/internal/modules/devices"
 )
 
 const (
@@ -44,7 +45,9 @@ type projectedObservation struct {
 	observedAt  time.Time
 }
 
+//nolint:gocognit,gocyclo,cyclop // The acknowledgement failure matrix is clearer as one consumer test.
 func TestObservationConsumerMapsProjectsAndAcknowledgesByFailureClass(t *testing.T) {
+	t.Parallel()
 	_, connection, js := startJetStream(t)
 	consumer, err := ProvisionObservationResources(context.Background(), js)
 	if err != nil {
@@ -102,8 +105,8 @@ func TestObservationConsumerMapsProjectsAndAcknowledgesByFailureClass(t *testing
 		Header:  natsgo.Header{natsgo.MsgIdHdr: []string{testSecondObservationID}},
 		Data:    []byte(`{}`),
 	}
-	if _, err := js.PublishMsg(context.Background(), message); err != nil {
-		t.Fatal(err)
+	if _, publishErr := js.PublishMsg(context.Background(), message); publishErr != nil {
+		t.Fatal(publishErr)
 	}
 	waitForConsumer(t, consumer, func(info *jetstream.ConsumerInfo) bool {
 		return info.AckFloor.Consumer >= 2 && info.NumAckPending == 0
@@ -124,7 +127,8 @@ func TestObservationConsumerMapsProjectsAndAcknowledgesByFailureClass(t *testing
 		t.Fatalf("unparseable source_updated_at reached projector: %#v", unexpected)
 	default:
 	}
-	if output := logs.String(); !strings.Contains(output, "parse source_updated_at") || !strings.Contains(output, testThirdObservationID) {
+	if output := logs.String(); !strings.Contains(output, "parse source_updated_at") ||
+		!strings.Contains(output, testThirdObservationID) {
 		t.Fatalf("source_updated_at log = %s", output)
 	}
 
@@ -151,6 +155,7 @@ func TestObservationConsumerMapsProjectsAndAcknowledgesByFailureClass(t *testing
 }
 
 func TestDomainObservationCopiesWireDataAndPointers(t *testing.T) {
+	t.Parallel()
 	commandID := "cmd_01890f47-7a6b-7c4d-8e9f-0123456789ab"
 	wire := natswire.Envelope[observation]{
 		ID: testObservationID,
@@ -178,7 +183,12 @@ func publishObservationEnvelope(t *testing.T, js jetstream.JetStream, observatio
 	publishObservationEnvelopeWithSource(t, js, observationID, value, nil)
 }
 
-func publishObservationEnvelopeWithSource(t *testing.T, js jetstream.JetStream, observationID, value string, sourceUpdatedAt *string) {
+func publishObservationEnvelopeWithSource(
+	t *testing.T,
+	js jetstream.JetStream,
+	observationID, value string,
+	sourceUpdatedAt *string,
+) {
 	t.Helper()
 	emittedAt := time.Now().UTC()
 	adapterReceivedAt := emittedAt.Add(2 * time.Minute)
@@ -190,13 +200,13 @@ func publishObservationEnvelopeWithSource(t *testing.T, js jetstream.JetStream, 
 			AdapterReceivedAt: adapterReceivedAt.Format(time.RFC3339Nano), SourceUpdatedAt: sourceUpdatedAt,
 		},
 	}
-	validator, err := contractsv1.Compile()
-	if err != nil {
-		t.Fatal(err)
+	validator, compileErr := contractsv1.Compile()
+	if compileErr != nil {
+		t.Fatal(compileErr)
 	}
-	payload, err := natswire.Encode(validator, contractsv1.ObservationSchemaID, envelope)
-	if err != nil {
-		t.Fatal(err)
+	payload, encodeErr := natswire.Encode(validator, contractsv1.ObservationSchemaID, envelope)
+	if encodeErr != nil {
+		t.Fatal(encodeErr)
 	}
 	message := &natsgo.Msg{
 		Subject: mustObservationSubject(t),

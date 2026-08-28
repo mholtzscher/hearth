@@ -7,8 +7,9 @@ import (
 	"slices"
 	"time"
 
-	"github.com/mholtzscher/hearth/internal/contracts/v1/natswire"
 	"github.com/nats-io/nats.go/jetstream"
+
+	"github.com/mholtzscher/hearth/internal/contracts/v1/natswire"
 )
 
 const (
@@ -27,8 +28,8 @@ func ProvisionObservationResources(ctx context.Context, js jetstream.JetStream) 
 	if err != nil {
 		return nil, fmt.Errorf("provision observation stream: %w", err)
 	}
-	if err := validateObservationStream(ctx, stream); err != nil {
-		return nil, err
+	if validationErr := validateObservationStream(ctx, stream); validationErr != nil {
+		return nil, validationErr
 	}
 
 	consumer, err := stream.Consumer(ctx, ObservationConsumerName)
@@ -38,8 +39,8 @@ func ProvisionObservationResources(ctx context.Context, js jetstream.JetStream) 
 	if err != nil {
 		return nil, fmt.Errorf("provision observation consumer: %w", err)
 	}
-	if err := validateObservationConsumer(ctx, consumer); err != nil {
-		return nil, err
+	if validationErr := validateObservationConsumer(ctx, consumer); validationErr != nil {
+		return nil, validationErr
 	}
 	return consumer, nil
 }
@@ -49,8 +50,8 @@ func ValidateObservationResources(ctx context.Context, js jetstream.JetStream) e
 	if err != nil {
 		return fmt.Errorf("get observation stream: %w", err)
 	}
-	if err := validateObservationStream(ctx, stream); err != nil {
-		return err
+	if validationErr := validateObservationStream(ctx, stream); validationErr != nil {
+		return validationErr
 	}
 	consumer, err := stream.Consumer(ctx, ObservationConsumerName)
 	if err != nil {

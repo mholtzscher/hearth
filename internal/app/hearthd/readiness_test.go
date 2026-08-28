@@ -1,30 +1,33 @@
-package hearthd
+package hearthd //nolint:testpackage // Tests exercise package-private assembly and lifecycle behavior.
 
 import (
 	"context"
-	"io"
 	"log/slog"
 	"path/filepath"
 	"testing"
 	"time"
 
+	natsserver "github.com/nats-io/nats-server/v2/server"
+	natsgo "github.com/nats-io/nats.go"
+	"github.com/nats-io/nats.go/jetstream"
+
 	contractsv1 "github.com/mholtzscher/hearth/contracts/v1"
 	"github.com/mholtzscher/hearth/internal/modules/devices"
 	devicesnats "github.com/mholtzscher/hearth/internal/modules/devices/nats"
 	platformdb "github.com/mholtzscher/hearth/internal/platform/db"
-	natsserver "github.com/nats-io/nats-server/v2/server"
-	natsgo "github.com/nats-io/nats.go"
-	"github.com/nats-io/nats.go/jetstream"
 )
 
 func TestRuntimeReadinessChecksEveryRequiredDependency(t *testing.T) {
+	t.Parallel()
 	t.Run("ready", func(t *testing.T) {
+		t.Parallel()
 		fixture := newReadinessFixture(t)
 		if err := fixture.readiness.Check(context.Background()); err != nil {
 			t.Fatal(err)
 		}
 	})
 	t.Run("SQLite unavailable", func(t *testing.T) {
+		t.Parallel()
 		fixture := newReadinessFixture(t)
 		if err := fixture.database.Close(); err != nil {
 			t.Fatal(err)
@@ -34,6 +37,7 @@ func TestRuntimeReadinessChecksEveryRequiredDependency(t *testing.T) {
 		}
 	})
 	t.Run("NATS unavailable", func(t *testing.T) {
+		t.Parallel()
 		fixture := newReadinessFixture(t)
 		fixture.connection.Close()
 		if err := fixture.readiness.Check(context.Background()); err == nil {
@@ -41,6 +45,7 @@ func TestRuntimeReadinessChecksEveryRequiredDependency(t *testing.T) {
 		}
 	})
 	t.Run("resources mismatched", func(t *testing.T) {
+		t.Parallel()
 		fixture := newReadinessFixture(t)
 		stream, err := fixture.jetstream.Stream(context.Background(), devicesnats.ObservationStreamName)
 		if err != nil {
@@ -52,14 +57,15 @@ func TestRuntimeReadinessChecksEveryRequiredDependency(t *testing.T) {
 		}
 		config := info.Config
 		config.MaxBytes = 42
-		if _, err := fixture.jetstream.UpdateStream(context.Background(), config); err != nil {
-			t.Fatal(err)
+		if _, updateErr := fixture.jetstream.UpdateStream(context.Background(), config); updateErr != nil {
+			t.Fatal(updateErr)
 		}
-		if err := fixture.readiness.Check(context.Background()); err == nil {
+		if checkErr := fixture.readiness.Check(context.Background()); checkErr == nil {
 			t.Fatal("readiness passed with mismatched stream")
 		}
 	})
 	t.Run("consumer inactive", func(t *testing.T) {
+		t.Parallel()
 		fixture := newReadinessFixture(t)
 		fixture.consumer.Stop()
 		select {
@@ -132,7 +138,7 @@ func newReadinessFixture(t *testing.T) readinessFixture {
 		t.Fatal(err)
 	}
 	consumer, err := devicesnats.StartObservationConsumer(
-		ctx, durable, validator, discardObservationProjector{}, slog.New(slog.NewJSONHandler(io.Discard, nil)),
+		ctx, durable, validator, discardObservationProjector{}, slog.New(slog.DiscardHandler),
 	)
 	if err != nil {
 		t.Fatal(err)

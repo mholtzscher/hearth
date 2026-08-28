@@ -1,4 +1,4 @@
-package hearthd
+package hearthd //nolint:testpackage // Tests exercise package-private assembly and lifecycle behavior.
 
 import (
 	"bytes"
@@ -11,6 +11,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -18,6 +19,10 @@ import (
 	"time"
 
 	"github.com/danielgtaylor/huma/v2"
+	natsserver "github.com/nats-io/nats-server/v2/server"
+	natsgo "github.com/nats-io/nats.go"
+	"github.com/nats-io/nats.go/jetstream"
+
 	contractsv1 "github.com/mholtzscher/hearth/contracts/v1"
 	simulatoradapter "github.com/mholtzscher/hearth/internal/adapters/simulator"
 	simulatorapp "github.com/mholtzscher/hearth/internal/app/simulator"
@@ -27,9 +32,6 @@ import (
 	devicesnats "github.com/mholtzscher/hearth/internal/modules/devices/nats"
 	platformdb "github.com/mholtzscher/hearth/internal/platform/db"
 	"github.com/mholtzscher/hearth/sdk/adapter"
-	natsserver "github.com/nats-io/nats-server/v2/server"
-	natsgo "github.com/nats-io/nats.go"
-	"github.com/nats-io/nats.go/jetstream"
 )
 
 const simulatorMatrixAdapterID = "simulator"
@@ -78,8 +80,9 @@ type simulatorMatrixHarness struct {
 }
 
 type lockedBuffer struct {
-	mutex sync.Mutex
 	bytes.Buffer
+
+	mutex sync.Mutex
 }
 
 func (buffer *lockedBuffer) Write(value []byte) (int, error) {
@@ -94,6 +97,7 @@ func (buffer *lockedBuffer) String() string {
 	return buffer.Buffer.String()
 }
 
+//nolint:gocognit // Integration harness setup keeps resource ownership visible in one place.
 func newSimulatorMatrixHarness(t *testing.T, scenario string, options simulatorMatrixOptions) *simulatorMatrixHarness {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
@@ -107,8 +111,8 @@ func newSimulatorMatrixHarness(t *testing.T, scenario string, options simulatorM
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := platformdb.Migrate(ctx, harness.database); err != nil {
-		t.Fatal(err)
+	if migrateErr := platformdb.Migrate(ctx, harness.database); migrateErr != nil {
+		t.Fatal(migrateErr)
 	}
 	catalog, err := devices.NewBuiltinTypeCatalog()
 	if err != nil {
@@ -139,9 +143,9 @@ func newSimulatorMatrixHarness(t *testing.T, scenario string, options simulatorM
 		t.Fatal(err)
 	}
 	if options.ackWait > 0 {
-		info, err := harness.durable.Info(ctx)
-		if err != nil {
-			t.Fatal(err)
+		info, infoErr := harness.durable.Info(ctx)
+		if infoErr != nil {
+			t.Fatal(infoErr)
 		}
 		config := info.Config
 		config.AckWait = options.ackWait
@@ -170,7 +174,13 @@ func newSimulatorMatrixHarness(t *testing.T, scenario string, options simulatorM
 	if options.observationProjector != nil {
 		projector = options.observationProjector(harness.service, projector)
 	}
-	harness.consumer, err = devicesnats.StartObservationConsumer(ctx, harness.durable, harness.validator, projector, logger)
+	harness.consumer, err = devicesnats.StartObservationConsumer(
+		ctx,
+		harness.durable,
+		harness.validator,
+		projector,
+		logger,
+	)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -186,20 +196,37 @@ func newSimulatorMatrixHarness(t *testing.T, scenario string, options simulatorM
 
 	waitForMatrixCondition(t, 5*time.Second, func() (bool, error) {
 		var entityID string
-		err := harness.database.QueryRowContext(ctx, `SELECT id FROM entities LIMIT 1`).Scan(&entityID)
-		if errors.Is(err, sql.ErrNoRows) {
+		queryErr := harness.database.QueryRowContext(ctx, `SELECT id FROM entities LIMIT 1`).Scan(&entityID)
+		if errors.Is(queryErr, sql.ErrNoRows) {
 			return false, nil
 		}
-		if err != nil {
-			return false, err
+		if queryErr != nil {
+			return false, queryErr
 		}
 		harness.entityID = devices.EntityID(entityID)
 		return true, nil
 	})
+	if scenario != simulatoradapter.ScenarioUnavailableAdapter {
+		commandSubject, subjectErr := natswire.CommandSubject(simulatorMatrixAdapterID, string(harness.entityID), "set")
+		if subjectErr != nil {
+			t.Fatal(subjectErr)
+		}
+		waitForMatrixCondition(t, 5*time.Second, func() (bool, error) {
+			subscriptions, subscriptionsErr := harness.server.Subsz(&natsserver.SubszOptions{
+				Subscriptions: true,
+				Test:          commandSubject,
+			})
+			if subscriptionsErr != nil {
+				return false, subscriptionsErr
+			}
+			return subscriptions.Total > 0, nil
+		})
+	}
 	t.Cleanup(harness.Close)
 	return harness
 }
 
+//nolint:gocognit // Teardown mirrors the harness resources and preserves their shutdown order.
 func (harness *simulatorMatrixHarness) Close() {
 	harness.closeOnce.Do(func() {
 		harness.cancel()
@@ -274,6 +301,7 @@ func (harness *simulatorMatrixHarness) postCommand(ctx context.Context, value bo
 }
 
 func TestSimulatorObservationFailureMatrix(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name     string
 		scenario string
@@ -304,7 +332,8 @@ func TestSimulatorObservationFailureMatrix(t *testing.T) {
 			name: "delayed source time", scenario: simulatoradapter.ScenarioDelayedSourceTime,
 			assert: func(t *testing.T, harness *simulatorMatrixHarness) {
 				state := harness.waitForState(t)
-				if state.SourceUpdatedAt == nil || !state.SourceUpdatedAt.Before(state.AdapterReceivedAt.Add(-23*time.Hour)) {
+				if state.SourceUpdatedAt == nil ||
+					!state.SourceUpdatedAt.Before(state.AdapterReceivedAt.Add(-23*time.Hour)) {
 					t.Fatalf("state timestamps = %#v", state)
 				}
 			},
@@ -340,13 +369,16 @@ func TestSimulatorObservationFailureMatrix(t *testing.T) {
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
 			harness := newSimulatorMatrixHarness(t, test.scenario, simulatorMatrixOptions{})
 			test.assert(t, harness)
 		})
 	}
 }
 
+//nolint:gocognit // The failure matrix is clearer as one table-driven integration test.
 func TestSimulatorCommandHTTPFailureMatrix(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name        string
 		scenario    string
@@ -389,8 +421,8 @@ func TestSimulatorCommandHTTPFailureMatrix(t *testing.T) {
 					t.Fatal(err)
 				}
 				t.Cleanup(func() { _ = subscription.Drain() })
-				if err := harness.connection.Flush(); err != nil {
-					t.Fatal(err)
+				if flushErr := harness.connection.Flush(); flushErr != nil {
+					t.Fatal(flushErr)
 				}
 			},
 			wantStatus: http.StatusInternalServerError, wantDetail: "internal error",
@@ -399,6 +431,7 @@ func TestSimulatorCommandHTTPFailureMatrix(t *testing.T) {
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
 			harness := newSimulatorMatrixHarness(t, test.scenario, test.options)
 			if test.prepare != nil {
 				test.prepare(t, harness)
@@ -411,8 +444,8 @@ func TestSimulatorCommandHTTPFailureMatrix(t *testing.T) {
 				t.Fatalf("status = %d, body = %s", status, body)
 			}
 			var response huma.ErrorModel
-			if err := json.Unmarshal(body, &response); err != nil {
-				t.Fatal(err)
+			if decodeErr := json.Unmarshal(body, &response); decodeErr != nil {
+				t.Fatal(decodeErr)
 			}
 			if response.Status != test.wantStatus || response.Detail != test.wantDetail {
 				t.Fatalf("error body = %#v", response)
@@ -427,15 +460,19 @@ func TestSimulatorCommandHTTPFailureMatrix(t *testing.T) {
 				t.Fatalf("command history = %#v", history)
 			}
 			command := history.Items[0]
-			if command.Status != test.wantCommand || command.FailureCode == nil || *command.FailureCode != test.wantFailure {
+			if command.Status != test.wantCommand || command.FailureCode == nil ||
+				*command.FailureCode != test.wantFailure {
 				t.Fatalf("stored command = %#v", command)
 			}
 		})
 	}
 }
 
+//nolint:gocognit // The overlapping command lifecycle is clearer as one integration test.
 func TestSimulatorNoOpAndOverlappingCommands(t *testing.T) {
+	t.Parallel()
 	t.Run("no-op refresh", func(t *testing.T) {
+		t.Parallel()
 		harness := newSimulatorMatrixHarness(t, simulatoradapter.ScenarioNoOpRefresh, simulatorMatrixOptions{})
 		initial := harness.waitForState(t)
 		status, body, err := harness.postCommand(harness.ctx, false)
@@ -446,8 +483,8 @@ func TestSimulatorNoOpAndOverlappingCommands(t *testing.T) {
 			t.Fatalf("status = %d, body = %s", status, body)
 		}
 		var result devicesapi.CommandResultBody
-		if err := json.Unmarshal(body, &result); err != nil {
-			t.Fatal(err)
+		if decodeErr := json.Unmarshal(body, &result); decodeErr != nil {
+			t.Fatal(decodeErr)
 		}
 		state := harness.waitForState(t)
 		if result.Value != false || state.ObservationID == initial.ObservationID ||
@@ -469,6 +506,7 @@ func TestSimulatorNoOpAndOverlappingCommands(t *testing.T) {
 	})
 
 	t.Run("overlapping opposite commands", func(t *testing.T) {
+		t.Parallel()
 		harness := newSimulatorMatrixHarness(t, simulatoradapter.ScenarioOverlappingCommands, simulatorMatrixOptions{})
 		harness.waitForState(t)
 		type outcome struct {
@@ -478,7 +516,6 @@ func TestSimulatorNoOpAndOverlappingCommands(t *testing.T) {
 		}
 		outcomes := make(chan outcome, 2)
 		for _, value := range []bool{true, false} {
-			value := value
 			go func() {
 				status, body, err := harness.postCommand(harness.ctx, value)
 				outcomes <- outcome{status: status, body: body, err: err}
@@ -487,15 +524,15 @@ func TestSimulatorNoOpAndOverlappingCommands(t *testing.T) {
 		commandIDs := make(map[string]struct{})
 		observationIDs := make(map[string]struct{})
 		for range 2 {
-			outcome := <-outcomes
-			if outcome.err != nil {
-				t.Fatal(outcome.err)
+			commandOutcome := <-outcomes
+			if commandOutcome.err != nil {
+				t.Fatal(commandOutcome.err)
 			}
-			if outcome.status != http.StatusOK {
-				t.Fatalf("status = %d, body = %s", outcome.status, outcome.body)
+			if commandOutcome.status != http.StatusOK {
+				t.Fatalf("status = %d, body = %s", commandOutcome.status, commandOutcome.body)
 			}
 			var result devicesapi.CommandResultBody
-			if err := json.Unmarshal(outcome.body, &result); err != nil {
+			if err := json.Unmarshal(commandOutcome.body, &result); err != nil {
 				t.Fatal(err)
 			}
 			commandIDs[result.CommandID] = struct{}{}
@@ -522,6 +559,7 @@ func TestSimulatorNoOpAndOverlappingCommands(t *testing.T) {
 }
 
 func TestHTTPDisconnectLeavesCommandLifecycleActive(t *testing.T) {
+	t.Parallel()
 	harness := newSimulatorMatrixHarness(t, simulatoradapter.ScenarioOutcomeTimeout, simulatorMatrixOptions{
 		dependencies: devices.Dependencies{
 			Now: func() time.Time { return time.Now().UTC().Add(-9 * time.Second) },
@@ -572,6 +610,7 @@ func TestHTTPDisconnectLeavesCommandLifecycleActive(t *testing.T) {
 }
 
 func TestSimulatorInterruptedCommandSurvivesLateLinkedObservation(t *testing.T) {
+	t.Parallel()
 	harness := newSimulatorMatrixHarness(t, simulatoradapter.ScenarioInterruptedCommand, simulatorMatrixOptions{})
 	harness.waitForState(t)
 	commandID, err := devices.NewCommandID()
@@ -589,13 +628,17 @@ func TestSimulatorInterruptedCommandSurvivesLateLinkedObservation(t *testing.T) 
 		CorrelationID: correlationID, Status: devices.CommandStatusRequested,
 		RequestedAt: now, DeadlineAt: now.Add(10 * time.Second),
 	}
-	if _, err := harness.repository.CreateCommand(harness.ctx, record); err != nil {
-		t.Fatal(err)
+	if _, createErr := harness.repository.CreateCommand(harness.ctx, record); createErr != nil {
+		t.Fatal(createErr)
 	}
 	acceptance, err := devicesnats.NewCommandSender(harness.connection, harness.validator).Send(
 		harness.ctx, simulatorMatrixAdapterID, devices.CommandRequest{
-			ID: commandID, CorrelationID: correlationID, EntityID: harness.entityID,
-			OperationName: devices.OperationNameSet, Parameters: devices.CommandParameters(`{"value":true}`), Deadline: record.DeadlineAt,
+			ID:            commandID,
+			CorrelationID: correlationID,
+			EntityID:      harness.entityID,
+			OperationName: devices.OperationNameSet,
+			Parameters:    devices.CommandParameters(`{"value":true}`),
+			Deadline:      record.DeadlineAt,
 		},
 	)
 	if err != nil {
@@ -604,17 +647,17 @@ func TestSimulatorInterruptedCommandSurvivesLateLinkedObservation(t *testing.T) 
 	if !acceptance.Accepted {
 		t.Fatal("simulator did not accept interrupted command")
 	}
-	if err := harness.repository.MarkCommandAccepted(harness.ctx, commandID, time.Now().UTC()); err != nil {
-		t.Fatal(err)
+	if acceptErr := harness.repository.MarkCommandAccepted(harness.ctx, commandID, time.Now().UTC()); acceptErr != nil {
+		t.Fatal(acceptErr)
 	}
-	if err := harness.repository.InterruptActiveCommands(harness.ctx, time.Now().UTC()); err != nil {
-		t.Fatal(err)
+	if interruptErr := harness.repository.InterruptActiveCommands(harness.ctx, time.Now().UTC()); interruptErr != nil {
+		t.Fatal(interruptErr)
 	}
 	observationID := publishMatrixLinkedObservation(t, harness, commandID, correlationID, true)
 	waitForMatrixCondition(t, 3*time.Second, func() (bool, error) {
-		view, err := harness.service.GetEntity(harness.ctx, harness.entityID)
-		if err != nil {
-			return false, err
+		view, getErr := harness.service.GetEntity(harness.ctx, harness.entityID)
+		if getErr != nil {
+			return false, getErr
 		}
 		return view.State != nil && view.State.ObservationID == observationID, nil
 	})
@@ -628,7 +671,9 @@ func TestSimulatorInterruptedCommandSurvivesLateLinkedObservation(t *testing.T) 
 	}
 }
 
+//nolint:gocognit // The restart and redelivery lifecycle is clearer as one integration test.
 func TestSimulatorRestartBeforeAckRedeliversWithoutChangingStateOrCommand(t *testing.T) {
+	t.Parallel()
 	committed := make(chan struct{})
 	var failOnce atomic.Bool
 	harness := newSimulatorMatrixHarness(t, simulatoradapter.ScenarioRestartBeforeAck, simulatorMatrixOptions{
@@ -661,8 +706,8 @@ func TestSimulatorRestartBeforeAckRedeliversWithoutChangingStateOrCommand(t *tes
 		t.Fatalf("status = %d, body = %s", status, body)
 	}
 	var result devicesapi.CommandResultBody
-	if err := json.Unmarshal(body, &result); err != nil {
-		t.Fatal(err)
+	if decodeErr := json.Unmarshal(body, &result); decodeErr != nil {
+		t.Fatal(decodeErr)
 	}
 	select {
 	case <-committed:
@@ -696,11 +741,11 @@ func TestSimulatorRestartBeforeAckRedeliversWithoutChangingStateOrCommand(t *tes
 			observation devices.Observation,
 			observedAt time.Time,
 		) (devices.ProjectionResult, error) {
-			projected, err := harness.service.ProjectObservation(ctx, adapterID, observation, observedAt)
+			projected, projectionErr := harness.service.ProjectObservation(ctx, adapterID, observation, observedAt)
 			if observation.ID == devices.ObservationID(result.ObservationID) {
 				redeliveryOnce.Do(func() { close(redelivered) })
 			}
-			return projected, err
+			return projected, projectionErr
 		}),
 		slog.New(slog.NewJSONHandler(harness.logs, nil)),
 	)
@@ -713,8 +758,8 @@ func TestSimulatorRestartBeforeAckRedeliversWithoutChangingStateOrCommand(t *tes
 		t.Fatal("unacknowledged linked observation was not redelivered")
 	}
 	waitForMatrixCondition(t, time.Second, func() (bool, error) {
-		info, err := harness.durable.Info(harness.ctx)
-		return err == nil && info.NumAckPending == 0, err
+		info, infoErr := harness.durable.Info(harness.ctx)
+		return infoErr == nil && info.NumAckPending == 0, infoErr
 	})
 	afterCommand, err := harness.repository.GetCommand(harness.ctx, commandID)
 	if err != nil {
@@ -752,7 +797,7 @@ func publishMatrixLinkedObservation(
 			ID: string(observationID), Schema: contractsv1.ObservationSchemaID, EmittedAt: now,
 			CorrelationID: string(correlationID), CausationID: &commandIDString,
 			Data: adapter.Observation{
-				EntityID: string(harness.entityID), Value: json.RawMessage(fmt.Sprintf("%t", value)),
+				EntityID: string(harness.entityID), Value: json.RawMessage(strconv.FormatBool(value)),
 				AdapterReceivedAt: now, RefreshForCommand: &commandIDString,
 			},
 		},
@@ -766,8 +811,8 @@ func publishMatrixLinkedObservation(
 	}
 	message := &natsgo.Msg{Subject: subject, Data: payload, Header: make(natsgo.Header)}
 	message.Header.Set(natsgo.MsgIdHdr, string(observationID))
-	if _, err := harness.jetstream.PublishMsg(harness.ctx, message); err != nil {
-		t.Fatal(err)
+	if _, publishErr := harness.jetstream.PublishMsg(harness.ctx, message); publishErr != nil {
+		t.Fatal(publishErr)
 	}
 	return observationID
 }

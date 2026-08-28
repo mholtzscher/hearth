@@ -1,4 +1,4 @@
-package natswire
+package natswire //nolint:testpackage // Tests share package-private subject fixtures with routing tests.
 
 import (
 	"encoding/json"
@@ -14,6 +14,7 @@ type testObservation struct {
 }
 
 func TestCodecUsesAuthoritativeSchemas(t *testing.T) {
+	t.Parallel()
 	validator, err := contractsv1.Compile()
 	if err != nil {
 		t.Fatal(err)
@@ -42,10 +43,14 @@ func TestCodecUsesAuthoritativeSchemas(t *testing.T) {
 	}
 
 	envelope.Schema = contractsv1.CommandRequestSchemaID
-	if _, err := Encode(validator, contractsv1.ObservationSchemaID, envelope); err == nil {
+	if _, encodeErr := Encode(validator, contractsv1.ObservationSchemaID, envelope); encodeErr == nil {
 		t.Fatal("schema-invalid envelope unexpectedly encoded")
 	}
-	if _, err := Decode[testObservation](validator, contractsv1.ObservationSchemaID, []byte(`{}`)); err == nil {
+	if _, decodeErr := Decode[testObservation](
+		validator,
+		contractsv1.ObservationSchemaID,
+		[]byte(`{}`),
+	); decodeErr == nil {
 		t.Fatal("schema-invalid payload unexpectedly decoded")
 	}
 }

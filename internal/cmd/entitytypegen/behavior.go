@@ -13,6 +13,20 @@ const (
 	kindString  valueKind = "string"
 	kindInteger valueKind = "integer"
 	kindNumber  valueKind = "number"
+
+	schemaTypeArray  = "array"
+	schemaTypeObject = "object"
+
+	ruleOperatorLTE        = "lte"
+	ruleOperatorMultipleOf = "multiple_of"
+
+	referenceRootParameters = "parameters"
+	referenceRootState      = "state"
+	referenceRootSupport    = "support"
+
+	int64MagnitudeBits       = 63
+	builtinSchemaCount       = 2
+	maximumOperationDeadline = 9_223_372_036_854
 )
 
 type ruleModel struct {
@@ -55,15 +69,20 @@ func compileRule(rule ruleManifest, roots map[string]referenceRoot) (ruleModel, 
 		return ruleModel{}, fmt.Errorf("right reference: %w", err)
 	}
 	if left.Kind != right.Kind {
-		return ruleModel{}, fmt.Errorf("operator %q requires matching operand types, got %s and %s", rule.Op, left.Kind, right.Kind)
+		return ruleModel{}, fmt.Errorf(
+			"operator %q requires matching operand types, got %s and %s",
+			rule.Op,
+			left.Kind,
+			right.Kind,
+		)
 	}
 	switch rule.Op {
 	case "eq":
-	case "lte":
+	case ruleOperatorLTE:
 		if left.Kind != kindInteger && left.Kind != kindNumber {
 			return ruleModel{}, fmt.Errorf("operator %q requires numeric operands, got %s", rule.Op, left.Kind)
 		}
-	case "multiple_of":
+	case ruleOperatorMultipleOf:
 		if left.Kind != kindInteger {
 			return ruleModel{}, fmt.Errorf("operator %q requires integer operands, got %s", rule.Op, left.Kind)
 		}
@@ -78,37 +97,47 @@ func compileReference(reference referenceManifest, roots map[string]referenceRoo
 	if !exists {
 		return referenceModel{}, fmt.Errorf("root %q is not available in this context", reference.Root)
 	}
-	schema := root.Schema
-	expression := root.GoExpression
-	if reference.Path != "" {
-		segments, err := parseJSONPointer(reference.Path)
-		if err != nil {
-			return referenceModel{}, err
-		}
-		for _, segment := range segments {
-			if schema.Type != "object" {
-				return referenceModel{}, fmt.Errorf("path %q traverses non-object type %q", reference.Path, schema.Type)
-			}
-			property, exists := schema.Properties[segment]
-			if !exists {
-				return referenceModel{}, fmt.Errorf("path %q selects unknown property %q", reference.Path, segment)
-			}
-			if !required(schema, segment) {
-				return referenceModel{}, fmt.Errorf("path %q traverses optional property %q", reference.Path, segment)
-			}
-			field, err := exportedName(segment)
-			if err != nil {
-				return referenceModel{}, err
-			}
-			expression += "." + field
-			schema = property
-		}
+	schema, expression, pathErr := compileReferencePath(root, reference.Path)
+	if pathErr != nil {
+		return referenceModel{}, pathErr
 	}
 	kind, err := scalarKind(schema)
 	if err != nil {
 		return referenceModel{}, fmt.Errorf("path %q: %w", reference.Path, err)
 	}
 	return referenceModel{Root: reference.Root, Path: reference.Path, Kind: kind, GoExpression: expression}, nil
+}
+
+func compileReferencePath(root referenceRoot, path string) (schemaNode, string, error) {
+	schema := root.Schema
+	expression := root.GoExpression
+	if path == "" {
+		return schema, expression, nil
+	}
+	segments, err := parseJSONPointer(path)
+	if err != nil {
+		return schemaNode{}, "", err
+	}
+	var suffix strings.Builder
+	for _, segment := range segments {
+		if schema.Type != schemaTypeObject {
+			return schemaNode{}, "", fmt.Errorf("path %q traverses non-object type %q", path, schema.Type)
+		}
+		property, exists := schema.Properties[segment]
+		if !exists {
+			return schemaNode{}, "", fmt.Errorf("path %q selects unknown property %q", path, segment)
+		}
+		if !required(schema, segment) {
+			return schemaNode{}, "", fmt.Errorf("path %q traverses optional property %q", path, segment)
+		}
+		field, nameErr := exportedName(segment)
+		if nameErr != nil {
+			return schemaNode{}, "", nameErr
+		}
+		suffix.WriteString("." + field)
+		schema = property
+	}
+	return schema, expression + suffix.String(), nil
 }
 
 func parseJSONPointer(pointer string) ([]string, error) {
@@ -155,7 +184,7 @@ func scalarKind(schema schemaNode) (valueKind, error) {
 		return kindInteger, nil
 	case string(kindNumber):
 		return kindNumber, nil
-	case "object", "array":
+	case schemaTypeObject, schemaTypeArray:
 		return "", errors.New("behavior references must select scalar values")
 	default:
 		return "", fmt.Errorf("unsupported scalar type %q", schema.Type)
@@ -168,9 +197,9 @@ func ruleCondition(rule ruleModel) string {
 	switch rule.Op {
 	case "eq":
 		return left + " == " + right
-	case "lte":
+	case ruleOperatorLTE:
 		return left + " <= " + right
-	case "multiple_of":
+	case ruleOperatorMultipleOf:
 		return right + " != 0 && " + left + "%" + right + " == 0"
 	default:
 		panic("render unsupported rule operator " + rule.Op)
@@ -180,7 +209,7 @@ func ruleCondition(rule ruleModel) string {
 func ruleOperand(reference referenceModel) string {
 	goType := map[valueKind]string{
 		kindBoolean: "bool",
-		kindString:  "string",
+		kindString:  string(kindString),
 		kindInteger: "int64",
 		kindNumber:  "float64",
 	}[reference.Kind]
@@ -188,7 +217,9 @@ func ruleOperand(reference referenceModel) string {
 }
 
 func ruleDescription(rule ruleModel) string {
-	symbol := map[string]string{"eq": "equal", "lte": "less than or equal to", "multiple_of": "a multiple of"}[rule.Op]
+	symbol := map[string]string{
+		"eq": "equal", ruleOperatorLTE: "less than or equal to", ruleOperatorMultipleOf: "a multiple of",
+	}[rule.Op]
 	return referenceDescription(rule.Left) + " must be " + symbol + " " + referenceDescription(rule.Right)
 }
 

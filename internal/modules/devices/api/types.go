@@ -12,7 +12,7 @@ type EntityBody struct {
 
 type StateBody struct {
 	// Huma uses this ignored marker to emit StateBody as an object-or-null schema.
-	_                 struct{} `json:"-" nullable:"true"`
+	_                 struct{} `json:"-"                           nullable:"true"`
 	Value             any      `json:"value"`
 	ObservationID     string   `json:"observation_id"`
 	AdapterReceivedAt string   `json:"adapter_received_at"`

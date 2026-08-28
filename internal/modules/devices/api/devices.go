@@ -9,7 +9,7 @@ import (
 )
 
 type ListDevicesInput struct {
-	Limit  int    `query:"limit" default:"50" minimum:"1" maximum:"200"`
+	Limit  int    `query:"limit"  default:"50" minimum:"1" maximum:"200"`
 	Cursor string `query:"cursor"`
 }
 
@@ -19,8 +19,8 @@ type ListDevicesOutput struct {
 
 type GetDeviceInput struct {
 	DeviceID     string `path:"device_id" doc:"Canonical Hearth Device ID"`
-	EntityLimit  int    `query:"entity_limit" default:"50" minimum:"1" maximum:"200"`
-	EntityCursor string `query:"entity_cursor"`
+	EntityLimit  int    `                                                  query:"entity_limit"  default:"50" minimum:"1" maximum:"200"`
+	EntityCursor string `                                                  query:"entity_cursor"`
 }
 
 type GetDeviceOutput struct {
@@ -48,8 +48,8 @@ func (handler *Handler) ListDevices(ctx context.Context, input *ListDevicesInput
 		body.Items[index] = deviceBody(device)
 	}
 	if page.HasMore && len(page.Items) > 0 {
-		cursor, err := encodeDevicesCursor(page.Items[len(page.Items)-1].ID)
-		if err != nil {
+		cursor, cursorErr := encodeDevicesCursor(page.Items[len(page.Items)-1].ID)
+		if cursorErr != nil {
 			return nil, apiError(http.StatusInternalServerError, "internal error")
 		}
 		body.NextCursor = &cursor
@@ -64,8 +64,8 @@ func (handler *Handler) GetDevice(ctx context.Context, input *GetDeviceInput) (*
 	}
 	params := devices.GetDeviceParams{ID: deviceID, EntityLimit: input.EntityLimit}
 	if input.EntityCursor != "" {
-		afterID, err := decodeDeviceEntitiesCursor(input.EntityCursor, deviceID)
-		if err != nil {
+		afterID, cursorErr := decodeDeviceEntitiesCursor(input.EntityCursor, deviceID)
+		if cursorErr != nil {
 			return nil, apiError(http.StatusBadRequest, "invalid entity cursor")
 		}
 		params.AfterEntityID = afterID
@@ -84,10 +84,10 @@ func (handler *Handler) GetDevice(ctx context.Context, input *GetDeviceInput) (*
 		return nil, apiError(http.StatusInternalServerError, "internal error")
 	}
 	if aggregate.Entities.HasMore && len(aggregate.Entities.Items) > 0 {
-		cursor, err := encodeDeviceEntitiesCursor(
+		cursor, cursorErr := encodeDeviceEntitiesCursor(
 			aggregate.Entities.Items[len(aggregate.Entities.Items)-1].Entity.ID, deviceID,
 		)
-		if err != nil {
+		if cursorErr != nil {
 			return nil, apiError(http.StatusInternalServerError, "internal error")
 		}
 		body.NextEntityCursor = &cursor

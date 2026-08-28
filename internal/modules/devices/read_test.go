@@ -1,4 +1,4 @@
-package devices
+package devices //nolint:testpackage // Tests exercise package-private domain seams and repository fixtures.
 
 import (
 	"context"
@@ -9,6 +9,7 @@ import (
 
 type readRepository struct {
 	*stubRegistrationRepository
+
 	device             DeviceAggregate
 	deviceErr          error
 	getDeviceParams    GetDeviceParams
@@ -40,7 +41,10 @@ func (repository *readRepository) GetEntity(context.Context, EntityID) (EntityWi
 	return repository.entity, repository.entityErr
 }
 
-func (repository *readRepository) ListEntities(_ context.Context, params ListEntitiesParams) (Page[EntityWithState], error) {
+func (repository *readRepository) ListEntities(
+	_ context.Context,
+	params ListEntitiesParams,
+) (Page[EntityWithState], error) {
 	repository.listEntityCalls++
 	repository.listEntitiesParams = params
 	return repository.entitiesPage, nil
@@ -50,13 +54,17 @@ func (repository *readRepository) GetCommand(context.Context, CommandID) (Comman
 	return repository.command, nil
 }
 
-func (repository *readRepository) ListEntityCommands(_ context.Context, params ListEntityCommandsParams) (Page[CommandRecord], error) {
+func (repository *readRepository) ListEntityCommands(
+	_ context.Context,
+	params ListEntityCommandsParams,
+) (Page[CommandRecord], error) {
 	repository.listCommandsCalls++
 	repository.listCommandsParams = params
 	return repository.commandPage, nil
 }
 
 func TestReadServiceValidatesPagesBeforeRepositoryCalls(t *testing.T) {
+	t.Parallel()
 	repository := newReadRepository()
 	service := NewService(repository, nil, nil, Dependencies{})
 	invalidDeviceID := DeviceID("bad")
@@ -105,6 +113,7 @@ func TestReadServiceValidatesPagesBeforeRepositoryCalls(t *testing.T) {
 		}},
 	} {
 		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
 			if err := test.call(); !errors.Is(err, ErrInvalidPage) {
 				t.Fatalf("error = %v, want ErrInvalidPage", err)
 			}
@@ -119,6 +128,7 @@ func TestReadServiceValidatesPagesBeforeRepositoryCalls(t *testing.T) {
 }
 
 func TestReadServiceReturnsOwnedDataAndNormalizesCommandPosition(t *testing.T) {
+	t.Parallel()
 	sourceUpdatedAt := time.Date(2026, 8, 25, 10, 0, 0, 0, time.UTC)
 	completedAt := sourceUpdatedAt.Add(time.Second)
 	failure := CommandFailureOutcomeTimeout
@@ -140,7 +150,7 @@ func TestReadServiceReturnsOwnedDataAndNormalizesCommandPosition(t *testing.T) {
 	service := NewService(repository, nil, nil, Dependencies{})
 
 	device, err := service.GetDevice(context.Background(), GetDeviceParams{
-		ID: commandTestDeviceID, AfterEntityID: pointerTo(commandTestEntityID), EntityLimit: 1,
+		ID: commandTestDeviceID, AfterEntityID: new(commandTestEntityID), EntityLimit: 1,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -162,13 +172,14 @@ func TestReadServiceReturnsOwnedDataAndNormalizesCommandPosition(t *testing.T) {
 	entities.Items[0].Entity.Support[0] = 'x'
 	entities.Items[0].State.Value[0] = 'f'
 	*entities.Items[0].State.SourceUpdatedAt = time.Time{}
-	if string(repository.entity.Entity.Support) != `{"state":{}}` || string(repository.entity.State.Value) != "true" || repository.entity.State.SourceUpdatedAt.IsZero() {
+	if string(repository.entity.Entity.Support) != `{"state":{}}` || string(repository.entity.State.Value) != "true" ||
+		repository.entity.State.SourceUpdatedAt.IsZero() {
 		t.Fatal("ListEntities result aliases repository data")
 	}
 
 	position := time.Date(2026, 8, 25, 5, 0, 0, 0, time.FixedZone("offset", -5*60*60))
 	commands, err := service.ListEntityCommands(context.Background(), ListEntityCommandsParams{
-		EntityID: commandTestEntityID, BeforeRequestedAt: &position, BeforeID: pointerTo(commandTestID), Limit: 1,
+		EntityID: commandTestEntityID, BeforeRequestedAt: &position, BeforeID: new(commandTestID), Limit: 1,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -180,19 +191,22 @@ func TestReadServiceReturnsOwnedDataAndNormalizesCommandPosition(t *testing.T) {
 	commands.Items[0].Parameters[0] = 'x'
 	*commands.Items[0].CompletedAt = time.Time{}
 	*commands.Items[0].FailureCode = CommandFailureInternalError
-	if string(repository.command.Parameters) != `{"value":true}` || repository.command.CompletedAt.IsZero() || *repository.command.FailureCode != failure {
+	if string(repository.command.Parameters) != `{"value":true}` || repository.command.CompletedAt.IsZero() ||
+		*repository.command.FailureCode != failure {
 		t.Fatal("ListEntityCommands result aliases repository data")
 	}
 }
 
 func TestListEntityCommandsDistinguishesUnknownParent(t *testing.T) {
+	t.Parallel()
 	repository := newReadRepository()
 	repository.entityErr = ErrEntityNotFound
 	service := NewService(repository, nil, nil, Dependencies{})
-	_, err := service.ListEntityCommands(context.Background(), ListEntityCommandsParams{EntityID: commandTestEntityID, Limit: 50})
+	_, err := service.ListEntityCommands(
+		context.Background(),
+		ListEntityCommandsParams{EntityID: commandTestEntityID, Limit: 50},
+	)
 	if !errors.Is(err, ErrEntityNotFound) || repository.listCommandsCalls != 0 {
 		t.Fatalf("error = %v, list calls = %d", err, repository.listCommandsCalls)
 	}
 }
-
-func pointerTo[T any](value T) *T { return &value }

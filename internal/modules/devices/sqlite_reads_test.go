@@ -1,8 +1,9 @@
-package devices
+package devices //nolint:testpackage // Tests exercise package-private domain seams and repository fixtures.
 
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"path/filepath"
 	"testing"
 	"time"
@@ -18,7 +19,9 @@ const (
 	readCommandB = CommandID("cmd_01890f47-7a6b-7c4d-8e9f-0123456789a2")
 )
 
+//nolint:gocognit,gocyclo,cyclop // Related keyset pagination invariants are intentionally verified together.
 func TestSQLiteResourceReadsUseDeterministicKeysetPages(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	database := openMigratedDatabase(t, filepath.Join(t.TempDir(), "hearth.db"))
 	repository := NewSQLiteRepository(database, nil)
@@ -35,7 +38,7 @@ func TestSQLiteResourceReadsUseDeterministicKeysetPages(t *testing.T) {
 	if len(devicesPage.Items) != 1 || devicesPage.Items[0].ID != readDeviceA || !devicesPage.HasMore {
 		t.Fatalf("first device page = %#v", devicesPage)
 	}
-	devicesPage, err = repository.ListDevices(ctx, ListDevicesParams{AfterID: pointerTo(readDeviceA), Limit: 1})
+	devicesPage, err = repository.ListDevices(ctx, ListDevicesParams{AfterID: new(readDeviceA), Limit: 1})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -43,12 +46,14 @@ func TestSQLiteResourceReadsUseDeterministicKeysetPages(t *testing.T) {
 		t.Fatalf("second device page = %#v", devicesPage)
 	}
 
-	entitiesPage, err := repository.ListEntities(ctx, ListEntitiesParams{DeviceID: pointerTo(readDeviceA), Limit: 1})
+	entitiesPage, err := repository.ListEntities(ctx, ListEntitiesParams{DeviceID: new(readDeviceA), Limit: 1})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(entitiesPage.Items) != 1 || entitiesPage.Items[0].Entity.ID != readEntityA || entitiesPage.Items[0].State == nil ||
-		string(entitiesPage.Items[0].State.Value) != "true" || !entitiesPage.HasMore {
+	if len(entitiesPage.Items) != 1 || entitiesPage.Items[0].Entity.ID != readEntityA ||
+		entitiesPage.Items[0].State == nil ||
+		string(entitiesPage.Items[0].State.Value) != "true" ||
+		!entitiesPage.HasMore {
 		t.Fatalf("filtered entities = %#v", entitiesPage)
 	}
 	unknownDevice := DeviceID("dev_01890f47-7a6b-7c4d-8e9f-0123456789ff")
@@ -69,7 +74,7 @@ func TestSQLiteResourceReadsUseDeterministicKeysetPages(t *testing.T) {
 		t.Fatalf("first device aggregate page = %#v", aggregate)
 	}
 	aggregate, err = repository.GetDevice(ctx, GetDeviceParams{
-		ID: readDeviceA, AfterEntityID: pointerTo(readEntityA), EntityLimit: 1,
+		ID: readDeviceA, AfterEntityID: new(readEntityA), EntityLimit: 1,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -78,8 +83,14 @@ func TestSQLiteResourceReadsUseDeterministicKeysetPages(t *testing.T) {
 		aggregate.Entities.Items[0].Entity.Enabled || aggregate.Entities.HasMore {
 		t.Fatalf("second device aggregate page = %#v", aggregate)
 	}
-	if _, err := repository.GetDevice(ctx, GetDeviceParams{ID: unknownDevice, EntityLimit: 50}); err != ErrDeviceNotFound {
-		t.Fatalf("unknown device error = %v", err)
+	if _, getErr := repository.GetDevice(
+		ctx,
+		GetDeviceParams{ID: unknownDevice, EntityLimit: 50},
+	); !errors.Is(
+		getErr,
+		ErrDeviceNotFound,
+	) {
+		t.Fatalf("unknown device error = %v", getErr)
 	}
 
 	history, err := repository.ListEntityCommands(ctx, ListEntityCommandsParams{EntityID: readEntityA, Limit: 1})
@@ -90,7 +101,7 @@ func TestSQLiteResourceReadsUseDeterministicKeysetPages(t *testing.T) {
 		t.Fatalf("first command page = %#v", history)
 	}
 	history, err = repository.ListEntityCommands(ctx, ListEntityCommandsParams{
-		EntityID: readEntityA, BeforeRequestedAt: &requestedAt, BeforeID: pointerTo(readCommandB), Limit: 1,
+		EntityID: readEntityA, BeforeRequestedAt: &requestedAt, BeforeID: new(readCommandB), Limit: 1,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -101,6 +112,7 @@ func TestSQLiteResourceReadsUseDeterministicKeysetPages(t *testing.T) {
 }
 
 func TestSQLiteCommandHistoryOrdersWholeAndFractionalSecondsChronologically(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	database := openMigratedDatabase(t, filepath.Join(t.TempDir(), "hearth.db"))
 	repository := NewSQLiteRepository(database, nil)
@@ -136,8 +148,9 @@ func TestSQLiteCommandHistoryOrdersWholeAndFractionalSecondsChronologically(t *t
 	}
 
 	var stored string
-	if err := database.QueryRowContext(ctx, "SELECT requested_at FROM commands WHERE id = ?", earlier.ID).Scan(&stored); err != nil {
-		t.Fatal(err)
+	if scanErr := database.QueryRowContext(ctx, "SELECT requested_at FROM commands WHERE id = ?", earlier.ID).
+		Scan(&stored); scanErr != nil {
+		t.Fatal(scanErr)
 	}
 	if stored != "2026-08-26T12:00:00.000000000Z" {
 		t.Fatalf("stored requested_at = %q", stored)

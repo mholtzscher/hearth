@@ -1,10 +1,12 @@
-package natswire
+package natswire //nolint:testpackage // Tests exercise package-private subject validation alongside public routing.
 
 import "testing"
 
 const testEntityID = "ent_01890f47-7a6b-7c4d-8e9f-0123456789ab"
 
+//nolint:gocognit // Subject constructors and parsers are verified as one table-driven matrix.
 func TestSubjectsRoundTrip(t *testing.T) {
+	t.Parallel()
 	if got := RegistrationWildcard(); got != "hearth.v1.adapter.*.register" {
 		t.Fatalf("registration wildcard = %q", got)
 	}
@@ -53,7 +55,8 @@ func TestSubjectsRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if commandRoute.AdapterID != "simulator" || commandRoute.EntityID != testEntityID || commandRoute.OperationName != "set" {
+	if commandRoute.AdapterID != "simulator" || commandRoute.EntityID != testEntityID ||
+		commandRoute.OperationName != "set" {
 		t.Fatalf("command route = %#v", commandRoute)
 	}
 	wildcard, err := CommandWildcard("simulator")
@@ -63,6 +66,7 @@ func TestSubjectsRoundTrip(t *testing.T) {
 }
 
 func TestSubjectsRejectUnsafeTokens(t *testing.T) {
+	t.Parallel()
 	if _, err := RegistrationSubject("bad.adapter"); err == nil {
 		t.Fatal("adapter ID containing a period unexpectedly accepted")
 	}
@@ -72,13 +76,17 @@ func TestSubjectsRejectUnsafeTokens(t *testing.T) {
 	if _, err := EntityEnablementSubject("bad.adapter", testEntityID); err == nil {
 		t.Fatal("unsafe Entity enablement adapter unexpectedly accepted")
 	}
-	if _, err := ParseEntityEnablementSubject("hearth.v1.adapter.simulator.enablement.extra." + testEntityID); err == nil {
+	if _, err := ParseEntityEnablementSubject(
+		"hearth.v1.adapter.simulator.enablement.extra." + testEntityID,
+	); err == nil {
 		t.Fatal("malformed Entity enablement subject unexpectedly accepted")
 	}
 	if _, err := CommandSubject("simulator", testEntityID, "bad.operation"); err == nil {
 		t.Fatal("operation containing a period unexpectedly accepted")
 	}
-	if _, err := ParseCommandSubject("hearth.v1.adapter.simulator.command.extra." + testEntityID + ".set"); err == nil {
+	if _, err := ParseCommandSubject(
+		"hearth.v1.adapter.simulator.command.extra." + testEntityID + ".set",
+	); err == nil {
 		t.Fatal("malformed command subject unexpectedly accepted")
 	}
 }

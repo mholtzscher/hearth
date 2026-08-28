@@ -33,6 +33,7 @@ type outcomeExample struct {
 	Satisfied  bool            `json:"satisfied"`
 }
 
+//nolint:gocognit // Validation follows the nested examples document shape in one linear pass.
 func loadExamples(directory, relative string, operations []operationModel) (examplesFile, error) {
 	if relative == "" {
 		return examplesFile{}, errors.New("examples is required")
@@ -42,8 +43,8 @@ func loadExamples(directory, relative string, operations []operationModel) (exam
 		return examplesFile{}, err
 	}
 	var examples examplesFile
-	if err := decodeStrictFile(path, &examples); err != nil {
-		return examplesFile{}, err
+	if decodeErr := decodeStrictFile(path, &examples); decodeErr != nil {
+		return examplesFile{}, decodeErr
 	}
 	if len(examples.Cases) == 0 {
 		return examplesFile{}, errors.New("at least one conformance case is required")
@@ -68,21 +69,28 @@ func loadExamples(directory, relative string, operations []operationModel) (exam
 		var supportShape struct {
 			Operations map[string]json.RawMessage `json:"operations"`
 		}
-		if err := json.Unmarshal(example.Support, &supportShape); err != nil {
-			return examplesFile{}, fmt.Errorf("case %q support: %w", example.Name, err)
+		if decodeErr := json.Unmarshal(example.Support, &supportShape); decodeErr != nil {
+			return examplesFile{}, fmt.Errorf("case %q support: %w", example.Name, decodeErr)
 		}
 		if supportShape.Operations == nil {
 			return examplesFile{}, fmt.Errorf("case %q support has no operations object", example.Name)
 		}
-		if err := requireValidityCoverage(example.States); err != nil {
-			return examplesFile{}, fmt.Errorf("case %q states: %w", example.Name, err)
+		if coverageErr := requireValidityCoverage(example.States); coverageErr != nil {
+			return examplesFile{}, fmt.Errorf("case %q states: %w", example.Name, coverageErr)
 		}
 		if len(example.Operations) != len(supportShape.Operations) {
-			return examplesFile{}, fmt.Errorf("case %q examples must exactly match its supported operations", example.Name)
+			return examplesFile{}, fmt.Errorf(
+				"case %q examples must exactly match its supported operations",
+				example.Name,
+			)
 		}
 		for name := range supportShape.Operations {
 			if _, exists := example.Operations[name]; !exists {
-				return examplesFile{}, fmt.Errorf("case %q has no examples for supported operation %q", example.Name, name)
+				return examplesFile{}, fmt.Errorf(
+					"case %q has no examples for supported operation %q",
+					example.Name,
+					name,
+				)
 			}
 		}
 		for name, values := range example.Operations {
@@ -90,13 +98,21 @@ func loadExamples(directory, relative string, operations []operationModel) (exam
 				return examplesFile{}, fmt.Errorf("case %q has unknown operation %q", example.Name, name)
 			}
 			if _, supported := supportShape.Operations[name]; !supported {
-				return examplesFile{}, fmt.Errorf("case %q has examples for unsupported operation %q", example.Name, name)
+				return examplesFile{}, fmt.Errorf(
+					"case %q has examples for unsupported operation %q",
+					example.Name,
+					name,
+				)
 			}
-			if err := requireValidityCoverage(values.Parameters); err != nil {
-				return examplesFile{}, fmt.Errorf("case %q operation %q parameters: %w", example.Name, name, err)
+			if coverageErr := requireValidityCoverage(values.Parameters); coverageErr != nil {
+				return examplesFile{}, fmt.Errorf(
+					"case %q operation %q parameters: %w", example.Name, name, coverageErr,
+				)
 			}
-			if err := requireOutcomeCoverage(values.Outcomes); err != nil {
-				return examplesFile{}, fmt.Errorf("case %q operation %q outcomes: %w", example.Name, name, err)
+			if coverageErr := requireOutcomeCoverage(values.Outcomes); coverageErr != nil {
+				return examplesFile{}, fmt.Errorf(
+					"case %q operation %q outcomes: %w", example.Name, name, coverageErr,
+				)
 			}
 		}
 	}

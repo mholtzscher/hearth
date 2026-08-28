@@ -11,7 +11,7 @@ import (
 
 type ExecuteCommandInput struct {
 	EntityID string      `path:"entity_id" doc:"Canonical Hearth Entity ID"`
-	Body     CommandBody `doc:"Entity operation and parameters"`
+	Body     CommandBody `                 doc:"Entity operation and parameters"`
 }
 
 type ExecuteCommandOutput struct {
@@ -19,19 +19,19 @@ type ExecuteCommandOutput struct {
 }
 
 func (handler *Handler) ExecuteCommand(ctx context.Context, input *ExecuteCommandInput) (*ExecuteCommandOutput, error) {
-	entityID, err := devices.ParseEntityID(input.EntityID)
-	if err != nil {
+	entityID, parseErr := devices.ParseEntityID(input.EntityID)
+	if parseErr != nil {
 		return nil, apiError(http.StatusBadRequest, "entity_id must be a canonical Hearth Entity ID")
 	}
-	parameters, err := json.Marshal(input.Body.Parameters)
-	if err != nil {
+	parameters, marshalErr := json.Marshal(input.Body.Parameters)
+	if marshalErr != nil {
 		return nil, apiError(http.StatusBadRequest, "parameters must be a JSON object")
 	}
-	result, err := handler.devices.ExecuteCommand(
+	result, commandErr := handler.devices.ExecuteCommand(
 		ctx, entityID, devices.OperationName(input.Body.OperationName), devices.CommandParameters(parameters),
 	)
-	if err != nil {
-		return nil, mapCommandError(err)
+	if commandErr != nil {
+		return nil, mapCommandError(commandErr)
 	}
 	var value any
 	if err := decodeJSON(result.Value, &value); err != nil {

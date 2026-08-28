@@ -3,11 +3,13 @@ package adapter
 import (
 	"context"
 	"encoding/json"
+	"log/slog"
 )
 
 type Config struct {
 	AdapterID string
 	NATSURL   string
+	Logger    *slog.Logger
 }
 
 type EntityMetadata struct {

@@ -17,7 +17,7 @@ type typeEmitter struct {
 func renderTypes(model entityTypeModel) ([]byte, error) {
 	emitter := &typeEmitter{declarations: make(map[string]string)}
 	if err := emitter.define("State", model.StateSchema); err != nil {
-		return nil, fmt.Errorf("State: %w", err)
+		return nil, fmt.Errorf("state: %w", err)
 	}
 	if err := emitter.define("StateSupport", model.StateSupport); err != nil {
 		return nil, fmt.Errorf("StateSupport: %w", err)
@@ -39,10 +39,16 @@ func renderTypes(model entityTypeModel) ([]byte, error) {
 		}
 		fmt.Fprintf(&operationFields, "\t%s %s `json:%s`\n", operation.GoName, fieldType, strconv.Quote(tag))
 	}
-	if err := emitter.add("OperationSupport", "type OperationSupport struct {\n"+operationFields.String()+"}\n"); err != nil {
+	if err := emitter.add(
+		"OperationSupport",
+		"type OperationSupport struct {\n"+operationFields.String()+"}\n",
+	); err != nil {
 		return nil, err
 	}
-	if err := emitter.add("Support", "type Support struct {\n\tState StateSupport `json:\"state\"`\n\tOperations OperationSupport `json:\"operations\"`\n}\n"); err != nil {
+	if err := emitter.add(
+		"Support",
+		"type Support struct {\n\tState StateSupport `json:\"state\"`\n\tOperations OperationSupport `json:\"operations\"`\n}\n",
+	); err != nil {
 		return nil, err
 	}
 	for _, operation := range model.Operations {
@@ -53,7 +59,12 @@ func renderTypes(model entityTypeModel) ([]byte, error) {
 
 	var source strings.Builder
 	generatedHeader(&source)
-	fmt.Fprintf(&source, "// Package %s provides schemas, behavior, and Go bindings for %s.\n", model.Package, model.TypeID)
+	fmt.Fprintf(
+		&source,
+		"// Package %s provides schemas, behavior, and Go bindings for %s.\n",
+		model.Package,
+		model.TypeID,
+	)
 	fmt.Fprintf(&source, "package %s\n\n", model.Package)
 	fmt.Fprintf(&source, "const TypeID = %s\n\n", strconv.Quote(model.TypeID))
 	if len(model.Operations) > 0 {
@@ -70,21 +81,22 @@ func renderTypes(model entityTypeModel) ([]byte, error) {
 	return formatGenerated(source.String())
 }
 
+//nolint:gocognit // Recursive type emission mirrors the supported JSON Schema node kinds.
 func (emitter *typeEmitter) define(name string, schema schemaNode) error {
 	if _, exists := emitter.declarations[name]; exists {
 		return fmt.Errorf("duplicate generated type %q", name)
 	}
 	var declaration string
 	switch schema.Type {
-	case "boolean":
+	case string(kindBoolean):
 		declaration = "type " + name + " bool\n"
-	case "string":
+	case string(kindString):
 		declaration = "type " + name + " string\n"
-	case "integer":
+	case string(kindInteger):
 		declaration = "type " + name + " int64\n"
-	case "number":
+	case string(kindNumber):
 		return errors.New("number schemas require a lossless binding and are not supported")
-	case "array":
+	case schemaTypeArray:
 		if schema.Items == nil {
 			return errors.New("array schema requires items")
 		}
@@ -93,7 +105,7 @@ func (emitter *typeEmitter) define(name string, schema schemaNode) error {
 			return err
 		}
 		declaration = fmt.Sprintf("type %s []%s\n", name, itemType)
-	case "object":
+	case schemaTypeObject:
 		if err := requireClosedObject(schema); err != nil {
 			return err
 		}
@@ -129,15 +141,15 @@ func (emitter *typeEmitter) define(name string, schema schemaNode) error {
 
 func (emitter *typeEmitter) propertyType(name string, schema schemaNode) (string, error) {
 	switch schema.Type {
-	case "boolean":
+	case string(kindBoolean):
 		return "bool", nil
-	case "string":
-		return "string", nil
-	case "integer":
+	case string(kindString):
+		return string(kindString), nil
+	case string(kindInteger):
 		return "int64", nil
-	case "number":
+	case string(kindNumber):
 		return "", errors.New("number schemas require a lossless binding and are not supported")
-	case "object", "array":
+	case schemaTypeObject, schemaTypeArray:
 		if err := emitter.define(name, schema); err != nil {
 			return "", err
 		}
@@ -174,12 +186,19 @@ func renderCodecs(model entityTypeModel) ([]byte, error) {
 	var source strings.Builder
 	generatedHeader(&source)
 	fmt.Fprintf(&source, "package %s\n\n", model.Package)
-	source.WriteString("import (\n\t\"embed\"\n\t\"encoding/json\"\n\t\"fmt\"\n\n\t\"github.com/mholtzscher/hearth/entitytypes\"\n)\n\n")
+	source.WriteString(
+		"import (\n\t\"embed\"\n\t\"encoding/json\"\n\t\"fmt\"\n\n\t\"github.com/mholtzscher/hearth/entitytypes\"\n)\n\n",
+	)
 	source.WriteString("const (\n")
 	fmt.Fprintf(&source, "\tStateSchemaID = %s\n", strconv.Quote(model.StateSchema.ID))
 	fmt.Fprintf(&source, "\tSupportSchemaID = %s\n", strconv.Quote(model.SupportSchema.ID))
 	for _, operation := range model.Operations {
-		fmt.Fprintf(&source, "\t%sParametersSchemaID = %s\n", operation.GoName, strconv.Quote(operation.ParametersSchema.ID))
+		fmt.Fprintf(
+			&source,
+			"\t%sParametersSchemaID = %s\n",
+			operation.GoName,
+			strconv.Quote(operation.ParametersSchema.ID),
+		)
 	}
 	source.WriteString(")\n\n")
 	schemaFiles := []string{model.StateFile, model.SupportFile}
@@ -201,20 +220,43 @@ func renderCodecs(model entityTypeModel) ([]byte, error) {
 	fmt.Fprintf(&source, "\t\tStateSchemaID: %s,\n", strconv.Quote(model.StateFile))
 	fmt.Fprintf(&source, "\t\tSupportSchemaID: %s,\n", strconv.Quote(model.SupportFile))
 	for _, operation := range model.Operations {
-		fmt.Fprintf(&source, "\t\t%sParametersSchemaID: %s,\n", operation.GoName, strconv.Quote(operation.ParametersFile))
+		fmt.Fprintf(
+			&source,
+			"\t\t%sParametersSchemaID: %s,\n",
+			operation.GoName,
+			strconv.Quote(operation.ParametersFile),
+		)
 	}
 	source.WriteString("\t}\n}\n\n")
-	source.WriteString("type Codecs struct {\n\tState *entitytypes.JSONCodec[State]\n\tSupport *entitytypes.JSONCodec[Support]\n")
+	source.WriteString(
+		"type Codecs struct {\n\tState *entitytypes.JSONCodec[State]\n\tSupport *entitytypes.JSONCodec[Support]\n",
+	)
 	for _, operation := range model.Operations {
-		fmt.Fprintf(&source, "\t%sParameters *entitytypes.JSONCodec[%sParameters]\n", operation.GoName, operation.GoName)
+		fmt.Fprintf(
+			&source,
+			"\t%sParameters *entitytypes.JSONCodec[%sParameters]\n",
+			operation.GoName,
+			operation.GoName,
+		)
 	}
 	source.WriteString("}\n\n")
 	source.WriteString("func Compile() (*Codecs, error) {\n")
-	source.WriteString("\tstate, err := compileCodec[State](StateSchemaID, SchemaFiles()[StateSchemaID])\n\tif err != nil { return nil, err }\n")
-	source.WriteString("\tsupport, err := compileCodec[Support](SupportSchemaID, SchemaFiles()[SupportSchemaID])\n\tif err != nil { return nil, err }\n")
+	source.WriteString(
+		"\tstate, err := compileCodec[State](StateSchemaID, SchemaFiles()[StateSchemaID])\n\tif err != nil { return nil, err }\n",
+	)
+	source.WriteString(
+		"\tsupport, err := compileCodec[Support](SupportSchemaID, SchemaFiles()[SupportSchemaID])\n\tif err != nil { return nil, err }\n",
+	)
 	for _, operation := range model.Operations {
 		variable := lowerFirst(operation.GoName) + "Parameters"
-		fmt.Fprintf(&source, "\t%s, err := compileCodec[%sParameters](%sParametersSchemaID, SchemaFiles()[%sParametersSchemaID])\n", variable, operation.GoName, operation.GoName, operation.GoName)
+		fmt.Fprintf(
+			&source,
+			"\t%s, err := compileCodec[%sParameters](%sParametersSchemaID, SchemaFiles()[%sParametersSchemaID])\n",
+			variable,
+			operation.GoName,
+			operation.GoName,
+			operation.GoName,
+		)
 		source.WriteString("\tif err != nil { return nil, err }\n")
 	}
 	source.WriteString("\treturn &Codecs{State: state, Support: support")
@@ -222,6 +264,8 @@ func renderCodecs(model entityTypeModel) ([]byte, error) {
 		fmt.Fprintf(&source, ", %sParameters: %sParameters", operation.GoName, lowerFirst(operation.GoName))
 	}
 	source.WriteString("}, nil\n}\n\n")
-	source.WriteString("func compileCodec[T any](schemaID, path string) (*entitytypes.JSONCodec[T], error) {\n\traw, err := FS.ReadFile(path)\n\tif err != nil { return nil, fmt.Errorf(\"read %s: %w\", path, err) }\n\treturn entitytypes.CompileJSONCodec[T](schemaID, json.RawMessage(raw), nil)\n}\n")
+	source.WriteString(
+		"func compileCodec[T any](schemaID, path string) (*entitytypes.JSONCodec[T], error) {\n\traw, err := FS.ReadFile(path)\n\tif err != nil { return nil, fmt.Errorf(\"read %s: %w\", path, err) }\n\treturn entitytypes.CompileJSONCodec[T](schemaID, json.RawMessage(raw), nil)\n}\n",
+	)
 	return formatGenerated(source.String())
 }

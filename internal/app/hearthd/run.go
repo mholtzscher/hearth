@@ -8,33 +8,37 @@ import (
 	"net/http"
 	"time"
 
+	natsgo "github.com/nats-io/nats.go"
+	"github.com/nats-io/nats.go/jetstream"
+
 	contractsv1 "github.com/mholtzscher/hearth/contracts/v1"
 	"github.com/mholtzscher/hearth/internal/modules/devices"
 	devicesnats "github.com/mholtzscher/hearth/internal/modules/devices/nats"
 	platformdb "github.com/mholtzscher/hearth/internal/platform/db"
-	natsgo "github.com/nats-io/nats.go"
-	"github.com/nats-io/nats.go/jetstream"
 )
 
 const (
-	receiptPruneInterval = time.Hour
-	shutdownTimeout      = 5 * time.Second
+	receiptPruneInterval  = time.Hour
+	shutdownTimeout       = 5 * time.Second
+	httpReadHeaderTimeout = 5 * time.Second
+	natsReconnectWait     = 250 * time.Millisecond
 )
 
-func Run(ctx context.Context, config Config, logger *slog.Logger) error {
+//nolint:gocognit // Startup and shutdown remain linear so resource ownership is visible in one place.
+func Run(ctx context.Context, config Config, logger *slog.Logger) error { //nolint:funlen // Linear resource lifecycle.
 	if err := config.Validate(); err != nil {
 		return err
 	}
 	if logger == nil {
 		logger = slog.Default()
 	}
-	catalog, err := devices.NewBuiltinTypeCatalog()
-	if err != nil {
-		return fmt.Errorf("construct entity type catalog: %w", err)
+	catalog, catalogErr := devices.NewBuiltinTypeCatalog()
+	if catalogErr != nil {
+		return fmt.Errorf("construct entity type catalog: %w", catalogErr)
 	}
-	database, err := platformdb.Open(ctx, config.SQLitePath)
-	if err != nil {
-		return err
+	database, openErr := platformdb.Open(ctx, config.SQLitePath)
+	if openErr != nil {
+		return openErr
 	}
 	defer database.Close()
 	if err := platformdb.Migrate(ctx, database); err != nil {
@@ -49,45 +53,47 @@ func Run(ctx context.Context, config Config, logger *slog.Logger) error {
 		return fmt.Errorf("prune observation receipts: %w", err)
 	}
 
-	connection, err := connectCoreNATS(ctx, config.NATSURL)
-	if err != nil {
-		return err
+	connection, connectErr := connectCoreNATS(ctx, config.NATSURL)
+	if connectErr != nil {
+		return connectErr
 	}
 	defer connection.Close()
-	js, err := jetstream.New(connection)
-	if err != nil {
-		return fmt.Errorf("create JetStream client: %w", err)
+	js, jetStreamErr := jetstream.New(connection)
+	if jetStreamErr != nil {
+		return fmt.Errorf("create JetStream client: %w", jetStreamErr)
 	}
-	durable, err := devicesnats.ProvisionObservationResources(ctx, js)
-	if err != nil {
-		return err
+	durable, provisionErr := devicesnats.ProvisionObservationResources(ctx, js)
+	if provisionErr != nil {
+		return provisionErr
 	}
-	validator, err := contractsv1.Compile()
-	if err != nil {
-		return fmt.Errorf("compile wire schemas: %w", err)
+	validator, compileErr := contractsv1.Compile()
+	if compileErr != nil {
+		return fmt.Errorf("compile wire schemas: %w", compileErr)
 	}
 	commandSender := devicesnats.NewCommandSender(connection, validator)
 	service := devices.NewService(repository, commandSender, catalog, devices.Dependencies{})
 
-	registrations, err := devicesnats.StartRegistrationServer(connection, validator, service, logger)
-	if err != nil {
-		return err
+	registrations, registrationErr := devicesnats.StartRegistrationServer(connection, validator, service, logger)
+	if registrationErr != nil {
+		return registrationErr
 	}
-	defer registrations.Drain()
-	enablement, err := devicesnats.StartEntityEnablementServer(connection, validator, service, logger)
-	if err != nil {
-		return err
+	defer func() { _ = registrations.Drain() }()
+	enablement, enablementErr := devicesnats.StartEntityEnablementServer(connection, validator, service, logger)
+	if enablementErr != nil {
+		return enablementErr
 	}
-	defer enablement.Drain()
-	observations, err := devicesnats.StartObservationConsumer(ctx, durable, validator, service, logger)
-	if err != nil {
-		return err
+	defer func() { _ = enablement.Drain() }()
+	observations, observationErr := devicesnats.StartObservationConsumer(ctx, durable, validator, service, logger)
+	if observationErr != nil {
+		return observationErr
 	}
 	defer observations.Stop()
 
 	readiness := NewRuntimeReadiness(database, connection, js, observations)
 	handler, _ := NewHTTPHandler(service, readiness)
-	server := &http.Server{Addr: config.HTTPAddr, Handler: handler}
+	server := &http.Server{
+		Addr: config.HTTPAddr, Handler: handler, ReadHeaderTimeout: httpReadHeaderTimeout,
+	}
 	serverErrors := make(chan error, 1)
 	go func() {
 		serverErrors <- server.ListenAndServe()
@@ -132,7 +138,7 @@ func connectCoreNATS(ctx context.Context, url string) (*natsgo.Conn, error) {
 	options := []natsgo.Option{
 		natsgo.Name("hearthd"),
 		natsgo.MaxReconnects(-1),
-		natsgo.ReconnectWait(250 * time.Millisecond),
+		natsgo.ReconnectWait(natsReconnectWait),
 	}
 	if deadline, ok := ctx.Deadline(); ok {
 		remaining := time.Until(deadline)
@@ -157,7 +163,7 @@ func pruneObservationReceipts(ctx context.Context, service *devices.Service, log
 			return
 		case now := <-ticker.C:
 			if err := service.DeleteExpiredObservationReceipts(ctx, now.UTC()); err != nil {
-				logger.Error("prune observation receipts", "error", err)
+				logger.ErrorContext(ctx, "prune observation receipts", "error", err)
 			}
 		}
 	}

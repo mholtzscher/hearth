@@ -1,9 +1,14 @@
-package v1
+package v1_test
 
-import "testing"
+import (
+	"testing"
+
+	contractsv1 "github.com/mholtzscher/hearth/contracts/v1"
+)
 
 func TestValidatorRejectsTrailingJSON(t *testing.T) {
-	validator, err := Compile()
+	t.Parallel()
+	validator, err := contractsv1.Compile()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -14,7 +19,7 @@ func TestValidatorRejectsTrailingJSON(t *testing.T) {
 		"correlation_id":"cor_01890f47-7a6b-7c4d-8e9f-0123456789ab",
 		"data":{"entity_id":"ent_01890f47-7a6b-7c4d-8e9f-0123456789ab","value":true,"adapter_received_at":"2026-08-20T12:34:56Z"}
 	} false`)
-	if err := validator.Validate(ObservationSchemaID, payload); err == nil {
+	if validationErr := validator.Validate(contractsv1.ObservationSchemaID, payload); validationErr == nil {
 		t.Fatal("trailing JSON value unexpectedly accepted")
 	}
 }

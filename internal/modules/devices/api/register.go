@@ -6,13 +6,19 @@ import (
 	"reflect"
 
 	"github.com/danielgtaylor/huma/v2"
+
 	"github.com/mholtzscher/hearth/internal/modules/devices"
 )
 
 type Devices interface {
 	GetEntity(context.Context, devices.EntityID) (devices.EntityWithState, error)
 	SetEntityEnabled(context.Context, devices.EntityID, bool) (devices.EntityWithState, error)
-	ExecuteCommand(context.Context, devices.EntityID, devices.OperationName, devices.CommandParameters) (devices.CommandResult, error)
+	ExecuteCommand(
+		context.Context,
+		devices.EntityID,
+		devices.OperationName,
+		devices.CommandParameters,
+	) (devices.CommandResult, error)
 	ListDevices(context.Context, devices.ListDevicesParams) (devices.Page[devices.Device], error)
 	GetDevice(context.Context, devices.GetDeviceParams) (devices.DeviceAggregate, error)
 	ListEntities(context.Context, devices.ListEntitiesParams) (devices.Page[devices.EntityWithState], error)
@@ -25,28 +31,29 @@ type Handler struct {
 }
 
 func Register(api huma.API, service Devices) {
+	const entitiesTag = "Entities"
 	handler := &Handler{devices: service}
 	disabledProblemSchema := huma.SchemaFromType(
-		api.OpenAPI().Components.Schemas, reflect.TypeFor[disabledCommandProblem](),
+		api.OpenAPI().Components.Schemas, reflect.TypeFor[disabledCommandError](),
 	)
 	huma.Register(api, huma.Operation{
 		OperationID: "list-entities", Method: http.MethodGet, Path: "/entities",
-		Summary: "List Entities and their current State", Tags: []string{"Entities"},
+		Summary: "List Entities and their current State", Tags: []string{entitiesTag},
 		Errors: []int{http.StatusBadRequest, http.StatusInternalServerError},
 	}, handler.ListEntities)
 	huma.Register(api, huma.Operation{
 		OperationID: "get-entity", Method: http.MethodGet, Path: "/entities/{entity_id}",
-		Summary: "Get an Entity and its current State", Tags: []string{"Entities"},
+		Summary: "Get an Entity and its current State", Tags: []string{entitiesTag},
 		Errors: []int{http.StatusBadRequest, http.StatusNotFound, http.StatusInternalServerError},
 	}, handler.GetEntity)
 	huma.Register(api, huma.Operation{
 		OperationID: "update-entity", Method: http.MethodPatch, Path: "/entities/{entity_id}",
-		Summary: "Update an Entity", Tags: []string{"Entities"},
+		Summary: "Update an Entity", Tags: []string{entitiesTag},
 		Errors: []int{http.StatusBadRequest, http.StatusNotFound, http.StatusInternalServerError},
 	}, handler.PatchEntity)
 	huma.Register(api, huma.Operation{
 		OperationID: "execute-entity-command", Method: http.MethodPost, Path: "/entities/{entity_id}/commands",
-		Summary: "Execute an Entity Command", Tags: []string{"Entities"},
+		Summary: "Execute an Entity Command", Tags: []string{entitiesTag},
 		Errors: []int{
 			http.StatusBadRequest, http.StatusNotFound, http.StatusBadGateway,
 			http.StatusServiceUnavailable, http.StatusGatewayTimeout, http.StatusInternalServerError,

@@ -122,20 +122,20 @@ func dialClient(ctx context.Context, rawURL, token, entityID string) (*client, e
 		Type    string `json:"type"`
 		Message string `json:"message,omitempty"`
 	}
-	if err := wsjson.Read(ctx, connection, &authentication); err != nil {
-		return nil, fmt.Errorf("read Home Assistant authentication challenge: %w", err)
+	if readErr := wsjson.Read(ctx, connection, &authentication); readErr != nil {
+		return nil, fmt.Errorf("read Home Assistant authentication challenge: %w", readErr)
 	}
 	if authentication.Type != "auth_required" {
 		return nil, fmt.Errorf("unexpected Home Assistant authentication message %q", authentication.Type)
 	}
-	if err := wsjson.Write(ctx, connection, struct {
+	if writeErr := wsjson.Write(ctx, connection, struct {
 		Type        string `json:"type"`
 		AccessToken string `json:"access_token"`
-	}{Type: "auth", AccessToken: token}); err != nil {
-		return nil, fmt.Errorf("send Home Assistant authentication: %w", err)
+	}{Type: "auth", AccessToken: token}); writeErr != nil {
+		return nil, fmt.Errorf("send Home Assistant authentication: %w", writeErr)
 	}
-	if err := wsjson.Read(ctx, connection, &authentication); err != nil {
-		return nil, fmt.Errorf("read Home Assistant authentication result: %w", err)
+	if readErr := wsjson.Read(ctx, connection, &authentication); readErr != nil {
+		return nil, fmt.Errorf("read Home Assistant authentication result: %w", readErr)
 	}
 	switch authentication.Type {
 	case "auth_ok":
@@ -173,10 +173,10 @@ func websocketAddress(rawURL string) (string, error) {
 		parsed.Scheme = "wss"
 	case "ws", "wss":
 	default:
-		return "", fmt.Errorf("Home Assistant URL must use HTTP or WebSocket")
+		return "", fmt.Errorf("home assistant URL must use HTTP or WebSocket")
 	}
 	if parsed.Host == "" {
-		return "", fmt.Errorf("Home Assistant URL must be absolute")
+		return "", fmt.Errorf("home assistant URL must be absolute")
 	}
 	path := strings.TrimRight(parsed.Path, "/")
 	if !strings.HasSuffix(path, "/api/websocket") {
@@ -202,8 +202,8 @@ func (client *client) GetStates(ctx context.Context) ([]upstreamState, time.Time
 		return nil, time.Time{}, 0, fmt.Errorf("get Home Assistant states: %w", err)
 	}
 	var states []upstreamState
-	if err := json.Unmarshal(result.Result, &states); err != nil {
-		return nil, time.Time{}, 0, fmt.Errorf("decode Home Assistant states: %w", err)
+	if decodeErr := json.Unmarshal(result.Result, &states); decodeErr != nil {
+		return nil, time.Time{}, 0, fmt.Errorf("decode Home Assistant states: %w", decodeErr)
 	}
 	return states, result.received, result.priorEvents, nil
 }
@@ -251,7 +251,7 @@ func (client *client) Err() error {
 
 func (client *client) Close() {
 	_ = client.connection.CloseNow()
-	client.stop(errors.New("Home Assistant connection closed"))
+	client.stop(errors.New("home assistant connection closed"))
 }
 
 func (client *client) request(ctx context.Context, request requestMessage) (resultMessage, error) {
@@ -273,9 +273,9 @@ func (client *client) request(ctx context.Context, request requestMessage) (resu
 		client.removePending(request.ID)
 		return resultMessage{}, fmt.Errorf("encode Home Assistant request: %w", err)
 	}
-	if err := client.connection.Write(ctx, websocket.MessageText, payload); err != nil {
+	if writeErr := client.connection.Write(ctx, websocket.MessageText, payload); writeErr != nil {
 		client.removePending(request.ID)
-		return resultMessage{}, fmt.Errorf("write Home Assistant request: %w", err)
+		return resultMessage{}, fmt.Errorf("write Home Assistant request: %w", writeErr)
 	}
 	result, err := client.waitForResult(ctx, response)
 	if err != nil {
@@ -284,9 +284,13 @@ func (client *client) request(ctx context.Context, request requestMessage) (resu
 	}
 	if !result.Success {
 		if result.Error == nil {
-			return resultMessage{}, errors.New("Home Assistant request failed")
+			return resultMessage{}, errors.New("request to Home Assistant failed")
 		}
-		return resultMessage{}, fmt.Errorf("Home Assistant request failed (%s): %s", result.Error.Code, result.Error.Message)
+		return resultMessage{}, fmt.Errorf(
+			"request to Home Assistant failed (%s): %s",
+			result.Error.Code,
+			result.Error.Message,
+		)
 	}
 	return result, nil
 }
@@ -330,15 +334,15 @@ func (client *client) read(ctx context.Context) {
 			ID   int64  `json:"id"`
 			Type string `json:"type"`
 		}
-		if err := json.Unmarshal(payload, &header); err != nil {
-			client.stop(fmt.Errorf("decode Home Assistant message: %w", err))
+		if decodeErr := json.Unmarshal(payload, &header); decodeErr != nil {
+			client.stop(fmt.Errorf("decode Home Assistant message: %w", decodeErr))
 			return
 		}
 		switch header.Type {
 		case "result":
 			var result resultMessage
-			if err := json.Unmarshal(payload, &result); err != nil {
-				client.stop(fmt.Errorf("decode Home Assistant result: %w", err))
+			if decodeErr := json.Unmarshal(payload, &result); decodeErr != nil {
+				client.stop(fmt.Errorf("decode Home Assistant result: %w", decodeErr))
 				return
 			}
 			result.received = time.Now().UTC()
@@ -346,11 +350,12 @@ func (client *client) read(ctx context.Context) {
 			client.deliverResult(result)
 		case "event":
 			var event eventMessage
-			if err := json.Unmarshal(payload, &event); err != nil {
-				client.stop(fmt.Errorf("decode Home Assistant event: %w", err))
+			if decodeErr := json.Unmarshal(payload, &event); decodeErr != nil {
+				client.stop(fmt.Errorf("decode Home Assistant event: %w", decodeErr))
 				return
 			}
-			if event.Event.Data.EntityID != client.entityID || event.Event.Data.NewState == nil || event.Event.Data.NewState.EntityID != client.entityID {
+			if event.Event.Data.EntityID != client.entityID || event.Event.Data.NewState == nil ||
+				event.Event.Data.NewState.EntityID != client.entityID {
 				continue
 			}
 			change := stateChange{

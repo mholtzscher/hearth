@@ -1,12 +1,15 @@
-package hearthd
+package hearthd_test
 
 import (
 	"path/filepath"
 	"testing"
+
+	"github.com/mholtzscher/hearth/internal/app/hearthd"
 )
 
 func TestLoadExampleConfig(t *testing.T) {
-	value, err := LoadConfig(filepath.Join("..", "..", "..", "configs", "hearthd.example.yaml"))
+	t.Parallel()
+	value, err := hearthd.LoadConfig(filepath.Join("..", "..", "..", "configs", "hearthd.example.yaml"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -16,7 +19,8 @@ func TestLoadExampleConfig(t *testing.T) {
 }
 
 func TestConfigAcceptsNonLoopbackHTTP(t *testing.T) {
-	value := Config{HTTPAddr: "0.0.0.0:8080", NATSURL: "nats://127.0.0.1:4222", SQLitePath: "hearth.db"}
+	t.Parallel()
+	value := hearthd.Config{HTTPAddr: "0.0.0.0:8080", NATSURL: "nats://127.0.0.1:4222", SQLitePath: "hearth.db"}
 	if err := value.Validate(); err != nil {
 		t.Fatalf("validate non-loopback HTTP address: %v", err)
 	}

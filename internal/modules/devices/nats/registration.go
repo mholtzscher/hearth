@@ -5,10 +5,11 @@ import (
 	"errors"
 	"log/slog"
 
+	natsgo "github.com/nats-io/nats.go"
+
 	contractsv1 "github.com/mholtzscher/hearth/contracts/v1"
 	"github.com/mholtzscher/hearth/internal/contracts/v1/natswire"
 	"github.com/mholtzscher/hearth/internal/modules/devices"
-	natsgo "github.com/nats-io/nats.go"
 )
 
 type Registrar interface {
@@ -29,32 +30,47 @@ func StartRegistrationServer(
 		return nil, errors.New("registration handler is required")
 	}
 	logger = defaultLogger(logger)
-	server, err := startRequestReplyServer(
+	server, startErr := startRequestReplyServer(
 		connection, validator,
 		natswire.RegistrationWildcard(), "registration", "registration_id",
 		contractsv1.RegistrationRequestSchemaID, contractsv1.RegistrationResponseSchemaID,
 		logger,
-		func(ctx context.Context, subject string, request natswire.Envelope[registration]) (registrationResponse, bool) {
-			route, err := natswire.ParseRegistrationSubject(subject)
-			if err != nil {
-				logger.Error("discarding registration with invalid subject", "subject", subject, "error", err)
+		func(
+			ctx context.Context,
+			subject string,
+			request natswire.Envelope[registration],
+		) (registrationResponse, bool) {
+			route, routeErr := natswire.ParseRegistrationSubject(subject)
+			if routeErr != nil {
+				logger.ErrorContext(ctx,
+					"discarding registration with invalid subject",
+					"subject", subject, "error", routeErr,
+				)
 				return registrationResponse{}, false
 			}
-			response, err := register(ctx, registrar, route.AdapterID, request.Data)
-			if err != nil {
-				logger.Error("handle registration", "subject", subject, "registration_id", request.ID, "error", err)
+			response, registrationErr := register(ctx, registrar, route.AdapterID, request.Data)
+			if registrationErr != nil {
+				logger.ErrorContext(ctx,
+					"handle registration", "subject", subject,
+					"registration_id", request.ID, "error", registrationErr,
+				)
 				return registrationResponse{}, false
 			}
 			return response, true
 		},
 	)
-	if err != nil {
-		return nil, err
+	if startErr != nil {
+		return nil, startErr
 	}
 	return &RegistrationServer{requestReplyServer: server}, nil
 }
 
-func register(ctx context.Context, registrar Registrar, adapterID string, wire registration) (registrationResponse, error) {
+func register(
+	ctx context.Context,
+	registrar Registrar,
+	adapterID string,
+	wire registration,
+) (registrationResponse, error) {
 	domain := devices.Registration{
 		BindingKey: wire.BindingKey,
 		Device: devices.DeviceDescriptor{
@@ -73,10 +89,9 @@ func register(ctx context.Context, registrar Registrar, adapterID string, wire r
 		}
 	}
 	accepted, err := registrar.Register(ctx, adapterID, domain)
-	var rejected *devices.RegistrationRejectedError
-	if errors.As(err, &rejected) {
+	if rejected, ok := errors.AsType[*devices.RegistrationRejectedError](err); ok {
 		return registrationResponse{
-			Status: "rejected",
+			Status: statusRejected,
 			Error:  &registrationError{Code: string(rejected.Code), Message: rejected.Message},
 		}, nil
 	}
@@ -93,21 +108,21 @@ func register(ctx context.Context, registrar Registrar, adapterID string, wire r
 			Key: entity.Key, EntityID: string(entity.EntityID), Enabled: entity.Enabled,
 		}
 	}
-	return registrationResponse{Status: "accepted", Binding: &wireBinding}, nil
+	return registrationResponse{Status: statusAccepted, Binding: &wireBinding}, nil
 }
 
 func copyBoolPointer(value *bool) *bool {
 	if value == nil {
 		return nil
 	}
-	copy := *value
-	return &copy
+	cloned := *value
+	return &cloned
 }
 
 func copyStringPointer(value *string) *string {
 	if value == nil {
 		return nil
 	}
-	copy := *value
-	return &copy
+	cloned := *value
+	return &cloned
 }

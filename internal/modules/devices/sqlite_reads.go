@@ -56,7 +56,10 @@ func (repository *SQLiteRepository) GetDevice(ctx context.Context, params GetDev
 	}, nil
 }
 
-func (repository *SQLiteRepository) ListEntities(ctx context.Context, params ListEntitiesParams) (Page[EntityWithState], error) {
+func (repository *SQLiteRepository) ListEntities(
+	ctx context.Context,
+	params ListEntitiesParams,
+) (Page[EntityWithState], error) {
 	if !validPageLimit(params.Limit) {
 		return Page[EntityWithState]{}, ErrInvalidPage
 	}
@@ -65,48 +68,61 @@ func (repository *SQLiteRepository) ListEntities(ctx context.Context, params Lis
 		afterID = string(*params.AfterID)
 	}
 	queries := statesqlc.New(repository.database)
+	if params.DeviceID != nil {
+		return listEntitiesByDevice(ctx, queries, params, afterID)
+	}
+	rows, err := queries.ListEntities(ctx, statesqlc.ListEntitiesParams{
+		ID: afterID, Limit: int64(params.Limit + 1),
+	})
+	if err != nil {
+		return Page[EntityWithState]{}, fmt.Errorf("list entities: %w", err)
+	}
 	items := make([]EntityWithState, 0, params.Limit+1)
-	if params.DeviceID == nil {
-		rows, err := queries.ListEntities(ctx, statesqlc.ListEntitiesParams{
-			ID: afterID, Limit: int64(params.Limit + 1),
-		})
-		if err != nil {
-			return Page[EntityWithState]{}, fmt.Errorf("list entities: %w", err)
+	for _, row := range rows {
+		view, mappingErr := entityWithStateFromValues(
+			row.ID, row.DeviceID, row.AdapterID, row.Name, row.TypeID, row.SupportJson, row.Enabled,
+			row.ObservationID, row.ValueJson, row.AdapterReceivedAt, row.SourceUpdatedAt,
+			row.ObservedAt, row.ReceiveOrder,
+		)
+		if mappingErr != nil {
+			return Page[EntityWithState]{}, fmt.Errorf("map entity: %w", mappingErr)
 		}
-		for _, row := range rows {
-			view, err := entityWithStateFromValues(
-				row.ID, row.DeviceID, row.AdapterID, row.Name, row.TypeID, row.SupportJson, row.Enabled,
-				row.ObservationID, row.ValueJson, row.AdapterReceivedAt, row.SourceUpdatedAt,
-				row.ObservedAt, row.ReceiveOrder,
-			)
-			if err != nil {
-				return Page[EntityWithState]{}, fmt.Errorf("map entity: %w", err)
-			}
-			items = append(items, view)
-		}
-	} else {
-		rows, err := queries.ListEntitiesByDevice(ctx, statesqlc.ListEntitiesByDeviceParams{
-			DeviceID: string(*params.DeviceID), ID: afterID, Limit: int64(params.Limit + 1),
-		})
-		if err != nil {
-			return Page[EntityWithState]{}, fmt.Errorf("list entities by device: %w", err)
-		}
-		for _, row := range rows {
-			view, err := entityWithStateFromValues(
-				row.ID, row.DeviceID, row.AdapterID, row.Name, row.TypeID, row.SupportJson, row.Enabled,
-				row.ObservationID, row.ValueJson, row.AdapterReceivedAt, row.SourceUpdatedAt,
-				row.ObservedAt, row.ReceiveOrder,
-			)
-			if err != nil {
-				return Page[EntityWithState]{}, fmt.Errorf("map entity: %w", err)
-			}
-			items = append(items, view)
-		}
+		items = append(items, view)
 	}
 	return pageFromExtra(items, params.Limit), nil
 }
 
-func (repository *SQLiteRepository) ListEntityCommands(ctx context.Context, params ListEntityCommandsParams) (Page[CommandRecord], error) {
+func listEntitiesByDevice(
+	ctx context.Context,
+	queries *statesqlc.Queries,
+	params ListEntitiesParams,
+	afterID string,
+) (Page[EntityWithState], error) {
+	rows, err := queries.ListEntitiesByDevice(ctx, statesqlc.ListEntitiesByDeviceParams{
+		DeviceID: string(*params.DeviceID), ID: afterID, Limit: int64(params.Limit + 1),
+	})
+	if err != nil {
+		return Page[EntityWithState]{}, fmt.Errorf("list entities by device: %w", err)
+	}
+	items := make([]EntityWithState, 0, params.Limit+1)
+	for _, row := range rows {
+		view, mappingErr := entityWithStateFromValues(
+			row.ID, row.DeviceID, row.AdapterID, row.Name, row.TypeID, row.SupportJson, row.Enabled,
+			row.ObservationID, row.ValueJson, row.AdapterReceivedAt, row.SourceUpdatedAt,
+			row.ObservedAt, row.ReceiveOrder,
+		)
+		if mappingErr != nil {
+			return Page[EntityWithState]{}, fmt.Errorf("map entity: %w", mappingErr)
+		}
+		items = append(items, view)
+	}
+	return pageFromExtra(items, params.Limit), nil
+}
+
+func (repository *SQLiteRepository) ListEntityCommands(
+	ctx context.Context,
+	params ListEntityCommandsParams,
+) (Page[CommandRecord], error) {
 	if !validPageLimit(params.Limit) || (params.BeforeRequestedAt == nil) != (params.BeforeID == nil) {
 		return Page[CommandRecord]{}, ErrInvalidPage
 	}
@@ -129,9 +145,9 @@ func (repository *SQLiteRepository) ListEntityCommands(ctx context.Context, para
 	}
 	items := make([]CommandRecord, 0, len(rows))
 	for _, row := range rows {
-		command, err := commandFromRow(row)
-		if err != nil {
-			return Page[CommandRecord]{}, fmt.Errorf("map entity command: %w", err)
+		command, mappingErr := commandFromRow(row)
+		if mappingErr != nil {
+			return Page[CommandRecord]{}, fmt.Errorf("map entity command: %w", mappingErr)
 		}
 		items = append(items, command)
 	}

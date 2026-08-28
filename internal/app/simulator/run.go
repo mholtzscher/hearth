@@ -9,13 +9,14 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	natsgo "github.com/nats-io/nats.go"
+	"github.com/nats-io/nats.go/jetstream"
+
 	contractsv1 "github.com/mholtzscher/hearth/contracts/v1"
 	simulatoradapter "github.com/mholtzscher/hearth/internal/adapters/simulator"
 	"github.com/mholtzscher/hearth/internal/contracts/v1/natswire"
 	"github.com/mholtzscher/hearth/sdk/adapter"
 	sdkpowerv1 "github.com/mholtzscher/hearth/sdk/adapter/powerv1"
-	natsgo "github.com/nats-io/nats.go"
-	"github.com/nats-io/nats.go/jetstream"
 )
 
 const (
@@ -30,35 +31,39 @@ func Run(ctx context.Context, config Config, logger *slog.Logger) error {
 	if logger == nil {
 		logger = slog.Default()
 	}
-	session, err := adapter.Connect(ctx, adapter.Config{AdapterID: config.AdapterID, NATSURL: config.NATSURL})
-	if err != nil {
-		return err
+	session, connectErr := adapter.Connect(ctx, adapter.Config{
+		AdapterID: config.AdapterID,
+		NATSURL:   config.NATSURL,
+		Logger:    logger,
+	})
+	if connectErr != nil {
+		return connectErr
 	}
 	defer session.Close()
-	simulated, err := simulatoradapter.New(session, config.Scenario)
-	if err != nil {
-		return err
+	simulated, simulatorErr := simulatoradapter.New(session, config.Scenario)
+	if simulatorErr != nil {
+		return simulatorErr
 	}
-	descriptor, err := sdkpowerv1.NewEntityDescriptor(adapter.EntityMetadata{
+	descriptor, descriptorErr := sdkpowerv1.NewEntityDescriptor(adapter.EntityMetadata{
 		Key: "power", ExternalID: config.BindingKey + ".power", Name: "Power",
 	}, simulated.Support())
-	if err != nil {
-		return err
+	if descriptorErr != nil {
+		return descriptorErr
 	}
 	deviceExternalID := config.BindingKey
-	binding, err := register(ctx, session, adapter.Registration{
+	binding, registrationErr := register(ctx, session, adapter.Registration{
 		BindingKey: config.BindingKey,
 		Device: adapter.DeviceDescriptor{
 			ExternalID: &deviceExternalID, Name: "Simulated light", Kind: "light",
 		},
 		Entities: []adapter.EntityDescriptor{descriptor},
 	}, logger)
-	if err != nil {
-		return err
+	if registrationErr != nil {
+		return registrationErr
 	}
-	entityID, err := entityIDForKey(binding, "power")
-	if err != nil {
-		return err
+	entityID, entityIDErr := entityIDForKey(binding, "power")
+	if entityIDErr != nil {
+		return entityIDErr
 	}
 	switch config.Scenario {
 	case simulatoradapter.ScenarioDuplicate:
@@ -82,13 +87,22 @@ func Run(ctx context.Context, config Config, logger *slog.Logger) error {
 	if err != nil {
 		return err
 	}
-	if err := session.ServeCommands(ctx, handler); err != nil && !errors.Is(err, context.Canceled) && !errors.Is(err, adapter.ErrClosed) {
-		return err
+	if serveErr := session.ServeCommands(
+		ctx,
+		handler,
+	); serveErr != nil && !errors.Is(serveErr, context.Canceled) &&
+		!errors.Is(serveErr, adapter.ErrClosed) {
+		return serveErr
 	}
 	return nil
 }
 
-func register(ctx context.Context, session *adapter.Session, registration adapter.Registration, logger *slog.Logger) (adapter.Binding, error) {
+func register(
+	ctx context.Context,
+	session *adapter.Session,
+	registration adapter.Registration,
+	logger *slog.Logger,
+) (adapter.Binding, error) {
 	delay := registrationRetryMinimum
 	for {
 		binding, err := session.Register(ctx, registration)
@@ -100,7 +114,7 @@ func register(ctx context.Context, session *adapter.Session, registration adapte
 		if errors.As(err, &validation) || errors.As(err, &rejected) {
 			return adapter.Binding{}, err
 		}
-		logger.Warn("retry simulator registration", "error", err, "retry_in", delay)
+		logger.WarnContext(ctx, "retry simulator registration", "error", err, "retry_in", delay)
 		timer := time.NewTimer(delay)
 		select {
 		case <-ctx.Done():
@@ -166,9 +180,9 @@ func publishRawObservation(
 	payload []byte,
 	duplicate bool,
 ) error {
-	connection, err := natsgo.Connect(config.NATSURL, natsgo.Name("hearth-simulator-faults"))
-	if err != nil {
-		return fmt.Errorf("connect simulator fault publisher: %w", err)
+	connection, connectErr := natsgo.Connect(config.NATSURL, natsgo.Name("hearth-simulator-faults"))
+	if connectErr != nil {
+		return fmt.Errorf("connect simulator fault publisher: %w", connectErr)
 	}
 	defer connection.Close()
 	js, err := jetstream.New(connection)
@@ -181,13 +195,13 @@ func publishRawObservation(
 	}
 	message := &natsgo.Msg{Subject: subject, Header: make(natsgo.Header), Data: payload}
 	message.Header.Set(natsgo.MsgIdHdr, observationID)
-	if _, err := js.PublishMsg(ctx, message); err != nil {
-		return fmt.Errorf("publish simulator fault Observation: %w", err)
+	if _, publishErr := js.PublishMsg(ctx, message); publishErr != nil {
+		return fmt.Errorf("publish simulator fault Observation: %w", publishErr)
 	}
 	if duplicate {
-		acknowledgement, err := js.PublishMsg(ctx, message)
-		if err != nil {
-			return fmt.Errorf("publish duplicate simulator Observation: %w", err)
+		acknowledgement, publishErr := js.PublishMsg(ctx, message)
+		if publishErr != nil {
+			return fmt.Errorf("publish duplicate simulator Observation: %w", publishErr)
 		}
 		if !acknowledgement.Duplicate {
 			return fmt.Errorf("duplicate simulator Observation was not deduplicated by JetStream")

@@ -1,4 +1,4 @@
-package api
+package api //nolint:testpackage // Tests exercise package-private transport mappings and fixtures.
 
 import (
 	"context"
@@ -12,6 +12,7 @@ import (
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/danielgtaylor/huma/v2/adapters/humaecho"
 	"github.com/labstack/echo/v5"
+
 	"github.com/mholtzscher/hearth/internal/modules/devices"
 )
 
@@ -44,28 +45,41 @@ func (stub *stubDevices) GetEntity(ctx context.Context, entityID devices.EntityI
 	return stub.getEntity(ctx, entityID)
 }
 
-func (stub *stubDevices) SetEntityEnabled(ctx context.Context, entityID devices.EntityID, enabled bool) (devices.EntityWithState, error) {
+func (stub *stubDevices) SetEntityEnabled(
+	ctx context.Context,
+	entityID devices.EntityID,
+	enabled bool,
+) (devices.EntityWithState, error) {
 	if stub.setEntityEnabled == nil {
 		panic("unexpected SetEntityEnabled call")
 	}
 	return stub.setEntityEnabled(ctx, entityID, enabled)
 }
 
-func (stub *stubDevices) ListDevices(ctx context.Context, params devices.ListDevicesParams) (devices.Page[devices.Device], error) {
+func (stub *stubDevices) ListDevices(
+	ctx context.Context,
+	params devices.ListDevicesParams,
+) (devices.Page[devices.Device], error) {
 	if stub.listDevices == nil {
 		panic("unexpected ListDevices call")
 	}
 	return stub.listDevices(ctx, params)
 }
 
-func (stub *stubDevices) GetDevice(ctx context.Context, params devices.GetDeviceParams) (devices.DeviceAggregate, error) {
+func (stub *stubDevices) GetDevice(
+	ctx context.Context,
+	params devices.GetDeviceParams,
+) (devices.DeviceAggregate, error) {
 	if stub.getDevice == nil {
 		panic("unexpected GetDevice call")
 	}
 	return stub.getDevice(ctx, params)
 }
 
-func (stub *stubDevices) ListEntities(ctx context.Context, params devices.ListEntitiesParams) (devices.Page[devices.EntityWithState], error) {
+func (stub *stubDevices) ListEntities(
+	ctx context.Context,
+	params devices.ListEntitiesParams,
+) (devices.Page[devices.EntityWithState], error) {
 	if stub.listEntities == nil {
 		panic("unexpected ListEntities call")
 	}
@@ -79,7 +93,10 @@ func (stub *stubDevices) GetCommand(ctx context.Context, id devices.CommandID) (
 	return stub.getCommand(ctx, id)
 }
 
-func (stub *stubDevices) ListEntityCommands(ctx context.Context, params devices.ListEntityCommandsParams) (devices.Page[devices.CommandRecord], error) {
+func (stub *stubDevices) ListEntityCommands(
+	ctx context.Context,
+	params devices.ListEntityCommandsParams,
+) (devices.Page[devices.CommandRecord], error) {
 	if stub.listEntityCommands == nil {
 		panic("unexpected ListEntityCommands call")
 	}
@@ -99,11 +116,14 @@ func (stub *stubDevices) ExecuteCommand(
 }
 
 func TestGetEntityReturnsMetadataAndNullableState(t *testing.T) {
+	t.Parallel()
 	var requestedEntityID devices.EntityID
-	stub := &stubDevices{getEntity: func(_ context.Context, entityID devices.EntityID) (devices.EntityWithState, error) {
-		requestedEntityID = entityID
-		return apiEntityWithState(nil), nil
-	}}
+	stub := &stubDevices{
+		getEntity: func(_ context.Context, entityID devices.EntityID) (devices.EntityWithState, error) {
+			requestedEntityID = entityID
+			return apiEntityWithState(nil), nil
+		},
+	}
 	router, openapi := testAPI(t, stub)
 
 	response := performRequest(router, "/v1/entities/"+string(apiEntityID))
@@ -123,7 +143,8 @@ func TestGetEntityReturnsMetadataAndNullableState(t *testing.T) {
 	if requestedEntityID != apiEntityID {
 		t.Fatalf("GetEntity ID = %q", requestedEntityID)
 	}
-	if body.ID != string(apiEntityID) || body.Name != "Power" || !body.Enabled || body.State != nil || body.Support["state"] == nil {
+	if body.ID != string(apiEntityID) || body.Name != "Power" || !body.Enabled || body.State != nil ||
+		body.Support["state"] == nil {
 		t.Fatalf("body = %#v", body)
 	}
 	operation := openapi.OpenAPI().Paths["/v1/entities/{entity_id}"].Get
@@ -133,16 +154,25 @@ func TestGetEntityReturnsMetadataAndNullableState(t *testing.T) {
 }
 
 func TestGetEntityMapsCurrentState(t *testing.T) {
+	t.Parallel()
 	adapterReceivedAt := time.Date(2026, 8, 22, 12, 0, 0, 123, time.UTC)
 	sourceUpdatedAt := adapterReceivedAt.Add(-time.Minute)
 	observedAt := adapterReceivedAt.Add(time.Second)
 	state := &devices.State{
-		EntityID: apiEntityID, Value: devices.Value(`true`), ObservationID: apiObservationID,
-		AdapterReceivedAt: adapterReceivedAt, SourceUpdatedAt: &sourceUpdatedAt, ObservedAt: observedAt, ReceiveOrder: 4,
+		EntityID:          apiEntityID,
+		Value:             devices.Value(`true`),
+		ObservationID:     apiObservationID,
+		AdapterReceivedAt: adapterReceivedAt,
+		SourceUpdatedAt:   &sourceUpdatedAt,
+		ObservedAt:        observedAt,
+		ReceiveOrder:      4,
 	}
-	router, _ := testAPI(t, &stubDevices{getEntity: func(context.Context, devices.EntityID) (devices.EntityWithState, error) {
-		return apiEntityWithState(state), nil
-	}})
+	router, _ := testAPI(
+		t,
+		&stubDevices{getEntity: func(context.Context, devices.EntityID) (devices.EntityWithState, error) {
+			return apiEntityWithState(state), nil
+		}},
+	)
 	response := performRequest(router, "/v1/entities/"+string(apiEntityID))
 	if response.Code != http.StatusOK {
 		t.Fatalf("status = %d, body = %s", response.Code, response.Body.String())
@@ -158,6 +188,7 @@ func TestGetEntityMapsCurrentState(t *testing.T) {
 }
 
 func TestGetEntityMapsStandardErrors(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name    string
 		path    string
@@ -165,16 +196,35 @@ func TestGetEntityMapsStandardErrors(t *testing.T) {
 		status  int
 		detail  string
 	}{
-		{"invalid ID", "/v1/entities/not-an-id", &stubDevices{}, http.StatusBadRequest, "entity_id must be a canonical Hearth Entity ID"},
-		{"not found", "/v1/entities/" + string(apiEntityID), &stubDevices{getEntity: func(context.Context, devices.EntityID) (devices.EntityWithState, error) {
-			return devices.EntityWithState{}, devices.ErrEntityNotFound
-		}}, http.StatusNotFound, "entity not found"},
-		{"internal", "/v1/entities/" + string(apiEntityID), &stubDevices{getEntity: func(context.Context, devices.EntityID) (devices.EntityWithState, error) {
-			return devices.EntityWithState{}, errors.New("SQLite unavailable")
-		}}, http.StatusInternalServerError, "internal error"},
+		{
+			"invalid ID",
+			"/v1/entities/not-an-id",
+			&stubDevices{},
+			http.StatusBadRequest,
+			"entity_id must be a canonical Hearth Entity ID",
+		},
+		{
+			"not found",
+			"/v1/entities/" + string(apiEntityID),
+			&stubDevices{getEntity: func(context.Context, devices.EntityID) (devices.EntityWithState, error) {
+				return devices.EntityWithState{}, devices.ErrEntityNotFound
+			}},
+			http.StatusNotFound,
+			"entity not found",
+		},
+		{
+			"internal",
+			"/v1/entities/" + string(apiEntityID),
+			&stubDevices{getEntity: func(context.Context, devices.EntityID) (devices.EntityWithState, error) {
+				return devices.EntityWithState{}, errors.New("SQLite unavailable")
+			}},
+			http.StatusInternalServerError,
+			"internal error",
+		},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
 			router, _ := testAPI(t, test.devices)
 			response := performRequest(router, test.path)
 			if response.Code != test.status {
@@ -194,8 +244,13 @@ func TestGetEntityMapsStandardErrors(t *testing.T) {
 func apiEntityWithState(state *devices.State) devices.EntityWithState {
 	return devices.EntityWithState{
 		Entity: devices.Entity{
-			ID: apiEntityID, DeviceID: apiDeviceID, AdapterID: "simulator", Name: "Power",
-			TypeID: devices.EntityTypePowerV1, Support: devices.EntitySupport(`{"state":{},"operations":{"set":{}}}`), Enabled: true,
+			ID:        apiEntityID,
+			DeviceID:  apiDeviceID,
+			AdapterID: "simulator",
+			Name:      "Power",
+			TypeID:    devices.EntityTypePowerV1,
+			Support:   devices.EntitySupport(`{"state":{},"operations":{"set":{}}}`),
+			Enabled:   true,
 		},
 		State: state,
 	}
@@ -210,6 +265,7 @@ func testAPI(t *testing.T, devices Devices) (*echo.Echo, huma.API) {
 	return router, openapi
 }
 
+//nolint:paralleltest,reassign // Temporarily replaces the process-wide Huma error factory.
 func TestRegisterDoesNotChangeHumaErrorFactory(t *testing.T) {
 	original := huma.NewError
 	called := false
