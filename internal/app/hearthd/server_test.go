@@ -301,7 +301,7 @@ func TestHTTPHandlerUsesStandardHumaValidationErrors(t *testing.T) {
 	}
 }
 
-//nolint:paralleltest // Temporarily replaces the process-wide Huma error factory.
+//nolint:paralleltest,reassign // Temporarily replaces the process-wide Huma error factory.
 func TestNewHTTPHandlerPreservesHumaErrorFactory(t *testing.T) {
 	original := huma.NewError
 	called := false

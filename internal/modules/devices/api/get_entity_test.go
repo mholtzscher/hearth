@@ -265,7 +265,7 @@ func testAPI(t *testing.T, devices Devices) (*echo.Echo, huma.API) {
 	return router, openapi
 }
 
-//nolint:paralleltest // Temporarily replaces the process-wide Huma error factory.
+//nolint:paralleltest,reassign // Temporarily replaces the process-wide Huma error factory.
 func TestRegisterDoesNotChangeHumaErrorFactory(t *testing.T) {
 	original := huma.NewError
 	called := false
