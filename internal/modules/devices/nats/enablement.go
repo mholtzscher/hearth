@@ -3,9 +3,7 @@ package nats
 import (
 	"context"
 	"errors"
-	"fmt"
 	"log/slog"
-	"time"
 
 	contractsv1 "github.com/mholtzscher/hearth/contracts/v1"
 	"github.com/mholtzscher/hearth/internal/contracts/v1/natswire"
@@ -18,7 +16,7 @@ type EntityEnablementSetter interface {
 }
 
 type EntityEnablementServer struct {
-	subscription *natsgo.Subscription
+	*requestReplyServer
 }
 
 func StartEntityEnablementServer(
@@ -27,101 +25,42 @@ func StartEntityEnablementServer(
 	setter EntityEnablementSetter,
 	logger *slog.Logger,
 ) (*EntityEnablementServer, error) {
-	if connection == nil {
-		return nil, errors.New("entity enablement NATS connection is required")
-	}
-	if validator == nil {
-		return nil, errors.New("entity enablement validator is required")
-	}
 	if setter == nil {
 		return nil, errors.New("entity enablement setter is required")
 	}
-	if logger == nil {
-		logger = slog.Default()
-	}
-	subscription, err := connection.Subscribe(natswire.EntityEnablementWildcard(), func(message *natsgo.Msg) {
-		handleEntityEnablementMessage(connection, message, validator, setter, logger)
-	})
-	if err != nil {
-		return nil, fmt.Errorf("subscribe to entity enablement requests: %w", err)
-	}
-	if err := connection.Flush(); err != nil {
-		_ = subscription.Unsubscribe()
-		return nil, fmt.Errorf("activate entity enablement subscription: %w", err)
-	}
-	return &EntityEnablementServer{subscription: subscription}, nil
-}
-
-func (server *EntityEnablementServer) Drain() error {
-	if server == nil || server.subscription == nil {
-		return nil
-	}
-	if err := server.subscription.Drain(); err != nil && !errors.Is(err, natsgo.ErrConnectionClosed) {
-		return fmt.Errorf("drain entity enablement subscription: %w", err)
-	}
-	return nil
-}
-
-func handleEntityEnablementMessage(
-	connection *natsgo.Conn,
-	message *natsgo.Msg,
-	validator *contractsv1.Validator,
-	setter EntityEnablementSetter,
-	logger *slog.Logger,
-) {
-	if message.Reply == "" {
-		logger.Error("discarding Entity enablement request without reply subject", "subject", message.Subject)
-		return
-	}
-	route, err := natswire.ParseEntityEnablementSubject(message.Subject)
-	if err != nil {
-		logger.Error("discarding Entity enablement request with invalid subject", "subject", message.Subject, "error", err)
-		return
-	}
-	request, err := natswire.Decode[entityEnablementRequest](
-		validator, contractsv1.EntityEnablementRequestSchemaID, message.Data,
+	logger = defaultLogger(logger)
+	server, err := startRequestReplyServer(
+		connection, validator,
+		natswire.EntityEnablementWildcard(), "entity enablement", "enablement_id",
+		contractsv1.EntityEnablementRequestSchemaID, contractsv1.EntityEnablementResponseSchemaID,
+		logger,
+		func(ctx context.Context, subject string, request natswire.Envelope[entityEnablementRequest]) (entityEnablementResponse, bool) {
+			route, err := natswire.ParseEntityEnablementSubject(subject)
+			if err != nil {
+				logger.Error("discarding Entity enablement request with invalid subject", "subject", subject, "error", err)
+				return entityEnablementResponse{}, false
+			}
+			if route.EntityID != request.Data.EntityID {
+				logger.Error("discarding Entity enablement request with mismatched routing", "subject", subject, "enablement_id", request.ID)
+				return entityEnablementResponse{}, false
+			}
+			entityID, err := devices.ParseEntityID(request.Data.EntityID)
+			if err != nil {
+				logger.Error("discarding Entity enablement request with invalid Entity ID", "subject", subject, "enablement_id", request.ID)
+				return entityEnablementResponse{}, false
+			}
+			confirmed, err := setter.SetOwnedEntityEnabled(ctx, route.AdapterID, entityID, request.Data.Enabled)
+			response, handled := mapEntityEnablementResult(request.Data.EntityID, confirmed, err)
+			if !handled {
+				logger.Error("set Entity enablement", "subject", subject, "enablement_id", request.ID, "error", err)
+			}
+			return response, handled
+		},
 	)
 	if err != nil {
-		logger.Error("discarding invalid Entity enablement request", "subject", message.Subject, "error", err)
-		return
+		return nil, err
 	}
-	if request.CausationID != nil || route.EntityID != request.Data.EntityID {
-		logger.Error("discarding Entity enablement request with mismatched routing", "subject", message.Subject, "enablement_id", request.ID)
-		return
-	}
-	entityID, err := devices.ParseEntityID(request.Data.EntityID)
-	if err != nil {
-		logger.Error("discarding Entity enablement request with invalid Entity ID", "subject", message.Subject, "enablement_id", request.ID)
-		return
-	}
-	ctx := natswire.ExtractTrace(context.Background(), message.Header)
-	confirmed, err := setter.SetOwnedEntityEnabled(ctx, route.AdapterID, entityID, request.Data.Enabled)
-	response, handled := mapEntityEnablementResult(request.Data.EntityID, confirmed, err)
-	if !handled {
-		logger.Error("set Entity enablement", "subject", message.Subject, "enablement_id", request.ID, "error", err)
-		return
-	}
-	replyID, err := newReplyID()
-	if err != nil {
-		logger.Error("generate Entity enablement reply ID", "enablement_id", request.ID, "error", err)
-		return
-	}
-	causationID := request.ID
-	reply := natswire.Envelope[entityEnablementResponse]{
-		ID: replyID, Schema: contractsv1.EntityEnablementResponseSchemaID,
-		EmittedAt: time.Now().UTC().Format(time.RFC3339Nano), CorrelationID: request.CorrelationID,
-		CausationID: &causationID, Data: response,
-	}
-	payload, err := natswire.Encode(validator, contractsv1.EntityEnablementResponseSchemaID, reply)
-	if err != nil {
-		logger.Error("encode Entity enablement response", "enablement_id", request.ID, "error", err)
-		return
-	}
-	replyMessage := &natsgo.Msg{Subject: message.Reply, Header: make(natsgo.Header), Data: payload}
-	natswire.InjectTrace(ctx, replyMessage.Header)
-	if err := connection.PublishMsg(replyMessage); err != nil {
-		logger.Error("publish Entity enablement response", "enablement_id", request.ID, "error", err)
-	}
+	return &EntityEnablementServer{requestReplyServer: server}, nil
 }
 
 func mapEntityEnablementResult(
