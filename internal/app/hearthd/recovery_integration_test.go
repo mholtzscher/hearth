@@ -1,4 +1,4 @@
-package hearthd
+package hearthd //nolint:testpackage // Tests exercise package-private assembly and lifecycle behavior.
 
 import (
 	"context"
@@ -17,6 +17,7 @@ import (
 )
 
 func TestCoreStartupInterruptsActiveCommandsWithoutRedispatch(t *testing.T) {
+	t.Parallel()
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	databasePath := filepath.Join(t.TempDir(), "hearth.db")

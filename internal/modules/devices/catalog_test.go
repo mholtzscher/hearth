@@ -1,4 +1,4 @@
-package devices
+package devices //nolint:testpackage // Tests exercise package-private domain seams and repository fixtures.
 
 import (
 	"encoding/json"
@@ -10,6 +10,7 @@ import (
 )
 
 func TestGenericCatalogCarriesTypedBehaviorAcrossErasure(t *testing.T) {
+	t.Parallel()
 	type state struct {
 		Level int `json:"level"`
 	}
@@ -120,11 +121,11 @@ func TestGenericCatalogCarriesTypedBehaviorAcrossErasure(t *testing.T) {
 
 	withoutOperation := entity
 	withoutOperation.Support = EntitySupport(`{"state":{"maximum":10},"operations":{}}`)
-	if _, err := catalog.ResolveCommand(
+	if _, resolveErr := catalog.ResolveCommand(
 		withoutOperation,
 		OperationNameSet,
 		CommandParameters(`{"target":5}`),
-	); err == nil {
+	); resolveErr == nil {
 		t.Fatal("absent operation support unexpectedly accepted")
 	}
 
@@ -137,6 +138,7 @@ func TestGenericCatalogCarriesTypedBehaviorAcrossErasure(t *testing.T) {
 }
 
 func TestCatalogRejectsInvalidDefinitions(t *testing.T) {
+	t.Parallel()
 	state := compileTestCodec[bool](t, "state", `{"type":"boolean"}`)
 	support := compileTestCodec[struct{}](t, "support", `{"type":"object","maxProperties":0}`)
 	parameters := compileTestCodec[struct{}](t, "parameters", `{"type":"object","maxProperties":0}`)
@@ -174,7 +176,7 @@ func TestCatalogRejectsInvalidDefinitions(t *testing.T) {
 		time.Second,
 		func(struct{}, bool) bool { return true },
 	)
-	if _, err := DefineEntityType(
+	if _, defineErr := DefineEntityType(
 		"test.duplicate/v1",
 		state,
 		support,
@@ -182,7 +184,7 @@ func TestCatalogRejectsInvalidDefinitions(t *testing.T) {
 		func(bool, bool) bool { return true },
 		validOperation,
 		duplicateOperation,
-	); err == nil {
+	); defineErr == nil {
 		t.Fatal("duplicate operation unexpectedly accepted")
 	}
 	invalidOperation := DefineOperation(
@@ -193,23 +195,23 @@ func TestCatalogRejectsInvalidDefinitions(t *testing.T) {
 		time.Second,
 		func(struct{}, bool) bool { return true },
 	)
-	if _, err := DefineEntityType(
+	if _, defineErr := DefineEntityType(
 		"test.invalid/v1",
 		state,
 		support,
 		func(struct{}, bool) error { return nil },
 		func(bool, bool) bool { return true },
 		invalidOperation,
-	); err == nil {
+	); defineErr == nil {
 		t.Fatal("unsafe operation name unexpectedly accepted")
 	}
-	if _, err := DefineEntityType(
+	if _, defineErr := DefineEntityType(
 		"test.nil/v1",
 		state,
 		support,
 		nil,
 		func(bool, bool) bool { return true },
-	); err == nil {
+	); defineErr == nil {
 		t.Fatal("nil supported-state validator unexpectedly accepted")
 	}
 }

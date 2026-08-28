@@ -1,4 +1,4 @@
-package devices
+package devices //nolint:testpackage // Tests exercise package-private domain seams and repository fixtures.
 
 import (
 	"context"
@@ -64,6 +64,7 @@ func (repository *readRepository) ListEntityCommands(
 }
 
 func TestReadServiceValidatesPagesBeforeRepositoryCalls(t *testing.T) {
+	t.Parallel()
 	repository := newReadRepository()
 	service := NewService(repository, nil, nil, Dependencies{})
 	invalidDeviceID := DeviceID("bad")
@@ -112,6 +113,7 @@ func TestReadServiceValidatesPagesBeforeRepositoryCalls(t *testing.T) {
 		}},
 	} {
 		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
 			if err := test.call(); !errors.Is(err, ErrInvalidPage) {
 				t.Fatalf("error = %v, want ErrInvalidPage", err)
 			}
@@ -126,6 +128,7 @@ func TestReadServiceValidatesPagesBeforeRepositoryCalls(t *testing.T) {
 }
 
 func TestReadServiceReturnsOwnedDataAndNormalizesCommandPosition(t *testing.T) {
+	t.Parallel()
 	sourceUpdatedAt := time.Date(2026, 8, 25, 10, 0, 0, 0, time.UTC)
 	completedAt := sourceUpdatedAt.Add(time.Second)
 	failure := CommandFailureOutcomeTimeout
@@ -195,6 +198,7 @@ func TestReadServiceReturnsOwnedDataAndNormalizesCommandPosition(t *testing.T) {
 }
 
 func TestListEntityCommandsDistinguishesUnknownParent(t *testing.T) {
+	t.Parallel()
 	repository := newReadRepository()
 	repository.entityErr = ErrEntityNotFound
 	service := NewService(repository, nil, nil, Dependencies{})
@@ -206,6 +210,3 @@ func TestListEntityCommandsDistinguishesUnknownParent(t *testing.T) {
 		t.Fatalf("error = %v, list calls = %d", err, repository.listCommandsCalls)
 	}
 }
-
-//go:fix inline
-func pointerTo[T any](value T) *T { return new(value) }

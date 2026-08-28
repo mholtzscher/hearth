@@ -1,4 +1,4 @@
-package adapter
+package adapter //nolint:testpackage // Tests exercise package-private Session lifecycle behavior.
 
 import (
 	"context"
@@ -21,6 +21,7 @@ import (
 const testEntityID = "ent_01890f47-7a6b-7c4d-8e9f-0123456789ab"
 
 func TestConnectRetriesWhenNATSStartsLater(t *testing.T) {
+	t.Parallel()
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)
@@ -46,6 +47,7 @@ func TestConnectRetriesWhenNATSStartsLater(t *testing.T) {
 }
 
 func TestRegisterAcceptedRejectedAndLocalValidation(t *testing.T) {
+	t.Parallel()
 	server := startServer(t, -1, t.TempDir())
 	core := connectNATS(t, server.ClientURL())
 	validator := compileValidator(t)
@@ -135,6 +137,7 @@ func TestRegisterAcceptedRejectedAndLocalValidation(t *testing.T) {
 }
 
 func TestRegisterNoResponderRemainsRequestError(t *testing.T) {
+	t.Parallel()
 	server := startServer(t, -1, t.TempDir())
 	session := connectSession(t, server.ClientURL())
 	_, err := session.Register(testContext(t), validRegistration("office-light"))
@@ -149,6 +152,7 @@ func TestRegisterNoResponderRemainsRequestError(t *testing.T) {
 }
 
 func TestSetEntityEnabledRoundTripsAcceptedAndTypedRejectedResponses(t *testing.T) {
+	t.Parallel()
 	server := startServer(t, -1, t.TempDir())
 	core := connectNATS(t, server.ClientURL())
 	validator := compileValidator(t)
@@ -223,6 +227,7 @@ func TestSetEntityEnabledRoundTripsAcceptedAndTypedRejectedResponses(t *testing.
 }
 
 func TestPublishObservationWaitsForAcknowledgement(t *testing.T) {
+	t.Parallel()
 	server := startServer(t, -1, t.TempDir())
 	core := connectNATS(t, server.ClientURL())
 	stream := createObservationStream(t, core)
@@ -256,6 +261,7 @@ func TestPublishObservationWaitsForAcknowledgement(t *testing.T) {
 }
 
 func TestPublishObservationRetriesSameIDAfterReconnect(t *testing.T) {
+	t.Parallel()
 	storeDir := t.TempDir()
 	server := startServer(t, -1, storeDir)
 	core := connectNATS(t, server.ClientURL())
@@ -312,6 +318,7 @@ func TestPublishObservationRetriesSameIDAfterReconnect(t *testing.T) {
 }
 
 func TestServeCommandsInvokesHandlersConcurrentlyAndRespondsOnce(t *testing.T) {
+	t.Parallel()
 	server := startServer(t, -1, t.TempDir())
 	core := connectNATS(t, server.ClientURL())
 	session := connectSession(t, server.ClientURL())
@@ -391,6 +398,7 @@ func TestServeCommandsInvokesHandlersConcurrentlyAndRespondsOnce(t *testing.T) {
 }
 
 func TestCommandHandlerUsesTransmittedDeadline(t *testing.T) {
+	t.Parallel()
 	server := startServer(t, -1, t.TempDir())
 	core := connectNATS(t, server.ClientURL())
 	session := connectSession(t, server.ClientURL())
@@ -452,6 +460,7 @@ func TestCommandHandlerUsesTransmittedDeadline(t *testing.T) {
 }
 
 func TestCommandRejectionUsesUpstreamRejectedCode(t *testing.T) {
+	t.Parallel()
 	server := startServer(t, -1, t.TempDir())
 	core := connectNATS(t, server.ClientURL())
 	session := connectSession(t, server.ClientURL())
@@ -490,6 +499,7 @@ func TestCommandRejectionUsesUpstreamRejectedCode(t *testing.T) {
 }
 
 func TestCommandPublishFailureDoesNotConsumeResponder(t *testing.T) {
+	t.Parallel()
 	server := startServer(t, -1, t.TempDir())
 	session := connectSession(t, server.ClientURL())
 	responder := &commandResponder{
@@ -514,6 +524,7 @@ func TestCommandPublishFailureDoesNotConsumeResponder(t *testing.T) {
 }
 
 func TestLinkedObservationReusesCommandCausality(t *testing.T) {
+	t.Parallel()
 	server := startServer(t, -1, t.TempDir())
 	core := connectNATS(t, server.ClientURL())
 	stream := createObservationStream(t, core)
@@ -563,6 +574,7 @@ func TestLinkedObservationReusesCommandCausality(t *testing.T) {
 }
 
 func TestMissingCommandResponseLetsRequestTimeOut(t *testing.T) {
+	t.Parallel()
 	server := startServer(t, -1, t.TempDir())
 	core := connectNATS(t, server.ClientURL())
 	session := connectSession(t, server.ClientURL())
@@ -590,6 +602,7 @@ func TestMissingCommandResponseLetsRequestTimeOut(t *testing.T) {
 }
 
 func TestCloseWaitsForCommandHandlers(t *testing.T) {
+	t.Parallel()
 	server := startServer(t, -1, t.TempDir())
 	core := connectNATS(t, server.ClientURL())
 	session := connectSession(t, server.ClientURL())
@@ -636,6 +649,7 @@ func TestCloseWaitsForCommandHandlers(t *testing.T) {
 }
 
 func TestCloseIsIdempotent(t *testing.T) {
+	t.Parallel()
 	server := startServer(t, -1, t.TempDir())
 	session := connectSession(t, server.ClientURL())
 	if err := session.Close(); err != nil {

@@ -1,4 +1,4 @@
-package natswire
+package natswire //nolint:testpackage // Tests exercise package-private tracing integration behavior.
 
 import (
 	"context"
@@ -9,6 +9,7 @@ import (
 )
 
 func TestTraceContextRoundTrip(t *testing.T) {
+	t.Parallel()
 	spanContext := trace.NewSpanContext(trace.SpanContextConfig{
 		TraceID:    trace.TraceID{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16},
 		SpanID:     trace.SpanID{1, 2, 3, 4, 5, 6, 7, 8},

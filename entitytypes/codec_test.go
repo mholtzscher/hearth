@@ -1,10 +1,12 @@
-package entitytypes
+package entitytypes_test
 
 import (
 	"encoding/json"
 	"errors"
 	"strings"
 	"testing"
+
+	"github.com/mholtzscher/hearth/entitytypes"
 )
 
 type codecFixture struct {
@@ -12,7 +14,8 @@ type codecFixture struct {
 }
 
 func TestJSONCodecNormalizesAndValidates(t *testing.T) {
-	codec, err := CompileJSONCodec[codecFixture](
+	t.Parallel()
+	codec, err := entitytypes.CompileJSONCodec[codecFixture](
 		"urn:test:codec",
 		json.RawMessage(
 			`{"type":"object","required":["value"],"properties":{"value":{"type":"boolean"}},"additionalProperties":false}`,
@@ -54,6 +57,7 @@ func TestJSONCodecNormalizesAndValidates(t *testing.T) {
 		{"invariant", `{"value":false}`},
 	} {
 		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
 			if _, _, err := codec.Decode(json.RawMessage(test.raw)); err == nil {
 				t.Fatal("value unexpectedly accepted")
 			}
@@ -62,7 +66,8 @@ func TestJSONCodecNormalizesAndValidates(t *testing.T) {
 }
 
 func TestJSONCodecDecodesEquivalentIntegerRepresentations(t *testing.T) {
-	scalar, err := CompileJSONCodec[int64](
+	t.Parallel()
+	scalar, err := entitytypes.CompileJSONCodec[int64](
 		"urn:test:integer",
 		json.RawMessage(`{"type":"integer"}`),
 		nil,
@@ -84,7 +89,7 @@ func TestJSONCodecDecodesEquivalentIntegerRepresentations(t *testing.T) {
 	type integerFixture struct {
 		Value int64 `json:"value"`
 	}
-	object, err := CompileJSONCodec[integerFixture](
+	object, err := entitytypes.CompileJSONCodec[integerFixture](
 		"urn:test:integer-object",
 		json.RawMessage(
 			`{"type":"object","required":["value"],"properties":{"value":{"type":"integer"}},"additionalProperties":false}`,
@@ -104,8 +109,9 @@ func TestJSONCodecDecodesEquivalentIntegerRepresentations(t *testing.T) {
 }
 
 func TestJSONCodecRejectsBindingDrift(t *testing.T) {
+	t.Parallel()
 	type driftedBinding struct{}
-	codec, err := CompileJSONCodec[driftedBinding](
+	codec, err := entitytypes.CompileJSONCodec[driftedBinding](
 		"urn:test:drift",
 		json.RawMessage(
 			`{"type":"object","required":["value"],"properties":{"value":{"type":"boolean"}},"additionalProperties":false}`,
@@ -122,10 +128,11 @@ func TestJSONCodecRejectsBindingDrift(t *testing.T) {
 }
 
 func TestCompileJSONCodecRejectsInvalidSchemas(t *testing.T) {
-	if _, err := CompileJSONCodec[bool]("", json.RawMessage(`{"type":"boolean"}`), nil); err == nil {
+	t.Parallel()
+	if _, err := entitytypes.CompileJSONCodec[bool]("", json.RawMessage(`{"type":"boolean"}`), nil); err == nil {
 		t.Fatal("empty schema ID unexpectedly accepted")
 	}
-	if _, err := CompileJSONCodec[bool]("urn:test:bad", json.RawMessage(`{`), nil); err == nil {
+	if _, err := entitytypes.CompileJSONCodec[bool]("urn:test:bad", json.RawMessage(`{`), nil); err == nil {
 		t.Fatal("malformed schema unexpectedly accepted")
 	}
 }

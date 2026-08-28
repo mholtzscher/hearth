@@ -1,4 +1,4 @@
-package api
+package api //nolint:testpackage // Tests exercise package-private transport mappings and fixtures.
 
 import (
 	"bytes"
@@ -15,6 +15,7 @@ import (
 )
 
 func TestPatchEntitySetsEnablementAndReturnsCompleteEntity(t *testing.T) {
+	t.Parallel()
 	var gotID devices.EntityID
 	var gotEnabled bool
 	stub := &stubDevices{setEntityEnabled: func(
@@ -47,6 +48,7 @@ func TestPatchEntitySetsEnablementAndReturnsCompleteEntity(t *testing.T) {
 }
 
 func TestPatchEntityUsesHumaStructuralValidation(t *testing.T) {
+	t.Parallel()
 	router, _ := testAPI(t, &stubDevices{})
 	for _, body := range []string{`{}`, `{"enabled":null}`, `{"enabled":"false"}`, `{"enabled":false,"extra":true}`} {
 		response := patchEntityRequest(router, string(apiEntityID), body)
@@ -64,6 +66,7 @@ func TestPatchEntityUsesHumaStructuralValidation(t *testing.T) {
 }
 
 func TestPatchEntityMapsDomainErrors(t *testing.T) {
+	t.Parallel()
 	for _, test := range []struct {
 		name   string
 		id     string
@@ -76,6 +79,7 @@ func TestPatchEntityMapsDomainErrors(t *testing.T) {
 		{"internal", string(apiEntityID), errors.New("SQLite unavailable"), http.StatusInternalServerError, "internal error"},
 	} {
 		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
 			stub := &stubDevices{}
 			if test.id == string(apiEntityID) {
 				stub.setEntityEnabled = func(context.Context, devices.EntityID, bool) (devices.EntityWithState, error) {

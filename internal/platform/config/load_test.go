@@ -1,13 +1,16 @@
-package config
+package config_test
 
 import (
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	platformconfig "github.com/mholtzscher/hearth/internal/platform/config"
 )
 
 func TestLoadFileIsStrict(t *testing.T) {
+	t.Parallel()
 	type testConfig struct {
 		Name string `yaml:"name"`
 	}
@@ -21,7 +24,7 @@ func TestLoadFileIsStrict(t *testing.T) {
 	}
 
 	var valid testConfig
-	if err := LoadFile(write(t, "name: hearth\n"), &valid); err != nil {
+	if err := platformconfig.LoadFile(write(t, "name: hearth\n"), &valid); err != nil {
 		t.Fatal(err)
 	}
 	if valid.Name != "hearth" {
@@ -33,25 +36,26 @@ func TestLoadFileIsStrict(t *testing.T) {
 		"name: hearth\n---\nname: second\n",
 	} {
 		var value testConfig
-		if err := LoadFile(write(t, contents), &value); err == nil {
+		if err := platformconfig.LoadFile(write(t, contents), &value); err == nil {
 			t.Fatalf("invalid config unexpectedly accepted: %s", strings.TrimSpace(contents))
 		}
 	}
 }
 
 func TestValidators(t *testing.T) {
-	if err := ValidateSlug("adapter_id", "homeassistant-migration"); err != nil {
+	t.Parallel()
+	if err := platformconfig.ValidateSlug("adapter_id", "homeassistant-migration"); err != nil {
 		t.Fatal(err)
 	}
-	if err := ValidateNATSURL("nats://127.0.0.1:4222"); err != nil {
+	if err := platformconfig.ValidateNATSURL("nats://127.0.0.1:4222"); err != nil {
 		t.Fatal(err)
 	}
 	for _, value := range []string{"HomeAssistant", "contains.period", ""} {
-		if err := ValidateSlug("adapter_id", value); err == nil {
+		if err := platformconfig.ValidateSlug("adapter_id", value); err == nil {
 			t.Fatalf("slug %q unexpectedly accepted", value)
 		}
 	}
-	if err := ValidateNATSURL("http://127.0.0.1:4222"); err == nil {
+	if err := platformconfig.ValidateNATSURL("http://127.0.0.1:4222"); err == nil {
 		t.Fatal("non-NATS URL unexpectedly accepted")
 	}
 }

@@ -1,4 +1,4 @@
-package typed
+package typed_test
 
 import (
 	"context"
@@ -6,6 +6,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/mholtzscher/hearth/sdk/adapter/typed"
 
 	"github.com/mholtzscher/hearth/sdk/adapter"
 )
@@ -15,9 +17,10 @@ type parameters struct {
 }
 
 func TestCommandHandlerRoutesAndDecodesTypedCommands(t *testing.T) {
+	t.Parallel()
 	deadline := time.Date(2026, 8, 22, 12, 0, 0, 123, time.UTC)
-	received := make(chan Command[parameters], 1)
-	route, err := Operation(
+	received := make(chan typed.Command[parameters], 1)
+	route, err := typed.Operation(
 		"ent_one",
 		"set",
 		func(raw json.RawMessage) (parameters, error) {
@@ -25,7 +28,7 @@ func TestCommandHandlerRoutesAndDecodesTypedCommands(t *testing.T) {
 			err := json.Unmarshal(raw, &value)
 			return value, err
 		},
-		func(_ context.Context, command Command[parameters], _ adapter.Responder) error {
+		func(_ context.Context, command typed.Command[parameters], _ adapter.Responder) error {
 			received <- command
 			return nil
 		},
@@ -33,7 +36,7 @@ func TestCommandHandlerRoutesAndDecodesTypedCommands(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	handler, err := NewCommandHandler(route)
+	handler, err := typed.NewCommandHandler(route)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -52,15 +55,16 @@ func TestCommandHandlerRoutesAndDecodesTypedCommands(t *testing.T) {
 }
 
 func TestCommandHandlerMatchesEntityAndOperationTogether(t *testing.T) {
-	route, err := Operation(
+	t.Parallel()
+	route, err := typed.Operation(
 		"ent_one", "set",
 		func(json.RawMessage) (parameters, error) { return parameters{}, nil },
-		func(context.Context, Command[parameters], adapter.Responder) error { return nil },
+		func(context.Context, typed.Command[parameters], adapter.Responder) error { return nil },
 	)
 	if err != nil {
 		t.Fatal(err)
 	}
-	handler, err := NewCommandHandler(route)
+	handler, err := typed.NewCommandHandler(route)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -69,47 +73,48 @@ func TestCommandHandlerMatchesEntityAndOperationTogether(t *testing.T) {
 		OperationName: "set",
 		Deadline:      time.Now().UTC().Format(time.RFC3339Nano),
 	}
-	if err := handler(
+	if handlerErr := handler(
 		context.Background(),
 		command,
 		nil,
-	); err == nil ||
-		!strings.Contains(err.Error(), "no typed command route") {
-		t.Fatalf("route error = %v", err)
+	); handlerErr == nil ||
+		!strings.Contains(handlerErr.Error(), "no typed command route") {
+		t.Fatalf("route error = %v", handlerErr)
 	}
 }
 
 func TestCommandHandlerRejectsDuplicateAndInvalidRoutes(t *testing.T) {
-	newRoute := func() Route {
-		route, err := Operation(
+	t.Parallel()
+	newRoute := func() typed.Route {
+		route, err := typed.Operation(
 			"ent_one", "set",
 			func(json.RawMessage) (parameters, error) { return parameters{}, nil },
-			func(context.Context, Command[parameters], adapter.Responder) error { return nil },
+			func(context.Context, typed.Command[parameters], adapter.Responder) error { return nil },
 		)
 		if err != nil {
 			t.Fatal(err)
 		}
 		return route
 	}
-	if _, err := NewCommandHandler(newRoute(), newRoute()); err == nil {
+	if _, err := typed.NewCommandHandler(newRoute(), newRoute()); err == nil {
 		t.Fatal("duplicate route unexpectedly accepted")
 	}
-	if _, err := NewCommandHandler(); err == nil {
+	if _, err := typed.NewCommandHandler(); err == nil {
 		t.Fatal("empty routes unexpectedly accepted")
 	}
-	if _, err := Operation[parameters](
+	if _, err := typed.Operation[parameters](
 		"",
 		"set",
 		func(json.RawMessage) (parameters, error) { return parameters{}, nil },
-		func(context.Context, Command[parameters], adapter.Responder) error { return nil },
+		func(context.Context, typed.Command[parameters], adapter.Responder) error { return nil },
 	); err == nil {
 		t.Fatal("empty entity ID unexpectedly accepted")
 	}
-	if _, err := Operation[parameters](
+	if _, err := typed.Operation[parameters](
 		"ent_one",
 		"bad.name",
 		func(json.RawMessage) (parameters, error) { return parameters{}, nil },
-		func(context.Context, Command[parameters], adapter.Responder) error { return nil },
+		func(context.Context, typed.Command[parameters], adapter.Responder) error { return nil },
 	); err == nil {
 		t.Fatal("unsafe operation unexpectedly accepted")
 	}

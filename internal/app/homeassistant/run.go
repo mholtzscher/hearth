@@ -37,7 +37,11 @@ func Run(ctx context.Context, config Config, logger *slog.Logger) error {
 		return errors.New("Home Assistant token file is empty")
 	}
 
-	session, err := adapter.Connect(ctx, adapter.Config{AdapterID: config.AdapterID, NATSURL: config.NATSURL})
+	session, err := adapter.Connect(ctx, adapter.Config{
+		AdapterID: config.AdapterID,
+		NATSURL:   config.NATSURL,
+		Logger:    logger,
+	})
 	if err != nil {
 		return err
 	}

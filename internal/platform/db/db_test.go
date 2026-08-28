@@ -1,4 +1,4 @@
-package db
+package db //nolint:testpackage // Migration tests require the package-private embedded migration set.
 
 import (
 	"context"
@@ -14,6 +14,7 @@ import (
 )
 
 func TestMigrateEmptySQLiteDatabase(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	database, err := Open(ctx, filepath.Join(t.TempDir(), "hearth.db"))
 	if err != nil {
@@ -77,6 +78,7 @@ func TestMigrateEmptySQLiteDatabase(t *testing.T) {
 }
 
 func TestResourceReadIndexMigrationReversesAndReapplies(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	database, err := Open(ctx, filepath.Join(t.TempDir(), "hearth.db"))
 	if err != nil {
@@ -167,6 +169,7 @@ func TestResourceReadIndexMigrationReversesAndReapplies(t *testing.T) {
 }
 
 func TestEntityEnablementMigrationPreservesPopulatedDatabaseAndMapsDown(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	database, err := Open(ctx, filepath.Join(t.TempDir(), "hearth.db"))
 	if err != nil {
@@ -240,13 +243,13 @@ func TestEntityEnablementMigrationPreservesPopulatedDatabaseAndMapsDown(t *testi
 		t.Fatal(err)
 	}
 	var enabled, receiptOrder, commandCount int
-	if err := database.QueryRowContext(ctx, "SELECT enabled FROM entities WHERE id = 'ent_migration'").
-		Scan(&enabled); err != nil {
-		t.Fatal(err)
+	if scanErr := database.QueryRowContext(ctx, "SELECT enabled FROM entities WHERE id = 'ent_migration'").
+		Scan(&enabled); scanErr != nil {
+		t.Fatal(scanErr)
 	}
-	if err := database.QueryRowContext(ctx, "SELECT receive_order FROM observation_receipts WHERE observation_id = 'obs_migration'").
-		Scan(&receiptOrder); err != nil {
-		t.Fatal(err)
+	if scanErr := database.QueryRowContext(ctx, "SELECT receive_order FROM observation_receipts WHERE observation_id = 'obs_migration'").
+		Scan(&receiptOrder); scanErr != nil {
+		t.Fatal(scanErr)
 	}
 	if err := database.QueryRowContext(ctx, "SELECT count(*) FROM commands").Scan(&commandCount); err != nil {
 		t.Fatal(err)
@@ -276,25 +279,25 @@ func TestEntityEnablementMigrationPreservesPopulatedDatabaseAndMapsDown(t *testi
 		t.Fatal(err)
 	}
 	var status, failureCode string
-	if err := database.QueryRowContext(ctx, "SELECT status, failure_code FROM commands WHERE id = 'cmd_disabled'").
-		Scan(&status, &failureCode); err != nil {
-		t.Fatal(err)
+	if scanErr := database.QueryRowContext(ctx, "SELECT status, failure_code FROM commands WHERE id = 'cmd_disabled'").
+		Scan(&status, &failureCode); scanErr != nil {
+		t.Fatal(scanErr)
 	}
 	if status != "internal_failure" || failureCode != "internal_error" {
 		t.Fatalf("down-mapped Command = %q/%q", status, failureCode)
 	}
 	var disabledReceipts int
-	if err := database.QueryRowContext(ctx, "SELECT count(*) FROM observation_receipts WHERE observation_id = 'obs_disabled'").
-		Scan(&disabledReceipts); err != nil {
-		t.Fatal(err)
+	if scanErr := database.QueryRowContext(ctx, "SELECT count(*) FROM observation_receipts WHERE observation_id = 'obs_disabled'").
+		Scan(&disabledReceipts); scanErr != nil {
+		t.Fatal(scanErr)
 	}
 	if disabledReceipts != 0 {
 		t.Fatalf("disabled receipts after down = %d", disabledReceipts)
 	}
 	var enabledColumns int
-	if err := database.QueryRowContext(ctx, "SELECT count(*) FROM pragma_table_info('entities') WHERE name = 'enabled'").
-		Scan(&enabledColumns); err != nil {
-		t.Fatal(err)
+	if scanErr := database.QueryRowContext(ctx, "SELECT count(*) FROM pragma_table_info('entities') WHERE name = 'enabled'").
+		Scan(&enabledColumns); scanErr != nil {
+		t.Fatal(scanErr)
 	}
 	if enabledColumns != 0 {
 		t.Fatal("entities.enabled remains after down migration")
@@ -303,6 +306,7 @@ func TestEntityEnablementMigrationPreservesPopulatedDatabaseAndMapsDown(t *testi
 }
 
 func TestEntityEnablementDownFailsForUnexpectedCurrentStateReceipt(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	database, err := Open(ctx, filepath.Join(t.TempDir(), "hearth.db"))
 	if err != nil {
@@ -341,9 +345,9 @@ func TestEntityEnablementDownFailsForUnexpectedCurrentStateReceipt(t *testing.T)
 		t.Fatal("down migration unexpectedly deleted a receipt referenced by current State")
 	}
 	var count int
-	if err := database.QueryRowContext(ctx, "SELECT count(*) FROM observation_receipts WHERE observation_id = 'obs_unexpected'").
-		Scan(&count); err != nil {
-		t.Fatal(err)
+	if scanErr := database.QueryRowContext(ctx, "SELECT count(*) FROM observation_receipts WHERE observation_id = 'obs_unexpected'").
+		Scan(&count); scanErr != nil {
+		t.Fatal(scanErr)
 	}
 	if count != 1 {
 		t.Fatalf("unexpected receipt count after failed down = %d", count)
@@ -389,6 +393,7 @@ func assertIndexColumns(t *testing.T, database *sql.DB, name, want string) {
 }
 
 func TestIDPrefixConstraintsRequireLiteralUnderscore(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	database, err := Open(ctx, filepath.Join(t.TempDir(), "hearth.db"))
 	if err != nil {
@@ -404,22 +409,22 @@ func TestIDPrefixConstraintsRequireLiteralUnderscore(t *testing.T) {
 		database,
 		`INSERT INTO devices (id, kind, name, created_at, updated_at) VALUES ('devXbad', 'light', 'Bad', 'now', 'now')`,
 	)
-	if _, err := database.ExecContext(
+	if _, insertErr := database.ExecContext(
 		ctx,
 		`INSERT INTO devices (id, kind, name, created_at, updated_at) VALUES ('dev_valid', 'light', 'Valid', 'now', 'now')`,
-	); err != nil {
-		t.Fatal(err)
+	); insertErr != nil {
+		t.Fatal(insertErr)
 	}
 	assertWriteRejected(
 		t,
 		database,
 		`INSERT INTO entities (id, device_id, name, type_id, support_json, created_at, updated_at) VALUES ('entXbad', 'dev_valid', 'Bad', 'test/v1', '{}', 'now', 'now')`,
 	)
-	if _, err := database.ExecContext(
+	if _, insertErr := database.ExecContext(
 		ctx,
 		`INSERT INTO entities (id, device_id, name, type_id, support_json, created_at, updated_at) VALUES ('ent_valid', 'dev_valid', 'Valid', 'test/v1', '{}', 'now', 'now')`,
-	); err != nil {
-		t.Fatal(err)
+	); insertErr != nil {
+		t.Fatal(insertErr)
 	}
 	assertWriteRejected(
 		t,
@@ -444,6 +449,7 @@ func TestIDPrefixConstraintsRequireLiteralUnderscore(t *testing.T) {
 }
 
 func TestDeleteExpiredObservationReceiptsComparesTimestampsChronologically(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	database, err := Open(ctx, filepath.Join(t.TempDir(), "hearth.db"))
 	if err != nil {
@@ -484,9 +490,9 @@ func TestDeleteExpiredObservationReceiptsComparesTimestampsChronologically(t *te
 		t.Fatalf("deleted receipts = %d, want 1", deleted)
 	}
 	var remaining string
-	if err := database.QueryRowContext(ctx, `SELECT observation_id FROM observation_receipts`).
-		Scan(&remaining); err != nil {
-		t.Fatal(err)
+	if scanErr := database.QueryRowContext(ctx, `SELECT observation_id FROM observation_receipts`).
+		Scan(&remaining); scanErr != nil {
+		t.Fatal(scanErr)
 	}
 	if remaining != "obs_future" {
 		t.Fatalf("remaining receipt = %q, want obs_future", remaining)
@@ -501,6 +507,7 @@ func assertWriteRejected(t *testing.T, database *sql.DB, query string) {
 }
 
 func TestOpenRejectsEmptyPath(t *testing.T) {
+	t.Parallel()
 	if _, err := Open(context.Background(), " "); err == nil {
 		t.Fatal("Open accepted an empty path")
 	}

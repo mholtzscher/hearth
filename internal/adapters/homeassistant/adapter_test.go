@@ -1,4 +1,4 @@
-package homeassistant
+package homeassistant //nolint:testpackage // Tests exercise package-private protocol and reconnect behavior.
 
 import (
 	"context"
@@ -78,6 +78,7 @@ func (responder *recordingResponder) result() (bool, bool) {
 }
 
 func TestSubscribeFirstReconcilesBufferedTransitionAfterSnapshot(t *testing.T) {
+	t.Parallel()
 	publisher := newRecordingPublisher()
 	snapshotTime := time.Date(2026, 8, 19, 12, 0, 0, 0, time.UTC)
 	eventTime := snapshotTime.Add(time.Second)
@@ -140,6 +141,7 @@ func TestSubscribeFirstReconcilesBufferedTransitionAfterSnapshot(t *testing.T) {
 }
 
 func TestSetRetainsMatchingRefreshWhenImmediatelySuperseded(t *testing.T) {
+	t.Parallel()
 	publisher := newRecordingPublisher()
 	initialTime := time.Date(2026, 8, 19, 12, 0, 0, 0, time.UTC)
 	refreshTime := initialTime.Add(time.Second)
@@ -241,6 +243,7 @@ func TestSetRetainsMatchingRefreshWhenImmediatelySuperseded(t *testing.T) {
 }
 
 func TestUnavailableAndUnsupportedUpstreamStatesAreRejected(t *testing.T) {
+	t.Parallel()
 	publisher := newRecordingPublisher()
 	migrationAdapter := newTestAdapter(t, publisher, "http://127.0.0.1:1")
 	if err := migrationAdapter.publish(context.Background(), upstreamState{
@@ -267,6 +270,7 @@ func TestUnavailableAndUnsupportedUpstreamStatesAreRejected(t *testing.T) {
 }
 
 func TestWaitForStateAfterRetainsImmediatelySupersededMatch(t *testing.T) {
+	t.Parallel()
 	client := &client{
 		latestStates: make(map[string]stateChange),
 		stateSignal:  make(chan struct{}),
@@ -286,6 +290,7 @@ func TestWaitForStateAfterRetainsImmediatelySupersededMatch(t *testing.T) {
 }
 
 func TestPublishOmitsMalformedLastUpdated(t *testing.T) {
+	t.Parallel()
 	publisher := newRecordingPublisher()
 	migrationAdapter := newTestAdapter(t, publisher, "http://127.0.0.1:1")
 	if err := migrationAdapter.publish(context.Background(), upstreamState{
@@ -300,6 +305,7 @@ func TestPublishOmitsMalformedLastUpdated(t *testing.T) {
 }
 
 func TestDeliveredResponseWinsDisconnect(t *testing.T) {
+	t.Parallel()
 	connectionError := errors.New("connection closed")
 	for range 100 {
 		client := &client{done: make(chan struct{}), err: connectionError}
@@ -318,6 +324,7 @@ func TestDeliveredResponseWinsDisconnect(t *testing.T) {
 }
 
 func TestClientCorrelatesConcurrentRequestsByID(t *testing.T) {
+	t.Parallel()
 	server, serverErrors := newScriptedServer(t, func(ctx context.Context, connection *websocket.Conn) error {
 		first, err := readRequest(ctx, connection)
 		if err != nil {
@@ -333,16 +340,16 @@ func TestClientCorrelatesConcurrentRequestsByID(t *testing.T) {
 		if service.ID == 0 || states.ID == 0 {
 			return errors.New("did not receive both concurrent requests")
 		}
-		if err := writeResult(
+		if writeErr := writeResult(
 			ctx,
 			connection,
 			states.ID,
 			[]upstreamState{{EntityID: testExternalEntityID, State: "on"}},
-		); err != nil {
-			return err
+		); writeErr != nil {
+			return writeErr
 		}
-		if err := writeResult(ctx, connection, service.ID, nil); err != nil {
-			return err
+		if writeErr := writeResult(ctx, connection, service.ID, nil); writeErr != nil {
+			return writeErr
 		}
 		_, _, _ = connection.Read(ctx)
 		return nil
@@ -375,6 +382,7 @@ func TestClientCorrelatesConcurrentRequestsByID(t *testing.T) {
 }
 
 func TestAdapterReconnectsAndAcquiresANewSnapshot(t *testing.T) {
+	t.Parallel()
 	publisher := newRecordingPublisher()
 	var connections atomic.Int64
 	server, serverErrors := newScriptedServer(t, func(ctx context.Context, connection *websocket.Conn) error {

@@ -1,4 +1,4 @@
-package simulator
+package simulator //nolint:testpackage // Tests exercise package-private fault publication helpers.
 
 import (
 	"context"
@@ -15,6 +15,7 @@ import (
 const simulatorTestEntityID = "ent_01890f47-7a6b-7c4d-8e9f-0123456789ab"
 
 func TestFaultPublishersProduceDuplicateAndMalformedStreamEvidence(t *testing.T) {
+	t.Parallel()
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	server, err := natsserver.NewServer(&natsserver.Options{

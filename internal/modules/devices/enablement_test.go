@@ -1,4 +1,4 @@
-package devices
+package devices //nolint:testpackage // Tests exercise package-private domain seams and repository fixtures.
 
 import (
 	"context"
@@ -25,6 +25,7 @@ func (repository *enablementRepository) SetEntityEnabled(
 }
 
 func TestSetEntityEnabledUsesExplicitManagementAndOwnerPolicies(t *testing.T) {
+	t.Parallel()
 	now := time.Date(2026, 8, 26, 12, 0, 0, 0, time.FixedZone("test", -5*60*60))
 	repository := &enablementRepository{
 		stubRegistrationRepository: &stubRegistrationRepository{},
@@ -59,6 +60,7 @@ func TestSetEntityEnabledUsesExplicitManagementAndOwnerPolicies(t *testing.T) {
 }
 
 func TestSetEntityEnabledValidatesIdentityBeforeRepositoryCall(t *testing.T) {
+	t.Parallel()
 	repository := &enablementRepository{stubRegistrationRepository: &stubRegistrationRepository{}}
 	service := NewService(repository, nil, nil, Dependencies{})
 	if _, err := service.SetEntityEnabled(context.Background(), "bad", false); err == nil {

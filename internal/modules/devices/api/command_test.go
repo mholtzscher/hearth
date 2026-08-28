@@ -1,4 +1,4 @@
-package api
+package api //nolint:testpackage // Tests exercise package-private transport mappings and fixtures.
 
 import (
 	"bytes"
@@ -17,6 +17,7 @@ import (
 const apiCommandID = devices.CommandID("cmd_01890f47-7a6b-7c4d-8e9f-0123456789ab")
 
 func TestExecuteCommandReturnsSatisfiedResultAndRegistersOpenAPI(t *testing.T) {
+	t.Parallel()
 	var requestedEntityID devices.EntityID
 	var requestedOperation devices.OperationName
 	var requestedParameters devices.CommandParameters
@@ -70,6 +71,7 @@ func TestExecuteCommandReturnsSatisfiedResultAndRegistersOpenAPI(t *testing.T) {
 }
 
 func TestExecuteDisabledCommandReturnsDurableProblemDetailsExtension(t *testing.T) {
+	t.Parallel()
 	stub := &stubDevices{executeCommand: func(
 		context.Context,
 		devices.EntityID,
@@ -109,6 +111,7 @@ func TestExecuteDisabledCommandReturnsDurableProblemDetailsExtension(t *testing.
 }
 
 func TestCommandErrorMappingUsesStandardHumaErrors(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		cause  error
 		status int

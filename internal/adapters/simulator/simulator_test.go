@@ -1,10 +1,12 @@
-package simulator
+package simulator_test
 
 import (
 	"context"
 	"encoding/json"
 	"testing"
 	"time"
+
+	simulatoradapter "github.com/mholtzscher/hearth/internal/adapters/simulator"
 
 	"github.com/mholtzscher/hearth/sdk/adapter"
 )
@@ -39,24 +41,26 @@ func (responder *recordingResponder) Reject(string) error {
 }
 
 func TestFailureMatrixScenariosAreRecognized(t *testing.T) {
+	t.Parallel()
 	for _, scenario := range []string{
-		ScenarioHappy, ScenarioDuplicate, ScenarioDelayedSourceTime, ScenarioFutureClockSkew,
-		ScenarioMalformed, ScenarioUnavailableAdapter, ScenarioUpstreamRejection,
-		ScenarioNoOpRefresh, ScenarioOverlappingCommands, ScenarioOutcomeTimeout,
-		ScenarioInterruptedCommand, ScenarioRestartBeforeAck,
+		simulatoradapter.ScenarioHappy, simulatoradapter.ScenarioDuplicate, simulatoradapter.ScenarioDelayedSourceTime, simulatoradapter.ScenarioFutureClockSkew,
+		simulatoradapter.ScenarioMalformed, simulatoradapter.ScenarioUnavailableAdapter, simulatoradapter.ScenarioUpstreamRejection,
+		simulatoradapter.ScenarioNoOpRefresh, simulatoradapter.ScenarioOverlappingCommands, simulatoradapter.ScenarioOutcomeTimeout,
+		simulatoradapter.ScenarioInterruptedCommand, simulatoradapter.ScenarioRestartBeforeAck,
 	} {
-		if !ValidScenario(scenario) {
+		if !simulatoradapter.ValidScenario(scenario) {
 			t.Fatalf("scenario %q is not recognized", scenario)
 		}
 	}
-	if ValidScenario("unknown") {
+	if simulatoradapter.ValidScenario("unknown") {
 		t.Fatal("unknown scenario was recognized")
 	}
 }
 
 func TestHappyScenarioAcceptsAndPublishesLinkedRefresh(t *testing.T) {
+	t.Parallel()
 	publisher := &recordingPublisher{}
-	simulated, err := New(publisher, ScenarioHappy)
+	simulated, err := simulatoradapter.New(publisher, simulatoradapter.ScenarioHappy)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -86,19 +90,21 @@ func TestHappyScenarioAcceptsAndPublishesLinkedRefresh(t *testing.T) {
 }
 
 func TestFailureScenariosRejectOrWithholdOutcome(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		scenario     string
 		wantAccepted bool
 		wantRejected bool
 	}{
-		{ScenarioUpstreamRejection, false, true},
-		{ScenarioOutcomeTimeout, true, false},
-		{ScenarioInterruptedCommand, true, false},
+		{simulatoradapter.ScenarioUpstreamRejection, false, true},
+		{simulatoradapter.ScenarioOutcomeTimeout, true, false},
+		{simulatoradapter.ScenarioInterruptedCommand, true, false},
 	}
 	for _, test := range tests {
 		t.Run(test.scenario, func(t *testing.T) {
+			t.Parallel()
 			publisher := &recordingPublisher{}
-			simulated, err := New(publisher, test.scenario)
+			simulated, err := simulatoradapter.New(publisher, test.scenario)
 			if err != nil {
 				t.Fatal(err)
 			}

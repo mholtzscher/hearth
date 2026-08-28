@@ -21,6 +21,7 @@ type Session struct {
 	connection   *natsgo.Conn
 	jetstream    jetstream.JetStream
 	validator    *contractsv1.Validator
+	logger       *slog.Logger
 	closed       chan struct{}
 	closeOnce    sync.Once
 	closeErr     error
@@ -51,6 +52,10 @@ func Connect(ctx context.Context, config Config) (*Session, error) {
 	if err != nil {
 		return nil, fmt.Errorf("compile wire schemas: %w", err)
 	}
+	logger := config.Logger
+	if logger == nil {
+		logger = slog.New(slog.DiscardHandler)
+	}
 
 	options := []natsgo.Option{
 		natsgo.Name("hearth-adapter-" + config.AdapterID),
@@ -79,6 +84,7 @@ func Connect(ctx context.Context, config Config) (*Session, error) {
 		connection: connection,
 		jetstream:  js,
 		validator:  validator,
+		logger:     logger,
 		closed:     make(chan struct{}),
 	}, nil
 }
@@ -319,18 +325,18 @@ func (session *Session) startCommandHandler(parent context.Context, message *nat
 
 func (session *Session) handleCommand(parent context.Context, message *natsgo.Msg, handler CommandHandler) {
 	if message.Reply == "" {
-		slog.ErrorContext(parent, "discarding command without reply subject", "subject", message.Subject)
+		session.logger.ErrorContext(parent, "discarding command without reply subject", "subject", message.Subject)
 		return
 	}
 	request, err := natswire.Decode[Command](session.validator, contractsv1.CommandRequestSchemaID, message.Data)
 	if err != nil {
-		slog.ErrorContext(parent, "discarding invalid command", "subject", message.Subject, "error", err)
+		session.logger.ErrorContext(parent, "discarding invalid command", "subject", message.Subject, "error", err)
 		return
 	}
 	route, err := natswire.ParseCommandSubject(message.Subject)
 	if err != nil || route.AdapterID != session.adapterID || route.EntityID != request.Data.EntityID ||
 		route.OperationName != request.Data.OperationName || request.CausationID != nil {
-		slog.ErrorContext(
+		session.logger.ErrorContext(
 			parent,
 			"discarding command with mismatched routing",
 			"subject",
@@ -342,7 +348,7 @@ func (session *Session) handleCommand(parent context.Context, message *natsgo.Ms
 	}
 	deadline, err := time.Parse(time.RFC3339Nano, request.Data.Deadline)
 	if err != nil {
-		slog.ErrorContext(
+		session.logger.ErrorContext(
 			parent,
 			"discarding command with invalid deadline",
 			"subject",
@@ -359,7 +365,7 @@ func (session *Session) handleCommand(parent context.Context, message *natsgo.Ms
 	ctx, cancel := context.WithDeadline(ctx, deadline)
 	defer cancel()
 	if err := ctx.Err(); err != nil {
-		slog.ErrorContext(
+		session.logger.ErrorContext(
 			parent,
 			"discarding expired command",
 			"subject",
@@ -388,10 +394,10 @@ func (session *Session) handleCommand(parent context.Context, message *natsgo.Ms
 		correlationID: request.CorrelationID,
 	}
 	if err := handler(ctx, command, responder); err != nil {
-		slog.ErrorContext(parent, "command handler failed", "command_id", request.ID, "error", err)
+		session.logger.ErrorContext(parent, "command handler failed", "command_id", request.ID, "error", err)
 	}
 	if !responder.didRespond() {
-		slog.ErrorContext(parent, ErrMissingResponse.Error(), "command_id", request.ID)
+		session.logger.ErrorContext(parent, ErrMissingResponse.Error(), "command_id", request.ID)
 	}
 }
 

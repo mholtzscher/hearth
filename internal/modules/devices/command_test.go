@@ -1,4 +1,4 @@
-package devices
+package devices //nolint:testpackage // Tests exercise package-private domain seams and repository fixtures.
 
 import (
 	"context"
@@ -184,6 +184,7 @@ func (send commandSenderFunc) Send(
 }
 
 func TestExecuteCommandCommitsBeforeDispatchAndHandlesAcceptanceRace(t *testing.T) {
+	t.Parallel()
 	repository := newCommandRepository()
 	catalog := commandCatalog(t, time.Second)
 	var service *Service
@@ -225,6 +226,7 @@ func TestExecuteCommandCommitsBeforeDispatchAndHandlesAcceptanceRace(t *testing.
 }
 
 func TestExecuteCommandReturnsSatisfiedWhenObservationWinsDispatchFailureRace(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name       string
 		acceptance CommandAcceptance
@@ -236,6 +238,7 @@ func TestExecuteCommandReturnsSatisfiedWhenObservationWinsDispatchFailureRace(t 
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
 			repository := newCommandRepository()
 			var service *Service
 			sender := commandSenderFunc(
@@ -275,6 +278,7 @@ func TestExecuteCommandReturnsSatisfiedWhenObservationWinsDispatchFailureRace(t 
 }
 
 func TestExecuteCommandFailureMatrixIsDurablyClassified(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name       string
 		acceptance CommandAcceptance
@@ -323,6 +327,7 @@ func TestExecuteCommandFailureMatrixIsDurablyClassified(t *testing.T) {
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
 			repository := newCommandRepository()
 			sender := commandSenderFunc(func(context.Context, string, CommandRequest) (CommandAcceptance, error) {
 				return test.acceptance, test.sendErr
@@ -355,6 +360,7 @@ func TestExecuteCommandFailureMatrixIsDurablyClassified(t *testing.T) {
 }
 
 func TestExecuteCommandRejectsInvalidParametersAndCreationFailureBeforeDispatch(t *testing.T) {
+	t.Parallel()
 	repository := newCommandRepository()
 	dispatches := 0
 	sender := commandSenderFunc(func(context.Context, string, CommandRequest) (CommandAcceptance, error) {
@@ -392,6 +398,7 @@ func TestExecuteCommandRejectsInvalidParametersAndCreationFailureBeforeDispatch(
 }
 
 func TestExecuteCommandCreatesTerminalRecordWithoutWaiterOrDispatchWhenDisabled(t *testing.T) {
+	t.Parallel()
 	repository := newCommandRepository()
 	repository.view.Entity.Enabled = false
 	dispatches := 0
@@ -438,6 +445,7 @@ func TestExecuteCommandCreatesTerminalRecordWithoutWaiterOrDispatchWhenDisabled(
 }
 
 func TestExecuteCommandKeepsOverlappingCommandsIndependent(t *testing.T) {
+	t.Parallel()
 	repository := newCommandRepository()
 	catalog := commandCatalog(t, time.Second)
 	commandIDs := []CommandID{
@@ -535,6 +543,7 @@ func TestExecuteCommandKeepsOverlappingCommandsIndependent(t *testing.T) {
 }
 
 func TestExecuteCommandIgnoresMismatchedLinkedObservation(t *testing.T) {
+	t.Parallel()
 	repository := newCommandRepository()
 	var service *Service
 	sender := commandSenderFunc(
@@ -565,6 +574,7 @@ func TestExecuteCommandIgnoresMismatchedLinkedObservation(t *testing.T) {
 }
 
 func TestExecuteCommandContinuesAfterCallerCancellation(t *testing.T) {
+	t.Parallel()
 	repository := newCommandRepository()
 	dispatched := make(chan CommandRequest, 1)
 	release := make(chan struct{})

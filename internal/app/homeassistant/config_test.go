@@ -1,12 +1,15 @@
-package homeassistant
+package homeassistant_test
 
 import (
 	"path/filepath"
 	"testing"
+
+	apphomeassistant "github.com/mholtzscher/hearth/internal/app/homeassistant"
 )
 
 func TestLoadExampleConfig(t *testing.T) {
-	value, err := LoadConfig(filepath.Join("..", "..", "..", "configs", "homeassistant.example.yaml"))
+	t.Parallel()
+	value, err := apphomeassistant.LoadConfig(filepath.Join("..", "..", "..", "configs", "homeassistant.example.yaml"))
 	if err != nil {
 		t.Fatal(err)
 	}

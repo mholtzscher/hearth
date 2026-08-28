@@ -10,9 +10,9 @@ import (
 )
 
 func LoadFile(path string, destination any) error {
-	file, err := os.Open(path)
-	if err != nil {
-		return fmt.Errorf("open config %q: %w", path, err)
+	file, openErr := os.Open(path)
+	if openErr != nil {
+		return fmt.Errorf("open config %q: %w", path, openErr)
 	}
 	defer file.Close()
 

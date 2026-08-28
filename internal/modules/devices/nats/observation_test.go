@@ -1,4 +1,4 @@
-package nats
+package nats //nolint:testpackage // Tests exercise package-private NATS wire behavior and fixtures.
 
 import (
 	"bytes"
@@ -46,6 +46,7 @@ type projectedObservation struct {
 }
 
 func TestObservationConsumerMapsProjectsAndAcknowledgesByFailureClass(t *testing.T) {
+	t.Parallel()
 	_, connection, js := startJetStream(t)
 	consumer, err := ProvisionObservationResources(context.Background(), js)
 	if err != nil {
@@ -153,6 +154,7 @@ func TestObservationConsumerMapsProjectsAndAcknowledgesByFailureClass(t *testing
 }
 
 func TestDomainObservationCopiesWireDataAndPointers(t *testing.T) {
+	t.Parallel()
 	commandID := "cmd_01890f47-7a6b-7c4d-8e9f-0123456789ab"
 	wire := natswire.Envelope[observation]{
 		ID: testObservationID,

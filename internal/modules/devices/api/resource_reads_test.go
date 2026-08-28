@@ -1,4 +1,4 @@
-package api
+package api //nolint:testpackage // Tests exercise package-private transport mappings and fixtures.
 
 import (
 	"context"
@@ -11,6 +11,7 @@ import (
 )
 
 func TestListDevicesDefaultsLimitAndReturnsScopedCursor(t *testing.T) {
+	t.Parallel()
 	secondDeviceID := devices.DeviceID("dev_01890f47-7a6b-7c4d-8e9f-0123456789ac")
 	calls := 0
 	stub := &stubDevices{
@@ -66,6 +67,7 @@ func TestListDevicesDefaultsLimitAndReturnsScopedCursor(t *testing.T) {
 }
 
 func TestDeviceDetailAndEntityListUseFullEntityBodies(t *testing.T) {
+	t.Parallel()
 	view := apiEntityWithState(nil)
 	secondEntityID := devices.EntityID("ent_01890f47-7a6b-7c4d-8e9f-0123456789ac")
 	secondView := apiEntityWithState(nil)
@@ -134,6 +136,7 @@ func TestDeviceDetailAndEntityListUseFullEntityBodies(t *testing.T) {
 }
 
 func TestCommandReadBodiesOmitInternalIdentifiers(t *testing.T) {
+	t.Parallel()
 	requestedAt := time.Date(2026, 8, 26, 12, 0, 0, 123, time.UTC)
 	acceptedAt := requestedAt.Add(time.Second)
 	command := devices.CommandRecord{

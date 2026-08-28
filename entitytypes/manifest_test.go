@@ -1,18 +1,21 @@
-package entitytypes
+package entitytypes_test
 
 import (
 	"encoding/json"
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/mholtzscher/hearth/entitytypes"
 )
 
 func TestEntityTypeManifestsMatchAuthoritativeSchema(t *testing.T) {
+	t.Parallel()
 	schema, err := os.ReadFile("entitytype-manifest.schema.json")
 	if err != nil {
 		t.Fatal(err)
 	}
-	codec, err := CompileJSONCodec[map[string]any](
+	codec, err := entitytypes.CompileJSONCodec[map[string]any](
 		"urn:hearth:schema:entity-type-manifest:v1",
 		json.RawMessage(schema),
 		nil,
@@ -29,6 +32,7 @@ func TestEntityTypeManifestsMatchAuthoritativeSchema(t *testing.T) {
 	}
 	for _, path := range manifests {
 		t.Run(filepath.Base(filepath.Dir(path)), func(t *testing.T) {
+			t.Parallel()
 			raw, err := os.ReadFile(path)
 			if err != nil {
 				t.Fatal(err)

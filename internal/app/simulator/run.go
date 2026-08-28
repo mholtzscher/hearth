@@ -31,7 +31,11 @@ func Run(ctx context.Context, config Config, logger *slog.Logger) error {
 	if logger == nil {
 		logger = slog.Default()
 	}
-	session, err := adapter.Connect(ctx, adapter.Config{AdapterID: config.AdapterID, NATSURL: config.NATSURL})
+	session, err := adapter.Connect(ctx, adapter.Config{
+		AdapterID: config.AdapterID,
+		NATSURL:   config.NATSURL,
+		Logger:    logger,
+	})
 	if err != nil {
 		return err
 	}
@@ -83,12 +87,12 @@ func Run(ctx context.Context, config Config, logger *slog.Logger) error {
 	if err != nil {
 		return err
 	}
-	if err := session.ServeCommands(
+	if serveErr := session.ServeCommands(
 		ctx,
 		handler,
-	); err != nil && !errors.Is(err, context.Canceled) &&
-		!errors.Is(err, adapter.ErrClosed) {
-		return err
+	); serveErr != nil && !errors.Is(serveErr, context.Canceled) &&
+		!errors.Is(serveErr, adapter.ErrClosed) {
+		return serveErr
 	}
 	return nil
 }

@@ -1,14 +1,17 @@
-package v1
+package v1_test
 
 import (
 	"bytes"
 	"encoding/json"
 	"testing"
 
+	contractsv1 "github.com/mholtzscher/hearth/contracts/v1"
+
 	"github.com/santhosh-tekuri/jsonschema/v6"
 )
 
 func TestEmbeddedSchemasCompile(t *testing.T) {
+	t.Parallel()
 	schemas := compileSchemas(t)
 	if len(schemas) != 8 {
 		t.Fatalf("compiled %d schemas, want 8", len(schemas))
@@ -16,16 +19,17 @@ func TestEmbeddedSchemasCompile(t *testing.T) {
 }
 
 func TestSchemaFixtures(t *testing.T) {
+	t.Parallel()
 	schemas := compileSchemas(t)
 	fixtures := map[string]string{
-		RegistrationRequestSchemaID: `{
+		contractsv1.RegistrationRequestSchemaID: `{
 			"id":"reg_01890f47-7a6b-7c4d-8e9f-0123456789ab",
 			"schema":"urn:hearth:schema:registration-request:v1",
 			"emitted_at":"2026-08-20T12:34:56.123Z",
 			"correlation_id":"cor_01890f47-7a6b-7c4d-8e9f-0123456789ab",
 			"data":{"binding_key":"office-light","device":{"name":"Office Light","kind":"light"},"entities":[{"key":"power","external_id":"light.office","name":"Power","type":"hearth.power/v1","support":{"state":{},"operations":{"set":{}}}}]}
 		}`,
-		RegistrationResponseSchemaID: `{
+		contractsv1.RegistrationResponseSchemaID: `{
 			"id":"rep_01890f47-7a6b-7c4d-8e9f-0123456789ab",
 			"schema":"urn:hearth:schema:registration-response:v1",
 			"emitted_at":"2026-08-20T12:34:56Z",
@@ -33,21 +37,21 @@ func TestSchemaFixtures(t *testing.T) {
 			"causation_id":"reg_01890f47-7a6b-7c4d-8e9f-0123456789ab",
 			"data":{"status":"accepted","binding":{"binding_key":"office-light","device_id":"dev_01890f47-7a6b-7c4d-8e9f-0123456789ab","entities":[{"key":"power","entity_id":"ent_01890f47-7a6b-7c4d-8e9f-0123456789ab","enabled":true}]}}
 		}`,
-		ObservationSchemaID: `{
+		contractsv1.ObservationSchemaID: `{
 			"id":"obs_01890f47-7a6b-7c4d-8e9f-0123456789ab",
 			"schema":"urn:hearth:schema:observation:v1",
 			"emitted_at":"2026-08-20T12:34:56Z",
 			"correlation_id":"cor_01890f47-7a6b-7c4d-8e9f-0123456789ab",
 			"data":{"entity_id":"ent_01890f47-7a6b-7c4d-8e9f-0123456789ab","value":false,"adapter_received_at":"2026-08-20T12:34:56Z"}
 		}`,
-		CommandRequestSchemaID: `{
+		contractsv1.CommandRequestSchemaID: `{
 			"id":"cmd_01890f47-7a6b-7c4d-8e9f-0123456789ab",
 			"schema":"urn:hearth:schema:command-request:v1",
 			"emitted_at":"2026-08-20T12:34:56Z",
 			"correlation_id":"cor_01890f47-7a6b-7c4d-8e9f-0123456789ab",
 			"data":{"entity_id":"ent_01890f47-7a6b-7c4d-8e9f-0123456789ab","operation":"set","parameters":{"value":true},"deadline":"2026-08-20T12:35:06Z"}
 		}`,
-		CommandResponseSchemaID: `{
+		contractsv1.CommandResponseSchemaID: `{
 			"id":"rep_01890f47-7a6b-7c4d-8e9f-0123456789ab",
 			"schema":"urn:hearth:schema:command-response:v1",
 			"emitted_at":"2026-08-20T12:34:57Z",
@@ -55,14 +59,14 @@ func TestSchemaFixtures(t *testing.T) {
 			"causation_id":"cmd_01890f47-7a6b-7c4d-8e9f-0123456789ab",
 			"data":{"command_id":"cmd_01890f47-7a6b-7c4d-8e9f-0123456789ab","status":"accepted"}
 		}`,
-		EntityEnablementRequestSchemaID: `{
+		contractsv1.EntityEnablementRequestSchemaID: `{
 			"id":"ena_01890f47-7a6b-7c4d-8e9f-0123456789ab",
 			"schema":"urn:hearth:schema:entity-enablement-request:v1",
 			"emitted_at":"2026-08-20T12:34:56Z",
 			"correlation_id":"cor_01890f47-7a6b-7c4d-8e9f-0123456789ab",
 			"data":{"entity_id":"ent_01890f47-7a6b-7c4d-8e9f-0123456789ab","enabled":false}
 		}`,
-		EntityEnablementResponseSchemaID: `{
+		contractsv1.EntityEnablementResponseSchemaID: `{
 			"id":"rep_01890f47-7a6b-7c4d-8e9f-0123456789ab",
 			"schema":"urn:hearth:schema:entity-enablement-response:v1",
 			"emitted_at":"2026-08-20T12:34:57Z",
@@ -73,6 +77,7 @@ func TestSchemaFixtures(t *testing.T) {
 	}
 	for schemaID, fixture := range fixtures {
 		t.Run(schemaID, func(t *testing.T) {
+			t.Parallel()
 			var value any
 			if err := json.Unmarshal([]byte(fixture), &value); err != nil {
 				t.Fatal(err)
@@ -85,7 +90,8 @@ func TestSchemaFixtures(t *testing.T) {
 }
 
 func TestRegistrationSchemaRequiresUnifiedSupport(t *testing.T) {
-	schema := compileSchemas(t)[RegistrationRequestSchemaID]
+	t.Parallel()
+	schema := compileSchemas(t)[contractsv1.RegistrationRequestSchemaID]
 	for _, test := range []struct {
 		name   string
 		entity string
@@ -96,6 +102,7 @@ func TestRegistrationSchemaRequiresUnifiedSupport(t *testing.T) {
 		{"non-object operation support", `"support":{"state":{},"operations":{"set":true}}`},
 	} {
 		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
 			payload := `{
 				"id":"reg_01890f47-7a6b-7c4d-8e9f-0123456789ab",
 				"schema":"urn:hearth:schema:registration-request:v1",
@@ -117,6 +124,7 @@ func TestRegistrationSchemaRequiresUnifiedSupport(t *testing.T) {
 }
 
 func TestRegistrationSchemaEntityBounds(t *testing.T) {
+	t.Parallel()
 	schemas := compileSchemas(t)
 	for _, test := range []struct {
 		name     string
@@ -124,21 +132,22 @@ func TestRegistrationSchemaEntityBounds(t *testing.T) {
 		payload  string
 	}{
 		{
-			name: "request", schemaID: RegistrationRequestSchemaID,
+			name: "request", schemaID: contractsv1.RegistrationRequestSchemaID,
 			payload: `{"id":"reg_01890f47-7a6b-7c4d-8e9f-0123456789ab","schema":"urn:hearth:schema:registration-request:v1","emitted_at":"2026-08-20T12:34:56Z","correlation_id":"cor_01890f47-7a6b-7c4d-8e9f-0123456789ab","data":{"binding_key":"office-light","device":{"name":"Office Light","kind":"light"},"entities":[{"key":"power","external_id":"light.office","name":"Power","type":"hearth.power/v1","support":{"state":{},"operations":{"set":{}}}}]}}`,
 		},
 		{
-			name: "response", schemaID: RegistrationResponseSchemaID,
+			name: "response", schemaID: contractsv1.RegistrationResponseSchemaID,
 			payload: `{"id":"rep_01890f47-7a6b-7c4d-8e9f-0123456789ab","schema":"urn:hearth:schema:registration-response:v1","emitted_at":"2026-08-20T12:34:56Z","correlation_id":"cor_01890f47-7a6b-7c4d-8e9f-0123456789ab","causation_id":"reg_01890f47-7a6b-7c4d-8e9f-0123456789ab","data":{"status":"accepted","binding":{"binding_key":"office-light","device_id":"dev_01890f47-7a6b-7c4d-8e9f-0123456789ab","entities":[{"key":"power","entity_id":"ent_01890f47-7a6b-7c4d-8e9f-0123456789ab","enabled":true}]}}}`,
 		},
 	} {
 		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
 			var payload map[string]any
 			if err := json.Unmarshal([]byte(test.payload), &payload); err != nil {
 				t.Fatal(err)
 			}
 			binding := payload["data"].(map[string]any)
-			if test.schemaID == RegistrationResponseSchemaID {
+			if test.schemaID == contractsv1.RegistrationResponseSchemaID {
 				binding = binding["binding"].(map[string]any)
 			}
 			entity := binding["entities"].([]any)[0]
@@ -162,7 +171,8 @@ func TestRegistrationSchemaEntityBounds(t *testing.T) {
 }
 
 func TestRegistrationResponseRequiresCausationID(t *testing.T) {
-	schema := compileSchemas(t)[RegistrationResponseSchemaID]
+	t.Parallel()
+	schema := compileSchemas(t)[contractsv1.RegistrationResponseSchemaID]
 	var value any
 	if err := json.Unmarshal([]byte(`{
 		"id":"rep_01890f47-7a6b-7c4d-8e9f-0123456789ab",
@@ -179,7 +189,8 @@ func TestRegistrationResponseRequiresCausationID(t *testing.T) {
 }
 
 func TestObservationSchemaLeavesValueSemanticsToCatalog(t *testing.T) {
-	schema := compileSchemas(t)[ObservationSchemaID]
+	t.Parallel()
+	schema := compileSchemas(t)[contractsv1.ObservationSchemaID]
 	var value any
 	if err := json.Unmarshal([]byte(`{
 		"id":"obs_01890f47-7a6b-7c4d-8e9f-0123456789ab",
@@ -196,7 +207,8 @@ func TestObservationSchemaLeavesValueSemanticsToCatalog(t *testing.T) {
 }
 
 func TestSchemaRejectsUnknownEnvelopeProperty(t *testing.T) {
-	schema := compileSchemas(t)[CommandRequestSchemaID]
+	t.Parallel()
+	schema := compileSchemas(t)[contractsv1.CommandRequestSchemaID]
 	var value any
 	if err := json.Unmarshal([]byte(`{
 		"id":"cmd_01890f47-7a6b-7c4d-8e9f-0123456789ab",
@@ -214,6 +226,7 @@ func TestSchemaRejectsUnknownEnvelopeProperty(t *testing.T) {
 }
 
 func TestEntityEnablementAndRegistrationBooleanShapes(t *testing.T) {
+	t.Parallel()
 	schemas := compileSchemas(t)
 	var registration map[string]any
 	if err := json.Unmarshal([]byte(`{
@@ -232,7 +245,7 @@ func TestEntityEnablementAndRegistrationBooleanShapes(t *testing.T) {
 		} else {
 			entity["initially_enabled"] = value
 		}
-		err := schemas[RegistrationRequestSchemaID].Validate(registration)
+		err := schemas[contractsv1.RegistrationRequestSchemaID].Validate(registration)
 		if value == "false" && err == nil {
 			t.Fatal("non-boolean initially_enabled unexpectedly accepted")
 		}
@@ -253,17 +266,17 @@ func TestEntityEnablementAndRegistrationBooleanShapes(t *testing.T) {
 		t.Fatal(err)
 	}
 	data := response["data"].(map[string]any)
-	if err := schemas[EntityEnablementResponseSchemaID].Validate(response); err != nil {
+	if err := schemas[contractsv1.EntityEnablementResponseSchemaID].Validate(response); err != nil {
 		t.Fatal(err)
 	}
 	delete(data, "enabled")
-	if err := schemas[EntityEnablementResponseSchemaID].Validate(response); err == nil {
+	if err := schemas[contractsv1.EntityEnablementResponseSchemaID].Validate(response); err == nil {
 		t.Fatal("accepted response without enabled unexpectedly accepted")
 	}
 	data["status"] = "rejected"
 	data["error"] = map[string]any{"code": "unknown_entity", "message": "entity not found"}
 	delete(data, "entity_id")
-	if err := schemas[EntityEnablementResponseSchemaID].Validate(response); err != nil {
+	if err := schemas[contractsv1.EntityEnablementResponseSchemaID].Validate(response); err != nil {
 		t.Fatalf("rejected response rejected: %v", err)
 	}
 }
@@ -272,8 +285,8 @@ func compileSchemas(t *testing.T) map[string]*jsonschema.Schema {
 	t.Helper()
 	compiler := jsonschema.NewCompiler()
 	compiler.AssertFormat()
-	for schemaID, path := range SchemaFiles() {
-		raw, err := FS.ReadFile(path)
+	for schemaID, path := range contractsv1.SchemaFiles() {
+		raw, err := contractsv1.FS.ReadFile(path)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -285,8 +298,8 @@ func compileSchemas(t *testing.T) map[string]*jsonschema.Schema {
 			t.Fatalf("add %s: %v", path, err)
 		}
 	}
-	compiled := make(map[string]*jsonschema.Schema, len(SchemaFiles()))
-	for schemaID := range SchemaFiles() {
+	compiled := make(map[string]*jsonschema.Schema, len(contractsv1.SchemaFiles()))
+	for schemaID := range contractsv1.SchemaFiles() {
 		schema, err := compiler.Compile(schemaID)
 		if err != nil {
 			t.Fatalf("compile %s: %v", schemaID, err)

@@ -1,12 +1,15 @@
-package simulator
+package simulator_test
 
 import (
 	"path/filepath"
 	"testing"
+
+	appsimulator "github.com/mholtzscher/hearth/internal/app/simulator"
 )
 
 func TestLoadExampleConfig(t *testing.T) {
-	value, err := LoadConfig(filepath.Join("..", "..", "..", "configs", "simulator.example.yaml"))
+	t.Parallel()
+	value, err := appsimulator.LoadConfig(filepath.Join("..", "..", "..", "configs", "simulator.example.yaml"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -16,7 +19,8 @@ func TestLoadExampleConfig(t *testing.T) {
 }
 
 func TestConfigRejectsUnknownScenario(t *testing.T) {
-	config := Config{
+	t.Parallel()
+	config := appsimulator.Config{
 		AdapterID: "simulator", NATSURL: "nats://127.0.0.1:4222",
 		BindingKey: "simulated-light", Scenario: "unknown",
 	}

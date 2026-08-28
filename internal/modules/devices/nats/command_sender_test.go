@@ -1,4 +1,4 @@
-package nats
+package nats //nolint:testpackage // Tests exercise package-private NATS wire behavior and fixtures.
 
 import (
 	"context"
@@ -17,6 +17,7 @@ const (
 )
 
 func TestCommandSenderDispatchesValidatedCorrelatedRequests(t *testing.T) {
+	t.Parallel()
 	server, connection, _ := startJetStream(t)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -75,6 +76,7 @@ func TestCommandSenderDispatchesValidatedCorrelatedRequests(t *testing.T) {
 }
 
 func TestCommandSenderClassifiesMissingAdapterAsUnavailable(t *testing.T) {
+	t.Parallel()
 	_, connection, _ := startJetStream(t)
 	validator, err := contractsv1.Compile()
 	if err != nil {

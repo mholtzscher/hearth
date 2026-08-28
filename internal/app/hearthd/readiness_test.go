@@ -1,4 +1,4 @@
-package hearthd
+package hearthd //nolint:testpackage // Tests exercise package-private assembly and lifecycle behavior.
 
 import (
 	"context"
@@ -18,13 +18,16 @@ import (
 )
 
 func TestRuntimeReadinessChecksEveryRequiredDependency(t *testing.T) {
+	t.Parallel()
 	t.Run("ready", func(t *testing.T) {
+		t.Parallel()
 		fixture := newReadinessFixture(t)
 		if err := fixture.readiness.Check(context.Background()); err != nil {
 			t.Fatal(err)
 		}
 	})
 	t.Run("SQLite unavailable", func(t *testing.T) {
+		t.Parallel()
 		fixture := newReadinessFixture(t)
 		if err := fixture.database.Close(); err != nil {
 			t.Fatal(err)
@@ -34,6 +37,7 @@ func TestRuntimeReadinessChecksEveryRequiredDependency(t *testing.T) {
 		}
 	})
 	t.Run("NATS unavailable", func(t *testing.T) {
+		t.Parallel()
 		fixture := newReadinessFixture(t)
 		fixture.connection.Close()
 		if err := fixture.readiness.Check(context.Background()); err == nil {
@@ -41,6 +45,7 @@ func TestRuntimeReadinessChecksEveryRequiredDependency(t *testing.T) {
 		}
 	})
 	t.Run("resources mismatched", func(t *testing.T) {
+		t.Parallel()
 		fixture := newReadinessFixture(t)
 		stream, err := fixture.jetstream.Stream(context.Background(), devicesnats.ObservationStreamName)
 		if err != nil {
@@ -60,6 +65,7 @@ func TestRuntimeReadinessChecksEveryRequiredDependency(t *testing.T) {
 		}
 	})
 	t.Run("consumer inactive", func(t *testing.T) {
+		t.Parallel()
 		fixture := newReadinessFixture(t)
 		fixture.consumer.Stop()
 		select {

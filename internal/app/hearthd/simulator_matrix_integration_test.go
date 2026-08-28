@@ -1,4 +1,4 @@
-package hearthd
+package hearthd //nolint:testpackage // Tests exercise package-private assembly and lifecycle behavior.
 
 import (
 	"bytes"
@@ -282,6 +282,7 @@ func (harness *simulatorMatrixHarness) postCommand(ctx context.Context, value bo
 }
 
 func TestSimulatorObservationFailureMatrix(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name     string
 		scenario string
@@ -349,6 +350,7 @@ func TestSimulatorObservationFailureMatrix(t *testing.T) {
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
 			harness := newSimulatorMatrixHarness(t, test.scenario, simulatorMatrixOptions{})
 			test.assert(t, harness)
 		})
@@ -356,6 +358,7 @@ func TestSimulatorObservationFailureMatrix(t *testing.T) {
 }
 
 func TestSimulatorCommandHTTPFailureMatrix(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name        string
 		scenario    string
@@ -408,6 +411,7 @@ func TestSimulatorCommandHTTPFailureMatrix(t *testing.T) {
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
 			harness := newSimulatorMatrixHarness(t, test.scenario, test.options)
 			if test.prepare != nil {
 				test.prepare(t, harness)
@@ -445,7 +449,9 @@ func TestSimulatorCommandHTTPFailureMatrix(t *testing.T) {
 }
 
 func TestSimulatorNoOpAndOverlappingCommands(t *testing.T) {
+	t.Parallel()
 	t.Run("no-op refresh", func(t *testing.T) {
+		t.Parallel()
 		harness := newSimulatorMatrixHarness(t, simulatoradapter.ScenarioNoOpRefresh, simulatorMatrixOptions{})
 		initial := harness.waitForState(t)
 		status, body, err := harness.postCommand(harness.ctx, false)
@@ -479,6 +485,7 @@ func TestSimulatorNoOpAndOverlappingCommands(t *testing.T) {
 	})
 
 	t.Run("overlapping opposite commands", func(t *testing.T) {
+		t.Parallel()
 		harness := newSimulatorMatrixHarness(t, simulatoradapter.ScenarioOverlappingCommands, simulatorMatrixOptions{})
 		harness.waitForState(t)
 		type outcome struct {
@@ -531,6 +538,7 @@ func TestSimulatorNoOpAndOverlappingCommands(t *testing.T) {
 }
 
 func TestHTTPDisconnectLeavesCommandLifecycleActive(t *testing.T) {
+	t.Parallel()
 	harness := newSimulatorMatrixHarness(t, simulatoradapter.ScenarioOutcomeTimeout, simulatorMatrixOptions{
 		dependencies: devices.Dependencies{
 			Now: func() time.Time { return time.Now().UTC().Add(-9 * time.Second) },
@@ -581,6 +589,7 @@ func TestHTTPDisconnectLeavesCommandLifecycleActive(t *testing.T) {
 }
 
 func TestSimulatorInterruptedCommandSurvivesLateLinkedObservation(t *testing.T) {
+	t.Parallel()
 	harness := newSimulatorMatrixHarness(t, simulatoradapter.ScenarioInterruptedCommand, simulatorMatrixOptions{})
 	harness.waitForState(t)
 	commandID, err := devices.NewCommandID()
@@ -642,6 +651,7 @@ func TestSimulatorInterruptedCommandSurvivesLateLinkedObservation(t *testing.T) 
 }
 
 func TestSimulatorRestartBeforeAckRedeliversWithoutChangingStateOrCommand(t *testing.T) {
+	t.Parallel()
 	committed := make(chan struct{})
 	var failOnce atomic.Bool
 	harness := newSimulatorMatrixHarness(t, simulatoradapter.ScenarioRestartBeforeAck, simulatorMatrixOptions{

@@ -23,6 +23,13 @@ type SQLiteRepository struct {
 	catalog  *TypeCatalog
 }
 
+type entityReconciliation struct {
+	params   RegisterEntityParams
+	mapping  registrationsqlc.GetEntityMappingRow
+	entityID EntityID
+	exists   bool
+}
+
 func NewSQLiteRepository(database *sql.DB, catalog *TypeCatalog) *SQLiteRepository {
 	return &SQLiteRepository{database: database, catalog: catalog}
 }
@@ -39,162 +46,227 @@ func (repository *SQLiteRepository) RegisterBinding(
 	queries := registrationsqlc.New(tx)
 	updatedAt := formatTime(params.UpdatedAt)
 
+	deviceID, err := reconcileRegistrationDevice(ctx, queries, params, updatedAt)
+	if err != nil {
+		return Binding{}, err
+	}
+	reconciliations, err := prepareEntityReconciliations(ctx, queries, params, deviceID)
+	if err != nil {
+		return Binding{}, err
+	}
+	entityBindings, err := applyEntityReconciliations(ctx, queries, params, deviceID, updatedAt, reconciliations)
+	if err != nil {
+		return Binding{}, err
+	}
+	if commitErr := tx.Commit(); commitErr != nil {
+		return Binding{}, fmt.Errorf("commit registration: %w", commitErr)
+	}
+	return Binding{BindingKey: params.BindingKey, DeviceID: deviceID, Entities: entityBindings}, nil
+}
+
+func reconcileRegistrationDevice(
+	ctx context.Context,
+	queries *registrationsqlc.Queries,
+	params RegisterBindingParams,
+	updatedAt string,
+) (DeviceID, error) {
 	binding, err := queries.GetBinding(ctx, registrationsqlc.GetBindingParams{
 		AdapterID: params.AdapterID, BindingKey: params.BindingKey,
 	})
-	var deviceID DeviceID
-	switch {
-	case err == nil:
-		deviceID = DeviceID(binding.DeviceID)
-		if err := ensureExternalDeviceAvailable(
-			ctx,
-			queries,
-			params.AdapterID,
-			params.Device.ExternalID,
-			deviceID,
-		); err != nil {
-			return Binding{}, err
-		}
-		if err := queries.UpdateDeviceDescriptor(ctx, registrationsqlc.UpdateDeviceDescriptorParams{
-			Kind: string(params.Device.Kind), Name: params.Device.Name, UpdatedAt: updatedAt, ID: binding.DeviceID,
-		}); err != nil {
-			return Binding{}, fmt.Errorf("update device descriptor: %w", err)
-		}
-		if err := queries.UpdateBindingExternalID(ctx, registrationsqlc.UpdateBindingExternalIDParams{
-			ExternalDeviceID: nullableString(params.Device.ExternalID), UpdatedAt: updatedAt,
-			AdapterID: params.AdapterID, BindingKey: params.BindingKey,
-		}); err != nil {
-			return Binding{}, mapRegistrationWriteError("update binding external ID", err)
-		}
-	case errors.Is(err, sql.ErrNoRows):
-		deviceID = params.DeviceID
-		if err := ensureExternalDeviceAvailable(
-			ctx,
-			queries,
-			params.AdapterID,
-			params.Device.ExternalID,
-			deviceID,
-		); err != nil {
-			return Binding{}, err
-		}
-		if err := queries.CreateDevice(ctx, registrationsqlc.CreateDeviceParams{
-			ID: string(deviceID), Kind: string(params.Device.Kind), Name: params.Device.Name,
-			CreatedAt: updatedAt, UpdatedAt: updatedAt,
-		}); err != nil {
-			return Binding{}, fmt.Errorf("create device: %w", err)
-		}
-		if err := queries.CreateBinding(ctx, registrationsqlc.CreateBindingParams{
-			AdapterID: params.AdapterID, BindingKey: params.BindingKey, DeviceID: string(deviceID),
-			ExternalDeviceID: nullableString(params.Device.ExternalID), CreatedAt: updatedAt, UpdatedAt: updatedAt,
-		}); err != nil {
-			return Binding{}, mapRegistrationWriteError("create binding", err)
-		}
-	default:
-		return Binding{}, fmt.Errorf("get binding: %w", err)
+	if errors.Is(err, sql.ErrNoRows) {
+		return createRegistrationDevice(ctx, queries, params, updatedAt)
 	}
+	if err != nil {
+		return "", fmt.Errorf("get binding: %w", err)
+	}
+	deviceID := DeviceID(binding.DeviceID)
+	if availabilityErr := ensureExternalDeviceAvailable(
+		ctx, queries, params.AdapterID, params.Device.ExternalID, deviceID,
+	); availabilityErr != nil {
+		return "", availabilityErr
+	}
+	if updateErr := queries.UpdateDeviceDescriptor(ctx, registrationsqlc.UpdateDeviceDescriptorParams{
+		Kind: string(params.Device.Kind), Name: params.Device.Name, UpdatedAt: updatedAt, ID: binding.DeviceID,
+	}); updateErr != nil {
+		return "", fmt.Errorf("update device descriptor: %w", updateErr)
+	}
+	if updateErr := queries.UpdateBindingExternalID(ctx, registrationsqlc.UpdateBindingExternalIDParams{
+		ExternalDeviceID: nullableString(params.Device.ExternalID), UpdatedAt: updatedAt,
+		AdapterID: params.AdapterID, BindingKey: params.BindingKey,
+	}); updateErr != nil {
+		return "", mapRegistrationWriteError("update binding external ID", updateErr)
+	}
+	return deviceID, nil
+}
 
-	type entityReconciliation struct {
-		params   RegisterEntityParams
-		mapping  registrationsqlc.GetEntityMappingRow
-		entityID EntityID
-		exists   bool
+func createRegistrationDevice(
+	ctx context.Context,
+	queries *registrationsqlc.Queries,
+	params RegisterBindingParams,
+	updatedAt string,
+) (DeviceID, error) {
+	deviceID := params.DeviceID
+	if err := ensureExternalDeviceAvailable(
+		ctx, queries, params.AdapterID, params.Device.ExternalID, deviceID,
+	); err != nil {
+		return "", err
 	}
+	if err := queries.CreateDevice(ctx, registrationsqlc.CreateDeviceParams{
+		ID: string(deviceID), Kind: string(params.Device.Kind), Name: params.Device.Name,
+		CreatedAt: updatedAt, UpdatedAt: updatedAt,
+	}); err != nil {
+		return "", fmt.Errorf("create device: %w", err)
+	}
+	if err := queries.CreateBinding(ctx, registrationsqlc.CreateBindingParams{
+		AdapterID: params.AdapterID, BindingKey: params.BindingKey, DeviceID: string(deviceID),
+		ExternalDeviceID: nullableString(params.Device.ExternalID), CreatedAt: updatedAt, UpdatedAt: updatedAt,
+	}); err != nil {
+		return "", mapRegistrationWriteError("create binding", err)
+	}
+	return deviceID, nil
+}
+
+func prepareEntityReconciliations(
+	ctx context.Context,
+	queries *registrationsqlc.Queries,
+	params RegisterBindingParams,
+	deviceID DeviceID,
+) ([]entityReconciliation, error) {
 	reconciliations := make([]entityReconciliation, len(params.Entities))
 	for index, entity := range params.Entities {
-		reconciliation := entityReconciliation{params: entity, entityID: entity.EntityID}
-		mapping, err := queries.GetEntityMapping(ctx, registrationsqlc.GetEntityMappingParams{
-			AdapterID: params.AdapterID, BindingKey: params.BindingKey, EntityKey: entity.Entity.Key,
-		})
-		switch {
-		case err == nil:
-			reconciliation.mapping = mapping
-			reconciliation.entityID = EntityID(mapping.EntityID)
-			reconciliation.exists = true
-			if mapping.DeviceID != string(deviceID) {
-				return Binding{}, fmt.Errorf("entity mapping references a different device")
-			}
-			if EntityTypeID(mapping.TypeID) != entity.Entity.TypeID {
-				return Binding{}, errImmutableTypeChange
-			}
-		case errors.Is(err, sql.ErrNoRows):
-		default:
-			return Binding{}, fmt.Errorf("get entity mapping: %w", err)
-		}
-
-		owner, err := queries.GetEntityMappingByExternalID(ctx, registrationsqlc.GetEntityMappingByExternalIDParams{
-			AdapterID: params.AdapterID, ExternalEntityID: entity.Entity.ExternalID,
-		})
-		if err == nil && owner.EntityID != string(reconciliation.entityID) {
-			return Binding{}, errIdentityConflict
-		}
-		if err != nil && !errors.Is(err, sql.ErrNoRows) {
-			return Binding{}, fmt.Errorf("check external entity ID: %w", err)
+		reconciliation, err := prepareEntityReconciliation(ctx, queries, params, entity, deviceID)
+		if err != nil {
+			return nil, err
 		}
 		reconciliations[index] = reconciliation
 	}
+	return reconciliations, nil
+}
 
-	entityBindings := make([]EntityBinding, len(reconciliations))
+func prepareEntityReconciliation(
+	ctx context.Context,
+	queries *registrationsqlc.Queries,
+	params RegisterBindingParams,
+	entity RegisterEntityParams,
+	deviceID DeviceID,
+) (entityReconciliation, error) {
+	reconciliation := entityReconciliation{params: entity, entityID: entity.EntityID}
+	mapping, err := queries.GetEntityMapping(ctx, registrationsqlc.GetEntityMappingParams{
+		AdapterID: params.AdapterID, BindingKey: params.BindingKey, EntityKey: entity.Entity.Key,
+	})
+	switch {
+	case err == nil:
+		reconciliation.mapping = mapping
+		reconciliation.entityID = EntityID(mapping.EntityID)
+		reconciliation.exists = true
+		if mapping.DeviceID != string(deviceID) {
+			return entityReconciliation{}, errors.New("entity mapping references a different device")
+		}
+		if EntityTypeID(mapping.TypeID) != entity.Entity.TypeID {
+			return entityReconciliation{}, errImmutableTypeChange
+		}
+	case errors.Is(err, sql.ErrNoRows):
+	default:
+		return entityReconciliation{}, fmt.Errorf("get entity mapping: %w", err)
+	}
+
+	owner, ownerErr := queries.GetEntityMappingByExternalID(ctx, registrationsqlc.GetEntityMappingByExternalIDParams{
+		AdapterID: params.AdapterID, ExternalEntityID: entity.Entity.ExternalID,
+	})
+	if ownerErr == nil && owner.EntityID != string(reconciliation.entityID) {
+		return entityReconciliation{}, errIdentityConflict
+	}
+	if ownerErr != nil && !errors.Is(ownerErr, sql.ErrNoRows) {
+		return entityReconciliation{}, fmt.Errorf("check external entity ID: %w", ownerErr)
+	}
+	return reconciliation, nil
+}
+
+func applyEntityReconciliations(
+	ctx context.Context,
+	queries *registrationsqlc.Queries,
+	params RegisterBindingParams,
+	deviceID DeviceID,
+	updatedAt string,
+	reconciliations []entityReconciliation,
+) ([]EntityBinding, error) {
+	bindings := make([]EntityBinding, len(reconciliations))
 	for index, reconciliation := range reconciliations {
-		entity := reconciliation.params.Entity
-		if reconciliation.exists {
-			if err := queries.UpdateEntityDescriptor(ctx, registrationsqlc.UpdateEntityDescriptorParams{
-				Name:        entity.Name,
-				SupportJson: string(entity.Support),
-				UpdatedAt:   updatedAt,
-				ID:          reconciliation.mapping.EntityID,
-			}); err != nil {
-				return Binding{}, fmt.Errorf("update entity descriptor: %w", err)
-			}
-			if err := queries.UpdateEntityMappingExternalID(ctx, registrationsqlc.UpdateEntityMappingExternalIDParams{
-				ExternalEntityID: entity.ExternalID, UpdatedAt: updatedAt,
-				AdapterID: params.AdapterID, BindingKey: params.BindingKey, EntityKey: entity.Key,
-			}); err != nil {
-				return Binding{}, mapRegistrationWriteError("update entity external ID", err)
-			}
-		} else {
-			initiallyEnabled := true
-			if entity.InitiallyEnabled != nil {
-				initiallyEnabled = *entity.InitiallyEnabled
-			}
-			if err := queries.CreateEntity(ctx, registrationsqlc.CreateEntityParams{
-				ID:       string(reconciliation.entityID),
-				DeviceID: string(deviceID),
-				Name:     entity.Name,
-				TypeID: string(
-					entity.TypeID,
-				),
-				SupportJson: string(entity.Support),
-				Enabled:     boolToInt64(initiallyEnabled),
-				CreatedAt:   updatedAt,
-				UpdatedAt:   updatedAt,
-			}); err != nil {
-				return Binding{}, fmt.Errorf("create entity: %w", err)
-			}
-			if err := queries.CreateEntityMapping(ctx, registrationsqlc.CreateEntityMappingParams{
-				AdapterID: params.AdapterID, BindingKey: params.BindingKey, EntityKey: entity.Key,
-				EntityID: string(reconciliation.entityID), ExternalEntityID: entity.ExternalID,
-				CreatedAt: updatedAt, UpdatedAt: updatedAt,
-			}); err != nil {
-				return Binding{}, mapRegistrationWriteError("create entity mapping", err)
-			}
+		binding, err := applyEntityReconciliation(ctx, queries, params, deviceID, updatedAt, reconciliation)
+		if err != nil {
+			return nil, err
 		}
-		enabled := true
-		if reconciliation.exists {
-			enabled = reconciliation.mapping.Enabled != 0
-		} else if entity.InitiallyEnabled != nil {
-			enabled = *entity.InitiallyEnabled
-		}
-		entityBindings[index] = EntityBinding{Key: entity.Key, EntityID: reconciliation.entityID, Enabled: enabled}
+		bindings[index] = binding
 	}
+	return bindings, nil
+}
 
-	if err := tx.Commit(); err != nil {
-		return Binding{}, fmt.Errorf("commit registration: %w", err)
+func applyEntityReconciliation(
+	ctx context.Context,
+	queries *registrationsqlc.Queries,
+	params RegisterBindingParams,
+	deviceID DeviceID,
+	updatedAt string,
+	reconciliation entityReconciliation,
+) (EntityBinding, error) {
+	entity := reconciliation.params.Entity
+	if reconciliation.exists {
+		if err := queries.UpdateEntityDescriptor(ctx, registrationsqlc.UpdateEntityDescriptorParams{
+			Name: entity.Name, SupportJson: string(entity.Support), UpdatedAt: updatedAt,
+			ID: reconciliation.mapping.EntityID,
+		}); err != nil {
+			return EntityBinding{}, fmt.Errorf("update entity descriptor: %w", err)
+		}
+		if err := queries.UpdateEntityMappingExternalID(ctx, registrationsqlc.UpdateEntityMappingExternalIDParams{
+			ExternalEntityID: entity.ExternalID, UpdatedAt: updatedAt,
+			AdapterID: params.AdapterID, BindingKey: params.BindingKey, EntityKey: entity.Key,
+		}); err != nil {
+			return EntityBinding{}, mapRegistrationWriteError("update entity external ID", err)
+		}
+	} else {
+		if err := createRegistrationEntity(ctx, queries, params, deviceID, updatedAt, reconciliation); err != nil {
+			return EntityBinding{}, err
+		}
 	}
-	return Binding{
-		BindingKey: params.BindingKey,
-		DeviceID:   deviceID,
-		Entities:   entityBindings,
+	return EntityBinding{
+		Key: entity.Key, EntityID: reconciliation.entityID, Enabled: reconciliationEnabled(reconciliation),
 	}, nil
+}
+
+func createRegistrationEntity(
+	ctx context.Context,
+	queries *registrationsqlc.Queries,
+	params RegisterBindingParams,
+	deviceID DeviceID,
+	updatedAt string,
+	reconciliation entityReconciliation,
+) error {
+	entity := reconciliation.params.Entity
+	if err := queries.CreateEntity(ctx, registrationsqlc.CreateEntityParams{
+		ID: string(reconciliation.entityID), DeviceID: string(deviceID), Name: entity.Name,
+		TypeID: string(entity.TypeID), SupportJson: string(entity.Support),
+		Enabled: boolToInt64(reconciliationEnabled(reconciliation)), CreatedAt: updatedAt, UpdatedAt: updatedAt,
+	}); err != nil {
+		return fmt.Errorf("create entity: %w", err)
+	}
+	if err := queries.CreateEntityMapping(ctx, registrationsqlc.CreateEntityMappingParams{
+		AdapterID: params.AdapterID, BindingKey: params.BindingKey, EntityKey: entity.Key,
+		EntityID: string(reconciliation.entityID), ExternalEntityID: entity.ExternalID,
+		CreatedAt: updatedAt, UpdatedAt: updatedAt,
+	}); err != nil {
+		return mapRegistrationWriteError("create entity mapping", err)
+	}
+	return nil
+}
+
+func reconciliationEnabled(reconciliation entityReconciliation) bool {
+	if reconciliation.exists {
+		return reconciliation.mapping.Enabled != 0
+	}
+	if reconciliation.params.Entity.InitiallyEnabled != nil {
+		return *reconciliation.params.Entity.InitiallyEnabled
+	}
+	return true
 }
 
 func ensureExternalDeviceAvailable(

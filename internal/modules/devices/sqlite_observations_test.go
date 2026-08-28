@@ -1,4 +1,4 @@
-package devices
+package devices //nolint:testpackage // Tests exercise package-private domain seams and repository fixtures.
 
 import (
 	"context"
@@ -9,6 +9,7 @@ import (
 )
 
 func TestObservationProjectionAdvancesStateByReceiveOrderAndDeduplicates(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	path := filepath.Join(t.TempDir(), "hearth.db")
 	database := openMigratedDatabase(t, path)
@@ -79,6 +80,7 @@ func TestObservationProjectionAdvancesStateByReceiveOrderAndDeduplicates(t *test
 	}
 }
 
+//nolint:paralleltest // Subtests share one repository and are asserted as a batch.
 func TestObservationProjectionDurablyRejectsIdentityAndValueFailures(t *testing.T) {
 	ctx := context.Background()
 	database := openMigratedDatabase(t, filepath.Join(t.TempDir(), "hearth.db"))
@@ -105,16 +107,17 @@ func TestObservationProjectionDurablyRejectsIdentityAndValueFailures(t *testing.
 		{"wrong adapter", "other-adapter", newObservation(t, entityID, `true`, observedAt), RejectionWrongAdapter},
 		{"invalid value", "simulator", newObservation(t, entityID, `1`, observedAt), RejectionInvalidValue},
 	}
+	//nolint:paralleltest // Cases share one repository and are asserted as a batch.
 	for index, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			result, err := service.ProjectObservation(
+			result, projectionErr := service.ProjectObservation(
 				ctx,
 				test.adapterID,
 				test.observation,
 				observedAt.Add(time.Duration(index)*time.Second),
 			)
-			if err != nil {
-				t.Fatal(err)
+			if projectionErr != nil {
+				t.Fatal(projectionErr)
 			}
 			if result.Disposition != DispositionRejected || result.Rejection == nil || *result.Rejection != test.want ||
 				result.State != nil {
@@ -133,6 +136,7 @@ func TestObservationProjectionDurablyRejectsIdentityAndValueFailures(t *testing.
 }
 
 func TestDisabledEntityRejectsUnlinkedObservationAndAllowsActiveCommandRefresh(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	database := openMigratedDatabase(t, filepath.Join(t.TempDir(), "hearth.db"))
 	catalog := firstLightCatalog(t)
@@ -201,6 +205,7 @@ func TestDisabledEntityRejectsUnlinkedObservationAndAllowsActiveCommandRefresh(t
 }
 
 func TestDisabledEntityDoesNotExemptUnknownExpiredOrTerminalCommandLinks(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	database := openMigratedDatabase(t, filepath.Join(t.TempDir(), "hearth.db"))
 	catalog := firstLightCatalog(t)
@@ -236,14 +241,14 @@ func TestDisabledEntityDoesNotExemptUnknownExpiredOrTerminalCommandLinks(t *test
 	for index, id := range []CommandID{unknown, expired.ID, terminal.ID} {
 		observation := newObservation(t, entityID, `true`, now)
 		observation.RefreshForCommand = &id
-		result, err := service.ProjectObservation(
+		result, projectionErr := service.ProjectObservation(
 			ctx,
 			"simulator",
 			observation,
 			now.Add(time.Duration(index)*time.Second),
 		)
-		if err != nil {
-			t.Fatal(err)
+		if projectionErr != nil {
+			t.Fatal(projectionErr)
 		}
 		if result.Disposition != DispositionRejected || result.Rejection == nil ||
 			*result.Rejection != RejectionEntityDisabled || result.State != nil || result.SatisfiedCommand != nil {
@@ -253,6 +258,7 @@ func TestDisabledEntityDoesNotExemptUnknownExpiredOrTerminalCommandLinks(t *test
 }
 
 func TestObservationProjectionSatisfiesOnlyMatchingActiveLinkedCommand(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	database := openMigratedDatabase(t, filepath.Join(t.TempDir(), "hearth.db"))
 	catalog := firstLightCatalog(t)
@@ -355,6 +361,7 @@ func TestObservationProjectionSatisfiesOnlyMatchingActiveLinkedCommand(t *testin
 }
 
 func TestReceiptPruningPinsCurrentStateUntilItAdvances(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	database := openMigratedDatabase(t, filepath.Join(t.TempDir(), "hearth.db"))
 	catalog := firstLightCatalog(t)

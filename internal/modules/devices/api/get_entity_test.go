@@ -1,4 +1,4 @@
-package api
+package api //nolint:testpackage // Tests exercise package-private transport mappings and fixtures.
 
 import (
 	"context"
@@ -116,6 +116,7 @@ func (stub *stubDevices) ExecuteCommand(
 }
 
 func TestGetEntityReturnsMetadataAndNullableState(t *testing.T) {
+	t.Parallel()
 	var requestedEntityID devices.EntityID
 	stub := &stubDevices{
 		getEntity: func(_ context.Context, entityID devices.EntityID) (devices.EntityWithState, error) {
@@ -153,6 +154,7 @@ func TestGetEntityReturnsMetadataAndNullableState(t *testing.T) {
 }
 
 func TestGetEntityMapsCurrentState(t *testing.T) {
+	t.Parallel()
 	adapterReceivedAt := time.Date(2026, 8, 22, 12, 0, 0, 123, time.UTC)
 	sourceUpdatedAt := adapterReceivedAt.Add(-time.Minute)
 	observedAt := adapterReceivedAt.Add(time.Second)
@@ -186,6 +188,7 @@ func TestGetEntityMapsCurrentState(t *testing.T) {
 }
 
 func TestGetEntityMapsStandardErrors(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name    string
 		path    string
@@ -221,6 +224,7 @@ func TestGetEntityMapsStandardErrors(t *testing.T) {
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
 			router, _ := testAPI(t, test.devices)
 			response := performRequest(router, test.path)
 			if response.Code != test.status {
@@ -261,6 +265,7 @@ func testAPI(t *testing.T, devices Devices) (*echo.Echo, huma.API) {
 	return router, openapi
 }
 
+//nolint:paralleltest // Temporarily replaces the process-wide Huma error factory.
 func TestRegisterDoesNotChangeHumaErrorFactory(t *testing.T) {
 	original := huma.NewError
 	called := false

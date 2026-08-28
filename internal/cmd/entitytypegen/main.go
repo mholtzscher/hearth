@@ -141,7 +141,7 @@ func generateRoot(root string, check bool) error {
 		goName := entityTypeGoName(model)
 		if previous, duplicate := seenGoNames[goName]; duplicate {
 			return fmt.Errorf(
-				"Entity-type packages %q and %q both map to generated Go name %q",
+				"entity-type packages %q and %q both map to generated Go name %q",
 				previous,
 				model.Package,
 				goName,

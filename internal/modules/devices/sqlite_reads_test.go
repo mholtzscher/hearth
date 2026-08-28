@@ -1,4 +1,4 @@
-package devices
+package devices //nolint:testpackage // Tests exercise package-private domain seams and repository fixtures.
 
 import (
 	"context"
@@ -20,6 +20,7 @@ const (
 )
 
 func TestSQLiteResourceReadsUseDeterministicKeysetPages(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	database := openMigratedDatabase(t, filepath.Join(t.TempDir(), "hearth.db"))
 	repository := NewSQLiteRepository(database, nil)
@@ -81,14 +82,14 @@ func TestSQLiteResourceReadsUseDeterministicKeysetPages(t *testing.T) {
 		aggregate.Entities.Items[0].Entity.Enabled || aggregate.Entities.HasMore {
 		t.Fatalf("second device aggregate page = %#v", aggregate)
 	}
-	if _, err := repository.GetDevice(
+	if _, getErr := repository.GetDevice(
 		ctx,
 		GetDeviceParams{ID: unknownDevice, EntityLimit: 50},
 	); !errors.Is(
-		err,
+		getErr,
 		ErrDeviceNotFound,
 	) {
-		t.Fatalf("unknown device error = %v", err)
+		t.Fatalf("unknown device error = %v", getErr)
 	}
 
 	history, err := repository.ListEntityCommands(ctx, ListEntityCommandsParams{EntityID: readEntityA, Limit: 1})
@@ -110,6 +111,7 @@ func TestSQLiteResourceReadsUseDeterministicKeysetPages(t *testing.T) {
 }
 
 func TestSQLiteCommandHistoryOrdersWholeAndFractionalSecondsChronologically(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	database := openMigratedDatabase(t, filepath.Join(t.TempDir(), "hearth.db"))
 	repository := NewSQLiteRepository(database, nil)
@@ -145,9 +147,9 @@ func TestSQLiteCommandHistoryOrdersWholeAndFractionalSecondsChronologically(t *t
 	}
 
 	var stored string
-	if err := database.QueryRowContext(ctx, "SELECT requested_at FROM commands WHERE id = ?", earlier.ID).
-		Scan(&stored); err != nil {
-		t.Fatal(err)
+	if scanErr := database.QueryRowContext(ctx, "SELECT requested_at FROM commands WHERE id = ?", earlier.ID).
+		Scan(&stored); scanErr != nil {
+		t.Fatal(scanErr)
 	}
 	if stored != "2026-08-26T12:00:00.000000000Z" {
 		t.Fatalf("stored requested_at = %q", stored)

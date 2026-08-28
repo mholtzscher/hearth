@@ -1,4 +1,4 @@
-package nats
+package nats //nolint:testpackage // Tests exercise package-private NATS wire behavior and fixtures.
 
 import (
 	"context"
@@ -27,6 +27,7 @@ func (setter entityEnablementSetterFunc) SetOwnedEntityEnabled(
 }
 
 func TestEntityEnablementServerReturnsCorrelatedAcceptedAndRejectedResponses(t *testing.T) {
+	t.Parallel()
 	_, connection, _ := startJetStream(t)
 	validator, err := contractsv1.Compile()
 	if err != nil {
@@ -66,6 +67,7 @@ func TestEntityEnablementServerReturnsCorrelatedAcceptedAndRejectedResponses(t *
 }
 
 func TestEntityEnablementServerDiscardsRoutePayloadMismatchWithoutInvokingSetter(t *testing.T) {
+	t.Parallel()
 	_, connection, _ := startJetStream(t)
 	validator, err := contractsv1.Compile()
 	if err != nil {

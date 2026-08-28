@@ -12,6 +12,7 @@ import (
 )
 
 func TestGeneratedFilesAreCurrent(t *testing.T) {
+	t.Parallel()
 	_, filename, _, ok := runtime.Caller(0)
 	if !ok {
 		t.Fatal("locate generator test")
@@ -23,6 +24,7 @@ func TestGeneratedFilesAreCurrent(t *testing.T) {
 }
 
 func TestLoadModelRequiresManifestOperationsToMatchSupport(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	if err := os.WriteFile(
 		filepath.Join(root, "go.mod"),
@@ -66,6 +68,7 @@ func TestLoadModelRequiresManifestOperationsToMatchSupport(t *testing.T) {
 }
 
 func TestLoadModelEnforcesAuthoritativeManifestSchema(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	if err := os.WriteFile(
 		filepath.Join(root, "go.mod"),
@@ -95,12 +98,14 @@ func TestLoadModelEnforcesAuthoritativeManifestSchema(t *testing.T) {
 }
 
 func TestLoadModelRejectsIntegerSchemasOutsideInt64(t *testing.T) {
+	t.Parallel()
 	for name, bounds := range map[string]map[string]any{
 		"unbounded":     {},
 		"below minimum": {"minimum": json.Number("-9223372036854775809"), "maximum": 0},
 		"above maximum": {"minimum": 0, "maximum": json.Number("9223372036854775808")},
 	} {
 		t.Run(name, func(t *testing.T) {
+			t.Parallel()
 			directory, manifestPath := writeMinimalEntityTypeFixture(t, "examplev1")
 			schema := map[string]any{"$id": "urn:test:state", "type": "integer"}
 			maps.Copy(schema, bounds)
@@ -115,6 +120,7 @@ func TestLoadModelRejectsIntegerSchemasOutsideInt64(t *testing.T) {
 }
 
 func TestLoadModelRejectsLongTypeID(t *testing.T) {
+	t.Parallel()
 	directory, manifestPath := writeMinimalEntityTypeFixture(t, "examplev1")
 	writeJSON(t, filepath.Join(directory, "entitytype.json"), minimalManifest(strings.Repeat("a", 126)+"/v1"))
 
@@ -124,6 +130,7 @@ func TestLoadModelRejectsLongTypeID(t *testing.T) {
 }
 
 func TestLoadModelRejectsDuplicateSchemaIDs(t *testing.T) {
+	t.Parallel()
 	directory, manifestPath := writeMinimalEntityTypeFixture(t, "examplev1")
 	writeJSON(t, filepath.Join(directory, "support.schema.json"), minimalSupportSchema("urn:test:state"))
 
@@ -134,6 +141,7 @@ func TestLoadModelRejectsDuplicateSchemaIDs(t *testing.T) {
 }
 
 func TestRequireUniqueSchemaIDsIncludesOperationParameters(t *testing.T) {
+	t.Parallel()
 	err := requireUniqueSchemaIDs(
 		schemaNode{ID: "urn:test:state"},
 		schemaNode{ID: "urn:test:support"},
@@ -148,6 +156,7 @@ func TestRequireUniqueSchemaIDsIncludesOperationParameters(t *testing.T) {
 }
 
 func TestLoadModelRejectsExtraTopLevelSupportProperties(t *testing.T) {
+	t.Parallel()
 	directory, manifestPath := writeMinimalEntityTypeFixture(t, "examplev1")
 	support := minimalSupportSchema("urn:test:support")
 	support["properties"].(map[string]any)["extra"] = map[string]any{"type": "boolean"}
@@ -160,8 +169,10 @@ func TestLoadModelRejectsExtraTopLevelSupportProperties(t *testing.T) {
 }
 
 func TestLoadModelRejectsNonImportablePackageNames(t *testing.T) {
+	t.Parallel()
 	for _, packageName := range []string{"main", "internal", "_", "é"} {
 		t.Run(packageName, func(t *testing.T) {
+			t.Parallel()
 			_, manifestPath := writeMinimalEntityTypeFixture(t, packageName)
 			_, err := loadModel(manifestPath)
 			if err == nil || !strings.Contains(err.Error(), "not an importable Go package name") {
@@ -172,6 +183,7 @@ func TestLoadModelRejectsNonImportablePackageNames(t *testing.T) {
 }
 
 func TestBehaviorRulesAreSchemaChecked(t *testing.T) {
+	t.Parallel()
 	integer := schemaNode{Type: "integer"}
 	boolean := schemaNode{Type: "boolean"}
 	support := schemaNode{
@@ -213,6 +225,7 @@ func TestBehaviorRulesAreSchemaChecked(t *testing.T) {
 		},
 	} {
 		t.Run(name, func(t *testing.T) {
+			t.Parallel()
 			if _, err := compileRule(rule, roots); err == nil {
 				t.Fatal("invalid behavior rule unexpectedly accepted")
 			}
@@ -221,6 +234,7 @@ func TestBehaviorRulesAreSchemaChecked(t *testing.T) {
 }
 
 func TestOutcomeEnvironmentExcludesSupport(t *testing.T) {
+	t.Parallel()
 	_, err := compileRule(ruleManifest{
 		Op:    "eq",
 		Left:  referenceManifest{Root: "parameters", Path: ""},
@@ -235,6 +249,7 @@ func TestOutcomeEnvironmentExcludesSupport(t *testing.T) {
 }
 
 func TestMultipleOfGuardsZeroDivisor(t *testing.T) {
+	t.Parallel()
 	rule := ruleModel{
 		Op:    "multiple_of",
 		Left:  referenceModel{Kind: kindInteger, GoExpression: "parameters.Value"},
@@ -247,6 +262,7 @@ func TestMultipleOfGuardsZeroDivisor(t *testing.T) {
 }
 
 func TestTypeEmitterRejectsLossyNumberBindings(t *testing.T) {
+	t.Parallel()
 	for name, schema := range map[string]schemaNode{
 		"root": {Type: "number"},
 		"property": {
@@ -258,6 +274,7 @@ func TestTypeEmitterRejectsLossyNumberBindings(t *testing.T) {
 		},
 	} {
 		t.Run(name, func(t *testing.T) {
+			t.Parallel()
 			emitter := &typeEmitter{declarations: make(map[string]string)}
 			if err := emitter.define(
 				"Value",
@@ -271,6 +288,7 @@ func TestTypeEmitterRejectsLossyNumberBindings(t *testing.T) {
 }
 
 func TestTypeEmitterPreservesOptionalObjectPresence(t *testing.T) {
+	t.Parallel()
 	emitter := &typeEmitter{declarations: make(map[string]string)}
 	schema := schemaNode{
 		Type: "object",
@@ -289,6 +307,7 @@ func TestTypeEmitterPreservesOptionalObjectPresence(t *testing.T) {
 }
 
 func TestRenderedObservationUsesSupportDependentStateValidation(t *testing.T) {
+	t.Parallel()
 	source, err := renderFacade(entityTypeModel{Package: "examplev1"})
 	if err != nil {
 		t.Fatal(err)
@@ -307,6 +326,7 @@ func TestRenderedObservationUsesSupportDependentStateValidation(t *testing.T) {
 }
 
 func TestRenderedCodecsEmbedExactManifestPaths(t *testing.T) {
+	t.Parallel()
 	source, err := renderCodecs(entityTypeModel{
 		Package:       "examplev1",
 		StateFile:     "schemas/state.json",
@@ -328,6 +348,7 @@ func TestRenderedCodecsEmbedExactManifestPaths(t *testing.T) {
 }
 
 func TestRootGenerationAddsATypeWithoutPerTypeGo(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	if err := os.WriteFile(
 		filepath.Join(root, "go.mod"),
@@ -438,12 +459,12 @@ func TestRootGenerationAddsATypeWithoutPerTypeGo(t *testing.T) {
 		t.Fatal(err)
 	}
 	orphan := filepath.Join(directory, "zz_generated_old.go")
-	if err := os.WriteFile(
+	if writeErr := os.WriteFile(
 		orphan,
 		[]byte("// Code generated by entitytypegen; DO NOT EDIT.\n\npackage switchv1\n"),
 		0o644,
-	); err != nil {
-		t.Fatal(err)
+	); writeErr != nil {
+		t.Fatal(writeErr)
 	}
 	if err := generateRoot(root, true); err == nil || !strings.Contains(err.Error(), "orphaned") {
 		t.Fatalf("orphan check error = %v", err)

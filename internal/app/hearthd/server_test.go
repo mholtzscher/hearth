@@ -1,4 +1,4 @@
-package hearthd
+package hearthd //nolint:testpackage // Tests exercise package-private assembly and lifecycle behavior.
 
 import (
 	"bytes"
@@ -96,6 +96,7 @@ func (stub *stubDevices) ExecuteCommand(
 }
 
 func TestHTTPHandlerServesHealthReadinessAndDeviceOperations(t *testing.T) {
+	t.Parallel()
 	stub := &stubDevices{getEntity: func(context.Context, devices.EntityID) (devices.EntityWithState, error) {
 		return devices.EntityWithState{Entity: devices.Entity{
 			ID: testHTTPEntityID, DeviceID: testHTTPDeviceID, AdapterID: "simulator", Name: "Power",
@@ -132,6 +133,7 @@ func TestHTTPHandlerServesHealthReadinessAndDeviceOperations(t *testing.T) {
 }
 
 func TestRuntimeOpenAPIContract(t *testing.T) {
+	t.Parallel()
 	handler, _ := NewHTTPHandler(&stubDevices{}, &testReadiness{})
 	response := appRequest(handler, "/openapi.json")
 	if response.Code != http.StatusOK {
@@ -271,6 +273,7 @@ func TestRuntimeOpenAPIContract(t *testing.T) {
 }
 
 func TestHTTPHandlerUsesStandardHumaValidationErrors(t *testing.T) {
+	t.Parallel()
 	handler, _ := NewHTTPHandler(&stubDevices{}, nil)
 	for _, test := range []struct {
 		body   string
@@ -297,6 +300,7 @@ func TestHTTPHandlerUsesStandardHumaValidationErrors(t *testing.T) {
 	}
 }
 
+//nolint:paralleltest // Temporarily replaces the process-wide Huma error factory.
 func TestNewHTTPHandlerPreservesHumaErrorFactory(t *testing.T) {
 	original := huma.NewError
 	called := false

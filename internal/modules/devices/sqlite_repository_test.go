@@ -1,4 +1,4 @@
-package devices
+package devices //nolint:testpackage // Tests exercise package-private domain seams and repository fixtures.
 
 import (
 	"context"
@@ -13,6 +13,7 @@ import (
 )
 
 func TestRegistrationIsIdempotentAndUpdatesDescriptors(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	path := filepath.Join(t.TempDir(), "hearth.db")
 	database := openMigratedDatabase(t, path)
@@ -76,6 +77,7 @@ func TestRegistrationIsIdempotentAndUpdatesDescriptors(t *testing.T) {
 }
 
 func TestMultiEntityRegistrationIsAdditiveAndReturnsSubmittedOrder(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	database := openMigratedDatabase(t, filepath.Join(t.TempDir(), "hearth.db"))
 	catalog := firstLightCatalog(t)
@@ -136,9 +138,9 @@ func TestMultiEntityRegistrationIsAdditiveAndReturnsSubmittedOrder(t *testing.T)
 	}
 	assertCounts(t, database, 1, 2)
 	var powerName string
-	if err := database.QueryRowContext(ctx, "SELECT name FROM entities WHERE id = ?", power.Entities[0].EntityID).
-		Scan(&powerName); err != nil {
-		t.Fatal(err)
+	if scanErr := database.QueryRowContext(ctx, "SELECT name FROM entities WHERE id = ?", power.Entities[0].EntityID).
+		Scan(&powerName); scanErr != nil {
+		t.Fatal(scanErr)
 	}
 	if powerName != "Power" {
 		t.Fatalf("omitted power name = %q", powerName)
@@ -158,6 +160,7 @@ func TestMultiEntityRegistrationIsAdditiveAndReturnsSubmittedOrder(t *testing.T)
 }
 
 func TestRegistrationAllowsDeviceAggregateBeyondRequestLimit(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	database := openMigratedDatabase(t, filepath.Join(t.TempDir(), "hearth.db"))
 	catalog := firstLightCatalog(t)
@@ -182,6 +185,7 @@ func TestRegistrationAllowsDeviceAggregateBeyondRequestLimit(t *testing.T) {
 }
 
 func TestRegistrationRejectsExternalIDTransfersIndependentOfOrder(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	database := openMigratedDatabase(t, filepath.Join(t.TempDir(), "hearth.db"))
 	catalog := firstLightCatalog(t)
@@ -218,6 +222,7 @@ func TestRegistrationRejectsExternalIDTransfersIndependentOfOrder(t *testing.T) 
 }
 
 func TestExternalIDCanTransferAcrossRegistrations(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	database := openMigratedDatabase(t, filepath.Join(t.TempDir(), "hearth.db"))
 	catalog := firstLightCatalog(t)
@@ -247,6 +252,7 @@ func TestExternalIDCanTransferAcrossRegistrations(t *testing.T) {
 }
 
 func TestRegistrationRollsBackWhenLaterEntityWriteFails(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	database := openMigratedDatabase(t, filepath.Join(t.TempDir(), "hearth.db"))
 	catalog := firstLightCatalog(t)
@@ -271,6 +277,7 @@ func TestRegistrationRollsBackWhenLaterEntityWriteFails(t *testing.T) {
 }
 
 func TestReRegistrationReplacesNormalizedSupport(t *testing.T) {
+	t.Parallel()
 	type stateSupport struct {
 		Mode string `json:"mode"`
 	}
@@ -346,9 +353,9 @@ func TestReRegistrationReplacesNormalizedSupport(t *testing.T) {
 	}
 	database = openMigratedDatabase(t, path)
 	var stored string
-	if err := database.QueryRowContext(ctx, "SELECT support_json FROM entities WHERE id = ?", second.Entities[0].EntityID).
-		Scan(&stored); err != nil {
-		t.Fatal(err)
+	if scanErr := database.QueryRowContext(ctx, "SELECT support_json FROM entities WHERE id = ?", second.Entities[0].EntityID).
+		Scan(&stored); scanErr != nil {
+		t.Fatal(scanErr)
 	}
 	if stored != `{"state":{"mode":"second"},"operations":{"set":{}}}` {
 		t.Fatalf("stored support = %s", stored)
@@ -356,6 +363,7 @@ func TestReRegistrationReplacesNormalizedSupport(t *testing.T) {
 }
 
 func TestConcurrentRegistrationReturnsOneBinding(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	database := openMigratedDatabase(t, filepath.Join(t.TempDir(), "hearth.db"))
 	catalog := firstLightCatalog(t)
@@ -390,6 +398,7 @@ func TestConcurrentRegistrationReturnsOneBinding(t *testing.T) {
 }
 
 func TestRegistrationRejectionsAreAtomic(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	database := openMigratedDatabase(t, filepath.Join(t.TempDir(), "hearth.db"))
 	catalog := firstLightCatalog(t)
@@ -447,6 +456,7 @@ func TestRegistrationRejectionsAreAtomic(t *testing.T) {
 }
 
 func TestRegistrationInitialEnablementAndRetryPreservesCurrentValue(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	database := openMigratedDatabase(t, filepath.Join(t.TempDir(), "hearth.db"))
 	catalog := firstLightCatalog(t)
@@ -491,6 +501,7 @@ func TestRegistrationInitialEnablementAndRetryPreservesCurrentValue(t *testing.T
 }
 
 func TestSetEntityEnabledIsIdempotentAndOwnerScoped(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	database := openMigratedDatabase(t, filepath.Join(t.TempDir(), "hearth.db"))
 	catalog := firstLightCatalog(t)
@@ -508,9 +519,9 @@ func TestSetEntityEnabledIsIdempotentAndOwnerScoped(t *testing.T) {
 	entityID := binding.Entities[0].EntityID
 
 	var registeredAt string
-	if err := database.QueryRowContext(ctx, "SELECT updated_at FROM entities WHERE id = ?", entityID).
-		Scan(&registeredAt); err != nil {
-		t.Fatal(err)
+	if scanErr := database.QueryRowContext(ctx, "SELECT updated_at FROM entities WHERE id = ?", entityID).
+		Scan(&registeredAt); scanErr != nil {
+		t.Fatal(scanErr)
 	}
 	now = now.Add(time.Minute)
 	confirmed, err := service.SetOwnedEntityEnabled(ctx, "simulator", entityID, false)
@@ -518,9 +529,9 @@ func TestSetEntityEnabledIsIdempotentAndOwnerScoped(t *testing.T) {
 		t.Fatalf("owner disable = %t, %v", confirmed, err)
 	}
 	var disabledAt string
-	if err := database.QueryRowContext(ctx, "SELECT updated_at FROM entities WHERE id = ?", entityID).
-		Scan(&disabledAt); err != nil {
-		t.Fatal(err)
+	if scanErr := database.QueryRowContext(ctx, "SELECT updated_at FROM entities WHERE id = ?", entityID).
+		Scan(&disabledAt); scanErr != nil {
+		t.Fatal(scanErr)
 	}
 	if disabledAt == registeredAt {
 		t.Fatal("changed enablement did not update updated_at")
@@ -532,23 +543,23 @@ func TestSetEntityEnabledIsIdempotentAndOwnerScoped(t *testing.T) {
 		t.Fatalf("management no-op = %#v, %v", view, err)
 	}
 	var afterNoop string
-	if err := database.QueryRowContext(ctx, "SELECT updated_at FROM entities WHERE id = ?", entityID).
-		Scan(&afterNoop); err != nil {
-		t.Fatal(err)
+	if scanErr := database.QueryRowContext(ctx, "SELECT updated_at FROM entities WHERE id = ?", entityID).
+		Scan(&afterNoop); scanErr != nil {
+		t.Fatal(scanErr)
 	}
 	if afterNoop != disabledAt {
 		t.Fatalf("no-op updated_at = %q, want %q", afterNoop, disabledAt)
 	}
-	if _, err := service.SetOwnedEntityEnabled(
+	if _, enableErr := service.SetOwnedEntityEnabled(
 		ctx,
 		"other-adapter",
 		entityID,
 		true,
 	); !errors.Is(
-		err,
+		enableErr,
 		ErrEntityWrongAdapter,
 	) {
-		t.Fatalf("wrong owner error = %v", err)
+		t.Fatalf("wrong owner error = %v", enableErr)
 	}
 	unknown, err := NewEntityID()
 	if err != nil {
@@ -560,6 +571,7 @@ func TestSetEntityEnabledIsIdempotentAndOwnerScoped(t *testing.T) {
 }
 
 func TestCreateCommandDurablyClassifiesDisabledEntity(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	database := openMigratedDatabase(t, filepath.Join(t.TempDir(), "hearth.db"))
 	catalog := firstLightCatalog(t)
@@ -597,6 +609,7 @@ func TestCreateCommandDurablyClassifiesDisabledEntity(t *testing.T) {
 }
 
 func TestCommandCreationAndEnablementFollowCommitOrder(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	database := openMigratedDatabase(t, filepath.Join(t.TempDir(), "hearth.db"))
 	catalog := firstLightCatalog(t)
@@ -630,6 +643,7 @@ func TestCommandCreationAndEnablementFollowCommitOrder(t *testing.T) {
 }
 
 func TestCommandLedgerTransitionsAreMonotonicAndIdempotent(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	database := openMigratedDatabase(t, filepath.Join(t.TempDir(), "hearth.db"))
 	catalog := firstLightCatalog(t)

@@ -1,4 +1,4 @@
-package nats
+package nats //nolint:testpackage // Tests exercise package-private NATS wire behavior and fixtures.
 
 import (
 	"context"
@@ -25,6 +25,7 @@ func (registrar registrarFunc) Register(
 }
 
 func TestRegistrationServerMapsDomainRegistrationAndReturnsCorrelatedResponse(t *testing.T) {
+	t.Parallel()
 	_, connection, _ := startJetStream(t)
 	validator, err := contractsv1.Compile()
 	if err != nil {
@@ -109,6 +110,7 @@ func TestRegistrationServerMapsDomainRegistrationAndReturnsCorrelatedResponse(t 
 }
 
 func TestRegistrationServerMapsDomainRejection(t *testing.T) {
+	t.Parallel()
 	_, connection, _ := startJetStream(t)
 	validator, err := contractsv1.Compile()
 	if err != nil {
@@ -136,6 +138,7 @@ func TestRegistrationServerMapsDomainRejection(t *testing.T) {
 }
 
 func TestRegistrationInfrastructureFailureDoesNotReply(t *testing.T) {
+	t.Parallel()
 	_, connection, _ := startJetStream(t)
 	validator, err := contractsv1.Compile()
 	if err != nil {

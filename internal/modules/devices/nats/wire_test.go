@@ -1,4 +1,4 @@
-package nats
+package nats //nolint:testpackage // Tests exercise package-private NATS wire behavior and fixtures.
 
 import (
 	"bytes"
@@ -12,6 +12,7 @@ import (
 )
 
 func TestCrossBinaryFixtures(t *testing.T) {
+	t.Parallel()
 	validator, err := contractsv1.Compile()
 	if err != nil {
 		t.Fatal(err)
@@ -107,6 +108,7 @@ func TestCrossBinaryFixtures(t *testing.T) {
 
 	for _, fixture := range fixtures {
 		t.Run(fixture.name, func(t *testing.T) {
+			t.Parallel()
 			payload := []byte(fixture.payload)
 			if err := validator.Validate(fixture.schemaID, payload); err != nil {
 				t.Fatal(err)

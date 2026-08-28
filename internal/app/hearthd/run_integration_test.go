@@ -1,4 +1,4 @@
-package hearthd
+package hearthd //nolint:testpackage // Tests exercise package-private assembly and lifecycle behavior.
 
 import (
 	"context"
@@ -23,6 +23,7 @@ import (
 )
 
 func TestCoreNATSTransportRegistersAndProjectsDurableObservation(t *testing.T) {
+	t.Parallel()
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	logger := slog.New(slog.DiscardHandler)
@@ -201,6 +202,7 @@ func TestCoreNATSTransportRegistersAndProjectsDurableObservation(t *testing.T) {
 }
 
 func TestCoreCommandRoundTripRequiresLinkedSimulatorObservation(t *testing.T) {
+	t.Parallel()
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	logger := slog.New(slog.DiscardHandler)

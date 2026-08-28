@@ -1,4 +1,4 @@
-package api
+package api //nolint:testpackage // Tests exercise package-private transport mappings and fixtures.
 
 import (
 	"encoding/base64"
@@ -9,6 +9,7 @@ import (
 )
 
 func TestCursorCodecsRoundTripAndEnforceScope(t *testing.T) {
+	t.Parallel()
 	deviceCursor, err := encodeDevicesCursor(apiDeviceID)
 	if err != nil {
 		t.Fatal(err)
@@ -65,6 +66,7 @@ func TestCursorCodecsRoundTripAndEnforceScope(t *testing.T) {
 }
 
 func TestCursorCodecsRejectMalformedDocuments(t *testing.T) {
+	t.Parallel()
 	unknownField := base64.RawURLEncoding.EncodeToString(
 		[]byte(`{"v":1,"resource":"devices","id":"` + string(apiDeviceID) + `","extra":true}`),
 	)

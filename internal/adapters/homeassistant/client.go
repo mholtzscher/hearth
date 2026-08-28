@@ -284,10 +284,10 @@ func (client *client) request(ctx context.Context, request requestMessage) (resu
 	}
 	if !result.Success {
 		if result.Error == nil {
-			return resultMessage{}, errors.New("Home Assistant request failed")
+			return resultMessage{}, errors.New("request to Home Assistant failed")
 		}
 		return resultMessage{}, fmt.Errorf(
-			"Home Assistant request failed (%s): %s",
+			"request to Home Assistant failed (%s): %s",
 			result.Error.Code,
 			result.Error.Message,
 		)
