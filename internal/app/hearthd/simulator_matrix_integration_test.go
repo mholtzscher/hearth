@@ -206,6 +206,22 @@ func newSimulatorMatrixHarness(t *testing.T, scenario string, options simulatorM
 		harness.entityID = devices.EntityID(entityID)
 		return true, nil
 	})
+	if scenario != simulatoradapter.ScenarioUnavailableAdapter {
+		commandSubject, subjectErr := natswire.CommandSubject(simulatorMatrixAdapterID, string(harness.entityID), "set")
+		if subjectErr != nil {
+			t.Fatal(subjectErr)
+		}
+		waitForMatrixCondition(t, 5*time.Second, func() (bool, error) {
+			subscriptions, subscriptionsErr := harness.server.Subsz(&natsserver.SubszOptions{
+				Subscriptions: true,
+				Test:          commandSubject,
+			})
+			if subscriptionsErr != nil {
+				return false, subscriptionsErr
+			}
+			return subscriptions.Total > 0, nil
+		})
+	}
 	t.Cleanup(harness.Close)
 	return harness
 }
