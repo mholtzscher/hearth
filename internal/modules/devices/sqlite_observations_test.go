@@ -80,8 +80,8 @@ func TestObservationProjectionAdvancesStateByReceiveOrderAndDeduplicates(t *test
 	}
 }
 
-//nolint:paralleltest // Subtests share one repository and are asserted as a batch.
 func TestObservationProjectionDurablyRejectsIdentityAndValueFailures(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	database := openMigratedDatabase(t, filepath.Join(t.TempDir(), "hearth.db"))
 	catalog := firstLightCatalog(t)
@@ -107,23 +107,20 @@ func TestObservationProjectionDurablyRejectsIdentityAndValueFailures(t *testing.
 		{"wrong adapter", "other-adapter", newObservation(t, entityID, `true`, observedAt), RejectionWrongAdapter},
 		{"invalid value", "simulator", newObservation(t, entityID, `1`, observedAt), RejectionInvalidValue},
 	}
-	//nolint:paralleltest // Cases share one repository and are asserted as a batch.
 	for index, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			result, projectionErr := service.ProjectObservation(
-				ctx,
-				test.adapterID,
-				test.observation,
-				observedAt.Add(time.Duration(index)*time.Second),
-			)
-			if projectionErr != nil {
-				t.Fatal(projectionErr)
-			}
-			if result.Disposition != DispositionRejected || result.Rejection == nil || *result.Rejection != test.want ||
-				result.State != nil {
-				t.Fatalf("projection = %#v", result)
-			}
-		})
+		result, projectionErr := service.ProjectObservation(
+			ctx,
+			test.adapterID,
+			test.observation,
+			observedAt.Add(time.Duration(index)*time.Second),
+		)
+		if projectionErr != nil {
+			t.Fatalf("%s: %v", test.name, projectionErr)
+		}
+		if result.Disposition != DispositionRejected || result.Rejection == nil || *result.Rejection != test.want ||
+			result.State != nil {
+			t.Fatalf("%s: projection = %#v", test.name, result)
+		}
 	}
 	assertReceiptCount(t, database, len(tests))
 	view, err := service.GetEntity(ctx, entityID)

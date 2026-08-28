@@ -14,7 +14,6 @@ import (
 
 const simulatorTestEntityID = "ent_01890f47-7a6b-7c4d-8e9f-0123456789ab"
 
-//nolint:govet // Sequential integration setup intentionally reuses short error variables.
 func TestFaultPublishersProduceDuplicateAndMalformedStreamEvidence(t *testing.T) {
 	t.Parallel()
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -42,8 +41,8 @@ func TestFaultPublishersProduceDuplicateAndMalformedStreamEvidence(t *testing.T)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := devicesnats.ProvisionObservationResources(ctx, js); err != nil {
-		t.Fatal(err)
+	if _, provisionErr := devicesnats.ProvisionObservationResources(ctx, js); provisionErr != nil {
+		t.Fatal(provisionErr)
 	}
 	config := Config{
 		AdapterID:  "simulator",
@@ -51,8 +50,8 @@ func TestFaultPublishersProduceDuplicateAndMalformedStreamEvidence(t *testing.T)
 		BindingKey: "simulated-light",
 		Scenario:   "duplicate",
 	}
-	if err := publishFaultObservation(ctx, config, simulatorTestEntityID); err != nil {
-		t.Fatal(err)
+	if publishErr := publishFaultObservation(ctx, config, simulatorTestEntityID); publishErr != nil {
+		t.Fatal(publishErr)
 	}
 	stream, err := js.Stream(ctx, devicesnats.ObservationStreamName)
 	if err != nil {
@@ -65,8 +64,8 @@ func TestFaultPublishersProduceDuplicateAndMalformedStreamEvidence(t *testing.T)
 	if info.State.Msgs != 1 {
 		t.Fatalf("messages after duplicate = %d, want 1", info.State.Msgs)
 	}
-	if err := publishMalformedObservation(ctx, config, simulatorTestEntityID); err != nil {
-		t.Fatal(err)
+	if publishErr := publishMalformedObservation(ctx, config, simulatorTestEntityID); publishErr != nil {
+		t.Fatal(publishErr)
 	}
 	info, err = stream.Info(ctx)
 	if err != nil {

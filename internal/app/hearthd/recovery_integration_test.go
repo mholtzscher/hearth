@@ -16,7 +16,7 @@ import (
 	platformdb "github.com/mholtzscher/hearth/internal/platform/db"
 )
 
-//nolint:govet,gocognit // The recovery lifecycle is clearer as one end-to-end integration test.
+//nolint:gocognit // The recovery lifecycle is clearer as one end-to-end integration test.
 func TestCoreStartupInterruptsActiveCommandsWithoutRedispatch(t *testing.T) {
 	t.Parallel()
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
@@ -26,8 +26,8 @@ func TestCoreStartupInterruptsActiveCommandsWithoutRedispatch(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := platformdb.Migrate(ctx, database); err != nil {
-		t.Fatal(err)
+	if migrateErr := platformdb.Migrate(ctx, database); migrateErr != nil {
+		t.Fatal(migrateErr)
 	}
 	catalog, err := devices.NewBuiltinTypeCatalog()
 	if err != nil {
@@ -49,17 +49,21 @@ func TestCoreStartupInterruptsActiveCommandsWithoutRedispatch(t *testing.T) {
 	}
 	requested := recoveryCommandRecord(t, binding.Entities[0].EntityID, time.Now().UTC())
 	accepted := recoveryCommandRecord(t, binding.Entities[0].EntityID, requested.RequestedAt.Add(time.Second))
-	if _, err := repository.CreateCommand(ctx, requested); err != nil {
-		t.Fatal(err)
+	if _, createErr := repository.CreateCommand(ctx, requested); createErr != nil {
+		t.Fatal(createErr)
 	}
-	if _, err := repository.CreateCommand(ctx, accepted); err != nil {
-		t.Fatal(err)
+	if _, createErr := repository.CreateCommand(ctx, accepted); createErr != nil {
+		t.Fatal(createErr)
 	}
-	if err := repository.MarkCommandAccepted(ctx, accepted.ID, accepted.RequestedAt.Add(time.Millisecond)); err != nil {
-		t.Fatal(err)
+	if acceptErr := repository.MarkCommandAccepted(
+		ctx,
+		accepted.ID,
+		accepted.RequestedAt.Add(time.Millisecond),
+	); acceptErr != nil {
+		t.Fatal(acceptErr)
 	}
-	if err := database.Close(); err != nil {
-		t.Fatal(err)
+	if closeErr := database.Close(); closeErr != nil {
+		t.Fatal(closeErr)
 	}
 
 	server, err := natsserver.NewServer(&natsserver.Options{
@@ -89,8 +93,8 @@ func TestCoreStartupInterruptsActiveCommandsWithoutRedispatch(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = subscription.Drain() })
-	if err := observer.Flush(); err != nil {
-		t.Fatal(err)
+	if flushErr := observer.Flush(); flushErr != nil {
+		t.Fatal(flushErr)
 	}
 
 	httpAddress := unusedLoopbackAddress(t)
@@ -110,19 +114,19 @@ func TestCoreStartupInterruptsActiveCommandsWithoutRedispatch(t *testing.T) {
 	t.Cleanup(func() { _ = observerDatabase.Close() })
 	waitForMatrixCondition(t, 5*time.Second, func() (bool, error) {
 		select {
-		case err := <-runErrors:
-			if err != nil {
-				return false, err
+		case runErr := <-runErrors:
+			if runErr != nil {
+				return false, runErr
 			}
 			return false, context.Canceled
 		default:
 		}
 		var interrupted, restarted int
-		err := observerDatabase.QueryRowContext(ctx, `
+		queryErr := observerDatabase.QueryRowContext(ctx, `
 			SELECT count(*), coalesce(sum(CASE WHEN failure_code = 'core_restarted' THEN 1 ELSE 0 END), 0)
 			FROM commands WHERE status = 'interrupted'`,
 		).Scan(&interrupted, &restarted)
-		return interrupted == 2 && restarted == 2, err
+		return interrupted == 2 && restarted == 2, queryErr
 	})
 	time.Sleep(100 * time.Millisecond)
 	if got := dispatches.Load(); got != 0 {
@@ -131,9 +135,9 @@ func TestCoreStartupInterruptsActiveCommandsWithoutRedispatch(t *testing.T) {
 
 	stopCore()
 	select {
-	case err := <-runErrors:
-		if err != nil {
-			t.Fatal(err)
+	case runErr := <-runErrors:
+		if runErr != nil {
+			t.Fatal(runErr)
 		}
 	case <-time.After(5 * time.Second):
 		t.Fatal("hearthd did not stop")

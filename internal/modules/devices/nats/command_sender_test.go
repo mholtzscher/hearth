@@ -16,7 +16,6 @@ const (
 	commandClientCorrelationID = "cor_01890f47-7a6b-7c4d-8e9f-0123456789ab"
 )
 
-//nolint:govet // Sequential request assertions intentionally reuse short error variables.
 func TestCommandSenderDispatchesValidatedCorrelatedRequests(t *testing.T) {
 	t.Parallel()
 	server, connection, _ := startJetStream(t)
@@ -67,9 +66,9 @@ func TestCommandSenderDispatchesValidatedCorrelatedRequests(t *testing.T) {
 	}
 	cancel()
 	select {
-	case err := <-serveErrors:
-		if !errors.Is(err, context.Canceled) {
-			t.Fatalf("serve error = %v", err)
+	case serveErr := <-serveErrors:
+		if !errors.Is(serveErr, context.Canceled) {
+			t.Fatalf("serve error = %v", serveErr)
 		}
 	case <-time.After(time.Second):
 		t.Fatal("ServeCommands did not stop")

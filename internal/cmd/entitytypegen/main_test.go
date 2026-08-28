@@ -347,7 +347,6 @@ func TestRenderedCodecsEmbedExactManifestPaths(t *testing.T) {
 	}
 }
 
-//nolint:govet // The end-to-end generation scenario intentionally reuses short error variables.
 func TestRootGenerationAddsATypeWithoutPerTypeGo(t *testing.T) {
 	t.Parallel()
 	root := t.TempDir()
@@ -456,8 +455,8 @@ func TestRootGenerationAddsATypeWithoutPerTypeGo(t *testing.T) {
 	if !strings.Contains(string(catalog), "newSwitchV1TypeDefinition") {
 		t.Fatalf("generated catalog does not contain switch/v1:\n%s", catalog)
 	}
-	if err := generateRoot(root, true); err != nil {
-		t.Fatal(err)
+	if checkErr := generateRoot(root, true); checkErr != nil {
+		t.Fatal(checkErr)
 	}
 	orphan := filepath.Join(directory, "zz_generated_old.go")
 	if writeErr := os.WriteFile(
@@ -467,14 +466,14 @@ func TestRootGenerationAddsATypeWithoutPerTypeGo(t *testing.T) {
 	); writeErr != nil {
 		t.Fatal(writeErr)
 	}
-	if err := generateRoot(root, true); err == nil || !strings.Contains(err.Error(), "orphaned") {
-		t.Fatalf("orphan check error = %v", err)
+	if checkErr := generateRoot(root, true); checkErr == nil || !strings.Contains(checkErr.Error(), "orphaned") {
+		t.Fatalf("orphan check error = %v", checkErr)
 	}
-	if err := generateRoot(root, false); err != nil {
-		t.Fatal(err)
+	if removeErr := generateRoot(root, false); removeErr != nil {
+		t.Fatal(removeErr)
 	}
-	if _, err := os.Stat(orphan); !os.IsNotExist(err) {
-		t.Fatalf("orphan still exists: %v", err)
+	if _, statErr := os.Stat(orphan); !os.IsNotExist(statErr) {
+		t.Fatalf("orphan still exists: %v", statErr)
 	}
 }
 

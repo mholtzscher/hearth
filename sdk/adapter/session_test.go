@@ -46,7 +46,6 @@ func TestConnectRetriesWhenNATSStartsLater(t *testing.T) {
 	waitForConnectionStatus(t, session.connection, natsgo.CONNECTED)
 }
 
-//nolint:govet // The request-response matrix intentionally reuses short error variables.
 func TestRegisterAcceptedRejectedAndLocalValidation(t *testing.T) {
 	t.Parallel()
 	server := startServer(t, -1, t.TempDir())
@@ -100,8 +99,8 @@ func TestRegisterAcceptedRejectedAndLocalValidation(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := core.Flush(); err != nil {
-		t.Fatal(err)
+	if flushErr := core.Flush(); flushErr != nil {
+		t.Fatal(flushErr)
 	}
 
 	session := connectSession(t, server.ClientURL())
@@ -152,7 +151,6 @@ func TestRegisterNoResponderRemainsRequestError(t *testing.T) {
 	}
 }
 
-//nolint:govet // The request-response matrix intentionally reuses short error variables.
 func TestSetEntityEnabledRoundTripsAcceptedAndTypedRejectedResponses(t *testing.T) {
 	t.Parallel()
 	server := startServer(t, -1, t.TempDir())
@@ -202,8 +200,8 @@ func TestSetEntityEnabledRoundTripsAcceptedAndTypedRejectedResponses(t *testing.
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := core.Flush(); err != nil {
-		t.Fatal(err)
+	if flushErr := core.Flush(); flushErr != nil {
+		t.Fatal(flushErr)
 	}
 
 	session := connectSession(t, server.ClientURL())
@@ -216,11 +214,11 @@ func TestSetEntityEnabledRoundTripsAcceptedAndTypedRejectedResponses(t *testing.
 	if !errors.As(err, &rejected) || rejected.Code != EntityEnablementWrongAdapter {
 		t.Fatalf("rejection = %#v, error = %v", rejected, err)
 	}
-	if _, err := session.SetEntityEnabled(testContext(t), "not-an-entity", false); err == nil {
+	if _, validationErr := session.SetEntityEnabled(testContext(t), "not-an-entity", false); validationErr == nil {
 		t.Fatal("invalid local Entity ID unexpectedly accepted")
 	} else {
-		if _, ok := errors.AsType[*ValidationError](err); !ok {
-			t.Fatalf("local validation error = %v", err)
+		if _, ok := errors.AsType[*ValidationError](validationErr); !ok {
+			t.Fatalf("local validation error = %v", validationErr)
 		}
 	}
 	if requests.Load() != 2 {
@@ -461,7 +459,6 @@ func TestCommandHandlerUsesTransmittedDeadline(t *testing.T) {
 	}
 }
 
-//nolint:govet // Sequential request assertions intentionally reuse short error variables.
 func TestCommandRejectionUsesUpstreamRejectedCode(t *testing.T) {
 	t.Parallel()
 	server := startServer(t, -1, t.TempDir())
@@ -496,8 +493,8 @@ func TestCommandRejectionUsesUpstreamRejectedCode(t *testing.T) {
 	}
 
 	cancelServe()
-	if err := <-serveDone; !errors.Is(err, context.Canceled) {
-		t.Fatalf("ServeCommands error = %v", err)
+	if serveErr := <-serveDone; !errors.Is(serveErr, context.Canceled) {
+		t.Fatalf("ServeCommands error = %v", serveErr)
 	}
 }
 
@@ -526,7 +523,6 @@ func TestCommandPublishFailureDoesNotConsumeResponder(t *testing.T) {
 	}
 }
 
-//nolint:govet // Sequential request assertions intentionally reuse short error variables.
 func TestLinkedObservationReusesCommandCausality(t *testing.T) {
 	t.Parallel()
 	server := startServer(t, -1, t.TempDir())
@@ -555,8 +551,8 @@ func TestLinkedObservationReusesCommandCausality(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := <-published; err != nil {
-		t.Fatal(err)
+	if publishErr := <-published; publishErr != nil {
+		t.Fatal(publishErr)
 	}
 	validator := compileValidator(t)
 	response, err := natswire.Decode[CommandResponse](validator, contractsv1.CommandResponseSchemaID, reply.Data)

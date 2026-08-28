@@ -22,7 +22,7 @@ import (
 	sdkpowerv1 "github.com/mholtzscher/hearth/sdk/adapter/powerv1"
 )
 
-//nolint:govet,gocognit,gocyclo,cyclop // The durable transport lifecycle is clearer as one integration test.
+//nolint:gocognit,gocyclo,cyclop // The durable transport lifecycle is clearer as one integration test.
 func TestCoreNATSTransportRegistersAndProjectsDurableObservation(t *testing.T) {
 	t.Parallel()
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
@@ -34,8 +34,8 @@ func TestCoreNATSTransportRegistersAndProjectsDurableObservation(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = database.Close() })
-	if err := platformdb.Migrate(ctx, database); err != nil {
-		t.Fatal(err)
+	if migrateErr := platformdb.Migrate(ctx, database); migrateErr != nil {
+		t.Fatal(migrateErr)
 	}
 	catalog, err := devices.NewBuiltinTypeCatalog()
 	if err != nil {
@@ -135,8 +135,8 @@ func TestCoreNATSTransportRegistersAndProjectsDurableObservation(t *testing.T) {
 	if projected.ObservationID != devices.ObservationID(observationID) || string(projected.Value) != "true" {
 		t.Fatalf("projected state = %#v", projected)
 	}
-	if err := NewRuntimeReadiness(database, coreConnection, js, observations).Check(ctx); err != nil {
-		t.Fatal(err)
+	if readinessErr := NewRuntimeReadiness(database, coreConnection, js, observations).Check(ctx); readinessErr != nil {
+		t.Fatal(readinessErr)
 	}
 	for time.Now().Before(deadline) {
 		info, infoErr := durable.Info(ctx)
@@ -162,8 +162,8 @@ func TestCoreNATSTransportRegistersAndProjectsDurableObservation(t *testing.T) {
 	case <-time.After(time.Second):
 		t.Fatal("observation consumer did not stop")
 	}
-	if err := database.Close(); err != nil {
-		t.Fatal(err)
+	if closeErr := database.Close(); closeErr != nil {
+		t.Fatal(closeErr)
 	}
 	database, err = platformdb.Open(ctx, databasePath)
 	if err != nil {
@@ -194,15 +194,18 @@ func TestCoreNATSTransportRegistersAndProjectsDurableObservation(t *testing.T) {
 		t.Fatalf("recovered redelivery = %#v", result)
 	}
 	var receipts int
-	if err := database.QueryRowContext(ctx, "SELECT count(*) FROM observation_receipts").Scan(&receipts); err != nil {
-		t.Fatal(err)
+	if queryErr := database.QueryRowContext(
+		ctx,
+		"SELECT count(*) FROM observation_receipts",
+	).Scan(&receipts); queryErr != nil {
+		t.Fatal(queryErr)
 	}
 	if receipts != 1 {
 		t.Fatalf("receipt count after recovered redelivery = %d", receipts)
 	}
 }
 
-//nolint:govet,gocognit,gocyclo,cyclop // The command lifecycle is clearer as one integration test.
+//nolint:gocognit,gocyclo,cyclop // The command lifecycle is clearer as one integration test.
 func TestCoreCommandRoundTripRequiresLinkedSimulatorObservation(t *testing.T) {
 	t.Parallel()
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
@@ -213,8 +216,8 @@ func TestCoreCommandRoundTripRequiresLinkedSimulatorObservation(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = database.Close() })
-	if err := platformdb.Migrate(ctx, database); err != nil {
-		t.Fatal(err)
+	if migrateErr := platformdb.Migrate(ctx, database); migrateErr != nil {
+		t.Fatal(migrateErr)
 	}
 	catalog, err := devices.NewBuiltinTypeCatalog()
 	if err != nil {
@@ -301,19 +304,19 @@ func TestCoreCommandRoundTripRequiresLinkedSimulatorObservation(t *testing.T) {
 	}
 	handler, err := sdkpowerv1.NewCommandHandler(string(entityID), support, sdkpowerv1.Handlers{
 		Set: func(commandContext context.Context, command sdkpowerv1.SetCommand, responder adapter.Responder) error {
-			if err := responder.Accept(); err != nil {
-				return err
+			if acceptErr := responder.Accept(); acceptErr != nil {
+				return acceptErr
 			}
 			commandID := command.ID
-			observation, err := sdkpowerv1.NewObservation(sdkpowerv1.ObservationInput{
+			observation, observationErr := sdkpowerv1.NewObservation(sdkpowerv1.ObservationInput{
 				EntityID: string(entityID), Support: support, State: contractpowerv1.State(command.Parameters.Value),
 				AdapterReceivedAt: time.Now().UTC(), RefreshForCommand: &commandID,
 			})
-			if err != nil {
-				return err
+			if observationErr != nil {
+				return observationErr
 			}
-			_, err = session.PublishObservation(commandContext, observation)
-			return err
+			_, publishErr := session.PublishObservation(commandContext, observation)
+			return publishErr
 		},
 	})
 	if err != nil {
@@ -361,9 +364,9 @@ func TestCoreCommandRoundTripRequiresLinkedSimulatorObservation(t *testing.T) {
 	}
 	stopServing()
 	select {
-	case err := <-serveErrors:
-		if !errors.Is(err, context.Canceled) {
-			t.Fatalf("serve commands: %v", err)
+	case serveErr := <-serveErrors:
+		if !errors.Is(serveErr, context.Canceled) {
+			t.Fatalf("serve commands: %v", serveErr)
 		}
 	case <-time.After(time.Second):
 		t.Fatal("simulator command server did not stop")

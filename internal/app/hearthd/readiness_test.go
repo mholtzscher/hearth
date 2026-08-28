@@ -17,7 +17,6 @@ import (
 	platformdb "github.com/mholtzscher/hearth/internal/platform/db"
 )
 
-//nolint:govet // Independent readiness scenarios intentionally reuse short error variables.
 func TestRuntimeReadinessChecksEveryRequiredDependency(t *testing.T) {
 	t.Parallel()
 	t.Run("ready", func(t *testing.T) {
@@ -58,10 +57,10 @@ func TestRuntimeReadinessChecksEveryRequiredDependency(t *testing.T) {
 		}
 		config := info.Config
 		config.MaxBytes = 42
-		if _, err := fixture.jetstream.UpdateStream(context.Background(), config); err != nil {
-			t.Fatal(err)
+		if _, updateErr := fixture.jetstream.UpdateStream(context.Background(), config); updateErr != nil {
+			t.Fatal(updateErr)
 		}
-		if err := fixture.readiness.Check(context.Background()); err == nil {
+		if checkErr := fixture.readiness.Check(context.Background()); checkErr == nil {
 			t.Fatal("readiness passed with mismatched stream")
 		}
 	})

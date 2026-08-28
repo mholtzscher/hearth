@@ -11,7 +11,6 @@ import (
 	sdkadapter "github.com/mholtzscher/hearth/sdk/adapter"
 )
 
-//nolint:govet // The cross-binary fixture matrix intentionally reuses short error variables.
 func TestCrossBinaryFixtures(t *testing.T) {
 	t.Parallel()
 	validator, err := contractsv1.Compile()
@@ -111,8 +110,8 @@ func TestCrossBinaryFixtures(t *testing.T) {
 		t.Run(fixture.name, func(t *testing.T) {
 			t.Parallel()
 			payload := []byte(fixture.payload)
-			if err := validator.Validate(fixture.schemaID, payload); err != nil {
-				t.Fatal(err)
+			if validationErr := validator.Validate(fixture.schemaID, payload); validationErr != nil {
+				t.Fatal(validationErr)
 			}
 			lowerPayload := strings.ToLower(fixture.payload)
 			for _, forbidden := range []string{"light.turn_on", "light.turn_off", "call_service", "home_assistant"} {
@@ -124,8 +123,8 @@ func TestCrossBinaryFixtures(t *testing.T) {
 			var envelope struct {
 				Data json.RawMessage `json:"data"`
 			}
-			if err := json.Unmarshal(payload, &envelope); err != nil {
-				t.Fatal(err)
+			if decodeErr := json.Unmarshal(payload, &envelope); decodeErr != nil {
+				t.Fatal(decodeErr)
 			}
 			assertDataRoundTrip(t, envelope.Data, fixture.sdkData)
 			assertDataRoundTrip(t, envelope.Data, fixture.coreData)

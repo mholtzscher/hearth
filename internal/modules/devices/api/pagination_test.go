@@ -8,7 +8,6 @@ import (
 	"github.com/mholtzscher/hearth/internal/modules/devices"
 )
 
-//nolint:govet // The codec matrix intentionally reuses short error variables.
 func TestCursorCodecsRoundTripAndEnforceScope(t *testing.T) {
 	t.Parallel()
 	deviceCursor, err := encodeDevicesCursor(apiDeviceID)
@@ -29,7 +28,7 @@ func TestCursorCodecsRoundTripAndEnforceScope(t *testing.T) {
 	if err != nil || *entityID != apiEntityID {
 		t.Fatalf("entity cursor = %q, %v", entityCursor, err)
 	}
-	if _, err := decodeEntitiesCursor(entityCursor, nil); err == nil {
+	if _, decodeErr := decodeEntitiesCursor(entityCursor, nil); decodeErr == nil {
 		t.Fatal("filtered entity cursor accepted without its filter")
 	}
 
@@ -41,11 +40,11 @@ func TestCursorCodecsRoundTripAndEnforceScope(t *testing.T) {
 	if err != nil || *entityID != apiEntityID {
 		t.Fatalf("device entity cursor = %q, %v", deviceEntityCursor, err)
 	}
-	if _, err := decodeEntitiesCursor(deviceEntityCursor, &deviceFilter); err == nil {
+	if _, decodeErr := decodeEntitiesCursor(deviceEntityCursor, &deviceFilter); decodeErr == nil {
 		t.Fatal("device-detail cursor accepted by the Entity-list endpoint")
 	}
 	otherDevice := devices.DeviceID("dev_01890f47-7a6b-7c4d-8e9f-0123456789ac")
-	if _, err := decodeDeviceEntitiesCursor(deviceEntityCursor, otherDevice); err == nil {
+	if _, decodeErr := decodeDeviceEntitiesCursor(deviceEntityCursor, otherDevice); decodeErr == nil {
 		t.Fatal("device entity cursor accepted for another Device")
 	}
 
@@ -61,7 +60,7 @@ func TestCursorCodecsRoundTripAndEnforceScope(t *testing.T) {
 		t.Fatalf("command cursor = %q, %v", commandCursor, err)
 	}
 	otherEntity := devices.EntityID("ent_01890f47-7a6b-7c4d-8e9f-0123456789ac")
-	if _, _, err := decodeCommandCursor(commandCursor, otherEntity); err == nil {
+	if _, _, decodeErr := decodeCommandCursor(commandCursor, otherEntity); decodeErr == nil {
 		t.Fatal("command cursor accepted for another Entity")
 	}
 }

@@ -45,7 +45,7 @@ type projectedObservation struct {
 	observedAt  time.Time
 }
 
-//nolint:govet,gocognit,gocyclo,cyclop // The acknowledgement failure matrix is clearer as one consumer test.
+//nolint:gocognit,gocyclo,cyclop // The acknowledgement failure matrix is clearer as one consumer test.
 func TestObservationConsumerMapsProjectsAndAcknowledgesByFailureClass(t *testing.T) {
 	t.Parallel()
 	_, connection, js := startJetStream(t)
@@ -105,8 +105,8 @@ func TestObservationConsumerMapsProjectsAndAcknowledgesByFailureClass(t *testing
 		Header:  natsgo.Header{natsgo.MsgIdHdr: []string{testSecondObservationID}},
 		Data:    []byte(`{}`),
 	}
-	if _, err := js.PublishMsg(context.Background(), message); err != nil {
-		t.Fatal(err)
+	if _, publishErr := js.PublishMsg(context.Background(), message); publishErr != nil {
+		t.Fatal(publishErr)
 	}
 	waitForConsumer(t, consumer, func(info *jetstream.ConsumerInfo) bool {
 		return info.AckFloor.Consumer >= 2 && info.NumAckPending == 0
