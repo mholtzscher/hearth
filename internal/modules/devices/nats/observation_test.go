@@ -45,7 +45,7 @@ type projectedObservation struct {
 	observedAt  time.Time
 }
 
-//nolint:govet,gocognit,gocyclo // The acknowledgement failure matrix is clearer as one consumer test.
+//nolint:govet,gocognit,gocyclo,cyclop // The acknowledgement failure matrix is clearer as one consumer test.
 func TestObservationConsumerMapsProjectsAndAcknowledgesByFailureClass(t *testing.T) {
 	t.Parallel()
 	_, connection, js := startJetStream(t)

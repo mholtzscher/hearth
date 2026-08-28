@@ -174,7 +174,7 @@ func generateRoot(root string, check bool) error {
 	return applyOutputs(absoluteRoot, outputs, check)
 }
 
-//nolint:gocognit,gocyclo // Model loading validates the manifest in document order in one linear pass.
+//nolint:gocognit,gocyclo,cyclop,funlen // Model loading validates the manifest in document order in one linear pass.
 func loadModel(path string) (entityTypeModel, error) {
 	directory := filepath.Dir(path)
 	moduleRoot, moduleRootErr := findModuleRoot(directory)
