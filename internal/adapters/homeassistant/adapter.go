@@ -20,6 +20,7 @@ const (
 	reconnectMinimum = 250 * time.Millisecond
 	reconnectMaximum = 5 * time.Second
 	stateOff         = "off"
+	jitterDivisor    = 2
 )
 
 type ObservationPublisher interface {
@@ -400,7 +401,7 @@ func (homeAssistant *Adapter) currentClient() *client {
 }
 
 func jitter(delay time.Duration) time.Duration {
-	half := delay / 2
+	half := delay / jitterDivisor
 	if half <= 0 {
 		return delay
 	}

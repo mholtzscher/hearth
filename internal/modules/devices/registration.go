@@ -8,6 +8,13 @@ import (
 	"unicode/utf8"
 )
 
+const (
+	minimumDescriptorLength = 1
+	maximumNameLength       = 128
+	maximumExternalIDLength = 256
+	maximumTypeIDLength     = 128
+)
+
 var registrationSlugPattern = regexp.MustCompile(`^[a-z0-9][a-z0-9_-]{0,62}$`)
 
 type Registration struct {
@@ -118,10 +125,10 @@ func (service *Service) normalizeRegistration(adapterID string, registration Reg
 	if normalized.Device.Kind != DeviceKindLight {
 		return Registration{}, errors.New("device kind must be light")
 	}
-	if !validLength(normalized.Device.Name, 1, 128) {
+	if !validLength(normalized.Device.Name, minimumDescriptorLength, maximumNameLength) {
 		return Registration{}, errors.New("device name must contain 1 to 128 characters")
 	}
-	if normalized.Device.ExternalID != nil && !validLength(*normalized.Device.ExternalID, 1, 256) {
+	if normalized.Device.ExternalID != nil && !validLength(*normalized.Device.ExternalID, minimumDescriptorLength, maximumExternalIDLength) {
 		return Registration{}, errors.New("device external ID must contain 1 to 256 characters")
 	}
 	if len(normalized.Entities) < 1 || len(normalized.Entities) > 64 {
@@ -137,17 +144,17 @@ func (service *Service) normalizeRegistration(adapterID string, registration Reg
 			return Registration{}, errors.New("entity keys must be unique within a registration")
 		}
 		keys[entity.Key] = struct{}{}
-		if !validLength(entity.ExternalID, 1, 256) {
+		if !validLength(entity.ExternalID, minimumDescriptorLength, maximumExternalIDLength) {
 			return Registration{}, errors.New("entity external ID must contain 1 to 256 characters")
 		}
 		if _, exists := externalIDs[entity.ExternalID]; exists {
 			return Registration{}, errors.New("entity external IDs must be unique within a registration")
 		}
 		externalIDs[entity.ExternalID] = struct{}{}
-		if !validLength(entity.Name, 1, 128) {
+		if !validLength(entity.Name, minimumDescriptorLength, maximumNameLength) {
 			return Registration{}, errors.New("entity name must contain 1 to 128 characters")
 		}
-		if !validLength(string(entity.TypeID), 1, 128) {
+		if !validLength(string(entity.TypeID), minimumDescriptorLength, maximumTypeIDLength) {
 			return Registration{}, errors.New("entity type must contain 1 to 128 characters")
 		}
 		support, err := service.catalog.NormalizeSupport(entity.TypeID, entity.Support)

@@ -14,6 +14,8 @@ import (
 )
 
 const (
+	futureObservationOffset = 2 * time.Minute
+
 	ScenarioHappy               = "happy"
 	ScenarioUnavailableAdapter  = "unavailable-adapter"
 	ScenarioUpstreamRejection   = "upstream-rejection"
@@ -82,7 +84,7 @@ func (simulator *Adapter) PublishInitial(ctx context.Context, entityID string) e
 		value := now.Add(-24 * time.Hour)
 		sourceUpdatedAt = &value
 	case ScenarioFutureClockSkew:
-		adapterReceivedAt = now.Add(2 * time.Minute)
+		adapterReceivedAt = now.Add(futureObservationOffset)
 	}
 	simulator.mutex.Lock()
 	state := simulator.state

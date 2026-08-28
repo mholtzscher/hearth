@@ -23,6 +23,10 @@ const (
 	referenceRootParameters = "parameters"
 	referenceRootState      = "state"
 	referenceRootSupport    = "support"
+
+	int64MagnitudeBits       = 63
+	builtinSchemaCount       = 2
+	maximumOperationDeadline = 9_223_372_036_854
 )
 
 type ruleModel struct {

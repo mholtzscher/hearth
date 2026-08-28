@@ -19,6 +19,8 @@ const (
 	registrationRetryMinimum = 100 * time.Millisecond
 	registrationRetryMaximum = 2 * time.Second
 	powerEntityKey           = "power"
+	concurrentComponents     = 2
+	jitterDivisor            = 2
 )
 
 func Run(ctx context.Context, config Config, logger *slog.Logger) error {
@@ -89,7 +91,7 @@ func Run(ctx context.Context, config Config, logger *slog.Logger) error {
 
 	runContext, cancel := context.WithCancel(ctx)
 	defer cancel()
-	results := make(chan error, 2)
+	results := make(chan error, concurrentComponents)
 	go func() { results <- migrationAdapter.Run(runContext) }()
 	go func() { results <- session.ServeCommands(runContext, handler) }()
 
@@ -150,7 +152,7 @@ func entityIDForKey(binding adapter.Binding, key string) (string, error) {
 }
 
 func registrationJitter(delay time.Duration) time.Duration {
-	half := delay / 2
+	half := delay / jitterDivisor
 	if half <= 0 {
 		return delay
 	}

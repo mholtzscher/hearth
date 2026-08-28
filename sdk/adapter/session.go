@@ -17,8 +17,11 @@ import (
 )
 
 const (
-	statusAccepted = "accepted"
-	statusRejected = "rejected"
+	statusAccepted        = "accepted"
+	statusRejected        = "rejected"
+	natsReconnectWait     = 250 * time.Millisecond
+	requestRetryWait      = 100 * time.Millisecond
+	jetStreamFlushTimeout = 5 * time.Second
 )
 
 type Session struct {
@@ -65,7 +68,7 @@ func Connect(ctx context.Context, config Config) (*Session, error) {
 	options := []natsgo.Option{
 		natsgo.Name("hearth-adapter-" + config.AdapterID),
 		natsgo.MaxReconnects(-1),
-		natsgo.ReconnectWait(250 * time.Millisecond),
+		natsgo.ReconnectWait(natsReconnectWait),
 		natsgo.RetryOnFailedConnect(true),
 	}
 	if deadline, ok := ctx.Deadline(); ok {
@@ -252,7 +255,7 @@ func (session *Session) PublishObservation(ctx context.Context, observation Obse
 		if !isTransientPublishError(err) {
 			return observationID, err
 		}
-		timer := time.NewTimer(100 * time.Millisecond)
+		timer := time.NewTimer(requestRetryWait)
 		select {
 		case <-ctx.Done():
 			timer.Stop()
@@ -280,7 +283,7 @@ func (session *Session) ServeCommands(ctx context.Context, handler CommandHandle
 	if err != nil {
 		return fmt.Errorf("subscribe to commands: %w", err)
 	}
-	flushContext, cancelFlush := context.WithTimeout(ctx, 5*time.Second)
+	flushContext, cancelFlush := context.WithTimeout(ctx, jetStreamFlushTimeout)
 	err = session.connection.FlushWithContext(flushContext)
 	cancelFlush()
 	if err != nil {

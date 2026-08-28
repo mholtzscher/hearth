@@ -21,6 +21,7 @@ const (
 	receiptPruneInterval  = time.Hour
 	shutdownTimeout       = 5 * time.Second
 	httpReadHeaderTimeout = 5 * time.Second
+	natsReconnectWait     = 250 * time.Millisecond
 )
 
 //nolint:gocognit // Startup and shutdown remain linear so resource ownership is visible in one place.
@@ -137,7 +138,7 @@ func connectCoreNATS(ctx context.Context, url string) (*natsgo.Conn, error) {
 	options := []natsgo.Option{
 		natsgo.Name("hearthd"),
 		natsgo.MaxReconnects(-1),
-		natsgo.ReconnectWait(250 * time.Millisecond),
+		natsgo.ReconnectWait(natsReconnectWait),
 	}
 	if deadline, ok := ctx.Deadline(); ok {
 		remaining := time.Until(deadline)

@@ -281,7 +281,7 @@ func loadModel(path string) (entityTypeModel, error) {
 		if operation.DeadlineMS <= 0 {
 			return entityTypeModel{}, fmt.Errorf("operation %q deadline_ms must be positive", name)
 		}
-		if operation.DeadlineMS > 9_223_372_036_854 {
+		if operation.DeadlineMS > maximumOperationDeadline {
 			return entityTypeModel{}, fmt.Errorf("operation %q deadline_ms overflows time.Duration", name)
 		}
 		if operation.SatisfiedWhen == nil {
@@ -415,7 +415,7 @@ func requireInt64Bindings(schema schemaNode) error {
 		if !ok {
 			return fmt.Errorf("invalid integer maximum %q", schema.Maximum)
 		}
-		minimumInt64 := new(big.Rat).SetInt64(-1 << 63)
+		minimumInt64 := new(big.Rat).SetInt64(-1 << int64MagnitudeBits)
 		maximumInt64 := new(big.Rat).SetInt64(1<<63 - 1)
 		if minimum.Cmp(minimumInt64) < 0 || maximum.Cmp(maximumInt64) > 0 {
 			return errors.New("integer schema minimum and maximum must fit int64")
@@ -437,7 +437,7 @@ func requireInt64Bindings(schema schemaNode) error {
 }
 
 func requireUniqueSchemaIDs(state, support schemaNode, operations []operationModel) error {
-	seen := make(map[string]string, len(operations)+2)
+	seen := make(map[string]string, len(operations)+builtinSchemaCount)
 	add := func(id, location string) error {
 		if previous, duplicate := seen[id]; duplicate {
 			return fmt.Errorf("duplicate schema ID %q in %s and %s", id, previous, location)

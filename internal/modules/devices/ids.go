@@ -7,6 +7,8 @@ import (
 	"github.com/google/uuid"
 )
 
+const canonicalUUIDVersion = 7
+
 func NewDeviceID() (DeviceID, error) {
 	id, err := newID("dev")
 	return DeviceID(id), err
@@ -87,7 +89,7 @@ func validateID(value, prefix string) error {
 	if parsed.String() != text {
 		return fmt.Errorf("invalid %s ID: UUID must be canonical lowercase", prefix)
 	}
-	if parsed.Version() != 7 {
+	if parsed.Version() != canonicalUUIDVersion {
 		return fmt.Errorf("invalid %s ID: UUID must be version 7", prefix)
 	}
 	if parsed.Variant() != uuid.RFC4122 {
