@@ -82,46 +82,67 @@ func Connect(ctx context.Context, config Config) (*Session, error) {
 	}, nil
 }
 
-// Register performs one schema-validated Core NATS request/reply attempt.
-func (session *Session) Register(ctx context.Context, registration Registration) (Binding, error) {
-	requestID, err := newID("reg")
+// requestReply performs one schema-validated Core NATS request/reply exchange:
+// it envelopes and encodes data, sends it to subject, decodes the reply, and
+// verifies causation and correlation IDs. Rejection handling and response
+// identity checks remain with the caller.
+func requestReply[Req, Resp any](
+	ctx context.Context,
+	session *Session,
+	prefix, requestSchema, responseSchema, kind, subject string,
+	data Req,
+) (natswire.Envelope[Resp], error) {
+	requestID, err := newID(prefix)
 	if err != nil {
-		return Binding{}, err
+		return natswire.Envelope[Resp]{}, err
 	}
 	correlationID, err := newID("cor")
 	if err != nil {
-		return Binding{}, err
+		return natswire.Envelope[Resp]{}, err
 	}
-	request := natswire.Envelope[Registration]{
+	envelope := natswire.Envelope[Req]{
 		ID:            requestID,
-		Schema:        contractsv1.RegistrationRequestSchemaID,
+		Schema:        requestSchema,
 		EmittedAt:     nowString(),
 		CorrelationID: correlationID,
-		Data:          registration,
+		Data:          data,
 	}
-	payload, err := natswire.Encode(session.validator, contractsv1.RegistrationRequestSchemaID, request)
+	payload, err := natswire.Encode(session.validator, requestSchema, envelope)
 	if err != nil {
-		return Binding{}, &ValidationError{Err: err}
-	}
-	subject, err := natswire.RegistrationSubject(session.adapterID)
-	if err != nil {
-		return Binding{}, &ValidationError{Err: err}
+		return natswire.Envelope[Resp]{}, &ValidationError{Err: err}
 	}
 	message := &natsgo.Msg{Subject: subject, Header: make(natsgo.Header), Data: payload}
 	natswire.InjectTrace(ctx, message.Header)
 	reply, err := session.connection.RequestMsgWithContext(ctx, message)
 	if err != nil {
-		return Binding{}, err
+		return natswire.Envelope[Resp]{}, err
 	}
-	response, err := natswire.Decode[RegistrationResponse](session.validator, contractsv1.RegistrationResponseSchemaID, reply.Data)
+	response, err := natswire.Decode[Resp](session.validator, responseSchema, reply.Data)
 	if err != nil {
-		return Binding{}, fmt.Errorf("invalid registration response: %w", err)
+		return natswire.Envelope[Resp]{}, fmt.Errorf("invalid %s response: %w", kind, err)
 	}
 	if response.CausationID == nil || *response.CausationID != requestID {
-		return Binding{}, errors.New("registration response causation ID does not match request")
+		return natswire.Envelope[Resp]{}, errors.New("response causation ID does not match request")
 	}
 	if response.CorrelationID != correlationID {
-		return Binding{}, errors.New("registration response correlation ID does not match request")
+		return natswire.Envelope[Resp]{}, errors.New("response correlation ID does not match request")
+	}
+	return response, nil
+}
+
+// Register performs one schema-validated Core NATS request/reply attempt.
+func (session *Session) Register(ctx context.Context, registration Registration) (Binding, error) {
+	subject, err := natswire.RegistrationSubject(session.adapterID)
+	if err != nil {
+		return Binding{}, &ValidationError{Err: err}
+	}
+	response, err := requestReply[Registration, RegistrationResponse](
+		ctx, session, "reg",
+		contractsv1.RegistrationRequestSchemaID, contractsv1.RegistrationResponseSchemaID,
+		"registration", subject, registration,
+	)
+	if err != nil {
+		return Binding{}, err
 	}
 	if response.Data.Status == "rejected" {
 		return Binding{}, &RegistrationRejectedError{
@@ -134,51 +155,24 @@ func (session *Session) Register(ctx context.Context, registration Registration)
 
 // SetEntityEnabled performs one schema-validated Core NATS request/reply attempt.
 func (session *Session) SetEntityEnabled(ctx context.Context, entityID string, enabled bool) (bool, error) {
-	requestID, err := newID("ena")
-	if err != nil {
-		return false, err
-	}
-	correlationID, err := newID("cor")
-	if err != nil {
-		return false, err
-	}
-	request := natswire.Envelope[EntityEnablementRequest]{
-		ID: requestID, Schema: contractsv1.EntityEnablementRequestSchemaID,
-		EmittedAt: nowString(), CorrelationID: correlationID,
-		Data: EntityEnablementRequest{EntityID: entityID, Enabled: enabled},
-	}
-	payload, err := natswire.Encode(session.validator, contractsv1.EntityEnablementRequestSchemaID, request)
-	if err != nil {
-		return false, &ValidationError{Err: err}
-	}
 	subject, err := natswire.EntityEnablementSubject(session.adapterID, entityID)
 	if err != nil {
 		return false, &ValidationError{Err: err}
 	}
 	route, err := natswire.ParseEntityEnablementSubject(subject)
-	if err != nil || route.AdapterID != session.adapterID || route.EntityID != request.Data.EntityID {
+	if err != nil || route.AdapterID != session.adapterID || route.EntityID != entityID {
 		if err == nil {
 			err = errors.New("entity enablement route does not match request")
 		}
 		return false, &ValidationError{Err: err}
 	}
-	message := &natsgo.Msg{Subject: subject, Header: make(natsgo.Header), Data: payload}
-	natswire.InjectTrace(ctx, message.Header)
-	reply, err := session.connection.RequestMsgWithContext(ctx, message)
-	if err != nil {
-		return false, err
-	}
-	response, err := natswire.Decode[EntityEnablementResponse](
-		session.validator, contractsv1.EntityEnablementResponseSchemaID, reply.Data,
+	response, err := requestReply[EntityEnablementRequest, EntityEnablementResponse](
+		ctx, session, "ena",
+		contractsv1.EntityEnablementRequestSchemaID, contractsv1.EntityEnablementResponseSchemaID,
+		"entity enablement", subject, EntityEnablementRequest{EntityID: entityID, Enabled: enabled},
 	)
 	if err != nil {
-		return false, fmt.Errorf("invalid entity enablement response: %w", err)
-	}
-	if response.CausationID == nil || *response.CausationID != requestID {
-		return false, errors.New("entity enablement response causation ID does not match request")
-	}
-	if response.CorrelationID != correlationID {
-		return false, errors.New("entity enablement response correlation ID does not match request")
+		return false, err
 	}
 	if response.Data.Status == "rejected" {
 		return false, &EntityEnablementRejectedError{
