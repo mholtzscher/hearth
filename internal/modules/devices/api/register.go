@@ -6,13 +6,19 @@ import (
 	"reflect"
 
 	"github.com/danielgtaylor/huma/v2"
+
 	"github.com/mholtzscher/hearth/internal/modules/devices"
 )
 
 type Devices interface {
 	GetEntity(context.Context, devices.EntityID) (devices.EntityWithState, error)
 	SetEntityEnabled(context.Context, devices.EntityID, bool) (devices.EntityWithState, error)
-	ExecuteCommand(context.Context, devices.EntityID, devices.OperationName, devices.CommandParameters) (devices.CommandResult, error)
+	ExecuteCommand(
+		context.Context,
+		devices.EntityID,
+		devices.OperationName,
+		devices.CommandParameters,
+	) (devices.CommandResult, error)
 	ListDevices(context.Context, devices.ListDevicesParams) (devices.Page[devices.Device], error)
 	GetDevice(context.Context, devices.GetDeviceParams) (devices.DeviceAggregate, error)
 	ListEntities(context.Context, devices.ListEntitiesParams) (devices.Page[devices.EntityWithState], error)

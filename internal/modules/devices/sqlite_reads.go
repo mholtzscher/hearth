@@ -56,7 +56,10 @@ func (repository *SQLiteRepository) GetDevice(ctx context.Context, params GetDev
 	}, nil
 }
 
-func (repository *SQLiteRepository) ListEntities(ctx context.Context, params ListEntitiesParams) (Page[EntityWithState], error) {
+func (repository *SQLiteRepository) ListEntities(
+	ctx context.Context,
+	params ListEntitiesParams,
+) (Page[EntityWithState], error) {
 	if !validPageLimit(params.Limit) {
 		return Page[EntityWithState]{}, ErrInvalidPage
 	}
@@ -106,7 +109,10 @@ func (repository *SQLiteRepository) ListEntities(ctx context.Context, params Lis
 	return pageFromExtra(items, params.Limit), nil
 }
 
-func (repository *SQLiteRepository) ListEntityCommands(ctx context.Context, params ListEntityCommandsParams) (Page[CommandRecord], error) {
+func (repository *SQLiteRepository) ListEntityCommands(
+	ctx context.Context,
+	params ListEntityCommandsParams,
+) (Page[CommandRecord], error) {
 	if !validPageLimit(params.Limit) || (params.BeforeRequestedAt == nil) != (params.BeforeID == nil) {
 		return Page[CommandRecord]{}, ErrInvalidPage
 	}

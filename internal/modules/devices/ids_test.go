@@ -12,11 +12,36 @@ func TestTypedIDsGenerateCanonicalUUIDv7(t *testing.T) {
 		newID  func() (string, error)
 		parse  func(string) error
 	}{
-		{"device", "dev_", func() (string, error) { value, err := NewDeviceID(); return string(value), err }, func(value string) error { _, err := ParseDeviceID(value); return err }},
-		{"entity", "ent_", func() (string, error) { value, err := NewEntityID(); return string(value), err }, func(value string) error { _, err := ParseEntityID(value); return err }},
-		{"observation", "obs_", func() (string, error) { value, err := NewObservationID(); return string(value), err }, func(value string) error { _, err := ParseObservationID(value); return err }},
-		{"command", "cmd_", func() (string, error) { value, err := NewCommandID(); return string(value), err }, func(value string) error { _, err := ParseCommandID(value); return err }},
-		{"correlation", "cor_", func() (string, error) { value, err := NewCorrelationID(); return string(value), err }, func(value string) error { _, err := ParseCorrelationID(value); return err }},
+		{
+			"device",
+			"dev_",
+			func() (string, error) { value, err := NewDeviceID(); return string(value), err },
+			func(value string) error { _, err := ParseDeviceID(value); return err },
+		},
+		{
+			"entity",
+			"ent_",
+			func() (string, error) { value, err := NewEntityID(); return string(value), err },
+			func(value string) error { _, err := ParseEntityID(value); return err },
+		},
+		{
+			"observation",
+			"obs_",
+			func() (string, error) { value, err := NewObservationID(); return string(value), err },
+			func(value string) error { _, err := ParseObservationID(value); return err },
+		},
+		{
+			"command",
+			"cmd_",
+			func() (string, error) { value, err := NewCommandID(); return string(value), err },
+			func(value string) error { _, err := ParseCommandID(value); return err },
+		},
+		{
+			"correlation",
+			"cor_",
+			func() (string, error) { value, err := NewCorrelationID(); return string(value), err },
+			func(value string) error { _, err := ParseCorrelationID(value); return err },
+		},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {

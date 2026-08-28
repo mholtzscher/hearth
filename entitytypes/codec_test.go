@@ -14,7 +14,9 @@ type codecFixture struct {
 func TestJSONCodecNormalizesAndValidates(t *testing.T) {
 	codec, err := CompileJSONCodec[codecFixture](
 		"urn:test:codec",
-		json.RawMessage(`{"type":"object","required":["value"],"properties":{"value":{"type":"boolean"}},"additionalProperties":false}`),
+		json.RawMessage(
+			`{"type":"object","required":["value"],"properties":{"value":{"type":"boolean"}},"additionalProperties":false}`,
+		),
 		func(value codecFixture) error {
 			if !value.Value {
 				return errors.New("value must be true")
@@ -84,7 +86,9 @@ func TestJSONCodecDecodesEquivalentIntegerRepresentations(t *testing.T) {
 	}
 	object, err := CompileJSONCodec[integerFixture](
 		"urn:test:integer-object",
-		json.RawMessage(`{"type":"object","required":["value"],"properties":{"value":{"type":"integer"}},"additionalProperties":false}`),
+		json.RawMessage(
+			`{"type":"object","required":["value"],"properties":{"value":{"type":"integer"}},"additionalProperties":false}`,
+		),
 		nil,
 	)
 	if err != nil {
@@ -103,7 +107,9 @@ func TestJSONCodecRejectsBindingDrift(t *testing.T) {
 	type driftedBinding struct{}
 	codec, err := CompileJSONCodec[driftedBinding](
 		"urn:test:drift",
-		json.RawMessage(`{"type":"object","required":["value"],"properties":{"value":{"type":"boolean"}},"additionalProperties":false}`),
+		json.RawMessage(
+			`{"type":"object","required":["value"],"properties":{"value":{"type":"boolean"}},"additionalProperties":false}`,
+		),
 		nil,
 	)
 	if err != nil {

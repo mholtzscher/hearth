@@ -12,7 +12,11 @@ import (
 )
 
 func main() {
-	configPath := flag.String("config", "configs/homeassistant.yaml", "path to the Home Assistant adapter YAML configuration")
+	configPath := flag.String(
+		"config",
+		"configs/homeassistant.yaml",
+		"path to the Home Assistant adapter YAML configuration",
+	)
 	flag.Parse()
 
 	config, err := homeassistant.LoadConfig(*configPath)

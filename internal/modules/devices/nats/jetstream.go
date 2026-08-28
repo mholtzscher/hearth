@@ -7,8 +7,9 @@ import (
 	"slices"
 	"time"
 
-	"github.com/mholtzscher/hearth/internal/contracts/v1/natswire"
 	"github.com/nats-io/nats.go/jetstream"
+
+	"github.com/mholtzscher/hearth/internal/contracts/v1/natswire"
 )
 
 const (

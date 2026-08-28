@@ -15,7 +15,10 @@ type recordingPublisher struct {
 	observations []adapter.Observation
 }
 
-func (publisher *recordingPublisher) PublishObservation(_ context.Context, observation adapter.Observation) (adapter.ObservationID, error) {
+func (publisher *recordingPublisher) PublishObservation(
+	_ context.Context,
+	observation adapter.Observation,
+) (adapter.ObservationID, error) {
 	publisher.observations = append(publisher.observations, observation)
 	return "obs_01890f47-7a6b-7c4d-8e9f-0123456789ab", nil
 }
@@ -113,7 +116,8 @@ func TestFailureScenariosRejectOrWithholdOutcome(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if responder.accepted != test.wantAccepted || responder.rejected != test.wantRejected || len(publisher.observations) != 0 {
+			if responder.accepted != test.wantAccepted || responder.rejected != test.wantRejected ||
+				len(publisher.observations) != 0 {
 				t.Fatalf("responder = %#v, observations = %#v", responder, publisher.observations)
 			}
 		})

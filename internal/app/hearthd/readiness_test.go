@@ -2,19 +2,19 @@ package hearthd
 
 import (
 	"context"
-	"io"
 	"log/slog"
 	"path/filepath"
 	"testing"
 	"time"
 
+	natsserver "github.com/nats-io/nats-server/v2/server"
+	natsgo "github.com/nats-io/nats.go"
+	"github.com/nats-io/nats.go/jetstream"
+
 	contractsv1 "github.com/mholtzscher/hearth/contracts/v1"
 	"github.com/mholtzscher/hearth/internal/modules/devices"
 	devicesnats "github.com/mholtzscher/hearth/internal/modules/devices/nats"
 	platformdb "github.com/mholtzscher/hearth/internal/platform/db"
-	natsserver "github.com/nats-io/nats-server/v2/server"
-	natsgo "github.com/nats-io/nats.go"
-	"github.com/nats-io/nats.go/jetstream"
 )
 
 func TestRuntimeReadinessChecksEveryRequiredDependency(t *testing.T) {
@@ -132,7 +132,7 @@ func newReadinessFixture(t *testing.T) readinessFixture {
 		t.Fatal(err)
 	}
 	consumer, err := devicesnats.StartObservationConsumer(
-		ctx, durable, validator, discardObservationProjector{}, slog.New(slog.NewJSONHandler(io.Discard, nil)),
+		ctx, durable, validator, discardObservationProjector{}, slog.New(slog.DiscardHandler),
 	)
 	if err != nil {
 		t.Fatal(err)

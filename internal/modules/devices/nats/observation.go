@@ -8,11 +8,12 @@ import (
 	"sync/atomic"
 	"time"
 
+	natsgo "github.com/nats-io/nats.go"
+	"github.com/nats-io/nats.go/jetstream"
+
 	contractsv1 "github.com/mholtzscher/hearth/contracts/v1"
 	"github.com/mholtzscher/hearth/internal/contracts/v1/natswire"
 	"github.com/mholtzscher/hearth/internal/modules/devices"
-	natsgo "github.com/nats-io/nats.go"
-	"github.com/nats-io/nats.go/jetstream"
 )
 
 const observationFutureClockThreshold = time.Minute
@@ -52,7 +53,7 @@ func StartObservationConsumer(
 			handleObservationMessage(baseContext, message, validator, projector, logger)
 		},
 		jetstream.ConsumeErrHandler(func(_ jetstream.ConsumeContext, err error) {
-			logger.Error("observation consumer error", "error", err)
+			logger.ErrorContext(baseContext, "observation consumer error", "error", err)
 		}),
 	)
 	if err != nil {
@@ -105,7 +106,7 @@ func handleObservationMessage(
 ) {
 	metadata, err := message.Metadata()
 	if err != nil {
-		logger.Error("cannot read observation metadata", "subject", message.Subject(), "error", err)
+		logger.ErrorContext(baseContext, "cannot read observation metadata", "subject", message.Subject(), "error", err)
 		return
 	}
 	permanentFailure := func(err error, observationID string) {
@@ -117,9 +118,18 @@ func handleObservationMessage(
 		if observationID != "" {
 			attributes = append(attributes, "observation_id", observationID)
 		}
-		logger.Error("acknowledging invalid observation", attributes...)
+		logger.ErrorContext(baseContext, "acknowledging invalid observation", attributes...)
 		if ackErr := message.Ack(); ackErr != nil {
-			logger.Error("acknowledge invalid observation", "subject", message.Subject(), "stream_sequence", metadata.Sequence.Stream, "error", ackErr)
+			logger.ErrorContext(
+				baseContext,
+				"acknowledge invalid observation",
+				"subject",
+				message.Subject(),
+				"stream_sequence",
+				metadata.Sequence.Stream,
+				"error",
+				ackErr,
+			)
 		}
 	}
 
@@ -162,7 +172,7 @@ func handleObservationMessage(
 		sourceUpdatedAt = &parsed
 	}
 	if adapterReceivedAt.After(metadata.Timestamp.Add(observationFutureClockThreshold)) {
-		logger.Warn("adapter observation clock is ahead of core receipt time",
+		logger.WarnContext(baseContext, "adapter observation clock is ahead of core receipt time",
 			"observation_id", envelope.ID,
 			"adapter_id", route.AdapterID,
 			"entity_id", route.EntityID,
@@ -178,7 +188,7 @@ func handleObservationMessage(
 	}
 	ctx := natswire.ExtractTrace(baseContext, message.Headers())
 	if _, err := projector.ProjectObservation(ctx, route.AdapterID, domain, metadata.Timestamp.UTC()); err != nil {
-		logger.Error("project observation",
+		logger.ErrorContext(baseContext, "project observation",
 			"subject", message.Subject(),
 			"stream_sequence", metadata.Sequence.Stream,
 			"observation_id", envelope.ID,
@@ -187,7 +197,7 @@ func handleObservationMessage(
 		return
 	}
 	if err := message.Ack(); err != nil {
-		logger.Error("acknowledge projected observation",
+		logger.ErrorContext(baseContext, "acknowledge projected observation",
 			"subject", message.Subject(),
 			"stream_sequence", metadata.Sequence.Stream,
 			"observation_id", envelope.ID,

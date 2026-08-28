@@ -9,10 +9,11 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	contractsv1 "github.com/mholtzscher/hearth/contracts/v1"
-	"github.com/mholtzscher/hearth/internal/contracts/v1/natswire"
 	natsgo "github.com/nats-io/nats.go"
 	"github.com/nats-io/nats.go/jetstream"
+
+	contractsv1 "github.com/mholtzscher/hearth/contracts/v1"
+	"github.com/mholtzscher/hearth/internal/contracts/v1/natswire"
 )
 
 type Session struct {
@@ -202,7 +203,9 @@ func (session *Session) PublishObservation(ctx context.Context, observation Obse
 	if observation.RefreshForCommand != nil {
 		metadata, ok := ctx.Value(commandMetadataKey{}).(commandMetadata)
 		if !ok || metadata.id != *observation.RefreshForCommand {
-			return observationID, &ValidationError{Err: errors.New("linked observation requires its command handler context")}
+			return observationID, &ValidationError{
+				Err: errors.New("linked observation requires its command handler context"),
+			}
 		}
 		correlationID = metadata.correlationID
 		causationID = observation.RefreshForCommand
@@ -316,23 +319,39 @@ func (session *Session) startCommandHandler(parent context.Context, message *nat
 
 func (session *Session) handleCommand(parent context.Context, message *natsgo.Msg, handler CommandHandler) {
 	if message.Reply == "" {
-		slog.Error("discarding command without reply subject", "subject", message.Subject)
+		slog.ErrorContext(parent, "discarding command without reply subject", "subject", message.Subject)
 		return
 	}
 	request, err := natswire.Decode[Command](session.validator, contractsv1.CommandRequestSchemaID, message.Data)
 	if err != nil {
-		slog.Error("discarding invalid command", "subject", message.Subject, "error", err)
+		slog.ErrorContext(parent, "discarding invalid command", "subject", message.Subject, "error", err)
 		return
 	}
 	route, err := natswire.ParseCommandSubject(message.Subject)
 	if err != nil || route.AdapterID != session.adapterID || route.EntityID != request.Data.EntityID ||
 		route.OperationName != request.Data.OperationName || request.CausationID != nil {
-		slog.Error("discarding command with mismatched routing", "subject", message.Subject, "command_id", request.ID)
+		slog.ErrorContext(
+			parent,
+			"discarding command with mismatched routing",
+			"subject",
+			message.Subject,
+			"command_id",
+			request.ID,
+		)
 		return
 	}
 	deadline, err := time.Parse(time.RFC3339Nano, request.Data.Deadline)
 	if err != nil {
-		slog.Error("discarding command with invalid deadline", "subject", message.Subject, "command_id", request.ID, "error", err)
+		slog.ErrorContext(
+			parent,
+			"discarding command with invalid deadline",
+			"subject",
+			message.Subject,
+			"command_id",
+			request.ID,
+			"error",
+			err,
+		)
 		return
 	}
 
@@ -340,10 +359,23 @@ func (session *Session) handleCommand(parent context.Context, message *natsgo.Ms
 	ctx, cancel := context.WithDeadline(ctx, deadline)
 	defer cancel()
 	if err := ctx.Err(); err != nil {
-		slog.Error("discarding expired command", "subject", message.Subject, "command_id", request.ID, "error", err)
+		slog.ErrorContext(
+			parent,
+			"discarding expired command",
+			"subject",
+			message.Subject,
+			"command_id",
+			request.ID,
+			"error",
+			err,
+		)
 		return
 	}
-	ctx = context.WithValue(ctx, commandMetadataKey{}, commandMetadata{id: request.ID, correlationID: request.CorrelationID})
+	ctx = context.WithValue(
+		ctx,
+		commandMetadataKey{},
+		commandMetadata{id: request.ID, correlationID: request.CorrelationID},
+	)
 	command := request.Data
 	command.ID = request.ID
 	command.CorrelationID = request.CorrelationID
@@ -356,10 +388,10 @@ func (session *Session) handleCommand(parent context.Context, message *natsgo.Ms
 		correlationID: request.CorrelationID,
 	}
 	if err := handler(ctx, command, responder); err != nil {
-		slog.Error("command handler failed", "command_id", request.ID, "error", err)
+		slog.ErrorContext(parent, "command handler failed", "command_id", request.ID, "error", err)
 	}
 	if !responder.didRespond() {
-		slog.Error(ErrMissingResponse.Error(), "command_id", request.ID)
+		slog.ErrorContext(parent, ErrMissingResponse.Error(), "command_id", request.ID)
 	}
 }
 

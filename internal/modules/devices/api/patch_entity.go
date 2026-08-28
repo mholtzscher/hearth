@@ -10,7 +10,7 @@ import (
 
 type PatchEntityInput struct {
 	EntityID string          `path:"entity_id" doc:"Canonical Hearth Entity ID"`
-	Body     PatchEntityBody `doc:"Mutable Entity fields"`
+	Body     PatchEntityBody `                 doc:"Mutable Entity fields"`
 }
 
 type PatchEntityOutput struct {

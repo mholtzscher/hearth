@@ -30,14 +30,22 @@ func TestGenericCatalogCarriesTypedBehaviorAcrossErasure(t *testing.T) {
 		Target int `json:"target"`
 	}
 
-	stateCodec := compileTestCodec[state](t, "state", `{"type":"object","required":["level"],"properties":{"level":{"type":"integer"}},"additionalProperties":false}`)
+	stateCodec := compileTestCodec[state](
+		t,
+		"state",
+		`{"type":"object","required":["level"],"properties":{"level":{"type":"integer"}},"additionalProperties":false}`,
+	)
 	supportCodec := compileTestCodec[support](t, "support", `{
 		"type":"object","required":["state","operations"],"additionalProperties":false,
 		"properties":{
 			"state":{"type":"object","required":["maximum"],"properties":{"maximum":{"type":"integer"}},"additionalProperties":false},
 			"operations":{"type":"object","properties":{"set":{"type":"object","required":["minimum"],"properties":{"minimum":{"type":"integer"}},"additionalProperties":false}},"additionalProperties":false}
 		}}`)
-	parametersCodec := compileTestCodec[parameters](t, "parameters", `{"type":"object","required":["target"],"properties":{"target":{"type":"integer"}},"additionalProperties":false}`)
+	parametersCodec := compileTestCodec[parameters](
+		t,
+		"parameters",
+		`{"type":"object","required":["target"],"properties":{"target":{"type":"integer"}},"additionalProperties":false}`,
+	)
 
 	set := DefineOperation(
 		OperationNameSet,
@@ -77,7 +85,10 @@ func TestGenericCatalogCarriesTypedBehaviorAcrossErasure(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	entity := Entity{TypeID: "test.level/v1", Support: EntitySupport(`{"state":{"maximum":10},"operations":{"set":{"minimum":2}}}`)}
+	entity := Entity{
+		TypeID:  "test.level/v1",
+		Support: EntitySupport(`{"state":{"maximum":10},"operations":{"set":{"minimum":2}}}`),
+	}
 
 	normalized, err := catalog.NormalizeState(entity, Value(`{ "level": 5 }`))
 	if err != nil || string(normalized) != `{"level":5}` {
@@ -109,7 +120,11 @@ func TestGenericCatalogCarriesTypedBehaviorAcrossErasure(t *testing.T) {
 
 	withoutOperation := entity
 	withoutOperation.Support = EntitySupport(`{"state":{"maximum":10},"operations":{}}`)
-	if _, err := catalog.ResolveCommand(withoutOperation, OperationNameSet, CommandParameters(`{"target":5}`)); err == nil {
+	if _, err := catalog.ResolveCommand(
+		withoutOperation,
+		OperationNameSet,
+		CommandParameters(`{"target":5}`),
+	); err == nil {
 		t.Fatal("absent operation support unexpectedly accepted")
 	}
 
@@ -133,7 +148,14 @@ func TestCatalogRejectsInvalidDefinitions(t *testing.T) {
 		time.Second,
 		func(struct{}, bool) bool { return true },
 	)
-	valid, err := DefineEntityType("test.value/v1", state, support, func(struct{}, bool) error { return nil }, func(left, right bool) bool { return left == right }, validOperation)
+	valid, err := DefineEntityType(
+		"test.value/v1",
+		state,
+		support,
+		func(struct{}, bool) error { return nil },
+		func(left, right bool) bool { return left == right },
+		validOperation,
+	)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -152,7 +174,15 @@ func TestCatalogRejectsInvalidDefinitions(t *testing.T) {
 		time.Second,
 		func(struct{}, bool) bool { return true },
 	)
-	if _, err := DefineEntityType("test.duplicate/v1", state, support, func(struct{}, bool) error { return nil }, func(bool, bool) bool { return true }, validOperation, duplicateOperation); err == nil {
+	if _, err := DefineEntityType(
+		"test.duplicate/v1",
+		state,
+		support,
+		func(struct{}, bool) error { return nil },
+		func(bool, bool) bool { return true },
+		validOperation,
+		duplicateOperation,
+	); err == nil {
 		t.Fatal("duplicate operation unexpectedly accepted")
 	}
 	invalidOperation := DefineOperation(
@@ -163,10 +193,23 @@ func TestCatalogRejectsInvalidDefinitions(t *testing.T) {
 		time.Second,
 		func(struct{}, bool) bool { return true },
 	)
-	if _, err := DefineEntityType("test.invalid/v1", state, support, func(struct{}, bool) error { return nil }, func(bool, bool) bool { return true }, invalidOperation); err == nil {
+	if _, err := DefineEntityType(
+		"test.invalid/v1",
+		state,
+		support,
+		func(struct{}, bool) error { return nil },
+		func(bool, bool) bool { return true },
+		invalidOperation,
+	); err == nil {
 		t.Fatal("unsafe operation name unexpectedly accepted")
 	}
-	if _, err := DefineEntityType("test.nil/v1", state, support, nil, func(bool, bool) bool { return true }); err == nil {
+	if _, err := DefineEntityType(
+		"test.nil/v1",
+		state,
+		support,
+		nil,
+		func(bool, bool) bool { return true },
+	); err == nil {
 		t.Fatal("nil supported-state validator unexpectedly accepted")
 	}
 }

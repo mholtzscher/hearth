@@ -18,8 +18,8 @@ type GetCommandOutput struct {
 
 type ListEntityCommandsInput struct {
 	EntityID string `path:"entity_id" doc:"Canonical Hearth Entity ID"`
-	Limit    int    `query:"limit" default:"50" minimum:"1" maximum:"200"`
-	Cursor   string `query:"cursor"`
+	Limit    int    `                                                  query:"limit"  default:"50" minimum:"1" maximum:"200"`
+	Cursor   string `                                                  query:"cursor"`
 }
 
 type ListEntityCommandsOutput struct {
@@ -45,7 +45,10 @@ func (handler *Handler) GetCommand(ctx context.Context, input *GetCommandInput) 
 	return &GetCommandOutput{Body: body}, nil
 }
 
-func (handler *Handler) ListEntityCommands(ctx context.Context, input *ListEntityCommandsInput) (*ListEntityCommandsOutput, error) {
+func (handler *Handler) ListEntityCommands(
+	ctx context.Context,
+	input *ListEntityCommandsInput,
+) (*ListEntityCommandsOutput, error) {
 	entityID, err := devices.ParseEntityID(input.EntityID)
 	if err != nil {
 		return nil, apiError(http.StatusBadRequest, "entity_id must be a canonical Hearth Entity ID")

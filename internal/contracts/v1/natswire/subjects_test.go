@@ -53,7 +53,8 @@ func TestSubjectsRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if commandRoute.AdapterID != "simulator" || commandRoute.EntityID != testEntityID || commandRoute.OperationName != "set" {
+	if commandRoute.AdapterID != "simulator" || commandRoute.EntityID != testEntityID ||
+		commandRoute.OperationName != "set" {
 		t.Fatalf("command route = %#v", commandRoute)
 	}
 	wildcard, err := CommandWildcard("simulator")
@@ -72,7 +73,9 @@ func TestSubjectsRejectUnsafeTokens(t *testing.T) {
 	if _, err := EntityEnablementSubject("bad.adapter", testEntityID); err == nil {
 		t.Fatal("unsafe Entity enablement adapter unexpectedly accepted")
 	}
-	if _, err := ParseEntityEnablementSubject("hearth.v1.adapter.simulator.enablement.extra." + testEntityID); err == nil {
+	if _, err := ParseEntityEnablementSubject(
+		"hearth.v1.adapter.simulator.enablement.extra." + testEntityID,
+	); err == nil {
 		t.Fatal("malformed Entity enablement subject unexpectedly accepted")
 	}
 	if _, err := CommandSubject("simulator", testEntityID, "bad.operation"); err == nil {

@@ -8,7 +8,6 @@ import (
 	contractsv1 "github.com/mholtzscher/hearth/contracts/v1"
 	"github.com/mholtzscher/hearth/internal/contracts/v1/natswire"
 	"github.com/mholtzscher/hearth/internal/modules/devices"
-	natsgo "github.com/nats-io/nats.go"
 )
 
 type Registrar interface {
@@ -54,7 +53,12 @@ func StartRegistrationServer(
 	return &RegistrationServer{requestReplyServer: server}, nil
 }
 
-func register(ctx context.Context, registrar Registrar, adapterID string, wire registration) (registrationResponse, error) {
+func register(
+	ctx context.Context,
+	registrar Registrar,
+	adapterID string,
+	wire registration,
+) (registrationResponse, error) {
 	domain := devices.Registration{
 		BindingKey: wire.BindingKey,
 		Device: devices.DeviceDescriptor{
@@ -73,8 +77,7 @@ func register(ctx context.Context, registrar Registrar, adapterID string, wire r
 		}
 	}
 	accepted, err := registrar.Register(ctx, adapterID, domain)
-	var rejected *devices.RegistrationRejectedError
-	if errors.As(err, &rejected) {
+	if rejected, ok := errors.AsType[*devices.RegistrationRejectedError](err); ok {
 		return registrationResponse{
 			Status: "rejected",
 			Error:  &registrationError{Code: string(rejected.Code), Message: rejected.Message},

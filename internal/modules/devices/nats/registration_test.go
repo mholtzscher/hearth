@@ -3,15 +3,15 @@ package nats
 import (
 	"context"
 	"errors"
-	"io"
 	"log/slog"
 	"testing"
 	"time"
 
+	natsgo "github.com/nats-io/nats.go"
+
 	contractsv1 "github.com/mholtzscher/hearth/contracts/v1"
 	"github.com/mholtzscher/hearth/internal/contracts/v1/natswire"
 	"github.com/mholtzscher/hearth/internal/modules/devices"
-	natsgo "github.com/nats-io/nats.go"
 )
 
 type registrarFunc func(context.Context, string, devices.Registration) (devices.Binding, error)
@@ -47,10 +47,14 @@ func TestRegistrationServerMapsDomainRegistrationAndReturnsCorrelatedResponse(t 
 			DeviceID:   devices.DeviceID("dev_01890f47-7a6b-7c4d-8e9f-0123456789ab"),
 			Entities: []devices.EntityBinding{
 				{Key: "power", EntityID: devices.EntityID(testEntityID), Enabled: true},
-				{Key: "brightness", EntityID: devices.EntityID("ent_01890f47-7a6b-7c4d-8e9f-1123456789ab"), Enabled: true},
+				{
+					Key:      "brightness",
+					EntityID: devices.EntityID("ent_01890f47-7a6b-7c4d-8e9f-1123456789ab"),
+					Enabled:  true,
+				},
 			},
 		}, nil
-	}), slog.New(slog.NewJSONHandler(io.Discard, nil)))
+	}), slog.New(slog.DiscardHandler))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -69,8 +73,11 @@ func TestRegistrationServerMapsDomainRegistrationAndReturnsCorrelatedResponse(t 
 					Support: []byte(`{"state":{},"operations":{"set":{}}}`), InitiallyEnabled: &initiallyEnabled,
 				},
 				{
-					Key: "brightness", ExternalID: "light.office.brightness", Name: "Brightness", Type: "hearth.brightness/v1",
-					Support: []byte(`{"state":{"maximum":100},"operations":{"set":{"step":1}}}`),
+					Key:        "brightness",
+					ExternalID: "light.office.brightness",
+					Name:       "Brightness",
+					Type:       "hearth.brightness/v1",
+					Support:    []byte(`{"state":{"maximum":100},"operations":{"set":{"step":1}}}`),
 				},
 			},
 		},
@@ -94,7 +101,8 @@ func TestRegistrationServerMapsDomainRegistrationAndReturnsCorrelatedResponse(t 
 	externalID = "mutated"
 	initiallyEnabled = true
 	request.Data.Entities[0].Support[0] = 'x'
-	if *mapped.Device.ExternalID != "device.office" || string(mapped.Entities[0].Support) != `{"state":{},"operations":{"set":{}}}` ||
+	if *mapped.Device.ExternalID != "device.office" ||
+		string(mapped.Entities[0].Support) != `{"state":{},"operations":{"set":{}}}` ||
 		*mapped.Entities[0].InitiallyEnabled {
 		t.Fatalf("registrar inputs were not copied: %#v", mapped)
 	}
@@ -114,7 +122,7 @@ func TestRegistrationServerMapsDomainRejection(t *testing.T) {
 		return devices.Binding{}, &devices.RegistrationRejectedError{
 			Code: devices.RegistrationIdentityConflict, Message: "binding is already owned",
 		}
-	}), slog.New(slog.NewJSONHandler(io.Discard, nil)))
+	}), slog.New(slog.DiscardHandler))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -139,7 +147,7 @@ func TestRegistrationInfrastructureFailureDoesNotReply(t *testing.T) {
 		devices.Registration,
 	) (devices.Binding, error) {
 		return devices.Binding{}, errors.New("SQLite unavailable")
-	}), slog.New(slog.NewJSONHandler(io.Discard, nil)))
+	}), slog.New(slog.DiscardHandler))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -156,7 +164,10 @@ func TestRegistrationInfrastructureFailureDoesNotReply(t *testing.T) {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
 	defer cancel()
-	_, err = connection.RequestMsgWithContext(ctx, &natsgo.Msg{Subject: subject, Header: make(natsgo.Header), Data: payload})
+	_, err = connection.RequestMsgWithContext(
+		ctx,
+		&natsgo.Msg{Subject: subject, Header: make(natsgo.Header), Data: payload},
+	)
 	if !errors.Is(err, context.DeadlineExceeded) {
 		t.Fatalf("request error = %v", err)
 	}
@@ -200,7 +211,11 @@ func requestRegistration(
 	if err != nil {
 		t.Fatal(err)
 	}
-	response, err := natswire.Decode[registrationResponse](validator, contractsv1.RegistrationResponseSchemaID, reply.Data)
+	response, err := natswire.Decode[registrationResponse](
+		validator,
+		contractsv1.RegistrationResponseSchemaID,
+		reply.Data,
+	)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -11,6 +11,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -18,6 +19,10 @@ import (
 	"time"
 
 	"github.com/danielgtaylor/huma/v2"
+	natsserver "github.com/nats-io/nats-server/v2/server"
+	natsgo "github.com/nats-io/nats.go"
+	"github.com/nats-io/nats.go/jetstream"
+
 	contractsv1 "github.com/mholtzscher/hearth/contracts/v1"
 	simulatoradapter "github.com/mholtzscher/hearth/internal/adapters/simulator"
 	simulatorapp "github.com/mholtzscher/hearth/internal/app/simulator"
@@ -27,9 +32,6 @@ import (
 	devicesnats "github.com/mholtzscher/hearth/internal/modules/devices/nats"
 	platformdb "github.com/mholtzscher/hearth/internal/platform/db"
 	"github.com/mholtzscher/hearth/sdk/adapter"
-	natsserver "github.com/nats-io/nats-server/v2/server"
-	natsgo "github.com/nats-io/nats.go"
-	"github.com/nats-io/nats.go/jetstream"
 )
 
 const simulatorMatrixAdapterID = "simulator"
@@ -170,7 +172,13 @@ func newSimulatorMatrixHarness(t *testing.T, scenario string, options simulatorM
 	if options.observationProjector != nil {
 		projector = options.observationProjector(harness.service, projector)
 	}
-	harness.consumer, err = devicesnats.StartObservationConsumer(ctx, harness.durable, harness.validator, projector, logger)
+	harness.consumer, err = devicesnats.StartObservationConsumer(
+		ctx,
+		harness.durable,
+		harness.validator,
+		projector,
+		logger,
+	)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -304,7 +312,8 @@ func TestSimulatorObservationFailureMatrix(t *testing.T) {
 			name: "delayed source time", scenario: simulatoradapter.ScenarioDelayedSourceTime,
 			assert: func(t *testing.T, harness *simulatorMatrixHarness) {
 				state := harness.waitForState(t)
-				if state.SourceUpdatedAt == nil || !state.SourceUpdatedAt.Before(state.AdapterReceivedAt.Add(-23*time.Hour)) {
+				if state.SourceUpdatedAt == nil ||
+					!state.SourceUpdatedAt.Before(state.AdapterReceivedAt.Add(-23*time.Hour)) {
 					t.Fatalf("state timestamps = %#v", state)
 				}
 			},
@@ -427,7 +436,8 @@ func TestSimulatorCommandHTTPFailureMatrix(t *testing.T) {
 				t.Fatalf("command history = %#v", history)
 			}
 			command := history.Items[0]
-			if command.Status != test.wantCommand || command.FailureCode == nil || *command.FailureCode != test.wantFailure {
+			if command.Status != test.wantCommand || command.FailureCode == nil ||
+				*command.FailureCode != test.wantFailure {
 				t.Fatalf("stored command = %#v", command)
 			}
 		})
@@ -478,7 +488,6 @@ func TestSimulatorNoOpAndOverlappingCommands(t *testing.T) {
 		}
 		outcomes := make(chan outcome, 2)
 		for _, value := range []bool{true, false} {
-			value := value
 			go func() {
 				status, body, err := harness.postCommand(harness.ctx, value)
 				outcomes <- outcome{status: status, body: body, err: err}
@@ -594,8 +603,12 @@ func TestSimulatorInterruptedCommandSurvivesLateLinkedObservation(t *testing.T) 
 	}
 	acceptance, err := devicesnats.NewCommandSender(harness.connection, harness.validator).Send(
 		harness.ctx, simulatorMatrixAdapterID, devices.CommandRequest{
-			ID: commandID, CorrelationID: correlationID, EntityID: harness.entityID,
-			OperationName: devices.OperationNameSet, Parameters: devices.CommandParameters(`{"value":true}`), Deadline: record.DeadlineAt,
+			ID:            commandID,
+			CorrelationID: correlationID,
+			EntityID:      harness.entityID,
+			OperationName: devices.OperationNameSet,
+			Parameters:    devices.CommandParameters(`{"value":true}`),
+			Deadline:      record.DeadlineAt,
 		},
 	)
 	if err != nil {
@@ -752,7 +765,7 @@ func publishMatrixLinkedObservation(
 			ID: string(observationID), Schema: contractsv1.ObservationSchemaID, EmittedAt: now,
 			CorrelationID: string(correlationID), CausationID: &commandIDString,
 			Data: adapter.Observation{
-				EntityID: string(harness.entityID), Value: json.RawMessage(fmt.Sprintf("%t", value)),
+				EntityID: string(harness.entityID), Value: json.RawMessage(strconv.FormatBool(value)),
 				AdapterReceivedAt: now, RefreshForCommand: &commandIDString,
 			},
 		},

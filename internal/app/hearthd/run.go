@@ -8,12 +8,13 @@ import (
 	"net/http"
 	"time"
 
+	natsgo "github.com/nats-io/nats.go"
+	"github.com/nats-io/nats.go/jetstream"
+
 	contractsv1 "github.com/mholtzscher/hearth/contracts/v1"
 	"github.com/mholtzscher/hearth/internal/modules/devices"
 	devicesnats "github.com/mholtzscher/hearth/internal/modules/devices/nats"
 	platformdb "github.com/mholtzscher/hearth/internal/platform/db"
-	natsgo "github.com/nats-io/nats.go"
-	"github.com/nats-io/nats.go/jetstream"
 )
 
 const (
@@ -157,7 +158,7 @@ func pruneObservationReceipts(ctx context.Context, service *devices.Service, log
 			return
 		case now := <-ticker.C:
 			if err := service.DeleteExpiredObservationReceipts(ctx, now.UTC()); err != nil {
-				logger.Error("prune observation receipts", "error", err)
+				logger.ErrorContext(ctx, "prune observation receipts", "error", err)
 			}
 		}
 	}

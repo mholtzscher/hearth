@@ -9,13 +9,14 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	natsgo "github.com/nats-io/nats.go"
+	"github.com/nats-io/nats.go/jetstream"
+
 	contractsv1 "github.com/mholtzscher/hearth/contracts/v1"
 	simulatoradapter "github.com/mholtzscher/hearth/internal/adapters/simulator"
 	"github.com/mholtzscher/hearth/internal/contracts/v1/natswire"
 	"github.com/mholtzscher/hearth/sdk/adapter"
 	sdkpowerv1 "github.com/mholtzscher/hearth/sdk/adapter/powerv1"
-	natsgo "github.com/nats-io/nats.go"
-	"github.com/nats-io/nats.go/jetstream"
 )
 
 const (
@@ -82,13 +83,22 @@ func Run(ctx context.Context, config Config, logger *slog.Logger) error {
 	if err != nil {
 		return err
 	}
-	if err := session.ServeCommands(ctx, handler); err != nil && !errors.Is(err, context.Canceled) && !errors.Is(err, adapter.ErrClosed) {
+	if err := session.ServeCommands(
+		ctx,
+		handler,
+	); err != nil && !errors.Is(err, context.Canceled) &&
+		!errors.Is(err, adapter.ErrClosed) {
 		return err
 	}
 	return nil
 }
 
-func register(ctx context.Context, session *adapter.Session, registration adapter.Registration, logger *slog.Logger) (adapter.Binding, error) {
+func register(
+	ctx context.Context,
+	session *adapter.Session,
+	registration adapter.Registration,
+	logger *slog.Logger,
+) (adapter.Binding, error) {
 	delay := registrationRetryMinimum
 	for {
 		binding, err := session.Register(ctx, registration)
@@ -100,7 +110,7 @@ func register(ctx context.Context, session *adapter.Session, registration adapte
 		if errors.As(err, &validation) || errors.As(err, &rejected) {
 			return adapter.Binding{}, err
 		}
-		logger.Warn("retry simulator registration", "error", err, "retry_in", delay)
+		logger.WarnContext(ctx, "retry simulator registration", "error", err, "retry_in", delay)
 		timer := time.NewTimer(delay)
 		select {
 		case <-ctx.Done():

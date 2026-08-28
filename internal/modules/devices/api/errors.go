@@ -4,6 +4,7 @@ import (
 	"net/http"
 
 	"github.com/danielgtaylor/huma/v2"
+
 	"github.com/mholtzscher/hearth/internal/modules/devices"
 )
 
@@ -12,7 +13,7 @@ func apiError(status int, message string) error {
 }
 
 type disabledCommandProblem struct {
-	Type      string `json:"type" format:"uri" default:"about:blank"`
+	Type      string `json:"type"       format:"uri" default:"about:blank"`
 	Title     string `json:"title"`
 	Status    int    `json:"status"`
 	Detail    string `json:"detail"`

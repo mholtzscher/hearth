@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/danielgtaylor/huma/v2"
+
 	"github.com/mholtzscher/hearth/internal/modules/devices"
 )
 

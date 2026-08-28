@@ -78,11 +78,18 @@ func loadExamples(directory, relative string, operations []operationModel) (exam
 			return examplesFile{}, fmt.Errorf("case %q states: %w", example.Name, err)
 		}
 		if len(example.Operations) != len(supportShape.Operations) {
-			return examplesFile{}, fmt.Errorf("case %q examples must exactly match its supported operations", example.Name)
+			return examplesFile{}, fmt.Errorf(
+				"case %q examples must exactly match its supported operations",
+				example.Name,
+			)
 		}
 		for name := range supportShape.Operations {
 			if _, exists := example.Operations[name]; !exists {
-				return examplesFile{}, fmt.Errorf("case %q has no examples for supported operation %q", example.Name, name)
+				return examplesFile{}, fmt.Errorf(
+					"case %q has no examples for supported operation %q",
+					example.Name,
+					name,
+				)
 			}
 		}
 		for name, values := range example.Operations {
@@ -90,7 +97,11 @@ func loadExamples(directory, relative string, operations []operationModel) (exam
 				return examplesFile{}, fmt.Errorf("case %q has unknown operation %q", example.Name, name)
 			}
 			if _, supported := supportShape.Operations[name]; !supported {
-				return examplesFile{}, fmt.Errorf("case %q has examples for unsupported operation %q", example.Name, name)
+				return examplesFile{}, fmt.Errorf(
+					"case %q has examples for unsupported operation %q",
+					example.Name,
+					name,
+				)
 			}
 			if err := requireValidityCoverage(values.Parameters); err != nil {
 				return examplesFile{}, fmt.Errorf("case %q operation %q parameters: %w", example.Name, name, err)

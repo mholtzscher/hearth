@@ -8,6 +8,7 @@ import (
 
 type enablementRepository struct {
 	*stubRegistrationRepository
+
 	params SetEntityEnabledParams
 	view   EntityWithState
 	err    error
@@ -63,7 +64,12 @@ func TestSetEntityEnabledValidatesIdentityBeforeRepositoryCall(t *testing.T) {
 	if _, err := service.SetEntityEnabled(context.Background(), "bad", false); err == nil {
 		t.Fatal("invalid Entity ID unexpectedly accepted")
 	}
-	if _, err := service.SetOwnedEntityEnabled(context.Background(), "bad.adapter", commandTestEntityID, false); err == nil {
+	if _, err := service.SetOwnedEntityEnabled(
+		context.Background(),
+		"bad.adapter",
+		commandTestEntityID,
+		false,
+	); err == nil {
 		t.Fatal("invalid Adapter ID unexpectedly accepted")
 	}
 	if repository.calls != 0 {

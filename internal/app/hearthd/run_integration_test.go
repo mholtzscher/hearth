@@ -4,11 +4,14 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"io"
 	"log/slog"
 	"path/filepath"
 	"testing"
 	"time"
+
+	natsserver "github.com/nats-io/nats-server/v2/server"
+	natsgo "github.com/nats-io/nats.go"
+	"github.com/nats-io/nats.go/jetstream"
 
 	contractsv1 "github.com/mholtzscher/hearth/contracts/v1"
 	contractpowerv1 "github.com/mholtzscher/hearth/entitytypes/powerv1"
@@ -17,15 +20,12 @@ import (
 	platformdb "github.com/mholtzscher/hearth/internal/platform/db"
 	"github.com/mholtzscher/hearth/sdk/adapter"
 	sdkpowerv1 "github.com/mholtzscher/hearth/sdk/adapter/powerv1"
-	natsserver "github.com/nats-io/nats-server/v2/server"
-	natsgo "github.com/nats-io/nats.go"
-	"github.com/nats-io/nats.go/jetstream"
 )
 
 func TestCoreNATSTransportRegistersAndProjectsDurableObservation(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	logger := slog.New(slog.NewJSONHandler(io.Discard, nil))
+	logger := slog.New(slog.DiscardHandler)
 	databasePath := filepath.Join(t.TempDir(), "hearth.db")
 	database, err := platformdb.Open(ctx, databasePath)
 	if err != nil {
@@ -167,7 +167,12 @@ func TestCoreNATSTransportRegistersAndProjectsDurableObservation(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	recoveredService := devices.NewService(devices.NewSQLiteRepository(database, catalog), nil, catalog, devices.Dependencies{})
+	recoveredService := devices.NewService(
+		devices.NewSQLiteRepository(database, catalog),
+		nil,
+		catalog,
+		devices.Dependencies{},
+	)
 	recovered, err := recoveredService.GetEntity(ctx, entityID)
 	if err != nil {
 		t.Fatal(err)
@@ -198,7 +203,7 @@ func TestCoreNATSTransportRegistersAndProjectsDurableObservation(t *testing.T) {
 func TestCoreCommandRoundTripRequiresLinkedSimulatorObservation(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	logger := slog.New(slog.NewJSONHandler(io.Discard, nil))
+	logger := slog.New(slog.DiscardHandler)
 	database, err := platformdb.Open(ctx, filepath.Join(t.TempDir(), "hearth.db"))
 	if err != nil {
 		t.Fatal(err)
@@ -323,7 +328,12 @@ func TestCoreCommandRoundTripRequiresLinkedSimulatorObservation(t *testing.T) {
 		t.Fatal("simulator command subscription did not become active")
 	}
 
-	result, err := service.ExecuteCommand(ctx, entityID, devices.OperationNameSet, devices.CommandParameters(`{"value":true}`))
+	result, err := service.ExecuteCommand(
+		ctx,
+		entityID,
+		devices.OperationNameSet,
+		devices.CommandParameters(`{"value":true}`),
+	)
 	if err != nil {
 		t.Fatal(err)
 	}

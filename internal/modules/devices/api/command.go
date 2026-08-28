@@ -11,7 +11,7 @@ import (
 
 type ExecuteCommandInput struct {
 	EntityID string      `path:"entity_id" doc:"Canonical Hearth Entity ID"`
-	Body     CommandBody `doc:"Entity operation and parameters"`
+	Body     CommandBody `                 doc:"Entity operation and parameters"`
 }
 
 type ExecuteCommandOutput struct {

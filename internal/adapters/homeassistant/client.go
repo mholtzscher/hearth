@@ -286,7 +286,11 @@ func (client *client) request(ctx context.Context, request requestMessage) (resu
 		if result.Error == nil {
 			return resultMessage{}, errors.New("Home Assistant request failed")
 		}
-		return resultMessage{}, fmt.Errorf("Home Assistant request failed (%s): %s", result.Error.Code, result.Error.Message)
+		return resultMessage{}, fmt.Errorf(
+			"Home Assistant request failed (%s): %s",
+			result.Error.Code,
+			result.Error.Message,
+		)
 	}
 	return result, nil
 }
@@ -350,7 +354,8 @@ func (client *client) read(ctx context.Context) {
 				client.stop(fmt.Errorf("decode Home Assistant event: %w", err))
 				return
 			}
-			if event.Event.Data.EntityID != client.entityID || event.Event.Data.NewState == nil || event.Event.Data.NewState.EntityID != client.entityID {
+			if event.Event.Data.EntityID != client.entityID || event.Event.Data.NewState == nil ||
+				event.Event.Data.NewState.EntityID != client.entityID {
 				continue
 			}
 			change := stateChange{

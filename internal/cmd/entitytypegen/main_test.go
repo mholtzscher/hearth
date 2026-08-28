@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"maps"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -23,7 +24,11 @@ func TestGeneratedFilesAreCurrent(t *testing.T) {
 
 func TestLoadModelRequiresManifestOperationsToMatchSupport(t *testing.T) {
 	root := t.TempDir()
-	if err := os.WriteFile(filepath.Join(root, "go.mod"), []byte("module example.test\n\ngo 1.26\n"), 0o644); err != nil {
+	if err := os.WriteFile(
+		filepath.Join(root, "go.mod"),
+		[]byte("module example.test\n\ngo 1.26\n"),
+		0o644,
+	); err != nil {
 		t.Fatal(err)
 	}
 	writeManifestSchema(t, root)
@@ -46,8 +51,12 @@ func TestLoadModelRequiresManifestOperationsToMatchSupport(t *testing.T) {
 		},
 	})
 	writeJSON(t, filepath.Join(directory, "entitytype.json"), map[string]any{
-		"manifest_version": 1, "type": "example.value/v1", "state_schema": "state.schema.json", "support_schema": "support.schema.json",
-		"operations": map[string]any{}, "examples": "examples.json",
+		"manifest_version": 1,
+		"type":             "example.value/v1",
+		"state_schema":     "state.schema.json",
+		"support_schema":   "support.schema.json",
+		"operations":       map[string]any{},
+		"examples":         "examples.json",
 	})
 
 	_, err := loadModel(filepath.Join(directory, "entitytype.json"))
@@ -58,7 +67,11 @@ func TestLoadModelRequiresManifestOperationsToMatchSupport(t *testing.T) {
 
 func TestLoadModelEnforcesAuthoritativeManifestSchema(t *testing.T) {
 	root := t.TempDir()
-	if err := os.WriteFile(filepath.Join(root, "go.mod"), []byte("module example.test\n\ngo 1.26\n"), 0o644); err != nil {
+	if err := os.WriteFile(
+		filepath.Join(root, "go.mod"),
+		[]byte("module example.test\n\ngo 1.26\n"),
+		0o644,
+	); err != nil {
 		t.Fatal(err)
 	}
 	writeManifestSchema(t, root)
@@ -75,7 +88,8 @@ func TestLoadModelEnforcesAuthoritativeManifestSchema(t *testing.T) {
 	})
 
 	_, err := loadModel(filepath.Join(directory, "entitytype.json"))
-	if err == nil || !strings.Contains(err.Error(), "validate manifest schema") || !strings.Contains(err.Error(), "operations") {
+	if err == nil || !strings.Contains(err.Error(), "validate manifest schema") ||
+		!strings.Contains(err.Error(), "operations") {
 		t.Fatalf("missing operations error = %v", err)
 	}
 }
@@ -89,9 +103,7 @@ func TestLoadModelRejectsIntegerSchemasOutsideInt64(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			directory, manifestPath := writeMinimalEntityTypeFixture(t, "examplev1")
 			schema := map[string]any{"$id": "urn:test:state", "type": "integer"}
-			for key, value := range bounds {
-				schema[key] = value
-			}
+			maps.Copy(schema, bounds)
 			writeJSON(t, filepath.Join(directory, "state.schema.json"), schema)
 
 			_, err := loadModel(manifestPath)
@@ -247,7 +259,11 @@ func TestTypeEmitterRejectsLossyNumberBindings(t *testing.T) {
 	} {
 		t.Run(name, func(t *testing.T) {
 			emitter := &typeEmitter{declarations: make(map[string]string)}
-			if err := emitter.define("Value", schema); err == nil || !strings.Contains(err.Error(), "lossless binding") {
+			if err := emitter.define(
+				"Value",
+				schema,
+			); err == nil ||
+				!strings.Contains(err.Error(), "lossless binding") {
 				t.Fatalf("number binding error = %v", err)
 			}
 		})
@@ -266,7 +282,8 @@ func TestTypeEmitterPreservesOptionalObjectPresence(t *testing.T) {
 	if err := emitter.define("Operations", schema); err != nil {
 		t.Fatal(err)
 	}
-	if declaration := emitter.declarations["Operations"]; !strings.Contains(declaration, "Set *OperationsSet") || !strings.Contains(declaration, `json:"set,omitempty"`) {
+	if declaration := emitter.declarations["Operations"]; !strings.Contains(declaration, "Set *OperationsSet") ||
+		!strings.Contains(declaration, `json:"set,omitempty"`) {
 		t.Fatalf("optional operation field = %s", declaration)
 	}
 }
@@ -312,7 +329,11 @@ func TestRenderedCodecsEmbedExactManifestPaths(t *testing.T) {
 
 func TestRootGenerationAddsATypeWithoutPerTypeGo(t *testing.T) {
 	root := t.TempDir()
-	if err := os.WriteFile(filepath.Join(root, "go.mod"), []byte("module example.test\n\ngo 1.26\n"), 0o644); err != nil {
+	if err := os.WriteFile(
+		filepath.Join(root, "go.mod"),
+		[]byte("module example.test\n\ngo 1.26\n"),
+		0o644,
+	); err != nil {
 		t.Fatal(err)
 	}
 	writeManifestSchema(t, root)
@@ -344,21 +365,42 @@ func TestRootGenerationAddsATypeWithoutPerTypeGo(t *testing.T) {
 		},
 	})
 	writeJSON(t, filepath.Join(directory, "examples.json"), map[string]any{
-		"cases": []any{map[string]any{
-			"name": "switch", "support": map[string]any{"state": map[string]any{}, "operations": map[string]any{"set": map[string]any{}}},
-			"states": []any{map[string]any{"value": 1, "valid": true}, map[string]any{"value": "on", "valid": false}},
-			"operations": map[string]any{"set": map[string]any{
-				"parameters": []any{map[string]any{"value": map[string]any{"value": 1}, "valid": true}, map[string]any{"value": map[string]any{"value": "on"}, "valid": false}},
-				"outcomes":   []any{map[string]any{"parameters": map[string]any{"value": 1}, "state": 2, "satisfied": true}, map[string]any{"parameters": map[string]any{"value": 2}, "state": 1, "satisfied": false}},
-			}},
-		}},
+		"cases": []any{
+			map[string]any{
+				"name": "switch",
+				"support": map[string]any{
+					"state":      map[string]any{},
+					"operations": map[string]any{"set": map[string]any{}},
+				},
+				"states": []any{
+					map[string]any{"value": 1, "valid": true},
+					map[string]any{"value": "on", "valid": false},
+				},
+				"operations": map[string]any{"set": map[string]any{
+					"parameters": []any{
+						map[string]any{"value": map[string]any{"value": 1}, "valid": true},
+						map[string]any{"value": map[string]any{"value": "on"}, "valid": false},
+					},
+					"outcomes": []any{
+						map[string]any{"parameters": map[string]any{"value": 1}, "state": 2, "satisfied": true},
+						map[string]any{"parameters": map[string]any{"value": 2}, "state": 1, "satisfied": false},
+					},
+				}},
+			},
+		},
 	})
 	writeJSON(t, filepath.Join(directory, "entitytype.json"), map[string]any{
-		"manifest_version": 1, "type": "example.switch/v1", "state_schema": "schemas/state.json", "support_schema": "support.schema.json", "examples": "examples.json",
+		"manifest_version": 1,
+		"type":             "example.switch/v1",
+		"state_schema":     "schemas/state.json",
+		"support_schema":   "support.schema.json",
+		"examples":         "examples.json",
 		"operations": map[string]any{"set": map[string]any{
 			"parameters_schema": "parameters.schema.json", "deadline_ms": 1000,
 			"satisfied_when": map[string]any{
-				"op": "lte", "left": map[string]any{"root": "parameters", "path": "/value"}, "right": map[string]any{"root": "state", "path": ""},
+				"op":    "lte",
+				"left":  map[string]any{"root": "parameters", "path": "/value"},
+				"right": map[string]any{"root": "state", "path": ""},
 			},
 		}},
 	})
@@ -396,7 +438,11 @@ func TestRootGenerationAddsATypeWithoutPerTypeGo(t *testing.T) {
 		t.Fatal(err)
 	}
 	orphan := filepath.Join(directory, "zz_generated_old.go")
-	if err := os.WriteFile(orphan, []byte("// Code generated by entitytypegen; DO NOT EDIT.\n\npackage switchv1\n"), 0o644); err != nil {
+	if err := os.WriteFile(
+		orphan,
+		[]byte("// Code generated by entitytypegen; DO NOT EDIT.\n\npackage switchv1\n"),
+		0o644,
+	); err != nil {
 		t.Fatal(err)
 	}
 	if err := generateRoot(root, true); err == nil || !strings.Contains(err.Error(), "orphaned") {
@@ -413,7 +459,11 @@ func TestRootGenerationAddsATypeWithoutPerTypeGo(t *testing.T) {
 func writeMinimalEntityTypeFixture(t *testing.T, packageName string) (string, string) {
 	t.Helper()
 	root := t.TempDir()
-	if err := os.WriteFile(filepath.Join(root, "go.mod"), []byte("module example.test\n\ngo 1.26\n"), 0o644); err != nil {
+	if err := os.WriteFile(
+		filepath.Join(root, "go.mod"),
+		[]byte("module example.test\n\ngo 1.26\n"),
+		0o644,
+	); err != nil {
 		t.Fatal(err)
 	}
 	writeManifestSchema(t, root)
@@ -469,7 +519,9 @@ func writeManifestSchema(t *testing.T, root string) {
 	if !ok {
 		t.Fatal("locate generator test")
 	}
-	raw, err := os.ReadFile(filepath.Join(filepath.Dir(filename), "../../../entitytypes/entitytype-manifest.schema.json"))
+	raw, err := os.ReadFile(
+		filepath.Join(filepath.Dir(filename), "../../../entitytypes/entitytype-manifest.schema.json"),
+	)
 	if err != nil {
 		t.Fatal(err)
 	}

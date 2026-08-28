@@ -39,10 +39,16 @@ func renderTypes(model entityTypeModel) ([]byte, error) {
 		}
 		fmt.Fprintf(&operationFields, "\t%s %s `json:%s`\n", operation.GoName, fieldType, strconv.Quote(tag))
 	}
-	if err := emitter.add("OperationSupport", "type OperationSupport struct {\n"+operationFields.String()+"}\n"); err != nil {
+	if err := emitter.add(
+		"OperationSupport",
+		"type OperationSupport struct {\n"+operationFields.String()+"}\n",
+	); err != nil {
 		return nil, err
 	}
-	if err := emitter.add("Support", "type Support struct {\n\tState StateSupport `json:\"state\"`\n\tOperations OperationSupport `json:\"operations\"`\n}\n"); err != nil {
+	if err := emitter.add(
+		"Support",
+		"type Support struct {\n\tState StateSupport `json:\"state\"`\n\tOperations OperationSupport `json:\"operations\"`\n}\n",
+	); err != nil {
 		return nil, err
 	}
 	for _, operation := range model.Operations {
@@ -53,7 +59,12 @@ func renderTypes(model entityTypeModel) ([]byte, error) {
 
 	var source strings.Builder
 	generatedHeader(&source)
-	fmt.Fprintf(&source, "// Package %s provides schemas, behavior, and Go bindings for %s.\n", model.Package, model.TypeID)
+	fmt.Fprintf(
+		&source,
+		"// Package %s provides schemas, behavior, and Go bindings for %s.\n",
+		model.Package,
+		model.TypeID,
+	)
 	fmt.Fprintf(&source, "package %s\n\n", model.Package)
 	fmt.Fprintf(&source, "const TypeID = %s\n\n", strconv.Quote(model.TypeID))
 	if len(model.Operations) > 0 {
@@ -174,12 +185,19 @@ func renderCodecs(model entityTypeModel) ([]byte, error) {
 	var source strings.Builder
 	generatedHeader(&source)
 	fmt.Fprintf(&source, "package %s\n\n", model.Package)
-	source.WriteString("import (\n\t\"embed\"\n\t\"encoding/json\"\n\t\"fmt\"\n\n\t\"github.com/mholtzscher/hearth/entitytypes\"\n)\n\n")
+	source.WriteString(
+		"import (\n\t\"embed\"\n\t\"encoding/json\"\n\t\"fmt\"\n\n\t\"github.com/mholtzscher/hearth/entitytypes\"\n)\n\n",
+	)
 	source.WriteString("const (\n")
 	fmt.Fprintf(&source, "\tStateSchemaID = %s\n", strconv.Quote(model.StateSchema.ID))
 	fmt.Fprintf(&source, "\tSupportSchemaID = %s\n", strconv.Quote(model.SupportSchema.ID))
 	for _, operation := range model.Operations {
-		fmt.Fprintf(&source, "\t%sParametersSchemaID = %s\n", operation.GoName, strconv.Quote(operation.ParametersSchema.ID))
+		fmt.Fprintf(
+			&source,
+			"\t%sParametersSchemaID = %s\n",
+			operation.GoName,
+			strconv.Quote(operation.ParametersSchema.ID),
+		)
 	}
 	source.WriteString(")\n\n")
 	schemaFiles := []string{model.StateFile, model.SupportFile}
@@ -201,20 +219,43 @@ func renderCodecs(model entityTypeModel) ([]byte, error) {
 	fmt.Fprintf(&source, "\t\tStateSchemaID: %s,\n", strconv.Quote(model.StateFile))
 	fmt.Fprintf(&source, "\t\tSupportSchemaID: %s,\n", strconv.Quote(model.SupportFile))
 	for _, operation := range model.Operations {
-		fmt.Fprintf(&source, "\t\t%sParametersSchemaID: %s,\n", operation.GoName, strconv.Quote(operation.ParametersFile))
+		fmt.Fprintf(
+			&source,
+			"\t\t%sParametersSchemaID: %s,\n",
+			operation.GoName,
+			strconv.Quote(operation.ParametersFile),
+		)
 	}
 	source.WriteString("\t}\n}\n\n")
-	source.WriteString("type Codecs struct {\n\tState *entitytypes.JSONCodec[State]\n\tSupport *entitytypes.JSONCodec[Support]\n")
+	source.WriteString(
+		"type Codecs struct {\n\tState *entitytypes.JSONCodec[State]\n\tSupport *entitytypes.JSONCodec[Support]\n",
+	)
 	for _, operation := range model.Operations {
-		fmt.Fprintf(&source, "\t%sParameters *entitytypes.JSONCodec[%sParameters]\n", operation.GoName, operation.GoName)
+		fmt.Fprintf(
+			&source,
+			"\t%sParameters *entitytypes.JSONCodec[%sParameters]\n",
+			operation.GoName,
+			operation.GoName,
+		)
 	}
 	source.WriteString("}\n\n")
 	source.WriteString("func Compile() (*Codecs, error) {\n")
-	source.WriteString("\tstate, err := compileCodec[State](StateSchemaID, SchemaFiles()[StateSchemaID])\n\tif err != nil { return nil, err }\n")
-	source.WriteString("\tsupport, err := compileCodec[Support](SupportSchemaID, SchemaFiles()[SupportSchemaID])\n\tif err != nil { return nil, err }\n")
+	source.WriteString(
+		"\tstate, err := compileCodec[State](StateSchemaID, SchemaFiles()[StateSchemaID])\n\tif err != nil { return nil, err }\n",
+	)
+	source.WriteString(
+		"\tsupport, err := compileCodec[Support](SupportSchemaID, SchemaFiles()[SupportSchemaID])\n\tif err != nil { return nil, err }\n",
+	)
 	for _, operation := range model.Operations {
 		variable := lowerFirst(operation.GoName) + "Parameters"
-		fmt.Fprintf(&source, "\t%s, err := compileCodec[%sParameters](%sParametersSchemaID, SchemaFiles()[%sParametersSchemaID])\n", variable, operation.GoName, operation.GoName, operation.GoName)
+		fmt.Fprintf(
+			&source,
+			"\t%s, err := compileCodec[%sParameters](%sParametersSchemaID, SchemaFiles()[%sParametersSchemaID])\n",
+			variable,
+			operation.GoName,
+			operation.GoName,
+			operation.GoName,
+		)
 		source.WriteString("\tif err != nil { return nil, err }\n")
 	}
 	source.WriteString("\treturn &Codecs{State: state, Support: support")
@@ -222,6 +263,8 @@ func renderCodecs(model entityTypeModel) ([]byte, error) {
 		fmt.Fprintf(&source, ", %sParameters: %sParameters", operation.GoName, lowerFirst(operation.GoName))
 	}
 	source.WriteString("}, nil\n}\n\n")
-	source.WriteString("func compileCodec[T any](schemaID, path string) (*entitytypes.JSONCodec[T], error) {\n\traw, err := FS.ReadFile(path)\n\tif err != nil { return nil, fmt.Errorf(\"read %s: %w\", path, err) }\n\treturn entitytypes.CompileJSONCodec[T](schemaID, json.RawMessage(raw), nil)\n}\n")
+	source.WriteString(
+		"func compileCodec[T any](schemaID, path string) (*entitytypes.JSONCodec[T], error) {\n\traw, err := FS.ReadFile(path)\n\tif err != nil { return nil, fmt.Errorf(\"read %s: %w\", path, err) }\n\treturn entitytypes.CompileJSONCodec[T](schemaID, json.RawMessage(raw), nil)\n}\n",
+	)
 	return formatGenerated(source.String())
 }

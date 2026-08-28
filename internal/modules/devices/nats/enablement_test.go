@@ -3,16 +3,16 @@ package nats
 import (
 	"context"
 	"errors"
-	"io"
 	"log/slog"
 	"sync/atomic"
 	"testing"
 	"time"
 
+	natsgo "github.com/nats-io/nats.go"
+
 	contractsv1 "github.com/mholtzscher/hearth/contracts/v1"
 	"github.com/mholtzscher/hearth/internal/contracts/v1/natswire"
 	"github.com/mholtzscher/hearth/internal/modules/devices"
-	natsgo "github.com/nats-io/nats.go"
 )
 
 type entityEnablementSetterFunc func(context.Context, string, devices.EntityID, bool) (bool, error)
@@ -45,7 +45,7 @@ func TestEntityEnablementServerReturnsCorrelatedAcceptedAndRejectedResponses(t *
 			return false, devices.ErrEntityWrongAdapter
 		}
 		return false, nil
-	}), slog.New(slog.NewJSONHandler(io.Discard, nil)))
+	}), slog.New(slog.DiscardHandler))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -80,7 +80,7 @@ func TestEntityEnablementServerDiscardsRoutePayloadMismatchWithoutInvokingSetter
 	) (bool, error) {
 		calls.Add(1)
 		return false, nil
-	}), slog.New(slog.NewJSONHandler(io.Discard, nil)))
+	}), slog.New(slog.DiscardHandler))
 	if err != nil {
 		t.Fatal(err)
 	}

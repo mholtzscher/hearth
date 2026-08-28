@@ -5,10 +5,11 @@ import (
 	"errors"
 	"log/slog"
 
+	natsgo "github.com/nats-io/nats.go"
+
 	contractsv1 "github.com/mholtzscher/hearth/contracts/v1"
 	"github.com/mholtzscher/hearth/internal/contracts/v1/natswire"
 	"github.com/mholtzscher/hearth/internal/modules/devices"
-	natsgo "github.com/nats-io/nats.go"
 )
 
 type EntityEnablementSetter interface {

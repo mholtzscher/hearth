@@ -9,12 +9,13 @@ import (
 	"testing"
 	"time"
 
-	contractsv1 "github.com/mholtzscher/hearth/contracts/v1"
-	"github.com/mholtzscher/hearth/internal/contracts/v1/natswire"
 	natsserver "github.com/nats-io/nats-server/v2/server"
 	natsgo "github.com/nats-io/nats.go"
 	"github.com/nats-io/nats.go/jetstream"
 	"go.opentelemetry.io/otel/trace"
+
+	contractsv1 "github.com/mholtzscher/hearth/contracts/v1"
+	"github.com/mholtzscher/hearth/internal/contracts/v1/natswire"
 )
 
 const testEntityID = "ent_01890f47-7a6b-7c4d-8e9f-0123456789ab"
@@ -57,7 +58,11 @@ func TestRegisterAcceptedRejectedAndLocalValidation(t *testing.T) {
 	_, err = core.Subscribe(subject, func(message *natsgo.Msg) {
 		requests.Add(1)
 		traceHeaders <- message.Header.Get("traceparent")
-		request, decodeErr := natswire.Decode[Registration](validator, contractsv1.RegistrationRequestSchemaID, message.Data)
+		request, decodeErr := natswire.Decode[Registration](
+			validator,
+			contractsv1.RegistrationRequestSchemaID,
+			message.Data,
+		)
 		if decodeErr != nil {
 			t.Errorf("decode registration request: %v", decodeErr)
 			return
@@ -69,7 +74,10 @@ func TestRegisterAcceptedRejectedAndLocalValidation(t *testing.T) {
 			CorrelationID: request.CorrelationID, CausationID: &causationID,
 		}
 		if request.Data.BindingKey == "rejected-light" {
-			response.Data = RegistrationResponse{Status: "rejected", Error: &RegistrationError{Code: "identity_conflict", Message: "binding is already owned"}}
+			response.Data = RegistrationResponse{
+				Status: "rejected",
+				Error:  &RegistrationError{Code: "identity_conflict", Message: "binding is already owned"},
+			}
 		} else {
 			response.Data = RegistrationResponse{Status: "accepted", Binding: &Binding{
 				BindingKey: request.Data.BindingKey,
@@ -100,7 +108,8 @@ func TestRegisterAcceptedRejectedAndLocalValidation(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if binding.BindingKey != "office-light" || binding.Entities[0].EntityID != testEntityID || !binding.Entities[0].Enabled {
+	if binding.BindingKey != "office-light" || binding.Entities[0].EntityID != testEntityID ||
+		!binding.Entities[0].Enabled {
 		t.Fatalf("binding = %#v", binding)
 	}
 	if traceHeader := <-traceHeaders; traceHeader == "" {
@@ -117,8 +126,7 @@ func TestRegisterAcceptedRejectedAndLocalValidation(t *testing.T) {
 
 	registration = validRegistration("bad.binding")
 	_, err = session.Register(testContext(t), registration)
-	var validation *ValidationError
-	if !errors.As(err, &validation) {
+	if _, ok := errors.AsType[*ValidationError](err); !ok {
 		t.Fatalf("local validation error = %v", err)
 	}
 	if got := requests.Load(); got != 2 {
@@ -205,8 +213,7 @@ func TestSetEntityEnabledRoundTripsAcceptedAndTypedRejectedResponses(t *testing.
 	if _, err := session.SetEntityEnabled(testContext(t), "not-an-entity", false); err == nil {
 		t.Fatal("invalid local Entity ID unexpectedly accepted")
 	} else {
-		var validation *ValidationError
-		if !errors.As(err, &validation) {
+		if _, ok := errors.AsType[*ValidationError](err); !ok {
 			t.Fatalf("local validation error = %v", err)
 		}
 	}
@@ -335,7 +342,6 @@ func TestServeCommandsInvokesHandlersConcurrentlyAndRespondsOnce(t *testing.T) {
 	replies := make(chan *natsgo.Msg, 2)
 	errorsChannel := make(chan error, 2)
 	for _, value := range []bool{true, false} {
-		value := value
 		go func() {
 			reply, requestErr := sendCommand(requestContext, core, value)
 			replies <- reply
@@ -355,11 +361,16 @@ func TestServeCommandsInvokesHandlersConcurrentlyAndRespondsOnce(t *testing.T) {
 			t.Fatal(requestErr)
 		}
 		reply := <-replies
-		response, decodeErr := natswire.Decode[CommandResponse](validator, contractsv1.CommandResponseSchemaID, reply.Data)
+		response, decodeErr := natswire.Decode[CommandResponse](
+			validator,
+			contractsv1.CommandResponseSchemaID,
+			reply.Data,
+		)
 		if decodeErr != nil {
 			t.Fatal(decodeErr)
 		}
-		if response.Data.Status != "accepted" || response.CausationID == nil || response.Data.CommandID != *response.CausationID {
+		if response.Data.Status != "accepted" || response.CausationID == nil ||
+			response.Data.CommandID != *response.CausationID {
 			t.Fatalf("command response = %#v", response)
 		}
 		if reply.Header.Get("traceparent") == "" {
@@ -459,11 +470,16 @@ func TestCommandRejectionUsesUpstreamRejectedCode(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	response, err := natswire.Decode[CommandResponse](compileValidator(t), contractsv1.CommandResponseSchemaID, reply.Data)
+	response, err := natswire.Decode[CommandResponse](
+		compileValidator(t),
+		contractsv1.CommandResponseSchemaID,
+		reply.Data,
+	)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if response.Data.Status != "rejected" || response.Data.Error == nil || response.Data.Error.Code != "upstream_rejected" {
+	if response.Data.Status != "rejected" || response.Data.Error == nil ||
+		response.Data.Error.Code != "upstream_rejected" {
 		t.Fatalf("command response = %#v", response)
 	}
 
@@ -502,8 +518,7 @@ func TestLinkedObservationReusesCommandCausality(t *testing.T) {
 	core := connectNATS(t, server.ClientURL())
 	stream := createObservationStream(t, core)
 	session := connectSession(t, server.ClientURL())
-	serveContext, cancelServe := context.WithCancel(context.Background())
-	defer cancelServe()
+	serveContext := t.Context()
 	published := make(chan error, 1)
 	serveDone := make(chan error, 1)
 	subscriptions := server.NumSubscriptions()
@@ -541,7 +556,8 @@ func TestLinkedObservationReusesCommandCausality(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if observation.CausationID == nil || *observation.CausationID != response.Data.CommandID || observation.CorrelationID != response.CorrelationID {
+	if observation.CausationID == nil || *observation.CausationID != response.Data.CommandID ||
+		observation.CorrelationID != response.CorrelationID {
 		t.Fatalf("linked observation causality = %#v; response = %#v", observation, response)
 	}
 }
@@ -550,8 +566,7 @@ func TestMissingCommandResponseLetsRequestTimeOut(t *testing.T) {
 	server := startServer(t, -1, t.TempDir())
 	core := connectNATS(t, server.ClientURL())
 	session := connectSession(t, server.ClientURL())
-	serveContext, cancelServe := context.WithCancel(context.Background())
-	defer cancelServe()
+	serveContext := t.Context()
 	handled := make(chan struct{}, 1)
 	serveDone := make(chan error, 1)
 	subscriptions := server.NumSubscriptions()
@@ -578,8 +593,7 @@ func TestCloseWaitsForCommandHandlers(t *testing.T) {
 	server := startServer(t, -1, t.TempDir())
 	core := connectNATS(t, server.ClientURL())
 	session := connectSession(t, server.ClientURL())
-	serveContext, cancelServe := context.WithCancel(context.Background())
-	defer cancelServe()
+	serveContext := t.Context()
 	entered := make(chan struct{})
 	release := make(chan struct{})
 	serveDone := make(chan error, 1)
@@ -647,11 +661,22 @@ func sendCommand(ctx context.Context, connection *natsgo.Conn, value bool) (*nat
 	return sendCommandWithTimeout(ctx, connection, value, 3*time.Second)
 }
 
-func sendCommandWithTimeout(ctx context.Context, connection *natsgo.Conn, value bool, timeout time.Duration) (*natsgo.Msg, error) {
+func sendCommandWithTimeout(
+	ctx context.Context,
+	connection *natsgo.Conn,
+	value bool,
+	timeout time.Duration,
+) (*natsgo.Msg, error) {
 	return sendCommandWithDeadline(ctx, connection, value, timeout, time.Now().UTC().Add(10*time.Second))
 }
 
-func sendCommandWithDeadline(ctx context.Context, connection *natsgo.Conn, value bool, timeout time.Duration, deadline time.Time) (*natsgo.Msg, error) {
+func sendCommandWithDeadline(
+	ctx context.Context,
+	connection *natsgo.Conn,
+	value bool,
+	timeout time.Duration,
+	deadline time.Time,
+) (*natsgo.Msg, error) {
 	validator, err := contractsv1.Compile()
 	if err != nil {
 		return nil, err
@@ -669,8 +694,16 @@ func sendCommandWithDeadline(ctx context.Context, connection *natsgo.Conn, value
 		return nil, err
 	}
 	payload, err := natswire.Encode(validator, contractsv1.CommandRequestSchemaID, natswire.Envelope[Command]{
-		ID: commandID, Schema: contractsv1.CommandRequestSchemaID, EmittedAt: nowString(), CorrelationID: correlationID,
-		Data: Command{EntityID: testEntityID, OperationName: "set", Parameters: json.RawMessage(mustJSON(value)), Deadline: deadline.UTC().Format(time.RFC3339Nano)},
+		ID:            commandID,
+		Schema:        contractsv1.CommandRequestSchemaID,
+		EmittedAt:     nowString(),
+		CorrelationID: correlationID,
+		Data: Command{
+			EntityID:      testEntityID,
+			OperationName: "set",
+			Parameters:    json.RawMessage(mustJSON(value)),
+			Deadline:      deadline.UTC().Format(time.RFC3339Nano),
+		},
 	})
 	if err != nil {
 		return nil, err
@@ -735,7 +768,9 @@ func createObservationStream(t *testing.T, connection *natsgo.Conn) jetstream.St
 		t.Fatal(err)
 	}
 	stream, err := js.CreateStream(testContext(t), jetstream.StreamConfig{
-		Name: "HEARTH_OBSERVATIONS_V1", Subjects: []string{"hearth.v1.adapter.*.observation.>"}, Storage: jetstream.FileStorage,
+		Name:     "HEARTH_OBSERVATIONS_V1",
+		Subjects: []string{"hearth.v1.adapter.*.observation.>"},
+		Storage:  jetstream.FileStorage,
 	})
 	if err != nil {
 		t.Fatal(err)

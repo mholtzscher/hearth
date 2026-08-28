@@ -64,8 +64,17 @@ func TestCommandHandlerMatchesEntityAndOperationTogether(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	command := adapter.Command{EntityID: "ent_two", OperationName: "set", Deadline: time.Now().UTC().Format(time.RFC3339Nano)}
-	if err := handler(context.Background(), command, nil); err == nil || !strings.Contains(err.Error(), "no typed command route") {
+	command := adapter.Command{
+		EntityID:      "ent_two",
+		OperationName: "set",
+		Deadline:      time.Now().UTC().Format(time.RFC3339Nano),
+	}
+	if err := handler(
+		context.Background(),
+		command,
+		nil,
+	); err == nil ||
+		!strings.Contains(err.Error(), "no typed command route") {
 		t.Fatalf("route error = %v", err)
 	}
 }
@@ -88,10 +97,20 @@ func TestCommandHandlerRejectsDuplicateAndInvalidRoutes(t *testing.T) {
 	if _, err := NewCommandHandler(); err == nil {
 		t.Fatal("empty routes unexpectedly accepted")
 	}
-	if _, err := Operation[parameters]("", "set", func(json.RawMessage) (parameters, error) { return parameters{}, nil }, func(context.Context, Command[parameters], adapter.Responder) error { return nil }); err == nil {
+	if _, err := Operation[parameters](
+		"",
+		"set",
+		func(json.RawMessage) (parameters, error) { return parameters{}, nil },
+		func(context.Context, Command[parameters], adapter.Responder) error { return nil },
+	); err == nil {
 		t.Fatal("empty entity ID unexpectedly accepted")
 	}
-	if _, err := Operation[parameters]("ent_one", "bad.name", func(json.RawMessage) (parameters, error) { return parameters{}, nil }, func(context.Context, Command[parameters], adapter.Responder) error { return nil }); err == nil {
+	if _, err := Operation[parameters](
+		"ent_one",
+		"bad.name",
+		func(json.RawMessage) (parameters, error) { return parameters{}, nil },
+		func(context.Context, Command[parameters], adapter.Responder) error { return nil },
+	); err == nil {
 		t.Fatal("unsafe operation unexpectedly accepted")
 	}
 }

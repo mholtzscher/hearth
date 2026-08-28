@@ -10,12 +10,13 @@ import (
 	"testing"
 	"time"
 
-	contractsv1 "github.com/mholtzscher/hearth/contracts/v1"
-	"github.com/mholtzscher/hearth/internal/contracts/v1/natswire"
-	"github.com/mholtzscher/hearth/internal/modules/devices"
 	natsserver "github.com/nats-io/nats-server/v2/server"
 	natsgo "github.com/nats-io/nats.go"
 	"github.com/nats-io/nats.go/jetstream"
+
+	contractsv1 "github.com/mholtzscher/hearth/contracts/v1"
+	"github.com/mholtzscher/hearth/internal/contracts/v1/natswire"
+	"github.com/mholtzscher/hearth/internal/modules/devices"
 )
 
 const (
@@ -124,7 +125,8 @@ func TestObservationConsumerMapsProjectsAndAcknowledgesByFailureClass(t *testing
 		t.Fatalf("unparseable source_updated_at reached projector: %#v", unexpected)
 	default:
 	}
-	if output := logs.String(); !strings.Contains(output, "parse source_updated_at") || !strings.Contains(output, testThirdObservationID) {
+	if output := logs.String(); !strings.Contains(output, "parse source_updated_at") ||
+		!strings.Contains(output, testThirdObservationID) {
 		t.Fatalf("source_updated_at log = %s", output)
 	}
 
@@ -178,7 +180,12 @@ func publishObservationEnvelope(t *testing.T, js jetstream.JetStream, observatio
 	publishObservationEnvelopeWithSource(t, js, observationID, value, nil)
 }
 
-func publishObservationEnvelopeWithSource(t *testing.T, js jetstream.JetStream, observationID, value string, sourceUpdatedAt *string) {
+func publishObservationEnvelopeWithSource(
+	t *testing.T,
+	js jetstream.JetStream,
+	observationID, value string,
+	sourceUpdatedAt *string,
+) {
 	t.Helper()
 	emittedAt := time.Now().UTC()
 	adapterReceivedAt := emittedAt.Add(2 * time.Minute)

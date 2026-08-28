@@ -3,6 +3,7 @@ package devices
 import (
 	"encoding/json"
 	"fmt"
+	"maps"
 	"regexp"
 	"time"
 
@@ -187,7 +188,9 @@ type TypeCatalog struct {
 func NewTypeCatalog(definitions []EntityTypeDefinition) (*TypeCatalog, error) {
 	catalog := &TypeCatalog{types: make(map[EntityTypeID]EntityTypeDefinition, len(definitions))}
 	for _, definition := range definitions {
-		if definition.id == "" || definition.normalizeSupport == nil || definition.normalizeState == nil || definition.equalState == nil || definition.operations == nil {
+		if definition.id == "" || definition.normalizeSupport == nil || definition.normalizeState == nil ||
+			definition.equalState == nil ||
+			definition.operations == nil {
 			return nil, fmt.Errorf("invalid entity type definition")
 		}
 		if _, duplicate := catalog.types[definition.id]; duplicate {
@@ -195,9 +198,7 @@ func NewTypeCatalog(definitions []EntityTypeDefinition) (*TypeCatalog, error) {
 		}
 		copy := definition
 		copy.operations = make(map[OperationName]erasedOperationDefinition, len(definition.operations))
-		for name, operation := range definition.operations {
-			copy.operations[name] = operation
-		}
+		maps.Copy(copy.operations, definition.operations)
 		catalog.types[definition.id] = copy
 	}
 	return catalog, nil
@@ -227,14 +228,22 @@ func (catalog *TypeCatalog) EqualState(entity Entity, persisted, incoming Value)
 	return definition.equalState(entity.Support, persisted, incoming)
 }
 
-func (catalog *TypeCatalog) ResolveCommand(entity Entity, operationName OperationName, parameters CommandParameters) (ResolvedCommand, error) {
+func (catalog *TypeCatalog) ResolveCommand(
+	entity Entity,
+	operationName OperationName,
+	parameters CommandParameters,
+) (ResolvedCommand, error) {
 	definition, err := catalog.resolve(entity.TypeID)
 	if err != nil {
 		return ResolvedCommand{}, err
 	}
 	operation, exists := definition.operations[operationName]
 	if !exists {
-		return ResolvedCommand{}, fmt.Errorf("entity type %q does not define operation %q", entity.TypeID, operationName)
+		return ResolvedCommand{}, fmt.Errorf(
+			"entity type %q does not define operation %q",
+			entity.TypeID,
+			operationName,
+		)
 	}
 	normalized, err := operation.resolve(entity.Support, parameters)
 	if err != nil {

@@ -6,10 +6,11 @@ import (
 	"fmt"
 	"time"
 
+	natsgo "github.com/nats-io/nats.go"
+
 	contractsv1 "github.com/mholtzscher/hearth/contracts/v1"
 	"github.com/mholtzscher/hearth/internal/contracts/v1/natswire"
 	"github.com/mholtzscher/hearth/internal/modules/devices"
-	natsgo "github.com/nats-io/nats.go"
 )
 
 type CommandSender struct {
@@ -51,7 +52,11 @@ func (sender *CommandSender) Send(
 	reply, err := sender.connection.RequestMsgWithContext(ctx, message)
 	if err != nil {
 		if commandUnavailable(err) {
-			return devices.CommandAcceptance{}, fmt.Errorf("%w: command adapter unavailable: %v", devices.ErrAdapterUnavailable, err)
+			return devices.CommandAcceptance{}, fmt.Errorf(
+				"%w: command adapter unavailable: %w",
+				devices.ErrAdapterUnavailable,
+				err,
+			)
 		}
 		return devices.CommandAcceptance{}, fmt.Errorf("request command: %w", err)
 	}

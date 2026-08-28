@@ -9,9 +9,9 @@ import (
 )
 
 type ListEntitiesInput struct {
-	Limit    int    `query:"limit" default:"50" minimum:"1" maximum:"200"`
+	Limit    int    `query:"limit"     default:"50" minimum:"1" maximum:"200"`
 	Cursor   string `query:"cursor"`
-	DeviceID string `query:"device_id" doc:"Canonical Hearth Device ID"`
+	DeviceID string `query:"device_id"                                        doc:"Canonical Hearth Device ID"`
 }
 
 type ListEntitiesOutput struct {

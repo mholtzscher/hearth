@@ -93,12 +93,18 @@ func (homeAssistant *Adapter) Run(ctx context.Context) error {
 		if ctx.Err() != nil {
 			return nil
 		}
-		var authentication *AuthenticationError
-		if errors.As(err, &authentication) {
+		if _, ok := errors.AsType[*AuthenticationError](err); ok {
 			return err
 		}
 		wait := jitter(delay)
-		homeAssistant.logger.Warn("Home Assistant connection ended; reconnecting", "error", err, "retry_in", wait)
+		homeAssistant.logger.WarnContext(
+			ctx,
+			"Home Assistant connection ended; reconnecting",
+			"error",
+			err,
+			"retry_in",
+			wait,
+		)
 		timer := time.NewTimer(wait)
 		select {
 		case <-ctx.Done():
@@ -114,7 +120,12 @@ func (homeAssistant *Adapter) Run(ctx context.Context) error {
 }
 
 func (homeAssistant *Adapter) runConnection(ctx context.Context) error {
-	client, err := dialClient(ctx, homeAssistant.config.URL, homeAssistant.config.Token, homeAssistant.config.ExternalEntityID)
+	client, err := dialClient(
+		ctx,
+		homeAssistant.config.URL,
+		homeAssistant.config.Token,
+		homeAssistant.config.ExternalEntityID,
+	)
 	if err != nil {
 		return err
 	}
@@ -172,23 +183,41 @@ snapshotReady:
 	}
 	state, found := findState(snapshot.states, homeAssistant.config.ExternalEntityID)
 	if !found {
-		return fmt.Errorf("configured Home Assistant Entity %q was absent from get_states", homeAssistant.config.ExternalEntityID)
+		return fmt.Errorf(
+			"configured Home Assistant Entity %q was absent from get_states",
+			homeAssistant.config.ExternalEntityID,
+		)
 	}
 	snapshotUpdatedAt, _ := sourceUpdatedAt(state)
 	if err := homeAssistant.publish(ctx, state, snapshot.receivedAt, nil); err != nil {
 		if !errors.Is(err, errUnsupportedState) {
 			return err
 		}
-		homeAssistant.logger.Warn("Home Assistant snapshot State is not publishable", "entity_id", state.EntityID, "state", state.State)
+		homeAssistant.logger.WarnContext(
+			ctx,
+			"Home Assistant snapshot State is not publishable",
+			"entity_id",
+			state.EntityID,
+			"state",
+			state.State,
+		)
 	}
 	for _, event := range buffered {
 		eventUpdatedAt, err := sourceUpdatedAt(event.State)
-		if err != nil || snapshotUpdatedAt == nil || eventUpdatedAt == nil || !eventUpdatedAt.After(*snapshotUpdatedAt) {
+		if err != nil || snapshotUpdatedAt == nil || eventUpdatedAt == nil ||
+			!eventUpdatedAt.After(*snapshotUpdatedAt) {
 			continue
 		}
 		if err := homeAssistant.publish(ctx, event.State, event.ReceivedAt, nil); err != nil {
 			if errors.Is(err, errUnsupportedState) {
-				homeAssistant.logger.Warn("Home Assistant event State is not publishable", "entity_id", event.State.EntityID, "state", event.State.State)
+				homeAssistant.logger.WarnContext(
+					ctx,
+					"Home Assistant event State is not publishable",
+					"entity_id",
+					event.State.EntityID,
+					"state",
+					event.State.State,
+				)
 				continue
 			}
 			return err
@@ -200,7 +229,14 @@ snapshotReady:
 		case event := <-client.Events():
 			if err := homeAssistant.publish(ctx, event.State, event.ReceivedAt, nil); err != nil {
 				if errors.Is(err, errUnsupportedState) {
-					homeAssistant.logger.Warn("Home Assistant event State is not publishable", "entity_id", event.State.EntityID, "state", event.State.State)
+					homeAssistant.logger.WarnContext(
+						ctx,
+						"Home Assistant event State is not publishable",
+						"entity_id",
+						event.State.EntityID,
+						"state",
+						event.State.State,
+					)
 					continue
 				}
 				return err
@@ -230,7 +266,14 @@ func (homeAssistant *Adapter) set(
 		desiredState = "on"
 	}
 	if err := client.CallLightService(ctx, service, homeAssistant.config.ExternalEntityID); err != nil {
-		homeAssistant.logger.Warn("Home Assistant service call failed", "entity_id", homeAssistant.config.ExternalEntityID, "error", err)
+		homeAssistant.logger.WarnContext(
+			ctx,
+			"Home Assistant service call failed",
+			"entity_id",
+			homeAssistant.config.ExternalEntityID,
+			"error",
+			err,
+		)
 		return responder.Reject("Home Assistant rejected the light command")
 	}
 	if err := responder.Accept(); err != nil {
@@ -263,7 +306,10 @@ func (homeAssistant *Adapter) getState(ctx context.Context, client *client) (ups
 	}
 	state, found := findState(states, homeAssistant.config.ExternalEntityID)
 	if !found {
-		return upstreamState{}, time.Time{}, fmt.Errorf("configured Home Assistant Entity %q was absent from command refresh", homeAssistant.config.ExternalEntityID)
+		return upstreamState{}, time.Time{}, fmt.Errorf(
+			"configured Home Assistant Entity %q was absent from command refresh",
+			homeAssistant.config.ExternalEntityID,
+		)
 	}
 	return state, receivedAt, nil
 }
@@ -287,7 +333,14 @@ func (homeAssistant *Adapter) publish(
 	}
 	updatedAt, err := sourceUpdatedAt(state)
 	if err != nil {
-		homeAssistant.logger.Warn("Home Assistant State has invalid last_updated", "entity_id", state.EntityID, "error", err)
+		homeAssistant.logger.WarnContext(
+			ctx,
+			"Home Assistant State has invalid last_updated",
+			"entity_id",
+			state.EntityID,
+			"error",
+			err,
+		)
 		updatedAt = nil
 	}
 	observation, err := sdkpowerv1.NewObservation(sdkpowerv1.ObservationInput{

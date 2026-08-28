@@ -63,7 +63,10 @@ func (err *RegistrationRejectedError) Error() string {
 func (service *Service) Register(ctx context.Context, adapterID string, registration Registration) (Binding, error) {
 	normalized, err := service.normalizeRegistration(adapterID, registration)
 	if err != nil {
-		return Binding{}, &RegistrationRejectedError{Code: RegistrationInvalidDescriptor, Message: operatorMessage(err.Error())}
+		return Binding{}, &RegistrationRejectedError{
+			Code:    RegistrationInvalidDescriptor,
+			Message: operatorMessage(err.Error()),
+		}
 	}
 	deviceID, err := service.dependencies.NewDeviceID()
 	if err != nil {

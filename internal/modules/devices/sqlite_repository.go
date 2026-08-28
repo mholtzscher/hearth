@@ -27,7 +27,10 @@ func NewSQLiteRepository(database *sql.DB, catalog *TypeCatalog) *SQLiteReposito
 	return &SQLiteRepository{database: database, catalog: catalog}
 }
 
-func (repository *SQLiteRepository) RegisterBinding(ctx context.Context, params RegisterBindingParams) (Binding, error) {
+func (repository *SQLiteRepository) RegisterBinding(
+	ctx context.Context,
+	params RegisterBindingParams,
+) (Binding, error) {
 	tx, err := repository.database.BeginTx(ctx, &sql.TxOptions{Isolation: sql.LevelSerializable})
 	if err != nil {
 		return Binding{}, fmt.Errorf("begin registration transaction: %w", err)
@@ -43,7 +46,13 @@ func (repository *SQLiteRepository) RegisterBinding(ctx context.Context, params 
 	switch {
 	case err == nil:
 		deviceID = DeviceID(binding.DeviceID)
-		if err := ensureExternalDeviceAvailable(ctx, queries, params.AdapterID, params.Device.ExternalID, deviceID); err != nil {
+		if err := ensureExternalDeviceAvailable(
+			ctx,
+			queries,
+			params.AdapterID,
+			params.Device.ExternalID,
+			deviceID,
+		); err != nil {
 			return Binding{}, err
 		}
 		if err := queries.UpdateDeviceDescriptor(ctx, registrationsqlc.UpdateDeviceDescriptorParams{
@@ -59,7 +68,13 @@ func (repository *SQLiteRepository) RegisterBinding(ctx context.Context, params 
 		}
 	case errors.Is(err, sql.ErrNoRows):
 		deviceID = params.DeviceID
-		if err := ensureExternalDeviceAvailable(ctx, queries, params.AdapterID, params.Device.ExternalID, deviceID); err != nil {
+		if err := ensureExternalDeviceAvailable(
+			ctx,
+			queries,
+			params.AdapterID,
+			params.Device.ExternalID,
+			deviceID,
+		); err != nil {
 			return Binding{}, err
 		}
 		if err := queries.CreateDevice(ctx, registrationsqlc.CreateDeviceParams{
@@ -123,7 +138,10 @@ func (repository *SQLiteRepository) RegisterBinding(ctx context.Context, params 
 		entity := reconciliation.params.Entity
 		if reconciliation.exists {
 			if err := queries.UpdateEntityDescriptor(ctx, registrationsqlc.UpdateEntityDescriptorParams{
-				Name: entity.Name, SupportJson: string(entity.Support), UpdatedAt: updatedAt, ID: reconciliation.mapping.EntityID,
+				Name:        entity.Name,
+				SupportJson: string(entity.Support),
+				UpdatedAt:   updatedAt,
+				ID:          reconciliation.mapping.EntityID,
 			}); err != nil {
 				return Binding{}, fmt.Errorf("update entity descriptor: %w", err)
 			}
@@ -139,9 +157,16 @@ func (repository *SQLiteRepository) RegisterBinding(ctx context.Context, params 
 				initiallyEnabled = *entity.InitiallyEnabled
 			}
 			if err := queries.CreateEntity(ctx, registrationsqlc.CreateEntityParams{
-				ID: string(reconciliation.entityID), DeviceID: string(deviceID), Name: entity.Name,
-				TypeID: string(entity.TypeID), SupportJson: string(entity.Support), Enabled: boolToInt64(initiallyEnabled),
-				CreatedAt: updatedAt, UpdatedAt: updatedAt,
+				ID:       string(reconciliation.entityID),
+				DeviceID: string(deviceID),
+				Name:     entity.Name,
+				TypeID: string(
+					entity.TypeID,
+				),
+				SupportJson: string(entity.Support),
+				Enabled:     boolToInt64(initiallyEnabled),
+				CreatedAt:   updatedAt,
+				UpdatedAt:   updatedAt,
 			}); err != nil {
 				return Binding{}, fmt.Errorf("create entity: %w", err)
 			}
@@ -172,7 +197,13 @@ func (repository *SQLiteRepository) RegisterBinding(ctx context.Context, params 
 	}, nil
 }
 
-func ensureExternalDeviceAvailable(ctx context.Context, queries *registrationsqlc.Queries, adapterID string, externalID *string, deviceID DeviceID) error {
+func ensureExternalDeviceAvailable(
+	ctx context.Context,
+	queries *registrationsqlc.Queries,
+	adapterID string,
+	externalID *string,
+	deviceID DeviceID,
+) error {
 	if externalID == nil {
 		return nil
 	}
@@ -208,7 +239,10 @@ func isUniqueConstraint(err error) bool {
 	return code == 1555 || code == 2067
 }
 
-func (repository *SQLiteRepository) SetEntityEnabled(ctx context.Context, params SetEntityEnabledParams) (EntityWithState, error) {
+func (repository *SQLiteRepository) SetEntityEnabled(
+	ctx context.Context,
+	params SetEntityEnabledParams,
+) (EntityWithState, error) {
 	tx, err := repository.database.BeginTx(ctx, &sql.TxOptions{Isolation: sql.LevelSerializable})
 	if err != nil {
 		return EntityWithState{}, fmt.Errorf("begin entity enablement update: %w", err)
@@ -252,7 +286,9 @@ func (repository *SQLiteRepository) SetEntityEnabled(ctx context.Context, params
 }
 
 func (repository *SQLiteRepository) CreateCommand(ctx context.Context, command CommandRecord) (CommandRecord, error) {
-	if command.Status != CommandStatusRequested || command.AcceptedAt != nil || command.CompletedAt != nil || command.OutcomeObservationID != nil || command.FailureCode != nil {
+	if command.Status != CommandStatusRequested || command.AcceptedAt != nil || command.CompletedAt != nil ||
+		command.OutcomeObservationID != nil ||
+		command.FailureCode != nil {
 		return CommandRecord{}, errors.New("new command must be in requested status without terminal fields")
 	}
 	tx, err := repository.database.BeginTx(ctx, &sql.TxOptions{Isolation: sql.LevelSerializable})
@@ -364,9 +400,10 @@ func (repository *SQLiteRepository) CompleteCommand(ctx context.Context, complet
 }
 
 func (repository *SQLiteRepository) InterruptActiveCommands(ctx context.Context, completedAt time.Time) error {
-	_, err := commandsqlc.New(repository.database).InterruptActiveCommands(ctx, commandsqlc.InterruptActiveCommandsParams{
-		CompletedAt: sql.NullString{String: formatTime(completedAt), Valid: true},
-	})
+	_, err := commandsqlc.New(repository.database).
+		InterruptActiveCommands(ctx, commandsqlc.InterruptActiveCommandsParams{
+			CompletedAt: sql.NullString{String: formatTime(completedAt), Valid: true},
+		})
 	if err != nil {
 		return fmt.Errorf("interrupt active commands: %w", err)
 	}
@@ -414,7 +451,8 @@ func validCommandCompletion(completion CommandCompletion) bool {
 		CommandStatusOutcomeTimeout:     CommandFailureOutcomeTimeout,
 		CommandStatusInternalFailure:    CommandFailureInternalError,
 	}
-	return !completion.CompletedAt.IsZero() && expected[completion.Status] == completion.FailureCode && completion.FailureCode != ""
+	return !completion.CompletedAt.IsZero() && expected[completion.Status] == completion.FailureCode &&
+		completion.FailureCode != ""
 }
 
 func sameCompletion(command CommandRecord, completion CommandCompletion) bool {

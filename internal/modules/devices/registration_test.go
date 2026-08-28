@@ -15,7 +15,10 @@ type stubRegistrationRepository struct {
 	params  RegisterBindingParams
 }
 
-func (repository *stubRegistrationRepository) RegisterBinding(_ context.Context, params RegisterBindingParams) (Binding, error) {
+func (repository *stubRegistrationRepository) RegisterBinding(
+	_ context.Context,
+	params RegisterBindingParams,
+) (Binding, error) {
 	repository.calls++
 	repository.params = params
 	return repository.binding, repository.err
@@ -45,11 +48,17 @@ func (*stubRegistrationRepository) GetCommand(context.Context, CommandID) (Comma
 	panic("unexpected GetCommand call")
 }
 
-func (*stubRegistrationRepository) ListEntityCommands(context.Context, ListEntityCommandsParams) (Page[CommandRecord], error) {
+func (*stubRegistrationRepository) ListEntityCommands(
+	context.Context,
+	ListEntityCommandsParams,
+) (Page[CommandRecord], error) {
 	panic("unexpected ListEntityCommands call")
 }
 
-func (*stubRegistrationRepository) ProjectObservation(context.Context, ProjectObservationParams) (ProjectionResult, error) {
+func (*stubRegistrationRepository) ProjectObservation(
+	context.Context,
+	ProjectObservationParams,
+) (ProjectionResult, error) {
 	panic("unexpected ProjectObservation call")
 }
 
@@ -135,7 +144,10 @@ func TestRegisterRejectsInvalidEntitySetsBeforeGeneratingIDsOrCallingRepository(
 			return registration
 		},
 		"duplicate key": func(registration Registration) Registration {
-			registration.Entities = append(registration.Entities, registrationEntity("power", "light.office.brightness"))
+			registration.Entities = append(
+				registration.Entities,
+				registrationEntity("power", "light.office.brightness"),
+			)
 			return registration
 		},
 		"duplicate external ID": func(registration Registration) Registration {

@@ -27,7 +27,10 @@ func (repository *SQLiteRepository) GetEntity(ctx context.Context, id EntityID) 
 	)
 }
 
-func (repository *SQLiteRepository) ProjectObservation(ctx context.Context, params ProjectObservationParams) (ProjectionResult, error) {
+func (repository *SQLiteRepository) ProjectObservation(
+	ctx context.Context,
+	params ProjectObservationParams,
+) (ProjectionResult, error) {
 	if repository.catalog == nil {
 		return ProjectionResult{}, errors.New("project observation: entity type catalog is required")
 	}
@@ -235,9 +238,10 @@ func (repository *SQLiteRepository) satisfyCommand(
 }
 
 func (repository *SQLiteRepository) DeleteExpiredObservationReceipts(ctx context.Context, before time.Time) error {
-	_, err := receiptsqlc.New(repository.database).DeleteExpiredObservationReceipts(ctx, receiptsqlc.DeleteExpiredObservationReceiptsParams{
-		ExpiresAt: formatTime(before),
-	})
+	_, err := receiptsqlc.New(repository.database).
+		DeleteExpiredObservationReceipts(ctx, receiptsqlc.DeleteExpiredObservationReceiptsParams{
+			ExpiresAt: formatTime(before),
+		})
 	if err != nil {
 		return fmt.Errorf("delete expired observation receipts: %w", err)
 	}

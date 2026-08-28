@@ -48,7 +48,9 @@ func TestCursorCodecsRoundTripAndEnforceScope(t *testing.T) {
 	}
 
 	requestedAt := time.Date(2026, 8, 26, 12, 0, 0, 123, time.UTC)
-	commandCursor, err := encodeCommandCursor(devices.CommandRecord{ID: apiCommandID, EntityID: apiEntityID, RequestedAt: requestedAt})
+	commandCursor, err := encodeCommandCursor(
+		devices.CommandRecord{ID: apiCommandID, EntityID: apiEntityID, RequestedAt: requestedAt},
+	)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -63,8 +65,12 @@ func TestCursorCodecsRoundTripAndEnforceScope(t *testing.T) {
 }
 
 func TestCursorCodecsRejectMalformedDocuments(t *testing.T) {
-	unknownField := base64.RawURLEncoding.EncodeToString([]byte(`{"v":1,"resource":"devices","id":"` + string(apiDeviceID) + `","extra":true}`))
-	trailing := base64.RawURLEncoding.EncodeToString([]byte(`{"v":1,"resource":"devices","id":"` + string(apiDeviceID) + `"}{}`))
+	unknownField := base64.RawURLEncoding.EncodeToString(
+		[]byte(`{"v":1,"resource":"devices","id":"` + string(apiDeviceID) + `","extra":true}`),
+	)
+	trailing := base64.RawURLEncoding.EncodeToString(
+		[]byte(`{"v":1,"resource":"devices","id":"` + string(apiDeviceID) + `"}{}`),
+	)
 	wrongVersion, _ := encodeCursor(idCursor{Version: 2, Resource: "devices", ID: string(apiDeviceID)})
 	wrongResource, _ := encodeCursor(idCursor{Version: 1, Resource: "entities", ID: string(apiEntityID)})
 	invalidID, _ := encodeCursor(idCursor{Version: 1, Resource: "devices", ID: "dev_bad"})

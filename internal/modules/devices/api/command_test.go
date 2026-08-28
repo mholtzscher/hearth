@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/danielgtaylor/huma/v2"
+
 	"github.com/mholtzscher/hearth/internal/modules/devices"
 )
 
@@ -34,21 +35,28 @@ func TestExecuteCommandReturnsSatisfiedResultAndRegistersOpenAPI(t *testing.T) {
 	}}
 	router, openapi := testAPI(t, stub)
 
-	request := httptest.NewRequest(http.MethodPost, "/v1/entities/"+string(apiEntityID)+"/commands", bytes.NewBufferString(`{"operation":"set","parameters":{"value":true}}`))
+	request := httptest.NewRequest(
+		http.MethodPost,
+		"/v1/entities/"+string(apiEntityID)+"/commands",
+		bytes.NewBufferString(`{"operation":"set","parameters":{"value":true}}`),
+	)
 	request.Header.Set("Content-Type", "application/json")
 	response := httptest.NewRecorder()
 	router.ServeHTTP(response, request)
 	if response.Code != http.StatusOK {
 		t.Fatalf("status = %d, body = %s", response.Code, response.Body.String())
 	}
-	if requestedEntityID != apiEntityID || requestedOperation != devices.OperationName("set") || string(requestedParameters) != `{"value":true}` {
+	if requestedEntityID != apiEntityID || requestedOperation != devices.OperationName("set") ||
+		string(requestedParameters) != `{"value":true}` {
 		t.Fatalf("ExecuteCommand arguments = %q, %q, %s", requestedEntityID, requestedOperation, requestedParameters)
 	}
 	var body CommandResultBody
 	if err := json.Unmarshal(response.Body.Bytes(), &body); err != nil {
 		t.Fatal(err)
 	}
-	if body.CommandID != string(apiCommandID) || body.Status != "satisfied" || body.ObservationID != string(apiObservationID) || body.Value != true {
+	if body.CommandID != string(apiCommandID) || body.Status != "satisfied" ||
+		body.ObservationID != string(apiObservationID) ||
+		body.Value != true {
 		t.Fatalf("body = %#v", body)
 	}
 	operation := openapi.OpenAPI().Paths["/v1/entities/{entity_id}/commands"].Post
@@ -82,7 +90,12 @@ func TestExecuteDisabledCommandReturnsDurableProblemDetailsExtension(t *testing.
 	response := httptest.NewRecorder()
 	router.ServeHTTP(response, request)
 	if response.Code != http.StatusConflict || response.Header().Get("Content-Type") != "application/problem+json" {
-		t.Fatalf("status/content type = %d/%q, body = %s", response.Code, response.Header().Get("Content-Type"), response.Body.String())
+		t.Fatalf(
+			"status/content type = %d/%q, body = %s",
+			response.Code,
+			response.Header().Get("Content-Type"),
+			response.Body.String(),
+		)
 	}
 	var problem disabledCommandProblem
 	if err := json.Unmarshal(response.Body.Bytes(), &problem); err != nil {
@@ -110,7 +123,8 @@ func TestCommandErrorMappingUsesStandardHumaErrors(t *testing.T) {
 	}
 	for _, test := range tests {
 		err := mapCommandError(&devices.CommandExecutionError{CommandID: apiCommandID, Err: test.cause})
-		status, ok := err.(huma.StatusError)
+		var status huma.StatusError
+		ok := errors.As(err, &status)
 		if !ok || status.GetStatus() != test.status || status.Error() != test.detail {
 			t.Fatalf("mapped %v = %#v", test.cause, status)
 		}

@@ -3,6 +3,7 @@ package devices
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"path/filepath"
 	"testing"
 	"time"
@@ -35,7 +36,7 @@ func TestSQLiteResourceReadsUseDeterministicKeysetPages(t *testing.T) {
 	if len(devicesPage.Items) != 1 || devicesPage.Items[0].ID != readDeviceA || !devicesPage.HasMore {
 		t.Fatalf("first device page = %#v", devicesPage)
 	}
-	devicesPage, err = repository.ListDevices(ctx, ListDevicesParams{AfterID: pointerTo(readDeviceA), Limit: 1})
+	devicesPage, err = repository.ListDevices(ctx, ListDevicesParams{AfterID: new(readDeviceA), Limit: 1})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -43,12 +44,14 @@ func TestSQLiteResourceReadsUseDeterministicKeysetPages(t *testing.T) {
 		t.Fatalf("second device page = %#v", devicesPage)
 	}
 
-	entitiesPage, err := repository.ListEntities(ctx, ListEntitiesParams{DeviceID: pointerTo(readDeviceA), Limit: 1})
+	entitiesPage, err := repository.ListEntities(ctx, ListEntitiesParams{DeviceID: new(readDeviceA), Limit: 1})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(entitiesPage.Items) != 1 || entitiesPage.Items[0].Entity.ID != readEntityA || entitiesPage.Items[0].State == nil ||
-		string(entitiesPage.Items[0].State.Value) != "true" || !entitiesPage.HasMore {
+	if len(entitiesPage.Items) != 1 || entitiesPage.Items[0].Entity.ID != readEntityA ||
+		entitiesPage.Items[0].State == nil ||
+		string(entitiesPage.Items[0].State.Value) != "true" ||
+		!entitiesPage.HasMore {
 		t.Fatalf("filtered entities = %#v", entitiesPage)
 	}
 	unknownDevice := DeviceID("dev_01890f47-7a6b-7c4d-8e9f-0123456789ff")
@@ -69,7 +72,7 @@ func TestSQLiteResourceReadsUseDeterministicKeysetPages(t *testing.T) {
 		t.Fatalf("first device aggregate page = %#v", aggregate)
 	}
 	aggregate, err = repository.GetDevice(ctx, GetDeviceParams{
-		ID: readDeviceA, AfterEntityID: pointerTo(readEntityA), EntityLimit: 1,
+		ID: readDeviceA, AfterEntityID: new(readEntityA), EntityLimit: 1,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -78,7 +81,13 @@ func TestSQLiteResourceReadsUseDeterministicKeysetPages(t *testing.T) {
 		aggregate.Entities.Items[0].Entity.Enabled || aggregate.Entities.HasMore {
 		t.Fatalf("second device aggregate page = %#v", aggregate)
 	}
-	if _, err := repository.GetDevice(ctx, GetDeviceParams{ID: unknownDevice, EntityLimit: 50}); err != ErrDeviceNotFound {
+	if _, err := repository.GetDevice(
+		ctx,
+		GetDeviceParams{ID: unknownDevice, EntityLimit: 50},
+	); !errors.Is(
+		err,
+		ErrDeviceNotFound,
+	) {
 		t.Fatalf("unknown device error = %v", err)
 	}
 
@@ -90,7 +99,7 @@ func TestSQLiteResourceReadsUseDeterministicKeysetPages(t *testing.T) {
 		t.Fatalf("first command page = %#v", history)
 	}
 	history, err = repository.ListEntityCommands(ctx, ListEntityCommandsParams{
-		EntityID: readEntityA, BeforeRequestedAt: &requestedAt, BeforeID: pointerTo(readCommandB), Limit: 1,
+		EntityID: readEntityA, BeforeRequestedAt: &requestedAt, BeforeID: new(readCommandB), Limit: 1,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -136,7 +145,8 @@ func TestSQLiteCommandHistoryOrdersWholeAndFractionalSecondsChronologically(t *t
 	}
 
 	var stored string
-	if err := database.QueryRowContext(ctx, "SELECT requested_at FROM commands WHERE id = ?", earlier.ID).Scan(&stored); err != nil {
+	if err := database.QueryRowContext(ctx, "SELECT requested_at FROM commands WHERE id = ?", earlier.ID).
+		Scan(&stored); err != nil {
 		t.Fatal(err)
 	}
 	if stored != "2026-08-26T12:00:00.000000000Z" {

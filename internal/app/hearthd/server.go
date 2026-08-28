@@ -9,10 +9,11 @@ import (
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/danielgtaylor/huma/v2/adapters/humaecho"
 	"github.com/labstack/echo/v5"
-	devicesapi "github.com/mholtzscher/hearth/internal/modules/devices/api"
-	devicesnats "github.com/mholtzscher/hearth/internal/modules/devices/nats"
 	natsgo "github.com/nats-io/nats.go"
 	"github.com/nats-io/nats.go/jetstream"
+
+	devicesapi "github.com/mholtzscher/hearth/internal/modules/devices/api"
+	devicesnats "github.com/mholtzscher/hearth/internal/modules/devices/nats"
 )
 
 type ReadinessChecker interface {

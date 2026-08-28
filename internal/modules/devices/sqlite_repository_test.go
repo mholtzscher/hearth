@@ -18,7 +18,12 @@ func TestRegistrationIsIdempotentAndUpdatesDescriptors(t *testing.T) {
 	database := openMigratedDatabase(t, path)
 	catalog := firstLightCatalog(t)
 	now := time.Date(2026, 8, 20, 20, 0, 0, 123, time.FixedZone("test", -5*60*60))
-	service := NewService(NewSQLiteRepository(database, catalog), nil, catalog, Dependencies{Now: func() time.Time { return now }})
+	service := NewService(
+		NewSQLiteRepository(database, catalog),
+		nil,
+		catalog,
+		Dependencies{Now: func() time.Time { return now }},
+	)
 	registration := validDomainRegistration()
 
 	first, err := service.Register(ctx, "homeassistant", registration)
@@ -59,7 +64,14 @@ func TestRegistrationIsIdempotentAndUpdatesDescriptors(t *testing.T) {
 	if deviceName != "Renamed light" || entityName != "Renamed power" ||
 		storedDeviceExternalID != deviceExternalID || storedEntityExternalID != "light.office-renamed" ||
 		storedSupport != `{"state":{},"operations":{"set":{}}}` {
-		t.Fatalf("persisted descriptors = %q %q %q %q %s", deviceName, entityName, storedDeviceExternalID, storedEntityExternalID, storedSupport)
+		t.Fatalf(
+			"persisted descriptors = %q %q %q %q %s",
+			deviceName,
+			entityName,
+			storedDeviceExternalID,
+			storedEntityExternalID,
+			storedSupport,
+		)
 	}
 }
 
@@ -68,7 +80,12 @@ func TestMultiEntityRegistrationIsAdditiveAndReturnsSubmittedOrder(t *testing.T)
 	database := openMigratedDatabase(t, filepath.Join(t.TempDir(), "hearth.db"))
 	catalog := firstLightCatalog(t)
 	now := time.Date(2026, 8, 25, 12, 0, 0, 0, time.UTC)
-	service := NewService(NewSQLiteRepository(database, catalog), nil, catalog, Dependencies{Now: func() time.Time { return now }})
+	service := NewService(
+		NewSQLiteRepository(database, catalog),
+		nil,
+		catalog,
+		Dependencies{Now: func() time.Time { return now }},
+	)
 
 	power, err := service.Register(ctx, "homeassistant", validDomainRegistration())
 	if err != nil {
@@ -119,7 +136,8 @@ func TestMultiEntityRegistrationIsAdditiveAndReturnsSubmittedOrder(t *testing.T)
 	}
 	assertCounts(t, database, 1, 2)
 	var powerName string
-	if err := database.QueryRowContext(ctx, "SELECT name FROM entities WHERE id = ?", power.Entities[0].EntityID).Scan(&powerName); err != nil {
+	if err := database.QueryRowContext(ctx, "SELECT name FROM entities WHERE id = ?", power.Entities[0].EntityID).
+		Scan(&powerName); err != nil {
 		t.Fatal(err)
 	}
 	if powerName != "Power" {
@@ -274,7 +292,11 @@ func TestReRegistrationReplacesNormalizedSupport(t *testing.T) {
 			"state":{"type":"object","required":["mode"],"properties":{"mode":{"type":"string"}},"additionalProperties":false},
 			"operations":{"type":"object","required":["set"],"properties":{"set":{"type":"object","maxProperties":0}},"additionalProperties":false}
 		}}`)
-	parametersCodec := compileTestCodec[parameters](t, "repository-parameters", `{"type":"object","required":["value"],"properties":{"value":{"type":"boolean"}},"additionalProperties":false}`)
+	parametersCodec := compileTestCodec[parameters](
+		t,
+		"repository-parameters",
+		`{"type":"object","required":["value"],"properties":{"value":{"type":"boolean"}},"additionalProperties":false}`,
+	)
 	set := DefineOperation(
 		OperationNameSet,
 		parametersCodec,
@@ -324,7 +346,8 @@ func TestReRegistrationReplacesNormalizedSupport(t *testing.T) {
 	}
 	database = openMigratedDatabase(t, path)
 	var stored string
-	if err := database.QueryRowContext(ctx, "SELECT support_json FROM entities WHERE id = ?", second.Entities[0].EntityID).Scan(&stored); err != nil {
+	if err := database.QueryRowContext(ctx, "SELECT support_json FROM entities WHERE id = ?", second.Entities[0].EntityID).
+		Scan(&stored); err != nil {
 		t.Fatal(err)
 	}
 	if stored != `{"state":{"mode":"second"},"operations":{"set":{}}}` {
@@ -428,7 +451,12 @@ func TestRegistrationInitialEnablementAndRetryPreservesCurrentValue(t *testing.T
 	database := openMigratedDatabase(t, filepath.Join(t.TempDir(), "hearth.db"))
 	catalog := firstLightCatalog(t)
 	now := time.Date(2026, 8, 26, 12, 0, 0, 0, time.UTC)
-	service := NewService(NewSQLiteRepository(database, catalog), nil, catalog, Dependencies{Now: func() time.Time { return now }})
+	service := NewService(
+		NewSQLiteRepository(database, catalog),
+		nil,
+		catalog,
+		Dependencies{Now: func() time.Time { return now }},
+	)
 
 	registration := validDomainRegistration()
 	initiallyEnabled := false
@@ -467,7 +495,12 @@ func TestSetEntityEnabledIsIdempotentAndOwnerScoped(t *testing.T) {
 	database := openMigratedDatabase(t, filepath.Join(t.TempDir(), "hearth.db"))
 	catalog := firstLightCatalog(t)
 	now := time.Date(2026, 8, 26, 12, 0, 0, 0, time.UTC)
-	service := NewService(NewSQLiteRepository(database, catalog), nil, catalog, Dependencies{Now: func() time.Time { return now }})
+	service := NewService(
+		NewSQLiteRepository(database, catalog),
+		nil,
+		catalog,
+		Dependencies{Now: func() time.Time { return now }},
+	)
 	binding, err := service.Register(ctx, "simulator", validDomainRegistration())
 	if err != nil {
 		t.Fatal(err)
@@ -475,7 +508,8 @@ func TestSetEntityEnabledIsIdempotentAndOwnerScoped(t *testing.T) {
 	entityID := binding.Entities[0].EntityID
 
 	var registeredAt string
-	if err := database.QueryRowContext(ctx, "SELECT updated_at FROM entities WHERE id = ?", entityID).Scan(&registeredAt); err != nil {
+	if err := database.QueryRowContext(ctx, "SELECT updated_at FROM entities WHERE id = ?", entityID).
+		Scan(&registeredAt); err != nil {
 		t.Fatal(err)
 	}
 	now = now.Add(time.Minute)
@@ -484,7 +518,8 @@ func TestSetEntityEnabledIsIdempotentAndOwnerScoped(t *testing.T) {
 		t.Fatalf("owner disable = %t, %v", confirmed, err)
 	}
 	var disabledAt string
-	if err := database.QueryRowContext(ctx, "SELECT updated_at FROM entities WHERE id = ?", entityID).Scan(&disabledAt); err != nil {
+	if err := database.QueryRowContext(ctx, "SELECT updated_at FROM entities WHERE id = ?", entityID).
+		Scan(&disabledAt); err != nil {
 		t.Fatal(err)
 	}
 	if disabledAt == registeredAt {
@@ -497,13 +532,22 @@ func TestSetEntityEnabledIsIdempotentAndOwnerScoped(t *testing.T) {
 		t.Fatalf("management no-op = %#v, %v", view, err)
 	}
 	var afterNoop string
-	if err := database.QueryRowContext(ctx, "SELECT updated_at FROM entities WHERE id = ?", entityID).Scan(&afterNoop); err != nil {
+	if err := database.QueryRowContext(ctx, "SELECT updated_at FROM entities WHERE id = ?", entityID).
+		Scan(&afterNoop); err != nil {
 		t.Fatal(err)
 	}
 	if afterNoop != disabledAt {
 		t.Fatalf("no-op updated_at = %q, want %q", afterNoop, disabledAt)
 	}
-	if _, err := service.SetOwnedEntityEnabled(ctx, "other-adapter", entityID, true); !errors.Is(err, ErrEntityWrongAdapter) {
+	if _, err := service.SetOwnedEntityEnabled(
+		ctx,
+		"other-adapter",
+		entityID,
+		true,
+	); !errors.Is(
+		err,
+		ErrEntityWrongAdapter,
+	) {
 		t.Fatalf("wrong owner error = %v", err)
 	}
 	unknown, err := NewEntityID()
@@ -590,7 +634,12 @@ func TestCommandLedgerTransitionsAreMonotonicAndIdempotent(t *testing.T) {
 	database := openMigratedDatabase(t, filepath.Join(t.TempDir(), "hearth.db"))
 	catalog := firstLightCatalog(t)
 	repository := NewSQLiteRepository(database, catalog)
-	binding, err := NewService(repository, nil, catalog, Dependencies{}).Register(ctx, "simulator", validDomainRegistration())
+	binding, err := NewService(
+		repository,
+		nil,
+		catalog,
+		Dependencies{},
+	).Register(ctx, "simulator", validDomainRegistration())
 	if err != nil {
 		t.Fatal(err)
 	}

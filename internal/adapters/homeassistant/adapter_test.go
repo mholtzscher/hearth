@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"io"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
@@ -15,6 +14,7 @@ import (
 
 	"github.com/coder/websocket"
 	"github.com/coder/websocket/wsjson"
+
 	"github.com/mholtzscher/hearth/sdk/adapter"
 )
 
@@ -34,7 +34,10 @@ func newRecordingPublisher() *recordingPublisher {
 	return &recordingPublisher{published: make(chan struct{}, 16)}
 }
 
-func (publisher *recordingPublisher) PublishObservation(_ context.Context, observation adapter.Observation) (adapter.ObservationID, error) {
+func (publisher *recordingPublisher) PublishObservation(
+	_ context.Context,
+	observation adapter.Observation,
+) (adapter.ObservationID, error) {
 	publisher.mutex.Lock()
 	publisher.observations = append(publisher.observations, observation)
 	publisher.mutex.Unlock()
@@ -130,7 +133,8 @@ func TestSubscribeFirstReconcilesBufferedTransitionAfterSnapshot(t *testing.T) {
 	if got := string(observations[1].Value); got != "true" {
 		t.Fatalf("reconciled event value = %s, want true", got)
 	}
-	if observations[1].SourceUpdatedAt == nil || *observations[1].SourceUpdatedAt != eventTime.Format(time.RFC3339Nano) {
+	if observations[1].SourceUpdatedAt == nil ||
+		*observations[1].SourceUpdatedAt != eventTime.Format(time.RFC3339Nano) {
 		t.Fatalf("reconciled source_updated_at = %v", observations[1].SourceUpdatedAt)
 	}
 }
@@ -160,7 +164,9 @@ func TestSetRetainsMatchingRefreshWhenImmediatelySuperseded(t *testing.T) {
 		if err != nil {
 			return err
 		}
-		if service.Type != "call_service" || service.Domain != "light" || service.Service != "turn_on" || service.Target == nil || service.Target.EntityID != testExternalEntityID {
+		if service.Type != "call_service" || service.Domain != "light" || service.Service != "turn_on" ||
+			service.Target == nil ||
+			service.Target.EntityID != testExternalEntityID {
 			return errors.New("set did not call light.turn_on for the configured Entity")
 		}
 		if err := writeResult(ctx, connection, service.ID, nil); err != nil {
@@ -327,7 +333,12 @@ func TestClientCorrelatesConcurrentRequestsByID(t *testing.T) {
 		if service.ID == 0 || states.ID == 0 {
 			return errors.New("did not receive both concurrent requests")
 		}
-		if err := writeResult(ctx, connection, states.ID, []upstreamState{{EntityID: testExternalEntityID, State: "on"}}); err != nil {
+		if err := writeResult(
+			ctx,
+			connection,
+			states.ID,
+			[]upstreamState{{EntityID: testExternalEntityID, State: "on"}},
+		); err != nil {
 			return err
 		}
 		if err := writeResult(ctx, connection, service.ID, nil); err != nil {
@@ -418,14 +429,17 @@ func newTestAdapter(t *testing.T, publisher ObservationPublisher, upstreamURL st
 	t.Helper()
 	value, err := New(publisher, Config{
 		URL: upstreamURL, Token: "test-token", ExternalEntityID: testExternalEntityID, EntityID: testEntityID,
-	}, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	}, slog.New(slog.DiscardHandler))
 	if err != nil {
 		t.Fatal(err)
 	}
 	return value
 }
 
-func newScriptedServer(t *testing.T, script func(context.Context, *websocket.Conn) error) (*httptest.Server, <-chan error) {
+func newScriptedServer(
+	t *testing.T,
+	script func(context.Context, *websocket.Conn) error,
+) (*httptest.Server, <-chan error) {
 	t.Helper()
 	errorsChannel := make(chan error, 8)
 	server := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {

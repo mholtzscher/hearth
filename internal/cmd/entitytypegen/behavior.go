@@ -55,7 +55,12 @@ func compileRule(rule ruleManifest, roots map[string]referenceRoot) (ruleModel, 
 		return ruleModel{}, fmt.Errorf("right reference: %w", err)
 	}
 	if left.Kind != right.Kind {
-		return ruleModel{}, fmt.Errorf("operator %q requires matching operand types, got %s and %s", rule.Op, left.Kind, right.Kind)
+		return ruleModel{}, fmt.Errorf(
+			"operator %q requires matching operand types, got %s and %s",
+			rule.Op,
+			left.Kind,
+			right.Kind,
+		)
 	}
 	switch rule.Op {
 	case "eq":
@@ -85,6 +90,7 @@ func compileReference(reference referenceManifest, roots map[string]referenceRoo
 		if err != nil {
 			return referenceModel{}, err
 		}
+		var expressionSb88 strings.Builder
 		for _, segment := range segments {
 			if schema.Type != "object" {
 				return referenceModel{}, fmt.Errorf("path %q traverses non-object type %q", reference.Path, schema.Type)
@@ -100,9 +106,10 @@ func compileReference(reference referenceManifest, roots map[string]referenceRoo
 			if err != nil {
 				return referenceModel{}, err
 			}
-			expression += "." + field
+			expressionSb88.WriteString("." + field)
 			schema = property
 		}
+		expression += expressionSb88.String()
 	}
 	kind, err := scalarKind(schema)
 	if err != nil {

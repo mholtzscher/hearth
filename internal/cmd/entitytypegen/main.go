@@ -14,6 +14,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"sort"
 	"strings"
 	"unicode"
@@ -139,7 +140,12 @@ func generateRoot(root string, check bool) error {
 		seenTypeIDs[model.TypeID] = path
 		goName := entityTypeGoName(model)
 		if previous, duplicate := seenGoNames[goName]; duplicate {
-			return fmt.Errorf("Entity-type packages %q and %q both map to generated Go name %q", previous, model.Package, goName)
+			return fmt.Errorf(
+				"Entity-type packages %q and %q both map to generated Go name %q",
+				previous,
+				model.Package,
+				goName,
+			)
 		}
 		seenGoNames[goName] = model.Package
 		models = append(models, model)
@@ -192,7 +198,11 @@ func loadModel(path string) (entityTypeModel, error) {
 		return entityTypeModel{}, errors.New("state_schema and support_schema are required")
 	}
 	packageName := filepath.Base(directory)
-	if !packageNamePattern.MatchString(packageName) || !token.IsIdentifier(packageName) || token.Lookup(packageName).IsKeyword() || packageName == "main" || packageName == "internal" || packageName == "_" {
+	if !packageNamePattern.MatchString(packageName) || !token.IsIdentifier(packageName) ||
+		token.Lookup(packageName).IsKeyword() ||
+		packageName == "main" ||
+		packageName == "internal" ||
+		packageName == "_" {
 		return entityTypeModel{}, fmt.Errorf("manifest directory %q is not an importable Go package name", packageName)
 	}
 	state, err := loadSchema(directory, definition.StateSchema)
@@ -296,7 +306,12 @@ func loadModel(path string) (entityTypeModel, error) {
 			return entityTypeModel{}, err
 		}
 		if previous, collision := seenGoNames[goName]; collision {
-			return entityTypeModel{}, fmt.Errorf("operation names %q and %q both map to Go name %q", previous, name, goName)
+			return entityTypeModel{}, fmt.Errorf(
+				"operation names %q and %q both map to Go name %q",
+				previous,
+				name,
+				goName,
+			)
 		}
 		seenGoNames[goName] = name
 		operations = append(operations, operationModel{
@@ -435,7 +450,10 @@ func requireUniqueSchemaIDs(state, support schemaNode, operations []operationMod
 		return err
 	}
 	for _, operation := range operations {
-		if err := add(operation.ParametersSchema.ID, fmt.Sprintf("operation %q parameters schema", operation.Name)); err != nil {
+		if err := add(
+			operation.ParametersSchema.ID,
+			fmt.Sprintf("operation %q parameters schema", operation.Name),
+		); err != nil {
 			return err
 		}
 	}
@@ -485,7 +503,7 @@ func readModulePath(root string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	for _, line := range strings.Split(string(raw), "\n") {
+	for line := range strings.SplitSeq(string(raw), "\n") {
 		fields := strings.Fields(line)
 		if len(fields) == 2 && fields[0] == "module" {
 			return fields[1], nil
@@ -541,12 +559,7 @@ func applyOutput(generated output, check bool) error {
 }
 
 func required(schema schemaNode, property string) bool {
-	for _, name := range schema.Required {
-		if name == property {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(schema.Required, property)
 }
 
 func sortedProperties(properties map[string]schemaNode) []string {

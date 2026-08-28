@@ -73,7 +73,8 @@ func TestObservationProjectionAdvancesStateByReceiveOrderAndDeduplicates(t *test
 	if err != nil {
 		t.Fatal(err)
 	}
-	if view.State == nil || view.State.ObservationID != second.ID || view.State.ReceiveOrder != resultReceiveOrder(t, database, second.ID) {
+	if view.State == nil || view.State.ObservationID != second.ID ||
+		view.State.ReceiveOrder != resultReceiveOrder(t, database, second.ID) {
 		t.Fatalf("restarted entity view = %#v", view)
 	}
 }
@@ -106,11 +107,17 @@ func TestObservationProjectionDurablyRejectsIdentityAndValueFailures(t *testing.
 	}
 	for index, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			result, err := service.ProjectObservation(ctx, test.adapterID, test.observation, observedAt.Add(time.Duration(index)*time.Second))
+			result, err := service.ProjectObservation(
+				ctx,
+				test.adapterID,
+				test.observation,
+				observedAt.Add(time.Duration(index)*time.Second),
+			)
 			if err != nil {
 				t.Fatal(err)
 			}
-			if result.Disposition != DispositionRejected || result.Rejection == nil || *result.Rejection != test.want || result.State != nil {
+			if result.Disposition != DispositionRejected || result.Rejection == nil || *result.Rejection != test.want ||
+				result.State != nil {
 				t.Fatalf("projection = %#v", result)
 			}
 		})
@@ -229,7 +236,12 @@ func TestDisabledEntityDoesNotExemptUnknownExpiredOrTerminalCommandLinks(t *test
 	for index, id := range []CommandID{unknown, expired.ID, terminal.ID} {
 		observation := newObservation(t, entityID, `true`, now)
 		observation.RefreshForCommand = &id
-		result, err := service.ProjectObservation(ctx, "simulator", observation, now.Add(time.Duration(index)*time.Second))
+		result, err := service.ProjectObservation(
+			ctx,
+			"simulator",
+			observation,
+			now.Add(time.Duration(index)*time.Second),
+		)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -429,7 +441,8 @@ func assertReceiptIDs(t *testing.T, database *sql.DB, want []ObservationID) {
 func resultReceiveOrder(t *testing.T, database *sql.DB, id ObservationID) int64 {
 	t.Helper()
 	var order int64
-	if err := database.QueryRow("SELECT receive_order FROM observation_receipts WHERE observation_id = ?", id).Scan(&order); err != nil {
+	if err := database.QueryRow("SELECT receive_order FROM observation_receipts WHERE observation_id = ?", id).
+		Scan(&order); err != nil {
 		t.Fatal(err)
 	}
 	return order

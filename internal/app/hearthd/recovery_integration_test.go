@@ -2,7 +2,6 @@ package hearthd
 
 import (
 	"context"
-	"io"
 	"log/slog"
 	"net"
 	"path/filepath"
@@ -10,10 +9,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/mholtzscher/hearth/internal/modules/devices"
-	platformdb "github.com/mholtzscher/hearth/internal/platform/db"
 	natsserver "github.com/nats-io/nats-server/v2/server"
 	natsgo "github.com/nats-io/nats.go"
+
+	"github.com/mholtzscher/hearth/internal/modules/devices"
+	platformdb "github.com/mholtzscher/hearth/internal/platform/db"
 )
 
 func TestCoreStartupInterruptsActiveCommandsWithoutRedispatch(t *testing.T) {
@@ -98,7 +98,7 @@ func TestCoreStartupInterruptsActiveCommandsWithoutRedispatch(t *testing.T) {
 	go func() {
 		runErrors <- Run(runContext, Config{
 			HTTPAddr: httpAddress, NATSURL: server.ClientURL(), SQLitePath: databasePath,
-		}, slog.New(slog.NewJSONHandler(io.Discard, nil)))
+		}, slog.New(slog.DiscardHandler))
 	}()
 
 	observerDatabase, err := platformdb.Open(ctx, databasePath)

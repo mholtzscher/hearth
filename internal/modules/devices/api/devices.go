@@ -9,7 +9,7 @@ import (
 )
 
 type ListDevicesInput struct {
-	Limit  int    `query:"limit" default:"50" minimum:"1" maximum:"200"`
+	Limit  int    `query:"limit"  default:"50" minimum:"1" maximum:"200"`
 	Cursor string `query:"cursor"`
 }
 
@@ -19,8 +19,8 @@ type ListDevicesOutput struct {
 
 type GetDeviceInput struct {
 	DeviceID     string `path:"device_id" doc:"Canonical Hearth Device ID"`
-	EntityLimit  int    `query:"entity_limit" default:"50" minimum:"1" maximum:"200"`
-	EntityCursor string `query:"entity_cursor"`
+	EntityLimit  int    `                                                  query:"entity_limit"  default:"50" minimum:"1" maximum:"200"`
+	EntityCursor string `                                                  query:"entity_cursor"`
 }
 
 type GetDeviceOutput struct {
