@@ -193,14 +193,7 @@ snapshotReady:
 		if !errors.Is(err, errUnsupportedState) {
 			return err
 		}
-		homeAssistant.logger.WarnContext(
-			ctx,
-			"Home Assistant snapshot State is not publishable",
-			"entity_id",
-			state.EntityID,
-			"state",
-			state.State,
-		)
+		homeAssistant.logUnsupportedState(ctx, "snapshot", state)
 	}
 	for _, event := range buffered {
 		eventUpdatedAt, err := sourceUpdatedAt(event.State)
@@ -210,14 +203,7 @@ snapshotReady:
 		}
 		if publishErr := homeAssistant.publish(ctx, event.State, event.ReceivedAt, nil); publishErr != nil {
 			if errors.Is(publishErr, errUnsupportedState) {
-				homeAssistant.logger.WarnContext(
-					ctx,
-					"Home Assistant event State is not publishable",
-					"entity_id",
-					event.State.EntityID,
-					"state",
-					event.State.State,
-				)
+				homeAssistant.logUnsupportedState(ctx, "event", event.State)
 				continue
 			}
 			return publishErr
@@ -247,6 +233,15 @@ snapshotReady:
 			return ctx.Err()
 		}
 	}
+}
+
+func (homeAssistant *Adapter) logUnsupportedState(ctx context.Context, source string, state upstreamState) {
+	homeAssistant.logger.WarnContext(
+		ctx,
+		"Home Assistant "+source+" State is not publishable",
+		"entity_id", state.EntityID,
+		"state", state.State,
+	)
 }
 
 func (homeAssistant *Adapter) set(

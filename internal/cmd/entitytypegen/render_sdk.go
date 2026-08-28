@@ -6,6 +6,7 @@ import (
 	"strings"
 )
 
+//nolint:funlen // Keeping the generated facade template together makes its emitted structure reviewable.
 func renderFacade(model entityTypeModel) ([]byte, error) {
 	var source strings.Builder
 	generatedHeader(&source)

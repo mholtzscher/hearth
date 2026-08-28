@@ -102,6 +102,7 @@ func schemaComparable(schema schemaNode) bool {
 	}
 }
 
+//nolint:funlen // Keeping the generated test template together makes its emitted structure reviewable.
 func renderConformanceTest(model entityTypeModel) ([]byte, error) {
 	var source strings.Builder
 	generatedHeader(&source)

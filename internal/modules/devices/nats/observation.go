@@ -97,6 +97,7 @@ func (consumer *ObservationConsumer) Closed() <-chan struct{} {
 	return consumer.consume.Closed()
 }
 
+//nolint:funlen // The handler is a linear decode, validate, project, and acknowledge pipeline.
 func handleObservationMessage(
 	baseContext context.Context,
 	message jetstream.Msg,

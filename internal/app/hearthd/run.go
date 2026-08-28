@@ -22,7 +22,7 @@ const (
 	shutdownTimeout      = 5 * time.Second
 )
 
-func Run(ctx context.Context, config Config, logger *slog.Logger) error {
+func Run(ctx context.Context, config Config, logger *slog.Logger) error { //nolint:funlen // Linear resource lifecycle.
 	if err := config.Validate(); err != nil {
 		return err
 	}
