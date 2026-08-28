@@ -17,7 +17,7 @@ type typeEmitter struct {
 func renderTypes(model entityTypeModel) ([]byte, error) {
 	emitter := &typeEmitter{declarations: make(map[string]string)}
 	if err := emitter.define("State", model.StateSchema); err != nil {
-		return nil, fmt.Errorf("State: %w", err)
+		return nil, fmt.Errorf("state: %w", err)
 	}
 	if err := emitter.define("StateSupport", model.StateSupport); err != nil {
 		return nil, fmt.Errorf("StateSupport: %w", err)

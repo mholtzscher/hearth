@@ -173,10 +173,10 @@ func websocketAddress(rawURL string) (string, error) {
 		parsed.Scheme = "wss"
 	case "ws", "wss":
 	default:
-		return "", fmt.Errorf("Home Assistant URL must use HTTP or WebSocket")
+		return "", fmt.Errorf("home assistant URL must use HTTP or WebSocket")
 	}
 	if parsed.Host == "" {
-		return "", fmt.Errorf("Home Assistant URL must be absolute")
+		return "", fmt.Errorf("home assistant URL must be absolute")
 	}
 	path := strings.TrimRight(parsed.Path, "/")
 	if !strings.HasSuffix(path, "/api/websocket") {
@@ -251,7 +251,7 @@ func (client *client) Err() error {
 
 func (client *client) Close() {
 	_ = client.connection.CloseNow()
-	client.stop(errors.New("Home Assistant connection closed"))
+	client.stop(errors.New("home assistant connection closed"))
 }
 
 func (client *client) request(ctx context.Context, request requestMessage) (resultMessage, error) {

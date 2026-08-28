@@ -44,19 +44,19 @@ type Adapter struct {
 
 func New(publisher ObservationPublisher, config Config, logger *slog.Logger) (*Adapter, error) {
 	if publisher == nil {
-		return nil, errors.New("Home Assistant observation publisher is required")
+		return nil, errors.New("home assistant observation publisher is required")
 	}
 	if _, err := websocketAddress(config.URL); err != nil {
 		return nil, err
 	}
 	if strings.TrimSpace(config.Token) == "" {
-		return nil, errors.New("Home Assistant token is required")
+		return nil, errors.New("home assistant token is required")
 	}
 	if config.ExternalEntityID == "" {
-		return nil, errors.New("Home Assistant Entity ID is required")
+		return nil, errors.New("home assistant Entity ID is required")
 	}
 	if config.EntityID == "" {
-		return nil, errors.New("Hearth Entity ID is required")
+		return nil, errors.New("hearth Entity ID is required")
 	}
 	if logger == nil {
 		logger = slog.Default()

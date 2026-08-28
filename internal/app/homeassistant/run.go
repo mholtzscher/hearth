@@ -34,7 +34,7 @@ func Run(ctx context.Context, config Config, logger *slog.Logger) error {
 	}
 	token := strings.TrimSpace(string(tokenBytes))
 	if token == "" {
-		return errors.New("Home Assistant token file is empty")
+		return errors.New("home assistant token file is empty")
 	}
 
 	session, err := adapter.Connect(ctx, adapter.Config{
