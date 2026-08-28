@@ -8,9 +8,10 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	natsgo "github.com/nats-io/nats.go"
+
 	contractsv1 "github.com/mholtzscher/hearth/contracts/v1"
 	"github.com/mholtzscher/hearth/internal/contracts/v1/natswire"
-	natsgo "github.com/nats-io/nats.go"
 )
 
 // requestReplyServer holds the subscription for one request/reply endpoint.
