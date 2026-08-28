@@ -80,8 +80,9 @@ type simulatorMatrixHarness struct {
 }
 
 type lockedBuffer struct {
-	mutex sync.Mutex
 	bytes.Buffer
+
+	mutex sync.Mutex
 }
 
 func (buffer *lockedBuffer) Write(value []byte) (int, error) {
