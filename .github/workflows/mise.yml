@@ -17,6 +17,21 @@ jobs:
       - uses: jdx/mise-action@v2
         with:
           cache: true
+      - name: Resolve Go cache paths
+        id: go-cache-paths
+        run: |
+          echo "build=$(go env GOCACHE)" >> "$GITHUB_OUTPUT"
+          echo "modules=$(go env GOMODCACHE)" >> "$GITHUB_OUTPUT"
+          echo "version=$(go env GOVERSION)" >> "$GITHUB_OUTPUT"
+      - name: Cache Go dependencies and build artifacts
+        uses: actions/cache@v4
+        with:
+          path: |
+            ${{ steps.go-cache-paths.outputs.build }}
+            ${{ steps.go-cache-paths.outputs.modules }}
+          key: go-${{ runner.os }}-${{ runner.arch }}-${{ steps.go-cache-paths.outputs.version }}-${{ hashFiles('go.sum') }}
+          restore-keys: |
+            go-${{ runner.os }}-${{ runner.arch }}-${{ steps.go-cache-paths.outputs.version }}-
       - name: Run checks
         run: |
           mise run validate
