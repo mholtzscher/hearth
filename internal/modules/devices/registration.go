@@ -106,6 +106,7 @@ func (service *Service) Register(ctx context.Context, adapterID string, registra
 	return binding, nil
 }
 
+//nolint:gocognit // Validation follows the nested registration document in one linear pass.
 func (service *Service) normalizeRegistration(adapterID string, registration Registration) (Registration, error) {
 	normalized := copyRegistration(registration)
 	if !registrationSlugPattern.MatchString(adapterID) {

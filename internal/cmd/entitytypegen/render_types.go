@@ -81,6 +81,7 @@ func renderTypes(model entityTypeModel) ([]byte, error) {
 	return formatGenerated(source.String())
 }
 
+//nolint:gocognit // Recursive type emission mirrors the supported JSON Schema node kinds.
 func (emitter *typeEmitter) define(name string, schema schemaNode) error {
 	if _, exists := emitter.declarations[name]; exists {
 		return fmt.Errorf("duplicate generated type %q", name)

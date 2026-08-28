@@ -77,6 +77,7 @@ func (responder *recordingResponder) result() (bool, bool) {
 	return responder.accepted, responder.rejected
 }
 
+//nolint:gocognit // The event-ordering scenario is clearer as one end-to-end test.
 func TestSubscribeFirstReconcilesBufferedTransitionAfterSnapshot(t *testing.T) {
 	t.Parallel()
 	publisher := newRecordingPublisher()
@@ -140,6 +141,7 @@ func TestSubscribeFirstReconcilesBufferedTransitionAfterSnapshot(t *testing.T) {
 	}
 }
 
+//nolint:gocognit // The event-ordering scenario is clearer as one end-to-end test.
 func TestSetRetainsMatchingRefreshWhenImmediatelySuperseded(t *testing.T) {
 	t.Parallel()
 	publisher := newRecordingPublisher()

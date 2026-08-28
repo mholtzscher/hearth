@@ -97,7 +97,7 @@ func (buffer *lockedBuffer) String() string {
 	return buffer.Buffer.String()
 }
 
-//nolint:govet // Sequential integration setup intentionally reuses short error variables.
+//nolint:govet,gocognit // Integration harness setup keeps resource ownership visible in one place.
 func newSimulatorMatrixHarness(t *testing.T, scenario string, options simulatorMatrixOptions) *simulatorMatrixHarness {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
@@ -210,6 +210,7 @@ func newSimulatorMatrixHarness(t *testing.T, scenario string, options simulatorM
 	return harness
 }
 
+//nolint:gocognit // Teardown mirrors the harness resources and preserves their shutdown order.
 func (harness *simulatorMatrixHarness) Close() {
 	harness.closeOnce.Do(func() {
 		harness.cancel()
@@ -359,7 +360,7 @@ func TestSimulatorObservationFailureMatrix(t *testing.T) {
 	}
 }
 
-//nolint:govet // The scenario matrix intentionally reuses short result variables.
+//nolint:govet,gocognit // The failure matrix is clearer as one table-driven integration test.
 func TestSimulatorCommandHTTPFailureMatrix(t *testing.T) {
 	t.Parallel()
 	tests := []struct {
@@ -451,7 +452,7 @@ func TestSimulatorCommandHTTPFailureMatrix(t *testing.T) {
 	}
 }
 
-//nolint:govet // The scenario matrix intentionally reuses short result variables.
+//nolint:govet,gocognit // The overlapping command lifecycle is clearer as one integration test.
 func TestSimulatorNoOpAndOverlappingCommands(t *testing.T) {
 	t.Parallel()
 	t.Run("no-op refresh", func(t *testing.T) {
@@ -655,7 +656,7 @@ func TestSimulatorInterruptedCommandSurvivesLateLinkedObservation(t *testing.T) 
 	}
 }
 
-//nolint:govet // Sequential integration assertions intentionally reuse short error variables.
+//nolint:govet,gocognit // The restart and redelivery lifecycle is clearer as one integration test.
 func TestSimulatorRestartBeforeAckRedeliversWithoutChangingStateOrCommand(t *testing.T) {
 	t.Parallel()
 	committed := make(chan struct{})

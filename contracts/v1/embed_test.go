@@ -123,6 +123,7 @@ func TestRegistrationSchemaRequiresUnifiedSupport(t *testing.T) {
 	}
 }
 
+//nolint:gocognit // The table-driven schema boundary matrix is intentionally kept together.
 func TestRegistrationSchemaEntityBounds(t *testing.T) {
 	t.Parallel()
 	schemas := compileSchemas(t)

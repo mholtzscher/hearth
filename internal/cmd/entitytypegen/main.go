@@ -174,6 +174,7 @@ func generateRoot(root string, check bool) error {
 	return applyOutputs(absoluteRoot, outputs, check)
 }
 
+//nolint:gocognit // Model loading validates the manifest in document order in one linear pass.
 func loadModel(path string) (entityTypeModel, error) {
 	directory := filepath.Dir(path)
 	moduleRoot, moduleRootErr := findModuleRoot(directory)
@@ -399,6 +400,7 @@ func loadSchema(directory, relative string) (schemaNode, error) {
 	return schema, nil
 }
 
+//nolint:gocognit // Recursive schema validation mirrors the supported JSON Schema node kinds.
 func requireInt64Bindings(schema schemaNode) error {
 	switch schema.Type {
 	case "integer":

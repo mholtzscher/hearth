@@ -4,6 +4,7 @@ import "testing"
 
 const testEntityID = "ent_01890f47-7a6b-7c4d-8e9f-0123456789ab"
 
+//nolint:gocognit // Subject constructors and parsers are verified as one table-driven matrix.
 func TestSubjectsRoundTrip(t *testing.T) {
 	t.Parallel()
 	if got := RegistrationWildcard(); got != "hearth.v1.adapter.*.register" {

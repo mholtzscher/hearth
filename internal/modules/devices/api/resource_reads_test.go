@@ -66,6 +66,7 @@ func TestListDevicesDefaultsLimitAndReturnsScopedCursor(t *testing.T) {
 	}
 }
 
+//nolint:gocognit // The related response-shape assertions are intentionally kept together.
 func TestDeviceDetailAndEntityListUseFullEntityBodies(t *testing.T) {
 	t.Parallel()
 	view := apiEntityWithState(nil)

@@ -45,7 +45,7 @@ type projectedObservation struct {
 	observedAt  time.Time
 }
 
-//nolint:govet // Sequential consumer assertions intentionally reuse short error variables.
+//nolint:govet,gocognit // The acknowledgement failure matrix is clearer as one consumer test.
 func TestObservationConsumerMapsProjectsAndAcknowledgesByFailureClass(t *testing.T) {
 	t.Parallel()
 	_, connection, js := startJetStream(t)

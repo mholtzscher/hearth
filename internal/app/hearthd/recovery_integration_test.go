@@ -16,7 +16,7 @@ import (
 	platformdb "github.com/mholtzscher/hearth/internal/platform/db"
 )
 
-//nolint:govet // Sequential integration setup intentionally reuses short error variables.
+//nolint:govet,gocognit // The recovery lifecycle is clearer as one end-to-end integration test.
 func TestCoreStartupInterruptsActiveCommandsWithoutRedispatch(t *testing.T) {
 	t.Parallel()
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)

@@ -22,6 +22,7 @@ const (
 	shutdownTimeout      = 5 * time.Second
 )
 
+//nolint:gocognit // Startup and shutdown remain linear so resource ownership is visible in one place.
 func Run(ctx context.Context, config Config, logger *slog.Logger) error { //nolint:funlen // Linear resource lifecycle.
 	if err := config.Validate(); err != nil {
 		return err

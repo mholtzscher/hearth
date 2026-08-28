@@ -9,6 +9,7 @@ import (
 	"github.com/mholtzscher/hearth/entitytypes"
 )
 
+//nolint:gocognit // The type-erasure contract is clearer as one end-to-end test.
 func TestGenericCatalogCarriesTypedBehaviorAcrossErasure(t *testing.T) {
 	t.Parallel()
 	type state struct {

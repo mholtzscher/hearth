@@ -18,6 +18,7 @@ type OperationDefinition[State, Support any] struct {
 	err   error
 }
 
+//nolint:gocognit // Generic boundary validation is kept with the operation definition it protects.
 func DefineOperation[State, Support, OperationSupport, Parameters any](
 	name OperationName,
 	parameters *entitytypes.JSONCodec[Parameters],
@@ -93,6 +94,7 @@ type erasedOperationDefinition struct {
 	satisfies func(CommandParameters, Value) (bool, error)
 }
 
+//nolint:gocognit // Generic boundary validation is kept with the Entity type definition it protects.
 func DefineEntityType[State, Support any](
 	id EntityTypeID,
 	state *entitytypes.JSONCodec[State],

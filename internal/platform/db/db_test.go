@@ -77,6 +77,7 @@ func TestMigrateEmptySQLiteDatabase(t *testing.T) {
 	}
 }
 
+//nolint:gocognit // Migration round-trip assertions are intentionally kept together.
 func TestResourceReadIndexMigrationReversesAndReapplies(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
@@ -168,6 +169,7 @@ func TestResourceReadIndexMigrationReversesAndReapplies(t *testing.T) {
 	}
 }
 
+//nolint:gocognit // Migration round-trip assertions are intentionally kept together.
 func TestEntityEnablementMigrationPreservesPopulatedDatabaseAndMapsDown(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()

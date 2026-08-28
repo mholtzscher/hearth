@@ -132,6 +132,7 @@ func TestHTTPHandlerServesHealthReadinessAndDeviceOperations(t *testing.T) {
 	}
 }
 
+//nolint:gocognit // The OpenAPI contract matrix is intentionally verified in one place.
 func TestRuntimeOpenAPIContract(t *testing.T) {
 	t.Parallel()
 	handler, _ := NewHTTPHandler(&stubDevices{}, &testReadiness{})

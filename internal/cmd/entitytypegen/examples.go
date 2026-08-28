@@ -33,6 +33,7 @@ type outcomeExample struct {
 	Satisfied  bool            `json:"satisfied"`
 }
 
+//nolint:gocognit // Validation follows the nested examples document shape in one linear pass.
 func loadExamples(directory, relative string, operations []operationModel) (examplesFile, error) {
 	if relative == "" {
 		return examplesFile{}, errors.New("examples is required")

@@ -7,6 +7,7 @@ import (
 	"strings"
 )
 
+//nolint:gocognit // Generated conformance cases are assembled in one deterministic pass.
 func renderCatalogConformanceTest(models []entityTypeModel, moduleRoot string) (output, error) {
 	var source strings.Builder
 	generatedHeader(&source)
