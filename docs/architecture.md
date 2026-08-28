@@ -49,7 +49,7 @@
 - First-slice NATS subjects are adapter-scoped and include canonical entity IDs where available: `hearth.v1.adapter.<adapter>.register`, `hearth.v1.adapter.<adapter>.observation.<entity>`, and `hearth.v1.adapter.<adapter>.command.<entity>.<operation>`; the only first-slice operation is `set`.
 
 - Echo v5 and Huma v2 provide HTTP transport; application assembly constructs them and owns process-global HTTP framework policy, while the `devices` module owns operation registration and transport mapping. OpenAPI is exposed at runtime and is not committed as a generated artifact.
-- Local development runs Go binaries and NATS natively through devenv; container packaging is deferred until deployment work.
+- Local development runs Go binaries and NATS natively through mise; container packaging is deferred until deployment work.
 - The core exposes `/healthz` and `/readyz` on its configured HTTP address; readiness requires migrated SQLite, NATS connectivity, provisioned JetStream resources, and an active observation consumer. Adapters retry transient registration failures until the core is available and stop on schema-defined permanent rejection.
 
 ## Undecided

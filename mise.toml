@@ -1,0 +1,95 @@
+#:schema https://mise.jdx.dev/schema/mise.json
+
+[tools]
+go = "1.26"
+golangci-lint = "latest"
+"aqua:pressly/goose" = "3.27.3"
+"github:nats-io/nats-server" = "2.12"
+ko = "latest"
+sqlc = "latest"
+
+[tasks."generate"]
+description = "Regenerate checked-in code"
+run = '''
+go generate ./entitytypes
+sqlc generate
+'''
+
+[tasks."format"]
+description = "Format Go files"
+depends = ["generate"]
+run = '''git ls-files -z --cached --others --exclude-standard -- '*.go' | xargs -0 -r gofmt -w'''
+
+[tasks."format-check"]
+description = "Check Go formatting"
+depends = ["tidy"]
+run = '''
+unformatted="$(git ls-files -z --cached --others --exclude-standard -- '*.go' | xargs -0 -r gofmt -l)"
+if test -n "$unformatted"; then
+  printf 'The following Go files need formatting:\n%s\n' "$unformatted"
+  exit 1
+fi
+'''
+
+[tasks."tidy"]
+description = "Tidy module metadata"
+depends = ["format"]
+run = '''go mod tidy'''
+
+[tasks."tidy-check"]
+description = "Check module tidiness"
+depends = ["tidy"]
+run = '''go mod tidy -diff'''
+
+[tasks."generate-check"]
+description = "Check generated code"
+depends = ["tidy"]
+run = '''
+go run ./internal/cmd/entitytypegen -root . -check
+
+tmp="$(mktemp -d)"
+trap 'rm -rf "$tmp"' EXIT
+mkdir -p "$tmp/internal/platform/db"
+cp sqlc.yaml "$tmp/"
+cp -R internal/platform/db/migrations internal/platform/db/queries internal/platform/db/sqlc "$tmp/internal/platform/db/"
+(cd "$tmp" && sqlc generate)
+diff -ru internal/platform/db/sqlc "$tmp/internal/platform/db/sqlc"
+'''
+
+[tasks."ko-build"]
+description = "Build container images locally"
+depends = ["tidy"]
+run = '''
+KO_DOCKER_REPO=example.invalid/hearth ko build --base-import-paths --tags validation --push=false \
+  ./cmd/hearthd ./cmd/hearth-adapter-homeassistant ./cmd/hearth-simulator
+'''
+
+[tasks."lint"]
+description = "Lint"
+depends = ["tidy"]
+run = '''golangci-lint run ./...'''
+
+[tasks."test"]
+description = "Test with the race detector"
+depends = ["tidy"]
+run = '''go test -race ./...'''
+
+[tasks."vet"]
+description = "Vet"
+depends = ["tidy"]
+run = '''go vet ./...'''
+
+[tasks."nats"]
+description = "Run NATS server with JetStream (data in .data/nats)"
+run = '''nats-server -js -sd .data/nats'''
+
+[tasks."validate"]
+description = "Run all validation"
+depends = [
+  "format-check",
+  "generate-check",
+  # "lint"
+  "tidy-check",
+  "test",
+  "vet",
+]
