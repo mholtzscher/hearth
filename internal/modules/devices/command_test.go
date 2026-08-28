@@ -452,7 +452,7 @@ func TestExecuteCommandKeepsOverlappingCommandsIndependent(t *testing.T) {
 		"cmd_01890f47-7a6b-7c4d-8e9f-0123456789ab",
 		"cmd_01890f47-7a6c-7c4d-8e9f-0123456789ab",
 	}
-	observationIDs := map[CommandID]ObservationID{
+	observationIDs := map[CommandID]ObservationID{ //nolint:exhaustive // Only commands linked by this test need observations.
 		commandIDs[0]: "obs_01890f47-7a6b-7c4d-8e9f-0123456789ab",
 		commandIDs[1]: "obs_01890f47-7a6c-7c4d-8e9f-0123456789ab",
 	}

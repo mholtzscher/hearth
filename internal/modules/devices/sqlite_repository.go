@@ -517,7 +517,7 @@ func commandFromRow(row commandsqlc.Command) (CommandRecord, error) {
 }
 
 func validCommandCompletion(completion CommandCompletion) bool {
-	expected := map[CommandStatus]CommandFailureCode{
+	expected := map[CommandStatus]CommandFailureCode{ //nolint:exhaustive // Only terminal failure statuses have failure codes.
 		CommandStatusRejected:           CommandFailureUpstreamRejected,
 		CommandStatusAdapterUnavailable: CommandFailureAdapterUnavailable,
 		CommandStatusOutcomeTimeout:     CommandFailureOutcomeTimeout,
