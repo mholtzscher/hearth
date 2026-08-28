@@ -73,7 +73,7 @@ func (sender *CommandSender) Send(
 	if response.Data.CommandID != string(request.ID) {
 		return devices.CommandAcceptance{}, errors.New("command response command ID does not match request")
 	}
-	return devices.CommandAcceptance{Accepted: response.Data.Status == "accepted"}, nil
+	return devices.CommandAcceptance{Accepted: response.Data.Status == statusAccepted}, nil
 }
 
 func commandUnavailable(err error) bool {

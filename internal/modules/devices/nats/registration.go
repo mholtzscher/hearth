@@ -79,7 +79,7 @@ func register(
 	accepted, err := registrar.Register(ctx, adapterID, domain)
 	if rejected, ok := errors.AsType[*devices.RegistrationRejectedError](err); ok {
 		return registrationResponse{
-			Status: "rejected",
+			Status: statusRejected,
 			Error:  &registrationError{Code: string(rejected.Code), Message: rejected.Message},
 		}, nil
 	}
@@ -96,7 +96,7 @@ func register(
 			Key: entity.Key, EntityID: string(entity.EntityID), Enabled: entity.Enabled,
 		}
 	}
-	return registrationResponse{Status: "accepted", Binding: &wireBinding}, nil
+	return registrationResponse{Status: statusAccepted, Binding: &wireBinding}, nil
 }
 
 func copyBoolPointer(value *bool) *bool {

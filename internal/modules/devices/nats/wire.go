@@ -2,6 +2,11 @@ package nats
 
 import "encoding/json"
 
+const (
+	statusAccepted = "accepted"
+	statusRejected = "rejected"
+)
+
 type registration struct {
 	BindingKey string             `json:"binding_key"`
 	Device     deviceDescriptor   `json:"device"`

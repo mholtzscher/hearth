@@ -72,16 +72,16 @@ func mapEntityEnablementResult(
 	switch {
 	case err == nil:
 		return entityEnablementResponse{
-			Status: "accepted", EntityID: entityID, Enabled: &confirmed,
+			Status: statusAccepted, EntityID: entityID, Enabled: &confirmed,
 		}, true
 	case errors.Is(err, devices.ErrEntityNotFound):
 		return entityEnablementResponse{
-			Status: "rejected",
+			Status: statusRejected,
 			Error:  &entityEnablementError{Code: "unknown_entity", Message: "entity not found"},
 		}, true
 	case errors.Is(err, devices.ErrEntityWrongAdapter):
 		return entityEnablementResponse{
-			Status: "rejected",
+			Status: statusRejected,
 			Error:  &entityEnablementError{Code: "wrong_adapter", Message: "entity is owned by another adapter"},
 		}, true
 	default:

@@ -13,6 +13,16 @@ const (
 	kindString  valueKind = "string"
 	kindInteger valueKind = "integer"
 	kindNumber  valueKind = "number"
+
+	schemaTypeArray  = "array"
+	schemaTypeObject = "object"
+
+	ruleOperatorLTE        = "lte"
+	ruleOperatorMultipleOf = "multiple_of"
+
+	referenceRootParameters = "parameters"
+	referenceRootState      = "state"
+	referenceRootSupport    = "support"
 )
 
 type ruleModel struct {
@@ -64,11 +74,11 @@ func compileRule(rule ruleManifest, roots map[string]referenceRoot) (ruleModel, 
 	}
 	switch rule.Op {
 	case "eq":
-	case "lte":
+	case ruleOperatorLTE:
 		if left.Kind != kindInteger && left.Kind != kindNumber {
 			return ruleModel{}, fmt.Errorf("operator %q requires numeric operands, got %s", rule.Op, left.Kind)
 		}
-	case "multiple_of":
+	case ruleOperatorMultipleOf:
 		if left.Kind != kindInteger {
 			return ruleModel{}, fmt.Errorf("operator %q requires integer operands, got %s", rule.Op, left.Kind)
 		}
@@ -92,7 +102,7 @@ func compileReference(reference referenceManifest, roots map[string]referenceRoo
 		}
 		var expressionSb88 strings.Builder
 		for _, segment := range segments {
-			if schema.Type != "object" {
+			if schema.Type != schemaTypeObject {
 				return referenceModel{}, fmt.Errorf("path %q traverses non-object type %q", reference.Path, schema.Type)
 			}
 			property, propertyExists := schema.Properties[segment]
@@ -162,7 +172,7 @@ func scalarKind(schema schemaNode) (valueKind, error) {
 		return kindInteger, nil
 	case string(kindNumber):
 		return kindNumber, nil
-	case "object", "array":
+	case schemaTypeObject, schemaTypeArray:
 		return "", errors.New("behavior references must select scalar values")
 	default:
 		return "", fmt.Errorf("unsupported scalar type %q", schema.Type)
@@ -175,9 +185,9 @@ func ruleCondition(rule ruleModel) string {
 	switch rule.Op {
 	case "eq":
 		return left + " == " + right
-	case "lte":
+	case ruleOperatorLTE:
 		return left + " <= " + right
-	case "multiple_of":
+	case ruleOperatorMultipleOf:
 		return right + " != 0 && " + left + "%" + right + " == 0"
 	default:
 		panic("render unsupported rule operator " + rule.Op)
@@ -187,7 +197,7 @@ func ruleCondition(rule ruleModel) string {
 func ruleOperand(reference referenceModel) string {
 	goType := map[valueKind]string{
 		kindBoolean: "bool",
-		kindString:  "string",
+		kindString:  string(kindString),
 		kindInteger: "int64",
 		kindNumber:  "float64",
 	}[reference.Kind]
@@ -195,7 +205,9 @@ func ruleOperand(reference referenceModel) string {
 }
 
 func ruleDescription(rule ruleModel) string {
-	symbol := map[string]string{"eq": "equal", "lte": "less than or equal to", "multiple_of": "a multiple of"}[rule.Op]
+	symbol := map[string]string{
+		"eq": "equal", ruleOperatorLTE: "less than or equal to", ruleOperatorMultipleOf: "a multiple of",
+	}[rule.Op]
 	return referenceDescription(rule.Left) + " must be " + symbol + " " + referenceDescription(rule.Right)
 }
 

@@ -58,15 +58,16 @@ func (readiness *RuntimeReadiness) Check(ctx context.Context) error {
 }
 
 func NewHTTPHandler(devices devicesapi.Devices, readiness ReadinessChecker) (http.Handler, huma.API) {
+	const statusField = "status"
 	router := echo.New()
 	router.GET("/healthz", func(ctx *echo.Context) error {
-		return ctx.JSON(http.StatusOK, map[string]string{"status": "ok"})
+		return ctx.JSON(http.StatusOK, map[string]string{statusField: "ok"})
 	})
 	router.GET("/readyz", func(ctx *echo.Context) error {
 		if readiness == nil || readiness.Check(ctx.Request().Context()) != nil {
-			return ctx.JSON(http.StatusServiceUnavailable, map[string]string{"status": "not_ready"})
+			return ctx.JSON(http.StatusServiceUnavailable, map[string]string{statusField: "not_ready"})
 		}
-		return ctx.JSON(http.StatusOK, map[string]string{"status": "ready"})
+		return ctx.JSON(http.StatusOK, map[string]string{statusField: "ready"})
 	})
 
 	api := humaecho.New(router, huma.DefaultConfig("Hearth", "1.0.0"))

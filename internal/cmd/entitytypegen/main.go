@@ -217,26 +217,26 @@ func loadModel(path string) (entityTypeModel, error) {
 	if state.ID == "" || support.ID == "" {
 		return entityTypeModel{}, errors.New("state and support schemas require $id")
 	}
-	if support.Type != "object" {
+	if support.Type != schemaTypeObject {
 		return entityTypeModel{}, errors.New("support schema must describe an object")
 	}
 	if err := requireClosedObject(support); err != nil {
 		return entityTypeModel{}, fmt.Errorf("support schema: %w", err)
 	}
-	if !required(support, "state") || !required(support, "operations") {
+	if !required(support, referenceRootState) || !required(support, "operations") {
 		return entityTypeModel{}, errors.New("support schema must require state and operations")
 	}
 	for _, property := range sortedProperties(support.Properties) {
-		if property != "state" && property != "operations" {
+		if property != referenceRootState && property != "operations" {
 			return entityTypeModel{}, fmt.Errorf("support schema has unsupported top-level property %q", property)
 		}
 	}
-	stateSupport, stateSupportExists := support.Properties["state"]
-	if !stateSupportExists || stateSupport.Type != "object" {
+	stateSupport, stateSupportExists := support.Properties[referenceRootState]
+	if !stateSupportExists || stateSupport.Type != schemaTypeObject {
 		return entityTypeModel{}, errors.New("support.state must describe an object")
 	}
 	operationSupport, operationSupportExists := support.Properties["operations"]
-	if !operationSupportExists || operationSupport.Type != "object" {
+	if !operationSupportExists || operationSupport.Type != schemaTypeObject {
 		return entityTypeModel{}, errors.New("support.operations must describe an object")
 	}
 	if err := requireClosedObject(operationSupport); err != nil {
@@ -261,7 +261,7 @@ func loadModel(path string) (entityTypeModel, error) {
 		if !supportExists {
 			return entityTypeModel{}, fmt.Errorf("operation %q is absent from support schema", name)
 		}
-		if supportSchema.Type != "object" {
+		if supportSchema.Type != schemaTypeObject {
 			return entityTypeModel{}, fmt.Errorf("operation support %q must describe an object", name)
 		}
 		operation := definition.Operations[name]
@@ -275,7 +275,7 @@ func loadModel(path string) (entityTypeModel, error) {
 		if parameters.ID == "" {
 			return entityTypeModel{}, fmt.Errorf("operation %q parameters schema requires $id", name)
 		}
-		if parameters.Type != "object" {
+		if parameters.Type != schemaTypeObject {
 			return entityTypeModel{}, fmt.Errorf("operation %q parameters schema must describe an object", name)
 		}
 		if operation.DeadlineMS <= 0 {
@@ -288,16 +288,16 @@ func loadModel(path string) (entityTypeModel, error) {
 			return entityTypeModel{}, fmt.Errorf("operation %q requires satisfied_when", name)
 		}
 		parameterValidation, validationErr := compileRules(operation.ParameterValidation, map[string]referenceRoot{
-			"parameters":        {Schema: parameters, GoExpression: "parameters"},
-			"support":           {Schema: support, GoExpression: "support"},
-			"operation_support": {Schema: supportSchema, GoExpression: "operationSupport"},
+			referenceRootParameters: {Schema: parameters, GoExpression: referenceRootParameters},
+			referenceRootSupport:    {Schema: support, GoExpression: referenceRootSupport},
+			"operation_support":     {Schema: supportSchema, GoExpression: "operationSupport"},
 		}, fmt.Sprintf("operation %q parameter validation", name))
 		if validationErr != nil {
 			return entityTypeModel{}, validationErr
 		}
 		satisfied, satisfiedErr := compileRule(*operation.SatisfiedWhen, map[string]referenceRoot{
-			"parameters": {Schema: parameters, GoExpression: "parameters"},
-			"state":      {Schema: state, GoExpression: "state"},
+			referenceRootParameters: {Schema: parameters, GoExpression: referenceRootParameters},
+			referenceRootState:      {Schema: state, GoExpression: referenceRootState},
 		})
 		if satisfiedErr != nil {
 			return entityTypeModel{}, fmt.Errorf("operation %q satisfied_when: %w", name, satisfiedErr)
@@ -331,8 +331,8 @@ func loadModel(path string) (entityTypeModel, error) {
 		return entityTypeModel{}, err
 	}
 	stateValidation, stateValidationErr := compileRules(definition.StateValidation, map[string]referenceRoot{
-		"state":   {Schema: state, GoExpression: "state"},
-		"support": {Schema: support, GoExpression: "support"},
+		referenceRootState:   {Schema: state, GoExpression: referenceRootState},
+		referenceRootSupport: {Schema: support, GoExpression: referenceRootSupport},
 	}, "state validation")
 	if stateValidationErr != nil {
 		return entityTypeModel{}, stateValidationErr
@@ -403,7 +403,7 @@ func loadSchema(directory, relative string) (schemaNode, error) {
 //nolint:gocognit // Recursive schema validation mirrors the supported JSON Schema node kinds.
 func requireInt64Bindings(schema schemaNode) error {
 	switch schema.Type {
-	case "integer":
+	case string(kindInteger):
 		if schema.Minimum == nil || schema.Maximum == nil {
 			return errors.New("integer schema must set minimum and maximum within int64")
 		}
@@ -420,13 +420,13 @@ func requireInt64Bindings(schema schemaNode) error {
 		if minimum.Cmp(minimumInt64) < 0 || maximum.Cmp(maximumInt64) > 0 {
 			return errors.New("integer schema minimum and maximum must fit int64")
 		}
-	case "object":
+	case schemaTypeObject:
 		for _, property := range sortedProperties(schema.Properties) {
 			if err := requireInt64Bindings(schema.Properties[property]); err != nil {
 				return fmt.Errorf("property %q: %w", property, err)
 			}
 		}
-	case "array":
+	case schemaTypeArray:
 		if schema.Items != nil {
 			if err := requireInt64Bindings(*schema.Items); err != nil {
 				return fmt.Errorf("items: %w", err)

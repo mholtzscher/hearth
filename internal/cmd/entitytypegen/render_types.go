@@ -88,15 +88,15 @@ func (emitter *typeEmitter) define(name string, schema schemaNode) error {
 	}
 	var declaration string
 	switch schema.Type {
-	case "boolean":
+	case string(kindBoolean):
 		declaration = "type " + name + " bool\n"
-	case "string":
+	case string(kindString):
 		declaration = "type " + name + " string\n"
-	case "integer":
+	case string(kindInteger):
 		declaration = "type " + name + " int64\n"
-	case "number":
+	case string(kindNumber):
 		return errors.New("number schemas require a lossless binding and are not supported")
-	case "array":
+	case schemaTypeArray:
 		if schema.Items == nil {
 			return errors.New("array schema requires items")
 		}
@@ -105,7 +105,7 @@ func (emitter *typeEmitter) define(name string, schema schemaNode) error {
 			return err
 		}
 		declaration = fmt.Sprintf("type %s []%s\n", name, itemType)
-	case "object":
+	case schemaTypeObject:
 		if err := requireClosedObject(schema); err != nil {
 			return err
 		}
@@ -141,15 +141,15 @@ func (emitter *typeEmitter) define(name string, schema schemaNode) error {
 
 func (emitter *typeEmitter) propertyType(name string, schema schemaNode) (string, error) {
 	switch schema.Type {
-	case "boolean":
+	case string(kindBoolean):
 		return "bool", nil
-	case "string":
-		return "string", nil
-	case "integer":
+	case string(kindString):
+		return string(kindString), nil
+	case string(kindInteger):
 		return "int64", nil
-	case "number":
+	case string(kindNumber):
 		return "", errors.New("number schemas require a lossless binding and are not supported")
-	case "object", "array":
+	case schemaTypeObject, schemaTypeArray:
 		if err := emitter.define(name, schema); err != nil {
 			return "", err
 		}

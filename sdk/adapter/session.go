@@ -16,6 +16,11 @@ import (
 	"github.com/mholtzscher/hearth/internal/contracts/v1/natswire"
 )
 
+const (
+	statusAccepted = "accepted"
+	statusRejected = "rejected"
+)
+
 type Session struct {
 	adapterID    string
 	connection   *natsgo.Conn
@@ -151,7 +156,7 @@ func (session *Session) Register(ctx context.Context, registration Registration)
 	if err != nil {
 		return Binding{}, err
 	}
-	if response.Data.Status == "rejected" {
+	if response.Data.Status == statusRejected {
 		return Binding{}, &RegistrationRejectedError{
 			Code:    RegistrationRejectionCode(response.Data.Error.Code),
 			Message: response.Data.Error.Message,
@@ -181,7 +186,7 @@ func (session *Session) SetEntityEnabled(ctx context.Context, entityID string, e
 	if err != nil {
 		return false, err
 	}
-	if response.Data.Status == "rejected" {
+	if response.Data.Status == statusRejected {
 		return false, &EntityEnablementRejectedError{
 			Code: response.Data.Error.Code, Message: response.Data.Error.Message,
 		}
@@ -413,13 +418,13 @@ type commandResponder struct {
 }
 
 func (responder *commandResponder) Accept() error {
-	return responder.respond(CommandResponse{CommandID: responder.commandID, Status: "accepted"})
+	return responder.respond(CommandResponse{CommandID: responder.commandID, Status: statusAccepted})
 }
 
 func (responder *commandResponder) Reject(message string) error {
 	return responder.respond(CommandResponse{
 		CommandID: responder.commandID,
-		Status:    "rejected",
+		Status:    statusRejected,
 		Error:     &CommandError{Code: "upstream_rejected", Message: message},
 	})
 }

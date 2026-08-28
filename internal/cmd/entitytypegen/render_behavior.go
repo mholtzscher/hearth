@@ -86,11 +86,11 @@ func writeValidationRules(source *strings.Builder, rules []ruleModel, indent str
 
 func schemaComparable(schema schemaNode) bool {
 	switch schema.Type {
-	case "boolean", "string", "integer", "number":
+	case string(kindBoolean), string(kindString), string(kindInteger), string(kindNumber):
 		return true
-	case "array":
+	case schemaTypeArray:
 		return false
-	case "object":
+	case schemaTypeObject:
 		for name, property := range schema.Properties {
 			if !required(schema, name) || !schemaComparable(property) {
 				return false

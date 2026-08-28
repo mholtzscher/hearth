@@ -19,6 +19,7 @@ import (
 const (
 	reconnectMinimum = 250 * time.Millisecond
 	reconnectMaximum = 5 * time.Second
+	stateOff         = "off"
 )
 
 type ObservationPublisher interface {
@@ -256,7 +257,7 @@ func (homeAssistant *Adapter) set(
 	}
 	eventSequence := client.EventSequence()
 	service := "turn_off"
-	desiredState := "off"
+	desiredState := stateOff
 	if command.Parameters.Value {
 		service = "turn_on"
 		desiredState = "on"
@@ -283,7 +284,7 @@ func (homeAssistant *Adapter) set(
 	if state.State == desiredState {
 		return homeAssistant.publish(ctx, state, receivedAt, &commandID)
 	}
-	if state.State == "on" || state.State == "off" {
+	if state.State == "on" || state.State == stateOff {
 		if publishErr := homeAssistant.publish(ctx, state, receivedAt, &commandID); publishErr != nil {
 			return publishErr
 		}
@@ -322,7 +323,7 @@ func (homeAssistant *Adapter) publish(
 	switch state.State {
 	case "on":
 		value = true
-	case "off":
+	case stateOff:
 		value = false
 	default:
 		return fmt.Errorf("%w %q", errUnsupportedState, state.State)
