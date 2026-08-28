@@ -12,6 +12,10 @@ import (
 )
 
 func main() {
+	os.Exit(run())
+}
+
+func run() int {
 	configPath := flag.String(
 		"config",
 		"configs/homeassistant.yaml",
@@ -23,12 +27,13 @@ func main() {
 	config, configErr := homeassistant.LoadConfig(*configPath)
 	if configErr != nil {
 		logger.Error("load configuration", "error", configErr)
-		os.Exit(1)
+		return 1
 	}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	if err := homeassistant.Run(ctx, config, logger); err != nil {
 		logger.Error("run Home Assistant adapter", "error", err)
-		os.Exit(1)
+		return 1
 	}
+	return 0
 }
