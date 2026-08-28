@@ -15,12 +15,12 @@ func renderBehavior(model entityTypeModel) ([]byte, error) {
 	for _, operation := range model.Operations {
 		hasValidation = hasValidation || len(operation.ParameterValidation) > 0
 	}
-	comparable := schemaComparable(model.StateSchema)
+	isComparable := schemaComparable(model.StateSchema)
 	var imports []string
 	if hasValidation {
 		imports = append(imports, "errors")
 	}
-	if !comparable {
+	if !isComparable {
 		imports = append(imports, "reflect")
 	}
 	if len(model.Operations) > 0 {
@@ -37,7 +37,7 @@ func renderBehavior(model entityTypeModel) ([]byte, error) {
 	source.WriteString("func ValidateState(support Support, state State) error {\n")
 	writeValidationRules(&source, model.StateValidation, "\t")
 	source.WriteString("\treturn nil\n}\n\n")
-	if comparable {
+	if isComparable {
 		source.WriteString("func EqualState(left, right State) bool { return left == right }\n\n")
 	} else {
 		source.WriteString("func EqualState(left, right State) bool { return reflect.DeepEqual(left, right) }\n\n")
