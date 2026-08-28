@@ -154,5 +154,6 @@ func registrationJitter(delay time.Duration) time.Duration {
 	if half <= 0 {
 		return delay
 	}
+	//nolint:gosec // Backoff jitter does not require cryptographic randomness.
 	return half + time.Duration(rand.Int64N(int64(delay-half)+1))
 }

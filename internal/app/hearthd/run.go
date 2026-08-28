@@ -18,8 +18,9 @@ import (
 )
 
 const (
-	receiptPruneInterval = time.Hour
-	shutdownTimeout      = 5 * time.Second
+	receiptPruneInterval  = time.Hour
+	shutdownTimeout       = 5 * time.Second
+	httpReadHeaderTimeout = 5 * time.Second
 )
 
 //nolint:gocognit // Startup and shutdown remain linear so resource ownership is visible in one place.
@@ -89,7 +90,9 @@ func Run(ctx context.Context, config Config, logger *slog.Logger) error { //noli
 
 	readiness := NewRuntimeReadiness(database, connection, js, observations)
 	handler, _ := NewHTTPHandler(service, readiness)
-	server := &http.Server{Addr: config.HTTPAddr, Handler: handler}
+	server := &http.Server{
+		Addr: config.HTTPAddr, Handler: handler, ReadHeaderTimeout: httpReadHeaderTimeout,
+	}
 	serverErrors := make(chan error, 1)
 	go func() {
 		serverErrors <- server.ListenAndServe()

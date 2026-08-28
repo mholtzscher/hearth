@@ -551,9 +551,11 @@ func applyOutput(generated output, check bool) error {
 		}
 		return fmt.Errorf("generated file %s is stale; run go generate ./entitytypes", generated.path)
 	}
+	//nolint:gosec // Generated source directories use conventional repository permissions.
 	if err := os.MkdirAll(filepath.Dir(generated.path), 0o755); err != nil {
 		return err
 	}
+	//nolint:gosec // Generated source files must be readable by repository users.
 	if err := os.WriteFile(generated.path, generated.content, 0o644); err != nil {
 		return err
 	}
