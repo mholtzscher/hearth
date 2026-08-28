@@ -22,7 +22,7 @@ import (
 	sdkpowerv1 "github.com/mholtzscher/hearth/sdk/adapter/powerv1"
 )
 
-//nolint:govet,gocognit // The durable transport lifecycle is clearer as one integration test.
+//nolint:govet,gocognit,gocyclo // The durable transport lifecycle is clearer as one integration test.
 func TestCoreNATSTransportRegistersAndProjectsDurableObservation(t *testing.T) {
 	t.Parallel()
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
@@ -202,7 +202,7 @@ func TestCoreNATSTransportRegistersAndProjectsDurableObservation(t *testing.T) {
 	}
 }
 
-//nolint:govet,gocognit // The command lifecycle is clearer as one integration test.
+//nolint:govet,gocognit,gocyclo // The command lifecycle is clearer as one integration test.
 func TestCoreCommandRoundTripRequiresLinkedSimulatorObservation(t *testing.T) {
 	t.Parallel()
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)

@@ -19,7 +19,7 @@ const (
 	readCommandB = CommandID("cmd_01890f47-7a6b-7c4d-8e9f-0123456789a2")
 )
 
-//nolint:gocognit // Related keyset pagination invariants are intentionally verified together.
+//nolint:gocognit,gocyclo // Related keyset pagination invariants are intentionally verified together.
 func TestSQLiteResourceReadsUseDeterministicKeysetPages(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()

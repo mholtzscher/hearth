@@ -642,7 +642,7 @@ func TestCommandCreationAndEnablementFollowCommitOrder(t *testing.T) {
 	}
 }
 
-//nolint:gocognit // The command transition matrix is clearer as one persistence test.
+//nolint:gocognit,gocyclo // The command transition matrix is clearer as one persistence test.
 func TestCommandLedgerTransitionsAreMonotonicAndIdempotent(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()

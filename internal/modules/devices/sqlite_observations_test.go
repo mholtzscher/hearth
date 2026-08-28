@@ -257,7 +257,7 @@ func TestDisabledEntityDoesNotExemptUnknownExpiredOrTerminalCommandLinks(t *test
 	}
 }
 
-//nolint:gocognit // The linked-command transition matrix is clearer as one persistence test.
+//nolint:gocognit,gocyclo // The linked-command transition matrix is clearer as one persistence test.
 func TestObservationProjectionSatisfiesOnlyMatchingActiveLinkedCommand(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
