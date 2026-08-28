@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"log/slog"
 	"net"
 	"sync/atomic"
 	"testing"
@@ -19,6 +20,15 @@ import (
 )
 
 const testEntityID = "ent_01890f47-7a6b-7c4d-8e9f-0123456789ab"
+
+func TestConnectUsesDefaultLoggerWhenLoggerIsOmitted(t *testing.T) {
+	t.Parallel()
+	server := startServer(t, -1, t.TempDir())
+	session := connectSession(t, server.ClientURL())
+	if session.logger != slog.Default() {
+		t.Fatal("Session did not use the default logger")
+	}
+}
 
 func TestConnectRetriesWhenNATSStartsLater(t *testing.T) {
 	t.Parallel()

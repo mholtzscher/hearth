@@ -62,7 +62,7 @@ func Connect(ctx context.Context, config Config) (*Session, error) {
 	}
 	logger := config.Logger
 	if logger == nil {
-		logger = slog.New(slog.DiscardHandler)
+		logger = slog.Default()
 	}
 
 	options := []natsgo.Option{
