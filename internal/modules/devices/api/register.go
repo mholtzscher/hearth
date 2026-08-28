@@ -33,7 +33,7 @@ type Handler struct {
 func Register(api huma.API, service Devices) {
 	handler := &Handler{devices: service}
 	disabledProblemSchema := huma.SchemaFromType(
-		api.OpenAPI().Components.Schemas, reflect.TypeFor[disabledCommandProblem](),
+		api.OpenAPI().Components.Schemas, reflect.TypeFor[disabledCommandError](),
 	)
 	huma.Register(api, huma.Operation{
 		OperationID: "list-entities", Method: http.MethodGet, Path: "/entities",

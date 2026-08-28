@@ -99,7 +99,7 @@ func TestExecuteDisabledCommandReturnsDurableProblemDetailsExtension(t *testing.
 			response.Body.String(),
 		)
 	}
-	var problem disabledCommandProblem
+	var problem disabledCommandError
 	if err := json.Unmarshal(response.Body.Bytes(), &problem); err != nil {
 		t.Fatal(err)
 	}
