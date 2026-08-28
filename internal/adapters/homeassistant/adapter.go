@@ -147,7 +147,10 @@ type snapshotResult struct {
 }
 
 //nolint:gocognit // Reconciliation is an explicit state machine whose branches mirror upstream events.
-func (homeAssistant *Adapter) reconcileAndStream(ctx context.Context, client *client) error {
+func (homeAssistant *Adapter) reconcileAndStream(
+	ctx context.Context,
+	client *client,
+) error {
 	resultChannel := make(chan snapshotResult, 1)
 	go func() {
 		states, receivedAt, priorEvents, err := client.GetStates(ctx)

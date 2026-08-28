@@ -107,7 +107,10 @@ func handleObservationMessage(
 ) {
 	metadata, metadataErr := message.Metadata()
 	if metadataErr != nil {
-		logger.ErrorContext(baseContext, "cannot read observation metadata", "subject", message.Subject(), "error", metadataErr)
+		logger.ErrorContext(
+			baseContext, "cannot read observation metadata",
+			"subject", message.Subject(), "error", metadataErr,
+		)
 		return
 	}
 	permanentFailure := func(err error, observationID string) {

@@ -35,25 +35,43 @@ func StartEntityEnablementServer(
 		natswire.EntityEnablementWildcard(), "entity enablement", "enablement_id",
 		contractsv1.EntityEnablementRequestSchemaID, contractsv1.EntityEnablementResponseSchemaID,
 		logger,
-		func(ctx context.Context, subject string, request natswire.Envelope[entityEnablementRequest]) (entityEnablementResponse, bool) {
+		func(
+			ctx context.Context,
+			subject string,
+			request natswire.Envelope[entityEnablementRequest],
+		) (entityEnablementResponse, bool) {
 			route, routeErr := natswire.ParseEntityEnablementSubject(subject)
 			if routeErr != nil {
-				logger.ErrorContext(ctx, "discarding Entity enablement request with invalid subject", "subject", subject, "error", routeErr)
+				logger.ErrorContext(ctx,
+					"discarding Entity enablement request with invalid subject",
+					"subject", subject, "error", routeErr,
+				)
 				return entityEnablementResponse{}, false
 			}
 			if route.EntityID != request.Data.EntityID {
-				logger.ErrorContext(ctx, "discarding Entity enablement request with mismatched routing", "subject", subject, "enablement_id", request.ID)
+				logger.ErrorContext(ctx,
+					"discarding Entity enablement request with mismatched routing",
+					"subject", subject, "enablement_id", request.ID,
+				)
 				return entityEnablementResponse{}, false
 			}
 			entityID, entityIDErr := devices.ParseEntityID(request.Data.EntityID)
 			if entityIDErr != nil {
-				logger.ErrorContext(ctx, "discarding Entity enablement request with invalid Entity ID", "subject", subject, "enablement_id", request.ID)
+				logger.ErrorContext(ctx,
+					"discarding Entity enablement request with invalid Entity ID",
+					"subject", subject, "enablement_id", request.ID,
+				)
 				return entityEnablementResponse{}, false
 			}
-			confirmed, enablementErr := setter.SetOwnedEntityEnabled(ctx, route.AdapterID, entityID, request.Data.Enabled)
+			confirmed, enablementErr := setter.SetOwnedEntityEnabled(
+				ctx, route.AdapterID, entityID, request.Data.Enabled,
+			)
 			response, handled := mapEntityEnablementResult(request.Data.EntityID, confirmed, enablementErr)
 			if !handled {
-				logger.ErrorContext(ctx, "set Entity enablement", "subject", subject, "enablement_id", request.ID, "error", enablementErr)
+				logger.ErrorContext(ctx,
+					"set Entity enablement", "subject", subject,
+					"enablement_id", request.ID, "error", enablementErr,
+				)
 			}
 			return response, handled
 		},

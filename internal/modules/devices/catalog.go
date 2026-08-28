@@ -57,7 +57,9 @@ func DefineOperation[State, Support, OperationSupport, Parameters any](
 					if err != nil {
 						return nil, fmt.Errorf("decode parameters for operation %q: %w", name, err)
 					}
-					if validationErr := validateParameters(typedSupport, operationSupport, typedParameters); validationErr != nil {
+					if validationErr := validateParameters(
+						typedSupport, operationSupport, typedParameters,
+					); validationErr != nil {
 						return nil, fmt.Errorf("validate parameters for operation %q: %w", name, validationErr)
 					}
 					return CommandParameters(normalized), nil

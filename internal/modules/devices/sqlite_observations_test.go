@@ -378,7 +378,9 @@ func TestReceiptPruningPinsCurrentStateUntilItAdvances(t *testing.T) {
 	if _, projectionErr := service.ProjectObservation(ctx, "simulator", first, start); projectionErr != nil {
 		t.Fatal(projectionErr)
 	}
-	if _, projectionErr := service.ProjectObservation(ctx, "simulator", second, start.Add(time.Hour)); projectionErr != nil {
+	if _, projectionErr := service.ProjectObservation(
+		ctx, "simulator", second, start.Add(time.Hour),
+	); projectionErr != nil {
 		t.Fatal(projectionErr)
 	}
 

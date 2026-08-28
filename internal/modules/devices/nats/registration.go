@@ -33,15 +33,25 @@ func StartRegistrationServer(
 		natswire.RegistrationWildcard(), "registration", "registration_id",
 		contractsv1.RegistrationRequestSchemaID, contractsv1.RegistrationResponseSchemaID,
 		logger,
-		func(ctx context.Context, subject string, request natswire.Envelope[registration]) (registrationResponse, bool) {
+		func(
+			ctx context.Context,
+			subject string,
+			request natswire.Envelope[registration],
+		) (registrationResponse, bool) {
 			route, routeErr := natswire.ParseRegistrationSubject(subject)
 			if routeErr != nil {
-				logger.ErrorContext(ctx, "discarding registration with invalid subject", "subject", subject, "error", routeErr)
+				logger.ErrorContext(ctx,
+					"discarding registration with invalid subject",
+					"subject", subject, "error", routeErr,
+				)
 				return registrationResponse{}, false
 			}
 			response, registrationErr := register(ctx, registrar, route.AdapterID, request.Data)
 			if registrationErr != nil {
-				logger.ErrorContext(ctx, "handle registration", "subject", subject, "registration_id", request.ID, "error", registrationErr)
+				logger.ErrorContext(ctx,
+					"handle registration", "subject", subject,
+					"registration_id", request.ID, "error", registrationErr,
+				)
 				return registrationResponse{}, false
 			}
 			return response, true

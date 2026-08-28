@@ -116,7 +116,9 @@ func TestGenericCatalogCarriesTypedBehaviorAcrossErasure(t *testing.T) {
 	if err != nil || string(resolved.Parameters) != `{"target":5}` || resolved.Deadline != 3*time.Second {
 		t.Fatalf("resolved command = %#v, %v", resolved, err)
 	}
-	if _, resolveErr := catalog.ResolveCommand(entity, OperationNameSet, CommandParameters(`{"target":1}`)); resolveErr == nil {
+	if _, resolveErr := catalog.ResolveCommand(
+		entity, OperationNameSet, CommandParameters(`{"target":1}`),
+	); resolveErr == nil {
 		t.Fatal("support-incompatible parameters unexpectedly accepted")
 	}
 
