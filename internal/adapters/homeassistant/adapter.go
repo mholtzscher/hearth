@@ -361,7 +361,7 @@ func (homeAssistant *Adapter) publish(
 
 func sourceUpdatedAt(state upstreamState) (*time.Time, error) {
 	if state.LastUpdated == "" {
-		return nil, nil
+		return nil, nil //nolint:nilnil // Missing upstream timestamps are represented by nil.
 	}
 	value, err := time.Parse(time.RFC3339Nano, state.LastUpdated)
 	if err != nil {

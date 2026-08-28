@@ -284,7 +284,7 @@ func (repository *SQLiteRepository) satisfyCommand(
 		return nil, fmt.Errorf("evaluate linked command outcome: %w", err)
 	}
 	if !matches {
-		return nil, nil
+		return nil, nil //nolint:nilnil // No matching outcome is a successful projection.
 	}
 	rows, err := commandsqlc.New(tx).SatisfyCommandFromObservation(ctx, commandsqlc.SatisfyCommandFromObservationParams{
 		CompletedAt:          sql.NullString{String: formatTime(completedAt), Valid: true},
@@ -297,7 +297,7 @@ func (repository *SQLiteRepository) satisfyCommand(
 		return nil, fmt.Errorf("satisfy linked command: %w", err)
 	}
 	if rows != 1 {
-		return nil, nil
+		return nil, nil //nolint:nilnil // A concurrently completed command has no result.
 	}
 	return &CommandResult{
 		CommandID: command.ID, ObservationID: observationID, Value: append(Value(nil), value...),

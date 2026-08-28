@@ -568,7 +568,7 @@ func parseTime(value string) (time.Time, error) {
 
 func parseOptionalTime(value sql.NullString) (*time.Time, error) {
 	if !value.Valid {
-		return nil, nil
+		return nil, nil //nolint:nilnil // SQL NULL is represented by a nil optional time.
 	}
 	parsed, err := parseTime(value.String)
 	if err != nil {
