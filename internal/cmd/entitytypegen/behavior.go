@@ -97,39 +97,47 @@ func compileReference(reference referenceManifest, roots map[string]referenceRoo
 	if !exists {
 		return referenceModel{}, fmt.Errorf("root %q is not available in this context", reference.Root)
 	}
-	schema := root.Schema
-	expression := root.GoExpression
-	if reference.Path != "" {
-		segments, err := parseJSONPointer(reference.Path)
-		if err != nil {
-			return referenceModel{}, err
-		}
-		var expressionSb88 strings.Builder
-		for _, segment := range segments {
-			if schema.Type != schemaTypeObject {
-				return referenceModel{}, fmt.Errorf("path %q traverses non-object type %q", reference.Path, schema.Type)
-			}
-			property, propertyExists := schema.Properties[segment]
-			if !propertyExists {
-				return referenceModel{}, fmt.Errorf("path %q selects unknown property %q", reference.Path, segment)
-			}
-			if !required(schema, segment) {
-				return referenceModel{}, fmt.Errorf("path %q traverses optional property %q", reference.Path, segment)
-			}
-			field, nameErr := exportedName(segment)
-			if nameErr != nil {
-				return referenceModel{}, nameErr
-			}
-			expressionSb88.WriteString("." + field)
-			schema = property
-		}
-		expression += expressionSb88.String()
+	schema, expression, pathErr := compileReferencePath(root, reference.Path)
+	if pathErr != nil {
+		return referenceModel{}, pathErr
 	}
 	kind, err := scalarKind(schema)
 	if err != nil {
 		return referenceModel{}, fmt.Errorf("path %q: %w", reference.Path, err)
 	}
 	return referenceModel{Root: reference.Root, Path: reference.Path, Kind: kind, GoExpression: expression}, nil
+}
+
+func compileReferencePath(root referenceRoot, path string) (schemaNode, string, error) {
+	schema := root.Schema
+	expression := root.GoExpression
+	if path == "" {
+		return schema, expression, nil
+	}
+	segments, err := parseJSONPointer(path)
+	if err != nil {
+		return schemaNode{}, "", err
+	}
+	var suffix strings.Builder
+	for _, segment := range segments {
+		if schema.Type != schemaTypeObject {
+			return schemaNode{}, "", fmt.Errorf("path %q traverses non-object type %q", path, schema.Type)
+		}
+		property, exists := schema.Properties[segment]
+		if !exists {
+			return schemaNode{}, "", fmt.Errorf("path %q selects unknown property %q", path, segment)
+		}
+		if !required(schema, segment) {
+			return schemaNode{}, "", fmt.Errorf("path %q traverses optional property %q", path, segment)
+		}
+		field, nameErr := exportedName(segment)
+		if nameErr != nil {
+			return schemaNode{}, "", nameErr
+		}
+		suffix.WriteString("." + field)
+		schema = property
+	}
+	return schema, expression + suffix.String(), nil
 }
 
 func parseJSONPointer(pointer string) ([]string, error) {

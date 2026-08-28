@@ -68,43 +68,53 @@ func (repository *SQLiteRepository) ListEntities(
 		afterID = string(*params.AfterID)
 	}
 	queries := statesqlc.New(repository.database)
+	if params.DeviceID != nil {
+		return listEntitiesByDevice(ctx, queries, params, afterID)
+	}
+	rows, err := queries.ListEntities(ctx, statesqlc.ListEntitiesParams{
+		ID: afterID, Limit: int64(params.Limit + 1),
+	})
+	if err != nil {
+		return Page[EntityWithState]{}, fmt.Errorf("list entities: %w", err)
+	}
 	items := make([]EntityWithState, 0, params.Limit+1)
-	if params.DeviceID == nil {
-		rows, err := queries.ListEntities(ctx, statesqlc.ListEntitiesParams{
-			ID: afterID, Limit: int64(params.Limit + 1),
-		})
-		if err != nil {
-			return Page[EntityWithState]{}, fmt.Errorf("list entities: %w", err)
+	for _, row := range rows {
+		view, mappingErr := entityWithStateFromValues(
+			row.ID, row.DeviceID, row.AdapterID, row.Name, row.TypeID, row.SupportJson, row.Enabled,
+			row.ObservationID, row.ValueJson, row.AdapterReceivedAt, row.SourceUpdatedAt,
+			row.ObservedAt, row.ReceiveOrder,
+		)
+		if mappingErr != nil {
+			return Page[EntityWithState]{}, fmt.Errorf("map entity: %w", mappingErr)
 		}
-		for _, row := range rows {
-			view, mappingErr := entityWithStateFromValues(
-				row.ID, row.DeviceID, row.AdapterID, row.Name, row.TypeID, row.SupportJson, row.Enabled,
-				row.ObservationID, row.ValueJson, row.AdapterReceivedAt, row.SourceUpdatedAt,
-				row.ObservedAt, row.ReceiveOrder,
-			)
-			if mappingErr != nil {
-				return Page[EntityWithState]{}, fmt.Errorf("map entity: %w", mappingErr)
-			}
-			items = append(items, view)
+		items = append(items, view)
+	}
+	return pageFromExtra(items, params.Limit), nil
+}
+
+func listEntitiesByDevice(
+	ctx context.Context,
+	queries *statesqlc.Queries,
+	params ListEntitiesParams,
+	afterID string,
+) (Page[EntityWithState], error) {
+	rows, err := queries.ListEntitiesByDevice(ctx, statesqlc.ListEntitiesByDeviceParams{
+		DeviceID: string(*params.DeviceID), ID: afterID, Limit: int64(params.Limit + 1),
+	})
+	if err != nil {
+		return Page[EntityWithState]{}, fmt.Errorf("list entities by device: %w", err)
+	}
+	items := make([]EntityWithState, 0, params.Limit+1)
+	for _, row := range rows {
+		view, mappingErr := entityWithStateFromValues(
+			row.ID, row.DeviceID, row.AdapterID, row.Name, row.TypeID, row.SupportJson, row.Enabled,
+			row.ObservationID, row.ValueJson, row.AdapterReceivedAt, row.SourceUpdatedAt,
+			row.ObservedAt, row.ReceiveOrder,
+		)
+		if mappingErr != nil {
+			return Page[EntityWithState]{}, fmt.Errorf("map entity: %w", mappingErr)
 		}
-	} else {
-		rows, err := queries.ListEntitiesByDevice(ctx, statesqlc.ListEntitiesByDeviceParams{
-			DeviceID: string(*params.DeviceID), ID: afterID, Limit: int64(params.Limit + 1),
-		})
-		if err != nil {
-			return Page[EntityWithState]{}, fmt.Errorf("list entities by device: %w", err)
-		}
-		for _, row := range rows {
-			view, mappingErr := entityWithStateFromValues(
-				row.ID, row.DeviceID, row.AdapterID, row.Name, row.TypeID, row.SupportJson, row.Enabled,
-				row.ObservationID, row.ValueJson, row.AdapterReceivedAt, row.SourceUpdatedAt,
-				row.ObservedAt, row.ReceiveOrder,
-			)
-			if mappingErr != nil {
-				return Page[EntityWithState]{}, fmt.Errorf("map entity: %w", mappingErr)
-			}
-			items = append(items, view)
-		}
+		items = append(items, view)
 	}
 	return pageFromExtra(items, params.Limit), nil
 }
