@@ -200,10 +200,10 @@ func NewTypeCatalog(definitions []EntityTypeDefinition) (*TypeCatalog, error) {
 		if _, duplicate := catalog.types[definition.id]; duplicate {
 			return nil, fmt.Errorf("duplicate entity type %q", definition.id)
 		}
-		copy := definition
-		copy.operations = make(map[OperationName]erasedOperationDefinition, len(definition.operations))
-		maps.Copy(copy.operations, definition.operations)
-		catalog.types[definition.id] = copy
+		cloned := definition
+		cloned.operations = make(map[OperationName]erasedOperationDefinition, len(definition.operations))
+		maps.Copy(cloned.operations, definition.operations)
+		catalog.types[definition.id] = cloned
 	}
 	return catalog, nil
 }

@@ -113,14 +113,14 @@ func copyBoolPointer(value *bool) *bool {
 	if value == nil {
 		return nil
 	}
-	copy := *value
-	return &copy
+	cloned := *value
+	return &cloned
 }
 
 func copyStringPointer(value *string) *string {
 	if value == nil {
 		return nil
 	}
-	copy := *value
-	return &copy
+	cloned := *value
+	return &cloned
 }

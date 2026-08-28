@@ -578,7 +578,7 @@ func TestExecuteCommandContinuesAfterCallerCancellation(t *testing.T) {
 	repository := newCommandRepository()
 	dispatched := make(chan CommandRequest, 1)
 	release := make(chan struct{})
-	sender := commandSenderFunc(func(ctx context.Context, _ string, request CommandRequest) (CommandAcceptance, error) {
+	sender := commandSenderFunc(func(_ context.Context, _ string, request CommandRequest) (CommandAcceptance, error) {
 		dispatched <- request
 		<-release
 		return CommandAcceptance{Accepted: false}, nil

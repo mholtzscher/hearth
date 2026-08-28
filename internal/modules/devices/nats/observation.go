@@ -232,8 +232,8 @@ func domainObservation(
 		AdapterReceivedAt: adapterReceivedAt,
 	}
 	if sourceUpdatedAt != nil {
-		copy := *sourceUpdatedAt
-		domain.SourceUpdatedAt = &copy
+		cloned := *sourceUpdatedAt
+		domain.SourceUpdatedAt = &cloned
 	}
 	if envelope.Data.RefreshForCommand != nil {
 		commandID, commandIDErr := devices.ParseCommandID(*envelope.Data.RefreshForCommand)

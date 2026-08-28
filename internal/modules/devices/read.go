@@ -133,23 +133,23 @@ func (service *Service) ListEntityCommands(
 }
 
 func copyCommandRecord(command CommandRecord) CommandRecord {
-	copy := command
-	copy.Parameters = append(CommandParameters(nil), command.Parameters...)
+	cloned := command
+	cloned.Parameters = append(CommandParameters(nil), command.Parameters...)
 	if command.AcceptedAt != nil {
 		value := *command.AcceptedAt
-		copy.AcceptedAt = &value
+		cloned.AcceptedAt = &value
 	}
 	if command.CompletedAt != nil {
 		value := *command.CompletedAt
-		copy.CompletedAt = &value
+		cloned.CompletedAt = &value
 	}
 	if command.OutcomeObservationID != nil {
 		value := *command.OutcomeObservationID
-		copy.OutcomeObservationID = &value
+		cloned.OutcomeObservationID = &value
 	}
 	if command.FailureCode != nil {
 		value := *command.FailureCode
-		copy.FailureCode = &value
+		cloned.FailureCode = &value
 	}
-	return copy
+	return cloned
 }

@@ -184,30 +184,30 @@ func validLength(value string, minimum, maximum int) bool {
 }
 
 func copyRegistration(registration Registration) Registration {
-	copy := registration
-	copy.Device = copyDeviceDescriptor(registration.Device)
-	copy.Entities = make([]EntityDescriptor, len(registration.Entities))
+	cloned := registration
+	cloned.Device = copyDeviceDescriptor(registration.Device)
+	cloned.Entities = make([]EntityDescriptor, len(registration.Entities))
 	for index, entity := range registration.Entities {
-		copy.Entities[index] = copyEntityDescriptor(entity)
+		cloned.Entities[index] = copyEntityDescriptor(entity)
 	}
-	return copy
+	return cloned
 }
 
 func copyDeviceDescriptor(device DeviceDescriptor) DeviceDescriptor {
-	copy := device
+	cloned := device
 	if device.ExternalID != nil {
 		externalID := *device.ExternalID
-		copy.ExternalID = &externalID
+		cloned.ExternalID = &externalID
 	}
-	return copy
+	return cloned
 }
 
 func copyEntityDescriptor(entity EntityDescriptor) EntityDescriptor {
-	copy := entity
-	copy.Support = append(EntitySupport(nil), entity.Support...)
+	cloned := entity
+	cloned.Support = append(EntitySupport(nil), entity.Support...)
 	if entity.InitiallyEnabled != nil {
 		initiallyEnabled := *entity.InitiallyEnabled
-		copy.InitiallyEnabled = &initiallyEnabled
+		cloned.InitiallyEnabled = &initiallyEnabled
 	}
-	return copy
+	return cloned
 }

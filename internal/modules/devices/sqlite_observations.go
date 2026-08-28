@@ -368,6 +368,6 @@ func copyTimePointer(value *time.Time) *time.Time {
 	if value == nil {
 		return nil
 	}
-	copy := value.UTC()
-	return &copy
+	cloned := value.UTC()
+	return &cloned
 }

@@ -9,7 +9,7 @@ import (
 	"strings"
 
 	"github.com/pressly/goose/v3"
-	_ "modernc.org/sqlite"
+	_ "modernc.org/sqlite" // Register the SQLite database/sql driver.
 )
 
 // Open opens the core SQLite database with the required connection policy.

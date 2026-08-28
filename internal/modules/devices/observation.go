@@ -66,53 +66,53 @@ func (service *Service) DeleteExpiredObservationReceipts(ctx context.Context, be
 }
 
 func copyObservation(observation Observation) Observation {
-	copy := observation
-	copy.Value = append(Value(nil), observation.Value...)
+	cloned := observation
+	cloned.Value = append(Value(nil), observation.Value...)
 	if observation.SourceUpdatedAt != nil {
 		sourceUpdatedAt := *observation.SourceUpdatedAt
-		copy.SourceUpdatedAt = &sourceUpdatedAt
+		cloned.SourceUpdatedAt = &sourceUpdatedAt
 	}
 	if observation.RefreshForCommand != nil {
 		commandID := *observation.RefreshForCommand
-		copy.RefreshForCommand = &commandID
+		cloned.RefreshForCommand = &commandID
 	}
-	return copy
+	return cloned
 }
 
 func copyProjectionResult(result ProjectionResult) ProjectionResult {
-	copy := result
+	cloned := result
 	if result.State != nil {
 		state := copyState(*result.State)
-		copy.State = &state
+		cloned.State = &state
 	}
 	if result.Rejection != nil {
 		rejection := *result.Rejection
-		copy.Rejection = &rejection
+		cloned.Rejection = &rejection
 	}
 	if result.SatisfiedCommand != nil {
 		command := *result.SatisfiedCommand
 		command.Value = append(Value(nil), result.SatisfiedCommand.Value...)
-		copy.SatisfiedCommand = &command
+		cloned.SatisfiedCommand = &command
 	}
-	return copy
+	return cloned
 }
 
 func copyEntityWithState(view EntityWithState) EntityWithState {
-	copy := view
-	copy.Entity.Support = append(EntitySupport(nil), view.Entity.Support...)
+	cloned := view
+	cloned.Entity.Support = append(EntitySupport(nil), view.Entity.Support...)
 	if view.State != nil {
 		state := copyState(*view.State)
-		copy.State = &state
+		cloned.State = &state
 	}
-	return copy
+	return cloned
 }
 
 func copyState(state State) State {
-	copy := state
-	copy.Value = append(Value(nil), state.Value...)
+	cloned := state
+	cloned.Value = append(Value(nil), state.Value...)
 	if state.SourceUpdatedAt != nil {
 		sourceUpdatedAt := *state.SourceUpdatedAt
-		copy.SourceUpdatedAt = &sourceUpdatedAt
+		cloned.SourceUpdatedAt = &sourceUpdatedAt
 	}
-	return copy
+	return cloned
 }
