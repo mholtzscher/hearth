@@ -19,6 +19,6 @@ jobs:
           cache: true
       - name: Run checks
         run: |
-          mise run hearth:validate
+          mise run validate
           git diff --exit-code
           test -z "$(git ls-files --others --exclude-standard)"
