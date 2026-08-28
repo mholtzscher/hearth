@@ -18,6 +18,7 @@ SELECT
     e.name,
     e.type_id,
     e.support_json,
+    e.enabled,
     s.observation_id,
     s.value_json,
     s.adapter_received_at,
@@ -39,6 +40,7 @@ SELECT
     e.name,
     e.type_id,
     e.support_json,
+    e.enabled,
     s.observation_id,
     s.value_json,
     s.adapter_received_at,
@@ -60,6 +62,7 @@ SELECT
     e.name,
     e.type_id,
     e.support_json,
+    e.enabled,
     s.observation_id,
     s.value_json,
     s.adapter_received_at,
@@ -70,6 +73,11 @@ FROM entities AS e
 JOIN adapter_entity_mappings AS m ON m.entity_id = e.id
 LEFT JOIN entity_states AS s ON s.entity_id = e.id
 WHERE e.id = ?;
+
+-- name: UpdateEntityEnablement :execrows
+UPDATE entities
+SET enabled = sqlc.arg(enabled), updated_at = sqlc.arg(updated_at)
+WHERE id = sqlc.arg(id) AND enabled <> sqlc.arg(enabled);
 
 -- name: GetEntityState :one
 SELECT entity_id, observation_id, value_json, adapter_received_at,

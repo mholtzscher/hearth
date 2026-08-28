@@ -28,8 +28,9 @@ func (readiness *testReadiness) Check(context.Context) error {
 }
 
 type stubDevices struct {
-	getEntity      func(context.Context, devices.EntityID) (devices.EntityWithState, error)
-	executeCommand func(
+	getEntity        func(context.Context, devices.EntityID) (devices.EntityWithState, error)
+	setEntityEnabled func(context.Context, devices.EntityID, bool) (devices.EntityWithState, error)
+	executeCommand   func(
 		context.Context,
 		devices.EntityID,
 		devices.OperationName,
@@ -42,6 +43,13 @@ func (stub *stubDevices) GetEntity(ctx context.Context, entityID devices.EntityI
 		panic("unexpected GetEntity call")
 	}
 	return stub.getEntity(ctx, entityID)
+}
+
+func (stub *stubDevices) SetEntityEnabled(ctx context.Context, entityID devices.EntityID, enabled bool) (devices.EntityWithState, error) {
+	if stub.setEntityEnabled == nil {
+		panic("unexpected SetEntityEnabled call")
+	}
+	return stub.setEntityEnabled(ctx, entityID, enabled)
 }
 
 func (*stubDevices) ListDevices(context.Context, devices.ListDevicesParams) (devices.Page[devices.Device], error) {
@@ -129,8 +137,9 @@ func TestRuntimeOpenAPIContract(t *testing.T) {
 			Version string `json:"version"`
 		} `json:"info"`
 		Paths map[string]struct {
-			Get  *runtimeOpenAPIOperation `json:"get"`
-			Post *runtimeOpenAPIOperation `json:"post"`
+			Get   *runtimeOpenAPIOperation `json:"get"`
+			Post  *runtimeOpenAPIOperation `json:"post"`
+			Patch *runtimeOpenAPIOperation `json:"patch"`
 		} `json:"paths"`
 		Components struct {
 			Schemas map[string]json.RawMessage `json:"schemas"`
@@ -148,8 +157,10 @@ func TestRuntimeOpenAPIContract(t *testing.T) {
 	assertRuntimeOpenAPIOperation(t, document.Paths["/v1/entities"].Get, "list-entities", "200", "400", "422", "500")
 	getEntity := document.Paths["/v1/entities/{entity_id}"].Get
 	assertRuntimeOpenAPIOperation(t, getEntity, "get-entity", "200", "400", "404", "422", "500")
+	patchEntity := document.Paths["/v1/entities/{entity_id}"].Patch
+	assertRuntimeOpenAPIOperation(t, patchEntity, "update-entity", "200", "400", "404", "422", "500")
 	executeCommand := document.Paths["/v1/entities/{entity_id}/commands"].Post
-	assertRuntimeOpenAPIOperation(t, executeCommand, "execute-entity-command", "200", "400", "404", "422", "502", "503", "504", "500")
+	assertRuntimeOpenAPIOperation(t, executeCommand, "execute-entity-command", "200", "400", "404", "409", "422", "502", "503", "504", "500")
 	assertRuntimeOpenAPIOperation(t, document.Paths["/v1/entities/{entity_id}/commands"].Get, "list-entity-commands", "200", "400", "404", "422", "500")
 	assertRuntimeOpenAPIOperation(t, document.Paths["/v1/devices"].Get, "list-devices", "200", "400", "422", "500")
 	assertRuntimeOpenAPIOperation(t, document.Paths["/v1/devices/{device_id}"].Get, "get-device", "200", "400", "404", "422", "500")
@@ -159,8 +170,9 @@ func TestRuntimeOpenAPIContract(t *testing.T) {
 	}
 
 	for schemaName, properties := range map[string][]string{
-		"EntityBody":           {"id", "device_id", "name", "type", "support", "state"},
+		"EntityBody":           {"id", "device_id", "name", "type", "support", "enabled", "state"},
 		"StateBody":            {"value", "observation_id", "adapter_received_at", "source_updated_at", "observed_at"},
+		"PatchEntityBody":      {"enabled"},
 		"CommandBody":          {"operation", "parameters"},
 		"CommandResultBody":    {"command_id", "status", "observation_id", "value"},
 		"DeviceBody":           {"id", "kind", "name"},
@@ -273,6 +285,12 @@ func assertRuntimeOpenAPIOperation(t *testing.T, operation *runtimeOpenAPIOperat
 		response, ok := operation.Responses[status]
 		if !ok {
 			t.Errorf("OpenAPI operation %q is missing response %s", operationID, status)
+			continue
+		}
+		if status == "409" && operationID == "execute-entity-command" {
+			if !strings.Contains(string(response), `"code"`) || !strings.Contains(string(response), `"command_id"`) {
+				t.Errorf("OpenAPI operation %q response %s is missing disabled Command fields: %s", operationID, status, response)
+			}
 			continue
 		}
 		if status != "200" && !strings.Contains(string(response), "#/components/schemas/ErrorModel") {

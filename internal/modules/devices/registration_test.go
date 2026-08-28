@@ -37,6 +37,10 @@ func (*stubRegistrationRepository) GetEntity(context.Context, EntityID) (EntityW
 	panic("unexpected GetEntity call")
 }
 
+func (*stubRegistrationRepository) SetEntityEnabled(context.Context, SetEntityEnabledParams) (EntityWithState, error) {
+	panic("unexpected SetEntityEnabled call")
+}
+
 func (*stubRegistrationRepository) GetCommand(context.Context, CommandID) (CommandRecord, error) {
 	panic("unexpected GetCommand call")
 }
@@ -53,7 +57,7 @@ func (*stubRegistrationRepository) DeleteExpiredObservationReceipts(context.Cont
 	panic("unexpected DeleteExpiredObservationReceipts call")
 }
 
-func (*stubRegistrationRepository) CreateCommand(context.Context, CommandRecord) error {
+func (*stubRegistrationRepository) CreateCommand(context.Context, CommandRecord) (CommandRecord, error) {
 	panic("unexpected CreateCommand call")
 }
 

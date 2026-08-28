@@ -131,8 +131,9 @@ func register(ctx context.Context, registrar Registrar, adapterID string, wire r
 	for index, entity := range wire.Entities {
 		domain.Entities[index] = devices.EntityDescriptor{
 			Key: entity.Key, ExternalID: entity.ExternalID, Name: entity.Name,
-			TypeID:  devices.EntityTypeID(entity.Type),
-			Support: append(devices.EntitySupport(nil), entity.Support...),
+			TypeID:           devices.EntityTypeID(entity.Type),
+			Support:          append(devices.EntitySupport(nil), entity.Support...),
+			InitiallyEnabled: copyBoolPointer(entity.InitiallyEnabled),
 		}
 	}
 	accepted, err := registrar.Register(ctx, adapterID, domain)
@@ -152,7 +153,9 @@ func register(ctx context.Context, registrar Registrar, adapterID string, wire r
 		Entities:   make([]entityBinding, len(accepted.Entities)),
 	}
 	for index, entity := range accepted.Entities {
-		wireBinding.Entities[index] = entityBinding{Key: entity.Key, EntityID: string(entity.EntityID)}
+		wireBinding.Entities[index] = entityBinding{
+			Key: entity.Key, EntityID: string(entity.EntityID), Enabled: entity.Enabled,
+		}
 	}
 	return registrationResponse{Status: "accepted", Binding: &wireBinding}, nil
 }
@@ -163,6 +166,14 @@ func newReplyID() (string, error) {
 		return "", err
 	}
 	return "rep_" + id.String(), nil
+}
+
+func copyBoolPointer(value *bool) *bool {
+	if value == nil {
+		return nil
+	}
+	copy := *value
+	return &copy
 }
 
 func copyStringPointer(value *string) *string {

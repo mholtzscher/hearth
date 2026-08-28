@@ -589,7 +589,7 @@ func TestSimulatorInterruptedCommandSurvivesLateLinkedObservation(t *testing.T) 
 		CorrelationID: correlationID, Status: devices.CommandStatusRequested,
 		RequestedAt: now, DeadlineAt: now.Add(10 * time.Second),
 	}
-	if err := harness.repository.CreateCommand(harness.ctx, record); err != nil {
+	if _, err := harness.repository.CreateCommand(harness.ctx, record); err != nil {
 		t.Fatal(err)
 	}
 	acceptance, err := devicesnats.NewCommandSender(harness.connection, harness.validator).Send(

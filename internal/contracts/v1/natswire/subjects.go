@@ -28,6 +28,11 @@ type CommandRoute struct {
 	OperationName string
 }
 
+type EntityEnablementRoute struct {
+	AdapterID string
+	EntityID  string
+}
+
 func RegistrationWildcard() string {
 	return subjectPrefix + ".*.register"
 }
@@ -51,6 +56,20 @@ func ObservationSubject(adapterID, entityID string) (string, error) {
 		return "", fmt.Errorf("invalid entity ID %q", entityID)
 	}
 	return subjectPrefix + "." + adapterID + ".observation." + entityID, nil
+}
+
+func EntityEnablementWildcard() string {
+	return subjectPrefix + ".*.enablement.*"
+}
+
+func EntityEnablementSubject(adapterID, entityID string) (string, error) {
+	if err := validateSlug("adapter ID", adapterID); err != nil {
+		return "", err
+	}
+	if !entityIDPattern.MatchString(entityID) {
+		return "", fmt.Errorf("invalid entity ID %q", entityID)
+	}
+	return subjectPrefix + "." + adapterID + ".enablement." + entityID, nil
 }
 
 func CommandSubject(adapterID, entityID, operationName string) (string, error) {
@@ -93,6 +112,17 @@ func ParseObservationSubject(subject string) (ObservationRoute, error) {
 		return ObservationRoute{}, fmt.Errorf("invalid observation subject %q: %w", subject, err)
 	}
 	return ObservationRoute{AdapterID: parts[3], EntityID: parts[5]}, nil
+}
+
+func ParseEntityEnablementSubject(subject string) (EntityEnablementRoute, error) {
+	parts := strings.Split(subject, ".")
+	if len(parts) != 6 || strings.Join(parts[:3], ".") != subjectPrefix || parts[4] != "enablement" {
+		return EntityEnablementRoute{}, fmt.Errorf("invalid entity enablement subject %q", subject)
+	}
+	if _, err := EntityEnablementSubject(parts[3], parts[5]); err != nil {
+		return EntityEnablementRoute{}, fmt.Errorf("invalid entity enablement subject %q: %w", subject, err)
+	}
+	return EntityEnablementRoute{AdapterID: parts[3], EntityID: parts[5]}, nil
 }
 
 func ParseCommandSubject(subject string) (CommandRoute, error) {

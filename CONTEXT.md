@@ -36,6 +36,10 @@ _Avoid_: Accessory, node
 One independently addressable state or control point belonging to a device. State reads and commands target entities.
 _Avoid_: Device capability, endpoint
 
+**Entity enablement**:
+Whether an Entity participates in normal control and State projection. An enabled Entity accepts valid Commands and Observations. Disabling immediately rejects new Commands, while Commands already requested or accepted retain their normal lifecycle; only Observations linked to those active Commands may still update State and satisfy them. A disabled Entity retains its canonical identity, Binding, history, and last accepted State, while other incoming Observations do not update State or satisfy Commands. The management API and owning Adapter may each explicitly enable or disable an Entity, with the last accepted change taking effect. Registration may choose a newly created Entity's initial enablement, which defaults to enabled; subsequent registration reconciles identity and descriptors without changing existing enablement. Disablement is reversible and distinct from temporary unavailability or removal from the household.
+_Avoid_: Retirement, availability
+
 **Entity support**:
 An Entity's type-specific statement of its supported State space and Operations. An Operation is supported exactly when it is present in Entity support; support may change without changing the Entity's identity or the meaning of active Commands.
 _Avoid_: Constraints, capability list

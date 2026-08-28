@@ -6,6 +6,7 @@ type EntityBody struct {
 	Name     string         `json:"name"`
 	Type     string         `json:"type"`
 	Support  map[string]any `json:"support"`
+	Enabled  bool           `json:"enabled"`
 	State    *StateBody     `json:"state"`
 }
 
@@ -60,6 +61,10 @@ type CommandRecordBody struct {
 type CommandCollectionBody struct {
 	Items      []CommandRecordBody `json:"items"`
 	NextCursor *string             `json:"next_cursor,omitempty"`
+}
+
+type PatchEntityBody struct {
+	Enabled bool `json:"enabled"`
 }
 
 type CommandBody struct {

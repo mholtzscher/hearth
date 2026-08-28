@@ -41,6 +41,7 @@ SELECT
     e.name,
     e.type_id,
     e.support_json,
+    e.enabled,
     s.observation_id,
     s.value_json,
     s.adapter_received_at,
@@ -64,6 +65,7 @@ type GetEntityRow struct {
 	Name              string
 	TypeID            string
 	SupportJson       string
+	Enabled           int64
 	ObservationID     sql.NullString
 	ValueJson         sql.NullString
 	AdapterReceivedAt sql.NullString
@@ -82,6 +84,7 @@ func (q *Queries) GetEntity(ctx context.Context, arg GetEntityParams) (GetEntity
 		&i.Name,
 		&i.TypeID,
 		&i.SupportJson,
+		&i.Enabled,
 		&i.ObservationID,
 		&i.ValueJson,
 		&i.AdapterReceivedAt,
@@ -168,6 +171,7 @@ SELECT
     e.name,
     e.type_id,
     e.support_json,
+    e.enabled,
     s.observation_id,
     s.value_json,
     s.adapter_received_at,
@@ -194,6 +198,7 @@ type ListEntitiesRow struct {
 	Name              string
 	TypeID            string
 	SupportJson       string
+	Enabled           int64
 	ObservationID     sql.NullString
 	ValueJson         sql.NullString
 	AdapterReceivedAt sql.NullString
@@ -218,6 +223,7 @@ func (q *Queries) ListEntities(ctx context.Context, arg ListEntitiesParams) ([]L
 			&i.Name,
 			&i.TypeID,
 			&i.SupportJson,
+			&i.Enabled,
 			&i.ObservationID,
 			&i.ValueJson,
 			&i.AdapterReceivedAt,
@@ -246,6 +252,7 @@ SELECT
     e.name,
     e.type_id,
     e.support_json,
+    e.enabled,
     s.observation_id,
     s.value_json,
     s.adapter_received_at,
@@ -273,6 +280,7 @@ type ListEntitiesByDeviceRow struct {
 	Name              string
 	TypeID            string
 	SupportJson       string
+	Enabled           int64
 	ObservationID     sql.NullString
 	ValueJson         sql.NullString
 	AdapterReceivedAt sql.NullString
@@ -297,6 +305,7 @@ func (q *Queries) ListEntitiesByDevice(ctx context.Context, arg ListEntitiesByDe
 			&i.Name,
 			&i.TypeID,
 			&i.SupportJson,
+			&i.Enabled,
 			&i.ObservationID,
 			&i.ValueJson,
 			&i.AdapterReceivedAt,
@@ -315,6 +324,26 @@ func (q *Queries) ListEntitiesByDevice(ctx context.Context, arg ListEntitiesByDe
 		return nil, err
 	}
 	return items, nil
+}
+
+const updateEntityEnablement = `-- name: UpdateEntityEnablement :execrows
+UPDATE entities
+SET enabled = ?1, updated_at = ?2
+WHERE id = ?3 AND enabled <> ?1
+`
+
+type UpdateEntityEnablementParams struct {
+	Enabled   int64
+	UpdatedAt string
+	ID        string
+}
+
+func (q *Queries) UpdateEntityEnablement(ctx context.Context, arg UpdateEntityEnablementParams) (int64, error) {
+	result, err := q.db.ExecContext(ctx, updateEntityEnablement, arg.Enabled, arg.UpdatedAt, arg.ID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
 }
 
 const upsertEntityState = `-- name: UpsertEntityState :exec

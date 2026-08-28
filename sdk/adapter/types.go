@@ -29,11 +29,12 @@ type DeviceDescriptor struct {
 }
 
 type EntityDescriptor struct {
-	Key        string          `json:"key"`
-	ExternalID string          `json:"external_id"`
-	Name       string          `json:"name"`
-	Type       string          `json:"type"`
-	Support    json.RawMessage `json:"support"`
+	Key              string          `json:"key"`
+	ExternalID       string          `json:"external_id"`
+	Name             string          `json:"name"`
+	Type             string          `json:"type"`
+	Support          json.RawMessage `json:"support"`
+	InitiallyEnabled *bool           `json:"initially_enabled,omitempty"`
 }
 
 type Binding struct {
@@ -45,6 +46,7 @@ type Binding struct {
 type EntityBinding struct {
 	Key      string `json:"key"`
 	EntityID string `json:"entity_id"`
+	Enabled  bool   `json:"enabled"`
 }
 
 type RegistrationResponse struct {
@@ -56,6 +58,23 @@ type RegistrationResponse struct {
 type RegistrationError struct {
 	Code    string `json:"code"`
 	Message string `json:"message"`
+}
+
+type EntityEnablementRequest struct {
+	EntityID string `json:"entity_id"`
+	Enabled  bool   `json:"enabled"`
+}
+
+type EntityEnablementResponse struct {
+	Status   string                 `json:"status"`
+	EntityID string                 `json:"entity_id,omitempty"`
+	Enabled  *bool                  `json:"enabled,omitempty"`
+	Error    *EntityEnablementError `json:"error,omitempty"`
+}
+
+type EntityEnablementError struct {
+	Code    EntityEnablementRejectionCode `json:"code"`
+	Message string                        `json:"message"`
 }
 
 type Observation struct {

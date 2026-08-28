@@ -42,9 +42,32 @@ func TestCrossBinaryFixtures(t *testing.T) {
 				"emitted_at":"2026-08-20T12:34:56Z",
 				"correlation_id":"cor_01890f47-7a6b-7c4d-8e9f-0123456789ab",
 				"causation_id":"reg_01890f47-7a6b-7c4d-8e9f-0123456789ab",
-				"data":{"status":"accepted","binding":{"binding_key":"office-light","device_id":"dev_01890f47-7a6b-7c4d-8e9f-0123456789ab","entities":[{"key":"power","entity_id":"ent_01890f47-7a6b-7c4d-8e9f-0123456789ab"}]}}
+				"data":{"status":"accepted","binding":{"binding_key":"office-light","device_id":"dev_01890f47-7a6b-7c4d-8e9f-0123456789ab","entities":[{"key":"power","entity_id":"ent_01890f47-7a6b-7c4d-8e9f-0123456789ab","enabled":true}]}}
 			}`,
 			sdkData: &sdkadapter.RegistrationResponse{}, coreData: &registrationResponse{},
+		},
+		{
+			name: "Entity enablement request", schemaID: contractsv1.EntityEnablementRequestSchemaID,
+			payload: `{
+				"id":"ena_01890f47-7a6b-7c4d-8e9f-0123456789ab",
+				"schema":"urn:hearth:schema:entity-enablement-request:v1",
+				"emitted_at":"2026-08-20T12:34:56Z",
+				"correlation_id":"cor_01890f47-7a6b-7c4d-8e9f-0123456789ab",
+				"data":{"entity_id":"ent_01890f47-7a6b-7c4d-8e9f-0123456789ab","enabled":false}
+			}`,
+			sdkData: &sdkadapter.EntityEnablementRequest{}, coreData: &entityEnablementRequest{},
+		},
+		{
+			name: "Entity enablement response", schemaID: contractsv1.EntityEnablementResponseSchemaID,
+			payload: `{
+				"id":"rep_01890f47-7a6b-7c4d-8e9f-0123456789ab",
+				"schema":"urn:hearth:schema:entity-enablement-response:v1",
+				"emitted_at":"2026-08-20T12:34:57Z",
+				"correlation_id":"cor_01890f47-7a6b-7c4d-8e9f-0123456789ab",
+				"causation_id":"ena_01890f47-7a6b-7c4d-8e9f-0123456789ab",
+				"data":{"status":"accepted","entity_id":"ent_01890f47-7a6b-7c4d-8e9f-0123456789ab","enabled":false}
+			}`,
+			sdkData: &sdkadapter.EntityEnablementResponse{}, coreData: &entityEnablementResponse{},
 		},
 		{
 			name: "observation", schemaID: contractsv1.ObservationSchemaID,

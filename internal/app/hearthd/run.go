@@ -74,6 +74,11 @@ func Run(ctx context.Context, config Config, logger *slog.Logger) error {
 		return err
 	}
 	defer registrations.Drain()
+	enablement, err := devicesnats.StartEntityEnablementServer(connection, validator, service, logger)
+	if err != nil {
+		return err
+	}
+	defer enablement.Drain()
 	observations, err := devicesnats.StartObservationConsumer(ctx, durable, validator, service, logger)
 	if err != nil {
 		return err
@@ -106,6 +111,9 @@ func Run(ctx context.Context, config Config, logger *slog.Logger) error {
 		case <-observations.Closed():
 		case <-shutdownContext.Done():
 			observations.Stop()
+		}
+		if err := enablement.Drain(); err != nil {
+			return err
 		}
 		if err := registrations.Drain(); err != nil {
 			return err

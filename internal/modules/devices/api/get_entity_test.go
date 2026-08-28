@@ -23,6 +23,7 @@ const (
 
 type stubDevices struct {
 	getEntity          func(context.Context, devices.EntityID) (devices.EntityWithState, error)
+	setEntityEnabled   func(context.Context, devices.EntityID, bool) (devices.EntityWithState, error)
 	listDevices        func(context.Context, devices.ListDevicesParams) (devices.Page[devices.Device], error)
 	getDevice          func(context.Context, devices.GetDeviceParams) (devices.DeviceAggregate, error)
 	listEntities       func(context.Context, devices.ListEntitiesParams) (devices.Page[devices.EntityWithState], error)
@@ -41,6 +42,13 @@ func (stub *stubDevices) GetEntity(ctx context.Context, entityID devices.EntityI
 		panic("unexpected GetEntity call")
 	}
 	return stub.getEntity(ctx, entityID)
+}
+
+func (stub *stubDevices) SetEntityEnabled(ctx context.Context, entityID devices.EntityID, enabled bool) (devices.EntityWithState, error) {
+	if stub.setEntityEnabled == nil {
+		panic("unexpected SetEntityEnabled call")
+	}
+	return stub.setEntityEnabled(ctx, entityID, enabled)
 }
 
 func (stub *stubDevices) ListDevices(ctx context.Context, params devices.ListDevicesParams) (devices.Page[devices.Device], error) {
@@ -106,6 +114,7 @@ func TestGetEntityReturnsMetadataAndNullableState(t *testing.T) {
 		ID      string         `json:"id"`
 		Name    string         `json:"name"`
 		Support map[string]any `json:"support"`
+		Enabled bool           `json:"enabled"`
 		State   any            `json:"state"`
 	}
 	if err := json.Unmarshal(response.Body.Bytes(), &body); err != nil {
@@ -114,7 +123,7 @@ func TestGetEntityReturnsMetadataAndNullableState(t *testing.T) {
 	if requestedEntityID != apiEntityID {
 		t.Fatalf("GetEntity ID = %q", requestedEntityID)
 	}
-	if body.ID != string(apiEntityID) || body.Name != "Power" || body.State != nil || body.Support["state"] == nil {
+	if body.ID != string(apiEntityID) || body.Name != "Power" || !body.Enabled || body.State != nil || body.Support["state"] == nil {
 		t.Fatalf("body = %#v", body)
 	}
 	operation := openapi.OpenAPI().Paths["/v1/entities/{entity_id}"].Get
@@ -186,7 +195,7 @@ func apiEntityWithState(state *devices.State) devices.EntityWithState {
 	return devices.EntityWithState{
 		Entity: devices.Entity{
 			ID: apiEntityID, DeviceID: apiDeviceID, AdapterID: "simulator", Name: "Power",
-			TypeID: devices.EntityTypePowerV1, Support: devices.EntitySupport(`{"state":{},"operations":{"set":{}}}`),
+			TypeID: devices.EntityTypePowerV1, Support: devices.EntitySupport(`{"state":{},"operations":{"set":{}}}`), Enabled: true,
 		},
 		State: state,
 	}

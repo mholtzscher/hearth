@@ -71,11 +71,14 @@ func (service *Service) ExecuteCommand(
 		CorrelationID: correlationID, Status: CommandStatusRequested,
 		RequestedAt: requestedAt, DeadlineAt: requestedAt.Add(resolved.Deadline),
 	}
-	waiter := service.addCommandWaiter(command.ID)
-	if err := service.repository.CreateCommand(ctx, command); err != nil {
-		service.removeCommandWaiter(command.ID)
+	command, err = service.repository.CreateCommand(ctx, command)
+	if err != nil {
 		return CommandResult{}, err
 	}
+	if command.Status == CommandStatusEntityDisabled {
+		return CommandResult{}, commandExecutionError(command.ID, ErrEntityDisabled)
+	}
+	waiter := service.addCommandWaiter(command.ID)
 
 	completed := make(chan commandOutcome, 1)
 	lifecycleParent := context.WithoutCancel(ctx)

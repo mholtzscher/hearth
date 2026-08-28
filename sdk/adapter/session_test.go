@@ -74,7 +74,7 @@ func TestRegisterAcceptedRejectedAndLocalValidation(t *testing.T) {
 			response.Data = RegistrationResponse{Status: "accepted", Binding: &Binding{
 				BindingKey: request.Data.BindingKey,
 				DeviceID:   "dev_01890f47-7a6b-7c4d-8e9f-0123456789ab",
-				Entities:   []EntityBinding{{Key: "power", EntityID: testEntityID}},
+				Entities:   []EntityBinding{{Key: "power", EntityID: testEntityID, Enabled: true}},
 			}}
 		}
 		payload, encodeErr := natswire.Encode(validator, contractsv1.RegistrationResponseSchemaID, response)
@@ -100,7 +100,7 @@ func TestRegisterAcceptedRejectedAndLocalValidation(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if binding.BindingKey != "office-light" || binding.Entities[0].EntityID != testEntityID {
+	if binding.BindingKey != "office-light" || binding.Entities[0].EntityID != testEntityID || !binding.Entities[0].Enabled {
 		t.Fatalf("binding = %#v", binding)
 	}
 	if traceHeader := <-traceHeaders; traceHeader == "" {
@@ -137,6 +137,81 @@ func TestRegisterNoResponderRemainsRequestError(t *testing.T) {
 	var validation *ValidationError
 	if errors.As(err, &rejected) || errors.As(err, &validation) {
 		t.Fatalf("transient request error was classified as permanent: %v", err)
+	}
+}
+
+func TestSetEntityEnabledRoundTripsAcceptedAndTypedRejectedResponses(t *testing.T) {
+	server := startServer(t, -1, t.TempDir())
+	core := connectNATS(t, server.ClientURL())
+	validator := compileValidator(t)
+	subject, err := natswire.EntityEnablementSubject("simulator", testEntityID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var requests atomic.Int32
+	_, err = core.Subscribe(subject, func(message *natsgo.Msg) {
+		requests.Add(1)
+		request, decodeErr := natswire.Decode[EntityEnablementRequest](
+			validator, contractsv1.EntityEnablementRequestSchemaID, message.Data,
+		)
+		if decodeErr != nil {
+			t.Errorf("decode Entity enablement request: %v", decodeErr)
+			return
+		}
+		causationID := request.ID
+		response := natswire.Envelope[EntityEnablementResponse]{
+			ID: mustID(t, "rep"), Schema: contractsv1.EntityEnablementResponseSchemaID,
+			EmittedAt: nowString(), CorrelationID: request.CorrelationID, CausationID: &causationID,
+		}
+		if request.Data.Enabled {
+			response.Data = EntityEnablementResponse{
+				Status: "rejected",
+				Error: &EntityEnablementError{
+					Code: EntityEnablementWrongAdapter, Message: "entity is owned by another adapter",
+				},
+			}
+		} else {
+			confirmed := false
+			response.Data = EntityEnablementResponse{
+				Status: "accepted", EntityID: request.Data.EntityID, Enabled: &confirmed,
+			}
+		}
+		payload, encodeErr := natswire.Encode(validator, contractsv1.EntityEnablementResponseSchemaID, response)
+		if encodeErr != nil {
+			t.Errorf("encode Entity enablement response: %v", encodeErr)
+			return
+		}
+		if respondErr := message.Respond(payload); respondErr != nil {
+			t.Errorf("respond to Entity enablement: %v", respondErr)
+		}
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := core.Flush(); err != nil {
+		t.Fatal(err)
+	}
+
+	session := connectSession(t, server.ClientURL())
+	confirmed, err := session.SetEntityEnabled(testContext(t), testEntityID, false)
+	if err != nil || confirmed {
+		t.Fatalf("accepted result = %t, %v", confirmed, err)
+	}
+	_, err = session.SetEntityEnabled(testContext(t), testEntityID, true)
+	var rejected *EntityEnablementRejectedError
+	if !errors.As(err, &rejected) || rejected.Code != EntityEnablementWrongAdapter {
+		t.Fatalf("rejection = %#v, error = %v", rejected, err)
+	}
+	if _, err := session.SetEntityEnabled(testContext(t), "not-an-entity", false); err == nil {
+		t.Fatal("invalid local Entity ID unexpectedly accepted")
+	} else {
+		var validation *ValidationError
+		if !errors.As(err, &validation) {
+			t.Fatalf("local validation error = %v", err)
+		}
+	}
+	if requests.Load() != 2 {
+		t.Fatalf("Core requests = %d, want 2", requests.Load())
 	}
 }
 

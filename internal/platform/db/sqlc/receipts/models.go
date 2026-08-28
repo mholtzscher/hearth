@@ -59,6 +59,7 @@ type Entity struct {
 	SupportJson string
 	CreatedAt   string
 	UpdatedAt   string
+	Enabled     int64
 }
 
 type EntityState struct {
