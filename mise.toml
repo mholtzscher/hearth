@@ -81,12 +81,9 @@ sed 's|github.com/my/project|github.com/mholtzscher/hearth|' "$tmp" > .golangci.
 '''
 
 [tasks."lint"]
-description = "Lint changes introduced after the golden config baseline"
+description = "Lint"
 depends = ["tidy"]
-run = '''
-# Baseline the findings that predate adoption of maratori/golangci-lint-config.
-golangci-lint run --new-from-rev=f131515a7ef42d7bffffc7417a2cff7d408bc168 ./...
-'''
+run = '''golangci-lint run ./...'''
 
 [tasks."test"]
 description = "Test with the race detector"
