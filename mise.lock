@@ -227,6 +227,7 @@ url = "https://downloads.sqlc.dev/sqlc_1.31.1_linux_arm64.tar.gz"
 url = "https://downloads.sqlc.dev/sqlc_1.31.1_linux_arm64.tar.gz"
 
 [tools.sqlc."platforms.linux-x64"]
+checksum = "blake3:126418aba85a58d6a5a50f477a619a2e7ce43994681bb7327e85a17c048e14ae"
 url = "https://downloads.sqlc.dev/sqlc_1.31.1_linux_amd64.tar.gz"
 
 [tools.sqlc."platforms.linux-x64-musl"]
