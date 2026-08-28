@@ -41,7 +41,7 @@ func (repository *SQLiteRepository) ProjectObservation(
 	if err != nil {
 		return ProjectionResult{}, fmt.Errorf("begin observation projection: %w", err)
 	}
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }()
 
 	receiptQueries := receiptsqlc.New(tx)
 	duplicate, err := observationReceiptExists(ctx, receiptQueries, params.Observation.ID)

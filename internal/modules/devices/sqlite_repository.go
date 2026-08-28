@@ -42,7 +42,7 @@ func (repository *SQLiteRepository) RegisterBinding(
 	if err != nil {
 		return Binding{}, fmt.Errorf("begin registration transaction: %w", err)
 	}
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }()
 	queries := registrationsqlc.New(tx)
 	updatedAt := formatTime(params.UpdatedAt)
 
@@ -319,7 +319,7 @@ func (repository *SQLiteRepository) SetEntityEnabled(
 	if err != nil {
 		return EntityWithState{}, fmt.Errorf("begin entity enablement update: %w", err)
 	}
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }()
 	queries := statesqlc.New(tx)
 	row, err := queries.GetEntity(ctx, statesqlc.GetEntityParams{ID: string(params.EntityID)})
 	if errors.Is(err, sql.ErrNoRows) {
@@ -367,7 +367,7 @@ func (repository *SQLiteRepository) CreateCommand(ctx context.Context, command C
 	if err != nil {
 		return CommandRecord{}, fmt.Errorf("begin command creation: %w", err)
 	}
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }()
 	entity, err := statesqlc.New(tx).GetEntity(ctx, statesqlc.GetEntityParams{ID: string(command.EntityID)})
 	if errors.Is(err, sql.ErrNoRows) {
 		return CommandRecord{}, ErrEntityNotFound
@@ -434,7 +434,7 @@ func (repository *SQLiteRepository) CompleteCommand(ctx context.Context, complet
 	if err != nil {
 		return fmt.Errorf("begin command completion: %w", err)
 	}
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }()
 	queries := commandsqlc.New(tx)
 	row, err := queries.GetCommand(ctx, commandsqlc.GetCommandParams{ID: string(completion.ID)})
 	if errors.Is(err, sql.ErrNoRows) {
