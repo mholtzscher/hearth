@@ -18,16 +18,17 @@ func main() {
 		"path to the Home Assistant adapter YAML configuration",
 	)
 	flag.Parse()
+	logger := slog.New(slog.NewTextHandler(os.Stderr, nil))
 
 	config, err := homeassistant.LoadConfig(*configPath)
 	if err != nil {
-		slog.Error("load configuration", "error", err)
+		logger.Error("load configuration", "error", err)
 		os.Exit(1)
 	}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
-	if err := homeassistant.Run(ctx, config, slog.Default()); err != nil {
-		slog.Error("run Home Assistant adapter", "error", err)
+	if err := homeassistant.Run(ctx, config, logger); err != nil {
+		logger.Error("run Home Assistant adapter", "error", err)
 		os.Exit(1)
 	}
 }
