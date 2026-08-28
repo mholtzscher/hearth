@@ -93,7 +93,7 @@ func (homeAssistant *Adapter) Run(ctx context.Context) error {
 	for {
 		err := homeAssistant.runConnection(ctx)
 		if ctx.Err() != nil {
-			return nil
+			return nil //nolint:nilerr // Context cancellation is a graceful shutdown.
 		}
 		if _, ok := errors.AsType[*AuthenticationError](err); ok {
 			return err
