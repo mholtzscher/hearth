@@ -125,10 +125,10 @@ func (service *Service) normalizeRegistration(adapterID string, registration Reg
 	if normalized.Device.Kind != DeviceKindLight {
 		return Registration{}, errors.New("device kind must be light")
 	}
-	if !validLength(normalized.Device.Name, minimumDescriptorLength, maximumNameLength) {
+	if !validLength(normalized.Device.Name, maximumNameLength) {
 		return Registration{}, errors.New("device name must contain 1 to 128 characters")
 	}
-	if normalized.Device.ExternalID != nil && !validLength(*normalized.Device.ExternalID, minimumDescriptorLength, maximumExternalIDLength) {
+	if normalized.Device.ExternalID != nil && !validLength(*normalized.Device.ExternalID, maximumExternalIDLength) {
 		return Registration{}, errors.New("device external ID must contain 1 to 256 characters")
 	}
 	if len(normalized.Entities) < 1 || len(normalized.Entities) > 64 {
@@ -144,17 +144,17 @@ func (service *Service) normalizeRegistration(adapterID string, registration Reg
 			return Registration{}, errors.New("entity keys must be unique within a registration")
 		}
 		keys[entity.Key] = struct{}{}
-		if !validLength(entity.ExternalID, minimumDescriptorLength, maximumExternalIDLength) {
+		if !validLength(entity.ExternalID, maximumExternalIDLength) {
 			return Registration{}, errors.New("entity external ID must contain 1 to 256 characters")
 		}
 		if _, exists := externalIDs[entity.ExternalID]; exists {
 			return Registration{}, errors.New("entity external IDs must be unique within a registration")
 		}
 		externalIDs[entity.ExternalID] = struct{}{}
-		if !validLength(entity.Name, minimumDescriptorLength, maximumNameLength) {
+		if !validLength(entity.Name, maximumNameLength) {
 			return Registration{}, errors.New("entity name must contain 1 to 128 characters")
 		}
-		if !validLength(string(entity.TypeID), minimumDescriptorLength, maximumTypeIDLength) {
+		if !validLength(string(entity.TypeID), maximumTypeIDLength) {
 			return Registration{}, errors.New("entity type must contain 1 to 128 characters")
 		}
 		support, err := service.catalog.NormalizeSupport(entity.TypeID, entity.Support)
@@ -175,12 +175,12 @@ func operatorMessage(message string) string {
 	return string(runes[:maximum-1]) + "…"
 }
 
-func validLength(value string, minimum, maximum int) bool {
+func validLength(value string, maximum int) bool {
 	if !utf8.ValidString(value) {
 		return false
 	}
 	length := utf8.RuneCountInString(value)
-	return length >= minimum && length <= maximum
+	return length >= minimumDescriptorLength && length <= maximum
 }
 
 func copyRegistration(registration Registration) Registration {

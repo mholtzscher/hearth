@@ -819,6 +819,7 @@ func assertRegistrationRejection(t *testing.T, err error, code RegistrationRejec
 	}
 }
 
+//nolint:unparam // Call sites keep both expected table counts explicit.
 func assertCounts(t *testing.T, database *sql.DB, devices, entities int) {
 	t.Helper()
 	for table, want := range map[string]int{"devices": devices, "entities": entities} {
