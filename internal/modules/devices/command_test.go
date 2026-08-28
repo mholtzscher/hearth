@@ -434,10 +434,10 @@ func TestExecuteCommandCreatesTerminalRecordWithoutWaiterOrDispatchWhenDisabled(
 	}
 
 	repository.commands = make(map[CommandID]CommandRecord)
-	if _, err := service.ExecuteCommand(
+	if _, commandErr := service.ExecuteCommand(
 		context.Background(), commandTestEntityID, OperationNameSet, CommandParameters(`{"value":1}`),
-	); !errors.Is(err, ErrInvalidCommand) {
-		t.Fatalf("invalid disabled Command error = %v", err)
+	); !errors.Is(commandErr, ErrInvalidCommand) {
+		t.Fatalf("invalid disabled Command error = %v", commandErr)
 	}
 	if len(repository.commands) != 0 {
 		t.Fatalf("invalid disabled Command created records: %#v", repository.commands)

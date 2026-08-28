@@ -14,6 +14,7 @@ import (
 
 const simulatorTestEntityID = "ent_01890f47-7a6b-7c4d-8e9f-0123456789ab"
 
+//nolint:govet // Sequential integration setup intentionally reuses short error variables.
 func TestFaultPublishersProduceDuplicateAndMalformedStreamEvidence(t *testing.T) {
 	t.Parallel()
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)

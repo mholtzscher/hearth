@@ -46,15 +46,15 @@ func (handler *Handler) ListEntities(ctx context.Context, input *ListEntitiesInp
 	}
 	body := EntityCollectionBody{Items: make([]EntityBody, len(page.Items))}
 	for index, entity := range page.Items {
-		mapped, err := entityBody(entity)
-		if err != nil {
+		mapped, mappingErr := entityBody(entity)
+		if mappingErr != nil {
 			return nil, apiError(http.StatusInternalServerError, "internal error")
 		}
 		body.Items[index] = mapped
 	}
 	if page.HasMore && len(page.Items) > 0 {
-		cursor, err := encodeEntitiesCursor(page.Items[len(page.Items)-1].Entity.ID, deviceID)
-		if err != nil {
+		cursor, cursorErr := encodeEntitiesCursor(page.Items[len(page.Items)-1].Entity.ID, deviceID)
+		if cursorErr != nil {
 			return nil, apiError(http.StatusInternalServerError, "internal error")
 		}
 		body.NextCursor = &cursor

@@ -35,8 +35,8 @@ func (value Config) Validate() error {
 	if err != nil || port < 1 || port > 65535 {
 		return fmt.Errorf("http_addr port must be between 1 and 65535")
 	}
-	if err := platformconfig.ValidateNATSURL(value.NATSURL); err != nil {
-		return err
+	if validationErr := platformconfig.ValidateNATSURL(value.NATSURL); validationErr != nil {
+		return validationErr
 	}
 	if strings.TrimSpace(value.SQLitePath) == "" {
 		return fmt.Errorf("sqlite_path is required")

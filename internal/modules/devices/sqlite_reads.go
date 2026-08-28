@@ -77,13 +77,13 @@ func (repository *SQLiteRepository) ListEntities(
 			return Page[EntityWithState]{}, fmt.Errorf("list entities: %w", err)
 		}
 		for _, row := range rows {
-			view, err := entityWithStateFromValues(
+			view, mappingErr := entityWithStateFromValues(
 				row.ID, row.DeviceID, row.AdapterID, row.Name, row.TypeID, row.SupportJson, row.Enabled,
 				row.ObservationID, row.ValueJson, row.AdapterReceivedAt, row.SourceUpdatedAt,
 				row.ObservedAt, row.ReceiveOrder,
 			)
-			if err != nil {
-				return Page[EntityWithState]{}, fmt.Errorf("map entity: %w", err)
+			if mappingErr != nil {
+				return Page[EntityWithState]{}, fmt.Errorf("map entity: %w", mappingErr)
 			}
 			items = append(items, view)
 		}
@@ -95,13 +95,13 @@ func (repository *SQLiteRepository) ListEntities(
 			return Page[EntityWithState]{}, fmt.Errorf("list entities by device: %w", err)
 		}
 		for _, row := range rows {
-			view, err := entityWithStateFromValues(
+			view, mappingErr := entityWithStateFromValues(
 				row.ID, row.DeviceID, row.AdapterID, row.Name, row.TypeID, row.SupportJson, row.Enabled,
 				row.ObservationID, row.ValueJson, row.AdapterReceivedAt, row.SourceUpdatedAt,
 				row.ObservedAt, row.ReceiveOrder,
 			)
-			if err != nil {
-				return Page[EntityWithState]{}, fmt.Errorf("map entity: %w", err)
+			if mappingErr != nil {
+				return Page[EntityWithState]{}, fmt.Errorf("map entity: %w", mappingErr)
 			}
 			items = append(items, view)
 		}
@@ -135,9 +135,9 @@ func (repository *SQLiteRepository) ListEntityCommands(
 	}
 	items := make([]CommandRecord, 0, len(rows))
 	for _, row := range rows {
-		command, err := commandFromRow(row)
-		if err != nil {
-			return Page[CommandRecord]{}, fmt.Errorf("map entity command: %w", err)
+		command, mappingErr := commandFromRow(row)
+		if mappingErr != nil {
+			return Page[CommandRecord]{}, fmt.Errorf("map entity command: %w", mappingErr)
 		}
 		items = append(items, command)
 	}

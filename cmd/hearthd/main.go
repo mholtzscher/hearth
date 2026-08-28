@@ -16,9 +16,9 @@ func main() {
 	flag.Parse()
 	logger := slog.New(slog.NewTextHandler(os.Stderr, nil))
 
-	config, err := hearthd.LoadConfig(*configPath)
-	if err != nil {
-		logger.Error("load configuration", "error", err)
+	config, configErr := hearthd.LoadConfig(*configPath)
+	if configErr != nil {
+		logger.Error("load configuration", "error", configErr)
 		os.Exit(1)
 	}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)

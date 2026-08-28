@@ -250,7 +250,7 @@ func TestRuntimeOpenAPIContract(t *testing.T) {
 			t.Fatal(err)
 		}
 		for _, property := range properties {
-			if _, ok := schema.Properties[property]; !ok {
+			if _, propertyExists := schema.Properties[property]; !propertyExists {
 				t.Errorf("OpenAPI %s schema is missing %q", schemaName, property)
 			}
 		}

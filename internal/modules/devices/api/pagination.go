@@ -143,10 +143,10 @@ func decodeCursor(value string, cursor any) error {
 	}
 	decoder := json.NewDecoder(bytes.NewReader(decoded))
 	decoder.DisallowUnknownFields()
-	if err := decoder.Decode(cursor); err != nil {
-		return fmt.Errorf("decode cursor document: %w", err)
+	if decodeErr := decoder.Decode(cursor); decodeErr != nil {
+		return fmt.Errorf("decode cursor document: %w", decodeErr)
 	}
-	if err := decoder.Decode(&struct{}{}); !errors.Is(err, io.EOF) {
+	if trailingErr := decoder.Decode(&struct{}{}); !errors.Is(trailingErr, io.EOF) {
 		return errors.New("cursor contains trailing JSON")
 	}
 	return nil

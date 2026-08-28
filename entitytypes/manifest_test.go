@@ -33,12 +33,12 @@ func TestEntityTypeManifestsMatchAuthoritativeSchema(t *testing.T) {
 	for _, path := range manifests {
 		t.Run(filepath.Base(filepath.Dir(path)), func(t *testing.T) {
 			t.Parallel()
-			raw, err := os.ReadFile(path)
-			if err != nil {
-				t.Fatal(err)
+			raw, readErr := os.ReadFile(path)
+			if readErr != nil {
+				t.Fatal(readErr)
 			}
-			if _, _, err := codec.Decode(json.RawMessage(raw)); err != nil {
-				t.Fatal(err)
+			if _, _, decodeErr := codec.Decode(json.RawMessage(raw)); decodeErr != nil {
+				t.Fatal(decodeErr)
 			}
 		})
 	}

@@ -95,7 +95,7 @@ func TestGenericCatalogCarriesTypedBehaviorAcrossErasure(t *testing.T) {
 	if err != nil || string(normalized) != `{"level":5}` {
 		t.Fatalf("normalized state = %s, %v", normalized, err)
 	}
-	if _, err := catalog.NormalizeState(entity, Value(`{"level":11}`)); err == nil {
+	if _, normalizeErr := catalog.NormalizeState(entity, Value(`{"level":11}`)); normalizeErr == nil {
 		t.Fatal("unsupported state unexpectedly accepted")
 	}
 	equal, err := catalog.EqualState(entity, Value(`{"level":5}`), Value(`{ "level": 5 }`))
@@ -108,14 +108,14 @@ func TestGenericCatalogCarriesTypedBehaviorAcrossErasure(t *testing.T) {
 	if err != nil || equal {
 		t.Fatalf("equality after support narrowed = %v, %v", equal, err)
 	}
-	if _, err := catalog.EqualState(narrowed, Value(`{"level":4}`), Value(`{"level":5}`)); err == nil {
+	if _, equalityErr := catalog.EqualState(narrowed, Value(`{"level":4}`), Value(`{"level":5}`)); equalityErr == nil {
 		t.Fatal("support-incompatible incoming State unexpectedly accepted by equality")
 	}
 	resolved, err := catalog.ResolveCommand(entity, OperationNameSet, CommandParameters(`{ "target": 5 }`))
 	if err != nil || string(resolved.Parameters) != `{"target":5}` || resolved.Deadline != 3*time.Second {
 		t.Fatalf("resolved command = %#v, %v", resolved, err)
 	}
-	if _, err := catalog.ResolveCommand(entity, OperationNameSet, CommandParameters(`{"target":1}`)); err == nil {
+	if _, resolveErr := catalog.ResolveCommand(entity, OperationNameSet, CommandParameters(`{"target":1}`)); resolveErr == nil {
 		t.Fatal("support-incompatible parameters unexpectedly accepted")
 	}
 
@@ -162,10 +162,10 @@ func TestCatalogRejectsInvalidDefinitions(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if _, err := NewTypeCatalog([]EntityTypeDefinition{valid, valid}); err == nil {
+	if _, catalogErr := NewTypeCatalog([]EntityTypeDefinition{valid, valid}); catalogErr == nil {
 		t.Fatal("duplicate type unexpectedly accepted")
 	}
-	if _, err := NewTypeCatalog([]EntityTypeDefinition{{}}); err == nil {
+	if _, catalogErr := NewTypeCatalog([]EntityTypeDefinition{{}}); catalogErr == nil {
 		t.Fatal("zero definition unexpectedly accepted")
 	}
 	duplicateOperation := DefineOperation(

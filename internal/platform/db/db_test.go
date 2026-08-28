@@ -16,9 +16,9 @@ import (
 func TestMigrateEmptySQLiteDatabase(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
-	database, err := Open(ctx, filepath.Join(t.TempDir(), "hearth.db"))
-	if err != nil {
-		t.Fatal(err)
+	database, openErr := Open(ctx, filepath.Join(t.TempDir(), "hearth.db"))
+	if openErr != nil {
+		t.Fatal(openErr)
 	}
 	t.Cleanup(func() { _ = database.Close() })
 
@@ -80,21 +80,21 @@ func TestMigrateEmptySQLiteDatabase(t *testing.T) {
 func TestResourceReadIndexMigrationReversesAndReapplies(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
-	database, err := Open(ctx, filepath.Join(t.TempDir(), "hearth.db"))
-	if err != nil {
-		t.Fatal(err)
+	database, openErr := Open(ctx, filepath.Join(t.TempDir(), "hearth.db"))
+	if openErr != nil {
+		t.Fatal(openErr)
 	}
 	t.Cleanup(func() { _ = database.Close() })
 	if err := Migrate(ctx, database); err != nil {
 		t.Fatal(err)
 	}
-	migrations, err := fs.Sub(migrationFiles, "migrations")
-	if err != nil {
-		t.Fatal(err)
+	migrations, migrationsErr := fs.Sub(migrationFiles, "migrations")
+	if migrationsErr != nil {
+		t.Fatal(migrationsErr)
 	}
-	provider, err := goose.NewProvider(goose.DialectSQLite3, database, migrations)
-	if err != nil {
-		t.Fatal(err)
+	provider, providerErr := goose.NewProvider(goose.DialectSQLite3, database, migrations)
+	if providerErr != nil {
+		t.Fatal(providerErr)
 	}
 	if _, err := provider.Down(ctx); err != nil {
 		t.Fatal(err)
@@ -137,9 +137,9 @@ func TestResourceReadIndexMigrationReversesAndReapplies(t *testing.T) {
 	assertIndexColumns(t, database, "entities_device_id_idx", "device_id,id")
 	assertIndexColumns(t, database, "commands_entity_requested_idx", "entity_id,requested_at,id")
 
-	rows, err := database.QueryContext(ctx, "SELECT id, requested_at FROM commands ORDER BY requested_at DESC")
-	if err != nil {
-		t.Fatal(err)
+	rows, queryErr := database.QueryContext(ctx, "SELECT id, requested_at FROM commands ORDER BY requested_at DESC")
+	if queryErr != nil {
+		t.Fatal(queryErr)
 	}
 	defer rows.Close()
 	for index, want := range []struct {
@@ -171,18 +171,18 @@ func TestResourceReadIndexMigrationReversesAndReapplies(t *testing.T) {
 func TestEntityEnablementMigrationPreservesPopulatedDatabaseAndMapsDown(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
-	database, err := Open(ctx, filepath.Join(t.TempDir(), "hearth.db"))
-	if err != nil {
-		t.Fatal(err)
+	database, openErr := Open(ctx, filepath.Join(t.TempDir(), "hearth.db"))
+	if openErr != nil {
+		t.Fatal(openErr)
 	}
 	t.Cleanup(func() { _ = database.Close() })
-	migrations, err := fs.Sub(migrationFiles, "migrations")
-	if err != nil {
-		t.Fatal(err)
+	migrations, migrationsErr := fs.Sub(migrationFiles, "migrations")
+	if migrationsErr != nil {
+		t.Fatal(migrationsErr)
 	}
-	provider, err := goose.NewProvider(goose.DialectSQLite3, database, migrations)
-	if err != nil {
-		t.Fatal(err)
+	provider, providerErr := goose.NewProvider(goose.DialectSQLite3, database, migrations)
+	if providerErr != nil {
+		t.Fatal(providerErr)
 	}
 	if _, err := provider.UpTo(ctx, 2); err != nil {
 		t.Fatal(err)
@@ -308,9 +308,9 @@ func TestEntityEnablementMigrationPreservesPopulatedDatabaseAndMapsDown(t *testi
 func TestEntityEnablementDownFailsForUnexpectedCurrentStateReceipt(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
-	database, err := Open(ctx, filepath.Join(t.TempDir(), "hearth.db"))
-	if err != nil {
-		t.Fatal(err)
+	database, openErr := Open(ctx, filepath.Join(t.TempDir(), "hearth.db"))
+	if openErr != nil {
+		t.Fatal(openErr)
 	}
 	t.Cleanup(func() { _ = database.Close() })
 	if err := Migrate(ctx, database); err != nil {
@@ -333,13 +333,13 @@ func TestEntityEnablementDownFailsForUnexpectedCurrentStateReceipt(t *testing.T)
 	`); err != nil {
 		t.Fatal(err)
 	}
-	migrations, err := fs.Sub(migrationFiles, "migrations")
-	if err != nil {
-		t.Fatal(err)
+	migrations, migrationsErr := fs.Sub(migrationFiles, "migrations")
+	if migrationsErr != nil {
+		t.Fatal(migrationsErr)
 	}
-	provider, err := goose.NewProvider(goose.DialectSQLite3, database, migrations)
-	if err != nil {
-		t.Fatal(err)
+	provider, providerErr := goose.NewProvider(goose.DialectSQLite3, database, migrations)
+	if providerErr != nil {
+		t.Fatal(providerErr)
 	}
 	if _, err := provider.Down(ctx); err == nil {
 		t.Fatal("down migration unexpectedly deleted a receipt referenced by current State")
@@ -356,9 +356,9 @@ func TestEntityEnablementDownFailsForUnexpectedCurrentStateReceipt(t *testing.T)
 
 func assertForeignKeyCheckEmpty(t *testing.T, database *sql.DB) {
 	t.Helper()
-	rows, err := database.Query("PRAGMA foreign_key_check")
-	if err != nil {
-		t.Fatal(err)
+	rows, queryErr := database.Query("PRAGMA foreign_key_check")
+	if queryErr != nil {
+		t.Fatal(queryErr)
 	}
 	defer rows.Close()
 	if rows.Next() {
@@ -371,9 +371,9 @@ func assertForeignKeyCheckEmpty(t *testing.T, database *sql.DB) {
 
 func assertIndexColumns(t *testing.T, database *sql.DB, name, want string) {
 	t.Helper()
-	rows, err := database.Query("SELECT name FROM pragma_index_info(?) ORDER BY seqno", name)
-	if err != nil {
-		t.Fatal(err)
+	rows, queryErr := database.Query("SELECT name FROM pragma_index_info(?) ORDER BY seqno", name)
+	if queryErr != nil {
+		t.Fatal(queryErr)
 	}
 	defer rows.Close()
 	var columns []string
@@ -395,9 +395,9 @@ func assertIndexColumns(t *testing.T, database *sql.DB, name, want string) {
 func TestIDPrefixConstraintsRequireLiteralUnderscore(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
-	database, err := Open(ctx, filepath.Join(t.TempDir(), "hearth.db"))
-	if err != nil {
-		t.Fatal(err)
+	database, openErr := Open(ctx, filepath.Join(t.TempDir(), "hearth.db"))
+	if openErr != nil {
+		t.Fatal(openErr)
 	}
 	t.Cleanup(func() { _ = database.Close() })
 	if err := Migrate(ctx, database); err != nil {
@@ -451,9 +451,9 @@ func TestIDPrefixConstraintsRequireLiteralUnderscore(t *testing.T) {
 func TestDeleteExpiredObservationReceiptsComparesTimestampsChronologically(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
-	database, err := Open(ctx, filepath.Join(t.TempDir(), "hearth.db"))
-	if err != nil {
-		t.Fatal(err)
+	database, openErr := Open(ctx, filepath.Join(t.TempDir(), "hearth.db"))
+	if openErr != nil {
+		t.Fatal(openErr)
 	}
 	t.Cleanup(func() { _ = database.Close() })
 	if err := Migrate(ctx, database); err != nil {

@@ -11,9 +11,9 @@ import (
 func TestProvisionObservationResourcesCreatesAndValidatesRequiredConfiguration(t *testing.T) {
 	t.Parallel()
 	_, _, js := startJetStream(t)
-	consumer, err := ProvisionObservationResources(context.Background(), js)
-	if err != nil {
-		t.Fatal(err)
+	consumer, provisionErr := ProvisionObservationResources(context.Background(), js)
+	if provisionErr != nil {
+		t.Fatal(provisionErr)
 	}
 	if consumer.CachedInfo().Config.Name != ObservationConsumerName {
 		t.Fatalf("consumer = %#v", consumer.CachedInfo().Config)

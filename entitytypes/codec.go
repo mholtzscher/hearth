@@ -31,8 +31,8 @@ func CompileJSONCodec[T any](schemaID string, schema json.RawMessage, validate f
 		return nil, fmt.Errorf("decode schema %q: %w", schemaID, err)
 	}
 	compiler := jsonschema.NewCompiler()
-	if err := compiler.AddResource(schemaID, document); err != nil {
-		return nil, fmt.Errorf("add schema %q: %w", schemaID, err)
+	if addErr := compiler.AddResource(schemaID, document); addErr != nil {
+		return nil, fmt.Errorf("add schema %q: %w", schemaID, addErr)
 	}
 	compiled, err := compiler.Compile(schemaID)
 	if err != nil {
@@ -51,8 +51,8 @@ func (codec *JSONCodec[T]) Decode(raw json.RawMessage) (T, json.RawMessage, erro
 	if err != nil {
 		return zero, nil, fmt.Errorf("decode %q: %w", codec.schemaID, err)
 	}
-	if err := codec.schema.Validate(value); err != nil {
-		return zero, nil, fmt.Errorf("validate %q: %w", codec.schemaID, err)
+	if schemaErr := codec.schema.Validate(value); schemaErr != nil {
+		return zero, nil, fmt.Errorf("validate %q: %w", codec.schemaID, schemaErr)
 	}
 
 	bindingRaw, err := json.Marshal(normalizeIntegralNumbers(value))
@@ -62,12 +62,12 @@ func (codec *JSONCodec[T]) Decode(raw json.RawMessage) (T, json.RawMessage, erro
 	decoder := json.NewDecoder(bytes.NewReader(bindingRaw))
 	decoder.UseNumber()
 	var typed T
-	if err := decoder.Decode(&typed); err != nil {
-		return zero, nil, fmt.Errorf("decode binding for %q: %w", codec.schemaID, err)
+	if decodeErr := decoder.Decode(&typed); decodeErr != nil {
+		return zero, nil, fmt.Errorf("decode binding for %q: %w", codec.schemaID, decodeErr)
 	}
 	if codec.validate != nil {
-		if err := codec.validate(typed); err != nil {
-			return zero, nil, fmt.Errorf("validate binding for %q: %w", codec.schemaID, err)
+		if validationErr := codec.validate(typed); validationErr != nil {
+			return zero, nil, fmt.Errorf("validate binding for %q: %w", codec.schemaID, validationErr)
 		}
 	}
 	normalized, err := json.Marshal(typed)
@@ -78,8 +78,8 @@ func (codec *JSONCodec[T]) Decode(raw json.RawMessage) (T, json.RawMessage, erro
 	if err != nil {
 		return zero, nil, fmt.Errorf("decode normalized binding for %q: %w", codec.schemaID, err)
 	}
-	if err := codec.schema.Validate(normalizedValue); err != nil {
-		return zero, nil, fmt.Errorf("binding for %q does not preserve its schema: %w", codec.schemaID, err)
+	if schemaErr := codec.schema.Validate(normalizedValue); schemaErr != nil {
+		return zero, nil, fmt.Errorf("binding for %q does not preserve its schema: %w", codec.schemaID, schemaErr)
 	}
 	return typed, normalized, nil
 }

@@ -43,7 +43,7 @@ func TestCodecUsesAuthoritativeSchemas(t *testing.T) {
 	}
 
 	envelope.Schema = contractsv1.CommandRequestSchemaID
-	if _, err := Encode(validator, contractsv1.ObservationSchemaID, envelope); err == nil {
+	if _, encodeErr := Encode(validator, contractsv1.ObservationSchemaID, envelope); encodeErr == nil {
 		t.Fatal("schema-invalid envelope unexpectedly encoded")
 	}
 	if _, decodeErr := Decode[testObservation](

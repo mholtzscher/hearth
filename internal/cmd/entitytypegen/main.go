@@ -114,13 +114,13 @@ func main() {
 }
 
 func generateRoot(root string, check bool) error {
-	absoluteRoot, err := filepath.Abs(root)
-	if err != nil {
-		return err
+	absoluteRoot, absoluteRootErr := filepath.Abs(root)
+	if absoluteRootErr != nil {
+		return absoluteRootErr
 	}
-	manifests, err := filepath.Glob(filepath.Join(absoluteRoot, "entitytypes", "*", "entitytype.json"))
-	if err != nil {
-		return err
+	manifests, globErr := filepath.Glob(filepath.Join(absoluteRoot, "entitytypes", "*", "entitytype.json"))
+	if globErr != nil {
+		return globErr
 	}
 	if len(manifests) == 0 {
 		return fmt.Errorf("no Entity-type manifests found under %s", root)
@@ -130,9 +130,9 @@ func generateRoot(root string, check bool) error {
 	seenTypeIDs := make(map[string]string, len(manifests))
 	seenGoNames := make(map[string]string, len(manifests))
 	for _, path := range manifests {
-		model, err := loadModel(path)
-		if err != nil {
-			return fmt.Errorf("load %s: %w", path, err)
+		model, loadErr := loadModel(path)
+		if loadErr != nil {
+			return fmt.Errorf("load %s: %w", path, loadErr)
 		}
 		if previous, duplicate := seenTypeIDs[model.TypeID]; duplicate {
 			return fmt.Errorf("duplicate Entity type ID %q in %s and %s", model.TypeID, previous, path)
@@ -150,15 +150,15 @@ func generateRoot(root string, check bool) error {
 		seenGoNames[goName] = model.Package
 		models = append(models, model)
 	}
-	modulePath, err := readModulePath(absoluteRoot)
-	if err != nil {
-		return err
+	modulePath, modulePathErr := readModulePath(absoluteRoot)
+	if modulePathErr != nil {
+		return modulePathErr
 	}
 	var outputs []output
 	for _, model := range models {
-		generated, err := render(model)
-		if err != nil {
-			return fmt.Errorf("render %s: %w", model.TypeID, err)
+		generated, renderErr := render(model)
+		if renderErr != nil {
+			return fmt.Errorf("render %s: %w", model.TypeID, renderErr)
 		}
 		outputs = append(outputs, generated...)
 	}
@@ -176,9 +176,9 @@ func generateRoot(root string, check bool) error {
 
 func loadModel(path string) (entityTypeModel, error) {
 	directory := filepath.Dir(path)
-	moduleRoot, err := findModuleRoot(directory)
-	if err != nil {
-		return entityTypeModel{}, err
+	moduleRoot, moduleRootErr := findModuleRoot(directory)
+	if moduleRootErr != nil {
+		return entityTypeModel{}, moduleRootErr
 	}
 	if err := validateManifest(moduleRoot, path); err != nil {
 		return entityTypeModel{}, err
@@ -205,13 +205,13 @@ func loadModel(path string) (entityTypeModel, error) {
 		packageName == "_" {
 		return entityTypeModel{}, fmt.Errorf("manifest directory %q is not an importable Go package name", packageName)
 	}
-	state, err := loadSchema(directory, definition.StateSchema)
-	if err != nil {
-		return entityTypeModel{}, fmt.Errorf("state schema: %w", err)
+	state, stateErr := loadSchema(directory, definition.StateSchema)
+	if stateErr != nil {
+		return entityTypeModel{}, fmt.Errorf("state schema: %w", stateErr)
 	}
-	support, err := loadSchema(directory, definition.SupportSchema)
-	if err != nil {
-		return entityTypeModel{}, fmt.Errorf("support schema: %w", err)
+	support, supportErr := loadSchema(directory, definition.SupportSchema)
+	if supportErr != nil {
+		return entityTypeModel{}, fmt.Errorf("support schema: %w", supportErr)
 	}
 	if state.ID == "" || support.ID == "" {
 		return entityTypeModel{}, errors.New("state and support schemas require $id")
@@ -230,12 +230,12 @@ func loadModel(path string) (entityTypeModel, error) {
 			return entityTypeModel{}, fmt.Errorf("support schema has unsupported top-level property %q", property)
 		}
 	}
-	stateSupport, exists := support.Properties["state"]
-	if !exists || stateSupport.Type != "object" {
+	stateSupport, stateSupportExists := support.Properties["state"]
+	if !stateSupportExists || stateSupport.Type != "object" {
 		return entityTypeModel{}, errors.New("support.state must describe an object")
 	}
-	operationSupport, exists := support.Properties["operations"]
-	if !exists || operationSupport.Type != "object" {
+	operationSupport, operationSupportExists := support.Properties["operations"]
+	if !operationSupportExists || operationSupport.Type != "object" {
 		return entityTypeModel{}, errors.New("support.operations must describe an object")
 	}
 	if err := requireClosedObject(operationSupport); err != nil {
@@ -256,8 +256,8 @@ func loadModel(path string) (entityTypeModel, error) {
 		if !operationPattern.MatchString(name) {
 			return entityTypeModel{}, fmt.Errorf("invalid operation name %q", name)
 		}
-		supportSchema, exists := operationSupport.Properties[name]
-		if !exists {
+		supportSchema, supportExists := operationSupport.Properties[name]
+		if !supportExists {
 			return entityTypeModel{}, fmt.Errorf("operation %q is absent from support schema", name)
 		}
 		if supportSchema.Type != "object" {
@@ -267,9 +267,9 @@ func loadModel(path string) (entityTypeModel, error) {
 		if operation.ParametersSchema == "" {
 			return entityTypeModel{}, fmt.Errorf("operation %q has no parameters_schema", name)
 		}
-		parameters, err := loadSchema(directory, operation.ParametersSchema)
-		if err != nil {
-			return entityTypeModel{}, fmt.Errorf("operation %q parameters schema: %w", name, err)
+		parameters, parametersErr := loadSchema(directory, operation.ParametersSchema)
+		if parametersErr != nil {
+			return entityTypeModel{}, fmt.Errorf("operation %q parameters schema: %w", name, parametersErr)
 		}
 		if parameters.ID == "" {
 			return entityTypeModel{}, fmt.Errorf("operation %q parameters schema requires $id", name)
@@ -286,24 +286,24 @@ func loadModel(path string) (entityTypeModel, error) {
 		if operation.SatisfiedWhen == nil {
 			return entityTypeModel{}, fmt.Errorf("operation %q requires satisfied_when", name)
 		}
-		parameterValidation, err := compileRules(operation.ParameterValidation, map[string]referenceRoot{
+		parameterValidation, validationErr := compileRules(operation.ParameterValidation, map[string]referenceRoot{
 			"parameters":        {Schema: parameters, GoExpression: "parameters"},
 			"support":           {Schema: support, GoExpression: "support"},
 			"operation_support": {Schema: supportSchema, GoExpression: "operationSupport"},
 		}, fmt.Sprintf("operation %q parameter validation", name))
-		if err != nil {
-			return entityTypeModel{}, err
+		if validationErr != nil {
+			return entityTypeModel{}, validationErr
 		}
-		satisfied, err := compileRule(*operation.SatisfiedWhen, map[string]referenceRoot{
+		satisfied, satisfiedErr := compileRule(*operation.SatisfiedWhen, map[string]referenceRoot{
 			"parameters": {Schema: parameters, GoExpression: "parameters"},
 			"state":      {Schema: state, GoExpression: "state"},
 		})
-		if err != nil {
-			return entityTypeModel{}, fmt.Errorf("operation %q satisfied_when: %w", name, err)
+		if satisfiedErr != nil {
+			return entityTypeModel{}, fmt.Errorf("operation %q satisfied_when: %w", name, satisfiedErr)
 		}
-		goName, err := exportedName(name)
-		if err != nil {
-			return entityTypeModel{}, err
+		goName, nameErr := exportedName(name)
+		if nameErr != nil {
+			return entityTypeModel{}, nameErr
 		}
 		if previous, collision := seenGoNames[goName]; collision {
 			return entityTypeModel{}, fmt.Errorf(
@@ -322,23 +322,23 @@ func loadModel(path string) (entityTypeModel, error) {
 		})
 	}
 	for name := range operationSupport.Properties {
-		if _, exists := definition.Operations[name]; !exists {
+		if _, manifestExists := definition.Operations[name]; !manifestExists {
 			return entityTypeModel{}, fmt.Errorf("support operation %q is absent from manifest", name)
 		}
 	}
 	if err := requireUniqueSchemaIDs(state, support, operations); err != nil {
 		return entityTypeModel{}, err
 	}
-	stateValidation, err := compileRules(definition.StateValidation, map[string]referenceRoot{
+	stateValidation, stateValidationErr := compileRules(definition.StateValidation, map[string]referenceRoot{
 		"state":   {Schema: state, GoExpression: "state"},
 		"support": {Schema: support, GoExpression: "support"},
 	}, "state validation")
-	if err != nil {
-		return entityTypeModel{}, err
+	if stateValidationErr != nil {
+		return entityTypeModel{}, stateValidationErr
 	}
-	examples, err := loadExamples(directory, definition.Examples, operations)
-	if err != nil {
-		return entityTypeModel{}, fmt.Errorf("examples: %w", err)
+	examples, examplesErr := loadExamples(directory, definition.Examples, operations)
+	if examplesErr != nil {
+		return entityTypeModel{}, fmt.Errorf("examples: %w", examplesErr)
 	}
 	return entityTypeModel{
 		Package: packageName, Directory: directory, ModuleRoot: moduleRoot, TypeID: definition.TypeID,
@@ -351,29 +351,29 @@ func loadModel(path string) (entityTypeModel, error) {
 func validateManifest(moduleRoot, path string) error {
 	const schemaID = "urn:hearth:schema:entity-type-manifest:v1"
 	schemaPath := filepath.Join(moduleRoot, "entitytypes", "entitytype-manifest.schema.json")
-	rawSchema, err := os.ReadFile(schemaPath)
-	if err != nil {
-		return fmt.Errorf("read manifest schema: %w", err)
+	rawSchema, readErr := os.ReadFile(schemaPath)
+	if readErr != nil {
+		return fmt.Errorf("read manifest schema: %w", readErr)
 	}
-	document, err := jsonschema.UnmarshalJSON(bytes.NewReader(rawSchema))
-	if err != nil {
-		return fmt.Errorf("decode manifest schema: %w", err)
+	document, decodeErr := jsonschema.UnmarshalJSON(bytes.NewReader(rawSchema))
+	if decodeErr != nil {
+		return fmt.Errorf("decode manifest schema: %w", decodeErr)
 	}
 	compiler := jsonschema.NewCompiler()
 	if err := compiler.AddResource(schemaID, document); err != nil {
 		return fmt.Errorf("add manifest schema: %w", err)
 	}
-	compiled, err := compiler.Compile(schemaID)
-	if err != nil {
-		return fmt.Errorf("compile manifest schema: %w", err)
+	compiled, compileErr := compiler.Compile(schemaID)
+	if compileErr != nil {
+		return fmt.Errorf("compile manifest schema: %w", compileErr)
 	}
-	rawManifest, err := os.ReadFile(path)
-	if err != nil {
-		return err
+	rawManifest, readErr := os.ReadFile(path)
+	if readErr != nil {
+		return readErr
 	}
-	value, err := jsonschema.UnmarshalJSON(bytes.NewReader(rawManifest))
-	if err != nil {
-		return fmt.Errorf("decode manifest: %w", err)
+	value, decodeErr := jsonschema.UnmarshalJSON(bytes.NewReader(rawManifest))
+	if decodeErr != nil {
+		return fmt.Errorf("decode manifest: %w", decodeErr)
 	}
 	if err := compiled.Validate(value); err != nil {
 		return fmt.Errorf("validate manifest schema: %w", err)
@@ -382,9 +382,9 @@ func validateManifest(moduleRoot, path string) error {
 }
 
 func loadSchema(directory, relative string) (schemaNode, error) {
-	path, err := localPath(directory, relative)
-	if err != nil {
-		return schemaNode{}, err
+	path, pathErr := localPath(directory, relative)
+	if pathErr != nil {
+		return schemaNode{}, pathErr
 	}
 	var schema schemaNode
 	if err := decodeFile(path, &schema, false); err != nil {
@@ -477,9 +477,9 @@ func decodeStrictFile(path string, target any) error {
 }
 
 func decodeFile(path string, target any, strict bool) error {
-	raw, err := os.ReadFile(path)
-	if err != nil {
-		return err
+	raw, readErr := os.ReadFile(path)
+	if readErr != nil {
+		return readErr
 	}
 	decoder := json.NewDecoder(bytes.NewReader(raw))
 	if strict {
@@ -539,12 +539,12 @@ func formatGenerated(source string) ([]byte, error) {
 }
 
 func applyOutput(generated output, check bool) error {
-	current, err := os.ReadFile(generated.path)
-	if err == nil && bytes.Equal(current, generated.content) {
+	current, readErr := os.ReadFile(generated.path)
+	if readErr == nil && bytes.Equal(current, generated.content) {
 		return nil
 	}
 	if check {
-		if errors.Is(err, os.ErrNotExist) {
+		if errors.Is(readErr, os.ErrNotExist) {
 			return fmt.Errorf("generated file %s is missing; run go generate ./entitytypes", generated.path)
 		}
 		return fmt.Errorf("generated file %s is stale; run go generate ./entitytypes", generated.path)

@@ -45,6 +45,7 @@ type projectedObservation struct {
 	observedAt  time.Time
 }
 
+//nolint:govet // Sequential consumer assertions intentionally reuse short error variables.
 func TestObservationConsumerMapsProjectsAndAcknowledgesByFailureClass(t *testing.T) {
 	t.Parallel()
 	_, connection, js := startJetStream(t)
@@ -199,13 +200,13 @@ func publishObservationEnvelopeWithSource(
 			AdapterReceivedAt: adapterReceivedAt.Format(time.RFC3339Nano), SourceUpdatedAt: sourceUpdatedAt,
 		},
 	}
-	validator, err := contractsv1.Compile()
-	if err != nil {
-		t.Fatal(err)
+	validator, compileErr := contractsv1.Compile()
+	if compileErr != nil {
+		t.Fatal(compileErr)
 	}
-	payload, err := natswire.Encode(validator, contractsv1.ObservationSchemaID, envelope)
-	if err != nil {
-		t.Fatal(err)
+	payload, encodeErr := natswire.Encode(validator, contractsv1.ObservationSchemaID, envelope)
+	if encodeErr != nil {
+		t.Fatal(encodeErr)
 	}
 	message := &natsgo.Msg{
 		Subject: mustObservationSubject(t),

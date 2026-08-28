@@ -226,7 +226,7 @@ func TestBehaviorRulesAreSchemaChecked(t *testing.T) {
 	} {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
-			if _, err := compileRule(rule, roots); err == nil {
+			if _, compileErr := compileRule(rule, roots); compileErr == nil {
 				t.Fatal("invalid behavior rule unexpectedly accepted")
 			}
 		})
@@ -347,6 +347,7 @@ func TestRenderedCodecsEmbedExactManifestPaths(t *testing.T) {
 	}
 }
 
+//nolint:govet // The end-to-end generation scenario intentionally reuses short error variables.
 func TestRootGenerationAddsATypeWithoutPerTypeGo(t *testing.T) {
 	t.Parallel()
 	root := t.TempDir()
@@ -540,11 +541,11 @@ func writeManifestSchema(t *testing.T, root string) {
 	if !ok {
 		t.Fatal("locate generator test")
 	}
-	raw, err := os.ReadFile(
+	raw, readErr := os.ReadFile(
 		filepath.Join(filepath.Dir(filename), "../../../entitytypes/entitytype-manifest.schema.json"),
 	)
-	if err != nil {
-		t.Fatal(err)
+	if readErr != nil {
+		t.Fatal(readErr)
 	}
 	path := filepath.Join(root, "entitytypes", "entitytype-manifest.schema.json")
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
@@ -557,9 +558,9 @@ func writeManifestSchema(t *testing.T, root string) {
 
 func writeJSON(t *testing.T, path string, value any) {
 	t.Helper()
-	raw, err := json.Marshal(value)
-	if err != nil {
-		t.Fatal(err)
+	raw, marshalErr := json.Marshal(value)
+	if marshalErr != nil {
+		t.Fatal(marshalErr)
 	}
 	if err := os.WriteFile(path, raw, 0o644); err != nil {
 		t.Fatal(err)

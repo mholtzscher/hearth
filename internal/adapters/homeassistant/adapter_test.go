@@ -83,9 +83,9 @@ func TestSubscribeFirstReconcilesBufferedTransitionAfterSnapshot(t *testing.T) {
 	snapshotTime := time.Date(2026, 8, 19, 12, 0, 0, 0, time.UTC)
 	eventTime := snapshotTime.Add(time.Second)
 	server, serverErrors := newScriptedServer(t, func(ctx context.Context, connection *websocket.Conn) error {
-		subscribe, err := readRequest(ctx, connection)
-		if err != nil {
-			return err
+		subscribe, requestErr := readRequest(ctx, connection)
+		if requestErr != nil {
+			return requestErr
 		}
 		if subscribe.Type != "subscribe_events" || subscribe.EventType != "state_changed" {
 			return errors.New("first request was not the state_changed subscription")
@@ -93,9 +93,9 @@ func TestSubscribeFirstReconcilesBufferedTransitionAfterSnapshot(t *testing.T) {
 		if err := writeResult(ctx, connection, subscribe.ID, nil); err != nil {
 			return err
 		}
-		snapshot, err := readRequest(ctx, connection)
-		if err != nil {
-			return err
+		snapshot, requestErr := readRequest(ctx, connection)
+		if requestErr != nil {
+			return requestErr
 		}
 		if snapshot.Type != "get_states" {
 			return errors.New("snapshot was not requested after subscription acknowledgement")
@@ -146,25 +146,25 @@ func TestSetRetainsMatchingRefreshWhenImmediatelySuperseded(t *testing.T) {
 	initialTime := time.Date(2026, 8, 19, 12, 0, 0, 0, time.UTC)
 	refreshTime := initialTime.Add(time.Second)
 	server, serverErrors := newScriptedServer(t, func(ctx context.Context, connection *websocket.Conn) error {
-		subscribe, err := readRequest(ctx, connection)
-		if err != nil {
-			return err
+		subscribe, requestErr := readRequest(ctx, connection)
+		if requestErr != nil {
+			return requestErr
 		}
 		if err := writeResult(ctx, connection, subscribe.ID, nil); err != nil {
 			return err
 		}
-		snapshot, err := readRequest(ctx, connection)
-		if err != nil {
-			return err
+		snapshot, requestErr := readRequest(ctx, connection)
+		if requestErr != nil {
+			return requestErr
 		}
 		if err := writeResult(ctx, connection, snapshot.ID, []upstreamState{{
 			EntityID: testExternalEntityID, State: "off", LastUpdated: initialTime.Format(time.RFC3339Nano),
 		}}); err != nil {
 			return err
 		}
-		service, err := readRequest(ctx, connection)
-		if err != nil {
-			return err
+		service, requestErr := readRequest(ctx, connection)
+		if requestErr != nil {
+			return requestErr
 		}
 		if service.Type != "call_service" || service.Domain != "light" || service.Service != "turn_on" ||
 			service.Target == nil ||
@@ -174,9 +174,9 @@ func TestSetRetainsMatchingRefreshWhenImmediatelySuperseded(t *testing.T) {
 		if err := writeResult(ctx, connection, service.ID, nil); err != nil {
 			return err
 		}
-		firstRefresh, err := readRequest(ctx, connection)
-		if err != nil {
-			return err
+		firstRefresh, requestErr := readRequest(ctx, connection)
+		if requestErr != nil {
+			return requestErr
 		}
 		if firstRefresh.Type != "get_states" {
 			return errors.New("accepted command did not request a fresh State")
@@ -203,9 +203,9 @@ func TestSetRetainsMatchingRefreshWhenImmediatelySuperseded(t *testing.T) {
 	go func() { runResult <- migrationAdapter.Run(ctx) }()
 	waitForPublications(t, publisher, 1)
 
-	handler, err := migrationAdapter.CommandHandler()
-	if err != nil {
-		t.Fatal(err)
+	handler, handlerErr := migrationAdapter.CommandHandler()
+	if handlerErr != nil {
+		t.Fatal(handlerErr)
 	}
 	responder := &recordingResponder{}
 	if err := handler(ctx, adapter.Command{
@@ -251,9 +251,9 @@ func TestUnavailableAndUnsupportedUpstreamStatesAreRejected(t *testing.T) {
 	}, time.Now().UTC(), nil); !errors.Is(err, errUnsupportedState) {
 		t.Fatalf("publish unavailable State error = %v", err)
 	}
-	handler, err := migrationAdapter.CommandHandler()
-	if err != nil {
-		t.Fatal(err)
+	handler, handlerErr := migrationAdapter.CommandHandler()
+	if handlerErr != nil {
+		t.Fatal(handlerErr)
 	}
 	responder := &recordingResponder{}
 	if err := handler(context.Background(), adapter.Command{
@@ -326,13 +326,13 @@ func TestDeliveredResponseWinsDisconnect(t *testing.T) {
 func TestClientCorrelatesConcurrentRequestsByID(t *testing.T) {
 	t.Parallel()
 	server, serverErrors := newScriptedServer(t, func(ctx context.Context, connection *websocket.Conn) error {
-		first, err := readRequest(ctx, connection)
-		if err != nil {
-			return err
+		first, requestErr := readRequest(ctx, connection)
+		if requestErr != nil {
+			return requestErr
 		}
-		second, err := readRequest(ctx, connection)
-		if err != nil {
-			return err
+		second, requestErr := readRequest(ctx, connection)
+		if requestErr != nil {
+			return requestErr
 		}
 		requests := map[string]requestMessage{first.Type: first, second.Type: second}
 		service := requests["call_service"]
@@ -358,9 +358,9 @@ func TestClientCorrelatesConcurrentRequestsByID(t *testing.T) {
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	client, err := dialClient(ctx, server.URL, "test-token", testExternalEntityID)
-	if err != nil {
-		t.Fatal(err)
+	client, dialErr := dialClient(ctx, server.URL, "test-token", testExternalEntityID)
+	if dialErr != nil {
+		t.Fatal(dialErr)
 	}
 	defer client.Close()
 
@@ -387,16 +387,16 @@ func TestAdapterReconnectsAndAcquiresANewSnapshot(t *testing.T) {
 	var connections atomic.Int64
 	server, serverErrors := newScriptedServer(t, func(ctx context.Context, connection *websocket.Conn) error {
 		connectionNumber := connections.Add(1)
-		subscribe, err := readRequest(ctx, connection)
-		if err != nil {
-			return err
+		subscribe, requestErr := readRequest(ctx, connection)
+		if requestErr != nil {
+			return requestErr
 		}
 		if err := writeResult(ctx, connection, subscribe.ID, nil); err != nil {
 			return err
 		}
-		snapshot, err := readRequest(ctx, connection)
-		if err != nil {
-			return err
+		snapshot, requestErr := readRequest(ctx, connection)
+		if requestErr != nil {
+			return requestErr
 		}
 		state := "off"
 		if connectionNumber > 1 {
@@ -455,9 +455,9 @@ func newScriptedServer(
 			http.NotFound(response, request)
 			return
 		}
-		connection, err := websocket.Accept(response, request, nil)
-		if err != nil {
-			errorsChannel <- err
+		connection, acceptErr := websocket.Accept(response, request, nil)
+		if acceptErr != nil {
+			errorsChannel <- acceptErr
 			return
 		}
 		defer connection.CloseNow()

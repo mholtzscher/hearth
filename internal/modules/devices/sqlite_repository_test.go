@@ -45,8 +45,8 @@ func TestRegistrationIsIdempotentAndUpdatesDescriptors(t *testing.T) {
 		t.Fatalf("re-registration changed IDs: first=%#v second=%#v", first, second)
 	}
 
-	if err := database.Close(); err != nil {
-		t.Fatal(err)
+	if closeErr := database.Close(); closeErr != nil {
+		t.Fatal(closeErr)
 	}
 	database = openMigratedDatabase(t, path)
 	var deviceName, entityName, storedDeviceExternalID, storedEntityExternalID, storedSupport string
@@ -118,12 +118,12 @@ func TestMultiEntityRegistrationIsAdditiveAndReturnsSubmittedOrder(t *testing.T)
 		t.Fatalf("reordered binding = %#v", reorderedBinding)
 	}
 	var powerEntityUpdatedAt, powerMappingUpdatedAt string
-	if err := database.QueryRowContext(ctx, `
+	if scanErr := database.QueryRowContext(ctx, `
 		SELECT e.updated_at, m.updated_at
 		FROM entities e JOIN adapter_entity_mappings m ON m.entity_id = e.id
 		WHERE e.id = ?`, power.Entities[0].EntityID,
-	).Scan(&powerEntityUpdatedAt, &powerMappingUpdatedAt); err != nil {
-		t.Fatal(err)
+	).Scan(&powerEntityUpdatedAt, &powerMappingUpdatedAt); scanErr != nil {
+		t.Fatal(scanErr)
 	}
 
 	brightnessOnly := copyRegistration(multi)
@@ -146,12 +146,12 @@ func TestMultiEntityRegistrationIsAdditiveAndReturnsSubmittedOrder(t *testing.T)
 		t.Fatalf("omitted power name = %q", powerName)
 	}
 	var omittedEntityUpdatedAt, omittedMappingUpdatedAt string
-	if err := database.QueryRowContext(ctx, `
+	if scanErr := database.QueryRowContext(ctx, `
 		SELECT e.updated_at, m.updated_at
 		FROM entities e JOIN adapter_entity_mappings m ON m.entity_id = e.id
 		WHERE e.id = ?`, power.Entities[0].EntityID,
-	).Scan(&omittedEntityUpdatedAt, &omittedMappingUpdatedAt); err != nil {
-		t.Fatal(err)
+	).Scan(&omittedEntityUpdatedAt, &omittedMappingUpdatedAt); scanErr != nil {
+		t.Fatal(scanErr)
 	}
 	if omittedEntityUpdatedAt != powerEntityUpdatedAt || omittedMappingUpdatedAt != powerMappingUpdatedAt {
 		t.Fatalf("omitted power was updated: entity %q -> %q, mapping %q -> %q",
@@ -348,8 +348,8 @@ func TestReRegistrationReplacesNormalizedSupport(t *testing.T) {
 		t.Fatalf("re-registration changed IDs: first=%#v second=%#v", first, second)
 	}
 
-	if err := database.Close(); err != nil {
-		t.Fatal(err)
+	if closeErr := database.Close(); closeErr != nil {
+		t.Fatal(closeErr)
 	}
 	database = openMigratedDatabase(t, path)
 	var stored string
@@ -433,8 +433,8 @@ func TestRegistrationRejectionsAreAtomic(t *testing.T) {
 	assertRegistrationRejection(t, err, RegistrationImmutableTypeChange)
 	assertCounts(t, database, 1, 1)
 	var deviceName string
-	if err := database.QueryRowContext(ctx, "SELECT name FROM devices").Scan(&deviceName); err != nil {
-		t.Fatal(err)
+	if scanErr := database.QueryRowContext(ctx, "SELECT name FROM devices").Scan(&deviceName); scanErr != nil {
+		t.Fatal(scanErr)
 	}
 	if deviceName != original.Device.Name {
 		t.Fatalf("failed type change partially updated device name to %q", deviceName)
@@ -487,8 +487,8 @@ func TestRegistrationInitialEnablementAndRetryPreservesCurrentValue(t *testing.T
 	}
 
 	now = now.Add(time.Minute)
-	if _, err := service.SetEntityEnabled(ctx, view.Entity.ID, true); err != nil {
-		t.Fatal(err)
+	if _, enablementErr := service.SetEntityEnabled(ctx, view.Entity.ID, true); enablementErr != nil {
+		t.Fatal(enablementErr)
 	}
 	now = now.Add(time.Minute)
 	retried, err := service.Register(ctx, "simulator", registration)
@@ -561,12 +561,12 @@ func TestSetEntityEnabledIsIdempotentAndOwnerScoped(t *testing.T) {
 	) {
 		t.Fatalf("wrong owner error = %v", enableErr)
 	}
-	unknown, err := NewEntityID()
-	if err != nil {
-		t.Fatal(err)
+	unknown, entityIDErr := NewEntityID()
+	if entityIDErr != nil {
+		t.Fatal(entityIDErr)
 	}
-	if _, err := service.SetEntityEnabled(ctx, unknown, true); !errors.Is(err, ErrEntityNotFound) {
-		t.Fatalf("unknown Entity error = %v", err)
+	if _, enablementErr := service.SetEntityEnabled(ctx, unknown, true); !errors.Is(enablementErr, ErrEntityNotFound) {
+		t.Fatalf("unknown Entity error = %v", enablementErr)
 	}
 }
 
@@ -582,8 +582,8 @@ func TestCreateCommandDurablyClassifiesDisabledEntity(t *testing.T) {
 		t.Fatal(err)
 	}
 	entityID := binding.Entities[0].EntityID
-	if _, err := service.SetEntityEnabled(ctx, entityID, false); err != nil {
-		t.Fatal(err)
+	if _, enablementErr := service.SetEntityEnabled(ctx, entityID, false); enablementErr != nil {
+		t.Fatal(enablementErr)
 	}
 	requestedAt := time.Date(2026, 8, 26, 12, 0, 0, 123, time.UTC)
 	candidate := newCommandRecord(t, entityID, requestedAt)
@@ -627,8 +627,8 @@ func TestCommandCreationAndEnablementFollowCommitOrder(t *testing.T) {
 	if err != nil || created.Status != CommandStatusRequested {
 		t.Fatalf("Command-first creation = %#v, %v", created, err)
 	}
-	if _, err := service.SetEntityEnabled(ctx, entityID, false); err != nil {
-		t.Fatal(err)
+	if _, enablementErr := service.SetEntityEnabled(ctx, entityID, false); enablementErr != nil {
+		t.Fatal(enablementErr)
 	}
 	stored, err := repository.GetCommand(ctx, commandFirst.ID)
 	if err != nil || stored.Status != CommandStatusRequested {
@@ -648,14 +648,14 @@ func TestCommandLedgerTransitionsAreMonotonicAndIdempotent(t *testing.T) {
 	database := openMigratedDatabase(t, filepath.Join(t.TempDir(), "hearth.db"))
 	catalog := firstLightCatalog(t)
 	repository := NewSQLiteRepository(database, catalog)
-	binding, err := NewService(
+	binding, registrationErr := NewService(
 		repository,
 		nil,
 		catalog,
 		Dependencies{},
 	).Register(ctx, "simulator", validDomainRegistration())
-	if err != nil {
-		t.Fatal(err)
+	if registrationErr != nil {
+		t.Fatal(registrationErr)
 	}
 	requestedAt := time.Date(2026, 8, 20, 12, 0, 0, 0, time.UTC)
 	command := newCommandRecord(t, binding.Entities[0].EntityID, requestedAt)
@@ -669,9 +669,9 @@ func TestCommandLedgerTransitionsAreMonotonicAndIdempotent(t *testing.T) {
 	if err := repository.MarkCommandAccepted(ctx, command.ID, acceptedAt.Add(time.Second)); err != nil {
 		t.Fatal(err)
 	}
-	stored, err := repository.GetCommand(ctx, command.ID)
-	if err != nil {
-		t.Fatal(err)
+	stored, lookupErr := repository.GetCommand(ctx, command.ID)
+	if lookupErr != nil {
+		t.Fatal(lookupErr)
 	}
 	if stored.Status != CommandStatusAccepted || stored.AcceptedAt == nil || !stored.AcceptedAt.Equal(acceptedAt) {
 		t.Fatalf("accepted command = %#v", stored)
@@ -701,9 +701,9 @@ func TestCommandLedgerTransitionsAreMonotonicAndIdempotent(t *testing.T) {
 	if _, err := repository.CreateCommand(ctx, satisfied); err != nil {
 		t.Fatal(err)
 	}
-	observationID, err := NewObservationID()
-	if err != nil {
-		t.Fatal(err)
+	observationID, observationIDErr := NewObservationID()
+	if observationIDErr != nil {
+		t.Fatal(observationIDErr)
 	}
 	satisfiedAt := satisfied.RequestedAt.Add(time.Second)
 	if _, err := database.ExecContext(ctx, `
@@ -715,9 +715,9 @@ func TestCommandLedgerTransitionsAreMonotonicAndIdempotent(t *testing.T) {
 	if err := repository.MarkCommandAccepted(ctx, satisfied.ID, satisfiedAt.Add(time.Second)); err != nil {
 		t.Fatalf("accept after linked outcome: %v", err)
 	}
-	storedSatisfied, err := repository.GetCommand(ctx, satisfied.ID)
-	if err != nil {
-		t.Fatal(err)
+	storedSatisfied, lookupErr := repository.GetCommand(ctx, satisfied.ID)
+	if lookupErr != nil {
+		t.Fatal(lookupErr)
 	}
 	if storedSatisfied.Status != CommandStatusSatisfied || storedSatisfied.AcceptedAt == nil {
 		t.Fatalf("acceptance regressed satisfied command: %#v", storedSatisfied)
@@ -741,9 +741,9 @@ func TestCommandLedgerTransitionsAreMonotonicAndIdempotent(t *testing.T) {
 	}); err == nil {
 		t.Fatal("per-command interruption unexpectedly accepted")
 	}
-	stillRequested, err := repository.GetCommand(ctx, requested.ID)
-	if err != nil {
-		t.Fatal(err)
+	stillRequested, lookupErr := repository.GetCommand(ctx, requested.ID)
+	if lookupErr != nil {
+		t.Fatal(lookupErr)
 	}
 	if stillRequested.Status != CommandStatusRequested {
 		t.Fatalf("rejected per-command interruption changed status to %q", stillRequested.Status)
@@ -755,9 +755,9 @@ func TestCommandLedgerTransitionsAreMonotonicAndIdempotent(t *testing.T) {
 		t.Fatalf("repeat interruption: %v", err)
 	}
 	for _, id := range []CommandID{requested.ID, accepted.ID} {
-		interrupted, err := repository.GetCommand(ctx, id)
-		if err != nil {
-			t.Fatal(err)
+		interrupted, interruptedErr := repository.GetCommand(ctx, id)
+		if interruptedErr != nil {
+			t.Fatal(interruptedErr)
 		}
 		if interrupted.Status != CommandStatusInterrupted || interrupted.FailureCode == nil ||
 			*interrupted.FailureCode != CommandFailureCoreRestarted || interrupted.CompletedAt == nil ||
@@ -769,9 +769,9 @@ func TestCommandLedgerTransitionsAreMonotonicAndIdempotent(t *testing.T) {
 
 func openMigratedDatabase(t *testing.T, path string) *sql.DB {
 	t.Helper()
-	database, err := platformdb.Open(context.Background(), path)
-	if err != nil {
-		t.Fatal(err)
+	database, openErr := platformdb.Open(context.Background(), path)
+	if openErr != nil {
+		t.Fatal(openErr)
 	}
 	t.Cleanup(func() { _ = database.Close() })
 	if err := platformdb.Migrate(context.Background(), database); err != nil {

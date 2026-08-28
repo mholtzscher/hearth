@@ -55,8 +55,8 @@ func (handler *Handler) ListEntityCommands(
 	}
 	params := devices.ListEntityCommandsParams{EntityID: entityID, Limit: input.Limit}
 	if input.Cursor != "" {
-		requestedAt, commandID, err := decodeCommandCursor(input.Cursor, entityID)
-		if err != nil {
+		requestedAt, commandID, cursorErr := decodeCommandCursor(input.Cursor, entityID)
+		if cursorErr != nil {
 			return nil, apiError(http.StatusBadRequest, "invalid cursor")
 		}
 		params.BeforeRequestedAt = requestedAt
@@ -73,15 +73,15 @@ func (handler *Handler) ListEntityCommands(
 	}
 	body := CommandCollectionBody{Items: make([]CommandRecordBody, len(page.Items))}
 	for index, command := range page.Items {
-		mapped, err := commandRecordBody(command)
-		if err != nil {
+		mapped, mappingErr := commandRecordBody(command)
+		if mappingErr != nil {
 			return nil, apiError(http.StatusInternalServerError, "internal error")
 		}
 		body.Items[index] = mapped
 	}
 	if page.HasMore && len(page.Items) > 0 {
-		cursor, err := encodeCommandCursor(page.Items[len(page.Items)-1])
-		if err != nil {
+		cursor, cursorErr := encodeCommandCursor(page.Items[len(page.Items)-1])
+		if cursorErr != nil {
 			return nil, apiError(http.StatusInternalServerError, "internal error")
 		}
 		body.NextCursor = &cursor

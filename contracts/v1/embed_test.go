@@ -294,8 +294,8 @@ func compileSchemas(t *testing.T) map[string]*jsonschema.Schema {
 		if err != nil {
 			t.Fatalf("decode %s: %v", path, err)
 		}
-		if err := compiler.AddResource(schemaID, document); err != nil {
-			t.Fatalf("add %s: %v", path, err)
+		if addErr := compiler.AddResource(schemaID, document); addErr != nil {
+			t.Fatalf("add %s: %v", path, addErr)
 		}
 	}
 	compiled := make(map[string]*jsonschema.Schema, len(contractsv1.SchemaFiles()))

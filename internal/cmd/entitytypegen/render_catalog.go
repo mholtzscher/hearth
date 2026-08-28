@@ -113,10 +113,10 @@ func entityTypeGoName(model entityTypeModel) string {
 	packageName := model.Package
 	if index := strings.LastIndex(packageName, "v"); index > 0 && index < len(packageName)-1 {
 		version := packageName[index+1:]
-		if _, err := strconv.Atoi(version); err == nil {
-			prefix, err := exportedName(packageName[:index])
-			if err != nil {
-				panic(err)
+		if _, conversionErr := strconv.Atoi(version); conversionErr == nil {
+			prefix, nameErr := exportedName(packageName[:index])
+			if nameErr != nil {
+				panic(nameErr)
 			}
 			return prefix + "V" + version
 		}

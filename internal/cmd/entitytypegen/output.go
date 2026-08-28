@@ -23,9 +23,9 @@ func applyOutputs(root string, outputs []output, check bool) error {
 		}
 		expected[absolute] = struct{}{}
 	}
-	owned, err := ownedGeneratedFiles(root)
-	if err != nil {
-		return err
+	owned, discoveryErr := ownedGeneratedFiles(root)
+	if discoveryErr != nil {
+		return discoveryErr
 	}
 	for _, path := range owned {
 		if _, exists := expected[path]; exists {
@@ -54,9 +54,9 @@ func ownedGeneratedFiles(root string) ([]string, error) {
 	}
 	var owned []string
 	for _, pattern := range patterns {
-		matches, err := filepath.Glob(pattern)
-		if err != nil {
-			return nil, err
+		matches, globErr := filepath.Glob(pattern)
+		if globErr != nil {
+			return nil, globErr
 		}
 		for _, path := range matches {
 			raw, err := os.ReadFile(path)

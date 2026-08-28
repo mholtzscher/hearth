@@ -15,9 +15,9 @@ func main() {
 	configPath := flag.String("config", "configs/simulator.yaml", "path to the simulator YAML configuration")
 	flag.Parse()
 	logger := slog.New(slog.NewTextHandler(os.Stderr, nil))
-	config, err := simulator.LoadConfig(*configPath)
-	if err != nil {
-		logger.Error("load configuration", "error", err)
+	config, configErr := simulator.LoadConfig(*configPath)
+	if configErr != nil {
+		logger.Error("load configuration", "error", configErr)
 		os.Exit(1)
 	}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)

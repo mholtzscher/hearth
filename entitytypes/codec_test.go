@@ -58,7 +58,7 @@ func TestJSONCodecNormalizesAndValidates(t *testing.T) {
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
-			if _, _, err := codec.Decode(json.RawMessage(test.raw)); err == nil {
+			if _, _, decodeErr := codec.Decode(json.RawMessage(test.raw)); decodeErr == nil {
 				t.Fatal("value unexpectedly accepted")
 			}
 		})
@@ -76,9 +76,9 @@ func TestJSONCodecDecodesEquivalentIntegerRepresentations(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, raw := range []string{"75", "75.0", "75e0"} {
-		value, normalized, err := scalar.Decode(json.RawMessage(raw))
-		if err != nil {
-			t.Errorf("Decode(%s): %v", raw, err)
+		value, normalized, decodeErr := scalar.Decode(json.RawMessage(raw))
+		if decodeErr != nil {
+			t.Errorf("Decode(%s): %v", raw, decodeErr)
 			continue
 		}
 		if value != 75 || string(normalized) != "75" {

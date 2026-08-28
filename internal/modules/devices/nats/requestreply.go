@@ -59,11 +59,11 @@ func startRequestReplyServer[Req, Resp any](
 		return nil, fmt.Errorf("%s handler is required", kind)
 	}
 	logger = defaultLogger(logger)
-	subscription, err := connection.Subscribe(wildcard, func(message *natsgo.Msg) {
+	subscription, subscribeErr := connection.Subscribe(wildcard, func(message *natsgo.Msg) {
 		handleRequest(connection, message, validator, kind, idField, requestSchema, responseSchema, logger, respond)
 	})
-	if err != nil {
-		return nil, fmt.Errorf("subscribe to %s requests: %w", kind, err)
+	if subscribeErr != nil {
+		return nil, fmt.Errorf("subscribe to %s requests: %w", kind, subscribeErr)
 	}
 	if err := connection.Flush(); err != nil {
 		_ = subscription.Unsubscribe()
@@ -120,8 +120,8 @@ func handleRequest[Req, Resp any](
 	}
 	replyMessage := &natsgo.Msg{Subject: message.Reply, Header: make(natsgo.Header), Data: payload}
 	natswire.InjectTrace(ctx, replyMessage.Header)
-	if err := connection.PublishMsg(replyMessage); err != nil {
-		logger.Error(fmt.Sprintf("publish %s response", kind), idField, request.ID, "error", err)
+	if publishErr := connection.PublishMsg(replyMessage); publishErr != nil {
+		logger.Error(fmt.Sprintf("publish %s response", kind), idField, request.ID, "error", publishErr)
 	}
 }
 

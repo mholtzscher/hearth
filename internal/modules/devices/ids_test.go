@@ -49,9 +49,9 @@ func TestTypedIDsGenerateCanonicalUUIDv7(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
-			value, err := test.newID()
-			if err != nil {
-				t.Fatal(err)
+			value, generationErr := test.newID()
+			if generationErr != nil {
+				t.Fatal(generationErr)
 			}
 			if !strings.HasPrefix(value, test.prefix) {
 				t.Fatalf("ID %q does not have prefix %q", value, test.prefix)

@@ -64,8 +64,8 @@ func TestHappyScenarioAcceptsAndPublishesLinkedRefresh(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := simulated.PublishInitial(context.Background(), simulatorEntityID); err != nil {
-		t.Fatal(err)
+	if publishErr := simulated.PublishInitial(context.Background(), simulatorEntityID); publishErr != nil {
+		t.Fatal(publishErr)
 	}
 	handler, err := simulated.CommandHandler(simulatorEntityID)
 	if err != nil {
@@ -73,12 +73,12 @@ func TestHappyScenarioAcceptsAndPublishesLinkedRefresh(t *testing.T) {
 	}
 	responder := &recordingResponder{}
 	commandID := "cmd_01890f47-7a6b-7c4d-8e9f-0123456789ab"
-	if err := handler(context.Background(), adapter.Command{
+	if handlerErr := handler(context.Background(), adapter.Command{
 		ID: commandID, CorrelationID: "cor_01890f47-7a6b-7c4d-8e9f-0123456789ab",
 		EntityID: simulatorEntityID, OperationName: "set", Parameters: json.RawMessage(`{"value":true}`),
 		Deadline: time.Now().Add(time.Second).UTC().Format(time.RFC3339Nano),
-	}, responder); err != nil {
-		t.Fatal(err)
+	}, responder); handlerErr != nil {
+		t.Fatal(handlerErr)
 	}
 	if !responder.accepted || responder.rejected || len(publisher.observations) != 2 {
 		t.Fatalf("responder = %#v, observations = %#v", responder, publisher.observations)

@@ -23,8 +23,8 @@ func Encode[T any](validator *contractsv1.Validator, schemaID string, envelope E
 	if err != nil {
 		return nil, fmt.Errorf("encode envelope: %w", err)
 	}
-	if err := validator.Validate(schemaID, payload); err != nil {
-		return nil, err
+	if validationErr := validator.Validate(schemaID, payload); validationErr != nil {
+		return nil, validationErr
 	}
 	return payload, nil
 }

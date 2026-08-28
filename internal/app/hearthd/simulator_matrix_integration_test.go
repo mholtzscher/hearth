@@ -96,6 +96,7 @@ func (buffer *lockedBuffer) String() string {
 	return buffer.Buffer.String()
 }
 
+//nolint:govet // Sequential integration setup intentionally reuses short error variables.
 func newSimulatorMatrixHarness(t *testing.T, scenario string, options simulatorMatrixOptions) *simulatorMatrixHarness {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
@@ -357,6 +358,7 @@ func TestSimulatorObservationFailureMatrix(t *testing.T) {
 	}
 }
 
+//nolint:govet // The scenario matrix intentionally reuses short result variables.
 func TestSimulatorCommandHTTPFailureMatrix(t *testing.T) {
 	t.Parallel()
 	tests := []struct {
@@ -448,6 +450,7 @@ func TestSimulatorCommandHTTPFailureMatrix(t *testing.T) {
 	}
 }
 
+//nolint:govet // The scenario matrix intentionally reuses short result variables.
 func TestSimulatorNoOpAndOverlappingCommands(t *testing.T) {
 	t.Parallel()
 	t.Run("no-op refresh", func(t *testing.T) {
@@ -588,6 +591,7 @@ func TestHTTPDisconnectLeavesCommandLifecycleActive(t *testing.T) {
 	})
 }
 
+//nolint:govet // Sequential integration assertions intentionally reuse short error variables.
 func TestSimulatorInterruptedCommandSurvivesLateLinkedObservation(t *testing.T) {
 	t.Parallel()
 	harness := newSimulatorMatrixHarness(t, simulatoradapter.ScenarioInterruptedCommand, simulatorMatrixOptions{})
@@ -650,6 +654,7 @@ func TestSimulatorInterruptedCommandSurvivesLateLinkedObservation(t *testing.T) 
 	}
 }
 
+//nolint:govet // Sequential integration assertions intentionally reuse short error variables.
 func TestSimulatorRestartBeforeAckRedeliversWithoutChangingStateOrCommand(t *testing.T) {
 	t.Parallel()
 	committed := make(chan struct{})
@@ -756,6 +761,7 @@ func TestSimulatorRestartBeforeAckRedeliversWithoutChangingStateOrCommand(t *tes
 	assertMatrixCount(t, harness.database, "observation_receipts", 2)
 }
 
+//nolint:govet // Sequential publishing steps intentionally reuse short error variables.
 func publishMatrixLinkedObservation(
 	t *testing.T,
 	harness *simulatorMatrixHarness,

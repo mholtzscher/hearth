@@ -8,6 +8,7 @@ import (
 	"github.com/mholtzscher/hearth/internal/modules/devices"
 )
 
+//nolint:govet // The codec matrix intentionally reuses short error variables.
 func TestCursorCodecsRoundTripAndEnforceScope(t *testing.T) {
 	t.Parallel()
 	deviceCursor, err := encodeDevicesCursor(apiDeviceID)

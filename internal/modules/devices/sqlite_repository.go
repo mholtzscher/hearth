@@ -332,11 +332,11 @@ func (repository *SQLiteRepository) SetEntityEnabled(
 		return EntityWithState{}, ErrEntityWrongAdapter
 	}
 	if row.Enabled != boolToInt64(params.Enabled) {
-		if _, err := queries.UpdateEntityEnablement(ctx, statesqlc.UpdateEntityEnablementParams{
+		if _, updateErr := queries.UpdateEntityEnablement(ctx, statesqlc.UpdateEntityEnablementParams{
 			Enabled: boolToInt64(params.Enabled), UpdatedAt: formatTime(params.UpdatedAt),
 			ID: string(params.EntityID),
-		}); err != nil {
-			return EntityWithState{}, fmt.Errorf("update entity enablement: %w", err)
+		}); updateErr != nil {
+			return EntityWithState{}, fmt.Errorf("update entity enablement: %w", updateErr)
 		}
 		row, err = queries.GetEntity(ctx, statesqlc.GetEntityParams{ID: string(params.EntityID)})
 		if err != nil {
@@ -351,8 +351,8 @@ func (repository *SQLiteRepository) SetEntityEnabled(
 	if err != nil {
 		return EntityWithState{}, fmt.Errorf("map updated entity: %w", err)
 	}
-	if err := tx.Commit(); err != nil {
-		return EntityWithState{}, fmt.Errorf("commit entity enablement update: %w", err)
+	if commitErr := tx.Commit(); commitErr != nil {
+		return EntityWithState{}, fmt.Errorf("commit entity enablement update: %w", commitErr)
 	}
 	return copyEntityWithState(view), nil
 }
@@ -383,17 +383,17 @@ func (repository *SQLiteRepository) CreateCommand(ctx context.Context, command C
 		command.FailureCode = &failureCode
 	}
 	queries := commandsqlc.New(tx)
-	if err := queries.CreateCommand(ctx, commandsqlc.CreateCommandParams{
+	if createErr := queries.CreateCommand(ctx, commandsqlc.CreateCommandParams{
 		ID: string(command.ID), EntityID: string(command.EntityID), AdapterID: command.AdapterID,
 		Operation: string(command.OperationName), ParametersJson: string(command.Parameters),
 		CorrelationID: string(command.CorrelationID), Status: string(command.Status),
 		RequestedAt: formatSortableTime(command.RequestedAt), DeadlineAt: formatTime(command.DeadlineAt),
 		CompletedAt: nullableTime(command.CompletedAt), FailureCode: nullableCommandFailure(command.FailureCode),
-	}); err != nil {
-		return CommandRecord{}, fmt.Errorf("create command: %w", err)
+	}); createErr != nil {
+		return CommandRecord{}, fmt.Errorf("create command: %w", createErr)
 	}
-	if err := tx.Commit(); err != nil {
-		return CommandRecord{}, fmt.Errorf("commit command creation: %w", err)
+	if commitErr := tx.Commit(); commitErr != nil {
+		return CommandRecord{}, fmt.Errorf("commit command creation: %w", commitErr)
 	}
 	return copyCommandRecord(command), nil
 }
@@ -420,8 +420,8 @@ func (repository *SQLiteRepository) MarkCommandAccepted(ctx context.Context, id 
 	if rows > 0 {
 		return nil
 	}
-	if _, err := repository.GetCommand(ctx, id); err != nil {
-		return err
+	if _, lookupErr := repository.GetCommand(ctx, id); lookupErr != nil {
+		return lookupErr
 	}
 	return ErrCommandTerminal
 }
@@ -465,8 +465,8 @@ func (repository *SQLiteRepository) CompleteCommand(ctx context.Context, complet
 	if rows != 1 {
 		return ErrCommandTerminal
 	}
-	if err := tx.Commit(); err != nil {
-		return fmt.Errorf("commit command completion: %w", err)
+	if commitErr := tx.Commit(); commitErr != nil {
+		return fmt.Errorf("commit command completion: %w", commitErr)
 	}
 	return nil
 }

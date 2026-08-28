@@ -17,6 +17,7 @@ import (
 	platformdb "github.com/mholtzscher/hearth/internal/platform/db"
 )
 
+//nolint:govet // Independent readiness scenarios intentionally reuse short error variables.
 func TestRuntimeReadinessChecksEveryRequiredDependency(t *testing.T) {
 	t.Parallel()
 	t.Run("ready", func(t *testing.T) {

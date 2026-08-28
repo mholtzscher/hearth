@@ -56,8 +56,8 @@ func DefineOperation[State, Support, OperationSupport, Parameters any](
 					if err != nil {
 						return nil, fmt.Errorf("decode parameters for operation %q: %w", name, err)
 					}
-					if err := validateParameters(typedSupport, operationSupport, typedParameters); err != nil {
-						return nil, fmt.Errorf("validate parameters for operation %q: %w", name, err)
+					if validationErr := validateParameters(typedSupport, operationSupport, typedParameters); validationErr != nil {
+						return nil, fmt.Errorf("validate parameters for operation %q: %w", name, validationErr)
 					}
 					return CommandParameters(normalized), nil
 				},
@@ -150,8 +150,8 @@ func DefineEntityType[State, Support any](
 		if err != nil {
 			return nil, fmt.Errorf("invalid state for entity type %q: %w", id, err)
 		}
-		if err := validateSupportedState(typedSupport, typedState); err != nil {
-			return nil, fmt.Errorf("state is unsupported by entity type %q: %w", id, err)
+		if validationErr := validateSupportedState(typedSupport, typedState); validationErr != nil {
+			return nil, fmt.Errorf("state is unsupported by entity type %q: %w", id, validationErr)
 		}
 		return Value(normalized), nil
 	}
@@ -168,8 +168,8 @@ func DefineEntityType[State, Support any](
 		if err != nil {
 			return false, fmt.Errorf("invalid incoming state for entity type %q: %w", id, err)
 		}
-		if err := validateSupportedState(typedSupport, typedIncoming); err != nil {
-			return false, fmt.Errorf("incoming state is unsupported by entity type %q: %w", id, err)
+		if validationErr := validateSupportedState(typedSupport, typedIncoming); validationErr != nil {
+			return false, fmt.Errorf("incoming state is unsupported by entity type %q: %w", id, validationErr)
 		}
 		return equalState(typedPersisted, typedIncoming), nil
 	}

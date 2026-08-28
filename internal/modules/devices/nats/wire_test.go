@@ -11,6 +11,7 @@ import (
 	sdkadapter "github.com/mholtzscher/hearth/sdk/adapter"
 )
 
+//nolint:govet // The cross-binary fixture matrix intentionally reuses short error variables.
 func TestCrossBinaryFixtures(t *testing.T) {
 	t.Parallel()
 	validator, err := contractsv1.Compile()

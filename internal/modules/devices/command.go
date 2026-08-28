@@ -51,15 +51,15 @@ func (service *Service) ExecuteCommand(
 	if err != nil {
 		return CommandResult{}, fmt.Errorf("generate command ID: %w", err)
 	}
-	if _, err := ParseCommandID(string(commandID)); err != nil {
-		return CommandResult{}, fmt.Errorf("generate command ID: %w", err)
+	if _, parseErr := ParseCommandID(string(commandID)); parseErr != nil {
+		return CommandResult{}, fmt.Errorf("generate command ID: %w", parseErr)
 	}
 	correlationID, err := service.dependencies.NewCorrelationID()
 	if err != nil {
 		return CommandResult{}, fmt.Errorf("generate correlation ID: %w", err)
 	}
-	if _, err := ParseCorrelationID(string(correlationID)); err != nil {
-		return CommandResult{}, fmt.Errorf("generate correlation ID: %w", err)
+	if _, parseErr := ParseCorrelationID(string(correlationID)); parseErr != nil {
+		return CommandResult{}, fmt.Errorf("generate correlation ID: %w", parseErr)
 	}
 	requestedAt, err := service.now()
 	if err != nil {
@@ -182,10 +182,10 @@ func (service *Service) runCommand(
 			ID: command.ID, Status: CommandStatusOutcomeTimeout, CompletedAt: completedAt,
 			FailureCode: CommandFailureOutcomeTimeout,
 		}
-		writeContext, cancel := persistenceContext(ctx)
-		err := service.repository.CompleteCommand(writeContext, completion)
-		cancel()
-		if errors.Is(err, ErrCommandTerminal) {
+		completionContext, cancelCompletion := persistenceContext(ctx)
+		completionErr := service.repository.CompleteCommand(completionContext, completion)
+		cancelCompletion()
+		if errors.Is(completionErr, ErrCommandTerminal) {
 			// A matching Observation committed first and its notification follows
 			// that transaction. Preserve the satisfying terminal result.
 			select {
@@ -197,12 +197,12 @@ func (service *Service) runCommand(
 				}
 			}
 		}
-		if err != nil {
+		if completionErr != nil {
 			return service.failCommand(
 				command.ID,
 				CommandStatusInternalFailure,
 				CommandFailureInternalError,
-				err,
+				completionErr,
 				waiter,
 			)
 		}

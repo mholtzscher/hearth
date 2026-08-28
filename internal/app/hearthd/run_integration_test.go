@@ -22,6 +22,7 @@ import (
 	sdkpowerv1 "github.com/mholtzscher/hearth/sdk/adapter/powerv1"
 )
 
+//nolint:govet // Sequential integration setup intentionally reuses short error variables.
 func TestCoreNATSTransportRegistersAndProjectsDurableObservation(t *testing.T) {
 	t.Parallel()
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
@@ -201,6 +202,7 @@ func TestCoreNATSTransportRegistersAndProjectsDurableObservation(t *testing.T) {
 	}
 }
 
+//nolint:govet // Sequential integration setup intentionally reuses short error variables.
 func TestCoreCommandRoundTripRequiresLinkedSimulatorObservation(t *testing.T) {
 	t.Parallel()
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)

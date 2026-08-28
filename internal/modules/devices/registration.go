@@ -74,9 +74,9 @@ func (service *Service) Register(ctx context.Context, adapterID string, registra
 	}
 	entities := make([]RegisterEntityParams, len(normalized.Entities))
 	for index, entity := range normalized.Entities {
-		entityID, err := service.dependencies.NewEntityID()
-		if err != nil {
-			return Binding{}, fmt.Errorf("generate entity ID: %w", err)
+		entityID, entityIDErr := service.dependencies.NewEntityID()
+		if entityIDErr != nil {
+			return Binding{}, fmt.Errorf("generate entity ID: %w", entityIDErr)
 		}
 		entities[index] = RegisterEntityParams{EntityID: entityID, Entity: copyEntityDescriptor(entity)}
 	}

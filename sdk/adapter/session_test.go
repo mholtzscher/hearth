@@ -22,9 +22,9 @@ const testEntityID = "ent_01890f47-7a6b-7c4d-8e9f-0123456789ab"
 
 func TestConnectRetriesWhenNATSStartsLater(t *testing.T) {
 	t.Parallel()
-	listener, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatal(err)
+	listener, listenErr := net.Listen("tcp", "127.0.0.1:0")
+	if listenErr != nil {
+		t.Fatal(listenErr)
 	}
 	address := listener.Addr().String()
 	port := listener.Addr().(*net.TCPAddr).Port
@@ -46,6 +46,7 @@ func TestConnectRetriesWhenNATSStartsLater(t *testing.T) {
 	waitForConnectionStatus(t, session.connection, natsgo.CONNECTED)
 }
 
+//nolint:govet // The request-response matrix intentionally reuses short error variables.
 func TestRegisterAcceptedRejectedAndLocalValidation(t *testing.T) {
 	t.Parallel()
 	server := startServer(t, -1, t.TempDir())
@@ -151,6 +152,7 @@ func TestRegisterNoResponderRemainsRequestError(t *testing.T) {
 	}
 }
 
+//nolint:govet // The request-response matrix intentionally reuses short error variables.
 func TestSetEntityEnabledRoundTripsAcceptedAndTypedRejectedResponses(t *testing.T) {
 	t.Parallel()
 	server := startServer(t, -1, t.TempDir())
@@ -459,6 +461,7 @@ func TestCommandHandlerUsesTransmittedDeadline(t *testing.T) {
 	}
 }
 
+//nolint:govet // Sequential request assertions intentionally reuse short error variables.
 func TestCommandRejectionUsesUpstreamRejectedCode(t *testing.T) {
 	t.Parallel()
 	server := startServer(t, -1, t.TempDir())
@@ -523,6 +526,7 @@ func TestCommandPublishFailureDoesNotConsumeResponder(t *testing.T) {
 	}
 }
 
+//nolint:govet // Sequential request assertions intentionally reuse short error variables.
 func TestLinkedObservationReusesCommandCausality(t *testing.T) {
 	t.Parallel()
 	server := startServer(t, -1, t.TempDir())

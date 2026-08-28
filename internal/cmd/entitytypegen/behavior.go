@@ -95,16 +95,16 @@ func compileReference(reference referenceManifest, roots map[string]referenceRoo
 			if schema.Type != "object" {
 				return referenceModel{}, fmt.Errorf("path %q traverses non-object type %q", reference.Path, schema.Type)
 			}
-			property, exists := schema.Properties[segment]
-			if !exists {
+			property, propertyExists := schema.Properties[segment]
+			if !propertyExists {
 				return referenceModel{}, fmt.Errorf("path %q selects unknown property %q", reference.Path, segment)
 			}
 			if !required(schema, segment) {
 				return referenceModel{}, fmt.Errorf("path %q traverses optional property %q", reference.Path, segment)
 			}
-			field, err := exportedName(segment)
-			if err != nil {
-				return referenceModel{}, err
+			field, nameErr := exportedName(segment)
+			if nameErr != nil {
+				return referenceModel{}, nameErr
 			}
 			expressionSb88.WriteString("." + field)
 			schema = property

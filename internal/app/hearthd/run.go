@@ -29,13 +29,13 @@ func Run(ctx context.Context, config Config, logger *slog.Logger) error {
 	if logger == nil {
 		logger = slog.Default()
 	}
-	catalog, err := devices.NewBuiltinTypeCatalog()
-	if err != nil {
-		return fmt.Errorf("construct entity type catalog: %w", err)
+	catalog, catalogErr := devices.NewBuiltinTypeCatalog()
+	if catalogErr != nil {
+		return fmt.Errorf("construct entity type catalog: %w", catalogErr)
 	}
-	database, err := platformdb.Open(ctx, config.SQLitePath)
-	if err != nil {
-		return err
+	database, openErr := platformdb.Open(ctx, config.SQLitePath)
+	if openErr != nil {
+		return openErr
 	}
 	defer database.Close()
 	if err := platformdb.Migrate(ctx, database); err != nil {
@@ -50,39 +50,39 @@ func Run(ctx context.Context, config Config, logger *slog.Logger) error {
 		return fmt.Errorf("prune observation receipts: %w", err)
 	}
 
-	connection, err := connectCoreNATS(ctx, config.NATSURL)
-	if err != nil {
-		return err
+	connection, connectErr := connectCoreNATS(ctx, config.NATSURL)
+	if connectErr != nil {
+		return connectErr
 	}
 	defer connection.Close()
-	js, err := jetstream.New(connection)
-	if err != nil {
-		return fmt.Errorf("create JetStream client: %w", err)
+	js, jetStreamErr := jetstream.New(connection)
+	if jetStreamErr != nil {
+		return fmt.Errorf("create JetStream client: %w", jetStreamErr)
 	}
-	durable, err := devicesnats.ProvisionObservationResources(ctx, js)
-	if err != nil {
-		return err
+	durable, provisionErr := devicesnats.ProvisionObservationResources(ctx, js)
+	if provisionErr != nil {
+		return provisionErr
 	}
-	validator, err := contractsv1.Compile()
-	if err != nil {
-		return fmt.Errorf("compile wire schemas: %w", err)
+	validator, compileErr := contractsv1.Compile()
+	if compileErr != nil {
+		return fmt.Errorf("compile wire schemas: %w", compileErr)
 	}
 	commandSender := devicesnats.NewCommandSender(connection, validator)
 	service := devices.NewService(repository, commandSender, catalog, devices.Dependencies{})
 
-	registrations, err := devicesnats.StartRegistrationServer(connection, validator, service, logger)
-	if err != nil {
-		return err
+	registrations, registrationErr := devicesnats.StartRegistrationServer(connection, validator, service, logger)
+	if registrationErr != nil {
+		return registrationErr
 	}
 	defer registrations.Drain()
-	enablement, err := devicesnats.StartEntityEnablementServer(connection, validator, service, logger)
-	if err != nil {
-		return err
+	enablement, enablementErr := devicesnats.StartEntityEnablementServer(connection, validator, service, logger)
+	if enablementErr != nil {
+		return enablementErr
 	}
 	defer enablement.Drain()
-	observations, err := devicesnats.StartObservationConsumer(ctx, durable, validator, service, logger)
-	if err != nil {
-		return err
+	observations, observationErr := devicesnats.StartObservationConsumer(ctx, durable, validator, service, logger)
+	if observationErr != nil {
+		return observationErr
 	}
 	defer observations.Stop()
 

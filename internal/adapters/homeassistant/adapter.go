@@ -130,8 +130,8 @@ func (homeAssistant *Adapter) runConnection(ctx context.Context) error {
 		return err
 	}
 	defer client.Close()
-	if err := client.SubscribeStateChanges(ctx); err != nil {
-		return err
+	if subscribeErr := client.SubscribeStateChanges(ctx); subscribeErr != nil {
+		return subscribeErr
 	}
 	homeAssistant.setClient(client)
 	defer homeAssistant.clearClient(client)
@@ -208,8 +208,8 @@ snapshotReady:
 			!eventUpdatedAt.After(*snapshotUpdatedAt) {
 			continue
 		}
-		if err := homeAssistant.publish(ctx, event.State, event.ReceivedAt, nil); err != nil {
-			if errors.Is(err, errUnsupportedState) {
+		if publishErr := homeAssistant.publish(ctx, event.State, event.ReceivedAt, nil); publishErr != nil {
+			if errors.Is(publishErr, errUnsupportedState) {
 				homeAssistant.logger.WarnContext(
 					ctx,
 					"Home Assistant event State is not publishable",
@@ -220,7 +220,7 @@ snapshotReady:
 				)
 				continue
 			}
-			return err
+			return publishErr
 		}
 	}
 
@@ -288,8 +288,8 @@ func (homeAssistant *Adapter) set(
 		return homeAssistant.publish(ctx, state, receivedAt, &commandID)
 	}
 	if state.State == "on" || state.State == "off" {
-		if err := homeAssistant.publish(ctx, state, receivedAt, &commandID); err != nil {
-			return err
+		if publishErr := homeAssistant.publish(ctx, state, receivedAt, &commandID); publishErr != nil {
+			return publishErr
 		}
 	}
 	matching, err := client.WaitForStateAfter(ctx, eventSequence, desiredState)

@@ -284,8 +284,8 @@ func (session *Session) ServeCommands(ctx context.Context, handler CommandHandle
 	}
 	select {
 	case <-ctx.Done():
-		if err := subscription.Drain(); err != nil && !errors.Is(err, natsgo.ErrConnectionClosed) {
-			return fmt.Errorf("drain command subscription: %w", err)
+		if drainErr := subscription.Drain(); drainErr != nil && !errors.Is(drainErr, natsgo.ErrConnectionClosed) {
+			return fmt.Errorf("drain command subscription: %w", drainErr)
 		}
 		return ctx.Err()
 	case <-session.closed:
@@ -364,7 +364,7 @@ func (session *Session) handleCommand(parent context.Context, message *natsgo.Ms
 	ctx := natswire.ExtractTrace(parent, message.Header)
 	ctx, cancel := context.WithDeadline(ctx, deadline)
 	defer cancel()
-	if err := ctx.Err(); err != nil {
+	if contextErr := ctx.Err(); contextErr != nil {
 		session.logger.ErrorContext(
 			parent,
 			"discarding expired command",
@@ -373,7 +373,7 @@ func (session *Session) handleCommand(parent context.Context, message *natsgo.Ms
 			"command_id",
 			request.ID,
 			"error",
-			err,
+			contextErr,
 		)
 		return
 	}
@@ -393,8 +393,8 @@ func (session *Session) handleCommand(parent context.Context, message *natsgo.Ms
 		commandID:     request.ID,
 		correlationID: request.CorrelationID,
 	}
-	if err := handler(ctx, command, responder); err != nil {
-		session.logger.ErrorContext(parent, "command handler failed", "command_id", request.ID, "error", err)
+	if handlerErr := handler(ctx, command, responder); handlerErr != nil {
+		session.logger.ErrorContext(parent, "command handler failed", "command_id", request.ID, "error", handlerErr)
 	}
 	if !responder.didRespond() {
 		session.logger.ErrorContext(parent, ErrMissingResponse.Error(), "command_id", request.ID)
@@ -453,8 +453,8 @@ func (responder *commandResponder) respond(response CommandResponse) error {
 	}
 	message := &natsgo.Msg{Subject: responder.replySubject, Header: make(natsgo.Header), Data: payload}
 	natswire.InjectTrace(responder.context, message.Header)
-	if err := responder.connection.PublishMsg(message); err != nil {
-		return fmt.Errorf("publish command response: %w", err)
+	if publishErr := responder.connection.PublishMsg(message); publishErr != nil {
+		return fmt.Errorf("publish command response: %w", publishErr)
 	}
 	responder.responded = true
 	return nil

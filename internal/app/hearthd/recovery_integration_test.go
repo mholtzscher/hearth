@@ -16,6 +16,7 @@ import (
 	platformdb "github.com/mholtzscher/hearth/internal/platform/db"
 )
 
+//nolint:govet // Sequential integration setup intentionally reuses short error variables.
 func TestCoreStartupInterruptsActiveCommandsWithoutRedispatch(t *testing.T) {
 	t.Parallel()
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
@@ -159,9 +160,9 @@ func recoveryCommandRecord(t *testing.T, entityID devices.EntityID, requestedAt 
 
 func unusedLoopbackAddress(t *testing.T) string {
 	t.Helper()
-	listener, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatal(err)
+	listener, listenErr := net.Listen("tcp", "127.0.0.1:0")
+	if listenErr != nil {
+		t.Fatal(listenErr)
 	}
 	address := listener.Addr().String()
 	if err := listener.Close(); err != nil {
