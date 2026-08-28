@@ -11,15 +11,15 @@
 
 | Activity | Command |
 |---|---|
-| Format Go files | `mise run format` |
-| Regenerate checked-in code | `mise run generate` |
-| Check formatting | `mise run format-check` |
-| Check generated code | `mise run generate-check` |
-| Lint | `mise run lint` |
-| Tidy module metadata | `mise run tidy` |
-| Check module tidiness | `mise run tidy-check` |
-| Test with the race detector | `mise run test` |
-| Vet | `mise run vet` |
+| Format Go files | `mise run --skip-deps format` |
+| Regenerate checked-in code | `mise run --skip-deps generate` |
+| Check formatting | `mise run --skip-deps format-check` |
+| Check generated code | `mise run --skip-deps generate-check` |
+| Lint | `mise run --skip-deps lint` |
+| Tidy module metadata | `mise run --skip-deps tidy` |
+| Check module tidiness | `mise run --skip-deps tidy-check` |
+| Test with the race detector | `mise run --skip-deps test` |
+| Vet | `mise run --skip-deps vet` |
 | Run all validation (preferred) | `mise run validate` |
 | Run NATS server locally | `mise run nats` |
 
