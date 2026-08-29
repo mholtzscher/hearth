@@ -51,10 +51,33 @@ func TestSQLiteResourceReadsUseDeterministicKeysetPages(t *testing.T) {
 		t.Fatal(err)
 	}
 	if len(entitiesPage.Items) != 1 || entitiesPage.Items[0].Entity.ID != readEntityA ||
+		entitiesPage.Items[0].Entity.AdapterID != "simulator" ||
+		entitiesPage.Items[0].Entity.BindingKey != "binding-Alpha" ||
+		entitiesPage.Items[0].Entity.EntityKey != "power-a" ||
+		entitiesPage.Items[0].Entity.ExternalID != "external-power-a" ||
 		entitiesPage.Items[0].State == nil ||
 		string(entitiesPage.Items[0].State.Value) != "true" ||
 		!entitiesPage.HasMore {
 		t.Fatalf("filtered entities = %#v", entitiesPage)
+	}
+	allEntities, err := repository.ListEntities(ctx, ListEntitiesParams{Limit: 3})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(allEntities.Items) != 3 || allEntities.HasMore ||
+		allEntities.Items[1].Entity.ID != readEntityB ||
+		allEntities.Items[1].Entity.BindingKey != "binding-Beta" ||
+		allEntities.Items[1].Entity.EntityKey != "power-b" ||
+		allEntities.Items[1].Entity.ExternalID != "external-power-b" {
+		t.Fatalf("all entities = %#v", allEntities)
+	}
+	entity, err := repository.GetEntity(ctx, readEntityB)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if entity.Entity.BindingKey != "binding-Beta" || entity.Entity.EntityKey != "power-b" ||
+		entity.Entity.ExternalID != "external-power-b" || entity.State != nil {
+		t.Fatalf("entity = %#v", entity)
 	}
 	unknownDevice := DeviceID("dev_01890f47-7a6b-7c4d-8e9f-0123456789ff")
 	empty, err := repository.ListEntities(ctx, ListEntitiesParams{DeviceID: &unknownDevice, Limit: 50})
@@ -69,7 +92,9 @@ func TestSQLiteResourceReadsUseDeterministicKeysetPages(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if aggregate.Device.Name != "Alpha" || len(aggregate.Entities.Items) != 1 ||
+	if aggregate.Device.Name != "Alpha" || aggregate.Binding.AdapterID != "simulator" ||
+		aggregate.Binding.BindingKey != "binding-Alpha" || aggregate.Binding.ExternalDeviceID == nil ||
+		*aggregate.Binding.ExternalDeviceID != "external-device-alpha" || len(aggregate.Entities.Items) != 1 ||
 		aggregate.Entities.Items[0].Entity.ID != readEntityA || !aggregate.Entities.HasMore {
 		t.Fatalf("first device aggregate page = %#v", aggregate)
 	}
@@ -79,9 +104,24 @@ func TestSQLiteResourceReadsUseDeterministicKeysetPages(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(aggregate.Entities.Items) != 1 || aggregate.Entities.Items[0].Entity.ID != readEntityC ||
-		aggregate.Entities.Items[0].Entity.Enabled || aggregate.Entities.HasMore {
+	if aggregate.Binding.AdapterID != "simulator" || aggregate.Binding.BindingKey != "binding-Alpha" ||
+		aggregate.Binding.ExternalDeviceID == nil ||
+		*aggregate.Binding.ExternalDeviceID != "external-device-alpha" ||
+		len(aggregate.Entities.Items) != 1 || aggregate.Entities.Items[0].Entity.ID != readEntityC ||
+		aggregate.Entities.Items[0].Entity.EntityKey != "power-c" ||
+		aggregate.Entities.Items[0].Entity.ExternalID != "external-power-c" ||
+		aggregate.Entities.Items[0].Entity.Enabled || aggregate.Entities.Items[0].State != nil ||
+		aggregate.Entities.HasMore {
 		t.Fatalf("second device aggregate page = %#v", aggregate)
+	}
+	withoutExternalID, err := repository.GetDevice(ctx, GetDeviceParams{ID: readDeviceB, EntityLimit: 50})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if withoutExternalID.Binding.AdapterID != "simulator" ||
+		withoutExternalID.Binding.BindingKey != "binding-Beta" ||
+		withoutExternalID.Binding.ExternalDeviceID != nil {
+		t.Fatalf("device without external ID = %#v", withoutExternalID)
 	}
 	if _, getErr := repository.GetDevice(
 		ctx,
@@ -108,6 +148,26 @@ func TestSQLiteResourceReadsUseDeterministicKeysetPages(t *testing.T) {
 	}
 	if len(history.Items) != 1 || history.Items[0].ID != readCommandA || history.HasMore {
 		t.Fatalf("second command page = %#v", history)
+	}
+}
+
+func TestSQLiteGetDeviceRejectsMissingBinding(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	database := openMigratedDatabase(t, filepath.Join(t.TempDir(), "hearth.db"))
+	repository := NewSQLiteRepository(database, nil)
+	corruptDeviceID := DeviceID("dev_01890f47-7a6b-7c4d-8e9f-0123456789fe")
+	timestamp := formatTime(time.Date(2026, 8, 26, 12, 0, 0, 0, time.UTC))
+	if _, err := database.ExecContext(ctx, `
+		INSERT INTO devices (id, kind, name, created_at, updated_at)
+		VALUES (?, 'light', 'Corrupt', ?, ?)`, corruptDeviceID, timestamp, timestamp); err != nil {
+		t.Fatal(err)
+	}
+
+	_, err := repository.GetDevice(ctx, GetDeviceParams{ID: corruptDeviceID, EntityLimit: 50})
+	if err == nil || errors.Is(err, ErrDeviceNotFound) ||
+		err.Error() != "map device binding: device binding row is incomplete" {
+		t.Fatalf("corrupt device error = %v", err)
 	}
 }
 
@@ -171,9 +231,15 @@ func seedResourceReads(t *testing.T, database *sql.DB, requestedAt time.Time) {
 			t.Fatal(err)
 		}
 		bindingKey := "binding-" + device.name
+		var externalDeviceID any
+		if device.id == readDeviceA {
+			externalDeviceID = "external-device-alpha"
+		}
 		if _, err := database.ExecContext(ctx, `
-			INSERT INTO adapter_bindings (adapter_id, binding_key, device_id, created_at, updated_at)
-			VALUES ('simulator', ?, ?, ?, ?)`, bindingKey, device.id, timestamp, timestamp); err != nil {
+			INSERT INTO adapter_bindings (
+				adapter_id, binding_key, device_id, external_device_id, created_at, updated_at
+			) VALUES ('simulator', ?, ?, ?, ?, ?)`,
+			bindingKey, device.id, externalDeviceID, timestamp, timestamp); err != nil {
 			t.Fatal(err)
 		}
 	}

@@ -38,7 +38,8 @@ func TestPatchEntitySetsEnablementAndReturnsCompleteEntity(t *testing.T) {
 	if err := json.Unmarshal(response.Body.Bytes(), &body); err != nil {
 		t.Fatal(err)
 	}
-	if gotID != apiEntityID || gotEnabled || body.ID != string(apiEntityID) || body.Enabled {
+	if gotID != apiEntityID || gotEnabled || body.ID != string(apiEntityID) || body.Enabled ||
+		containsJSONField(response.Body.Bytes(), "binding") {
 		t.Fatalf("mutation = (%q, %t), body = %#v", gotID, gotEnabled, body)
 	}
 	operation := openapi.OpenAPI().Paths["/v1/entities/{entity_id}"].Patch

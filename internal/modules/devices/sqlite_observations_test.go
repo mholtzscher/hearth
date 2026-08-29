@@ -60,7 +60,9 @@ func TestObservationProjectionAdvancesStateByReceiveOrderAndDeduplicates(t *test
 		t.Fatal(err)
 	}
 	if view.State == nil || view.State.ObservationID != second.ID || string(view.State.Value) != "true" ||
-		view.Entity.Name != "Power" || view.Entity.AdapterID != "simulator" {
+		view.Entity.Name != "Power" || view.Entity.AdapterID != "simulator" ||
+		view.Entity.BindingKey != "office-light" || view.Entity.EntityKey != "power" ||
+		view.Entity.ExternalID != "light.office" {
 		t.Fatalf("entity view = %#v", view)
 	}
 	assertReceiptCount(t, database, 2)

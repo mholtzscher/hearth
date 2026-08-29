@@ -3,6 +3,7 @@ package api //nolint:testpackage // Tests exercise package-private transport map
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"testing"
 	"time"
@@ -46,7 +47,7 @@ func TestListDevicesDefaultsLimitAndReturnsScopedCursor(t *testing.T) {
 	if err := json.Unmarshal(response.Body.Bytes(), &first); err != nil {
 		t.Fatal(err)
 	}
-	if len(first.Items) != 1 || first.NextCursor == nil {
+	if len(first.Items) != 1 || first.NextCursor == nil || containsJSONField(response.Body.Bytes(), "binding") {
 		t.Fatalf("first page = %#v", first)
 	}
 	response = performRequest(router, "/v1/devices?cursor="+*first.NextCursor)
@@ -66,13 +67,17 @@ func TestListDevicesDefaultsLimitAndReturnsScopedCursor(t *testing.T) {
 	}
 }
 
-//nolint:gocognit // The related response-shape assertions are intentionally kept together.
+//nolint:gocognit,gocyclo,cyclop // The related response-shape assertions are intentionally kept together.
 func TestDeviceDetailAndEntityListUseFullEntityBodies(t *testing.T) {
 	t.Parallel()
 	view := apiEntityWithState(nil)
+	view.Entity.Enabled = false
 	secondEntityID := devices.EntityID("ent_01890f47-7a6b-7c4d-8e9f-0123456789ac")
 	secondView := apiEntityWithState(nil)
 	secondView.Entity.ID = secondEntityID
+	secondView.Entity.EntityKey = "brightness"
+	secondView.Entity.ExternalID = "light.office.brightness"
+	externalDeviceID := "ha-device"
 	deviceCalls := 0
 	stub := &stubDevices{
 		getDevice: func(_ context.Context, params devices.GetDeviceParams) (devices.DeviceAggregate, error) {
@@ -88,7 +93,10 @@ func TestDeviceDetailAndEntityListUseFullEntityBodies(t *testing.T) {
 				page = devices.Page[devices.EntityWithState]{Items: []devices.EntityWithState{secondView}}
 			}
 			return devices.DeviceAggregate{
-				Device:   devices.Device{ID: apiDeviceID, Kind: devices.DeviceKindLight, Name: "Office"},
+				Device: devices.Device{ID: apiDeviceID, Kind: devices.DeviceKindLight, Name: "Office"},
+				Binding: devices.DeviceBinding{
+					AdapterID: "simulator", BindingKey: "office-light", ExternalDeviceID: &externalDeviceID,
+				},
 				Entities: page,
 			}, nil
 		},
@@ -108,7 +116,13 @@ func TestDeviceDetailAndEntityListUseFullEntityBodies(t *testing.T) {
 	if err := json.Unmarshal(response.Body.Bytes(), &detail); err != nil {
 		t.Fatal(err)
 	}
-	if len(detail.Entities) != 1 || detail.Entities[0].ID != string(apiEntityID) || detail.Entities[0].State != nil ||
+	if detail.Binding.AdapterID != "simulator" || detail.Binding.BindingKey != "office-light" ||
+		detail.Binding.ExternalDeviceID == nil || *detail.Binding.ExternalDeviceID != externalDeviceID ||
+		len(detail.Entities) != 1 || detail.Entities[0].ID != string(apiEntityID) ||
+		detail.Entities[0].Enabled || detail.Entities[0].Binding.AdapterID != "simulator" ||
+		detail.Entities[0].Binding.BindingKey != "office-light" ||
+		detail.Entities[0].Binding.EntityKey != "power" ||
+		detail.Entities[0].Binding.ExternalEntityID != "light.office" || detail.Entities[0].State != nil ||
 		detail.NextEntityCursor == nil {
 		t.Fatalf("device detail = %#v", detail)
 	}
@@ -120,7 +134,12 @@ func TestDeviceDetailAndEntityListUseFullEntityBodies(t *testing.T) {
 	if err := json.Unmarshal(response.Body.Bytes(), &detail); err != nil {
 		t.Fatal(err)
 	}
-	if len(detail.Entities) != 1 || detail.Entities[0].ID != string(secondEntityID) || detail.NextEntityCursor != nil {
+	if detail.Binding.AdapterID != "simulator" || detail.Binding.BindingKey != "office-light" ||
+		detail.Binding.ExternalDeviceID == nil || *detail.Binding.ExternalDeviceID != externalDeviceID ||
+		len(detail.Entities) != 1 || detail.Entities[0].ID != string(secondEntityID) ||
+		detail.Entities[0].Binding.EntityKey != "brightness" ||
+		detail.Entities[0].Binding.ExternalEntityID != "light.office.brightness" ||
+		detail.NextEntityCursor != nil {
 		t.Fatalf("second device detail = %#v", detail)
 	}
 	response = performRequest(router, "/v1/entities?device_id="+string(apiDeviceID)+"&limit=2")
@@ -131,8 +150,82 @@ func TestDeviceDetailAndEntityListUseFullEntityBodies(t *testing.T) {
 	if err := json.Unmarshal(response.Body.Bytes(), &entitiesBody); err != nil {
 		t.Fatal(err)
 	}
-	if len(entitiesBody.Items) != 1 || entitiesBody.Items[0].Support["operations"] == nil {
+	if len(entitiesBody.Items) != 1 || entitiesBody.Items[0].Support["operations"] == nil ||
+		containsJSONField(response.Body.Bytes(), "binding") {
 		t.Fatalf("entities body = %#v", entitiesBody)
+	}
+}
+
+func TestDeviceDetailOmitsAbsentExternalDeviceID(t *testing.T) {
+	t.Parallel()
+	stub := &stubDevices{getDevice: func(
+		_ context.Context,
+		params devices.GetDeviceParams,
+	) (devices.DeviceAggregate, error) {
+		return devices.DeviceAggregate{
+			Device: devices.Device{ID: params.ID, Kind: devices.DeviceKindLight, Name: "Office"},
+			Binding: devices.DeviceBinding{
+				AdapterID: "simulator", BindingKey: "office-light",
+			},
+			Entities: devices.Page[devices.EntityWithState]{Items: []devices.EntityWithState{}},
+		}, nil
+	}}
+	router, _ := testAPI(t, stub)
+	response := performRequest(router, "/v1/devices/"+string(apiDeviceID))
+	if response.Code != http.StatusOK {
+		t.Fatalf("status = %d, body = %s", response.Code, response.Body.String())
+	}
+	var body map[string]any
+	if err := json.Unmarshal(response.Body.Bytes(), &body); err != nil {
+		t.Fatal(err)
+	}
+	binding, ok := body["binding"].(map[string]any)
+	if !ok || binding["adapter_id"] != "simulator" || binding["binding_key"] != "office-light" {
+		t.Fatalf("binding = %#v", body["binding"])
+	}
+	if _, exists := binding["external_device_id"]; exists {
+		t.Fatalf("external_device_id was not omitted: %#v", binding)
+	}
+}
+
+func TestGetDeviceMapsNotFoundAndInternalErrors(t *testing.T) {
+	t.Parallel()
+	for _, test := range []struct {
+		name   string
+		err    error
+		status int
+		detail string
+	}{
+		{name: "not found", err: devices.ErrDeviceNotFound, status: http.StatusNotFound, detail: "device not found"},
+		{
+			name: "corrupt binding", err: errors.New("map device binding: database details"),
+			status: http.StatusInternalServerError, detail: "internal error",
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			stub := &stubDevices{getDevice: func(
+				context.Context,
+				devices.GetDeviceParams,
+			) (devices.DeviceAggregate, error) {
+				return devices.DeviceAggregate{}, test.err
+			}}
+			router, _ := testAPI(t, stub)
+			response := performRequest(router, "/v1/devices/"+string(apiDeviceID))
+			if response.Code != test.status {
+				t.Fatalf("status = %d, body = %s", response.Code, response.Body.String())
+			}
+			var body struct {
+				Status int    `json:"status"`
+				Detail string `json:"detail"`
+			}
+			if err := json.Unmarshal(response.Body.Bytes(), &body); err != nil {
+				t.Fatal(err)
+			}
+			if body.Status != test.status || body.Detail != test.detail {
+				t.Fatalf("error body = %#v", body)
+			}
+		})
 	}
 }
 

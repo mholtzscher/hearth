@@ -7,6 +7,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"strings"
 	"testing"
 
@@ -225,12 +226,15 @@ func TestRuntimeOpenAPIContract(t *testing.T) {
 
 	for schemaName, properties := range map[string][]string{
 		"EntityBody":           {"id", "device_id", "name", "type", "support", "enabled", "state"},
+		"DeviceEntityBody":     {"id", "device_id", "name", "type", "support", "enabled", "binding", "state"},
+		"EntityBindingBody":    {"adapter_id", "binding_key", "entity_key", "external_entity_id"},
+		"DeviceBindingBody":    {"adapter_id", "binding_key", "external_device_id"},
 		"StateBody":            {"value", "observation_id", "adapter_received_at", "source_updated_at", "observed_at"},
 		"PatchEntityBody":      {"enabled"},
 		"CommandBody":          {"operation", "parameters"},
 		"CommandResultBody":    {"command_id", "status", "observation_id", "value"},
 		"DeviceBody":           {"id", "kind", "name"},
-		"DeviceDetailBody":     {"id", "kind", "name", "entities", "next_entity_cursor"},
+		"DeviceDetailBody":     {"id", "kind", "name", "binding", "entities", "next_entity_cursor"},
 		"EntityCollectionBody": {"items", "next_cursor"},
 		"DeviceCollectionBody": {"items", "next_cursor"},
 		"CommandRecordBody": {
@@ -244,9 +248,7 @@ func TestRuntimeOpenAPIContract(t *testing.T) {
 		if !ok {
 			t.Fatalf("OpenAPI is missing %s schema", schemaName)
 		}
-		var schema struct {
-			Properties map[string]json.RawMessage `json:"properties"`
-		}
+		var schema runtimeOpenAPISchema
 		if err := json.Unmarshal(raw, &schema); err != nil {
 			t.Fatal(err)
 		}
@@ -256,6 +258,71 @@ func TestRuntimeOpenAPIContract(t *testing.T) {
 			}
 		}
 	}
+	var entitySchema runtimeOpenAPISchema
+	if err := json.Unmarshal(document.Components.Schemas["EntityBody"], &entitySchema); err != nil {
+		t.Fatal(err)
+	}
+	if _, exists := entitySchema.Properties["binding"]; exists {
+		t.Fatalf("OpenAPI EntityBody unexpectedly contains binding: %s", document.Components.Schemas["EntityBody"])
+	}
+	var deviceEntitySchema runtimeOpenAPISchema
+	if err := json.Unmarshal(document.Components.Schemas["DeviceEntityBody"], &deviceEntitySchema); err != nil {
+		t.Fatal(err)
+	}
+	assertRequiredProperties(
+		t,
+		"DeviceEntityBody",
+		deviceEntitySchema,
+		"id",
+		"device_id",
+		"name",
+		"type",
+		"support",
+		"enabled",
+		"binding",
+		"state",
+	)
+	assertSchemaReference(
+		t,
+		"DeviceEntityBody.binding",
+		deviceEntitySchema.Properties["binding"],
+		"#/components/schemas/EntityBindingBody",
+	)
+	var entityBindingSchema runtimeOpenAPISchema
+	if err := json.Unmarshal(document.Components.Schemas["EntityBindingBody"], &entityBindingSchema); err != nil {
+		t.Fatal(err)
+	}
+	assertRequiredProperties(
+		t,
+		"EntityBindingBody",
+		entityBindingSchema,
+		"adapter_id",
+		"binding_key",
+		"entity_key",
+		"external_entity_id",
+	)
+	var deviceBindingSchema runtimeOpenAPISchema
+	if err := json.Unmarshal(document.Components.Schemas["DeviceBindingBody"], &deviceBindingSchema); err != nil {
+		t.Fatal(err)
+	}
+	assertRequiredProperties(t, "DeviceBindingBody", deviceBindingSchema, "adapter_id", "binding_key")
+	if slices.Contains(deviceBindingSchema.Required, "external_device_id") {
+		t.Fatalf("OpenAPI DeviceBindingBody requires external_device_id: %v", deviceBindingSchema.Required)
+	}
+	var deviceDetailSchema runtimeOpenAPISchema
+	if err := json.Unmarshal(document.Components.Schemas["DeviceDetailBody"], &deviceDetailSchema); err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Contains(deviceDetailSchema.Required, "binding") {
+		t.Fatalf("OpenAPI DeviceDetailBody does not require binding: %v", deviceDetailSchema.Required)
+	}
+	assertSchemaReference(
+		t,
+		"DeviceDetailBody.binding",
+		deviceDetailSchema.Properties["binding"],
+		"#/components/schemas/DeviceBindingBody",
+	)
+
 	var stateSchema struct {
 		Type []string `json:"type"`
 	}
@@ -319,6 +386,11 @@ func TestNewHTTPHandlerPreservesHumaErrorFactory(t *testing.T) {
 	}
 }
 
+type runtimeOpenAPISchema struct {
+	Properties map[string]json.RawMessage `json:"properties"`
+	Required   []string                   `json:"required"`
+}
+
 type runtimeOpenAPIOperation struct {
 	OperationID string                     `json:"operationId"`
 	RequestBody *runtimeOpenAPIRequestBody `json:"requestBody"`
@@ -327,6 +399,27 @@ type runtimeOpenAPIOperation struct {
 
 type runtimeOpenAPIRequestBody struct {
 	Required bool `json:"required"`
+}
+
+func assertRequiredProperties(
+	t *testing.T,
+	name string,
+	schema runtimeOpenAPISchema,
+	properties ...string,
+) {
+	t.Helper()
+	for _, property := range properties {
+		if !slices.Contains(schema.Required, property) {
+			t.Errorf("OpenAPI %s does not require %q: %v", name, property, schema.Required)
+		}
+	}
+}
+
+func assertSchemaReference(t *testing.T, name string, raw json.RawMessage, reference string) {
+	t.Helper()
+	if !strings.Contains(string(raw), `"$ref":"`+reference+`"`) {
+		t.Errorf("OpenAPI %s does not reference %s: %s", name, reference, raw)
+	}
 }
 
 func assertRuntimeOpenAPIOperation(

@@ -144,7 +144,7 @@ func TestGetEntityReturnsMetadataAndNullableState(t *testing.T) {
 		t.Fatalf("GetEntity ID = %q", requestedEntityID)
 	}
 	if body.ID != string(apiEntityID) || body.Name != "Power" || !body.Enabled || body.State != nil ||
-		body.Support["state"] == nil {
+		body.Support["state"] == nil || containsJSONField(response.Body.Bytes(), "binding") {
 		t.Fatalf("body = %#v", body)
 	}
 	operation := openapi.OpenAPI().Paths["/v1/entities/{entity_id}"].Get
@@ -244,13 +244,9 @@ func TestGetEntityMapsStandardErrors(t *testing.T) {
 func apiEntityWithState(state *devices.State) devices.EntityWithState {
 	return devices.EntityWithState{
 		Entity: devices.Entity{
-			ID:        apiEntityID,
-			DeviceID:  apiDeviceID,
-			AdapterID: "simulator",
-			Name:      "Power",
-			TypeID:    devices.EntityTypePowerV1,
-			Support:   devices.EntitySupport(`{"state":{},"operations":{"set":{}}}`),
-			Enabled:   true,
+			ID: apiEntityID, DeviceID: apiDeviceID, AdapterID: "simulator", BindingKey: "office-light",
+			EntityKey: "power", ExternalID: "light.office", Name: "Power", TypeID: devices.EntityTypePowerV1,
+			Support: devices.EntitySupport(`{"state":{},"operations":{"set":{}}}`), Enabled: true,
 		},
 		State: state,
 	}

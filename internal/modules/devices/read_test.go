@@ -131,14 +131,22 @@ func TestReadServiceReturnsOwnedDataAndNormalizesCommandPosition(t *testing.T) {
 	t.Parallel()
 	sourceUpdatedAt := time.Date(2026, 8, 25, 10, 0, 0, 0, time.UTC)
 	completedAt := sourceUpdatedAt.Add(time.Second)
+	deviceExternalID := "ha-device"
 	failure := CommandFailureOutcomeTimeout
 	repository := newReadRepository()
 	repository.entity = EntityWithState{
-		Entity: Entity{ID: commandTestEntityID, DeviceID: commandTestDeviceID, Support: EntitySupport(`{"state":{}}`)},
-		State:  &State{EntityID: commandTestEntityID, Value: Value(`true`), SourceUpdatedAt: &sourceUpdatedAt},
+		Entity: Entity{
+			ID: commandTestEntityID, DeviceID: commandTestDeviceID, AdapterID: "homeassistant",
+			BindingKey: "office-light", EntityKey: "power", ExternalID: "light.office",
+			Support: EntitySupport(`{"state":{}}`),
+		},
+		State: &State{EntityID: commandTestEntityID, Value: Value(`true`), SourceUpdatedAt: &sourceUpdatedAt},
 	}
 	repository.device = DeviceAggregate{
-		Device:   Device{ID: commandTestDeviceID, Kind: DeviceKindLight, Name: "Office"},
+		Device: Device{ID: commandTestDeviceID, Kind: DeviceKindLight, Name: "Office"},
+		Binding: DeviceBinding{
+			AdapterID: "homeassistant", BindingKey: "office-light", ExternalDeviceID: &deviceExternalID,
+		},
 		Entities: Page[EntityWithState]{Items: []EntityWithState{repository.entity}, HasMore: true},
 	}
 	repository.entitiesPage = Page[EntityWithState]{Items: []EntityWithState{repository.entity}, HasMore: true}
@@ -157,11 +165,16 @@ func TestReadServiceReturnsOwnedDataAndNormalizesCommandPosition(t *testing.T) {
 	}
 	if repository.getDeviceParams.ID != commandTestDeviceID || repository.getDeviceParams.EntityLimit != 1 ||
 		repository.getDeviceParams.AfterEntityID == nil || *repository.getDeviceParams.AfterEntityID != commandTestEntityID ||
-		!device.Entities.HasMore {
+		!device.Entities.HasMore || device.Binding.ExternalDeviceID == nil ||
+		*device.Binding.ExternalDeviceID != deviceExternalID ||
+		device.Entities.Items[0].Entity.BindingKey != "office-light" ||
+		device.Entities.Items[0].Entity.EntityKey != "power" ||
+		device.Entities.Items[0].Entity.ExternalID != "light.office" {
 		t.Fatalf("device params/result = %#v, %#v", repository.getDeviceParams, device)
 	}
 	device.Entities.Items[0].Entity.Support[0] = 'x'
-	if string(repository.entity.Entity.Support) != `{"state":{}}` {
+	*device.Binding.ExternalDeviceID = "changed"
+	if string(repository.entity.Entity.Support) != `{"state":{}}` || deviceExternalID != "ha-device" {
 		t.Fatal("GetDevice result aliases repository data")
 	}
 

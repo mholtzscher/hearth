@@ -43,6 +43,15 @@ func (repository *SQLiteRepository) GetDevice(ctx context.Context, params GetDev
 	if err != nil {
 		return DeviceAggregate{}, fmt.Errorf("get device: %w", err)
 	}
+	if !row.AdapterID.Valid || row.AdapterID.String == "" || !row.BindingKey.Valid || row.BindingKey.String == "" ||
+		(row.ExternalDeviceID.Valid && row.ExternalDeviceID.String == "") {
+		return DeviceAggregate{}, errors.New("map device binding: device binding row is incomplete")
+	}
+	binding := DeviceBinding{AdapterID: row.AdapterID.String, BindingKey: row.BindingKey.String}
+	if row.ExternalDeviceID.Valid {
+		externalDeviceID := row.ExternalDeviceID.String
+		binding.ExternalDeviceID = &externalDeviceID
+	}
 	deviceID := params.ID
 	entities, err := repository.ListEntities(ctx, ListEntitiesParams{
 		DeviceID: &deviceID, AfterID: params.AfterEntityID, Limit: params.EntityLimit,
@@ -52,6 +61,7 @@ func (repository *SQLiteRepository) GetDevice(ctx context.Context, params GetDev
 	}
 	return DeviceAggregate{
 		Device:   Device{ID: DeviceID(row.ID), Kind: DeviceKind(row.Kind), Name: row.Name},
+		Binding:  binding,
 		Entities: entities,
 	}, nil
 }
@@ -80,9 +90,9 @@ func (repository *SQLiteRepository) ListEntities(
 	items := make([]EntityWithState, 0, params.Limit+1)
 	for _, row := range rows {
 		view, mappingErr := entityWithStateFromValues(
-			row.ID, row.DeviceID, row.AdapterID, row.Name, row.TypeID, row.SupportJson, row.Enabled,
-			row.ObservationID, row.ValueJson, row.AdapterReceivedAt, row.SourceUpdatedAt,
-			row.ObservedAt, row.ReceiveOrder,
+			row.ID, row.DeviceID, row.AdapterID, row.BindingKey, row.EntityKey, row.ExternalEntityID,
+			row.Name, row.TypeID, row.SupportJson, row.Enabled, row.ObservationID, row.ValueJson,
+			row.AdapterReceivedAt, row.SourceUpdatedAt, row.ObservedAt, row.ReceiveOrder,
 		)
 		if mappingErr != nil {
 			return Page[EntityWithState]{}, fmt.Errorf("map entity: %w", mappingErr)
@@ -107,9 +117,9 @@ func listEntitiesByDevice(
 	items := make([]EntityWithState, 0, params.Limit+1)
 	for _, row := range rows {
 		view, mappingErr := entityWithStateFromValues(
-			row.ID, row.DeviceID, row.AdapterID, row.Name, row.TypeID, row.SupportJson, row.Enabled,
-			row.ObservationID, row.ValueJson, row.AdapterReceivedAt, row.SourceUpdatedAt,
-			row.ObservedAt, row.ReceiveOrder,
+			row.ID, row.DeviceID, row.AdapterID, row.BindingKey, row.EntityKey, row.ExternalEntityID,
+			row.Name, row.TypeID, row.SupportJson, row.Enabled, row.ObservationID, row.ValueJson,
+			row.AdapterReceivedAt, row.SourceUpdatedAt, row.ObservedAt, row.ReceiveOrder,
 		)
 		if mappingErr != nil {
 			return Page[EntityWithState]{}, fmt.Errorf("map entity: %w", mappingErr)

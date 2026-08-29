@@ -74,6 +74,21 @@ func TestRegistrationIsIdempotentAndUpdatesDescriptors(t *testing.T) {
 			storedSupport,
 		)
 	}
+	reader := NewService(NewSQLiteRepository(database, catalog), nil, catalog, Dependencies{})
+	detail, err := reader.GetDevice(ctx, GetDeviceParams{ID: first.DeviceID, EntityLimit: 50})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if detail.Device.ID != first.DeviceID || detail.Binding.AdapterID != "homeassistant" ||
+		detail.Binding.BindingKey != registration.BindingKey || detail.Binding.ExternalDeviceID == nil ||
+		*detail.Binding.ExternalDeviceID != deviceExternalID || len(detail.Entities.Items) != 1 ||
+		detail.Entities.Items[0].Entity.ID != first.Entities[0].EntityID ||
+		detail.Entities.Items[0].Entity.AdapterID != "homeassistant" ||
+		detail.Entities.Items[0].Entity.BindingKey != registration.BindingKey ||
+		detail.Entities.Items[0].Entity.EntityKey != registration.Entities[0].Key ||
+		detail.Entities.Items[0].Entity.ExternalID != "light.office-renamed" {
+		t.Fatalf("re-registered device detail = %#v", detail)
+	}
 }
 
 func TestMultiEntityRegistrationIsAdditiveAndReturnsSubmittedOrder(t *testing.T) {
@@ -172,16 +187,40 @@ func TestRegistrationAllowsDeviceAggregateBeyondRequestLimit(t *testing.T) {
 			fmt.Sprintf("power-%d", index), fmt.Sprintf("light.office.%d", index),
 		)
 	}
-	if _, err := service.Register(ctx, "homeassistant", registration); err != nil {
+	binding, err := service.Register(ctx, "homeassistant", registration)
+	if err != nil {
 		t.Fatal(err)
 	}
 
 	additional := validDomainRegistration()
 	additional.Entities = []EntityDescriptor{registrationEntity("power-additional", "light.office.additional")}
-	if _, err := service.Register(ctx, "homeassistant", additional); err != nil {
-		t.Fatal(err)
+	if _, registrationErr := service.Register(ctx, "homeassistant", additional); registrationErr != nil {
+		t.Fatal(registrationErr)
 	}
 	assertCounts(t, database, 1, 65)
+
+	firstPage, err := service.GetDevice(ctx, GetDeviceParams{ID: binding.DeviceID, EntityLimit: 64})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(firstPage.Entities.Items) != 64 || !firstPage.Entities.HasMore ||
+		firstPage.Binding.AdapterID != "homeassistant" || firstPage.Binding.BindingKey != registration.BindingKey {
+		t.Fatalf("first aggregate page = %#v", firstPage)
+	}
+	afterID := firstPage.Entities.Items[len(firstPage.Entities.Items)-1].Entity.ID
+	secondPage, err := service.GetDevice(ctx, GetDeviceParams{
+		ID: binding.DeviceID, AfterEntityID: &afterID, EntityLimit: 64,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(secondPage.Entities.Items) != 1 || secondPage.Entities.HasMore ||
+		secondPage.Binding.AdapterID != firstPage.Binding.AdapterID ||
+		secondPage.Binding.BindingKey != firstPage.Binding.BindingKey ||
+		secondPage.Entities.Items[0].Entity.BindingKey != registration.BindingKey ||
+		secondPage.Entities.Items[0].Entity.ExternalID == "" {
+		t.Fatalf("second aggregate page = %#v", secondPage)
+	}
 }
 
 func TestRegistrationRejectsExternalIDTransfersIndependentOfOrder(t *testing.T) {
@@ -539,7 +578,9 @@ func TestSetEntityEnabledIsIdempotentAndOwnerScoped(t *testing.T) {
 
 	now = now.Add(time.Minute)
 	view, err := service.SetEntityEnabled(ctx, entityID, false)
-	if err != nil || view.Entity.Enabled {
+	if err != nil || view.Entity.Enabled || view.Entity.AdapterID != "simulator" ||
+		view.Entity.BindingKey != "office-light" || view.Entity.EntityKey != "power" ||
+		view.Entity.ExternalID != "light.office" {
 		t.Fatalf("management no-op = %#v, %v", view, err)
 	}
 	var afterNoop string

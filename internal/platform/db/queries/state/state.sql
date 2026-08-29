@@ -6,15 +6,25 @@ ORDER BY id ASC
 LIMIT ?;
 
 -- name: GetDevice :one
-SELECT id, kind, name
-FROM devices
-WHERE id = ?;
+SELECT
+    d.id,
+    d.kind,
+    d.name,
+    b.adapter_id,
+    b.binding_key,
+    b.external_device_id
+FROM devices AS d
+LEFT JOIN adapter_bindings AS b ON b.device_id = d.id
+WHERE d.id = ?;
 
 -- name: ListEntities :many
 SELECT
     e.id,
     e.device_id,
     m.adapter_id,
+    m.binding_key,
+    m.entity_key,
+    m.external_entity_id,
     e.name,
     e.type_id,
     e.support_json,
@@ -37,6 +47,9 @@ SELECT
     e.id,
     e.device_id,
     m.adapter_id,
+    m.binding_key,
+    m.entity_key,
+    m.external_entity_id,
     e.name,
     e.type_id,
     e.support_json,
@@ -59,6 +72,9 @@ SELECT
     e.id,
     e.device_id,
     m.adapter_id,
+    m.binding_key,
+    m.entity_key,
+    m.external_entity_id,
     e.name,
     e.type_id,
     e.support_json,

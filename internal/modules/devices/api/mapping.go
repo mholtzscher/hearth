@@ -45,6 +45,28 @@ func entityBody(view devices.EntityWithState) (EntityBody, error) {
 	return body, nil
 }
 
+func deviceEntityBody(view devices.EntityWithState) (DeviceEntityBody, error) {
+	entity, err := entityBody(view)
+	if err != nil {
+		return DeviceEntityBody{}, err
+	}
+	return DeviceEntityBody{
+		ID:       entity.ID,
+		DeviceID: entity.DeviceID,
+		Name:     entity.Name,
+		Type:     entity.Type,
+		Support:  entity.Support,
+		Enabled:  entity.Enabled,
+		Binding: EntityBindingBody{
+			AdapterID:        view.Entity.AdapterID,
+			BindingKey:       view.Entity.BindingKey,
+			EntityKey:        view.Entity.EntityKey,
+			ExternalEntityID: view.Entity.ExternalID,
+		},
+		State: entity.State,
+	}, nil
+}
+
 func deviceBody(device devices.Device) DeviceBody {
 	return DeviceBody{ID: string(device.ID), Kind: string(device.Kind), Name: device.Name}
 }
@@ -52,10 +74,17 @@ func deviceBody(device devices.Device) DeviceBody {
 func deviceDetailBody(aggregate devices.DeviceAggregate) (DeviceDetailBody, error) {
 	body := DeviceDetailBody{
 		ID: string(aggregate.Device.ID), Kind: string(aggregate.Device.Kind), Name: aggregate.Device.Name,
-		Entities: make([]EntityBody, len(aggregate.Entities.Items)),
+		Binding: DeviceBindingBody{
+			AdapterID: aggregate.Binding.AdapterID, BindingKey: aggregate.Binding.BindingKey,
+		},
+		Entities: make([]DeviceEntityBody, len(aggregate.Entities.Items)),
+	}
+	if aggregate.Binding.ExternalDeviceID != nil {
+		externalDeviceID := *aggregate.Binding.ExternalDeviceID
+		body.Binding.ExternalDeviceID = &externalDeviceID
 	}
 	for index, entity := range aggregate.Entities.Items {
-		mapped, err := entityBody(entity)
+		mapped, err := deviceEntityBody(entity)
 		if err != nil {
 			return DeviceDetailBody{}, err
 		}

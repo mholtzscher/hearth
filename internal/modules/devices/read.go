@@ -43,8 +43,14 @@ func (service *Service) GetDevice(ctx context.Context, params GetDeviceParams) (
 	for index, entity := range aggregate.Entities.Items {
 		items[index] = copyEntityWithState(entity)
 	}
+	binding := aggregate.Binding
+	if aggregate.Binding.ExternalDeviceID != nil {
+		externalDeviceID := *aggregate.Binding.ExternalDeviceID
+		binding.ExternalDeviceID = &externalDeviceID
+	}
 	return DeviceAggregate{
-		Device: aggregate.Device,
+		Device:  aggregate.Device,
+		Binding: binding,
 		Entities: Page[EntityWithState]{
 			Items: items, HasMore: aggregate.Entities.HasMore,
 		},

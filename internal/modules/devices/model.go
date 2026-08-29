@@ -32,13 +32,16 @@ type Device struct {
 }
 
 type Entity struct {
-	ID        EntityID
-	DeviceID  DeviceID
-	AdapterID string
-	Name      string
-	TypeID    EntityTypeID
-	Support   EntitySupport
-	Enabled   bool
+	ID         EntityID
+	DeviceID   DeviceID
+	AdapterID  string
+	BindingKey string
+	EntityKey  string
+	ExternalID string
+	Name       string
+	TypeID     EntityTypeID
+	Support    EntitySupport
+	Enabled    bool
 }
 
 type State struct {
@@ -56,8 +59,15 @@ type EntityWithState struct {
 	State  *State
 }
 
+type DeviceBinding struct {
+	AdapterID        string
+	BindingKey       string
+	ExternalDeviceID *string
+}
+
 type DeviceAggregate struct {
 	Device   Device
+	Binding  DeviceBinding
 	Entities Page[EntityWithState]
 }
 

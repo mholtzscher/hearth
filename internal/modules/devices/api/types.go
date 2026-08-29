@@ -26,12 +26,37 @@ type DeviceBody struct {
 	Name string `json:"name"`
 }
 
+type DeviceEntityBody struct {
+	ID       string            `json:"id"`
+	DeviceID string            `json:"device_id"`
+	Name     string            `json:"name"`
+	Type     string            `json:"type"`
+	Support  map[string]any    `json:"support"`
+	Enabled  bool              `json:"enabled"`
+	Binding  EntityBindingBody `json:"binding"`
+	State    *StateBody        `json:"state"`
+}
+
+type EntityBindingBody struct {
+	AdapterID        string `json:"adapter_id"`
+	BindingKey       string `json:"binding_key"`
+	EntityKey        string `json:"entity_key"`
+	ExternalEntityID string `json:"external_entity_id"`
+}
+
+type DeviceBindingBody struct {
+	AdapterID        string  `json:"adapter_id"`
+	BindingKey       string  `json:"binding_key"`
+	ExternalDeviceID *string `json:"external_device_id,omitempty"`
+}
+
 type DeviceDetailBody struct {
-	ID               string       `json:"id"`
-	Kind             string       `json:"kind"`
-	Name             string       `json:"name"`
-	Entities         []EntityBody `json:"entities"`
-	NextEntityCursor *string      `json:"next_entity_cursor,omitempty"`
+	ID               string             `json:"id"`
+	Kind             string             `json:"kind"`
+	Name             string             `json:"name"`
+	Binding          DeviceBindingBody  `json:"binding"`
+	Entities         []DeviceEntityBody `json:"entities"`
+	NextEntityCursor *string            `json:"next_entity_cursor,omitempty"`
 }
 
 type EntityCollectionBody struct {

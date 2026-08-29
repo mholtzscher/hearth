@@ -344,9 +344,9 @@ func (repository *SQLiteRepository) SetEntityEnabled(
 		}
 	}
 	view, err := entityWithStateFromValues(
-		row.ID, row.DeviceID, row.AdapterID, row.Name, row.TypeID, row.SupportJson, row.Enabled,
-		row.ObservationID, row.ValueJson, row.AdapterReceivedAt, row.SourceUpdatedAt,
-		row.ObservedAt, row.ReceiveOrder,
+		row.ID, row.DeviceID, row.AdapterID, row.BindingKey, row.EntityKey, row.ExternalEntityID,
+		row.Name, row.TypeID, row.SupportJson, row.Enabled, row.ObservationID, row.ValueJson,
+		row.AdapterReceivedAt, row.SourceUpdatedAt, row.ObservedAt, row.ReceiveOrder,
 	)
 	if err != nil {
 		return EntityWithState{}, fmt.Errorf("map updated entity: %w", err)

@@ -11,9 +11,16 @@ import (
 )
 
 const getDevice = `-- name: GetDevice :one
-SELECT id, kind, name
-FROM devices
-WHERE id = ?
+SELECT
+    d.id,
+    d.kind,
+    d.name,
+    b.adapter_id,
+    b.binding_key,
+    b.external_device_id
+FROM devices AS d
+LEFT JOIN adapter_bindings AS b ON b.device_id = d.id
+WHERE d.id = ?
 `
 
 type GetDeviceParams struct {
@@ -21,15 +28,25 @@ type GetDeviceParams struct {
 }
 
 type GetDeviceRow struct {
-	ID   string
-	Kind string
-	Name string
+	ID               string
+	Kind             string
+	Name             string
+	AdapterID        sql.NullString
+	BindingKey       sql.NullString
+	ExternalDeviceID sql.NullString
 }
 
 func (q *Queries) GetDevice(ctx context.Context, arg GetDeviceParams) (GetDeviceRow, error) {
 	row := q.db.QueryRowContext(ctx, getDevice, arg.ID)
 	var i GetDeviceRow
-	err := row.Scan(&i.ID, &i.Kind, &i.Name)
+	err := row.Scan(
+		&i.ID,
+		&i.Kind,
+		&i.Name,
+		&i.AdapterID,
+		&i.BindingKey,
+		&i.ExternalDeviceID,
+	)
 	return i, err
 }
 
@@ -38,6 +55,9 @@ SELECT
     e.id,
     e.device_id,
     m.adapter_id,
+    m.binding_key,
+    m.entity_key,
+    m.external_entity_id,
     e.name,
     e.type_id,
     e.support_json,
@@ -62,6 +82,9 @@ type GetEntityRow struct {
 	ID                string
 	DeviceID          string
 	AdapterID         string
+	BindingKey        string
+	EntityKey         string
+	ExternalEntityID  string
 	Name              string
 	TypeID            string
 	SupportJson       string
@@ -81,6 +104,9 @@ func (q *Queries) GetEntity(ctx context.Context, arg GetEntityParams) (GetEntity
 		&i.ID,
 		&i.DeviceID,
 		&i.AdapterID,
+		&i.BindingKey,
+		&i.EntityKey,
+		&i.ExternalEntityID,
 		&i.Name,
 		&i.TypeID,
 		&i.SupportJson,
@@ -168,6 +194,9 @@ SELECT
     e.id,
     e.device_id,
     m.adapter_id,
+    m.binding_key,
+    m.entity_key,
+    m.external_entity_id,
     e.name,
     e.type_id,
     e.support_json,
@@ -195,6 +224,9 @@ type ListEntitiesRow struct {
 	ID                string
 	DeviceID          string
 	AdapterID         string
+	BindingKey        string
+	EntityKey         string
+	ExternalEntityID  string
 	Name              string
 	TypeID            string
 	SupportJson       string
@@ -220,6 +252,9 @@ func (q *Queries) ListEntities(ctx context.Context, arg ListEntitiesParams) ([]L
 			&i.ID,
 			&i.DeviceID,
 			&i.AdapterID,
+			&i.BindingKey,
+			&i.EntityKey,
+			&i.ExternalEntityID,
 			&i.Name,
 			&i.TypeID,
 			&i.SupportJson,
@@ -249,6 +284,9 @@ SELECT
     e.id,
     e.device_id,
     m.adapter_id,
+    m.binding_key,
+    m.entity_key,
+    m.external_entity_id,
     e.name,
     e.type_id,
     e.support_json,
@@ -277,6 +315,9 @@ type ListEntitiesByDeviceRow struct {
 	ID                string
 	DeviceID          string
 	AdapterID         string
+	BindingKey        string
+	EntityKey         string
+	ExternalEntityID  string
 	Name              string
 	TypeID            string
 	SupportJson       string
@@ -302,6 +343,9 @@ func (q *Queries) ListEntitiesByDevice(ctx context.Context, arg ListEntitiesByDe
 			&i.ID,
 			&i.DeviceID,
 			&i.AdapterID,
+			&i.BindingKey,
+			&i.EntityKey,
+			&i.ExternalEntityID,
 			&i.Name,
 			&i.TypeID,
 			&i.SupportJson,

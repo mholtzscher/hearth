@@ -21,9 +21,9 @@ func (repository *SQLiteRepository) GetEntity(ctx context.Context, id EntityID) 
 		return EntityWithState{}, fmt.Errorf("get entity: %w", err)
 	}
 	return entityWithStateFromValues(
-		row.ID, row.DeviceID, row.AdapterID, row.Name, row.TypeID, row.SupportJson, row.Enabled,
-		row.ObservationID, row.ValueJson, row.AdapterReceivedAt, row.SourceUpdatedAt,
-		row.ObservedAt, row.ReceiveOrder,
+		row.ID, row.DeviceID, row.AdapterID, row.BindingKey, row.EntityKey, row.ExternalEntityID,
+		row.Name, row.TypeID, row.SupportJson, row.Enabled, row.ObservationID, row.ValueJson,
+		row.AdapterReceivedAt, row.SourceUpdatedAt, row.ObservedAt, row.ReceiveOrder,
 	)
 }
 
@@ -125,9 +125,9 @@ func loadObservationEntity(
 		return EntityWithState{}, nil, fmt.Errorf("get entity for observation: %w", err)
 	}
 	view, err := entityWithStateFromValues(
-		row.ID, row.DeviceID, row.AdapterID, row.Name, row.TypeID, row.SupportJson, row.Enabled,
-		row.ObservationID, row.ValueJson, row.AdapterReceivedAt, row.SourceUpdatedAt,
-		row.ObservedAt, row.ReceiveOrder,
+		row.ID, row.DeviceID, row.AdapterID, row.BindingKey, row.EntityKey, row.ExternalEntityID,
+		row.Name, row.TypeID, row.SupportJson, row.Enabled, row.ObservationID, row.ValueJson,
+		row.AdapterReceivedAt, row.SourceUpdatedAt, row.ObservedAt, row.ReceiveOrder,
 	)
 	if err != nil {
 		return EntityWithState{}, nil, err
@@ -316,12 +316,17 @@ func (repository *SQLiteRepository) DeleteExpiredObservationReceipts(ctx context
 }
 
 func entityWithStateFromValues(
-	id, deviceID, adapterID, name, typeID, supportJSON string, enabled int64,
+	id, deviceID, adapterID, bindingKey, entityKey, externalID, name, typeID, supportJSON string,
+	enabled int64,
 	observationID, valueJSON, adapterReceivedAt, sourceUpdatedAt, observedAt sql.NullString,
 	receiveOrder sql.NullInt64,
 ) (EntityWithState, error) {
+	if adapterID == "" || bindingKey == "" || entityKey == "" || externalID == "" {
+		return EntityWithState{}, errors.New("entity binding row is incomplete")
+	}
 	view := EntityWithState{Entity: Entity{
 		ID: EntityID(id), DeviceID: DeviceID(deviceID), AdapterID: adapterID,
+		BindingKey: bindingKey, EntityKey: entityKey, ExternalID: externalID,
 		Name: name, TypeID: EntityTypeID(typeID), Support: EntitySupport(supportJSON), Enabled: enabled != 0,
 	}}
 	if !observationID.Valid {
