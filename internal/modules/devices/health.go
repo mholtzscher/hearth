@@ -10,6 +10,11 @@ const (
 	AdapterHealthUnhealthy AdapterHealthStatus = "unhealthy"
 )
 
+const (
+	runtimeStatusOnline  = "online"
+	runtimeStatusOffline = "offline"
+)
+
 type EntityAvailabilityStatus string
 
 const (
@@ -73,10 +78,25 @@ type HealthTransition struct {
 	ObservedAt       time.Time
 }
 
+type ClaimAdapterRuntimeParams struct {
+	ClaimID         string
+	AdapterID       string
+	SoftwareName    string
+	SoftwareVersion string
+}
+
 type RuntimeClaim struct {
 	RuntimeID         RuntimeID
 	HeartbeatInterval time.Duration
 	LeaseDuration     time.Duration
+}
+
+type AdapterHeartbeat struct {
+	AdapterID        string
+	RuntimeID        RuntimeID
+	ExternalStatus   AdapterHealthStatus
+	SourceObservedAt time.Time
+	Reason           *HealthReason
 }
 
 type ClaimRuntimeWrite struct {

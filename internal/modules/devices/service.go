@@ -11,14 +11,16 @@ type Dependencies struct {
 	NewEntityID      func() (EntityID, error)
 	NewCommandID     func() (CommandID, error)
 	NewCorrelationID func() (CorrelationID, error)
+	NewRuntimeID     func() (RuntimeID, error)
 }
 
 type Service struct {
-	repository   Repository
-	sender       CommandSender
-	catalog      *TypeCatalog
-	dependencies Dependencies
-	waiters      commandWaiters
+	repository       Repository
+	sender           CommandSender
+	catalog          *TypeCatalog
+	dependencies     Dependencies
+	healthEvaluation healthEvaluationState
+	waiters          commandWaiters
 }
 
 type commandWaiters struct {
@@ -42,11 +44,15 @@ func NewService(repository Repository, sender CommandSender, catalog *TypeCatalo
 	if dependencies.NewCorrelationID == nil {
 		dependencies.NewCorrelationID = NewCorrelationID
 	}
+	if dependencies.NewRuntimeID == nil {
+		dependencies.NewRuntimeID = NewRuntimeID
+	}
 	return &Service{
-		repository:   repository,
-		sender:       sender,
-		catalog:      catalog,
-		dependencies: dependencies,
-		waiters:      commandWaiters{byID: make(map[CommandID]chan CommandResult)},
+		repository:       repository,
+		sender:           sender,
+		catalog:          catalog,
+		dependencies:     dependencies,
+		healthEvaluation: newHealthEvaluationState(),
+		waiters:          commandWaiters{byID: make(map[CommandID]chan CommandResult)},
 	}
 }

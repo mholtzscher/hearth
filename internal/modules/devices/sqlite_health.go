@@ -193,6 +193,17 @@ func (repository *SQLiteRepository) RecordAdapterHeartbeat(
 	if err != nil {
 		return HeartbeatResult{}, err
 	}
+	runtime, err := queries.GetRuntime(ctx, healthsqlc.GetRuntimeParams{RuntimeID: string(write.RuntimeID)})
+	if err != nil {
+		return HeartbeatResult{}, fmt.Errorf("get Adapter runtime for heartbeat: %w", err)
+	}
+	overdue, err := expireRuntimeIfOverdue(ctx, queries, instance, runtime, write.ReceivedAt)
+	if err != nil {
+		return HeartbeatResult{}, err
+	}
+	if overdue {
+		return HeartbeatResult{}, commitExpiredRuntime(tx, "overdue Adapter heartbeat")
+	}
 	if write.ExternalStatus == AdapterHealthUnknown && instance.ExternalSystemStatus.Valid &&
 		instance.ExternalSystemStatus.String != string(AdapterHealthUnknown) {
 		return HeartbeatResult{}, errors.New("external-system health cannot return to unknown in one runtime")
@@ -306,6 +317,13 @@ func (repository *SQLiteRepository) ReleaseAdapterRuntime(
 	if err != nil {
 		return err
 	}
+	overdue, err := expireRuntimeIfOverdue(ctx, queries, instance, runtime, write.ReleasedAt)
+	if err != nil {
+		return err
+	}
+	if overdue {
+		return commitExpiredRuntime(tx, "overdue Adapter release")
+	}
 	if rows, endErr := queries.EndRuntime(ctx, healthsqlc.EndRuntimeParams{
 		EndedAt: formatNullableTime(write.ReleasedAt), EndReason: nullableText("stopped"),
 		RuntimeID: string(write.RuntimeID), AdapterID: write.AdapterID,
@@ -359,6 +377,33 @@ func (repository *SQLiteRepository) ExpireAdapterLeases(
 		return fmt.Errorf("commit Adapter lease expiry: %w", commitErr)
 	}
 	return nil
+}
+
+func expireRuntimeIfOverdue(
+	ctx context.Context,
+	queries *healthsqlc.Queries,
+	instance healthsqlc.AdapterInstance,
+	runtime healthsqlc.AdapterRuntime,
+	receivedAt time.Time,
+) (bool, error) {
+	leaseExpiresAt, err := parseTime(runtime.LeaseExpiresAt)
+	if err != nil {
+		return false, fmt.Errorf("parse Adapter runtime lease expiry: %w", err)
+	}
+	if leaseExpiresAt.After(receivedAt) {
+		return false, nil
+	}
+	if expireErr := expireRuntime(ctx, queries, instance, runtime, receivedAt); expireErr != nil {
+		return false, expireErr
+	}
+	return true, nil
+}
+
+func commitExpiredRuntime(tx *sql.Tx, operation string) error {
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit %s expiry: %w", operation, err)
+	}
+	return ErrRuntimeFenced
 }
 
 func expireRuntime(
@@ -731,9 +776,9 @@ func adapterInstanceFromView(view sqliteAdapterView) (AdapterInstance, error) {
 		if parseErr != nil {
 			return AdapterInstance{}, fmt.Errorf("parse Adapter runtime last_heartbeat_at: %w", parseErr)
 		}
-		status := "online"
+		status := runtimeStatusOnline
 		if view.endedAt.Valid {
-			status = "offline"
+			status = runtimeStatusOffline
 		}
 		instance.Health.Runtime = &RuntimeEvidence{
 			ID: RuntimeID(view.runtimeID.String), Status: status, SoftwareName: view.softwareName.String,

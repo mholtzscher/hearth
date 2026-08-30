@@ -90,6 +90,8 @@ func Run(ctx context.Context, config Config, logger *slog.Logger) error { //noli
 	defer observations.Stop()
 
 	readiness := NewRuntimeReadiness(database, connection, js, observations)
+	healthSupervisor := startHealthSupervisor(ctx, readiness, service, logger)
+	defer healthSupervisor.Stop()
 	handler, _ := NewHTTPHandler(service, readiness)
 	server := &http.Server{
 		Addr: config.HTTPAddr, Handler: handler, ReadHeaderTimeout: httpReadHeaderTimeout,
@@ -107,6 +109,7 @@ func Run(ctx context.Context, config Config, logger *slog.Logger) error { //noli
 		}
 		return nil
 	case <-ctx.Done():
+		healthSupervisor.Stop()
 		shutdownContext, cancel := context.WithTimeout(context.Background(), shutdownTimeout)
 		defer cancel()
 		if err := server.Shutdown(shutdownContext); err != nil {

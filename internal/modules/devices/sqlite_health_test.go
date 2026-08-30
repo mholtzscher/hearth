@@ -93,6 +93,55 @@ func TestSQLiteAdapterClaimIsIdempotentAndFencedByLease(t *testing.T) {
 	}
 }
 
+func TestSQLiteOverdueRuntimeTrafficCannotReviveExpiredLease(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	database := openMigratedDatabase(t, filepath.Join(t.TempDir(), "hearth.db"))
+	repository := NewSQLiteRepository(database, firstLightCatalog(t))
+	claimedAt := time.Date(2026, 8, 29, 12, 30, 0, 0, time.UTC)
+	first := testClaimWrite(testClaimID, testRuntimeID, claimedAt)
+	if _, err := repository.ClaimAdapterRuntime(ctx, first); err != nil {
+		t.Fatal(err)
+	}
+
+	overdueAt := first.LeaseExpiresAt.Add(time.Nanosecond)
+	_, err := repository.RecordAdapterHeartbeat(ctx, HeartbeatWrite{
+		AdapterID: "simulator", RuntimeID: testRuntimeID, ExternalStatus: AdapterHealthHealthy,
+		SourceObservedAt: overdueAt, ReceivedAt: overdueAt,
+		LeaseExpiresAt: overdueAt.Add(adapterLeaseDuration),
+	})
+	if !errors.Is(err, ErrRuntimeFenced) {
+		t.Fatalf("overdue heartbeat error = %v", err)
+	}
+	adapter, err := repository.GetAdapter(ctx, "simulator")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if adapter.Health == nil || adapter.Health.Reason == nil ||
+		adapter.Health.Reason.Code != "hearth.heartbeat_expired" || adapter.Health.Runtime == nil ||
+		adapter.Health.Runtime.Status != runtimeStatusOffline || adapter.Health.Runtime.LastHeartbeatAt != nil {
+		t.Fatalf("Adapter after overdue heartbeat = %#v", adapter)
+	}
+	assertTableCount(t, database, "health_transitions", 2)
+
+	second := testClaimWrite(testSecondClaimID, testSecondRuntime, overdueAt.Add(time.Second))
+	if _, claimErr := repository.ClaimAdapterRuntime(ctx, second); claimErr != nil {
+		t.Fatal(claimErr)
+	}
+	releaseErr := repository.ReleaseAdapterRuntime(ctx, ReleaseRuntimeWrite{
+		AdapterID: "simulator", RuntimeID: testSecondRuntime, ReleasedAt: second.LeaseExpiresAt,
+	})
+	if !errors.Is(releaseErr, ErrRuntimeFenced) {
+		t.Fatalf("overdue release error = %v", releaseErr)
+	}
+	adapter, err = repository.GetAdapter(ctx, "simulator")
+	if err != nil || adapter.Health == nil || adapter.Health.Reason == nil ||
+		adapter.Health.Reason.Code != "hearth.heartbeat_expired" {
+		t.Fatalf("Adapter after overdue release = %#v, %v", adapter, err)
+	}
+	assertTableCount(t, database, "health_transitions", 4)
+}
+
 func TestSQLiteHeartbeatRefreshesEvidenceWithoutFabricatingTransitions(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
