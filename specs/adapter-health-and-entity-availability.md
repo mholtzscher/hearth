@@ -30,13 +30,13 @@ Adapter health combines two pieces of evidence under one result:
 
 An unhealthy Adapter makes every owned Entity effectively unavailable. A healthy Adapter does not make an Entity available; the active runtime must explicitly report that Entity. Entity availability remains separate from enablement, State, and State freshness.
 
-Availability is advisory when an owner is usable. A Command fails before dispatch when its owning Adapter is known unhealthy or has no active runtime route. A Command is still attempted when Adapter health is unknown but a route exists, or when the Entity is reported unavailable under a healthy Adapter. A fresh Adapter rejection may then return `entity_unavailable` without changing stored availability.
+Availability is advisory when an owner is usable. A Command fails before dispatch when its owning Adapter is known unhealthy or has no active runtime. A Command is still attempted when Adapter health is unknown but an active runtime exists, or when the Entity is reported unavailable under a healthy Adapter. A fresh Adapter rejection may then return `entity_unavailable` without changing stored availability.
 
-One Adapter instance permits one active runtime. A Core-issued runtime ID fences every Adapter-originated operation and every Command route. It is not Adapter identity or an authentication credential. The deployment's NATS account permissions remain the transport security boundary.
+One Adapter instance permits one active runtime. A Core-issued runtime ID scopes the NATS subject for every post-claim Adapter-originated operation and every Command. Payloads do not repeat the runtime ID; the subject is the authoritative wire source. A runtime ID is not Adapter identity or an authentication credential. The deployment's NATS account permissions remain the transport security boundary.
 
 ## Scope
 
-Included work covers Adapter persistence and archival, runtime lifecycle and fencing, explicit Entity availability, current and historical HTTP reads, and Command outcome changes. It also covers Core recovery, SDK lifecycle and replay, first-party Adapter adoption, migration, generation, NATS cutover, OpenAPI, and tests.
+Included work covers Adapter persistence and archival, runtime lifecycle and fencing, explicit Entity availability, current and historical HTTP reads, and Command outcome changes. It also covers Core recovery, SDK lifecycle and replay, first-party Adapter adoption, migration, code generation, an incompatible NATS subject and Observation consumer cutover, OpenAPI, and tests.
 
 This feature does not add Device health, a `degraded` status, inferred availability, Adapter replication or forced takeover, authentication changes, Adapter disablement, or Binding ownership transfer. It also excludes automation, alerting, incident tracking, uptime metrics, UI or CLI work, configurable timing or limits, and history pruning. Archival does not cascade through Bindings. Ownership intervals support future transfer behavior, but this change does not implement transfer or reconciliation.
 
@@ -80,7 +80,7 @@ Claim behavior:
 
 A replacement process cannot evict a healthy runtime. Graceful release or lease expiry ends the current runtime. A later claim reuses the stable Adapter slug but receives a new runtime ID. Software name and version are bounded diagnostic evidence attached to that runtime, never Adapter identity.
 
-Every Adapter-originated Registration, heartbeat, release, Entity availability report, Entity enablement request, and Observation repeats its runtime ID in both route and payload. Core verifies the active runtime in the same SQLite transaction as the requested write. Commands are sent only to the runtime ID committed on the Command record.
+Every Adapter-originated Registration, heartbeat, release, Entity availability report, Entity enablement request, and Observation uses a subject containing its Adapter and runtime IDs. Core parses the subject and verifies the active runtime in the same SQLite transaction as the requested write. Commands are sent on the subject for the runtime ID committed on the Command record.
 
 A `runtime_fenced` request/reply rejection is terminal. The SDK stops Command serving and further publications, clears its availability cache, closes the session, and exposes `ErrRuntimeFenced`. It does not try to reclaim from the same process.
 
@@ -150,14 +150,14 @@ Entity report batches:
 
 ### Commands
 
-Command creation remains the serialization point for enablement and now also captures runtime routing and Adapter health.
+Command creation remains the serialization point for enablement and now also captures the selected runtime and Adapter health.
 
 Within one SQLite transaction, `CreateCommand`:
 
 1. reloads the Entity and current owner;
 2. returns terminal `entity_disabled` when disabled, preserving its existing precedence;
 3. loads current Adapter health and active runtime;
-4. returns terminal `adapter_unhealthy` when health is unhealthy or no active runtime route exists;
+4. returns terminal `adapter_unhealthy` when health is unhealthy or no active runtime exists;
 5. permits unknown health only when an active runtime exists;
 6. ignores Entity availability for dispatch policy;
 7. stores the chosen runtime ID on a requested Command; and
@@ -167,7 +167,7 @@ Commit order defines races:
 
 - Command-first captures its runtime and proceeds through its normal lifecycle even if health changes immediately afterward.
 - Health-first creates terminal `adapter_unhealthy` and sends nothing.
-- A takeover never retargets an already requested Command. Its old runtime route returns no responder and the Command completes `adapter_unhealthy`.
+- A takeover never retargets an already requested Command. The request keeps its committed runtime subject, a newer runtime does not receive it, and the Command completes `adapter_unhealthy` if no responder remains on the old subject.
 
 Rename durable `adapter_unavailable` status, failure code, errors, and HTTP detail to `adapter_unhealthy`. Migration rewrites existing rows.
 
@@ -177,11 +177,11 @@ The SDK Responder adds `RejectUnavailable(message string)`. Generic `Reject` rem
 
 ### Observation, Registration, and enablement fencing
 
-Registration and Entity enablement carry runtime ID and validate it in their existing serializable transactions. Schema-valid requests from a stale runtime receive typed `runtime_fenced` rejection so the SDK closes.
+Registration and Entity enablement subjects carry runtime ID and validate it in their existing serializable transactions. Schema-valid requests on a stale runtime subject receive typed `runtime_fenced` rejection so the SDK closes.
 
-Observation subjects and payloads carry runtime ID. Projection checks the active runtime in the same transaction as deduplication, ownership validation, receipt insertion, State projection, and Command satisfaction.
+Observation subjects carry runtime ID while Observation payloads remain unchanged. Projection checks the subject runtime in the same transaction as deduplication, ownership validation, receipt insertion, State projection, and Command satisfaction.
 
-A first-seen Observation from a stale runtime records a rejected receipt with `stale_runtime`, commits, and is acknowledged. Existing exact-ID redelivery remains a no-op. Retained old-subject Observations from before the atomic cutover are not projected.
+A first-seen Observation from a stale runtime records a rejected receipt with `stale_runtime`, commits, and is acknowledged. Existing exact-ID redelivery remains a no-op. Retained stable-subject Observations from before the atomic cutover do not match the new consumer and are never projected.
 
 ### Adapter archival
 
@@ -402,7 +402,7 @@ hearth.v1.adapter.<adapter>.runtime.<runtime_id>.command.<entity_id>.<operation>
 hearth.v1.adapter.<adapter>.runtime.<runtime_id>.enablement.<entity_id>
 ```
 
-Add route types, constructors, wildcard constructors, and strict parsers in `internal/contracts/v1/natswire/subjects.go`. Runtime IDs match `run_` plus canonical UUIDv7. Old stable-slug-only subjects are not served after cutover.
+Add route types, constructors, wildcard constructors, and strict parsers in `internal/contracts/v1/natswire/subjects.go`. Runtime IDs match `run_` plus canonical UUIDv7. Runtime-scoped subjects are the sole wire source of runtime identity, and old stable-slug-only subjects are not served after cutover.
 
 ### IDs and schemas
 
@@ -461,7 +461,6 @@ Request:
 
 ```json
 {
-  "runtime_id": "run_01890f47-7a6b-7c4d-8e9f-0123456789ab",
   "external_system": {
     "status": "unhealthy",
     "source_observed_at": "2026-08-29T15:00:00Z",
@@ -480,7 +479,6 @@ Accepted response:
 ```json
 {
   "status": "accepted",
-  "runtime_id": "run_01890f47-7a6b-7c4d-8e9f-0123456789ab",
   "lease_expires_at": "2026-08-29T15:00:15Z",
   "refresh_entity_availability": true
 }
@@ -490,7 +488,7 @@ Rejected code: `runtime_fenced`.
 
 ### Release data
 
-Request data contains only `runtime_id`. Accepted response repeats it with `status: accepted`. A same-runtime retry after a committed release is accepted idempotently while no newer runtime has claimed the Adapter. Once a newer claim exists, every request from the earlier runtime receives `runtime_fenced`.
+Request data is an empty object. Accepted response contains only `status: accepted`. A same-runtime retry on its release subject after a committed release is accepted idempotently while no newer runtime has claimed the Adapter. Once a newer claim exists, every request on the earlier runtime subject receives `runtime_fenced`.
 
 ### Entity availability data
 
@@ -498,7 +496,6 @@ Request:
 
 ```json
 {
-  "runtime_id": "run_01890f47-7a6b-7c4d-8e9f-0123456789ab",
   "entities": [
     {
       "entity_id": "ent_01890f47-7a6b-7c4d-8e9f-0123456789ab",
@@ -520,7 +517,6 @@ Accepted response:
 ```json
 {
   "status": "accepted",
-  "runtime_id": "run_01890f47-7a6b-7c4d-8e9f-0123456789ab",
   "reported_at": "2026-08-29T15:00:01Z",
   "count": 1
 }
@@ -535,17 +531,17 @@ Rejected codes:
 
 Infrastructure failure publishes no schema-level reply. The SDK retries transient no-response failures under caller context.
 
-### Existing payload changes
+### Existing payload compatibility
 
-Add required `runtime_id` to Registration, Observation, Command request, Command response, and Entity enablement request/response data. Route and payload runtime IDs must match.
+Registration, Observation, Command request/response, and Entity enablement request/response data do not add `runtime_id`. Their NATS subjects provide runtime identity. Registration and enablement add `runtime_fenced` to their typed rejection codes. Command rejection code becomes one of `upstream_rejected` or `entity_unavailable`.
 
-Registration and enablement add `runtime_fenced` to their typed rejection codes. Command rejection code becomes one of `upstream_rejected` or `entity_unavailable`.
+A JSON payload captured without its NATS subject does not identify the runtime. Transport code must preserve or record the subject when retaining or diagnosing a message.
 
 ### Observation stream cutover
 
-Keep stream `HEARTH_OBSERVATIONS_V1`, update its subject set from the old Observation wildcard to the runtime-scoped wildcard, and create a new durable consumer name `hearthd-state-runtime-v1` with the runtime-scoped filter. Remove the old durable consumer after Core has stopped for the atomic deployment. Existing old-subject messages remain retained by stream age/size policy but do not match the new consumer and are never projected.
+Keep stream `HEARTH_OBSERVATIONS_V1`, update its subject set from the stable Observation wildcard to the runtime-scoped wildcard, and create a new durable consumer named `hearthd-state-runtime-v1` with the runtime-scoped filter. Remove the old durable consumer after Core has stopped for the atomic deployment. Existing stable-subject messages remain retained by stream age and size policy but do not match the new consumer and are never projected.
 
-`ProvisionObservationResources` may update only the exact known pre-cutover stream configuration; any unrelated drift remains a readiness failure. Rollback must restore the old stream subject and consumer before starting old binaries.
+`ProvisionObservationResources` may update only the exact known pre-cutover stream configuration; unrelated drift remains a readiness failure. Rollback must restore the old stream subject and consumer before starting old binaries. Core, contracts, the SDK, and first-party Adapters deploy the incompatible subject change together; mixed versions remain unsupported.
 
 ## Go implementation contract
 
@@ -577,7 +573,6 @@ Owner: `internal/modules/devices/model.go` and new `health.go`.
  type CommandRequest struct {
      ID            CommandID
      CorrelationID CorrelationID
-+    RuntimeID     RuntimeID
      EntityID      EntityID
      OperationName OperationName
      Parameters    CommandParameters
@@ -740,17 +735,16 @@ Remove `ErrAdapterUnavailable` after migrating callers and tests.
 
 Owner: `internal/modules/devices/repository.go`.
 
-```diff
- type RegistrationRepository interface {
--    RegisterBinding(context.Context, RegisterBindingParams) (Binding, error)
-+    RegisterBinding(context.Context, RuntimeScopedRegistrationParams) (Binding, error)
- }
+`RegistrationRepository` keeps its existing interface. Registration adds the runtime ID parsed from the subject to `RegisterBindingParams`. Command sending adds the committed runtime ID as a routing argument:
 
+```diff
  type CommandSender interface {
 -    Send(context.Context, string, CommandRequest) (CommandAcceptance, error)
 +    Send(context.Context, string, RuntimeID, CommandRequest) (CommandAcceptance, error)
  }
 ```
+
+The sender uses the runtime ID only to construct the Command subject.
 
 Add a focused repository capability and embed it in `Repository`:
 
@@ -772,6 +766,12 @@ type HealthRepository interface {
 Existing repository writes that originate from an Adapter add runtime ID and validate it transactionally:
 
 ```diff
+ type RegisterBindingParams struct {
+     AdapterID string
++    RuntimeID RuntimeID
+     // existing fields
+ }
+
  type SetEntityEnabledParams struct {
      EntityID      EntityID
      Enabled       bool
@@ -845,7 +845,7 @@ func (session *Session) SetHealth(context.Context, HealthReport) error
 func (session *Session) ReportEntityAvailability(context.Context, []EntityAvailabilityReport) error
 ```
 
-`Connect` requires Core claim success before returning and starts one serialized heartbeat loop. `Close` attempts release with an internal five-second timeout before draining NATS; failure falls back to lease expiry. `Register`, `SetEntityEnabled`, `PublishObservation`, and `ServeCommands` use the hidden runtime ID.
+`Connect` requires Core claim success before returning and starts one serialized heartbeat loop. `Close` attempts release with an internal five-second timeout before draining NATS; failure falls back to lease expiry. `Register`, `SetEntityEnabled`, and `PublishObservation` use the hidden runtime ID to construct subjects. `ServeCommands` subscribes only to the Session's runtime-scoped Command wildcard.
 
 The Session caches latest acknowledged availability by Entity ID, chunks automatic replay to 256, and owns no durable state. It retries availability request/reply through transient disconnect or no-response under caller context. First-party applications retain their retry loops for transient Registration failures and stop on schema-defined permanent rejection. A fenced response closes the Session and returns `ErrRuntimeFenced` from all pending and future methods. The session state machine serializes heartbeat, cache, close, and fencing changes; it never invokes callbacks while holding its locks.
 
@@ -870,9 +870,9 @@ type AvailabilityReporter interface {
 }
 ```
 
-`SessionServer` owns claim, heartbeat, and release subscriptions. `EntityAvailabilityServer` owns batch request/reply. Existing Registration and enablement servers receive runtime-scoped routes. Observation Consumer parses runtime scope. Command Sender takes the committed runtime ID.
+`SessionServer` owns claim, heartbeat, and release subscriptions. `EntityAvailabilityServer` owns batch request/reply. Existing Registration and enablement servers receive runtime-scoped routes. Observation Consumer parses runtime scope. Command Sender takes the committed runtime ID and constructs the runtime-scoped subject.
 
-Transport owns DTO mapping, route/payload equality, schema, trace, correlation, causation, rejection mapping, safe logging, and drain. It does not decide health or availability.
+Transport owns DTO mapping, subject parsing and identity, schema, trace, correlation, causation, rejection mapping, safe logging, and drain. It does not decide health or availability.
 
 ### Core health supervisor
 
@@ -1068,8 +1068,8 @@ Tests stay beside their owners. Generated sqlc output remains under `internal/pl
 
 - [ ] Claim is idempotent by envelope ID, permits one active runtime, rejects archived Adapter IDs, and permits takeover only after release or expiry. The response returns the five-second heartbeat interval and fifteen-second lease.
 - [ ] Only an accepted heartbeat renews the lease.
-- [ ] Every scoped route checks matching route and payload runtime IDs. Every Adapter-originated write also checks the active runtime in its committing transaction.
-- [ ] After takeover, the old runtime cannot register, change enablement, project an Observation, report availability, or receive a new Command.
+- [ ] Every post-claim subject contains an Adapter and runtime ID, and strict parsing rejects malformed combinations. Every Adapter-originated write also checks that subject runtime is active in its committing transaction.
+- [ ] After takeover, the old runtime cannot register, change enablement, project an Observation, report availability, or receive a newly created Command.
 - [ ] `runtime_fenced` terminates the SDK session without reclaim. Runtime IDs remain fencing data, not authorization credentials.
 
 ### Health and readiness
@@ -1089,11 +1089,11 @@ Tests stay beside their owners. Generated sqlc output remains under `internal/pl
 
 ### Commands and other Adapter traffic
 
-- [ ] Disabled wins classification. An unhealthy or unrouted owner creates terminal `adapter_unhealthy` without dispatch; unknown health with a route and Entity unavailability under a healthy owner both dispatch.
+- [ ] Disabled wins classification. An unhealthy owner or one without an active runtime creates terminal `adapter_unhealthy` without dispatch; unknown health with an active runtime and Entity unavailability under a healthy owner both dispatch.
 - [ ] `RejectUnavailable` creates terminal `entity_unavailable`, returns HTTP 503, and does not change availability. Generic rejection remains `upstream_rejected` and HTTP 502.
 - [ ] SQLite commit order decides Command and health races. Takeover does not retarget requested Commands, and migration preserves `adapter_unavailable` history as `adapter_unhealthy`.
 - [ ] Runtime-scoped Observation preserves acknowledgement, deduplication, tracing, IDs, receipt retention, and State ordering. A stale runtime commits one acknowledged `stale_runtime` receipt without changing State or Commands.
-- [ ] Registration and enablement keep their current behavior after runtime validation. The new Observation consumer processes only runtime-scoped subjects.
+- [ ] Registration and enablement keep their current behavior after subject runtime validation. The new Observation consumer processes only runtime-scoped subjects, and retained stable-subject messages are never projected.
 
 ### HTTP, history, persistence, and compatibility
 
@@ -1102,18 +1102,18 @@ Tests stay beside their owners. Generated sqlc output remains under `internal/pl
 - [ ] Effective Entity history uses ownership intervals and global receive order, omits source-only and detail-only changes, and remains retained indefinitely.
 - [ ] Migration 00004 passes empty and populated up/down tests, preserves State, receipt, Command, ID, Binding, and history relationships, applies the specified outcome mappings, and passes foreign-key checks.
 - [ ] Indexes and transactions enforce one open runtime per Adapter and one open ownership interval per Entity. sqlc output is reproducible and stays behind the repository interface.
-- [ ] Core, contracts, SDK, first-party Adapters, and NATS resources deploy as one incompatible v1 cutover while existing canonical resource IDs and histories remain compatible.
+- [ ] Core, contracts, the SDK, first-party Adapters, and NATS resources deploy as one incompatible v1 subject cutover while canonical resource IDs and histories remain compatible.
 
 ## Test strategy
 
 | Layer | Required coverage |
 |---|---|
-| Contract | New IDs, strict schemas, reason branches, 256 bound, runtime repetition, causation, and old-route rejection. |
-| Subject routing | Every constructor/parser/wildcard, invalid runtime IDs, route/payload mismatch, and runtime isolation. |
+| Contract | New IDs, strict schemas, reason branches, 256 bound, causation, typed rejections, and unchanged existing payload shapes. |
+| Subject routing | Every constructor, parser, and wildcard; invalid runtime IDs; old-route rejection; and runtime isolation. |
 | Service | Health validation, reason namespace, evaluation override, report epochs, archival rules, owned copies, and page validation. |
 | SQLite | Claim retry, duplicate claim race, lease expiry, heartbeat transitions, batch atomicity, effective reads/history, ownership intervals, and Command/health commit races. |
-| NATS/SDK | Claim retry after lost response, heartbeat serialization, cache replay, fenced shutdown, request/reply identity, availability retry, and scoped Command serving. |
-| JetStream | In-place stream update, new consumer, retained old-subject isolation, stale-runtime receipt, redelivery, and readiness validation. |
+| NATS/SDK | Claim retry after lost response, heartbeat serialization, cache replay, fenced shutdown, request/reply route identity, availability retry, and runtime-scoped Command serving. |
+| JetStream | In-place stream update, new consumer, retained stable-subject isolation, stale-runtime receipts, redelivery, rollback, and readiness validation. |
 | HTTP | Bodies, null archived health, nested availability, archive conflict, pagination scopes, history causes, errors, and runtime OpenAPI. |
 | Adapter | Home Assistant connection/outage/resource states and simulator failure matrix. |
 | Process | Core restart, readiness pause/recovery, takeover, active Command behavior, and clean shutdown/release. |
@@ -1128,7 +1128,7 @@ Use fake clocks and direct expiry calls for domain/repository tests. Do not make
 
 ## Delivery and verification
 
-Implement D1 and D2 first, then prove that a stale runtime cannot execute a Command after takeover. The hardest implementation areas are effective Entity history SQL and Core-recovery concurrency.
+Implement D1 and D2 first, then prove that a stale runtime cannot receive a newly created Command after takeover. The hardest implementation areas are effective Entity history SQL and Core-recovery concurrency.
 
 The final review covers generated sqlc output, embedded schemas, populated migration up/down behavior, ownership interval boundaries, NATS cutover and rollback, runtime OpenAPI, first-party Adapter fixtures, and race-enabled SDK lifecycle tests. Run:
 
