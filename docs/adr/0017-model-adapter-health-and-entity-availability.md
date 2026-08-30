@@ -1,0 +1,3 @@
+# Model Adapter health and Entity availability without Device health
+
+Hearth will model one tri-state Adapter health assessment from active-runtime and configured-external-system evidence, and tri-state Entity availability from explicit reports by the healthy owning Adapter. An unhealthy Adapter makes its Entities unavailable, while a healthy Adapter leaves each Entity unknown until it reports; Devices have no health because they only group independently addressable Entities. Entity availability remains separate from enablement, State, and State freshness, and is advisory for Commands when the owning Adapter is healthy so stale reports cannot prevent a Command from recovering or freshly testing an Entity.
