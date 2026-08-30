@@ -107,6 +107,7 @@ type ClaimRuntimeWrite struct {
 	SoftwareVersion string
 	ClaimedAt       time.Time
 	LeaseExpiresAt  time.Time
+	LeaseGraceUntil time.Time
 }
 
 type HeartbeatWrite struct {
@@ -117,6 +118,7 @@ type HeartbeatWrite struct {
 	Reason           *HealthReason
 	ReceivedAt       time.Time
 	LeaseExpiresAt   time.Time
+	LeaseGraceUntil  time.Time
 }
 
 type HeartbeatResult struct {
@@ -125,9 +127,10 @@ type HeartbeatResult struct {
 }
 
 type ReleaseRuntimeWrite struct {
-	AdapterID  string
-	RuntimeID  RuntimeID
-	ReleasedAt time.Time
+	AdapterID       string
+	RuntimeID       RuntimeID
+	ReleasedAt      time.Time
+	LeaseGraceUntil time.Time
 }
 
 type ExpireLeasesWrite struct {

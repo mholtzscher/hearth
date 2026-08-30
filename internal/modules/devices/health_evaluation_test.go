@@ -3,6 +3,7 @@ package devices //nolint:testpackage // Tests exercise package-private health ev
 import (
 	"context"
 	"errors"
+	"path/filepath"
 	"testing"
 	"time"
 )
@@ -171,6 +172,171 @@ func TestServiceRecoveryGraceDefersLeaseExpiry(t *testing.T) {
 	if result.RefreshEntityAvailability {
 		t.Fatal("heartbeat after completed recovery requested a recovery refresh")
 	}
+}
+
+func TestServiceSQLiteRecoveryGraceRevivesExpiredRuntimeAndPreventsTakeover(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	database := openMigratedDatabase(t, filepath.Join(t.TempDir(), "hearth.db"))
+	catalog := firstLightCatalog(t)
+	claimedAt := time.Date(2026, 8, 29, 11, 30, 0, 0, time.UTC)
+	now := claimedAt
+	runtimeIDs := []RuntimeID{
+		testRuntimeID,
+		testSecondRuntime,
+		testThirdRuntime,
+		"run_01890f47-7a6b-7c4d-8e9f-0123456789ae",
+	}
+	nextRuntimeID := 0
+	service := NewService(NewSQLiteRepository(database, catalog), nil, catalog, Dependencies{
+		Now: func() time.Time { return now },
+		NewRuntimeID: func() (RuntimeID, error) {
+			runtimeID := runtimeIDs[nextRuntimeID]
+			nextRuntimeID++
+			return runtimeID, nil
+		},
+	})
+	service.ResumeHealthEvaluation(claimedAt)
+	claim, err := service.ClaimAdapterRuntime(ctx, ClaimAdapterRuntimeParams{
+		ClaimID: testClaimID, AdapterID: "simulator",
+		SoftwareName: "hearth-simulator", SoftwareVersion: "0.1.0",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	releaseClaim, err := service.ClaimAdapterRuntime(ctx, ClaimAdapterRuntimeParams{
+		ClaimID: "clm_01890f47-7a6b-7c4d-8e9f-0123456789ae", AdapterID: "release-simulator",
+		SoftwareName: "hearth-simulator", SoftwareVersion: "0.1.0",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	now = claimedAt.Add(time.Second)
+	initialHeartbeat, err := service.RecordAdapterHeartbeat(ctx, AdapterHeartbeat{
+		AdapterID: "simulator", RuntimeID: claim.RuntimeID, ExternalStatus: AdapterHealthHealthy,
+		SourceObservedAt: now,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	service.PauseHealthEvaluation()
+	resumedAt := initialHeartbeat.LeaseExpiresAt.Add(time.Minute)
+	now = resumedAt
+	service.ResumeHealthEvaluation(resumedAt)
+	now = resumedAt.Add(time.Second)
+	_, err = service.ClaimAdapterRuntime(ctx, ClaimAdapterRuntimeParams{
+		ClaimID: testSecondClaimID, AdapterID: "simulator",
+		SoftwareName: "hearth-simulator", SoftwareVersion: "0.2.0",
+	})
+	var activeErr *AdapterActiveError
+	if !errors.As(err, &activeErr) || !activeErr.RetryAfter.Equal(resumedAt.Add(adapterLeaseDuration)) {
+		t.Fatalf("competing claim during recovery grace error = %v", err)
+	}
+
+	now = resumedAt.Add(2 * time.Second)
+	revived, err := service.RecordAdapterHeartbeat(ctx, AdapterHeartbeat{
+		AdapterID: "simulator", RuntimeID: claim.RuntimeID, ExternalStatus: AdapterHealthHealthy,
+		SourceObservedAt: now,
+	})
+	if err != nil {
+		t.Fatalf("recovery heartbeat: %v", err)
+	}
+	if !revived.LeaseExpiresAt.Equal(now.Add(adapterLeaseDuration)) || !revived.RefreshEntityAvailability {
+		t.Fatalf("recovery heartbeat result = %#v", revived)
+	}
+
+	now = resumedAt.Add(3 * time.Second)
+	_, err = service.ClaimAdapterRuntime(ctx, ClaimAdapterRuntimeParams{
+		ClaimID: testThirdClaimID, AdapterID: "simulator",
+		SoftwareName: "hearth-simulator", SoftwareVersion: "0.3.0",
+	})
+	activeErr = nil
+	if !errors.As(err, &activeErr) || !activeErr.RetryAfter.Equal(revived.LeaseExpiresAt) {
+		t.Fatalf("competing claim after recovery heartbeat error = %v", err)
+	}
+
+	now = resumedAt.Add(4 * time.Second)
+	if releaseErr := service.ReleaseAdapterRuntime(
+		ctx, "release-simulator", releaseClaim.RuntimeID,
+	); releaseErr != nil {
+		t.Fatalf("release stale runtime during recovery grace: %v", releaseErr)
+	}
+	releasedAdapter, err := service.GetAdapter(ctx, "release-simulator")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if releasedAdapter.Health == nil || releasedAdapter.Health.Reason == nil ||
+		releasedAdapter.Health.Reason.Code != "hearth.stopped" || releasedAdapter.Health.Runtime == nil ||
+		releasedAdapter.Health.Runtime.Status != runtimeStatusOffline {
+		t.Fatalf("stale Adapter after recovery release = %#v", releasedAdapter)
+	}
+	if releaseErr := service.ReleaseAdapterRuntime(ctx, "simulator", claim.RuntimeID); releaseErr != nil {
+		t.Fatalf("release revived runtime: %v", releaseErr)
+	}
+	adapter, err := service.GetAdapter(ctx, "simulator")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if adapter.Health == nil || adapter.Health.Status != AdapterHealthUnhealthy ||
+		adapter.Health.Reason == nil || adapter.Health.Reason.Code != "hearth.stopped" ||
+		adapter.Health.Runtime == nil || adapter.Health.Runtime.Status != runtimeStatusOffline {
+		t.Fatalf("Adapter after recovery release = %#v", adapter)
+	}
+	assertTableCount(t, database, "adapter_runtimes", 2)
+}
+
+func TestServiceSQLiteRecoveryGraceExpiresRuntimeAtBoundary(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	database := openMigratedDatabase(t, filepath.Join(t.TempDir(), "hearth.db"))
+	catalog := firstLightCatalog(t)
+	claimedAt := time.Date(2026, 8, 29, 11, 45, 0, 0, time.UTC)
+	now := claimedAt
+	service := NewService(NewSQLiteRepository(database, catalog), nil, catalog, Dependencies{
+		Now:          func() time.Time { return now },
+		NewRuntimeID: func() (RuntimeID, error) { return testRuntimeID, nil },
+	})
+	service.ResumeHealthEvaluation(claimedAt)
+	if _, err := service.ClaimAdapterRuntime(ctx, ClaimAdapterRuntimeParams{
+		ClaimID: testClaimID, AdapterID: "simulator",
+		SoftwareName: "hearth-simulator", SoftwareVersion: "0.1.0",
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	service.PauseHealthEvaluation()
+	resumedAt := claimedAt.Add(time.Minute)
+	now = resumedAt
+	service.ResumeHealthEvaluation(resumedAt)
+	boundary := resumedAt.Add(adapterLeaseDuration)
+	if err := service.ExpireAdapterLeases(ctx, boundary.Add(-time.Nanosecond)); err != nil {
+		t.Fatal(err)
+	}
+	now = boundary.Add(-time.Nanosecond)
+	adapter, err := service.GetAdapter(ctx, "simulator")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if adapter.Health == nil || adapter.Health.Runtime == nil ||
+		adapter.Health.Runtime.Status != runtimeStatusOnline {
+		t.Fatalf("Adapter before recovery boundary = %#v", adapter)
+	}
+
+	if expiryErr := service.ExpireAdapterLeases(ctx, boundary); expiryErr != nil {
+		t.Fatal(expiryErr)
+	}
+	now = boundary
+	adapter, err = service.GetAdapter(ctx, "simulator")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if adapter.Health == nil || adapter.Health.Status != AdapterHealthUnhealthy ||
+		adapter.Health.Reason == nil || adapter.Health.Reason.Code != "hearth.heartbeat_expired" ||
+		adapter.Health.Runtime == nil || adapter.Health.Runtime.Status != runtimeStatusOffline {
+		t.Fatalf("Adapter at recovery boundary = %#v", adapter)
+	}
+	assertTableCount(t, database, "health_transitions", 2)
 }
 
 func TestServiceValidatesClaimsAndAdapterReasonNamespace(t *testing.T) {

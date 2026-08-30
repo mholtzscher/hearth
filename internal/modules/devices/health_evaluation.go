@@ -81,6 +81,7 @@ func (service *Service) ClaimAdapterRuntime(
 		ClaimID: params.ClaimID, RuntimeID: runtimeID, AdapterID: params.AdapterID,
 		SoftwareName: params.SoftwareName, SoftwareVersion: params.SoftwareVersion,
 		ClaimedAt: claimedAt, LeaseExpiresAt: claimedAt.Add(adapterLeaseDuration),
+		LeaseGraceUntil: service.recoveryGraceUntilLocked(),
 	})
 }
 
@@ -114,7 +115,8 @@ func (service *Service) RecordAdapterHeartbeat(
 			AdapterID: heartbeat.AdapterID, RuntimeID: heartbeat.RuntimeID,
 			ExternalStatus: heartbeat.ExternalStatus, SourceObservedAt: heartbeat.SourceObservedAt.UTC(),
 			Reason: copyHealthReason(heartbeat.Reason), ReceivedAt: receivedAt,
-			LeaseExpiresAt: receivedAt.Add(adapterLeaseDuration),
+			LeaseExpiresAt:  receivedAt.Add(adapterLeaseDuration),
+			LeaseGraceUntil: service.recoveryGraceUntilLocked(),
 		})
 	}()
 	if err != nil {
@@ -143,6 +145,7 @@ func (service *Service) ReleaseAdapterRuntime(
 	}
 	return service.repository.ReleaseAdapterRuntime(ctx, ReleaseRuntimeWrite{
 		AdapterID: adapterID, RuntimeID: runtimeID, ReleasedAt: service.dependencies.Now().UTC(),
+		LeaseGraceUntil: service.recoveryGraceUntilLocked(),
 	})
 }
 
@@ -182,6 +185,14 @@ func (service *Service) beginHealthEvaluation() (func(), error) {
 		return nil, ErrHealthEvaluationPaused
 	}
 	return service.healthEvaluation.mutex.RUnlock, nil
+}
+
+// recoveryGraceUntilLocked returns the active recovery boundary while beginHealthEvaluation holds the read lock.
+func (service *Service) recoveryGraceUntilLocked() time.Time {
+	if !service.healthEvaluation.recovering {
+		return time.Time{}
+	}
+	return service.healthEvaluation.recoveryUntil
 }
 
 func (service *Service) heartbeatRecoveryState(runtimeID RuntimeID) (uint64, bool) {

@@ -156,9 +156,9 @@ func expireRuntimeBeforeClaim(
 	if err != nil {
 		return healthsqlc.AdapterInstance{}, fmt.Errorf("get active Adapter runtime: %w", err)
 	}
-	leaseExpiresAt, err := parseTime(active.LeaseExpiresAt)
+	leaseExpiresAt, err := effectiveLeaseExpiresAt(active, write.LeaseGraceUntil)
 	if err != nil {
-		return healthsqlc.AdapterInstance{}, fmt.Errorf("parse active Adapter lease expiry: %w", err)
+		return healthsqlc.AdapterInstance{}, err
 	}
 	if leaseExpiresAt.After(write.ClaimedAt) {
 		return healthsqlc.AdapterInstance{}, &AdapterActiveError{RetryAfter: leaseExpiresAt}
@@ -197,7 +197,9 @@ func (repository *SQLiteRepository) RecordAdapterHeartbeat(
 	if err != nil {
 		return HeartbeatResult{}, fmt.Errorf("get Adapter runtime for heartbeat: %w", err)
 	}
-	overdue, err := expireRuntimeIfOverdue(ctx, queries, instance, runtime, write.ReceivedAt)
+	overdue, err := expireRuntimeIfOverdue(
+		ctx, queries, instance, runtime, write.ReceivedAt, write.LeaseGraceUntil,
+	)
 	if err != nil {
 		return HeartbeatResult{}, err
 	}
@@ -317,7 +319,9 @@ func (repository *SQLiteRepository) ReleaseAdapterRuntime(
 	if err != nil {
 		return err
 	}
-	overdue, err := expireRuntimeIfOverdue(ctx, queries, instance, runtime, write.ReleasedAt)
+	overdue, err := expireRuntimeIfOverdue(
+		ctx, queries, instance, runtime, write.ReleasedAt, write.LeaseGraceUntil,
+	)
 	if err != nil {
 		return err
 	}
@@ -385,10 +389,11 @@ func expireRuntimeIfOverdue(
 	instance healthsqlc.AdapterInstance,
 	runtime healthsqlc.AdapterRuntime,
 	receivedAt time.Time,
+	leaseGraceUntil time.Time,
 ) (bool, error) {
-	leaseExpiresAt, err := parseTime(runtime.LeaseExpiresAt)
+	leaseExpiresAt, err := effectiveLeaseExpiresAt(runtime, leaseGraceUntil)
 	if err != nil {
-		return false, fmt.Errorf("parse Adapter runtime lease expiry: %w", err)
+		return false, err
 	}
 	if leaseExpiresAt.After(receivedAt) {
 		return false, nil
@@ -397,6 +402,17 @@ func expireRuntimeIfOverdue(
 		return false, expireErr
 	}
 	return true, nil
+}
+
+func effectiveLeaseExpiresAt(runtime healthsqlc.AdapterRuntime, leaseGraceUntil time.Time) (time.Time, error) {
+	leaseExpiresAt, err := parseTime(runtime.LeaseExpiresAt)
+	if err != nil {
+		return time.Time{}, fmt.Errorf("parse Adapter runtime lease expiry: %w", err)
+	}
+	if leaseGraceUntil.After(leaseExpiresAt) {
+		return leaseGraceUntil, nil
+	}
+	return leaseExpiresAt, nil
 }
 
 func commitExpiredRuntime(tx *sql.Tx, operation string) error {
