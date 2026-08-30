@@ -27,10 +27,45 @@ type AdapterEntityMapping struct {
 	UpdatedAt        string
 }
 
+type AdapterInstance struct {
+	AdapterID                      string
+	ArchivedAt                     sql.NullString
+	CreatedAt                      string
+	UpdatedAt                      string
+	ActiveRuntimeID                sql.NullString
+	HealthRuntimeID                sql.NullString
+	HealthStatus                   sql.NullString
+	HealthReasonCode               sql.NullString
+	HealthReasonDetail             sql.NullString
+	HealthSince                    sql.NullString
+	HealthEvidenceAt               sql.NullString
+	ExternalSystemStatus           sql.NullString
+	ExternalSystemReasonCode       sql.NullString
+	ExternalSystemReasonDetail     sql.NullString
+	ExternalSystemSourceObservedAt sql.NullString
+	ExternalSystemEvidenceAt       sql.NullString
+	AvailabilityEpoch              int64
+	LatestTransitionReceiveOrder   sql.NullInt64
+}
+
+type AdapterRuntime struct {
+	RuntimeID       string
+	ClaimID         string
+	AdapterID       string
+	SoftwareName    string
+	SoftwareVersion string
+	ClaimedAt       string
+	LastHeartbeatAt sql.NullString
+	LeaseExpiresAt  string
+	EndedAt         sql.NullString
+	EndReason       sql.NullString
+}
+
 type Command struct {
 	ID                   string
 	EntityID             string
 	AdapterID            string
+	RuntimeID            sql.NullString
 	Operation            string
 	ParametersJson       string
 	CorrelationID        string
@@ -62,6 +97,27 @@ type Entity struct {
 	Enabled     int64
 }
 
+type EntityAvailabilityCurrent struct {
+	EntityID                     string
+	AdapterID                    string
+	RuntimeID                    string
+	AvailabilityEpoch            int64
+	Status                       string
+	ReasonCode                   sql.NullString
+	ReasonDetail                 sql.NullString
+	SourceObservedAt             string
+	EvidenceAt                   string
+	CurrentSince                 string
+	LatestTransitionReceiveOrder sql.NullInt64
+}
+
+type EntityOwnershipInterval struct {
+	EntityID             string
+	AdapterID            string
+	StartingReceiveOrder int64
+	EndingReceiveOrder   sql.NullInt64
+}
+
 type EntityState struct {
 	EntityID          string
 	ObservationID     string
@@ -72,10 +128,25 @@ type EntityState struct {
 	ReceiveOrder      int64
 }
 
+type HealthTransition struct {
+	ReceiveOrder     int64
+	ResourceKind     string
+	AdapterID        string
+	EntityID         sql.NullString
+	RuntimeID        sql.NullString
+	Status           string
+	Source           string
+	ReasonCode       sql.NullString
+	ReasonDetail     sql.NullString
+	SourceObservedAt sql.NullString
+	ObservedAt       string
+}
+
 type ObservationReceipt struct {
 	ReceiveOrder      int64
 	ObservationID     string
 	AdapterID         string
+	RuntimeID         sql.NullString
 	EntityID          string
 	Disposition       string
 	RejectionCode     sql.NullString

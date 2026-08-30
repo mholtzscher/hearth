@@ -135,6 +135,10 @@ func (service *Service) ListEntityCommands(
 func copyCommandRecord(command CommandRecord) CommandRecord {
 	cloned := command
 	cloned.Parameters = append(CommandParameters(nil), command.Parameters...)
+	if command.RuntimeID != nil {
+		value := *command.RuntimeID
+		cloned.RuntimeID = &value
+	}
 	if command.AcceptedAt != nil {
 		value := *command.AcceptedAt
 		cloned.AcceptedAt = &value

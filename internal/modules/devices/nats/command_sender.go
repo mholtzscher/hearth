@@ -53,8 +53,8 @@ func (sender *CommandSender) Send(
 	if err != nil {
 		if commandUnavailable(err) {
 			return devices.CommandAcceptance{}, fmt.Errorf(
-				"%w: command adapter unavailable: %w",
-				devices.ErrAdapterUnavailable,
+				"%w: command adapter unhealthy: %w",
+				devices.ErrAdapterUnhealthy,
 				err,
 			)
 		}

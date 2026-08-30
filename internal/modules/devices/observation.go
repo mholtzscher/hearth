@@ -104,6 +104,11 @@ func copyEntityWithState(view EntityWithState) EntityWithState {
 		state := copyState(*view.State)
 		cloned.State = &state
 	}
+	if view.Availability.SourceObservedAt != nil {
+		sourceObservedAt := *view.Availability.SourceObservedAt
+		cloned.Availability.SourceObservedAt = &sourceObservedAt
+	}
+	cloned.Availability.Reason = copyHealthReason(view.Availability.Reason)
 	return cloned
 }
 

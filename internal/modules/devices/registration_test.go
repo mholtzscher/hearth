@@ -82,6 +82,64 @@ func (*stubRegistrationRepository) InterruptActiveCommands(context.Context, time
 	panic("unexpected InterruptActiveCommands call")
 }
 
+func (*stubRegistrationRepository) ClaimAdapterRuntime(
+	context.Context,
+	ClaimRuntimeWrite,
+) (RuntimeClaim, error) {
+	panic("unexpected ClaimAdapterRuntime call")
+}
+
+func (*stubRegistrationRepository) RecordAdapterHeartbeat(
+	context.Context,
+	HeartbeatWrite,
+) (HeartbeatResult, error) {
+	panic("unexpected RecordAdapterHeartbeat call")
+}
+
+func (*stubRegistrationRepository) ReleaseAdapterRuntime(context.Context, ReleaseRuntimeWrite) error {
+	panic("unexpected ReleaseAdapterRuntime call")
+}
+
+func (*stubRegistrationRepository) ExpireAdapterLeases(context.Context, ExpireLeasesWrite) error {
+	panic("unexpected ExpireAdapterLeases call")
+}
+
+func (*stubRegistrationRepository) ReportEntityAvailability(
+	context.Context,
+	AvailabilityBatchWrite,
+) (time.Time, error) {
+	panic("unexpected ReportEntityAvailability call")
+}
+
+func (*stubRegistrationRepository) ListAdapters(
+	context.Context,
+	ListAdaptersParams,
+) (Page[AdapterInstance], error) {
+	panic("unexpected ListAdapters call")
+}
+
+func (*stubRegistrationRepository) GetAdapter(context.Context, string) (AdapterInstance, error) {
+	panic("unexpected GetAdapter call")
+}
+
+func (*stubRegistrationRepository) ArchiveAdapter(context.Context, ArchiveAdapterParams) error {
+	panic("unexpected ArchiveAdapter call")
+}
+
+func (*stubRegistrationRepository) ListAdapterHealthHistory(
+	context.Context,
+	ListAdapterHealthParams,
+) (Page[HealthTransition], error) {
+	panic("unexpected ListAdapterHealthHistory call")
+}
+
+func (*stubRegistrationRepository) ListEntityAvailabilityHistory(
+	context.Context,
+	ListEntityAvailabilityParams,
+) (Page[HealthTransition], error) {
+	panic("unexpected ListEntityAvailabilityHistory call")
+}
+
 func TestRegisterClassifiesOnlyDescriptorAndIdentityFailuresAsPermanent(t *testing.T) {
 	t.Parallel()
 	catalog := firstLightCatalog(t)

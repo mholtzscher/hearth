@@ -90,7 +90,7 @@ func TestCommandSenderClassifiesMissingAdapterAsUnavailable(t *testing.T) {
 		EntityID: devices.EntityID(testEntityID), OperationName: devices.OperationNameSet,
 		Parameters: devices.CommandParameters(`{"value":true}`), Deadline: time.Now().Add(time.Second),
 	})
-	if !errors.Is(err, devices.ErrAdapterUnavailable) {
+	if !errors.Is(err, devices.ErrAdapterUnhealthy) {
 		t.Fatalf("error = %v", err)
 	}
 }

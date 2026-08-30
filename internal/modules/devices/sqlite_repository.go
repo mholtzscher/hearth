@@ -385,8 +385,9 @@ func (repository *SQLiteRepository) CreateCommand(ctx context.Context, command C
 	queries := commandsqlc.New(tx)
 	if createErr := queries.CreateCommand(ctx, commandsqlc.CreateCommandParams{
 		ID: string(command.ID), EntityID: string(command.EntityID), AdapterID: command.AdapterID,
-		Operation: string(command.OperationName), ParametersJson: string(command.Parameters),
-		CorrelationID: string(command.CorrelationID), Status: string(command.Status),
+		RuntimeID: nullableRuntimeID(command.RuntimeID), Operation: string(command.OperationName),
+		ParametersJson: string(command.Parameters),
+		CorrelationID:  string(command.CorrelationID), Status: string(command.Status),
 		RequestedAt: formatSortableTime(command.RequestedAt), DeadlineAt: formatTime(command.DeadlineAt),
 		CompletedAt: nullableTime(command.CompletedAt), FailureCode: nullableCommandFailure(command.FailureCode),
 	}); createErr != nil {
@@ -505,6 +506,10 @@ func commandFromRow(row commandsqlc.Command) (CommandRecord, error) {
 		CorrelationID: CorrelationID(row.CorrelationID), Status: CommandStatus(row.Status),
 		RequestedAt: requestedAt, DeadlineAt: deadlineAt, AcceptedAt: acceptedAt, CompletedAt: completedAt,
 	}
+	if row.RuntimeID.Valid {
+		id := RuntimeID(row.RuntimeID.String)
+		command.RuntimeID = &id
+	}
 	if row.OutcomeObservationID.Valid {
 		id := ObservationID(row.OutcomeObservationID.String)
 		command.OutcomeObservationID = &id
@@ -518,10 +523,11 @@ func commandFromRow(row commandsqlc.Command) (CommandRecord, error) {
 
 func validCommandCompletion(completion CommandCompletion) bool {
 	expected := map[CommandStatus]CommandFailureCode{ //nolint:exhaustive // Only terminal failure statuses have failure codes.
-		CommandStatusRejected:           CommandFailureUpstreamRejected,
-		CommandStatusAdapterUnavailable: CommandFailureAdapterUnavailable,
-		CommandStatusOutcomeTimeout:     CommandFailureOutcomeTimeout,
-		CommandStatusInternalFailure:    CommandFailureInternalError,
+		CommandStatusRejected:          CommandFailureUpstreamRejected,
+		CommandStatusAdapterUnhealthy:  CommandFailureAdapterUnhealthy,
+		CommandStatusEntityUnavailable: CommandFailureEntityUnavailable,
+		CommandStatusOutcomeTimeout:    CommandFailureOutcomeTimeout,
+		CommandStatusInternalFailure:   CommandFailureInternalError,
 	}
 	return !completion.CompletedAt.IsZero() && expected[completion.Status] == completion.FailureCode &&
 		completion.FailureCode != ""
@@ -538,6 +544,13 @@ func boolToInt64(value bool) int64 {
 		return 1
 	}
 	return 0
+}
+
+func nullableRuntimeID(value *RuntimeID) sql.NullString {
+	if value == nil {
+		return sql.NullString{}
+	}
+	return sql.NullString{String: string(*value), Valid: true}
 }
 
 func nullableCommandFailure(value *CommandFailureCode) sql.NullString {

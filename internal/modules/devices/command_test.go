@@ -19,6 +19,8 @@ const (
 )
 
 type commandRepository struct {
+	*stubRegistrationRepository
+
 	mutex     sync.Mutex
 	view      EntityWithState
 	commands  map[CommandID]CommandRecord
@@ -27,6 +29,7 @@ type commandRepository struct {
 
 func newCommandRepository() *commandRepository {
 	return &commandRepository{
+		stubRegistrationRepository: &stubRegistrationRepository{},
 		view: EntityWithState{Entity: Entity{
 			ID: commandTestEntityID, DeviceID: commandTestDeviceID, AdapterID: "simulator", Name: "Power",
 			TypeID: EntityTypePowerV1, Support: EntitySupport(`{"state":{},"operations":{"set":{}}}`), Enabled: true,
@@ -232,7 +235,7 @@ func TestExecuteCommandReturnsSatisfiedWhenObservationWinsDispatchFailureRace(t 
 		acceptance CommandAcceptance
 		sendErr    error
 	}{
-		{"adapter unavailable", CommandAcceptance{}, ErrAdapterUnavailable},
+		{"adapter unhealthy", CommandAcceptance{}, ErrAdapterUnhealthy},
 		{"upstream rejected", CommandAcceptance{Accepted: false}, nil},
 		{"invalid response", CommandAcceptance{}, errors.New("invalid response")},
 	}
@@ -289,13 +292,13 @@ func TestExecuteCommandFailureMatrixIsDurablyClassified(t *testing.T) {
 		wantCode   CommandFailureCode
 	}{
 		{
-			"adapter unavailable",
+			"adapter unhealthy",
 			CommandAcceptance{},
-			ErrAdapterUnavailable,
+			ErrAdapterUnhealthy,
 			time.Second,
-			ErrAdapterUnavailable,
-			CommandStatusAdapterUnavailable,
-			CommandFailureAdapterUnavailable,
+			ErrAdapterUnhealthy,
+			CommandStatusAdapterUnhealthy,
+			CommandFailureAdapterUnhealthy,
 		},
 		{
 			"upstream rejected",
@@ -343,7 +346,7 @@ func TestExecuteCommandFailureMatrixIsDurablyClassified(t *testing.T) {
 				t.Fatalf("error = %v, want %v", err, test.wantErr)
 			}
 			if test.wantErr == nil &&
-				(err == nil || errors.Is(err, ErrAdapterUnavailable) || errors.Is(err, ErrUpstreamRejected) || errors.Is(err, ErrOutcomeTimeout)) {
+				(err == nil || errors.Is(err, ErrAdapterUnhealthy) || errors.Is(err, ErrUpstreamRejected) || errors.Is(err, ErrOutcomeTimeout)) {
 				t.Fatalf("error = %v, want internal failure", err)
 			}
 			var executionError *CommandExecutionError

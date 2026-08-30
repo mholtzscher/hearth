@@ -69,6 +69,7 @@ func (repository *SQLiteRepository) ProjectObservation(
 	receiveOrder, err := receiptQueries.InsertObservationReceipt(ctx, receiptsqlc.InsertObservationReceiptParams{
 		ObservationID:     string(params.Observation.ID),
 		AdapterID:         params.AdapterID,
+		RuntimeID:         sql.NullString{},
 		EntityID:          string(params.Observation.EntityID),
 		Disposition:       string(disposition),
 		RejectionCode:     nullableRejection(rejection),

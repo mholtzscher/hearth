@@ -53,8 +53,8 @@ func mapCommandError(err error) error {
 		return apiError(http.StatusBadRequest, "invalid command")
 	case errors.Is(err, devices.ErrEntityNotFound):
 		return apiError(http.StatusNotFound, "entity not found")
-	case errors.Is(err, devices.ErrAdapterUnavailable):
-		return apiError(http.StatusServiceUnavailable, "adapter unavailable")
+	case errors.Is(err, devices.ErrAdapterUnhealthy):
+		return apiError(http.StatusServiceUnavailable, "adapter unhealthy")
 	case errors.Is(err, devices.ErrUpstreamRejected):
 		return apiError(http.StatusBadGateway, "upstream rejected command")
 	case errors.Is(err, devices.ErrOutcomeTimeout):

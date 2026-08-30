@@ -38,16 +38,17 @@ func (q *Queries) CompleteCommand(ctx context.Context, arg CompleteCommandParams
 
 const createCommand = `-- name: CreateCommand :exec
 INSERT INTO commands (
-    id, entity_id, adapter_id, operation, parameters_json, correlation_id,
-    status, requested_at, deadline_at, accepted_at, completed_at,
-    outcome_observation_id, failure_code
-) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    id, entity_id, adapter_id, runtime_id, operation, parameters_json,
+    correlation_id, status, requested_at, deadline_at, accepted_at,
+    completed_at, outcome_observation_id, failure_code
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 `
 
 type CreateCommandParams struct {
 	ID                   string
 	EntityID             string
 	AdapterID            string
+	RuntimeID            sql.NullString
 	Operation            string
 	ParametersJson       string
 	CorrelationID        string
@@ -65,6 +66,7 @@ func (q *Queries) CreateCommand(ctx context.Context, arg CreateCommandParams) er
 		arg.ID,
 		arg.EntityID,
 		arg.AdapterID,
+		arg.RuntimeID,
 		arg.Operation,
 		arg.ParametersJson,
 		arg.CorrelationID,
@@ -80,9 +82,9 @@ func (q *Queries) CreateCommand(ctx context.Context, arg CreateCommandParams) er
 }
 
 const getCommand = `-- name: GetCommand :one
-SELECT id, entity_id, adapter_id, operation, parameters_json, correlation_id,
-       status, requested_at, deadline_at, accepted_at, completed_at,
-       outcome_observation_id, failure_code
+SELECT id, entity_id, adapter_id, runtime_id, operation, parameters_json,
+       correlation_id, status, requested_at, deadline_at, accepted_at,
+       completed_at, outcome_observation_id, failure_code
 FROM commands
 WHERE id = ?
 `
@@ -98,6 +100,7 @@ func (q *Queries) GetCommand(ctx context.Context, arg GetCommandParams) (Command
 		&i.ID,
 		&i.EntityID,
 		&i.AdapterID,
+		&i.RuntimeID,
 		&i.Operation,
 		&i.ParametersJson,
 		&i.CorrelationID,
@@ -131,9 +134,9 @@ func (q *Queries) InterruptActiveCommands(ctx context.Context, arg InterruptActi
 }
 
 const listEntityCommandsAfter = `-- name: ListEntityCommandsAfter :many
-SELECT id, entity_id, adapter_id, operation, parameters_json, correlation_id,
-       status, requested_at, deadline_at, accepted_at, completed_at,
-       outcome_observation_id, failure_code
+SELECT id, entity_id, adapter_id, runtime_id, operation, parameters_json,
+       correlation_id, status, requested_at, deadline_at, accepted_at,
+       completed_at, outcome_observation_id, failure_code
 FROM commands
 WHERE entity_id = ?
   AND (requested_at < ? OR (requested_at = ? AND id < ?))
@@ -168,6 +171,7 @@ func (q *Queries) ListEntityCommandsAfter(ctx context.Context, arg ListEntityCom
 			&i.ID,
 			&i.EntityID,
 			&i.AdapterID,
+			&i.RuntimeID,
 			&i.Operation,
 			&i.ParametersJson,
 			&i.CorrelationID,
@@ -193,9 +197,9 @@ func (q *Queries) ListEntityCommandsAfter(ctx context.Context, arg ListEntityCom
 }
 
 const listEntityCommandsFirstPage = `-- name: ListEntityCommandsFirstPage :many
-SELECT id, entity_id, adapter_id, operation, parameters_json, correlation_id,
-       status, requested_at, deadline_at, accepted_at, completed_at,
-       outcome_observation_id, failure_code
+SELECT id, entity_id, adapter_id, runtime_id, operation, parameters_json,
+       correlation_id, status, requested_at, deadline_at, accepted_at,
+       completed_at, outcome_observation_id, failure_code
 FROM commands
 WHERE entity_id = ?
 ORDER BY requested_at DESC, id DESC
@@ -220,6 +224,7 @@ func (q *Queries) ListEntityCommandsFirstPage(ctx context.Context, arg ListEntit
 			&i.ID,
 			&i.EntityID,
 			&i.AdapterID,
+			&i.RuntimeID,
 			&i.Operation,
 			&i.ParametersJson,
 			&i.CorrelationID,

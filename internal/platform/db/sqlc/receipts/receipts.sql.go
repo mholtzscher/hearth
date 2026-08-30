@@ -33,8 +33,8 @@ func (q *Queries) DeleteExpiredObservationReceipts(ctx context.Context, arg Dele
 }
 
 const getObservationReceipt = `-- name: GetObservationReceipt :one
-SELECT receive_order, observation_id, adapter_id, entity_id, disposition,
-       rejection_code, adapter_received_at, observed_at, expires_at
+SELECT receive_order, observation_id, adapter_id, runtime_id, entity_id,
+       disposition, rejection_code, adapter_received_at, observed_at, expires_at
 FROM observation_receipts
 WHERE observation_id = ?
 `
@@ -50,6 +50,7 @@ func (q *Queries) GetObservationReceipt(ctx context.Context, arg GetObservationR
 		&i.ReceiveOrder,
 		&i.ObservationID,
 		&i.AdapterID,
+		&i.RuntimeID,
 		&i.EntityID,
 		&i.Disposition,
 		&i.RejectionCode,
@@ -62,15 +63,16 @@ func (q *Queries) GetObservationReceipt(ctx context.Context, arg GetObservationR
 
 const insertObservationReceipt = `-- name: InsertObservationReceipt :one
 INSERT INTO observation_receipts (
-    observation_id, adapter_id, entity_id, disposition, rejection_code,
-    adapter_received_at, observed_at, expires_at
-) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    observation_id, adapter_id, runtime_id, entity_id, disposition,
+    rejection_code, adapter_received_at, observed_at, expires_at
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
 RETURNING receive_order
 `
 
 type InsertObservationReceiptParams struct {
 	ObservationID     string
 	AdapterID         string
+	RuntimeID         sql.NullString
 	EntityID          string
 	Disposition       string
 	RejectionCode     sql.NullString
@@ -83,6 +85,7 @@ func (q *Queries) InsertObservationReceipt(ctx context.Context, arg InsertObserv
 	row := q.db.QueryRowContext(ctx, insertObservationReceipt,
 		arg.ObservationID,
 		arg.AdapterID,
+		arg.RuntimeID,
 		arg.EntityID,
 		arg.Disposition,
 		arg.RejectionCode,

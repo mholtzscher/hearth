@@ -40,3 +40,13 @@ sql:
         sql_package: "database/sql"
         emit_interface: true
         query_parameter_limit: 0
+  - engine: "sqlite"
+    schema: "internal/platform/db/migrations"
+    queries: "internal/platform/db/queries/health"
+    gen:
+      go:
+        package: "health"
+        out: "internal/platform/db/sqlc/health"
+        sql_package: "database/sql"
+        emit_interface: true
+        query_parameter_limit: 0

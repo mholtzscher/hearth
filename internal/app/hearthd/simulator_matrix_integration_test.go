@@ -395,9 +395,9 @@ func TestSimulatorCommandHTTPFailureMatrix(t *testing.T) {
 		wantFailure devices.CommandFailureCode
 	}{
 		{
-			name: "unavailable adapter", scenario: simulatoradapter.ScenarioUnavailableAdapter,
-			wantStatus: http.StatusServiceUnavailable, wantDetail: "adapter unavailable",
-			wantCommand: devices.CommandStatusAdapterUnavailable, wantFailure: devices.CommandFailureAdapterUnavailable,
+			name: "unhealthy adapter", scenario: simulatoradapter.ScenarioUnavailableAdapter,
+			wantStatus: http.StatusServiceUnavailable, wantDetail: "adapter unhealthy",
+			wantCommand: devices.CommandStatusAdapterUnhealthy, wantFailure: devices.CommandFailureAdapterUnhealthy,
 		},
 		{
 			name: "upstream rejection", scenario: simulatoradapter.ScenarioUpstreamRejection,

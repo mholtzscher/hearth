@@ -15,7 +15,13 @@ var (
 	ErrInvalidPage         = errors.New("invalid page")
 	ErrCommandTerminal     = errors.New("command is already terminal")
 	ErrInvalidCommand      = errors.New("invalid command")
-	ErrAdapterUnavailable  = errors.New("adapter unavailable")
+	ErrAdapterNotFound     = errors.New("adapter not found")
+	ErrAdapterActive       = errors.New("adapter already has an active runtime")
+	ErrAdapterArchived     = errors.New("adapter is archived")
+	ErrAdapterUnhealthy    = errors.New("adapter unhealthy")
+	ErrEntityUnavailable   = errors.New("entity unavailable")
+	ErrRuntimeFenced       = errors.New("adapter runtime fenced")
+	ErrAdapterHasBindings  = errors.New("adapter owns bindings")
 	ErrUpstreamRejected    = errors.New("upstream rejected")
 	ErrOutcomeTimeout      = errors.New("command outcome timeout")
 	ErrEntityDisabled      = errors.New("entity disabled")
@@ -55,8 +61,22 @@ type RegistrationRepository interface {
 	RegisterBinding(context.Context, RegisterBindingParams) (Binding, error)
 }
 
+type HealthRepository interface {
+	ClaimAdapterRuntime(context.Context, ClaimRuntimeWrite) (RuntimeClaim, error)
+	RecordAdapterHeartbeat(context.Context, HeartbeatWrite) (HeartbeatResult, error)
+	ReleaseAdapterRuntime(context.Context, ReleaseRuntimeWrite) error
+	ExpireAdapterLeases(context.Context, ExpireLeasesWrite) error
+	ReportEntityAvailability(context.Context, AvailabilityBatchWrite) (time.Time, error)
+	ListAdapters(context.Context, ListAdaptersParams) (Page[AdapterInstance], error)
+	GetAdapter(context.Context, string) (AdapterInstance, error)
+	ArchiveAdapter(context.Context, ArchiveAdapterParams) error
+	ListAdapterHealthHistory(context.Context, ListAdapterHealthParams) (Page[HealthTransition], error)
+	ListEntityAvailabilityHistory(context.Context, ListEntityAvailabilityParams) (Page[HealthTransition], error)
+}
+
 type Repository interface {
 	RegistrationRepository
+	HealthRepository
 	CommandLedger
 	ListDevices(context.Context, ListDevicesParams) (Page[Device], error)
 	GetDevice(context.Context, GetDeviceParams) (DeviceAggregate, error)

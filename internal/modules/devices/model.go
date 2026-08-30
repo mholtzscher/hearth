@@ -53,8 +53,9 @@ type State struct {
 }
 
 type EntityWithState struct {
-	Entity Entity
-	State  *State
+	Entity       Entity
+	State        *State
+	Availability EntityAvailability
 }
 
 type DeviceAggregate struct {
@@ -128,26 +129,28 @@ type ProjectionResult struct {
 type CommandStatus string
 
 const (
-	CommandStatusRequested          CommandStatus = "requested"
-	CommandStatusAccepted           CommandStatus = "accepted"
-	CommandStatusSatisfied          CommandStatus = "satisfied"
-	CommandStatusRejected           CommandStatus = "rejected"
-	CommandStatusAdapterUnavailable CommandStatus = "adapter_unavailable"
-	CommandStatusOutcomeTimeout     CommandStatus = "outcome_timeout"
-	CommandStatusEntityDisabled     CommandStatus = "entity_disabled"
-	CommandStatusInternalFailure    CommandStatus = "internal_failure"
-	CommandStatusInterrupted        CommandStatus = "interrupted"
+	CommandStatusRequested         CommandStatus = "requested"
+	CommandStatusAccepted          CommandStatus = "accepted"
+	CommandStatusSatisfied         CommandStatus = "satisfied"
+	CommandStatusRejected          CommandStatus = "rejected"
+	CommandStatusAdapterUnhealthy  CommandStatus = "adapter_unhealthy"
+	CommandStatusEntityUnavailable CommandStatus = "entity_unavailable"
+	CommandStatusOutcomeTimeout    CommandStatus = "outcome_timeout"
+	CommandStatusEntityDisabled    CommandStatus = "entity_disabled"
+	CommandStatusInternalFailure   CommandStatus = "internal_failure"
+	CommandStatusInterrupted       CommandStatus = "interrupted"
 )
 
 type CommandFailureCode string
 
 const (
-	CommandFailureAdapterUnavailable CommandFailureCode = "adapter_unavailable"
-	CommandFailureUpstreamRejected   CommandFailureCode = "upstream_rejected"
-	CommandFailureOutcomeTimeout     CommandFailureCode = "outcome_timeout"
-	CommandFailureEntityDisabled     CommandFailureCode = "entity_disabled"
-	CommandFailureInternalError      CommandFailureCode = "internal_error"
-	CommandFailureCoreRestarted      CommandFailureCode = "core_restarted"
+	CommandFailureAdapterUnhealthy  CommandFailureCode = "adapter_unhealthy"
+	CommandFailureEntityUnavailable CommandFailureCode = "entity_unavailable"
+	CommandFailureUpstreamRejected  CommandFailureCode = "upstream_rejected"
+	CommandFailureOutcomeTimeout    CommandFailureCode = "outcome_timeout"
+	CommandFailureEntityDisabled    CommandFailureCode = "entity_disabled"
+	CommandFailureInternalError     CommandFailureCode = "internal_error"
+	CommandFailureCoreRestarted     CommandFailureCode = "core_restarted"
 )
 
 type CommandRequest struct {
@@ -167,6 +170,7 @@ type CommandRecord struct {
 	ID                   CommandID
 	EntityID             EntityID
 	AdapterID            string
+	RuntimeID            *RuntimeID
 	OperationName        OperationName
 	Parameters           CommandParameters
 	CorrelationID        CorrelationID

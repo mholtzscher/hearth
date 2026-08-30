@@ -127,12 +127,12 @@ func (service *Service) runCommand(
 		Deadline: command.DeadlineAt,
 	})
 	if err != nil {
-		if errors.Is(err, ErrAdapterUnavailable) || errors.Is(err, context.DeadlineExceeded) {
+		if errors.Is(err, ErrAdapterUnhealthy) || errors.Is(err, context.DeadlineExceeded) {
 			return service.failCommand(
 				command.ID,
-				CommandStatusAdapterUnavailable,
-				CommandFailureAdapterUnavailable,
-				ErrAdapterUnavailable,
+				CommandStatusAdapterUnhealthy,
+				CommandFailureAdapterUnhealthy,
+				ErrAdapterUnhealthy,
 				waiter,
 			)
 		}
