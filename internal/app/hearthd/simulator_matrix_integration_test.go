@@ -34,7 +34,10 @@ import (
 	"github.com/mholtzscher/hearth/sdk/adapter"
 )
 
-const simulatorMatrixAdapterID = "simulator"
+const (
+	simulatorMatrixAdapterID = "simulator"
+	simulatorMatrixRuntimeID = "run_01890f47-7a6b-7c4d-8e9f-0123456789ab"
+)
 
 type simulatorMatrixOptions struct {
 	dependencies         devices.Dependencies
@@ -207,7 +210,9 @@ func newSimulatorMatrixHarness(t *testing.T, scenario string, options simulatorM
 		return true, nil
 	})
 	if scenario != simulatoradapter.ScenarioUnavailableAdapter {
-		commandSubject, subjectErr := natswire.CommandSubject(simulatorMatrixAdapterID, string(harness.entityID), "set")
+		commandSubject, subjectErr := natswire.CommandSubject(
+			simulatorMatrixAdapterID, simulatorMatrixRuntimeID, string(harness.entityID), "set",
+		)
 		if subjectErr != nil {
 			t.Fatal(subjectErr)
 		}
@@ -410,7 +415,9 @@ func TestSimulatorCommandHTTPFailureMatrix(t *testing.T) {
 		{
 			name: "unexpected response", scenario: simulatoradapter.ScenarioUnavailableAdapter,
 			prepare: func(t *testing.T, harness *simulatorMatrixHarness) {
-				subject, err := natswire.CommandSubject(simulatorMatrixAdapterID, string(harness.entityID), "set")
+				subject, err := natswire.CommandSubject(
+					simulatorMatrixAdapterID, simulatorMatrixRuntimeID, string(harness.entityID), "set",
+				)
 				if err != nil {
 					t.Fatal(err)
 				}
@@ -805,7 +812,9 @@ func publishMatrixLinkedObservation(
 	if err != nil {
 		t.Fatal(err)
 	}
-	subject, err := natswire.ObservationSubject(simulatorMatrixAdapterID, string(harness.entityID))
+	subject, err := natswire.ObservationSubject(
+		simulatorMatrixAdapterID, simulatorMatrixRuntimeID, string(harness.entityID),
+	)
 	if err != nil {
 		t.Fatal(err)
 	}

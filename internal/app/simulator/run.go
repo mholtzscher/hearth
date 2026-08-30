@@ -189,7 +189,7 @@ func publishRawObservation(
 	if err != nil {
 		return fmt.Errorf("create simulator fault publisher: %w", err)
 	}
-	subject, err := natswire.ObservationSubject(config.AdapterID, entityID)
+	subject, err := natswire.ObservationSubject(config.AdapterID, "", entityID)
 	if err != nil {
 		return err
 	}

@@ -46,7 +46,7 @@
           "additionalProperties": false,
           "required": ["code", "message"],
           "properties": {
-            "code": { "enum": ["invalid_descriptor", "immutable_type_change", "identity_conflict"] },
+            "code": { "enum": ["invalid_descriptor", "immutable_type_change", "identity_conflict", "runtime_fenced"] },
             "message": { "$ref": "urn:hearth:schema:common:v1#/$defs/safe_message" }
           }
         }

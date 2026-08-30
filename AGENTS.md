@@ -6,6 +6,7 @@
 - After making any change, prefer `mise run validate`; it regenerates code, formats it, and tidies module metadata before running all checks.
 - After adding or strengthening Go tests, run Gremlins against the smallest affected package or subtree. Investigate surviving mutants as missing behavioral guarantees; do not add assertions solely to kill mutated syntax. Mutation testing is intentionally excluded from `validate` because wider runs are slow.
 - Review the resulting diff and include intended generated or formatting changes.
+- Hearth has no deployments yet. Do not preserve backward compatibility by default. Make direct breaking changes and update all in-repository callers; add compatibility shims, legacy paths, or migration handling only when explicitly requested.
 - To run NATS locally (JetStream enabled) while developing: `mise run nats`.
 
 ## Commands

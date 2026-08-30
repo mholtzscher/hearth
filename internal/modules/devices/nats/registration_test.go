@@ -161,7 +161,7 @@ func TestRegistrationInfrastructureFailureDoesNotReply(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	subject, err := natswire.RegistrationSubject("simulator")
+	subject, err := natswire.RegistrationSubject("simulator", testRuntimeID)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -204,7 +204,7 @@ func requestRegistration(
 	if err != nil {
 		t.Fatal(err)
 	}
-	subject, err := natswire.RegistrationSubject("simulator")
+	subject, err := natswire.RegistrationSubject("simulator", testRuntimeID)
 	if err != nil {
 		t.Fatal(err)
 	}

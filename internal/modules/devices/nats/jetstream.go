@@ -14,7 +14,7 @@ import (
 
 const (
 	ObservationStreamName           = "HEARTH_OBSERVATIONS_V1"
-	ObservationConsumerName         = "hearthd-state-v1"
+	ObservationConsumerName         = "hearthd-state-runtime-v1"
 	ObservationStreamMaxAge         = 7 * 24 * time.Hour
 	ObservationStreamMaxBytes int64 = 1 << 30
 	ObservationAckWait              = 30 * time.Second
@@ -107,7 +107,7 @@ func validateObservationStream(ctx context.Context, stream jetstream.Stream) err
 		config.MaxMsgSize != -1 ||
 		config.Discard != jetstream.DiscardOld ||
 		config.NoAck {
-		return fmt.Errorf("observation stream configuration does not match required v1 settings")
+		return errors.New("observation stream configuration does not match required v1 settings")
 	}
 	return nil
 }
@@ -127,7 +127,7 @@ func validateObservationConsumer(ctx context.Context, consumer jetstream.Consume
 		config.MaxAckPending != 1 ||
 		config.ReplayPolicy != jetstream.ReplayInstantPolicy ||
 		config.FilterSubject != natswire.ObservationWildcard() {
-		return fmt.Errorf("observation consumer configuration does not match required v1 settings")
+		return errors.New("observation consumer configuration does not match required v1 settings")
 	}
 	return nil
 }

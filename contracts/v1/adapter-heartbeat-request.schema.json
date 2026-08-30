@@ -1,0 +1,23 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:hearth:schema:adapter-heartbeat-request:v1",
+  "title": "Hearth v1 Adapter heartbeat request",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["id", "schema", "emitted_at", "correlation_id", "data"],
+  "properties": {
+    "id": { "$ref": "urn:hearth:schema:common:v1#/$defs/hbt_id" },
+    "schema": { "const": "urn:hearth:schema:adapter-heartbeat-request:v1" },
+    "emitted_at": { "$ref": "urn:hearth:schema:common:v1#/$defs/utc_timestamp" },
+    "correlation_id": { "$ref": "urn:hearth:schema:common:v1#/$defs/cor_id" },
+    "causation_id": { "$ref": "urn:hearth:schema:common:v1#/$defs/causation_id" },
+    "data": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["external_system"],
+      "properties": {
+        "external_system": { "$ref": "urn:hearth:schema:common:v1#/$defs/external_system_health" }
+      }
+    }
+  }
+}

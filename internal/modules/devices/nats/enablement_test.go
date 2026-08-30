@@ -94,7 +94,7 @@ func TestEntityEnablementServerDiscardsRoutePayloadMismatchWithoutInvokingSetter
 		t.Fatal(err)
 	}
 	otherEntity := "ent_01890f47-7a6c-7c4d-8e9f-0123456789ab"
-	subject, err := natswire.EntityEnablementSubject("simulator", otherEntity)
+	subject, err := natswire.EntityEnablementSubject("simulator", testRuntimeID, otherEntity)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -120,7 +120,7 @@ func requestEntityEnablement(
 	if err != nil {
 		t.Fatal(err)
 	}
-	subject, err := natswire.EntityEnablementSubject("simulator", testEntityID)
+	subject, err := natswire.EntityEnablementSubject("simulator", testRuntimeID, testEntityID)
 	if err != nil {
 		t.Fatal(err)
 	}

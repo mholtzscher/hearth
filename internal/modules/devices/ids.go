@@ -34,6 +34,11 @@ func NewCorrelationID() (CorrelationID, error) {
 	return CorrelationID(id), err
 }
 
+func NewRuntimeID() (RuntimeID, error) {
+	id, err := newID("run")
+	return RuntimeID(id), err
+}
+
 func ParseDeviceID(value string) (DeviceID, error) {
 	if err := validateID(value, "dev"); err != nil {
 		return "", err
@@ -67,6 +72,13 @@ func ParseCorrelationID(value string) (CorrelationID, error) {
 		return "", err
 	}
 	return CorrelationID(value), nil
+}
+
+func ParseRuntimeID(value string) (RuntimeID, error) {
+	if err := validateID(value, "run"); err != nil {
+		return "", err
+	}
+	return RuntimeID(value), nil
 }
 
 func newID(prefix string) (string, error) {

@@ -10,6 +10,7 @@ type EntityID string
 type ObservationID string
 type CommandID string
 type CorrelationID string
+type RuntimeID string
 
 type DeviceKind string
 

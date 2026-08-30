@@ -20,6 +20,7 @@ import (
 )
 
 const (
+	testRuntimeID           = "run_01890f47-7a6b-7c4d-8e9f-0123456789ab"
 	testEntityID            = "ent_01890f47-7a6b-7c4d-8e9f-0123456789ab"
 	testObservationID       = "obs_01890f47-7a6b-7c4d-8e9f-0123456789ab"
 	testSecondObservationID = "obs_01890f47-7a6b-7c4d-8e9f-0123456789ac"
@@ -220,7 +221,7 @@ func publishObservationEnvelopeWithSource(
 
 func mustObservationSubject(t *testing.T) string {
 	t.Helper()
-	subject, err := natswire.ObservationSubject("simulator", testEntityID)
+	subject, err := natswire.ObservationSubject("simulator", testRuntimeID, testEntityID)
 	if err != nil {
 		t.Fatal(err)
 	}

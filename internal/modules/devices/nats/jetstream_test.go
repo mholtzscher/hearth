@@ -1,4 +1,4 @@
-package nats //nolint:testpackage // Tests exercise package-private NATS wire behavior and fixtures.
+package nats //nolint:testpackage // Tests exercise package-private JetStream configuration.
 
 import (
 	"context"
@@ -6,23 +6,34 @@ import (
 	"testing"
 
 	"github.com/nats-io/nats.go/jetstream"
+
+	"github.com/mholtzscher/hearth/internal/contracts/v1/natswire"
 )
 
-func TestProvisionObservationResourcesCreatesAndValidatesRequiredConfiguration(t *testing.T) {
+func TestProvisionObservationResourcesCreatesAndValidatesRuntimeConfiguration(t *testing.T) {
 	t.Parallel()
 	_, _, js := startJetStream(t)
 	consumer, provisionErr := ProvisionObservationResources(context.Background(), js)
 	if provisionErr != nil {
 		t.Fatal(provisionErr)
 	}
-	if consumer.CachedInfo().Config.Name != ObservationConsumerName {
-		t.Fatalf("consumer = %#v", consumer.CachedInfo().Config)
+	if config := consumer.CachedInfo().Config; config.Name != ObservationConsumerName ||
+		config.FilterSubject != natswire.ObservationWildcard() {
+		t.Fatalf("consumer = %#v", config)
 	}
-	if _, err := ProvisionObservationResources(context.Background(), js); err != nil {
-		t.Fatalf("second provisioning: %v", err)
+	stream, streamErr := js.Stream(context.Background(), ObservationStreamName)
+	if streamErr != nil {
+		t.Fatal(streamErr)
 	}
-	if err := ValidateObservationResources(context.Background(), js); err != nil {
-		t.Fatal(err)
+	if subjects := stream.CachedInfo().Config.Subjects; len(subjects) != 1 ||
+		subjects[0] != natswire.ObservationWildcard() {
+		t.Fatalf("stream subjects = %v", subjects)
+	}
+	if _, provisionAgainErr := ProvisionObservationResources(context.Background(), js); provisionAgainErr != nil {
+		t.Fatalf("second provisioning: %v", provisionAgainErr)
+	}
+	if validationErr := ValidateObservationResources(context.Background(), js); validationErr != nil {
+		t.Fatal(validationErr)
 	}
 }
 
@@ -32,6 +43,9 @@ func TestProvisionObservationResourcesRejectsMismatchedExistingConfiguration(t *
 		name   string
 		mutate func(*jetstream.StreamConfig)
 	}{
+		{"pre-runtime subject", func(config *jetstream.StreamConfig) {
+			config.Subjects = []string{"hearth.v1.adapter.*.observation.>"}
+		}},
 		{"max bytes", func(config *jetstream.StreamConfig) { config.MaxBytes = 42 }},
 		{"max messages", func(config *jetstream.StreamConfig) { config.MaxMsgs = 1 }},
 		{"max messages per subject", func(config *jetstream.StreamConfig) { config.MaxMsgsPerSubject = 1 }},

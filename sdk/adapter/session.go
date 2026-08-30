@@ -26,6 +26,7 @@ const (
 
 type Session struct {
 	adapterID    string
+	runtimeID    string
 	connection   *natsgo.Conn
 	jetstream    jetstream.JetStream
 	validator    *contractsv1.Validator
@@ -50,7 +51,7 @@ func Connect(ctx context.Context, config Config) (*Session, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-	if _, err := natswire.RegistrationSubject(config.AdapterID); err != nil {
+	if _, err := natswire.AdapterClaimSubject(config.AdapterID); err != nil {
 		return nil, &ValidationError{Err: err}
 	}
 	if config.NATSURL == "" {
@@ -147,7 +148,7 @@ func requestReply[Req, Resp any](
 
 // Register performs one schema-validated Core NATS request/reply attempt.
 func (session *Session) Register(ctx context.Context, registration Registration) (Binding, error) {
-	subject, err := natswire.RegistrationSubject(session.adapterID)
+	subject, err := natswire.RegistrationSubject(session.adapterID, session.runtimeID)
 	if err != nil {
 		return Binding{}, &ValidationError{Err: err}
 	}
@@ -170,7 +171,7 @@ func (session *Session) Register(ctx context.Context, registration Registration)
 
 // SetEntityEnabled performs one schema-validated Core NATS request/reply attempt.
 func (session *Session) SetEntityEnabled(ctx context.Context, entityID string, enabled bool) (bool, error) {
-	subject, err := natswire.EntityEnablementSubject(session.adapterID, entityID)
+	subject, err := natswire.EntityEnablementSubject(session.adapterID, session.runtimeID, entityID)
 	if err != nil {
 		return false, &ValidationError{Err: err}
 	}
@@ -236,7 +237,7 @@ func (session *Session) PublishObservation(ctx context.Context, observation Obse
 	if err != nil {
 		return observationID, &ValidationError{Err: err}
 	}
-	subject, err := natswire.ObservationSubject(session.adapterID, observation.EntityID)
+	subject, err := natswire.ObservationSubject(session.adapterID, session.runtimeID, observation.EntityID)
 	if err != nil {
 		return observationID, &ValidationError{Err: err}
 	}
@@ -273,7 +274,7 @@ func (session *Session) ServeCommands(ctx context.Context, handler CommandHandle
 	if handler == nil {
 		return &ValidationError{Err: errors.New("command handler is required")}
 	}
-	wildcard, err := natswire.CommandWildcard(session.adapterID)
+	wildcard, err := natswire.CommandWildcard(session.adapterID, session.runtimeID)
 	if err != nil {
 		return &ValidationError{Err: err}
 	}
@@ -342,8 +343,9 @@ func (session *Session) handleCommand(parent context.Context, message *natsgo.Ms
 		return
 	}
 	route, err := natswire.ParseCommandSubject(message.Subject)
-	if err != nil || route.AdapterID != session.adapterID || route.EntityID != request.Data.EntityID ||
-		route.OperationName != request.Data.OperationName || request.CausationID != nil {
+	if err != nil || route.AdapterID != session.adapterID || route.RuntimeID != session.runtimeID ||
+		route.EntityID != request.Data.EntityID || route.OperationName != request.Data.OperationName ||
+		request.CausationID != nil {
 		session.logger.ErrorContext(
 			parent,
 			"discarding command with mismatched routing",

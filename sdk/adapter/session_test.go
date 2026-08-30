@@ -19,7 +19,10 @@ import (
 	"github.com/mholtzscher/hearth/internal/contracts/v1/natswire"
 )
 
-const testEntityID = "ent_01890f47-7a6b-7c4d-8e9f-0123456789ab"
+const (
+	testRuntimeID = "run_01890f47-7a6b-7c4d-8e9f-0123456789ab"
+	testEntityID  = "ent_01890f47-7a6b-7c4d-8e9f-0123456789ab"
+)
 
 func TestConnectUsesDefaultLoggerWhenLoggerIsOmitted(t *testing.T) {
 	t.Parallel()
@@ -61,7 +64,7 @@ func TestRegisterAcceptedRejectedAndLocalValidation(t *testing.T) {
 	server := startServer(t, -1, t.TempDir())
 	core := connectNATS(t, server.ClientURL())
 	validator := compileValidator(t)
-	subject, err := natswire.RegistrationSubject("simulator")
+	subject, err := natswire.RegistrationSubject("simulator", testRuntimeID)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -166,7 +169,7 @@ func TestSetEntityEnabledRoundTripsAcceptedAndTypedRejectedResponses(t *testing.
 	server := startServer(t, -1, t.TempDir())
 	core := connectNATS(t, server.ClientURL())
 	validator := compileValidator(t)
-	subject, err := natswire.EntityEnablementSubject("simulator", testEntityID)
+	subject, err := natswire.EntityEnablementSubject("simulator", testRuntimeID, testEntityID)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -713,7 +716,7 @@ func sendCommandWithDeadline(
 	if err != nil {
 		return nil, err
 	}
-	subject, err := natswire.CommandSubject("simulator", testEntityID, "set")
+	subject, err := natswire.CommandSubject("simulator", testRuntimeID, testEntityID, "set")
 	if err != nil {
 		return nil, err
 	}

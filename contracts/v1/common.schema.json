@@ -64,9 +64,63 @@
       "type": "string",
       "pattern": "^ena_[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
     },
+    "run_id": {
+      "type": "string",
+      "pattern": "^run_[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+    },
+    "clm_id": {
+      "type": "string",
+      "pattern": "^clm_[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+    },
+    "hbt_id": {
+      "type": "string",
+      "pattern": "^hbt_[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+    },
+    "rel_id": {
+      "type": "string",
+      "pattern": "^rel_[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+    },
+    "avl_id": {
+      "type": "string",
+      "pattern": "^avl_[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+    },
     "cor_id": {
       "type": "string",
       "pattern": "^cor_[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+    },
+    "reason_code": {
+      "type": "string",
+      "maxLength": 128,
+      "pattern": "^[a-z0-9][a-z0-9_-]*(\\.[a-z0-9][a-z0-9_-]*)+$"
+    },
+    "health_reason": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["code"],
+      "properties": {
+        "code": { "$ref": "#/$defs/reason_code" },
+        "detail": { "$ref": "#/$defs/safe_message" }
+      }
+    },
+    "external_system_health": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "source_observed_at"],
+      "properties": {
+        "status": { "enum": ["unknown", "healthy", "unhealthy"] },
+        "source_observed_at": { "$ref": "#/$defs/utc_timestamp" },
+        "reason": { "$ref": "#/$defs/health_reason" }
+      },
+      "oneOf": [
+        {
+          "properties": { "status": { "enum": ["unknown", "healthy"] } },
+          "not": { "required": ["reason"] }
+        },
+        {
+          "properties": { "status": { "const": "unhealthy" } },
+          "required": ["reason"]
+        }
+      ]
     },
     "causation_id": {
       "oneOf": [
@@ -74,7 +128,11 @@
         { "$ref": "#/$defs/obs_id" },
         { "$ref": "#/$defs/cmd_id" },
         { "$ref": "#/$defs/rep_id" },
-        { "$ref": "#/$defs/ena_id" }
+        { "$ref": "#/$defs/ena_id" },
+        { "$ref": "#/$defs/clm_id" },
+        { "$ref": "#/$defs/hbt_id" },
+        { "$ref": "#/$defs/rel_id" },
+        { "$ref": "#/$defs/avl_id" }
       ]
     }
   }
