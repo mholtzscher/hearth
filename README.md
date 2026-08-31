@@ -20,7 +20,7 @@ Run a small mutation-testing trial with `mise run mutation-test -- ./contracts/v
 
 `hearthd` accepts any configured HTTP bind address. The example remains `127.0.0.1:8080`; bind to a non-loopback address only on a trusted network because the HTTP API has no authentication.
 
-Run the first-light simulator with `go run ./cmd/hearth-simulator -config configs/simulator.yaml` after copying `configs/simulator.example.yaml`. Its `scenario` may be `happy`, `delayed-source-time`, `future-clock-skew`, `unavailable-adapter`, `upstream-rejection`, `no-op-refresh`, `overlapping-opposite-command`, `outcome-timeout`, `interrupted-command`, or `restart-before-ack`. Raw duplicate and malformed Observation cases remain test-only transport scenarios.
+Run the first-light simulator with `go run ./cmd/hearth-simulator -config configs/simulator.yaml` after copying `configs/simulator.example.yaml`. Its `scenario` may be `happy`, `adapter-unhealthy`, `entity-unavailable`, `delayed-source-time`, `future-clock-skew`, `upstream-rejection`, `no-op-refresh`, `overlapping-opposite-command`, `outcome-timeout`, `interrupted-command`, or `restart-before-ack`. `happy` reports a healthy Adapter and available Entity before publishing State. `adapter-unhealthy` proves that Core rejects a Command before dispatch. `entity-unavailable` proves that availability is advisory: Core dispatches the Command, and the simulator reports the Entity available after the recovery attempt succeeds. Heartbeat expiry, takeover, stale-runtime isolation, Core recovery replay, and graceful release remain deterministic process-test scenarios. Raw duplicate and malformed Observation cases remain transport-test scenarios.
 
 ### Home Assistant migration adapter
 
@@ -30,9 +30,12 @@ Copy `configs/homeassistant.example.yaml` to the ignored `configs/homeassistant.
 go run ./cmd/hearth-adapter-homeassistant -config configs/homeassistant.yaml
 ```
 
-The registration log reports the canonical Entity ID. Use it to verify the snapshot and a real on/off command; a successful command response is returned only after the adapter publishes its linked refresh Observation:
+The registration log reports the canonical Entity ID. The Adapter reports healthy only after its WebSocket subscription, snapshot, and buffered-event reconciliation are ready. Home Assistant `on` and `off` values report the Entity available and publish State. `unavailable` and `unknown` report it unavailable without replacing the last State.
+
+Use the Adapter slug and canonical Entity ID to inspect current evidence, then verify a real on/off command. A successful command response is returned only after the adapter publishes its linked refresh Observation:
 
 ```sh
+curl http://127.0.0.1:8080/v1/adapters/homeassistant
 curl http://127.0.0.1:8080/v1/entities/ent_...
 curl -X POST http://127.0.0.1:8080/v1/entities/ent_.../commands \
   -H 'content-type: application/json' \

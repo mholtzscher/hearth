@@ -68,6 +68,18 @@ type upstreamError struct {
 	Message string `json:"message"`
 }
 
+type requestRejectedError struct {
+	Code    string
+	Message string
+}
+
+func (err *requestRejectedError) Error() string {
+	if err.Code == "" {
+		return "Home Assistant request rejected: " + err.Message
+	}
+	return fmt.Sprintf("Home Assistant request rejected (%s): %s", err.Code, err.Message)
+}
+
 type eventMessage struct {
 	Type  string `json:"type"`
 	Event struct {
@@ -284,13 +296,11 @@ func (client *client) request(ctx context.Context, request requestMessage) (resu
 	}
 	if !result.Success {
 		if result.Error == nil {
-			return resultMessage{}, errors.New("request to Home Assistant failed")
+			return resultMessage{}, &requestRejectedError{Message: "request failed without an error"}
 		}
-		return resultMessage{}, fmt.Errorf(
-			"request to Home Assistant failed (%s): %s",
-			result.Error.Code,
-			result.Error.Message,
-		)
+		return resultMessage{}, &requestRejectedError{
+			Code: result.Error.Code, Message: result.Error.Message,
+		}
 	}
 	return result, nil
 }

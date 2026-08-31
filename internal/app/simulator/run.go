@@ -60,10 +60,10 @@ func Run(ctx context.Context, config Config, logger *slog.Logger) error {
 	if entityIDErr != nil {
 		return entityIDErr
 	}
-	if err := simulated.PublishInitial(ctx, entityID); err != nil {
-		return fmt.Errorf("publish initial simulator Observation: %w", err)
+	if err := simulated.Initialize(ctx, entityID); err != nil {
+		return fmt.Errorf("initialize simulator health and Entity availability: %w", err)
 	}
-	if config.Scenario == simulatoradapter.ScenarioUnavailableAdapter {
+	if config.Scenario == simulatoradapter.ScenarioAdapterUnhealthy {
 		<-ctx.Done()
 		return nil
 	}

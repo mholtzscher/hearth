@@ -13,16 +13,31 @@ import (
 
 const simulatorEntityID = "ent_01890f47-7a6b-7c4d-8e9f-0123456789ab"
 
-type recordingPublisher struct {
-	observations []adapter.Observation
+type recordingSession struct {
+	observations        []adapter.Observation
+	healthReports       []adapter.HealthReport
+	availabilityReports []adapter.EntityAvailabilityReport
 }
 
-func (publisher *recordingPublisher) PublishObservation(
+func (session *recordingSession) PublishObservation(
 	_ context.Context,
 	observation adapter.Observation,
 ) (adapter.ObservationID, error) {
-	publisher.observations = append(publisher.observations, observation)
+	session.observations = append(session.observations, observation)
 	return "obs_01890f47-7a6b-7c4d-8e9f-0123456789ab", nil
+}
+
+func (session *recordingSession) SetHealth(_ context.Context, report adapter.HealthReport) error {
+	session.healthReports = append(session.healthReports, report)
+	return nil
+}
+
+func (session *recordingSession) ReportEntityAvailability(
+	_ context.Context,
+	reports []adapter.EntityAvailabilityReport,
+) error {
+	session.availabilityReports = append(session.availabilityReports, reports...)
+	return nil
 }
 
 type recordingResponder struct {
@@ -48,7 +63,8 @@ func TestFailureMatrixScenariosAreRecognized(t *testing.T) {
 	t.Parallel()
 	for _, scenario := range []string{
 		simulatoradapter.ScenarioHappy, simulatoradapter.ScenarioDelayedSourceTime, simulatoradapter.ScenarioFutureClockSkew,
-		simulatoradapter.ScenarioUnavailableAdapter, simulatoradapter.ScenarioUpstreamRejection,
+		simulatoradapter.ScenarioAdapterUnhealthy, simulatoradapter.ScenarioEntityUnavailable,
+		simulatoradapter.ScenarioUpstreamRejection,
 		simulatoradapter.ScenarioNoOpRefresh, simulatoradapter.ScenarioOverlappingCommands, simulatoradapter.ScenarioOutcomeTimeout,
 		simulatoradapter.ScenarioInterruptedCommand, simulatoradapter.ScenarioRestartBeforeAck,
 	} {
@@ -65,13 +81,13 @@ func TestFailureMatrixScenariosAreRecognized(t *testing.T) {
 
 func TestHappyScenarioAcceptsAndPublishesLinkedRefresh(t *testing.T) {
 	t.Parallel()
-	publisher := &recordingPublisher{}
-	simulated, err := simulatoradapter.New(publisher, simulatoradapter.ScenarioHappy)
+	session := &recordingSession{}
+	simulated, err := simulatoradapter.New(session, simulatoradapter.ScenarioHappy)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if publishErr := simulated.PublishInitial(context.Background(), simulatorEntityID); publishErr != nil {
-		t.Fatal(publishErr)
+	if initializeErr := simulated.Initialize(context.Background(), simulatorEntityID); initializeErr != nil {
+		t.Fatal(initializeErr)
 	}
 	handler, err := simulated.CommandHandler(simulatorEntityID)
 	if err != nil {
@@ -86,12 +102,74 @@ func TestHappyScenarioAcceptsAndPublishesLinkedRefresh(t *testing.T) {
 	}, responder); handlerErr != nil {
 		t.Fatal(handlerErr)
 	}
-	if !responder.accepted || responder.rejected || len(publisher.observations) != 2 {
-		t.Fatalf("responder = %#v, observations = %#v", responder, publisher.observations)
+	if !responder.accepted || responder.rejected || len(session.observations) != 2 {
+		t.Fatalf("responder = %#v, observations = %#v", responder, session.observations)
 	}
-	refresh := publisher.observations[1]
+	if len(session.healthReports) != 1 || session.healthReports[0].Status != adapter.HealthHealthy ||
+		len(session.availabilityReports) != 1 ||
+		session.availabilityReports[0].Status != adapter.AvailabilityAvailable {
+		t.Fatalf("health = %#v, availability = %#v", session.healthReports, session.availabilityReports)
+	}
+	refresh := session.observations[1]
 	if refresh.RefreshForCommand == nil || *refresh.RefreshForCommand != commandID || string(refresh.Value) != "true" {
 		t.Fatalf("refresh = %#v", refresh)
+	}
+}
+
+func TestAdapterUnhealthyScenarioReportsHealthWithoutPublishingState(t *testing.T) {
+	t.Parallel()
+	session := &recordingSession{}
+	simulated, err := simulatoradapter.New(session, simulatoradapter.ScenarioAdapterUnhealthy)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = simulated.Initialize(context.Background(), simulatorEntityID); err != nil {
+		t.Fatal(err)
+	}
+	if len(session.healthReports) != 1 || session.healthReports[0].Status != adapter.HealthUnhealthy ||
+		session.healthReports[0].ReasonCode != "hearth.external_system_unavailable" ||
+		len(session.availabilityReports) != 0 || len(session.observations) != 0 {
+		t.Fatalf(
+			"health = %#v, availability = %#v, observations = %#v",
+			session.healthReports, session.availabilityReports, session.observations,
+		)
+	}
+}
+
+func TestEntityUnavailableScenarioRecoversThroughCommand(t *testing.T) {
+	t.Parallel()
+	session := &recordingSession{}
+	simulated, err := simulatoradapter.New(session, simulatoradapter.ScenarioEntityUnavailable)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = simulated.Initialize(context.Background(), simulatorEntityID); err != nil {
+		t.Fatal(err)
+	}
+	if len(session.availabilityReports) != 1 ||
+		session.availabilityReports[0].Status != adapter.AvailabilityUnavailable ||
+		len(session.observations) != 0 {
+		t.Fatalf("initial availability = %#v, observations = %#v", session.availabilityReports, session.observations)
+	}
+	handler, err := simulated.CommandHandler(simulatorEntityID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	responder := &recordingResponder{}
+	if err = handler(context.Background(), adapter.Command{
+		ID:            "cmd_01890f47-7a6b-7c4d-8e9f-0123456789ab",
+		CorrelationID: "cor_01890f47-7a6b-7c4d-8e9f-0123456789ab",
+		EntityID:      simulatorEntityID, OperationName: "set", Parameters: json.RawMessage(`{"value":true}`),
+		Deadline: time.Now().Add(time.Second).UTC().Format(time.RFC3339Nano),
+	}, responder); err != nil {
+		t.Fatal(err)
+	}
+	if !responder.accepted || responder.rejected || len(session.availabilityReports) != 2 ||
+		session.availabilityReports[1].Status != adapter.AvailabilityAvailable || len(session.observations) != 1 {
+		t.Fatalf(
+			"responder = %#v, availability = %#v, observations = %#v",
+			responder, session.availabilityReports, session.observations,
+		)
 	}
 }
 
@@ -109,8 +187,8 @@ func TestFailureScenariosRejectOrWithholdOutcome(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.scenario, func(t *testing.T) {
 			t.Parallel()
-			publisher := &recordingPublisher{}
-			simulated, err := simulatoradapter.New(publisher, test.scenario)
+			session := &recordingSession{}
+			simulated, err := simulatoradapter.New(session, test.scenario)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -129,8 +207,8 @@ func TestFailureScenariosRejectOrWithholdOutcome(t *testing.T) {
 				t.Fatal(err)
 			}
 			if responder.accepted != test.wantAccepted || responder.rejected != test.wantRejected ||
-				len(publisher.observations) != 0 {
-				t.Fatalf("responder = %#v, observations = %#v", responder, publisher.observations)
+				len(session.observations) != 0 {
+				t.Fatalf("responder = %#v, observations = %#v", responder, session.observations)
 			}
 		})
 	}
