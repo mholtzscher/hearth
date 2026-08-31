@@ -12,7 +12,7 @@ func TestObservationProjectionAdvancesStateByReceiveOrderAndDeduplicates(t *test
 	t.Parallel()
 	ctx := context.Background()
 	path := filepath.Join(t.TempDir(), "hearth.db")
-	database := openMigratedDatabase(t, path)
+	database := openRegistrationDatabase(t, path)
 	catalog := firstLightCatalog(t)
 	repository := NewSQLiteRepository(database, catalog)
 	service := NewService(repository, nil, catalog, Dependencies{})
@@ -68,7 +68,7 @@ func TestObservationProjectionAdvancesStateByReceiveOrderAndDeduplicates(t *test
 	if closeErr := database.Close(); closeErr != nil {
 		t.Fatal(closeErr)
 	}
-	database = openMigratedDatabase(t, path)
+	database = openRegistrationDatabase(t, path)
 	restarted := NewService(NewSQLiteRepository(database, catalog), nil, catalog, Dependencies{})
 	view, err = restarted.GetEntity(ctx, entityID)
 	if err != nil {
@@ -83,7 +83,7 @@ func TestObservationProjectionAdvancesStateByReceiveOrderAndDeduplicates(t *test
 func TestObservationProjectionDurablyRejectsIdentityAndValueFailures(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
-	database := openMigratedDatabase(t, filepath.Join(t.TempDir(), "hearth.db"))
+	database := openRegistrationDatabase(t, filepath.Join(t.TempDir(), "hearth.db"))
 	catalog := firstLightCatalog(t)
 	service := NewService(NewSQLiteRepository(database, catalog), nil, catalog, Dependencies{})
 	binding, err := service.Register(ctx, "simulator", validDomainRegistration())
@@ -135,7 +135,7 @@ func TestObservationProjectionDurablyRejectsIdentityAndValueFailures(t *testing.
 func TestDisabledEntityRejectsUnlinkedObservationAndAllowsActiveCommandRefresh(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
-	database := openMigratedDatabase(t, filepath.Join(t.TempDir(), "hearth.db"))
+	database := openRegistrationDatabase(t, filepath.Join(t.TempDir(), "hearth.db"))
 	catalog := firstLightCatalog(t)
 	repository := NewSQLiteRepository(database, catalog)
 	now := time.Date(2026, 8, 26, 12, 0, 0, 0, time.UTC)
@@ -205,7 +205,7 @@ func TestDisabledEntityRejectsUnlinkedObservationAndAllowsActiveCommandRefresh(t
 func TestDisabledEntityDoesNotExemptUnknownExpiredOrTerminalCommandLinks(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
-	database := openMigratedDatabase(t, filepath.Join(t.TempDir(), "hearth.db"))
+	database := openRegistrationDatabase(t, filepath.Join(t.TempDir(), "hearth.db"))
 	catalog := firstLightCatalog(t)
 	repository := NewSQLiteRepository(database, catalog)
 	now := time.Date(2026, 8, 26, 12, 0, 20, 0, time.UTC)
@@ -260,7 +260,7 @@ func TestDisabledEntityDoesNotExemptUnknownExpiredOrTerminalCommandLinks(t *test
 func TestObservationProjectionSatisfiesOnlyMatchingActiveLinkedCommand(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
-	database := openMigratedDatabase(t, filepath.Join(t.TempDir(), "hearth.db"))
+	database := openRegistrationDatabase(t, filepath.Join(t.TempDir(), "hearth.db"))
 	catalog := firstLightCatalog(t)
 	repository := NewSQLiteRepository(database, catalog)
 	completedAt := time.Date(2026, 8, 22, 12, 0, 2, 0, time.UTC)
@@ -364,7 +364,7 @@ func TestObservationProjectionSatisfiesOnlyMatchingActiveLinkedCommand(t *testin
 func TestReceiptPruningPinsCurrentStateUntilItAdvances(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
-	database := openMigratedDatabase(t, filepath.Join(t.TempDir(), "hearth.db"))
+	database := openRegistrationDatabase(t, filepath.Join(t.TempDir(), "hearth.db"))
 	catalog := firstLightCatalog(t)
 	service := NewService(NewSQLiteRepository(database, catalog), nil, catalog, Dependencies{})
 	binding, err := service.Register(ctx, "simulator", validDomainRegistration())

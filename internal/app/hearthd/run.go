@@ -78,6 +78,13 @@ func Run(ctx context.Context, config Config, logger *slog.Logger) error { //noli
 		return sessionErr
 	}
 	defer func() { _ = sessions.Drain() }()
+	availability, availabilityErr := devicesnats.StartEntityAvailabilityServer(
+		connection, validator, service, logger,
+	)
+	if availabilityErr != nil {
+		return availabilityErr
+	}
+	defer func() { _ = availability.Drain() }()
 	registrations, registrationErr := devicesnats.StartRegistrationServer(connection, validator, service, logger)
 	if registrationErr != nil {
 		return registrationErr
@@ -130,6 +137,9 @@ func Run(ctx context.Context, config Config, logger *slog.Logger) error { //noli
 			return err
 		}
 		if err := registrations.Drain(); err != nil {
+			return err
+		}
+		if err := availability.Drain(); err != nil {
 			return err
 		}
 		if err := sessions.Drain(); err != nil {

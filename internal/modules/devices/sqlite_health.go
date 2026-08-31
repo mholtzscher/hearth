@@ -77,8 +77,10 @@ func (repository *SQLiteRepository) ClaimAdapterRuntime(
 	}
 	if _, transitionErr := appendHealthTransition(ctx, queries, healthsqlc.InsertHealthTransitionParams{
 		ResourceKind: healthResourceAdapter, AdapterID: write.AdapterID,
-		RuntimeID: nullableText(string(write.RuntimeID)),
-		Status:    string(AdapterHealthUnknown), Source: "core", ReasonCode: nullableText("hearth.awaiting_health"),
+		RuntimeID:  nullableText(string(write.RuntimeID)),
+		Status:     string(AdapterHealthUnknown),
+		Source:     healthSourceCore,
+		ReasonCode: nullableText("hearth.awaiting_health"),
 		ObservedAt: formatTime(write.ClaimedAt),
 	}); transitionErr != nil {
 		return RuntimeClaim{}, transitionErr
@@ -485,7 +487,7 @@ func setOfflineAdapterHealth(
 		AdapterID:    instance.AdapterID,
 		RuntimeID:    nullableText(runtime.RuntimeID),
 		Status:       string(AdapterHealthUnhealthy),
-		Source:       "core",
+		Source:       healthSourceCore,
 		ReasonCode:   nullableText(reasonCode),
 		ObservedAt:   formatTime(observedAt),
 	})
@@ -555,6 +557,17 @@ func (repository *SQLiteRepository) ReportEntityAvailability(
 	if err != nil {
 		return time.Time{}, err
 	}
+	runtime, err := queries.GetRuntime(ctx, healthsqlc.GetRuntimeParams{RuntimeID: string(write.RuntimeID)})
+	if err != nil {
+		return time.Time{}, fmt.Errorf("get Adapter runtime for Entity availability: %w", err)
+	}
+	overdue, err := expireRuntimeIfOverdue(ctx, queries, instance, runtime, write.ReportedAt, time.Time{})
+	if err != nil {
+		return time.Time{}, err
+	}
+	if overdue {
+		return time.Time{}, commitExpiredRuntime(tx, "overdue Entity availability report")
+	}
 	if instance.HealthStatus.String != string(AdapterHealthHealthy) {
 		return time.Time{}, ErrAdapterUnhealthy
 	}
@@ -583,13 +596,13 @@ func persistEntityAvailability(
 ) error {
 	owner, err := queries.GetEntityOwner(ctx, healthsqlc.GetEntityOwnerParams{EntityID: string(report.EntityID)})
 	if errors.Is(err, sql.ErrNoRows) {
-		return fmt.Errorf("%w: %s", ErrEntityNotFound, report.EntityID)
+		return &EntityAvailabilityReportError{EntityID: report.EntityID, Err: ErrEntityNotFound}
 	}
 	if err != nil {
 		return fmt.Errorf("get Entity availability owner: %w", err)
 	}
 	if owner != write.AdapterID {
-		return fmt.Errorf("%w: %s", ErrEntityWrongAdapter, report.EntityID)
+		return &EntityAvailabilityReportError{EntityID: report.EntityID, Err: ErrEntityWrongAdapter}
 	}
 	current, err := queries.GetEntityAvailabilityCurrent(ctx, healthsqlc.GetEntityAvailabilityCurrentParams{
 		EntityID: string(report.EntityID),
@@ -974,7 +987,7 @@ func listFirstEntityTransitions(
 	rows, err := queries.ListEntityAvailabilityHistoryFirstPage(
 		ctx,
 		healthsqlc.ListEntityAvailabilityHistoryFirstPageParams{
-			EntityID: nullableText(string(entityID)), Limit: limit,
+			EntityID: nullableText(string(entityID)), PageLimit: limit,
 		},
 	)
 	if err != nil {
@@ -1000,7 +1013,7 @@ func listEntityTransitionsBefore(
 	rows, err := queries.ListEntityAvailabilityHistoryBefore(
 		ctx,
 		healthsqlc.ListEntityAvailabilityHistoryBeforeParams{
-			EntityID: nullableText(string(entityID)), ReceiveOrder: before, Limit: limit,
+			EntityID: nullableText(string(entityID)), BeforeReceiveOrder: before, PageLimit: limit,
 		},
 	)
 	if err != nil {

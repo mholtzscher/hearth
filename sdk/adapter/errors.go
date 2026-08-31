@@ -60,6 +60,28 @@ func (err *EntityEnablementRejectedError) Error() string {
 	return fmt.Sprintf("entity enablement rejected (%s): %s", err.Code, err.Message)
 }
 
+type EntityAvailabilityRejectionCode string
+
+const (
+	EntityAvailabilityAdapterUnhealthy EntityAvailabilityRejectionCode = "adapter_unhealthy"
+	EntityAvailabilityUnknownEntity    EntityAvailabilityRejectionCode = "unknown_entity"
+	EntityAvailabilityWrongAdapter     EntityAvailabilityRejectionCode = "wrong_adapter"
+	entityAvailabilityRuntimeFenced    EntityAvailabilityRejectionCode = "runtime_fenced"
+)
+
+type EntityAvailabilityRejectedError struct {
+	Code     EntityAvailabilityRejectionCode
+	Message  string
+	EntityID string
+}
+
+func (err *EntityAvailabilityRejectedError) Error() string {
+	if err.EntityID == "" {
+		return fmt.Sprintf("entity availability rejected (%s): %s", err.Code, err.Message)
+	}
+	return fmt.Sprintf("entity availability rejected for %s (%s): %s", err.EntityID, err.Code, err.Message)
+}
+
 type ValidationError struct {
 	Err error
 }

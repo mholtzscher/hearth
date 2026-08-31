@@ -13,10 +13,13 @@ type Querier interface {
 	CreateDevice(ctx context.Context, arg CreateDeviceParams) error
 	CreateEntity(ctx context.Context, arg CreateEntityParams) error
 	CreateEntityMapping(ctx context.Context, arg CreateEntityMappingParams) error
+	CreateEntityOwnershipInterval(ctx context.Context, arg CreateEntityOwnershipIntervalParams) error
+	GetAdapterAvailabilityBaseline(ctx context.Context, arg GetAdapterAvailabilityBaselineParams) (GetAdapterAvailabilityBaselineRow, error)
 	GetBinding(ctx context.Context, arg GetBindingParams) (GetBindingRow, error)
 	GetBindingByExternalDeviceID(ctx context.Context, arg GetBindingByExternalDeviceIDParams) (GetBindingByExternalDeviceIDRow, error)
 	GetEntityMapping(ctx context.Context, arg GetEntityMappingParams) (GetEntityMappingRow, error)
 	GetEntityMappingByExternalID(ctx context.Context, arg GetEntityMappingByExternalIDParams) (GetEntityMappingByExternalIDRow, error)
+	InsertEntityAvailabilityBaseline(ctx context.Context, arg InsertEntityAvailabilityBaselineParams) (int64, error)
 	UpdateBindingExternalID(ctx context.Context, arg UpdateBindingExternalIDParams) error
 	UpdateDeviceDescriptor(ctx context.Context, arg UpdateDeviceDescriptorParams) error
 	UpdateEntityDescriptor(ctx context.Context, arg UpdateEntityDescriptorParams) error

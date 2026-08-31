@@ -30,6 +30,21 @@ type HealthReport struct {
 	Detail           string
 }
 
+type EntityAvailabilityStatus string
+
+const (
+	AvailabilityAvailable   EntityAvailabilityStatus = "available"
+	AvailabilityUnavailable EntityAvailabilityStatus = "unavailable"
+)
+
+type EntityAvailabilityReport struct {
+	EntityID         string
+	Status           EntityAvailabilityStatus
+	SourceObservedAt time.Time
+	ReasonCode       string
+	Detail           string
+}
+
 type EntityMetadata struct {
 	Key        string
 	ExternalID string

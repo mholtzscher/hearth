@@ -329,6 +329,7 @@ func TestSQLiteReleaseAndExpiryPersistOfflineHealth(t *testing.T) {
 	}
 }
 
+//nolint:gocognit,gocyclo,cyclop // One timeline verifies batches, epochs, current views, and history.
 func TestSQLiteAvailabilityBatchRollsBackAndUsesHealthEpoch(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
@@ -348,12 +349,28 @@ func TestSQLiteAvailabilityBatchRollsBackAndUsesHealthEpoch(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	_, disableErr := database.ExecContext(
+		ctx,
+		"UPDATE entities SET enabled = 0 WHERE id = ?",
+		binding.Entities[0].EntityID,
+	)
+	if disableErr != nil {
+		t.Fatal(disableErr)
+	}
 	healthyAt := claimedAt.Add(time.Second)
 	if _, heartbeatErr := repository.RecordAdapterHeartbeat(ctx, HeartbeatWrite{
 		AdapterID: "simulator", RuntimeID: testRuntimeID, ExternalStatus: AdapterHealthHealthy,
 		SourceObservedAt: healthyAt, ReceivedAt: healthyAt, LeaseExpiresAt: healthyAt.Add(15 * time.Second),
 	}); heartbeatErr != nil {
 		t.Fatal(heartbeatErr)
+	}
+	view, err := repository.GetEntity(ctx, binding.Entities[0].EntityID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if view.Availability.Status != EntityAvailabilityUnknown || view.Availability.Source != healthSourceCore ||
+		view.Availability.Reason == nil || view.Availability.Reason.Code != "hearth.awaiting_entity_report" {
+		t.Fatalf("healthy availability without report = %#v", view.Availability)
 	}
 	available := EntityAvailabilityReport{
 		EntityID: binding.Entities[0].EntityID, Status: EntityAvailabilityAvailable, SourceObservedAt: healthyAt,
@@ -382,15 +399,72 @@ func TestSQLiteAvailabilityBatchRollsBackAndUsesHealthEpoch(t *testing.T) {
 		t.Fatal(reportErr)
 	}
 	assertTableCount(t, database, "entity_availability_current", 1)
-	assertTableCount(t, database, "health_transitions", 3)
+	assertTableCount(t, database, "health_transitions", 4)
+	view, err = repository.GetEntity(ctx, binding.Entities[0].EntityID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if view.Entity.Enabled || view.Availability.Status != EntityAvailabilityAvailable ||
+		view.Availability.Source != "entity_report" || view.Availability.SourceObservedAt == nil ||
+		!view.Availability.SourceObservedAt.Equal(healthyAt) {
+		t.Fatalf("reported availability = %#v", view.Availability)
+	}
+	repeatedAt := reportedAt.Add(time.Second)
+	repeated := available
+	repeated.SourceObservedAt = healthyAt.Add(time.Second)
+	if _, repeatErr := repository.ReportEntityAvailability(ctx, AvailabilityBatchWrite{
+		AdapterID: "simulator", RuntimeID: testRuntimeID,
+		Reports: []EntityAvailabilityReport{repeated}, ReportedAt: repeatedAt,
+	}); repeatErr != nil {
+		t.Fatal(repeatErr)
+	}
+	var currentSince, evidenceAt, sourceObservedAt string
+	var directTransitions int
+	if scanErr := database.QueryRowContext(ctx, `
+		SELECT current_since, evidence_at, source_observed_at,
+		       (SELECT count(*) FROM health_transitions
+		        WHERE resource_kind = 'entity' AND entity_id = ?)
+		FROM entity_availability_current WHERE entity_id = ?`,
+		binding.Entities[0].EntityID, binding.Entities[0].EntityID,
+	).Scan(&currentSince, &evidenceAt, &sourceObservedAt, &directTransitions); scanErr != nil {
+		t.Fatal(scanErr)
+	}
+	if currentSince != formatTime(reportedAt) || evidenceAt != formatTime(repeatedAt) ||
+		sourceObservedAt != formatTime(repeated.SourceObservedAt) || directTransitions != 2 {
+		t.Fatalf(
+			"repeated availability = since %q, evidence %q, source %q, transitions %d",
+			currentSince, evidenceAt, sourceObservedAt, directTransitions,
+		)
+	}
 
-	unhealthyAt := reportedAt.Add(time.Second)
+	unavailableAt := repeatedAt.Add(time.Second)
+	if _, unavailableErr := repository.ReportEntityAvailability(ctx, AvailabilityBatchWrite{
+		AdapterID: "simulator", RuntimeID: testRuntimeID,
+		Reports: []EntityAvailabilityReport{{
+			EntityID: binding.Entities[0].EntityID, Status: EntityAvailabilityUnavailable,
+			SourceObservedAt: unavailableAt,
+			Reason:           &HealthReason{Code: "hearth.external_system_unavailable"},
+		}},
+		ReportedAt: unavailableAt,
+	}); unavailableErr != nil {
+		t.Fatal(unavailableErr)
+	}
+	unhealthyAt := unavailableAt.Add(time.Second)
 	if _, unhealthyErr := repository.RecordAdapterHeartbeat(ctx, HeartbeatWrite{
 		AdapterID: "simulator", RuntimeID: testRuntimeID, ExternalStatus: AdapterHealthUnhealthy,
 		SourceObservedAt: unhealthyAt, Reason: &HealthReason{Code: "hearth.external_system_unavailable"},
 		ReceivedAt: unhealthyAt, LeaseExpiresAt: unhealthyAt.Add(15 * time.Second),
 	}); unhealthyErr != nil {
 		t.Fatal(unhealthyErr)
+	}
+	view, err = repository.GetEntity(ctx, binding.Entities[0].EntityID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if view.Availability.Status != EntityAvailabilityUnavailable || view.Availability.Source != "adapter_health" ||
+		!view.Availability.Since.Equal(unavailableAt) || view.Availability.Reason == nil ||
+		view.Availability.Reason.Code != "hearth.external_system_unavailable" {
+		t.Fatalf("inherited unhealthy availability = %#v", view.Availability)
 	}
 	recoveredAt := unhealthyAt.Add(time.Second)
 	if _, recoveredErr := repository.RecordAdapterHeartbeat(ctx, HeartbeatWrite{
@@ -399,6 +473,14 @@ func TestSQLiteAvailabilityBatchRollsBackAndUsesHealthEpoch(t *testing.T) {
 		LeaseExpiresAt: recoveredAt.Add(15 * time.Second),
 	}); recoveredErr != nil {
 		t.Fatal(recoveredErr)
+	}
+	view, err = repository.GetEntity(ctx, binding.Entities[0].EntityID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if view.Availability.Status != EntityAvailabilityUnknown || view.Availability.Source != healthSourceCore ||
+		view.Availability.Reason == nil || view.Availability.Reason.Code != "hearth.awaiting_entity_report" {
+		t.Fatalf("availability after healthy epoch change = %#v", view.Availability)
 	}
 	if _, recoveryReportErr := repository.ReportEntityAvailability(ctx, AvailabilityBatchWrite{
 		AdapterID: "simulator", RuntimeID: testRuntimeID,
@@ -415,8 +497,102 @@ func TestSQLiteAvailabilityBatchRollsBackAndUsesHealthEpoch(t *testing.T) {
 	).Scan(&epoch, &transitionCount); scanErr != nil {
 		t.Fatal(scanErr)
 	}
-	if epoch != 2 || transitionCount != 2 {
+	if epoch != 2 || transitionCount != 4 {
 		t.Fatalf("availability after recovery = epoch %d, transitions %d", epoch, transitionCount)
+	}
+	history, err := repository.ListEntityAvailabilityHistory(ctx, ListEntityAvailabilityParams{
+		EntityID: binding.Entities[0].EntityID, Limit: 10,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantStatuses := []string{"available", "unknown", "unavailable", "available", "unknown", "unknown"}
+	wantSources := []string{
+		"entity_report", healthSourceCore, "entity_report", "entity_report", healthSourceCore, "adapter_health",
+	}
+	if len(history.Items) != len(wantStatuses) {
+		t.Fatalf("effective availability history = %#v", history)
+	}
+	for index := range wantStatuses {
+		if history.Items[index].Status != wantStatuses[index] || history.Items[index].Source != wantSources[index] {
+			t.Fatalf("effective availability history[%d] = %#v", index, history.Items[index])
+		}
+	}
+	var intervalStart, baselineOrder int64
+	if scanErr := database.QueryRowContext(ctx, `
+		SELECT ownership.starting_receive_order, transition.receive_order
+		FROM entity_ownership_intervals AS ownership
+		JOIN health_transitions AS transition
+		  ON transition.receive_order = ownership.starting_receive_order
+		WHERE ownership.entity_id = ? AND ownership.ending_receive_order IS NULL`,
+		binding.Entities[0].EntityID,
+	).Scan(&intervalStart, &baselineOrder); scanErr != nil {
+		t.Fatal(scanErr)
+	}
+	if intervalStart != baselineOrder {
+		t.Fatalf("ownership interval start = %d, baseline order = %d", intervalStart, baselineOrder)
+	}
+}
+
+func TestSQLiteAvailabilityFencesRuntimeAtLeaseBoundary(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	database := openMigratedDatabase(t, filepath.Join(t.TempDir(), "hearth.db"))
+	catalog := firstLightCatalog(t)
+	repository := NewSQLiteRepository(database, catalog)
+	claimedAt := time.Date(2026, 8, 29, 16, 0, 0, 0, time.UTC)
+	if _, err := repository.ClaimAdapterRuntime(
+		ctx,
+		testClaimWrite(testClaimID, testRuntimeID, claimedAt),
+	); err != nil {
+		t.Fatal(err)
+	}
+	healthyAt := claimedAt.Add(time.Second)
+	leaseExpiresAt := healthyAt.Add(adapterLeaseDuration)
+	if _, err := repository.RecordAdapterHeartbeat(ctx, HeartbeatWrite{
+		AdapterID: "simulator", RuntimeID: testRuntimeID, ExternalStatus: AdapterHealthHealthy,
+		SourceObservedAt: healthyAt, ReceivedAt: healthyAt, LeaseExpiresAt: leaseExpiresAt,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	service := NewService(repository, nil, catalog, Dependencies{Now: func() time.Time { return healthyAt }})
+	binding, err := service.Register(ctx, "simulator", validDomainRegistration())
+	if err != nil {
+		t.Fatal(err)
+	}
+	beforeExpiry := leaseExpiresAt.Add(-time.Nanosecond)
+	report := EntityAvailabilityReport{
+		EntityID: binding.Entities[0].EntityID, Status: EntityAvailabilityAvailable,
+		SourceObservedAt: beforeExpiry,
+	}
+	if _, reportErr := repository.ReportEntityAvailability(ctx, AvailabilityBatchWrite{
+		AdapterID: "simulator", RuntimeID: testRuntimeID,
+		Reports: []EntityAvailabilityReport{report}, ReportedAt: beforeExpiry,
+	}); reportErr != nil {
+		t.Fatalf("report before lease expiry: %v", reportErr)
+	}
+	_, err = repository.ReportEntityAvailability(ctx, AvailabilityBatchWrite{
+		AdapterID: "simulator", RuntimeID: testRuntimeID,
+		Reports: []EntityAvailabilityReport{report}, ReportedAt: leaseExpiresAt,
+	})
+	if !errors.Is(err, ErrRuntimeFenced) {
+		t.Fatalf("report at lease expiry error = %v", err)
+	}
+	var evidenceAt string
+	if scanErr := database.QueryRowContext(ctx, `
+		SELECT evidence_at FROM entity_availability_current WHERE entity_id = ?`,
+		binding.Entities[0].EntityID,
+	).Scan(&evidenceAt); scanErr != nil {
+		t.Fatal(scanErr)
+	}
+	if evidenceAt != formatTime(beforeExpiry) {
+		t.Fatalf("availability evidence after fenced report = %q", evidenceAt)
+	}
+	adapter, err := repository.GetAdapter(ctx, "simulator")
+	if err != nil || adapter.Health == nil || adapter.Health.Reason == nil ||
+		adapter.Health.Reason.Code != "hearth.heartbeat_expired" || adapter.Health.Runtime == nil ||
+		adapter.Health.Runtime.Status != runtimeStatusOffline {
+		t.Fatalf("Adapter after availability-triggered expiry = %#v, %v", adapter, err)
 	}
 }
 

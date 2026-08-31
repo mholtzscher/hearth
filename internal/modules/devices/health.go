@@ -13,6 +13,7 @@ const (
 const (
 	runtimeStatusOnline  = "online"
 	runtimeStatusOffline = "offline"
+	healthSourceCore     = "core"
 )
 
 type EntityAvailabilityStatus string

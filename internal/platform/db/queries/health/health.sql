@@ -234,17 +234,132 @@ ON CONFLICT(entity_id) DO UPDATE SET
     latest_transition_receive_order = excluded.latest_transition_receive_order;
 
 -- name: ListEntityAvailabilityHistoryFirstPage :many
+WITH candidates AS (
+    SELECT
+        transition.receive_order,
+        transition.status,
+        transition.source,
+        transition.reason_code,
+        transition.reason_detail,
+        transition.source_observed_at,
+        transition.observed_at
+    FROM health_transitions AS transition
+    JOIN entity_ownership_intervals AS ownership
+        ON ownership.entity_id = transition.entity_id
+        AND ownership.adapter_id = transition.adapter_id
+        AND transition.receive_order >= ownership.starting_receive_order
+        AND (
+            ownership.ending_receive_order IS NULL
+            OR transition.receive_order < ownership.ending_receive_order
+        )
+    WHERE transition.resource_kind = 'entity'
+      AND transition.entity_id = sqlc.arg(entity_id)
+
+    UNION ALL
+
+    SELECT
+        transition.receive_order,
+        CASE WHEN transition.status = 'unhealthy' THEN 'unavailable' ELSE 'unknown' END AS status,
+        CASE WHEN transition.status = 'healthy' THEN 'core' ELSE 'adapter_health' END AS source,
+        CASE
+            WHEN transition.status = 'healthy' THEN 'hearth.awaiting_entity_report'
+            ELSE transition.reason_code
+        END AS reason_code,
+        CASE WHEN transition.status = 'healthy' THEN NULL ELSE transition.reason_detail END AS reason_detail,
+        CASE WHEN transition.status = 'healthy' THEN NULL ELSE transition.source_observed_at END AS source_observed_at,
+        transition.observed_at
+    FROM entity_ownership_intervals AS ownership
+    JOIN health_transitions AS transition
+        ON transition.resource_kind = 'adapter'
+        AND transition.adapter_id = ownership.adapter_id
+        AND transition.receive_order >= ownership.starting_receive_order
+        AND (
+            ownership.ending_receive_order IS NULL
+            OR transition.receive_order < ownership.ending_receive_order
+        )
+    WHERE ownership.entity_id = sqlc.arg(entity_id)
+), sequenced AS (
+    SELECT
+        candidates.*,
+        lag(status) OVER (ORDER BY receive_order) AS prior_status,
+        lag(reason_code) OVER (ORDER BY receive_order) AS prior_reason_code
+    FROM candidates
+), effective AS (
+    SELECT receive_order, status, source, reason_code, reason_detail,
+           source_observed_at, observed_at
+    FROM sequenced
+    WHERE prior_status IS NULL
+       OR status <> prior_status
+       OR reason_code IS NOT prior_reason_code
+)
 SELECT receive_order, status, source, reason_code, reason_detail,
        source_observed_at, observed_at
-FROM health_transitions
-WHERE resource_kind = 'entity' AND entity_id = ?
+FROM effective
 ORDER BY receive_order DESC
-LIMIT ?;
+LIMIT sqlc.arg(page_limit);
 
 -- name: ListEntityAvailabilityHistoryBefore :many
+WITH candidates AS (
+    SELECT
+        transition.receive_order,
+        transition.status,
+        transition.source,
+        transition.reason_code,
+        transition.reason_detail,
+        transition.source_observed_at,
+        transition.observed_at
+    FROM health_transitions AS transition
+    JOIN entity_ownership_intervals AS ownership
+        ON ownership.entity_id = transition.entity_id
+        AND ownership.adapter_id = transition.adapter_id
+        AND transition.receive_order >= ownership.starting_receive_order
+        AND (
+            ownership.ending_receive_order IS NULL
+            OR transition.receive_order < ownership.ending_receive_order
+        )
+    WHERE transition.resource_kind = 'entity'
+      AND transition.entity_id = sqlc.arg(entity_id)
+
+    UNION ALL
+
+    SELECT
+        transition.receive_order,
+        CASE WHEN transition.status = 'unhealthy' THEN 'unavailable' ELSE 'unknown' END AS status,
+        CASE WHEN transition.status = 'healthy' THEN 'core' ELSE 'adapter_health' END AS source,
+        CASE
+            WHEN transition.status = 'healthy' THEN 'hearth.awaiting_entity_report'
+            ELSE transition.reason_code
+        END AS reason_code,
+        CASE WHEN transition.status = 'healthy' THEN NULL ELSE transition.reason_detail END AS reason_detail,
+        CASE WHEN transition.status = 'healthy' THEN NULL ELSE transition.source_observed_at END AS source_observed_at,
+        transition.observed_at
+    FROM entity_ownership_intervals AS ownership
+    JOIN health_transitions AS transition
+        ON transition.resource_kind = 'adapter'
+        AND transition.adapter_id = ownership.adapter_id
+        AND transition.receive_order >= ownership.starting_receive_order
+        AND (
+            ownership.ending_receive_order IS NULL
+            OR transition.receive_order < ownership.ending_receive_order
+        )
+    WHERE ownership.entity_id = sqlc.arg(entity_id)
+), sequenced AS (
+    SELECT
+        candidates.*,
+        lag(status) OVER (ORDER BY receive_order) AS prior_status,
+        lag(reason_code) OVER (ORDER BY receive_order) AS prior_reason_code
+    FROM candidates
+), effective AS (
+    SELECT receive_order, status, source, reason_code, reason_detail,
+           source_observed_at, observed_at
+    FROM sequenced
+    WHERE prior_status IS NULL
+       OR status <> prior_status
+       OR reason_code IS NOT prior_reason_code
+)
 SELECT receive_order, status, source, reason_code, reason_detail,
        source_observed_at, observed_at
-FROM health_transitions
-WHERE resource_kind = 'entity' AND entity_id = ? AND receive_order < ?
+FROM effective
+WHERE receive_order < CAST(sqlc.arg(before_receive_order) AS INTEGER)
 ORDER BY receive_order DESC
-LIMIT ?;
+LIMIT sqlc.arg(page_limit);

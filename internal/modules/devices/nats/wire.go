@@ -61,6 +61,30 @@ type adapterError struct {
 	Message string `json:"message"`
 }
 
+type entityAvailabilityRequest struct {
+	Entities []entityAvailabilityEntry `json:"entities"`
+}
+
+type entityAvailabilityEntry struct {
+	EntityID         string        `json:"entity_id"`
+	Status           string        `json:"status"`
+	SourceObservedAt string        `json:"source_observed_at"`
+	Reason           *healthReason `json:"reason,omitempty"`
+}
+
+type entityAvailabilityResponse struct {
+	Status     string                   `json:"status"`
+	ReportedAt string                   `json:"reported_at,omitempty"`
+	Count      int                      `json:"count,omitempty"`
+	Error      *entityAvailabilityError `json:"error,omitempty"`
+}
+
+type entityAvailabilityError struct {
+	Code     string `json:"code"`
+	Message  string `json:"message"`
+	EntityID string `json:"entity_id,omitempty"`
+}
+
 type registration struct {
 	BindingKey string             `json:"binding_key"`
 	Device     deviceDescriptor   `json:"device"`

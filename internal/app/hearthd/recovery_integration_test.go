@@ -36,6 +36,12 @@ func TestCoreStartupInterruptsActiveCommandsWithoutRedispatch(t *testing.T) {
 	repository := devices.NewSQLiteRepository(database, catalog)
 	service := devices.NewService(repository, nil, catalog, devices.Dependencies{})
 	service.ResumeHealthEvaluation(time.Now().UTC())
+	if _, claimErr := service.ClaimAdapterRuntime(ctx, devices.ClaimAdapterRuntimeParams{
+		ClaimID: "clm_01890f47-7a6b-7c4d-8e9f-0123456789ab", AdapterID: "simulator",
+		SoftwareName: "hearth-simulator", SoftwareVersion: "0.1.0",
+	}); claimErr != nil {
+		t.Fatal(claimErr)
+	}
 	binding, err := service.Register(ctx, "simulator", devices.Registration{
 		BindingKey: "recovery-light",
 		Device:     devices.DeviceDescriptor{Name: "Recovery light", Kind: devices.DeviceKindLight},
@@ -47,12 +53,6 @@ func TestCoreStartupInterruptsActiveCommandsWithoutRedispatch(t *testing.T) {
 	})
 	if err != nil {
 		t.Fatal(err)
-	}
-	if _, claimErr := service.ClaimAdapterRuntime(ctx, devices.ClaimAdapterRuntimeParams{
-		ClaimID: "clm_01890f47-7a6b-7c4d-8e9f-0123456789ab", AdapterID: "simulator",
-		SoftwareName: "hearth-simulator", SoftwareVersion: "0.1.0",
-	}); claimErr != nil {
-		t.Fatal(claimErr)
 	}
 	requested := recoveryCommandRecord(t, binding.Entities[0].EntityID, time.Now().UTC())
 	accepted := recoveryCommandRecord(t, binding.Entities[0].EntityID, requested.RequestedAt.Add(time.Second))

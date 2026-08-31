@@ -38,19 +38,23 @@ type Session struct {
 	validator         *contractsv1.Validator
 	logger            *slog.Logger
 
-	stateMutex        sync.Mutex
-	terminalErr       error
-	closed            chan struct{}
-	closedOnce        sync.Once
-	closeOnce         sync.Once
-	closeErr          error
-	lifecycleCancel   context.CancelFunc
-	heartbeatDone     chan struct{}
-	heartbeatWake     chan struct{}
-	heartbeatNotify   chan struct{}
-	desiredHealth     HealthReport
-	desiredGeneration uint64
-	ackedGeneration   uint64
+	stateMutex             sync.Mutex
+	terminalErr            error
+	closed                 chan struct{}
+	closedOnce             sync.Once
+	closeOnce              sync.Once
+	closeErr               error
+	lifecycleCancel        context.CancelFunc
+	heartbeatDone          chan struct{}
+	heartbeatWake          chan struct{}
+	heartbeatNotify        chan struct{}
+	desiredHealth          HealthReport
+	desiredGeneration      uint64
+	ackedGeneration        uint64
+	availabilityCache      map[string]EntityAvailabilityReport
+	availabilityGate       chan struct{}
+	availabilityReplayWake chan struct{}
+	availabilityReplayDone chan struct{}
 
 	handlerMutex sync.Mutex
 	handlerWait  sync.WaitGroup
@@ -105,14 +109,20 @@ func Connect(ctx context.Context, config Config) (*Session, error) {
 		connection: connection, jetstream: js, validator: validator, logger: logger,
 		closed: make(chan struct{}), heartbeatDone: make(chan struct{}),
 		heartbeatWake: make(chan struct{}, 1), heartbeatNotify: make(chan struct{}),
-		desiredHealth: HealthReport{Status: HealthUnknown, SourceObservedAt: time.Now().UTC()},
+		desiredHealth:          HealthReport{Status: HealthUnknown, SourceObservedAt: time.Now().UTC()},
+		availabilityCache:      make(map[string]EntityAvailabilityReport),
+		availabilityGate:       make(chan struct{}, 1),
+		availabilityReplayWake: make(chan struct{}, 1),
+		availabilityReplayDone: make(chan struct{}),
 	}
+	session.availabilityGate <- struct{}{}
 	if claimErr := session.claim(ctx, config); claimErr != nil {
 		connection.Close()
 		return nil, claimErr
 	}
 	lifecycleContext, cancelLifecycle := context.WithCancel(context.Background())
 	session.lifecycleCancel = cancelLifecycle
+	go session.runAvailabilityReplay(lifecycleContext)
 	go session.runHeartbeats(lifecycleContext)
 	return session, nil
 }

@@ -257,6 +257,63 @@ func createRegistrationEntity(
 	}); err != nil {
 		return mapRegistrationWriteError("create entity mapping", err)
 	}
+	return createEntityAvailabilityBaseline(
+		ctx, queries, params.AdapterID, reconciliation.entityID, updatedAt,
+	)
+}
+
+func createEntityAvailabilityBaseline(
+	ctx context.Context,
+	queries *registrationsqlc.Queries,
+	adapterID string,
+	entityID EntityID,
+	observedAt string,
+) error {
+	adapter, err := queries.GetAdapterAvailabilityBaseline(
+		ctx,
+		registrationsqlc.GetAdapterAvailabilityBaselineParams{AdapterID: adapterID},
+	)
+	if errors.Is(err, sql.ErrNoRows) {
+		return ErrRuntimeFenced
+	}
+	if err != nil {
+		return fmt.Errorf("get Adapter health for Entity availability baseline: %w", err)
+	}
+	status := string(EntityAvailabilityUnknown)
+	source := "adapter_health"
+	reasonCode := adapter.HealthReasonCode
+	reasonDetail := adapter.HealthReasonDetail
+	switch AdapterHealthStatus(adapter.HealthStatus.String) {
+	case AdapterHealthHealthy:
+		source = healthSourceCore
+		reasonCode = nullableText("hearth.awaiting_entity_report")
+		reasonDetail = sql.NullString{}
+	case AdapterHealthUnhealthy:
+		status = string(EntityAvailabilityUnavailable)
+	case AdapterHealthUnknown:
+	default:
+		return errors.New("adapter health is incomplete for entity availability baseline")
+	}
+	receiveOrder, err := queries.InsertEntityAvailabilityBaseline(
+		ctx,
+		registrationsqlc.InsertEntityAvailabilityBaselineParams{
+			AdapterID: adapterID, EntityID: nullableText(string(entityID)),
+			RuntimeID: adapter.ActiveRuntimeID, Status: status, Source: source,
+			ReasonCode: reasonCode, ReasonDetail: reasonDetail, ObservedAt: observedAt,
+		},
+	)
+	if err != nil {
+		return fmt.Errorf("insert Entity availability baseline: %w", err)
+	}
+	intervalErr := queries.CreateEntityOwnershipInterval(
+		ctx,
+		registrationsqlc.CreateEntityOwnershipIntervalParams{
+			EntityID: string(entityID), AdapterID: adapterID, StartingReceiveOrder: receiveOrder,
+		},
+	)
+	if intervalErr != nil {
+		return fmt.Errorf("create Entity ownership interval: %w", intervalErr)
+	}
 	return nil
 }
 
@@ -348,6 +405,17 @@ func (repository *SQLiteRepository) SetEntityEnabled(
 		row.ID, row.DeviceID, row.AdapterID, row.Name, row.TypeID, row.SupportJson, row.Enabled,
 		row.ObservationID, row.ValueJson, row.AdapterReceivedAt, row.SourceUpdatedAt,
 		row.ObservedAt, row.ReceiveOrder,
+		sqliteEntityAvailability{
+			entityCreatedAt: row.EntityCreatedAt, runtimeID: row.AvailabilityRuntimeID,
+			adapterStatus: row.AdapterHealthStatus, adapterReasonCode: row.AdapterHealthReasonCode,
+			adapterReasonDetail: row.AdapterHealthReasonDetail, adapterSince: row.AdapterHealthSince,
+			adapterEvidenceAt: row.AdapterHealthEvidenceAt, reportedStatus: row.ReportedAvailabilityStatus,
+			reportedReasonCode:   row.ReportedAvailabilityReasonCode,
+			reportedReasonDetail: row.ReportedAvailabilityReasonDetail,
+			reportedSourceAt:     row.ReportedAvailabilitySourceObservedAt,
+			reportedEvidenceAt:   row.ReportedAvailabilityEvidenceAt,
+			reportedSince:        row.ReportedAvailabilitySince,
+		},
 	)
 	if err != nil {
 		return EntityWithState{}, fmt.Errorf("map updated entity: %w", err)

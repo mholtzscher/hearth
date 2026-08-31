@@ -3,6 +3,7 @@ package devices
 import (
 	"context"
 	"fmt"
+	"time"
 )
 
 func (service *Service) ListDevices(ctx context.Context, params ListDevicesParams) (Page[Device], error) {
@@ -35,13 +36,15 @@ func (service *Service) GetDevice(ctx context.Context, params GetDeviceParams) (
 			return DeviceAggregate{}, fmt.Errorf("%w: parse entity position: %w", ErrInvalidPage, err)
 		}
 	}
+	snapshot := service.healthEvaluationSnapshot()
+	now := service.dependencies.Now().UTC()
 	aggregate, err := service.repository.GetDevice(ctx, params)
 	if err != nil {
 		return DeviceAggregate{}, err
 	}
 	items := make([]EntityWithState, len(aggregate.Entities.Items))
 	for index, entity := range aggregate.Entities.Items {
-		items[index] = copyEntityWithState(entity)
+		items[index] = evaluateEntityAvailability(copyEntityWithState(entity), snapshot, now)
 	}
 	return DeviceAggregate{
 		Device: aggregate.Device,
@@ -65,13 +68,15 @@ func (service *Service) ListEntities(ctx context.Context, params ListEntitiesPar
 			return Page[EntityWithState]{}, fmt.Errorf("%w: parse entity position: %w", ErrInvalidPage, err)
 		}
 	}
+	snapshot := service.healthEvaluationSnapshot()
+	now := service.dependencies.Now().UTC()
 	page, err := service.repository.ListEntities(ctx, params)
 	if err != nil {
 		return Page[EntityWithState]{}, err
 	}
 	items := make([]EntityWithState, len(page.Items))
 	for index, entity := range page.Items {
-		items[index] = copyEntityWithState(entity)
+		items[index] = evaluateEntityAvailability(copyEntityWithState(entity), snapshot, now)
 	}
 	return Page[EntityWithState]{Items: items, HasMore: page.HasMore}, nil
 }
@@ -80,11 +85,32 @@ func (service *Service) GetEntity(ctx context.Context, id EntityID) (EntityWithS
 	if _, err := ParseEntityID(string(id)); err != nil {
 		return EntityWithState{}, fmt.Errorf("parse entity ID: %w", err)
 	}
+	snapshot := service.healthEvaluationSnapshot()
+	now := service.dependencies.Now().UTC()
 	view, err := service.repository.GetEntity(ctx, id)
 	if err != nil {
 		return EntityWithState{}, err
 	}
-	return copyEntityWithState(view), nil
+	return evaluateEntityAvailability(copyEntityWithState(view), snapshot, now), nil
+}
+
+func evaluateEntityAvailability(
+	view EntityWithState,
+	snapshot healthEvaluationSnapshot,
+	now time.Time,
+) EntityWithState {
+	if !snapshot.active || !now.Before(snapshot.recoveryUntil) || view.availabilityRuntimeID == nil {
+		return view
+	}
+	if _, refreshed := snapshot.refreshed[*view.availabilityRuntimeID]; refreshed {
+		return view
+	}
+	view.Availability = EntityAvailability{
+		Status: EntityAvailabilityUnknown, Source: healthSourceCore,
+		Since: snapshot.resumedAt, EvidenceAt: snapshot.resumedAt,
+		Reason: &HealthReason{Code: "hearth.core_recovering"},
+	}
+	return view
 }
 
 func (service *Service) GetCommand(ctx context.Context, id CommandID) (CommandRecord, error) {

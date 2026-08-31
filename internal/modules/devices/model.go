@@ -53,9 +53,10 @@ type State struct {
 }
 
 type EntityWithState struct {
-	Entity       Entity
-	State        *State
-	Availability EntityAvailability
+	Entity                Entity
+	State                 *State
+	Availability          EntityAvailability
+	availabilityRuntimeID *RuntimeID
 }
 
 type DeviceAggregate struct {

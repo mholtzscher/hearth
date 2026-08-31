@@ -83,6 +83,17 @@ func (repository *SQLiteRepository) ListEntities(
 			row.ID, row.DeviceID, row.AdapterID, row.Name, row.TypeID, row.SupportJson, row.Enabled,
 			row.ObservationID, row.ValueJson, row.AdapterReceivedAt, row.SourceUpdatedAt,
 			row.ObservedAt, row.ReceiveOrder,
+			sqliteEntityAvailability{
+				entityCreatedAt: row.EntityCreatedAt, runtimeID: row.AvailabilityRuntimeID,
+				adapterStatus: row.AdapterHealthStatus, adapterReasonCode: row.AdapterHealthReasonCode,
+				adapterReasonDetail: row.AdapterHealthReasonDetail, adapterSince: row.AdapterHealthSince,
+				adapterEvidenceAt: row.AdapterHealthEvidenceAt, reportedStatus: row.ReportedAvailabilityStatus,
+				reportedReasonCode:   row.ReportedAvailabilityReasonCode,
+				reportedReasonDetail: row.ReportedAvailabilityReasonDetail,
+				reportedSourceAt:     row.ReportedAvailabilitySourceObservedAt,
+				reportedEvidenceAt:   row.ReportedAvailabilityEvidenceAt,
+				reportedSince:        row.ReportedAvailabilitySince,
+			},
 		)
 		if mappingErr != nil {
 			return Page[EntityWithState]{}, fmt.Errorf("map entity: %w", mappingErr)
@@ -110,6 +121,17 @@ func listEntitiesByDevice(
 			row.ID, row.DeviceID, row.AdapterID, row.Name, row.TypeID, row.SupportJson, row.Enabled,
 			row.ObservationID, row.ValueJson, row.AdapterReceivedAt, row.SourceUpdatedAt,
 			row.ObservedAt, row.ReceiveOrder,
+			sqliteEntityAvailability{
+				entityCreatedAt: row.EntityCreatedAt, runtimeID: row.AvailabilityRuntimeID,
+				adapterStatus: row.AdapterHealthStatus, adapterReasonCode: row.AdapterHealthReasonCode,
+				adapterReasonDetail: row.AdapterHealthReasonDetail, adapterSince: row.AdapterHealthSince,
+				adapterEvidenceAt: row.AdapterHealthEvidenceAt, reportedStatus: row.ReportedAvailabilityStatus,
+				reportedReasonCode:   row.ReportedAvailabilityReasonCode,
+				reportedReasonDetail: row.ReportedAvailabilityReasonDetail,
+				reportedSourceAt:     row.ReportedAvailabilitySourceObservedAt,
+				reportedEvidenceAt:   row.ReportedAvailabilityEvidenceAt,
+				reportedSince:        row.ReportedAvailabilitySince,
+			},
 		)
 		if mappingErr != nil {
 			return Page[EntityWithState]{}, fmt.Errorf("map entity: %w", mappingErr)

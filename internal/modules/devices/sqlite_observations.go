@@ -24,6 +24,17 @@ func (repository *SQLiteRepository) GetEntity(ctx context.Context, id EntityID) 
 		row.ID, row.DeviceID, row.AdapterID, row.Name, row.TypeID, row.SupportJson, row.Enabled,
 		row.ObservationID, row.ValueJson, row.AdapterReceivedAt, row.SourceUpdatedAt,
 		row.ObservedAt, row.ReceiveOrder,
+		sqliteEntityAvailability{
+			entityCreatedAt: row.EntityCreatedAt, runtimeID: row.AvailabilityRuntimeID,
+			adapterStatus: row.AdapterHealthStatus, adapterReasonCode: row.AdapterHealthReasonCode,
+			adapterReasonDetail: row.AdapterHealthReasonDetail, adapterSince: row.AdapterHealthSince,
+			adapterEvidenceAt: row.AdapterHealthEvidenceAt, reportedStatus: row.ReportedAvailabilityStatus,
+			reportedReasonCode:   row.ReportedAvailabilityReasonCode,
+			reportedReasonDetail: row.ReportedAvailabilityReasonDetail,
+			reportedSourceAt:     row.ReportedAvailabilitySourceObservedAt,
+			reportedEvidenceAt:   row.ReportedAvailabilityEvidenceAt,
+			reportedSince:        row.ReportedAvailabilitySince,
+		},
 	)
 }
 
@@ -129,6 +140,17 @@ func loadObservationEntity(
 		row.ID, row.DeviceID, row.AdapterID, row.Name, row.TypeID, row.SupportJson, row.Enabled,
 		row.ObservationID, row.ValueJson, row.AdapterReceivedAt, row.SourceUpdatedAt,
 		row.ObservedAt, row.ReceiveOrder,
+		sqliteEntityAvailability{
+			entityCreatedAt: row.EntityCreatedAt, runtimeID: row.AvailabilityRuntimeID,
+			adapterStatus: row.AdapterHealthStatus, adapterReasonCode: row.AdapterHealthReasonCode,
+			adapterReasonDetail: row.AdapterHealthReasonDetail, adapterSince: row.AdapterHealthSince,
+			adapterEvidenceAt: row.AdapterHealthEvidenceAt, reportedStatus: row.ReportedAvailabilityStatus,
+			reportedReasonCode:   row.ReportedAvailabilityReasonCode,
+			reportedReasonDetail: row.ReportedAvailabilityReasonDetail,
+			reportedSourceAt:     row.ReportedAvailabilitySourceObservedAt,
+			reportedEvidenceAt:   row.ReportedAvailabilityEvidenceAt,
+			reportedSince:        row.ReportedAvailabilitySince,
+		},
 	)
 	if err != nil {
 		return EntityWithState{}, nil, err
@@ -316,15 +338,39 @@ func (repository *SQLiteRepository) DeleteExpiredObservationReceipts(ctx context
 	return nil
 }
 
+type sqliteEntityAvailability struct {
+	entityCreatedAt      string
+	runtimeID            sql.NullString
+	adapterStatus        sql.NullString
+	adapterReasonCode    sql.NullString
+	adapterReasonDetail  sql.NullString
+	adapterSince         sql.NullString
+	adapterEvidenceAt    sql.NullString
+	reportedStatus       sql.NullString
+	reportedReasonCode   sql.NullString
+	reportedReasonDetail sql.NullString
+	reportedSourceAt     sql.NullString
+	reportedEvidenceAt   sql.NullString
+	reportedSince        sql.NullString
+}
+
 func entityWithStateFromValues(
 	id, deviceID, adapterID, name, typeID, supportJSON string, enabled int64,
 	observationID, valueJSON, adapterReceivedAt, sourceUpdatedAt, observedAt sql.NullString,
 	receiveOrder sql.NullInt64,
+	availabilityValues sqliteEntityAvailability,
 ) (EntityWithState, error) {
-	view := EntityWithState{Entity: Entity{
-		ID: EntityID(id), DeviceID: DeviceID(deviceID), AdapterID: adapterID,
-		Name: name, TypeID: EntityTypeID(typeID), Support: EntitySupport(supportJSON), Enabled: enabled != 0,
-	}}
+	availability, runtimeID, err := entityAvailabilityFromValues(availabilityValues)
+	if err != nil {
+		return EntityWithState{}, err
+	}
+	view := EntityWithState{
+		Entity: Entity{
+			ID: EntityID(id), DeviceID: DeviceID(deviceID), AdapterID: adapterID,
+			Name: name, TypeID: EntityTypeID(typeID), Support: EntitySupport(supportJSON), Enabled: enabled != 0,
+		},
+		Availability: availability, availabilityRuntimeID: runtimeID,
+	}
 	if !observationID.Valid {
 		return view, nil
 	}
@@ -349,6 +395,91 @@ func entityWithStateFromValues(
 		ReceiveOrder: receiveOrder.Int64,
 	}
 	return view, nil
+}
+
+func entityAvailabilityFromValues(
+	values sqliteEntityAvailability,
+) (EntityAvailability, *RuntimeID, error) {
+	var runtimeID *RuntimeID
+	if values.runtimeID.Valid {
+		value := RuntimeID(values.runtimeID.String)
+		runtimeID = &value
+	}
+	if !values.adapterStatus.Valid {
+		observedAt, err := parseTime(values.entityCreatedAt)
+		if err != nil {
+			return EntityAvailability{}, nil, fmt.Errorf("parse Entity creation time for availability: %w", err)
+		}
+		return EntityAvailability{
+			Status: EntityAvailabilityUnknown, Source: healthSourceCore, Since: observedAt, EvidenceAt: observedAt,
+			Reason: &HealthReason{Code: "hearth.awaiting_runtime"},
+		}, runtimeID, nil
+	}
+
+	adapterStatus := AdapterHealthStatus(values.adapterStatus.String)
+	if adapterStatus == AdapterHealthHealthy && values.reportedStatus.Valid {
+		since, evidenceAt, sourceObservedAt, err := parseAvailabilityTimes(
+			values.reportedSince, values.reportedEvidenceAt, values.reportedSourceAt,
+		)
+		if err != nil {
+			return EntityAvailability{}, nil, err
+		}
+		return EntityAvailability{
+			Status: EntityAvailabilityStatus(values.reportedStatus.String), Source: "entity_report",
+			Since: since, EvidenceAt: evidenceAt, SourceObservedAt: sourceObservedAt,
+			Reason: healthReasonFromNulls(values.reportedReasonCode, values.reportedReasonDetail),
+		}, runtimeID, nil
+	}
+
+	since, err := parseRequiredTime(values.adapterSince, "Adapter health since for Entity availability")
+	if err != nil {
+		return EntityAvailability{}, nil, err
+	}
+	if adapterStatus == AdapterHealthUnhealthy &&
+		values.reportedStatus.String == string(EntityAvailabilityUnavailable) &&
+		values.reportedReasonCode.Valid == values.adapterReasonCode.Valid &&
+		values.reportedReasonCode.String == values.adapterReasonCode.String {
+		since, err = parseRequiredTime(values.reportedSince, "matching Entity availability since")
+		if err != nil {
+			return EntityAvailability{}, nil, err
+		}
+	}
+	evidenceAt, err := parseRequiredTime(values.adapterEvidenceAt, "Adapter health evidence for Entity availability")
+	if err != nil {
+		return EntityAvailability{}, nil, err
+	}
+	if adapterStatus == AdapterHealthHealthy {
+		return EntityAvailability{
+			Status: EntityAvailabilityUnknown, Source: healthSourceCore, Since: since, EvidenceAt: evidenceAt,
+			Reason: &HealthReason{Code: "hearth.awaiting_entity_report"},
+		}, runtimeID, nil
+	}
+	status := EntityAvailabilityUnknown
+	if adapterStatus == AdapterHealthUnhealthy {
+		status = EntityAvailabilityUnavailable
+	}
+	return EntityAvailability{
+		Status: status, Source: "adapter_health", Since: since, EvidenceAt: evidenceAt,
+		Reason: healthReasonFromNulls(values.adapterReasonCode, values.adapterReasonDetail),
+	}, runtimeID, nil
+}
+
+func parseAvailabilityTimes(
+	sinceValue, evidenceValue, sourceValue sql.NullString,
+) (time.Time, time.Time, *time.Time, error) {
+	since, err := parseRequiredTime(sinceValue, "Entity availability since")
+	if err != nil {
+		return time.Time{}, time.Time{}, nil, err
+	}
+	evidenceAt, err := parseRequiredTime(evidenceValue, "Entity availability evidence")
+	if err != nil {
+		return time.Time{}, time.Time{}, nil, err
+	}
+	sourceObservedAt, err := parseOptionalTime(sourceValue)
+	if err != nil {
+		return time.Time{}, time.Time{}, nil, fmt.Errorf("parse Entity availability source time: %w", err)
+	}
+	return since, evidenceAt, sourceObservedAt, nil
 }
 
 func nullableRejection(value *ObservationRejection) sql.NullString {

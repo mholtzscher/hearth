@@ -100,6 +100,10 @@ func copyProjectionResult(result ProjectionResult) ProjectionResult {
 func copyEntityWithState(view EntityWithState) EntityWithState {
 	cloned := view
 	cloned.Entity.Support = append(EntitySupport(nil), view.Entity.Support...)
+	if view.availabilityRuntimeID != nil {
+		runtimeID := *view.availabilityRuntimeID
+		cloned.availabilityRuntimeID = &runtimeID
+	}
 	if view.State != nil {
 		state := copyState(*view.State)
 		cloned.State = &state

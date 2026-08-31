@@ -197,6 +197,42 @@ func TestReadServiceReturnsOwnedDataAndNormalizesCommandPosition(t *testing.T) {
 	}
 }
 
+func TestEntityReadsApplyRecoveryAvailabilityWithoutChangingState(t *testing.T) {
+	t.Parallel()
+	now := time.Date(2026, 8, 29, 15, 0, 0, 0, time.UTC)
+	runtimeID := testRuntimeID
+	repository := newReadRepository()
+	repository.entity = EntityWithState{
+		Entity: Entity{ID: commandTestEntityID, DeviceID: commandTestDeviceID},
+		State:  &State{EntityID: commandTestEntityID, Value: Value(`true`)},
+		Availability: EntityAvailability{
+			Status: EntityAvailabilityAvailable, Source: "entity_report",
+			Since: now.Add(-time.Minute), EvidenceAt: now.Add(-time.Minute),
+		},
+		availabilityRuntimeID: &runtimeID,
+	}
+	service := NewService(repository, nil, nil, Dependencies{Now: func() time.Time { return now }})
+	service.ResumeHealthEvaluation(now)
+
+	view, err := service.GetEntity(context.Background(), commandTestEntityID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if view.State == nil || string(view.State.Value) != "true" ||
+		view.Availability.Status != EntityAvailabilityUnknown || view.Availability.Source != healthSourceCore ||
+		view.Availability.Reason == nil || view.Availability.Reason.Code != "hearth.core_recovering" {
+		t.Fatalf("recovering Entity view = %#v", view)
+	}
+	service.markRecoveryHeartbeat(1, runtimeID)
+	view, err = service.GetEntity(context.Background(), commandTestEntityID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if view.Availability.Status != EntityAvailabilityAvailable || view.Availability.Source != "entity_report" {
+		t.Fatalf("refreshed Entity view = %#v", view.Availability)
+	}
+}
+
 func TestListEntityCommandsDistinguishesUnknownParent(t *testing.T) {
 	t.Parallel()
 	repository := newReadRepository()

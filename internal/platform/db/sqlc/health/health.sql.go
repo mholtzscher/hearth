@@ -749,18 +749,76 @@ func (q *Queries) ListAdapterViewsFirstPage(ctx context.Context, arg ListAdapter
 }
 
 const listEntityAvailabilityHistoryBefore = `-- name: ListEntityAvailabilityHistoryBefore :many
+WITH candidates AS (
+    SELECT
+        transition.receive_order,
+        transition.status,
+        transition.source,
+        transition.reason_code,
+        transition.reason_detail,
+        transition.source_observed_at,
+        transition.observed_at
+    FROM health_transitions AS transition
+    JOIN entity_ownership_intervals AS ownership
+        ON ownership.entity_id = transition.entity_id
+        AND ownership.adapter_id = transition.adapter_id
+        AND transition.receive_order >= ownership.starting_receive_order
+        AND (
+            ownership.ending_receive_order IS NULL
+            OR transition.receive_order < ownership.ending_receive_order
+        )
+    WHERE transition.resource_kind = 'entity'
+      AND transition.entity_id = ?3
+
+    UNION ALL
+
+    SELECT
+        transition.receive_order,
+        CASE WHEN transition.status = 'unhealthy' THEN 'unavailable' ELSE 'unknown' END AS status,
+        CASE WHEN transition.status = 'healthy' THEN 'core' ELSE 'adapter_health' END AS source,
+        CASE
+            WHEN transition.status = 'healthy' THEN 'hearth.awaiting_entity_report'
+            ELSE transition.reason_code
+        END AS reason_code,
+        CASE WHEN transition.status = 'healthy' THEN NULL ELSE transition.reason_detail END AS reason_detail,
+        CASE WHEN transition.status = 'healthy' THEN NULL ELSE transition.source_observed_at END AS source_observed_at,
+        transition.observed_at
+    FROM entity_ownership_intervals AS ownership
+    JOIN health_transitions AS transition
+        ON transition.resource_kind = 'adapter'
+        AND transition.adapter_id = ownership.adapter_id
+        AND transition.receive_order >= ownership.starting_receive_order
+        AND (
+            ownership.ending_receive_order IS NULL
+            OR transition.receive_order < ownership.ending_receive_order
+        )
+    WHERE ownership.entity_id = ?3
+), sequenced AS (
+    SELECT
+        candidates.receive_order, candidates.status, candidates.source, candidates.reason_code, candidates.reason_detail, candidates.source_observed_at, candidates.observed_at,
+        lag(status) OVER (ORDER BY receive_order) AS prior_status,
+        lag(reason_code) OVER (ORDER BY receive_order) AS prior_reason_code
+    FROM candidates
+), effective AS (
+    SELECT receive_order, status, source, reason_code, reason_detail,
+           source_observed_at, observed_at
+    FROM sequenced
+    WHERE prior_status IS NULL
+       OR status <> prior_status
+       OR reason_code IS NOT prior_reason_code
+)
 SELECT receive_order, status, source, reason_code, reason_detail,
        source_observed_at, observed_at
-FROM health_transitions
-WHERE resource_kind = 'entity' AND entity_id = ? AND receive_order < ?
+FROM effective
+WHERE receive_order < CAST(?1 AS INTEGER)
 ORDER BY receive_order DESC
-LIMIT ?
+LIMIT ?2
 `
 
 type ListEntityAvailabilityHistoryBeforeParams struct {
-	EntityID     sql.NullString
-	ReceiveOrder int64
-	Limit        int64
+	BeforeReceiveOrder int64
+	PageLimit          int64
+	EntityID           sql.NullString
 }
 
 type ListEntityAvailabilityHistoryBeforeRow struct {
@@ -774,7 +832,7 @@ type ListEntityAvailabilityHistoryBeforeRow struct {
 }
 
 func (q *Queries) ListEntityAvailabilityHistoryBefore(ctx context.Context, arg ListEntityAvailabilityHistoryBeforeParams) ([]ListEntityAvailabilityHistoryBeforeRow, error) {
-	rows, err := q.db.QueryContext(ctx, listEntityAvailabilityHistoryBefore, arg.EntityID, arg.ReceiveOrder, arg.Limit)
+	rows, err := q.db.QueryContext(ctx, listEntityAvailabilityHistoryBefore, arg.BeforeReceiveOrder, arg.PageLimit, arg.EntityID)
 	if err != nil {
 		return nil, err
 	}
@@ -805,17 +863,74 @@ func (q *Queries) ListEntityAvailabilityHistoryBefore(ctx context.Context, arg L
 }
 
 const listEntityAvailabilityHistoryFirstPage = `-- name: ListEntityAvailabilityHistoryFirstPage :many
+WITH candidates AS (
+    SELECT
+        transition.receive_order,
+        transition.status,
+        transition.source,
+        transition.reason_code,
+        transition.reason_detail,
+        transition.source_observed_at,
+        transition.observed_at
+    FROM health_transitions AS transition
+    JOIN entity_ownership_intervals AS ownership
+        ON ownership.entity_id = transition.entity_id
+        AND ownership.adapter_id = transition.adapter_id
+        AND transition.receive_order >= ownership.starting_receive_order
+        AND (
+            ownership.ending_receive_order IS NULL
+            OR transition.receive_order < ownership.ending_receive_order
+        )
+    WHERE transition.resource_kind = 'entity'
+      AND transition.entity_id = ?2
+
+    UNION ALL
+
+    SELECT
+        transition.receive_order,
+        CASE WHEN transition.status = 'unhealthy' THEN 'unavailable' ELSE 'unknown' END AS status,
+        CASE WHEN transition.status = 'healthy' THEN 'core' ELSE 'adapter_health' END AS source,
+        CASE
+            WHEN transition.status = 'healthy' THEN 'hearth.awaiting_entity_report'
+            ELSE transition.reason_code
+        END AS reason_code,
+        CASE WHEN transition.status = 'healthy' THEN NULL ELSE transition.reason_detail END AS reason_detail,
+        CASE WHEN transition.status = 'healthy' THEN NULL ELSE transition.source_observed_at END AS source_observed_at,
+        transition.observed_at
+    FROM entity_ownership_intervals AS ownership
+    JOIN health_transitions AS transition
+        ON transition.resource_kind = 'adapter'
+        AND transition.adapter_id = ownership.adapter_id
+        AND transition.receive_order >= ownership.starting_receive_order
+        AND (
+            ownership.ending_receive_order IS NULL
+            OR transition.receive_order < ownership.ending_receive_order
+        )
+    WHERE ownership.entity_id = ?2
+), sequenced AS (
+    SELECT
+        candidates.receive_order, candidates.status, candidates.source, candidates.reason_code, candidates.reason_detail, candidates.source_observed_at, candidates.observed_at,
+        lag(status) OVER (ORDER BY receive_order) AS prior_status,
+        lag(reason_code) OVER (ORDER BY receive_order) AS prior_reason_code
+    FROM candidates
+), effective AS (
+    SELECT receive_order, status, source, reason_code, reason_detail,
+           source_observed_at, observed_at
+    FROM sequenced
+    WHERE prior_status IS NULL
+       OR status <> prior_status
+       OR reason_code IS NOT prior_reason_code
+)
 SELECT receive_order, status, source, reason_code, reason_detail,
        source_observed_at, observed_at
-FROM health_transitions
-WHERE resource_kind = 'entity' AND entity_id = ?
+FROM effective
 ORDER BY receive_order DESC
-LIMIT ?
+LIMIT ?1
 `
 
 type ListEntityAvailabilityHistoryFirstPageParams struct {
-	EntityID sql.NullString
-	Limit    int64
+	PageLimit int64
+	EntityID  sql.NullString
 }
 
 type ListEntityAvailabilityHistoryFirstPageRow struct {
@@ -829,7 +944,7 @@ type ListEntityAvailabilityHistoryFirstPageRow struct {
 }
 
 func (q *Queries) ListEntityAvailabilityHistoryFirstPage(ctx context.Context, arg ListEntityAvailabilityHistoryFirstPageParams) ([]ListEntityAvailabilityHistoryFirstPageRow, error) {
-	rows, err := q.db.QueryContext(ctx, listEntityAvailabilityHistoryFirstPage, arg.EntityID, arg.Limit)
+	rows, err := q.db.QueryContext(ctx, listEntityAvailabilityHistoryFirstPage, arg.PageLimit, arg.EntityID)
 	if err != nil {
 		return nil, err
 	}

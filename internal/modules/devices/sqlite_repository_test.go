@@ -12,11 +12,74 @@ import (
 	platformdb "github.com/mholtzscher/hearth/internal/platform/db"
 )
 
+func TestRegistrationWithoutAdapterRollsBackAndRetainsHistoryAfterClaim(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	database := openMigratedDatabase(t, filepath.Join(t.TempDir(), "hearth.db"))
+	catalog := firstLightCatalog(t)
+	repository := NewSQLiteRepository(database, catalog)
+	now := time.Date(2026, 8, 29, 11, 0, 0, 0, time.UTC)
+	service := NewService(
+		repository,
+		nil,
+		catalog,
+		Dependencies{Now: func() time.Time { return now }},
+	)
+	if _, err := service.Register(ctx, "simulator", validDomainRegistration()); !errors.Is(err, ErrRuntimeFenced) {
+		t.Fatalf("registration before Adapter claim error = %v", err)
+	}
+	for _, table := range []string{
+		"adapter_bindings", "devices", "entities", "adapter_entity_mappings", "entity_ownership_intervals",
+	} {
+		assertTableCount(t, database, table, 0)
+	}
+
+	if _, err := repository.ClaimAdapterRuntime(
+		ctx,
+		testClaimWrite(testClaimID, testRuntimeID, now),
+	); err != nil {
+		t.Fatal(err)
+	}
+	now = now.Add(time.Second)
+	if _, err := repository.RecordAdapterHeartbeat(ctx, HeartbeatWrite{
+		AdapterID: "simulator", RuntimeID: testRuntimeID, ExternalStatus: AdapterHealthHealthy,
+		SourceObservedAt: now, ReceivedAt: now, LeaseExpiresAt: now.Add(adapterLeaseDuration),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	binding, err := service.Register(ctx, "simulator", validDomainRegistration())
+	if err != nil {
+		t.Fatal(err)
+	}
+	now = now.Add(time.Second)
+	if _, reportErr := repository.ReportEntityAvailability(ctx, AvailabilityBatchWrite{
+		AdapterID: "simulator", RuntimeID: testRuntimeID,
+		Reports: []EntityAvailabilityReport{{
+			EntityID: binding.Entities[0].EntityID, Status: EntityAvailabilityAvailable,
+			SourceObservedAt: now,
+		}},
+		ReportedAt: now,
+	}); reportErr != nil {
+		t.Fatal(reportErr)
+	}
+	history, err := repository.ListEntityAvailabilityHistory(ctx, ListEntityAvailabilityParams{
+		EntityID: binding.Entities[0].EntityID, Limit: 10,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(history.Items) != 2 || history.Items[0].Status != "available" ||
+		history.Items[1].Status != "unknown" || history.Items[1].Source != healthSourceCore {
+		t.Fatalf("Entity history after retry = %#v", history.Items)
+	}
+	assertTableCount(t, database, "entity_ownership_intervals", 1)
+}
+
 func TestRegistrationIsIdempotentAndUpdatesDescriptors(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	path := filepath.Join(t.TempDir(), "hearth.db")
-	database := openMigratedDatabase(t, path)
+	database := openRegistrationDatabase(t, path)
 	catalog := firstLightCatalog(t)
 	now := time.Date(2026, 8, 20, 20, 0, 0, 123, time.FixedZone("test", -5*60*60))
 	service := NewService(
@@ -48,7 +111,7 @@ func TestRegistrationIsIdempotentAndUpdatesDescriptors(t *testing.T) {
 	if closeErr := database.Close(); closeErr != nil {
 		t.Fatal(closeErr)
 	}
-	database = openMigratedDatabase(t, path)
+	database = openRegistrationDatabase(t, path)
 	var deviceName, entityName, storedDeviceExternalID, storedEntityExternalID, storedSupport string
 	err = database.QueryRowContext(ctx, `
 		SELECT d.name, e.name, b.external_device_id, m.external_entity_id, e.support_json
@@ -79,7 +142,7 @@ func TestRegistrationIsIdempotentAndUpdatesDescriptors(t *testing.T) {
 func TestMultiEntityRegistrationIsAdditiveAndReturnsSubmittedOrder(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
-	database := openMigratedDatabase(t, filepath.Join(t.TempDir(), "hearth.db"))
+	database := openRegistrationDatabase(t, filepath.Join(t.TempDir(), "hearth.db"))
 	catalog := firstLightCatalog(t)
 	now := time.Date(2026, 8, 25, 12, 0, 0, 0, time.UTC)
 	service := NewService(
@@ -162,7 +225,7 @@ func TestMultiEntityRegistrationIsAdditiveAndReturnsSubmittedOrder(t *testing.T)
 func TestRegistrationAllowsDeviceAggregateBeyondRequestLimit(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
-	database := openMigratedDatabase(t, filepath.Join(t.TempDir(), "hearth.db"))
+	database := openRegistrationDatabase(t, filepath.Join(t.TempDir(), "hearth.db"))
 	catalog := firstLightCatalog(t)
 	service := NewService(NewSQLiteRepository(database, catalog), nil, catalog, Dependencies{})
 	registration := validDomainRegistration()
@@ -187,7 +250,7 @@ func TestRegistrationAllowsDeviceAggregateBeyondRequestLimit(t *testing.T) {
 func TestRegistrationRejectsExternalIDTransfersIndependentOfOrder(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
-	database := openMigratedDatabase(t, filepath.Join(t.TempDir(), "hearth.db"))
+	database := openRegistrationDatabase(t, filepath.Join(t.TempDir(), "hearth.db"))
 	catalog := firstLightCatalog(t)
 	service := NewService(NewSQLiteRepository(database, catalog), nil, catalog, Dependencies{})
 	original := multiEntityRegistration()
@@ -224,7 +287,7 @@ func TestRegistrationRejectsExternalIDTransfersIndependentOfOrder(t *testing.T) 
 func TestExternalIDCanTransferAcrossRegistrations(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
-	database := openMigratedDatabase(t, filepath.Join(t.TempDir(), "hearth.db"))
+	database := openRegistrationDatabase(t, filepath.Join(t.TempDir(), "hearth.db"))
 	catalog := firstLightCatalog(t)
 	service := NewService(NewSQLiteRepository(database, catalog), nil, catalog, Dependencies{})
 	original, err := service.Register(ctx, "homeassistant", validDomainRegistration())
@@ -254,7 +317,7 @@ func TestExternalIDCanTransferAcrossRegistrations(t *testing.T) {
 func TestRegistrationRollsBackWhenLaterEntityWriteFails(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
-	database := openMigratedDatabase(t, filepath.Join(t.TempDir(), "hearth.db"))
+	database := openRegistrationDatabase(t, filepath.Join(t.TempDir(), "hearth.db"))
 	catalog := firstLightCatalog(t)
 	service := NewService(NewSQLiteRepository(database, catalog), nil, catalog, Dependencies{
 		NewEntityID: func() (EntityID, error) {
@@ -330,7 +393,7 @@ func TestReRegistrationReplacesNormalizedSupport(t *testing.T) {
 
 	ctx := context.Background()
 	path := filepath.Join(t.TempDir(), "hearth.db")
-	database := openMigratedDatabase(t, path)
+	database := openRegistrationDatabase(t, path)
 	service := NewService(NewSQLiteRepository(database, catalog), nil, catalog, Dependencies{})
 	registration := validDomainRegistration()
 	registration.Entities[0].TypeID = "test.mutable/v1"
@@ -351,7 +414,7 @@ func TestReRegistrationReplacesNormalizedSupport(t *testing.T) {
 	if closeErr := database.Close(); closeErr != nil {
 		t.Fatal(closeErr)
 	}
-	database = openMigratedDatabase(t, path)
+	database = openRegistrationDatabase(t, path)
 	var stored string
 	if scanErr := database.QueryRowContext(ctx, "SELECT support_json FROM entities WHERE id = ?", second.Entities[0].EntityID).
 		Scan(&stored); scanErr != nil {
@@ -365,7 +428,7 @@ func TestReRegistrationReplacesNormalizedSupport(t *testing.T) {
 func TestConcurrentRegistrationReturnsOneBinding(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
-	database := openMigratedDatabase(t, filepath.Join(t.TempDir(), "hearth.db"))
+	database := openRegistrationDatabase(t, filepath.Join(t.TempDir(), "hearth.db"))
 	catalog := firstLightCatalog(t)
 	service := NewService(NewSQLiteRepository(database, catalog), nil, catalog, Dependencies{})
 	const attempts = 8
@@ -400,7 +463,7 @@ func TestConcurrentRegistrationReturnsOneBinding(t *testing.T) {
 func TestRegistrationRejectionsAreAtomic(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
-	database := openMigratedDatabase(t, filepath.Join(t.TempDir(), "hearth.db"))
+	database := openRegistrationDatabase(t, filepath.Join(t.TempDir(), "hearth.db"))
 	catalog := firstLightCatalog(t)
 	service := NewService(NewSQLiteRepository(database, catalog), nil, catalog, Dependencies{})
 	original := validDomainRegistration()
@@ -458,7 +521,7 @@ func TestRegistrationRejectionsAreAtomic(t *testing.T) {
 func TestRegistrationInitialEnablementAndRetryPreservesCurrentValue(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
-	database := openMigratedDatabase(t, filepath.Join(t.TempDir(), "hearth.db"))
+	database := openRegistrationDatabase(t, filepath.Join(t.TempDir(), "hearth.db"))
 	catalog := firstLightCatalog(t)
 	now := time.Date(2026, 8, 26, 12, 0, 0, 0, time.UTC)
 	service := NewService(
@@ -503,7 +566,7 @@ func TestRegistrationInitialEnablementAndRetryPreservesCurrentValue(t *testing.T
 func TestSetEntityEnabledIsIdempotentAndOwnerScoped(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
-	database := openMigratedDatabase(t, filepath.Join(t.TempDir(), "hearth.db"))
+	database := openRegistrationDatabase(t, filepath.Join(t.TempDir(), "hearth.db"))
 	catalog := firstLightCatalog(t)
 	now := time.Date(2026, 8, 26, 12, 0, 0, 0, time.UTC)
 	service := NewService(
@@ -573,7 +636,7 @@ func TestSetEntityEnabledIsIdempotentAndOwnerScoped(t *testing.T) {
 func TestCreateCommandDurablyClassifiesDisabledEntity(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
-	database := openMigratedDatabase(t, filepath.Join(t.TempDir(), "hearth.db"))
+	database := openRegistrationDatabase(t, filepath.Join(t.TempDir(), "hearth.db"))
 	catalog := firstLightCatalog(t)
 	repository := NewSQLiteRepository(database, catalog)
 	service := NewService(repository, nil, catalog, Dependencies{})
@@ -611,7 +674,7 @@ func TestCreateCommandDurablyClassifiesDisabledEntity(t *testing.T) {
 func TestCommandCreationAndEnablementFollowCommitOrder(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
-	database := openMigratedDatabase(t, filepath.Join(t.TempDir(), "hearth.db"))
+	database := openRegistrationDatabase(t, filepath.Join(t.TempDir(), "hearth.db"))
 	catalog := firstLightCatalog(t)
 	repository := NewSQLiteRepository(database, catalog)
 	service := NewService(repository, nil, catalog, Dependencies{})
@@ -646,7 +709,7 @@ func TestCommandCreationAndEnablementFollowCommitOrder(t *testing.T) {
 func TestCommandRuntimeIsNotRetargetedAfterTakeover(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
-	database := openMigratedDatabase(t, filepath.Join(t.TempDir(), "hearth.db"))
+	database := openRegistrationDatabase(t, filepath.Join(t.TempDir(), "hearth.db"))
 	catalog := firstLightCatalog(t)
 	repository := NewSQLiteRepository(database, catalog)
 	service := NewService(repository, nil, catalog, Dependencies{})
@@ -691,7 +754,7 @@ func TestCommandRuntimeIsNotRetargetedAfterTakeover(t *testing.T) {
 func TestCommandLedgerTransitionsAreMonotonicAndIdempotent(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
-	database := openMigratedDatabase(t, filepath.Join(t.TempDir(), "hearth.db"))
+	database := openRegistrationDatabase(t, filepath.Join(t.TempDir(), "hearth.db"))
 	catalog := firstLightCatalog(t)
 	repository := NewSQLiteRepository(database, catalog)
 	binding, registrationErr := NewService(
@@ -825,6 +888,29 @@ func openMigratedDatabase(t *testing.T, path string) *sql.DB {
 		t.Fatal(err)
 	}
 	return database
+}
+
+func openRegistrationDatabase(t *testing.T, path string) *sql.DB {
+	t.Helper()
+	database := openMigratedDatabase(t, path)
+	for _, adapterID := range []string{"homeassistant", "simulator"} {
+		seedRegistrationAdapter(t, database, adapterID)
+	}
+	return database
+}
+
+func seedRegistrationAdapter(t *testing.T, database *sql.DB, adapterID string) {
+	t.Helper()
+	observedAt := formatTime(time.Date(2026, 8, 20, 0, 0, 0, 0, time.UTC))
+	if _, err := database.ExecContext(context.Background(), `
+		INSERT OR IGNORE INTO adapter_instances (
+			adapter_id, created_at, updated_at, health_status, health_reason_code,
+			health_since, health_evidence_at
+		) VALUES (?, ?, ?, 'unknown', 'hearth.awaiting_runtime', ?, ?)`,
+		adapterID, observedAt, observedAt, observedAt, observedAt,
+	); err != nil {
+		t.Fatal(err)
+	}
 }
 
 func firstLightCatalog(t *testing.T) *TypeCatalog {

@@ -11,16 +11,18 @@ import (
 type healthRepositoryStub struct {
 	*stubRegistrationRepository
 
-	claimWrites       []ClaimRuntimeWrite
-	heartbeatWrites   []HeartbeatWrite
-	releaseWrites     []ReleaseRuntimeWrite
-	expiryWrites      []ExpireLeasesWrite
-	archiveWrites     []ArchiveAdapterParams
-	adapter           AdapterInstance
-	adapterPage       Page[AdapterInstance]
-	healthHistoryPage Page[HealthTransition]
-	listAdapterCalls  int
-	historyCalls      int
+	claimWrites              []ClaimRuntimeWrite
+	heartbeatWrites          []HeartbeatWrite
+	releaseWrites            []ReleaseRuntimeWrite
+	expiryWrites             []ExpireLeasesWrite
+	archiveWrites            []ArchiveAdapterParams
+	adapter                  AdapterInstance
+	adapterPage              Page[AdapterInstance]
+	healthHistoryPage        Page[HealthTransition]
+	availabilityHistoryPage  Page[HealthTransition]
+	listAdapterCalls         int
+	historyCalls             int
+	availabilityHistoryCalls int
 }
 
 func newHealthRepositoryStub() *healthRepositoryStub {
@@ -85,6 +87,14 @@ func (repository *healthRepositoryStub) ListAdapterHealthHistory(
 ) (Page[HealthTransition], error) {
 	repository.historyCalls++
 	return repository.healthHistoryPage, nil
+}
+
+func (repository *healthRepositoryStub) ListEntityAvailabilityHistory(
+	context.Context,
+	ListEntityAvailabilityParams,
+) (Page[HealthTransition], error) {
+	repository.availabilityHistoryCalls++
+	return repository.availabilityHistoryPage, nil
 }
 
 func TestServiceHealthEvaluationFreezesWritesAndOverridesRecoveryReads(t *testing.T) {
@@ -424,6 +434,11 @@ func TestServiceAdapterReadsReturnOwnedCopiesAndValidatePages(t *testing.T) {
 		Reason:           &HealthReason{Code: "hearth.network_unreachable", Detail: &detail},
 		SourceObservedAt: &sourceObservedAt, ObservedAt: now,
 	}}, HasMore: true}
+	repository.availabilityHistoryPage = Page[HealthTransition]{Items: []HealthTransition{{
+		ReceiveOrder: 5, Status: string(EntityAvailabilityUnavailable), Source: "adapter_health",
+		Reason:           &HealthReason{Code: "hearth.network_unreachable", Detail: &detail},
+		SourceObservedAt: &sourceObservedAt, ObservedAt: now,
+	}}, HasMore: true}
 	service := NewService(repository, nil, firstLightCatalog(t), Dependencies{Now: func() time.Time { return now }})
 
 	invalidCursor := "INVALID"
@@ -457,6 +472,23 @@ func TestServiceAdapterReadsReturnOwnedCopiesAndValidatePages(t *testing.T) {
 	if *repository.healthHistoryPage.Items[0].Reason.Detail != detail ||
 		!repository.healthHistoryPage.Items[0].SourceObservedAt.Equal(sourceObservedAt) {
 		t.Fatal("health history result aliases repository data")
+	}
+
+	availabilityHistory, err := service.ListEntityAvailabilityHistory(
+		ctx,
+		ListEntityAvailabilityParams{EntityID: commandTestEntityID, Limit: 10},
+	)
+	if err != nil || !availabilityHistory.HasMore || len(availabilityHistory.Items) != 1 {
+		t.Fatalf("availability history = %#v, %v", availabilityHistory, err)
+	}
+	*availabilityHistory.Items[0].Reason.Detail = "changed"
+	if *repository.availabilityHistoryPage.Items[0].Reason.Detail != detail {
+		t.Fatal("availability history result aliases repository data")
+	}
+	if _, invalidErr := service.ListEntityAvailabilityHistory(ctx, ListEntityAvailabilityParams{
+		EntityID: "invalid", Limit: 10,
+	}); !errors.Is(invalidErr, ErrInvalidPage) || repository.availabilityHistoryCalls != 1 {
+		t.Fatalf("invalid availability history error = %v, calls = %d", invalidErr, repository.availabilityHistoryCalls)
 	}
 
 	if archiveErr := service.ArchiveAdapter(ctx, "simulator"); archiveErr != nil {

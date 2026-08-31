@@ -202,6 +202,9 @@ func (session *Session) SetHealth(ctx context.Context, report HealthReport) erro
 		return &ValidationError{Err: errors.New("health cannot return to unknown in one runtime")}
 	}
 	session.desiredHealth = report
+	if report.Status == HealthUnhealthy {
+		clear(session.availabilityCache)
+	}
 	session.desiredGeneration++
 	generation := session.desiredGeneration
 	session.stateMutex.Unlock()
@@ -307,6 +310,7 @@ func (session *Session) sendLatestHeartbeat(ctx context.Context) error {
 			return errors.New("adapter heartbeat response omitted availability refresh flag")
 		}
 
+		refreshAvailability := *response.Data.RefreshEntityAvailability
 		session.stateMutex.Lock()
 		if generation > session.ackedGeneration {
 			session.ackedGeneration = generation
@@ -314,6 +318,9 @@ func (session *Session) sendLatestHeartbeat(ctx context.Context) error {
 		session.notifyHeartbeatLocked()
 		moreRecent := session.desiredGeneration > generation
 		session.stateMutex.Unlock()
+		if refreshAvailability {
+			session.requestEntityAvailabilityReplay()
+		}
 		if !moreRecent {
 			return nil
 		}
@@ -336,6 +343,7 @@ func (session *Session) close() error {
 	session.signalClosedLocked()
 	session.stateMutex.Unlock()
 	<-session.heartbeatDone
+	<-session.availabilityReplayDone
 
 	session.stateMutex.Lock()
 	fenced = fenced || errors.Is(session.terminalErr, ErrRuntimeFenced)
@@ -546,6 +554,7 @@ func (session *Session) markFenced() {
 
 	session.stateMutex.Lock()
 	session.terminalErr = ErrRuntimeFenced
+	clear(session.availabilityCache)
 	if session.lifecycleCancel != nil {
 		session.lifecycleCancel()
 	}
