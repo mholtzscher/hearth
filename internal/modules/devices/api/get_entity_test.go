@@ -23,14 +23,25 @@ const (
 )
 
 type stubDevices struct {
-	getEntity          func(context.Context, devices.EntityID) (devices.EntityWithState, error)
-	setEntityEnabled   func(context.Context, devices.EntityID, bool) (devices.EntityWithState, error)
-	listDevices        func(context.Context, devices.ListDevicesParams) (devices.Page[devices.Device], error)
-	getDevice          func(context.Context, devices.GetDeviceParams) (devices.DeviceAggregate, error)
-	listEntities       func(context.Context, devices.ListEntitiesParams) (devices.Page[devices.EntityWithState], error)
-	getCommand         func(context.Context, devices.CommandID) (devices.CommandRecord, error)
-	listEntityCommands func(context.Context, devices.ListEntityCommandsParams) (devices.Page[devices.CommandRecord], error)
-	executeCommand     func(
+	getEntity                func(context.Context, devices.EntityID) (devices.EntityWithState, error)
+	setEntityEnabled         func(context.Context, devices.EntityID, bool) (devices.EntityWithState, error)
+	listDevices              func(context.Context, devices.ListDevicesParams) (devices.Page[devices.Device], error)
+	getDevice                func(context.Context, devices.GetDeviceParams) (devices.DeviceAggregate, error)
+	listEntities             func(context.Context, devices.ListEntitiesParams) (devices.Page[devices.EntityWithState], error)
+	getCommand               func(context.Context, devices.CommandID) (devices.CommandRecord, error)
+	listEntityCommands       func(context.Context, devices.ListEntityCommandsParams) (devices.Page[devices.CommandRecord], error)
+	listAdapters             func(context.Context, devices.ListAdaptersParams) (devices.Page[devices.AdapterInstance], error)
+	getAdapter               func(context.Context, string) (devices.AdapterInstance, error)
+	archiveAdapter           func(context.Context, string) error
+	listAdapterHealthHistory func(
+		context.Context,
+		devices.ListAdapterHealthParams,
+	) (devices.Page[devices.HealthTransition], error)
+	listEntityAvailabilityHistory func(
+		context.Context,
+		devices.ListEntityAvailabilityParams,
+	) (devices.Page[devices.HealthTransition], error)
+	executeCommand func(
 		context.Context,
 		devices.EntityID,
 		devices.OperationName,
@@ -103,6 +114,50 @@ func (stub *stubDevices) ListEntityCommands(
 	return stub.listEntityCommands(ctx, params)
 }
 
+func (stub *stubDevices) ListAdapters(
+	ctx context.Context,
+	params devices.ListAdaptersParams,
+) (devices.Page[devices.AdapterInstance], error) {
+	if stub.listAdapters == nil {
+		panic("unexpected ListAdapters call")
+	}
+	return stub.listAdapters(ctx, params)
+}
+
+func (stub *stubDevices) GetAdapter(ctx context.Context, adapterID string) (devices.AdapterInstance, error) {
+	if stub.getAdapter == nil {
+		panic("unexpected GetAdapter call")
+	}
+	return stub.getAdapter(ctx, adapterID)
+}
+
+func (stub *stubDevices) ArchiveAdapter(ctx context.Context, adapterID string) error {
+	if stub.archiveAdapter == nil {
+		panic("unexpected ArchiveAdapter call")
+	}
+	return stub.archiveAdapter(ctx, adapterID)
+}
+
+func (stub *stubDevices) ListAdapterHealthHistory(
+	ctx context.Context,
+	params devices.ListAdapterHealthParams,
+) (devices.Page[devices.HealthTransition], error) {
+	if stub.listAdapterHealthHistory == nil {
+		panic("unexpected ListAdapterHealthHistory call")
+	}
+	return stub.listAdapterHealthHistory(ctx, params)
+}
+
+func (stub *stubDevices) ListEntityAvailabilityHistory(
+	ctx context.Context,
+	params devices.ListEntityAvailabilityParams,
+) (devices.Page[devices.HealthTransition], error) {
+	if stub.listEntityAvailabilityHistory == nil {
+		panic("unexpected ListEntityAvailabilityHistory call")
+	}
+	return stub.listEntityAvailabilityHistory(ctx, params)
+}
+
 func (stub *stubDevices) ExecuteCommand(
 	ctx context.Context,
 	entityID devices.EntityID,
@@ -130,21 +185,17 @@ func TestGetEntityReturnsMetadataAndNullableState(t *testing.T) {
 	if response.Code != http.StatusOK {
 		t.Fatalf("status = %d, body = %s", response.Code, response.Body.String())
 	}
-	var body struct {
-		ID      string         `json:"id"`
-		Name    string         `json:"name"`
-		Support map[string]any `json:"support"`
-		Enabled bool           `json:"enabled"`
-		State   any            `json:"state"`
-	}
+	var body EntityBody
 	if err := json.Unmarshal(response.Body.Bytes(), &body); err != nil {
 		t.Fatal(err)
 	}
 	if requestedEntityID != apiEntityID {
 		t.Fatalf("GetEntity ID = %q", requestedEntityID)
 	}
-	if body.ID != string(apiEntityID) || body.Name != "Power" || !body.Enabled || body.State != nil ||
-		body.Support["state"] == nil {
+	if body.ID != string(apiEntityID) || body.AdapterID != "simulator" || body.Name != "Power" ||
+		!body.Enabled || body.State != nil || body.Support["state"] == nil ||
+		body.Availability.Status != "available" || body.Availability.Source != "entity_report" ||
+		body.Availability.SourceObservedAt == nil {
 		t.Fatalf("body = %#v", body)
 	}
 	operation := openapi.OpenAPI().Paths["/v1/entities/{entity_id}"].Get
@@ -242,6 +293,8 @@ func TestGetEntityMapsStandardErrors(t *testing.T) {
 }
 
 func apiEntityWithState(state *devices.State) devices.EntityWithState {
+	evidenceAt := time.Date(2026, 8, 22, 12, 0, 1, 0, time.UTC)
+	sourceObservedAt := evidenceAt.Add(-time.Second)
 	return devices.EntityWithState{
 		Entity: devices.Entity{
 			ID:        apiEntityID,
@@ -253,6 +306,10 @@ func apiEntityWithState(state *devices.State) devices.EntityWithState {
 			Enabled:   true,
 		},
 		State: state,
+		Availability: devices.EntityAvailability{
+			Status: devices.EntityAvailabilityAvailable, Source: "entity_report",
+			Since: evidenceAt, EvidenceAt: evidenceAt, SourceObservedAt: &sourceObservedAt,
+		},
 	}
 }
 

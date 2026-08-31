@@ -29,6 +29,20 @@ type commandCursor struct {
 	ID          string `json:"id"`
 }
 
+type adapterCursor struct {
+	Version         int    `json:"v"`
+	Resource        string `json:"resource"`
+	ID              string `json:"id"`
+	IncludeArchived bool   `json:"include_archived"`
+}
+
+type healthCursor struct {
+	Version      int    `json:"v"`
+	Resource     string `json:"resource"`
+	ParentID     string `json:"parent_id"`
+	ReceiveOrder int64  `json:"receive_order"`
+}
+
 func encodeDevicesCursor(id devices.DeviceID) (string, error) {
 	return encodeCursor(idCursor{Version: cursorVersion, Resource: "devices", ID: string(id)})
 }
@@ -91,6 +105,58 @@ func decodeEntityCursor(value, resource, deviceID string) (*devices.EntityID, er
 		return nil, fmt.Errorf("invalid entity cursor ID: %w", err)
 	}
 	return &id, nil
+}
+
+func encodeAdaptersCursor(id string, includeArchived bool) (string, error) {
+	return encodeCursor(adapterCursor{
+		Version: cursorVersion, Resource: "adapters", ID: id, IncludeArchived: includeArchived,
+	})
+}
+
+func decodeAdaptersCursor(value string, includeArchived bool) (*string, error) {
+	var cursor adapterCursor
+	if err := decodeCursor(value, &cursor); err != nil {
+		return nil, err
+	}
+	if cursor.Version != cursorVersion || cursor.Resource != "adapters" ||
+		cursor.IncludeArchived != includeArchived || !validAdapterID(cursor.ID) {
+		return nil, errors.New("invalid Adapter cursor scope")
+	}
+	return &cursor.ID, nil
+}
+
+func encodeAdapterHealthCursor(adapterID string, receiveOrder int64) (string, error) {
+	return encodeHealthCursor("adapter_health", adapterID, receiveOrder)
+}
+
+func decodeAdapterHealthCursor(value, adapterID string) (*int64, error) {
+	return decodeHealthCursor(value, "adapter_health", adapterID)
+}
+
+func encodeEntityAvailabilityCursor(entityID devices.EntityID, receiveOrder int64) (string, error) {
+	return encodeHealthCursor("entity_availability", string(entityID), receiveOrder)
+}
+
+func decodeEntityAvailabilityCursor(value string, entityID devices.EntityID) (*int64, error) {
+	return decodeHealthCursor(value, "entity_availability", string(entityID))
+}
+
+func encodeHealthCursor(resource, parentID string, receiveOrder int64) (string, error) {
+	return encodeCursor(healthCursor{
+		Version: cursorVersion, Resource: resource, ParentID: parentID, ReceiveOrder: receiveOrder,
+	})
+}
+
+func decodeHealthCursor(value, resource, parentID string) (*int64, error) {
+	var cursor healthCursor
+	if err := decodeCursor(value, &cursor); err != nil {
+		return nil, err
+	}
+	if cursor.Version != cursorVersion || cursor.Resource != resource || cursor.ParentID != parentID ||
+		cursor.ReceiveOrder < 1 {
+		return nil, errors.New("invalid health cursor scope")
+	}
+	return &cursor.ReceiveOrder, nil
 }
 
 func encodeCommandCursor(command devices.CommandRecord) (string, error) {

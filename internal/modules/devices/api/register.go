@@ -24,6 +24,17 @@ type Devices interface {
 	ListEntities(context.Context, devices.ListEntitiesParams) (devices.Page[devices.EntityWithState], error)
 	GetCommand(context.Context, devices.CommandID) (devices.CommandRecord, error)
 	ListEntityCommands(context.Context, devices.ListEntityCommandsParams) (devices.Page[devices.CommandRecord], error)
+	ListAdapters(context.Context, devices.ListAdaptersParams) (devices.Page[devices.AdapterInstance], error)
+	GetAdapter(context.Context, string) (devices.AdapterInstance, error)
+	ArchiveAdapter(context.Context, string) error
+	ListAdapterHealthHistory(
+		context.Context,
+		devices.ListAdapterHealthParams,
+	) (devices.Page[devices.HealthTransition], error)
+	ListEntityAvailabilityHistory(
+		context.Context,
+		devices.ListEntityAvailabilityParams,
+	) (devices.Page[devices.HealthTransition], error)
 }
 
 type Handler struct {
@@ -31,7 +42,10 @@ type Handler struct {
 }
 
 func Register(api huma.API, service Devices) {
-	const entitiesTag = "Entities"
+	const (
+		entitiesTag = "Entities"
+		adaptersTag = "Adapters"
+	)
 	handler := &Handler{devices: service}
 	disabledProblemSchema := huma.SchemaFromType(
 		api.OpenAPI().Components.Schemas, reflect.TypeFor[disabledCommandError](),
@@ -87,4 +101,33 @@ func Register(api huma.API, service Devices) {
 		Summary: "Get a Command record", Tags: []string{"Commands"},
 		Errors: []int{http.StatusBadRequest, http.StatusNotFound, http.StatusInternalServerError},
 	}, handler.GetCommand)
+	huma.Register(api, huma.Operation{
+		OperationID: "list-adapters", Method: http.MethodGet, Path: "/adapters",
+		Summary: "List Adapters and their current health", Tags: []string{adaptersTag},
+		Errors: []int{http.StatusBadRequest, http.StatusInternalServerError},
+	}, handler.ListAdapters)
+	huma.Register(api, huma.Operation{
+		OperationID: "get-adapter", Method: http.MethodGet, Path: "/adapters/{adapter_id}",
+		Summary: "Get an Adapter and its current health", Tags: []string{adaptersTag},
+		Errors: []int{http.StatusBadRequest, http.StatusNotFound, http.StatusInternalServerError},
+	}, handler.GetAdapter)
+	huma.Register(api, huma.Operation{
+		OperationID: "archive-adapter", Method: http.MethodDelete, Path: "/adapters/{adapter_id}",
+		Summary: "Archive an Adapter", Tags: []string{adaptersTag}, DefaultStatus: http.StatusNoContent,
+		Errors: []int{
+			http.StatusBadRequest, http.StatusNotFound, http.StatusConflict, http.StatusInternalServerError,
+		},
+	}, handler.ArchiveAdapter)
+	huma.Register(api, huma.Operation{
+		OperationID: "list-adapter-health-history", Method: http.MethodGet,
+		Path: "/adapters/{adapter_id}/health/history", Summary: "List an Adapter's health history",
+		Tags:   []string{adaptersTag},
+		Errors: []int{http.StatusBadRequest, http.StatusNotFound, http.StatusInternalServerError},
+	}, handler.ListAdapterHealthHistory)
+	huma.Register(api, huma.Operation{
+		OperationID: "list-entity-availability-history", Method: http.MethodGet,
+		Path: "/entities/{entity_id}/availability/history", Summary: "List an Entity's availability history",
+		Tags:   []string{entitiesTag},
+		Errors: []int{http.StatusBadRequest, http.StatusNotFound, http.StatusInternalServerError},
+	}, handler.ListEntityAvailabilityHistory)
 }

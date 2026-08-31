@@ -8,6 +8,7 @@ import (
 	"github.com/mholtzscher/hearth/internal/modules/devices"
 )
 
+//nolint:gocognit // Each resource cursor is checked against its endpoint-specific scope.
 func TestCursorCodecsRoundTripAndEnforceScope(t *testing.T) {
 	t.Parallel()
 	deviceCursor, err := encodeDevicesCursor(apiDeviceID)
@@ -62,6 +63,33 @@ func TestCursorCodecsRoundTripAndEnforceScope(t *testing.T) {
 	otherEntity := devices.EntityID("ent_01890f47-7a6b-7c4d-8e9f-0123456789ac")
 	if _, _, decodeErr := decodeCommandCursor(commandCursor, otherEntity); decodeErr == nil {
 		t.Fatal("command cursor accepted for another Entity")
+	}
+
+	adapterCursor, err := encodeAdaptersCursor(apiAdapterID, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	adapterID, err := decodeAdaptersCursor(adapterCursor, true)
+	if err != nil || *adapterID != apiAdapterID {
+		t.Fatalf("Adapter cursor = %q, %v", adapterCursor, err)
+	}
+	if _, decodeErr := decodeAdaptersCursor(adapterCursor, false); decodeErr == nil {
+		t.Fatal("archived Adapter cursor accepted without its filter")
+	}
+
+	healthCursor, err := encodeAdapterHealthCursor(apiAdapterID, 42)
+	if err != nil {
+		t.Fatal(err)
+	}
+	receiveOrder, err := decodeAdapterHealthCursor(healthCursor, apiAdapterID)
+	if err != nil || *receiveOrder != 42 {
+		t.Fatalf("health cursor = %q, %v", healthCursor, err)
+	}
+	if _, decodeErr := decodeAdapterHealthCursor(healthCursor, "other"); decodeErr == nil {
+		t.Fatal("health cursor accepted for another Adapter")
+	}
+	if _, decodeErr := decodeEntityAvailabilityCursor(healthCursor, apiEntityID); decodeErr == nil {
+		t.Fatal("Adapter health cursor accepted for Entity availability")
 	}
 }
 

@@ -108,8 +108,9 @@ func TestDeviceDetailAndEntityListUseFullEntityBodies(t *testing.T) {
 	if err := json.Unmarshal(response.Body.Bytes(), &detail); err != nil {
 		t.Fatal(err)
 	}
-	if len(detail.Entities) != 1 || detail.Entities[0].ID != string(apiEntityID) || detail.Entities[0].State != nil ||
-		detail.NextEntityCursor == nil {
+	if len(detail.Entities) != 1 || detail.Entities[0].ID != string(apiEntityID) ||
+		detail.Entities[0].AdapterID != "simulator" || detail.Entities[0].Availability.Status != "available" ||
+		detail.Entities[0].State != nil || detail.NextEntityCursor == nil {
 		t.Fatalf("device detail = %#v", detail)
 	}
 	response = performRequest(router, "/v1/devices/"+string(apiDeviceID)+"?entity_cursor="+*detail.NextEntityCursor)
@@ -131,7 +132,8 @@ func TestDeviceDetailAndEntityListUseFullEntityBodies(t *testing.T) {
 	if err := json.Unmarshal(response.Body.Bytes(), &entitiesBody); err != nil {
 		t.Fatal(err)
 	}
-	if len(entitiesBody.Items) != 1 || entitiesBody.Items[0].Support["operations"] == nil {
+	if len(entitiesBody.Items) != 1 || entitiesBody.Items[0].Support["operations"] == nil ||
+		entitiesBody.Items[0].AdapterID != "simulator" || entitiesBody.Items[0].Availability.Status != "available" {
 		t.Fatalf("entities body = %#v", entitiesBody)
 	}
 }

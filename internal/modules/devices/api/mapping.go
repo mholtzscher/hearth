@@ -17,12 +17,14 @@ func entityBody(view devices.EntityWithState) (EntityBody, error) {
 		return EntityBody{}, fmt.Errorf("decode entity support: %w", err)
 	}
 	body := EntityBody{
-		ID:       string(view.Entity.ID),
-		DeviceID: string(view.Entity.DeviceID),
-		Name:     view.Entity.Name,
-		Type:     string(view.Entity.TypeID),
-		Support:  support,
-		Enabled:  view.Entity.Enabled,
+		ID:           string(view.Entity.ID),
+		DeviceID:     string(view.Entity.DeviceID),
+		AdapterID:    view.Entity.AdapterID,
+		Name:         view.Entity.Name,
+		Type:         string(view.Entity.TypeID),
+		Support:      support,
+		Enabled:      view.Entity.Enabled,
+		Availability: availabilityBody(view.Availability),
 	}
 	if view.State == nil {
 		return body, nil
@@ -43,6 +45,19 @@ func entityBody(view devices.EntityWithState) (EntityBody, error) {
 	}
 	body.State = state
 	return body, nil
+}
+
+func availabilityBody(availability devices.EntityAvailability) AvailabilityBody {
+	body := AvailabilityBody{
+		Status: string(availability.Status), Source: availability.Source,
+		Since: formatTime(availability.Since), EvidenceAt: formatTime(availability.EvidenceAt),
+		Reason: healthReasonBody(availability.Reason),
+	}
+	if availability.SourceObservedAt != nil {
+		value := formatTime(*availability.SourceObservedAt)
+		body.SourceObservedAt = &value
+	}
+	return body
 }
 
 func deviceBody(device devices.Device) DeviceBody {

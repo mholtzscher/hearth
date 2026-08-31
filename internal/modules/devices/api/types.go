@@ -1,13 +1,71 @@
 package api
 
 type EntityBody struct {
-	ID       string         `json:"id"`
-	DeviceID string         `json:"device_id"`
-	Name     string         `json:"name"`
-	Type     string         `json:"type"`
-	Support  map[string]any `json:"support"`
-	Enabled  bool           `json:"enabled"`
-	State    *StateBody     `json:"state"`
+	ID           string           `json:"id"`
+	DeviceID     string           `json:"device_id"`
+	AdapterID    string           `json:"adapter_id"`
+	Name         string           `json:"name"`
+	Type         string           `json:"type"`
+	Support      map[string]any   `json:"support"`
+	Enabled      bool             `json:"enabled"`
+	Availability AvailabilityBody `json:"availability"`
+	State        *StateBody       `json:"state"`
+}
+
+type AvailabilityBody struct {
+	Status           string            `json:"status"`
+	Source           string            `json:"source"`
+	Since            string            `json:"since"`
+	EvidenceAt       string            `json:"evidence_at"`
+	SourceObservedAt *string           `json:"source_observed_at,omitempty"`
+	Reason           *HealthReasonBody `json:"reason,omitempty"`
+}
+
+type HealthReasonBody struct {
+	Code   string  `json:"code"`
+	Detail *string `json:"detail,omitempty"`
+}
+
+type AdapterBody struct {
+	ID         string             `json:"id"`
+	ArchivedAt *string            `json:"archived_at,omitempty"`
+	Health     *AdapterHealthBody `json:"health"`
+}
+
+type AdapterHealthBody struct {
+	// Huma uses this ignored marker to emit AdapterHealthBody as an object-or-null schema.
+	_              struct{}                    `json:"-"                         nullable:"true"`
+	Status         string                      `json:"status"`
+	Since          string                      `json:"since"`
+	EvidenceAt     string                      `json:"evidence_at"`
+	Reason         *HealthReasonBody           `json:"reason,omitempty"`
+	Runtime        *AdapterRuntimeEvidenceBody `json:"runtime,omitempty"`
+	ExternalSystem *ExternalSystemEvidenceBody `json:"external_system,omitempty"`
+}
+
+type AdapterRuntimeEvidenceBody struct {
+	ID              string  `json:"id"`
+	Status          string  `json:"status"`
+	SoftwareName    string  `json:"software_name"`
+	SoftwareVersion string  `json:"software_version"`
+	ClaimedAt       string  `json:"claimed_at"`
+	LastHeartbeatAt *string `json:"last_heartbeat_at"`
+	LeaseExpiresAt  string  `json:"lease_expires_at"`
+}
+
+type ExternalSystemEvidenceBody struct {
+	Status           string            `json:"status"`
+	SourceObservedAt string            `json:"source_observed_at"`
+	EvidenceAt       string            `json:"evidence_at"`
+	Reason           *HealthReasonBody `json:"reason,omitempty"`
+}
+
+type HealthTransitionBody struct {
+	Status           string            `json:"status"`
+	Source           string            `json:"source"`
+	Reason           *HealthReasonBody `json:"reason,omitempty"`
+	SourceObservedAt *string           `json:"source_observed_at,omitempty"`
+	ObservedAt       string            `json:"observed_at"`
 }
 
 type StateBody struct {
@@ -42,6 +100,16 @@ type EntityCollectionBody struct {
 type DeviceCollectionBody struct {
 	Items      []DeviceBody `json:"items"`
 	NextCursor *string      `json:"next_cursor,omitempty"`
+}
+
+type AdapterCollectionBody struct {
+	Items      []AdapterBody `json:"items"`
+	NextCursor *string       `json:"next_cursor,omitempty"`
+}
+
+type HealthTransitionCollectionBody struct {
+	Items      []HealthTransitionBody `json:"items"`
+	NextCursor *string                `json:"next_cursor,omitempty"`
 }
 
 type CommandRecordBody struct {
