@@ -1,10 +1,11 @@
 # Adapter health and Entity availability implementation spec
 
-**Status:** Ready for task breakdown
+**Status:** Implemented and verified
 **Type:** Feature plan
 **Effort:** XL, approximately 8-12 focused days, 65% confidence
 **Approved by:** User design confirmation
 **Date:** 2026-08-29
+**Completed:** 2026-08-31
 **Baseline:** branch `availability` at `88d4217`, plus the confirmed glossary, architecture, and ADR changes in this worktree
 
 ## Problem
@@ -36,7 +37,7 @@ One Adapter instance permits one active runtime. A Core-issued runtime ID scopes
 
 ## Scope
 
-Included work covers Adapter persistence and archival, runtime lifecycle and fencing, explicit Entity availability, current and historical HTTP reads, and Command outcome changes. It also covers Core recovery, SDK lifecycle and replay, first-party Adapter adoption, migration, code generation, an incompatible NATS subject and Observation consumer cutover, OpenAPI, and tests.
+Included work covers Adapter persistence and archival, runtime lifecycle and fencing, explicit Entity availability, current and historical HTTP reads, and Command outcome changes. It also covers Core recovery, SDK lifecycle and replay, first-party Adapter adoption, migration, code generation, runtime-scoped NATS subjects and Observation consumer provisioning, OpenAPI, and tests.
 
 This feature does not add Device health, a `degraded` status, inferred availability, Adapter replication or forced takeover, authentication changes, Adapter disablement, or Binding ownership transfer. It also excludes automation, alerting, incident tracking, uptime metrics, UI or CLI work, configurable timing or limits, and history pruning. Archival does not cascade through Bindings. Ownership intervals support future transfer behavior, but this change does not implement transfer or reconciliation.
 
@@ -181,7 +182,7 @@ Registration and Entity enablement subjects carry runtime ID and validate it in 
 
 Observation subjects carry runtime ID while Observation payloads remain unchanged. Projection checks the subject runtime in the same transaction as deduplication, ownership validation, receipt insertion, State projection, and Command satisfaction.
 
-A first-seen Observation from a stale runtime records a rejected receipt with `stale_runtime`, commits, and is acknowledged. Existing exact-ID redelivery remains a no-op. Retained stable-subject Observations from before the atomic cutover do not match the new consumer and are never projected.
+A first-seen Observation from a stale runtime records a rejected receipt with `stale_runtime`, commits, and is acknowledged. Existing exact-ID redelivery remains a no-op. Stable-subject Observations do not match the runtime-scoped stream and are never projected.
 
 ### Adapter archival
 
@@ -250,7 +251,7 @@ type AdapterRuntimeEvidenceBody struct {
     SoftwareName     string `json:"software_name"`
     SoftwareVersion  string `json:"software_version"`
     ClaimedAt        string `json:"claimed_at"`
-    LastHeartbeatAt  string `json:"last_heartbeat_at"`
+    LastHeartbeatAt  *string `json:"last_heartbeat_at"`
     LeaseExpiresAt   string `json:"lease_expires_at"`
 }
 
@@ -402,7 +403,7 @@ hearth.v1.adapter.<adapter>.runtime.<runtime_id>.command.<entity_id>.<operation>
 hearth.v1.adapter.<adapter>.runtime.<runtime_id>.enablement.<entity_id>
 ```
 
-Add route types, constructors, wildcard constructors, and strict parsers in `internal/contracts/v1/natswire/subjects.go`. Runtime IDs match `run_` plus canonical UUIDv7. Runtime-scoped subjects are the sole wire source of runtime identity, and old stable-slug-only subjects are not served after cutover.
+Add route types, constructors, wildcard constructors, and strict parsers in `internal/contracts/v1/natswire/subjects.go`. Runtime IDs match `run_` plus canonical UUIDv7. Runtime-scoped subjects are the sole wire source of runtime identity, and this implementation does not serve old stable-slug-only subjects.
 
 ### IDs and schemas
 
@@ -537,11 +538,11 @@ Registration, Observation, Command request/response, and Entity enablement reque
 
 A JSON payload captured without its NATS subject does not identify the runtime. Transport code must preserve or record the subject when retaining or diagnosing a message.
 
-### Observation stream cutover
+### Observation stream provisioning
 
-Keep stream `HEARTH_OBSERVATIONS_V1`, update its subject set from the stable Observation wildcard to the runtime-scoped wildcard, and create a new durable consumer named `hearthd-state-runtime-v1` with the runtime-scoped filter. Remove the old durable consumer after Core has stopped for the atomic deployment. Existing stable-subject messages remain retained by stream age and size policy but do not match the new consumer and are never projected.
+Provision stream `HEARTH_OBSERVATIONS_V1` with the runtime-scoped Observation wildcard and durable consumer `hearthd-state-runtime-v1` with the same filter. Existing configuration drift remains a readiness failure.
 
-`ProvisionObservationResources` may update only the exact known pre-cutover stream configuration; unrelated drift remains a readiness failure. Rollback must restore the old stream subject and consumer before starting old binaries. Core, contracts, the SDK, and first-party Adapters deploy the incompatible subject change together; mixed versions remain unsupported.
+Hearth had no deployments before this incompatible subject change, so provisioning does not migrate or roll back pre-runtime stream resources. Core, contracts, the SDK, and first-party Adapters use the runtime-scoped contract together; mixed versions remain unsupported.
 
 ## Go implementation contract
 
@@ -618,7 +619,7 @@ type RuntimeEvidence struct {
     SoftwareName    string
     SoftwareVersion string
     ClaimedAt       time.Time
-    LastHeartbeatAt time.Time
+    LastHeartbeatAt *time.Time
     LeaseExpiresAt  time.Time
 }
 
@@ -910,7 +911,7 @@ New tables:
    - `claim_id` unique with `clm_` check for lost-response idempotency;
    - Adapter foreign key;
    - software name/version;
-   - claimed, last-heartbeat, lease-expiry, ended timestamps and end reason;
+   - claimed, nullable last-heartbeat, lease-expiry, ended timestamps and end reason;
    - partial unique index allowing one `ended_at IS NULL` runtime per Adapter.
 
 3. `entity_availability_current`
@@ -1019,16 +1020,7 @@ A Command with no current client retains generic upstream rejection. A command a
 
 ### Simulator
 
-Add deterministic scenarios for:
-
-- healthy Adapter and available Entity;
-- heartbeat expiry;
-- configured-external-system unhealthy;
-- Entity unavailable with Command recovery attempt;
-- duplicate claim and takeover after expiry;
-- stale runtime Registration, enablement, Observation, availability, and Command isolation;
-- Core readiness pause and recovery replay; and
-- graceful release.
+Add deterministic simulator scenarios for a healthy Adapter with an available Entity, configured-external-system unhealthy, and Entity unavailable with Command recovery. Cover heartbeat expiry, duplicate claim and takeover, stale-runtime isolation, Core readiness recovery replay, and graceful release in the simulator process matrix, where the test can control Core and competing sessions directly.
 
 Replace the existing `unavailable-adapter` expectation and durable Command outcome with `adapter_unhealthy`.
 
@@ -1053,7 +1045,7 @@ Tests stay beside their owners. Generated sqlc output remains under `internal/pl
 
 | Deliverable | Effort | Depends on |
 |---|---:|---|
-| D1. Wire schemas, IDs, runtime-scoped subjects, and stream cutover | L | - |
+| D1. Wire schemas, IDs, runtime-scoped subjects, and stream provisioning | L | - |
 | D2. Migration, health sqlc package, claim idempotency, and current/history persistence | XL | D1 |
 | D3. Domain health evaluation, lease supervisor, Adapter reads, and archival | L | D2 |
 | D4. SDK claim/heartbeat/release lifecycle and end-to-end fencing | XL | D1, D2, D3 |
@@ -1066,43 +1058,43 @@ Tests stay beside their owners. Generated sqlc output remains under `internal/pl
 
 ### Adapter session and fencing
 
-- [ ] Claim is idempotent by envelope ID, permits one active runtime, rejects archived Adapter IDs, and permits takeover only after release or expiry. The response returns the five-second heartbeat interval and fifteen-second lease.
-- [ ] Only an accepted heartbeat renews the lease.
-- [ ] Every post-claim subject contains an Adapter and runtime ID, and strict parsing rejects malformed combinations. Every Adapter-originated write also checks that subject runtime is active in its committing transaction.
-- [ ] After takeover, the old runtime cannot register, change enablement, project an Observation, report availability, or receive a newly created Command.
-- [ ] `runtime_fenced` terminates the SDK session without reclaim. Runtime IDs remain fencing data, not authorization credentials.
+- [x] Claim is idempotent by envelope ID, permits one active runtime, rejects archived Adapter IDs, and permits takeover only after release or expiry. The response returns the five-second heartbeat interval and fifteen-second lease.
+- [x] Only an accepted heartbeat renews the lease.
+- [x] Every post-claim subject contains an Adapter and runtime ID, and strict parsing rejects malformed combinations. Every Adapter-originated write also checks that subject runtime is active in its committing transaction.
+- [x] After takeover, the old runtime cannot register, change enablement, project an Observation, report availability, or receive a newly created Command.
+- [x] `runtime_fenced` terminates the SDK session without reclaim. Runtime IDs remain fencing data, not authorization credentials.
 
 ### Health and readiness
 
-- [ ] Adapter health and transition creation follow the effective-health table, including claim, expiry, release, and archive.
-- [ ] Reads expose Core and Adapter times. Core receive order alone controls transitions.
-- [ ] A readiness failure freezes evaluation and expiry without transitions. Recovery applies the evaluation-only grace, requests availability refresh on the first heartbeat, and does not create a transition when persisted health is unchanged.
-- [ ] `/healthz` and `/readyz` keep their current meanings and readiness checks.
+- [x] Adapter health and transition creation follow the effective-health table, including claim, expiry, release, and archive.
+- [x] Reads expose Core and Adapter times. Core receive order alone controls transitions.
+- [x] A readiness failure freezes evaluation and expiry without transitions. Recovery applies the evaluation-only grace, requests availability refresh on the first heartbeat, and does not create a transition when persisted health is unchanged.
+- [x] `/healthz` and `/readyz` keep their current meanings and readiness checks.
 
 ### Entity availability
 
-- [ ] Effective availability follows the owning-Adapter and current-epoch report table. A healthy transition invalidates old reports without per-Entity writes.
-- [ ] A batch contains 1-256 unique owned Entity IDs and commits atomically. Omitted reports remain unchanged, disabled Entities are accepted, and invalid identity, ownership, runtime, health, reason, or time rejects the batch.
-- [ ] A repeated status and reason in one epoch refreshes current evidence only. The first report in a new epoch creates a transition.
-- [ ] Core-only restart replays the SDK cache. An actual unhealthy assessment clears it and requires fresh reports after recovery.
-- [ ] Availability never replaces State, which remains nullable or last accepted.
+- [x] Effective availability follows the owning-Adapter and current-epoch report table. A healthy transition invalidates old reports without per-Entity writes.
+- [x] A batch contains 1-256 unique owned Entity IDs and commits atomically. Omitted reports remain unchanged, disabled Entities are accepted, and invalid identity, ownership, runtime, health, reason, or time rejects the batch.
+- [x] A repeated status and reason in one epoch refreshes current evidence only. The first report in a new epoch creates a transition.
+- [x] Core-only restart replays the SDK cache. An actual unhealthy assessment clears it and requires fresh reports after recovery.
+- [x] Availability never replaces State, which remains nullable or last accepted.
 
 ### Commands and other Adapter traffic
 
-- [ ] Disabled wins classification. An unhealthy owner or one without an active runtime creates terminal `adapter_unhealthy` without dispatch; unknown health with an active runtime and Entity unavailability under a healthy owner both dispatch.
-- [ ] `RejectUnavailable` creates terminal `entity_unavailable`, returns HTTP 503, and does not change availability. Generic rejection remains `upstream_rejected` and HTTP 502.
-- [ ] SQLite commit order decides Command and health races. Takeover does not retarget requested Commands, and migration preserves `adapter_unavailable` history as `adapter_unhealthy`.
-- [ ] Runtime-scoped Observation preserves acknowledgement, deduplication, tracing, IDs, receipt retention, and State ordering. A stale runtime commits one acknowledged `stale_runtime` receipt without changing State or Commands.
-- [ ] Registration and enablement keep their current behavior after subject runtime validation. The new Observation consumer processes only runtime-scoped subjects, and retained stable-subject messages are never projected.
+- [x] Disabled wins classification. An unhealthy owner or one without an active runtime creates terminal `adapter_unhealthy` without dispatch; unknown health with an active runtime and Entity unavailability under a healthy owner both dispatch.
+- [x] `RejectUnavailable` creates terminal `entity_unavailable`, returns HTTP 503, and does not change availability. Generic rejection remains `upstream_rejected` and HTTP 502.
+- [x] SQLite commit order decides Command and health races. Takeover does not retarget requested Commands, and migration preserves `adapter_unavailable` history as `adapter_unhealthy`.
+- [x] Runtime-scoped Observation preserves acknowledgement, deduplication, tracing, IDs, receipt retention, and State ordering. A stale runtime commits one acknowledged `stale_runtime` receipt without changing State or Commands.
+- [x] Registration and enablement keep their current behavior after subject runtime validation. The Observation consumer processes only runtime-scoped subjects.
 
 ### HTTP, history, persistence, and compatibility
 
-- [ ] Adapter list, detail, archive, both history routes, and all Entity representations match the specified DTOs, filters, errors, pagination, and OpenAPI metadata.
-- [ ] Archived Adapters remain readable only when addressed or included, have null current health, retain history, and reserve their Adapter IDs. Archival rejects active runtimes and owned Bindings and is otherwise idempotent.
-- [ ] Effective Entity history uses ownership intervals and global receive order, omits source-only and detail-only changes, and remains retained indefinitely.
-- [ ] Migration 00004 passes empty and populated up/down tests, preserves State, receipt, Command, ID, Binding, and history relationships, applies the specified outcome mappings, and passes foreign-key checks.
-- [ ] Indexes and transactions enforce one open runtime per Adapter and one open ownership interval per Entity. sqlc output is reproducible and stays behind the repository interface.
-- [ ] Core, contracts, the SDK, first-party Adapters, and NATS resources deploy as one incompatible v1 subject cutover while canonical resource IDs and histories remain compatible.
+- [x] Adapter list, detail, archive, both history routes, and all Entity representations match the specified DTOs, filters, errors, pagination, and OpenAPI metadata.
+- [x] Archived Adapters remain readable only when addressed or included, have null current health, retain history, and reserve their Adapter IDs. Archival rejects active runtimes and owned Bindings and is otherwise idempotent.
+- [x] Effective Entity history uses ownership intervals and global receive order, omits source-only and detail-only changes, and remains retained indefinitely.
+- [x] Migration 00004 passes empty and populated up/down tests, preserves State, receipt, Command, ID, Binding, and history relationships, applies the specified outcome mappings, and passes foreign-key checks.
+- [x] Indexes and transactions enforce one open runtime per Adapter and one open ownership interval per Entity. sqlc output is reproducible and stays behind the repository interface.
+- [x] Core, contracts, the SDK, first-party Adapters, and NATS resources use the runtime-scoped v1 contract together while canonical resource IDs and histories remain compatible.
 
 ## Test strategy
 
@@ -1113,24 +1105,27 @@ Tests stay beside their owners. Generated sqlc output remains under `internal/pl
 | Service | Health validation, reason namespace, evaluation override, report epochs, archival rules, owned copies, and page validation. |
 | SQLite | Claim retry, duplicate claim race, lease expiry, heartbeat transitions, batch atomicity, effective reads/history, ownership intervals, and Command/health commit races. |
 | NATS/SDK | Claim retry after lost response, heartbeat serialization, cache replay, fenced shutdown, request/reply route identity, availability retry, and runtime-scoped Command serving. |
-| JetStream | In-place stream update, new consumer, retained stable-subject isolation, stale-runtime receipts, redelivery, rollback, and readiness validation. |
+| JetStream | Runtime-scoped stream and consumer creation, configuration-drift rejection, stale-runtime receipts, redelivery, and readiness validation. |
 | HTTP | Bodies, null archived health, nested availability, archive conflict, pagination scopes, history causes, errors, and runtime OpenAPI. |
-| Adapter | Home Assistant connection/outage/resource states and simulator failure matrix. |
-| Process | Core restart, readiness pause/recovery, takeover, active Command behavior, and clean shutdown/release. |
+| Adapter | Home Assistant connection/outage/resource states and deterministic simulator health and availability scenarios. |
+| Process | Core restart command recovery, readiness pause/recovery, takeover, active Command behavior, stale-runtime isolation, and clean shutdown/release. |
 | Migration | Empty/populated up/down, enum rewrites, current State receipts, indexes, constraints, and foreign keys. |
 
 Use fake clocks and direct expiry calls for domain/repository tests. Do not make the unit suite sleep for five or fifteen seconds. Keep real timers only in a small process-level test with bounded deadlines.
 
-## Open contract questions
+## Resolved contract decisions
 
-- `AdapterRuntimeEvidenceBody.LastHeartbeatAt` and `RuntimeEvidence.LastHeartbeatAt` are required, but a claimed runtime has health before its first heartbeat. The persistence section also does not say whether `last_heartbeat_at` is nullable. The owner must choose a nullable field or define the claim-time value.
-- Availability batches reject any nonhealthy Adapter, including `unknown`, with `adapter_unhealthy`. The owner must confirm that this code intentionally covers `unknown` or define a separate error.
+- `AdapterRuntimeEvidenceBody.LastHeartbeatAt`, `RuntimeEvidence.LastHeartbeatAt`, and persisted `last_heartbeat_at` are nullable. A claimed runtime returns null until Core accepts its first heartbeat.
+- Availability batches reject every nonhealthy Adapter, including `unknown`, with `adapter_unhealthy`.
+- Hearth had no deployments before the runtime-scoped Observation subject change. JetStream provisioning supports fresh runtime-scoped resources and rejects drift rather than migrating pre-runtime resources.
 
 ## Delivery and verification
 
-Implement D1 and D2 first, then prove that a stale runtime cannot receive a newly created Command after takeover. The hardest implementation areas are effective Entity history SQL and Core-recovery concurrency.
+All eight deliverables are implemented. Tests prove that a stale runtime cannot receive a newly created Command after takeover and cover effective Entity history and Core-recovery concurrency.
 
-The final review covers generated sqlc output, embedded schemas, populated migration up/down behavior, ownership interval boundaries, NATS cutover and rollback, runtime OpenAPI, first-party Adapter fixtures, and race-enabled SDK lifecycle tests. Run:
+Final review covered generated sqlc output, embedded schemas, populated migration up/down behavior, ownership interval boundaries, runtime-scoped NATS resources, runtime OpenAPI, first-party Adapter fixtures, and race-enabled SDK lifecycle tests.
+
+Verified on 2026-08-31:
 
 ```sh
 mise run validate
@@ -1138,4 +1133,4 @@ git diff --check
 git status --short
 ```
 
-The spec is ready for task breakdown once the open contract questions are resolved.
+All commands passed, and the worktree was clean before this documentation closeout.
