@@ -1,3 +1,16 @@
+-- name: GetActiveAdapterRuntime :one
+SELECT active_runtime_id
+FROM adapter_instances
+WHERE adapter_id = sqlc.arg(adapter_id)
+  AND archived_at IS NULL
+  AND active_runtime_id = CAST(sqlc.arg(runtime_id) AS TEXT);
+
+-- name: GetAdapterRuntime :one
+SELECT runtime_id
+FROM adapter_runtimes
+WHERE adapter_id = sqlc.arg(adapter_id)
+  AND runtime_id = CAST(sqlc.arg(runtime_id) AS TEXT);
+
 -- name: ListDevices :many
 SELECT id, kind, name
 FROM devices

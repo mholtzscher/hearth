@@ -13,7 +13,7 @@ import (
 )
 
 type Registrar interface {
-	Register(context.Context, string, devices.Registration) (devices.Binding, error)
+	Register(context.Context, string, devices.RuntimeID, devices.Registration) (devices.Binding, error)
 }
 
 type RegistrationServer struct {
@@ -48,7 +48,9 @@ func StartRegistrationServer(
 				)
 				return registrationResponse{}, false
 			}
-			response, registrationErr := register(ctx, registrar, route.AdapterID, request.Data)
+			response, registrationErr := register(
+				ctx, registrar, route.AdapterID, devices.RuntimeID(route.RuntimeID), request.Data,
+			)
 			if registrationErr != nil {
 				logger.ErrorContext(ctx,
 					"handle registration", "subject", subject,
@@ -69,6 +71,7 @@ func register(
 	ctx context.Context,
 	registrar Registrar,
 	adapterID string,
+	runtimeID devices.RuntimeID,
 	wire registration,
 ) (registrationResponse, error) {
 	domain := devices.Registration{
@@ -88,7 +91,13 @@ func register(
 			InitiallyEnabled: copyBoolPointer(entity.InitiallyEnabled),
 		}
 	}
-	accepted, err := registrar.Register(ctx, adapterID, domain)
+	accepted, err := registrar.Register(ctx, adapterID, runtimeID, domain)
+	if errors.Is(err, devices.ErrRuntimeFenced) {
+		return registrationResponse{
+			Status: statusRejected,
+			Error:  &registrationError{Code: runtimeFencedCode, Message: runtimeFencedMessage},
+		}, nil
+	}
 	if rejected, ok := errors.AsType[*devices.RegistrationRejectedError](err); ok {
 		return registrationResponse{
 			Status: statusRejected,

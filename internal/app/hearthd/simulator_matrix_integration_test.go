@@ -51,6 +51,7 @@ type simulatorMatrixOptions struct {
 type observationProjectorFunc func(
 	context.Context,
 	string,
+	devices.RuntimeID,
 	devices.Observation,
 	time.Time,
 ) (devices.ProjectionResult, error)
@@ -58,10 +59,11 @@ type observationProjectorFunc func(
 func (projector observationProjectorFunc) ProjectObservation(
 	ctx context.Context,
 	adapterID string,
+	runtimeID devices.RuntimeID,
 	observation devices.Observation,
 	observedAt time.Time,
 ) (devices.ProjectionResult, error) {
-	return projector(ctx, adapterID, observation, observedAt)
+	return projector(ctx, adapterID, runtimeID, observation, observedAt)
 }
 
 type simulatorMatrixHarness struct {
@@ -832,10 +834,11 @@ func TestSimulatorRestartBeforeAckRedeliversWithoutChangingStateOrCommand(t *tes
 			return observationProjectorFunc(func(
 				ctx context.Context,
 				adapterID string,
+				runtimeID devices.RuntimeID,
 				observation devices.Observation,
 				observedAt time.Time,
 			) (devices.ProjectionResult, error) {
-				result, err := base.ProjectObservation(ctx, adapterID, observation, observedAt)
+				result, err := base.ProjectObservation(ctx, adapterID, runtimeID, observation, observedAt)
 				if err != nil {
 					return result, err
 				}
@@ -888,10 +891,13 @@ func TestSimulatorRestartBeforeAckRedeliversWithoutChangingStateOrCommand(t *tes
 		observationProjectorFunc(func(
 			ctx context.Context,
 			adapterID string,
+			runtimeID devices.RuntimeID,
 			observation devices.Observation,
 			observedAt time.Time,
 		) (devices.ProjectionResult, error) {
-			projected, projectionErr := harness.service.ProjectObservation(ctx, adapterID, observation, observedAt)
+			projected, projectionErr := harness.service.ProjectObservation(
+				ctx, adapterID, runtimeID, observation, observedAt,
+			)
 			if observation.ID == devices.ObservationID(result.ObservationID) {
 				redeliveryOnce.Do(func() { close(redelivered) })
 			}

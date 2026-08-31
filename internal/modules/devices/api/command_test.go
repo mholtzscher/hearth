@@ -120,6 +120,7 @@ func TestCommandErrorMappingUsesStandardHumaErrors(t *testing.T) {
 		{devices.ErrInvalidCommand, http.StatusBadRequest, "invalid command"},
 		{devices.ErrEntityNotFound, http.StatusNotFound, "entity not found"},
 		{devices.ErrAdapterUnhealthy, http.StatusServiceUnavailable, "adapter unhealthy"},
+		{devices.ErrEntityUnavailable, http.StatusServiceUnavailable, "entity unavailable"},
 		{devices.ErrUpstreamRejected, http.StatusBadGateway, "upstream rejected command"},
 		{devices.ErrOutcomeTimeout, http.StatusGatewayTimeout, "command outcome timed out"},
 		{errors.New("SQLite unavailable"), http.StatusInternalServerError, "internal error"},

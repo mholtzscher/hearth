@@ -9,10 +9,12 @@ import (
 )
 
 type stubRegistrationRepository struct {
-	binding Binding
-	err     error
-	calls   int
-	params  RegisterBindingParams
+	binding       Binding
+	err           error
+	runtimeErr    error
+	calls         int
+	runtimeChecks int
+	params        RegisterBindingParams
 }
 
 func (repository *stubRegistrationRepository) RegisterBinding(
@@ -118,8 +120,20 @@ func (*stubRegistrationRepository) ListAdapters(
 	panic("unexpected ListAdapters call")
 }
 
-func (*stubRegistrationRepository) GetAdapter(context.Context, string) (AdapterInstance, error) {
-	panic("unexpected GetAdapter call")
+func (repository *stubRegistrationRepository) GetAdapter(
+	_ context.Context,
+	adapterID string,
+) (AdapterInstance, error) {
+	repository.runtimeChecks++
+	if repository.runtimeErr != nil {
+		return AdapterInstance{}, repository.runtimeErr
+	}
+	return AdapterInstance{
+		ID: adapterID,
+		Health: &AdapterHealth{Runtime: &RuntimeEvidence{
+			ID: commandTestRuntimeID, Status: runtimeStatusOnline,
+		}},
+	}, nil
 }
 
 func (*stubRegistrationRepository) ArchiveAdapter(context.Context, ArchiveAdapterParams) error {
@@ -147,7 +161,9 @@ func TestRegisterClassifiesOnlyDescriptorAndIdentityFailuresAsPermanent(t *testi
 	repository := &stubRegistrationRepository{err: infrastructureFailure}
 	service := NewService(repository, nil, catalog, Dependencies{})
 
-	_, err := service.Register(context.Background(), "homeassistant", validDomainRegistration())
+	_, err := service.Register(
+		context.Background(), "homeassistant", commandTestRuntimeID, validDomainRegistration(),
+	)
 	if !errors.Is(err, infrastructureFailure) {
 		t.Fatalf("infrastructure error = %v, want original error", err)
 	}
@@ -158,12 +174,32 @@ func TestRegisterClassifiesOnlyDescriptorAndIdentityFailuresAsPermanent(t *testi
 
 	invalid := validDomainRegistration()
 	invalid.Entities[0].Support = EntitySupport(`{"state":{},"operations":{}}`)
-	_, err = service.Register(context.Background(), "homeassistant", invalid)
+	_, err = service.Register(context.Background(), "homeassistant", commandTestRuntimeID, invalid)
 	if !errors.As(err, &rejected) || rejected.Code != RegistrationInvalidDescriptor {
 		t.Fatalf("invalid descriptor error = %v", err)
 	}
 	if repository.calls != 1 {
 		t.Fatalf("repository calls = %d, want only the valid attempt", repository.calls)
+	}
+}
+
+func TestRegisterPrefersRuntimeFencingToDescriptorRejection(t *testing.T) {
+	t.Parallel()
+	repository := &stubRegistrationRepository{runtimeErr: ErrRuntimeFenced}
+	service := NewService(repository, nil, firstLightCatalog(t), Dependencies{})
+	invalid := validDomainRegistration()
+	invalid.Entities[0].TypeID = "unknown.entity/v1"
+	invalid.Entities[0].Support = EntitySupport(`{}`)
+
+	_, err := service.Register(context.Background(), "homeassistant", commandTestRuntimeID, invalid)
+	if !errors.Is(err, ErrRuntimeFenced) {
+		t.Fatalf("registration error = %v", err)
+	}
+	if _, ok := errors.AsType[*RegistrationRejectedError](err); ok {
+		t.Fatalf("stale runtime received descriptor rejection: %v", err)
+	}
+	if repository.runtimeChecks != 1 || repository.calls != 0 {
+		t.Fatalf("runtime checks = %d, registration writes = %d", repository.runtimeChecks, repository.calls)
 	}
 }
 
@@ -176,8 +212,13 @@ func TestRegisterPersistsNormalizedSupportWithoutMutatingInput(t *testing.T) {
 	registration.Entities[0].Support = EntitySupport(" \n { \"state\" : {}, \"operations\" : { \"set\" : {} } } ")
 	original := string(registration.Entities[0].Support)
 
-	if _, err := service.Register(context.Background(), "homeassistant", registration); err != nil {
+	if _, err := service.Register(
+		context.Background(), "homeassistant", commandTestRuntimeID, registration,
+	); err != nil {
 		t.Fatal(err)
+	}
+	if repository.params.RuntimeID != commandTestRuntimeID {
+		t.Fatalf("repository runtime ID = %q", repository.params.RuntimeID)
 	}
 	if got := string(repository.params.Entities[0].Entity.Support); got != `{"state":{},"operations":{"set":{}}}` {
 		t.Fatalf("repository support = %s", got)
@@ -232,7 +273,9 @@ func TestRegisterRejectsInvalidEntitySetsBeforeGeneratingIDsOrCallingRepository(
 				NewEntityID: func() (EntityID, error) { generatedIDs++; return "", nil },
 			})
 
-			_, err := service.Register(context.Background(), "homeassistant", mutate(validDomainRegistration()))
+			_, err := service.Register(
+				context.Background(), "homeassistant", commandTestRuntimeID, mutate(validDomainRegistration()),
+			)
 			var rejected *RegistrationRejectedError
 			if !errors.As(err, &rejected) || rejected.Code != RegistrationInvalidDescriptor {
 				t.Fatalf("registration error = %v", err)
@@ -257,7 +300,9 @@ func TestRegisterAccepts64Entities(t *testing.T) {
 		)
 	}
 
-	if _, err := service.Register(context.Background(), "homeassistant", registration); err != nil {
+	if _, err := service.Register(
+		context.Background(), "homeassistant", commandTestRuntimeID, registration,
+	); err != nil {
 		t.Fatal(err)
 	}
 	if len(repository.params.Entities) != 64 {

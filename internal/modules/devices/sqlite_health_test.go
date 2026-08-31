@@ -345,7 +345,7 @@ func TestSQLiteAvailabilityBatchRollsBackAndUsesHealthEpoch(t *testing.T) {
 		t.Fatal(claimErr)
 	}
 	service := NewService(repository, nil, catalog, Dependencies{})
-	binding, err := service.Register(ctx, "simulator", validDomainRegistration())
+	binding, err := service.Register(ctx, "simulator", testRuntimeID, validDomainRegistration())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -556,7 +556,7 @@ func TestSQLiteAvailabilityFencesRuntimeAtLeaseBoundary(t *testing.T) {
 		t.Fatal(err)
 	}
 	service := NewService(repository, nil, catalog, Dependencies{Now: func() time.Time { return healthyAt }})
-	binding, err := service.Register(ctx, "simulator", validDomainRegistration())
+	binding, err := service.Register(ctx, "simulator", testRuntimeID, validDomainRegistration())
 	if err != nil {
 		t.Fatal(err)
 	}

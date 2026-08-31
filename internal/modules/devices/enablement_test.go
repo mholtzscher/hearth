@@ -50,11 +50,14 @@ func TestSetEntityEnabledUsesExplicitManagementAndOwnerPolicies(t *testing.T) {
 	}
 
 	repository.view.Entity.Enabled = true
-	confirmed, err := service.SetOwnedEntityEnabled(context.Background(), "simulator", commandTestEntityID, true)
+	confirmed, err := service.SetOwnedEntityEnabled(
+		context.Background(), "simulator", commandTestRuntimeID, commandTestEntityID, true,
+	)
 	if err != nil || !confirmed {
 		t.Fatalf("owner result = %t, %v", confirmed, err)
 	}
-	if repository.params.RequiredOwner == nil || *repository.params.RequiredOwner != "simulator" {
+	if repository.params.RequiredOwner == nil || *repository.params.RequiredOwner != "simulator" ||
+		repository.params.RequiredRuntime == nil || *repository.params.RequiredRuntime != commandTestRuntimeID {
 		t.Fatalf("owner params = %#v", repository.params)
 	}
 }
@@ -69,6 +72,7 @@ func TestSetEntityEnabledValidatesIdentityBeforeRepositoryCall(t *testing.T) {
 	if _, err := service.SetOwnedEntityEnabled(
 		context.Background(),
 		"bad.adapter",
+		commandTestRuntimeID,
 		commandTestEntityID,
 		false,
 	); err == nil {

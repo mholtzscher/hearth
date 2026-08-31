@@ -110,6 +110,17 @@ type commandOutcome struct {
 	err    error
 }
 
+func classifyCommandDispatchError(err error) (CommandStatus, CommandFailureCode, error) {
+	switch {
+	case errors.Is(err, ErrEntityUnavailable):
+		return CommandStatusEntityUnavailable, CommandFailureEntityUnavailable, ErrEntityUnavailable
+	case errors.Is(err, ErrAdapterUnhealthy), errors.Is(err, context.DeadlineExceeded):
+		return CommandStatusAdapterUnhealthy, CommandFailureAdapterUnhealthy, ErrAdapterUnhealthy
+	default:
+		return CommandStatusInternalFailure, CommandFailureInternalError, err
+	}
+}
+
 func (service *Service) runCommand(
 	ctx context.Context,
 	command CommandRecord,
@@ -117,16 +128,8 @@ func (service *Service) runCommand(
 ) commandOutcome {
 	acceptance, err := service.dispatchCommand(ctx, command)
 	if err != nil {
-		if errors.Is(err, ErrAdapterUnhealthy) || errors.Is(err, context.DeadlineExceeded) {
-			return service.failCommand(
-				command.ID,
-				CommandStatusAdapterUnhealthy,
-				CommandFailureAdapterUnhealthy,
-				ErrAdapterUnhealthy,
-				waiter,
-			)
-		}
-		return service.failCommand(command.ID, CommandStatusInternalFailure, CommandFailureInternalError, err, waiter)
+		status, failureCode, outcome := classifyCommandDispatchError(err)
+		return service.failCommand(command.ID, status, failureCode, outcome, waiter)
 	}
 	if !acceptance.Accepted {
 		return service.failCommand(

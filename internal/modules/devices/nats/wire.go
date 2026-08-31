@@ -3,8 +3,10 @@ package nats
 import "encoding/json"
 
 const (
-	statusAccepted = "accepted"
-	statusRejected = "rejected"
+	statusAccepted       = "accepted"
+	statusRejected       = "rejected"
+	runtimeFencedCode    = "runtime_fenced"
+	runtimeFencedMessage = "Adapter runtime is fenced"
 )
 
 type adapterClaimRequest struct {

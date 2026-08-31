@@ -118,6 +118,7 @@ const (
 	RejectionWrongAdapter   ObservationRejection = "wrong_adapter"
 	RejectionEntityDisabled ObservationRejection = "entity_disabled"
 	RejectionInvalidValue   ObservationRejection = "invalid_value"
+	RejectionStaleRuntime   ObservationRejection = "stale_runtime"
 )
 
 type ProjectionResult struct {

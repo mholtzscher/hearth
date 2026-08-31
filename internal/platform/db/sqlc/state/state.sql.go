@@ -10,6 +10,45 @@ import (
 	"database/sql"
 )
 
+const getActiveAdapterRuntime = `-- name: GetActiveAdapterRuntime :one
+SELECT active_runtime_id
+FROM adapter_instances
+WHERE adapter_id = ?1
+  AND archived_at IS NULL
+  AND active_runtime_id = CAST(?2 AS TEXT)
+`
+
+type GetActiveAdapterRuntimeParams struct {
+	AdapterID string
+	RuntimeID string
+}
+
+func (q *Queries) GetActiveAdapterRuntime(ctx context.Context, arg GetActiveAdapterRuntimeParams) (sql.NullString, error) {
+	row := q.db.QueryRowContext(ctx, getActiveAdapterRuntime, arg.AdapterID, arg.RuntimeID)
+	var active_runtime_id sql.NullString
+	err := row.Scan(&active_runtime_id)
+	return active_runtime_id, err
+}
+
+const getAdapterRuntime = `-- name: GetAdapterRuntime :one
+SELECT runtime_id
+FROM adapter_runtimes
+WHERE adapter_id = ?1
+  AND runtime_id = CAST(?2 AS TEXT)
+`
+
+type GetAdapterRuntimeParams struct {
+	AdapterID string
+	RuntimeID string
+}
+
+func (q *Queries) GetAdapterRuntime(ctx context.Context, arg GetAdapterRuntimeParams) (string, error) {
+	row := q.db.QueryRowContext(ctx, getAdapterRuntime, arg.AdapterID, arg.RuntimeID)
+	var runtime_id string
+	err := row.Scan(&runtime_id)
+	return runtime_id, err
+}
+
 const getDevice = `-- name: GetDevice :one
 SELECT id, kind, name
 FROM devices

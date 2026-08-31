@@ -48,6 +48,7 @@ SET status = 'satisfied', completed_at = ?, outcome_observation_id = ?
 WHERE id = ?
   AND entity_id = ?
   AND adapter_id = ?
+  AND runtime_id = ?
   AND status IN ('requested', 'accepted');
 
 -- name: InterruptActiveCommands :execrows

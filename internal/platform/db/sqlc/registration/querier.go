@@ -6,6 +6,7 @@ package registration
 
 import (
 	"context"
+	"database/sql"
 )
 
 type Querier interface {
@@ -14,6 +15,7 @@ type Querier interface {
 	CreateEntity(ctx context.Context, arg CreateEntityParams) error
 	CreateEntityMapping(ctx context.Context, arg CreateEntityMappingParams) error
 	CreateEntityOwnershipInterval(ctx context.Context, arg CreateEntityOwnershipIntervalParams) error
+	GetActiveAdapterRuntime(ctx context.Context, arg GetActiveAdapterRuntimeParams) (sql.NullString, error)
 	GetAdapterAvailabilityBaseline(ctx context.Context, arg GetAdapterAvailabilityBaselineParams) (GetAdapterAvailabilityBaselineRow, error)
 	GetBinding(ctx context.Context, arg GetBindingParams) (GetBindingRow, error)
 	GetBindingByExternalDeviceID(ctx context.Context, arg GetBindingByExternalDeviceIDParams) (GetBindingByExternalDeviceIDRow, error)

@@ -19,7 +19,13 @@ import (
 const observationFutureClockThreshold = time.Minute
 
 type ObservationProjector interface {
-	ProjectObservation(context.Context, string, devices.Observation, time.Time) (devices.ProjectionResult, error)
+	ProjectObservation(
+		context.Context,
+		string,
+		devices.RuntimeID,
+		devices.Observation,
+		time.Time,
+	) (devices.ProjectionResult, error)
 }
 
 type ObservationConsumer struct {
@@ -192,7 +198,7 @@ func handleObservationMessage(
 	}
 	ctx := natswire.ExtractTrace(baseContext, message.Headers())
 	if _, projectionErr := projector.ProjectObservation(
-		ctx, route.AdapterID, domain, metadata.Timestamp.UTC(),
+		ctx, route.AdapterID, devices.RuntimeID(route.RuntimeID), domain, metadata.Timestamp.UTC(),
 	); projectionErr != nil {
 		logger.ErrorContext(baseContext, "project observation",
 			"subject", message.Subject(),

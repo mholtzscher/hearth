@@ -45,6 +45,9 @@ func (repository *SQLiteRepository) RegisterBinding(
 	}
 	defer func() { _ = tx.Rollback() }()
 	queries := registrationsqlc.New(tx)
+	if runtimeErr := checkRegistrationRuntime(ctx, queries, params.AdapterID, params.RuntimeID); runtimeErr != nil {
+		return Binding{}, runtimeErr
+	}
 	updatedAt := formatTime(params.UpdatedAt)
 
 	deviceID, err := reconcileRegistrationDevice(ctx, queries, params, updatedAt)
@@ -63,6 +66,24 @@ func (repository *SQLiteRepository) RegisterBinding(
 		return Binding{}, fmt.Errorf("commit registration: %w", commitErr)
 	}
 	return Binding{BindingKey: params.BindingKey, DeviceID: deviceID, Entities: entityBindings}, nil
+}
+
+func checkRegistrationRuntime(
+	ctx context.Context,
+	queries *registrationsqlc.Queries,
+	adapterID string,
+	runtimeID RuntimeID,
+) error {
+	_, err := queries.GetActiveAdapterRuntime(ctx, registrationsqlc.GetActiveAdapterRuntimeParams{
+		AdapterID: adapterID, RuntimeID: string(runtimeID),
+	})
+	if errors.Is(err, sql.ErrNoRows) {
+		return ErrRuntimeFenced
+	}
+	if err != nil {
+		return fmt.Errorf("validate registration runtime: %w", err)
+	}
+	return nil
 }
 
 func reconcileRegistrationDevice(
@@ -379,6 +400,20 @@ func (repository *SQLiteRepository) SetEntityEnabled(
 	}
 	defer func() { _ = tx.Rollback() }()
 	queries := statesqlc.New(tx)
+	if params.RequiredRuntime != nil {
+		if params.RequiredOwner == nil {
+			return EntityWithState{}, errors.New("runtime-scoped enablement requires an Adapter owner")
+		}
+		_, runtimeErr := queries.GetActiveAdapterRuntime(ctx, statesqlc.GetActiveAdapterRuntimeParams{
+			AdapterID: *params.RequiredOwner, RuntimeID: string(*params.RequiredRuntime),
+		})
+		if errors.Is(runtimeErr, sql.ErrNoRows) {
+			return EntityWithState{}, ErrRuntimeFenced
+		}
+		if runtimeErr != nil {
+			return EntityWithState{}, fmt.Errorf("validate entity enablement runtime: %w", runtimeErr)
+		}
+	}
 	row, err := queries.GetEntity(ctx, statesqlc.GetEntityParams{ID: string(params.EntityID)})
 	if errors.Is(err, sql.ErrNoRows) {
 		return EntityWithState{}, ErrEntityNotFound

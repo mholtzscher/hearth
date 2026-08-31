@@ -144,6 +144,14 @@ func TestCoreNATSTransportRegistersAndProjectsDurableObservation(t *testing.T) {
 	if projected.ObservationID != devices.ObservationID(observationID) || string(projected.Value) != "true" {
 		t.Fatalf("projected state = %#v", projected)
 	}
+	var runtimeID devices.RuntimeID
+	if scanErr := database.QueryRowContext(
+		ctx,
+		"SELECT runtime_id FROM observation_receipts WHERE observation_id = ?",
+		observationID,
+	).Scan(&runtimeID); scanErr != nil {
+		t.Fatal(scanErr)
+	}
 	if readinessErr := NewRuntimeReadiness(database, coreConnection, js, observations).Check(ctx); readinessErr != nil {
 		t.Fatal(readinessErr)
 	}
@@ -192,7 +200,7 @@ func TestCoreNATSTransportRegistersAndProjectsDurableObservation(t *testing.T) {
 		recovered.State.ReceiveOrder != projected.ReceiveOrder || string(recovered.State.Value) != "true" {
 		t.Fatalf("recovered state = %#v, want %#v", recovered.State, projected)
 	}
-	result, err := recoveredService.ProjectObservation(ctx, "simulator", devices.Observation{
+	result, err := recoveredService.ProjectObservation(ctx, "simulator", runtimeID, devices.Observation{
 		ID: devices.ObservationID(observationID), EntityID: entityID, Value: devices.Value(`true`),
 		AdapterReceivedAt: adapterReceivedAt,
 	}, projected.ObservedAt)

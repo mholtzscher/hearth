@@ -36,6 +36,7 @@ type RegisterEntityParams struct {
 
 type RegisterBindingParams struct {
 	AdapterID  string
+	RuntimeID  RuntimeID
 	BindingKey string
 	DeviceID   DeviceID
 	Device     DeviceDescriptor
@@ -44,14 +45,16 @@ type RegisterBindingParams struct {
 }
 
 type SetEntityEnabledParams struct {
-	EntityID      EntityID
-	Enabled       bool
-	RequiredOwner *string
-	UpdatedAt     time.Time
+	EntityID        EntityID
+	Enabled         bool
+	RequiredOwner   *string
+	RequiredRuntime *RuntimeID
+	UpdatedAt       time.Time
 }
 
 type ProjectObservationParams struct {
 	AdapterID        string
+	RuntimeID        RuntimeID
 	Observation      Observation
 	ObservedAt       time.Time
 	Now              func() time.Time

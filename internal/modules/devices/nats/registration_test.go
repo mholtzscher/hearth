@@ -2,8 +2,10 @@ package nats //nolint:testpackage // Tests exercise package-private NATS wire be
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"log/slog"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -12,16 +14,24 @@ import (
 	contractsv1 "github.com/mholtzscher/hearth/contracts/v1"
 	"github.com/mholtzscher/hearth/internal/contracts/v1/natswire"
 	"github.com/mholtzscher/hearth/internal/modules/devices"
+	platformdb "github.com/mholtzscher/hearth/internal/platform/db"
+	"github.com/mholtzscher/hearth/sdk/adapter"
 )
 
-type registrarFunc func(context.Context, string, devices.Registration) (devices.Binding, error)
+type registrarFunc func(
+	context.Context,
+	string,
+	devices.RuntimeID,
+	devices.Registration,
+) (devices.Binding, error)
 
 func (registrar registrarFunc) Register(
 	ctx context.Context,
 	adapterID string,
+	runtimeID devices.RuntimeID,
 	registration devices.Registration,
 ) (devices.Binding, error) {
-	return registrar(ctx, adapterID, registration)
+	return registrar(ctx, adapterID, runtimeID, registration)
 }
 
 func TestRegistrationServerMapsDomainRegistrationAndReturnsCorrelatedResponse(t *testing.T) {
@@ -37,10 +47,11 @@ func TestRegistrationServerMapsDomainRegistrationAndReturnsCorrelatedResponse(t 
 	server, err := StartRegistrationServer(connection, validator, registrarFunc(func(
 		_ context.Context,
 		adapterID string,
+		runtimeID devices.RuntimeID,
 		registration devices.Registration,
 	) (devices.Binding, error) {
-		if adapterID != "simulator" {
-			t.Errorf("adapter ID = %q", adapterID)
+		if adapterID != "simulator" || runtimeID != devices.RuntimeID(testRuntimeID) {
+			t.Errorf("Adapter runtime = %q/%q", adapterID, runtimeID)
 		}
 		handled <- registration
 		return devices.Binding{
@@ -119,6 +130,7 @@ func TestRegistrationServerMapsDomainRejection(t *testing.T) {
 	server, err := StartRegistrationServer(connection, validator, registrarFunc(func(
 		context.Context,
 		string,
+		devices.RuntimeID,
 		devices.Registration,
 	) (devices.Binding, error) {
 		return devices.Binding{}, &devices.RegistrationRejectedError{
@@ -137,6 +149,117 @@ func TestRegistrationServerMapsDomainRejection(t *testing.T) {
 	}
 }
 
+func TestRegistrationServerMapsRuntimeFencingToTypedRejection(t *testing.T) {
+	t.Parallel()
+	_, connection, _ := startJetStream(t)
+	validator, err := contractsv1.Compile()
+	if err != nil {
+		t.Fatal(err)
+	}
+	server, err := StartRegistrationServer(connection, validator, registrarFunc(func(
+		context.Context,
+		string,
+		devices.RuntimeID,
+		devices.Registration,
+	) (devices.Binding, error) {
+		return devices.Binding{}, devices.ErrRuntimeFenced
+	}), slog.New(slog.DiscardHandler))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = server.Drain() })
+
+	response := requestRegistration(t, connection, validator, validRegistrationEnvelope())
+	if response.Data.Status != "rejected" || response.Data.Error == nil ||
+		response.Data.Error.Code != "runtime_fenced" {
+		t.Fatalf("response = %#v", response)
+	}
+}
+
+func TestStaleRuntimeInvalidRegistrationFencesSDKSession(t *testing.T) {
+	t.Parallel()
+	ctx, cancel := context.WithTimeout(context.Background(), 4*time.Second)
+	defer cancel()
+	server, connection, _ := startJetStream(t)
+	validator, err := contractsv1.Compile()
+	if err != nil {
+		t.Fatal(err)
+	}
+	database, err := platformdb.Open(ctx, filepath.Join(t.TempDir(), "hearth.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = database.Close() })
+	if migrateErr := platformdb.Migrate(ctx, database); migrateErr != nil {
+		t.Fatal(migrateErr)
+	}
+	catalog, err := devices.NewBuiltinTypeCatalog()
+	if err != nil {
+		t.Fatal(err)
+	}
+	repository := devices.NewSQLiteRepository(database, catalog)
+	service := devices.NewService(repository, nil, catalog, devices.Dependencies{})
+	service.ResumeHealthEvaluation(time.Now().UTC())
+	sessions, err := StartSessionServer(connection, validator, service, service, slog.New(slog.DiscardHandler))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = sessions.Drain() })
+	registrations, err := StartRegistrationServer(connection, validator, service, slog.New(slog.DiscardHandler))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = registrations.Drain() })
+
+	staleSession, err := adapter.Connect(ctx, adapter.Config{
+		AdapterID: "simulator", SoftwareName: "hearth-simulator",
+		SoftwareVersion: "0.1.0", NATSURL: server.ClientURL(),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = staleSession.Close() })
+	var runtimeValue string
+	if scanErr := database.QueryRowContext(
+		ctx,
+		"SELECT active_runtime_id FROM adapter_instances WHERE adapter_id = 'simulator'",
+	).Scan(&runtimeValue); scanErr != nil {
+		t.Fatal(scanErr)
+	}
+	staleRuntime, err := devices.ParseRuntimeID(runtimeValue)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if releaseErr := service.ReleaseAdapterRuntime(ctx, "simulator", staleRuntime); releaseErr != nil {
+		t.Fatal(releaseErr)
+	}
+	replacement, err := adapter.Connect(ctx, adapter.Config{
+		AdapterID: "simulator", SoftwareName: "hearth-simulator",
+		SoftwareVersion: "0.1.0", NATSURL: server.ClientURL(),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = replacement.Close() })
+
+	_, err = staleSession.Register(ctx, adapter.Registration{
+		BindingKey: "invalid-light",
+		Device:     adapter.DeviceDescriptor{Name: "Invalid light", Kind: "light"},
+		Entities: []adapter.EntityDescriptor{{
+			Key: "power", ExternalID: "invalid.light", Name: "Power",
+			Type: "unknown.entity/v1", Support: json.RawMessage(`{"state":{},"operations":{}}`),
+		}},
+	})
+	if !errors.Is(err, adapter.ErrRuntimeFenced) {
+		t.Fatalf("stale invalid Registration error = %v", err)
+	}
+	if _, followupErr := staleSession.SetEntityEnabled(
+		ctx, testEntityID, false,
+	); !errors.Is(followupErr, adapter.ErrRuntimeFenced) {
+		t.Fatalf("fenced session follow-up error = %v", followupErr)
+	}
+}
+
 func TestRegistrationInfrastructureFailureDoesNotReply(t *testing.T) {
 	t.Parallel()
 	_, connection, _ := startJetStream(t)
@@ -147,6 +270,7 @@ func TestRegistrationInfrastructureFailureDoesNotReply(t *testing.T) {
 	server, err := StartRegistrationServer(connection, validator, registrarFunc(func(
 		context.Context,
 		string,
+		devices.RuntimeID,
 		devices.Registration,
 	) (devices.Binding, error) {
 		return devices.Binding{}, errors.New("SQLite unavailable")

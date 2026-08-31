@@ -13,11 +13,15 @@ const ObservationReceiptRetention = 192 * time.Hour
 func (service *Service) ProjectObservation(
 	ctx context.Context,
 	adapterID string,
+	runtimeID RuntimeID,
 	observation Observation,
 	observedAt time.Time,
 ) (ProjectionResult, error) {
 	if !registrationSlugPattern.MatchString(adapterID) {
 		return ProjectionResult{}, errors.New("adapter ID must be a subject-safe slug")
+	}
+	if _, err := ParseRuntimeID(string(runtimeID)); err != nil {
+		return ProjectionResult{}, fmt.Errorf("parse runtime ID: %w", err)
 	}
 	if _, err := ParseObservationID(string(observation.ID)); err != nil {
 		return ProjectionResult{}, fmt.Errorf("parse observation ID: %w", err)
@@ -43,6 +47,7 @@ func (service *Service) ProjectObservation(
 	observedAt = observedAt.UTC()
 	params := ProjectObservationParams{
 		AdapterID:        adapterID,
+		RuntimeID:        runtimeID,
 		Observation:      copyObservation(observation),
 		ObservedAt:       observedAt,
 		Now:              service.dependencies.Now,

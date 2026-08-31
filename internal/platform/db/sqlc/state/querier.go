@@ -6,9 +6,12 @@ package state
 
 import (
 	"context"
+	"database/sql"
 )
 
 type Querier interface {
+	GetActiveAdapterRuntime(ctx context.Context, arg GetActiveAdapterRuntimeParams) (sql.NullString, error)
+	GetAdapterRuntime(ctx context.Context, arg GetAdapterRuntimeParams) (string, error)
 	GetDevice(ctx context.Context, arg GetDeviceParams) (GetDeviceRow, error)
 	GetEntity(ctx context.Context, arg GetEntityParams) (GetEntityRow, error)
 	GetEntityState(ctx context.Context, arg GetEntityStateParams) (EntityState, error)

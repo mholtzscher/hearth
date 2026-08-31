@@ -76,6 +76,9 @@ func (sender *CommandSender) Send(
 	if response.Data.CommandID != string(request.ID) {
 		return devices.CommandAcceptance{}, errors.New("command response command ID does not match request")
 	}
+	if response.Data.Status == statusRejected && response.Data.Error.Code == "entity_unavailable" {
+		return devices.CommandAcceptance{}, devices.ErrEntityUnavailable
+	}
 	return devices.CommandAcceptance{Accepted: response.Data.Status == statusAccepted}, nil
 }
 

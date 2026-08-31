@@ -123,7 +123,7 @@ func mapAvailabilityResult(
 		}, true
 	}
 	if errors.Is(err, devices.ErrRuntimeFenced) {
-		return rejectedAvailability("runtime_fenced", "Adapter runtime is fenced", ""), true
+		return rejectedAvailability(runtimeFencedCode, runtimeFencedMessage, ""), true
 	}
 	if errors.Is(err, devices.ErrAdapterUnhealthy) {
 		return rejectedAvailability("adapter_unhealthy", "Adapter is not healthy", ""), true

@@ -206,7 +206,9 @@ func TestExecuteCommandCommitsBeforeDispatchAndHandlesAcceptanceRace(t *testing.
 				ID: commandTestObservationID, EntityID: request.EntityID, Value: Value(`true`),
 				AdapterReceivedAt: time.Now().UTC(), RefreshForCommand: &request.ID,
 			}
-			if _, err := service.ProjectObservation(ctx, adapterID, observation, time.Now().UTC()); err != nil {
+			if _, err := service.ProjectObservation(
+				ctx, adapterID, runtimeID, observation, time.Now().UTC(),
+			); err != nil {
 				return CommandAcceptance{}, err
 			}
 			return CommandAcceptance{Accepted: true}, nil
@@ -242,6 +244,7 @@ func TestExecuteCommandReturnsSatisfiedWhenObservationWinsDispatchFailureRace(t 
 		sendErr    error
 	}{
 		{"adapter unhealthy", CommandAcceptance{}, ErrAdapterUnhealthy},
+		{"entity unavailable", CommandAcceptance{}, ErrEntityUnavailable},
 		{"upstream rejected", CommandAcceptance{Accepted: false}, nil},
 		{"invalid response", CommandAcceptance{}, errors.New("invalid response")},
 	}
@@ -251,8 +254,13 @@ func TestExecuteCommandReturnsSatisfiedWhenObservationWinsDispatchFailureRace(t 
 			repository := newCommandRepository()
 			var service *Service
 			sender := commandSenderFunc(
-				func(ctx context.Context, adapterID string, _ RuntimeID, request CommandRequest) (CommandAcceptance, error) {
-					_, err := service.ProjectObservation(ctx, adapterID, Observation{
+				func(
+					ctx context.Context,
+					adapterID string,
+					runtimeID RuntimeID,
+					request CommandRequest,
+				) (CommandAcceptance, error) {
+					_, err := service.ProjectObservation(ctx, adapterID, runtimeID, Observation{
 						ID: commandTestObservationID, EntityID: request.EntityID, Value: Value(`true`),
 						AdapterReceivedAt: time.Now().UTC(), RefreshForCommand: &request.ID,
 					}, time.Now().UTC())
@@ -307,6 +315,15 @@ func TestExecuteCommandFailureMatrixIsDurablyClassified(t *testing.T) {
 			CommandFailureAdapterUnhealthy,
 		},
 		{
+			"entity unavailable",
+			CommandAcceptance{},
+			ErrEntityUnavailable,
+			time.Second,
+			ErrEntityUnavailable,
+			CommandStatusEntityUnavailable,
+			CommandFailureEntityUnavailable,
+		},
+		{
 			"upstream rejected",
 			CommandAcceptance{Accepted: false},
 			nil,
@@ -357,7 +374,8 @@ func TestExecuteCommandFailureMatrixIsDurablyClassified(t *testing.T) {
 				t.Fatalf("error = %v, want %v", err, test.wantErr)
 			}
 			if test.wantErr == nil &&
-				(err == nil || errors.Is(err, ErrAdapterUnhealthy) || errors.Is(err, ErrUpstreamRejected) || errors.Is(err, ErrOutcomeTimeout)) {
+				(err == nil || errors.Is(err, ErrAdapterUnhealthy) || errors.Is(err, ErrEntityUnavailable) ||
+					errors.Is(err, ErrUpstreamRejected) || errors.Is(err, ErrOutcomeTimeout)) {
 				t.Fatalf("error = %v, want internal failure", err)
 			}
 			var executionError *CommandExecutionError
@@ -498,7 +516,7 @@ func TestExecuteCommandKeepsOverlappingCommandsIndependent(t *testing.T) {
 	arrived := make(chan struct{}, 2)
 	release := make(chan struct{})
 	sender := commandSenderFunc(
-		func(ctx context.Context, adapterID string, _ RuntimeID, request CommandRequest) (CommandAcceptance, error) {
+		func(ctx context.Context, adapterID string, runtimeID RuntimeID, request CommandRequest) (CommandAcceptance, error) {
 			arrived <- struct{}{}
 			<-release
 			value := Value(`false`)
@@ -506,7 +524,7 @@ func TestExecuteCommandKeepsOverlappingCommandsIndependent(t *testing.T) {
 				value = Value(`true`)
 			}
 			observationID := observationIDs[request.ID]
-			_, err := service.ProjectObservation(ctx, adapterID, Observation{
+			_, err := service.ProjectObservation(ctx, adapterID, runtimeID, Observation{
 				ID: observationID, EntityID: request.EntityID, Value: value,
 				AdapterReceivedAt: time.Now().UTC(), RefreshForCommand: &request.ID,
 			}, time.Now().UTC())
@@ -561,8 +579,8 @@ func TestExecuteCommandIgnoresMismatchedLinkedObservation(t *testing.T) {
 	repository := newCommandRepository()
 	var service *Service
 	sender := commandSenderFunc(
-		func(ctx context.Context, adapterID string, _ RuntimeID, request CommandRequest) (CommandAcceptance, error) {
-			_, err := service.ProjectObservation(ctx, adapterID, Observation{
+		func(ctx context.Context, adapterID string, runtimeID RuntimeID, request CommandRequest) (CommandAcceptance, error) {
+			_, err := service.ProjectObservation(ctx, adapterID, runtimeID, Observation{
 				ID: commandTestObservationID, EntityID: request.EntityID, Value: Value(`false`),
 				AdapterReceivedAt: time.Now().UTC(), RefreshForCommand: &request.ID,
 			}, time.Now().UTC())

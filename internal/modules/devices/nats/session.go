@@ -190,7 +190,7 @@ func mapHeartbeatResult(result devices.HeartbeatResult, err error) (adapterHeart
 	if errors.Is(err, devices.ErrRuntimeFenced) {
 		return adapterHeartbeatResponse{
 			Status: statusRejected,
-			Error:  &adapterError{Code: "runtime_fenced", Message: "Adapter runtime is fenced"},
+			Error:  &adapterError{Code: runtimeFencedCode, Message: runtimeFencedMessage},
 		}, true
 	}
 	return adapterHeartbeatResponse{}, false
@@ -242,7 +242,7 @@ func mapReleaseResult(err error) (adapterReleaseResponse, bool) {
 	if errors.Is(err, devices.ErrRuntimeFenced) {
 		return adapterReleaseResponse{
 			Status: statusRejected,
-			Error:  &adapterError{Code: "runtime_fenced", Message: "Adapter runtime is fenced"},
+			Error:  &adapterError{Code: runtimeFencedCode, Message: runtimeFencedMessage},
 		}, true
 	}
 	return adapterReleaseResponse{}, false

@@ -275,6 +275,7 @@ SET status = 'satisfied', completed_at = ?, outcome_observation_id = ?
 WHERE id = ?
   AND entity_id = ?
   AND adapter_id = ?
+  AND runtime_id = ?
   AND status IN ('requested', 'accepted')
 `
 
@@ -284,6 +285,7 @@ type SatisfyCommandFromObservationParams struct {
 	ID                   string
 	EntityID             string
 	AdapterID            string
+	RuntimeID            sql.NullString
 }
 
 func (q *Queries) SatisfyCommandFromObservation(ctx context.Context, arg SatisfyCommandFromObservationParams) (int64, error) {
@@ -293,6 +295,7 @@ func (q *Queries) SatisfyCommandFromObservation(ctx context.Context, arg Satisfy
 		arg.ID,
 		arg.EntityID,
 		arg.AdapterID,
+		arg.RuntimeID,
 	)
 	if err != nil {
 		return 0, err

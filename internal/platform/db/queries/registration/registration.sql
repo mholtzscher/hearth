@@ -1,3 +1,10 @@
+-- name: GetActiveAdapterRuntime :one
+SELECT active_runtime_id
+FROM adapter_instances
+WHERE adapter_id = sqlc.arg(adapter_id)
+  AND archived_at IS NULL
+  AND active_runtime_id = CAST(sqlc.arg(runtime_id) AS TEXT);
+
 -- name: GetBinding :one
 SELECT
     b.adapter_id,

@@ -64,23 +64,44 @@ func (repository *SQLiteRepository) ProjectObservation(
 	}
 
 	stateQueries := statesqlc.New(tx)
-	view, rejection, err := loadObservationEntity(ctx, stateQueries, params)
+	var view EntityWithState
+	var linkedCommand *CommandRecord
+	var projectionNow time.Time
+	var normalized Value
+	var rejection *ObservationRejection
+	disposition := DispositionRejected
+	receiptRuntimeID, runtimeActive, err := observationRuntimeState(
+		ctx, stateQueries, params.AdapterID, params.RuntimeID,
+	)
 	if err != nil {
 		return ProjectionResult{}, err
 	}
-	linkedCommand, projectionNow, rejection, err := repository.resolveObservationLink(ctx, tx, params, view, rejection)
-	if err != nil {
-		return ProjectionResult{}, err
-	}
-	normalized, disposition, rejection, err := repository.classifyObservation(view, params.Observation.Value, rejection)
-	if err != nil {
-		return ProjectionResult{}, err
+	if !runtimeActive {
+		staleRuntime := RejectionStaleRuntime
+		rejection = &staleRuntime
+	} else {
+		view, rejection, err = loadObservationEntity(ctx, stateQueries, params)
+		if err != nil {
+			return ProjectionResult{}, err
+		}
+		linkedCommand, projectionNow, rejection, err = repository.resolveObservationLink(
+			ctx, tx, params, view, rejection,
+		)
+		if err != nil {
+			return ProjectionResult{}, err
+		}
+		normalized, disposition, rejection, err = repository.classifyObservation(
+			view, params.Observation.Value, rejection,
+		)
+		if err != nil {
+			return ProjectionResult{}, err
+		}
 	}
 
 	receiveOrder, err := receiptQueries.InsertObservationReceipt(ctx, receiptsqlc.InsertObservationReceiptParams{
 		ObservationID:     string(params.Observation.ID),
 		AdapterID:         params.AdapterID,
-		RuntimeID:         sql.NullString{},
+		RuntimeID:         receiptRuntimeID,
 		EntityID:          string(params.Observation.EntityID),
 		Disposition:       string(disposition),
 		RejectionCode:     nullableRejection(rejection),
@@ -104,6 +125,34 @@ func (repository *SQLiteRepository) ProjectObservation(
 	return ProjectionResult{
 		Disposition: disposition, Rejection: rejection, State: state, SatisfiedCommand: satisfied,
 	}, nil
+}
+
+func observationRuntimeState(
+	ctx context.Context,
+	queries *statesqlc.Queries,
+	adapterID string,
+	runtimeID RuntimeID,
+) (sql.NullString, bool, error) {
+	receiptRuntimeID := nullableText(string(runtimeID))
+	_, err := queries.GetActiveAdapterRuntime(ctx, statesqlc.GetActiveAdapterRuntimeParams{
+		AdapterID: adapterID, RuntimeID: string(runtimeID),
+	})
+	if err == nil {
+		return receiptRuntimeID, true, nil
+	}
+	if !errors.Is(err, sql.ErrNoRows) {
+		return sql.NullString{}, false, fmt.Errorf("validate observation runtime: %w", err)
+	}
+	_, err = queries.GetAdapterRuntime(ctx, statesqlc.GetAdapterRuntimeParams{
+		AdapterID: adapterID, RuntimeID: string(runtimeID),
+	})
+	if err == nil {
+		return receiptRuntimeID, false, nil
+	}
+	if errors.Is(err, sql.ErrNoRows) {
+		return sql.NullString{}, false, nil
+	}
+	return sql.NullString{}, false, fmt.Errorf("lookup stale observation runtime: %w", err)
 }
 
 func observationReceiptExists(
@@ -254,7 +303,8 @@ func (repository *SQLiteRepository) persistObservationState(
 		return &state, nil, nil
 	}
 	satisfied, err := repository.satisfyCommand(
-		ctx, tx, view.Entity, *linkedCommand, params.Observation.ID, normalized, projectionNow,
+		ctx, tx, view.Entity, *linkedCommand, params.RuntimeID,
+		params.Observation.ID, normalized, projectionNow,
 	)
 	if err != nil {
 		return nil, nil, err
@@ -280,7 +330,8 @@ func (repository *SQLiteRepository) activeLinkedCommand(
 		return nil, time.Time{}, fmt.Errorf("map linked command: %w", err)
 	}
 	if (command.Status != CommandStatusRequested && command.Status != CommandStatusAccepted) ||
-		command.EntityID != params.Observation.EntityID || command.AdapterID != params.AdapterID {
+		command.EntityID != params.Observation.EntityID || command.AdapterID != params.AdapterID ||
+		command.RuntimeID == nil || *command.RuntimeID != params.RuntimeID {
 		return nil, time.Time{}, nil
 	}
 	completedAt := params.Now().UTC()
@@ -298,6 +349,7 @@ func (repository *SQLiteRepository) satisfyCommand(
 	tx *sql.Tx,
 	entity Entity,
 	command CommandRecord,
+	runtimeID RuntimeID,
 	observationID ObservationID,
 	value Value,
 	completedAt time.Time,
@@ -315,6 +367,7 @@ func (repository *SQLiteRepository) satisfyCommand(
 		ID:                   string(command.ID),
 		EntityID:             string(command.EntityID),
 		AdapterID:            command.AdapterID,
+		RuntimeID:            nullableText(string(runtimeID)),
 	})
 	if err != nil {
 		return nil, fmt.Errorf("satisfy linked command: %w", err)

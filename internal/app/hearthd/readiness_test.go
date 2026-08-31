@@ -84,6 +84,7 @@ type discardObservationProjector struct{}
 func (discardObservationProjector) ProjectObservation(
 	context.Context,
 	string,
+	devices.RuntimeID,
 	devices.Observation,
 	time.Time,
 ) (devices.ProjectionResult, error) {
