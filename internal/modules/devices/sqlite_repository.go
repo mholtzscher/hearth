@@ -9,6 +9,7 @@ import (
 	"time"
 
 	commandsqlc "github.com/mholtzscher/hearth/internal/platform/db/sqlc/commands"
+	healthsqlc "github.com/mholtzscher/hearth/internal/platform/db/sqlc/health"
 	registrationsqlc "github.com/mholtzscher/hearth/internal/platform/db/sqlc/registration"
 	statesqlc "github.com/mholtzscher/hearth/internal/platform/db/sqlc/state"
 )
@@ -375,12 +376,32 @@ func (repository *SQLiteRepository) CreateCommand(ctx context.Context, command C
 	if err != nil {
 		return CommandRecord{}, fmt.Errorf("get entity for command: %w", err)
 	}
+	command.AdapterID = entity.AdapterID
 	if entity.Enabled == 0 {
 		completedAt := command.RequestedAt
 		failureCode := CommandFailureEntityDisabled
 		command.Status = CommandStatusEntityDisabled
 		command.CompletedAt = &completedAt
 		command.FailureCode = &failureCode
+	} else {
+		instance, healthErr := healthsqlc.New(tx).GetAdapterInstance(
+			ctx,
+			healthsqlc.GetAdapterInstanceParams{AdapterID: entity.AdapterID},
+		)
+		if healthErr != nil && !errors.Is(healthErr, sql.ErrNoRows) {
+			return CommandRecord{}, fmt.Errorf("get Adapter health for command: %w", healthErr)
+		}
+		if errors.Is(healthErr, sql.ErrNoRows) || !instance.ActiveRuntimeID.Valid ||
+			!instance.HealthStatus.Valid || instance.HealthStatus.String == string(AdapterHealthUnhealthy) {
+			completedAt := command.RequestedAt
+			failureCode := CommandFailureAdapterUnhealthy
+			command.Status = CommandStatusAdapterUnhealthy
+			command.CompletedAt = &completedAt
+			command.FailureCode = &failureCode
+		} else {
+			runtimeID := RuntimeID(instance.ActiveRuntimeID.String)
+			command.RuntimeID = &runtimeID
+		}
 	}
 	queries := commandsqlc.New(tx)
 	if createErr := queries.CreateCommand(ctx, commandsqlc.CreateCommandParams{

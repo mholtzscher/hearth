@@ -40,9 +40,11 @@ func Run(ctx context.Context, config Config, logger *slog.Logger) error {
 	}
 
 	session, err := adapter.Connect(ctx, adapter.Config{
-		AdapterID: config.AdapterID,
-		NATSURL:   config.NATSURL,
-		Logger:    logger,
+		AdapterID:       config.AdapterID,
+		SoftwareName:    "hearth-adapter-homeassistant",
+		SoftwareVersion: "0.1.0",
+		NATSURL:         config.NATSURL,
+		Logger:          logger,
 	})
 	if err != nil {
 		return err

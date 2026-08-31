@@ -25,8 +25,6 @@ const (
 	ScenarioInterruptedCommand  = "interrupted-command"
 	ScenarioDelayedSourceTime   = "delayed-source-time"
 	ScenarioFutureClockSkew     = "future-clock-skew"
-	ScenarioDuplicate           = "duplicate"
-	ScenarioMalformed           = "malformed"
 	ScenarioRestartBeforeAck    = "restart-before-ack"
 )
 
@@ -35,7 +33,7 @@ func ValidScenario(value string) bool {
 	case ScenarioHappy, ScenarioUnavailableAdapter, ScenarioUpstreamRejection,
 		ScenarioOutcomeTimeout, ScenarioNoOpRefresh, ScenarioOverlappingCommands,
 		ScenarioInterruptedCommand, ScenarioDelayedSourceTime, ScenarioFutureClockSkew,
-		ScenarioDuplicate, ScenarioMalformed, ScenarioRestartBeforeAck:
+		ScenarioRestartBeforeAck:
 		return true
 	default:
 		return false

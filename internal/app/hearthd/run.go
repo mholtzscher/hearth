@@ -73,6 +73,11 @@ func Run(ctx context.Context, config Config, logger *slog.Logger) error { //noli
 	commandSender := devicesnats.NewCommandSender(connection, validator)
 	service := devices.NewService(repository, commandSender, catalog, devices.Dependencies{})
 
+	sessions, sessionErr := devicesnats.StartSessionServer(connection, validator, service, service, logger)
+	if sessionErr != nil {
+		return sessionErr
+	}
+	defer func() { _ = sessions.Drain() }()
 	registrations, registrationErr := devicesnats.StartRegistrationServer(connection, validator, service, logger)
 	if registrationErr != nil {
 		return registrationErr
@@ -125,6 +130,9 @@ func Run(ctx context.Context, config Config, logger *slog.Logger) error { //noli
 			return err
 		}
 		if err := registrations.Drain(); err != nil {
+			return err
+		}
+		if err := sessions.Drain(); err != nil {
 			return err
 		}
 		if err := connection.Drain(); err != nil && !errors.Is(err, natsgo.ErrConnectionClosed) {

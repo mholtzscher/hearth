@@ -24,6 +24,21 @@ const (
 	testEntityID  = "ent_01890f47-7a6b-7c4d-8e9f-0123456789ab"
 )
 
+type blockingJetStreamPublisher struct {
+	started chan struct{}
+	release chan struct{}
+}
+
+func (publisher *blockingJetStreamPublisher) PublishMsg(
+	context.Context,
+	*natsgo.Msg,
+	...jetstream.PublishOpt,
+) (*jetstream.PubAck, error) {
+	close(publisher.started)
+	<-publisher.release
+	return nil, natsgo.ErrConnectionClosed
+}
+
 func TestConnectUsesDefaultLoggerWhenLoggerIsOmitted(t *testing.T) {
 	t.Parallel()
 	server := startServer(t, -1, t.TempDir())
@@ -46,17 +61,282 @@ func TestConnectRetriesWhenNATSStartsLater(t *testing.T) {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	session, err := Connect(ctx, Config{AdapterID: "simulator", NATSURL: "nats://" + address})
+	type connectResult struct {
+		session *Session
+		err     error
+	}
+	connected := make(chan connectResult, 1)
+	go func() {
+		session, err := Connect(ctx, testConfig("nats://"+address))
+		connected <- connectResult{session: session, err: err}
+	}()
+
+	server := startServer(t, port, t.TempDir())
+	startTestLifecycleResponder(t, server.ClientURL())
+	result := <-connected
+	if result.err != nil {
+		t.Fatal(result.err)
+	}
+	t.Cleanup(func() { _ = result.session.Close() })
+	waitForConnectionStatus(t, result.session.connection, natsgo.CONNECTED)
+}
+
+func TestConnectRetriesLostClaimResponseWithSameEnvelope(t *testing.T) {
+	t.Parallel()
+	server := startServer(t, -1, t.TempDir())
+	core := connectNATS(t, server.ClientURL())
+	validator := compileValidator(t)
+	claimIDs := make(chan string, 2)
+	var attempts atomic.Int32
+	_, err := core.Subscribe(natswire.AdapterClaimWildcard(), func(message *natsgo.Msg) {
+		request, decodeErr := natswire.Decode[adapterClaimRequest](
+			validator, contractsv1.AdapterClaimRequestSchemaID, message.Data,
+		)
+		if decodeErr != nil {
+			t.Errorf("decode claim: %v", decodeErr)
+			return
+		}
+		claimIDs <- request.ID
+		if attempts.Add(1) == 1 {
+			return
+		}
+		respondTestLifecycle(t, validator, message, request.ID, request.CorrelationID,
+			contractsv1.AdapterClaimResponseSchemaID, adapterClaimResponse{
+				Status: statusAccepted, RuntimeID: testRuntimeID,
+				HeartbeatIntervalMS: 5000, LeaseDurationMS: 15000,
+			})
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	startHeartbeatAndReleaseResponders(t, core, validator)
+	if flushErr := core.Flush(); flushErr != nil {
+		t.Fatal(flushErr)
+	}
+
+	session, err := Connect(testContext(t), testConfig(server.ClientURL()))
 	if err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = session.Close() })
-	if session.connection.Status() != natsgo.RECONNECTING {
-		t.Fatalf("initial NATS status = %s, want %s", session.connection.Status(), natsgo.RECONNECTING)
+	first := <-claimIDs
+	second := <-claimIDs
+	if first != second {
+		t.Fatalf("claim retry IDs = %q and %q", first, second)
+	}
+}
+
+func TestSetHealthSerializesImmediateHeartbeats(t *testing.T) {
+	t.Parallel()
+	server := startServer(t, -1, t.TempDir())
+	core := connectNATS(t, server.ClientURL())
+	validator := compileValidator(t)
+	startClaimAndReleaseResponders(t, core, validator)
+	heartbeats := make(chan natswire.Envelope[adapterHeartbeatRequest], 2)
+	replies := make(chan *natsgo.Msg, 2)
+	_, err := core.Subscribe(natswire.AdapterHeartbeatWildcard(), func(message *natsgo.Msg) {
+		request, decodeErr := natswire.Decode[adapterHeartbeatRequest](
+			validator, contractsv1.AdapterHeartbeatRequestSchemaID, message.Data,
+		)
+		if decodeErr != nil {
+			t.Errorf("decode heartbeat: %v", decodeErr)
+			return
+		}
+		heartbeats <- request
+		replies <- message
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if flushErr := core.Flush(); flushErr != nil {
+		t.Fatal(flushErr)
+	}
+	session, err := Connect(testContext(t), testConfig(server.ClientURL()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = session.Close() })
+
+	firstDone := make(chan error, 1)
+	go func() {
+		firstDone <- session.SetHealth(testContext(t), HealthReport{
+			Status: HealthUnhealthy, SourceObservedAt: time.Now().UTC(),
+			ReasonCode: "hearth.network_unreachable",
+		})
+	}()
+	first := <-heartbeats
+	firstReply := <-replies
+	if first.Data.ExternalSystem.Status != "unhealthy" {
+		t.Fatalf("first heartbeat = %#v", first.Data)
+	}
+	secondDone := make(chan error, 1)
+	go func() {
+		secondDone <- session.SetHealth(testContext(t), HealthReport{
+			Status: HealthHealthy, SourceObservedAt: time.Now().UTC(),
+		})
+	}()
+	select {
+	case second := <-heartbeats:
+		t.Fatalf("newer heartbeat arrived before older acknowledgement: %#v", second.Data)
+	case <-time.After(100 * time.Millisecond):
+	}
+	respondAcceptedHeartbeat(t, validator, firstReply, first)
+	second := <-heartbeats
+	secondReply := <-replies
+	if second.Data.ExternalSystem.Status != "healthy" {
+		t.Fatalf("second heartbeat = %#v", second.Data)
+	}
+	respondAcceptedHeartbeat(t, validator, secondReply, second)
+	if firstErr := <-firstDone; firstErr != nil {
+		t.Fatal(firstErr)
+	}
+	if secondErr := <-secondDone; secondErr != nil {
+		t.Fatal(secondErr)
+	}
+}
+
+func TestHeartbeatFencingTerminatesSession(t *testing.T) {
+	t.Parallel()
+	server := startServer(t, -1, t.TempDir())
+	core := connectNATS(t, server.ClientURL())
+	validator := compileValidator(t)
+	startClaimAndReleaseResponders(t, core, validator)
+	_, err := core.Subscribe(natswire.AdapterHeartbeatWildcard(), func(message *natsgo.Msg) {
+		request, decodeErr := natswire.Decode[adapterHeartbeatRequest](
+			validator, contractsv1.AdapterHeartbeatRequestSchemaID, message.Data,
+		)
+		if decodeErr != nil {
+			t.Errorf("decode heartbeat: %v", decodeErr)
+			return
+		}
+		respondTestLifecycle(t, validator, message, request.ID, request.CorrelationID,
+			contractsv1.AdapterHeartbeatResponseSchemaID, adapterHeartbeatResponse{
+				Status: statusRejected,
+				Error:  &adapterError{Code: "runtime_fenced", Message: "runtime replaced"},
+			})
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if flushErr := core.Flush(); flushErr != nil {
+		t.Fatal(flushErr)
+	}
+	session, err := Connect(testContext(t), testConfig(server.ClientURL()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	serveDone := make(chan error, 1)
+	baselineSubscriptions := server.NumSubscriptions()
+	go func() {
+		serveDone <- session.ServeCommands(context.Background(), func(context.Context, Command, Responder) error {
+			return nil
+		})
+	}()
+	waitForSubscription(t, server, baselineSubscriptions, serveDone)
+	if healthErr := session.SetHealth(testContext(t), HealthReport{
+		Status: HealthHealthy, SourceObservedAt: time.Now().UTC(),
+	}); !errors.Is(healthErr, ErrRuntimeFenced) {
+		t.Fatalf("SetHealth error = %v", healthErr)
+	}
+	if serveErr := <-serveDone; !errors.Is(serveErr, ErrRuntimeFenced) {
+		t.Fatalf("ServeCommands error = %v", serveErr)
+	}
+	if _, publishErr := session.PublishObservation(
+		context.Background(), Observation{},
+	); !errors.Is(publishErr, ErrRuntimeFenced) {
+		t.Fatalf("PublishObservation error = %v", publishErr)
+	}
+	if closeErr := session.Close(); !errors.Is(closeErr, ErrRuntimeFenced) {
+		t.Fatalf("Close error = %v", closeErr)
+	}
+}
+
+func TestHeartbeatFencingTerminatesPendingRegisterWithFencedError(t *testing.T) {
+	t.Parallel()
+	server := startServer(t, -1, t.TempDir())
+	core := connectNATS(t, server.ClientURL())
+	validator := compileValidator(t)
+	startClaimAndReleaseResponders(t, core, validator)
+	registrationReceived := make(chan struct{}, 1)
+	if _, err := core.Subscribe(natswire.RegistrationWildcard(), func(*natsgo.Msg) {
+		registrationReceived <- struct{}{}
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := core.Subscribe(natswire.AdapterHeartbeatWildcard(), func(message *natsgo.Msg) {
+		request, decodeErr := natswire.Decode[adapterHeartbeatRequest](
+			validator, contractsv1.AdapterHeartbeatRequestSchemaID, message.Data,
+		)
+		if decodeErr != nil {
+			t.Errorf("decode heartbeat: %v", decodeErr)
+			return
+		}
+		respondTestLifecycle(t, validator, message, request.ID, request.CorrelationID,
+			contractsv1.AdapterHeartbeatResponseSchemaID, adapterHeartbeatResponse{
+				Status: statusRejected,
+				Error:  &adapterError{Code: "runtime_fenced", Message: "runtime replaced"},
+			})
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := core.Flush(); err != nil {
+		t.Fatal(err)
 	}
 
-	startServer(t, port, t.TempDir())
-	waitForConnectionStatus(t, session.connection, natsgo.CONNECTED)
+	session, err := Connect(testContext(t), testConfig(server.ClientURL()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = session.Close() })
+	registerContext := testContext(t)
+	registerDone := make(chan error, 1)
+	go func() {
+		_, registerErr := session.Register(registerContext, validRegistration("office-light"))
+		registerDone <- registerErr
+	}()
+	select {
+	case <-registrationReceived:
+	case <-time.After(time.Second):
+		t.Fatal("registration request did not become pending")
+	}
+
+	if healthErr := session.SetHealth(testContext(t), HealthReport{
+		Status: HealthHealthy, SourceObservedAt: time.Now().UTC(),
+	}); !errors.Is(healthErr, ErrRuntimeFenced) {
+		t.Fatalf("SetHealth error = %v, want runtime fenced", healthErr)
+	}
+	if registerErr := <-registerDone; !errors.Is(registerErr, ErrRuntimeFenced) {
+		t.Fatalf("pending Register error = %v, want runtime fenced", registerErr)
+	}
+}
+
+func TestFencingTerminatesPendingObservationPublishWithFencedError(t *testing.T) {
+	t.Parallel()
+	server := startServer(t, -1, t.TempDir())
+	session := connectSession(t, server.ClientURL())
+	publisher := &blockingJetStreamPublisher{
+		started: make(chan struct{}),
+		release: make(chan struct{}),
+	}
+	session.jetstream = publisher
+	publishDone := make(chan error, 1)
+	go func() {
+		_, err := session.PublishObservation(context.Background(), Observation{
+			EntityID: testEntityID, Value: json.RawMessage(`true`), AdapterReceivedAt: nowString(),
+		})
+		publishDone <- err
+	}()
+	select {
+	case <-publisher.started:
+	case <-time.After(time.Second):
+		t.Fatal("Observation publication did not become pending")
+	}
+
+	session.markFenced()
+	close(publisher.release)
+	if err := <-publishDone; !errors.Is(err, ErrRuntimeFenced) {
+		t.Fatalf("pending PublishObservation error = %v, want runtime fenced", err)
+	}
 }
 
 func TestRegisterAcceptedRejectedAndLocalValidation(t *testing.T) {
@@ -472,7 +752,7 @@ func TestCommandHandlerUsesTransmittedDeadline(t *testing.T) {
 	}
 }
 
-func TestCommandRejectionUsesUpstreamRejectedCode(t *testing.T) {
+func TestCommandRejectionsUseSpecificCodes(t *testing.T) {
 	t.Parallel()
 	server := startServer(t, -1, t.TempDir())
 	core := connectNATS(t, server.ClientURL())
@@ -482,27 +762,36 @@ func TestCommandRejectionUsesUpstreamRejectedCode(t *testing.T) {
 	serveDone := make(chan error, 1)
 	subscriptions := server.NumSubscriptions()
 	go func() {
-		serveDone <- session.ServeCommands(serveContext, func(_ context.Context, _ Command, responder Responder) error {
+		serveDone <- session.ServeCommands(serveContext, func(_ context.Context, command Command, responder Responder) error {
+			if string(command.Parameters) == `{"value":false}` {
+				return responder.RejectUnavailable("Entity is unavailable")
+			}
 			return responder.Reject("vendor declined the command")
 		})
 	}()
 	waitForSubscription(t, server, subscriptions, serveDone)
 
-	reply, err := sendCommand(context.Background(), core, true)
-	if err != nil {
-		t.Fatal(err)
-	}
-	response, err := natswire.Decode[CommandResponse](
-		compileValidator(t),
-		contractsv1.CommandResponseSchemaID,
-		reply.Data,
-	)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if response.Data.Status != "rejected" || response.Data.Error == nil ||
-		response.Data.Error.Code != "upstream_rejected" {
-		t.Fatalf("command response = %#v", response)
+	for _, test := range []struct {
+		value bool
+		code  string
+	}{
+		{value: true, code: "upstream_rejected"},
+		{value: false, code: "entity_unavailable"},
+	} {
+		reply, err := sendCommand(context.Background(), core, test.value)
+		if err != nil {
+			t.Fatal(err)
+		}
+		response, err := natswire.Decode[CommandResponse](
+			compileValidator(t), contractsv1.CommandResponseSchemaID, reply.Data,
+		)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if response.Data.Status != "rejected" || response.Data.Error == nil ||
+			response.Data.Error.Code != test.code {
+			t.Fatalf("command response = %#v, want code %q", response, test.code)
+		}
 	}
 
 	cancelServe()
@@ -778,14 +1067,194 @@ func connectNATS(t *testing.T, url string) *natsgo.Conn {
 	return connection
 }
 
+func startClaimAndReleaseResponders(
+	t *testing.T,
+	connection *natsgo.Conn,
+	validator *contractsv1.Validator,
+) {
+	t.Helper()
+	_, err := connection.Subscribe(natswire.AdapterClaimWildcard(), func(message *natsgo.Msg) {
+		request, decodeErr := natswire.Decode[adapterClaimRequest](
+			validator, contractsv1.AdapterClaimRequestSchemaID, message.Data,
+		)
+		if decodeErr != nil {
+			t.Errorf("decode claim: %v", decodeErr)
+			return
+		}
+		respondTestLifecycle(t, validator, message, request.ID, request.CorrelationID,
+			contractsv1.AdapterClaimResponseSchemaID, adapterClaimResponse{
+				Status: statusAccepted, RuntimeID: testRuntimeID,
+				HeartbeatIntervalMS: 5000, LeaseDurationMS: 15000,
+			})
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = connection.Subscribe(natswire.AdapterReleaseWildcard(), func(message *natsgo.Msg) {
+		request, decodeErr := natswire.Decode[adapterReleaseRequest](
+			validator, contractsv1.AdapterReleaseRequestSchemaID, message.Data,
+		)
+		if decodeErr != nil {
+			t.Errorf("decode release: %v", decodeErr)
+			return
+		}
+		respondTestLifecycle(t, validator, message, request.ID, request.CorrelationID,
+			contractsv1.AdapterReleaseResponseSchemaID, adapterReleaseResponse{Status: statusAccepted})
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+}
+
+func startHeartbeatAndReleaseResponders(
+	t *testing.T,
+	connection *natsgo.Conn,
+	validator *contractsv1.Validator,
+) {
+	t.Helper()
+	_, err := connection.Subscribe(natswire.AdapterHeartbeatWildcard(), func(message *natsgo.Msg) {
+		request, decodeErr := natswire.Decode[adapterHeartbeatRequest](
+			validator, contractsv1.AdapterHeartbeatRequestSchemaID, message.Data,
+		)
+		if decodeErr != nil {
+			t.Errorf("decode heartbeat: %v", decodeErr)
+			return
+		}
+		respondAcceptedHeartbeat(t, validator, message, request)
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = connection.Subscribe(natswire.AdapterReleaseWildcard(), func(message *natsgo.Msg) {
+		request, decodeErr := natswire.Decode[adapterReleaseRequest](
+			validator, contractsv1.AdapterReleaseRequestSchemaID, message.Data,
+		)
+		if decodeErr != nil {
+			t.Errorf("decode release: %v", decodeErr)
+			return
+		}
+		respondTestLifecycle(t, validator, message, request.ID, request.CorrelationID,
+			contractsv1.AdapterReleaseResponseSchemaID, adapterReleaseResponse{Status: statusAccepted})
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+}
+
+func respondAcceptedHeartbeat(
+	t *testing.T,
+	validator *contractsv1.Validator,
+	message *natsgo.Msg,
+	request natswire.Envelope[adapterHeartbeatRequest],
+) {
+	t.Helper()
+	refresh := false
+	respondTestLifecycle(t, validator, message, request.ID, request.CorrelationID,
+		contractsv1.AdapterHeartbeatResponseSchemaID, adapterHeartbeatResponse{
+			Status:                    statusAccepted,
+			LeaseExpiresAt:            time.Now().UTC().Add(15 * time.Second).Format(time.RFC3339Nano),
+			RefreshEntityAvailability: &refresh,
+		})
+}
+
+func respondTestLifecycle(
+	t *testing.T,
+	validator *contractsv1.Validator,
+	message *natsgo.Msg,
+	requestID string,
+	correlationID string,
+	responseSchema string,
+	data any,
+) {
+	t.Helper()
+	causationID := requestID
+	response := natswire.Envelope[any]{
+		ID: mustID(t, "rep"), Schema: responseSchema, EmittedAt: nowString(),
+		CorrelationID: correlationID, CausationID: &causationID, Data: data,
+	}
+	payload, err := natswire.Encode(validator, responseSchema, response)
+	if err != nil {
+		t.Errorf("encode lifecycle response: %v", err)
+		return
+	}
+	if respondErr := message.Respond(payload); respondErr != nil {
+		t.Errorf("respond to lifecycle request: %v", respondErr)
+	}
+}
+
 func connectSession(t *testing.T, url string) *Session {
 	t.Helper()
-	session, err := Connect(testContext(t), Config{AdapterID: "simulator", NATSURL: url})
+	startTestLifecycleResponder(t, url)
+	session, err := Connect(testContext(t), testConfig(url))
 	if err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = session.Close() })
 	return session
+}
+
+func testConfig(url string) Config {
+	return Config{
+		AdapterID: "simulator", SoftwareName: "hearth-simulator",
+		SoftwareVersion: "0.1.0", NATSURL: url,
+	}
+}
+
+func startTestLifecycleResponder(t *testing.T, url string) {
+	t.Helper()
+	connection := connectNATS(t, url)
+	validator := compileValidator(t)
+	respond := func(message *natsgo.Msg, requestSchema, responseSchema string, data any) {
+		request, decodeErr := natswire.Decode[json.RawMessage](validator, requestSchema, message.Data)
+		if decodeErr != nil {
+			t.Errorf("decode lifecycle request: %v", decodeErr)
+			return
+		}
+		causationID := request.ID
+		response := natswire.Envelope[any]{
+			ID: mustID(t, "rep"), Schema: responseSchema, EmittedAt: nowString(),
+			CorrelationID: request.CorrelationID, CausationID: &causationID, Data: data,
+		}
+		payload, encodeErr := natswire.Encode(validator, responseSchema, response)
+		if encodeErr != nil {
+			t.Errorf("encode lifecycle response: %v", encodeErr)
+			return
+		}
+		if respondErr := message.Respond(payload); respondErr != nil {
+			t.Errorf("respond to lifecycle request: %v", respondErr)
+		}
+	}
+	_, err := connection.Subscribe(natswire.AdapterClaimWildcard(), func(message *natsgo.Msg) {
+		respond(message, contractsv1.AdapterClaimRequestSchemaID, contractsv1.AdapterClaimResponseSchemaID,
+			adapterClaimResponse{
+				Status: statusAccepted, RuntimeID: testRuntimeID,
+				HeartbeatIntervalMS: 5000, LeaseDurationMS: 15000,
+			})
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = connection.Subscribe(natswire.AdapterHeartbeatWildcard(), func(message *natsgo.Msg) {
+		refresh := false
+		respond(message, contractsv1.AdapterHeartbeatRequestSchemaID, contractsv1.AdapterHeartbeatResponseSchemaID,
+			adapterHeartbeatResponse{
+				Status: statusAccepted, LeaseExpiresAt: time.Now().UTC().Add(15 * time.Second).Format(time.RFC3339Nano),
+				RefreshEntityAvailability: &refresh,
+			})
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = connection.Subscribe(natswire.AdapterReleaseWildcard(), func(message *natsgo.Msg) {
+		respond(message, contractsv1.AdapterReleaseRequestSchemaID, contractsv1.AdapterReleaseResponseSchemaID,
+			adapterReleaseResponse{Status: statusAccepted})
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if flushErr := connection.Flush(); flushErr != nil {
+		t.Fatal(flushErr)
+	}
 }
 
 func createObservationStream(t *testing.T, connection *natsgo.Conn) jetstream.Stream {
@@ -796,7 +1265,7 @@ func createObservationStream(t *testing.T, connection *natsgo.Conn) jetstream.St
 	}
 	stream, err := js.CreateStream(testContext(t), jetstream.StreamConfig{
 		Name:     "HEARTH_OBSERVATIONS_V1",
-		Subjects: []string{"hearth.v1.adapter.*.observation.>"},
+		Subjects: []string{natswire.ObservationWildcard()},
 		Storage:  jetstream.FileStorage,
 	})
 	if err != nil {

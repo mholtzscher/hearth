@@ -621,6 +621,7 @@ func TestCommandCreationAndEnablementFollowCommitOrder(t *testing.T) {
 	}
 	entityID := binding.Entities[0].EntityID
 	requestedAt := time.Date(2026, 8, 26, 12, 0, 0, 0, time.UTC)
+	claimTestAdapterRuntime(t, repository, requestedAt)
 
 	commandFirst := newCommandRecord(t, entityID, requestedAt)
 	created, err := repository.CreateCommand(ctx, commandFirst)
@@ -642,6 +643,50 @@ func TestCommandCreationAndEnablementFollowCommitOrder(t *testing.T) {
 	}
 }
 
+func TestCommandRuntimeIsNotRetargetedAfterTakeover(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	database := openMigratedDatabase(t, filepath.Join(t.TempDir(), "hearth.db"))
+	catalog := firstLightCatalog(t)
+	repository := NewSQLiteRepository(database, catalog)
+	service := NewService(repository, nil, catalog, Dependencies{})
+	binding, err := service.Register(ctx, "simulator", validDomainRegistration())
+	if err != nil {
+		t.Fatal(err)
+	}
+	claimedAt := time.Date(2026, 8, 29, 12, 0, 0, 0, time.UTC)
+	if _, claimErr := repository.ClaimAdapterRuntime(
+		ctx, testClaimWrite(testClaimID, testRuntimeID, claimedAt),
+	); claimErr != nil {
+		t.Fatal(claimErr)
+	}
+	first := newCommandRecord(t, binding.Entities[0].EntityID, claimedAt.Add(time.Second))
+	first, err = repository.CreateCommand(ctx, first)
+	if err != nil || first.RuntimeID == nil || *first.RuntimeID != testRuntimeID {
+		t.Fatalf("first runtime Command = %#v, %v", first, err)
+	}
+	if releaseErr := repository.ReleaseAdapterRuntime(ctx, ReleaseRuntimeWrite{
+		AdapterID: "simulator", RuntimeID: testRuntimeID, ReleasedAt: claimedAt.Add(2 * time.Second),
+	}); releaseErr != nil {
+		t.Fatal(releaseErr)
+	}
+	if _, claimErr := repository.ClaimAdapterRuntime(
+		ctx,
+		testClaimWrite(testSecondClaimID, testSecondRuntime, claimedAt.Add(3*time.Second)),
+	); claimErr != nil {
+		t.Fatal(claimErr)
+	}
+	second := newCommandRecord(t, binding.Entities[0].EntityID, claimedAt.Add(4*time.Second))
+	second, err = repository.CreateCommand(ctx, second)
+	if err != nil || second.RuntimeID == nil || *second.RuntimeID != testSecondRuntime {
+		t.Fatalf("replacement runtime Command = %#v, %v", second, err)
+	}
+	storedFirst, err := repository.GetCommand(ctx, first.ID)
+	if err != nil || storedFirst.RuntimeID == nil || *storedFirst.RuntimeID != testRuntimeID {
+		t.Fatalf("stored first Command = %#v, %v", storedFirst, err)
+	}
+}
+
 //nolint:gocognit,gocyclo,cyclop // The command transition matrix is clearer as one persistence test.
 func TestCommandLedgerTransitionsAreMonotonicAndIdempotent(t *testing.T) {
 	t.Parallel()
@@ -659,6 +704,7 @@ func TestCommandLedgerTransitionsAreMonotonicAndIdempotent(t *testing.T) {
 		t.Fatal(registrationErr)
 	}
 	requestedAt := time.Date(2026, 8, 20, 12, 0, 0, 0, time.UTC)
+	claimTestAdapterRuntime(t, repository, requestedAt)
 	command := newCommandRecord(t, binding.Entities[0].EntityID, requestedAt)
 	if _, err := repository.CreateCommand(ctx, command); err != nil {
 		t.Fatal(err)
@@ -830,6 +876,19 @@ func assertCounts(t *testing.T, database *sql.DB, devices, entities int) {
 		if got != want {
 			t.Fatalf("%s count = %d, want %d", table, got, want)
 		}
+	}
+}
+
+func claimTestAdapterRuntime(t *testing.T, repository *SQLiteRepository, claimedAt time.Time) {
+	t.Helper()
+	runtimeID := RuntimeID("run_01890f47-7a6b-7c4d-8e9f-0123456789ab")
+	_, err := repository.ClaimAdapterRuntime(context.Background(), ClaimRuntimeWrite{
+		ClaimID: "clm_01890f47-7a6b-7c4d-8e9f-0123456789ab", RuntimeID: runtimeID,
+		AdapterID: "simulator", SoftwareName: "hearth-simulator", SoftwareVersion: "0.1.0",
+		ClaimedAt: claimedAt, LeaseExpiresAt: claimedAt.Add(15 * time.Second),
+	})
+	if err != nil {
+		t.Fatal(err)
 	}
 }
 

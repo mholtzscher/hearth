@@ -7,6 +7,60 @@ const (
 	statusRejected = "rejected"
 )
 
+type adapterClaimRequest struct {
+	AdapterID       string `json:"adapter_id"`
+	SoftwareName    string `json:"software_name"`
+	SoftwareVersion string `json:"software_version"`
+}
+
+type adapterClaimResponse struct {
+	Status              string             `json:"status"`
+	RuntimeID           string             `json:"runtime_id,omitempty"`
+	HeartbeatIntervalMS int64              `json:"heartbeat_interval_ms,omitempty"`
+	LeaseDurationMS     int64              `json:"lease_duration_ms,omitempty"`
+	Error               *adapterClaimError `json:"error,omitempty"`
+}
+
+type adapterClaimError struct {
+	Code       string  `json:"code"`
+	Message    string  `json:"message"`
+	RetryAfter *string `json:"retry_after,omitempty"`
+}
+
+type adapterHeartbeatRequest struct {
+	ExternalSystem externalSystemHealth `json:"external_system"`
+}
+
+type externalSystemHealth struct {
+	Status           string        `json:"status"`
+	SourceObservedAt string        `json:"source_observed_at"`
+	Reason           *healthReason `json:"reason,omitempty"`
+}
+
+type healthReason struct {
+	Code   string  `json:"code"`
+	Detail *string `json:"detail,omitempty"`
+}
+
+type adapterHeartbeatResponse struct {
+	Status                    string        `json:"status"`
+	LeaseExpiresAt            string        `json:"lease_expires_at,omitempty"`
+	RefreshEntityAvailability *bool         `json:"refresh_entity_availability,omitempty"`
+	Error                     *adapterError `json:"error,omitempty"`
+}
+
+type adapterReleaseRequest struct{}
+
+type adapterReleaseResponse struct {
+	Status string        `json:"status"`
+	Error  *adapterError `json:"error,omitempty"`
+}
+
+type adapterError struct {
+	Code    string `json:"code"`
+	Message string `json:"message"`
+}
+
 type registration struct {
 	BindingKey string             `json:"binding_key"`
 	Device     deviceDescriptor   `json:"device"`

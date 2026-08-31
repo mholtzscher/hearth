@@ -16,6 +16,7 @@ const (
 	commandTestID            = CommandID("cmd_01890f47-7a6b-7c4d-8e9f-0123456789ab")
 	commandTestCorrelationID = CorrelationID("cor_01890f47-7a6b-7c4d-8e9f-0123456789ab")
 	commandTestObservationID = ObservationID("obs_01890f47-7a6b-7c4d-8e9f-0123456789ab")
+	commandTestRuntimeID     = RuntimeID("run_01890f47-7a6b-7c4d-8e9f-0123456789ab")
 )
 
 type commandRepository struct {
@@ -78,6 +79,9 @@ func (repository *commandRepository) CreateCommand(_ context.Context, command Co
 		command.Status = CommandStatusEntityDisabled
 		command.CompletedAt = &completedAt
 		command.FailureCode = &failureCode
+	} else {
+		runtimeID := commandTestRuntimeID
+		command.RuntimeID = &runtimeID
 	}
 	repository.commands[command.ID] = command
 	return copyCommandRecord(command), nil
@@ -176,14 +180,15 @@ func (repository *commandRepository) command(id CommandID) CommandRecord {
 	return repository.commands[id]
 }
 
-type commandSenderFunc func(context.Context, string, CommandRequest) (CommandAcceptance, error)
+type commandSenderFunc func(context.Context, string, RuntimeID, CommandRequest) (CommandAcceptance, error)
 
 func (send commandSenderFunc) Send(
 	ctx context.Context,
 	adapterID string,
+	runtimeID RuntimeID,
 	request CommandRequest,
 ) (CommandAcceptance, error) {
-	return send(ctx, adapterID, request)
+	return send(ctx, adapterID, runtimeID, request)
 }
 
 func TestExecuteCommandCommitsBeforeDispatchAndHandlesAcceptanceRace(t *testing.T) {
@@ -192,8 +197,9 @@ func TestExecuteCommandCommitsBeforeDispatchAndHandlesAcceptanceRace(t *testing.
 	catalog := commandCatalog(t, time.Second)
 	var service *Service
 	sender := commandSenderFunc(
-		func(ctx context.Context, adapterID string, request CommandRequest) (CommandAcceptance, error) {
-			if adapterID != "simulator" || repository.command(request.ID).Status != CommandStatusRequested {
+		func(ctx context.Context, adapterID string, runtimeID RuntimeID, request CommandRequest) (CommandAcceptance, error) {
+			if adapterID != "simulator" || runtimeID != commandTestRuntimeID ||
+				repository.command(request.ID).Status != CommandStatusRequested {
 				return CommandAcceptance{}, errors.New("command was dispatched before requested was committed")
 			}
 			observation := Observation{
@@ -245,7 +251,7 @@ func TestExecuteCommandReturnsSatisfiedWhenObservationWinsDispatchFailureRace(t 
 			repository := newCommandRepository()
 			var service *Service
 			sender := commandSenderFunc(
-				func(ctx context.Context, adapterID string, request CommandRequest) (CommandAcceptance, error) {
+				func(ctx context.Context, adapterID string, _ RuntimeID, request CommandRequest) (CommandAcceptance, error) {
 					_, err := service.ProjectObservation(ctx, adapterID, Observation{
 						ID: commandTestObservationID, EntityID: request.EntityID, Value: Value(`true`),
 						AdapterReceivedAt: time.Now().UTC(), RefreshForCommand: &request.ID,
@@ -332,7 +338,12 @@ func TestExecuteCommandFailureMatrixIsDurablyClassified(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
 			repository := newCommandRepository()
-			sender := commandSenderFunc(func(context.Context, string, CommandRequest) (CommandAcceptance, error) {
+			sender := commandSenderFunc(func(
+				context.Context,
+				string,
+				RuntimeID,
+				CommandRequest,
+			) (CommandAcceptance, error) {
 				return test.acceptance, test.sendErr
 			})
 			service := NewService(repository, sender, commandCatalog(t, test.deadline), commandDependencies())
@@ -366,7 +377,7 @@ func TestExecuteCommandRejectsInvalidParametersAndCreationFailureBeforeDispatch(
 	t.Parallel()
 	repository := newCommandRepository()
 	dispatches := 0
-	sender := commandSenderFunc(func(context.Context, string, CommandRequest) (CommandAcceptance, error) {
+	sender := commandSenderFunc(func(context.Context, string, RuntimeID, CommandRequest) (CommandAcceptance, error) {
 		dispatches++
 		return CommandAcceptance{Accepted: true}, nil
 	})
@@ -405,7 +416,7 @@ func TestExecuteCommandCreatesTerminalRecordWithoutWaiterOrDispatchWhenDisabled(
 	repository := newCommandRepository()
 	repository.view.Entity.Enabled = false
 	dispatches := 0
-	sender := commandSenderFunc(func(context.Context, string, CommandRequest) (CommandAcceptance, error) {
+	sender := commandSenderFunc(func(context.Context, string, RuntimeID, CommandRequest) (CommandAcceptance, error) {
 		dispatches++
 		return CommandAcceptance{}, nil
 	})
@@ -487,7 +498,7 @@ func TestExecuteCommandKeepsOverlappingCommandsIndependent(t *testing.T) {
 	arrived := make(chan struct{}, 2)
 	release := make(chan struct{})
 	sender := commandSenderFunc(
-		func(ctx context.Context, adapterID string, request CommandRequest) (CommandAcceptance, error) {
+		func(ctx context.Context, adapterID string, _ RuntimeID, request CommandRequest) (CommandAcceptance, error) {
 			arrived <- struct{}{}
 			<-release
 			value := Value(`false`)
@@ -550,7 +561,7 @@ func TestExecuteCommandIgnoresMismatchedLinkedObservation(t *testing.T) {
 	repository := newCommandRepository()
 	var service *Service
 	sender := commandSenderFunc(
-		func(ctx context.Context, adapterID string, request CommandRequest) (CommandAcceptance, error) {
+		func(ctx context.Context, adapterID string, _ RuntimeID, request CommandRequest) (CommandAcceptance, error) {
 			_, err := service.ProjectObservation(ctx, adapterID, Observation{
 				ID: commandTestObservationID, EntityID: request.EntityID, Value: Value(`false`),
 				AdapterReceivedAt: time.Now().UTC(), RefreshForCommand: &request.ID,
@@ -581,7 +592,12 @@ func TestExecuteCommandContinuesAfterCallerCancellation(t *testing.T) {
 	repository := newCommandRepository()
 	dispatched := make(chan CommandRequest, 1)
 	release := make(chan struct{})
-	sender := commandSenderFunc(func(_ context.Context, _ string, request CommandRequest) (CommandAcceptance, error) {
+	sender := commandSenderFunc(func(
+		_ context.Context,
+		_ string,
+		_ RuntimeID,
+		request CommandRequest,
+	) (CommandAcceptance, error) {
 		dispatched <- request
 		<-release
 		return CommandAcceptance{Accepted: false}, nil

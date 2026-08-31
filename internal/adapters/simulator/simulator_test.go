@@ -40,11 +40,15 @@ func (responder *recordingResponder) Reject(string) error {
 	return nil
 }
 
+func (responder *recordingResponder) RejectUnavailable(message string) error {
+	return responder.Reject(message)
+}
+
 func TestFailureMatrixScenariosAreRecognized(t *testing.T) {
 	t.Parallel()
 	for _, scenario := range []string{
-		simulatoradapter.ScenarioHappy, simulatoradapter.ScenarioDuplicate, simulatoradapter.ScenarioDelayedSourceTime, simulatoradapter.ScenarioFutureClockSkew,
-		simulatoradapter.ScenarioMalformed, simulatoradapter.ScenarioUnavailableAdapter, simulatoradapter.ScenarioUpstreamRejection,
+		simulatoradapter.ScenarioHappy, simulatoradapter.ScenarioDelayedSourceTime, simulatoradapter.ScenarioFutureClockSkew,
+		simulatoradapter.ScenarioUnavailableAdapter, simulatoradapter.ScenarioUpstreamRejection,
 		simulatoradapter.ScenarioNoOpRefresh, simulatoradapter.ScenarioOverlappingCommands, simulatoradapter.ScenarioOutcomeTimeout,
 		simulatoradapter.ScenarioInterruptedCommand, simulatoradapter.ScenarioRestartBeforeAck,
 	} {
@@ -52,8 +56,10 @@ func TestFailureMatrixScenariosAreRecognized(t *testing.T) {
 			t.Fatalf("scenario %q is not recognized", scenario)
 		}
 	}
-	if simulatoradapter.ValidScenario("unknown") {
-		t.Fatal("unknown scenario was recognized")
+	for _, scenario := range []string{"unknown", "duplicate", "malformed"} {
+		if simulatoradapter.ValidScenario(scenario) {
+			t.Fatalf("non-runtime scenario %q was recognized", scenario)
+		}
 	}
 }
 

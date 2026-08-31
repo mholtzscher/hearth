@@ -71,6 +71,10 @@ func (responder *recordingResponder) Reject(string) error {
 	return nil
 }
 
+func (responder *recordingResponder) RejectUnavailable(message string) error {
+	return responder.Reject(message)
+}
+
 func (responder *recordingResponder) result() (bool, bool) {
 	responder.mutex.Lock()
 	defer responder.mutex.Unlock()

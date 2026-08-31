@@ -144,6 +144,7 @@ func TestDisabledEntityRejectsUnlinkedObservationAndAllowsActiveCommandRefresh(t
 	if err != nil {
 		t.Fatal(err)
 	}
+	claimTestAdapterRuntime(t, repository, now)
 	entityID := binding.Entities[0].EntityID
 	baseline := newObservation(t, entityID, `true`, now)
 	if _, projectionErr := service.ProjectObservation(ctx, "simulator", baseline, now); projectionErr != nil {
@@ -213,6 +214,7 @@ func TestDisabledEntityDoesNotExemptUnknownExpiredOrTerminalCommandLinks(t *test
 	if err != nil {
 		t.Fatal(err)
 	}
+	claimTestAdapterRuntime(t, repository, now)
 	entityID := binding.Entities[0].EntityID
 	expired := newCommandRecord(t, entityID, now.Add(-20*time.Second))
 	if _, createErr := repository.CreateCommand(ctx, expired); createErr != nil {
@@ -268,6 +270,7 @@ func TestObservationProjectionSatisfiesOnlyMatchingActiveLinkedCommand(t *testin
 	if err != nil {
 		t.Fatal(err)
 	}
+	claimTestAdapterRuntime(t, repository, completedAt)
 	entityID := binding.Entities[0].EntityID
 	requestedAt := completedAt.Add(-time.Second)
 	command := newCommandRecord(t, entityID, requestedAt)

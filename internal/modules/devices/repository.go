@@ -98,5 +98,5 @@ type CommandLedger interface {
 }
 
 type CommandSender interface {
-	Send(context.Context, string, CommandRequest) (CommandAcceptance, error)
+	Send(context.Context, string, RuntimeID, CommandRequest) (CommandAcceptance, error)
 }

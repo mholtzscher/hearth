@@ -1,0 +1,1017 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark">
+  <title>A guided tour of sdk/adapter/lifecycle.go</title>
+  <style>
+    :root {
+      --ink: #eff4ea;
+      --muted: #9da99d;
+      --faint: #657168;
+      --panel: #121814;
+      --panel-2: #182019;
+      --ground: #0b100d;
+      --line: #344038;
+      --grid: rgba(180, 208, 185, 0.055);
+      --signal: #b8f35d;
+      --amber: #ffc764;
+      --red: #ff806f;
+      --cyan: #73d9d0;
+      --paper: #d9e2d6;
+      --mono: ui-monospace, "SFMono-Regular", "Cascadia Code", "Roboto Mono", Menlo, Consolas, monospace;
+      --sans: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+
+    * { box-sizing: border-box; }
+    html { scroll-behavior: smooth; }
+    body {
+      margin: 0;
+      min-width: 320px;
+      color: var(--ink);
+      background-color: var(--ground);
+      background-image:
+        linear-gradient(var(--grid) 1px, transparent 1px),
+        linear-gradient(90deg, var(--grid) 1px, transparent 1px);
+      background-size: 28px 28px;
+      font-family: var(--sans);
+      line-height: 1.5;
+    }
+
+    button, a { font: inherit; }
+    button:focus-visible, a:focus-visible {
+      outline: 2px solid var(--signal);
+      outline-offset: 3px;
+    }
+
+    .shell {
+      min-height: 100vh;
+      display: grid;
+      grid-template-columns: minmax(230px, 18vw) minmax(0, 1fr);
+    }
+
+    .rail {
+      position: sticky;
+      top: 0;
+      height: 100vh;
+      overflow-y: auto;
+      border-right: 1px solid var(--line);
+      background: rgba(9, 14, 11, 0.96);
+      padding: 24px 18px;
+    }
+
+    .rail-mark {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 28px;
+      font-family: var(--mono);
+      font-size: 12px;
+      color: var(--signal);
+    }
+
+    .rail-mark::before {
+      content: "";
+      width: 9px;
+      height: 9px;
+      border: 1px solid currentColor;
+      box-shadow: 0 0 0 3px rgba(184, 243, 93, 0.12);
+    }
+
+    .rail h2 {
+      margin: 0 0 6px;
+      font-size: 17px;
+      font-weight: 650;
+    }
+
+    .rail-intro {
+      margin: 0 0 22px;
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    .tour-nav {
+      display: grid;
+      gap: 2px;
+      margin: 0;
+      padding: 0;
+      list-style: none;
+    }
+
+    .tour-nav button {
+      width: 100%;
+      display: grid;
+      grid-template-columns: 28px 1fr;
+      gap: 9px;
+      align-items: start;
+      padding: 10px 9px;
+      border: 0;
+      border-left: 2px solid transparent;
+      color: var(--muted);
+      background: transparent;
+      text-align: left;
+      cursor: pointer;
+    }
+
+    .tour-nav button:hover { background: var(--panel); color: var(--ink); }
+    .tour-nav button[aria-current="step"] {
+      border-left-color: var(--signal);
+      background: var(--panel-2);
+      color: var(--ink);
+    }
+
+    .nav-number {
+      font-family: var(--mono);
+      color: var(--faint);
+      font-size: 11px;
+      padding-top: 2px;
+    }
+
+    .tour-nav button[aria-current="step"] .nav-number { color: var(--signal); }
+    .nav-copy strong { display: block; font-size: 13px; font-weight: 650; }
+    .nav-copy small { display: block; color: var(--faint); font-family: var(--mono); font-size: 10px; }
+
+    .rail-foot {
+      margin-top: 28px;
+      padding-top: 16px;
+      border-top: 1px solid var(--line);
+      color: var(--faint);
+      font-family: var(--mono);
+      font-size: 10px;
+    }
+
+    main { min-width: 0; }
+
+    .masthead {
+      min-height: 260px;
+      padding: clamp(32px, 6vw, 76px) clamp(24px, 6vw, 88px) 38px;
+      border-bottom: 1px solid var(--line);
+      background: linear-gradient(90deg, rgba(11, 16, 13, 0.88), rgba(11, 16, 13, 0.62));
+    }
+
+    .path {
+      margin: 0 0 20px;
+      color: var(--cyan);
+      font-family: var(--mono);
+      font-size: 12px;
+    }
+
+    h1 {
+      max-width: 900px;
+      margin: 0;
+      font-family: var(--mono);
+      font-size: clamp(34px, 5.2vw, 72px);
+      font-weight: 550;
+      line-height: 1.02;
+      letter-spacing: -0.055em;
+    }
+
+    .mast-copy {
+      max-width: 770px;
+      margin: 24px 0 0;
+      color: var(--muted);
+      font-size: clamp(16px, 1.7vw, 21px);
+    }
+
+    .readout {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 1px;
+      margin-top: 32px;
+      font-family: var(--mono);
+      font-size: 11px;
+    }
+
+    .readout span {
+      padding: 7px 10px;
+      border: 1px solid var(--line);
+      color: var(--muted);
+      background: var(--panel);
+    }
+    .readout b { color: var(--ink); font-weight: 600; }
+
+    .tour-stage {
+      padding: 34px clamp(18px, 4vw, 60px) 22px;
+    }
+
+    .stage-header {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      gap: 24px;
+      align-items: end;
+      padding-bottom: 24px;
+      border-bottom: 1px solid var(--line);
+    }
+
+    .eyebrow {
+      margin: 0 0 8px;
+      color: var(--signal);
+      font-family: var(--mono);
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.12em;
+    }
+
+    .stage-header h2 {
+      margin: 0;
+      font-size: clamp(26px, 3vw, 42px);
+      line-height: 1.08;
+      letter-spacing: -0.025em;
+    }
+
+    .line-range {
+      color: var(--amber);
+      font-family: var(--mono);
+      font-size: 12px;
+      white-space: nowrap;
+    }
+
+    .thesis {
+      max-width: 850px;
+      min-height: 72px;
+      margin: 22px 0 28px;
+      color: var(--paper);
+      font-size: clamp(17px, 1.8vw, 22px);
+    }
+
+    .state-board {
+      position: relative;
+      padding: 20px 18px 16px;
+      border: 1px solid var(--line);
+      background: rgba(18, 24, 20, 0.82);
+      overflow: hidden;
+    }
+
+    .state-board::before {
+      content: "SESSION STATE";
+      display: block;
+      margin-bottom: 15px;
+      color: var(--faint);
+      font-family: var(--mono);
+      font-size: 10px;
+      letter-spacing: 0.14em;
+    }
+
+    .state-track {
+      display: grid;
+      grid-template-columns: repeat(5, minmax(92px, 1fr));
+      align-items: center;
+      min-width: 570px;
+      overflow: visible;
+    }
+
+    .state-node {
+      position: relative;
+      padding: 9px 8px;
+      border: 1px solid var(--line);
+      color: var(--faint);
+      background: var(--ground);
+      font-family: var(--mono);
+      font-size: 11px;
+      text-align: center;
+    }
+
+    .state-node:not(:last-child)::after {
+      content: "→";
+      position: absolute;
+      z-index: 2;
+      right: -14px;
+      top: 7px;
+      width: 26px;
+      color: var(--faint);
+      background: var(--panel);
+    }
+
+    .state-node.active {
+      border-color: var(--signal);
+      color: var(--signal);
+      box-shadow: inset 0 -3px 0 rgba(184, 243, 93, 0.2);
+    }
+
+    .state-node.past { color: var(--ink); border-color: #56635a; }
+    .state-node.danger.active { border-color: var(--red); color: var(--red); }
+
+    .fence-branch {
+      display: flex;
+      justify-content: center;
+      min-width: 570px;
+      margin-top: 12px;
+    }
+
+    .fence-branch .state-node { width: 150px; }
+    .fence-branch .state-node::before {
+      content: "↳ terminal override";
+      position: absolute;
+      right: calc(100% + 10px);
+      top: 8px;
+      width: 130px;
+      color: var(--faint);
+      font-size: 9px;
+    }
+
+    .workbench {
+      display: grid;
+      grid-template-columns: minmax(0, 0.86fr) minmax(360px, 1.14fr);
+      gap: 18px;
+      margin-top: 18px;
+    }
+
+    .trace, .source {
+      min-width: 0;
+      border: 1px solid var(--line);
+      background: rgba(18, 24, 20, 0.9);
+    }
+
+    .panel-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      min-height: 43px;
+      padding: 10px 13px;
+      border-bottom: 1px solid var(--line);
+      color: var(--muted);
+      font-family: var(--mono);
+      font-size: 10px;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+
+    .trace-lanes {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      border-bottom: 1px solid var(--line);
+    }
+
+    .trace-lanes span {
+      padding: 8px 6px;
+      color: var(--faint);
+      font-family: var(--mono);
+      font-size: 9px;
+      text-align: center;
+    }
+    .trace-lanes span + span { border-left: 1px solid var(--line); }
+
+    .event-list {
+      min-height: 315px;
+      margin: 0;
+      padding: 14px 14px 18px;
+      list-style: none;
+      counter-reset: event;
+      background-image: linear-gradient(90deg, transparent 33.2%, var(--grid) 33.2%, var(--grid) 33.6%, transparent 33.6%, transparent 66.4%, var(--grid) 66.4%, var(--grid) 66.8%, transparent 66.8%);
+    }
+
+    .event {
+      position: relative;
+      display: grid;
+      grid-template-columns: 28px 1fr;
+      gap: 8px;
+      align-items: start;
+      margin-bottom: 11px;
+      counter-increment: event;
+    }
+
+    .event::before {
+      content: counter(event, decimal-leading-zero);
+      color: var(--faint);
+      font-family: var(--mono);
+      font-size: 9px;
+      padding-top: 4px;
+    }
+
+    .event-copy {
+      position: relative;
+      width: 64%;
+      padding: 8px 10px;
+      border-left: 2px solid var(--cyan);
+      color: var(--paper);
+      background: var(--panel-2);
+      font-family: var(--mono);
+      font-size: 11px;
+      line-height: 1.45;
+    }
+
+    .event[data-actor="caller"] .event-copy { margin-left: 0; }
+    .event[data-actor="session"] .event-copy { margin-left: 18%; border-left-color: var(--signal); }
+    .event[data-actor="core"] .event-copy { margin-left: 36%; border-left-color: var(--amber); }
+    .event[data-tone="danger"] .event-copy { border-left-color: var(--red); color: #ffd4ce; }
+    .event[data-tone="muted"] .event-copy { border-left-color: var(--faint); color: var(--muted); }
+
+    .source pre {
+      min-height: 357px;
+      max-height: 520px;
+      margin: 0;
+      overflow: auto;
+      padding: 13px 0 20px;
+      color: #d8e1d5;
+      background: #0d120f;
+      font-family: var(--mono);
+      font-size: 11px;
+      line-height: 1.7;
+      tab-size: 4;
+    }
+
+    .code-line {
+      display: grid;
+      grid-template-columns: 46px minmax(max-content, 1fr);
+      min-width: max-content;
+      padding-right: 18px;
+    }
+
+    .code-line.focus { background: rgba(184, 243, 93, 0.09); }
+    .line-no {
+      padding-right: 11px;
+      color: #536058;
+      text-align: right;
+      user-select: none;
+    }
+    .code-line.focus .line-no { color: var(--signal); }
+    .code-text { white-space: pre; }
+    .kw { color: #ffab7a; }
+    .fn { color: #8de0d6; }
+    .str { color: #e5cf83; }
+    .cm { color: #728078; }
+
+    .annotation-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 1px;
+      margin-top: 18px;
+      border: 1px solid var(--line);
+      background: var(--line);
+    }
+
+    .annotation {
+      min-height: 138px;
+      padding: 17px;
+      background: var(--panel);
+    }
+    .annotation .label {
+      color: var(--amber);
+      font-family: var(--mono);
+      font-size: 10px;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+    }
+    .annotation h3 { margin: 8px 0 7px; font-size: 15px; }
+    .annotation p { margin: 0; color: var(--muted); font-size: 13px; }
+
+    .invariant {
+      display: grid;
+      grid-template-columns: auto 1fr;
+      gap: 13px;
+      align-items: start;
+      margin-top: 18px;
+      padding: 15px 17px;
+      border: 1px solid rgba(184, 243, 93, 0.55);
+      color: #ddf8b6;
+      background: rgba(184, 243, 93, 0.06);
+    }
+    .invariant b { font-family: var(--mono); font-size: 10px; letter-spacing: 0.1em; }
+    .invariant span { font-size: 14px; }
+
+    .tour-controls {
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      align-items: center;
+      padding: 22px 0 38px;
+    }
+
+    .control-button {
+      min-width: 108px;
+      padding: 10px 14px;
+      border: 1px solid var(--line);
+      color: var(--ink);
+      background: var(--panel);
+      cursor: pointer;
+    }
+    .control-button:hover:not(:disabled) { border-color: var(--signal); color: var(--signal); }
+    .control-button:disabled { opacity: 0.35; cursor: not-allowed; }
+    .progress-copy { color: var(--faint); font-family: var(--mono); font-size: 11px; }
+
+    .ledger {
+      padding: 46px clamp(18px, 4vw, 60px) 70px;
+      border-top: 1px solid var(--line);
+      background: rgba(9, 14, 11, 0.9);
+    }
+    .ledger-head {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) minmax(260px, 520px);
+      gap: 32px;
+      align-items: end;
+      margin-bottom: 25px;
+    }
+    .ledger h2 { margin: 0; font-size: clamp(27px, 3vw, 42px); }
+    .ledger-head p { margin: 0; color: var(--muted); }
+    .ledger-grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      border-top: 1px solid var(--line);
+      border-left: 1px solid var(--line);
+    }
+    .ledger-item {
+      display: grid;
+      grid-template-columns: 42px 1fr;
+      gap: 13px;
+      min-height: 125px;
+      padding: 19px;
+      border-right: 1px solid var(--line);
+      border-bottom: 1px solid var(--line);
+    }
+    .ledger-num { color: var(--signal); font-family: var(--mono); font-size: 12px; }
+    .ledger-item h3 { margin: 0 0 7px; font-size: 15px; }
+    .ledger-item p { margin: 0; color: var(--muted); font-size: 13px; }
+
+    .file-note {
+      margin-top: 24px;
+      color: var(--faint);
+      font-family: var(--mono);
+      font-size: 10px;
+    }
+
+    @media (max-width: 1000px) {
+      .shell { grid-template-columns: 1fr; }
+      .rail {
+        position: static;
+        height: auto;
+        border-right: 0;
+        border-bottom: 1px solid var(--line);
+      }
+      .rail-mark, .rail h2, .rail-intro, .rail-foot { display: none; }
+      .tour-nav { grid-template-columns: repeat(9, minmax(130px, 1fr)); overflow-x: auto; padding-bottom: 8px; }
+      .tour-nav button { min-height: 62px; }
+      .workbench { grid-template-columns: 1fr; }
+      .source pre { min-height: 300px; }
+    }
+
+    @media (max-width: 700px) {
+      .masthead { min-height: auto; padding: 30px 20px; }
+      h1 { font-size: 35px; }
+      .stage-header { grid-template-columns: 1fr; gap: 8px; }
+      .state-board { overflow-x: auto; }
+      .annotation-grid, .ledger-grid, .ledger-head { grid-template-columns: 1fr; }
+      .annotation { min-height: auto; }
+      .event-copy { width: 82%; }
+      .event[data-actor="session"] .event-copy { margin-left: 9%; }
+      .event[data-actor="core"] .event-copy { margin-left: 18%; }
+      .tour-controls { flex-wrap: wrap; }
+    }
+
+    @media (prefers-reduced-motion: no-preference) {
+      .state-node.active { animation: signal-in 240ms ease-out; }
+      .event { animation: event-in 220ms ease-out both; }
+      .event:nth-child(2) { animation-delay: 35ms; }
+      .event:nth-child(3) { animation-delay: 70ms; }
+      .event:nth-child(4) { animation-delay: 105ms; }
+      .event:nth-child(5) { animation-delay: 140ms; }
+      @keyframes signal-in { from { box-shadow: inset 0 0 0 rgba(184, 243, 93, 0); } }
+      @keyframes event-in { from { opacity: 0; transform: translateY(4px); } }
+    }
+
+    @media print {
+      :root { color-scheme: light; --ink: #111; --muted: #444; --faint: #666; --panel: #fff; --panel-2: #f5f5f1; --ground: #fff; --line: #bbb; --signal: #315d00; --amber: #7c4b00; --red: #8d1b12; --cyan: #00645c; --paper: #222; --grid: transparent; }
+      .shell { display: block; }
+      .rail, .tour-controls { display: none; }
+      .masthead { min-height: 0; padding: 24px; }
+      .tour-stage, .ledger { padding: 24px; }
+      .source pre { max-height: none; }
+      .workbench { grid-template-columns: 1fr; }
+      .state-board, .trace, .source { break-inside: avoid; }
+    }
+  </style>
+</head>
+<body>
+  <div class="shell">
+    <aside class="rail" aria-label="Tour stops">
+      <div class="rail-mark">HEARTH / RUNTIME RECORDER</div>
+      <h2>Tour stops</h2>
+      <p class="rail-intro">Nine stops through one Adapter runtime, from config validation to terminal fencing.</p>
+      <ol class="tour-nav" id="tourNav"></ol>
+      <div class="rail-foot">Arrow keys move between stops.<br>Source: current working tree.</div>
+    </aside>
+
+    <main>
+      <header class="masthead">
+        <p class="path">sdk/adapter/lifecycle.go</p>
+        <h1>The lease, the pulse, and the fence.</h1>
+        <p class="mast-copy">This file turns a NATS connection into a claimed Adapter runtime. Its real job is coordination: preserve request identity across retries, serialize health evidence, renew a lease, and make fencing terminal.</p>
+        <div class="readout" aria-label="Key constants">
+          <span>attempt <b>1s</b></span>
+          <span>retry floor <b>100ms</b></span>
+          <span>release budget <b>5s</b></span>
+          <span>source <b>578 lines</b></span>
+        </div>
+      </header>
+
+      <section class="tour-stage" aria-live="polite" aria-labelledby="stepTitle">
+        <div class="stage-header">
+          <div>
+            <p class="eyebrow" id="stepKicker"></p>
+            <h2 id="stepTitle"></h2>
+          </div>
+          <div class="line-range" id="lineRange"></div>
+        </div>
+        <p class="thesis" id="stepThesis"></p>
+
+        <div class="state-board" aria-label="Session state machine">
+          <div class="state-track" id="stateTrack">
+            <div class="state-node" data-state="connecting">CONNECTING</div>
+            <div class="state-node" data-state="claimed">CLAIMED</div>
+            <div class="state-node" data-state="heartbeating">HEARTBEATING</div>
+            <div class="state-node" data-state="closing">CLOSING</div>
+            <div class="state-node" data-state="closed">CLOSED</div>
+          </div>
+          <div class="fence-branch">
+            <div class="state-node danger" data-state="fenced">FENCED</div>
+          </div>
+        </div>
+
+        <div class="workbench">
+          <section class="trace" aria-labelledby="traceTitle">
+            <div class="panel-head"><span id="traceTitle">Causal trace</span><span id="traceCount"></span></div>
+            <div class="trace-lanes" aria-hidden="true"><span>CALLER</span><span>SESSION</span><span>CORE / NATS</span></div>
+            <ol class="event-list" id="eventList"></ol>
+          </section>
+
+          <section class="source" aria-labelledby="sourceTitle">
+            <div class="panel-head"><span id="sourceTitle">Source lens</span><span>lifecycle.go</span></div>
+            <pre id="sourceCode" tabindex="0" aria-label="Selected source excerpt"></pre>
+          </section>
+        </div>
+
+        <div class="annotation-grid" id="annotationGrid"></div>
+        <div class="invariant"><b>INVARIANT</b><span id="invariantText"></span></div>
+
+        <div class="tour-controls">
+          <button class="control-button" id="prevButton" type="button">← Previous</button>
+          <span class="progress-copy" id="progressCopy"></span>
+          <button class="control-button" id="nextButton" type="button">Next →</button>
+        </div>
+      </section>
+
+      <section class="ledger" id="ledger">
+        <div class="ledger-head">
+          <h2>The six rules worth carrying away</h2>
+          <p>The implementation has plenty of wire detail. These are the choices that shape its behavior under retries, concurrent health changes, takeover, and shutdown.</p>
+        </div>
+        <div class="ledger-grid">
+          <article class="ledger-item"><div class="ledger-num">01</div><div><h3>Claim identity survives retries</h3><p><code>prepareRequest</code> runs before the claim loop. A lost reply does not create a second logical claim.</p></div></article>
+          <article class="ledger-item"><div class="ledger-num">02</div><div><h3>Health is a latest-value mailbox</h3><p>Writers replace <code>desiredHealth</code> and increment a generation. They do not enqueue one heartbeat per call.</p></div></article>
+          <article class="ledger-item"><div class="ledger-num">03</div><div><h3>One goroutine sends heartbeats</h3><p>The heartbeat loop serializes transport, acknowledgements, and immediate follow-up when a newer generation appears.</p></div></article>
+          <article class="ledger-item"><div class="ledger-num">04</div><div><h3>Acknowledgement has a generation</h3><p><code>SetHealth</code> returns only after <code>ackedGeneration</code> reaches the generation written by that call.</p></div></article>
+          <article class="ledger-item"><div class="ledger-num">05</div><div><h3>Fencing outranks ordinary closure</h3><p><code>markFenced</code> always writes <code>ErrRuntimeFenced</code>, cancels lifecycle work, wakes waiters, and closes NATS.</p></div></article>
+          <article class="ledger-item"><div class="ledger-num">06</div><div><h3>Release is best effort and bounded</h3><p>Close stops heartbeat work first, then gives release five seconds. Lease expiry remains the fallback.</p></div></article>
+        </div>
+        <p class="file-note">Generated as a reading aid for <code>sdk/adapter/lifecycle.go</code>. The Go source remains authoritative.</p>
+      </section>
+    </main>
+  </div>
+
+  <script>
+    const steps = [
+      {
+        nav: "Reading map", range: "L18–92", kicker: "00 / orientation", title: "The file has three jobs",
+        thesis: "First it defines the wire shapes. Then it runs the claim, heartbeat, and release protocol. Finally it owns the small synchronization helpers that make closure and fencing visible to every waiter.",
+        states: [],
+        events: [
+          ["caller", "Connect supplies identity, version, NATS URL, and context."],
+          ["session", "Lifecycle code validates, claims a runtime, and starts one heartbeat loop."],
+          ["core", "Core returns a runtime ID, lease timing, and later heartbeat acknowledgements."],
+          ["session", "Close or runtime_fenced ends the state machine."],
+        ],
+        source: [
+          [18, "const ("], [19, "\trequestAttemptTimeout      = time.Second", true], [20, "\treleaseTimeout             = 5 * time.Second", true],
+          [21, "\tmaximumSoftwareVersionSize = 128"], [22, "\tmaximumHealthReasonSize    = 128"], [23, "\tmaximumHealthDetailSize    = 512"], [24, ")"],
+          [31, "type adapterClaimRequest struct {"], [32, "\tAdapterID       string `json:\"adapter_id\"`"], [33, "\tSoftwareName    string `json:\"software_name\"`"],
+          [34, "\tSoftwareVersion string `json:\"software_version\"`"], [35, "}"],
+          [85, "type preparedRequest struct {", true], [86, "\tid             string", true], [87, "\tcorrelationID  string", true], [90, "\tsubject        string"], [91, "\tpayload        []byte", true], [92, "}"],
+        ],
+        notes: [
+          ["Wire", "Private DTOs mirror the claim, heartbeat, and release schemas. Public SDK types stay separate."],
+          ["Timing", "Each request attempt gets one second. Release gets a separate five-second outer budget."],
+          ["Identity", "preparedRequest keeps IDs and encoded bytes together so selected retry loops can resend the same logical message."],
+        ],
+        invariant: "Lifecycle behavior is built around one claimed runtime ID and one terminal session error."
+      },
+      {
+        nav: "Config gate", range: "L94–112", kicker: "01 / before I/O", title: "Reject bad identity before dialing",
+        thesis: "Validation checks the caller context, derives the claim subject from the Adapter ID, constrains the software name and version, and requires a NATS URL. Nothing reaches NATS until these checks pass.",
+        states: ["connecting"],
+        events: [
+          ["caller", "Connect(ctx, Config) enters with an Adapter identity."],
+          ["session", "ctx.Err() stops already-cancelled work."],
+          ["session", "AdapterClaimSubject validates the Adapter ID against subject rules."],
+          ["session", "SoftwareName must be a lowercase subject-safe slug."],
+          ["session", "SoftwareVersion must be valid UTF-8 with 1–128 runes."],
+        ],
+        source: [
+          [94, "func validateConfig(ctx context.Context, config Config) error {", true],
+          [95, "\tif err := ctx.Err(); err != nil {"], [96, "\t\treturn err"], [97, "\t}"],
+          [98, "\tif _, err := natswire.AdapterClaimSubject(config.AdapterID); err != nil {", true], [99, "\t\treturn &ValidationError{Err: err}"], [100, "\t}"],
+          [101, "\tif !slugPattern.MatchString(config.SoftwareName) {", true], [102, "\t\treturn &ValidationError{Err: errors.New(\"software name must be a subject-safe slug\")}"], [103, "\t}"],
+          [104, "\tif !utf8.ValidString(config.SoftwareVersion) ||"], [105, "\t\t!validTextLength(config.SoftwareVersion, maximumSoftwareVersionSize) {"], [106, "\t\treturn &ValidationError{Err: errors.New(\"software version must contain 1 to 128 characters\")}"], [107, "\t}"],
+          [108, "\tif config.NATSURL == \"\" {", true], [109, "\t\treturn &ValidationError{Err: errors.New(\"NATS URL is required\")}"], [110, "\t}"], [111, "\treturn nil"], [112, "}"],
+        ],
+        notes: [
+          ["Subject first", "The claim-subject constructor doubles as Adapter ID validation. Wire routing rules stay in natswire."],
+          ["Typed failure", "Local input faults become ValidationError. Callers can distinguish them from transport and Core rejection."],
+          ["No defaults here", "The SDK requires software identity. It does not guess a name or version that would weaken runtime evidence."],
+        ],
+        invariant: "Invalid configuration fails locally and cannot create a partial Core runtime."
+      },
+      {
+        nav: "Claim", range: "L115–183", kicker: "02 / acquire lease", title: "Prepare once, retry the same claim",
+        thesis: "The claim envelope is built before the retry loop. Transport retries and active-runtime waits therefore keep one claim ID, which lets Core treat a lost response as the same claim instead of a competing runtime.",
+        states: ["connecting", "claimed"],
+        events: [
+          ["session", "Build clm_ ID, correlation ID, subject, schema, and payload once."],
+          ["session", "Send with a one-second attempt context."],
+          ["core", "Transient miss: retry after at least 100ms with the same envelope."],
+          ["core", "adapter_active: wait until retry_after, still keeping the same envelope."],
+          ["core", "accepted: return runtime ID plus heartbeat and lease timing."],
+          ["session", "Validate runtime subject and timing, then store runtimeID and heartbeatInterval."],
+        ],
+        source: [
+          [115, "func (session *Session) claim(ctx context.Context, config Config) error {"],
+          [120, "\trequest, err := prepareRequest(", true], [121, "\t\tsession, \"clm\", contractsv1.AdapterClaimRequestSchemaID,"], [127, "\t)", true],
+          [131, "\tfor {", true], [132, "\t\tattemptContext, cancelAttempt := context.WithTimeout(ctx, requestAttemptTimeout)"], [133, "\t\tresponse, requestErr := sendPrepared[adapterClaimResponse](attemptContext, session, request)", true],
+          [139, "\t\tif !isTransientRequestError(requestErr) {"], [142, "\t\tif waitErr := waitForRetry(ctx, requestRetryWait); waitErr != nil {"],
+          [147, "\t\tif response.Data.Status == statusAccepted {", true], [148, "\t\t\t_, parseErr := natswire.AdapterHeartbeatSubject(config.AdapterID, response.Data.RuntimeID)"],
+          [152, "\t\t\theartbeatInterval := time.Duration(response.Data.HeartbeatIntervalMS) * time.Millisecond"], [153, "\t\t\tleaseDuration := time.Duration(response.Data.LeaseDurationMS) * time.Millisecond"],
+          [157, "\t\t\tsession.runtimeID = response.Data.RuntimeID", true], [158, "\t\t\tsession.heartbeatInterval = heartbeatInterval", true], [159, "\t\t\treturn nil"],
+          [164, "\t\tswitch response.Data.Error.Code {"], [165, "\t\tcase \"adapter_archived\":"], [167, "\t\tcase \"adapter_active\":", true], [175, "\t\t\tdelay := max(time.Until(retryAfter), requestRetryWait)", true],
+        ],
+        notes: [
+          ["Idempotency", "The location of prepareRequest matters. Move it inside the loop and a lost response can mint a fresh claim ID."],
+          ["Two waits", "Transport failures use the 100ms floor. adapter_active uses Core's retry_after, also clamped to that floor."],
+          ["Trust, then verify", "An accepted response still has to yield a valid runtime-scoped heartbeat subject and sensible lease timing."],
+        ],
+        invariant: "One call to claim represents one logical claim, even when NATS or Core makes it wait."
+      },
+      {
+        nav: "SetHealth", range: "L185–229", kicker: "03 / publish intent", title: "Health writes a generation, not a message",
+        thesis: "SetHealth updates the latest desired report under the state lock, increments a generation, wakes the heartbeat goroutine, and waits until that exact generation is acknowledged.",
+        states: ["claimed", "heartbeating"],
+        events: [
+          ["caller", "SetHealth submits healthy, unhealthy, or the initial unknown report."],
+          ["session", "Validate timestamp, status, reason namespace, and detail length."],
+          ["session", "Replace desiredHealth and increment desiredGeneration."],
+          ["session", "Nonblocking wake tells the single heartbeat loop to send now."],
+          ["caller", "Wait until ackedGeneration reaches this call's generation."],
+        ],
+        source: [
+          [185, "func (session *Session) SetHealth(ctx context.Context, report HealthReport) error {"],
+          [186, "\tif err := session.sessionError(); err != nil {", true], [189, "\tif err := validateHealthReport(report, session.softwareName); err != nil {", true],
+          [194, "\tsession.stateMutex.Lock()"], [200, "\tif report.Status == HealthUnknown && session.desiredHealth.Status != HealthUnknown {", true],
+          [204, "\tsession.desiredHealth = report", true], [205, "\tsession.desiredGeneration++", true], [206, "\tgeneration := session.desiredGeneration", true], [207, "\tsession.stateMutex.Unlock()"],
+          [208, "\tsession.wakeHeartbeat()", true], [210, "\tfor {"], [217, "\t\tif session.ackedGeneration >= generation {", true], [218, "\t\t\tsession.stateMutex.Unlock()"], [219, "\t\t\treturn nil"],
+          [221, "\t\tnotified := session.heartbeatNotify"], [223, "\t\tselect {"], [224, "\t\tcase <-ctx.Done():"], [226, "\t\tcase <-notified:", true],
+        ],
+        notes: [
+          ["Latest wins", "Several callers can update health while one heartbeat is in flight. The state stores only the newest desired report."],
+          ["Synchronous meaning", "SetHealth does not return after enqueue. It waits for Core to acknowledge its generation or for context or terminal state."],
+          ["One-way rule", "After a runtime leaves unknown, it cannot report unknown again. A real outage needs an unhealthy reason."],
+        ],
+        invariant: "A successful SetHealth means Core acknowledged this report's generation or a newer one."
+      },
+      {
+        nav: "Scheduler", range: "L231–253", kicker: "04 / single writer", title: "One goroutine owns heartbeat transport",
+        thesis: "The scheduler wakes for cancellation, an immediate health update, or the interval timer. It calls the sender synchronously, so two heartbeats cannot overlap.",
+        states: ["heartbeating"],
+        events: [
+          ["session", "Start one timer at the claimed heartbeat interval."],
+          ["caller", "SetHealth may write to heartbeatWake."],
+          ["session", "Timer or wake selects one sendLatestHeartbeat call."],
+          ["session", "Expected terminal errors stop quietly."],
+          ["session", "Unexpected failure logs, marks the session closed, and closes NATS."],
+        ],
+        source: [
+          [231, "func (session *Session) runHeartbeats(ctx context.Context) {"], [232, "\tdefer close(session.heartbeatDone)", true],
+          [233, "\ttimer := time.NewTimer(session.heartbeatInterval)"], [235, "\tfor {"], [236, "\t\tselect {"],
+          [237, "\t\tcase <-ctx.Done():"], [239, "\t\tcase <-session.heartbeatWake:", true], [240, "\t\tcase <-timer.C:", true],
+          [242, "\t\tif err := session.sendLatestHeartbeat(ctx); err != nil {", true],
+          [243, "\t\t\tif errors.Is(err, context.Canceled) || errors.Is(err, ErrClosed) ||"], [244, "\t\t\t\terrors.Is(err, ErrRuntimeFenced) {"],
+          [247, "\t\t\tsession.logger.ErrorContext(ctx, \"Adapter heartbeat loop stopped\", \"error\", err)"], [248, "\t\t\tsession.markClosed()", true],
+          [251, "\t\ttimer.Reset(session.heartbeatInterval)", true], [252, "\t}"], [253, "}"],
+        ],
+        notes: [
+          ["No overlap", "sendLatestHeartbeat blocks the scheduler until it finishes all retries and catches up to the latest generation."],
+          ["Wake coalescing", "heartbeatWake is nonblocking. Multiple updates need one wake because the sender reads the latest generation."],
+          ["Failure policy", "A permanent heartbeat error is terminal. The SDK does not keep a half-alive Session around."],
+        ],
+        invariant: "At most one heartbeat exchange is active for a Session."
+      },
+      {
+        nav: "Heartbeat", range: "L256–321", kicker: "05 / renew and acknowledge", title: "Snapshot, send, acknowledge, catch up",
+        thesis: "The sender snapshots the latest report and generation, builds a runtime-scoped heartbeat, retries transient failures, validates Core's lease reply, and advances the acknowledged generation. If a newer report appeared meanwhile, it loops immediately.",
+        states: ["heartbeating"],
+        events: [
+          ["session", "Snapshot desiredHealth and desiredGeneration under the lock."],
+          ["session", "Encode a runtime-scoped hbt_ request with external-system evidence."],
+          ["core", "Accepted reply renews the lease and carries a refresh-availability flag."],
+          ["session", "Advance ackedGeneration and wake SetHealth waiters."],
+          ["session", "If desiredGeneration moved, send the newer report without waiting for the timer."],
+        ],
+        source: [
+          [256, "func (session *Session) sendLatestHeartbeat(ctx context.Context) error {"], [257, "\tfor {", true],
+          [258, "\t\tsession.stateMutex.Lock()"], [264, "\t\treport := session.desiredHealth", true], [265, "\t\tgeneration := session.desiredGeneration", true], [266, "\t\tsession.stateMutex.Unlock()"],
+          [268, "\t\tsubject, err := natswire.AdapterHeartbeatSubject(session.adapterID, session.runtimeID)", true],
+          [272, "\t\trequest, err := prepareRequest("], [275, "\t\t\tadapterHeartbeatRequest{ExternalSystem: wireHealthReport(report)},"],
+          [281, "\t\tresponse, requestErr := sendPrepared[adapterHeartbeatResponse](attemptContext, session, request)", true],
+          [295, "\t\tif response.Data.Status == statusRejected {"], [296, "\t\t\tif response.Data.Error != nil && response.Data.Error.Code == \"runtime_fenced\" {", true], [297, "\t\t\t\tsession.markFenced()", true],
+          [302, "\t\t_, leaseParseErr := time.Parse(time.RFC3339Nano, response.Data.LeaseExpiresAt)"], [306, "\t\tif response.Data.RefreshEntityAvailability == nil {", true],
+          [310, "\t\tsession.stateMutex.Lock()"], [312, "\t\t\tsession.ackedGeneration = generation", true], [314, "\t\tsession.notifyHeartbeatLocked()", true], [315, "\t\tmoreRecent := session.desiredGeneration > generation", true], [317, "\t\tif !moreRecent {"], [318, "\t\t\treturn nil"],
+        ],
+        notes: [
+          ["Fresh envelope", "The request is prepared after each health snapshot. A retry can pick up a newer desired report instead of preserving stale evidence."],
+          ["Generation barrier", "Only an accepted and structurally valid response advances ackedGeneration."],
+          ["D5 hook", "The refresh-availability flag is required in the reply here. Availability replay itself belongs to the later availability work."],
+        ],
+        invariant: "Only a validated, accepted heartbeat can acknowledge health and renew the runtime lease."
+      },
+      {
+        nav: "Close + release", range: "L323–404", kicker: "06 / orderly exit", title: "Stop the pulse before releasing the lease",
+        thesis: "Close prevents new handlers, installs a terminal error, cancels heartbeat work, waits for the heartbeat goroutine, then attempts release. Fenced sessions skip normal release and return ErrRuntimeFenced.",
+        states: ["heartbeating", "closing", "closed"],
+        events: [
+          ["caller", "Close begins and blocks new command handlers."],
+          ["session", "Set ErrClosed if no stronger terminal error exists; cancel lifecycle work."],
+          ["session", "Wait for heartbeatDone before release."],
+          ["core", "Attempt release for at most five seconds, reusing one rel_ envelope across retries."],
+          ["session", "Wait for active handlers, drain NATS, or return ErrRuntimeFenced."],
+        ],
+        source: [
+          [323, "func (session *Session) close() error {"], [324, "\tsession.handlerMutex.Lock()"], [325, "\tsession.closing = true", true],
+          [328, "\tsession.stateMutex.Lock()"], [329, "\tfenced := errors.Is(session.terminalErr, ErrRuntimeFenced)"], [330, "\tif session.terminalErr == nil {"], [331, "\t\tsession.terminalErr = ErrClosed", true],
+          [333, "\tif session.lifecycleCancel != nil {"], [334, "\t\tsession.lifecycleCancel()", true], [336, "\tsession.signalClosedLocked()", true], [338, "\t<-session.heartbeatDone", true],
+          [343, "\tif !fenced {"], [344, "\t\treleaseContext, cancelRelease := context.WithTimeout(context.Background(), releaseTimeout)", true], [345, "\t\treleaseErr := session.release(releaseContext)"],
+          [355, "\tsession.handlerWait.Wait()", true], [356, "\tif fenced {"], [358, "\t\treturn ErrRuntimeFenced"], [360, "\tif err := session.connection.Drain(); err != nil {", true],
+          [367, "func (session *Session) release(ctx context.Context) error {"], [372, "\trequest, err := prepareRequest(", true], [380, "\tfor {"], [382, "\t\tresponse, requestErr := sendPrepared[adapterReleaseResponse](attemptContext, session, request)", true], [396, "\t\tif response.Data.Status == statusAccepted {"],
+        ],
+        notes: [
+          ["Ordering", "Heartbeat shutdown comes before release, so the SDK cannot renew a lease after asking Core to end it."],
+          ["Race check", "Close checks for fencing again after heartbeatDone. A heartbeat can discover takeover while Close is starting."],
+          ["Fallback", "Release failure is logged, not fatal to shutdown. Core's lease expiry still ends the runtime."],
+        ],
+        invariant: "A graceful close never sends another heartbeat after its release attempt."
+      },
+      {
+        nav: "Request kernel", range: "L406–455", kicker: "07 / wire discipline", title: "Every lifecycle exchange gets schema and identity checks",
+        thesis: "prepareRequest creates the envelope once. sendPrepared injects trace context, performs request/reply, validates the response schema, and rejects replies whose causation or correlation IDs do not match.",
+        states: ["claimed", "heartbeating"],
+        events: [
+          ["session", "Generate a typed request ID and correlation ID."],
+          ["session", "Encode the request against its contract schema."],
+          ["core", "NATS request/reply carries trace headers and encoded payload."],
+          ["session", "Decode against the expected response schema."],
+          ["session", "Require causation=request ID and correlation=request correlation ID."],
+        ],
+        source: [
+          [406, "func prepareRequest[Req any]("], [411, "\trequestID, err := newID(prefix)", true], [415, "\tcorrelationID, err := newID(\"cor\")", true],
+          [419, "\tenvelope := natswire.Envelope[Req]{"], [420, "\t\tID: requestID, Schema: requestSchema, EmittedAt: nowString(),", true], [421, "\t\tCorrelationID: correlationID, Data: data,"],
+          [423, "\tpayload, err := natswire.Encode(session.validator, requestSchema, envelope)", true], [427, "\treturn preparedRequest{"], [428, "\t\tid: requestID, correlationID: correlationID, responseSchema: responseSchema,"], [429, "\t\tkind: kind, subject: subject, payload: payload,"],
+          [433, "func sendPrepared[Resp any]("], [438, "\tmessage := &natsgo.Msg{Subject: request.subject, Header: make(natsgo.Header), Data: request.payload}"], [439, "\tnatswire.InjectTrace(ctx, message.Header)", true],
+          [440, "\treply, err := session.connection.RequestMsgWithContext(ctx, message)", true], [444, "\tresponse, err := natswire.Decode[Resp](session.validator, request.responseSchema, reply.Data)", true],
+          [448, "\tif response.CausationID == nil || *response.CausationID != request.id {", true], [451, "\tif response.CorrelationID != request.correlationID {", true], [454, "\treturn response, nil"],
+        ],
+        notes: [
+          ["Separation", "Callers own retry policy and semantic status. This helper owns envelope construction and reply identity."],
+          ["No stray reply", "A valid schema is insufficient. Causation and correlation must tie the reply to this exact exchange."],
+          ["Retry lever", "Where a caller places prepareRequest, inside or outside its loop, decides whether retries keep logical identity."],
+        ],
+        invariant: "A lifecycle caller never accepts a well-formed reply that belongs to another request."
+      },
+      {
+        nav: "Terminal paths", range: "L457–578", kicker: "08 / fence wins", title: "Wake every waiter, then cut transport",
+        thesis: "The tail of the file validates health evidence and owns terminal signaling. markClosed preserves an existing error. markFenced deliberately overwrites it, wakes all health waiters, cancels heartbeat work, blocks new handlers, and closes NATS.",
+        states: ["fenced"],
+        events: [
+          ["core", "Heartbeat or another runtime-scoped operation reports runtime_fenced.", "danger"],
+          ["session", "Set closing so no new command handler starts.", "danger"],
+          ["session", "Overwrite terminalErr with ErrRuntimeFenced.", "danger"],
+          ["session", "Cancel lifecycle context and close waiter notification channels.", "danger"],
+          ["session", "Close NATS so pending transport work wakes and observes fencing.", "danger"],
+        ],
+        source: [
+          [457, "func validateHealthReport(report HealthReport, softwareName string) error {"], [461, "\tswitch report.Status {"], [466, "\tcase HealthUnhealthy:"], [467, "\t\tif report.ReasonCode == \"\" {", true],
+          [476, "\tif !utf8.ValidString(report.ReasonCode) ||"], [478, "\t\t!reasonCodePattern.MatchString(report.ReasonCode) {", true], [485, "\tif strings.HasPrefix(report.ReasonCode, \"hearth.\") ||", true], [486, "\t\tstrings.HasPrefix(report.ReasonCode, \"adapter.\"+softwareName+\".\") {"],
+          [519, "func (session *Session) notifyHeartbeatLocked() {"], [520, "\tclose(session.heartbeatNotify)", true], [521, "\tsession.heartbeatNotify = make(chan struct{})", true],
+          [529, "func (session *Session) markClosed() {"], [531, "\tif session.terminalErr == nil {", true], [532, "\t\tsession.terminalErr = ErrClosed"], [537, "\tsession.signalClosedLocked()"], [539, "\tsession.connection.Close()"],
+          [542, "func (session *Session) markFenced() {", true], [543, "\tsession.handlerMutex.Lock()"], [544, "\tsession.closing = true", true], [547, "\tsession.stateMutex.Lock()"], [548, "\tsession.terminalErr = ErrRuntimeFenced", true], [550, "\t\tsession.lifecycleCancel()"], [552, "\tsession.signalClosedLocked()", true], [554, "\tsession.connection.Close()", true],
+          [573, "func isTransientRequestError(err error) bool {"], [574, "\treturn errors.Is(err, natsgo.ErrDisconnected) ||"], [577, "\t\terrors.Is(err, context.DeadlineExceeded)"],
+        ],
+        notes: [
+          ["Fencing wins", "markClosed writes only when terminalErr is nil. markFenced always writes ErrRuntimeFenced, even during a close race."],
+          ["Broadcast", "Closing heartbeatNotify wakes every SetHealth waiter. Replacing the channel prepares the next generation."],
+          ["Reason ownership", "Unhealthy reasons must live under hearth.* or adapter.<softwareName>.*. The producer owns its namespace."],
+        ],
+        invariant: "Once fenced, the Session cannot reclaim, send future work, or disguise takeover as a transport error."
+      }
+    ];
+
+    const nav = document.getElementById("tourNav");
+    const nodes = [...document.querySelectorAll(".state-node")];
+    const sourceCode = document.getElementById("sourceCode");
+    const eventList = document.getElementById("eventList");
+    const annotationGrid = document.getElementById("annotationGrid");
+    const prevButton = document.getElementById("prevButton");
+    const nextButton = document.getElementById("nextButton");
+    let current = 0;
+
+    function escapeHTML(value) {
+      return value.replace(/[&<>"']/g, char => ({"&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;", "'":"&#039;"})[char]);
+    }
+
+    function colorCode(value) {
+      return escapeHTML(value)
+        .replace(/(\/\/.*)$/g, '<span class="cm">$1</span>')
+        .replace(/\b(func|type|const|var|for|if|else|switch|case|default|return|defer|select)\b/g, '<span class="kw">$1</span>')
+        .replace(/(&quot;.*?&quot;)/g, '<span class="str">$1</span>');
+    }
+
+    steps.forEach((step, index) => {
+      const item = document.createElement("li");
+      const button = document.createElement("button");
+      button.type = "button";
+      button.innerHTML = `<span class="nav-number">${String(index).padStart(2, "0")}</span><span class="nav-copy"><strong>${step.nav}</strong><small>${step.range}</small></span>`;
+      button.addEventListener("click", () => render(index));
+      item.appendChild(button);
+      nav.appendChild(item);
+    });
+
+    function render(index) {
+      current = Math.max(0, Math.min(steps.length - 1, index));
+      const step = steps[current];
+      document.getElementById("stepKicker").textContent = step.kicker;
+      document.getElementById("stepTitle").textContent = step.title;
+      document.getElementById("lineRange").textContent = step.range;
+      document.getElementById("stepThesis").textContent = step.thesis;
+      document.getElementById("invariantText").textContent = step.invariant;
+      document.getElementById("traceCount").textContent = `${step.events.length} events`;
+      document.getElementById("progressCopy").textContent = `${String(current + 1).padStart(2, "0")} / ${String(steps.length).padStart(2, "0")}`;
+
+      const navButtons = [...nav.querySelectorAll("button")];
+      navButtons.forEach((button, i) => {
+        if (i === current) button.setAttribute("aria-current", "step");
+        else button.removeAttribute("aria-current");
+      });
+      const activeButton = navButtons[current];
+      const centerActiveStop = () => {
+        nav.scrollLeft = Math.max(0, activeButton.parentElement.offsetLeft - (nav.clientWidth - activeButton.offsetWidth) / 2);
+      };
+      centerActiveStop();
+      requestAnimationFrame(centerActiveStop);
+
+      const orderedStates = ["connecting", "claimed", "heartbeating", "closing", "closed"];
+      const furthest = Math.max(...step.states.map(state => orderedStates.indexOf(state)), -1);
+      nodes.forEach(node => {
+        const name = node.dataset.state;
+        node.classList.toggle("active", step.states.includes(name));
+        node.classList.toggle("past", name !== "fenced" && orderedStates.indexOf(name) < furthest && !step.states.includes(name));
+      });
+
+      eventList.replaceChildren();
+      step.events.forEach(([actor, text, tone]) => {
+        const event = document.createElement("li");
+        event.className = "event";
+        event.dataset.actor = actor;
+        if (tone) event.dataset.tone = tone;
+        const copy = document.createElement("div");
+        copy.className = "event-copy";
+        copy.textContent = text;
+        event.appendChild(copy);
+        eventList.appendChild(event);
+      });
+
+      sourceCode.innerHTML = step.source.map(([number, text, focus]) =>
+        `<span class="code-line${focus ? " focus" : ""}"><span class="line-no">${number}</span><span class="code-text">${colorCode(text)}</span></span>`
+      ).join("");
+      sourceCode.scrollTop = 0;
+
+      annotationGrid.replaceChildren();
+      step.notes.forEach(([title, text], noteIndex) => {
+        const article = document.createElement("article");
+        article.className = "annotation";
+        article.innerHTML = `<div class="label">READING NOTE ${String(noteIndex + 1).padStart(2, "0")}</div><h3>${escapeHTML(title)}</h3><p>${escapeHTML(text)}</p>`;
+        annotationGrid.appendChild(article);
+      });
+
+      prevButton.disabled = current === 0;
+      nextButton.disabled = current === steps.length - 1;
+      history.replaceState(null, "", `#step-${current + 1}`);
+    }
+
+    prevButton.addEventListener("click", () => render(current - 1));
+    nextButton.addEventListener("click", () => render(current + 1));
+    document.addEventListener("keydown", event => {
+      if (event.target.matches("button, a, pre")) return;
+      if (event.key === "ArrowLeft") render(current - 1);
+      if (event.key === "ArrowRight") render(current + 1);
+    });
+
+    const requested = Number(location.hash.replace("#step-", "")) - 1;
+    render(Number.isInteger(requested) && requested >= 0 ? requested : 0);
+  </script>
+</body>
+</html>

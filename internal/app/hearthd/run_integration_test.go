@@ -43,6 +43,7 @@ func TestCoreNATSTransportRegistersAndProjectsDurableObservation(t *testing.T) {
 	}
 	repository := devices.NewSQLiteRepository(database, catalog)
 	service := devices.NewService(repository, nil, catalog, devices.Dependencies{})
+	service.ResumeHealthEvaluation(time.Now().UTC())
 
 	server, err := natsserver.NewServer(&natsserver.Options{
 		Host: "127.0.0.1", Port: -1, JetStream: true, StoreDir: t.TempDir(), NoSigs: true,
@@ -75,6 +76,11 @@ func TestCoreNATSTransportRegistersAndProjectsDurableObservation(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	sessions, err := devicesnats.StartSessionServer(coreConnection, validator, service, service, logger)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = sessions.Drain() })
 	registrations, err := devicesnats.StartRegistrationServer(coreConnection, validator, service, logger)
 	if err != nil {
 		t.Fatal(err)
@@ -86,7 +92,10 @@ func TestCoreNATSTransportRegistersAndProjectsDurableObservation(t *testing.T) {
 	}
 	t.Cleanup(observations.Stop)
 
-	session, err := adapter.Connect(ctx, adapter.Config{AdapterID: "simulator", NATSURL: server.ClientURL()})
+	session, err := adapter.Connect(ctx, adapter.Config{
+		AdapterID: "simulator", SoftwareName: "hearth-simulator",
+		SoftwareVersion: "0.1.0", NATSURL: server.ClientURL(),
+	})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -262,6 +271,12 @@ func TestCoreCommandRoundTripRequiresLinkedSimulatorObservation(t *testing.T) {
 		catalog,
 		devices.Dependencies{},
 	)
+	service.ResumeHealthEvaluation(time.Now().UTC())
+	sessions, err := devicesnats.StartSessionServer(coreConnection, validator, service, service, logger)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = sessions.Drain() })
 	registrations, err := devicesnats.StartRegistrationServer(coreConnection, validator, service, logger)
 	if err != nil {
 		t.Fatal(err)
@@ -273,7 +288,10 @@ func TestCoreCommandRoundTripRequiresLinkedSimulatorObservation(t *testing.T) {
 	}
 	t.Cleanup(observations.Stop)
 
-	session, err := adapter.Connect(ctx, adapter.Config{AdapterID: "simulator", NATSURL: server.ClientURL()})
+	session, err := adapter.Connect(ctx, adapter.Config{
+		AdapterID: "simulator", SoftwareName: "hearth-simulator",
+		SoftwareVersion: "0.1.0", NATSURL: server.ClientURL(),
+	})
 	if err != nil {
 		t.Fatal(err)
 	}

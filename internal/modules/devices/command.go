@@ -78,6 +78,9 @@ func (service *Service) ExecuteCommand(
 	if command.Status == CommandStatusEntityDisabled {
 		return CommandResult{}, commandExecutionError(command.ID, ErrEntityDisabled)
 	}
+	if command.Status == CommandStatusAdapterUnhealthy {
+		return CommandResult{}, commandExecutionError(command.ID, ErrAdapterUnhealthy)
+	}
 	waiter := service.addCommandWaiter(command.ID)
 
 	completed := make(chan commandOutcome, 1)
@@ -112,20 +115,7 @@ func (service *Service) runCommand(
 	command CommandRecord,
 	waiter <-chan CommandResult,
 ) commandOutcome {
-	if service.sender == nil {
-		return service.failCommand(
-			command.ID,
-			CommandStatusInternalFailure,
-			CommandFailureInternalError,
-			errors.New("command sender is not configured"),
-			waiter,
-		)
-	}
-	acceptance, err := service.sender.Send(ctx, command.AdapterID, CommandRequest{
-		ID: command.ID, CorrelationID: command.CorrelationID, EntityID: command.EntityID,
-		OperationName: command.OperationName, Parameters: append(CommandParameters(nil), command.Parameters...),
-		Deadline: command.DeadlineAt,
-	})
+	acceptance, err := service.dispatchCommand(ctx, command)
 	if err != nil {
 		if errors.Is(err, ErrAdapterUnhealthy) || errors.Is(err, context.DeadlineExceeded) {
 			return service.failCommand(
@@ -208,6 +198,23 @@ func (service *Service) runCommand(
 		}
 		return commandOutcome{err: commandExecutionError(command.ID, ErrOutcomeTimeout)}
 	}
+}
+
+func (service *Service) dispatchCommand(
+	ctx context.Context,
+	command CommandRecord,
+) (CommandAcceptance, error) {
+	if service.sender == nil {
+		return CommandAcceptance{}, errors.New("command sender is not configured")
+	}
+	if command.RuntimeID == nil {
+		return CommandAcceptance{}, ErrAdapterUnhealthy
+	}
+	return service.sender.Send(ctx, command.AdapterID, *command.RuntimeID, CommandRequest{
+		ID: command.ID, CorrelationID: command.CorrelationID, EntityID: command.EntityID,
+		OperationName: command.OperationName, Parameters: append(CommandParameters(nil), command.Parameters...),
+		Deadline: command.DeadlineAt,
+	})
 }
 
 func (service *Service) failCommand(

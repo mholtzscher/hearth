@@ -25,12 +25,15 @@ func NewCommandSender(connection *natsgo.Conn, validator *contractsv1.Validator)
 func (sender *CommandSender) Send(
 	ctx context.Context,
 	adapterID string,
+	runtimeID devices.RuntimeID,
 	request devices.CommandRequest,
 ) (devices.CommandAcceptance, error) {
 	if sender == nil || sender.connection == nil || sender.validator == nil {
 		return devices.CommandAcceptance{}, errors.New("command client is not initialized")
 	}
-	subject, err := natswire.CommandSubject(adapterID, "", string(request.EntityID), string(request.OperationName))
+	subject, err := natswire.CommandSubject(
+		adapterID, string(runtimeID), string(request.EntityID), string(request.OperationName),
+	)
 	if err != nil {
 		return devices.CommandAcceptance{}, err
 	}
