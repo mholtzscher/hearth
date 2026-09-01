@@ -261,10 +261,9 @@ type SetEntityEnabledParams struct {
 ```
 
 ```diff
-type Repository interface {
-    // existing methods
++type EnablementRepository interface {
 +   SetEntityEnabled(context.Context, SetEntityEnabledParams) (EntityWithState, error)
-}
++}
 
 type CommandLedger interface {
 -   CreateCommand(context.Context, CommandRecord) error
@@ -273,7 +272,7 @@ type CommandLedger interface {
 }
 ```
 
-`RequiredOwner == nil` selects trusted management; non-nil requires an exact current Adapter mapping in the update transaction. Repository results retain the existing owned-copy guarantee for mutable JSON and pointers.
+`RequiredOwner == nil` selects trusted management; non-nil requires an exact current Adapter mapping in the update transaction. Persistence results retain the existing owned-copy guarantee for mutable JSON and pointers.
 
 ### HTTP API Types
 
@@ -425,25 +424,16 @@ The method returns `ValidationError` for local contract or ID failures and `Enti
 
 ## Persistence and Service Integration
 
-### Migration `00003_entity_enablement.sql`
+### Fresh baseline schema
 
-Add immutable Goose migration `internal/platform/db/migrations/00003_entity_enablement.sql`.
+Hearth had no deployments before Entity enablement. `internal/platform/db/migrations/00001_initial.sql` therefore creates the final schema directly with:
 
-Up must:
+1. `entities.enabled INTEGER NOT NULL DEFAULT 1 CHECK (enabled IN (0, 1))`;
+2. `entity_disabled` in the final Command status and failure-code checks;
+3. `entity_disabled` in the final Observation receipt rejection-code check; and
+4. the final State relationships, foreign keys, and indexes.
 
-1. add `entities.enabled INTEGER NOT NULL DEFAULT 1 CHECK (enabled IN (0, 1))`, enabling existing Entities;
-2. rebuild `commands` to admit `entity_disabled` in status and failure-code checks while preserving every row, constraint, foreign key, timestamp, and the 00002 `(entity_id, requested_at DESC, id DESC)` index;
-3. rebuild `observation_receipts` and `entity_states` together so receipts admit `entity_disabled` while preserving receipt IDs, `receive_order`, uniqueness, current-State references, and all existing constraints; and
-4. run with foreign-key checking enabled and leave `PRAGMA foreign_key_check` empty.
-
-Down must:
-
-1. map `entity_disabled` Commands to terminal `internal_failure` / `internal_error`;
-2. delete `entity_disabled` receipts before rebuilding; deletion must fail on an unexpected current-State reference, and tests must prove normal projection creates none;
-3. rebuild receipt/State and Command tables with prior checks and indexes; and
-4. remove `entities.enabled`.
-
-Migration tests cover empty and populated upgrades containing Devices, Entities, current State, receipts, and every pre-existing Command status, plus the explicit lossy down mapping.
+Existing local databases must be recreated. Tests cover empty-database creation, idempotent startup, final constraints, and repository behavior rather than upgrade or rollback mappings.
 
 ### Query Sources
 
@@ -533,12 +523,12 @@ internal/modules/devices/
 ├── sqlite_reads.go, sqlite_reads_test.go                    # modify — read mapping
 └── sqlite_repository.go, sqlite_repository_test.go          # modify — transactions and registration
 internal/platform/db/
-├── migrations/00003_entity_enablement.sql                   # new — column and checked-enum rebuilds
+├── migrations/00001_initial.sql                             # modify — final baseline schema
 ├── queries/
 │   ├── registration/registration.sql                       # modify — create/read enablement
 │   └── state/state.sql                                     # modify — read/update enablement
 ├── sqlc/                                                    # regenerate
-└── db_test.go                                               # modify — up/down/FK coverage
+└── db_test.go                                               # modify — baseline/FK coverage
 sdk/adapter/
 ├── errors.go                                                # modify — typed permanent rejection
 ├── session.go, session_test.go                              # modify — one-attempt setter
@@ -597,10 +587,10 @@ Total effort is **XL, approximately 3–5 focused days at 70% confidence**. The 
 - [ ] Processing-time tests cover queued Observations across both disable and re-enable commits.
 - [ ] Existing receipt retention and current-State receipt pinning invariants remain valid.
 
-### Persistence and Compatibility
+### Persistence
 
-- [ ] Migration 00003 upgrades empty and populated databases without losing rows, IDs, receive order, State references, Command history, indexes, constraints, or foreign-key validity.
-- [ ] Down migration performs the specified lossy mappings and leaves a schema accepted by the prior application.
+- [ ] The fresh baseline schema contains final enablement, Command, receipt, State, index, constraint, and foreign-key definitions.
+- [ ] Existing local databases are recreated; no pre-deployment upgrade or rollback path is maintained.
 - [ ] sqlc output is generated only from migration/query sources and remains reproducible.
 - [ ] Repository methods expose only owned domain models, with no sqlc leakage.
 - [ ] The assembled runtime covers registration, HTTP disable, disabled Command history, rejected Observation acknowledgement, active-Command completion, SDK re-enable, and subsequent State projection.
@@ -619,7 +609,7 @@ Total effort is **XL, approximately 3–5 focused days at 70% confidence**. The 
 | HTTP | PATCH validation/mapping, disabled visibility, custom 409 Problem Details, OpenAPI, existing mappings. |
 | NATS/SDK | Subject parsing, schema round trips, typed rejections, identity/correlation/causation validation, one-attempt behavior. |
 | Runtime | Assembled SQLite, NATS/JetStream, Core, SDK, and HTTP disable/re-enable flow. |
-| Migration/generation | Empty/populated up/down, foreign keys, indexes, checks, and reproducible sqlc output. |
+| Schema/generation | Empty-database creation, foreign keys, indexes, checks, and reproducible sqlc output. |
 
 Use service tests for transport-independent rules, migrated SQLite for every transactional claim, API tests for Huma behavior, and runtime tests only for cross-seam risks.
 
@@ -627,7 +617,7 @@ Use service tests for transport-independent rules, migrated SQLite for every tra
 
 | Risk | Likelihood | Impact | Mitigation |
 |---|---:|---:|---|
-| Table rebuild loses or rewires current-State receipts | Medium | High | Rebuild receipts and State together; assert IDs, order, foreign keys, and projections across up/down. |
+| Baseline schema misstates receipt/State relationships | Low | High | Apply it to an empty database and test repository projection and foreign-key behavior. |
 | Command and disable commits classify in the wrong order | Medium | High | Classify and insert in one repository transaction; coordinate real SQLite race tests. |
 | Active-linked Observation exception is too broad | Medium | High | Require exact Command, Entity, Adapter, active status, and deadline; test mismatch and terminal boundaries. |
 | Strict registration response breaks mixed Core/SDK versions | High during rolling upgrade | Medium | Ship Core/contracts/SDK atomically and run cross-binary registration contract tests. |

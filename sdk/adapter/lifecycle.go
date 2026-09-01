@@ -64,10 +64,9 @@ type healthReason struct {
 }
 
 type adapterHeartbeatResponse struct {
-	Status                    string        `json:"status"`
-	LeaseExpiresAt            string        `json:"lease_expires_at,omitempty"`
-	RefreshEntityAvailability *bool         `json:"refresh_entity_availability,omitempty"`
-	Error                     *adapterError `json:"error,omitempty"`
+	Status         string        `json:"status"`
+	LeaseExpiresAt string        `json:"lease_expires_at,omitempty"`
+	Error          *adapterError `json:"error,omitempty"`
 }
 
 type adapterReleaseRequest struct{}
@@ -130,17 +129,11 @@ func (session *Session) claim(ctx context.Context, config Config) error {
 	}
 	for {
 		attemptContext, cancelAttempt := context.WithTimeout(ctx, requestAttemptTimeout)
-		response, requestErr := sendPrepared[adapterClaimResponse](attemptContext, session, request)
+		response, requestErr := sendSessionRequest[adapterClaimResponse](attemptContext, session, request)
 		cancelAttempt()
 		if requestErr != nil {
-			if ctxErr := ctx.Err(); ctxErr != nil {
-				return ctxErr
-			}
-			if !isTransientRequestError(requestErr) {
-				return requestErr
-			}
-			if waitErr := waitForRetry(ctx, requestRetryWait); waitErr != nil {
-				return waitErr
+			if retryErr := waitForRequestRetry(ctx, requestErr); retryErr != nil {
+				return retryErr
 			}
 			continue
 		}
@@ -202,9 +195,6 @@ func (session *Session) SetHealth(ctx context.Context, report HealthReport) erro
 		return &ValidationError{Err: errors.New("health cannot return to unknown in one runtime")}
 	}
 	session.desiredHealth = report
-	if report.Status == HealthUnhealthy {
-		clear(session.availabilityCache)
-	}
 	session.desiredGeneration++
 	generation := session.desiredGeneration
 	session.stateMutex.Unlock()
@@ -281,17 +271,11 @@ func (session *Session) sendLatestHeartbeat(ctx context.Context) error {
 			return err
 		}
 		attemptContext, cancelAttempt := context.WithTimeout(ctx, requestAttemptTimeout)
-		response, requestErr := sendPrepared[adapterHeartbeatResponse](attemptContext, session, request)
+		response, requestErr := sendSessionRequest[adapterHeartbeatResponse](attemptContext, session, request)
 		cancelAttempt()
 		if requestErr != nil {
-			if ctxErr := ctx.Err(); ctxErr != nil {
-				return ctxErr
-			}
-			if !isTransientRequestError(requestErr) {
-				return requestErr
-			}
-			if waitErr := waitForRetry(ctx, requestRetryWait); waitErr != nil {
-				return waitErr
+			if retryErr := waitForRequestRetry(ctx, requestErr); retryErr != nil {
+				return retryErr
 			}
 			continue
 		}
@@ -306,11 +290,7 @@ func (session *Session) sendLatestHeartbeat(ctx context.Context) error {
 		if leaseParseErr != nil {
 			return fmt.Errorf("parse Adapter heartbeat lease expiry: %w", leaseParseErr)
 		}
-		if response.Data.RefreshEntityAvailability == nil {
-			return errors.New("adapter heartbeat response omitted availability refresh flag")
-		}
 
-		refreshAvailability := *response.Data.RefreshEntityAvailability
 		session.stateMutex.Lock()
 		if generation > session.ackedGeneration {
 			session.ackedGeneration = generation
@@ -318,9 +298,6 @@ func (session *Session) sendLatestHeartbeat(ctx context.Context) error {
 		session.notifyHeartbeatLocked()
 		moreRecent := session.desiredGeneration > generation
 		session.stateMutex.Unlock()
-		if refreshAvailability {
-			session.requestEntityAvailabilityReplay()
-		}
 		if !moreRecent {
 			return nil
 		}
@@ -343,7 +320,6 @@ func (session *Session) close() error {
 	session.signalClosedLocked()
 	session.stateMutex.Unlock()
 	<-session.heartbeatDone
-	<-session.availabilityReplayDone
 
 	session.stateMutex.Lock()
 	fenced = fenced || errors.Is(session.terminalErr, ErrRuntimeFenced)
@@ -390,14 +366,8 @@ func (session *Session) release(ctx context.Context) error {
 		response, requestErr := sendPrepared[adapterReleaseResponse](attemptContext, session, request)
 		cancelAttempt()
 		if requestErr != nil {
-			if ctxErr := ctx.Err(); ctxErr != nil {
-				return ctxErr
-			}
-			if !isTransientRequestError(requestErr) {
-				return requestErr
-			}
-			if waitErr := waitForRetry(ctx, requestRetryWait); waitErr != nil {
-				return waitErr
+			if retryErr := waitForRequestRetry(ctx, requestErr); retryErr != nil {
+				return retryErr
 			}
 			continue
 		}
@@ -458,6 +428,27 @@ func sendPrepared[Resp any](
 	}
 	if response.CorrelationID != request.correlationID {
 		return natswire.Envelope[Resp]{}, errors.New("response correlation ID does not match request")
+	}
+	return response, nil
+}
+
+func sendSessionRequest[Resp any](
+	ctx context.Context,
+	session *Session,
+	request preparedRequest,
+) (natswire.Envelope[Resp], error) {
+	if err := session.sessionError(); err != nil {
+		return natswire.Envelope[Resp]{}, err
+	}
+	response, err := sendPrepared[Resp](ctx, session, request)
+	if err != nil {
+		if terminalErr := session.sessionError(); terminalErr != nil {
+			return natswire.Envelope[Resp]{}, terminalErr
+		}
+		return natswire.Envelope[Resp]{}, err
+	}
+	if terminalErr := session.sessionError(); terminalErr != nil {
+		return natswire.Envelope[Resp]{}, terminalErr
 	}
 	return response, nil
 }
@@ -554,7 +545,6 @@ func (session *Session) markFenced() {
 
 	session.stateMutex.Lock()
 	session.terminalErr = ErrRuntimeFenced
-	clear(session.availabilityCache)
 	if session.lifecycleCancel != nil {
 		session.lifecycleCancel()
 	}
@@ -566,6 +556,16 @@ func (session *Session) markFenced() {
 func validTextLength(value string, maximum int) bool {
 	length := utf8.RuneCountInString(value)
 	return length >= 1 && length <= maximum
+}
+
+func waitForRequestRetry(ctx context.Context, requestErr error) error {
+	if ctxErr := ctx.Err(); ctxErr != nil {
+		return ctxErr
+	}
+	if !isTransientRequestError(requestErr) {
+		return requestErr
+	}
+	return waitForRetry(ctx, requestRetryWait)
 }
 
 func waitForRetry(ctx context.Context, delay time.Duration) error {

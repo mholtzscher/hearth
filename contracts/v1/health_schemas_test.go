@@ -49,7 +49,7 @@ func TestAdapterSessionAndAvailabilitySchemaFixtures(t *testing.T) {
 			"emitted_at":"2026-08-29T15:00:01Z",
 			"correlation_id":"` + testCorrelationID + `",
 			"causation_id":"hbt_01890f47-7a6b-7c4d-8e9f-0123456789ab",
-			"data":{"status":"accepted","lease_expires_at":"2026-08-29T15:00:16Z","refresh_entity_availability":true}
+			"data":{"status":"accepted","lease_expires_at":"2026-08-29T15:00:16Z"}
 		}`,
 		contractsv1.AdapterReleaseRequestSchemaID: `{
 			"id":"rel_01890f47-7a6b-7c4d-8e9f-0123456789ab",

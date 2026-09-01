@@ -6,8 +6,7 @@ import (
 	"errors"
 	"fmt"
 
-	commandsqlc "github.com/mholtzscher/hearth/internal/platform/db/sqlc/commands"
-	statesqlc "github.com/mholtzscher/hearth/internal/platform/db/sqlc/state"
+	"github.com/mholtzscher/hearth/internal/modules/devices/dbsqlc"
 )
 
 func (repository *SQLiteRepository) ListDevices(ctx context.Context, params ListDevicesParams) (Page[Device], error) {
@@ -18,7 +17,7 @@ func (repository *SQLiteRepository) ListDevices(ctx context.Context, params List
 	if params.AfterID != nil {
 		afterID = string(*params.AfterID)
 	}
-	rows, err := statesqlc.New(repository.database).ListDevices(ctx, statesqlc.ListDevicesParams{
+	rows, err := repository.queries.ListDevices(ctx, dbsqlc.ListDevicesParams{
 		ID: afterID, Limit: int64(params.Limit + 1),
 	})
 	if err != nil {
@@ -35,8 +34,8 @@ func (repository *SQLiteRepository) GetDevice(ctx context.Context, params GetDev
 	if !validPageLimit(params.EntityLimit) {
 		return DeviceAggregate{}, ErrInvalidPage
 	}
-	queries := statesqlc.New(repository.database)
-	row, err := queries.GetDevice(ctx, statesqlc.GetDeviceParams{ID: string(params.ID)})
+	queries := repository.queries
+	row, err := queries.GetDevice(ctx, dbsqlc.GetDeviceParams{ID: string(params.ID)})
 	if errors.Is(err, sql.ErrNoRows) {
 		return DeviceAggregate{}, ErrDeviceNotFound
 	}
@@ -67,78 +66,32 @@ func (repository *SQLiteRepository) ListEntities(
 	if params.AfterID != nil {
 		afterID = string(*params.AfterID)
 	}
-	queries := statesqlc.New(repository.database)
+	queries := repository.queries
 	if params.DeviceID != nil {
 		return listEntitiesByDevice(ctx, queries, params, afterID)
 	}
-	rows, err := queries.ListEntities(ctx, statesqlc.ListEntitiesParams{
+	rows, err := queries.ListEntities(ctx, dbsqlc.ListEntitiesParams{
 		ID: afterID, Limit: int64(params.Limit + 1),
 	})
 	if err != nil {
 		return Page[EntityWithState]{}, fmt.Errorf("list entities: %w", err)
 	}
-	items := make([]EntityWithState, 0, params.Limit+1)
-	for _, row := range rows {
-		view, mappingErr := entityWithStateFromValues(
-			row.ID, row.DeviceID, row.AdapterID, row.Name, row.TypeID, row.SupportJson, row.Enabled,
-			row.ObservationID, row.ValueJson, row.AdapterReceivedAt, row.SourceUpdatedAt,
-			row.ObservedAt, row.ReceiveOrder,
-			sqliteEntityAvailability{
-				entityCreatedAt: row.EntityCreatedAt, runtimeID: row.AvailabilityRuntimeID,
-				adapterStatus: row.AdapterHealthStatus, adapterReasonCode: row.AdapterHealthReasonCode,
-				adapterReasonDetail: row.AdapterHealthReasonDetail, adapterSince: row.AdapterHealthSince,
-				adapterEvidenceAt: row.AdapterHealthEvidenceAt, reportedStatus: row.ReportedAvailabilityStatus,
-				reportedReasonCode:   row.ReportedAvailabilityReasonCode,
-				reportedReasonDetail: row.ReportedAvailabilityReasonDetail,
-				reportedSourceAt:     row.ReportedAvailabilitySourceObservedAt,
-				reportedEvidenceAt:   row.ReportedAvailabilityEvidenceAt,
-				reportedSince:        row.ReportedAvailabilitySince,
-			},
-		)
-		if mappingErr != nil {
-			return Page[EntityWithState]{}, fmt.Errorf("map entity: %w", mappingErr)
-		}
-		items = append(items, view)
-	}
-	return pageFromExtra(items, params.Limit), nil
+	return entityPageFromRows(rows, params.Limit)
 }
 
 func listEntitiesByDevice(
 	ctx context.Context,
-	queries *statesqlc.Queries,
+	queries *dbsqlc.Queries,
 	params ListEntitiesParams,
 	afterID string,
 ) (Page[EntityWithState], error) {
-	rows, err := queries.ListEntitiesByDevice(ctx, statesqlc.ListEntitiesByDeviceParams{
+	rows, err := queries.ListEntitiesByDevice(ctx, dbsqlc.ListEntitiesByDeviceParams{
 		DeviceID: string(*params.DeviceID), ID: afterID, Limit: int64(params.Limit + 1),
 	})
 	if err != nil {
 		return Page[EntityWithState]{}, fmt.Errorf("list entities by device: %w", err)
 	}
-	items := make([]EntityWithState, 0, params.Limit+1)
-	for _, row := range rows {
-		view, mappingErr := entityWithStateFromValues(
-			row.ID, row.DeviceID, row.AdapterID, row.Name, row.TypeID, row.SupportJson, row.Enabled,
-			row.ObservationID, row.ValueJson, row.AdapterReceivedAt, row.SourceUpdatedAt,
-			row.ObservedAt, row.ReceiveOrder,
-			sqliteEntityAvailability{
-				entityCreatedAt: row.EntityCreatedAt, runtimeID: row.AvailabilityRuntimeID,
-				adapterStatus: row.AdapterHealthStatus, adapterReasonCode: row.AdapterHealthReasonCode,
-				adapterReasonDetail: row.AdapterHealthReasonDetail, adapterSince: row.AdapterHealthSince,
-				adapterEvidenceAt: row.AdapterHealthEvidenceAt, reportedStatus: row.ReportedAvailabilityStatus,
-				reportedReasonCode:   row.ReportedAvailabilityReasonCode,
-				reportedReasonDetail: row.ReportedAvailabilityReasonDetail,
-				reportedSourceAt:     row.ReportedAvailabilitySourceObservedAt,
-				reportedEvidenceAt:   row.ReportedAvailabilityEvidenceAt,
-				reportedSince:        row.ReportedAvailabilitySince,
-			},
-		)
-		if mappingErr != nil {
-			return Page[EntityWithState]{}, fmt.Errorf("map entity: %w", mappingErr)
-		}
-		items = append(items, view)
-	}
-	return pageFromExtra(items, params.Limit), nil
+	return entityPageFromRows(rows, params.Limit)
 }
 
 func (repository *SQLiteRepository) ListEntityCommands(
@@ -148,16 +101,16 @@ func (repository *SQLiteRepository) ListEntityCommands(
 	if !validPageLimit(params.Limit) || (params.BeforeRequestedAt == nil) != (params.BeforeID == nil) {
 		return Page[CommandRecord]{}, ErrInvalidPage
 	}
-	queries := commandsqlc.New(repository.database)
-	var rows []commandsqlc.Command
+	queries := repository.queries
+	var rows []dbsqlc.Command
 	var err error
 	if params.BeforeRequestedAt == nil {
-		rows, err = queries.ListEntityCommandsFirstPage(ctx, commandsqlc.ListEntityCommandsFirstPageParams{
+		rows, err = queries.ListEntityCommandsFirstPage(ctx, dbsqlc.ListEntityCommandsFirstPageParams{
 			EntityID: string(params.EntityID), Limit: int64(params.Limit + 1),
 		})
 	} else {
 		requestedAt := formatSortableTime(*params.BeforeRequestedAt)
-		rows, err = queries.ListEntityCommandsAfter(ctx, commandsqlc.ListEntityCommandsAfterParams{
+		rows, err = queries.ListEntityCommandsAfter(ctx, dbsqlc.ListEntityCommandsAfterParams{
 			EntityID: string(params.EntityID), RequestedAt: requestedAt, RequestedAt_2: requestedAt,
 			ID: string(*params.BeforeID), Limit: int64(params.Limit + 1),
 		})
@@ -174,6 +127,18 @@ func (repository *SQLiteRepository) ListEntityCommands(
 		items = append(items, command)
 	}
 	return pageFromExtra(items, params.Limit), nil
+}
+
+func entityPageFromRows(rows []dbsqlc.EntityReadProjection, limit int) (Page[EntityWithState], error) {
+	items := make([]EntityWithState, 0, len(rows))
+	for _, row := range rows {
+		view, err := entityWithStateFromRow(row)
+		if err != nil {
+			return Page[EntityWithState]{}, fmt.Errorf("map entity: %w", err)
+		}
+		items = append(items, view)
+	}
+	return pageFromExtra(items, limit), nil
 }
 
 func validPageLimit(limit int) bool {

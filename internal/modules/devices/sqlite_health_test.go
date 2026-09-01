@@ -162,7 +162,7 @@ func TestSQLiteHeartbeatRefreshesEvidenceWithoutFabricatingTransitions(t *testin
 		SourceObservedAt: healthyAt.Add(-time.Second), ReceivedAt: healthyAt,
 		LeaseExpiresAt: healthyAt.Add(15 * time.Second),
 	})
-	if err != nil || !result.RefreshEntityAvailability {
+	if err != nil {
 		t.Fatalf("first healthy heartbeat = %#v, %v", result, err)
 	}
 	if _, repeatErr := repository.RecordAdapterHeartbeat(ctx, HeartbeatWrite{
@@ -223,17 +223,8 @@ func TestSQLiteHeartbeatRefreshesEvidenceWithoutFabricatingTransitions(t *testin
 		SourceObservedAt: recoveredAt, ReceivedAt: recoveredAt,
 		LeaseExpiresAt: recoveredAt.Add(15 * time.Second),
 	})
-	if err != nil || !result.RefreshEntityAvailability {
+	if err != nil {
 		t.Fatalf("recovery heartbeat = %#v, %v", result, err)
-	}
-	var epoch int
-	if scanErr := database.QueryRowContext(ctx,
-		"SELECT availability_epoch FROM adapter_instances WHERE adapter_id = 'simulator'",
-	).Scan(&epoch); scanErr != nil {
-		t.Fatal(scanErr)
-	}
-	if epoch != 2 {
-		t.Fatalf("availability epoch = %d, want 2", epoch)
 	}
 }
 
@@ -329,8 +320,8 @@ func TestSQLiteReleaseAndExpiryPersistOfflineHealth(t *testing.T) {
 	}
 }
 
-//nolint:gocognit,gocyclo,cyclop // One timeline verifies batches, epochs, current views, and history.
-func TestSQLiteAvailabilityBatchRollsBackAndUsesHealthEpoch(t *testing.T) {
+//nolint:gocognit,gocyclo,cyclop // One timeline verifies batches, invalidation, current views, and history.
+func TestSQLiteAvailabilityBatchRollsBackAndInvalidatesOnUnhealthy(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	database := openMigratedDatabase(t, filepath.Join(t.TempDir(), "hearth.db"))
@@ -344,7 +335,7 @@ func TestSQLiteAvailabilityBatchRollsBackAndUsesHealthEpoch(t *testing.T) {
 	if claimErr != nil {
 		t.Fatal(claimErr)
 	}
-	service := NewService(repository, nil, catalog, Dependencies{})
+	service := newTestService(repository, nil, catalog, Dependencies{})
 	binding, err := service.Register(ctx, "simulator", testRuntimeID, validDomainRegistration())
 	if err != nil {
 		t.Fatal(err)
@@ -462,10 +453,11 @@ func TestSQLiteAvailabilityBatchRollsBackAndUsesHealthEpoch(t *testing.T) {
 		t.Fatal(err)
 	}
 	if view.Availability.Status != EntityAvailabilityUnavailable || view.Availability.Source != "adapter_health" ||
-		!view.Availability.Since.Equal(unavailableAt) || view.Availability.Reason == nil ||
+		!view.Availability.Since.Equal(unhealthyAt) || view.Availability.Reason == nil ||
 		view.Availability.Reason.Code != "hearth.external_system_unavailable" {
 		t.Fatalf("inherited unhealthy availability = %#v", view.Availability)
 	}
+	assertTableCount(t, database, "entity_availability_current", 0)
 	recoveredAt := unhealthyAt.Add(time.Second)
 	if _, recoveredErr := repository.RecordAdapterHeartbeat(ctx, HeartbeatWrite{
 		AdapterID: "simulator", RuntimeID: testRuntimeID, ExternalStatus: AdapterHealthHealthy,
@@ -480,7 +472,7 @@ func TestSQLiteAvailabilityBatchRollsBackAndUsesHealthEpoch(t *testing.T) {
 	}
 	if view.Availability.Status != EntityAvailabilityUnknown || view.Availability.Source != healthSourceCore ||
 		view.Availability.Reason == nil || view.Availability.Reason.Code != "hearth.awaiting_entity_report" {
-		t.Fatalf("availability after healthy epoch change = %#v", view.Availability)
+		t.Fatalf("availability after healthy recovery = %#v", view.Availability)
 	}
 	if _, recoveryReportErr := repository.ReportEntityAvailability(ctx, AvailabilityBatchWrite{
 		AdapterID: "simulator", RuntimeID: testRuntimeID,
@@ -488,17 +480,14 @@ func TestSQLiteAvailabilityBatchRollsBackAndUsesHealthEpoch(t *testing.T) {
 	}); recoveryReportErr != nil {
 		t.Fatal(recoveryReportErr)
 	}
-	var epoch, transitionCount int
+	var transitionCount int
 	if scanErr := database.QueryRowContext(ctx, `
-		SELECT availability_epoch,
-		       (SELECT count(*) FROM health_transitions WHERE resource_kind = 'entity')
-		FROM entity_availability_current
-		WHERE entity_id = ?`, binding.Entities[0].EntityID,
-	).Scan(&epoch, &transitionCount); scanErr != nil {
+		SELECT count(*) FROM health_transitions WHERE resource_kind = 'entity'
+	`).Scan(&transitionCount); scanErr != nil {
 		t.Fatal(scanErr)
 	}
-	if epoch != 2 || transitionCount != 4 {
-		t.Fatalf("availability after recovery = epoch %d, transitions %d", epoch, transitionCount)
+	if transitionCount != 4 {
+		t.Fatalf("availability transitions after recovery = %d", transitionCount)
 	}
 	history, err := repository.ListEntityAvailabilityHistory(ctx, ListEntityAvailabilityParams{
 		EntityID: binding.Entities[0].EntityID, Limit: 10,
@@ -555,7 +544,7 @@ func TestSQLiteAvailabilityFencesRuntimeAtLeaseBoundary(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	service := NewService(repository, nil, catalog, Dependencies{Now: func() time.Time { return healthyAt }})
+	service := newTestService(repository, nil, catalog, Dependencies{Now: func() time.Time { return healthyAt }})
 	binding, err := service.Register(ctx, "simulator", testRuntimeID, validDomainRegistration())
 	if err != nil {
 		t.Fatal(err)
@@ -578,16 +567,7 @@ func TestSQLiteAvailabilityFencesRuntimeAtLeaseBoundary(t *testing.T) {
 	if !errors.Is(err, ErrRuntimeFenced) {
 		t.Fatalf("report at lease expiry error = %v", err)
 	}
-	var evidenceAt string
-	if scanErr := database.QueryRowContext(ctx, `
-		SELECT evidence_at FROM entity_availability_current WHERE entity_id = ?`,
-		binding.Entities[0].EntityID,
-	).Scan(&evidenceAt); scanErr != nil {
-		t.Fatal(scanErr)
-	}
-	if evidenceAt != formatTime(beforeExpiry) {
-		t.Fatalf("availability evidence after fenced report = %q", evidenceAt)
-	}
+	assertTableCount(t, database, "entity_availability_current", 0)
 	adapter, err := repository.GetAdapter(ctx, "simulator")
 	if err != nil || adapter.Health == nil || adapter.Health.Reason == nil ||
 		adapter.Health.Reason.Code != "hearth.heartbeat_expired" || adapter.Health.Runtime == nil ||

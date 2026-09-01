@@ -178,12 +178,12 @@ func newSimulatorMatrixHarness(t *testing.T, scenario string, options simulatorM
 		}
 	}
 	harness.service = devices.NewService(
-		harness.repository,
+		devices.SQLiteStores(harness.repository),
 		devicesnats.NewCommandSender(harness.connection, harness.validator),
 		catalog,
 		options.dependencies,
 	)
-	harness.service.ResumeHealthEvaluation(time.Now().UTC())
+	harness.service.ResumeAdapterLeaseExpiry(time.Now().UTC())
 	harness.sessions, err = devicesnats.StartSessionServer(
 		harness.connection, harness.validator, harness.service, harness.service, logger,
 	)
@@ -1032,7 +1032,8 @@ func TestSimulatorRestartBeforeAckRedeliversWithoutChangingStateOrCommand(t *tes
 	assertMatrixCount(t, harness.database, "observation_receipts", 2)
 }
 
-func TestSimulatorReadinessRecoveryReplaysCachedAvailability(t *testing.T) {
+//nolint:gocognit // The readiness sequence is easier to audit in chronological order.
+func TestSimulatorReadinessRecoveryRestoresPersistedAvailabilityWithoutReport(t *testing.T) {
 	t.Parallel()
 	harness := newManualSimulatorMatrixHarness(t, simulatorMatrixRuntimeID)
 	session := connectMatrixSession(t, harness)
@@ -1047,6 +1048,10 @@ func TestSimulatorReadinessRecoveryReplaysCachedAvailability(t *testing.T) {
 		EntityID: string(entityID), Status: adapter.AvailabilityAvailable, SourceObservedAt: now,
 	}
 	if err := session.ReportEntityAvailability(harness.ctx, []adapter.EntityAvailabilityReport{report}); err != nil {
+		t.Fatal(err)
+	}
+	beforeEntity, err := harness.service.GetEntity(harness.ctx, entityID)
+	if err != nil {
 		t.Fatal(err)
 	}
 	beforeAdapterHistory, err := harness.service.ListAdapterHealthHistory(
@@ -1064,27 +1069,19 @@ func TestSimulatorReadinessRecoveryReplaysCachedAvailability(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	harness.service.PauseHealthEvaluation()
-	pausedContext, cancelPaused := context.WithTimeout(context.Background(), 150*time.Millisecond)
-	err = session.ReportEntityAvailability(pausedContext, []adapter.EntityAvailabilityReport{report})
-	cancelPaused()
-	if !errors.Is(err, context.DeadlineExceeded) {
-		t.Fatalf("availability report while Core was not ready = %v", err)
-	}
-	harness.service.ResumeHealthEvaluation(time.Now().UTC())
-	recoveringAdapter, err := harness.service.GetAdapter(harness.ctx, simulatorMatrixAdapterID)
+	harness.service.PauseAdapterLeaseExpiry()
+	harness.service.ResumeAdapterLeaseExpiry(time.Now().UTC())
+	recoveredAdapter, err := harness.service.GetAdapter(harness.ctx, simulatorMatrixAdapterID)
 	if err != nil {
 		t.Fatal(err)
 	}
-	recoveringEntity, err := harness.service.GetEntity(harness.ctx, entityID)
+	recoveredEntity, err := harness.service.GetEntity(harness.ctx, entityID)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if recoveringAdapter.Health == nil || recoveringAdapter.Health.Status != devices.AdapterHealthUnknown ||
-		recoveringAdapter.Health.Reason == nil ||
-		recoveringAdapter.Health.Reason.Code != "hearth.core_recovering" ||
-		recoveringEntity.Availability.Status != devices.EntityAvailabilityUnknown {
-		t.Fatalf("recovery views = Adapter %#v, Entity %#v", recoveringAdapter, recoveringEntity)
+	if recoveredAdapter.Health == nil || recoveredAdapter.Health.Status != devices.AdapterHealthHealthy ||
+		recoveredEntity.Availability.Status != devices.EntityAvailabilityAvailable {
+		t.Fatalf("recovery views = Adapter %#v, Entity %#v", recoveredAdapter, recoveredEntity)
 	}
 	if err = session.SetHealth(harness.ctx, adapter.HealthReport{
 		Status: adapter.HealthHealthy, SourceObservedAt: time.Now().UTC(),
@@ -1103,6 +1100,19 @@ func TestSimulatorReadinessRecoveryReplaysCachedAvailability(t *testing.T) {
 		return instance.Health != nil && instance.Health.Status == devices.AdapterHealthHealthy &&
 			entity.Availability.Status == devices.EntityAvailabilityAvailable, nil
 	})
+	restoredEntity, err := harness.service.GetEntity(harness.ctx, entityID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !restoredEntity.Availability.Since.Equal(beforeEntity.Availability.Since) ||
+		!restoredEntity.Availability.EvidenceAt.Equal(beforeEntity.Availability.EvidenceAt) ||
+		restoredEntity.Availability.SourceObservedAt == nil || beforeEntity.Availability.SourceObservedAt == nil ||
+		!restoredEntity.Availability.SourceObservedAt.Equal(*beforeEntity.Availability.SourceObservedAt) {
+		t.Fatalf(
+			"persisted availability changed during recovery: before = %#v, after = %#v",
+			beforeEntity.Availability, restoredEntity.Availability,
+		)
+	}
 	afterAdapterHistory, err := harness.service.ListAdapterHealthHistory(
 		harness.ctx,
 		devices.ListAdapterHealthParams{AdapterID: simulatorMatrixAdapterID, Limit: 200},

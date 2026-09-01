@@ -3,7 +3,6 @@ package devices
 import (
 	"context"
 	"fmt"
-	"time"
 )
 
 func (service *Service) ListDevices(ctx context.Context, params ListDevicesParams) (Page[Device], error) {
@@ -15,7 +14,7 @@ func (service *Service) ListDevices(ctx context.Context, params ListDevicesParam
 			return Page[Device]{}, fmt.Errorf("%w: parse device position: %w", ErrInvalidPage, err)
 		}
 	}
-	page, err := service.repository.ListDevices(ctx, params)
+	page, err := service.stores.Reads.ListDevices(ctx, params)
 	if err != nil {
 		return Page[Device]{}, err
 	}
@@ -36,15 +35,13 @@ func (service *Service) GetDevice(ctx context.Context, params GetDeviceParams) (
 			return DeviceAggregate{}, fmt.Errorf("%w: parse entity position: %w", ErrInvalidPage, err)
 		}
 	}
-	snapshot := service.healthEvaluationSnapshot()
-	now := service.dependencies.Now().UTC()
-	aggregate, err := service.repository.GetDevice(ctx, params)
+	aggregate, err := service.stores.Reads.GetDevice(ctx, params)
 	if err != nil {
 		return DeviceAggregate{}, err
 	}
 	items := make([]EntityWithState, len(aggregate.Entities.Items))
 	for index, entity := range aggregate.Entities.Items {
-		items[index] = evaluateEntityAvailability(copyEntityWithState(entity), snapshot, now)
+		items[index] = copyEntityWithState(entity)
 	}
 	return DeviceAggregate{
 		Device: aggregate.Device,
@@ -68,15 +65,13 @@ func (service *Service) ListEntities(ctx context.Context, params ListEntitiesPar
 			return Page[EntityWithState]{}, fmt.Errorf("%w: parse entity position: %w", ErrInvalidPage, err)
 		}
 	}
-	snapshot := service.healthEvaluationSnapshot()
-	now := service.dependencies.Now().UTC()
-	page, err := service.repository.ListEntities(ctx, params)
+	page, err := service.stores.Reads.ListEntities(ctx, params)
 	if err != nil {
 		return Page[EntityWithState]{}, err
 	}
 	items := make([]EntityWithState, len(page.Items))
 	for index, entity := range page.Items {
-		items[index] = evaluateEntityAvailability(copyEntityWithState(entity), snapshot, now)
+		items[index] = copyEntityWithState(entity)
 	}
 	return Page[EntityWithState]{Items: items, HasMore: page.HasMore}, nil
 }
@@ -85,39 +80,18 @@ func (service *Service) GetEntity(ctx context.Context, id EntityID) (EntityWithS
 	if _, err := ParseEntityID(string(id)); err != nil {
 		return EntityWithState{}, fmt.Errorf("parse entity ID: %w", err)
 	}
-	snapshot := service.healthEvaluationSnapshot()
-	now := service.dependencies.Now().UTC()
-	view, err := service.repository.GetEntity(ctx, id)
+	view, err := service.stores.Reads.GetEntity(ctx, id)
 	if err != nil {
 		return EntityWithState{}, err
 	}
-	return evaluateEntityAvailability(copyEntityWithState(view), snapshot, now), nil
-}
-
-func evaluateEntityAvailability(
-	view EntityWithState,
-	snapshot healthEvaluationSnapshot,
-	now time.Time,
-) EntityWithState {
-	if !snapshot.active || !now.Before(snapshot.recoveryUntil) || view.availabilityRuntimeID == nil {
-		return view
-	}
-	if _, refreshed := snapshot.refreshed[*view.availabilityRuntimeID]; refreshed {
-		return view
-	}
-	view.Availability = EntityAvailability{
-		Status: EntityAvailabilityUnknown, Source: healthSourceCore,
-		Since: snapshot.resumedAt, EvidenceAt: snapshot.resumedAt,
-		Reason: &HealthReason{Code: "hearth.core_recovering"},
-	}
-	return view
+	return copyEntityWithState(view), nil
 }
 
 func (service *Service) GetCommand(ctx context.Context, id CommandID) (CommandRecord, error) {
 	if _, err := ParseCommandID(string(id)); err != nil {
 		return CommandRecord{}, fmt.Errorf("parse command ID: %w", err)
 	}
-	command, err := service.repository.GetCommand(ctx, id)
+	command, err := service.stores.Reads.GetCommand(ctx, id)
 	if err != nil {
 		return CommandRecord{}, err
 	}
@@ -144,10 +118,10 @@ func (service *Service) ListEntityCommands(
 		utc := params.BeforeRequestedAt.UTC()
 		params.BeforeRequestedAt = &utc
 	}
-	if _, err := service.repository.GetEntity(ctx, params.EntityID); err != nil {
+	if _, err := service.stores.Reads.GetEntity(ctx, params.EntityID); err != nil {
 		return Page[CommandRecord]{}, err
 	}
-	page, err := service.repository.ListEntityCommands(ctx, params)
+	page, err := service.stores.Reads.ListEntityCommands(ctx, params)
 	if err != nil {
 		return Page[CommandRecord]{}, err
 	}

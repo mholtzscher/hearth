@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"sort"
 	"time"
 
 	contractsv1 "github.com/mholtzscher/hearth/contracts/v1"
@@ -110,7 +109,6 @@ func (session *Session) validateAvailabilityReport(report EntityAvailabilityRepo
 	return nil
 }
 
-//nolint:gocognit // Availability retry keeps one envelope until Core acknowledges or the caller stops it.
 func (session *Session) reportAvailabilityBatch(
 	ctx context.Context,
 	reports []EntityAvailabilityReport,
@@ -121,20 +119,11 @@ func (session *Session) reportAvailabilityBatch(
 	}
 	for {
 		attemptContext, cancelAttempt := context.WithTimeout(ctx, requestAttemptTimeout)
-		response, requestErr := sendPrepared[entityAvailabilityResponse](attemptContext, session, request)
+		response, requestErr := sendSessionRequest[entityAvailabilityResponse](attemptContext, session, request)
 		cancelAttempt()
 		if requestErr != nil {
-			if terminalErr := session.sessionError(); terminalErr != nil {
-				return terminalErr
-			}
-			if ctxErr := ctx.Err(); ctxErr != nil {
-				return ctxErr
-			}
-			if !isTransientRequestError(requestErr) {
-				return requestErr
-			}
-			if waitErr := waitForRetry(ctx, requestRetryWait); waitErr != nil {
-				return waitErr
+			if retryErr := waitForRequestRetry(ctx, requestErr); retryErr != nil {
+				return retryErr
 			}
 			continue
 		}
@@ -151,19 +140,9 @@ func (session *Session) reportAvailabilityBatch(
 		if _, parseErr := time.Parse(time.RFC3339Nano, response.Data.ReportedAt); parseErr != nil {
 			return fmt.Errorf("parse Entity availability report time: %w", parseErr)
 		}
-
-		session.stateMutex.Lock()
-		if session.terminalErr != nil {
-			terminalErr := session.terminalErr
-			session.stateMutex.Unlock()
+		if terminalErr := session.sessionError(); terminalErr != nil {
 			return terminalErr
 		}
-		if session.desiredHealth.Status != HealthUnhealthy {
-			for _, report := range reports {
-				session.availabilityCache[report.EntityID] = report
-			}
-		}
-		session.stateMutex.Unlock()
 		return nil
 	}
 }
@@ -216,30 +195,6 @@ func (session *Session) handleAvailabilityRejection(rejection *entityAvailabilit
 	}
 }
 
-func (session *Session) runAvailabilityReplay(ctx context.Context) {
-	defer close(session.availabilityReplayDone)
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		case <-session.availabilityReplayWake:
-		}
-		if err := session.replayEntityAvailability(ctx); err != nil {
-			if ctx.Err() != nil || session.sessionError() != nil {
-				return
-			}
-			session.logger.ErrorContext(ctx, "replay Entity availability", "error", err)
-		}
-	}
-}
-
-func (session *Session) requestEntityAvailabilityReplay() {
-	select {
-	case session.availabilityReplayWake <- struct{}{}:
-	default:
-	}
-}
-
 func (session *Session) acquireAvailability(ctx context.Context) error {
 	if err := ctx.Err(); err != nil {
 		return err
@@ -258,31 +213,4 @@ func (session *Session) acquireAvailability(ctx context.Context) error {
 
 func (session *Session) releaseAvailability() {
 	session.availabilityGate <- struct{}{}
-}
-
-func (session *Session) replayEntityAvailability(ctx context.Context) error {
-	if err := session.acquireAvailability(ctx); err != nil {
-		return err
-	}
-	defer session.releaseAvailability()
-
-	session.stateMutex.Lock()
-	entityIDs := make([]string, 0, len(session.availabilityCache))
-	for entityID := range session.availabilityCache {
-		entityIDs = append(entityIDs, entityID)
-	}
-	sort.Strings(entityIDs)
-	reports := make([]EntityAvailabilityReport, len(entityIDs))
-	for index, entityID := range entityIDs {
-		reports[index] = session.availabilityCache[entityID]
-	}
-	session.stateMutex.Unlock()
-
-	for start := 0; start < len(reports); start += maximumAvailabilityBatchSize {
-		end := min(start+maximumAvailabilityBatchSize, len(reports))
-		if err := session.reportAvailabilityBatch(ctx, reports[start:end]); err != nil {
-			return err
-		}
-	}
-	return nil
 }

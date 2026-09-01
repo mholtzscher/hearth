@@ -5,10 +5,8 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"math/rand/v2"
 	"os"
 	"strings"
-	"time"
 
 	homeassistantadapter "github.com/mholtzscher/hearth/internal/adapters/homeassistant"
 	"github.com/mholtzscher/hearth/sdk/adapter"
@@ -16,11 +14,8 @@ import (
 )
 
 const (
-	registrationRetryMinimum = 100 * time.Millisecond
-	registrationRetryMaximum = 2 * time.Second
-	powerEntityKey           = "power"
-	concurrentComponents     = 2
-	jitterDivisor            = 2
+	powerEntityKey       = "power"
+	concurrentComponents = 2
 )
 
 func Run(ctx context.Context, config Config, logger *slog.Logger) error {
@@ -59,7 +54,7 @@ func Run(ctx context.Context, config Config, logger *slog.Logger) error {
 	if err != nil {
 		return err
 	}
-	binding, err := register(ctx, session, adapter.Registration{
+	binding, err := session.Register(ctx, adapter.Registration{
 		BindingKey: config.Binding.Key,
 		Device: adapter.DeviceDescriptor{
 			ExternalID: config.Binding.DeviceExternalID,
@@ -67,7 +62,7 @@ func Run(ctx context.Context, config Config, logger *slog.Logger) error {
 			Kind:       "light",
 		},
 		Entities: []adapter.EntityDescriptor{descriptor},
-	}, logger)
+	})
 	if err != nil {
 		return err
 	}
@@ -111,39 +106,6 @@ func Run(ctx context.Context, config Config, logger *slog.Logger) error {
 	return nil
 }
 
-func register(
-	ctx context.Context,
-	session *adapter.Session,
-	registration adapter.Registration,
-	logger *slog.Logger,
-) (adapter.Binding, error) {
-	delay := registrationRetryMinimum
-	for {
-		binding, err := session.Register(ctx, registration)
-		if err == nil {
-			return binding, nil
-		}
-		var validation *adapter.ValidationError
-		var rejected *adapter.RegistrationRejectedError
-		if errors.As(err, &validation) || errors.As(err, &rejected) {
-			return adapter.Binding{}, err
-		}
-		wait := registrationJitter(delay)
-		logger.WarnContext(ctx, "retry Home Assistant adapter registration", "error", err, "retry_in", wait)
-		timer := time.NewTimer(wait)
-		select {
-		case <-ctx.Done():
-			timer.Stop()
-			return adapter.Binding{}, ctx.Err()
-		case <-timer.C:
-		}
-		delay *= 2
-		if delay > registrationRetryMaximum {
-			delay = registrationRetryMaximum
-		}
-	}
-}
-
 func entityIDForKey(binding adapter.Binding, key string) (string, error) {
 	for _, entity := range binding.Entities {
 		if entity.Key == key {
@@ -151,13 +113,4 @@ func entityIDForKey(binding adapter.Binding, key string) (string, error) {
 		}
 	}
 	return "", fmt.Errorf("registration response omitted Entity key %q", key)
-}
-
-func registrationJitter(delay time.Duration) time.Duration {
-	half := delay / jitterDivisor
-	if half <= 0 {
-		return delay
-	}
-	//nolint:gosec // Backoff jitter does not require cryptographic randomness.
-	return half + time.Duration(rand.Int64N(int64(delay-half)+1))
 }

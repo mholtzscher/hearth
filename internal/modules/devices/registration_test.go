@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"testing"
-	"time"
 )
 
 type stubRegistrationRepository struct {
@@ -26,100 +25,6 @@ func (repository *stubRegistrationRepository) RegisterBinding(
 	return repository.binding, repository.err
 }
 
-func (*stubRegistrationRepository) ListDevices(context.Context, ListDevicesParams) (Page[Device], error) {
-	panic("unexpected ListDevices call")
-}
-
-func (*stubRegistrationRepository) GetDevice(context.Context, GetDeviceParams) (DeviceAggregate, error) {
-	panic("unexpected GetDevice call")
-}
-
-func (*stubRegistrationRepository) ListEntities(context.Context, ListEntitiesParams) (Page[EntityWithState], error) {
-	panic("unexpected ListEntities call")
-}
-
-func (*stubRegistrationRepository) GetEntity(context.Context, EntityID) (EntityWithState, error) {
-	panic("unexpected GetEntity call")
-}
-
-func (*stubRegistrationRepository) SetEntityEnabled(context.Context, SetEntityEnabledParams) (EntityWithState, error) {
-	panic("unexpected SetEntityEnabled call")
-}
-
-func (*stubRegistrationRepository) GetCommand(context.Context, CommandID) (CommandRecord, error) {
-	panic("unexpected GetCommand call")
-}
-
-func (*stubRegistrationRepository) ListEntityCommands(
-	context.Context,
-	ListEntityCommandsParams,
-) (Page[CommandRecord], error) {
-	panic("unexpected ListEntityCommands call")
-}
-
-func (*stubRegistrationRepository) ProjectObservation(
-	context.Context,
-	ProjectObservationParams,
-) (ProjectionResult, error) {
-	panic("unexpected ProjectObservation call")
-}
-
-func (*stubRegistrationRepository) DeleteExpiredObservationReceipts(context.Context, time.Time) error {
-	panic("unexpected DeleteExpiredObservationReceipts call")
-}
-
-func (*stubRegistrationRepository) CreateCommand(context.Context, CommandRecord) (CommandRecord, error) {
-	panic("unexpected CreateCommand call")
-}
-
-func (*stubRegistrationRepository) MarkCommandAccepted(context.Context, CommandID, time.Time) error {
-	panic("unexpected MarkCommandAccepted call")
-}
-
-func (*stubRegistrationRepository) CompleteCommand(context.Context, CommandCompletion) error {
-	panic("unexpected CompleteCommand call")
-}
-
-func (*stubRegistrationRepository) InterruptActiveCommands(context.Context, time.Time) error {
-	panic("unexpected InterruptActiveCommands call")
-}
-
-func (*stubRegistrationRepository) ClaimAdapterRuntime(
-	context.Context,
-	ClaimRuntimeWrite,
-) (RuntimeClaim, error) {
-	panic("unexpected ClaimAdapterRuntime call")
-}
-
-func (*stubRegistrationRepository) RecordAdapterHeartbeat(
-	context.Context,
-	HeartbeatWrite,
-) (HeartbeatResult, error) {
-	panic("unexpected RecordAdapterHeartbeat call")
-}
-
-func (*stubRegistrationRepository) ReleaseAdapterRuntime(context.Context, ReleaseRuntimeWrite) error {
-	panic("unexpected ReleaseAdapterRuntime call")
-}
-
-func (*stubRegistrationRepository) ExpireAdapterLeases(context.Context, ExpireLeasesWrite) error {
-	panic("unexpected ExpireAdapterLeases call")
-}
-
-func (*stubRegistrationRepository) ReportEntityAvailability(
-	context.Context,
-	AvailabilityBatchWrite,
-) (time.Time, error) {
-	panic("unexpected ReportEntityAvailability call")
-}
-
-func (*stubRegistrationRepository) ListAdapters(
-	context.Context,
-	ListAdaptersParams,
-) (Page[AdapterInstance], error) {
-	panic("unexpected ListAdapters call")
-}
-
 func (repository *stubRegistrationRepository) GetAdapter(
 	_ context.Context,
 	adapterID string,
@@ -136,30 +41,12 @@ func (repository *stubRegistrationRepository) GetAdapter(
 	}, nil
 }
 
-func (*stubRegistrationRepository) ArchiveAdapter(context.Context, ArchiveAdapterParams) error {
-	panic("unexpected ArchiveAdapter call")
-}
-
-func (*stubRegistrationRepository) ListAdapterHealthHistory(
-	context.Context,
-	ListAdapterHealthParams,
-) (Page[HealthTransition], error) {
-	panic("unexpected ListAdapterHealthHistory call")
-}
-
-func (*stubRegistrationRepository) ListEntityAvailabilityHistory(
-	context.Context,
-	ListEntityAvailabilityParams,
-) (Page[HealthTransition], error) {
-	panic("unexpected ListEntityAvailabilityHistory call")
-}
-
 func TestRegisterClassifiesOnlyDescriptorAndIdentityFailuresAsPermanent(t *testing.T) {
 	t.Parallel()
 	catalog := firstLightCatalog(t)
 	infrastructureFailure := errors.New("SQLite busy")
 	repository := &stubRegistrationRepository{err: infrastructureFailure}
-	service := NewService(repository, nil, catalog, Dependencies{})
+	service := newTestService(repository, nil, catalog, Dependencies{})
 
 	_, err := service.Register(
 		context.Background(), "homeassistant", commandTestRuntimeID, validDomainRegistration(),
@@ -186,7 +73,7 @@ func TestRegisterClassifiesOnlyDescriptorAndIdentityFailuresAsPermanent(t *testi
 func TestRegisterPrefersRuntimeFencingToDescriptorRejection(t *testing.T) {
 	t.Parallel()
 	repository := &stubRegistrationRepository{runtimeErr: ErrRuntimeFenced}
-	service := NewService(repository, nil, firstLightCatalog(t), Dependencies{})
+	service := newTestService(repository, nil, firstLightCatalog(t), Dependencies{})
 	invalid := validDomainRegistration()
 	invalid.Entities[0].TypeID = "unknown.entity/v1"
 	invalid.Entities[0].Support = EntitySupport(`{}`)
@@ -207,7 +94,7 @@ func TestRegisterPersistsNormalizedSupportWithoutMutatingInput(t *testing.T) {
 	t.Parallel()
 	catalog := firstLightCatalog(t)
 	repository := &stubRegistrationRepository{}
-	service := NewService(repository, nil, catalog, Dependencies{})
+	service := newTestService(repository, nil, catalog, Dependencies{})
 	registration := validDomainRegistration()
 	registration.Entities[0].Support = EntitySupport(" \n { \"state\" : {}, \"operations\" : { \"set\" : {} } } ")
 	original := string(registration.Entities[0].Support)
@@ -268,7 +155,7 @@ func TestRegisterRejectsInvalidEntitySetsBeforeGeneratingIDsOrCallingRepository(
 			t.Parallel()
 			repository := &stubRegistrationRepository{}
 			generatedIDs := 0
-			service := NewService(repository, nil, firstLightCatalog(t), Dependencies{
+			service := newTestService(repository, nil, firstLightCatalog(t), Dependencies{
 				NewDeviceID: func() (DeviceID, error) { generatedIDs++; return "", nil },
 				NewEntityID: func() (EntityID, error) { generatedIDs++; return "", nil },
 			})
@@ -290,7 +177,7 @@ func TestRegisterRejectsInvalidEntitySetsBeforeGeneratingIDsOrCallingRepository(
 func TestRegisterAccepts64Entities(t *testing.T) {
 	t.Parallel()
 	repository := &stubRegistrationRepository{}
-	service := NewService(repository, nil, firstLightCatalog(t), Dependencies{})
+	service := newTestService(repository, nil, firstLightCatalog(t), Dependencies{})
 	registration := validDomainRegistration()
 	registration.Entities = make([]EntityDescriptor, 64)
 	for index := range registration.Entities {

@@ -19,7 +19,7 @@ func TestRegistrationWithoutAdapterRollsBackAndRetainsHistoryAfterClaim(t *testi
 	catalog := firstLightCatalog(t)
 	repository := NewSQLiteRepository(database, catalog)
 	now := time.Date(2026, 8, 29, 11, 0, 0, 0, time.UTC)
-	service := NewService(
+	service := newTestService(
 		repository,
 		nil,
 		catalog,
@@ -84,7 +84,7 @@ func TestRegistrationIsIdempotentAndUpdatesDescriptors(t *testing.T) {
 	database := openRegistrationDatabase(t, path)
 	catalog := firstLightCatalog(t)
 	now := time.Date(2026, 8, 20, 20, 0, 0, 123, time.FixedZone("test", -5*60*60))
-	service := NewService(
+	service := newTestService(
 		NewSQLiteRepository(database, catalog),
 		nil,
 		catalog,
@@ -147,7 +147,7 @@ func TestMultiEntityRegistrationIsAdditiveAndReturnsSubmittedOrder(t *testing.T)
 	database := openRegistrationDatabase(t, filepath.Join(t.TempDir(), "hearth.db"))
 	catalog := firstLightCatalog(t)
 	now := time.Date(2026, 8, 25, 12, 0, 0, 0, time.UTC)
-	service := NewService(
+	service := newTestService(
 		NewSQLiteRepository(database, catalog),
 		nil,
 		catalog,
@@ -235,7 +235,7 @@ func TestRegistrationAllowsDeviceAggregateBeyondRequestLimit(t *testing.T) {
 	ctx := context.Background()
 	database := openRegistrationDatabase(t, filepath.Join(t.TempDir(), "hearth.db"))
 	catalog := firstLightCatalog(t)
-	service := NewService(NewSQLiteRepository(database, catalog), nil, catalog, Dependencies{})
+	service := newTestService(NewSQLiteRepository(database, catalog), nil, catalog, Dependencies{})
 	registration := validDomainRegistration()
 	registration.Entities = make([]EntityDescriptor, 64)
 	for index := range registration.Entities {
@@ -264,7 +264,7 @@ func TestRegistrationRejectsExternalIDTransfersIndependentOfOrder(t *testing.T) 
 	ctx := context.Background()
 	database := openRegistrationDatabase(t, filepath.Join(t.TempDir(), "hearth.db"))
 	catalog := firstLightCatalog(t)
-	service := NewService(NewSQLiteRepository(database, catalog), nil, catalog, Dependencies{})
+	service := newTestService(NewSQLiteRepository(database, catalog), nil, catalog, Dependencies{})
 	original := multiEntityRegistration()
 	if _, err := service.Register(
 		ctx, "homeassistant", testAdapterRuntime("homeassistant"), original,
@@ -305,7 +305,7 @@ func TestExternalIDCanTransferAcrossRegistrations(t *testing.T) {
 	ctx := context.Background()
 	database := openRegistrationDatabase(t, filepath.Join(t.TempDir(), "hearth.db"))
 	catalog := firstLightCatalog(t)
-	service := NewService(NewSQLiteRepository(database, catalog), nil, catalog, Dependencies{})
+	service := newTestService(NewSQLiteRepository(database, catalog), nil, catalog, Dependencies{})
 	original, err := service.Register(
 		ctx, "homeassistant", testAdapterRuntime("homeassistant"), validDomainRegistration(),
 	)
@@ -337,7 +337,7 @@ func TestRegistrationRollsBackWhenLaterEntityWriteFails(t *testing.T) {
 	ctx := context.Background()
 	database := openRegistrationDatabase(t, filepath.Join(t.TempDir(), "hearth.db"))
 	catalog := firstLightCatalog(t)
-	service := NewService(NewSQLiteRepository(database, catalog), nil, catalog, Dependencies{
+	service := newTestService(NewSQLiteRepository(database, catalog), nil, catalog, Dependencies{
 		NewEntityID: func() (EntityID, error) {
 			return EntityID("ent_01890f47-7a6b-7c4d-8e9f-0123456789ab"), nil
 		},
@@ -414,7 +414,7 @@ func TestReRegistrationReplacesNormalizedSupport(t *testing.T) {
 	ctx := context.Background()
 	path := filepath.Join(t.TempDir(), "hearth.db")
 	database := openRegistrationDatabase(t, path)
-	service := NewService(NewSQLiteRepository(database, catalog), nil, catalog, Dependencies{})
+	service := newTestService(NewSQLiteRepository(database, catalog), nil, catalog, Dependencies{})
 	registration := validDomainRegistration()
 	registration.Entities[0].TypeID = "test.mutable/v1"
 	registration.Entities[0].Support = EntitySupport(`{"state":{"mode":"first"},"operations":{"set":{}}}`)
@@ -450,7 +450,7 @@ func TestConcurrentRegistrationReturnsOneBinding(t *testing.T) {
 	ctx := context.Background()
 	database := openRegistrationDatabase(t, filepath.Join(t.TempDir(), "hearth.db"))
 	catalog := firstLightCatalog(t)
-	service := NewService(NewSQLiteRepository(database, catalog), nil, catalog, Dependencies{})
+	service := newTestService(NewSQLiteRepository(database, catalog), nil, catalog, Dependencies{})
 	const attempts = 8
 	results := make(chan Binding, attempts)
 	errors := make(chan error, attempts)
@@ -487,7 +487,7 @@ func TestRegistrationRejectionsAreAtomic(t *testing.T) {
 	ctx := context.Background()
 	database := openRegistrationDatabase(t, filepath.Join(t.TempDir(), "hearth.db"))
 	catalog := firstLightCatalog(t)
-	service := NewService(NewSQLiteRepository(database, catalog), nil, catalog, Dependencies{})
+	service := newTestService(NewSQLiteRepository(database, catalog), nil, catalog, Dependencies{})
 	original := validDomainRegistration()
 	if _, err := service.Register(
 		ctx, "homeassistant", testAdapterRuntime("homeassistant"), original,
@@ -517,7 +517,7 @@ func TestRegistrationRejectionsAreAtomic(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	service = NewService(NewSQLiteRepository(database, alternateCatalog), nil, alternateCatalog, Dependencies{})
+	service = newTestService(NewSQLiteRepository(database, alternateCatalog), nil, alternateCatalog, Dependencies{})
 	_, err = service.Register(
 		ctx, "homeassistant", testAdapterRuntime("homeassistant"), typeChange,
 	)
@@ -556,7 +556,7 @@ func TestRegistrationInitialEnablementAndRetryPreservesCurrentValue(t *testing.T
 	database := openRegistrationDatabase(t, filepath.Join(t.TempDir(), "hearth.db"))
 	catalog := firstLightCatalog(t)
 	now := time.Date(2026, 8, 26, 12, 0, 0, 0, time.UTC)
-	service := NewService(
+	service := newTestService(
 		NewSQLiteRepository(database, catalog),
 		nil,
 		catalog,
@@ -601,7 +601,7 @@ func TestSetEntityEnabledIsIdempotentAndOwnerScoped(t *testing.T) {
 	database := openRegistrationDatabase(t, filepath.Join(t.TempDir(), "hearth.db"))
 	catalog := firstLightCatalog(t)
 	now := time.Date(2026, 8, 26, 12, 0, 0, 0, time.UTC)
-	service := NewService(
+	service := newTestService(
 		NewSQLiteRepository(database, catalog),
 		nil,
 		catalog,
@@ -673,7 +673,7 @@ func TestRegistrationAndEnablementFenceStaleRuntimeBeforeWriting(t *testing.T) {
 	catalog := firstLightCatalog(t)
 	repository := NewSQLiteRepository(database, catalog)
 	now := time.Date(2026, 8, 20, 0, 0, 1, 0, time.UTC)
-	service := NewService(repository, nil, catalog, Dependencies{Now: func() time.Time { return now }})
+	service := newTestService(repository, nil, catalog, Dependencies{Now: func() time.Time { return now }})
 	registration := validDomainRegistration()
 	binding, err := service.Register(ctx, "simulator", testRuntimeID, registration)
 	if err != nil {
@@ -740,7 +740,7 @@ func TestCreateCommandDurablyClassifiesDisabledEntity(t *testing.T) {
 	database := openRegistrationDatabase(t, filepath.Join(t.TempDir(), "hearth.db"))
 	catalog := firstLightCatalog(t)
 	repository := NewSQLiteRepository(database, catalog)
-	service := NewService(repository, nil, catalog, Dependencies{})
+	service := newTestService(repository, nil, catalog, Dependencies{})
 	binding, err := service.Register(ctx, "simulator", testRuntimeID, validDomainRegistration())
 	if err != nil {
 		t.Fatal(err)
@@ -778,7 +778,7 @@ func TestCreateCommandDispatchesWhenHealthyEntityIsReportedUnavailable(t *testin
 	database := openRegistrationDatabase(t, filepath.Join(t.TempDir(), "hearth.db"))
 	catalog := firstLightCatalog(t)
 	repository := NewSQLiteRepository(database, catalog)
-	service := NewService(repository, nil, catalog, Dependencies{})
+	service := newTestService(repository, nil, catalog, Dependencies{})
 	binding, err := service.Register(ctx, "simulator", testRuntimeID, validDomainRegistration())
 	if err != nil {
 		t.Fatal(err)
@@ -823,7 +823,7 @@ func TestCommandCreationAndEnablementFollowCommitOrder(t *testing.T) {
 	database := openRegistrationDatabase(t, filepath.Join(t.TempDir(), "hearth.db"))
 	catalog := firstLightCatalog(t)
 	repository := NewSQLiteRepository(database, catalog)
-	service := NewService(repository, nil, catalog, Dependencies{})
+	service := newTestService(repository, nil, catalog, Dependencies{})
 	binding, err := service.Register(ctx, "simulator", testRuntimeID, validDomainRegistration())
 	if err != nil {
 		t.Fatal(err)
@@ -858,7 +858,7 @@ func TestCommandRuntimeIsNotRetargetedAfterTakeover(t *testing.T) {
 	database := openRegistrationDatabase(t, filepath.Join(t.TempDir(), "hearth.db"))
 	catalog := firstLightCatalog(t)
 	repository := NewSQLiteRepository(database, catalog)
-	service := NewService(repository, nil, catalog, Dependencies{})
+	service := newTestService(repository, nil, catalog, Dependencies{})
 	binding, err := service.Register(ctx, "simulator", testRuntimeID, validDomainRegistration())
 	if err != nil {
 		t.Fatal(err)
@@ -898,7 +898,7 @@ func TestCommandLedgerTransitionsAreMonotonicAndIdempotent(t *testing.T) {
 	database := openRegistrationDatabase(t, filepath.Join(t.TempDir(), "hearth.db"))
 	catalog := firstLightCatalog(t)
 	repository := NewSQLiteRepository(database, catalog)
-	binding, registrationErr := NewService(
+	binding, registrationErr := newTestService(
 		repository,
 		nil,
 		catalog,

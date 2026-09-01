@@ -53,7 +53,7 @@ func (service *Service) ProjectObservation(
 		Now:              service.dependencies.Now,
 		ReceiptExpiresAt: observedAt.Add(ObservationReceiptRetention),
 	}
-	result, err := service.repository.ProjectObservation(ctx, params)
+	result, err := service.stores.Observations.ProjectObservation(ctx, params)
 	if err != nil {
 		return ProjectionResult{}, err
 	}
@@ -67,7 +67,7 @@ func (service *Service) DeleteExpiredObservationReceipts(ctx context.Context, be
 	if before.IsZero() {
 		return errors.New("receipt expiry cutoff is required")
 	}
-	return service.repository.DeleteExpiredObservationReceipts(ctx, before.UTC())
+	return service.stores.Observations.DeleteExpiredObservationReceipts(ctx, before.UTC())
 }
 
 func copyObservation(observation Observation) Observation {
@@ -105,10 +105,6 @@ func copyProjectionResult(result ProjectionResult) ProjectionResult {
 func copyEntityWithState(view EntityWithState) EntityWithState {
 	cloned := view
 	cloned.Entity.Support = append(EntitySupport(nil), view.Entity.Support...)
-	if view.availabilityRuntimeID != nil {
-		runtimeID := *view.availabilityRuntimeID
-		cloned.availabilityRuntimeID = &runtimeID
-	}
 	if view.State != nil {
 		state := copyState(*view.State)
 		cloned.State = &state

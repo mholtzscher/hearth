@@ -22,11 +22,11 @@ type supervisorHealthStub struct {
 	expires []time.Time
 }
 
-func (health *supervisorHealthStub) PauseHealthEvaluation() {
+func (health *supervisorHealthStub) PauseAdapterLeaseExpiry() {
 	health.pauses++
 }
 
-func (health *supervisorHealthStub) ResumeHealthEvaluation(at time.Time) {
+func (health *supervisorHealthStub) ResumeAdapterLeaseExpiry(at time.Time) {
 	health.resumes = append(health.resumes, at)
 }
 

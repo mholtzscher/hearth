@@ -15,7 +15,7 @@ func TestObservationProjectionAdvancesStateByReceiveOrderAndDeduplicates(t *test
 	database := openRegistrationDatabase(t, path)
 	catalog := firstLightCatalog(t)
 	repository := NewSQLiteRepository(database, catalog)
-	service := NewService(repository, nil, catalog, Dependencies{})
+	service := newTestService(repository, nil, catalog, Dependencies{})
 	binding, err := service.Register(ctx, "simulator", testRuntimeID, validDomainRegistration())
 	if err != nil {
 		t.Fatal(err)
@@ -73,7 +73,7 @@ func TestObservationProjectionAdvancesStateByReceiveOrderAndDeduplicates(t *test
 		t.Fatal(closeErr)
 	}
 	database = openRegistrationDatabase(t, path)
-	restarted := NewService(NewSQLiteRepository(database, catalog), nil, catalog, Dependencies{})
+	restarted := newTestService(NewSQLiteRepository(database, catalog), nil, catalog, Dependencies{})
 	view, err = restarted.GetEntity(ctx, entityID)
 	if err != nil {
 		t.Fatal(err)
@@ -89,7 +89,7 @@ func TestObservationProjectionDurablyRejectsIdentityAndValueFailures(t *testing.
 	ctx := context.Background()
 	database := openRegistrationDatabase(t, filepath.Join(t.TempDir(), "hearth.db"))
 	catalog := firstLightCatalog(t)
-	service := NewService(NewSQLiteRepository(database, catalog), nil, catalog, Dependencies{})
+	service := newTestService(NewSQLiteRepository(database, catalog), nil, catalog, Dependencies{})
 	binding, err := service.Register(ctx, "simulator", testRuntimeID, validDomainRegistration())
 	if err != nil {
 		t.Fatal(err)
@@ -146,7 +146,7 @@ func TestDisabledEntityRejectsUnlinkedObservationAndAllowsActiveCommandRefresh(t
 	catalog := firstLightCatalog(t)
 	repository := NewSQLiteRepository(database, catalog)
 	now := time.Date(2026, 8, 26, 12, 0, 0, 0, time.UTC)
-	service := NewService(repository, nil, catalog, Dependencies{Now: func() time.Time { return now }})
+	service := newTestService(repository, nil, catalog, Dependencies{Now: func() time.Time { return now }})
 	binding, err := service.Register(ctx, "simulator", testRuntimeID, validDomainRegistration())
 	if err != nil {
 		t.Fatal(err)
@@ -220,7 +220,7 @@ func TestDisabledEntityDoesNotExemptUnknownExpiredOrTerminalCommandLinks(t *test
 	catalog := firstLightCatalog(t)
 	repository := NewSQLiteRepository(database, catalog)
 	now := time.Date(2026, 8, 26, 12, 0, 20, 0, time.UTC)
-	service := NewService(repository, nil, catalog, Dependencies{Now: func() time.Time { return now }})
+	service := newTestService(repository, nil, catalog, Dependencies{Now: func() time.Time { return now }})
 	binding, err := service.Register(ctx, "simulator", testRuntimeID, validDomainRegistration())
 	if err != nil {
 		t.Fatal(err)
@@ -277,7 +277,7 @@ func TestObservationProjectionSatisfiesOnlyMatchingActiveLinkedCommand(t *testin
 	repository := NewSQLiteRepository(database, catalog)
 	completedAt := time.Date(2026, 8, 22, 12, 0, 2, 0, time.UTC)
 	now := completedAt
-	service := NewService(repository, nil, catalog, Dependencies{Now: func() time.Time { return now }})
+	service := newTestService(repository, nil, catalog, Dependencies{Now: func() time.Time { return now }})
 	binding, err := service.Register(ctx, "simulator", testRuntimeID, validDomainRegistration())
 	if err != nil {
 		t.Fatal(err)
@@ -387,7 +387,7 @@ func TestObservationRuntimeFencingRecordsStaleReceiptAndIsolatesCommands(t *test
 	catalog := firstLightCatalog(t)
 	repository := NewSQLiteRepository(database, catalog)
 	now := time.Date(2026, 8, 20, 0, 0, 0, 0, time.UTC)
-	service := NewService(repository, nil, catalog, Dependencies{Now: func() time.Time { return now }})
+	service := newTestService(repository, nil, catalog, Dependencies{Now: func() time.Time { return now }})
 	binding, err := service.Register(ctx, "simulator", testRuntimeID, validDomainRegistration())
 	if err != nil {
 		t.Fatal(err)
@@ -482,7 +482,7 @@ func TestReceiptPruningPinsCurrentStateUntilItAdvances(t *testing.T) {
 	ctx := context.Background()
 	database := openRegistrationDatabase(t, filepath.Join(t.TempDir(), "hearth.db"))
 	catalog := firstLightCatalog(t)
-	service := NewService(NewSQLiteRepository(database, catalog), nil, catalog, Dependencies{})
+	service := newTestService(NewSQLiteRepository(database, catalog), nil, catalog, Dependencies{})
 	binding, err := service.Register(ctx, "simulator", testRuntimeID, validDomainRegistration())
 	if err != nil {
 		t.Fatal(err)

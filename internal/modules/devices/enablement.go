@@ -48,13 +48,12 @@ func (service *Service) setEntityEnabled(
 	if updatedAt.IsZero() {
 		return EntityWithState{}, errors.New("enablement clock returned zero time")
 	}
-	snapshot := service.healthEvaluationSnapshot()
-	view, err := service.repository.SetEntityEnabled(ctx, SetEntityEnabledParams{
+	view, err := service.stores.Enablement.SetEntityEnabled(ctx, SetEntityEnabledParams{
 		EntityID: entityID, Enabled: enabled, RequiredOwner: requiredOwner,
 		RequiredRuntime: requiredRuntime, UpdatedAt: updatedAt,
 	})
 	if err != nil {
 		return EntityWithState{}, err
 	}
-	return evaluateEntityAvailability(copyEntityWithState(view), snapshot, updatedAt), nil
+	return copyEntityWithState(view), nil
 }

@@ -181,10 +181,8 @@ func startHeartbeatServer(
 
 func mapHeartbeatResult(result devices.HeartbeatResult, err error) (adapterHeartbeatResponse, bool) {
 	if err == nil {
-		refresh := result.RefreshEntityAvailability
 		return adapterHeartbeatResponse{
 			Status: statusAccepted, LeaseExpiresAt: result.LeaseExpiresAt.UTC().Format(time.RFC3339Nano),
-			RefreshEntityAvailability: &refresh,
 		}, true
 	}
 	if errors.Is(err, devices.ErrRuntimeFenced) {

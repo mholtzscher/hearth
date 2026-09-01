@@ -7,17 +7,17 @@ import (
 	"time"
 )
 
-const healthEvaluationInterval = time.Second
+const leaseExpiryInterval = time.Second
 
-type healthEvaluationService interface {
-	PauseHealthEvaluation()
-	ResumeHealthEvaluation(time.Time)
+type leaseExpiryService interface {
+	PauseAdapterLeaseExpiry()
+	ResumeAdapterLeaseExpiry(time.Time)
 	ExpireAdapterLeases(context.Context, time.Time) error
 }
 
 type healthSupervisor struct {
 	readiness ReadinessChecker
-	health    healthEvaluationService
+	health    leaseExpiryService
 	logger    *slog.Logger
 	now       func() time.Time
 	ready     bool
@@ -29,7 +29,7 @@ type healthSupervisor struct {
 func startHealthSupervisor(
 	ctx context.Context,
 	readiness ReadinessChecker,
-	health healthEvaluationService,
+	health leaseExpiryService,
 	logger *slog.Logger,
 ) *healthSupervisor {
 	if logger == nil {
@@ -47,7 +47,7 @@ func startHealthSupervisor(
 
 func (supervisor *healthSupervisor) run(ctx context.Context) {
 	defer close(supervisor.done)
-	ticker := time.NewTicker(healthEvaluationInterval)
+	ticker := time.NewTicker(leaseExpiryInterval)
 	defer ticker.Stop()
 	for {
 		select {
@@ -62,13 +62,13 @@ func (supervisor *healthSupervisor) run(ctx context.Context) {
 func (supervisor *healthSupervisor) poll(ctx context.Context, now time.Time) {
 	if supervisor.readiness == nil || supervisor.readiness.Check(ctx) != nil {
 		if supervisor.ready {
-			supervisor.health.PauseHealthEvaluation()
+			supervisor.health.PauseAdapterLeaseExpiry()
 			supervisor.ready = false
 		}
 		return
 	}
 	if !supervisor.ready {
-		supervisor.health.ResumeHealthEvaluation(now)
+		supervisor.health.ResumeAdapterLeaseExpiry(now)
 		supervisor.ready = true
 	}
 	if err := supervisor.health.ExpireAdapterLeases(ctx, now); err != nil {

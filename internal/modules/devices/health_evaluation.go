@@ -18,57 +18,36 @@ const (
 
 var healthReasonCodePattern = regexp.MustCompile(`^[a-z0-9][a-z0-9_-]*(\.[a-z0-9][a-z0-9_-]*)+$`)
 
-type healthEvaluationState struct {
-	mutex         sync.RWMutex
-	paused        bool
-	recovering    bool
-	epoch         uint64
-	resumedAt     time.Time
-	recoveryUntil time.Time
-	refreshed     map[RuntimeID]struct{}
+type leaseExpiryState struct {
+	mutex      sync.RWMutex
+	paused     bool
+	graceUntil time.Time
 }
 
-type healthEvaluationSnapshot struct {
-	active        bool
-	resumedAt     time.Time
-	recoveryUntil time.Time
-	refreshed     map[RuntimeID]struct{}
+func newLeaseExpiryState() leaseExpiryState {
+	return leaseExpiryState{paused: true}
 }
 
-func newHealthEvaluationState() healthEvaluationState {
-	return healthEvaluationState{paused: true, refreshed: make(map[RuntimeID]struct{})}
+func (service *Service) PauseAdapterLeaseExpiry() {
+	service.leaseExpiry.mutex.Lock()
+	defer service.leaseExpiry.mutex.Unlock()
+	service.leaseExpiry.paused = true
 }
 
-func (service *Service) PauseHealthEvaluation() {
-	service.healthEvaluation.mutex.Lock()
-	defer service.healthEvaluation.mutex.Unlock()
-	service.healthEvaluation.paused = true
-}
-
-func (service *Service) ResumeHealthEvaluation(resumedAt time.Time) {
-	service.healthEvaluation.mutex.Lock()
-	defer service.healthEvaluation.mutex.Unlock()
-	if !service.healthEvaluation.paused {
+func (service *Service) ResumeAdapterLeaseExpiry(resumedAt time.Time) {
+	service.leaseExpiry.mutex.Lock()
+	defer service.leaseExpiry.mutex.Unlock()
+	if !service.leaseExpiry.paused {
 		return
 	}
-	resumedAt = resumedAt.UTC()
-	service.healthEvaluation.paused = false
-	service.healthEvaluation.recovering = true
-	service.healthEvaluation.epoch++
-	service.healthEvaluation.resumedAt = resumedAt
-	service.healthEvaluation.recoveryUntil = resumedAt.Add(adapterLeaseDuration)
-	service.healthEvaluation.refreshed = make(map[RuntimeID]struct{})
+	service.leaseExpiry.paused = false
+	service.leaseExpiry.graceUntil = resumedAt.UTC().Add(adapterLeaseDuration)
 }
 
 func (service *Service) ClaimAdapterRuntime(
 	ctx context.Context,
 	params ClaimAdapterRuntimeParams,
 ) (RuntimeClaim, error) {
-	unlock, err := service.beginHealthEvaluation()
-	if err != nil {
-		return RuntimeClaim{}, err
-	}
-	defer unlock()
 	if validationErr := validateClaimAdapterRuntime(params); validationErr != nil {
 		return RuntimeClaim{}, validationErr
 	}
@@ -77,11 +56,11 @@ func (service *Service) ClaimAdapterRuntime(
 		return RuntimeClaim{}, fmt.Errorf("generate Adapter runtime ID: %w", err)
 	}
 	claimedAt := service.dependencies.Now().UTC()
-	return service.repository.ClaimAdapterRuntime(ctx, ClaimRuntimeWrite{
+	return service.stores.Runtimes.ClaimAdapterRuntime(ctx, ClaimRuntimeWrite{
 		ClaimID: params.ClaimID, RuntimeID: runtimeID, AdapterID: params.AdapterID,
 		SoftwareName: params.SoftwareName, SoftwareVersion: params.SoftwareVersion,
 		ClaimedAt: claimedAt, LeaseExpiresAt: claimedAt.Add(adapterLeaseDuration),
-		LeaseGraceUntil: service.recoveryGraceUntilLocked(),
+		LeaseGraceUntil: service.leaseGraceUntil(claimedAt),
 	})
 }
 
@@ -89,42 +68,28 @@ func (service *Service) RecordAdapterHeartbeat(
 	ctx context.Context,
 	heartbeat AdapterHeartbeat,
 ) (HeartbeatResult, error) {
-	var epoch uint64
-	var needsRefresh bool
-	result, err := func() (HeartbeatResult, error) {
-		unlock, beginErr := service.beginHealthEvaluation()
-		if beginErr != nil {
-			return HeartbeatResult{}, beginErr
-		}
-		defer unlock()
-		if validateErr := validateAdapterHeartbeat(heartbeat); validateErr != nil {
-			return HeartbeatResult{}, validateErr
-		}
-		if heartbeat.Reason != nil && strings.HasPrefix(heartbeat.Reason.Code, "adapter.") {
-			softwareName, softwareErr := service.runtimeSoftwareName(ctx, heartbeat.AdapterID, heartbeat.RuntimeID)
-			if softwareErr != nil {
-				return HeartbeatResult{}, softwareErr
-			}
-			if namespaceErr := validateHealthReasonNamespace(heartbeat.Reason.Code, softwareName); namespaceErr != nil {
-				return HeartbeatResult{}, namespaceErr
-			}
-		}
-		epoch, needsRefresh = service.heartbeatRecoveryState(heartbeat.RuntimeID)
-		receivedAt := service.dependencies.Now().UTC()
-		return service.repository.RecordAdapterHeartbeat(ctx, HeartbeatWrite{
-			AdapterID: heartbeat.AdapterID, RuntimeID: heartbeat.RuntimeID,
-			ExternalStatus: heartbeat.ExternalStatus, SourceObservedAt: heartbeat.SourceObservedAt.UTC(),
-			Reason: copyHealthReason(heartbeat.Reason), ReceivedAt: receivedAt,
-			LeaseExpiresAt:  receivedAt.Add(adapterLeaseDuration),
-			LeaseGraceUntil: service.recoveryGraceUntilLocked(),
-		})
-	}()
-	if err != nil {
-		return HeartbeatResult{}, err
+	if validateErr := validateAdapterHeartbeat(heartbeat); validateErr != nil {
+		return HeartbeatResult{}, validateErr
 	}
-	service.markRecoveryHeartbeat(epoch, heartbeat.RuntimeID)
-	result.RefreshEntityAvailability = result.RefreshEntityAvailability || needsRefresh
-	return result, nil
+	if heartbeat.Reason != nil && strings.HasPrefix(heartbeat.Reason.Code, "adapter.") {
+		softwareName, softwareErr := runtimeSoftwareName(
+			ctx, service.stores.Adapters, heartbeat.AdapterID, heartbeat.RuntimeID,
+		)
+		if softwareErr != nil {
+			return HeartbeatResult{}, softwareErr
+		}
+		if namespaceErr := validateHealthReasonNamespace(heartbeat.Reason.Code, softwareName); namespaceErr != nil {
+			return HeartbeatResult{}, namespaceErr
+		}
+	}
+	receivedAt := service.dependencies.Now().UTC()
+	return service.stores.Runtimes.RecordAdapterHeartbeat(ctx, HeartbeatWrite{
+		AdapterID: heartbeat.AdapterID, RuntimeID: heartbeat.RuntimeID,
+		ExternalStatus: heartbeat.ExternalStatus, SourceObservedAt: heartbeat.SourceObservedAt.UTC(),
+		Reason: copyHealthReason(heartbeat.Reason), ReceivedAt: receivedAt,
+		LeaseExpiresAt:  receivedAt.Add(adapterLeaseDuration),
+		LeaseGraceUntil: service.leaseGraceUntil(receivedAt),
+	})
 }
 
 func (service *Service) ReleaseAdapterRuntime(
@@ -132,106 +97,46 @@ func (service *Service) ReleaseAdapterRuntime(
 	adapterID string,
 	runtimeID RuntimeID,
 ) error {
-	unlock, err := service.beginHealthEvaluation()
-	if err != nil {
-		return err
-	}
-	defer unlock()
 	if !registrationSlugPattern.MatchString(adapterID) {
 		return errors.New("adapter ID must be a subject-safe slug")
 	}
 	if _, parseErr := ParseRuntimeID(string(runtimeID)); parseErr != nil {
 		return fmt.Errorf("parse Adapter runtime ID: %w", parseErr)
 	}
-	return service.repository.ReleaseAdapterRuntime(ctx, ReleaseRuntimeWrite{
-		AdapterID: adapterID, RuntimeID: runtimeID, ReleasedAt: service.dependencies.Now().UTC(),
-		LeaseGraceUntil: service.recoveryGraceUntilLocked(),
+	releasedAt := service.dependencies.Now().UTC()
+	return service.stores.Runtimes.ReleaseAdapterRuntime(ctx, ReleaseRuntimeWrite{
+		AdapterID: adapterID, RuntimeID: runtimeID, ReleasedAt: releasedAt,
+		LeaseGraceUntil: service.leaseGraceUntil(releasedAt),
 	})
 }
 
 func (service *Service) ExpireAdapterLeases(ctx context.Context, expiresAt time.Time) error {
-	var epoch uint64
-	var completesRecovery bool
-	err := func() error {
-		unlock, beginErr := service.beginHealthEvaluation()
-		if beginErr != nil {
-			return beginErr
-		}
-		defer unlock()
-		if expiresAt.IsZero() {
-			return errors.New("adapter lease evaluation time is required")
-		}
-		expiresAt = expiresAt.UTC()
-		if service.healthEvaluation.recovering && expiresAt.Before(service.healthEvaluation.recoveryUntil) {
-			return nil
-		}
-		epoch = service.healthEvaluation.epoch
-		completesRecovery = service.healthEvaluation.recovering
-		return service.repository.ExpireAdapterLeases(ctx, ExpireLeasesWrite{ExpiresAt: expiresAt})
-	}()
-	if err != nil {
-		return err
+	if expiresAt.IsZero() {
+		return errors.New("adapter lease evaluation time is required")
 	}
-	if completesRecovery {
-		service.completeRecovery(epoch)
+	expiresAt = expiresAt.UTC()
+	if service.leaseExpiryDeferred(expiresAt) {
+		return nil
 	}
-	return nil
+	return service.stores.Runtimes.ExpireAdapterLeases(ctx, ExpireLeasesWrite{ExpiresAt: expiresAt})
 }
 
-func (service *Service) beginHealthEvaluation() (func(), error) {
-	service.healthEvaluation.mutex.RLock()
-	if service.healthEvaluation.paused {
-		service.healthEvaluation.mutex.RUnlock()
-		return nil, ErrHealthEvaluationPaused
+func (service *Service) leaseGraceUntil(at time.Time) time.Time {
+	service.leaseExpiry.mutex.RLock()
+	defer service.leaseExpiry.mutex.RUnlock()
+	if service.leaseExpiry.paused {
+		return at.UTC().Add(adapterLeaseDuration)
 	}
-	return service.healthEvaluation.mutex.RUnlock, nil
+	if at.Before(service.leaseExpiry.graceUntil) {
+		return service.leaseExpiry.graceUntil
+	}
+	return time.Time{}
 }
 
-// recoveryGraceUntilLocked returns the active recovery boundary while beginHealthEvaluation holds the read lock.
-func (service *Service) recoveryGraceUntilLocked() time.Time {
-	if !service.healthEvaluation.recovering {
-		return time.Time{}
-	}
-	return service.healthEvaluation.recoveryUntil
-}
-
-func (service *Service) heartbeatRecoveryState(runtimeID RuntimeID) (uint64, bool) {
-	_, refreshed := service.healthEvaluation.refreshed[runtimeID]
-	return service.healthEvaluation.epoch, service.healthEvaluation.recovering && !refreshed
-}
-
-func (service *Service) markRecoveryHeartbeat(epoch uint64, runtimeID RuntimeID) {
-	service.healthEvaluation.mutex.Lock()
-	defer service.healthEvaluation.mutex.Unlock()
-	if service.healthEvaluation.paused || !service.healthEvaluation.recovering ||
-		service.healthEvaluation.epoch != epoch {
-		return
-	}
-	service.healthEvaluation.refreshed[runtimeID] = struct{}{}
-}
-
-func (service *Service) completeRecovery(epoch uint64) {
-	service.healthEvaluation.mutex.Lock()
-	defer service.healthEvaluation.mutex.Unlock()
-	if service.healthEvaluation.epoch != epoch {
-		return
-	}
-	service.healthEvaluation.recovering = false
-	service.healthEvaluation.refreshed = make(map[RuntimeID]struct{})
-}
-
-func (service *Service) healthEvaluationSnapshot() healthEvaluationSnapshot {
-	service.healthEvaluation.mutex.RLock()
-	defer service.healthEvaluation.mutex.RUnlock()
-	snapshot := healthEvaluationSnapshot{
-		active:    !service.healthEvaluation.paused && service.healthEvaluation.recovering,
-		resumedAt: service.healthEvaluation.resumedAt, recoveryUntil: service.healthEvaluation.recoveryUntil,
-		refreshed: make(map[RuntimeID]struct{}, len(service.healthEvaluation.refreshed)),
-	}
-	for runtimeID := range service.healthEvaluation.refreshed {
-		snapshot.refreshed[runtimeID] = struct{}{}
-	}
-	return snapshot
+func (service *Service) leaseExpiryDeferred(at time.Time) bool {
+	service.leaseExpiry.mutex.RLock()
+	defer service.leaseExpiry.mutex.RUnlock()
+	return service.leaseExpiry.paused || at.Before(service.leaseExpiry.graceUntil)
 }
 
 func validateClaimAdapterRuntime(params ClaimAdapterRuntimeParams) error {
@@ -308,12 +213,13 @@ func validateHealthReasonNamespace(code, softwareName string) error {
 	return nil
 }
 
-func (service *Service) runtimeSoftwareName(
+func runtimeSoftwareName(
 	ctx context.Context,
+	repository AdapterReader,
 	adapterID string,
 	runtimeID RuntimeID,
 ) (string, error) {
-	instance, err := service.repository.GetAdapter(ctx, adapterID)
+	instance, err := repository.GetAdapter(ctx, adapterID)
 	if err != nil {
 		return "", err
 	}

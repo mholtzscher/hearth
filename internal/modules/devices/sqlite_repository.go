@@ -8,31 +8,49 @@ import (
 	"fmt"
 	"time"
 
-	commandsqlc "github.com/mholtzscher/hearth/internal/platform/db/sqlc/commands"
-	healthsqlc "github.com/mholtzscher/hearth/internal/platform/db/sqlc/health"
-	registrationsqlc "github.com/mholtzscher/hearth/internal/platform/db/sqlc/registration"
-	statesqlc "github.com/mholtzscher/hearth/internal/platform/db/sqlc/state"
+	"github.com/mholtzscher/hearth/internal/modules/devices/dbsqlc"
 )
 
 var (
-	_ Repository    = (*SQLiteRepository)(nil)
-	_ CommandLedger = (*SQLiteRepository)(nil)
+	_ RegistrationRepository = (*SQLiteRepository)(nil)
+	_ RuntimeRepository      = (*SQLiteRepository)(nil)
+	_ AdapterRepository      = (*SQLiteRepository)(nil)
+	_ AvailabilityRepository = (*SQLiteRepository)(nil)
+	_ ReadRepository         = (*SQLiteRepository)(nil)
+	_ EnablementRepository   = (*SQLiteRepository)(nil)
+	_ CommandLedger          = (*SQLiteRepository)(nil)
+	_ ObservationRepository  = (*SQLiteRepository)(nil)
 )
 
 type SQLiteRepository struct {
 	database *sql.DB
+	queries  *dbsqlc.Queries
 	catalog  *TypeCatalog
 }
 
 type entityReconciliation struct {
 	params   RegisterEntityParams
-	mapping  registrationsqlc.GetEntityMappingRow
+	mapping  dbsqlc.GetEntityMappingRow
 	entityID EntityID
 	exists   bool
 }
 
 func NewSQLiteRepository(database *sql.DB, catalog *TypeCatalog) *SQLiteRepository {
-	return &SQLiteRepository{database: database, catalog: catalog}
+	return &SQLiteRepository{database: database, queries: dbsqlc.New(database), catalog: catalog}
+}
+
+// SQLiteStores exposes one SQLite repository through each Service capability.
+func SQLiteStores(repository *SQLiteRepository) Stores {
+	return Stores{
+		Registration: repository,
+		Runtimes:     repository,
+		Adapters:     repository,
+		Availability: repository,
+		Reads:        repository,
+		Enablement:   repository,
+		Commands:     repository,
+		Observations: repository,
+	}
 }
 
 func (repository *SQLiteRepository) RegisterBinding(
@@ -44,7 +62,7 @@ func (repository *SQLiteRepository) RegisterBinding(
 		return Binding{}, fmt.Errorf("begin registration transaction: %w", err)
 	}
 	defer func() { _ = tx.Rollback() }()
-	queries := registrationsqlc.New(tx)
+	queries := repository.queries.WithTx(tx)
 	if runtimeErr := checkRegistrationRuntime(ctx, queries, params.AdapterID, params.RuntimeID); runtimeErr != nil {
 		return Binding{}, runtimeErr
 	}
@@ -70,11 +88,11 @@ func (repository *SQLiteRepository) RegisterBinding(
 
 func checkRegistrationRuntime(
 	ctx context.Context,
-	queries *registrationsqlc.Queries,
+	queries *dbsqlc.Queries,
 	adapterID string,
 	runtimeID RuntimeID,
 ) error {
-	_, err := queries.GetActiveAdapterRuntime(ctx, registrationsqlc.GetActiveAdapterRuntimeParams{
+	_, err := queries.GetActiveAdapterRuntime(ctx, dbsqlc.GetActiveAdapterRuntimeParams{
 		AdapterID: adapterID, RuntimeID: string(runtimeID),
 	})
 	if errors.Is(err, sql.ErrNoRows) {
@@ -88,11 +106,11 @@ func checkRegistrationRuntime(
 
 func reconcileRegistrationDevice(
 	ctx context.Context,
-	queries *registrationsqlc.Queries,
+	queries *dbsqlc.Queries,
 	params RegisterBindingParams,
 	updatedAt string,
 ) (DeviceID, error) {
-	binding, err := queries.GetBinding(ctx, registrationsqlc.GetBindingParams{
+	binding, err := queries.GetBinding(ctx, dbsqlc.GetBindingParams{
 		AdapterID: params.AdapterID, BindingKey: params.BindingKey,
 	})
 	if errors.Is(err, sql.ErrNoRows) {
@@ -107,12 +125,12 @@ func reconcileRegistrationDevice(
 	); availabilityErr != nil {
 		return "", availabilityErr
 	}
-	if updateErr := queries.UpdateDeviceDescriptor(ctx, registrationsqlc.UpdateDeviceDescriptorParams{
+	if updateErr := queries.UpdateDeviceDescriptor(ctx, dbsqlc.UpdateDeviceDescriptorParams{
 		Kind: string(params.Device.Kind), Name: params.Device.Name, UpdatedAt: updatedAt, ID: binding.DeviceID,
 	}); updateErr != nil {
 		return "", fmt.Errorf("update device descriptor: %w", updateErr)
 	}
-	if updateErr := queries.UpdateBindingExternalID(ctx, registrationsqlc.UpdateBindingExternalIDParams{
+	if updateErr := queries.UpdateBindingExternalID(ctx, dbsqlc.UpdateBindingExternalIDParams{
 		ExternalDeviceID: nullableString(params.Device.ExternalID), UpdatedAt: updatedAt,
 		AdapterID: params.AdapterID, BindingKey: params.BindingKey,
 	}); updateErr != nil {
@@ -123,7 +141,7 @@ func reconcileRegistrationDevice(
 
 func createRegistrationDevice(
 	ctx context.Context,
-	queries *registrationsqlc.Queries,
+	queries *dbsqlc.Queries,
 	params RegisterBindingParams,
 	updatedAt string,
 ) (DeviceID, error) {
@@ -133,13 +151,13 @@ func createRegistrationDevice(
 	); err != nil {
 		return "", err
 	}
-	if err := queries.CreateDevice(ctx, registrationsqlc.CreateDeviceParams{
+	if err := queries.CreateDevice(ctx, dbsqlc.CreateDeviceParams{
 		ID: string(deviceID), Kind: string(params.Device.Kind), Name: params.Device.Name,
 		CreatedAt: updatedAt, UpdatedAt: updatedAt,
 	}); err != nil {
 		return "", fmt.Errorf("create device: %w", err)
 	}
-	if err := queries.CreateBinding(ctx, registrationsqlc.CreateBindingParams{
+	if err := queries.CreateBinding(ctx, dbsqlc.CreateBindingParams{
 		AdapterID: params.AdapterID, BindingKey: params.BindingKey, DeviceID: string(deviceID),
 		ExternalDeviceID: nullableString(params.Device.ExternalID), CreatedAt: updatedAt, UpdatedAt: updatedAt,
 	}); err != nil {
@@ -150,7 +168,7 @@ func createRegistrationDevice(
 
 func prepareEntityReconciliations(
 	ctx context.Context,
-	queries *registrationsqlc.Queries,
+	queries *dbsqlc.Queries,
 	params RegisterBindingParams,
 	deviceID DeviceID,
 ) ([]entityReconciliation, error) {
@@ -167,13 +185,13 @@ func prepareEntityReconciliations(
 
 func prepareEntityReconciliation(
 	ctx context.Context,
-	queries *registrationsqlc.Queries,
+	queries *dbsqlc.Queries,
 	params RegisterBindingParams,
 	entity RegisterEntityParams,
 	deviceID DeviceID,
 ) (entityReconciliation, error) {
 	reconciliation := entityReconciliation{params: entity, entityID: entity.EntityID}
-	mapping, err := queries.GetEntityMapping(ctx, registrationsqlc.GetEntityMappingParams{
+	mapping, err := queries.GetEntityMapping(ctx, dbsqlc.GetEntityMappingParams{
 		AdapterID: params.AdapterID, BindingKey: params.BindingKey, EntityKey: entity.Entity.Key,
 	})
 	switch {
@@ -192,7 +210,7 @@ func prepareEntityReconciliation(
 		return entityReconciliation{}, fmt.Errorf("get entity mapping: %w", err)
 	}
 
-	owner, ownerErr := queries.GetEntityMappingByExternalID(ctx, registrationsqlc.GetEntityMappingByExternalIDParams{
+	owner, ownerErr := queries.GetEntityMappingByExternalID(ctx, dbsqlc.GetEntityMappingByExternalIDParams{
 		AdapterID: params.AdapterID, ExternalEntityID: entity.Entity.ExternalID,
 	})
 	if ownerErr == nil && owner.EntityID != string(reconciliation.entityID) {
@@ -206,7 +224,7 @@ func prepareEntityReconciliation(
 
 func applyEntityReconciliations(
 	ctx context.Context,
-	queries *registrationsqlc.Queries,
+	queries *dbsqlc.Queries,
 	params RegisterBindingParams,
 	deviceID DeviceID,
 	updatedAt string,
@@ -225,7 +243,7 @@ func applyEntityReconciliations(
 
 func applyEntityReconciliation(
 	ctx context.Context,
-	queries *registrationsqlc.Queries,
+	queries *dbsqlc.Queries,
 	params RegisterBindingParams,
 	deviceID DeviceID,
 	updatedAt string,
@@ -233,13 +251,13 @@ func applyEntityReconciliation(
 ) (EntityBinding, error) {
 	entity := reconciliation.params.Entity
 	if reconciliation.exists {
-		if err := queries.UpdateEntityDescriptor(ctx, registrationsqlc.UpdateEntityDescriptorParams{
+		if err := queries.UpdateEntityDescriptor(ctx, dbsqlc.UpdateEntityDescriptorParams{
 			Name: entity.Name, SupportJson: string(entity.Support), UpdatedAt: updatedAt,
 			ID: reconciliation.mapping.EntityID,
 		}); err != nil {
 			return EntityBinding{}, fmt.Errorf("update entity descriptor: %w", err)
 		}
-		if err := queries.UpdateEntityMappingExternalID(ctx, registrationsqlc.UpdateEntityMappingExternalIDParams{
+		if err := queries.UpdateEntityMappingExternalID(ctx, dbsqlc.UpdateEntityMappingExternalIDParams{
 			ExternalEntityID: entity.ExternalID, UpdatedAt: updatedAt,
 			AdapterID: params.AdapterID, BindingKey: params.BindingKey, EntityKey: entity.Key,
 		}); err != nil {
@@ -257,21 +275,21 @@ func applyEntityReconciliation(
 
 func createRegistrationEntity(
 	ctx context.Context,
-	queries *registrationsqlc.Queries,
+	queries *dbsqlc.Queries,
 	params RegisterBindingParams,
 	deviceID DeviceID,
 	updatedAt string,
 	reconciliation entityReconciliation,
 ) error {
 	entity := reconciliation.params.Entity
-	if err := queries.CreateEntity(ctx, registrationsqlc.CreateEntityParams{
+	if err := queries.CreateEntity(ctx, dbsqlc.CreateEntityParams{
 		ID: string(reconciliation.entityID), DeviceID: string(deviceID), Name: entity.Name,
 		TypeID: string(entity.TypeID), SupportJson: string(entity.Support),
 		Enabled: boolToInt64(reconciliationEnabled(reconciliation)), CreatedAt: updatedAt, UpdatedAt: updatedAt,
 	}); err != nil {
 		return fmt.Errorf("create entity: %w", err)
 	}
-	if err := queries.CreateEntityMapping(ctx, registrationsqlc.CreateEntityMappingParams{
+	if err := queries.CreateEntityMapping(ctx, dbsqlc.CreateEntityMappingParams{
 		AdapterID: params.AdapterID, BindingKey: params.BindingKey, EntityKey: entity.Key,
 		EntityID: string(reconciliation.entityID), ExternalEntityID: entity.ExternalID,
 		CreatedAt: updatedAt, UpdatedAt: updatedAt,
@@ -285,14 +303,14 @@ func createRegistrationEntity(
 
 func createEntityAvailabilityBaseline(
 	ctx context.Context,
-	queries *registrationsqlc.Queries,
+	queries *dbsqlc.Queries,
 	adapterID string,
 	entityID EntityID,
 	observedAt string,
 ) error {
 	adapter, err := queries.GetAdapterAvailabilityBaseline(
 		ctx,
-		registrationsqlc.GetAdapterAvailabilityBaselineParams{AdapterID: adapterID},
+		dbsqlc.GetAdapterAvailabilityBaselineParams{AdapterID: adapterID},
 	)
 	if errors.Is(err, sql.ErrNoRows) {
 		return ErrRuntimeFenced
@@ -317,7 +335,7 @@ func createEntityAvailabilityBaseline(
 	}
 	receiveOrder, err := queries.InsertEntityAvailabilityBaseline(
 		ctx,
-		registrationsqlc.InsertEntityAvailabilityBaselineParams{
+		dbsqlc.InsertEntityAvailabilityBaselineParams{
 			AdapterID: adapterID, EntityID: nullableText(string(entityID)),
 			RuntimeID: adapter.ActiveRuntimeID, Status: status, Source: source,
 			ReasonCode: reasonCode, ReasonDetail: reasonDetail, ObservedAt: observedAt,
@@ -328,7 +346,7 @@ func createEntityAvailabilityBaseline(
 	}
 	intervalErr := queries.CreateEntityOwnershipInterval(
 		ctx,
-		registrationsqlc.CreateEntityOwnershipIntervalParams{
+		dbsqlc.CreateEntityOwnershipIntervalParams{
 			EntityID: string(entityID), AdapterID: adapterID, StartingReceiveOrder: receiveOrder,
 		},
 	)
@@ -350,7 +368,7 @@ func reconciliationEnabled(reconciliation entityReconciliation) bool {
 
 func ensureExternalDeviceAvailable(
 	ctx context.Context,
-	queries *registrationsqlc.Queries,
+	queries *dbsqlc.Queries,
 	adapterID string,
 	externalID *string,
 	deviceID DeviceID,
@@ -358,7 +376,7 @@ func ensureExternalDeviceAvailable(
 	if externalID == nil {
 		return nil
 	}
-	binding, err := queries.GetBindingByExternalDeviceID(ctx, registrationsqlc.GetBindingByExternalDeviceIDParams{
+	binding, err := queries.GetBindingByExternalDeviceID(ctx, dbsqlc.GetBindingByExternalDeviceIDParams{
 		AdapterID: adapterID, ExternalDeviceID: sql.NullString{String: *externalID, Valid: true},
 	})
 	if errors.Is(err, sql.ErrNoRows) {
@@ -399,12 +417,12 @@ func (repository *SQLiteRepository) SetEntityEnabled(
 		return EntityWithState{}, fmt.Errorf("begin entity enablement update: %w", err)
 	}
 	defer func() { _ = tx.Rollback() }()
-	queries := statesqlc.New(tx)
+	queries := repository.queries.WithTx(tx)
 	if params.RequiredRuntime != nil {
 		if params.RequiredOwner == nil {
 			return EntityWithState{}, errors.New("runtime-scoped enablement requires an Adapter owner")
 		}
-		_, runtimeErr := queries.GetActiveAdapterRuntime(ctx, statesqlc.GetActiveAdapterRuntimeParams{
+		_, runtimeErr := queries.GetActiveAdapterRuntime(ctx, dbsqlc.GetActiveAdapterRuntimeParams{
 			AdapterID: *params.RequiredOwner, RuntimeID: string(*params.RequiredRuntime),
 		})
 		if errors.Is(runtimeErr, sql.ErrNoRows) {
@@ -414,7 +432,7 @@ func (repository *SQLiteRepository) SetEntityEnabled(
 			return EntityWithState{}, fmt.Errorf("validate entity enablement runtime: %w", runtimeErr)
 		}
 	}
-	row, err := queries.GetEntity(ctx, statesqlc.GetEntityParams{ID: string(params.EntityID)})
+	row, err := queries.GetEntity(ctx, dbsqlc.GetEntityParams{ID: string(params.EntityID)})
 	if errors.Is(err, sql.ErrNoRows) {
 		return EntityWithState{}, ErrEntityNotFound
 	}
@@ -425,33 +443,18 @@ func (repository *SQLiteRepository) SetEntityEnabled(
 		return EntityWithState{}, ErrEntityWrongAdapter
 	}
 	if row.Enabled != boolToInt64(params.Enabled) {
-		if _, updateErr := queries.UpdateEntityEnablement(ctx, statesqlc.UpdateEntityEnablementParams{
+		if _, updateErr := queries.UpdateEntityEnablement(ctx, dbsqlc.UpdateEntityEnablementParams{
 			Enabled: boolToInt64(params.Enabled), UpdatedAt: formatTime(params.UpdatedAt),
 			ID: string(params.EntityID),
 		}); updateErr != nil {
 			return EntityWithState{}, fmt.Errorf("update entity enablement: %w", updateErr)
 		}
-		row, err = queries.GetEntity(ctx, statesqlc.GetEntityParams{ID: string(params.EntityID)})
+		row, err = queries.GetEntity(ctx, dbsqlc.GetEntityParams{ID: string(params.EntityID)})
 		if err != nil {
 			return EntityWithState{}, fmt.Errorf("get updated entity: %w", err)
 		}
 	}
-	view, err := entityWithStateFromValues(
-		row.ID, row.DeviceID, row.AdapterID, row.Name, row.TypeID, row.SupportJson, row.Enabled,
-		row.ObservationID, row.ValueJson, row.AdapterReceivedAt, row.SourceUpdatedAt,
-		row.ObservedAt, row.ReceiveOrder,
-		sqliteEntityAvailability{
-			entityCreatedAt: row.EntityCreatedAt, runtimeID: row.AvailabilityRuntimeID,
-			adapterStatus: row.AdapterHealthStatus, adapterReasonCode: row.AdapterHealthReasonCode,
-			adapterReasonDetail: row.AdapterHealthReasonDetail, adapterSince: row.AdapterHealthSince,
-			adapterEvidenceAt: row.AdapterHealthEvidenceAt, reportedStatus: row.ReportedAvailabilityStatus,
-			reportedReasonCode:   row.ReportedAvailabilityReasonCode,
-			reportedReasonDetail: row.ReportedAvailabilityReasonDetail,
-			reportedSourceAt:     row.ReportedAvailabilitySourceObservedAt,
-			reportedEvidenceAt:   row.ReportedAvailabilityEvidenceAt,
-			reportedSince:        row.ReportedAvailabilitySince,
-		},
-	)
+	view, err := entityWithStateFromRow(row)
 	if err != nil {
 		return EntityWithState{}, fmt.Errorf("map updated entity: %w", err)
 	}
@@ -472,7 +475,7 @@ func (repository *SQLiteRepository) CreateCommand(ctx context.Context, command C
 		return CommandRecord{}, fmt.Errorf("begin command creation: %w", err)
 	}
 	defer func() { _ = tx.Rollback() }()
-	entity, err := statesqlc.New(tx).GetEntity(ctx, statesqlc.GetEntityParams{ID: string(command.EntityID)})
+	entity, err := repository.queries.WithTx(tx).GetEntity(ctx, dbsqlc.GetEntityParams{ID: string(command.EntityID)})
 	if errors.Is(err, sql.ErrNoRows) {
 		return CommandRecord{}, ErrEntityNotFound
 	}
@@ -487,9 +490,9 @@ func (repository *SQLiteRepository) CreateCommand(ctx context.Context, command C
 		command.CompletedAt = &completedAt
 		command.FailureCode = &failureCode
 	} else {
-		instance, healthErr := healthsqlc.New(tx).GetAdapterInstance(
+		instance, healthErr := repository.queries.WithTx(tx).GetAdapterInstance(
 			ctx,
-			healthsqlc.GetAdapterInstanceParams{AdapterID: entity.AdapterID},
+			dbsqlc.GetAdapterInstanceParams{AdapterID: entity.AdapterID},
 		)
 		if healthErr != nil && !errors.Is(healthErr, sql.ErrNoRows) {
 			return CommandRecord{}, fmt.Errorf("get Adapter health for command: %w", healthErr)
@@ -506,8 +509,8 @@ func (repository *SQLiteRepository) CreateCommand(ctx context.Context, command C
 			command.RuntimeID = &runtimeID
 		}
 	}
-	queries := commandsqlc.New(tx)
-	if createErr := queries.CreateCommand(ctx, commandsqlc.CreateCommandParams{
+	queries := repository.queries.WithTx(tx)
+	if createErr := queries.CreateCommand(ctx, dbsqlc.CreateCommandParams{
 		ID: string(command.ID), EntityID: string(command.EntityID), AdapterID: command.AdapterID,
 		RuntimeID: nullableRuntimeID(command.RuntimeID), Operation: string(command.OperationName),
 		ParametersJson: string(command.Parameters),
@@ -524,7 +527,7 @@ func (repository *SQLiteRepository) CreateCommand(ctx context.Context, command C
 }
 
 func (repository *SQLiteRepository) GetCommand(ctx context.Context, id CommandID) (CommandRecord, error) {
-	row, err := commandsqlc.New(repository.database).GetCommand(ctx, commandsqlc.GetCommandParams{ID: string(id)})
+	row, err := repository.queries.GetCommand(ctx, dbsqlc.GetCommandParams{ID: string(id)})
 	if errors.Is(err, sql.ErrNoRows) {
 		return CommandRecord{}, ErrCommandNotFound
 	}
@@ -535,8 +538,8 @@ func (repository *SQLiteRepository) GetCommand(ctx context.Context, id CommandID
 }
 
 func (repository *SQLiteRepository) MarkCommandAccepted(ctx context.Context, id CommandID, acceptedAt time.Time) error {
-	queries := commandsqlc.New(repository.database)
-	rows, err := queries.MarkCommandAccepted(ctx, commandsqlc.MarkCommandAcceptedParams{
+	queries := repository.queries
+	rows, err := queries.MarkCommandAccepted(ctx, dbsqlc.MarkCommandAcceptedParams{
 		AcceptedAt: sql.NullString{String: formatTime(acceptedAt), Valid: true}, ID: string(id),
 	})
 	if err != nil {
@@ -560,8 +563,8 @@ func (repository *SQLiteRepository) CompleteCommand(ctx context.Context, complet
 		return fmt.Errorf("begin command completion: %w", err)
 	}
 	defer func() { _ = tx.Rollback() }()
-	queries := commandsqlc.New(tx)
-	row, err := queries.GetCommand(ctx, commandsqlc.GetCommandParams{ID: string(completion.ID)})
+	queries := repository.queries.WithTx(tx)
+	row, err := queries.GetCommand(ctx, dbsqlc.GetCommandParams{ID: string(completion.ID)})
 	if errors.Is(err, sql.ErrNoRows) {
 		return ErrCommandNotFound
 	}
@@ -578,7 +581,7 @@ func (repository *SQLiteRepository) CompleteCommand(ctx context.Context, complet
 		}
 		return ErrCommandTerminal
 	}
-	rows, err := queries.CompleteCommand(ctx, commandsqlc.CompleteCommandParams{
+	rows, err := queries.CompleteCommand(ctx, dbsqlc.CompleteCommandParams{
 		Status:      string(completion.Status),
 		CompletedAt: sql.NullString{String: formatTime(completion.CompletedAt), Valid: true},
 		FailureCode: sql.NullString{String: string(completion.FailureCode), Valid: true},
@@ -597,8 +600,8 @@ func (repository *SQLiteRepository) CompleteCommand(ctx context.Context, complet
 }
 
 func (repository *SQLiteRepository) InterruptActiveCommands(ctx context.Context, completedAt time.Time) error {
-	_, err := commandsqlc.New(repository.database).
-		InterruptActiveCommands(ctx, commandsqlc.InterruptActiveCommandsParams{
+	_, err := repository.queries.
+		InterruptActiveCommands(ctx, dbsqlc.InterruptActiveCommandsParams{
 			CompletedAt: sql.NullString{String: formatTime(completedAt), Valid: true},
 		})
 	if err != nil {
@@ -607,7 +610,7 @@ func (repository *SQLiteRepository) InterruptActiveCommands(ctx context.Context,
 	return nil
 }
 
-func commandFromRow(row commandsqlc.Command) (CommandRecord, error) {
+func commandFromRow(row dbsqlc.Command) (CommandRecord, error) {
 	requestedAt, err := parseTime(row.RequestedAt)
 	if err != nil {
 		return CommandRecord{}, fmt.Errorf("parse command requested_at: %w", err)

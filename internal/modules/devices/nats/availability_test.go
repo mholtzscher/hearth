@@ -103,7 +103,4 @@ func TestEntityAvailabilityServerMapsOnlyContractRejections(t *testing.T) {
 	if _, handled := mapAvailabilityResult(time.Time{}, 1, errors.New("SQLite unavailable")); handled {
 		t.Fatal("infrastructure failure unexpectedly produced a schema reply")
 	}
-	if _, handled := mapAvailabilityResult(time.Time{}, 1, devices.ErrHealthEvaluationPaused); handled {
-		t.Fatal("paused evaluation unexpectedly produced a schema reply")
-	}
 }

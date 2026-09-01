@@ -620,6 +620,11 @@ func TestAdapterReconnectsAndAcquiresANewSnapshot(t *testing.T) {
 		health[2].Status != adapter.HealthHealthy {
 		t.Fatalf("reconnect health reports = %#v", health)
 	}
+	availability := session.availability()
+	if len(availability) != 2 || availability[0].Status != adapter.AvailabilityAvailable ||
+		availability[1].Status != adapter.AvailabilityAvailable {
+		t.Fatalf("reconnect availability reports = %#v", availability)
+	}
 }
 
 func newTestAdapter(t *testing.T, session Session, upstreamURL string) *Adapter {

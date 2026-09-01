@@ -429,18 +429,75 @@ func TestRegisterAcceptedRejectedAndLocalValidation(t *testing.T) {
 	}
 }
 
-func TestRegisterNoResponderRemainsRequestError(t *testing.T) {
+func TestRegisterRetriesOneEnvelope(t *testing.T) {
+	t.Parallel()
+	server := startServer(t, -1, t.TempDir())
+	core := connectNATS(t, server.ClientURL())
+	validator := compileValidator(t)
+	requestIDs := make(chan string, 2)
+	var attempts atomic.Int32
+	_, err := core.Subscribe(natswire.RegistrationWildcard(), func(message *natsgo.Msg) {
+		request, decodeErr := natswire.Decode[Registration](
+			validator, contractsv1.RegistrationRequestSchemaID, message.Data,
+		)
+		if decodeErr != nil {
+			t.Errorf("decode registration request: %v", decodeErr)
+			return
+		}
+		requestIDs <- request.ID
+		if attempts.Add(1) == 1 {
+			return
+		}
+		causationID := request.ID
+		response := natswire.Envelope[RegistrationResponse]{
+			ID: mustID(t, "rep"), Schema: contractsv1.RegistrationResponseSchemaID,
+			EmittedAt: nowString(), CorrelationID: request.CorrelationID, CausationID: &causationID,
+			Data: RegistrationResponse{Status: statusAccepted, Binding: &Binding{
+				BindingKey: request.Data.BindingKey,
+				DeviceID:   "dev_01890f47-7a6b-7c4d-8e9f-0123456789ab",
+				Entities:   []EntityBinding{{Key: "power", EntityID: testEntityID, Enabled: true}},
+			}},
+		}
+		payload, encodeErr := natswire.Encode(
+			validator, contractsv1.RegistrationResponseSchemaID, response,
+		)
+		if encodeErr != nil {
+			t.Errorf("encode registration response: %v", encodeErr)
+			return
+		}
+		if respondErr := message.Respond(payload); respondErr != nil {
+			t.Errorf("respond to registration: %v", respondErr)
+		}
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if flushErr := core.Flush(); flushErr != nil {
+		t.Fatal(flushErr)
+	}
+
+	session := connectSession(t, server.ClientURL())
+	if _, registerErr := session.Register(
+		testContext(t), validRegistration("office-light"),
+	); registerErr != nil {
+		t.Fatal(registerErr)
+	}
+	firstID := <-requestIDs
+	secondID := <-requestIDs
+	if firstID != secondID {
+		t.Fatalf("registration retry IDs = %q and %q", firstID, secondID)
+	}
+}
+
+func TestRegisterRetriesNoResponderUntilContextEnds(t *testing.T) {
 	t.Parallel()
 	server := startServer(t, -1, t.TempDir())
 	session := connectSession(t, server.ClientURL())
-	_, err := session.Register(testContext(t), validRegistration("office-light"))
-	if !errors.Is(err, natsgo.ErrNoResponders) {
-		t.Fatalf("registration error = %v, want no responders", err)
-	}
-	var rejected *RegistrationRejectedError
-	var validation *ValidationError
-	if errors.As(err, &rejected) || errors.As(err, &validation) {
-		t.Fatalf("transient request error was classified as permanent: %v", err)
+	ctx, cancel := context.WithTimeout(context.Background(), 250*time.Millisecond)
+	defer cancel()
+	_, err := session.Register(ctx, validRegistration("office-light"))
+	if !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("registration error = %v, want context deadline", err)
 	}
 }
 
@@ -1148,12 +1205,10 @@ func respondAcceptedHeartbeat(
 	request natswire.Envelope[adapterHeartbeatRequest],
 ) {
 	t.Helper()
-	refresh := false
 	respondTestLifecycle(t, validator, message, request.ID, request.CorrelationID,
 		contractsv1.AdapterHeartbeatResponseSchemaID, adapterHeartbeatResponse{
-			Status:                    statusAccepted,
-			LeaseExpiresAt:            time.Now().UTC().Add(15 * time.Second).Format(time.RFC3339Nano),
-			RefreshEntityAvailability: &refresh,
+			Status:         statusAccepted,
+			LeaseExpiresAt: time.Now().UTC().Add(15 * time.Second).Format(time.RFC3339Nano),
 		})
 }
 
@@ -1235,11 +1290,9 @@ func startTestLifecycleResponder(t *testing.T, url string) {
 		t.Fatal(err)
 	}
 	_, err = connection.Subscribe(natswire.AdapterHeartbeatWildcard(), func(message *natsgo.Msg) {
-		refresh := false
 		respond(message, contractsv1.AdapterHeartbeatRequestSchemaID, contractsv1.AdapterHeartbeatResponseSchemaID,
 			adapterHeartbeatResponse{
 				Status: statusAccepted, LeaseExpiresAt: time.Now().UTC().Add(15 * time.Second).Format(time.RFC3339Nano),
-				RefreshEntityAvailability: &refresh,
 			})
 	})
 	if err != nil {

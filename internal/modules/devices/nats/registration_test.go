@@ -198,8 +198,8 @@ func TestStaleRuntimeInvalidRegistrationFencesSDKSession(t *testing.T) {
 		t.Fatal(err)
 	}
 	repository := devices.NewSQLiteRepository(database, catalog)
-	service := devices.NewService(repository, nil, catalog, devices.Dependencies{})
-	service.ResumeHealthEvaluation(time.Now().UTC())
+	service := devices.NewService(devices.SQLiteStores(repository), nil, catalog, devices.Dependencies{})
+	service.ResumeAdapterLeaseExpiry(time.Now().UTC())
 	sessions, err := StartSessionServer(connection, validator, service, service, slog.New(slog.DiscardHandler))
 	if err != nil {
 		t.Fatal(err)

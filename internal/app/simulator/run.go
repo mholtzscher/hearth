@@ -5,16 +5,10 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"time"
 
 	simulatoradapter "github.com/mholtzscher/hearth/internal/adapters/simulator"
 	"github.com/mholtzscher/hearth/sdk/adapter"
 	sdkpowerv1 "github.com/mholtzscher/hearth/sdk/adapter/powerv1"
-)
-
-const (
-	registrationRetryMinimum = 100 * time.Millisecond
-	registrationRetryMaximum = 2 * time.Second
 )
 
 func Run(ctx context.Context, config Config, logger *slog.Logger) error {
@@ -46,13 +40,13 @@ func Run(ctx context.Context, config Config, logger *slog.Logger) error {
 		return descriptorErr
 	}
 	deviceExternalID := config.BindingKey
-	binding, registrationErr := register(ctx, session, adapter.Registration{
+	binding, registrationErr := session.Register(ctx, adapter.Registration{
 		BindingKey: config.BindingKey,
 		Device: adapter.DeviceDescriptor{
 			ExternalID: &deviceExternalID, Name: "Simulated light", Kind: "light",
 		},
 		Entities: []adapter.EntityDescriptor{descriptor},
-	}, logger)
+	})
 	if registrationErr != nil {
 		return registrationErr
 	}
@@ -79,38 +73,6 @@ func Run(ctx context.Context, config Config, logger *slog.Logger) error {
 		return serveErr
 	}
 	return nil
-}
-
-func register(
-	ctx context.Context,
-	session *adapter.Session,
-	registration adapter.Registration,
-	logger *slog.Logger,
-) (adapter.Binding, error) {
-	delay := registrationRetryMinimum
-	for {
-		binding, err := session.Register(ctx, registration)
-		if err == nil {
-			return binding, nil
-		}
-		var validation *adapter.ValidationError
-		var rejected *adapter.RegistrationRejectedError
-		if errors.As(err, &validation) || errors.As(err, &rejected) {
-			return adapter.Binding{}, err
-		}
-		logger.WarnContext(ctx, "retry simulator registration", "error", err, "retry_in", delay)
-		timer := time.NewTimer(delay)
-		select {
-		case <-ctx.Done():
-			timer.Stop()
-			return adapter.Binding{}, ctx.Err()
-		case <-timer.C:
-		}
-		delay *= 2
-		if delay > registrationRetryMaximum {
-			delay = registrationRetryMaximum
-		}
-	}
 }
 
 func entityIDForKey(binding adapter.Binding, key string) (string, error) {

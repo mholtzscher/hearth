@@ -14,13 +14,25 @@ type Dependencies struct {
 	NewRuntimeID     func() (RuntimeID, error)
 }
 
+// Stores groups persistence capabilities consumed by Service.
+type Stores struct {
+	Registration RegistrationRepository
+	Runtimes     RuntimeRepository
+	Adapters     AdapterRepository
+	Availability AvailabilityRepository
+	Reads        ReadRepository
+	Enablement   EnablementRepository
+	Commands     CommandLedger
+	Observations ObservationRepository
+}
+
 type Service struct {
-	repository       Repository
-	sender           CommandSender
-	catalog          *TypeCatalog
-	dependencies     Dependencies
-	healthEvaluation healthEvaluationState
-	waiters          commandWaiters
+	stores       Stores
+	sender       CommandSender
+	catalog      *TypeCatalog
+	dependencies Dependencies
+	leaseExpiry  leaseExpiryState
+	waiters      commandWaiters
 }
 
 type commandWaiters struct {
@@ -28,7 +40,7 @@ type commandWaiters struct {
 	byID  map[CommandID]chan CommandResult
 }
 
-func NewService(repository Repository, sender CommandSender, catalog *TypeCatalog, dependencies Dependencies) *Service {
+func NewService(stores Stores, sender CommandSender, catalog *TypeCatalog, dependencies Dependencies) *Service {
 	if dependencies.Now == nil {
 		dependencies.Now = time.Now
 	}
@@ -48,11 +60,11 @@ func NewService(repository Repository, sender CommandSender, catalog *TypeCatalo
 		dependencies.NewRuntimeID = NewRuntimeID
 	}
 	return &Service{
-		repository:       repository,
-		sender:           sender,
-		catalog:          catalog,
-		dependencies:     dependencies,
-		healthEvaluation: newHealthEvaluationState(),
-		waiters:          commandWaiters{byID: make(map[CommandID]chan CommandResult)},
+		stores:       stores,
+		sender:       sender,
+		catalog:      catalog,
+		dependencies: dependencies,
+		leaseExpiry:  newLeaseExpiryState(),
+		waiters:      commandWaiters{byID: make(map[CommandID]chan CommandResult)},
 	}
 }

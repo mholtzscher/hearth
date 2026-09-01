@@ -39,7 +39,7 @@ func (service *Service) ExecuteCommand(
 	if err := validateCommandParameters(parameters); err != nil {
 		return CommandResult{}, fmt.Errorf("%w: %w", ErrInvalidCommand, err)
 	}
-	view, err := service.repository.GetEntity(ctx, entityID)
+	view, err := service.stores.Reads.GetEntity(ctx, entityID)
 	if err != nil {
 		return CommandResult{}, err
 	}
@@ -71,7 +71,7 @@ func (service *Service) ExecuteCommand(
 		CorrelationID: correlationID, Status: CommandStatusRequested,
 		RequestedAt: requestedAt, DeadlineAt: requestedAt.Add(resolved.Deadline),
 	}
-	command, err = service.repository.CreateCommand(ctx, command)
+	command, err = service.stores.Commands.CreateCommand(ctx, command)
 	if err != nil {
 		return CommandResult{}, err
 	}
@@ -146,7 +146,7 @@ func (service *Service) runCommand(
 		return service.failCommand(command.ID, CommandStatusInternalFailure, CommandFailureInternalError, err, waiter)
 	}
 	writeContext, cancel := persistenceContext(ctx)
-	err = service.repository.MarkCommandAccepted(writeContext, command.ID, acceptedAt)
+	err = service.stores.Commands.MarkCommandAccepted(writeContext, command.ID, acceptedAt)
 	cancel()
 	if err != nil && !errors.Is(err, ErrCommandTerminal) {
 		return service.failCommand(command.ID, CommandStatusInternalFailure, CommandFailureInternalError, err, waiter)
@@ -176,7 +176,7 @@ func (service *Service) runCommand(
 			FailureCode: CommandFailureOutcomeTimeout,
 		}
 		completionContext, cancelCompletion := persistenceContext(ctx)
-		completionErr := service.repository.CompleteCommand(completionContext, completion)
+		completionErr := service.stores.Commands.CompleteCommand(completionContext, completion)
 		cancelCompletion()
 		if errors.Is(completionErr, ErrCommandTerminal) {
 			// A matching Observation committed first and its notification follows
@@ -232,7 +232,7 @@ func (service *Service) failCommand(
 		return commandOutcome{err: commandExecutionError(id, err)}
 	}
 	writeContext, cancel := persistenceContext(context.Background())
-	err = service.repository.CompleteCommand(writeContext, CommandCompletion{
+	err = service.stores.Commands.CompleteCommand(writeContext, CommandCompletion{
 		ID: id, Status: status, CompletedAt: completedAt, FailureCode: failureCode,
 	})
 	cancel()

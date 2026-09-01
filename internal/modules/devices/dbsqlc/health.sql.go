@@ -3,7 +3,7 @@
 //   sqlc v1.31.1
 // source: health.sql
 
-package health
+package dbsqlc
 
 import (
 	"context"
@@ -54,9 +54,8 @@ func (q *Queries) CountAdapterBindings(ctx context.Context, arg CountAdapterBind
 const createAdapterInstance = `-- name: CreateAdapterInstance :exec
 INSERT INTO adapter_instances (
     adapter_id, created_at, updated_at, health_status, health_reason_code,
-    health_reason_detail, health_since, health_evidence_at,
-    availability_epoch
-) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    health_reason_detail, health_since, health_evidence_at
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
 `
 
 type CreateAdapterInstanceParams struct {
@@ -68,7 +67,6 @@ type CreateAdapterInstanceParams struct {
 	HealthReasonDetail sql.NullString
 	HealthSince        sql.NullString
 	HealthEvidenceAt   sql.NullString
-	AvailabilityEpoch  int64
 }
 
 func (q *Queries) CreateAdapterInstance(ctx context.Context, arg CreateAdapterInstanceParams) error {
@@ -81,8 +79,21 @@ func (q *Queries) CreateAdapterInstance(ctx context.Context, arg CreateAdapterIn
 		arg.HealthReasonDetail,
 		arg.HealthSince,
 		arg.HealthEvidenceAt,
-		arg.AvailabilityEpoch,
 	)
+	return err
+}
+
+const deleteAdapterEntityAvailability = `-- name: DeleteAdapterEntityAvailability :exec
+DELETE FROM entity_availability_current
+WHERE adapter_id = ?
+`
+
+type DeleteAdapterEntityAvailabilityParams struct {
+	AdapterID string
+}
+
+func (q *Queries) DeleteAdapterEntityAvailability(ctx context.Context, arg DeleteAdapterEntityAvailabilityParams) error {
+	_, err := q.db.ExecContext(ctx, deleteAdapterEntityAvailability, arg.AdapterID)
 	return err
 }
 
@@ -118,8 +129,7 @@ SELECT adapter_id, archived_at, created_at, updated_at, active_runtime_id,
        health_reason_detail, health_since, health_evidence_at,
        external_system_status, external_system_reason_code,
        external_system_reason_detail, external_system_source_observed_at,
-       external_system_evidence_at, availability_epoch,
-       latest_transition_receive_order
+       external_system_evidence_at, latest_transition_receive_order
 FROM adapter_instances
 WHERE adapter_id = ?
 `
@@ -148,7 +158,6 @@ func (q *Queries) GetAdapterInstance(ctx context.Context, arg GetAdapterInstance
 		&i.ExternalSystemReasonDetail,
 		&i.ExternalSystemSourceObservedAt,
 		&i.ExternalSystemEvidenceAt,
-		&i.AvailabilityEpoch,
 		&i.LatestTransitionReceiveOrder,
 	)
 	return i, err
@@ -234,9 +243,9 @@ func (q *Queries) GetAdapterView(ctx context.Context, arg GetAdapterViewParams) 
 }
 
 const getEntityAvailabilityCurrent = `-- name: GetEntityAvailabilityCurrent :one
-SELECT entity_id, adapter_id, runtime_id, availability_epoch, status,
-       reason_code, reason_detail, source_observed_at, evidence_at,
-       current_since, latest_transition_receive_order
+SELECT entity_id, adapter_id, runtime_id, status, reason_code, reason_detail,
+       source_observed_at, evidence_at, current_since,
+       latest_transition_receive_order
 FROM entity_availability_current
 WHERE entity_id = ?
 `
@@ -252,7 +261,6 @@ func (q *Queries) GetEntityAvailabilityCurrent(ctx context.Context, arg GetEntit
 		&i.EntityID,
 		&i.AdapterID,
 		&i.RuntimeID,
-		&i.AvailabilityEpoch,
 		&i.Status,
 		&i.ReasonCode,
 		&i.ReasonDetail,
@@ -1051,7 +1059,6 @@ SET active_runtime_id = ?,
     external_system_reason_detail = ?,
     external_system_source_observed_at = ?,
     external_system_evidence_at = ?,
-    availability_epoch = ?,
     updated_at = ?
 WHERE adapter_id = ?
 `
@@ -1069,7 +1076,6 @@ type UpdateAdapterCurrentHealthParams struct {
 	ExternalSystemReasonDetail     sql.NullString
 	ExternalSystemSourceObservedAt sql.NullString
 	ExternalSystemEvidenceAt       sql.NullString
-	AvailabilityEpoch              int64
 	UpdatedAt                      string
 	AdapterID                      string
 }
@@ -1088,7 +1094,6 @@ func (q *Queries) UpdateAdapterCurrentHealth(ctx context.Context, arg UpdateAdap
 		arg.ExternalSystemReasonDetail,
 		arg.ExternalSystemSourceObservedAt,
 		arg.ExternalSystemEvidenceAt,
-		arg.AvailabilityEpoch,
 		arg.UpdatedAt,
 		arg.AdapterID,
 	)
@@ -1123,14 +1128,13 @@ func (q *Queries) UpdateRuntimeHeartbeat(ctx context.Context, arg UpdateRuntimeH
 
 const upsertEntityAvailabilityCurrent = `-- name: UpsertEntityAvailabilityCurrent :exec
 INSERT INTO entity_availability_current (
-    entity_id, adapter_id, runtime_id, availability_epoch, status,
-    reason_code, reason_detail, source_observed_at, evidence_at,
-    current_since, latest_transition_receive_order
-) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    entity_id, adapter_id, runtime_id, status, reason_code, reason_detail,
+    source_observed_at, evidence_at, current_since,
+    latest_transition_receive_order
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 ON CONFLICT(entity_id) DO UPDATE SET
     adapter_id = excluded.adapter_id,
     runtime_id = excluded.runtime_id,
-    availability_epoch = excluded.availability_epoch,
     status = excluded.status,
     reason_code = excluded.reason_code,
     reason_detail = excluded.reason_detail,
@@ -1144,7 +1148,6 @@ type UpsertEntityAvailabilityCurrentParams struct {
 	EntityID                     string
 	AdapterID                    string
 	RuntimeID                    string
-	AvailabilityEpoch            int64
 	Status                       string
 	ReasonCode                   sql.NullString
 	ReasonDetail                 sql.NullString
@@ -1159,7 +1162,6 @@ func (q *Queries) UpsertEntityAvailabilityCurrent(ctx context.Context, arg Upser
 		arg.EntityID,
 		arg.AdapterID,
 		arg.RuntimeID,
-		arg.AvailabilityEpoch,
 		arg.Status,
 		arg.ReasonCode,
 		arg.ReasonDetail,

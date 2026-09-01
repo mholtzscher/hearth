@@ -108,7 +108,7 @@ func (service *Service) Register(
 		Entities:   entities,
 		UpdatedAt:  registeredAt,
 	}
-	binding, err := service.repository.RegisterBinding(ctx, params)
+	binding, err := service.stores.Registration.RegisterBinding(ctx, params)
 	if errors.Is(err, errImmutableTypeChange) {
 		return Binding{}, &RegistrationRejectedError{
 			Code: RegistrationImmutableTypeChange, Message: "an existing entity cannot change type",
@@ -130,7 +130,7 @@ func (service *Service) checkRegistrationRuntime(
 	adapterID string,
 	runtimeID RuntimeID,
 ) error {
-	instance, err := service.repository.GetAdapter(ctx, adapterID)
+	instance, err := service.stores.Registration.GetAdapter(ctx, adapterID)
 	if errors.Is(err, ErrAdapterNotFound) {
 		return ErrRuntimeFenced
 	}

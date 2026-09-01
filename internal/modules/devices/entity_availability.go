@@ -28,22 +28,13 @@ func (service *Service) ReportEntityAvailability(
 	runtimeID RuntimeID,
 	reports []EntityAvailabilityReport,
 ) (time.Time, error) {
-	unlock, err := service.beginHealthEvaluation()
-	if err != nil {
-		return time.Time{}, err
-	}
-	defer unlock()
-
 	if validationErr := validateAvailabilityBatch(adapterID, runtimeID, reports); validationErr != nil {
 		return time.Time{}, validationErr
 	}
-	if service.healthEvaluation.recovering {
-		if _, refreshed := service.healthEvaluation.refreshed[runtimeID]; !refreshed {
-			return time.Time{}, ErrAdapterUnhealthy
-		}
-	}
 	if availabilityBatchUsesAdapterReason(reports) {
-		softwareName, softwareErr := service.runtimeSoftwareName(ctx, adapterID, runtimeID)
+		softwareName, softwareErr := runtimeSoftwareName(
+			ctx, service.stores.Availability, adapterID, runtimeID,
+		)
 		if softwareErr != nil {
 			return time.Time{}, softwareErr
 		}
@@ -67,8 +58,9 @@ func (service *Service) ReportEntityAvailability(
 		owned[index].SourceObservedAt = report.SourceObservedAt.UTC()
 		owned[index].Reason = copyHealthReason(report.Reason)
 	}
-	return service.repository.ReportEntityAvailability(ctx, AvailabilityBatchWrite{
+	return service.stores.Availability.ReportEntityAvailability(ctx, AvailabilityBatchWrite{
 		AdapterID: adapterID, RuntimeID: runtimeID, Reports: owned, ReportedAt: reportedAt,
+		LeaseGraceUntil: service.leaseGraceUntil(reportedAt),
 	})
 }
 

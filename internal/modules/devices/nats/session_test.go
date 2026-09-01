@@ -45,8 +45,7 @@ func (recorder *lifecycleRecorder) RecordAdapterHeartbeat(
 	defer recorder.mutex.Unlock()
 	recorder.heartbeat = heartbeat
 	return devices.HeartbeatResult{
-		LeaseExpiresAt:            time.Date(2026, 8, 29, 15, 0, 15, 0, time.UTC),
-		RefreshEntityAvailability: true,
+		LeaseExpiresAt: time.Date(2026, 8, 29, 15, 0, 15, 0, time.UTC),
 	}, recorder.heartbeatErr
 }
 
@@ -102,8 +101,7 @@ func TestSessionServerMapsClaimHeartbeatAndRelease(t *testing.T) {
 			Reason: &healthReason{Code: "hearth.network_unreachable", Detail: &detail},
 		}},
 	)
-	if heartbeat.Data.Status != statusAccepted || heartbeat.Data.RefreshEntityAvailability == nil ||
-		!*heartbeat.Data.RefreshEntityAvailability || heartbeat.Data.LeaseExpiresAt != "2026-08-29T15:00:15Z" {
+	if heartbeat.Data.Status != statusAccepted || heartbeat.Data.LeaseExpiresAt != "2026-08-29T15:00:15Z" {
 		t.Fatalf("heartbeat response = %#v", heartbeat.Data)
 	}
 

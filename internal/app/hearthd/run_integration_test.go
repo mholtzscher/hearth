@@ -42,8 +42,8 @@ func TestCoreNATSTransportRegistersAndProjectsDurableObservation(t *testing.T) {
 		t.Fatal(err)
 	}
 	repository := devices.NewSQLiteRepository(database, catalog)
-	service := devices.NewService(repository, nil, catalog, devices.Dependencies{})
-	service.ResumeHealthEvaluation(time.Now().UTC())
+	service := devices.NewService(devices.SQLiteStores(repository), nil, catalog, devices.Dependencies{})
+	service.ResumeAdapterLeaseExpiry(time.Now().UTC())
 
 	server, err := natsserver.NewServer(&natsserver.Options{
 		Host: "127.0.0.1", Port: -1, JetStream: true, StoreDir: t.TempDir(), NoSigs: true,
@@ -187,7 +187,7 @@ func TestCoreNATSTransportRegistersAndProjectsDurableObservation(t *testing.T) {
 		t.Fatal(err)
 	}
 	recoveredService := devices.NewService(
-		devices.NewSQLiteRepository(database, catalog),
+		devices.SQLiteStores(devices.NewSQLiteRepository(database, catalog)),
 		nil,
 		catalog,
 		devices.Dependencies{},
@@ -274,12 +274,12 @@ func TestCoreCommandRoundTripRequiresLinkedSimulatorObservation(t *testing.T) {
 		t.Fatal(err)
 	}
 	service := devices.NewService(
-		repository,
+		devices.SQLiteStores(repository),
 		devicesnats.NewCommandSender(coreConnection, validator),
 		catalog,
 		devices.Dependencies{},
 	)
-	service.ResumeHealthEvaluation(time.Now().UTC())
+	service.ResumeAdapterLeaseExpiry(time.Now().UTC())
 	sessions, err := devicesnats.StartSessionServer(coreConnection, validator, service, service, logger)
 	if err != nil {
 		t.Fatal(err)

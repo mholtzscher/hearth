@@ -1,4 +1,4 @@
-package adapter //nolint:testpackage // Tests exercise package-private availability cache behavior.
+package adapter //nolint:testpackage // Tests exercise package-private availability request behavior.
 
 import (
 	"context"
@@ -13,7 +13,7 @@ import (
 	"github.com/mholtzscher/hearth/internal/contracts/v1/natswire"
 )
 
-func TestReportEntityAvailabilityRetriesOneEnvelopeAndCachesAcknowledgedReport(t *testing.T) {
+func TestReportEntityAvailabilityRetriesOneEnvelope(t *testing.T) {
 	t.Parallel()
 	server := startServer(t, -1, t.TempDir())
 	core := connectNATS(t, server.ClientURL())
@@ -54,13 +54,6 @@ func TestReportEntityAvailabilityRetriesOneEnvelopeAndCachesAcknowledgedReport(t
 	if firstID != secondID {
 		t.Fatalf("availability retry IDs = %q and %q", firstID, secondID)
 	}
-	session.stateMutex.Lock()
-	cached, ok := session.availabilityCache[testEntityID]
-	session.stateMutex.Unlock()
-	if !ok || cached.Status != AvailabilityUnavailable || cached.ReasonCode != report.ReasonCode ||
-		cached.SourceObservedAt.Location() != time.UTC {
-		t.Fatalf("cached availability = %#v, present %t", cached, ok)
-	}
 }
 
 func TestReportEntityAvailabilityRejectsInvalidReportsLocally(t *testing.T) {
@@ -86,14 +79,12 @@ func TestReportEntityAvailabilityRejectsInvalidReportsLocally(t *testing.T) {
 	}
 }
 
-//nolint:gocognit // The lifecycle sequence verifies cache population, bounded replay, and invalidation.
-func TestHeartbeatRefreshReplaysCacheInBoundedBatchesAndUnhealthyClearsIt(t *testing.T) {
+func TestAcknowledgedAvailabilityIsNotReplayedByHeartbeat(t *testing.T) {
 	t.Parallel()
 	server := startServer(t, -1, t.TempDir())
 	core := connectNATS(t, server.ClientURL())
 	validator := compileValidator(t)
 	startClaimAndReleaseResponders(t, core, validator)
-	var heartbeatCount atomic.Int32
 	if _, err := core.Subscribe(natswire.AdapterHeartbeatWildcard(), func(message *natsgo.Msg) {
 		request, decodeErr := natswire.Decode[adapterHeartbeatRequest](
 			validator, contractsv1.AdapterHeartbeatRequestSchemaID, message.Data,
@@ -102,12 +93,10 @@ func TestHeartbeatRefreshReplaysCacheInBoundedBatchesAndUnhealthyClearsIt(t *tes
 			t.Errorf("decode heartbeat: %v", decodeErr)
 			return
 		}
-		refresh := heartbeatCount.Add(1) == 2
 		respondTestLifecycle(t, validator, message, request.ID, request.CorrelationID,
 			contractsv1.AdapterHeartbeatResponseSchemaID, adapterHeartbeatResponse{
-				Status:                    statusAccepted,
-				LeaseExpiresAt:            time.Now().UTC().Add(15 * time.Second).Format(time.RFC3339Nano),
-				RefreshEntityAvailability: &refresh,
+				Status:         statusAccepted,
+				LeaseExpiresAt: time.Now().UTC().Add(15 * time.Second).Format(time.RFC3339Nano),
 			})
 	}); err != nil {
 		t.Fatal(err)
@@ -142,27 +131,13 @@ func TestHeartbeatRefreshReplaysCacheInBoundedBatchesAndUnhealthyClearsIt(t *tes
 		t.Fatal(err)
 	}
 
-	reports := make([]EntityAvailabilityReport, maximumAvailabilityBatchSize+1)
-	for index := range reports {
-		reports[index] = EntityAvailabilityReport{
-			EntityID: mustID(t, "ent"), Status: AvailabilityAvailable, SourceObservedAt: time.Now().UTC(),
-		}
-	}
-	if err := session.ReportEntityAvailability(
-		testContext(t), reports[:maximumAvailabilityBatchSize],
-	); err != nil {
-		t.Fatal(err)
-	}
-	if got := <-availabilityCounts; got != maximumAvailabilityBatchSize {
-		t.Fatalf("first direct availability batch = %d", got)
-	}
-	if err := session.ReportEntityAvailability(
-		testContext(t), reports[maximumAvailabilityBatchSize:],
-	); err != nil {
+	if err := session.ReportEntityAvailability(testContext(t), []EntityAvailabilityReport{{
+		EntityID: testEntityID, Status: AvailabilityAvailable, SourceObservedAt: time.Now().UTC(),
+	}}); err != nil {
 		t.Fatal(err)
 	}
 	if got := <-availabilityCounts; got != 1 {
-		t.Fatalf("second direct availability batch = %d", got)
+		t.Fatalf("direct availability batch = %d", got)
 	}
 
 	if err := session.SetHealth(testContext(t), HealthReport{
@@ -170,109 +145,14 @@ func TestHeartbeatRefreshReplaysCacheInBoundedBatchesAndUnhealthyClearsIt(t *tes
 	}); err != nil {
 		t.Fatal(err)
 	}
-	for index, want := range []int{maximumAvailabilityBatchSize, 1} {
-		select {
-		case got := <-availabilityCounts:
-			if got != want {
-				t.Fatalf("replay batch %d = %d, want %d", index, got, want)
-			}
-		case <-time.After(3 * time.Second):
-			t.Fatalf("replay batch %d did not arrive", index)
-		}
-	}
-
-	if err := session.SetHealth(testContext(t), HealthReport{
-		Status: HealthUnhealthy, SourceObservedAt: time.Now().UTC(),
-		ReasonCode: "hearth.external_system_unavailable",
-	}); err != nil {
-		t.Fatal(err)
-	}
-	session.stateMutex.Lock()
-	cacheSize := len(session.availabilityCache)
-	session.stateMutex.Unlock()
-	if cacheSize != 0 {
-		t.Fatalf("availability cache size after unhealthy = %d", cacheSize)
-	}
-}
-
-func TestStalledAvailabilityReplayDoesNotBlockNextHeartbeat(t *testing.T) {
-	t.Parallel()
-	server := startServer(t, -1, t.TempDir())
-	core := connectNATS(t, server.ClientURL())
-	validator := compileValidator(t)
-	startClaimAndReleaseResponders(t, core, validator)
-
-	continuedHeartbeats := make(chan struct{}, 1)
-	var refreshSent atomic.Bool
-	if _, err := core.Subscribe(natswire.AdapterHeartbeatWildcard(), func(message *natsgo.Msg) {
-		request, decodeErr := natswire.Decode[adapterHeartbeatRequest](
-			validator, contractsv1.AdapterHeartbeatRequestSchemaID, message.Data,
-		)
-		if decodeErr != nil {
-			t.Errorf("decode heartbeat: %v", decodeErr)
-			return
-		}
-		refresh := false
-		if request.Data.ExternalSystem.Status == string(HealthHealthy) &&
-			refreshSent.CompareAndSwap(false, true) {
-			refresh = true
-		} else if refreshSent.Load() {
-			select {
-			case continuedHeartbeats <- struct{}{}:
-			default:
-			}
-		}
-		respondTestLifecycle(t, validator, message, request.ID, request.CorrelationID,
-			contractsv1.AdapterHeartbeatResponseSchemaID, adapterHeartbeatResponse{
-				Status:                    statusAccepted,
-				LeaseExpiresAt:            time.Now().UTC().Add(15 * time.Second).Format(time.RFC3339Nano),
-				RefreshEntityAvailability: &refresh,
-			})
-	}); err != nil {
-		t.Fatal(err)
-	}
-	availabilityStarted := make(chan struct{}, 1)
-	if _, err := core.Subscribe(natswire.EntityAvailabilityWildcard(), func(*natsgo.Msg) {
-		select {
-		case availabilityStarted <- struct{}{}:
-		default:
-		}
-	}); err != nil {
-		t.Fatal(err)
-	}
-	if err := core.Flush(); err != nil {
-		t.Fatal(err)
-	}
-
-	session, err := Connect(testContext(t), testConfig(server.ClientURL()))
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = session.Close() })
-	session.stateMutex.Lock()
-	session.availabilityCache[testEntityID] = EntityAvailabilityReport{
-		EntityID: testEntityID, Status: AvailabilityAvailable, SourceObservedAt: time.Now().UTC(),
-	}
-	session.stateMutex.Unlock()
-	if healthErr := session.SetHealth(testContext(t), HealthReport{
-		Status: HealthHealthy, SourceObservedAt: time.Now().UTC(),
-	}); healthErr != nil {
-		t.Fatal(healthErr)
-	}
 	select {
-	case <-availabilityStarted:
-	case <-time.After(time.Second):
-		t.Fatal("availability replay did not start")
-	}
-	session.wakeHeartbeat()
-	select {
-	case <-continuedHeartbeats:
+	case count := <-availabilityCounts:
+		t.Fatalf("heartbeat caused an additional availability report of %d Entities", count)
 	case <-time.After(250 * time.Millisecond):
-		t.Fatal("heartbeat was blocked by availability replay")
 	}
 }
 
-func TestEntityAvailabilityFencingTerminatesSessionAndClearsCache(t *testing.T) {
+func TestEntityAvailabilityFencingTerminatesSession(t *testing.T) {
 	t.Parallel()
 	server := startServer(t, -1, t.TempDir())
 	core := connectNATS(t, server.ClientURL())
@@ -296,9 +176,6 @@ func TestEntityAvailabilityFencingTerminatesSessionAndClearsCache(t *testing.T) 
 		t.Fatal(err)
 	}
 	session := connectSession(t, server.ClientURL())
-	session.stateMutex.Lock()
-	session.availabilityCache[testEntityID] = EntityAvailabilityReport{EntityID: testEntityID}
-	session.stateMutex.Unlock()
 	err := session.ReportEntityAvailability(testContext(t), []EntityAvailabilityReport{{
 		EntityID: testEntityID, Status: AvailabilityAvailable, SourceObservedAt: time.Now().UTC(),
 	}})
@@ -309,12 +186,6 @@ func TestEntityAvailabilityFencingTerminatesSessionAndClearsCache(t *testing.T) 
 		EntityID: testEntityID, Status: AvailabilityAvailable, SourceObservedAt: time.Now().UTC(),
 	}}); !errors.Is(futureErr, ErrRuntimeFenced) {
 		t.Fatalf("future availability error = %v", futureErr)
-	}
-	session.stateMutex.Lock()
-	cacheSize := len(session.availabilityCache)
-	session.stateMutex.Unlock()
-	if cacheSize != 0 {
-		t.Fatalf("availability cache size after fencing = %d", cacheSize)
 	}
 }
 

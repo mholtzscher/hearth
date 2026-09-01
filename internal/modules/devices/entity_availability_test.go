@@ -1,15 +1,12 @@
-package devices //nolint:testpackage // Tests exercise package-private health evaluation state.
+package devices //nolint:testpackage // Tests exercise package-private lease-expiry state.
 
 import (
 	"context"
-	"errors"
 	"testing"
 	"time"
 )
 
 type availabilityServiceRepository struct {
-	*stubRegistrationRepository
-
 	adapter AdapterInstance
 	write   AvailabilityBatchWrite
 	calls   int
@@ -31,7 +28,7 @@ func (repository *availabilityServiceRepository) GetAdapter(
 	return copyAdapterInstance(repository.adapter), nil
 }
 
-func TestReportEntityAvailabilityValidatesEvaluationAndOwnsInput(t *testing.T) {
+func TestReportEntityAvailabilityAllowsReadinessPauseAndOwnsInput(t *testing.T) {
 	t.Parallel()
 	now := time.Date(2026, 8, 29, 15, 0, 0, 0, time.UTC)
 	entityID, err := ParseEntityID("ent_01890f47-7a6b-7c4d-8e9f-0123456789ab")
@@ -39,14 +36,13 @@ func TestReportEntityAvailabilityValidatesEvaluationAndOwnsInput(t *testing.T) {
 		t.Fatal(err)
 	}
 	repository := &availabilityServiceRepository{
-		stubRegistrationRepository: &stubRegistrationRepository{},
 		adapter: AdapterInstance{ID: "simulator", Health: &AdapterHealth{
 			Runtime: &RuntimeEvidence{
 				ID: testRuntimeID, Status: runtimeStatusOnline, SoftwareName: "hearth-simulator",
 			},
 		}},
 	}
-	service := NewService(repository, nil, nil, Dependencies{Now: func() time.Time { return now }})
+	service := newTestService(repository, nil, nil, Dependencies{Now: func() time.Time { return now }})
 	detail := "upstream resource missing"
 	reports := []EntityAvailabilityReport{{
 		EntityID: entityID, Status: EntityAvailabilityUnavailable,
@@ -56,18 +52,6 @@ func TestReportEntityAvailabilityValidatesEvaluationAndOwnsInput(t *testing.T) {
 		},
 	}}
 
-	if _, reportErr := service.ReportEntityAvailability(
-		context.Background(), "simulator", testRuntimeID, reports,
-	); !errors.Is(reportErr, ErrHealthEvaluationPaused) {
-		t.Fatalf("paused report error = %v", reportErr)
-	}
-	service.ResumeHealthEvaluation(now.Add(-time.Second))
-	if _, reportErr := service.ReportEntityAvailability(
-		context.Background(), "simulator", testRuntimeID, reports,
-	); !errors.Is(reportErr, ErrAdapterUnhealthy) {
-		t.Fatalf("unrefreshed recovery report error = %v", reportErr)
-	}
-	service.markRecoveryHeartbeat(1, testRuntimeID)
 	reportedAt, err := service.ReportEntityAvailability(
 		context.Background(), "simulator", testRuntimeID, reports,
 	)
@@ -76,7 +60,7 @@ func TestReportEntityAvailabilityValidatesEvaluationAndOwnsInput(t *testing.T) {
 	}
 	if !reportedAt.Equal(now) || repository.calls != 1 || repository.write.AdapterID != "simulator" ||
 		repository.write.RuntimeID != testRuntimeID || !repository.write.ReportedAt.Equal(now) ||
-		len(repository.write.Reports) != 1 ||
+		!repository.write.LeaseGraceUntil.Equal(now.Add(adapterLeaseDuration)) || len(repository.write.Reports) != 1 ||
 		repository.write.Reports[0].SourceObservedAt.Location() != time.UTC {
 		t.Fatalf("availability write = %#v, reported at %v", repository.write, reportedAt)
 	}
@@ -96,10 +80,8 @@ func TestReportEntityAvailabilityRejectsMalformedBatchesBeforePersistence(t *tes
 	if err != nil {
 		t.Fatal(err)
 	}
-	repository := &availabilityServiceRepository{stubRegistrationRepository: &stubRegistrationRepository{}}
-	service := NewService(repository, nil, nil, Dependencies{Now: func() time.Time { return now }})
-	service.ResumeHealthEvaluation(now.Add(-adapterLeaseDuration))
-	service.markRecoveryHeartbeat(1, testRuntimeID)
+	repository := &availabilityServiceRepository{}
+	service := newTestService(repository, nil, nil, Dependencies{Now: func() time.Time { return now }})
 	valid := EntityAvailabilityReport{
 		EntityID: entityID, Status: EntityAvailabilityAvailable, SourceObservedAt: now,
 	}

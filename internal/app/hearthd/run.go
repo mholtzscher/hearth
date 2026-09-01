@@ -71,7 +71,7 @@ func Run(ctx context.Context, config Config, logger *slog.Logger) error { //noli
 		return fmt.Errorf("compile wire schemas: %w", compileErr)
 	}
 	commandSender := devicesnats.NewCommandSender(connection, validator)
-	service := devices.NewService(repository, commandSender, catalog, devices.Dependencies{})
+	service := devices.NewService(devices.SQLiteStores(repository), commandSender, catalog, devices.Dependencies{})
 
 	sessions, sessionErr := devicesnats.StartSessionServer(connection, validator, service, service, logger)
 	if sessionErr != nil {

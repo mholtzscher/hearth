@@ -2,7 +2,7 @@
 // versions:
 //   sqlc v1.31.1
 
-package commands
+package dbsqlc
 
 import (
 	"context"

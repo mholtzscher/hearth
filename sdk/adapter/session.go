@@ -38,23 +38,20 @@ type Session struct {
 	validator         *contractsv1.Validator
 	logger            *slog.Logger
 
-	stateMutex             sync.Mutex
-	terminalErr            error
-	closed                 chan struct{}
-	closedOnce             sync.Once
-	closeOnce              sync.Once
-	closeErr               error
-	lifecycleCancel        context.CancelFunc
-	heartbeatDone          chan struct{}
-	heartbeatWake          chan struct{}
-	heartbeatNotify        chan struct{}
-	desiredHealth          HealthReport
-	desiredGeneration      uint64
-	ackedGeneration        uint64
-	availabilityCache      map[string]EntityAvailabilityReport
-	availabilityGate       chan struct{}
-	availabilityReplayWake chan struct{}
-	availabilityReplayDone chan struct{}
+	stateMutex        sync.Mutex
+	terminalErr       error
+	closed            chan struct{}
+	closedOnce        sync.Once
+	closeOnce         sync.Once
+	closeErr          error
+	lifecycleCancel   context.CancelFunc
+	heartbeatDone     chan struct{}
+	heartbeatWake     chan struct{}
+	heartbeatNotify   chan struct{}
+	desiredHealth     HealthReport
+	desiredGeneration uint64
+	ackedGeneration   uint64
+	availabilityGate  chan struct{}
 
 	handlerMutex sync.Mutex
 	handlerWait  sync.WaitGroup
@@ -109,11 +106,8 @@ func Connect(ctx context.Context, config Config) (*Session, error) {
 		connection: connection, jetstream: js, validator: validator, logger: logger,
 		closed: make(chan struct{}), heartbeatDone: make(chan struct{}),
 		heartbeatWake: make(chan struct{}, 1), heartbeatNotify: make(chan struct{}),
-		desiredHealth:          HealthReport{Status: HealthUnknown, SourceObservedAt: time.Now().UTC()},
-		availabilityCache:      make(map[string]EntityAvailabilityReport),
-		availabilityGate:       make(chan struct{}, 1),
-		availabilityReplayWake: make(chan struct{}, 1),
-		availabilityReplayDone: make(chan struct{}),
+		desiredHealth:    HealthReport{Status: HealthUnknown, SourceObservedAt: time.Now().UTC()},
+		availabilityGate: make(chan struct{}, 1),
 	}
 	session.availabilityGate <- struct{}{}
 	if claimErr := session.claim(ctx, config); claimErr != nil {
@@ -122,91 +116,49 @@ func Connect(ctx context.Context, config Config) (*Session, error) {
 	}
 	lifecycleContext, cancelLifecycle := context.WithCancel(context.Background())
 	session.lifecycleCancel = cancelLifecycle
-	go session.runAvailabilityReplay(lifecycleContext)
 	go session.runHeartbeats(lifecycleContext)
 	return session, nil
 }
 
-// requestReply performs one schema-validated Core NATS request/reply exchange:
-// it envelopes and encodes data, sends it to subject, decodes the reply, and
-// verifies causation and correlation IDs. Rejection handling and response
-// identity checks remain with the caller.
-func requestReply[Req, Resp any](
-	ctx context.Context,
-	session *Session,
-	prefix, requestSchema, responseSchema, kind, subject string,
-	data Req,
-) (natswire.Envelope[Resp], error) {
-	if err := session.sessionError(); err != nil {
-		return natswire.Envelope[Resp]{}, err
-	}
-	requestID, err := newID(prefix)
-	if err != nil {
-		return natswire.Envelope[Resp]{}, err
-	}
-	correlationID, err := newID("cor")
-	if err != nil {
-		return natswire.Envelope[Resp]{}, err
-	}
-	envelope := natswire.Envelope[Req]{
-		ID:            requestID,
-		Schema:        requestSchema,
-		EmittedAt:     nowString(),
-		CorrelationID: correlationID,
-		Data:          data,
-	}
-	payload, err := natswire.Encode(session.validator, requestSchema, envelope)
-	if err != nil {
-		return natswire.Envelope[Resp]{}, &ValidationError{Err: err}
-	}
-	message := &natsgo.Msg{Subject: subject, Header: make(natsgo.Header), Data: payload}
-	natswire.InjectTrace(ctx, message.Header)
-	reply, err := session.connection.RequestMsgWithContext(ctx, message)
-	if err != nil {
-		if terminalErr := session.sessionError(); terminalErr != nil {
-			return natswire.Envelope[Resp]{}, terminalErr
-		}
-		return natswire.Envelope[Resp]{}, err
-	}
-	response, err := natswire.Decode[Resp](session.validator, responseSchema, reply.Data)
-	if err != nil {
-		return natswire.Envelope[Resp]{}, fmt.Errorf("invalid %s response: %w", kind, err)
-	}
-	if response.CausationID == nil || *response.CausationID != requestID {
-		return natswire.Envelope[Resp]{}, errors.New("response causation ID does not match request")
-	}
-	if response.CorrelationID != correlationID {
-		return natswire.Envelope[Resp]{}, errors.New("response correlation ID does not match request")
-	}
-	if terminalErr := session.sessionError(); terminalErr != nil {
-		return natswire.Envelope[Resp]{}, terminalErr
-	}
-	return response, nil
-}
-
-// Register performs one schema-validated Core NATS request/reply attempt.
+// Register retries one schema-validated Core request under ctx. Transient
+// attempts reuse the same envelope, preserving request identity after a lost reply.
 func (session *Session) Register(ctx context.Context, registration Registration) (Binding, error) {
+	if err := session.sessionError(); err != nil {
+		return Binding{}, err
+	}
 	subject, err := natswire.RegistrationSubject(session.adapterID, session.runtimeID)
 	if err != nil {
 		return Binding{}, &ValidationError{Err: err}
 	}
-	response, err := requestReply[Registration, RegistrationResponse](
-		ctx, session, "reg",
-		contractsv1.RegistrationRequestSchemaID, contractsv1.RegistrationResponseSchemaID,
-		"registration", subject, registration,
+	request, err := prepareRequest(
+		session, "reg", contractsv1.RegistrationRequestSchemaID,
+		contractsv1.RegistrationResponseSchemaID, "registration", subject, registration,
 	)
 	if err != nil {
 		return Binding{}, err
 	}
-	if response.Data.Status == statusRejected {
-		code := RegistrationRejectionCode(response.Data.Error.Code)
-		if code == registrationRuntimeFenced {
-			session.markFenced()
-			return Binding{}, ErrRuntimeFenced
+	for {
+		attemptContext, cancelAttempt := context.WithTimeout(ctx, requestAttemptTimeout)
+		response, requestErr := sendSessionRequest[RegistrationResponse](attemptContext, session, request)
+		cancelAttempt()
+		if requestErr != nil {
+			if retryErr := waitForRequestRetry(ctx, requestErr); retryErr != nil {
+				return Binding{}, retryErr
+			}
+			continue
 		}
-		return Binding{}, &RegistrationRejectedError{Code: code, Message: response.Data.Error.Message}
+		if response.Data.Status == statusRejected {
+			code := RegistrationRejectionCode(response.Data.Error.Code)
+			if code == registrationRuntimeFenced {
+				session.markFenced()
+				return Binding{}, ErrRuntimeFenced
+			}
+			return Binding{}, &RegistrationRejectedError{
+				Code: code, Message: response.Data.Error.Message,
+			}
+		}
+		return *response.Data.Binding, nil
 	}
-	return *response.Data.Binding, nil
 }
 
 // SetEntityEnabled performs one schema-validated Core NATS request/reply attempt.
@@ -225,11 +177,15 @@ func (session *Session) SetEntityEnabled(ctx context.Context, entityID string, e
 		}
 		return false, &ValidationError{Err: err}
 	}
-	response, err := requestReply[EntityEnablementRequest, EntityEnablementResponse](
-		ctx, session, "ena",
-		contractsv1.EntityEnablementRequestSchemaID, contractsv1.EntityEnablementResponseSchemaID,
-		"entity enablement", subject, EntityEnablementRequest{EntityID: entityID, Enabled: enabled},
+	request, err := prepareRequest(
+		session, "ena", contractsv1.EntityEnablementRequestSchemaID,
+		contractsv1.EntityEnablementResponseSchemaID, "entity enablement", subject,
+		EntityEnablementRequest{EntityID: entityID, Enabled: enabled},
 	)
+	if err != nil {
+		return false, err
+	}
+	response, err := sendSessionRequest[EntityEnablementResponse](ctx, session, request)
 	if err != nil {
 		return false, err
 	}

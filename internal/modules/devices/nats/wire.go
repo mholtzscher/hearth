@@ -45,10 +45,9 @@ type healthReason struct {
 }
 
 type adapterHeartbeatResponse struct {
-	Status                    string        `json:"status"`
-	LeaseExpiresAt            string        `json:"lease_expires_at,omitempty"`
-	RefreshEntityAvailability *bool         `json:"refresh_entity_availability,omitempty"`
-	Error                     *adapterError `json:"error,omitempty"`
+	Status         string        `json:"status"`
+	LeaseExpiresAt string        `json:"lease_expires_at,omitempty"`
+	Error          *adapterError `json:"error,omitempty"`
 }
 
 type adapterReleaseRequest struct{}

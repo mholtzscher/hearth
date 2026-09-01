@@ -19,13 +19,25 @@ sqlc generate
 [tasks."format"]
 description = "Format Go files"
 depends = ["generate"]
-run = '''git ls-files -z --cached --others --exclude-standard -- '*.go' | xargs -0 -r gofmt -w'''
+run = '''
+git ls-files -z --cached --others --exclude-standard -- '*.go' |
+  while IFS= read -r -d '' file; do
+    test ! -f "$file" || printf '%s\0' "$file"
+  done |
+  xargs -0 -r gofmt -w
+'''
 
 [tasks."format-check"]
 description = "Check Go formatting"
 depends = ["tidy"]
 run = '''
-unformatted="$(git ls-files -z --cached --others --exclude-standard -- '*.go' | xargs -0 -r gofmt -l)"
+unformatted="$(
+  git ls-files -z --cached --others --exclude-standard -- '*.go' |
+    while IFS= read -r -d '' file; do
+      test ! -f "$file" || printf '%s\0' "$file"
+    done |
+    xargs -0 -r gofmt -l
+)"
 if test -n "$unformatted"; then
   printf 'The following Go files need formatting:\n%s\n' "$unformatted"
   exit 1
@@ -50,11 +62,12 @@ go run ./internal/cmd/entitytypegen -root . -check
 
 tmp="$(mktemp -d)"
 trap 'rm -rf "$tmp"' EXIT
-mkdir -p "$tmp/internal/platform/db"
+mkdir -p "$tmp/internal/platform/db" "$tmp/internal/modules/devices"
 cp sqlc.yaml "$tmp/"
-cp -R internal/platform/db/migrations internal/platform/db/queries internal/platform/db/sqlc "$tmp/internal/platform/db/"
+cp -R internal/platform/db/migrations "$tmp/internal/platform/db/"
+cp -R internal/modules/devices/dbqueries internal/modules/devices/dbsqlc "$tmp/internal/modules/devices/"
 (cd "$tmp" && sqlc generate)
-diff -ru internal/platform/db/sqlc "$tmp/internal/platform/db/sqlc"
+diff -ru internal/modules/devices/dbsqlc "$tmp/internal/modules/devices/dbsqlc"
 '''
 
 [tasks."ko-build"]

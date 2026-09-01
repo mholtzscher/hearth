@@ -18,7 +18,6 @@
       "properties": {
         "status": { "enum": ["accepted", "rejected"] },
         "lease_expires_at": { "$ref": "urn:hearth:schema:common:v1#/$defs/utc_timestamp" },
-        "refresh_entity_availability": { "type": "boolean" },
         "error": {
           "type": "object",
           "additionalProperties": false,
@@ -32,18 +31,13 @@
       "oneOf": [
         {
           "properties": { "status": { "const": "accepted" } },
-          "required": ["lease_expires_at", "refresh_entity_availability"],
+          "required": ["lease_expires_at"],
           "not": { "required": ["error"] }
         },
         {
           "properties": { "status": { "const": "rejected" } },
           "required": ["error"],
-          "not": {
-            "anyOf": [
-              { "required": ["lease_expires_at"] },
-              { "required": ["refresh_entity_availability"] }
-            ]
-          }
+          "not": { "required": ["lease_expires_at"] }
         }
       ]
     }

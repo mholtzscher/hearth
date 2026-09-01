@@ -123,8 +123,7 @@ type HeartbeatWrite struct {
 }
 
 type HeartbeatResult struct {
-	LeaseExpiresAt            time.Time
-	RefreshEntityAvailability bool
+	LeaseExpiresAt time.Time
 }
 
 type ReleaseRuntimeWrite struct {
@@ -146,10 +145,11 @@ type EntityAvailabilityReport struct {
 }
 
 type AvailabilityBatchWrite struct {
-	AdapterID  string
-	RuntimeID  RuntimeID
-	Reports    []EntityAvailabilityReport
-	ReportedAt time.Time
+	AdapterID       string
+	RuntimeID       RuntimeID
+	Reports         []EntityAvailabilityReport
+	ReportedAt      time.Time
+	LeaseGraceUntil time.Time
 }
 
 type ListAdaptersParams struct {

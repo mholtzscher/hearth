@@ -20,8 +20,6 @@ const (
 )
 
 type commandRepository struct {
-	*stubRegistrationRepository
-
 	mutex     sync.Mutex
 	view      EntityWithState
 	commands  map[CommandID]CommandRecord
@@ -30,17 +28,12 @@ type commandRepository struct {
 
 func newCommandRepository() *commandRepository {
 	return &commandRepository{
-		stubRegistrationRepository: &stubRegistrationRepository{},
 		view: EntityWithState{Entity: Entity{
 			ID: commandTestEntityID, DeviceID: commandTestDeviceID, AdapterID: "simulator", Name: "Power",
 			TypeID: EntityTypePowerV1, Support: EntitySupport(`{"state":{},"operations":{"set":{}}}`), Enabled: true,
 		}},
 		commands: make(map[CommandID]CommandRecord),
 	}
-}
-
-func (*commandRepository) RegisterBinding(context.Context, RegisterBindingParams) (Binding, error) {
-	panic("unexpected RegisterBinding call")
 }
 
 func (*commandRepository) ListDevices(context.Context, ListDevicesParams) (Page[Device], error) {
@@ -85,19 +78,6 @@ func (repository *commandRepository) CreateCommand(_ context.Context, command Co
 	}
 	repository.commands[command.ID] = command
 	return copyCommandRecord(command), nil
-}
-
-func (repository *commandRepository) SetEntityEnabled(
-	_ context.Context,
-	params SetEntityEnabledParams,
-) (EntityWithState, error) {
-	repository.mutex.Lock()
-	defer repository.mutex.Unlock()
-	if params.RequiredOwner != nil && *params.RequiredOwner != repository.view.Entity.AdapterID {
-		return EntityWithState{}, ErrEntityWrongAdapter
-	}
-	repository.view.Entity.Enabled = params.Enabled
-	return copyEntityWithState(repository.view), nil
 }
 
 func (repository *commandRepository) MarkCommandAccepted(_ context.Context, id CommandID, acceptedAt time.Time) error {
@@ -214,7 +194,7 @@ func TestExecuteCommandCommitsBeforeDispatchAndHandlesAcceptanceRace(t *testing.
 			return CommandAcceptance{Accepted: true}, nil
 		},
 	)
-	service = NewService(repository, sender, catalog, commandDependencies())
+	service = newTestService(repository, sender, catalog, commandDependencies())
 
 	result, err := service.ExecuteCommand(
 		context.Background(),
@@ -270,7 +250,7 @@ func TestExecuteCommandReturnsSatisfiedWhenObservationWinsDispatchFailureRace(t 
 					return test.acceptance, test.sendErr
 				},
 			)
-			service = NewService(repository, sender, commandCatalog(t, time.Second), commandDependencies())
+			service = newTestService(repository, sender, commandCatalog(t, time.Second), commandDependencies())
 
 			result, err := service.ExecuteCommand(
 				context.Background(),
@@ -363,7 +343,7 @@ func TestExecuteCommandFailureMatrixIsDurablyClassified(t *testing.T) {
 			) (CommandAcceptance, error) {
 				return test.acceptance, test.sendErr
 			})
-			service := NewService(repository, sender, commandCatalog(t, test.deadline), commandDependencies())
+			service := newTestService(repository, sender, commandCatalog(t, test.deadline), commandDependencies())
 			_, err := service.ExecuteCommand(
 				context.Background(),
 				commandTestEntityID,
@@ -399,7 +379,7 @@ func TestExecuteCommandRejectsInvalidParametersAndCreationFailureBeforeDispatch(
 		dispatches++
 		return CommandAcceptance{Accepted: true}, nil
 	})
-	service := NewService(repository, sender, commandCatalog(t, time.Second), commandDependencies())
+	service := newTestService(repository, sender, commandCatalog(t, time.Second), commandDependencies())
 
 	if _, err := service.ExecuteCommand(
 		context.Background(),
@@ -438,7 +418,7 @@ func TestExecuteCommandCreatesTerminalRecordWithoutWaiterOrDispatchWhenDisabled(
 		dispatches++
 		return CommandAcceptance{}, nil
 	})
-	service := NewService(repository, sender, commandCatalog(t, time.Second), commandDependencies())
+	service := newTestService(repository, sender, commandCatalog(t, time.Second), commandDependencies())
 
 	_, err := service.ExecuteCommand(
 		context.Background(), commandTestEntityID, OperationNameSet, CommandParameters(`{"value":true}`),
@@ -531,7 +511,7 @@ func TestExecuteCommandKeepsOverlappingCommandsIndependent(t *testing.T) {
 			return CommandAcceptance{Accepted: true}, err
 		},
 	)
-	service = NewService(repository, sender, catalog, dependencies)
+	service = newTestService(repository, sender, catalog, dependencies)
 
 	type result struct {
 		command CommandResult
@@ -587,7 +567,7 @@ func TestExecuteCommandIgnoresMismatchedLinkedObservation(t *testing.T) {
 			return CommandAcceptance{Accepted: true}, err
 		},
 	)
-	service = NewService(repository, sender, commandCatalog(t, 15*time.Millisecond), commandDependencies())
+	service = newTestService(repository, sender, commandCatalog(t, 15*time.Millisecond), commandDependencies())
 	_, err := service.ExecuteCommand(
 		context.Background(),
 		commandTestEntityID,
@@ -620,7 +600,7 @@ func TestExecuteCommandContinuesAfterCallerCancellation(t *testing.T) {
 		<-release
 		return CommandAcceptance{Accepted: false}, nil
 	})
-	service := NewService(repository, sender, commandCatalog(t, time.Second), commandDependencies())
+	service := newTestService(repository, sender, commandCatalog(t, time.Second), commandDependencies())
 	ctx, cancel := context.WithCancel(context.Background())
 	returned := make(chan error, 1)
 	go func() {

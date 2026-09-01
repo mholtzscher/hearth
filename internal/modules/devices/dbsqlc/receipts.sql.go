@@ -3,7 +3,7 @@
 //   sqlc v1.31.1
 // source: receipts.sql
 
-package receipts
+package dbsqlc
 
 import (
 	"context"

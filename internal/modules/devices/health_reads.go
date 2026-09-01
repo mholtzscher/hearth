@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"time"
 )
 
 func (service *Service) ListAdapters(
@@ -17,15 +16,13 @@ func (service *Service) ListAdapters(
 	if params.AfterID != nil && !registrationSlugPattern.MatchString(*params.AfterID) {
 		return Page[AdapterInstance]{}, fmt.Errorf("%w: Adapter position must be a subject-safe slug", ErrInvalidPage)
 	}
-	snapshot := service.healthEvaluationSnapshot()
-	now := service.dependencies.Now().UTC()
-	page, err := service.repository.ListAdapters(ctx, params)
+	page, err := service.stores.Adapters.ListAdapters(ctx, params)
 	if err != nil {
 		return Page[AdapterInstance]{}, err
 	}
 	items := make([]AdapterInstance, len(page.Items))
 	for index, instance := range page.Items {
-		items[index] = evaluateAdapterHealth(copyAdapterInstance(instance), snapshot, now)
+		items[index] = copyAdapterInstance(instance)
 	}
 	return Page[AdapterInstance]{Items: items, HasMore: page.HasMore}, nil
 }
@@ -34,20 +31,18 @@ func (service *Service) GetAdapter(ctx context.Context, adapterID string) (Adapt
 	if !registrationSlugPattern.MatchString(adapterID) {
 		return AdapterInstance{}, errors.New("adapter ID must be a subject-safe slug")
 	}
-	snapshot := service.healthEvaluationSnapshot()
-	now := service.dependencies.Now().UTC()
-	instance, err := service.repository.GetAdapter(ctx, adapterID)
+	instance, err := service.stores.Adapters.GetAdapter(ctx, adapterID)
 	if err != nil {
 		return AdapterInstance{}, err
 	}
-	return evaluateAdapterHealth(copyAdapterInstance(instance), snapshot, now), nil
+	return copyAdapterInstance(instance), nil
 }
 
 func (service *Service) ArchiveAdapter(ctx context.Context, adapterID string) error {
 	if !registrationSlugPattern.MatchString(adapterID) {
 		return errors.New("adapter ID must be a subject-safe slug")
 	}
-	return service.repository.ArchiveAdapter(ctx, ArchiveAdapterParams{
+	return service.stores.Adapters.ArchiveAdapter(ctx, ArchiveAdapterParams{
 		AdapterID: adapterID, ArchivedAt: service.dependencies.Now().UTC(),
 	})
 }
@@ -60,7 +55,7 @@ func (service *Service) ListAdapterHealthHistory(
 		(params.BeforeReceiveOrder != nil && *params.BeforeReceiveOrder < 1) {
 		return Page[HealthTransition]{}, ErrInvalidPage
 	}
-	page, err := service.repository.ListAdapterHealthHistory(ctx, params)
+	page, err := service.stores.Adapters.ListAdapterHealthHistory(ctx, params)
 	if err != nil {
 		return Page[HealthTransition]{}, err
 	}
@@ -75,7 +70,7 @@ func (service *Service) ListEntityAvailabilityHistory(
 		(params.BeforeReceiveOrder != nil && *params.BeforeReceiveOrder < 1) {
 		return Page[HealthTransition]{}, ErrInvalidPage
 	}
-	page, err := service.repository.ListEntityAvailabilityHistory(ctx, params)
+	page, err := service.stores.Adapters.ListEntityAvailabilityHistory(ctx, params)
 	if err != nil {
 		return Page[HealthTransition]{}, err
 	}
@@ -88,25 +83,6 @@ func copyHealthTransitionPage(page Page[HealthTransition]) Page[HealthTransition
 		items[index] = copyHealthTransition(transition)
 	}
 	return Page[HealthTransition]{Items: items, HasMore: page.HasMore}
-}
-
-func evaluateAdapterHealth(
-	instance AdapterInstance,
-	snapshot healthEvaluationSnapshot,
-	now time.Time,
-) AdapterInstance {
-	if !snapshot.active || !now.Before(snapshot.recoveryUntil) || instance.Health == nil ||
-		instance.Health.Runtime == nil || instance.Health.Runtime.Status != runtimeStatusOnline {
-		return instance
-	}
-	if _, refreshed := snapshot.refreshed[instance.Health.Runtime.ID]; refreshed {
-		return instance
-	}
-	instance.Health.Status = AdapterHealthUnknown
-	instance.Health.Since = snapshot.resumedAt
-	instance.Health.EvidenceAt = snapshot.resumedAt
-	instance.Health.Reason = &HealthReason{Code: "hearth.core_recovering"}
-	return instance
 }
 
 func copyAdapterInstance(instance AdapterInstance) AdapterInstance {

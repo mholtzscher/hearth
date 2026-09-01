@@ -8,8 +8,6 @@ import (
 )
 
 type readRepository struct {
-	*stubRegistrationRepository
-
 	device             DeviceAggregate
 	deviceErr          error
 	getDeviceParams    GetDeviceParams
@@ -27,7 +25,11 @@ type readRepository struct {
 }
 
 func newReadRepository() *readRepository {
-	return &readRepository{stubRegistrationRepository: &stubRegistrationRepository{}}
+	return &readRepository{}
+}
+
+func (*readRepository) ListDevices(context.Context, ListDevicesParams) (Page[Device], error) {
+	panic("unexpected ListDevices call")
 }
 
 func (repository *readRepository) GetDevice(_ context.Context, params GetDeviceParams) (DeviceAggregate, error) {
@@ -66,7 +68,7 @@ func (repository *readRepository) ListEntityCommands(
 func TestReadServiceValidatesPagesBeforeRepositoryCalls(t *testing.T) {
 	t.Parallel()
 	repository := newReadRepository()
-	service := NewService(repository, nil, nil, Dependencies{})
+	service := newTestService(repository, nil, nil, Dependencies{})
 	invalidDeviceID := DeviceID("bad")
 	invalidEntityID := EntityID("bad")
 	invalidCommandID := CommandID("bad")
@@ -147,7 +149,7 @@ func TestReadServiceReturnsOwnedDataAndNormalizesCommandPosition(t *testing.T) {
 		CompletedAt: &completedAt, FailureCode: &failure,
 	}
 	repository.commandPage = Page[CommandRecord]{Items: []CommandRecord{repository.command}}
-	service := NewService(repository, nil, nil, Dependencies{})
+	service := newTestService(repository, nil, nil, Dependencies{})
 
 	device, err := service.GetDevice(context.Background(), GetDeviceParams{
 		ID: commandTestDeviceID, AfterEntityID: new(commandTestEntityID), EntityLimit: 1,
@@ -197,10 +199,9 @@ func TestReadServiceReturnsOwnedDataAndNormalizesCommandPosition(t *testing.T) {
 	}
 }
 
-func TestEntityReadsApplyRecoveryAvailabilityWithoutChangingState(t *testing.T) {
+func TestEntityReadsPreservePersistedAvailabilityDuringReadinessPause(t *testing.T) {
 	t.Parallel()
 	now := time.Date(2026, 8, 29, 15, 0, 0, 0, time.UTC)
-	runtimeID := testRuntimeID
 	repository := newReadRepository()
 	repository.entity = EntityWithState{
 		Entity: Entity{ID: commandTestEntityID, DeviceID: commandTestDeviceID},
@@ -209,27 +210,16 @@ func TestEntityReadsApplyRecoveryAvailabilityWithoutChangingState(t *testing.T) 
 			Status: EntityAvailabilityAvailable, Source: "entity_report",
 			Since: now.Add(-time.Minute), EvidenceAt: now.Add(-time.Minute),
 		},
-		availabilityRuntimeID: &runtimeID,
 	}
-	service := NewService(repository, nil, nil, Dependencies{Now: func() time.Time { return now }})
-	service.ResumeHealthEvaluation(now)
+	service := newTestService(repository, nil, nil, Dependencies{Now: func() time.Time { return now }})
 
 	view, err := service.GetEntity(context.Background(), commandTestEntityID)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if view.State == nil || string(view.State.Value) != "true" ||
-		view.Availability.Status != EntityAvailabilityUnknown || view.Availability.Source != healthSourceCore ||
-		view.Availability.Reason == nil || view.Availability.Reason.Code != "hearth.core_recovering" {
-		t.Fatalf("recovering Entity view = %#v", view)
-	}
-	service.markRecoveryHeartbeat(1, runtimeID)
-	view, err = service.GetEntity(context.Background(), commandTestEntityID)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if view.Availability.Status != EntityAvailabilityAvailable || view.Availability.Source != "entity_report" {
-		t.Fatalf("refreshed Entity view = %#v", view.Availability)
+		view.Availability.Status != EntityAvailabilityAvailable || view.Availability.Source != "entity_report" {
+		t.Fatalf("paused Entity view = %#v", view)
 	}
 }
 
@@ -237,7 +227,7 @@ func TestListEntityCommandsDistinguishesUnknownParent(t *testing.T) {
 	t.Parallel()
 	repository := newReadRepository()
 	repository.entityErr = ErrEntityNotFound
-	service := NewService(repository, nil, nil, Dependencies{})
+	service := newTestService(repository, nil, nil, Dependencies{})
 	_, err := service.ListEntityCommands(
 		context.Background(),
 		ListEntityCommandsParams{EntityID: commandTestEntityID, Limit: 50},

@@ -2,7 +2,7 @@
 // versions:
 //   sqlc v1.31.1
 
-package health
+package dbsqlc
 
 import (
 	"database/sql"
@@ -44,7 +44,6 @@ type AdapterInstance struct {
 	ExternalSystemReasonDetail     sql.NullString
 	ExternalSystemSourceObservedAt sql.NullString
 	ExternalSystemEvidenceAt       sql.NullString
-	AvailabilityEpoch              int64
 	LatestTransitionReceiveOrder   sql.NullInt64
 }
 
@@ -101,7 +100,6 @@ type EntityAvailabilityCurrent struct {
 	EntityID                     string
 	AdapterID                    string
 	RuntimeID                    string
-	AvailabilityEpoch            int64
 	Status                       string
 	ReasonCode                   sql.NullString
 	ReasonDetail                 sql.NullString
@@ -116,6 +114,34 @@ type EntityOwnershipInterval struct {
 	AdapterID            string
 	StartingReceiveOrder int64
 	EndingReceiveOrder   sql.NullInt64
+}
+
+type EntityReadProjection struct {
+	ID                                   string
+	DeviceID                             string
+	AdapterID                            string
+	Name                                 string
+	TypeID                               string
+	SupportJson                          string
+	Enabled                              int64
+	EntityCreatedAt                      string
+	ObservationID                        sql.NullString
+	ValueJson                            sql.NullString
+	AdapterReceivedAt                    sql.NullString
+	SourceUpdatedAt                      sql.NullString
+	ObservedAt                           sql.NullString
+	ReceiveOrder                         sql.NullInt64
+	AdapterHealthStatus                  sql.NullString
+	AdapterHealthReasonCode              sql.NullString
+	AdapterHealthReasonDetail            sql.NullString
+	AdapterHealthSince                   sql.NullString
+	AdapterHealthEvidenceAt              sql.NullString
+	ReportedAvailabilityStatus           sql.NullString
+	ReportedAvailabilityReasonCode       sql.NullString
+	ReportedAvailabilityReasonDetail     sql.NullString
+	ReportedAvailabilitySourceObservedAt sql.NullString
+	ReportedAvailabilityEvidenceAt       sql.NullString
+	ReportedAvailabilitySince            sql.NullString
 }
 
 type EntityState struct {

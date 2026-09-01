@@ -3,7 +3,7 @@
 //   sqlc v1.31.1
 // source: registration.sql
 
-package registration
+package dbsqlc
 
 import (
 	"context"

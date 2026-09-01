@@ -3,7 +3,7 @@
 //   sqlc v1.31.1
 // source: commands.sql
 
-package commands
+package dbsqlc
 
 import (
 	"context"
