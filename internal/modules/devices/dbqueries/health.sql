@@ -1,18 +1,15 @@
 -- name: GetAdapterInstance :one
-SELECT adapter_id, archived_at, created_at, updated_at, active_runtime_id,
-       health_runtime_id, health_status, health_reason_code,
-       health_reason_detail, health_since, health_evidence_at,
+SELECT adapter_id, archived_at, active_runtime_id, health_runtime_id,
+       health_status, health_reason_code, health_since, health_evidence_at,
        external_system_status, external_system_reason_code,
-       external_system_reason_detail, external_system_source_observed_at,
-       external_system_evidence_at, latest_transition_receive_order
+       external_system_source_observed_at, external_system_evidence_at
 FROM adapter_instances
 WHERE adapter_id = ?;
 
 -- name: CreateAdapterInstance :exec
 INSERT INTO adapter_instances (
-    adapter_id, created_at, updated_at, health_status, health_reason_code,
-    health_reason_detail, health_since, health_evidence_at
-) VALUES (?, ?, ?, ?, ?, ?, ?, ?);
+    adapter_id, health_status, health_reason_code, health_since, health_evidence_at
+) VALUES (?, ?, ?, ?, ?);
 
 -- name: GetRuntimeByClaimID :one
 SELECT runtime_id, claim_id, adapter_id, software_name, software_version,
@@ -64,28 +61,20 @@ SET active_runtime_id = ?,
     health_runtime_id = ?,
     health_status = ?,
     health_reason_code = ?,
-    health_reason_detail = ?,
     health_since = ?,
     health_evidence_at = ?,
     external_system_status = ?,
     external_system_reason_code = ?,
-    external_system_reason_detail = ?,
     external_system_source_observed_at = ?,
-    external_system_evidence_at = ?,
-    updated_at = ?
+    external_system_evidence_at = ?
 WHERE adapter_id = ?;
 
 -- name: InsertHealthTransition :one
 INSERT INTO health_transitions (
     resource_kind, adapter_id, entity_id, runtime_id, status, source,
-    reason_code, reason_detail, source_observed_at, observed_at
-) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    reason_code, source_observed_at, observed_at
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
 RETURNING receive_order;
-
--- name: SetLatestAdapterTransition :exec
-UPDATE adapter_instances
-SET latest_transition_receive_order = ?
-WHERE adapter_id = ?;
 
 -- name: GetAdapterView :one
 SELECT
@@ -93,12 +82,10 @@ SELECT
     ai.archived_at,
     ai.health_status,
     ai.health_reason_code,
-    ai.health_reason_detail,
     ai.health_since,
     ai.health_evidence_at,
     ai.external_system_status,
     ai.external_system_reason_code,
-    ai.external_system_reason_detail,
     ai.external_system_source_observed_at,
     ai.external_system_evidence_at,
     ar.runtime_id,
@@ -118,12 +105,10 @@ SELECT
     ai.archived_at,
     ai.health_status,
     ai.health_reason_code,
-    ai.health_reason_detail,
     ai.health_since,
     ai.health_evidence_at,
     ai.external_system_status,
     ai.external_system_reason_code,
-    ai.external_system_reason_detail,
     ai.external_system_source_observed_at,
     ai.external_system_evidence_at,
     ar.runtime_id,
@@ -145,12 +130,10 @@ SELECT
     ai.archived_at,
     ai.health_status,
     ai.health_reason_code,
-    ai.health_reason_detail,
     ai.health_since,
     ai.health_evidence_at,
     ai.external_system_status,
     ai.external_system_reason_code,
-    ai.external_system_reason_detail,
     ai.external_system_source_observed_at,
     ai.external_system_evidence_at,
     ar.runtime_id,
@@ -174,34 +157,30 @@ WHERE adapter_id = ?;
 
 -- name: ArchiveAdapter :exec
 UPDATE adapter_instances
-SET archived_at = ?, updated_at = ?,
-    active_runtime_id = NULL, health_runtime_id = NULL,
+SET archived_at = ?, active_runtime_id = NULL, health_runtime_id = NULL,
     health_status = NULL, health_reason_code = NULL,
-    health_reason_detail = NULL, health_since = NULL,
-    health_evidence_at = NULL, external_system_status = NULL,
-    external_system_reason_code = NULL, external_system_reason_detail = NULL,
+    health_since = NULL, health_evidence_at = NULL,
+    external_system_status = NULL, external_system_reason_code = NULL,
     external_system_source_observed_at = NULL,
     external_system_evidence_at = NULL
 WHERE adapter_id = ?;
 
 -- name: ListAdapterHealthHistoryFirstPage :many
-SELECT receive_order, status, source, reason_code, reason_detail,
-       source_observed_at, observed_at
+SELECT receive_order, status, source, reason_code, source_observed_at, observed_at
 FROM health_transitions
 WHERE resource_kind = 'adapter' AND adapter_id = ?
 ORDER BY receive_order DESC
 LIMIT ?;
 
 -- name: ListAdapterHealthHistoryBefore :many
-SELECT receive_order, status, source, reason_code, reason_detail,
-       source_observed_at, observed_at
+SELECT receive_order, status, source, reason_code, source_observed_at, observed_at
 FROM health_transitions
 WHERE resource_kind = 'adapter' AND adapter_id = ? AND receive_order < ?
 ORDER BY receive_order DESC
 LIMIT ?;
 
 -- name: GetEntityAvailabilityCurrent :one
-SELECT entity_id, adapter_id, runtime_id, status, reason_code, reason_detail,
+SELECT entity_id, adapter_id, runtime_id, status, reason_code,
        source_observed_at, evidence_at, current_since,
        latest_transition_receive_order
 FROM entity_availability_current
@@ -218,40 +197,35 @@ WHERE entity_id = ?;
 
 -- name: UpsertEntityAvailabilityCurrent :exec
 INSERT INTO entity_availability_current (
-    entity_id, adapter_id, runtime_id, status, reason_code, reason_detail,
+    entity_id, adapter_id, runtime_id, status, reason_code,
     source_observed_at, evidence_at, current_since,
     latest_transition_receive_order
-) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
 ON CONFLICT(entity_id) DO UPDATE SET
     adapter_id = excluded.adapter_id,
     runtime_id = excluded.runtime_id,
     status = excluded.status,
     reason_code = excluded.reason_code,
-    reason_detail = excluded.reason_detail,
     source_observed_at = excluded.source_observed_at,
     evidence_at = excluded.evidence_at,
     current_since = excluded.current_since,
     latest_transition_receive_order = excluded.latest_transition_receive_order;
 
 -- name: ListEntityAvailabilityHistoryFirstPage :many
-WITH candidates AS (
+WITH entity_lifetime AS (
+    SELECT initial.adapter_id, MIN(initial.receive_order) AS starting_receive_order
+    FROM health_transitions AS initial
+    WHERE initial.resource_kind = 'entity' AND initial.entity_id = sqlc.arg(entity_id)
+    GROUP BY initial.adapter_id
+), candidates AS (
     SELECT
         transition.receive_order,
         transition.status,
         transition.source,
         transition.reason_code,
-        transition.reason_detail,
         transition.source_observed_at,
         transition.observed_at
     FROM health_transitions AS transition
-    JOIN entity_ownership_intervals AS ownership
-        ON ownership.entity_id = transition.entity_id
-        AND ownership.adapter_id = transition.adapter_id
-        AND transition.receive_order >= ownership.starting_receive_order
-        AND (
-            ownership.ending_receive_order IS NULL
-            OR transition.receive_order < ownership.ending_receive_order
-        )
     WHERE transition.resource_kind = 'entity'
       AND transition.entity_id = sqlc.arg(entity_id)
 
@@ -265,19 +239,13 @@ WITH candidates AS (
             WHEN transition.status = 'healthy' THEN 'hearth.awaiting_entity_report'
             ELSE transition.reason_code
         END AS reason_code,
-        CASE WHEN transition.status = 'healthy' THEN NULL ELSE transition.reason_detail END AS reason_detail,
         CASE WHEN transition.status = 'healthy' THEN NULL ELSE transition.source_observed_at END AS source_observed_at,
         transition.observed_at
-    FROM entity_ownership_intervals AS ownership
+    FROM entity_lifetime AS lifetime
     JOIN health_transitions AS transition
         ON transition.resource_kind = 'adapter'
-        AND transition.adapter_id = ownership.adapter_id
-        AND transition.receive_order >= ownership.starting_receive_order
-        AND (
-            ownership.ending_receive_order IS NULL
-            OR transition.receive_order < ownership.ending_receive_order
-        )
-    WHERE ownership.entity_id = sqlc.arg(entity_id)
+        AND transition.adapter_id = lifetime.adapter_id
+        AND transition.receive_order >= lifetime.starting_receive_order
 ), sequenced AS (
     SELECT
         candidates.*,
@@ -285,38 +253,32 @@ WITH candidates AS (
         lag(reason_code) OVER (ORDER BY receive_order) AS prior_reason_code
     FROM candidates
 ), effective AS (
-    SELECT receive_order, status, source, reason_code, reason_detail,
-           source_observed_at, observed_at
+    SELECT receive_order, status, source, reason_code, source_observed_at, observed_at
     FROM sequenced
     WHERE prior_status IS NULL
        OR status <> prior_status
        OR reason_code IS NOT prior_reason_code
 )
-SELECT receive_order, status, source, reason_code, reason_detail,
-       source_observed_at, observed_at
+SELECT receive_order, status, source, reason_code, source_observed_at, observed_at
 FROM effective
 ORDER BY receive_order DESC
 LIMIT sqlc.arg(page_limit);
 
 -- name: ListEntityAvailabilityHistoryBefore :many
-WITH candidates AS (
+WITH entity_lifetime AS (
+    SELECT initial.adapter_id, MIN(initial.receive_order) AS starting_receive_order
+    FROM health_transitions AS initial
+    WHERE initial.resource_kind = 'entity' AND initial.entity_id = sqlc.arg(entity_id)
+    GROUP BY initial.adapter_id
+), candidates AS (
     SELECT
         transition.receive_order,
         transition.status,
         transition.source,
         transition.reason_code,
-        transition.reason_detail,
         transition.source_observed_at,
         transition.observed_at
     FROM health_transitions AS transition
-    JOIN entity_ownership_intervals AS ownership
-        ON ownership.entity_id = transition.entity_id
-        AND ownership.adapter_id = transition.adapter_id
-        AND transition.receive_order >= ownership.starting_receive_order
-        AND (
-            ownership.ending_receive_order IS NULL
-            OR transition.receive_order < ownership.ending_receive_order
-        )
     WHERE transition.resource_kind = 'entity'
       AND transition.entity_id = sqlc.arg(entity_id)
 
@@ -330,19 +292,13 @@ WITH candidates AS (
             WHEN transition.status = 'healthy' THEN 'hearth.awaiting_entity_report'
             ELSE transition.reason_code
         END AS reason_code,
-        CASE WHEN transition.status = 'healthy' THEN NULL ELSE transition.reason_detail END AS reason_detail,
         CASE WHEN transition.status = 'healthy' THEN NULL ELSE transition.source_observed_at END AS source_observed_at,
         transition.observed_at
-    FROM entity_ownership_intervals AS ownership
+    FROM entity_lifetime AS lifetime
     JOIN health_transitions AS transition
         ON transition.resource_kind = 'adapter'
-        AND transition.adapter_id = ownership.adapter_id
-        AND transition.receive_order >= ownership.starting_receive_order
-        AND (
-            ownership.ending_receive_order IS NULL
-            OR transition.receive_order < ownership.ending_receive_order
-        )
-    WHERE ownership.entity_id = sqlc.arg(entity_id)
+        AND transition.adapter_id = lifetime.adapter_id
+        AND transition.receive_order >= lifetime.starting_receive_order
 ), sequenced AS (
     SELECT
         candidates.*,
@@ -350,15 +306,13 @@ WITH candidates AS (
         lag(reason_code) OVER (ORDER BY receive_order) AS prior_reason_code
     FROM candidates
 ), effective AS (
-    SELECT receive_order, status, source, reason_code, reason_detail,
-           source_observed_at, observed_at
+    SELECT receive_order, status, source, reason_code, source_observed_at, observed_at
     FROM sequenced
     WHERE prior_status IS NULL
        OR status <> prior_status
        OR reason_code IS NOT prior_reason_code
 )
-SELECT receive_order, status, source, reason_code, reason_detail,
-       source_observed_at, observed_at
+SELECT receive_order, status, source, reason_code, source_observed_at, observed_at
 FROM effective
 WHERE receive_order < CAST(sqlc.arg(before_receive_order) AS INTEGER)
 ORDER BY receive_order DESC

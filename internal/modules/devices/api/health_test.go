@@ -22,10 +22,9 @@ func TestListAdaptersMapsHealthAndScopesCursorToArchiveFilter(t *testing.T) {
 	t.Parallel()
 	observedAt := time.Date(2026, 8, 29, 15, 0, 1, 0, time.UTC)
 	sourceObservedAt := observedAt.Add(-time.Second)
-	detail := "network is unreachable"
 	active := devices.AdapterInstance{ID: apiAdapterID, Health: &devices.AdapterHealth{
 		Status: devices.AdapterHealthUnhealthy, Since: observedAt, EvidenceAt: observedAt,
-		Reason: &devices.HealthReason{Code: "hearth.network_unreachable", Detail: &detail},
+		Reason: &devices.HealthReason{Code: "hearth.network_unreachable"},
 		Runtime: &devices.RuntimeEvidence{
 			ID: "run_01890f47-7a6b-7c4d-8e9f-0123456789ab", Status: "online",
 			SoftwareName: "hearth-adapter-simulator", SoftwareVersion: "0.1.0",
@@ -34,7 +33,7 @@ func TestListAdaptersMapsHealthAndScopesCursorToArchiveFilter(t *testing.T) {
 		ExternalSystem: &devices.ExternalSystemEvidence{
 			Status: devices.AdapterHealthUnhealthy, SourceObservedAt: sourceObservedAt,
 			EvidenceAt: observedAt,
-			Reason:     &devices.HealthReason{Code: "hearth.network_unreachable", Detail: &detail},
+			Reason:     &devices.HealthReason{Code: "hearth.network_unreachable"},
 		},
 	}}
 	archivedAt := observedAt.Add(time.Hour)
@@ -74,7 +73,7 @@ func TestListAdaptersMapsHealthAndScopesCursorToArchiveFilter(t *testing.T) {
 	}
 	body := first.Items[0]
 	if body.ID != apiAdapterID || body.Health == nil || body.Health.Status != "unhealthy" ||
-		body.Health.Reason == nil || body.Health.Reason.Detail == nil || *body.Health.Reason.Detail != detail ||
+		body.Health.Reason == nil || body.Health.Reason.Code != "hearth.network_unreachable" ||
 		body.Health.Runtime == nil || body.Health.Runtime.LastHeartbeatAt != nil ||
 		body.Health.ExternalSystem == nil || body.Health.ExternalSystem.SourceObservedAt != formatTime(sourceObservedAt) {
 		t.Fatalf("Adapter body = %#v", body)
@@ -250,7 +249,6 @@ func TestHealthHistoryRoutesMapEvidenceAndScopedCursors(t *testing.T) {
 	t.Parallel()
 	observedAt := time.Date(2026, 8, 29, 15, 0, 1, 0, time.UTC)
 	sourceObservedAt := observedAt.Add(-time.Second)
-	detail := "network is unreachable"
 	adapterCalls := 0
 	stub := &stubDevices{
 		listAdapterHealthHistory: func(
@@ -268,7 +266,7 @@ func TestHealthHistoryRoutesMapEvidenceAndScopedCursors(t *testing.T) {
 				return devices.Page[devices.HealthTransition]{
 					Items: []devices.HealthTransition{{
 						ReceiveOrder: 12, Status: "unhealthy", Source: "external_system",
-						Reason:           &devices.HealthReason{Code: "hearth.network_unreachable", Detail: &detail},
+						Reason:           &devices.HealthReason{Code: "hearth.network_unreachable"},
 						SourceObservedAt: &sourceObservedAt, ObservedAt: observedAt,
 					}},
 					HasMore: true,
@@ -306,7 +304,7 @@ func TestHealthHistoryRoutesMapEvidenceAndScopedCursors(t *testing.T) {
 		t.Fatal(err)
 	}
 	if len(first.Items) != 1 || first.NextCursor == nil || first.Items[0].Reason == nil ||
-		first.Items[0].Reason.Detail == nil || first.Items[0].SourceObservedAt == nil ||
+		first.Items[0].Reason.Code != "hearth.network_unreachable" || first.Items[0].SourceObservedAt == nil ||
 		first.Items[0].ObservedAt != formatTime(observedAt) {
 		t.Fatalf("Adapter history = %#v", first)
 	}

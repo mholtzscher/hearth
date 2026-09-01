@@ -31,7 +31,7 @@ func TestRegistrationWithoutAdapterRollsBackAndRetainsHistoryAfterClaim(t *testi
 		t.Fatalf("registration before Adapter claim error = %v", err)
 	}
 	for _, table := range []string{
-		"adapter_bindings", "devices", "entities", "adapter_entity_mappings", "entity_ownership_intervals",
+		"adapter_bindings", "devices", "entities", "adapter_entity_mappings",
 	} {
 		assertTableCount(t, database, table, 0)
 	}
@@ -74,7 +74,6 @@ func TestRegistrationWithoutAdapterRollsBackAndRetainsHistoryAfterClaim(t *testi
 		history.Items[1].Status != "unknown" || history.Items[1].Source != healthSourceCore {
 		t.Fatalf("Entity history after retry = %#v", history.Items)
 	}
-	assertTableCount(t, database, "entity_ownership_intervals", 1)
 }
 
 func TestRegistrationIsIdempotentAndUpdatesDescriptors(t *testing.T) {
@@ -791,15 +790,12 @@ func TestCreateCommandDispatchesWhenHealthyEntityIsReportedUnavailable(t *testin
 	}); heartbeatErr != nil {
 		t.Fatal(heartbeatErr)
 	}
-	detail := "upstream resource unavailable"
 	if _, reportErr := repository.ReportEntityAvailability(ctx, AvailabilityBatchWrite{
 		AdapterID: "simulator", RuntimeID: testRuntimeID,
 		Reports: []EntityAvailabilityReport{{
 			EntityID: binding.Entities[0].EntityID, Status: EntityAvailabilityUnavailable,
 			SourceObservedAt: healthyAt,
-			Reason: &HealthReason{
-				Code: "adapter.hearth-simulator.entity_unavailable", Detail: &detail,
-			},
+			Reason:           &HealthReason{Code: "adapter.hearth-simulator.entity_unavailable"},
 		}},
 		ReportedAt: healthyAt,
 	}); reportErr != nil {

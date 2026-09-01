@@ -41,7 +41,7 @@ func TestAdapterSessionAndAvailabilitySchemaFixtures(t *testing.T) {
 			"schema":"urn:hearth:schema:adapter-heartbeat-request:v1",
 			"emitted_at":"2026-08-29T15:00:01Z",
 			"correlation_id":"` + testCorrelationID + `",
-			"data":{"external_system":{"status":"unhealthy","source_observed_at":"2026-08-29T15:00:00Z","reason":{"code":"hearth.network_unreachable","detail":"network is unreachable"}}}
+			"data":{"external_system":{"status":"unhealthy","source_observed_at":"2026-08-29T15:00:00Z","reason":{"code":"hearth.network_unreachable"}}}
 		}`,
 		contractsv1.AdapterHeartbeatResponseSchemaID: `{
 			"id":"rep_01890f47-7a6b-7c4d-8e9f-0123456789ac",
@@ -136,6 +136,12 @@ func TestHealthSchemasEnforceStatusReasonBranches(t *testing.T) {
 	external["reason"] = map[string]any{"code": "Hearth.NetworkUnreachable"}
 	if err := schemas[contractsv1.AdapterHeartbeatRequestSchemaID].Validate(heartbeat); err == nil {
 		t.Fatal("non-lowercase reason code unexpectedly accepted")
+	}
+	external["reason"] = map[string]any{
+		"code": "hearth.network_unreachable", "detail": "network is unreachable",
+	}
+	if err := schemas[contractsv1.AdapterHeartbeatRequestSchemaID].Validate(heartbeat); err == nil {
+		t.Fatal("health reason detail unexpectedly accepted")
 	}
 }
 
@@ -281,7 +287,7 @@ func availabilityRequestFixture() string {
 		"schema":"urn:hearth:schema:entity-availability-request:v1",
 		"emitted_at":"2026-08-29T15:00:01Z",
 		"correlation_id":"` + testCorrelationID + `",
-		"data":{"entities":[{"entity_id":"` + testEntityID + `","status":"unavailable","source_observed_at":"2026-08-29T15:00:00Z","reason":{"code":"hearth.entity_unavailable","detail":"resource unavailable"}}]}
+		"data":{"entities":[{"entity_id":"` + testEntityID + `","status":"unavailable","source_observed_at":"2026-08-29T15:00:00Z","reason":{"code":"hearth.entity_unavailable"}}]}
 	}`
 }
 

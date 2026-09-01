@@ -44,8 +44,7 @@ func TestMigrateEmptySQLiteDatabase(t *testing.T) {
 	for _, table := range []string{
 		"devices", "entities", "commands",
 		"adapter_bindings", "adapter_entity_mappings", "observation_receipts", "entity_states",
-		"adapter_instances", "adapter_runtimes", "entity_availability_current",
-		"health_transitions", "entity_ownership_intervals",
+		"adapter_instances", "adapter_runtimes", "entity_availability_current", "health_transitions",
 	} {
 		var found string
 		err := database.QueryRowContext(ctx,
@@ -71,7 +70,7 @@ func TestMigrateEmptySQLiteDatabase(t *testing.T) {
 	assertIndexColumns(t, database, "entities_device_id_idx", "device_id,id")
 	assertIndexColumns(t, database, "commands_entity_requested_idx", "entity_id,requested_at,id")
 	assertIndexColumns(t, database, "adapter_runtimes_one_active_idx", "adapter_id")
-	assertIndexColumns(t, database, "entity_ownership_intervals_one_open_idx", "entity_id")
+	assertIndexColumns(t, database, "adapter_runtimes_adapter_idx", "adapter_id")
 
 	var supportColumn string
 	if err := database.QueryRowContext(ctx, `

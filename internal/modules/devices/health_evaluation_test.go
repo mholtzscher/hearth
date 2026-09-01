@@ -329,7 +329,7 @@ func TestServiceSQLiteRecoveryGraceExpiresRuntimeAtBoundary(t *testing.T) {
 	assertTableCount(t, database, "health_transitions", 2)
 }
 
-func TestServiceValidatesClaimsAndAdapterReasonNamespace(t *testing.T) {
+func TestServiceValidatesClaimsAndAcceptsSoftwareIndependentAdapterReasons(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	now := time.Date(2026, 8, 29, 12, 0, 0, 0, time.UTC)
@@ -366,29 +366,20 @@ func TestServiceValidatesClaimsAndAdapterReasonNamespace(t *testing.T) {
 		t.Fatalf("claim write = %#v", repository.claimWrites)
 	}
 
-	wrongNamespace := AdapterHeartbeat{
+	heartbeat := AdapterHeartbeat{
 		AdapterID: "simulator", RuntimeID: testRuntimeID, ExternalStatus: AdapterHealthUnhealthy,
 		SourceObservedAt: now,
 		Reason:           &HealthReason{Code: "adapter.some-other-software.connection_lost"},
 	}
-	if _, err := service.RecordAdapterHeartbeat(ctx, wrongNamespace); err == nil {
-		t.Fatal("wrong Adapter reason namespace was accepted")
-	}
-	if len(repository.heartbeatWrites) != 0 {
-		t.Fatal("invalid heartbeat reached repository")
-	}
-
-	detail := "upstream disconnected"
-	validHeartbeat := wrongNamespace
-	validHeartbeat.Reason = &HealthReason{
-		Code: "adapter.hearth-simulator.connection_lost", Detail: &detail,
-	}
-	if _, err := service.RecordAdapterHeartbeat(ctx, validHeartbeat); err != nil {
+	if _, err := service.RecordAdapterHeartbeat(ctx, heartbeat); err != nil {
 		t.Fatal(err)
 	}
-	detail = "mutated"
+	heartbeat.Reason.Code = "mutated"
+	if len(repository.heartbeatWrites) != 1 {
+		t.Fatalf("heartbeat writes = %d, want 1", len(repository.heartbeatWrites))
+	}
 	write := repository.heartbeatWrites[0]
-	if write.Reason == nil || write.Reason.Detail == nil || *write.Reason.Detail != "upstream disconnected" ||
+	if write.Reason == nil || write.Reason.Code != "adapter.some-other-software.connection_lost" ||
 		!write.LeaseExpiresAt.Equal(now.Add(adapterLeaseDuration)) {
 		t.Fatalf("heartbeat write = %#v", write)
 	}
@@ -398,25 +389,22 @@ func TestServiceAdapterReadsReturnOwnedCopiesAndValidatePages(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	now := time.Date(2026, 8, 29, 13, 0, 0, 0, time.UTC)
-	detail := "network unreachable"
 	sourceObservedAt := now.Add(-time.Second)
 	repository := newHealthRepositoryStub()
 	repository.adapter = healthyAdapterFixture(now)
 	repository.adapter.Health.Status = AdapterHealthUnhealthy
-	repository.adapter.Health.Reason = &HealthReason{Code: "hearth.network_unreachable", Detail: &detail}
+	repository.adapter.Health.Reason = &HealthReason{Code: "hearth.network_unreachable"}
 	repository.adapter.Health.ExternalSystem.Status = AdapterHealthUnhealthy
-	repository.adapter.Health.ExternalSystem.Reason = &HealthReason{
-		Code: "hearth.network_unreachable", Detail: &detail,
-	}
+	repository.adapter.Health.ExternalSystem.Reason = &HealthReason{Code: "hearth.network_unreachable"}
 	repository.adapterPage = Page[AdapterInstance]{Items: []AdapterInstance{repository.adapter}, HasMore: true}
 	repository.healthHistoryPage = Page[HealthTransition]{Items: []HealthTransition{{
 		ReceiveOrder: 4, Status: string(AdapterHealthUnhealthy), Source: "external_system",
-		Reason:           &HealthReason{Code: "hearth.network_unreachable", Detail: &detail},
+		Reason:           &HealthReason{Code: "hearth.network_unreachable"},
 		SourceObservedAt: &sourceObservedAt, ObservedAt: now,
 	}}, HasMore: true}
 	repository.availabilityHistoryPage = Page[HealthTransition]{Items: []HealthTransition{{
 		ReceiveOrder: 5, Status: string(EntityAvailabilityUnavailable), Source: "adapter_health",
-		Reason:           &HealthReason{Code: "hearth.network_unreachable", Detail: &detail},
+		Reason:           &HealthReason{Code: "hearth.network_unreachable"},
 		SourceObservedAt: &sourceObservedAt, ObservedAt: now,
 	}}, HasMore: true}
 	service := newTestService(repository, nil, firstLightCatalog(t), Dependencies{Now: func() time.Time { return now }})
@@ -434,9 +422,9 @@ func TestServiceAdapterReadsReturnOwnedCopiesAndValidatePages(t *testing.T) {
 	if err != nil || !page.HasMore || len(page.Items) != 1 {
 		t.Fatalf("Adapter page = %#v, %v", page, err)
 	}
-	*page.Items[0].Health.Reason.Detail = "changed"
+	page.Items[0].Health.Reason.Code = "changed"
 	page.Items[0].Health.Runtime.SoftwareName = "changed"
-	if *repository.adapter.Health.Reason.Detail != detail ||
+	if repository.adapter.Health.Reason.Code != "hearth.network_unreachable" ||
 		repository.adapter.Health.Runtime.SoftwareName != "hearth-simulator" {
 		t.Fatal("Adapter list result aliases repository data")
 	}
@@ -447,9 +435,9 @@ func TestServiceAdapterReadsReturnOwnedCopiesAndValidatePages(t *testing.T) {
 	if err != nil || !history.HasMore || len(history.Items) != 1 {
 		t.Fatalf("health history = %#v, %v", history, err)
 	}
-	*history.Items[0].Reason.Detail = "changed"
+	history.Items[0].Reason.Code = "changed"
 	*history.Items[0].SourceObservedAt = now
-	if *repository.healthHistoryPage.Items[0].Reason.Detail != detail ||
+	if repository.healthHistoryPage.Items[0].Reason.Code != "hearth.network_unreachable" ||
 		!repository.healthHistoryPage.Items[0].SourceObservedAt.Equal(sourceObservedAt) {
 		t.Fatal("health history result aliases repository data")
 	}
@@ -461,8 +449,8 @@ func TestServiceAdapterReadsReturnOwnedCopiesAndValidatePages(t *testing.T) {
 	if err != nil || !availabilityHistory.HasMore || len(availabilityHistory.Items) != 1 {
 		t.Fatalf("availability history = %#v, %v", availabilityHistory, err)
 	}
-	*availabilityHistory.Items[0].Reason.Detail = "changed"
-	if *repository.availabilityHistoryPage.Items[0].Reason.Detail != detail {
+	availabilityHistory.Items[0].Reason.Code = "changed"
+	if repository.availabilityHistoryPage.Items[0].Reason.Code != "hearth.network_unreachable" {
 		t.Fatal("availability history result aliases repository data")
 	}
 	if _, invalidErr := service.ListEntityAvailabilityHistory(ctx, ListEntityAvailabilityParams{

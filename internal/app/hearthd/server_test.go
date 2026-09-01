@@ -308,7 +308,7 @@ func TestRuntimeOpenAPIContract(t *testing.T) {
 			"id", "device_id", "adapter_id", "name", "type", "support", "enabled", "availability", "state",
 		},
 		"AvailabilityBody": {"status", "source", "since", "evidence_at", "source_observed_at", "reason"},
-		"HealthReasonBody": {"code", "detail"},
+		"HealthReasonBody": {"code"},
 		"AdapterBody":      {"id", "archived_at", "health"},
 		"AdapterHealthBody": {
 			"status", "since", "evidence_at", "reason", "runtime", "external_system",

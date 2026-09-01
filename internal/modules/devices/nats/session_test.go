@@ -88,7 +88,6 @@ func TestSessionServerMapsClaimHeartbeatAndRelease(t *testing.T) {
 		t.Fatalf("claim response = %#v", claim.Data)
 	}
 
-	detail := "dial tcp: network is unreachable"
 	heartbeatSubject := func(adapterID string) (string, error) {
 		return natswire.AdapterHeartbeatSubject(adapterID, testRuntimeID)
 	}
@@ -98,7 +97,7 @@ func TestSessionServerMapsClaimHeartbeatAndRelease(t *testing.T) {
 		"hbt_01890f47-7a6b-7c4d-8e9f-0123456789ab", heartbeatSubject,
 		adapterHeartbeatRequest{ExternalSystem: externalSystemHealth{
 			Status: "unhealthy", SourceObservedAt: "2026-08-29T15:00:00Z",
-			Reason: &healthReason{Code: "hearth.network_unreachable", Detail: &detail},
+			Reason: &healthReason{Code: "hearth.network_unreachable"},
 		}},
 	)
 	if heartbeat.Data.Status != statusAccepted || heartbeat.Data.LeaseExpiresAt != "2026-08-29T15:00:15Z" {
@@ -125,8 +124,8 @@ func TestSessionServerMapsClaimHeartbeatAndRelease(t *testing.T) {
 	}
 	if recorder.heartbeat.RuntimeID != devices.RuntimeID(testRuntimeID) ||
 		recorder.heartbeat.ExternalStatus != devices.AdapterHealthUnhealthy ||
-		recorder.heartbeat.Reason == nil || recorder.heartbeat.Reason.Detail == nil ||
-		*recorder.heartbeat.Reason.Detail != detail {
+		recorder.heartbeat.Reason == nil ||
+		recorder.heartbeat.Reason.Code != "hearth.network_unreachable" {
 		t.Fatalf("mapped heartbeat = %#v", recorder.heartbeat)
 	}
 	if recorder.releasedID != devices.RuntimeID(testRuntimeID) {

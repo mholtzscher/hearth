@@ -250,5 +250,5 @@ func domainHealthReason(reason *healthReason) *devices.HealthReason {
 	if reason == nil {
 		return nil
 	}
-	return &devices.HealthReason{Code: reason.Code, Detail: copyStringPointer(reason.Detail)}
+	return &devices.HealthReason{Code: reason.Code}
 }

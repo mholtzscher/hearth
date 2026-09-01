@@ -27,7 +27,6 @@ type HealthReport struct {
 	Status           HealthStatus
 	SourceObservedAt time.Time
 	ReasonCode       string
-	Detail           string
 }
 
 type EntityAvailabilityStatus string
@@ -42,7 +41,6 @@ type EntityAvailabilityReport struct {
 	Status           EntityAvailabilityStatus
 	SourceObservedAt time.Time
 	ReasonCode       string
-	Detail           string
 }
 
 type EntityMetadata struct {

@@ -84,19 +84,12 @@ SET external_entity_id = ?, updated_at = ?
 WHERE adapter_id = ? AND binding_key = ? AND entity_key = ?;
 
 -- name: GetAdapterAvailabilityBaseline :one
-SELECT active_runtime_id, health_status, health_reason_code,
-       health_reason_detail
+SELECT active_runtime_id, health_status, health_reason_code
 FROM adapter_instances
 WHERE adapter_id = ? AND archived_at IS NULL;
 
--- name: InsertEntityAvailabilityBaseline :one
+-- name: InsertEntityAvailabilityBaseline :exec
 INSERT INTO health_transitions (
     resource_kind, adapter_id, entity_id, runtime_id, status, source,
-    reason_code, reason_detail, source_observed_at, observed_at
-) VALUES ('entity', ?, ?, ?, ?, ?, ?, ?, ?, ?)
-RETURNING receive_order;
-
--- name: CreateEntityOwnershipInterval :exec
-INSERT INTO entity_ownership_intervals (
-    entity_id, adapter_id, starting_receive_order
-) VALUES (?, ?, ?);
+    reason_code, source_observed_at, observed_at
+) VALUES ('entity', ?, ?, ?, ?, ?, ?, ?, ?);

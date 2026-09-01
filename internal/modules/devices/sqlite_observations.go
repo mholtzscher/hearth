@@ -361,31 +361,28 @@ func (repository *SQLiteRepository) DeleteExpiredObservationReceipts(ctx context
 }
 
 type sqliteEntityAvailability struct {
-	entityCreatedAt      string
-	adapterStatus        sql.NullString
-	adapterReasonCode    sql.NullString
-	adapterReasonDetail  sql.NullString
-	adapterSince         sql.NullString
-	adapterEvidenceAt    sql.NullString
-	reportedStatus       sql.NullString
-	reportedReasonCode   sql.NullString
-	reportedReasonDetail sql.NullString
-	reportedSourceAt     sql.NullString
-	reportedEvidenceAt   sql.NullString
-	reportedSince        sql.NullString
+	entityCreatedAt    string
+	adapterStatus      sql.NullString
+	adapterReasonCode  sql.NullString
+	adapterSince       sql.NullString
+	adapterEvidenceAt  sql.NullString
+	reportedStatus     sql.NullString
+	reportedReasonCode sql.NullString
+	reportedSourceAt   sql.NullString
+	reportedEvidenceAt sql.NullString
+	reportedSince      sql.NullString
 }
 
 func entityWithStateFromRow(row dbsqlc.EntityReadProjection) (EntityWithState, error) {
 	availability, err := entityAvailabilityFromValues(sqliteEntityAvailability{
 		entityCreatedAt: row.EntityCreatedAt,
 		adapterStatus:   row.AdapterHealthStatus, adapterReasonCode: row.AdapterHealthReasonCode,
-		adapterReasonDetail: row.AdapterHealthReasonDetail, adapterSince: row.AdapterHealthSince,
-		adapterEvidenceAt: row.AdapterHealthEvidenceAt, reportedStatus: row.ReportedAvailabilityStatus,
-		reportedReasonCode:   row.ReportedAvailabilityReasonCode,
-		reportedReasonDetail: row.ReportedAvailabilityReasonDetail,
-		reportedSourceAt:     row.ReportedAvailabilitySourceObservedAt,
-		reportedEvidenceAt:   row.ReportedAvailabilityEvidenceAt,
-		reportedSince:        row.ReportedAvailabilitySince,
+		adapterSince: row.AdapterHealthSince, adapterEvidenceAt: row.AdapterHealthEvidenceAt,
+		reportedStatus:     row.ReportedAvailabilityStatus,
+		reportedReasonCode: row.ReportedAvailabilityReasonCode,
+		reportedSourceAt:   row.ReportedAvailabilitySourceObservedAt,
+		reportedEvidenceAt: row.ReportedAvailabilityEvidenceAt,
+		reportedSince:      row.ReportedAvailabilitySince,
 	})
 	if err != nil {
 		return EntityWithState{}, err
@@ -447,7 +444,7 @@ func entityAvailabilityFromValues(values sqliteEntityAvailability) (EntityAvaila
 		return EntityAvailability{
 			Status: EntityAvailabilityStatus(values.reportedStatus.String), Source: "entity_report",
 			Since: since, EvidenceAt: evidenceAt, SourceObservedAt: sourceObservedAt,
-			Reason: healthReasonFromNulls(values.reportedReasonCode, values.reportedReasonDetail),
+			Reason: healthReasonFromNull(values.reportedReasonCode),
 		}, nil
 	}
 
@@ -471,7 +468,7 @@ func entityAvailabilityFromValues(values sqliteEntityAvailability) (EntityAvaila
 	}
 	return EntityAvailability{
 		Status: status, Source: "adapter_health", Since: since, EvidenceAt: evidenceAt,
-		Reason: healthReasonFromNulls(values.adapterReasonCode, values.adapterReasonDetail),
+		Reason: healthReasonFromNull(values.adapterReasonCode),
 	}, nil
 }
 

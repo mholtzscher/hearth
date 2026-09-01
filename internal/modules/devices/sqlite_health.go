@@ -68,7 +68,6 @@ func (repository *SQLiteRepository) ClaimAdapterRuntime(
 		HealthReasonCode: nullableText("hearth.awaiting_health"),
 		HealthSince:      formatNullableTime(write.ClaimedAt),
 		HealthEvidenceAt: formatNullableTime(write.ClaimedAt),
-		UpdatedAt:        formatTime(write.ClaimedAt),
 		AdapterID:        write.AdapterID,
 	}); updateErr != nil {
 		return RuntimeClaim{}, fmt.Errorf("activate Adapter runtime: %w", updateErr)
@@ -125,8 +124,6 @@ func claimAdapterInstance(
 	}
 	if createErr := queries.CreateAdapterInstance(ctx, dbsqlc.CreateAdapterInstanceParams{
 		AdapterID:        write.AdapterID,
-		CreatedAt:        formatTime(write.ClaimedAt),
-		UpdatedAt:        formatTime(write.ClaimedAt),
 		HealthStatus:     nullableText(string(AdapterHealthUnknown)),
 		HealthReasonCode: nullableText("hearth.awaiting_health"),
 		HealthSince:      formatNullableTime(write.ClaimedAt),
@@ -228,15 +225,12 @@ func (repository *SQLiteRepository) RecordAdapterHeartbeat(
 		HealthRuntimeID:                nullableText(string(write.RuntimeID)),
 		HealthStatus:                   nullableText(string(write.ExternalStatus)),
 		HealthReasonCode:               nullableReasonCode(reason),
-		HealthReasonDetail:             nullableReasonDetail(reason),
 		HealthSince:                    formatNullableTime(since),
 		HealthEvidenceAt:               formatNullableTime(write.ReceivedAt),
 		ExternalSystemStatus:           nullableText(string(write.ExternalStatus)),
 		ExternalSystemReasonCode:       nullableReasonCode(write.Reason),
-		ExternalSystemReasonDetail:     nullableReasonDetail(write.Reason),
 		ExternalSystemSourceObservedAt: formatNullableTime(write.SourceObservedAt),
 		ExternalSystemEvidenceAt:       formatNullableTime(write.ReceivedAt),
-		UpdatedAt:                      formatTime(write.ReceivedAt),
 		AdapterID:                      write.AdapterID,
 	}); updateErr != nil {
 		return HeartbeatResult{}, fmt.Errorf("update Adapter heartbeat health: %w", updateErr)
@@ -254,7 +248,6 @@ func (repository *SQLiteRepository) RecordAdapterHeartbeat(
 			Status:           string(write.ExternalStatus),
 			Source:           "external_system",
 			ReasonCode:       nullableReasonCode(reason),
-			ReasonDetail:     nullableReasonDetail(reason),
 			SourceObservedAt: formatNullableTime(write.SourceObservedAt),
 			ObservedAt:       formatTime(write.ReceivedAt),
 		}); transitionErr != nil {
@@ -456,10 +449,8 @@ func setOfflineAdapterHealth(
 		HealthEvidenceAt:               formatNullableTime(observedAt),
 		ExternalSystemStatus:           instance.ExternalSystemStatus,
 		ExternalSystemReasonCode:       instance.ExternalSystemReasonCode,
-		ExternalSystemReasonDetail:     instance.ExternalSystemReasonDetail,
 		ExternalSystemSourceObservedAt: instance.ExternalSystemSourceObservedAt,
 		ExternalSystemEvidenceAt:       instance.ExternalSystemEvidenceAt,
-		UpdatedAt:                      formatTime(observedAt),
 		AdapterID:                      instance.AdapterID,
 	}); updateErr != nil {
 		return fmt.Errorf("mark Adapter runtime offline: %w", updateErr)
@@ -509,14 +500,6 @@ func appendHealthTransition(
 	receiveOrder, err := queries.InsertHealthTransition(ctx, params)
 	if err != nil {
 		return 0, fmt.Errorf("insert health transition: %w", err)
-	}
-	if params.ResourceKind == "adapter" {
-		if updateErr := queries.SetLatestAdapterTransition(ctx, dbsqlc.SetLatestAdapterTransitionParams{
-			LatestTransitionReceiveOrder: sql.NullInt64{Int64: receiveOrder, Valid: true},
-			AdapterID:                    params.AdapterID,
-		}); updateErr != nil {
-			return 0, fmt.Errorf("update latest Adapter transition: %w", updateErr)
-		}
 	}
 	return receiveOrder, nil
 }
@@ -638,7 +621,6 @@ func persistEntityAvailability(
 			Status:           string(report.Status),
 			Source:           "entity_report",
 			ReasonCode:       nullableReasonCode(report.Reason),
-			ReasonDetail:     nullableReasonDetail(report.Reason),
 			SourceObservedAt: formatNullableTime(report.SourceObservedAt),
 			ObservedAt:       formatTime(write.ReportedAt),
 		})
@@ -655,7 +637,6 @@ func persistEntityAvailability(
 		RuntimeID:                    string(write.RuntimeID),
 		Status:                       string(report.Status),
 		ReasonCode:                   nullableReasonCode(report.Reason),
-		ReasonDetail:                 nullableReasonDetail(report.Reason),
 		SourceObservedAt:             formatTime(report.SourceObservedAt),
 		EvidenceAt:                   formatTime(write.ReportedAt),
 		CurrentSince:                 formatTime(since),
@@ -671,12 +652,10 @@ type sqliteAdapterView struct {
 	archivedAt               sql.NullString
 	healthStatus             sql.NullString
 	healthReasonCode         sql.NullString
-	healthReasonDetail       sql.NullString
 	healthSince              sql.NullString
 	healthEvidenceAt         sql.NullString
 	externalStatus           sql.NullString
 	externalReasonCode       sql.NullString
-	externalReasonDetail     sql.NullString
 	externalSourceObservedAt sql.NullString
 	externalEvidenceAt       sql.NullString
 	runtimeID                sql.NullString
@@ -700,10 +679,9 @@ func (repository *SQLiteRepository) GetAdapter(ctx context.Context, adapterID st
 	}
 	return adapterInstanceFromView(sqliteAdapterView{
 		adapterID: row.AdapterID, archivedAt: row.ArchivedAt, healthStatus: row.HealthStatus,
-		healthReasonCode: row.HealthReasonCode, healthReasonDetail: row.HealthReasonDetail,
-		healthSince: row.HealthSince, healthEvidenceAt: row.HealthEvidenceAt,
-		externalStatus: row.ExternalSystemStatus, externalReasonCode: row.ExternalSystemReasonCode,
-		externalReasonDetail:     row.ExternalSystemReasonDetail,
+		healthReasonCode: row.HealthReasonCode, healthSince: row.HealthSince,
+		healthEvidenceAt: row.HealthEvidenceAt, externalStatus: row.ExternalSystemStatus,
+		externalReasonCode:       row.ExternalSystemReasonCode,
 		externalSourceObservedAt: row.ExternalSystemSourceObservedAt,
 		externalEvidenceAt:       row.ExternalSystemEvidenceAt, runtimeID: row.RuntimeID,
 		softwareName: row.SoftwareName, softwareVersion: row.SoftwareVersion, claimedAt: row.ClaimedAt,
@@ -732,10 +710,9 @@ func (repository *SQLiteRepository) ListAdapters(
 		for index, row := range rows {
 			views[index] = sqliteAdapterView{
 				adapterID: row.AdapterID, archivedAt: row.ArchivedAt, healthStatus: row.HealthStatus,
-				healthReasonCode: row.HealthReasonCode, healthReasonDetail: row.HealthReasonDetail,
-				healthSince: row.HealthSince, healthEvidenceAt: row.HealthEvidenceAt,
-				externalStatus: row.ExternalSystemStatus, externalReasonCode: row.ExternalSystemReasonCode,
-				externalReasonDetail:     row.ExternalSystemReasonDetail,
+				healthReasonCode: row.HealthReasonCode, healthSince: row.HealthSince,
+				healthEvidenceAt: row.HealthEvidenceAt, externalStatus: row.ExternalSystemStatus,
+				externalReasonCode:       row.ExternalSystemReasonCode,
 				externalSourceObservedAt: row.ExternalSystemSourceObservedAt,
 				externalEvidenceAt:       row.ExternalSystemEvidenceAt, runtimeID: row.RuntimeID,
 				softwareName: row.SoftwareName, softwareVersion: row.SoftwareVersion, claimedAt: row.ClaimedAt,
@@ -753,10 +730,9 @@ func (repository *SQLiteRepository) ListAdapters(
 		for index, row := range rows {
 			views[index] = sqliteAdapterView{
 				adapterID: row.AdapterID, archivedAt: row.ArchivedAt, healthStatus: row.HealthStatus,
-				healthReasonCode: row.HealthReasonCode, healthReasonDetail: row.HealthReasonDetail,
-				healthSince: row.HealthSince, healthEvidenceAt: row.HealthEvidenceAt,
-				externalStatus: row.ExternalSystemStatus, externalReasonCode: row.ExternalSystemReasonCode,
-				externalReasonDetail:     row.ExternalSystemReasonDetail,
+				healthReasonCode: row.HealthReasonCode, healthSince: row.HealthSince,
+				healthEvidenceAt: row.HealthEvidenceAt, externalStatus: row.ExternalSystemStatus,
+				externalReasonCode:       row.ExternalSystemReasonCode,
 				externalSourceObservedAt: row.ExternalSystemSourceObservedAt,
 				externalEvidenceAt:       row.ExternalSystemEvidenceAt, runtimeID: row.RuntimeID,
 				softwareName: row.SoftwareName, softwareVersion: row.SoftwareVersion, claimedAt: row.ClaimedAt,
@@ -798,7 +774,7 @@ func adapterInstanceFromView(view sqliteAdapterView) (AdapterInstance, error) {
 	}
 	instance.Health = &AdapterHealth{
 		Status: AdapterHealthStatus(view.healthStatus.String), Since: since, EvidenceAt: evidenceAt,
-		Reason: healthReasonFromNulls(view.healthReasonCode, view.healthReasonDetail),
+		Reason: healthReasonFromNull(view.healthReasonCode),
 	}
 	if view.runtimeID.Valid {
 		claimed, parseErr := parseRequiredTime(view.claimedAt, "Adapter runtime claimed_at")
@@ -835,7 +811,7 @@ func adapterInstanceFromView(view sqliteAdapterView) (AdapterInstance, error) {
 		instance.Health.ExternalSystem = &ExternalSystemEvidence{
 			Status: AdapterHealthStatus(view.externalStatus.String), SourceObservedAt: sourceObservedAt,
 			EvidenceAt: externalObservedAt,
-			Reason:     healthReasonFromNulls(view.externalReasonCode, view.externalReasonDetail),
+			Reason:     healthReasonFromNull(view.externalReasonCode),
 		}
 	}
 	return instance, nil
@@ -872,8 +848,7 @@ func (repository *SQLiteRepository) ArchiveAdapter(ctx context.Context, params A
 		return ErrAdapterHasBindings
 	}
 	if archiveErr := queries.ArchiveAdapter(ctx, dbsqlc.ArchiveAdapterParams{
-		ArchivedAt: formatNullableTime(params.ArchivedAt), UpdatedAt: formatTime(params.ArchivedAt),
-		AdapterID: params.AdapterID,
+		ArchivedAt: formatNullableTime(params.ArchivedAt), AdapterID: params.AdapterID,
 	}); archiveErr != nil {
 		return fmt.Errorf("archive Adapter: %w", archiveErr)
 	}
@@ -926,7 +901,7 @@ func listFirstAdapterTransitions(
 	for index, row := range rows {
 		values[index] = newSQLiteTransition(
 			row.ReceiveOrder, row.Status, row.Source, row.ReasonCode,
-			row.ReasonDetail, row.SourceObservedAt, row.ObservedAt,
+			row.SourceObservedAt, row.ObservedAt,
 		)
 	}
 	return healthTransitionsFromValues(values)
@@ -949,7 +924,7 @@ func listAdapterTransitionsBefore(
 	for index, row := range rows {
 		values[index] = newSQLiteTransition(
 			row.ReceiveOrder, row.Status, row.Source, row.ReasonCode,
-			row.ReasonDetail, row.SourceObservedAt, row.ObservedAt,
+			row.SourceObservedAt, row.ObservedAt,
 		)
 	}
 	return healthTransitionsFromValues(values)
@@ -1005,7 +980,7 @@ func listFirstEntityTransitions(
 	for index, row := range rows {
 		values[index] = newSQLiteTransition(
 			row.ReceiveOrder, row.Status, row.Source, row.ReasonCode,
-			row.ReasonDetail, row.SourceObservedAt, row.ObservedAt,
+			row.SourceObservedAt, row.ObservedAt,
 		)
 	}
 	return healthTransitionsFromValues(values)
@@ -1031,7 +1006,7 @@ func listEntityTransitionsBefore(
 	for index, row := range rows {
 		values[index] = newSQLiteTransition(
 			row.ReceiveOrder, row.Status, row.Source, row.ReasonCode,
-			row.ReasonDetail, row.SourceObservedAt, row.ObservedAt,
+			row.SourceObservedAt, row.ObservedAt,
 		)
 	}
 	return healthTransitionsFromValues(values)
@@ -1042,7 +1017,6 @@ type sqliteTransition struct {
 	status           string
 	source           string
 	reasonCode       sql.NullString
-	reasonDetail     sql.NullString
 	sourceObservedAt sql.NullString
 	observedAt       string
 }
@@ -1052,14 +1026,12 @@ func newSQLiteTransition(
 	status string,
 	source string,
 	reasonCode sql.NullString,
-	reasonDetail sql.NullString,
 	sourceObservedAt sql.NullString,
 	observedAt string,
 ) sqliteTransition {
 	return sqliteTransition{
 		receiveOrder: receiveOrder, status: status, source: source,
-		reasonCode: reasonCode, reasonDetail: reasonDetail,
-		sourceObservedAt: sourceObservedAt, observedAt: observedAt,
+		reasonCode: reasonCode, sourceObservedAt: sourceObservedAt, observedAt: observedAt,
 	}
 }
 
@@ -1068,7 +1040,7 @@ func healthTransitionsFromValues(values []sqliteTransition) ([]HealthTransition,
 	for index, value := range values {
 		transition, err := healthTransitionFromValues(
 			value.receiveOrder, value.status, value.source, value.reasonCode,
-			value.reasonDetail, value.sourceObservedAt, value.observedAt,
+			value.sourceObservedAt, value.observedAt,
 		)
 		if err != nil {
 			return nil, err
@@ -1081,7 +1053,7 @@ func healthTransitionsFromValues(values []sqliteTransition) ([]HealthTransition,
 func healthTransitionFromValues(
 	receiveOrder int64,
 	status, source string,
-	reasonCode, reasonDetail, sourceObservedAt sql.NullString,
+	reasonCode, sourceObservedAt sql.NullString,
 	observedAt string,
 ) (HealthTransition, error) {
 	observed, err := parseTime(observedAt)
@@ -1094,7 +1066,7 @@ func healthTransitionFromValues(
 	}
 	return HealthTransition{
 		ReceiveOrder: receiveOrder, Status: status, Source: source,
-		Reason: healthReasonFromNulls(reasonCode, reasonDetail), SourceObservedAt: sourceObserved,
+		Reason: healthReasonFromNull(reasonCode), SourceObservedAt: sourceObserved,
 		ObservedAt: observed,
 	}, nil
 }
@@ -1136,13 +1108,6 @@ func nullableReasonCode(reason *HealthReason) sql.NullString {
 	return nullableText(reason.Code)
 }
 
-func nullableReasonDetail(reason *HealthReason) sql.NullString {
-	if reason == nil || reason.Detail == nil {
-		return sql.NullString{}
-	}
-	return nullableText(*reason.Detail)
-}
-
 func healthReasonCode(reason *HealthReason) string {
 	if reason == nil {
 		return ""
@@ -1150,26 +1115,16 @@ func healthReasonCode(reason *HealthReason) string {
 	return reason.Code
 }
 
-func healthReasonFromNulls(code, detail sql.NullString) *HealthReason {
+func healthReasonFromNull(code sql.NullString) *HealthReason {
 	if !code.Valid {
 		return nil
 	}
-	reason := &HealthReason{Code: code.String}
-	if detail.Valid {
-		value := detail.String
-		reason.Detail = &value
-	}
-	return reason
+	return &HealthReason{Code: code.String}
 }
 
 func copyHealthReason(reason *HealthReason) *HealthReason {
 	if reason == nil {
 		return nil
 	}
-	copied := &HealthReason{Code: reason.Code}
-	if reason.Detail != nil {
-		detail := *reason.Detail
-		copied.Detail = &detail
-	}
-	return copied
+	return &HealthReason{Code: reason.Code}
 }

@@ -11,10 +11,7 @@ import (
 	"unicode/utf8"
 )
 
-const (
-	maximumHealthReasonCodeLength = 128
-	maximumHealthReasonDetail     = 512
-)
+const maximumHealthReasonCodeLength = 128
 
 var healthReasonCodePattern = regexp.MustCompile(`^[a-z0-9][a-z0-9_-]*(\.[a-z0-9][a-z0-9_-]*)+$`)
 
@@ -70,17 +67,6 @@ func (service *Service) RecordAdapterHeartbeat(
 ) (HeartbeatResult, error) {
 	if validateErr := validateAdapterHeartbeat(heartbeat); validateErr != nil {
 		return HeartbeatResult{}, validateErr
-	}
-	if heartbeat.Reason != nil && strings.HasPrefix(heartbeat.Reason.Code, "adapter.") {
-		softwareName, softwareErr := runtimeSoftwareName(
-			ctx, service.stores.Adapters, heartbeat.AdapterID, heartbeat.RuntimeID,
-		)
-		if softwareErr != nil {
-			return HeartbeatResult{}, softwareErr
-		}
-		if namespaceErr := validateHealthReasonNamespace(heartbeat.Reason.Code, softwareName); namespaceErr != nil {
-			return HeartbeatResult{}, namespaceErr
-		}
 	}
 	receivedAt := service.dependencies.Now().UTC()
 	return service.stores.Runtimes.RecordAdapterHeartbeat(ctx, HeartbeatWrite{
@@ -197,35 +183,5 @@ func validateHealthReason(reason *HealthReason) error {
 		!healthReasonCodePattern.MatchString(reason.Code) {
 		return errors.New("health reason code must be a lowercase dotted identifier of at most 128 characters")
 	}
-	if reason.Detail != nil && !validLength(*reason.Detail, maximumHealthReasonDetail) {
-		return errors.New("health reason detail must contain 1 to 512 characters")
-	}
 	return nil
-}
-
-func validateHealthReasonNamespace(code, softwareName string) error {
-	if strings.HasPrefix(code, "hearth.") {
-		return nil
-	}
-	if !strings.HasPrefix(code, "adapter."+softwareName+".") {
-		return fmt.Errorf("adapter health reason must use adapter.%s", softwareName)
-	}
-	return nil
-}
-
-func runtimeSoftwareName(
-	ctx context.Context,
-	repository AdapterReader,
-	adapterID string,
-	runtimeID RuntimeID,
-) (string, error) {
-	instance, err := repository.GetAdapter(ctx, adapterID)
-	if err != nil {
-		return "", err
-	}
-	if instance.Health == nil || instance.Health.Runtime == nil ||
-		instance.Health.Runtime.ID != runtimeID || instance.Health.Runtime.Status != runtimeStatusOnline {
-		return "", ErrRuntimeFenced
-	}
-	return instance.Health.Runtime.SoftwareName, nil
 }

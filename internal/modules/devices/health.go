@@ -25,8 +25,7 @@ const (
 )
 
 type HealthReason struct {
-	Code   string
-	Detail *string
+	Code string
 }
 
 type RuntimeEvidence struct {

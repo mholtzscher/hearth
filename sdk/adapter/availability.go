@@ -89,8 +89,8 @@ func (session *Session) validateAvailabilityReport(report EntityAvailabilityRepo
 	}
 	switch report.Status {
 	case AvailabilityAvailable:
-		if report.ReasonCode != "" || report.Detail != "" {
-			return fmt.Errorf("available Entity %s must omit reason and detail", report.EntityID)
+		if report.ReasonCode != "" {
+			return fmt.Errorf("available Entity %s must omit a reason", report.EntityID)
 		}
 		return nil
 	case AvailabilityUnavailable:
@@ -102,7 +102,7 @@ func (session *Session) validateAvailabilityReport(report EntityAvailabilityRepo
 	}
 	if err := validateHealthReport(HealthReport{
 		Status: HealthUnhealthy, SourceObservedAt: report.SourceObservedAt,
-		ReasonCode: report.ReasonCode, Detail: report.Detail,
+		ReasonCode: report.ReasonCode,
 	}, session.softwareName); err != nil {
 		return fmt.Errorf("validate Entity availability reason for %s: %w", report.EntityID, err)
 	}
@@ -162,10 +162,6 @@ func (session *Session) prepareAvailabilityRequest(
 		}
 		if report.ReasonCode != "" {
 			entities[index].Reason = &healthReason{Code: report.ReasonCode}
-			if report.Detail != "" {
-				detail := report.Detail
-				entities[index].Reason.Detail = &detail
-			}
 		}
 	}
 	return prepareRequest(

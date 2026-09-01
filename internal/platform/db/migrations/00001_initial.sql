@@ -31,8 +31,6 @@ CREATE TABLE adapter_instances (
         AND adapter_id NOT GLOB '*[^a-z0-9_-]*'
     ),
     archived_at                       TEXT,
-    created_at                        TEXT NOT NULL,
-    updated_at                        TEXT NOT NULL,
     active_runtime_id                 TEXT REFERENCES adapter_runtimes(runtime_id),
     health_runtime_id                 TEXT REFERENCES adapter_runtimes(runtime_id),
     health_status                     TEXT CHECK (
@@ -44,9 +42,6 @@ CREATE TABLE adapter_instances (
             AND health_reason_code GLOB '*.*'
             AND health_reason_code NOT GLOB '*[^a-z0-9._-]*'
         )
-    ),
-    health_reason_detail              TEXT CHECK (
-        health_reason_detail IS NULL OR length(health_reason_detail) BETWEEN 1 AND 512
     ),
     health_since                      TEXT,
     health_evidence_at                TEXT,
@@ -60,49 +55,39 @@ CREATE TABLE adapter_instances (
             AND external_system_reason_code NOT GLOB '*[^a-z0-9._-]*'
         )
     ),
-    external_system_reason_detail     TEXT CHECK (
-        external_system_reason_detail IS NULL OR length(external_system_reason_detail) BETWEEN 1 AND 512
-    ),
     external_system_source_observed_at TEXT,
     external_system_evidence_at       TEXT,
-    latest_transition_receive_order   INTEGER,
     CHECK (
         (archived_at IS NULL AND health_status IS NOT NULL
             AND health_since IS NOT NULL AND health_evidence_at IS NOT NULL)
         OR (archived_at IS NOT NULL
             AND active_runtime_id IS NULL AND health_runtime_id IS NULL
             AND health_status IS NULL AND health_reason_code IS NULL
-            AND health_reason_detail IS NULL AND health_since IS NULL
-            AND health_evidence_at IS NULL
+            AND health_since IS NULL AND health_evidence_at IS NULL
             AND external_system_status IS NULL
             AND external_system_reason_code IS NULL
-            AND external_system_reason_detail IS NULL
             AND external_system_source_observed_at IS NULL
             AND external_system_evidence_at IS NULL)
     ),
     CHECK (
-        (health_status = 'healthy' AND health_reason_code IS NULL AND health_reason_detail IS NULL)
+        (health_status = 'healthy' AND health_reason_code IS NULL)
         OR (health_status IN ('unknown', 'unhealthy') AND health_reason_code IS NOT NULL)
         OR health_status IS NULL
     ),
-    CHECK (health_reason_detail IS NULL OR health_reason_code IS NOT NULL),
     CHECK (
         (external_system_status IS NULL
             AND external_system_reason_code IS NULL
-            AND external_system_reason_detail IS NULL
             AND external_system_source_observed_at IS NULL
             AND external_system_evidence_at IS NULL)
         OR (external_system_status IN ('unknown', 'healthy')
             AND external_system_reason_code IS NULL
-            AND external_system_reason_detail IS NULL
             AND external_system_source_observed_at IS NOT NULL
             AND external_system_evidence_at IS NOT NULL)
         OR (external_system_status = 'unhealthy'
             AND external_system_reason_code IS NOT NULL
             AND external_system_source_observed_at IS NOT NULL
             AND external_system_evidence_at IS NOT NULL)
-    ),
-    CHECK (external_system_reason_detail IS NULL OR external_system_reason_code IS NOT NULL)
+    )
 );
 
 CREATE TABLE adapter_runtimes (
@@ -135,8 +120,8 @@ CREATE TABLE adapter_runtimes (
 CREATE UNIQUE INDEX adapter_runtimes_one_active_idx
     ON adapter_runtimes(adapter_id)
     WHERE ended_at IS NULL;
-CREATE INDEX adapter_runtimes_adapter_claimed_idx
-    ON adapter_runtimes(adapter_id, claimed_at DESC, runtime_id DESC);
+CREATE INDEX adapter_runtimes_adapter_idx
+    ON adapter_runtimes(adapter_id);
 CREATE INDEX adapter_runtimes_lease_expiry_idx
     ON adapter_runtimes(lease_expires_at)
     WHERE ended_at IS NULL;
@@ -269,18 +254,14 @@ CREATE TABLE entity_availability_current (
             AND reason_code NOT GLOB '*[^a-z0-9._-]*'
         )
     ),
-    reason_detail        TEXT CHECK (
-        reason_detail IS NULL OR length(reason_detail) BETWEEN 1 AND 512
-    ),
     source_observed_at   TEXT NOT NULL,
     evidence_at          TEXT NOT NULL,
     current_since        TEXT NOT NULL,
     latest_transition_receive_order INTEGER,
     CHECK (
-        (status = 'available' AND reason_code IS NULL AND reason_detail IS NULL)
+        (status = 'available' AND reason_code IS NULL)
         OR (status = 'unavailable' AND reason_code IS NOT NULL)
-    ),
-    CHECK (reason_detail IS NULL OR reason_code IS NOT NULL)
+    )
 );
 
 CREATE TABLE health_transitions (
@@ -302,9 +283,6 @@ CREATE TABLE health_transitions (
             AND reason_code NOT GLOB '*[^a-z0-9._-]*'
         )
     ),
-    reason_detail     TEXT CHECK (
-        reason_detail IS NULL OR length(reason_detail) BETWEEN 1 AND 512
-    ),
     source_observed_at TEXT,
     observed_at       TEXT NOT NULL,
     CHECK (
@@ -316,10 +294,9 @@ CREATE TABLE health_transitions (
             AND source IN ('core', 'adapter_health', 'entity_report'))
     ),
     CHECK (
-        (status IN ('healthy', 'available') AND reason_code IS NULL AND reason_detail IS NULL)
+        (status IN ('healthy', 'available') AND reason_code IS NULL)
         OR (status IN ('unknown', 'unhealthy', 'unavailable') AND reason_code IS NOT NULL)
-    ),
-    CHECK (reason_detail IS NULL OR reason_code IS NOT NULL)
+    )
 );
 
 CREATE INDEX health_transitions_adapter_history_idx
@@ -328,22 +305,6 @@ CREATE INDEX health_transitions_adapter_history_idx
 CREATE INDEX health_transitions_entity_history_idx
     ON health_transitions(entity_id, receive_order DESC)
     WHERE resource_kind = 'entity';
-
-CREATE TABLE entity_ownership_intervals (
-    entity_id              TEXT NOT NULL REFERENCES entities(id) ON DELETE CASCADE,
-    adapter_id             TEXT NOT NULL REFERENCES adapter_instances(adapter_id) ON DELETE RESTRICT,
-    starting_receive_order INTEGER NOT NULL CHECK (starting_receive_order >= 0),
-    ending_receive_order   INTEGER CHECK (
-        ending_receive_order IS NULL OR ending_receive_order >= starting_receive_order
-    ),
-    PRIMARY KEY (entity_id, starting_receive_order)
-);
-
-CREATE UNIQUE INDEX entity_ownership_intervals_one_open_idx
-    ON entity_ownership_intervals(entity_id)
-    WHERE ending_receive_order IS NULL;
-CREATE INDEX entity_ownership_intervals_history_idx
-    ON entity_ownership_intervals(entity_id, starting_receive_order, ending_receive_order);
 
 CREATE VIEW entity_read_projection AS
 SELECT
@@ -363,12 +324,10 @@ SELECT
     s.receive_order,
     ai.health_status AS adapter_health_status,
     ai.health_reason_code AS adapter_health_reason_code,
-    ai.health_reason_detail AS adapter_health_reason_detail,
     ai.health_since AS adapter_health_since,
     ai.health_evidence_at AS adapter_health_evidence_at,
     current.status AS reported_availability_status,
     current.reason_code AS reported_availability_reason_code,
-    current.reason_detail AS reported_availability_reason_detail,
     current.source_observed_at AS reported_availability_source_observed_at,
     current.evidence_at AS reported_availability_evidence_at,
     current.current_since AS reported_availability_since
@@ -382,9 +341,6 @@ LEFT JOIN entity_availability_current AS current
 
 -- +goose Down
 DROP VIEW entity_read_projection;
-DROP INDEX entity_ownership_intervals_history_idx;
-DROP INDEX entity_ownership_intervals_one_open_idx;
-DROP TABLE entity_ownership_intervals;
 DROP INDEX health_transitions_entity_history_idx;
 DROP INDEX health_transitions_adapter_history_idx;
 DROP TABLE health_transitions;
@@ -399,7 +355,7 @@ DROP TABLE commands;
 UPDATE adapter_instances
 SET active_runtime_id = NULL, health_runtime_id = NULL;
 DROP INDEX adapter_runtimes_lease_expiry_idx;
-DROP INDEX adapter_runtimes_adapter_claimed_idx;
+DROP INDEX adapter_runtimes_adapter_idx;
 DROP INDEX adapter_runtimes_one_active_idx;
 DROP TABLE adapter_runtimes;
 DROP TABLE adapter_instances;

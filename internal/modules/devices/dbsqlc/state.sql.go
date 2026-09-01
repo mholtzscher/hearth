@@ -53,7 +53,7 @@ func (q *Queries) GetDevice(ctx context.Context, arg GetDeviceParams) (GetDevice
 }
 
 const getEntity = `-- name: GetEntity :one
-SELECT id, device_id, adapter_id, name, type_id, support_json, enabled, entity_created_at, observation_id, value_json, adapter_received_at, source_updated_at, observed_at, receive_order, adapter_health_status, adapter_health_reason_code, adapter_health_reason_detail, adapter_health_since, adapter_health_evidence_at, reported_availability_status, reported_availability_reason_code, reported_availability_reason_detail, reported_availability_source_observed_at, reported_availability_evidence_at, reported_availability_since
+SELECT id, device_id, adapter_id, name, type_id, support_json, enabled, entity_created_at, observation_id, value_json, adapter_received_at, source_updated_at, observed_at, receive_order, adapter_health_status, adapter_health_reason_code, adapter_health_since, adapter_health_evidence_at, reported_availability_status, reported_availability_reason_code, reported_availability_source_observed_at, reported_availability_evidence_at, reported_availability_since
 FROM entity_read_projection
 WHERE id = ?
 `
@@ -82,12 +82,10 @@ func (q *Queries) GetEntity(ctx context.Context, arg GetEntityParams) (EntityRea
 		&i.ReceiveOrder,
 		&i.AdapterHealthStatus,
 		&i.AdapterHealthReasonCode,
-		&i.AdapterHealthReasonDetail,
 		&i.AdapterHealthSince,
 		&i.AdapterHealthEvidenceAt,
 		&i.ReportedAvailabilityStatus,
 		&i.ReportedAvailabilityReasonCode,
-		&i.ReportedAvailabilityReasonDetail,
 		&i.ReportedAvailabilitySourceObservedAt,
 		&i.ReportedAvailabilityEvidenceAt,
 		&i.ReportedAvailabilitySince,
@@ -164,7 +162,7 @@ func (q *Queries) ListDevices(ctx context.Context, arg ListDevicesParams) ([]Lis
 }
 
 const listEntities = `-- name: ListEntities :many
-SELECT id, device_id, adapter_id, name, type_id, support_json, enabled, entity_created_at, observation_id, value_json, adapter_received_at, source_updated_at, observed_at, receive_order, adapter_health_status, adapter_health_reason_code, adapter_health_reason_detail, adapter_health_since, adapter_health_evidence_at, reported_availability_status, reported_availability_reason_code, reported_availability_reason_detail, reported_availability_source_observed_at, reported_availability_evidence_at, reported_availability_since
+SELECT id, device_id, adapter_id, name, type_id, support_json, enabled, entity_created_at, observation_id, value_json, adapter_received_at, source_updated_at, observed_at, receive_order, adapter_health_status, adapter_health_reason_code, adapter_health_since, adapter_health_evidence_at, reported_availability_status, reported_availability_reason_code, reported_availability_source_observed_at, reported_availability_evidence_at, reported_availability_since
 FROM entity_read_projection
 WHERE id > ?
 ORDER BY id ASC
@@ -202,12 +200,10 @@ func (q *Queries) ListEntities(ctx context.Context, arg ListEntitiesParams) ([]E
 			&i.ReceiveOrder,
 			&i.AdapterHealthStatus,
 			&i.AdapterHealthReasonCode,
-			&i.AdapterHealthReasonDetail,
 			&i.AdapterHealthSince,
 			&i.AdapterHealthEvidenceAt,
 			&i.ReportedAvailabilityStatus,
 			&i.ReportedAvailabilityReasonCode,
-			&i.ReportedAvailabilityReasonDetail,
 			&i.ReportedAvailabilitySourceObservedAt,
 			&i.ReportedAvailabilityEvidenceAt,
 			&i.ReportedAvailabilitySince,
@@ -226,7 +222,7 @@ func (q *Queries) ListEntities(ctx context.Context, arg ListEntitiesParams) ([]E
 }
 
 const listEntitiesByDevice = `-- name: ListEntitiesByDevice :many
-SELECT id, device_id, adapter_id, name, type_id, support_json, enabled, entity_created_at, observation_id, value_json, adapter_received_at, source_updated_at, observed_at, receive_order, adapter_health_status, adapter_health_reason_code, adapter_health_reason_detail, adapter_health_since, adapter_health_evidence_at, reported_availability_status, reported_availability_reason_code, reported_availability_reason_detail, reported_availability_source_observed_at, reported_availability_evidence_at, reported_availability_since
+SELECT id, device_id, adapter_id, name, type_id, support_json, enabled, entity_created_at, observation_id, value_json, adapter_received_at, source_updated_at, observed_at, receive_order, adapter_health_status, adapter_health_reason_code, adapter_health_since, adapter_health_evidence_at, reported_availability_status, reported_availability_reason_code, reported_availability_source_observed_at, reported_availability_evidence_at, reported_availability_since
 FROM entity_read_projection
 WHERE device_id = ? AND id > ?
 ORDER BY id ASC
@@ -265,12 +261,10 @@ func (q *Queries) ListEntitiesByDevice(ctx context.Context, arg ListEntitiesByDe
 			&i.ReceiveOrder,
 			&i.AdapterHealthStatus,
 			&i.AdapterHealthReasonCode,
-			&i.AdapterHealthReasonDetail,
 			&i.AdapterHealthSince,
 			&i.AdapterHealthEvidenceAt,
 			&i.ReportedAvailabilityStatus,
 			&i.ReportedAvailabilityReasonCode,
-			&i.ReportedAvailabilityReasonDetail,
 			&i.ReportedAvailabilitySourceObservedAt,
 			&i.ReportedAvailabilityEvidenceAt,
 			&i.ReportedAvailabilitySince,

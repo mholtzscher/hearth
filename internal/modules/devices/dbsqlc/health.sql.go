@@ -12,12 +12,10 @@ import (
 
 const archiveAdapter = `-- name: ArchiveAdapter :exec
 UPDATE adapter_instances
-SET archived_at = ?, updated_at = ?,
-    active_runtime_id = NULL, health_runtime_id = NULL,
+SET archived_at = ?, active_runtime_id = NULL, health_runtime_id = NULL,
     health_status = NULL, health_reason_code = NULL,
-    health_reason_detail = NULL, health_since = NULL,
-    health_evidence_at = NULL, external_system_status = NULL,
-    external_system_reason_code = NULL, external_system_reason_detail = NULL,
+    health_since = NULL, health_evidence_at = NULL,
+    external_system_status = NULL, external_system_reason_code = NULL,
     external_system_source_observed_at = NULL,
     external_system_evidence_at = NULL
 WHERE adapter_id = ?
@@ -25,12 +23,11 @@ WHERE adapter_id = ?
 
 type ArchiveAdapterParams struct {
 	ArchivedAt sql.NullString
-	UpdatedAt  string
 	AdapterID  string
 }
 
 func (q *Queries) ArchiveAdapter(ctx context.Context, arg ArchiveAdapterParams) error {
-	_, err := q.db.ExecContext(ctx, archiveAdapter, arg.ArchivedAt, arg.UpdatedAt, arg.AdapterID)
+	_, err := q.db.ExecContext(ctx, archiveAdapter, arg.ArchivedAt, arg.AdapterID)
 	return err
 }
 
@@ -53,30 +50,23 @@ func (q *Queries) CountAdapterBindings(ctx context.Context, arg CountAdapterBind
 
 const createAdapterInstance = `-- name: CreateAdapterInstance :exec
 INSERT INTO adapter_instances (
-    adapter_id, created_at, updated_at, health_status, health_reason_code,
-    health_reason_detail, health_since, health_evidence_at
-) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    adapter_id, health_status, health_reason_code, health_since, health_evidence_at
+) VALUES (?, ?, ?, ?, ?)
 `
 
 type CreateAdapterInstanceParams struct {
-	AdapterID          string
-	CreatedAt          string
-	UpdatedAt          string
-	HealthStatus       sql.NullString
-	HealthReasonCode   sql.NullString
-	HealthReasonDetail sql.NullString
-	HealthSince        sql.NullString
-	HealthEvidenceAt   sql.NullString
+	AdapterID        string
+	HealthStatus     sql.NullString
+	HealthReasonCode sql.NullString
+	HealthSince      sql.NullString
+	HealthEvidenceAt sql.NullString
 }
 
 func (q *Queries) CreateAdapterInstance(ctx context.Context, arg CreateAdapterInstanceParams) error {
 	_, err := q.db.ExecContext(ctx, createAdapterInstance,
 		arg.AdapterID,
-		arg.CreatedAt,
-		arg.UpdatedAt,
 		arg.HealthStatus,
 		arg.HealthReasonCode,
-		arg.HealthReasonDetail,
 		arg.HealthSince,
 		arg.HealthEvidenceAt,
 	)
@@ -124,12 +114,10 @@ func (q *Queries) EndRuntime(ctx context.Context, arg EndRuntimeParams) (int64, 
 }
 
 const getAdapterInstance = `-- name: GetAdapterInstance :one
-SELECT adapter_id, archived_at, created_at, updated_at, active_runtime_id,
-       health_runtime_id, health_status, health_reason_code,
-       health_reason_detail, health_since, health_evidence_at,
+SELECT adapter_id, archived_at, active_runtime_id, health_runtime_id,
+       health_status, health_reason_code, health_since, health_evidence_at,
        external_system_status, external_system_reason_code,
-       external_system_reason_detail, external_system_source_observed_at,
-       external_system_evidence_at, latest_transition_receive_order
+       external_system_source_observed_at, external_system_evidence_at
 FROM adapter_instances
 WHERE adapter_id = ?
 `
@@ -144,21 +132,16 @@ func (q *Queries) GetAdapterInstance(ctx context.Context, arg GetAdapterInstance
 	err := row.Scan(
 		&i.AdapterID,
 		&i.ArchivedAt,
-		&i.CreatedAt,
-		&i.UpdatedAt,
 		&i.ActiveRuntimeID,
 		&i.HealthRuntimeID,
 		&i.HealthStatus,
 		&i.HealthReasonCode,
-		&i.HealthReasonDetail,
 		&i.HealthSince,
 		&i.HealthEvidenceAt,
 		&i.ExternalSystemStatus,
 		&i.ExternalSystemReasonCode,
-		&i.ExternalSystemReasonDetail,
 		&i.ExternalSystemSourceObservedAt,
 		&i.ExternalSystemEvidenceAt,
-		&i.LatestTransitionReceiveOrder,
 	)
 	return i, err
 }
@@ -169,12 +152,10 @@ SELECT
     ai.archived_at,
     ai.health_status,
     ai.health_reason_code,
-    ai.health_reason_detail,
     ai.health_since,
     ai.health_evidence_at,
     ai.external_system_status,
     ai.external_system_reason_code,
-    ai.external_system_reason_detail,
     ai.external_system_source_observed_at,
     ai.external_system_evidence_at,
     ar.runtime_id,
@@ -198,12 +179,10 @@ type GetAdapterViewRow struct {
 	ArchivedAt                     sql.NullString
 	HealthStatus                   sql.NullString
 	HealthReasonCode               sql.NullString
-	HealthReasonDetail             sql.NullString
 	HealthSince                    sql.NullString
 	HealthEvidenceAt               sql.NullString
 	ExternalSystemStatus           sql.NullString
 	ExternalSystemReasonCode       sql.NullString
-	ExternalSystemReasonDetail     sql.NullString
 	ExternalSystemSourceObservedAt sql.NullString
 	ExternalSystemEvidenceAt       sql.NullString
 	RuntimeID                      sql.NullString
@@ -223,12 +202,10 @@ func (q *Queries) GetAdapterView(ctx context.Context, arg GetAdapterViewParams) 
 		&i.ArchivedAt,
 		&i.HealthStatus,
 		&i.HealthReasonCode,
-		&i.HealthReasonDetail,
 		&i.HealthSince,
 		&i.HealthEvidenceAt,
 		&i.ExternalSystemStatus,
 		&i.ExternalSystemReasonCode,
-		&i.ExternalSystemReasonDetail,
 		&i.ExternalSystemSourceObservedAt,
 		&i.ExternalSystemEvidenceAt,
 		&i.RuntimeID,
@@ -243,7 +220,7 @@ func (q *Queries) GetAdapterView(ctx context.Context, arg GetAdapterViewParams) 
 }
 
 const getEntityAvailabilityCurrent = `-- name: GetEntityAvailabilityCurrent :one
-SELECT entity_id, adapter_id, runtime_id, status, reason_code, reason_detail,
+SELECT entity_id, adapter_id, runtime_id, status, reason_code,
        source_observed_at, evidence_at, current_since,
        latest_transition_receive_order
 FROM entity_availability_current
@@ -263,7 +240,6 @@ func (q *Queries) GetEntityAvailabilityCurrent(ctx context.Context, arg GetEntit
 		&i.RuntimeID,
 		&i.Status,
 		&i.ReasonCode,
-		&i.ReasonDetail,
 		&i.SourceObservedAt,
 		&i.EvidenceAt,
 		&i.CurrentSince,
@@ -381,8 +357,8 @@ func (q *Queries) GetRuntimeByClaimID(ctx context.Context, arg GetRuntimeByClaim
 const insertHealthTransition = `-- name: InsertHealthTransition :one
 INSERT INTO health_transitions (
     resource_kind, adapter_id, entity_id, runtime_id, status, source,
-    reason_code, reason_detail, source_observed_at, observed_at
-) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    reason_code, source_observed_at, observed_at
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
 RETURNING receive_order
 `
 
@@ -394,7 +370,6 @@ type InsertHealthTransitionParams struct {
 	Status           string
 	Source           string
 	ReasonCode       sql.NullString
-	ReasonDetail     sql.NullString
 	SourceObservedAt sql.NullString
 	ObservedAt       string
 }
@@ -408,7 +383,6 @@ func (q *Queries) InsertHealthTransition(ctx context.Context, arg InsertHealthTr
 		arg.Status,
 		arg.Source,
 		arg.ReasonCode,
-		arg.ReasonDetail,
 		arg.SourceObservedAt,
 		arg.ObservedAt,
 	)
@@ -448,8 +422,7 @@ func (q *Queries) InsertRuntime(ctx context.Context, arg InsertRuntimeParams) er
 }
 
 const listAdapterHealthHistoryBefore = `-- name: ListAdapterHealthHistoryBefore :many
-SELECT receive_order, status, source, reason_code, reason_detail,
-       source_observed_at, observed_at
+SELECT receive_order, status, source, reason_code, source_observed_at, observed_at
 FROM health_transitions
 WHERE resource_kind = 'adapter' AND adapter_id = ? AND receive_order < ?
 ORDER BY receive_order DESC
@@ -467,7 +440,6 @@ type ListAdapterHealthHistoryBeforeRow struct {
 	Status           string
 	Source           string
 	ReasonCode       sql.NullString
-	ReasonDetail     sql.NullString
 	SourceObservedAt sql.NullString
 	ObservedAt       string
 }
@@ -486,7 +458,6 @@ func (q *Queries) ListAdapterHealthHistoryBefore(ctx context.Context, arg ListAd
 			&i.Status,
 			&i.Source,
 			&i.ReasonCode,
-			&i.ReasonDetail,
 			&i.SourceObservedAt,
 			&i.ObservedAt,
 		); err != nil {
@@ -504,8 +475,7 @@ func (q *Queries) ListAdapterHealthHistoryBefore(ctx context.Context, arg ListAd
 }
 
 const listAdapterHealthHistoryFirstPage = `-- name: ListAdapterHealthHistoryFirstPage :many
-SELECT receive_order, status, source, reason_code, reason_detail,
-       source_observed_at, observed_at
+SELECT receive_order, status, source, reason_code, source_observed_at, observed_at
 FROM health_transitions
 WHERE resource_kind = 'adapter' AND adapter_id = ?
 ORDER BY receive_order DESC
@@ -522,7 +492,6 @@ type ListAdapterHealthHistoryFirstPageRow struct {
 	Status           string
 	Source           string
 	ReasonCode       sql.NullString
-	ReasonDetail     sql.NullString
 	SourceObservedAt sql.NullString
 	ObservedAt       string
 }
@@ -541,7 +510,6 @@ func (q *Queries) ListAdapterHealthHistoryFirstPage(ctx context.Context, arg Lis
 			&i.Status,
 			&i.Source,
 			&i.ReasonCode,
-			&i.ReasonDetail,
 			&i.SourceObservedAt,
 			&i.ObservedAt,
 		); err != nil {
@@ -564,12 +532,10 @@ SELECT
     ai.archived_at,
     ai.health_status,
     ai.health_reason_code,
-    ai.health_reason_detail,
     ai.health_since,
     ai.health_evidence_at,
     ai.external_system_status,
     ai.external_system_reason_code,
-    ai.external_system_reason_detail,
     ai.external_system_source_observed_at,
     ai.external_system_evidence_at,
     ar.runtime_id,
@@ -598,12 +564,10 @@ type ListAdapterViewsAfterRow struct {
 	ArchivedAt                     sql.NullString
 	HealthStatus                   sql.NullString
 	HealthReasonCode               sql.NullString
-	HealthReasonDetail             sql.NullString
 	HealthSince                    sql.NullString
 	HealthEvidenceAt               sql.NullString
 	ExternalSystemStatus           sql.NullString
 	ExternalSystemReasonCode       sql.NullString
-	ExternalSystemReasonDetail     sql.NullString
 	ExternalSystemSourceObservedAt sql.NullString
 	ExternalSystemEvidenceAt       sql.NullString
 	RuntimeID                      sql.NullString
@@ -629,12 +593,10 @@ func (q *Queries) ListAdapterViewsAfter(ctx context.Context, arg ListAdapterView
 			&i.ArchivedAt,
 			&i.HealthStatus,
 			&i.HealthReasonCode,
-			&i.HealthReasonDetail,
 			&i.HealthSince,
 			&i.HealthEvidenceAt,
 			&i.ExternalSystemStatus,
 			&i.ExternalSystemReasonCode,
-			&i.ExternalSystemReasonDetail,
 			&i.ExternalSystemSourceObservedAt,
 			&i.ExternalSystemEvidenceAt,
 			&i.RuntimeID,
@@ -664,12 +626,10 @@ SELECT
     ai.archived_at,
     ai.health_status,
     ai.health_reason_code,
-    ai.health_reason_detail,
     ai.health_since,
     ai.health_evidence_at,
     ai.external_system_status,
     ai.external_system_reason_code,
-    ai.external_system_reason_detail,
     ai.external_system_source_observed_at,
     ai.external_system_evidence_at,
     ar.runtime_id,
@@ -696,12 +656,10 @@ type ListAdapterViewsFirstPageRow struct {
 	ArchivedAt                     sql.NullString
 	HealthStatus                   sql.NullString
 	HealthReasonCode               sql.NullString
-	HealthReasonDetail             sql.NullString
 	HealthSince                    sql.NullString
 	HealthEvidenceAt               sql.NullString
 	ExternalSystemStatus           sql.NullString
 	ExternalSystemReasonCode       sql.NullString
-	ExternalSystemReasonDetail     sql.NullString
 	ExternalSystemSourceObservedAt sql.NullString
 	ExternalSystemEvidenceAt       sql.NullString
 	RuntimeID                      sql.NullString
@@ -727,12 +685,10 @@ func (q *Queries) ListAdapterViewsFirstPage(ctx context.Context, arg ListAdapter
 			&i.ArchivedAt,
 			&i.HealthStatus,
 			&i.HealthReasonCode,
-			&i.HealthReasonDetail,
 			&i.HealthSince,
 			&i.HealthEvidenceAt,
 			&i.ExternalSystemStatus,
 			&i.ExternalSystemReasonCode,
-			&i.ExternalSystemReasonDetail,
 			&i.ExternalSystemSourceObservedAt,
 			&i.ExternalSystemEvidenceAt,
 			&i.RuntimeID,
@@ -757,24 +713,20 @@ func (q *Queries) ListAdapterViewsFirstPage(ctx context.Context, arg ListAdapter
 }
 
 const listEntityAvailabilityHistoryBefore = `-- name: ListEntityAvailabilityHistoryBefore :many
-WITH candidates AS (
+WITH entity_lifetime AS (
+    SELECT initial.adapter_id, MIN(initial.receive_order) AS starting_receive_order
+    FROM health_transitions AS initial
+    WHERE initial.resource_kind = 'entity' AND initial.entity_id = ?3
+    GROUP BY initial.adapter_id
+), candidates AS (
     SELECT
         transition.receive_order,
         transition.status,
         transition.source,
         transition.reason_code,
-        transition.reason_detail,
         transition.source_observed_at,
         transition.observed_at
     FROM health_transitions AS transition
-    JOIN entity_ownership_intervals AS ownership
-        ON ownership.entity_id = transition.entity_id
-        AND ownership.adapter_id = transition.adapter_id
-        AND transition.receive_order >= ownership.starting_receive_order
-        AND (
-            ownership.ending_receive_order IS NULL
-            OR transition.receive_order < ownership.ending_receive_order
-        )
     WHERE transition.resource_kind = 'entity'
       AND transition.entity_id = ?3
 
@@ -788,35 +740,27 @@ WITH candidates AS (
             WHEN transition.status = 'healthy' THEN 'hearth.awaiting_entity_report'
             ELSE transition.reason_code
         END AS reason_code,
-        CASE WHEN transition.status = 'healthy' THEN NULL ELSE transition.reason_detail END AS reason_detail,
         CASE WHEN transition.status = 'healthy' THEN NULL ELSE transition.source_observed_at END AS source_observed_at,
         transition.observed_at
-    FROM entity_ownership_intervals AS ownership
+    FROM entity_lifetime AS lifetime
     JOIN health_transitions AS transition
         ON transition.resource_kind = 'adapter'
-        AND transition.adapter_id = ownership.adapter_id
-        AND transition.receive_order >= ownership.starting_receive_order
-        AND (
-            ownership.ending_receive_order IS NULL
-            OR transition.receive_order < ownership.ending_receive_order
-        )
-    WHERE ownership.entity_id = ?3
+        AND transition.adapter_id = lifetime.adapter_id
+        AND transition.receive_order >= lifetime.starting_receive_order
 ), sequenced AS (
     SELECT
-        candidates.receive_order, candidates.status, candidates.source, candidates.reason_code, candidates.reason_detail, candidates.source_observed_at, candidates.observed_at,
+        candidates.receive_order, candidates.status, candidates.source, candidates.reason_code, candidates.source_observed_at, candidates.observed_at,
         lag(status) OVER (ORDER BY receive_order) AS prior_status,
         lag(reason_code) OVER (ORDER BY receive_order) AS prior_reason_code
     FROM candidates
 ), effective AS (
-    SELECT receive_order, status, source, reason_code, reason_detail,
-           source_observed_at, observed_at
+    SELECT receive_order, status, source, reason_code, source_observed_at, observed_at
     FROM sequenced
     WHERE prior_status IS NULL
        OR status <> prior_status
        OR reason_code IS NOT prior_reason_code
 )
-SELECT receive_order, status, source, reason_code, reason_detail,
-       source_observed_at, observed_at
+SELECT receive_order, status, source, reason_code, source_observed_at, observed_at
 FROM effective
 WHERE receive_order < CAST(?1 AS INTEGER)
 ORDER BY receive_order DESC
@@ -834,7 +778,6 @@ type ListEntityAvailabilityHistoryBeforeRow struct {
 	Status           string
 	Source           string
 	ReasonCode       sql.NullString
-	ReasonDetail     sql.NullString
 	SourceObservedAt sql.NullString
 	ObservedAt       string
 }
@@ -853,7 +796,6 @@ func (q *Queries) ListEntityAvailabilityHistoryBefore(ctx context.Context, arg L
 			&i.Status,
 			&i.Source,
 			&i.ReasonCode,
-			&i.ReasonDetail,
 			&i.SourceObservedAt,
 			&i.ObservedAt,
 		); err != nil {
@@ -871,24 +813,20 @@ func (q *Queries) ListEntityAvailabilityHistoryBefore(ctx context.Context, arg L
 }
 
 const listEntityAvailabilityHistoryFirstPage = `-- name: ListEntityAvailabilityHistoryFirstPage :many
-WITH candidates AS (
+WITH entity_lifetime AS (
+    SELECT initial.adapter_id, MIN(initial.receive_order) AS starting_receive_order
+    FROM health_transitions AS initial
+    WHERE initial.resource_kind = 'entity' AND initial.entity_id = ?2
+    GROUP BY initial.adapter_id
+), candidates AS (
     SELECT
         transition.receive_order,
         transition.status,
         transition.source,
         transition.reason_code,
-        transition.reason_detail,
         transition.source_observed_at,
         transition.observed_at
     FROM health_transitions AS transition
-    JOIN entity_ownership_intervals AS ownership
-        ON ownership.entity_id = transition.entity_id
-        AND ownership.adapter_id = transition.adapter_id
-        AND transition.receive_order >= ownership.starting_receive_order
-        AND (
-            ownership.ending_receive_order IS NULL
-            OR transition.receive_order < ownership.ending_receive_order
-        )
     WHERE transition.resource_kind = 'entity'
       AND transition.entity_id = ?2
 
@@ -902,35 +840,27 @@ WITH candidates AS (
             WHEN transition.status = 'healthy' THEN 'hearth.awaiting_entity_report'
             ELSE transition.reason_code
         END AS reason_code,
-        CASE WHEN transition.status = 'healthy' THEN NULL ELSE transition.reason_detail END AS reason_detail,
         CASE WHEN transition.status = 'healthy' THEN NULL ELSE transition.source_observed_at END AS source_observed_at,
         transition.observed_at
-    FROM entity_ownership_intervals AS ownership
+    FROM entity_lifetime AS lifetime
     JOIN health_transitions AS transition
         ON transition.resource_kind = 'adapter'
-        AND transition.adapter_id = ownership.adapter_id
-        AND transition.receive_order >= ownership.starting_receive_order
-        AND (
-            ownership.ending_receive_order IS NULL
-            OR transition.receive_order < ownership.ending_receive_order
-        )
-    WHERE ownership.entity_id = ?2
+        AND transition.adapter_id = lifetime.adapter_id
+        AND transition.receive_order >= lifetime.starting_receive_order
 ), sequenced AS (
     SELECT
-        candidates.receive_order, candidates.status, candidates.source, candidates.reason_code, candidates.reason_detail, candidates.source_observed_at, candidates.observed_at,
+        candidates.receive_order, candidates.status, candidates.source, candidates.reason_code, candidates.source_observed_at, candidates.observed_at,
         lag(status) OVER (ORDER BY receive_order) AS prior_status,
         lag(reason_code) OVER (ORDER BY receive_order) AS prior_reason_code
     FROM candidates
 ), effective AS (
-    SELECT receive_order, status, source, reason_code, reason_detail,
-           source_observed_at, observed_at
+    SELECT receive_order, status, source, reason_code, source_observed_at, observed_at
     FROM sequenced
     WHERE prior_status IS NULL
        OR status <> prior_status
        OR reason_code IS NOT prior_reason_code
 )
-SELECT receive_order, status, source, reason_code, reason_detail,
-       source_observed_at, observed_at
+SELECT receive_order, status, source, reason_code, source_observed_at, observed_at
 FROM effective
 ORDER BY receive_order DESC
 LIMIT ?1
@@ -946,7 +876,6 @@ type ListEntityAvailabilityHistoryFirstPageRow struct {
 	Status           string
 	Source           string
 	ReasonCode       sql.NullString
-	ReasonDetail     sql.NullString
 	SourceObservedAt sql.NullString
 	ObservedAt       string
 }
@@ -965,7 +894,6 @@ func (q *Queries) ListEntityAvailabilityHistoryFirstPage(ctx context.Context, ar
 			&i.Status,
 			&i.Source,
 			&i.ReasonCode,
-			&i.ReasonDetail,
 			&i.SourceObservedAt,
 			&i.ObservedAt,
 		); err != nil {
@@ -1029,37 +957,18 @@ func (q *Queries) ListExpiredRuntimes(ctx context.Context, arg ListExpiredRuntim
 	return items, nil
 }
 
-const setLatestAdapterTransition = `-- name: SetLatestAdapterTransition :exec
-UPDATE adapter_instances
-SET latest_transition_receive_order = ?
-WHERE adapter_id = ?
-`
-
-type SetLatestAdapterTransitionParams struct {
-	LatestTransitionReceiveOrder sql.NullInt64
-	AdapterID                    string
-}
-
-func (q *Queries) SetLatestAdapterTransition(ctx context.Context, arg SetLatestAdapterTransitionParams) error {
-	_, err := q.db.ExecContext(ctx, setLatestAdapterTransition, arg.LatestTransitionReceiveOrder, arg.AdapterID)
-	return err
-}
-
 const updateAdapterCurrentHealth = `-- name: UpdateAdapterCurrentHealth :exec
 UPDATE adapter_instances
 SET active_runtime_id = ?,
     health_runtime_id = ?,
     health_status = ?,
     health_reason_code = ?,
-    health_reason_detail = ?,
     health_since = ?,
     health_evidence_at = ?,
     external_system_status = ?,
     external_system_reason_code = ?,
-    external_system_reason_detail = ?,
     external_system_source_observed_at = ?,
-    external_system_evidence_at = ?,
-    updated_at = ?
+    external_system_evidence_at = ?
 WHERE adapter_id = ?
 `
 
@@ -1068,15 +977,12 @@ type UpdateAdapterCurrentHealthParams struct {
 	HealthRuntimeID                sql.NullString
 	HealthStatus                   sql.NullString
 	HealthReasonCode               sql.NullString
-	HealthReasonDetail             sql.NullString
 	HealthSince                    sql.NullString
 	HealthEvidenceAt               sql.NullString
 	ExternalSystemStatus           sql.NullString
 	ExternalSystemReasonCode       sql.NullString
-	ExternalSystemReasonDetail     sql.NullString
 	ExternalSystemSourceObservedAt sql.NullString
 	ExternalSystemEvidenceAt       sql.NullString
-	UpdatedAt                      string
 	AdapterID                      string
 }
 
@@ -1086,15 +992,12 @@ func (q *Queries) UpdateAdapterCurrentHealth(ctx context.Context, arg UpdateAdap
 		arg.HealthRuntimeID,
 		arg.HealthStatus,
 		arg.HealthReasonCode,
-		arg.HealthReasonDetail,
 		arg.HealthSince,
 		arg.HealthEvidenceAt,
 		arg.ExternalSystemStatus,
 		arg.ExternalSystemReasonCode,
-		arg.ExternalSystemReasonDetail,
 		arg.ExternalSystemSourceObservedAt,
 		arg.ExternalSystemEvidenceAt,
-		arg.UpdatedAt,
 		arg.AdapterID,
 	)
 	return err
@@ -1128,16 +1031,15 @@ func (q *Queries) UpdateRuntimeHeartbeat(ctx context.Context, arg UpdateRuntimeH
 
 const upsertEntityAvailabilityCurrent = `-- name: UpsertEntityAvailabilityCurrent :exec
 INSERT INTO entity_availability_current (
-    entity_id, adapter_id, runtime_id, status, reason_code, reason_detail,
+    entity_id, adapter_id, runtime_id, status, reason_code,
     source_observed_at, evidence_at, current_since,
     latest_transition_receive_order
-) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
 ON CONFLICT(entity_id) DO UPDATE SET
     adapter_id = excluded.adapter_id,
     runtime_id = excluded.runtime_id,
     status = excluded.status,
     reason_code = excluded.reason_code,
-    reason_detail = excluded.reason_detail,
     source_observed_at = excluded.source_observed_at,
     evidence_at = excluded.evidence_at,
     current_since = excluded.current_since,
@@ -1150,7 +1052,6 @@ type UpsertEntityAvailabilityCurrentParams struct {
 	RuntimeID                    string
 	Status                       string
 	ReasonCode                   sql.NullString
-	ReasonDetail                 sql.NullString
 	SourceObservedAt             string
 	EvidenceAt                   string
 	CurrentSince                 string
@@ -1164,7 +1065,6 @@ func (q *Queries) UpsertEntityAvailabilityCurrent(ctx context.Context, arg Upser
 		arg.RuntimeID,
 		arg.Status,
 		arg.ReasonCode,
-		arg.ReasonDetail,
 		arg.SourceObservedAt,
 		arg.EvidenceAt,
 		arg.CurrentSince,

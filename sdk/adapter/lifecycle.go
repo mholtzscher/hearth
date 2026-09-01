@@ -20,7 +20,6 @@ const (
 	releaseTimeout             = 5 * time.Second
 	maximumSoftwareVersionSize = 128
 	maximumHealthReasonSize    = 128
-	maximumHealthDetailSize    = 512
 )
 
 var (
@@ -59,8 +58,7 @@ type externalSystemHealth struct {
 }
 
 type healthReason struct {
-	Code   string  `json:"code"`
-	Detail *string `json:"detail,omitempty"`
+	Code string `json:"code"`
 }
 
 type adapterHeartbeatResponse struct {
@@ -459,8 +457,8 @@ func validateHealthReport(report HealthReport, softwareName string) error {
 	}
 	switch report.Status {
 	case HealthUnknown, HealthHealthy:
-		if report.ReasonCode != "" || report.Detail != "" {
-			return fmt.Errorf("%s health must omit reason and detail", report.Status)
+		if report.ReasonCode != "" {
+			return fmt.Errorf("%s health must omit a reason", report.Status)
 		}
 	case HealthUnhealthy:
 		if report.ReasonCode == "" {
@@ -477,10 +475,6 @@ func validateHealthReport(report HealthReport, softwareName string) error {
 		!reasonCodePattern.MatchString(report.ReasonCode) {
 		return errors.New("health reason code must be a lowercase dotted identifier of at most 128 characters")
 	}
-	if report.Detail != "" &&
-		(!utf8.ValidString(report.Detail) || !validTextLength(report.Detail, maximumHealthDetailSize)) {
-		return errors.New("health detail must contain 1 to 512 characters")
-	}
 	if strings.HasPrefix(report.ReasonCode, "hearth.") ||
 		strings.HasPrefix(report.ReasonCode, "adapter."+softwareName+".") {
 		return nil
@@ -494,10 +488,6 @@ func wireHealthReport(report HealthReport) externalSystemHealth {
 	}
 	if report.ReasonCode != "" {
 		wire.Reason = &healthReason{Code: report.ReasonCode}
-		if report.Detail != "" {
-			detail := report.Detail
-			wire.Reason.Detail = &detail
-		}
 	}
 	return wire
 }

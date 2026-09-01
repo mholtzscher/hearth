@@ -7,9 +7,8 @@ import (
 )
 
 type availabilityServiceRepository struct {
-	adapter AdapterInstance
-	write   AvailabilityBatchWrite
-	calls   int
+	write AvailabilityBatchWrite
+	calls int
 }
 
 func (repository *availabilityServiceRepository) ReportEntityAvailability(
@@ -21,13 +20,6 @@ func (repository *availabilityServiceRepository) ReportEntityAvailability(
 	return write.ReportedAt, nil
 }
 
-func (repository *availabilityServiceRepository) GetAdapter(
-	context.Context,
-	string,
-) (AdapterInstance, error) {
-	return copyAdapterInstance(repository.adapter), nil
-}
-
 func TestReportEntityAvailabilityAllowsReadinessPauseAndOwnsInput(t *testing.T) {
 	t.Parallel()
 	now := time.Date(2026, 8, 29, 15, 0, 0, 0, time.UTC)
@@ -35,21 +27,12 @@ func TestReportEntityAvailabilityAllowsReadinessPauseAndOwnsInput(t *testing.T) 
 	if err != nil {
 		t.Fatal(err)
 	}
-	repository := &availabilityServiceRepository{
-		adapter: AdapterInstance{ID: "simulator", Health: &AdapterHealth{
-			Runtime: &RuntimeEvidence{
-				ID: testRuntimeID, Status: runtimeStatusOnline, SoftwareName: "hearth-simulator",
-			},
-		}},
-	}
+	repository := &availabilityServiceRepository{}
 	service := newTestService(repository, nil, nil, Dependencies{Now: func() time.Time { return now }})
-	detail := "upstream resource missing"
 	reports := []EntityAvailabilityReport{{
 		EntityID: entityID, Status: EntityAvailabilityUnavailable,
 		SourceObservedAt: now.In(time.FixedZone("offset", 2*60*60)),
-		Reason: &HealthReason{
-			Code: "adapter.hearth-simulator.entity_unavailable", Detail: &detail,
-		},
+		Reason:           &HealthReason{Code: "adapter.some-other-software.entity_unavailable"},
 	}}
 
 	reportedAt, err := service.ReportEntityAvailability(
@@ -66,9 +49,7 @@ func TestReportEntityAvailabilityAllowsReadinessPauseAndOwnsInput(t *testing.T) 
 	}
 
 	reports[0].Reason.Code = "hearth.changed"
-	detail = "changed"
-	if repository.write.Reports[0].Reason.Code != "adapter.hearth-simulator.entity_unavailable" ||
-		*repository.write.Reports[0].Reason.Detail != "upstream resource missing" {
+	if repository.write.Reports[0].Reason.Code != "adapter.some-other-software.entity_unavailable" {
 		t.Fatal("repository availability write aliases caller input")
 	}
 }

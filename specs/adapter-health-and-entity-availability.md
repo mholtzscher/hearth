@@ -39,7 +39,7 @@ One Adapter instance permits one active runtime. A Core-issued runtime ID scopes
 
 Included work covers Adapter persistence and archival, runtime lifecycle and fencing, explicit Entity availability, current and historical HTTP reads, and Command outcome changes. It also covers Core recovery, SDK lifecycle, first-party Adapter adoption, migration, code generation, runtime-scoped NATS subjects and Observation consumer provisioning, OpenAPI, and tests.
 
-This feature does not add Device health, a `degraded` status, inferred availability, Adapter replication or forced takeover, authentication changes, Adapter disablement, or Binding ownership transfer. It also excludes automation, alerting, incident tracking, uptime metrics, UI or CLI work, configurable timing or limits, and history pruning. Archival does not cascade through Bindings. Ownership intervals support future transfer behavior, but this change does not implement transfer or reconciliation.
+This feature does not add Device health, a `degraded` status, inferred availability, Adapter replication or forced takeover, authentication changes, Adapter disablement, or Binding ownership transfer. It also excludes automation, alerting, incident tracking, uptime metrics, UI or CLI work, configurable timing or limits, and history pruning. Archival does not cascade through Bindings. Entity ownership remains immutable.
 
 ## Behavioral contract
 
@@ -86,7 +86,7 @@ Each heartbeat carries the Adapter's latest configured-external-system assessmen
 
 - `unknown` before Adapter code has a result;
 - `healthy` when the external system is usable; or
-- `unhealthy` with a mandatory reason code and optional safe detail.
+- `unhealthy` with a mandatory reason code.
 
 Core receipt renews the lease to 15 seconds after receipt. Registration, availability reports, enablement requests, Observations, Command traffic, and NATS connection presence never renew it. Adapter source time is diagnostic only. Core receipt order and Core-owned time determine current status and transition order.
 
@@ -102,7 +102,7 @@ Effective Adapter health is:
 | graceful release | retained but ignored | `unhealthy` | `hearth.stopped` |
 | archived | retained in history | no current health | none |
 
-A status or stable reason-code change appends one Adapter transition. Same status and reason refresh current evidence and latest detail without appending history. Detail-only changes do not rewrite the historical transition.
+A status or stable reason-code change appends one Adapter transition. Same status and reason refresh current evidence without appending history.
 
 `Session.SetHealth` updates the SDK's desired health immediately and waits for an acknowledged immediate heartbeat or caller cancellation. The desired value remains in memory after caller cancellation so the regular heartbeat loop can report it later. A Core-only readiness change does not change the SDK's desired health.
 
@@ -140,7 +140,7 @@ Entity report batches:
 - accept reports for disabled Entities because enablement and availability are independent; and
 - return only after SQLite commits.
 
-`unavailable` requires a stable reason code. `available` omits reason and detail. Repeating the same status and reason refreshes current evidence and detail without appending history. The first report after invalidation creates a transition because effective availability changed to unknown.
+`unavailable` requires a stable reason code. `available` omits a reason. Repeating the same status and reason refreshes current evidence without appending history. The first report after invalidation creates a transition because effective availability changed to unknown.
 
 ### Commands
 
@@ -193,9 +193,8 @@ Success sets `archived_at`, clears current health, excludes the Adapter from def
 Reason codes are lowercase dotted identifiers with a maximum of 128 characters.
 
 - Hearth-owned codes use `hearth.<reason>`.
-- Adapter-specific codes use `adapter.<software_name>.<reason>`.
-- The Adapter-specific software-name segment must equal the subject-safe software name from the active claim.
-- Optional detail is valid UTF-8 from 1-512 characters.
+- Adapter-defined codes use `adapter.<reason>`.
+- Components after `adapter.` are Adapter-chosen and are not validated against runtime software metadata.
 - Adapters must exclude credentials, tokens, raw upstream payloads, and other secrets.
 
 Initial common codes:
@@ -253,8 +252,7 @@ type ExternalSystemEvidenceBody struct {
 }
 
 type HealthReasonBody struct {
-    Code   string  `json:"code"`
-    Detail *string `json:"detail,omitempty"`
+    Code string `json:"code"`
 }
 ```
 
@@ -268,8 +266,7 @@ Example:
     "since": "2026-08-29T15:00:01Z",
     "evidence_at": "2026-08-29T15:00:01Z",
     "reason": {
-      "code": "hearth.network_unreachable",
-      "detail": "dial tcp: network is unreachable"
+      "code": "hearth.network_unreachable"
     },
     "runtime": {
       "id": "run_01890f47-7a6b-7c4d-8e9f-0123456789ab",
@@ -285,8 +282,7 @@ Example:
       "source_observed_at": "2026-08-29T15:00:00Z",
       "evidence_at": "2026-08-29T15:00:01Z",
       "reason": {
-        "code": "hearth.network_unreachable",
-        "detail": "dial tcp: network is unreachable"
+        "code": "hearth.network_unreachable"
       }
     }
   }
@@ -363,7 +359,7 @@ The cursor stores resource `adapters`, last slug, and `include_archived` so it c
 #### `GET /v1/entities/{entity_id}/availability/history`
 
 - Operation ID: `list-entity-availability-history`
-- Returns the effective Entity timeline newest first by merging direct Entity report transitions with owning-Adapter transitions during persisted ownership intervals.
+- Returns the effective Entity timeline newest first by merging direct Entity transitions with owning-Adapter transitions from the Entity's initial transition onward.
 - Unknown Entity returns 404.
 
 Both accept `limit` and `cursor`, use `receive_order DESC`, fetch `limit + 1`, omit totals, and scope cursors to resource plus parent ID. Core readiness changes are absent because they do not change health or availability.
@@ -456,8 +452,7 @@ Request:
     "status": "unhealthy",
     "source_observed_at": "2026-08-29T15:00:00Z",
     "reason": {
-      "code": "hearth.network_unreachable",
-      "detail": "dial tcp: network is unreachable"
+      "code": "hearth.network_unreachable"
     }
   }
 }
@@ -492,15 +487,14 @@ Request:
       "status": "unavailable",
       "source_observed_at": "2026-08-29T15:00:00Z",
       "reason": {
-        "code": "adapter.hearth-adapter-homeassistant.entity_unavailable",
-        "detail": "Home Assistant reported unavailable"
+        "code": "adapter.entity_unavailable"
       }
     }
   ]
 }
 ```
 
-The schema enforces 1-256 entries, unique Entity IDs, available-without-reason, unavailable-with-reason, and 512-character detail. Core also validates uniqueness because JSON Schema `uniqueItems` compares whole objects rather than only Entity IDs.
+The schema enforces 1-256 entries, unique Entity IDs, available-without-reason, and unavailable-with-reason. Core also validates uniqueness because JSON Schema `uniqueItems` compares whole objects rather than only Entity IDs.
 
 Accepted response:
 
@@ -598,8 +592,7 @@ const (
 )
 
 type HealthReason struct {
-    Code   string
-    Detail *string
+    Code string
 }
 
 type RuntimeEvidence struct {
@@ -814,7 +807,6 @@ type HealthReport struct {
     Status           HealthStatus
     SourceObservedAt time.Time
     ReasonCode       string
-    Detail           string
 }
 
 type EntityAvailabilityStatus string
@@ -824,11 +816,10 @@ const (
 )
 
 type EntityAvailabilityReport struct {
-    EntityID        string
-    Status          EntityAvailabilityStatus
+    EntityID         string
+    Status           EntityAvailabilityStatus
     SourceObservedAt time.Time
-    ReasonCode      string
-    Detail          string
+    ReasonCode       string
 }
 
 func (session *Session) SetHealth(context.Context, HealthReport) error
@@ -889,10 +880,8 @@ The baseline creates:
 
 1. `adapter_instances`
    - `adapter_id` primary key with slug length and shape checks;
-   - `archived_at`, `created_at`, `updated_at`;
-   - nullable `active_runtime_id` and `health_runtime_id`;
-   - nullable current health status/reason/detail/source/evidence/since fields;
-   - latest transition receive order.
+   - nullable `archived_at`, `active_runtime_id`, and `health_runtime_id`;
+   - nullable current health status/reason/source/evidence/since fields.
 
 2. `adapter_runtimes`
    - `runtime_id` primary key with `run_` check;
@@ -906,7 +895,7 @@ The baseline creates:
    - one row per Entity;
    - reporting Adapter and runtime;
    - status restricted to available/unavailable;
-   - reason/detail/source-observed/Core-evidence/current-since fields;
+   - reason/source-observed/Core-evidence/current-since fields;
    - latest direct transition receive order.
 
 4. `health_transitions`
@@ -914,16 +903,11 @@ The baseline creates:
    - resource kind adapter/entity;
    - Adapter ID, optional Entity ID, optional runtime ID;
    - status with resource-specific checks;
-   - source, reason, detail, source-observed time, Core-observed time;
+   - source, reason, source-observed time, Core-observed time;
    - checks requiring negative reasons and prohibiting reasons for positive states;
    - indexes for Adapter and Entity newest-first histories.
 
-5. `entity_ownership_intervals`
-   - Entity ID, Adapter ID, starting receive order, optional ending receive order;
-   - one open interval per Entity;
-   - indexes supporting effective history joins.
-
-The baseline `commands` and `observation_receipts` tables include their final runtime IDs, statuses, failure and rejection codes, indexes, and checks. Registration inserts the ownership baseline for each newly created Entity; no migration seeding exists.
+The baseline `commands` and `observation_receipts` tables include their final runtime IDs, statuses, failure and rejection codes, indexes, and checks. Registration inserts the initial availability transition for each newly created Entity; no migration seeding exists.
 
 Migration tests cover creation from an empty database, idempotent startup, final tables, indexes, and constraints. Repository tests cover transactional relationships and foreign-key behavior.
 
@@ -933,10 +917,10 @@ One feature-owned sqlc group generates `internal/modules/devices/dbsqlc` from th
 
 Modify:
 
-- `registration.sql` to create ownership intervals and validate active runtime in registration transactions;
-- `state/state.sql` to select Adapter and availability evidence needed for current effective Entity views;
-- `commands/commands.sql` for runtime ID and renamed/new outcomes;
-- `receipts/receipts.sql` for runtime ID.
+- `registration.sql` to insert initial Entity availability and validate active runtime in registration transactions;
+- `state.sql` to select Adapter and availability evidence needed for current effective Entity views;
+- `commands.sql` for runtime ID and renamed/new outcomes;
+- `receipts.sql` for runtime ID.
 
 Generated sqlc types remain inside the SQLite repository implementation.
 
@@ -944,12 +928,10 @@ Generated sqlc types remain inside the SQLite repository implementation.
 
 `ListEntityAvailabilityHistory` performs one bounded SQL `UNION ALL` over:
 
-- direct Entity report and ownership-baseline rows in `health_transitions`; and
-- Adapter rows whose receive order falls within the Entity's ownership interval.
+- direct Entity transitions in `health_transitions`; and
+- owning-Adapter transitions at or after the Entity's first transition.
 
-It maps Adapter `unhealthy` to Entity `unavailable`, Adapter `healthy` or `unknown` to Entity `unknown`, and preserves Adapter reasons as inherited causes. A CTE orders candidates chronologically and uses the preceding effective status and reason code to suppress cross-source rows that do not represent a transition. A change of source or detail alone must not fabricate one. The result then orders by global `receive_order DESC` and fetches `limit + 1`.
-
-Future ownership transfer must close the old interval and open the new interval in the same transaction as mapping reconciliation, using the global transition order. Ownership transfer itself remains out of scope.
+The first Entity transition is inserted transactionally with Entity registration and defines the start of its immutable ownership lifetime. The query maps Adapter `unhealthy` to Entity `unavailable`, Adapter `healthy` or `unknown` to Entity `unknown`, and preserves Adapter reasons as inherited causes. A CTE orders candidates chronologically and uses the preceding effective status and reason code to suppress cross-source rows that do not represent a transition. A change of source alone must not fabricate one. The result then orders by global `receive_order DESC` and fetches `limit + 1`.
 
 ## First-party Adapter changes
 
@@ -1041,9 +1023,9 @@ Tests stay beside their owners. Generated sqlc output remains under `internal/mo
 
 - [x] Adapter list, detail, archive, both history routes, and all Entity representations match the specified DTOs, filters, errors, pagination, and OpenAPI metadata.
 - [x] Archived Adapters remain readable only when addressed or included, have null current health, retain history, and reserve their Adapter IDs. Archival rejects active runtimes and owned Bindings and is otherwise idempotent.
-- [x] Effective Entity history uses ownership intervals and global receive order, omits source-only and detail-only changes, and remains retained indefinitely.
-- [x] The fresh baseline schema creates the final State, receipt, Command, Adapter, runtime, availability, ownership, and history relationships with the specified constraints and indexes.
-- [x] Indexes and transactions enforce one open runtime per Adapter and one open ownership interval per Entity. sqlc output is reproducible and stays behind the repository interface.
+- [x] Effective Entity history uses the initial Entity transition and global receive order, omits source-only changes, and remains retained indefinitely.
+- [x] The fresh baseline schema creates the final State, receipt, Command, Adapter, runtime, availability, and history relationships with the specified constraints and indexes.
+- [x] Indexes and transactions enforce one open runtime per Adapter. sqlc output is reproducible and stays behind the module's capability interfaces.
 - [x] Core, contracts, the SDK, first-party Adapters, and NATS resources use the runtime-scoped v1 contract together while canonical resource IDs and histories remain compatible.
 
 ## Test strategy
@@ -1052,8 +1034,8 @@ Tests stay beside their owners. Generated sqlc output remains under `internal/mo
 |---|---|
 | Contract | New IDs, strict schemas, reason branches, 256 bound, causation, typed rejections, and unchanged existing payload shapes. |
 | Subject routing | Every constructor, parser, and wildcard; invalid runtime IDs; old-route rejection; and runtime isolation. |
-| Service | Health validation, reason namespace, readiness lease grace, archival rules, owned copies, and page validation. |
-| SQLite | Claim retry, duplicate claim race, lease expiry, heartbeat transitions, batch atomicity, effective reads/history, ownership intervals, and Command/health commit races. |
+| Service | Health validation, top-level reason namespace, readiness lease grace, archival rules, owned copies, and page validation. |
+| SQLite | Claim retry, duplicate claim race, lease expiry, heartbeat transitions, batch atomicity, effective reads/history, immutable Entity ownership, and Command/health commit races. |
 | NATS/SDK | Claim retry after lost response, heartbeat serialization, fenced shutdown, request/reply route identity, explicit availability retry, absence of heartbeat-triggered availability reporting, and runtime-scoped Command serving. |
 | JetStream | Runtime-scoped stream and consumer creation, configuration-drift rejection, stale-runtime receipts, redelivery, and readiness validation. |
 | HTTP | Bodies, null archived health, nested availability, archive conflict, pagination scopes, history causes, errors, and runtime OpenAPI. |
@@ -1073,7 +1055,7 @@ Use fake clocks and direct expiry calls for domain/repository tests. Do not make
 
 All eight deliverables are implemented. Tests prove that a stale runtime cannot receive a newly created Command after takeover and cover effective Entity history, Core-readiness lease grace, and direct availability invalidation.
 
-Final review covered generated sqlc output, embedded schemas, fresh baseline creation, ownership interval boundaries, runtime-scoped NATS resources, runtime OpenAPI, first-party Adapter fixtures, and race-enabled SDK lifecycle tests.
+Final review covered generated sqlc output, embedded schemas, fresh baseline creation, Entity history boundaries, runtime-scoped NATS resources, runtime OpenAPI, first-party Adapter fixtures, and race-enabled SDK lifecycle tests.
 
 Verified on 2026-08-31:
 

@@ -30,21 +30,16 @@ type AdapterEntityMapping struct {
 type AdapterInstance struct {
 	AdapterID                      string
 	ArchivedAt                     sql.NullString
-	CreatedAt                      string
-	UpdatedAt                      string
 	ActiveRuntimeID                sql.NullString
 	HealthRuntimeID                sql.NullString
 	HealthStatus                   sql.NullString
 	HealthReasonCode               sql.NullString
-	HealthReasonDetail             sql.NullString
 	HealthSince                    sql.NullString
 	HealthEvidenceAt               sql.NullString
 	ExternalSystemStatus           sql.NullString
 	ExternalSystemReasonCode       sql.NullString
-	ExternalSystemReasonDetail     sql.NullString
 	ExternalSystemSourceObservedAt sql.NullString
 	ExternalSystemEvidenceAt       sql.NullString
-	LatestTransitionReceiveOrder   sql.NullInt64
 }
 
 type AdapterRuntime struct {
@@ -102,18 +97,10 @@ type EntityAvailabilityCurrent struct {
 	RuntimeID                    string
 	Status                       string
 	ReasonCode                   sql.NullString
-	ReasonDetail                 sql.NullString
 	SourceObservedAt             string
 	EvidenceAt                   string
 	CurrentSince                 string
 	LatestTransitionReceiveOrder sql.NullInt64
-}
-
-type EntityOwnershipInterval struct {
-	EntityID             string
-	AdapterID            string
-	StartingReceiveOrder int64
-	EndingReceiveOrder   sql.NullInt64
 }
 
 type EntityReadProjection struct {
@@ -133,12 +120,10 @@ type EntityReadProjection struct {
 	ReceiveOrder                         sql.NullInt64
 	AdapterHealthStatus                  sql.NullString
 	AdapterHealthReasonCode              sql.NullString
-	AdapterHealthReasonDetail            sql.NullString
 	AdapterHealthSince                   sql.NullString
 	AdapterHealthEvidenceAt              sql.NullString
 	ReportedAvailabilityStatus           sql.NullString
 	ReportedAvailabilityReasonCode       sql.NullString
-	ReportedAvailabilityReasonDetail     sql.NullString
 	ReportedAvailabilitySourceObservedAt sql.NullString
 	ReportedAvailabilityEvidenceAt       sql.NullString
 	ReportedAvailabilitySince            sql.NullString
@@ -163,7 +148,6 @@ type HealthTransition struct {
 	Status           string
 	Source           string
 	ReasonCode       sql.NullString
-	ReasonDetail     sql.NullString
 	SourceObservedAt sql.NullString
 	ObservedAt       string
 }

@@ -85,7 +85,6 @@ type AdapterRepository interface {
 }
 
 type AvailabilityRepository interface {
-	AdapterReader
 	ReportEntityAvailability(context.Context, AvailabilityBatchWrite) (time.Time, error)
 }
 

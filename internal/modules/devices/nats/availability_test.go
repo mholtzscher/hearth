@@ -48,7 +48,6 @@ func TestEntityAvailabilityServerMapsAcceptedBatch(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = server.Drain() })
-	detail := "Home Assistant reported unavailable"
 	subjectFor := func(adapterID string) (string, error) {
 		return natswire.EntityAvailabilitySubject(adapterID, testRuntimeID)
 	}
@@ -58,7 +57,7 @@ func TestEntityAvailabilityServerMapsAcceptedBatch(t *testing.T) {
 		"avl_01890f47-7a6b-7c4d-8e9f-0123456789ab", subjectFor,
 		entityAvailabilityRequest{Entities: []entityAvailabilityEntry{{
 			EntityID: testEntityID, Status: "unavailable", SourceObservedAt: "2026-08-29T15:00:00Z",
-			Reason: &healthReason{Code: "hearth.entity_unavailable", Detail: &detail},
+			Reason: &healthReason{Code: "hearth.entity_unavailable"},
 		}}},
 	)
 	if response.Data.Status != statusAccepted || response.Data.ReportedAt != reportedAt.Format(time.RFC3339Nano) ||
@@ -67,8 +66,8 @@ func TestEntityAvailabilityServerMapsAcceptedBatch(t *testing.T) {
 	}
 	if recorder.adapterID != "simulator" || recorder.runtimeID != devices.RuntimeID(testRuntimeID) ||
 		len(recorder.reports) != 1 || recorder.reports[0].EntityID != devices.EntityID(testEntityID) ||
-		recorder.reports[0].Reason == nil || recorder.reports[0].Reason.Detail == nil ||
-		*recorder.reports[0].Reason.Detail != detail {
+		recorder.reports[0].Reason == nil ||
+		recorder.reports[0].Reason.Code != "hearth.entity_unavailable" {
 		t.Fatalf("mapped availability report = %#v", recorder)
 	}
 }

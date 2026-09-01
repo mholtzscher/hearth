@@ -31,26 +31,6 @@ func (service *Service) ReportEntityAvailability(
 	if validationErr := validateAvailabilityBatch(adapterID, runtimeID, reports); validationErr != nil {
 		return time.Time{}, validationErr
 	}
-	if availabilityBatchUsesAdapterReason(reports) {
-		softwareName, softwareErr := runtimeSoftwareName(
-			ctx, service.stores.Availability, adapterID, runtimeID,
-		)
-		if softwareErr != nil {
-			return time.Time{}, softwareErr
-		}
-		for _, report := range reports {
-			if report.Reason == nil || !strings.HasPrefix(report.Reason.Code, "adapter.") {
-				continue
-			}
-			if namespaceErr := validateHealthReasonNamespace(
-				report.Reason.Code,
-				softwareName,
-			); namespaceErr != nil {
-				return time.Time{}, namespaceErr
-			}
-		}
-	}
-
 	reportedAt := service.dependencies.Now().UTC()
 	owned := make([]EntityAvailabilityReport, len(reports))
 	for index, report := range reports {
@@ -124,13 +104,4 @@ func validateAvailabilityReport(report EntityAvailabilityReport) error {
 		)
 	}
 	return nil
-}
-
-func availabilityBatchUsesAdapterReason(reports []EntityAvailabilityReport) bool {
-	for _, report := range reports {
-		if report.Reason != nil && strings.HasPrefix(report.Reason.Code, "adapter.") {
-			return true
-		}
-	}
-	return false
 }

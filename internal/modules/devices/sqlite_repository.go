@@ -321,37 +321,26 @@ func createEntityAvailabilityBaseline(
 	status := string(EntityAvailabilityUnknown)
 	source := "adapter_health"
 	reasonCode := adapter.HealthReasonCode
-	reasonDetail := adapter.HealthReasonDetail
 	switch AdapterHealthStatus(adapter.HealthStatus.String) {
 	case AdapterHealthHealthy:
 		source = healthSourceCore
 		reasonCode = nullableText("hearth.awaiting_entity_report")
-		reasonDetail = sql.NullString{}
 	case AdapterHealthUnhealthy:
 		status = string(EntityAvailabilityUnavailable)
 	case AdapterHealthUnknown:
 	default:
 		return errors.New("adapter health is incomplete for entity availability baseline")
 	}
-	receiveOrder, err := queries.InsertEntityAvailabilityBaseline(
+	err = queries.InsertEntityAvailabilityBaseline(
 		ctx,
 		dbsqlc.InsertEntityAvailabilityBaselineParams{
 			AdapterID: adapterID, EntityID: nullableText(string(entityID)),
 			RuntimeID: adapter.ActiveRuntimeID, Status: status, Source: source,
-			ReasonCode: reasonCode, ReasonDetail: reasonDetail, ObservedAt: observedAt,
+			ReasonCode: reasonCode, ObservedAt: observedAt,
 		},
 	)
 	if err != nil {
 		return fmt.Errorf("insert Entity availability baseline: %w", err)
-	}
-	intervalErr := queries.CreateEntityOwnershipInterval(
-		ctx,
-		dbsqlc.CreateEntityOwnershipIntervalParams{
-			EntityID: string(entityID), AdapterID: adapterID, StartingReceiveOrder: receiveOrder,
-		},
-	)
-	if intervalErr != nil {
-		return fmt.Errorf("create Entity ownership interval: %w", intervalErr)
 	}
 	return nil
 }

@@ -174,19 +174,16 @@ func TestSQLiteHeartbeatRefreshesEvidenceWithoutFabricatingTransitions(t *testin
 	}
 	assertTableCount(t, database, "health_transitions", 2)
 
-	firstDetail := "dial failed"
 	unhealthyAt := healthyAt.Add(2 * time.Second)
 	unhealthy := HeartbeatWrite{
 		AdapterID: "simulator", RuntimeID: testRuntimeID, ExternalStatus: AdapterHealthUnhealthy,
 		SourceObservedAt: unhealthyAt.Add(-time.Second),
-		Reason:           &HealthReason{Code: "hearth.network_unreachable", Detail: &firstDetail},
+		Reason:           &HealthReason{Code: "hearth.network_unreachable"},
 		ReceivedAt:       unhealthyAt, LeaseExpiresAt: unhealthyAt.Add(15 * time.Second),
 	}
 	if _, unhealthyErr := repository.RecordAdapterHeartbeat(ctx, unhealthy); unhealthyErr != nil {
 		t.Fatal(unhealthyErr)
 	}
-	latestDetail := "network remains unreachable"
-	unhealthy.Reason.Detail = &latestDetail
 	unhealthy.SourceObservedAt = unhealthy.SourceObservedAt.Add(time.Second)
 	unhealthy.ReceivedAt = unhealthy.ReceivedAt.Add(time.Second)
 	unhealthy.LeaseExpiresAt = unhealthy.LeaseExpiresAt.Add(time.Second)
@@ -200,9 +197,8 @@ func TestSQLiteHeartbeatRefreshesEvidenceWithoutFabricatingTransitions(t *testin
 		t.Fatal(err)
 	}
 	if adapter.Health == nil || adapter.Health.Status != AdapterHealthUnhealthy ||
-		adapter.Health.Reason == nil || adapter.Health.Reason.Detail == nil ||
-		*adapter.Health.Reason.Detail != latestDetail || adapter.Health.Runtime == nil ||
-		adapter.Health.Runtime.LastHeartbeatAt == nil ||
+		adapter.Health.Reason == nil || adapter.Health.Reason.Code != "hearth.network_unreachable" ||
+		adapter.Health.Runtime == nil || adapter.Health.Runtime.LastHeartbeatAt == nil ||
 		!adapter.Health.Runtime.LastHeartbeatAt.Equal(unhealthy.ReceivedAt) {
 		t.Fatalf("current Adapter = %#v", adapter)
 	}
@@ -212,9 +208,8 @@ func TestSQLiteHeartbeatRefreshesEvidenceWithoutFabricatingTransitions(t *testin
 	if err != nil {
 		t.Fatal(err)
 	}
-	if history.Items[0].Reason == nil || history.Items[0].Reason.Detail == nil ||
-		*history.Items[0].Reason.Detail != firstDetail {
-		t.Fatalf("historical transition was rewritten = %#v", history.Items[0])
+	if history.Items[0].Reason == nil || history.Items[0].Reason.Code != "hearth.network_unreachable" {
+		t.Fatalf("historical transition = %#v", history.Items[0])
 	}
 
 	recoveredAt := unhealthy.ReceivedAt.Add(time.Second)
@@ -507,19 +502,18 @@ func TestSQLiteAvailabilityBatchRollsBackAndInvalidatesOnUnhealthy(t *testing.T)
 			t.Fatalf("effective availability history[%d] = %#v", index, history.Items[index])
 		}
 	}
-	var intervalStart, baselineOrder int64
+	var baselineOrder int64
 	if scanErr := database.QueryRowContext(ctx, `
-		SELECT ownership.starting_receive_order, transition.receive_order
-		FROM entity_ownership_intervals AS ownership
-		JOIN health_transitions AS transition
-		  ON transition.receive_order = ownership.starting_receive_order
-		WHERE ownership.entity_id = ? AND ownership.ending_receive_order IS NULL`,
+		SELECT MIN(receive_order)
+		FROM health_transitions
+		WHERE resource_kind = 'entity' AND entity_id = ?`,
 		binding.Entities[0].EntityID,
-	).Scan(&intervalStart, &baselineOrder); scanErr != nil {
+	).Scan(&baselineOrder); scanErr != nil {
 		t.Fatal(scanErr)
 	}
-	if intervalStart != baselineOrder {
-		t.Fatalf("ownership interval start = %d, baseline order = %d", intervalStart, baselineOrder)
+	oldest := history.Items[len(history.Items)-1]
+	if oldest.ReceiveOrder != baselineOrder {
+		t.Fatalf("oldest Entity history order = %d, baseline order = %d", oldest.ReceiveOrder, baselineOrder)
 	}
 }
 

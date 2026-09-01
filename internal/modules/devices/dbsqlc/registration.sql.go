@@ -122,23 +122,6 @@ func (q *Queries) CreateEntityMapping(ctx context.Context, arg CreateEntityMappi
 	return err
 }
 
-const createEntityOwnershipInterval = `-- name: CreateEntityOwnershipInterval :exec
-INSERT INTO entity_ownership_intervals (
-    entity_id, adapter_id, starting_receive_order
-) VALUES (?, ?, ?)
-`
-
-type CreateEntityOwnershipIntervalParams struct {
-	EntityID             string
-	AdapterID            string
-	StartingReceiveOrder int64
-}
-
-func (q *Queries) CreateEntityOwnershipInterval(ctx context.Context, arg CreateEntityOwnershipIntervalParams) error {
-	_, err := q.db.ExecContext(ctx, createEntityOwnershipInterval, arg.EntityID, arg.AdapterID, arg.StartingReceiveOrder)
-	return err
-}
-
 const getActiveAdapterRuntime = `-- name: GetActiveAdapterRuntime :one
 SELECT active_runtime_id
 FROM adapter_instances
@@ -160,8 +143,7 @@ func (q *Queries) GetActiveAdapterRuntime(ctx context.Context, arg GetActiveAdap
 }
 
 const getAdapterAvailabilityBaseline = `-- name: GetAdapterAvailabilityBaseline :one
-SELECT active_runtime_id, health_status, health_reason_code,
-       health_reason_detail
+SELECT active_runtime_id, health_status, health_reason_code
 FROM adapter_instances
 WHERE adapter_id = ? AND archived_at IS NULL
 `
@@ -171,21 +153,15 @@ type GetAdapterAvailabilityBaselineParams struct {
 }
 
 type GetAdapterAvailabilityBaselineRow struct {
-	ActiveRuntimeID    sql.NullString
-	HealthStatus       sql.NullString
-	HealthReasonCode   sql.NullString
-	HealthReasonDetail sql.NullString
+	ActiveRuntimeID  sql.NullString
+	HealthStatus     sql.NullString
+	HealthReasonCode sql.NullString
 }
 
 func (q *Queries) GetAdapterAvailabilityBaseline(ctx context.Context, arg GetAdapterAvailabilityBaselineParams) (GetAdapterAvailabilityBaselineRow, error) {
 	row := q.db.QueryRowContext(ctx, getAdapterAvailabilityBaseline, arg.AdapterID)
 	var i GetAdapterAvailabilityBaselineRow
-	err := row.Scan(
-		&i.ActiveRuntimeID,
-		&i.HealthStatus,
-		&i.HealthReasonCode,
-		&i.HealthReasonDetail,
-	)
+	err := row.Scan(&i.ActiveRuntimeID, &i.HealthStatus, &i.HealthReasonCode)
 	return i, err
 }
 
@@ -346,12 +322,11 @@ func (q *Queries) GetEntityMappingByExternalID(ctx context.Context, arg GetEntit
 	return i, err
 }
 
-const insertEntityAvailabilityBaseline = `-- name: InsertEntityAvailabilityBaseline :one
+const insertEntityAvailabilityBaseline = `-- name: InsertEntityAvailabilityBaseline :exec
 INSERT INTO health_transitions (
     resource_kind, adapter_id, entity_id, runtime_id, status, source,
-    reason_code, reason_detail, source_observed_at, observed_at
-) VALUES ('entity', ?, ?, ?, ?, ?, ?, ?, ?, ?)
-RETURNING receive_order
+    reason_code, source_observed_at, observed_at
+) VALUES ('entity', ?, ?, ?, ?, ?, ?, ?, ?)
 `
 
 type InsertEntityAvailabilityBaselineParams struct {
@@ -361,26 +336,22 @@ type InsertEntityAvailabilityBaselineParams struct {
 	Status           string
 	Source           string
 	ReasonCode       sql.NullString
-	ReasonDetail     sql.NullString
 	SourceObservedAt sql.NullString
 	ObservedAt       string
 }
 
-func (q *Queries) InsertEntityAvailabilityBaseline(ctx context.Context, arg InsertEntityAvailabilityBaselineParams) (int64, error) {
-	row := q.db.QueryRowContext(ctx, insertEntityAvailabilityBaseline,
+func (q *Queries) InsertEntityAvailabilityBaseline(ctx context.Context, arg InsertEntityAvailabilityBaselineParams) error {
+	_, err := q.db.ExecContext(ctx, insertEntityAvailabilityBaseline,
 		arg.AdapterID,
 		arg.EntityID,
 		arg.RuntimeID,
 		arg.Status,
 		arg.Source,
 		arg.ReasonCode,
-		arg.ReasonDetail,
 		arg.SourceObservedAt,
 		arg.ObservedAt,
 	)
-	var receive_order int64
-	err := row.Scan(&receive_order)
-	return receive_order, err
+	return err
 }
 
 const updateBindingExternalID = `-- name: UpdateBindingExternalID :exec

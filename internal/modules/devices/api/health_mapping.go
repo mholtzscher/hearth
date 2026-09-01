@@ -54,10 +54,5 @@ func healthReasonBody(reason *devices.HealthReason) *HealthReasonBody {
 	if reason == nil {
 		return nil
 	}
-	body := &HealthReasonBody{Code: reason.Code}
-	if reason.Detail != nil {
-		detail := *reason.Detail
-		body.Detail = &detail
-	}
-	return body
+	return &HealthReasonBody{Code: reason.Code}
 }

@@ -40,8 +40,7 @@ type externalSystemHealth struct {
 }
 
 type healthReason struct {
-	Code   string  `json:"code"`
-	Detail *string `json:"detail,omitempty"`
+	Code string `json:"code"`
 }
 
 type adapterHeartbeatResponse struct {

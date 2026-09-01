@@ -98,8 +98,7 @@
       "additionalProperties": false,
       "required": ["code"],
       "properties": {
-        "code": { "$ref": "#/$defs/reason_code" },
-        "detail": { "$ref": "#/$defs/safe_message" }
+        "code": { "$ref": "#/$defs/reason_code" }
       }
     },
     "external_system_health": {

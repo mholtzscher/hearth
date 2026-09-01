@@ -44,7 +44,7 @@ func TestReportEntityAvailabilityRetriesOneEnvelope(t *testing.T) {
 	session := connectSession(t, server.ClientURL())
 	report := EntityAvailabilityReport{
 		EntityID: testEntityID, Status: AvailabilityUnavailable, SourceObservedAt: time.Now().UTC(),
-		ReasonCode: "hearth.entity_unavailable", Detail: "upstream resource missing",
+		ReasonCode: "hearth.entity_unavailable",
 	}
 	if err := session.ReportEntityAvailability(testContext(t), []EntityAvailabilityReport{report}); err != nil {
 		t.Fatal(err)
