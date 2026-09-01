@@ -1,0 +1,6 @@
+unleash:
+  # Fast package tests need extra process-startup margin to avoid false timeouts.
+  timeout-coefficient: 20
+  exclude-files:
+    - '(^|/)zz_generated_.*\.go$'
+    - '(^|/)internal/platform/db/sqlc/.*\.go$'

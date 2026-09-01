@@ -4,6 +4,7 @@
 
 - For focused formatting, generation, module tidying, linting, testing, and vetting, always use the mise tasks below instead of invoking the underlying tools directly.
 - After making any change, prefer `mise run validate`; it regenerates code, formats it, and tidies module metadata before running all checks.
+- After adding or strengthening Go tests, run Gremlins against the smallest affected package or subtree. Investigate surviving mutants as missing behavioral guarantees; do not add assertions solely to kill mutated syntax. Mutation testing is intentionally excluded from `validate` because wider runs are slow.
 - Review the resulting diff and include intended generated or formatting changes.
 - To run NATS locally (JetStream enabled) while developing: `mise run nats`.
 
@@ -19,6 +20,7 @@
 | Tidy module metadata | `mise run --skip-deps tidy` |
 | Check module tidiness | `mise run --skip-deps tidy-check` |
 | Test with the race detector | `mise run --skip-deps test` |
+| Mutation test a focused package | `mise run mutation-test -- ./path/to/package` |
 | Vet | `mise run --skip-deps vet` |
 | Run all validation (preferred) | `mise run validate` |
 | Run NATS server locally | `mise run nats` |
