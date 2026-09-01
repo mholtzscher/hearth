@@ -104,6 +104,26 @@ description = "Test with the race detector"
 depends = ["tidy"]
 run = '''go test -race ./...'''
 
+[tasks."fuzz-entitytypes-json-codec"]
+description = "Run a bounded JSONCodec fuzz campaign"
+run = '''go test ./entitytypes -run='^$' -fuzz='^FuzzJSONCodecDecodeStability$' -fuzztime="${FUZZTIME:-5s}"'''
+
+[tasks."fuzz-natswire-codec"]
+description = "Run a bounded NATS wire codec fuzz campaign"
+run = '''go test ./internal/contracts/v1/natswire -run='^$' -fuzz='^FuzzCodecObservationRoundTrip$' -fuzztime="${FUZZTIME:-5s}"'''
+
+[tasks."fuzz-natswire-subjects"]
+description = "Run a bounded NATS subject parser fuzz campaign"
+run = '''go test ./internal/contracts/v1/natswire -run='^$' -fuzz='^FuzzSubjectParsersCanonicalRoundTrip$' -fuzztime="${FUZZTIME:-5s}"'''
+
+[tasks."fuzz"]
+description = "Run all bounded fuzz campaigns"
+run = '''
+mise run fuzz-natswire-subjects
+mise run fuzz-entitytypes-json-codec
+mise run fuzz-natswire-codec
+'''
+
 [tasks."vet"]
 description = "Vet"
 depends = ["tidy"]

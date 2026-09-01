@@ -1,15 +1,18 @@
 package natswire //nolint:testpackage // Tests exercise package-private subject validation alongside public routing.
 
-import "testing"
+import (
+	"strings"
+	"testing"
 
-const (
-	testRuntimeID       = "run_01890f47-7a6b-7c4d-8e9f-0123456789ab"
-	testSecondRuntimeID = "run_01890f47-7a6b-7c4d-8e9f-0123456789ac"
-	testEntityID        = "ent_01890f47-7a6b-7c4d-8e9f-0123456789ab"
+	"pgregory.net/rapid"
 )
 
-//nolint:cyclop,gocognit,gocyclo // The protocol route matrix is easier to audit in one place.
-func TestRuntimeScopedSubjectsRoundTrip(t *testing.T) {
+const (
+	testRuntimeID = "run_01890f47-7a6b-7c4d-8e9f-0123456789ab"
+	testEntityID  = "ent_01890f47-7a6b-7c4d-8e9f-0123456789ab"
+)
+
+func TestSubjectWildcardsMatchProtocol(t *testing.T) {
 	t.Parallel()
 	wildcards := map[string]string{
 		"claim":        AdapterClaimWildcard(),
@@ -36,109 +39,122 @@ func TestRuntimeScopedSubjectsRoundTrip(t *testing.T) {
 			t.Fatalf("%s wildcard = %q, want %q", name, got, want)
 		}
 	}
-
-	claim, err := AdapterClaimSubject("simulator")
-	if err != nil || claim != "hearth.v1.adapter.simulator.claim" {
-		t.Fatalf("claim subject = %q, err = %v", claim, err)
-	}
-	claimRoute, err := ParseAdapterClaimSubject(claim)
-	if err != nil || claimRoute.AdapterID != "simulator" {
-		t.Fatalf("claim route = %#v, err = %v", claimRoute, err)
-	}
-
-	heartbeat, err := AdapterHeartbeatSubject("simulator", testRuntimeID)
-	if err != nil {
-		t.Fatal(err)
-	}
-	heartbeatRoute, err := ParseAdapterHeartbeatSubject(heartbeat)
-	if err != nil || heartbeatRoute.AdapterID != "simulator" || heartbeatRoute.RuntimeID != testRuntimeID {
-		t.Fatalf("heartbeat route = %#v, err = %v", heartbeatRoute, err)
-	}
-
-	release, err := AdapterReleaseSubject("simulator", testRuntimeID)
-	if err != nil {
-		t.Fatal(err)
-	}
-	releaseRoute, err := ParseAdapterReleaseSubject(release)
-	if err != nil || releaseRoute.AdapterID != "simulator" || releaseRoute.RuntimeID != testRuntimeID {
-		t.Fatalf("release route = %#v, err = %v", releaseRoute, err)
-	}
-
-	registration, err := RegistrationSubject("simulator", testRuntimeID)
-	if err != nil {
-		t.Fatal(err)
-	}
-	registrationRoute, err := ParseRegistrationSubject(registration)
-	if err != nil || registrationRoute.AdapterID != "simulator" || registrationRoute.RuntimeID != testRuntimeID {
-		t.Fatalf("registration route = %#v, err = %v", registrationRoute, err)
-	}
-
-	availability, err := EntityAvailabilitySubject("simulator", testRuntimeID)
-	if err != nil {
-		t.Fatal(err)
-	}
-	availabilityRoute, err := ParseEntityAvailabilitySubject(availability)
-	if err != nil || availabilityRoute.AdapterID != "simulator" || availabilityRoute.RuntimeID != testRuntimeID {
-		t.Fatalf("availability route = %#v, err = %v", availabilityRoute, err)
-	}
-
-	observation, err := ObservationSubject("simulator", testRuntimeID, testEntityID)
-	if err != nil {
-		t.Fatal(err)
-	}
-	observationRoute, err := ParseObservationSubject(observation)
-	if err != nil || observationRoute.AdapterID != "simulator" || observationRoute.RuntimeID != testRuntimeID ||
-		observationRoute.EntityID != testEntityID {
-		t.Fatalf("observation route = %#v, err = %v", observationRoute, err)
-	}
-
-	enablement, err := EntityEnablementSubject("simulator", testRuntimeID, testEntityID)
-	if err != nil {
-		t.Fatal(err)
-	}
-	enablementRoute, err := ParseEntityEnablementSubject(enablement)
-	if err != nil || enablementRoute.AdapterID != "simulator" || enablementRoute.RuntimeID != testRuntimeID ||
-		enablementRoute.EntityID != testEntityID {
-		t.Fatalf("Entity enablement route = %#v, err = %v", enablementRoute, err)
-	}
-
-	command, err := CommandSubject("simulator", testRuntimeID, testEntityID, "set")
-	if err != nil {
-		t.Fatal(err)
-	}
-	commandRoute, err := ParseCommandSubject(command)
-	if err != nil || commandRoute.AdapterID != "simulator" || commandRoute.RuntimeID != testRuntimeID ||
-		commandRoute.EntityID != testEntityID || commandRoute.OperationName != "set" {
-		t.Fatalf("command route = %#v, err = %v", commandRoute, err)
-	}
-	wildcard, err := CommandWildcard("simulator", testRuntimeID)
-	if err != nil || wildcard != "hearth.v1.adapter.simulator.runtime."+testRuntimeID+".command.*.*" {
-		t.Fatalf("command wildcard = %q, err = %v", wildcard, err)
-	}
 }
 
-func TestSubjectsRejectMissingOrMalformedRuntimeIDs(t *testing.T) {
+type subjectPropertyRoute struct {
+	name        string
+	subject     string
+	wantRoute   any
+	usesRuntime bool
+	construct   func(string) (string, error)
+	parse       func(string) (any, error)
+}
+
+//nolint:gocognit // The table keeps the complete public route matrix auditable.
+func TestSubjectConstructorsAndParsersMatchProtocol(t *testing.T) {
 	t.Parallel()
-	invalidRuntimeIDs := []string{
-		"",
-		"run_not-a-uuid",
-		"run_01890f47-7a6b-4c4d-8e9f-0123456789ab",
-		"run_01890F47-7A6B-7C4D-8E9F-0123456789AB",
-	}
-	for _, runtimeID := range invalidRuntimeIDs {
-		if _, err := AdapterHeartbeatSubject("simulator", runtimeID); err == nil {
-			t.Fatalf("runtime ID %q unexpectedly accepted", runtimeID)
+	rapid.Check(t, func(t *rapid.T) {
+		adapterID := subjectSlugGenerator().Draw(t, "adapter ID")
+		runtimeID := subjectResourceIDGenerator("run").Draw(t, "runtime ID")
+		entityID := subjectResourceIDGenerator("ent").Draw(t, "entity ID")
+		operationName := subjectSlugGenerator().Draw(t, "operation name")
+		prefix := "hearth.v1.adapter." + adapterID
+		runtimePrefix := prefix + ".runtime." + runtimeID
+		routes := []subjectPropertyRoute{
+			{
+				name: "claim", subject: prefix + ".claim", wantRoute: AdapterClaimRoute{AdapterID: adapterID},
+				construct: func(string) (string, error) { return AdapterClaimSubject(adapterID) },
+				parse:     erasedSubjectParser(ParseAdapterClaimSubject),
+			},
+			{
+				name: "heartbeat", subject: runtimePrefix + ".heartbeat", usesRuntime: true,
+				wantRoute: AdapterHeartbeatRoute{AdapterID: adapterID, RuntimeID: runtimeID},
+				construct: func(value string) (string, error) { return AdapterHeartbeatSubject(adapterID, value) },
+				parse:     erasedSubjectParser(ParseAdapterHeartbeatSubject),
+			},
+			{
+				name: "release", subject: runtimePrefix + ".release", usesRuntime: true,
+				wantRoute: AdapterReleaseRoute{AdapterID: adapterID, RuntimeID: runtimeID},
+				construct: func(value string) (string, error) { return AdapterReleaseSubject(adapterID, value) },
+				parse:     erasedSubjectParser(ParseAdapterReleaseSubject),
+			},
+			{
+				name: "registration", subject: runtimePrefix + ".register", usesRuntime: true,
+				wantRoute: RegistrationRoute{AdapterID: adapterID, RuntimeID: runtimeID},
+				construct: func(value string) (string, error) { return RegistrationSubject(adapterID, value) },
+				parse:     erasedSubjectParser(ParseRegistrationSubject),
+			},
+			{
+				name: "availability", subject: runtimePrefix + ".availability", usesRuntime: true,
+				wantRoute: EntityAvailabilityRoute{AdapterID: adapterID, RuntimeID: runtimeID},
+				construct: func(value string) (string, error) { return EntityAvailabilitySubject(adapterID, value) },
+				parse:     erasedSubjectParser(ParseEntityAvailabilitySubject),
+			},
+			{
+				name: "observation", subject: runtimePrefix + ".observation." + entityID, usesRuntime: true,
+				wantRoute: ObservationRoute{AdapterID: adapterID, RuntimeID: runtimeID, EntityID: entityID},
+				construct: func(value string) (string, error) { return ObservationSubject(adapterID, value, entityID) },
+				parse:     erasedSubjectParser(ParseObservationSubject),
+			},
+			{
+				name:        "enablement",
+				subject:     runtimePrefix + ".enablement." + entityID,
+				usesRuntime: true,
+				wantRoute:   EntityEnablementRoute{AdapterID: adapterID, RuntimeID: runtimeID, EntityID: entityID},
+				construct:   func(value string) (string, error) { return EntityEnablementSubject(adapterID, value, entityID) },
+				parse:       erasedSubjectParser(ParseEntityEnablementSubject),
+			},
+			{
+				name: "command", subject: runtimePrefix + ".command." + entityID + "." + operationName,
+				usesRuntime: true,
+				wantRoute: CommandRoute{
+					AdapterID: adapterID, RuntimeID: runtimeID, EntityID: entityID, OperationName: operationName,
+				},
+				construct: func(value string) (string, error) {
+					return CommandSubject(adapterID, value, entityID, operationName)
+				},
+				parse: erasedSubjectParser(ParseCommandSubject),
+			},
+			{
+				name: "command wildcard", subject: runtimePrefix + ".command.*.*", usesRuntime: true,
+				construct: func(value string) (string, error) { return CommandWildcard(adapterID, value) },
+			},
 		}
-	}
-	if _, err := RegistrationSubject("simulator", ""); err == nil {
-		t.Fatal("registration without a runtime ID unexpectedly accepted")
-	}
-	if _, err := ObservationSubject("simulator", "", testEntityID); err == nil {
-		t.Fatal("observation without a runtime ID unexpectedly accepted")
-	}
-	if _, err := CommandWildcard("simulator", ""); err == nil {
-		t.Fatal("command wildcard without a runtime ID unexpectedly accepted")
-	}
+		invalidRuntimeIDs := []string{
+			"",
+			"run_not-a-uuid",
+			runtimeID[:18] + "4" + runtimeID[19:],
+			runtimeID[:23] + "7" + runtimeID[24:],
+			strings.ToUpper(runtimeID),
+		}
+
+		for _, route := range routes {
+			got, err := route.construct(runtimeID)
+			if err != nil || got != route.subject {
+				t.Fatalf("%s subject = %q, want %q, err = %v", route.name, got, route.subject, err)
+			}
+			if route.parse != nil {
+				parsed, parseErr := route.parse(got)
+				if parseErr != nil || parsed != route.wantRoute {
+					t.Fatalf("%s route = %#v, want %#v, err = %v", route.name, parsed, route.wantRoute, parseErr)
+				}
+			}
+			if !route.usesRuntime {
+				continue
+			}
+			for _, invalidRuntimeID := range invalidRuntimeIDs {
+				if _, constructErr := route.construct(invalidRuntimeID); constructErr == nil {
+					t.Fatalf("%s constructor accepted runtime ID %q", route.name, invalidRuntimeID)
+				}
+				if route.parse != nil {
+					invalidSubject := strings.Replace(route.subject, runtimeID, invalidRuntimeID, 1)
+					if _, parseErr := route.parse(invalidSubject); parseErr == nil {
+						t.Fatalf("%s parser accepted runtime ID %q", route.name, invalidRuntimeID)
+					}
+				}
+			}
+		}
+	})
 }
 
 func TestStrictParsersRejectStablePreCutoverSubjects(t *testing.T) {
@@ -171,25 +187,6 @@ func TestStrictParsersRejectStablePreCutoverSubjects(t *testing.T) {
 	}
 }
 
-func TestRuntimeRoutesPreserveIsolation(t *testing.T) {
-	t.Parallel()
-	first, err := CommandSubject("simulator", testRuntimeID, testEntityID, "set")
-	if err != nil {
-		t.Fatal(err)
-	}
-	second, err := CommandSubject("simulator", testSecondRuntimeID, testEntityID, "set")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if first == second {
-		t.Fatal("different runtimes produced the same command subject")
-	}
-	parsed, err := ParseCommandSubject(second)
-	if err != nil || parsed.RuntimeID != testSecondRuntimeID {
-		t.Fatalf("second runtime route = %#v, err = %v", parsed, err)
-	}
-}
-
 func TestSubjectsRejectUnsafeTokens(t *testing.T) {
 	t.Parallel()
 	if _, err := AdapterClaimSubject("bad.adapter"); err == nil {
@@ -205,5 +202,32 @@ func TestSubjectsRejectUnsafeTokens(t *testing.T) {
 		"hearth.v1.adapter.simulator.runtime." + testRuntimeID + ".command.extra." + testEntityID + ".set",
 	); err == nil {
 		t.Fatal("malformed command subject unexpectedly accepted")
+	}
+}
+
+func subjectSlugGenerator() *rapid.Generator[string] {
+	firstCharacters := []rune("abcdefghijklmnopqrstuvwxyz0123456789")
+	characters := append(append([]rune{}, firstCharacters...), '_', '-')
+	return rapid.Custom(func(t *rapid.T) string {
+		first := rapid.SampledFrom(firstCharacters).Draw(t, "first character")
+		rest := rapid.StringOfN(rapid.SampledFrom(characters), 0, 62, -1).Draw(t, "remaining characters")
+		return string(first) + rest
+	})
+}
+
+func subjectResourceIDGenerator(prefix string) *rapid.Generator[string] {
+	hexDigit := rapid.SampledFrom([]rune("0123456789abcdef"))
+	variant := rapid.SampledFrom([]rune("89ab"))
+	return rapid.Custom(func(t *rapid.T) string {
+		digits := rapid.StringOfN(hexDigit, 30, 30, -1).Draw(t, "hex digits")
+		variantDigit := variant.Draw(t, "variant")
+		return prefix + "_" + digits[:8] + "-" + digits[8:12] + "-7" + digits[12:15] +
+			"-" + string(variantDigit) + digits[15:18] + "-" + digits[18:]
+	})
+}
+
+func erasedSubjectParser[T any](parse func(string) (T, error)) func(string) (any, error) {
+	return func(subject string) (any, error) {
+		return parse(subject)
 	}
 }

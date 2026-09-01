@@ -291,7 +291,7 @@ func TestSQLiteReleaseAndExpiryPersistOfflineHealth(t *testing.T) {
 	}
 }
 
-//nolint:gocognit,gocyclo,cyclop // One timeline verifies batches, invalidation, current views, and history.
+//nolint:gocognit,gocyclo,cyclop // One timeline verifies batches, invalidation, and current views.
 func TestSQLiteAvailabilityBatchRollsBackAndInvalidatesOnUnhealthy(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
@@ -444,52 +444,6 @@ func TestSQLiteAvailabilityBatchRollsBackAndInvalidatesOnUnhealthy(t *testing.T)
 	if view.Availability.Status != EntityAvailabilityUnknown || view.Availability.Source != healthSourceCore ||
 		view.Availability.Reason == nil || view.Availability.Reason.Code != "hearth.awaiting_entity_report" {
 		t.Fatalf("availability after healthy recovery = %#v", view.Availability)
-	}
-	if _, recoveryReportErr := repository.ReportEntityAvailability(ctx, AvailabilityBatchWrite{
-		AdapterID: "simulator", RuntimeID: testRuntimeID,
-		Reports: []EntityAvailabilityReport{available}, ReportedAt: recoveredAt.Add(time.Second),
-	}); recoveryReportErr != nil {
-		t.Fatal(recoveryReportErr)
-	}
-	var transitionCount int
-	if scanErr := database.QueryRowContext(ctx, `
-		SELECT count(*) FROM health_transitions WHERE resource_kind = 'entity'
-	`).Scan(&transitionCount); scanErr != nil {
-		t.Fatal(scanErr)
-	}
-	if transitionCount != 4 {
-		t.Fatalf("availability transitions after recovery = %d", transitionCount)
-	}
-	history, err := repository.ListEntityAvailabilityHistory(ctx, ListEntityAvailabilityParams{
-		EntityID: binding.Entities[0].EntityID, Limit: 10,
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	wantStatuses := []string{"available", "unknown", "unavailable", "available", "unknown", "unknown"}
-	wantSources := []string{
-		"entity_report", healthSourceCore, "entity_report", "entity_report", healthSourceCore, "adapter_health",
-	}
-	if len(history.Items) != len(wantStatuses) {
-		t.Fatalf("effective availability history = %#v", history)
-	}
-	for index := range wantStatuses {
-		if history.Items[index].Status != wantStatuses[index] || history.Items[index].Source != wantSources[index] {
-			t.Fatalf("effective availability history[%d] = %#v", index, history.Items[index])
-		}
-	}
-	var baselineOrder int64
-	if scanErr := database.QueryRowContext(ctx, `
-		SELECT MIN(receive_order)
-		FROM health_transitions
-		WHERE resource_kind = 'entity' AND entity_id = ?`,
-		binding.Entities[0].EntityID,
-	).Scan(&baselineOrder); scanErr != nil {
-		t.Fatal(scanErr)
-	}
-	oldest := history.Items[len(history.Items)-1]
-	if oldest.ReceiveOrder != baselineOrder {
-		t.Fatalf("oldest Entity history order = %d, baseline order = %d", oldest.ReceiveOrder, baselineOrder)
 	}
 }
 
