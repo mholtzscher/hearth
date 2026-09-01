@@ -1,35 +1,6 @@
-# Gremlins is pre-1.0, so keep the selected operators explicit when upgrading.
 unleash:
-  workers: 2
   # Fast package tests need extra process-startup margin to avoid false timeouts.
   timeout-coefficient: 20
   exclude-files:
     - '(^|/)zz_generated_.*\.go$'
     - '(^|/)internal/platform/db/sqlc/.*\.go$'
-  threshold:
-    efficacy: 0
-    mutant-coverage: 0
-
-mutants:
-  arithmetic-base:
-    enabled: true
-  conditionals-boundary:
-    enabled: true
-  conditionals-negation:
-    enabled: true
-  increment-decrement:
-    enabled: true
-  invert-negatives:
-    enabled: true
-  invert-assignments:
-    enabled: false
-  invert-bitwise:
-    enabled: false
-  invert-bwassign:
-    enabled: false
-  invert-logical:
-    enabled: false
-  invert-loopctrl:
-    enabled: false
-  remove-self-assignments:
-    enabled: false
