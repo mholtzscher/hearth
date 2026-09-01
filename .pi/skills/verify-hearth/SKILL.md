@@ -12,7 +12,7 @@ Hearth currently exposes an HTTP API. It has no browser UI or management CLI. Dr
 Run from the repository root. Use a fresh lower-case run ID for every attempt.
 
 ```bash
-CONTROL=./.cursor/skills/verify-hearth/scripts/control-hearth
+CONTROL=./.pi/skills/verify-hearth/scripts/control-hearth
 RUN_ID=verify-$(date +%s)
 "$CONTROL" launch "$RUN_ID" happy
 ```
@@ -39,7 +39,7 @@ Run this before driving the API and whenever the instance looks wrong:
 "$CONTROL" doctor "$RUN_ID"
 ```
 
-Doctor is read-only. It checks that the recorded NATS, `hearthd`, and simulator processes still have their original process start tokens and executable hashes; confirms that those processes own the recorded ports; requires healthy and ready responses; checks the runtime OpenAPI identity `Hearth` version `1.0.0`; reads the registered Entity; and checks the simulator Command subscription when the scenario should have one. Hearth's HTTP API has no authentication, which doctor reports as `auth=not_configured`.
+Doctor is read-only. It checks that the recorded NATS, `hearthd`, and simulator processes still have their original start times, command paths, and executable hashes; confirms that those processes own the recorded ports; requires healthy and ready responses; checks the runtime OpenAPI identity `Hearth` version `1.0.0`; reads the registered Entity; and checks the simulator Command subscription when the scenario should have one. Hearth's HTTP API has no authentication, which doctor reports as `auth=not_configured`.
 
 Do not drive a run when doctor fails. Clean it up, inspect `.data/verify-hearth/evidence/$RUN_ID/runtime/*.log`, and start a fresh run ID.
 
@@ -103,7 +103,7 @@ test -d ".data/verify-hearth/evidence/$RUN_ID"
 
 ## Helpers
 
-The executable helper is `.cursor/skills/verify-hearth/scripts/control-hearth`.
+The executable helper is `.pi/skills/verify-hearth/scripts/control-hearth`.
 
 ```bash
 # Build and start an isolated stack. Scenario defaults to happy.
@@ -119,4 +119,4 @@ The executable helper is `.cursor/skills/verify-hearth/scripts/control-hearth`.
 "$CONTROL" cleanup "$RUN_ID"
 ```
 
-The helper requires Bash, `mise`, Go and `nats-server` from `mise.toml`, `curl`, Python 3, and Linux `/proc`. Run `mise install` if the pinned Go or NATS tools are missing.
+The helper requires Bash, `mise`, Go and `nats-server` from `mise.toml`, `curl`, Python 3, `lsof`, and standard `ps`. It works on macOS and Linux. Run `mise install` if the pinned Go or NATS tools are missing.

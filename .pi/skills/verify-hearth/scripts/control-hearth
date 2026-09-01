@@ -49,41 +49,45 @@ evidence_dir() {
 
 process_start_token() {
   local pid=$1
-  [[ -r /proc/$pid/stat ]] || return 1
-  awk '{print $22}' "/proc/$pid/stat"
+  /bin/ps -p "$pid" -o lstart= 2>/dev/null | awk '{$1=$1; print}'
 }
 
 record_role() {
-  local directory=$1 role=$2 pid=$3 token
-  token=$(process_start_token "$pid") || die "$role process $pid did not start"
+  local directory=$1 role=$2 pid=$3 executable=$4 token actual_executable
+  token=$(process_start_token "$pid")
+  [[ -n $token ]] || die "$role process $pid did not start"
+  actual_executable=$(/bin/ps -p "$pid" -o command= | awk '{print $1}')
+  [[ $actual_executable == "$executable" ]] || die "$role process did not start the expected executable"
   mkdir -p "$directory/pids"
-  printf '%s %s\n' "$pid" "$token" >"$directory/pids/$role"
+  printf '%s|%s|%s\n' "$pid" "$token" "$executable" >"$directory/pids/$role"
 }
 
 role_matches() {
-  local directory=$1 role=$2 pid token current
+  local directory=$1 role=$2 pid token executable current actual_executable
   [[ -f $directory/pids/$role ]] || return 1
-  read -r pid token <"$directory/pids/$role"
-  current=$(process_start_token "$pid") || return 1
-  [[ $current == "$token" ]]
+  IFS='|' read -r pid token executable <"$directory/pids/$role"
+  current=$(process_start_token "$pid")
+  actual_executable=$(/bin/ps -p "$pid" -o command= 2>/dev/null | awk '{print $1}')
+  [[ -n $current && $current == "$token" && $actual_executable == "$executable" ]]
 }
 
 role_pid() {
-  local directory=$1 role=$2 pid token
-  read -r pid token <"$directory/pids/$role" || return 1
+  local directory=$1 role=$2 pid token executable
+  IFS='|' read -r pid token executable <"$directory/pids/$role" || return 1
   printf '%s\n' "$pid"
 }
 
 stop_role() {
-  local directory=$1 role=$2 pid token current
+  local directory=$1 role=$2 pid token executable current actual_executable
   [[ -f $directory/pids/$role ]] || return 0
-  read -r pid token <"$directory/pids/$role"
+  IFS='|' read -r pid token executable <"$directory/pids/$role"
   current=$(process_start_token "$pid" 2>/dev/null || true)
   if [[ -z $current ]]; then
     return 0
   fi
-  if [[ $current != "$token" ]]; then
-    printf 'Refusing to stop PID %s for %s: process start token changed.\n' "$pid" "$role" >&2
+  actual_executable=$(/bin/ps -p "$pid" -o command= 2>/dev/null | awk '{print $1}')
+  if [[ $current != "$token" || $actual_executable != "$executable" ]]; then
+    printf 'Refusing to stop PID %s for %s: process identity changed.\n' "$pid" "$role" >&2
     return 1
   fi
   kill -TERM "$pid" 2>/dev/null || true
@@ -162,41 +166,20 @@ load_runtime() {
 }
 
 assert_role() {
-  local directory=$1 role=$2 expected_hash=$3 pid actual_hash
+  local directory=$1 role=$2 expected_executable=$3 expected_hash=$4 pid actual_executable actual_hash
   role_matches "$directory" "$role" || die "$role is not the process launched for this run"
   pid=$(role_pid "$directory" "$role")
-  actual_hash=$(sha256sum "/proc/$pid/exe" | awk '{print $1}')
+  actual_executable=$(/bin/ps -p "$pid" -o command= | awk '{print $1}')
+  [[ $actual_executable == "$expected_executable" ]] ||
+    die "$role command does not match the launched executable"
+  actual_hash=$(sha256sum "$expected_executable" | awk '{print $1}')
   [[ $actual_hash == "$expected_hash" ]] || die "$role executable does not match the launched build"
 }
 
 assert_port_owner() {
   local pid=$1 port=$2 role=$3
-  python3 - "$pid" "$port" <<'PY' || die "$role does not own its recorded listening port"
-import os
-import sys
-
-pid, port = sys.argv[1], int(sys.argv[2])
-inodes = set()
-for name in os.listdir(f"/proc/{pid}/fd"):
-    try:
-        target = os.readlink(f"/proc/{pid}/fd/{name}")
-    except OSError:
-        continue
-    if target.startswith("socket:[") and target.endswith("]"):
-        inodes.add(target[8:-1])
-
-for table in ("tcp", "tcp6"):
-    try:
-        rows = open(f"/proc/{pid}/net/{table}", encoding="ascii").read().splitlines()[1:]
-    except OSError:
-        continue
-    for row in rows:
-        fields = row.split()
-        local_port = int(fields[1].split(":")[1], 16)
-        if fields[3] == "0A" and local_port == port and fields[9] in inodes:
-            raise SystemExit(0)
-raise SystemExit(1)
-PY
+  lsof -nP -a -p "$pid" -iTCP:"$port" -sTCP:LISTEN -t 2>/dev/null | grep -qx "$pid" ||
+    die "$role does not own its recorded listening port"
 }
 
 command_subscription_ready() {
@@ -234,7 +217,7 @@ launch() {
 
   "$nats_binary" -js -a 127.0.0.1 -p -1 -m -1 \
     --ports_file_dir "$directory" -sd "$directory/nats" >"$directory/nats.log" 2>&1 &
-  record_role "$directory" nats "$!"
+  record_role "$directory" nats "$!" "$nats_binary"
 
   local ports_file=""
   for _ in $(seq 1 100); do
@@ -277,7 +260,7 @@ scenario: $scenario
 EOF
 
   "$directory/bin/hearthd" -config "$directory/hearthd.yaml" >"$directory/hearthd.log" 2>&1 &
-  record_role "$directory" hearthd "$!"
+  record_role "$directory" hearthd "$!" "$directory/bin/hearthd"
 
   local ready=0
   for _ in $(seq 1 150); do
@@ -300,7 +283,7 @@ PY
   [[ $ready -eq 1 ]] || die "hearthd did not become ready"
 
   "$directory/bin/hearth-simulator" -config "$directory/simulator.yaml" >"$directory/simulator.log" 2>&1 &
-  record_role "$directory" simulator "$!"
+  record_role "$directory" simulator "$!" "$directory/bin/hearth-simulator"
 
   local registered=0
   for _ in $(seq 1 150); do
@@ -370,6 +353,9 @@ PY
     printf 'DEVICE_ID=%q\n' "$device_id"
     printf 'COMMAND_SUBJECT=%q\n' "$command_subject"
     printf 'EVIDENCE_DIR=%q\n' "$proof"
+    printf 'HEARTHD_EXECUTABLE=%q\n' "$directory/bin/hearthd"
+    printf 'SIMULATOR_EXECUTABLE=%q\n' "$directory/bin/hearth-simulator"
+    printf 'NATS_EXECUTABLE=%q\n' "$nats_binary"
     printf 'HEARTHD_SHA256=%q\n' "$hearthd_hash"
     printf 'SIMULATOR_SHA256=%q\n' "$simulator_hash"
     printf 'NATS_SHA256=%q\n' "$nats_hash"
@@ -402,9 +388,9 @@ doctor() {
   directory=$(run_dir "$run_id")
   load_runtime "$run_id"
 
-  assert_role "$directory" nats "$NATS_SHA256"
-  assert_role "$directory" hearthd "$HEARTHD_SHA256"
-  assert_role "$directory" simulator "$SIMULATOR_SHA256"
+  assert_role "$directory" nats "$NATS_EXECUTABLE" "$NATS_SHA256"
+  assert_role "$directory" hearthd "$HEARTHD_EXECUTABLE" "$HEARTHD_SHA256"
+  assert_role "$directory" simulator "$SIMULATOR_EXECUTABLE" "$SIMULATOR_SHA256"
 
   assert_port_owner "$(role_pid "$directory" nats)" "$NATS_PORT" NATS
   assert_port_owner "$(role_pid "$directory" nats)" "$MONITOR_PORT" "NATS monitoring"
