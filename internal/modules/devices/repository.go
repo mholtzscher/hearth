@@ -68,7 +68,7 @@ type RegistrationRepository interface {
 }
 
 type RuntimeRepository interface {
-	ClaimAdapterRuntime(context.Context, ClaimRuntimeWrite) (RuntimeClaim, error)
+	ClaimAdapterRuntime(context.Context, ClaimRuntimeWrite) error
 	RecordAdapterHeartbeat(context.Context, HeartbeatWrite) (HeartbeatResult, error)
 	ReleaseAdapterRuntime(context.Context, ReleaseRuntimeWrite) error
 	ExpireAdapterLeases(context.Context, ExpireLeasesWrite) error

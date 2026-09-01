@@ -36,9 +36,9 @@ func TestRegistrationWithoutAdapterRollsBackAndRetainsHistoryAfterClaim(t *testi
 		assertTableCount(t, database, table, 0)
 	}
 
-	if _, err := repository.ClaimAdapterRuntime(
+	if err := repository.ClaimAdapterRuntime(
 		ctx,
-		testClaimWrite(testClaimID, testRuntimeID, now),
+		testClaimWrite(testRuntimeID, now),
 	); err != nil {
 		t.Fatal(err)
 	}
@@ -683,9 +683,9 @@ func TestRegistrationAndEnablementFenceStaleRuntimeBeforeWriting(t *testing.T) {
 	}); releaseErr != nil {
 		t.Fatal(releaseErr)
 	}
-	if _, claimErr := repository.ClaimAdapterRuntime(
+	if claimErr := repository.ClaimAdapterRuntime(
 		ctx,
-		testClaimWrite(testSecondClaimID, testSecondRuntime, now.Add(2*time.Second)),
+		testClaimWrite(testSecondRuntime, now.Add(2*time.Second)),
 	); claimErr != nil {
 		t.Fatal(claimErr)
 	}
@@ -870,9 +870,9 @@ func TestCommandRuntimeIsNotRetargetedAfterTakeover(t *testing.T) {
 	}); releaseErr != nil {
 		t.Fatal(releaseErr)
 	}
-	if _, claimErr := repository.ClaimAdapterRuntime(
+	if claimErr := repository.ClaimAdapterRuntime(
 		ctx,
-		testClaimWrite(testSecondClaimID, testSecondRuntime, claimedAt.Add(3*time.Second)),
+		testClaimWrite(testSecondRuntime, claimedAt.Add(3*time.Second)),
 	); claimErr != nil {
 		t.Fatal(claimErr)
 	}
@@ -1033,7 +1033,7 @@ func openRegistrationDatabase(t *testing.T, path string) *sql.DB {
 	repository := NewSQLiteRepository(database, nil)
 	claimedAt := time.Date(2026, 8, 20, 0, 0, 0, 0, time.UTC)
 	for _, adapterID := range []string{"homeassistant", "simulator"} {
-		if _, err := repository.ClaimAdapterRuntime(
+		if err := repository.ClaimAdapterRuntime(
 			context.Background(),
 			testAdapterClaim(adapterID, claimedAt),
 		); err != nil {
@@ -1045,14 +1045,12 @@ func openRegistrationDatabase(t *testing.T, path string) *sql.DB {
 
 func testAdapterClaim(adapterID string, claimedAt time.Time) ClaimRuntimeWrite {
 	runtimeID := testAdapterRuntime(adapterID)
-	claimID := "clm_01890f47-7a6b-7c4d-8e9f-0123456789ab"
 	softwareName := "hearth-simulator"
 	if adapterID == "homeassistant" {
-		claimID = "clm_01890f47-7a6b-7c4d-8e9f-0123456789ad"
 		softwareName = "hearth-adapter-homeassistant"
 	}
 	return ClaimRuntimeWrite{
-		ClaimID: claimID, RuntimeID: runtimeID, AdapterID: adapterID,
+		RuntimeID: runtimeID, AdapterID: adapterID,
 		SoftwareName: softwareName, SoftwareVersion: "0.1.0",
 		ClaimedAt: claimedAt, LeaseExpiresAt: claimedAt.Add(adapterLeaseDuration),
 	}
@@ -1120,8 +1118,8 @@ func assertCounts(t *testing.T, database *sql.DB, devices, entities int) {
 func claimTestAdapterRuntime(t *testing.T, repository *SQLiteRepository, claimedAt time.Time) {
 	t.Helper()
 	runtimeID := RuntimeID("run_01890f47-7a6b-7c4d-8e9f-0123456789ab")
-	_, err := repository.ClaimAdapterRuntime(context.Background(), ClaimRuntimeWrite{
-		ClaimID: "clm_01890f47-7a6b-7c4d-8e9f-0123456789ab", RuntimeID: runtimeID,
+	err := repository.ClaimAdapterRuntime(context.Background(), ClaimRuntimeWrite{
+		RuntimeID: runtimeID,
 		AdapterID: "simulator", SoftwareName: "hearth-simulator", SoftwareVersion: "0.1.0",
 		ClaimedAt: claimedAt, LeaseExpiresAt: claimedAt.Add(15 * time.Second),
 	})

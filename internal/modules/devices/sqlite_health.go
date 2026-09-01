@@ -11,9 +11,8 @@ import (
 )
 
 const (
-	adapterHeartbeatInterval = 5 * time.Second
-	adapterLeaseDuration     = 15 * time.Second
-	healthResourceAdapter    = "adapter"
+	adapterLeaseDuration  = 15 * time.Second
+	healthResourceAdapter = "adapter"
 )
 
 type AdapterActiveError struct {
@@ -31,48 +30,49 @@ func (*AdapterActiveError) Unwrap() error {
 func (repository *SQLiteRepository) ClaimAdapterRuntime(
 	ctx context.Context,
 	write ClaimRuntimeWrite,
-) (RuntimeClaim, error) {
+) error {
 	tx, err := repository.database.BeginTx(ctx, &sql.TxOptions{Isolation: sql.LevelSerializable})
 	if err != nil {
-		return RuntimeClaim{}, fmt.Errorf("begin Adapter runtime claim: %w", err)
+		return fmt.Errorf("begin Adapter runtime claim: %w", err)
 	}
 	defer func() { _ = tx.Rollback() }()
 	queries := repository.queries.WithTx(tx)
 
-	previous, repeated, err := repeatedRuntimeClaim(ctx, queries, write)
+	repeated, err := repeatedRuntimeClaim(ctx, queries, write)
 	if err != nil {
-		return RuntimeClaim{}, err
+		return err
 	}
 	if repeated {
-		return previous, nil
+		return nil
 	}
 	instance, err := claimAdapterInstance(ctx, queries, write)
 	if err != nil {
-		return RuntimeClaim{}, err
+		return err
 	}
 	if activeErr := rejectActiveRuntimeClaim(ctx, queries, instance); activeErr != nil {
-		return RuntimeClaim{}, activeErr
+		return activeErr
 	}
 
 	if insertErr := queries.InsertRuntime(ctx, dbsqlc.InsertRuntimeParams{
-		RuntimeID: string(write.RuntimeID), ClaimID: write.ClaimID, AdapterID: write.AdapterID,
+		RuntimeID: string(write.RuntimeID), AdapterID: write.AdapterID,
 		SoftwareName: write.SoftwareName, SoftwareVersion: write.SoftwareVersion,
 		ClaimedAt: formatTime(write.ClaimedAt), LeaseExpiresAt: formatTime(write.LeaseExpiresAt),
 	}); insertErr != nil {
-		return RuntimeClaim{}, fmt.Errorf("insert Adapter runtime: %w", insertErr)
+		return fmt.Errorf("insert Adapter runtime: %w", insertErr)
 	}
 	if updateErr := queries.UpdateAdapterCurrentHealth(ctx, dbsqlc.UpdateAdapterCurrentHealthParams{
 		ActiveRuntimeID:  nullableText(string(write.RuntimeID)),
 		HealthRuntimeID:  nullableText(string(write.RuntimeID)),
 		HealthStatus:     string(AdapterHealthUnknown),
 		HealthReasonCode: nullableText("hearth.awaiting_health"),
+		HealthSource:     healthSourceCore,
 		HealthSince:      formatTime(write.ClaimedAt),
 		HealthEvidenceAt: formatTime(write.ClaimedAt),
 		AdapterID:        write.AdapterID,
 	}); updateErr != nil {
-		return RuntimeClaim{}, fmt.Errorf("activate Adapter runtime: %w", updateErr)
+		return fmt.Errorf("activate Adapter runtime: %w", updateErr)
 	}
-	if _, transitionErr := appendHealthTransition(ctx, queries, dbsqlc.InsertHealthTransitionParams{
+	if transitionErr := appendAdapterHealthTransition(ctx, queries, dbsqlc.InsertHealthTransitionParams{
 		ResourceKind: healthResourceAdapter, AdapterID: write.AdapterID,
 		RuntimeID:  nullableText(string(write.RuntimeID)),
 		Status:     string(AdapterHealthUnknown),
@@ -80,31 +80,31 @@ func (repository *SQLiteRepository) ClaimAdapterRuntime(
 		ReasonCode: nullableText("hearth.awaiting_health"),
 		ObservedAt: formatTime(write.ClaimedAt),
 	}); transitionErr != nil {
-		return RuntimeClaim{}, transitionErr
+		return transitionErr
 	}
 	if commitErr := tx.Commit(); commitErr != nil {
-		return RuntimeClaim{}, fmt.Errorf("commit Adapter runtime claim: %w", commitErr)
+		return fmt.Errorf("commit Adapter runtime claim: %w", commitErr)
 	}
-	return runtimeClaim(write.RuntimeID), nil
+	return nil
 }
 
 func repeatedRuntimeClaim(
 	ctx context.Context,
 	queries *dbsqlc.Queries,
 	write ClaimRuntimeWrite,
-) (RuntimeClaim, bool, error) {
-	previous, err := queries.GetRuntimeByClaimID(ctx, dbsqlc.GetRuntimeByClaimIDParams{ClaimID: write.ClaimID})
+) (bool, error) {
+	previous, err := queries.GetRuntime(ctx, dbsqlc.GetRuntimeParams{RuntimeID: string(write.RuntimeID)})
 	if errors.Is(err, sql.ErrNoRows) {
-		return RuntimeClaim{}, false, nil
+		return false, nil
 	}
 	if err != nil {
-		return RuntimeClaim{}, false, fmt.Errorf("get claim retry: %w", err)
+		return false, fmt.Errorf("get claim retry: %w", err)
 	}
 	if previous.AdapterID != write.AdapterID || previous.SoftwareName != write.SoftwareName ||
 		previous.SoftwareVersion != write.SoftwareVersion {
-		return RuntimeClaim{}, false, errors.New("claim ID was already used with different Adapter metadata")
+		return false, errors.New("runtime ID was already used with different Adapter metadata")
 	}
-	return runtimeClaim(RuntimeID(previous.RuntimeID)), true, nil
+	return true, nil
 }
 
 func claimAdapterInstance(
@@ -123,6 +123,7 @@ func claimAdapterInstance(
 		AdapterID:        write.AdapterID,
 		HealthStatus:     string(AdapterHealthUnknown),
 		HealthReasonCode: nullableText("hearth.awaiting_health"),
+		HealthSource:     healthSourceCore,
 		HealthSince:      formatTime(write.ClaimedAt),
 		HealthEvidenceAt: formatTime(write.ClaimedAt),
 	}); createErr != nil {
@@ -156,12 +157,6 @@ func rejectActiveRuntimeClaim(
 	return &AdapterActiveError{RetryAfter: leaseExpiresAt}
 }
 
-func runtimeClaim(runtimeID RuntimeID) RuntimeClaim {
-	return RuntimeClaim{
-		RuntimeID: runtimeID, HeartbeatInterval: adapterHeartbeatInterval, LeaseDuration: adapterLeaseDuration,
-	}
-}
-
 func (repository *SQLiteRepository) RecordAdapterHeartbeat(
 	ctx context.Context,
 	write HeartbeatWrite,
@@ -176,9 +171,9 @@ func (repository *SQLiteRepository) RecordAdapterHeartbeat(
 	if err != nil {
 		return HeartbeatResult{}, err
 	}
-	if write.ExternalStatus == AdapterHealthUnknown && instance.ExternalSystemStatus.Valid &&
-		instance.ExternalSystemStatus.String != string(AdapterHealthUnknown) {
-		return HeartbeatResult{}, errors.New("external-system health cannot return to unknown in one runtime")
+	if write.ExternalStatus == AdapterHealthUnknown &&
+		instance.HealthStatus != string(AdapterHealthUnknown) {
+		return HeartbeatResult{}, errors.New("adapter health cannot return to unknown in one runtime")
 	}
 	rows, err := queries.UpdateRuntimeHeartbeat(ctx, dbsqlc.UpdateRuntimeHeartbeatParams{
 		LastHeartbeatAt: formatNullableTime(write.ReceivedAt), LeaseExpiresAt: formatTime(write.LeaseExpiresAt),
@@ -201,17 +196,15 @@ func (repository *SQLiteRepository) RecordAdapterHeartbeat(
 		}
 	}
 	if updateErr := queries.UpdateAdapterCurrentHealth(ctx, dbsqlc.UpdateAdapterCurrentHealthParams{
-		ActiveRuntimeID:                nullableText(string(write.RuntimeID)),
-		HealthRuntimeID:                nullableText(string(write.RuntimeID)),
-		HealthStatus:                   string(write.ExternalStatus),
-		HealthReasonCode:               nullableReasonCode(reason),
-		HealthSince:                    formatTime(since),
-		HealthEvidenceAt:               formatTime(write.ReceivedAt),
-		ExternalSystemStatus:           nullableText(string(write.ExternalStatus)),
-		ExternalSystemReasonCode:       nullableReasonCode(write.Reason),
-		ExternalSystemSourceObservedAt: formatNullableTime(write.SourceObservedAt),
-		ExternalSystemEvidenceAt:       formatNullableTime(write.ReceivedAt),
-		AdapterID:                      write.AdapterID,
+		ActiveRuntimeID:        nullableText(string(write.RuntimeID)),
+		HealthRuntimeID:        nullableText(string(write.RuntimeID)),
+		HealthStatus:           string(write.ExternalStatus),
+		HealthReasonCode:       nullableReasonCode(reason),
+		HealthSource:           healthSourceAdapter,
+		HealthSince:            formatTime(since),
+		HealthEvidenceAt:       formatTime(write.ReceivedAt),
+		HealthSourceObservedAt: formatNullableTime(write.SourceObservedAt),
+		AdapterID:              write.AdapterID,
 	}); updateErr != nil {
 		return HeartbeatResult{}, fmt.Errorf("update Adapter heartbeat health: %w", updateErr)
 	}
@@ -221,12 +214,12 @@ func (repository *SQLiteRepository) RecordAdapterHeartbeat(
 		return HeartbeatResult{}, invalidateErr
 	}
 	if changed {
-		if _, transitionErr := appendHealthTransition(ctx, queries, dbsqlc.InsertHealthTransitionParams{
+		if transitionErr := appendAdapterHealthTransition(ctx, queries, dbsqlc.InsertHealthTransitionParams{
 			ResourceKind:     healthResourceAdapter,
 			AdapterID:        write.AdapterID,
 			RuntimeID:        nullableText(string(write.RuntimeID)),
 			Status:           string(write.ExternalStatus),
-			Source:           "external_system",
+			Source:           healthSourceAdapter,
 			ReasonCode:       nullableReasonCode(reason),
 			SourceObservedAt: formatNullableTime(write.SourceObservedAt),
 			ObservedAt:       formatTime(write.ReceivedAt),
@@ -374,16 +367,13 @@ func setOfflineAdapterHealth(
 		}
 	}
 	if updateErr := queries.UpdateAdapterCurrentHealth(ctx, dbsqlc.UpdateAdapterCurrentHealthParams{
-		HealthRuntimeID:                nullableText(runtime.RuntimeID),
-		HealthStatus:                   string(AdapterHealthUnhealthy),
-		HealthReasonCode:               nullableText(reasonCode),
-		HealthSince:                    formatTime(since),
-		HealthEvidenceAt:               formatTime(observedAt),
-		ExternalSystemStatus:           instance.ExternalSystemStatus,
-		ExternalSystemReasonCode:       instance.ExternalSystemReasonCode,
-		ExternalSystemSourceObservedAt: instance.ExternalSystemSourceObservedAt,
-		ExternalSystemEvidenceAt:       instance.ExternalSystemEvidenceAt,
-		AdapterID:                      instance.AdapterID,
+		HealthRuntimeID:  nullableText(runtime.RuntimeID),
+		HealthStatus:     string(AdapterHealthUnhealthy),
+		HealthReasonCode: nullableText(reasonCode),
+		HealthSource:     healthSourceCore,
+		HealthSince:      formatTime(since),
+		HealthEvidenceAt: formatTime(observedAt),
+		AdapterID:        instance.AdapterID,
 	}); updateErr != nil {
 		return fmt.Errorf("mark Adapter runtime offline: %w", updateErr)
 	}
@@ -395,7 +385,7 @@ func setOfflineAdapterHealth(
 	if !changed {
 		return nil
 	}
-	_, err := appendHealthTransition(ctx, queries, dbsqlc.InsertHealthTransitionParams{
+	return appendAdapterHealthTransition(ctx, queries, dbsqlc.InsertHealthTransitionParams{
 		ResourceKind: healthResourceAdapter,
 		AdapterID:    instance.AdapterID,
 		RuntimeID:    nullableText(runtime.RuntimeID),
@@ -404,7 +394,6 @@ func setOfflineAdapterHealth(
 		ReasonCode:   nullableText(reasonCode),
 		ObservedAt:   formatTime(observedAt),
 	})
-	return err
 }
 
 func activeAdapterInstance(
@@ -434,6 +423,44 @@ func appendHealthTransition(
 		return 0, fmt.Errorf("insert health transition: %w", err)
 	}
 	return receiveOrder, nil
+}
+
+func appendAdapterHealthTransition(
+	ctx context.Context,
+	queries *dbsqlc.Queries,
+	params dbsqlc.InsertHealthTransitionParams,
+) error {
+	if _, err := appendHealthTransition(ctx, queries, params); err != nil {
+		return err
+	}
+
+	status := EntityAvailabilityUnknown
+	source := availabilitySourceAdapterHealth
+	reasonCode := params.ReasonCode
+	sourceObservedAt := params.SourceObservedAt
+	switch AdapterHealthStatus(params.Status) {
+	case AdapterHealthHealthy:
+		source = healthSourceCore
+		reasonCode = nullableText("hearth.awaiting_entity_report")
+		sourceObservedAt = sql.NullString{}
+	case AdapterHealthUnhealthy:
+		status = EntityAvailabilityUnavailable
+	case AdapterHealthUnknown:
+	default:
+		return errors.New("cannot materialize invalid Adapter health transition")
+	}
+
+	if err := queries.InsertAdapterEntityAvailabilityTransitions(
+		ctx,
+		dbsqlc.InsertAdapterEntityAvailabilityTransitionsParams{
+			RuntimeID: params.RuntimeID, Status: string(status), Source: source,
+			ReasonCode: reasonCode, SourceObservedAt: sourceObservedAt,
+			ObservedAt: params.ObservedAt, AdapterID: params.AdapterID,
+		},
+	); err != nil {
+		return fmt.Errorf("insert effective Entity availability transitions: %w", err)
+	}
+	return nil
 }
 
 func invalidateAdapterEntityAvailability(
@@ -567,22 +594,20 @@ func persistEntityAvailability(
 }
 
 type sqliteAdapterView struct {
-	adapterID                string
-	healthStatus             string
-	healthReasonCode         sql.NullString
-	healthSince              string
-	healthEvidenceAt         string
-	externalStatus           sql.NullString
-	externalReasonCode       sql.NullString
-	externalSourceObservedAt sql.NullString
-	externalEvidenceAt       sql.NullString
-	runtimeID                sql.NullString
-	softwareName             sql.NullString
-	softwareVersion          sql.NullString
-	claimedAt                sql.NullString
-	lastHeartbeatAt          sql.NullString
-	leaseExpiresAt           sql.NullString
-	endedAt                  sql.NullString
+	adapterID              string
+	healthStatus           string
+	healthReasonCode       sql.NullString
+	healthSource           string
+	healthSince            string
+	healthEvidenceAt       string
+	healthSourceObservedAt sql.NullString
+	runtimeID              sql.NullString
+	softwareName           sql.NullString
+	softwareVersion        sql.NullString
+	claimedAt              sql.NullString
+	lastHeartbeatAt        sql.NullString
+	leaseExpiresAt         sql.NullString
+	endedAt                sql.NullString
 }
 
 func (repository *SQLiteRepository) GetAdapter(ctx context.Context, adapterID string) (AdapterInstance, error) {
@@ -597,11 +622,9 @@ func (repository *SQLiteRepository) GetAdapter(ctx context.Context, adapterID st
 	}
 	return adapterInstanceFromView(sqliteAdapterView{
 		adapterID: row.AdapterID, healthStatus: row.HealthStatus,
-		healthReasonCode: row.HealthReasonCode, healthSince: row.HealthSince,
-		healthEvidenceAt: row.HealthEvidenceAt, externalStatus: row.ExternalSystemStatus,
-		externalReasonCode:       row.ExternalSystemReasonCode,
-		externalSourceObservedAt: row.ExternalSystemSourceObservedAt,
-		externalEvidenceAt:       row.ExternalSystemEvidenceAt, runtimeID: row.RuntimeID,
+		healthReasonCode: row.HealthReasonCode, healthSource: row.HealthSource,
+		healthSince: row.HealthSince, healthEvidenceAt: row.HealthEvidenceAt,
+		healthSourceObservedAt: row.HealthSourceObservedAt, runtimeID: row.RuntimeID,
 		softwareName: row.SoftwareName, softwareVersion: row.SoftwareVersion, claimedAt: row.ClaimedAt,
 		lastHeartbeatAt: row.LastHeartbeatAt, leaseExpiresAt: row.LeaseExpiresAt, endedAt: row.EndedAt,
 	})
@@ -628,11 +651,9 @@ func (repository *SQLiteRepository) ListAdapters(
 		for index, row := range rows {
 			views[index] = sqliteAdapterView{
 				adapterID: row.AdapterID, healthStatus: row.HealthStatus,
-				healthReasonCode: row.HealthReasonCode, healthSince: row.HealthSince,
-				healthEvidenceAt: row.HealthEvidenceAt, externalStatus: row.ExternalSystemStatus,
-				externalReasonCode:       row.ExternalSystemReasonCode,
-				externalSourceObservedAt: row.ExternalSystemSourceObservedAt,
-				externalEvidenceAt:       row.ExternalSystemEvidenceAt, runtimeID: row.RuntimeID,
+				healthReasonCode: row.HealthReasonCode, healthSource: row.HealthSource,
+				healthSince: row.HealthSince, healthEvidenceAt: row.HealthEvidenceAt,
+				healthSourceObservedAt: row.HealthSourceObservedAt, runtimeID: row.RuntimeID,
 				softwareName: row.SoftwareName, softwareVersion: row.SoftwareVersion, claimedAt: row.ClaimedAt,
 				lastHeartbeatAt: row.LastHeartbeatAt, leaseExpiresAt: row.LeaseExpiresAt, endedAt: row.EndedAt,
 			}
@@ -648,11 +669,9 @@ func (repository *SQLiteRepository) ListAdapters(
 		for index, row := range rows {
 			views[index] = sqliteAdapterView{
 				adapterID: row.AdapterID, healthStatus: row.HealthStatus,
-				healthReasonCode: row.HealthReasonCode, healthSince: row.HealthSince,
-				healthEvidenceAt: row.HealthEvidenceAt, externalStatus: row.ExternalSystemStatus,
-				externalReasonCode:       row.ExternalSystemReasonCode,
-				externalSourceObservedAt: row.ExternalSystemSourceObservedAt,
-				externalEvidenceAt:       row.ExternalSystemEvidenceAt, runtimeID: row.RuntimeID,
+				healthReasonCode: row.HealthReasonCode, healthSource: row.HealthSource,
+				healthSince: row.HealthSince, healthEvidenceAt: row.HealthEvidenceAt,
+				healthSourceObservedAt: row.HealthSourceObservedAt, runtimeID: row.RuntimeID,
 				softwareName: row.SoftwareName, softwareVersion: row.SoftwareVersion, claimedAt: row.ClaimedAt,
 				lastHeartbeatAt: row.LastHeartbeatAt, leaseExpiresAt: row.LeaseExpiresAt, endedAt: row.EndedAt,
 			}
@@ -682,8 +701,13 @@ func adapterInstanceFromView(view sqliteAdapterView) (AdapterInstance, error) {
 	if err != nil {
 		return AdapterInstance{}, fmt.Errorf("parse Adapter health evidence: %w", err)
 	}
+	sourceObservedAt, err := parseOptionalTime(view.healthSourceObservedAt)
+	if err != nil {
+		return AdapterInstance{}, fmt.Errorf("parse Adapter health source observation time: %w", err)
+	}
 	instance := AdapterInstance{ID: view.adapterID, Health: AdapterHealth{
-		Status: AdapterHealthStatus(view.healthStatus), Since: since, EvidenceAt: evidenceAt,
+		Status: AdapterHealthStatus(view.healthStatus), Source: view.healthSource,
+		Since: since, EvidenceAt: evidenceAt, SourceObservedAt: sourceObservedAt,
 		Reason: healthReasonFromNull(view.healthReasonCode),
 	}}
 	if view.runtimeID.Valid {
@@ -707,21 +731,6 @@ func adapterInstanceFromView(view sqliteAdapterView) (AdapterInstance, error) {
 			ID: RuntimeID(view.runtimeID.String), Status: status, SoftwareName: view.softwareName.String,
 			SoftwareVersion: view.softwareVersion.String, ClaimedAt: claimed, LastHeartbeatAt: lastHeartbeat,
 			LeaseExpiresAt: lease,
-		}
-	}
-	if view.externalStatus.Valid {
-		sourceObservedAt, parseErr := parseRequiredTime(view.externalSourceObservedAt, "external-system source time")
-		if parseErr != nil {
-			return AdapterInstance{}, parseErr
-		}
-		externalObservedAt, parseErr := parseRequiredTime(view.externalEvidenceAt, "external-system evidence time")
-		if parseErr != nil {
-			return AdapterInstance{}, parseErr
-		}
-		instance.Health.ExternalSystem = &ExternalSystemEvidence{
-			Status: AdapterHealthStatus(view.externalStatus.String), SourceObservedAt: sourceObservedAt,
-			EvidenceAt: externalObservedAt,
-			Reason:     healthReasonFromNull(view.externalReasonCode),
 		}
 	}
 	return instance, nil

@@ -28,13 +28,11 @@ type lifecycleRecorder struct {
 func (recorder *lifecycleRecorder) ClaimAdapterRuntime(
 	_ context.Context,
 	params devices.ClaimAdapterRuntimeParams,
-) (devices.RuntimeClaim, error) {
+) error {
 	recorder.mutex.Lock()
 	defer recorder.mutex.Unlock()
 	recorder.claim = params
-	return devices.RuntimeClaim{
-		RuntimeID: testRuntimeID, HeartbeatInterval: 5 * time.Second, LeaseDuration: 15 * time.Second,
-	}, recorder.claimErr
+	return recorder.claimErr
 }
 
 func (recorder *lifecycleRecorder) RecordAdapterHeartbeat(
@@ -80,11 +78,11 @@ func TestSessionServerMapsClaimHeartbeatAndRelease(t *testing.T) {
 		contractsv1.AdapterClaimRequestSchemaID, contractsv1.AdapterClaimResponseSchemaID,
 		claimID, natswire.AdapterClaimSubject,
 		adapterClaimRequest{
-			AdapterID: "simulator", SoftwareName: "hearth-simulator", SoftwareVersion: "0.1.0",
+			AdapterID: "simulator", RuntimeID: testRuntimeID,
+			SoftwareName: "hearth-simulator", SoftwareVersion: "0.1.0",
 		},
 	)
-	if claim.Data.Status != statusAccepted || claim.Data.RuntimeID != testRuntimeID ||
-		claim.Data.HeartbeatIntervalMS != 5000 || claim.Data.LeaseDurationMS != 15000 {
+	if claim.Data.Status != statusAccepted {
 		t.Fatalf("claim response = %#v", claim.Data)
 	}
 
@@ -118,7 +116,7 @@ func TestSessionServerMapsClaimHeartbeatAndRelease(t *testing.T) {
 
 	recorder.mutex.Lock()
 	defer recorder.mutex.Unlock()
-	if recorder.claim.ClaimID != claimID || recorder.claim.AdapterID != "simulator" ||
+	if recorder.claim.AdapterID != "simulator" || recorder.claim.RuntimeID != devices.RuntimeID(testRuntimeID) ||
 		recorder.claim.SoftwareName != "hearth-simulator" || recorder.claim.SoftwareVersion != "0.1.0" {
 		t.Fatalf("mapped claim = %#v", recorder.claim)
 	}
@@ -136,7 +134,7 @@ func TestSessionServerMapsClaimHeartbeatAndRelease(t *testing.T) {
 func TestSessionServerMapsLifecycleRejections(t *testing.T) {
 	t.Parallel()
 	retryAfter := time.Date(2026, 8, 29, 15, 0, 15, 0, time.UTC)
-	claim, handled := mapClaimResult(devices.RuntimeClaim{}, &devices.AdapterActiveError{RetryAfter: retryAfter})
+	claim, handled := mapClaimResult(&devices.AdapterActiveError{RetryAfter: retryAfter})
 	if !handled || claim.Error == nil || claim.Error.Code != "adapter_active" ||
 		claim.Error.RetryAfter == nil || *claim.Error.RetryAfter != retryAfter.Format(time.RFC3339Nano) {
 		t.Fatalf("active claim mapping = %#v, %t", claim, handled)
@@ -158,7 +156,7 @@ func startAdapterSessionServer(
 	t *testing.T,
 	connection *natsgo.Conn,
 	validator *contractsv1.Validator,
-) {
+) *lifecycleRecorder {
 	t.Helper()
 	recorder := &lifecycleRecorder{}
 	server, err := StartSessionServer(connection, validator, recorder, recorder, slog.New(slog.DiscardHandler))
@@ -166,6 +164,13 @@ func startAdapterSessionServer(
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = server.Drain() })
+	return recorder
+}
+
+func (recorder *lifecycleRecorder) claimedRuntimeID() devices.RuntimeID {
+	recorder.mutex.Lock()
+	defer recorder.mutex.Unlock()
+	return recorder.claim.RuntimeID
 }
 
 func requestLifecycle[Req, Resp any](

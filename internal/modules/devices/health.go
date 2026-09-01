@@ -11,9 +11,11 @@ const (
 )
 
 const (
-	runtimeStatusOnline  = "online"
-	runtimeStatusOffline = "offline"
-	healthSourceCore     = "core"
+	runtimeStatusOnline             = "online"
+	runtimeStatusOffline            = "offline"
+	healthSourceCore                = "core"
+	healthSourceAdapter             = "adapter"
+	availabilitySourceAdapterHealth = "adapter_health"
 )
 
 type EntityAvailabilityStatus string
@@ -38,20 +40,14 @@ type RuntimeEvidence struct {
 	LeaseExpiresAt  time.Time
 }
 
-type ExternalSystemEvidence struct {
-	Status           AdapterHealthStatus
-	SourceObservedAt time.Time
-	EvidenceAt       time.Time
-	Reason           *HealthReason
-}
-
 type AdapterHealth struct {
-	Status         AdapterHealthStatus
-	Since          time.Time
-	EvidenceAt     time.Time
-	Reason         *HealthReason
-	Runtime        *RuntimeEvidence
-	ExternalSystem *ExternalSystemEvidence
+	Status           AdapterHealthStatus
+	Source           string
+	Since            time.Time
+	EvidenceAt       time.Time
+	SourceObservedAt *time.Time
+	Reason           *HealthReason
+	Runtime          *RuntimeEvidence
 }
 
 type AdapterInstance struct {
@@ -78,16 +74,10 @@ type HealthTransition struct {
 }
 
 type ClaimAdapterRuntimeParams struct {
-	ClaimID         string
 	AdapterID       string
+	RuntimeID       RuntimeID
 	SoftwareName    string
 	SoftwareVersion string
-}
-
-type RuntimeClaim struct {
-	RuntimeID         RuntimeID
-	HeartbeatInterval time.Duration
-	LeaseDuration     time.Duration
 }
 
 type AdapterHeartbeat struct {
@@ -99,7 +89,6 @@ type AdapterHeartbeat struct {
 }
 
 type ClaimRuntimeWrite struct {
-	ClaimID         string
 	RuntimeID       RuntimeID
 	AdapterID       string
 	SoftwareName    string

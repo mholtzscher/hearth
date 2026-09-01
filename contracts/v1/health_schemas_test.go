@@ -26,7 +26,7 @@ func TestAdapterSessionAndAvailabilitySchemaFixtures(t *testing.T) {
 			"schema":"urn:hearth:schema:adapter-claim-request:v1",
 			"emitted_at":"2026-08-29T15:00:00Z",
 			"correlation_id":"` + testCorrelationID + `",
-			"data":{"adapter_id":"homeassistant","software_name":"hearth-adapter-homeassistant","software_version":"0.1.0"}
+			"data":{"adapter_id":"homeassistant","runtime_id":"` + testRuntimeID + `","software_name":"hearth-adapter-homeassistant","software_version":"0.1.0"}
 		}`,
 		contractsv1.AdapterClaimResponseSchemaID: `{
 			"id":"rep_01890f47-7a6b-7c4d-8e9f-0123456789ab",
@@ -34,7 +34,7 @@ func TestAdapterSessionAndAvailabilitySchemaFixtures(t *testing.T) {
 			"emitted_at":"2026-08-29T15:00:00Z",
 			"correlation_id":"` + testCorrelationID + `",
 			"causation_id":"clm_01890f47-7a6b-7c4d-8e9f-0123456789ab",
-			"data":{"status":"accepted","runtime_id":"` + testRuntimeID + `","heartbeat_interval_ms":5000,"lease_duration_ms":15000}
+			"data":{"status":"accepted"}
 		}`,
 		contractsv1.AdapterHeartbeatRequestSchemaID: `{
 			"id":"hbt_01890f47-7a6b-7c4d-8e9f-0123456789ab",
@@ -201,6 +201,18 @@ func TestEntityAvailabilitySchemaEnforcesBatchAndReasonBounds(t *testing.T) {
 func TestClaimAndTypedRejectionBranches(t *testing.T) {
 	t.Parallel()
 	schemas := compileSchemas(t)
+	claimRequest := decodeObject(t, `{
+		"id":"clm_01890f47-7a6b-7c4d-8e9f-0123456789ab",
+		"schema":"urn:hearth:schema:adapter-claim-request:v1",
+		"emitted_at":"2026-08-29T15:00:00Z",
+		"correlation_id":"`+testCorrelationID+`",
+		"data":{"adapter_id":"homeassistant","runtime_id":"`+testRuntimeID+`","software_name":"hearth-adapter-homeassistant","software_version":"0.1.0"}
+	}`)
+	delete(claimRequest["data"].(map[string]any), "runtime_id")
+	if err := schemas[contractsv1.AdapterClaimRequestSchemaID].Validate(claimRequest); err == nil {
+		t.Fatal("Adapter claim without a runtime ID unexpectedly accepted")
+	}
+
 	claim := decodeObject(t, `{
 		"id":"rep_01890f47-7a6b-7c4d-8e9f-0123456789ab",
 		"schema":"urn:hearth:schema:adapter-claim-response:v1",

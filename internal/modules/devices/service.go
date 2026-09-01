@@ -11,7 +11,6 @@ type Dependencies struct {
 	NewEntityID      func() (EntityID, error)
 	NewCommandID     func() (CommandID, error)
 	NewCorrelationID func() (CorrelationID, error)
-	NewRuntimeID     func() (RuntimeID, error)
 }
 
 // Stores groups persistence capabilities consumed by Service.
@@ -31,7 +30,6 @@ type Service struct {
 	sender       CommandSender
 	catalog      *TypeCatalog
 	dependencies Dependencies
-	leaseExpiry  leaseExpiryState
 	waiters      commandWaiters
 }
 
@@ -56,15 +54,11 @@ func NewService(stores Stores, sender CommandSender, catalog *TypeCatalog, depen
 	if dependencies.NewCorrelationID == nil {
 		dependencies.NewCorrelationID = NewCorrelationID
 	}
-	if dependencies.NewRuntimeID == nil {
-		dependencies.NewRuntimeID = NewRuntimeID
-	}
 	return &Service{
 		stores:       stores,
 		sender:       sender,
 		catalog:      catalog,
 		dependencies: dependencies,
-		leaseExpiry:  newLeaseExpiryState(),
 		waiters:      commandWaiters{byID: make(map[CommandID]chan CommandResult)},
 	}
 }

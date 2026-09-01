@@ -27,13 +27,15 @@ Device health:       not modeled
 Adapter health combines two pieces of evidence under one result:
 
 - runtime evidence, established by a fenced request/reply heartbeat lease; and
-- configured-external-system evidence, reported by Adapter code in each heartbeat.
+- a configured-external-system assessment, reported by Adapter code in each heartbeat.
+
+The reported assessment is an input to Adapter health, not a separate persisted or exposed health model. Current health records whether Core or the Adapter supplied the effective evidence and retains Adapter source time only for Adapter-supplied evidence.
 
 An unhealthy Adapter makes every owned Entity effectively unavailable. A healthy Adapter does not make an Entity available; the active runtime must explicitly report that Entity. Entity availability remains separate from enablement, State, and State freshness.
 
 Availability is advisory when an owner is usable. A Command fails before dispatch when its owning Adapter is known unhealthy or has no active runtime. A Command is still attempted when Adapter health is unknown but an active runtime exists, or when the Entity is reported unavailable under a healthy Adapter. A fresh Adapter rejection may then return `entity_unavailable` without changing stored availability.
 
-One Adapter instance permits one active runtime. A Core-issued runtime ID scopes the NATS subject for every post-claim Adapter-originated operation and every Command. Payloads do not repeat the runtime ID; the subject is the authoritative wire source. A runtime ID is not Adapter identity or an authentication credential. The deployment's NATS account permissions remain the transport security boundary.
+One Adapter instance permits one active runtime. The SDK generates a runtime ID before claiming and reuses it across retries. That runtime ID scopes the NATS subject for every post-claim Adapter-originated operation and every Command. Later payloads do not repeat the runtime ID; the subject is the authoritative wire source. A runtime ID is not Adapter identity or an authentication credential. The deployment's NATS account permissions remain the transport security boundary.
 
 ## Scope
 
@@ -64,14 +66,14 @@ An Adapter instance is identified by its configured stable slug. `adapter.Connec
 
 Claim behavior:
 
-1. The SDK connects to NATS and creates one `clm_` request envelope containing Adapter ID, software name, and software version.
-2. It retries that same envelope through transient no-response failures so a lost accepted response cannot create a second runtime.
+1. The SDK connects to NATS, generates one `run_` UUIDv7 runtime ID, and creates one `clm_` request envelope containing the Adapter ID, runtime ID, software name, and software version.
+2. It retries that same envelope and runtime ID through transient no-response failures so a lost accepted response cannot create a second runtime.
 3. Core creates the Adapter instance on its first claim, or loads the existing instance.
-4. If the same `clm_` request already succeeded, Core returns the existing `run_` runtime ID.
+4. If the supplied runtime ID already exists with the same Adapter and software metadata, Core accepts the retry without another write.
 5. If another runtime remains active, Core rejects with transient `adapter_active` and its recorded lease expiry; the SDK waits and retries until its context ends or the supervisor expires that runtime.
-6. Otherwise Core issues a `run_` UUIDv7 runtime ID, records `unknown` health with `hearth.awaiting_health`, and returns a five-second heartbeat interval and fifteen-second lease.
+6. Otherwise Core records the supplied runtime ID, sets health to `unknown` with `hearth.awaiting_health`, and acknowledges the claim. The protocol fixes the heartbeat interval at five seconds and the lease at fifteen seconds rather than returning those constants in every claim response.
 
-A replacement process cannot evict an active runtime. Graceful release or supervisor-owned lease expiry ends the current runtime. A later claim reuses the stable Adapter slug but receives a new runtime ID. Software name and version are bounded diagnostic evidence attached to that runtime, never Adapter identity.
+A replacement process cannot evict an active runtime. Graceful release or supervisor-owned lease expiry ends the current runtime. A later process reuses the stable Adapter slug but generates a new runtime ID. Software name and version are bounded diagnostic evidence attached to that runtime, never Adapter identity.
 
 Every Adapter-originated Registration, heartbeat, release, Entity availability report, Entity enablement request, and Observation uses a subject containing its Adapter and runtime IDs. Core parses the subject and verifies the active runtime in the same SQLite transaction as the requested write. Commands are sent on the subject for the runtime ID committed on the Command record.
 
@@ -91,16 +93,16 @@ Core receipt renews the lease to 15 seconds after receipt while the runtime rema
 
 Effective Adapter health is:
 
-| Runtime evidence | External-system evidence | Effective health | Effective reason |
+| Runtime evidence | Adapter report | Effective health | Effective reason |
 |---|---|---|---|
 | no runtime before first claim | none | `unknown` | `hearth.awaiting_runtime` |
 | active runtime | `unknown` | `unknown` | `hearth.awaiting_health` |
 | active runtime | `healthy` | `healthy` | none |
 | active runtime | `unhealthy` | `unhealthy` | reported reason |
-| supervisor-expired runtime | retained but ignored | `unhealthy` | `hearth.heartbeat_expired` |
-| graceful release | retained but ignored | `unhealthy` | `hearth.stopped` |
+| supervisor-expired runtime | ignored | `unhealthy` | `hearth.heartbeat_expired` |
+| graceful release | ignored | `unhealthy` | `hearth.stopped` |
 
-A status or stable reason-code change appends one Adapter transition. Same status and reason refresh current evidence without appending history.
+A status or stable reason-code change appends one Adapter transition. Same status and reason refresh current evidence without appending history. Current health source is `adapter` after an accepted heartbeat and `core` after claim, release, or expiry; only Adapter-supplied evidence has `source_observed_at`.
 
 `Session.SetHealth` updates the SDK's desired health immediately and waits for an acknowledged immediate heartbeat or caller cancellation. The desired value remains in memory after caller cancellation so the regular heartbeat loop can report it later. A Core-only readiness change does not change the SDK's desired health.
 
@@ -118,7 +120,7 @@ For one Entity, effective availability is:
 | `healthy` | `available` | `available` |
 | `healthy` | `unavailable` | `unavailable`, reported Entity cause |
 
-Whenever an Adapter actually leaves healthy state through an unhealthy heartbeat, release, or supervisor-owned lease expiry, Core deletes that Adapter's current Entity availability rows in the same transaction as the health change. A later healthy report therefore leaves every owned Entity unknown until fresh explicit reports arrive.
+Whenever an Adapter actually leaves healthy state through an unhealthy heartbeat, release, or supervisor-owned lease expiry, Core deletes that Adapter's current Entity availability rows in the same transaction as the health change. Every Adapter health status or reason transition also appends the resulting effective availability transition for each owned Entity in that transaction. A later healthy report therefore leaves every owned Entity unknown until fresh explicit reports arrive.
 
 After actual Adapter recovery:
 
@@ -212,12 +214,13 @@ type AdapterBody struct {
 }
 
 type AdapterHealthBody struct {
-    Status         string                     `json:"status"`
-    Since          string                     `json:"since"`
-    EvidenceAt     string                     `json:"evidence_at"`
-    Reason         *HealthReasonBody          `json:"reason,omitempty"`
-    Runtime        *AdapterRuntimeEvidenceBody `json:"runtime,omitempty"`
-    ExternalSystem *ExternalSystemEvidenceBody `json:"external_system,omitempty"`
+    Status           string                      `json:"status"`
+    Source           string                      `json:"source"` // core or adapter
+    Since            string                      `json:"since"`
+    EvidenceAt       string                      `json:"evidence_at"`
+    SourceObservedAt *string                     `json:"source_observed_at,omitempty"`
+    Reason           *HealthReasonBody           `json:"reason,omitempty"`
+    Runtime          *AdapterRuntimeEvidenceBody `json:"runtime,omitempty"`
 }
 
 type AdapterRuntimeEvidenceBody struct {
@@ -228,13 +231,6 @@ type AdapterRuntimeEvidenceBody struct {
     ClaimedAt        string `json:"claimed_at"`
     LastHeartbeatAt  *string `json:"last_heartbeat_at"`
     LeaseExpiresAt   string `json:"lease_expires_at"`
-}
-
-type ExternalSystemEvidenceBody struct {
-    Status           string            `json:"status"`
-    SourceObservedAt string            `json:"source_observed_at"`
-    EvidenceAt       string            `json:"evidence_at"`
-    Reason           *HealthReasonBody `json:"reason,omitempty"`
 }
 
 type HealthReasonBody struct {
@@ -249,8 +245,10 @@ Example:
   "id": "homeassistant",
   "health": {
     "status": "unhealthy",
+    "source": "adapter",
     "since": "2026-08-29T15:00:01Z",
     "evidence_at": "2026-08-29T15:00:01Z",
+    "source_observed_at": "2026-08-29T15:00:00Z",
     "reason": {
       "code": "hearth.network_unreachable"
     },
@@ -262,20 +260,12 @@ Example:
       "claimed_at": "2026-08-29T14:30:00Z",
       "last_heartbeat_at": "2026-08-29T15:00:01Z",
       "lease_expires_at": "2026-08-29T15:00:16Z"
-    },
-    "external_system": {
-      "status": "unhealthy",
-      "source_observed_at": "2026-08-29T15:00:00Z",
-      "evidence_at": "2026-08-29T15:00:01Z",
-      "reason": {
-        "code": "hearth.network_unreachable"
-      }
     }
   }
 }
 ```
 
-`health` is required for all Adapter instances, including unknown health. Runtime evidence remains visible after release or expiry with status `offline`; an Adapter that has never claimed a runtime has `runtime` and `external_system` omitted.
+`health` is required for all Adapter instances, including unknown health. Runtime evidence remains visible after release or expiry with status `offline`; an Adapter that has never claimed a runtime omits `runtime`. Core-sourced health omits `source_observed_at`.
 
 ### Entity representation
 
@@ -336,7 +326,7 @@ The cursor stores resource `adapters` and the last slug.
 #### `GET /v1/entities/{entity_id}/availability/history`
 
 - Operation ID: `list-entity-availability-history`
-- Returns the effective Entity timeline newest first by merging direct Entity transitions with owning-Adapter transitions from the Entity's initial transition onward.
+- Returns the stored effective Entity timeline newest first. Core materializes Adapter-inherited and directly reported transitions when their status or reason changes.
 - Unknown Entity returns 404.
 
 Both accept `limit` and `cursor`, use `receive_order DESC`, fetch `limit + 1`, omit totals, and scope cursors to resource plus parent ID. Core readiness changes are absent because they do not change health or availability.
@@ -398,6 +388,7 @@ Request:
 ```json
 {
   "adapter_id": "homeassistant",
+  "runtime_id": "run_01890f47-7a6b-7c4d-8e9f-0123456789ab",
   "software_name": "hearth-adapter-homeassistant",
   "software_version": "0.1.0"
 }
@@ -407,10 +398,7 @@ Accepted response:
 
 ```json
 {
-  "status": "accepted",
-  "runtime_id": "run_01890f47-7a6b-7c4d-8e9f-0123456789ab",
-  "heartbeat_interval_ms": 5000,
-  "lease_duration_ms": 15000
+  "status": "accepted"
 }
 ```
 
@@ -579,20 +567,14 @@ type RuntimeEvidence struct {
     LeaseExpiresAt  time.Time
 }
 
-type ExternalSystemEvidence struct {
-    Status           AdapterHealthStatus
-    SourceObservedAt time.Time
-    EvidenceAt       time.Time
-    Reason           *HealthReason
-}
-
 type AdapterHealth struct {
-    Status         AdapterHealthStatus
-    Since          time.Time
-    EvidenceAt     time.Time
-    Reason         *HealthReason
-    Runtime        *RuntimeEvidence
-    ExternalSystem *ExternalSystemEvidence
+    Status           AdapterHealthStatus
+    Source           string
+    Since            time.Time
+    EvidenceAt       time.Time
+    SourceObservedAt *time.Time
+    Reason           *HealthReason
+    Runtime          *RuntimeEvidence
 }
 
 type AdapterInstance struct {
@@ -619,7 +601,7 @@ type HealthTransition struct {
 }
 ```
 
-Add `NewRuntimeID` and `ParseRuntimeID` using the existing UUIDv7 rules. Adapter IDs remain validated slugs rather than canonical UUIDs.
+Add `ParseRuntimeID` using the existing UUIDv7 rules. The SDK generates runtime IDs with the same rules. Adapter IDs remain validated slugs rather than canonical UUIDs.
 
 ### Service types and methods
 
@@ -627,16 +609,10 @@ Owner: new `internal/modules/devices/health.go`, `health_reads.go`, and `health_
 
 ```go
 type ClaimAdapterRuntimeParams struct {
-    ClaimID        string
-    AdapterID      string
-    SoftwareName   string
+    AdapterID       string
+    RuntimeID       RuntimeID
+    SoftwareName    string
     SoftwareVersion string
-}
-
-type RuntimeClaim struct {
-    RuntimeID        RuntimeID
-    HeartbeatInterval time.Duration
-    LeaseDuration     time.Duration
 }
 
 type AdapterHeartbeat struct {
@@ -654,13 +630,11 @@ type EntityAvailabilityReport struct {
     Reason          *HealthReason
 }
 
-func (service *Service) ClaimAdapterRuntime(context.Context, ClaimAdapterRuntimeParams) (RuntimeClaim, error)
+func (service *Service) ClaimAdapterRuntime(context.Context, ClaimAdapterRuntimeParams) error
 func (service *Service) RecordAdapterHeartbeat(context.Context, AdapterHeartbeat) (HeartbeatResult, error)
 func (service *Service) ReleaseAdapterRuntime(context.Context, string, RuntimeID) error
 func (service *Service) ReportEntityAvailability(context.Context, string, RuntimeID, []EntityAvailabilityReport) (time.Time, error)
 func (service *Service) ExpireAdapterLeases(context.Context, time.Time) error
-func (service *Service) PauseAdapterLeaseExpiry()
-func (service *Service) ResumeAdapterLeaseExpiry(time.Time)
 
 func (service *Service) ListAdapters(context.Context, ListAdaptersParams) (Page[AdapterInstance], error)
 func (service *Service) GetAdapter(context.Context, string) (AdapterInstance, error)
@@ -703,7 +677,7 @@ Add a focused repository capability and embed it in `Repository`:
 
 ```go
 type HealthRepository interface {
-    ClaimAdapterRuntime(context.Context, ClaimRuntimeWrite) (RuntimeClaim, error)
+    ClaimAdapterRuntime(context.Context, ClaimRuntimeWrite) error
     RecordAdapterHeartbeat(context.Context, HeartbeatWrite) (HeartbeatResult, error)
     ReleaseAdapterRuntime(context.Context, ReleaseRuntimeWrite) error
     ExpireAdapterLeases(context.Context, ExpireLeasesWrite) error
@@ -807,7 +781,7 @@ Add:
 
 ```go
 type RuntimeClaimer interface {
-    ClaimAdapterRuntime(context.Context, devices.ClaimAdapterRuntimeParams) (devices.RuntimeClaim, error)
+    ClaimAdapterRuntime(context.Context, devices.ClaimAdapterRuntimeParams) error
 }
 
 type HealthRecorder interface {
@@ -830,14 +804,14 @@ Owner: new `internal/app/hearthd/health_supervisor.go`.
 
 The app-owned supervisor polls the existing `RuntimeReadiness` once per second:
 
-- ready to not-ready calls `PauseAdapterLeaseExpiry` and stops expiry;
-- not-ready to ready calls `ResumeAdapterLeaseExpiry(now)`, which grants one lease-duration grace;
-- while ready it calls `ExpireAdapterLeases(now)` once per second; and
+- ready to not-ready stops expiry;
+- not-ready to ready records a one-lease-duration grace deadline;
+- while ready and at or after that deadline, it calls `ExpireAdapterLeases(now)` once per second; and
 - shutdown stops the supervisor before NATS servers drain.
 
-Claim, heartbeat, release, and availability operations remain available during the pause. They verify active runtime identity but do not evaluate lease deadlines or expire runtimes. No readiness state changes persist health or read projections. `/readyz` remains the externally authoritative boundary.
+Claim, heartbeat, release, and availability operations remain available while expiry is paused. They verify active runtime identity but do not evaluate lease deadlines or expire runtimes. No readiness state changes persist health or read projections. `/readyz` remains the externally authoritative boundary.
 
-The `devices` module owns the small lease-expiry pause and grace rule. Its periodic expiry operation is the only path that ends an elapsed lease. Application assembly owns readiness inspection and process lifecycle.
+The app-owned supervisor owns readiness inspection, expiry pause and grace, and process lifecycle. The `devices` module exposes expiry as a validated persistence operation; it does not retain scheduler state. Supervisor-invoked expiry is the only path that ends an elapsed lease.
 
 ## Persistence
 
@@ -853,8 +827,7 @@ The baseline creates:
    - current health status/reason/source/evidence/since fields.
 
 2. `adapter_runtimes`
-   - `runtime_id` primary key with `run_` check;
-   - `claim_id` unique with `clm_` check for lost-response idempotency;
+   - SDK-supplied `runtime_id` primary key with `run_` check and lost-response idempotency;
    - Adapter foreign key;
    - software name/version;
    - claimed, nullable last-heartbeat, lease-expiry, ended timestamps and end reason;
@@ -871,6 +844,7 @@ The baseline creates:
    - global `receive_order INTEGER PRIMARY KEY AUTOINCREMENT`;
    - resource kind adapter/entity;
    - Adapter ID, optional Entity ID, optional runtime ID;
+   - Adapter health transitions and materialized effective Entity availability transitions;
    - status with resource-specific checks;
    - source, reason, source-observed time, Core-observed time;
    - checks requiring negative reasons and prohibiting reasons for positive states;
@@ -895,12 +869,9 @@ Generated sqlc types remain inside the SQLite repository implementation.
 
 ### Effective Entity history
 
-`ListEntityAvailabilityHistory` performs one bounded SQL `UNION ALL` over:
+The first effective Entity transition is inserted transactionally with Entity registration. A changed explicit report appends its resulting effective transition. Each Adapter health status or reason transition uses one transactional `INSERT ... SELECT` to append the resulting effective transition for every owned Entity whose latest status or reason differs. Adapter `unhealthy` maps to Entity `unavailable`; Adapter `healthy` or `unknown` maps to Entity `unknown`; and Adapter reasons remain inherited causes. A change of source alone does not append a transition.
 
-- direct Entity transitions in `health_transitions`; and
-- owning-Adapter transitions at or after the Entity's first transition.
-
-The first Entity transition is inserted transactionally with Entity registration and defines the start of its immutable ownership lifetime. The query maps Adapter `unhealthy` to Entity `unavailable`, Adapter `healthy` or `unknown` to Entity `unknown`, and preserves Adapter reasons as inherited causes. A CTE orders candidates chronologically and uses the preceding effective status and reason code to suppress cross-source rows that do not represent a transition. A change of source alone must not fabricate one. The result then orders by global `receive_order DESC` and fetches `limit + 1`.
+`ListEntityAvailabilityHistory` reads the stored Entity transitions by `receive_order DESC`, applies the optional cursor, and fetches `limit + 1`. It does not reconstruct effective history from Adapter transitions.
 
 ## First-party Adapter changes
 
@@ -959,7 +930,7 @@ Tests stay beside their owners. Generated sqlc output remains under `internal/mo
 
 ### Adapter session and fencing
 
-- [x] Claim is idempotent by envelope ID, permits one active runtime, and permits takeover only after release or supervisor expiry. The response returns the five-second heartbeat interval and fifteen-second lease.
+- [x] Claim is idempotent by the SDK-supplied runtime ID, permits one active runtime, and permits takeover only after release or supervisor expiry. The accepted response is an acknowledgement; the protocol fixes the five-second heartbeat interval and fifteen-second lease.
 - [x] Only an accepted heartbeat renews the lease. An active runtime may renew after its recorded deadline until the supervisor commits expiry.
 - [x] Every post-claim subject contains an Adapter and runtime ID, and strict parsing rejects malformed combinations. Every Adapter-originated write also checks that subject runtime is active in its committing transaction.
 - [x] After takeover, the old runtime cannot register, change enablement, project an Observation, report availability, or receive a newly created Command.
@@ -991,7 +962,7 @@ Tests stay beside their owners. Generated sqlc output remains under `internal/mo
 ### HTTP, history, persistence, and compatibility
 
 - [x] Adapter list, detail, both history routes, and all Entity representations match the specified DTOs, errors, pagination, and OpenAPI metadata.
-- [x] Effective Entity history uses the initial Entity transition and global receive order, omits source-only changes, and remains retained indefinitely.
+- [x] Effective Entity history materializes Adapter-inherited and directly reported transitions in global receive order, omits source-only changes, and remains retained indefinitely.
 - [x] The fresh baseline schema creates the final State, receipt, Command, Adapter, runtime, availability, and history relationships with the specified constraints and indexes.
 - [x] Indexes and transactions enforce one open runtime per Adapter. sqlc output is reproducible and stays behind the module's capability interfaces.
 - [x] Core, contracts, the SDK, first-party Adapters, and NATS resources use the runtime-scoped v1 contract together while canonical resource IDs and histories remain compatible.
@@ -1002,9 +973,9 @@ Tests stay beside their owners. Generated sqlc output remains under `internal/mo
 |---|---|
 | Contract | New IDs, strict schemas, reason branches, 256 bound, causation, typed rejections, and unchanged existing payload shapes. |
 | Subject routing | Every constructor, parser, and wildcard; invalid runtime IDs; old-route rejection; and runtime isolation. |
-| Service | Health validation, top-level reason namespace, readiness lease grace, owned copies, and page validation. |
-| SQLite | Claim retry, duplicate claim race, supervisor-owned lease expiry, late heartbeat renewal, batch atomicity, effective reads/history, immutable Entity ownership, and Command/health commit races. |
-| NATS/SDK | Claim retry after lost response, heartbeat serialization, fenced shutdown, request/reply route identity, explicit availability retry, absence of heartbeat-triggered availability reporting, and runtime-scoped Command serving. |
+| Service | Health validation, top-level reason namespace, expiry validation, owned copies, and page validation. |
+| SQLite | Claim retry, duplicate claim race, supervisor-owned lease expiry, late heartbeat renewal, batch atomicity, effective reads, transactional history fan-out, source-only transition suppression, immutable Entity ownership, and Command/health commit races. |
+| NATS/SDK | Claim retry reuses one SDK-generated runtime ID after a lost response, heartbeat serialization, fenced shutdown, request/reply route identity, explicit availability retry, absence of heartbeat-triggered availability reporting, and runtime-scoped Command serving. |
 | JetStream | Runtime-scoped stream and consumer creation, configuration-drift rejection, stale-runtime receipts, redelivery, and readiness validation. |
 | HTTP | Bodies, nested availability, pagination scopes, history causes, errors, and runtime OpenAPI. |
 | Adapter | Home Assistant connection/outage/resource states and deterministic simulator health and availability scenarios. |

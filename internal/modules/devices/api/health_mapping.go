@@ -4,8 +4,13 @@ import "github.com/mholtzscher/hearth/internal/modules/devices"
 
 func adapterBody(instance devices.AdapterInstance) AdapterBody {
 	health := AdapterHealthBody{
-		Status: string(instance.Health.Status), Since: formatTime(instance.Health.Since),
-		EvidenceAt: formatTime(instance.Health.EvidenceAt), Reason: healthReasonBody(instance.Health.Reason),
+		Status: string(instance.Health.Status), Source: instance.Health.Source,
+		Since: formatTime(instance.Health.Since), EvidenceAt: formatTime(instance.Health.EvidenceAt),
+		Reason: healthReasonBody(instance.Health.Reason),
+	}
+	if instance.Health.SourceObservedAt != nil {
+		value := formatTime(*instance.Health.SourceObservedAt)
+		health.SourceObservedAt = &value
 	}
 	if instance.Health.Runtime != nil {
 		runtime := instance.Health.Runtime
@@ -17,13 +22,6 @@ func adapterBody(instance devices.AdapterInstance) AdapterBody {
 		if runtime.LastHeartbeatAt != nil {
 			value := formatTime(*runtime.LastHeartbeatAt)
 			health.Runtime.LastHeartbeatAt = &value
-		}
-	}
-	if instance.Health.ExternalSystem != nil {
-		external := instance.Health.ExternalSystem
-		health.ExternalSystem = &ExternalSystemEvidenceBody{
-			Status: string(external.Status), SourceObservedAt: formatTime(external.SourceObservedAt),
-			EvidenceAt: formatTime(external.EvidenceAt), Reason: healthReasonBody(external.Reason),
 		}
 	}
 	return AdapterBody{ID: instance.ID, Health: health}

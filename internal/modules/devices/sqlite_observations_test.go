@@ -403,9 +403,9 @@ func TestObservationRuntimeFencingRecordsStaleReceiptAndIsolatesCommands(t *test
 	}); releaseErr != nil {
 		t.Fatal(releaseErr)
 	}
-	if _, claimErr := repository.ClaimAdapterRuntime(
+	if claimErr := repository.ClaimAdapterRuntime(
 		ctx,
-		testClaimWrite(testSecondClaimID, testSecondRuntime, now.Add(3*time.Second)),
+		testClaimWrite(testSecondRuntime, now.Add(3*time.Second)),
 	); claimErr != nil {
 		t.Fatal(claimErr)
 	}

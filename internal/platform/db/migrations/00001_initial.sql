@@ -42,46 +42,25 @@ CREATE TABLE adapter_instances (
             AND health_reason_code NOT GLOB '*[^a-z0-9._-]*'
         )
     ),
+    health_source                     TEXT NOT NULL CHECK (
+        health_source IN ('core', 'adapter')
+    ),
     health_since                      TEXT NOT NULL,
     health_evidence_at                TEXT NOT NULL,
-    external_system_status            TEXT CHECK (
-        external_system_status IS NULL OR external_system_status IN ('unknown', 'healthy', 'unhealthy')
-    ),
-    external_system_reason_code       TEXT CHECK (
-        external_system_reason_code IS NULL OR (
-            length(external_system_reason_code) BETWEEN 1 AND 128
-            AND external_system_reason_code GLOB '*.*'
-            AND external_system_reason_code NOT GLOB '*[^a-z0-9._-]*'
-        )
-    ),
-    external_system_source_observed_at TEXT,
-    external_system_evidence_at       TEXT,
+    health_source_observed_at         TEXT,
     CHECK (
         (health_status = 'healthy' AND health_reason_code IS NULL)
         OR (health_status IN ('unknown', 'unhealthy') AND health_reason_code IS NOT NULL)
     ),
     CHECK (
-        (external_system_status IS NULL
-            AND external_system_reason_code IS NULL
-            AND external_system_source_observed_at IS NULL
-            AND external_system_evidence_at IS NULL)
-        OR (external_system_status IN ('unknown', 'healthy')
-            AND external_system_reason_code IS NULL
-            AND external_system_source_observed_at IS NOT NULL
-            AND external_system_evidence_at IS NOT NULL)
-        OR (external_system_status = 'unhealthy'
-            AND external_system_reason_code IS NOT NULL
-            AND external_system_source_observed_at IS NOT NULL
-            AND external_system_evidence_at IS NOT NULL)
+        (health_source = 'core' AND health_source_observed_at IS NULL)
+        OR (health_source = 'adapter' AND health_source_observed_at IS NOT NULL)
     )
 );
 
 CREATE TABLE adapter_runtimes (
     runtime_id        TEXT PRIMARY KEY CHECK (
         length(runtime_id) = 40 AND substr(runtime_id, 1, 4) = 'run_'
-    ),
-    claim_id          TEXT NOT NULL UNIQUE CHECK (
-        length(claim_id) = 40 AND substr(claim_id, 1, 4) = 'clm_'
     ),
     adapter_id        TEXT NOT NULL REFERENCES adapter_instances(adapter_id) ON DELETE RESTRICT,
     software_name     TEXT NOT NULL CHECK (
@@ -260,7 +239,7 @@ CREATE TABLE health_transitions (
         status IN ('unknown', 'healthy', 'unhealthy', 'available', 'unavailable')
     ),
     source            TEXT NOT NULL CHECK (
-        source IN ('core', 'external_system', 'adapter_health', 'entity_report')
+        source IN ('core', 'adapter', 'adapter_health', 'entity_report')
     ),
     reason_code       TEXT CHECK (
         reason_code IS NULL OR (
@@ -274,7 +253,7 @@ CREATE TABLE health_transitions (
     CHECK (
         (resource_kind = 'adapter' AND entity_id IS NULL
             AND status IN ('unknown', 'healthy', 'unhealthy')
-            AND source IN ('core', 'external_system'))
+            AND source IN ('core', 'adapter'))
         OR (resource_kind = 'entity' AND entity_id IS NOT NULL
             AND status IN ('unknown', 'available', 'unavailable')
             AND source IN ('core', 'adapter_health', 'entity_report'))

@@ -19,10 +19,7 @@ import (
 	"github.com/mholtzscher/hearth/internal/contracts/v1/natswire"
 )
 
-const (
-	testRuntimeID = "run_01890f47-7a6b-7c4d-8e9f-0123456789ab"
-	testEntityID  = "ent_01890f47-7a6b-7c4d-8e9f-0123456789ab"
-)
+const testEntityID = "ent_01890f47-7a6b-7c4d-8e9f-0123456789ab"
 
 type blockingJetStreamPublisher struct {
 	started chan struct{}
@@ -87,6 +84,7 @@ func TestConnectRetriesLostClaimResponseWithSameEnvelope(t *testing.T) {
 	core := connectNATS(t, server.ClientURL())
 	validator := compileValidator(t)
 	claimIDs := make(chan string, 2)
+	runtimeIDs := make(chan string, 2)
 	var attempts atomic.Int32
 	_, err := core.Subscribe(natswire.AdapterClaimWildcard(), func(message *natsgo.Msg) {
 		request, decodeErr := natswire.Decode[adapterClaimRequest](
@@ -97,14 +95,12 @@ func TestConnectRetriesLostClaimResponseWithSameEnvelope(t *testing.T) {
 			return
 		}
 		claimIDs <- request.ID
+		runtimeIDs <- request.Data.RuntimeID
 		if attempts.Add(1) == 1 {
 			return
 		}
 		respondTestLifecycle(t, validator, message, request.ID, request.CorrelationID,
-			contractsv1.AdapterClaimResponseSchemaID, adapterClaimResponse{
-				Status: statusAccepted, RuntimeID: testRuntimeID,
-				HeartbeatIntervalMS: 5000, LeaseDurationMS: 15000,
-			})
+			contractsv1.AdapterClaimResponseSchemaID, adapterClaimResponse{Status: statusAccepted})
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -119,10 +115,15 @@ func TestConnectRetriesLostClaimResponseWithSameEnvelope(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = session.Close() })
-	first := <-claimIDs
-	second := <-claimIDs
-	if first != second {
-		t.Fatalf("claim retry IDs = %q and %q", first, second)
+	firstClaim := <-claimIDs
+	secondClaim := <-claimIDs
+	if firstClaim != secondClaim {
+		t.Fatalf("claim retry IDs = %q and %q", firstClaim, secondClaim)
+	}
+	firstRuntime := <-runtimeIDs
+	secondRuntime := <-runtimeIDs
+	if firstRuntime != secondRuntime || session.runtimeID != firstRuntime {
+		t.Fatalf("claim retry runtime IDs = %q and %q; session = %q", firstRuntime, secondRuntime, session.runtimeID)
 	}
 }
 
@@ -344,13 +345,9 @@ func TestRegisterAcceptedRejectedAndLocalValidation(t *testing.T) {
 	server := startServer(t, -1, t.TempDir())
 	core := connectNATS(t, server.ClientURL())
 	validator := compileValidator(t)
-	subject, err := natswire.RegistrationSubject("simulator", testRuntimeID)
-	if err != nil {
-		t.Fatal(err)
-	}
 	var requests atomic.Int32
 	traceHeaders := make(chan string, 2)
-	_, err = core.Subscribe(subject, func(message *natsgo.Msg) {
+	_, err := core.Subscribe(natswire.RegistrationWildcard(), func(message *natsgo.Msg) {
 		requests.Add(1)
 		traceHeaders <- message.Header.Get("traceparent")
 		request, decodeErr := natswire.Decode[Registration](
@@ -506,12 +503,8 @@ func TestSetEntityEnabledRoundTripsAcceptedAndTypedRejectedResponses(t *testing.
 	server := startServer(t, -1, t.TempDir())
 	core := connectNATS(t, server.ClientURL())
 	validator := compileValidator(t)
-	subject, err := natswire.EntityEnablementSubject("simulator", testRuntimeID, testEntityID)
-	if err != nil {
-		t.Fatal(err)
-	}
 	var requests atomic.Int32
-	_, err = core.Subscribe(subject, func(message *natsgo.Msg) {
+	_, err := core.Subscribe(natswire.EntityEnablementWildcard(), func(message *natsgo.Msg) {
 		requests.Add(1)
 		request, decodeErr := natswire.Decode[EntityEnablementRequest](
 			validator, contractsv1.EntityEnablementRequestSchemaID, message.Data,
@@ -700,7 +693,7 @@ func TestServeCommandsInvokesHandlersConcurrentlyAndRespondsOnce(t *testing.T) {
 	errorsChannel := make(chan error, 2)
 	for _, value := range []bool{true, false} {
 		go func() {
-			reply, requestErr := sendCommand(requestContext, core, value)
+			reply, requestErr := sendCommand(requestContext, core, session.runtimeID, value)
 			replies <- reply
 			errorsChannel <- requestErr
 		}()
@@ -779,7 +772,9 @@ func TestCommandHandlerUsesTransmittedDeadline(t *testing.T) {
 	commandDeadline := time.Now().UTC().Add(250 * time.Millisecond)
 	requestDone := make(chan error, 1)
 	go func() {
-		_, err := sendCommandWithDeadline(context.Background(), core, true, time.Second, commandDeadline)
+		_, err := sendCommandWithDeadline(
+			context.Background(), core, session.runtimeID, true, time.Second, commandDeadline,
+		)
 		requestDone <- err
 	}()
 
@@ -835,7 +830,7 @@ func TestCommandRejectionsUseSpecificCodes(t *testing.T) {
 		{value: true, code: "upstream_rejected"},
 		{value: false, code: "entity_unavailable"},
 	} {
-		reply, err := sendCommand(context.Background(), core, test.value)
+		reply, err := sendCommand(context.Background(), core, session.runtimeID, test.value)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -906,7 +901,7 @@ func TestLinkedObservationReusesCommandCausality(t *testing.T) {
 	}()
 	waitForSubscription(t, server, subscriptions, serveDone)
 
-	reply, err := sendCommand(context.Background(), core, true)
+	reply, err := sendCommand(context.Background(), core, session.runtimeID, true)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -949,7 +944,7 @@ func TestMissingCommandResponseLetsRequestTimeOut(t *testing.T) {
 	}()
 	waitForSubscription(t, server, subscriptions, serveDone)
 
-	_, err := sendCommandWithTimeout(context.Background(), core, true, 200*time.Millisecond)
+	_, err := sendCommandWithTimeout(context.Background(), core, session.runtimeID, true, 200*time.Millisecond)
 	if !errors.Is(err, context.DeadlineExceeded) {
 		t.Fatalf("request error = %v, want deadline exceeded", err)
 	}
@@ -981,7 +976,7 @@ func TestCloseWaitsForCommandHandlers(t *testing.T) {
 
 	requestDone := make(chan error, 1)
 	go func() {
-		_, err := sendCommand(context.Background(), core, true)
+		_, err := sendCommand(context.Background(), core, session.runtimeID, true)
 		requestDone <- err
 	}()
 	<-entered
@@ -1030,22 +1025,31 @@ func validRegistration(bindingKey string) Registration {
 	}
 }
 
-func sendCommand(ctx context.Context, connection *natsgo.Conn, value bool) (*natsgo.Msg, error) {
-	return sendCommandWithTimeout(ctx, connection, value, 3*time.Second)
+func sendCommand(
+	ctx context.Context,
+	connection *natsgo.Conn,
+	runtimeID string,
+	value bool,
+) (*natsgo.Msg, error) {
+	return sendCommandWithTimeout(ctx, connection, runtimeID, value, 3*time.Second)
 }
 
 func sendCommandWithTimeout(
 	ctx context.Context,
 	connection *natsgo.Conn,
+	runtimeID string,
 	value bool,
 	timeout time.Duration,
 ) (*natsgo.Msg, error) {
-	return sendCommandWithDeadline(ctx, connection, value, timeout, time.Now().UTC().Add(10*time.Second))
+	return sendCommandWithDeadline(
+		ctx, connection, runtimeID, value, timeout, time.Now().UTC().Add(10*time.Second),
+	)
 }
 
 func sendCommandWithDeadline(
 	ctx context.Context,
 	connection *natsgo.Conn,
+	runtimeID string,
 	value bool,
 	timeout time.Duration,
 	deadline time.Time,
@@ -1062,7 +1066,7 @@ func sendCommandWithDeadline(
 	if err != nil {
 		return nil, err
 	}
-	subject, err := natswire.CommandSubject("simulator", testRuntimeID, testEntityID, "set")
+	subject, err := natswire.CommandSubject("simulator", runtimeID, testEntityID, "set")
 	if err != nil {
 		return nil, err
 	}
@@ -1139,10 +1143,7 @@ func startClaimAndReleaseResponders(
 			return
 		}
 		respondTestLifecycle(t, validator, message, request.ID, request.CorrelationID,
-			contractsv1.AdapterClaimResponseSchemaID, adapterClaimResponse{
-				Status: statusAccepted, RuntimeID: testRuntimeID,
-				HeartbeatIntervalMS: 5000, LeaseDurationMS: 15000,
-			})
+			contractsv1.AdapterClaimResponseSchemaID, adapterClaimResponse{Status: statusAccepted})
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -1281,10 +1282,7 @@ func startTestLifecycleResponder(t *testing.T, url string) {
 	}
 	_, err := connection.Subscribe(natswire.AdapterClaimWildcard(), func(message *natsgo.Msg) {
 		respond(message, contractsv1.AdapterClaimRequestSchemaID, contractsv1.AdapterClaimResponseSchemaID,
-			adapterClaimResponse{
-				Status: statusAccepted, RuntimeID: testRuntimeID,
-				HeartbeatIntervalMS: 5000, LeaseDurationMS: 15000,
-			})
+			adapterClaimResponse{Status: statusAccepted})
 	})
 	if err != nil {
 		t.Fatal(err)

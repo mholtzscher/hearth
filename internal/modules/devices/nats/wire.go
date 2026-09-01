@@ -11,16 +11,14 @@ const (
 
 type adapterClaimRequest struct {
 	AdapterID       string `json:"adapter_id"`
+	RuntimeID       string `json:"runtime_id"`
 	SoftwareName    string `json:"software_name"`
 	SoftwareVersion string `json:"software_version"`
 }
 
 type adapterClaimResponse struct {
-	Status              string             `json:"status"`
-	RuntimeID           string             `json:"runtime_id,omitempty"`
-	HeartbeatIntervalMS int64              `json:"heartbeat_interval_ms,omitempty"`
-	LeaseDurationMS     int64              `json:"lease_duration_ms,omitempty"`
-	Error               *adapterClaimError `json:"error,omitempty"`
+	Status string             `json:"status"`
+	Error  *adapterClaimError `json:"error,omitempty"`
 }
 
 type adapterClaimError struct {

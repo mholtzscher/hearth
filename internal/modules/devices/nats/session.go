@@ -14,7 +14,7 @@ import (
 )
 
 type RuntimeClaimer interface {
-	ClaimAdapterRuntime(context.Context, devices.ClaimAdapterRuntimeParams) (devices.RuntimeClaim, error)
+	ClaimAdapterRuntime(context.Context, devices.ClaimAdapterRuntimeParams) error
 }
 
 type HealthRecorder interface {
@@ -89,11 +89,17 @@ func startClaimServer(
 					"subject", subject, "claim_id", request.ID, "error", err)
 				return adapterClaimResponse{}, false
 			}
-			claim, claimErr := claimer.ClaimAdapterRuntime(ctx, devices.ClaimAdapterRuntimeParams{
-				ClaimID: request.ID, AdapterID: route.AdapterID,
+			runtimeID, err := devices.ParseRuntimeID(request.Data.RuntimeID)
+			if err != nil {
+				logger.ErrorContext(ctx, "discarding Adapter claim with invalid runtime ID",
+					"subject", subject, "claim_id", request.ID, "error", err)
+				return adapterClaimResponse{}, false
+			}
+			claimErr := claimer.ClaimAdapterRuntime(ctx, devices.ClaimAdapterRuntimeParams{
+				AdapterID: route.AdapterID, RuntimeID: runtimeID,
 				SoftwareName: request.Data.SoftwareName, SoftwareVersion: request.Data.SoftwareVersion,
 			})
-			response, handled := mapClaimResult(claim, claimErr)
+			response, handled := mapClaimResult(claimErr)
 			if !handled {
 				logger.ErrorContext(ctx, "claim Adapter runtime",
 					"subject", subject, "claim_id", request.ID, "error", claimErr)
@@ -103,13 +109,9 @@ func startClaimServer(
 	)
 }
 
-func mapClaimResult(claim devices.RuntimeClaim, err error) (adapterClaimResponse, bool) {
+func mapClaimResult(err error) (adapterClaimResponse, bool) {
 	if err == nil {
-		return adapterClaimResponse{
-			Status: statusAccepted, RuntimeID: string(claim.RuntimeID),
-			HeartbeatIntervalMS: claim.HeartbeatInterval.Milliseconds(),
-			LeaseDurationMS:     claim.LeaseDuration.Milliseconds(),
-		}, true
+		return adapterClaimResponse{Status: statusAccepted}, true
 	}
 	if active, ok := errors.AsType[*devices.AdapterActiveError](err); ok {
 		retryAfter := active.RetryAfter.UTC().Format(time.RFC3339Nano)

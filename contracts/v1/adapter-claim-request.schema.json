@@ -14,9 +14,10 @@
     "data": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["adapter_id", "software_name", "software_version"],
+      "required": ["adapter_id", "runtime_id", "software_name", "software_version"],
       "properties": {
         "adapter_id": { "$ref": "urn:hearth:schema:common:v1#/$defs/slug" },
+        "runtime_id": { "$ref": "urn:hearth:schema:common:v1#/$defs/run_id" },
         "software_name": { "$ref": "urn:hearth:schema:common:v1#/$defs/slug" },
         "software_version": { "type": "string", "minLength": 1, "maxLength": 128 }
       }

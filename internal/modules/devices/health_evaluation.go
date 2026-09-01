@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"regexp"
 	"strings"
-	"sync"
 	"time"
 	"unicode/utf8"
 )
@@ -15,46 +14,16 @@ const maximumHealthReasonCodeLength = 128
 
 var healthReasonCodePattern = regexp.MustCompile(`^[a-z0-9][a-z0-9_-]*(\.[a-z0-9][a-z0-9_-]*)+$`)
 
-type leaseExpiryState struct {
-	mutex      sync.RWMutex
-	paused     bool
-	graceUntil time.Time
-}
-
-func newLeaseExpiryState() leaseExpiryState {
-	return leaseExpiryState{paused: true}
-}
-
-func (service *Service) PauseAdapterLeaseExpiry() {
-	service.leaseExpiry.mutex.Lock()
-	defer service.leaseExpiry.mutex.Unlock()
-	service.leaseExpiry.paused = true
-}
-
-func (service *Service) ResumeAdapterLeaseExpiry(resumedAt time.Time) {
-	service.leaseExpiry.mutex.Lock()
-	defer service.leaseExpiry.mutex.Unlock()
-	if !service.leaseExpiry.paused {
-		return
-	}
-	service.leaseExpiry.paused = false
-	service.leaseExpiry.graceUntil = resumedAt.UTC().Add(adapterLeaseDuration)
-}
-
 func (service *Service) ClaimAdapterRuntime(
 	ctx context.Context,
 	params ClaimAdapterRuntimeParams,
-) (RuntimeClaim, error) {
+) error {
 	if validationErr := validateClaimAdapterRuntime(params); validationErr != nil {
-		return RuntimeClaim{}, validationErr
-	}
-	runtimeID, err := service.dependencies.NewRuntimeID()
-	if err != nil {
-		return RuntimeClaim{}, fmt.Errorf("generate Adapter runtime ID: %w", err)
+		return validationErr
 	}
 	claimedAt := service.dependencies.Now().UTC()
 	return service.stores.Runtimes.ClaimAdapterRuntime(ctx, ClaimRuntimeWrite{
-		ClaimID: params.ClaimID, RuntimeID: runtimeID, AdapterID: params.AdapterID,
+		RuntimeID: params.RuntimeID, AdapterID: params.AdapterID,
 		SoftwareName: params.SoftwareName, SoftwareVersion: params.SoftwareVersion,
 		ClaimedAt: claimedAt, LeaseExpiresAt: claimedAt.Add(adapterLeaseDuration),
 	})
@@ -97,25 +66,15 @@ func (service *Service) ExpireAdapterLeases(ctx context.Context, expiresAt time.
 	if expiresAt.IsZero() {
 		return errors.New("adapter lease evaluation time is required")
 	}
-	expiresAt = expiresAt.UTC()
-	if service.leaseExpiryDeferred(expiresAt) {
-		return nil
-	}
-	return service.stores.Runtimes.ExpireAdapterLeases(ctx, ExpireLeasesWrite{ExpiresAt: expiresAt})
-}
-
-func (service *Service) leaseExpiryDeferred(at time.Time) bool {
-	service.leaseExpiry.mutex.RLock()
-	defer service.leaseExpiry.mutex.RUnlock()
-	return service.leaseExpiry.paused || at.Before(service.leaseExpiry.graceUntil)
+	return service.stores.Runtimes.ExpireAdapterLeases(ctx, ExpireLeasesWrite{ExpiresAt: expiresAt.UTC()})
 }
 
 func validateClaimAdapterRuntime(params ClaimAdapterRuntimeParams) error {
-	if err := validateID(params.ClaimID, "clm"); err != nil {
-		return fmt.Errorf("parse Adapter claim ID: %w", err)
-	}
 	if !registrationSlugPattern.MatchString(params.AdapterID) {
 		return errors.New("adapter ID must be a subject-safe slug")
+	}
+	if _, err := ParseRuntimeID(string(params.RuntimeID)); err != nil {
+		return fmt.Errorf("parse Adapter runtime ID: %w", err)
 	}
 	if !registrationSlugPattern.MatchString(params.SoftwareName) {
 		return errors.New("software name must be a subject-safe slug")

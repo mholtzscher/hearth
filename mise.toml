@@ -135,7 +135,7 @@ run = '''nats-server -js -sd .data/nats'''
 
 [tasks."mutation-test"]
 description = "Run Gremlins mutation testing (pass package paths after --)"
-run = '''gremlins unleash "$@"'''
+run = '''gremlins unleash'''
 
 [tasks."validate"]
 description = "Run all validation"

@@ -17,9 +17,6 @@
       "required": ["status"],
       "properties": {
         "status": { "enum": ["accepted", "rejected"] },
-        "runtime_id": { "$ref": "urn:hearth:schema:common:v1#/$defs/run_id" },
-        "heartbeat_interval_ms": { "const": 5000 },
-        "lease_duration_ms": { "const": 15000 },
         "error": {
           "type": "object",
           "additionalProperties": false,
@@ -34,19 +31,11 @@
       "oneOf": [
         {
           "properties": { "status": { "const": "accepted" } },
-          "required": ["runtime_id", "heartbeat_interval_ms", "lease_duration_ms"],
           "not": { "required": ["error"] }
         },
         {
           "properties": { "status": { "const": "rejected" } },
-          "required": ["error"],
-          "not": {
-            "anyOf": [
-              { "required": ["runtime_id"] },
-              { "required": ["heartbeat_interval_ms"] },
-              { "required": ["lease_duration_ms"] }
-            ]
-          }
+          "required": ["error"]
         }
       ]
     }

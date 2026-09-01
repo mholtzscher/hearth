@@ -72,7 +72,6 @@ type availabilityModelReport struct {
 }
 
 type availabilityModelTransition struct {
-	receiveOrder     int64
 	status           string
 	source           string
 	reasonCode       string
@@ -81,28 +80,25 @@ type availabilityModelTransition struct {
 }
 
 type availabilityHistoryModel struct {
-	nextReceiveOrder int64
-	adapterStatus    AdapterHealthStatus
-	adapterReason    string
-	adapterSince     time.Time
-	adapterEvidence  time.Time
-	report           *availabilityModelReport
-	candidates       []availabilityModelTransition
+	adapterStatus   AdapterHealthStatus
+	adapterReason   string
+	adapterSince    time.Time
+	adapterEvidence time.Time
+	report          *availabilityModelReport
+	candidates      []availabilityModelTransition
 }
 
 func newAvailabilityHistoryModel(claimedAt, registeredAt time.Time) *availabilityHistoryModel {
 	return &availabilityHistoryModel{
-		nextReceiveOrder: 3,
-		adapterStatus:    AdapterHealthUnknown,
-		adapterReason:    "hearth.awaiting_health",
-		adapterSince:     claimedAt,
-		adapterEvidence:  claimedAt,
+		adapterStatus:   AdapterHealthUnknown,
+		adapterReason:   "hearth.awaiting_health",
+		adapterSince:    claimedAt,
+		adapterEvidence: claimedAt,
 		candidates: []availabilityModelTransition{{
-			receiveOrder: 2,
-			status:       string(EntityAvailabilityUnknown),
-			source:       "adapter_health",
-			reasonCode:   "hearth.awaiting_health",
-			observedAt:   registeredAt,
+			status:     string(EntityAvailabilityUnknown),
+			source:     "adapter_health",
+			reasonCode: "hearth.awaiting_health",
+			observedAt: registeredAt,
 		}},
 	}
 }
@@ -132,11 +128,7 @@ func (model *availabilityHistoryModel) applyHeartbeat(
 		return
 	}
 	model.adapterSince = at
-	transition := availabilityModelTransition{
-		receiveOrder: model.nextReceiveOrder,
-		observedAt:   at,
-	}
-	model.nextReceiveOrder++
+	transition := availabilityModelTransition{observedAt: at}
 	if status == AdapterHealthHealthy {
 		transition.status = string(EntityAvailabilityUnknown)
 		transition.source = healthSourceCore
@@ -170,11 +162,9 @@ func (model *availabilityHistoryModel) applyReport(
 	if changed {
 		sourceObservedAt := at
 		model.candidates = append(model.candidates, availabilityModelTransition{
-			receiveOrder: model.nextReceiveOrder,
-			status:       string(status), source: "entity_report", reasonCode: reasonCode,
+			status: string(status), source: "entity_report", reasonCode: reasonCode,
 			sourceObservedAt: &sourceObservedAt, observedAt: at,
 		})
-		model.nextReceiveOrder++
 	}
 	return true
 }
@@ -303,8 +293,8 @@ func newAvailabilityPropertyFixture(
 	}
 	repository := NewSQLiteRepository(database, catalog)
 	claimedAt := time.Date(2026, 8, 29, 12, 0, 0, 0, time.UTC)
-	if _, claimErr := repository.ClaimAdapterRuntime(t.Context(), ClaimRuntimeWrite{
-		ClaimID: testClaimID, RuntimeID: testRuntimeID, AdapterID: "simulator",
+	if claimErr := repository.ClaimAdapterRuntime(t.Context(), ClaimRuntimeWrite{
+		RuntimeID: testRuntimeID, AdapterID: "simulator",
 		SoftwareName: "hearth-simulator", SoftwareVersion: "0.1.0",
 		ClaimedAt: claimedAt, LeaseExpiresAt: claimedAt.Add(time.Hour),
 	}); claimErr != nil {
@@ -432,8 +422,9 @@ func assertAvailabilityPropertyTransitions(
 		t.Fatalf("history length = %d, want %d\ngot: %#v\nwant: %#v", len(got), len(want), got, want)
 	}
 	for index := range want {
-		if got[index].ReceiveOrder != want[index].receiveOrder || got[index].Status != want[index].status ||
-			got[index].Source != want[index].source ||
+		if got[index].ReceiveOrder < 1 ||
+			(index > 0 && got[index-1].ReceiveOrder <= got[index].ReceiveOrder) ||
+			got[index].Status != want[index].status || got[index].Source != want[index].source ||
 			modelReasonCode(got[index].Reason) != want[index].reasonCode ||
 			!optionalTimesEqual(got[index].SourceObservedAt, want[index].sourceObservedAt) ||
 			!got[index].ObservedAt.Equal(want[index].observedAt) {

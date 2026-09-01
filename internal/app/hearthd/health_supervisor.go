@@ -7,23 +7,25 @@ import (
 	"time"
 )
 
-const leaseExpiryInterval = time.Second
+const (
+	leaseExpiryInterval      = time.Second
+	leaseExpiryRecoveryGrace = 15 * time.Second
+)
 
 type leaseExpiryService interface {
-	PauseAdapterLeaseExpiry()
-	ResumeAdapterLeaseExpiry(time.Time)
 	ExpireAdapterLeases(context.Context, time.Time) error
 }
 
 type healthSupervisor struct {
-	readiness ReadinessChecker
-	health    leaseExpiryService
-	logger    *slog.Logger
-	now       func() time.Time
-	ready     bool
-	cancel    context.CancelFunc
-	done      chan struct{}
-	stopOnce  sync.Once
+	readiness  ReadinessChecker
+	health     leaseExpiryService
+	logger     *slog.Logger
+	now        func() time.Time
+	ready      bool
+	graceUntil time.Time
+	cancel     context.CancelFunc
+	done       chan struct{}
+	stopOnce   sync.Once
 }
 
 func startHealthSupervisor(
@@ -61,15 +63,15 @@ func (supervisor *healthSupervisor) run(ctx context.Context) {
 
 func (supervisor *healthSupervisor) poll(ctx context.Context, now time.Time) {
 	if supervisor.readiness == nil || supervisor.readiness.Check(ctx) != nil {
-		if supervisor.ready {
-			supervisor.health.PauseAdapterLeaseExpiry()
-			supervisor.ready = false
-		}
+		supervisor.ready = false
 		return
 	}
 	if !supervisor.ready {
-		supervisor.health.ResumeAdapterLeaseExpiry(now)
 		supervisor.ready = true
+		supervisor.graceUntil = now.Add(leaseExpiryRecoveryGrace)
+	}
+	if now.Before(supervisor.graceUntil) {
+		return
 	}
 	if err := supervisor.health.ExpireAdapterLeases(ctx, now); err != nil {
 		supervisor.logger.ErrorContext(ctx, "expire Adapter leases", "error", err)

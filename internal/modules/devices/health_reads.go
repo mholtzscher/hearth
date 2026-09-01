@@ -79,6 +79,10 @@ func copyHealthTransitionPage(page Page[HealthTransition]) Page[HealthTransition
 func copyAdapterInstance(instance AdapterInstance) AdapterInstance {
 	cloned := instance
 	cloned.Health.Reason = copyHealthReason(instance.Health.Reason)
+	if instance.Health.SourceObservedAt != nil {
+		sourceObservedAt := *instance.Health.SourceObservedAt
+		cloned.Health.SourceObservedAt = &sourceObservedAt
+	}
 	if instance.Health.Runtime != nil {
 		runtime := *instance.Health.Runtime
 		if instance.Health.Runtime.LastHeartbeatAt != nil {
@@ -86,11 +90,6 @@ func copyAdapterInstance(instance AdapterInstance) AdapterInstance {
 			runtime.LastHeartbeatAt = &lastHeartbeatAt
 		}
 		cloned.Health.Runtime = &runtime
-	}
-	if instance.Health.ExternalSystem != nil {
-		externalSystem := *instance.Health.ExternalSystem
-		externalSystem.Reason = copyHealthReason(instance.Health.ExternalSystem.Reason)
-		cloned.Health.ExternalSystem = &externalSystem
 	}
 	return cloned
 }

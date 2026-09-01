@@ -12,14 +12,16 @@ import (
 
 const createAdapterInstance = `-- name: CreateAdapterInstance :exec
 INSERT INTO adapter_instances (
-    adapter_id, health_status, health_reason_code, health_since, health_evidence_at
-) VALUES (?, ?, ?, ?, ?)
+    adapter_id, health_status, health_reason_code, health_source,
+    health_since, health_evidence_at
+) VALUES (?, ?, ?, ?, ?, ?)
 `
 
 type CreateAdapterInstanceParams struct {
 	AdapterID        string
 	HealthStatus     string
 	HealthReasonCode sql.NullString
+	HealthSource     string
 	HealthSince      string
 	HealthEvidenceAt string
 }
@@ -29,6 +31,7 @@ func (q *Queries) CreateAdapterInstance(ctx context.Context, arg CreateAdapterIn
 		arg.AdapterID,
 		arg.HealthStatus,
 		arg.HealthReasonCode,
+		arg.HealthSource,
 		arg.HealthSince,
 		arg.HealthEvidenceAt,
 	)
@@ -77,9 +80,8 @@ func (q *Queries) EndRuntime(ctx context.Context, arg EndRuntimeParams) (int64, 
 
 const getAdapterInstance = `-- name: GetAdapterInstance :one
 SELECT adapter_id, active_runtime_id, health_runtime_id,
-       health_status, health_reason_code, health_since, health_evidence_at,
-       external_system_status, external_system_reason_code,
-       external_system_source_observed_at, external_system_evidence_at
+       health_status, health_reason_code, health_source, health_since,
+       health_evidence_at, health_source_observed_at
 FROM adapter_instances
 WHERE adapter_id = ?
 `
@@ -97,12 +99,10 @@ func (q *Queries) GetAdapterInstance(ctx context.Context, arg GetAdapterInstance
 		&i.HealthRuntimeID,
 		&i.HealthStatus,
 		&i.HealthReasonCode,
+		&i.HealthSource,
 		&i.HealthSince,
 		&i.HealthEvidenceAt,
-		&i.ExternalSystemStatus,
-		&i.ExternalSystemReasonCode,
-		&i.ExternalSystemSourceObservedAt,
-		&i.ExternalSystemEvidenceAt,
+		&i.HealthSourceObservedAt,
 	)
 	return i, err
 }
@@ -112,12 +112,10 @@ SELECT
     ai.adapter_id,
     ai.health_status,
     ai.health_reason_code,
+    ai.health_source,
     ai.health_since,
     ai.health_evidence_at,
-    ai.external_system_status,
-    ai.external_system_reason_code,
-    ai.external_system_source_observed_at,
-    ai.external_system_evidence_at,
+    ai.health_source_observed_at,
     ar.runtime_id,
     ar.software_name,
     ar.software_version,
@@ -135,22 +133,20 @@ type GetAdapterViewParams struct {
 }
 
 type GetAdapterViewRow struct {
-	AdapterID                      string
-	HealthStatus                   string
-	HealthReasonCode               sql.NullString
-	HealthSince                    string
-	HealthEvidenceAt               string
-	ExternalSystemStatus           sql.NullString
-	ExternalSystemReasonCode       sql.NullString
-	ExternalSystemSourceObservedAt sql.NullString
-	ExternalSystemEvidenceAt       sql.NullString
-	RuntimeID                      sql.NullString
-	SoftwareName                   sql.NullString
-	SoftwareVersion                sql.NullString
-	ClaimedAt                      sql.NullString
-	LastHeartbeatAt                sql.NullString
-	LeaseExpiresAt                 sql.NullString
-	EndedAt                        sql.NullString
+	AdapterID              string
+	HealthStatus           string
+	HealthReasonCode       sql.NullString
+	HealthSource           string
+	HealthSince            string
+	HealthEvidenceAt       string
+	HealthSourceObservedAt sql.NullString
+	RuntimeID              sql.NullString
+	SoftwareName           sql.NullString
+	SoftwareVersion        sql.NullString
+	ClaimedAt              sql.NullString
+	LastHeartbeatAt        sql.NullString
+	LeaseExpiresAt         sql.NullString
+	EndedAt                sql.NullString
 }
 
 func (q *Queries) GetAdapterView(ctx context.Context, arg GetAdapterViewParams) (GetAdapterViewRow, error) {
@@ -160,12 +156,10 @@ func (q *Queries) GetAdapterView(ctx context.Context, arg GetAdapterViewParams) 
 		&i.AdapterID,
 		&i.HealthStatus,
 		&i.HealthReasonCode,
+		&i.HealthSource,
 		&i.HealthSince,
 		&i.HealthEvidenceAt,
-		&i.ExternalSystemStatus,
-		&i.ExternalSystemReasonCode,
-		&i.ExternalSystemSourceObservedAt,
-		&i.ExternalSystemEvidenceAt,
+		&i.HealthSourceObservedAt,
 		&i.RuntimeID,
 		&i.SoftwareName,
 		&i.SoftwareVersion,
@@ -224,7 +218,7 @@ func (q *Queries) GetEntityOwner(ctx context.Context, arg GetEntityOwnerParams) 
 }
 
 const getLatestRuntimeForAdapter = `-- name: GetLatestRuntimeForAdapter :one
-SELECT runtime_id, claim_id, adapter_id, software_name, software_version,
+SELECT runtime_id, adapter_id, software_name, software_version,
        claimed_at, last_heartbeat_at, lease_expires_at, ended_at, end_reason
 FROM adapter_runtimes
 WHERE adapter_id = ?
@@ -241,7 +235,6 @@ func (q *Queries) GetLatestRuntimeForAdapter(ctx context.Context, arg GetLatestR
 	var i AdapterRuntime
 	err := row.Scan(
 		&i.RuntimeID,
-		&i.ClaimID,
 		&i.AdapterID,
 		&i.SoftwareName,
 		&i.SoftwareVersion,
@@ -255,7 +248,7 @@ func (q *Queries) GetLatestRuntimeForAdapter(ctx context.Context, arg GetLatestR
 }
 
 const getRuntime = `-- name: GetRuntime :one
-SELECT runtime_id, claim_id, adapter_id, software_name, software_version,
+SELECT runtime_id, adapter_id, software_name, software_version,
        claimed_at, last_heartbeat_at, lease_expires_at, ended_at, end_reason
 FROM adapter_runtimes
 WHERE runtime_id = ?
@@ -270,7 +263,6 @@ func (q *Queries) GetRuntime(ctx context.Context, arg GetRuntimeParams) (Adapter
 	var i AdapterRuntime
 	err := row.Scan(
 		&i.RuntimeID,
-		&i.ClaimID,
 		&i.AdapterID,
 		&i.SoftwareName,
 		&i.SoftwareVersion,
@@ -283,33 +275,54 @@ func (q *Queries) GetRuntime(ctx context.Context, arg GetRuntimeParams) (Adapter
 	return i, err
 }
 
-const getRuntimeByClaimID = `-- name: GetRuntimeByClaimID :one
-SELECT runtime_id, claim_id, adapter_id, software_name, software_version,
-       claimed_at, last_heartbeat_at, lease_expires_at, ended_at, end_reason
-FROM adapter_runtimes
-WHERE claim_id = ?
+const insertAdapterEntityAvailabilityTransitions = `-- name: InsertAdapterEntityAvailabilityTransitions :exec
+INSERT INTO health_transitions (
+    resource_kind, adapter_id, entity_id, runtime_id, status, source,
+    reason_code, source_observed_at, observed_at
+)
+SELECT
+    'entity', mapping.adapter_id, mapping.entity_id, ?1,
+    CAST(?2 AS TEXT), CAST(?3 AS TEXT),
+    ?4, ?5,
+    CAST(?6 AS TEXT)
+FROM adapter_entity_mappings AS mapping
+LEFT JOIN health_transitions AS latest
+    ON latest.receive_order = (
+        SELECT MAX(candidate.receive_order)
+        FROM health_transitions AS candidate
+        WHERE candidate.resource_kind = 'entity'
+          AND candidate.entity_id = mapping.entity_id
+    )
+WHERE mapping.adapter_id = ?7
+  AND (
+      latest.receive_order IS NULL
+      OR latest.status <> CAST(?2 AS TEXT)
+      OR latest.reason_code IS NOT ?4
+  )
+ORDER BY mapping.entity_id
 `
 
-type GetRuntimeByClaimIDParams struct {
-	ClaimID string
+type InsertAdapterEntityAvailabilityTransitionsParams struct {
+	RuntimeID        sql.NullString
+	Status           string
+	Source           string
+	ReasonCode       sql.NullString
+	SourceObservedAt sql.NullString
+	ObservedAt       string
+	AdapterID        string
 }
 
-func (q *Queries) GetRuntimeByClaimID(ctx context.Context, arg GetRuntimeByClaimIDParams) (AdapterRuntime, error) {
-	row := q.db.QueryRowContext(ctx, getRuntimeByClaimID, arg.ClaimID)
-	var i AdapterRuntime
-	err := row.Scan(
-		&i.RuntimeID,
-		&i.ClaimID,
-		&i.AdapterID,
-		&i.SoftwareName,
-		&i.SoftwareVersion,
-		&i.ClaimedAt,
-		&i.LastHeartbeatAt,
-		&i.LeaseExpiresAt,
-		&i.EndedAt,
-		&i.EndReason,
+func (q *Queries) InsertAdapterEntityAvailabilityTransitions(ctx context.Context, arg InsertAdapterEntityAvailabilityTransitionsParams) error {
+	_, err := q.db.ExecContext(ctx, insertAdapterEntityAvailabilityTransitions,
+		arg.RuntimeID,
+		arg.Status,
+		arg.Source,
+		arg.ReasonCode,
+		arg.SourceObservedAt,
+		arg.ObservedAt,
+		arg.AdapterID,
 	)
-	return i, err
+	return err
 }
 
 const insertHealthTransition = `-- name: InsertHealthTransition :one
@@ -351,14 +364,13 @@ func (q *Queries) InsertHealthTransition(ctx context.Context, arg InsertHealthTr
 
 const insertRuntime = `-- name: InsertRuntime :exec
 INSERT INTO adapter_runtimes (
-    runtime_id, claim_id, adapter_id, software_name, software_version,
+    runtime_id, adapter_id, software_name, software_version,
     claimed_at, lease_expires_at
-) VALUES (?, ?, ?, ?, ?, ?, ?)
+) VALUES (?, ?, ?, ?, ?, ?)
 `
 
 type InsertRuntimeParams struct {
 	RuntimeID       string
-	ClaimID         string
 	AdapterID       string
 	SoftwareName    string
 	SoftwareVersion string
@@ -369,7 +381,6 @@ type InsertRuntimeParams struct {
 func (q *Queries) InsertRuntime(ctx context.Context, arg InsertRuntimeParams) error {
 	_, err := q.db.ExecContext(ctx, insertRuntime,
 		arg.RuntimeID,
-		arg.ClaimID,
 		arg.AdapterID,
 		arg.SoftwareName,
 		arg.SoftwareVersion,
@@ -489,12 +500,10 @@ SELECT
     ai.adapter_id,
     ai.health_status,
     ai.health_reason_code,
+    ai.health_source,
     ai.health_since,
     ai.health_evidence_at,
-    ai.external_system_status,
-    ai.external_system_reason_code,
-    ai.external_system_source_observed_at,
-    ai.external_system_evidence_at,
+    ai.health_source_observed_at,
     ar.runtime_id,
     ar.software_name,
     ar.software_version,
@@ -515,22 +524,20 @@ type ListAdapterViewsAfterParams struct {
 }
 
 type ListAdapterViewsAfterRow struct {
-	AdapterID                      string
-	HealthStatus                   string
-	HealthReasonCode               sql.NullString
-	HealthSince                    string
-	HealthEvidenceAt               string
-	ExternalSystemStatus           sql.NullString
-	ExternalSystemReasonCode       sql.NullString
-	ExternalSystemSourceObservedAt sql.NullString
-	ExternalSystemEvidenceAt       sql.NullString
-	RuntimeID                      sql.NullString
-	SoftwareName                   sql.NullString
-	SoftwareVersion                sql.NullString
-	ClaimedAt                      sql.NullString
-	LastHeartbeatAt                sql.NullString
-	LeaseExpiresAt                 sql.NullString
-	EndedAt                        sql.NullString
+	AdapterID              string
+	HealthStatus           string
+	HealthReasonCode       sql.NullString
+	HealthSource           string
+	HealthSince            string
+	HealthEvidenceAt       string
+	HealthSourceObservedAt sql.NullString
+	RuntimeID              sql.NullString
+	SoftwareName           sql.NullString
+	SoftwareVersion        sql.NullString
+	ClaimedAt              sql.NullString
+	LastHeartbeatAt        sql.NullString
+	LeaseExpiresAt         sql.NullString
+	EndedAt                sql.NullString
 }
 
 func (q *Queries) ListAdapterViewsAfter(ctx context.Context, arg ListAdapterViewsAfterParams) ([]ListAdapterViewsAfterRow, error) {
@@ -546,12 +553,10 @@ func (q *Queries) ListAdapterViewsAfter(ctx context.Context, arg ListAdapterView
 			&i.AdapterID,
 			&i.HealthStatus,
 			&i.HealthReasonCode,
+			&i.HealthSource,
 			&i.HealthSince,
 			&i.HealthEvidenceAt,
-			&i.ExternalSystemStatus,
-			&i.ExternalSystemReasonCode,
-			&i.ExternalSystemSourceObservedAt,
-			&i.ExternalSystemEvidenceAt,
+			&i.HealthSourceObservedAt,
 			&i.RuntimeID,
 			&i.SoftwareName,
 			&i.SoftwareVersion,
@@ -578,12 +583,10 @@ SELECT
     ai.adapter_id,
     ai.health_status,
     ai.health_reason_code,
+    ai.health_source,
     ai.health_since,
     ai.health_evidence_at,
-    ai.external_system_status,
-    ai.external_system_reason_code,
-    ai.external_system_source_observed_at,
-    ai.external_system_evidence_at,
+    ai.health_source_observed_at,
     ar.runtime_id,
     ar.software_name,
     ar.software_version,
@@ -602,22 +605,20 @@ type ListAdapterViewsFirstPageParams struct {
 }
 
 type ListAdapterViewsFirstPageRow struct {
-	AdapterID                      string
-	HealthStatus                   string
-	HealthReasonCode               sql.NullString
-	HealthSince                    string
-	HealthEvidenceAt               string
-	ExternalSystemStatus           sql.NullString
-	ExternalSystemReasonCode       sql.NullString
-	ExternalSystemSourceObservedAt sql.NullString
-	ExternalSystemEvidenceAt       sql.NullString
-	RuntimeID                      sql.NullString
-	SoftwareName                   sql.NullString
-	SoftwareVersion                sql.NullString
-	ClaimedAt                      sql.NullString
-	LastHeartbeatAt                sql.NullString
-	LeaseExpiresAt                 sql.NullString
-	EndedAt                        sql.NullString
+	AdapterID              string
+	HealthStatus           string
+	HealthReasonCode       sql.NullString
+	HealthSource           string
+	HealthSince            string
+	HealthEvidenceAt       string
+	HealthSourceObservedAt sql.NullString
+	RuntimeID              sql.NullString
+	SoftwareName           sql.NullString
+	SoftwareVersion        sql.NullString
+	ClaimedAt              sql.NullString
+	LastHeartbeatAt        sql.NullString
+	LeaseExpiresAt         sql.NullString
+	EndedAt                sql.NullString
 }
 
 func (q *Queries) ListAdapterViewsFirstPage(ctx context.Context, arg ListAdapterViewsFirstPageParams) ([]ListAdapterViewsFirstPageRow, error) {
@@ -633,12 +634,10 @@ func (q *Queries) ListAdapterViewsFirstPage(ctx context.Context, arg ListAdapter
 			&i.AdapterID,
 			&i.HealthStatus,
 			&i.HealthReasonCode,
+			&i.HealthSource,
 			&i.HealthSince,
 			&i.HealthEvidenceAt,
-			&i.ExternalSystemStatus,
-			&i.ExternalSystemReasonCode,
-			&i.ExternalSystemSourceObservedAt,
-			&i.ExternalSystemEvidenceAt,
+			&i.HealthSourceObservedAt,
 			&i.RuntimeID,
 			&i.SoftwareName,
 			&i.SoftwareVersion,
@@ -661,64 +660,19 @@ func (q *Queries) ListAdapterViewsFirstPage(ctx context.Context, arg ListAdapter
 }
 
 const listEntityAvailabilityHistoryBefore = `-- name: ListEntityAvailabilityHistoryBefore :many
-WITH entity_lifetime AS (
-    SELECT initial.adapter_id, MIN(initial.receive_order) AS starting_receive_order
-    FROM health_transitions AS initial
-    WHERE initial.resource_kind = 'entity' AND initial.entity_id = ?3
-    GROUP BY initial.adapter_id
-), candidates AS (
-    SELECT
-        transition.receive_order,
-        transition.status,
-        transition.source,
-        transition.reason_code,
-        transition.source_observed_at,
-        transition.observed_at
-    FROM health_transitions AS transition
-    WHERE transition.resource_kind = 'entity'
-      AND transition.entity_id = ?3
-
-    UNION ALL
-
-    SELECT
-        transition.receive_order,
-        CASE WHEN transition.status = 'unhealthy' THEN 'unavailable' ELSE 'unknown' END AS status,
-        CASE WHEN transition.status = 'healthy' THEN 'core' ELSE 'adapter_health' END AS source,
-        CASE
-            WHEN transition.status = 'healthy' THEN 'hearth.awaiting_entity_report'
-            ELSE transition.reason_code
-        END AS reason_code,
-        CASE WHEN transition.status = 'healthy' THEN NULL ELSE transition.source_observed_at END AS source_observed_at,
-        transition.observed_at
-    FROM entity_lifetime AS lifetime
-    JOIN health_transitions AS transition
-        ON transition.resource_kind = 'adapter'
-        AND transition.adapter_id = lifetime.adapter_id
-        AND transition.receive_order >= lifetime.starting_receive_order
-), sequenced AS (
-    SELECT
-        candidates.receive_order, candidates.status, candidates.source, candidates.reason_code, candidates.source_observed_at, candidates.observed_at,
-        lag(status) OVER (ORDER BY receive_order) AS prior_status,
-        lag(reason_code) OVER (ORDER BY receive_order) AS prior_reason_code
-    FROM candidates
-), effective AS (
-    SELECT receive_order, status, source, reason_code, source_observed_at, observed_at
-    FROM sequenced
-    WHERE prior_status IS NULL
-       OR status <> prior_status
-       OR reason_code IS NOT prior_reason_code
-)
 SELECT receive_order, status, source, reason_code, source_observed_at, observed_at
-FROM effective
-WHERE receive_order < CAST(?1 AS INTEGER)
+FROM health_transitions
+WHERE resource_kind = 'entity'
+  AND entity_id = ?1
+  AND receive_order < CAST(?2 AS INTEGER)
 ORDER BY receive_order DESC
-LIMIT ?2
+LIMIT ?3
 `
 
 type ListEntityAvailabilityHistoryBeforeParams struct {
+	EntityID           sql.NullString
 	BeforeReceiveOrder int64
 	PageLimit          int64
-	EntityID           sql.NullString
 }
 
 type ListEntityAvailabilityHistoryBeforeRow struct {
@@ -731,7 +685,7 @@ type ListEntityAvailabilityHistoryBeforeRow struct {
 }
 
 func (q *Queries) ListEntityAvailabilityHistoryBefore(ctx context.Context, arg ListEntityAvailabilityHistoryBeforeParams) ([]ListEntityAvailabilityHistoryBeforeRow, error) {
-	rows, err := q.db.QueryContext(ctx, listEntityAvailabilityHistoryBefore, arg.BeforeReceiveOrder, arg.PageLimit, arg.EntityID)
+	rows, err := q.db.QueryContext(ctx, listEntityAvailabilityHistoryBefore, arg.EntityID, arg.BeforeReceiveOrder, arg.PageLimit)
 	if err != nil {
 		return nil, err
 	}
@@ -761,62 +715,16 @@ func (q *Queries) ListEntityAvailabilityHistoryBefore(ctx context.Context, arg L
 }
 
 const listEntityAvailabilityHistoryFirstPage = `-- name: ListEntityAvailabilityHistoryFirstPage :many
-WITH entity_lifetime AS (
-    SELECT initial.adapter_id, MIN(initial.receive_order) AS starting_receive_order
-    FROM health_transitions AS initial
-    WHERE initial.resource_kind = 'entity' AND initial.entity_id = ?2
-    GROUP BY initial.adapter_id
-), candidates AS (
-    SELECT
-        transition.receive_order,
-        transition.status,
-        transition.source,
-        transition.reason_code,
-        transition.source_observed_at,
-        transition.observed_at
-    FROM health_transitions AS transition
-    WHERE transition.resource_kind = 'entity'
-      AND transition.entity_id = ?2
-
-    UNION ALL
-
-    SELECT
-        transition.receive_order,
-        CASE WHEN transition.status = 'unhealthy' THEN 'unavailable' ELSE 'unknown' END AS status,
-        CASE WHEN transition.status = 'healthy' THEN 'core' ELSE 'adapter_health' END AS source,
-        CASE
-            WHEN transition.status = 'healthy' THEN 'hearth.awaiting_entity_report'
-            ELSE transition.reason_code
-        END AS reason_code,
-        CASE WHEN transition.status = 'healthy' THEN NULL ELSE transition.source_observed_at END AS source_observed_at,
-        transition.observed_at
-    FROM entity_lifetime AS lifetime
-    JOIN health_transitions AS transition
-        ON transition.resource_kind = 'adapter'
-        AND transition.adapter_id = lifetime.adapter_id
-        AND transition.receive_order >= lifetime.starting_receive_order
-), sequenced AS (
-    SELECT
-        candidates.receive_order, candidates.status, candidates.source, candidates.reason_code, candidates.source_observed_at, candidates.observed_at,
-        lag(status) OVER (ORDER BY receive_order) AS prior_status,
-        lag(reason_code) OVER (ORDER BY receive_order) AS prior_reason_code
-    FROM candidates
-), effective AS (
-    SELECT receive_order, status, source, reason_code, source_observed_at, observed_at
-    FROM sequenced
-    WHERE prior_status IS NULL
-       OR status <> prior_status
-       OR reason_code IS NOT prior_reason_code
-)
 SELECT receive_order, status, source, reason_code, source_observed_at, observed_at
-FROM effective
+FROM health_transitions
+WHERE resource_kind = 'entity' AND entity_id = ?1
 ORDER BY receive_order DESC
-LIMIT ?1
+LIMIT ?2
 `
 
 type ListEntityAvailabilityHistoryFirstPageParams struct {
-	PageLimit int64
 	EntityID  sql.NullString
+	PageLimit int64
 }
 
 type ListEntityAvailabilityHistoryFirstPageRow struct {
@@ -829,7 +737,7 @@ type ListEntityAvailabilityHistoryFirstPageRow struct {
 }
 
 func (q *Queries) ListEntityAvailabilityHistoryFirstPage(ctx context.Context, arg ListEntityAvailabilityHistoryFirstPageParams) ([]ListEntityAvailabilityHistoryFirstPageRow, error) {
-	rows, err := q.db.QueryContext(ctx, listEntityAvailabilityHistoryFirstPage, arg.PageLimit, arg.EntityID)
+	rows, err := q.db.QueryContext(ctx, listEntityAvailabilityHistoryFirstPage, arg.EntityID, arg.PageLimit)
 	if err != nil {
 		return nil, err
 	}
@@ -859,7 +767,7 @@ func (q *Queries) ListEntityAvailabilityHistoryFirstPage(ctx context.Context, ar
 }
 
 const listExpiredRuntimes = `-- name: ListExpiredRuntimes :many
-SELECT runtime_id, claim_id, adapter_id, software_name, software_version,
+SELECT runtime_id, adapter_id, software_name, software_version,
        claimed_at, last_heartbeat_at, lease_expires_at, ended_at, end_reason
 FROM adapter_runtimes
 WHERE ended_at IS NULL
@@ -882,7 +790,6 @@ func (q *Queries) ListExpiredRuntimes(ctx context.Context, arg ListExpiredRuntim
 		var i AdapterRuntime
 		if err := rows.Scan(
 			&i.RuntimeID,
-			&i.ClaimID,
 			&i.AdapterID,
 			&i.SoftwareName,
 			&i.SoftwareVersion,
@@ -911,27 +818,23 @@ SET active_runtime_id = ?,
     health_runtime_id = ?,
     health_status = ?,
     health_reason_code = ?,
+    health_source = ?,
     health_since = ?,
     health_evidence_at = ?,
-    external_system_status = ?,
-    external_system_reason_code = ?,
-    external_system_source_observed_at = ?,
-    external_system_evidence_at = ?
+    health_source_observed_at = ?
 WHERE adapter_id = ?
 `
 
 type UpdateAdapterCurrentHealthParams struct {
-	ActiveRuntimeID                sql.NullString
-	HealthRuntimeID                sql.NullString
-	HealthStatus                   string
-	HealthReasonCode               sql.NullString
-	HealthSince                    string
-	HealthEvidenceAt               string
-	ExternalSystemStatus           sql.NullString
-	ExternalSystemReasonCode       sql.NullString
-	ExternalSystemSourceObservedAt sql.NullString
-	ExternalSystemEvidenceAt       sql.NullString
-	AdapterID                      string
+	ActiveRuntimeID        sql.NullString
+	HealthRuntimeID        sql.NullString
+	HealthStatus           string
+	HealthReasonCode       sql.NullString
+	HealthSource           string
+	HealthSince            string
+	HealthEvidenceAt       string
+	HealthSourceObservedAt sql.NullString
+	AdapterID              string
 }
 
 func (q *Queries) UpdateAdapterCurrentHealth(ctx context.Context, arg UpdateAdapterCurrentHealthParams) error {
@@ -940,12 +843,10 @@ func (q *Queries) UpdateAdapterCurrentHealth(ctx context.Context, arg UpdateAdap
 		arg.HealthRuntimeID,
 		arg.HealthStatus,
 		arg.HealthReasonCode,
+		arg.HealthSource,
 		arg.HealthSince,
 		arg.HealthEvidenceAt,
-		arg.ExternalSystemStatus,
-		arg.ExternalSystemReasonCode,
-		arg.ExternalSystemSourceObservedAt,
-		arg.ExternalSystemEvidenceAt,
+		arg.HealthSourceObservedAt,
 		arg.AdapterID,
 	)
 	return err

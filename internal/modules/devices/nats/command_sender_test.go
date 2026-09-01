@@ -25,7 +25,7 @@ func TestCommandSenderDispatchesValidatedCorrelatedRequests(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	startAdapterSessionServer(t, connection, validator)
+	lifecycle := startAdapterSessionServer(t, connection, validator)
 	session, err := adapter.Connect(ctx, adapter.Config{
 		AdapterID: "simulator", SoftwareName: "hearth-simulator",
 		SoftwareVersion: "0.1.0", NATSURL: server.ClientURL(),
@@ -54,7 +54,7 @@ func TestCommandSenderDispatchesValidatedCorrelatedRequests(t *testing.T) {
 		EntityID: devices.EntityID(testEntityID), OperationName: devices.OperationNameSet,
 		Parameters: devices.CommandParameters(`{"value":true}`), Deadline: time.Now().Add(time.Second),
 	}
-	acceptance, err := sender.Send(ctx, "simulator", devices.RuntimeID(testRuntimeID), request)
+	acceptance, err := sender.Send(ctx, "simulator", lifecycle.claimedRuntimeID(), request)
 	if err != nil || !acceptance.Accepted {
 		t.Fatalf("accepted response = %#v, %v", acceptance, err)
 	}
@@ -65,7 +65,7 @@ func TestCommandSenderDispatchesValidatedCorrelatedRequests(t *testing.T) {
 	}
 
 	request.Parameters = devices.CommandParameters(`{"value":false}`)
-	acceptance, err = sender.Send(ctx, "simulator", devices.RuntimeID(testRuntimeID), request)
+	acceptance, err = sender.Send(ctx, "simulator", lifecycle.claimedRuntimeID(), request)
 	if err != nil || acceptance.Accepted {
 		t.Fatalf("rejected response = %#v, %v", acceptance, err)
 	}
@@ -89,7 +89,7 @@ func TestCommandSenderClassifiesEntityUnavailableRejection(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	startAdapterSessionServer(t, connection, validator)
+	lifecycle := startAdapterSessionServer(t, connection, validator)
 	session, err := adapter.Connect(ctx, adapter.Config{
 		AdapterID: "simulator", SoftwareName: "hearth-simulator",
 		SoftwareVersion: "0.1.0", NATSURL: server.ClientURL(),
@@ -112,7 +112,7 @@ func TestCommandSenderClassifiesEntityUnavailableRejection(t *testing.T) {
 	waitForSubscriptions(t, server, baselineSubscriptions+1)
 
 	sender := NewCommandSender(connection, validator)
-	_, err = sender.Send(ctx, "simulator", devices.RuntimeID(testRuntimeID), devices.CommandRequest{
+	_, err = sender.Send(ctx, "simulator", lifecycle.claimedRuntimeID(), devices.CommandRequest{
 		ID: devices.CommandID(commandClientCommandID), CorrelationID: devices.CorrelationID(commandClientCorrelationID),
 		EntityID: devices.EntityID(testEntityID), OperationName: devices.OperationNameSet,
 		Parameters: devices.CommandParameters(`{"value":false}`), Deadline: time.Now().Add(time.Second),

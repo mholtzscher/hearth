@@ -467,7 +467,7 @@ func entityAvailabilityFromValues(values sqliteEntityAvailability) (EntityAvaila
 		status = EntityAvailabilityUnavailable
 	}
 	return EntityAvailability{
-		Status: status, Source: "adapter_health", Since: since, EvidenceAt: evidenceAt,
+		Status: status, Source: availabilitySourceAdapterHealth, Since: since, EvidenceAt: evidenceAt,
 		Reason: healthReasonFromNull(values.adapterReasonCode),
 	}, nil
 }

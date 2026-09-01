@@ -34,11 +34,6 @@ func NewCorrelationID() (CorrelationID, error) {
 	return CorrelationID(id), err
 }
 
-func NewRuntimeID() (RuntimeID, error) {
-	id, err := newID("run")
-	return RuntimeID(id), err
-}
-
 func ParseDeviceID(value string) (DeviceID, error) {
 	if err := validateID(value, "dev"); err != nil {
 		return "", err

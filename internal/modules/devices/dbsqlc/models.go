@@ -28,22 +28,19 @@ type AdapterEntityMapping struct {
 }
 
 type AdapterInstance struct {
-	AdapterID                      string
-	ActiveRuntimeID                sql.NullString
-	HealthRuntimeID                sql.NullString
-	HealthStatus                   string
-	HealthReasonCode               sql.NullString
-	HealthSince                    string
-	HealthEvidenceAt               string
-	ExternalSystemStatus           sql.NullString
-	ExternalSystemReasonCode       sql.NullString
-	ExternalSystemSourceObservedAt sql.NullString
-	ExternalSystemEvidenceAt       sql.NullString
+	AdapterID              string
+	ActiveRuntimeID        sql.NullString
+	HealthRuntimeID        sql.NullString
+	HealthStatus           string
+	HealthReasonCode       sql.NullString
+	HealthSource           string
+	HealthSince            string
+	HealthEvidenceAt       string
+	HealthSourceObservedAt sql.NullString
 }
 
 type AdapterRuntime struct {
 	RuntimeID       string
-	ClaimID         string
 	AdapterID       string
 	SoftwareName    string
 	SoftwareVersion string

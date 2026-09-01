@@ -17,17 +17,7 @@ func (readiness *supervisorReadinessStub) Check(context.Context) error {
 }
 
 type supervisorHealthStub struct {
-	pauses  int
-	resumes []time.Time
 	expires []time.Time
-}
-
-func (health *supervisorHealthStub) PauseAdapterLeaseExpiry() {
-	health.pauses++
-}
-
-func (health *supervisorHealthStub) ResumeAdapterLeaseExpiry(at time.Time) {
-	health.resumes = append(health.resumes, at)
 }
 
 func (health *supervisorHealthStub) ExpireAdapterLeases(_ context.Context, at time.Time) error {
@@ -43,27 +33,37 @@ func TestHealthSupervisorFollowsReadinessTransitions(t *testing.T) {
 	supervisor := &healthSupervisor{
 		readiness: readiness, health: health, logger: slog.New(slog.DiscardHandler),
 	}
-	first := time.Date(2026, 8, 29, 14, 0, 0, 0, time.UTC)
+	firstReadyAt := time.Date(2026, 8, 29, 14, 0, 0, 0, time.UTC)
 
-	supervisor.poll(ctx, first)
-	supervisor.poll(ctx, first.Add(time.Second))
-	if len(health.resumes) != 1 || !health.resumes[0].Equal(first) || len(health.expires) != 2 {
-		t.Fatalf("initial ready calls = resumes %#v, expires %#v", health.resumes, health.expires)
+	supervisor.poll(ctx, firstReadyAt)
+	supervisor.poll(ctx, firstReadyAt.Add(leaseExpiryRecoveryGrace-time.Second))
+	if len(health.expires) != 0 {
+		t.Fatalf("initial grace expiry calls = %#v", health.expires)
+	}
+	firstBoundary := firstReadyAt.Add(leaseExpiryRecoveryGrace)
+	supervisor.poll(ctx, firstBoundary)
+	if len(health.expires) != 1 || !health.expires[0].Equal(firstBoundary) {
+		t.Fatalf("initial boundary expiry calls = %#v", health.expires)
 	}
 
 	readiness.err = errors.New("NATS disconnected")
-	supervisor.poll(ctx, first.Add(2*time.Second))
-	supervisor.poll(ctx, first.Add(3*time.Second))
-	if health.pauses != 1 || len(health.expires) != 2 {
-		t.Fatalf("not-ready calls = pauses %d, expires %#v", health.pauses, health.expires)
+	supervisor.poll(ctx, firstBoundary.Add(time.Second))
+	supervisor.poll(ctx, firstBoundary.Add(2*time.Second))
+	if len(health.expires) != 1 {
+		t.Fatalf("not-ready expiry calls = %#v", health.expires)
 	}
 
 	readiness.err = nil
-	recoveredAt := first.Add(4 * time.Second)
+	recoveredAt := firstBoundary.Add(3 * time.Second)
 	supervisor.poll(ctx, recoveredAt)
-	if len(health.resumes) != 2 || !health.resumes[1].Equal(recoveredAt) ||
-		len(health.expires) != 3 || !health.expires[2].Equal(recoveredAt) {
-		t.Fatalf("recovery calls = resumes %#v, expires %#v", health.resumes, health.expires)
+	supervisor.poll(ctx, recoveredAt.Add(leaseExpiryRecoveryGrace-time.Second))
+	if len(health.expires) != 1 {
+		t.Fatalf("recovery grace expiry calls = %#v", health.expires)
+	}
+	recoveryBoundary := recoveredAt.Add(leaseExpiryRecoveryGrace)
+	supervisor.poll(ctx, recoveryBoundary)
+	if len(health.expires) != 2 || !health.expires[1].Equal(recoveryBoundary) {
+		t.Fatalf("recovery boundary expiry calls = %#v", health.expires)
 	}
 }
 
@@ -80,7 +80,7 @@ func TestHealthSupervisorPerformsInitialCheckAndStops(t *testing.T) {
 	cancel()
 	supervisor.Stop()
 	supervisor.Stop()
-	if len(health.resumes) != 1 || len(health.expires) != 1 {
-		t.Fatalf("initial calls = resumes %#v, expires %#v", health.resumes, health.expires)
+	if len(health.expires) != 0 {
+		t.Fatalf("initial expiry calls = %#v", health.expires)
 	}
 }

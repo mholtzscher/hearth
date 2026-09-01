@@ -319,7 +319,7 @@ func createEntityAvailabilityBaseline(
 		return fmt.Errorf("get Adapter health for Entity availability baseline: %w", err)
 	}
 	status := string(EntityAvailabilityUnknown)
-	source := "adapter_health"
+	source := availabilitySourceAdapterHealth
 	reasonCode := adapter.HealthReasonCode
 	switch AdapterHealthStatus(adapter.HealthStatus) {
 	case AdapterHealthHealthy:

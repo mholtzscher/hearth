@@ -17,6 +17,7 @@ import (
 
 const (
 	requestAttemptTimeout      = time.Second
+	heartbeatInterval          = 5 * time.Second
 	releaseTimeout             = 5 * time.Second
 	maximumSoftwareVersionSize = 128
 	maximumHealthReasonSize    = 128
@@ -29,16 +30,14 @@ var (
 
 type adapterClaimRequest struct {
 	AdapterID       string `json:"adapter_id"`
+	RuntimeID       string `json:"runtime_id"`
 	SoftwareName    string `json:"software_name"`
 	SoftwareVersion string `json:"software_version"`
 }
 
 type adapterClaimResponse struct {
-	Status              string             `json:"status"`
-	RuntimeID           string             `json:"runtime_id,omitempty"`
-	HeartbeatIntervalMS int64              `json:"heartbeat_interval_ms,omitempty"`
-	LeaseDurationMS     int64              `json:"lease_duration_ms,omitempty"`
-	Error               *adapterClaimError `json:"error,omitempty"`
+	Status string             `json:"status"`
+	Error  *adapterClaimError `json:"error,omitempty"`
 }
 
 type adapterClaimError struct {
@@ -114,11 +113,15 @@ func (session *Session) claim(ctx context.Context, config Config) error {
 	if err != nil {
 		return &ValidationError{Err: err}
 	}
+	runtimeID, err := newID("run")
+	if err != nil {
+		return err
+	}
 	request, err := prepareRequest(
 		session, "clm", contractsv1.AdapterClaimRequestSchemaID,
 		contractsv1.AdapterClaimResponseSchemaID, "Adapter claim", subject,
 		adapterClaimRequest{
-			AdapterID: config.AdapterID, SoftwareName: config.SoftwareName,
+			AdapterID: config.AdapterID, RuntimeID: runtimeID, SoftwareName: config.SoftwareName,
 			SoftwareVersion: config.SoftwareVersion,
 		},
 	)
@@ -136,16 +139,7 @@ func (session *Session) claim(ctx context.Context, config Config) error {
 			continue
 		}
 		if response.Data.Status == statusAccepted {
-			_, parseErr := natswire.AdapterHeartbeatSubject(config.AdapterID, response.Data.RuntimeID)
-			if parseErr != nil {
-				return fmt.Errorf("invalid Adapter claim runtime ID: %w", parseErr)
-			}
-			heartbeatInterval := time.Duration(response.Data.HeartbeatIntervalMS) * time.Millisecond
-			leaseDuration := time.Duration(response.Data.LeaseDurationMS) * time.Millisecond
-			if heartbeatInterval <= 0 || leaseDuration <= heartbeatInterval {
-				return errors.New("invalid Adapter claim timing")
-			}
-			session.runtimeID = response.Data.RuntimeID
+			session.runtimeID = runtimeID
 			session.heartbeatInterval = heartbeatInterval
 			return nil
 		}

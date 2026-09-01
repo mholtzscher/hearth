@@ -36,11 +36,9 @@ import (
 )
 
 const (
-	simulatorMatrixAdapterID       = "simulator"
-	simulatorMatrixRuntimeID       = "run_01890f47-7a6b-7c4d-8e9f-0123456789ab"
-	simulatorMatrixSecondRuntimeID = "run_01890f47-7a6c-7c4d-8e9f-0123456789ab"
-	simulatorMatrixDuplicateFault  = "duplicate"
-	simulatorMatrixMalformedFault  = "malformed"
+	simulatorMatrixAdapterID      = "simulator"
+	simulatorMatrixDuplicateFault = "duplicate"
+	simulatorMatrixMalformedFault = "malformed"
 )
 
 type simulatorMatrixOptions struct {
@@ -172,18 +170,12 @@ func newSimulatorMatrixHarness(t *testing.T, scenario string, options simulatorM
 	if err != nil {
 		t.Fatal(err)
 	}
-	if options.dependencies.NewRuntimeID == nil {
-		options.dependencies.NewRuntimeID = func() (devices.RuntimeID, error) {
-			return devices.RuntimeID(simulatorMatrixRuntimeID), nil
-		}
-	}
 	harness.service = devices.NewService(
 		devices.SQLiteStores(harness.repository),
 		devicesnats.NewCommandSender(harness.connection, harness.validator),
 		catalog,
 		options.dependencies,
 	)
-	harness.service.ResumeAdapterLeaseExpiry(time.Now().UTC())
 	harness.sessions, err = devicesnats.StartSessionServer(
 		harness.connection, harness.validator, harness.service, harness.service, logger,
 	)
@@ -275,8 +267,9 @@ func newSimulatorMatrixHarness(t *testing.T, scenario string, options simulatorM
 			entity.Availability.Status == wantAvailability, nil
 	})
 	if scenario != simulatoradapter.ScenarioAdapterUnhealthy {
+		runtimeID := currentMatrixRuntimeID(t, harness)
 		commandSubject, subjectErr := natswire.CommandSubject(
-			simulatorMatrixAdapterID, simulatorMatrixRuntimeID, string(harness.entityID), "set",
+			simulatorMatrixAdapterID, string(runtimeID), string(harness.entityID), "set",
 		)
 		if subjectErr != nil {
 			t.Fatal(subjectErr)
@@ -448,8 +441,15 @@ func (harness *simulatorMatrixHarness) publishObservationFault(
 	default:
 		return fmt.Errorf("unknown Observation fault %q", scenario)
 	}
+	instance, err := harness.service.GetAdapter(ctx, simulatorMatrixAdapterID)
+	if err != nil {
+		return err
+	}
+	if instance.Health.Runtime == nil {
+		return errors.New("simulator Adapter has no runtime")
+	}
 	subject, err := natswire.ObservationSubject(
-		simulatorMatrixAdapterID, simulatorMatrixRuntimeID, entityID,
+		simulatorMatrixAdapterID, string(instance.Health.Runtime.ID), entityID,
 	)
 	if err != nil {
 		return err
@@ -618,14 +618,15 @@ func TestSimulatorCommandHTTPFailureMatrix(t *testing.T) {
 		{
 			name: "unexpected response", scenario: simulatoradapter.ScenarioAdapterUnhealthy,
 			prepare: func(t *testing.T, harness *simulatorMatrixHarness) {
+				runtimeID := currentMatrixRuntimeID(t, harness)
 				if _, err := harness.service.RecordAdapterHeartbeat(harness.ctx, devices.AdapterHeartbeat{
-					AdapterID: simulatorMatrixAdapterID, RuntimeID: simulatorMatrixRuntimeID,
+					AdapterID: simulatorMatrixAdapterID, RuntimeID: runtimeID,
 					ExternalStatus: devices.AdapterHealthHealthy, SourceObservedAt: time.Now().UTC(),
 				}); err != nil {
 					t.Fatal(err)
 				}
 				subject, err := natswire.CommandSubject(
-					simulatorMatrixAdapterID, simulatorMatrixRuntimeID, string(harness.entityID), "set",
+					simulatorMatrixAdapterID, string(runtimeID), string(harness.entityID), "set",
 				)
 				if err != nil {
 					t.Fatal(err)
@@ -1035,8 +1036,8 @@ func TestSimulatorRestartBeforeAckRedeliversWithoutChangingStateOrCommand(t *tes
 //nolint:gocognit // The readiness sequence is easier to audit in chronological order.
 func TestSimulatorReadinessRecoveryRestoresPersistedAvailabilityWithoutReport(t *testing.T) {
 	t.Parallel()
-	harness := newManualSimulatorMatrixHarness(t, simulatorMatrixRuntimeID)
-	session := connectMatrixSession(t, harness)
+	harness := newManualSimulatorMatrixHarness(t)
+	session, _ := connectMatrixSession(t, harness)
 	entityID, _ := registerMatrixEntity(harness.ctx, t, session)
 	now := time.Now().UTC()
 	if err := session.SetHealth(harness.ctx, adapter.HealthReport{
@@ -1069,8 +1070,14 @@ func TestSimulatorReadinessRecoveryRestoresPersistedAvailabilityWithoutReport(t 
 		t.Fatal(err)
 	}
 
-	harness.service.PauseAdapterLeaseExpiry()
-	harness.service.ResumeAdapterLeaseExpiry(time.Now().UTC())
+	readiness := &supervisorReadinessStub{err: errors.New("Core not ready")}
+	supervisor := &healthSupervisor{
+		readiness: readiness, health: harness.service, logger: slog.New(slog.DiscardHandler),
+	}
+	recoveredAt := time.Now().UTC()
+	supervisor.poll(harness.ctx, recoveredAt.Add(-time.Second))
+	readiness.err = nil
+	supervisor.poll(harness.ctx, recoveredAt)
 	recoveredAdapter, err := harness.service.GetAdapter(harness.ctx, simulatorMatrixAdapterID)
 	if err != nil {
 		t.Fatal(err)
@@ -1139,12 +1146,8 @@ func TestSimulatorReadinessRecoveryRestoresPersistedAvailabilityWithoutReport(t 
 
 func TestSimulatorGracefulReleaseAllowsImmediateReplacement(t *testing.T) {
 	t.Parallel()
-	harness := newManualSimulatorMatrixHarness(
-		t,
-		simulatorMatrixRuntimeID,
-		simulatorMatrixSecondRuntimeID,
-	)
-	first := connectMatrixSession(t, harness)
+	harness := newManualSimulatorMatrixHarness(t)
+	first, _ := connectMatrixSession(t, harness)
 	if err := first.SetHealth(harness.ctx, adapter.HealthReport{
 		Status: adapter.HealthHealthy, SourceObservedAt: time.Now().UTC(),
 	}); err != nil {
@@ -1159,13 +1162,12 @@ func TestSimulatorGracefulReleaseAllowsImmediateReplacement(t *testing.T) {
 			instance.Health.Reason != nil && instance.Health.Reason.Code == "hearth.stopped" &&
 			instance.Health.Runtime != nil && instance.Health.Runtime.Status == "offline", err
 	})
-	second := connectMatrixSession(t, harness)
+	second, secondRuntimeID := connectMatrixSession(t, harness)
 	instance, err := harness.service.GetAdapter(harness.ctx, simulatorMatrixAdapterID)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if instance.Health.Runtime == nil ||
-		instance.Health.Runtime.ID != devices.RuntimeID(simulatorMatrixSecondRuntimeID) {
+	if instance.Health.Runtime == nil || instance.Health.Runtime.ID != secondRuntimeID {
 		t.Fatalf("replacement Adapter = %#v", instance)
 	}
 	if err = second.Close(); err != nil {
@@ -1176,12 +1178,8 @@ func TestSimulatorGracefulReleaseAllowsImmediateReplacement(t *testing.T) {
 //nolint:gocognit,gocyclo,cyclop // This process scenario keeps takeover and every stale-runtime effect in one causal sequence.
 func TestSimulatorExpiryTakeoverFencesOldTrafficAndCommands(t *testing.T) {
 	t.Parallel()
-	harness := newManualSimulatorMatrixHarness(
-		t,
-		simulatorMatrixRuntimeID,
-		simulatorMatrixSecondRuntimeID,
-	)
-	oldSession := connectMatrixSession(t, harness)
+	harness := newManualSimulatorMatrixHarness(t)
+	oldSession, oldRuntimeID := connectMatrixSession(t, harness)
 	entityID, registration := registerMatrixEntity(harness.ctx, t, oldSession)
 	now := time.Now().UTC()
 	if err := oldSession.SetHealth(harness.ctx, adapter.HealthReport{
@@ -1211,7 +1209,7 @@ func TestSimulatorExpiryTakeoverFencesOldTrafficAndCommands(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if captured.RuntimeID == nil || *captured.RuntimeID != devices.RuntimeID(simulatorMatrixRuntimeID) {
+	if captured.RuntimeID == nil || *captured.RuntimeID != oldRuntimeID {
 		t.Fatalf("captured Command runtime = %#v", captured.RuntimeID)
 	}
 
@@ -1227,7 +1225,7 @@ func TestSimulatorExpiryTakeoverFencesOldTrafficAndCommands(t *testing.T) {
 	if err = harness.service.ExpireAdapterLeases(harness.ctx, time.Now().UTC().Add(30*time.Second)); err != nil {
 		t.Fatal(err)
 	}
-	newSession := connectMatrixSession(t, harness)
+	newSession, newRuntimeID := connectMatrixSession(t, harness)
 	newEntityID, _ := registerMatrixEntity(harness.ctx, t, newSession)
 	if newEntityID != entityID {
 		t.Fatalf("replacement Entity ID = %s, want %s", newEntityID, entityID)
@@ -1269,8 +1267,8 @@ func TestSimulatorExpiryTakeoverFencesOldTrafficAndCommands(t *testing.T) {
 			return responder.Reject("simulated rejection")
 		})
 	}()
-	waitForMatrixCommandSubscription(t, harness, simulatorMatrixRuntimeID, entityID)
-	waitForMatrixCommandSubscription(t, harness, simulatorMatrixSecondRuntimeID, entityID)
+	waitForMatrixCommandSubscription(t, harness, string(oldRuntimeID), entityID)
+	waitForMatrixCommandSubscription(t, harness, string(newRuntimeID), entityID)
 	acceptance, err := devicesnats.NewCommandSender(harness.connection, harness.validator).Send(
 		harness.ctx,
 		simulatorMatrixAdapterID,
@@ -1309,7 +1307,7 @@ func TestSimulatorExpiryTakeoverFencesOldTrafficAndCommands(t *testing.T) {
 		t.Fatal(err)
 	}
 	if len(commands.Items) != 1 || commands.Items[0].RuntimeID == nil ||
-		*commands.Items[0].RuntimeID != devices.RuntimeID(simulatorMatrixSecondRuntimeID) {
+		*commands.Items[0].RuntimeID != newRuntimeID {
 		t.Fatalf("replacement Command = %#v", commands.Items)
 	}
 
@@ -1369,22 +1367,15 @@ func TestSimulatorExpiryTakeoverFencesOldTrafficAndCommands(t *testing.T) {
 	}
 }
 
-func newManualSimulatorMatrixHarness(
-	t *testing.T,
-	runtimeIDs ...string,
-) *simulatorMatrixHarness {
+func newManualSimulatorMatrixHarness(t *testing.T) *simulatorMatrixHarness {
 	t.Helper()
-	var index atomic.Int64
-	return newSimulatorMatrixHarness(t, "", simulatorMatrixOptions{
-		manual: true,
-		dependencies: devices.Dependencies{NewRuntimeID: func() (devices.RuntimeID, error) {
-			position := min(int(index.Add(1)-1), len(runtimeIDs)-1)
-			return devices.RuntimeID(runtimeIDs[position]), nil
-		}},
-	})
+	return newSimulatorMatrixHarness(t, "", simulatorMatrixOptions{manual: true})
 }
 
-func connectMatrixSession(t *testing.T, harness *simulatorMatrixHarness) *adapter.Session {
+func connectMatrixSession(
+	t *testing.T,
+	harness *simulatorMatrixHarness,
+) (*adapter.Session, devices.RuntimeID) {
 	t.Helper()
 	session, err := adapter.Connect(harness.ctx, adapter.Config{
 		AdapterID: simulatorMatrixAdapterID, SoftwareName: "hearth-simulator",
@@ -1398,7 +1389,19 @@ func connectMatrixSession(t *testing.T, harness *simulatorMatrixHarness) *adapte
 			t.Errorf("close simulator Session: %v", closeErr)
 		}
 	})
-	return session
+	return session, currentMatrixRuntimeID(t, harness)
+}
+
+func currentMatrixRuntimeID(t *testing.T, harness *simulatorMatrixHarness) devices.RuntimeID {
+	t.Helper()
+	instance, err := harness.service.GetAdapter(harness.ctx, simulatorMatrixAdapterID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if instance.Health.Runtime == nil {
+		t.Fatal("simulator Adapter has no runtime")
+	}
+	return instance.Health.Runtime.ID
 }
 
 func registerMatrixEntity(
@@ -1491,8 +1494,9 @@ func publishMatrixLinkedObservation(
 	if err != nil {
 		t.Fatal(err)
 	}
+	runtimeID := currentMatrixRuntimeID(t, harness)
 	subject, err := natswire.ObservationSubject(
-		simulatorMatrixAdapterID, simulatorMatrixRuntimeID, string(harness.entityID),
+		simulatorMatrixAdapterID, string(runtimeID), string(harness.entityID),
 	)
 	if err != nil {
 		t.Fatal(err)

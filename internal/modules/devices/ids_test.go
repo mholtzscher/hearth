@@ -45,12 +45,6 @@ func TestTypedIDsGenerateCanonicalUUIDv7(t *testing.T) {
 			func() (string, error) { value, err := devices.NewCorrelationID(); return string(value), err },
 			func(value string) error { _, err := devices.ParseCorrelationID(value); return err },
 		},
-		{
-			"runtime",
-			"run_",
-			func() (string, error) { value, err := devices.NewRuntimeID(); return string(value), err },
-			func(value string) error { _, err := devices.ParseRuntimeID(value); return err },
-		},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {

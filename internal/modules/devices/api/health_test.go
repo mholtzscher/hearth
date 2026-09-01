@@ -22,17 +22,13 @@ func TestListAdaptersMapsHealthAndPaginates(t *testing.T) {
 	observedAt := time.Date(2026, 8, 29, 15, 0, 1, 0, time.UTC)
 	sourceObservedAt := observedAt.Add(-time.Second)
 	active := devices.AdapterInstance{ID: apiAdapterID, Health: devices.AdapterHealth{
-		Status: devices.AdapterHealthUnhealthy, Since: observedAt, EvidenceAt: observedAt,
+		Status: devices.AdapterHealthUnhealthy, Source: "adapter",
+		Since: observedAt, EvidenceAt: observedAt, SourceObservedAt: &sourceObservedAt,
 		Reason: &devices.HealthReason{Code: "hearth.network_unreachable"},
 		Runtime: &devices.RuntimeEvidence{
 			ID: "run_01890f47-7a6b-7c4d-8e9f-0123456789ab", Status: "online",
 			SoftwareName: "hearth-adapter-simulator", SoftwareVersion: "0.1.0",
 			ClaimedAt: observedAt.Add(-time.Hour), LeaseExpiresAt: observedAt.Add(15 * time.Second),
-		},
-		ExternalSystem: &devices.ExternalSystemEvidence{
-			Status: devices.AdapterHealthUnhealthy, SourceObservedAt: sourceObservedAt,
-			EvidenceAt: observedAt,
-			Reason:     &devices.HealthReason{Code: "hearth.network_unreachable"},
 		},
 	}}
 	secondAdapter := active
@@ -71,10 +67,10 @@ func TestListAdaptersMapsHealthAndPaginates(t *testing.T) {
 		t.Fatalf("first page = %#v", first)
 	}
 	body := first.Items[0]
-	if body.ID != apiAdapterID || body.Health.Status != "unhealthy" ||
+	if body.ID != apiAdapterID || body.Health.Status != "unhealthy" || body.Health.Source != "adapter" ||
+		body.Health.SourceObservedAt == nil || *body.Health.SourceObservedAt != formatTime(sourceObservedAt) ||
 		body.Health.Reason == nil || body.Health.Reason.Code != "hearth.network_unreachable" ||
-		body.Health.Runtime == nil || body.Health.Runtime.LastHeartbeatAt != nil ||
-		body.Health.ExternalSystem == nil || body.Health.ExternalSystem.SourceObservedAt != formatTime(sourceObservedAt) {
+		body.Health.Runtime == nil || body.Health.Runtime.LastHeartbeatAt != nil {
 		t.Fatalf("Adapter body = %#v", body)
 	}
 	if !strings.Contains(response.Body.String(), `"last_heartbeat_at":null`) {
@@ -107,7 +103,7 @@ func TestGetAdapterMapsCurrentHealth(t *testing.T) {
 			t.Fatalf("Adapter ID = %q", adapterID)
 		}
 		return devices.AdapterInstance{ID: adapterID, Health: devices.AdapterHealth{
-			Status: devices.AdapterHealthUnknown, Since: observedAt, EvidenceAt: observedAt,
+			Status: devices.AdapterHealthUnknown, Source: "core", Since: observedAt, EvidenceAt: observedAt,
 			Reason: &devices.HealthReason{Code: "hearth.awaiting_health"},
 		}}, nil
 	}}
@@ -120,7 +116,8 @@ func TestGetAdapterMapsCurrentHealth(t *testing.T) {
 	if err := json.Unmarshal(response.Body.Bytes(), &body); err != nil {
 		t.Fatal(err)
 	}
-	if body.ID != apiAdapterID || body.Health.Status != "unknown" || body.Health.Reason == nil ||
+	if body.ID != apiAdapterID || body.Health.Status != "unknown" || body.Health.Source != "core" ||
+		body.Health.SourceObservedAt != nil || body.Health.Reason == nil ||
 		body.Health.Reason.Code != "hearth.awaiting_health" {
 		t.Fatalf("Adapter body = %#v", body)
 	}
@@ -216,7 +213,7 @@ func TestHealthHistoryRoutesMapEvidenceAndScopedCursors(t *testing.T) {
 				}
 				return devices.Page[devices.HealthTransition]{
 					Items: []devices.HealthTransition{{
-						ReceiveOrder: 12, Status: "unhealthy", Source: "external_system",
+						ReceiveOrder: 12, Status: "unhealthy", Source: "adapter",
 						Reason:           &devices.HealthReason{Code: "hearth.network_unreachable"},
 						SourceObservedAt: &sourceObservedAt, ObservedAt: observedAt,
 					}},

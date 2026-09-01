@@ -31,12 +31,13 @@ type AdapterBody struct {
 }
 
 type AdapterHealthBody struct {
-	Status         string                      `json:"status"`
-	Since          string                      `json:"since"`
-	EvidenceAt     string                      `json:"evidence_at"`
-	Reason         *HealthReasonBody           `json:"reason,omitempty"`
-	Runtime        *AdapterRuntimeEvidenceBody `json:"runtime,omitempty"`
-	ExternalSystem *ExternalSystemEvidenceBody `json:"external_system,omitempty"`
+	Status           string                      `json:"status"`
+	Source           string                      `json:"source"`
+	Since            string                      `json:"since"`
+	EvidenceAt       string                      `json:"evidence_at"`
+	SourceObservedAt *string                     `json:"source_observed_at,omitempty"`
+	Reason           *HealthReasonBody           `json:"reason,omitempty"`
+	Runtime          *AdapterRuntimeEvidenceBody `json:"runtime,omitempty"`
 }
 
 type AdapterRuntimeEvidenceBody struct {
@@ -47,13 +48,6 @@ type AdapterRuntimeEvidenceBody struct {
 	ClaimedAt       string  `json:"claimed_at"`
 	LastHeartbeatAt *string `json:"last_heartbeat_at"`
 	LeaseExpiresAt  string  `json:"lease_expires_at"`
-}
-
-type ExternalSystemEvidenceBody struct {
-	Status           string            `json:"status"`
-	SourceObservedAt string            `json:"source_observed_at"`
-	EvidenceAt       string            `json:"evidence_at"`
-	Reason           *HealthReasonBody `json:"reason,omitempty"`
 }
 
 type HealthTransitionBody struct {
