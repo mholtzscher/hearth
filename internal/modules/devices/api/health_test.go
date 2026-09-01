@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
-	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
@@ -17,12 +16,12 @@ import (
 
 const apiAdapterID = "simulator"
 
-//nolint:gocognit,gocyclo,cyclop // Response evidence and two cursor requests form one list contract.
-func TestListAdaptersMapsHealthAndScopesCursorToArchiveFilter(t *testing.T) {
+//nolint:gocognit // Response evidence and two cursor requests form one list contract.
+func TestListAdaptersMapsHealthAndPaginates(t *testing.T) {
 	t.Parallel()
 	observedAt := time.Date(2026, 8, 29, 15, 0, 1, 0, time.UTC)
 	sourceObservedAt := observedAt.Add(-time.Second)
-	active := devices.AdapterInstance{ID: apiAdapterID, Health: &devices.AdapterHealth{
+	active := devices.AdapterInstance{ID: apiAdapterID, Health: devices.AdapterHealth{
 		Status: devices.AdapterHealthUnhealthy, Since: observedAt, EvidenceAt: observedAt,
 		Reason: &devices.HealthReason{Code: "hearth.network_unreachable"},
 		Runtime: &devices.RuntimeEvidence{
@@ -36,15 +35,15 @@ func TestListAdaptersMapsHealthAndScopesCursorToArchiveFilter(t *testing.T) {
 			Reason:     &devices.HealthReason{Code: "hearth.network_unreachable"},
 		},
 	}}
-	archivedAt := observedAt.Add(time.Hour)
-	archived := devices.AdapterInstance{ID: "z_archive", ArchivedAt: &archivedAt}
+	secondAdapter := active
+	secondAdapter.ID = "z_adapter"
 	calls := 0
 	stub := &stubDevices{listAdapters: func(
 		_ context.Context,
 		params devices.ListAdaptersParams,
 	) (devices.Page[devices.AdapterInstance], error) {
 		calls++
-		if params.Limit != 50 || !params.IncludeArchived {
+		if params.Limit != 50 {
 			t.Fatalf("params = %#v", params)
 		}
 		if calls == 1 {
@@ -56,11 +55,11 @@ func TestListAdaptersMapsHealthAndScopesCursorToArchiveFilter(t *testing.T) {
 		if params.AfterID == nil || *params.AfterID != apiAdapterID {
 			t.Fatalf("second AfterID = %v", params.AfterID)
 		}
-		return devices.Page[devices.AdapterInstance]{Items: []devices.AdapterInstance{archived}}, nil
+		return devices.Page[devices.AdapterInstance]{Items: []devices.AdapterInstance{secondAdapter}}, nil
 	}}
 	router, openapi := testAPI(t, stub)
 
-	response := performRequest(router, "/v1/adapters?include_archived=true")
+	response := performRequest(router, "/v1/adapters")
 	if response.Code != http.StatusOK {
 		t.Fatalf("status = %d, body = %s", response.Code, response.Body.String())
 	}
@@ -72,7 +71,7 @@ func TestListAdaptersMapsHealthAndScopesCursorToArchiveFilter(t *testing.T) {
 		t.Fatalf("first page = %#v", first)
 	}
 	body := first.Items[0]
-	if body.ID != apiAdapterID || body.Health == nil || body.Health.Status != "unhealthy" ||
+	if body.ID != apiAdapterID || body.Health.Status != "unhealthy" ||
 		body.Health.Reason == nil || body.Health.Reason.Code != "hearth.network_unreachable" ||
 		body.Health.Runtime == nil || body.Health.Runtime.LastHeartbeatAt != nil ||
 		body.Health.ExternalSystem == nil || body.Health.ExternalSystem.SourceObservedAt != formatTime(sourceObservedAt) {
@@ -82,11 +81,7 @@ func TestListAdaptersMapsHealthAndScopesCursorToArchiveFilter(t *testing.T) {
 		t.Fatalf("claimed runtime did not expose null last_heartbeat_at: %s", response.Body.String())
 	}
 
-	mismatched := performRequest(router, "/v1/adapters?cursor="+*first.NextCursor)
-	if mismatched.Code != http.StatusBadRequest || calls != 1 {
-		t.Fatalf("mismatched filter status/calls = %d/%d, body = %s", mismatched.Code, calls, mismatched.Body.String())
-	}
-	response = performRequest(router, "/v1/adapters?include_archived=true&cursor="+*first.NextCursor)
+	response = performRequest(router, "/v1/adapters?cursor="+*first.NextCursor)
 	if response.Code != http.StatusOK {
 		t.Fatalf("second status = %d, body = %s", response.Code, response.Body.String())
 	}
@@ -94,17 +89,40 @@ func TestListAdaptersMapsHealthAndScopesCursorToArchiveFilter(t *testing.T) {
 	if err := json.Unmarshal(response.Body.Bytes(), &second); err != nil {
 		t.Fatal(err)
 	}
-	if len(second.Items) != 1 || second.Items[0].ArchivedAt == nil || second.Items[0].Health != nil ||
-		second.NextCursor != nil {
+	if len(second.Items) != 1 || second.Items[0].ID != "z_adapter" || second.NextCursor != nil {
 		t.Fatalf("second page = %#v", second)
-	}
-	if !strings.Contains(response.Body.String(), `"health":null`) {
-		t.Fatalf("archived Adapter did not expose null health: %s", response.Body.String())
 	}
 	operation := openapi.OpenAPI().Paths["/v1/adapters"].Get
 	if operation == nil || operation.OperationID != "list-adapters" || len(operation.Tags) != 1 ||
 		operation.Tags[0] != "Adapters" {
 		t.Fatalf("list Adapters operation = %#v", operation)
+	}
+}
+
+func TestGetAdapterMapsCurrentHealth(t *testing.T) {
+	t.Parallel()
+	observedAt := time.Date(2026, 8, 29, 16, 0, 0, 0, time.UTC)
+	stub := &stubDevices{getAdapter: func(_ context.Context, adapterID string) (devices.AdapterInstance, error) {
+		if adapterID != apiAdapterID {
+			t.Fatalf("Adapter ID = %q", adapterID)
+		}
+		return devices.AdapterInstance{ID: adapterID, Health: devices.AdapterHealth{
+			Status: devices.AdapterHealthUnknown, Since: observedAt, EvidenceAt: observedAt,
+			Reason: &devices.HealthReason{Code: "hearth.awaiting_health"},
+		}}, nil
+	}}
+	router, _ := testAPI(t, stub)
+	response := performRequest(router, "/v1/adapters/"+apiAdapterID)
+	if response.Code != http.StatusOK {
+		t.Fatalf("status = %d, body = %s", response.Code, response.Body.String())
+	}
+	var body AdapterBody
+	if err := json.Unmarshal(response.Body.Bytes(), &body); err != nil {
+		t.Fatal(err)
+	}
+	if body.ID != apiAdapterID || body.Health.Status != "unknown" || body.Health.Reason == nil ||
+		body.Health.Reason.Code != "hearth.awaiting_health" {
+		t.Fatalf("Adapter body = %#v", body)
 	}
 }
 
@@ -168,73 +186,6 @@ func TestAdapterAndHistoryReadsMapErrors(t *testing.T) {
 			}
 			var problem huma.ErrorModel
 			if err := json.Unmarshal(response.Body.Bytes(), &problem); err != nil {
-				t.Fatal(err)
-			}
-			if problem.Detail != test.detail {
-				t.Fatalf("problem = %#v", problem)
-			}
-		})
-	}
-}
-
-//nolint:gocognit // Success and conflict cases share one archive route contract.
-func TestGetAndArchiveAdapterMapErrorsAndNoContent(t *testing.T) {
-	t.Parallel()
-	archivedAt := time.Date(2026, 8, 29, 16, 0, 0, 0, time.UTC)
-	stub := &stubDevices{
-		getAdapter: func(_ context.Context, adapterID string) (devices.AdapterInstance, error) {
-			if adapterID != apiAdapterID {
-				t.Fatalf("Adapter ID = %q", adapterID)
-			}
-			return devices.AdapterInstance{ID: adapterID, ArchivedAt: &archivedAt}, nil
-		},
-		archiveAdapter: func(_ context.Context, adapterID string) error {
-			if adapterID != apiAdapterID {
-				t.Fatalf("Adapter ID = %q", adapterID)
-			}
-			return nil
-		},
-	}
-	router, openapi := testAPI(t, stub)
-	response := performRequest(router, "/v1/adapters/"+apiAdapterID)
-	if response.Code != http.StatusOK || !strings.Contains(response.Body.String(), `"health":null`) {
-		t.Fatalf("detail status = %d, body = %s", response.Code, response.Body.String())
-	}
-	response = performMethodRequest(router, http.MethodDelete, "/v1/adapters/"+apiAdapterID)
-	if response.Code != http.StatusNoContent || response.Body.Len() != 0 {
-		t.Fatalf("archive status = %d, body = %s", response.Code, response.Body.String())
-	}
-	operation := openapi.OpenAPI().Paths["/v1/adapters/{adapter_id}"].Delete
-	if operation == nil || operation.OperationID != "archive-adapter" {
-		t.Fatalf("archive operation = %#v", operation)
-	}
-
-	for _, test := range []struct {
-		name   string
-		id     string
-		err    error
-		status int
-		detail string
-	}{
-		{"invalid ID", "Bad.Adapter", nil, http.StatusBadRequest, "adapter_id must be a subject-safe slug"},
-		{"not found", apiAdapterID, devices.ErrAdapterNotFound, http.StatusNotFound, "adapter not found"},
-		{"active", apiAdapterID, devices.ErrAdapterActive, http.StatusConflict, "adapter has an active runtime"},
-		{"owned bindings", apiAdapterID, devices.ErrAdapterHasBindings, http.StatusConflict, "adapter owns bindings"},
-		{"internal", apiAdapterID, errors.New("SQLite unavailable"), http.StatusInternalServerError, "internal error"},
-	} {
-		t.Run(test.name, func(t *testing.T) {
-			t.Parallel()
-			failureStub := &stubDevices{}
-			if test.err != nil {
-				failureStub.archiveAdapter = func(context.Context, string) error { return test.err }
-			}
-			failureRouter, _ := testAPI(t, failureStub)
-			failure := performMethodRequest(failureRouter, http.MethodDelete, "/v1/adapters/"+test.id)
-			if failure.Code != test.status {
-				t.Fatalf("status = %d, body = %s", failure.Code, failure.Body.String())
-			}
-			var problem huma.ErrorModel
-			if err := json.Unmarshal(failure.Body.Bytes(), &problem); err != nil {
 				t.Fatal(err)
 			}
 			if problem.Detail != test.detail {
@@ -332,11 +283,4 @@ func TestHealthHistoryRoutesMapEvidenceAndScopedCursors(t *testing.T) {
 	if wrongRoute.Code != http.StatusBadRequest {
 		t.Fatalf("cross-route cursor status = %d, body = %s", wrongRoute.Code, wrongRoute.Body.String())
 	}
-}
-
-func performMethodRequest(handler http.Handler, method, path string) *httptest.ResponseRecorder {
-	request := httptest.NewRequest(method, path, nil)
-	response := httptest.NewRecorder()
-	handler.ServeHTTP(response, request)
-	return response
 }

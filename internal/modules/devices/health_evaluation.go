@@ -57,7 +57,6 @@ func (service *Service) ClaimAdapterRuntime(
 		ClaimID: params.ClaimID, RuntimeID: runtimeID, AdapterID: params.AdapterID,
 		SoftwareName: params.SoftwareName, SoftwareVersion: params.SoftwareVersion,
 		ClaimedAt: claimedAt, LeaseExpiresAt: claimedAt.Add(adapterLeaseDuration),
-		LeaseGraceUntil: service.leaseGraceUntil(claimedAt),
 	})
 }
 
@@ -73,8 +72,7 @@ func (service *Service) RecordAdapterHeartbeat(
 		AdapterID: heartbeat.AdapterID, RuntimeID: heartbeat.RuntimeID,
 		ExternalStatus: heartbeat.ExternalStatus, SourceObservedAt: heartbeat.SourceObservedAt.UTC(),
 		Reason: copyHealthReason(heartbeat.Reason), ReceivedAt: receivedAt,
-		LeaseExpiresAt:  receivedAt.Add(adapterLeaseDuration),
-		LeaseGraceUntil: service.leaseGraceUntil(receivedAt),
+		LeaseExpiresAt: receivedAt.Add(adapterLeaseDuration),
 	})
 }
 
@@ -92,7 +90,6 @@ func (service *Service) ReleaseAdapterRuntime(
 	releasedAt := service.dependencies.Now().UTC()
 	return service.stores.Runtimes.ReleaseAdapterRuntime(ctx, ReleaseRuntimeWrite{
 		AdapterID: adapterID, RuntimeID: runtimeID, ReleasedAt: releasedAt,
-		LeaseGraceUntil: service.leaseGraceUntil(releasedAt),
 	})
 }
 
@@ -105,18 +102,6 @@ func (service *Service) ExpireAdapterLeases(ctx context.Context, expiresAt time.
 		return nil
 	}
 	return service.stores.Runtimes.ExpireAdapterLeases(ctx, ExpireLeasesWrite{ExpiresAt: expiresAt})
-}
-
-func (service *Service) leaseGraceUntil(at time.Time) time.Time {
-	service.leaseExpiry.mutex.RLock()
-	defer service.leaseExpiry.mutex.RUnlock()
-	if service.leaseExpiry.paused {
-		return at.UTC().Add(adapterLeaseDuration)
-	}
-	if at.Before(service.leaseExpiry.graceUntil) {
-		return service.leaseExpiry.graceUntil
-	}
-	return time.Time{}
 }
 
 func (service *Service) leaseExpiryDeferred(at time.Time) bool {

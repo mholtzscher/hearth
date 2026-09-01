@@ -2,7 +2,6 @@
 SELECT active_runtime_id
 FROM adapter_instances
 WHERE adapter_id = sqlc.arg(adapter_id)
-  AND archived_at IS NULL
   AND active_runtime_id = CAST(sqlc.arg(runtime_id) AS TEXT);
 
 -- name: GetBinding :one
@@ -86,7 +85,7 @@ WHERE adapter_id = ? AND binding_key = ? AND entity_key = ?;
 -- name: GetAdapterAvailabilityBaseline :one
 SELECT active_runtime_id, health_status, health_reason_code
 FROM adapter_instances
-WHERE adapter_id = ? AND archived_at IS NULL;
+WHERE adapter_id = ?;
 
 -- name: InsertEntityAvailabilityBaseline :exec
 INSERT INTO health_transitions (

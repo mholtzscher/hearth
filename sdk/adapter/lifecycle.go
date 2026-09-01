@@ -153,8 +153,6 @@ func (session *Session) claim(ctx context.Context, config Config) error {
 			return errors.New("adapter claim rejection omitted error")
 		}
 		switch response.Data.Error.Code {
-		case "adapter_archived":
-			return &ClaimRejectedError{Code: ClaimAdapterArchived, Message: response.Data.Error.Message}
 		case "adapter_active":
 			if response.Data.Error.RetryAfter == nil {
 				return errors.New("active Adapter claim rejection omitted retry time")

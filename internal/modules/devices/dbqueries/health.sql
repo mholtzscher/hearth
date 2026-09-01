@@ -1,5 +1,5 @@
 -- name: GetAdapterInstance :one
-SELECT adapter_id, archived_at, active_runtime_id, health_runtime_id,
+SELECT adapter_id, active_runtime_id, health_runtime_id,
        health_status, health_reason_code, health_since, health_evidence_at,
        external_system_status, external_system_reason_code,
        external_system_source_observed_at, external_system_evidence_at
@@ -79,7 +79,6 @@ RETURNING receive_order;
 -- name: GetAdapterView :one
 SELECT
     ai.adapter_id,
-    ai.archived_at,
     ai.health_status,
     ai.health_reason_code,
     ai.health_since,
@@ -102,7 +101,6 @@ WHERE ai.adapter_id = ?;
 -- name: ListAdapterViewsFirstPage :many
 SELECT
     ai.adapter_id,
-    ai.archived_at,
     ai.health_status,
     ai.health_reason_code,
     ai.health_since,
@@ -120,14 +118,12 @@ SELECT
     ar.ended_at
 FROM adapter_instances AS ai
 LEFT JOIN adapter_runtimes AS ar ON ar.runtime_id = ai.health_runtime_id
-WHERE (sqlc.arg(include_archived) OR ai.archived_at IS NULL)
 ORDER BY ai.adapter_id
 LIMIT sqlc.arg(page_limit);
 
 -- name: ListAdapterViewsAfter :many
 SELECT
     ai.adapter_id,
-    ai.archived_at,
     ai.health_status,
     ai.health_reason_code,
     ai.health_since,
@@ -146,24 +142,8 @@ SELECT
 FROM adapter_instances AS ai
 LEFT JOIN adapter_runtimes AS ar ON ar.runtime_id = ai.health_runtime_id
 WHERE ai.adapter_id > sqlc.arg(after_adapter_id)
-  AND (sqlc.arg(include_archived) OR ai.archived_at IS NULL)
 ORDER BY ai.adapter_id
 LIMIT sqlc.arg(page_limit);
-
--- name: CountAdapterBindings :one
-SELECT count(*)
-FROM adapter_bindings
-WHERE adapter_id = ?;
-
--- name: ArchiveAdapter :exec
-UPDATE adapter_instances
-SET archived_at = ?, active_runtime_id = NULL, health_runtime_id = NULL,
-    health_status = NULL, health_reason_code = NULL,
-    health_since = NULL, health_evidence_at = NULL,
-    external_system_status = NULL, external_system_reason_code = NULL,
-    external_system_source_observed_at = NULL,
-    external_system_evidence_at = NULL
-WHERE adapter_id = ?;
 
 -- name: ListAdapterHealthHistoryFirstPage :many
 SELECT receive_order, status, source, reason_code, source_observed_at, observed_at

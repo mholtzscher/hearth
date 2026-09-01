@@ -38,15 +38,6 @@ func (service *Service) GetAdapter(ctx context.Context, adapterID string) (Adapt
 	return copyAdapterInstance(instance), nil
 }
 
-func (service *Service) ArchiveAdapter(ctx context.Context, adapterID string) error {
-	if !registrationSlugPattern.MatchString(adapterID) {
-		return errors.New("adapter ID must be a subject-safe slug")
-	}
-	return service.stores.Adapters.ArchiveAdapter(ctx, ArchiveAdapterParams{
-		AdapterID: adapterID, ArchivedAt: service.dependencies.Now().UTC(),
-	})
-}
-
 func (service *Service) ListAdapterHealthHistory(
 	ctx context.Context,
 	params ListAdapterHealthParams,
@@ -87,29 +78,20 @@ func copyHealthTransitionPage(page Page[HealthTransition]) Page[HealthTransition
 
 func copyAdapterInstance(instance AdapterInstance) AdapterInstance {
 	cloned := instance
-	if instance.ArchivedAt != nil {
-		archivedAt := *instance.ArchivedAt
-		cloned.ArchivedAt = &archivedAt
-	}
-	if instance.Health == nil {
-		return cloned
-	}
-	health := *instance.Health
-	health.Reason = copyHealthReason(instance.Health.Reason)
+	cloned.Health.Reason = copyHealthReason(instance.Health.Reason)
 	if instance.Health.Runtime != nil {
 		runtime := *instance.Health.Runtime
 		if instance.Health.Runtime.LastHeartbeatAt != nil {
 			lastHeartbeatAt := *instance.Health.Runtime.LastHeartbeatAt
 			runtime.LastHeartbeatAt = &lastHeartbeatAt
 		}
-		health.Runtime = &runtime
+		cloned.Health.Runtime = &runtime
 	}
 	if instance.Health.ExternalSystem != nil {
 		externalSystem := *instance.Health.ExternalSystem
 		externalSystem.Reason = copyHealthReason(instance.Health.ExternalSystem.Reason)
-		health.ExternalSystem = &externalSystem
+		cloned.Health.ExternalSystem = &externalSystem
 	}
-	cloned.Health = &health
 	return cloned
 }
 

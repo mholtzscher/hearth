@@ -10,44 +10,6 @@ import (
 	"database/sql"
 )
 
-const archiveAdapter = `-- name: ArchiveAdapter :exec
-UPDATE adapter_instances
-SET archived_at = ?, active_runtime_id = NULL, health_runtime_id = NULL,
-    health_status = NULL, health_reason_code = NULL,
-    health_since = NULL, health_evidence_at = NULL,
-    external_system_status = NULL, external_system_reason_code = NULL,
-    external_system_source_observed_at = NULL,
-    external_system_evidence_at = NULL
-WHERE adapter_id = ?
-`
-
-type ArchiveAdapterParams struct {
-	ArchivedAt sql.NullString
-	AdapterID  string
-}
-
-func (q *Queries) ArchiveAdapter(ctx context.Context, arg ArchiveAdapterParams) error {
-	_, err := q.db.ExecContext(ctx, archiveAdapter, arg.ArchivedAt, arg.AdapterID)
-	return err
-}
-
-const countAdapterBindings = `-- name: CountAdapterBindings :one
-SELECT count(*)
-FROM adapter_bindings
-WHERE adapter_id = ?
-`
-
-type CountAdapterBindingsParams struct {
-	AdapterID string
-}
-
-func (q *Queries) CountAdapterBindings(ctx context.Context, arg CountAdapterBindingsParams) (int64, error) {
-	row := q.db.QueryRowContext(ctx, countAdapterBindings, arg.AdapterID)
-	var count int64
-	err := row.Scan(&count)
-	return count, err
-}
-
 const createAdapterInstance = `-- name: CreateAdapterInstance :exec
 INSERT INTO adapter_instances (
     adapter_id, health_status, health_reason_code, health_since, health_evidence_at
@@ -56,10 +18,10 @@ INSERT INTO adapter_instances (
 
 type CreateAdapterInstanceParams struct {
 	AdapterID        string
-	HealthStatus     sql.NullString
+	HealthStatus     string
 	HealthReasonCode sql.NullString
-	HealthSince      sql.NullString
-	HealthEvidenceAt sql.NullString
+	HealthSince      string
+	HealthEvidenceAt string
 }
 
 func (q *Queries) CreateAdapterInstance(ctx context.Context, arg CreateAdapterInstanceParams) error {
@@ -114,7 +76,7 @@ func (q *Queries) EndRuntime(ctx context.Context, arg EndRuntimeParams) (int64, 
 }
 
 const getAdapterInstance = `-- name: GetAdapterInstance :one
-SELECT adapter_id, archived_at, active_runtime_id, health_runtime_id,
+SELECT adapter_id, active_runtime_id, health_runtime_id,
        health_status, health_reason_code, health_since, health_evidence_at,
        external_system_status, external_system_reason_code,
        external_system_source_observed_at, external_system_evidence_at
@@ -131,7 +93,6 @@ func (q *Queries) GetAdapterInstance(ctx context.Context, arg GetAdapterInstance
 	var i AdapterInstance
 	err := row.Scan(
 		&i.AdapterID,
-		&i.ArchivedAt,
 		&i.ActiveRuntimeID,
 		&i.HealthRuntimeID,
 		&i.HealthStatus,
@@ -149,7 +110,6 @@ func (q *Queries) GetAdapterInstance(ctx context.Context, arg GetAdapterInstance
 const getAdapterView = `-- name: GetAdapterView :one
 SELECT
     ai.adapter_id,
-    ai.archived_at,
     ai.health_status,
     ai.health_reason_code,
     ai.health_since,
@@ -176,11 +136,10 @@ type GetAdapterViewParams struct {
 
 type GetAdapterViewRow struct {
 	AdapterID                      string
-	ArchivedAt                     sql.NullString
-	HealthStatus                   sql.NullString
+	HealthStatus                   string
 	HealthReasonCode               sql.NullString
-	HealthSince                    sql.NullString
-	HealthEvidenceAt               sql.NullString
+	HealthSince                    string
+	HealthEvidenceAt               string
 	ExternalSystemStatus           sql.NullString
 	ExternalSystemReasonCode       sql.NullString
 	ExternalSystemSourceObservedAt sql.NullString
@@ -199,7 +158,6 @@ func (q *Queries) GetAdapterView(ctx context.Context, arg GetAdapterViewParams) 
 	var i GetAdapterViewRow
 	err := row.Scan(
 		&i.AdapterID,
-		&i.ArchivedAt,
 		&i.HealthStatus,
 		&i.HealthReasonCode,
 		&i.HealthSince,
@@ -529,7 +487,6 @@ func (q *Queries) ListAdapterHealthHistoryFirstPage(ctx context.Context, arg Lis
 const listAdapterViewsAfter = `-- name: ListAdapterViewsAfter :many
 SELECT
     ai.adapter_id,
-    ai.archived_at,
     ai.health_status,
     ai.health_reason_code,
     ai.health_since,
@@ -548,24 +505,21 @@ SELECT
 FROM adapter_instances AS ai
 LEFT JOIN adapter_runtimes AS ar ON ar.runtime_id = ai.health_runtime_id
 WHERE ai.adapter_id > ?1
-  AND (?2 OR ai.archived_at IS NULL)
 ORDER BY ai.adapter_id
-LIMIT ?3
+LIMIT ?2
 `
 
 type ListAdapterViewsAfterParams struct {
-	AfterAdapterID  string
-	IncludeArchived interface{}
-	PageLimit       int64
+	AfterAdapterID string
+	PageLimit      int64
 }
 
 type ListAdapterViewsAfterRow struct {
 	AdapterID                      string
-	ArchivedAt                     sql.NullString
-	HealthStatus                   sql.NullString
+	HealthStatus                   string
 	HealthReasonCode               sql.NullString
-	HealthSince                    sql.NullString
-	HealthEvidenceAt               sql.NullString
+	HealthSince                    string
+	HealthEvidenceAt               string
 	ExternalSystemStatus           sql.NullString
 	ExternalSystemReasonCode       sql.NullString
 	ExternalSystemSourceObservedAt sql.NullString
@@ -580,7 +534,7 @@ type ListAdapterViewsAfterRow struct {
 }
 
 func (q *Queries) ListAdapterViewsAfter(ctx context.Context, arg ListAdapterViewsAfterParams) ([]ListAdapterViewsAfterRow, error) {
-	rows, err := q.db.QueryContext(ctx, listAdapterViewsAfter, arg.AfterAdapterID, arg.IncludeArchived, arg.PageLimit)
+	rows, err := q.db.QueryContext(ctx, listAdapterViewsAfter, arg.AfterAdapterID, arg.PageLimit)
 	if err != nil {
 		return nil, err
 	}
@@ -590,7 +544,6 @@ func (q *Queries) ListAdapterViewsAfter(ctx context.Context, arg ListAdapterView
 		var i ListAdapterViewsAfterRow
 		if err := rows.Scan(
 			&i.AdapterID,
-			&i.ArchivedAt,
 			&i.HealthStatus,
 			&i.HealthReasonCode,
 			&i.HealthSince,
@@ -623,7 +576,6 @@ func (q *Queries) ListAdapterViewsAfter(ctx context.Context, arg ListAdapterView
 const listAdapterViewsFirstPage = `-- name: ListAdapterViewsFirstPage :many
 SELECT
     ai.adapter_id,
-    ai.archived_at,
     ai.health_status,
     ai.health_reason_code,
     ai.health_since,
@@ -641,23 +593,20 @@ SELECT
     ar.ended_at
 FROM adapter_instances AS ai
 LEFT JOIN adapter_runtimes AS ar ON ar.runtime_id = ai.health_runtime_id
-WHERE (?1 OR ai.archived_at IS NULL)
 ORDER BY ai.adapter_id
-LIMIT ?2
+LIMIT ?1
 `
 
 type ListAdapterViewsFirstPageParams struct {
-	IncludeArchived interface{}
-	PageLimit       int64
+	PageLimit int64
 }
 
 type ListAdapterViewsFirstPageRow struct {
 	AdapterID                      string
-	ArchivedAt                     sql.NullString
-	HealthStatus                   sql.NullString
+	HealthStatus                   string
 	HealthReasonCode               sql.NullString
-	HealthSince                    sql.NullString
-	HealthEvidenceAt               sql.NullString
+	HealthSince                    string
+	HealthEvidenceAt               string
 	ExternalSystemStatus           sql.NullString
 	ExternalSystemReasonCode       sql.NullString
 	ExternalSystemSourceObservedAt sql.NullString
@@ -672,7 +621,7 @@ type ListAdapterViewsFirstPageRow struct {
 }
 
 func (q *Queries) ListAdapterViewsFirstPage(ctx context.Context, arg ListAdapterViewsFirstPageParams) ([]ListAdapterViewsFirstPageRow, error) {
-	rows, err := q.db.QueryContext(ctx, listAdapterViewsFirstPage, arg.IncludeArchived, arg.PageLimit)
+	rows, err := q.db.QueryContext(ctx, listAdapterViewsFirstPage, arg.PageLimit)
 	if err != nil {
 		return nil, err
 	}
@@ -682,7 +631,6 @@ func (q *Queries) ListAdapterViewsFirstPage(ctx context.Context, arg ListAdapter
 		var i ListAdapterViewsFirstPageRow
 		if err := rows.Scan(
 			&i.AdapterID,
-			&i.ArchivedAt,
 			&i.HealthStatus,
 			&i.HealthReasonCode,
 			&i.HealthSince,
@@ -975,10 +923,10 @@ WHERE adapter_id = ?
 type UpdateAdapterCurrentHealthParams struct {
 	ActiveRuntimeID                sql.NullString
 	HealthRuntimeID                sql.NullString
-	HealthStatus                   sql.NullString
+	HealthStatus                   string
 	HealthReasonCode               sql.NullString
-	HealthSince                    sql.NullString
-	HealthEvidenceAt               sql.NullString
+	HealthSince                    string
+	HealthEvidenceAt               string
 	ExternalSystemStatus           sql.NullString
 	ExternalSystemReasonCode       sql.NullString
 	ExternalSystemSourceObservedAt sql.NullString

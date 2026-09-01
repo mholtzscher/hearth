@@ -26,14 +26,11 @@ type HealthReasonBody struct {
 }
 
 type AdapterBody struct {
-	ID         string             `json:"id"`
-	ArchivedAt *string            `json:"archived_at,omitempty"`
-	Health     *AdapterHealthBody `json:"health"`
+	ID     string            `json:"id"`
+	Health AdapterHealthBody `json:"health"`
 }
 
 type AdapterHealthBody struct {
-	// Huma uses this ignored marker to emit AdapterHealthBody as an object-or-null schema.
-	_              struct{}                    `json:"-"                         nullable:"true"`
 	Status         string                      `json:"status"`
 	Since          string                      `json:"since"`
 	EvidenceAt     string                      `json:"evidence_at"`

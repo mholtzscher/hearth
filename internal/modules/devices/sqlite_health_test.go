@@ -19,7 +19,7 @@ const (
 	testThirdRuntime  = RuntimeID("run_01890f47-7a6b-7c4d-8e9f-0123456789ad")
 )
 
-func TestSQLiteAdapterClaimIsIdempotentAndFencedByLease(t *testing.T) {
+func TestSQLiteAdapterClaimIsIdempotentAndFencedUntilSupervisorExpiry(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	database := openMigratedDatabase(t, filepath.Join(t.TempDir(), "hearth.db"))
@@ -62,9 +62,19 @@ func TestSQLiteAdapterClaimIsIdempotentAndFencedByLease(t *testing.T) {
 	}
 
 	takeover := testClaimWrite(testSecondClaimID, testSecondRuntime, first.LeaseExpiresAt)
+	_, err = repository.ClaimAdapterRuntime(ctx, takeover)
+	activeErr = nil
+	if !errors.As(err, &activeErr) || !activeErr.RetryAfter.Equal(first.LeaseExpiresAt) {
+		t.Fatalf("claim before supervisor expiry error = %v", err)
+	}
+	if expiryErr := repository.ExpireAdapterLeases(ctx, ExpireLeasesWrite{
+		ExpiresAt: first.LeaseExpiresAt,
+	}); expiryErr != nil {
+		t.Fatal(expiryErr)
+	}
 	claim, err := repository.ClaimAdapterRuntime(ctx, takeover)
 	if err != nil || claim.RuntimeID != testSecondRuntime {
-		t.Fatalf("takeover claim = %#v, %v", claim, err)
+		t.Fatalf("takeover claim after supervisor expiry = %#v, %v", claim, err)
 	}
 	assertTableCount(t, database, "adapter_runtimes", 2)
 	var activeRuntime, endedAt, endReason string
@@ -93,7 +103,7 @@ func TestSQLiteAdapterClaimIsIdempotentAndFencedByLease(t *testing.T) {
 	}
 }
 
-func TestSQLiteOverdueRuntimeTrafficCannotReviveExpiredLease(t *testing.T) {
+func TestSQLiteActiveRuntimeTrafficCanRenewOrReleaseOverdueLease(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	database := openMigratedDatabase(t, filepath.Join(t.TempDir(), "hearth.db"))
@@ -104,42 +114,43 @@ func TestSQLiteOverdueRuntimeTrafficCannotReviveExpiredLease(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	overdueAt := first.LeaseExpiresAt.Add(time.Nanosecond)
-	_, err := repository.RecordAdapterHeartbeat(ctx, HeartbeatWrite{
+	overdueAt := first.LeaseExpiresAt.Add(time.Second)
+	renewed, err := repository.RecordAdapterHeartbeat(ctx, HeartbeatWrite{
 		AdapterID: "simulator", RuntimeID: testRuntimeID, ExternalStatus: AdapterHealthHealthy,
 		SourceObservedAt: overdueAt, ReceivedAt: overdueAt,
 		LeaseExpiresAt: overdueAt.Add(adapterLeaseDuration),
 	})
-	if !errors.Is(err, ErrRuntimeFenced) {
-		t.Fatalf("overdue heartbeat error = %v", err)
+	if err != nil || !renewed.LeaseExpiresAt.Equal(overdueAt.Add(adapterLeaseDuration)) {
+		t.Fatalf("overdue heartbeat = %#v, %v", renewed, err)
 	}
 	adapter, err := repository.GetAdapter(ctx, "simulator")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if adapter.Health == nil || adapter.Health.Reason == nil ||
-		adapter.Health.Reason.Code != "hearth.heartbeat_expired" || adapter.Health.Runtime == nil ||
-		adapter.Health.Runtime.Status != runtimeStatusOffline || adapter.Health.Runtime.LastHeartbeatAt != nil {
+	if adapter.Health.Status != AdapterHealthHealthy || adapter.Health.Runtime == nil ||
+		adapter.Health.Runtime.Status != runtimeStatusOnline || adapter.Health.Runtime.LastHeartbeatAt == nil ||
+		!adapter.Health.Runtime.LastHeartbeatAt.Equal(overdueAt) {
 		t.Fatalf("Adapter after overdue heartbeat = %#v", adapter)
 	}
-	assertTableCount(t, database, "health_transitions", 2)
 
 	second := testClaimWrite(testSecondClaimID, testSecondRuntime, overdueAt.Add(time.Second))
-	if _, claimErr := repository.ClaimAdapterRuntime(ctx, second); claimErr != nil {
-		t.Fatal(claimErr)
+	_, claimErr := repository.ClaimAdapterRuntime(ctx, second)
+	var activeErr *AdapterActiveError
+	if !errors.As(claimErr, &activeErr) || !activeErr.RetryAfter.Equal(renewed.LeaseExpiresAt) {
+		t.Fatalf("claim after overdue heartbeat error = %v", claimErr)
 	}
-	releaseErr := repository.ReleaseAdapterRuntime(ctx, ReleaseRuntimeWrite{
-		AdapterID: "simulator", RuntimeID: testSecondRuntime, ReleasedAt: second.LeaseExpiresAt,
-	})
-	if !errors.Is(releaseErr, ErrRuntimeFenced) {
-		t.Fatalf("overdue release error = %v", releaseErr)
+	releasedAt := renewed.LeaseExpiresAt.Add(time.Second)
+	if releaseErr := repository.ReleaseAdapterRuntime(ctx, ReleaseRuntimeWrite{
+		AdapterID: "simulator", RuntimeID: testRuntimeID, ReleasedAt: releasedAt,
+	}); releaseErr != nil {
+		t.Fatalf("overdue release: %v", releaseErr)
 	}
 	adapter, err = repository.GetAdapter(ctx, "simulator")
-	if err != nil || adapter.Health == nil || adapter.Health.Reason == nil ||
-		adapter.Health.Reason.Code != "hearth.heartbeat_expired" {
+	if err != nil || adapter.Health.Reason == nil || adapter.Health.Reason.Code != "hearth.stopped" ||
+		adapter.Health.Runtime == nil || adapter.Health.Runtime.Status != runtimeStatusOffline {
 		t.Fatalf("Adapter after overdue release = %#v, %v", adapter, err)
 	}
-	assertTableCount(t, database, "health_transitions", 4)
+	assertTableCount(t, database, "health_transitions", 3)
 }
 
 func TestSQLiteHeartbeatRefreshesEvidenceWithoutFabricatingTransitions(t *testing.T) {
@@ -196,8 +207,8 @@ func TestSQLiteHeartbeatRefreshesEvidenceWithoutFabricatingTransitions(t *testin
 	if err != nil {
 		t.Fatal(err)
 	}
-	if adapter.Health == nil || adapter.Health.Status != AdapterHealthUnhealthy ||
-		adapter.Health.Reason == nil || adapter.Health.Reason.Code != "hearth.network_unreachable" ||
+	if adapter.Health.Status != AdapterHealthUnhealthy || adapter.Health.Reason == nil ||
+		adapter.Health.Reason.Code != "hearth.network_unreachable" ||
 		adapter.Health.Runtime == nil || adapter.Health.Runtime.LastHeartbeatAt == nil ||
 		!adapter.Health.Runtime.LastHeartbeatAt.Equal(unhealthy.ReceivedAt) {
 		t.Fatalf("current Adapter = %#v", adapter)
@@ -223,7 +234,6 @@ func TestSQLiteHeartbeatRefreshesEvidenceWithoutFabricatingTransitions(t *testin
 	}
 }
 
-//nolint:gocognit,gocyclo,cyclop // The lifecycle assertions are easier to audit in chronological order.
 func TestSQLiteReleaseAndExpiryPersistOfflineHealth(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
@@ -246,8 +256,8 @@ func TestSQLiteReleaseAndExpiryPersistOfflineHealth(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if adapter.Health == nil || adapter.Health.Status != AdapterHealthUnhealthy ||
-		adapter.Health.Reason == nil || adapter.Health.Reason.Code != "hearth.stopped" ||
+	if adapter.Health.Status != AdapterHealthUnhealthy || adapter.Health.Reason == nil ||
+		adapter.Health.Reason.Code != "hearth.stopped" ||
 		adapter.Health.Runtime == nil || adapter.Health.Runtime.Status != "offline" {
 		t.Fatalf("released Adapter = %#v", adapter)
 	}
@@ -269,49 +279,15 @@ func TestSQLiteReleaseAndExpiryPersistOfflineHealth(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if adapter.Health == nil || adapter.Health.Reason == nil ||
-		adapter.Health.Reason.Code != "hearth.heartbeat_expired" {
+	if adapter.Health.Reason == nil || adapter.Health.Reason.Code != "hearth.heartbeat_expired" {
 		t.Fatalf("expired Adapter = %#v", adapter)
 	}
 
-	archivedAt := second.LeaseExpiresAt.Add(time.Second)
-	if archiveErr := repository.ArchiveAdapter(ctx, ArchiveAdapterParams{
-		AdapterID: "simulator", ArchivedAt: archivedAt,
-	}); archiveErr != nil {
-		t.Fatal(archiveErr)
-	}
-	if repeatedArchiveErr := repository.ArchiveAdapter(ctx, ArchiveAdapterParams{
-		AdapterID: "simulator", ArchivedAt: archivedAt.Add(time.Second),
-	}); repeatedArchiveErr != nil {
-		t.Fatalf("idempotent archive: %v", repeatedArchiveErr)
-	}
-	adapter, err = repository.GetAdapter(ctx, "simulator")
-	if err != nil || adapter.ArchivedAt == nil || adapter.Health != nil {
-		t.Fatalf("archived Adapter = %#v, %v", adapter, err)
-	}
-	current, err := repository.ListAdapters(ctx, ListAdaptersParams{Limit: 10})
-	if err != nil || len(current.Items) != 0 {
-		t.Fatalf("default Adapter list = %#v, %v", current, err)
-	}
-	includingArchived, err := repository.ListAdapters(ctx, ListAdaptersParams{
-		Limit: 10, IncludeArchived: true,
-	})
-	if err != nil || len(includingArchived.Items) != 1 || includingArchived.Items[0].Health != nil {
-		t.Fatalf("archived Adapter list = %#v, %v", includingArchived, err)
-	}
 	history, err := repository.ListAdapterHealthHistory(ctx, ListAdapterHealthParams{
 		AdapterID: "simulator", Limit: 10,
 	})
 	if err != nil || len(history.Items) != 4 {
-		t.Fatalf("archived Adapter history = %#v, %v", history, err)
-	}
-	_, err = repository.ClaimAdapterRuntime(ctx, testClaimWrite(
-		testThirdClaimID,
-		testThirdRuntime,
-		archivedAt.Add(time.Second),
-	))
-	if !errors.Is(err, ErrAdapterArchived) {
-		t.Fatalf("archived claim error = %v", err)
+		t.Fatalf("Adapter history = %#v, %v", history, err)
 	}
 }
 
@@ -517,7 +493,7 @@ func TestSQLiteAvailabilityBatchRollsBackAndInvalidatesOnUnhealthy(t *testing.T)
 	}
 }
 
-func TestSQLiteAvailabilityFencesRuntimeAtLeaseBoundary(t *testing.T) {
+func TestSQLiteAvailabilityDoesNotExpireActiveRuntime(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	database := openMigratedDatabase(t, filepath.Join(t.TempDir(), "hearth.db"))
@@ -543,7 +519,7 @@ func TestSQLiteAvailabilityFencesRuntimeAtLeaseBoundary(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	beforeExpiry := leaseExpiresAt.Add(-time.Nanosecond)
+	beforeExpiry := leaseExpiresAt.Add(-time.Second)
 	report := EntityAvailabilityReport{
 		EntityID: binding.Entities[0].EntityID, Status: EntityAvailabilityAvailable,
 		SourceObservedAt: beforeExpiry,
@@ -554,19 +530,29 @@ func TestSQLiteAvailabilityFencesRuntimeAtLeaseBoundary(t *testing.T) {
 	}); reportErr != nil {
 		t.Fatalf("report before lease expiry: %v", reportErr)
 	}
-	_, err = repository.ReportEntityAvailability(ctx, AvailabilityBatchWrite{
+	if _, reportErr := repository.ReportEntityAvailability(ctx, AvailabilityBatchWrite{
 		AdapterID: "simulator", RuntimeID: testRuntimeID,
 		Reports: []EntityAvailabilityReport{report}, ReportedAt: leaseExpiresAt,
-	})
-	if !errors.Is(err, ErrRuntimeFenced) {
-		t.Fatalf("report at lease expiry error = %v", err)
+	}); reportErr != nil {
+		t.Fatalf("report at lease expiry: %v", reportErr)
+	}
+	assertTableCount(t, database, "entity_availability_current", 1)
+	adapter, err := repository.GetAdapter(ctx, "simulator")
+	if err != nil || adapter.Health.Status != AdapterHealthHealthy || adapter.Health.Runtime == nil ||
+		adapter.Health.Runtime.Status != runtimeStatusOnline {
+		t.Fatalf("Adapter after availability report = %#v, %v", adapter, err)
+	}
+	if expiryErr := repository.ExpireAdapterLeases(ctx, ExpireLeasesWrite{
+		ExpiresAt: leaseExpiresAt,
+	}); expiryErr != nil {
+		t.Fatal(expiryErr)
 	}
 	assertTableCount(t, database, "entity_availability_current", 0)
-	adapter, err := repository.GetAdapter(ctx, "simulator")
-	if err != nil || adapter.Health == nil || adapter.Health.Reason == nil ||
+	adapter, err = repository.GetAdapter(ctx, "simulator")
+	if err != nil || adapter.Health.Reason == nil ||
 		adapter.Health.Reason.Code != "hearth.heartbeat_expired" || adapter.Health.Runtime == nil ||
 		adapter.Health.Runtime.Status != runtimeStatusOffline {
-		t.Fatalf("Adapter after availability-triggered expiry = %#v, %v", adapter, err)
+		t.Fatalf("Adapter after supervisor expiry = %#v, %v", adapter, err)
 	}
 }
 

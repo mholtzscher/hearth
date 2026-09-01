@@ -94,10 +94,6 @@ func (*stubDevices) GetAdapter(context.Context, string) (devices.AdapterInstance
 	panic("unexpected GetAdapter call")
 }
 
-func (*stubDevices) ArchiveAdapter(context.Context, string) error {
-	panic("unexpected ArchiveAdapter call")
-}
-
 func (*stubDevices) ListAdapterHealthHistory(
 	context.Context,
 	devices.ListAdapterHealthParams,
@@ -268,17 +264,9 @@ func TestRuntimeOpenAPIContract(t *testing.T) {
 		"422",
 		"500",
 	)
-	assertRuntimeOpenAPIOperation(
-		t,
-		document.Paths["/v1/adapters/{adapter_id}"].Delete,
-		"archive-adapter",
-		"204",
-		"400",
-		"404",
-		"409",
-		"422",
-		"500",
-	)
+	if document.Paths["/v1/adapters/{adapter_id}"].Delete != nil {
+		t.Fatal("OpenAPI still exposes Adapter removal")
+	}
 	assertRuntimeOpenAPIOperation(
 		t,
 		document.Paths["/v1/adapters/{adapter_id}/health/history"].Get,
@@ -309,7 +297,7 @@ func TestRuntimeOpenAPIContract(t *testing.T) {
 		},
 		"AvailabilityBody": {"status", "source", "since", "evidence_at", "source_observed_at", "reason"},
 		"HealthReasonBody": {"code"},
-		"AdapterBody":      {"id", "archived_at", "health"},
+		"AdapterBody":      {"id", "health"},
 		"AdapterHealthBody": {
 			"status", "since", "evidence_at", "reason", "runtime", "external_system",
 		},
@@ -365,18 +353,6 @@ func TestRuntimeOpenAPIContract(t *testing.T) {
 	}
 	if !nullable {
 		t.Fatalf("OpenAPI StateBody is not nullable: %s", document.Components.Schemas["StateBody"])
-	}
-	if err := json.Unmarshal(document.Components.Schemas["AdapterHealthBody"], &stateSchema); err != nil {
-		t.Fatal(err)
-	}
-	nullable = false
-	for _, schemaType := range stateSchema.Type {
-		if schemaType == "null" {
-			nullable = true
-		}
-	}
-	if !nullable {
-		t.Fatalf("OpenAPI AdapterHealthBody is not nullable: %s", document.Components.Schemas["AdapterHealthBody"])
 	}
 }
 

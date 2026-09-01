@@ -65,16 +65,13 @@ func TestCursorCodecsRoundTripAndEnforceScope(t *testing.T) {
 		t.Fatal("command cursor accepted for another Entity")
 	}
 
-	adapterCursor, err := encodeAdaptersCursor(apiAdapterID, true)
+	adapterCursor, err := encodeAdaptersCursor(apiAdapterID)
 	if err != nil {
 		t.Fatal(err)
 	}
-	adapterID, err := decodeAdaptersCursor(adapterCursor, true)
+	adapterID, err := decodeAdaptersCursor(adapterCursor)
 	if err != nil || *adapterID != apiAdapterID {
 		t.Fatalf("Adapter cursor = %q, %v", adapterCursor, err)
-	}
-	if _, decodeErr := decodeAdaptersCursor(adapterCursor, false); decodeErr == nil {
-		t.Fatal("archived Adapter cursor accepted without its filter")
 	}
 
 	healthCursor, err := encodeAdapterHealthCursor(apiAdapterID, 42)

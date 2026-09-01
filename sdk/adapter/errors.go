@@ -12,19 +12,6 @@ var (
 	ErrRuntimeFenced    = errors.New("adapter: runtime fenced")
 )
 
-type ClaimRejectionCode string
-
-const ClaimAdapterArchived ClaimRejectionCode = "adapter_archived"
-
-type ClaimRejectedError struct {
-	Code    ClaimRejectionCode
-	Message string
-}
-
-func (err *ClaimRejectedError) Error() string {
-	return fmt.Sprintf("adapter claim rejected (%s): %s", err.Code, err.Message)
-}
-
 type RegistrationRejectionCode string
 
 const (

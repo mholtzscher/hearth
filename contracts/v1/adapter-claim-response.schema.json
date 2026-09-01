@@ -23,22 +23,12 @@
         "error": {
           "type": "object",
           "additionalProperties": false,
-          "required": ["code", "message"],
+          "required": ["code", "message", "retry_after"],
           "properties": {
-            "code": { "enum": ["adapter_active", "adapter_archived"] },
+            "code": { "const": "adapter_active" },
             "message": { "$ref": "urn:hearth:schema:common:v1#/$defs/safe_message" },
             "retry_after": { "$ref": "urn:hearth:schema:common:v1#/$defs/utc_timestamp" }
-          },
-          "oneOf": [
-            {
-              "properties": { "code": { "const": "adapter_active" } },
-              "required": ["retry_after"]
-            },
-            {
-              "properties": { "code": { "const": "adapter_archived" } },
-              "not": { "required": ["retry_after"] }
-            }
-          ]
+          }
         }
       },
       "oneOf": [

@@ -141,10 +141,6 @@ func TestSessionServerMapsLifecycleRejections(t *testing.T) {
 		claim.Error.RetryAfter == nil || *claim.Error.RetryAfter != retryAfter.Format(time.RFC3339Nano) {
 		t.Fatalf("active claim mapping = %#v, %t", claim, handled)
 	}
-	claim, handled = mapClaimResult(devices.RuntimeClaim{}, devices.ErrAdapterArchived)
-	if !handled || claim.Error == nil || claim.Error.Code != "adapter_archived" {
-		t.Fatalf("archived claim mapping = %#v, %t", claim, handled)
-	}
 	heartbeat, handled := mapHeartbeatResult(devices.HeartbeatResult{}, devices.ErrRuntimeFenced)
 	if !handled || heartbeat.Error == nil || heartbeat.Error.Code != "runtime_fenced" {
 		t.Fatalf("fenced heartbeat mapping = %#v, %t", heartbeat, handled)

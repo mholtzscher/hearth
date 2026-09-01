@@ -55,9 +55,8 @@ type AdapterHealth struct {
 }
 
 type AdapterInstance struct {
-	ID         string
-	ArchivedAt *time.Time
-	Health     *AdapterHealth
+	ID     string
+	Health AdapterHealth
 }
 
 type EntityAvailability struct {
@@ -107,7 +106,6 @@ type ClaimRuntimeWrite struct {
 	SoftwareVersion string
 	ClaimedAt       time.Time
 	LeaseExpiresAt  time.Time
-	LeaseGraceUntil time.Time
 }
 
 type HeartbeatWrite struct {
@@ -118,7 +116,6 @@ type HeartbeatWrite struct {
 	Reason           *HealthReason
 	ReceivedAt       time.Time
 	LeaseExpiresAt   time.Time
-	LeaseGraceUntil  time.Time
 }
 
 type HeartbeatResult struct {
@@ -126,10 +123,9 @@ type HeartbeatResult struct {
 }
 
 type ReleaseRuntimeWrite struct {
-	AdapterID       string
-	RuntimeID       RuntimeID
-	ReleasedAt      time.Time
-	LeaseGraceUntil time.Time
+	AdapterID  string
+	RuntimeID  RuntimeID
+	ReleasedAt time.Time
 }
 
 type ExpireLeasesWrite struct {
@@ -144,22 +140,15 @@ type EntityAvailabilityReport struct {
 }
 
 type AvailabilityBatchWrite struct {
-	AdapterID       string
-	RuntimeID       RuntimeID
-	Reports         []EntityAvailabilityReport
-	ReportedAt      time.Time
-	LeaseGraceUntil time.Time
+	AdapterID  string
+	RuntimeID  RuntimeID
+	Reports    []EntityAvailabilityReport
+	ReportedAt time.Time
 }
 
 type ListAdaptersParams struct {
-	AfterID         *string
-	Limit           int
-	IncludeArchived bool
-}
-
-type ArchiveAdapterParams struct {
-	AdapterID  string
-	ArchivedAt time.Time
+	AfterID *string
+	Limit   int
 }
 
 type ListAdapterHealthParams struct {

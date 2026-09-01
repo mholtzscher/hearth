@@ -3,15 +3,7 @@ package api
 import "github.com/mholtzscher/hearth/internal/modules/devices"
 
 func adapterBody(instance devices.AdapterInstance) AdapterBody {
-	body := AdapterBody{ID: instance.ID}
-	if instance.ArchivedAt != nil {
-		value := formatTime(*instance.ArchivedAt)
-		body.ArchivedAt = &value
-	}
-	if instance.Health == nil {
-		return body
-	}
-	health := &AdapterHealthBody{
+	health := AdapterHealthBody{
 		Status: string(instance.Health.Status), Since: formatTime(instance.Health.Since),
 		EvidenceAt: formatTime(instance.Health.EvidenceAt), Reason: healthReasonBody(instance.Health.Reason),
 	}
@@ -34,8 +26,7 @@ func adapterBody(instance devices.AdapterInstance) AdapterBody {
 			EvidenceAt: formatTime(external.EvidenceAt), Reason: healthReasonBody(external.Reason),
 		}
 	}
-	body.Health = health
-	return body
+	return AdapterBody{ID: instance.ID, Health: health}
 }
 
 func healthTransitionBody(transition devices.HealthTransition) HealthTransitionBody {

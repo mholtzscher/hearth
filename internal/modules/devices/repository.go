@@ -17,11 +17,9 @@ var (
 	ErrInvalidCommand      = errors.New("invalid command")
 	ErrAdapterNotFound     = errors.New("adapter not found")
 	ErrAdapterActive       = errors.New("adapter already has an active runtime")
-	ErrAdapterArchived     = errors.New("adapter is archived")
 	ErrAdapterUnhealthy    = errors.New("adapter unhealthy")
 	ErrEntityUnavailable   = errors.New("entity unavailable")
 	ErrRuntimeFenced       = errors.New("adapter runtime fenced")
-	ErrAdapterHasBindings  = errors.New("adapter owns bindings")
 	ErrUpstreamRejected    = errors.New("upstream rejected")
 	ErrOutcomeTimeout      = errors.New("command outcome timeout")
 	ErrEntityDisabled      = errors.New("entity disabled")
@@ -79,7 +77,6 @@ type RuntimeRepository interface {
 type AdapterRepository interface {
 	AdapterReader
 	ListAdapters(context.Context, ListAdaptersParams) (Page[AdapterInstance], error)
-	ArchiveAdapter(context.Context, ArchiveAdapterParams) error
 	ListAdapterHealthHistory(context.Context, ListAdapterHealthParams) (Page[HealthTransition], error)
 	ListEntityAvailabilityHistory(context.Context, ListEntityAvailabilityParams) (Page[HealthTransition], error)
 }

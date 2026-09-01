@@ -120,12 +120,6 @@ func mapClaimResult(claim devices.RuntimeClaim, err error) (adapterClaimResponse
 			},
 		}, true
 	}
-	if errors.Is(err, devices.ErrAdapterArchived) {
-		return adapterClaimResponse{
-			Status: statusRejected,
-			Error:  &adapterClaimError{Code: "adapter_archived", Message: "Adapter is archived"},
-		}, true
-	}
 	return adapterClaimResponse{}, false
 }
 

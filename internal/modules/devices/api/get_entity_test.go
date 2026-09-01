@@ -32,7 +32,6 @@ type stubDevices struct {
 	listEntityCommands       func(context.Context, devices.ListEntityCommandsParams) (devices.Page[devices.CommandRecord], error)
 	listAdapters             func(context.Context, devices.ListAdaptersParams) (devices.Page[devices.AdapterInstance], error)
 	getAdapter               func(context.Context, string) (devices.AdapterInstance, error)
-	archiveAdapter           func(context.Context, string) error
 	listAdapterHealthHistory func(
 		context.Context,
 		devices.ListAdapterHealthParams,
@@ -129,13 +128,6 @@ func (stub *stubDevices) GetAdapter(ctx context.Context, adapterID string) (devi
 		panic("unexpected GetAdapter call")
 	}
 	return stub.getAdapter(ctx, adapterID)
-}
-
-func (stub *stubDevices) ArchiveAdapter(ctx context.Context, adapterID string) error {
-	if stub.archiveAdapter == nil {
-		panic("unexpected ArchiveAdapter call")
-	}
-	return stub.archiveAdapter(ctx, adapterID)
 }
 
 func (stub *stubDevices) ListAdapterHealthHistory(

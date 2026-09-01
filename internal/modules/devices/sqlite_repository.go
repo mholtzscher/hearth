@@ -321,7 +321,7 @@ func createEntityAvailabilityBaseline(
 	status := string(EntityAvailabilityUnknown)
 	source := "adapter_health"
 	reasonCode := adapter.HealthReasonCode
-	switch AdapterHealthStatus(adapter.HealthStatus.String) {
+	switch AdapterHealthStatus(adapter.HealthStatus) {
 	case AdapterHealthHealthy:
 		source = healthSourceCore
 		reasonCode = nullableText("hearth.awaiting_entity_report")
@@ -487,7 +487,7 @@ func (repository *SQLiteRepository) CreateCommand(ctx context.Context, command C
 			return CommandRecord{}, fmt.Errorf("get Adapter health for command: %w", healthErr)
 		}
 		if errors.Is(healthErr, sql.ErrNoRows) || !instance.ActiveRuntimeID.Valid ||
-			!instance.HealthStatus.Valid || instance.HealthStatus.String == string(AdapterHealthUnhealthy) {
+			instance.HealthStatus == string(AdapterHealthUnhealthy) {
 			completedAt := command.RequestedAt
 			failureCode := CommandFailureAdapterUnhealthy
 			command.Status = CommandStatusAdapterUnhealthy

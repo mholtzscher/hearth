@@ -26,7 +26,6 @@ type Devices interface {
 	ListEntityCommands(context.Context, devices.ListEntityCommandsParams) (devices.Page[devices.CommandRecord], error)
 	ListAdapters(context.Context, devices.ListAdaptersParams) (devices.Page[devices.AdapterInstance], error)
 	GetAdapter(context.Context, string) (devices.AdapterInstance, error)
-	ArchiveAdapter(context.Context, string) error
 	ListAdapterHealthHistory(
 		context.Context,
 		devices.ListAdapterHealthParams,
@@ -111,13 +110,6 @@ func Register(api huma.API, service Devices) {
 		Summary: "Get an Adapter and its current health", Tags: []string{adaptersTag},
 		Errors: []int{http.StatusBadRequest, http.StatusNotFound, http.StatusInternalServerError},
 	}, handler.GetAdapter)
-	huma.Register(api, huma.Operation{
-		OperationID: "archive-adapter", Method: http.MethodDelete, Path: "/adapters/{adapter_id}",
-		Summary: "Archive an Adapter", Tags: []string{adaptersTag}, DefaultStatus: http.StatusNoContent,
-		Errors: []int{
-			http.StatusBadRequest, http.StatusNotFound, http.StatusConflict, http.StatusInternalServerError,
-		},
-	}, handler.ArchiveAdapter)
 	huma.Register(api, huma.Operation{
 		OperationID: "list-adapter-health-history", Method: http.MethodGet,
 		Path: "/adapters/{adapter_id}/health/history", Summary: "List an Adapter's health history",

@@ -30,11 +30,10 @@ CREATE TABLE adapter_instances (
         AND substr(adapter_id, 1, 1) GLOB '[a-z0-9]'
         AND adapter_id NOT GLOB '*[^a-z0-9_-]*'
     ),
-    archived_at                       TEXT,
     active_runtime_id                 TEXT REFERENCES adapter_runtimes(runtime_id),
     health_runtime_id                 TEXT REFERENCES adapter_runtimes(runtime_id),
-    health_status                     TEXT CHECK (
-        health_status IS NULL OR health_status IN ('unknown', 'healthy', 'unhealthy')
+    health_status                     TEXT NOT NULL CHECK (
+        health_status IN ('unknown', 'healthy', 'unhealthy')
     ),
     health_reason_code                TEXT CHECK (
         health_reason_code IS NULL OR (
@@ -43,8 +42,8 @@ CREATE TABLE adapter_instances (
             AND health_reason_code NOT GLOB '*[^a-z0-9._-]*'
         )
     ),
-    health_since                      TEXT,
-    health_evidence_at                TEXT,
+    health_since                      TEXT NOT NULL,
+    health_evidence_at                TEXT NOT NULL,
     external_system_status            TEXT CHECK (
         external_system_status IS NULL OR external_system_status IN ('unknown', 'healthy', 'unhealthy')
     ),
@@ -58,21 +57,8 @@ CREATE TABLE adapter_instances (
     external_system_source_observed_at TEXT,
     external_system_evidence_at       TEXT,
     CHECK (
-        (archived_at IS NULL AND health_status IS NOT NULL
-            AND health_since IS NOT NULL AND health_evidence_at IS NOT NULL)
-        OR (archived_at IS NOT NULL
-            AND active_runtime_id IS NULL AND health_runtime_id IS NULL
-            AND health_status IS NULL AND health_reason_code IS NULL
-            AND health_since IS NULL AND health_evidence_at IS NULL
-            AND external_system_status IS NULL
-            AND external_system_reason_code IS NULL
-            AND external_system_source_observed_at IS NULL
-            AND external_system_evidence_at IS NULL)
-    ),
-    CHECK (
         (health_status = 'healthy' AND health_reason_code IS NULL)
         OR (health_status IN ('unknown', 'unhealthy') AND health_reason_code IS NOT NULL)
-        OR health_status IS NULL
     ),
     CHECK (
         (external_system_status IS NULL
@@ -334,7 +320,7 @@ SELECT
 FROM entities AS e
 JOIN adapter_entity_mappings AS m ON m.entity_id = e.id
 LEFT JOIN entity_states AS s ON s.entity_id = e.id
-LEFT JOIN adapter_instances AS ai ON ai.adapter_id = m.adapter_id AND ai.archived_at IS NULL
+LEFT JOIN adapter_instances AS ai ON ai.adapter_id = m.adapter_id
 LEFT JOIN entity_availability_current AS current
     ON current.entity_id = e.id
     AND current.adapter_id = m.adapter_id;

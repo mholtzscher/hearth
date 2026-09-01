@@ -29,13 +29,6 @@ type commandCursor struct {
 	ID          string `json:"id"`
 }
 
-type adapterCursor struct {
-	Version         int    `json:"v"`
-	Resource        string `json:"resource"`
-	ID              string `json:"id"`
-	IncludeArchived bool   `json:"include_archived"`
-}
-
 type healthCursor struct {
 	Version      int    `json:"v"`
 	Resource     string `json:"resource"`
@@ -107,19 +100,17 @@ func decodeEntityCursor(value, resource, deviceID string) (*devices.EntityID, er
 	return &id, nil
 }
 
-func encodeAdaptersCursor(id string, includeArchived bool) (string, error) {
-	return encodeCursor(adapterCursor{
-		Version: cursorVersion, Resource: "adapters", ID: id, IncludeArchived: includeArchived,
-	})
+func encodeAdaptersCursor(id string) (string, error) {
+	return encodeCursor(idCursor{Version: cursorVersion, Resource: "adapters", ID: id})
 }
 
-func decodeAdaptersCursor(value string, includeArchived bool) (*string, error) {
-	var cursor adapterCursor
+func decodeAdaptersCursor(value string) (*string, error) {
+	var cursor idCursor
 	if err := decodeCursor(value, &cursor); err != nil {
 		return nil, err
 	}
 	if cursor.Version != cursorVersion || cursor.Resource != "adapters" ||
-		cursor.IncludeArchived != includeArchived || !validAdapterID(cursor.ID) {
+		cursor.DeviceID != "" || !validAdapterID(cursor.ID) {
 		return nil, errors.New("invalid Adapter cursor scope")
 	}
 	return &cursor.ID, nil

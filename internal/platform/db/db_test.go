@@ -66,6 +66,15 @@ func TestMigrateEmptySQLiteDatabase(t *testing.T) {
 			t.Fatalf("%s still contains availability_epoch", table)
 		}
 	}
+	var archivedColumns int
+	if err := database.QueryRowContext(ctx,
+		"SELECT count(*) FROM pragma_table_info('adapter_instances') WHERE name = 'archived_at'",
+	).Scan(&archivedColumns); err != nil {
+		t.Fatal(err)
+	}
+	if archivedColumns != 0 {
+		t.Fatal("adapter_instances still contains archived_at")
+	}
 
 	assertIndexColumns(t, database, "entities_device_id_idx", "device_id,id")
 	assertIndexColumns(t, database, "commands_entity_requested_idx", "entity_id,requested_at,id")

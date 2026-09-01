@@ -217,9 +217,10 @@ func TestClaimAndTypedRejectionBranches(t *testing.T) {
 	if err := schemas[contractsv1.AdapterClaimResponseSchemaID].Validate(claim); err == nil {
 		t.Fatal("adapter_active rejection without retry_after unexpectedly accepted")
 	}
+	errorData["retry_after"] = "2026-08-29T15:00:16Z"
 	errorData["code"] = "adapter_archived"
-	if err := schemas[contractsv1.AdapterClaimResponseSchemaID].Validate(claim); err != nil {
-		t.Fatalf("adapter_archived rejection rejected: %v", err)
+	if err := schemas[contractsv1.AdapterClaimResponseSchemaID].Validate(claim); err == nil {
+		t.Fatal("removed adapter_archived rejection unexpectedly accepted")
 	}
 
 	for _, test := range []struct {

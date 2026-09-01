@@ -20,10 +20,6 @@ _Avoid_: Adapter type, process ID
 The current assessment of whether an Adapter instance has a live Adapter process that can use its configured external system. It is `unknown` without current evidence, `healthy` only when both are usable, and `unhealthy` when either is unavailable.
 _Avoid_: Adapter status, runtime health, upstream health
 
-**Adapter removal**:
-The explicit deconfiguration of an Adapter instance after it owns no Bindings. Removal archives its health history and permanently reserves its slug.
-_Avoid_: Process shutdown, disablement, deletion
-
 **Binding**:
 The durable association between an adapter's external object and its canonical Hearth Device and Entities. An adapter-scoped stable binding key preserves the association when an external identifier changes; ambiguous identity conflicts require explicit reconciliation.
 _Avoid_: Discovery result, entity name

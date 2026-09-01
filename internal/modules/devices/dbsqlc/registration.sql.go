@@ -126,7 +126,6 @@ const getActiveAdapterRuntime = `-- name: GetActiveAdapterRuntime :one
 SELECT active_runtime_id
 FROM adapter_instances
 WHERE adapter_id = ?1
-  AND archived_at IS NULL
   AND active_runtime_id = CAST(?2 AS TEXT)
 `
 
@@ -145,7 +144,7 @@ func (q *Queries) GetActiveAdapterRuntime(ctx context.Context, arg GetActiveAdap
 const getAdapterAvailabilityBaseline = `-- name: GetAdapterAvailabilityBaseline :one
 SELECT active_runtime_id, health_status, health_reason_code
 FROM adapter_instances
-WHERE adapter_id = ? AND archived_at IS NULL
+WHERE adapter_id = ?
 `
 
 type GetAdapterAvailabilityBaselineParams struct {
@@ -154,7 +153,7 @@ type GetAdapterAvailabilityBaselineParams struct {
 
 type GetAdapterAvailabilityBaselineRow struct {
 	ActiveRuntimeID  sql.NullString
-	HealthStatus     sql.NullString
+	HealthStatus     string
 	HealthReasonCode sql.NullString
 }
 

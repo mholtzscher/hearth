@@ -271,7 +271,7 @@ func newSimulatorMatrixHarness(t *testing.T, scenario string, options simulatorM
 		case simulatoradapter.ScenarioEntityUnavailable:
 			wantAvailability = devices.EntityAvailabilityUnavailable
 		}
-		return instance.Health != nil && instance.Health.Status == wantHealth &&
+		return instance.Health.Status == wantHealth &&
 			entity.Availability.Status == wantAvailability, nil
 	})
 	if scenario != simulatoradapter.ScenarioAdapterUnhealthy {
@@ -1079,7 +1079,7 @@ func TestSimulatorReadinessRecoveryRestoresPersistedAvailabilityWithoutReport(t 
 	if err != nil {
 		t.Fatal(err)
 	}
-	if recoveredAdapter.Health == nil || recoveredAdapter.Health.Status != devices.AdapterHealthHealthy ||
+	if recoveredAdapter.Health.Status != devices.AdapterHealthHealthy ||
 		recoveredEntity.Availability.Status != devices.EntityAvailabilityAvailable {
 		t.Fatalf("recovery views = Adapter %#v, Entity %#v", recoveredAdapter, recoveredEntity)
 	}
@@ -1097,7 +1097,7 @@ func TestSimulatorReadinessRecoveryRestoresPersistedAvailabilityWithoutReport(t 
 		if entityErr != nil {
 			return false, entityErr
 		}
-		return instance.Health != nil && instance.Health.Status == devices.AdapterHealthHealthy &&
+		return instance.Health.Status == devices.AdapterHealthHealthy &&
 			entity.Availability.Status == devices.EntityAvailabilityAvailable, nil
 	})
 	restoredEntity, err := harness.service.GetEntity(harness.ctx, entityID)
@@ -1155,7 +1155,7 @@ func TestSimulatorGracefulReleaseAllowsImmediateReplacement(t *testing.T) {
 	}
 	waitForMatrixCondition(t, time.Second, func() (bool, error) {
 		instance, err := harness.service.GetAdapter(harness.ctx, simulatorMatrixAdapterID)
-		return err == nil && instance.Health != nil && instance.Health.Status == devices.AdapterHealthUnhealthy &&
+		return err == nil && instance.Health.Status == devices.AdapterHealthUnhealthy &&
 			instance.Health.Reason != nil && instance.Health.Reason.Code == "hearth.stopped" &&
 			instance.Health.Runtime != nil && instance.Health.Runtime.Status == "offline", err
 	})
@@ -1164,7 +1164,7 @@ func TestSimulatorGracefulReleaseAllowsImmediateReplacement(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if instance.Health == nil || instance.Health.Runtime == nil ||
+	if instance.Health.Runtime == nil ||
 		instance.Health.Runtime.ID != devices.RuntimeID(simulatorMatrixSecondRuntimeID) {
 		t.Fatalf("replacement Adapter = %#v", instance)
 	}

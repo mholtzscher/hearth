@@ -137,8 +137,8 @@ func (service *Service) checkRegistrationRuntime(
 	if err != nil {
 		return err
 	}
-	if instance.Health == nil || instance.Health.Runtime == nil ||
-		instance.Health.Runtime.Status != runtimeStatusOnline || instance.Health.Runtime.ID != runtimeID {
+	if instance.Health.Runtime == nil || instance.Health.Runtime.Status != runtimeStatusOnline ||
+		instance.Health.Runtime.ID != runtimeID {
 		return ErrRuntimeFenced
 	}
 	return nil

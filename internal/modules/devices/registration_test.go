@@ -35,7 +35,7 @@ func (repository *stubRegistrationRepository) GetAdapter(
 	}
 	return AdapterInstance{
 		ID: adapterID,
-		Health: &AdapterHealth{Runtime: &RuntimeEvidence{
+		Health: AdapterHealth{Runtime: &RuntimeEvidence{
 			ID: commandTestRuntimeID, Status: runtimeStatusOnline,
 		}},
 	}, nil

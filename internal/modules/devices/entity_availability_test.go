@@ -43,8 +43,7 @@ func TestReportEntityAvailabilityAllowsReadinessPauseAndOwnsInput(t *testing.T) 
 	}
 	if !reportedAt.Equal(now) || repository.calls != 1 || repository.write.AdapterID != "simulator" ||
 		repository.write.RuntimeID != testRuntimeID || !repository.write.ReportedAt.Equal(now) ||
-		!repository.write.LeaseGraceUntil.Equal(now.Add(adapterLeaseDuration)) || len(repository.write.Reports) != 1 ||
-		repository.write.Reports[0].SourceObservedAt.Location() != time.UTC {
+		len(repository.write.Reports) != 1 || repository.write.Reports[0].SourceObservedAt.Location() != time.UTC {
 		t.Fatalf("availability write = %#v, reported at %v", repository.write, reportedAt)
 	}
 

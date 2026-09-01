@@ -40,7 +40,6 @@ func (service *Service) ReportEntityAvailability(
 	}
 	return service.stores.Availability.ReportEntityAvailability(ctx, AvailabilityBatchWrite{
 		AdapterID: adapterID, RuntimeID: runtimeID, Reports: owned, ReportedAt: reportedAt,
-		LeaseGraceUntil: service.leaseGraceUntil(reportedAt),
 	})
 }
 
