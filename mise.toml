@@ -7,6 +7,7 @@ golangci-lint = "latest"
 "github:nats-io/nats-server" = "2.12"
 ko = "latest"
 sqlc = "latest"
+"github:go-gremlins/gremlins" = "0.6.0"
 
 [tasks."generate"]
 description = "Regenerate checked-in code"
@@ -98,6 +99,10 @@ run = '''go vet ./...'''
 [tasks."nats"]
 description = "Run NATS server with JetStream (data in .data/nats)"
 run = '''nats-server -js -sd .data/nats'''
+
+[tasks."mutation-test"]
+description = "Run Gremlins mutation testing (pass package paths after --)"
+run = '''gremlins unleash "$@"'''
 
 [tasks."validate"]
 description = "Run all validation"
