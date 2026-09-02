@@ -29,6 +29,7 @@ type recordingSession struct {
 	observations        []adapter.Observation
 	healthReports       []adapter.HealthReport
 	availabilityReports []adapter.EntityAvailabilityReport
+	healthHook          func(adapter.HealthReport)
 	published           chan struct{}
 }
 
@@ -50,6 +51,9 @@ func (session *recordingSession) PublishObservation(
 func (session *recordingSession) SetHealth(_ context.Context, report adapter.HealthReport) error {
 	session.mutex.Lock()
 	defer session.mutex.Unlock()
+	if session.healthHook != nil {
+		session.healthHook(report)
+	}
 	session.healthReports = append(session.healthReports, report)
 	return nil
 }
@@ -158,6 +162,12 @@ func TestSubscribeFirstReconcilesBufferedTransitionAfterSnapshot(t *testing.T) {
 	defer server.Close()
 
 	migrationAdapter := newTestAdapter(t, session, server.URL)
+	healthyWithClient := make(chan bool, 1)
+	session.healthHook = func(report adapter.HealthReport) {
+		if report.Status == adapter.HealthHealthy {
+			healthyWithClient <- migrationAdapter.currentClient() != nil
+		}
+	}
 	ctx, cancel := context.WithCancel(context.Background())
 	runResult := make(chan error, 1)
 	go func() { runResult <- migrationAdapter.Run(ctx) }()
@@ -184,9 +194,29 @@ func TestSubscribeFirstReconcilesBufferedTransitionAfterSnapshot(t *testing.T) {
 	if len(health) != 1 || health[0].Status != adapter.HealthHealthy {
 		t.Fatalf("health reports = %#v", health)
 	}
+	if installed := <-healthyWithClient; !installed {
+		t.Fatal("healthy status was reported before the Home Assistant client was installed")
+	}
 	if len(availability) != 2 || availability[0].Status != adapter.AvailabilityAvailable ||
 		availability[1].Status != adapter.AvailabilityAvailable {
 		t.Fatalf("availability reports = %#v", availability)
+	}
+}
+
+func TestSupersededClientFailureDoesNotOverwriteHealth(t *testing.T) {
+	t.Parallel()
+	session := newRecordingSession()
+	migrationAdapter := newTestAdapter(t, session, "http://unused.example")
+	oldClient := &client{}
+	currentClient := &client{}
+	migrationAdapter.setClient(currentClient)
+	if err := migrationAdapter.reportClientUnhealthy(
+		context.Background(), oldClient, errors.New("old connection failed"),
+	); err != nil {
+		t.Fatal(err)
+	}
+	if reports := session.health(); len(reports) != 0 {
+		t.Fatalf("superseded client health reports = %#v", reports)
 	}
 }
 

@@ -366,6 +366,7 @@ type sqliteEntityAvailability struct {
 	adapterReasonCode  sql.NullString
 	adapterSince       sql.NullString
 	adapterEvidenceAt  sql.NullString
+	adapterSourceAt    sql.NullString
 	reportedStatus     sql.NullString
 	reportedReasonCode sql.NullString
 	reportedSourceAt   sql.NullString
@@ -378,6 +379,7 @@ func entityWithStateFromRow(row dbsqlc.EntityReadProjection) (EntityWithState, e
 		entityCreatedAt: row.EntityCreatedAt,
 		adapterStatus:   row.AdapterHealthStatus, adapterReasonCode: row.AdapterHealthReasonCode,
 		adapterSince: row.AdapterHealthSince, adapterEvidenceAt: row.AdapterHealthEvidenceAt,
+		adapterSourceAt:    row.AdapterHealthSourceObservedAt,
 		reportedStatus:     row.ReportedAvailabilityStatus,
 		reportedReasonCode: row.ReportedAvailabilityReasonCode,
 		reportedSourceAt:   row.ReportedAvailabilitySourceObservedAt,
@@ -456,6 +458,16 @@ func entityAvailabilityFromValues(values sqliteEntityAvailability) (EntityAvaila
 	if err != nil {
 		return EntityAvailability{}, err
 	}
+	createdAt, err := parseTime(values.entityCreatedAt)
+	if err != nil {
+		return EntityAvailability{}, fmt.Errorf("parse Entity creation time for availability: %w", err)
+	}
+	if since.Before(createdAt) {
+		since = createdAt
+	}
+	if evidenceAt.Before(createdAt) {
+		evidenceAt = createdAt
+	}
 	if adapterStatus == AdapterHealthHealthy {
 		return EntityAvailability{
 			Status: EntityAvailabilityUnknown, Source: healthSourceCore, Since: since, EvidenceAt: evidenceAt,
@@ -466,9 +478,13 @@ func entityAvailabilityFromValues(values sqliteEntityAvailability) (EntityAvaila
 	if adapterStatus == AdapterHealthUnhealthy {
 		status = EntityAvailabilityUnavailable
 	}
+	sourceObservedAt, err := parseOptionalTime(values.adapterSourceAt)
+	if err != nil {
+		return EntityAvailability{}, fmt.Errorf("parse Adapter source time for Entity availability: %w", err)
+	}
 	return EntityAvailability{
 		Status: status, Source: availabilitySourceAdapterHealth, Since: since, EvidenceAt: evidenceAt,
-		Reason: healthReasonFromNull(values.adapterReasonCode),
+		SourceObservedAt: sourceObservedAt, Reason: healthReasonFromNull(values.adapterReasonCode),
 	}, nil
 }
 

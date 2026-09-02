@@ -2,9 +2,12 @@ package devices //nolint:testpackage // Tests exercise package-private lease-exp
 
 import (
 	"context"
+	"errors"
 	"testing"
 	"time"
 )
+
+const testAvailabilityRequestID = "avl_01890f47-7a6b-7c4d-8e9f-0123456789ab"
 
 type availabilityServiceRepository struct {
 	write AvailabilityBatchWrite
@@ -36,13 +39,15 @@ func TestReportEntityAvailabilityAllowsReadinessPauseAndOwnsInput(t *testing.T) 
 	}}
 
 	reportedAt, err := service.ReportEntityAvailability(
-		context.Background(), "simulator", testRuntimeID, reports,
+		context.Background(), testAvailabilityRequestID, "simulator", testRuntimeID, reports,
 	)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !reportedAt.Equal(now) || repository.calls != 1 || repository.write.AdapterID != "simulator" ||
-		repository.write.RuntimeID != testRuntimeID || !repository.write.ReportedAt.Equal(now) ||
+	if !reportedAt.Equal(now) || repository.calls != 1 ||
+		repository.write.RequestID != testAvailabilityRequestID ||
+		repository.write.AdapterID != "simulator" || repository.write.RuntimeID != testRuntimeID ||
+		!repository.write.ReportedAt.Equal(now) ||
 		len(repository.write.Reports) != 1 || repository.write.Reports[0].SourceObservedAt.Location() != time.UTC {
 		t.Fatalf("availability write = %#v, reported at %v", repository.write, reportedAt)
 	}
@@ -70,7 +75,10 @@ func TestReportEntityAvailabilityRejectsMalformedBatchesBeforePersistence(t *tes
 		reports []EntityAvailabilityReport
 	}{
 		{name: "empty"},
-		{name: "duplicate Entity", reports: []EntityAvailabilityReport{valid, valid}},
+		{name: "duplicate Entity", reports: []EntityAvailabilityReport{valid, {
+			EntityID: valid.EntityID, Status: EntityAvailabilityAvailable,
+			SourceObservedAt: valid.SourceObservedAt.Add(time.Second),
+		}}},
 		{name: "unknown status", reports: []EntityAvailabilityReport{{
 			EntityID: entityID, Status: EntityAvailabilityUnknown, SourceObservedAt: now,
 		}}},
@@ -88,9 +96,9 @@ func TestReportEntityAvailabilityRejectsMalformedBatchesBeforePersistence(t *tes
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
 			if _, reportErr := service.ReportEntityAvailability(
-				context.Background(), "simulator", testRuntimeID, test.reports,
-			); reportErr == nil {
-				t.Fatal("malformed availability batch was accepted")
+				context.Background(), testAvailabilityRequestID, "simulator", testRuntimeID, test.reports,
+			); !errors.Is(reportErr, ErrInvalidAvailabilityRequest) {
+				t.Fatalf("malformed availability batch error = %v", reportErr)
 			}
 		})
 	}

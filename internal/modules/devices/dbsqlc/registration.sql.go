@@ -142,7 +142,7 @@ func (q *Queries) GetActiveAdapterRuntime(ctx context.Context, arg GetActiveAdap
 }
 
 const getAdapterAvailabilityBaseline = `-- name: GetAdapterAvailabilityBaseline :one
-SELECT active_runtime_id, health_status, health_reason_code
+SELECT active_runtime_id, health_status, health_reason_code, health_source_observed_at
 FROM adapter_instances
 WHERE adapter_id = ?
 `
@@ -152,15 +152,21 @@ type GetAdapterAvailabilityBaselineParams struct {
 }
 
 type GetAdapterAvailabilityBaselineRow struct {
-	ActiveRuntimeID  sql.NullString
-	HealthStatus     string
-	HealthReasonCode sql.NullString
+	ActiveRuntimeID        sql.NullString
+	HealthStatus           string
+	HealthReasonCode       sql.NullString
+	HealthSourceObservedAt sql.NullString
 }
 
 func (q *Queries) GetAdapterAvailabilityBaseline(ctx context.Context, arg GetAdapterAvailabilityBaselineParams) (GetAdapterAvailabilityBaselineRow, error) {
 	row := q.db.QueryRowContext(ctx, getAdapterAvailabilityBaseline, arg.AdapterID)
 	var i GetAdapterAvailabilityBaselineRow
-	err := row.Scan(&i.ActiveRuntimeID, &i.HealthStatus, &i.HealthReasonCode)
+	err := row.Scan(
+		&i.ActiveRuntimeID,
+		&i.HealthStatus,
+		&i.HealthReasonCode,
+		&i.HealthSourceObservedAt,
+	)
 	return i, err
 }
 

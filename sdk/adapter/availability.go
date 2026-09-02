@@ -103,7 +103,7 @@ func (session *Session) validateAvailabilityReport(report EntityAvailabilityRepo
 	if err := validateHealthReport(HealthReport{
 		Status: HealthUnhealthy, SourceObservedAt: report.SourceObservedAt,
 		ReasonCode: report.ReasonCode,
-	}, session.softwareName); err != nil {
+	}); err != nil {
 		return fmt.Errorf("validate Entity availability reason for %s: %w", report.EntityID, err)
 	}
 	return nil
@@ -181,6 +181,7 @@ func (session *Session) handleAvailabilityRejection(rejection *entityAvailabilit
 		session.markFenced()
 		return ErrRuntimeFenced
 	case EntityAvailabilityAdapterUnhealthy,
+		EntityAvailabilityInvalidRequest,
 		EntityAvailabilityUnknownEntity,
 		EntityAvailabilityWrongAdapter:
 		return &EntityAvailabilityRejectedError{

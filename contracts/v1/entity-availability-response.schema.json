@@ -25,14 +25,14 @@
           "required": ["code", "message"],
           "properties": {
             "code": {
-              "enum": ["runtime_fenced", "adapter_unhealthy", "unknown_entity", "wrong_adapter"]
+              "enum": ["runtime_fenced", "adapter_unhealthy", "invalid_request", "unknown_entity", "wrong_adapter"]
             },
             "message": { "$ref": "urn:hearth:schema:common:v1#/$defs/safe_message" },
             "entity_id": { "$ref": "urn:hearth:schema:common:v1#/$defs/ent_id" }
           },
           "oneOf": [
             {
-              "properties": { "code": { "enum": ["runtime_fenced", "adapter_unhealthy"] } },
+              "properties": { "code": { "enum": ["runtime_fenced", "adapter_unhealthy", "invalid_request"] } },
               "not": { "required": ["entity_id"] }
             },
             {

@@ -171,6 +171,15 @@ WHERE resource_kind = 'adapter' AND adapter_id = ? AND receive_order < ?
 ORDER BY receive_order DESC
 LIMIT ?;
 
+-- name: GetEntityAvailabilityReceipt :one
+SELECT fingerprint, reported_at
+FROM entity_availability_receipts
+WHERE request_id = ?;
+
+-- name: InsertEntityAvailabilityReceipt :exec
+INSERT INTO entity_availability_receipts (request_id, fingerprint, reported_at)
+VALUES (?, ?, ?);
+
 -- name: GetEntityAvailabilityCurrent :one
 SELECT entity_id, adapter_id, runtime_id, status, reason_code,
        source_observed_at, evidence_at, current_since,

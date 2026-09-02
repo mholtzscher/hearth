@@ -80,20 +80,25 @@ type availabilityModelTransition struct {
 }
 
 type availabilityHistoryModel struct {
-	adapterStatus   AdapterHealthStatus
-	adapterReason   string
-	adapterSince    time.Time
-	adapterEvidence time.Time
-	report          *availabilityModelReport
-	candidates      []availabilityModelTransition
+	adapterStatus         AdapterHealthStatus
+	adapterReason         string
+	adapterSince          time.Time
+	adapterEvidence       time.Time
+	adapterSourceObserved *time.Time
+	report                *availabilityModelReport
+	candidates            []availabilityModelTransition
 }
 
 func newAvailabilityHistoryModel(claimedAt, registeredAt time.Time) *availabilityHistoryModel {
+	baselineAt := registeredAt
+	if claimedAt.After(baselineAt) {
+		baselineAt = claimedAt
+	}
 	return &availabilityHistoryModel{
 		adapterStatus:   AdapterHealthUnknown,
 		adapterReason:   "hearth.awaiting_health",
-		adapterSince:    claimedAt,
-		adapterEvidence: claimedAt,
+		adapterSince:    baselineAt,
+		adapterEvidence: baselineAt,
 		candidates: []availabilityModelTransition{{
 			status:     string(EntityAvailabilityUnknown),
 			source:     "adapter_health",
@@ -124,6 +129,8 @@ func (model *availabilityHistoryModel) applyHeartbeat(
 	model.adapterStatus = status
 	model.adapterReason = reasonCode
 	model.adapterEvidence = at
+	sourceObservedAt := at
+	model.adapterSourceObserved = &sourceObservedAt
 	if !changed {
 		return
 	}
@@ -137,7 +144,6 @@ func (model *availabilityHistoryModel) applyHeartbeat(
 		transition.status = string(EntityAvailabilityUnavailable)
 		transition.source = "adapter_health"
 		transition.reasonCode = reasonCode
-		sourceObservedAt := at
 		transition.sourceObservedAt = &sourceObservedAt
 	}
 	model.candidates = append(model.candidates, transition)
@@ -188,9 +194,13 @@ func (model *availabilityHistoryModel) current() EntityAvailability {
 		status = EntityAvailabilityUnavailable
 	case AdapterHealthUnknown:
 	}
+	var sourceObservedAt *time.Time
+	if model.adapterStatus != AdapterHealthHealthy {
+		sourceObservedAt = model.adapterSourceObserved
+	}
 	return EntityAvailability{
 		Status: status, Source: source, Since: model.adapterSince, EvidenceAt: model.adapterEvidence,
-		Reason: modelReason(reasonCode),
+		SourceObservedAt: sourceObservedAt, Reason: modelReason(reasonCode),
 	}
 }
 
@@ -336,12 +346,12 @@ func applyAvailabilityPropertyOperation(
 		})
 	} else {
 		status, reportReasonCode := operation.report()
-		_, err = repository.ReportEntityAvailability(t.Context(), AvailabilityBatchWrite{
+		_, err = repository.ReportEntityAvailability(t.Context(), testAvailabilityWrite(t, AvailabilityBatchWrite{
 			AdapterID: "simulator", RuntimeID: testRuntimeID, ReportedAt: at,
 			Reports: []EntityAvailabilityReport{{
 				EntityID: entityID, Status: status, SourceObservedAt: at, Reason: modelReason(reportReasonCode),
 			}},
-		})
+		}))
 	}
 	if wantAccepted && err != nil {
 		t.Fatalf("%s at %s: %v", operation, at.Format(time.RFC3339), err)

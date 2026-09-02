@@ -137,6 +137,14 @@ func TestHealthSchemasEnforceStatusReasonBranches(t *testing.T) {
 	if err := schemas[contractsv1.AdapterHeartbeatRequestSchemaID].Validate(heartbeat); err == nil {
 		t.Fatal("non-lowercase reason code unexpectedly accepted")
 	}
+	external["reason"] = map[string]any{"code": "adapter.entity_unavailable"}
+	if err := schemas[contractsv1.AdapterHeartbeatRequestSchemaID].Validate(heartbeat); err != nil {
+		t.Fatalf("documented adapter reason rejected: %v", err)
+	}
+	external["reason"] = map[string]any{"code": "vendor.offline"}
+	if err := schemas[contractsv1.AdapterHeartbeatRequestSchemaID].Validate(heartbeat); err == nil {
+		t.Fatal("unsupported reason namespace unexpectedly accepted")
+	}
 	external["reason"] = map[string]any{
 		"code": "hearth.network_unreachable", "detail": "network is unreachable",
 	}
@@ -175,6 +183,13 @@ func TestEntityAvailabilitySchemaEnforcesBatchAndReasonBounds(t *testing.T) {
 	data["entities"] = []any{original, original}
 	if err := schema.Validate(request); err == nil {
 		t.Fatal("identical duplicate Entity reports unexpectedly accepted")
+	}
+	data["entities"] = []any{original, map[string]any{
+		"entity_id": testEntityID, "status": "available",
+		"source_observed_at": "2026-08-29T15:00:01Z",
+	}}
+	if err := schema.Validate(request); err != nil {
+		t.Fatalf("distinct reports for one Entity should reach semantic validation: %v", err)
 	}
 
 	report := original.(map[string]any)
@@ -229,7 +244,14 @@ func TestClaimAndTypedRejectionBranches(t *testing.T) {
 	if err := schemas[contractsv1.AdapterClaimResponseSchemaID].Validate(claim); err == nil {
 		t.Fatal("adapter_active rejection without retry_after unexpectedly accepted")
 	}
+	errorData["code"] = "claim_conflict"
+	if err := schemas[contractsv1.AdapterClaimResponseSchemaID].Validate(claim); err != nil {
+		t.Fatalf("claim conflict rejection without retry_after: %v", err)
+	}
 	errorData["retry_after"] = "2026-08-29T15:00:16Z"
+	if err := schemas[contractsv1.AdapterClaimResponseSchemaID].Validate(claim); err == nil {
+		t.Fatal("claim conflict rejection with retry_after unexpectedly accepted")
+	}
 	errorData["code"] = "adapter_archived"
 	if err := schemas[contractsv1.AdapterClaimResponseSchemaID].Validate(claim); err == nil {
 		t.Fatal("removed adapter_archived rejection unexpectedly accepted")
@@ -245,12 +267,20 @@ func TestClaimAndTypedRejectionBranches(t *testing.T) {
 			`{"id":"rep_01890f47-7a6b-7c4d-8e9f-0123456789ab","schema":"urn:hearth:schema:adapter-heartbeat-response:v1","emitted_at":"2026-08-29T15:00:01Z","correlation_id":"` + testCorrelationID + `","causation_id":"hbt_01890f47-7a6b-7c4d-8e9f-0123456789ab","data":{"status":"rejected","error":{"code":"runtime_fenced","message":"runtime fenced"}}}`,
 		},
 		{
+			"heartbeat invalid transition", contractsv1.AdapterHeartbeatResponseSchemaID,
+			`{"id":"rep_01890f47-7a6b-7c4d-8e9f-0123456789ab","schema":"urn:hearth:schema:adapter-heartbeat-response:v1","emitted_at":"2026-08-29T15:00:01Z","correlation_id":"` + testCorrelationID + `","causation_id":"hbt_01890f47-7a6b-7c4d-8e9f-0123456789ab","data":{"status":"rejected","error":{"code":"invalid_transition","message":"invalid transition"}}}`,
+		},
+		{
 			"release fenced", contractsv1.AdapterReleaseResponseSchemaID,
 			`{"id":"rep_01890f47-7a6b-7c4d-8e9f-0123456789ab","schema":"urn:hearth:schema:adapter-release-response:v1","emitted_at":"2026-08-29T15:00:01Z","correlation_id":"` + testCorrelationID + `","causation_id":"rel_01890f47-7a6b-7c4d-8e9f-0123456789ab","data":{"status":"rejected","error":{"code":"runtime_fenced","message":"runtime fenced"}}}`,
 		},
 		{
 			"availability fenced", contractsv1.EntityAvailabilityResponseSchemaID,
 			`{"id":"rep_01890f47-7a6b-7c4d-8e9f-0123456789ab","schema":"urn:hearth:schema:entity-availability-response:v1","emitted_at":"2026-08-29T15:00:01Z","correlation_id":"` + testCorrelationID + `","causation_id":"avl_01890f47-7a6b-7c4d-8e9f-0123456789ab","data":{"status":"rejected","error":{"code":"runtime_fenced","message":"runtime fenced"}}}`,
+		},
+		{
+			"availability invalid request", contractsv1.EntityAvailabilityResponseSchemaID,
+			`{"id":"rep_01890f47-7a6b-7c4d-8e9f-0123456789ab","schema":"urn:hearth:schema:entity-availability-response:v1","emitted_at":"2026-08-29T15:00:01Z","correlation_id":"` + testCorrelationID + `","causation_id":"avl_01890f47-7a6b-7c4d-8e9f-0123456789ab","data":{"status":"rejected","error":{"code":"invalid_request","message":"invalid request"}}}`,
 		},
 		{
 			"availability unknown Entity", contractsv1.EntityAvailabilityResponseSchemaID,

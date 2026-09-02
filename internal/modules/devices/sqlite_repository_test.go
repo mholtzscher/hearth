@@ -54,14 +54,14 @@ func TestRegistrationWithoutAdapterRollsBackAndRetainsHistoryAfterClaim(t *testi
 		t.Fatal(err)
 	}
 	now = now.Add(time.Second)
-	if _, reportErr := repository.ReportEntityAvailability(ctx, AvailabilityBatchWrite{
+	if _, reportErr := repository.ReportEntityAvailability(ctx, testAvailabilityWrite(t, AvailabilityBatchWrite{
 		AdapterID: "simulator", RuntimeID: testRuntimeID,
 		Reports: []EntityAvailabilityReport{{
 			EntityID: binding.Entities[0].EntityID, Status: EntityAvailabilityAvailable,
 			SourceObservedAt: now,
 		}},
 		ReportedAt: now,
-	}); reportErr != nil {
+	})); reportErr != nil {
 		t.Fatal(reportErr)
 	}
 	history, err := repository.ListEntityAvailabilityHistory(ctx, ListEntityAvailabilityParams{
@@ -790,7 +790,7 @@ func TestCreateCommandDispatchesWhenHealthyEntityIsReportedUnavailable(t *testin
 	}); heartbeatErr != nil {
 		t.Fatal(heartbeatErr)
 	}
-	if _, reportErr := repository.ReportEntityAvailability(ctx, AvailabilityBatchWrite{
+	if _, reportErr := repository.ReportEntityAvailability(ctx, testAvailabilityWrite(t, AvailabilityBatchWrite{
 		AdapterID: "simulator", RuntimeID: testRuntimeID,
 		Reports: []EntityAvailabilityReport{{
 			EntityID: binding.Entities[0].EntityID, Status: EntityAvailabilityUnavailable,
@@ -798,7 +798,7 @@ func TestCreateCommandDispatchesWhenHealthyEntityIsReportedUnavailable(t *testin
 			Reason:           &HealthReason{Code: "adapter.hearth-simulator.entity_unavailable"},
 		}},
 		ReportedAt: healthyAt,
-	}); reportErr != nil {
+	})); reportErr != nil {
 		t.Fatal(reportErr)
 	}
 

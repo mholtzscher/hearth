@@ -229,6 +229,12 @@ CREATE TABLE entity_availability_current (
     )
 );
 
+CREATE TABLE entity_availability_receipts (
+    request_id  TEXT PRIMARY KEY CHECK (substr(request_id, 1, 4) = 'avl_'),
+    fingerprint TEXT NOT NULL CHECK (length(fingerprint) = 64),
+    reported_at TEXT NOT NULL
+);
+
 CREATE TABLE health_transitions (
     receive_order      INTEGER PRIMARY KEY AUTOINCREMENT,
     resource_kind     TEXT NOT NULL CHECK (resource_kind IN ('adapter', 'entity')),
@@ -291,6 +297,7 @@ SELECT
     ai.health_reason_code AS adapter_health_reason_code,
     ai.health_since AS adapter_health_since,
     ai.health_evidence_at AS adapter_health_evidence_at,
+    ai.health_source_observed_at AS adapter_health_source_observed_at,
     current.status AS reported_availability_status,
     current.reason_code AS reported_availability_reason_code,
     current.source_observed_at AS reported_availability_source_observed_at,
@@ -309,6 +316,7 @@ DROP VIEW entity_read_projection;
 DROP INDEX health_transitions_entity_history_idx;
 DROP INDEX health_transitions_adapter_history_idx;
 DROP TABLE health_transitions;
+DROP TABLE entity_availability_receipts;
 DROP TABLE entity_availability_current;
 DROP TABLE entity_states;
 DROP INDEX observation_receipts_expiry_idx;

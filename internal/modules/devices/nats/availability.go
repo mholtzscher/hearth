@@ -17,6 +17,7 @@ type AvailabilityReporter interface {
 	ReportEntityAvailability(
 		context.Context,
 		string,
+		string,
 		devices.RuntimeID,
 		[]devices.EntityAvailabilityReport,
 	) (time.Time, error)
@@ -102,7 +103,7 @@ func handleEntityAvailability(
 		}
 	}
 	reportedAt, reportErr := reporter.ReportEntityAvailability(
-		ctx, route.AdapterID, runtimeID, reports,
+		ctx, request.ID, route.AdapterID, runtimeID, reports,
 	)
 	response, handled := mapAvailabilityResult(reportedAt, len(reports), reportErr)
 	if !handled {
@@ -127,6 +128,9 @@ func mapAvailabilityResult(
 	}
 	if errors.Is(err, devices.ErrAdapterUnhealthy) {
 		return rejectedAvailability("adapter_unhealthy", "Adapter is not healthy", ""), true
+	}
+	if errors.Is(err, devices.ErrInvalidAvailabilityRequest) {
+		return rejectedAvailability("invalid_request", "Entity availability request is invalid", ""), true
 	}
 	if entityErr, ok := errors.AsType[*devices.EntityAvailabilityReportError](err); ok {
 		switch {

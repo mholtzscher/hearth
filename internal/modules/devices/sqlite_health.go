@@ -2,7 +2,9 @@ package devices
 
 import (
 	"context"
+	"crypto/sha256"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"time"
@@ -102,7 +104,18 @@ func repeatedRuntimeClaim(
 	}
 	if previous.AdapterID != write.AdapterID || previous.SoftwareName != write.SoftwareName ||
 		previous.SoftwareVersion != write.SoftwareVersion {
-		return false, errors.New("runtime ID was already used with different Adapter metadata")
+		return false, fmt.Errorf(
+			"%w: runtime ID was already used with different Adapter metadata",
+			ErrRuntimeClaimConflict,
+		)
+	}
+	instance, err := queries.GetAdapterInstance(ctx, dbsqlc.GetAdapterInstanceParams{AdapterID: write.AdapterID})
+	if err != nil {
+		return false, fmt.Errorf("get Adapter instance for claim retry: %w", err)
+	}
+	if previous.EndedAt.Valid || !instance.ActiveRuntimeID.Valid ||
+		instance.ActiveRuntimeID.String != string(write.RuntimeID) {
+		return false, fmt.Errorf("%w: runtime is no longer active", ErrRuntimeClaimConflict)
 	}
 	return true, nil
 }
@@ -173,7 +186,10 @@ func (repository *SQLiteRepository) RecordAdapterHeartbeat(
 	}
 	if write.ExternalStatus == AdapterHealthUnknown &&
 		instance.HealthStatus != string(AdapterHealthUnknown) {
-		return HeartbeatResult{}, errors.New("adapter health cannot return to unknown in one runtime")
+		return HeartbeatResult{}, fmt.Errorf(
+			"%w: adapter health cannot return to unknown in one runtime",
+			ErrInvalidHealthTransition,
+		)
 	}
 	rows, err := queries.UpdateRuntimeHeartbeat(ctx, dbsqlc.UpdateRuntimeHeartbeatParams{
 		LastHeartbeatAt: formatNullableTime(write.ReceivedAt), LeaseExpiresAt: formatTime(write.LeaseExpiresAt),
@@ -494,8 +510,18 @@ func (repository *SQLiteRepository) ReportEntityAvailability(
 	ctx context.Context,
 	write AvailabilityBatchWrite,
 ) (time.Time, error) {
+	if err := validateID(write.RequestID, "avl"); err != nil {
+		return time.Time{}, fmt.Errorf("%w: invalid request identity", ErrInvalidAvailabilityRequest)
+	}
 	if len(write.Reports) == 0 || len(write.Reports) > 256 {
-		return time.Time{}, errors.New("Entity availability batch must contain 1-256 reports")
+		return time.Time{}, fmt.Errorf(
+			"%w: Entity availability batch must contain 1-256 reports",
+			ErrInvalidAvailabilityRequest,
+		)
+	}
+	fingerprint, err := availabilityRequestFingerprint(write)
+	if err != nil {
+		return time.Time{}, fmt.Errorf("%w: %w", ErrInvalidAvailabilityRequest, err)
 	}
 	tx, err := repository.database.BeginTx(ctx, &sql.TxOptions{Isolation: sql.LevelSerializable})
 	if err != nil {
@@ -503,6 +529,13 @@ func (repository *SQLiteRepository) ReportEntityAvailability(
 	}
 	defer func() { _ = tx.Rollback() }()
 	queries := repository.queries.WithTx(tx)
+	reportedAt, repeated, repeatErr := repeatedAvailabilityRequest(ctx, queries, write.RequestID, fingerprint)
+	if repeatErr != nil {
+		return time.Time{}, repeatErr
+	}
+	if repeated {
+		return reportedAt, nil
+	}
 	instance, err := activeAdapterInstance(ctx, queries, write.AdapterID, write.RuntimeID)
 	if err != nil {
 		return time.Time{}, err
@@ -513,17 +546,81 @@ func (repository *SQLiteRepository) ReportEntityAvailability(
 	seen := make(map[EntityID]struct{}, len(write.Reports))
 	for _, report := range write.Reports {
 		if _, duplicate := seen[report.EntityID]; duplicate {
-			return time.Time{}, fmt.Errorf("duplicate Entity availability report for %s", report.EntityID)
+			return time.Time{}, fmt.Errorf(
+				"%w: duplicate Entity availability report for %s",
+				ErrInvalidAvailabilityRequest,
+				report.EntityID,
+			)
 		}
 		seen[report.EntityID] = struct{}{}
 		if persistErr := persistEntityAvailability(ctx, queries, write, report); persistErr != nil {
 			return time.Time{}, persistErr
 		}
 	}
+	if receiptErr := queries.InsertEntityAvailabilityReceipt(ctx, dbsqlc.InsertEntityAvailabilityReceiptParams{
+		RequestID: write.RequestID, Fingerprint: fingerprint, ReportedAt: formatTime(write.ReportedAt),
+	}); receiptErr != nil {
+		return time.Time{}, fmt.Errorf("insert Entity availability receipt: %w", receiptErr)
+	}
 	if commitErr := tx.Commit(); commitErr != nil {
 		return time.Time{}, fmt.Errorf("commit Entity availability report: %w", commitErr)
 	}
 	return write.ReportedAt.UTC(), nil
+}
+
+func repeatedAvailabilityRequest(
+	ctx context.Context,
+	queries *dbsqlc.Queries,
+	requestID string,
+	fingerprint string,
+) (time.Time, bool, error) {
+	receipt, err := queries.GetEntityAvailabilityReceipt(ctx, dbsqlc.GetEntityAvailabilityReceiptParams{
+		RequestID: requestID,
+	})
+	if errors.Is(err, sql.ErrNoRows) {
+		return time.Time{}, false, nil
+	}
+	if err != nil {
+		return time.Time{}, false, fmt.Errorf("get Entity availability receipt: %w", err)
+	}
+	if receipt.Fingerprint != fingerprint {
+		return time.Time{}, false, fmt.Errorf(
+			"%w: request ID was already used with different availability data",
+			ErrInvalidAvailabilityRequest,
+		)
+	}
+	reportedAt, err := parseTime(receipt.ReportedAt)
+	if err != nil {
+		return time.Time{}, false, fmt.Errorf("parse Entity availability receipt time: %w", err)
+	}
+	return reportedAt, true, nil
+}
+
+func availabilityRequestFingerprint(write AvailabilityBatchWrite) (string, error) {
+	type fingerprintReport struct {
+		EntityID         EntityID                 `json:"entity_id"`
+		Status           EntityAvailabilityStatus `json:"status"`
+		SourceObservedAt time.Time                `json:"source_observed_at"`
+		ReasonCode       string                   `json:"reason_code,omitempty"`
+	}
+	request := struct {
+		AdapterID string              `json:"adapter_id"`
+		RuntimeID RuntimeID           `json:"runtime_id"`
+		Reports   []fingerprintReport `json:"reports"`
+	}{AdapterID: write.AdapterID, RuntimeID: write.RuntimeID, Reports: make([]fingerprintReport, len(write.Reports))}
+	for index, report := range write.Reports {
+		request.Reports[index] = fingerprintReport{
+			EntityID: report.EntityID, Status: report.Status, SourceObservedAt: report.SourceObservedAt.UTC(),
+		}
+		if report.Reason != nil {
+			request.Reports[index].ReasonCode = report.Reason.Code
+		}
+	}
+	payload, err := json.Marshal(request)
+	if err != nil {
+		return "", fmt.Errorf("encode Entity availability request fingerprint: %w", err)
+	}
+	return fmt.Sprintf("%x", sha256.Sum256(payload)), nil
 }
 
 func persistEntityAvailability(

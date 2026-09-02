@@ -51,6 +51,7 @@ type EntityAvailabilityRejectionCode string
 
 const (
 	EntityAvailabilityAdapterUnhealthy EntityAvailabilityRejectionCode = "adapter_unhealthy"
+	EntityAvailabilityInvalidRequest   EntityAvailabilityRejectionCode = "invalid_request"
 	EntityAvailabilityUnknownEntity    EntityAvailabilityRejectionCode = "unknown_entity"
 	EntityAvailabilityWrongAdapter     EntityAvailabilityRejectionCode = "wrong_adapter"
 	entityAvailabilityRuntimeFenced    EntityAvailabilityRejectionCode = "runtime_fenced"

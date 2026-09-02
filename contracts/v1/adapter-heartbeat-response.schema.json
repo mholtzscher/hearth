@@ -23,7 +23,7 @@
           "additionalProperties": false,
           "required": ["code", "message"],
           "properties": {
-            "code": { "const": "runtime_fenced" },
+            "code": { "enum": ["runtime_fenced", "invalid_transition"] },
             "message": { "$ref": "urn:hearth:schema:common:v1#/$defs/safe_message" }
           }
         }

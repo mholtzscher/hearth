@@ -129,6 +129,7 @@ type EntityAvailabilityReport struct {
 }
 
 type AvailabilityBatchWrite struct {
+	RequestID  string
 	AdapterID  string
 	RuntimeID  RuntimeID
 	Reports    []EntityAvailabilityReport

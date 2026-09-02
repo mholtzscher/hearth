@@ -69,7 +69,7 @@ Claim behavior:
 1. The SDK connects to NATS, generates one `run_` UUIDv7 runtime ID, and creates one `clm_` request envelope containing the Adapter ID, runtime ID, software name, and software version.
 2. It retries that same envelope and runtime ID through transient no-response failures so a lost accepted response cannot create a second runtime.
 3. Core creates the Adapter instance on its first claim, or loads the existing instance.
-4. If the supplied runtime ID already exists with the same Adapter and software metadata, Core accepts the retry without another write.
+4. If the supplied runtime ID already exists with the same Adapter and software metadata and remains that Adapter's active runtime, Core accepts the retry without another write; ended or superseded runtime IDs are rejected permanently.
 5. If another runtime remains active, Core rejects with transient `adapter_active` and its recorded lease expiry; the SDK waits and retries until its context ends or the supervisor expires that runtime.
 6. Otherwise Core records the supplied runtime ID, sets health to `unknown` with `hearth.awaiting_health`, and acknowledges the claim. The protocol fixes the heartbeat interval at five seconds and the lease at fifteen seconds rather than returning those constants in every claim response.
 
@@ -402,7 +402,10 @@ Accepted response:
 }
 ```
 
-Rejected claim code: `adapter_active`, transient, with the active runtime's recorded lease expiry as the `retry_after` UTC timestamp. That timestamp may already have elapsed while the claim waits for the supervisor to commit expiry.
+Rejected claim codes:
+
+- `adapter_active`, transient, with the active runtime's recorded lease expiry as the `retry_after` UTC timestamp. That timestamp may already have elapsed while the claim waits for the supervisor to commit expiry;
+- `claim_conflict`, permanent, when the runtime ID conflicts with prior metadata or no longer identifies the active runtime.
 
 ### Heartbeat data
 
@@ -431,7 +434,7 @@ Accepted response:
 }
 ```
 
-Rejected code: `runtime_fenced`.
+Rejected codes: `runtime_fenced` and permanent `invalid_transition` when one runtime attempts to return from known health to `unknown`.
 
 ### Release data
 
@@ -456,7 +459,7 @@ Request:
 }
 ```
 
-The schema enforces 1-256 entries, unique Entity IDs, available-without-reason, and unavailable-with-reason. Core also validates uniqueness because JSON Schema `uniqueItems` compares whole objects rather than only Entity IDs.
+The schema enforces 1-256 entries, unique whole report objects, available-without-reason, and unavailable-with-reason. Core validates Entity ID uniqueness semantically because JSON Schema `uniqueItems` compares whole objects rather than Entity IDs.
 
 Accepted response:
 
@@ -472,6 +475,7 @@ Rejected codes:
 
 - `runtime_fenced`;
 - `adapter_unhealthy`;
+- `invalid_request`, for duplicate Entity IDs or request-ID conflicts;
 - `unknown_entity`, with Entity ID;
 - `wrong_adapter`, with Entity ID.
 
@@ -633,7 +637,7 @@ type EntityAvailabilityReport struct {
 func (service *Service) ClaimAdapterRuntime(context.Context, ClaimAdapterRuntimeParams) error
 func (service *Service) RecordAdapterHeartbeat(context.Context, AdapterHeartbeat) (HeartbeatResult, error)
 func (service *Service) ReleaseAdapterRuntime(context.Context, string, RuntimeID) error
-func (service *Service) ReportEntityAvailability(context.Context, string, RuntimeID, []EntityAvailabilityReport) (time.Time, error)
+func (service *Service) ReportEntityAvailability(context.Context, string, string, RuntimeID, []EntityAvailabilityReport) (time.Time, error)
 func (service *Service) ExpireAdapterLeases(context.Context, time.Time) error
 
 func (service *Service) ListAdapters(context.Context, ListAdaptersParams) (Page[AdapterInstance], error)
@@ -771,7 +775,7 @@ func (session *Session) ReportEntityAvailability(context.Context, []EntityAvaila
 
 `Connect` requires Core claim success before returning and starts one serialized heartbeat loop. `Close` attempts release with an internal five-second timeout before draining NATS; failure falls back to lease expiry. `Register`, `SetEntityEnabled`, and `PublishObservation` use the hidden runtime ID to construct subjects. `ServeCommands` subscribes only to the Session's runtime-scoped Command wildcard.
 
-The Session does not retain acknowledged availability reports. It serializes explicit availability request/reply calls and retries transient disconnect or no-response failures under caller context. `Register` owns the same transient retry behavior, reuses one request envelope across attempts, and stops on local validation or schema-defined permanent rejection; first-party applications call it once. A fenced response closes the Session and returns `ErrRuntimeFenced` from all pending and future methods. The session state machine serializes heartbeat, close, and fencing changes; it never invokes callbacks while holding its locks.
+The Session does not retain acknowledged availability reports. It serializes explicit availability request/reply calls and retries transient disconnect or no-response failures under caller context. Core stores the accepted result by availability request ID, returns that original result to exact retries even after health changes, and permanently rejects reuse with different data. `Register` owns the same transient retry behavior, reuses one request envelope across attempts, and stops on local validation or schema-defined permanent rejection; first-party applications call it once. A fenced response closes the Session and returns `ErrRuntimeFenced` from all pending and future methods. The session state machine serializes heartbeat, close, and fencing changes; it never invokes callbacks while holding its locks.
 
 ### NATS transport interfaces
 
@@ -790,7 +794,7 @@ type HealthRecorder interface {
 }
 
 type AvailabilityReporter interface {
-    ReportEntityAvailability(context.Context, string, devices.RuntimeID, []devices.EntityAvailabilityReport) (time.Time, error)
+    ReportEntityAvailability(context.Context, string, string, devices.RuntimeID, []devices.EntityAvailabilityReport) (time.Time, error)
 }
 ```
 
@@ -840,7 +844,12 @@ The baseline creates:
    - reason/source-observed/Core-evidence/current-since fields;
    - latest direct transition receive order.
 
-4. `health_transitions`
+4. `entity_availability_receipts`
+   - accepted `avl_` request ID;
+   - canonical request fingerprint; and
+   - original reported-at result returned to exact retries.
+
+5. `health_transitions`
    - global `receive_order INTEGER PRIMARY KEY AUTOINCREMENT`;
    - resource kind adapter/entity;
    - Adapter ID, optional Entity ID, optional runtime ID;

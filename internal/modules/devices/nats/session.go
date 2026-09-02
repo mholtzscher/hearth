@@ -122,6 +122,12 @@ func mapClaimResult(err error) (adapterClaimResponse, bool) {
 			},
 		}, true
 	}
+	if errors.Is(err, devices.ErrRuntimeClaimConflict) {
+		return adapterClaimResponse{
+			Status: statusRejected,
+			Error:  &adapterClaimError{Code: "claim_conflict", Message: "Runtime claim conflicts with prior state"},
+		}, true
+	}
 	return adapterClaimResponse{}, false
 }
 
@@ -185,6 +191,12 @@ func mapHeartbeatResult(result devices.HeartbeatResult, err error) (adapterHeart
 		return adapterHeartbeatResponse{
 			Status: statusRejected,
 			Error:  &adapterError{Code: runtimeFencedCode, Message: runtimeFencedMessage},
+		}, true
+	}
+	if errors.Is(err, devices.ErrInvalidHealthTransition) {
+		return adapterHeartbeatResponse{
+			Status: statusRejected,
+			Error:  &adapterError{Code: "invalid_transition", Message: "Adapter health transition is invalid"},
 		}, true
 	}
 	return adapterHeartbeatResponse{}, false

@@ -321,10 +321,12 @@ func createEntityAvailabilityBaseline(
 	status := string(EntityAvailabilityUnknown)
 	source := availabilitySourceAdapterHealth
 	reasonCode := adapter.HealthReasonCode
+	sourceObservedAt := adapter.HealthSourceObservedAt
 	switch AdapterHealthStatus(adapter.HealthStatus) {
 	case AdapterHealthHealthy:
 		source = healthSourceCore
 		reasonCode = nullableText("hearth.awaiting_entity_report")
+		sourceObservedAt = sql.NullString{}
 	case AdapterHealthUnhealthy:
 		status = string(EntityAvailabilityUnavailable)
 	case AdapterHealthUnknown:
@@ -336,7 +338,7 @@ func createEntityAvailabilityBaseline(
 		dbsqlc.InsertEntityAvailabilityBaselineParams{
 			AdapterID: adapterID, EntityID: nullableText(string(entityID)),
 			RuntimeID: adapter.ActiveRuntimeID, Status: status, Source: source,
-			ReasonCode: reasonCode, ObservedAt: observedAt,
+			ReasonCode: reasonCode, SourceObservedAt: sourceObservedAt, ObservedAt: observedAt,
 		},
 	)
 	if err != nil {

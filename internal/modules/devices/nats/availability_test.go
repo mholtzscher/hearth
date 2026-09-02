@@ -13,6 +13,7 @@ import (
 )
 
 type availabilityRecorder struct {
+	requestID string
 	adapterID string
 	runtimeID devices.RuntimeID
 	reports   []devices.EntityAvailabilityReport
@@ -22,10 +23,12 @@ type availabilityRecorder struct {
 
 func (recorder *availabilityRecorder) ReportEntityAvailability(
 	_ context.Context,
+	requestID string,
 	adapterID string,
 	runtimeID devices.RuntimeID,
 	reports []devices.EntityAvailabilityReport,
 ) (time.Time, error) {
+	recorder.requestID = requestID
 	recorder.adapterID = adapterID
 	recorder.runtimeID = runtimeID
 	recorder.reports = reports
@@ -64,7 +67,8 @@ func TestEntityAvailabilityServerMapsAcceptedBatch(t *testing.T) {
 		response.Data.Count != 1 {
 		t.Fatalf("availability response = %#v", response.Data)
 	}
-	if recorder.adapterID != "simulator" || recorder.runtimeID != devices.RuntimeID(testRuntimeID) ||
+	if recorder.requestID != "avl_01890f47-7a6b-7c4d-8e9f-0123456789ab" ||
+		recorder.adapterID != "simulator" || recorder.runtimeID != devices.RuntimeID(testRuntimeID) ||
 		len(recorder.reports) != 1 || recorder.reports[0].EntityID != devices.EntityID(testEntityID) ||
 		recorder.reports[0].Reason == nil ||
 		recorder.reports[0].Reason.Code != "hearth.entity_unavailable" {
@@ -83,6 +87,7 @@ func TestEntityAvailabilityServerMapsOnlyContractRejections(t *testing.T) {
 	}{
 		{name: "fenced", err: devices.ErrRuntimeFenced, code: "runtime_fenced"},
 		{name: "nonhealthy", err: devices.ErrAdapterUnhealthy, code: "adapter_unhealthy"},
+		{name: "invalid request", err: devices.ErrInvalidAvailabilityRequest, code: "invalid_request"},
 		{name: "unknown Entity", err: &devices.EntityAvailabilityReportError{
 			EntityID: entityID, Err: devices.ErrEntityNotFound,
 		}, code: "unknown_entity", entityID: testEntityID},

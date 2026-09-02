@@ -24,12 +24,13 @@ func (err *EntityAvailabilityReportError) Unwrap() error {
 
 func (service *Service) ReportEntityAvailability(
 	ctx context.Context,
+	requestID string,
 	adapterID string,
 	runtimeID RuntimeID,
 	reports []EntityAvailabilityReport,
 ) (time.Time, error) {
-	if validationErr := validateAvailabilityBatch(adapterID, runtimeID, reports); validationErr != nil {
-		return time.Time{}, validationErr
+	if validationErr := validateAvailabilityBatch(requestID, adapterID, runtimeID, reports); validationErr != nil {
+		return time.Time{}, fmt.Errorf("%w: %w", ErrInvalidAvailabilityRequest, validationErr)
 	}
 	reportedAt := service.dependencies.Now().UTC()
 	owned := make([]EntityAvailabilityReport, len(reports))
@@ -39,15 +40,20 @@ func (service *Service) ReportEntityAvailability(
 		owned[index].Reason = copyHealthReason(report.Reason)
 	}
 	return service.stores.Availability.ReportEntityAvailability(ctx, AvailabilityBatchWrite{
-		AdapterID: adapterID, RuntimeID: runtimeID, Reports: owned, ReportedAt: reportedAt,
+		RequestID: requestID, AdapterID: adapterID, RuntimeID: runtimeID,
+		Reports: owned, ReportedAt: reportedAt,
 	})
 }
 
 func validateAvailabilityBatch(
+	requestID string,
 	adapterID string,
 	runtimeID RuntimeID,
 	reports []EntityAvailabilityReport,
 ) error {
+	if err := validateID(requestID, "avl"); err != nil {
+		return fmt.Errorf("parse Entity availability request ID: %w", err)
+	}
 	if !registrationSlugPattern.MatchString(adapterID) {
 		return errors.New("adapter ID must be a subject-safe slug")
 	}

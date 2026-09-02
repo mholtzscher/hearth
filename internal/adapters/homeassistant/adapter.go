@@ -215,11 +215,11 @@ snapshotReady:
 		}
 		reconciled = append(reconciled, event)
 	}
+	homeAssistant.setClient(client)
+	defer homeAssistant.clearClient(client)
 	if err := homeAssistant.setHealthy(ctx); err != nil {
 		return err
 	}
-	homeAssistant.setClient(client)
-	defer homeAssistant.clearClient(client)
 	for index, item := range reconciled {
 		source := "event"
 		if index == 0 {
@@ -292,7 +292,7 @@ func (homeAssistant *Adapter) set(
 	state, receivedAt, stateErr := homeAssistant.getState(ctx, client)
 	if stateErr != nil {
 		client.Close()
-		if healthErr := homeAssistant.reportUnhealthy(ctx, stateErr); healthErr != nil {
+		if healthErr := homeAssistant.reportClientUnhealthy(ctx, client, stateErr); healthErr != nil {
 			return healthErr
 		}
 		return responder.Reject("Home Assistant is unavailable")
@@ -307,7 +307,7 @@ func (homeAssistant *Adapter) set(
 	if serviceErr != nil {
 		if _, ok := errors.AsType[*requestRejectedError](serviceErr); !ok {
 			client.Close()
-			if healthErr := homeAssistant.reportUnhealthy(ctx, serviceErr); healthErr != nil {
+			if healthErr := homeAssistant.reportClientUnhealthy(ctx, client, serviceErr); healthErr != nil {
 				return healthErr
 			}
 		}
@@ -382,6 +382,15 @@ func (homeAssistant *Adapter) reportUnhealthy(ctx context.Context, cause error) 
 		return &sessionOperationError{operation: "report unhealthy Home Assistant", err: err}
 	}
 	return nil
+}
+
+func (homeAssistant *Adapter) reportClientUnhealthy(ctx context.Context, expected *client, cause error) error {
+	homeAssistant.clientMutex.Lock()
+	defer homeAssistant.clientMutex.Unlock()
+	if homeAssistant.client != expected {
+		return nil
+	}
+	return homeAssistant.reportUnhealthy(ctx, cause)
 }
 
 func (homeAssistant *Adapter) processState(

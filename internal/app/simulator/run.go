@@ -57,10 +57,6 @@ func Run(ctx context.Context, config Config, logger *slog.Logger) error {
 	if err := simulated.Initialize(ctx, entityID); err != nil {
 		return fmt.Errorf("initialize simulator health and Entity availability: %w", err)
 	}
-	if config.Scenario == simulatoradapter.ScenarioAdapterUnhealthy {
-		<-ctx.Done()
-		return nil
-	}
 	handler, err := simulated.CommandHandler(entityID)
 	if err != nil {
 		return err

@@ -30,7 +30,6 @@ type jetStreamPublisher interface {
 
 type Session struct {
 	adapterID         string
-	softwareName      string
 	runtimeID         string
 	heartbeatInterval time.Duration
 	connection        *natsgo.Conn
@@ -102,7 +101,7 @@ func Connect(ctx context.Context, config Config) (*Session, error) {
 		return nil, fmt.Errorf("create JetStream client: %w", err)
 	}
 	session := &Session{
-		adapterID: config.AdapterID, softwareName: config.SoftwareName,
+		adapterID:  config.AdapterID,
 		connection: connection, jetstream: js, validator: validator, logger: logger,
 		closed: make(chan struct{}), heartbeatDone: make(chan struct{}),
 		heartbeatWake: make(chan struct{}, 1), heartbeatNotify: make(chan struct{}),

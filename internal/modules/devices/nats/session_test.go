@@ -139,9 +139,20 @@ func TestSessionServerMapsLifecycleRejections(t *testing.T) {
 		claim.Error.RetryAfter == nil || *claim.Error.RetryAfter != retryAfter.Format(time.RFC3339Nano) {
 		t.Fatalf("active claim mapping = %#v, %t", claim, handled)
 	}
+	conflict, handled := mapClaimResult(devices.ErrRuntimeClaimConflict)
+	if !handled || conflict.Error == nil || conflict.Error.Code != "claim_conflict" ||
+		conflict.Error.RetryAfter != nil {
+		t.Fatalf("claim conflict mapping = %#v, %t", conflict, handled)
+	}
 	heartbeat, handled := mapHeartbeatResult(devices.HeartbeatResult{}, devices.ErrRuntimeFenced)
 	if !handled || heartbeat.Error == nil || heartbeat.Error.Code != "runtime_fenced" {
 		t.Fatalf("fenced heartbeat mapping = %#v, %t", heartbeat, handled)
+	}
+	invalidHeartbeat, handled := mapHeartbeatResult(
+		devices.HeartbeatResult{}, devices.ErrInvalidHealthTransition,
+	)
+	if !handled || invalidHeartbeat.Error == nil || invalidHeartbeat.Error.Code != "invalid_transition" {
+		t.Fatalf("invalid heartbeat mapping = %#v, %t", invalidHeartbeat, handled)
 	}
 	release, handled := mapReleaseResult(devices.ErrRuntimeFenced)
 	if !handled || release.Error == nil || release.Error.Code != "runtime_fenced" {

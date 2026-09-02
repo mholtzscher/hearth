@@ -200,6 +200,28 @@ func (q *Queries) GetEntityAvailabilityCurrent(ctx context.Context, arg GetEntit
 	return i, err
 }
 
+const getEntityAvailabilityReceipt = `-- name: GetEntityAvailabilityReceipt :one
+SELECT fingerprint, reported_at
+FROM entity_availability_receipts
+WHERE request_id = ?
+`
+
+type GetEntityAvailabilityReceiptParams struct {
+	RequestID string
+}
+
+type GetEntityAvailabilityReceiptRow struct {
+	Fingerprint string
+	ReportedAt  string
+}
+
+func (q *Queries) GetEntityAvailabilityReceipt(ctx context.Context, arg GetEntityAvailabilityReceiptParams) (GetEntityAvailabilityReceiptRow, error) {
+	row := q.db.QueryRowContext(ctx, getEntityAvailabilityReceipt, arg.RequestID)
+	var i GetEntityAvailabilityReceiptRow
+	err := row.Scan(&i.Fingerprint, &i.ReportedAt)
+	return i, err
+}
+
 const getEntityOwner = `-- name: GetEntityOwner :one
 SELECT adapter_id
 FROM adapter_entity_mappings
@@ -322,6 +344,22 @@ func (q *Queries) InsertAdapterEntityAvailabilityTransitions(ctx context.Context
 		arg.ObservedAt,
 		arg.AdapterID,
 	)
+	return err
+}
+
+const insertEntityAvailabilityReceipt = `-- name: InsertEntityAvailabilityReceipt :exec
+INSERT INTO entity_availability_receipts (request_id, fingerprint, reported_at)
+VALUES (?, ?, ?)
+`
+
+type InsertEntityAvailabilityReceiptParams struct {
+	RequestID   string
+	Fingerprint string
+	ReportedAt  string
+}
+
+func (q *Queries) InsertEntityAvailabilityReceipt(ctx context.Context, arg InsertEntityAvailabilityReceiptParams) error {
+	_, err := q.db.ExecContext(ctx, insertEntityAvailabilityReceipt, arg.RequestID, arg.Fingerprint, arg.ReportedAt)
 	return err
 }
 

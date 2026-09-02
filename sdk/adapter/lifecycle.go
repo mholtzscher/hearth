@@ -159,6 +159,8 @@ func (session *Session) claim(ctx context.Context, config Config) error {
 			if waitErr := waitForRetry(ctx, delay); waitErr != nil {
 				return waitErr
 			}
+		case "claim_conflict":
+			return errors.New("adapter runtime claim conflicts with prior state")
 		default:
 			return fmt.Errorf("unknown Adapter claim rejection %q", response.Data.Error.Code)
 		}
@@ -169,7 +171,7 @@ func (session *Session) SetHealth(ctx context.Context, report HealthReport) erro
 	if err := session.sessionError(); err != nil {
 		return err
 	}
-	if err := validateHealthReport(report, session.softwareName); err != nil {
+	if err := validateHealthReport(report); err != nil {
 		return &ValidationError{Err: err}
 	}
 	report.SourceObservedAt = report.SourceObservedAt.UTC()
@@ -443,7 +445,7 @@ func sendSessionRequest[Resp any](
 	return response, nil
 }
 
-func validateHealthReport(report HealthReport, softwareName string) error {
+func validateHealthReport(report HealthReport) error {
 	if report.SourceObservedAt.IsZero() {
 		return errors.New("health source observation time is required")
 	}
@@ -468,10 +470,10 @@ func validateHealthReport(report HealthReport, softwareName string) error {
 		return errors.New("health reason code must be a lowercase dotted identifier of at most 128 characters")
 	}
 	if strings.HasPrefix(report.ReasonCode, "hearth.") ||
-		strings.HasPrefix(report.ReasonCode, "adapter."+softwareName+".") {
+		strings.HasPrefix(report.ReasonCode, "adapter.") {
 		return nil
 	}
-	return fmt.Errorf("health reason code must use hearth or adapter.%s", softwareName)
+	return errors.New("health reason code must use the hearth or adapter namespace")
 }
 
 func wireHealthReport(report HealthReport) externalSystemHealth {

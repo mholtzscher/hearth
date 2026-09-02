@@ -99,6 +99,12 @@ type EntityAvailabilityCurrent struct {
 	LatestTransitionReceiveOrder sql.NullInt64
 }
 
+type EntityAvailabilityReceipt struct {
+	RequestID   string
+	Fingerprint string
+	ReportedAt  string
+}
+
 type EntityReadProjection struct {
 	ID                                   string
 	DeviceID                             string
@@ -118,6 +124,7 @@ type EntityReadProjection struct {
 	AdapterHealthReasonCode              sql.NullString
 	AdapterHealthSince                   sql.NullString
 	AdapterHealthEvidenceAt              sql.NullString
+	AdapterHealthSourceObservedAt        sql.NullString
 	ReportedAvailabilityStatus           sql.NullString
 	ReportedAvailabilityReasonCode       sql.NullString
 	ReportedAvailabilitySourceObservedAt sql.NullString
