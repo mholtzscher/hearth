@@ -16,3 +16,5 @@ updates:
       interval: weekly
     groups:
       actions-updates:
+        patterns:
+          - "*"
