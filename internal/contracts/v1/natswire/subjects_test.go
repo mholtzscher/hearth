@@ -15,24 +15,26 @@ const (
 func TestSubjectWildcardsMatchProtocol(t *testing.T) {
 	t.Parallel()
 	wildcards := map[string]string{
-		"claim":        AdapterClaimWildcard(),
-		"heartbeat":    AdapterHeartbeatWildcard(),
-		"release":      AdapterReleaseWildcard(),
-		"registration": RegistrationWildcard(),
-		"availability": EntityAvailabilityWildcard(),
-		"observation":  ObservationWildcard(),
-		"enablement":   EntityEnablementWildcard(),
-		"all commands": AllCommandsWildcard(),
+		"claim":          AdapterClaimWildcard(),
+		"heartbeat":      AdapterHeartbeatWildcard(),
+		"release":        AdapterReleaseWildcard(),
+		"registration":   RegistrationWildcard(),
+		"owned mappings": OwnedMappingsWildcard(),
+		"availability":   EntityAvailabilityWildcard(),
+		"observation":    ObservationWildcard(),
+		"enablement":     EntityEnablementWildcard(),
+		"all commands":   AllCommandsWildcard(),
 	}
 	wantWildcards := map[string]string{
-		"claim":        "hearth.v1.adapter.*.claim",
-		"heartbeat":    "hearth.v1.adapter.*.runtime.*.heartbeat",
-		"release":      "hearth.v1.adapter.*.runtime.*.release",
-		"registration": "hearth.v1.adapter.*.runtime.*.register",
-		"availability": "hearth.v1.adapter.*.runtime.*.availability",
-		"observation":  "hearth.v1.adapter.*.runtime.*.observation.*",
-		"enablement":   "hearth.v1.adapter.*.runtime.*.enablement.*",
-		"all commands": "hearth.v1.adapter.*.runtime.*.command.*.*",
+		"claim":          "hearth.v1.adapter.*.claim",
+		"heartbeat":      "hearth.v1.adapter.*.runtime.*.heartbeat",
+		"release":        "hearth.v1.adapter.*.runtime.*.release",
+		"registration":   "hearth.v1.adapter.*.runtime.*.register",
+		"owned mappings": "hearth.v1.adapter.*.runtime.*.mappings",
+		"availability":   "hearth.v1.adapter.*.runtime.*.availability",
+		"observation":    "hearth.v1.adapter.*.runtime.*.observation.*",
+		"enablement":     "hearth.v1.adapter.*.runtime.*.enablement.*",
+		"all commands":   "hearth.v1.adapter.*.runtime.*.command.*.*",
 	}
 	for name, want := range wantWildcards {
 		if got := wildcards[name]; got != want {
@@ -83,6 +85,12 @@ func TestSubjectConstructorsAndParsersMatchProtocol(t *testing.T) {
 				wantRoute: RegistrationRoute{AdapterID: adapterID, RuntimeID: runtimeID},
 				construct: func(value string) (string, error) { return RegistrationSubject(adapterID, value) },
 				parse:     erasedSubjectParser(ParseRegistrationSubject),
+			},
+			{
+				name: "owned mappings", subject: runtimePrefix + ".mappings", usesRuntime: true,
+				wantRoute: OwnedMappingsRoute{AdapterID: adapterID, RuntimeID: runtimeID},
+				construct: func(value string) (string, error) { return OwnedMappingsSubject(adapterID, value) },
+				parse:     erasedSubjectParser(ParseOwnedMappingsSubject),
 			},
 			{
 				name: "availability", subject: runtimePrefix + ".availability", usesRuntime: true,
@@ -166,6 +174,10 @@ func TestStrictParsersRejectStablePreCutoverSubjects(t *testing.T) {
 		{
 			"hearth.v1.adapter.simulator.register",
 			func(value string) error { _, err := ParseRegistrationSubject(value); return err },
+		},
+		{
+			"hearth.v1.adapter.simulator.mappings",
+			func(value string) error { _, err := ParseOwnedMappingsSubject(value); return err },
 		},
 		{
 			"hearth.v1.adapter.simulator.observation." + testEntityID,

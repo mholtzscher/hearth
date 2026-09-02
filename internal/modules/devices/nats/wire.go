@@ -127,6 +127,30 @@ type registrationError struct {
 	Message string `json:"message"`
 }
 
+type ownedMappingsRequest struct {
+	Limit  *int   `json:"limit,omitempty"`
+	Cursor string `json:"cursor,omitempty"`
+}
+
+type ownedMapping struct {
+	BindingKey string `json:"binding_key"`
+	DeviceID   string `json:"device_id"`
+	EntityKey  string `json:"entity_key"`
+	EntityID   string `json:"entity_id"`
+}
+
+type ownedMappingsResponse struct {
+	Status     string              `json:"status"`
+	Items      *[]ownedMapping     `json:"items,omitempty"`
+	NextCursor string              `json:"next_cursor,omitempty"`
+	Error      *ownedMappingsError `json:"error,omitempty"`
+}
+
+type ownedMappingsError struct {
+	Code    string `json:"code"`
+	Message string `json:"message"`
+}
+
 type entityEnablementRequest struct {
 	EntityID string `json:"entity_id"`
 	Enabled  bool   `json:"enabled"`

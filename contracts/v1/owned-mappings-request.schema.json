@@ -1,0 +1,23 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:hearth:schema:owned-mappings-request:v1",
+  "title": "Hearth v1 owned mappings request",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["id", "schema", "emitted_at", "correlation_id", "data"],
+  "properties": {
+    "id": { "$ref": "urn:hearth:schema:common:v1#/$defs/map_id" },
+    "schema": { "const": "urn:hearth:schema:owned-mappings-request:v1" },
+    "emitted_at": { "$ref": "urn:hearth:schema:common:v1#/$defs/utc_timestamp" },
+    "correlation_id": { "$ref": "urn:hearth:schema:common:v1#/$defs/cor_id" },
+    "causation_id": { "$ref": "urn:hearth:schema:common:v1#/$defs/causation_id" },
+    "data": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "limit": { "type": "integer", "minimum": 1, "maximum": 200 },
+        "cursor": { "type": "string", "minLength": 1, "maxLength": 2048, "pattern": "^[\\x00-\\x7F]+$" }
+      }
+    }
+  }
+}

@@ -13,6 +13,7 @@ import (
 
 var (
 	_ RegistrationRepository = (*SQLiteRepository)(nil)
+	_ OwnedMappingRepository = (*SQLiteRepository)(nil)
 	_ RuntimeRepository      = (*SQLiteRepository)(nil)
 	_ AdapterRepository      = (*SQLiteRepository)(nil)
 	_ AvailabilityRepository = (*SQLiteRepository)(nil)
@@ -42,15 +43,55 @@ func NewSQLiteRepository(database *sql.DB, catalog *TypeCatalog) *SQLiteReposito
 // SQLiteStores exposes one SQLite repository through each Service capability.
 func SQLiteStores(repository *SQLiteRepository) Stores {
 	return Stores{
-		Registration: repository,
-		Runtimes:     repository,
-		Adapters:     repository,
-		Availability: repository,
-		Reads:        repository,
-		Enablement:   repository,
-		Commands:     repository,
-		Observations: repository,
+		Registration:  repository,
+		OwnedMappings: repository,
+		Runtimes:      repository,
+		Adapters:      repository,
+		Availability:  repository,
+		Reads:         repository,
+		Enablement:    repository,
+		Commands:      repository,
+		Observations:  repository,
 	}
+}
+
+func (repository *SQLiteRepository) ListOwnedMappings(
+	ctx context.Context,
+	params ListOwnedMappingsParams,
+) (Page[OwnedMapping], error) {
+	if !validPageLimit(params.Limit) || (params.After != nil &&
+		(!registrationSlugPattern.MatchString(params.After.BindingKey) ||
+			!registrationSlugPattern.MatchString(params.After.EntityKey))) {
+		return Page[OwnedMapping]{}, ErrInvalidPage
+	}
+	afterBindingKey := ""
+	afterEntityKey := ""
+	hasAfter := int64(0)
+	if params.After != nil {
+		afterBindingKey = params.After.BindingKey
+		afterEntityKey = params.After.EntityKey
+		hasAfter = 1
+	}
+	rows, err := repository.queries.ListOwnedMappings(ctx, dbsqlc.ListOwnedMappingsParams{
+		AdapterID:       params.AdapterID,
+		HasAfter:        hasAfter,
+		AfterBindingKey: afterBindingKey,
+		AfterEntityKey:  afterEntityKey,
+		ResultLimit:     int64(params.Limit + 1),
+	})
+	if err != nil {
+		return Page[OwnedMapping]{}, fmt.Errorf("list owned mappings: %w", err)
+	}
+	items := make([]OwnedMapping, len(rows))
+	for index, row := range rows {
+		items[index] = OwnedMapping{
+			BindingKey: row.BindingKey,
+			DeviceID:   DeviceID(row.DeviceID),
+			EntityKey:  row.EntityKey,
+			EntityID:   EntityID(row.EntityID),
+		}
+	}
+	return pageFromExtra(items, params.Limit), nil
 }
 
 func (repository *SQLiteRepository) RegisterBinding(

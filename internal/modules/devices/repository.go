@@ -70,6 +70,11 @@ type RegistrationRepository interface {
 	RegisterBinding(context.Context, RegisterBindingParams) (Binding, error)
 }
 
+type OwnedMappingRepository interface {
+	AdapterReader
+	ListOwnedMappings(context.Context, ListOwnedMappingsParams) (Page[OwnedMapping], error)
+}
+
 type RuntimeRepository interface {
 	ClaimAdapterRuntime(context.Context, ClaimRuntimeWrite) error
 	RecordAdapterHeartbeat(context.Context, HeartbeatWrite) (HeartbeatResult, error)

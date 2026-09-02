@@ -30,6 +30,22 @@ func (err *RegistrationRejectedError) Error() string {
 	return fmt.Sprintf("registration rejected (%s): %s", err.Code, err.Message)
 }
 
+type OwnedMappingsRejectionCode string
+
+const (
+	OwnedMappingsInvalidCursor OwnedMappingsRejectionCode = "invalid_cursor"
+	ownedMappingsRuntimeFenced OwnedMappingsRejectionCode = "runtime_fenced"
+)
+
+type OwnedMappingsRejectedError struct {
+	Code    OwnedMappingsRejectionCode
+	Message string
+}
+
+func (err *OwnedMappingsRejectedError) Error() string {
+	return fmt.Sprintf("owned mappings rejected (%s): %s", err.Code, err.Message)
+}
+
 type EntityEnablementRejectionCode string
 
 const (

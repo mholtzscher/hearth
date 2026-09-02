@@ -15,14 +15,15 @@ type Dependencies struct {
 
 // Stores groups persistence capabilities consumed by Service.
 type Stores struct {
-	Registration RegistrationRepository
-	Runtimes     RuntimeRepository
-	Adapters     AdapterRepository
-	Availability AvailabilityRepository
-	Reads        ReadRepository
-	Enablement   EnablementRepository
-	Commands     CommandLedger
-	Observations ObservationRepository
+	Registration  RegistrationRepository
+	OwnedMappings OwnedMappingRepository
+	Runtimes      RuntimeRepository
+	Adapters      AdapterRepository
+	Availability  AvailabilityRepository
+	Reads         ReadRepository
+	Enablement    EnablementRepository
+	Commands      CommandLedger
+	Observations  ObservationRepository
 }
 
 type Service struct {

@@ -3,6 +3,7 @@ package devices //nolint:testpackage // Test helpers assemble package-private pe
 func storesForTest(repository any) Stores {
 	stores := Stores{}
 	stores.Registration, _ = repository.(RegistrationRepository)
+	stores.OwnedMappings, _ = repository.(OwnedMappingRepository)
 	stores.Runtimes, _ = repository.(RuntimeRepository)
 	stores.Adapters, _ = repository.(AdapterRepository)
 	stores.Availability, _ = repository.(AvailabilityRepository)

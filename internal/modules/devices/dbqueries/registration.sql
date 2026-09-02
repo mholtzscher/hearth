@@ -4,6 +4,23 @@ FROM adapter_instances
 WHERE adapter_id = sqlc.arg(adapter_id)
   AND active_runtime_id = CAST(sqlc.arg(runtime_id) AS TEXT);
 
+-- name: ListOwnedMappings :many
+SELECT m.binding_key, b.device_id, m.entity_key, m.entity_id
+FROM adapter_entity_mappings AS m
+JOIN adapter_bindings AS b
+  ON b.adapter_id = m.adapter_id AND b.binding_key = m.binding_key
+WHERE m.adapter_id = sqlc.arg(adapter_id)
+  AND (
+    NOT sqlc.arg(has_after)
+    OR m.binding_key > sqlc.arg(after_binding_key)
+    OR (
+      m.binding_key = sqlc.arg(after_binding_key)
+      AND m.entity_key > sqlc.arg(after_entity_key)
+    )
+  )
+ORDER BY m.binding_key ASC, m.entity_key ASC
+LIMIT sqlc.arg(result_limit);
+
 -- name: GetBinding :one
 SELECT
     b.adapter_id,

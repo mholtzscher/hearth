@@ -82,6 +82,23 @@ type EntityBinding struct {
 	Enabled  bool   `json:"enabled"`
 }
 
+type OwnedMappingPageRequest struct {
+	Limit  int    `json:"limit,omitempty"`
+	Cursor string `json:"cursor,omitempty"`
+}
+
+type OwnedMapping struct {
+	BindingKey string `json:"binding_key"`
+	DeviceID   string `json:"device_id"`
+	EntityKey  string `json:"entity_key"`
+	EntityID   string `json:"entity_id"`
+}
+
+type OwnedMappingPage struct {
+	Items      []OwnedMapping `json:"items"`
+	NextCursor string         `json:"next_cursor,omitempty"`
+}
+
 type RegistrationResponse struct {
 	Status  string             `json:"status"`
 	Binding *Binding           `json:"binding,omitempty"`

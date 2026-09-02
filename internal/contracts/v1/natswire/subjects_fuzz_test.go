@@ -21,6 +21,7 @@ func FuzzSubjectParsersCanonicalRoundTrip(f *testing.F) {
 		validRuntimePrefix + ".heartbeat",
 		validRuntimePrefix + ".release",
 		validRuntimePrefix + ".register",
+		validRuntimePrefix + ".mappings",
 		validRuntimePrefix + ".availability",
 		validRuntimePrefix + ".observation." + fuzzEntityID,
 		validRuntimePrefix + ".enablement." + fuzzEntityID,
@@ -45,6 +46,7 @@ func FuzzSubjectParsersCanonicalRoundTrip(f *testing.F) {
 
 		// Stable pre-runtime cutover forms.
 		"hearth.v1.adapter.simulator.register",
+		"hearth.v1.adapter.simulator.mappings",
 		"hearth.v1.adapter.simulator.observation." + fuzzEntityID,
 		"hearth.v1.adapter.simulator.enablement." + fuzzEntityID,
 		"hearth.v1.adapter.simulator.command." + fuzzEntityID + ".set",
@@ -80,6 +82,12 @@ func FuzzSubjectParsersCanonicalRoundTrip(f *testing.F) {
 			t, subject, natswire.ParseRegistrationSubject,
 			func(route natswire.RegistrationRoute) (string, error) {
 				return natswire.RegistrationSubject(route.AdapterID, route.RuntimeID)
+			},
+		)
+		checkAcceptedSubject(
+			t, subject, natswire.ParseOwnedMappingsSubject,
+			func(route natswire.OwnedMappingsRoute) (string, error) {
+				return natswire.OwnedMappingsSubject(route.AdapterID, route.RuntimeID)
 			},
 		)
 		checkAcceptedSubject(
