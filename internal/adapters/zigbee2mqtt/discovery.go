@@ -12,8 +12,6 @@ import (
 	"strings"
 	"unicode/utf8"
 
-	contractbrightnessv1 "github.com/mholtzscher/hearth/entitytypes/brightnessv1"
-	contractpowerv1 "github.com/mholtzscher/hearth/entitytypes/powerv1"
 	"github.com/mholtzscher/hearth/sdk/adapter"
 	sdkbrightnessv1 "github.com/mholtzscher/hearth/sdk/adapter/brightnessv1"
 	sdkpowerv1 "github.com/mholtzscher/hearth/sdk/adapter/powerv1"
@@ -46,20 +44,12 @@ const (
 	rejectionDuplicateFriendly = "duplicate_friendly_name"
 )
 
-// bridgeInfo is the retained bridge/info payload needed to prove compatible global behavior.
+// bridgeInfo is the validated bridge information needed to prove compatible global behavior.
 type bridgeInfo struct {
-	Version string `json:"version"`
-	Config  struct {
-		MQTT struct {
-			Version int `json:"version"`
-		} `json:"mqtt"`
-		Availability struct {
-			Enabled bool `json:"enabled"`
-		} `json:"availability"`
-		DeviceOptions struct {
-			Optimistic *bool `json:"optimistic"`
-		} `json:"device_options"`
-	} `json:"config"`
+	Version             string
+	MQTTVersion         int
+	AvailabilityEnabled bool
+	Optimistic          bool
 }
 
 // bridgeState is the retained bridge/state payload.
@@ -498,9 +488,6 @@ func entityIdentity(kind entityKind, label string, endpoint int, scoped bool) (s
 }
 
 func makeEntityDescriptor(ieeeAddress string, entity discoveredEntity) (adapter.EntityDescriptor, error) {
-	if utf8.RuneCountInString(entity.Descriptor.Name) > maximumDescriptorRunes {
-		return adapter.EntityDescriptor{}, errors.New("entity name exceeds 128 runes")
-	}
 	location := "root"
 	if entity.Scoped {
 		location = "ep" + strconv.Itoa(entity.Endpoint)
@@ -512,17 +499,9 @@ func makeEntityDescriptor(ieeeAddress string, entity discoveredEntity) (adapter.
 	}
 	switch entity.Kind {
 	case entityKindPower:
-		return sdkpowerv1.NewEntityDescriptor(metadata, contractpowerv1.Support{
-			State:      contractpowerv1.StateSupport{},
-			Operations: contractpowerv1.OperationSupport{Set: contractpowerv1.SetSupport{}},
-		})
+		return sdkpowerv1.NewEntityDescriptor(metadata, powerSupport())
 	case entityKindBrightness:
-		return sdkbrightnessv1.NewEntityDescriptor(metadata, contractbrightnessv1.Support{
-			State: contractbrightnessv1.StateSupport{Maximum: hearthBrightnessMaximum},
-			Operations: contractbrightnessv1.OperationSupport{
-				Set: contractbrightnessv1.SetSupport{Step: 1},
-			},
-		})
+		return sdkbrightnessv1.NewEntityDescriptor(metadata, brightnessSupport())
 	default:
 		return adapter.EntityDescriptor{}, errors.New("unknown Entity kind")
 	}

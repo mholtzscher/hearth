@@ -43,12 +43,7 @@ func decodeDeviceState(
 	}
 	states := make([]decodedEntityState, 0, len(entities))
 	issues := make([]stateDecodeIssue, 0)
-	seenProperties := make(map[string]struct{}, len(entities))
 	for _, entity := range entities {
-		if _, seen := seenProperties[entity.Property]; seen {
-			return nil, nil, fmt.Errorf("duplicate discovered property %q", entity.Property)
-		}
-		seenProperties[entity.Property] = struct{}{}
 		raw, present := properties[entity.Property]
 		if !present {
 			continue

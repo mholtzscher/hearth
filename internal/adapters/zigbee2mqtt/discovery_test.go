@@ -454,16 +454,20 @@ func TestDiscoverInventoryDocumentBoundaries(t *testing.T) {
 	}
 }
 
-// This test protects the retained bridge/info DTO shape, including proof that optimistic mode was explicitly false.
+// This test protects retained bridge/info decoding, including proof that optimistic mode was explicitly false.
 func TestDecodeCapturedBridgeInfo(t *testing.T) {
 	t.Parallel()
-	var info bridgeInfo
-	if err := decodeJSON(readFixture(t, "bridge-info-2.13.0.json"), &info); err != nil {
+	info, err := decodeBridgeInfo(readFixture(t, "bridge-info-2.13.0.json"))
+	if err != nil {
 		t.Fatal(err)
 	}
-	if info.Version != "2.13.0" || info.Config.MQTT.Version != 4 || !info.Config.Availability.Enabled ||
-		info.Config.DeviceOptions.Optimistic == nil || *info.Config.DeviceOptions.Optimistic {
+	if info.Version != "2.13.0" || info.MQTTVersion != 4 || !info.AvailabilityEnabled || info.Optimistic {
 		t.Fatalf("bridge info = %#v", info)
+	}
+	if _, err = decodeBridgeInfo([]byte(
+		`{"version":"2.13.0","config":{"mqtt":{"version":4},"availability":{"enabled":true},"device_options":{}}}`,
+	)); err == nil {
+		t.Fatal("bridge info without explicit optimistic behavior was accepted")
 	}
 }
 

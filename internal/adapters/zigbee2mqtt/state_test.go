@@ -242,19 +242,14 @@ func TestDecodeAvailability(t *testing.T) {
 	}
 }
 
-// This test protects malformed top-level State rejection and duplicate-route defense.
-func TestDecodeDeviceStateRejectsInvalidShapeAndRoutes(t *testing.T) {
+// This test protects malformed top-level State rejection.
+func TestDecodeDeviceStateRejectsInvalidShape(t *testing.T) {
 	t.Parallel()
 	device := mustDiscoveredFixtureDevice(t, "bridge-devices-3rcb01057z.json")
 	for _, payload := range [][]byte{[]byte(`null`), []byte(`[]`), []byte(`{`), []byte(`{} {}`)} {
 		if _, _, err := decodeDeviceState(payload, device.Entities); err == nil {
 			t.Errorf("decodeDeviceState(%q) accepted invalid shape", payload)
 		}
-	}
-	duplicate := append([]discoveredEntity(nil), device.Entities...)
-	duplicate = append(duplicate, duplicate[0])
-	if _, _, err := decodeDeviceState([]byte(`{"state":"ON"}`), duplicate); err == nil {
-		t.Fatal("duplicate discovered property was accepted")
 	}
 }
 

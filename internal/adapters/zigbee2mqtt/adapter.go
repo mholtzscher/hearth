@@ -92,9 +92,8 @@ type runtimeDevice struct {
 }
 
 type routeSnapshot struct {
-	routes      map[string]commandRoute
-	devices     map[string]runtimeDevice
-	deviceOrder []string
+	routes  map[string]commandRoute
+	devices map[string]runtimeDevice
 }
 
 type sessionOperationError struct {
@@ -381,39 +380,41 @@ func (z2m *Adapter) ingestMessage(
 }
 
 func decodeBridgeInfo(payload []byte) (bridgeInfo, error) {
-	var required struct {
-		Version *json.RawMessage `json:"version"`
+	var wire struct {
+		Version *string `json:"version"`
 		Config  *struct {
 			MQTT *struct {
-				Version *json.RawMessage `json:"version"`
+				Version *int `json:"version"`
 			} `json:"mqtt"`
 			Availability *struct {
-				Enabled *json.RawMessage `json:"enabled"`
+				Enabled *bool `json:"enabled"`
 			} `json:"availability"`
 			DeviceOptions *struct {
-				Optimistic *json.RawMessage `json:"optimistic"`
+				Optimistic *bool `json:"optimistic"`
 			} `json:"device_options"`
 		} `json:"config"`
 	}
-	if err := decodeJSON(payload, &required); err != nil || required.Version == nil || required.Config == nil ||
-		required.Config.MQTT == nil || required.Config.MQTT.Version == nil || required.Config.Availability == nil ||
-		required.Config.Availability.Enabled == nil || required.Config.DeviceOptions == nil ||
-		required.Config.DeviceOptions.Optimistic == nil {
-		return bridgeInfo{}, errors.New("bridge info is missing required fields")
-	}
-	var info bridgeInfo
-	if err := decodeJSON(payload, &info); err != nil {
+	if err := decodeJSON(payload, &wire); err != nil {
 		return bridgeInfo{}, err
 	}
-	if info.Version == "" {
+	if wire.Version == nil || wire.Config == nil || wire.Config.MQTT == nil || wire.Config.MQTT.Version == nil ||
+		wire.Config.Availability == nil || wire.Config.Availability.Enabled == nil ||
+		wire.Config.DeviceOptions == nil || wire.Config.DeviceOptions.Optimistic == nil {
+		return bridgeInfo{}, errors.New("bridge info is missing required fields")
+	}
+	if *wire.Version == "" {
 		return bridgeInfo{}, errors.New("bridge info version is required")
 	}
-	return info, nil
+	return bridgeInfo{
+		Version:             *wire.Version,
+		MQTTVersion:         *wire.Config.MQTT.Version,
+		AvailabilityEnabled: *wire.Config.Availability.Enabled,
+		Optimistic:          *wire.Config.DeviceOptions.Optimistic,
+	}, nil
 }
 
 func compatibleBridgeInfo(info bridgeInfo) bool {
-	return info.Config.MQTT.Version == mqttProtocolVersion311 && info.Config.Availability.Enabled &&
-		info.Config.DeviceOptions.Optimistic != nil && !*info.Config.DeviceOptions.Optimistic
+	return info.MQTTVersion == mqttProtocolVersion311 && info.AvailabilityEnabled && !info.Optimistic
 }
 
 //nolint:gocognit,funlen // Registration and ordered evidence form one transaction-like reconciliation flow.
@@ -429,7 +430,6 @@ func (z2m *Adapter) reconcile(
 	var err error
 	snapshot := routeSnapshot{
 		routes: make(map[string]commandRoute), devices: make(map[string]runtimeDevice),
-		deviceOrder: make([]string, 0, len(state.inventory.Devices)),
 	}
 	for _, rejection := range state.inventory.Rejections {
 		z2m.logger.WarnContext(
@@ -487,7 +487,6 @@ func (z2m *Adapter) reconcile(
 			continue
 		}
 		snapshot.devices[runtime.friendly] = runtime
-		snapshot.deviceOrder = append(snapshot.deviceOrder, runtime.friendly)
 		for _, entity := range runtime.entities {
 			route := commandRoute{
 				entityID: entity.entityID, ieeeAddress: runtime.ieeeAddress, friendlyName: runtime.friendly,
@@ -542,8 +541,11 @@ func (z2m *Adapter) reconcile(
 		}
 	}
 	state.clearPending()
-	for _, friendly := range snapshot.deviceOrder {
-		device := snapshot.devices[friendly]
+	for _, discovered := range state.inventory.Devices {
+		device, exists := snapshot.devices[discovered.FriendlyName]
+		if !exists {
+			continue
+		}
 		for _, entity := range device.entities {
 			if err = publishGet(
 				ctx,
@@ -628,12 +630,11 @@ func (z2m *Adapter) reportReconciledAvailability(
 	snapshot routeSnapshot,
 	evidence map[string]availabilityEvidence,
 ) error {
-	current := make(map[mappingKey]runtimeEntity)
-	bindingIEEE := make(map[string]string)
+	currentIEEE := make(map[mappingKey]string)
 	for _, device := range snapshot.devices {
-		bindingIEEE[device.bindingKey] = device.ieeeAddress
 		for _, entity := range device.entities {
-			current[mappingKey{binding: device.bindingKey, entity: entity.discovered.Descriptor.Key}] = entity
+			currentIEEE[mappingKey{binding: device.bindingKey, entity: entity.discovered.Descriptor.Key}] =
+				device.ieeeAddress
 		}
 	}
 	present := make(map[string]struct{})
@@ -656,20 +657,20 @@ func (z2m *Adapter) reportReconciledAvailability(
 	for _, key := range z2m.knownOrder {
 		mapping := z2m.knownMappings[key]
 		report := adapter.EntityAvailabilityReport{EntityID: mapping.EntityID, SourceObservedAt: time.Now().UTC()}
-		if _, exists := current[key]; !exists {
+		ieeeAddress, current := currentIEEE[key]
+		if !current {
 			report.Status = adapter.AvailabilityUnavailable
-			switch {
-			case contains(disabled, key.binding):
+			if _, isDisabled := disabled[key.binding]; isDisabled {
 				report.ReasonCode = deviceDisabledReason
-			case contains(present, key.binding):
+			} else if _, isPresent := present[key.binding]; isPresent {
 				report.ReasonCode = capabilityMissingReason
-			default:
+			} else {
 				report.ReasonCode = deviceMissingReason
 			}
 			reports = append(reports, report)
 			continue
 		}
-		if available, exists := evidence[bindingIEEE[key.binding]]; exists {
+		if available, exists := evidence[ieeeAddress]; exists {
 			report.SourceObservedAt = available.receivedAt
 			if available.available {
 				report.Status = adapter.AvailabilityAvailable
@@ -681,11 +682,6 @@ func (z2m *Adapter) reportReconciledAvailability(
 		}
 	}
 	return z2m.reportAvailability(ctx, reports)
-}
-
-func contains(values map[string]struct{}, value string) bool {
-	_, exists := values[value]
-	return exists
 }
 
 func (z2m *Adapter) processDeviceMessage(
@@ -1008,23 +1004,31 @@ const (
 	deviceTopicAvailability
 )
 
-func queueableDeviceTopic(base, topic string, inventory *inventoryDiscovery) bool {
+func parseDeviceTopic(base, topic string) (string, deviceTopic) {
 	remainder, ok := strings.CutPrefix(topic, base+"/")
 	if !ok {
-		return false
+		return "", deviceTopicUnknown
 	}
-	parts := strings.Split(remainder, "/")
-	if len(parts) == 0 || !validRouteSlug(parts[0]) || parts[0] == "bridge" {
-		return false
+	if validRouteSlug(remainder) && remainder != "bridge" {
+		return remainder, deviceTopicState
 	}
-	if len(parts) != 1 && (len(parts) != 2 || parts[1] != "availability") {
+	friendly, suffix, hasSuffix := strings.Cut(remainder, "/")
+	if hasSuffix && suffix == "availability" && validRouteSlug(friendly) && friendly != "bridge" {
+		return friendly, deviceTopicAvailability
+	}
+	return "", deviceTopicUnknown
+}
+
+func queueableDeviceTopic(base, topic string, inventory *inventoryDiscovery) bool {
+	friendly, kind := parseDeviceTopic(base, topic)
+	if kind == deviceTopicUnknown {
 		return false
 	}
 	if inventory == nil {
 		return true
 	}
 	for _, device := range inventory.Devices {
-		if device.FriendlyName == parts[0] {
+		if device.FriendlyName == friendly {
 			return true
 		}
 	}
@@ -1032,20 +1036,10 @@ func queueableDeviceTopic(base, topic string, inventory *inventoryDiscovery) boo
 }
 
 func classifyDeviceTopic(base, topic string, devices map[string]runtimeDevice) (runtimeDevice, deviceTopic) {
-	remainder, ok := strings.CutPrefix(topic, base+"/")
-	if !ok || remainder == "" {
-		return runtimeDevice{}, deviceTopicUnknown
-	}
-	if device, exists := devices[remainder]; exists {
-		return device, deviceTopicState
-	}
-	friendly, suffix, hasSuffix := strings.Cut(remainder, "/")
-	if !hasSuffix || suffix != "availability" {
-		return runtimeDevice{}, deviceTopicUnknown
-	}
+	friendly, kind := parseDeviceTopic(base, topic)
 	device, exists := devices[friendly]
 	if !exists {
 		return runtimeDevice{}, deviceTopicUnknown
 	}
-	return device, deviceTopicAvailability
+	return device, kind
 }
