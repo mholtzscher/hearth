@@ -13,10 +13,10 @@ jobs:
   test:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
-      - uses: jdx/mise-action@v2
+      - uses: jdx/mise-action@v4
         with:
           cache: true
       - name: Resolve Go cache paths
@@ -26,7 +26,7 @@ jobs:
           echo "modules=$(go env GOMODCACHE)" >> "$GITHUB_OUTPUT"
           echo "version=$(go env GOVERSION)" >> "$GITHUB_OUTPUT"
       - name: Cache Go dependencies and build artifacts
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: |
             ${{ steps.go-cache-paths.outputs.build }}
@@ -44,8 +44,8 @@ jobs:
   fuzz:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
-      - uses: jdx/mise-action@v2
+      - uses: actions/checkout@v7
+      - uses: jdx/mise-action@v4
         with:
           cache: true
       - name: Resolve Go cache paths
@@ -55,7 +55,7 @@ jobs:
           echo "modules=$(go env GOMODCACHE)" >> "$GITHUB_OUTPUT"
           echo "version=$(go env GOVERSION)" >> "$GITHUB_OUTPUT"
       - name: Cache Go dependencies and build artifacts
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: |
             ${{ steps.go-cache-paths.outputs.build }}
@@ -68,7 +68,7 @@ jobs:
         run: mise run fuzz
       - name: Upload failing fuzz corpus
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: fuzz-failures
           path: "**/testdata/fuzz/**"
