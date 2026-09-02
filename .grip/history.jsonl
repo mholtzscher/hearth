@@ -4,3 +4,17 @@
 {"url": "sqlite:.data/hearthd.db", "table": "entity_states", "elapsed_ms": 15, "ts": 1787535380, "type": "query", "sql": "SELECT * FROM \"entity_states\" LIMIT 100"}
 {"url": "sqlite:.data/hearthd.db", "table": "observation_receipts", "elapsed_ms": 17, "ts": 1787535387, "type": "query", "sql": "SELECT * FROM \"observation_receipts\" LIMIT 100"}
 {"url": "sqlite:.data/hearthd.db", "table": "commands", "elapsed_ms": 14, "ts": 1787535404, "type": "query", "sql": "SELECT * FROM \"commands\" LIMIT 100"}
+{"url": "sqlite:/tmp/hearth-z2m-live-20260902-163246/hearthd.db", "table": "adapter_bindings", "elapsed_ms": 6, "ts": 1788385773, "type": "query", "sql": "SELECT * FROM \"adapter_bindings\" LIMIT 100"}
+{"url": "sqlite:/tmp/hearth-z2m-live-20260902-163246/hearthd.db", "table": "adapter_entity_mappings", "elapsed_ms": 7, "ts": 1788385777, "type": "query", "sql": "SELECT * FROM \"adapter_entity_mappings\" LIMIT 100"}
+{"url": "sqlite:/tmp/hearth-z2m-live-20260902-163246/hearthd.db", "table": "adapter_instances", "elapsed_ms": 7, "ts": 1788385789, "type": "query", "sql": "SELECT * FROM \"adapter_instances\" LIMIT 100"}
+{"url": "sqlite:/tmp/hearth-z2m-live-20260902-163246/hearthd.db", "table": "adapter_runtimes", "elapsed_ms": 7, "ts": 1788385793, "type": "query", "sql": "SELECT * FROM \"adapter_runtimes\" LIMIT 100"}
+{"url": "sqlite:/tmp/hearth-z2m-live-20260902-163246/hearthd.db", "table": "adapter_bindings", "elapsed_ms": 7, "ts": 1788385795, "type": "query", "sql": "SELECT * FROM \"adapter_bindings\" LIMIT 100"}
+{"url": "sqlite:/tmp/hearth-z2m-live-20260902-163246/hearthd.db", "table": "commands", "elapsed_ms": 7, "ts": 1788385802, "type": "query", "sql": "SELECT * FROM \"commands\" LIMIT 100"}
+{"url": "sqlite:/tmp/hearth-z2m-live-20260902-163246/hearthd.db", "table": "devices", "elapsed_ms": 7, "ts": 1788385814, "type": "query", "sql": "SELECT * FROM \"devices\" LIMIT 100"}
+{"url": "sqlite:/tmp/hearth-z2m-live-20260902-163246/hearthd.db", "table": "entities", "elapsed_ms": 7, "ts": 1788385815, "type": "query", "sql": "SELECT * FROM \"entities\" LIMIT 100"}
+{"url": "sqlite:/tmp/hearth-z2m-live-20260902-163246/hearthd.db", "table": "entity_availability_current", "elapsed_ms": 7, "ts": 1788385828, "type": "query", "sql": "SELECT * FROM \"entity_availability_current\" LIMIT 100"}
+{"url": "sqlite:/tmp/hearth-z2m-live-20260902-163246/hearthd.db", "table": "entity_availability_receipts", "elapsed_ms": 7, "ts": 1788385832, "type": "query", "sql": "SELECT * FROM \"entity_availability_receipts\" LIMIT 100"}
+{"url": "sqlite:/tmp/hearth-z2m-live-20260902-163246/hearthd.db", "table": "entity_states", "elapsed_ms": 7, "ts": 1788385834, "type": "query", "sql": "SELECT * FROM \"entity_states\" LIMIT 100"}
+{"url": "sqlite:/tmp/hearth-z2m-live-20260902-163246/hearthd.db", "table": "health_transitions", "elapsed_ms": 7, "ts": 1788385853, "type": "query", "sql": "SELECT * FROM \"health_transitions\" LIMIT 100"}
+{"url": "sqlite:/tmp/hearth-z2m-live-20260902-163246/hearthd.db", "table": "observation_receipts", "elapsed_ms": 8, "ts": 1788385873, "type": "query", "sql": "SELECT * FROM \"observation_receipts\" LIMIT 100"}
+{"url": "sqlite:/tmp/hearth-z2m-live-20260902-163246/hearthd.db", "table": "entity_states", "elapsed_ms": 6, "ts": 1788385901, "type": "query", "sql": "SELECT * FROM \"entity_states\" LIMIT 100"}

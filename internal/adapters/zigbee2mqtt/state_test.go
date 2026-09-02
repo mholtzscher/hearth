@@ -213,35 +213,6 @@ func TestCommandValuesUseDiscoveredMetadata(t *testing.T) {
 	}
 }
 
-// This test protects explicit availability evidence and fails if unknown strings or malformed payloads imply availability.
-func TestDecodeAvailability(t *testing.T) {
-	t.Parallel()
-	for _, test := range []struct {
-		payload string
-		want    bool
-		valid   bool
-	}{
-		{payload: `{"state":"online","extra":true}`, want: true, valid: true},
-		{payload: `{"state":"offline"}`, want: false, valid: true},
-		{payload: `{"state":"unknown"}`},
-		{payload: `{}`},
-		{payload: `null`},
-		{payload: `not-json`},
-	} {
-		got, err := decodeAvailability([]byte(test.payload))
-		if (err == nil) != test.valid || got != test.want {
-			t.Errorf(
-				"decodeAvailability(%s) = %t, %v; want %t, valid=%t",
-				test.payload,
-				got,
-				err,
-				test.want,
-				test.valid,
-			)
-		}
-	}
-}
-
 // This test protects malformed top-level State rejection.
 func TestDecodeDeviceStateRejectsInvalidShape(t *testing.T) {
 	t.Parallel()
@@ -276,21 +247,6 @@ func FuzzDeviceState(fuzz *testing.F) {
 			}
 		}
 	})
-}
-
-func mustDiscoveredFixtureDevice(testingT interface {
-	Helper()
-	Fatal(...any)
-}, fixture string) discoveredDevice {
-	testingT.Helper()
-	result, err := discoverInventory(readFixture(testingT, fixture))
-	if err != nil {
-		testingT.Fatal(err)
-	}
-	if len(result.Devices) != 1 {
-		testingT.Fatal("fixture did not discover exactly one Device")
-	}
-	return result.Devices[0]
 }
 
 func TestDecodeStatePreservesDiscoveryOrder(t *testing.T) {

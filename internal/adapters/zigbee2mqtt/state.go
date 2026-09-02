@@ -10,11 +10,6 @@ import (
 
 const brightnessRoundingOffset = 0.5
 
-// availabilityPayload is a per-Device availability message.
-type availabilityPayload struct {
-	State string `json:"state"`
-}
-
 // decodedEntityState is one typed Hearth value joined to the discovery route that produced it.
 type decodedEntityState struct {
 	Entity     discoveredEntity
@@ -158,20 +153,4 @@ func scaleBrightnessCommand(percentage int64, maximum float64) (json.RawMessage,
 		return nil, fmt.Errorf("encode scaled brightness: %w", err)
 	}
 	return encoded, nil
-}
-
-// decodeAvailability accepts only Zigbee2MQTT's explicit online and offline evidence.
-func decodeAvailability(payload []byte) (bool, error) {
-	var availability availabilityPayload
-	if err := decodeJSON(payload, &availability); err != nil {
-		return false, fmt.Errorf("decode Zigbee2MQTT availability: %w", err)
-	}
-	switch availability.State {
-	case upstreamOnline:
-		return true, nil
-	case upstreamOffline:
-		return false, nil
-	default:
-		return false, fmt.Errorf("unsupported availability state %q", availability.State)
-	}
 }

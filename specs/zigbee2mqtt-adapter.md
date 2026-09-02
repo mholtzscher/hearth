@@ -540,15 +540,30 @@ internal/app/
 internal/adapters/
 └── zigbee2mqtt/
     ├── adapter.go
-    ├── adapter_test.go
+    ├── availability.go
+    ├── availability_test.go
     ├── command.go
+    ├── command_concurrency_test.go
     ├── command_test.go
+    ├── connection.go
+    ├── connection_test.go
     ├── discovery.go
+    ├── discovery_exposes.go
     ├── discovery_test.go
+    ├── discovery_wire.go
+    ├── exposes_test.go
+    ├── fixture_helpers_test.go
     ├── mqtt.go
     ├── mqtt_integration_test.go
+    ├── observation.go
+    ├── reconcile.go
+    ├── reconciliation_test.go
+    ├── routes.go
+    ├── runtime_helpers_test.go
     ├── state.go
     ├── state_test.go
+    ├── topics.go
+    ├── topics_test.go
     └── testdata/
         ├── bridge-info-2.13.0.json
         ├── bridge-devices-3rcb01057z.json
