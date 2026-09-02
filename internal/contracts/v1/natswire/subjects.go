@@ -37,6 +37,11 @@ type RegistrationRoute struct {
 	RuntimeID string
 }
 
+type OwnedMappingsRoute struct {
+	AdapterID string
+	RuntimeID string
+}
+
 type EntityAvailabilityRoute struct {
 	AdapterID string
 	RuntimeID string
@@ -94,6 +99,14 @@ func RegistrationWildcard() string {
 
 func RegistrationSubject(adapterID, runtimeID string) (string, error) {
 	return runtimeSubject(adapterID, runtimeID, "register")
+}
+
+func OwnedMappingsWildcard() string {
+	return runtimeWildcard("mappings")
+}
+
+func OwnedMappingsSubject(adapterID, runtimeID string) (string, error) {
+	return runtimeSubject(adapterID, runtimeID, "mappings")
 }
 
 func EntityAvailabilityWildcard() string {
@@ -193,6 +206,14 @@ func ParseRegistrationSubject(subject string) (RegistrationRoute, error) {
 		return RegistrationRoute{}, fmt.Errorf("invalid registration subject %q: %w", subject, err)
 	}
 	return RegistrationRoute{AdapterID: adapterID, RuntimeID: runtimeID}, nil
+}
+
+func ParseOwnedMappingsSubject(subject string) (OwnedMappingsRoute, error) {
+	adapterID, runtimeID, err := parseRuntimeSubject(subject, "mappings")
+	if err != nil {
+		return OwnedMappingsRoute{}, fmt.Errorf("invalid owned mappings subject %q: %w", subject, err)
+	}
+	return OwnedMappingsRoute{AdapterID: adapterID, RuntimeID: runtimeID}, nil
 }
 
 func ParseEntityAvailabilitySubject(subject string) (EntityAvailabilityRoute, error) {

@@ -24,7 +24,7 @@ const (
 	natsReconnectWait     = 250 * time.Millisecond
 )
 
-//nolint:gocognit // Startup and shutdown remain linear so resource ownership is visible in one place.
+//nolint:gocognit,gocyclo,cyclop // Startup and shutdown remain linear so resource ownership is visible in one place.
 func Run(ctx context.Context, config Config, logger *slog.Logger) error { //nolint:funlen // Linear resource lifecycle.
 	if err := config.Validate(); err != nil {
 		return err
@@ -90,6 +90,13 @@ func Run(ctx context.Context, config Config, logger *slog.Logger) error { //noli
 		return registrationErr
 	}
 	defer func() { _ = registrations.Drain() }()
+	ownedMappings, ownedMappingsErr := devicesnats.StartOwnedMappingsServer(
+		connection, validator, service, logger,
+	)
+	if ownedMappingsErr != nil {
+		return ownedMappingsErr
+	}
+	defer func() { _ = ownedMappings.Drain() }()
 	enablement, enablementErr := devicesnats.StartEntityEnablementServer(connection, validator, service, logger)
 	if enablementErr != nil {
 		return enablementErr
@@ -134,6 +141,9 @@ func Run(ctx context.Context, config Config, logger *slog.Logger) error { //noli
 			observations.Stop()
 		}
 		if err := enablement.Drain(); err != nil {
+			return err
+		}
+		if err := ownedMappings.Drain(); err != nil {
 			return err
 		}
 		if err := registrations.Drain(); err != nil {

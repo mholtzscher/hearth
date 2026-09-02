@@ -19,6 +19,8 @@ const (
 	CommandResponseSchemaID            = "urn:hearth:schema:command-response:v1"
 	EntityEnablementRequestSchemaID    = "urn:hearth:schema:entity-enablement-request:v1"
 	EntityEnablementResponseSchemaID   = "urn:hearth:schema:entity-enablement-response:v1"
+	OwnedMappingsRequestSchemaID       = "urn:hearth:schema:owned-mappings-request:v1"
+	OwnedMappingsResponseSchemaID      = "urn:hearth:schema:owned-mappings-response:v1"
 )
 
 // FS contains the authoritative Hearth v1 JSON Schemas.
@@ -44,5 +46,7 @@ func SchemaFiles() map[string]string {
 		CommandResponseSchemaID:            "command-response.schema.json",
 		EntityEnablementRequestSchemaID:    "entity-enablement-request.schema.json",
 		EntityEnablementResponseSchemaID:   "entity-enablement-response.schema.json",
+		OwnedMappingsRequestSchemaID:       "owned-mappings-request.schema.json",
+		OwnedMappingsResponseSchemaID:      "owned-mappings-response.schema.json",
 	}
 }

@@ -359,6 +359,73 @@ func (q *Queries) InsertEntityAvailabilityBaseline(ctx context.Context, arg Inse
 	return err
 }
 
+const listOwnedMappings = `-- name: ListOwnedMappings :many
+SELECT m.binding_key, b.device_id, m.entity_key, m.entity_id
+FROM adapter_entity_mappings AS m
+JOIN adapter_bindings AS b
+  ON b.adapter_id = m.adapter_id AND b.binding_key = m.binding_key
+WHERE m.adapter_id = ?1
+  AND (
+    NOT ?2
+    OR m.binding_key > ?3
+    OR (
+      m.binding_key = ?3
+      AND m.entity_key > ?4
+    )
+  )
+ORDER BY m.binding_key ASC, m.entity_key ASC
+LIMIT ?5
+`
+
+type ListOwnedMappingsParams struct {
+	AdapterID       string
+	HasAfter        interface{}
+	AfterBindingKey string
+	AfterEntityKey  string
+	ResultLimit     int64
+}
+
+type ListOwnedMappingsRow struct {
+	BindingKey string
+	DeviceID   string
+	EntityKey  string
+	EntityID   string
+}
+
+func (q *Queries) ListOwnedMappings(ctx context.Context, arg ListOwnedMappingsParams) ([]ListOwnedMappingsRow, error) {
+	rows, err := q.db.QueryContext(ctx, listOwnedMappings,
+		arg.AdapterID,
+		arg.HasAfter,
+		arg.AfterBindingKey,
+		arg.AfterEntityKey,
+		arg.ResultLimit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListOwnedMappingsRow
+	for rows.Next() {
+		var i ListOwnedMappingsRow
+		if err := rows.Scan(
+			&i.BindingKey,
+			&i.DeviceID,
+			&i.EntityKey,
+			&i.EntityID,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const updateBindingExternalID = `-- name: UpdateBindingExternalID :exec
 UPDATE adapter_bindings
 SET external_device_id = ?, updated_at = ?

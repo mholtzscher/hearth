@@ -160,6 +160,67 @@ func (session *Session) Register(ctx context.Context, registration Registration)
 	}
 }
 
+type ownedMappingsResponse struct {
+	Status     string              `json:"status"`
+	Items      *[]OwnedMapping     `json:"items,omitempty"`
+	NextCursor string              `json:"next_cursor,omitempty"`
+	Error      *ownedMappingsError `json:"error,omitempty"`
+}
+
+type ownedMappingsError struct {
+	Code    OwnedMappingsRejectionCode `json:"code"`
+	Message string                     `json:"message"`
+}
+
+// ListOwnedMappings returns one page of Binding and Entity mappings owned by the Session's Adapter.
+func (session *Session) ListOwnedMappings(
+	ctx context.Context,
+	pageRequest OwnedMappingPageRequest,
+) (OwnedMappingPage, error) {
+	if err := session.sessionError(); err != nil {
+		return OwnedMappingPage{}, err
+	}
+	if pageRequest.Limit < 0 || pageRequest.Limit > 200 {
+		return OwnedMappingPage{}, &ValidationError{
+			Err: errors.New("owned mappings limit must be 0 or between 1 and 200"),
+		}
+	}
+	subject, err := natswire.OwnedMappingsSubject(session.adapterID, session.runtimeID)
+	if err != nil {
+		return OwnedMappingPage{}, &ValidationError{Err: err}
+	}
+	request, err := prepareRequest(
+		session, "map", contractsv1.OwnedMappingsRequestSchemaID,
+		contractsv1.OwnedMappingsResponseSchemaID, "owned mappings", subject, pageRequest,
+	)
+	if err != nil {
+		return OwnedMappingPage{}, err
+	}
+	for {
+		attemptContext, cancelAttempt := context.WithTimeout(ctx, requestAttemptTimeout)
+		response, requestErr := sendSessionRequest[ownedMappingsResponse](attemptContext, session, request)
+		cancelAttempt()
+		if requestErr != nil {
+			if retryErr := waitForRequestRetry(ctx, requestErr); retryErr != nil {
+				return OwnedMappingPage{}, retryErr
+			}
+			continue
+		}
+		if response.Data.Status == statusRejected {
+			if response.Data.Error.Code == ownedMappingsRuntimeFenced {
+				session.markFenced()
+				return OwnedMappingPage{}, ErrRuntimeFenced
+			}
+			return OwnedMappingPage{}, &OwnedMappingsRejectedError{
+				Code: response.Data.Error.Code, Message: response.Data.Error.Message,
+			}
+		}
+		return OwnedMappingPage{
+			Items: *response.Data.Items, NextCursor: response.Data.NextCursor,
+		}, nil
+	}
+}
+
 // SetEntityEnabled performs one schema-validated Core NATS request/reply attempt.
 func (session *Session) SetEntityEnabled(ctx context.Context, entityID string, enabled bool) (bool, error) {
 	if err := session.sessionError(); err != nil {

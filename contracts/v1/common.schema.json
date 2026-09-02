@@ -84,6 +84,10 @@
       "type": "string",
       "pattern": "^avl_[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
     },
+    "map_id": {
+      "type": "string",
+      "pattern": "^map_[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+    },
     "cor_id": {
       "type": "string",
       "pattern": "^cor_[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
@@ -131,7 +135,8 @@
         { "$ref": "#/$defs/clm_id" },
         { "$ref": "#/$defs/hbt_id" },
         { "$ref": "#/$defs/rel_id" },
-        { "$ref": "#/$defs/avl_id" }
+        { "$ref": "#/$defs/avl_id" },
+        { "$ref": "#/$defs/map_id" }
       ]
     }
   }
