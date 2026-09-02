@@ -99,16 +99,7 @@ func TestRunListsOwnedMappingsAndDrainsEndpoint(t *testing.T) {
 	}
 	stopCoreAndWait(t, stopCore, runErrors)
 
-	subscriptions, err := server.Subsz(&natsserver.SubszOptions{
-		Subscriptions: true,
-		Test:          probeSubject,
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if subscriptions.Total != 0 {
-		t.Fatalf("owned mappings subscriptions after shutdown = %d, want 0", subscriptions.Total)
-	}
+	waitForOwnedMappingsSubscriptionCount(t, server, probeSubject, 0)
 }
 
 func waitForOwnedMappingsServer(
@@ -135,6 +126,25 @@ func waitForOwnedMappingsServer(
 			return false, err
 		}
 		return subscriptions.Total == 1, nil
+	})
+}
+
+func waitForOwnedMappingsSubscriptionCount(
+	t *testing.T,
+	server *natsserver.Server,
+	probeSubject string,
+	want int,
+) {
+	t.Helper()
+	waitForMatrixCondition(t, 5*time.Second, func() (bool, error) {
+		subscriptions, err := server.Subsz(&natsserver.SubszOptions{
+			Subscriptions: true,
+			Test:          probeSubject,
+		})
+		if err != nil {
+			return false, err
+		}
+		return subscriptions.Total == want, nil
 	})
 }
 
