@@ -13,8 +13,20 @@ type Dependencies struct {
 	NewCorrelationID func() (CorrelationID, error)
 }
 
+// Stores groups persistence capabilities consumed by Service.
+type Stores struct {
+	Registration RegistrationRepository
+	Runtimes     RuntimeRepository
+	Adapters     AdapterRepository
+	Availability AvailabilityRepository
+	Reads        ReadRepository
+	Enablement   EnablementRepository
+	Commands     CommandLedger
+	Observations ObservationRepository
+}
+
 type Service struct {
-	repository   Repository
+	stores       Stores
 	sender       CommandSender
 	catalog      *TypeCatalog
 	dependencies Dependencies
@@ -26,7 +38,7 @@ type commandWaiters struct {
 	byID  map[CommandID]chan CommandResult
 }
 
-func NewService(repository Repository, sender CommandSender, catalog *TypeCatalog, dependencies Dependencies) *Service {
+func NewService(stores Stores, sender CommandSender, catalog *TypeCatalog, dependencies Dependencies) *Service {
 	if dependencies.Now == nil {
 		dependencies.Now = time.Now
 	}
@@ -43,7 +55,7 @@ func NewService(repository Repository, sender CommandSender, catalog *TypeCatalo
 		dependencies.NewCorrelationID = NewCorrelationID
 	}
 	return &Service{
-		repository:   repository,
+		stores:       stores,
 		sender:       sender,
 		catalog:      catalog,
 		dependencies: dependencies,

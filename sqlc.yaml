@@ -2,41 +2,10 @@ version: "2"
 sql:
   - engine: "sqlite"
     schema: "internal/platform/db/migrations"
-    queries: "internal/platform/db/queries/registration"
+    queries: "internal/modules/devices/dbqueries"
     gen:
       go:
-        package: "registration"
-        out: "internal/platform/db/sqlc/registration"
+        package: "dbsqlc"
+        out: "internal/modules/devices/dbsqlc"
         sql_package: "database/sql"
-        emit_interface: true
-        query_parameter_limit: 0
-  - engine: "sqlite"
-    schema: "internal/platform/db/migrations"
-    queries: "internal/platform/db/queries/state"
-    gen:
-      go:
-        package: "state"
-        out: "internal/platform/db/sqlc/state"
-        sql_package: "database/sql"
-        emit_interface: true
-        query_parameter_limit: 0
-  - engine: "sqlite"
-    schema: "internal/platform/db/migrations"
-    queries: "internal/platform/db/queries/commands"
-    gen:
-      go:
-        package: "commands"
-        out: "internal/platform/db/sqlc/commands"
-        sql_package: "database/sql"
-        emit_interface: true
-        query_parameter_limit: 0
-  - engine: "sqlite"
-    schema: "internal/platform/db/migrations"
-    queries: "internal/platform/db/queries/receipts"
-    gen:
-      go:
-        package: "receipts"
-        out: "internal/platform/db/sqlc/receipts"
-        sql_package: "database/sql"
-        emit_interface: true
         query_parameter_limit: 0

@@ -71,8 +71,20 @@ func Run(ctx context.Context, config Config, logger *slog.Logger) error { //noli
 		return fmt.Errorf("compile wire schemas: %w", compileErr)
 	}
 	commandSender := devicesnats.NewCommandSender(connection, validator)
-	service := devices.NewService(repository, commandSender, catalog, devices.Dependencies{})
+	service := devices.NewService(devices.SQLiteStores(repository), commandSender, catalog, devices.Dependencies{})
 
+	sessions, sessionErr := devicesnats.StartSessionServer(connection, validator, service, service, logger)
+	if sessionErr != nil {
+		return sessionErr
+	}
+	defer func() { _ = sessions.Drain() }()
+	availability, availabilityErr := devicesnats.StartEntityAvailabilityServer(
+		connection, validator, service, logger,
+	)
+	if availabilityErr != nil {
+		return availabilityErr
+	}
+	defer func() { _ = availability.Drain() }()
 	registrations, registrationErr := devicesnats.StartRegistrationServer(connection, validator, service, logger)
 	if registrationErr != nil {
 		return registrationErr
@@ -90,6 +102,8 @@ func Run(ctx context.Context, config Config, logger *slog.Logger) error { //noli
 	defer observations.Stop()
 
 	readiness := NewRuntimeReadiness(database, connection, js, observations)
+	healthSupervisor := startHealthSupervisor(ctx, readiness, service, logger)
+	defer healthSupervisor.Stop()
 	handler, _ := NewHTTPHandler(service, readiness)
 	server := &http.Server{
 		Addr: config.HTTPAddr, Handler: handler, ReadHeaderTimeout: httpReadHeaderTimeout,
@@ -107,6 +121,7 @@ func Run(ctx context.Context, config Config, logger *slog.Logger) error { //noli
 		}
 		return nil
 	case <-ctx.Done():
+		healthSupervisor.Stop()
 		shutdownContext, cancel := context.WithTimeout(context.Background(), shutdownTimeout)
 		defer cancel()
 		if err := server.Shutdown(shutdownContext); err != nil {
@@ -122,6 +137,12 @@ func Run(ctx context.Context, config Config, logger *slog.Logger) error { //noli
 			return err
 		}
 		if err := registrations.Drain(); err != nil {
+			return err
+		}
+		if err := availability.Drain(); err != nil {
+			return err
+		}
+		if err := sessions.Drain(); err != nil {
 			return err
 		}
 		if err := connection.Drain(); err != nil && !errors.Is(err, natsgo.ErrConnectionClosed) {

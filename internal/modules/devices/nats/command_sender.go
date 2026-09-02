@@ -25,12 +25,15 @@ func NewCommandSender(connection *natsgo.Conn, validator *contractsv1.Validator)
 func (sender *CommandSender) Send(
 	ctx context.Context,
 	adapterID string,
+	runtimeID devices.RuntimeID,
 	request devices.CommandRequest,
 ) (devices.CommandAcceptance, error) {
 	if sender == nil || sender.connection == nil || sender.validator == nil {
 		return devices.CommandAcceptance{}, errors.New("command client is not initialized")
 	}
-	subject, err := natswire.CommandSubject(adapterID, string(request.EntityID), string(request.OperationName))
+	subject, err := natswire.CommandSubject(
+		adapterID, string(runtimeID), string(request.EntityID), string(request.OperationName),
+	)
 	if err != nil {
 		return devices.CommandAcceptance{}, err
 	}
@@ -53,8 +56,8 @@ func (sender *CommandSender) Send(
 	if err != nil {
 		if commandUnavailable(err) {
 			return devices.CommandAcceptance{}, fmt.Errorf(
-				"%w: command adapter unavailable: %w",
-				devices.ErrAdapterUnavailable,
+				"%w: command adapter unhealthy: %w",
+				devices.ErrAdapterUnhealthy,
 				err,
 			)
 		}
@@ -72,6 +75,9 @@ func (sender *CommandSender) Send(
 	}
 	if response.Data.CommandID != string(request.ID) {
 		return devices.CommandAcceptance{}, errors.New("command response command ID does not match request")
+	}
+	if response.Data.Status == statusRejected && response.Data.Error.Code == "entity_unavailable" {
+		return devices.CommandAcceptance{}, devices.ErrEntityUnavailable
 	}
 	return devices.CommandAcceptance{Accepted: response.Data.Status == statusAccepted}, nil
 }

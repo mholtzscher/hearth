@@ -12,14 +12,78 @@ import (
 	platformdb "github.com/mholtzscher/hearth/internal/platform/db"
 )
 
+func TestRegistrationWithoutAdapterRollsBackAndRetainsHistoryAfterClaim(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	database := openMigratedDatabase(t, filepath.Join(t.TempDir(), "hearth.db"))
+	catalog := firstLightCatalog(t)
+	repository := NewSQLiteRepository(database, catalog)
+	now := time.Date(2026, 8, 29, 11, 0, 0, 0, time.UTC)
+	service := newTestService(
+		repository,
+		nil,
+		catalog,
+		Dependencies{Now: func() time.Time { return now }},
+	)
+	if _, err := service.Register(
+		ctx, "simulator", testRuntimeID, validDomainRegistration(),
+	); !errors.Is(err, ErrRuntimeFenced) {
+		t.Fatalf("registration before Adapter claim error = %v", err)
+	}
+	for _, table := range []string{
+		"adapter_bindings", "devices", "entities", "adapter_entity_mappings",
+	} {
+		assertTableCount(t, database, table, 0)
+	}
+
+	if err := repository.ClaimAdapterRuntime(
+		ctx,
+		testClaimWrite(testRuntimeID, now),
+	); err != nil {
+		t.Fatal(err)
+	}
+	now = now.Add(time.Second)
+	if _, err := repository.RecordAdapterHeartbeat(ctx, HeartbeatWrite{
+		AdapterID: "simulator", RuntimeID: testRuntimeID, ExternalStatus: AdapterHealthHealthy,
+		SourceObservedAt: now, ReceivedAt: now, LeaseExpiresAt: now.Add(adapterLeaseDuration),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	binding, err := service.Register(ctx, "simulator", testRuntimeID, validDomainRegistration())
+	if err != nil {
+		t.Fatal(err)
+	}
+	now = now.Add(time.Second)
+	if _, reportErr := repository.ReportEntityAvailability(ctx, testAvailabilityWrite(t, AvailabilityBatchWrite{
+		AdapterID: "simulator", RuntimeID: testRuntimeID,
+		Reports: []EntityAvailabilityReport{{
+			EntityID: binding.Entities[0].EntityID, Status: EntityAvailabilityAvailable,
+			SourceObservedAt: now,
+		}},
+		ReportedAt: now,
+	})); reportErr != nil {
+		t.Fatal(reportErr)
+	}
+	history, err := repository.ListEntityAvailabilityHistory(ctx, ListEntityAvailabilityParams{
+		EntityID: binding.Entities[0].EntityID, Limit: 10,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(history.Items) != 2 || history.Items[0].Status != "available" ||
+		history.Items[1].Status != "unknown" || history.Items[1].Source != healthSourceCore {
+		t.Fatalf("Entity history after retry = %#v", history.Items)
+	}
+}
+
 func TestRegistrationIsIdempotentAndUpdatesDescriptors(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	path := filepath.Join(t.TempDir(), "hearth.db")
-	database := openMigratedDatabase(t, path)
+	database := openRegistrationDatabase(t, path)
 	catalog := firstLightCatalog(t)
 	now := time.Date(2026, 8, 20, 20, 0, 0, 123, time.FixedZone("test", -5*60*60))
-	service := NewService(
+	service := newTestService(
 		NewSQLiteRepository(database, catalog),
 		nil,
 		catalog,
@@ -27,7 +91,7 @@ func TestRegistrationIsIdempotentAndUpdatesDescriptors(t *testing.T) {
 	)
 	registration := validDomainRegistration()
 
-	first, err := service.Register(ctx, "homeassistant", registration)
+	first, err := service.Register(ctx, "homeassistant", testAdapterRuntime("homeassistant"), registration)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -37,7 +101,7 @@ func TestRegistrationIsIdempotentAndUpdatesDescriptors(t *testing.T) {
 	registration.Entities[0].Name = "Renamed power"
 	registration.Entities[0].ExternalID = "light.office-renamed"
 	now = now.Add(time.Minute)
-	second, err := service.Register(ctx, "homeassistant", registration)
+	second, err := service.Register(ctx, "homeassistant", testAdapterRuntime("homeassistant"), registration)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -48,7 +112,7 @@ func TestRegistrationIsIdempotentAndUpdatesDescriptors(t *testing.T) {
 	if closeErr := database.Close(); closeErr != nil {
 		t.Fatal(closeErr)
 	}
-	database = openMigratedDatabase(t, path)
+	database = openRegistrationDatabase(t, path)
 	var deviceName, entityName, storedDeviceExternalID, storedEntityExternalID, storedSupport string
 	err = database.QueryRowContext(ctx, `
 		SELECT d.name, e.name, b.external_device_id, m.external_entity_id, e.support_json
@@ -79,22 +143,24 @@ func TestRegistrationIsIdempotentAndUpdatesDescriptors(t *testing.T) {
 func TestMultiEntityRegistrationIsAdditiveAndReturnsSubmittedOrder(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
-	database := openMigratedDatabase(t, filepath.Join(t.TempDir(), "hearth.db"))
+	database := openRegistrationDatabase(t, filepath.Join(t.TempDir(), "hearth.db"))
 	catalog := firstLightCatalog(t)
 	now := time.Date(2026, 8, 25, 12, 0, 0, 0, time.UTC)
-	service := NewService(
+	service := newTestService(
 		NewSQLiteRepository(database, catalog),
 		nil,
 		catalog,
 		Dependencies{Now: func() time.Time { return now }},
 	)
 
-	power, err := service.Register(ctx, "homeassistant", validDomainRegistration())
+	power, err := service.Register(
+		ctx, "homeassistant", testAdapterRuntime("homeassistant"), validDomainRegistration(),
+	)
 	if err != nil {
 		t.Fatal(err)
 	}
 	multi := multiEntityRegistration()
-	combined, err := service.Register(ctx, "homeassistant", multi)
+	combined, err := service.Register(ctx, "homeassistant", testAdapterRuntime("homeassistant"), multi)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -108,7 +174,9 @@ func TestMultiEntityRegistrationIsAdditiveAndReturnsSubmittedOrder(t *testing.T)
 	reordered := copyRegistration(multi)
 	reordered.Entities[0], reordered.Entities[1] = reordered.Entities[1], reordered.Entities[0]
 	now = now.Add(time.Minute)
-	reorderedBinding, err := service.Register(ctx, "homeassistant", reordered)
+	reorderedBinding, err := service.Register(
+		ctx, "homeassistant", testAdapterRuntime("homeassistant"), reordered,
+	)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -129,7 +197,9 @@ func TestMultiEntityRegistrationIsAdditiveAndReturnsSubmittedOrder(t *testing.T)
 	brightnessOnly := copyRegistration(multi)
 	brightnessOnly.Entities = brightnessOnly.Entities[1:]
 	now = now.Add(time.Minute)
-	omitted, err := service.Register(ctx, "homeassistant", brightnessOnly)
+	omitted, err := service.Register(
+		ctx, "homeassistant", testAdapterRuntime("homeassistant"), brightnessOnly,
+	)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -162,9 +232,9 @@ func TestMultiEntityRegistrationIsAdditiveAndReturnsSubmittedOrder(t *testing.T)
 func TestRegistrationAllowsDeviceAggregateBeyondRequestLimit(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
-	database := openMigratedDatabase(t, filepath.Join(t.TempDir(), "hearth.db"))
+	database := openRegistrationDatabase(t, filepath.Join(t.TempDir(), "hearth.db"))
 	catalog := firstLightCatalog(t)
-	service := NewService(NewSQLiteRepository(database, catalog), nil, catalog, Dependencies{})
+	service := newTestService(NewSQLiteRepository(database, catalog), nil, catalog, Dependencies{})
 	registration := validDomainRegistration()
 	registration.Entities = make([]EntityDescriptor, 64)
 	for index := range registration.Entities {
@@ -172,13 +242,17 @@ func TestRegistrationAllowsDeviceAggregateBeyondRequestLimit(t *testing.T) {
 			fmt.Sprintf("power-%d", index), fmt.Sprintf("light.office.%d", index),
 		)
 	}
-	if _, err := service.Register(ctx, "homeassistant", registration); err != nil {
+	if _, err := service.Register(
+		ctx, "homeassistant", testAdapterRuntime("homeassistant"), registration,
+	); err != nil {
 		t.Fatal(err)
 	}
 
 	additional := validDomainRegistration()
 	additional.Entities = []EntityDescriptor{registrationEntity("power-additional", "light.office.additional")}
-	if _, err := service.Register(ctx, "homeassistant", additional); err != nil {
+	if _, err := service.Register(
+		ctx, "homeassistant", testAdapterRuntime("homeassistant"), additional,
+	); err != nil {
 		t.Fatal(err)
 	}
 	assertCounts(t, database, 1, 65)
@@ -187,11 +261,13 @@ func TestRegistrationAllowsDeviceAggregateBeyondRequestLimit(t *testing.T) {
 func TestRegistrationRejectsExternalIDTransfersIndependentOfOrder(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
-	database := openMigratedDatabase(t, filepath.Join(t.TempDir(), "hearth.db"))
+	database := openRegistrationDatabase(t, filepath.Join(t.TempDir(), "hearth.db"))
 	catalog := firstLightCatalog(t)
-	service := NewService(NewSQLiteRepository(database, catalog), nil, catalog, Dependencies{})
+	service := newTestService(NewSQLiteRepository(database, catalog), nil, catalog, Dependencies{})
 	original := multiEntityRegistration()
-	if _, err := service.Register(ctx, "homeassistant", original); err != nil {
+	if _, err := service.Register(
+		ctx, "homeassistant", testAdapterRuntime("homeassistant"), original,
+	); err != nil {
 		t.Fatal(err)
 	}
 
@@ -208,7 +284,9 @@ func TestRegistrationRejectsExternalIDTransfersIndependentOfOrder(t *testing.T) 
 		transfer,
 		{BindingKey: transfer.BindingKey, Device: transfer.Device, Entities: []EntityDescriptor{transfer.Entities[2], transfer.Entities[1], transfer.Entities[0]}},
 	} {
-		_, err := service.Register(ctx, "homeassistant", registration)
+		_, err := service.Register(
+			ctx, "homeassistant", testAdapterRuntime("homeassistant"), registration,
+		)
 		assertRegistrationRejection(t, err, RegistrationIdentityConflict)
 	}
 	assertCounts(t, database, 1, 2)
@@ -224,23 +302,25 @@ func TestRegistrationRejectsExternalIDTransfersIndependentOfOrder(t *testing.T) 
 func TestExternalIDCanTransferAcrossRegistrations(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
-	database := openMigratedDatabase(t, filepath.Join(t.TempDir(), "hearth.db"))
+	database := openRegistrationDatabase(t, filepath.Join(t.TempDir(), "hearth.db"))
 	catalog := firstLightCatalog(t)
-	service := NewService(NewSQLiteRepository(database, catalog), nil, catalog, Dependencies{})
-	original, err := service.Register(ctx, "homeassistant", validDomainRegistration())
+	service := newTestService(NewSQLiteRepository(database, catalog), nil, catalog, Dependencies{})
+	original, err := service.Register(
+		ctx, "homeassistant", testAdapterRuntime("homeassistant"), validDomainRegistration(),
+	)
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	release := validDomainRegistration()
 	release.Entities[0].ExternalID = "light.office.new"
-	released, err := service.Register(ctx, "homeassistant", release)
+	released, err := service.Register(ctx, "homeassistant", testAdapterRuntime("homeassistant"), release)
 	if err != nil {
 		t.Fatal(err)
 	}
 	claim := validDomainRegistration()
 	claim.Entities = []EntityDescriptor{registrationEntity("alternate", "light.office")}
-	claimed, err := service.Register(ctx, "homeassistant", claim)
+	claimed, err := service.Register(ctx, "homeassistant", testAdapterRuntime("homeassistant"), claim)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -254,15 +334,17 @@ func TestExternalIDCanTransferAcrossRegistrations(t *testing.T) {
 func TestRegistrationRollsBackWhenLaterEntityWriteFails(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
-	database := openMigratedDatabase(t, filepath.Join(t.TempDir(), "hearth.db"))
+	database := openRegistrationDatabase(t, filepath.Join(t.TempDir(), "hearth.db"))
 	catalog := firstLightCatalog(t)
-	service := NewService(NewSQLiteRepository(database, catalog), nil, catalog, Dependencies{
+	service := newTestService(NewSQLiteRepository(database, catalog), nil, catalog, Dependencies{
 		NewEntityID: func() (EntityID, error) {
 			return EntityID("ent_01890f47-7a6b-7c4d-8e9f-0123456789ab"), nil
 		},
 	})
 
-	if _, err := service.Register(ctx, "homeassistant", multiEntityRegistration()); err == nil {
+	if _, err := service.Register(
+		ctx, "homeassistant", testAdapterRuntime("homeassistant"), multiEntityRegistration(),
+	); err == nil {
 		t.Fatal("registration unexpectedly succeeded with duplicate generated Entity IDs")
 	}
 	for _, table := range []string{"devices", "entities", "adapter_bindings", "adapter_entity_mappings"} {
@@ -330,17 +412,17 @@ func TestReRegistrationReplacesNormalizedSupport(t *testing.T) {
 
 	ctx := context.Background()
 	path := filepath.Join(t.TempDir(), "hearth.db")
-	database := openMigratedDatabase(t, path)
-	service := NewService(NewSQLiteRepository(database, catalog), nil, catalog, Dependencies{})
+	database := openRegistrationDatabase(t, path)
+	service := newTestService(NewSQLiteRepository(database, catalog), nil, catalog, Dependencies{})
 	registration := validDomainRegistration()
 	registration.Entities[0].TypeID = "test.mutable/v1"
 	registration.Entities[0].Support = EntitySupport(`{"state":{"mode":"first"},"operations":{"set":{}}}`)
-	first, err := service.Register(ctx, "simulator", registration)
+	first, err := service.Register(ctx, "simulator", testRuntimeID, registration)
 	if err != nil {
 		t.Fatal(err)
 	}
 	registration.Entities[0].Support = EntitySupport(`{ "operations": { "set": {} }, "state": { "mode": "second" } }`)
-	second, err := service.Register(ctx, "simulator", registration)
+	second, err := service.Register(ctx, "simulator", testRuntimeID, registration)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -351,7 +433,7 @@ func TestReRegistrationReplacesNormalizedSupport(t *testing.T) {
 	if closeErr := database.Close(); closeErr != nil {
 		t.Fatal(closeErr)
 	}
-	database = openMigratedDatabase(t, path)
+	database = openRegistrationDatabase(t, path)
 	var stored string
 	if scanErr := database.QueryRowContext(ctx, "SELECT support_json FROM entities WHERE id = ?", second.Entities[0].EntityID).
 		Scan(&stored); scanErr != nil {
@@ -365,15 +447,17 @@ func TestReRegistrationReplacesNormalizedSupport(t *testing.T) {
 func TestConcurrentRegistrationReturnsOneBinding(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
-	database := openMigratedDatabase(t, filepath.Join(t.TempDir(), "hearth.db"))
+	database := openRegistrationDatabase(t, filepath.Join(t.TempDir(), "hearth.db"))
 	catalog := firstLightCatalog(t)
-	service := NewService(NewSQLiteRepository(database, catalog), nil, catalog, Dependencies{})
+	service := newTestService(NewSQLiteRepository(database, catalog), nil, catalog, Dependencies{})
 	const attempts = 8
 	results := make(chan Binding, attempts)
 	errors := make(chan error, attempts)
 	for range attempts {
 		go func() {
-			binding, err := service.Register(ctx, "homeassistant", multiEntityRegistration())
+			binding, err := service.Register(
+				ctx, "homeassistant", testAdapterRuntime("homeassistant"), multiEntityRegistration(),
+			)
 			results <- binding
 			errors <- err
 		}()
@@ -400,18 +484,22 @@ func TestConcurrentRegistrationReturnsOneBinding(t *testing.T) {
 func TestRegistrationRejectionsAreAtomic(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
-	database := openMigratedDatabase(t, filepath.Join(t.TempDir(), "hearth.db"))
+	database := openRegistrationDatabase(t, filepath.Join(t.TempDir(), "hearth.db"))
 	catalog := firstLightCatalog(t)
-	service := NewService(NewSQLiteRepository(database, catalog), nil, catalog, Dependencies{})
+	service := newTestService(NewSQLiteRepository(database, catalog), nil, catalog, Dependencies{})
 	original := validDomainRegistration()
-	if _, err := service.Register(ctx, "homeassistant", original); err != nil {
+	if _, err := service.Register(
+		ctx, "homeassistant", testAdapterRuntime("homeassistant"), original,
+	); err != nil {
 		t.Fatal(err)
 	}
 
 	typeChange := validDomainRegistration()
 	typeChange.Device.Name = "must roll back"
 	typeChange.Entities[0].TypeID = "example.changed/v1"
-	_, err := service.Register(ctx, "homeassistant", typeChange)
+	_, err := service.Register(
+		ctx, "homeassistant", testAdapterRuntime("homeassistant"), typeChange,
+	)
 	assertRegistrationRejection(t, err, RegistrationInvalidDescriptor)
 
 	// Inject a catalog-known alternate type so the repository, rather than catalog
@@ -428,8 +516,10 @@ func TestRegistrationRejectionsAreAtomic(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	service = NewService(NewSQLiteRepository(database, alternateCatalog), nil, alternateCatalog, Dependencies{})
-	_, err = service.Register(ctx, "homeassistant", typeChange)
+	service = newTestService(NewSQLiteRepository(database, alternateCatalog), nil, alternateCatalog, Dependencies{})
+	_, err = service.Register(
+		ctx, "homeassistant", testAdapterRuntime("homeassistant"), typeChange,
+	)
 	assertRegistrationRejection(t, err, RegistrationImmutableTypeChange)
 	assertCounts(t, database, 1, 1)
 	var deviceName string
@@ -444,13 +534,17 @@ func TestRegistrationRejectionsAreAtomic(t *testing.T) {
 	conflict.BindingKey = "other-light"
 	otherExternalID := "other-device"
 	conflict.Device.ExternalID = &otherExternalID
-	_, err = service.Register(ctx, "homeassistant", conflict)
+	_, err = service.Register(
+		ctx, "homeassistant", testAdapterRuntime("homeassistant"), conflict,
+	)
 	assertRegistrationRejection(t, err, RegistrationIdentityConflict)
 	assertCounts(t, database, 1, 1)
 
 	invalid := validDomainRegistration()
 	invalid.Entities[0].Support = EntitySupport(`{"state":{"unexpected":true},"operations":{"set":{}}}`)
-	_, err = service.Register(ctx, "homeassistant", invalid)
+	_, err = service.Register(
+		ctx, "homeassistant", testAdapterRuntime("homeassistant"), invalid,
+	)
 	assertRegistrationRejection(t, err, RegistrationInvalidDescriptor)
 	assertCounts(t, database, 1, 1)
 }
@@ -458,10 +552,10 @@ func TestRegistrationRejectionsAreAtomic(t *testing.T) {
 func TestRegistrationInitialEnablementAndRetryPreservesCurrentValue(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
-	database := openMigratedDatabase(t, filepath.Join(t.TempDir(), "hearth.db"))
+	database := openRegistrationDatabase(t, filepath.Join(t.TempDir(), "hearth.db"))
 	catalog := firstLightCatalog(t)
 	now := time.Date(2026, 8, 26, 12, 0, 0, 0, time.UTC)
-	service := NewService(
+	service := newTestService(
 		NewSQLiteRepository(database, catalog),
 		nil,
 		catalog,
@@ -471,7 +565,7 @@ func TestRegistrationInitialEnablementAndRetryPreservesCurrentValue(t *testing.T
 	registration := validDomainRegistration()
 	initiallyEnabled := false
 	registration.Entities[0].InitiallyEnabled = &initiallyEnabled
-	binding, err := service.Register(ctx, "simulator", registration)
+	binding, err := service.Register(ctx, "simulator", testRuntimeID, registration)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -491,7 +585,7 @@ func TestRegistrationInitialEnablementAndRetryPreservesCurrentValue(t *testing.T
 		t.Fatal(enablementErr)
 	}
 	now = now.Add(time.Minute)
-	retried, err := service.Register(ctx, "simulator", registration)
+	retried, err := service.Register(ctx, "simulator", testRuntimeID, registration)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -503,16 +597,16 @@ func TestRegistrationInitialEnablementAndRetryPreservesCurrentValue(t *testing.T
 func TestSetEntityEnabledIsIdempotentAndOwnerScoped(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
-	database := openMigratedDatabase(t, filepath.Join(t.TempDir(), "hearth.db"))
+	database := openRegistrationDatabase(t, filepath.Join(t.TempDir(), "hearth.db"))
 	catalog := firstLightCatalog(t)
 	now := time.Date(2026, 8, 26, 12, 0, 0, 0, time.UTC)
-	service := NewService(
+	service := newTestService(
 		NewSQLiteRepository(database, catalog),
 		nil,
 		catalog,
 		Dependencies{Now: func() time.Time { return now }},
 	)
-	binding, err := service.Register(ctx, "simulator", validDomainRegistration())
+	binding, err := service.Register(ctx, "simulator", testRuntimeID, validDomainRegistration())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -524,7 +618,7 @@ func TestSetEntityEnabledIsIdempotentAndOwnerScoped(t *testing.T) {
 		t.Fatal(scanErr)
 	}
 	now = now.Add(time.Minute)
-	confirmed, err := service.SetOwnedEntityEnabled(ctx, "simulator", entityID, false)
+	confirmed, err := service.SetOwnedEntityEnabled(ctx, "simulator", testRuntimeID, entityID, false)
 	if err != nil || confirmed {
 		t.Fatalf("owner disable = %t, %v", confirmed, err)
 	}
@@ -552,7 +646,8 @@ func TestSetEntityEnabledIsIdempotentAndOwnerScoped(t *testing.T) {
 	}
 	if _, enableErr := service.SetOwnedEntityEnabled(
 		ctx,
-		"other-adapter",
+		"homeassistant",
+		testAdapterRuntime("homeassistant"),
 		entityID,
 		true,
 	); !errors.Is(
@@ -570,14 +665,82 @@ func TestSetEntityEnabledIsIdempotentAndOwnerScoped(t *testing.T) {
 	}
 }
 
+func TestRegistrationAndEnablementFenceStaleRuntimeBeforeWriting(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	database := openRegistrationDatabase(t, filepath.Join(t.TempDir(), "hearth.db"))
+	catalog := firstLightCatalog(t)
+	repository := NewSQLiteRepository(database, catalog)
+	now := time.Date(2026, 8, 20, 0, 0, 1, 0, time.UTC)
+	service := newTestService(repository, nil, catalog, Dependencies{Now: func() time.Time { return now }})
+	registration := validDomainRegistration()
+	binding, err := service.Register(ctx, "simulator", testRuntimeID, registration)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if releaseErr := repository.ReleaseAdapterRuntime(ctx, ReleaseRuntimeWrite{
+		AdapterID: "simulator", RuntimeID: testRuntimeID, ReleasedAt: now.Add(time.Second),
+	}); releaseErr != nil {
+		t.Fatal(releaseErr)
+	}
+	if claimErr := repository.ClaimAdapterRuntime(
+		ctx,
+		testClaimWrite(testSecondRuntime, now.Add(2*time.Second)),
+	); claimErr != nil {
+		t.Fatal(claimErr)
+	}
+
+	registration.Device.Name = "must not be stored"
+	registration.Entities[0].Name = "must not be stored"
+	now = now.Add(3 * time.Second)
+	if _, registerErr := service.Register(
+		ctx, "simulator", testRuntimeID, registration,
+	); !errors.Is(registerErr, ErrRuntimeFenced) {
+		t.Fatalf("stale registration error = %v", registerErr)
+	}
+	if _, enableErr := service.SetOwnedEntityEnabled(
+		ctx, "simulator", testRuntimeID, binding.Entities[0].EntityID, false,
+	); !errors.Is(enableErr, ErrRuntimeFenced) {
+		t.Fatalf("stale enablement error = %v", enableErr)
+	}
+	view, err := service.GetEntity(ctx, binding.Entities[0].EntityID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if view.Entity.Name != "Power" || !view.Entity.Enabled {
+		t.Fatalf("Entity changed after stale writes: %#v", view.Entity)
+	}
+
+	registration.Device.Name = "Replacement runtime light"
+	registration.Entities[0].Name = "Replacement power"
+	if _, registerErr := service.Register(
+		ctx, "simulator", testSecondRuntime, registration,
+	); registerErr != nil {
+		t.Fatal(registerErr)
+	}
+	confirmed, enableErr := service.SetOwnedEntityEnabled(
+		ctx, "simulator", testSecondRuntime, binding.Entities[0].EntityID, false,
+	)
+	if enableErr != nil || confirmed {
+		t.Fatalf("replacement enablement = %t, %v", confirmed, enableErr)
+	}
+	view, err = service.GetEntity(ctx, binding.Entities[0].EntityID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if view.Entity.Name != "Replacement power" || view.Entity.Enabled {
+		t.Fatalf("replacement writes = %#v", view.Entity)
+	}
+}
+
 func TestCreateCommandDurablyClassifiesDisabledEntity(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
-	database := openMigratedDatabase(t, filepath.Join(t.TempDir(), "hearth.db"))
+	database := openRegistrationDatabase(t, filepath.Join(t.TempDir(), "hearth.db"))
 	catalog := firstLightCatalog(t)
 	repository := NewSQLiteRepository(database, catalog)
-	service := NewService(repository, nil, catalog, Dependencies{})
-	binding, err := service.Register(ctx, "simulator", validDomainRegistration())
+	service := newTestService(repository, nil, catalog, Dependencies{})
+	binding, err := service.Register(ctx, "simulator", testRuntimeID, validDomainRegistration())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -608,19 +771,62 @@ func TestCreateCommandDurablyClassifiesDisabledEntity(t *testing.T) {
 	}
 }
 
+func TestCreateCommandDispatchesWhenHealthyEntityIsReportedUnavailable(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	database := openRegistrationDatabase(t, filepath.Join(t.TempDir(), "hearth.db"))
+	catalog := firstLightCatalog(t)
+	repository := NewSQLiteRepository(database, catalog)
+	service := newTestService(repository, nil, catalog, Dependencies{})
+	binding, err := service.Register(ctx, "simulator", testRuntimeID, validDomainRegistration())
+	if err != nil {
+		t.Fatal(err)
+	}
+	healthyAt := time.Date(2026, 8, 20, 0, 0, 1, 0, time.UTC)
+	if _, heartbeatErr := repository.RecordAdapterHeartbeat(ctx, HeartbeatWrite{
+		AdapterID: "simulator", RuntimeID: testRuntimeID, ExternalStatus: AdapterHealthHealthy,
+		SourceObservedAt: healthyAt, ReceivedAt: healthyAt,
+		LeaseExpiresAt: healthyAt.Add(adapterLeaseDuration),
+	}); heartbeatErr != nil {
+		t.Fatal(heartbeatErr)
+	}
+	if _, reportErr := repository.ReportEntityAvailability(ctx, testAvailabilityWrite(t, AvailabilityBatchWrite{
+		AdapterID: "simulator", RuntimeID: testRuntimeID,
+		Reports: []EntityAvailabilityReport{{
+			EntityID: binding.Entities[0].EntityID, Status: EntityAvailabilityUnavailable,
+			SourceObservedAt: healthyAt,
+			Reason:           &HealthReason{Code: "adapter.hearth-simulator.entity_unavailable"},
+		}},
+		ReportedAt: healthyAt,
+	})); reportErr != nil {
+		t.Fatal(reportErr)
+	}
+
+	candidate := newCommandRecord(t, binding.Entities[0].EntityID, healthyAt.Add(time.Second))
+	created, err := repository.CreateCommand(ctx, candidate)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if created.Status != CommandStatusRequested || created.RuntimeID == nil ||
+		*created.RuntimeID != testRuntimeID || created.CompletedAt != nil || created.FailureCode != nil {
+		t.Fatalf("Command for unavailable Entity = %#v", created)
+	}
+}
+
 func TestCommandCreationAndEnablementFollowCommitOrder(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
-	database := openMigratedDatabase(t, filepath.Join(t.TempDir(), "hearth.db"))
+	database := openRegistrationDatabase(t, filepath.Join(t.TempDir(), "hearth.db"))
 	catalog := firstLightCatalog(t)
 	repository := NewSQLiteRepository(database, catalog)
-	service := NewService(repository, nil, catalog, Dependencies{})
-	binding, err := service.Register(ctx, "simulator", validDomainRegistration())
+	service := newTestService(repository, nil, catalog, Dependencies{})
+	binding, err := service.Register(ctx, "simulator", testRuntimeID, validDomainRegistration())
 	if err != nil {
 		t.Fatal(err)
 	}
 	entityID := binding.Entities[0].EntityID
 	requestedAt := time.Date(2026, 8, 26, 12, 0, 0, 0, time.UTC)
+	claimTestAdapterRuntime(t, repository, requestedAt)
 
 	commandFirst := newCommandRecord(t, entityID, requestedAt)
 	created, err := repository.CreateCommand(ctx, commandFirst)
@@ -642,23 +848,63 @@ func TestCommandCreationAndEnablementFollowCommitOrder(t *testing.T) {
 	}
 }
 
+func TestCommandRuntimeIsNotRetargetedAfterTakeover(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	database := openRegistrationDatabase(t, filepath.Join(t.TempDir(), "hearth.db"))
+	catalog := firstLightCatalog(t)
+	repository := NewSQLiteRepository(database, catalog)
+	service := newTestService(repository, nil, catalog, Dependencies{})
+	binding, err := service.Register(ctx, "simulator", testRuntimeID, validDomainRegistration())
+	if err != nil {
+		t.Fatal(err)
+	}
+	claimedAt := time.Date(2026, 8, 20, 0, 0, 0, 0, time.UTC)
+	first := newCommandRecord(t, binding.Entities[0].EntityID, claimedAt.Add(time.Second))
+	first, err = repository.CreateCommand(ctx, first)
+	if err != nil || first.RuntimeID == nil || *first.RuntimeID != testRuntimeID {
+		t.Fatalf("first runtime Command = %#v, %v", first, err)
+	}
+	if releaseErr := repository.ReleaseAdapterRuntime(ctx, ReleaseRuntimeWrite{
+		AdapterID: "simulator", RuntimeID: testRuntimeID, ReleasedAt: claimedAt.Add(2 * time.Second),
+	}); releaseErr != nil {
+		t.Fatal(releaseErr)
+	}
+	if claimErr := repository.ClaimAdapterRuntime(
+		ctx,
+		testClaimWrite(testSecondRuntime, claimedAt.Add(3*time.Second)),
+	); claimErr != nil {
+		t.Fatal(claimErr)
+	}
+	second := newCommandRecord(t, binding.Entities[0].EntityID, claimedAt.Add(4*time.Second))
+	second, err = repository.CreateCommand(ctx, second)
+	if err != nil || second.RuntimeID == nil || *second.RuntimeID != testSecondRuntime {
+		t.Fatalf("replacement runtime Command = %#v, %v", second, err)
+	}
+	storedFirst, err := repository.GetCommand(ctx, first.ID)
+	if err != nil || storedFirst.RuntimeID == nil || *storedFirst.RuntimeID != testRuntimeID {
+		t.Fatalf("stored first Command = %#v, %v", storedFirst, err)
+	}
+}
+
 //nolint:gocognit,gocyclo,cyclop // The command transition matrix is clearer as one persistence test.
 func TestCommandLedgerTransitionsAreMonotonicAndIdempotent(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
-	database := openMigratedDatabase(t, filepath.Join(t.TempDir(), "hearth.db"))
+	database := openRegistrationDatabase(t, filepath.Join(t.TempDir(), "hearth.db"))
 	catalog := firstLightCatalog(t)
 	repository := NewSQLiteRepository(database, catalog)
-	binding, registrationErr := NewService(
+	binding, registrationErr := newTestService(
 		repository,
 		nil,
 		catalog,
 		Dependencies{},
-	).Register(ctx, "simulator", validDomainRegistration())
+	).Register(ctx, "simulator", testRuntimeID, validDomainRegistration())
 	if registrationErr != nil {
 		t.Fatal(registrationErr)
 	}
 	requestedAt := time.Date(2026, 8, 20, 12, 0, 0, 0, time.UTC)
+	claimTestAdapterRuntime(t, repository, requestedAt)
 	command := newCommandRecord(t, binding.Entities[0].EntityID, requestedAt)
 	if _, err := repository.CreateCommand(ctx, command); err != nil {
 		t.Fatal(err)
@@ -781,6 +1027,42 @@ func openMigratedDatabase(t *testing.T, path string) *sql.DB {
 	return database
 }
 
+func openRegistrationDatabase(t *testing.T, path string) *sql.DB {
+	t.Helper()
+	database := openMigratedDatabase(t, path)
+	repository := NewSQLiteRepository(database, nil)
+	claimedAt := time.Date(2026, 8, 20, 0, 0, 0, 0, time.UTC)
+	for _, adapterID := range []string{"homeassistant", "simulator"} {
+		if err := repository.ClaimAdapterRuntime(
+			context.Background(),
+			testAdapterClaim(adapterID, claimedAt),
+		); err != nil {
+			t.Fatal(err)
+		}
+	}
+	return database
+}
+
+func testAdapterClaim(adapterID string, claimedAt time.Time) ClaimRuntimeWrite {
+	runtimeID := testAdapterRuntime(adapterID)
+	softwareName := "hearth-simulator"
+	if adapterID == "homeassistant" {
+		softwareName = "hearth-adapter-homeassistant"
+	}
+	return ClaimRuntimeWrite{
+		RuntimeID: runtimeID, AdapterID: adapterID,
+		SoftwareName: softwareName, SoftwareVersion: "0.1.0",
+		ClaimedAt: claimedAt, LeaseExpiresAt: claimedAt.Add(adapterLeaseDuration),
+	}
+}
+
+func testAdapterRuntime(adapterID string) RuntimeID {
+	if adapterID == "homeassistant" {
+		return RuntimeID("run_01890f47-7a6b-7c4d-8e9f-0123456789ad")
+	}
+	return testRuntimeID
+}
+
 func firstLightCatalog(t *testing.T) *TypeCatalog {
 	t.Helper()
 	catalog, err := NewBuiltinTypeCatalog()
@@ -830,6 +1112,19 @@ func assertCounts(t *testing.T, database *sql.DB, devices, entities int) {
 		if got != want {
 			t.Fatalf("%s count = %d, want %d", table, got, want)
 		}
+	}
+}
+
+func claimTestAdapterRuntime(t *testing.T, repository *SQLiteRepository, claimedAt time.Time) {
+	t.Helper()
+	runtimeID := RuntimeID("run_01890f47-7a6b-7c4d-8e9f-0123456789ab")
+	err := repository.ClaimAdapterRuntime(context.Background(), ClaimRuntimeWrite{
+		RuntimeID: runtimeID,
+		AdapterID: "simulator", SoftwareName: "hearth-simulator", SoftwareVersion: "0.1.0",
+		ClaimedAt: claimedAt, LeaseExpiresAt: claimedAt.Add(15 * time.Second),
+	})
+	if err != nil {
+		t.Fatal(err)
 	}
 }
 

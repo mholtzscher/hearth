@@ -7,8 +7,6 @@ import (
 )
 
 type enablementRepository struct {
-	*stubRegistrationRepository
-
 	params SetEntityEnabledParams
 	view   EntityWithState
 	err    error
@@ -28,13 +26,12 @@ func TestSetEntityEnabledUsesExplicitManagementAndOwnerPolicies(t *testing.T) {
 	t.Parallel()
 	now := time.Date(2026, 8, 26, 12, 0, 0, 0, time.FixedZone("test", -5*60*60))
 	repository := &enablementRepository{
-		stubRegistrationRepository: &stubRegistrationRepository{},
 		view: EntityWithState{Entity: Entity{
 			ID: commandTestEntityID, AdapterID: "simulator", Enabled: false,
 			Support: EntitySupport(`{"state":{},"operations":{"set":{}}}`),
 		}},
 	}
-	service := NewService(repository, nil, nil, Dependencies{Now: func() time.Time { return now }})
+	service := newTestService(repository, nil, nil, Dependencies{Now: func() time.Time { return now }})
 
 	view, err := service.SetEntityEnabled(context.Background(), commandTestEntityID, false)
 	if err != nil {
@@ -50,25 +47,29 @@ func TestSetEntityEnabledUsesExplicitManagementAndOwnerPolicies(t *testing.T) {
 	}
 
 	repository.view.Entity.Enabled = true
-	confirmed, err := service.SetOwnedEntityEnabled(context.Background(), "simulator", commandTestEntityID, true)
+	confirmed, err := service.SetOwnedEntityEnabled(
+		context.Background(), "simulator", commandTestRuntimeID, commandTestEntityID, true,
+	)
 	if err != nil || !confirmed {
 		t.Fatalf("owner result = %t, %v", confirmed, err)
 	}
-	if repository.params.RequiredOwner == nil || *repository.params.RequiredOwner != "simulator" {
+	if repository.params.RequiredOwner == nil || *repository.params.RequiredOwner != "simulator" ||
+		repository.params.RequiredRuntime == nil || *repository.params.RequiredRuntime != commandTestRuntimeID {
 		t.Fatalf("owner params = %#v", repository.params)
 	}
 }
 
 func TestSetEntityEnabledValidatesIdentityBeforeRepositoryCall(t *testing.T) {
 	t.Parallel()
-	repository := &enablementRepository{stubRegistrationRepository: &stubRegistrationRepository{}}
-	service := NewService(repository, nil, nil, Dependencies{})
+	repository := &enablementRepository{}
+	service := newTestService(repository, nil, nil, Dependencies{})
 	if _, err := service.SetEntityEnabled(context.Background(), "bad", false); err == nil {
 		t.Fatal("invalid Entity ID unexpectedly accepted")
 	}
 	if _, err := service.SetOwnedEntityEnabled(
 		context.Background(),
 		"bad.adapter",
+		commandTestRuntimeID,
 		commandTestEntityID,
 		false,
 	); err == nil {

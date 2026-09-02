@@ -13,11 +13,15 @@ const ObservationReceiptRetention = 192 * time.Hour
 func (service *Service) ProjectObservation(
 	ctx context.Context,
 	adapterID string,
+	runtimeID RuntimeID,
 	observation Observation,
 	observedAt time.Time,
 ) (ProjectionResult, error) {
 	if !registrationSlugPattern.MatchString(adapterID) {
 		return ProjectionResult{}, errors.New("adapter ID must be a subject-safe slug")
+	}
+	if _, err := ParseRuntimeID(string(runtimeID)); err != nil {
+		return ProjectionResult{}, fmt.Errorf("parse runtime ID: %w", err)
 	}
 	if _, err := ParseObservationID(string(observation.ID)); err != nil {
 		return ProjectionResult{}, fmt.Errorf("parse observation ID: %w", err)
@@ -43,12 +47,13 @@ func (service *Service) ProjectObservation(
 	observedAt = observedAt.UTC()
 	params := ProjectObservationParams{
 		AdapterID:        adapterID,
+		RuntimeID:        runtimeID,
 		Observation:      copyObservation(observation),
 		ObservedAt:       observedAt,
 		Now:              service.dependencies.Now,
 		ReceiptExpiresAt: observedAt.Add(ObservationReceiptRetention),
 	}
-	result, err := service.repository.ProjectObservation(ctx, params)
+	result, err := service.stores.Observations.ProjectObservation(ctx, params)
 	if err != nil {
 		return ProjectionResult{}, err
 	}
@@ -62,7 +67,7 @@ func (service *Service) DeleteExpiredObservationReceipts(ctx context.Context, be
 	if before.IsZero() {
 		return errors.New("receipt expiry cutoff is required")
 	}
-	return service.repository.DeleteExpiredObservationReceipts(ctx, before.UTC())
+	return service.stores.Observations.DeleteExpiredObservationReceipts(ctx, before.UTC())
 }
 
 func copyObservation(observation Observation) Observation {
@@ -104,6 +109,11 @@ func copyEntityWithState(view EntityWithState) EntityWithState {
 		state := copyState(*view.State)
 		cloned.State = &state
 	}
+	if view.Availability.SourceObservedAt != nil {
+		sourceObservedAt := *view.Availability.SourceObservedAt
+		cloned.Availability.SourceObservedAt = &sourceObservedAt
+	}
+	cloned.Availability.Reason = copyHealthReason(view.Availability.Reason)
 	return cloned
 }
 

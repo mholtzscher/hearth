@@ -42,7 +42,7 @@ func TestCoreNATSTransportRegistersAndProjectsDurableObservation(t *testing.T) {
 		t.Fatal(err)
 	}
 	repository := devices.NewSQLiteRepository(database, catalog)
-	service := devices.NewService(repository, nil, catalog, devices.Dependencies{})
+	service := devices.NewService(devices.SQLiteStores(repository), nil, catalog, devices.Dependencies{})
 
 	server, err := natsserver.NewServer(&natsserver.Options{
 		Host: "127.0.0.1", Port: -1, JetStream: true, StoreDir: t.TempDir(), NoSigs: true,
@@ -75,6 +75,11 @@ func TestCoreNATSTransportRegistersAndProjectsDurableObservation(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	sessions, err := devicesnats.StartSessionServer(coreConnection, validator, service, service, logger)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = sessions.Drain() })
 	registrations, err := devicesnats.StartRegistrationServer(coreConnection, validator, service, logger)
 	if err != nil {
 		t.Fatal(err)
@@ -86,7 +91,10 @@ func TestCoreNATSTransportRegistersAndProjectsDurableObservation(t *testing.T) {
 	}
 	t.Cleanup(observations.Stop)
 
-	session, err := adapter.Connect(ctx, adapter.Config{AdapterID: "simulator", NATSURL: server.ClientURL()})
+	session, err := adapter.Connect(ctx, adapter.Config{
+		AdapterID: "simulator", SoftwareName: "hearth-simulator",
+		SoftwareVersion: "0.1.0", NATSURL: server.ClientURL(),
+	})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -135,6 +143,14 @@ func TestCoreNATSTransportRegistersAndProjectsDurableObservation(t *testing.T) {
 	if projected.ObservationID != devices.ObservationID(observationID) || string(projected.Value) != "true" {
 		t.Fatalf("projected state = %#v", projected)
 	}
+	var runtimeID devices.RuntimeID
+	if scanErr := database.QueryRowContext(
+		ctx,
+		"SELECT runtime_id FROM observation_receipts WHERE observation_id = ?",
+		observationID,
+	).Scan(&runtimeID); scanErr != nil {
+		t.Fatal(scanErr)
+	}
 	if readinessErr := NewRuntimeReadiness(database, coreConnection, js, observations).Check(ctx); readinessErr != nil {
 		t.Fatal(readinessErr)
 	}
@@ -170,7 +186,7 @@ func TestCoreNATSTransportRegistersAndProjectsDurableObservation(t *testing.T) {
 		t.Fatal(err)
 	}
 	recoveredService := devices.NewService(
-		devices.NewSQLiteRepository(database, catalog),
+		devices.SQLiteStores(devices.NewSQLiteRepository(database, catalog)),
 		nil,
 		catalog,
 		devices.Dependencies{},
@@ -183,7 +199,7 @@ func TestCoreNATSTransportRegistersAndProjectsDurableObservation(t *testing.T) {
 		recovered.State.ReceiveOrder != projected.ReceiveOrder || string(recovered.State.Value) != "true" {
 		t.Fatalf("recovered state = %#v, want %#v", recovered.State, projected)
 	}
-	result, err := recoveredService.ProjectObservation(ctx, "simulator", devices.Observation{
+	result, err := recoveredService.ProjectObservation(ctx, "simulator", runtimeID, devices.Observation{
 		ID: devices.ObservationID(observationID), EntityID: entityID, Value: devices.Value(`true`),
 		AdapterReceivedAt: adapterReceivedAt,
 	}, projected.ObservedAt)
@@ -257,11 +273,16 @@ func TestCoreCommandRoundTripRequiresLinkedSimulatorObservation(t *testing.T) {
 		t.Fatal(err)
 	}
 	service := devices.NewService(
-		repository,
+		devices.SQLiteStores(repository),
 		devicesnats.NewCommandSender(coreConnection, validator),
 		catalog,
 		devices.Dependencies{},
 	)
+	sessions, err := devicesnats.StartSessionServer(coreConnection, validator, service, service, logger)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = sessions.Drain() })
 	registrations, err := devicesnats.StartRegistrationServer(coreConnection, validator, service, logger)
 	if err != nil {
 		t.Fatal(err)
@@ -273,7 +294,10 @@ func TestCoreCommandRoundTripRequiresLinkedSimulatorObservation(t *testing.T) {
 	}
 	t.Cleanup(observations.Stop)
 
-	session, err := adapter.Connect(ctx, adapter.Config{AdapterID: "simulator", NATSURL: server.ClientURL()})
+	session, err := adapter.Connect(ctx, adapter.Config{
+		AdapterID: "simulator", SoftwareName: "hearth-simulator",
+		SoftwareVersion: "0.1.0", NATSURL: server.ClientURL(),
+	})
 	if err != nil {
 		t.Fatal(err)
 	}

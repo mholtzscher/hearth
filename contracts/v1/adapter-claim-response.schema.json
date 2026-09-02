@@ -1,0 +1,53 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:hearth:schema:adapter-claim-response:v1",
+  "title": "Hearth v1 Adapter claim response",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["id", "schema", "emitted_at", "correlation_id", "causation_id", "data"],
+  "properties": {
+    "id": { "$ref": "urn:hearth:schema:common:v1#/$defs/rep_id" },
+    "schema": { "const": "urn:hearth:schema:adapter-claim-response:v1" },
+    "emitted_at": { "$ref": "urn:hearth:schema:common:v1#/$defs/utc_timestamp" },
+    "correlation_id": { "$ref": "urn:hearth:schema:common:v1#/$defs/cor_id" },
+    "causation_id": { "$ref": "urn:hearth:schema:common:v1#/$defs/clm_id" },
+    "data": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status"],
+      "properties": {
+        "status": { "enum": ["accepted", "rejected"] },
+        "error": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["code", "message"],
+          "properties": {
+            "code": { "enum": ["adapter_active", "claim_conflict"] },
+            "message": { "$ref": "urn:hearth:schema:common:v1#/$defs/safe_message" },
+            "retry_after": { "$ref": "urn:hearth:schema:common:v1#/$defs/utc_timestamp" }
+          },
+          "oneOf": [
+            {
+              "properties": { "code": { "const": "adapter_active" } },
+              "required": ["retry_after"]
+            },
+            {
+              "properties": { "code": { "const": "claim_conflict" } },
+              "not": { "required": ["retry_after"] }
+            }
+          ]
+        }
+      },
+      "oneOf": [
+        {
+          "properties": { "status": { "const": "accepted" } },
+          "not": { "required": ["error"] }
+        },
+        {
+          "properties": { "status": { "const": "rejected" } },
+          "required": ["error"]
+        }
+      ]
+    }
+  }
+}

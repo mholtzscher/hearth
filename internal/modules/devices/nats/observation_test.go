@@ -20,6 +20,7 @@ import (
 )
 
 const (
+	testRuntimeID           = "run_01890f47-7a6b-7c4d-8e9f-0123456789ab"
 	testEntityID            = "ent_01890f47-7a6b-7c4d-8e9f-0123456789ab"
 	testObservationID       = "obs_01890f47-7a6b-7c4d-8e9f-0123456789ab"
 	testSecondObservationID = "obs_01890f47-7a6b-7c4d-8e9f-0123456789ac"
@@ -28,19 +29,27 @@ const (
 	testCorrelationID       = "cor_01890f47-7a6b-7c4d-8e9f-0123456789ab"
 )
 
-type projectorFunc func(context.Context, string, devices.Observation, time.Time) (devices.ProjectionResult, error)
+type projectorFunc func(
+	context.Context,
+	string,
+	devices.RuntimeID,
+	devices.Observation,
+	time.Time,
+) (devices.ProjectionResult, error)
 
 func (projector projectorFunc) ProjectObservation(
 	ctx context.Context,
 	adapterID string,
+	runtimeID devices.RuntimeID,
 	observation devices.Observation,
 	observedAt time.Time,
 ) (devices.ProjectionResult, error) {
-	return projector(ctx, adapterID, observation, observedAt)
+	return projector(ctx, adapterID, runtimeID, observation, observedAt)
 }
 
 type projectedObservation struct {
 	adapterID   string
+	runtimeID   devices.RuntimeID
 	observation devices.Observation
 	observedAt  time.Time
 }
@@ -63,10 +72,13 @@ func TestObservationConsumerMapsProjectsAndAcknowledgesByFailureClass(t *testing
 	running, err := StartObservationConsumer(context.Background(), consumer, validator, projectorFunc(func(
 		_ context.Context,
 		adapterID string,
+		runtimeID devices.RuntimeID,
 		observation devices.Observation,
 		observedAt time.Time,
 	) (devices.ProjectionResult, error) {
-		projections <- projectedObservation{adapterID: adapterID, observation: observation, observedAt: observedAt}
+		projections <- projectedObservation{
+			adapterID: adapterID, runtimeID: runtimeID, observation: observation, observedAt: observedAt,
+		}
 		if observation.ID == devices.ObservationID(testFourthObservationID) {
 			return devices.ProjectionResult{}, errors.New("temporary SQLite failure")
 		}
@@ -86,6 +98,7 @@ func TestObservationConsumerMapsProjectsAndAcknowledgesByFailureClass(t *testing
 		if projection.observation.ID != devices.ObservationID(testObservationID) ||
 			projection.observation.EntityID != devices.EntityID(testEntityID) ||
 			string(projection.observation.Value) != "true" || projection.adapterID != "simulator" ||
+			projection.runtimeID != devices.RuntimeID(testRuntimeID) ||
 			projection.observedAt.IsZero() || projection.observedAt.Location() != time.UTC {
 			t.Fatalf("projection = %#v", projection)
 		}
@@ -220,7 +233,7 @@ func publishObservationEnvelopeWithSource(
 
 func mustObservationSubject(t *testing.T) string {
 	t.Helper()
-	subject, err := natswire.ObservationSubject("simulator", testEntityID)
+	subject, err := natswire.ObservationSubject("simulator", testRuntimeID, testEntityID)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -584,7 +584,7 @@ The generated facades validate and normalize support, expose typed parameters, a
 Interface contract:
 
 - `Connect` validates the adapter slug, compiles embedded schemas, connects to NATS, and installs W3C propagation. It does not provision core-owned streams.
-- `Register` validates the request and performs one request/reply attempt. An accepted response returns its `Binding`; a rejected response returns `*RegistrationRejectedError`, suitable for `errors.As`. Local validation and registration rejection are permanent failures. The adapter application retries only timeout, no-responder, transient NATS, and transient core/infrastructure errors with bounded exponential backoff until success or context cancellation.
+- `Register` validates the request and retries one prepared request envelope across timeout, no-responder, and transient NATS failures until success or context cancellation. An accepted response returns its `Binding`; a rejected response returns `*RegistrationRejectedError`, suitable for `errors.As`. Local validation, malformed responses, and registration rejection are permanent failures.
 - `PublishObservation` generates one Observation envelope and retries that same bytes/ID across transient NATS disconnects. It returns the generated ID after JetStream publish acknowledgement, or returns that ID with an error when the context expires. There is no local outbox.
 - `ServeCommands` subscribes to the adapter-scoped wildcard, starts an independent handler invocation for each valid request, and blocks until context cancellation or terminal serving failure. Handler invocations may overlap, including for the same Entity, so adapter code must be concurrency-safe. An adapter may serialize internally when its vendor protocol requires it, but the SDK and core provide no ordering guarantee.
 - A `Responder` is one-shot. `Accept` or `Reject` sends the Core NATS reply; `Reject` emits the fixed v1 code `upstream_rejected`. A second reply returns `ErrAlreadyResponded`. Returning without a reply returns/logs `ErrMissingResponse` and lets the core request time out.
@@ -596,29 +596,29 @@ Interface contract:
 Owner: `internal/modules/devices/service.go`.
 
 ```go
-type Repository interface {
-    RegisterBinding(context.Context, RegisterBindingParams) (Binding, error)
-    GetEntityView(context.Context, EntityID) (EntityView, error)
-    CreateCommand(context.Context, CommandRecord) error
-    MarkCommandAccepted(context.Context, CommandID, time.Time) error
-    CompleteCommand(context.Context, CommandCompletion) error
-    InterruptActiveCommands(context.Context, time.Time) error
-    ProjectObservation(context.Context, ProjectObservationParams) (ProjectionResult, error)
-    DeleteExpiredObservationReceipts(context.Context, time.Time) error
+type Stores struct {
+    Registration RegistrationRepository
+    Runtimes     RuntimeRepository
+    Adapters     AdapterRepository
+    Availability AvailabilityRepository
+    Reads        ReadRepository
+    Enablement   EnablementRepository
+    Commands     CommandLedger
+    Observations ObservationRepository
 }
 
 type CommandSender interface {
-    Send(context.Context, string, CommandRequest) (CommandAcceptance, error)
+    Send(context.Context, string, RuntimeID, CommandRequest) (CommandAcceptance, error)
 }
 
-func NewService(Repository, CommandSender, *TypeCatalog, Dependencies) *Service
-func (*Service) Register(context.Context, string, Registration) (Binding, error)
-func (*Service) ProjectObservation(context.Context, string, Observation, time.Time) (ProjectionResult, error)
-func (*Service) GetEntity(context.Context, EntityID) (EntityView, error)
+func NewService(Stores, CommandSender, *TypeCatalog, Dependencies) *Service
+func (*Service) Register(context.Context, string, RuntimeID, Registration) (Binding, error)
+func (*Service) ProjectObservation(context.Context, string, RuntimeID, Observation, time.Time) (ProjectionResult, error)
+func (*Service) GetEntity(context.Context, EntityID) (EntityWithState, error)
 func (*Service) ExecuteCommand(context.Context, EntityID, OperationName, CommandParameters) (CommandResult, error)
 ```
 
-`Dependencies` contains an injected clock and UUIDv7 generator for deterministic module tests. `TypeCatalog` is a required concrete dependency selected by application assembly; it is not a runtime plugin interface. Interfaces are defined in the consuming `devices` package; production sqlc/NATS adapters and test adapters satisfy them.
+`Dependencies` contains the injected clock and UUIDv7 generators used by deterministic module tests. `TypeCatalog` is a required concrete dependency selected by application assembly; it is not a runtime plugin interface. Capability interfaces are defined in the consuming `devices` package. One SQLite repository satisfies every production capability, while tests implement only the capabilities they exercise.
 
 `ExecuteCommand` behavior:
 
@@ -896,7 +896,7 @@ receipts:
   DeleteExpiredObservationReceipts
 ```
 
-`sqlc.yaml` has one SQLite generation entry per query directory, all using the same migrations and emitting to distinct packages under `internal/platform/db/sqlc`. The concrete `devices` repository composes those generated packages; transactions bind every package they need to the same SQLite transaction. Generated interfaces and types remain persistence details; they are not combined into one generated `Querier` and never leak into the module-facing `Repository`.
+`sqlc.yaml` has one SQLite generation entry using the shared migrations and the concern-specific query files under `internal/modules/devices/dbqueries`. It emits one feature-owned package at `internal/modules/devices/dbsqlc`, so table models are generated once. The concrete `devices` SQLite repository owns one generated `Queries` value and binds it to transactions with `WithTx`. Generated types remain persistence details and never leak through the module's capability-based stores.
 
 The pruning query excludes the receipt referenced by current State:
 
@@ -937,7 +937,7 @@ Owner: `internal/adapters/homeassistant`.
 
 The adapter uses Home Assistant's WebSocket API directly:
 
-1. Read YAML/token, connect/authenticate, and register through the SDK. Retry transient registration failures with bounded exponential backoff and jitter until shutdown; stop with a clear configuration error on local validation or `RegistrationRejectedError`.
+1. Read YAML/token, connect/authenticate, and call the SDK's context-bound `Register` once. The Session retries transient transport failures and stops on local validation or `RegistrationRejectedError`.
 2. After startup/reconnect, subscribe to `state_changed` and wait for its acknowledgement before requesting `get_states`. Buffer configured-Entity events while the snapshot request is pending.
 3. Publish the configured light's snapshot, then replay buffered events whose Home Assistant `last_updated` is later than the snapshot's `last_updated`, in WebSocket arrival order, before switching to live event publication. This closes the snapshot-to-subscription gap without letting pre-snapshot events overwrite the snapshot.
 4. Map `on`/`off` to the JSON booleans accepted by `hearth.power/v1`; reject unsupported/unavailable values rather than inventing State.

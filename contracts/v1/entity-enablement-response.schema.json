@@ -24,7 +24,7 @@
           "additionalProperties": false,
           "required": ["code", "message"],
           "properties": {
-            "code": { "enum": ["unknown_entity", "wrong_adapter"] },
+            "code": { "enum": ["unknown_entity", "wrong_adapter", "runtime_fenced"] },
             "message": { "$ref": "urn:hearth:schema:common:v1#/$defs/safe_message" }
           }
         }

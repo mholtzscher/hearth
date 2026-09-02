@@ -355,7 +355,7 @@ Primary keys already support direct lookups and household-wide ID pagination. Th
 
 ### sqlc query sources
 
-Modify `internal/platform/db/queries/state/state.sql`:
+Modify `internal/modules/devices/dbqueries/state.sql`:
 
 - `ListDevices`: `id > after_id`, `ORDER BY id ASC`, caller-provided `limit + 1`.
 - `GetDevice`: direct Device metadata lookup for existence and detail fields; embedded Entities use `ListEntitiesByDevice` pagination.
@@ -363,12 +363,12 @@ Modify `internal/platform/db/queries/state/state.sql`:
 - `ListEntitiesByDevice`: the same domain data constrained by Device ID.
 - Rename the existing Entity/current-State query to `GetEntity` so generated persistence names follow the domain repository vocabulary.
 
-Modify `internal/platform/db/queries/commands/commands.sql`:
+Modify `internal/modules/devices/dbqueries/commands.sql`:
 
 - `ListEntityCommandsFirstPage`: Entity-constrained, newest first.
 - `ListEntityCommandsAfter`: Entity-constrained with strict `(requested_at, id)` keyset position.
 
-Use explicit select lists. Regenerate affected sqlc packages; never hand-edit generated files. Command orchestration, projection, receipt-retention, and transaction ownership remain unchanged.
+The baseline `entity_read_projection` view owns the explicit joined Entity column list; get and list queries select that canonical projection. Regenerate the feature-owned sqlc package and never hand-edit generated files. Command orchestration, projection, receipt-retention, and transaction ownership remain unchanged.
 
 ## Project Layout
 

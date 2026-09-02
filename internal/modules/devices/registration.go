@@ -67,7 +67,18 @@ func (err *RegistrationRejectedError) Error() string {
 	return fmt.Sprintf("registration rejected (%s): %s", err.Code, err.Message)
 }
 
-func (service *Service) Register(ctx context.Context, adapterID string, registration Registration) (Binding, error) {
+func (service *Service) Register(
+	ctx context.Context,
+	adapterID string,
+	runtimeID RuntimeID,
+	registration Registration,
+) (Binding, error) {
+	if _, err := ParseRuntimeID(string(runtimeID)); err != nil {
+		return Binding{}, fmt.Errorf("parse runtime ID: %w", err)
+	}
+	if err := service.checkRegistrationRuntime(ctx, adapterID, runtimeID); err != nil {
+		return Binding{}, err
+	}
 	normalized, err := service.normalizeRegistration(adapterID, registration)
 	if err != nil {
 		return Binding{}, &RegistrationRejectedError{
@@ -90,13 +101,14 @@ func (service *Service) Register(ctx context.Context, adapterID string, registra
 	registeredAt := service.dependencies.Now().UTC()
 	params := RegisterBindingParams{
 		AdapterID:  adapterID,
+		RuntimeID:  runtimeID,
 		BindingKey: normalized.BindingKey,
 		DeviceID:   deviceID,
 		Device:     copyDeviceDescriptor(normalized.Device),
 		Entities:   entities,
 		UpdatedAt:  registeredAt,
 	}
-	binding, err := service.repository.RegisterBinding(ctx, params)
+	binding, err := service.stores.Registration.RegisterBinding(ctx, params)
 	if errors.Is(err, errImmutableTypeChange) {
 		return Binding{}, &RegistrationRejectedError{
 			Code: RegistrationImmutableTypeChange, Message: "an existing entity cannot change type",
@@ -111,6 +123,25 @@ func (service *Service) Register(ctx context.Context, adapterID string, registra
 		return Binding{}, err
 	}
 	return binding, nil
+}
+
+func (service *Service) checkRegistrationRuntime(
+	ctx context.Context,
+	adapterID string,
+	runtimeID RuntimeID,
+) error {
+	instance, err := service.stores.Registration.GetAdapter(ctx, adapterID)
+	if errors.Is(err, ErrAdapterNotFound) {
+		return ErrRuntimeFenced
+	}
+	if err != nil {
+		return err
+	}
+	if instance.Health.Runtime == nil || instance.Health.Runtime.Status != runtimeStatusOnline ||
+		instance.Health.Runtime.ID != runtimeID {
+		return ErrRuntimeFenced
+	}
+	return nil
 }
 
 //nolint:gocognit // Validation follows the nested registration document in one linear pass.

@@ -16,6 +16,10 @@ _Avoid_: Integration, plugin
 One configured occurrence of an adapter, identified by a stable subject-safe slug within a household.
 _Avoid_: Adapter type, process ID
 
+**Adapter health**:
+The current assessment of whether an Adapter instance has a live Adapter process that can use its configured external system. It is `unknown` without current evidence, `healthy` only when both are usable, and `unhealthy` when either is unavailable.
+_Avoid_: Adapter status, runtime health, upstream health
+
 **Binding**:
 The durable association between an adapter's external object and its canonical Hearth Device and Entities. An adapter-scoped stable binding key preserves the association when an external identifier changes; ambiguous identity conflicts require explicit reconciliation.
 _Avoid_: Discovery result, entity name
@@ -35,6 +39,10 @@ _Avoid_: Accessory, node
 **Entity**:
 One independently addressable state or control point belonging to a device. State reads and commands target entities.
 _Avoid_: Device capability, endpoint
+
+**Entity availability**:
+The current assessment of whether an Entity can be reached through its owning Adapter, distinct from Entity enablement and State freshness. It is `unknown` without a current explicit report, `available` only while the owner is healthy and reports it available, and `unavailable` when the owner is unhealthy or reports it unavailable.
+_Avoid_: Entity health, Device health
 
 **Entity enablement**:
 Whether an Entity participates in normal control and State projection. An enabled Entity accepts valid Commands and Observations. Disabling immediately rejects new Commands, while Commands already requested or accepted retain their normal lifecycle; only Observations linked to those active Commands may still update State and satisfy them. A disabled Entity retains its canonical identity, Binding, history, and last accepted State, while other incoming Observations do not update State or satisfy Commands. The management API and owning Adapter may each explicitly enable or disable an Entity, with the last accepted change taking effect. Registration may choose a newly created Entity's initial enablement, which defaults to enabled; subsequent registration reconciles identity and descriptors without changing existing enablement. Disablement is reversible and distinct from temporary unavailability or removal from the household.
@@ -57,7 +65,7 @@ The current value Hearth has accepted for an entity. It is the latest first-seen
 _Avoid_: Desired state, target
 
 **Command**:
-A request to change one controllable entity before a deadline. Its outcome is satisfied only after a fresh post-dispatch observation linked to that Command matches the requested value; dispatch or acceptance alone is not satisfaction, and an unavailable owner causes failure rather than deferred delivery. Commands for one entity may overlap, each with an independent outcome; a satisfied outcome may be immediately superseded by another observation. The core durably records each attempt and outcome for history, but the record is not executable work: unfinished attempts become interrupted after restart and are never replayed.
+A request to change one controllable entity before a deadline. Its outcome is satisfied only after a fresh post-dispatch observation linked to that Command matches the requested value; dispatch or acceptance alone is not satisfaction, and an unhealthy owning Adapter causes failure rather than deferred delivery, while an unavailable Entity with a healthy owner is still attempted. Commands for one entity may overlap, each with an independent outcome; a satisfied outcome may be immediately superseded by another observation. The core durably records each attempt and outcome for history, but the record is not executable work: unfinished attempts become interrupted after restart and are never replayed.
 _Avoid_: Action, service call, queued job
 
 **Canonical ID**:

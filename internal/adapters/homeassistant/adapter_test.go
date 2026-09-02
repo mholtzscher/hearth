@@ -24,37 +24,73 @@ const (
 	testCommandID        = "cmd_01890f47-7a6b-7c4d-8e9f-0123456789ab"
 )
 
-type recordingPublisher struct {
-	mutex        sync.Mutex
-	observations []adapter.Observation
-	published    chan struct{}
+type recordingSession struct {
+	mutex               sync.Mutex
+	observations        []adapter.Observation
+	healthReports       []adapter.HealthReport
+	availabilityReports []adapter.EntityAvailabilityReport
+	healthHook          func(adapter.HealthReport)
+	published           chan struct{}
 }
 
-func newRecordingPublisher() *recordingPublisher {
-	return &recordingPublisher{published: make(chan struct{}, 16)}
+func newRecordingSession() *recordingSession {
+	return &recordingSession{published: make(chan struct{}, 16)}
 }
 
-func (publisher *recordingPublisher) PublishObservation(
+func (session *recordingSession) PublishObservation(
 	_ context.Context,
 	observation adapter.Observation,
 ) (adapter.ObservationID, error) {
-	publisher.mutex.Lock()
-	publisher.observations = append(publisher.observations, observation)
-	publisher.mutex.Unlock()
-	publisher.published <- struct{}{}
+	session.mutex.Lock()
+	session.observations = append(session.observations, observation)
+	session.mutex.Unlock()
+	session.published <- struct{}{}
 	return "obs_01890f47-7a6b-7c4d-8e9f-0123456789ab", nil
 }
 
-func (publisher *recordingPublisher) values() []adapter.Observation {
-	publisher.mutex.Lock()
-	defer publisher.mutex.Unlock()
-	return append([]adapter.Observation(nil), publisher.observations...)
+func (session *recordingSession) SetHealth(_ context.Context, report adapter.HealthReport) error {
+	session.mutex.Lock()
+	defer session.mutex.Unlock()
+	if session.healthHook != nil {
+		session.healthHook(report)
+	}
+	session.healthReports = append(session.healthReports, report)
+	return nil
+}
+
+func (session *recordingSession) ReportEntityAvailability(
+	_ context.Context,
+	reports []adapter.EntityAvailabilityReport,
+) error {
+	session.mutex.Lock()
+	defer session.mutex.Unlock()
+	session.availabilityReports = append(session.availabilityReports, reports...)
+	return nil
+}
+
+func (session *recordingSession) values() []adapter.Observation {
+	session.mutex.Lock()
+	defer session.mutex.Unlock()
+	return append([]adapter.Observation(nil), session.observations...)
+}
+
+func (session *recordingSession) health() []adapter.HealthReport {
+	session.mutex.Lock()
+	defer session.mutex.Unlock()
+	return append([]adapter.HealthReport(nil), session.healthReports...)
+}
+
+func (session *recordingSession) availability() []adapter.EntityAvailabilityReport {
+	session.mutex.Lock()
+	defer session.mutex.Unlock()
+	return append([]adapter.EntityAvailabilityReport(nil), session.availabilityReports...)
 }
 
 type recordingResponder struct {
-	mutex    sync.Mutex
-	accepted bool
-	rejected bool
+	mutex       sync.Mutex
+	accepted    bool
+	rejected    bool
+	unavailable bool
 }
 
 func (responder *recordingResponder) Accept() error {
@@ -71,16 +107,24 @@ func (responder *recordingResponder) Reject(string) error {
 	return nil
 }
 
-func (responder *recordingResponder) result() (bool, bool) {
+func (responder *recordingResponder) RejectUnavailable(string) error {
+	responder.mutex.Lock()
+	responder.rejected = true
+	responder.unavailable = true
+	responder.mutex.Unlock()
+	return nil
+}
+
+func (responder *recordingResponder) result() (bool, bool, bool) {
 	responder.mutex.Lock()
 	defer responder.mutex.Unlock()
-	return responder.accepted, responder.rejected
+	return responder.accepted, responder.rejected, responder.unavailable
 }
 
 //nolint:gocognit // The event-ordering scenario is clearer as one end-to-end test.
 func TestSubscribeFirstReconcilesBufferedTransitionAfterSnapshot(t *testing.T) {
 	t.Parallel()
-	publisher := newRecordingPublisher()
+	session := newRecordingSession()
 	snapshotTime := time.Date(2026, 8, 19, 12, 0, 0, 0, time.UTC)
 	eventTime := snapshotTime.Add(time.Second)
 	server, serverErrors := newScriptedServer(t, func(ctx context.Context, connection *websocket.Conn) error {
@@ -117,18 +161,24 @@ func TestSubscribeFirstReconcilesBufferedTransitionAfterSnapshot(t *testing.T) {
 	})
 	defer server.Close()
 
-	migrationAdapter := newTestAdapter(t, publisher, server.URL)
+	migrationAdapter := newTestAdapter(t, session, server.URL)
+	healthyWithClient := make(chan bool, 1)
+	session.healthHook = func(report adapter.HealthReport) {
+		if report.Status == adapter.HealthHealthy {
+			healthyWithClient <- migrationAdapter.currentClient() != nil
+		}
+	}
 	ctx, cancel := context.WithCancel(context.Background())
 	runResult := make(chan error, 1)
 	go func() { runResult <- migrationAdapter.Run(ctx) }()
-	waitForPublications(t, publisher, 2)
+	waitForPublications(t, session, 2)
 	cancel()
 	if err := <-runResult; err != nil {
 		t.Fatal(err)
 	}
 	assertNoServerError(t, serverErrors)
 
-	observations := publisher.values()
+	observations := session.values()
 	if got := string(observations[0].Value); got != "false" {
 		t.Fatalf("snapshot value = %s, want false", got)
 	}
@@ -139,12 +189,41 @@ func TestSubscribeFirstReconcilesBufferedTransitionAfterSnapshot(t *testing.T) {
 		*observations[1].SourceUpdatedAt != eventTime.Format(time.RFC3339Nano) {
 		t.Fatalf("reconciled source_updated_at = %v", observations[1].SourceUpdatedAt)
 	}
+	health := session.health()
+	availability := session.availability()
+	if len(health) != 1 || health[0].Status != adapter.HealthHealthy {
+		t.Fatalf("health reports = %#v", health)
+	}
+	if installed := <-healthyWithClient; !installed {
+		t.Fatal("healthy status was reported before the Home Assistant client was installed")
+	}
+	if len(availability) != 2 || availability[0].Status != adapter.AvailabilityAvailable ||
+		availability[1].Status != adapter.AvailabilityAvailable {
+		t.Fatalf("availability reports = %#v", availability)
+	}
+}
+
+func TestSupersededClientFailureDoesNotOverwriteHealth(t *testing.T) {
+	t.Parallel()
+	session := newRecordingSession()
+	migrationAdapter := newTestAdapter(t, session, "http://unused.example")
+	oldClient := &client{}
+	currentClient := &client{}
+	migrationAdapter.setClient(currentClient)
+	if err := migrationAdapter.reportClientUnhealthy(
+		context.Background(), oldClient, errors.New("old connection failed"),
+	); err != nil {
+		t.Fatal(err)
+	}
+	if reports := session.health(); len(reports) != 0 {
+		t.Fatalf("superseded client health reports = %#v", reports)
+	}
 }
 
 //nolint:gocognit // The event-ordering scenario is clearer as one end-to-end test.
 func TestSetRetainsMatchingRefreshWhenImmediatelySuperseded(t *testing.T) {
 	t.Parallel()
-	publisher := newRecordingPublisher()
+	session := newRecordingSession()
 	initialTime := time.Date(2026, 8, 19, 12, 0, 0, 0, time.UTC)
 	refreshTime := initialTime.Add(time.Second)
 	server, serverErrors := newScriptedServer(t, func(ctx context.Context, connection *websocket.Conn) error {
@@ -199,11 +278,11 @@ func TestSetRetainsMatchingRefreshWhenImmediatelySuperseded(t *testing.T) {
 	})
 	defer server.Close()
 
-	migrationAdapter := newTestAdapter(t, publisher, server.URL)
+	migrationAdapter := newTestAdapter(t, session, server.URL)
 	ctx, cancel := context.WithCancel(context.Background())
 	runResult := make(chan error, 1)
 	go func() { runResult <- migrationAdapter.Run(ctx) }()
-	waitForPublications(t, publisher, 1)
+	waitForPublications(t, session, 1)
 
 	handler, handlerErr := migrationAdapter.CommandHandler()
 	if handlerErr != nil {
@@ -220,11 +299,14 @@ func TestSetRetainsMatchingRefreshWhenImmediatelySuperseded(t *testing.T) {
 	}, responder); err != nil {
 		t.Fatal(err)
 	}
-	accepted, rejected := responder.result()
-	if !accepted || rejected {
-		t.Fatalf("responder accepted = %t, rejected = %t", accepted, rejected)
+	accepted, rejected, unavailable := responder.result()
+	if !accepted || rejected || unavailable {
+		t.Fatalf(
+			"responder accepted = %t, rejected = %t, unavailable = %t",
+			accepted, rejected, unavailable,
+		)
 	}
-	observations := publisher.values()
+	observations := session.values()
 	var staleLinked, matchingLinked bool
 	for _, observation := range observations {
 		if observation.RefreshForCommand == nil || *observation.RefreshForCommand != testCommandID {
@@ -244,14 +326,140 @@ func TestSetRetainsMatchingRefreshWhenImmediatelySuperseded(t *testing.T) {
 	assertNoServerError(t, serverErrors)
 }
 
-func TestUnavailableAndUnsupportedUpstreamStatesAreRejected(t *testing.T) {
+//nolint:gocognit // The scripted exchange verifies readiness, service attempt, refresh, report, and typed rejection.
+func TestCommandConfirmedUnavailableUsesTypedRejection(t *testing.T) {
 	t.Parallel()
-	publisher := newRecordingPublisher()
-	migrationAdapter := newTestAdapter(t, publisher, "http://127.0.0.1:1")
-	if err := migrationAdapter.publish(context.Background(), upstreamState{
-		EntityID: testExternalEntityID, State: "unavailable",
+	session := newRecordingSession()
+	now := time.Date(2026, 8, 19, 12, 0, 0, 0, time.UTC)
+	server, serverErrors := newScriptedServer(t, func(ctx context.Context, connection *websocket.Conn) error {
+		subscribe, err := readRequest(ctx, connection)
+		if err != nil {
+			return err
+		}
+		if err = writeResult(ctx, connection, subscribe.ID, nil); err != nil {
+			return err
+		}
+		snapshot, err := readRequest(ctx, connection)
+		if err != nil {
+			return err
+		}
+		if err = writeResult(ctx, connection, snapshot.ID, []upstreamState{{
+			EntityID: testExternalEntityID, State: "on", LastUpdated: now.Format(time.RFC3339Nano),
+		}}); err != nil {
+			return err
+		}
+		service, err := readRequest(ctx, connection)
+		if err != nil {
+			return err
+		}
+		if service.Type != "call_service" {
+			return errors.New("command did not call Home Assistant service")
+		}
+		if err = writeResult(ctx, connection, service.ID, nil); err != nil {
+			return err
+		}
+		refresh, err := readRequest(ctx, connection)
+		if err != nil {
+			return err
+		}
+		unavailable := upstreamState{
+			EntityID: testExternalEntityID,
+			State:    stateUnavailable,
+			LastUpdated: now.Add(time.Second).
+				Format(time.RFC3339Nano),
+		}
+		if err = writeResult(ctx, connection, refresh.ID, []upstreamState{unavailable}); err != nil {
+			return err
+		}
+		_, _, _ = connection.Read(ctx)
+		return nil
+	})
+	defer server.Close()
+
+	migrationAdapter := newTestAdapter(t, session, server.URL)
+	ctx, cancel := context.WithCancel(context.Background())
+	runResult := make(chan error, 1)
+	go func() { runResult <- migrationAdapter.Run(ctx) }()
+	waitForPublications(t, session, 1)
+	handler, err := migrationAdapter.CommandHandler()
+	if err != nil {
+		t.Fatal(err)
+	}
+	responder := &recordingResponder{}
+	if err = handler(ctx, adapter.Command{
+		ID: testCommandID, CorrelationID: "cor_01890f47-7a6b-7c4d-8e9f-0123456789ab",
+		EntityID: testEntityID, OperationName: "set", Parameters: json.RawMessage(`{"value":false}`),
+		Deadline: time.Now().Add(time.Second).UTC().Format(time.RFC3339Nano),
+	}, responder); err != nil {
+		t.Fatal(err)
+	}
+	accepted, rejected, unavailable := responder.result()
+	if accepted || !rejected || !unavailable {
+		t.Fatalf("responder accepted = %t, rejected = %t, unavailable = %t", accepted, rejected, unavailable)
+	}
+	reports := session.availability()
+	if len(reports) != 2 || reports[1].Status != adapter.AvailabilityUnavailable ||
+		reports[1].ReasonCode != entityUnavailableReason || len(session.values()) != 1 {
+		t.Fatalf("availability = %#v, observations = %#v", reports, session.values())
+	}
+	cancel()
+	if err = <-runResult; err != nil {
+		t.Fatal(err)
+	}
+	assertNoServerError(t, serverErrors)
+}
+
+func TestAuthenticationFailureReportsUnhealthy(t *testing.T) {
+	t.Parallel()
+	session := newRecordingSession()
+	server := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
+		connection, err := websocket.Accept(response, request, nil)
+		if err != nil {
+			return
+		}
+		defer connection.CloseNow()
+		ctx := request.Context()
+		if err = wsjson.Write(ctx, connection, map[string]any{"type": "auth_required"}); err != nil {
+			return
+		}
+		var authentication map[string]any
+		if err = wsjson.Read(ctx, connection, &authentication); err != nil {
+			return
+		}
+		_ = wsjson.Write(ctx, connection, map[string]any{
+			"type": "auth_invalid", "message": "invalid access token",
+		})
+	}))
+	defer server.Close()
+	migrationAdapter := newTestAdapter(t, session, server.URL)
+	if err := migrationAdapter.Run(context.Background()); err == nil {
+		t.Fatal("authentication failure returned nil")
+	}
+	health := session.health()
+	if len(health) != 1 || health[0].Status != adapter.HealthUnhealthy ||
+		health[0].ReasonCode != authenticationFailedReason {
+		t.Fatalf("health reports = %#v", health)
+	}
+}
+
+func TestUnavailableStateReportsAvailabilityWithoutReplacingState(t *testing.T) {
+	t.Parallel()
+	session := newRecordingSession()
+	migrationAdapter := newTestAdapter(t, session, "http://127.0.0.1:1")
+	if err := migrationAdapter.processState(context.Background(), upstreamState{
+		EntityID: testExternalEntityID, State: stateUnavailable,
+	}, time.Now().UTC(), nil); err != nil {
+		t.Fatal(err)
+	}
+	if err := migrationAdapter.processState(context.Background(), upstreamState{
+		EntityID: testExternalEntityID, State: "unsupported",
 	}, time.Now().UTC(), nil); !errors.Is(err, errUnsupportedState) {
-		t.Fatalf("publish unavailable State error = %v", err)
+		t.Fatalf("process unsupported State error = %v", err)
+	}
+	availability := session.availability()
+	if len(availability) != 1 || availability[0].Status != adapter.AvailabilityUnavailable ||
+		availability[0].ReasonCode != entityUnavailableReason || len(session.values()) != 0 {
+		t.Fatalf("availability = %#v, observations = %#v", availability, session.values())
 	}
 	handler, handlerErr := migrationAdapter.CommandHandler()
 	if handlerErr != nil {
@@ -265,9 +473,12 @@ func TestUnavailableAndUnsupportedUpstreamStatesAreRejected(t *testing.T) {
 	}, responder); err != nil {
 		t.Fatal(err)
 	}
-	accepted, rejected := responder.result()
-	if accepted || !rejected || len(publisher.values()) != 0 {
-		t.Fatalf("accepted = %t, rejected = %t, publications = %d", accepted, rejected, len(publisher.values()))
+	accepted, rejected, unavailable := responder.result()
+	if accepted || !rejected || unavailable || len(session.values()) != 0 {
+		t.Fatalf(
+			"accepted = %t, rejected = %t, unavailable = %t, publications = %d",
+			accepted, rejected, unavailable, len(session.values()),
+		)
 	}
 }
 
@@ -293,14 +504,14 @@ func TestWaitForStateAfterRetainsImmediatelySupersededMatch(t *testing.T) {
 
 func TestPublishOmitsMalformedLastUpdated(t *testing.T) {
 	t.Parallel()
-	publisher := newRecordingPublisher()
-	migrationAdapter := newTestAdapter(t, publisher, "http://127.0.0.1:1")
+	session := newRecordingSession()
+	migrationAdapter := newTestAdapter(t, session, "http://127.0.0.1:1")
 	if err := migrationAdapter.publish(context.Background(), upstreamState{
 		EntityID: testExternalEntityID, State: "on", LastUpdated: "not-a-timestamp",
 	}, time.Now().UTC(), nil); err != nil {
 		t.Fatal(err)
 	}
-	observations := publisher.values()
+	observations := session.values()
 	if len(observations) != 1 || observations[0].SourceUpdatedAt != nil || string(observations[0].Value) != "true" {
 		t.Fatalf("Observation = %#v", observations)
 	}
@@ -385,7 +596,7 @@ func TestClientCorrelatesConcurrentRequestsByID(t *testing.T) {
 
 func TestAdapterReconnectsAndAcquiresANewSnapshot(t *testing.T) {
 	t.Parallel()
-	publisher := newRecordingPublisher()
+	session := newRecordingSession()
 	var connections atomic.Int64
 	server, serverErrors := newScriptedServer(t, func(ctx context.Context, connection *websocket.Conn) error {
 		connectionNumber := connections.Add(1)
@@ -410,7 +621,7 @@ func TestAdapterReconnectsAndAcquiresANewSnapshot(t *testing.T) {
 		}}); err != nil {
 			return err
 		}
-		<-publisher.published
+		<-session.published
 		if connectionNumber == 1 {
 			return connection.CloseNow()
 		}
@@ -419,25 +630,36 @@ func TestAdapterReconnectsAndAcquiresANewSnapshot(t *testing.T) {
 	})
 	defer server.Close()
 
-	migrationAdapter := newTestAdapter(t, publisher, server.URL)
+	migrationAdapter := newTestAdapter(t, session, server.URL)
 	ctx, cancel := context.WithCancel(context.Background())
 	runResult := make(chan error, 1)
 	go func() { runResult <- migrationAdapter.Run(ctx) }()
-	waitForPublications(t, publisher, 2)
+	waitForPublications(t, session, 2)
 	cancel()
 	if err := <-runResult; err != nil {
 		t.Fatal(err)
 	}
 	assertNoServerError(t, serverErrors)
-	observations := publisher.values()
+	observations := session.values()
 	if string(observations[0].Value) != "false" || string(observations[1].Value) != "true" {
 		t.Fatalf("reconnect snapshots = %s, %s", observations[0].Value, observations[1].Value)
 	}
+	health := session.health()
+	if len(health) != 3 || health[0].Status != adapter.HealthHealthy ||
+		health[1].Status != adapter.HealthUnhealthy || health[1].ReasonCode != externalSystemUnavailableReason ||
+		health[2].Status != adapter.HealthHealthy {
+		t.Fatalf("reconnect health reports = %#v", health)
+	}
+	availability := session.availability()
+	if len(availability) != 2 || availability[0].Status != adapter.AvailabilityAvailable ||
+		availability[1].Status != adapter.AvailabilityAvailable {
+		t.Fatalf("reconnect availability reports = %#v", availability)
+	}
 }
 
-func newTestAdapter(t *testing.T, publisher ObservationPublisher, upstreamURL string) *Adapter {
+func newTestAdapter(t *testing.T, session Session, upstreamURL string) *Adapter {
 	t.Helper()
-	value, err := New(publisher, Config{
+	value, err := New(session, Config{
 		URL: upstreamURL, Token: "test-token", ExternalEntityID: testExternalEntityID, EntityID: testEntityID,
 	}, slog.New(slog.DiscardHandler))
 	if err != nil {
@@ -521,17 +743,17 @@ func writeStateEvent(ctx context.Context, connection *websocket.Conn, state stri
 	})
 }
 
-func waitForPublications(t *testing.T, publisher *recordingPublisher, count int) {
+func waitForPublications(t *testing.T, session *recordingSession, count int) {
 	t.Helper()
 	deadline := time.NewTimer(5 * time.Second)
 	defer deadline.Stop()
 	ticker := time.NewTicker(10 * time.Millisecond)
 	defer ticker.Stop()
-	for len(publisher.values()) < count {
+	for len(session.values()) < count {
 		select {
 		case <-ticker.C:
 		case <-deadline.C:
-			t.Fatalf("timed out waiting for %d publications; got %d", count, len(publisher.values()))
+			t.Fatalf("timed out waiting for %d publications; got %d", count, len(session.values()))
 		}
 	}
 }

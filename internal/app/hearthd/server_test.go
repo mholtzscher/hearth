@@ -83,6 +83,31 @@ func (*stubDevices) ListEntityCommands(
 	panic("unexpected ListEntityCommands call")
 }
 
+func (*stubDevices) ListAdapters(
+	context.Context,
+	devices.ListAdaptersParams,
+) (devices.Page[devices.AdapterInstance], error) {
+	panic("unexpected ListAdapters call")
+}
+
+func (*stubDevices) GetAdapter(context.Context, string) (devices.AdapterInstance, error) {
+	panic("unexpected GetAdapter call")
+}
+
+func (*stubDevices) ListAdapterHealthHistory(
+	context.Context,
+	devices.ListAdapterHealthParams,
+) (devices.Page[devices.HealthTransition], error) {
+	panic("unexpected ListAdapterHealthHistory call")
+}
+
+func (*stubDevices) ListEntityAvailabilityHistory(
+	context.Context,
+	devices.ListEntityAvailabilityParams,
+) (devices.Page[devices.HealthTransition], error) {
+	panic("unexpected ListEntityAvailabilityHistory call")
+}
+
 func (stub *stubDevices) ExecuteCommand(
 	ctx context.Context,
 	entityID devices.EntityID,
@@ -151,9 +176,10 @@ func TestRuntimeOpenAPIContract(t *testing.T) {
 			Version string `json:"version"`
 		} `json:"info"`
 		Paths map[string]struct {
-			Get   *runtimeOpenAPIOperation `json:"get"`
-			Post  *runtimeOpenAPIOperation `json:"post"`
-			Patch *runtimeOpenAPIOperation `json:"patch"`
+			Get    *runtimeOpenAPIOperation `json:"get"`
+			Post   *runtimeOpenAPIOperation `json:"post"`
+			Patch  *runtimeOpenAPIOperation `json:"patch"`
+			Delete *runtimeOpenAPIOperation `json:"delete"`
 		} `json:"paths"`
 		Components struct {
 			Schemas map[string]json.RawMessage `json:"schemas"`
@@ -165,7 +191,7 @@ func TestRuntimeOpenAPIContract(t *testing.T) {
 	if document.OpenAPI != "3.1.0" || document.Info.Title != "Hearth" || document.Info.Version != "1.0.0" {
 		t.Fatalf("OpenAPI metadata = %#v", document)
 	}
-	if len(document.Paths) != 6 {
+	if len(document.Paths) != 10 {
 		t.Fatalf("OpenAPI paths = %v", document.Paths)
 	}
 	assertRuntimeOpenAPIOperation(t, document.Paths["/v1/entities"].Get, "list-entities", "200", "400", "422", "500")
@@ -219,12 +245,66 @@ func TestRuntimeOpenAPIContract(t *testing.T) {
 		"422",
 		"500",
 	)
+	assertRuntimeOpenAPIOperation(
+		t,
+		document.Paths["/v1/adapters"].Get,
+		"list-adapters",
+		"200",
+		"400",
+		"422",
+		"500",
+	)
+	assertRuntimeOpenAPIOperation(
+		t,
+		document.Paths["/v1/adapters/{adapter_id}"].Get,
+		"get-adapter",
+		"200",
+		"400",
+		"404",
+		"422",
+		"500",
+	)
+	if document.Paths["/v1/adapters/{adapter_id}"].Delete != nil {
+		t.Fatal("OpenAPI still exposes Adapter removal")
+	}
+	assertRuntimeOpenAPIOperation(
+		t,
+		document.Paths["/v1/adapters/{adapter_id}/health/history"].Get,
+		"list-adapter-health-history",
+		"200",
+		"400",
+		"404",
+		"422",
+		"500",
+	)
+	assertRuntimeOpenAPIOperation(
+		t,
+		document.Paths["/v1/entities/{entity_id}/availability/history"].Get,
+		"list-entity-availability-history",
+		"200",
+		"400",
+		"404",
+		"422",
+		"500",
+	)
 	if executeCommand.RequestBody == nil || !executeCommand.RequestBody.Required {
 		t.Fatalf("command request body = %#v", executeCommand.RequestBody)
 	}
 
 	for schemaName, properties := range map[string][]string{
-		"EntityBody":           {"id", "device_id", "name", "type", "support", "enabled", "state"},
+		"EntityBody": {
+			"id", "device_id", "adapter_id", "name", "type", "support", "enabled", "availability", "state",
+		},
+		"AvailabilityBody": {"status", "source", "since", "evidence_at", "source_observed_at", "reason"},
+		"HealthReasonBody": {"code"},
+		"AdapterBody":      {"id", "health"},
+		"AdapterHealthBody": {
+			"status", "source", "since", "evidence_at", "source_observed_at", "reason", "runtime",
+		},
+		"AdapterRuntimeEvidenceBody": {
+			"id", "status", "software_name", "software_version", "claimed_at", "last_heartbeat_at", "lease_expires_at",
+		},
+		"HealthTransitionBody": {"status", "source", "reason", "source_observed_at", "observed_at"},
 		"StateBody":            {"value", "observation_id", "adapter_received_at", "source_updated_at", "observed_at"},
 		"PatchEntityBody":      {"enabled"},
 		"CommandBody":          {"operation", "parameters"},
@@ -237,8 +317,10 @@ func TestRuntimeOpenAPIContract(t *testing.T) {
 			"id", "entity_id", "operation", "parameters", "status", "requested_at", "deadline_at",
 			"accepted_at", "completed_at", "outcome_observation_id", "failure_code",
 		},
-		"CommandCollectionBody": {"items", "next_cursor"},
-		"ErrorModel":            {"type", "title", "status", "detail", "instance", "errors"},
+		"CommandCollectionBody":          {"items", "next_cursor"},
+		"AdapterCollectionBody":          {"items", "next_cursor"},
+		"HealthTransitionCollectionBody": {"items", "next_cursor"},
+		"ErrorModel":                     {"type", "title", "status", "detail", "instance", "errors"},
 	} {
 		raw, ok := document.Components.Schemas[schemaName]
 		if !ok {
@@ -359,7 +441,8 @@ func assertRuntimeOpenAPIOperation(
 			}
 			continue
 		}
-		if status != "200" && !strings.Contains(string(response), "#/components/schemas/ErrorModel") {
+		if status != "200" && status != "204" &&
+			!strings.Contains(string(response), "#/components/schemas/ErrorModel") {
 			t.Errorf(
 				"OpenAPI operation %q response %s does not use Huma's standard error body: %s",
 				operationID,

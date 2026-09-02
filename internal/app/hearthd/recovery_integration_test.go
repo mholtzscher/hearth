@@ -34,8 +34,15 @@ func TestCoreStartupInterruptsActiveCommandsWithoutRedispatch(t *testing.T) {
 		t.Fatal(err)
 	}
 	repository := devices.NewSQLiteRepository(database, catalog)
-	service := devices.NewService(repository, nil, catalog, devices.Dependencies{})
-	binding, err := service.Register(ctx, "simulator", devices.Registration{
+	service := devices.NewService(devices.SQLiteStores(repository), nil, catalog, devices.Dependencies{})
+	runtimeID := devices.RuntimeID("run_01890f47-7a6b-7c4d-8e9f-0123456789ab")
+	if claimErr := service.ClaimAdapterRuntime(ctx, devices.ClaimAdapterRuntimeParams{
+		AdapterID: "simulator", RuntimeID: runtimeID,
+		SoftwareName: "hearth-simulator", SoftwareVersion: "0.1.0",
+	}); claimErr != nil {
+		t.Fatal(claimErr)
+	}
+	binding, err := service.Register(ctx, "simulator", runtimeID, devices.Registration{
 		BindingKey: "recovery-light",
 		Device:     devices.DeviceDescriptor{Name: "Recovery light", Kind: devices.DeviceKindLight},
 		Entities: []devices.EntityDescriptor{{

@@ -4,12 +4,43 @@ import (
 	"context"
 	"encoding/json"
 	"log/slog"
+	"time"
 )
 
 type Config struct {
-	AdapterID string
-	NATSURL   string
-	Logger    *slog.Logger
+	AdapterID       string
+	SoftwareName    string
+	SoftwareVersion string
+	NATSURL         string
+	Logger          *slog.Logger
+}
+
+type HealthStatus string
+
+const (
+	HealthUnknown   HealthStatus = "unknown"
+	HealthHealthy   HealthStatus = "healthy"
+	HealthUnhealthy HealthStatus = "unhealthy"
+)
+
+type HealthReport struct {
+	Status           HealthStatus
+	SourceObservedAt time.Time
+	ReasonCode       string
+}
+
+type EntityAvailabilityStatus string
+
+const (
+	AvailabilityAvailable   EntityAvailabilityStatus = "available"
+	AvailabilityUnavailable EntityAvailabilityStatus = "unavailable"
+)
+
+type EntityAvailabilityReport struct {
+	EntityID         string
+	Status           EntityAvailabilityStatus
+	SourceObservedAt time.Time
+	ReasonCode       string
 }
 
 type EntityMetadata struct {
@@ -114,4 +145,5 @@ type CommandHandler func(context.Context, Command, Responder) error
 type Responder interface {
 	Accept() error
 	Reject(message string) error
+	RejectUnavailable(message string) error
 }

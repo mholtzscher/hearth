@@ -69,6 +69,13 @@ func ParseCorrelationID(value string) (CorrelationID, error) {
 	return CorrelationID(value), nil
 }
 
+func ParseRuntimeID(value string) (RuntimeID, error) {
+	if err := validateID(value, "run"); err != nil {
+		return "", err
+	}
+	return RuntimeID(value), nil
+}
+
 func newID(prefix string) (string, error) {
 	value, err := uuid.NewV7()
 	if err != nil {

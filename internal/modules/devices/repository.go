@@ -7,19 +7,26 @@ import (
 )
 
 var (
-	errIdentityConflict    = errors.New("registration identity conflict")
-	errImmutableTypeChange = errors.New("entity type is immutable")
-	ErrDeviceNotFound      = errors.New("device not found")
-	ErrEntityNotFound      = errors.New("entity not found")
-	ErrCommandNotFound     = errors.New("command not found")
-	ErrInvalidPage         = errors.New("invalid page")
-	ErrCommandTerminal     = errors.New("command is already terminal")
-	ErrInvalidCommand      = errors.New("invalid command")
-	ErrAdapterUnavailable  = errors.New("adapter unavailable")
-	ErrUpstreamRejected    = errors.New("upstream rejected")
-	ErrOutcomeTimeout      = errors.New("command outcome timeout")
-	ErrEntityDisabled      = errors.New("entity disabled")
-	ErrEntityWrongAdapter  = errors.New("entity belongs to another adapter")
+	errIdentityConflict           = errors.New("registration identity conflict")
+	errImmutableTypeChange        = errors.New("entity type is immutable")
+	ErrDeviceNotFound             = errors.New("device not found")
+	ErrEntityNotFound             = errors.New("entity not found")
+	ErrCommandNotFound            = errors.New("command not found")
+	ErrInvalidPage                = errors.New("invalid page")
+	ErrCommandTerminal            = errors.New("command is already terminal")
+	ErrInvalidCommand             = errors.New("invalid command")
+	ErrAdapterNotFound            = errors.New("adapter not found")
+	ErrAdapterActive              = errors.New("adapter already has an active runtime")
+	ErrRuntimeClaimConflict       = errors.New("adapter runtime claim conflict")
+	ErrInvalidHealthTransition    = errors.New("invalid adapter health transition")
+	ErrInvalidAvailabilityRequest = errors.New("invalid entity availability request")
+	ErrAdapterUnhealthy           = errors.New("adapter unhealthy")
+	ErrEntityUnavailable          = errors.New("entity unavailable")
+	ErrRuntimeFenced              = errors.New("adapter runtime fenced")
+	ErrUpstreamRejected           = errors.New("upstream rejected")
+	ErrOutcomeTimeout             = errors.New("command outcome timeout")
+	ErrEntityDisabled             = errors.New("entity disabled")
+	ErrEntityWrongAdapter         = errors.New("entity belongs to another adapter")
 )
 
 type RegisterEntityParams struct {
@@ -29,6 +36,7 @@ type RegisterEntityParams struct {
 
 type RegisterBindingParams struct {
 	AdapterID  string
+	RuntimeID  RuntimeID
 	BindingKey string
 	DeviceID   DeviceID
 	Device     DeviceDescriptor
@@ -37,34 +45,63 @@ type RegisterBindingParams struct {
 }
 
 type SetEntityEnabledParams struct {
-	EntityID      EntityID
-	Enabled       bool
-	RequiredOwner *string
-	UpdatedAt     time.Time
+	EntityID        EntityID
+	Enabled         bool
+	RequiredOwner   *string
+	RequiredRuntime *RuntimeID
+	UpdatedAt       time.Time
 }
 
 type ProjectObservationParams struct {
 	AdapterID        string
+	RuntimeID        RuntimeID
 	Observation      Observation
 	ObservedAt       time.Time
 	Now              func() time.Time
 	ReceiptExpiresAt time.Time
 }
 
+type AdapterReader interface {
+	GetAdapter(context.Context, string) (AdapterInstance, error)
+}
+
 type RegistrationRepository interface {
+	AdapterReader
 	RegisterBinding(context.Context, RegisterBindingParams) (Binding, error)
 }
 
-type Repository interface {
-	RegistrationRepository
-	CommandLedger
+type RuntimeRepository interface {
+	ClaimAdapterRuntime(context.Context, ClaimRuntimeWrite) error
+	RecordAdapterHeartbeat(context.Context, HeartbeatWrite) (HeartbeatResult, error)
+	ReleaseAdapterRuntime(context.Context, ReleaseRuntimeWrite) error
+	ExpireAdapterLeases(context.Context, ExpireLeasesWrite) error
+}
+
+type AdapterRepository interface {
+	AdapterReader
+	ListAdapters(context.Context, ListAdaptersParams) (Page[AdapterInstance], error)
+	ListAdapterHealthHistory(context.Context, ListAdapterHealthParams) (Page[HealthTransition], error)
+	ListEntityAvailabilityHistory(context.Context, ListEntityAvailabilityParams) (Page[HealthTransition], error)
+}
+
+type AvailabilityRepository interface {
+	ReportEntityAvailability(context.Context, AvailabilityBatchWrite) (time.Time, error)
+}
+
+type ReadRepository interface {
 	ListDevices(context.Context, ListDevicesParams) (Page[Device], error)
 	GetDevice(context.Context, GetDeviceParams) (DeviceAggregate, error)
 	ListEntities(context.Context, ListEntitiesParams) (Page[EntityWithState], error)
 	GetEntity(context.Context, EntityID) (EntityWithState, error)
-	SetEntityEnabled(context.Context, SetEntityEnabledParams) (EntityWithState, error)
 	GetCommand(context.Context, CommandID) (CommandRecord, error)
 	ListEntityCommands(context.Context, ListEntityCommandsParams) (Page[CommandRecord], error)
+}
+
+type EnablementRepository interface {
+	SetEntityEnabled(context.Context, SetEntityEnabledParams) (EntityWithState, error)
+}
+
+type ObservationRepository interface {
 	ProjectObservation(context.Context, ProjectObservationParams) (ProjectionResult, error)
 	DeleteExpiredObservationReceipts(context.Context, time.Time) error
 }
@@ -77,5 +114,5 @@ type CommandLedger interface {
 }
 
 type CommandSender interface {
-	Send(context.Context, string, CommandRequest) (CommandAcceptance, error)
+	Send(context.Context, string, RuntimeID, CommandRequest) (CommandAcceptance, error)
 }

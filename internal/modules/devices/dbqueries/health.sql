@@ -1,0 +1,229 @@
+-- name: GetAdapterInstance :one
+SELECT adapter_id, active_runtime_id, health_runtime_id,
+       health_status, health_reason_code, health_source, health_since,
+       health_evidence_at, health_source_observed_at
+FROM adapter_instances
+WHERE adapter_id = ?;
+
+-- name: CreateAdapterInstance :exec
+INSERT INTO adapter_instances (
+    adapter_id, health_status, health_reason_code, health_source,
+    health_since, health_evidence_at
+) VALUES (?, ?, ?, ?, ?, ?);
+
+-- name: GetRuntime :one
+SELECT runtime_id, adapter_id, software_name, software_version,
+       claimed_at, last_heartbeat_at, lease_expires_at, ended_at, end_reason
+FROM adapter_runtimes
+WHERE runtime_id = ?;
+
+-- name: GetLatestRuntimeForAdapter :one
+SELECT runtime_id, adapter_id, software_name, software_version,
+       claimed_at, last_heartbeat_at, lease_expires_at, ended_at, end_reason
+FROM adapter_runtimes
+WHERE adapter_id = ?
+ORDER BY rowid DESC
+LIMIT 1;
+
+-- name: InsertRuntime :exec
+INSERT INTO adapter_runtimes (
+    runtime_id, adapter_id, software_name, software_version,
+    claimed_at, lease_expires_at
+) VALUES (?, ?, ?, ?, ?, ?);
+
+-- name: UpdateRuntimeHeartbeat :execrows
+UPDATE adapter_runtimes
+SET last_heartbeat_at = ?, lease_expires_at = ?
+WHERE runtime_id = ? AND adapter_id = ? AND ended_at IS NULL;
+
+-- name: EndRuntime :execrows
+UPDATE adapter_runtimes
+SET ended_at = ?, end_reason = ?
+WHERE runtime_id = ? AND adapter_id = ? AND ended_at IS NULL;
+
+-- name: ListExpiredRuntimes :many
+SELECT runtime_id, adapter_id, software_name, software_version,
+       claimed_at, last_heartbeat_at, lease_expires_at, ended_at, end_reason
+FROM adapter_runtimes
+WHERE ended_at IS NULL
+  AND julianday(lease_expires_at) <= julianday(CAST(sqlc.arg(expires_at) AS TEXT))
+ORDER BY lease_expires_at, runtime_id;
+
+-- name: UpdateAdapterCurrentHealth :exec
+UPDATE adapter_instances
+SET active_runtime_id = ?,
+    health_runtime_id = ?,
+    health_status = ?,
+    health_reason_code = ?,
+    health_source = ?,
+    health_since = ?,
+    health_evidence_at = ?,
+    health_source_observed_at = ?
+WHERE adapter_id = ?;
+
+-- name: InsertHealthTransition :one
+INSERT INTO health_transitions (
+    resource_kind, adapter_id, entity_id, runtime_id, status, source,
+    reason_code, source_observed_at, observed_at
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+RETURNING receive_order;
+
+-- name: InsertAdapterEntityAvailabilityTransitions :exec
+INSERT INTO health_transitions (
+    resource_kind, adapter_id, entity_id, runtime_id, status, source,
+    reason_code, source_observed_at, observed_at
+)
+SELECT
+    'entity', mapping.adapter_id, mapping.entity_id, sqlc.narg(runtime_id),
+    CAST(sqlc.arg(status) AS TEXT), CAST(sqlc.arg(source) AS TEXT),
+    sqlc.narg(reason_code), sqlc.narg(source_observed_at),
+    CAST(sqlc.arg(observed_at) AS TEXT)
+FROM adapter_entity_mappings AS mapping
+LEFT JOIN health_transitions AS latest
+    ON latest.receive_order = (
+        SELECT MAX(candidate.receive_order)
+        FROM health_transitions AS candidate
+        WHERE candidate.resource_kind = 'entity'
+          AND candidate.entity_id = mapping.entity_id
+    )
+WHERE mapping.adapter_id = sqlc.arg(adapter_id)
+  AND (
+      latest.receive_order IS NULL
+      OR latest.status <> CAST(sqlc.arg(status) AS TEXT)
+      OR latest.reason_code IS NOT sqlc.narg(reason_code)
+  )
+ORDER BY mapping.entity_id;
+
+-- name: GetAdapterView :one
+SELECT
+    ai.adapter_id,
+    ai.health_status,
+    ai.health_reason_code,
+    ai.health_source,
+    ai.health_since,
+    ai.health_evidence_at,
+    ai.health_source_observed_at,
+    ar.runtime_id,
+    ar.software_name,
+    ar.software_version,
+    ar.claimed_at,
+    ar.last_heartbeat_at,
+    ar.lease_expires_at,
+    ar.ended_at
+FROM adapter_instances AS ai
+LEFT JOIN adapter_runtimes AS ar ON ar.runtime_id = ai.health_runtime_id
+WHERE ai.adapter_id = ?;
+
+-- name: ListAdapterViewsFirstPage :many
+SELECT
+    ai.adapter_id,
+    ai.health_status,
+    ai.health_reason_code,
+    ai.health_source,
+    ai.health_since,
+    ai.health_evidence_at,
+    ai.health_source_observed_at,
+    ar.runtime_id,
+    ar.software_name,
+    ar.software_version,
+    ar.claimed_at,
+    ar.last_heartbeat_at,
+    ar.lease_expires_at,
+    ar.ended_at
+FROM adapter_instances AS ai
+LEFT JOIN adapter_runtimes AS ar ON ar.runtime_id = ai.health_runtime_id
+ORDER BY ai.adapter_id
+LIMIT sqlc.arg(page_limit);
+
+-- name: ListAdapterViewsAfter :many
+SELECT
+    ai.adapter_id,
+    ai.health_status,
+    ai.health_reason_code,
+    ai.health_source,
+    ai.health_since,
+    ai.health_evidence_at,
+    ai.health_source_observed_at,
+    ar.runtime_id,
+    ar.software_name,
+    ar.software_version,
+    ar.claimed_at,
+    ar.last_heartbeat_at,
+    ar.lease_expires_at,
+    ar.ended_at
+FROM adapter_instances AS ai
+LEFT JOIN adapter_runtimes AS ar ON ar.runtime_id = ai.health_runtime_id
+WHERE ai.adapter_id > sqlc.arg(after_adapter_id)
+ORDER BY ai.adapter_id
+LIMIT sqlc.arg(page_limit);
+
+-- name: ListAdapterHealthHistoryFirstPage :many
+SELECT receive_order, status, source, reason_code, source_observed_at, observed_at
+FROM health_transitions
+WHERE resource_kind = 'adapter' AND adapter_id = ?
+ORDER BY receive_order DESC
+LIMIT ?;
+
+-- name: ListAdapterHealthHistoryBefore :many
+SELECT receive_order, status, source, reason_code, source_observed_at, observed_at
+FROM health_transitions
+WHERE resource_kind = 'adapter' AND adapter_id = ? AND receive_order < ?
+ORDER BY receive_order DESC
+LIMIT ?;
+
+-- name: GetEntityAvailabilityReceipt :one
+SELECT fingerprint, reported_at
+FROM entity_availability_receipts
+WHERE request_id = ?;
+
+-- name: InsertEntityAvailabilityReceipt :exec
+INSERT INTO entity_availability_receipts (request_id, fingerprint, reported_at)
+VALUES (?, ?, ?);
+
+-- name: GetEntityAvailabilityCurrent :one
+SELECT entity_id, adapter_id, runtime_id, status, reason_code,
+       source_observed_at, evidence_at, current_since,
+       latest_transition_receive_order
+FROM entity_availability_current
+WHERE entity_id = ?;
+
+-- name: DeleteAdapterEntityAvailability :exec
+DELETE FROM entity_availability_current
+WHERE adapter_id = ?;
+
+-- name: GetEntityOwner :one
+SELECT adapter_id
+FROM adapter_entity_mappings
+WHERE entity_id = ?;
+
+-- name: UpsertEntityAvailabilityCurrent :exec
+INSERT INTO entity_availability_current (
+    entity_id, adapter_id, runtime_id, status, reason_code,
+    source_observed_at, evidence_at, current_since,
+    latest_transition_receive_order
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+ON CONFLICT(entity_id) DO UPDATE SET
+    adapter_id = excluded.adapter_id,
+    runtime_id = excluded.runtime_id,
+    status = excluded.status,
+    reason_code = excluded.reason_code,
+    source_observed_at = excluded.source_observed_at,
+    evidence_at = excluded.evidence_at,
+    current_since = excluded.current_since,
+    latest_transition_receive_order = excluded.latest_transition_receive_order;
+
+-- name: ListEntityAvailabilityHistoryFirstPage :many
+SELECT receive_order, status, source, reason_code, source_observed_at, observed_at
+FROM health_transitions
+WHERE resource_kind = 'entity' AND entity_id = sqlc.arg(entity_id)
+ORDER BY receive_order DESC
+LIMIT sqlc.arg(page_limit);
+
+-- name: ListEntityAvailabilityHistoryBefore :many
+SELECT receive_order, status, source, reason_code, source_observed_at, observed_at
+FROM health_transitions
+WHERE resource_kind = 'entity'
+  AND entity_id = sqlc.arg(entity_id)
+  AND receive_order < CAST(sqlc.arg(before_receive_order) AS INTEGER)
+ORDER BY receive_order DESC
+LIMIT sqlc.arg(page_limit);

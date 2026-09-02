@@ -19,13 +19,25 @@ sqlc generate
 [tasks."format"]
 description = "Format Go files"
 depends = ["generate"]
-run = '''git ls-files -z --cached --others --exclude-standard -- '*.go' | xargs -0 -r gofmt -w'''
+run = '''
+git ls-files -z --cached --others --exclude-standard -- '*.go' |
+  while IFS= read -r -d '' file; do
+    test ! -f "$file" || printf '%s\0' "$file"
+  done |
+  xargs -0 -r gofmt -w
+'''
 
 [tasks."format-check"]
 description = "Check Go formatting"
 depends = ["tidy"]
 run = '''
-unformatted="$(git ls-files -z --cached --others --exclude-standard -- '*.go' | xargs -0 -r gofmt -l)"
+unformatted="$(
+  git ls-files -z --cached --others --exclude-standard -- '*.go' |
+    while IFS= read -r -d '' file; do
+      test ! -f "$file" || printf '%s\0' "$file"
+    done |
+    xargs -0 -r gofmt -l
+)"
 if test -n "$unformatted"; then
   printf 'The following Go files need formatting:\n%s\n' "$unformatted"
   exit 1
@@ -50,11 +62,12 @@ go run ./internal/cmd/entitytypegen -root . -check
 
 tmp="$(mktemp -d)"
 trap 'rm -rf "$tmp"' EXIT
-mkdir -p "$tmp/internal/platform/db"
+mkdir -p "$tmp/internal/platform/db" "$tmp/internal/modules/devices"
 cp sqlc.yaml "$tmp/"
-cp -R internal/platform/db/migrations internal/platform/db/queries internal/platform/db/sqlc "$tmp/internal/platform/db/"
+cp -R internal/platform/db/migrations "$tmp/internal/platform/db/"
+cp -R internal/modules/devices/dbqueries internal/modules/devices/dbsqlc "$tmp/internal/modules/devices/"
 (cd "$tmp" && sqlc generate)
-diff -ru internal/platform/db/sqlc "$tmp/internal/platform/db/sqlc"
+diff -ru internal/modules/devices/dbsqlc "$tmp/internal/modules/devices/dbsqlc"
 '''
 
 [tasks."ko-build"]
@@ -91,6 +104,26 @@ description = "Test with the race detector"
 depends = ["tidy"]
 run = '''go test -race ./...'''
 
+[tasks."fuzz-entitytypes-json-codec"]
+description = "Run a bounded JSONCodec fuzz campaign"
+run = '''go test ./entitytypes -run='^$' -fuzz='^FuzzJSONCodecDecodeStability$' -fuzztime="${FUZZTIME:-5s}"'''
+
+[tasks."fuzz-natswire-codec"]
+description = "Run a bounded NATS wire codec fuzz campaign"
+run = '''go test ./internal/contracts/v1/natswire -run='^$' -fuzz='^FuzzCodecObservationRoundTrip$' -fuzztime="${FUZZTIME:-5s}"'''
+
+[tasks."fuzz-natswire-subjects"]
+description = "Run a bounded NATS subject parser fuzz campaign"
+run = '''go test ./internal/contracts/v1/natswire -run='^$' -fuzz='^FuzzSubjectParsersCanonicalRoundTrip$' -fuzztime="${FUZZTIME:-5s}"'''
+
+[tasks."fuzz"]
+description = "Run all bounded fuzz campaigns"
+run = '''
+mise run fuzz-natswire-subjects
+mise run fuzz-entitytypes-json-codec
+mise run fuzz-natswire-codec
+'''
+
 [tasks."vet"]
 description = "Vet"
 depends = ["tidy"]
@@ -102,7 +135,7 @@ run = '''nats-server -js -sd .data/nats'''
 
 [tasks."mutation-test"]
 description = "Run Gremlins mutation testing (pass package paths after --)"
-run = '''gremlins unleash "$@"'''
+run = '''gremlins unleash'''
 
 [tasks."validate"]
 description = "Run all validation"

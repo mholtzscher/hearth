@@ -23,7 +23,7 @@
           "additionalProperties": false,
           "required": ["code", "message"],
           "properties": {
-            "code": { "const": "upstream_rejected" },
+            "code": { "enum": ["upstream_rejected", "entity_unavailable"] },
             "message": { "$ref": "urn:hearth:schema:common:v1#/$defs/safe_message" }
           }
         }

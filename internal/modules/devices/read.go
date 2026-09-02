@@ -14,7 +14,7 @@ func (service *Service) ListDevices(ctx context.Context, params ListDevicesParam
 			return Page[Device]{}, fmt.Errorf("%w: parse device position: %w", ErrInvalidPage, err)
 		}
 	}
-	page, err := service.repository.ListDevices(ctx, params)
+	page, err := service.stores.Reads.ListDevices(ctx, params)
 	if err != nil {
 		return Page[Device]{}, err
 	}
@@ -35,7 +35,7 @@ func (service *Service) GetDevice(ctx context.Context, params GetDeviceParams) (
 			return DeviceAggregate{}, fmt.Errorf("%w: parse entity position: %w", ErrInvalidPage, err)
 		}
 	}
-	aggregate, err := service.repository.GetDevice(ctx, params)
+	aggregate, err := service.stores.Reads.GetDevice(ctx, params)
 	if err != nil {
 		return DeviceAggregate{}, err
 	}
@@ -65,7 +65,7 @@ func (service *Service) ListEntities(ctx context.Context, params ListEntitiesPar
 			return Page[EntityWithState]{}, fmt.Errorf("%w: parse entity position: %w", ErrInvalidPage, err)
 		}
 	}
-	page, err := service.repository.ListEntities(ctx, params)
+	page, err := service.stores.Reads.ListEntities(ctx, params)
 	if err != nil {
 		return Page[EntityWithState]{}, err
 	}
@@ -80,7 +80,7 @@ func (service *Service) GetEntity(ctx context.Context, id EntityID) (EntityWithS
 	if _, err := ParseEntityID(string(id)); err != nil {
 		return EntityWithState{}, fmt.Errorf("parse entity ID: %w", err)
 	}
-	view, err := service.repository.GetEntity(ctx, id)
+	view, err := service.stores.Reads.GetEntity(ctx, id)
 	if err != nil {
 		return EntityWithState{}, err
 	}
@@ -91,7 +91,7 @@ func (service *Service) GetCommand(ctx context.Context, id CommandID) (CommandRe
 	if _, err := ParseCommandID(string(id)); err != nil {
 		return CommandRecord{}, fmt.Errorf("parse command ID: %w", err)
 	}
-	command, err := service.repository.GetCommand(ctx, id)
+	command, err := service.stores.Reads.GetCommand(ctx, id)
 	if err != nil {
 		return CommandRecord{}, err
 	}
@@ -118,10 +118,10 @@ func (service *Service) ListEntityCommands(
 		utc := params.BeforeRequestedAt.UTC()
 		params.BeforeRequestedAt = &utc
 	}
-	if _, err := service.repository.GetEntity(ctx, params.EntityID); err != nil {
+	if _, err := service.stores.Reads.GetEntity(ctx, params.EntityID); err != nil {
 		return Page[CommandRecord]{}, err
 	}
-	page, err := service.repository.ListEntityCommands(ctx, params)
+	page, err := service.stores.Reads.ListEntityCommands(ctx, params)
 	if err != nil {
 		return Page[CommandRecord]{}, err
 	}
@@ -135,6 +135,10 @@ func (service *Service) ListEntityCommands(
 func copyCommandRecord(command CommandRecord) CommandRecord {
 	cloned := command
 	cloned.Parameters = append(CommandParameters(nil), command.Parameters...)
+	if command.RuntimeID != nil {
+		value := *command.RuntimeID
+		cloned.RuntimeID = &value
+	}
 	if command.AcceptedAt != nil {
 		value := *command.AcceptedAt
 		cloned.AcceptedAt = &value

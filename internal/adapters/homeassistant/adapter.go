@@ -17,14 +17,21 @@ import (
 )
 
 const (
-	reconnectMinimum = 250 * time.Millisecond
-	reconnectMaximum = 5 * time.Second
-	stateOff         = "off"
-	jitterDivisor    = 2
+	reconnectMinimum                = 250 * time.Millisecond
+	reconnectMaximum                = 5 * time.Second
+	stateOff                        = "off"
+	stateUnavailable                = "unavailable"
+	stateUnknown                    = "unknown"
+	jitterDivisor                   = 2
+	authenticationFailedReason      = "hearth.authentication_failed"
+	externalSystemUnavailableReason = "hearth.external_system_unavailable"
+	entityUnavailableReason         = "adapter.hearth-adapter-homeassistant.entity_unavailable"
 )
 
-type ObservationPublisher interface {
+type Session interface {
 	PublishObservation(context.Context, adapter.Observation) (adapter.ObservationID, error)
+	SetHealth(context.Context, adapter.HealthReport) error
+	ReportEntityAvailability(context.Context, []adapter.EntityAvailabilityReport) error
 }
 
 type Config struct {
@@ -35,18 +42,18 @@ type Config struct {
 }
 
 type Adapter struct {
-	publisher ObservationPublisher
-	config    Config
-	logger    *slog.Logger
-	support   contractpowerv1.Support
+	session Session
+	config  Config
+	logger  *slog.Logger
+	support contractpowerv1.Support
 
 	clientMutex sync.RWMutex
 	client      *client
 }
 
-func New(publisher ObservationPublisher, config Config, logger *slog.Logger) (*Adapter, error) {
-	if publisher == nil {
-		return nil, errors.New("home assistant observation publisher is required")
+func New(session Session, config Config, logger *slog.Logger) (*Adapter, error) {
+	if session == nil {
+		return nil, errors.New("home assistant adapter Session is required")
 	}
 	if _, err := websocketAddress(config.URL); err != nil {
 		return nil, err
@@ -64,10 +71,10 @@ func New(publisher ObservationPublisher, config Config, logger *slog.Logger) (*A
 		logger = slog.Default()
 	}
 	return &Adapter{
-		publisher: publisher,
-		config:    config,
-		logger:    logger,
-		support:   PowerSupport(),
+		session: session,
+		config:  config,
+		logger:  logger,
+		support: PowerSupport(),
 	}, nil
 }
 
@@ -94,6 +101,12 @@ func (homeAssistant *Adapter) Run(ctx context.Context) error {
 		err := homeAssistant.runConnection(ctx)
 		if ctx.Err() != nil {
 			return nil //nolint:nilerr // Context cancellation is a graceful shutdown.
+		}
+		if _, ok := errors.AsType[*sessionOperationError](err); ok {
+			return err
+		}
+		if healthErr := homeAssistant.reportUnhealthy(ctx, err); healthErr != nil {
+			return healthErr
 		}
 		if _, ok := errors.AsType[*AuthenticationError](err); ok {
 			return err
@@ -135,8 +148,6 @@ func (homeAssistant *Adapter) runConnection(ctx context.Context) error {
 	if subscribeErr := client.SubscribeStateChanges(ctx); subscribeErr != nil {
 		return subscribeErr
 	}
-	homeAssistant.setClient(client)
-	defer homeAssistant.clearClient(client)
 	return homeAssistant.reconcileAndStream(ctx, client)
 }
 
@@ -194,41 +205,41 @@ snapshotReady:
 			homeAssistant.config.ExternalEntityID,
 		)
 	}
+	reconciled := []stateChange{{State: state, ReceivedAt: snapshot.receivedAt}}
 	snapshotUpdatedAt, _ := sourceUpdatedAt(state)
-	if err := homeAssistant.publish(ctx, state, snapshot.receivedAt, nil); err != nil {
-		if !errors.Is(err, errUnsupportedState) {
-			return err
-		}
-		homeAssistant.logUnsupportedState(ctx, "snapshot", state)
-	}
 	for _, event := range buffered {
 		eventUpdatedAt, err := sourceUpdatedAt(event.State)
 		if err != nil || snapshotUpdatedAt == nil || eventUpdatedAt == nil ||
 			!eventUpdatedAt.After(*snapshotUpdatedAt) {
 			continue
 		}
-		if publishErr := homeAssistant.publish(ctx, event.State, event.ReceivedAt, nil); publishErr != nil {
-			if errors.Is(publishErr, errUnsupportedState) {
-				homeAssistant.logUnsupportedState(ctx, "event", event.State)
+		reconciled = append(reconciled, event)
+	}
+	homeAssistant.setClient(client)
+	defer homeAssistant.clearClient(client)
+	if err := homeAssistant.setHealthy(ctx); err != nil {
+		return err
+	}
+	for index, item := range reconciled {
+		source := "event"
+		if index == 0 {
+			source = "snapshot"
+		}
+		if err := homeAssistant.processState(ctx, item.State, item.ReceivedAt, nil); err != nil {
+			if errors.Is(err, errUnsupportedState) {
+				homeAssistant.logUnsupportedState(ctx, source, item.State)
 				continue
 			}
-			return publishErr
+			return err
 		}
 	}
 
 	for {
 		select {
 		case event := <-client.Events():
-			if err := homeAssistant.publish(ctx, event.State, event.ReceivedAt, nil); err != nil {
+			if err := homeAssistant.processState(ctx, event.State, event.ReceivedAt, nil); err != nil {
 				if errors.Is(err, errUnsupportedState) {
-					homeAssistant.logger.WarnContext(
-						ctx,
-						"Home Assistant event State is not publishable",
-						"entity_id",
-						event.State.EntityID,
-						"state",
-						event.State.State,
-					)
+					homeAssistant.logUnsupportedState(ctx, "event", event.State)
 					continue
 				}
 				return err
@@ -250,6 +261,7 @@ func (homeAssistant *Adapter) logUnsupportedState(ctx context.Context, source st
 	)
 }
 
+//nolint:gocognit // Command refresh distinguishes resource, external-system, and protocol failures before responding.
 func (homeAssistant *Adapter) set(
 	ctx context.Context,
 	command typed.Command[contractpowerv1.SetParameters],
@@ -266,29 +278,49 @@ func (homeAssistant *Adapter) set(
 		service = "turn_on"
 		desiredState = "on"
 	}
-	if err := client.CallLightService(ctx, service, homeAssistant.config.ExternalEntityID); err != nil {
+	serviceErr := client.CallLightService(ctx, service, homeAssistant.config.ExternalEntityID)
+	if serviceErr != nil {
 		homeAssistant.logger.WarnContext(
 			ctx,
 			"Home Assistant service call failed",
 			"entity_id",
 			homeAssistant.config.ExternalEntityID,
 			"error",
-			err,
+			serviceErr,
 		)
+	}
+	state, receivedAt, stateErr := homeAssistant.getState(ctx, client)
+	if stateErr != nil {
+		client.Close()
+		if healthErr := homeAssistant.reportClientUnhealthy(ctx, client, stateErr); healthErr != nil {
+			return healthErr
+		}
+		return responder.Reject("Home Assistant is unavailable")
+	}
+	available, availabilityErr := homeAssistant.reportStateAvailability(ctx, state, receivedAt)
+	if availabilityErr != nil && !errors.Is(availabilityErr, errUnsupportedState) {
+		return availabilityErr
+	}
+	if !available && availabilityErr == nil {
+		return responder.RejectUnavailable("Home Assistant reported the Entity unavailable")
+	}
+	if serviceErr != nil {
+		if _, ok := errors.AsType[*requestRejectedError](serviceErr); !ok {
+			client.Close()
+			if healthErr := homeAssistant.reportClientUnhealthy(ctx, client, serviceErr); healthErr != nil {
+				return healthErr
+			}
+		}
 		return responder.Reject("Home Assistant rejected the light command")
 	}
 	if err := responder.Accept(); err != nil {
 		return err
 	}
 	commandID := command.ID
-	state, receivedAt, err := homeAssistant.getState(ctx, client)
-	if err != nil {
-		return err
-	}
 	if state.State == desiredState {
 		return homeAssistant.publish(ctx, state, receivedAt, &commandID)
 	}
-	if state.State == "on" || state.State == stateOff {
+	if available {
 		if publishErr := homeAssistant.publish(ctx, state, receivedAt, &commandID); publishErr != nil {
 			return publishErr
 		}
@@ -297,7 +329,7 @@ func (homeAssistant *Adapter) set(
 	if err != nil {
 		return err
 	}
-	return homeAssistant.publish(ctx, matching.State, matching.ReceivedAt, &commandID)
+	return homeAssistant.processState(ctx, matching.State, matching.ReceivedAt, &commandID)
 }
 
 func (homeAssistant *Adapter) getState(ctx context.Context, client *client) (upstreamState, time.Time, error) {
@@ -316,6 +348,95 @@ func (homeAssistant *Adapter) getState(ctx context.Context, client *client) (ups
 }
 
 var errUnsupportedState = errors.New("unsupported Home Assistant State")
+
+type sessionOperationError struct {
+	operation string
+	err       error
+}
+
+func (operationError *sessionOperationError) Error() string {
+	return operationError.operation + ": " + operationError.err.Error()
+}
+
+func (operationError *sessionOperationError) Unwrap() error { return operationError.err }
+
+func (homeAssistant *Adapter) setHealthy(ctx context.Context) error {
+	err := homeAssistant.session.SetHealth(ctx, adapter.HealthReport{
+		Status: adapter.HealthHealthy, SourceObservedAt: time.Now().UTC(),
+	})
+	if err != nil {
+		return &sessionOperationError{operation: "report healthy Home Assistant", err: err}
+	}
+	return nil
+}
+
+func (homeAssistant *Adapter) reportUnhealthy(ctx context.Context, cause error) error {
+	reason := externalSystemUnavailableReason
+	if _, ok := errors.AsType[*AuthenticationError](cause); ok {
+		reason = authenticationFailedReason
+	}
+	err := homeAssistant.session.SetHealth(ctx, adapter.HealthReport{
+		Status: adapter.HealthUnhealthy, SourceObservedAt: time.Now().UTC(), ReasonCode: reason,
+	})
+	if err != nil {
+		return &sessionOperationError{operation: "report unhealthy Home Assistant", err: err}
+	}
+	return nil
+}
+
+func (homeAssistant *Adapter) reportClientUnhealthy(ctx context.Context, expected *client, cause error) error {
+	homeAssistant.clientMutex.Lock()
+	defer homeAssistant.clientMutex.Unlock()
+	if homeAssistant.client != expected {
+		return nil
+	}
+	return homeAssistant.reportUnhealthy(ctx, cause)
+}
+
+func (homeAssistant *Adapter) processState(
+	ctx context.Context,
+	state upstreamState,
+	receivedAt time.Time,
+	refreshForCommand *string,
+) error {
+	available, err := homeAssistant.reportStateAvailability(ctx, state, receivedAt)
+	if err != nil || !available {
+		return err
+	}
+	return homeAssistant.publish(ctx, state, receivedAt, refreshForCommand)
+}
+
+func (homeAssistant *Adapter) reportStateAvailability(
+	ctx context.Context,
+	state upstreamState,
+	receivedAt time.Time,
+) (bool, error) {
+	report := adapter.EntityAvailabilityReport{
+		EntityID: homeAssistant.config.EntityID, SourceObservedAt: receivedAt.UTC(),
+	}
+	if report.SourceObservedAt.IsZero() {
+		report.SourceObservedAt = time.Now().UTC()
+	}
+	switch state.State {
+	case "on", stateOff:
+		report.Status = adapter.AvailabilityAvailable
+	case stateUnavailable, stateUnknown:
+		report.Status = adapter.AvailabilityUnavailable
+		report.ReasonCode = entityUnavailableReason
+	default:
+		return false, fmt.Errorf("%w %q", errUnsupportedState, state.State)
+	}
+	if err := homeAssistant.session.ReportEntityAvailability(
+		ctx,
+		[]adapter.EntityAvailabilityReport{report},
+	); err != nil {
+		return false, &sessionOperationError{
+			operation: "report Home Assistant Entity availability",
+			err:       err,
+		}
+	}
+	return report.Status == adapter.AvailabilityAvailable, nil
+}
 
 func (homeAssistant *Adapter) publish(
 	ctx context.Context,
@@ -355,8 +476,11 @@ func (homeAssistant *Adapter) publish(
 	if err != nil {
 		return err
 	}
-	_, err = homeAssistant.publisher.PublishObservation(ctx, observation)
-	return err
+	_, err = homeAssistant.session.PublishObservation(ctx, observation)
+	if err != nil {
+		return &sessionOperationError{operation: "publish Home Assistant Observation", err: err}
+	}
+	return nil
 }
 
 func sourceUpdatedAt(state upstreamState) (*time.Time, error) {

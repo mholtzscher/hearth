@@ -39,7 +39,7 @@ func (service *Service) ExecuteCommand(
 	if err := validateCommandParameters(parameters); err != nil {
 		return CommandResult{}, fmt.Errorf("%w: %w", ErrInvalidCommand, err)
 	}
-	view, err := service.repository.GetEntity(ctx, entityID)
+	view, err := service.stores.Reads.GetEntity(ctx, entityID)
 	if err != nil {
 		return CommandResult{}, err
 	}
@@ -71,12 +71,15 @@ func (service *Service) ExecuteCommand(
 		CorrelationID: correlationID, Status: CommandStatusRequested,
 		RequestedAt: requestedAt, DeadlineAt: requestedAt.Add(resolved.Deadline),
 	}
-	command, err = service.repository.CreateCommand(ctx, command)
+	command, err = service.stores.Commands.CreateCommand(ctx, command)
 	if err != nil {
 		return CommandResult{}, err
 	}
 	if command.Status == CommandStatusEntityDisabled {
 		return CommandResult{}, commandExecutionError(command.ID, ErrEntityDisabled)
+	}
+	if command.Status == CommandStatusAdapterUnhealthy {
+		return CommandResult{}, commandExecutionError(command.ID, ErrAdapterUnhealthy)
 	}
 	waiter := service.addCommandWaiter(command.ID)
 
@@ -107,36 +110,26 @@ type commandOutcome struct {
 	err    error
 }
 
+func classifyCommandDispatchError(err error) (CommandStatus, CommandFailureCode, error) {
+	switch {
+	case errors.Is(err, ErrEntityUnavailable):
+		return CommandStatusEntityUnavailable, CommandFailureEntityUnavailable, ErrEntityUnavailable
+	case errors.Is(err, ErrAdapterUnhealthy), errors.Is(err, context.DeadlineExceeded):
+		return CommandStatusAdapterUnhealthy, CommandFailureAdapterUnhealthy, ErrAdapterUnhealthy
+	default:
+		return CommandStatusInternalFailure, CommandFailureInternalError, err
+	}
+}
+
 func (service *Service) runCommand(
 	ctx context.Context,
 	command CommandRecord,
 	waiter <-chan CommandResult,
 ) commandOutcome {
-	if service.sender == nil {
-		return service.failCommand(
-			command.ID,
-			CommandStatusInternalFailure,
-			CommandFailureInternalError,
-			errors.New("command sender is not configured"),
-			waiter,
-		)
-	}
-	acceptance, err := service.sender.Send(ctx, command.AdapterID, CommandRequest{
-		ID: command.ID, CorrelationID: command.CorrelationID, EntityID: command.EntityID,
-		OperationName: command.OperationName, Parameters: append(CommandParameters(nil), command.Parameters...),
-		Deadline: command.DeadlineAt,
-	})
+	acceptance, err := service.dispatchCommand(ctx, command)
 	if err != nil {
-		if errors.Is(err, ErrAdapterUnavailable) || errors.Is(err, context.DeadlineExceeded) {
-			return service.failCommand(
-				command.ID,
-				CommandStatusAdapterUnavailable,
-				CommandFailureAdapterUnavailable,
-				ErrAdapterUnavailable,
-				waiter,
-			)
-		}
-		return service.failCommand(command.ID, CommandStatusInternalFailure, CommandFailureInternalError, err, waiter)
+		status, failureCode, outcome := classifyCommandDispatchError(err)
+		return service.failCommand(command.ID, status, failureCode, outcome, waiter)
 	}
 	if !acceptance.Accepted {
 		return service.failCommand(
@@ -153,7 +146,7 @@ func (service *Service) runCommand(
 		return service.failCommand(command.ID, CommandStatusInternalFailure, CommandFailureInternalError, err, waiter)
 	}
 	writeContext, cancel := persistenceContext(ctx)
-	err = service.repository.MarkCommandAccepted(writeContext, command.ID, acceptedAt)
+	err = service.stores.Commands.MarkCommandAccepted(writeContext, command.ID, acceptedAt)
 	cancel()
 	if err != nil && !errors.Is(err, ErrCommandTerminal) {
 		return service.failCommand(command.ID, CommandStatusInternalFailure, CommandFailureInternalError, err, waiter)
@@ -183,7 +176,7 @@ func (service *Service) runCommand(
 			FailureCode: CommandFailureOutcomeTimeout,
 		}
 		completionContext, cancelCompletion := persistenceContext(ctx)
-		completionErr := service.repository.CompleteCommand(completionContext, completion)
+		completionErr := service.stores.Commands.CompleteCommand(completionContext, completion)
 		cancelCompletion()
 		if errors.Is(completionErr, ErrCommandTerminal) {
 			// A matching Observation committed first and its notification follows
@@ -210,6 +203,23 @@ func (service *Service) runCommand(
 	}
 }
 
+func (service *Service) dispatchCommand(
+	ctx context.Context,
+	command CommandRecord,
+) (CommandAcceptance, error) {
+	if service.sender == nil {
+		return CommandAcceptance{}, errors.New("command sender is not configured")
+	}
+	if command.RuntimeID == nil {
+		return CommandAcceptance{}, ErrAdapterUnhealthy
+	}
+	return service.sender.Send(ctx, command.AdapterID, *command.RuntimeID, CommandRequest{
+		ID: command.ID, CorrelationID: command.CorrelationID, EntityID: command.EntityID,
+		OperationName: command.OperationName, Parameters: append(CommandParameters(nil), command.Parameters...),
+		Deadline: command.DeadlineAt,
+	})
+}
+
 func (service *Service) failCommand(
 	id CommandID,
 	status CommandStatus,
@@ -222,7 +232,7 @@ func (service *Service) failCommand(
 		return commandOutcome{err: commandExecutionError(id, err)}
 	}
 	writeContext, cancel := persistenceContext(context.Background())
-	err = service.repository.CompleteCommand(writeContext, CommandCompletion{
+	err = service.stores.Commands.CompleteCommand(writeContext, CommandCompletion{
 		ID: id, Status: status, CompletedAt: completedAt, FailureCode: failureCode,
 	})
 	cancel()

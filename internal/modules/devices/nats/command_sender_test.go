@@ -21,13 +21,22 @@ func TestCommandSenderDispatchesValidatedCorrelatedRequests(t *testing.T) {
 	server, connection, _ := startJetStream(t)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	session, err := adapter.Connect(ctx, adapter.Config{AdapterID: "simulator", NATSURL: server.ClientURL()})
+	validator, err := contractsv1.Compile()
+	if err != nil {
+		t.Fatal(err)
+	}
+	lifecycle := startAdapterSessionServer(t, connection, validator)
+	session, err := adapter.Connect(ctx, adapter.Config{
+		AdapterID: "simulator", SoftwareName: "hearth-simulator",
+		SoftwareVersion: "0.1.0", NATSURL: server.ClientURL(),
+	})
 	if err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = session.Close() })
 	served := make(chan adapter.Command, 2)
 	serveErrors := make(chan error, 1)
+	baselineSubscriptions := server.NumSubscriptions()
 	go func() {
 		serveErrors <- session.ServeCommands(ctx, func(_ context.Context, command adapter.Command, responder adapter.Responder) error {
 			served <- command
@@ -37,19 +46,15 @@ func TestCommandSenderDispatchesValidatedCorrelatedRequests(t *testing.T) {
 			return responder.Reject("simulated rejection")
 		})
 	}()
-	waitForSubscriptions(t, server, 1)
+	waitForSubscriptions(t, server, baselineSubscriptions+1)
 
-	validator, err := contractsv1.Compile()
-	if err != nil {
-		t.Fatal(err)
-	}
 	sender := NewCommandSender(connection, validator)
 	request := devices.CommandRequest{
 		ID: devices.CommandID(commandClientCommandID), CorrelationID: devices.CorrelationID(commandClientCorrelationID),
 		EntityID: devices.EntityID(testEntityID), OperationName: devices.OperationNameSet,
 		Parameters: devices.CommandParameters(`{"value":true}`), Deadline: time.Now().Add(time.Second),
 	}
-	acceptance, err := sender.Send(ctx, "simulator", request)
+	acceptance, err := sender.Send(ctx, "simulator", lifecycle.claimedRuntimeID(), request)
 	if err != nil || !acceptance.Accepted {
 		t.Fatalf("accepted response = %#v, %v", acceptance, err)
 	}
@@ -60,7 +65,7 @@ func TestCommandSenderDispatchesValidatedCorrelatedRequests(t *testing.T) {
 	}
 
 	request.Parameters = devices.CommandParameters(`{"value":false}`)
-	acceptance, err = sender.Send(ctx, "simulator", request)
+	acceptance, err = sender.Send(ctx, "simulator", lifecycle.claimedRuntimeID(), request)
 	if err != nil || acceptance.Accepted {
 		t.Fatalf("rejected response = %#v, %v", acceptance, err)
 	}
@@ -75,6 +80,52 @@ func TestCommandSenderDispatchesValidatedCorrelatedRequests(t *testing.T) {
 	}
 }
 
+func TestCommandSenderClassifiesEntityUnavailableRejection(t *testing.T) {
+	t.Parallel()
+	server, connection, _ := startJetStream(t)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	validator, err := contractsv1.Compile()
+	if err != nil {
+		t.Fatal(err)
+	}
+	lifecycle := startAdapterSessionServer(t, connection, validator)
+	session, err := adapter.Connect(ctx, adapter.Config{
+		AdapterID: "simulator", SoftwareName: "hearth-simulator",
+		SoftwareVersion: "0.1.0", NATSURL: server.ClientURL(),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = session.Close() })
+	serveErrors := make(chan error, 1)
+	baselineSubscriptions := server.NumSubscriptions()
+	go func() {
+		serveErrors <- session.ServeCommands(ctx, func(
+			_ context.Context,
+			_ adapter.Command,
+			responder adapter.Responder,
+		) error {
+			return responder.RejectUnavailable("resource unavailable")
+		})
+	}()
+	waitForSubscriptions(t, server, baselineSubscriptions+1)
+
+	sender := NewCommandSender(connection, validator)
+	_, err = sender.Send(ctx, "simulator", lifecycle.claimedRuntimeID(), devices.CommandRequest{
+		ID: devices.CommandID(commandClientCommandID), CorrelationID: devices.CorrelationID(commandClientCorrelationID),
+		EntityID: devices.EntityID(testEntityID), OperationName: devices.OperationNameSet,
+		Parameters: devices.CommandParameters(`{"value":false}`), Deadline: time.Now().Add(time.Second),
+	})
+	if !errors.Is(err, devices.ErrEntityUnavailable) {
+		t.Fatalf("error = %v", err)
+	}
+	cancel()
+	if serveErr := <-serveErrors; !errors.Is(serveErr, context.Canceled) {
+		t.Fatalf("ServeCommands error = %v", serveErr)
+	}
+}
+
 func TestCommandSenderClassifiesMissingAdapterAsUnavailable(t *testing.T) {
 	t.Parallel()
 	_, connection, _ := startJetStream(t)
@@ -85,12 +136,12 @@ func TestCommandSenderClassifiesMissingAdapterAsUnavailable(t *testing.T) {
 	sender := NewCommandSender(connection, validator)
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
-	_, err = sender.Send(ctx, "missing-adapter", devices.CommandRequest{
+	_, err = sender.Send(ctx, "missing-adapter", devices.RuntimeID(testRuntimeID), devices.CommandRequest{
 		ID: devices.CommandID(commandClientCommandID), CorrelationID: devices.CorrelationID(commandClientCorrelationID),
 		EntityID: devices.EntityID(testEntityID), OperationName: devices.OperationNameSet,
 		Parameters: devices.CommandParameters(`{"value":true}`), Deadline: time.Now().Add(time.Second),
 	})
-	if !errors.Is(err, devices.ErrAdapterUnavailable) {
+	if !errors.Is(err, devices.ErrAdapterUnhealthy) {
 		t.Fatalf("error = %v", err)
 	}
 }
