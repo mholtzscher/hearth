@@ -129,7 +129,8 @@ func TestOwnedMappingsServerEnforcesCursorByteLimitBeforeListing(t *testing.T) {
 		},
 		lister, logger,
 	)
-	if handled || called.Load() || !reflect.DeepEqual(oversized, ownedMappingsResponse{}) {
+	if !handled || called.Load() || oversized.Error == nil ||
+		oversized.Error.Code != ownedMappingsInvalidCursorCode {
 		t.Fatalf("oversized cursor response = %#v, handled = %t, called = %t", oversized, handled, called.Load())
 	}
 }

@@ -75,9 +75,7 @@ func handleOwnedMappings(
 		return ownedMappingsResponse{}, false
 	}
 	if len(request.Data.Cursor) > maximumOwnedMappingsCursorBytes {
-		logger.ErrorContext(ctx, "discarding owned mappings request with oversized cursor",
-			"subject", subject, "mapping_id", request.ID)
-		return ownedMappingsResponse{}, false
+		return rejectedOwnedMappings(ownedMappingsInvalidCursorCode, ownedMappingsInvalidCursorMessage), true
 	}
 	limit := defaultOwnedMappingsLimit
 	if request.Data.Limit != nil {
