@@ -1,0 +1,21 @@
+{
+  "version": "2.13.0",
+  "config": {
+    "mqtt": {
+      "base_topic": "zigbee2mqtt",
+      "server": "mqtt://127.0.0.1:1883",
+      "version": 4
+    },
+    "availability": {
+      "enabled": true,
+      "active": {"timeout": 10},
+      "passive": {"timeout": 1500}
+    },
+    "device_options": {
+      "optimistic": false,
+      "retain": false
+    }
+  },
+  "coordinator": {"type": "zStack3x0"},
+  "log_level": "info"
+}

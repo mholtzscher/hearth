@@ -1,0 +1,5 @@
+adapter_id: zigbee2mqtt
+nats_url: nats://127.0.0.1:4222
+mqtt:
+  url: tcp://127.0.0.1:1883
+  base_topic: zigbee2mqtt

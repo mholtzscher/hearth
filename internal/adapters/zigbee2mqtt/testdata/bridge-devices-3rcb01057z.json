@@ -1,0 +1,83 @@
+[
+  {
+    "ieee_address": "0x00124B0000000001",
+    "type": "Coordinator",
+    "supported": false,
+    "disabled": false,
+    "friendly_name": "Coordinator",
+    "interview_state": "SUCCESSFUL",
+    "endpoints": {"1": {"bindings": [], "clusters": {}}}
+  },
+  {
+    "ieee_address": "0xA4C1380000000001",
+    "type": "Router",
+    "network_address": 41952,
+    "supported": true,
+    "disabled": false,
+    "friendly_name": "fixture-light",
+    "description": " Sanitized Fixture Light ",
+    "interview_state": "SUCCESSFUL",
+    "endpoints": {
+      "1": {
+        "bindings": [],
+        "clusters": {"input": [0, 3, 4, 5, 6, 8], "output": [25]},
+        "configured_reportings": []
+      }
+    },
+    "definition": {
+      "model": "3RCB01057Z",
+      "vendor": "Third Reality",
+      "description": "Smart color bulb",
+      "exposes": [
+        {
+          "type": "light",
+          "features": [
+            {
+              "type": "binary",
+              "name": "state",
+              "property": "state",
+              "access": 7,
+              "value_on": "ON",
+              "value_off": "OFF",
+              "value_toggle": "TOGGLE"
+            },
+            {
+              "type": "numeric",
+              "name": "brightness",
+              "property": "brightness",
+              "access": 7,
+              "value_min": 0,
+              "value_max": 255,
+              "value_step": 1
+            },
+            {
+              "type": "composite",
+              "name": "color_xy",
+              "property": "color",
+              "access": 7,
+              "features": []
+            },
+            {
+              "type": "numeric",
+              "name": "color_temp",
+              "property": "color_temp",
+              "access": 7,
+              "value_min": 153,
+              "value_max": 500
+            }
+          ]
+        },
+        {
+          "type": "numeric",
+          "name": "linkquality",
+          "property": "linkquality",
+          "access": 1,
+          "value_min": 0,
+          "value_max": 255
+        }
+      ]
+    },
+    "power_source": "Mains (single phase)",
+    "software_build_id": "1.0.0"
+  }
+]

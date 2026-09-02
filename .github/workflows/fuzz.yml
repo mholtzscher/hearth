@@ -19,6 +19,8 @@ jobs:
           - fuzz-natswire-subjects
           - fuzz-entitytypes-json-codec
           - fuzz-natswire-codec
+          - fuzz-zigbee2mqtt-discovery
+          - fuzz-zigbee2mqtt-state
     env:
       FUZZTIME: 5m
     steps:

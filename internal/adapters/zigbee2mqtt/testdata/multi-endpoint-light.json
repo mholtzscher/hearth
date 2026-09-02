@@ -1,0 +1,84 @@
+[
+  {
+    "ieee_address": "0x00124b0000000002",
+    "type": "Router",
+    "supported": true,
+    "disabled": false,
+    "friendly_name": "fixture-multi-light",
+    "description": "Sanitized Multi Light",
+    "interview_state": "SUCCESSFUL",
+    "endpoints": {
+      "1": {"name": "left"},
+      "2": {"name": "right"},
+      "242": {"name": "green_power"}
+    },
+    "definition": {
+      "model": "SYNTHETIC-DUAL-LIGHT",
+      "vendor": "Fixture Vendor",
+      "description": "Sanitized multi-endpoint light fixture",
+      "exposes": [
+        {
+          "type": "light",
+          "endpoint": "left",
+          "features": [
+            {
+              "type": "binary",
+              "name": "state",
+              "property": "state_left",
+              "access": 7,
+              "value_on": true,
+              "value_off": false
+            },
+            {
+              "type": "numeric",
+              "name": "brightness",
+              "property": "brightness_left",
+              "access": 7,
+              "value_min": 0,
+              "value_max": 254,
+              "value_step": 1
+            },
+            {
+              "type": "numeric",
+              "name": "color_temp",
+              "property": "color_temp_left",
+              "access": 7,
+              "value_min": 153,
+              "value_max": 500
+            }
+          ]
+        },
+        {
+          "type": "light",
+          "endpoint": "right",
+          "features": [
+            {
+              "type": "binary",
+              "name": "state",
+              "property": "state_right",
+              "access": 7,
+              "value_on": 1,
+              "value_off": 0
+            },
+            {
+              "type": "numeric",
+              "name": "brightness",
+              "property": "brightness_right",
+              "access": 7,
+              "value_min": 0,
+              "value_max": 255,
+              "value_step": 5
+            },
+            {
+              "type": "enum",
+              "name": "effect",
+              "property": "effect_right",
+              "access": 7,
+              "values": ["blink", "breathe"]
+            }
+          ]
+        }
+      ]
+    }
+  }
+]
