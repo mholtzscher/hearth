@@ -303,8 +303,8 @@ func TestRunReconcilesOwnedMappingsAndOrdersStartupEvidence(t *testing.T) {
 	}
 }
 
-// This test protects recoverable exact health reasons. It fails if malformed or incompatible retained info permits
-// registration, or if recovered availability is emitted before the healthy acknowledgement.
+// This test protects recoverable exact health reasons and latest-per-topic pending State. It fails if malformed or
+// incompatible info permits registration, stale State history floods Core, or availability precedes healthy acknowledgement.
 func TestRunRecoversFromIncompatibleBridgeConfiguration(t *testing.T) {
 	t.Parallel()
 	recorder := &runtimeRecorder{}
@@ -320,6 +320,9 @@ func TestRunRecoversFromIncompatibleBridgeConfiguration(t *testing.T) {
 		connection.emit("zigbee2mqtt/bridge/info", []byte(`{}`), true, now)
 		connection.emit("zigbee2mqtt/bridge/info", badInfo, true, now)
 		connection.emit("zigbee2mqtt/bridge/devices", inventory, true, now)
+		connection.emit("zigbee2mqtt/test-light", []byte(`{"state":"ON"}`), false, now.Add(time.Second))
+		connection.emit("zigbee2mqtt/test-light", []byte(`{"state":"OFF"}`), false, now.Add(2*time.Second))
+		connection.emit("zigbee2mqtt/test-light", []byte(`{"state":"ON"}`), false, now.Add(3*time.Second))
 		connection.emit(
 			"zigbee2mqtt/bridge/info",
 			readFixture(t, "bridge-info-2.13.0.json"),
@@ -340,11 +343,15 @@ func TestRunRecoversFromIncompatibleBridgeConfiguration(t *testing.T) {
 	waitFor(t, func() bool {
 		session.mutex.Lock()
 		defer session.mutex.Unlock()
-		return len(session.health) >= 3 && len(session.availability) >= 2
+		return len(session.health) >= 3 && len(session.availability) >= 2 && len(session.observations) == 1
 	})
 	cancel()
 	if err := <-done; err != nil {
 		t.Fatal(err)
+	}
+	if string(session.observations[0].Value) != "true" ||
+		session.observations[0].AdapterReceivedAt != now.Add(3*time.Second).Format(time.RFC3339Nano) {
+		t.Fatalf("replayed pending Observations = %#v, want only latest State", session.observations)
 	}
 	if session.health[0].Status != adapter.HealthUnhealthy || session.health[0].ReasonCode != invalidInventoryReason ||
 		session.health[1].Status != adapter.HealthUnhealthy ||

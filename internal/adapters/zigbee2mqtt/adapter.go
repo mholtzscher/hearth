@@ -57,17 +57,17 @@ type Adapter struct {
 	logger  *slog.Logger
 	dialer  mqttDialer
 
-	routeLifecycle sync.RWMutex
-	mutex          sync.Mutex
-	connection     mqttConnection
-	generation     uint64
-	healthy        bool
-	routeSerial    uint64
-	routes         map[string]commandRoute
-	devices        map[string]runtimeDevice
-	matchers       map[string]*commandMatcher
-	deviceLocks    map[string]*contextLock
-	failures       chan connectionFailure
+	routeLifecycle   sync.RWMutex
+	mutex            sync.Mutex
+	connection       mqttConnection
+	connectionCancel context.CancelCauseFunc
+	generation       uint64
+	healthy          bool
+	routeSerial      uint64
+	routes           map[string]commandRoute
+	devices          map[string]runtimeDevice
+	matchers         map[string]*commandMatcher
+	deviceLocks      map[string]*contextLock
 
 	knownMappings map[mappingKey]adapter.OwnedMapping
 	knownOrder    []mappingKey
@@ -95,11 +95,6 @@ type routeSnapshot struct {
 	routes      map[string]commandRoute
 	devices     map[string]runtimeDevice
 	deviceOrder []string
-}
-
-type connectionFailure struct {
-	generation uint64
-	err        error
 }
 
 type sessionOperationError struct {
@@ -134,8 +129,8 @@ func newAdapter(session Session, config Config, logger *slog.Logger, dialer mqtt
 		session: session, config: config, logger: logger, dialer: dialer,
 		routes: make(map[string]commandRoute), devices: make(map[string]runtimeDevice),
 		matchers: make(map[string]*commandMatcher), deviceLocks: make(map[string]*contextLock),
-		failures: make(chan connectionFailure, 1), knownMappings: make(map[mappingKey]adapter.OwnedMapping),
-		retryDelay: jitterReconnect,
+		knownMappings: make(map[mappingKey]adapter.OwnedMapping),
+		retryDelay:    jitterReconnect,
 	}, nil
 }
 
@@ -190,7 +185,7 @@ func (z2m *Adapter) runConnection(ctx context.Context) (bool, error) {
 	generation := z2m.generation
 	z2m.mutex.Unlock()
 
-	connectionContext, cancelConnection := context.WithCancel(ctx)
+	connectionContext, cancelConnection := context.WithCancelCause(ctx)
 	connection, err := z2m.dialer.Dial(
 		connectionContext,
 		mqttConfig{URL: z2m.config.MQTTURL, ClientID: z2m.config.ClientID},
@@ -202,22 +197,22 @@ func (z2m *Adapter) runConnection(ctx context.Context) (bool, error) {
 		},
 	)
 	if err != nil {
-		cancelConnection()
+		cancelConnection(nil)
 		return false, err
 	}
 	defer func() {
-		cancelConnection()
+		cancelConnection(nil)
 		connection.Close()
 	}()
-	lost := make(chan error, 1)
-	go z2m.monitorConnectionLoss(connectionContext, cancelConnection, connection, lost)
-	z2m.setConnection(generation, connection)
+	go z2m.monitorConnectionLoss(connectionContext, cancelConnection, connection)
+	z2m.setConnection(generation, connection, cancelConnection)
 	defer z2m.clearConnection(generation)
 	if err = connection.Subscribe(connectionContext, z2m.config.BaseTopic+"/#", mqttQoS); err != nil {
-		return synchronized, preferConnectionLoss(ctx, connectionContext, lost, err)
+		return synchronized, preferConnectionError(ctx, connectionContext, err)
 	}
 
 	state := connectionSync{
+		pending:      make(map[string]mqttMessage),
 		availability: make(map[string]availabilityEvidence),
 	}
 	for {
@@ -227,7 +222,7 @@ func (z2m *Adapter) runConnection(ctx context.Context) (bool, error) {
 				case message := <-messages:
 					message = normalizeReceivedMessage(message)
 					if err = z2m.ingestMessage(connectionContext, generation, &state, message); err != nil {
-						return synchronized, preferConnectionLoss(ctx, connectionContext, lost, err)
+						return synchronized, preferConnectionError(ctx, connectionContext, err)
 					}
 					if !state.ready() {
 						draining = false
@@ -238,7 +233,7 @@ func (z2m *Adapter) runConnection(ctx context.Context) (bool, error) {
 			}
 			if state.ready() && state.dirty {
 				if err = z2m.reconcile(connectionContext, generation, connection, &state); err != nil {
-					return synchronized, preferConnectionLoss(ctx, connectionContext, lost, err)
+					return synchronized, preferConnectionError(ctx, connectionContext, err)
 				}
 				synchronized = true
 				state.dirty = false
@@ -247,16 +242,12 @@ func (z2m *Adapter) runConnection(ctx context.Context) (bool, error) {
 		select {
 		case <-ctx.Done():
 			return synchronized, ctx.Err()
-		case lostErr := <-lost:
-			return synchronized, lostErr
-		case failure := <-z2m.failures:
-			if failure.generation == generation {
-				return synchronized, failure.err
-			}
+		case <-connectionContext.Done():
+			return synchronized, preferConnectionError(ctx, connectionContext, connectionContext.Err())
 		case message := <-messages:
 			message = normalizeReceivedMessage(message)
 			if err = z2m.ingestMessage(connectionContext, generation, &state, message); err != nil {
-				return synchronized, preferConnectionLoss(ctx, connectionContext, lost, err)
+				return synchronized, preferConnectionError(ctx, connectionContext, err)
 			}
 		}
 	}
@@ -264,37 +255,29 @@ func (z2m *Adapter) runConnection(ctx context.Context) (bool, error) {
 
 func (z2m *Adapter) monitorConnectionLoss(
 	ctx context.Context,
-	cancel context.CancelFunc,
+	cancel context.CancelCauseFunc,
 	connection mqttConnection,
-	lost chan<- error,
 ) {
 	select {
 	case err := <-connection.Lost():
 		if err == nil {
 			err = errors.New("MQTT connection lost")
 		}
-		lost <- err
-		cancel()
+		cancel(err)
 		z2m.disableRoutes()
 	case <-ctx.Done():
 	}
 }
 
-func preferConnectionLoss(
+func preferConnectionError(
 	parent context.Context,
 	connectionContext context.Context,
-	lost <-chan error,
 	operationErr error,
 ) error {
-	if parent.Err() != nil || connectionContext.Err() == nil {
-		return operationErr
+	if parent.Err() == nil && connectionContext.Err() != nil {
+		return context.Cause(connectionContext)
 	}
-	select {
-	case lostErr := <-lost:
-		return lostErr
-	default:
-		return operationErr
-	}
+	return operationErr
 }
 
 type connectionSync struct {
@@ -303,7 +286,8 @@ type connectionSync struct {
 	info           *bridgeInfo
 	inventory      *inventoryDiscovery
 	dirty          bool
-	pending        []mqttMessage
+	pendingOrder   []string
+	pending        map[string]mqttMessage
 	availability   map[string]availabilityEvidence
 }
 
@@ -390,7 +374,7 @@ func (z2m *Adapter) ingestMessage(
 			return z2m.processDeviceMessage(ctx, generation, state, message)
 		}
 		if queueableDeviceTopic(z2m.config.BaseTopic, message.Topic, state.inventory) {
-			state.pending = append(state.pending, message)
+			state.queuePending(message)
 		}
 	}
 	return nil
@@ -523,7 +507,8 @@ func (z2m *Adapter) reconcile(
 	}
 	z2m.installSnapshot(generation, snapshot)
 
-	for _, message := range state.pending {
+	for _, topic := range state.pendingOrder {
+		message := state.pending[topic]
 		if _, kind := classifyDeviceTopic(
 			z2m.config.BaseTopic,
 			message.Topic,
@@ -544,7 +529,8 @@ func (z2m *Adapter) reconcile(
 	if err = z2m.reportReconciledAvailability(ctx, *state.inventory, snapshot, state.availability); err != nil {
 		return err
 	}
-	for _, message := range state.pending {
+	for _, topic := range state.pendingOrder {
+		message := state.pending[topic]
 		if _, kind := classifyDeviceTopic(
 			z2m.config.BaseTopic,
 			message.Topic,
@@ -555,7 +541,7 @@ func (z2m *Adapter) reconcile(
 			}
 		}
 	}
-	state.pending = nil
+	state.clearPending()
 	for _, friendly := range snapshot.deviceOrder {
 		device := snapshot.devices[friendly]
 		for _, entity := range device.entities {
@@ -746,17 +732,32 @@ func (z2m *Adapter) processDeviceMessage(
 	return nil
 }
 
+func (state *connectionSync) queuePending(message mqttMessage) {
+	if state.pending == nil {
+		state.pending = make(map[string]mqttMessage)
+	}
+	if _, exists := state.pending[message.Topic]; !exists {
+		state.pendingOrder = append(state.pendingOrder, message.Topic)
+	}
+	state.pending[message.Topic] = message
+}
+
+func (state *connectionSync) clearPending() {
+	state.pendingOrder = nil
+	clear(state.pending)
+}
+
 func (z2m *Adapter) clearAvailabilityEvidence(state *connectionSync) {
 	clear(state.availability)
-	kept := state.pending[:0]
-	for _, message := range state.pending {
-		if strings.HasPrefix(message.Topic, z2m.config.BaseTopic+"/") &&
-			strings.HasSuffix(message.Topic, "/availability") {
+	kept := state.pendingOrder[:0]
+	for _, topic := range state.pendingOrder {
+		if strings.HasPrefix(topic, z2m.config.BaseTopic+"/") && strings.HasSuffix(topic, "/availability") {
+			delete(state.pending, topic)
 			continue
 		}
-		kept = append(kept, message)
+		kept = append(kept, topic)
 	}
-	state.pending = kept
+	state.pendingOrder = kept
 }
 
 func (z2m *Adapter) cacheAvailability(
@@ -893,11 +894,16 @@ func (z2m *Adapter) reportUnhealthy(ctx context.Context, reason string) error {
 	return nil
 }
 
-func (z2m *Adapter) setConnection(generation uint64, connection mqttConnection) {
+func (z2m *Adapter) setConnection(
+	generation uint64,
+	connection mqttConnection,
+	cancel context.CancelCauseFunc,
+) {
 	z2m.mutex.Lock()
 	defer z2m.mutex.Unlock()
 	if z2m.generation == generation {
 		z2m.connection = connection
+		z2m.connectionCancel = cancel
 	}
 }
 
@@ -910,6 +916,7 @@ func (z2m *Adapter) clearConnection(generation uint64) {
 		return
 	}
 	z2m.connection = nil
+	z2m.connectionCancel = nil
 	z2m.healthy = false
 	z2m.routes = make(map[string]commandRoute)
 	z2m.devices = make(map[string]runtimeDevice)

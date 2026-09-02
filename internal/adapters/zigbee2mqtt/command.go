@@ -314,17 +314,18 @@ func (z2m *Adapter) failConnection(generation uint64, err error) {
 		z2m.mutex.Unlock()
 		return
 	}
+	cause := fmt.Errorf("publish Zigbee2MQTT command: %w", err)
 	connection := z2m.connection
+	cancel := z2m.connectionCancel
 	z2m.healthy = false
 	z2m.routes = make(map[string]commandRoute)
 	z2m.devices = make(map[string]runtimeDevice)
 	z2m.cancelMatchersLocked()
 	z2m.mutex.Unlock()
+	if cancel != nil {
+		cancel(cause)
+	}
 	if connection != nil {
 		connection.Close()
-	}
-	select {
-	case z2m.failures <- connectionFailure{generation: generation, err: fmt.Errorf("publish Zigbee2MQTT command: %w", err)}:
-	default:
 	}
 }

@@ -185,6 +185,11 @@ func TestCommandSetFailureRejectsUnavailableAndDisablesRoutes(t *testing.T) {
 	recorder := &runtimeRecorder{}
 	session := newFakeSession(recorder)
 	z2m, connection, device := commandReadyAdapter(t, recorder, session)
+	connectionContext, cancelConnection := context.WithCancelCause(context.Background())
+	defer cancelConnection(nil)
+	z2m.mutex.Lock()
+	z2m.connectionCancel = cancelConnection
+	z2m.mutex.Unlock()
 	connection.onPublish = func(context.Context, *fakeConnection, string, []byte) error {
 		return errors.New("set PUBACK failed")
 	}
@@ -207,6 +212,10 @@ func TestCommandSetFailureRejectsUnavailableAndDisablesRoutes(t *testing.T) {
 			len(z2m.routes),
 			len(z2m.matchers),
 		)
+	}
+	cause := context.Cause(connectionContext)
+	if cause == nil || !strings.Contains(cause.Error(), "set PUBACK failed") {
+		t.Fatalf("connection cancellation cause = %v", cause)
 	}
 }
 
