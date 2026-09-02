@@ -616,13 +616,20 @@ func TestSimulatorCommandHTTPFailureMatrix(t *testing.T) {
 			wantCommand: devices.CommandStatusOutcomeTimeout, wantFailure: devices.CommandFailureOutcomeTimeout,
 		},
 		{
-			name: "unexpected response", scenario: simulatoradapter.ScenarioAdapterUnhealthy,
+			name: "unexpected response", options: simulatorMatrixOptions{manual: true},
 			prepare: func(t *testing.T, harness *simulatorMatrixHarness) {
-				runtimeID := currentMatrixRuntimeID(t, harness)
-				if _, err := harness.service.RecordAdapterHeartbeat(harness.ctx, devices.AdapterHeartbeat{
-					AdapterID: simulatorMatrixAdapterID, RuntimeID: runtimeID,
-					ExternalStatus: devices.AdapterHealthHealthy, SourceObservedAt: time.Now().UTC(),
+				session, runtimeID := connectMatrixSession(t, harness)
+				entityID, _ := registerMatrixEntity(harness.ctx, t, session)
+				harness.entityID = entityID
+				now := time.Now().UTC()
+				if err := session.SetHealth(harness.ctx, adapter.HealthReport{
+					Status: adapter.HealthHealthy, SourceObservedAt: now,
 				}); err != nil {
+					t.Fatal(err)
+				}
+				if err := session.ReportEntityAvailability(harness.ctx, []adapter.EntityAvailabilityReport{{
+					EntityID: string(entityID), Status: adapter.AvailabilityAvailable, SourceObservedAt: now,
+				}}); err != nil {
 					t.Fatal(err)
 				}
 				subject, err := natswire.CommandSubject(
