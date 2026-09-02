@@ -1,7 +1,7 @@
 #:schema https://mise.jdx.dev/schema/mise.json
 
 [tools]
-go = "1.26"
+go = "1.27.1"
 golangci-lint = "latest"
 "aqua:pressly/goose" = "3.27.3"
 "github:nats-io/nats-server" = "2.12"
