@@ -28,11 +28,6 @@ type ownedMappingCursor struct {
 }
 
 func encodeOwnedMappingCursor(adapterID string, position devices.OwnedMappingPosition) (string, error) {
-	if !ownedMappingCursorSlugPattern.MatchString(adapterID) ||
-		!ownedMappingCursorSlugPattern.MatchString(position.BindingKey) ||
-		!ownedMappingCursorSlugPattern.MatchString(position.EntityKey) {
-		return "", errors.New("invalid owned mapping cursor position")
-	}
 	encoded, err := json.Marshal(ownedMappingCursor{
 		Version: ownedMappingCursorVersion, Resource: ownedMappingCursorResource,
 		AdapterID: adapterID, BindingKey: position.BindingKey, EntityKey: position.EntityKey,
@@ -55,7 +50,6 @@ func decodeOwnedMappingCursor(value, adapterID string) (*devices.OwnedMappingPos
 		return nil, errors.New("owned mapping cursor encoding is not canonical")
 	}
 	decoder := json.NewDecoder(bytes.NewReader(decoded))
-	decoder.DisallowUnknownFields()
 	var cursor ownedMappingCursor
 	if decodeErr := decoder.Decode(&cursor); decodeErr != nil {
 		return nil, fmt.Errorf("decode owned mapping cursor document: %w", decodeErr)

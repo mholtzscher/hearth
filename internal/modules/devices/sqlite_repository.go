@@ -59,11 +59,6 @@ func (repository *SQLiteRepository) ListOwnedMappings(
 	ctx context.Context,
 	params ListOwnedMappingsParams,
 ) (Page[OwnedMapping], error) {
-	if !validPageLimit(params.Limit) || (params.After != nil &&
-		(!registrationSlugPattern.MatchString(params.After.BindingKey) ||
-			!registrationSlugPattern.MatchString(params.After.EntityKey))) {
-		return Page[OwnedMapping]{}, ErrInvalidPage
-	}
 	afterBindingKey := ""
 	afterEntityKey := ""
 	hasAfter := int64(0)

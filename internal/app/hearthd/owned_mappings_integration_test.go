@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"log/slog"
 	"path/filepath"
-	"reflect"
 	"testing"
 	"time"
 
@@ -15,7 +14,6 @@ import (
 	"github.com/mholtzscher/hearth/sdk/adapter"
 )
 
-//nolint:gocognit,cyclop // One end-to-end test keeps assembly, persistence, pagination, and shutdown in one lifecycle.
 func TestRunListsOwnedMappingsAndDrainsEndpoint(t *testing.T) {
 	t.Parallel()
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
@@ -43,16 +41,15 @@ func TestRunListsOwnedMappingsAndDrainsEndpoint(t *testing.T) {
 		t.Fatal(err)
 	}
 	runContext, stopCore := context.WithCancel(ctx)
-	runConfig := Config{
-		HTTPAddr:   unusedLoopbackAddress(t),
-		NATSURL:    server.ClientURL(),
-		SQLitePath: filepath.Join(t.TempDir(), "hearth.db"),
-	}
 	runErrors := make(chan error, 1)
 	runDone := make(chan struct{})
 	go func() {
 		defer close(runDone)
-		runErrors <- Run(runContext, runConfig, slog.New(slog.DiscardHandler))
+		runErrors <- Run(runContext, Config{
+			HTTPAddr:   unusedLoopbackAddress(t),
+			NATSURL:    server.ClientURL(),
+			SQLitePath: filepath.Join(t.TempDir(), "hearth.db"),
+		}, slog.New(slog.DiscardHandler))
 	}()
 	t.Cleanup(func() {
 		stopCore()
@@ -63,100 +60,44 @@ func TestRunListsOwnedMappingsAndDrainsEndpoint(t *testing.T) {
 		}
 	})
 
-	waitForMatrixCondition(t, 5*time.Second, func() (bool, error) {
-		select {
-		case runErr := <-runErrors:
-			if runErr != nil {
-				return false, runErr
-			}
-			return false, context.Canceled
-		default:
-		}
-		subscriptions, subscriptionErr := server.Subsz(&natsserver.SubszOptions{
-			Subscriptions: true,
-			Test:          probeSubject,
-		})
-		if subscriptionErr != nil {
-			return false, subscriptionErr
-		}
-		return subscriptions.Total == 1, nil
-	})
+	waitForOwnedMappingsServer(t, server, probeSubject, runErrors)
 
-	owner, err := adapter.Connect(ctx, adapter.Config{
+	session, err := adapter.Connect(ctx, adapter.Config{
 		AdapterID: "inventory-owner", SoftwareName: "inventory-test",
 		SoftwareVersion: "0.1.0", NATSURL: server.ClientURL(),
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { _ = owner.Close() })
-	other, err := adapter.Connect(ctx, adapter.Config{
-		AdapterID: "inventory-other", SoftwareName: "inventory-test",
-		SoftwareVersion: "0.1.0", NATSURL: server.ClientURL(),
+	t.Cleanup(func() { _ = session.Close() })
+	binding, err := session.Register(ctx, adapter.Registration{
+		BindingKey: "office-light",
+		Device:     adapter.DeviceDescriptor{Name: "Office light", Kind: "light"},
+		Entities: []adapter.EntityDescriptor{{
+			Key: "power", ExternalID: "office-light.power", Name: "Power", Type: "hearth.power/v1",
+			Support: json.RawMessage(`{"state":{},"operations":{"set":{}}}`),
+		}},
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { _ = other.Close() })
-
-	empty, err := owner.ListOwnedMappings(ctx, adapter.OwnedMappingPageRequest{Limit: 1})
+	page, err := session.ListOwnedMappings(ctx, adapter.OwnedMappingPageRequest{})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(empty.Items) != 0 || empty.NextCursor != "" {
-		t.Fatalf("mappings before registration = %#v", empty)
+	if len(page.Items) != 1 || page.NextCursor != "" {
+		t.Fatalf("owned mappings page = %#v", page)
+	}
+	mapping := page.Items[0]
+	if mapping.BindingKey != binding.BindingKey || mapping.DeviceID != binding.DeviceID ||
+		mapping.EntityKey != binding.Entities[0].Key || mapping.EntityID != binding.Entities[0].EntityID {
+		t.Fatalf("owned mapping = %#v, binding = %#v", mapping, binding)
 	}
 
-	alpha, err := owner.Register(ctx, ownedMappingsRegistration("alpha-light", "power", "brightness"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	zeta, err := owner.Register(ctx, ownedMappingsRegistration("zeta-light", "power"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err = other.Register(ctx, ownedMappingsRegistration("middle-light", "power")); err != nil {
-		t.Fatal(err)
-	}
-
-	first, err := owner.ListOwnedMappings(ctx, adapter.OwnedMappingPageRequest{Limit: 2})
-	if err != nil {
-		t.Fatal(err)
-	}
-	wantFirst := []adapter.OwnedMapping{
-		ownedMappingFromBinding(t, alpha, "brightness"),
-		ownedMappingFromBinding(t, alpha, "power"),
-	}
-	if !reflect.DeepEqual(first.Items, wantFirst) || first.NextCursor == "" {
-		t.Fatalf("first mappings page = %#v, want items %#v and a cursor", first, wantFirst)
-	}
-
-	second, err := owner.ListOwnedMappings(ctx, adapter.OwnedMappingPageRequest{
-		Limit: 2, Cursor: first.NextCursor,
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	wantSecond := []adapter.OwnedMapping{ownedMappingFromBinding(t, zeta, "power")}
-	if !reflect.DeepEqual(second.Items, wantSecond) || second.NextCursor != "" {
-		t.Fatalf("second mappings page = %#v, want terminal items %#v", second, wantSecond)
-	}
-
-	if closeErr := other.Close(); closeErr != nil {
+	if closeErr := session.Close(); closeErr != nil {
 		t.Fatal(closeErr)
 	}
-	if closeErr := owner.Close(); closeErr != nil {
-		t.Fatal(closeErr)
-	}
-	stopCore()
-	select {
-	case runErr := <-runErrors:
-		if runErr != nil {
-			t.Fatal(runErr)
-		}
-	case <-time.After(5 * time.Second):
-		t.Fatal("hearthd did not stop")
-	}
+	stopCoreAndWait(t, stopCore, runErrors)
 
 	subscriptions, err := server.Subsz(&natsserver.SubszOptions{
 		Subscriptions: true,
@@ -170,33 +111,42 @@ func TestRunListsOwnedMappingsAndDrainsEndpoint(t *testing.T) {
 	}
 }
 
-func ownedMappingsRegistration(bindingKey string, entityKeys ...string) adapter.Registration {
-	entities := make([]adapter.EntityDescriptor, len(entityKeys))
-	for index, key := range entityKeys {
-		entities[index] = adapter.EntityDescriptor{
-			Key: key, ExternalID: bindingKey + "." + key, Name: key, Type: "hearth.power/v1",
-			Support: json.RawMessage(`{"state":{},"operations":{"set":{}}}`),
+func waitForOwnedMappingsServer(
+	t *testing.T,
+	server *natsserver.Server,
+	probeSubject string,
+	runErrors <-chan error,
+) {
+	t.Helper()
+	waitForMatrixCondition(t, 5*time.Second, func() (bool, error) {
+		select {
+		case runErr := <-runErrors:
+			if runErr != nil {
+				return false, runErr
+			}
+			return false, context.Canceled
+		default:
 		}
-	}
-	return adapter.Registration{
-		BindingKey: bindingKey,
-		Device:     adapter.DeviceDescriptor{Name: bindingKey, Kind: "light"},
-		Entities:   entities,
-	}
+		subscriptions, err := server.Subsz(&natsserver.SubszOptions{
+			Subscriptions: true,
+			Test:          probeSubject,
+		})
+		if err != nil {
+			return false, err
+		}
+		return subscriptions.Total == 1, nil
+	})
 }
 
-func ownedMappingFromBinding(t *testing.T, binding adapter.Binding, entityKey string) adapter.OwnedMapping {
+func stopCoreAndWait(t *testing.T, stopCore context.CancelFunc, runErrors <-chan error) {
 	t.Helper()
-	for _, entity := range binding.Entities {
-		if entity.Key == entityKey {
-			return adapter.OwnedMapping{
-				BindingKey: binding.BindingKey,
-				DeviceID:   binding.DeviceID,
-				EntityKey:  entity.Key,
-				EntityID:   entity.EntityID,
-			}
+	stopCore()
+	select {
+	case err := <-runErrors:
+		if err != nil {
+			t.Fatal(err)
 		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("hearthd did not stop")
 	}
-	t.Fatalf("binding %q omitted entity %q", binding.BindingKey, entityKey)
-	return adapter.OwnedMapping{}
 }

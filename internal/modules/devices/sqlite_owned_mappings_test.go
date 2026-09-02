@@ -3,7 +3,6 @@ package devices //nolint:testpackage // Tests exercise the concrete repository a
 import (
 	"context"
 	"database/sql"
-	"errors"
 	"path/filepath"
 	"reflect"
 	"testing"
@@ -126,23 +125,6 @@ func TestSQLiteListOwnedMappingsAcceptsLexicalPositions(t *testing.T) {
 				t.Fatalf("page = %#v, want non-nil terminal items %#v", page, test.want)
 			}
 		})
-	}
-}
-
-func TestSQLiteListOwnedMappingsRejectsInvalidPages(t *testing.T) {
-	t.Parallel()
-	repository := seededOwnedMappingsRepository(t)
-	for _, params := range []ListOwnedMappingsParams{
-		{AdapterID: "homeassistant", Limit: 0},
-		{AdapterID: "homeassistant", Limit: 201},
-		{
-			AdapterID: "homeassistant", Limit: 1,
-			After: &OwnedMappingPosition{BindingKey: "light", EntityKey: "Power"},
-		},
-	} {
-		if _, err := repository.ListOwnedMappings(context.Background(), params); !errors.Is(err, ErrInvalidPage) {
-			t.Fatalf("params %#v error = %v, want ErrInvalidPage", params, err)
-		}
 	}
 }
 

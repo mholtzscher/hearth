@@ -13,10 +13,10 @@ import (
 )
 
 const (
-	defaultOwnedMappingsLimit           = 50
-	ownedMappingsInvalidCursorCode      = "invalid_cursor"
-	ownedMappingsInvalidCursorMessage   = "Owned mappings cursor is invalid"
-	ownedMappingsInconsistentPageReason = "page reports more owned mappings without returning an item"
+	defaultOwnedMappingsLimit         = 50
+	maximumOwnedMappingsCursorBytes   = 2048
+	ownedMappingsInvalidCursorCode    = "invalid_cursor"
+	ownedMappingsInvalidCursorMessage = "Owned mappings cursor is invalid"
 )
 
 type OwnedMappingLister interface {
@@ -74,6 +74,11 @@ func handleOwnedMappings(
 			"subject", subject, "mapping_id", request.ID, "error", err)
 		return ownedMappingsResponse{}, false
 	}
+	if len(request.Data.Cursor) > maximumOwnedMappingsCursorBytes {
+		logger.ErrorContext(ctx, "discarding owned mappings request with oversized cursor",
+			"subject", subject, "mapping_id", request.ID)
+		return ownedMappingsResponse{}, false
+	}
 	limit := defaultOwnedMappingsLimit
 	if request.Data.Limit != nil {
 		limit = *request.Data.Limit
@@ -127,9 +132,6 @@ func acceptedOwnedMappings(
 	response := ownedMappingsResponse{Status: statusAccepted, Items: &items}
 	if !page.HasMore {
 		return response, nil
-	}
-	if len(page.Items) == 0 {
-		return ownedMappingsResponse{}, errors.New(ownedMappingsInconsistentPageReason)
 	}
 	last := page.Items[len(page.Items)-1]
 	nextCursor, err := encodeOwnedMappingCursor(adapterID, devices.OwnedMappingPosition{

@@ -6,6 +6,7 @@ import (
 	"errors"
 	"log/slog"
 	"reflect"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -46,9 +47,6 @@ func TestOwnedMappingsCursorRoundTripAndStrictValidation(t *testing.T) {
 	}
 
 	malformedJSON := encodeOwnedMappingCursorDocument(`{"v":`)
-	unknownField := encodeOwnedMappingCursorDocument(
-		`{"v":1,"resource":"adapter_owned_mappings","adapter_id":"simulator","binding_key":"office-light","entity_key":"power","extra":true}`,
-	)
 	trailingJSON := encodeOwnedMappingCursorDocument(
 		`{"v":1,"resource":"adapter_owned_mappings","adapter_id":"simulator","binding_key":"office-light","entity_key":"power"}{}`,
 	)
@@ -74,7 +72,6 @@ func TestOwnedMappingsCursorRoundTripAndStrictValidation(t *testing.T) {
 		"padded base64url":    valid + "=",
 		"noncanonical":        noncanonicalBase64URL(t, valid),
 		"malformed JSON":      malformedJSON,
-		"unknown field":       unknownField,
 		"trailing JSON":       trailingJSON,
 		"wrong version":       wrongVersion,
 		"wrong resource":      wrongResource,
@@ -88,6 +85,52 @@ func TestOwnedMappingsCursorRoundTripAndStrictValidation(t *testing.T) {
 				t.Fatalf("decodeOwnedMappingCursor(%q) succeeded", value)
 			}
 		})
+	}
+}
+
+func TestOwnedMappingsServerEnforcesCursorByteLimitBeforeListing(t *testing.T) {
+	t.Parallel()
+	subject, err := natswire.OwnedMappingsSubject("simulator", testRuntimeID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var called atomic.Bool
+	lister := ownedMappingListerFunc(func(
+		context.Context,
+		string,
+		devices.RuntimeID,
+		devices.OwnedMappingPageParams,
+	) (devices.Page[devices.OwnedMapping], error) {
+		called.Store(true)
+		return devices.Page[devices.OwnedMapping]{}, nil
+	})
+	logger := slog.New(slog.DiscardHandler)
+	atLimit, handled := handleOwnedMappings(
+		context.Background(), subject,
+		natswire.Envelope[ownedMappingsRequest]{
+			ID: ownedMappingsRequestID,
+			Data: ownedMappingsRequest{
+				Cursor: strings.Repeat("a", maximumOwnedMappingsCursorBytes),
+			},
+		},
+		lister, logger,
+	)
+	if !handled || atLimit.Error == nil || atLimit.Error.Code != ownedMappingsInvalidCursorCode {
+		t.Fatalf("cursor at byte limit response = %#v, handled = %t", atLimit, handled)
+	}
+
+	oversized, handled := handleOwnedMappings(
+		context.Background(), subject,
+		natswire.Envelope[ownedMappingsRequest]{
+			ID: ownedMappingsRequestID,
+			Data: ownedMappingsRequest{
+				Cursor: strings.Repeat("é", maximumOwnedMappingsCursorBytes/2+1),
+			},
+		},
+		lister, logger,
+	)
+	if handled || called.Load() || !reflect.DeepEqual(oversized, ownedMappingsResponse{}) {
+		t.Fatalf("oversized cursor response = %#v, handled = %t, called = %t", oversized, handled, called.Load())
 	}
 }
 
