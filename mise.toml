@@ -2,6 +2,7 @@
 
 [tools]
 go = "1.27.1"
+node = "26.6.0"
 golangci-lint = "latest"
 "aqua:pressly/goose" = "3.27.3"
 "github:nats-io/nats-server" = "2.12"
@@ -142,6 +143,20 @@ run = '''go vet ./...'''
 [tasks."nats"]
 description = "Run NATS server with JetStream and MQTT (data in .data/nats)"
 run = '''nats-server -c configs/nats-server.conf'''
+
+[tasks."web-install"]
+description = "Install dashboard dependencies"
+run = '''npm --prefix web install'''
+
+[tasks."web-build"]
+description = "Typecheck and build the dashboard"
+depends = ["web-install"]
+run = '''npm --prefix web run build'''
+
+[tasks."web-dev"]
+description = "Run the dashboard dev server (proxies hearthd on 127.0.0.1:8080)"
+depends = ["web-install"]
+run = '''npm --prefix web run dev'''
 
 [tasks."mutation-test"]
 description = "Run Gremlins mutation testing (pass package paths after --)"
