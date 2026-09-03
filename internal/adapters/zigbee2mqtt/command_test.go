@@ -1,4 +1,4 @@
-package zigbee2mqtt //nolint:testpackage // Command tests exercise package-private matchers and route snapshots.
+package zigbee2mqtt //nolint:testpackage // Command tests exercise the private runtime state machine.
 
 import (
 	"context"
@@ -10,26 +10,102 @@ import (
 	"github.com/mholtzscher/hearth/sdk/adapter"
 )
 
-// This test protects typed facade dispatch, early post-dispatch matching, Accept-before-linked-observation, exact-once
-// claiming, sibling ordinary projection, and the mandatory /set then /get publication order.
+// This test protects the asynchronous boundary: /set must receive PUBACK and acceptance must publish before the handler
+// returns, while /get, State matching, and linked JetStream acknowledgement remain coordinator-owned work.
+func TestCommandReturnsAfterSetAndAcceptBeforeRefreshOrEvidence(t *testing.T) {
+	t.Parallel()
+	recorder := &runtimeRecorder{}
+	session := newFakeSession(recorder)
+	z2m, _, connection, device := commandReadyAdapter(t, recorder, session)
+	getStarted := make(chan struct{})
+	releaseGet := make(chan struct{})
+	linkedStarted := make(chan struct{})
+	releaseLinked := make(chan struct{})
+	connection.onPublish = func(ctx context.Context, _ *fakeConnection, topic string, _ []byte) error {
+		if strings.HasSuffix(topic, "/get") {
+			close(getStarted)
+			select {
+			case <-releaseGet:
+			case <-ctx.Done():
+				return ctx.Err()
+			}
+		}
+		return nil
+	}
+	session.publishHook = func(ctx context.Context, _ adapter.Observation, linked bool) error {
+		if linked {
+			close(linkedStarted)
+			select {
+			case <-releaseLinked:
+			case <-ctx.Done():
+				return ctx.Err()
+			}
+		}
+		return nil
+	}
+
+	responder := newFakeResponder(recorder, session)
+	result := make(chan error, 1)
+	go func() {
+		result <- z2m.HandleCommand(
+			context.Background(),
+			testCommand(device.entities[0].entityID, `{"value":true}`),
+			responder,
+		)
+	}()
+	select {
+	case err := <-result:
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("handler waited for /get")
+	}
+	if responder.accepted != 1 {
+		t.Fatalf("accepted = %d", responder.accepted)
+	}
+	select {
+	case <-getStarted:
+	case <-time.After(time.Second):
+		t.Fatal("mandatory /get did not start")
+	}
+	if err := publishState(
+		context.Background(),
+		z2m,
+		device,
+		`{"state":"ON"}`,
+		time.Now().UTC(),
+	); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-linkedStarted:
+	case <-time.After(time.Second):
+		t.Fatal("linked publication did not start")
+	}
+	close(releaseGet)
+	close(releaseLinked)
+	waitFor(t, func() bool {
+		session.mutex.Lock()
+		defer session.mutex.Unlock()
+		return len(session.linked) == 1
+	})
+}
+
+// This test protects matcher installation before /set launch, early report ownership, sibling ordinary disposition,
+// Accept-before-linking, and mandatory /get launch.
 func TestCommandClaimsEarlyMatchExactlyOnceAfterAccept(t *testing.T) {
 	t.Parallel()
 	recorder := &runtimeRecorder{}
 	session := newFakeSession(recorder)
-	z2m, connection, device := commandReadyAdapter(t, recorder, session)
-	var receivedAt time.Time
+	z2m, _, connection, device := commandReadyAdapter(t, recorder, session)
 	connection.onPublish = func(ctx context.Context, _ *fakeConnection, topic string, _ []byte) error {
-		if topic == "zigbee2mqtt/fixture-light/set" {
-			receivedAt = time.Now().UTC()
-			return z2m.publishDeviceState(ctx, 1, device, mqttMessage{
-				Topic:      "zigbee2mqtt/fixture-light",
-				Payload:    []byte(`{"state":"ON","brightness":63.75}`),
-				ReceivedAt: receivedAt,
-			})
+		if strings.HasSuffix(topic, "/set") {
+			return publishState(ctx, z2m, device, `{"state":"ON","brightness":63.75}`, time.Now().UTC())
 		}
 		return nil
 	}
-	responder := &fakeResponder{recorder: recorder}
+	responder := newFakeResponder(recorder, session)
 	if err := z2m.HandleCommand(
 		context.Background(),
 		testCommand(device.entities[0].entityID, `{"value":true}`),
@@ -37,128 +113,171 @@ func TestCommandClaimsEarlyMatchExactlyOnceAfterAccept(t *testing.T) {
 	); err != nil {
 		t.Fatal(err)
 	}
-	if responder.accepted != 1 || responder.rejected != 0 || responder.unavailable != 0 {
-		t.Fatalf("responder = %#v", responder)
+	waitFor(t, func() bool {
+		session.mutex.Lock()
+		defer session.mutex.Unlock()
+		return len(session.linked) == 1 && len(session.observations) == 1
+	})
+	if session.linked[0].EntityID != device.entities[0].entityID ||
+		session.observations[0].EntityID != device.entities[1].entityID {
+		t.Fatalf("linked=%#v ordinary=%#v", session.linked, session.observations)
 	}
-	if len(connection.published) != 2 || connection.published[0].topic != "zigbee2mqtt/fixture-light/set" ||
-		connection.published[0].payload != `{"state":"ON"}` || connection.published[1].topic != "zigbee2mqtt/fixture-light/get" ||
-		connection.published[1].payload != `{"state":""}` {
-		t.Fatalf("publications = %#v", connection.published)
-	}
-	if len(session.observations) != 2 {
-		t.Fatalf("observations = %#v", session.observations)
-	}
-	var linked, ordinary int
-	for _, observation := range session.observations {
-		if observation.RefreshForCommand == nil {
-			ordinary++
-			if observation.EntityID != device.entities[1].entityID {
-				t.Fatalf("ordinary Observation claimed wrong property: %#v", observation)
-			}
-		} else {
-			linked++
-			if observation.EntityID != device.entities[0].entityID || *observation.RefreshForCommand != "cmd-test" {
-				t.Fatalf("linked Observation = %#v", observation)
-			}
-		}
-	}
-	if linked != 1 || ordinary != 1 {
-		t.Fatalf("linked=%d ordinary=%d", linked, ordinary)
-	}
+	events := recorder.snapshot()
 	assertOrdered(
 		t,
-		recorder.snapshot(),
+		events,
 		"mqtt:zigbee2mqtt/fixture-light/set",
 		"accept",
-		"mqtt:zigbee2mqtt/fixture-light/get",
 		"linked-observation",
 	)
+	if indexOf(events, "mqtt:zigbee2mqtt/fixture-light/get", 0) < 0 {
+		t.Fatalf("mandatory /get was not published: %v", events)
+	}
 }
 
-// This test protects freshness and exact matching. It fails if retained replay or a fresh wrong target satisfies the
-// Command instead of the non-retained matching report produced by active refresh.
-func TestCommandRequiresFreshNonRetainedExactMatch(t *testing.T) {
+// This test protects every freshness and identity discriminator required before a report may be claimed.
+//
+//nolint:gocognit // One table keeps all State eligibility discriminators under the same active matcher setup.
+func TestCommandLeavesIneligibleStateOrdinary(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name            string
+		generation      uint64
+		revision        uint64
+		candidateEntity int
+		stateEntity     int
+		payload         string
+		retained        bool
+		receivedAt      func(time.Time, time.Time) time.Time
+	}{
+		{name: "retained", generation: 1, revision: 1, payload: `{"state":"ON"}`, retained: true},
+		{
+			name: "pre-dispatch", generation: 1, revision: 1, payload: `{"state":"ON"}`,
+			receivedAt: func(dispatched, _ time.Time) time.Time { return dispatched },
+		},
+		{name: "stale generation", generation: 2, revision: 1, payload: `{"state":"ON"}`},
+		{name: "stale revision", generation: 1, revision: 2, payload: `{"state":"ON"}`},
+		{
+			name: "wrong entity", generation: 1, revision: 1,
+			candidateEntity: 1, stateEntity: 1, payload: `{"brightness":50}`,
+		},
+		{name: "wrong property", generation: 1, revision: 1, stateEntity: 1, payload: `{"brightness":50}`},
+		{name: "wrong value", generation: 1, revision: 1, payload: `{"state":"OFF"}`},
+		{
+			name: "post deadline", generation: 1, revision: 1, payload: `{"state":"ON"}`,
+			receivedAt: func(_, deadline time.Time) time.Time { return deadline.Add(time.Nanosecond) },
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			recorder := &runtimeRecorder{}
+			session := newFakeSession(recorder)
+			z2m, coordinator, connection, device := commandReadyAdapter(t, recorder, session)
+			setStarted := make(chan struct{})
+			releaseSet := make(chan struct{})
+			connection.onPublish = func(ctx context.Context, _ *fakeConnection, topic string, _ []byte) error {
+				if strings.HasSuffix(topic, "/set") {
+					close(setStarted)
+					select {
+					case <-releaseSet:
+					case <-ctx.Done():
+						return ctx.Err()
+					}
+				}
+				return nil
+			}
+			command := testCommand(device.entities[0].entityID, `{"value":true}`)
+			result := make(chan error, 1)
+			go func() {
+				result <- z2m.HandleCommand(context.Background(), command, newFakeResponder(recorder, session))
+			}()
+			<-setStarted
+			var attempt *commandAttempt
+			waitFor(t, func() bool {
+				attempt = coordinator.matchers[device.entities[0].entityID]
+				return attempt != nil
+			})
+			candidateEntity := device.entities[test.candidateEntity]
+			stateEntity := device.entities[test.stateEntity]
+			states, _, err := decodeDeviceState([]byte(test.payload), []discoveredEntity{stateEntity.discovered})
+			if err != nil || len(states) != 1 {
+				t.Fatalf("decode test State: states=%#v err=%v", states, err)
+			}
+			receivedAt := time.Now().UTC()
+			if test.receivedAt != nil {
+				receivedAt = test.receivedAt(attempt.dispatchedAt, attempt.deadline)
+			}
+			candidateResult := make(chan stateDisposition, 1)
+			z2m.runtimeEvents <- stateCandidate{
+				ctx:           context.Background(),
+				generation:    test.generation,
+				routeRevision: test.revision,
+				entityID:      candidateEntity.entityID,
+				state:         states[0],
+				retained:      test.retained,
+				receivedAt:    receivedAt,
+				result:        candidateResult,
+			}
+			if disposition := <-candidateResult; disposition != stateOrdinary {
+				t.Fatalf("disposition = %v, want ordinary", disposition)
+			}
+			close(releaseSet)
+			if err = <-result; err != nil {
+				t.Fatal(err)
+			}
+			waitFor(t, func() bool {
+				session.mutex.Lock()
+				defer session.mutex.Unlock()
+				return len(session.observations) == 1
+			})
+			if len(session.linked) != 0 {
+				t.Fatalf("ineligible report linked: %#v", session.linked)
+			}
+		})
+	}
+}
+
+// This test protects typed unavailable rejection, immediate route invalidation, connection cancellation, and one ordinary
+// fallback for an early claim when /set fails outside the Command context.
+func TestCommandSetFailureRejectsAndFallsBack(t *testing.T) {
 	t.Parallel()
 	recorder := &runtimeRecorder{}
 	session := newFakeSession(recorder)
-	z2m, connection, device := commandReadyAdapter(t, recorder, session)
-	retainedAt := time.Date(2026, 9, 1, 12, 0, 0, 0, time.UTC)
-	var freshAt time.Time
+	z2m, _, connection, device := commandReadyAdapter(t, recorder, session)
+	connectionContext, disconnect := context.WithCancelCause(context.Background())
+	routes := make(map[string]commandRoute)
+	for _, entity := range device.entities {
+		routes[entity.entityID] = commandRoute{
+			entityID: entity.entityID, ieeeAddress: device.ieeeAddress, friendlyName: device.friendly,
+			entity: entity.discovered,
+		}
+	}
+	activation := make(chan routeActivationResult, 1)
+	z2m.runtimeEvents <- routesActivated{
+		generation: 1,
+		connection: connection,
+		disconnect: disconnect,
+		snapshot:   routeSnapshot{routes: routes, devices: map[string]runtimeDevice{device.friendly: device}},
+		result:     activation,
+	}
+	if result := <-activation; result.err != nil {
+		t.Fatal(result.err)
+	}
 	connection.onPublish = func(ctx context.Context, _ *fakeConnection, topic string, _ []byte) error {
-		switch topic {
-		case "zigbee2mqtt/fixture-light/set":
-			for _, message := range []mqttMessage{
-				{
-					Topic: "zigbee2mqtt/fixture-light", Payload: []byte(`{"state":"ON"}`),
-					Retained: true, ReceivedAt: retainedAt,
-				},
-				{
-					Topic: "zigbee2mqtt/fixture-light", Payload: []byte(`{"state":"ON"}`),
-					ReceivedAt: retainedAt.Add(time.Second),
-				},
-				{
-					Topic: "zigbee2mqtt/fixture-light", Payload: []byte(`{"state":"OFF"}`),
-					ReceivedAt: time.Now().UTC(),
-				},
-			} {
-				if err := z2m.publishDeviceState(ctx, 1, device, message); err != nil {
-					return err
-				}
+		if strings.HasSuffix(topic, "/set") {
+			if err := z2m.publishDeviceState(ctx, 1, 2, device, mqttMessage{
+				Topic:      "zigbee2mqtt/" + device.friendly,
+				Payload:    []byte(`{"state":"ON"}`),
+				ReceivedAt: time.Now().UTC(),
+			}); err != nil {
+				return err
 			}
-			return nil
-		case "zigbee2mqtt/fixture-light/get":
-			freshAt = time.Now().UTC()
-			return z2m.publishDeviceState(ctx, 1, device, mqttMessage{
-				Topic: "zigbee2mqtt/fixture-light", Payload: []byte(`{"state":"ON"}`), ReceivedAt: freshAt,
-			})
+			return errors.New("set PUBACK failed")
 		}
 		return nil
 	}
-	if err := z2m.HandleCommand(
-		context.Background(),
-		testCommand(device.entities[0].entityID, `{"value":true}`),
-		&fakeResponder{recorder: recorder},
-	); err != nil {
-		t.Fatal(err)
-	}
-	var linked adapter.Observation
-	for _, observation := range session.observations {
-		if observation.RefreshForCommand != nil {
-			linked = observation
-		}
-	}
-	if linked.AdapterReceivedAt != freshAt.Format(time.RFC3339Nano) {
-		t.Fatalf(
-			"linked receive time = %q, want fresh %q; observations=%#v",
-			linked.AdapterReceivedAt,
-			freshAt,
-			session.observations,
-		)
-	}
-	if len(session.observations) != 4 {
-		t.Fatalf(
-			"observations = %#v, want retained, pre-dispatch, wrong ordinary, and fresh linked",
-			session.observations,
-		)
-	}
-}
-
-// This test protects typed rejection on an unacknowledged /set. It fails if broker failure is reported as a generic
-// upstream rejection, leaves routes enabled, or permits a stale matcher to survive.
-func TestCommandSetFailureRejectsUnavailableAndDisablesRoutes(t *testing.T) {
-	t.Parallel()
-	recorder := &runtimeRecorder{}
-	session := newFakeSession(recorder)
-	z2m, connection, device := commandReadyAdapter(t, recorder, session)
-	connectionContext, cancelConnection := context.WithCancelCause(context.Background())
-	defer cancelConnection(nil)
-	z2m.mutex.Lock()
-	z2m.connectionCancel = cancelConnection
-	z2m.mutex.Unlock()
-	connection.onPublish = func(context.Context, *fakeConnection, string, []byte) error {
-		return errors.New("set PUBACK failed")
-	}
-	responder := &fakeResponder{recorder: recorder}
+	responder := newFakeResponder(recorder, session)
 	if err := z2m.HandleCommand(
 		context.Background(),
 		testCommand(device.entities[0].entityID, `{"value":true}`),
@@ -166,17 +285,24 @@ func TestCommandSetFailureRejectsUnavailableAndDisablesRoutes(t *testing.T) {
 	); err != nil {
 		t.Fatal(err)
 	}
-	z2m.mutex.Lock()
-	defer z2m.mutex.Unlock()
-	if responder.unavailable != 1 || responder.accepted != 0 || z2m.healthy || len(z2m.routes) != 0 ||
-		len(z2m.matchers) != 0 {
-		t.Fatalf(
-			"set failure responder=%#v healthy=%t routes=%d matchers=%d",
-			responder,
-			z2m.healthy,
-			len(z2m.routes),
-			len(z2m.matchers),
-		)
+	waitFor(t, func() bool {
+		session.mutex.Lock()
+		defer session.mutex.Unlock()
+		return len(session.observations) == 1
+	})
+	if responder.unavailable != 1 || responder.accepted != 0 || len(session.linked) != 0 {
+		t.Fatalf("responder=%#v ordinary=%#v linked=%#v", responder, session.observations, session.linked)
+	}
+	missing := newFakeResponder(recorder, session)
+	if err := z2m.HandleCommand(
+		context.Background(),
+		testCommand(device.entities[0].entityID, `{"value":true}`),
+		missing,
+	); err != nil {
+		t.Fatal(err)
+	}
+	if missing.unavailable != 1 || missing.accepted != 0 {
+		t.Fatalf("route remained dispatchable after /set failure: %#v", missing)
 	}
 	cause := context.Cause(connectionContext)
 	if cause == nil || !strings.Contains(cause.Error(), "set PUBACK failed") {
@@ -184,90 +310,34 @@ func TestCommandSetFailureRejectsUnavailableAndDisablesRoutes(t *testing.T) {
 	}
 }
 
-// This test protects held early State and command-local cancellation. It fails if an unacknowledged set drops valid
-// ordinary evidence or if one expired Command tears down an otherwise healthy broker route.
-//
-//nolint:gocognit // The shared setup compares two distinct failure classifications.
-func TestCommandSetFailurePreservesHeldStateAndContextFailureDoesNotDisconnect(t *testing.T) {
-	t.Parallel()
-	for _, test := range []struct {
-		name            string
-		publishErr      error
-		wantHealthy     bool
-		wantObservation bool
-	}{
-		{name: "broker failure", publishErr: errors.New("PUBACK failed"), wantObservation: true},
-		{name: "command deadline", publishErr: context.DeadlineExceeded, wantHealthy: true},
-	} {
-		t.Run(test.name, func(t *testing.T) {
-			t.Parallel()
-			recorder := &runtimeRecorder{}
-			session := newFakeSession(recorder)
-			z2m, connection, device := commandReadyAdapter(t, recorder, session)
-			connection.onPublish = func(ctx context.Context, _ *fakeConnection, topic string, _ []byte) error {
-				if topic == "zigbee2mqtt/fixture-light/set" && test.wantObservation {
-					if err := z2m.publishDeviceState(ctx, 1, device, mqttMessage{
-						Topic: "zigbee2mqtt/fixture-light", Payload: []byte(`{"state":"ON"}`),
-						ReceivedAt: time.Now().UTC(),
-					}); err != nil {
-						return err
-					}
-				}
-				return test.publishErr
-			}
-			responder := &fakeResponder{recorder: recorder}
-			if err := z2m.HandleCommand(
-				context.Background(),
-				testCommand(device.entities[0].entityID, `{"value":true}`),
-				responder,
-			); err != nil {
-				t.Fatal(err)
-			}
-			z2m.mutex.Lock()
-			healthy := z2m.healthy
-			z2m.mutex.Unlock()
-			if healthy != test.wantHealthy || responder.unavailable != 1 {
-				t.Fatalf("healthy=%t responder=%#v", healthy, responder)
-			}
-			if got := len(session.observations) == 1; got != test.wantObservation {
-				t.Fatalf("ordinary held Observation present=%t, want %t", got, test.wantObservation)
-			}
-			if test.wantObservation && session.observations[0].RefreshForCommand != nil {
-				t.Fatalf("held State was incorrectly linked: %#v", session.observations[0])
-			}
-		})
-	}
-}
-
-// This test protects accepted-Command behavior when active refresh publication fails. It fails if /get failure removes
-// the matcher and prevents a later natural non-retained State report from satisfying the Command.
+// This test protects accepted-Command behavior after /get failure: a later natural report must still be linked.
 func TestCommandGetFailureStillAllowsNaturalMatch(t *testing.T) {
 	t.Parallel()
 	recorder := &runtimeRecorder{}
 	session := newFakeSession(recorder)
-	z2m, connection, device := commandReadyAdapter(t, recorder, session)
-	connection.onPublish = func(ctx context.Context, _ *fakeConnection, topic string, _ []byte) error {
-		if topic != "zigbee2mqtt/fixture-light/get" {
-			return nil
-		}
-		go func() {
-			_ = z2m.publishDeviceState(ctx, 1, device, mqttMessage{
-				Topic: "zigbee2mqtt/fixture-light", Payload: []byte(`{"state":"ON"}`),
-				ReceivedAt: time.Now().UTC(),
-			})
-		}()
-		return errors.New("refresh PUBACK failed")
+	z2m, _, connection, device := commandReadyAdapter(t, recorder, session)
+	connection.onPublish = func(context.Context, *fakeConnection, string, []byte) error {
+		return nil
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
-	defer cancel()
+	connection.onPublish = func(_ context.Context, _ *fakeConnection, topic string, _ []byte) error {
+		if strings.HasSuffix(topic, "/get") {
+			return errors.New("refresh PUBACK failed")
+		}
+		return nil
+	}
 	if err := z2m.HandleCommand(
-		ctx,
+		context.Background(),
 		testCommand(device.entities[0].entityID, `{"value":true}`),
-		&fakeResponder{recorder: recorder},
+		newFakeResponder(recorder, session),
 	); err != nil {
 		t.Fatal(err)
 	}
-	if len(session.observations) != 1 || session.observations[0].RefreshForCommand == nil {
-		t.Fatalf("natural match was not linked after /get failure: %#v", session.observations)
+	if err := publishState(context.Background(), z2m, device, `{"state":"ON"}`, time.Now().UTC()); err != nil {
+		t.Fatal(err)
 	}
+	waitFor(t, func() bool {
+		session.mutex.Lock()
+		defer session.mutex.Unlock()
+		return len(session.linked) == 1
+	})
 }

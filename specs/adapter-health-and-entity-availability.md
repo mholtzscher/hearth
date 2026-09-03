@@ -733,11 +733,15 @@ Owner: `sdk/adapter/types.go`, `errors.go`, and `session.go`.
      Logger    *slog.Logger
  }
 
- type Responder interface {
-     Accept() error
-     Reject(message string) error
+ type CommandEvidence interface {
++    PublishObservation(context.Context, Observation) (ObservationID, error)
++}
++
++type Responder interface {
++    Accept() (CommandEvidence, error)
++    Reject(message string) error
 +    RejectUnavailable(message string) error
- }
++}
 ```
 
 New public SDK types and methods:
@@ -773,7 +777,7 @@ func (session *Session) SetHealth(context.Context, HealthReport) error
 func (session *Session) ReportEntityAvailability(context.Context, []EntityAvailabilityReport) error
 ```
 
-`Connect` requires Core claim success before returning and starts one serialized heartbeat loop. `Close` attempts release with an internal five-second timeout before draining NATS; failure falls back to lease expiry. `Register`, `SetEntityEnabled`, and `PublishObservation` use the hidden runtime ID to construct subjects. `ServeCommands` subscribes only to the Session's runtime-scoped Command wildcard.
+`Connect` requires Core claim success before returning and starts one serialized heartbeat loop. `Close` attempts release with an internal five-second timeout before draining NATS; failure falls back to lease expiry. `Register`, `SetEntityEnabled`, and ordinary `PublishObservation` use the hidden runtime ID to construct subjects. Successful `Accept` returns evidence that publishes Observations linked to that accepted Command with the same hidden runtime scope. `ServeCommands` subscribes only to the Session's runtime-scoped Command wildcard.
 
 The Session does not retain acknowledged availability reports. It serializes explicit availability request/reply calls and retries transient disconnect or no-response failures under caller context. Core stores the accepted result by availability request ID, returns that original result to exact retries even after health changes, and permanently rejects reuse with different data. `Register` owns the same transient retry behavior, reuses one request envelope across attempts, and stops on local validation or schema-defined permanent rejection; first-party applications call it once. A fenced response closes the Session and returns `ErrRuntimeFenced` from all pending and future methods. The session state machine serializes heartbeat, close, and fencing changes; it never invokes callbacks while holding its locks.
 

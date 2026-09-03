@@ -92,6 +92,15 @@ func TestRunReconcilesOwnedMappingsAndOrdersStartupEvidence(t *testing.T) {
 		t.Fatalf("availability reasons = %#v", reasons)
 	}
 	events := recorder.snapshot()
+	availabilityEvents := 0
+	for _, event := range events {
+		if event == "availability" {
+			availabilityEvents++
+		}
+	}
+	if availabilityEvents != 1 {
+		t.Fatalf("availability publications = %d, want one reconciled batch; events = %v", availabilityEvents, events)
+	}
 	assertOrdered(
 		t,
 		events,

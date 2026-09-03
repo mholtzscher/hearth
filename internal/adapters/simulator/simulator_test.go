@@ -15,6 +15,7 @@ const simulatorEntityID = "ent_01890f47-7a6b-7c4d-8e9f-0123456789ab"
 
 type recordingSession struct {
 	observations        []adapter.Observation
+	linkedObservations  []adapter.Observation
 	healthReports       []adapter.HealthReport
 	availabilityReports []adapter.EntityAvailabilityReport
 }
@@ -25,6 +26,20 @@ func (session *recordingSession) PublishObservation(
 ) (adapter.ObservationID, error) {
 	session.observations = append(session.observations, observation)
 	return "obs_01890f47-7a6b-7c4d-8e9f-0123456789ab", nil
+}
+
+type recordingEvidence struct{ session *recordingSession }
+
+func (evidence recordingEvidence) PublishObservation(
+	_ context.Context,
+	observation adapter.Observation,
+) (adapter.ObservationID, error) {
+	evidence.session.linkedObservations = append(evidence.session.linkedObservations, observation)
+	return "obs_01890f47-7a6b-7c4d-8e9f-0123456789ab", nil
+}
+
+func (session *recordingSession) evidence() adapter.CommandEvidence {
+	return recordingEvidence{session: session}
 }
 
 func (session *recordingSession) SetHealth(_ context.Context, report adapter.HealthReport) error {
@@ -43,11 +58,12 @@ func (session *recordingSession) ReportEntityAvailability(
 type recordingResponder struct {
 	accepted bool
 	rejected bool
+	evidence adapter.CommandEvidence
 }
 
-func (responder *recordingResponder) Accept() error {
+func (responder *recordingResponder) Accept() (adapter.CommandEvidence, error) {
 	responder.accepted = true
-	return nil
+	return responder.evidence, nil
 }
 
 func (responder *recordingResponder) Reject(string) error {
@@ -93,25 +109,30 @@ func TestHappyScenarioAcceptsAndPublishesLinkedRefresh(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	responder := &recordingResponder{}
-	commandID := "cmd_01890f47-7a6b-7c4d-8e9f-0123456789ab"
+	responder := &recordingResponder{evidence: session.evidence()}
 	if handlerErr := handler(context.Background(), adapter.Command{
-		ID: commandID, CorrelationID: "cor_01890f47-7a6b-7c4d-8e9f-0123456789ab",
+		ID: "cmd_01890f47-7a6b-7c4d-8e9f-0123456789ab", CorrelationID: "cor_01890f47-7a6b-7c4d-8e9f-0123456789ab",
 		EntityID: simulatorEntityID, OperationName: "set", Parameters: json.RawMessage(`{"value":true}`),
 		Deadline: time.Now().Add(time.Second).UTC().Format(time.RFC3339Nano),
 	}, responder); handlerErr != nil {
 		t.Fatal(handlerErr)
 	}
-	if !responder.accepted || responder.rejected || len(session.observations) != 2 {
-		t.Fatalf("responder = %#v, observations = %#v", responder, session.observations)
+	if !responder.accepted || responder.rejected || len(session.observations) != 1 ||
+		len(session.linkedObservations) != 1 {
+		t.Fatalf(
+			"responder = %#v, ordinary observations = %#v, linked observations = %#v",
+			responder,
+			session.observations,
+			session.linkedObservations,
+		)
 	}
 	if len(session.healthReports) != 1 || session.healthReports[0].Status != adapter.HealthHealthy ||
 		len(session.availabilityReports) != 1 ||
 		session.availabilityReports[0].Status != adapter.AvailabilityAvailable {
 		t.Fatalf("health = %#v, availability = %#v", session.healthReports, session.availabilityReports)
 	}
-	refresh := session.observations[1]
-	if refresh.RefreshForCommand == nil || *refresh.RefreshForCommand != commandID || string(refresh.Value) != "true" {
+	refresh := session.linkedObservations[0]
+	if string(refresh.Value) != "true" {
 		t.Fatalf("refresh = %#v", refresh)
 	}
 }
@@ -155,7 +176,7 @@ func TestEntityUnavailableScenarioRecoversThroughCommand(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	responder := &recordingResponder{}
+	responder := &recordingResponder{evidence: session.evidence()}
 	if err = handler(context.Background(), adapter.Command{
 		ID:            "cmd_01890f47-7a6b-7c4d-8e9f-0123456789ab",
 		CorrelationID: "cor_01890f47-7a6b-7c4d-8e9f-0123456789ab",
@@ -165,7 +186,8 @@ func TestEntityUnavailableScenarioRecoversThroughCommand(t *testing.T) {
 		t.Fatal(err)
 	}
 	if !responder.accepted || responder.rejected || len(session.availabilityReports) != 2 ||
-		session.availabilityReports[1].Status != adapter.AvailabilityAvailable || len(session.observations) != 1 {
+		session.availabilityReports[1].Status != adapter.AvailabilityAvailable || len(session.observations) != 0 ||
+		len(session.linkedObservations) != 1 {
 		t.Fatalf(
 			"responder = %#v, availability = %#v, observations = %#v",
 			responder, session.availabilityReports, session.observations,
@@ -196,7 +218,7 @@ func TestFailureScenariosRejectOrWithholdOutcome(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			responder := &recordingResponder{}
+			responder := &recordingResponder{evidence: session.evidence()}
 			err = handler(context.Background(), adapter.Command{
 				ID:            "cmd_01890f47-7a6b-7c4d-8e9f-0123456789ab",
 				CorrelationID: "cor_01890f47-7a6b-7c4d-8e9f-0123456789ab",
@@ -207,8 +229,13 @@ func TestFailureScenariosRejectOrWithholdOutcome(t *testing.T) {
 				t.Fatal(err)
 			}
 			if responder.accepted != test.wantAccepted || responder.rejected != test.wantRejected ||
-				len(session.observations) != 0 {
-				t.Fatalf("responder = %#v, observations = %#v", responder, session.observations)
+				len(session.observations) != 0 || len(session.linkedObservations) != 0 {
+				t.Fatalf(
+					"responder = %#v, ordinary observations = %#v, linked observations = %#v",
+					responder,
+					session.observations,
+					session.linkedObservations,
+				)
 			}
 		})
 	}

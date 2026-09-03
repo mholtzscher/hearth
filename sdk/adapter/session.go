@@ -57,13 +57,6 @@ type Session struct {
 	closing      bool
 }
 
-type commandMetadata struct {
-	id            string
-	correlationID string
-}
-
-type commandMetadataKey struct{}
-
 // Connect validates config, connects to NATS, and claims one Core runtime before returning.
 func Connect(ctx context.Context, config Config) (*Session, error) {
 	if err := validateConfig(ctx, config); err != nil {
@@ -264,83 +257,10 @@ func (session *Session) SetEntityEnabled(ctx context.Context, entityID string, e
 	return *response.Data.Enabled, nil
 }
 
-// PublishObservation publishes one envelope through JetStream and waits for its
-// acknowledgement. A command-linked observation must use the context received
-// by that command's handler so its causation and correlation IDs are preserved.
-//
-//nolint:gocognit // Retry and command-causality checks stay together around one publication.
+// PublishObservation publishes one ordinary Observation through JetStream and
+// waits for its acknowledgement.
 func (session *Session) PublishObservation(ctx context.Context, observation Observation) (ObservationID, error) {
-	if err := session.sessionError(); err != nil {
-		return "", err
-	}
-	generated, err := newID("obs")
-	if err != nil {
-		return "", err
-	}
-	observationID := ObservationID(generated)
-	correlationID, err := newID("cor")
-	if err != nil {
-		return observationID, err
-	}
-	var causationID *string
-	if observation.RefreshForCommand != nil {
-		metadata, ok := ctx.Value(commandMetadataKey{}).(commandMetadata)
-		if !ok || metadata.id != *observation.RefreshForCommand {
-			return observationID, &ValidationError{
-				Err: errors.New("linked observation requires its command handler context"),
-			}
-		}
-		correlationID = metadata.correlationID
-		causationID = observation.RefreshForCommand
-	}
-	event := natswire.Envelope[Observation]{
-		ID:            generated,
-		Schema:        contractsv1.ObservationSchemaID,
-		EmittedAt:     nowString(),
-		CorrelationID: correlationID,
-		CausationID:   causationID,
-		Data:          observation,
-	}
-	payload, err := natswire.Encode(session.validator, contractsv1.ObservationSchemaID, event)
-	if err != nil {
-		return observationID, &ValidationError{Err: err}
-	}
-	subject, err := natswire.ObservationSubject(session.adapterID, session.runtimeID, observation.EntityID)
-	if err != nil {
-		return observationID, &ValidationError{Err: err}
-	}
-	headers := make(natsgo.Header)
-	headers.Set(natsgo.MsgIdHdr, generated)
-	natswire.InjectTrace(ctx, headers)
-
-	for {
-		message := &natsgo.Msg{Subject: subject, Header: headers, Data: payload}
-		if _, err = session.jetstream.PublishMsg(ctx, message); err == nil {
-			if terminalErr := session.sessionError(); terminalErr != nil {
-				return observationID, terminalErr
-			}
-			return observationID, nil
-		}
-		if terminalErr := session.sessionError(); terminalErr != nil {
-			return observationID, terminalErr
-		}
-		if ctxErr := ctx.Err(); ctxErr != nil {
-			return observationID, ctxErr
-		}
-		if !isTransientPublishError(err) {
-			return observationID, err
-		}
-		timer := time.NewTimer(requestRetryWait)
-		select {
-		case <-ctx.Done():
-			timer.Stop()
-			return observationID, ctx.Err()
-		case <-session.closed:
-			timer.Stop()
-			return observationID, session.sessionError()
-		case <-timer.C:
-		}
-	}
+	return session.publishObservation(ctx, observation, nil)
 }
 
 // ServeCommands handles valid command requests concurrently until ctx ends.
@@ -456,21 +376,19 @@ func (session *Session) handleCommand(parent context.Context, message *natsgo.Ms
 		)
 		return
 	}
-	ctx = context.WithValue(
-		ctx,
-		commandMetadataKey{},
-		commandMetadata{id: request.ID, correlationID: request.CorrelationID},
-	)
 	command := request.Data
 	command.ID = request.ID
 	command.CorrelationID = request.CorrelationID
 	responder := &commandResponder{
 		context:       ctx,
+		session:       session,
 		connection:    session.connection,
 		replySubject:  message.Reply,
 		validator:     session.validator,
 		commandID:     request.ID,
 		correlationID: request.CorrelationID,
+		entityID:      command.EntityID,
+		deadline:      deadline,
 	}
 	if handlerErr := handler(ctx, command, responder); handlerErr != nil {
 		session.logger.ErrorContext(parent, "command handler failed", "command_id", request.ID, "error", handlerErr)
@@ -482,17 +400,28 @@ func (session *Session) handleCommand(parent context.Context, message *natsgo.Ms
 
 type commandResponder struct {
 	context       context.Context
+	session       *Session
 	connection    *natsgo.Conn
 	replySubject  string
 	validator     *contractsv1.Validator
 	commandID     string
 	correlationID string
+	entityID      string
+	deadline      time.Time
 	mutex         sync.Mutex
 	responded     bool
 }
 
-func (responder *commandResponder) Accept() error {
-	return responder.respond(CommandResponse{CommandID: responder.commandID, Status: statusAccepted})
+func (responder *commandResponder) Accept() (CommandEvidence, error) {
+	if err := responder.respond(CommandResponse{CommandID: responder.commandID, Status: statusAccepted}); err != nil {
+		return nil, err
+	}
+	return newCommandEvidence(responder.context, responder.session, observationLink{
+		commandID:     responder.commandID,
+		correlationID: responder.correlationID,
+		entityID:      responder.entityID,
+		deadline:      responder.deadline,
+	}), nil
 }
 
 func (responder *commandResponder) Reject(message string) error {

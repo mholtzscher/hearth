@@ -38,7 +38,7 @@ V1 includes:
 - power and brightness Entities with stable IEEE and endpoint identity;
 - mutable friendly-name routing and display metadata;
 - Adapter health, explicit Entity availability, retained or cached State, and startup refresh;
-- serialized per-Device power and brightness Commands with fresh post-dispatch correlation;
+- a private runtime coordinator that serializes power and brightness Commands per IEEE Device and publishes fresh post-dispatch evidence;
 - clean-session MQTT 3.1.1 at QoS 1 through NATS MQTT;
 - loopback local configuration, operator documentation, and captured, official, synthetic, integration, and real-bulb tests.
 
@@ -265,7 +265,7 @@ Brightness external IDs replace the final `power` segment with `brightness`. Bin
 
 The Device name is trimmed `description` when non-empty, otherwise the exact valid `friendly_name`. Root Entity names are `Power` and `Brightness`. Scoped names are `<endpoint label> Power` and `<endpoint label> Brightness`; the expose label is preferred, with `ep<N>` as fallback. A descriptor over Hearth's 128-rune limit is rejected, never truncated.
 
-Registration uses Device kind `light`, generated `powerv1` and `brightnessv1` descriptors, and additive Core reconciliation. Re-registration updates names, external IDs, and normalized support without changing canonical IDs. The Adapter updates its own MQTT route snapshot.
+Registration uses Device kind `light`, generated `powerv1` and `brightnessv1` descriptors, and additive Core reconciliation. Re-registration updates names, external IDs, and normalized support without changing canonical IDs. Reconciliation sends the coordinator an immutable MQTT route snapshot.
 
 ### Owned-mapping reconciliation
 
@@ -302,7 +302,7 @@ Ignore `/set`, `/get`, bridge request and response topics, groups, and unknown t
 
 The MQTT client uses MQTT 3.1.1, `CleanSession=true`, the deterministic client ID, and QoS 1 for subscription and `/set` or `/get` publication. Adapter publications are not retained. Every Paho token wait is context-bounded. Paho automatic reconnect is disabled because the Adapter owns reconnect with bounded exponential backoff and jitter.
 
-Each connection is newly created, subscribed, and synchronized from retained bridge topics. MQTT callbacks copy messages into an internal relay queue. The serialized Adapter run loop owns parsing, inventory generations, registration, and evidence routing. Command handlers use bounded request and result channels to communicate with that loop.
+Each connection is newly created, subscribed, and synchronized from retained bridge topics. MQTT callbacks copy messages into an internal relay queue. The serial connection loop owns parsing, inventory generations, registration, availability evidence, pending MQTT messages, and its immutable runtime-Device snapshot. A separate runtime coordinator owns route activation, Command queues and attempts, matchers, deadlines, and State disposition. Command handlers submit to that coordinator and never read routes directly.
 
 A slow callback must not silently drop MQTT messages. The relay queue is unbounded only for one connection's lifetime and is released on disconnect. NATS and Zigbee2MQTT packet limits bound each message. Explicit backpressure waits for measurement.
 
@@ -336,7 +336,7 @@ adapter.hearth-adapter-zigbee2mqtt.invalid_inventory
 
 MQTT connection failure or loss uses `hearth.external_system_unavailable`. Explicit offline `bridge/state` uses `bridge_offline`. Invalid MQTT version, availability, or optimistic settings use `incompatible_configuration`. Malformed complete bridge info or devices documents use `invalid_inventory`.
 
-An unhealthy transition disables current Command routes and cancels active matchers. Registrations remain, and the process reconnects or waits for corrected retained data. Static YAML errors and terminal SDK fencing terminate the process.
+An unhealthy transition waits for coordinator route invalidation, which makes routes nondispatchable, cancels MQTT work, rejects unaccepted attempts when possible, and preserves one State disposition for any held report. Registrations remain, and the process reconnects or waits for corrected retained data. Static YAML errors and terminal SDK fencing terminate the process.
 
 After recovery, the Adapter repeats complete mapping and inventory reconciliation, waits for health acknowledgement, then sends fresh availability. It never relies on reports that Core cleared during the unhealthy transition.
 
@@ -399,40 +399,21 @@ Command JSON may contain a fraction. Observation normalization produces an integ
 
 The Adapter does not clamp out-of-range values, parse numeric strings, infer power from zero brightness, or infer brightness from power. A brightness Command publishes only its brightness property.
 
-## Command routing and correlation
+## Command runtime and correlation
 
-One long-lived generic SDK handler dispatches the dynamic Command wildcard by canonical Entity ID through a mutex-protected route snapshot. Generated `powerv1` and `brightnessv1` facades decode and validate parameters. The Adapter does not decode Hearth parameters by hand.
+A private runtime coordinator is the only owner of active routes and route revisions, MQTT generations and the dispatchable connection, per-IEEE FIFO queues, Command attempts, matchers, claimed State, and deadline timers. The connection loop sends it immutable route snapshots and State candidates carrying the connection generation and route revision. The coordinator changes only its state and completion events; blocking MQTT and JetStream work runs in tracked effect goroutines. The MQTT relay keeps its mutex because Paho callbacks, queue consumption, and closure remain concurrent.
 
-Different IEEE Devices may run Commands concurrently. One context-aware lock serializes all power and brightness Commands for the same IEEE Device. Lock wait consumes the existing absolute Command deadline.
+One long-lived generic SDK handler submits each Command to the coordinator and waits only for its buffered result, caller cancellation, or coordinator shutdown. It never reads routes directly. Generated `powerv1` and `brightnessv1` facades decode and validate parameters and build the MQTT payload and normalized target; the Adapter does not decode Hearth parameters by hand.
 
-For a valid current route, the handler:
+The coordinator queues Commands FIFO by IEEE address. Queue time consumes the existing absolute deadline; an expired queued Command never reaches MQTT. Different IEEE Devices may dispatch concurrently. When a Device becomes idle, the coordinator installs its matcher and records dispatch immediately before it launches the QoS 1 `/set` effect with one-property JSON at `<base>/<friendly_name>/set`. It keeps handling State, route changes, deadlines, and other Device queues while PUBACK is pending.
 
-1. acquires the per-Device lock under the SDK Command context;
-2. re-reads the route generation and calls `RejectUnavailable` if the route disappeared;
-3. installs one matcher for Entity, property, desired normalized value, connection generation, and Command context;
-4. marks it dispatched immediately before MQTT `/set` publication;
-5. publishes one-property JSON to `<base>/<friendly_name>/set` at QoS 1;
-6. waits for PUBACK under the Command context;
-7. on unacknowledged publication, removes the matcher, reports external-system health when appropriate, and calls `RejectUnavailable`;
-8. after PUBACK, calls `responder.Accept()`;
-9. publishes `<base>/<friendly_name>/get` with `{<property>: ""}` at QoS 1;
-10. waits for the first eligible matching State report or context end;
-11. publishes that report once as a typed Observation with `RefreshForCommand`, using the original handler context;
-12. releases the matcher and per-Device lock.
+After PUBACK, the coordinator calls `Accept`, stores the returned `CommandEvidence`, starts the QoS 1 `/get` effect with `{<property>: ""}` at `<base>/<friendly_name>/get` for every accepted Command, and completes the handler result without waiting for `/get`, a State match, or JetStream acknowledgement. A failed `/get` is logged and cannot retract acceptance. A non-context `/set` failure rejects the unaccepted Command as unavailable and cancels the connection so the reconnect loop recovers it. Failed acceptance does not consume the responder and leaves the held report, if any, for ordinary publication.
 
-A matching report must:
+A State candidate can satisfy the active matcher only when it has the same MQTT generation and route revision, is non-retained, belongs to the exact Entity and discovered property, decodes and normalizes to the target value, arrived after dispatch and no later than the Command deadline, and has not already been claimed or begun linked publication. A match after `/set` launch but before PUBACK is held. The coordinator claims at most one eligible report; every other valid report, including siblings and nonmatching values, is published ordinarily by the connection loop.
 
-- belong to the same MQTT connection generation;
-- be non-retained and received after dispatch;
-- contain the exact current property;
-- decode to valid Hearth State;
-- normalize to the requested value.
+A claimed report has exactly one disposition: before linked publication starts, terminal paths such as `/set` failure, failed acceptance, deadline, route replacement, or MQTT disconnect publish it once through ordinary `Session.PublishObservation`; once linked publication starts, it is published only through `CommandEvidence.PublishObservation`. The evidence capability supplies the accepted Command's linkage after the handler returns. A lost linked acknowledgement remains ambiguous, so the SDK retries its original envelope and Observation ID until the evidence deadline and the Adapter never sends an ordinary duplicate. The Device remains active until its linked or fallback publication finishes, or until a terminal path with no claim finishes.
 
-A match after `/set` dispatch but before `/get` is eligible. A match before PUBACK is held until `Accept` succeeds, then published as linked evidence. Nonmatching target values and sibling properties publish as ordinary Observations while the matcher remains active.
-
-The run loop claims one matching property report and creates exactly one linked Observation. It never publishes both ordinary and linked copies of that property report.
-
-If `/get` publication fails after `/set` PUBACK, the accepted Command may still complete from a natural matching report. Otherwise Core reaches its existing outcome deadline. The Adapter sends no second response. Disconnect cancels the matcher, and retained replay after reconnect cannot satisfy it.
+Route replacement and connection loss invalidate the old revision or generation before exposing new routes. They reject only unaccepted attempts when a response remains possible; accepted Commands receive no second response. Attempt, revision, and generation checks discard stale State and effect completions. Coordinator shutdown cancels and joins tracked effects without waiting for a send to an undrained event channel. Terminal Session or fencing errors stop the Adapter runtime.
 
 Offline availability does not suppress `/set`; availability is advisory and a recovering Device may succeed. A missing Device or capability route, or an unreachable MQTT broker, produces typed `entity_unavailable`, not `upstream_rejected`.
 
@@ -462,7 +443,7 @@ func (z2m *Adapter) Run(context.Context) error
 func (z2m *Adapter) HandleCommand(context.Context, adapter.Command, adapter.Responder) error
 ```
 
-`Run` owns MQTT connection and recovery, subscription, reconciliation, registration, State, availability, and health. `HandleCommand` owns typed routing, serialization, translation, matcher lifecycle, and refresh correlation.
+`Run` supervises the MQTT reconnect loop and runtime coordinator under one child context, alongside subscription, reconciliation, registration, State, availability, and health. `HandleCommand` submits typed work to the coordinator; the coordinator owns serialization, translation, matcher lifecycle, evidence publication, and refresh correlation.
 
 ### Private MQTT seam
 
@@ -558,8 +539,9 @@ internal/adapters/
     ├── observation.go
     ├── reconcile.go
     ├── reconciliation_test.go
-    ├── routes.go
+    ├── runtime.go
     ├── runtime_helpers_test.go
+    ├── runtime_test.go
     ├── state.go
     ├── state_test.go
     ├── topics.go
@@ -588,7 +570,7 @@ Files in the Adapter package split only along distinct protocol or change pressu
 | D1. Config, Paho MQTT transport, local NATS MQTT config, protocol integration | L | owned-mapping spec |
 | D2. Inventory, eligibility, identity, registration, restart reconciliation | L | D1 |
 | D3. Health, availability, retained or live State, startup `/get` | L | D2 |
-| D4. Dynamic Commands, per-Device serialization, matcher claiming, refresh | XL | D3 |
+| D4. Runtime coordinator, per-IEEE queues, matcher claiming, and asynchronous command evidence | XL | D3 |
 | D5. Docs, fixtures, real-bulb acceptance, mutation testing, validation | L | D4 |
 
 Implementation proceeds from the Core prerequisite through observation, D1 to D3, then control, D4 and D5. Each stage passes focused tests. There is no temporary configured-single-light path.
@@ -603,7 +585,7 @@ Tests must state the protected behavior and plausible defect. Oracles come from 
 | State | Multi-property examples prevent endpoint cross-talk, inferred power, and malformed-value fanout failure. |
 | Reconciliation | Present registrations and absent owned mappings converge without canonical ID loss, deletion, or restart ambiguity. |
 | Health and availability | Recoverable bridge failures, isolated Device errors, explicit reports, stale-report clearing, and exact reason codes prevent false health or availability. |
-| Commands | Freshness, exact-once claiming, property and generation matching, no-op refresh, and concurrency tests catch duplicate, retained, cross-Command, and global-lock defects. |
+| Commands | Coordinator ownership, freshness, exact-once claiming, property/generation/revision matching, one report disposition, no-op refresh, and cross-IEEE concurrency tests catch duplicate, retained, stale-event, cross-Command, and blocked-effect defects. |
 | MQTT integration | Real Paho against NATS proves MQTT 3.1.1, clean session, QoS 1, SUBACK and PUBACK handling, and disconnect recovery. |
 | Process integration | One shared NATS server carries SDK registration, Observation, and Command flows without schema, subject, assembly, or lifecycle mismatch. |
 | Manual | The real bulb proves power, brightness, restart, offline recovery, and no-op refresh behavior. |
@@ -673,16 +655,16 @@ The unfinished disposable Paho smoke test from discovery is not evidence. D1 rep
 #### Commands
 
 - [ ] Power and brightness parameters use generated typed SDK facades.
-- [ ] Same-IEEE Commands serialize, while different IEEE Commands may overlap.
+- [ ] Same-IEEE Commands remain FIFO until their linked or ordinary claimed-State disposition finishes, while different IEEE Devices may make progress concurrently.
 - [ ] Offline availability does not prevent an attempted `/set`.
-- [ ] Missing routes and unacknowledged `/set` return `entity_unavailable`.
-- [ ] Accepted Commands publish QoS 1 `/set`, then active `/get`, and require fresh non-retained matching State.
-- [ ] Early post-dispatch matches wait for SDK acceptance.
-- [ ] One matching upstream property report creates exactly one linked Observation.
-- [ ] Nonmatching and sibling properties remain ordinary Observations.
-- [ ] Retained replay, prior connection generations, wrong endpoints, and wrong normalized brightness cannot satisfy a Command.
+- [ ] Missing or replaced routes and non-context `/set` failures return `entity_unavailable` when a response remains possible; queued or `/set` deadline expiry sends no late response.
+- [ ] `HandleCommand` returns after QoS 1 `/set` PUBACK and successful acceptance, before `/get`, State matching, or linked acknowledgement; every accepted Command triggers active `/get`.
+- [ ] An early eligible match is held until acceptance, then uses its returned evidence capability for linked publication.
+- [ ] One matching upstream property report has exactly one linked or ordinary disposition; nonmatching and sibling properties remain ordinary Observations.
+- [ ] Retained replay, pre-dispatch State, stale routes or connection generations, wrong endpoints, and wrong normalized brightness cannot satisfy a Command.
+- [ ] A held report falls back ordinarily on every pre-link terminal path, but never after linked publication starts.
 - [ ] No-op Commands can satisfy through active refresh.
-- [ ] Without a match, Core reaches its existing outcome timeout without replay or synthetic success.
+- [ ] Without a match, Core reaches its existing outcome timeout without replay or synthetic success; an ambiguous linked acknowledgement creates no ordinary duplicate.
 
 #### Delivery
 
@@ -696,7 +678,7 @@ The unfinished disposable Paho smoke test from discovery is not evidence. D1 rep
 ## Key rationale and risks
 
 - Optimistic Zigbee2MQTT echoes could look like outcome evidence, so registration requires global optimistic behavior false.
-- MQTT has no Device Command ID. Per-IEEE serialization, connection generations, a post-dispatch matcher, active `/get`, and one claimed report provide correlation without blocking unrelated Devices.
+- MQTT has no Device Command ID. The coordinator's per-IEEE FIFO queues, connection generations, route revisions, post-dispatch matcher, active `/get`, and one claimed report provide correlation without blocking unrelated Devices.
 - Core-owned mapping inventory preserves absent identity after restart without Adapter state.
 - `UseNumber`, finite conversion, explicit percent math, and property tests protect observed fractional brightness behavior.
 - Numeric endpoint IDs survive converter label drift. Friendly names remain routing metadata.

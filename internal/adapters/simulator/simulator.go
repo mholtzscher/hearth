@@ -156,20 +156,20 @@ func (simulator *Adapter) set(
 	simulator.state = contractpowerv1.State(command.Parameters.Value)
 	state := simulator.state
 	simulator.mutex.Unlock()
-	if err := responder.Accept(); err != nil {
+	evidence, err := responder.Accept()
+	if err != nil {
 		return err
 	}
 	if simulator.scenario == ScenarioOutcomeTimeout || simulator.scenario == ScenarioInterruptedCommand {
 		return nil
 	}
-	commandID := command.ID
 	observation, err := sdkpowerv1.NewObservation(sdkpowerv1.ObservationInput{
 		EntityID: command.EntityID, Support: simulator.support, State: state,
-		AdapterReceivedAt: time.Now().UTC(), RefreshForCommand: &commandID,
+		AdapterReceivedAt: time.Now().UTC(),
 	})
 	if err != nil {
 		return err
 	}
-	_, err = simulator.session.PublishObservation(ctx, observation)
+	_, err = evidence.PublishObservation(ctx, observation)
 	return err
 }

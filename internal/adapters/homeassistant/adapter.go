@@ -225,7 +225,7 @@ snapshotReady:
 		if index == 0 {
 			source = "snapshot"
 		}
-		if err := homeAssistant.processState(ctx, item.State, item.ReceivedAt, nil); err != nil {
+		if err := homeAssistant.processState(ctx, item.State, item.ReceivedAt); err != nil {
 			if errors.Is(err, errUnsupportedState) {
 				homeAssistant.logUnsupportedState(ctx, source, item.State)
 				continue
@@ -237,7 +237,7 @@ snapshotReady:
 	for {
 		select {
 		case event := <-client.Events():
-			if err := homeAssistant.processState(ctx, event.State, event.ReceivedAt, nil); err != nil {
+			if err := homeAssistant.processState(ctx, event.State, event.ReceivedAt); err != nil {
 				if errors.Is(err, errUnsupportedState) {
 					homeAssistant.logUnsupportedState(ctx, "event", event.State)
 					continue
@@ -313,15 +313,15 @@ func (homeAssistant *Adapter) set(
 		}
 		return responder.Reject("Home Assistant rejected the light command")
 	}
-	if err := responder.Accept(); err != nil {
+	evidence, err := responder.Accept()
+	if err != nil {
 		return err
 	}
-	commandID := command.ID
 	if state.State == desiredState {
-		return homeAssistant.publish(ctx, state, receivedAt, &commandID)
+		return homeAssistant.publishEvidence(ctx, evidence, state, receivedAt)
 	}
 	if available {
-		if publishErr := homeAssistant.publish(ctx, state, receivedAt, &commandID); publishErr != nil {
+		if publishErr := homeAssistant.publishEvidence(ctx, evidence, state, receivedAt); publishErr != nil {
 			return publishErr
 		}
 	}
@@ -329,7 +329,7 @@ func (homeAssistant *Adapter) set(
 	if err != nil {
 		return err
 	}
-	return homeAssistant.processState(ctx, matching.State, matching.ReceivedAt, &commandID)
+	return homeAssistant.publishEvidence(ctx, evidence, matching.State, matching.ReceivedAt)
 }
 
 func (homeAssistant *Adapter) getState(ctx context.Context, client *client) (upstreamState, time.Time, error) {
@@ -397,13 +397,12 @@ func (homeAssistant *Adapter) processState(
 	ctx context.Context,
 	state upstreamState,
 	receivedAt time.Time,
-	refreshForCommand *string,
 ) error {
 	available, err := homeAssistant.reportStateAvailability(ctx, state, receivedAt)
 	if err != nil || !available {
 		return err
 	}
-	return homeAssistant.publish(ctx, state, receivedAt, refreshForCommand)
+	return homeAssistant.publish(ctx, state, receivedAt)
 }
 
 func (homeAssistant *Adapter) reportStateAvailability(
@@ -438,12 +437,38 @@ func (homeAssistant *Adapter) reportStateAvailability(
 	return report.Status == adapter.AvailabilityAvailable, nil
 }
 
-func (homeAssistant *Adapter) publish(
+func (homeAssistant *Adapter) publish(ctx context.Context, state upstreamState, receivedAt time.Time) error {
+	observation, err := homeAssistant.newObservation(ctx, state, receivedAt)
+	if err != nil {
+		return err
+	}
+	if _, err = homeAssistant.session.PublishObservation(ctx, observation); err != nil {
+		return &sessionOperationError{operation: "publish Home Assistant Observation", err: err}
+	}
+	return nil
+}
+
+func (homeAssistant *Adapter) publishEvidence(
+	ctx context.Context,
+	evidence adapter.CommandEvidence,
+	state upstreamState,
+	receivedAt time.Time,
+) error {
+	observation, err := homeAssistant.newObservation(ctx, state, receivedAt)
+	if err != nil {
+		return err
+	}
+	if _, err = evidence.PublishObservation(ctx, observation); err != nil {
+		return &sessionOperationError{operation: "publish Home Assistant Command evidence", err: err}
+	}
+	return nil
+}
+
+func (homeAssistant *Adapter) newObservation(
 	ctx context.Context,
 	state upstreamState,
 	receivedAt time.Time,
-	refreshForCommand *string,
-) error {
+) (adapter.Observation, error) {
 	var value contractpowerv1.State
 	switch state.State {
 	case "on":
@@ -451,7 +476,7 @@ func (homeAssistant *Adapter) publish(
 	case stateOff:
 		value = false
 	default:
-		return fmt.Errorf("%w %q", errUnsupportedState, state.State)
+		return adapter.Observation{}, fmt.Errorf("%w %q", errUnsupportedState, state.State)
 	}
 	updatedAt, err := sourceUpdatedAt(state)
 	if err != nil {
@@ -465,22 +490,13 @@ func (homeAssistant *Adapter) publish(
 		)
 		updatedAt = nil
 	}
-	observation, err := sdkpowerv1.NewObservation(sdkpowerv1.ObservationInput{
+	return sdkpowerv1.NewObservation(sdkpowerv1.ObservationInput{
 		EntityID:          homeAssistant.config.EntityID,
 		Support:           homeAssistant.support,
 		State:             value,
 		AdapterReceivedAt: receivedAt,
 		SourceUpdatedAt:   updatedAt,
-		RefreshForCommand: refreshForCommand,
 	})
-	if err != nil {
-		return err
-	}
-	_, err = homeAssistant.session.PublishObservation(ctx, observation)
-	if err != nil {
-		return &sessionOperationError{operation: "publish Home Assistant Observation", err: err}
-	}
-	return nil
 }
 
 func sourceUpdatedAt(state upstreamState) (*time.Time, error) {

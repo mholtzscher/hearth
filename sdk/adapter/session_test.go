@@ -678,7 +678,7 @@ func TestServeCommandsInvokesHandlersConcurrentlyAndRespondsOnce(t *testing.T) {
 			traceIDs <- trace.SpanContextFromContext(ctx).TraceID()
 			entered <- command
 			<-release
-			if err := responder.Accept(); err != nil {
+			if _, err := responder.Accept(); err != nil {
 				return err
 			}
 			secondReplies <- responder.Reject("")
@@ -858,56 +858,72 @@ func TestCommandPublishFailureDoesNotConsumeResponder(t *testing.T) {
 	session := connectSession(t, server.ClientURL())
 	responder := &commandResponder{
 		context:       context.Background(),
+		session:       session,
 		connection:    session.connection,
 		replySubject:  "_INBOX.command-response",
 		validator:     compileValidator(t),
 		commandID:     mustID(t, "cmd"),
 		correlationID: mustID(t, "cor"),
+		entityID:      testEntityID,
+		deadline:      time.Now().Add(time.Second),
 	}
 	session.connection.Close()
 
-	if err := responder.Accept(); err == nil || errors.Is(err, ErrAlreadyResponded) {
-		t.Fatalf("first response error = %v, want publish error", err)
+	evidence, err := responder.Accept()
+	if err == nil || errors.Is(err, ErrAlreadyResponded) || evidence != nil {
+		t.Fatalf("first Accept = %v, %v; want nil evidence and publish error", evidence, err)
 	}
 	if responder.didRespond() {
 		t.Fatal("failed publish consumed responder")
 	}
-	if err := responder.Accept(); err == nil || errors.Is(err, ErrAlreadyResponded) {
-		t.Fatalf("retry response error = %v, want publish error", err)
+	evidence, err = responder.Accept()
+	if err == nil || errors.Is(err, ErrAlreadyResponded) || evidence != nil {
+		t.Fatalf("retry Accept = %v, %v; want nil evidence and publish error", evidence, err)
 	}
 }
 
-func TestLinkedObservationReusesCommandCausality(t *testing.T) {
+func TestCommandEvidencePublishesAfterHandlerReturnWithAcceptedMetadata(t *testing.T) {
 	t.Parallel()
 	server := startServer(t, -1, t.TempDir())
 	core := connectNATS(t, server.ClientURL())
 	stream := createObservationStream(t, core)
 	session := connectSession(t, server.ClientURL())
-	serveContext := t.Context()
-	published := make(chan error, 1)
+	evidenceReady := make(chan CommandEvidence, 1)
+	handlerReturned := make(chan struct{})
 	serveDone := make(chan error, 1)
 	subscriptions := server.NumSubscriptions()
 	go func() {
-		serveDone <- session.ServeCommands(serveContext, func(ctx context.Context, command Command, responder Responder) error {
-			if err := responder.Accept(); err != nil {
+		serveDone <- session.ServeCommands(t.Context(), func(_ context.Context, _ Command, responder Responder) error {
+			defer close(handlerReturned)
+			evidence, err := responder.Accept()
+			if err != nil {
 				return err
 			}
-			_, err := session.PublishObservation(ctx, Observation{
-				EntityID: testEntityID, Value: json.RawMessage(`true`), AdapterReceivedAt: nowString(), RefreshForCommand: &command.ID,
-			})
-			published <- err
-			return err
+			evidenceReady <- evidence
+			return nil
 		})
 	}()
 	waitForSubscription(t, server, subscriptions, serveDone)
 
-	reply, err := sendCommand(context.Background(), core, session.runtimeID, true)
+	requestContext := trace.ContextWithSpanContext(context.Background(), sampleSpanContext())
+	reply, err := sendCommand(requestContext, core, session.runtimeID, true)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if publishErr := <-published; publishErr != nil {
+	evidence := <-evidenceReady
+	<-handlerReturned
+	callerTrace := trace.NewSpanContext(trace.SpanContextConfig{
+		TraceID: trace.TraceID{16, 15, 14, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1},
+		SpanID:  trace.SpanID{8, 7, 6, 5, 4, 3, 2, 1},
+	})
+	callerContext := trace.ContextWithSpanContext(context.Background(), callerTrace)
+	observationID, publishErr := evidence.PublishObservation(callerContext, Observation{
+		EntityID: testEntityID, Value: json.RawMessage(`true`), AdapterReceivedAt: nowString(),
+	})
+	if publishErr != nil {
 		t.Fatal(publishErr)
 	}
+
 	validator := compileValidator(t)
 	response, err := natswire.Decode[CommandResponse](validator, contractsv1.CommandResponseSchemaID, reply.Data)
 	if err != nil {
@@ -917,13 +933,22 @@ func TestLinkedObservationReusesCommandCausality(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	observation, err := natswire.Decode[Observation](validator, contractsv1.ObservationSchemaID, stored.Data)
+	observation, err := natswire.Decode[wireObservation](validator, contractsv1.ObservationSchemaID, stored.Data)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if observation.CausationID == nil || *observation.CausationID != response.Data.CommandID ||
-		observation.CorrelationID != response.CorrelationID {
-		t.Fatalf("linked observation causality = %#v; response = %#v", observation, response)
+	wantSubject, err := natswire.ObservationSubject(session.adapterID, session.runtimeID, testEntityID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	publishedTrace := trace.SpanContextFromContext(natswire.ExtractTrace(context.Background(), stored.Header))
+	if stored.Subject != wantSubject || stored.Header.Get(natsgo.MsgIdHdr) != string(observationID) ||
+		observation.CausationID == nil || *observation.CausationID != response.Data.CommandID ||
+		observation.CorrelationID != response.CorrelationID ||
+		observation.Data.RefreshForCommand == nil ||
+		*observation.Data.RefreshForCommand != *observation.CausationID ||
+		observation.Data.EntityID != testEntityID || publishedTrace.TraceID() != sampleSpanContext().TraceID() {
+		t.Fatalf("linked observation = %#v; response = %#v", observation, response)
 	}
 }
 
@@ -969,7 +994,8 @@ func TestCloseWaitsForCommandHandlers(t *testing.T) {
 		serveDone <- session.ServeCommands(serveContext, func(_ context.Context, _ Command, responder Responder) error {
 			close(entered)
 			<-release
-			return responder.Accept()
+			_, err := responder.Accept()
+			return err
 		})
 	}()
 	waitForSubscription(t, server, subscriptions, serveDone)

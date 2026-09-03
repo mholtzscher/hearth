@@ -26,7 +26,7 @@ import (
 // registration, command serving, linked observation, sibling cancellation, or
 // graceful release defects.
 //
-//nolint:gocognit // One process-level lifecycle is clearest in one test.
+//nolint:cyclop,gocognit,gocyclo // One process-level lifecycle is clearest in one test.
 func TestRunConnectsBothProtocols(t *testing.T) {
 	t.Parallel()
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
@@ -83,7 +83,6 @@ func TestRunConnectsBothProtocols(t *testing.T) {
 		case setRequests <- payload:
 		default:
 		}
-		go publishMQTT(t, upstream, "zigbee2mqtt/test-light", false, []byte(`{"state":"ON"}`))
 	})
 	publishRetainedSnapshots(t, upstream)
 
@@ -113,18 +112,20 @@ func TestRunConnectsBothProtocols(t *testing.T) {
 		t.Fatalf("Adapter instance = %#v", instance)
 	}
 
-	result, err := service.ExecuteCommand(
-		ctx,
-		entity.Entity.ID,
-		devices.OperationNameSet,
-		devices.CommandParameters(`{"value":true}`),
-	)
-	if err != nil {
-		t.Fatal(err)
+	type commandResult struct {
+		result devices.CommandResult
+		err    error
 	}
-	if string(result.Value) != "true" {
-		t.Fatalf("Command result = %#v", result)
-	}
+	commandDone := make(chan commandResult, 1)
+	go func() {
+		result, executeErr := service.ExecuteCommand(
+			ctx,
+			entity.Entity.ID,
+			devices.OperationNameSet,
+			devices.CommandParameters(`{"value":true}`),
+		)
+		commandDone <- commandResult{result: result, err: executeErr}
+	}()
 	select {
 	case payload := <-setRequests:
 		var command map[string]json.RawMessage
@@ -136,6 +137,42 @@ func TestRunConnectsBothProtocols(t *testing.T) {
 		}
 	case <-ctx.Done():
 		t.Fatalf("waiting for Zigbee2MQTT set: %v", ctx.Err())
+	}
+	for {
+		history, historyErr := service.ListEntityCommands(ctx, devices.ListEntityCommandsParams{
+			EntityID: entity.Entity.ID,
+			Limit:    1,
+		})
+		if historyErr != nil {
+			t.Fatal(historyErr)
+		}
+		if len(history.Items) == 1 && history.Items[0].Status == devices.CommandStatusAccepted {
+			break
+		}
+		select {
+		case completed := <-commandDone:
+			t.Fatalf("Command completed before delayed State: result=%#v error=%v", completed.result, completed.err)
+		case <-time.After(time.Millisecond):
+		}
+	}
+	publishMQTT(t, upstream, "zigbee2mqtt/test-light", false, []byte(`{"state":"ON"}`))
+	completed := <-commandDone
+	if completed.err != nil {
+		t.Fatal(completed.err)
+	}
+	if string(completed.result.Value) != "true" {
+		t.Fatalf("Command result = %#v", completed.result)
+	}
+	var receiptCount int
+	if err = database.QueryRowContext(
+		ctx,
+		"SELECT COUNT(*) FROM observation_receipts WHERE entity_id = ?",
+		string(entity.Entity.ID),
+	).Scan(&receiptCount); err != nil {
+		t.Fatal(err)
+	}
+	if receiptCount != 2 {
+		t.Fatalf("Observation receipts = %d, want startup State plus one linked outcome", receiptCount)
 	}
 
 	stopRun()

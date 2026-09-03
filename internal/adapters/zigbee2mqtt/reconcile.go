@@ -36,6 +36,7 @@ func (z2m *Adapter) reconcile(
 	ctx context.Context,
 	generation uint64,
 	connection mqttConnection,
+	disconnect context.CancelCauseFunc,
 	state *connectionSync,
 ) error {
 	if state.inventory == nil {
@@ -46,17 +47,59 @@ func (z2m *Adapter) reconcile(
 	if err != nil {
 		return err
 	}
-	if err = z2m.ensureHealthy(ctx, generation); err != nil {
+	revision, err := z2m.activateRoutes(ctx, generation, connection, disconnect, snapshot)
+	if err != nil {
 		return err
 	}
-	z2m.installSnapshot(generation, snapshot)
+	state.snapshot = snapshot
+	state.routeRevision = revision
+	if err = z2m.session.SetHealth(ctx, adapter.HealthReport{
+		Status: adapter.HealthHealthy, SourceObservedAt: time.Now().UTC(),
+	}); err != nil {
+		_ = z2m.invalidateRoutes(ctx, generation, err)
+		state.snapshot = routeSnapshot{routes: make(map[string]commandRoute), devices: make(map[string]runtimeDevice)}
+		state.routeRevision = 0
+		return &sessionOperationError{operation: "report healthy Zigbee2MQTT bridge", err: err}
+	}
 	if err = z2m.replayPendingAvailability(ctx, state, snapshot); err != nil {
 		return err
 	}
-	if err = z2m.replayPendingState(ctx, generation, state, snapshot); err != nil {
+	if err = z2m.replayPendingState(ctx, generation, state); err != nil {
 		return err
 	}
 	return z2m.requestCurrentState(ctx, connection, *state.inventory, snapshot)
+}
+
+func (z2m *Adapter) activateRoutes(
+	ctx context.Context,
+	generation uint64,
+	connection mqttConnection,
+	disconnect context.CancelCauseFunc,
+	snapshot routeSnapshot,
+) (uint64, error) {
+	result := make(chan routeActivationResult, 1)
+	event := routesActivated{
+		generation: generation,
+		connection: connection,
+		disconnect: disconnect,
+		snapshot:   snapshot,
+		result:     result,
+	}
+	select {
+	case z2m.runtimeEvents <- event:
+	case <-ctx.Done():
+		return 0, ctx.Err()
+	case <-z2m.runtimeDone:
+		return 0, errors.New("Zigbee2MQTT runtime stopped")
+	}
+	select {
+	case activation := <-result:
+		return activation.revision, activation.err
+	case <-ctx.Done():
+		return 0, ctx.Err()
+	case <-z2m.runtimeDone:
+		return 0, errors.New("Zigbee2MQTT runtime stopped")
+	}
 }
 
 func (z2m *Adapter) buildRouteSnapshot(
@@ -137,18 +180,6 @@ func (z2m *Adapter) buildRouteSnapshot(
 	return snapshot, nil
 }
 
-func (z2m *Adapter) ensureHealthy(ctx context.Context, generation uint64) error {
-	if z2m.isHealthy(generation) {
-		return nil
-	}
-	if err := z2m.session.SetHealth(ctx, adapter.HealthReport{
-		Status: adapter.HealthHealthy, SourceObservedAt: time.Now().UTC(),
-	}); err != nil {
-		return &sessionOperationError{operation: "report healthy Zigbee2MQTT bridge", err: err}
-	}
-	return nil
-}
-
 func (z2m *Adapter) replayPendingAvailability(
 	ctx context.Context,
 	state *connectionSync,
@@ -180,14 +211,13 @@ func (z2m *Adapter) replayPendingState(
 	ctx context.Context,
 	generation uint64,
 	state *connectionSync,
-	snapshot routeSnapshot,
 ) error {
 	for _, topic := range state.pendingOrder {
 		message := state.pending[topic]
 		if _, kind := classifyDeviceTopic(
 			z2m.config.BaseTopic,
 			message.Topic,
-			snapshot.devices,
+			state.snapshot.devices,
 		); kind == deviceTopicState {
 			if err := z2m.processDeviceMessage(ctx, generation, state, message); err != nil {
 				return err

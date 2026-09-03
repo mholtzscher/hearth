@@ -1,4 +1,4 @@
-package zigbee2mqtt //nolint:testpackage // Command tests exercise package-private matchers and route snapshots.
+package zigbee2mqtt //nolint:testpackage // Command tests exercise the private runtime state machine.
 
 import (
 	"context"
@@ -6,71 +6,93 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/mholtzscher/hearth/sdk/adapter"
 )
 
-// This deterministic concurrency test protects the per-IEEE context lock. It fails if power and brightness Commands for
-// one physical Device publish concurrently or if lock waiting bypasses the existing Command context.
-func TestCommandsForSameIEEEAreSerialized(t *testing.T) {
+// This deterministic concurrency test protects per-IEEE FIFO ownership until evidence disposition completes, including
+// after the first command handler has returned.
+func TestCommandsForSameIEEEStaySerializedUntilDisposition(t *testing.T) {
 	t.Parallel()
 	recorder := &runtimeRecorder{}
 	session := newFakeSession(recorder)
-	z2m, connection, device := commandReadyAdapter(t, recorder, session)
-	firstStarted := make(chan struct{})
-	releaseFirst := make(chan struct{})
-	var setCount atomic.Int32
-	connection.onPublish = func(ctx context.Context, _ *fakeConnection, topic string, payload []byte) error {
-		if topic != "zigbee2mqtt/fixture-light/set" {
-			return nil
-		}
-		count := setCount.Add(1)
-		if count == 1 {
-			close(firstStarted)
+	z2m, _, connection, device := commandReadyAdapter(t, recorder, session)
+	firstLinked := make(chan struct{})
+	releaseFirstLinked := make(chan struct{})
+	var linkedCount atomic.Int32
+	session.publishHook = func(ctx context.Context, _ adapter.Observation, linked bool) error {
+		if linked && linkedCount.Add(1) == 1 {
+			close(firstLinked)
 			select {
-			case <-releaseFirst:
+			case <-releaseFirstLinked:
 			case <-ctx.Done():
 				return ctx.Err()
 			}
 		}
-		return z2m.publishDeviceState(ctx, 1, device, mqttMessage{
-			Topic: "zigbee2mqtt/fixture-light", Payload: append([]byte(nil), payload...), ReceivedAt: time.Now().UTC(),
-		})
+		return nil
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
-	defer cancel()
+	var setCount atomic.Int32
+	connection.onPublish = func(ctx context.Context, _ *fakeConnection, topic string, payload []byte) error {
+		if !strings.HasSuffix(topic, "/set") {
+			return nil
+		}
+		setCount.Add(1)
+		return publishState(ctx, z2m, device, string(payload), time.Now().UTC())
+	}
 	results := make(chan error, 2)
 	go func() {
-		results <- z2m.HandleCommand(ctx, testCommand(device.entities[0].entityID, `{"value":true}`), &fakeResponder{recorder: recorder})
-	}()
-	<-firstStarted
-	go func() {
-		results <- z2m.HandleCommand(ctx, testCommand(device.entities[1].entityID, `{"value":50}`), &fakeResponder{recorder: recorder})
+		results <- z2m.HandleCommand(
+			context.Background(),
+			testCommand(device.entities[0].entityID, `{"value":true}`),
+			newFakeResponder(recorder, session),
+		)
 	}()
 	select {
-	case <-time.After(30 * time.Millisecond):
-		if setCount.Load() != 1 {
-			t.Fatalf("same-IEEE set publications overlapped: %d", setCount.Load())
-		}
 	case err := <-results:
-		t.Fatalf("second same-IEEE Command completed while first was blocked: %v", err)
-	}
-	close(releaseFirst)
-	for range 2 {
-		if err := <-results; err != nil {
+		if err != nil {
 			t.Fatal(err)
 		}
+	case <-time.After(time.Second):
+		t.Fatal("first handler did not return after acceptance")
 	}
-	if setCount.Load() != 2 {
-		t.Fatalf("set publication count = %d", setCount.Load())
+	<-firstLinked
+	secondResult := make(chan error, 1)
+	z2m.runtimeEvents <- commandSubmitted{
+		ctx:       context.Background(),
+		command:   testCommand(device.entities[1].entityID, `{"value":50}`),
+		responder: newFakeResponder(recorder, session),
+		result:    secondResult,
 	}
+	if err := publishState(
+		context.Background(),
+		z2m,
+		device,
+		`{"brightness":50}`,
+		time.Now().UTC(),
+	); err != nil {
+		t.Fatal(err)
+	}
+	if setCount.Load() != 1 {
+		t.Fatalf("same-IEEE set publications overlapped: %d", setCount.Load())
+	}
+	select {
+	case err := <-secondResult:
+		t.Fatalf("second same-IEEE Command completed before first disposition: %v", err)
+	default:
+	}
+	close(releaseFirstLinked)
+	if err := <-secondResult; err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, func() bool { return setCount.Load() == 2 })
 }
 
-// This test protects lock granularity. It fails if a global lock prevents Commands for independent IEEE Devices from
-// reaching MQTT concurrently.
+// This test protects queue granularity: independent IEEE Devices may wait on MQTT PUBACK concurrently.
 func TestCommandsForDifferentIEEEDevicesOverlap(t *testing.T) {
 	t.Parallel()
 	recorder := &runtimeRecorder{}
 	session := newFakeSession(recorder)
-	z2m, connection, first := commandReadyAdapter(t, recorder, session)
+	z2m, coordinator, connection, first := commandReadyAdapter(t, recorder, session)
 	second := first
 	second.ieeeAddress = "0x0000000000000002"
 	second.friendly = "other-light"
@@ -87,14 +109,26 @@ func TestCommandsForDifferentIEEEDevicesOverlap(t *testing.T) {
 			}
 		}
 	}
-	z2m.installSnapshot(1, routeSnapshot{
-		routes:  routes,
-		devices: map[string]runtimeDevice{first.friendly: first, second.friendly: second},
-	})
+	activation := make(chan routeActivationResult, 1)
+	z2m.runtimeEvents <- routesActivated{
+		generation: 1,
+		connection: connection,
+		disconnect: func(error) {},
+		snapshot: routeSnapshot{
+			routes:  routes,
+			devices: map[string]runtimeDevice{first.friendly: first, second.friendly: second},
+		},
+		result: activation,
+	}
+	if result := <-activation; result.err != nil {
+		t.Fatal(result.err)
+	}
+	_ = coordinator
+
 	bothStarted := make(chan struct{})
 	release := make(chan struct{})
 	var started atomic.Int32
-	connection.onPublish = func(ctx context.Context, _ *fakeConnection, topic string, payload []byte) error {
+	connection.onPublish = func(ctx context.Context, _ *fakeConnection, topic string, _ []byte) error {
 		if !strings.HasSuffix(topic, "/set") {
 			return nil
 		}
@@ -103,33 +137,24 @@ func TestCommandsForDifferentIEEEDevicesOverlap(t *testing.T) {
 		}
 		select {
 		case <-release:
+			return nil
 		case <-ctx.Done():
 			return ctx.Err()
 		}
-		device := first
-		if strings.Contains(topic, "/other-light/") {
-			device = second
-		}
-		return z2m.publishDeviceState(ctx, 1, device, mqttMessage{
-			Topic: strings.TrimSuffix(
-				topic,
-				"/set",
-			),
-			Payload:    append([]byte(nil), payload...),
-			ReceivedAt: time.Now().UTC(),
-		})
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
-	defer cancel()
 	results := make(chan error, 2)
 	for _, entityID := range []string{first.entities[0].entityID, second.entities[0].entityID} {
 		go func() {
-			results <- z2m.HandleCommand(ctx, testCommand(entityID, `{"value":true}`), &fakeResponder{recorder: recorder})
+			results <- z2m.HandleCommand(
+				context.Background(),
+				testCommand(entityID, `{"value":true}`),
+				newFakeResponder(recorder, session),
+			)
 		}()
 	}
 	select {
 	case <-bothStarted:
-	case <-ctx.Done():
+	case <-time.After(time.Second):
 		t.Fatal("different-IEEE Commands did not overlap")
 	}
 	close(release)
@@ -140,69 +165,66 @@ func TestCommandsForDifferentIEEEDevicesOverlap(t *testing.T) {
 	}
 }
 
-// This test protects cancellation of an already-claimed report and fails if disconnect races publish it as linked or drops it.
-func TestUnhealthyTransitionPublishesClaimedStateAsOrdinary(t *testing.T) {
+// This test protects invalidation acknowledgement: routes become unavailable immediately, unaccepted work is rejected,
+// and a claimed pre-link report receives exactly one ordinary fallback.
+func TestRouteInvalidationRejectsAndFallsBack(t *testing.T) {
 	t.Parallel()
 	recorder := &runtimeRecorder{}
 	session := newFakeSession(recorder)
-	z2m, connection, device := commandReadyAdapter(t, recorder, session)
+	z2m, _, connection, device := commandReadyAdapter(t, recorder, session)
+	setStarted := make(chan struct{})
+	releaseSet := make(chan struct{})
 	connection.onPublish = func(ctx context.Context, _ *fakeConnection, topic string, _ []byte) error {
-		switch topic {
-		case "zigbee2mqtt/fixture-light/set":
-			return z2m.publishDeviceState(ctx, 1, device, mqttMessage{
-				Topic: "zigbee2mqtt/fixture-light", Payload: []byte(`{"state":"ON"}`),
-				ReceivedAt: time.Now().UTC(),
-			})
-		case "zigbee2mqtt/fixture-light/get":
-			z2m.disableRoutes()
+		if strings.HasSuffix(topic, "/set") {
+			if err := publishState(ctx, z2m, device, `{"state":"ON"}`, time.Now().UTC()); err != nil {
+				return err
+			}
+			close(setStarted)
+			select {
+			case <-releaseSet:
+				return nil
+			case <-ctx.Done():
+				return ctx.Err()
+			}
 		}
 		return nil
 	}
-	responder := &fakeResponder{recorder: recorder}
-	if err := z2m.HandleCommand(
-		context.Background(),
-		testCommand(device.entities[0].entityID, `{"value":true}`),
-		responder,
-	); err != nil {
-		t.Fatal(err)
-	}
-	if responder.accepted != 1 || len(session.observations) != 1 ||
-		session.observations[0].RefreshForCommand != nil {
-		t.Fatalf("responder=%#v observations=%#v", responder, session.observations)
-	}
-}
-
-// This test protects typed entity_unavailable rejection and matcher cancellation when health removes route snapshots.
-func TestUnhealthyTransitionCancelsCommandAndRejectsMissingRoute(t *testing.T) {
-	t.Parallel()
-	recorder := &runtimeRecorder{}
-	session := newFakeSession(recorder)
-	z2m, connection, device := commandReadyAdapter(t, recorder, session)
-	accepted := make(chan struct{})
-	connection.onPublish = func(_ context.Context, _ *fakeConnection, topic string, _ []byte) error {
-		if topic == "zigbee2mqtt/fixture-light/get" {
-			close(accepted)
-		}
-		return nil
-	}
+	responder := newFakeResponder(recorder, session)
 	result := make(chan error, 1)
 	go func() {
-		result <- z2m.HandleCommand(context.Background(), testCommand(device.entities[0].entityID, `{"value":true}`), &fakeResponder{recorder: recorder})
+		result <- z2m.HandleCommand(
+			context.Background(),
+			testCommand(device.entities[0].entityID, `{"value":true}`),
+			responder,
+		)
 	}()
-	<-accepted
-	z2m.disableRoutes()
+	<-setStarted
+	invalidated := make(chan error, 1)
+	z2m.runtimeEvents <- routesInvalidated{generation: 1, cause: context.Canceled, result: invalidated}
+	if err := <-invalidated; err != nil {
+		t.Fatal(err)
+	}
+	close(releaseSet)
 	if err := <-result; err != nil {
 		t.Fatal(err)
 	}
-	responder := &fakeResponder{recorder: recorder}
+	waitFor(t, func() bool {
+		session.mutex.Lock()
+		defer session.mutex.Unlock()
+		return len(session.observations) == 1
+	})
+	if responder.unavailable != 1 || responder.accepted != 0 || len(session.linked) != 0 {
+		t.Fatalf("responder=%#v ordinary=%#v linked=%#v", responder, session.observations, session.linked)
+	}
+	missing := newFakeResponder(recorder, session)
 	if err := z2m.HandleCommand(
 		context.Background(),
 		testCommand(device.entities[0].entityID, `{"value":true}`),
-		responder,
+		missing,
 	); err != nil {
 		t.Fatal(err)
 	}
-	if responder.unavailable != 1 || responder.accepted != 0 {
-		t.Fatalf("missing route responder = %#v", responder)
+	if missing.unavailable != 1 {
+		t.Fatalf("missing route responder = %#v", missing)
 	}
 }

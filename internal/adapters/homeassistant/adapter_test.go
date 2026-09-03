@@ -27,6 +27,7 @@ const (
 type recordingSession struct {
 	mutex               sync.Mutex
 	observations        []adapter.Observation
+	linkedObservations  []adapter.Observation
 	healthReports       []adapter.HealthReport
 	availabilityReports []adapter.EntityAvailabilityReport
 	healthHook          func(adapter.HealthReport)
@@ -74,6 +75,28 @@ func (session *recordingSession) values() []adapter.Observation {
 	return append([]adapter.Observation(nil), session.observations...)
 }
 
+func (session *recordingSession) evidence() adapter.CommandEvidence {
+	return recordingEvidence{session: session}
+}
+
+func (session *recordingSession) linkedValues() []adapter.Observation {
+	session.mutex.Lock()
+	defer session.mutex.Unlock()
+	return append([]adapter.Observation(nil), session.linkedObservations...)
+}
+
+type recordingEvidence struct{ session *recordingSession }
+
+func (evidence recordingEvidence) PublishObservation(
+	_ context.Context,
+	observation adapter.Observation,
+) (adapter.ObservationID, error) {
+	evidence.session.mutex.Lock()
+	defer evidence.session.mutex.Unlock()
+	evidence.session.linkedObservations = append(evidence.session.linkedObservations, observation)
+	return "obs_01890f47-7a6b-7c4d-8e9f-0123456789ab", nil
+}
+
 func (session *recordingSession) health() []adapter.HealthReport {
 	session.mutex.Lock()
 	defer session.mutex.Unlock()
@@ -91,13 +114,15 @@ type recordingResponder struct {
 	accepted    bool
 	rejected    bool
 	unavailable bool
+	evidence    adapter.CommandEvidence
 }
 
-func (responder *recordingResponder) Accept() error {
+func (responder *recordingResponder) Accept() (adapter.CommandEvidence, error) {
 	responder.mutex.Lock()
 	responder.accepted = true
+	evidence := responder.evidence
 	responder.mutex.Unlock()
-	return nil
+	return evidence, nil
 }
 
 func (responder *recordingResponder) Reject(string) error {
@@ -288,7 +313,7 @@ func TestSetRetainsMatchingRefreshWhenImmediatelySuperseded(t *testing.T) {
 	if handlerErr != nil {
 		t.Fatal(handlerErr)
 	}
-	responder := &recordingResponder{}
+	responder := &recordingResponder{evidence: session.evidence()}
 	if err := handler(ctx, adapter.Command{
 		ID:            testCommandID,
 		CorrelationID: "cor_01890f47-7a6b-7c4d-8e9f-0123456789ab",
@@ -306,17 +331,14 @@ func TestSetRetainsMatchingRefreshWhenImmediatelySuperseded(t *testing.T) {
 			accepted, rejected, unavailable,
 		)
 	}
-	observations := session.values()
+	linked := session.linkedValues()
 	var staleLinked, matchingLinked bool
-	for _, observation := range observations {
-		if observation.RefreshForCommand == nil || *observation.RefreshForCommand != testCommandID {
-			continue
-		}
+	for _, observation := range linked {
 		staleLinked = staleLinked || string(observation.Value) == "false"
 		matchingLinked = matchingLinked || string(observation.Value) == "true"
 	}
 	if !staleLinked || !matchingLinked {
-		t.Fatalf("linked refreshes did not preserve stale evidence and reacquire the target: %#v", observations)
+		t.Fatalf("linked refreshes did not preserve stale evidence and reacquire the target: %#v", linked)
 	}
 
 	cancel()
@@ -385,7 +407,7 @@ func TestCommandConfirmedUnavailableUsesTypedRejection(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	responder := &recordingResponder{}
+	responder := &recordingResponder{evidence: session.evidence()}
 	if err = handler(ctx, adapter.Command{
 		ID: testCommandID, CorrelationID: "cor_01890f47-7a6b-7c4d-8e9f-0123456789ab",
 		EntityID: testEntityID, OperationName: "set", Parameters: json.RawMessage(`{"value":false}`),
@@ -448,12 +470,12 @@ func TestUnavailableStateReportsAvailabilityWithoutReplacingState(t *testing.T) 
 	migrationAdapter := newTestAdapter(t, session, "http://127.0.0.1:1")
 	if err := migrationAdapter.processState(context.Background(), upstreamState{
 		EntityID: testExternalEntityID, State: stateUnavailable,
-	}, time.Now().UTC(), nil); err != nil {
+	}, time.Now().UTC()); err != nil {
 		t.Fatal(err)
 	}
 	if err := migrationAdapter.processState(context.Background(), upstreamState{
 		EntityID: testExternalEntityID, State: "unsupported",
-	}, time.Now().UTC(), nil); !errors.Is(err, errUnsupportedState) {
+	}, time.Now().UTC()); !errors.Is(err, errUnsupportedState) {
 		t.Fatalf("process unsupported State error = %v", err)
 	}
 	availability := session.availability()
@@ -465,7 +487,7 @@ func TestUnavailableStateReportsAvailabilityWithoutReplacingState(t *testing.T) 
 	if handlerErr != nil {
 		t.Fatal(handlerErr)
 	}
-	responder := &recordingResponder{}
+	responder := &recordingResponder{evidence: session.evidence()}
 	if err := handler(context.Background(), adapter.Command{
 		ID: testCommandID, EntityID: testEntityID, OperationName: "set",
 		Parameters: json.RawMessage(`{"value":false}`),
@@ -508,7 +530,7 @@ func TestPublishOmitsMalformedLastUpdated(t *testing.T) {
 	migrationAdapter := newTestAdapter(t, session, "http://127.0.0.1:1")
 	if err := migrationAdapter.publish(context.Background(), upstreamState{
 		EntityID: testExternalEntityID, State: "on", LastUpdated: "not-a-timestamp",
-	}, time.Now().UTC(), nil); err != nil {
+	}, time.Now().UTC()); err != nil {
 		t.Fatal(err)
 	}
 	observations := session.values()

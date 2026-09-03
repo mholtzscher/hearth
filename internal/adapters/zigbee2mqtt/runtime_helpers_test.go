@@ -36,9 +36,11 @@ type fakeSession struct {
 	pageRequests []adapter.OwnedMappingPageRequest
 	bindings     map[string]adapter.Binding
 	registerHook func(context.Context, adapter.Registration)
+	publishHook  func(context.Context, adapter.Observation, bool) error
 	health       []adapter.HealthReport
 	availability []adapter.EntityAvailabilityReport
 	observations []adapter.Observation
+	linked       []adapter.Observation
 }
 
 func newFakeSession(recorder *runtimeRecorder) *fakeSession {
@@ -105,18 +107,44 @@ func (session *fakeSession) ReportEntityAvailability(
 }
 
 func (session *fakeSession) PublishObservation(
-	_ context.Context,
+	ctx context.Context,
 	observation adapter.Observation,
 ) (adapter.ObservationID, error) {
+	if session.publishHook != nil {
+		if err := session.publishHook(ctx, observation, false); err != nil {
+			return "obs-test", err
+		}
+	}
 	session.mutex.Lock()
 	session.observations = append(session.observations, observation)
 	session.mutex.Unlock()
-	if observation.RefreshForCommand == nil {
-		session.recorder.add("observation")
-	} else {
-		session.recorder.add("linked-observation")
-	}
+	session.recorder.add("observation")
 	return "obs-test", nil
+}
+
+func (session *fakeSession) publishLinked(
+	ctx context.Context,
+	observation adapter.Observation,
+) (adapter.ObservationID, error) {
+	if session.publishHook != nil {
+		if err := session.publishHook(ctx, observation, true); err != nil {
+			return "obs-linked", err
+		}
+	}
+	session.mutex.Lock()
+	session.linked = append(session.linked, observation)
+	session.mutex.Unlock()
+	session.recorder.add("linked-observation")
+	return "obs-linked", nil
+}
+
+type fakeEvidence struct{ session *fakeSession }
+
+func (evidence fakeEvidence) PublishObservation(
+	ctx context.Context,
+	observation adapter.Observation,
+) (adapter.ObservationID, error) {
+	return evidence.session.publishLinked(ctx, observation)
 }
 
 type fakeDialer struct {
@@ -205,17 +233,28 @@ func (connection *fakeConnection) emit(topic string, payload []byte, retained bo
 type fakeResponder struct {
 	mutex       sync.Mutex
 	recorder    *runtimeRecorder
+	evidence    adapter.CommandEvidence
+	acceptErr   error
 	accepted    int
 	rejected    int
 	unavailable int
 }
 
-func (responder *fakeResponder) Accept() error {
+func newFakeResponder(recorder *runtimeRecorder, session *fakeSession) *fakeResponder {
+	return &fakeResponder{recorder: recorder, evidence: fakeEvidence{session: session}}
+}
+
+func (responder *fakeResponder) Accept() (adapter.CommandEvidence, error) {
 	responder.mutex.Lock()
 	responder.accepted++
+	err := responder.acceptErr
+	evidence := responder.evidence
 	responder.mutex.Unlock()
 	responder.recorder.add("accept")
-	return nil
+	if err != nil {
+		return nil, err
+	}
+	return evidence, nil
 }
 
 func (responder *fakeResponder) Reject(string) error {
@@ -248,6 +287,22 @@ func newRuntimeAdapter(t *testing.T, session *fakeSession, dialer mqttDialer) *A
 	}
 	z2m.retryDelay = func(time.Duration) time.Duration { return 0 }
 	return z2m
+}
+
+func startCoordinator(t *testing.T, z2m *Adapter) *runtimeCoordinator {
+	t.Helper()
+	ctx, cancel := context.WithCancel(context.Background())
+	coordinator := newRuntimeCoordinator(ctx, z2m)
+	go func() { _ = coordinator.run() }()
+	t.Cleanup(func() {
+		cancel()
+		select {
+		case <-z2m.runtimeDone:
+		case <-time.After(3 * time.Second):
+			t.Fatal("runtime coordinator did not stop")
+		}
+	})
+	return coordinator
 }
 
 func waitFor(t *testing.T, condition func() bool) {
@@ -287,9 +342,10 @@ func commandReadyAdapter(
 	t *testing.T,
 	recorder *runtimeRecorder,
 	session *fakeSession,
-) (*Adapter, *fakeConnection, runtimeDevice) {
+) (*Adapter, *runtimeCoordinator, *fakeConnection, runtimeDevice) {
 	t.Helper()
 	z2m := newRuntimeAdapter(t, session, &fakeDialer{})
+	coordinator := startCoordinator(t, z2m)
 	connection := newFakeConnection(recorder)
 	device := mustDiscoveredFixtureDevice(t, "bridge-devices-3rcb01057z.json")
 	binding := adapter.Binding{BindingKey: device.Registration.BindingKey, DeviceID: "dev-test"}
@@ -307,10 +363,6 @@ func commandReadyAdapter(
 	if err != nil {
 		t.Fatal(err)
 	}
-	z2m.mutex.Lock()
-	z2m.generation = 1
-	z2m.connection = connection
-	z2m.mutex.Unlock()
 	routes := make(map[string]commandRoute)
 	for _, entity := range runtime.entities {
 		routes[entity.entityID] = commandRoute{
@@ -318,8 +370,33 @@ func commandReadyAdapter(
 			entity: entity.discovered, connectionGeneration: 1,
 		}
 	}
-	z2m.installSnapshot(1, routeSnapshot{routes: routes, devices: map[string]runtimeDevice{runtime.friendly: runtime}})
-	return z2m, connection, runtime
+	activation := make(chan routeActivationResult, 1)
+	z2m.runtimeEvents <- routesActivated{
+		generation: 1,
+		connection: connection,
+		disconnect: func(error) {},
+		snapshot:   routeSnapshot{routes: routes, devices: map[string]runtimeDevice{runtime.friendly: runtime}},
+		result:     activation,
+	}
+	result := <-activation
+	if result.err != nil {
+		t.Fatal(result.err)
+	}
+	return z2m, coordinator, connection, runtime
+}
+
+func publishState(
+	ctx context.Context,
+	z2m *Adapter,
+	device runtimeDevice,
+	payload string,
+	receivedAt time.Time,
+) error {
+	return z2m.publishDeviceState(ctx, 1, 1, device, mqttMessage{
+		Topic:      "zigbee2mqtt/" + device.friendly,
+		Payload:    []byte(payload),
+		ReceivedAt: receivedAt,
+	})
 }
 
 func testCommand(entityID, parameters string) adapter.Command {

@@ -37,7 +37,7 @@ Delete `internal/platform/nats` without a forwarding package or compatibility al
 | D3 | Rewire `hearthd`, SDK, simulator, readiness, and integration harnesses | M | D1, D2 |
 | D4 | Preserve compatibility coverage and update ownership documentation | M | D1–D3 |
 
-Unless specified as an ownership change, preserve schemas and IDs, subjects and payloads, JetStream policy, transport semantics and errors, timing and concurrency, logging fields, readiness and shutdown, configuration, and every exported `sdk/adapter` API. Core and SDK payload DTOs remain separate and schema-governed. Connection creation and process lifecycle remain in `hearthd`.
+Unless specified as an ownership change, preserve schemas and IDs, subjects and payloads, JetStream policy, transport semantics and errors, timing and concurrency, logging fields, readiness and shutdown, and configuration. Core and SDK payload DTOs remain separate and schema-governed. The later command-evidence capability intentionally changes only the SDK's public Observation and `Responder.Accept` contracts; it preserves the wire payload, link field, and Core behavior. Connection creation and process lifecycle remain in `hearthd`.
 
 Dependency flows from `internal/modules/devices/nats` to the parent `devices` package. The parent package must not import `devices/nats`, `nats.go`, or JetStream or expose their types in its interface.
 
@@ -293,7 +293,7 @@ func ValidateObservationResources(
 
 ### SDK compatibility
 
-`sdk/adapter` retains its current exported source interface, including `Config`, `Session`, payload and responder types, rejection and validation types, and exported errors. It removes its private envelope, subject builders/parsers and validation, header carrier, and stored propagator in favor of `natswire`.
+`sdk/adapter` retains its `Config`, `Session`, rejection and validation types, and exported errors. Its public `Observation` type omits `refresh_for_command_id`; successful `Responder.Accept` returns command evidence whose private publisher supplies that unchanged wire link with matching causation, correlation, trace context, Entity, runtime, and deadline. Ordinary `Session.PublishObservation` remains unlinked. It removes its private envelope, subject builders/parsers and validation, header carrier, and stored propagator in favor of `natswire`.
 
 Connection creation, JetStream publication retry, command concurrency and responses, ID generation, logging, and transient error classification remain in the SDK. Existing validation still makes shared subject errors impossible; handle them without changing caller-visible error classification or text.
 
@@ -327,7 +327,7 @@ Connection creation, JetStream publication retry, command concurrency and respon
 - `RuntimeReadiness.Check` continues to validate SQLite, NATS connectivity, stream/consumer configuration, and active consumption in that order. `hearthd.Run` retains startup and shutdown order.
 - `hearthd` assembles `devicesnats.NewCommandSender`, `StartRegistrationServer(..., service, ...)`, and `StartObservationConsumer(..., service, ...)`; it no longer defines `natsCommandSender`, `registrationHandler`, `observationHandler`, `domainObservation`, or `copyStringPointer`.
 - Replace the restart-before-ack matrix test's wire-level `ObservationHandler` decorator with an `ObservationProjector` decorator. It may inspect `devices.Observation.RefreshForCommand`; it must delegate to the real service before returning the same injected error.
-- Raw linked-observation fixtures use `natswire.Envelope` with an SDK or test-local Observation DTO, not exported core payload types.
+- Raw linked-observation fixtures use `natswire.Envelope` with a test-local wire Observation DTO, not exported core payload types or the public SDK Observation type.
 
 ## Project Layout
 
@@ -409,9 +409,9 @@ There is no data or deployment migration, feature flag, or mixed-version require
 - [ ] The parent `devices` package does not import `devices/nats`, `nats.go`, or JetStream or expose their types; transport dependencies point from `devices/nats` to `devices`.
 - [ ] `hearthd/run.go` contains assembly but no NATS wire construction, parsing, copying, registration rejection mapping, or command error mapping.
 - [ ] `hearthd` creates and drains the focused device NATS adapters while retaining connection and lifecycle ownership.
-- [ ] The public `sdk/adapter` source interface is unchanged.
+- [ ] The public `sdk/adapter` surface changes only for command evidence: `Observation` has no raw link and `Responder.Accept` returns the evidence capability.
 - [ ] Subjects, validation and errors, schema IDs, and core/SDK payload JSON remain compatible.
-- [ ] Registration, observation, command, JetStream, readiness, logging, concurrency, startup, and shutdown contracts above remain unchanged.
+- [ ] Core Registration, Observation, Command, JetStream, readiness, logging, concurrency, startup, and shutdown contracts above remain unchanged.
 - [ ] Restart-before-ack still proves that redelivery does not change state or terminal command data; duplicate and malformed simulator scenarios still pass.
 
 ### Verification
