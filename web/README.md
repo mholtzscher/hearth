@@ -48,5 +48,18 @@ npm run preview
 - **Devices**: list + detail with embedded entities.
 - **Adapters**: list + detail with runtime evidence, health history, raw JSON.
 - **Commands**: lookup by `cmd_…` id (`GET /v1/commands/{id}`).
+- **NATS**: live wire traffic (`hearth.v1.adapter.>` over websocket) with
+  subject presets, pause/clear, and subject filter; plus server info from the
+  NATS monitoring endpoint (connections with subscriptions, JetStream stream
+  `HEARTH_OBSERVATIONS_V1` state and consumer lag).
 
 Health (`/healthz`) and readiness (`/readyz`) poll every 10s in the header.
+
+## NATS debugging prerequisites
+
+The NATS page needs the dev-only loopback listeners in
+`configs/nats-server.conf` (already present: `websocket` on
+`127.0.0.1:4223`, `http` monitoring on `127.0.0.1:8222`). Restart NATS after
+changing that file (`mise run nats`). Vite proxies `/nats-monitor` to the
+monitoring port (override with `NATS_MONITOR_URL`); the websocket URL is
+editable in the page (stored in `localStorage`).

@@ -6,6 +6,7 @@ import react from "@vitejs/plugin-react";
 // Run hearthd first, e.g. `go run ./cmd/hearthd -config configs/hearthd.yaml`
 // (default bind 127.0.0.1:8080), then `npm run dev`.
 const HEARTHD = process.env.HEARTHD_URL ?? "http://127.0.0.1:8080";
+const NATS_MONITOR = process.env.NATS_MONITOR_URL ?? "http://127.0.0.1:8222";
 
 export default defineConfig({
   plugins: [react()],
@@ -16,6 +17,10 @@ export default defineConfig({
       "/healthz": HEARTHD,
       "/readyz": HEARTHD,
       "/openapi.json": HEARTHD,
+      "/nats-monitor": {
+        target: NATS_MONITOR,
+        rewrite: (path) => path.replace(/^\/nats-monitor/, ""),
+      },
     },
   },
 });

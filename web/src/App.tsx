@@ -9,6 +9,7 @@ import CommandsPage from "./pages/CommandsPage.tsx";
 import DevicesPage from "./pages/DevicesPage.tsx";
 import EntitiesPage from "./pages/EntitiesPage.tsx";
 import EntityDetailPage from "./pages/EntityDetailPage.tsx";
+import NatsPage from "./pages/NatsPage.tsx";
 
 function HealthBadges() {
   const health = usePolling("healthz", api.health, 10_000);
@@ -77,6 +78,9 @@ function Shell() {
           <Button color="inherit" component={RouterLink} to="/commands">
             Commands
           </Button>
+          <Button color="inherit" component={RouterLink} to="/nats">
+            NATS
+          </Button>
           <Box sx={{ flexGrow: 1 }} />
           <HealthBadges />
         </Toolbar>
@@ -111,6 +115,7 @@ function Shell() {
           <Route path="/devices" element={<DevicesPage />} />
           <Route path="/adapters" element={<AdaptersPage />} />
           <Route path="/commands" element={<CommandsPage />} />
+          <Route path="/nats" element={<NatsPage />} />
         </Routes>
       </Container>
     </Box>
