@@ -20,16 +20,21 @@ export function setNatsWsUrl(value: string): void {
 }
 
 let connection: NatsConnection | null = null;
+let connectionUrl: string | null = null;
 
 export async function natsConnect(): Promise<NatsConnection> {
-  if (connection && !connection.isClosed()) return connection;
-  connection = await connect({ servers: getNatsWsUrl(), timeout: 5000 });
+  const url = getNatsWsUrl();
+  if (connection && !connection.isClosed() && connectionUrl === url) return connection;
+  await natsDisconnect();
+  connection = await connect({ servers: url, timeout: 5000 });
+  connectionUrl = url;
   return connection;
 }
 
 export async function natsDisconnect(): Promise<void> {
   const nc = connection;
   connection = null;
+  connectionUrl = null;
   if (nc && !nc.isClosed()) await nc.close();
 }
 

@@ -12,7 +12,8 @@ import {
   Typography,
 } from "@mui/material";
 import { useEffect, useRef, useState } from "react";
-import { apiFetch } from "../api/client.ts";
+import { ApiError } from "../api/client.ts";
+import type { ProblemDetail } from "../api/types.ts";
 import { useApi, usePolling } from "../api/hooks.ts";
 import type { NatsMessage, Subscription } from "../api/nats.ts";
 import {
@@ -25,6 +26,18 @@ import {
 import { ErrorBox, Facts, JsonCode, RawJson, Section, StatusChip } from "../components/common.tsx";
 
 const MAX_MESSAGES = 200;
+
+/** Monitoring endpoints live on the vite proxy origin, never under the
+    toolbar's hearthd base URL (hearthd serves no /nats-monitor routes). */
+async function monitorFetch<T>(path: string): Promise<T> {
+  const res = await fetch(`/nats-monitor${path}`);
+  const text = await res.text();
+  const body = text ? (JSON.parse(text) as T) : (undefined as T);
+  if (!res.ok) {
+    throw new ApiError(res.status, (body as ProblemDetail) ?? res.statusText);
+  }
+  return body;
+}
 
 const SUBJECT_PRESETS = [
   { label: "all adapter traffic", subject: "hearth.v1.adapter.>" },
@@ -48,16 +61,21 @@ function LiveMessages() {
   const [messages, setMessages] = useState<NatsMessage[]>([]);
   const subRef = useRef<Subscription | null>(null);
   const pausedRef = useRef(false);
+  const mountedRef = useRef(true);
 
   useEffect(() => {
     pausedRef.current = paused;
   }, [paused]);
 
   useEffect(
-    () => () => {
-      subRef.current?.unsubscribe();
-      subRef.current = null;
-      void natsDisconnect();
+    () => {
+      mountedRef.current = true;
+      return () => {
+        mountedRef.current = false;
+        subRef.current?.unsubscribe();
+        subRef.current = null;
+        void natsDisconnect();
+      };
     },
     [],
   );
@@ -69,6 +87,10 @@ function LiveMessages() {
     setStatus("connecting");
     try {
       const nc = await natsConnect();
+      if (!mountedRef.current) {
+        await natsDisconnect();
+        return;
+      }
       const sub = nc.subscribe(target);
       subRef.current = sub;
       setStatus("connected");
@@ -230,13 +252,13 @@ interface JetStreamAccountDetail {
 }
 
 function ServerInfo() {
-  const varz = usePolling<Varz>("nats-varz", () => apiFetch<Varz>("/nats-monitor/varz"), 10_000);
+  const varz = usePolling<Varz>("nats-varz", () => monitorFetch<Varz>("/varz"), 10_000);
   const conns = useApi<{ connections?: ConnInfo[] }>("nats-connz", () =>
-    apiFetch<{ connections?: ConnInfo[] }>("/nats-monitor/connz?subs=1"),
+    monitorFetch<{ connections?: ConnInfo[] }>("/connz?subs=1"),
   );
   const jsz = useApi<{ account_details?: JetStreamAccountDetail[] }>("nats-jsz", () =>
-    apiFetch<{ account_details?: JetStreamAccountDetail[] }>(
-      "/nats-monitor/jsz?streams=true&consumers=true",
+    monitorFetch<{ account_details?: JetStreamAccountDetail[] }>(
+      "/jsz?streams=true&consumers=true",
     ),
   );
 
