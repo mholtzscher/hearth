@@ -328,18 +328,18 @@ func TestCoreCommandRoundTripRequiresLinkedSimulatorObservation(t *testing.T) {
 	}
 	handler, err := sdkpowerv1.NewCommandHandler(string(entityID), support, sdkpowerv1.Handlers{
 		Set: func(commandContext context.Context, command sdkpowerv1.SetCommand, responder adapter.Responder) error {
-			if acceptErr := responder.Accept(); acceptErr != nil {
+			evidence, acceptErr := responder.Accept()
+			if acceptErr != nil {
 				return acceptErr
 			}
-			commandID := command.ID
 			observation, observationErr := sdkpowerv1.NewObservation(sdkpowerv1.ObservationInput{
 				EntityID: string(entityID), Support: support, State: contractpowerv1.State(command.Parameters.Value),
-				AdapterReceivedAt: time.Now().UTC(), RefreshForCommand: &commandID,
+				AdapterReceivedAt: time.Now().UTC(),
 			})
 			if observationErr != nil {
 				return observationErr
 			}
-			_, publishErr := session.PublishObservation(commandContext, observation)
+			_, publishErr := evidence.PublishObservation(commandContext, observation)
 			return publishErr
 		},
 	})

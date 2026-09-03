@@ -6,20 +6,21 @@ import (
 	"log/slog"
 	"math/rand/v2"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/mholtzscher/hearth/sdk/adapter"
 )
 
 const (
-	reconnectMinimum     = 250 * time.Millisecond
-	reconnectMaximum     = 5 * time.Second
-	mqttQoS              = byte(1)
-	mappingPageLimit     = 200
-	availabilityPage     = 256
-	messageChannelBuffer = 64
-	jitterDivisor        = 2
+	reconnectMinimum            = 250 * time.Millisecond
+	reconnectMaximum            = 5 * time.Second
+	mqttQoS                     = byte(1)
+	mappingPageLimit            = 200
+	availabilityPage            = 256
+	messageChannelBuffer        = 64
+	runtimeEventBuffer          = 64
+	concurrentRuntimeComponents = 2
+	jitterDivisor               = 2
 
 	externalSystemUnavailableReason = "hearth.external_system_unavailable"
 	bridgeOfflineReason             = "adapter.hearth-adapter-zigbee2mqtt.bridge_offline"
@@ -51,17 +52,8 @@ type Adapter struct {
 	logger  *slog.Logger
 	dialer  mqttDialer
 
-	routeLifecycle   sync.RWMutex
-	mutex            sync.Mutex
-	connection       mqttConnection
-	connectionCancel context.CancelCauseFunc
-	generation       uint64
-	healthy          bool
-	routeSerial      uint64
-	routes           map[string]commandRoute
-	devices          map[string]runtimeDevice
-	matchers         map[string]*commandMatcher
-	deviceLocks      map[string]*contextLock
+	runtimeEvents chan runtimeEvent
+	runtimeDone   chan struct{}
 
 	knownMappings map[mappingKey]adapter.OwnedMapping
 	knownOrder    []mappingKey
@@ -98,24 +90,51 @@ func newAdapter(session Session, config Config, logger *slog.Logger, dialer mqtt
 	}
 	return &Adapter{
 		session: session, config: config, logger: logger, dialer: dialer,
-		routes: make(map[string]commandRoute), devices: make(map[string]runtimeDevice),
-		matchers: make(map[string]*commandMatcher), deviceLocks: make(map[string]*contextLock),
+		runtimeEvents: make(chan runtimeEvent, runtimeEventBuffer),
+		runtimeDone:   make(chan struct{}),
 		knownMappings: make(map[mappingKey]adapter.OwnedMapping),
 		retryDelay:    jitterReconnect,
 	}, nil
 }
 
 func (z2m *Adapter) Run(ctx context.Context) error {
+	runContext, cancel := context.WithCancel(ctx)
+	results := make(chan error, concurrentRuntimeComponents)
+	coordinator := newRuntimeCoordinator(runContext, z2m)
+	go func() { results <- coordinator.run() }()
+	go func() { results <- z2m.runConnections(runContext) }()
+
+	first := <-results
+	cancel()
+	second := <-results
+	if ctx.Err() != nil {
+		return nil //nolint:nilerr // Parent cancellation is graceful shutdown.
+	}
+	for _, err := range []error{first, second} {
+		if err != nil && !errors.Is(err, context.Canceled) {
+			return err
+		}
+	}
+	return nil
+}
+
+func (z2m *Adapter) runConnections(ctx context.Context) error {
 	delay := reconnectMinimum
+	var generation uint64
 	for {
-		synchronized, err := z2m.runConnection(ctx)
+		generation++
+		synchronized, err := z2m.runConnection(ctx, generation)
 		if ctx.Err() != nil {
-			return nil //nolint:nilerr // Parent cancellation is graceful shutdown.
+			return ctx.Err()
 		}
 		if _, ok := errors.AsType[*sessionOperationError](err); ok {
 			return err
 		}
-		if healthErr := z2m.reportUnhealthy(ctx, externalSystemUnavailableReason); healthErr != nil {
+		if healthErr := z2m.reportUnhealthy(
+			ctx,
+			generation,
+			externalSystemUnavailableReason,
+		); healthErr != nil {
 			return healthErr
 		}
 		if synchronized {
@@ -127,7 +146,7 @@ func (z2m *Adapter) Run(ctx context.Context) error {
 		select {
 		case <-ctx.Done():
 			timer.Stop()
-			return nil
+			return ctx.Err()
 		case <-timer.C:
 		}
 		if delay < reconnectMaximum {

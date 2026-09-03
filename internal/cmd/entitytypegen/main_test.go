@@ -323,6 +323,9 @@ func TestRenderedObservationUsesSupportDependentStateValidation(t *testing.T) {
 			t.Errorf("generated facade does not contain %q", expected)
 		}
 	}
+	if strings.Contains(string(source), "RefreshForCommand") {
+		t.Fatal("generated Observation input exposes command linkage")
+	}
 }
 
 func TestRenderedCodecsEmbedExactManifestPaths(t *testing.T) {

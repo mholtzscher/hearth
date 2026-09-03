@@ -41,6 +41,14 @@ const (
 	simulatorMatrixMalformedFault = "malformed"
 )
 
+type wireObservation struct {
+	EntityID          string          `json:"entity_id"`
+	Value             json.RawMessage `json:"value"`
+	AdapterReceivedAt string          `json:"adapter_received_at"`
+	SourceUpdatedAt   *string         `json:"source_updated_at,omitempty"`
+	RefreshForCommand *string         `json:"refresh_for_command_id,omitempty"`
+}
+
 type simulatorMatrixOptions struct {
 	dependencies         devices.Dependencies
 	manual               bool
@@ -1489,10 +1497,10 @@ func publishMatrixLinkedObservation(
 	now := time.Now().UTC().Format(time.RFC3339Nano)
 	commandIDString := string(commandID)
 	payload, err := natswire.Encode(harness.validator, contractsv1.ObservationSchemaID,
-		natswire.Envelope[adapter.Observation]{
+		natswire.Envelope[wireObservation]{
 			ID: string(observationID), Schema: contractsv1.ObservationSchemaID, EmittedAt: now,
 			CorrelationID: string(correlationID), CausationID: &commandIDString,
-			Data: adapter.Observation{
+			Data: wireObservation{
 				EntityID: string(harness.entityID), Value: json.RawMessage(strconv.FormatBool(value)),
 				AdapterReceivedAt: now, RefreshForCommand: &commandIDString,
 			},

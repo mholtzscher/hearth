@@ -51,8 +51,8 @@ func TestRunDisconnectsUnhealthyAndResynchronizesNewGeneration(t *testing.T) {
 	if err = <-done; err != nil {
 		t.Fatal(err)
 	}
-	if dialer.dials != 2 || z2m.generation != 2 {
-		t.Fatalf("dials=%d generation=%d", dialer.dials, z2m.generation)
+	if dialer.dials != 2 {
+		t.Fatalf("dials=%d, want 2", dialer.dials)
 	}
 	if session.health[1].Status != adapter.HealthUnhealthy ||
 		session.health[1].ReasonCode != externalSystemUnavailableReason {

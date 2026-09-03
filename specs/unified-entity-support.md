@@ -19,7 +19,7 @@ The approved design is:
 6. Operation support participates in Command resolution, but not outcome matching. Immutable type behavior, normalized parameters, and the absolute deadline preserve an active Command's meaning across re-registration.
 7. The stateless generic SDK gains typed routing primitives and generated power/v1 and brightness/v1 facades for registration, Commands, and Observations.
 
-This reworks D1-D3 and their schemas, fixtures, tests, and documentation. The built-in catalog contains `hearth.power/v1` plus `hearth.brightness/v1` as generator/catalog validation; D4-D6 behavior, runtime type loading, and Command/Observation wire payloads remain unchanged.
+This reworks D1-D3 and their schemas, fixtures, tests, and documentation. The built-in catalog contains `hearth.power/v1` plus `hearth.brightness/v1` as generator/catalog validation; Core D4-D6 behavior, runtime type loading, and Command/Observation wire payloads remain unchanged. The SDK separately returns command evidence from successful acceptance, and generated Observation inputs remain ordinary.
 
 ## Public JSON contracts
 
@@ -323,13 +323,12 @@ type ObservationInput struct {
     State             State
     AdapterReceivedAt time.Time
     SourceUpdatedAt   *time.Time
-    RefreshForCommand *string
 }
 
 func NewObservation(ObservationInput) (adapter.Observation, error)
 ```
 
-`NewEntityDescriptor` validates and normalizes support and sets type `hearth.power/v1`. `NewCommandHandler` validates support, requires `Handlers.Set`, and closes parameter validation over that support. `NewObservation` validates support, applies support-dependent State rules, encodes State, and formats UTC timestamps. `Session.PublishObservation` retains publication, correlation, causation, and linked-command context rules. No configuration fields change.
+`NewEntityDescriptor` validates and normalizes support and sets type `hearth.power/v1`. `NewCommandHandler` validates support, requires `Handlers.Set`, and closes parameter validation over that support. `NewObservation` validates support, applies support-dependent State rules, encodes State, and formats UTC timestamps for ordinary publication. It cannot link an Observation to a Command; the command-evidence capability returned by successful acceptance adds that private linkage during publication. No configuration fields change.
 
 ## Ownership and layout
 
@@ -382,7 +381,7 @@ Entity-type manifests own built-in behavior, `devices` owns generic catalog and 
 - [x] Registration persists normalized support, re-registration replaces it without changing canonical IDs, and restart reads the same support. SQLite contains `entities.support_json` and no `entity_operations` table.
 - [x] Go SDK consumers register power/v1 and brightness/v1, handle typed `SetParameters`, and create typed Observations without constructing `json.RawMessage` or switching on operation strings.
 - [x] Brightness/v1 generation proves non-empty State/operation support, integer State/parameters, and support-dependent maximum/step validation.
-- [x] Existing generic Session behavior remains unchanged, including Command/Observation JSON, concurrent handlers, one-shot responders, publication acknowledgement/retry, and trace/correlation/causation propagation.
+- [x] The generic Session retains Command/Observation wire JSON, concurrent handlers, one-shot response semantics, publication acknowledgement/retry, and trace/correlation/causation propagation; successful acceptance returns command evidence for linked publication while generated Observation inputs remain ordinary.
 
 Tests remain local to the owning seam:
 

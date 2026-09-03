@@ -18,13 +18,10 @@ func (z2m *Adapter) processDeviceMessage(
 	state *connectionSync,
 	message mqttMessage,
 ) error {
-	z2m.mutex.Lock()
-	devices := z2m.devices
-	z2m.mutex.Unlock()
-	device, kind := classifyDeviceTopic(z2m.config.BaseTopic, message.Topic, devices)
+	device, kind := classifyDeviceTopic(z2m.config.BaseTopic, message.Topic, state.snapshot.devices)
 	switch kind {
 	case deviceTopicAvailability:
-		if err := z2m.cacheAvailability(state, message, devices); err != nil {
+		if err := z2m.cacheAvailability(state, message, state.snapshot.devices); err != nil {
 			z2m.logger.WarnContext(
 				ctx,
 				"ignored invalid Zigbee2MQTT availability",
@@ -49,7 +46,7 @@ func (z2m *Adapter) processDeviceMessage(
 		}
 		return z2m.reportAvailability(ctx, reports)
 	case deviceTopicState:
-		return z2m.publishDeviceState(ctx, generation, device, message)
+		return z2m.publishDeviceState(ctx, generation, state.routeRevision, device, message)
 	case deviceTopicUnknown:
 		return nil
 	}
@@ -59,6 +56,7 @@ func (z2m *Adapter) processDeviceMessage(
 func (z2m *Adapter) publishDeviceState(
 	ctx context.Context,
 	generation uint64,
+	routeRevision uint64,
 	device runtimeDevice,
 	message mqttMessage,
 ) error {
@@ -92,17 +90,31 @@ func (z2m *Adapter) publishDeviceState(
 			issue.Err,
 		)
 	}
-	for _, state := range states {
-		entityID := byKey[state.Entity.Descriptor.Key]
-		if z2m.claimMatcher(generation, entityID, state, message.Retained, message.ReceivedAt) {
-			continue
+	for _, decoded := range states {
+		result := make(chan stateDisposition, 1)
+		candidate := stateCandidate{
+			ctx:           ctx,
+			generation:    generation,
+			routeRevision: routeRevision,
+			entityID:      byKey[decoded.Entity.Descriptor.Key],
+			state:         decoded,
+			retained:      message.Retained,
+			receivedAt:    message.ReceivedAt,
+			result:        result,
 		}
-		observation, observationErr := newObservation(entityID, state, message.ReceivedAt, nil)
-		if observationErr != nil {
-			return observationErr
+		select {
+		case z2m.runtimeEvents <- candidate:
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-z2m.runtimeDone:
+			return errors.New("Zigbee2MQTT runtime stopped")
 		}
-		if _, observationErr = z2m.session.PublishObservation(ctx, observation); observationErr != nil {
-			return &sessionOperationError{operation: "publish Zigbee2MQTT Observation", err: observationErr}
+		select {
+		case <-result:
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-z2m.runtimeDone:
+			return errors.New("Zigbee2MQTT runtime stopped")
 		}
 	}
 	return nil
@@ -112,18 +124,17 @@ func newObservation(
 	entityID string,
 	state decodedEntityState,
 	receivedAt time.Time,
-	refreshForCommand *string,
 ) (adapter.Observation, error) {
 	switch state.Entity.Kind {
 	case entityKindPower:
 		return sdkpowerv1.NewObservation(sdkpowerv1.ObservationInput{
 			EntityID: entityID, Support: powerSupport(), State: contractpowerv1.State(state.Power),
-			AdapterReceivedAt: receivedAt, RefreshForCommand: refreshForCommand,
+			AdapterReceivedAt: receivedAt,
 		})
 	case entityKindBrightness:
 		return sdkbrightnessv1.NewObservation(sdkbrightnessv1.ObservationInput{
 			EntityID: entityID, Support: brightnessSupport(), State: contractbrightnessv1.State(state.Brightness),
-			AdapterReceivedAt: receivedAt, RefreshForCommand: refreshForCommand,
+			AdapterReceivedAt: receivedAt,
 		})
 	default:
 		return adapter.Observation{}, errors.New("unknown Zigbee2MQTT Entity kind")
