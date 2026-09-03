@@ -56,6 +56,8 @@ type discoveredEntity struct {
 	PowerOn           scalarValue
 	PowerOff          scalarValue
 	BrightnessMaximum float64
+	ColorTempMinimum  int64
+	ColorTempMaximum  int64
 }
 
 // deviceRejection gives adapter diagnostics and reconciliation a safe identity and stable reason.

@@ -198,16 +198,21 @@ func TestBehaviorRulesAreSchemaChecked(t *testing.T) {
 		"support": {Schema: support, GoExpression: "support"},
 	}
 
-	compiled, err := compileRule(ruleManifest{
-		Op:    "lte",
-		Left:  referenceManifest{Root: "parameters", Path: "/value"},
-		Right: referenceManifest{Root: "support", Path: "/maximum"},
-	}, roots)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if condition := ruleCondition(compiled); condition != "int64(parameters.Value) <= int64(support.Maximum)" {
-		t.Fatalf("condition = %s", condition)
+	for operator, expected := range map[string]string{
+		"gte": "int64(parameters.Value) >= int64(support.Maximum)",
+		"lte": "int64(parameters.Value) <= int64(support.Maximum)",
+	} {
+		compiled, err := compileRule(ruleManifest{
+			Op:    operator,
+			Left:  referenceManifest{Root: "parameters", Path: "/value"},
+			Right: referenceManifest{Root: "support", Path: "/maximum"},
+		}, roots)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if condition := ruleCondition(compiled); condition != expected {
+			t.Fatalf("%s condition = %s", operator, condition)
+		}
 	}
 
 	for name, rule := range map[string]ruleManifest{
@@ -222,6 +227,9 @@ func TestBehaviorRulesAreSchemaChecked(t *testing.T) {
 		},
 		"optional path": {
 			Op: "eq", Left: referenceManifest{Root: "parameters", Path: "/value"}, Right: referenceManifest{Root: "support", Path: "/optional"},
+		},
+		"non-numeric gte": {
+			Op: "gte", Left: referenceManifest{Root: "support", Path: "/enabled"}, Right: referenceManifest{Root: "support", Path: "/enabled"},
 		},
 	} {
 		t.Run(name, func(t *testing.T) {

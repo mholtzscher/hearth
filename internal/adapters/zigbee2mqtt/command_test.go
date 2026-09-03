@@ -135,6 +135,56 @@ func TestCommandClaimsEarlyMatchExactlyOnceAfterAccept(t *testing.T) {
 	}
 }
 
+// This integration test protects native-mired set/get passthrough, typed Observation publication, and exact matching.
+// It fails if a nearby value satisfies the Command or if either Zigbee2MQTT property payload is converted or renamed.
+func TestColorTempCommandPassesThroughAndRequiresExactReport(t *testing.T) {
+	t.Parallel()
+	recorder := &runtimeRecorder{}
+	session := newFakeSession(recorder)
+	z2m, _, connection, device := commandReadyAdapter(t, recorder, session)
+	connection.onPublish = func(ctx context.Context, _ *fakeConnection, topic string, _ []byte) error {
+		switch {
+		case strings.HasSuffix(topic, "/set"):
+			return publishState(ctx, z2m, device, `{"color_temp":369}`, time.Now().UTC())
+		case strings.HasSuffix(topic, "/get"):
+			return publishState(ctx, z2m, device, `{"color_temp":370}`, time.Now().UTC())
+		default:
+			return nil
+		}
+	}
+	responder := newFakeResponder(recorder, session)
+	if err := z2m.HandleCommand(
+		context.Background(),
+		testCommand(device.entities[2].entityID, `{"value":370}`),
+		responder,
+	); err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, func() bool {
+		session.mutex.Lock()
+		defer session.mutex.Unlock()
+		return len(session.observations) == 1 && len(session.linked) == 1
+	})
+	connection.mutex.Lock()
+	publications := append([]mqttPublication(nil), connection.published...)
+	connection.mutex.Unlock()
+	if len(publications) != 2 || publications[0].topic != "zigbee2mqtt/fixture-light/set" ||
+		publications[0].payload != `{"color_temp":370}` || publications[0].qos != mqttQoS || publications[0].retained ||
+		publications[1].topic != "zigbee2mqtt/fixture-light/get" ||
+		publications[1].payload != `{"color_temp":""}` || publications[1].qos != mqttQoS || publications[1].retained {
+		t.Fatalf("MQTT publications = %#v", publications)
+	}
+	if responder.accepted != 1 || string(session.observations[0].Value) != "369" ||
+		string(session.linked[0].Value) != "370" || session.linked[0].EntityID != device.entities[2].entityID {
+		t.Fatalf(
+			"responder=%#v ordinary=%#v linked=%#v",
+			responder,
+			session.observations,
+			session.linked,
+		)
+	}
+}
+
 // This test protects every freshness and identity discriminator required before a report may be claimed.
 //
 //nolint:gocognit // One table keeps all State eligibility discriminators under the same active matcher setup.

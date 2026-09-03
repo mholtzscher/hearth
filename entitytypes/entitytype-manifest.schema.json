@@ -54,7 +54,7 @@
       "additionalProperties": false,
       "required": ["op", "left", "right"],
       "properties": {
-        "op": {"enum": ["eq", "lte", "multiple_of"]},
+        "op": {"enum": ["eq", "gte", "lte", "multiple_of"]},
         "left": {"$ref": "#/$defs/reference"},
         "right": {"$ref": "#/$defs/reference"}
       }

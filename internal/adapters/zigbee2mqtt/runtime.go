@@ -647,6 +647,8 @@ func matcherMatches(desired desiredState, state decodedEntityState) bool {
 		return state.Power == desired.power
 	case entityKindBrightness:
 		return state.Brightness == desired.brightness
+	case entityKindColorTemp:
+		return state.ColorTemp == desired.colorTemp
 	default:
 		return false
 	}

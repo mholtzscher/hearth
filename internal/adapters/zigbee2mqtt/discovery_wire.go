@@ -52,17 +52,68 @@ type upstreamDefinition struct {
 }
 
 type upstreamExpose struct {
-	Type      string           `json:"type"`
-	Name      string           `json:"name"`
-	Property  string           `json:"property"`
-	Endpoint  string           `json:"endpoint"`
-	Access    int              `json:"access"`
-	ValueOn   json.RawMessage  `json:"value_on"`
-	ValueOff  json.RawMessage  `json:"value_off"`
-	ValueMin  *float64         `json:"value_min"`
-	ValueMax  *float64         `json:"value_max"`
-	ValueStep *float64         `json:"value_step"`
-	Features  []upstreamExpose `json:"features"`
+	Type        string           `json:"type"`
+	Name        string           `json:"name"`
+	Property    string           `json:"property"`
+	Endpoint    string           `json:"endpoint"`
+	Access      int              `json:"access"`
+	ValueOn     json.RawMessage  `json:"value_on"`
+	ValueOff    json.RawMessage  `json:"value_off"`
+	ValueMin    *float64         `json:"value_min"`
+	ValueMax    *float64         `json:"value_max"`
+	ValueStep   *float64         `json:"value_step"`
+	Features    []upstreamExpose `json:"features"`
+	valueMinRaw json.RawMessage
+	valueMaxRaw json.RawMessage
+}
+
+// UnmarshalJSON isolates malformed expose metadata so one optional feature cannot suppress valid siblings.
+func (expose *upstreamExpose) UnmarshalJSON(payload []byte) error {
+	*expose = upstreamExpose{}
+	var wire struct {
+		Type      json.RawMessage `json:"type"`
+		Name      json.RawMessage `json:"name"`
+		Property  json.RawMessage `json:"property"`
+		Endpoint  json.RawMessage `json:"endpoint"`
+		Access    json.RawMessage `json:"access"`
+		ValueOn   json.RawMessage `json:"value_on"`
+		ValueOff  json.RawMessage `json:"value_off"`
+		ValueMin  json.RawMessage `json:"value_min"`
+		ValueMax  json.RawMessage `json:"value_max"`
+		ValueStep json.RawMessage `json:"value_step"`
+		Features  json.RawMessage `json:"features"`
+	}
+	_ = json.Unmarshal(payload, &wire)
+	_ = json.Unmarshal(wire.Type, &expose.Type)
+	_ = json.Unmarshal(wire.Name, &expose.Name)
+	_ = json.Unmarshal(wire.Property, &expose.Property)
+	_ = json.Unmarshal(wire.Endpoint, &expose.Endpoint)
+	_ = json.Unmarshal(wire.Access, &expose.Access)
+	expose.ValueOn = bytes.Clone(wire.ValueOn)
+	expose.ValueOff = bytes.Clone(wire.ValueOff)
+	expose.ValueMin = decodeOptionalFloat(wire.ValueMin)
+	expose.ValueMax = decodeOptionalFloat(wire.ValueMax)
+	expose.ValueStep = decodeOptionalFloat(wire.ValueStep)
+	expose.valueMinRaw = bytes.Clone(wire.ValueMin)
+	expose.valueMaxRaw = bytes.Clone(wire.ValueMax)
+	_ = json.Unmarshal(wire.Features, &expose.Features)
+	return nil
+}
+
+func decodeOptionalFloat(payload json.RawMessage) *float64 {
+	var decoded any
+	if len(payload) == 0 || decodeJSON(payload, &decoded) != nil {
+		return nil
+	}
+	number, ok := decoded.(json.Number)
+	if !ok {
+		return nil
+	}
+	value, err := number.Float64()
+	if err != nil {
+		return nil
+	}
+	return &value
 }
 
 // scalarValue retains the upstream command representation and a semantic comparison key.

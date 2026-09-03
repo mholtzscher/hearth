@@ -1,0 +1,31 @@
+[
+  {
+    "ieee_address": "0x00124b0000000003",
+    "type": "Router",
+    "supported": true,
+    "disabled": false,
+    "friendly_name": "fixture-temp-only",
+    "interview_state": "SUCCESSFUL",
+    "endpoints": {"1": {}},
+    "definition": {
+      "model": "SYNTHETIC-TEMP-ONLY",
+      "vendor": "Fixture Vendor",
+      "description": "Color temperature without power",
+      "exposes": [
+        {
+          "type": "light",
+          "features": [
+            {
+              "type": "numeric",
+              "name": "color_temp",
+              "property": "color_temp",
+              "access": 7,
+              "value_min": 153,
+              "value_max": 500
+            }
+          ]
+        }
+      ]
+    }
+  }
+]

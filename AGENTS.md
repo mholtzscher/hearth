@@ -4,33 +4,31 @@
 
 - For focused formatting, generation, module tidying, linting, testing, and vetting, always use the mise tasks below instead of invoking the underlying tools directly.
 - After making any change, prefer `mise run validate`; it regenerates code, formats it, and tidies module metadata before running all checks.
-- After adding or strengthening Go tests, run Gremlins against the smallest affected package or subtree. Investigate surviving mutants as missing behavioral guarantees; do not add assertions solely to kill mutated syntax. Mutation testing is intentionally excluded from `validate` because wider runs are slow.
 - Review the resulting diff and include intended generated or formatting changes.
 - Hearth has no deployments yet. Do not preserve backward compatibility by default. Make direct breaking changes and update all in-repository callers; add compatibility shims, legacy paths, or migration handling only when explicitly requested.
 - To run NATS locally (JetStream enabled) while developing: `mise run nats`.
 
 ## Commands
 
-| Activity | Command |
-|---|---|
-| Format Go files | `mise run --skip-deps format` |
-| Regenerate checked-in code | `mise run --skip-deps generate` |
-| Check formatting | `mise run --skip-deps format-check` |
-| Check generated code | `mise run --skip-deps generate-check` |
-| Lint | `mise run --skip-deps lint` |
-| Tidy module metadata | `mise run --skip-deps tidy` |
-| Check module tidiness | `mise run --skip-deps tidy-check` |
-| Test with the race detector | `mise run --skip-deps test` |
-| Mutation test a focused package | `mise run mutation-test -- ./path/to/package` |
-| Vet | `mise run --skip-deps vet` |
-| Run all validation (preferred) | `mise run validate` |
-| Run NATS server locally | `mise run nats` |
+| Activity                       | Command                               |
+| ------------------------------ | ------------------------------------- |
+| Format Go files                | `mise run --skip-deps format`         |
+| Regenerate checked-in code     | `mise run --skip-deps generate`       |
+| Check formatting               | `mise run --skip-deps format-check`   |
+| Check generated code           | `mise run --skip-deps generate-check` |
+| Lint                           | `mise run --skip-deps lint`           |
+| Tidy module metadata           | `mise run --skip-deps tidy`           |
+| Check module tidiness          | `mise run --skip-deps tidy-check`     |
+| Test with the race detector    | `mise run --skip-deps test`           |
+| Vet                            | `mise run --skip-deps vet`            |
+| Run all validation (preferred) | `mise run validate`                   |
+| Run NATS server locally        | `mise run nats`                       |
 
 ## External References
 
-| Need | File |
-|---|---|
-| Setup and development workflow | `README.md` |
-| Canonical domain language | `CONTEXT.md` |
-| Architectural constraints | `docs/architecture.md` |
-| Product scope | `docs/product.md` |
+| Need                           | File                   |
+| ------------------------------ | ---------------------- |
+| Setup and development workflow | `README.md`            |
+| Canonical domain language      | `CONTEXT.md`           |
+| Architectural constraints      | `docs/architecture.md` |
+| Product scope                  | `docs/product.md`      |

@@ -1,0 +1,8 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:hearth:schema:entity-type:colortemp:v1:state",
+  "title": "Hearth colortemp/v1 State",
+  "type": "integer",
+  "minimum": 100,
+  "maximum": 1000
+}

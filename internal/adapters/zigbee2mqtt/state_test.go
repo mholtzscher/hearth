@@ -5,12 +5,13 @@ import (
 	"math"
 	"reflect"
 	"testing"
+	"time"
 
 	"pgregory.net/rapid"
 )
 
-// This test protects captured fractional State projection and fails on integer-only decoding, hard-coded ON/OFF routing,
-// color leakage, or a normalization formula other than nearest integer percent.
+// This test protects captured typed State projection and fails on integer-only brightness decoding, hard-coded ON/OFF
+// routing, color-temperature conversion, or a brightness normalization formula other than nearest integer percent.
 func TestDecodeCapturedFractionalState(t *testing.T) {
 	t.Parallel()
 	discovery, err := discoverInventory(readFixture(t, "bridge-devices-3rcb01057z.json"))
@@ -21,8 +22,16 @@ func TestDecodeCapturedFractionalState(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(issues) != 0 || len(states) != 2 || !states[0].Power || states[1].Brightness != 25 {
+	if len(issues) != 0 || len(states) != 3 || !states[0].Power || states[1].Brightness != 25 ||
+		states[2].ColorTemp != 370 {
 		t.Fatalf("states = %#v, issues = %#v", states, issues)
+	}
+	observation, err := newObservation("entity-colortemp", states[2], time.Unix(1, 0).UTC())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if observation.EntityID != "entity-colortemp" || string(observation.Value) != "370" {
+		t.Fatalf("color-temperature Observation = %#v", observation)
 	}
 }
 
@@ -48,6 +57,43 @@ func TestDecodeDeviceStateIsolatesInvalidAndUnknownProperties(t *testing.T) {
 	if len(states) != 1 || states[0].Entity.Kind != entityKindBrightness || states[0].Brightness != 50 ||
 		len(issues) != 0 {
 		t.Fatalf("brightness-only states = %#v, issues = %#v", states, issues)
+	}
+}
+
+// This test protects strict color-temperature decoding and sibling issue isolation. It fails on conversion, clamping,
+// fractional rounding, numeric-string coercion, or whole-message rejection for one invalid recognized property.
+func TestNormalizeColorTempAndIsolateInvalidProperty(t *testing.T) {
+	t.Parallel()
+	device := mustDiscoveredFixtureDevice(t, "bridge-devices-3rcb01057z.json")
+	colorTemp := device.Entities[2]
+	for _, test := range []struct {
+		payload string
+		want    int64
+	}{
+		{payload: `153`, want: 153},
+		{payload: `370.0`, want: 370},
+		{payload: `500`, want: 500},
+	} {
+		value, err := normalizeColorTemp(
+			json.RawMessage(test.payload),
+			colorTemp.ColorTempMinimum,
+			colorTemp.ColorTempMaximum,
+		)
+		if err != nil || value != test.want {
+			t.Errorf("normalizeColorTemp(%s) = %d, %v; want %d", test.payload, value, err, test.want)
+		}
+	}
+	for _, payload := range []string{`152`, `501`, `370.5`, `"370"`, `1e10000`} {
+		states, issues, err := decodeDeviceState(
+			[]byte(`{"state":"OFF","color_temp":`+payload+`}`),
+			device.Entities,
+		)
+		if err != nil {
+			t.Fatalf("decode sibling State with color_temp %s: %v", payload, err)
+		}
+		if len(states) != 1 || states[0].Power || len(issues) != 1 || issues[0].Property != "color_temp" {
+			t.Errorf("color_temp %s: states=%#v issues=%#v", payload, states, issues)
+		}
 	}
 }
 
@@ -181,8 +227,8 @@ func TestBrightnessCommandRoundTripProperty(t *testing.T) {
 func TestCommandValuesUseDiscoveredMetadata(t *testing.T) {
 	t.Parallel()
 	device := mustDiscoveredFixtureDevice(t, "multi-endpoint-light.json")
-	power := device.Entities[2]
-	brightness := device.Entities[3]
+	power := device.Entities[3]
+	brightness := device.Entities[4]
 	on, err := powerCommandValue(power, true)
 	if err != nil {
 		t.Fatal(err)
@@ -245,6 +291,10 @@ func FuzzDeviceState(fuzz *testing.F) {
 			if state.Entity.Kind == entityKindBrightness && (state.Brightness < 0 || state.Brightness > 100) {
 				t.Fatalf("brightness State = %d", state.Brightness)
 			}
+			if state.Entity.Kind == entityKindColorTemp &&
+				(state.ColorTemp < state.Entity.ColorTempMinimum || state.ColorTemp > state.Entity.ColorTempMaximum) {
+				t.Fatalf("color-temperature State = %d", state.ColorTemp)
+			}
 		}
 	})
 }
@@ -252,12 +302,16 @@ func FuzzDeviceState(fuzz *testing.F) {
 func TestDecodeStatePreservesDiscoveryOrder(t *testing.T) {
 	t.Parallel()
 	device := mustDiscoveredFixtureDevice(t, "bridge-devices-3rcb01057z.json")
-	states, issues, err := decodeDeviceState([]byte(`{"brightness":255,"state":"ON"}`), device.Entities)
+	states, issues, err := decodeDeviceState(
+		[]byte(`{"color_temp":370,"brightness":255,"state":"ON"}`),
+		device.Entities,
+	)
 	if err != nil {
 		t.Fatal(err)
 	}
-	got := []entityKind{states[0].Entity.Kind, states[1].Entity.Kind}
-	if len(issues) != 0 || !reflect.DeepEqual(got, []entityKind{entityKindPower, entityKindBrightness}) {
+	got := []entityKind{states[0].Entity.Kind, states[1].Entity.Kind, states[2].Entity.Kind}
+	if len(issues) != 0 ||
+		!reflect.DeepEqual(got, []entityKind{entityKindPower, entityKindBrightness, entityKindColorTemp}) {
 		t.Fatalf("states = %#v, issues = %#v", states, issues)
 	}
 }

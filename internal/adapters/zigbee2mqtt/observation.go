@@ -6,9 +6,11 @@ import (
 	"time"
 
 	contractbrightnessv1 "github.com/mholtzscher/hearth/entitytypes/brightnessv1"
+	contractcolortempv1 "github.com/mholtzscher/hearth/entitytypes/colortempv1"
 	contractpowerv1 "github.com/mholtzscher/hearth/entitytypes/powerv1"
 	"github.com/mholtzscher/hearth/sdk/adapter"
 	sdkbrightnessv1 "github.com/mholtzscher/hearth/sdk/adapter/brightnessv1"
+	sdkcolortempv1 "github.com/mholtzscher/hearth/sdk/adapter/colortempv1"
 	sdkpowerv1 "github.com/mholtzscher/hearth/sdk/adapter/powerv1"
 )
 
@@ -136,6 +138,13 @@ func newObservation(
 			EntityID: entityID, Support: brightnessSupport(), State: contractbrightnessv1.State(state.Brightness),
 			AdapterReceivedAt: receivedAt,
 		})
+	case entityKindColorTemp:
+		return sdkcolortempv1.NewObservation(sdkcolortempv1.ObservationInput{
+			EntityID:          entityID,
+			Support:           colorTempSupport(state.Entity),
+			State:             contractcolortempv1.State(state.ColorTemp),
+			AdapterReceivedAt: receivedAt,
+		})
 	default:
 		return adapter.Observation{}, errors.New("unknown Zigbee2MQTT Entity kind")
 	}
@@ -152,5 +161,15 @@ func brightnessSupport() contractbrightnessv1.Support {
 	return contractbrightnessv1.Support{
 		State:      contractbrightnessv1.StateSupport{Maximum: hearthBrightnessMaximum},
 		Operations: contractbrightnessv1.OperationSupport{Set: contractbrightnessv1.SetSupport{Step: 1}},
+	}
+}
+
+func colorTempSupport(entity discoveredEntity) contractcolortempv1.Support {
+	return contractcolortempv1.Support{
+		State: contractcolortempv1.StateSupport{
+			Minimum: entity.ColorTempMinimum,
+			Maximum: entity.ColorTempMaximum,
+		},
+		Operations: contractcolortempv1.OperationSupport{Set: contractcolortempv1.SetSupport{Step: 1}},
 	}
 }

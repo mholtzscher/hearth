@@ -1,0 +1,47 @@
+{
+  "manifest_version": 1,
+  "type": "hearth.colortemp/v1",
+  "state_schema": "state.schema.json",
+  "support_schema": "support.schema.json",
+  "state_validation": [
+    {
+      "op": "gte",
+      "left": {"root": "state", "path": ""},
+      "right": {"root": "support", "path": "/state/minimum"}
+    },
+    {
+      "op": "lte",
+      "left": {"root": "state", "path": ""},
+      "right": {"root": "support", "path": "/state/maximum"}
+    }
+  ],
+  "operations": {
+    "set": {
+      "parameters_schema": "set-parameters.schema.json",
+      "deadline_ms": 10000,
+      "parameter_validation": [
+        {
+          "op": "gte",
+          "left": {"root": "parameters", "path": "/value"},
+          "right": {"root": "support", "path": "/state/minimum"}
+        },
+        {
+          "op": "lte",
+          "left": {"root": "parameters", "path": "/value"},
+          "right": {"root": "support", "path": "/state/maximum"}
+        },
+        {
+          "op": "multiple_of",
+          "left": {"root": "parameters", "path": "/value"},
+          "right": {"root": "operation_support", "path": "/step"}
+        }
+      ],
+      "satisfied_when": {
+        "op": "eq",
+        "left": {"root": "parameters", "path": "/value"},
+        "right": {"root": "state", "path": ""}
+      }
+    }
+  },
+  "examples": "examples.json"
+}

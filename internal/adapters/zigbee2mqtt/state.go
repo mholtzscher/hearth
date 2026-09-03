@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"math/big"
 )
 
 const brightnessRoundingOffset = 0.5
@@ -15,6 +16,7 @@ type decodedEntityState struct {
 	Entity     discoveredEntity
 	Power      bool
 	Brightness int64
+	ColorTemp  int64
 }
 
 // stateDecodeIssue identifies one recognized property rejected without suppressing valid siblings.
@@ -67,6 +69,12 @@ func decodeEntityState(entity discoveredEntity, payload json.RawMessage) (decode
 			return decodedEntityState{}, err
 		}
 		return decodedEntityState{Entity: entity, Brightness: value}, nil
+	case entityKindColorTemp:
+		value, err := normalizeColorTemp(payload, entity.ColorTempMinimum, entity.ColorTempMaximum)
+		if err != nil {
+			return decodedEntityState{}, err
+		}
+		return decodedEntityState{Entity: entity, ColorTemp: value}, nil
 	default:
 		return decodedEntityState{}, errors.New("unknown discovered Entity kind")
 	}
@@ -104,6 +112,26 @@ func normalizeBrightness(payload json.RawMessage, maximum float64) (int64, error
 	return normalizeBrightnessValue(value, maximum)
 }
 
+func normalizeColorTemp(payload json.RawMessage, minimum, maximum int64) (int64, error) {
+	var decoded any
+	if err := decodeJSON(payload, &decoded); err != nil {
+		return 0, fmt.Errorf("decode color temperature number: %w", err)
+	}
+	number, ok := decoded.(json.Number)
+	if !ok {
+		return 0, errors.New("color temperature value must be a JSON number")
+	}
+	exact, ok := new(big.Rat).SetString(number.String())
+	if !ok || !exact.IsInt() || !exact.Num().IsInt64() {
+		return 0, errors.New("color temperature value must be a finite integer")
+	}
+	value := exact.Num().Int64()
+	if value < minimum || value > maximum {
+		return 0, errors.New("color temperature value is outside its discovered range")
+	}
+	return value, nil
+}
+
 func normalizeBrightnessValue(value, maximum float64) (int64, error) {
 	if !isFinite(value) || !isFinite(maximum) || maximum <= 0 {
 		return 0, errors.New("brightness value and maximum must be finite with a positive maximum")
@@ -135,6 +163,17 @@ func brightnessCommandValue(entity discoveredEntity, percentage int64) (json.Raw
 		return nil, errors.New("brightness command requires a brightness Entity")
 	}
 	return scaleBrightnessCommand(percentage, entity.BrightnessMaximum)
+}
+
+func colorTempCommandValue(entity discoveredEntity, value int64) (json.RawMessage, error) {
+	if entity.Kind != entityKindColorTemp {
+		return nil, errors.New("color temperature command requires a color-temperature Entity")
+	}
+	encoded, err := json.Marshal(value)
+	if err != nil {
+		return nil, fmt.Errorf("encode color temperature: %w", err)
+	}
+	return encoded, nil
 }
 
 func scaleBrightnessCommand(percentage int64, maximum float64) (json.RawMessage, error) {

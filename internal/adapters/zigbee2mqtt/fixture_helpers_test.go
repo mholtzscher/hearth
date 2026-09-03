@@ -34,6 +34,13 @@ func lightExpose(endpoint, stateProperty, brightnessProperty string) upstreamExp
 	}
 }
 
+func colorTempFeature(property string, minimum, maximum float64) upstreamExpose {
+	return upstreamExpose{
+		Type: "numeric", Name: upstreamColorTempName, Property: property, Access: 7,
+		ValueMin: &minimum, ValueMax: &maximum,
+	}
+}
+
 func entityKeys(entities []discoveredEntity) []string {
 	keys := make([]string, 0, len(entities))
 	for _, entity := range entities {

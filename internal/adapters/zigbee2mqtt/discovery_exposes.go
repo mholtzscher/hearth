@@ -1,21 +1,27 @@
 package zigbee2mqtt
 
 import (
+	"encoding/json"
 	"errors"
 	"math"
+	"math/big"
 	"strconv"
 	"strings"
 	"unicode/utf8"
 
 	"github.com/mholtzscher/hearth/sdk/adapter"
 	sdkbrightnessv1 "github.com/mholtzscher/hearth/sdk/adapter/brightnessv1"
+	sdkcolortempv1 "github.com/mholtzscher/hearth/sdk/adapter/colortempv1"
 	sdkpowerv1 "github.com/mholtzscher/hearth/sdk/adapter/powerv1"
 )
 
 const (
 	requiredAccessMask      = 7
 	hearthBrightnessMaximum = 100
+	hearthColorTempMinimum  = 100
+	hearthColorTempMaximum  = 1000
 	upstreamBrightnessName  = "brightness"
+	upstreamColorTempName   = "color_temp"
 )
 
 type entityKind uint8
@@ -23,6 +29,7 @@ type entityKind uint8
 const (
 	entityKindPower entityKind = iota + 1
 	entityKindBrightness
+	entityKindColorTemp
 )
 
 type exposeCandidate struct {
@@ -105,6 +112,22 @@ func makeExposeCandidate(
 		brightness.Descriptor.Name = name
 		candidate.entities = append(candidate.entities, brightness)
 	}
+
+	colorTempFeature, colorTempOK := uniqueFeature(expose.Features, "numeric", upstreamColorTempName)
+	minimum, maximum, validRange := colorTempRange(colorTempFeature)
+	if colorTempOK && validRange && propertyCounts[colorTempFeature.Property] == 1 {
+		key, name := entityIdentity(entityKindColorTemp, expose.Endpoint, endpoint, scoped)
+		if utf8.RuneCountInString(name) > maximumDescriptorRunes {
+			return candidate, true
+		}
+		colorTemp := discoveredEntity{
+			Property: colorTempFeature.Property, Kind: entityKindColorTemp,
+			Endpoint: endpoint, Scoped: scoped, ColorTempMinimum: minimum, ColorTempMaximum: maximum,
+		}
+		colorTemp.Descriptor.Key = key
+		colorTemp.Descriptor.Name = name
+		candidate.entities = append(candidate.entities, colorTemp)
+	}
 	return candidate, true
 }
 
@@ -129,6 +152,42 @@ func validBrightnessFeature(feature upstreamExpose) bool {
 	return feature.Access&requiredAccessMask == requiredAccessMask && feature.Property != "" &&
 		feature.ValueMin != nil && *feature.ValueMin == 0 &&
 		feature.ValueMax != nil && brightnessRangeSupported(*feature.ValueMax)
+}
+
+func colorTempRange(feature upstreamExpose) (int64, int64, bool) {
+	if feature.Access&requiredAccessMask != requiredAccessMask || feature.Property == "" {
+		return 0, 0, false
+	}
+	minimum, minimumOK := colorTempBound(feature.valueMinRaw, feature.ValueMin)
+	maximum, maximumOK := colorTempBound(feature.valueMaxRaw, feature.ValueMax)
+	if !minimumOK || !maximumOK || minimum < hearthColorTempMinimum || maximum > hearthColorTempMaximum ||
+		minimum >= maximum {
+		return 0, 0, false
+	}
+	return minimum, maximum, true
+}
+
+func colorTempBound(payload json.RawMessage, fallback *float64) (int64, bool) {
+	if len(payload) == 0 {
+		if fallback == nil || !isFinite(*fallback) || math.Trunc(*fallback) != *fallback ||
+			*fallback < hearthColorTempMinimum || *fallback > hearthColorTempMaximum {
+			return 0, false
+		}
+		return int64(*fallback), true
+	}
+	var decoded any
+	if decodeJSON(payload, &decoded) != nil {
+		return 0, false
+	}
+	number, ok := decoded.(json.Number)
+	if !ok {
+		return 0, false
+	}
+	exact, ok := new(big.Rat).SetString(number.String())
+	if !ok || !exact.IsInt() || !exact.Num().IsInt64() {
+		return 0, false
+	}
+	return exact.Num().Int64(), true
 }
 
 func selectUnambiguousEntities(candidates []exposeCandidate) []discoveredEntity {
@@ -184,11 +243,17 @@ func resolveEndpoint(reference string, endpoints map[string]upstreamEndpoint) (i
 }
 
 func entityIdentity(kind entityKind, label string, endpoint int, scoped bool) (string, string) {
-	baseKey := "power"
-	baseName := "Power"
-	if kind == entityKindBrightness {
+	var baseKey, baseName string
+	switch kind {
+	case entityKindPower:
+		baseKey = "power"
+		baseName = "Power"
+	case entityKindBrightness:
 		baseKey = "brightness"
 		baseName = "Brightness"
+	case entityKindColorTemp:
+		baseKey = "colortemp"
+		baseName = "Color Temperature"
 	}
 	if !scoped {
 		return baseKey, baseName
@@ -216,16 +281,24 @@ func makeEntityDescriptor(ieeeAddress string, entity discoveredEntity) (adapter.
 		return sdkpowerv1.NewEntityDescriptor(metadata, powerSupport())
 	case entityKindBrightness:
 		return sdkbrightnessv1.NewEntityDescriptor(metadata, brightnessSupport())
+	case entityKindColorTemp:
+		return sdkcolortempv1.NewEntityDescriptor(metadata, colorTempSupport(entity))
 	default:
 		return adapter.EntityDescriptor{}, errors.New("unknown Entity kind")
 	}
 }
 
 func entityKindName(kind entityKind) string {
-	if kind == entityKindBrightness {
+	switch kind {
+	case entityKindPower:
+		return "power"
+	case entityKindBrightness:
 		return "brightness"
+	case entityKindColorTemp:
+		return "colortemp"
+	default:
+		return ""
 	}
-	return "power"
 }
 
 func brightnessRangeSupported(maximum float64) bool {

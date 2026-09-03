@@ -7,9 +7,11 @@ import (
 	"time"
 
 	contractbrightnessv1 "github.com/mholtzscher/hearth/entitytypes/brightnessv1"
+	contractcolortempv1 "github.com/mholtzscher/hearth/entitytypes/colortempv1"
 	contractpowerv1 "github.com/mholtzscher/hearth/entitytypes/powerv1"
 	"github.com/mholtzscher/hearth/sdk/adapter"
 	sdkbrightnessv1 "github.com/mholtzscher/hearth/sdk/adapter/brightnessv1"
+	sdkcolortempv1 "github.com/mholtzscher/hearth/sdk/adapter/colortempv1"
 	sdkpowerv1 "github.com/mholtzscher/hearth/sdk/adapter/powerv1"
 	"github.com/mholtzscher/hearth/sdk/adapter/typed"
 )
@@ -26,6 +28,7 @@ type commandRoute struct {
 type desiredState struct {
 	power      bool
 	brightness int64
+	colorTemp  int64
 }
 
 type matchedState struct {
@@ -53,6 +56,7 @@ func (z2m *Adapter) HandleCommand(ctx context.Context, command adapter.Command, 
 	}
 }
 
+//nolint:gocognit // Each generated typed facade requires one explicit Entity-kind branch.
 func translateCommand(
 	ctx context.Context,
 	route commandRoute,
@@ -105,6 +109,33 @@ func translateCommand(
 				return nil
 			},
 		})
+		if err != nil {
+			return nil, desiredState{}, time.Time{}, err
+		}
+		if err = handler(ctx, command, responder); err != nil {
+			return nil, desiredState{}, time.Time{}, err
+		}
+	case entityKindColorTemp:
+		handler, err := sdkcolortempv1.NewCommandHandler(
+			route.entityID,
+			colorTempSupport(route.entity),
+			sdkcolortempv1.Handlers{
+				Set: func(
+					_ context.Context,
+					typedCommand typed.Command[contractcolortempv1.SetParameters],
+					_ adapter.Responder,
+				) error {
+					translated, valueErr := colorTempCommandValue(route.entity, typedCommand.Parameters.Value)
+					if valueErr != nil {
+						return valueErr
+					}
+					value = translated
+					desired.colorTemp = typedCommand.Parameters.Value
+					deadline = typedCommand.Deadline
+					return nil
+				},
+			},
+		)
 		if err != nil {
 			return nil, desiredState{}, time.Time{}, err
 		}
