@@ -61,6 +61,11 @@ function EntityJump() {
 
 function Shell() {
   const [baseUrl, setBaseUrlState] = useState(getBaseUrl());
+  // Commit on blur/Enter so mid-typing values don't refetch every page.
+  function commitBaseUrl(value: string) {
+    setBaseUrlState(value);
+    setBaseUrl(value.trim());
+  }
   return (
     <Box>
       <AppBar position="static">
@@ -90,9 +95,10 @@ function Shell() {
             label="hearthd base URL (empty = same origin)"
             placeholder="http://127.0.0.1:8080"
             value={baseUrl}
-            onChange={(e) => {
-              setBaseUrlState(e.target.value);
-              setBaseUrl(e.target.value.trim());
+            onChange={(e) => setBaseUrlState(e.target.value)}
+            onBlur={(e) => commitBaseUrl(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") commitBaseUrl((e.target as HTMLInputElement).value);
             }}
             sx={{ minWidth: 300 }}
           />

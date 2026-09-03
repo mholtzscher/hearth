@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useBaseUrlVersion } from "./client.ts";
 
 /** Minimal GET hook with manual refresh. POST/PATCH use apiFetch directly. */
 export function useApi<T>(key: string, fetcher: () => Promise<T>) {
@@ -6,6 +7,9 @@ export function useApi<T>(key: string, fetcher: () => Promise<T>) {
   const [error, setError] = useState<Error | null>(null);
   const [loading, setLoading] = useState(true);
   const generation = useRef(0);
+  // The hearthd base URL is part of the request identity: changing servers
+  // clears stale data and refetches, like navigating to a new resource.
+  const baseVersion = useBaseUrlVersion();
 
   const refresh = useCallback(async () => {
     const current = ++generation.current;
@@ -21,11 +25,12 @@ export function useApi<T>(key: string, fetcher: () => Promise<T>) {
     } finally {
       if (generation.current === current) setLoading(false);
     }
-  }, [key]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [key, baseVersion]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
-    // refresh identity changes only when key changes, so this clears stale
-    // data on navigation but not on manual or polling refreshes.
+    // refresh identity changes only when the key or base URL changes, so this
+    // clears stale data on navigation or server switch but not on manual or
+    // polling refreshes.
     setData(null);
     void refresh();
   }, [refresh]);

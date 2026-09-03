@@ -1,4 +1,5 @@
 import type { ProblemDetail } from "./types.ts";
+import { useEffect, useState } from "react";
 
 export class ApiError extends Error {
   status: number;
@@ -16,7 +17,28 @@ export function getBaseUrl(): string {
 }
 
 export function setBaseUrl(value: string): void {
-  localStorage.setItem("hearth.baseUrl", value.replace(/\/$/, ""));
+  const next = value.replace(/\/$/, "");
+  const prev = localStorage.getItem("hearth.baseUrl") ?? "";
+  if (prev === next) return;
+  localStorage.setItem("hearth.baseUrl", next);
+  baseUrlVersion++;
+  baseUrlListeners.forEach((listener) => listener());
+}
+
+let baseUrlVersion = 0;
+const baseUrlListeners = new Set<() => void>();
+
+/** Reactive base-URL generation for request identity (see useApi). */
+export function useBaseUrlVersion(): number {
+  const [version, setVersion] = useState(baseUrlVersion);
+  useEffect(() => {
+    const listener = () => setVersion(baseUrlVersion);
+    baseUrlListeners.add(listener);
+    return () => {
+      baseUrlListeners.delete(listener);
+    };
+  }, []);
+  return version;
 }
 
 function joinUrl(base: string, path: string): string {

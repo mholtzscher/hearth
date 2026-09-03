@@ -202,9 +202,10 @@ export default function EntityDetailPage() {
       setResult(res);
       void refresh();
     } catch (e) {
+      if (entityIdRef.current !== target) return;
       setSendError(e instanceof Error ? e : new Error(String(e)));
     } finally {
-      setSending(false);
+      if (entityIdRef.current === target) setSending(false);
     }
   }
 
@@ -219,9 +220,10 @@ export default function EntityDetailPage() {
       if (entityIdRef.current !== target) return;
       void refresh();
     } catch (e) {
+      if (entityIdRef.current !== target) return;
       setSendError(e instanceof Error ? e : new Error(String(e)));
     } finally {
-      setToggling(false);
+      if (entityIdRef.current === target) setToggling(false);
     }
   }
 
