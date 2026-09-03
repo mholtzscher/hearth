@@ -9,7 +9,7 @@ everywhere.
 
 - `hearthd` running, default `http://127.0.0.1:8080`
   (see root `README.md`; start NATS with `mise run nats` first).
-- Node (see `mise.lock` / root `mise.toml` for other tools; npm comes with Node).
+- Node + npm, provided by mise: run `mise install` from the repo root.
 
 ## Run
 
