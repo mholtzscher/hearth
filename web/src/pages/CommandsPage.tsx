@@ -8,7 +8,7 @@ import { ErrorBox, RawJson, StatusChip } from "../components/common.tsx";
 export default function CommandsPage() {
   const [commandId, setCommandId] = useState("");
   const [applied, setApplied] = useState("");
-  const { data, error, loading } = useApi<CommandRecord | null>(
+  const { data, error, loading, refresh } = useApi<CommandRecord | null>(
     `command-${applied || "none"}`,
     () => (applied ? apiFetch<CommandRecord>(`/v1/commands/${applied}`) : Promise.resolve(null)),
   );
@@ -28,7 +28,14 @@ export default function CommandsPage() {
           onChange={(e) => setCommandId(e.target.value)}
           sx={{ minWidth: 360 }}
         />
-        <Button variant="contained" onClick={() => setApplied(commandId.trim())}>
+        <Button
+          variant="contained"
+          onClick={() => {
+            const id = commandId.trim();
+            if (id && id === applied) void refresh();
+            else setApplied(id);
+          }}
+        >
           Look up
         </Button>
       </Box>

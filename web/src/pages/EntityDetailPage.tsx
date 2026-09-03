@@ -14,7 +14,7 @@ import {
   TextField,
   Typography,
 } from "@mui/material";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useParams } from "react-router-dom";
 import { ApiError, apiFetch } from "../api/client.ts";
 import { useApi } from "../api/hooks.ts";
@@ -35,16 +35,27 @@ function presetsFor(type: string | undefined, support?: Record<string, unknown>)
   }
 }
 
-function exampleParams(type: string | undefined): string {
-  return type === "hearth.brightness/v1" ? '{"value":50}' : '{"value":true}';
+function exampleParams(type: string | undefined, support?: Record<string, unknown>): string {
+  if (type === "hearth.brightness/v1") {
+    const { maximum, step } = brightnessBounds(support);
+    return `{"value":${step <= maximum ? step : 0}}`;
+  }
+  return '{"value":true}';
+}
+
+/** Per-entity brightness bounds; defaults preserve the old fixed presets. */
+function brightnessBounds(support?: Record<string, unknown>): { maximum: number; step: number } {
+  const state = support?.state as { maximum?: unknown } | undefined;
+  const set = (support?.operations as { set?: { step?: unknown } } | undefined)?.set;
+  return {
+    maximum: typeof state?.maximum === "number" ? state.maximum : 100,
+    step: typeof set?.step === "number" && set.step > 0 ? set.step : 1,
+  };
 }
 
 /** Brightness presets that satisfy the entity's own support (maximum and step). */
 function brightnessPresets(support?: Record<string, unknown>): { label: string; params: string }[] {
-  const state = support?.state as { maximum?: unknown } | undefined;
-  const set = (support?.operations as { set?: { step?: unknown } } | undefined)?.set;
-  const maximum = typeof state?.maximum === "number" ? state.maximum : 100;
-  const step = typeof set?.step === "number" && set.step > 0 ? set.step : 1;
+  const { maximum, step } = brightnessBounds(support);
   return [0, 50, 100]
     .filter((value) => value <= maximum && value % step === 0)
     .map((value) => ({ label: `brightness ${value}`, params: `{"value":${value}}` }));
@@ -143,6 +154,8 @@ function AvailabilityHistory({ entityId }: { entityId: string }) {
 
 export default function EntityDetailPage() {
   const { entityId = "" } = useParams();
+  const entityIdRef = useRef(entityId);
+  entityIdRef.current = entityId;
   const { data, error, loading, refresh } = useApi(`entity-${entityId}`, () =>
     apiFetch<Entity>(`/v1/entities/${entityId}`),
   );
@@ -150,7 +163,7 @@ export default function EntityDetailPage() {
   const [paramsText, setParamsText] = useState('{"value":true}');
   const [paramsTouched, setParamsTouched] = useState(false);
   useEffect(() => {
-    if (data && !paramsTouched) setParamsText(exampleParams(data.type));
+    if (data && !paramsTouched) setParamsText(exampleParams(data.type, data.support));
   }, [data, paramsTouched]);
   useEffect(() => {
     // The route reuses this page across entities: reset form and outcome state.
@@ -168,6 +181,7 @@ export default function EntityDetailPage() {
   const [toggling, setToggling] = useState(false);
 
   async function sendCommand() {
+    const target = entityId;
     setParamsError(null);
     setSendError(null);
     setResult(null);
@@ -180,10 +194,11 @@ export default function EntityDetailPage() {
     }
     setSending(true);
     try {
-      const res = await apiFetch<CommandResult>(`/v1/entities/${entityId}/commands`, {
+      const res = await apiFetch<CommandResult>(`/v1/entities/${target}/commands`, {
         method: "POST",
         body: JSON.stringify({ operation, parameters: params }),
       });
+      if (entityIdRef.current !== target) return;
       setResult(res);
       void refresh();
     } catch (e) {
@@ -194,12 +209,14 @@ export default function EntityDetailPage() {
   }
 
   async function setEnabled(enabled: boolean) {
+    const target = entityId;
     setToggling(true);
     try {
-      await apiFetch(`/v1/entities/${entityId}`, {
+      await apiFetch(`/v1/entities/${target}`, {
         method: "PATCH",
         body: JSON.stringify({ enabled }),
       });
+      if (entityIdRef.current !== target) return;
       void refresh();
     } catch (e) {
       setSendError(e instanceof Error ? e : new Error(String(e)));
@@ -281,7 +298,7 @@ export default function EntityDetailPage() {
                 value={paramsText}
                 onChange={(e) => { setParamsText(e.target.value); setParamsTouched(true); }}
                 error={!!paramsError}
-                helperText={paramsError ?? `e.g. ${exampleParams(data?.type)}${data ? ` for ${data.type} set` : ""}`}
+                helperText={paramsError ?? `e.g. ${exampleParams(data?.type, data?.support)}${data ? ` for ${data.type} set` : ""}`}
                 multiline
                 minRows={2}
                 sx={{ flexGrow: 1, minWidth: 280 }}
