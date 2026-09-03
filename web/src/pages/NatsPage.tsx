@@ -22,7 +22,7 @@ import {
   natsDisconnect,
   setNatsWsUrl,
 } from "../api/nats.ts";
-import { ErrorBox, Facts, RawJson, Section, StatusChip } from "../components/common.tsx";
+import { ErrorBox, Facts, JsonCode, RawJson, Section, StatusChip } from "../components/common.tsx";
 
 const MAX_MESSAGES = 200;
 
@@ -177,9 +177,13 @@ function LiveMessages() {
                 <TableCell sx={{ fontSize: 11, whiteSpace: "nowrap" }}>{m.at}</TableCell>
                 <TableCell sx={{ fontSize: 11, wordBreak: "break-all" }}>{m.subject}</TableCell>
                 <TableCell sx={{ fontSize: 11, maxWidth: 560, overflow: "hidden", textOverflow: "ellipsis" }}>
-                  <pre style={{ margin: 0, whiteSpace: "pre-wrap", wordBreak: "break-all" }}>
-                    {m.json !== null ? JSON.stringify(m.json, null, 1).slice(0, 2000) : m.payload.slice(0, 2000)}
-                  </pre>
+                  {m.json !== null ? (
+                    <JsonCode code={JSON.stringify(m.json, null, 1).slice(0, 2000)} />
+                  ) : (
+                    <pre style={{ margin: 0, whiteSpace: "pre-wrap", wordBreak: "break-all" }}>
+                      {m.payload.slice(0, 2000)}
+                    </pre>
+                  )}
                 </TableCell>
               </TableRow>
             ))}

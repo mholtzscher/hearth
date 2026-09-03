@@ -1,5 +1,6 @@
 import { Accordion, AccordionDetails, AccordionSummary, Box, Chip, Divider, Table, TableBody, TableCell, TableRow, Typography } from "@mui/material";
 import ExpandMoreIcon from "@mui/icons-material/ExpandMore";
+import { Highlight, themes } from "prism-react-renderer";
 import type { ReactNode } from "react";
 import { ApiError } from "../api/client.ts";
 
@@ -49,11 +50,34 @@ export function RawJson({ value, title = "Raw JSON" }: { value: unknown; title?:
         <Typography variant="subtitle2">{title}</Typography>
       </AccordionSummary>
       <AccordionDetails>
-        <Box component="pre" sx={{ overflow: "auto", fontSize: 12, m: 0 }}>
-          {JSON.stringify(value, null, 2)}
-        </Box>
+        <JsonCode code={JSON.stringify(value, null, 2) ?? String(value)} />
       </AccordionDetails>
     </Accordion>
+  );
+}
+
+/** Syntax-highlighted JSON block. Token colors from nightOwl, transparent
+    background so the block blends with the surrounding MUI surface. */
+const jsonTheme = {
+  ...themes.nightOwl,
+  plain: { ...themes.nightOwl.plain, backgroundColor: "transparent" },
+};
+
+export function JsonCode({ code }: { code: string }) {
+  return (
+    <Highlight code={code} language="json" theme={jsonTheme}>
+      {({ tokens, getLineProps, getTokenProps }) => (
+        <Box component="pre" sx={{ overflow: "auto", fontSize: 12, m: 0 }}>
+          {tokens.map((line, i) => (
+            <div key={i} {...getLineProps({ line, key: i })}>
+              {line.map((token, key) => (
+                <span key={key} {...getTokenProps({ token, key })} />
+              ))}
+            </div>
+          ))}
+        </Box>
+      )}
+    </Highlight>
   );
 }
 
