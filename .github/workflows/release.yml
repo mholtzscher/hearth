@@ -49,4 +49,5 @@ jobs:
           ko build --base-import-paths --tags "${TAG}" \
             ./cmd/hearthd \
             ./cmd/hearth-adapter-homeassistant \
+            ./cmd/hearth-adapter-zigbee2mqtt \
             ./cmd/hearth-simulator

@@ -1,0 +1,415 @@
+package zigbee2mqtt //nolint:testpackage // Tests exercise package-private lifecycle supervision.
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"log/slog"
+	"path/filepath"
+	"testing"
+	"time"
+
+	paho "github.com/eclipse/paho.mqtt.golang"
+	natsserver "github.com/nats-io/nats-server/v2/server"
+	natsgo "github.com/nats-io/nats.go"
+	"github.com/nats-io/nats.go/jetstream"
+
+	contractsv1 "github.com/mholtzscher/hearth/contracts/v1"
+	"github.com/mholtzscher/hearth/internal/modules/devices"
+	devicesnats "github.com/mholtzscher/hearth/internal/modules/devices/nats"
+	platformdb "github.com/mholtzscher/hearth/internal/platform/db"
+)
+
+// TestRunConnectsBothProtocols protects application assembly across one shared
+// native-NATS/MQTT server and fails on SDK metadata, logger wiring,
+// registration, command serving, linked observation, sibling cancellation, or
+// graceful release defects.
+//
+//nolint:cyclop,gocognit,gocyclo // One process-level lifecycle is clearest in one test.
+func TestRunConnectsBothProtocols(t *testing.T) {
+	t.Parallel()
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+	logRecords := make(chan slog.Record, 16)
+	logger := slog.New(recordHandler{records: logRecords})
+
+	server := startSharedNATSServer(t)
+	mqttURL := mqttServerURL(t, server)
+	coreConnection, err := natsgo.Connect(server.ClientURL())
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(coreConnection.Close)
+
+	database, err := platformdb.Open(ctx, filepath.Join(t.TempDir(), "hearth.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = database.Close() })
+	if err = platformdb.Migrate(ctx, database); err != nil {
+		t.Fatal(err)
+	}
+	catalog, err := devices.NewBuiltinTypeCatalog()
+	if err != nil {
+		t.Fatal(err)
+	}
+	repository := devices.NewSQLiteRepository(database, catalog)
+	validator, err := contractsv1.Compile()
+	if err != nil {
+		t.Fatal(err)
+	}
+	js, err := jetstream.New(coreConnection)
+	if err != nil {
+		t.Fatal(err)
+	}
+	durable, err := devicesnats.ProvisionObservationResources(ctx, js)
+	if err != nil {
+		t.Fatal(err)
+	}
+	service := devices.NewService(
+		devices.SQLiteStores(repository),
+		devicesnats.NewCommandSender(coreConnection, validator),
+		catalog,
+		devices.Dependencies{},
+	)
+	startCoreTransports(ctx, t, coreConnection, durable, validator, service, logger)
+
+	setRequests := make(chan []byte, 1)
+	upstream := connectMQTTClient(t, mqttURL, "zigbee2mqtt-process-test")
+	subscribeMQTT(t, upstream, "zigbee2mqtt/test-light/set", func(_ paho.Client, message paho.Message) {
+		payload := append([]byte(nil), message.Payload()...)
+		select {
+		case setRequests <- payload:
+		default:
+		}
+	})
+	publishRetainedSnapshots(t, upstream)
+
+	runContext, stopRun := context.WithCancel(ctx)
+	runErrors := make(chan error, 1)
+	go func() {
+		runErrors <- Run(runContext, Config{
+			AdapterID: "zigbee2mqtt",
+			NATSURL:   server.ClientURL(),
+			MQTT: MQTTConfig{
+				URL: mqttURL, BaseTopic: "zigbee2mqtt",
+			},
+		}, logger)
+	}()
+
+	entity := waitForReadyPowerEntity(ctx, t, service, runErrors)
+	publishMQTT(t, upstream, "zigbee2mqtt/bridge/event", false, []byte(`not-json`))
+	waitForLog(t, logRecords, "ignored malformed Zigbee2MQTT bridge event")
+
+	instance, err := service.GetAdapter(ctx, "zigbee2mqtt")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if instance.Health.Status != devices.AdapterHealthHealthy || instance.Health.Runtime == nil ||
+		instance.Health.Runtime.SoftwareName != "hearth-adapter-zigbee2mqtt" ||
+		instance.Health.Runtime.SoftwareVersion != "0.1.0" {
+		t.Fatalf("Adapter instance = %#v", instance)
+	}
+
+	type commandResult struct {
+		result devices.CommandResult
+		err    error
+	}
+	commandDone := make(chan commandResult, 1)
+	go func() {
+		result, executeErr := service.ExecuteCommand(
+			ctx,
+			entity.Entity.ID,
+			devices.OperationNameSet,
+			devices.CommandParameters(`{"value":true}`),
+		)
+		commandDone <- commandResult{result: result, err: executeErr}
+	}()
+	select {
+	case payload := <-setRequests:
+		var command map[string]json.RawMessage
+		if err = json.Unmarshal(payload, &command); err != nil {
+			t.Fatal(err)
+		}
+		if string(command["state"]) != `"ON"` || len(command) != 1 {
+			t.Fatalf("Zigbee2MQTT set payload = %s", payload)
+		}
+	case <-ctx.Done():
+		t.Fatalf("waiting for Zigbee2MQTT set: %v", ctx.Err())
+	}
+	for {
+		history, historyErr := service.ListEntityCommands(ctx, devices.ListEntityCommandsParams{
+			EntityID: entity.Entity.ID,
+			Limit:    1,
+		})
+		if historyErr != nil {
+			t.Fatal(historyErr)
+		}
+		if len(history.Items) == 1 && history.Items[0].Status == devices.CommandStatusAccepted {
+			break
+		}
+		select {
+		case completed := <-commandDone:
+			t.Fatalf("Command completed before delayed State: result=%#v error=%v", completed.result, completed.err)
+		case <-time.After(time.Millisecond):
+		}
+	}
+	publishMQTT(t, upstream, "zigbee2mqtt/test-light", false, []byte(`{"state":"ON"}`))
+	completed := <-commandDone
+	if completed.err != nil {
+		t.Fatal(completed.err)
+	}
+	if string(completed.result.Value) != "true" {
+		t.Fatalf("Command result = %#v", completed.result)
+	}
+	var receiptCount int
+	if err = database.QueryRowContext(
+		ctx,
+		"SELECT COUNT(*) FROM observation_receipts WHERE entity_id = ?",
+		string(entity.Entity.ID),
+	).Scan(&receiptCount); err != nil {
+		t.Fatal(err)
+	}
+	if receiptCount != 2 {
+		t.Fatalf("Observation receipts = %d, want startup State plus one linked outcome", receiptCount)
+	}
+
+	stopRun()
+	select {
+	case runErr := <-runErrors:
+		if runErr != nil {
+			t.Fatalf("Run returned after parent cancellation: %v", runErr)
+		}
+	case <-ctx.Done():
+		t.Fatalf("Run did not stop after parent cancellation: %v", ctx.Err())
+	}
+	instance, err = service.GetAdapter(ctx, "zigbee2mqtt")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if instance.Health.Status != devices.AdapterHealthUnhealthy || instance.Health.Runtime == nil ||
+		instance.Health.Runtime.Status != "offline" {
+		t.Fatalf("released Adapter instance = %#v", instance)
+	}
+}
+
+// TestSuperviseCancelsSiblingAndReturnsTerminalError protects the lifecycle
+// failure path and fails if the first component's error is discarded.
+func TestSuperviseCancelsSiblingAndReturnsTerminalError(t *testing.T) {
+	t.Parallel()
+	started := make(chan struct{})
+	terminalErr := errors.New("terminal adapter failure")
+
+	err := supervise(
+		context.Background(),
+		func(context.Context) error {
+			<-started
+			return terminalErr
+		},
+		func(ctx context.Context) error {
+			close(started)
+			<-ctx.Done()
+			return ctx.Err()
+		},
+	)
+	if !errors.Is(err, terminalErr) {
+		t.Fatalf("supervise error = %v, want terminal failure", err)
+	}
+}
+
+type recordHandler struct {
+	records chan<- slog.Record
+}
+
+func (handler recordHandler) Enabled(context.Context, slog.Level) bool { return true }
+
+func (handler recordHandler) Handle(_ context.Context, record slog.Record) error {
+	handler.records <- record.Clone()
+	return nil
+}
+
+func (handler recordHandler) WithAttrs([]slog.Attr) slog.Handler { return handler }
+
+func (handler recordHandler) WithGroup(string) slog.Handler { return handler }
+
+func waitForLog(t *testing.T, records <-chan slog.Record, message string) {
+	t.Helper()
+	timer := time.NewTimer(time.Second)
+	defer timer.Stop()
+	for {
+		select {
+		case record := <-records:
+			if record.Message == message {
+				return
+			}
+		case <-timer.C:
+			t.Fatalf("waiting for log message %q", message)
+		}
+	}
+}
+
+func startSharedNATSServer(t *testing.T) *natsserver.Server {
+	t.Helper()
+	server, err := natsserver.NewServer(&natsserver.Options{
+		ServerName: "hearth-zigbee2mqtt-process-test",
+		Host:       "127.0.0.1",
+		Port:       -1,
+		NoSigs:     true,
+		NoLog:      true,
+		JetStream:  true,
+		StoreDir:   t.TempDir(),
+		MQTT: natsserver.MQTTOpts{
+			Host: "127.0.0.1",
+			Port: -1,
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	go server.Start()
+	if !server.ReadyForConnections(10 * time.Second) {
+		server.Shutdown()
+		t.Fatal("NATS server did not become ready")
+	}
+	t.Cleanup(func() {
+		server.Shutdown()
+		server.WaitForShutdown()
+	})
+	return server
+}
+
+func mqttServerURL(t *testing.T, server *natsserver.Server) string {
+	t.Helper()
+	varz, err := server.Varz(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return fmt.Sprintf("tcp://127.0.0.1:%d", varz.MQTT.Port)
+}
+
+func startCoreTransports(
+	ctx context.Context,
+	t *testing.T,
+	connection *natsgo.Conn,
+	durable jetstream.Consumer,
+	validator *contractsv1.Validator,
+	service *devices.Service,
+	logger *slog.Logger,
+) {
+	t.Helper()
+	sessions, err := devicesnats.StartSessionServer(connection, validator, service, service, logger)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = sessions.Drain() })
+	registrations, err := devicesnats.StartRegistrationServer(connection, validator, service, logger)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = registrations.Drain() })
+	mappings, err := devicesnats.StartOwnedMappingsServer(connection, validator, service, logger)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = mappings.Drain() })
+	availability, err := devicesnats.StartEntityAvailabilityServer(connection, validator, service, logger)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = availability.Drain() })
+	observations, err := devicesnats.StartObservationConsumer(ctx, durable, validator, service, logger)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(observations.Stop)
+}
+
+func connectMQTTClient(t *testing.T, brokerURL, clientID string) paho.Client {
+	t.Helper()
+	client := paho.NewClient(paho.NewClientOptions().
+		AddBroker(brokerURL).
+		SetClientID(clientID).
+		SetProtocolVersion(4).
+		SetCleanSession(true))
+	if token := client.Connect(); !token.WaitTimeout(5*time.Second) || token.Error() != nil {
+		t.Fatalf("connect MQTT: %v", token.Error())
+	}
+	t.Cleanup(func() { client.Disconnect(0) })
+	return client
+}
+
+func subscribeMQTT(t *testing.T, client paho.Client, topic string, callback paho.MessageHandler) {
+	t.Helper()
+	if token := client.Subscribe(topic, 1, callback); !token.WaitTimeout(5*time.Second) || token.Error() != nil {
+		t.Fatalf("subscribe MQTT topic %q: %v", topic, token.Error())
+	}
+}
+
+func publishMQTT(t *testing.T, client paho.Client, topic string, retained bool, payload []byte) {
+	t.Helper()
+	if token := client.Publish(topic, 1, retained, payload); !token.WaitTimeout(5*time.Second) || token.Error() != nil {
+		t.Errorf("publish MQTT topic %q: %v", topic, token.Error())
+	}
+}
+
+func publishRetainedSnapshots(t *testing.T, client paho.Client) {
+	t.Helper()
+	messages := []struct {
+		topic   string
+		payload string
+	}{
+		{
+			topic: "zigbee2mqtt/bridge/info",
+			payload: `{"version":"2.13.0","config":{"mqtt":{"version":4},` +
+				`"availability":{"enabled":true},"device_options":{"optimistic":false}}}`,
+		},
+		{topic: "zigbee2mqtt/bridge/state", payload: `{"state":"online"}`},
+		{
+			topic: "zigbee2mqtt/bridge/devices",
+			payload: `[{"ieee_address":"0x00124b0000000001","type":"Router","supported":true,` +
+				`"disabled":false,"friendly_name":"test-light","description":"Test light",` +
+				`"interview_state":"SUCCESSFUL","endpoints":{},"definition":{"model":"TEST",` +
+				`"vendor":"Fixture","description":"Fixture","exposes":[{"type":"light","features":[` +
+				`{"type":"binary","name":"state","property":"state","access":7,` +
+				`"value_on":"ON","value_off":"OFF"}]}]}}]`,
+		},
+		{topic: "zigbee2mqtt/test-light/availability", payload: `{"state":"online"}`},
+		{topic: "zigbee2mqtt/test-light", payload: `{"state":"OFF"}`},
+	}
+	for _, message := range messages {
+		publishMQTT(t, client, message.topic, true, []byte(message.payload))
+	}
+}
+
+func waitForReadyPowerEntity(
+	ctx context.Context,
+	t *testing.T,
+	service *devices.Service,
+	runErrors <-chan error,
+) devices.EntityWithState {
+	t.Helper()
+	ticker := time.NewTicker(10 * time.Millisecond)
+	defer ticker.Stop()
+	for {
+		page, err := service.ListEntities(ctx, devices.ListEntitiesParams{Limit: 10})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(page.Items) == 1 {
+			entity := page.Items[0]
+			if entity.Entity.TypeID == "hearth.power/v1" && entity.State != nil &&
+				string(entity.State.Value) == "false" &&
+				entity.Availability.Status == devices.EntityAvailabilityAvailable {
+				return entity
+			}
+		}
+		select {
+		case runErr := <-runErrors:
+			t.Fatalf("Run exited before the power Entity was ready: %v", runErr)
+		case <-ctx.Done():
+			t.Fatalf("waiting for registered, observable, available power Entity: %v", ctx.Err())
+		case <-ticker.C:
+		}
+	}
+}

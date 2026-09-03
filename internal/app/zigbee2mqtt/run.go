@@ -1,0 +1,72 @@
+package zigbee2mqtt
+
+import (
+	"context"
+	"errors"
+	"log/slog"
+
+	zigbee2mqttadapter "github.com/mholtzscher/hearth/internal/adapters/zigbee2mqtt"
+	"github.com/mholtzscher/hearth/sdk/adapter"
+)
+
+const concurrentComponents = 2
+
+func Run(ctx context.Context, config Config, logger *slog.Logger) error {
+	if err := config.Validate(); err != nil {
+		return err
+	}
+	if logger == nil {
+		logger = slog.Default()
+	}
+
+	session, err := adapter.Connect(ctx, adapter.Config{
+		AdapterID:       config.AdapterID,
+		SoftwareName:    "hearth-adapter-zigbee2mqtt",
+		SoftwareVersion: "0.1.0",
+		NATSURL:         config.NATSURL,
+		Logger:          logger,
+	})
+	if err != nil {
+		return err
+	}
+	defer session.Close()
+
+	zigbeeAdapter, err := zigbee2mqttadapter.New(session, zigbee2mqttadapter.Config{
+		MQTTURL:   config.MQTT.URL,
+		BaseTopic: config.MQTT.BaseTopic,
+		ClientID:  DeriveClientID(config.AdapterID),
+	}, logger)
+	if err != nil {
+		return err
+	}
+
+	return supervise(
+		ctx,
+		zigbeeAdapter.Run,
+		func(runContext context.Context) error {
+			return session.ServeCommands(runContext, zigbeeAdapter.HandleCommand)
+		},
+	)
+}
+
+func supervise(
+	ctx context.Context,
+	runAdapter func(context.Context) error,
+	serveCommands func(context.Context) error,
+) error {
+	runContext, cancel := context.WithCancel(ctx)
+	defer cancel()
+	results := make(chan error, concurrentComponents)
+	go func() { results <- runAdapter(runContext) }()
+	go func() { results <- serveCommands(runContext) }()
+
+	first := <-results
+	cancel()
+	second := <-results
+	for _, runErr := range []error{first, second} {
+		if runErr != nil && !errors.Is(runErr, context.Canceled) {
+			return runErr
+		}
+	}
+	return nil
+}

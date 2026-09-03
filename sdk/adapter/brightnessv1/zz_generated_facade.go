@@ -32,7 +32,6 @@ type ObservationInput struct {
 	State             State
 	AdapterReceivedAt time.Time
 	SourceUpdatedAt   *time.Time
-	RefreshForCommand *string
 }
 
 var (
@@ -111,7 +110,7 @@ func NewObservation(input ObservationInput) (adapter.Observation, error) {
 	if err != nil {
 		return adapter.Observation{}, validationError(fmt.Errorf("invalid State: %w", err))
 	}
-	observation := adapter.Observation{EntityID: input.EntityID, Value: value, AdapterReceivedAt: input.AdapterReceivedAt.UTC().Format(time.RFC3339Nano), RefreshForCommand: input.RefreshForCommand}
+	observation := adapter.Observation{EntityID: input.EntityID, Value: value, AdapterReceivedAt: input.AdapterReceivedAt.UTC().Format(time.RFC3339Nano)}
 	if input.SourceUpdatedAt != nil {
 		formatted := input.SourceUpdatedAt.UTC().Format(time.RFC3339Nano)
 		observation.SourceUpdatedAt = &formatted

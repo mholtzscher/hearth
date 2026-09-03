@@ -75,7 +75,7 @@ description = "Build container images locally"
 depends = ["tidy"]
 run = '''
 KO_DOCKER_REPO=example.invalid/hearth ko build --base-import-paths --tags validation --push=false \
-  ./cmd/hearthd ./cmd/hearth-adapter-homeassistant ./cmd/hearth-simulator
+  ./cmd/hearthd ./cmd/hearth-adapter-homeassistant ./cmd/hearth-adapter-zigbee2mqtt ./cmd/hearth-simulator
 '''
 
 [tasks."update-lint-config"]
@@ -116,12 +116,22 @@ run = '''go test ./internal/contracts/v1/natswire -run='^$' -fuzz='^FuzzCodecObs
 description = "Run a bounded NATS subject parser fuzz campaign"
 run = '''go test ./internal/contracts/v1/natswire -run='^$' -fuzz='^FuzzSubjectParsersCanonicalRoundTrip$' -fuzztime="${FUZZTIME:-5s}"'''
 
+[tasks."fuzz-zigbee2mqtt-discovery"]
+description = "Run a bounded Zigbee2MQTT inventory fuzz campaign"
+run = '''go test ./internal/adapters/zigbee2mqtt -run='^$' -fuzz='^FuzzDiscoverInventory$' -fuzztime="${FUZZTIME:-5s}"'''
+
+[tasks."fuzz-zigbee2mqtt-state"]
+description = "Run a bounded Zigbee2MQTT State fuzz campaign"
+run = '''go test ./internal/adapters/zigbee2mqtt -run='^$' -fuzz='^FuzzDeviceState$' -fuzztime="${FUZZTIME:-5s}"'''
+
 [tasks."fuzz"]
 description = "Run all bounded fuzz campaigns"
 run = '''
 mise run fuzz-natswire-subjects
 mise run fuzz-entitytypes-json-codec
 mise run fuzz-natswire-codec
+mise run fuzz-zigbee2mqtt-discovery
+mise run fuzz-zigbee2mqtt-state
 '''
 
 [tasks."vet"]
@@ -130,8 +140,8 @@ depends = ["tidy"]
 run = '''go vet ./...'''
 
 [tasks."nats"]
-description = "Run NATS server with JetStream (data in .data/nats)"
-run = '''nats-server -js -sd .data/nats'''
+description = "Run NATS server with JetStream and MQTT (data in .data/nats)"
+run = '''nats-server -c configs/nats-server.conf'''
 
 [tasks."mutation-test"]
 description = "Run Gremlins mutation testing (pass package paths after --)"

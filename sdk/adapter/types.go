@@ -132,10 +132,14 @@ type Observation struct {
 	Value             json.RawMessage `json:"value"`
 	AdapterReceivedAt string          `json:"adapter_received_at"`
 	SourceUpdatedAt   *string         `json:"source_updated_at,omitempty"`
-	RefreshForCommand *string         `json:"refresh_for_command_id,omitempty"`
 }
 
 type ObservationID string
+
+// CommandEvidence publishes Observations linked to one accepted Command.
+type CommandEvidence interface {
+	PublishObservation(context.Context, Observation) (ObservationID, error)
+}
 
 type Command struct {
 	ID            string          `json:"-"`
@@ -160,7 +164,7 @@ type CommandError struct {
 type CommandHandler func(context.Context, Command, Responder) error
 
 type Responder interface {
-	Accept() error
+	Accept() (CommandEvidence, error)
 	Reject(message string) error
 	RejectUnavailable(message string) error
 }

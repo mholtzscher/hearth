@@ -46,7 +46,7 @@ Adapters register configured Devices and Entities over Core NATS request/reply, 
 ## Key trade-offs
 
 - JetStream durably recovers Observation evidence; SQLite owns transactional canonical State and non-replayable Command history.
-- State follows core receive order while source times remain diagnostic metadata; Command success requires an explicit linked refresh rather than upstream acceptance alone.
+- State follows core receive order while source times remain diagnostic metadata; Command success requires explicit linked evidence from the capability returned by acceptance rather than upstream acceptance alone.
 - A thin SDK centralizes protocol mechanics while vendor behavior stays in adapters; the first slice remains one `devices` module.
 - Generic JSON State values and Command parameters avoid boolean-specific transport and persistence, at the cost of moving semantic validation from structural wire schemas into a core-owned Entity-type catalog.
 - The catalog is deliberately closed and concrete in this slice: it establishes the seam for later built-in or explicitly installed definitions without implementing runtime extension loading.
@@ -379,10 +379,12 @@ Constraints:
 - Re-registration with the same adapter ID, binding key, and Entity key returns the same canonical IDs. Changing the Entity key for an existing binding is an identity conflict; changing its Entity type rejects the whole registration. Valid normalized support, name, and external-ID updates commit transactionally.
 - A conflicting external mapping rejects the whole registration transaction.
 
-### Observation payload
+### Observation wire payload
+
+Each binary keeps this wire DTO private. The public SDK `Observation` type omits `RefreshForCommand`; only command evidence can add the private wire link.
 
 ```go
-type Observation struct {
+type wireObservation struct {
     EntityID          string          `json:"entity_id"`
     Value             json.RawMessage `json:"value"`
     AdapterReceivedAt string          `json:"adapter_received_at"`
@@ -395,8 +397,8 @@ type Observation struct {
 - `adapter_received_at` is when the adapter freshly acquired the value.
 - `source_updated_at` preserves an optional upstream last-change claim.
 - The core adds `observed_at` from the JetStream server timestamp when the message was durably received.
-- A command refresh carries both `refresh_for_command_id = cmd_...` and envelope `causation_id = cmd_...`, and reuses the Command correlation ID.
-- The SDK generates the `obs_...` envelope ID once per `PublishObservation` call.
+- A command-evidence publication carries both `refresh_for_command_id = cmd_...` and envelope `causation_id = cmd_...`, and reuses the accepted Command correlation ID.
+- The SDK generates the `obs_...` envelope ID once per ordinary or evidence publication call.
 
 ### Command payloads
 
@@ -536,6 +538,17 @@ func (*Session) PublishObservation(context.Context, Observation) (ObservationID,
 func (*Session) ServeCommands(context.Context, CommandHandler) error
 func (*Session) Close() error
 
+type Observation struct {
+    EntityID          string          `json:"entity_id"`
+    Value             json.RawMessage `json:"value"`
+    AdapterReceivedAt string          `json:"adapter_received_at"`
+    SourceUpdatedAt   *string         `json:"source_updated_at,omitempty"`
+}
+
+type CommandEvidence interface {
+    PublishObservation(context.Context, Observation) (ObservationID, error)
+}
+
 type RegistrationRejectionCode string
 const (
     RegistrationInvalidDescriptor   RegistrationRejectionCode = "invalid_descriptor"
@@ -553,12 +566,13 @@ func (*RegistrationRejectedError) Error() string
 type CommandHandler func(context.Context, Command, Responder) error
 
 type Responder interface {
-    Accept() error
+    Accept() (CommandEvidence, error)
     Reject(message string) error
+    RejectUnavailable(message string) error
 }
 ```
 
-The generic Session methods remain unchanged. Typed routing converts one `(entity ID, operation name)` route into the same `CommandHandler` interface:
+Typed routing converts one `(entity ID, operation name)` route into the same `CommandHandler` interface:
 
 ```go
 // sdk/adapter/typed
@@ -579,15 +593,16 @@ func NewCommandHandler(string, Support, Handlers) (adapter.CommandHandler, error
 func NewObservation(ObservationInput) (adapter.Observation, error)
 ```
 
-The generated facades validate and normalize support, expose typed parameters, and require Observation support so support-dependent State rules run before encoding; they also format Observation timestamps as UTC. A Go adapter can therefore register, route Commands, and publish Observations without constructing `json.RawMessage` or switching on operation strings. The generic Session retains concurrency, one-shot responder, acknowledgement/retry, and trace/correlation/causation behavior.
+The generated facades validate and normalize support, expose typed parameters, and require Observation support so support-dependent State rules run before encoding; they also format Observation timestamps as UTC. A Go adapter can therefore register, route Commands, and publish ordinary Observations without constructing `json.RawMessage` or switching on operation strings. The generic Session retains concurrency, one-shot response, acknowledgement/retry, and trace/correlation/causation behavior; successful acceptance adds the command-evidence publication capability.
 
 Interface contract:
 
 - `Connect` validates the adapter slug, compiles embedded schemas, connects to NATS, and installs W3C propagation. It does not provision core-owned streams.
 - `Register` validates the request and retries one prepared request envelope across timeout, no-responder, and transient NATS failures until success or context cancellation. An accepted response returns its `Binding`; a rejected response returns `*RegistrationRejectedError`, suitable for `errors.As`. Local validation, malformed responses, and registration rejection are permanent failures.
-- `PublishObservation` generates one Observation envelope and retries that same bytes/ID across transient NATS disconnects. It returns the generated ID after JetStream publish acknowledgement, or returns that ID with an error when the context expires. There is no local outbox.
+- `PublishObservation` generates one ordinary Observation envelope and retries that same bytes/ID across transient NATS disconnects. It returns the generated ID after JetStream publish acknowledgement, or returns that ID with an error when the context expires. There is no local outbox.
 - `ServeCommands` subscribes to the adapter-scoped wildcard, starts an independent handler invocation for each valid request, and blocks until context cancellation or terminal serving failure. Handler invocations may overlap, including for the same Entity, so adapter code must be concurrency-safe. An adapter may serialize internally when its vendor protocol requires it, but the SDK and core provide no ordering guarantee.
-- A `Responder` is one-shot. `Accept` or `Reject` sends the Core NATS reply; `Reject` emits the fixed v1 code `upstream_rejected`. A second reply returns `ErrAlreadyResponded`. Returning without a reply returns/logs `ErrMissingResponse` and lets the core request time out.
+- A `Responder` is one-shot. `Accept` first sends the Core NATS acceptance reply and then returns evidence bound to that Command's ID, correlation, Entity, runtime, deadline, and trace context. A failed response returns nil evidence without consuming the responder, so the caller may retry; a response after success returns `ErrAlreadyResponded`. `Reject` emits the fixed v1 code `upstream_rejected`; `RejectUnavailable` emits `entity_unavailable`. Returning without a reply returns/logs `ErrMissingResponse` and lets the core request time out.
+- Evidence may publish zero or more Observations for its bound Entity after the handler returns. It supplies the Command linkage and metadata, retries one stable envelope/ID through transient failure until acknowledgement or the effective deadline, and rejects a different Entity before publication. The caller context may shorten publication but cannot extend the Command deadline.
 - `Close` is idempotent and drains subscriptions within the caller's shutdown budget.
 - Vendor calls, credentials, polling, state refresh, mapping, and checkpoints remain outside the SDK.
 
@@ -942,9 +957,9 @@ The adapter uses Home Assistant's WebSocket API directly:
 3. Publish the configured light's snapshot, then replay buffered events whose Home Assistant `last_updated` is later than the snapshot's `last_updated`, in WebSocket arrival order, before switching to live event publication. This closes the snapshot-to-subscription gap without letting pre-snapshot events overwrite the snapshot.
 4. Map `on`/`off` to the JSON booleans accepted by `hearth.power/v1`; reject unsupported/unavailable values rather than inventing State.
 5. Map `set` parameters `{"value":true}`/`{"value":false}` to `light.turn_on`/`light.turn_off`. Reject failed calls; accept after successful service-call completion.
-6. Call `get_states` and durably publish a linked refresh Observation.
+6. Call `get_states` and durably publish a linked refresh through the evidence returned by successful acceptance.
 
-Adapter acquisition time is `adapter_received_at`; Home Assistant `last_updated` is optional `source_updated_at` and is used only by the adapter to reconcile buffered startup/reconnect events. Core `observed_at` comes from the JetStream server timestamp. Home Assistant identifiers, service names, contexts, and payloads stay in this package. WebSocket request IDs, pending responses, event buffering, and refresh publications are concurrency-safe: overlapping handlers may issue calls concurrently, and each refresh retains its Command/correlation IDs. The adapter serializes by Entity only if the protocol requires it and is deleted after migration.
+Adapter acquisition time is `adapter_received_at`; Home Assistant `last_updated` is optional `source_updated_at` and is used only by the adapter to reconcile buffered startup/reconnect events. Core `observed_at` comes from the JetStream server timestamp. Home Assistant identifiers, service names, contexts, and payloads stay in this package. WebSocket request IDs, pending responses, event buffering, and refresh publications are concurrency-safe: overlapping handlers may issue calls concurrently, and each refresh uses its accepted Command evidence. The adapter serializes by Entity only if the protocol requires it and is deleted after migration.
 
 ## Configuration
 

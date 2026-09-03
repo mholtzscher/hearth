@@ -41,7 +41,8 @@ func TestCommandSenderDispatchesValidatedCorrelatedRequests(t *testing.T) {
 		serveErrors <- session.ServeCommands(ctx, func(_ context.Context, command adapter.Command, responder adapter.Responder) error {
 			served <- command
 			if string(command.Parameters) == `{"value":true}` {
-				return responder.Accept()
+				_, acceptErr := responder.Accept()
+				return acceptErr
 			}
 			return responder.Reject("simulated rejection")
 		})
