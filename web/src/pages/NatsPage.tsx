@@ -101,11 +101,6 @@ function LiveMessages() {
     setStatus("disconnected");
   }
 
-  async function disconnect() {
-    unsubscribe();
-    await natsDisconnect();
-  }
-
   const visible = messages.filter((m) => !filter || m.subject.includes(filter));
 
   return (
@@ -149,9 +144,6 @@ function LiveMessages() {
         </Button>
         <Button variant="outlined" size="small" disabled={status === "disconnected"} onClick={unsubscribe}>
           Unsubscribe
-        </Button>
-        <Button variant="outlined" size="small" onClick={() => void disconnect()}>
-          Disconnect
         </Button>
         <Button variant="outlined" size="small" onClick={() => setPaused((p) => !p)}>
           {paused ? "Resume" : "Pause"}
