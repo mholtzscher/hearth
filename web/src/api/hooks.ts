@@ -38,11 +38,17 @@ export function useApi<T>(key: string, fetcher: () => Promise<T>) {
   return { data, error, loading, refresh };
 }
 
-/** Polling variant for health indicators. */
+/** Polling variant for health indicators. Skips a tick while a request is still
+    in flight instead of piling up overlapping fetches. */
 export function usePolling<T>(key: string, fetcher: () => Promise<T>, intervalMs: number) {
   const result = useApi<T>(key, fetcher);
+  const resultRef = useRef(result);
+  resultRef.current = result;
   useEffect(() => {
-    const timer = setInterval(() => void result.refresh(), intervalMs);
+    const timer = setInterval(() => {
+      const latest = resultRef.current;
+      if (!latest.loading) void latest.refresh();
+    }, intervalMs);
     return () => clearInterval(timer);
   }, [key, intervalMs]); // eslint-disable-line react-hooks/exhaustive-deps
   return result;

@@ -11,16 +11,21 @@ import {
   TextField,
   Typography,
 } from "@mui/material";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type { ReactNode } from "react";
 import { Link as RouterLink } from "react-router-dom";
-import { apiFetch } from "../api/client.ts";
+import { apiFetch, useBaseUrlVersion } from "../api/client.ts";
 import { useApi } from "../api/hooks.ts";
 import type { Adapter, Collection } from "../api/types.ts";
 import { ErrorBox, Facts, RawJson, Section, StatusChip } from "../components/common.tsx";
 
 function AdapterHealthHistory({ adapterId }: { adapterId: string }) {
   const [cursor, setCursor] = useState<string | undefined>(undefined);
+  const baseVersion = useBaseUrlVersion();
+  useEffect(() => {
+    // Cursors are scoped to one server: restart from the first page there.
+    setCursor(undefined);
+  }, [baseVersion]);
   const { data, error, loading } = useApi(
     `adapter-health-${adapterId}-${cursor ?? "first"}`,
     () =>
@@ -107,6 +112,12 @@ export default function AdaptersPage() {
   const [cursor, setCursor] = useState<string | undefined>(undefined);
   const [selected, setSelected] = useState("");
   const [filter, setFilter] = useState("");
+  const [detailNonce, setDetailNonce] = useState(0);
+  const baseVersion = useBaseUrlVersion();
+  useEffect(() => {
+    // Cursors are scoped to one server: restart from the first page there.
+    setCursor(undefined);
+  }, [baseVersion]);
   const { data, error, loading, refresh } = useApi(`adapters-${cursor ?? "first"}`, () =>
     apiFetch<Collection<Adapter>>(`/v1/adapters?limit=50${cursor ? `&cursor=${encodeURIComponent(cursor)}` : ""}`),
   );
@@ -117,7 +128,7 @@ export default function AdaptersPage() {
       <Typography variant="h5">Adapters</Typography>
       <Box sx={{ display: "flex", gap: 1, mt: 1 }}>
         <TextField size="small" label="Filter by id" value={filter} onChange={(e) => setFilter(e.target.value)} />
-        <Button variant="outlined" onClick={() => void refresh()}>
+        <Button variant="outlined" onClick={() => { void refresh(); setDetailNonce((n) => n + 1); }}>
           Refresh
         </Button>
         <Button
@@ -165,7 +176,7 @@ export default function AdaptersPage() {
           <RawJson value={data} title="Raw list JSON" />
         </>
       )}
-      {selected && <AdapterDetail adapterId={selected} />}
+      {selected && <AdapterDetail key={`${selected}-${detailNonce}`} adapterId={selected} />}
     </Box>
   );
 }

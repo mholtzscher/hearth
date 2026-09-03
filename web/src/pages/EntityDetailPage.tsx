@@ -16,7 +16,7 @@ import {
 } from "@mui/material";
 import { useEffect, useRef, useState } from "react";
 import { useParams } from "react-router-dom";
-import { ApiError, apiFetch } from "../api/client.ts";
+import { ApiError, apiFetch, useBaseUrlVersion } from "../api/client.ts";
 import { useApi } from "../api/hooks.ts";
 import type { Collection, CommandRecord, CommandResult, Entity, HealthTransition } from "../api/types.ts";
 import { ErrorBox, Facts, RawJson, Section, StatusChip } from "../components/common.tsx";
@@ -63,6 +63,11 @@ function brightnessPresets(support?: Record<string, unknown>): { label: string; 
 
 function CommandHistory({ entityId }: { entityId: string }) {
   const [cursor, setCursor] = useState<string | undefined>(undefined);
+  const baseVersion = useBaseUrlVersion();
+  useEffect(() => {
+    // Cursors are scoped to one server: restart from the first page there.
+    setCursor(undefined);
+  }, [baseVersion]);
   const { data, error, loading, refresh } = useApi(
     `cmds-${entityId}-${cursor ?? "first"}`,
     () =>
@@ -114,6 +119,11 @@ function CommandHistory({ entityId }: { entityId: string }) {
 
 function AvailabilityHistory({ entityId }: { entityId: string }) {
   const [cursor, setCursor] = useState<string | undefined>(undefined);
+  const baseVersion = useBaseUrlVersion();
+  useEffect(() => {
+    // Cursors are scoped to one server: restart from the first page there.
+    setCursor(undefined);
+  }, [baseVersion]);
   const { data, error, loading } = useApi(
     `avail-${entityId}-${cursor ?? "first"}`,
     () =>
@@ -156,6 +166,9 @@ export default function EntityDetailPage() {
   const { entityId = "" } = useParams();
   const entityIdRef = useRef(entityId);
   entityIdRef.current = entityId;
+  const baseVersion = useBaseUrlVersion();
+  const baseVersionRef = useRef(baseVersion);
+  baseVersionRef.current = baseVersion;
   const { data, error, loading, refresh } = useApi(`entity-${entityId}`, () =>
     apiFetch<Entity>(`/v1/entities/${entityId}`),
   );
@@ -166,14 +179,17 @@ export default function EntityDetailPage() {
     if (data && !paramsTouched) setParamsText(exampleParams(data.type, data.support));
   }, [data, paramsTouched]);
   useEffect(() => {
-    // The route reuses this page across entities: reset form and outcome state.
+    // The route reuses this page across entities, and the toolbar can switch
+    // servers under the same entity ID: reset form, outcome, and pending state.
     setOperation("set");
     setParamsText('{"value":true}');
     setParamsTouched(false);
     setParamsError(null);
     setResult(null);
     setSendError(null);
-  }, [entityId]);
+    setSending(false);
+    setToggling(false);
+  }, [entityId, baseVersion]);
   const [paramsError, setParamsError] = useState<string | null>(null);
   const [sending, setSending] = useState(false);
   const [result, setResult] = useState<CommandResult | null>(null);
@@ -182,6 +198,7 @@ export default function EntityDetailPage() {
 
   async function sendCommand() {
     const target = entityId;
+    const targetBase = baseVersionRef.current;
     setParamsError(null);
     setSendError(null);
     setResult(null);
@@ -198,32 +215,33 @@ export default function EntityDetailPage() {
         method: "POST",
         body: JSON.stringify({ operation, parameters: params }),
       });
-      if (entityIdRef.current !== target) return;
+      if (entityIdRef.current !== target || baseVersionRef.current !== targetBase) return;
       setResult(res);
       void refresh();
     } catch (e) {
-      if (entityIdRef.current !== target) return;
+      if (entityIdRef.current !== target || baseVersionRef.current !== targetBase) return;
       setSendError(e instanceof Error ? e : new Error(String(e)));
     } finally {
-      if (entityIdRef.current === target) setSending(false);
+      if (entityIdRef.current === target && baseVersionRef.current === targetBase) setSending(false);
     }
   }
 
   async function setEnabled(enabled: boolean) {
     const target = entityId;
+    const targetBase = baseVersionRef.current;
     setToggling(true);
     try {
       await apiFetch(`/v1/entities/${target}`, {
         method: "PATCH",
         body: JSON.stringify({ enabled }),
       });
-      if (entityIdRef.current !== target) return;
+      if (entityIdRef.current !== target || baseVersionRef.current !== targetBase) return;
       void refresh();
     } catch (e) {
-      if (entityIdRef.current !== target) return;
+      if (entityIdRef.current !== target || baseVersionRef.current !== targetBase) return;
       setSendError(e instanceof Error ? e : new Error(String(e)));
     } finally {
-      if (entityIdRef.current === target) setToggling(false);
+      if (entityIdRef.current === target && baseVersionRef.current === targetBase) setToggling(false);
     }
   }
 

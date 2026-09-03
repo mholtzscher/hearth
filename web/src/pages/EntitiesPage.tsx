@@ -10,15 +10,20 @@ import {
   TextField,
   Typography,
 } from "@mui/material";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Link as RouterLink } from "react-router-dom";
-import { apiFetch } from "../api/client.ts";
+import { apiFetch, useBaseUrlVersion } from "../api/client.ts";
 import { useApi } from "../api/hooks.ts";
 import type { Collection, Entity } from "../api/types.ts";
 import { ErrorBox, RawJson, StatusChip } from "../components/common.tsx";
 
 export default function EntitiesPage() {
   const [cursor, setCursor] = useState<string | undefined>(undefined);
+  const baseVersion = useBaseUrlVersion();
+  useEffect(() => {
+    // Cursors are scoped to one server: restart from the first page there.
+    setCursor(undefined);
+  }, [baseVersion]);
   const [deviceId, setDeviceId] = useState("");
   const [appliedDeviceId, setAppliedDeviceId] = useState("");
   const query = `/v1/entities?limit=50${cursor ? `&cursor=${encodeURIComponent(cursor)}` : ""}${appliedDeviceId ? `&device_id=${encodeURIComponent(appliedDeviceId)}` : ""}`;

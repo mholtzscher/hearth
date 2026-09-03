@@ -62,6 +62,10 @@ function LiveMessages() {
   const subRef = useRef<Subscription | null>(null);
   const pausedRef = useRef(false);
   const mountedRef = useRef(true);
+  const attemptRef = useRef(0);
+  // Generation of the latest connection attempt. Completions from an attempt
+  // superseded by Unsubscribe (or a newer Subscribe) are discarded instead of
+  // resurrecting a canceled subscription.
 
   useEffect(() => {
     pausedRef.current = paused;
@@ -83,10 +87,18 @@ function LiveMessages() {
   async function subscribe() {
     setStatusError(null);
     if (subRef.current) return;
+    const attempt = ++attemptRef.current;
     const target = subject.trim() || SUBJECT_PRESETS[0].subject;
     setStatus("connecting");
     try {
       const nc = await natsConnect();
+      if (attempt !== attemptRef.current) {
+        // Superseded by Unsubscribe: don't resurrect the subscription. Tear
+        // down the just-opened connection unless a newer attempt already
+        // claimed it for a live subscription.
+        if (subRef.current == null) await natsDisconnect();
+        return;
+      }
       if (!mountedRef.current) {
         await natsDisconnect();
         return;
@@ -118,6 +130,8 @@ function LiveMessages() {
   }
 
   function unsubscribe() {
+    // Invalidate any in-flight connection attempt so its completion is discarded.
+    attemptRef.current++;
     subRef.current?.unsubscribe();
     subRef.current = null;
     setStatus("disconnected");
