@@ -24,7 +24,7 @@ export default function DevicesPage() {
   const [selected, setSelected] = useState<string | null>(null);
   const detail = useApi<DeviceDetail | null>(`device-${selected ?? "none"}`, () =>
     selected
-      ? apiFetch<DeviceDetail>(`/v1/devices/${selected}?entity_limit=50`)
+      ? apiFetch<DeviceDetail>(`/v1/devices/${selected}?entity_limit=200`)
       : Promise.resolve(null),
   );
 

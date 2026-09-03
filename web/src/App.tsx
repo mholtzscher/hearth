@@ -1,7 +1,7 @@
 import { AppBar, Box, Button, Container, TextField, Toolbar, Typography } from "@mui/material";
 import { useState } from "react";
 import { HashRouter, Link as RouterLink, Route, Routes, useNavigate } from "react-router-dom";
-import { api, getBaseUrl, setBaseUrl } from "./api/client.ts";
+import { api, ApiError, getBaseUrl, setBaseUrl } from "./api/client.ts";
 import { usePolling } from "./api/hooks.ts";
 import { StatusChip } from "./components/common.tsx";
 import AdaptersPage from "./pages/AdaptersPage.tsx";
@@ -15,10 +15,21 @@ function HealthBadges() {
   const ready = usePolling("readyz", api.ready, 10_000);
   return (
     <Box sx={{ display: "flex", gap: 1, alignItems: "center" }}>
-      <StatusChip label="healthz" status={health.data?.status ?? (health.error ? "unreachable" : "unknown")} />
-      <StatusChip label="readyz" status={ready.data?.status ?? (ready.error ? "unreachable" : "unknown")} />
+      <StatusChip label="healthz" status={readyStatus(health.data?.status, health.error)} />
+      <StatusChip label="readyz" status={readyStatus(ready.data?.status, ready.error)} />
     </Box>
   );
+}
+
+/** Preserve an expected 503 readiness status; only transport/parse failures are unreachable. */
+function readyStatus(dataStatus: string | undefined, error: Error | null): string {
+  if (dataStatus) return dataStatus;
+  if (error instanceof ApiError && error.status === 503 && typeof error.detail === "object") {
+    const status = (error.detail as { status?: unknown }).status;
+    if (typeof status === "string") return status;
+  }
+  if (error) return "unreachable";
+  return "unknown";
 }
 
 function EntityJump() {

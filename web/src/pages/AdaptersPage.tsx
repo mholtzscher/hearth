@@ -96,7 +96,7 @@ function AdapterDetail({ adapterId }: { adapterId: string }) {
         ]}
       />
       <Section title="Health history">
-        <AdapterHealthHistory adapterId={adapterId} />
+        <AdapterHealthHistory key={adapterId} adapterId={adapterId} />
       </Section>
       <RawJson value={data} />
     </Paper>

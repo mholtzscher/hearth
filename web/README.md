@@ -29,6 +29,8 @@ HEARTHD_URL=http://127.0.0.1:8080 npm run dev
 To point at a non-loopback `hearthd` on a trusted network, set the base URL in
 the toolbar (stored in `localStorage`) instead of using the proxy. The HTTP API
 has no authentication, so keep `hearthd` on loopback or a trusted network.
+Cross-origin reads work directly; commands (POST/PATCH) require the same-origin
+proxy until `hearthd` serves CORS headers.
 
 ## Build
 

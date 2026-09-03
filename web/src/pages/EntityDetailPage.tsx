@@ -21,7 +21,7 @@ import { useApi } from "../api/hooks.ts";
 import type { Collection, CommandRecord, CommandResult, Entity, HealthTransition } from "../api/types.ts";
 import { ErrorBox, Facts, RawJson, Section, StatusChip } from "../components/common.tsx";
 
-function presetsFor(type: string | undefined): { label: string; params: string }[] {
+function presetsFor(type: string | undefined, support?: Record<string, unknown>): { label: string; params: string }[] {
   switch (type) {
     case "hearth.power/v1":
       return [
@@ -29,11 +29,7 @@ function presetsFor(type: string | undefined): { label: string; params: string }
         { label: "power off", params: '{"value":false}' },
       ];
     case "hearth.brightness/v1":
-      return [
-        { label: "brightness 0", params: '{"value":0}' },
-        { label: "brightness 50", params: '{"value":50}' },
-        { label: "brightness 100", params: '{"value":100}' },
-      ];
+      return brightnessPresets(support);
     default:
       return [];
   }
@@ -41,6 +37,17 @@ function presetsFor(type: string | undefined): { label: string; params: string }
 
 function exampleParams(type: string | undefined): string {
   return type === "hearth.brightness/v1" ? '{"value":50}' : '{"value":true}';
+}
+
+/** Brightness presets that satisfy the entity's own support (maximum and step). */
+function brightnessPresets(support?: Record<string, unknown>): { label: string; params: string }[] {
+  const state = support?.state as { maximum?: unknown } | undefined;
+  const set = (support?.operations as { set?: { step?: unknown } } | undefined)?.set;
+  const maximum = typeof state?.maximum === "number" ? state.maximum : 100;
+  const step = typeof set?.step === "number" && set.step > 0 ? set.step : 1;
+  return [0, 50, 100]
+    .filter((value) => value <= maximum && value % step === 0)
+    .map((value) => ({ label: `brightness ${value}`, params: `{"value":${value}}` }));
 }
 
 function CommandHistory({ entityId }: { entityId: string }) {
@@ -145,6 +152,15 @@ export default function EntityDetailPage() {
   useEffect(() => {
     if (data && !paramsTouched) setParamsText(exampleParams(data.type));
   }, [data, paramsTouched]);
+  useEffect(() => {
+    // The route reuses this page across entities: reset form and outcome state.
+    setOperation("set");
+    setParamsText('{"value":true}');
+    setParamsTouched(false);
+    setParamsError(null);
+    setResult(null);
+    setSendError(null);
+  }, [entityId]);
   const [paramsError, setParamsError] = useState<string | null>(null);
   const [sending, setSending] = useState(false);
   const [result, setResult] = useState<CommandResult | null>(null);
@@ -242,9 +258,9 @@ export default function EntityDetailPage() {
 
           <Section title="Send command (POST /v1/entities/{id}/commands)">
             <Stack spacing={2}>
-            {presetsFor(data?.type).length > 0 && (
+            {presetsFor(data?.type, data?.support).length > 0 && (
             <Box sx={{ display: "flex", gap: 1, flexWrap: "wrap" }}>
-              {presetsFor(data?.type).map((p) => (
+              {presetsFor(data?.type, data?.support).map((p) => (
                 <Button key={p.label} size="small" variant="outlined" onClick={() => { setParamsText(p.params); setParamsTouched(true); }}>
                   {p.label}
                 </Button>
@@ -296,11 +312,11 @@ export default function EntityDetailPage() {
           </Section>
 
           <Section title="Command history">
-            <CommandHistory entityId={entityId} />
+            <CommandHistory key={entityId} entityId={entityId} />
           </Section>
 
           <Section title="Availability history">
-            <AvailabilityHistory entityId={entityId} />
+            <AvailabilityHistory key={entityId} entityId={entityId} />
           </Section>
 
           <RawJson value={data} title="Raw entity JSON" />

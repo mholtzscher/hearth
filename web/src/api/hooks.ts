@@ -1,24 +1,32 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 /** Minimal GET hook with manual refresh. POST/PATCH use apiFetch directly. */
 export function useApi<T>(key: string, fetcher: () => Promise<T>) {
   const [data, setData] = useState<T | null>(null);
   const [error, setError] = useState<Error | null>(null);
   const [loading, setLoading] = useState(true);
+  const generation = useRef(0);
 
   const refresh = useCallback(async () => {
+    const current = ++generation.current;
     setLoading(true);
     setError(null);
     try {
-      setData(await fetcher());
+      const value = await fetcher();
+      if (generation.current !== current) return;
+      setData(value);
     } catch (e) {
+      if (generation.current !== current) return;
       setError(e instanceof Error ? e : new Error(String(e)));
     } finally {
-      setLoading(false);
+      if (generation.current === current) setLoading(false);
     }
   }, [key]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
+    // refresh identity changes only when key changes, so this clears stale
+    // data on navigation but not on manual or polling refreshes.
+    setData(null);
     void refresh();
   }, [refresh]);
 
