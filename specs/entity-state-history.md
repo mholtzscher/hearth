@@ -328,6 +328,8 @@ Modify `internal/modules/devices/dbqueries/receipts.sql` so `InsertObservationRe
 
 Classification already produces `normalized`, `disposition`, and `rejection` before `InsertObservationReceipt`, so no new write step and no `persistObservationState` signature change are needed. Receipt insertion, State upsert, optional Command satisfaction, and commit remain one transaction.
 
+Update the successful raw SQL receipt fixtures in `internal/platform/db/db_test.go` and `internal/modules/devices/sqlite_reads_test.go` to include normalized `state_value_json` (`true` for their existing applied power Observations). The invalid-ID fixture in `db_test.go` intentionally expects rejection and remains unchanged.
+
 ### History queries
 
 Add to `internal/modules/devices/dbqueries/receipts.sql`:
@@ -386,10 +388,12 @@ A dependency-free responsive SVG step chart uses only accepted rows from the cur
 Per Entity type:
 
 - `hearth.power/v1`: 0/1 steps with Off/On labels.
-- `hearth.brightness/v1`: integer stepped line using support bounds when available.
-- `hearth.colortemp/v1`: integer-mired stepped line using support bounds when available.
+- `hearth.brightness/v1`: integer stepped line using current support bounds when available.
+- `hearth.colortemp/v1`: integer-mired stepped line using current support bounds when available.
 - `hearth.temperature/v1`: milli-Celsius values displayed as °C.
 - unknown future types: table remains available and the chart displays `Chart unavailable for this Entity type.`
+
+For every numeric chart, the vertical domain is the union of current support bounds, when available, and every plotted accepted historical value. Apply constant-value padding only after that union is computed. A support range narrowed after an Observation was recorded therefore cannot clip or misposition that retained historical value.
 
 Required edge behavior:
 
@@ -435,9 +439,11 @@ internal/
 │       ├── sqlite_entity_state_history.go               # new — history query selection and domain mapping
 │       ├── sqlite_entity_state_history_test.go           # new — filters, ordering, pagination, retention, mapping
 │       ├── sqlite_observations.go                       # modify — enrich receipt insert in projection transaction
-│       └── sqlite_observations_test.go                  # modify — dispositions, duplicates, unknown IDs, atomicity
+│       ├── sqlite_observations_test.go                  # modify — dispositions, duplicates, unknown IDs, atomicity
+│       └── sqlite_reads_test.go                         # modify — accepted receipt fixture includes normalized value
 └── platform/
     └── db/
+        ├── db_test.go                                   # modify — expiry fixtures include normalized accepted values
         └── migrations/
             └── 00001_initial.sql                        # modify — enriched receipt columns and history index
 specs/
@@ -493,6 +499,7 @@ Normal-path scenarios establish integration behavior. Mocked responses establish
 - [ ] Every non-duplicate Observation commits exactly one receipt in the existing projection transaction; `applied` and `unchanged` store only normalized State JSON, while `rejected` stores no value.
 - [ ] Duplicate delivery writes no new receipt or history entry.
 - [ ] Unknown-Entity and stale-runtime rejections remain durable and do not fail an Entity foreign key.
+- [ ] Every successful raw SQL fixture for an accepted receipt supplies normalized `state_value_json`; intentionally rejected fixture inserts retain their original failure purpose.
 - [ ] History uses the existing receipt prune path: expired non-current entries disappear and the receipt backing current State survives until superseded.
 - [ ] `GET /v1/entities/{entity_id}/state/history` matches the specified method, path, metadata, DTO, ordering, filters, cursor scope, and errors.
 - [ ] `state-updates` consistently means `applied` plus `unchanged` in service, SQL, cursor, HTTP, and dashboard vocabulary.
