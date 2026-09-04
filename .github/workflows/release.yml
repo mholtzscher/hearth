@@ -46,7 +46,7 @@ jobs:
         env:
           TAG: ${{ needs.release.outputs.tag_name }}
         run: |
-          ko build --base-import-paths --tags "${TAG}" \
+          ko build --base-import-paths --tags "${TAG}" --tags latest \
             ./cmd/hearthd \
             ./cmd/hearth-adapter-homeassistant \
             ./cmd/hearth-adapter-zigbee2mqtt \
@@ -62,4 +62,6 @@ jobs:
         with:
           context: ./web
           push: true
-          tags: ghcr.io/${{ github.repository }}-web:${{ needs.release.outputs.tag_name }}
+          tags: |
+            ghcr.io/${{ github.repository }}-web:${{ needs.release.outputs.tag_name }}
+            ghcr.io/${{ github.repository }}-web:latest
