@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.4.0](https://github.com/mholtzscher/hearth/compare/v0.3.0...v0.4.0) (2026-09-04)
+
+
+### Features
+
+* **web:** publish dashboard container image on release ([#54](https://github.com/mholtzscher/hearth/issues/54)) ([a92508c](https://github.com/mholtzscher/hearth/commit/a92508c9acfca05cb431f80cb692399dc737123d))
+
 ## [0.3.0](https://github.com/mholtzscher/hearth/compare/v0.2.0...v0.3.0) (2026-09-04)
 
 
