@@ -14,7 +14,11 @@ type RuntimeID string
 
 type DeviceKind string
 
-const DeviceKindLight DeviceKind = "light"
+const (
+	DeviceKindLight  DeviceKind = "light"
+	DeviceKindRelay  DeviceKind = "relay"
+	DeviceKindSensor DeviceKind = "sensor"
+)
 
 type EntityTypeID string
 

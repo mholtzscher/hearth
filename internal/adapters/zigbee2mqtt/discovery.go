@@ -15,20 +15,26 @@ const (
 	maximumEntitiesPerDevice = 64
 	maximumDescriptorRunes   = 128
 	upstreamDeviceKindLight  = "light"
+	upstreamDeviceKindRelay  = "relay"
+	upstreamDeviceKindSensor = "sensor"
+	upstreamExposeSwitch     = "switch"
 
-	rejectionMalformedDevice   = "malformed_device"
-	rejectionCoordinator       = "coordinator"
-	rejectionUnsupported       = "unsupported"
-	rejectionDisabled          = "disabled"
-	rejectionInterview         = "interview_incomplete"
-	rejectionMissingDefinition = "missing_definition"
-	rejectionInvalidIEEE       = "invalid_ieee_address"
-	rejectionInvalidName       = "invalid_friendly_name"
-	rejectionNoEligibleLight   = "no_eligible_light"
-	rejectionTooManyEntities   = "too_many_entities"
-	rejectionInvalidDescriptor = "invalid_descriptor"
-	rejectionDuplicateIEEE     = "duplicate_ieee_address"
-	rejectionDuplicateFriendly = "duplicate_friendly_name"
+	rejectionMalformedDevice     = "malformed_device"
+	rejectionCoordinator         = "coordinator"
+	rejectionUnsupported         = "unsupported"
+	rejectionDisabled            = "disabled"
+	rejectionInterview           = "interview_incomplete"
+	rejectionMissingDefinition   = "missing_definition"
+	rejectionInvalidIEEE         = "invalid_ieee_address"
+	rejectionInvalidName         = "invalid_friendly_name"
+	rejectionNoEligibleLight     = "no_eligible_light"
+	rejectionNoEligibleRelay     = "no_eligible_relay"
+	rejectionNoEligibleEntity    = "no_eligible_entity"
+	rejectionAmbiguousEntityPlan = "ambiguous_entity_plan"
+	rejectionTooManyEntities     = "too_many_entities"
+	rejectionInvalidDescriptor   = "invalid_descriptor"
+	rejectionDuplicateIEEE       = "duplicate_ieee_address"
+	rejectionDuplicateFriendly   = "duplicate_friendly_name"
 )
 
 // inventoryDiscovery is the complete, deterministic result consumed by adapter reconciliation.
@@ -43,19 +49,7 @@ type discoveredDevice struct {
 	FriendlyName string
 	Model        string
 	Registration adapter.Registration
-	Entities     []discoveredEntity
-}
-
-// discoveredEntity joins a registration Entity key to its state and command wire metadata.
-type discoveredEntity struct {
-	Descriptor        adapter.EntityDescriptor
-	Property          string
-	Kind              entityKind
-	Endpoint          int
-	Scoped            bool
-	PowerOn           scalarValue
-	PowerOff          scalarValue
-	BrightnessMaximum float64
+	Entities     []entityPlan
 }
 
 // deviceRejection gives adapter diagnostics and reconciliation a safe identity and stable reason.
@@ -139,23 +133,21 @@ func buildDiscoveredDevice(device upstreamDevice, ieeeAddress string) (discovere
 	if utf8.RuneCountInString(name) > maximumDescriptorRunes {
 		return rejectedDevice(device, ieeeAddress, rejectionInvalidDescriptor)
 	}
-	candidates := collectExposeCandidates(device)
-	entities := selectUnambiguousEntities(candidates)
-	if len(entities) == 0 {
-		return rejectedDevice(device, ieeeAddress, rejectionNoEligibleLight)
-	}
-	if len(entities) > maximumEntitiesPerDevice {
-		return rejectedDevice(device, ieeeAddress, rejectionTooManyEntities)
+	plan, err := planDevice(
+		devicePlanningInput{IEEE: ieeeAddress, Exposes: newExposeIndex(device)},
+		defaultDevicePlanners(),
+	)
+	if err != nil {
+		code := rejectionInvalidDescriptor
+		if planErr, ok := errors.AsType[*devicePlanError](err); ok {
+			code = planErr.code
+		}
+		return rejectedDevice(device, ieeeAddress, code)
 	}
 
-	descriptors := make([]adapter.EntityDescriptor, 0, len(entities))
-	for index := range entities {
-		descriptor, err := makeEntityDescriptor(ieeeAddress, entities[index])
-		if err != nil {
-			return rejectedDevice(device, ieeeAddress, rejectionInvalidDescriptor)
-		}
-		entities[index].Descriptor = descriptor
-		descriptors = append(descriptors, descriptor)
+	descriptors := make([]adapter.EntityDescriptor, 0, len(plan.Entities))
+	for _, entity := range plan.Entities {
+		descriptors = append(descriptors, entity.Descriptor)
 	}
 	externalID := ieeeAddress
 	return discoveredDevice{
@@ -167,11 +159,11 @@ func buildDiscoveredDevice(device upstreamDevice, ieeeAddress string) (discovere
 			Device: adapter.DeviceDescriptor{
 				ExternalID: &externalID,
 				Name:       name,
-				Kind:       upstreamDeviceKindLight,
+				Kind:       plan.Kind,
 			},
 			Entities: descriptors,
 		},
-		Entities: entities,
+		Entities: plan.Entities,
 	}, nil
 }
 

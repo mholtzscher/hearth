@@ -1,0 +1,8 @@
+{
+  "manifest_version": 1,
+  "type": "hearth.temperature/v1",
+  "state_schema": "state.schema.json",
+  "support_schema": "support.schema.json",
+  "operations": {},
+  "examples": "examples.json"
+}

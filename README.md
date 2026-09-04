@@ -73,7 +73,7 @@ Run Zigbee2MQTT separately under the operator's normal supervision. The adapter 
 
 The adapter remains `unknown` until it has claimed a Hearth session, connected and subscribed to MQTT, received retained `bridge/state`, `bridge/info`, and `bridge/devices`, and completed registration. It becomes healthy after an online bridge and compatible configuration are reconciled. Device availability comes only from explicit `<friendly_name>/availability` messages; State does not imply availability.
 
-Use the HTTP API to discover the registered power and brightness Entity IDs, inspect adapter health and Entity availability, and send typed commands:
+Use the HTTP API to discover the registered power, brightness, color-temperature, and ambient-temperature Entity IDs, inspect adapter health and Entity availability, and send typed commands. Lights, relays, and sensors register as Device kinds `light`, `relay`, and `sensor`; one IEEE address produces one Device, with temperature Entities supplementing either actuator family. Color temperature uses Zigbee2MQTT's native integer mired unit and each Entity reports its discovered range in `support` (for example, 153–500 mireds). Ambient temperature is read-only `hearth.temperature/v1` with integer milli-Celsius State (for example, `21.5` °C reports `21500`) and empty operation support:
 
 ```sh
 curl http://127.0.0.1:8080/v1/adapters/zigbee2mqtt
@@ -85,7 +85,12 @@ curl -X POST http://127.0.0.1:8080/v1/entities/ent_.../commands \
 curl -X POST http://127.0.0.1:8080/v1/entities/ent_.../commands \
   -H 'content-type: application/json' \
   -d '{"operation":"set","parameters":{"value":50}}'
+curl -X POST http://127.0.0.1:8080/v1/entities/ent_.../commands \
+  -H 'content-type: application/json' \
+  -d '{"operation":"set","parameters":{"value":370}}'
 ```
+
+A color-temperature set publishes `{"color_temp":370}` to the Device's Zigbee2MQTT `/set` topic, then requests `{"color_temp":""}` from `/get`. The HTTP request succeeds only after a fresh, non-retained report returns exactly 370 mireds. Temperature Entities never create command routes. Startup `/get` covers only Entities whose expose grants get access, so a publish-only sensor refreshes from live reports while a gettable sensor also receives active `/get`.
 
 For diagnostics, check adapter logs together with the adapter and Entity reads:
 

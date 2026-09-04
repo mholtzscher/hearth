@@ -15,11 +15,6 @@ type mappingKey struct {
 	entity  string
 }
 
-type runtimeEntity struct {
-	discovered discoveredEntity
-	entityID   string
-}
-
 type runtimeDevice struct {
 	bindingKey  string
 	ieeeAddress string
@@ -123,7 +118,7 @@ func (z2m *Adapter) buildRouteSnapshot(
 		)
 	}
 	if len(inventory.Devices) == 0 {
-		z2m.logger.InfoContext(ctx, "Zigbee2MQTT inventory contains no eligible lights")
+		z2m.logger.InfoContext(ctx, "Zigbee2MQTT inventory contains no eligible Entities")
 	}
 	for _, device := range inventory.Devices {
 		binding, registerErr := z2m.session.Register(ctx, device.Registration)
@@ -170,9 +165,12 @@ func (z2m *Adapter) buildRouteSnapshot(
 		}
 		snapshot.devices[runtime.friendly] = runtime
 		for _, entity := range runtime.entities {
+			if entity.plan.TranslateCommand == nil {
+				continue
+			}
 			route := commandRoute{
 				entityID: entity.entityID, ieeeAddress: runtime.ieeeAddress, friendlyName: runtime.friendly,
-				entity: entity.discovered, connectionGeneration: generation,
+				entity: entity, connectionGeneration: generation,
 			}
 			snapshot.routes[entity.entityID] = route
 		}
@@ -240,12 +238,15 @@ func (z2m *Adapter) requestCurrentState(
 			continue
 		}
 		for _, entity := range device.entities {
+			if len(entity.plan.GetProperties) == 0 {
+				continue
+			}
 			if err := publishGet(
 				ctx,
 				connection,
 				z2m.config.BaseTopic,
 				device.friendly,
-				entity.discovered.Property,
+				entity.plan.GetProperties,
 			); err != nil {
 				return err
 			}
@@ -298,12 +299,12 @@ func runtimeDeviceFromBinding(device discoveredDevice, binding adapter.Binding) 
 		bindingKey: device.Registration.BindingKey, ieeeAddress: device.IEEEAddress,
 		friendly: device.FriendlyName, entities: make([]runtimeEntity, 0, len(device.Entities)),
 	}
-	for _, discovered := range device.Entities {
-		mapped, exists := byKey[discovered.Descriptor.Key]
+	for _, planned := range device.Entities {
+		mapped, exists := byKey[planned.Descriptor.Key]
 		if !exists {
-			return runtimeDevice{}, fmt.Errorf("registration omitted Entity key %q", discovered.Descriptor.Key)
+			return runtimeDevice{}, fmt.Errorf("registration omitted Entity key %q", planned.Descriptor.Key)
 		}
-		runtime.entities = append(runtime.entities, runtimeEntity{discovered: discovered, entityID: mapped.EntityID})
+		runtime.entities = append(runtime.entities, runtimeEntity{plan: planned, entityID: mapped.EntityID})
 	}
 	return runtime, nil
 }
@@ -316,8 +317,17 @@ func (z2m *Adapter) rememberMapping(mapping adapter.OwnedMapping) {
 	z2m.knownMappings[key] = mapping
 }
 
-func publishGet(ctx context.Context, connection mqttConnection, base, friendly, property string) error {
-	payload, err := json.Marshal(map[string]string{property: ""})
+func publishGet(
+	ctx context.Context,
+	connection mqttConnection,
+	base, friendly string,
+	properties []string,
+) error {
+	values := make(map[string]string, len(properties))
+	for _, property := range properties {
+		values[property] = ""
+	}
+	payload, err := json.Marshal(values)
 	if err != nil {
 		return err
 	}

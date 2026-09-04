@@ -34,12 +34,27 @@ func lightExpose(endpoint, stateProperty, brightnessProperty string) upstreamExp
 	}
 }
 
-func entityKeys(entities []discoveredEntity) []string {
+func colorTempFeature(property string, minimum, maximum float64) upstreamExpose {
+	return upstreamExpose{
+		Type: "numeric", Name: upstreamColorTempName, Property: property, Access: 7,
+		ValueMin: &minimum, ValueMax: &maximum,
+	}
+}
+
+func entityKeys(entities []entityPlan) []string {
 	keys := make([]string, 0, len(entities))
 	for _, entity := range entities {
 		keys = append(keys, entity.Descriptor.Key)
 	}
 	return keys
+}
+
+func bindPlans(plans []entityPlan) []runtimeEntity {
+	entities := make([]runtimeEntity, 0, len(plans))
+	for _, plan := range plans {
+		entities = append(entities, runtimeEntity{plan: plan, entityID: "entity-" + plan.Descriptor.Key})
+	}
+	return entities
 }
 
 func jsonNumber(value int) string {

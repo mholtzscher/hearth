@@ -1,0 +1,44 @@
+[
+  {
+    "ieee_address": "0x00124b0024abcd01",
+    "type": "Router",
+    "supported": true,
+    "disabled": false,
+    "friendly_name": "fixture-plug",
+    "description": "Sanitized Fixture Plug",
+    "interview_state": "SUCCESSFUL",
+    "endpoints": {
+      "1": {}
+    },
+    "definition": {
+      "model": "S31ZB",
+      "vendor": "SONOFF",
+      "description": "Zigbee smart plug (US version)",
+      "exposes": [
+        {
+          "type": "switch",
+          "features": [
+            {
+              "type": "binary",
+              "name": "state",
+              "property": "state",
+              "access": 7,
+              "value_on": "ON",
+              "value_off": "OFF",
+              "value_toggle": "TOGGLE"
+            }
+          ]
+        },
+        {
+          "type": "numeric",
+          "name": "linkquality",
+          "property": "linkquality",
+          "access": 1,
+          "value_min": 0,
+          "value_max": 255
+        }
+      ]
+    },
+    "power_source": "Mains (single phase)"
+  }
+]

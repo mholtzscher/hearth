@@ -103,6 +103,136 @@ func TestDiscoveryExposeEligibility(t *testing.T) {
 	}
 }
 
+// This test protects strict optional color-temperature discovery and fails if bounds, uniqueness, property identity,
+// or the low three access bits are relaxed, or if an invalid optional feature suppresses valid siblings.
+func TestDiscoveryColorTempEligibilityAndIsolation(t *testing.T) {
+	t.Parallel()
+	for _, test := range []struct {
+		name      string
+		edit      func(*upstreamDevice)
+		wantColor bool
+	}{
+		{
+			name: "outer bounds and extra access bits",
+			edit: func(device *upstreamDevice) {
+				feature := colorTempFeature("color_temp", 100, 1000)
+				feature.Access = 15
+				device.Definition.Exposes[0].Features = append(device.Definition.Exposes[0].Features, feature)
+			},
+			wantColor: true,
+		},
+		{
+			name: "missing access bit",
+			edit: func(device *upstreamDevice) {
+				feature := colorTempFeature("color_temp", 153, 500)
+				feature.Access = 6
+				device.Definition.Exposes[0].Features = append(device.Definition.Exposes[0].Features, feature)
+			},
+		},
+		{
+			name: "empty property",
+			edit: func(device *upstreamDevice) {
+				device.Definition.Exposes[0].Features = append(
+					device.Definition.Exposes[0].Features,
+					colorTempFeature("", 153, 500),
+				)
+			},
+		},
+		{
+			name: "duplicate matching feature",
+			edit: func(device *upstreamDevice) {
+				feature := colorTempFeature("color_temp", 153, 500)
+				device.Definition.Exposes[0].Features = append(
+					device.Definition.Exposes[0].Features,
+					feature,
+					feature,
+				)
+			},
+		},
+		{
+			name: "duplicate Device property",
+			edit: func(device *upstreamDevice) {
+				device.Definition.Exposes[0].Features = append(
+					device.Definition.Exposes[0].Features,
+					colorTempFeature("color_temp", 153, 500),
+				)
+				device.Definition.Exposes = append(device.Definition.Exposes, upstreamExpose{
+					Type: "numeric", Name: "diagnostic", Property: "color_temp",
+				})
+			},
+		},
+		{
+			name: "fractional bound",
+			edit: func(device *upstreamDevice) {
+				device.Definition.Exposes[0].Features = append(
+					device.Definition.Exposes[0].Features,
+					colorTempFeature("color_temp", 153.5, 500),
+				)
+			},
+		},
+		{
+			name: "below outer minimum",
+			edit: func(device *upstreamDevice) {
+				device.Definition.Exposes[0].Features = append(
+					device.Definition.Exposes[0].Features,
+					colorTempFeature("color_temp", 99, 500),
+				)
+			},
+		},
+		{
+			name: "above outer maximum",
+			edit: func(device *upstreamDevice) {
+				device.Definition.Exposes[0].Features = append(
+					device.Definition.Exposes[0].Features,
+					colorTempFeature("color_temp", 153, 1001),
+				)
+			},
+		},
+		{
+			name: "unordered bounds",
+			edit: func(device *upstreamDevice) {
+				device.Definition.Exposes[0].Features = append(
+					device.Definition.Exposes[0].Features,
+					colorTempFeature("color_temp", 500, 500),
+				)
+			},
+		},
+		{
+			name: "non-finite bound",
+			edit: func(device *upstreamDevice) {
+				device.Definition.Exposes[0].Features = append(
+					device.Definition.Exposes[0].Features,
+					colorTempFeature("color_temp", math.Inf(-1), 500),
+				)
+			},
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			device := eligibleDevice()
+			test.edit(&device)
+			discovered, rejection := discoverDevice(device)
+			if rejection != nil {
+				t.Fatalf("Device rejected: %#v", rejection)
+			}
+			want := []string{"power", "brightness"}
+			if test.wantColor {
+				want = append(want, "colortemp")
+			}
+			if got := entityKeys(discovered.Entities); !reflect.DeepEqual(got, want) {
+				t.Fatalf("Entity keys = %v, want %v", got, want)
+			}
+			if test.wantColor {
+				colorTemp := discovered.Entities[2]
+				support := string(colorTemp.Descriptor.Support)
+				if !strings.Contains(support, `"minimum":100`) || !strings.Contains(support, `"maximum":1000`) {
+					t.Fatalf("color-temperature support = %s", support)
+				}
+			}
+		})
+	}
+}
+
 // This test protects endpoint resolution by numeric key and unique endpoint name, including canonical ep<N> fallback labels.
 func TestDiscoveryEndpointResolution(t *testing.T) {
 	t.Parallel()
@@ -197,6 +327,27 @@ func TestDiscoveryEnforcesDescriptorRuneBound(t *testing.T) {
 		if wantBrightness &&
 			utf8.RuneCountInString(discovered.Entities[1].Descriptor.Name) != maximumDescriptorRunes {
 			t.Fatalf("brightness name = %q", discovered.Entities[1].Descriptor.Name)
+		}
+	}
+
+	for labelRunes, wantColorTemp := range map[int]bool{110: true, 111: false} {
+		device := eligibleDevice()
+		label := strings.Repeat("c", labelRunes)
+		device.Endpoints = map[string]upstreamEndpoint{"1": {Name: label}}
+		expose := lightExpose(label, "state_scoped", "")
+		expose.Features = expose.Features[:1]
+		expose.Features = append(expose.Features, colorTempFeature("color_temp_scoped", 153, 500))
+		device.Definition.Exposes = []upstreamExpose{expose}
+		discovered, rejection := discoverDevice(device)
+		if rejection != nil {
+			t.Fatalf("%d-rune color-temperature label rejected Device: %#v", labelRunes, rejection)
+		}
+		if got := len(discovered.Entities) == 2; got != wantColorTemp {
+			t.Fatalf("%d-rune label color temperature present = %t, want %t", labelRunes, got, wantColorTemp)
+		}
+		if wantColorTemp &&
+			utf8.RuneCountInString(discovered.Entities[1].Descriptor.Name) != maximumDescriptorRunes {
+			t.Fatalf("color-temperature name = %q", discovered.Entities[1].Descriptor.Name)
 		}
 	}
 }

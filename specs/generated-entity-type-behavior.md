@@ -21,7 +21,7 @@ Make Entity-type generation a deep build-time module. Its complete authoring int
 
 A repository-level `go generate` pass will generate all per-type Go, typed SDK facades, semantic conformance tests, core catalog definitions, and the aggregate built-in registry.
 
-The behavior DSL is a small, typed relation language compiled to direct Go. It is not interpreted at runtime. V1 adds only the operators required by power/v1 and brightness/v1. CEL, runtime type installation, and a general-purpose expression language remain out of scope.
+The behavior DSL is a small, typed relation language compiled to direct Go. It is not interpreted at runtime. V1 adds only the operators required by power/v1, brightness/v1, and colortemp/v1. CEL, runtime type installation, and a general-purpose expression language remain out of scope.
 
 ## Goals
 
@@ -143,7 +143,7 @@ type reference struct {
 }
 ```
 
-`operator` is exactly `eq`, `lte`, or `multiple_of` in v1.
+`operator` is exactly `eq`, `gte`, `lte`, or `multiple_of` in v1.
 
 `referenceRoot` is context-dependent:
 
@@ -162,7 +162,7 @@ Outcome matching deliberately cannot reference `support` or `operation_support`.
 Generation resolves every reference against the loaded schemas and assigns it a schema-derived scalar kind.
 
 - `eq` requires operands of the same scalar kind.
-- `lte` requires operands of the same numeric kind.
+- `gte` and `lte` require operands of the same numeric kind and compile to `left >= right` and `left <= right`, respectively.
 - `multiple_of` requires integer operands.
 - Unknown roots, invalid pointers, optional paths, incompatible operands, and unsupported schema constructs fail generation with the manifest path, operation, rule index, and offending reference.
 - Generated `multiple_of` code guards a zero divisor even when the support schema excludes zero.
@@ -329,7 +329,7 @@ D2 and D3 may proceed in parallel after D1.
 
 - Reject unknown manifest fields and unsupported manifest versions.
 - Reject invalid roots, JSON Pointers, optional paths, and object/array operands.
-- Reject mismatched `eq`, non-numeric `lte`, and non-integer `multiple_of` operands.
+- Reject mismatched `eq`, non-numeric `gte`/`lte`, and non-integer `multiple_of` operands.
 - Reject `support` references in `satisfied_when`.
 - Reject zero/non-positive deadlines and incomplete conformance fixtures.
 - Golden-test direct Go for no-op power behavior and maximum/step brightness behavior.

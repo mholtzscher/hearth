@@ -6,26 +6,40 @@ import (
 	"fmt"
 
 	contractbrightnessv1 "github.com/mholtzscher/hearth/entitytypes/brightnessv1"
+	contractcolortempv1 "github.com/mholtzscher/hearth/entitytypes/colortempv1"
 	contractpowerv1 "github.com/mholtzscher/hearth/entitytypes/powerv1"
+	contracttemperaturev1 "github.com/mholtzscher/hearth/entitytypes/temperaturev1"
 )
 
 const (
-	EntityTypeBrightnessV1 EntityTypeID = "hearth.brightness/v1"
-	EntityTypePowerV1      EntityTypeID = "hearth.power/v1"
+	EntityTypeBrightnessV1  EntityTypeID = "hearth.brightness/v1"
+	EntityTypeColortempV1   EntityTypeID = "hearth.colortemp/v1"
+	EntityTypePowerV1       EntityTypeID = "hearth.power/v1"
+	EntityTypeTemperatureV1 EntityTypeID = "hearth.temperature/v1"
 )
 
 func NewBuiltinTypeCatalog() (*TypeCatalog, error) {
-	definitions := make([]EntityTypeDefinition, 0, 2)
+	definitions := make([]EntityTypeDefinition, 0, 4)
 	brightnessV1, err := newBrightnessV1TypeDefinition(EntityTypeBrightnessV1)
 	if err != nil {
 		return nil, err
 	}
 	definitions = append(definitions, brightnessV1)
+	colortempV1, err := newColortempV1TypeDefinition(EntityTypeColortempV1)
+	if err != nil {
+		return nil, err
+	}
+	definitions = append(definitions, colortempV1)
 	powerV1, err := newPowerV1TypeDefinition(EntityTypePowerV1)
 	if err != nil {
 		return nil, err
 	}
 	definitions = append(definitions, powerV1)
+	temperatureV1, err := newTemperatureV1TypeDefinition(EntityTypeTemperatureV1)
+	if err != nil {
+		return nil, err
+	}
+	definitions = append(definitions, temperatureV1)
 	return NewTypeCatalog(definitions)
 }
 
@@ -51,6 +65,28 @@ func newBrightnessV1TypeDefinition(id EntityTypeID) (EntityTypeDefinition, error
 	return definition, nil
 }
 
+func newColortempV1TypeDefinition(id EntityTypeID) (EntityTypeDefinition, error) {
+	codecs, err := contractcolortempv1.Compile()
+	if err != nil {
+		return EntityTypeDefinition{}, fmt.Errorf("compile hearth.colortemp/v1 codecs: %w", err)
+	}
+	set := DefineOperation(
+		OperationName(contractcolortempv1.OperationSet),
+		codecs.SetParameters,
+		func(support contractcolortempv1.Support) (contractcolortempv1.SetSupport, bool) {
+			return support.Operations.Set, true
+		},
+		contractcolortempv1.ValidateSetParameters,
+		contractcolortempv1.SetDeadline,
+		contractcolortempv1.SetSatisfied,
+	)
+	definition, err := DefineEntityType(id, codecs.State, codecs.Support, contractcolortempv1.ValidateState, contractcolortempv1.EqualState, set)
+	if err != nil {
+		return EntityTypeDefinition{}, err
+	}
+	return definition, nil
+}
+
 func newPowerV1TypeDefinition(id EntityTypeID) (EntityTypeDefinition, error) {
 	codecs, err := contractpowerv1.Compile()
 	if err != nil {
@@ -67,6 +103,18 @@ func newPowerV1TypeDefinition(id EntityTypeID) (EntityTypeDefinition, error) {
 		contractpowerv1.SetSatisfied,
 	)
 	definition, err := DefineEntityType(id, codecs.State, codecs.Support, contractpowerv1.ValidateState, contractpowerv1.EqualState, set)
+	if err != nil {
+		return EntityTypeDefinition{}, err
+	}
+	return definition, nil
+}
+
+func newTemperatureV1TypeDefinition(id EntityTypeID) (EntityTypeDefinition, error) {
+	codecs, err := contracttemperaturev1.Compile()
+	if err != nil {
+		return EntityTypeDefinition{}, fmt.Errorf("compile hearth.temperature/v1 codecs: %w", err)
+	}
+	definition, err := DefineEntityType(id, codecs.State, codecs.Support, contracttemperaturev1.ValidateState, contracttemperaturev1.EqualState)
 	if err != nil {
 		return EntityTypeDefinition{}, err
 	}

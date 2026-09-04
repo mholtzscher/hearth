@@ -197,6 +197,50 @@ func TestRegisterAccepts64Entities(t *testing.T) {
 	}
 }
 
+func TestRegisterAcceptsCanonicalDeviceKinds(t *testing.T) {
+	t.Parallel()
+	for _, kind := range []DeviceKind{DeviceKindLight, DeviceKindRelay, DeviceKindSensor} {
+		t.Run(string(kind), func(t *testing.T) {
+			t.Parallel()
+			repository := &stubRegistrationRepository{}
+			service := newTestService(repository, nil, firstLightCatalog(t), Dependencies{})
+			registration := validDomainRegistration()
+			registration.Device.Kind = kind
+
+			if _, err := service.Register(
+				context.Background(), "homeassistant", commandTestRuntimeID, registration,
+			); err != nil {
+				t.Fatalf("kind %q error = %v", kind, err)
+			}
+			if repository.calls != 1 || repository.params.Device.Kind != kind {
+				t.Fatalf("repository calls = %d, kind = %q", repository.calls, repository.params.Device.Kind)
+			}
+		})
+	}
+}
+
+func TestRegisterRejectsUnknownDeviceKind(t *testing.T) {
+	t.Parallel()
+	for _, kind := range []DeviceKind{"", "plug", "switch", "Light", "SENSOR"} {
+		t.Run("kind:"+string(kind), func(t *testing.T) {
+			t.Parallel()
+			repository := &stubRegistrationRepository{}
+			service := newTestService(repository, nil, firstLightCatalog(t), Dependencies{})
+			registration := validDomainRegistration()
+			registration.Device.Kind = kind
+
+			_, err := service.Register(context.Background(), "homeassistant", commandTestRuntimeID, registration)
+			var rejected *RegistrationRejectedError
+			if !errors.As(err, &rejected) || rejected.Code != RegistrationInvalidDescriptor {
+				t.Fatalf("kind %q error = %v", kind, err)
+			}
+			if repository.calls != 0 {
+				t.Fatalf("repository calls = %d, want 0", repository.calls)
+			}
+		})
+	}
+}
+
 func TestRegistrationOperatorMessagesAreBounded(t *testing.T) {
 	t.Parallel()
 	message := operatorMessage(string(make([]rune, 600)))

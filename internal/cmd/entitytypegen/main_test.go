@@ -198,16 +198,21 @@ func TestBehaviorRulesAreSchemaChecked(t *testing.T) {
 		"support": {Schema: support, GoExpression: "support"},
 	}
 
-	compiled, err := compileRule(ruleManifest{
-		Op:    "lte",
-		Left:  referenceManifest{Root: "parameters", Path: "/value"},
-		Right: referenceManifest{Root: "support", Path: "/maximum"},
-	}, roots)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if condition := ruleCondition(compiled); condition != "int64(parameters.Value) <= int64(support.Maximum)" {
-		t.Fatalf("condition = %s", condition)
+	for operator, expected := range map[string]string{
+		"gte": "int64(parameters.Value) >= int64(support.Maximum)",
+		"lte": "int64(parameters.Value) <= int64(support.Maximum)",
+	} {
+		compiled, err := compileRule(ruleManifest{
+			Op:    operator,
+			Left:  referenceManifest{Root: "parameters", Path: "/value"},
+			Right: referenceManifest{Root: "support", Path: "/maximum"},
+		}, roots)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if condition := ruleCondition(compiled); condition != expected {
+			t.Fatalf("%s condition = %s", operator, condition)
+		}
 	}
 
 	for name, rule := range map[string]ruleManifest{
@@ -222,6 +227,9 @@ func TestBehaviorRulesAreSchemaChecked(t *testing.T) {
 		},
 		"optional path": {
 			Op: "eq", Left: referenceManifest{Root: "parameters", Path: "/value"}, Right: referenceManifest{Root: "support", Path: "/optional"},
+		},
+		"non-numeric gte": {
+			Op: "gte", Left: referenceManifest{Root: "support", Path: "/enabled"}, Right: referenceManifest{Root: "support", Path: "/enabled"},
 		},
 	} {
 		t.Run(name, func(t *testing.T) {
@@ -326,6 +334,50 @@ func TestRenderedObservationUsesSupportDependentStateValidation(t *testing.T) {
 	if strings.Contains(string(source), "RefreshForCommand") {
 		t.Fatal("generated Observation input exposes command linkage")
 	}
+}
+
+func TestOperationFreeFacadeOmitsCommandArtifacts(t *testing.T) {
+	t.Parallel()
+	source, err := renderFacade(entityTypeModel{Package: "examplev1"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(source)
+	for _, forbidden := range []string{
+		`"encoding/json"`,
+		`"github.com/mholtzscher/hearth/sdk/adapter/typed"`,
+		"type Handlers struct",
+		"NewCommandHandler",
+	} {
+		if strings.Contains(text, forbidden) {
+			t.Errorf("operation-free facade contains %q", forbidden)
+		}
+	}
+	for _, required := range []string{"NewEntityDescriptor", "NewObservation", "ObservationInput"} {
+		if !strings.Contains(text, required) {
+			t.Errorf("operation-free facade does not contain %q", required)
+		}
+	}
+}
+
+func TestOperationFreeCatalogConformanceOmitsTimeImport(t *testing.T) {
+	t.Parallel()
+	directory, manifestPath := writeMinimalEntityTypeFixture(t, "examplev1")
+	model, err := loadModel(manifestPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(model.Operations) != 0 {
+		t.Fatalf("fixture operations = %d, want 0", len(model.Operations))
+	}
+	conformance, err := renderCatalogConformanceTest([]entityTypeModel{model}, t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(conformance.content), `"time"`) {
+		t.Errorf("operation-free catalog conformance imports time:\n%s", conformance.content)
+	}
+	_ = directory
 }
 
 func TestRenderedCodecsEmbedExactManifestPaths(t *testing.T) {

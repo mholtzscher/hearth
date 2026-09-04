@@ -130,8 +130,59 @@ func TestCommandClaimsEarlyMatchExactlyOnceAfterAccept(t *testing.T) {
 		"accept",
 		"linked-observation",
 	)
-	if indexOf(events, "mqtt:zigbee2mqtt/fixture-light/get", 0) < 0 {
-		t.Fatalf("mandatory /get was not published: %v", events)
+	// The mandatory refresh runs on its own effect and may complete after linked disposition.
+	waitFor(t, func() bool {
+		return indexOf(recorder.snapshot(), "mqtt:zigbee2mqtt/fixture-light/get", 0) >= 0
+	})
+}
+
+// This integration test protects native-mired set/get passthrough, typed Observation publication, and exact matching.
+// It fails if a nearby value satisfies the Command or if either Zigbee2MQTT property payload is converted or renamed.
+func TestColorTempCommandPassesThroughAndRequiresExactReport(t *testing.T) {
+	t.Parallel()
+	recorder := &runtimeRecorder{}
+	session := newFakeSession(recorder)
+	z2m, _, connection, device := commandReadyAdapter(t, recorder, session)
+	connection.onPublish = func(ctx context.Context, _ *fakeConnection, topic string, _ []byte) error {
+		switch {
+		case strings.HasSuffix(topic, "/set"):
+			return publishState(ctx, z2m, device, `{"color_temp":369}`, time.Now().UTC())
+		case strings.HasSuffix(topic, "/get"):
+			return publishState(ctx, z2m, device, `{"color_temp":370}`, time.Now().UTC())
+		default:
+			return nil
+		}
+	}
+	responder := newFakeResponder(recorder, session)
+	if err := z2m.HandleCommand(
+		context.Background(),
+		testCommand(device.entities[2].entityID, `{"value":370}`),
+		responder,
+	); err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, func() bool {
+		session.mutex.Lock()
+		defer session.mutex.Unlock()
+		return len(session.observations) == 1 && len(session.linked) == 1
+	})
+	connection.mutex.Lock()
+	publications := append([]mqttPublication(nil), connection.published...)
+	connection.mutex.Unlock()
+	if len(publications) != 2 || publications[0].topic != "zigbee2mqtt/fixture-light/set" ||
+		publications[0].payload != `{"color_temp":370}` || publications[0].qos != mqttQoS || publications[0].retained ||
+		publications[1].topic != "zigbee2mqtt/fixture-light/get" ||
+		publications[1].payload != `{"color_temp":""}` || publications[1].qos != mqttQoS || publications[1].retained {
+		t.Fatalf("MQTT publications = %#v", publications)
+	}
+	if responder.accepted != 1 || string(session.observations[0].Value) != "369" ||
+		string(session.linked[0].Value) != "370" || session.linked[0].EntityID != device.entities[2].entityID {
+		t.Fatalf(
+			"responder=%#v ordinary=%#v linked=%#v",
+			responder,
+			session.observations,
+			session.linked,
+		)
 	}
 }
 
@@ -200,7 +251,11 @@ func TestCommandLeavesIneligibleStateOrdinary(t *testing.T) {
 			})
 			candidateEntity := device.entities[test.candidateEntity]
 			stateEntity := device.entities[test.stateEntity]
-			states, _, err := decodeDeviceState([]byte(test.payload), []discoveredEntity{stateEntity.discovered})
+			states, _, err := decodeDeviceState(
+				[]byte(test.payload),
+				[]runtimeEntity{{plan: stateEntity.plan, entityID: stateEntity.entityID}},
+				time.Now().UTC(),
+			)
 			if err != nil || len(states) != 1 {
 				t.Fatalf("decode test State: states=%#v err=%v", states, err)
 			}
@@ -214,7 +269,7 @@ func TestCommandLeavesIneligibleStateOrdinary(t *testing.T) {
 				generation:    test.generation,
 				routeRevision: test.revision,
 				entityID:      candidateEntity.entityID,
-				state:         states[0],
+				report:        states[0].report,
 				retained:      test.retained,
 				receivedAt:    receivedAt,
 				result:        candidateResult,
@@ -250,7 +305,7 @@ func TestCommandSetFailureRejectsAndFallsBack(t *testing.T) {
 	for _, entity := range device.entities {
 		routes[entity.entityID] = commandRoute{
 			entityID: entity.entityID, ieeeAddress: device.ieeeAddress, friendlyName: device.friendly,
-			entity: entity.discovered,
+			entity: entity,
 		}
 	}
 	activation := make(chan routeActivationResult, 1)

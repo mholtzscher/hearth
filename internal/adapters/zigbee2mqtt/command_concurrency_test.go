@@ -10,8 +10,10 @@ import (
 	"github.com/mholtzscher/hearth/sdk/adapter"
 )
 
-// This deterministic concurrency test protects per-IEEE FIFO ownership until evidence disposition completes, including
-// after the first command handler has returned.
+// This deterministic integration test protects per-IEEE FIFO across power, brightness, and color temperature until
+// evidence disposition completes, including after the first command handler has returned.
+//
+//nolint:gocognit // One flow must prove three Entity kinds stay in the same Device queue through disposition.
 func TestCommandsForSameIEEEStaySerializedUntilDisposition(t *testing.T) {
 	t.Parallel()
 	recorder := &runtimeRecorder{}
@@ -63,31 +65,55 @@ func TestCommandsForSameIEEEStaySerializedUntilDisposition(t *testing.T) {
 		responder: newFakeResponder(recorder, session),
 		result:    secondResult,
 	}
-	if err := publishState(
-		context.Background(),
-		z2m,
-		device,
-		`{"brightness":50}`,
-		time.Now().UTC(),
-	); err != nil {
-		t.Fatal(err)
+	thirdResult := make(chan error, 1)
+	z2m.runtimeEvents <- commandSubmitted{
+		ctx:       context.Background(),
+		command:   testCommand(device.entities[2].entityID, `{"value":370}`),
+		responder: newFakeResponder(recorder, session),
+		result:    thirdResult,
 	}
 	if setCount.Load() != 1 {
 		t.Fatalf("same-IEEE set publications overlapped: %d", setCount.Load())
 	}
-	select {
-	case err := <-secondResult:
-		t.Fatalf("second same-IEEE Command completed before first disposition: %v", err)
-	default:
+	for index, result := range []<-chan error{secondResult, thirdResult} {
+		select {
+		case err := <-result:
+			t.Fatalf("queued Command %d completed before first disposition: %v", index+2, err)
+		default:
+		}
 	}
 	close(releaseFirstLinked)
-	if err := <-secondResult; err != nil {
-		t.Fatal(err)
+	for index, result := range []<-chan error{secondResult, thirdResult} {
+		if err := <-result; err != nil {
+			t.Fatalf("queued Command %d: %v", index+2, err)
+		}
 	}
-	waitFor(t, func() bool { return setCount.Load() == 2 })
+	waitFor(t, func() bool {
+		session.mutex.Lock()
+		defer session.mutex.Unlock()
+		return setCount.Load() == 3 && len(session.linked) == 3
+	})
+	connection.mutex.Lock()
+	defer connection.mutex.Unlock()
+	var setPayloads []string
+	for _, publication := range connection.published {
+		if strings.HasSuffix(publication.topic, "/set") {
+			setPayloads = append(setPayloads, publication.payload)
+		}
+	}
+	want := []string{`{"state":"ON"}`, `{"brightness":127}`, `{"color_temp":370}`}
+	if len(setPayloads) != len(want) {
+		t.Fatalf("set payloads = %v, want %v", setPayloads, want)
+	}
+	for index := range want {
+		if setPayloads[index] != want[index] {
+			t.Fatalf("set payloads = %v, want %v", setPayloads, want)
+		}
+	}
 }
 
-// This test protects queue granularity: independent IEEE Devices may wait on MQTT PUBACK concurrently.
+// This test protects queue granularity: different Entity kinds on independent IEEE Devices may wait on MQTT PUBACK
+// concurrently.
 func TestCommandsForDifferentIEEEDevicesOverlap(t *testing.T) {
 	t.Parallel()
 	recorder := &runtimeRecorder{}
@@ -105,7 +131,7 @@ func TestCommandsForDifferentIEEEDevicesOverlap(t *testing.T) {
 		for _, entity := range device.entities {
 			routes[entity.entityID] = commandRoute{
 				entityID: entity.entityID, ieeeAddress: device.ieeeAddress, friendlyName: device.friendly,
-				entity: entity.discovered, connectionGeneration: 1,
+				entity: entity, connectionGeneration: 1,
 			}
 		}
 	}
@@ -143,11 +169,15 @@ func TestCommandsForDifferentIEEEDevicesOverlap(t *testing.T) {
 		}
 	}
 	results := make(chan error, 2)
-	for _, entityID := range []string{first.entities[0].entityID, second.entities[0].entityID} {
+	commands := []adapter.Command{
+		testCommand(first.entities[2].entityID, `{"value":370}`),
+		testCommand(second.entities[1].entityID, `{"value":50}`),
+	}
+	for _, command := range commands {
 		go func() {
 			results <- z2m.HandleCommand(
 				context.Background(),
-				testCommand(entityID, `{"value":true}`),
+				command,
 				newFakeResponder(recorder, session),
 			)
 		}()

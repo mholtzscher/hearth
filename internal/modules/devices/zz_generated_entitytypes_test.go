@@ -51,6 +51,43 @@ func TestGeneratedBuiltinCatalogConformance(t *testing.T) {
 			t.Errorf("set outcome 3: satisfied = %v, error = %v", satisfied, err)
 		}
 	})
+	t.Run("hearth.colortemp/v1/fixture-153-500-step-1", func(t *testing.T) {
+		entity := Entity{ID: EntityID("generated_colortempv1"), TypeID: EntityTypeColortempV1, Support: EntitySupport("{\n        \"state\": {\"minimum\": 153, \"maximum\": 500},\n        \"operations\": {\"set\": {\"step\": 1}}\n      }")}
+		if _, err := catalog.NormalizeSupport(entity.TypeID, entity.Support); err != nil {
+			t.Fatalf("support: %v", err)
+		}
+		if _, err := catalog.NormalizeState(entity, Value("370")); (err == nil) != true {
+			t.Errorf("State example 1 error = %v", err)
+		}
+		if _, err := catalog.NormalizeState(entity, Value("153")); (err == nil) != true {
+			t.Errorf("State example 2 error = %v", err)
+		}
+		if _, err := catalog.NormalizeState(entity, Value("500")); (err == nil) != true {
+			t.Errorf("State example 3 error = %v", err)
+		}
+		if _, err := catalog.NormalizeState(entity, Value("152")); (err == nil) != false {
+			t.Errorf("State example 4 error = %v", err)
+		}
+		if _, err := catalog.NormalizeState(entity, Value("501")); (err == nil) != false {
+			t.Errorf("State example 5 error = %v", err)
+		}
+		if resolved, err := catalog.ResolveCommand(entity, OperationName("set"), CommandParameters("{\"value\": 370}")); (err == nil) != true {
+			t.Errorf("set parameter example 1 error = %v", err)
+		} else if err == nil && resolved.Deadline != 10000*time.Millisecond {
+			t.Errorf("set parameter example 1 deadline = %v", resolved.Deadline)
+		}
+		if resolved, err := catalog.ResolveCommand(entity, OperationName("set"), CommandParameters("{\"value\": 152}")); (err == nil) != false {
+			t.Errorf("set parameter example 2 error = %v", err)
+		} else if err == nil && resolved.Deadline != 10000*time.Millisecond {
+			t.Errorf("set parameter example 2 deadline = %v", resolved.Deadline)
+		}
+		if satisfied, err := catalog.Satisfies(entity, CommandRecord{OperationName: OperationName("set"), Parameters: CommandParameters("{\"value\": 370}")}, Value("370")); err != nil || satisfied != true {
+			t.Errorf("set outcome 1: satisfied = %v, error = %v", satisfied, err)
+		}
+		if satisfied, err := catalog.Satisfies(entity, CommandRecord{OperationName: OperationName("set"), Parameters: CommandParameters("{\"value\": 370}")}, Value("369")); err != nil || satisfied != false {
+			t.Errorf("set outcome 2: satisfied = %v, error = %v", satisfied, err)
+		}
+	})
 	t.Run("hearth.power/v1/boolean-power", func(t *testing.T) {
 		entity := Entity{ID: EntityID("generated_powerv1"), TypeID: EntityTypePowerV1, Support: EntitySupport("{\n        \"state\": {},\n        \"operations\": {\"set\": {}}\n      }")}
 		if _, err := catalog.NormalizeSupport(entity.TypeID, entity.Support); err != nil {
@@ -77,6 +114,30 @@ func TestGeneratedBuiltinCatalogConformance(t *testing.T) {
 		}
 		if satisfied, err := catalog.Satisfies(entity, CommandRecord{OperationName: OperationName("set"), Parameters: CommandParameters("{\"value\": true}")}, Value("false")); err != nil || satisfied != false {
 			t.Errorf("set outcome 2: satisfied = %v, error = %v", satisfied, err)
+		}
+	})
+	t.Run("hearth.temperature/v1/fixed-range-milli-celsius", func(t *testing.T) {
+		entity := Entity{ID: EntityID("generated_temperaturev1"), TypeID: EntityTypeTemperatureV1, Support: EntitySupport("{\"state\": {}, \"operations\": {}}")}
+		if _, err := catalog.NormalizeSupport(entity.TypeID, entity.Support); err != nil {
+			t.Fatalf("support: %v", err)
+		}
+		if _, err := catalog.NormalizeState(entity, Value("21500")); (err == nil) != true {
+			t.Errorf("State example 1 error = %v", err)
+		}
+		if _, err := catalog.NormalizeState(entity, Value("-273150")); (err == nil) != true {
+			t.Errorf("State example 2 error = %v", err)
+		}
+		if _, err := catalog.NormalizeState(entity, Value("1000000")); (err == nil) != true {
+			t.Errorf("State example 3 error = %v", err)
+		}
+		if _, err := catalog.NormalizeState(entity, Value("-273151")); (err == nil) != false {
+			t.Errorf("State example 4 error = %v", err)
+		}
+		if _, err := catalog.NormalizeState(entity, Value("1000001")); (err == nil) != false {
+			t.Errorf("State example 5 error = %v", err)
+		}
+		if _, err := catalog.NormalizeState(entity, Value("21.5")); (err == nil) != false {
+			t.Errorf("State example 6 error = %v", err)
 		}
 	})
 }

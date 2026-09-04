@@ -17,6 +17,7 @@ const (
 	schemaTypeArray  = "array"
 	schemaTypeObject = "object"
 
+	ruleOperatorGTE        = "gte"
 	ruleOperatorLTE        = "lte"
 	ruleOperatorMultipleOf = "multiple_of"
 
@@ -78,7 +79,7 @@ func compileRule(rule ruleManifest, roots map[string]referenceRoot) (ruleModel, 
 	}
 	switch rule.Op {
 	case "eq":
-	case ruleOperatorLTE:
+	case ruleOperatorGTE, ruleOperatorLTE:
 		if left.Kind != kindInteger && left.Kind != kindNumber {
 			return ruleModel{}, fmt.Errorf("operator %q requires numeric operands, got %s", rule.Op, left.Kind)
 		}
@@ -197,6 +198,8 @@ func ruleCondition(rule ruleModel) string {
 	switch rule.Op {
 	case "eq":
 		return left + " == " + right
+	case ruleOperatorGTE:
+		return left + " >= " + right
 	case ruleOperatorLTE:
 		return left + " <= " + right
 	case ruleOperatorMultipleOf:
@@ -218,7 +221,8 @@ func ruleOperand(reference referenceModel) string {
 
 func ruleDescription(rule ruleModel) string {
 	symbol := map[string]string{
-		"eq": "equal", ruleOperatorLTE: "less than or equal to", ruleOperatorMultipleOf: "a multiple of",
+		"eq": "equal", ruleOperatorGTE: "greater than or equal to",
+		ruleOperatorLTE: "less than or equal to", ruleOperatorMultipleOf: "a multiple of",
 	}[rule.Op]
 	return referenceDescription(rule.Left) + " must be " + symbol + " " + referenceDescription(rule.Right)
 }

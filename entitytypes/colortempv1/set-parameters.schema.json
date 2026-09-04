@@ -1,0 +1,15 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:hearth:schema:entity-type:colortemp:v1:set-parameters",
+  "title": "Hearth colortemp/v1 set parameters",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["value"],
+  "properties": {
+    "value": {
+      "type": "integer",
+      "minimum": 100,
+      "maximum": 1000
+    }
+  }
+}
