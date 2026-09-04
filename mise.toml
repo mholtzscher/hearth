@@ -159,6 +159,10 @@ run = '''pnpm --dir web run build'''
 description = "Run the dashboard dev server (proxies hearthd on 127.0.0.1:8080; run web-install first)"
 run = '''pnpm --dir web run dev'''
 
+[tasks."web-dev-remote"]
+description = "Run the dashboard dev server against a remote hearthd (override with HEARTHD_URL and NATS_MONITOR_URL)"
+run = '''HEARTHD_URL="${HEARTHD_URL:-http://wanda:8081}" NATS_MONITOR_URL="${NATS_MONITOR_URL:-http://wanda:8222}" pnpm --dir web run dev'''
+
 [tasks."mutation-test"]
 description = "Run Gremlins mutation testing (pass package paths after --)"
 run = '''gremlins unleash'''
