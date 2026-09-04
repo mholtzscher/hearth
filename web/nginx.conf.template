@@ -1,0 +1,38 @@
+# Rendered by the nginx image's envsubst entrypoint at container start, so
+# HEARTHD_URL / NATS_MONITOR_URL are runtime configuration, not build inputs.
+# Mirrors the vite dev proxy (vite.config.ts): the bundle uses relative URLs
+# by default and hearthd serves no CORS headers, so same-origin proxying is
+# what makes the released image work.
+server {
+    listen 80;
+    root /usr/share/nginx/html;
+
+    # React Router fallback for client-side routes.
+    location / {
+        try_files $uri $uri/ /index.html;
+    }
+
+    location /v1 {
+        proxy_pass ${HEARTHD_URL};
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    }
+
+    location = /healthz {
+        proxy_pass ${HEARTHD_URL};
+    }
+
+    location = /readyz {
+        proxy_pass ${HEARTHD_URL};
+    }
+
+    location = /openapi.json {
+        proxy_pass ${HEARTHD_URL};
+    }
+
+    # Stripped prefix, matching vite's `/nats-monitor` rewrite.
+    location /nats-monitor {
+        proxy_pass ${NATS_MONITOR_URL}/;
+    }
+}

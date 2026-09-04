@@ -81,6 +81,10 @@ KO_DOCKER_REPO=example.invalid/hearth ko build --base-import-paths --tags valida
   ./cmd/hearthd ./cmd/hearth-adapter-homeassistant ./cmd/hearth-adapter-zigbee2mqtt ./cmd/hearth-simulator
 '''
 
+[tasks."web-docker-build"]
+description = "Build the dashboard container image locally"
+run = '''docker build ./web --tag hearth-web:dev'''
+
 [tasks."update-lint-config"]
 description = "Update .golangci.yml to match the installed golangci-lint version"
 run = '''
