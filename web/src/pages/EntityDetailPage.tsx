@@ -1,25 +1,31 @@
-import {
-  Box,
-  Button,
-  Card,
-  CardContent,
-  FormControlLabel,
-  Stack,
-  Switch,
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableRow,
-  TextField,
-  Typography,
-} from "@mui/material";
 import { useEffect, useRef, useState } from "react";
 import { useParams } from "react-router-dom";
 import { ApiError, apiFetch, useBaseUrlVersion } from "../api/client.ts";
 import { useApi } from "../api/hooks.ts";
 import type { Collection, CommandRecord, CommandResult, Entity, HealthTransition } from "../api/types.ts";
-import { ErrorBox, Facts, RawJson, Section, StatusChip } from "../components/common.tsx";
+import {
+  EmptyRow,
+  ErrorBox,
+  Facts,
+  MonoId,
+  RawJson,
+  Section,
+  StatusChip,
+} from "../components/common.tsx";
+import { Button } from "../components/ui/button.tsx";
+import { Card, CardContent } from "../components/ui/card.tsx";
+import { Input } from "../components/ui/input.tsx";
+import { Label } from "../components/ui/label.tsx";
+import { Switch } from "../components/ui/switch.tsx";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "../components/ui/table.tsx";
+import { Textarea } from "../components/ui/textarea.tsx";
 
 function presetsFor(type: string | undefined, support?: Record<string, unknown>): { label: string; params: string }[] {
   switch (type) {
@@ -76,44 +82,53 @@ function CommandHistory({ entityId }: { entityId: string }) {
       ),
   );
   return (
-    <Box>
-      <Button size="small" onClick={() => void refresh()}>
-        Refresh history
-      </Button>
-      {loading && <Typography>Loading…</Typography>}
+    <div>
+      <div className="flex items-center gap-2">
+        <Button size="sm" variant="outline" onClick={() => void refresh()}>
+          Refresh history
+        </Button>
+        {loading && <span className="text-sm text-muted-foreground">Loading…</span>}
+      </div>
       {error && <ErrorBox error={error} />}
       {data && (
         <>
-          <Table size="small">
-            <TableHead>
-              <TableRow>
-                <TableCell>ID</TableCell>
-                <TableCell>Operation</TableCell>
-                <TableCell>Params</TableCell>
-                <TableCell>Status</TableCell>
-                <TableCell>Failure</TableCell>
-                <TableCell>Requested</TableCell>
+          <Table className="mt-3">
+            <TableHeader>
+              <TableRow className="hover:bg-transparent">
+                <TableHead>Command id</TableHead>
+                <TableHead>Operation</TableHead>
+                <TableHead>Params</TableHead>
+                <TableHead>Status</TableHead>
+                <TableHead>Failure</TableHead>
+                <TableHead>Requested</TableHead>
               </TableRow>
-            </TableHead>
+            </TableHeader>
             <TableBody>
+              {data.items.length === 0 && <EmptyRow colSpan={6} message="No commands sent yet." />}
               {data.items.map((c) => (
-                <TableRow key={c.id} hover>
-                  <TableCell sx={{ fontSize: 11, maxWidth: 220, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={c.id}>{c.id}</TableCell>
+                <TableRow key={c.id}>
+                  <TableCell className="max-w-[16rem]">
+                    <MonoId value={c.id} className="text-muted-foreground" />
+                  </TableCell>
                   <TableCell>{c.operation}</TableCell>
-                  <TableCell sx={{ fontSize: 11 }}>{JSON.stringify(c.parameters)}</TableCell>
+                  <TableCell className="font-mono text-xs">{JSON.stringify(c.parameters)}</TableCell>
                   <TableCell>
                     <StatusChip status={c.status} />
                   </TableCell>
-                  <TableCell>{c.failure_code ?? "—"}</TableCell>
-                  <TableCell sx={{ fontSize: 11 }}>{c.requested_at}</TableCell>
+                  <TableCell className="font-mono text-xs">{c.failure_code ?? "—"}</TableCell>
+                  <TableCell className="font-mono text-xs text-muted-foreground">{c.requested_at}</TableCell>
                 </TableRow>
               ))}
             </TableBody>
           </Table>
-          {data.next_cursor && <Button onClick={() => setCursor(data.next_cursor)}>Next page</Button>}
+          {data.next_cursor && (
+            <Button size="sm" variant="outline" className="mt-2" onClick={() => setCursor(data.next_cursor)}>
+              Next page
+            </Button>
+          )}
         </>
       )}
-    </Box>
+    </div>
   );
 }
 
@@ -131,33 +146,40 @@ function AvailabilityHistory({ entityId }: { entityId: string }) {
         `/v1/entities/${entityId}/availability/history?limit=50${cursor ? `&cursor=${encodeURIComponent(cursor)}` : ""}`,
       ),
   );
-  if (loading) return <Typography>Loading…</Typography>;
+  if (loading) return <p className="text-sm text-muted-foreground">Loading…</p>;
   if (error) return <ErrorBox error={error} />;
   return (
     <>
-      <Table size="small">
-        <TableHead>
-          <TableRow>
-            <TableCell>Status</TableCell>
-            <TableCell>Source</TableCell>
-            <TableCell>Reason</TableCell>
-            <TableCell>Observed at</TableCell>
+      <Table>
+        <TableHeader>
+          <TableRow className="hover:bg-transparent">
+            <TableHead>Status</TableHead>
+            <TableHead>Source</TableHead>
+            <TableHead>Reason</TableHead>
+            <TableHead>Observed at</TableHead>
           </TableRow>
-        </TableHead>
+        </TableHeader>
         <TableBody>
+          {(data?.items ?? []).length === 0 && (
+            <EmptyRow colSpan={4} message="No availability transitions recorded." />
+          )}
           {data?.items.map((t, i) => (
             <TableRow key={i}>
               <TableCell>
                 <StatusChip status={t.status} />
               </TableCell>
               <TableCell>{t.source}</TableCell>
-              <TableCell>{t.reason?.code ?? "—"}</TableCell>
-              <TableCell>{t.observed_at}</TableCell>
+              <TableCell className="font-mono text-xs">{t.reason?.code ?? "—"}</TableCell>
+              <TableCell className="font-mono text-xs text-muted-foreground">{t.observed_at}</TableCell>
             </TableRow>
           ))}
         </TableBody>
       </Table>
-      {data?.next_cursor && <Button onClick={() => setCursor(data.next_cursor)}>Next page</Button>}
+      {data?.next_cursor && (
+        <Button size="sm" variant="outline" className="mt-2" onClick={() => setCursor(data.next_cursor)}>
+          Next page
+        </Button>
+      )}
     </>
   );
 }
@@ -246,107 +268,133 @@ export default function EntityDetailPage() {
   }
 
   return (
-    <Box>
-      <Typography variant="h5" sx={{ wordBreak: "break-all" }}>
-        Entity {entityId}
-      </Typography>
-      <Button variant="outlined" sx={{ mt: 1 }} onClick={() => void refresh()}>
-        Refresh
-      </Button>
-      {loading && <Typography>Loading…</Typography>}
+    <div>
+      <div className="flex flex-wrap items-center gap-2">
+        <h1 className="mr-1 text-lg font-semibold">{data?.name ?? "Entity"}</h1>
+        {data && <StatusChip label="availability" status={data.availability.status} />}
+        {data && (
+          <StatusChip
+            label={data.enabled ? "enabled" : "disabled"}
+            status={data.enabled ? "ok" : "disabled"}
+          />
+        )}
+        <Button size="sm" variant="outline" onClick={() => void refresh()}>
+          Refresh
+        </Button>
+        {loading && <span className="text-sm text-muted-foreground">Loading…</span>}
+      </div>
+      <p className="mt-1 font-mono text-xs break-all text-muted-foreground">{entityId}</p>
       {error && <ErrorBox error={error} />}
       {data && (
         <>
-          <Card variant="outlined" sx={{ mt: 2 }}>
-            <CardContent>
-              <Typography variant="subtitle1">
-                {data.name} <StatusChip label="availability" status={data.availability.status} />{" "}
-                <StatusChip label={data.enabled ? "enabled" : "disabled"} status={data.enabled ? "ok" : "disabled"} />
-              </Typography>
-              <Facts
-                rows={[
-                  ["Type", data.type],
-                  ["Device", data.device_id],
-                  ["Adapter", data.adapter_id],
-                  [
-                    "Availability",
-                    `${data.availability.source} since ${data.availability.since}${data.availability.reason ? ` (${data.availability.reason.code})` : ""}`,
-                  ],
-                  [
-                    "State",
-                    data.state
-                      ? `${JSON.stringify(data.state.value)} obs=${data.state.observation_id} at ${data.state.observed_at}`
-                      : "null (never observed)",
-                  ],
-                ]}
-              />
-              <FormControlLabel
-                control={
+          <div className="mt-3 grid gap-3 lg:grid-cols-2">
+            <Card size="sm">
+              <CardContent>
+                <Facts
+                  rows={[
+                    ["Type", data.type],
+                    ["Device", data.device_id],
+                    ["Adapter", data.adapter_id],
+                    [
+                      "Availability",
+                      `${data.availability.source} since ${data.availability.since}${data.availability.reason ? ` (${data.availability.reason.code})` : ""}`,
+                    ],
+                    [
+                      "State",
+                      data.state
+                        ? `${JSON.stringify(data.state.value)} obs=${data.state.observation_id} at ${data.state.observed_at}`
+                        : "null (never observed)",
+                    ],
+                  ]}
+                />
+                <div className="mt-3 flex items-center gap-2">
                   <Switch
+                    id="entity-enabled"
                     checked={data.enabled}
                     disabled={toggling}
-                    onChange={(e) => void setEnabled(e.target.checked)}
+                    onCheckedChange={(checked) => void setEnabled(checked)}
                   />
-                }
-                label="Enabled (PATCH /v1/entities/{id})"
-              />
-            </CardContent>
-          </Card>
+                  <Label htmlFor="entity-enabled" className="text-sm">
+                    Enabled
+                  </Label>
+                  <span className="font-mono text-xs text-muted-foreground">
+                    PATCH /v1/entities/{"{id}"}
+                  </span>
+                </div>
+              </CardContent>
+            </Card>
 
-          <Section title="Send command (POST /v1/entities/{id}/commands)">
-            <Stack spacing={2}>
-            {presetsFor(data?.type, data?.support).length > 0 && (
-            <Box sx={{ display: "flex", gap: 1, flexWrap: "wrap" }}>
-              {presetsFor(data?.type, data?.support).map((p) => (
-                <Button key={p.label} size="small" variant="outlined" onClick={() => { setParamsText(p.params); setParamsTouched(true); }}>
-                  {p.label}
-                </Button>
-              ))}
-            </Box>
-            )}
-            <Box sx={{ display: "flex", gap: 2, flexWrap: "wrap" }}>
-              <TextField
-                size="small"
-                label="operation"
-                value={operation}
-                onChange={(e) => setOperation(e.target.value)}
-                sx={{ width: 160 }}
-              />
-              <TextField
-                size="small"
-                label="parameters (JSON)"
-                value={paramsText}
-                onChange={(e) => { setParamsText(e.target.value); setParamsTouched(true); }}
-                error={!!paramsError}
-                helperText={paramsError ?? `e.g. ${exampleParams(data?.type, data?.support)}${data ? ` for ${data.type} set` : ""}`}
-                multiline
-                minRows={2}
-                sx={{ flexGrow: 1, minWidth: 280 }}
-              />
-            </Box>
-            <Box>
-            <Button variant="contained" disabled={sending} onClick={() => void sendCommand()}>
-              {sending ? "Sending…" : "Send command"}
-            </Button>
-            </Box>
-            {sendError && (
-              <ErrorBox error={sendError instanceof ApiError ? sendError : sendError} />
-            )}
-            {result && (
-              <>
-                <Typography sx={{ mt: 1 }}>
-                  <StatusChip status={result.status} /> observation={result.observation_id} value=
-                  {JSON.stringify(result.value)}
-                </Typography>
-                <RawJson value={result} title="Command result JSON" />
-              </>
-            )}
-            </Stack>
-          </Section>
-
-          <Section title="Support">
-            <RawJson value={data.support} title="support JSON" />
-          </Section>
+            <Card size="sm">
+              <CardContent>
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-sm font-medium">Send command</span>
+                  <span className="font-mono text-xs text-muted-foreground">
+                    POST /v1/entities/{"{id}"}/commands
+                  </span>
+                </div>
+                <div className="mt-3 flex flex-col gap-3">
+                  {presetsFor(data?.type, data?.support).length > 0 && (
+                    <div className="flex flex-wrap gap-1.5">
+                      {presetsFor(data?.type, data?.support).map((p) => (
+                        <Button
+                          key={p.label}
+                          size="xs"
+                          variant="outline"
+                          onClick={() => { setParamsText(p.params); setParamsTouched(true); }}
+                        >
+                          {p.label}
+                        </Button>
+                      ))}
+                    </div>
+                  )}
+                  <div className="grid gap-3 sm:grid-cols-[10rem_1fr]">
+                    <div className="grid content-start gap-1.5">
+                      <Label htmlFor="cmd-operation">operation</Label>
+                      <Input
+                        id="cmd-operation"
+                        className="font-mono text-xs"
+                        value={operation}
+                        onChange={(e) => setOperation(e.target.value)}
+                      />
+                    </div>
+                    <div className="grid gap-1.5">
+                      <Label htmlFor="cmd-params">parameters (JSON)</Label>
+                      <Textarea
+                        id="cmd-params"
+                        className="font-mono text-xs"
+                        value={paramsText}
+                        rows={2}
+                        aria-invalid={!!paramsError}
+                        onChange={(e) => { setParamsText(e.target.value); setParamsTouched(true); }}
+                      />
+                      <p className={`text-xs ${paramsError ? "text-destructive" : "text-muted-foreground"}`}>
+                        {paramsError ?? `e.g. ${exampleParams(data?.type, data?.support)}${data ? ` for ${data.type} set` : ""}`}
+                      </p>
+                    </div>
+                  </div>
+                  <div>
+                    <Button size="sm" disabled={sending} onClick={() => void sendCommand()}>
+                      {sending ? "Sending…" : "Send command"}
+                    </Button>
+                  </div>
+                  {sendError && (
+                    <ErrorBox error={sendError instanceof ApiError ? sendError : sendError} />
+                  )}
+                  {result && (
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <StatusChip status={result.status} />
+                        <span className="font-mono text-xs text-muted-foreground">
+                          obs={result.observation_id} value={JSON.stringify(result.value)}
+                        </span>
+                      </div>
+                      <RawJson value={result} title="Command result JSON" />
+                    </div>
+                  )}
+                </div>
+              </CardContent>
+            </Card>
+          </div>
 
           <Section title="Command history">
             <CommandHistory key={entityId} entityId={entityId} />
@@ -356,9 +404,13 @@ export default function EntityDetailPage() {
             <AvailabilityHistory key={entityId} entityId={entityId} />
           </Section>
 
+          <Section title="Support">
+            <RawJson value={data.support} title="support JSON" />
+          </Section>
+
           <RawJson value={data} title="Raw entity JSON" />
         </>
       )}
-    </Box>
+    </div>
   );
 }

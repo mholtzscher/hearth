@@ -1,23 +1,28 @@
+import { useEffect, useState } from "react";
+import type { ReactNode } from "react";
+import { apiFetch, useBaseUrlVersion } from "../api/client.ts";
+import { useApi } from "../api/hooks.ts";
+import type { Adapter, Collection } from "../api/types.ts";
 import {
-  Box,
-  Button,
-  Link,
-  Paper,
+  EmptyRow,
+  ErrorBox,
+  Facts,
+  linkClass,
+  RawJson,
+  Section,
+  StatusChip,
+} from "../components/common.tsx";
+import { Button } from "../components/ui/button.tsx";
+import { Card, CardContent } from "../components/ui/card.tsx";
+import { Input } from "../components/ui/input.tsx";
+import {
   Table,
   TableBody,
   TableCell,
   TableHead,
+  TableHeader,
   TableRow,
-  TextField,
-  Typography,
-} from "@mui/material";
-import { useEffect, useState } from "react";
-import type { ReactNode } from "react";
-import { Link as RouterLink } from "react-router-dom";
-import { apiFetch, useBaseUrlVersion } from "../api/client.ts";
-import { useApi } from "../api/hooks.ts";
-import type { Adapter, Collection } from "../api/types.ts";
-import { ErrorBox, Facts, RawJson, Section, StatusChip } from "../components/common.tsx";
+} from "../components/ui/table.tsx";
 
 function AdapterHealthHistory({ adapterId }: { adapterId: string }) {
   const [cursor, setCursor] = useState<string | undefined>(undefined);
@@ -33,33 +38,40 @@ function AdapterHealthHistory({ adapterId }: { adapterId: string }) {
         `/v1/adapters/${adapterId}/health/history?limit=50${cursor ? `&cursor=${encodeURIComponent(cursor)}` : ""}`,
       ),
   );
-  if (loading) return <Typography>Loading history…</Typography>;
+  if (loading) return <p className="text-sm text-muted-foreground">Loading history…</p>;
   if (error) return <ErrorBox error={error} />;
   return (
     <>
-      <Table size="small">
-        <TableHead>
-          <TableRow>
-            <TableCell>Status</TableCell>
-            <TableCell>Source</TableCell>
-            <TableCell>Reason</TableCell>
-            <TableCell>Observed at</TableCell>
+      <Table>
+        <TableHeader>
+          <TableRow className="hover:bg-transparent">
+            <TableHead>Status</TableHead>
+            <TableHead>Source</TableHead>
+            <TableHead>Reason</TableHead>
+            <TableHead>Observed at</TableHead>
           </TableRow>
-        </TableHead>
+        </TableHeader>
         <TableBody>
+          {(data?.items ?? []).length === 0 && (
+            <EmptyRow colSpan={4} message="No health transitions recorded." />
+          )}
           {data?.items.map((t, i) => (
             <TableRow key={i}>
               <TableCell>
                 <StatusChip status={t.status} />
               </TableCell>
               <TableCell>{t.source}</TableCell>
-              <TableCell>{t.reason?.code ?? "—"}</TableCell>
-              <TableCell>{t.observed_at}</TableCell>
+              <TableCell className="font-mono text-xs">{t.reason?.code ?? "—"}</TableCell>
+              <TableCell className="font-mono text-xs text-muted-foreground">{t.observed_at}</TableCell>
             </TableRow>
           ))}
         </TableBody>
       </Table>
-      {data?.next_cursor && <Button onClick={() => setCursor(data.next_cursor)}>Next page</Button>}
+      {data?.next_cursor && (
+        <Button size="sm" variant="outline" className="mt-2" onClick={() => setCursor(data.next_cursor)}>
+          Next page
+        </Button>
+      )}
     </>
   );
 }
@@ -68,43 +80,48 @@ function AdapterDetail({ adapterId }: { adapterId: string }) {
   const { data, error, loading, refresh } = useApi(`adapter-${adapterId}`, () =>
     apiFetch<Adapter>(`/v1/adapters/${adapterId}`),
   );
-  if (loading) return <Typography>Loading…</Typography>;
+  if (loading) return <p className="text-sm text-muted-foreground">Loading…</p>;
   if (error)
     return (
       <>
         <ErrorBox error={error} />
-        <Button onClick={() => void refresh()}>Retry</Button>
+        <Button size="sm" variant="outline" onClick={() => void refresh()}>
+          Retry
+        </Button>
       </>
     );
   if (!data) return null;
   return (
-    <Paper variant="outlined" sx={{ p: 2, mt: 2 }}>
-      <Typography variant="subtitle1">
-        {data.id} <StatusChip label="health" status={data.health.status} />
-      </Typography>
-      <Facts
-        rows={[
-          ["Source", data.health.source],
-          ["Since", data.health.since],
-          ["Evidence at", data.health.evidence_at],
-          ...(data.health.reason ? [["Reason", data.health.reason.code] as [string, ReactNode]] : []),
-          ...(data.health.runtime
-            ? [
-                ["Runtime", data.health.runtime.id] as [string, ReactNode],
-                [
-                  "Software",
-                  `${data.health.runtime.software_name} ${data.health.runtime.software_version}`,
-                ] as [string, ReactNode],
-                ["Lease expires", data.health.runtime.lease_expires_at] as [string, ReactNode],
-              ]
-            : []),
-        ]}
-      />
-      <Section title="Health history">
-        <AdapterHealthHistory key={adapterId} adapterId={adapterId} />
-      </Section>
-      <RawJson value={data} />
-    </Paper>
+    <Card className="mt-3" size="sm">
+      <CardContent>
+        <div className="flex items-center gap-2">
+          <span className="font-medium">{data.id}</span>
+          <StatusChip label="health" status={data.health.status} />
+        </div>
+        <Facts
+          rows={[
+            ["Source", data.health.source],
+            ["Since", data.health.since],
+            ["Evidence at", data.health.evidence_at],
+            ...(data.health.reason ? [["Reason", data.health.reason.code] as [string, ReactNode]] : []),
+            ...(data.health.runtime
+              ? [
+                  ["Runtime", data.health.runtime.id] as [string, ReactNode],
+                  [
+                    "Software",
+                    `${data.health.runtime.software_name} ${data.health.runtime.software_version}`,
+                  ] as [string, ReactNode],
+                  ["Lease expires", data.health.runtime.lease_expires_at] as [string, ReactNode],
+                ]
+              : []),
+          ]}
+        />
+        <Section title="Health history">
+          <AdapterHealthHistory key={adapterId} adapterId={adapterId} />
+        </Section>
+        <RawJson value={data} />
+      </CardContent>
+    </Card>
   );
 }
 
@@ -124,16 +141,22 @@ export default function AdaptersPage() {
   const items = (data?.items ?? []).filter((a) => !filter || a.id.includes(filter));
 
   return (
-    <Box>
-      <Typography variant="h5">Adapters</Typography>
-      <Box sx={{ display: "flex", gap: 1, mt: 1 }}>
-        <TextField size="small" label="Filter by id" value={filter} onChange={(e) => setFilter(e.target.value)} />
-        <Button variant="outlined" onClick={() => { void refresh(); setDetailNonce((n) => n + 1); }}>
+    <div>
+      <div className="flex flex-wrap items-center gap-2">
+        <h1 className="mr-2 text-lg font-semibold">Adapters</h1>
+        <Input
+          aria-label="Filter by adapter id"
+          placeholder="Filter by id…"
+          className="w-56"
+          value={filter}
+          onChange={(e) => setFilter(e.target.value)}
+        />
+        <Button size="sm" variant="outline" onClick={() => { void refresh(); setDetailNonce((n) => n + 1); }}>
           Refresh
         </Button>
         <Button
-          component={RouterLink}
-          to="/adapters"
+          size="sm"
+          variant="ghost"
           onClick={() => {
             setSelected("");
             setCursor(undefined);
@@ -141,42 +164,52 @@ export default function AdaptersPage() {
         >
           Reset
         </Button>
-      </Box>
-      {loading && <Typography>Loading…</Typography>}
+        {loading && <span className="text-sm text-muted-foreground">Loading…</span>}
+      </div>
       {error && <ErrorBox error={error} />}
       {data && (
         <>
-          <Table size="small" sx={{ mt: 1 }}>
-            <TableHead>
-              <TableRow>
-                <TableCell>ID</TableCell>
-                <TableCell>Health</TableCell>
-                <TableCell>Source</TableCell>
-                <TableCell>Reason</TableCell>
+          <Table className="mt-3">
+            <TableHeader>
+              <TableRow className="hover:bg-transparent">
+                <TableHead>ID</TableHead>
+                <TableHead>Health</TableHead>
+                <TableHead>Source</TableHead>
+                <TableHead>Reason</TableHead>
               </TableRow>
-            </TableHead>
+            </TableHeader>
             <TableBody>
+              {items.length === 0 && <EmptyRow colSpan={4} message="No adapters match." />}
               {items.map((a) => (
-                <TableRow key={a.id} selected={a.id === selected} hover>
-                  <TableCell>
-                    <Link component="button" onClick={() => setSelected(a.id)}>
+                <TableRow
+                  key={a.id}
+                  className="cursor-pointer"
+                  data-state={a.id === selected ? "selected" : undefined}
+                  onClick={() => setSelected(a.id)}
+                >
+                  <TableCell className="font-medium">
+                    <button type="button" className={linkClass}>
                       {a.id}
-                    </Link>
+                    </button>
                   </TableCell>
                   <TableCell>
                     <StatusChip status={a.health.status} />
                   </TableCell>
                   <TableCell>{a.health.source}</TableCell>
-                  <TableCell>{a.health.reason?.code ?? "—"}</TableCell>
+                  <TableCell className="font-mono text-xs">{a.health.reason?.code ?? "—"}</TableCell>
                 </TableRow>
               ))}
             </TableBody>
           </Table>
-          {data.next_cursor && <Button onClick={() => setCursor(data.next_cursor)}>Next page</Button>}
+          {data.next_cursor && (
+            <Button size="sm" variant="outline" className="mt-2" onClick={() => setCursor(data.next_cursor)}>
+              Next page
+            </Button>
+          )}
           <RawJson value={data} title="Raw list JSON" />
         </>
       )}
       {selected && <AdapterDetail key={`${selected}-${detailNonce}`} adapterId={selected} />}
-    </Box>
+    </div>
   );
 }

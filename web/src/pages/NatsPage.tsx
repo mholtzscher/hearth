@@ -1,16 +1,3 @@
-import {
-  Box,
-  Button,
-  Chip,
-  Paper,
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableRow,
-  TextField,
-  Typography,
-} from "@mui/material";
 import { useEffect, useRef, useState } from "react";
 import { ApiError } from "../api/client.ts";
 import type { ProblemDetail } from "../api/types.ts";
@@ -23,7 +10,26 @@ import {
   natsDisconnect,
   setNatsWsUrl,
 } from "../api/nats.ts";
-import { ErrorBox, Facts, JsonCode, RawJson, Section, StatusChip } from "../components/common.tsx";
+import {
+  EmptyRow,
+  ErrorBox,
+  Facts,
+  JsonCode,
+  RawJson,
+  Section,
+  StatusChip,
+} from "../components/common.tsx";
+import { Button } from "../components/ui/button.tsx";
+import { Card, CardContent } from "../components/ui/card.tsx";
+import { Input } from "../components/ui/input.tsx";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "../components/ui/table.tsx";
 
 const MAX_MESSAGES = 200;
 
@@ -140,93 +146,106 @@ function LiveMessages() {
   const visible = messages.filter((m) => !filter || m.subject.includes(filter));
 
   return (
-    <Box>
-      <Box sx={{ display: "flex", gap: 1.5, flexWrap: "wrap", alignItems: "center" }}>
-        <TextField
-          size="small"
-          label="NATS websocket URL"
+    <div>
+      <div className="flex flex-wrap items-center gap-2">
+        <Input
+          aria-label="NATS websocket URL"
+          placeholder="ws://127.0.0.1:4223"
+          className="w-56 font-mono text-xs"
           value={wsUrl}
           onChange={(e) => {
             setWsUrlState(e.target.value);
             setNatsWsUrl(e.target.value.trim());
           }}
-          sx={{ minWidth: 260 }}
+        />
+        <Input
+          aria-label="Subject (supports * and >)"
+          placeholder="hearth.v1.adapter.>"
+          className="w-96 flex-1 font-mono text-xs"
+          value={subject}
+          onChange={(e) => setSubject(e.target.value)}
         />
         <StatusChip label="nats" status={status === "connected" ? "ok" : status} />
-      </Box>
-      {statusError && <ErrorBox error={statusError} />}
-      <TextField
-        size="small"
-        label="Subject (supports * and >)"
-        value={subject}
-        onChange={(e) => setSubject(e.target.value)}
-        fullWidth
-        sx={{ mt: 2 }}
-      />
-      <Box sx={{ display: "flex", gap: 1, flexWrap: "wrap", mt: 1 }}>
+      </div>
+      <div className="mt-2 flex flex-wrap gap-1.5">
         {SUBJECT_PRESETS.map((p) => (
-          <Chip
+          <Button
             key={p.label}
-            label={p.label}
-            size="small"
-            variant={subject === p.subject ? "filled" : "outlined"}
+            size="xs"
+            variant={subject === p.subject ? "secondary" : "ghost"}
             onClick={() => setSubject(p.subject)}
-          />
+          >
+            {p.label}
+          </Button>
         ))}
-      </Box>
-      <Box sx={{ display: "flex", gap: 1, flexWrap: "wrap", mt: 2, alignItems: "center" }}>
-        <Button variant="contained" size="small" disabled={status !== "disconnected"} onClick={() => void subscribe()}>
+      </div>
+      <div className="mt-3 flex flex-wrap items-center gap-2">
+        <Button size="sm" disabled={status !== "disconnected"} onClick={() => void subscribe()}>
           Subscribe
         </Button>
-        <Button variant="outlined" size="small" disabled={status === "disconnected"} onClick={unsubscribe}>
+        <Button size="sm" variant="outline" disabled={status === "disconnected"} onClick={unsubscribe}>
           Unsubscribe
         </Button>
-        <Button variant="outlined" size="small" onClick={() => setPaused((p) => !p)}>
+        <Button size="sm" variant="outline" onClick={() => setPaused((p) => !p)}>
           {paused ? "Resume" : "Pause"}
         </Button>
-        <Button variant="outlined" size="small" onClick={() => setMessages([])}>
+        <Button size="sm" variant="ghost" onClick={() => setMessages([])}>
           Clear
         </Button>
-        <TextField
-          size="small"
-          label="Filter by subject"
+        <Input
+          aria-label="Filter by subject"
+          placeholder="Filter buffered subjects…"
+          className="w-56"
           value={filter}
           onChange={(e) => setFilter(e.target.value)}
-          sx={{ minWidth: 200 }}
         />
-        <Typography variant="body2" color="text.secondary">
+        <span className="text-sm text-muted-foreground">
           {messages.length} buffered (max {MAX_MESSAGES}), newest first
-        </Typography>
-      </Box>
-      {visible.length > 0 && (
-        <Table size="small" sx={{ mt: 1 }}>
-          <TableHead>
-            <TableRow>
-              <TableCell>Received</TableCell>
-              <TableCell>Subject</TableCell>
-              <TableCell>Payload</TableCell>
+          {paused && " · paused"}
+        </span>
+      </div>
+      {statusError && <ErrorBox error={statusError} />}
+      <Table className="mt-3">
+        <TableHeader>
+          <TableRow className="hover:bg-transparent">
+            <TableHead className="w-24">Received</TableHead>
+            <TableHead className="w-[28rem]">Subject</TableHead>
+            <TableHead>Payload</TableHead>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          {visible.length === 0 && (
+            <EmptyRow
+              colSpan={3}
+              message={
+                status === "connected"
+                  ? "Subscribed — waiting for messages."
+                  : "Not subscribed. Pick a subject and press Subscribe."
+              }
+            />
+          )}
+          {visible.map((m, i) => (
+            <TableRow key={`${m.at}-${i}`} className="align-top">
+              <TableCell className="font-mono text-xs whitespace-nowrap text-muted-foreground">
+                {m.at}
+              </TableCell>
+              <TableCell className="font-mono text-xs break-all whitespace-normal">
+                {m.subject}
+              </TableCell>
+              <TableCell className="whitespace-normal">
+                {m.json !== null ? (
+                  <JsonCode code={JSON.stringify(m.json, null, 1).slice(0, 2000)} />
+                ) : (
+                  <pre className="m-0 text-xs break-all whitespace-pre-wrap">
+                    {m.payload.slice(0, 2000)}
+                  </pre>
+                )}
+              </TableCell>
             </TableRow>
-          </TableHead>
-          <TableBody>
-            {visible.map((m, i) => (
-              <TableRow key={`${m.at}-${i}`} hover>
-                <TableCell sx={{ fontSize: 11, whiteSpace: "nowrap" }}>{m.at}</TableCell>
-                <TableCell sx={{ fontSize: 11, wordBreak: "break-all" }}>{m.subject}</TableCell>
-                <TableCell sx={{ fontSize: 11, maxWidth: 560, overflow: "hidden", textOverflow: "ellipsis" }}>
-                  {m.json !== null ? (
-                    <JsonCode code={JSON.stringify(m.json, null, 1).slice(0, 2000)} />
-                  ) : (
-                    <pre style={{ margin: 0, whiteSpace: "pre-wrap", wordBreak: "break-all" }}>
-                      {m.payload.slice(0, 2000)}
-                    </pre>
-                  )}
-                </TableCell>
-              </TableRow>
-            ))}
-          </TableBody>
-        </Table>
-      )}
-    </Box>
+          ))}
+        </TableBody>
+      </Table>
+    </div>
   );
 }
 
@@ -282,107 +301,122 @@ function ServerInfo() {
   const observations = streams.find((s) => s.name === "HEARTH_OBSERVATIONS_V1");
 
   return (
-    <Box>
-      <Typography variant="subtitle1">Server</Typography>
-      {varz.loading && <Typography>Loading…</Typography>}
-      {varz.error && <ErrorBox error={varz.error} />}
-      {varz.data && (
-        <Facts
-          rows={[
-            ["Version", varz.data.version],
-            ["Uptime", varz.data.uptime],
-            ["Connections", `${varz.data.connections} current / ${varz.data.total_connections} total`],
-            ["Messages in/out", `${varz.data.in_msgs} / ${varz.data.out_msgs}`],
-            ["Bytes in/out", `${varz.data.in_bytes} / ${varz.data.out_bytes}`],
-            ["Memory", `${varz.data.mem} bytes`],
-          ]}
-        />
-      )}
-      <RawJson value={varz.data} title="Raw /varz JSON" />
+    <div className="grid items-start gap-3 xl:grid-cols-2">
+      <Card size="sm">
+        <CardContent>
+          <div className="flex items-center gap-2">
+            <span className="text-sm font-medium">Server</span>
+            {varz.loading && <span className="text-xs text-muted-foreground">Loading…</span>}
+          </div>
+          {varz.error && <ErrorBox error={varz.error} />}
+          {varz.data && (
+            <Facts
+              rows={[
+                ["Version", varz.data.version],
+                ["Uptime", varz.data.uptime],
+                ["Connections", `${varz.data.connections} current / ${varz.data.total_connections} total`],
+                ["Messages in/out", `${varz.data.in_msgs} / ${varz.data.out_msgs}`],
+                ["Bytes in/out", `${varz.data.in_bytes} / ${varz.data.out_bytes}`],
+                ["Memory", `${varz.data.mem} bytes`],
+              ]}
+            />
+          )}
+          <RawJson value={varz.data} title="Raw /varz JSON" />
+        </CardContent>
+      </Card>
 
-      <Typography variant="subtitle1" sx={{ mt: 2 }}>
-        Connections
-      </Typography>
-      <Button size="small" onClick={() => void conns.refresh()}>
-        Refresh connections
-      </Button>
-      {conns.error && <ErrorBox error={conns.error} />}
-      {conns.data && (
-        <Table size="small" sx={{ mt: 1 }}>
-          <TableHead>
-            <TableRow>
-              <TableCell>CID</TableCell>
-              <TableCell>Kind</TableCell>
-              <TableCell>Remote</TableCell>
-              <TableCell>Subscriptions</TableCell>
-              <TableCell>Msgs in/out</TableCell>
-            </TableRow>
-          </TableHead>
-          <TableBody>
-            {(conns.data.connections ?? []).map((c) => (
-              <TableRow key={c.cid} hover>
-                <TableCell>{c.cid}</TableCell>
-                <TableCell>{c.kind}</TableCell>
-                <TableCell sx={{ fontSize: 11 }}>
-                  {c.ip}:{c.port}
-                </TableCell>
-                <TableCell sx={{ fontSize: 11, wordBreak: "break-all" }}>
-                  {c.subscriptions ?? "—"}
-                  {(c.subscriptions_list ?? []).length > 0 && `: ${(c.subscriptions_list ?? []).join(", ")}`}
-                </TableCell>
-                <TableCell>
-                  {c.in_msgs} / {c.out_msgs}
-                </TableCell>
+      <Card size="sm">
+        <CardContent>
+          <div className="flex items-center justify-between gap-2">
+            <span className="text-sm font-medium">JetStream: HEARTH_OBSERVATIONS_V1</span>
+            <Button size="xs" variant="outline" onClick={() => void jsz.refresh()}>
+              Refresh
+            </Button>
+          </div>
+          {jsz.error && <ErrorBox error={jsz.error} />}
+          {observations?.state && (
+            <Facts
+              rows={Object.entries(observations.state).map(([k, v]) => [k, JSON.stringify(v)] as [string, string])}
+            />
+          )}
+          {(observations?.consumer_detail ?? []).map((c) => (
+            <div key={String(c.name ?? "consumer")} className="mt-3">
+              <span className="text-sm font-medium">Consumer {String(c.name ?? "?")}</span>
+              <Facts
+                rows={Object.entries(c).map(([k, v]) => [k, JSON.stringify(v)] as [string, string])}
+              />
+            </div>
+          ))}
+          {!jsz.loading && !jsz.error && !observations && (
+            <p className="mt-2 text-sm text-muted-foreground">
+              Stream not found (is hearthd running?).
+            </p>
+          )}
+          <RawJson value={jsz.data} title="Raw /jsz JSON" />
+        </CardContent>
+      </Card>
+
+      <Card size="sm" className="xl:col-span-2">
+        <CardContent>
+          <div className="flex items-center justify-between gap-2">
+            <span className="text-sm font-medium">Connections</span>
+            <Button size="xs" variant="outline" onClick={() => void conns.refresh()}>
+              Refresh
+            </Button>
+          </div>
+          {conns.error && <ErrorBox error={conns.error} />}
+          <Table className="mt-2">
+            <TableHeader>
+              <TableRow className="hover:bg-transparent">
+                <TableHead className="w-16">CID</TableHead>
+                <TableHead className="w-20">Kind</TableHead>
+                <TableHead className="w-48">Remote</TableHead>
+                <TableHead>Subscriptions</TableHead>
+                <TableHead className="w-32">Msgs in/out</TableHead>
               </TableRow>
-            ))}
-          </TableBody>
-        </Table>
-      )}
-
-      <Typography variant="subtitle1" sx={{ mt: 2 }}>
-        JetStream: HEARTH_OBSERVATIONS_V1
-      </Typography>
-      <Button size="small" onClick={() => void jsz.refresh()}>
-        Refresh JetStream
-      </Button>
-      {jsz.error && <ErrorBox error={jsz.error} />}
-      {observations?.state && (
-        <Facts
-          rows={Object.entries(observations.state).map(([k, v]) => [k, JSON.stringify(v)] as [string, string])}
-        />
-      )}
-      {(observations?.consumer_detail ?? []).map((c) => (
-        <Box key={String(c.name ?? "consumer")} sx={{ mt: 1 }}>
-          <Typography variant="subtitle2">Consumer {String(c.name ?? "?")}</Typography>
-          <Facts
-            rows={Object.entries(c).map(([k, v]) => [k, JSON.stringify(v)] as [string, string])}
-          />
-        </Box>
-      ))}
-      {!jsz.loading && !jsz.error && !observations && (
-        <Typography color="text.secondary">Stream not found (is hearthd running?).</Typography>
-      )}
-      <RawJson value={jsz.data} title="Raw /jsz JSON" />
-    </Box>
+            </TableHeader>
+            <TableBody>
+              {(conns.data?.connections ?? []).length === 0 && (
+                <EmptyRow colSpan={5} message="No connections reported." />
+              )}
+              {(conns.data?.connections ?? []).map((c) => (
+                <TableRow key={c.cid} className="align-top">
+                  <TableCell className="font-mono text-xs">{c.cid}</TableCell>
+                  <TableCell>{c.kind}</TableCell>
+                  <TableCell className="font-mono text-xs">
+                    {c.ip}:{c.port}
+                  </TableCell>
+                  <TableCell className="font-mono text-xs break-all whitespace-normal text-muted-foreground">
+                    {c.subscriptions ?? "—"}
+                    {(c.subscriptions_list ?? []).length > 0 && `: ${(c.subscriptions_list ?? []).join(", ")}`}
+                  </TableCell>
+                  <TableCell className="font-mono text-xs">
+                    {c.in_msgs} / {c.out_msgs}
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </CardContent>
+      </Card>
+    </div>
   );
 }
 
 export default function NatsPage() {
   return (
-    <Box>
-      <Typography variant="h5">NATS</Typography>
-      <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
+    <div>
+      <h1 className="text-lg font-semibold">NATS</h1>
+      <p className="mt-1 text-sm text-muted-foreground">
         Live wire traffic and server introspection. Requires the websocket and monitoring listeners in
         configs/nats-server.conf (restart NATS after changing it).
-      </Typography>
+      </p>
       <Section title="Live messages (websocket)">
         <LiveMessages />
       </Section>
       <Section title="Server info (monitoring)">
-        <Paper variant="outlined" sx={{ p: 2 }}>
-          <ServerInfo />
-        </Paper>
+        <ServerInfo />
       </Section>
-    </Box>
+    </div>
   );
 }

@@ -1,9 +1,18 @@
-import { AppBar, Box, Button, Container, TextField, Toolbar, Typography } from "@mui/material";
+import { cn } from "cn";
+import { SettingsIcon } from "lucide-react";
 import { useState } from "react";
-import { HashRouter, Link as RouterLink, Route, Routes, useNavigate } from "react-router-dom";
+import { HashRouter, NavLink, Route, Routes, useNavigate } from "react-router-dom";
 import { api, ApiError, getBaseUrl, setBaseUrl } from "./api/client.ts";
 import { usePolling } from "./api/hooks.ts";
 import { StatusChip } from "./components/common.tsx";
+import { Button } from "./components/ui/button.tsx";
+import { Input } from "./components/ui/input.tsx";
+import { Label } from "./components/ui/label.tsx";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "./components/ui/popover.tsx";
 import AdaptersPage from "./pages/AdaptersPage.tsx";
 import CommandsPage from "./pages/CommandsPage.tsx";
 import DevicesPage from "./pages/DevicesPage.tsx";
@@ -11,14 +20,22 @@ import EntitiesPage from "./pages/EntitiesPage.tsx";
 import EntityDetailPage from "./pages/EntityDetailPage.tsx";
 import NatsPage from "./pages/NatsPage.tsx";
 
+const NAV_ITEMS = [
+  { to: "/entities", label: "Entities" },
+  { to: "/devices", label: "Devices" },
+  { to: "/adapters", label: "Adapters" },
+  { to: "/commands", label: "Commands" },
+  { to: "/nats", label: "NATS" },
+];
+
 function HealthBadges() {
   const health = usePolling("healthz", api.health, 10_000);
   const ready = usePolling("readyz", api.ready, 10_000);
   return (
-    <Box sx={{ display: "flex", gap: 1, alignItems: "center" }}>
+    <div className="flex items-center gap-1.5">
       <StatusChip label="healthz" status={readyStatus(health.data?.status, health.error)} />
       <StatusChip label="readyz" status={readyStatus(ready.data?.status, ready.error)} />
-    </Box>
+    </div>
   );
 }
 
@@ -37,29 +54,22 @@ function EntityJump() {
   const [value, setValue] = useState("");
   const navigate = useNavigate();
   return (
-    <Box sx={{ display: "flex", gap: 1, alignItems: "center" }}>
-      <TextField
-        size="small"
-        label="Jump to entity id"
-        value={value}
-        onChange={(e) => setValue(e.target.value)}
-        onKeyDown={(e) => {
-          if (e.key === "Enter" && value.trim()) navigate(`/entities/${value.trim()}`);
-        }}
-        sx={{ minWidth: 240 }}
-      />
-      <Button
-        size="small"
-        variant="outlined"
-        onClick={() => value.trim() && navigate(`/entities/${value.trim()}`)}
-      >
-        Go
-      </Button>
-    </Box>
+    <Input
+      aria-label="Jump to entity id"
+      placeholder="Jump to entity id…"
+      className="w-56"
+      value={value}
+      onChange={(e) => setValue(e.target.value)}
+      onKeyDown={(e) => {
+        if (e.key === "Enter" && value.trim()) navigate(`/entities/${value.trim()}`);
+      }}
+    />
   );
 }
 
-function Shell() {
+/** Base URL and the OpenAPI link are set-once controls, so they live behind a
+    popover instead of costing a toolbar row on every page. */
+function ConnectionSettings() {
   const [baseUrl, setBaseUrlState] = useState(getBaseUrl());
   // Commit on blur/Enter so mid-typing values don't refetch every page.
   function commitBaseUrl(value: string) {
@@ -67,32 +77,17 @@ function Shell() {
     setBaseUrl(value.trim());
   }
   return (
-    <Box>
-      <AppBar position="static">
-        <Toolbar sx={{ gap: 2, flexWrap: "wrap" }}>
-          <Typography variant="h6">Hearth Debug</Typography>
-          <Button color="inherit" component={RouterLink} to="/entities">
-            Entities
-          </Button>
-          <Button color="inherit" component={RouterLink} to="/devices">
-            Devices
-          </Button>
-          <Button color="inherit" component={RouterLink} to="/adapters">
-            Adapters
-          </Button>
-          <Button color="inherit" component={RouterLink} to="/commands">
-            Commands
-          </Button>
-          <Button color="inherit" component={RouterLink} to="/nats">
-            NATS
-          </Button>
-          <Box sx={{ flexGrow: 1 }} />
-          <HealthBadges />
-        </Toolbar>
-        <Toolbar variant="dense" sx={{ gap: 1.5, bgcolor: "background.paper", color: "text.primary" }}>
-          <TextField
-            size="small"
-            label="hearthd base URL (empty = same origin)"
+    <Popover>
+      <PopoverTrigger asChild>
+        <Button variant="ghost" size="icon-sm" aria-label="Connection settings">
+          <SettingsIcon />
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent align="end" className="w-80">
+        <div className="grid gap-1.5">
+          <Label htmlFor="base-url">hearthd base URL</Label>
+          <Input
+            id="base-url"
             placeholder="http://127.0.0.1:8080"
             value={baseUrl}
             onChange={(e) => setBaseUrlState(e.target.value)}
@@ -100,20 +95,53 @@ function Shell() {
             onKeyDown={(e) => {
               if (e.key === "Enter") commitBaseUrl((e.target as HTMLInputElement).value);
             }}
-            sx={{ minWidth: 300 }}
           />
-          <EntityJump />
-          <Button
-            size="small"
-            href={`${baseUrl || ""}/openapi.json`}
-            target="_blank"
-            rel="noreferrer"
-          >
-            OpenAPI JSON
-          </Button>
-        </Toolbar>
-      </AppBar>
-      <Container maxWidth="lg" sx={{ py: 3 }}>
+          <p className="text-xs text-muted-foreground">
+            Empty uses the same origin (the vite proxy).
+          </p>
+        </div>
+        <Button variant="outline" size="sm" asChild>
+          <a href={`${baseUrl || ""}/openapi.json`} target="_blank" rel="noreferrer">
+            Open OpenAPI JSON
+          </a>
+        </Button>
+      </PopoverContent>
+    </Popover>
+  );
+}
+
+function Shell() {
+  return (
+    <div>
+      <header className="sticky top-0 z-40 border-b bg-background">
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-2 px-4 py-2">
+          <span className="font-semibold">Hearth Debug</span>
+          <nav className="flex flex-wrap items-center gap-0.5">
+            {NAV_ITEMS.map((item) => (
+              <NavLink
+                key={item.to}
+                to={item.to}
+                className={({ isActive }) =>
+                  cn(
+                    "rounded-lg px-2.5 py-1 text-sm transition-colors",
+                    isActive
+                      ? "bg-secondary font-medium text-secondary-foreground"
+                      : "text-muted-foreground hover:bg-muted hover:text-foreground",
+                  )
+                }
+              >
+                {item.label}
+              </NavLink>
+            ))}
+          </nav>
+          <div className="ms-auto flex items-center gap-2">
+            <EntityJump />
+            <HealthBadges />
+            <ConnectionSettings />
+          </div>
+        </div>
+      </header>
+      <main className="px-4 py-4">
         <Routes>
           <Route path="/" element={<EntitiesPage />} />
           <Route path="/entities" element={<EntitiesPage />} />
@@ -123,8 +151,8 @@ function Shell() {
           <Route path="/commands" element={<CommandsPage />} />
           <Route path="/nats" element={<NatsPage />} />
         </Routes>
-      </Container>
-    </Box>
+      </main>
+    </div>
   );
 }
 

@@ -1,21 +1,19 @@
-import {
-  Box,
-  Button,
-  Link,
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableRow,
-  TextField,
-  Typography,
-} from "@mui/material";
 import { useEffect, useState } from "react";
 import { Link as RouterLink } from "react-router-dom";
 import { apiFetch, useBaseUrlVersion } from "../api/client.ts";
 import { useApi } from "../api/hooks.ts";
 import type { Collection, Entity } from "../api/types.ts";
-import { ErrorBox, RawJson, StatusChip } from "../components/common.tsx";
+import { EmptyRow, ErrorBox, linkClass, MonoId, RawJson, StatusChip } from "../components/common.tsx";
+import { Button } from "../components/ui/button.tsx";
+import { Input } from "../components/ui/input.tsx";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "../components/ui/table.tsx";
 
 export default function EntitiesPage() {
   const [cursor, setCursor] = useState<string | undefined>(undefined);
@@ -32,18 +30,24 @@ export default function EntitiesPage() {
   );
 
   return (
-    <Box>
-      <Typography variant="h5">Entities</Typography>
-      <Box sx={{ display: "flex", gap: 1, mt: 1, alignItems: "center" }}>
-        <TextField
-          size="small"
-          label="device_id filter"
+    <div>
+      <div className="flex flex-wrap items-center gap-2">
+        <h1 className="mr-2 text-lg font-semibold">Entities</h1>
+        <Input
+          aria-label="device_id filter"
+          placeholder="Filter by device_id…"
+          className="w-72"
           value={deviceId}
           onChange={(e) => setDeviceId(e.target.value)}
-          sx={{ minWidth: 320 }}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") {
+              setAppliedDeviceId(deviceId.trim());
+              setCursor(undefined);
+            }
+          }}
         />
         <Button
-          variant="contained"
+          size="sm"
           onClick={() => {
             setAppliedDeviceId(deviceId.trim());
             setCursor(undefined);
@@ -51,49 +55,59 @@ export default function EntitiesPage() {
         >
           Apply
         </Button>
-        <Button variant="outlined" onClick={() => void refresh()}>
+        <Button size="sm" variant="outline" onClick={() => void refresh()}>
           Refresh
         </Button>
-      </Box>
-      {loading && <Typography>Loading…</Typography>}
+        {loading && <span className="text-sm text-muted-foreground">Loading…</span>}
+      </div>
       {error && <ErrorBox error={error} />}
       {data && (
         <>
-          <Table size="small" sx={{ mt: 1 }}>
-            <TableHead>
-              <TableRow>
-                <TableCell>ID / Name</TableCell>
-                <TableCell>Type</TableCell>
-                <TableCell>Enabled</TableCell>
-                <TableCell>Availability</TableCell>
-                <TableCell>State</TableCell>
+          <Table className="mt-3">
+            <TableHeader>
+              <TableRow className="hover:bg-transparent">
+                <TableHead>Name</TableHead>
+                <TableHead>Entity id</TableHead>
+                <TableHead>Type</TableHead>
+                <TableHead>Adapter</TableHead>
+                <TableHead>Enabled</TableHead>
+                <TableHead>Availability</TableHead>
+                <TableHead>State</TableHead>
               </TableRow>
-            </TableHead>
+            </TableHeader>
             <TableBody>
+              {data.items.length === 0 && <EmptyRow colSpan={7} message="No entities." />}
               {data.items.map((e) => (
-                <TableRow key={e.id} hover>
-                  <TableCell>
-                    <Link component={RouterLink} to={`/entities/${e.id}`}>
+                <TableRow key={e.id}>
+                  <TableCell className="font-medium">
+                    <RouterLink to={`/entities/${e.id}`} className={linkClass}>
                       {e.name}
-                    </Link>
-                    <Typography variant="caption" display="block" color="text.secondary">
-                      {e.id} · {e.adapter_id}
-                    </Typography>
+                    </RouterLink>
                   </TableCell>
-                  <TableCell>{e.type}</TableCell>
+                  <TableCell className="max-w-[22rem]">
+                    <MonoId value={e.id} className="text-muted-foreground" />
+                  </TableCell>
+                  <TableCell className="font-mono text-xs">{e.type}</TableCell>
+                  <TableCell className="text-muted-foreground">{e.adapter_id}</TableCell>
                   <TableCell>{e.enabled ? "yes" : "no"}</TableCell>
                   <TableCell>
                     <StatusChip status={e.availability.status} />
                   </TableCell>
-                  <TableCell>{e.state ? JSON.stringify(e.state.value) : "—"}</TableCell>
+                  <TableCell className="font-mono text-xs">
+                    {e.state ? JSON.stringify(e.state.value) : "—"}
+                  </TableCell>
                 </TableRow>
               ))}
             </TableBody>
           </Table>
-          {data.next_cursor && <Button onClick={() => setCursor(data.next_cursor)}>Next page</Button>}
+          {data.next_cursor && (
+            <Button size="sm" variant="outline" className="mt-2" onClick={() => setCursor(data.next_cursor)}>
+              Next page
+            </Button>
+          )}
           <RawJson value={data} title="Raw list JSON" />
         </>
       )}
-    </Box>
+    </div>
   );
 }
