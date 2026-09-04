@@ -1,0 +1,119 @@
+[
+  {
+    "ieee_address": "0x00124b0024abcd02",
+    "type": "EndDevice",
+    "supported": true,
+    "disabled": false,
+    "friendly_name": "fixture-temperature",
+    "description": "Sanitized Fixture Temperature",
+    "interview_state": "SUCCESSFUL",
+    "endpoints": {
+      "1": {}
+    },
+    "definition": {
+      "model": "SNZB-02D",
+      "vendor": "SONOFF",
+      "description": "Temperature and humidity sensor with screen",
+      "exposes": [
+        {
+          "type": "numeric",
+          "name": "battery",
+          "property": "battery",
+          "access": 5,
+          "unit": "%",
+          "value_min": 0,
+          "value_max": 100
+        },
+        {
+          "type": "numeric",
+          "name": "temperature",
+          "property": "temperature",
+          "access": 5,
+          "unit": "°C"
+        },
+        {
+          "type": "numeric",
+          "name": "humidity",
+          "property": "humidity",
+          "access": 5,
+          "unit": "%"
+        },
+        {
+          "type": "numeric",
+          "name": "comfort_temperature_min",
+          "property": "comfort_temperature_min",
+          "access": 7,
+          "unit": "°C",
+          "value_min": -10,
+          "value_max": 60,
+          "value_step": 0.1
+        },
+        {
+          "type": "numeric",
+          "name": "comfort_temperature_max",
+          "property": "comfort_temperature_max",
+          "access": 7,
+          "unit": "°C",
+          "value_min": -10,
+          "value_max": 60,
+          "value_step": 0.1
+        },
+        {
+          "type": "numeric",
+          "name": "comfort_humidity_min",
+          "property": "comfort_humidity_min",
+          "access": 7,
+          "unit": "%",
+          "value_min": 5,
+          "value_max": 95,
+          "value_step": 0.1
+        },
+        {
+          "type": "numeric",
+          "name": "comfort_humidity_max",
+          "property": "comfort_humidity_max",
+          "access": 7,
+          "unit": "%",
+          "value_min": 5,
+          "value_max": 95,
+          "value_step": 0.1
+        },
+        {
+          "type": "enum",
+          "name": "temperature_units",
+          "property": "temperature_units",
+          "access": 7
+        },
+        {
+          "type": "numeric",
+          "name": "temperature_calibration",
+          "property": "temperature_calibration",
+          "access": 7,
+          "unit": "°C",
+          "value_min": -50,
+          "value_max": 50,
+          "value_step": 0.1
+        },
+        {
+          "type": "numeric",
+          "name": "humidity_calibration",
+          "property": "humidity_calibration",
+          "access": 7,
+          "unit": "%",
+          "value_min": -50,
+          "value_max": 50,
+          "value_step": 0.1
+        },
+        {
+          "type": "numeric",
+          "name": "linkquality",
+          "property": "linkquality",
+          "access": 1,
+          "value_min": 0,
+          "value_max": 255
+        }
+      ]
+    },
+    "power_source": "Battery"
+  }
+]

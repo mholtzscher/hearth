@@ -116,4 +116,28 @@ func TestGeneratedBuiltinCatalogConformance(t *testing.T) {
 			t.Errorf("set outcome 2: satisfied = %v, error = %v", satisfied, err)
 		}
 	})
+	t.Run("hearth.temperature/v1/fixed-range-milli-celsius", func(t *testing.T) {
+		entity := Entity{ID: EntityID("generated_temperaturev1"), TypeID: EntityTypeTemperatureV1, Support: EntitySupport("{\"state\": {}, \"operations\": {}}")}
+		if _, err := catalog.NormalizeSupport(entity.TypeID, entity.Support); err != nil {
+			t.Fatalf("support: %v", err)
+		}
+		if _, err := catalog.NormalizeState(entity, Value("21500")); (err == nil) != true {
+			t.Errorf("State example 1 error = %v", err)
+		}
+		if _, err := catalog.NormalizeState(entity, Value("-273150")); (err == nil) != true {
+			t.Errorf("State example 2 error = %v", err)
+		}
+		if _, err := catalog.NormalizeState(entity, Value("1000000")); (err == nil) != true {
+			t.Errorf("State example 3 error = %v", err)
+		}
+		if _, err := catalog.NormalizeState(entity, Value("-273151")); (err == nil) != false {
+			t.Errorf("State example 4 error = %v", err)
+		}
+		if _, err := catalog.NormalizeState(entity, Value("1000001")); (err == nil) != false {
+			t.Errorf("State example 5 error = %v", err)
+		}
+		if _, err := catalog.NormalizeState(entity, Value("21.5")); (err == nil) != false {
+			t.Errorf("State example 6 error = %v", err)
+		}
+	})
 }

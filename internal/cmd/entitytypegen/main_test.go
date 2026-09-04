@@ -336,6 +336,50 @@ func TestRenderedObservationUsesSupportDependentStateValidation(t *testing.T) {
 	}
 }
 
+func TestOperationFreeFacadeOmitsCommandArtifacts(t *testing.T) {
+	t.Parallel()
+	source, err := renderFacade(entityTypeModel{Package: "examplev1"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(source)
+	for _, forbidden := range []string{
+		`"encoding/json"`,
+		`"github.com/mholtzscher/hearth/sdk/adapter/typed"`,
+		"type Handlers struct",
+		"NewCommandHandler",
+	} {
+		if strings.Contains(text, forbidden) {
+			t.Errorf("operation-free facade contains %q", forbidden)
+		}
+	}
+	for _, required := range []string{"NewEntityDescriptor", "NewObservation", "ObservationInput"} {
+		if !strings.Contains(text, required) {
+			t.Errorf("operation-free facade does not contain %q", required)
+		}
+	}
+}
+
+func TestOperationFreeCatalogConformanceOmitsTimeImport(t *testing.T) {
+	t.Parallel()
+	directory, manifestPath := writeMinimalEntityTypeFixture(t, "examplev1")
+	model, err := loadModel(manifestPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(model.Operations) != 0 {
+		t.Fatalf("fixture operations = %d, want 0", len(model.Operations))
+	}
+	conformance, err := renderCatalogConformanceTest([]entityTypeModel{model}, t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(conformance.content), `"time"`) {
+		t.Errorf("operation-free catalog conformance imports time:\n%s", conformance.content)
+	}
+	_ = directory
+}
+
 func TestRenderedCodecsEmbedExactManifestPaths(t *testing.T) {
 	t.Parallel()
 	source, err := renderCodecs(entityTypeModel{

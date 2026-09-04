@@ -207,7 +207,7 @@ func TestStaleSetCompletionCannotChangeRecoveredRoute(t *testing.T) {
 	for _, entity := range device.entities {
 		routes[entity.entityID] = commandRoute{
 			entityID: entity.entityID, ieeeAddress: device.ieeeAddress, friendlyName: device.friendly,
-			entity: entity.discovered,
+			entity: entity,
 		}
 	}
 	activated := make(chan routeActivationResult, 1)
@@ -353,7 +353,7 @@ func TestCoordinatorShutdownUnblocksHandlerAndJoinsEffects(t *testing.T) {
 		entityID:     runtime.entities[0].entityID,
 		ieeeAddress:  runtime.ieeeAddress,
 		friendlyName: runtime.friendly,
-		entity:       runtime.entities[0].discovered,
+		entity:       runtime.entities[0],
 	}
 	activated := make(chan routeActivationResult, 1)
 	z2m.runtimeEvents <- routesActivated{
@@ -391,5 +391,64 @@ func TestCoordinatorShutdownUnblocksHandlerAndJoinsEffects(t *testing.T) {
 		}
 	case <-time.After(time.Second):
 		t.Fatal("handler remained blocked after shutdown")
+	}
+}
+
+// This test protects matcher gate ordering and fails if stale or late evidence
+// invokes the outcome closure. The matcher would return true for both
+// candidates, so a call count above zero proves the closure ran before the
+// post-dispatch and deadline gates.
+func TestMatcherSkippedForStaleAndLateEvidence(t *testing.T) {
+	t.Parallel()
+	for _, test := range []struct {
+		name       string
+		receivedAt func(dispatchedAt time.Time, deadline time.Time) time.Time
+	}{
+		{name: "stale", receivedAt: func(dispatchedAt time.Time, _ time.Time) time.Time {
+			return dispatchedAt
+		}},
+		{name: "late", receivedAt: func(_ time.Time, deadline time.Time) time.Time {
+			return deadline.Add(time.Second)
+		}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			recorder := &runtimeRecorder{}
+			session := newFakeSession(recorder)
+			z2m := newRuntimeAdapter(t, session, &fakeDialer{})
+			coordinator := newRuntimeCoordinator(context.Background(), z2m)
+			t.Cleanup(coordinator.cancel)
+			now := time.Now().UTC()
+			deadline := now.Add(time.Minute)
+			dispatchedAt := now
+			calls := 0
+			attempt := &commandAttempt{
+				id: 1, generation: 1, routeRevision: 1,
+				command: testCommand("entity-power", `{"value":true}`),
+				matches: func(stateReport) bool {
+					calls++
+					return true
+				},
+				deadline: deadline, dispatchedAt: dispatchedAt, phase: commandAwaitingEvidence,
+			}
+			coordinator.matchers[attempt.command.EntityID] = attempt
+			coordinator.attempts[attempt.id] = attempt
+			event := stateCandidate{
+				ctx: context.Background(), generation: 1, routeRevision: 1,
+				entityID:   attempt.command.EntityID,
+				report:     stateReport{},
+				receivedAt: test.receivedAt(dispatchedAt, deadline),
+				result:     make(chan stateDisposition, 1),
+			}
+			if err := coordinator.handleState(event); err != nil {
+				t.Fatal(err)
+			}
+			if calls != 0 {
+				t.Fatalf("%s evidence invoked matcher %d times, want zero", test.name, calls)
+			}
+			if attempt.claimed != nil {
+				t.Fatalf("%s evidence claimed the attempt", test.name)
+			}
+		})
 	}
 }

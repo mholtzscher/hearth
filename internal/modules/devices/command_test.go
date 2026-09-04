@@ -409,6 +409,40 @@ func TestExecuteCommandRejectsInvalidParametersAndCreationFailureBeforeDispatch(
 	}
 }
 
+func TestExecuteCommandRejectsTemperatureOperationBeforeDispatch(t *testing.T) {
+	t.Parallel()
+	repository := newCommandRepository()
+	repository.view.Entity = Entity{
+		ID: commandTestEntityID, DeviceID: commandTestDeviceID, AdapterID: "simulator", Name: "Temperature",
+		TypeID: EntityTypeTemperatureV1, Support: EntitySupport(`{"state":{},"operations":{}}`), Enabled: true,
+	}
+	dispatches := 0
+	sender := commandSenderFunc(func(context.Context, string, RuntimeID, CommandRequest) (CommandAcceptance, error) {
+		dispatches++
+		return CommandAcceptance{Accepted: true}, nil
+	})
+	catalog, err := NewBuiltinTypeCatalog()
+	if err != nil {
+		t.Fatal(err)
+	}
+	service := newTestService(repository, sender, catalog, commandDependencies())
+
+	if _, execErr := service.ExecuteCommand(
+		context.Background(),
+		commandTestEntityID,
+		OperationNameSet,
+		CommandParameters(`{"value":21500}`),
+	); !errors.Is(execErr, ErrInvalidCommand) {
+		t.Fatalf("temperature command error = %v", execErr)
+	}
+	if dispatches != 0 {
+		t.Fatalf("dispatches = %d, want 0", dispatches)
+	}
+	if len(repository.commands) != 0 {
+		t.Fatalf("commands = %#v, want none persisted", repository.commands)
+	}
+}
+
 func TestExecuteCommandCreatesTerminalRecordWithoutWaiterOrDispatchWhenDisabled(t *testing.T) {
 	t.Parallel()
 	repository := newCommandRepository()

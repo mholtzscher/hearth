@@ -131,7 +131,7 @@ func TestCommandsForDifferentIEEEDevicesOverlap(t *testing.T) {
 		for _, entity := range device.entities {
 			routes[entity.entityID] = commandRoute{
 				entityID: entity.entityID, ieeeAddress: device.ieeeAddress, friendlyName: device.friendly,
-				entity: entity.discovered, connectionGeneration: 1,
+				entity: entity, connectionGeneration: 1,
 			}
 		}
 	}

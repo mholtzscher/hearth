@@ -4,36 +4,17 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"time"
 
-	contractbrightnessv1 "github.com/mholtzscher/hearth/entitytypes/brightnessv1"
-	contractcolortempv1 "github.com/mholtzscher/hearth/entitytypes/colortempv1"
-	contractpowerv1 "github.com/mholtzscher/hearth/entitytypes/powerv1"
 	"github.com/mholtzscher/hearth/sdk/adapter"
-	sdkbrightnessv1 "github.com/mholtzscher/hearth/sdk/adapter/brightnessv1"
-	sdkcolortempv1 "github.com/mholtzscher/hearth/sdk/adapter/colortempv1"
-	sdkpowerv1 "github.com/mholtzscher/hearth/sdk/adapter/powerv1"
-	"github.com/mholtzscher/hearth/sdk/adapter/typed"
 )
 
 type commandRoute struct {
 	entityID             string
 	ieeeAddress          string
 	friendlyName         string
-	entity               discoveredEntity
+	entity               runtimeEntity
 	connectionGeneration uint64
 	routeGeneration      uint64
-}
-
-type desiredState struct {
-	power      bool
-	brightness int64
-	colorTemp  int64
-}
-
-type matchedState struct {
-	state      decodedEntityState
-	receivedAt time.Time
 }
 
 func (z2m *Adapter) HandleCommand(ctx context.Context, command adapter.Command, responder adapter.Responder) error {
@@ -56,100 +37,28 @@ func (z2m *Adapter) HandleCommand(ctx context.Context, command adapter.Command, 
 	}
 }
 
-//nolint:gocognit // Each generated typed facade requires one explicit Entity-kind branch.
+// translateCommand delegates to the bound Entity plan, validates the planned
+// output, and marshals every set value as one JSON object. A plan may write
+// several properties and request several refresh properties.
 func translateCommand(
 	ctx context.Context,
 	route commandRoute,
 	command adapter.Command,
 	responder adapter.Responder,
-) ([]byte, desiredState, time.Time, error) {
-	var (
-		value    json.RawMessage
-		desired  desiredState
-		deadline time.Time
-	)
-	switch route.entity.Kind {
-	case entityKindPower:
-		handler, err := sdkpowerv1.NewCommandHandler(route.entityID, powerSupport(), sdkpowerv1.Handlers{
-			Set: func(
-				_ context.Context,
-				typedCommand typed.Command[contractpowerv1.SetParameters],
-				_ adapter.Responder,
-			) error {
-				translated, valueErr := powerCommandValue(route.entity, typedCommand.Parameters.Value)
-				if valueErr != nil {
-					return valueErr
-				}
-				value = translated
-				desired.power = typedCommand.Parameters.Value
-				deadline = typedCommand.Deadline
-				return nil
-			},
-		})
-		if err != nil {
-			return nil, desiredState{}, time.Time{}, err
-		}
-		if err = handler(ctx, command, responder); err != nil {
-			return nil, desiredState{}, time.Time{}, err
-		}
-	case entityKindBrightness:
-		handler, err := sdkbrightnessv1.NewCommandHandler(route.entityID, brightnessSupport(), sdkbrightnessv1.Handlers{
-			Set: func(
-				_ context.Context,
-				typedCommand typed.Command[contractbrightnessv1.SetParameters],
-				_ adapter.Responder,
-			) error {
-				translated, valueErr := brightnessCommandValue(route.entity, typedCommand.Parameters.Value)
-				if valueErr != nil {
-					return valueErr
-				}
-				value = translated
-				desired.brightness = typedCommand.Parameters.Value
-				deadline = typedCommand.Deadline
-				return nil
-			},
-		})
-		if err != nil {
-			return nil, desiredState{}, time.Time{}, err
-		}
-		if err = handler(ctx, command, responder); err != nil {
-			return nil, desiredState{}, time.Time{}, err
-		}
-	case entityKindColorTemp:
-		handler, err := sdkcolortempv1.NewCommandHandler(
-			route.entityID,
-			colorTempSupport(route.entity),
-			sdkcolortempv1.Handlers{
-				Set: func(
-					_ context.Context,
-					typedCommand typed.Command[contractcolortempv1.SetParameters],
-					_ adapter.Responder,
-				) error {
-					translated, valueErr := colorTempCommandValue(route.entity, typedCommand.Parameters.Value)
-					if valueErr != nil {
-						return valueErr
-					}
-					value = translated
-					desired.colorTemp = typedCommand.Parameters.Value
-					deadline = typedCommand.Deadline
-					return nil
-				},
-			},
-		)
-		if err != nil {
-			return nil, desiredState{}, time.Time{}, err
-		}
-		if err = handler(ctx, command, responder); err != nil {
-			return nil, desiredState{}, time.Time{}, err
-		}
-	default:
-		return nil, desiredState{}, time.Time{}, responder.RejectUnavailable(
-			"Zigbee2MQTT Entity is unavailable",
-		)
+) ([]byte, plannedCommand, error) {
+	if route.entity.plan.TranslateCommand == nil {
+		return nil, plannedCommand{}, responder.RejectUnavailable("Zigbee2MQTT Entity is unavailable")
 	}
-	payload, err := json.Marshal(map[string]json.RawMessage{route.entity.Property: value})
+	planned, err := route.entity.plan.TranslateCommand(ctx, route.entityID, command, responder)
 	if err != nil {
-		return nil, desiredState{}, time.Time{}, err
+		return nil, plannedCommand{}, err
 	}
-	return payload, desired, deadline, nil
+	if err = validatePlannedCommand(planned); err != nil {
+		return nil, plannedCommand{}, err
+	}
+	payload, err := json.Marshal(planned.SetValues)
+	if err != nil {
+		return nil, plannedCommand{}, err
+	}
+	return payload, planned, nil
 }

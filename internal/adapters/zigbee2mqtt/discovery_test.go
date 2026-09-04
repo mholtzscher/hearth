@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"reflect"
+	"slices"
 	"testing"
 
 	"github.com/mholtzscher/hearth/sdk/adapter"
@@ -49,10 +50,12 @@ func TestDiscoverCapturedThirdRealityLight(t *testing.T) {
 	if !reflect.DeepEqual(device.Registration.Entities, want) {
 		t.Fatalf("Entity descriptors = %#v, want %#v", device.Registration.Entities, want)
 	}
-	if len(device.Entities) != 3 || device.Entities[0].Property != "state" ||
-		string(device.Entities[0].PowerOn.Raw) != `"ON"` || device.Entities[1].Property != "brightness" ||
-		device.Entities[1].BrightnessMaximum != 255 || device.Entities[2].Property != "color_temp" ||
-		device.Entities[2].ColorTempMinimum != 153 || device.Entities[2].ColorTempMaximum != 500 {
+	if len(device.Entities) != 3 || !reflect.DeepEqual(device.Entities[0].StateProperties, []string{"state"}) ||
+		!reflect.DeepEqual(device.Entities[0].GetProperties, []string{"state"}) ||
+		!reflect.DeepEqual(device.Entities[1].StateProperties, []string{"brightness"}) ||
+		!reflect.DeepEqual(device.Entities[1].GetProperties, []string{"brightness"}) ||
+		!reflect.DeepEqual(device.Entities[2].StateProperties, []string{"color_temp"}) ||
+		!reflect.DeepEqual(device.Entities[2].GetProperties, []string{"color_temp"}) {
 		t.Fatalf("Entity routes = %#v", device.Entities)
 	}
 }
@@ -99,7 +102,8 @@ func TestDiscoverNullBrightnessBoundDoesNotCreateBrightness(t *testing.T) {
 	}
 }
 
-// This test protects numeric endpoint identity and fails on map-order dependence or cross-endpoint routing.
+// This test protects numeric endpoint identity and complete descriptor compatibility and fails on map-order dependence,
+// cross-endpoint routing, Entity-type drift, or support drift during planner migration.
 func TestDiscoverMultiEndpointLight(t *testing.T) {
 	t.Parallel()
 	result, err := discoverInventory(readFixture(t, "multi-endpoint-light.json"))
@@ -110,19 +114,68 @@ func TestDiscoverMultiEndpointLight(t *testing.T) {
 		t.Fatalf("discovery = %#v", result)
 	}
 	device := result.Devices[0]
-	wantKeys := []string{"power-ep1", "brightness-ep1", "colortemp-ep1", "power-ep2", "brightness-ep2"}
-	wantNames := []string{"left Power", "left Brightness", "left Color Temperature", "right Power", "right Brightness"}
+	wantDescriptors := []adapter.EntityDescriptor{
+		{
+			Key: "power-ep1", ExternalID: "0x00124b0000000002/ep1/power", Name: "left Power",
+			Type: "hearth.power/v1", Support: json.RawMessage(`{"state":{},"operations":{"set":{}}}`),
+		},
+		{
+			Key: "brightness-ep1", ExternalID: "0x00124b0000000002/ep1/brightness", Name: "left Brightness",
+			Type:    "hearth.brightness/v1",
+			Support: json.RawMessage(`{"state":{"maximum":100},"operations":{"set":{"step":1}}}`),
+		},
+		{
+			Key: "colortemp-ep1", ExternalID: "0x00124b0000000002/ep1/colortemp", Name: "left Color Temperature",
+			Type:    "hearth.colortemp/v1",
+			Support: json.RawMessage(`{"state":{"maximum":500,"minimum":153},"operations":{"set":{"step":1}}}`),
+		},
+		{
+			Key: "power-ep2", ExternalID: "0x00124b0000000002/ep2/power", Name: "right Power",
+			Type: "hearth.power/v1", Support: json.RawMessage(`{"state":{},"operations":{"set":{}}}`),
+		},
+		{
+			Key: "brightness-ep2", ExternalID: "0x00124b0000000002/ep2/brightness", Name: "right Brightness",
+			Type:    "hearth.brightness/v1",
+			Support: json.RawMessage(`{"state":{"maximum":100},"operations":{"set":{"step":1}}}`),
+		},
+	}
+	if !reflect.DeepEqual(device.Registration.Entities, wantDescriptors) {
+		t.Fatalf("Entity descriptors = %#v, want %#v", device.Registration.Entities, wantDescriptors)
+	}
 	wantProperties := []string{"state_left", "brightness_left", "color_temp_left", "state_right", "brightness_right"}
-	wantLocations := []string{"ep1/power", "ep1/brightness", "ep1/colortemp", "ep2/power", "ep2/brightness"}
-	for index := range wantKeys {
-		entity := device.Entities[index]
-		if entity.Descriptor.Key != wantKeys[index] || entity.Descriptor.Name != wantNames[index] ||
-			entity.Property != wantProperties[index] {
-			t.Fatalf("Entity %d = %#v", index, entity)
+	for index, entity := range device.Entities {
+		if !reflect.DeepEqual(entity.StateProperties, []string{wantProperties[index]}) {
+			t.Fatalf("Entity %d State properties = %v", index, entity.StateProperties)
 		}
-		wantExternalID := "0x00124b0000000002/" + wantLocations[index]
-		if entity.Descriptor.ExternalID != wantExternalID {
-			t.Fatalf("Entity %d external ID = %q, want %q", index, entity.Descriptor.ExternalID, wantExternalID)
+	}
+}
+
+// This test protects canonical endpoint identity and fails if a mutable endpoint label enters Entity keys or external IDs.
+func TestDiscoverEndpointLabelChangePreservesCanonicalIdentity(t *testing.T) {
+	t.Parallel()
+	items, err := decodeRawArray(readFixture(t, "multi-endpoint-light.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	device, err := decodeUpstreamDevice(items[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	before, rejection := discoverDevice(device)
+	if rejection != nil {
+		t.Fatalf("initial Device rejected: %#v", rejection)
+	}
+	device.Endpoints["1"] = upstreamEndpoint{Name: "renamed-left"}
+	device.Definition.Exposes[0].Endpoint = "renamed-left"
+	after, rejection := discoverDevice(device)
+	if rejection != nil {
+		t.Fatalf("renamed Device rejected: %#v", rejection)
+	}
+	for index := range before.Registration.Entities {
+		if before.Registration.Entities[index].Key != after.Registration.Entities[index].Key ||
+			before.Registration.Entities[index].ExternalID != after.Registration.Entities[index].ExternalID {
+			t.Fatalf("Entity %d identity changed: %#v vs %#v", index,
+				before.Registration.Entities[index], after.Registration.Entities[index])
 		}
 	}
 }
@@ -308,19 +361,13 @@ func FuzzDiscoverInventory(fuzz *testing.F) {
 					t.Fatalf("duplicate Entity key %q", entity.Descriptor.Key)
 				}
 				seen[entity.Descriptor.Key] = struct{}{}
-				if entity.Kind == entityKindBrightness &&
-					(!isFinite(entity.BrightnessMaximum) || entity.BrightnessMaximum < 100) {
-					t.Fatalf("accepted invalid brightness maximum %v", entity.BrightnessMaximum)
+				if len(entity.StateProperties) == 0 || entity.DecodeState == nil {
+					t.Fatalf("accepted incomplete Entity plan %q", entity.Descriptor.Key)
 				}
-				if entity.Kind == entityKindColorTemp &&
-					(entity.ColorTempMinimum < hearthColorTempMinimum ||
-						entity.ColorTempMaximum > hearthColorTempMaximum ||
-						entity.ColorTempMinimum >= entity.ColorTempMaximum) {
-					t.Fatalf(
-						"accepted invalid color temperature range %d..%d",
-						entity.ColorTempMinimum,
-						entity.ColorTempMaximum,
-					)
+				for _, property := range entity.GetProperties {
+					if !slices.Contains(entity.StateProperties, property) {
+						t.Fatalf("get property %q is not a State property", property)
+					}
 				}
 			}
 		}

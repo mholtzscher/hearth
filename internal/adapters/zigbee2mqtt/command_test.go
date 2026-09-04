@@ -130,9 +130,10 @@ func TestCommandClaimsEarlyMatchExactlyOnceAfterAccept(t *testing.T) {
 		"accept",
 		"linked-observation",
 	)
-	if indexOf(events, "mqtt:zigbee2mqtt/fixture-light/get", 0) < 0 {
-		t.Fatalf("mandatory /get was not published: %v", events)
-	}
+	// The mandatory refresh runs on its own effect and may complete after linked disposition.
+	waitFor(t, func() bool {
+		return indexOf(recorder.snapshot(), "mqtt:zigbee2mqtt/fixture-light/get", 0) >= 0
+	})
 }
 
 // This integration test protects native-mired set/get passthrough, typed Observation publication, and exact matching.
@@ -250,7 +251,11 @@ func TestCommandLeavesIneligibleStateOrdinary(t *testing.T) {
 			})
 			candidateEntity := device.entities[test.candidateEntity]
 			stateEntity := device.entities[test.stateEntity]
-			states, _, err := decodeDeviceState([]byte(test.payload), []discoveredEntity{stateEntity.discovered})
+			states, _, err := decodeDeviceState(
+				[]byte(test.payload),
+				[]runtimeEntity{{plan: stateEntity.plan, entityID: stateEntity.entityID}},
+				time.Now().UTC(),
+			)
 			if err != nil || len(states) != 1 {
 				t.Fatalf("decode test State: states=%#v err=%v", states, err)
 			}
@@ -264,7 +269,7 @@ func TestCommandLeavesIneligibleStateOrdinary(t *testing.T) {
 				generation:    test.generation,
 				routeRevision: test.revision,
 				entityID:      candidateEntity.entityID,
-				state:         states[0],
+				report:        states[0].report,
 				retained:      test.retained,
 				receivedAt:    receivedAt,
 				result:        candidateResult,
@@ -300,7 +305,7 @@ func TestCommandSetFailureRejectsAndFallsBack(t *testing.T) {
 	for _, entity := range device.entities {
 		routes[entity.entityID] = commandRoute{
 			entityID: entity.entityID, ieeeAddress: device.ieeeAddress, friendlyName: device.friendly,
-			entity: entity.discovered,
+			entity: entity,
 		}
 	}
 	activation := make(chan routeActivationResult, 1)

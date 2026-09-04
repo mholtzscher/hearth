@@ -224,8 +224,9 @@ func TestDiscoveryColorTempEligibilityAndIsolation(t *testing.T) {
 			}
 			if test.wantColor {
 				colorTemp := discovered.Entities[2]
-				if colorTemp.ColorTempMinimum != 100 || colorTemp.ColorTempMaximum != 1000 {
-					t.Fatalf("color-temperature range = %d..%d", colorTemp.ColorTempMinimum, colorTemp.ColorTempMaximum)
+				support := string(colorTemp.Descriptor.Support)
+				if !strings.Contains(support, `"minimum":100`) || !strings.Contains(support, `"maximum":1000`) {
+					t.Fatalf("color-temperature support = %s", support)
 				}
 			}
 		})

@@ -11,16 +11,26 @@ func renderFacade(model entityTypeModel) ([]byte, error) {
 	var source strings.Builder
 	generatedHeader(&source)
 	fmt.Fprintf(&source, "package %s\n\n", model.Package)
-	source.WriteString("import (\n\t\"encoding/json\"\n\t\"errors\"\n\t\"fmt\"\n\t\"sync\"\n\t\"time\"\n\n")
+	if len(model.Operations) > 0 {
+		source.WriteString("import (\n\t\"encoding/json\"\n\t\"errors\"\n\t\"fmt\"\n\t\"sync\"\n\t\"time\"\n\n")
+	} else {
+		source.WriteString("import (\n\t\"errors\"\n\t\"fmt\"\n\t\"sync\"\n\t\"time\"\n\n")
+	}
 	fmt.Fprintf(
 		&source,
 		"\tcontract%s \"github.com/mholtzscher/hearth/entitytypes/%s\"\n",
 		model.Package,
 		model.Package,
 	)
-	source.WriteString(
-		"\t\"github.com/mholtzscher/hearth/sdk/adapter\"\n\t\"github.com/mholtzscher/hearth/sdk/adapter/typed\"\n)\n\n",
-	)
+	if len(model.Operations) > 0 {
+		source.WriteString(
+			"\t\"github.com/mholtzscher/hearth/sdk/adapter\"\n\t\"github.com/mholtzscher/hearth/sdk/adapter/typed\"\n)\n\n",
+		)
+	} else {
+		source.WriteString(
+			"\t\"github.com/mholtzscher/hearth/sdk/adapter\"\n)\n\n",
+		)
+	}
 	fmt.Fprintf(
 		&source,
 		"type Support = contract%s.Support\ntype State = contract%s.State\n",
@@ -51,11 +61,13 @@ func renderFacade(model entityTypeModel) ([]byte, error) {
 		fmt.Fprintf(&source, "type %sCommand = typed.Command[%sParameters]\n", operation.GoName, operation.GoName)
 	}
 	source.WriteByte('\n')
-	source.WriteString("type Handlers struct {\n")
-	for _, operation := range model.Operations {
-		fmt.Fprintf(&source, "\t%s typed.Handler[%sParameters]\n", operation.GoName, operation.GoName)
+	if len(model.Operations) > 0 {
+		source.WriteString("type Handlers struct {\n")
+		for _, operation := range model.Operations {
+			fmt.Fprintf(&source, "\t%s typed.Handler[%sParameters]\n", operation.GoName, operation.GoName)
+		}
+		source.WriteString("}\n\n")
 	}
-	source.WriteString("}\n\n")
 	source.WriteString(
 		"type ObservationInput struct {\n\tEntityID string\n\tSupport Support\n\tState State\n\tAdapterReceivedAt time.Time\n\tSourceUpdatedAt *time.Time\n}\n\n",
 	)

@@ -219,6 +219,53 @@ func TestCatalogRejectsInvalidDefinitions(t *testing.T) {
 	}
 }
 
+func TestTemperatureTypeExposesStateWithoutOperations(t *testing.T) {
+	t.Parallel()
+	catalog, err := NewBuiltinTypeCatalog()
+	if err != nil {
+		t.Fatal(err)
+	}
+	entity := Entity{
+		ID: EntityID("ent_01890f47-7a6b-7c4d-8e9f-0123456789ab"), TypeID: EntityTypeTemperatureV1,
+		Support: EntitySupport(`{"state":{},"operations":{}}`),
+	}
+
+	normalized, err := catalog.NormalizeSupport(entity.TypeID, EntitySupport(`{"state":{},"operations":{}}`))
+	if err != nil || string(normalized) != `{"state":{},"operations":{}}` {
+		t.Fatalf("normalized support = %s, %v", normalized, err)
+	}
+	for _, state := range []struct {
+		value string
+		valid bool
+	}{
+		{`21500`, true},
+		{`-273150`, true},
+		{`1000000`, true},
+		{`-273151`, false},
+		{`1000001`, false},
+		{`21.5`, false},
+		{`"21.5"`, false},
+	} {
+		if _, stateErr := catalog.NormalizeState(entity, Value(state.value)); (stateErr == nil) != state.valid {
+			t.Errorf("NormalizeState(%s) error = %v, want valid = %t", state.value, stateErr, state.valid)
+		}
+	}
+
+	for _, operation := range []OperationName{OperationNameSet, OperationName("get"), OperationName("unknown")} {
+		if _, resolveErr := catalog.ResolveCommand(
+			entity,
+			operation,
+			CommandParameters(`{"value":21500}`),
+		); resolveErr == nil {
+			t.Errorf("temperature operation %q unexpectedly accepted", operation)
+		}
+		record := CommandRecord{OperationName: operation, Parameters: CommandParameters(`{"value":21500}`)}
+		if _, satisfiesErr := catalog.Satisfies(entity, record, Value(`21500`)); satisfiesErr == nil {
+			t.Errorf("temperature outcome %q unexpectedly accepted", operation)
+		}
+	}
+}
+
 func compileTestCodec[T any](t *testing.T, name, schema string) *entitytypes.JSONCodec[T] {
 	t.Helper()
 	codec, err := entitytypes.CompileJSONCodec[T]("urn:test:"+name, json.RawMessage(schema), nil)

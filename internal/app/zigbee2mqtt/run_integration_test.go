@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"os"
 	"path/filepath"
 	"testing"
 	"time"
@@ -380,6 +381,238 @@ func publishRetainedSnapshots(t *testing.T, client paho.Client) {
 	for _, message := range messages {
 		publishMQTT(t, client, message.topic, true, []byte(message.payload))
 	}
+}
+
+// TestRunProjectsRelayAndTemperatureDevices protects the proof-flow Core
+// contract and fails if the relay plug or temperature sensor does not
+// register, if temperature support/State/availability does not project, or if
+// a temperature Operation reaches adapter dispatch instead of being rejected
+// by Core validation.
+//
+// The process test reads the same checked-in Zigbee2MQTT 2.13.0 proof
+// captures used by the Adapter characterization tests, preventing a reduced
+// duplicate inventory from weakening the end-to-end evidence.
+//
+//nolint:gocognit // One process-level proof flow keeps registration, projection, and rejection causally connected.
+func TestRunProjectsRelayAndTemperatureDevices(t *testing.T) {
+	t.Parallel()
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
+	logger := slog.New(slog.DiscardHandler)
+
+	server := startSharedNATSServer(t)
+	mqttURL := mqttServerURL(t, server)
+	coreConnection, err := natsgo.Connect(server.ClientURL())
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(coreConnection.Close)
+
+	database, err := platformdb.Open(ctx, filepath.Join(t.TempDir(), "hearth.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = database.Close() })
+	if err = platformdb.Migrate(ctx, database); err != nil {
+		t.Fatal(err)
+	}
+	catalog, err := devices.NewBuiltinTypeCatalog()
+	if err != nil {
+		t.Fatal(err)
+	}
+	repository := devices.NewSQLiteRepository(database, catalog)
+	validator, err := contractsv1.Compile()
+	if err != nil {
+		t.Fatal(err)
+	}
+	js, err := jetstream.New(coreConnection)
+	if err != nil {
+		t.Fatal(err)
+	}
+	durable, err := devicesnats.ProvisionObservationResources(ctx, js)
+	if err != nil {
+		t.Fatal(err)
+	}
+	service := devices.NewService(
+		devices.SQLiteStores(repository),
+		devicesnats.NewCommandSender(coreConnection, validator),
+		catalog,
+		devices.Dependencies{},
+	)
+	startCoreTransports(ctx, t, coreConnection, durable, validator, service, logger)
+
+	upstream := connectMQTTClient(t, mqttURL, "zigbee2mqtt-proof-flow-test")
+	temperatureSets := make(chan []byte, 4)
+	subscribeMQTT(t, upstream, "zigbee2mqtt/fixture-temperature/set", func(_ paho.Client, message paho.Message) {
+		payload := append([]byte(nil), message.Payload()...)
+		select {
+		case temperatureSets <- payload:
+		default:
+		}
+	})
+	publishProofFlowSnapshots(t, upstream)
+
+	runContext, stopRun := context.WithCancel(ctx)
+	runErrors := make(chan error, 1)
+	go func() {
+		runErrors <- Run(runContext, Config{
+			AdapterID: "zigbee2mqtt",
+			NATSURL:   server.ClientURL(),
+			MQTT: MQTTConfig{
+				URL: mqttURL, BaseTopic: "zigbee2mqtt",
+			},
+		}, logger)
+	}()
+
+	proof := waitForProofFlowEntities(ctx, t, service, runErrors)
+	if string(proof.temperature.Entity.Support) != `{"state":{},"operations":{}}` {
+		t.Fatalf("temperature support = %s", proof.temperature.Entity.Support)
+	}
+
+	devicesPage, err := service.ListDevices(ctx, devices.ListDevicesParams{Limit: 10})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(devicesPage.Items) != 2 {
+		t.Fatalf("devices = %#v", devicesPage.Items)
+	}
+	kinds := make(map[devices.DeviceKind]int)
+	for _, item := range devicesPage.Items {
+		aggregate, getErr := service.GetDevice(ctx, devices.GetDeviceParams{ID: item.ID, EntityLimit: 10})
+		if getErr != nil {
+			t.Fatal(getErr)
+		}
+		kinds[aggregate.Device.Kind]++
+	}
+	if kinds[devices.DeviceKindRelay] != 1 || kinds[devices.DeviceKindSensor] != 1 {
+		t.Fatalf("device kinds = %#v", kinds)
+	}
+
+	if _, err = service.ExecuteCommand(
+		ctx,
+		proof.temperature.Entity.ID,
+		devices.OperationNameSet,
+		devices.CommandParameters(`{"value":22600}`),
+	); !errors.Is(err, devices.ErrInvalidCommand) {
+		t.Fatalf("temperature command error = %v, want %v", err, devices.ErrInvalidCommand)
+	}
+	history, err := service.ListEntityCommands(ctx, devices.ListEntityCommandsParams{
+		EntityID: proof.temperature.Entity.ID,
+		Limit:    10,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(history.Items) != 0 {
+		t.Fatalf("temperature commands = %#v, want none persisted", history.Items)
+	}
+	select {
+	case payload := <-temperatureSets:
+		t.Fatalf("temperature set dispatched before validation: %s", payload)
+	case <-time.After(200 * time.Millisecond):
+	}
+
+	stopRun()
+	select {
+	case runErr := <-runErrors:
+		if runErr != nil {
+			t.Fatalf("Run returned after parent cancellation: %v", runErr)
+		}
+	case <-ctx.Done():
+		t.Fatalf("Run did not stop after parent cancellation: %v", ctx.Err())
+	}
+}
+
+type proofFlowEntities struct {
+	power       devices.EntityWithState
+	temperature devices.EntityWithState
+}
+
+func waitForProofFlowEntities(
+	ctx context.Context,
+	t *testing.T,
+	service *devices.Service,
+	runErrors <-chan error,
+) proofFlowEntities {
+	t.Helper()
+	ticker := time.NewTicker(10 * time.Millisecond)
+	defer ticker.Stop()
+	for {
+		page, err := service.ListEntities(ctx, devices.ListEntitiesParams{Limit: 10})
+		if err != nil {
+			t.Fatal(err)
+		}
+		var proof proofFlowEntities
+		var foundPower, foundTemperature bool
+		for _, entity := range page.Items {
+			switch {
+			case entity.Entity.TypeID == "hearth.power/v1" && entity.State != nil &&
+				string(entity.State.Value) == "true" &&
+				entity.Availability.Status == devices.EntityAvailabilityAvailable:
+				proof.power = entity
+				foundPower = true
+			case entity.Entity.TypeID == "hearth.temperature/v1" && entity.State != nil &&
+				string(entity.State.Value) == "22600" &&
+				entity.Availability.Status == devices.EntityAvailabilityAvailable:
+				proof.temperature = entity
+				foundTemperature = true
+			}
+		}
+		if len(page.Items) == 2 && foundPower && foundTemperature {
+			return proof
+		}
+		select {
+		case runErr := <-runErrors:
+			t.Fatalf("Run exited before proof-flow Entities were ready: %v", runErr)
+		case <-ctx.Done():
+			t.Fatalf("waiting for relay and temperature Entities: %v", ctx.Err())
+		case <-ticker.C:
+		}
+	}
+}
+
+func publishProofFlowSnapshots(t *testing.T, client paho.Client) {
+	t.Helper()
+	var inventory []json.RawMessage
+	for _, name := range []string{"bridge-devices-relay-plug.json", "bridge-devices-temperature.json"} {
+		var devices []json.RawMessage
+		if err := json.Unmarshal(readAdapterFixture(t, name), &devices); err != nil {
+			t.Fatal(err)
+		}
+		inventory = append(inventory, devices...)
+	}
+	inventoryPayload, err := json.Marshal(inventory)
+	if err != nil {
+		t.Fatal(err)
+	}
+	messages := []struct {
+		topic   string
+		payload []byte
+	}{
+		{
+			topic: "zigbee2mqtt/bridge/info",
+			payload: []byte(`{"version":"2.13.0","config":{"mqtt":{"version":4},` +
+				`"availability":{"enabled":true},"device_options":{"optimistic":false}}}`),
+		},
+		{topic: "zigbee2mqtt/bridge/state", payload: []byte(`{"state":"online"}`)},
+		{topic: "zigbee2mqtt/bridge/devices", payload: inventoryPayload},
+		{topic: "zigbee2mqtt/fixture-plug/availability", payload: []byte(`{"state":"online"}`)},
+		{topic: "zigbee2mqtt/fixture-temperature/availability", payload: []byte(`{"state":"online"}`)},
+		{topic: "zigbee2mqtt/fixture-plug", payload: readAdapterFixture(t, "state-relay-plug.json")},
+		{topic: "zigbee2mqtt/fixture-temperature", payload: readAdapterFixture(t, "state-temperature.json")},
+	}
+	for _, message := range messages {
+		publishMQTT(t, client, message.topic, true, message.payload)
+	}
+}
+
+func readAdapterFixture(t *testing.T, name string) []byte {
+	t.Helper()
+	payload, err := os.ReadFile(filepath.Join("..", "..", "adapters", "zigbee2mqtt", "testdata", name))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return payload
 }
 
 func waitForReadyPowerEntity(

@@ -41,7 +41,7 @@ func (z2m *Adapter) reportReconciledAvailability(
 	currentIEEE := make(map[mappingKey]string)
 	for _, device := range snapshot.devices {
 		for _, entity := range device.entities {
-			currentIEEE[mappingKey{binding: device.bindingKey, entity: entity.discovered.Descriptor.Key}] =
+			currentIEEE[mappingKey{binding: device.bindingKey, entity: entity.plan.Descriptor.Key}] =
 				device.ieeeAddress
 		}
 	}

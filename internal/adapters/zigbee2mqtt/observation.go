@@ -3,15 +3,8 @@ package zigbee2mqtt
 import (
 	"context"
 	"errors"
-	"time"
 
-	contractbrightnessv1 "github.com/mholtzscher/hearth/entitytypes/brightnessv1"
-	contractcolortempv1 "github.com/mholtzscher/hearth/entitytypes/colortempv1"
-	contractpowerv1 "github.com/mholtzscher/hearth/entitytypes/powerv1"
 	"github.com/mholtzscher/hearth/sdk/adapter"
-	sdkbrightnessv1 "github.com/mholtzscher/hearth/sdk/adapter/brightnessv1"
-	sdkcolortempv1 "github.com/mholtzscher/hearth/sdk/adapter/colortempv1"
-	sdkpowerv1 "github.com/mholtzscher/hearth/sdk/adapter/powerv1"
 )
 
 func (z2m *Adapter) processDeviceMessage(
@@ -62,13 +55,7 @@ func (z2m *Adapter) publishDeviceState(
 	device runtimeDevice,
 	message mqttMessage,
 ) error {
-	entities := make([]discoveredEntity, 0, len(device.entities))
-	byKey := make(map[string]string, len(device.entities))
-	for _, entity := range device.entities {
-		entities = append(entities, entity.discovered)
-		byKey[entity.discovered.Descriptor.Key] = entity.entityID
-	}
-	states, issues, err := decodeDeviceState(message.Payload, entities)
+	states, issues, err := decodeDeviceState(message.Payload, device.entities, message.ReceivedAt)
 	if err != nil {
 		z2m.logger.WarnContext(
 			ctx,
@@ -86,8 +73,8 @@ func (z2m *Adapter) publishDeviceState(
 			"ignored invalid Zigbee2MQTT State property",
 			"friendly_name",
 			device.friendly,
-			"property",
-			issue.Property,
+			"properties",
+			issue.Properties,
 			"error",
 			issue.Err,
 		)
@@ -98,8 +85,8 @@ func (z2m *Adapter) publishDeviceState(
 			ctx:           ctx,
 			generation:    generation,
 			routeRevision: routeRevision,
-			entityID:      byKey[decoded.Entity.Descriptor.Key],
-			state:         decoded,
+			entityID:      decoded.entityID,
+			report:        decoded.report,
 			retained:      message.Retained,
 			receivedAt:    message.ReceivedAt,
 			result:        result,
@@ -120,56 +107,4 @@ func (z2m *Adapter) publishDeviceState(
 		}
 	}
 	return nil
-}
-
-func newObservation(
-	entityID string,
-	state decodedEntityState,
-	receivedAt time.Time,
-) (adapter.Observation, error) {
-	switch state.Entity.Kind {
-	case entityKindPower:
-		return sdkpowerv1.NewObservation(sdkpowerv1.ObservationInput{
-			EntityID: entityID, Support: powerSupport(), State: contractpowerv1.State(state.Power),
-			AdapterReceivedAt: receivedAt,
-		})
-	case entityKindBrightness:
-		return sdkbrightnessv1.NewObservation(sdkbrightnessv1.ObservationInput{
-			EntityID: entityID, Support: brightnessSupport(), State: contractbrightnessv1.State(state.Brightness),
-			AdapterReceivedAt: receivedAt,
-		})
-	case entityKindColorTemp:
-		return sdkcolortempv1.NewObservation(sdkcolortempv1.ObservationInput{
-			EntityID:          entityID,
-			Support:           colorTempSupport(state.Entity),
-			State:             contractcolortempv1.State(state.ColorTemp),
-			AdapterReceivedAt: receivedAt,
-		})
-	default:
-		return adapter.Observation{}, errors.New("unknown Zigbee2MQTT Entity kind")
-	}
-}
-
-func powerSupport() contractpowerv1.Support {
-	return contractpowerv1.Support{
-		State:      contractpowerv1.StateSupport{},
-		Operations: contractpowerv1.OperationSupport{Set: contractpowerv1.SetSupport{}},
-	}
-}
-
-func brightnessSupport() contractbrightnessv1.Support {
-	return contractbrightnessv1.Support{
-		State:      contractbrightnessv1.StateSupport{Maximum: hearthBrightnessMaximum},
-		Operations: contractbrightnessv1.OperationSupport{Set: contractbrightnessv1.SetSupport{Step: 1}},
-	}
-}
-
-func colorTempSupport(entity discoveredEntity) contractcolortempv1.Support {
-	return contractcolortempv1.Support{
-		State: contractcolortempv1.StateSupport{
-			Minimum: entity.ColorTempMinimum,
-			Maximum: entity.ColorTempMaximum,
-		},
-		Operations: contractcolortempv1.OperationSupport{Set: contractcolortempv1.SetSupport{Step: 1}},
-	}
 }

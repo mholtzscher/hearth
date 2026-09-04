@@ -12,7 +12,18 @@ func renderCatalogConformanceTest(models []entityTypeModel, moduleRoot string) (
 	var source strings.Builder
 	generatedHeader(&source)
 	source.WriteString("package devices\n\n")
-	source.WriteString("import (\n\t\"testing\"\n\t\"time\"\n)\n\n")
+	hasOperations := false
+	for _, model := range models {
+		if len(model.Operations) > 0 {
+			hasOperations = true
+			break
+		}
+	}
+	if hasOperations {
+		source.WriteString("import (\n\t\"testing\"\n\t\"time\"\n)\n\n")
+	} else {
+		source.WriteString("import (\n\t\"testing\"\n)\n\n")
+	}
 	source.WriteString("func TestGeneratedBuiltinCatalogConformance(t *testing.T) {\n")
 	source.WriteString("\tcatalog, err := NewBuiltinTypeCatalog()\n\tif err != nil { t.Fatal(err) }\n")
 	for _, model := range models {

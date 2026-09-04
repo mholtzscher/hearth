@@ -367,7 +367,7 @@ func commandReadyAdapter(
 	for _, entity := range runtime.entities {
 		routes[entity.entityID] = commandRoute{
 			entityID: entity.entityID, ieeeAddress: runtime.ieeeAddress, friendlyName: runtime.friendly,
-			entity: entity.discovered, connectionGeneration: 1,
+			entity: entity, connectionGeneration: 1,
 		}
 	}
 	activation := make(chan routeActivationResult, 1)

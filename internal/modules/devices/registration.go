@@ -153,8 +153,10 @@ func (service *Service) normalizeRegistration(adapterID string, registration Reg
 	if !registrationSlugPattern.MatchString(normalized.BindingKey) {
 		return Registration{}, errors.New("binding key must be a subject-safe slug")
 	}
-	if normalized.Device.Kind != DeviceKindLight {
-		return Registration{}, errors.New("device kind must be light")
+	switch normalized.Device.Kind {
+	case DeviceKindLight, DeviceKindRelay, DeviceKindSensor:
+	default:
+		return Registration{}, errors.New("device kind must be light, relay, or sensor")
 	}
 	if !validLength(normalized.Device.Name, maximumNameLength) {
 		return Registration{}, errors.New("device name must contain 1 to 128 characters")

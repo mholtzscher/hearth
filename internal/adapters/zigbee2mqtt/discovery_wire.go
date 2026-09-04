@@ -57,6 +57,7 @@ type upstreamExpose struct {
 	Property    string           `json:"property"`
 	Endpoint    string           `json:"endpoint"`
 	Access      int              `json:"access"`
+	Unit        string           `json:"unit"`
 	ValueOn     json.RawMessage  `json:"value_on"`
 	ValueOff    json.RawMessage  `json:"value_off"`
 	ValueMin    *float64         `json:"value_min"`
@@ -76,6 +77,7 @@ func (expose *upstreamExpose) UnmarshalJSON(payload []byte) error {
 		Property  json.RawMessage `json:"property"`
 		Endpoint  json.RawMessage `json:"endpoint"`
 		Access    json.RawMessage `json:"access"`
+		Unit      json.RawMessage `json:"unit"`
 		ValueOn   json.RawMessage `json:"value_on"`
 		ValueOff  json.RawMessage `json:"value_off"`
 		ValueMin  json.RawMessage `json:"value_min"`
@@ -89,6 +91,7 @@ func (expose *upstreamExpose) UnmarshalJSON(payload []byte) error {
 	_ = json.Unmarshal(wire.Property, &expose.Property)
 	_ = json.Unmarshal(wire.Endpoint, &expose.Endpoint)
 	_ = json.Unmarshal(wire.Access, &expose.Access)
+	_ = json.Unmarshal(wire.Unit, &expose.Unit)
 	expose.ValueOn = bytes.Clone(wire.ValueOn)
 	expose.ValueOff = bytes.Clone(wire.ValueOff)
 	expose.ValueMin = decodeOptionalFloat(wire.ValueMin)

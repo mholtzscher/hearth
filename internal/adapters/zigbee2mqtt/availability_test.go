@@ -67,7 +67,7 @@ func TestReconciledAvailabilityUsesIEEEIdentity(t *testing.T) {
 		bindingKey:  "z2m-00124b0024abcdee",
 		ieeeAddress: "0x00124b0024abcdee",
 		friendly:    "reused-name",
-		entities: []runtimeEntity{{entityID: "new-power", discovered: discoveredEntity{
+		entities: []runtimeEntity{{entityID: "new-power", plan: entityPlan{
 			Descriptor: adapter.EntityDescriptor{Key: "power"},
 		}}},
 	}
