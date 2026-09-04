@@ -101,7 +101,7 @@ func TestCommandsForSameIEEEStaySerializedUntilDisposition(t *testing.T) {
 			setPayloads = append(setPayloads, publication.payload)
 		}
 	}
-	want := []string{`{"state":"ON"}`, `{"brightness":127.5}`, `{"color_temp":370}`}
+	want := []string{`{"state":"ON"}`, `{"brightness":127}`, `{"color_temp":370}`}
 	if len(setPayloads) != len(want) {
 		t.Fatalf("set payloads = %v, want %v", setPayloads, want)
 	}

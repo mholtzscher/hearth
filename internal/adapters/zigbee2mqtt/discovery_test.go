@@ -44,7 +44,7 @@ func TestDiscoverCapturedThirdRealityLight(t *testing.T) {
 		{
 			Key: "colortemp", ExternalID: "0xa4c1380000000001/root/colortemp", Name: "Color Temperature",
 			Type:    "hearth.colortemp/v1",
-			Support: json.RawMessage(`{"state":{"maximum":500,"minimum":153},"operations":{"set":{"step":1}}}`),
+			Support: json.RawMessage(`{"state":{"maximum":500,"minimum":154},"operations":{"set":{"step":1}}}`),
 		},
 	}
 	if !reflect.DeepEqual(device.Registration.Entities, want) {
@@ -66,12 +66,12 @@ func TestDiscoverMalformedColorTempBoundsPreservesSiblings(t *testing.T) {
 	t.Parallel()
 	fixture := readFixture(t, "bridge-devices-3rcb01057z.json")
 	for _, invalid := range [][]byte{
-		[]byte(`"153"`),
+		[]byte(`"154"`),
 		[]byte(`null`),
-		[]byte(`153.00000000000001`),
+		[]byte(`154.00000000000001`),
 		[]byte(`1e10000`),
 	} {
-		payload := bytes.Replace(fixture, []byte(`"value_min": 153`), []byte(`"value_min": `+string(invalid)), 1)
+		payload := bytes.Replace(fixture, []byte(`"value_min": 154`), []byte(`"value_min": `+string(invalid)), 1)
 		result, err := discoverInventory(payload)
 		if err != nil {
 			t.Fatalf("discover inventory with value_min %s: %v", invalid, err)

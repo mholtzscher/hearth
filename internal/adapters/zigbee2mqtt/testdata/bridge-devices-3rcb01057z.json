@@ -27,7 +27,7 @@
     "definition": {
       "model": "3RCB01057Z",
       "vendor": "Third Reality",
-      "description": "Smart color bulb",
+      "description": "Smart Color Bulb ZL1",
       "exposes": [
         {
           "type": "light",
@@ -47,8 +47,7 @@
               "property": "brightness",
               "access": 7,
               "value_min": 0,
-              "value_max": 255,
-              "value_step": 1
+              "value_max": 254
             },
             {
               "type": "composite",
@@ -62,7 +61,7 @@
               "name": "color_temp",
               "property": "color_temp",
               "access": 7,
-              "value_min": 153,
+              "value_min": 154,
               "value_max": 500
             }
           ]
@@ -78,6 +77,6 @@
       ]
     },
     "power_source": "Mains (single phase)",
-    "software_build_id": "1.0.0"
+    "software_build_id": "1.00.74"
   }
 ]

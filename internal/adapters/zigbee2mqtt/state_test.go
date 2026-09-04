@@ -76,11 +76,11 @@ func TestNormalizeColorTempAndIsolateInvalidProperty(t *testing.T) {
 		payload string
 		want    int64
 	}{
-		{payload: `153`, want: 153},
+		{payload: `154`, want: 154},
 		{payload: `370.0`, want: 370},
 		{payload: `500`, want: 500},
 	} {
-		value, err := normalizeColorTemp(json.RawMessage(test.payload), 153, 500)
+		value, err := normalizeColorTemp(json.RawMessage(test.payload), 154, 500)
 		if err != nil || value != test.want {
 			t.Errorf("normalizeColorTemp(%s) = %d, %v; want %d", test.payload, value, err, test.want)
 		}
@@ -88,7 +88,7 @@ func TestNormalizeColorTempAndIsolateInvalidProperty(t *testing.T) {
 	device := mustDiscoveredFixtureDevice(t, "bridge-devices-3rcb01057z.json")
 	entities := bindPlans(device.Entities)
 	receivedAt := time.Unix(1, 0).UTC()
-	for _, payload := range []string{`152`, `501`, `370.5`, `"370"`, `1e10000`} {
+	for _, payload := range []string{`153`, `501`, `370.5`, `"370"`, `1e10000`} {
 		states, issues, err := decodeDeviceState(
 			[]byte(`{"state":"OFF","color_temp":`+payload+`}`),
 			entities,
@@ -301,16 +301,18 @@ func TestDecodeStatePreservesDiscoveryOrder(t *testing.T) {
 	t.Parallel()
 	device := mustDiscoveredFixtureDevice(t, "bridge-devices-3rcb01057z.json")
 	states, issues, err := decodeDeviceState(
-		[]byte(`{"color_temp":370,"brightness":255,"state":"ON"}`),
+		[]byte(`{"color_temp":370,"brightness":254,"state":"ON"}`),
 		bindPlans(device.Entities),
 		time.Unix(1, 0).UTC(),
 	)
 	if err != nil {
 		t.Fatal(err)
 	}
-	got := []string{states[0].entityID, states[1].entityID, states[2].entityID}
-	if len(issues) != 0 ||
-		!reflect.DeepEqual(got, []string{"entity-power", "entity-brightness", "entity-colortemp"}) {
+	if len(states) != 3 || len(issues) != 0 {
 		t.Fatalf("states = %#v, issues = %#v", states, issues)
+	}
+	got := []string{states[0].entityID, states[1].entityID, states[2].entityID}
+	if !reflect.DeepEqual(got, []string{"entity-power", "entity-brightness", "entity-colortemp"}) {
+		t.Fatalf("State order = %v", got)
 	}
 }
