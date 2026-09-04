@@ -41,6 +41,23 @@ pnpm run build
 pnpm run preview
 ```
 
+## Container image
+
+Releases publish `ghcr.io/mholtzscher/hearth-web:<tag>` (same tag as the
+`ko` Go images): a static build served by nginx, proxying `/v1`, `/healthz`,
+`/readyz`, `/openapi.json` to `HEARTHD_URL` and `/nats-monitor` to
+`NATS_MONITOR_URL` (same-origin, so no CORS setup is needed). Point it at
+`hearthd` at container start:
+
+```sh
+mise run web-docker-build
+docker run --rm -p 8081:80 -e HEARTHD_URL=http://hearthd:8080 hearth-web:dev
+```
+
+The `HEARTHD_URL` hostname must resolve when the container starts (nginx
+resolves proxy targets at startup). The NATS websocket URL stays editable in
+the NATS page (stored in `localStorage`), so it needs no proxy.
+
 ## Pages
 
 - **Entities**: list (optional `device_id` filter), link to detail.

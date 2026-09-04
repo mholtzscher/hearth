@@ -41,6 +41,13 @@ jobs:
           git diff --exit-code
           test -z "$(git ls-files --others --exclude-standard)"
 
+  web-image:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Build dashboard image
+        run: docker build ./web --tag hearth-web:ci
+
   fuzz:
     runs-on: ubuntu-latest
     steps:

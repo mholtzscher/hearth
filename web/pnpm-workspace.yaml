@@ -1,5 +1,7 @@
 allowBuilds:
   esbuild: true
+# shadcn-migration deps published <24h before the lockfile refresh (#51);
+# pnpm's minimumReleaseAge policy requires explicit exclusions for them.
 minimumReleaseAgeExclude:
   - cn@0.2.5
   - lucide-react@1.41.0
