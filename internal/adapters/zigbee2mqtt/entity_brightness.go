@@ -106,7 +106,8 @@ func brightnessSupport() contractbrightnessv1.Support {
 }
 
 func validBrightnessFeature(feature upstreamExpose) bool {
-	return feature.Access&requiredAccessMask == requiredAccessMask && feature.Property != "" &&
+	return exposeCanPublish(feature) && exposeCanSet(feature) && exposeCanGet(feature) &&
+		feature.Property != "" &&
 		feature.ValueMin != nil && *feature.ValueMin == 0 &&
 		feature.ValueMax != nil && brightnessRangeSupported(*feature.ValueMax)
 }

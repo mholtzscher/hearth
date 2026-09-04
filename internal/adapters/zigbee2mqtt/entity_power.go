@@ -94,7 +94,8 @@ func powerSupport() contractpowerv1.Support {
 }
 
 func validPowerFeature(feature upstreamExpose) bool {
-	return feature.Access&requiredAccessMask == requiredAccessMask && feature.Property != "" &&
+	return exposeCanPublish(feature) && exposeCanSet(feature) && exposeCanGet(feature) &&
+		feature.Property != "" &&
 		len(feature.ValueOn) != 0 && len(feature.ValueOff) != 0
 }
 

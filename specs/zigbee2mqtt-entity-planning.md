@@ -24,7 +24,7 @@ Refactor the Adapter into two private in-process modules:
 
 Discovery merges planner results for one normalized IEEE address into one registration. Light and relay are mutually exclusive primary families. A valid light result wins over relay to preserve current behavior for Devices that expose both shapes. Sensor Entities are supplemental and join either primary family. A Device with no light or relay result becomes `sensor` when the sensor planner contributes at least one Entity.
 
-A relay with a temperature measurement is therefore one `relay` Device with power and temperature Entities. Each planner removes same-family key ambiguity before merge. Complete-plan validation rejects any remaining duplicate Entity key rather than relying on Core descriptor validation.
+A relay with a temperature measurement is therefore one `relay` Device with power and temperature Entities. Concrete planners skip ineligible candidates individually; the light planner drops whole duplicate power-root candidates with their optional siblings, and `planDevice` removes same-contribution duplicate keys before merge. Complete-plan validation rejects any remaining duplicate Entity key rather than relying on Core descriptor validation.
 
 The refactor includes two proof features:
 
@@ -82,7 +82,7 @@ bridge/devices JSON
        -> generic Command planning and coordinator execution
 ```
 
-The expose index and planners are in-process dependencies. Tests use their real implementations. MQTT remains behind the existing private `mqttConnection` seam.
+The expose index and planners are in-process dependencies. Concrete family behavior tests use real planners, while generic merge orchestration tests use a deterministic fake planner. MQTT remains behind the existing private `mqttConnection` seam.
 
 ## Types
 
@@ -240,18 +240,26 @@ Owner: `internal/adapters/zigbee2mqtt/device_planner.go`.
 
 ```go
 type devicePlanningInput struct {
-	Device upstreamDevice
-	IEEE   string
+	IEEE    string
 	Exposes exposeIndex
 }
+
+type plannerRole int
+
+const (
+	plannerRoleInvalid plannerRole = iota
+	plannerRolePrimary
+	plannerRoleSupplemental
+)
 
 type plannerContribution struct {
 	Kind     string
 	Entities []entityPlan
+	Role     plannerRole
 }
 
 type devicePlanner interface {
-	Plan(devicePlanningInput) (plannerContribution, error)
+	Plan(devicePlanningInput) plannerContribution
 }
 
 func defaultDevicePlanners() []devicePlanner
@@ -273,9 +281,9 @@ type devicePlan struct {
 }
 ```
 
-All planners may inspect the same index. `planDevice` chooses one primary family. A non-empty light result wins; otherwise a non-empty relay result wins. The sensor result is supplemental to either family and is the primary result only when neither actuator family contributes. This preserves current light behavior when a Device also has a switch root. It also lets relay and light Devices gain read-only measurements without another Device registration.
+All planners may inspect the same index. Each contribution declares its role: light and relay compete as primary contributions, while sensor appends as a supplemental contribution. `planDevice` rejects any contribution with an invalid role or an empty kind as `invalid_descriptor` before selection and merge. The first non-empty primary contribution wins Device kind and later primaries are discarded; with the fixed order above this preserves current light behavior when a Device also has a switch root. Every supplemental contribution appends in planner order, and the first non-empty supplemental contribution establishes Device kind only when no primary contribution exists. This also lets relay and light Devices gain read-only measurements without another Device registration.
 
-Each planner removes every same-family Entity key that occurs more than once. `planDevice` preserves planner and expose order, then validates the complete result before registration.
+Concrete planners skip ineligible candidates individually; the light planner drops whole duplicate power-root candidates with their optional siblings. `planDevice` removes every same-contribution Entity key that occurs more than once, preserves planner and expose order, then validates the complete result before registration.
 
 Planner implementations are immutable and concurrency-safe. They perform no I/O and retain no Device state.
 
@@ -651,7 +659,7 @@ After planners run:
 - no Entity plans from a Device with a light root uses `no_eligible_light`;
 - no Entity plans from a Device with a switch root uses `no_eligible_relay`;
 - no Entity plans from other roots uses `no_eligible_entity`;
-- each planner omits all same-family plans whose Entity key is duplicated;
+- `planDevice` omits all same-contribution plans whose Entity key is duplicated, while the light planner drops whole duplicate power-root candidates with their optional siblings;
 - any duplicate key left after primary and supplemental merge rejects the Device as `ambiguous_entity_plan`;
 - more than 64 merged plans uses `too_many_entities`;
 - invalid optional plans do not suppress independent valid plans;

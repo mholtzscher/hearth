@@ -134,7 +134,7 @@ func buildDiscoveredDevice(device upstreamDevice, ieeeAddress string) (discovere
 		return rejectedDevice(device, ieeeAddress, rejectionInvalidDescriptor)
 	}
 	plan, err := planDevice(
-		devicePlanningInput{Device: device, IEEE: ieeeAddress, Exposes: newExposeIndex(device)},
+		devicePlanningInput{IEEE: ieeeAddress, Exposes: newExposeIndex(device)},
 		defaultDevicePlanners(),
 	)
 	if err != nil {

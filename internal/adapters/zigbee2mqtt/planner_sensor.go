@@ -7,9 +7,6 @@ import (
 const (
 	temperatureExposeName  = "temperature"
 	temperatureUnitCelsius = "°C"
-	publishAccessMask      = 1
-	setAccessMask          = 2
-	getAccessMask          = 4
 )
 
 // sensorPlanner supports numeric ambient temperature root exposes. An eligible
@@ -18,8 +15,8 @@ const (
 // publish-only sensor has no get properties.
 type sensorPlanner struct{}
 
-func (sensorPlanner) Plan(input devicePlanningInput) (plannerContribution, error) {
-	contribution := plannerContribution{Kind: upstreamDeviceKindSensor}
+func (sensorPlanner) Plan(input devicePlanningInput) plannerContribution {
+	contribution := plannerContribution{Kind: upstreamDeviceKindSensor, Role: plannerRoleSupplemental}
 	for _, root := range input.Exposes.roots {
 		if root.expose.Type != upstreamExposeNumeric || root.expose.Name != temperatureExposeName {
 			continue
@@ -29,7 +26,7 @@ func (sensorPlanner) Plan(input devicePlanningInput) (plannerContribution, error
 		}
 		expose := root.expose
 		if expose.Unit != temperatureUnitCelsius || expose.Property == "" ||
-			expose.Access&publishAccessMask == 0 || expose.Access&setAccessMask != 0 ||
+			!exposeCanPublish(expose) || exposeCanSet(expose) ||
 			!input.Exposes.PropertyUnique(expose.Property) {
 			continue
 		}
@@ -47,11 +44,11 @@ func (sensorPlanner) Plan(input devicePlanningInput) (plannerContribution, error
 			Key:        key,
 			ExternalID: input.IEEE + "/" + entityLocation(root) + "/temperature",
 			Name:       name,
-		}, expose.Property, expose.Access&getAccessMask != 0)
+		}, expose.Property, exposeCanGet(expose))
 		if err != nil {
 			continue
 		}
 		contribution.Entities = append(contribution.Entities, plan)
 	}
-	return contribution, nil
+	return contribution
 }

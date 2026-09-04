@@ -373,7 +373,7 @@ The MQTT callback assigns one Adapter-owned UTC receive time to each accepted me
 
 Retained or Zigbee2MQTT-cached startup State is valid current evidence after registration and has no `source_updated_at`. After registration and every reconnect, the Adapter sends `/get` for all readable current properties because Device State need not be retained.
 
-A State object may contain several endpoint properties. Each Entity plan produces one typed Observation only when the same MQTT message contains all of its claimed State properties; partial plans are skipped without caching. Unknown properties are ignored. An invalid complete plan is logged once with all claimed properties and skipped without suppressing valid sibling plans or changing Device availability or Adapter health.
+A State object may contain several endpoint properties. Entity plans remain property-local by default; multi-property plans are appropriate only when the upstream value is genuinely atomic and complete in one MQTT message. Each Entity plan produces one typed Observation only when the same MQTT message contains all of its claimed State properties; partial plans are skipped without caching. Zigbee2MQTT cache-expanded payload completeness does not prove sibling properties were freshly observed together, and the Adapter must not require or depend on `cache_state=true` to assemble Entity State. Unknown properties are ignored. An invalid complete plan is logged once with all claimed properties and skipped without suppressing valid sibling plans or changing Device availability or Adapter health.
 
 Power compares the raw scalar's canonical JSON value with discovered metadata:
 

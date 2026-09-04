@@ -10,8 +10,8 @@ package zigbee2mqtt
 // distinguish a plug from an in-wall switch.
 type relayPlanner struct{}
 
-func (relayPlanner) Plan(input devicePlanningInput) (plannerContribution, error) {
-	contribution := plannerContribution{Kind: upstreamDeviceKindRelay}
+func (relayPlanner) Plan(input devicePlanningInput) plannerContribution {
+	contribution := plannerContribution{Kind: upstreamDeviceKindRelay, Role: plannerRolePrimary}
 	for _, root := range input.Exposes.Roots(upstreamExposeSwitch) {
 		if !root.resolved {
 			continue
@@ -35,5 +35,5 @@ func (relayPlanner) Plan(input devicePlanningInput) (plannerContribution, error)
 		}
 		contribution.Entities = append(contribution.Entities, power)
 	}
-	return contribution, nil
+	return contribution
 }

@@ -16,8 +16,8 @@ const (
 type lightPlanner struct{}
 
 //nolint:gocognit // One pass keeps the power gate and optional-feature isolation visibly together.
-func (lightPlanner) Plan(input devicePlanningInput) (plannerContribution, error) {
-	contribution := plannerContribution{Kind: upstreamDeviceKindLight}
+func (lightPlanner) Plan(input devicePlanningInput) plannerContribution {
+	contribution := plannerContribution{Kind: upstreamDeviceKindLight, Role: plannerRolePrimary}
 	type rootCandidate struct {
 		power entityPlan
 		extra []entityPlan
@@ -68,7 +68,7 @@ func (lightPlanner) Plan(input devicePlanningInput) (plannerContribution, error)
 		contribution.Entities = append(contribution.Entities, candidate.power)
 		contribution.Entities = append(contribution.Entities, candidate.extra...)
 	}
-	return contribution, nil
+	return contribution
 }
 
 func planBrightness(input devicePlanningInput, root indexedExpose) *entityPlan {

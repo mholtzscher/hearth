@@ -7,25 +7,49 @@ import (
 	"github.com/mholtzscher/hearth/sdk/adapter"
 )
 
-const requiredAccessMask = 7
-
 // devicePlanningInput shares one normalized inventory view with every planner.
 type devicePlanningInput struct {
-	Device  upstreamDevice
 	IEEE    string
 	Exposes exposeIndex
 }
 
-// plannerContribution is one planner family result for one IEEE address.
+// plannerRole declares whether one planner contribution competes as the
+// primary contribution for Device kind or appends as a supplemental contribution.
+// The zero value is invalid so a planner that omits its role is rejected
+// instead of silently competing as a primary.
+type plannerRole int
+
+const (
+	// plannerRoleInvalid marks a contribution whose planner omitted its role.
+	// planDevice rejects it as invalid_descriptor before selection and merge.
+	plannerRoleInvalid plannerRole = iota
+	// plannerRolePrimary marks a primary contribution: the first non-empty
+	// primary contribution wins Device kind and later primaries are discarded.
+	plannerRolePrimary
+	// plannerRoleSupplemental marks a supplemental contribution: every
+	// supplemental contribution appends in planner order, and the first
+	// non-empty supplemental contribution establishes Device kind when no
+	// primary contribution exists.
+	plannerRoleSupplemental
+)
+
+// plannerContribution is one planner family result for one IEEE address. A
+// primary contribution competes to establish Device kind; a supplemental
+// contribution always appends and establishes kind only when no primary
+// contribution exists.
 type plannerContribution struct {
 	Kind     string
 	Entities []entityPlan
+	Role     plannerRole
 }
 
-// devicePlanner produces one family contribution without I/O and without
-// retaining Device state. Implementations are immutable and concurrency-safe.
+// devicePlanner returns one family contribution without I/O and without
+// retaining Device state. Implementations skip ineligible candidates
+// individually and return an empty contribution when nothing is eligible;
+// planDevice owns generic same-contribution duplicate-key removal.
+// Implementations are immutable and concurrency-safe.
 type devicePlanner interface {
-	Plan(devicePlanningInput) (plannerContribution, error)
+	Plan(devicePlanningInput) plannerContribution
 }
 
 // devicePlan is the merged registration content for one normalized IEEE address.
@@ -51,35 +75,28 @@ func defaultDevicePlanners() []devicePlanner {
 	}
 }
 
-// planDevice chooses one primary family and merges supplemental sensor plans
-// before one registration. A non-empty light result wins; otherwise a
-// non-empty relay result wins. The sensor result supplements either family and
-// is primary only when neither actuator family contributes.
-//
-//nolint:gocognit // One function keeps primary-family precedence and merge validation together.
+// planDevice chooses one primary contribution and merges every supplemental
+// contribution before one registration. The first non-empty primary
+// contribution wins; later primary contributions are discarded. Every
+// supplemental contribution appends in planner order, and the first non-empty
+// supplemental contribution establishes Device kind when no primary
+// contribution exists. A contribution with an invalid role or an empty kind
+// rejects the Device as invalid_descriptor before selection and merge.
 func planDevice(input devicePlanningInput, planners []devicePlanner) (devicePlan, error) {
 	contributions := make([]plannerContribution, 0, len(planners))
 	for _, planner := range planners {
-		contribution, err := planner.Plan(input)
-		if err != nil {
-			return devicePlan{}, err
+		contribution := planner.Plan(input)
+		if !validPlannerContribution(contribution) {
+			return devicePlan{}, &devicePlanError{code: rejectionInvalidDescriptor}
 		}
 		contribution.Entities = deduplicateKeys(contribution.Entities)
 		contributions = append(contributions, contribution)
 	}
 	var primary *plannerContribution
 	for index := range contributions {
-		if contributions[index].Kind == upstreamDeviceKindLight && len(contributions[index].Entities) != 0 {
+		if contributions[index].Role == plannerRolePrimary && len(contributions[index].Entities) != 0 {
 			primary = &contributions[index]
 			break
-		}
-	}
-	if primary == nil {
-		for index := range contributions {
-			if contributions[index].Kind == upstreamDeviceKindRelay && len(contributions[index].Entities) != 0 {
-				primary = &contributions[index]
-				break
-			}
 		}
 	}
 	merged := make([]entityPlan, 0)
@@ -87,9 +104,16 @@ func planDevice(input devicePlanningInput, planners []devicePlanner) (devicePlan
 	if primary != nil {
 		merged = append(merged, primary.Entities...)
 		kind = primary.Kind
+	} else {
+		for index := range contributions {
+			if contributions[index].Role == plannerRoleSupplemental && len(contributions[index].Entities) != 0 {
+				kind = contributions[index].Kind
+				break
+			}
+		}
 	}
 	for _, contribution := range contributions {
-		if contribution.Kind == upstreamDeviceKindSensor {
+		if contribution.Role == plannerRoleSupplemental {
 			merged = append(merged, contribution.Entities...)
 		}
 	}
@@ -108,8 +132,24 @@ func planDevice(input devicePlanningInput, planners []devicePlanner) (devicePlan
 	return devicePlan{Kind: kind, Entities: merged}, nil
 }
 
-// deduplicateKeys removes every same-family Entity key that occurs more than
-// once, preserving planner and expose order for the survivors.
+// validPlannerContribution reports whether a contribution declares a known
+// role and a non-empty kind. The plannerRoleInvalid zero value catches
+// planners that omit their role, and the default case catches out-of-range
+// roles; both reject as invalid_descriptor before selection and merge.
+func validPlannerContribution(contribution plannerContribution) bool {
+	switch contribution.Role {
+	case plannerRoleInvalid:
+		return false
+	case plannerRolePrimary, plannerRoleSupplemental:
+		return contribution.Kind != ""
+	default:
+		return false
+	}
+}
+
+// deduplicateKeys removes every same-contribution Entity key that occurs more
+// than once, preserving planner and expose order for the survivors.
+// planDevice applies it to each contribution before selection and merge.
 func deduplicateKeys(plans []entityPlan) []entityPlan {
 	counts := make(map[string]int, len(plans))
 	for _, plan := range plans {

@@ -107,7 +107,8 @@ func colorTempSupport(minimum, maximum int64) contractcolortempv1.Support {
 }
 
 func colorTempRange(feature upstreamExpose) (int64, int64, bool) {
-	if feature.Access&requiredAccessMask != requiredAccessMask || feature.Property == "" {
+	if !exposeCanPublish(feature) || !exposeCanSet(feature) || !exposeCanGet(feature) ||
+		feature.Property == "" {
 		return 0, 0, false
 	}
 	minimum, minimumOK := colorTempBound(feature.valueMinRaw, feature.ValueMin)
