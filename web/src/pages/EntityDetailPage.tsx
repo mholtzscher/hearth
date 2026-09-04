@@ -36,6 +36,8 @@ function presetsFor(type: string | undefined, support?: Record<string, unknown>)
       ];
     case "hearth.brightness/v1":
       return brightnessPresets(support);
+    case "hearth.colortemp/v1":
+      return colorTempPresets(support);
     default:
       return [];
   }
@@ -45,6 +47,9 @@ function exampleParams(type: string | undefined, support?: Record<string, unknow
   if (type === "hearth.brightness/v1") {
     const { maximum, step } = brightnessBounds(support);
     return `{"value":${step <= maximum ? step : 0}}`;
+  }
+  if (type === "hearth.colortemp/v1") {
+    return `{"value":${colorTempExample(support)}}`;
   }
   return '{"value":true}';
 }
@@ -59,7 +64,33 @@ function brightnessBounds(support?: Record<string, unknown>): { maximum: number;
   };
 }
 
-/** Brightness presets that satisfy the entity's own support (maximum and step). */
+/** Color-temperature presets (mireds) that satisfy the entity's own support. */
+function colorTempPresets(support?: Record<string, unknown>): { label: string; params: string }[] {
+  const { minimum, maximum, step } = colorTempBounds(support);
+  const snap = (value: number) => Math.round(value / step) * step;
+  return [minimum, (minimum + maximum) / 2, maximum]
+    .map(snap)
+    .filter((value, index, all) => value >= minimum && value <= maximum && all.indexOf(value) === index)
+    .map((value) => ({ label: `color temp ${value}`, params: `{"value":${value}}` }));
+}
+
+/** Smallest valid color-temperature set value (mireds): first step multiple at or above minimum. */
+function colorTempExample(support?: Record<string, unknown>): number {
+  const { minimum, maximum, step } = colorTempBounds(support);
+  const first = Math.ceil(minimum / step) * step;
+  return first <= maximum ? first : minimum;
+}
+
+/** Per-entity color-temperature bounds in mireds; defaults cover the common Zigbee range. */
+function colorTempBounds(support?: Record<string, unknown>): { minimum: number; maximum: number; step: number } {
+  const state = support?.state as { minimum?: unknown; maximum?: unknown } | undefined;
+  const set = (support?.operations as { set?: { step?: unknown } } | undefined)?.set;
+  return {
+    minimum: typeof state?.minimum === "number" ? state.minimum : 154,
+    maximum: typeof state?.maximum === "number" ? state.maximum : 500,
+    step: typeof set?.step === "number" && set.step > 0 ? set.step : 1,
+  };
+}
 function brightnessPresets(support?: Record<string, unknown>): { label: string; params: string }[] {
   const { maximum, step } = brightnessBounds(support);
   return [0, 50, 100]

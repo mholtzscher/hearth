@@ -5,9 +5,9 @@ description: Validate Hearth against REAL Zigbee devices through the homelab's s
 
 # Real-Device Validation
 
-Run local `hearthd` + `hearth-adapter-zigbee2mqtt` from the current worktree
-against the shared dev stack on the homelab server, validate real Zigbee
-hardware, and collect device data for fixtures.
+Run local `hearthd` + `hearth-adapter-zigbee2mqtt` + the `web/` debug UI from
+the current worktree against the shared dev stack on the homelab server,
+validate real Zigbee hardware, and collect device data for fixtures.
 
 `HOMELAB` below means the homelab server's hostname. If you don't know it,
 check existing `configs/homelab-*.yaml` first (they already encode it from
@@ -27,6 +27,8 @@ setup is needed.
   - `hearth-adapter-zigbee2mqtt` from `configs/homelab-zigbee2mqtt.yaml` →
     `nats://HOMELAB:4222` + `tcp://HOMELAB:1883`
   - HTTP API on `127.0.0.1:8080` (loopback; the API has no auth).
+  - `web/` debug UI on `http://127.0.0.1:5173`, proxying Hearth API requests
+    to local `hearthd` and NATS monitoring requests to `HOMELAB:8222`.
 
 ## Rules
 
@@ -62,6 +64,13 @@ else
   echo local-8080-free
 fi
 
+if nc -z -w 3 127.0.0.1 5173; then
+  echo local-5173-in-use
+  exit 1
+else
+  echo local-5173-free
+fi
+
 curl -fsS -m 5 -o /dev/null http://HOMELAB:8222/varz
 echo nats-monitor-ok
 
@@ -77,10 +86,11 @@ nc -z -w 5 HOMELAB 1883
 echo mqtt-tcp-ok
 ```
 
-Proceed only when every check passes: local `:8080` is free, NATS and MQTT
-answer, the Z2M frontend is 200, and `HOMELAB:8081` does not answer. A stale
-local `hearthd` would shadow the new one; a remote core would compete on the
-shared NATS. SSH access is not part of this workflow and is not required.
+Proceed only when every check passes: local `:8080` and `:5173` are free,
+NATS and MQTT answer, the Z2M frontend is 200, and `HOMELAB:8081` does not
+answer. A stale local `hearthd` or debug UI would shadow the new one; a remote
+core would compete on the shared NATS. SSH access is not part of this workflow
+and is not required.
 
 ## Step 2 — Homelab configs (create once, reuse)
 
@@ -209,6 +219,34 @@ output after it becomes healthy and report relevant warnings or errors:
 ```sh
 herdr pane read <adapter-pane-id> --source recent-unwrapped --lines 120
 ```
+
+Split a third pane and launch the debug UI. The mise task installs its npm
+dependencies before starting Vite. Point the UI's NATS monitoring proxy at the
+shared homelab monitor; its Hearth API proxy already defaults to local
+`hearthd`:
+
+```sh
+herdr pane split --pane <adapter-pane-id> --direction down --cwd "$PWD" --no-focus
+herdr pane run <dashboard-pane-id> "NATS_MONITOR_URL=http://HOMELAB:8222 mise run web-dev"
+```
+
+Poll until Vite is serving the dashboard, then report its URL to the user:
+
+```sh
+dashboard_ok=0
+for i in $(seq 1 12); do
+  if curl -fsS -m 3 -o /dev/null http://127.0.0.1:5173/; then
+    echo debug-ui:http://127.0.0.1:5173/
+    dashboard_ok=1
+    break
+  fi
+  sleep 5
+done
+test "$dashboard_ok" -eq 1 || { echo debug-ui-timeout; exit 1; }
+```
+
+Do not start local NATS to enable the dashboard's live NATS WebSocket view;
+real-device mode must continue using only the shared homelab NATS server.
 
 ## Step 4 — Validate against real devices
 

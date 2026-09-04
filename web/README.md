@@ -9,21 +9,21 @@ everywhere.
 
 - `hearthd` running, default `http://127.0.0.1:8080`
   (see root `README.md`; start NATS with `mise run nats` first).
-- Node + npm, provided by mise: run `mise install` from the repo root.
+- Node + pnpm, provided by mise: run `mise install` from the repo root.
 
 ## Run
 
 ```sh
 cd web
-npm install
-npm run dev
+pnpm install
+pnpm run dev
 ```
 
 Open http://127.0.0.1:5173. `/v1`, `/healthz`, `/readyz`, and `/openapi.json`
 are proxied to `HEARTHD_URL` (default `http://127.0.0.1:8080`):
 
 ```sh
-HEARTHD_URL=http://127.0.0.1:8080 npm run dev
+HEARTHD_URL=http://127.0.0.1:8080 pnpm run dev
 ```
 
 To point at a non-loopback `hearthd` on a trusted network, set the base URL in
@@ -37,8 +37,8 @@ deployment or once `hearthd` gains CORS support.
 ## Build
 
 ```sh
-npm run build
-npm run preview
+pnpm run build
+pnpm run preview
 ```
 
 ## Pages
