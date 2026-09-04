@@ -1,306 +1,543 @@
 # Entity State History — Implementation Spec
 
-**Status:** Draft, awaiting approval
-**Type:** Feature (backend persistence + HTTP read + dashboard view)
-**Effort:** L (approximately 1–2 focused days, 75% confidence)
+**Status:** In review
+**Type:** Feature plan
+**Effort:** XL (approximately 2–4 focused days, 75% confidence)
 **Date:** 2026-09-04
+**Baseline:** `bcc55d2`
 
-## Problem
+## Problem Statement
 
-SQLite stores no state history today. `entity_states` holds one row per Entity with the
-current canonical State. `observation_receipts` holds per-Observation metadata
-(disposition, rejection code, timestamps) but no value, and rows expire after
-`ObservationReceiptRetention` (192h) except the receipt backing current State. The
-7-day JetStream observation stream holds raw values but has no HTTP read path.
+**Who:** The technical self-hoster operating and diagnosing a Hearth household through the dashboard and HTTP API.
 
-`EntityDetailPage` already shows command and availability history. State history needs
-a third section, and no endpoint exists to feed it. A prior spec deliberately excluded
-historical values (`resource-discovery-and-command-history.md`), so this spec
-revisits that scope for state values only.
+**What:** Hearth exposes only each Entity's current canonical State. SQLite retains Observation receipt metadata, but not the normalized value associated with each accepted Observation, so an operator cannot inspect how State evidence changed over time.
 
-## Decision
+**Why it matters:** Without recent State history, an operator cannot distinguish device behavior from adapter, normalization, or command-outcome problems. `EntityDetailPage` already presents Command and availability history, leaving State as the missing diagnostic timeline.
 
-Persist one history row per projected, non-duplicate Observation in the same SQLite
-transaction that already inserts the receipt, and expose it as:
+**Evidence:**
+
+- `entity_states` contains one current row per Entity.
+- `observation_receipts` contains each first-seen Observation's disposition and timestamps but no normalized State value or `source_updated_at`.
+- The seven-day JetStream stream retains raw Observations but has no HTTP read path and is not a canonical-State query model.
+- `resource-discovery-and-command-history.md` deliberately excluded historical values because they were not persisted.
+
+The cost of not solving this is continued reliance on raw stream inspection for diagnosis and no dashboard view of recent canonical State updates.
+
+## Proposed Solution
+
+Enrich each first-seen Observation receipt with the normalized State value, when the Observation advances canonical State, and with the Observation's optional source timestamp. The receipt remains the single durable audit row: no parallel history table or second insert is introduced.
+
+Expose retained receipts through:
 
 ```text
 GET /v1/entities/{entity_id}/state/history
 ```
 
-The dashboard adds a "State history" section to `EntityDetailPage` with a small
-dependency-free SVG chart plus a filterable, paginated table.
+The dashboard adds an Entity State history section with an endpoint-scoped filter, cursor pagination, a compact dependency-free SVG step chart, and a diagnostic table. History follows the existing Observation receipt lifecycle: normally 192 hours, while the receipt backing current State remains preserved until a newer State supersedes it and pruning makes it eligible.
 
-### What gets recorded
+### Recorded observations
 
-`persistObservationState` writes the row before its existing early return and state
-upsert, so rejected Observations are recorded too:
+Each non-duplicate projection commits exactly one enriched receipt in the existing projection transaction:
 
-| disposition | `value_json` | `rejection_code` |
-|---|---|---|
-| `applied`, `unchanged` | normalized canonical value | NULL |
-| `rejected` | NULL (never became State) | set |
+| Disposition | `state_value_json` | `rejection_code` | `source_updated_at` |
+|---|---|---|---|
+| `applied` | normalized canonical State value | `NULL` | copied when supplied |
+| `unchanged` | normalized canonical State value | `NULL` | copied when supplied |
+| `rejected` | `NULL`; raw rejected values are never persisted | set | copied when supplied |
 
-Duplicates write neither receipt nor history row. The first projection recorded them.
+A duplicate writes nothing because its original first-seen receipt already owns the history record. `unchanged` is retained because Hearth's canonical State evidence, Observation ID, and timestamps advance even when its value is equivalent.
 
-### Retention follows the observation stream
+Rejected `unknown_entity` and `stale_runtime` observations remain valid receipt records even when their requested Entity ID does not reference an existing Entity. `observation_receipts.entity_id` therefore remains an unconstrained canonical-ID-shaped string. The Entity-scoped read first verifies that its parent Entity exists and then matches retained receipts by ID.
 
-History rows share the receipt lifecycle, not the indefinite health-transition
-retention:
+## Scope and Deliverables
 
-- `entity_state_history.receive_order` is the primary key and references
-  `observation_receipts(receive_order) ON DELETE CASCADE`.
-- The existing `DeleteExpiredObservationReceipts` prune path in
-  `internal/app/hearthd/run.go` deletes history through the cascade. The row backing
-  current State survives because its receipt is preserved by the existing
-  `NOT EXISTS (entity_states ...)` guard. FK enforcement is already on
-  (`_pragma=foreign_keys(1)` in `internal/platform/db/db.go`), so no new prune
-  loop, config, or background path is needed.
-- `expires_at` copies `ProjectObservationParams.ReceiptExpiresAt`
-  (`observed_at` plus 192h), which covers the 7-day JetStream redelivery window.
+| ID | Deliverable | Effort | Depends On |
+|---|---|---:|---|
+| D1 | Enrich Observation receipts and projection persistence | M | — |
+| D2 | Add domain, service, and SQLite Entity State history reads | M | D1 |
+| D3 | Add the HTTP contract, cursor codec, and OpenAPI coverage | M | D2 |
+| D4 | Add the dashboard chart, filters, table, and agent-browser verification | L | D3 |
+| D5 | Record the accepted architecture and run repository gates | M | D1, D2, D3, D4 |
 
-### Migration
+Total: **XL**, approximately 2–4 focused days. The principal estimate risks are chart edge cases, broad Go interface-fake updates, and end-to-end browser fixture preparation rather than unfamiliar technology.
 
-New immutable Goose migration `00002_state_history.sql`
-(`internal/platform/db/migrations/` holds only `00001_initial.sql` today):
+## Non-Goals
 
-```sql
--- +goose Up
-CREATE TABLE entity_state_history (
-    receive_order       INTEGER PRIMARY KEY REFERENCES observation_receipts(receive_order) ON DELETE CASCADE,
-    entity_id           TEXT NOT NULL REFERENCES entities(id) ON DELETE CASCADE,
-    observation_id      TEXT NOT NULL UNIQUE CHECK (substr(observation_id, 1, 4) = 'obs_'),
-    value_json          TEXT CHECK (value_json IS NULL OR json_valid(value_json)),
-    disposition         TEXT NOT NULL CHECK (disposition IN ('applied', 'unchanged', 'rejected')),
-    rejection_code      TEXT CHECK (
-        rejection_code IS NULL OR rejection_code IN (
-            'unknown_entity', 'wrong_adapter', 'entity_disabled',
-            'invalid_value', 'stale_runtime'
-        )
-    ),
-    adapter_received_at TEXT NOT NULL,
-    source_updated_at   TEXT,
-    observed_at         TEXT NOT NULL,
-    expires_at          TEXT NOT NULL,
-    CHECK (
-        (disposition = 'rejected' AND rejection_code IS NOT NULL AND value_json IS NULL)
-        OR (disposition <> 'rejected' AND rejection_code IS NULL AND value_json IS NOT NULL)
-    )
-);
+- No history mutation, replay, or recovery from the JetStream stream.
+- No reconstruction of values received before this feature starts recording them.
+- No additional time-range filters, sorts, totals, offsets, or cross-Entity history queries.
+- No configurable State-history retention; it follows Observation receipt retention.
+- No new NATS subjects, JetStream consumers, SDK methods, or Adapter changes.
+- No raw rejected value persistence or exposure.
+- No authentication or network-exposure change.
+- No new frontend dependency or frontend unit-test framework.
 
-CREATE INDEX entity_state_history_entity_idx
-    ON entity_state_history(entity_id, receive_order DESC);
+## Types
 
--- Backfill one anchor row per Entity from current State so charts never start empty.
-INSERT INTO entity_state_history (
-    receive_order, entity_id, observation_id, value_json, disposition,
-    rejection_code, adapter_received_at, source_updated_at, observed_at, expires_at
+### Domain types
+
+Owner: new `internal/modules/devices/entity_state_history.go`.
+
+```go
+// EntityStateHistoryEntry is one retained first-seen Observation for an Entity, newest-first by ReceiveOrder.
+type EntityStateHistoryEntry struct {
+	ObservationID     ObservationID
+	Value             Value // Nil only when Disposition is rejected.
+	Disposition       ObservationDisposition
+	Rejection         *ObservationRejection
+	AdapterReceivedAt time.Time
+	SourceUpdatedAt   *time.Time
+	ObservedAt        time.Time
+	ReceiveOrder      int64
+}
+
+// EntityStateHistoryFilter selects retained Observation dispositions for one Entity.
+type EntityStateHistoryFilter string
+
+const (
+	EntityStateHistoryFilterUpdates   EntityStateHistoryFilter = "state-updates"
+	EntityStateHistoryFilterAll       EntityStateHistoryFilter = "all"
+	EntityStateHistoryFilterApplied   EntityStateHistoryFilter = "applied"
+	EntityStateHistoryFilterUnchanged EntityStateHistoryFilter = "unchanged"
+	EntityStateHistoryFilterRejected  EntityStateHistoryFilter = "rejected"
 )
-SELECT r.receive_order, s.entity_id, s.observation_id, s.value_json, 'applied',
-    NULL, s.adapter_received_at, s.source_updated_at, s.observed_at,
-    datetime(s.observed_at, '+192 hours')
-FROM entity_states AS s
-JOIN observation_receipts AS r ON r.observation_id = s.observation_id;
 
--- +goose Down
-DROP INDEX entity_state_history_entity_idx;
-DROP TABLE entity_state_history;
+// ListEntityStateHistoryParams defines one keyset page of an Entity's retained State history.
+type ListEntityStateHistoryParams struct {
+	EntityID           EntityID
+	Filter             EntityStateHistoryFilter
+	BeforeReceiveOrder *int64
+	Limit              int
+}
 ```
 
-Past values were never persisted and cannot be reconstructed, so history starts at
-this deployment plus the backfilled anchor row.
+`state-updates` means `applied` plus `unchanged`, matching Hearth's rule that either disposition advances canonical State evidence. An empty domain filter defaults to `state-updates`. `Value`, `SourceUpdatedAt`, and `Rejection` are returned as owned copies.
 
-## Public HTTP contract
+No event or configuration types change.
+
+### HTTP response types
+
+Owner: new `internal/modules/devices/api/entity_state_history.go`.
+
+```go
+type EntityStateHistoryBody struct {
+	ObservationID     string  `json:"observation_id"`
+	Value             any     `json:"value,omitempty"`
+	Disposition       string  `json:"disposition"`
+	RejectionCode     *string `json:"rejection_code,omitempty"`
+	AdapterReceivedAt string  `json:"adapter_received_at"`
+	SourceUpdatedAt   *string `json:"source_updated_at,omitempty"`
+	ObservedAt        string  `json:"observed_at"`
+}
+
+type EntityStateHistoryCollectionBody struct {
+	Items      []EntityStateHistoryBody `json:"items"`
+	NextCursor *string                  `json:"next_cursor,omitempty"`
+}
+```
+
+`value` is omitted for rejected rows. Accepted values are decoded from normalized JSON at the API mapping seam. All timestamps are UTC RFC3339Nano.
+
+### Dashboard type
+
+Modify `web/src/api/types.ts`:
+
+```diff
++export interface EntityStateHistoryEntry {
++  observation_id: string;
++  value?: unknown;
++  disposition: "applied" | "unchanged" | "rejected" | string;
++  rejection_code?: string;
++  adapter_received_at: string;
++  source_updated_at?: string;
++  observed_at: string;
++}
+```
+
+## Interfaces
+
+### Service use case
+
+Owner: `internal/modules/devices/entity_state_history.go`.
+
+```go
+func (service *Service) ListEntityStateHistory(
+	context.Context,
+	ListEntityStateHistoryParams,
+) (Page[EntityStateHistoryEntry], error)
+```
+
+The service:
+
+- validates the canonical Entity ID;
+- accepts limits from 1 through 200;
+- defaults an empty filter to `state-updates` and rejects unknown filters;
+- rejects `BeforeReceiveOrder` values below 1;
+- calls `stores.Reads.GetEntity` first, returning `ErrEntityNotFound` for an unknown parent;
+- calls the repository only after validation and parent lookup;
+- returns owned mutable values and pointers; and
+- performs no writes or NATS publication.
+
+Invalid page or filter input returns `ErrInvalidPage`, preserving the existing read-service convention.
+
+### Repository seam
+
+Modify `internal/modules/devices/repository.go`:
+
+```diff
+ type ReadRepository interface {
+     ListDevices(context.Context, ListDevicesParams) (Page[Device], error)
+     GetDevice(context.Context, GetDeviceParams) (DeviceAggregate, error)
+     ListEntities(context.Context, ListEntitiesParams) (Page[EntityWithState], error)
+     GetEntity(context.Context, EntityID) (EntityWithState, error)
+     GetCommand(context.Context, CommandID) (CommandRecord, error)
+     ListEntityCommands(context.Context, ListEntityCommandsParams) (Page[CommandRecord], error)
++    ListEntityStateHistory(context.Context, ListEntityStateHistoryParams) (Page[EntityStateHistoryEntry], error)
+ }
+```
+
+The SQLite adapter owns query selection, `limit + 1`, row mapping, timestamp parsing, `HasMore`, truncation, context propagation, and persistence-error wrapping. Generated sqlc types remain inside the adapter.
+
+`ObservationRepository` does not change. Receipt enrichment occurs inside its existing `ProjectObservation` implementation and transaction.
+
+### HTTP input, handler, and registration
+
+Owner: `internal/modules/devices/api/entity_state_history.go`.
+
+```go
+type ListEntityStateHistoryInput struct {
+	EntityID    string `path:"entity_id" doc:"Canonical Hearth Entity ID"`
+	Limit       int    `query:"limit" default:"50" minimum:"1" maximum:"200"`
+	Cursor      string `query:"cursor"`
+	Disposition string `query:"disposition" default:"state-updates"`
+}
+
+type ListEntityStateHistoryOutput struct {
+	Body EntityStateHistoryCollectionBody
+}
+```
+
+`Disposition` deliberately has no Huma enum tag because unsupported semantic filter values return HTTP 400 rather than structural-validation HTTP 422.
+
+Modify the consumer-owned interface in `internal/modules/devices/api/register.go`:
+
+```diff
+ type Devices interface {
+     // Existing use cases omitted.
++    ListEntityStateHistory(
++        context.Context,
++        devices.ListEntityStateHistoryParams,
++    ) (devices.Page[devices.EntityStateHistoryEntry], error)
+ }
+```
+
+Register on the existing `/v1` group:
+
+```text
+GET /entities/{entity_id}/state/history
+```
+
+Operation metadata:
+
+- **Operation ID:** `list-entity-state-history`
+- **Tag:** `Entities`
+- **Summary:** `List an Entity's State history`
+- **Errors:** HTTP 400 for invalid IDs, cursors, pages, or filters; HTTP 422 for Huma structural validation; HTTP 404 with `entity not found`; HTTP 500 with `internal error`
+
+The handler parses the Entity ID, decodes and verifies the cursor, calls one service use case, maps domain entries, and derives `next_cursor` from the final returned entry only when `HasMore` is true.
+
+### Cursor interface
+
+Owner: `internal/modules/devices/api/pagination.go`.
+
+```go
+type entityStateHistoryCursor struct {
+	Version      int    `json:"v"`
+	Resource     string `json:"resource"`
+	ParentID     string `json:"parent_id"`
+	ReceiveOrder int64  `json:"receive_order"`
+	Filter       string `json:"filter"`
+}
+```
+
+The cursor uses version `1`, resource `entity_state_history`, the path Entity ID, the effective filter, and the last returned `receive_order`. It is unsigned, unpadded canonical base64url JSON and conveys position rather than authority.
+
+Bad encoding, noncanonical encoding, trailing or unknown JSON fields, wrong version/resource/parent/filter, an invalid parent ID, or `receive_order < 1` returns HTTP 400. A cursor cannot be reused after changing filters or Entities.
+
+## Detailed Persistence Design
+
+### Schema source of truth
+
+Hearth has no deployments, so modify the existing initial Goose migration directly rather than adding an upgrade or compatibility migration. Existing development databases must be recreated. If Hearth gains a deployment before this feature lands, this decision must be revisited and an additive migration specified.
+
+Modify `internal/platform/db/migrations/00001_initial.sql`:
+
+```diff
+ CREATE TABLE observation_receipts (
+     receive_order       INTEGER PRIMARY KEY AUTOINCREMENT,
+     observation_id      TEXT NOT NULL UNIQUE CHECK (substr(observation_id, 1, 4) = 'obs_'),
+     adapter_id          TEXT NOT NULL,
+     runtime_id          TEXT REFERENCES adapter_runtimes(runtime_id) ON DELETE RESTRICT,
+     entity_id           TEXT NOT NULL,
+     disposition         TEXT NOT NULL CHECK (
+         disposition IN ('applied', 'unchanged', 'rejected')
+     ),
+     rejection_code      TEXT CHECK (
+         rejection_code IS NULL OR rejection_code IN (
+             'unknown_entity', 'wrong_adapter', 'entity_disabled',
+             'invalid_value', 'stale_runtime'
+         )
+     ),
++    state_value_json    TEXT CHECK (
++        state_value_json IS NULL OR json_valid(state_value_json)
++    ),
+     adapter_received_at TEXT NOT NULL,
++    source_updated_at   TEXT,
+     observed_at         TEXT NOT NULL,
+     expires_at          TEXT NOT NULL,
+     CHECK (
+-        (disposition = 'rejected' AND rejection_code IS NOT NULL)
+-        OR (disposition <> 'rejected' AND rejection_code IS NULL)
++        (disposition = 'rejected'
++            AND rejection_code IS NOT NULL
++            AND state_value_json IS NULL)
++        OR (disposition <> 'rejected'
++            AND rejection_code IS NULL
++            AND state_value_json IS NOT NULL)
+     )
+ );
+
+ CREATE INDEX observation_receipts_expiry_idx
+     ON observation_receipts(expires_at);
++
++CREATE INDEX observation_receipts_entity_history_idx
++    ON observation_receipts(entity_id, receive_order DESC);
+```
+
+The Down section drops `observation_receipts`, so no additional Down operation is required beyond dropping the new index before the table if the explicit index-drop ordering is retained.
+
+This design intentionally does not add an Entity foreign key. Observation receipt idempotency and rejection auditing must work for unknown Entity IDs. Entity deletion is not currently a product operation; if introduced later, inaccessible receipts expire through the existing retention path.
+
+### Projection write
+
+Modify `internal/modules/devices/dbqueries/receipts.sql` so `InsertObservationReceipt` writes `state_value_json` and `source_updated_at`. Modify `ProjectObservation` in `internal/modules/devices/sqlite_observations.go` to pass:
+
+- the normalized value for `applied` and `unchanged`;
+- SQL `NULL` for `rejected`;
+- the source timestamp for every disposition when supplied.
+
+Classification already produces `normalized`, `disposition`, and `rejection` before `InsertObservationReceipt`, so no new write step and no `persistObservationState` signature change are needed. Receipt insertion, State upsert, optional Command satisfaction, and commit remain one transaction.
+
+### History queries
+
+Add to `internal/modules/devices/dbqueries/receipts.sql`:
+
+- `ListEntityStateHistoryFirstPage`
+- `ListEntityStateHistoryAfter`
+
+Both select only the domain fields required by `EntityStateHistoryEntry`, constrain `entity_id`, apply the effective filter, order by `receive_order DESC`, and use the caller's `limit + 1`. The continuation query additionally requires `receive_order < before_receive_order`.
+
+Filter predicates are exact:
+
+| Filter | SQL disposition set |
+|---|---|
+| `state-updates` | `applied`, `unchanged` |
+| `all` | `applied`, `unchanged`, `rejected` |
+| `applied` | `applied` |
+| `unchanged` | `unchanged` |
+| `rejected` | `rejected` |
+
+The service validates the filter before SQL. The query still binds the filter explicitly rather than constructing SQL dynamically.
+
+### Retention
+
+`DeleteExpiredObservationReceipts` remains unchanged. It deletes expired non-current receipts, including their State-history values, and preserves the receipt referenced by current `entity_states`. Once a newer State replaces that reference, an already-expired older receipt becomes eligible on the next prune.
+
+History therefore normally covers at least the 192-hour receipt window, not an unlimited audit log. One older current-State entry may remain as an anchor. No separate expiry field, cascade, prune loop, or configuration is added.
+
+## Public HTTP Contract
 
 `GET /v1/entities/{entity_id}/state/history`
-
-- **Operation ID:** `list-entity-state-history`, **tag:** `Entities`,
-  **summary:** `List an Entity's State history`.
-- **Errors:** HTTP 400 for invalid IDs, cursors, or disposition filters; HTTP 422 for
-  structural validation; HTTP 404 for an unknown Entity (`entity not found`);
-  HTTP 500 for internal failures. Existing routes are unchanged.
 
 Query parameters:
 
 | Query | Required | Contract |
-|---|---|---|
-| `limit` | no | Integer; default 50; minimum 1; maximum 200. |
-| `cursor` | no | Opaque endpoint-specific continuation token from the preceding page. |
-| `disposition` | no | `state-changes` (default: `applied` + `unchanged`), `all`, `applied`, `unchanged`, or `rejected`. |
+|---|---:|---|
+| `limit` | no | Default 50; minimum 1; maximum 200. |
+| `cursor` | no | Opaque continuation token returned by the preceding page. |
+| `disposition` | no | `state-updates` default, `all`, `applied`, `unchanged`, or `rejected`. |
 
-Response items use:
+Items order by `receive_order DESC`. Later pages use a strict lower receive order under the same Entity and filter. The response always encodes `items` as an array and omits `next_cursor` on the final page.
 
-```go
-type StateHistoryBody struct {
-    ObservationID     string  `json:"observation_id"`
-    Value             any      `json:"value,omitempty"` // normalized State value; nil for rejected rows
-    Disposition       string  `json:"disposition"`
-    RejectionCode     *string `json:"rejection_code,omitempty"`
-    AdapterReceivedAt string  `json:"adapter_received_at"`
-    SourceUpdatedAt   *string `json:"source_updated_at,omitempty"`
-    ObservedAt        string  `json:"observed_at"`
-}
+An existing Entity with no retained matching receipts returns HTTP 200 with `items: []`. An unknown valid Entity returns HTTP 404. The response exposes no Adapter ID, runtime ID, raw rejected value, receipt expiry, or internal receive order.
 
-type StateHistoryCollectionBody struct {
-    Items      []StateHistoryBody `json:"items"`
-    NextCursor *string            `json:"next_cursor,omitempty"`
-}
-```
+## Dashboard Design
 
-Timestamps are UTC RFC3339Nano. Items order by `receive_order DESC`. Later pages
-select `receive_order < cursor.receive_order` under the same Entity and filter. The
-repository fetches `limit + 1` rows and transport derives `next_cursor` from the final
-item when `HasMore` is true, the same convention as command and health history. An
-existing Entity without history returns HTTP 200 with `items: []`.
+Owner: new `web/src/components/entity-state-history.tsx`, composed by `web/src/pages/EntityDetailPage.tsx` below Availability history.
 
-Cursors are versioned base64url JSON owned by `internal/modules/devices/api` through a
-new `stateCursor{Version, Resource: "entity_state", ParentID, ReceiveOrder,
-Disposition}`. Each cursor works only for its endpoint, parent Entity, and filter.
-Filter or parent mismatch, bad encoding, version, fields, or `receive_order < 1`
-returns HTTP 400.
+### Filter and pagination
 
-## Domain contract
+A segmented control offers `State updates` (default), `All`, `Applied`, `Unchanged`, and `Rejected`. Changing the filter, Entity route, or `useBaseUrlVersion` resets the cursor to the first page. The request query always carries the effective filter. `Next page` follows the existing dashboard cursor pattern.
 
-Owner: `internal/modules/devices/model.go` (new types only; existing types untouched).
+### Chart
 
-```go
-type StateHistoryEntry struct {
-    ObservationID     ObservationID
-    Value             Value // nil for rejected rows
-    Disposition       ObservationDisposition
-    Rejection         *ObservationRejection
-    AdapterReceivedAt time.Time
-    SourceUpdatedAt   *time.Time
-    ObservedAt        time.Time
-    ReceiveOrder      int64
-}
+A dependency-free responsive SVG step chart uses only accepted rows from the current page, rendered oldest-to-newest with receive-order response order reversed. `observed_at` supplies the horizontal labels; response order remains the deterministic tie-breaker when timestamps are equal.
 
-type StateDispositionFilter string
+Per Entity type:
 
-const (
-    StateFilterChanges   StateDispositionFilter = "state-changes"
-    StateFilterAll       StateDispositionFilter = "all"
-    StateFilterApplied   StateDispositionFilter = "applied"
-    StateFilterUnchanged StateDispositionFilter = "unchanged"
-    StateFilterRejected  StateDispositionFilter = "rejected"
-)
+- `hearth.power/v1`: 0/1 steps with Off/On labels.
+- `hearth.brightness/v1`: integer stepped line using support bounds when available.
+- `hearth.colortemp/v1`: integer-mired stepped line using support bounds when available.
+- `hearth.temperature/v1`: milli-Celsius values displayed as °C.
+- unknown future types: table remains available and the chart displays `Chart unavailable for this Entity type.`
 
-type ListStateHistoryParams struct {
-    EntityID           EntityID
-    Disposition        StateDispositionFilter
-    BeforeReceiveOrder *int64
-    Limit              int
-}
-```
+Required edge behavior:
 
-### Service use case
+- no matching rows: show the existing empty-table message and `No State updates to chart.`;
+- rejected-only page: show the table and `Rejected observations have no canonical State value to chart.`;
+- one accepted row: render a centered point with its formatted value rather than a zero-width path;
+- constant accepted values: expand the vertical domain by a type-appropriate padding so the line remains visible;
+- equal timestamps: distribute points in response-order sequence while retaining timestamp labels;
+- malformed API value despite the server contract: skip that point, keep the table's raw JSON, and state the skipped count in the caption.
 
-New file `internal/modules/devices/state_history.go`:
+The caption reports the page-local time range, number of plotted values, and number of rejected or malformed rows skipped. It does not imply that one page is the Entity's complete retained history.
 
-```go
-func (service *Service) ListStateHistory(context.Context, ListStateHistoryParams) (Page[StateHistoryEntry], error)
-```
+### Table
 
-The service rejects bad Entity IDs, limits outside 1–200, unknown filters (empty
-means `state-changes`), and `BeforeReceiveOrder` below 1. It calls
-`stores.Reads.GetEntity` first so an unknown Entity returns `ErrEntityNotFound`, the
-same convention as `ListEntityCommands`. It returns owned copies and performs no
-writes or NATS publication.
+Columns are Value, Disposition, Observation ID, Observed at, Adapter received at, and Source updated at. Values use Entity-type-aware formatting and preserve raw JSON in a title tooltip. Rejected rows display `—` for Value and a rejection-code chip or text. Observation IDs use the existing mono/truncation pattern.
 
-### Repository seam
+No npm dependency is added.
 
-Writing stays inside the existing `ObservationRepository.ProjectObservation`
-transaction (one extra insert; no interface change). Add the read to `ReadRepository`:
-
-```go
-ListStateHistory(context.Context, ListStateHistoryParams) (Page[StateHistoryEntry], error)
-```
-
-The SQLite implementation owns `limit + 1` querying, the disposition predicate,
-`HasMore`, truncation, context propagation, and error mapping; sqlc types stay inside
-the adapter. New sqlc queries in `internal/modules/devices/dbqueries/state.sql`:
-
-- `ListStateHistoryFirstPage` / `ListStateHistoryAfter`: entity-constrained,
-  `receive_order DESC`, with a `disposition IN (...)` predicate bound to the filter.
-- `InsertStateHistory`: single-row insert of the classified projection.
-
-## HTTP consumer
-
-Extend the `devicesapi` consumer interface in `internal/modules/devices/api/register.go`
-with `ListStateHistory`, register `GET /entities/{entity_id}/state/history` on the
-`/v1` group, and map domain entries with a `stateHistoryBody` mapper.
-
-## Dashboard
-
-New "State history" section on `EntityDetailPage`, below "Availability history":
-
-- **Filter.** A segmented control (`State changes` default, `All`, `Applied`,
-  `Unchanged`, `Rejected`) maps to the `disposition` query param. Changing it resets
-  pagination.
-- **Chart.** A dependency-free SVG step chart covers the current page's `observed_at`
-  range, oldest to newest. Power renders as 0/1 steps; brightness, color-temp, and
-  temperature render as stepped lines with min/max axis labels. Temperature converts
-  milli-Celsius to °C for display. Rejected rows carry no value, so the chart skips
-  them and says so in its caption.
-- **Table.** Columns are Value (per-type formatted, raw JSON in the title tooltip),
-  Disposition chip, Observation ID (mono, truncated), Observed at, and Adapter
-  received at. It reuses the `Collection<T>`, cursor pagination, `useBaseUrlVersion`
-  reset, and `EmptyRow` patterns from `CommandHistory` and `AvailabilityHistory`.
-- New `StateHistoryEntry` type in `web/src/api/types.ts`; no new npm dependencies.
-
-## Project layout
+## Project Layout
 
 ```text
-specs/entity-state-history.md                        # this spec
-docs/architecture.md                                  # modify: state-history retention + endpoint
-internal/platform/db/migrations/00002_state_history.sql  # new
-internal/modules/devices/dbqueries/state.sql         # modify: history queries
-internal/modules/devices/dbsqlc/                      # regenerate
-internal/modules/devices/model.go                    # modify: history domain types
-internal/modules/devices/repository.go               # modify: ReadRepository seam
-internal/modules/devices/sqlite_observations.go      # modify: insert history row in projection tx
-internal/modules/devices/sqlite_reads.go             # modify: row mapping + list
-internal/modules/devices/state_history.go            # new: service use case
-internal/modules/devices/api/state_history.go        # new: endpoint
-internal/modules/devices/api/pagination.go           # modify: state cursor codec
-internal/modules/devices/api/register.go             # modify: route + consumer interface
-internal/modules/devices/api/types.go                # modify: history DTOs
-web/src/api/types.ts                                 # modify: StateHistoryEntry
-web/src/pages/EntityDetailPage.tsx                   # modify: State history section + chart
+docs/
+└── architecture.md                                      # modify — accepted State-history retention and HTTP behavior
+internal/
+├── app/
+│   └── hearthd/
+│       └── server_test.go                               # modify — runtime OpenAPI and existing-operation regression coverage
+├── modules/
+│   └── devices/
+│       ├── api/
+│       │   ├── entity_state_history.go                  # new — Huma input/output, mapping, handler
+│       │   ├── entity_state_history_test.go             # new — route, validation, mapping, and errors
+│       │   ├── pagination.go                            # modify — Entity State history cursor codec
+│       │   ├── pagination_test.go                       # modify — cursor scope/filter/malformed cases
+│       │   └── register.go                              # modify — consumer interface and operation registration
+│       ├── dbqueries/
+│       │   └── receipts.sql                             # modify — enriched insert and history list queries
+│       ├── dbsqlc/                                      # regenerate — generated receipt/history query code
+│       ├── entity_state_history.go                      # new — domain types and read use case
+│       ├── entity_state_history_test.go                 # new — validation, parent lookup, copies, read-only behavior
+│       ├── repository.go                                # modify — ReadRepository method
+│       ├── read_test.go                                 # modify — existing ReadRepository fake remains complete
+│       ├── sqlite_entity_state_history.go               # new — history query selection and domain mapping
+│       ├── sqlite_entity_state_history_test.go           # new — filters, ordering, pagination, retention, mapping
+│       ├── sqlite_observations.go                       # modify — enrich receipt insert in projection transaction
+│       └── sqlite_observations_test.go                  # modify — dispositions, duplicates, unknown IDs, atomicity
+└── platform/
+    └── db/
+        └── migrations/
+            └── 00001_initial.sql                        # modify — enriched receipt columns and history index
+specs/
+└── entity-state-history.md                              # modify — implementation contract
+web/
+└── src/
+    ├── api/
+    │   └── types.ts                                     # modify — EntityStateHistoryEntry transport type
+    ├── components/
+    │   └── entity-state-history.tsx                     # new — filters, chart, table, pagination
+    └── pages/
+        └── EntityDetailPage.tsx                         # modify — compose State history section
 ```
 
-## Verification strategy
+D1 owns the migration, receipt query, projection, and projection tests. D2 owns the domain use case, repository interface/adapter, and their tests. D3 owns the API file, cursor, registration, and server OpenAPI test. D4 owns the dashboard files and browser evidence. D5 owns architecture documentation and final validation.
 
-| Layer | Required coverage |
-|---|---|
-| Cursor unit | Round trips per filter; version/scope/parent/filter mismatch; malformed input. |
-| Service unit | ID/limit/filter validation; unknown Entity; owned copies; read-only. |
-| Repository integration | Ordering; `limit + 1`; each filter predicate; rejected rows carry NULL value; backfill anchor; receipt-prune cascade deletes history but preserves current-State row; indexes. |
-| Projection | Applied/unchanged/rejected each write exactly one history row in-tx; duplicates write none; normalized value stored. |
-| API unit | Route metadata; query defaults/bounds; filter validation; cursor round trip; DTO mapping (value omitted for rejected); 404 unknown Entity; empty array. |
-| Application integration | New operation present in runtime OpenAPI; existing operations unchanged. |
-| Dashboard | `tsc --noEmit` + `vite build`; per-type value formatting; filter resets cursor; chart excludes rejected rows. |
-| Generation/migration | sqlc reproducibility; empty + upgraded DB migration; down migration restores schema. |
+## Test Strategy
 
-## Acceptance criteria
+Each test protects an explicit behavior and should fail under a named plausible defect.
 
-- [ ] Each non-duplicate projection writes exactly one history row in the same transaction
-      as its receipt; duplicates write none.
-- [ ] `GET /v1/entities/{entity_id}/state/history` matches the specified method, path,
-      operation metadata, DTO, ordering, filter, cursor, and error contracts, including
-      404 for an unknown Entity and `items: []` for an Entity without history.
-- [ ] Receipt expiry cascades history deletion; the current-State row survives.
-- [ ] Migration applies to empty and current databases, backfills one anchor row per
-      Entity, and reverses cleanly; sqlc output is regenerated from source.
-- [ ] Dashboard shows a chart plus filterable, paginated history table on the entity page
-      with no new npm dependencies.
-- [ ] `docs/architecture.md` records the accepted behavior.
-- [ ] Gate passes: `mise run validate`.
+| Layer | Behavior protected | Plausible defect detected | Method and oracle |
+|---|---|---|---|
+| Projection integration | Every first-seen disposition stores one correctly enriched receipt in the existing transaction | rejected/unchanged omitted, raw invalid value stored, partial commit | Migrated SQLite plus domain projection rules |
+| Projection integration | Unknown-Entity and stale-runtime rejections still commit receipts | accidental Entity FK or parent lookup makes idempotency fail | Existing rejection contract and receipt schema invariant |
+| Duplicate regression | Redelivery adds no receipt/history row | duplicate creates a second point | Observation ID idempotency contract |
+| Repository integration | Filters, strict keyset ordering, `limit + 1`, final-page behavior | wrong predicate, skipped/duplicated rows, off-by-one | Seeded receive orders and expected disposition sets |
+| Repository integration | Retention removes expired non-current rows and preserves current State's receipt | prune deletes current anchor or leaks expired history | Existing receipt-retention rule with real SQLite foreign/reference behavior |
+| Repository integration | JSON and timestamps map to owned domain values | sqlc leakage, aliasing, local/noncanonical times | Domain type contract and mutation-after-return checks |
+| Service unit | Validation precedes parent lookup/read; unknown parent is distinct from empty history | repository called on invalid input or 404 collapsed into empty page | Domain validation and `ErrEntityNotFound` contract |
+| Cursor unit | Canonical round trip and version/resource/parent/filter/order scoping | cursor reused across filters or Entities | Cursor interface defined above |
+| API unit | Metadata, defaults, 400/422/404/500 mapping, empty arrays, omitted rejected values | transport changes public contract | Huma operation and HTTP contract above |
+| Application integration | New operation appears while existing operations remain unchanged | registration accidentally moves or overwrites routes | Runtime OpenAPI document |
+| Browser verification | Filter, pagination reset, per-type chart/table formatting, and edge states are operable | compiled UI renders incorrectly or stale cursor survives | Agent-browser workflow below |
+| Generation/schema | sqlc output matches migration/query sources and a fresh DB migrates | generated drift or invalid initial schema | Repository generation and migration tasks |
 
-## Scope boundaries
+### Agent-browser verification
 
-- No history mutation, backfill beyond the current-State anchor, or replay: history is
-  an append-only audit of projections.
-- No additional filters (time ranges), sorts, totals, or cross-entity history queries.
-- No retention configuration: history strictly follows receipt retention.
-- No new NATS subjects, JetStream consumers, or SDK changes; adapters are untouched.
-- Authentication and network exposure are unchanged (trusted loopback default).
+After implementation:
+
+1. Run the normal local NATS, `hearthd`, and dashboard development processes against a disposable database populated through normal registration and Observation projection paths.
+2. Through those normal paths, prepare the four built-in Entity types plus no-history, one-point, constant-value, rejected-only, and multi-page histories.
+3. Load the installed browser workflow with `agent-browser skills get core --full` before issuing browser commands.
+4. Open each Entity detail page through the Vite origin, capture an accessibility snapshot, exercise every filter and pagination transition, and verify the visible chart caption and table values.
+5. Change the configured base URL or Entity route and verify the cursor resets.
+6. In separate dev-only browser sessions, use `agent-browser network route` before the first real navigation to mock the exact Entity-detail and State-history responses for otherwise unreachable defensive cases: an unsupported Entity type, a schema-wrong but valid JSON value, and equal timestamps. Remove each route after its scenario. Network mocking is permitted only against the local development origin and adds no production fixture endpoint.
+7. Capture screenshots for the four supported chart types plus empty, rejected-only, unsupported-type, and malformed-value states.
+8. Check the browser console after each scenario and require no uncaught errors.
+
+Normal-path scenarios establish integration behavior. Mocked responses establish only defensive dashboard rendering; repository and API tests remain the oracle for server contracts. Agent-browser is not a substitute for repository, service, cursor, or API tests.
+
+## Acceptance Criteria
+
+- [ ] Every non-duplicate Observation commits exactly one receipt in the existing projection transaction; `applied` and `unchanged` store only normalized State JSON, while `rejected` stores no value.
+- [ ] Duplicate delivery writes no new receipt or history entry.
+- [ ] Unknown-Entity and stale-runtime rejections remain durable and do not fail an Entity foreign key.
+- [ ] History uses the existing receipt prune path: expired non-current entries disappear and the receipt backing current State survives until superseded.
+- [ ] `GET /v1/entities/{entity_id}/state/history` matches the specified method, path, metadata, DTO, ordering, filters, cursor scope, and errors.
+- [ ] `state-updates` consistently means `applied` plus `unchanged` in service, SQL, cursor, HTTP, and dashboard vocabulary.
+- [ ] Under a stable database snapshot and filter, cursor traversal returns every matching receipt exactly once in descending receive order.
+- [ ] An unknown Entity returns 404; an existing Entity without matching retained history returns HTTP 200 with `items: []`.
+- [ ] Responses omit raw rejected values, Adapter/runtime IDs, expiry, and receive order.
+- [ ] The dashboard renders the specified four Entity types and all empty, rejected-only, single-point, constant-value, equal-time, malformed-value, and unsupported-type fallbacks without a new npm dependency.
+- [ ] Agent-browser evidence covers filters, pagination resets, chart/table formatting, screenshots, and a clean browser console.
+- [ ] `docs/architecture.md` records the accepted persistence, retention, and endpoint behavior.
+- [ ] `mise run web-build` passes.
+- [ ] `mise run validate` passes and the resulting generated/formatting diff is reviewed.
+
+## Success Metrics
+
+- All first-seen Observations after the feature lands are represented exactly once for their receipt lifetime.
+- A stable filtered history can be traversed without gaps or duplicates.
+- An operator can diagnose recent State updates for every built-in Entity type from `EntityDetailPage` without inspecting JetStream.
+- The feature adds no projection write round trip, NATS resource, background loop, runtime configuration, or frontend dependency.
+
+## Risks and Mitigations
+
+| Risk | Likelihood | Impact | Mitigation |
+|---|---:|---:|---|
+| Enriching receipts blurs idempotency and read-model responsibilities | Medium | Medium | Use explicit `state_value_json` naming, keep the domain read behind `ReadRepository`, and document receipt-history ownership in architecture. |
+| An Entity foreign key breaks unknown-Entity rejection durability | Medium | High | Keep `observation_receipts.entity_id` unconstrained and test unknown/stale rejection commits against real SQLite. |
+| Directly changing migration 00001 leaves an existing development DB stale | High for active developers | Low | Document that local DBs must be recreated; revisit with an additive migration if deployment status changes. |
+| Filter or cursor drift causes missing or repeated rows | Medium | Medium | Bind the effective filter into the cursor and test stable traversal for every filter. |
+| Chart domains collapse for sparse or constant values | High | Medium | Specify explicit empty, one-point, constant, equal-time, and unsupported-type rendering and verify with agent-browser. |
+| Raw rejected payloads could expose unsafe or malformed data | Low | High | Persist and expose no rejected value; retain only disposition, rejection code, and safe timestamps. |
+| `ReadRepository` expansion silently invalidates broad test fakes | High | Low | List and update existing fakes explicitly; compile the full repository under `mise run validate`. |
+
+## Trade-offs Made
+
+| Chose | Over | Because |
+|---|---|---|
+| Enrich `observation_receipts` | A duplicate `entity_state_history` table | Receipts already have the required cardinality, ordering, metadata, transaction, and retention; enrichment avoids a second insert and contradictory foreign keys. |
+| Directly modify migration 00001 | Add migration 00002 and backfill an anchor | Hearth has no deployments, past values cannot be reconstructed, and project policy prefers direct changes without compatibility work. |
+| `state-updates` default | Misnamed `state-changes` or `all` | Both applied and unchanged Observations advance canonical State evidence, while rejected diagnostics remain opt-in. |
+| Current-page chart | Unbounded/time-range chart | It preserves bounded endpoint work and avoids adding time filters or a chart-specific query. |
+| Agent-browser acceptance | A new frontend test framework | It verifies rendered behavior and interaction without adding a dependency; pure backend contracts remain covered by Go tests. |
+| Receipt retention | Indefinite State-history retention | It reuses an established bounded lifecycle and requires no new prune/configuration path, at the cost of not being a long-term analytics store. |
+
+## Open Questions
+
+No unresolved product or architecture questions remain. Persistence location, default filter semantics, and dashboard verification were confirmed during refinement.
+
+---
+Phase: REFINE | Waiting for: user approval
