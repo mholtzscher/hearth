@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.3.0](https://github.com/mholtzscher/hearth/compare/v0.2.0...v0.3.0) (2026-09-04)
+
+
+### Features
+
+* **adapter:** add owned mapping inventory ([#44](https://github.com/mholtzscher/hearth/issues/44)) ([ffd27d7](https://github.com/mholtzscher/hearth/commit/ffd27d713b7274deb7d5656682c1c2a5486838e6))
+* **adapter:** add Zigbee2MQTT adapter ([#47](https://github.com/mholtzscher/hearth/issues/47)) ([6bc6371](https://github.com/mholtzscher/hearth/commit/6bc63719e19aed38a6b8b2afaff875d8b48fbc3c))
+* **adapter:** plan Zigbee2MQTT entities ([#50](https://github.com/mholtzscher/hearth/issues/50)) ([b02d431](https://github.com/mholtzscher/hearth/commit/b02d431ce0e3b8ed1ede92ed3e0edc3070c72929))
+* add adapter health and entity availability ([#30](https://github.com/mholtzscher/hearth/issues/30)) ([fd9d55b](https://github.com/mholtzscher/hearth/commit/fd9d55bf7d310d7c377346dc5cd0de5d256aeb9a))
+* **devices:** add entity enablement ([#24](https://github.com/mholtzscher/hearth/issues/24)) ([f131515](https://github.com/mholtzscher/hearth/commit/f131515a7ef42d7bffffc7417a2cff7d408bc168))
+* **web:** add hearth debug dashboard ([#49](https://github.com/mholtzscher/hearth/issues/49)) ([36b297b](https://github.com/mholtzscher/hearth/commit/36b297ba7aadc9df29ce8045eb4e045af6cfd0ad))
+
 ## [0.2.0](https://github.com/mholtzscher/hearth/compare/v0.1.0...v0.2.0) (2026-08-26)
 
 
