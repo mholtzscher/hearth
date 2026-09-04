@@ -9,6 +9,7 @@ golangci-lint = "latest"
 ko = "latest"
 sqlc = "latest"
 "github:go-gremlins/gremlins" = "0.6.0"
+"npm:mqtt" = "5.15.2"
 
 [tasks."generate"]
 description = "Regenerate checked-in code"

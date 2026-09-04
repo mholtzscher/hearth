@@ -286,6 +286,9 @@ url = "https://nodejs.org/dist/v26.6.0/node-v26.6.0-darwin-x64.tar.gz"
 [tools.node."platforms.windows-x64"]
 checksum = "sha256:aa81c8552f251ff280134985ccdaf16d336e2961b1e2c3eeb7b7b2221509f723"
 url = "https://nodejs.org/dist/v26.6.0/node-v26.6.0-win-x64.zip"
+[[tools."npm:mqtt"]]
+version = "5.15.2"
+backend = "npm:mqtt"
 
 [[tools.sqlc]]
 version = "1.31.1"
