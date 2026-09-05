@@ -12,7 +12,7 @@ import (
 
 const deleteExpiredObservations = `-- name: DeleteExpiredObservations :execrows
 DELETE FROM observations
-WHERE julianday(expires_at) < julianday(CAST(?1 AS TEXT))
+WHERE observed_at < CAST(?1 AS TEXT)
   AND NOT EXISTS (
       SELECT 1
       FROM entity_states
@@ -21,11 +21,11 @@ WHERE julianday(expires_at) < julianday(CAST(?1 AS TEXT))
 `
 
 type DeleteExpiredObservationsParams struct {
-	ExpiresAt string
+	ObservedAt string
 }
 
 func (q *Queries) DeleteExpiredObservations(ctx context.Context, arg DeleteExpiredObservationsParams) (int64, error) {
-	result, err := q.db.ExecContext(ctx, deleteExpiredObservations, arg.ExpiresAt)
+	result, err := q.db.ExecContext(ctx, deleteExpiredObservations, arg.ObservedAt)
 	if err != nil {
 		return 0, err
 	}
@@ -34,7 +34,7 @@ func (q *Queries) DeleteExpiredObservations(ctx context.Context, arg DeleteExpir
 
 const getObservation = `-- name: GetObservation :one
 SELECT receive_order, observation_id, adapter_id, runtime_id, entity_id,
-       disposition, rejection_code, adapter_received_at, observed_at, expires_at
+       disposition, rejection_code, adapter_received_at, observed_at
 FROM observations
 WHERE observation_id = ?
 `
@@ -53,7 +53,6 @@ type GetObservationRow struct {
 	RejectionCode     sql.NullString
 	AdapterReceivedAt string
 	ObservedAt        string
-	ExpiresAt         string
 }
 
 func (q *Queries) GetObservation(ctx context.Context, arg GetObservationParams) (GetObservationRow, error) {
@@ -69,7 +68,6 @@ func (q *Queries) GetObservation(ctx context.Context, arg GetObservationParams) 
 		&i.RejectionCode,
 		&i.AdapterReceivedAt,
 		&i.ObservedAt,
-		&i.ExpiresAt,
 	)
 	return i, err
 }
@@ -78,8 +76,8 @@ const insertObservation = `-- name: InsertObservation :one
 INSERT INTO observations (
     observation_id, adapter_id, runtime_id, entity_id, disposition,
     rejection_code, state_value_json, adapter_received_at, source_updated_at,
-    observed_at, expires_at
-) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    observed_at
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 RETURNING receive_order
 `
 
@@ -94,7 +92,6 @@ type InsertObservationParams struct {
 	AdapterReceivedAt string
 	SourceUpdatedAt   sql.NullString
 	ObservedAt        string
-	ExpiresAt         string
 }
 
 func (q *Queries) InsertObservation(ctx context.Context, arg InsertObservationParams) (int64, error) {
@@ -109,7 +106,6 @@ func (q *Queries) InsertObservation(ctx context.Context, arg InsertObservationPa
 		arg.AdapterReceivedAt,
 		arg.SourceUpdatedAt,
 		arg.ObservedAt,
-		arg.ExpiresAt,
 	)
 	var receive_order int64
 	err := row.Scan(&receive_order)

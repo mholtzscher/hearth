@@ -503,8 +503,8 @@ func TestObservationPruningPinsCurrentStateUntilItAdvances(t *testing.T) {
 		t.Fatal(projectionErr)
 	}
 
-	cutoff := start.Add(ObservationRetention + 2*time.Hour)
-	if pruneErr := service.DeleteExpiredObservations(ctx, cutoff); pruneErr != nil {
+	cutoff := start.Add(2 * time.Hour)
+	if pruneErr := service.DeleteExpiredObservations(ctx, cutoff, time.Hour); pruneErr != nil {
 		t.Fatal(pruneErr)
 	}
 	assertObservationIDs(t, database, []ObservationID{second.ID})
@@ -515,10 +515,139 @@ func TestObservationPruningPinsCurrentStateUntilItAdvances(t *testing.T) {
 	); projectionErr != nil {
 		t.Fatal(projectionErr)
 	}
-	if pruneErr := service.DeleteExpiredObservations(ctx, cutoff.Add(time.Second)); pruneErr != nil {
+	if pruneErr := service.DeleteExpiredObservations(
+		ctx, cutoff.Add(time.Second), time.Hour,
+	); pruneErr != nil {
 		t.Fatal(pruneErr)
 	}
 	assertObservationIDs(t, database, []ObservationID{third.ID})
+}
+
+// This test protects the exclusive retention cutoff keyed on Core observed
+// time across applied, unchanged, and rejected dispositions. It fails if the
+// comparison becomes inclusive or reads Adapter or source timestamps instead.
+func TestObservationPruningUsesCoreObservedTimeExclusively(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	database := openRegistrationDatabase(t, filepath.Join(t.TempDir(), "hearth.db"))
+	catalog := firstLightCatalog(t)
+	service := newTestService(NewSQLiteRepository(database, catalog), nil, catalog, Dependencies{})
+	binding, err := service.Register(ctx, "simulator", testRuntimeID, validDomainRegistration())
+	if err != nil {
+		t.Fatal(err)
+	}
+	entityID := binding.Entities[0].EntityID
+	cutoff := time.Date(2026, 8, 1, 1, 0, 0, 0, time.UTC)
+	oldSource := cutoff.Add(-30 * 24 * time.Hour)
+
+	project := func(
+		value string,
+		observedAt, adapterReceivedAt time.Time,
+		source *time.Time,
+		want ObservationDisposition,
+	) Observation {
+		t.Helper()
+		observation := newObservation(t, entityID, value, adapterReceivedAt)
+		observation.SourceUpdatedAt = source
+		result, projectionErr := service.ProjectObservation(
+			ctx, "simulator", testRuntimeID, observation, observedAt,
+		)
+		if projectionErr != nil {
+			t.Fatal(projectionErr)
+		}
+		if result.Disposition != want {
+			t.Fatalf("project %s at %s disposition = %s, want %s", value, observedAt, result.Disposition, want)
+		}
+		return observation
+	}
+
+	// A newer Adapter timestamp does not protect an old observation.
+	project(`false`, cutoff.Add(-2*time.Hour), cutoff.Add(time.Hour), nil, DispositionApplied)
+	// Repeating the current value is unchanged through the same projection
+	// path, and the newer Adapter timestamp still does not protect it.
+	project(`false`, cutoff.Add(-time.Nanosecond), cutoff.Add(time.Hour), nil, DispositionUnchanged)
+	// Old Adapter and source timestamps do not condemn observations exactly
+	// on the cutoff; the boundary itself is retained.
+	edgeAdapter := project(
+		`true`, cutoff, cutoff.Add(-30*24*time.Hour), nil, DispositionApplied,
+	)
+	edgeUnchanged := project(`true`, cutoff, cutoff, &oldSource, DispositionUnchanged)
+	// Rejected observations follow the same observed_at rule.
+	project(`1`, cutoff.Add(-time.Nanosecond), cutoff, nil, DispositionRejected)
+	rejectedEdge := project(`1`, cutoff, cutoff, nil, DispositionRejected)
+	// The anchor row is newer than the cutoff either way.
+	anchor := project(`false`, cutoff.Add(time.Hour), cutoff.Add(time.Hour), nil, DispositionApplied)
+
+	if pruneErr := service.DeleteExpiredObservations(
+		ctx, cutoff.Add(time.Hour), time.Hour,
+	); pruneErr != nil {
+		t.Fatal(pruneErr)
+	}
+	assertObservationIDs(
+		t, database,
+		[]ObservationID{edgeAdapter.ID, edgeUnchanged.ID, rejectedEdge.ID, anchor.ID},
+	)
+}
+
+// This test protects retention policy changes applying to already persisted
+// rows and fails if prune results depend on values stored at insert time.
+func TestObservationPruningAppliesChangedPolicyToPersistedData(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	database := openRegistrationDatabase(t, filepath.Join(t.TempDir(), "hearth.db"))
+	catalog := firstLightCatalog(t)
+	service := newTestService(NewSQLiteRepository(database, catalog), nil, catalog, Dependencies{})
+	binding, err := service.Register(ctx, "simulator", testRuntimeID, validDomainRegistration())
+	if err != nil {
+		t.Fatal(err)
+	}
+	entityID := binding.Entities[0].EntityID
+	base := time.Date(2026, 8, 1, 0, 0, 0, 0, time.UTC)
+	var ids []ObservationID
+	for index, value := range []string{`false`, `true`, `false`} {
+		observation := newObservation(t, entityID, value, base.Add(time.Duration(index)*time.Hour))
+		if _, projectionErr := service.ProjectObservation(
+			ctx, "simulator", testRuntimeID, observation, base.Add(time.Duration(index)*time.Hour),
+		); projectionErr != nil {
+			t.Fatal(projectionErr)
+		}
+		ids = append(ids, observation.ID)
+	}
+
+	now := base.Add(3 * time.Hour)
+	if pruneErr := service.DeleteExpiredObservations(ctx, now, 2*time.Hour); pruneErr != nil {
+		t.Fatal(pruneErr)
+	}
+	assertObservationIDs(t, database, ids[1:])
+
+	// Increasing the window preserves the surviving rows without resurrecting
+	// the already deleted observation; the current-State anchor survives regardless.
+	if pruneErr := service.DeleteExpiredObservations(ctx, now, 10*time.Hour); pruneErr != nil {
+		t.Fatal(pruneErr)
+	}
+	assertObservationIDs(t, database, ids[1:])
+
+	// Shortening the window prunes the same persisted rows further without
+	// rewriting them; the current-State anchor survives regardless.
+	if pruneErr := service.DeleteExpiredObservations(ctx, now, 30*time.Minute); pruneErr != nil {
+		t.Fatal(pruneErr)
+	}
+	assertObservationIDs(t, database, ids[2:])
+}
+
+func TestObservationPruningRejectsMissingTimeAndRetention(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	database := openRegistrationDatabase(t, filepath.Join(t.TempDir(), "hearth.db"))
+	catalog := firstLightCatalog(t)
+	service := newTestService(NewSQLiteRepository(database, catalog), nil, catalog, Dependencies{})
+	now := time.Date(2026, 8, 1, 0, 0, 0, 0, time.UTC)
+	if err := service.DeleteExpiredObservations(ctx, time.Time{}, time.Hour); err == nil {
+		t.Fatal("prune without a prune time unexpectedly succeeded")
+	}
+	if err := service.DeleteExpiredObservations(ctx, now, 0); err == nil {
+		t.Fatal("prune without a retention unexpectedly succeeded")
+	}
 }
 
 func newObservation(t *testing.T, entityID EntityID, value string, adapterReceivedAt time.Time) Observation {

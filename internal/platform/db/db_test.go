@@ -81,6 +81,7 @@ func TestMigrateEmptySQLiteDatabase(t *testing.T) {
 	assertIndexColumns(t, database, "adapter_runtimes_one_active_idx", "adapter_id")
 	assertIndexColumns(t, database, "adapter_runtimes_adapter_idx", "adapter_id")
 	assertIndexColumns(t, database, "observations_entity_history_idx", "entity_id,receive_order")
+	assertIndexColumns(t, database, "observations_observed_at_idx", "observed_at")
 	assertIndexColumns(
 		t,
 		database,
@@ -186,7 +187,7 @@ func TestIDPrefixConstraintsRequireLiteralUnderscore(t *testing.T) {
 	assertWriteRejected(
 		t,
 		database,
-		`INSERT INTO observations (observation_id, adapter_id, entity_id, disposition, state_value_json, adapter_received_at, observed_at, expires_at) VALUES ('obsXbad', 'adapter', 'ent_valid', 'applied', 'true', 'now', 'now', 'later')`,
+		`INSERT INTO observations (observation_id, adapter_id, entity_id, disposition, state_value_json, adapter_received_at, observed_at) VALUES ('obsXbad', 'adapter', 'ent_valid', 'applied', 'true', 'now', 'now')`,
 	)
 }
 
@@ -202,19 +203,22 @@ func TestDeleteExpiredObservationsComparesTimestampsChronologically(t *testing.T
 		t.Fatal(err)
 	}
 
+	// Fixed-width observed_at values compare lexicographically, including
+	// fractional seconds around the cutoff.
 	for _, observation := range []struct {
-		id        string
-		expiresAt string
+		id         string
+		observedAt string
 	}{
-		{id: "obs_past", expiresAt: "2026-08-22T11:59:59.5Z"},
-		{id: "obs_future", expiresAt: "2026-08-22T12:00:00.5Z"},
+		{id: "obs_past", observedAt: "2026-08-22T11:59:59.500000000Z"},
+		{id: "obs_cutoff", observedAt: "2026-08-22T12:00:00.000000000Z"},
+		{id: "obs_future", observedAt: "2026-08-22T12:00:00.500000000Z"},
 	} {
 		_, err := database.ExecContext(ctx, `
 			INSERT INTO observations (
 				observation_id, adapter_id, entity_id, disposition, state_value_json,
-				adapter_received_at, observed_at, expires_at
-			) VALUES (?, 'adapter', 'ent_entity', 'applied', 'true', ?, ?, ?)`,
-			observation.id, "2026-08-22T11:00:00Z", "2026-08-22T11:00:00Z", observation.expiresAt,
+				adapter_received_at, observed_at
+			) VALUES (?, 'adapter', 'ent_entity', 'applied', 'true', ?, ?)`,
+			observation.id, "2026-08-22T11:00:00.000000000Z", observation.observedAt,
 		)
 		if err != nil {
 			t.Fatal(err)
@@ -223,7 +227,7 @@ func TestDeleteExpiredObservationsComparesTimestampsChronologically(t *testing.T
 
 	deleted, err := dbsqlc.New(database).
 		DeleteExpiredObservations(ctx, dbsqlc.DeleteExpiredObservationsParams{
-			ExpiresAt: "2026-08-22T12:00:00Z",
+			ObservedAt: "2026-08-22T12:00:00.000000000Z",
 		})
 	if err != nil {
 		t.Fatal(err)
@@ -231,13 +235,24 @@ func TestDeleteExpiredObservationsComparesTimestampsChronologically(t *testing.T
 	if deleted != 1 {
 		t.Fatalf("deleted observations = %d, want 1", deleted)
 	}
-	var remaining string
-	if scanErr := database.QueryRowContext(ctx, `SELECT observation_id FROM observations`).
-		Scan(&remaining); scanErr != nil {
-		t.Fatal(scanErr)
+	rows, queryErr := database.QueryContext(ctx, `SELECT observation_id FROM observations ORDER BY observed_at`)
+	if queryErr != nil {
+		t.Fatal(queryErr)
 	}
-	if remaining != "obs_future" {
-		t.Fatalf("remaining observation = %q, want obs_future", remaining)
+	defer rows.Close()
+	var remaining []string
+	for rows.Next() {
+		var id string
+		if scanErr := rows.Scan(&id); scanErr != nil {
+			t.Fatal(scanErr)
+		}
+		remaining = append(remaining, id)
+	}
+	if rowsErr := rows.Err(); rowsErr != nil {
+		t.Fatal(rowsErr)
+	}
+	if len(remaining) != 2 || remaining[0] != "obs_cutoff" || remaining[1] != "obs_future" {
+		t.Fatalf("remaining observations = %v, want [obs_cutoff obs_future]", remaining)
 	}
 }
 

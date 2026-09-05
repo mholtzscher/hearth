@@ -523,7 +523,7 @@ type SimulatorConfig struct {
 }
 ```
 
-Protocol limits are not YAML fields: the built-in `hearth.power/v1` `set` definition supplies its ten-second Command deadline; fixed v1 transport/storage constants are the one-minute future-clock diagnostic threshold, seven-day/one-GiB stream, 30-second acknowledgement wait, one pending acknowledgement, and `observed_at + 192h` observation expiry with the current-State observation pinned. Command records are not pruned in this slice; retention policy awaits a history interface.
+Protocol limits are not YAML fields: the built-in `hearth.power/v1` `set` definition supplies its ten-second Command deadline; fixed v1 transport/storage constants are the one-minute future-clock diagnostic threshold, seven-day/one-GiB stream, 30-second acknowledgement wait, and one pending acknowledgement. Observation retention is configurable through the single `observation_retention` core setting (default 30 days, minimum 8 days) with the current-State observation pinned: each hourly prune deletes non-current observations with `observed_at` older than the window. Command records are not pruned in this slice; retention policy awaits a history interface.
 
 ## Interfaces
 
@@ -841,15 +841,14 @@ CREATE TABLE observations (
     ),
     adapter_received_at TEXT NOT NULL,
     observed_at         TEXT NOT NULL,
-    expires_at          TEXT NOT NULL,
     CHECK (
         (disposition = 'rejected' AND rejection_code IS NOT NULL)
         OR (disposition <> 'rejected' AND rejection_code IS NULL)
     )
 );
 
-CREATE INDEX observations_expiry_idx
-    ON observations(expires_at);
+CREATE INDEX observations_observed_at_idx
+    ON observations(observed_at);
 
 CREATE TABLE entity_states (
     entity_id           TEXT PRIMARY KEY REFERENCES entities(id) ON DELETE CASCADE,
@@ -863,7 +862,7 @@ CREATE TABLE entity_states (
 
 -- +goose Down
 DROP TABLE entity_states;
-DROP INDEX observations_expiry_idx;
+DROP INDEX observations_observed_at_idx;
 DROP TABLE observations;
 DROP TABLE adapter_entity_mappings;
 DROP TABLE adapter_bindings;
@@ -918,7 +917,7 @@ The pruning query excludes the observation referenced by current State:
 ```sql
 -- name: DeleteExpiredObservations :exec
 DELETE FROM observations
-WHERE expires_at < ?
+WHERE observed_at < ?
   AND NOT EXISTS (
       SELECT 1
       FROM entity_states
@@ -926,7 +925,7 @@ WHERE expires_at < ?
   );
 ```
 
-Checking `observation_id` protects both State foreign keys because they reference the same observation. Superseded State observations become eligible at the next pruning pass.
+Checking `observation_id` protects both State foreign keys because they reference the same observation. The cutoff derives from Core now minus the configured retention on each hourly pass, so policy changes apply to already persisted rows without rewriting them. Superseded State observations become eligible at the next pruning pass.
 
 `RegisterBinding`, `ProjectObservation`, and all Command transitions own their SQLite transactions behind the repository; generated sqlc types never cross that seam. The concrete `devices` repository receives the same required `TypeCatalog` instance as the service so projection can validate values, compare State, and evaluate a linked Command's outcome policy inside the transaction. Projection atomically inserts the observation, updates State, and satisfies a matching active Command. Registration stores the catalog-normalized `support_json` in the existing binding transaction; re-registration replaces that one document atomically.
 
@@ -942,9 +941,9 @@ For each schema-valid Observation, one transaction:
 4. Validate the generic JSON value through the Entity-type catalog; record `rejected/invalid_value` when it violates the registered State schema. Unknown catalog IDs in persisted Entities are an internal configuration failure, not an adapter-input rejection.
 5. Insert the observation with the next internal `receive_order`. For a known, correctly owned Entity with a valid value, advance State regardless of timestamps: no current State or a value the catalog considers different is `applied`; a value the catalog considers equivalent is `unchanged`.
 6. An `applied`/`unchanged` Observation with `refresh_for_command_id` satisfies only an active `requested`/`accepted` Command for the same Entity/adapter when its catalog outcome policy matches the Command operation and parameters. Set `completed_at`/`outcome_observation_id` and notify its waiter. No rejected, nonmatching, wrong-identity, or terminal link satisfies a Command.
-7. Set observation expiry to `observed_at + 192h`, then atomically commit observation, State, and satisfaction before JetStream acknowledgement.
+7. Atomically commit observation, State, and satisfaction before JetStream acknowledgement. No per-row expiry is stored.
 
-At startup and hourly, delete expired observations except the current-State observation; it becomes eligible after State advances.
+On the hourly pass, delete non-current observations with `observed_at` older than the configured window, except the current-State observation; it becomes eligible after State advances. Startup performs no prune.
 
 ## Home Assistant adapter
 
@@ -1005,7 +1004,7 @@ Core startup order:
 1. Parse and validate YAML.
 2. Open SQLite; enable foreign keys/WAL/busy timeout; apply Goose migrations.
 3. Mark any `requested` or `accepted` Command records `interrupted` with failure code `core_restarted`; do not redispatch them.
-4. Delete expired Observations not referenced by current State.
+4. Perform no observation prune; retained history waits for the next hourly pass.
 5. Connect to NATS.
 6. Idempotently provision/validate the stream and durable consumer.
 7. Construct and validate the closed first-light Entity-type catalog.
@@ -1095,7 +1094,7 @@ Total relative effort is **XL**. No calendar estimate is asserted.
 - [x] Re-registration returns identical IDs, replaces normalized Entity support, and updates the Entity name returned by HTTP; both persist across restart. Conflicting binding/external mappings, an Entity type change, or catalog-invalid support return their schema-defined permanent rejection codes atomically without partial rows, and adapters do not retry them.
 - [x] A registered, unobserved Entity returns HTTP 200 with its configured metadata and `state: null`.
 - [x] A JetStream-acknowledged Observation survives restart; exact redelivery changes neither State nor observation count.
-- [x] Pruning deletes expired unreferenced observations, pins the current-State observation without foreign-key errors, then deletes it after State advances.
+- [x] Hourly pruning deletes non-current observations older than the configured window, pins the current-State observation without foreign-key errors, then deletes it after State advances.
 - [x] The generic wire and persistence paths round-trip the first-light JSON boolean without boolean-specific columns or DTO fields; the catalog rejects a schema-valid non-boolean Observation as `invalid_value` and rejects invalid `set` parameters before Command creation or dispatch.
 - [x] A later-received Observation advances State even when its `adapter_received_at` is older; a catalog-equivalent value advances State evidence/timestamps as `unchanged`; adapter clock skew beyond the threshold is logged but accepted; wrong-owner, unknown-Entity, invalid-value, and malformed input produce the specified rejection/diagnostic/acknowledgement behavior.
 - [x] Every dispatched Command first commits `requested`; record-creation failure prevents dispatch.

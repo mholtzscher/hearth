@@ -24,7 +24,7 @@ const (
 	natsReconnectWait        = 250 * time.Millisecond
 )
 
-//nolint:gocognit,gocyclo,cyclop // Startup and shutdown remain linear so resource ownership is visible in one place.
+//nolint:gocognit // Startup and shutdown remain linear so resource ownership is visible in one place.
 func Run(ctx context.Context, config Config, logger *slog.Logger) error { //nolint:funlen // Linear resource lifecycle.
 	if err := config.Validate(); err != nil {
 		return err
@@ -49,9 +49,8 @@ func Run(ctx context.Context, config Config, logger *slog.Logger) error { //noli
 	if err := repository.InterruptActiveCommands(ctx, startupTime); err != nil {
 		return fmt.Errorf("interrupt active commands: %w", err)
 	}
-	if err := repository.DeleteExpiredObservations(ctx, startupTime); err != nil {
-		return fmt.Errorf("prune observations: %w", err)
-	}
+	// Observation pruning runs only on the hourly pass below, so startup never
+	// sweeps retained history and uptime under one hour means no sweep yet.
 
 	connection, connectErr := connectCoreNATS(ctx, config.NATSURL)
 	if connectErr != nil {
@@ -119,7 +118,7 @@ func Run(ctx context.Context, config Config, logger *slog.Logger) error { //noli
 	go func() {
 		serverErrors <- server.ListenAndServe()
 	}()
-	go pruneObservations(ctx, service, logger)
+	go pruneObservations(ctx, service, logger, config.EffectiveObservationRetention())
 
 	select {
 	case err := <-serverErrors:
@@ -185,7 +184,12 @@ func connectCoreNATS(ctx context.Context, url string) (*natsgo.Conn, error) {
 	return connection, nil
 }
 
-func pruneObservations(ctx context.Context, service *devices.Service, logger *slog.Logger) {
+func pruneObservations(
+	ctx context.Context,
+	service *devices.Service,
+	logger *slog.Logger,
+	retention time.Duration,
+) {
 	ticker := time.NewTicker(observationPruneInterval)
 	defer ticker.Stop()
 	for {
@@ -193,7 +197,7 @@ func pruneObservations(ctx context.Context, service *devices.Service, logger *sl
 		case <-ctx.Done():
 			return
 		case now := <-ticker.C:
-			if err := service.DeleteExpiredObservations(ctx, now.UTC()); err != nil {
+			if err := service.DeleteExpiredObservations(ctx, now.UTC(), retention); err != nil {
 				logger.ErrorContext(ctx, "prune observations", "error", err)
 			}
 		}

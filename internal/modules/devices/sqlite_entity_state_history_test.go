@@ -324,15 +324,16 @@ func TestSQLiteEntityStateHistorySurvivesInsertsAndPruning(t *testing.T) {
 		}
 	}
 
-	// Expire every observation below the cursor, including the cursor row itself,
-	// then prune. The cursor must stay valid and report an empty final page.
+	// Age every observation below the cursor past the retention window,
+	// including the cursor row itself, then prune. The cursor must stay valid
+	// and report an empty final page.
 	if _, err = database.ExecContext(ctx,
-		`UPDATE observations SET expires_at = ? WHERE entity_id = ? AND receive_order < ?`,
-		formatTime(base.Add(-time.Hour)), string(entityID), newerCursor(t, database, newer[0]),
+		`UPDATE observations SET observed_at = ? WHERE entity_id = ? AND receive_order < ?`,
+		formatSortableTime(base.Add(-time.Hour)), string(entityID), newerCursor(t, database, newer[0]),
 	); err != nil {
 		t.Fatal(err)
 	}
-	if err = service.DeleteExpiredObservations(ctx, base.Add(time.Hour)); err != nil {
+	if err = service.DeleteExpiredObservations(ctx, base.Add(time.Hour), time.Hour); err != nil {
 		t.Fatal(err)
 	}
 	afterPrune, err := repository.ListEntityStateHistory(ctx, ListEntityStateHistoryParams{
@@ -377,14 +378,11 @@ func TestSQLiteEntityStateHistoryRetentionKeepsCurrentAnchor(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if _, err := database.ExecContext(ctx,
-		`UPDATE observations SET expires_at = ? WHERE entity_id = ?`,
-		formatTime(base.Add(time.Hour)), string(entityID),
-	); err != nil {
-		t.Fatal(err)
-	}
+	// Retention derives from observed_at on each prune, so both rows predate
+	// the cutoff; the prune must still keep the observation backing current
+	// State until a newer State supersedes it.
 	if err := service.DeleteExpiredObservations(
-		ctx, base.Add(ObservationRetention+2*time.Hour),
+		ctx, base.Add(30*24*time.Hour+2*time.Hour), 30*24*time.Hour,
 	); err != nil {
 		t.Fatal(err)
 	}
@@ -501,7 +499,7 @@ func seedTargetHistory(
 	t.Helper()
 	ctx := context.Background()
 	timestamp := formatTime(time.Date(2026, 8, 22, 12, 0, 0, 0, time.UTC))
-	expiry := formatTime(time.Date(2026, 8, 30, 12, 0, 0, 0, time.UTC))
+	observedAt := formatSortableTime(time.Date(2026, 8, 22, 12, 0, 0, 0, time.UTC))
 	transaction, err := database.BeginTx(ctx, nil)
 	if err != nil {
 		t.Fatal(err)
@@ -519,10 +517,10 @@ func seedTargetHistory(
 			)
 			INSERT INTO observations (
 				observation_id, adapter_id, entity_id, disposition, rejection_code,
-				state_value_json, adapter_received_at, observed_at, expires_at
-			) SELECT printf('obs_seed_%08d', ? + n - 1), 'simulator', ?, ?, ?, ?, ?, ?, ?
+				state_value_json, adapter_received_at, observed_at
+			) SELECT printf('obs_seed_%08d', ? + n - 1), 'simulator', ?, ?, ?, ?, ?, ?
 			FROM seq ORDER BY n`,
-			count, offset, string(target), disposition, rejection, value, timestamp, timestamp, expiry,
+			count, offset, string(target), disposition, rejection, value, timestamp, observedAt,
 		); execErr != nil {
 			t.Fatal(execErr)
 		}

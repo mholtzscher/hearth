@@ -190,8 +190,8 @@ CREATE TABLE observations (
     ),
     adapter_received_at TEXT NOT NULL,
     source_updated_at   TEXT,
+    -- Fixed-width UTC timestamps so the retention cutoff compares lexicographically.
     observed_at         TEXT NOT NULL,
-    expires_at          TEXT NOT NULL,
     CHECK (
         (disposition = 'rejected'
             AND rejection_code IS NOT NULL
@@ -202,8 +202,8 @@ CREATE TABLE observations (
     )
 );
 
-CREATE INDEX observations_expiry_idx
-    ON observations(expires_at);
+CREATE INDEX observations_observed_at_idx
+    ON observations(observed_at);
 
 CREATE INDEX observations_entity_history_idx
     ON observations(entity_id, receive_order DESC);
@@ -340,7 +340,7 @@ DROP TABLE entity_states;
 DROP INDEX observations_entity_updates_history_idx;
 DROP INDEX observations_entity_disposition_history_idx;
 DROP INDEX observations_entity_history_idx;
-DROP INDEX observations_expiry_idx;
+DROP INDEX observations_observed_at_idx;
 DROP TABLE observations;
 DROP TABLE adapter_entity_mappings;
 DROP TABLE adapter_bindings;

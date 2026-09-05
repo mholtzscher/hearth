@@ -91,8 +91,8 @@ func (repository *SQLiteRepository) ProjectObservation(
 		StateValueJson:    nullableStateValue(disposition, normalized),
 		AdapterReceivedAt: formatTime(params.Observation.AdapterReceivedAt),
 		SourceUpdatedAt:   nullableTime(params.Observation.SourceUpdatedAt),
-		ObservedAt:        formatTime(params.ObservedAt),
-		ExpiresAt:         formatTime(params.ExpiresAt),
+		// Fixed-width observed_at keeps the retention cutoff lexicographically comparable.
+		ObservedAt: formatSortableTime(params.ObservedAt),
 	})
 	if err != nil {
 		return ProjectionResult{}, fmt.Errorf("insert observation: %w", err)
@@ -354,7 +354,7 @@ func (repository *SQLiteRepository) satisfyCommand(
 func (repository *SQLiteRepository) DeleteExpiredObservations(ctx context.Context, before time.Time) error {
 	_, err := repository.queries.
 		DeleteExpiredObservations(ctx, dbsqlc.DeleteExpiredObservationsParams{
-			ExpiresAt: formatTime(before),
+			ObservedAt: formatSortableTime(before),
 		})
 	if err != nil {
 		return fmt.Errorf("delete expired observations: %w", err)

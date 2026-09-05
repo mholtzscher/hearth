@@ -8,8 +8,6 @@ import (
 	"time"
 )
 
-const ObservationRetention = 192 * time.Hour
-
 func (service *Service) ProjectObservation(
 	ctx context.Context,
 	adapterID string,
@@ -51,7 +49,6 @@ func (service *Service) ProjectObservation(
 		Observation: copyObservation(observation),
 		ObservedAt:  observedAt,
 		Now:         service.dependencies.Now,
-		ExpiresAt:   observedAt.Add(ObservationRetention),
 	}
 	result, err := service.stores.Observations.ProjectObservation(ctx, params)
 	if err != nil {
@@ -63,11 +60,26 @@ func (service *Service) ProjectObservation(
 	return copyProjectionResult(result), nil
 }
 
-func (service *Service) DeleteExpiredObservations(ctx context.Context, before time.Time) error {
-	if before.IsZero() {
-		return errors.New("observation expiry cutoff is required")
+// DeleteExpiredObservations deletes non-current observations older than the
+// retention window. The cutoff derives from the supplied Core now minus the
+// retention window and is compared against core-owned observed_at on each
+// prune, so retention policy changes apply to already persisted rows.
+// Adapter and source timestamps never affect eligibility.
+func (service *Service) DeleteExpiredObservations(
+	ctx context.Context,
+	now time.Time,
+	retention time.Duration,
+) error {
+	if now.IsZero() {
+		return errors.New("observation prune time is required")
 	}
-	return service.stores.Observations.DeleteExpiredObservations(ctx, before.UTC())
+	if retention <= 0 {
+		return errors.New("observation retention must be positive")
+	}
+	return service.stores.Observations.DeleteExpiredObservations(
+		ctx,
+		now.UTC().Add(-retention),
+	)
 }
 
 func copyObservation(observation Observation) Observation {

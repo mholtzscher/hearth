@@ -167,5 +167,4 @@ type Observation struct {
 	AdapterReceivedAt string
 	SourceUpdatedAt   sql.NullString
 	ObservedAt        string
-	ExpiresAt         string
 }

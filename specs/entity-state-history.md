@@ -33,7 +33,7 @@ Expose retained observations through:
 GET /v1/entities/{entity_id}/state/history
 ```
 
-The dashboard adds an Entity State history section with an endpoint-scoped filter, cursor pagination, a compact dependency-free SVG step chart, and a diagnostic table. History follows the existing Observation lifecycle: normally 192 hours, while the observation backing current State remains preserved until a newer State supersedes it and pruning makes it eligible.
+The dashboard adds an Entity State history section with an endpoint-scoped filter, cursor pagination, a compact dependency-free SVG step chart, and a diagnostic table. History follows the existing Observation lifecycle: normally 30 days under the single Observation retention setting, while the observation backing current State remains preserved until a newer State supersedes it and pruning makes it eligible.
 
 ### Recorded observations
 
@@ -66,7 +66,7 @@ Total: **XL**, approximately 2–4 focused days. The principal estimate risks ar
 - No history mutation, replay, or recovery from the JetStream stream.
 - No reconstruction of values received before this feature starts recording them.
 - No additional time-range filters, sorts, totals, offsets, or cross-Entity history queries.
-- No configurable State-history retention; it follows Observation retention.
+- No separate State-history retention setting; history follows the single Observation retention setting.
 - No new NATS subjects, JetStream consumers, SDK methods, or Adapter changes.
 - No raw rejected value persistence or exposure.
 - No authentication or network-exposure change.
@@ -294,7 +294,6 @@ Modify `internal/platform/db/migrations/00001_initial.sql`:
      adapter_received_at TEXT NOT NULL,
 +    source_updated_at   TEXT,
      observed_at         TEXT NOT NULL,
-     expires_at          TEXT NOT NULL,
      CHECK (
 -        (disposition = 'rejected' AND rejection_code IS NOT NULL)
 -        OR (disposition <> 'rejected' AND rejection_code IS NULL)
@@ -307,8 +306,8 @@ Modify `internal/platform/db/migrations/00001_initial.sql`:
      )
  );
 
- CREATE INDEX observations_expiry_idx
-     ON observations(expires_at);
+ CREATE INDEX observations_observed_at_idx
+     ON observations(observed_at);
 +
 +CREATE INDEX observations_entity_history_idx
 +    ON observations(entity_id, receive_order DESC);
@@ -367,9 +366,9 @@ Verify first and continuation pages for every filter with `EXPLAIN QUERY PLAN`: 
 
 ### Retention
 
-`DeleteExpiredObservations` remains unchanged. It deletes expired non-current observations, including their State-history values, and preserves the observation referenced by current `entity_states`. Once a newer State replaces that reference, an already-expired older observation becomes eligible on the next prune.
+One Core setting bounds Observation retention: `observation_retention` in the hearthd YAML configuration, defaulting to 30 days and rejecting values below 8 days (above the seven-day JetStream retention). No per-row expiry is stored. Each hourly prune deletes non-current observations with `observed_at < now - observation_retention`, including their State-history values, and preserves the observation referenced by current `entity_states`. Once a newer State replaces that reference, an already-aged older observation becomes eligible on the next pass. Retention changes therefore apply to already persisted observations without rewriting rows; increasing retention cannot restore already deleted history.
 
-History therefore normally covers at least the 192-hour observation window, not an unlimited audit log. One older current-State entry may remain as an anchor. No separate expiry field, cascade, prune loop, or configuration is added.
+History therefore normally covers at least the configured retention window, not an unlimited audit log. One older current-State entry may remain as an anchor. Pruning is eligibility on the hourly pass, not an exact TTL: uptime under one hour means no sweep has run yet, startup performs no prune, and a restart applies a changed setting on the next periodic pass. No separate history expiry field, archive, aggregate, soft delete, cascade, or additional prune loop is added.
 
 ## Public HTTP Contract
 
@@ -494,7 +493,7 @@ Each test protects an explicit behavior and should fail under a named plausible 
 | Repository integration | Filters, strict keyset ordering, `limit + 1`, final-page behavior | wrong predicate, skipped/duplicated rows, off-by-one | Seeded receive orders and expected disposition sets |
 | Repository integration | Every filter uses a selective ordered index on first and continuation pages | sparse/no-match filter scans unrelated observations or sorts full history | `EXPLAIN QUERY PLAN` on small skewed fixtures with sparse and absent matches |
 | Repository integration | Pagination remains valid across inserts and pruning | new rows appear below an old cursor, missing cursor row fails, or empty continuation errors | Insert newer observations and prune unseen observations between requests; assert strict order and valid empty final page |
-| Repository integration | Retention removes expired non-current rows and preserves current State's observation | prune deletes current anchor or leaks expired history | Existing observation-retention rule with real SQLite foreign/reference behavior |
+| Repository integration | Retention removes non-current rows older than the configured window and preserves current State's observation | prune deletes the current anchor, keys on Adapter/source time, or leaks aged history | Configured-window retention rule with real SQLite foreign/reference behavior |
 | Repository integration | JSON and timestamps map to owned domain values | sqlc leakage, aliasing, local/noncanonical times | Domain type contract and mutation-after-return checks |
 | Service unit | Validation precedes parent lookup/read; unknown parent is distinct from empty history | repository called on invalid input or 404 collapsed into empty page | Domain validation and `ErrEntityNotFound` contract |
 | Cursor unit | Canonical round trip and version/resource/parent/filter/order scoping | cursor reused across filters or Entities | Cursor interface defined above |
@@ -524,7 +523,7 @@ Normal-path scenarios establish integration behavior. Mocked responses establish
 - [x] Duplicate delivery writes no new observation or history entry.
 - [x] Unknown-Entity and stale-runtime rejections remain durable and do not fail an Entity foreign key.
 - [x] Every successful raw SQL fixture for an accepted observation supplies normalized `state_value_json`; intentionally invalid fixture inserts supply otherwise-valid columns to retain their original failure purpose.
-- [x] History uses the existing observation prune path: expired non-current entries disappear and the observation backing current State survives until superseded.
+- [x] History uses the existing observation prune path: non-current entries older than the configured retention window disappear and the observation backing current State survives until superseded.
 - [x] `GET /v1/entities/{entity_id}/state/history` matches the specified method, path, metadata, DTO, ordering, filters, cursor scope, and errors.
 - [x] `state-updates` consistently means `applied` plus `unchanged` in service, SQL, cursor, HTTP, and dashboard vocabulary.
 - [x] Every filter uses an indexed ordered search on first and continuation pages without scanning unrelated dispositions or sorting full Entity history; query plans are checked on small skewed fixtures, including sparse and absent matches.
@@ -572,7 +571,7 @@ Normal-path scenarios establish integration behavior. Mocked responses establish
 | Three indexed static query families | One generic filter-switch query | Extra index maintenance and query definitions prevent sparse filters from scanning unrelated history on the shared SQLite connection. |
 | Non-snapshot keyset pagination | Snapshot tokens or retention pins | Concurrent inserts and pruning have explicit semantics without long-lived transactions or additional retention machinery. |
 | Agent-browser acceptance | A new frontend test framework | It verifies rendered behavior and interaction without adding a dependency; pure backend contracts remain covered by Go tests. |
-| Observation retention | Indefinite State-history retention | It reuses an established bounded lifecycle and requires no new prune/configuration path, at the cost of not being a long-term analytics store. |
+| Observation retention | Indefinite State-history retention | It reuses an established bounded lifecycle with one retention setting and no new prune path, at the cost of not being a long-term analytics store. |
 
 ## Open Questions
 
@@ -583,7 +582,7 @@ Phase: IMPLEMENTED | Delivery: PR #53
 
 ## Implementation evidence
 
-- Projection integration tests cover normalized (not raw) JSON, every disposition, duplicate no-op behavior, unknown Entity rejections, and forced downstream State-write failure rolling back observation, State, and Command effects. Retention tests cover the current anchor, supersession, and pruning during pagination.
+- Projection integration tests cover normalized (not raw) JSON, every disposition, duplicate no-op behavior, unknown Entity rejections, and forced downstream State-write failure rolling back observation, State, and Command effects. Retention tests cover the current anchor, supersession, pruning during pagination, the exclusive `observed_at` boundary, Adapter/source-time independence, changed-policy pruning of persisted rows, and startup performing no prune.
 - Query-plan tests load the actual six named queries from `dbqueries/observations.sql`. Small unchanged-heavy and rejected-heavy histories retain sparse/absent matching and pagination assertions. First and continuation pages require the matching indexed search and no temporary ordering B-tree.
 - Implementation review explicitly removed the 100,000-row scale fixtures and concurrent latency test because their ongoing validation cost was not justified. Correctness, query-plan, and race-enabled repository validation remain; scale performance is not an acceptance gate.
 - Service, cursor, HTTP, and runtime OpenAPI tests cover validation, scoped canonical cursors, mutable ownership, filter traversal, omission rules, and empty/404/error distinctions.

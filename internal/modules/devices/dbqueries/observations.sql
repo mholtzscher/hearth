@@ -1,6 +1,6 @@
 -- name: GetObservation :one
 SELECT receive_order, observation_id, adapter_id, runtime_id, entity_id,
-       disposition, rejection_code, adapter_received_at, observed_at, expires_at
+       disposition, rejection_code, adapter_received_at, observed_at
 FROM observations
 WHERE observation_id = ?;
 
@@ -8,13 +8,13 @@ WHERE observation_id = ?;
 INSERT INTO observations (
     observation_id, adapter_id, runtime_id, entity_id, disposition,
     rejection_code, state_value_json, adapter_received_at, source_updated_at,
-    observed_at, expires_at
-) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    observed_at
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 RETURNING receive_order;
 
 -- name: DeleteExpiredObservations :execrows
 DELETE FROM observations
-WHERE julianday(expires_at) < julianday(CAST(sqlc.arg(expires_at) AS TEXT))
+WHERE observed_at < CAST(sqlc.arg(observed_at) AS TEXT)
   AND NOT EXISTS (
       SELECT 1
       FROM entity_states

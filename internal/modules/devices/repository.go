@@ -58,7 +58,6 @@ type ProjectObservationParams struct {
 	Observation Observation
 	ObservedAt  time.Time
 	Now         func() time.Time
-	ExpiresAt   time.Time
 }
 
 type AdapterReader interface {
