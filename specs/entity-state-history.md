@@ -1,6 +1,6 @@
 # Entity State History — Implementation Spec
 
-**Status:** In review
+**Status:** Implemented
 **Type:** Feature plan
 **Effort:** XL (approximately 2–4 focused days, 75% confidence)
 **Date:** 2026-09-04
@@ -335,7 +335,7 @@ Modify `internal/modules/devices/dbqueries/receipts.sql` so `InsertObservationRe
 
 Classification already produces `normalized`, `disposition`, and `rejection` before `InsertObservationReceipt`, so no new write step and no `persistObservationState` signature change are needed. Receipt insertion, State upsert, optional Command satisfaction, and commit remain one transaction.
 
-Update the successful raw SQL receipt fixtures in `internal/platform/db/db_test.go` and `internal/modules/devices/sqlite_reads_test.go` to include normalized `state_value_json` (`true` for their existing applied power Observations). The invalid-ID fixture in `db_test.go` intentionally expects rejection and remains unchanged.
+Update the successful raw SQL receipt fixtures in `internal/platform/db/db_test.go` and `internal/modules/devices/sqlite_reads_test.go` to include normalized `state_value_json` (`true` for their existing applied power Observations). The invalid-ID fixture in `db_test.go` also supplies normalized `state_value_json` so it still isolates the invalid-ID constraint rather than failing the new accepted-value constraint.
 
 ### History queries
 
@@ -520,25 +520,25 @@ Normal-path scenarios establish integration behavior. Mocked responses establish
 
 ## Acceptance Criteria
 
-- [ ] Every non-duplicate Observation commits exactly one receipt in the existing projection transaction; `applied` and `unchanged` store only normalized State JSON, while `rejected` stores no value.
-- [ ] Duplicate delivery writes no new receipt or history entry.
-- [ ] Unknown-Entity and stale-runtime rejections remain durable and do not fail an Entity foreign key.
-- [ ] Every successful raw SQL fixture for an accepted receipt supplies normalized `state_value_json`; intentionally rejected fixture inserts retain their original failure purpose.
-- [ ] History uses the existing receipt prune path: expired non-current entries disappear and the receipt backing current State survives until superseded.
-- [ ] `GET /v1/entities/{entity_id}/state/history` matches the specified method, path, metadata, DTO, ordering, filters, cursor scope, and errors.
-- [ ] `state-updates` consistently means `applied` plus `unchanged` in service, SQL, cursor, HTTP, and dashboard vocabulary.
-- [ ] Every filter uses an indexed ordered search on first and continuation pages without scanning unrelated dispositions or sorting full Entity history; large skewed-fixture query plans and concurrent read/projection latency evidence are reviewed.
-- [ ] With no intervening writes or pruning and a stable filter, cursor traversal returns every matching receipt exactly once in descending receive order.
-- [ ] Concurrent inserts require restarting at the first page; pruning unseen rows or the cursor's receipt does not invalidate the cursor, and an exhausted continuation returns an empty final page.
-- [ ] An unknown Entity returns 404; an existing Entity without matching retained history returns HTTP 200 with `items: []`.
-- [ ] Responses omit raw rejected values, Adapter/runtime IDs, expiry, and receive order.
-- [ ] The dashboard renders the specified four Entity types and all empty, rejected-only, single-point, constant-value, equal-time, malformed-value, and unsupported-type fallbacks without a new npm dependency.
-- [ ] The chart labels its ordinal axis as non-time, preserves receive order for equal/decreasing timestamps, uses isolated points for `Unchanged`, and breaks paths around malformed accepted values, including an all-malformed fallback.
-- [ ] `Latest / Refresh history` preserves the filter and fetches new observations from first, older, empty, and error pages without a browser reload; obsolete requests cannot overwrite a new scope.
-- [ ] Agent-browser evidence covers filters, pagination resets, refresh, chart/table formatting, screenshots, and a clean browser console.
-- [ ] `docs/architecture.md` records the accepted persistence, retention, and endpoint behavior.
-- [ ] `mise run web-build` passes.
-- [ ] `mise run validate` passes and the resulting generated/formatting diff is reviewed.
+- [x] Every non-duplicate Observation commits exactly one receipt in the existing projection transaction; `applied` and `unchanged` store only normalized State JSON, while `rejected` stores no value.
+- [x] Duplicate delivery writes no new receipt or history entry.
+- [x] Unknown-Entity and stale-runtime rejections remain durable and do not fail an Entity foreign key.
+- [x] Every successful raw SQL fixture for an accepted receipt supplies normalized `state_value_json`; intentionally invalid fixture inserts supply otherwise-valid columns to retain their original failure purpose.
+- [x] History uses the existing receipt prune path: expired non-current entries disappear and the receipt backing current State survives until superseded.
+- [x] `GET /v1/entities/{entity_id}/state/history` matches the specified method, path, metadata, DTO, ordering, filters, cursor scope, and errors.
+- [x] `state-updates` consistently means `applied` plus `unchanged` in service, SQL, cursor, HTTP, and dashboard vocabulary.
+- [x] Every filter uses an indexed ordered search on first and continuation pages without scanning unrelated dispositions or sorting full Entity history; large skewed-fixture query plans and concurrent read/projection latency evidence are reviewed.
+- [x] With no intervening writes or pruning and a stable filter, cursor traversal returns every matching receipt exactly once in descending receive order.
+- [x] Concurrent inserts require restarting at the first page; pruning unseen rows or the cursor's receipt does not invalidate the cursor, and an exhausted continuation returns an empty final page.
+- [x] An unknown Entity returns 404; an existing Entity without matching retained history returns HTTP 200 with `items: []`.
+- [x] Responses omit raw rejected values, Adapter/runtime IDs, expiry, and receive order.
+- [x] The dashboard renders the specified four Entity types and all empty, rejected-only, single-point, constant-value, equal-time, malformed-value, and unsupported-type fallbacks without a new npm dependency.
+- [x] The chart labels its ordinal axis as non-time, preserves receive order for equal/decreasing timestamps, uses isolated points for `Unchanged`, and breaks paths around malformed accepted values, including an all-malformed fallback.
+- [x] `Latest / Refresh history` preserves the filter and fetches new observations from first, older, empty, and error pages without a browser reload; obsolete requests cannot overwrite a new scope.
+- [x] Agent-browser evidence covers filters, pagination resets, refresh, chart/table formatting, screenshots, and a clean browser console.
+- [x] `docs/architecture.md` records the accepted persistence, retention, and endpoint behavior.
+- [x] `mise run web-build` passes.
+- [x] `mise run validate` passes and the resulting generated/formatting diff is reviewed.
 
 ## Success Metrics
 
@@ -579,4 +579,13 @@ Normal-path scenarios establish integration behavior. Mocked responses establish
 No unresolved product or architecture questions remain. Persistence location, default filter semantics, and dashboard verification were confirmed during refinement.
 
 ---
-Phase: REFINE | Waiting for: user approval
+Phase: IMPLEMENTED | Delivery: PR #53
+
+## Implementation evidence
+
+- Projection integration tests cover normalized (not raw) JSON, every disposition, duplicate no-op behavior, unknown Entity rejections, and forced downstream State-write failure rolling back receipt, State, and Command effects. Retention tests cover the current anchor, supersession, and pruning during pagination.
+- Query-plan tests load the actual six named queries from `dbqueries/receipts.sql`. Both unchanged-heavy and rejected-heavy histories have at least 100,000 receipts within the target Entity, with sparse and absent matches. First and continuation pages require the matching indexed search and no temporary ordering B-tree.
+- Concurrent evidence on a shared SQLite connection with 100,210 in-Entity receipts (race detector enabled): 160 reads averaged 27.96 ms (maximum 122.98 ms), and 100 projections averaged 10.35 ms (maximum 86.00 ms), with 1.03 s concurrent wall time. These are local measurements, not correctness thresholds or production guarantees.
+- Service, cursor, HTTP, and runtime OpenAPI tests cover validation, scoped canonical cursors, mutable ownership, filter traversal, omission rules, and empty/404/error distinctions.
+- Agent-browser verified normal SDK registration/projection through local NATS, hearthd, and Vite for all four types, all filters, pagination, latest refresh from first/older pages, route/server resets, and empty/constant/single-point/rejected-only cases. Local-only defensive mocks covered unsupported types, malformed values and static bounds, support narrowing, regressing timestamps, loading/errors, and delayed obsolete requests after filter/Entity changes. Screenshots and console evidence are retained locally in `.data/evidence/` (not production fixtures). Empty-continuation UI used a low cursor with a real empty response; actual pruning remains covered by SQLite integration tests. Nanosecond caption ordering has an additional direct reversed-input check.
+- Review corrections: accepted invalid-ID fixtures now supply valid State JSON to preserve their original constraint oracle; dashboard scope remounts prevent previous-scope data from appearing under new controls. No dependency, compatibility migration, or separate assumptions file was added.

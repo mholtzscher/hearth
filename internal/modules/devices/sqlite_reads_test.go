@@ -204,8 +204,8 @@ func seedResourceReads(t *testing.T, database *sql.DB, requestedAt time.Time) {
 	if _, err := database.ExecContext(ctx, `
 		INSERT INTO observation_receipts (
 			observation_id, adapter_id, entity_id, disposition,
-			adapter_received_at, observed_at, expires_at
-		) VALUES (?, 'simulator', ?, 'applied', ?, ?, ?)`,
+			state_value_json, adapter_received_at, observed_at, expires_at
+		) VALUES (?, 'simulator', ?, 'applied', 'true', ?, ?, ?)`,
 		observationID, readEntityA, timestamp, timestamp, formatTime(requestedAt.Add(time.Hour))); err != nil {
 		t.Fatal(err)
 	}

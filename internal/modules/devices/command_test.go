@@ -60,6 +60,13 @@ func (*commandRepository) ListEntityCommands(context.Context, ListEntityCommands
 	panic("unexpected ListEntityCommands call")
 }
 
+func (*commandRepository) ListEntityStateHistory(
+	context.Context,
+	ListEntityStateHistoryParams,
+) (Page[EntityStateHistoryEntry], error) {
+	panic("unexpected ListEntityStateHistory call")
+}
+
 func (repository *commandRepository) CreateCommand(_ context.Context, command CommandRecord) (CommandRecord, error) {
 	repository.mutex.Lock()
 	defer repository.mutex.Unlock()

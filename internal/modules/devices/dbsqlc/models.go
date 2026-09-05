@@ -163,7 +163,9 @@ type ObservationReceipt struct {
 	EntityID          string
 	Disposition       string
 	RejectionCode     sql.NullString
+	StateValueJson    sql.NullString
 	AdapterReceivedAt string
+	SourceUpdatedAt   sql.NullString
 	ObservedAt        string
 	ExpiresAt         string
 }

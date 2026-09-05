@@ -185,17 +185,35 @@ CREATE TABLE observation_receipts (
             'invalid_value', 'stale_runtime'
         )
     ),
+    state_value_json    TEXT CHECK (
+        state_value_json IS NULL OR json_valid(state_value_json)
+    ),
     adapter_received_at TEXT NOT NULL,
+    source_updated_at   TEXT,
     observed_at         TEXT NOT NULL,
     expires_at          TEXT NOT NULL,
     CHECK (
-        (disposition = 'rejected' AND rejection_code IS NOT NULL)
-        OR (disposition <> 'rejected' AND rejection_code IS NULL)
+        (disposition = 'rejected'
+            AND rejection_code IS NOT NULL
+            AND state_value_json IS NULL)
+        OR (disposition <> 'rejected'
+            AND rejection_code IS NULL
+            AND state_value_json IS NOT NULL)
     )
 );
 
 CREATE INDEX observation_receipts_expiry_idx
     ON observation_receipts(expires_at);
+
+CREATE INDEX observation_receipts_entity_history_idx
+    ON observation_receipts(entity_id, receive_order DESC);
+
+CREATE INDEX observation_receipts_entity_disposition_history_idx
+    ON observation_receipts(entity_id, disposition, receive_order DESC);
+
+CREATE INDEX observation_receipts_entity_updates_history_idx
+    ON observation_receipts(entity_id, receive_order DESC)
+    WHERE disposition IN ('applied', 'unchanged');
 
 CREATE TABLE entity_states (
     entity_id           TEXT PRIMARY KEY REFERENCES entities(id) ON DELETE CASCADE,
@@ -319,6 +337,9 @@ DROP TABLE health_transitions;
 DROP TABLE entity_availability_receipts;
 DROP TABLE entity_availability_current;
 DROP TABLE entity_states;
+DROP INDEX observation_receipts_entity_updates_history_idx;
+DROP INDEX observation_receipts_entity_disposition_history_idx;
+DROP INDEX observation_receipts_entity_history_idx;
 DROP INDEX observation_receipts_expiry_idx;
 DROP TABLE observation_receipts;
 DROP TABLE adapter_entity_mappings;

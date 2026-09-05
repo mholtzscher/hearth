@@ -34,6 +34,10 @@ type Devices interface {
 		context.Context,
 		devices.ListEntityAvailabilityParams,
 	) (devices.Page[devices.HealthTransition], error)
+	ListEntityStateHistory(
+		context.Context,
+		devices.ListEntityStateHistoryParams,
+	) (devices.Page[devices.EntityStateHistoryEntry], error)
 }
 
 type Handler struct {
@@ -122,4 +126,10 @@ func Register(api huma.API, service Devices) {
 		Tags:   []string{entitiesTag},
 		Errors: []int{http.StatusBadRequest, http.StatusNotFound, http.StatusInternalServerError},
 	}, handler.ListEntityAvailabilityHistory)
+	huma.Register(api, huma.Operation{
+		OperationID: "list-entity-state-history", Method: http.MethodGet,
+		Path: "/entities/{entity_id}/state/history", Summary: "List an Entity's State history",
+		Tags:   []string{entitiesTag},
+		Errors: []int{http.StatusBadRequest, http.StatusNotFound, http.StatusInternalServerError},
+	}, handler.ListEntityStateHistory)
 }

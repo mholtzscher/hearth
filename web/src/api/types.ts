@@ -98,6 +98,16 @@ export interface Collection<T> {
   next_cursor?: string;
 }
 
+export interface EntityStateHistoryEntry {
+  observation_id: string;
+  value?: unknown;
+  disposition: "applied" | "unchanged" | "rejected" | string;
+  rejection_code?: string;
+  adapter_received_at: string;
+  source_updated_at?: string;
+  observed_at: string;
+}
+
 /** RFC 9457 problem detail returned by hearthd on errors. */
 export interface ProblemDetail {
   title?: string;

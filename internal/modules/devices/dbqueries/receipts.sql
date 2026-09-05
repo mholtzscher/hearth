@@ -7,8 +7,9 @@ WHERE observation_id = ?;
 -- name: InsertObservationReceipt :one
 INSERT INTO observation_receipts (
     observation_id, adapter_id, runtime_id, entity_id, disposition,
-    rejection_code, adapter_received_at, observed_at, expires_at
-) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    rejection_code, state_value_json, adapter_received_at, source_updated_at,
+    observed_at, expires_at
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 RETURNING receive_order;
 
 -- name: DeleteExpiredObservationReceipts :execrows
@@ -19,3 +20,58 @@ WHERE julianday(expires_at) < julianday(CAST(sqlc.arg(expires_at) AS TEXT))
       FROM entity_states
       WHERE entity_states.observation_id = observation_receipts.observation_id
   );
+
+-- name: ListEntityStateHistoryFirstPage :many
+SELECT observation_id, state_value_json, disposition, rejection_code,
+       adapter_received_at, source_updated_at, observed_at, receive_order
+FROM observation_receipts
+WHERE entity_id = ?
+ORDER BY receive_order DESC
+LIMIT ?;
+
+-- name: ListEntityStateHistoryAfter :many
+SELECT observation_id, state_value_json, disposition, rejection_code,
+       adapter_received_at, source_updated_at, observed_at, receive_order
+FROM observation_receipts
+WHERE entity_id = ?
+  AND receive_order < ?
+ORDER BY receive_order DESC
+LIMIT ?;
+
+-- name: ListEntityStateUpdatesFirstPage :many
+SELECT observation_id, state_value_json, disposition, rejection_code,
+       adapter_received_at, source_updated_at, observed_at, receive_order
+FROM observation_receipts
+WHERE entity_id = ?
+  AND disposition IN ('applied', 'unchanged')
+ORDER BY receive_order DESC
+LIMIT ?;
+
+-- name: ListEntityStateUpdatesAfter :many
+SELECT observation_id, state_value_json, disposition, rejection_code,
+       adapter_received_at, source_updated_at, observed_at, receive_order
+FROM observation_receipts
+WHERE entity_id = ?
+  AND disposition IN ('applied', 'unchanged')
+  AND receive_order < ?
+ORDER BY receive_order DESC
+LIMIT ?;
+
+-- name: ListEntityStateHistoryByDispositionFirstPage :many
+SELECT observation_id, state_value_json, disposition, rejection_code,
+       adapter_received_at, source_updated_at, observed_at, receive_order
+FROM observation_receipts
+WHERE entity_id = ?
+  AND disposition = ?
+ORDER BY receive_order DESC
+LIMIT ?;
+
+-- name: ListEntityStateHistoryByDispositionAfter :many
+SELECT observation_id, state_value_json, disposition, rejection_code,
+       adapter_received_at, source_updated_at, observed_at, receive_order
+FROM observation_receipts
+WHERE entity_id = ?
+  AND disposition = ?
+  AND receive_order < ?
+ORDER BY receive_order DESC
+LIMIT ?;

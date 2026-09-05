@@ -80,6 +80,19 @@ func TestMigrateEmptySQLiteDatabase(t *testing.T) {
 	assertIndexColumns(t, database, "commands_entity_requested_idx", "entity_id,requested_at,id")
 	assertIndexColumns(t, database, "adapter_runtimes_one_active_idx", "adapter_id")
 	assertIndexColumns(t, database, "adapter_runtimes_adapter_idx", "adapter_id")
+	assertIndexColumns(t, database, "observation_receipts_entity_history_idx", "entity_id,receive_order")
+	assertIndexColumns(
+		t,
+		database,
+		"observation_receipts_entity_disposition_history_idx",
+		"entity_id,disposition,receive_order",
+	)
+	assertIndexColumns(
+		t,
+		database,
+		"observation_receipts_entity_updates_history_idx",
+		"entity_id,receive_order",
+	)
 
 	var supportColumn string
 	if err := database.QueryRowContext(ctx, `
@@ -173,7 +186,7 @@ func TestIDPrefixConstraintsRequireLiteralUnderscore(t *testing.T) {
 	assertWriteRejected(
 		t,
 		database,
-		`INSERT INTO observation_receipts (observation_id, adapter_id, entity_id, disposition, adapter_received_at, observed_at, expires_at) VALUES ('obsXbad', 'adapter', 'ent_valid', 'applied', 'now', 'now', 'later')`,
+		`INSERT INTO observation_receipts (observation_id, adapter_id, entity_id, disposition, state_value_json, adapter_received_at, observed_at, expires_at) VALUES ('obsXbad', 'adapter', 'ent_valid', 'applied', 'true', 'now', 'now', 'later')`,
 	)
 }
 
@@ -198,9 +211,9 @@ func TestDeleteExpiredObservationReceiptsComparesTimestampsChronologically(t *te
 	} {
 		_, err := database.ExecContext(ctx, `
 			INSERT INTO observation_receipts (
-				observation_id, adapter_id, entity_id, disposition,
+				observation_id, adapter_id, entity_id, disposition, state_value_json,
 				adapter_received_at, observed_at, expires_at
-			) VALUES (?, 'adapter', 'ent_entity', 'applied', ?, ?, ?)`,
+			) VALUES (?, 'adapter', 'ent_entity', 'applied', 'true', ?, ?, ?)`,
 			receipt.id, "2026-08-22T11:00:00Z", "2026-08-22T11:00:00Z", receipt.expiresAt,
 		)
 		if err != nil {

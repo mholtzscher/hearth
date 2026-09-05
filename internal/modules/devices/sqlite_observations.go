@@ -88,7 +88,9 @@ func (repository *SQLiteRepository) ProjectObservation(
 		EntityID:          string(params.Observation.EntityID),
 		Disposition:       string(disposition),
 		RejectionCode:     nullableRejection(rejection),
+		StateValueJson:    nullableStateValue(disposition, normalized),
 		AdapterReceivedAt: formatTime(params.Observation.AdapterReceivedAt),
+		SourceUpdatedAt:   nullableTime(params.Observation.SourceUpdatedAt),
 		ObservedAt:        formatTime(params.ObservedAt),
 		ExpiresAt:         formatTime(params.ReceiptExpiresAt),
 	})
@@ -511,6 +513,13 @@ func nullableRejection(value *ObservationRejection) sql.NullString {
 		return sql.NullString{}
 	}
 	return sql.NullString{String: string(*value), Valid: true}
+}
+
+func nullableStateValue(disposition ObservationDisposition, value Value) sql.NullString {
+	if disposition == DispositionRejected || len(value) == 0 {
+		return sql.NullString{}
+	}
+	return sql.NullString{String: string(value), Valid: true}
 }
 
 func nullableTime(value *time.Time) sql.NullString {

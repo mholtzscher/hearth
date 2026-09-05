@@ -43,9 +43,22 @@ type GetObservationReceiptParams struct {
 	ObservationID string
 }
 
-func (q *Queries) GetObservationReceipt(ctx context.Context, arg GetObservationReceiptParams) (ObservationReceipt, error) {
+type GetObservationReceiptRow struct {
+	ReceiveOrder      int64
+	ObservationID     string
+	AdapterID         string
+	RuntimeID         sql.NullString
+	EntityID          string
+	Disposition       string
+	RejectionCode     sql.NullString
+	AdapterReceivedAt string
+	ObservedAt        string
+	ExpiresAt         string
+}
+
+func (q *Queries) GetObservationReceipt(ctx context.Context, arg GetObservationReceiptParams) (GetObservationReceiptRow, error) {
 	row := q.db.QueryRowContext(ctx, getObservationReceipt, arg.ObservationID)
-	var i ObservationReceipt
+	var i GetObservationReceiptRow
 	err := row.Scan(
 		&i.ReceiveOrder,
 		&i.ObservationID,
@@ -64,8 +77,9 @@ func (q *Queries) GetObservationReceipt(ctx context.Context, arg GetObservationR
 const insertObservationReceipt = `-- name: InsertObservationReceipt :one
 INSERT INTO observation_receipts (
     observation_id, adapter_id, runtime_id, entity_id, disposition,
-    rejection_code, adapter_received_at, observed_at, expires_at
-) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    rejection_code, state_value_json, adapter_received_at, source_updated_at,
+    observed_at, expires_at
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 RETURNING receive_order
 `
 
@@ -76,7 +90,9 @@ type InsertObservationReceiptParams struct {
 	EntityID          string
 	Disposition       string
 	RejectionCode     sql.NullString
+	StateValueJson    sql.NullString
 	AdapterReceivedAt string
+	SourceUpdatedAt   sql.NullString
 	ObservedAt        string
 	ExpiresAt         string
 }
@@ -89,11 +105,372 @@ func (q *Queries) InsertObservationReceipt(ctx context.Context, arg InsertObserv
 		arg.EntityID,
 		arg.Disposition,
 		arg.RejectionCode,
+		arg.StateValueJson,
 		arg.AdapterReceivedAt,
+		arg.SourceUpdatedAt,
 		arg.ObservedAt,
 		arg.ExpiresAt,
 	)
 	var receive_order int64
 	err := row.Scan(&receive_order)
 	return receive_order, err
+}
+
+const listEntityStateHistoryAfter = `-- name: ListEntityStateHistoryAfter :many
+SELECT observation_id, state_value_json, disposition, rejection_code,
+       adapter_received_at, source_updated_at, observed_at, receive_order
+FROM observation_receipts
+WHERE entity_id = ?
+  AND receive_order < ?
+ORDER BY receive_order DESC
+LIMIT ?
+`
+
+type ListEntityStateHistoryAfterParams struct {
+	EntityID     string
+	ReceiveOrder int64
+	Limit        int64
+}
+
+type ListEntityStateHistoryAfterRow struct {
+	ObservationID     string
+	StateValueJson    sql.NullString
+	Disposition       string
+	RejectionCode     sql.NullString
+	AdapterReceivedAt string
+	SourceUpdatedAt   sql.NullString
+	ObservedAt        string
+	ReceiveOrder      int64
+}
+
+func (q *Queries) ListEntityStateHistoryAfter(ctx context.Context, arg ListEntityStateHistoryAfterParams) ([]ListEntityStateHistoryAfterRow, error) {
+	rows, err := q.db.QueryContext(ctx, listEntityStateHistoryAfter, arg.EntityID, arg.ReceiveOrder, arg.Limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListEntityStateHistoryAfterRow
+	for rows.Next() {
+		var i ListEntityStateHistoryAfterRow
+		if err := rows.Scan(
+			&i.ObservationID,
+			&i.StateValueJson,
+			&i.Disposition,
+			&i.RejectionCode,
+			&i.AdapterReceivedAt,
+			&i.SourceUpdatedAt,
+			&i.ObservedAt,
+			&i.ReceiveOrder,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listEntityStateHistoryByDispositionAfter = `-- name: ListEntityStateHistoryByDispositionAfter :many
+SELECT observation_id, state_value_json, disposition, rejection_code,
+       adapter_received_at, source_updated_at, observed_at, receive_order
+FROM observation_receipts
+WHERE entity_id = ?
+  AND disposition = ?
+  AND receive_order < ?
+ORDER BY receive_order DESC
+LIMIT ?
+`
+
+type ListEntityStateHistoryByDispositionAfterParams struct {
+	EntityID     string
+	Disposition  string
+	ReceiveOrder int64
+	Limit        int64
+}
+
+type ListEntityStateHistoryByDispositionAfterRow struct {
+	ObservationID     string
+	StateValueJson    sql.NullString
+	Disposition       string
+	RejectionCode     sql.NullString
+	AdapterReceivedAt string
+	SourceUpdatedAt   sql.NullString
+	ObservedAt        string
+	ReceiveOrder      int64
+}
+
+func (q *Queries) ListEntityStateHistoryByDispositionAfter(ctx context.Context, arg ListEntityStateHistoryByDispositionAfterParams) ([]ListEntityStateHistoryByDispositionAfterRow, error) {
+	rows, err := q.db.QueryContext(ctx, listEntityStateHistoryByDispositionAfter,
+		arg.EntityID,
+		arg.Disposition,
+		arg.ReceiveOrder,
+		arg.Limit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListEntityStateHistoryByDispositionAfterRow
+	for rows.Next() {
+		var i ListEntityStateHistoryByDispositionAfterRow
+		if err := rows.Scan(
+			&i.ObservationID,
+			&i.StateValueJson,
+			&i.Disposition,
+			&i.RejectionCode,
+			&i.AdapterReceivedAt,
+			&i.SourceUpdatedAt,
+			&i.ObservedAt,
+			&i.ReceiveOrder,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listEntityStateHistoryByDispositionFirstPage = `-- name: ListEntityStateHistoryByDispositionFirstPage :many
+SELECT observation_id, state_value_json, disposition, rejection_code,
+       adapter_received_at, source_updated_at, observed_at, receive_order
+FROM observation_receipts
+WHERE entity_id = ?
+  AND disposition = ?
+ORDER BY receive_order DESC
+LIMIT ?
+`
+
+type ListEntityStateHistoryByDispositionFirstPageParams struct {
+	EntityID    string
+	Disposition string
+	Limit       int64
+}
+
+type ListEntityStateHistoryByDispositionFirstPageRow struct {
+	ObservationID     string
+	StateValueJson    sql.NullString
+	Disposition       string
+	RejectionCode     sql.NullString
+	AdapterReceivedAt string
+	SourceUpdatedAt   sql.NullString
+	ObservedAt        string
+	ReceiveOrder      int64
+}
+
+func (q *Queries) ListEntityStateHistoryByDispositionFirstPage(ctx context.Context, arg ListEntityStateHistoryByDispositionFirstPageParams) ([]ListEntityStateHistoryByDispositionFirstPageRow, error) {
+	rows, err := q.db.QueryContext(ctx, listEntityStateHistoryByDispositionFirstPage, arg.EntityID, arg.Disposition, arg.Limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListEntityStateHistoryByDispositionFirstPageRow
+	for rows.Next() {
+		var i ListEntityStateHistoryByDispositionFirstPageRow
+		if err := rows.Scan(
+			&i.ObservationID,
+			&i.StateValueJson,
+			&i.Disposition,
+			&i.RejectionCode,
+			&i.AdapterReceivedAt,
+			&i.SourceUpdatedAt,
+			&i.ObservedAt,
+			&i.ReceiveOrder,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listEntityStateHistoryFirstPage = `-- name: ListEntityStateHistoryFirstPage :many
+SELECT observation_id, state_value_json, disposition, rejection_code,
+       adapter_received_at, source_updated_at, observed_at, receive_order
+FROM observation_receipts
+WHERE entity_id = ?
+ORDER BY receive_order DESC
+LIMIT ?
+`
+
+type ListEntityStateHistoryFirstPageParams struct {
+	EntityID string
+	Limit    int64
+}
+
+type ListEntityStateHistoryFirstPageRow struct {
+	ObservationID     string
+	StateValueJson    sql.NullString
+	Disposition       string
+	RejectionCode     sql.NullString
+	AdapterReceivedAt string
+	SourceUpdatedAt   sql.NullString
+	ObservedAt        string
+	ReceiveOrder      int64
+}
+
+func (q *Queries) ListEntityStateHistoryFirstPage(ctx context.Context, arg ListEntityStateHistoryFirstPageParams) ([]ListEntityStateHistoryFirstPageRow, error) {
+	rows, err := q.db.QueryContext(ctx, listEntityStateHistoryFirstPage, arg.EntityID, arg.Limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListEntityStateHistoryFirstPageRow
+	for rows.Next() {
+		var i ListEntityStateHistoryFirstPageRow
+		if err := rows.Scan(
+			&i.ObservationID,
+			&i.StateValueJson,
+			&i.Disposition,
+			&i.RejectionCode,
+			&i.AdapterReceivedAt,
+			&i.SourceUpdatedAt,
+			&i.ObservedAt,
+			&i.ReceiveOrder,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listEntityStateUpdatesAfter = `-- name: ListEntityStateUpdatesAfter :many
+SELECT observation_id, state_value_json, disposition, rejection_code,
+       adapter_received_at, source_updated_at, observed_at, receive_order
+FROM observation_receipts
+WHERE entity_id = ?
+  AND disposition IN ('applied', 'unchanged')
+  AND receive_order < ?
+ORDER BY receive_order DESC
+LIMIT ?
+`
+
+type ListEntityStateUpdatesAfterParams struct {
+	EntityID     string
+	ReceiveOrder int64
+	Limit        int64
+}
+
+type ListEntityStateUpdatesAfterRow struct {
+	ObservationID     string
+	StateValueJson    sql.NullString
+	Disposition       string
+	RejectionCode     sql.NullString
+	AdapterReceivedAt string
+	SourceUpdatedAt   sql.NullString
+	ObservedAt        string
+	ReceiveOrder      int64
+}
+
+func (q *Queries) ListEntityStateUpdatesAfter(ctx context.Context, arg ListEntityStateUpdatesAfterParams) ([]ListEntityStateUpdatesAfterRow, error) {
+	rows, err := q.db.QueryContext(ctx, listEntityStateUpdatesAfter, arg.EntityID, arg.ReceiveOrder, arg.Limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListEntityStateUpdatesAfterRow
+	for rows.Next() {
+		var i ListEntityStateUpdatesAfterRow
+		if err := rows.Scan(
+			&i.ObservationID,
+			&i.StateValueJson,
+			&i.Disposition,
+			&i.RejectionCode,
+			&i.AdapterReceivedAt,
+			&i.SourceUpdatedAt,
+			&i.ObservedAt,
+			&i.ReceiveOrder,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listEntityStateUpdatesFirstPage = `-- name: ListEntityStateUpdatesFirstPage :many
+SELECT observation_id, state_value_json, disposition, rejection_code,
+       adapter_received_at, source_updated_at, observed_at, receive_order
+FROM observation_receipts
+WHERE entity_id = ?
+  AND disposition IN ('applied', 'unchanged')
+ORDER BY receive_order DESC
+LIMIT ?
+`
+
+type ListEntityStateUpdatesFirstPageParams struct {
+	EntityID string
+	Limit    int64
+}
+
+type ListEntityStateUpdatesFirstPageRow struct {
+	ObservationID     string
+	StateValueJson    sql.NullString
+	Disposition       string
+	RejectionCode     sql.NullString
+	AdapterReceivedAt string
+	SourceUpdatedAt   sql.NullString
+	ObservedAt        string
+	ReceiveOrder      int64
+}
+
+func (q *Queries) ListEntityStateUpdatesFirstPage(ctx context.Context, arg ListEntityStateUpdatesFirstPageParams) ([]ListEntityStateUpdatesFirstPageRow, error) {
+	rows, err := q.db.QueryContext(ctx, listEntityStateUpdatesFirstPage, arg.EntityID, arg.Limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListEntityStateUpdatesFirstPageRow
+	for rows.Next() {
+		var i ListEntityStateUpdatesFirstPageRow
+		if err := rows.Scan(
+			&i.ObservationID,
+			&i.StateValueJson,
+			&i.Disposition,
+			&i.RejectionCode,
+			&i.AdapterReceivedAt,
+			&i.SourceUpdatedAt,
+			&i.ObservedAt,
+			&i.ReceiveOrder,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }

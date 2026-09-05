@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -576,4 +577,245 @@ func resultReceiveOrder(t *testing.T, database *sql.DB, id ObservationID) int64 
 		t.Fatal(err)
 	}
 	return order
+}
+
+func TestObservationProjectionEnrichesReceiptsWithNormalizedState(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	database := openRegistrationDatabase(t, filepath.Join(t.TempDir(), "hearth.db"))
+	catalog := firstLightCatalog(t)
+	service := newTestService(NewSQLiteRepository(database, catalog), nil, catalog, Dependencies{})
+	binding, err := service.Register(ctx, "simulator", testRuntimeID, validDomainRegistration())
+	if err != nil {
+		t.Fatal(err)
+	}
+	entityID := binding.Entities[0].EntityID
+	observedAt := time.Date(2026, 8, 22, 12, 0, 0, 0, time.UTC)
+	sourceUpdatedAt := observedAt.Add(-time.Hour)
+
+	applied := newObservation(t, entityID, `true`, observedAt)
+	applied.SourceUpdatedAt = &sourceUpdatedAt
+	if _, projectionErr := service.ProjectObservation(
+		ctx, "simulator", testRuntimeID, applied, observedAt,
+	); projectionErr != nil {
+		t.Fatal(projectionErr)
+	}
+	assertReceiptRow(t, database, applied.ID, "applied", `true`, "", sourceUpdatedAt)
+
+	unchanged := newObservation(t, entityID, `true`, observedAt.Add(time.Second))
+	if _, projectionErr := service.ProjectObservation(
+		ctx, "simulator", testRuntimeID, unchanged, observedAt.Add(time.Second),
+	); projectionErr != nil {
+		t.Fatal(projectionErr)
+	}
+	assertReceiptRow(t, database, unchanged.ID, "unchanged", `true`, "", time.Time{})
+
+	rejected := newObservation(t, entityID, `1`, observedAt.Add(2*time.Second))
+	rejected.SourceUpdatedAt = &sourceUpdatedAt
+	result, projectionErr := service.ProjectObservation(
+		ctx, "simulator", testRuntimeID, rejected, observedAt.Add(2*time.Second),
+	)
+	if projectionErr != nil {
+		t.Fatal(projectionErr)
+	}
+	if result.Disposition != DispositionRejected || result.Rejection == nil ||
+		*result.Rejection != RejectionInvalidValue {
+		t.Fatalf("invalid-value projection = %#v", result)
+	}
+	assertReceiptRow(t, database, rejected.ID, "rejected", "", string(RejectionInvalidValue), sourceUpdatedAt)
+
+	unknownEntityID, err := NewEntityID()
+	if err != nil {
+		t.Fatal(err)
+	}
+	unknown := newObservation(t, unknownEntityID, `true`, observedAt.Add(3*time.Second))
+	unknown.SourceUpdatedAt = &sourceUpdatedAt
+	result, projectionErr = service.ProjectObservation(
+		ctx, "simulator", testRuntimeID, unknown, observedAt.Add(3*time.Second),
+	)
+	if projectionErr != nil {
+		t.Fatal(projectionErr)
+	}
+	if result.Disposition != DispositionRejected || result.Rejection == nil ||
+		*result.Rejection != RejectionUnknownEntity {
+		t.Fatalf("unknown-entity projection = %#v", result)
+	}
+	assertReceiptRow(t, database, unknown.ID, "rejected", "", string(RejectionUnknownEntity), sourceUpdatedAt)
+
+	redelivery := unchanged
+	redelivery.Value = Value(`false`)
+	redelivery.SourceUpdatedAt = &sourceUpdatedAt
+	result, projectionErr = service.ProjectObservation(
+		ctx, "simulator", testRuntimeID, redelivery, observedAt.Add(4*time.Second),
+	)
+	if projectionErr != nil {
+		t.Fatal(projectionErr)
+	}
+	if result.Disposition != DispositionDuplicate {
+		t.Fatalf("duplicate projection = %#v", result)
+	}
+	assertReceiptCount(t, database, 4)
+}
+
+func assertReceiptRow(
+	t *testing.T,
+	database *sql.DB,
+	id ObservationID,
+	disposition, value, rejection string,
+	sourceUpdatedAt time.Time,
+) {
+	t.Helper()
+	var storedDisposition string
+	var storedValue, storedRejection, storedSource sql.NullString
+	if err := database.QueryRow(`
+		SELECT disposition, state_value_json, rejection_code, source_updated_at
+		FROM observation_receipts
+		WHERE observation_id = ?`, id,
+	).Scan(&storedDisposition, &storedValue, &storedRejection, &storedSource); err != nil {
+		t.Fatal(err)
+	}
+	if storedDisposition != disposition {
+		t.Fatalf("receipt %s disposition = %q, want %q", id, storedDisposition, disposition)
+	}
+	if value == "" && storedValue.Valid {
+		t.Fatalf("receipt %s state_value_json = %q, want NULL", id, storedValue.String)
+	}
+	if value != "" && (!storedValue.Valid || storedValue.String != value) {
+		t.Fatalf("receipt %s state_value_json = %#v, want %q", id, storedValue, value)
+	}
+	if rejection == "" && storedRejection.Valid {
+		t.Fatalf("receipt %s rejection_code = %q, want NULL", id, storedRejection.String)
+	}
+	if rejection != "" && (!storedRejection.Valid || storedRejection.String != rejection) {
+		t.Fatalf("receipt %s rejection_code = %#v, want %q", id, storedRejection, rejection)
+	}
+	if sourceUpdatedAt.IsZero() && storedSource.Valid {
+		t.Fatalf("receipt %s source_updated_at = %q, want NULL", id, storedSource.String)
+	}
+	if !sourceUpdatedAt.IsZero() &&
+		(!storedSource.Valid || storedSource.String != formatTime(sourceUpdatedAt)) {
+		t.Fatalf("receipt %s source_updated_at = %#v, want %q", id, storedSource, formatTime(sourceUpdatedAt))
+	}
+}
+
+func TestObservationProjectionStoresNormalizedStateValue(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	database := openRegistrationDatabase(t, filepath.Join(t.TempDir(), "hearth.db"))
+	catalog := firstLightCatalog(t)
+	service := newTestService(NewSQLiteRepository(database, catalog), nil, catalog, Dependencies{})
+	binding, err := service.Register(ctx, "simulator", testRuntimeID, validDomainRegistration())
+	if err != nil {
+		t.Fatal(err)
+	}
+	entityID := binding.Entities[0].EntityID
+	observedAt := time.Date(2026, 8, 22, 12, 0, 0, 0, time.UTC)
+
+	// This test protects normalized-value persistence and fails if the raw
+	// Observation Value is stored instead of the canonical normalized form.
+	padded := newObservation(t, entityID, `true`, observedAt)
+	padded.Value = Value("  true \n")
+	result, err := service.ProjectObservation(ctx, "simulator", testRuntimeID, padded, observedAt)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Disposition != DispositionApplied || result.State == nil || string(result.State.Value) != "true" {
+		t.Fatalf("whitespace-padded projection = %#v", result)
+	}
+	assertReceiptRow(t, database, padded.ID, "applied", `true`, "", time.Time{})
+
+	canonical := newObservation(t, entityID, `true`, observedAt.Add(time.Second))
+	second, err := service.ProjectObservation(
+		ctx, "simulator", testRuntimeID, canonical, observedAt.Add(time.Second),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if second.Disposition != DispositionUnchanged || second.State == nil ||
+		string(second.State.Value) != "true" {
+		t.Fatalf("canonical repeat projection = %#v", second)
+	}
+	assertReceiptRow(t, database, canonical.ID, "unchanged", `true`, "", time.Time{})
+
+	view, err := service.GetEntity(ctx, entityID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if view.State == nil || string(view.State.Value) != "true" {
+		t.Fatalf("entity view = %#v", view.State)
+	}
+}
+
+func TestObservationProjectionRollsBackReceiptWhenStateWriteFails(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	database := openRegistrationDatabase(t, filepath.Join(t.TempDir(), "hearth.db"))
+	catalog := firstLightCatalog(t)
+	repository := NewSQLiteRepository(database, catalog)
+	service := newTestService(repository, nil, catalog, Dependencies{})
+	binding, err := service.Register(ctx, "simulator", testRuntimeID, validDomainRegistration())
+	if err != nil {
+		t.Fatal(err)
+	}
+	entityID := binding.Entities[0].EntityID
+	observedAt := time.Date(2026, 8, 22, 12, 0, 0, 0, time.UTC)
+
+	baseline := newObservation(t, entityID, `false`, observedAt)
+	if _, err = service.ProjectObservation(ctx, "simulator", testRuntimeID, baseline, observedAt); err != nil {
+		t.Fatal(err)
+	}
+	command := newCommandRecord(t, entityID, observedAt.Add(time.Second))
+	if _, err = repository.CreateCommand(ctx, command); err != nil {
+		t.Fatal(err)
+	}
+
+	// This test protects receipt/state/command atomicity and fails if the
+	// receipt insert commits without its State upsert and Command outcome.
+	// The triggers force the State write to fail after the receipt insert
+	// has run inside the same projection transaction.
+	for _, trigger := range []string{
+		`CREATE TRIGGER force_state_insert_failure BEFORE INSERT ON entity_states
+			BEGIN SELECT RAISE(ABORT, 'forced state write failure'); END`,
+		`CREATE TRIGGER force_state_update_failure BEFORE UPDATE ON entity_states
+			BEGIN SELECT RAISE(ABORT, 'forced state write failure'); END`,
+	} {
+		if _, err = database.ExecContext(ctx, trigger); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	failing := newObservation(t, entityID, `true`, observedAt.Add(2*time.Second))
+	failing.RefreshForCommand = &command.ID
+	if _, err = service.ProjectObservation(
+		ctx, "simulator", testRuntimeID, failing, observedAt.Add(2*time.Second),
+	); err == nil || !strings.Contains(err.Error(), "forced state write failure") {
+		t.Fatalf("forced projection error = %v", err)
+	}
+
+	var receipts int
+	if err = database.QueryRowContext(ctx,
+		`SELECT count(*) FROM observation_receipts WHERE observation_id = ?`, failing.ID,
+	).Scan(&receipts); err != nil {
+		t.Fatal(err)
+	}
+	if receipts != 0 {
+		t.Fatalf("aborted projection left %d receipts for %q", receipts, failing.ID)
+	}
+	assertReceiptCount(t, database, 1)
+
+	view, err := service.GetEntity(ctx, entityID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if view.State == nil || view.State.ObservationID != baseline.ID || string(view.State.Value) != "false" {
+		t.Fatalf("state after aborted projection = %#v", view.State)
+	}
+	stored, err := repository.GetCommand(ctx, command.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if stored.Status != CommandStatusRequested || stored.CompletedAt != nil ||
+		stored.OutcomeObservationID != nil {
+		t.Fatalf("command after aborted projection = %#v", stored)
+	}
 }
