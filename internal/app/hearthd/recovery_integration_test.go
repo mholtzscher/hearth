@@ -136,7 +136,9 @@ func TestCoreStartupInterruptsActiveCommandsWithoutRedispatch(t *testing.T) {
 		).Scan(&interrupted, &restarted)
 		return interrupted == 2 && restarted == 2, queryErr
 	})
-	time.Sleep(100 * time.Millisecond)
+	// The interruption transaction commits before JetStream and HTTP startup.
+	// Wait for the bound socket rather than canceling mid-startup on slower CI runners.
+	waitForRecord(t, recorder, "core.http_listening", 5*time.Second)
 	if got := dispatches.Load(); got != 0 {
 		t.Fatalf("startup redispatched %d persisted commands", got)
 	}

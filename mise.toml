@@ -21,6 +21,7 @@ sqlc generate
 
 [tasks."format"]
 description = "Format Go files"
+shell = "bash -e -o pipefail -c"
 depends = ["generate"]
 run = '''
 git ls-files -z --cached --others --exclude-standard -- '*.go' |
@@ -32,6 +33,7 @@ git ls-files -z --cached --others --exclude-standard -- '*.go' |
 
 [tasks."format-check"]
 description = "Check Go formatting"
+shell = "bash -e -o pipefail -c"
 depends = ["tidy"]
 run = '''
 unformatted="$(
