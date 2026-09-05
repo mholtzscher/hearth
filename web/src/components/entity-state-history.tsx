@@ -257,7 +257,7 @@ function StateHistoryChart({
     <figure className="mt-3">
       <svg
         viewBox={`0 0 ${CHART_WIDTH} ${CHART_HEIGHT}`}
-        className="h-auto w-full text-muted-foreground"
+        className="h-auto w-full max-w-[560px] text-muted-foreground"
         role="img"
         aria-label={`State history chart for ${type}`}
       >
