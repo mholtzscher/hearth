@@ -43,7 +43,7 @@ pnpm run preview
 
 ## Container image
 
-Releases publish `ghcr.io/mholtzscher/hearth-web:<tag>` (same tag as the
+Releases publish `ghcr.io/mholtzscher/hearth/hearth-web:<tag>` (same tag as the
 `ko` Go images): a static build served by nginx, proxying `/v1`, `/healthz`,
 `/readyz`, `/openapi.json` to `HEARTHD_URL` and `/nats-monitor` to
 `NATS_MONITOR_URL` (same-origin, so no CORS setup is needed). Point it at
