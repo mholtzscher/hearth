@@ -64,5 +64,5 @@ jobs:
           context: ./web
           push: true
           tags: |
-            ghcr.io/${{ github.repository }}-web:${{ needs.release.outputs.tag_name }}
-            ghcr.io/${{ github.repository }}-web:latest
+            ghcr.io/${{ github.repository }}/hearth-web:${{ needs.release.outputs.tag_name }}
+            ghcr.io/${{ github.repository }}/hearth-web:latest
