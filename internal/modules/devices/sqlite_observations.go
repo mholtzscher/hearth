@@ -37,8 +37,8 @@ func (repository *SQLiteRepository) ProjectObservation(
 	}
 	defer func() { _ = tx.Rollback() }()
 
-	receiptQueries := repository.queries.WithTx(tx)
-	duplicate, err := observationReceiptExists(ctx, receiptQueries, params.Observation.ID)
+	observationQueries := repository.queries.WithTx(tx)
+	duplicate, err := observationExists(ctx, observationQueries, params.Observation.ID)
 	if err != nil {
 		return ProjectionResult{}, err
 	}
@@ -53,7 +53,7 @@ func (repository *SQLiteRepository) ProjectObservation(
 	var normalized Value
 	var rejection *ObservationRejection
 	disposition := DispositionRejected
-	receiptRuntimeID, runtimeActive, err := observationRuntimeState(
+	observationRuntimeID, runtimeActive, err := observationRuntimeState(
 		ctx, stateQueries, params.AdapterID, params.RuntimeID,
 	)
 	if err != nil {
@@ -81,10 +81,10 @@ func (repository *SQLiteRepository) ProjectObservation(
 		}
 	}
 
-	receiveOrder, err := receiptQueries.InsertObservationReceipt(ctx, dbsqlc.InsertObservationReceiptParams{
+	receiveOrder, err := observationQueries.InsertObservation(ctx, dbsqlc.InsertObservationParams{
 		ObservationID:     string(params.Observation.ID),
 		AdapterID:         params.AdapterID,
-		RuntimeID:         receiptRuntimeID,
+		RuntimeID:         observationRuntimeID,
 		EntityID:          string(params.Observation.EntityID),
 		Disposition:       string(disposition),
 		RejectionCode:     nullableRejection(rejection),
@@ -92,10 +92,10 @@ func (repository *SQLiteRepository) ProjectObservation(
 		AdapterReceivedAt: formatTime(params.Observation.AdapterReceivedAt),
 		SourceUpdatedAt:   nullableTime(params.Observation.SourceUpdatedAt),
 		ObservedAt:        formatTime(params.ObservedAt),
-		ExpiresAt:         formatTime(params.ReceiptExpiresAt),
+		ExpiresAt:         formatTime(params.ExpiresAt),
 	})
 	if err != nil {
-		return ProjectionResult{}, fmt.Errorf("insert observation receipt: %w", err)
+		return ProjectionResult{}, fmt.Errorf("insert observation: %w", err)
 	}
 
 	state, satisfied, err := repository.persistObservationState(
@@ -118,12 +118,12 @@ func observationRuntimeState(
 	adapterID string,
 	runtimeID RuntimeID,
 ) (sql.NullString, bool, error) {
-	receiptRuntimeID := nullableText(string(runtimeID))
+	observationRuntimeID := nullableText(string(runtimeID))
 	_, err := queries.GetActiveAdapterRuntime(ctx, dbsqlc.GetActiveAdapterRuntimeParams{
 		AdapterID: adapterID, RuntimeID: string(runtimeID),
 	})
 	if err == nil {
-		return receiptRuntimeID, true, nil
+		return observationRuntimeID, true, nil
 	}
 	if !errors.Is(err, sql.ErrNoRows) {
 		return sql.NullString{}, false, fmt.Errorf("validate observation runtime: %w", err)
@@ -132,7 +132,7 @@ func observationRuntimeState(
 		AdapterID: adapterID, RuntimeID: string(runtimeID),
 	})
 	if err == nil {
-		return receiptRuntimeID, false, nil
+		return observationRuntimeID, false, nil
 	}
 	if errors.Is(err, sql.ErrNoRows) {
 		return sql.NullString{}, false, nil
@@ -140,12 +140,12 @@ func observationRuntimeState(
 	return sql.NullString{}, false, fmt.Errorf("lookup stale observation runtime: %w", err)
 }
 
-func observationReceiptExists(
+func observationExists(
 	ctx context.Context,
 	queries *dbsqlc.Queries,
 	observationID ObservationID,
 ) (bool, error) {
-	_, err := queries.GetObservationReceipt(ctx, dbsqlc.GetObservationReceiptParams{
+	_, err := queries.GetObservation(ctx, dbsqlc.GetObservationParams{
 		ObservationID: string(observationID),
 	})
 	if err == nil {
@@ -154,7 +154,7 @@ func observationReceiptExists(
 	if errors.Is(err, sql.ErrNoRows) {
 		return false, nil
 	}
-	return false, fmt.Errorf("get observation receipt: %w", err)
+	return false, fmt.Errorf("get observation: %w", err)
 }
 
 func loadObservationEntity(
@@ -351,13 +351,13 @@ func (repository *SQLiteRepository) satisfyCommand(
 	}, nil
 }
 
-func (repository *SQLiteRepository) DeleteExpiredObservationReceipts(ctx context.Context, before time.Time) error {
+func (repository *SQLiteRepository) DeleteExpiredObservations(ctx context.Context, before time.Time) error {
 	_, err := repository.queries.
-		DeleteExpiredObservationReceipts(ctx, dbsqlc.DeleteExpiredObservationReceiptsParams{
+		DeleteExpiredObservations(ctx, dbsqlc.DeleteExpiredObservationsParams{
 			ExpiresAt: formatTime(before),
 		})
 	if err != nil {
-		return fmt.Errorf("delete expired observation receipts: %w", err)
+		return fmt.Errorf("delete expired observations: %w", err)
 	}
 	return nil
 }

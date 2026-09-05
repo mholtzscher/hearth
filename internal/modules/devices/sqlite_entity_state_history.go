@@ -9,7 +9,7 @@ import (
 )
 
 // ListEntityStateHistory returns one keyset page of an Entity's retained
-// first-seen Observation receipts, newest-first by receive order. The caller
+// first-seen observations, newest-first by receive order. The caller
 // validates the Entity, filter, cursor, and limit; the adapter owns query
 // selection, limit+1 truncation, row mapping, and error wrapping.
 func (repository *SQLiteRepository) ListEntityStateHistory(

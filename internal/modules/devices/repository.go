@@ -53,12 +53,12 @@ type SetEntityEnabledParams struct {
 }
 
 type ProjectObservationParams struct {
-	AdapterID        string
-	RuntimeID        RuntimeID
-	Observation      Observation
-	ObservedAt       time.Time
-	Now              func() time.Time
-	ReceiptExpiresAt time.Time
+	AdapterID   string
+	RuntimeID   RuntimeID
+	Observation Observation
+	ObservedAt  time.Time
+	Now         func() time.Time
+	ExpiresAt   time.Time
 }
 
 type AdapterReader interface {
@@ -109,7 +109,7 @@ type EnablementRepository interface {
 
 type ObservationRepository interface {
 	ProjectObservation(context.Context, ProjectObservationParams) (ProjectionResult, error)
-	DeleteExpiredObservationReceipts(context.Context, time.Time) error
+	DeleteExpiredObservations(context.Context, time.Time) error
 }
 
 type CommandLedger interface {

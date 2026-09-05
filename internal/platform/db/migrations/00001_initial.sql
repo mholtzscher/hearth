@@ -170,7 +170,7 @@ CREATE TABLE adapter_entity_mappings (
         ON DELETE CASCADE
 );
 
-CREATE TABLE observation_receipts (
+CREATE TABLE observations (
     receive_order       INTEGER PRIMARY KEY AUTOINCREMENT,
     observation_id      TEXT NOT NULL UNIQUE CHECK (substr(observation_id, 1, 4) = 'obs_'),
     adapter_id          TEXT NOT NULL,
@@ -202,27 +202,27 @@ CREATE TABLE observation_receipts (
     )
 );
 
-CREATE INDEX observation_receipts_expiry_idx
-    ON observation_receipts(expires_at);
+CREATE INDEX observations_expiry_idx
+    ON observations(expires_at);
 
-CREATE INDEX observation_receipts_entity_history_idx
-    ON observation_receipts(entity_id, receive_order DESC);
+CREATE INDEX observations_entity_history_idx
+    ON observations(entity_id, receive_order DESC);
 
-CREATE INDEX observation_receipts_entity_disposition_history_idx
-    ON observation_receipts(entity_id, disposition, receive_order DESC);
+CREATE INDEX observations_entity_disposition_history_idx
+    ON observations(entity_id, disposition, receive_order DESC);
 
-CREATE INDEX observation_receipts_entity_updates_history_idx
-    ON observation_receipts(entity_id, receive_order DESC)
+CREATE INDEX observations_entity_updates_history_idx
+    ON observations(entity_id, receive_order DESC)
     WHERE disposition IN ('applied', 'unchanged');
 
 CREATE TABLE entity_states (
     entity_id           TEXT PRIMARY KEY REFERENCES entities(id) ON DELETE CASCADE,
-    observation_id      TEXT NOT NULL UNIQUE REFERENCES observation_receipts(observation_id),
+    observation_id      TEXT NOT NULL UNIQUE REFERENCES observations(observation_id),
     value_json          TEXT NOT NULL CHECK (json_valid(value_json)),
     adapter_received_at TEXT NOT NULL,
     source_updated_at   TEXT,
     observed_at         TEXT NOT NULL,
-    receive_order       INTEGER NOT NULL UNIQUE REFERENCES observation_receipts(receive_order)
+    receive_order       INTEGER NOT NULL UNIQUE REFERENCES observations(receive_order)
 );
 
 CREATE TABLE entity_availability_current (
@@ -337,11 +337,11 @@ DROP TABLE health_transitions;
 DROP TABLE entity_availability_receipts;
 DROP TABLE entity_availability_current;
 DROP TABLE entity_states;
-DROP INDEX observation_receipts_entity_updates_history_idx;
-DROP INDEX observation_receipts_entity_disposition_history_idx;
-DROP INDEX observation_receipts_entity_history_idx;
-DROP INDEX observation_receipts_expiry_idx;
-DROP TABLE observation_receipts;
+DROP INDEX observations_entity_updates_history_idx;
+DROP INDEX observations_entity_disposition_history_idx;
+DROP INDEX observations_entity_history_idx;
+DROP INDEX observations_expiry_idx;
+DROP TABLE observations;
 DROP TABLE adapter_entity_mappings;
 DROP TABLE adapter_bindings;
 DROP INDEX commands_entity_requested_idx;

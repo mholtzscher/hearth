@@ -155,7 +155,7 @@ const (
     DispositionApplied   ObservationDisposition = "applied"
     DispositionUnchanged ObservationDisposition = "unchanged"
     DispositionRejected  ObservationDisposition = "rejected"
-    DispositionDuplicate ObservationDisposition = "duplicate" // processing result; no second receipt row
+    DispositionDuplicate ObservationDisposition = "duplicate" // processing result; no second observation row
 )
 
 type ObservationRejection string
@@ -523,7 +523,7 @@ type SimulatorConfig struct {
 }
 ```
 
-Protocol limits are not YAML fields: the built-in `hearth.power/v1` `set` definition supplies its ten-second Command deadline; fixed v1 transport/storage constants are the one-minute future-clock diagnostic threshold, seven-day/one-GiB stream, 30-second acknowledgement wait, one pending acknowledgement, and `observed_at + 192h` receipt expiry with the current-State receipt pinned. Command records are not pruned in this slice; retention policy awaits a history interface.
+Protocol limits are not YAML fields: the built-in `hearth.power/v1` `set` definition supplies its ten-second Command deadline; fixed v1 transport/storage constants are the one-minute future-clock diagnostic threshold, seven-day/one-GiB stream, 30-second acknowledgement wait, one pending acknowledgement, and `observed_at + 192h` observation expiry with the current-State observation pinned. Command records are not pruned in this slice; retention policy awaits a history interface.
 
 ## Interfaces
 
@@ -826,7 +826,7 @@ CREATE TABLE adapter_entity_mappings (
         ON DELETE CASCADE
 );
 
-CREATE TABLE observation_receipts (
+CREATE TABLE observations (
     receive_order       INTEGER PRIMARY KEY AUTOINCREMENT,
     observation_id      TEXT NOT NULL UNIQUE CHECK (observation_id LIKE 'obs_%'),
     adapter_id          TEXT NOT NULL,
@@ -848,23 +848,23 @@ CREATE TABLE observation_receipts (
     )
 );
 
-CREATE INDEX observation_receipts_expiry_idx
-    ON observation_receipts(expires_at);
+CREATE INDEX observations_expiry_idx
+    ON observations(expires_at);
 
 CREATE TABLE entity_states (
     entity_id           TEXT PRIMARY KEY REFERENCES entities(id) ON DELETE CASCADE,
-    observation_id      TEXT NOT NULL UNIQUE REFERENCES observation_receipts(observation_id),
+    observation_id      TEXT NOT NULL UNIQUE REFERENCES observations(observation_id),
     value_json          TEXT NOT NULL CHECK (json_valid(value_json)),
     adapter_received_at TEXT NOT NULL,
     source_updated_at   TEXT,
     observed_at         TEXT NOT NULL,
-    receive_order       INTEGER NOT NULL UNIQUE REFERENCES observation_receipts(receive_order)
+    receive_order       INTEGER NOT NULL UNIQUE REFERENCES observations(receive_order)
 );
 
 -- +goose Down
 DROP TABLE entity_states;
-DROP INDEX observation_receipts_expiry_idx;
-DROP TABLE observation_receipts;
+DROP INDEX observations_expiry_idx;
+DROP TABLE observations;
 DROP TABLE adapter_entity_mappings;
 DROP TABLE adapter_bindings;
 DROP INDEX commands_entity_requested_idx;
@@ -905,46 +905,46 @@ commands:
   SatisfyCommandFromObservation
   InterruptActiveCommands
 
-receipts:
-  GetObservationReceipt
-  InsertObservationReceipt
-  DeleteExpiredObservationReceipts
+observations:
+  GetObservation
+  InsertObservation
+  DeleteExpiredObservations
 ```
 
 `sqlc.yaml` has one SQLite generation entry using the shared migrations and the concern-specific query files under `internal/modules/devices/dbqueries`. It emits one feature-owned package at `internal/modules/devices/dbsqlc`, so table models are generated once. The concrete `devices` SQLite repository owns one generated `Queries` value and binds it to transactions with `WithTx`. Generated types remain persistence details and never leak through the module's capability-based stores.
 
-The pruning query excludes the receipt referenced by current State:
+The pruning query excludes the observation referenced by current State:
 
 ```sql
--- name: DeleteExpiredObservationReceipts :exec
-DELETE FROM observation_receipts
+-- name: DeleteExpiredObservations :exec
+DELETE FROM observations
 WHERE expires_at < ?
   AND NOT EXISTS (
       SELECT 1
       FROM entity_states
-      WHERE entity_states.observation_id = observation_receipts.observation_id
+      WHERE entity_states.observation_id = observations.observation_id
   );
 ```
 
-Checking `observation_id` protects both State foreign keys because they reference the same receipt. Superseded State receipts become eligible at the next pruning pass.
+Checking `observation_id` protects both State foreign keys because they reference the same observation. Superseded State observations become eligible at the next pruning pass.
 
-`RegisterBinding`, `ProjectObservation`, and all Command transitions own their SQLite transactions behind the repository; generated sqlc types never cross that seam. The concrete `devices` repository receives the same required `TypeCatalog` instance as the service so projection can validate values, compare State, and evaluate a linked Command's outcome policy inside the transaction. Projection atomically inserts the receipt, updates State, and satisfies a matching active Command. Registration stores the catalog-normalized `support_json` in the existing binding transaction; re-registration replaces that one document atomically.
+`RegisterBinding`, `ProjectObservation`, and all Command transitions own their SQLite transactions behind the repository; generated sqlc types never cross that seam. The concrete `devices` repository receives the same required `TypeCatalog` instance as the service so projection can validate values, compare State, and evaluate a linked Command's outcome policy inside the transaction. Projection atomically inserts the observation, updates State, and satisfies a matching active Command. Registration stores the catalog-normalized `support_json` in the existing binding transaction; re-registration replaces that one document atomically.
 
-`outcome_observation_id` intentionally has no receipt foreign key because receipts expire while Command history remains. Satisfaction writes this typed, immutable ID only after inserting its receipt in the same transaction.
+`outcome_observation_id` intentionally has no observation foreign key because observations expire while Command history remains. Satisfaction writes this typed, immutable ID only after inserting its observation in the same transaction.
 
 ### Observation projection rules
 
 For each schema-valid Observation, one transaction:
 
-1. Read core-owned `observed_at` from the JetStream server timestamp; return `duplicate` when the Observation ID already has a receipt.
+1. Read core-owned `observed_at` from the JetStream server timestamp; return `duplicate` when the Observation ID already has an observation.
 2. When `adapter_received_at > observed_at + 1m`, log a structured clock-skew diagnostic containing Observation, adapter, Entity, `adapter_received_at`, and `observed_at`; continue normally.
 3. Resolve Entity/owner; record `rejected/unknown_entity` or `rejected/wrong_adapter` for identity failures.
 4. Validate the generic JSON value through the Entity-type catalog; record `rejected/invalid_value` when it violates the registered State schema. Unknown catalog IDs in persisted Entities are an internal configuration failure, not an adapter-input rejection.
-5. Insert the receipt with the next internal `receive_order`. For a known, correctly owned Entity with a valid value, advance State regardless of timestamps: no current State or a value the catalog considers different is `applied`; a value the catalog considers equivalent is `unchanged`.
+5. Insert the observation with the next internal `receive_order`. For a known, correctly owned Entity with a valid value, advance State regardless of timestamps: no current State or a value the catalog considers different is `applied`; a value the catalog considers equivalent is `unchanged`.
 6. An `applied`/`unchanged` Observation with `refresh_for_command_id` satisfies only an active `requested`/`accepted` Command for the same Entity/adapter when its catalog outcome policy matches the Command operation and parameters. Set `completed_at`/`outcome_observation_id` and notify its waiter. No rejected, nonmatching, wrong-identity, or terminal link satisfies a Command.
-7. Set receipt expiry to `observed_at + 192h`, then atomically commit receipt, State, and satisfaction before JetStream acknowledgement.
+7. Set observation expiry to `observed_at + 192h`, then atomically commit observation, State, and satisfaction before JetStream acknowledgement.
 
-At startup and hourly, delete expired receipts except the current-State receipt; it becomes eligible after State advances.
+At startup and hourly, delete expired observations except the current-State observation; it becomes eligible after State advances.
 
 ## Home Assistant adapter
 
@@ -1005,7 +1005,7 @@ Core startup order:
 1. Parse and validate YAML.
 2. Open SQLite; enable foreign keys/WAL/busy timeout; apply Goose migrations.
 3. Mark any `requested` or `accepted` Command records `interrupted` with failure code `core_restarted`; do not redispatch them.
-4. Delete expired Observation receipts not referenced by current State.
+4. Delete expired Observations not referenced by current State.
 5. Connect to NATS.
 6. Idempotently provision/validate the stream and durable consumer.
 7. Construct and validate the closed first-light Entity-type catalog.
@@ -1037,7 +1037,7 @@ internal/
 │       ├── model.go                 # new — Device, Entity, generic State value, and Command types
 │       ├── catalog.go               # new — closed first-light Entity-type definitions and semantic policies
 │       ├── service.go               # new — registration, projection, Command behavior
-│       ├── repository.go            # new — identity, State, receipt, and Command-record persistence seam
+│       ├── repository.go            # new — identity, State, observation, and Command-record persistence seam
 │       ├── command.go               # new — durable lifecycle transitions plus concurrent in-memory outcome waits
 │       └── errors.go                # new — domain errors
 ├── adapters/
@@ -1047,7 +1047,7 @@ internal/
     ├── config/                      # new — strict per-process YAML loading
     ├── db/
     │   ├── migrations/              # new — Goose SQLite migrations
-    │   ├── queries/                 # new — registration/state/commands/receipts query directories
+    │   ├── queries/                 # new — registration/state/commands/observations query directories
     │   └── sqlc/                    # new/generated — matching focused query packages
     └── nats/                        # new — core NATS/JetStream transport
 entitytypes/
@@ -1082,7 +1082,7 @@ sqlc.yaml                             # new — root SQLite generation config
 | D1 | Go/devenv foundation, dependency lock, typed IDs, closed first-light Entity-type catalog, embedded JSON Schemas, YAML loaders | L | - |
 | D2 | Stateless adapter SDK, NATS subjects/envelopes, schema validation, registration/Observation/Command contract tests | L | D1 |
 | D3 | SQLite migration/sqlc layer, Command ledger, and idempotent binding registration in `devices` | L | D1, D2 |
-| D4 | JetStream provisioning, durable Observation projection, receipt pruning, GET Entity, readiness | XL | D2, D3 |
+| D4 | JetStream provisioning, durable Observation projection, observation pruning, GET Entity, readiness | XL | D2, D3 |
 | D5 | Audited ephemeral Command orchestration, POST endpoint, simulator happy path and complete failure matrix | XL | D4 |
 | D6 | Disposable Home Assistant WebSocket adapter and real-light verification | L | D2, D5 |
 | D7 | Broad checks, runtime OpenAPI assertions, recovery tests, docs reconciliation | L | D1–D6 |
@@ -1094,8 +1094,8 @@ Total relative effort is **XL**. No calendar estimate is asserted.
 - [x] From a clean checkout, `devenv test` (or its documented replacement) checks generation, tests, vet, runtime OpenAPI, compilation of every authoritative JSON Schema, and validation of cross-binary fixtures.
 - [x] Re-registration returns identical IDs, replaces normalized Entity support, and updates the Entity name returned by HTTP; both persist across restart. Conflicting binding/external mappings, an Entity type change, or catalog-invalid support return their schema-defined permanent rejection codes atomically without partial rows, and adapters do not retry them.
 - [x] A registered, unobserved Entity returns HTTP 200 with its configured metadata and `state: null`.
-- [x] A JetStream-acknowledged Observation survives restart; exact redelivery changes neither State nor receipt count.
-- [x] Pruning deletes expired unreferenced receipts, pins the current-State receipt without foreign-key errors, then deletes it after State advances.
+- [x] A JetStream-acknowledged Observation survives restart; exact redelivery changes neither State nor observation count.
+- [x] Pruning deletes expired unreferenced observations, pins the current-State observation without foreign-key errors, then deletes it after State advances.
 - [x] The generic wire and persistence paths round-trip the first-light JSON boolean without boolean-specific columns or DTO fields; the catalog rejects a schema-valid non-boolean Observation as `invalid_value` and rejects invalid `set` parameters before Command creation or dispatch.
 - [x] A later-received Observation advances State even when its `adapter_received_at` is older; a catalog-equivalent value advances State evidence/timestamps as `unchanged`; adapter clock skew beyond the threshold is logged but accepted; wrong-owner, unknown-Entity, invalid-value, and malformed input produce the specified rejection/diagnostic/acknowledgement behavior.
 - [x] Every dispatched Command first commits `requested`; record-creation failure prevents dispatch.
@@ -1116,7 +1116,7 @@ Total relative effort is **XL**. No calendar estimate is asserted.
 | Layer | What | How |
 | --- | --- | --- |
 | Pure module | ID validation, typed catalog support/State/parameter validation and erasure, type-aware equality and immutable outcome matching, registration conflicts, receive-order projection, source-time diagnostics, same-value advancement, Command transition monotonicity, concurrent waiter isolation, interleaved outcomes, deadline/result mapping | Inject in-memory Repository, CommandSender, closed catalog, clock, and ID generator |
-| Repository | Transactions, constraints, idempotency, receive ordering, receipt pruning, current-State retention, Command lifecycle persistence, atomic outcome satisfaction, startup interruption | Temporary real SQLite; apply Goose; use generated sqlc queries |
+| Repository | Transactions, constraints, idempotency, receive ordering, observation pruning, current-State retention, Command lifecycle persistence, atomic outcome satisfaction, startup interruption | Temporary real SQLite; apply Goose; use generated sqlc queries |
 | SDK/NATS | Subjects, envelopes, schema validation, typed power registration/Command/Observation facade, accepted/rejected registration responses and retry classification, publish acknowledgement/retry, concurrent Command handler invocation, request/reply, responder invariants, W3C headers | Typed facade tests plus in-process NATS Server with JetStream |
 | HTTP | Huma validation, operation IDs, nullable State, bodies, error/status mapping, runtime OpenAPI | Echo/Huma test server with fake module dependencies |
 | Home Assistant adapter | Subscribe-first snapshot/event reconciliation, concurrent request/response correlation, service calls, command-linked no-op refresh, reconnect | Scripted WebSocket server using captured minimal fixtures and controlled snapshot/event interleavings; one manual/live verification |

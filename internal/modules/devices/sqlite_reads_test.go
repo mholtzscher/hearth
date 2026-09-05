@@ -202,7 +202,7 @@ func seedResourceReads(t *testing.T, database *sql.DB, requestedAt time.Time) {
 	}
 	observationID := "obs_01890f47-7a6b-7c4d-8e9f-0123456789a1"
 	if _, err := database.ExecContext(ctx, `
-		INSERT INTO observation_receipts (
+		INSERT INTO observations (
 			observation_id, adapter_id, entity_id, disposition,
 			state_value_json, adapter_received_at, observed_at, expires_at
 		) VALUES (?, 'simulator', ?, 'applied', 'true', ?, ?, ?)`,
@@ -213,7 +213,7 @@ func seedResourceReads(t *testing.T, database *sql.DB, requestedAt time.Time) {
 		INSERT INTO entity_states (
 			entity_id, observation_id, value_json, adapter_received_at, observed_at, receive_order
 		) SELECT ?, ?, 'true', ?, ?, receive_order
-		  FROM observation_receipts WHERE observation_id = ?`,
+		  FROM observations WHERE observation_id = ?`,
 		readEntityA, observationID, timestamp, timestamp, observationID); err != nil {
 		t.Fatal(err)
 	}

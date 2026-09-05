@@ -43,7 +43,7 @@ func TestMigrateEmptySQLiteDatabase(t *testing.T) {
 
 	for _, table := range []string{
 		"devices", "entities", "commands",
-		"adapter_bindings", "adapter_entity_mappings", "observation_receipts", "entity_states",
+		"adapter_bindings", "adapter_entity_mappings", "observations", "entity_states",
 		"adapter_instances", "adapter_runtimes", "entity_availability_current", "health_transitions",
 	} {
 		var found string
@@ -80,17 +80,17 @@ func TestMigrateEmptySQLiteDatabase(t *testing.T) {
 	assertIndexColumns(t, database, "commands_entity_requested_idx", "entity_id,requested_at,id")
 	assertIndexColumns(t, database, "adapter_runtimes_one_active_idx", "adapter_id")
 	assertIndexColumns(t, database, "adapter_runtimes_adapter_idx", "adapter_id")
-	assertIndexColumns(t, database, "observation_receipts_entity_history_idx", "entity_id,receive_order")
+	assertIndexColumns(t, database, "observations_entity_history_idx", "entity_id,receive_order")
 	assertIndexColumns(
 		t,
 		database,
-		"observation_receipts_entity_disposition_history_idx",
+		"observations_entity_disposition_history_idx",
 		"entity_id,disposition,receive_order",
 	)
 	assertIndexColumns(
 		t,
 		database,
-		"observation_receipts_entity_updates_history_idx",
+		"observations_entity_updates_history_idx",
 		"entity_id,receive_order",
 	)
 
@@ -186,11 +186,11 @@ func TestIDPrefixConstraintsRequireLiteralUnderscore(t *testing.T) {
 	assertWriteRejected(
 		t,
 		database,
-		`INSERT INTO observation_receipts (observation_id, adapter_id, entity_id, disposition, state_value_json, adapter_received_at, observed_at, expires_at) VALUES ('obsXbad', 'adapter', 'ent_valid', 'applied', 'true', 'now', 'now', 'later')`,
+		`INSERT INTO observations (observation_id, adapter_id, entity_id, disposition, state_value_json, adapter_received_at, observed_at, expires_at) VALUES ('obsXbad', 'adapter', 'ent_valid', 'applied', 'true', 'now', 'now', 'later')`,
 	)
 }
 
-func TestDeleteExpiredObservationReceiptsComparesTimestampsChronologically(t *testing.T) {
+func TestDeleteExpiredObservationsComparesTimestampsChronologically(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	database, openErr := Open(ctx, filepath.Join(t.TempDir(), "hearth.db"))
@@ -202,7 +202,7 @@ func TestDeleteExpiredObservationReceiptsComparesTimestampsChronologically(t *te
 		t.Fatal(err)
 	}
 
-	for _, receipt := range []struct {
+	for _, observation := range []struct {
 		id        string
 		expiresAt string
 	}{
@@ -210,11 +210,11 @@ func TestDeleteExpiredObservationReceiptsComparesTimestampsChronologically(t *te
 		{id: "obs_future", expiresAt: "2026-08-22T12:00:00.5Z"},
 	} {
 		_, err := database.ExecContext(ctx, `
-			INSERT INTO observation_receipts (
+			INSERT INTO observations (
 				observation_id, adapter_id, entity_id, disposition, state_value_json,
 				adapter_received_at, observed_at, expires_at
 			) VALUES (?, 'adapter', 'ent_entity', 'applied', 'true', ?, ?, ?)`,
-			receipt.id, "2026-08-22T11:00:00Z", "2026-08-22T11:00:00Z", receipt.expiresAt,
+			observation.id, "2026-08-22T11:00:00Z", "2026-08-22T11:00:00Z", observation.expiresAt,
 		)
 		if err != nil {
 			t.Fatal(err)
@@ -222,22 +222,22 @@ func TestDeleteExpiredObservationReceiptsComparesTimestampsChronologically(t *te
 	}
 
 	deleted, err := dbsqlc.New(database).
-		DeleteExpiredObservationReceipts(ctx, dbsqlc.DeleteExpiredObservationReceiptsParams{
+		DeleteExpiredObservations(ctx, dbsqlc.DeleteExpiredObservationsParams{
 			ExpiresAt: "2026-08-22T12:00:00Z",
 		})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if deleted != 1 {
-		t.Fatalf("deleted receipts = %d, want 1", deleted)
+		t.Fatalf("deleted observations = %d, want 1", deleted)
 	}
 	var remaining string
-	if scanErr := database.QueryRowContext(ctx, `SELECT observation_id FROM observation_receipts`).
+	if scanErr := database.QueryRowContext(ctx, `SELECT observation_id FROM observations`).
 		Scan(&remaining); scanErr != nil {
 		t.Fatal(scanErr)
 	}
 	if remaining != "obs_future" {
-		t.Fatalf("remaining receipt = %q, want obs_future", remaining)
+		t.Fatalf("remaining observation = %q, want obs_future", remaining)
 	}
 }
 

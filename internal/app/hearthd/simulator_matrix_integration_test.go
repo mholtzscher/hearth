@@ -530,7 +530,7 @@ func TestSimulatorObservationFailureMatrix(t *testing.T) {
 				if string(state.Value) != "false" {
 					t.Fatalf("state = %#v", state)
 				}
-				assertMatrixCount(t, harness.database, "observation_receipts", 1)
+				assertMatrixCount(t, harness.database, "observations", 1)
 				stream, err := harness.jetstream.Stream(harness.ctx, devicesnats.ObservationStreamName)
 				if err != nil {
 					t.Fatal(err)
@@ -579,7 +579,7 @@ func TestSimulatorObservationFailureMatrix(t *testing.T) {
 				if view.State != nil {
 					t.Fatalf("malformed observation created state: %#v", view.State)
 				}
-				assertMatrixCount(t, harness.database, "observation_receipts", 0)
+				assertMatrixCount(t, harness.database, "observations", 0)
 			},
 		},
 	}
@@ -990,7 +990,7 @@ func TestSimulatorRestartBeforeAckRedeliversWithoutChangingStateOrCommand(t *tes
 		t.Fatal(err)
 	}
 	beforeState := harness.waitForState(t)
-	assertMatrixCount(t, harness.database, "observation_receipts", 2)
+	assertMatrixCount(t, harness.database, "observations", 2)
 
 	harness.consumer.Stop()
 	select {
@@ -1045,7 +1045,7 @@ func TestSimulatorRestartBeforeAckRedeliversWithoutChangingStateOrCommand(t *tes
 		string(afterState.Value) != string(beforeState.Value) {
 		t.Fatalf("state changed on redelivery: before = %#v, after = %#v", beforeState, afterState)
 	}
-	assertMatrixCount(t, harness.database, "observation_receipts", 2)
+	assertMatrixCount(t, harness.database, "observations", 2)
 }
 
 //nolint:gocognit // The readiness sequence is easier to audit in chronological order.
@@ -1337,7 +1337,7 @@ func TestSimulatorExpiryTakeoverFencesOldTrafficAndCommands(t *testing.T) {
 		var rejection string
 		queryErr := harness.database.QueryRowContext(
 			harness.ctx,
-			`SELECT rejection_code FROM observation_receipts WHERE observation_id = ?`,
+			`SELECT rejection_code FROM observations WHERE observation_id = ?`,
 			observationID,
 		).Scan(&rejection)
 		if errors.Is(queryErr, sql.ErrNoRows) {

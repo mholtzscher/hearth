@@ -230,7 +230,7 @@ func TestSQLiteEntityStateHistoryMapsOwnedDomainValues(t *testing.T) {
 	}
 }
 
-func TestSQLiteEntityStateHistoryListsReceiptsForUnknownEntities(t *testing.T) {
+func TestSQLiteEntityStateHistoryListsObservationsForUnknownEntities(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	database := openRegistrationDatabase(t, filepath.Join(t.TempDir(), "hearth.db"))
@@ -324,15 +324,15 @@ func TestSQLiteEntityStateHistorySurvivesInsertsAndPruning(t *testing.T) {
 		}
 	}
 
-	// Expire every receipt below the cursor, including the cursor row itself,
+	// Expire every observation below the cursor, including the cursor row itself,
 	// then prune. The cursor must stay valid and report an empty final page.
 	if _, err = database.ExecContext(ctx,
-		`UPDATE observation_receipts SET expires_at = ? WHERE entity_id = ? AND receive_order < ?`,
+		`UPDATE observations SET expires_at = ? WHERE entity_id = ? AND receive_order < ?`,
 		formatTime(base.Add(-time.Hour)), string(entityID), newerCursor(t, database, newer[0]),
 	); err != nil {
 		t.Fatal(err)
 	}
-	if err = service.DeleteExpiredObservationReceipts(ctx, base.Add(time.Hour)); err != nil {
+	if err = service.DeleteExpiredObservations(ctx, base.Add(time.Hour)); err != nil {
 		t.Fatal(err)
 	}
 	afterPrune, err := repository.ListEntityStateHistory(ctx, ListEntityStateHistoryParams{
@@ -351,7 +351,7 @@ func newerCursor(t *testing.T, database *sql.DB, id ObservationID) int64 {
 	t.Helper()
 	var order int64
 	if err := database.QueryRow(
-		`SELECT receive_order FROM observation_receipts WHERE observation_id = ?`, id,
+		`SELECT receive_order FROM observations WHERE observation_id = ?`, id,
 	).Scan(&order); err != nil {
 		t.Fatal(err)
 	}
@@ -378,13 +378,13 @@ func TestSQLiteEntityStateHistoryRetentionKeepsCurrentAnchor(t *testing.T) {
 	}
 
 	if _, err := database.ExecContext(ctx,
-		`UPDATE observation_receipts SET expires_at = ? WHERE entity_id = ?`,
+		`UPDATE observations SET expires_at = ? WHERE entity_id = ?`,
 		formatTime(base.Add(time.Hour)), string(entityID),
 	); err != nil {
 		t.Fatal(err)
 	}
-	if err := service.DeleteExpiredObservationReceipts(
-		ctx, base.Add(ObservationReceiptRetention+2*time.Hour),
+	if err := service.DeleteExpiredObservations(
+		ctx, base.Add(ObservationRetention+2*time.Hour),
 	); err != nil {
 		t.Fatal(err)
 	}
@@ -397,17 +397,17 @@ func TestSQLiteEntityStateHistoryRetentionKeepsCurrentAnchor(t *testing.T) {
 	assertHistoryIDs(t, "retained", historyIDs(page.Items), []ObservationID{second.ID})
 }
 
-// loadReceiptHistoryQueries reads the named history queries from the actual
-// dbqueries/receipts.sql source so EXPLAIN QUERY PLAN exercises the exact
+// loadObservationHistoryQueries reads the named history queries from the actual
+// dbqueries/observations.sql source so EXPLAIN QUERY PLAN exercises the exact
 // predicates, ordering, and limits the adapter binds. The file is parsed in
 // the test only; production code exposes no query text.
-func loadReceiptHistoryQueries(t *testing.T) map[string]string {
+func loadObservationHistoryQueries(t *testing.T) map[string]string {
 	t.Helper()
 	_, caller, _, ok := runtime.Caller(0)
 	if !ok {
 		t.Fatal("locate history query source")
 	}
-	source, err := os.ReadFile(filepath.Join(filepath.Dir(caller), "dbqueries", "receipts.sql"))
+	source, err := os.ReadFile(filepath.Join(filepath.Dir(caller), "dbqueries", "observations.sql"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -447,7 +447,7 @@ func loadReceiptHistoryQueries(t *testing.T) map[string]string {
 		"ListEntityStateHistoryByDispositionFirstPage", "ListEntityStateHistoryByDispositionAfter",
 	} {
 		if queries[name] == "" {
-			t.Fatalf("history query %q not found in receipts.sql", name)
+			t.Fatalf("history query %q not found in observations.sql", name)
 		}
 	}
 	return queries
@@ -489,7 +489,7 @@ func assertHistoryQueryPlan(
 	}
 }
 
-// seedTargetHistory inserts applied, unchanged, then rejected receipts for the
+// seedTargetHistory inserts applied, unchanged, then rejected observations for the
 // target Entity itself, so sparse filters must skip the dominant disposition
 // within one Entity history rather than across unrelated Entities.
 func seedTargetHistory(
@@ -507,7 +507,7 @@ func seedTargetHistory(
 		t.Fatal(err)
 	}
 	defer func() { _ = transaction.Rollback() }()
-	// Insert each disposition in receive order with deterministic receipt IDs.
+	// Insert each disposition in receive order with deterministic observation IDs.
 	insertDisposition := func(offset, count int, disposition string, rejection, value sql.NullString) {
 		t.Helper()
 		if count <= 0 {
@@ -517,7 +517,7 @@ func seedTargetHistory(
 			WITH RECURSIVE seq(n) AS (
 				SELECT 1 UNION ALL SELECT n + 1 FROM seq WHERE n < ?
 			)
-			INSERT INTO observation_receipts (
+			INSERT INTO observations (
 				observation_id, adapter_id, entity_id, disposition, rejection_code,
 				state_value_json, adapter_received_at, observed_at, expires_at
 			) SELECT printf('obs_seed_%08d', ? + n - 1), 'simulator', ?, ?, ?, ?, ?, ?, ?
@@ -540,7 +540,7 @@ func seedTargetHistory(
 
 func assertAllHistoryQueryPlans(t *testing.T, database *sql.DB, entityID string, cursor int64) {
 	t.Helper()
-	queries := loadReceiptHistoryQueries(t)
+	queries := loadObservationHistoryQueries(t)
 	byDispositionFirst := queries["ListEntityStateHistoryByDispositionFirstPage"]
 	byDispositionAfter := queries["ListEntityStateHistoryByDispositionAfter"]
 	absent := "ent_01890f47-7a6b-7c4d-8e9f-0123456789ff"
@@ -552,51 +552,51 @@ func assertAllHistoryQueryPlans(t *testing.T, database *sql.DB, entityID string,
 	}{
 		{
 			"all first page", queries["ListEntityStateHistoryFirstPage"],
-			[]any{entityID, 51}, "observation_receipts_entity_history_idx",
+			[]any{entityID, 51}, "observations_entity_history_idx",
 		},
 		{
 			"all continuation", queries["ListEntityStateHistoryAfter"],
-			[]any{entityID, cursor, 51}, "observation_receipts_entity_history_idx",
+			[]any{entityID, cursor, 51}, "observations_entity_history_idx",
 		},
 		{
 			"updates first page", queries["ListEntityStateUpdatesFirstPage"],
-			[]any{entityID, 51}, "observation_receipts_entity_updates_history_idx",
+			[]any{entityID, 51}, "observations_entity_updates_history_idx",
 		},
 		{
 			"updates continuation", queries["ListEntityStateUpdatesAfter"],
-			[]any{entityID, cursor, 51}, "observation_receipts_entity_updates_history_idx",
+			[]any{entityID, cursor, 51}, "observations_entity_updates_history_idx",
 		},
 		{
 			"applied first page", byDispositionFirst, []any{entityID, "applied", 51},
-			"observation_receipts_entity_disposition_history_idx",
+			"observations_entity_disposition_history_idx",
 		},
 		{
 			"applied continuation", byDispositionAfter, []any{entityID, "applied", cursor, 51},
-			"observation_receipts_entity_disposition_history_idx",
+			"observations_entity_disposition_history_idx",
 		},
 		{
 			"unchanged first page", byDispositionFirst, []any{entityID, "unchanged", 51},
-			"observation_receipts_entity_disposition_history_idx",
+			"observations_entity_disposition_history_idx",
 		},
 		{
 			"unchanged continuation", byDispositionAfter, []any{entityID, "unchanged", cursor, 51},
-			"observation_receipts_entity_disposition_history_idx",
+			"observations_entity_disposition_history_idx",
 		},
 		{
 			"rejected first page", byDispositionFirst, []any{entityID, "rejected", 51},
-			"observation_receipts_entity_disposition_history_idx",
+			"observations_entity_disposition_history_idx",
 		},
 		{
 			"rejected continuation", byDispositionAfter, []any{entityID, "rejected", cursor, 51},
-			"observation_receipts_entity_disposition_history_idx",
+			"observations_entity_disposition_history_idx",
 		},
 		{
 			"absent entity first page", byDispositionFirst, []any{absent, "applied", 51},
-			"observation_receipts_entity_disposition_history_idx",
+			"observations_entity_disposition_history_idx",
 		},
 		{
 			"absent entity continuation", byDispositionAfter, []any{absent, "applied", cursor, 51},
-			"observation_receipts_entity_disposition_history_idx",
+			"observations_entity_disposition_history_idx",
 		},
 	} {
 		t.Run(test.name, func(t *testing.T) {

@@ -63,7 +63,7 @@ Exact-ID deduplication remains first. For a first-seen valid envelope, rejection
 
 An exempt Observation follows normal projection and outcome rules: it updates State as `applied` or `unchanged` and satisfies only its matching active Command when the catalog outcome policy matches before the deadline.
 
-A disabled rejection leaves State and Commands unchanged, inserts an ordinary `rejected` Observation receipt with rejection code `entity_disabled` and the existing expiry policy, then acknowledges the JetStream message only after commit.
+A disabled rejection leaves State and Commands unchanged, inserts an ordinary `rejected` Observation with rejection code `entity_disabled` and the existing expiry policy, then acknowledges the JetStream message only after commit.
 
 Core evaluates enablement when projecting, not when the Adapter publishes. An Observation queued while enabled may therefore be rejected after a disable commit, and one queued while disabled may apply after a re-enable commit. No generation, publication-time fence, or JetStream purge participates in this decision.
 
@@ -430,7 +430,7 @@ Hearth had no deployments before Entity enablement. `internal/platform/db/migrat
 
 1. `entities.enabled INTEGER NOT NULL DEFAULT 1 CHECK (enabled IN (0, 1))`;
 2. `entity_disabled` in the final Command status and failure-code checks;
-3. `entity_disabled` in the final Observation receipt rejection-code check; and
+3. `entity_disabled` in the final Observation rejection-code check; and
 4. the final State relationships, foreign keys, and indexes.
 
 Existing local databases must be recreated. Tests cover empty-database creation, idempotent startup, final constraints, and repository behavior rather than upgrade or rollback mappings.
@@ -441,7 +441,7 @@ Modify SQL sources and regenerate sqlc output:
 
 - `queries/registration/registration.sql`: read current `e.enabled`, insert resolved creation enablement, and exclude enablement from `UpdateEntityDescriptor`.
 - `queries/state/state.sql`: select `e.enabled` in every Entity/current-State read, add the transactional update, and retain disabled Entities in all reads.
-- `queries/commands/commands.sql` and `queries/receipts/receipts.sql`: retain insert shapes; repositories supply the new terminal fields and rejection code.
+- `queries/commands/commands.sql` and `queries/observations/observations.sql`: retain insert shapes; repositories supply the new terminal fields and rejection code.
 
 Generated persistence types remain behind the `devices` repository.
 
@@ -581,15 +581,15 @@ Total effort is **XL, approximately 3–5 focused days at 70% confidence**. The 
 
 ### Observations
 
-- [ ] An unlinked owning-Adapter Observation projected while disabled commits one rejected `entity_disabled` receipt, is acknowledged, and leaves State unchanged; exact duplicates remain duplicates.
+- [ ] An unlinked owning-Adapter Observation projected while disabled commits one rejected `entity_disabled` observation, is acknowledged, and leaves State unchanged; exact duplicates remain duplicates.
 - [ ] Rejection precedence is unknown Entity, wrong Adapter, disabled, then invalid value outside the active-Command exception.
 - [ ] A valid Observation linked to a matching requested/accepted Command may update State and satisfy it while disabled; unknown, mismatched, expired, interrupted, and terminal links cannot.
 - [ ] Processing-time tests cover queued Observations across both disable and re-enable commits.
-- [ ] Existing receipt retention and current-State receipt pinning invariants remain valid.
+- [ ] Existing observation retention and current-State observation pinning invariants remain valid.
 
 ### Persistence
 
-- [ ] The fresh baseline schema contains final enablement, Command, receipt, State, index, constraint, and foreign-key definitions.
+- [ ] The fresh baseline schema contains final enablement, Command, observation, State, index, constraint, and foreign-key definitions.
 - [ ] Existing local databases are recreated; no pre-deployment upgrade or rollback path is maintained.
 - [ ] sqlc output is generated only from migration/query sources and remains reproducible.
 - [ ] Repository methods expose only owned domain models, with no sqlc leakage.
@@ -605,7 +605,7 @@ Total effort is **XL, approximately 3–5 focused days at 70% confidence**. The 
 | Contract | Registration and enablement schema shape, strict fields, `ena_` IDs, causation, malformed and extra fields. |
 | Service | ID/Adapter validation, registration default/copy semantics, owned copies, and disabled result before waiter creation. |
 | Repository | Migrated SQLite mutation/no-op/ownership, retry safety, atomic classification, checked enums, and coordinated writer races. |
-| Observation | Deduplication, rejection precedence, active-link boundary, processing-time ordering, receipt retention. |
+| Observation | Deduplication, rejection precedence, active-link boundary, processing-time ordering, observation retention. |
 | HTTP | PATCH validation/mapping, disabled visibility, custom 409 Problem Details, OpenAPI, existing mappings. |
 | NATS/SDK | Subject parsing, schema round trips, typed rejections, identity/correlation/causation validation, one-attempt behavior. |
 | Runtime | Assembled SQLite, NATS/JetStream, Core, SDK, and HTTP disable/re-enable flow. |
@@ -617,11 +617,11 @@ Use service tests for transport-independent rules, migrated SQLite for every tra
 
 | Risk | Likelihood | Impact | Mitigation |
 |---|---:|---:|---|
-| Baseline schema misstates receipt/State relationships | Low | High | Apply it to an empty database and test repository projection and foreign-key behavior. |
+| Baseline schema misstates observation/State relationships | Low | High | Apply it to an empty database and test repository projection and foreign-key behavior. |
 | Command and disable commits classify in the wrong order | Medium | High | Classify and insert in one repository transaction; coordinate real SQLite race tests. |
 | Active-linked Observation exception is too broad | Medium | High | Require exact Command, Entity, Adapter, active status, and deadline; test mismatch and terminal boundaries. |
 | Strict registration response breaks mixed Core/SDK versions | High during rolling upgrade | Medium | Ship Core/contracts/SDK atomically and run cross-binary registration contract tests. |
-| Disabled traffic consumes consumer/SQLite capacity | Medium | Medium | Commit only the bounded receipt, acknowledge promptly after commit, and retain current pruning. |
+| Disabled traffic consumes consumer/SQLite capacity | Medium | Medium | Commit only the bounded observation, acknowledge promptly after commit, and retain current pruning. |
 
 ## Verification
 

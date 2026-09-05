@@ -173,7 +173,7 @@ The SDK Responder adds `RejectUnavailable(message string)`. Generic `Reject` rem
 
 Registration and Entity enablement subjects carry runtime ID and validate it in their existing serializable transactions. Schema-valid requests on a stale runtime subject receive typed `runtime_fenced` rejection so the SDK closes.
 
-Observation subjects carry runtime ID while Observation payloads remain unchanged. Projection checks the subject runtime in the same transaction as deduplication, ownership validation, receipt insertion, State projection, and Command satisfaction.
+Observation subjects carry runtime ID while Observation payloads remain unchanged. Projection checks the subject runtime in the same transaction as deduplication, ownership validation, observation insertion, State projection, and Command satisfaction.
 
 A first-seen Observation from a stale runtime records a rejected receipt with `stale_runtime`, commits, and is acknowledged. Existing exact-ID redelivery remains a no-op. Stable-subject Observations do not match the runtime-scoped stream and are never projected.
 
@@ -863,7 +863,7 @@ The baseline creates:
    - checks requiring negative reasons and prohibiting reasons for positive states;
    - indexes for Adapter and Entity newest-first histories.
 
-The baseline `commands` and `observation_receipts` tables include their final runtime IDs, statuses, failure and rejection codes, indexes, and checks. Registration inserts the initial availability transition for each newly created Entity; no migration seeding exists.
+The baseline `commands` and `observations` tables include their final runtime IDs, statuses, failure and rejection codes, indexes, and checks. Registration inserts the initial availability transition for each newly created Entity; no migration seeding exists.
 
 Migration tests cover creation from an empty database, idempotent startup, final tables, indexes, and constraints. Repository tests cover transactional relationships and foreign-key behavior.
 
@@ -876,7 +876,7 @@ Modify:
 - `registration.sql` to insert initial Entity availability and validate active runtime in registration transactions;
 - `state.sql` to select Adapter and availability evidence needed for current effective Entity views;
 - `commands.sql` for runtime ID and renamed/new outcomes;
-- `receipts.sql` for runtime ID.
+- `observations.sql` for runtime ID.
 
 Generated sqlc types remain inside the SQLite repository implementation.
 
@@ -969,7 +969,7 @@ Tests stay beside their owners. Generated sqlc output remains under `internal/mo
 - [x] Disabled wins classification. An unhealthy owner or one without an active runtime creates terminal `adapter_unhealthy` without dispatch; unknown health with an active runtime and Entity unavailability under a healthy owner both dispatch.
 - [x] `RejectUnavailable` creates terminal `entity_unavailable`, returns HTTP 503, and does not change availability. Generic rejection remains `upstream_rejected` and HTTP 502.
 - [x] SQLite commit order decides Command and health races. Takeover does not retarget requested Commands, and the baseline uses `adapter_unhealthy` directly.
-- [x] Runtime-scoped Observation preserves acknowledgement, deduplication, tracing, IDs, receipt retention, and State ordering. A stale runtime commits one acknowledged `stale_runtime` receipt without changing State or Commands.
+- [x] Runtime-scoped Observation preserves acknowledgement, deduplication, tracing, IDs, observation retention, and State ordering. A stale runtime commits one acknowledged `stale_runtime` receipt without changing State or Commands.
 - [x] Registration and enablement keep their current behavior after subject runtime validation. The Observation consumer processes only runtime-scoped subjects.
 
 ### HTTP, history, persistence, and compatibility

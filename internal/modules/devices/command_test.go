@@ -157,8 +157,8 @@ func (repository *commandRepository) ProjectObservation(
 	return result, nil
 }
 
-func (*commandRepository) DeleteExpiredObservationReceipts(context.Context, time.Time) error {
-	panic("unexpected DeleteExpiredObservationReceipts call")
+func (*commandRepository) DeleteExpiredObservations(context.Context, time.Time) error {
+	panic("unexpected DeleteExpiredObservations call")
 }
 
 func (repository *commandRepository) command(id CommandID) CommandRecord {

@@ -18,10 +18,10 @@ import (
 )
 
 const (
-	receiptPruneInterval  = time.Hour
-	shutdownTimeout       = 5 * time.Second
-	httpReadHeaderTimeout = 5 * time.Second
-	natsReconnectWait     = 250 * time.Millisecond
+	observationPruneInterval = time.Hour
+	shutdownTimeout          = 5 * time.Second
+	httpReadHeaderTimeout    = 5 * time.Second
+	natsReconnectWait        = 250 * time.Millisecond
 )
 
 //nolint:gocognit,gocyclo,cyclop // Startup and shutdown remain linear so resource ownership is visible in one place.
@@ -49,8 +49,8 @@ func Run(ctx context.Context, config Config, logger *slog.Logger) error { //noli
 	if err := repository.InterruptActiveCommands(ctx, startupTime); err != nil {
 		return fmt.Errorf("interrupt active commands: %w", err)
 	}
-	if err := repository.DeleteExpiredObservationReceipts(ctx, startupTime); err != nil {
-		return fmt.Errorf("prune observation receipts: %w", err)
+	if err := repository.DeleteExpiredObservations(ctx, startupTime); err != nil {
+		return fmt.Errorf("prune observations: %w", err)
 	}
 
 	connection, connectErr := connectCoreNATS(ctx, config.NATSURL)
@@ -119,7 +119,7 @@ func Run(ctx context.Context, config Config, logger *slog.Logger) error { //noli
 	go func() {
 		serverErrors <- server.ListenAndServe()
 	}()
-	go pruneObservationReceipts(ctx, service, logger)
+	go pruneObservations(ctx, service, logger)
 
 	select {
 	case err := <-serverErrors:
@@ -185,16 +185,16 @@ func connectCoreNATS(ctx context.Context, url string) (*natsgo.Conn, error) {
 	return connection, nil
 }
 
-func pruneObservationReceipts(ctx context.Context, service *devices.Service, logger *slog.Logger) {
-	ticker := time.NewTicker(receiptPruneInterval)
+func pruneObservations(ctx context.Context, service *devices.Service, logger *slog.Logger) {
+	ticker := time.NewTicker(observationPruneInterval)
 	defer ticker.Stop()
 	for {
 		select {
 		case <-ctx.Done():
 			return
 		case now := <-ticker.C:
-			if err := service.DeleteExpiredObservationReceipts(ctx, now.UTC()); err != nil {
-				logger.ErrorContext(ctx, "prune observation receipts", "error", err)
+			if err := service.DeleteExpiredObservations(ctx, now.UTC()); err != nil {
+				logger.ErrorContext(ctx, "prune observations", "error", err)
 			}
 		}
 	}

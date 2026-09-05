@@ -8,7 +8,7 @@ import (
 	"time"
 )
 
-const ObservationReceiptRetention = 192 * time.Hour
+const ObservationRetention = 192 * time.Hour
 
 func (service *Service) ProjectObservation(
 	ctx context.Context,
@@ -46,12 +46,12 @@ func (service *Service) ProjectObservation(
 
 	observedAt = observedAt.UTC()
 	params := ProjectObservationParams{
-		AdapterID:        adapterID,
-		RuntimeID:        runtimeID,
-		Observation:      copyObservation(observation),
-		ObservedAt:       observedAt,
-		Now:              service.dependencies.Now,
-		ReceiptExpiresAt: observedAt.Add(ObservationReceiptRetention),
+		AdapterID:   adapterID,
+		RuntimeID:   runtimeID,
+		Observation: copyObservation(observation),
+		ObservedAt:  observedAt,
+		Now:         service.dependencies.Now,
+		ExpiresAt:   observedAt.Add(ObservationRetention),
 	}
 	result, err := service.stores.Observations.ProjectObservation(ctx, params)
 	if err != nil {
@@ -63,11 +63,11 @@ func (service *Service) ProjectObservation(
 	return copyProjectionResult(result), nil
 }
 
-func (service *Service) DeleteExpiredObservationReceipts(ctx context.Context, before time.Time) error {
+func (service *Service) DeleteExpiredObservations(ctx context.Context, before time.Time) error {
 	if before.IsZero() {
-		return errors.New("receipt expiry cutoff is required")
+		return errors.New("observation expiry cutoff is required")
 	}
-	return service.stores.Observations.DeleteExpiredObservationReceipts(ctx, before.UTC())
+	return service.stores.Observations.DeleteExpiredObservations(ctx, before.UTC())
 }
 
 func copyObservation(observation Observation) Observation {

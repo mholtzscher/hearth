@@ -155,7 +155,7 @@ type HealthTransition struct {
 	ObservedAt       string
 }
 
-type ObservationReceipt struct {
+type Observation struct {
 	ReceiveOrder      int64
 	ObservationID     string
 	AdapterID         string

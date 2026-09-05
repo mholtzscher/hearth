@@ -164,16 +164,16 @@ func TestRunConnectsBothProtocols(t *testing.T) {
 	if string(completed.result.Value) != "true" {
 		t.Fatalf("Command result = %#v", completed.result)
 	}
-	var receiptCount int
+	var observationCount int
 	if err = database.QueryRowContext(
 		ctx,
-		"SELECT COUNT(*) FROM observation_receipts WHERE entity_id = ?",
+		"SELECT COUNT(*) FROM observations WHERE entity_id = ?",
 		string(entity.Entity.ID),
-	).Scan(&receiptCount); err != nil {
+	).Scan(&observationCount); err != nil {
 		t.Fatal(err)
 	}
-	if receiptCount != 2 {
-		t.Fatalf("Observation receipts = %d, want startup State plus one linked outcome", receiptCount)
+	if observationCount != 2 {
+		t.Fatalf("Observations = %d, want startup State plus one linked outcome", observationCount)
 	}
 
 	stopRun()
