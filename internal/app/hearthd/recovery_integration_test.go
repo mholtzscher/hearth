@@ -21,6 +21,7 @@ func TestCoreStartupInterruptsActiveCommandsWithoutRedispatch(t *testing.T) {
 	t.Parallel()
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
+	logger, recorder := withRecording(slog.LevelInfo)
 	databasePath := filepath.Join(t.TempDir(), "hearth.db")
 	database, err := platformdb.Open(ctx, databasePath)
 	if err != nil {
@@ -111,7 +112,7 @@ func TestCoreStartupInterruptsActiveCommandsWithoutRedispatch(t *testing.T) {
 	go func() {
 		runErrors <- Run(runContext, Config{
 			HTTPAddr: httpAddress, NATSURL: server.ClientURL(), SQLitePath: databasePath,
-		}, slog.New(slog.DiscardHandler))
+		}, logger)
 	}()
 
 	observerDatabase, err := platformdb.Open(ctx, databasePath)
@@ -148,6 +149,23 @@ func TestCoreStartupInterruptsActiveCommandsWithoutRedispatch(t *testing.T) {
 		}
 	case <-time.After(5 * time.Second):
 		t.Fatal("hearthd did not stop")
+	}
+
+	// Restart recovery emits one successful interruption stage and fabricates
+	// no per-command outcome for the interrupted commands.
+	records := recorder.snapshot()
+	interrupted := false
+	for _, record := range recordsWithEvent(records, "core.startup_stage_completed") {
+		if value, ok := recordAttr(record, "stage"); ok && value.String() == "active_commands_interrupted" {
+			requireRecordAttr(t, record, "component", "core")
+			interrupted = true
+		}
+	}
+	if !interrupted {
+		t.Fatal("missing core.startup_stage_completed for stage active_commands_interrupted")
+	}
+	if completed := recordsWithEvent(records, "command.completed"); len(completed) != 0 {
+		t.Fatalf("startup recovery fabricated command outcomes: %#v", completed)
 	}
 }
 

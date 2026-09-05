@@ -386,7 +386,7 @@ func reconcileSensor(t *testing.T, access int) reconciledSensor {
 	if err != nil {
 		t.Fatal(err)
 	}
-	snapshot, err := z2m.buildRouteSnapshot(context.Background(), 1, inventory)
+	snapshot, _, err := z2m.buildRouteSnapshot(context.Background(), 1, inventory)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -50,9 +50,12 @@ type wireObservation struct {
 }
 
 type simulatorMatrixOptions struct {
-	dependencies         devices.Dependencies
-	manual               bool
-	ackWait              time.Duration
+	dependencies devices.Dependencies
+	manual       bool
+	ackWait      time.Duration
+	// logLevel selects the shared JSON log threshold; the zero value keeps
+	// Info so existing matrix tests never capture Debug transport progress.
+	logLevel             slog.Level
 	observationProjector func(*devices.Service, devicesnats.ObservationProjector) devicesnats.ObservationProjector
 }
 
@@ -124,7 +127,7 @@ func newSimulatorMatrixHarness(t *testing.T, scenario string, options simulatorM
 	harness := &simulatorMatrixHarness{
 		test: t, ctx: ctx, cancel: cancel, logs: &lockedBuffer{}, simulatorErrors: make(chan error, 1),
 	}
-	logger := slog.New(slog.NewJSONHandler(harness.logs, nil))
+	logger := slog.New(slog.NewJSONHandler(harness.logs, &slog.HandlerOptions{Level: options.logLevel}))
 
 	var err error
 	harness.database, err = platformdb.Open(ctx, t.TempDir()+"/hearth.db")
@@ -178,11 +181,19 @@ func newSimulatorMatrixHarness(t *testing.T, scenario string, options simulatorM
 	if err != nil {
 		t.Fatal(err)
 	}
+	// Capture service command evidence in the shared log buffer by default so
+	// cross-app tests can follow one command across core and SDK records.
+	// Like core assembly, the service receives the devices component child.
+	// Explicit dependency overrides (Now, Logger) are preserved.
+	serviceDependencies := options.dependencies
+	if serviceDependencies.Logger == nil {
+		serviceDependencies.Logger = logger.With("component", "devices")
+	}
 	harness.service = devices.NewService(
 		devices.SQLiteStores(harness.repository),
 		devicesnats.NewCommandSender(harness.connection, harness.validator),
 		catalog,
-		options.dependencies,
+		serviceDependencies,
 	)
 	harness.sessions, err = devicesnats.StartSessionServer(
 		harness.connection, harness.validator, harness.service, harness.service, logger,

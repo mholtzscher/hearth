@@ -70,6 +70,7 @@ func New(session Session, config Config, logger *slog.Logger) (*Adapter, error) 
 	if logger == nil {
 		logger = slog.Default()
 	}
+	logger = logger.With("component", adapterComponent)
 	return &Adapter{
 		session: session,
 		config:  config,
@@ -97,8 +98,9 @@ func (homeAssistant *Adapter) CommandHandler() (adapter.CommandHandler, error) {
 
 func (homeAssistant *Adapter) Run(ctx context.Context) error {
 	delay := reconnectMinimum
+	var episode retryEpisode
 	for {
-		err := homeAssistant.runConnection(ctx)
+		err := homeAssistant.runConnection(ctx, &episode)
 		if ctx.Err() != nil {
 			return nil //nolint:nilerr // Context cancellation is a graceful shutdown.
 		}
@@ -112,14 +114,7 @@ func (homeAssistant *Adapter) Run(ctx context.Context) error {
 			return err
 		}
 		wait := jitter(delay)
-		homeAssistant.logger.WarnContext(
-			ctx,
-			"Home Assistant connection ended; reconnecting",
-			"error",
-			err,
-			"retry_in",
-			wait,
-		)
+		homeAssistant.logConnectionRetry(ctx, &episode, err, wait)
 		timer := time.NewTimer(wait)
 		select {
 		case <-ctx.Done():
@@ -134,7 +129,7 @@ func (homeAssistant *Adapter) Run(ctx context.Context) error {
 	}
 }
 
-func (homeAssistant *Adapter) runConnection(ctx context.Context) error {
+func (homeAssistant *Adapter) runConnection(ctx context.Context, episode *retryEpisode) error {
 	client, err := dialClient(
 		ctx,
 		homeAssistant.config.URL,
@@ -148,7 +143,7 @@ func (homeAssistant *Adapter) runConnection(ctx context.Context) error {
 	if subscribeErr := client.SubscribeStateChanges(ctx); subscribeErr != nil {
 		return subscribeErr
 	}
-	return homeAssistant.reconcileAndStream(ctx, client)
+	return homeAssistant.reconcileAndStream(ctx, client, episode)
 }
 
 type snapshotResult struct {
@@ -162,6 +157,7 @@ type snapshotResult struct {
 func (homeAssistant *Adapter) reconcileAndStream(
 	ctx context.Context,
 	client *client,
+	episode *retryEpisode,
 ) error {
 	resultChannel := make(chan snapshotResult, 1)
 	go func() {
@@ -227,19 +223,20 @@ snapshotReady:
 		}
 		if err := homeAssistant.processState(ctx, item.State, item.ReceivedAt); err != nil {
 			if errors.Is(err, errUnsupportedState) {
-				homeAssistant.logUnsupportedState(ctx, source, item.State)
+				homeAssistant.logUnsupportedState(ctx, source)
 				continue
 			}
 			return err
 		}
 	}
+	homeAssistant.logUpstreamReady(ctx, episode)
 
 	for {
 		select {
 		case event := <-client.Events():
 			if err := homeAssistant.processState(ctx, event.State, event.ReceivedAt); err != nil {
 				if errors.Is(err, errUnsupportedState) {
-					homeAssistant.logUnsupportedState(ctx, "event", event.State)
+					homeAssistant.logUnsupportedState(ctx, "event")
 					continue
 				}
 				return err
@@ -252,12 +249,14 @@ snapshotReady:
 	}
 }
 
-func (homeAssistant *Adapter) logUnsupportedState(ctx context.Context, source string, state upstreamState) {
+func (homeAssistant *Adapter) logUnsupportedState(ctx context.Context, source string) {
 	homeAssistant.logger.WarnContext(
 		ctx,
 		"Home Assistant "+source+" State is not publishable",
-		"entity_id", state.EntityID,
-		"state", state.State,
+		eventKey, "adapter.unsupported_state",
+		"entity_id", homeAssistant.config.EntityID,
+		"error_code", "unsupported_state",
+		"source", source,
 	)
 }
 
@@ -283,10 +282,9 @@ func (homeAssistant *Adapter) set(
 		homeAssistant.logger.WarnContext(
 			ctx,
 			"Home Assistant service call failed",
-			"entity_id",
-			homeAssistant.config.ExternalEntityID,
-			"error",
-			serviceErr,
+			eventKey, "adapter.service_call_failed",
+			"entity_id", homeAssistant.config.EntityID,
+			"error_code", homeAssistantErrorCode(serviceErr),
 		)
 	}
 	state, receivedAt, stateErr := homeAssistant.getState(ctx, client)
@@ -483,10 +481,9 @@ func (homeAssistant *Adapter) newObservation(
 		homeAssistant.logger.WarnContext(
 			ctx,
 			"Home Assistant State has invalid last_updated",
-			"entity_id",
-			state.EntityID,
-			"error",
-			err,
+			eventKey, "adapter.invalid_source_timestamp",
+			"entity_id", homeAssistant.config.EntityID,
+			"error_code", "invalid_timestamp",
 		)
 		updatedAt = nil
 	}

@@ -25,13 +25,10 @@ func Run(ctx context.Context, config Config, logger *slog.Logger) error {
 	if logger == nil {
 		logger = slog.Default()
 	}
-	tokenBytes, err := os.ReadFile(config.Upstream.TokenFile)
+	processLogger := logger.With("component", "process")
+	token, err := readTokenFile(config.Upstream.TokenFile)
 	if err != nil {
-		return fmt.Errorf("read Home Assistant token file: %w", err)
-	}
-	token := strings.TrimSpace(string(tokenBytes))
-	if token == "" {
-		return errors.New("home assistant token file is empty")
+		return err
 	}
 
 	session, err := adapter.Connect(ctx, adapter.Config{
@@ -44,7 +41,22 @@ func Run(ctx context.Context, config Config, logger *slog.Logger) error {
 	if err != nil {
 		return err
 	}
-	defer session.Close()
+	defer closeAdapterSession(ctx, session, processLogger)
+	// started flips once component supervision begins. The deferred stopping
+	// record below covers post-connect startup failures (descriptor,
+	// registration, handler construction); it is registered after the close
+	// defer so stopping always precedes session release. The supervise path
+	// sets started and logs stopping itself, so exactly one record is emitted
+	// on every path.
+	started := false
+	defer func() {
+		if !started {
+			processLogger.InfoContext(
+				ctx, "hearth-adapter-homeassistant stopping", "event", "process.stopping",
+				"reason_code", startupReason(ctx),
+			)
+		}
+	}()
 
 	descriptor, err := sdkpowerv1.NewEntityDescriptor(adapter.EntityMetadata{
 		Key:        powerEntityKey,
@@ -70,7 +82,8 @@ func Run(ctx context.Context, config Config, logger *slog.Logger) error {
 	if err != nil {
 		return err
 	}
-	logger.InfoContext(ctx, "registered Home Assistant light", "device_id", binding.DeviceID, "entity_id", entityID)
+	// Registration outcome logging belongs to the SDK session claim owner;
+	// no duplicate registration summary is emitted here.
 
 	migrationAdapter, err := homeassistantadapter.New(session, homeassistantadapter.Config{
 		URL:              config.Upstream.URL,
@@ -88,12 +101,17 @@ func Run(ctx context.Context, config Config, logger *slog.Logger) error {
 
 	runContext, cancel := context.WithCancel(ctx)
 	defer cancel()
+	started = true
 	results := make(chan error, concurrentComponents)
 	go func() { results <- migrationAdapter.Run(runContext) }()
 	go func() { results <- session.ServeCommands(runContext, handler) }()
 
 	first := <-results
 	cancel()
+	processLogger.InfoContext(
+		ctx, "hearth-adapter-homeassistant stopping", "event", "process.stopping",
+		"reason_code", stoppingReason(ctx, first),
+	)
 	second := <-results
 	if ctx.Err() != nil {
 		return nil
@@ -104,6 +122,55 @@ func Run(ctx context.Context, config Config, logger *slog.Logger) error {
 		}
 	}
 	return nil
+}
+
+// readTokenFile loads the upstream bearer token without echoing its value.
+func readTokenFile(path string) (string, error) {
+	tokenBytes, err := os.ReadFile(path)
+	if err != nil {
+		return "", fmt.Errorf("read Home Assistant token file: %w", err)
+	}
+	token := strings.TrimSpace(string(tokenBytes))
+	if token == "" {
+		return "", errors.New("home assistant token file is empty")
+	}
+	return token, nil
+}
+
+// closeAdapterSession releases the SDK session, warning on cleanup failure
+// without changing the caller's return semantics.
+func closeAdapterSession(ctx context.Context, session *adapter.Session, logger *slog.Logger) {
+	if closeErr := session.Close(); closeErr != nil {
+		logger.WarnContext(
+			ctx,
+			"process cleanup failed",
+			"event",
+			"process.cleanup_failed",
+			"stage",
+			"session_close",
+			"error_code",
+			"cleanup_failed",
+		)
+	}
+}
+
+// stoppingReason distinguishes cancellation from component failure for the
+// process.stopping teardown record.
+func stoppingReason(ctx context.Context, first error) string {
+	if first != nil && !errors.Is(first, context.Canceled) && !errors.Is(first, adapter.ErrClosed) &&
+		ctx.Err() == nil {
+		return "component_failure"
+	}
+	return "context_cancelled"
+}
+
+// startupReason distinguishes cancellation from failure for a post-connect
+// startup teardown record.
+func startupReason(ctx context.Context) string {
+	if ctx.Err() != nil {
+		return "context_cancelled"
+	}
+	return "startup_failed"
 }
 
 func entityIDForKey(binding adapter.Binding, key string) (string, error) {

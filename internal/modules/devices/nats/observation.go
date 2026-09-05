@@ -47,7 +47,7 @@ func StartObservationConsumer(
 		return nil, errors.New("observation handler is required")
 	}
 	if logger == nil {
-		logger = slog.Default()
+		logger = defaultLogger(logger)
 	}
 	if baseContext == nil {
 		baseContext = context.Background()
@@ -58,8 +58,12 @@ func StartObservationConsumer(
 		func(message jetstream.Msg) {
 			handleObservationMessage(baseContext, message, validator, projector, logger)
 		},
-		jetstream.ConsumeErrHandler(func(_ jetstream.ConsumeContext, err error) {
-			logger.ErrorContext(baseContext, "observation consumer error", "error", err)
+		jetstream.ConsumeErrHandler(func(_ jetstream.ConsumeContext, _ error) {
+			logger.ErrorContext(baseContext, "observation consume error",
+				transportEventKey, "observation.processing_failed",
+				"stage", "consume",
+				transportErrorCodeKey, "consumer_error",
+			)
 		}),
 	)
 	if err != nil {
@@ -111,78 +115,65 @@ func handleObservationMessage(
 	projector ObservationProjector,
 	logger *slog.Logger,
 ) {
+	// Extract the operation context from headers before decoding so every
+	// emission below, including permanent invalid input, preserves it.
+	ctx := natswire.ExtractTrace(baseContext, message.Headers())
 	metadata, metadataErr := message.Metadata()
 	if metadataErr != nil {
-		logger.ErrorContext(
-			baseContext, "cannot read observation metadata",
-			"subject", message.Subject(), "error", metadataErr,
+		logger.ErrorContext(ctx, "cannot read observation metadata",
+			transportEventKey, "observation.processing_failed",
+			"stage", "metadata",
+			transportErrorCodeKey, "metadata_unavailable",
 		)
 		return
 	}
-	permanentFailure := func(err error, observationID string) {
-		attributes := []any{
-			"subject", message.Subject(),
-			"stream_sequence", metadata.Sequence.Stream,
-			"error", err,
-		}
-		if observationID != "" {
-			attributes = append(attributes, "observation_id", observationID)
-		}
-		logger.ErrorContext(baseContext, "acknowledging invalid observation", attributes...)
-		if ackErr := message.Ack(); ackErr != nil {
-			logger.ErrorContext(
-				baseContext,
-				"acknowledge invalid observation",
-				"subject",
-				message.Subject(),
-				"stream_sequence",
-				metadata.Sequence.Stream,
-				"error",
-				ackErr,
-			)
-		}
+	sequence := metadata.Sequence.Stream
+	payloadSize := len(message.Data())
+	permanentFailure := func(errorCode, observationID string) {
+		logInvalidObservation(ctx, logger, message, sequence, payloadSize, errorCode, observationID)
 	}
 
 	envelope, decodeErr := natswire.Decode[observation](validator, contractsv1.ObservationSchemaID, message.Data())
 	if decodeErr != nil {
-		permanentFailure(decodeErr, "")
+		permanentFailure("observation_decode_failed", "")
 		return
 	}
 	route, routeErr := natswire.ParseObservationSubject(message.Subject())
 	if routeErr != nil {
-		permanentFailure(routeErr, envelope.ID)
+		permanentFailure("observation_route_failed", envelope.ID)
 		return
 	}
 	if route.EntityID != envelope.Data.EntityID {
-		permanentFailure(errors.New("observation subject entity does not match payload"), envelope.ID)
+		permanentFailure("observation_entity_mismatch", envelope.ID)
 		return
 	}
 	if message.Headers().Get(natsgo.MsgIdHdr) != envelope.ID {
-		permanentFailure(errors.New("Nats-Msg-Id does not match observation ID"), envelope.ID)
+		permanentFailure("observation_msg_id_mismatch", envelope.ID)
 		return
 	}
 	if envelope.CausationID != nil &&
 		(envelope.Data.RefreshForCommand == nil || *envelope.CausationID != *envelope.Data.RefreshForCommand) {
-		permanentFailure(errors.New("observation causation ID does not match refresh command ID"), envelope.ID)
+		permanentFailure("observation_causation_mismatch", envelope.ID)
 		return
 	}
 
 	adapterReceivedAt, parseErr := time.Parse(time.RFC3339Nano, envelope.Data.AdapterReceivedAt)
 	if parseErr != nil {
-		permanentFailure(fmt.Errorf("parse adapter_received_at: %w", parseErr), envelope.ID)
+		permanentFailure("adapter_received_at_parse_failed", envelope.ID)
 		return
 	}
 	var sourceUpdatedAt *time.Time
 	if envelope.Data.SourceUpdatedAt != nil {
 		parsed, sourceTimeErr := time.Parse(time.RFC3339Nano, *envelope.Data.SourceUpdatedAt)
 		if sourceTimeErr != nil {
-			permanentFailure(fmt.Errorf("parse source_updated_at: %w", sourceTimeErr), envelope.ID)
+			permanentFailure("source_updated_at_parse_failed", envelope.ID)
 			return
 		}
 		sourceUpdatedAt = &parsed
 	}
 	if adapterReceivedAt.After(metadata.Timestamp.Add(observationFutureClockThreshold)) {
-		logger.WarnContext(baseContext, "adapter observation clock is ahead of core receive time",
+		logger.WarnContext(ctx, "adapter observation clock is ahead of core receive time",
+			transportEventKey, "observation.clock_skew",
 			"observation_id", envelope.ID,
 			"adapter_id", route.AdapterID,
 			"entity_id", route.EntityID,
@@ -193,29 +184,98 @@ func handleObservationMessage(
 
 	domain, domainErr := domainObservation(envelope, adapterReceivedAt, sourceUpdatedAt)
 	if domainErr != nil {
-		permanentFailure(domainErr, envelope.ID)
+		permanentFailure("observation_identity_failed", envelope.ID)
 		return
 	}
-	ctx := natswire.ExtractTrace(baseContext, message.Headers())
-	if _, projectionErr := projector.ProjectObservation(
+	result, projectionErr := projector.ProjectObservation(
 		ctx, route.AdapterID, devices.RuntimeID(route.RuntimeID), domain, metadata.Timestamp.UTC(),
-	); projectionErr != nil {
-		logger.ErrorContext(baseContext, "project observation",
-			"subject", message.Subject(),
+	)
+	if projectionErr != nil {
+		logger.ErrorContext(ctx, "project observation",
+			transportEventKey, "observation.processing_failed",
+			"stage", "commit",
+			transportErrorCodeKey, "projection_failed",
 			"stream_sequence", metadata.Sequence.Stream,
 			"observation_id", envelope.ID,
-			"error", projectionErr,
+			"adapter_id", route.AdapterID,
+			"entity_id", route.EntityID,
 		)
 		return
 	}
+	logObservationProjected(ctx, logger, envelope, route, domain, result)
 	if ackErr := message.Ack(); ackErr != nil {
-		logger.ErrorContext(baseContext, "acknowledge projected observation",
-			"subject", message.Subject(),
+		logger.ErrorContext(ctx, "acknowledge projected observation",
+			transportEventKey, "observation.processing_failed",
+			"stage", "ack",
+			transportErrorCodeKey, "ack_failed",
 			"stream_sequence", metadata.Sequence.Stream,
 			"observation_id", envelope.ID,
-			"error", ackErr,
 		)
 	}
+}
+
+// logInvalidObservation records permanent wire-invalid input at Warn with a
+// fixed validation class and safe sizes and IDs, then acknowledges the
+// message. Raw payloads and decode errors are never logged.
+func logInvalidObservation(
+	ctx context.Context,
+	logger *slog.Logger,
+	message jetstream.Msg,
+	sequence uint64,
+	payloadSize int,
+	errorCode, observationID string,
+) {
+	attributes := []any{
+		transportEventKey, "observation.invalid",
+		transportErrorCodeKey, errorCode,
+		"stream_sequence", sequence,
+		"payload_size", payloadSize,
+	}
+	if observationID != "" {
+		attributes = append(attributes, "observation_id", observationID)
+	}
+	logger.WarnContext(ctx, "acknowledging invalid observation", attributes...)
+	if ackErr := message.Ack(); ackErr != nil {
+		ackAttributes := []any{
+			transportEventKey, "observation.processing_failed",
+			"stage", "ack",
+			transportErrorCodeKey, "ack_failed",
+			"stream_sequence", sequence,
+		}
+		if observationID != "" {
+			ackAttributes = append(ackAttributes, "observation_id", observationID)
+		}
+		logger.ErrorContext(ctx, "acknowledge invalid observation", ackAttributes...)
+	}
+}
+
+// logObservationProjected records the committed projection disposition at
+// Debug with safe identity fields only; State values are never logged.
+func logObservationProjected(
+	ctx context.Context,
+	logger *slog.Logger,
+	envelope natswire.Envelope[observation],
+	route natswire.ObservationRoute,
+	domain devices.Observation,
+	result devices.ProjectionResult,
+) {
+	attributes := []any{
+		transportEventKey, "observation.projected",
+		"observation_id", envelope.ID,
+		"adapter_id", route.AdapterID,
+		"entity_id", route.EntityID,
+		"disposition", string(result.Disposition),
+	}
+	if envelope.CorrelationID != "" {
+		attributes = append(attributes, "correlation_id", envelope.CorrelationID)
+	}
+	if domain.RefreshForCommand != nil {
+		attributes = append(attributes, "command_id", string(*domain.RefreshForCommand))
+	}
+	if result.Rejection != nil {
+		attributes = append(attributes, "rejection_code", string(*result.Rejection))
+	}
+	logger.DebugContext(ctx, "observation projected", attributes...)
 }
 
 func domainObservation(

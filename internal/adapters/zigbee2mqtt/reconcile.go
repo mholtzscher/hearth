@@ -33,12 +33,13 @@ func (z2m *Adapter) reconcile(
 	connection mqttConnection,
 	disconnect context.CancelCauseFunc,
 	state *connectionSync,
+	progress *connectionProgress,
 ) error {
 	if state.inventory == nil {
 		return nil
 	}
 
-	snapshot, err := z2m.buildRouteSnapshot(ctx, generation, *state.inventory)
+	snapshot, isolated, err := z2m.buildRouteSnapshot(ctx, generation, *state.inventory)
 	if err != nil {
 		return err
 	}
@@ -62,7 +63,12 @@ func (z2m *Adapter) reconcile(
 	if err = z2m.replayPendingState(ctx, generation, state); err != nil {
 		return err
 	}
-	return z2m.requestCurrentState(ctx, connection, *state.inventory, snapshot)
+	if err = z2m.requestCurrentState(ctx, connection, *state.inventory, snapshot); err != nil {
+		return err
+	}
+	z2m.logReconcileCompleted(ctx, snapshot, isolated)
+	z2m.logUpstreamReady(ctx, progress)
+	return nil
 }
 
 func (z2m *Adapter) activateRoutes(
@@ -101,42 +107,24 @@ func (z2m *Adapter) buildRouteSnapshot(
 	ctx context.Context,
 	generation uint64,
 	inventory inventoryDiscovery,
-) (routeSnapshot, error) {
+) (routeSnapshot, int, error) {
 	snapshot := routeSnapshot{
 		routes: make(map[string]commandRoute), devices: make(map[string]runtimeDevice),
 	}
+	isolated := 0
 	for _, rejection := range inventory.Rejections {
-		z2m.logger.WarnContext(
-			ctx,
-			"isolated Zigbee2MQTT Device",
-			"ieee",
-			rejection.IEEEAddress,
-			"model",
-			rejection.Model,
-			"code",
-			rejection.Code,
-		)
-	}
-	if len(inventory.Devices) == 0 {
-		z2m.logger.InfoContext(ctx, "Zigbee2MQTT inventory contains no eligible Entities")
+		z2m.logIsolatedDevice(ctx, rejection.Code)
+		isolated++
 	}
 	for _, device := range inventory.Devices {
 		binding, registerErr := z2m.session.Register(ctx, device.Registration)
 		if registerErr != nil {
 			if rejected, ok := errors.AsType[*adapter.RegistrationRejectedError](registerErr); ok {
-				z2m.logger.WarnContext(
-					ctx,
-					"Zigbee2MQTT Device registration rejected",
-					"ieee",
-					device.IEEEAddress,
-					"model",
-					device.Model,
-					"code",
-					rejected.Code,
-				)
+				z2m.logIsolatedDevice(ctx, string(rejected.Code))
+				isolated++
 				continue
 			}
-			return routeSnapshot{}, &sessionOperationError{
+			return routeSnapshot{}, 0, &sessionOperationError{
 				operation: "register Zigbee2MQTT Device",
 				err:       registerErr,
 			}
@@ -154,13 +142,10 @@ func (z2m *Adapter) buildRouteSnapshot(
 			z2m.logger.WarnContext(
 				ctx,
 				"isolated invalid Zigbee2MQTT registration response",
-				"ieee",
-				device.IEEEAddress,
-				"model",
-				device.Model,
-				"error",
-				runtimeErr,
+				eventKey, "adapter.device_isolated",
+				"error_code", "invalid_registration",
 			)
+			isolated++
 			continue
 		}
 		snapshot.devices[runtime.friendly] = runtime
@@ -175,7 +160,7 @@ func (z2m *Adapter) buildRouteSnapshot(
 			snapshot.routes[entity.entityID] = route
 		}
 	}
-	return snapshot, nil
+	return snapshot, isolated, nil
 }
 
 func (z2m *Adapter) replayPendingAvailability(
@@ -194,10 +179,8 @@ func (z2m *Adapter) replayPendingAvailability(
 				z2m.logger.WarnContext(
 					ctx,
 					"ignored invalid Zigbee2MQTT availability",
-					"topic",
-					message.Topic,
-					"error",
-					err,
+					eventKey, "adapter.availability_ignored",
+					"error_code", "invalid_availability",
 				)
 			}
 		}

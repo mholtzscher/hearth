@@ -88,6 +88,7 @@ func newAdapter(session Session, config Config, logger *slog.Logger, dialer mqtt
 	if logger == nil {
 		logger = slog.Default()
 	}
+	logger = logger.With("component", adapterComponent)
 	return &Adapter{
 		session: session, config: config, logger: logger, dialer: dialer,
 		runtimeEvents: make(chan runtimeEvent, runtimeEventBuffer),
@@ -121,9 +122,11 @@ func (z2m *Adapter) Run(ctx context.Context) error {
 func (z2m *Adapter) runConnections(ctx context.Context) error {
 	delay := reconnectMinimum
 	var generation uint64
+	var episode retryEpisode
 	for {
 		generation++
-		synchronized, err := z2m.runConnection(ctx, generation)
+		progress := &connectionProgress{episode: &episode}
+		synchronized, err := z2m.runConnection(ctx, generation, progress)
 		if ctx.Err() != nil {
 			return ctx.Err()
 		}
@@ -134,6 +137,7 @@ func (z2m *Adapter) runConnections(ctx context.Context) error {
 			ctx,
 			generation,
 			externalSystemUnavailableReason,
+			progress,
 		); healthErr != nil {
 			return healthErr
 		}
@@ -141,7 +145,7 @@ func (z2m *Adapter) runConnections(ctx context.Context) error {
 			delay = reconnectMinimum
 		}
 		wait := z2m.retryDelay(delay)
-		z2m.logger.WarnContext(ctx, "Zigbee2MQTT connection ended; reconnecting", "error", err, "retry_in", wait)
+		z2m.logConnectionRetry(ctx, &episode, err, wait)
 		timer := time.NewTimer(wait)
 		select {
 		case <-ctx.Done():

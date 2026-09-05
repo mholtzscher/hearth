@@ -42,9 +42,11 @@ func StartRegistrationServer(
 		) (registrationResponse, bool) {
 			route, routeErr := natswire.ParseRegistrationSubject(subject)
 			if routeErr != nil {
-				logger.ErrorContext(ctx,
+				logger.WarnContext(ctx,
 					"discarding registration with invalid subject",
-					"subject", subject, "error", routeErr,
+					transportEventKey, "registration.request_discarded",
+					transportErrorCodeKey, "subject_invalid",
+					"registration_id", request.ID,
 				)
 				return registrationResponse{}, false
 			}
@@ -53,8 +55,11 @@ func StartRegistrationServer(
 			)
 			if registrationErr != nil {
 				logger.ErrorContext(ctx,
-					"handle registration", "subject", subject,
-					"registration_id", request.ID, "error", registrationErr,
+					"handle registration",
+					transportEventKey, "registration.failed",
+					transportErrorCodeKey, "registration_failed",
+					"registration_id", request.ID,
+					"adapter_id", route.AdapterID,
 				)
 				return registrationResponse{}, false
 			}

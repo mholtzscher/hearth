@@ -1,6 +1,6 @@
 # Application logging
 
-**Status:** Proposed, awaiting review; runtime implementation is not part of this change.
+**Status:** Implemented; runtime implementation authorized by the end-to-end implementation request.
 **Scope:** `hearthd`, `hearth-simulator`, `hearth-adapter-homeassistant`, and `hearth-adapter-zigbee2mqtt`, including their SDK and runtime paths.
 **Effort:** L (approximately two days); no infrastructure deployment required.
 
@@ -301,7 +301,7 @@ For Debug investigations, restart the affected process with `--log-level debug`.
 
 ## 5. Project layout and ownership
 
-Paths below are new or modified during future implementation. Existing tests next to touched behavior are extended rather than replaced.
+Paths below describe implementation ownership. Existing tests next to touched behavior are extended rather than replaced.
 
 ```text
 cmd/
@@ -435,4 +435,4 @@ D3 and D4 are independent after D1. Each deliverable includes its local tests an
 
 ## Review status
 
-This spec covers startup and readiness, end-to-end Command activity, and failure and recovery for terminal and container output across all four applications. The proposed defaults, event granularity, and safety/noise trade-offs await human approval before runtime work begins.
+This spec covers startup and readiness, end-to-end Command activity, and failure and recovery for terminal and container output across all four applications. The end-to-end implementation request authorized the defaults, event granularity, and safety/noise trade-offs described here.

@@ -2,6 +2,7 @@ package hearthd
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 	"sync"
 	"time"
@@ -23,9 +24,16 @@ type healthSupervisor struct {
 	now        func() time.Time
 	ready      bool
 	graceUntil time.Time
-	cancel     context.CancelFunc
-	done       chan struct{}
-	stopOnce   sync.Once
+	// readinessObserved and readinessReason suppress repeated readiness_changed
+	// events; readinessReason holds the last unready reason code, or empty when ready.
+	readinessObserved bool
+	readinessReason   string
+	// leaseExpiryPaused records an outage, including initial unready startup,
+	// so expiry after recovery grace emits lease_expiry_resumed once.
+	leaseExpiryPaused bool
+	cancel            context.CancelFunc
+	done              chan struct{}
+	stopOnce          sync.Once
 }
 
 func startHealthSupervisor(
@@ -62,19 +70,82 @@ func (supervisor *healthSupervisor) run(ctx context.Context) {
 }
 
 func (supervisor *healthSupervisor) poll(ctx context.Context, now time.Time) {
-	if supervisor.readiness == nil || supervisor.readiness.Check(ctx) != nil {
-		supervisor.ready = false
+	if checkErr := supervisor.checkReadiness(ctx); checkErr != nil {
+		supervisor.markNotReady(ctx, readinessFailureReason(checkErr))
 		return
+	}
+	supervisor.markReady(ctx, now)
+	if now.Before(supervisor.graceUntil) {
+		return
+	}
+	if supervisor.leaseExpiryPaused {
+		supervisor.leaseExpiryPaused = false
+		supervisor.logger.InfoContext(
+			ctx, "core lease expiry resumed", "event", "core.lease_expiry_resumed",
+		)
+	}
+	if err := supervisor.health.ExpireAdapterLeases(ctx, now); err != nil {
+		supervisor.logger.ErrorContext(
+			ctx,
+			"expire Adapter leases",
+			"event",
+			"core.lease_expiry_failed",
+			"error_code",
+			"adapter_lease_expiry_failed",
+		)
+	}
+}
+
+func (supervisor *healthSupervisor) checkReadiness(ctx context.Context) error {
+	if supervisor.readiness == nil {
+		return &readinessCheckError{
+			reasonCode: readinessCheckFailedReason, err: errors.New("readiness checker is not configured"),
+		}
+	}
+	return supervisor.readiness.Check(ctx)
+}
+
+// markNotReady records an unready evaluation, emitting readiness_changed only
+// for the first sample or a changed failure reason.
+func (supervisor *healthSupervisor) markNotReady(ctx context.Context, reason string) {
+	if !supervisor.readinessObserved || supervisor.readinessReason != reason {
+		supervisor.logger.WarnContext(
+			ctx,
+			"core readiness changed",
+			"event",
+			"core.readiness_changed",
+			"status",
+			"not_ready",
+			"reason_code",
+			reason,
+		)
+		supervisor.readinessObserved = true
+		supervisor.readinessReason = reason
+	}
+	supervisor.ready = false
+	supervisor.leaseExpiryPaused = true
+}
+
+// markReady records a ready evaluation, emitting readiness_changed only for
+// the first sample or a recovery from unready.
+func (supervisor *healthSupervisor) markReady(ctx context.Context, now time.Time) {
+	if !supervisor.readinessObserved || supervisor.readinessReason != "" {
+		supervisor.logger.InfoContext(
+			ctx,
+			"core readiness changed",
+			"event",
+			"core.readiness_changed",
+			"status",
+			"ready",
+			"lease_expiry_grace_ms",
+			leaseExpiryRecoveryGrace.Milliseconds(),
+		)
+		supervisor.readinessObserved = true
+		supervisor.readinessReason = ""
 	}
 	if !supervisor.ready {
 		supervisor.ready = true
 		supervisor.graceUntil = now.Add(leaseExpiryRecoveryGrace)
-	}
-	if now.Before(supervisor.graceUntil) {
-		return
-	}
-	if err := supervisor.health.ExpireAdapterLeases(ctx, now); err != nil {
-		supervisor.logger.ErrorContext(ctx, "expire Adapter leases", "error", err)
 	}
 }
 

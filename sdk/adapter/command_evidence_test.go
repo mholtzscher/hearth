@@ -228,9 +228,9 @@ func TestCommandEvidenceCallerCancellationAndDeadlinePreventPublication(t *testi
 
 func TestCommandEvidenceStopsAfterSessionTermination(t *testing.T) {
 	t.Parallel()
-	for name, terminate := range map[string]func(*Session){
-		"closed": (*Session).markClosed,
-		"fenced": (*Session).markFenced,
+	for name, terminate := range map[string]func(context.Context, *Session){
+		"closed": func(_ context.Context, session *Session) { session.markClosed() },
+		"fenced": func(ctx context.Context, session *Session) { session.markFenced(ctx) },
 	} {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
@@ -239,7 +239,7 @@ func TestCommandEvidenceStopsAfterSessionTermination(t *testing.T) {
 			publisher := &sequenceJetStreamPublisher{}
 			session.jetstream = publisher
 			evidence := acceptedEvidence(t, session, time.Now().Add(time.Second))
-			terminate(session)
+			terminate(context.Background(), session)
 			_, err := evidence.PublishObservation(context.Background(), Observation{
 				EntityID: testEntityID, Value: json.RawMessage(`true`), AdapterReceivedAt: nowString(),
 			})

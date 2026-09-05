@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"time"
 
 	contractsv1 "github.com/mholtzscher/hearth/contracts/v1"
@@ -117,18 +118,22 @@ func (session *Session) reportAvailabilityBatch(
 	if err != nil {
 		return err
 	}
+	episode := newRetryEpisode("entity_availability", "core")
 	for {
 		attemptContext, cancelAttempt := context.WithTimeout(ctx, requestAttemptTimeout)
 		response, requestErr := sendSessionRequest[entityAvailabilityResponse](attemptContext, session, request)
 		cancelAttempt()
 		if requestErr != nil {
-			if retryErr := waitForRequestRetry(ctx, requestErr); retryErr != nil {
+			if retryErr := episode.waitRetry(ctx, session.log(),
+				slog.String("error_code", requestErrorCode(requestErr)),
+				requestRetryWait, requestErr,
+			); retryErr != nil {
 				return retryErr
 			}
 			continue
 		}
 		if response.Data.Status == statusRejected {
-			return session.handleAvailabilityRejection(response.Data.Error)
+			return session.handleAvailabilityRejection(ctx, response.Data.Error)
 		}
 		if response.Data.Count != len(reports) {
 			return fmt.Errorf(
@@ -143,6 +148,9 @@ func (session *Session) reportAvailabilityBatch(
 		if terminalErr := session.sessionError(); terminalErr != nil {
 			return terminalErr
 		}
+		// Ordinary acknowledged reports stay silent; only a blocked report that
+		// required retries emits recovery evidence.
+		episode.succeeded(ctx, session.log())
 		return nil
 	}
 }
@@ -171,14 +179,17 @@ func (session *Session) prepareAvailabilityRequest(
 	)
 }
 
-func (session *Session) handleAvailabilityRejection(rejection *entityAvailabilityError) error {
+func (session *Session) handleAvailabilityRejection(
+	ctx context.Context,
+	rejection *entityAvailabilityError,
+) error {
 	if rejection == nil {
 		return errors.New("entity availability rejection omitted error")
 	}
 	code := EntityAvailabilityRejectionCode(rejection.Code)
 	switch code {
 	case entityAvailabilityRuntimeFenced:
-		session.markFenced()
+		session.markFenced(ctx)
 		return ErrRuntimeFenced
 	case EntityAvailabilityAdapterUnhealthy,
 		EntityAvailabilityInvalidRequest,

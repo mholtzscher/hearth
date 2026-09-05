@@ -18,6 +18,9 @@ func Run(ctx context.Context, config Config, logger *slog.Logger) error {
 	if logger == nil {
 		logger = slog.Default()
 	}
+	processLogger := logger.With("component", "process")
+	// The SDK owns session logging and attaches its own adapter_session
+	// component and Adapter/runtime identity, so it receives the root logger.
 	session, connectErr := adapter.Connect(ctx, adapter.Config{
 		AdapterID:       config.AdapterID,
 		SoftwareName:    "hearth-simulator",
@@ -28,7 +31,34 @@ func Run(ctx context.Context, config Config, logger *slog.Logger) error {
 	if connectErr != nil {
 		return connectErr
 	}
-	defer session.Close()
+	defer func() {
+		if closeErr := session.Close(); closeErr != nil {
+			processLogger.WarnContext(
+				ctx,
+				"process cleanup failed",
+				"event",
+				"process.cleanup_failed",
+				"stage",
+				"session_close",
+				"error_code",
+				"cleanup_failed",
+			)
+		}
+	}()
+	// started flips once command serving begins. The deferred stopping record
+	// below covers post-connect startup failures (register/initialize/handler
+	// construction); it is registered after the close defer so stopping always
+	// precedes session release. The serve path sets started and logs stopping
+	// itself, so exactly one record is emitted on every path.
+	started := false
+	defer func() {
+		if !started {
+			processLogger.InfoContext(
+				ctx, "hearth-simulator stopping", "event", "process.stopping",
+				"reason_code", startupReason(ctx),
+			)
+		}
+	}()
 	simulated, simulatorErr := simulatoradapter.New(session, config.Scenario)
 	if simulatorErr != nil {
 		return simulatorErr
@@ -57,18 +87,43 @@ func Run(ctx context.Context, config Config, logger *slog.Logger) error {
 	if err := simulated.Initialize(ctx, entityID); err != nil {
 		return fmt.Errorf("initialize simulator health and Entity availability: %w", err)
 	}
+	logger.With("component", "simulator").InfoContext(
+		ctx,
+		"simulator initialized",
+		"event",
+		"simulator.initialized",
+		"scenario",
+		config.Scenario,
+		"entity_id",
+		entityID,
+	)
 	handler, err := simulated.CommandHandler(entityID)
 	if err != nil {
 		return err
 	}
-	if serveErr := session.ServeCommands(
-		ctx,
-		handler,
-	); serveErr != nil && !errors.Is(serveErr, context.Canceled) &&
+	started = true
+	serveErr := session.ServeCommands(ctx, handler)
+	stoppingReason := "context_cancelled"
+	if serveErr != nil && ctx.Err() == nil {
+		stoppingReason = "serve_failed"
+	}
+	processLogger.InfoContext(
+		ctx, "hearth-simulator stopping", "event", "process.stopping", "reason_code", stoppingReason,
+	)
+	if serveErr != nil && !errors.Is(serveErr, context.Canceled) &&
 		!errors.Is(serveErr, adapter.ErrClosed) {
 		return serveErr
 	}
 	return nil
+}
+
+// startupReason distinguishes cancellation from failure for a post-connect
+// startup teardown record.
+func startupReason(ctx context.Context) string {
+	if ctx.Err() != nil {
+		return "context_cancelled"
+	}
+	return "startup_failed"
 }
 
 func entityIDForKey(binding adapter.Binding, key string) (string, error) {

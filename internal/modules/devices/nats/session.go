@@ -85,14 +85,20 @@ func startClaimServer(
 		) (adapterClaimResponse, bool) {
 			route, err := natswire.ParseAdapterClaimSubject(subject)
 			if err != nil || route.AdapterID != request.Data.AdapterID {
-				logger.ErrorContext(ctx, "discarding Adapter claim with mismatched routing",
-					"subject", subject, "claim_id", request.ID, "error", err)
+				logger.WarnContext(ctx, "discarding Adapter claim with mismatched routing",
+					transportEventKey, "session.claim_discarded",
+					transportErrorCodeKey, "routing_mismatch",
+					"claim_id", request.ID,
+				)
 				return adapterClaimResponse{}, false
 			}
 			runtimeID, err := devices.ParseRuntimeID(request.Data.RuntimeID)
 			if err != nil {
-				logger.ErrorContext(ctx, "discarding Adapter claim with invalid runtime ID",
-					"subject", subject, "claim_id", request.ID, "error", err)
+				logger.WarnContext(ctx, "discarding Adapter claim with invalid runtime ID",
+					transportEventKey, "session.claim_discarded",
+					transportErrorCodeKey, "runtime_id_invalid",
+					"claim_id", request.ID,
+				)
 				return adapterClaimResponse{}, false
 			}
 			claimErr := claimer.ClaimAdapterRuntime(ctx, devices.ClaimAdapterRuntimeParams{
@@ -102,7 +108,11 @@ func startClaimServer(
 			response, handled := mapClaimResult(claimErr)
 			if !handled {
 				logger.ErrorContext(ctx, "claim Adapter runtime",
-					"subject", subject, "claim_id", request.ID, "error", claimErr)
+					transportEventKey, "session.claim_failed",
+					transportErrorCodeKey, "claim_failed",
+					"claim_id", request.ID,
+					"adapter_id", route.AdapterID,
+				)
 			}
 			return response, handled
 		},
@@ -149,20 +159,29 @@ func startHeartbeatServer(
 		) (adapterHeartbeatResponse, bool) {
 			route, err := natswire.ParseAdapterHeartbeatSubject(subject)
 			if err != nil {
-				logger.ErrorContext(ctx, "discarding Adapter heartbeat with invalid subject",
-					"subject", subject, "heartbeat_id", request.ID, "error", err)
+				logger.WarnContext(ctx, "discarding Adapter heartbeat with invalid subject",
+					transportEventKey, "session.heartbeat_discarded",
+					transportErrorCodeKey, "subject_invalid",
+					"heartbeat_id", request.ID,
+				)
 				return adapterHeartbeatResponse{}, false
 			}
 			runtimeID, err := devices.ParseRuntimeID(route.RuntimeID)
 			if err != nil {
-				logger.ErrorContext(ctx, "discarding Adapter heartbeat with invalid runtime ID",
-					"subject", subject, "heartbeat_id", request.ID, "error", err)
+				logger.WarnContext(ctx, "discarding Adapter heartbeat with invalid runtime ID",
+					transportEventKey, "session.heartbeat_discarded",
+					transportErrorCodeKey, "runtime_id_invalid",
+					"heartbeat_id", request.ID,
+				)
 				return adapterHeartbeatResponse{}, false
 			}
 			sourceObservedAt, err := time.Parse(time.RFC3339Nano, request.Data.ExternalSystem.SourceObservedAt)
 			if err != nil {
-				logger.ErrorContext(ctx, "discarding Adapter heartbeat with invalid source time",
-					"subject", subject, "heartbeat_id", request.ID, "error", err)
+				logger.WarnContext(ctx, "discarding Adapter heartbeat with invalid source time",
+					transportEventKey, "session.heartbeat_discarded",
+					transportErrorCodeKey, "source_time_invalid",
+					"heartbeat_id", request.ID,
+				)
 				return adapterHeartbeatResponse{}, false
 			}
 			result, recordErr := recorder.RecordAdapterHeartbeat(ctx, devices.AdapterHeartbeat{
@@ -174,7 +193,12 @@ func startHeartbeatServer(
 			response, handled := mapHeartbeatResult(result, recordErr)
 			if !handled {
 				logger.ErrorContext(ctx, "record Adapter heartbeat",
-					"subject", subject, "heartbeat_id", request.ID, "error", recordErr)
+					transportEventKey, "session.heartbeat_failed",
+					transportErrorCodeKey, "heartbeat_failed",
+					"heartbeat_id", request.ID,
+					"adapter_id", route.AdapterID,
+					"runtime_id", route.RuntimeID,
+				)
 			}
 			return response, handled
 		},
@@ -220,21 +244,32 @@ func startReleaseServer(
 		) (adapterReleaseResponse, bool) {
 			route, err := natswire.ParseAdapterReleaseSubject(subject)
 			if err != nil {
-				logger.ErrorContext(ctx, "discarding Adapter release with invalid subject",
-					"subject", subject, "release_id", request.ID, "error", err)
+				logger.WarnContext(ctx, "discarding Adapter release with invalid subject",
+					transportEventKey, "session.release_discarded",
+					transportErrorCodeKey, "subject_invalid",
+					"release_id", request.ID,
+				)
 				return adapterReleaseResponse{}, false
 			}
 			runtimeID, err := devices.ParseRuntimeID(route.RuntimeID)
 			if err != nil {
-				logger.ErrorContext(ctx, "discarding Adapter release with invalid runtime ID",
-					"subject", subject, "release_id", request.ID, "error", err)
+				logger.WarnContext(ctx, "discarding Adapter release with invalid runtime ID",
+					transportEventKey, "session.release_discarded",
+					transportErrorCodeKey, "runtime_id_invalid",
+					"release_id", request.ID,
+				)
 				return adapterReleaseResponse{}, false
 			}
 			releaseErr := recorder.ReleaseAdapterRuntime(ctx, route.AdapterID, runtimeID)
 			response, handled := mapReleaseResult(releaseErr)
 			if !handled {
 				logger.ErrorContext(ctx, "release Adapter runtime",
-					"subject", subject, "release_id", request.ID, "error", releaseErr)
+					transportEventKey, "session.release_failed",
+					transportErrorCodeKey, "release_failed",
+					"release_id", request.ID,
+					"adapter_id", route.AdapterID,
+					"runtime_id", route.RuntimeID,
+				)
 			}
 			return response, handled
 		},

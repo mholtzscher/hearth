@@ -166,8 +166,9 @@ func (coordinator *runtimeCoordinator) finishGet(event getPublishFinished) {
 	coordinator.adapter.logger.WarnContext(
 		coordinator.ctx,
 		"Zigbee2MQTT command refresh publication failed",
+		eventKey, "adapter.command_refresh_failed",
 		"entity_id", attempt.command.EntityID,
-		"error", event.err,
+		"error_code", "refresh_publish_failed",
 	)
 }
 

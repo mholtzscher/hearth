@@ -42,24 +42,30 @@ func StartEntityEnablementServer(
 		) (entityEnablementResponse, bool) {
 			route, routeErr := natswire.ParseEntityEnablementSubject(subject)
 			if routeErr != nil {
-				logger.ErrorContext(ctx,
+				logger.WarnContext(ctx,
 					"discarding Entity enablement request with invalid subject",
-					"subject", subject, "error", routeErr,
+					transportEventKey, "enablement.request_discarded",
+					transportErrorCodeKey, "subject_invalid",
+					"enablement_id", request.ID,
 				)
 				return entityEnablementResponse{}, false
 			}
 			if route.EntityID != request.Data.EntityID {
-				logger.ErrorContext(ctx,
+				logger.WarnContext(ctx,
 					"discarding Entity enablement request with mismatched routing",
-					"subject", subject, "enablement_id", request.ID,
+					transportEventKey, "enablement.request_discarded",
+					transportErrorCodeKey, "routing_mismatch",
+					"enablement_id", request.ID,
 				)
 				return entityEnablementResponse{}, false
 			}
 			entityID, entityIDErr := devices.ParseEntityID(request.Data.EntityID)
 			if entityIDErr != nil {
-				logger.ErrorContext(ctx,
+				logger.WarnContext(ctx,
 					"discarding Entity enablement request with invalid Entity ID",
-					"subject", subject, "enablement_id", request.ID,
+					transportEventKey, "enablement.request_discarded",
+					transportErrorCodeKey, "entity_id_invalid",
+					"enablement_id", request.ID,
 				)
 				return entityEnablementResponse{}, false
 			}
@@ -69,8 +75,11 @@ func StartEntityEnablementServer(
 			response, handled := mapEntityEnablementResult(request.Data.EntityID, confirmed, enablementErr)
 			if !handled {
 				logger.ErrorContext(ctx,
-					"set Entity enablement", "subject", subject,
-					"enablement_id", request.ID, "error", enablementErr,
+					"set Entity enablement",
+					transportEventKey, "enablement.failed",
+					transportErrorCodeKey, "enablement_failed",
+					"enablement_id", request.ID,
+					"adapter_id", route.AdapterID,
 				)
 			}
 			return response, handled
