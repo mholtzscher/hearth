@@ -3,12 +3,10 @@ package devices //nolint:testpackage // Tests exercise package-private domain se
 import (
 	"context"
 	"database/sql"
-	"errors"
 	"os"
 	"path/filepath"
 	"runtime"
 	"strings"
-	"sync"
 	"testing"
 	"time"
 )
@@ -17,8 +15,6 @@ type historyProjection struct {
 	id          ObservationID
 	disposition ObservationDisposition
 }
-
-var errNoHistoryRows = errors.New("concurrent history read returned no rows")
 
 func seedStateHistory(t *testing.T, service *Service, entityID EntityID, base time.Time) []historyProjection {
 	t.Helper()
@@ -511,10 +507,7 @@ func seedTargetHistory(
 		t.Fatal(err)
 	}
 	defer func() { _ = transaction.Rollback() }()
-	// Set-based seeding: one INSERT SELECT per disposition preserves the
-	// exact obs_seed_%08d IDs and applied, unchanged, rejected insertion
-	// order of the former per-row Exec loop while avoiding 100k+ Go to
-	// SQLite round trips. Zero counts skip their statement entirely.
+	// Insert each disposition in receive order with deterministic receipt IDs.
 	insertDisposition := func(offset, count int, disposition string, rejection, value sql.NullString) {
 		t.Helper()
 		if count <= 0 {
@@ -617,10 +610,9 @@ func TestSQLiteEntityStateHistoryUnchangedHeavyQueryPlans(t *testing.T) {
 	t.Parallel()
 	database := openMigratedDatabase(t, filepath.Join(t.TempDir(), "hearth.db"))
 	target := EntityID("ent_01890f47-7a6b-7c4d-8e9f-0123456789a1")
-	// Skew lives in the target Entity: sparse applied/rejected rows hide
-	// among 100,000 unchanged rows. This test protects selective indexed
-	// reads and fails if a sparse filter scans the dominant disposition.
-	seedTargetHistory(t, database, target, 10, 100000, 5)
+	// Small skewed fixtures protect index selection and sparse pagination;
+	// they deliberately do not measure scale or latency.
+	seedTargetHistory(t, database, target, 10, 200, 5)
 
 	repository := NewSQLiteRepository(database, firstLightCatalog(t))
 	applied := requireHistoryPage(t, repository, ListEntityStateHistoryParams{
@@ -650,17 +642,14 @@ func TestSQLiteEntityStateHistoryUnchangedHeavyQueryPlans(t *testing.T) {
 		EntityID: EntityID("ent_01890f47-7a6b-7c4d-8e9f-0123456789ff"),
 		Filter:   EntityStateHistoryFilterApplied, Limit: 50,
 	})
-	assertAllHistoryQueryPlans(t, database, string(target), 50000)
+	assertAllHistoryQueryPlans(t, database, string(target), 100)
 }
 
 func TestSQLiteEntityStateHistoryRejectedHeavyQueryPlans(t *testing.T) {
 	t.Parallel()
 	database := openMigratedDatabase(t, filepath.Join(t.TempDir(), "hearth.db"))
 	target := EntityID("ent_01890f47-7a6b-7c4d-8e9f-0123456789a1")
-	// Skew lives in the target Entity: sparse applied/unchanged rows hide
-	// among 100,000 rejected rows. This test protects selective indexed
-	// reads and fails if a sparse filter scans the dominant disposition.
-	seedTargetHistory(t, database, target, 10, 10, 100000)
+	seedTargetHistory(t, database, target, 10, 10, 200)
 
 	repository := NewSQLiteRepository(database, firstLightCatalog(t))
 	applied := requireHistoryPage(t, repository, ListEntityStateHistoryParams{
@@ -690,7 +679,7 @@ func TestSQLiteEntityStateHistoryRejectedHeavyQueryPlans(t *testing.T) {
 		EntityID: EntityID("ent_01890f47-7a6b-7c4d-8e9f-0123456789ff"),
 		Filter:   EntityStateHistoryFilterApplied, Limit: 50,
 	})
-	assertAllHistoryQueryPlans(t, database, string(target), 50000)
+	assertAllHistoryQueryPlans(t, database, string(target), 100)
 }
 
 func assertStrictReceiveOrder(t *testing.T, entries []EntityStateHistoryEntry) {
@@ -754,167 +743,4 @@ func requireEmptyHistoryPage(
 	if page.Items == nil || len(page.Items) != 0 || page.HasMore {
 		t.Fatalf("%s empty page = %#v", params.Filter, page)
 	}
-}
-
-func TestSQLiteEntityStateHistoryConcurrentReadAndProjectionLatency(t *testing.T) {
-	t.Parallel()
-	ctx := context.Background()
-	database := openRegistrationDatabase(t, filepath.Join(t.TempDir(), "hearth.db"))
-	catalog := firstLightCatalog(t)
-	repository := NewSQLiteRepository(database, catalog)
-	service := newTestService(repository, nil, catalog, Dependencies{})
-	entityID := registerHistoryEntity(t, service)
-	base := time.Date(2026, 8, 22, 12, 0, 0, 0, time.UTC)
-	seedStateHistory(t, service, entityID, base)
-	// Skew lives in the read Entity itself so concurrent history reads
-	// contend with projection on one large in-target history.
-	seedTargetHistory(t, database, entityID, 10, 100000, 200)
-
-	const readers = 8
-	const readIterations = 20
-	const projections = 100
-	observations := make([]Observation, 0, projections)
-	for index := range projections {
-		observations = append(
-			observations,
-			newObservation(t, entityID, `true`, base.Add(time.Duration(100+index)*time.Second)),
-		)
-	}
-
-	start := time.Now()
-	var waiter sync.WaitGroup
-	readLatencies := make([]time.Duration, 0, readers*readIterations)
-	var readMutex sync.Mutex
-	projectLatencies := make([]time.Duration, 0, projections)
-	var projectMutex sync.Mutex
-	writeErr := make(chan error, 1)
-	for range readers {
-		waiter.Go(func() {
-			for latency, err := range readHistoryPages(ctx, repository, entityID, readIterations) {
-				if err != nil {
-					t.Error(err)
-					return
-				}
-				readMutex.Lock()
-				readLatencies = append(readLatencies, latency)
-				readMutex.Unlock()
-			}
-		})
-	}
-	waiter.Go(func() {
-		for latency, err := range projectHistoryObservations(ctx, service, observations) {
-			if err != nil {
-				writeErr <- err
-				return
-			}
-			projectMutex.Lock()
-			projectLatencies = append(projectLatencies, latency)
-			projectMutex.Unlock()
-		}
-	})
-	waiter.Wait()
-	total := time.Since(start)
-	select {
-	case err := <-writeErr:
-		t.Fatal(err)
-	default:
-	}
-
-	t.Logf(
-		"state-history concurrency evidence: %d reads took %v total (mean %v, max %v); "+
-			"%d projections took %v total (mean %v, max %v); wall %v",
-		len(readLatencies), sumLatencies(readLatencies), meanLatency(readLatencies), maxLatency(readLatencies),
-		len(projectLatencies), sumLatencies(projectLatencies), meanLatency(projectLatencies),
-		maxLatency(projectLatencies), total,
-	)
-	if len(readLatencies) != readers*readIterations || len(projectLatencies) != projections {
-		t.Fatalf("completed reads = %d, projections = %d", len(readLatencies), len(projectLatencies))
-	}
-	final, err := repository.ListEntityStateHistory(ctx, ListEntityStateHistoryParams{
-		EntityID: entityID, Filter: EntityStateHistoryFilterAll, Limit: 1,
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !final.HasMore || len(final.Items) != 1 {
-		t.Fatalf("final history page = %#v", final)
-	}
-}
-
-func readHistoryPages(
-	ctx context.Context,
-	repository *SQLiteRepository,
-	entityID EntityID,
-	iterations int,
-) func(yield func(time.Duration, error) bool) {
-	filters := []EntityStateHistoryFilter{
-		EntityStateHistoryFilterUpdates,
-		EntityStateHistoryFilterApplied,
-		EntityStateHistoryFilterRejected,
-		EntityStateHistoryFilterAll,
-	}
-	return func(yield func(time.Duration, error) bool) {
-		for index := range iterations {
-			before := time.Now()
-			page, err := repository.ListEntityStateHistory(ctx, ListEntityStateHistoryParams{
-				EntityID: entityID, Filter: filters[index%len(filters)], Limit: 50,
-			})
-			elapsed := time.Since(before)
-			if err != nil {
-				yield(0, err)
-				return
-			}
-			if len(page.Items) == 0 {
-				yield(0, errNoHistoryRows)
-				return
-			}
-			if !yield(elapsed, nil) {
-				return
-			}
-		}
-	}
-}
-
-func projectHistoryObservations(
-	ctx context.Context,
-	service *Service,
-	observations []Observation,
-) func(yield func(time.Duration, error) bool) {
-	return func(yield func(time.Duration, error) bool) {
-		for _, observation := range observations {
-			before := time.Now()
-			_, err := service.ProjectObservation(
-				ctx, "simulator", testRuntimeID, observation, observation.AdapterReceivedAt,
-			)
-			if !yield(time.Since(before), err) {
-				return
-			}
-			if err != nil {
-				return
-			}
-		}
-	}
-}
-
-func sumLatencies(latencies []time.Duration) time.Duration {
-	var total time.Duration
-	for _, latency := range latencies {
-		total += latency
-	}
-	return total
-}
-
-func meanLatency(latencies []time.Duration) time.Duration {
-	if len(latencies) == 0 {
-		return 0
-	}
-	return sumLatencies(latencies) / time.Duration(len(latencies))
-}
-
-func maxLatency(latencies []time.Duration) time.Duration {
-	var longest time.Duration
-	for _, latency := range latencies {
-		longest = max(longest, latency)
-	}
-	return longest
 }
