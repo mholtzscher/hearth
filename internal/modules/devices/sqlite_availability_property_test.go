@@ -231,10 +231,14 @@ func TestSQLiteEntityAvailabilityHistoryMatchesReferenceModel(t *testing.T) {
 		modelReportUnavailableNetwork,
 		modelReportUnavailableAuthentication,
 	}
+	preparedPath := filepath.Join(t.TempDir(), "prepared.db")
+	prepared := false
 	rapid.Check(t, func(t *rapid.T) {
 		generated := rapid.SliceOfN(rapid.SampledFrom(operations), 0, 24).Draw(t, "operations")
 		pageLimit := rapid.IntRange(1, 5).Draw(t, "page limit")
-		repository, entityID, claimedAt, registeredAt := newAvailabilityPropertyFixture(t, databaseImage, catalog)
+		repository, entityID, claimedAt, registeredAt := newAvailabilityPropertyFixture(
+			t, databaseImage, catalog, prepared,
+		)
 		model := newAvailabilityHistoryModel(claimedAt, registeredAt)
 
 		at := registeredAt
@@ -247,7 +251,25 @@ func TestSQLiteEntityAvailabilityHistoryMatchesReferenceModel(t *testing.T) {
 			modelHeartbeatHealthy,
 		} {
 			at = at.Add(time.Second)
-			applyAvailabilityPropertyOperation(t, repository, entityID, model, operation, at)
+			if prepared {
+				model.apply(operation, at)
+			} else {
+				applyAvailabilityPropertyOperation(t, repository, entityID, model, operation, at)
+			}
+		}
+		if !prepared {
+			// Check the fixed prefix once, then snapshot its committed database.
+			// Each generated sequence still gets an isolated database and model.
+			assertAvailabilityPropertyHistory(t, repository, entityID, model.effectiveHistory(), 1)
+			if _, err := repository.database.ExecContext(t.Context(), "VACUUM INTO ?", preparedPath); err != nil {
+				t.Fatal(err)
+			}
+			image, err := os.ReadFile(preparedPath)
+			if err != nil {
+				t.Fatal(err)
+			}
+			databaseImage = image
+			prepared = true
 		}
 		for _, operation := range generated {
 			at = at.Add(time.Second)
@@ -283,6 +305,7 @@ func newAvailabilityPropertyFixture(
 	t *rapid.T,
 	databaseImage []byte,
 	catalog *TypeCatalog,
+	prepared bool,
 ) (*SQLiteRepository, EntityID, time.Time, time.Time) {
 	t.Helper()
 	directory, err := os.MkdirTemp("", "hearth-availability-property-")
@@ -301,6 +324,11 @@ func newAvailabilityPropertyFixture(
 	t.Cleanup(func() { _ = database.Close() })
 	repository := NewSQLiteRepository(database, catalog)
 	claimedAt := time.Date(2026, 8, 29, 12, 0, 0, 0, time.UTC)
+	registeredAt := claimedAt.Add(time.Second)
+	entityID := EntityID("ent_01890f47-7a6b-7c4d-8e9f-0123456789ae")
+	if prepared {
+		return repository, entityID, claimedAt, registeredAt
+	}
 	if claimErr := repository.ClaimAdapterRuntime(t.Context(), ClaimRuntimeWrite{
 		RuntimeID: testRuntimeID, AdapterID: "simulator",
 		SoftwareName: "hearth-simulator", SoftwareVersion: "0.1.0",
@@ -308,14 +336,13 @@ func newAvailabilityPropertyFixture(
 	}); claimErr != nil {
 		t.Fatal(claimErr)
 	}
-	registeredAt := claimedAt.Add(time.Second)
 	service := newTestService(repository, nil, catalog, Dependencies{
 		Now: func() time.Time { return registeredAt },
 		NewDeviceID: func() (DeviceID, error) {
 			return DeviceID("dev_01890f47-7a6b-7c4d-8e9f-0123456789ae"), nil
 		},
 		NewEntityID: func() (EntityID, error) {
-			return EntityID("ent_01890f47-7a6b-7c4d-8e9f-0123456789ae"), nil
+			return entityID, nil
 		},
 	})
 	binding, err := service.Register(t.Context(), "simulator", testRuntimeID, validDomainRegistration())
