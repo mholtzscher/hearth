@@ -2,8 +2,7 @@ package adapter //nolint:testpackage // Tests exercise package-private logging b
 
 // Review regression tests for the SDK logging findings: Connect-context
 // independence after lifecycle establishment, the safe NATS async
-// ErrorHandler, and retry-episode state reset. They live here (not in
-// logging_test.go) to avoid conflicting with concurrent work in that file.
+// ErrorHandler, and retry-episode state reset.
 
 import (
 	"context"
@@ -94,12 +93,11 @@ func TestReviewConnectCancelAfterSuccessStaysUnexpected(t *testing.T) {
 func TestReviewAsyncErrorHandlerIsSafe(t *testing.T) {
 	t.Parallel()
 	server := startServer(t, -1, t.TempDir())
-	startTestLifecycleResponder(t, server.ClientURL())
 	writer := &lockedWriter{}
 	session := connectSessionWithLogger(t, server.ClientURL(), recordingLogger(t, writer))
 
 	subscription := &natsgo.Subscription{Subject: "SENTINEL-review-subject"}
-	session.onAsyncError(nil, subscription,
+	session.connection.Opts.AsyncErrorCB(session.connection, subscription,
 		errors.New("SENTINEL-review-async token=hunter2"))
 
 	failed := waitForLogRecord(t, writer, "dependency.operation_failed", nil, 3*time.Second)
