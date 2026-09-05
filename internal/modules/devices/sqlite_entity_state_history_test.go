@@ -4,7 +4,6 @@ import (
 	"context"
 	"database/sql"
 	"errors"
-	"fmt"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -512,47 +511,35 @@ func seedTargetHistory(
 		t.Fatal(err)
 	}
 	defer func() { _ = transaction.Rollback() }()
-	statement, err := transaction.PrepareContext(ctx, `
-		INSERT INTO observation_receipts (
-			observation_id, adapter_id, entity_id, disposition, rejection_code,
-			state_value_json, adapter_received_at, observed_at, expires_at
-		) VALUES (?, 'simulator', ?, ?, ?, ?, ?, ?, ?)`)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer statement.Close()
-	insert := func(index int, disposition, rejection, value string) {
+	// Set-based seeding: one INSERT SELECT per disposition preserves the
+	// exact obs_seed_%08d IDs and applied, unchanged, rejected insertion
+	// order of the former per-row Exec loop while avoiding 100k+ Go to
+	// SQLite round trips. Zero counts skip their statement entirely.
+	insertDisposition := func(offset, count int, disposition string, rejection, value sql.NullString) {
 		t.Helper()
-		var rejectionArg, valueArg sql.NullString
-		if rejection != "" {
-			rejectionArg = sql.NullString{String: rejection, Valid: true}
+		if count <= 0 {
+			return
 		}
-		if value != "" {
-			valueArg = sql.NullString{String: value, Valid: true}
-		}
-		if _, execErr := statement.ExecContext(
-			ctx, fmt.Sprintf("obs_seed_%08d", index), string(target),
-			disposition, rejectionArg, valueArg, timestamp, timestamp, expiry,
+		if _, execErr := transaction.ExecContext(ctx, `
+			WITH RECURSIVE seq(n) AS (
+				SELECT 1 UNION ALL SELECT n + 1 FROM seq WHERE n < ?
+			)
+			INSERT INTO observation_receipts (
+				observation_id, adapter_id, entity_id, disposition, rejection_code,
+				state_value_json, adapter_received_at, observed_at, expires_at
+			) SELECT printf('obs_seed_%08d', ? + n - 1), 'simulator', ?, ?, ?, ?, ?, ?, ?
+			FROM seq ORDER BY n`,
+			count, offset, string(target), disposition, rejection, value, timestamp, timestamp, expiry,
 		); execErr != nil {
 			t.Fatal(execErr)
 		}
 	}
-	index := 0
-	for range applied {
-		insert(index, string(DispositionApplied), "", `true`)
-		index++
-	}
-	for range unchanged {
-		insert(index, string(DispositionUnchanged), "", `true`)
-		index++
-	}
-	for range rejected {
-		insert(index, string(DispositionRejected), string(RejectionInvalidValue), "")
-		index++
-	}
-	if closeErr := statement.Close(); closeErr != nil {
-		t.Fatal(closeErr)
-	}
+	insertDisposition(0, applied, string(DispositionApplied),
+		sql.NullString{}, sql.NullString{String: `true`, Valid: true})
+	insertDisposition(applied, unchanged, string(DispositionUnchanged),
+		sql.NullString{}, sql.NullString{String: `true`, Valid: true})
+	insertDisposition(applied+unchanged, rejected, string(DispositionRejected),
+		sql.NullString{String: string(RejectionInvalidValue), Valid: true}, sql.NullString{})
 	if commitErr := transaction.Commit(); commitErr != nil {
 		t.Fatal(commitErr)
 	}
