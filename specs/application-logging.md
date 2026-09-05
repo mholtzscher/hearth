@@ -1,6 +1,6 @@
 # Application logging
 
-**Status:** Proposed — awaiting review; runtime implementation is not part of this change.
+**Status:** Proposed, awaiting review; runtime implementation is not part of this change.
 **Scope:** `hearthd`, `hearth-simulator`, `hearth-adapter-homeassistant`, and `hearth-adapter-zigbee2mqtt`, including their SDK and runtime paths.
 **Effort:** L (approximately two days); no infrastructure deployment required.
 
@@ -23,8 +23,8 @@ Debug logging adds routine Observation and transport progress for focused invest
 - `sdk/adapter.Config.Logger` already supplies the SDK logger. The SDK owns session claims, retries, heartbeats, fencing, Command serving, and Observation publication.
 - `internal/modules/devices/nats` already accepts loggers for incoming transports. `devices.Service` currently has no logger; it owns asynchronous Command execution even after the HTTP caller disconnects.
 - Command and Observation envelopes already carry correlation/causation IDs. Runtime-scoped subjects carry Adapter and runtime identity. W3C trace context is propagated today; no new correlation protocol is necessary.
-- `/readyz` checks SQLite, NATS, JetStream resources, and the Observation consumer. `health_supervisor.go` polls that checker and pauses lease expiry while unready, with a 15-second recovery grace.
-- Command acceptance is not satisfaction. Only committed linked Observation evidence can satisfy a Command. Startup interrupts old active Commands without redispatch.
+- `/readyz` checks SQLite, NATS, JetStream resources, and the Observation consumer. `health_supervisor.go` polls that checker and pauses lease expiry while unready.
+- Command acceptance is not satisfaction. Only committed linked Observation evidence can satisfy a Command.
 - Registration, Command, Observation, health, and availability persistence semantics remain unchanged.
 
 ## Decision and alternatives
@@ -33,19 +33,25 @@ Use standard-library `log/slog` directly, existing constructor injection, a smal
 
 | Option | Benefit | Cost / decision |
 | --- | --- | --- |
-| Add scattered Info messages | Small initial patch | Leaves inconsistent fields, noise, and misleading success messages; insufficient |
 | Shared slog setup + explicit event ownership | Searchable output, small dependency footprint, testable semantics | Chosen; requires coordinated adoption and some concurrency-sensitive tests |
 | Centralized observability stack and automatic tracing | Cross-host search and richer diagnostics | Deferred; not required for terminal/container use and does not fix missing semantic events |
 
 Text remains the default. JSON is opt-in for container tools and `jq`, not a prerequisite for a collector. Operational logging options are CLI flags alongside the existing `--config`; existing application YAML shapes do not change.
 
+### Execution context and future OpenTelemetry integration
+
+Pass the actual operation's `context.Context` to `DebugContext`, `InfoContext`, `WarnContext`, `ErrorContext`, or `LogAttrs` at every new or migrated emission site. Constructor injection supplies the logger; context never carries a logger. Lifecycle records without an operation context use the existing process lifecycle context.
+
+Preserve incoming context through transport handling and asynchronous work. Do not substitute `context.Background()` or `context.TODO()` for logging. Existing cancellation and deadline behavior is unchanged, including the Command lifecycle's `context.WithoutCancel`. This adds no spans and does not alter asynchronous execution semantics. Business fields stay explicit at emission sites: attach process, subsystem, and session fields with scoped `With` calls and supply operation fields from the owning operation. Standard handlers do not extract arbitrary context values, so future trace and span enrichment belongs at the handler or OpenTelemetry bridge boundary. Do not attach `trace_id` or `span_id` manually. Command and correlation IDs stay independent business lookup keys, not trace substitutes.
+
+Keep `*slog.Logger` as the application and SDK logging API, so a future OpenTelemetry slog bridge can receive execution context through `slog.Handler` without rewriting event sites. Provider, resource, exporter, and shutdown configuration will belong to application assembly. OpenTelemetry dependencies, bridge implementation, automatic enrichment, and span lifetime, parent, and link decisions remain out of scope.
+
 ### Non-goals
 
-- Runtime code changes in this spec-only task.
 - Collectors, dashboards, log files, rotation, retention services, OTLP export, new spans, metrics, or periodic health summaries.
 - HTTP access logging, request bodies, query strings, or a new HTTP request-ID protocol. Command IDs already cover the primary activity flow.
 - Dynamic level changes, per-component level configuration, sampling framework, or an environment-variable configuration system.
-- New wire fields, persistence tables, SQL queries for logging, repository interfaces, or a durable/exactly-once log guarantee.
+- New wire fields, persistence tables, SQL queries for logging, or repository interfaces.
 - Logging every health poll, heartbeat, unchanged State update, or individual successful reconciliation mapping at Info.
 - Logging build-time generators as if they were long-running applications.
 
@@ -60,7 +66,7 @@ Each executable accepts:
 
 Values are case-sensitive. Invalid values fail before reading configuration or opening connections, with a nonzero exit and a concise stderr diagnostic that does not echo the supplied value. The existing `--config` default is unchanged. Flags do not override YAML values because no YAML logging fields are added.
 
-Both formats write one record per line to stderr. Stdout remains available for future program output. Use built-in `slog.NewTextHandler` and `slog.NewJSONHandler`, the same level threshold, and no color/TTY detection. Timestamp and level representation follow the standard handlers. Do not hand-build JSON or text lines. Handler construction must not call `slog.SetDefault`.
+Both formats write one record per line to stderr. Use built-in `slog.NewTextHandler` and `slog.NewJSONHandler`, the same level threshold, and no color/TTY detection. Do not hand-build JSON or text lines. Handler construction must not call `slog.SetDefault`.
 
 The executable attaches `app` (exact binary name) and `pid` once. App assembly and SDK add narrower fields with `With`; event sites add operation-specific fields. A key must occur at most once in each record. Do not reattach `app`, `adapter_id`, or `runtime_id` if already inherited. A runtime ID must only label that actual claimed session, not be used as a general process ID.
 
@@ -132,7 +138,7 @@ Normal cancellation and graceful shutdown are not errors. Fenced sessions termin
 | `error_code` | Fixed diagnostic classification for errors without a domain code |
 | `error` | Optional reviewed, safe local error text; never arbitrary remote error text |
 
-Omit unknown values rather than logging empty IDs, zero durations pretending to be measured, or guessed counts. Keep fields flat. No arrays of IDs at Info. Existing trace propagation is unchanged; automatic trace/span log enrichment is deferred. The mandated cross-process lookup key is `command_id`, with `correlation_id` carried where already available.
+Omit unknown values rather than logging empty IDs, zero durations pretending to be measured, or guessed counts. Keep fields flat. No arrays of IDs at Info. The mandated cross-process lookup key is `command_id`, with `correlation_id` carried where already available.
 
 ### Safety
 
@@ -142,7 +148,7 @@ This applies at every level, including Debug:
 - Do not log configured upstream URLs or full subjects/topics. Log the dependency name instead. Core's validated HTTP listen address may be logged as `http_addr`.
 - Prefer canonical IDs over display names, HA external IDs, friendly names, and IEEE addresses. New events use canonical IDs when available and counts/reason codes before registration. Do not export vendor identity into core logs.
 - Do not pass unknown errors straight to a handler: URL, schema, protocol, and authentication errors can embed secrets or rejected payloads. At those boundaries, use a fixed `error_code` plus safe operation/stage metadata. For schema failures log the fixed validation class, not the raw validation error's instance value. Allowlist reviewed local error text; do not attempt generic regex redaction of arbitrary error strings.
-- Audit existing Error/Warn sites in the touched runtime paths as part of adoption; Debug is not an escape hatch for sensitive output. Invalid configured values must not be repeated by the bootstrap diagnostic either.
+- Audit existing Error/Warn sites in the touched runtime paths as part of adoption; Debug is not an escape hatch for sensitive output. Bootstrap diagnostics must not repeat invalid configured values.
 
 ## 3. Event ownership and emission points
 
@@ -169,13 +175,13 @@ This applies at every level, including Debug:
 
 Do not log HTTP listening before `ListenAndServe` runs: acquire a `net.Listener` explicitly, then log and call `server.Serve(listener)` using existing shutdown/error handling. A bind failure must never produce `core.http_listening`. Preserve ownership/closure of the listener on every path.
 
-Core readiness remains dependency readiness, exactly as `/readyz` defines it; it does not assert that every Entity is available. Emit the first readiness sample even if false. Add `readinessObserved bool` and `readinessReason string` to `healthSupervisor` to suppress repeats, plus `leaseExpiryPaused bool` to emit resumption once. State changes are owned by its existing single poll loop; do not mutate logging state inside HTTP readiness requests. Use fixed reason codes (`sqlite_unavailable`, `nats_disconnected`, `jetstream_unavailable`, `observation_consumer_inactive`, `readiness_check_failed`), preserving the existing checker interface. Concrete runtime readiness failures may carry these codes in a private typed error; unknown checker errors map to `readiness_check_failed`, never parsed by matching error strings. No additional polling loop.
+Core readiness is dependency readiness exactly as `/readyz` defines it; it does not assert that every Entity is available. Emit the first readiness sample even if false. Add `readinessObserved bool` and `readinessReason string` to `healthSupervisor` to suppress repeats, plus `leaseExpiryPaused bool` to emit resumption once. State changes stay in the existing single poll loop; do not mutate logging state inside HTTP readiness requests. Use fixed reason codes (`sqlite_unavailable`, `nats_disconnected`, `jetstream_unavailable`, `observation_consumer_inactive`, `readiness_check_failed`) while preserving the existing checker interface. Concrete runtime readiness failures may carry these codes in a private typed error; unknown checker errors map to `readiness_check_failed`, never by matching error strings. No additional polling loop.
 
-Readiness events include `status=ready|not_ready`, `reason_code` on failure, and `lease_expiry_grace_ms=15000` on becoming ready. Socket listening and dependency readiness are separate evidence; neither event is called universal process readiness.
+Readiness events include `status=ready|not_ready`, `reason_code` on failure, and `lease_expiry_grace_ms=15000` on becoming ready. Socket listening and dependency readiness are separate evidence.
 
-NATS callbacks belong in `connectCoreNATS` and `sdk/adapter.Connect`, which already create connections. They report existing connection behavior without changing reconnection policy or supervision. An unexpected terminal close is logged at Error even if current Run supervision remains alive or treats `ErrClosed` as a normal return; this spec does not introduce a new connection-to-supervisor failure channel. Classify expected closure using lifecycle context/state safely under concurrency. Do not duplicate loss/recovery events both in callbacks and an operation retry loop for the same connection; operation-specific retries may still identify the blocked operation.
+NATS callbacks belong in `connectCoreNATS` and `sdk/adapter.Connect`, which already create connections. They report existing connection behavior without changing reconnection policy or supervision. An unexpected terminal close is logged at Error even when current Run supervision stays alive or treats `ErrClosed` as a normal return; this spec introduces no new connection-to-supervisor failure channel. Classify expected closure using lifecycle context or state safely under concurrency. Do not duplicate loss/recovery events in both callbacks and an operation retry loop for the same connection; operation-specific retries may still identify the blocked operation.
 
-Add `process.cleanup_failed` at Warn around currently ignored cleanup errors (including deferred session Close and Core drains/close operations), with a fixed `stage`. Preserve current return/exit semantics and any primary Run error; do not turn this logging adoption into a shutdown refactor. The SDK's existing release failure diagnostic becomes `adapter.session_release_failed` at Warn, not a fabricated successful release. A subsequent `process.stopped` means Run returned normally despite the separately recorded cleanup warning. Do not log successful cleanup from a defer merely because cleanup was attempted.
+Add `process.cleanup_failed` at Warn around currently ignored cleanup errors (including deferred session Close and Core drains/close operations), with a fixed `stage`. Preserve current return/exit semantics and any primary Run error; do not turn this logging adoption into a shutdown refactor. The SDK's existing release failure diagnostic becomes `adapter.session_release_failed` at Warn. Do not log successful cleanup from a defer merely because cleanup was attempted.
 
 Startup interruption logs only that `InterruptActiveCommands` succeeded: its current interface returns no affected-row count. Do not claim zero interruptions or enumerate interrupted Commands. Existing Command history remains the source for individual `interrupted/core_restarted` records.
 
@@ -195,9 +201,9 @@ Startup interruption logs only that `InterruptActiveCommands` succeeded: its cur
 | `adapter.upstream_ready` | Info | HA after subscription/snapshot/buffer reconciliation; Z2M after its existing bridge/config/inventory health conditions hold; once per recovery |
 | `simulator.initialized` | Info | Simulator Run after registration and Initialize, with configured scenario and canonical Entity ID |
 
-Expose startup waits via the existing retry boundaries for session claim, registration, Entity availability acknowledgement (`sdk/adapter/availability.go:reportAvailabilityBatch`), upstream connection, and upstream subscription/snapshot acquisition. Ordinary successful availability reports stay silent at Info; a blocked report emits retry/recovery evidence even when NATS remains connected. Successful transport reconnect alone must not emit `adapter.upstream_ready`. Adapter health logs describe acknowledged reported evidence; authoritative current health is still the Core API. Protect any remembered acknowledged health status/reason with the same concurrency discipline as session health, and emit outside locks.
+Expose startup waits through the existing retry boundaries for session claim, registration, Entity availability acknowledgement (`sdk/adapter/availability.go:reportAvailabilityBatch`), upstream connection, and upstream subscription/snapshot acquisition. Ordinary successful availability reports stay silent at Info; a blocked report emits retry/recovery evidence even when NATS remains connected. Successful transport reconnect alone must not emit `adapter.upstream_ready`. Adapter health logs describe acknowledged reported evidence. Protect remembered acknowledged health status/reason with the same concurrency discipline as session health, and emit outside locks.
 
-Z2M reconciliation summaries describe only successfully activated work. Keep existing isolated-device warnings but sanitize their metadata. Unsupported inventory is not necessarily a failure; supported-device count zero must be explicit in the summary. Do not add a logger to the simulator library just to duplicate SDK events: its existing Run layer has all required initialization context.
+Z2M reconciliation summaries describe only successfully activated work. Keep existing isolated-device warnings but sanitize their metadata. Unsupported inventory is not necessarily a failure; a supported-device count of zero must be explicit in the summary. Do not add a logger to the simulator library just to duplicate SDK events: its existing Run layer has all required initialization context.
 
 ### Commands and Observations (D4)
 
@@ -220,7 +226,7 @@ A command-linked `observation.published` includes `command_id`, `correlation_id`
 
 `command.completed` includes command/correlation/Entity/Adapter IDs, runtime ID if assigned, operation, durable status, optional failure code, elapsed duration, and the satisfying `observation_id` when applicable. No parameters or State value. The SDK logs acceptance; the core does not emit a second `command.accepted` for the same command.
 
-The Service owns the terminal summary, not the HTTP handler, command sender, Observation projector, or SQLite repository. This prevents missing completions after HTTP cancellation and prevents double reporting by both projection and command waiting. Separate layers may record distinct events, but must not log-and-return the same generic error at every stack frame. Returning fatal errors is the executable's responsibility; swallowed/retried errors are diagnosed where recovery decisions occur.
+The Service owns the terminal summary, not the HTTP handler, command sender, Observation projector, or SQLite repository. This prevents missing completions after HTTP cancellation and double reporting by both projection and command waiting. Separate layers may record distinct events, but must not log-and-return the same generic error at every stack frame. Returning fatal errors is the executable's responsibility; swallowed/retried errors are diagnosed where recovery decisions occur.
 
 ### Command implementation contract
 
@@ -289,61 +295,61 @@ Use small local retry-episode state inside existing loops, not a shared limiter 
 - Permanent failure: terminate/report according to existing behavior, no invented retry.
 - Cancellation: no final error merely because a blocked retry was canceled.
 
-Info output grows with actual Commands, registrations, reconciliations, and transitions, not sensor update rate or five-second heartbeat frequency. No idle heartbeat/health summary is added. To determine current health after a period of silence, use `/readyz` and Adapter/Entity reads; logs describe historical transitions.
+Info output grows with actual Commands, registrations, reconciliations, and transitions, not sensor update rate or five-second heartbeat frequency. To determine current health after a period of silence, use `/readyz` and Adapter/Entity reads; logs describe historical transitions.
 
-For Debug investigations, restart the affected process with `--log-level debug`. Be aware that Adapter restarts create new runtime IDs and may wait for prior leases. JSON and text must expose equivalent events and fields.
+For Debug investigations, restart the affected process with `--log-level debug`. Adapter restarts create new runtime IDs and may wait for prior leases.
 
 ## 5. Project layout and ownership
 
-Paths below are new/modified during future implementation, not this spec-only change. Existing tests next to touched behavior are extended rather than replaced.
+Paths below are new or modified during future implementation. Existing tests next to touched behavior are extended rather than replaced.
 
 ```text
 cmd/
-├── hearthd/main.go                         # modify — flags, root logger, fatal lifecycle
-├── hearth-simulator/main.go                # modify — same
-├── hearth-adapter-homeassistant/main.go    # modify — same
-└── hearth-adapter-zigbee2mqtt/main.go       # modify — same
+├── hearthd/main.go                         # modify, flags, root logger, fatal lifecycle
+├── hearth-simulator/main.go                # modify, same
+├── hearth-adapter-homeassistant/main.go    # modify, same
+└── hearth-adapter-zigbee2mqtt/main.go       # modify, same
 internal/
 ├── platform/logging/
-│   ├── logger.go                          # new — LogOptions, NewApplicationLogger
-│   └── logger_test.go                     # new — formats, thresholds, safe option errors
+│   ├── logger.go                          # new, LogOptions, NewApplicationLogger
+│   └── logger_test.go                     # new, formats, thresholds, safe option errors
 ├── app/
 │   ├── hearthd/
-│   │   ├── run.go                         # modify — startup stages, listener, connection events, injection
-│   │   ├── server.go                      # modify — private coded readiness error, unchanged Check interface
-│   │   ├── health_supervisor.go           # modify — readiness transitions and grace resumption
-│   │   └── logging_integration_test.go    # new — lifecycle/Command event behavior using existing harness
-│   ├── simulator/run.go                   # modify — initialization and teardown evidence
-│   ├── homeassistant/run.go               # modify — lifecycle; remove duplicate registration log
-│   └── zigbee2mqtt/run.go                  # modify — lifecycle
+│   │   ├── run.go                         # modify, startup stages, listener, connection events, injection
+│   │   ├── server.go                      # modify, private coded readiness error, unchanged Check interface
+│   │   ├── health_supervisor.go           # modify, readiness transitions and grace resumption
+│   │   └── logging_integration_test.go    # new, lifecycle/Command event behavior using existing harness
+│   ├── simulator/run.go                   # modify, initialization and teardown evidence
+│   ├── homeassistant/run.go               # modify, lifecycle; remove duplicate registration log
+│   └── zigbee2mqtt/run.go                  # modify, lifecycle
 ├── modules/devices/
-│   ├── service.go                         # modify — injected concrete logger
-│   ├── command.go                         # modify — committed outcome tracking and emission points
-│   ├── command_logging.go                 # new — private command summary helper
-│   ├── command_test.go                    # modify — cancellation, persistence, race-path event assertions
+│   ├── service.go                         # modify, injected concrete logger
+│   ├── command.go                         # modify, committed outcome tracking and emission points
+│   ├── command_logging.go                 # new, private command summary helper
+│   ├── command_test.go                    # modify, cancellation, persistence, race-path event assertions
 │   └── nats/
-│       ├── observation.go                 # modify — safe structured dispositions/errors
-│       ├── observation_test.go            # modify — disposition, ack, and sensitive-data assertions
-│       └── requestreply.go                # modify — common safe request failure diagnostics
+│       ├── observation.go                 # modify, safe structured dispositions/errors
+│       ├── observation_test.go            # modify, disposition, ack, and sensitive-data assertions
+│       └── requestreply.go                # modify, common safe request failure diagnostics
 └── adapters/
-    ├── homeassistant/adapter.go            # modify — retry/recovery and upstream-ready evidence
+    ├── homeassistant/adapter.go            # modify, retry/recovery and upstream-ready evidence
     └── zigbee2mqtt/
-        ├── adapter.go                     # modify — recovery episode diagnostics
-        ├── connection.go                  # modify — sanitized bridge/connect diagnostics
-        ├── reconcile.go                   # modify — activated reconciliation summary
-        ├── runtime_commands.go            # modify — sanitize existing failure diagnostics
-        ├── runtime_observations.go        # modify — sanitize existing failure diagnostics
-        ├── observation.go                 # modify — sanitize existing payload diagnostics
-        └── availability.go                # modify — sanitize existing malformed evidence diagnostics
+        ├── adapter.go                     # modify, recovery episode diagnostics
+        ├── connection.go                  # modify, sanitized bridge/connect diagnostics
+        ├── reconcile.go                   # modify, activated reconciliation summary
+        ├── runtime_commands.go            # modify, sanitize existing failure diagnostics
+        ├── runtime_observations.go        # modify, sanitize existing failure diagnostics
+        ├── observation.go                 # modify, sanitize existing payload diagnostics
+        └── availability.go                # modify, sanitize existing malformed evidence diagnostics
 sdk/adapter/
-├── session.go                             # modify — connection hooks and command events
-├── lifecycle.go                           # modify — claims, registration, health, release, retry episodes
-├── availability.go                        # modify — blocked availability acknowledgement retry/recovery
-├── command_evidence.go                    # modify — acknowledged publication event
-└── logging_test.go                        # new — SDK fields, transition suppression, payload safety
-README.md                                  # modify — examples and link to logging guide
-docs/logging.md                            # new — developer conventions and operator workflow
-specs/application-logging.md               # new now — implementation contract
+├── session.go                             # modify, connection hooks and command events
+├── lifecycle.go                           # modify, claims, registration, health, release, retry episodes
+├── availability.go                        # modify, blocked availability acknowledgement retry/recovery
+├── command_evidence.go                    # modify, acknowledged publication event
+└── logging_test.go                        # new, SDK fields, transition suppression, payload safety
+README.md                                  # modify, examples and link to logging guide
+docs/logging.md                            # new, developer conventions and operator workflow
+specs/application-logging.md               # new now, implementation contract
 ```
 
 Also migrate existing diagnostic sites in `internal/modules/devices/nats/{session,registration,availability,enablement,owned_mappings}.go` to event/component/safety rules without changing their protocol behavior. Extend existing app/adapter lifecycle tests at the owning paths for new events. No generated files, schema definitions, repository interfaces, public HTTP models, or SDK method signatures change.
@@ -370,6 +376,7 @@ Test structured records using a concurrency-safe recorder/handler or locked writ
 | --- | --- |
 | Logger option matrix | All four levels and two formats; default hides Debug; invalid options produce safe nonzero bootstrap failure before dependency creation |
 | Record structure | Text/JSON equivalent fields; JSON parses per line; no duplicate root keys; required app/component/event/pid present for executable-created loggers |
+| Execution context preservation | A recording handler observes a test context value from the originating operation at transport and asynchronous Command emission sites, including after HTTP cancellation; adoption review confirms all new/migrated sites use context-aware slog methods without replacing available operation context with a background context; no OTel dependency required |
 | Startup failure | Busy HTTP port never emits listening; failed migration/provision never emits that completed stage; fatal diagnostic contains failed stage |
 | Readiness sequence | First false, repeated false, changed failure reason, true, repeated true, grace expiry: only required transitions and one expiry-resumed event; polling/expiry semantics unchanged |
 | All four application lifecycles | Config load, process identity, app-specific startup evidence, normal cancellation without Error, stopped only after Run/defers return; injected ignored cleanup failure emits Warn without changing existing exit behavior |
@@ -401,7 +408,7 @@ go run ./cmd/hearth-simulator --config configs/simulator.yaml --log-format json 
 2. Send one valid Command with the existing HTTP API. Find its `command.created` ID and search both files for that ID.
 3. Verify SDK receipt/acceptance and exactly one core satisfied outcome with the linked Observation ID. The database/API outcome must agree; acceptance alone is insufficient.
 4. Run the existing rejection and timeout scenarios and verify terminal codes identify the cause without payloads.
-5. Use existing automated recovery tests to demonstrate connection loss/recovery ordering. Repeated idle heartbeats and sensor reports add no Info records.
+5. Use existing automated recovery tests to demonstrate connection loss/recovery ordering.
 6. Repeat with Debug to inspect Observation publication/projection by ID, and with default text to verify terminal readability.
 
 `docs/logging.md` includes a short event lookup table, examples of filtering JSON by `event`/`command_id`, the safety rules, and the reminder that silence is not current-health evidence. Log captures may still contain household identity metadata and should not be committed.
@@ -410,25 +417,22 @@ go run ./cmd/hearth-simulator --config configs/simulator.yaml --log-format json 
 
 | Deliverable | Effort | Depends on | Completion gate |
 | --- | --- | --- | --- |
-| D1: Shared setup and four executable flags | M | — | Option/format tests and unchanged YAML loading |
+| D1: Shared setup and four executable flags | M | none | Option/format tests and unchanged YAML loading |
 | D2: Core/process lifecycle and readiness | M | D1 | Stage, listener failure, readiness/grace, normal shutdown tests |
 | D3: SDK and Adapter progress/recovery | L | D1 | Session/registration/upstream recovery tests and bounded Info output |
 | D4: Command outcomes and Observation diagnostics | L | D1 | Cancellation/race/failure matrix matches durable history |
 | D5: Cross-app verification and logging guide | M | D2, D3, D4 | Safety tests, operator exercise, `mise run validate` |
 
-Apply in small commits. D3 and D4 can be implemented independently after D1. Each deliverable includes its local tests and migration of existing logs in its paths; D5 integrates them rather than postponing all testing. Do not describe the rollout as complete until all four applications adopt the pattern.
+D3 and D4 are independent after D1. Each deliverable includes its local tests and log migration for its paths. Do not call the rollout complete until all four applications adopt the pattern.
 
 ## Risks and mitigations
 
 | Risk | Mitigation |
 | --- | --- |
-| More logs hide useful evidence | Info only for lifecycle/Commands/bounded summaries; routine observations and repeated retries Debug; assert suppression in tests |
-| Logs claim success before commit or hide failed cleanup | Emit at the owning successful boundary; explicit durable outcome metadata; cleanup warnings distinct from process termination; negative tests for persistence/listener/cleanup failures |
+| Logs claim success before commit or hide failed cleanup | Emit at the owning successful boundary with durable outcome metadata; cleanup warnings stay distinct from process termination; negative tests for persistence/listener/cleanup failures |
 | Async command and connection callbacks introduce races or duplicates | Existing ownership loops, synchronized state only where needed, single terminal emission site, race-enabled tests |
-| Errors leak credentials or household payloads | Allowlisted metadata and fixed codes at unsafe boundaries; sentinel tests include error strings, not only direct fields |
-| Synchronous stderr output slows hot paths | Debug disabled by default; no raw payload formatting; no additional database reads or external log dependencies |
-| Operators treat old healthy log as present truth | Explicit separation of readiness, connection state, reported health, and Command evidence; guide directs current checks to API |
+| Errors leak credentials or household payloads | Allowlisted metadata and fixed codes at unsafe boundaries; sentinel tests cover error strings, not only direct fields |
 
 ## Review status
 
-Requirements confirmed: spec only, all applications, startup/readiness plus end-to-end activity plus failure/recovery, terminal/container output. No unresolved implementation choices are deferred to a future implementer. The proposed defaults, event granularity, and safety/noise trade-offs await human approval before runtime work begins.
+This spec covers startup and readiness, end-to-end Command activity, and failure and recovery for terminal and container output across all four applications. The proposed defaults, event granularity, and safety/noise trade-offs await human approval before runtime work begins.
