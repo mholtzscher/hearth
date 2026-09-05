@@ -172,6 +172,10 @@ func TestCoreNATSTransportRegistersAndProjectsDurableObservation(t *testing.T) {
 		t.Fatalf("observation remained unacknowledged: %#v", info)
 	}
 
+	// Release while the session server's repository is still open.
+	if closeErr := session.Close(); closeErr != nil {
+		t.Fatal(closeErr)
+	}
 	observations.Stop()
 	select {
 	case <-observations.Closed():

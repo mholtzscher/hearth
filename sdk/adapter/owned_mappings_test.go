@@ -215,6 +215,8 @@ func TestListOwnedMappingsRetriesAfterReconnect(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	// Release before cleanup removes the restarted lifecycle responders/server.
+	t.Cleanup(func() { _ = session.Close() })
 	listed := <-result
 	if listed.err != nil {
 		t.Fatal(listed.err)

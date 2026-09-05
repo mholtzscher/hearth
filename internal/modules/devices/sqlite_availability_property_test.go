@@ -222,6 +222,7 @@ func (model *availabilityHistoryModel) effectiveHistory() []availabilityModelTra
 func TestSQLiteEntityAvailabilityHistoryMatchesReferenceModel(t *testing.T) {
 	t.Parallel()
 	databaseImage := newAvailabilityPropertyDatabaseImage(t)
+	catalog := firstLightCatalog(t)
 	operations := []availabilityModelOperation{
 		modelHeartbeatHealthy,
 		modelHeartbeatUnhealthyNetwork,
@@ -233,7 +234,7 @@ func TestSQLiteEntityAvailabilityHistoryMatchesReferenceModel(t *testing.T) {
 	rapid.Check(t, func(t *rapid.T) {
 		generated := rapid.SliceOfN(rapid.SampledFrom(operations), 0, 24).Draw(t, "operations")
 		pageLimit := rapid.IntRange(1, 5).Draw(t, "page limit")
-		repository, entityID, claimedAt, registeredAt := newAvailabilityPropertyFixture(t, databaseImage)
+		repository, entityID, claimedAt, registeredAt := newAvailabilityPropertyFixture(t, databaseImage, catalog)
 		model := newAvailabilityHistoryModel(claimedAt, registeredAt)
 
 		at := registeredAt
@@ -281,6 +282,7 @@ func newAvailabilityPropertyDatabaseImage(t *testing.T) []byte {
 func newAvailabilityPropertyFixture(
 	t *rapid.T,
 	databaseImage []byte,
+	catalog *TypeCatalog,
 ) (*SQLiteRepository, EntityID, time.Time, time.Time) {
 	t.Helper()
 	directory, err := os.MkdirTemp("", "hearth-availability-property-")
@@ -297,10 +299,6 @@ func newAvailabilityPropertyFixture(
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = database.Close() })
-	catalog, err := NewBuiltinTypeCatalog()
-	if err != nil {
-		t.Fatal(err)
-	}
 	repository := NewSQLiteRepository(database, catalog)
 	claimedAt := time.Date(2026, 8, 29, 12, 0, 0, 0, time.UTC)
 	if claimErr := repository.ClaimAdapterRuntime(t.Context(), ClaimRuntimeWrite{

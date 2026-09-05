@@ -631,6 +631,8 @@ func TestPublishObservationRetriesSameIDAfterReconnect(t *testing.T) {
 	}()
 
 	restarted := startServer(t, port, storeDir)
+	// Cleanup is LIFO: release before shutting down the restarted server.
+	t.Cleanup(func() { _ = session.Close() })
 	published := <-result
 	if published.err != nil {
 		t.Fatal(published.err)
