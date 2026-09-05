@@ -36,6 +36,16 @@ type healthCursor struct {
 	ReceiveOrder int64  `json:"receive_order"`
 }
 
+// entityStateHistoryCursor positions an Entity State history page after the
+// last returned receive order within one Entity and filter.
+type entityStateHistoryCursor struct {
+	Version      int    `json:"v"`
+	Resource     string `json:"resource"`
+	ParentID     string `json:"parent_id"`
+	ReceiveOrder int64  `json:"receive_order"`
+	Filter       string `json:"filter"`
+}
+
 func encodeDevicesCursor(id devices.DeviceID) (string, error) {
 	return encodeCursor(idCursor{Version: cursorVersion, Resource: "devices", ID: string(id)})
 }
@@ -130,6 +140,46 @@ func encodeEntityAvailabilityCursor(entityID devices.EntityID, receiveOrder int6
 
 func decodeEntityAvailabilityCursor(value string, entityID devices.EntityID) (*int64, error) {
 	return decodeHealthCursor(value, "entity_availability", string(entityID))
+}
+
+func encodeEntityStateHistoryCursor(
+	entityID devices.EntityID,
+	filter devices.EntityStateHistoryFilter,
+	receiveOrder int64,
+) (string, error) {
+	return encodeCursor(entityStateHistoryCursor{
+		Version: cursorVersion, Resource: "entity_state_history", ParentID: string(entityID),
+		ReceiveOrder: receiveOrder, Filter: string(filter),
+	})
+}
+
+func decodeEntityStateHistoryCursor(
+	value string,
+	entityID devices.EntityID,
+	filter devices.EntityStateHistoryFilter,
+) (*int64, error) {
+	var cursor entityStateHistoryCursor
+	if err := decodeCursor(value, &cursor); err != nil {
+		return nil, err
+	}
+	if cursor.Version != cursorVersion || cursor.Resource != "entity_state_history" ||
+		cursor.ParentID != string(entityID) || cursor.Filter != string(filter) ||
+		cursor.ReceiveOrder < 1 {
+		return nil, errors.New("invalid State history cursor scope")
+	}
+	if _, err := devices.ParseEntityID(cursor.ParentID); err != nil {
+		return nil, fmt.Errorf("invalid State history cursor entity ID: %w", err)
+	}
+	switch devices.EntityStateHistoryFilter(cursor.Filter) {
+	case devices.EntityStateHistoryFilterUpdates,
+		devices.EntityStateHistoryFilterAll,
+		devices.EntityStateHistoryFilterApplied,
+		devices.EntityStateHistoryFilterUnchanged,
+		devices.EntityStateHistoryFilterRejected:
+	default:
+		return nil, errors.New("invalid State history cursor scope")
+	}
+	return &cursor.ReceiveOrder, nil
 }
 
 func encodeHealthCursor(resource, parentID string, receiveOrder int64) (string, error) {

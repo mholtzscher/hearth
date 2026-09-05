@@ -53,12 +53,11 @@ type SetEntityEnabledParams struct {
 }
 
 type ProjectObservationParams struct {
-	AdapterID        string
-	RuntimeID        RuntimeID
-	Observation      Observation
-	ObservedAt       time.Time
-	Now              func() time.Time
-	ReceiptExpiresAt time.Time
+	AdapterID   string
+	RuntimeID   RuntimeID
+	Observation Observation
+	ObservedAt  time.Time
+	Now         func() time.Time
 }
 
 type AdapterReader interface {
@@ -100,6 +99,7 @@ type ReadRepository interface {
 	GetEntity(context.Context, EntityID) (EntityWithState, error)
 	GetCommand(context.Context, CommandID) (CommandRecord, error)
 	ListEntityCommands(context.Context, ListEntityCommandsParams) (Page[CommandRecord], error)
+	ListEntityStateHistory(context.Context, ListEntityStateHistoryParams) (Page[EntityStateHistoryEntry], error)
 }
 
 type EnablementRepository interface {
@@ -108,7 +108,7 @@ type EnablementRepository interface {
 
 type ObservationRepository interface {
 	ProjectObservation(context.Context, ProjectObservationParams) (ProjectionResult, error)
-	DeleteExpiredObservationReceipts(context.Context, time.Time) error
+	DeleteExpiredObservations(context.Context, time.Time) error
 }
 
 type CommandLedger interface {

@@ -18,10 +18,14 @@ type readRepository struct {
 	command            CommandRecord
 	commandPage        Page[CommandRecord]
 	listCommandsParams ListEntityCommandsParams
+	historyPage        Page[EntityStateHistoryEntry]
+	historyParams      ListEntityStateHistoryParams
+	historyErr         error
 	getDeviceCalls     int
 	getEntityCalls     int
 	listEntityCalls    int
 	listCommandsCalls  int
+	historyCalls       int
 }
 
 func newReadRepository() *readRepository {
@@ -63,6 +67,15 @@ func (repository *readRepository) ListEntityCommands(
 	repository.listCommandsCalls++
 	repository.listCommandsParams = params
 	return repository.commandPage, nil
+}
+
+func (repository *readRepository) ListEntityStateHistory(
+	_ context.Context,
+	params ListEntityStateHistoryParams,
+) (Page[EntityStateHistoryEntry], error) {
+	repository.historyCalls++
+	repository.historyParams = params
+	return repository.historyPage, repository.historyErr
 }
 
 func TestReadServiceValidatesPagesBeforeRepositoryCalls(t *testing.T) {

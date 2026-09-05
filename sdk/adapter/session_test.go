@@ -631,6 +631,8 @@ func TestPublishObservationRetriesSameIDAfterReconnect(t *testing.T) {
 	}()
 
 	restarted := startServer(t, port, storeDir)
+	// Cleanup is LIFO: release before shutting down the restarted server.
+	t.Cleanup(func() { _ = session.Close() })
 	published := <-result
 	if published.err != nil {
 		t.Fatal(published.err)
@@ -1146,7 +1148,9 @@ func startServer(t *testing.T, port int, storeDir string) *natsserver.Server {
 
 func connectNATS(t *testing.T, url string) *natsgo.Conn {
 	t.Helper()
-	connection, err := natsgo.Connect(url)
+	// Test Core peers need not wait NATS's default reconnect delay. The SDK
+	// connection under test retains its production reconnect policy.
+	connection, err := natsgo.Connect(url, natsgo.ReconnectWait(10*time.Millisecond))
 	if err != nil {
 		t.Fatal(err)
 	}

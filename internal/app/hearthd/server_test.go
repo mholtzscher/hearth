@@ -108,6 +108,13 @@ func (*stubDevices) ListEntityAvailabilityHistory(
 	panic("unexpected ListEntityAvailabilityHistory call")
 }
 
+func (*stubDevices) ListEntityStateHistory(
+	context.Context,
+	devices.ListEntityStateHistoryParams,
+) (devices.Page[devices.EntityStateHistoryEntry], error) {
+	panic("unexpected ListEntityStateHistory call")
+}
+
 func (stub *stubDevices) ExecuteCommand(
 	ctx context.Context,
 	entityID devices.EntityID,
@@ -191,7 +198,7 @@ func TestRuntimeOpenAPIContract(t *testing.T) {
 	if document.OpenAPI != "3.1.0" || document.Info.Title != "Hearth" || document.Info.Version != "1.0.0" {
 		t.Fatalf("OpenAPI metadata = %#v", document)
 	}
-	if len(document.Paths) != 10 {
+	if len(document.Paths) != 11 {
 		t.Fatalf("OpenAPI paths = %v", document.Paths)
 	}
 	assertRuntimeOpenAPIOperation(t, document.Paths["/v1/entities"].Get, "list-entities", "200", "400", "422", "500")
@@ -287,6 +294,16 @@ func TestRuntimeOpenAPIContract(t *testing.T) {
 		"422",
 		"500",
 	)
+	assertRuntimeOpenAPIOperation(
+		t,
+		document.Paths["/v1/entities/{entity_id}/state/history"].Get,
+		"list-entity-state-history",
+		"200",
+		"400",
+		"404",
+		"422",
+		"500",
+	)
 	if executeCommand.RequestBody == nil || !executeCommand.RequestBody.Required {
 		t.Fatalf("command request body = %#v", executeCommand.RequestBody)
 	}
@@ -317,10 +334,14 @@ func TestRuntimeOpenAPIContract(t *testing.T) {
 			"id", "entity_id", "operation", "parameters", "status", "requested_at", "deadline_at",
 			"accepted_at", "completed_at", "outcome_observation_id", "failure_code",
 		},
-		"CommandCollectionBody":          {"items", "next_cursor"},
-		"AdapterCollectionBody":          {"items", "next_cursor"},
-		"HealthTransitionCollectionBody": {"items", "next_cursor"},
-		"ErrorModel":                     {"type", "title", "status", "detail", "instance", "errors"},
+		"CommandCollectionBody": {"items", "next_cursor"},
+		"EntityStateHistoryBody": {
+			"observation_id", "disposition", "adapter_received_at", "observed_at",
+		},
+		"EntityStateHistoryCollectionBody": {"items", "next_cursor"},
+		"AdapterCollectionBody":            {"items", "next_cursor"},
+		"HealthTransitionCollectionBody":   {"items", "next_cursor"},
+		"ErrorModel":                       {"type", "title", "status", "detail", "instance", "errors"},
 	} {
 		raw, ok := document.Components.Schemas[schemaName]
 		if !ok {

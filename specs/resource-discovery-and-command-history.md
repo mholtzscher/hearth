@@ -368,7 +368,7 @@ Modify `internal/modules/devices/dbqueries/commands.sql`:
 - `ListEntityCommandsFirstPage`: Entity-constrained, newest first.
 - `ListEntityCommandsAfter`: Entity-constrained with strict `(requested_at, id)` keyset position.
 
-The baseline `entity_read_projection` view owns the explicit joined Entity column list; get and list queries select that canonical projection. Regenerate the feature-owned sqlc package and never hand-edit generated files. Command orchestration, projection, receipt-retention, and transaction ownership remain unchanged.
+The baseline `entity_read_projection` view owns the explicit joined Entity column list; get and list queries select that canonical projection. Regenerate the feature-owned sqlc package and never hand-edit generated files. Command orchestration, projection, observation-retention, and transaction ownership remain unchanged.
 
 ## Project Layout
 

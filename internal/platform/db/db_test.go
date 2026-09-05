@@ -43,7 +43,7 @@ func TestMigrateEmptySQLiteDatabase(t *testing.T) {
 
 	for _, table := range []string{
 		"devices", "entities", "commands",
-		"adapter_bindings", "adapter_entity_mappings", "observation_receipts", "entity_states",
+		"adapter_bindings", "adapter_entity_mappings", "observations", "entity_states",
 		"adapter_instances", "adapter_runtimes", "entity_availability_current", "health_transitions",
 	} {
 		var found string
@@ -80,6 +80,20 @@ func TestMigrateEmptySQLiteDatabase(t *testing.T) {
 	assertIndexColumns(t, database, "commands_entity_requested_idx", "entity_id,requested_at,id")
 	assertIndexColumns(t, database, "adapter_runtimes_one_active_idx", "adapter_id")
 	assertIndexColumns(t, database, "adapter_runtimes_adapter_idx", "adapter_id")
+	assertIndexColumns(t, database, "observations_entity_history_idx", "entity_id,receive_order")
+	assertIndexColumns(t, database, "observations_observed_at_idx", "observed_at")
+	assertIndexColumns(
+		t,
+		database,
+		"observations_entity_disposition_history_idx",
+		"entity_id,disposition,receive_order",
+	)
+	assertIndexColumns(
+		t,
+		database,
+		"observations_entity_updates_history_idx",
+		"entity_id,receive_order",
+	)
 
 	var supportColumn string
 	if err := database.QueryRowContext(ctx, `
@@ -173,11 +187,11 @@ func TestIDPrefixConstraintsRequireLiteralUnderscore(t *testing.T) {
 	assertWriteRejected(
 		t,
 		database,
-		`INSERT INTO observation_receipts (observation_id, adapter_id, entity_id, disposition, adapter_received_at, observed_at, expires_at) VALUES ('obsXbad', 'adapter', 'ent_valid', 'applied', 'now', 'now', 'later')`,
+		`INSERT INTO observations (observation_id, adapter_id, entity_id, disposition, state_value_json, adapter_received_at, observed_at) VALUES ('obsXbad', 'adapter', 'ent_valid', 'applied', 'true', 'now', 'now')`,
 	)
 }
 
-func TestDeleteExpiredObservationReceiptsComparesTimestampsChronologically(t *testing.T) {
+func TestDeleteExpiredObservationsComparesTimestampsChronologically(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	database, openErr := Open(ctx, filepath.Join(t.TempDir(), "hearth.db"))
@@ -189,19 +203,22 @@ func TestDeleteExpiredObservationReceiptsComparesTimestampsChronologically(t *te
 		t.Fatal(err)
 	}
 
-	for _, receipt := range []struct {
-		id        string
-		expiresAt string
+	// Fixed-width observed_at values compare lexicographically, including
+	// fractional seconds around the cutoff.
+	for _, observation := range []struct {
+		id         string
+		observedAt string
 	}{
-		{id: "obs_past", expiresAt: "2026-08-22T11:59:59.5Z"},
-		{id: "obs_future", expiresAt: "2026-08-22T12:00:00.5Z"},
+		{id: "obs_past", observedAt: "2026-08-22T11:59:59.500000000Z"},
+		{id: "obs_cutoff", observedAt: "2026-08-22T12:00:00.000000000Z"},
+		{id: "obs_future", observedAt: "2026-08-22T12:00:00.500000000Z"},
 	} {
 		_, err := database.ExecContext(ctx, `
-			INSERT INTO observation_receipts (
-				observation_id, adapter_id, entity_id, disposition,
-				adapter_received_at, observed_at, expires_at
-			) VALUES (?, 'adapter', 'ent_entity', 'applied', ?, ?, ?)`,
-			receipt.id, "2026-08-22T11:00:00Z", "2026-08-22T11:00:00Z", receipt.expiresAt,
+			INSERT INTO observations (
+				observation_id, adapter_id, entity_id, disposition, state_value_json,
+				adapter_received_at, observed_at
+			) VALUES (?, 'adapter', 'ent_entity', 'applied', 'true', ?, ?)`,
+			observation.id, "2026-08-22T11:00:00.000000000Z", observation.observedAt,
 		)
 		if err != nil {
 			t.Fatal(err)
@@ -209,22 +226,33 @@ func TestDeleteExpiredObservationReceiptsComparesTimestampsChronologically(t *te
 	}
 
 	deleted, err := dbsqlc.New(database).
-		DeleteExpiredObservationReceipts(ctx, dbsqlc.DeleteExpiredObservationReceiptsParams{
-			ExpiresAt: "2026-08-22T12:00:00Z",
+		DeleteExpiredObservations(ctx, dbsqlc.DeleteExpiredObservationsParams{
+			ObservedAt: "2026-08-22T12:00:00.000000000Z",
 		})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if deleted != 1 {
-		t.Fatalf("deleted receipts = %d, want 1", deleted)
+		t.Fatalf("deleted observations = %d, want 1", deleted)
 	}
-	var remaining string
-	if scanErr := database.QueryRowContext(ctx, `SELECT observation_id FROM observation_receipts`).
-		Scan(&remaining); scanErr != nil {
-		t.Fatal(scanErr)
+	rows, queryErr := database.QueryContext(ctx, `SELECT observation_id FROM observations ORDER BY observed_at`)
+	if queryErr != nil {
+		t.Fatal(queryErr)
 	}
-	if remaining != "obs_future" {
-		t.Fatalf("remaining receipt = %q, want obs_future", remaining)
+	defer rows.Close()
+	var remaining []string
+	for rows.Next() {
+		var id string
+		if scanErr := rows.Scan(&id); scanErr != nil {
+			t.Fatal(scanErr)
+		}
+		remaining = append(remaining, id)
+	}
+	if rowsErr := rows.Err(); rowsErr != nil {
+		t.Fatal(rowsErr)
+	}
+	if len(remaining) != 2 || remaining[0] != "obs_cutoff" || remaining[1] != "obs_future" {
+		t.Fatalf("remaining observations = %v, want [obs_cutoff obs_future]", remaining)
 	}
 }
 

@@ -57,7 +57,7 @@ A named command capability within an Entity type. The type defines its support s
 _Avoid_: Command, service call
 
 **Observation**:
-A fresh value report Hearth durably receives from an adapter. It records when Hearth received the report, when the adapter acquired the value, and optionally when the upstream source says the value last changed; it does not by itself prove physical truth or causation.
+A fresh value report Hearth durably receives from an Adapter, identified once despite redelivery and carrying Hearth receive time, Adapter acquisition time, and optional upstream change time. Its retained record includes the normalized value when accepted or rejection metadata without the value when rejected; neither the report nor its acceptance proves physical truth or causation.
 _Avoid_: Physical confirmation, proof of causation
 
 **State**:

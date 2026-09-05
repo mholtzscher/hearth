@@ -18,13 +18,13 @@ import (
 )
 
 const (
-	receiptPruneInterval  = time.Hour
-	shutdownTimeout       = 5 * time.Second
-	httpReadHeaderTimeout = 5 * time.Second
-	natsReconnectWait     = 250 * time.Millisecond
+	observationPruneInterval = time.Hour
+	shutdownTimeout          = 5 * time.Second
+	httpReadHeaderTimeout    = 5 * time.Second
+	natsReconnectWait        = 250 * time.Millisecond
 )
 
-//nolint:gocognit,gocyclo,cyclop // Startup and shutdown remain linear so resource ownership is visible in one place.
+//nolint:gocognit // Startup and shutdown remain linear so resource ownership is visible in one place.
 func Run(ctx context.Context, config Config, logger *slog.Logger) error { //nolint:funlen // Linear resource lifecycle.
 	if err := config.Validate(); err != nil {
 		return err
@@ -49,9 +49,8 @@ func Run(ctx context.Context, config Config, logger *slog.Logger) error { //noli
 	if err := repository.InterruptActiveCommands(ctx, startupTime); err != nil {
 		return fmt.Errorf("interrupt active commands: %w", err)
 	}
-	if err := repository.DeleteExpiredObservationReceipts(ctx, startupTime); err != nil {
-		return fmt.Errorf("prune observation receipts: %w", err)
-	}
+	// Observation pruning runs only on the hourly pass below, so startup never
+	// sweeps retained history and uptime under one hour means no sweep yet.
 
 	connection, connectErr := connectCoreNATS(ctx, config.NATSURL)
 	if connectErr != nil {
@@ -119,7 +118,7 @@ func Run(ctx context.Context, config Config, logger *slog.Logger) error { //noli
 	go func() {
 		serverErrors <- server.ListenAndServe()
 	}()
-	go pruneObservationReceipts(ctx, service, logger)
+	go pruneObservations(ctx, service, logger, config.EffectiveObservationRetention())
 
 	select {
 	case err := <-serverErrors:
@@ -185,16 +184,21 @@ func connectCoreNATS(ctx context.Context, url string) (*natsgo.Conn, error) {
 	return connection, nil
 }
 
-func pruneObservationReceipts(ctx context.Context, service *devices.Service, logger *slog.Logger) {
-	ticker := time.NewTicker(receiptPruneInterval)
+func pruneObservations(
+	ctx context.Context,
+	service *devices.Service,
+	logger *slog.Logger,
+	retention time.Duration,
+) {
+	ticker := time.NewTicker(observationPruneInterval)
 	defer ticker.Stop()
 	for {
 		select {
 		case <-ctx.Done():
 			return
 		case now := <-ticker.C:
-			if err := service.DeleteExpiredObservationReceipts(ctx, now.UTC()); err != nil {
-				logger.ErrorContext(ctx, "prune observation receipts", "error", err)
+			if err := service.DeleteExpiredObservations(ctx, now.UTC(), retention); err != nil {
+				logger.ErrorContext(ctx, "prune observations", "error", err)
 			}
 		}
 	}

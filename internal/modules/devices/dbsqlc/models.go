@@ -155,7 +155,7 @@ type HealthTransition struct {
 	ObservedAt       string
 }
 
-type ObservationReceipt struct {
+type Observation struct {
 	ReceiveOrder      int64
 	ObservationID     string
 	AdapterID         string
@@ -163,7 +163,8 @@ type ObservationReceipt struct {
 	EntityID          string
 	Disposition       string
 	RejectionCode     sql.NullString
+	StateValueJson    sql.NullString
 	AdapterReceivedAt string
+	SourceUpdatedAt   sql.NullString
 	ObservedAt        string
-	ExpiresAt         string
 }

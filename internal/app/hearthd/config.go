@@ -5,14 +5,26 @@ import (
 	"net"
 	"strconv"
 	"strings"
+	"time"
 
 	platformconfig "github.com/mholtzscher/hearth/internal/platform/config"
+)
+
+const (
+	// DefaultObservationRetention bounds how long Core keeps non-current observations.
+	DefaultObservationRetention = 30 * 24 * time.Hour
+	// MinimumObservationRetention keeps the Core window above the seven-day JetStream retention.
+	MinimumObservationRetention = 8 * 24 * time.Hour
 )
 
 type Config struct {
 	HTTPAddr   string `yaml:"http_addr"`
 	NATSURL    string `yaml:"nats_url"`
 	SQLitePath string `yaml:"sqlite_path"`
+	// ObservationRetention bounds how long Core keeps non-current observations.
+	// Zero selects DefaultObservationRetention; a restart applies policy changes
+	// on the next hourly prune pass.
+	ObservationRetention time.Duration `yaml:"observation_retention"`
 }
 
 func LoadConfig(path string) (Config, error) {
@@ -20,10 +32,22 @@ func LoadConfig(path string) (Config, error) {
 	if err := platformconfig.LoadFile(path, &value); err != nil {
 		return Config{}, err
 	}
+	if value.ObservationRetention == 0 {
+		value.ObservationRetention = DefaultObservationRetention
+	}
 	if err := value.Validate(); err != nil {
 		return Config{}, fmt.Errorf("validate config %q: %w", path, err)
 	}
 	return value, nil
+}
+
+// EffectiveObservationRetention returns the configured observation retention,
+// or DefaultObservationRetention when the setting is unset.
+func (value Config) EffectiveObservationRetention() time.Duration {
+	if value.ObservationRetention == 0 {
+		return DefaultObservationRetention
+	}
+	return value.ObservationRetention
 }
 
 func (value Config) Validate() error {
@@ -40,6 +64,11 @@ func (value Config) Validate() error {
 	}
 	if strings.TrimSpace(value.SQLitePath) == "" {
 		return fmt.Errorf("sqlite_path is required")
+	}
+	if value.ObservationRetention != 0 && value.ObservationRetention < MinimumObservationRetention {
+		return fmt.Errorf(
+			"observation_retention must be at least %s", MinimumObservationRetention,
+		)
 	}
 	return nil
 }

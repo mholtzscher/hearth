@@ -188,7 +188,8 @@ func TestListOwnedMappingsRetriesAfterReconnect(t *testing.T) {
 	}()
 
 	restarted := startServer(t, port, storeDir)
-	startTestLifecycleResponder(t, restarted.ClientURL())
+	// connectSession's lifecycle responder reconnects with the original Core
+	// connection; a second responder would race to reply during cleanup.
 	core := connectNATS(t, restarted.ClientURL())
 	validator := compileValidator(t)
 	if _, err := core.Subscribe(natswire.OwnedMappingsWildcard(), func(message *natsgo.Msg) {
@@ -215,6 +216,8 @@ func TestListOwnedMappingsRetriesAfterReconnect(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	// Release before cleanup removes the restarted lifecycle responders/server.
+	t.Cleanup(func() { _ = session.Close() })
 	listed := <-result
 	if listed.err != nil {
 		t.Fatal(listed.err)

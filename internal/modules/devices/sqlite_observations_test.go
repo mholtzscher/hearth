@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -67,7 +68,7 @@ func TestObservationProjectionAdvancesStateByReceiveOrderAndDeduplicates(t *test
 		view.Entity.Name != "Power" || view.Entity.AdapterID != "simulator" {
 		t.Fatalf("entity view = %#v", view)
 	}
-	assertReceiptCount(t, database, 2)
+	assertObservationCount(t, database, 2)
 
 	if closeErr := database.Close(); closeErr != nil {
 		t.Fatal(closeErr)
@@ -129,7 +130,7 @@ func TestObservationProjectionDurablyRejectsIdentityAndValueFailures(t *testing.
 			t.Fatalf("%s: projection = %#v", test.name, result)
 		}
 	}
-	assertReceiptCount(t, database, len(tests))
+	assertObservationCount(t, database, len(tests))
 	view, err := service.GetEntity(ctx, entityID)
 	if err != nil {
 		t.Fatal(err)
@@ -379,8 +380,8 @@ func TestObservationProjectionSatisfiesOnlyMatchingActiveLinkedCommand(t *testin
 	}
 }
 
-//nolint:gocognit,gocyclo,cyclop // One timeline verifies receipt, deduplication, State, and Command effects.
-func TestObservationRuntimeFencingRecordsStaleReceiptAndIsolatesCommands(t *testing.T) {
+//nolint:gocognit,gocyclo,cyclop // One timeline verifies observation, deduplication, State, and Command effects.
+func TestObservationRuntimeFencingRecordsStaleObservationAndIsolatesCommands(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	database := openRegistrationDatabase(t, filepath.Join(t.TempDir(), "hearth.db"))
@@ -421,16 +422,16 @@ func TestObservationRuntimeFencingRecordsStaleReceiptAndIsolatesCommands(t *test
 		*result.Rejection != RejectionStaleRuntime || result.State != nil || result.SatisfiedCommand != nil {
 		t.Fatalf("stale projection = %#v", result)
 	}
-	var receiptRuntime, rejectionCode string
+	var observationRuntime, rejectionCode string
 	if scanErr := database.QueryRowContext(ctx, `
 		SELECT runtime_id, rejection_code
-		FROM observation_receipts
+		FROM observations
 		WHERE observation_id = ?`, stale.ID,
-	).Scan(&receiptRuntime, &rejectionCode); scanErr != nil {
+	).Scan(&observationRuntime, &rejectionCode); scanErr != nil {
 		t.Fatal(scanErr)
 	}
-	if receiptRuntime != string(testRuntimeID) || rejectionCode != string(RejectionStaleRuntime) {
-		t.Fatalf("stale receipt = %q/%q", receiptRuntime, rejectionCode)
+	if observationRuntime != string(testRuntimeID) || rejectionCode != string(RejectionStaleRuntime) {
+		t.Fatalf("stale observation = %q/%q", observationRuntime, rejectionCode)
 	}
 
 	unknownRuntime := RuntimeID("run_01890f47-7a6b-7c4d-8e9f-0123456789ae")
@@ -442,14 +443,14 @@ func TestObservationRuntimeFencingRecordsStaleReceiptAndIsolatesCommands(t *test
 		*unknownResult.Rejection != RejectionStaleRuntime {
 		t.Fatalf("unknown-runtime projection = %#v, %v", unknownResult, err)
 	}
-	var unknownReceiptRuntime sql.NullString
+	var unknownObservationRuntime sql.NullString
 	if scanErr := database.QueryRowContext(ctx, `
-		SELECT runtime_id FROM observation_receipts WHERE observation_id = ?`, unknownRuntimeObservation.ID,
-	).Scan(&unknownReceiptRuntime); scanErr != nil {
+		SELECT runtime_id FROM observations WHERE observation_id = ?`, unknownRuntimeObservation.ID,
+	).Scan(&unknownObservationRuntime); scanErr != nil {
 		t.Fatal(scanErr)
 	}
-	if unknownReceiptRuntime.Valid {
-		t.Fatalf("unknown-runtime receipt retained invalid foreign key %q", unknownReceiptRuntime.String)
+	if unknownObservationRuntime.Valid {
+		t.Fatalf("unknown-runtime observation retained invalid foreign key %q", unknownObservationRuntime.String)
 	}
 
 	duplicate, err := service.ProjectObservation(ctx, "simulator", testSecondRuntime, stale, now.Add(time.Second))
@@ -477,7 +478,7 @@ func TestObservationRuntimeFencingRecordsStaleReceiptAndIsolatesCommands(t *test
 	}
 }
 
-func TestReceiptPruningPinsCurrentStateUntilItAdvances(t *testing.T) {
+func TestObservationPruningPinsCurrentStateUntilItAdvances(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	database := openRegistrationDatabase(t, filepath.Join(t.TempDir(), "hearth.db"))
@@ -502,11 +503,11 @@ func TestReceiptPruningPinsCurrentStateUntilItAdvances(t *testing.T) {
 		t.Fatal(projectionErr)
 	}
 
-	cutoff := start.Add(ObservationReceiptRetention + 2*time.Hour)
-	if pruneErr := service.DeleteExpiredObservationReceipts(ctx, cutoff); pruneErr != nil {
+	cutoff := start.Add(2 * time.Hour)
+	if pruneErr := service.DeleteExpiredObservations(ctx, cutoff, time.Hour); pruneErr != nil {
 		t.Fatal(pruneErr)
 	}
-	assertReceiptIDs(t, database, []ObservationID{second.ID})
+	assertObservationIDs(t, database, []ObservationID{second.ID})
 
 	third := newObservation(t, entityID, `false`, cutoff)
 	if _, projectionErr := service.ProjectObservation(
@@ -514,10 +515,139 @@ func TestReceiptPruningPinsCurrentStateUntilItAdvances(t *testing.T) {
 	); projectionErr != nil {
 		t.Fatal(projectionErr)
 	}
-	if pruneErr := service.DeleteExpiredObservationReceipts(ctx, cutoff.Add(time.Second)); pruneErr != nil {
+	if pruneErr := service.DeleteExpiredObservations(
+		ctx, cutoff.Add(time.Second), time.Hour,
+	); pruneErr != nil {
 		t.Fatal(pruneErr)
 	}
-	assertReceiptIDs(t, database, []ObservationID{third.ID})
+	assertObservationIDs(t, database, []ObservationID{third.ID})
+}
+
+// This test protects the exclusive retention cutoff keyed on Core observed
+// time across applied, unchanged, and rejected dispositions. It fails if the
+// comparison becomes inclusive or reads Adapter or source timestamps instead.
+func TestObservationPruningUsesCoreObservedTimeExclusively(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	database := openRegistrationDatabase(t, filepath.Join(t.TempDir(), "hearth.db"))
+	catalog := firstLightCatalog(t)
+	service := newTestService(NewSQLiteRepository(database, catalog), nil, catalog, Dependencies{})
+	binding, err := service.Register(ctx, "simulator", testRuntimeID, validDomainRegistration())
+	if err != nil {
+		t.Fatal(err)
+	}
+	entityID := binding.Entities[0].EntityID
+	cutoff := time.Date(2026, 8, 1, 1, 0, 0, 0, time.UTC)
+	oldSource := cutoff.Add(-30 * 24 * time.Hour)
+
+	project := func(
+		value string,
+		observedAt, adapterReceivedAt time.Time,
+		source *time.Time,
+		want ObservationDisposition,
+	) Observation {
+		t.Helper()
+		observation := newObservation(t, entityID, value, adapterReceivedAt)
+		observation.SourceUpdatedAt = source
+		result, projectionErr := service.ProjectObservation(
+			ctx, "simulator", testRuntimeID, observation, observedAt,
+		)
+		if projectionErr != nil {
+			t.Fatal(projectionErr)
+		}
+		if result.Disposition != want {
+			t.Fatalf("project %s at %s disposition = %s, want %s", value, observedAt, result.Disposition, want)
+		}
+		return observation
+	}
+
+	// A newer Adapter timestamp does not protect an old observation.
+	project(`false`, cutoff.Add(-2*time.Hour), cutoff.Add(time.Hour), nil, DispositionApplied)
+	// Repeating the current value is unchanged through the same projection
+	// path, and the newer Adapter timestamp still does not protect it.
+	project(`false`, cutoff.Add(-time.Nanosecond), cutoff.Add(time.Hour), nil, DispositionUnchanged)
+	// Old Adapter and source timestamps do not condemn observations exactly
+	// on the cutoff; the boundary itself is retained.
+	edgeAdapter := project(
+		`true`, cutoff, cutoff.Add(-30*24*time.Hour), nil, DispositionApplied,
+	)
+	edgeUnchanged := project(`true`, cutoff, cutoff, &oldSource, DispositionUnchanged)
+	// Rejected observations follow the same observed_at rule.
+	project(`1`, cutoff.Add(-time.Nanosecond), cutoff, nil, DispositionRejected)
+	rejectedEdge := project(`1`, cutoff, cutoff, nil, DispositionRejected)
+	// The anchor row is newer than the cutoff either way.
+	anchor := project(`false`, cutoff.Add(time.Hour), cutoff.Add(time.Hour), nil, DispositionApplied)
+
+	if pruneErr := service.DeleteExpiredObservations(
+		ctx, cutoff.Add(time.Hour), time.Hour,
+	); pruneErr != nil {
+		t.Fatal(pruneErr)
+	}
+	assertObservationIDs(
+		t, database,
+		[]ObservationID{edgeAdapter.ID, edgeUnchanged.ID, rejectedEdge.ID, anchor.ID},
+	)
+}
+
+// This test protects retention policy changes applying to already persisted
+// rows and fails if prune results depend on values stored at insert time.
+func TestObservationPruningAppliesChangedPolicyToPersistedData(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	database := openRegistrationDatabase(t, filepath.Join(t.TempDir(), "hearth.db"))
+	catalog := firstLightCatalog(t)
+	service := newTestService(NewSQLiteRepository(database, catalog), nil, catalog, Dependencies{})
+	binding, err := service.Register(ctx, "simulator", testRuntimeID, validDomainRegistration())
+	if err != nil {
+		t.Fatal(err)
+	}
+	entityID := binding.Entities[0].EntityID
+	base := time.Date(2026, 8, 1, 0, 0, 0, 0, time.UTC)
+	var ids []ObservationID
+	for index, value := range []string{`false`, `true`, `false`} {
+		observation := newObservation(t, entityID, value, base.Add(time.Duration(index)*time.Hour))
+		if _, projectionErr := service.ProjectObservation(
+			ctx, "simulator", testRuntimeID, observation, base.Add(time.Duration(index)*time.Hour),
+		); projectionErr != nil {
+			t.Fatal(projectionErr)
+		}
+		ids = append(ids, observation.ID)
+	}
+
+	now := base.Add(3 * time.Hour)
+	if pruneErr := service.DeleteExpiredObservations(ctx, now, 2*time.Hour); pruneErr != nil {
+		t.Fatal(pruneErr)
+	}
+	assertObservationIDs(t, database, ids[1:])
+
+	// Increasing the window preserves the surviving rows without resurrecting
+	// the already deleted observation; the current-State anchor survives regardless.
+	if pruneErr := service.DeleteExpiredObservations(ctx, now, 10*time.Hour); pruneErr != nil {
+		t.Fatal(pruneErr)
+	}
+	assertObservationIDs(t, database, ids[1:])
+
+	// Shortening the window prunes the same persisted rows further without
+	// rewriting them; the current-State anchor survives regardless.
+	if pruneErr := service.DeleteExpiredObservations(ctx, now, 30*time.Minute); pruneErr != nil {
+		t.Fatal(pruneErr)
+	}
+	assertObservationIDs(t, database, ids[2:])
+}
+
+func TestObservationPruningRejectsMissingTimeAndRetention(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	database := openRegistrationDatabase(t, filepath.Join(t.TempDir(), "hearth.db"))
+	catalog := firstLightCatalog(t)
+	service := newTestService(NewSQLiteRepository(database, catalog), nil, catalog, Dependencies{})
+	now := time.Date(2026, 8, 1, 0, 0, 0, 0, time.UTC)
+	if err := service.DeleteExpiredObservations(ctx, time.Time{}, time.Hour); err == nil {
+		t.Fatal("prune without a prune time unexpectedly succeeded")
+	}
+	if err := service.DeleteExpiredObservations(ctx, now, 0); err == nil {
+		t.Fatal("prune without a retention unexpectedly succeeded")
+	}
 }
 
 func newObservation(t *testing.T, entityID EntityID, value string, adapterReceivedAt time.Time) Observation {
@@ -529,20 +659,20 @@ func newObservation(t *testing.T, entityID EntityID, value string, adapterReceiv
 	return Observation{ID: id, EntityID: entityID, Value: Value(value), AdapterReceivedAt: adapterReceivedAt}
 }
 
-func assertReceiptCount(t *testing.T, database *sql.DB, want int) {
+func assertObservationCount(t *testing.T, database *sql.DB, want int) {
 	t.Helper()
 	var got int
-	if err := database.QueryRow("SELECT count(*) FROM observation_receipts").Scan(&got); err != nil {
+	if err := database.QueryRow("SELECT count(*) FROM observations").Scan(&got); err != nil {
 		t.Fatal(err)
 	}
 	if got != want {
-		t.Fatalf("receipt count = %d, want %d", got, want)
+		t.Fatalf("observation count = %d, want %d", got, want)
 	}
 }
 
-func assertReceiptIDs(t *testing.T, database *sql.DB, want []ObservationID) {
+func assertObservationIDs(t *testing.T, database *sql.DB, want []ObservationID) {
 	t.Helper()
-	rows, err := database.Query("SELECT observation_id FROM observation_receipts ORDER BY receive_order")
+	rows, err := database.Query("SELECT observation_id FROM observations ORDER BY receive_order")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -559,11 +689,11 @@ func assertReceiptIDs(t *testing.T, database *sql.DB, want []ObservationID) {
 		t.Fatal(rowsErr)
 	}
 	if len(got) != len(want) {
-		t.Fatalf("receipt IDs = %v, want %v", got, want)
+		t.Fatalf("observation IDs = %v, want %v", got, want)
 	}
 	for index := range want {
 		if got[index] != want[index] {
-			t.Fatalf("receipt IDs = %v, want %v", got, want)
+			t.Fatalf("observation IDs = %v, want %v", got, want)
 		}
 	}
 }
@@ -571,9 +701,250 @@ func assertReceiptIDs(t *testing.T, database *sql.DB, want []ObservationID) {
 func resultReceiveOrder(t *testing.T, database *sql.DB, id ObservationID) int64 {
 	t.Helper()
 	var order int64
-	if err := database.QueryRow("SELECT receive_order FROM observation_receipts WHERE observation_id = ?", id).
+	if err := database.QueryRow("SELECT receive_order FROM observations WHERE observation_id = ?", id).
 		Scan(&order); err != nil {
 		t.Fatal(err)
 	}
 	return order
+}
+
+func TestObservationProjectionEnrichesObservationsWithNormalizedState(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	database := openRegistrationDatabase(t, filepath.Join(t.TempDir(), "hearth.db"))
+	catalog := firstLightCatalog(t)
+	service := newTestService(NewSQLiteRepository(database, catalog), nil, catalog, Dependencies{})
+	binding, err := service.Register(ctx, "simulator", testRuntimeID, validDomainRegistration())
+	if err != nil {
+		t.Fatal(err)
+	}
+	entityID := binding.Entities[0].EntityID
+	observedAt := time.Date(2026, 8, 22, 12, 0, 0, 0, time.UTC)
+	sourceUpdatedAt := observedAt.Add(-time.Hour)
+
+	applied := newObservation(t, entityID, `true`, observedAt)
+	applied.SourceUpdatedAt = &sourceUpdatedAt
+	if _, projectionErr := service.ProjectObservation(
+		ctx, "simulator", testRuntimeID, applied, observedAt,
+	); projectionErr != nil {
+		t.Fatal(projectionErr)
+	}
+	assertObservationRow(t, database, applied.ID, "applied", `true`, "", sourceUpdatedAt)
+
+	unchanged := newObservation(t, entityID, `true`, observedAt.Add(time.Second))
+	if _, projectionErr := service.ProjectObservation(
+		ctx, "simulator", testRuntimeID, unchanged, observedAt.Add(time.Second),
+	); projectionErr != nil {
+		t.Fatal(projectionErr)
+	}
+	assertObservationRow(t, database, unchanged.ID, "unchanged", `true`, "", time.Time{})
+
+	rejected := newObservation(t, entityID, `1`, observedAt.Add(2*time.Second))
+	rejected.SourceUpdatedAt = &sourceUpdatedAt
+	result, projectionErr := service.ProjectObservation(
+		ctx, "simulator", testRuntimeID, rejected, observedAt.Add(2*time.Second),
+	)
+	if projectionErr != nil {
+		t.Fatal(projectionErr)
+	}
+	if result.Disposition != DispositionRejected || result.Rejection == nil ||
+		*result.Rejection != RejectionInvalidValue {
+		t.Fatalf("invalid-value projection = %#v", result)
+	}
+	assertObservationRow(t, database, rejected.ID, "rejected", "", string(RejectionInvalidValue), sourceUpdatedAt)
+
+	unknownEntityID, err := NewEntityID()
+	if err != nil {
+		t.Fatal(err)
+	}
+	unknown := newObservation(t, unknownEntityID, `true`, observedAt.Add(3*time.Second))
+	unknown.SourceUpdatedAt = &sourceUpdatedAt
+	result, projectionErr = service.ProjectObservation(
+		ctx, "simulator", testRuntimeID, unknown, observedAt.Add(3*time.Second),
+	)
+	if projectionErr != nil {
+		t.Fatal(projectionErr)
+	}
+	if result.Disposition != DispositionRejected || result.Rejection == nil ||
+		*result.Rejection != RejectionUnknownEntity {
+		t.Fatalf("unknown-entity projection = %#v", result)
+	}
+	assertObservationRow(t, database, unknown.ID, "rejected", "", string(RejectionUnknownEntity), sourceUpdatedAt)
+
+	redelivery := unchanged
+	redelivery.Value = Value(`false`)
+	redelivery.SourceUpdatedAt = &sourceUpdatedAt
+	result, projectionErr = service.ProjectObservation(
+		ctx, "simulator", testRuntimeID, redelivery, observedAt.Add(4*time.Second),
+	)
+	if projectionErr != nil {
+		t.Fatal(projectionErr)
+	}
+	if result.Disposition != DispositionDuplicate {
+		t.Fatalf("duplicate projection = %#v", result)
+	}
+	assertObservationCount(t, database, 4)
+}
+
+func assertObservationRow(
+	t *testing.T,
+	database *sql.DB,
+	id ObservationID,
+	disposition, value, rejection string,
+	sourceUpdatedAt time.Time,
+) {
+	t.Helper()
+	var storedDisposition string
+	var storedValue, storedRejection, storedSource sql.NullString
+	if err := database.QueryRow(`
+		SELECT disposition, state_value_json, rejection_code, source_updated_at
+		FROM observations
+		WHERE observation_id = ?`, id,
+	).Scan(&storedDisposition, &storedValue, &storedRejection, &storedSource); err != nil {
+		t.Fatal(err)
+	}
+	if storedDisposition != disposition {
+		t.Fatalf("observation %s disposition = %q, want %q", id, storedDisposition, disposition)
+	}
+	if value == "" && storedValue.Valid {
+		t.Fatalf("observation %s state_value_json = %q, want NULL", id, storedValue.String)
+	}
+	if value != "" && (!storedValue.Valid || storedValue.String != value) {
+		t.Fatalf("observation %s state_value_json = %#v, want %q", id, storedValue, value)
+	}
+	if rejection == "" && storedRejection.Valid {
+		t.Fatalf("observation %s rejection_code = %q, want NULL", id, storedRejection.String)
+	}
+	if rejection != "" && (!storedRejection.Valid || storedRejection.String != rejection) {
+		t.Fatalf("observation %s rejection_code = %#v, want %q", id, storedRejection, rejection)
+	}
+	if sourceUpdatedAt.IsZero() && storedSource.Valid {
+		t.Fatalf("observation %s source_updated_at = %q, want NULL", id, storedSource.String)
+	}
+	if !sourceUpdatedAt.IsZero() &&
+		(!storedSource.Valid || storedSource.String != formatTime(sourceUpdatedAt)) {
+		t.Fatalf("observation %s source_updated_at = %#v, want %q", id, storedSource, formatTime(sourceUpdatedAt))
+	}
+}
+
+func TestObservationProjectionStoresNormalizedStateValue(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	database := openRegistrationDatabase(t, filepath.Join(t.TempDir(), "hearth.db"))
+	catalog := firstLightCatalog(t)
+	service := newTestService(NewSQLiteRepository(database, catalog), nil, catalog, Dependencies{})
+	binding, err := service.Register(ctx, "simulator", testRuntimeID, validDomainRegistration())
+	if err != nil {
+		t.Fatal(err)
+	}
+	entityID := binding.Entities[0].EntityID
+	observedAt := time.Date(2026, 8, 22, 12, 0, 0, 0, time.UTC)
+
+	// This test protects normalized-value persistence and fails if the raw
+	// Observation Value is stored instead of the canonical normalized form.
+	padded := newObservation(t, entityID, `true`, observedAt)
+	padded.Value = Value("  true \n")
+	result, err := service.ProjectObservation(ctx, "simulator", testRuntimeID, padded, observedAt)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Disposition != DispositionApplied || result.State == nil || string(result.State.Value) != "true" {
+		t.Fatalf("whitespace-padded projection = %#v", result)
+	}
+	assertObservationRow(t, database, padded.ID, "applied", `true`, "", time.Time{})
+
+	canonical := newObservation(t, entityID, `true`, observedAt.Add(time.Second))
+	second, err := service.ProjectObservation(
+		ctx, "simulator", testRuntimeID, canonical, observedAt.Add(time.Second),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if second.Disposition != DispositionUnchanged || second.State == nil ||
+		string(second.State.Value) != "true" {
+		t.Fatalf("canonical repeat projection = %#v", second)
+	}
+	assertObservationRow(t, database, canonical.ID, "unchanged", `true`, "", time.Time{})
+
+	view, err := service.GetEntity(ctx, entityID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if view.State == nil || string(view.State.Value) != "true" {
+		t.Fatalf("entity view = %#v", view.State)
+	}
+}
+
+func TestObservationProjectionRollsBackObservationWhenStateWriteFails(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	database := openRegistrationDatabase(t, filepath.Join(t.TempDir(), "hearth.db"))
+	catalog := firstLightCatalog(t)
+	repository := NewSQLiteRepository(database, catalog)
+	service := newTestService(repository, nil, catalog, Dependencies{})
+	binding, err := service.Register(ctx, "simulator", testRuntimeID, validDomainRegistration())
+	if err != nil {
+		t.Fatal(err)
+	}
+	entityID := binding.Entities[0].EntityID
+	observedAt := time.Date(2026, 8, 22, 12, 0, 0, 0, time.UTC)
+
+	baseline := newObservation(t, entityID, `false`, observedAt)
+	if _, err = service.ProjectObservation(ctx, "simulator", testRuntimeID, baseline, observedAt); err != nil {
+		t.Fatal(err)
+	}
+	command := newCommandRecord(t, entityID, observedAt.Add(time.Second))
+	if _, err = repository.CreateCommand(ctx, command); err != nil {
+		t.Fatal(err)
+	}
+
+	// This test protects observation/state/command atomicity and fails if the
+	// observation insert commits without its State upsert and Command outcome.
+	// The triggers force the State write to fail after the observation insert
+	// has run inside the same projection transaction.
+	for _, trigger := range []string{
+		`CREATE TRIGGER force_state_insert_failure BEFORE INSERT ON entity_states
+			BEGIN SELECT RAISE(ABORT, 'forced state write failure'); END`,
+		`CREATE TRIGGER force_state_update_failure BEFORE UPDATE ON entity_states
+			BEGIN SELECT RAISE(ABORT, 'forced state write failure'); END`,
+	} {
+		if _, err = database.ExecContext(ctx, trigger); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	failing := newObservation(t, entityID, `true`, observedAt.Add(2*time.Second))
+	failing.RefreshForCommand = &command.ID
+	if _, err = service.ProjectObservation(
+		ctx, "simulator", testRuntimeID, failing, observedAt.Add(2*time.Second),
+	); err == nil || !strings.Contains(err.Error(), "forced state write failure") {
+		t.Fatalf("forced projection error = %v", err)
+	}
+
+	var observationRowCount int
+	if err = database.QueryRowContext(ctx,
+		`SELECT count(*) FROM observations WHERE observation_id = ?`, failing.ID,
+	).Scan(&observationRowCount); err != nil {
+		t.Fatal(err)
+	}
+	if observationRowCount != 0 {
+		t.Fatalf("aborted projection left %d observations for %q", observationRowCount, failing.ID)
+	}
+	assertObservationCount(t, database, 1)
+
+	view, err := service.GetEntity(ctx, entityID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if view.State == nil || view.State.ObservationID != baseline.ID || string(view.State.Value) != "false" {
+		t.Fatalf("state after aborted projection = %#v", view.State)
+	}
+	stored, err := repository.GetCommand(ctx, command.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if stored.Status != CommandStatusRequested || stored.CompletedAt != nil ||
+		stored.OutcomeObservationID != nil {
+		t.Fatalf("command after aborted projection = %#v", stored)
+	}
 }

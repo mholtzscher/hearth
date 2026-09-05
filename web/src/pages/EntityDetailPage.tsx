@@ -13,6 +13,7 @@ import {
   StatusChip,
 } from "../components/common.tsx";
 import { Button } from "../components/ui/button.tsx";
+import EntityStateHistory from "../components/entity-state-history.tsx";
 import { Card, CardContent } from "../components/ui/card.tsx";
 import { Input } from "../components/ui/input.tsx";
 import { Label } from "../components/ui/label.tsx";
@@ -433,6 +434,15 @@ export default function EntityDetailPage() {
 
           <Section title="Availability history">
             <AvailabilityHistory key={entityId} entityId={entityId} />
+          </Section>
+
+          <Section title="State history">
+            <EntityStateHistory
+              key={entityId}
+              entityId={entityId}
+              entityType={data.type}
+              support={data.support}
+            />
           </Section>
 
           <Section title="Support">

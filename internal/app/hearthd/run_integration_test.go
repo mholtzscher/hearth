@@ -146,7 +146,7 @@ func TestCoreNATSTransportRegistersAndProjectsDurableObservation(t *testing.T) {
 	var runtimeID devices.RuntimeID
 	if scanErr := database.QueryRowContext(
 		ctx,
-		"SELECT runtime_id FROM observation_receipts WHERE observation_id = ?",
+		"SELECT runtime_id FROM observations WHERE observation_id = ?",
 		observationID,
 	).Scan(&runtimeID); scanErr != nil {
 		t.Fatal(scanErr)
@@ -172,6 +172,10 @@ func TestCoreNATSTransportRegistersAndProjectsDurableObservation(t *testing.T) {
 		t.Fatalf("observation remained unacknowledged: %#v", info)
 	}
 
+	// Release while the session server's repository is still open.
+	if closeErr := session.Close(); closeErr != nil {
+		t.Fatal(closeErr)
+	}
 	observations.Stop()
 	select {
 	case <-observations.Closed():
@@ -209,15 +213,15 @@ func TestCoreNATSTransportRegistersAndProjectsDurableObservation(t *testing.T) {
 	if result.Disposition != devices.DispositionDuplicate || result.State != nil {
 		t.Fatalf("recovered redelivery = %#v", result)
 	}
-	var receipts int
+	var observationRowCount int
 	if queryErr := database.QueryRowContext(
 		ctx,
-		"SELECT count(*) FROM observation_receipts",
-	).Scan(&receipts); queryErr != nil {
+		"SELECT count(*) FROM observations",
+	).Scan(&observationRowCount); queryErr != nil {
 		t.Fatal(queryErr)
 	}
-	if receipts != 1 {
-		t.Fatalf("receipt count after recovered redelivery = %d", receipts)
+	if observationRowCount != 1 {
+		t.Fatalf("observation count after recovered redelivery = %d", observationRowCount)
 	}
 }
 

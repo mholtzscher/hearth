@@ -116,3 +116,91 @@ func TestCursorCodecsRejectMalformedDocuments(t *testing.T) {
 		t.Fatal("command cursor accepted a non-UTC timestamp")
 	}
 }
+
+func TestEntityStateHistoryCursorRoundTripAndEnforcesScope(t *testing.T) {
+	t.Parallel()
+	otherEntity := devices.EntityID("ent_01890f47-7a6b-7c4d-8e9f-0123456789ac")
+	cursor, err := encodeEntityStateHistoryCursor(apiEntityID, devices.EntityStateHistoryFilterUpdates, 9)
+	if err != nil {
+		t.Fatal(err)
+	}
+	receiveOrder, err := decodeEntityStateHistoryCursor(
+		cursor,
+		apiEntityID,
+		devices.EntityStateHistoryFilterUpdates,
+	)
+	if err != nil || *receiveOrder != 9 {
+		t.Fatalf("State history cursor = %q, %v", cursor, err)
+	}
+	if _, decodeErr := decodeEntityStateHistoryCursor(
+		cursor,
+		apiEntityID,
+		devices.EntityStateHistoryFilterAll,
+	); decodeErr == nil {
+		t.Fatal("State history cursor accepted for another filter")
+	}
+	if _, decodeErr := decodeEntityStateHistoryCursor(
+		cursor,
+		otherEntity,
+		devices.EntityStateHistoryFilterUpdates,
+	); decodeErr == nil {
+		t.Fatal("State history cursor accepted for another Entity")
+	}
+	if _, _, decodeErr := decodeCommandCursor(cursor, apiEntityID); decodeErr == nil {
+		t.Fatal("State history cursor accepted by the Command endpoint")
+	}
+}
+
+func TestEntityStateHistoryCursorRejectsOutOfScopeDocuments(t *testing.T) {
+	t.Parallel()
+	valid, validErr := encodeEntityStateHistoryCursor(apiEntityID, devices.EntityStateHistoryFilterUpdates, 9)
+	if validErr != nil {
+		t.Fatal(validErr)
+	}
+	unknownField := base64.RawURLEncoding.EncodeToString(
+		[]byte(
+			`{"v":1,"resource":"entity_state_history","parent_id":"` + string(
+				apiEntityID,
+			) + `","receive_order":9,"filter":"state-updates","extra":true}`,
+		),
+	)
+	trailing := base64.RawURLEncoding.EncodeToString(
+		[]byte(
+			`{"v":1,"resource":"entity_state_history","parent_id":"` + string(
+				apiEntityID,
+			) + `","receive_order":9,"filter":"state-updates"}{}`,
+		),
+	)
+	wrongVersion, _ := encodeCursor(entityStateHistoryCursor{
+		Version: 2, Resource: "entity_state_history", ParentID: string(apiEntityID),
+		ReceiveOrder: 9, Filter: "state-updates",
+	})
+	wrongResource, _ := encodeCursor(entityStateHistoryCursor{
+		Version: 1, Resource: "entity_availability", ParentID: string(apiEntityID),
+		ReceiveOrder: 9, Filter: "state-updates",
+	})
+	wrongFilter, _ := encodeCursor(entityStateHistoryCursor{
+		Version: 1, Resource: "entity_state_history", ParentID: string(apiEntityID),
+		ReceiveOrder: 9, Filter: "recent",
+	})
+	zeroOrder, _ := encodeCursor(entityStateHistoryCursor{
+		Version: 1, Resource: "entity_state_history", ParentID: string(apiEntityID),
+		ReceiveOrder: 0, Filter: "state-updates",
+	})
+	invalidParent, _ := encodeCursor(entityStateHistoryCursor{
+		Version: 1, Resource: "entity_state_history", ParentID: "bad",
+		ReceiveOrder: 9, Filter: "state-updates",
+	})
+	for _, value := range []string{
+		"not base64!", valid + "=", unknownField, trailing,
+		wrongVersion, wrongResource, wrongFilter, zeroOrder, invalidParent,
+	} {
+		if _, decodeErr := decodeEntityStateHistoryCursor(
+			value,
+			apiEntityID,
+			devices.EntityStateHistoryFilterUpdates,
+		); decodeErr == nil {
+			t.Fatalf("decodeEntityStateHistoryCursor(%q) succeeded", value)
+		}
+	}
+}

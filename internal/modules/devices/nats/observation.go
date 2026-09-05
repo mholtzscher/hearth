@@ -182,7 +182,7 @@ func handleObservationMessage(
 		sourceUpdatedAt = &parsed
 	}
 	if adapterReceivedAt.After(metadata.Timestamp.Add(observationFutureClockThreshold)) {
-		logger.WarnContext(baseContext, "adapter observation clock is ahead of core receipt time",
+		logger.WarnContext(baseContext, "adapter observation clock is ahead of core receive time",
 			"observation_id", envelope.ID,
 			"adapter_id", route.AdapterID,
 			"entity_id", route.EntityID,

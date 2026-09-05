@@ -40,6 +40,10 @@ type stubDevices struct {
 		context.Context,
 		devices.ListEntityAvailabilityParams,
 	) (devices.Page[devices.HealthTransition], error)
+	listEntityStateHistory func(
+		context.Context,
+		devices.ListEntityStateHistoryParams,
+	) (devices.Page[devices.EntityStateHistoryEntry], error)
 	executeCommand func(
 		context.Context,
 		devices.EntityID,
@@ -148,6 +152,16 @@ func (stub *stubDevices) ListEntityAvailabilityHistory(
 		panic("unexpected ListEntityAvailabilityHistory call")
 	}
 	return stub.listEntityAvailabilityHistory(ctx, params)
+}
+
+func (stub *stubDevices) ListEntityStateHistory(
+	ctx context.Context,
+	params devices.ListEntityStateHistoryParams,
+) (devices.Page[devices.EntityStateHistoryEntry], error) {
+	if stub.listEntityStateHistory == nil {
+		panic("unexpected ListEntityStateHistory call")
+	}
+	return stub.listEntityStateHistory(ctx, params)
 }
 
 func (stub *stubDevices) ExecuteCommand(
