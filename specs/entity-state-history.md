@@ -312,6 +312,13 @@ Modify `internal/platform/db/migrations/00001_initial.sql`:
 +
 +CREATE INDEX observation_receipts_entity_history_idx
 +    ON observation_receipts(entity_id, receive_order DESC);
++
++CREATE INDEX observation_receipts_entity_disposition_history_idx
++    ON observation_receipts(entity_id, disposition, receive_order DESC);
++
++CREATE INDEX observation_receipts_entity_updates_history_idx
++    ON observation_receipts(entity_id, receive_order DESC)
++    WHERE disposition IN ('applied', 'unchanged');
 ```
 
 The Down section drops `observation_receipts`, so no additional Down operation is required beyond dropping the new index before the table if the explicit index-drop ordering is retained.
@@ -332,12 +339,15 @@ Update the successful raw SQL receipt fixtures in `internal/platform/db/db_test.
 
 ### History queries
 
-Add to `internal/modules/devices/dbqueries/receipts.sql`:
+Add three static query pairs to `internal/modules/devices/dbqueries/receipts.sql`:
 
-- `ListEntityStateHistoryFirstPage`
-- `ListEntityStateHistoryAfter`
+| Filter | First-page / continuation queries | Predicate and index |
+|---|---|---|
+| `all` | `ListEntityStateHistoryFirstPage` / `ListEntityStateHistoryAfter` | Entity equality; `observation_receipts_entity_history_idx` |
+| `state-updates` | `ListEntityStateUpdatesFirstPage` / `ListEntityStateUpdatesAfter` | Entity equality and literal `disposition IN ('applied', 'unchanged')`; partial `observation_receipts_entity_updates_history_idx` |
+| Single disposition | `ListEntityStateHistoryByDispositionFirstPage` / `ListEntityStateHistoryByDispositionAfter` | Entity and bound disposition equality; `observation_receipts_entity_disposition_history_idx` |
 
-Both select only the domain fields required by `EntityStateHistoryEntry`, constrain `entity_id`, apply the effective filter, order by `receive_order DESC`, and use the caller's `limit + 1`. The continuation query additionally requires `receive_order < before_receive_order`.
+All select only the domain fields required by `EntityStateHistoryEntry`, order by `receive_order DESC`, and use the caller's `limit + 1`. Every continuation query additionally requires `receive_order < before_receive_order`. The SQLite adapter selects the query pair from the validated effective filter; the three single-disposition filters share one pair.
 
 Filter predicates are exact:
 
@@ -349,7 +359,11 @@ Filter predicates are exact:
 | `unchanged` | `unchanged` |
 | `rejected` | `rejected` |
 
-The service validates the filter before SQL. The query still binds the filter explicitly rather than constructing SQL dynamically.
+The service validates the filter before SQL. Bind Entity ID, cursor position, limit, and the single disposition where applicable; do not construct SQL dynamically or use a generic `OR`/`CASE` filter-switch predicate. The `state-updates` predicate must match the partial-index predicate literally so SQLite can use that index.
+
+`LIMIT` bounds returned rows, not examined rows. Each query must seek into its matching index and read in result order without scanning unrelated dispositions or sorting the entire Entity history. This is important because Hearth shares one SQLite connection between reads, projection, Commands, and heartbeats. The two additional indexes trade write/storage overhead for selective reads without adding another write statement.
+
+Verify first and continuation pages for every filter with `EXPLAIN QUERY PLAN`: require the corresponding indexed search and no temporary ordering B-tree, without asserting SQLite's full diagnostic string. Use unchanged-heavy and rejected-heavy fixtures of at least 100,000 receipts, including sparse and absent matches. Record read latency alongside projection latency under concurrent history reads as implementation evidence; keep wall-clock thresholds out of correctness tests.
 
 ### Retention
 
@@ -371,6 +385,8 @@ Query parameters:
 
 Items order by `receive_order DESC`. Later pages use a strict lower receive order under the same Entity and filter. The response always encodes `items` as an array and omits `next_cursor` on the final page.
 
+Pagination is not a snapshot. Observations inserted after the first page have higher receive orders and require restarting at the first page to see them. Pruning may remove entries not yet visited; `next_cursor` means more rows existed when that page was read, not that they will remain. A valid continuation cursor can therefore return HTTP 200 with `items: []` and no next cursor. Cursor positions need not reference an existing receipt. No snapshot token, long-lived transaction, or retention pin is introduced.
+
 An existing Entity with no retained matching receipts returns HTTP 200 with `items: []`. An unknown valid Entity returns HTTP 404. The response exposes no Adapter ID, runtime ID, raw rejected value, receipt expiry, or internal receive order.
 
 ## Dashboard Design
@@ -381,9 +397,13 @@ Owner: new `web/src/components/entity-state-history.tsx`, composed by `web/src/p
 
 A segmented control offers `State updates` (default), `All`, `Applied`, `Unchanged`, and `Rejected`. Changing the filter, Entity route, or `useBaseUrlVersion` resets the cursor to the first page. The request query always carries the effective filter. `Next page` follows the existing dashboard cursor pattern.
 
+An always-available `Latest / Refresh history` action preserves the effective filter, resets the cursor, and fetches the first page, including when already on that page. It is independent of Entity detail's Refresh action; no automatic polling or Command-completion refresh is required. Keep this action visible on empty continuation pages and errors. Show loading and request errors, and prevent obsolete requests from replacing results after a filter, Entity, or server change. Explain that newer observations require refreshing and older entries may expire while paging.
+
 ### Chart
 
-A dependency-free responsive SVG step chart uses only accepted rows from the current page, rendered oldest-to-newest with receive-order response order reversed. `observed_at` supplies the horizontal labels; response order remains the deterministic tie-breaker when timestamps are equal.
+A dependency-free responsive SVG chart uses accepted rows from the current page in ascending receive order by reversing response order; never sort by timestamps. The horizontal axis is explicitly labeled `Observation sequence (not elapsed time)`. Accepted rows occupy evenly spaced ordinal positions, including positions reserved for malformed accepted rows. `observed_at` supplies timestamp annotations only: horizontal distance does not represent duration, and equal or decreasing timestamps do not alter positions.
+
+`State updates`, `All`, and `Applied` render steps between valid accepted values within the page, holding the preceding value until the next plotted position. Do not extend paths beyond the page's first or last accepted observation. `Unchanged` renders isolated points, never connecting lines: filtered-out applied observations may contain intervening State changes. Its caption states `Unchanged observations only; intervening State changes are not shown.` Rejected rows have no State value and do not break a path; malformed accepted rows represent unknown values and must break it. A valid run of one point remains visible.
 
 Per Entity type:
 
@@ -401,10 +421,12 @@ Required edge behavior:
 - rejected-only page: show the table and `Rejected observations have no canonical State value to chart.`;
 - one accepted row: render a centered point with its formatted value rather than a zero-width path;
 - constant accepted values: expand the vertical domain by a type-appropriate padding so the line remains visible;
-- equal timestamps: distribute points in response-order sequence while retaining timestamp labels;
-- malformed API value despite the server contract: skip that point, keep the table's raw JSON, and state the skipped count in the caption.
+- equal or decreasing timestamps: preserve evenly spaced receive-order positions and original timestamp annotations;
+- malformed API value despite the server contract: omit its point but preserve its ordinal position, break the path on both sides, keep the table's raw JSON, and state the skipped count in the caption;
+- all accepted values malformed: render no path and show `No valid State values to chart.` with the skipped count;
+- `Unchanged` with intervening applied changes: show isolated points without implying State continuity.
 
-The caption reports the page-local time range, number of plotted values, and number of rejected or malformed rows skipped. It does not imply that one page is the Entity's complete retained history.
+The caption reports the page-local minimum and maximum `observed_at`, number of plotted values, and number of rejected or malformed rows skipped. Timestamp bounds describe receipt metadata, not elapsed duration along the axis. It does not imply that one page is the Entity's complete retained history or that spacing measures how long a State persisted.
 
 ### Table
 
@@ -470,6 +492,8 @@ Each test protects an explicit behavior and should fail under a named plausible 
 | Projection integration | Unknown-Entity and stale-runtime rejections still commit receipts | accidental Entity FK or parent lookup makes idempotency fail | Existing rejection contract and receipt schema invariant |
 | Duplicate regression | Redelivery adds no receipt/history row | duplicate creates a second point | Observation ID idempotency contract |
 | Repository integration | Filters, strict keyset ordering, `limit + 1`, final-page behavior | wrong predicate, skipped/duplicated rows, off-by-one | Seeded receive orders and expected disposition sets |
+| Repository integration | Every filter uses a selective ordered index on first and continuation pages | sparse/no-match filter scans unrelated receipts or sorts full history | `EXPLAIN QUERY PLAN` plus large skewed fixtures; record concurrent read/projection latency separately |
+| Repository integration | Pagination remains valid across inserts and pruning | new rows appear below an old cursor, missing cursor row fails, or empty continuation errors | Insert newer receipts and prune unseen receipts between requests; assert strict order and valid empty final page |
 | Repository integration | Retention removes expired non-current rows and preserves current State's receipt | prune deletes current anchor or leaks expired history | Existing receipt-retention rule with real SQLite foreign/reference behavior |
 | Repository integration | JSON and timestamps map to owned domain values | sqlc leakage, aliasing, local/noncanonical times | Domain type contract and mutation-after-return checks |
 | Service unit | Validation precedes parent lookup/read; unknown parent is distinct from empty history | repository called on invalid input or 404 collapsed into empty page | Domain validation and `ErrEntityNotFound` contract |
@@ -484,11 +508,11 @@ Each test protects an explicit behavior and should fail under a named plausible 
 After implementation:
 
 1. Run the normal local NATS, `hearthd`, and dashboard development processes against a disposable database populated through normal registration and Observation projection paths.
-2. Through those normal paths, prepare the four built-in Entity types plus no-history, one-point, constant-value, rejected-only, and multi-page histories.
+2. Through those normal paths, prepare the four built-in Entity types plus no-history, one-point, constant-value, rejected-only, and multi-page histories. Include Off (unchanged), On (applied), Off (applied), Off (unchanged) in receive order and verify that `Unchanged` shows isolated Off points rather than a continuous Off path.
 3. Load the installed browser workflow with `agent-browser skills get core --full` before issuing browser commands.
 4. Open each Entity detail page through the Vite origin, capture an accessibility snapshot, exercise every filter and pagination transition, and verify the visible chart caption and table values.
-5. Change the configured base URL or Entity route and verify the cursor resets.
-6. In separate dev-only browser sessions, use `agent-browser network route` before the first real navigation to mock the exact Entity-detail and State-history responses for otherwise unreachable defensive cases: an unsupported Entity type, a schema-wrong but valid JSON value, and equal timestamps. Remove each route after its scenario. Network mocking is permitted only against the local development origin and adds no production fixture endpoint.
+5. Change the configured base URL or Entity route and verify the cursor resets. From both the first and an older page, project a new matching observation, use `Latest / Refresh history`, and verify it appears without changing the filter or reloading the browser. Verify loading/error feedback and that obsolete requests cannot replace the current scope's results.
+6. In separate dev-only browser sessions, use `agent-browser network route` before the first real navigation to mock the exact Entity-detail and State-history responses for otherwise unreachable defensive cases: an unsupported Entity type, a schema-wrong but valid JSON value between two valid values, all accepted values malformed, equal and decreasing timestamps, and an empty continuation page after pruning. Verify broken paths around malformed values, the explicit non-time axis label, receive-order positions despite timestamp regressions, and the refresh action on the empty page. Remove each route after its scenario. Network mocking is permitted only against the local development origin and adds no production fixture endpoint.
 7. Capture screenshots for the four supported chart types plus empty, rejected-only, unsupported-type, and malformed-value states.
 8. Check the browser console after each scenario and require no uncaught errors.
 
@@ -503,11 +527,15 @@ Normal-path scenarios establish integration behavior. Mocked responses establish
 - [ ] History uses the existing receipt prune path: expired non-current entries disappear and the receipt backing current State survives until superseded.
 - [ ] `GET /v1/entities/{entity_id}/state/history` matches the specified method, path, metadata, DTO, ordering, filters, cursor scope, and errors.
 - [ ] `state-updates` consistently means `applied` plus `unchanged` in service, SQL, cursor, HTTP, and dashboard vocabulary.
-- [ ] Under a stable database snapshot and filter, cursor traversal returns every matching receipt exactly once in descending receive order.
+- [ ] Every filter uses an indexed ordered search on first and continuation pages without scanning unrelated dispositions or sorting full Entity history; large skewed-fixture query plans and concurrent read/projection latency evidence are reviewed.
+- [ ] With no intervening writes or pruning and a stable filter, cursor traversal returns every matching receipt exactly once in descending receive order.
+- [ ] Concurrent inserts require restarting at the first page; pruning unseen rows or the cursor's receipt does not invalidate the cursor, and an exhausted continuation returns an empty final page.
 - [ ] An unknown Entity returns 404; an existing Entity without matching retained history returns HTTP 200 with `items: []`.
 - [ ] Responses omit raw rejected values, Adapter/runtime IDs, expiry, and receive order.
 - [ ] The dashboard renders the specified four Entity types and all empty, rejected-only, single-point, constant-value, equal-time, malformed-value, and unsupported-type fallbacks without a new npm dependency.
-- [ ] Agent-browser evidence covers filters, pagination resets, chart/table formatting, screenshots, and a clean browser console.
+- [ ] The chart labels its ordinal axis as non-time, preserves receive order for equal/decreasing timestamps, uses isolated points for `Unchanged`, and breaks paths around malformed accepted values, including an all-malformed fallback.
+- [ ] `Latest / Refresh history` preserves the filter and fetches new observations from first, older, empty, and error pages without a browser reload; obsolete requests cannot overwrite a new scope.
+- [ ] Agent-browser evidence covers filters, pagination resets, refresh, chart/table formatting, screenshots, and a clean browser console.
 - [ ] `docs/architecture.md` records the accepted persistence, retention, and endpoint behavior.
 - [ ] `mise run web-build` passes.
 - [ ] `mise run validate` passes and the resulting generated/formatting diff is reviewed.
@@ -527,6 +555,8 @@ Normal-path scenarios establish integration behavior. Mocked responses establish
 | An Entity foreign key breaks unknown-Entity rejection durability | Medium | High | Keep `observation_receipts.entity_id` unconstrained and test unknown/stale rejection commits against real SQLite. |
 | Directly changing migration 00001 leaves an existing development DB stale | High for active developers | Low | Document that local DBs must be recreated; revisit with an additive migration if deployment status changes. |
 | Filter or cursor drift causes missing or repeated rows | Medium | Medium | Bind the effective filter into the cursor and test stable traversal for every filter. |
+| Filtered reads monopolize the shared SQLite connection | Medium | High | Use three indexed query families, verify sparse/no-match plans, and review concurrent projection/read latency on large skewed histories. |
+| Charts imply missing transitions or elapsed durations | Medium | Medium | Label the ordinal axis, render `Unchanged` as isolated points, break paths at malformed values, and verify decreasing timestamps. |
 | Chart domains collapse for sparse or constant values | High | Medium | Specify explicit empty, one-point, constant, equal-time, and unsupported-type rendering and verify with agent-browser. |
 | Raw rejected payloads could expose unsafe or malformed data | Low | High | Persist and expose no rejected value; retain only disposition, rejection code, and safe timestamps. |
 | `ReadRepository` expansion silently invalidates broad test fakes | High | Low | List and update existing fakes explicitly; compile the full repository under `mise run validate`. |
@@ -538,7 +568,9 @@ Normal-path scenarios establish integration behavior. Mocked responses establish
 | Enrich `observation_receipts` | A duplicate `entity_state_history` table | Receipts already have the required cardinality, ordering, metadata, transaction, and retention; enrichment avoids a second insert and contradictory foreign keys. |
 | Directly modify migration 00001 | Add migration 00002 and backfill an anchor | Hearth has no deployments, past values cannot be reconstructed, and project policy prefers direct changes without compatibility work. |
 | `state-updates` default | Misnamed `state-changes` or `all` | Both applied and unchanged Observations advance canonical State evidence, while rejected diagnostics remain opt-in. |
-| Current-page chart | Unbounded/time-range chart | It preserves bounded endpoint work and avoids adding time filters or a chart-specific query. |
+| Current-page observation-sequence chart | Elapsed-time or unbounded chart | It preserves canonical receive order and bounded page size without time filters or a chart-specific query; it deliberately cannot show State durations. |
+| Three indexed static query families | One generic filter-switch query | Extra index maintenance and query definitions prevent sparse filters from scanning unrelated history on the shared SQLite connection. |
+| Non-snapshot keyset pagination | Snapshot tokens or retention pins | Concurrent inserts and pruning have explicit semantics without long-lived transactions or additional retention machinery. |
 | Agent-browser acceptance | A new frontend test framework | It verifies rendered behavior and interaction without adding a dependency; pure backend contracts remain covered by Go tests. |
 | Receipt retention | Indefinite State-history retention | It reuses an established bounded lifecycle and requires no new prune/configuration path, at the cost of not being a long-term analytics store. |
 
