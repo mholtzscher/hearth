@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.5.0](https://github.com/mholtzscher/hearth/compare/v0.4.0...v0.5.0) (2026-09-05)
+
+
+### Features
+
+* **devices:** implement entity state history end-to-end ([#53](https://github.com/mholtzscher/hearth/issues/53)) ([7c0e74b](https://github.com/mholtzscher/hearth/commit/7c0e74b7e1cd02e9ef4d8667319fb5e658bb1954))
+
 ## [0.4.0](https://github.com/mholtzscher/hearth/compare/v0.3.0...v0.4.0) (2026-09-04)
 
 
