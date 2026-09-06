@@ -72,40 +72,40 @@ func handleEntityAvailability(
 ) (entityAvailabilityResponse, bool) {
 	route, err := natswire.ParseEntityAvailabilitySubject(subject)
 	if err != nil {
-		logger.WarnContext(ctx, "discarding Entity availability with invalid subject",
-			transportEventKey, "availability.request_discarded",
-			transportErrorCodeKey, "subject_invalid",
-			"availability_id", request.ID,
-		)
+		logger.With(slog.String("availability_id", request.ID)).
+			WarnContext(ctx, "discarding Entity availability with invalid subject",
+				slog.String(transportEventKey, "availability.request_discarded"),
+				slog.String(transportErrorCodeKey, "subject_invalid"),
+			)
 		return entityAvailabilityResponse{}, false
 	}
 	runtimeID, err := devices.ParseRuntimeID(route.RuntimeID)
 	if err != nil {
-		logger.WarnContext(ctx, "discarding Entity availability with invalid runtime ID",
-			transportEventKey, "availability.request_discarded",
-			transportErrorCodeKey, "runtime_id_invalid",
-			"availability_id", request.ID,
-		)
+		logger.With(slog.String("availability_id", request.ID)).
+			WarnContext(ctx, "discarding Entity availability with invalid runtime ID",
+				slog.String(transportEventKey, "availability.request_discarded"),
+				slog.String(transportErrorCodeKey, "runtime_id_invalid"),
+			)
 		return entityAvailabilityResponse{}, false
 	}
 	reports := make([]devices.EntityAvailabilityReport, len(request.Data.Entities))
 	for index, entity := range request.Data.Entities {
 		entityID, parseErr := devices.ParseEntityID(entity.EntityID)
 		if parseErr != nil {
-			logger.WarnContext(ctx, "discarding Entity availability with invalid Entity ID",
-				transportEventKey, "availability.request_discarded",
-				transportErrorCodeKey, "entity_id_invalid",
-				"availability_id", request.ID,
-			)
+			logger.With(slog.String("availability_id", request.ID)).
+				WarnContext(ctx, "discarding Entity availability with invalid Entity ID",
+					slog.String(transportEventKey, "availability.request_discarded"),
+					slog.String(transportErrorCodeKey, "entity_id_invalid"),
+				)
 			return entityAvailabilityResponse{}, false
 		}
 		sourceObservedAt, parseErr := time.Parse(time.RFC3339Nano, entity.SourceObservedAt)
 		if parseErr != nil {
-			logger.WarnContext(ctx, "discarding Entity availability with invalid source time",
-				transportEventKey, "availability.request_discarded",
-				transportErrorCodeKey, "source_time_invalid",
-				"availability_id", request.ID,
-			)
+			logger.With(slog.String("availability_id", request.ID)).
+				WarnContext(ctx, "discarding Entity availability with invalid source time",
+					slog.String(transportEventKey, "availability.request_discarded"),
+					slog.String(transportErrorCodeKey, "source_time_invalid"),
+				)
 			return entityAvailabilityResponse{}, false
 		}
 		reports[index] = devices.EntityAvailabilityReport{
@@ -118,11 +118,12 @@ func handleEntityAvailability(
 	)
 	response, handled := mapAvailabilityResult(reportedAt, len(reports), reportErr)
 	if !handled {
-		logger.ErrorContext(ctx, "report Entity availability",
-			transportEventKey, "availability.failed",
-			transportErrorCodeKey, "availability_failed",
-			"availability_id", request.ID,
-			"adapter_id", route.AdapterID,
+		logger.With(
+			slog.String("availability_id", request.ID),
+			slog.String("adapter_id", route.AdapterID),
+		).ErrorContext(ctx, "report Entity availability",
+			slog.String(transportEventKey, "availability.failed"),
+			slog.String(transportErrorCodeKey, "availability_failed"),
 		)
 	}
 	return response, handled

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"time"
 )
 
@@ -166,9 +167,9 @@ func (coordinator *runtimeCoordinator) finishGet(event getPublishFinished) {
 	coordinator.adapter.logger.WarnContext(
 		coordinator.ctx,
 		"Zigbee2MQTT command refresh publication failed",
-		eventKey, "adapter.command_refresh_failed",
-		"entity_id", attempt.command.EntityID,
-		"error_code", "refresh_publish_failed",
+		slog.String(eventKey, "adapter.command_refresh_failed"),
+		slog.String("entity_id", attempt.command.EntityID),
+		slog.String("error_code", "refresh_publish_failed"),
 	)
 }
 

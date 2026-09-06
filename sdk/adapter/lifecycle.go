@@ -97,7 +97,7 @@ func (session *Session) log() *slog.Logger {
 	if session.runtimeID == "" {
 		return session.logger
 	}
-	return session.logger.With("runtime_id", session.runtimeID)
+	return session.logger.With(slog.String("runtime_id", session.runtimeID))
 }
 
 // callbackLog snapshots the session logger and the lifecycle context for
@@ -109,7 +109,7 @@ func (session *Session) callbackLog() (*slog.Logger, context.Context) {
 	defer session.stateMutex.Unlock()
 	logger := session.logger
 	if session.runtimeID != "" {
-		logger = logger.With("runtime_id", session.runtimeID)
+		logger = logger.With(slog.String("runtime_id", session.runtimeID))
 	}
 	return logger, session.lifecycleCtx
 }

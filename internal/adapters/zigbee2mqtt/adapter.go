@@ -88,7 +88,7 @@ func newAdapter(session Session, config Config, logger *slog.Logger, dialer mqtt
 	if logger == nil {
 		logger = slog.Default()
 	}
-	logger = logger.With("component", adapterComponent)
+	logger = logger.With(slog.String("component", adapterComponent))
 	return &Adapter{
 		session: session, config: config, logger: logger, dialer: dialer,
 		runtimeEvents: make(chan runtimeEvent, runtimeEventBuffer),
@@ -145,10 +145,10 @@ func (z2m *Adapter) runConnections(ctx context.Context) error {
 		z2m.logger.DebugContext(
 			ctx,
 			"Zigbee2MQTT connection retrying",
-			eventKey, "dependency.retrying",
-			"dependency", adapterComponent,
-			"error_code", zigbee2MQTTErrorCode(err),
-			"retry_in_ms", max(wait.Milliseconds(), 0),
+			slog.String(eventKey, "dependency.retrying"),
+			slog.String("dependency", adapterComponent),
+			slog.String("error_code", zigbee2MQTTErrorCode(err)),
+			slog.Int64("retry_in_ms", max(wait.Milliseconds(), 0)),
 		)
 		timer := time.NewTimer(wait)
 		select {

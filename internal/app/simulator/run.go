@@ -18,7 +18,7 @@ func Run(ctx context.Context, config Config, logger *slog.Logger) error {
 	if logger == nil {
 		logger = slog.Default()
 	}
-	processLogger := logger.With("component", "process")
+	processLogger := logger.With(slog.String("component", "process"))
 	// The SDK owns session logging and attaches its own adapter_session
 	// component and Adapter/runtime identity, so it receives the root logger.
 	session, connectErr := adapter.Connect(ctx, adapter.Config{
@@ -36,12 +36,9 @@ func Run(ctx context.Context, config Config, logger *slog.Logger) error {
 			processLogger.WarnContext(
 				ctx,
 				"process cleanup failed",
-				"event",
-				"process.cleanup_failed",
-				"stage",
-				"session_close",
-				"error_code",
-				"cleanup_failed",
+				slog.String("event", "process.cleanup_failed"),
+				slog.String("stage", "session_close"),
+				slog.String("error_code", "cleanup_failed"),
 			)
 		}
 	}()
@@ -73,15 +70,12 @@ func Run(ctx context.Context, config Config, logger *slog.Logger) error {
 	if err := simulated.Initialize(ctx, entityID); err != nil {
 		return fmt.Errorf("initialize simulator health and Entity availability: %w", err)
 	}
-	logger.With("component", "simulator").InfoContext(
+	logger.With(slog.String("component", "simulator")).InfoContext(
 		ctx,
 		"simulator initialized",
-		"event",
-		"simulator.initialized",
-		"scenario",
-		config.Scenario,
-		"entity_id",
-		entityID,
+		slog.String("event", "simulator.initialized"),
+		slog.String("scenario", config.Scenario),
+		slog.String("entity_id", entityID),
 	)
 	handler, err := simulated.CommandHandler(entityID)
 	if err != nil {

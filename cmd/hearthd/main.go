@@ -4,6 +4,7 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"log/slog"
 	"os"
 	"os/signal"
 	"syscall"
@@ -28,39 +29,35 @@ func run() int {
 		fmt.Fprintln(os.Stderr, loggerErr)
 		return 1
 	}
-	processLogger := logger.With("component", "process")
+	processLogger := logger.With(slog.String("component", "process"))
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
-	processLogger.InfoContext(ctx, "hearthd starting", "event", "process.starting")
+	processLogger.InfoContext(ctx, "hearthd starting", slog.String("event", "process.starting"))
 	config, configErr := hearthd.LoadConfig(*configPath)
 	if configErr != nil {
 		processLogger.ErrorContext(
 			ctx,
 			"hearthd configuration failed",
-			"event",
-			"process.failed",
-			"error_code",
-			"config_invalid",
-			"stage",
-			"load_config",
+			slog.String("event", "process.failed"),
+			slog.String("error_code", "config_invalid"),
+			slog.String("stage", "load_config"),
 		)
 		return 1
 	}
-	processLogger.InfoContext(ctx, "hearthd configuration loaded", "event", "process.config_loaded")
+	processLogger.InfoContext(
+		ctx, "hearthd configuration loaded", slog.String("event", "process.config_loaded"),
+	)
 	if err := hearthd.Run(ctx, config, logger); err != nil {
 		processLogger.ErrorContext(
 			ctx,
 			"hearthd failed",
-			"event",
-			"process.failed",
-			"error_code",
-			"run_failed",
-			"stage",
-			hearthd.ErrorStage(err),
+			slog.String("event", "process.failed"),
+			slog.String("error_code", "run_failed"),
+			slog.String("stage", hearthd.ErrorStage(err)),
 		)
 		return 1
 	}
-	processLogger.InfoContext(ctx, "hearthd stopped", "event", "process.stopped")
+	processLogger.InfoContext(ctx, "hearthd stopped", slog.String("event", "process.stopped"))
 	return 0
 }

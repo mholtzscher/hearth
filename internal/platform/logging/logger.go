@@ -43,7 +43,7 @@ func NewApplicationLogger(output io.Writer, app string, options LogOptions) (*sl
 	} else {
 		handler = slog.NewTextHandler(output, handlerOptions)
 	}
-	return slog.New(handler).With("app", app, "pid", os.Getpid()), nil
+	return slog.New(handler).With(slog.String("app", app), slog.Int("pid", os.Getpid())), nil
 }
 
 func parseLogLevel(level string) (slog.Level, error) {

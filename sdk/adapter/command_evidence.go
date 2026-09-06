@@ -166,7 +166,7 @@ func (session *Session) logPublishedObservation(
 	observation Observation,
 	link *observationLink,
 ) {
-	attrs := []any{
+	attrs := []slog.Attr{
 		slog.String("event", "observation.published"),
 		slog.String("observation_id", string(observationID)),
 		slog.String("entity_id", observation.EntityID),
@@ -177,7 +177,7 @@ func (session *Session) logPublishedObservation(
 			slog.String("correlation_id", link.correlationID),
 		)
 	}
-	session.log().DebugContext(ctx, "observation published", attrs...)
+	session.log().LogAttrs(ctx, slog.LevelDebug, "observation published", attrs...)
 }
 
 func (session *Session) newPublicationContext(

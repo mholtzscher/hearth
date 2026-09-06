@@ -45,7 +45,7 @@ type commandWaiters struct {
 func NewService(stores Stores, sender CommandSender, catalog *TypeCatalog, dependencies Dependencies) *Service {
 	logger := dependencies.Logger
 	if logger == nil {
-		logger = slog.Default().With("component", "devices")
+		logger = slog.Default().With(slog.String("component", "devices"))
 	}
 	if dependencies.Now == nil {
 		dependencies.Now = time.Now

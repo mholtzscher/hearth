@@ -62,10 +62,10 @@ func Run(ctx context.Context, config Config, logger *slog.Logger) error { //noli
 	if logger == nil {
 		logger = slog.Default()
 	}
-	processLogger := logger.With("component", "process")
-	coreLogger := logger.With("component", "core")
-	devicesLogger := logger.With("component", "devices")
-	natsLogger := logger.With("component", "nats")
+	processLogger := logger.With(slog.String("component", "process"))
+	coreLogger := logger.With(slog.String("component", "core"))
+	devicesLogger := logger.With(slog.String("component", "devices"))
+	natsLogger := logger.With(slog.String("component", "nats"))
 	catalog, catalogErr := devices.NewBuiltinTypeCatalog()
 	if catalogErr != nil {
 		return failStage("load_type_catalog", catalogErr)
@@ -179,10 +179,8 @@ func Run(ctx context.Context, config Config, logger *slog.Logger) error { //noli
 	coreLogger.InfoContext(
 		ctx,
 		"core HTTP listening",
-		"event",
-		"core.http_listening",
-		"http_addr",
-		listener.Addr().String(),
+		slog.String("event", "core.http_listening"),
+		slog.String("http_addr", listener.Addr().String()),
 	)
 	server := &http.Server{Handler: handler, ReadHeaderTimeout: httpReadHeaderTimeout}
 	serverErrors := make(chan error, 1)
@@ -243,7 +241,10 @@ func shutdownCore(
 // startup step; failures return through failStage instead.
 func logStartupStage(ctx context.Context, logger *slog.Logger, stage string) {
 	logger.InfoContext(
-		ctx, "core startup stage completed", "event", "core.startup_stage_completed", "stage", stage,
+		ctx,
+		"core startup stage completed",
+		slog.String("event", "core.startup_stage_completed"),
+		slog.String("stage", stage),
 	)
 }
 
@@ -256,12 +257,9 @@ func logCleanupFailure(ctx context.Context, logger *slog.Logger, stage string, e
 	logger.WarnContext(
 		ctx,
 		"process cleanup failed",
-		"event",
-		"process.cleanup_failed",
-		"stage",
-		stage,
-		"error_code",
-		"cleanup_failed",
+		slog.String("event", "process.cleanup_failed"),
+		slog.String("stage", stage),
+		slog.String("error_code", "cleanup_failed"),
 	)
 }
 
@@ -276,6 +274,7 @@ func connectCoreNATS(
 	if logger == nil {
 		logger = slog.Default()
 	}
+	logger = logger.With(slog.String("dependency", "nats"))
 	options := []natsgo.Option{
 		natsgo.Name("hearthd"),
 		natsgo.MaxReconnects(-1),
@@ -287,30 +286,31 @@ func connectCoreNATS(
 			logger.WarnContext(
 				ctx,
 				"NATS disconnected",
-				"event",
-				"dependency.disconnected",
-				"dependency",
-				"nats",
-				"error_code",
-				"nats_disconnected",
+				slog.String("event", "dependency.disconnected"),
+				slog.String("error_code", "nats_disconnected"),
 			)
 		}),
 		natsgo.ReconnectHandler(func(_ *natsgo.Conn) {
 			if ctx.Err() != nil {
 				return
 			}
-			logger.InfoContext(ctx, "NATS reconnected", "event", "dependency.reconnected", "dependency", "nats")
+			logger.InfoContext(
+				ctx, "NATS reconnected", slog.String("event", "dependency.reconnected"),
+			)
 		}),
 		natsgo.ErrorHandler(func(_ *natsgo.Conn, _ *natsgo.Subscription, _ error) {
 			if ctx.Err() != nil {
 				return
 			}
 			logger.ErrorContext(ctx, "NATS operation failed",
-				"event", "dependency.operation_failed", "dependency", "nats", "error_code", "nats_async_error",
+				slog.String("event", "dependency.operation_failed"),
+				slog.String("error_code", "nats_async_error"),
 			)
 		}),
 		natsgo.ClosedHandler(func(_ *natsgo.Conn) {
-			logger.DebugContext(ctx, "NATS connection closed", "event", "dependency.closed", "dependency", "nats")
+			logger.DebugContext(
+				ctx, "NATS connection closed", slog.String("event", "dependency.closed"),
+			)
 		}),
 	}
 	if deadline, ok := ctx.Deadline(); ok {
@@ -324,7 +324,9 @@ func connectCoreNATS(
 	if err != nil {
 		return nil, failStage("connect_nats", fmt.Errorf("connect to NATS: %w", err))
 	}
-	logger.InfoContext(ctx, "NATS connected", "event", "dependency.connected", "dependency", "nats")
+	logger.InfoContext(
+		ctx, "NATS connected", slog.String("event", "dependency.connected"),
+	)
 	return connection, nil
 }
 
@@ -345,10 +347,8 @@ func pruneObservations(
 				logger.ErrorContext(
 					ctx,
 					"prune observations",
-					"event",
-					"core.observations_prune_failed",
-					"error_code",
-					"observations_prune_failed",
+					slog.String("event", "core.observations_prune_failed"),
+					slog.String("error_code", "observations_prune_failed"),
 				)
 			}
 		}

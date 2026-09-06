@@ -46,6 +46,8 @@ Existing constructor injection remains. `devices.Dependencies.Logger` stays opti
 
 Each application record carries a short human-readable message, a whole lower-case dotted `event` literal, and one bounded `component`: `process`, `core`, `devices`, `nats`, `adapter_session`, `zigbee2mqtt`, `homeassistant`, or `simulator`.
 
+Use typed slog attributes (`slog.String`, `slog.Int`, `slog.Int64`, etc.). Use `With` for fields shared by multiple records in a subsystem or operation; keep event-specific attributes at emission sites. Dynamic lists use `[]slog.Attr` and `LogAttrs`. Preserve existing field types, including integer milliseconds. Do not add logger plumbing or wrappers merely for single-use fields.
+
 Set component at the owning subsystem boundary. Avoid duplicate attributes. Scope canonical Adapter/runtime identities only when known; a runtime ID labels the actual claimed session, never the process generally. Operation records may carry existing command/correlation/observation/Entity IDs. Omit unknown IDs and absent optional codes.
 
 Always use context-aware slog methods with the actual operation context. Retain context values in existing asynchronous work without changing its cancellation, deadlines, or lifetime. Do not manually attach trace/span IDs; future handler-level telemetry integration is outside scope.

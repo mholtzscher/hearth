@@ -75,8 +75,8 @@ func Connect(ctx context.Context, config Config) (*Session, error) {
 		adapterID:    config.AdapterID,
 		lifecycleCtx: ctx,
 		logger: logger.With(
-			"component", "adapter_session",
-			"adapter_id", config.AdapterID,
+			slog.String("component", "adapter_session"),
+			slog.String("adapter_id", config.AdapterID),
 		),
 		closed:           make(chan struct{}),
 		heartbeatDone:    make(chan struct{}),
@@ -238,7 +238,7 @@ func (session *Session) logRegistrationCompleted(
 	correlationID string,
 	binding Binding,
 ) {
-	attrs := []any{
+	attrs := []slog.Attr{
 		slog.String("event", "adapter.registration_completed"),
 		slog.String("device_id", binding.DeviceID),
 		slog.Int("entity_count", len(binding.Entities)),
@@ -247,7 +247,7 @@ func (session *Session) logRegistrationCompleted(
 	if len(binding.Entities) == 1 {
 		attrs = append(attrs, slog.String("entity_id", binding.Entities[0].EntityID))
 	}
-	session.log().InfoContext(ctx, "adapter registration completed", attrs...)
+	session.log().LogAttrs(ctx, slog.LevelInfo, "adapter registration completed", attrs...)
 	for _, entity := range binding.Entities {
 		session.log().DebugContext(ctx, "adapter registration mapping",
 			slog.String("event", "adapter.registration_mapping"),
@@ -484,11 +484,13 @@ func (session *Session) handleCommand(parent context.Context, message *natsgo.Ms
 	command := request.Data
 	command.ID = request.ID
 	command.CorrelationID = request.CorrelationID
-	session.log().DebugContext(ctx, "command received",
-		slog.String("event", "command.received"),
+	commandLog := session.log().With(
 		slog.String("command_id", request.ID),
 		slog.String("correlation_id", request.CorrelationID),
 		slog.String("entity_id", command.EntityID),
+	)
+	commandLog.DebugContext(ctx, "command received",
+		slog.String("event", "command.received"),
 		slog.String("operation", command.OperationName),
 	)
 	responder := &commandResponder{
@@ -522,11 +524,8 @@ func (session *Session) handleCommand(parent context.Context, message *natsgo.Ms
 		errors.Is(handlerErr, ErrClosed) || errors.Is(handlerErr, ErrRuntimeFenced) {
 		return
 	}
-	session.log().ErrorContext(ctx, "command handler failed",
+	commandLog.ErrorContext(ctx, "command handler failed",
 		slog.String("event", "command.handler_failed"),
-		slog.String("command_id", request.ID),
-		slog.String("correlation_id", request.CorrelationID),
-		slog.String("entity_id", command.EntityID),
 		slog.String("error_code", "handler_failed"),
 	)
 }

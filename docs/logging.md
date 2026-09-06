@@ -61,6 +61,7 @@ Logs are best-effort diagnostics, not authoritative State, durable Command histo
 ## Developer conventions and safety
 
 - Use injected `*slog.Logger` directly. The shared factory attaches `app` and `pid` without changing the global default; subsystem boundaries attach one `component`. Keep fields flat and unique.
+- Use typed attributes (`slog.String`, `slog.Int`, `slog.Int64`, etc.), not alternating key/value arguments. Attach fields shared by multiple records with a child `logger.With`; keep event-specific fields at the emission site. Preserve integer milliseconds with `slog.Int64`, rather than changing the field to a duration string.
 - Write whole, stable lower-case dotted `event` literals with short messages. Add existing canonical IDs and safe typed/fixed codes where useful. Omit unknown fields.
 - Always use context-aware slog methods with the actual operation context, including asynchronous work. Do not carry loggers in context or manually attach trace/span IDs.
 - **Do not add logging-only state:** no health/readiness snapshots, retry counters or warned-class sets, recovery flags, timing loops, or channels enforcing log ordering. Log ordinary retries at Debug; use existing successful boundaries for milestones.
@@ -69,5 +70,23 @@ Logs are best-effort diagnostics, not authoritative State, durable Command histo
 - Never log credentials, token paths/contents, authorization headers, full config, upstream URLs, full subjects/topics, bodies, raw envelopes, parameters, or State—even at Debug. Prefer canonical IDs and available counts over vendor identities/display names.
 - Unknown error strings can contain secrets or rejected values. Use fixed codes and safe stage/operation metadata, not raw errors or regex redaction. NATS asynchronous errors must also pass through a safe handler.
 - Keep tests small: options/formatting, a few positive and negative startup boundaries, sensitive-input sentinels, and operation-context preservation. Preserve business tests; do not duplicate lifecycle matrices just to assert log sequences. Use locked recorders for concurrent logs and `mise run validate` for checks.
+
+For example, when assembly has already attached the component:
+
+```go
+commandLogger := logger.With(
+    slog.String("command_id", string(command.ID)),
+    slog.String("entity_id", string(command.EntityID)),
+)
+commandLogger.InfoContext(ctx, "command created",
+    slog.String("event", "command.created"),
+)
+commandLogger.DebugContext(ctx, "dispatching command",
+    slog.String("event", "command.dispatched"),
+    slog.String("runtime_id", string(runtimeID)),
+)
+```
+
+`With` creates a child without mutating its parent. Do not repeat inherited keys, introduce logger-in-context plumbing, or add a helper solely to wrap one log call. Dynamic attribute lists use `[]slog.Attr` with `LogAttrs`.
 
 Log captures still contain household identity metadata. Keep them outside the repository and review before sharing. Collection infrastructure, rotation, sampling, HTTP access logging, and OpenTelemetry export remain outside scope.

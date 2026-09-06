@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"log/slog"
 	"time"
 
 	"github.com/mholtzscher/hearth/sdk/adapter"
@@ -189,7 +190,11 @@ func (z2m *Adapter) ingestMessage(
 			return z2m.reportUnhealthy(ctx, generation, invalidInventoryReason, state)
 		}
 		state.info = &info
-		z2m.logger.DebugContext(ctx, "received Zigbee2MQTT bridge information", eventKey, "adapter.bridge_info")
+		z2m.logger.DebugContext(
+			ctx,
+			"received Zigbee2MQTT bridge information",
+			slog.String(eventKey, "adapter.bridge_info"),
+		)
 		if !compatibleBridgeInfo(info) {
 			z2m.clearAvailabilityEvidence(state)
 			return z2m.reportUnhealthy(ctx, generation, incompatibleConfigurationReason, state)
@@ -217,8 +222,8 @@ func (z2m *Adapter) ingestMessage(
 			z2m.logger.WarnContext(
 				ctx,
 				"ignored malformed Zigbee2MQTT bridge event",
-				eventKey, "adapter.bridge_event_ignored",
-				"error_code", "invalid_bridge_event",
+				slog.String(eventKey, "adapter.bridge_event_ignored"),
+				slog.String("error_code", "invalid_bridge_event"),
 			)
 		}
 	case bridgeTopicUnknown:

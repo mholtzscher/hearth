@@ -3,6 +3,7 @@ package zigbee2mqtt
 import (
 	"context"
 	"errors"
+	"log/slog"
 )
 
 // adapterComponent is the only component value emitted from this package. It
@@ -41,10 +42,10 @@ func (z2m *Adapter) logReconcileCompleted(
 	z2m.logger.InfoContext(
 		ctx,
 		"Zigbee2MQTT reconciliation completed",
-		eventKey, "adapter.reconcile_completed",
-		"device_count", len(snapshot.devices),
-		"entity_count", entityCount,
-		"isolated_device_count", isolated,
+		slog.String(eventKey, "adapter.reconcile_completed"),
+		slog.Int("device_count", len(snapshot.devices)),
+		slog.Int("entity_count", entityCount),
+		slog.Int("isolated_device_count", isolated),
 	)
 }
 
@@ -55,7 +56,7 @@ func (z2m *Adapter) logIsolatedDevice(ctx context.Context, reasonCode string) {
 	z2m.logger.WarnContext(
 		ctx,
 		"isolated Zigbee2MQTT device",
-		eventKey, "adapter.device_isolated",
-		"reason_code", reasonCode,
+		slog.String(eventKey, "adapter.device_isolated"),
+		slog.String("reason_code", reasonCode),
 	)
 }

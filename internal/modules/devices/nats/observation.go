@@ -60,9 +60,9 @@ func StartObservationConsumer(
 		},
 		jetstream.ConsumeErrHandler(func(_ jetstream.ConsumeContext, _ error) {
 			logger.ErrorContext(baseContext, "observation consume error",
-				transportEventKey, "observation.processing_failed",
-				"stage", "consume",
-				transportErrorCodeKey, "consumer_error",
+				slog.String(transportEventKey, "observation.processing_failed"),
+				slog.String("stage", "consume"),
+				slog.String(transportErrorCodeKey, "consumer_error"),
 			)
 		}),
 	)
@@ -121,9 +121,9 @@ func handleObservationMessage(
 	metadata, metadataErr := message.Metadata()
 	if metadataErr != nil {
 		logger.ErrorContext(ctx, "cannot read observation metadata",
-			transportEventKey, "observation.processing_failed",
-			"stage", "metadata",
-			transportErrorCodeKey, "metadata_unavailable",
+			slog.String(transportEventKey, "observation.processing_failed"),
+			slog.String("stage", "metadata"),
+			slog.String(transportErrorCodeKey, "metadata_unavailable"),
 		)
 		return
 	}
@@ -172,13 +172,14 @@ func handleObservationMessage(
 		sourceUpdatedAt = &parsed
 	}
 	if adapterReceivedAt.After(metadata.Timestamp.Add(observationFutureClockThreshold)) {
-		logger.WarnContext(ctx, "adapter observation clock is ahead of core receive time",
-			transportEventKey, "observation.clock_skew",
-			"observation_id", envelope.ID,
-			"adapter_id", route.AdapterID,
-			"entity_id", route.EntityID,
-			"adapter_received_at", adapterReceivedAt,
-			"observed_at", metadata.Timestamp,
+		logger.With(
+			slog.String("observation_id", envelope.ID),
+			slog.String("adapter_id", route.AdapterID),
+			slog.String("entity_id", route.EntityID),
+		).WarnContext(ctx, "adapter observation clock is ahead of core receive time",
+			slog.String(transportEventKey, "observation.clock_skew"),
+			slog.Time("adapter_received_at", adapterReceivedAt),
+			slog.Time("observed_at", metadata.Timestamp),
 		)
 	}
 
@@ -191,25 +192,27 @@ func handleObservationMessage(
 		ctx, route.AdapterID, devices.RuntimeID(route.RuntimeID), domain, metadata.Timestamp.UTC(),
 	)
 	if projectionErr != nil {
-		logger.ErrorContext(ctx, "project observation",
-			transportEventKey, "observation.processing_failed",
-			"stage", "commit",
-			transportErrorCodeKey, "projection_failed",
-			"stream_sequence", metadata.Sequence.Stream,
-			"observation_id", envelope.ID,
-			"adapter_id", route.AdapterID,
-			"entity_id", route.EntityID,
+		logger.With(
+			slog.Uint64("stream_sequence", metadata.Sequence.Stream),
+			slog.String("observation_id", envelope.ID),
+			slog.String("adapter_id", route.AdapterID),
+			slog.String("entity_id", route.EntityID),
+		).ErrorContext(ctx, "project observation",
+			slog.String(transportEventKey, "observation.processing_failed"),
+			slog.String("stage", "commit"),
+			slog.String(transportErrorCodeKey, "projection_failed"),
 		)
 		return
 	}
 	logObservationProjected(ctx, logger, envelope, route, domain, result)
 	if ackErr := message.Ack(); ackErr != nil {
-		logger.ErrorContext(ctx, "acknowledge projected observation",
-			transportEventKey, "observation.processing_failed",
-			"stage", "ack",
-			transportErrorCodeKey, "ack_failed",
-			"stream_sequence", metadata.Sequence.Stream,
-			"observation_id", envelope.ID,
+		logger.With(
+			slog.Uint64("stream_sequence", metadata.Sequence.Stream),
+			slog.String("observation_id", envelope.ID),
+		).ErrorContext(ctx, "acknowledge projected observation",
+			slog.String(transportEventKey, "observation.processing_failed"),
+			slog.String("stage", "ack"),
+			slog.String(transportErrorCodeKey, "ack_failed"),
 		)
 	}
 }
@@ -225,27 +228,26 @@ func logInvalidObservation(
 	payloadSize int,
 	errorCode, observationID string,
 ) {
-	attributes := []any{
-		transportEventKey, "observation.invalid",
-		transportErrorCodeKey, errorCode,
-		"stream_sequence", sequence,
-		"payload_size", payloadSize,
+	scoped := logger.With(slog.Uint64("stream_sequence", sequence))
+	attributes := []slog.Attr{
+		slog.Int("payload_size", payloadSize),
+		slog.String(transportEventKey, "observation.invalid"),
+		slog.String(transportErrorCodeKey, errorCode),
 	}
 	if observationID != "" {
-		attributes = append(attributes, "observation_id", observationID)
+		attributes = append(attributes, slog.String("observation_id", observationID))
 	}
-	logger.WarnContext(ctx, "acknowledging invalid observation", attributes...)
+	scoped.LogAttrs(ctx, slog.LevelWarn, "acknowledging invalid observation", attributes...)
 	if ackErr := message.Ack(); ackErr != nil {
-		ackAttributes := []any{
-			transportEventKey, "observation.processing_failed",
-			"stage", "ack",
-			transportErrorCodeKey, "ack_failed",
-			"stream_sequence", sequence,
+		ackAttributes := []slog.Attr{
+			slog.String(transportEventKey, "observation.processing_failed"),
+			slog.String("stage", "ack"),
+			slog.String(transportErrorCodeKey, "ack_failed"),
 		}
 		if observationID != "" {
-			ackAttributes = append(ackAttributes, "observation_id", observationID)
+			ackAttributes = append(ackAttributes, slog.String("observation_id", observationID))
 		}
-		logger.ErrorContext(ctx, "acknowledge invalid observation", ackAttributes...)
+		scoped.LogAttrs(ctx, slog.LevelError, "acknowledge invalid observation", ackAttributes...)
 	}
 }
 
@@ -259,23 +261,23 @@ func logObservationProjected(
 	domain devices.Observation,
 	result devices.ProjectionResult,
 ) {
-	attributes := []any{
-		transportEventKey, "observation.projected",
-		"observation_id", envelope.ID,
-		"adapter_id", route.AdapterID,
-		"entity_id", route.EntityID,
-		"disposition", string(result.Disposition),
+	attributes := []slog.Attr{
+		slog.String(transportEventKey, "observation.projected"),
+		slog.String("observation_id", envelope.ID),
+		slog.String("adapter_id", route.AdapterID),
+		slog.String("entity_id", route.EntityID),
+		slog.String("disposition", string(result.Disposition)),
 	}
 	if envelope.CorrelationID != "" {
-		attributes = append(attributes, "correlation_id", envelope.CorrelationID)
+		attributes = append(attributes, slog.String("correlation_id", envelope.CorrelationID))
 	}
 	if domain.RefreshForCommand != nil {
-		attributes = append(attributes, "command_id", string(*domain.RefreshForCommand))
+		attributes = append(attributes, slog.String("command_id", string(*domain.RefreshForCommand)))
 	}
 	if result.Rejection != nil {
-		attributes = append(attributes, "rejection_code", string(*result.Rejection))
+		attributes = append(attributes, slog.String("rejection_code", string(*result.Rejection)))
 	}
-	logger.DebugContext(ctx, "observation projected", attributes...)
+	logger.LogAttrs(ctx, slog.LevelDebug, "observation projected", attributes...)
 }
 
 func domainObservation(

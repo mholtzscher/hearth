@@ -70,11 +70,11 @@ func handleOwnedMappings(
 ) (ownedMappingsResponse, bool) {
 	route, err := natswire.ParseOwnedMappingsSubject(subject)
 	if err != nil {
-		logger.WarnContext(ctx, "discarding owned mappings request with invalid subject",
-			transportEventKey, "owned_mappings.request_discarded",
-			transportErrorCodeKey, "subject_invalid",
-			"mapping_id", request.ID,
-		)
+		logger.With(slog.String("mapping_id", request.ID)).
+			WarnContext(ctx, "discarding owned mappings request with invalid subject",
+				slog.String(transportEventKey, "owned_mappings.request_discarded"),
+				slog.String(transportErrorCodeKey, "subject_invalid"),
+			)
 		return ownedMappingsResponse{}, false
 	}
 	if len(request.Data.Cursor) > maximumOwnedMappingsCursorBytes {
@@ -101,11 +101,12 @@ func handleOwnedMappings(
 	case listErr == nil:
 		response, responseErr := acceptedOwnedMappings(route.AdapterID, page)
 		if responseErr != nil {
-			logger.ErrorContext(ctx, "map owned mappings response",
-				transportEventKey, "owned_mappings.failed",
-				transportErrorCodeKey, "mappings_map_failed",
-				"mapping_id", request.ID,
-				"adapter_id", route.AdapterID,
+			logger.With(
+				slog.String("mapping_id", request.ID),
+				slog.String("adapter_id", route.AdapterID),
+			).ErrorContext(ctx, "map owned mappings response",
+				slog.String(transportEventKey, "owned_mappings.failed"),
+				slog.String(transportErrorCodeKey, "mappings_map_failed"),
 			)
 			return ownedMappingsResponse{}, false
 		}
@@ -115,11 +116,12 @@ func handleOwnedMappings(
 	case errors.Is(listErr, devices.ErrInvalidPage):
 		return rejectedOwnedMappings(ownedMappingsInvalidCursorCode, ownedMappingsInvalidCursorMessage), true
 	default:
-		logger.ErrorContext(ctx, "list owned mappings",
-			transportEventKey, "owned_mappings.failed",
-			transportErrorCodeKey, "mappings_failed",
-			"mapping_id", request.ID,
-			"adapter_id", route.AdapterID,
+		logger.With(
+			slog.String("mapping_id", request.ID),
+			slog.String("adapter_id", route.AdapterID),
+		).ErrorContext(ctx, "list owned mappings",
+			slog.String(transportEventKey, "owned_mappings.failed"),
+			slog.String(transportErrorCodeKey, "mappings_failed"),
 		)
 		return ownedMappingsResponse{}, false
 	}

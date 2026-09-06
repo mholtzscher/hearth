@@ -4,6 +4,7 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"log/slog"
 	"os"
 	"os/signal"
 	"syscall"
@@ -28,39 +29,35 @@ func run() int {
 		fmt.Fprintln(os.Stderr, loggerErr)
 		return 1
 	}
-	processLogger := logger.With("component", "process")
+	processLogger := logger.With(slog.String("component", "process"))
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
-	processLogger.InfoContext(ctx, "hearth-simulator starting", "event", "process.starting")
+	processLogger.InfoContext(ctx, "hearth-simulator starting", slog.String("event", "process.starting"))
 	config, configErr := simulator.LoadConfig(*configPath)
 	if configErr != nil {
 		processLogger.ErrorContext(
 			ctx,
 			"hearth-simulator configuration failed",
-			"event",
-			"process.failed",
-			"error_code",
-			"config_invalid",
-			"stage",
-			"load_config",
+			slog.String("event", "process.failed"),
+			slog.String("error_code", "config_invalid"),
+			slog.String("stage", "load_config"),
 		)
 		return 1
 	}
-	processLogger.InfoContext(ctx, "hearth-simulator configuration loaded", "event", "process.config_loaded")
+	processLogger.InfoContext(
+		ctx, "hearth-simulator configuration loaded", slog.String("event", "process.config_loaded"),
+	)
 	if err := simulator.Run(ctx, config, logger); err != nil {
 		processLogger.ErrorContext(
 			ctx,
 			"hearth-simulator failed",
-			"event",
-			"process.failed",
-			"error_code",
-			"run_failed",
-			"stage",
-			"run",
+			slog.String("event", "process.failed"),
+			slog.String("error_code", "run_failed"),
+			slog.String("stage", "run"),
 		)
 		return 1
 	}
-	processLogger.InfoContext(ctx, "hearth-simulator stopped", "event", "process.stopped")
+	processLogger.InfoContext(ctx, "hearth-simulator stopped", slog.String("event", "process.stopped"))
 	return 0
 }

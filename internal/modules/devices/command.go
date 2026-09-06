@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"time"
 )
 
@@ -221,14 +222,8 @@ func (service *Service) dispatchCommand(
 	if command.RuntimeID == nil {
 		return CommandAcceptance{}, ErrAdapterUnhealthy
 	}
-	service.commandLogger().DebugContext(ctx, "command dispatching",
-		commandEventKey, "command.dispatched",
-		"command_id", string(command.ID),
-		"correlation_id", string(command.CorrelationID),
-		"entity_id", string(command.EntityID),
-		"adapter_id", command.AdapterID,
-		"runtime_id", string(*command.RuntimeID),
-		"operation", string(command.OperationName),
+	service.commandScopedLogger(command).DebugContext(ctx, "command dispatching",
+		slog.String(commandEventKey, "command.dispatched"),
 	)
 	return service.sender.Send(ctx, command.AdapterID, *command.RuntimeID, CommandRequest{
 		ID: command.ID, CorrelationID: command.CorrelationID, EntityID: command.EntityID,

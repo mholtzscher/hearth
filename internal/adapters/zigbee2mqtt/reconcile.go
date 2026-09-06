@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"time"
 
 	"github.com/mholtzscher/hearth/sdk/adapter"
@@ -169,8 +170,8 @@ func (z2m *Adapter) replayPendingAvailability(
 				z2m.logger.WarnContext(
 					ctx,
 					"ignored invalid Zigbee2MQTT availability",
-					eventKey, "adapter.availability_ignored",
-					"error_code", "invalid_availability",
+					slog.String(eventKey, "adapter.availability_ignored"),
+					slog.String("error_code", "invalid_availability"),
 				)
 			}
 		}

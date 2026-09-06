@@ -18,7 +18,7 @@ func Run(ctx context.Context, config Config, logger *slog.Logger) error {
 	if logger == nil {
 		logger = slog.Default()
 	}
-	processLogger := logger.With("component", "process")
+	processLogger := logger.With(slog.String("component", "process"))
 
 	session, err := adapter.Connect(ctx, adapter.Config{
 		AdapterID:       config.AdapterID,
@@ -35,12 +35,9 @@ func Run(ctx context.Context, config Config, logger *slog.Logger) error {
 			processLogger.WarnContext(
 				ctx,
 				"process cleanup failed",
-				"event",
-				"process.cleanup_failed",
-				"stage",
-				"session_close",
-				"error_code",
-				"cleanup_failed",
+				slog.String("event", "process.cleanup_failed"),
+				slog.String("stage", "session_close"),
+				slog.String("error_code", "cleanup_failed"),
 			)
 		}
 	}()

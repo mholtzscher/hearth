@@ -90,10 +90,8 @@ func (supervisor *healthSupervisor) poll(ctx context.Context, now time.Time) {
 		supervisor.logger.ErrorContext(
 			ctx,
 			"expire Adapter leases",
-			"event",
-			"core.lease_expiry_failed",
-			"error_code",
-			"adapter_lease_expiry_failed",
+			slog.String("event", "core.lease_expiry_failed"),
+			slog.String("error_code", "adapter_lease_expiry_failed"),
 		)
 	}
 }

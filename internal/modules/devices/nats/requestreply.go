@@ -32,7 +32,7 @@ func (server *requestReplyServer) Drain() error {
 
 func defaultLogger(logger *slog.Logger) *slog.Logger {
 	if logger == nil {
-		return slog.Default().With("component", "nats")
+		return slog.Default().With(slog.String("component", "nats"))
 	}
 	return logger
 }
@@ -97,28 +97,27 @@ func handleRequest[Req, Resp any](
 	// discard below preserves it even for undecodable input.
 	ctx := natswire.ExtractTrace(context.Background(), message.Header)
 	if message.Reply == "" {
-		logger.WarnContext(ctx, "discarding request without reply subject",
-			transportEventKey, "transport.request_discarded",
-			"kind", kind,
-			transportErrorCodeKey, "missing_reply_subject",
+		logger.With(slog.String("kind", kind)).WarnContext(ctx, "discarding request without reply subject",
+			slog.String(transportEventKey, "transport.request_discarded"),
+			slog.String(transportErrorCodeKey, "missing_reply_subject"),
 		)
 		return
 	}
 	request, err := natswire.Decode[Req](validator, requestSchema, message.Data)
 	if err != nil {
-		logger.WarnContext(ctx, fmt.Sprintf("discarding invalid %s", kind),
-			transportEventKey, "transport.request_discarded",
-			"kind", kind,
-			transportErrorCodeKey, "request_decode_failed",
+		logger.With(slog.String("kind", kind)).WarnContext(ctx, fmt.Sprintf("discarding invalid %s", kind),
+			slog.String(transportEventKey, "transport.request_discarded"),
+			slog.String(transportErrorCodeKey, "request_decode_failed"),
 		)
 		return
 	}
 	if request.CausationID != nil {
-		logger.WarnContext(ctx, fmt.Sprintf("discarding caused %s", kind),
-			transportEventKey, "transport.request_discarded",
-			"kind", kind,
-			transportErrorCodeKey, "causation_present",
-			idField, request.ID,
+		logger.With(
+			slog.String("kind", kind),
+			slog.String(idField, request.ID),
+		).WarnContext(ctx, fmt.Sprintf("discarding caused %s", kind),
+			slog.String(transportEventKey, "transport.request_discarded"),
+			slog.String(transportErrorCodeKey, "causation_present"),
 		)
 		return
 	}
@@ -128,12 +127,13 @@ func handleRequest[Req, Resp any](
 	}
 	replyID, err := newReplyID()
 	if err != nil {
-		logger.ErrorContext(ctx, fmt.Sprintf("generate %s reply ID", kind),
-			transportEventKey, "transport.response_failed",
-			"kind", kind,
-			"stage", "reply_id",
-			transportErrorCodeKey, "reply_id_failed",
-			idField, request.ID,
+		logger.With(
+			slog.String("kind", kind),
+			slog.String(idField, request.ID),
+		).ErrorContext(ctx, fmt.Sprintf("generate %s reply ID", kind),
+			slog.String(transportEventKey, "transport.response_failed"),
+			slog.String("stage", "reply_id"),
+			slog.String(transportErrorCodeKey, "reply_id_failed"),
 		)
 		return
 	}
@@ -145,24 +145,26 @@ func handleRequest[Req, Resp any](
 	}
 	payload, err := natswire.Encode(validator, responseSchema, reply)
 	if err != nil {
-		logger.ErrorContext(ctx, fmt.Sprintf("encode %s response", kind),
-			transportEventKey, "transport.response_failed",
-			"kind", kind,
-			"stage", "encode",
-			transportErrorCodeKey, "response_encode_failed",
-			idField, request.ID,
+		logger.With(
+			slog.String("kind", kind),
+			slog.String(idField, request.ID),
+		).ErrorContext(ctx, fmt.Sprintf("encode %s response", kind),
+			slog.String(transportEventKey, "transport.response_failed"),
+			slog.String("stage", "encode"),
+			slog.String(transportErrorCodeKey, "response_encode_failed"),
 		)
 		return
 	}
 	replyMessage := &natsgo.Msg{Subject: message.Reply, Header: make(natsgo.Header), Data: payload}
 	natswire.InjectTrace(ctx, replyMessage.Header)
 	if publishErr := connection.PublishMsg(replyMessage); publishErr != nil {
-		logger.ErrorContext(ctx, fmt.Sprintf("publish %s response", kind),
-			transportEventKey, "transport.response_failed",
-			"kind", kind,
-			"stage", "publish",
-			transportErrorCodeKey, "response_publish_failed",
-			idField, request.ID,
+		logger.With(
+			slog.String("kind", kind),
+			slog.String(idField, request.ID),
+		).ErrorContext(ctx, fmt.Sprintf("publish %s response", kind),
+			slog.String(transportEventKey, "transport.response_failed"),
+			slog.String("stage", "publish"),
+			slog.String(transportErrorCodeKey, "response_publish_failed"),
 		)
 	}
 }
