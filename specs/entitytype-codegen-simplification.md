@@ -146,7 +146,7 @@ func RunContractExamples(t *testing.T, examplesJSON []byte, probe ContractProbe)
 ```
 
 - Parse the existing `examples.json` shape in the runner; no authoring-format change. Use private structs matching `cases`, `support`, `states`, `operations`, `parameters`, and `outcomes`.
-- Retain generator-side example-shape and coverage validation. The runner independently rejects malformed input, missing callbacks, unknown operations, and empty case sets rather than silently skipping them.
+- Retain generator-side example-shape and coverage validation. Require every manifest-declared operation to appear in at least one case's support and operation examples; reject an examples file that omits an optional operation from every case, and cover this invariant with a generator rejection test. The runner independently rejects malformed input, missing callbacks, unknown operations, and empty case sets rather than silently skipping them.
 - Preserve all cases and flags. Report type/package context through the caller and named subtests for case, operation, category, and example index.
 - Generate test-only embedding of the manifest's exact examples path. Leave production schema embedding unchanged.
 - Generate one typed callback per operation, not one assertion block per example. Callbacks decode/validate inputs and return actual errors or outcomes; only the handwritten runner compares expected results.
