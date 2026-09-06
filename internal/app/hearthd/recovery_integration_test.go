@@ -2,6 +2,7 @@ package hearthd //nolint:testpackage // Tests exercise package-private assembly 
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 	"net"
 	"path/filepath"
@@ -173,8 +174,8 @@ func TestCoreStartupInterruptsActiveCommandsWithoutRedispatch(t *testing.T) {
 
 // This test protects clean shutdown when the startup context is cancelled
 // while the core NATS connection is blocked, and fails if cancellation
-// surfaces as a startup error instead of nil.
-func TestRunReturnsNilWhenStartupNATSConnectCancelled(t *testing.T) {
+// surfaces as the unrelated NATS connection error.
+func TestRunReturnsCancellationWhenStartupNATSConnectCancelled(t *testing.T) {
 	t.Parallel()
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
@@ -215,8 +216,8 @@ func TestRunReturnsNilWhenStartupNATSConnectCancelled(t *testing.T) {
 	}
 	select {
 	case runErr := <-runErrors:
-		if runErr != nil {
-			t.Fatalf("cancelled startup NATS connect returned %v, want nil", runErr)
+		if !errors.Is(runErr, context.Canceled) {
+			t.Fatalf("cancelled startup NATS connect returned %v, want context.Canceled", runErr)
 		}
 	case <-time.After(5 * time.Second):
 		t.Fatal("hearthd did not stop after startup cancellation")
