@@ -123,7 +123,10 @@ func (buffer *lockedBuffer) String() string {
 //nolint:gocognit,gocyclo,cyclop // Integration harness setup keeps resource ownership visible in one place.
 func newSimulatorMatrixHarness(t *testing.T, scenario string, options simulatorMatrixOptions) *simulatorMatrixHarness {
 	t.Helper()
-	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	// Every SDK call in a test shares this harness context, so the budget
+	// must cover a full takeover cycle (claim, expiry, replacement claim)
+	// even when the CI runner is starved by concurrent lint/vet tasks.
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	harness := &simulatorMatrixHarness{
 		test: t, ctx: ctx, cancel: cancel, logs: &lockedBuffer{}, simulatorErrors: make(chan error, 1),
 	}
