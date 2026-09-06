@@ -120,14 +120,12 @@ func (session *Session) publishObservation(
 	headers.Set(natsgo.MsgIdHdr, generated)
 	natswire.InjectTrace(publicationContext, headers)
 
-	episode := newRetryEpisode("observation_publish", "nats")
 	for {
 		message := &natsgo.Msg{Subject: subject, Header: headers, Data: payload}
 		if _, err = session.jetstream.PublishMsg(publicationContext, message); err == nil {
 			if terminalErr := session.sessionError(); terminalErr != nil {
 				return observationID, terminalErr
 			}
-			episode.succeeded(ctx, session.log())
 			session.logPublishedObservation(ctx, observationID, observation, link)
 			return observationID, nil
 		}
@@ -140,9 +138,11 @@ func (session *Session) publishObservation(
 		if !isTransientPublishError(err) {
 			return observationID, err
 		}
-		episode.failed(
-			publicationContext, session.log(),
-			slog.String("error_code", requestErrorCode(err)), requestRetryWait,
+		session.log().DebugContext(publicationContext, "retrying operation",
+			slog.String("event", "dependency.retrying"),
+			slog.String("operation", "observation_publish"),
+			slog.String("dependency", "nats"),
+			slog.String("error_code", requestErrorCode(err)),
 		)
 		timer := time.NewTimer(requestRetryWait)
 		select {

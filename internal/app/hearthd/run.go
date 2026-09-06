@@ -7,7 +7,6 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
-	"sync/atomic"
 	"time"
 
 	natsgo "github.com/nats-io/nats.go"
@@ -56,44 +55,6 @@ func failStage(stage string, err error) error {
 	return &runStageError{stage: stage, err: err}
 }
 
-// failStartup records the process teardown a startup failure initiates before
-// deferred cleanup runs, then returns the staged error. It is used once the
-// database is open, where returning tears down the acquired database handle
-// and any later NATS connections, transports, supervisors, and consumers
-// through deferred cleanup. Earlier failures acquire no running process
-// resources, so they return through failStage without a stopping record.
-// Serve-phase and shutdown paths log stopping at their own sites.
-func failStartup(ctx context.Context, logger *slog.Logger, stage string, err error) error {
-	if err == nil {
-		return nil
-	}
-	logger.InfoContext(
-		ctx,
-		"hearthd stopping",
-		"event",
-		"process.stopping",
-		"reason_code",
-		startupReason(ctx),
-		"stage",
-		stage,
-	)
-	// connectCoreNATS already stages its errors, so preserve a staged error
-	// instead of wrapping it twice.
-	if _, ok := errors.AsType[*runStageError](err); ok {
-		return err
-	}
-	return failStage(stage, err)
-}
-
-// startupReason distinguishes cancellation from failure for a startup
-// teardown record.
-func startupReason(ctx context.Context) string {
-	if ctx.Err() != nil {
-		return "context_cancelled"
-	}
-	return "startup_failed"
-}
-
 func Run(ctx context.Context, config Config, logger *slog.Logger) error { //nolint:funlen // Linear resource lifecycle.
 	if err := config.Validate(); err != nil {
 		return failStage("validate_config", err)
@@ -117,44 +78,38 @@ func Run(ctx context.Context, config Config, logger *slog.Logger) error { //noli
 		logCleanupFailure(ctx, processLogger, "close_database", database.Close())
 	}()
 	if err := platformdb.Migrate(ctx, database); err != nil {
-		return failStartup(ctx, processLogger, "migrate_database", err)
+		return failStage("migrate_database", err)
 	}
 	logStartupStage(ctx, coreLogger, "database_migrated")
 	repository := devices.NewSQLiteRepository(database, catalog)
 	startupTime := time.Now().UTC()
 	if err := repository.InterruptActiveCommands(ctx, startupTime); err != nil {
-		return failStartup(ctx, processLogger, "interrupt_commands", fmt.Errorf("interrupt active commands: %w", err))
+		return failStage("interrupt_commands", fmt.Errorf("interrupt active commands: %w", err))
 	}
 	logStartupStage(ctx, coreLogger, "active_commands_interrupted")
 	// Observation pruning runs only on the hourly pass below, so startup never
 	// sweeps retained history and uptime under one hour means no sweep yet.
 
-	natsClosing := &atomic.Bool{}
-	connection, connectErr := connectCoreNATS(ctx, config.NATSURL, natsLogger, natsClosing)
+	connection, connectErr := connectCoreNATS(ctx, config.NATSURL, natsLogger)
 	if connectErr != nil {
-		return failStartup(ctx, processLogger, "connect_nats", connectErr)
+		return connectErr
 	}
-	defer func() {
-		natsClosing.Store(true)
-		connection.Close()
-	}()
+	defer connection.Close()
 	js, jetStreamErr := jetstream.New(connection)
 	if jetStreamErr != nil {
-		return failStartup(
-			ctx,
-			processLogger,
+		return failStage(
 			"provision_jetstream",
 			fmt.Errorf("create JetStream client: %w", jetStreamErr),
 		)
 	}
 	durable, provisionErr := devicesnats.ProvisionObservationResources(ctx, js)
 	if provisionErr != nil {
-		return failStartup(ctx, processLogger, "provision_jetstream", provisionErr)
+		return failStage("provision_jetstream", provisionErr)
 	}
 	logStartupStage(ctx, coreLogger, "jetstream_provisioned")
 	validator, compileErr := contractsv1.Compile()
 	if compileErr != nil {
-		return failStartup(ctx, processLogger, "compile_schemas", fmt.Errorf("compile wire schemas: %w", compileErr))
+		return failStage("compile_schemas", fmt.Errorf("compile wire schemas: %w", compileErr))
 	}
 	commandSender := devicesnats.NewCommandSender(connection, validator)
 	service := devices.NewService(
@@ -166,7 +121,7 @@ func Run(ctx context.Context, config Config, logger *slog.Logger) error { //noli
 
 	sessions, sessionErr := devicesnats.StartSessionServer(connection, validator, service, service, natsLogger)
 	if sessionErr != nil {
-		return failStartup(ctx, processLogger, "start_transports", sessionErr)
+		return failStage("start_transports", sessionErr)
 	}
 	defer func() {
 		logCleanupFailure(ctx, processLogger, "drain_session_server", sessions.Drain())
@@ -175,14 +130,14 @@ func Run(ctx context.Context, config Config, logger *slog.Logger) error { //noli
 		connection, validator, service, natsLogger,
 	)
 	if availabilityErr != nil {
-		return failStartup(ctx, processLogger, "start_transports", availabilityErr)
+		return failStage("start_transports", availabilityErr)
 	}
 	defer func() {
 		logCleanupFailure(ctx, processLogger, "drain_availability_server", availability.Drain())
 	}()
 	registrations, registrationErr := devicesnats.StartRegistrationServer(connection, validator, service, natsLogger)
 	if registrationErr != nil {
-		return failStartup(ctx, processLogger, "start_transports", registrationErr)
+		return failStage("start_transports", registrationErr)
 	}
 	defer func() {
 		logCleanupFailure(ctx, processLogger, "drain_registration_server", registrations.Drain())
@@ -191,14 +146,14 @@ func Run(ctx context.Context, config Config, logger *slog.Logger) error { //noli
 		connection, validator, service, natsLogger,
 	)
 	if ownedMappingsErr != nil {
-		return failStartup(ctx, processLogger, "start_transports", ownedMappingsErr)
+		return failStage("start_transports", ownedMappingsErr)
 	}
 	defer func() {
 		logCleanupFailure(ctx, processLogger, "drain_owned_mappings_server", ownedMappings.Drain())
 	}()
 	enablement, enablementErr := devicesnats.StartEntityEnablementServer(connection, validator, service, natsLogger)
 	if enablementErr != nil {
-		return failStartup(ctx, processLogger, "start_transports", enablementErr)
+		return failStage("start_transports", enablementErr)
 	}
 	defer func() {
 		logCleanupFailure(ctx, processLogger, "drain_enablement_server", enablement.Drain())
@@ -206,7 +161,7 @@ func Run(ctx context.Context, config Config, logger *slog.Logger) error { //noli
 	logStartupStage(ctx, coreLogger, "nats_servers_started")
 	observations, observationErr := devicesnats.StartObservationConsumer(ctx, durable, validator, service, natsLogger)
 	if observationErr != nil {
-		return failStartup(ctx, processLogger, "start_observation_consumer", observationErr)
+		return failStage("start_observation_consumer", observationErr)
 	}
 	defer observations.Stop()
 	logStartupStage(ctx, coreLogger, "observation_consumer_started")
@@ -219,7 +174,7 @@ func Run(ctx context.Context, config Config, logger *slog.Logger) error { //noli
 	// address is actually held; a bind failure never produces that event.
 	listener, listenErr := (&net.ListenConfig{}).Listen(ctx, "tcp", config.HTTPAddr)
 	if listenErr != nil {
-		return failStartup(ctx, processLogger, "http_listen", listenErr)
+		return failStage("http_listen", listenErr)
 	}
 	coreLogger.InfoContext(
 		ctx,
@@ -239,27 +194,10 @@ func Run(ctx context.Context, config Config, logger *slog.Logger) error { //noli
 	select {
 	case err := <-serverErrors:
 		if !errors.Is(err, http.ErrServerClosed) {
-			natsClosing.Store(true)
-			processLogger.InfoContext(
-				ctx,
-				"hearthd stopping",
-				"event",
-				"process.stopping",
-				"reason_code",
-				"serve_failed",
-			)
 			return failStage("serve_http", fmt.Errorf("serve HTTP: %w", err))
 		}
-		natsClosing.Store(true)
-		processLogger.InfoContext(
-			ctx, "hearthd stopping", "event", "process.stopping", "reason_code", "server_closed",
-		)
 		return nil
 	case <-ctx.Done():
-		natsClosing.Store(true)
-		processLogger.InfoContext(
-			ctx, "hearthd stopping", "event", "process.stopping", "reason_code", "context_cancelled",
-		)
 		return shutdownCore(
 			healthSupervisor, server, observations, enablement, ownedMappings, registrations, availability, sessions,
 			connection,
@@ -331,7 +269,6 @@ func connectCoreNATS(
 	ctx context.Context,
 	url string,
 	logger *slog.Logger,
-	closing *atomic.Bool,
 ) (*natsgo.Conn, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, failStage("connect_nats", err)
@@ -343,8 +280,8 @@ func connectCoreNATS(
 		natsgo.Name("hearthd"),
 		natsgo.MaxReconnects(-1),
 		natsgo.ReconnectWait(natsReconnectWait),
-		natsgo.DisconnectErrHandler(func(_ *natsgo.Conn, _ error) {
-			if closing.Load() || ctx.Err() != nil {
+		natsgo.DisconnectErrHandler(func(_ *natsgo.Conn, disconnectErr error) {
+			if disconnectErr == nil || ctx.Err() != nil {
 				return
 			}
 			logger.WarnContext(
@@ -359,13 +296,13 @@ func connectCoreNATS(
 			)
 		}),
 		natsgo.ReconnectHandler(func(_ *natsgo.Conn) {
-			if closing.Load() || ctx.Err() != nil {
+			if ctx.Err() != nil {
 				return
 			}
 			logger.InfoContext(ctx, "NATS reconnected", "event", "dependency.reconnected", "dependency", "nats")
 		}),
 		natsgo.ErrorHandler(func(_ *natsgo.Conn, _ *natsgo.Subscription, _ error) {
-			if closing.Load() || ctx.Err() != nil {
+			if ctx.Err() != nil {
 				return
 			}
 			logger.ErrorContext(ctx, "NATS operation failed",
@@ -373,20 +310,7 @@ func connectCoreNATS(
 			)
 		}),
 		natsgo.ClosedHandler(func(_ *natsgo.Conn) {
-			if closing.Load() || ctx.Err() != nil {
-				logger.DebugContext(ctx, "NATS connection closed", "event", "dependency.closed", "dependency", "nats")
-				return
-			}
-			logger.ErrorContext(
-				ctx,
-				"NATS connection closed unexpectedly",
-				"event",
-				"dependency.closed",
-				"dependency",
-				"nats",
-				"reason_code",
-				"unexpected_close",
-			)
+			logger.DebugContext(ctx, "NATS connection closed", "event", "dependency.closed", "dependency", "nats")
 		}),
 	}
 	if deadline, ok := ctx.Deadline(); ok {
@@ -426,9 +350,7 @@ func pruneObservations(
 					"error_code",
 					"observations_prune_failed",
 				)
-				continue
 			}
-			logger.DebugContext(ctx, "pruned observations", "event", "core.observations_pruned")
 		}
 	}
 }

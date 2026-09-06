@@ -1,9 +1,7 @@
 package homeassistant
 
 import (
-	"context"
 	"errors"
-	"time"
 )
 
 // adapterComponent is the only component value emitted from this package. It
@@ -16,22 +14,8 @@ const adapterComponent = "homeassistant"
 // literals at each emission site so searching a value finds its site.
 const eventKey = "event"
 
-// retryEpisode tracks one consecutive run of retryable connection failures so
-// the first failure of each distinct failure class warns once while repeats
-// stay at Debug. Warned classes are remembered until a successful recovery
-// resets the episode. It is owned by a single Run goroutine; no locking is
-// needed.
-type retryEpisode struct {
-	attempts  int
-	warned    map[string]struct{}
-	startedAt time.Time
-}
-
-func (episode *retryEpisode) active() bool { return episode.attempts > 0 }
-
-// homeAssistantErrorCode maps a retry-loop failure to a fixed diagnostic
-// classification. The code never carries URLs, tokens, payloads, or upstream
-// free-form text.
+// homeAssistantErrorCode maps a failure to a fixed diagnostic classification.
+// The code never carries URLs, tokens, payloads, or upstream free-form text.
 func homeAssistantErrorCode(err error) string {
 	if _, ok := errors.AsType[*AuthenticationError](err); ok {
 		return "authentication_failed"
@@ -43,63 +27,4 @@ func homeAssistantErrorCode(err error) string {
 		return "session_operation_failed"
 	}
 	return "upstream_connection_failed"
-}
-
-// logConnectionRetry records one failed reconnect attempt. The first attempt
-// with a distinct failure class logs at Warn; repeats of an already warned
-// class in the same episode log at Debug.
-func (homeAssistant *Adapter) logConnectionRetry(
-	ctx context.Context,
-	episode *retryEpisode,
-	err error,
-	wait time.Duration,
-) {
-	code := homeAssistantErrorCode(err)
-	episode.attempts++
-	if episode.attempts == 1 {
-		episode.startedAt = time.Now()
-	}
-	_, seen := episode.warned[code]
-	warn := !seen
-	if warn {
-		if episode.warned == nil {
-			episode.warned = make(map[string]struct{})
-		}
-		episode.warned[code] = struct{}{}
-	}
-	args := []any{
-		eventKey, "dependency.retrying",
-		"dependency", adapterComponent,
-		"error_code", code,
-		"attempt", episode.attempts,
-		"retry_in_ms", max(wait.Milliseconds(), 0),
-	}
-	if warn {
-		homeAssistant.logger.WarnContext(ctx, "Home Assistant connection retrying", args...)
-		return
-	}
-	homeAssistant.logger.DebugContext(ctx, "Home Assistant connection retrying", args...)
-}
-
-// logUpstreamReady records a successful subscription, snapshot, and buffer
-// reconciliation. It closes any open retry episode with one recovery record
-// and then emits adapter readiness exactly once for the connection.
-func (homeAssistant *Adapter) logUpstreamReady(ctx context.Context, episode *retryEpisode) {
-	if episode.active() {
-		homeAssistant.logger.InfoContext(
-			ctx,
-			"Home Assistant connection recovered",
-			eventKey, "dependency.recovered",
-			"dependency", adapterComponent,
-			"attempts", episode.attempts,
-			"duration_ms", max(time.Since(episode.startedAt).Milliseconds(), 0),
-		)
-		*episode = retryEpisode{}
-	}
-	homeAssistant.logger.InfoContext(
-		ctx,
-		"Home Assistant upstream ready",
-		eventKey, "adapter.upstream_ready",
-		"entity_id", homeAssistant.config.EntityID,
-	)
 }

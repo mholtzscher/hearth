@@ -14,35 +14,33 @@ import (
 	"github.com/mholtzscher/hearth/sdk/adapter"
 )
 
-// logRecordSnapshot is one captured slog record with its resolved attributes.
-type logRecordSnapshot struct {
+// captureHandler is a minimal slog handler for asserting structured records.
+type captureStore struct {
+	mutex   sync.Mutex
+	records []capturedRecord
+}
+
+type capturedRecord struct {
 	level   slog.Level
 	message string
 	attrs   map[string]any
 }
 
-// recordingStore holds captured records behind a mutex so connection and
-// runtime goroutines can log while the test polls without data races.
-type recordingStore struct {
-	mutex   sync.Mutex
-	records []logRecordSnapshot
-}
-
-type recordingHandler struct {
-	level  slog.Level
+type captureHandler struct {
+	store  *captureStore
 	prefix []slog.Attr
-	store  *recordingStore
+	level  slog.Level
 }
 
-func newRecordingHandler() *recordingHandler {
-	return &recordingHandler{level: slog.LevelDebug, store: &recordingStore{}}
+func newCaptureHandler() *captureHandler {
+	return &captureHandler{store: &captureStore{}, level: slog.LevelDebug}
 }
 
-func (handler *recordingHandler) Enabled(_ context.Context, level slog.Level) bool {
+func (handler *captureHandler) Enabled(_ context.Context, level slog.Level) bool {
 	return level >= handler.level
 }
 
-func (handler *recordingHandler) Handle(_ context.Context, record slog.Record) error {
+func (handler *captureHandler) Handle(_ context.Context, record slog.Record) error {
 	attrs := make(map[string]any, len(handler.prefix)+record.NumAttrs())
 	for _, attr := range handler.prefix {
 		attrs[attr.Key] = attr.Value.Any()
@@ -52,28 +50,26 @@ func (handler *recordingHandler) Handle(_ context.Context, record slog.Record) e
 		return true
 	})
 	handler.store.mutex.Lock()
-	handler.store.records = append(handler.store.records, logRecordSnapshot{
+	handler.store.records = append(handler.store.records, capturedRecord{
 		level: record.Level, message: record.Message, attrs: attrs,
 	})
 	handler.store.mutex.Unlock()
 	return nil
 }
 
-func (handler *recordingHandler) WithAttrs(attrs []slog.Attr) slog.Handler {
-	return &recordingHandler{
-		level: handler.level, prefix: append(handler.prefix, attrs...), store: handler.store,
-	}
+func (handler *captureHandler) WithAttrs(attrs []slog.Attr) slog.Handler {
+	return &captureHandler{store: handler.store, prefix: append(handler.prefix, attrs...), level: handler.level}
 }
 
-func (handler *recordingHandler) WithGroup(string) slog.Handler { return handler }
+func (handler *captureHandler) WithGroup(string) slog.Handler { return handler }
 
-func (handler *recordingHandler) snapshot() []logRecordSnapshot {
+func (handler *captureHandler) snapshot() []capturedRecord {
 	handler.store.mutex.Lock()
 	defer handler.store.mutex.Unlock()
-	return append([]logRecordSnapshot(nil), handler.store.records...)
+	return append([]capturedRecord(nil), handler.store.records...)
 }
 
-func (handler *recordingHandler) count(level slog.Level, event string) int {
+func (handler *captureHandler) count(level slog.Level, event string) int {
 	total := 0
 	for _, record := range handler.snapshot() {
 		if record.level == level && record.attrs["event"] == event {
@@ -83,16 +79,16 @@ func (handler *recordingHandler) count(level slog.Level, event string) int {
 	return total
 }
 
-func (handler *recordingHandler) first(level slog.Level, event string) (logRecordSnapshot, bool) {
+func (handler *captureHandler) first(level slog.Level, event string) (capturedRecord, bool) {
 	for _, record := range handler.snapshot() {
 		if record.level == level && record.attrs["event"] == event {
 			return record, true
 		}
 	}
-	return logRecordSnapshot{}, false
+	return capturedRecord{}, false
 }
 
-func (handler *recordingHandler) containsText(text string) bool {
+func (handler *captureHandler) containsText(text string) bool {
 	for _, record := range handler.snapshot() {
 		if strings.Contains(record.message, text) {
 			return true
@@ -106,10 +102,10 @@ func (handler *recordingHandler) containsText(text string) bool {
 	return false
 }
 
-func newRecordingAdapter(
+func newCaptureAdapter(
 	t *testing.T,
 	session *fakeSession,
-	handler *recordingHandler,
+	handler *captureHandler,
 	dialer mqttDialer,
 ) *Adapter {
 	t.Helper()
@@ -138,7 +134,7 @@ func emitBridgeReady(
 	connection.emit("zigbee2mqtt/bridge/devices", inventory, true, now)
 }
 
-func waitForLogCondition(t *testing.T, handler *recordingHandler, condition func() bool) {
+func waitForCapture(t *testing.T, handler *captureHandler, condition func() bool) {
 	t.Helper()
 	deadline := time.Now().Add(5 * time.Second)
 	for !condition() {
@@ -151,9 +147,9 @@ func waitForLogCondition(t *testing.T, handler *recordingHandler, condition func
 
 func TestAdapterAttachesBoundedComponentOnce(t *testing.T) {
 	t.Parallel()
-	handler := newRecordingHandler()
+	handler := newCaptureHandler()
 	session := newFakeSession(&runtimeRecorder{})
-	z2m := newRecordingAdapter(t, session, handler, &fakeDialer{})
+	z2m := newCaptureAdapter(t, session, handler, &fakeDialer{})
 
 	z2m.logIsolatedDevice(context.Background(), rejectionDisabled)
 
@@ -175,9 +171,48 @@ func TestAdapterAttachesBoundedComponentOnce(t *testing.T) {
 	}
 }
 
+func TestConnectionRetryIsDebugWithFixedCode(t *testing.T) {
+	t.Parallel()
+	handler := newCaptureHandler()
+	session := newFakeSession(&runtimeRecorder{})
+	z2m := newCaptureAdapter(t, session, handler, &fakeDialer{})
+
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() { done <- z2m.Run(ctx) }()
+	waitForCapture(t, handler, func() bool {
+		return handler.count(slog.LevelDebug, "dependency.retrying") >= 1
+	})
+	cancel()
+	if err := <-done; err != nil && !errors.Is(err, context.Canceled) {
+		t.Fatal(err)
+	}
+
+	if got := handler.count(slog.LevelWarn, "dependency.retrying"); got != 0 {
+		t.Fatalf("warn retry records = %d, want 0 (retries stay at Debug)", got)
+	}
+	for _, record := range handler.snapshot() {
+		if record.attrs["event"] != "dependency.retrying" {
+			continue
+		}
+		if _, exists := record.attrs["error_code"]; !exists {
+			t.Fatalf("retry record misses error_code: %#v", record.attrs)
+		}
+		if _, exists := record.attrs["error"]; exists {
+			t.Fatalf("retry record carries arbitrary error text: %#v", record.attrs)
+		}
+	}
+	if handler.containsText("no fake MQTT connection") {
+		t.Fatal("logs leak raw connection error text")
+	}
+	if handler.containsText("tcp://127.0.0.1:1883") {
+		t.Fatal("logs leak configured MQTT URL")
+	}
+}
+
 func TestReconcileCompletedReportsActivatedCounts(t *testing.T) {
 	t.Parallel()
-	handler := newRecordingHandler()
+	handler := newCaptureHandler()
 	recorder := &runtimeRecorder{}
 	session := newFakeSession(recorder)
 	inventory, err := json.Marshal([]upstreamDevice{eligibleDevice()})
@@ -189,14 +224,13 @@ func TestReconcileCompletedReportsActivatedCounts(t *testing.T) {
 	connection.onSubscribe = func(connection *fakeConnection) {
 		emitBridgeReady(t, connection, now, inventory)
 	}
-	z2m := newRecordingAdapter(t, session, handler, &fakeDialer{connections: []*fakeConnection{connection}})
+	z2m := newCaptureAdapter(t, session, handler, &fakeDialer{connections: []*fakeConnection{connection}})
 
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
 	go func() { done <- z2m.Run(ctx) }()
-	waitForLogCondition(t, handler, func() bool {
-		return handler.count(slog.LevelInfo, "adapter.reconcile_completed") == 1 &&
-			handler.count(slog.LevelInfo, "adapter.upstream_ready") == 1
+	waitForCapture(t, handler, func() bool {
+		return handler.count(slog.LevelInfo, "adapter.reconcile_completed") == 1
 	})
 	cancel()
 	if err = <-done; err != nil {
@@ -216,14 +250,11 @@ func TestReconcileCompletedReportsActivatedCounts(t *testing.T) {
 	if record.attrs["isolated_device_count"] != int64(0) {
 		t.Fatalf("isolated_device_count = %v, want 0", record.attrs["isolated_device_count"])
 	}
-	if handler.count(slog.LevelInfo, "dependency.recovered") != 0 {
-		t.Fatalf("first startup must not emit recovery: %#v", handler.snapshot())
-	}
 }
 
 func TestReconcileCompletedReportsZeroSupportedDevices(t *testing.T) {
 	t.Parallel()
-	handler := newRecordingHandler()
+	handler := newCaptureHandler()
 	recorder := &runtimeRecorder{}
 	session := newFakeSession(recorder)
 	connection := newFakeConnection(recorder)
@@ -231,12 +262,12 @@ func TestReconcileCompletedReportsZeroSupportedDevices(t *testing.T) {
 	connection.onSubscribe = func(connection *fakeConnection) {
 		emitBridgeReady(t, connection, now, []byte(`[]`))
 	}
-	z2m := newRecordingAdapter(t, session, handler, &fakeDialer{connections: []*fakeConnection{connection}})
+	z2m := newCaptureAdapter(t, session, handler, &fakeDialer{connections: []*fakeConnection{connection}})
 
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
 	go func() { done <- z2m.Run(ctx) }()
-	waitForLogCondition(t, handler, func() bool {
+	waitForCapture(t, handler, func() bool {
 		return handler.count(slog.LevelInfo, "adapter.reconcile_completed") == 1
 	})
 	cancel()
@@ -257,14 +288,11 @@ func TestReconcileCompletedReportsZeroSupportedDevices(t *testing.T) {
 			t.Fatalf("%s = %v, want explicit 0", key, value)
 		}
 	}
-	if handler.count(slog.LevelInfo, "adapter.upstream_ready") != 1 {
-		t.Fatalf("records = %#v", handler.snapshot())
-	}
 }
 
 func TestReconcileCompletedCountsSensorOnlyEntities(t *testing.T) {
 	t.Parallel()
-	handler := newRecordingHandler()
+	handler := newCaptureHandler()
 	recorder := &runtimeRecorder{}
 	session := newFakeSession(recorder)
 	inventory, err := json.Marshal([]upstreamDevice{eligibleSensorDevice("temperature", 1)})
@@ -276,14 +304,13 @@ func TestReconcileCompletedCountsSensorOnlyEntities(t *testing.T) {
 	connection.onSubscribe = func(connection *fakeConnection) {
 		emitBridgeReady(t, connection, now, inventory)
 	}
-	z2m := newRecordingAdapter(t, session, handler, &fakeDialer{connections: []*fakeConnection{connection}})
+	z2m := newCaptureAdapter(t, session, handler, &fakeDialer{connections: []*fakeConnection{connection}})
 
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
 	go func() { done <- z2m.Run(ctx) }()
-	waitForLogCondition(t, handler, func() bool {
-		return handler.count(slog.LevelInfo, "adapter.reconcile_completed") == 1 &&
-			handler.count(slog.LevelInfo, "adapter.upstream_ready") == 1
+	waitForCapture(t, handler, func() bool {
+		return handler.count(slog.LevelInfo, "adapter.reconcile_completed") == 1
 	})
 	cancel()
 	if err = <-done; err != nil {
@@ -312,7 +339,7 @@ func TestIsolatedDeviceOmitsVendorIdentity(t *testing.T) {
 		friendlySentinel = "sentinel-friendly-9z8q"
 		modelSentinel    = "sentinel-model-7x6w"
 	)
-	handler := newRecordingHandler()
+	handler := newCaptureHandler()
 	recorder := &runtimeRecorder{}
 	session := newFakeSession(recorder)
 	device := eligibleDevice()
@@ -327,12 +354,12 @@ func TestIsolatedDeviceOmitsVendorIdentity(t *testing.T) {
 	connection.onSubscribe = func(connection *fakeConnection) {
 		emitBridgeReady(t, connection, now, inventory)
 	}
-	z2m := newRecordingAdapter(t, session, handler, &fakeDialer{connections: []*fakeConnection{connection}})
+	z2m := newCaptureAdapter(t, session, handler, &fakeDialer{connections: []*fakeConnection{connection}})
 
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
 	go func() { done <- z2m.Run(ctx) }()
-	waitForLogCondition(t, handler, func() bool {
+	waitForCapture(t, handler, func() bool {
 		return handler.count(slog.LevelInfo, "adapter.reconcile_completed") == 1 &&
 			handler.count(slog.LevelWarn, "adapter.device_isolated") == 1
 	})
@@ -363,7 +390,7 @@ func TestMalformedUpstreamPayloadsStayOutOfLogs(t *testing.T) {
 		availabilitySentinel = "SENTINEL-BAD-AVAIL-3c4d"
 		bridgeEventSentinel  = "SENTINEL-BRIDGE-EVT-5e6f"
 	)
-	handler := newRecordingHandler()
+	handler := newCaptureHandler()
 	recorder := &runtimeRecorder{}
 	session := newFakeSession(recorder)
 	inventory, err := json.Marshal([]upstreamDevice{eligibleDevice()})
@@ -375,13 +402,13 @@ func TestMalformedUpstreamPayloadsStayOutOfLogs(t *testing.T) {
 	connection.onSubscribe = func(connection *fakeConnection) {
 		emitBridgeReady(t, connection, now, inventory)
 	}
-	z2m := newRecordingAdapter(t, session, handler, &fakeDialer{connections: []*fakeConnection{connection}})
+	z2m := newCaptureAdapter(t, session, handler, &fakeDialer{connections: []*fakeConnection{connection}})
 
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
 	go func() { done <- z2m.Run(ctx) }()
-	waitForLogCondition(t, handler, func() bool {
-		return handler.count(slog.LevelInfo, "adapter.upstream_ready") == 1
+	waitForCapture(t, handler, func() bool {
+		return handler.count(slog.LevelInfo, "adapter.reconcile_completed") == 1
 	})
 	connection.emit(
 		"zigbee2mqtt/test-light",
@@ -396,7 +423,7 @@ func TestMalformedUpstreamPayloadsStayOutOfLogs(t *testing.T) {
 		now.Add(time.Second),
 	)
 	connection.emit("zigbee2mqtt/bridge/event", []byte(bridgeEventSentinel), false, now.Add(time.Second))
-	waitForLogCondition(t, handler, func() bool {
+	waitForCapture(t, handler, func() bool {
 		return handler.count(slog.LevelWarn, "adapter.device_state_ignored")+
 			handler.count(slog.LevelWarn, "adapter.state_property_ignored") >= 1 &&
 			handler.count(slog.LevelWarn, "adapter.availability_ignored") == 1 &&
@@ -421,218 +448,13 @@ func TestMalformedUpstreamPayloadsStayOutOfLogs(t *testing.T) {
 	}
 }
 
-func TestSameConnectionBridgeFlapReemitsUpstreamReadyOnce(t *testing.T) {
-	t.Parallel()
-	handler := newRecordingHandler()
-	recorder := &runtimeRecorder{}
-	session := newFakeSession(recorder)
-	inventory, err := json.Marshal([]upstreamDevice{eligibleDevice()})
-	if err != nil {
-		t.Fatal(err)
-	}
-	connection := newFakeConnection(recorder)
-	now := time.Date(2026, 9, 1, 12, 0, 0, 0, time.UTC)
-	connection.onSubscribe = func(connection *fakeConnection) {
-		emitBridgeReady(t, connection, now, inventory)
-	}
-	z2m := newRecordingAdapter(t, session, handler, &fakeDialer{connections: []*fakeConnection{connection}})
-
-	ctx, cancel := context.WithCancel(context.Background())
-	done := make(chan error, 1)
-	go func() { done <- z2m.Run(ctx) }()
-	waitForLogCondition(t, handler, func() bool {
-		return handler.count(slog.LevelInfo, "adapter.reconcile_completed") == 1 &&
-			handler.count(slog.LevelInfo, "adapter.upstream_ready") == 1
-	})
-
-	connection.emit("zigbee2mqtt/bridge/devices", inventory, true, now.Add(time.Second))
-	time.Sleep(200 * time.Millisecond)
-	if got := handler.count(slog.LevelInfo, "adapter.upstream_ready"); got != 1 {
-		cancel()
-		<-done
-		t.Fatalf("upstream_ready = %d after inventory refresh without unhealthy, want 1", got)
-	}
-
-	connection.emit("zigbee2mqtt/bridge/state", []byte(`{"state":"offline"}`), false, now.Add(2*time.Second))
-	waitForLogCondition(t, handler, func() bool {
-		session.mutex.Lock()
-		defer session.mutex.Unlock()
-		for _, report := range session.health {
-			if report.Status == adapter.HealthUnhealthy && report.ReasonCode == bridgeOfflineReason {
-				return true
-			}
-		}
-		return false
-	})
-	connection.emit("zigbee2mqtt/bridge/state", []byte(`{"state":"online"}`), false, now.Add(3*time.Second))
-	waitForLogCondition(t, handler, func() bool {
-		return handler.count(slog.LevelInfo, "adapter.upstream_ready") == 2
-	})
-	cancel()
-	if err = <-done; err != nil {
-		t.Fatal(err)
-	}
-
-	if got := handler.count(slog.LevelInfo, "adapter.reconcile_completed"); got != 3 {
-		t.Fatalf("reconcile_completed = %d, want 3 (initial plus inventory refresh plus same-connection recovery)", got)
-	}
-	if got := handler.count(slog.LevelInfo, "adapter.upstream_ready"); got != 2 {
-		t.Fatalf("upstream_ready = %d, want exactly 2 (once per recovery)", got)
-	}
-	if got := handler.count(slog.LevelInfo, "dependency.recovered"); got != 0 {
-		t.Fatalf("dependency.recovered = %d, want 0 without a dial retry episode", got)
-	}
-}
-
-// flakyDialer fails a fixed number of dials before delegating, so retry and
-// recovery evidence can be asserted without timing-sensitive fault injection.
-type flakyDialer struct {
-	mutex sync.Mutex
-	fails int
-	err   error
-	next  mqttDialer
-}
-
-func (dialer *flakyDialer) Dial(
-	ctx context.Context,
-	config mqttConfig,
-	receive func(mqttMessage),
-) (mqttConnection, error) {
-	dialer.mutex.Lock()
-	defer dialer.mutex.Unlock()
-	if dialer.fails > 0 {
-		dialer.fails--
-		return nil, dialer.err
-	}
-	return dialer.next.Dial(ctx, config, receive)
-}
-
-func TestConnectionFailureWarnsOnceThenRecovers(t *testing.T) {
-	t.Parallel()
-	const dialSentinel = "sentinel-broker-2f9d.invalid"
-	handler := newRecordingHandler()
-	recorder := &runtimeRecorder{}
-	session := newFakeSession(recorder)
-	inventory, err := json.Marshal([]upstreamDevice{eligibleDevice()})
-	if err != nil {
-		t.Fatal(err)
-	}
-	connection := newFakeConnection(recorder)
-	now := time.Date(2026, 9, 1, 12, 0, 0, 0, time.UTC)
-	connection.onSubscribe = func(connection *fakeConnection) {
-		emitBridgeReady(t, connection, now, inventory)
-	}
-	dialer := &flakyDialer{
-		fails: 1,
-		err:   errors.New("dial " + dialSentinel + ": connection refused"),
-		next:  &fakeDialer{connections: []*fakeConnection{connection}},
-	}
-	z2m := newRecordingAdapter(t, session, handler, dialer)
-
-	ctx, cancel := context.WithCancel(context.Background())
-	done := make(chan error, 1)
-	go func() { done <- z2m.Run(ctx) }()
-	waitForLogCondition(t, handler, func() bool {
-		return handler.count(slog.LevelInfo, "adapter.upstream_ready") == 1 &&
-			handler.count(slog.LevelInfo, "dependency.recovered") == 1
-	})
-	cancel()
-	if err = <-done; err != nil {
-		t.Fatal(err)
-	}
-
-	if got := handler.count(slog.LevelWarn, "dependency.retrying"); got != 1 {
-		t.Fatalf("warn retry records = %d, want exactly 1", got)
-	}
-	if got := handler.count(slog.LevelDebug, "dependency.retrying"); got != 0 {
-		t.Fatalf("debug retry records = %d, want 0 for a single failure", got)
-	}
-	recovered, found := handler.first(slog.LevelInfo, "dependency.recovered")
-	if !found {
-		t.Fatal("missing dependency.recovered record")
-	}
-	if recovered.attrs["attempts"] != int64(1) {
-		t.Fatalf("attempts = %v, want 1", recovered.attrs["attempts"])
-	}
-	if _, exists := recovered.attrs["duration_ms"]; !exists {
-		t.Fatalf("recovered record misses duration_ms: %#v", recovered.attrs)
-	}
-	if handler.containsText(dialSentinel) {
-		t.Fatalf("logs leak dial failure text %q", dialSentinel)
-	}
-	if handler.containsText("tcp://127.0.0.1:1883") {
-		t.Fatal("logs leak configured MQTT URL")
-	}
-}
-
-func TestIdenticalConnectionFailuresStayQuietAfterFirstWarn(t *testing.T) {
-	t.Parallel()
-	handler := newRecordingHandler()
-	recorder := &runtimeRecorder{}
-	session := newFakeSession(recorder)
-	z2m := newRecordingAdapter(t, session, handler, &fakeDialer{})
-
-	ctx, cancel := context.WithCancel(context.Background())
-	done := make(chan error, 1)
-	go func() { done <- z2m.Run(ctx) }()
-	waitForLogCondition(t, handler, func() bool {
-		return handler.count(slog.LevelDebug, "dependency.retrying") >= 1
-	})
-	cancel()
-	if err := <-done; err != nil && !errors.Is(err, context.Canceled) {
-		t.Fatal(err)
-	}
-
-	if got := handler.count(slog.LevelWarn, "dependency.retrying"); got != 1 {
-		t.Fatalf("warn retry records = %d, want exactly 1", got)
-	}
-	if handler.containsText("no fake MQTT connection") {
-		t.Fatal("logs leak raw connection error text")
-	}
-}
-
-func TestCancelledRetryBackoffEmitsNoAdditionalWarning(t *testing.T) {
-	t.Parallel()
-	handler := newRecordingHandler()
-	recorder := &runtimeRecorder{}
-	session := newFakeSession(recorder)
-	z2m := newRecordingAdapter(t, session, handler, &fakeDialer{})
-	z2m.retryDelay = func(time.Duration) time.Duration { return 50 * time.Millisecond }
-
-	ctx, cancel := context.WithCancel(context.Background())
-	done := make(chan error, 1)
-	go func() { done <- z2m.Run(ctx) }()
-	waitForLogCondition(t, handler, func() bool {
-		return handler.count(slog.LevelWarn, "dependency.retrying") == 1
-	})
-	cancel()
-	if err := <-done; err != nil && !errors.Is(err, context.Canceled) {
-		t.Fatal(err)
-	}
-
-	if got := handler.count(slog.LevelWarn, "dependency.retrying"); got != 1 {
-		t.Fatalf("warn retry records = %d, want exactly 1 with no cancellation warning", got)
-	}
-	for _, record := range handler.snapshot() {
-		if record.level == slog.LevelError {
-			t.Fatalf("cancellation produced an Error record: %#v", record)
-		}
-		if event, ok := record.attrs["event"].(string); ok {
-			switch event {
-			case "dependency.connected", "dependency.disconnected", "dependency.reconnected", "dependency.closed":
-				t.Fatalf("unexpected SDK-owned event %q: %#v", event, record)
-			}
-		}
-	}
-}
-
 func TestCommandRefreshFailureOmitsErrorText(t *testing.T) {
 	t.Parallel()
 	const refreshSentinel = "sentinel-refresh-8b4e"
-	handler := newRecordingHandler()
+	handler := newCaptureHandler()
 	recorder := &runtimeRecorder{}
 	session := newFakeSession(recorder)
-	z2m := newRecordingAdapter(t, session, handler, &fakeDialer{})
+	z2m := newCaptureAdapter(t, session, handler, &fakeDialer{})
 	startCoordinator(t, z2m)
 	connection := newFakeConnection(recorder)
 	device := mustDiscoveredFixtureDevice(t, "bridge-devices-3rcb01057z.json")
@@ -679,7 +501,7 @@ func TestCommandRefreshFailureOmitsErrorText(t *testing.T) {
 	); err != nil {
 		t.Fatal(err)
 	}
-	waitForLogCondition(t, handler, func() bool {
+	waitForCapture(t, handler, func() bool {
 		return handler.count(slog.LevelWarn, "adapter.command_refresh_failed") == 1
 	})
 

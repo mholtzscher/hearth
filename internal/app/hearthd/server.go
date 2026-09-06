@@ -4,7 +4,6 @@ import (
 	"context"
 	"database/sql"
 	"errors"
-	"fmt"
 	"net/http"
 
 	"github.com/danielgtaylor/huma/v2"
@@ -41,53 +40,21 @@ func NewRuntimeReadiness(
 
 func (readiness *RuntimeReadiness) Check(ctx context.Context) error {
 	if readiness == nil || readiness.database == nil || readiness.connection == nil || readiness.jetstream == nil {
-		return &readinessCheckError{
-			reasonCode: readinessCheckFailedReason, err: errors.New("runtime dependencies are not initialized"),
-		}
+		return errors.New("runtime dependencies are not initialized")
 	}
 	if err := readiness.database.PingContext(ctx); err != nil {
-		return &readinessCheckError{reasonCode: "sqlite_unavailable", err: fmt.Errorf("SQLite is unavailable: %w", err)}
+		return errors.New("SQLite is unavailable")
 	}
 	if !readiness.connection.IsConnected() {
-		return &readinessCheckError{
-			reasonCode: "nats_disconnected",
-			err:        errors.New("NATS is disconnected"),
-		}
+		return errors.New("NATS is disconnected")
 	}
 	if err := devicesnats.ValidateObservationResources(ctx, readiness.jetstream); err != nil {
-		return &readinessCheckError{reasonCode: "jetstream_unavailable", err: err}
+		return err
 	}
 	if !readiness.observationConsumer.Active() {
-		return &readinessCheckError{
-			reasonCode: "observation_consumer_inactive",
-			err:        errors.New("observation consumer is inactive"),
-		}
+		return errors.New("observation consumer is inactive")
 	}
 	return nil
-}
-
-// readinessCheckError carries a fixed safe reason code for readiness logs
-// while preserving the underlying error text and chain for existing consumers.
-// It is not a public health model and adds no response field.
-type readinessCheckError struct {
-	reasonCode string
-	err        error
-}
-
-func (err *readinessCheckError) Error() string { return err.err.Error() }
-
-func (err *readinessCheckError) Unwrap() error { return err.err }
-
-// readinessCheckFailedReason marks checker errors without a specific cause.
-const readinessCheckFailedReason = "readiness_check_failed"
-
-// readinessFailureReason reports the fixed reason code carried by err, mapping
-// unknown checker errors to readiness_check_failed without matching error strings.
-func readinessFailureReason(err error) string {
-	if checkErr, ok := errors.AsType[*readinessCheckError](err); ok {
-		return checkErr.reasonCode
-	}
-	return readinessCheckFailedReason
 }
 
 func NewHTTPHandler(devices devicesapi.Devices, readiness ReadinessChecker) (http.Handler, huma.API) {

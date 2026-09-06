@@ -45,20 +45,6 @@ func Run(ctx context.Context, config Config, logger *slog.Logger) error {
 			)
 		}
 	}()
-	// started flips once command serving begins. The deferred stopping record
-	// below covers post-connect startup failures (register/initialize/handler
-	// construction); it is registered after the close defer so stopping always
-	// precedes session release. The serve path sets started and logs stopping
-	// itself, so exactly one record is emitted on every path.
-	started := false
-	defer func() {
-		if !started {
-			processLogger.InfoContext(
-				ctx, "hearth-simulator stopping", "event", "process.stopping",
-				"reason_code", startupReason(ctx),
-			)
-		}
-	}()
 	simulated, simulatorErr := simulatoradapter.New(session, config.Scenario)
 	if simulatorErr != nil {
 		return simulatorErr
@@ -101,29 +87,12 @@ func Run(ctx context.Context, config Config, logger *slog.Logger) error {
 	if err != nil {
 		return err
 	}
-	started = true
 	serveErr := session.ServeCommands(ctx, handler)
-	stoppingReason := "context_cancelled"
-	if serveErr != nil && ctx.Err() == nil {
-		stoppingReason = "serve_failed"
-	}
-	processLogger.InfoContext(
-		ctx, "hearth-simulator stopping", "event", "process.stopping", "reason_code", stoppingReason,
-	)
 	if serveErr != nil && !errors.Is(serveErr, context.Canceled) &&
 		!errors.Is(serveErr, adapter.ErrClosed) {
 		return serveErr
 	}
 	return nil
-}
-
-// startupReason distinguishes cancellation from failure for a post-connect
-// startup teardown record.
-func startupReason(ctx context.Context) string {
-	if ctx.Err() != nil {
-		return "context_cancelled"
-	}
-	return "startup_failed"
 }
 
 func entityIDForKey(binding adapter.Binding, key string) (string, error) {

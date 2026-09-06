@@ -45,21 +45,6 @@ func Run(ctx context.Context, config Config, logger *slog.Logger) error {
 		}
 	}()
 
-	// started flips once component supervision begins. The deferred stopping
-	// record below covers the post-connect startup failure (adapter
-	// construction); it is registered after the close defer so stopping always
-	// precedes session release. The supervise path sets started and logs
-	// stopping itself, so exactly one record is emitted on every path.
-	started := false
-	defer func() {
-		if !started {
-			processLogger.InfoContext(
-				ctx, "hearth-adapter-zigbee2mqtt stopping", "event", "process.stopping",
-				"reason_code", startupReason(ctx),
-			)
-		}
-	}()
-
 	zigbeeAdapter, err := zigbee2mqttadapter.New(session, zigbee2mqttadapter.Config{
 		MQTTURL:   config.MQTT.URL,
 		BaseTopic: config.MQTT.BaseTopic,
@@ -69,32 +54,13 @@ func Run(ctx context.Context, config Config, logger *slog.Logger) error {
 		return err
 	}
 
-	started = true
-	runErr := supervise(
+	return supervise(
 		ctx,
 		zigbeeAdapter.Run,
 		func(runContext context.Context) error {
 			return session.ServeCommands(runContext, zigbeeAdapter.HandleCommand)
 		},
 	)
-	stoppingReason := "context_cancelled"
-	if runErr != nil && ctx.Err() == nil {
-		stoppingReason = "component_failure"
-	}
-	processLogger.InfoContext(
-		ctx, "hearth-adapter-zigbee2mqtt stopping", "event", "process.stopping",
-		"reason_code", stoppingReason,
-	)
-	return runErr
-}
-
-// startupReason distinguishes cancellation from failure for a post-connect
-// startup teardown record.
-func startupReason(ctx context.Context) string {
-	if ctx.Err() != nil {
-		return "context_cancelled"
-	}
-	return "startup_failed"
 }
 
 func supervise(

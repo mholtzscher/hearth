@@ -2,10 +2,8 @@ package hearthd //nolint:testpackage // Tests exercise package-private assembly 
 
 import (
 	"context"
-	"errors"
 	"log/slog"
 	"path/filepath"
-	"strings"
 	"testing"
 	"time"
 
@@ -79,105 +77,6 @@ func TestRuntimeReadinessChecksEveryRequiredDependency(t *testing.T) {
 			t.Fatal("readiness passed with inactive consumer")
 		}
 	})
-}
-
-// This test protects fixed readiness reason codes and fails if a dependency
-// outage loses its code, changes its preserved text, or breaks the error chain.
-func TestRuntimeReadinessCarriesReasonCodes(t *testing.T) {
-	t.Parallel()
-	t.Run("SQLite unavailable", func(t *testing.T) {
-		t.Parallel()
-		checkErr := closedDatabaseReadinessCheck(t)
-		if checkErr == nil {
-			t.Fatal("readiness passed with closed SQLite")
-		}
-		var coded *readinessCheckError
-		if !errors.As(checkErr, &coded) || coded.reasonCode != "sqlite_unavailable" {
-			t.Fatalf("readiness error = %#v, want sqlite_unavailable", checkErr)
-		}
-		if !strings.HasPrefix(checkErr.Error(), "SQLite is unavailable") {
-			t.Fatalf("readiness error text = %q, want SQLite prefix", checkErr.Error())
-		}
-		requireReadinessReason(t, checkErr, "sqlite_unavailable")
-	})
-	t.Run("NATS disconnected", func(t *testing.T) {
-		t.Parallel()
-		fixture := newReadinessFixture(t)
-		fixture.connection.Close()
-		if checkErr := fixture.readiness.Check(context.Background()); checkErr == nil {
-			t.Fatal("readiness passed with closed NATS connection")
-		} else {
-			requireReadinessReason(t, checkErr, "nats_disconnected")
-		}
-	})
-	t.Run("JetStream mismatch", func(t *testing.T) {
-		t.Parallel()
-		requireReadinessReason(t, mismatchedStreamReadinessCheck(t), "jetstream_unavailable")
-	})
-	t.Run("consumer inactive", func(t *testing.T) {
-		t.Parallel()
-		requireReadinessReason(t, inactiveConsumerReadinessCheck(t), "observation_consumer_inactive")
-	})
-	t.Run("uninitialized", func(t *testing.T) {
-		t.Parallel()
-		var uninitialized *RuntimeReadiness
-		requireReadinessReason(t, uninitialized.Check(context.Background()), "readiness_check_failed")
-	})
-	t.Run("unknown", func(t *testing.T) {
-		t.Parallel()
-		requireReadinessReason(t, errors.New("token=secret"), "readiness_check_failed")
-	})
-}
-
-func requireReadinessReason(t *testing.T, checkErr error, want string) {
-	t.Helper()
-	if checkErr == nil {
-		t.Fatalf("readiness passed, want reason %q", want)
-	}
-	if reason := readinessFailureReason(checkErr); reason != want {
-		t.Fatalf("readiness reason = %q, want %q", reason, want)
-	}
-}
-
-func closedDatabaseReadinessCheck(t *testing.T) error {
-	t.Helper()
-	fixture := newReadinessFixture(t)
-	if err := fixture.database.Close(); err != nil {
-		t.Fatal(err)
-	}
-	return fixture.readiness.Check(context.Background())
-}
-
-func mismatchedStreamReadinessCheck(t *testing.T) error {
-	t.Helper()
-	fixture := newReadinessFixture(t)
-	stream, err := fixture.jetstream.Stream(context.Background(), devicesnats.ObservationStreamName)
-	if err != nil {
-		t.Fatal(err)
-	}
-	info, err := stream.Info(context.Background())
-	if err != nil {
-		t.Fatal(err)
-	}
-	config := info.Config
-	config.MaxBytes = 42
-	if _, updateErr := fixture.jetstream.UpdateStream(context.Background(), config); updateErr != nil {
-		t.Fatal(updateErr)
-	}
-	return fixture.readiness.Check(context.Background())
-}
-
-func inactiveConsumerReadinessCheck(t *testing.T) error {
-	t.Helper()
-	fixture := newReadinessFixture(t)
-	fixture.consumer.Stop()
-	select {
-	case <-fixture.consumer.Closed():
-		return fixture.readiness.Check(context.Background())
-	case <-time.After(3 * time.Second):
-		t.Fatal("consumer did not stop")
-		return nil
-	}
 }
 
 type discardObservationProjector struct{}

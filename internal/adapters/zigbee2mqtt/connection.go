@@ -10,11 +10,7 @@ import (
 )
 
 //nolint:gocognit,nestif // The connection state machine keeps snapshot and relay ordering explicit.
-func (z2m *Adapter) runConnection(
-	ctx context.Context,
-	generation uint64,
-	progress *connectionProgress,
-) (bool, error) {
+func (z2m *Adapter) runConnection(ctx context.Context, generation uint64) (bool, error) {
 	owned, err := z2m.listOwnedMappings(ctx)
 	if err != nil {
 		return false, &sessionOperationError{operation: "list owned Zigbee2MQTT mappings", err: err}
@@ -61,7 +57,7 @@ func (z2m *Adapter) runConnection(
 				select {
 				case message := <-messages:
 					message = normalizeReceivedMessage(message)
-					if err = z2m.ingestMessage(connectionContext, generation, &state, message, progress); err != nil {
+					if err = z2m.ingestMessage(connectionContext, generation, &state, message); err != nil {
 						return synchronized, preferConnectionError(ctx, connectionContext, err)
 					}
 					if !state.ready() {
@@ -78,7 +74,6 @@ func (z2m *Adapter) runConnection(
 					connection,
 					cancelConnection,
 					&state,
-					progress,
 				); err != nil {
 					return synchronized, preferConnectionError(ctx, connectionContext, err)
 				}
@@ -93,7 +88,7 @@ func (z2m *Adapter) runConnection(
 			return synchronized, preferConnectionError(ctx, connectionContext, connectionContext.Err())
 		case message := <-messages:
 			message = normalizeReceivedMessage(message)
-			if err = z2m.ingestMessage(connectionContext, generation, &state, message, progress); err != nil {
+			if err = z2m.ingestMessage(connectionContext, generation, &state, message); err != nil {
 				return synchronized, preferConnectionError(ctx, connectionContext, err)
 			}
 		}
@@ -164,7 +159,6 @@ func (z2m *Adapter) ingestMessage(
 	generation uint64,
 	state *connectionSync,
 	message mqttMessage,
-	progress *connectionProgress,
 ) error {
 	switch classifyBridgeTopic(z2m.config.BaseTopic, message.Topic) {
 	case bridgeTopicState:
@@ -176,13 +170,13 @@ func (z2m *Adapter) ingestMessage(
 			(bridge.State != upstreamOnline && bridge.State != upstreamOffline) {
 			state.hasBridgeState = false
 			z2m.clearAvailabilityEvidence(state)
-			return z2m.reportUnhealthy(ctx, generation, invalidInventoryReason, progress, state)
+			return z2m.reportUnhealthy(ctx, generation, invalidInventoryReason, state)
 		}
 		state.hasBridgeState = true
 		state.bridgeOnline = bridge.State == upstreamOnline
 		if !state.bridgeOnline {
 			z2m.clearAvailabilityEvidence(state)
-			return z2m.reportUnhealthy(ctx, generation, bridgeOfflineReason, progress, state)
+			return z2m.reportUnhealthy(ctx, generation, bridgeOfflineReason, state)
 		}
 		if state.info != nil && state.inventory != nil {
 			state.dirty = true
@@ -192,13 +186,13 @@ func (z2m *Adapter) ingestMessage(
 		if err != nil {
 			state.info = nil
 			z2m.clearAvailabilityEvidence(state)
-			return z2m.reportUnhealthy(ctx, generation, invalidInventoryReason, progress, state)
+			return z2m.reportUnhealthy(ctx, generation, invalidInventoryReason, state)
 		}
 		state.info = &info
 		z2m.logger.DebugContext(ctx, "received Zigbee2MQTT bridge information", eventKey, "adapter.bridge_info")
 		if !compatibleBridgeInfo(info) {
 			z2m.clearAvailabilityEvidence(state)
-			return z2m.reportUnhealthy(ctx, generation, incompatibleConfigurationReason, progress, state)
+			return z2m.reportUnhealthy(ctx, generation, incompatibleConfigurationReason, state)
 		}
 		if state.hasBridgeState && state.bridgeOnline && state.inventory != nil {
 			state.dirty = true
@@ -208,7 +202,7 @@ func (z2m *Adapter) ingestMessage(
 		if err != nil {
 			state.inventory = nil
 			z2m.clearAvailabilityEvidence(state)
-			return z2m.reportUnhealthy(ctx, generation, invalidInventoryReason, progress, state)
+			return z2m.reportUnhealthy(ctx, generation, invalidInventoryReason, state)
 		}
 		if err = z2m.invalidateRoutes(ctx, generation, nil); err != nil {
 			return err
@@ -261,12 +255,8 @@ func (z2m *Adapter) reportUnhealthy(
 	ctx context.Context,
 	generation uint64,
 	reason string,
-	progress *connectionProgress,
 	states ...*connectionSync,
 ) error {
-	if progress != nil {
-		progress.upstreamReady = false
-	}
 	if err := z2m.invalidateRoutes(ctx, generation, errors.New(reason)); err != nil {
 		return err
 	}

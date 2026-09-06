@@ -108,10 +108,10 @@ All four executables write to stderr with `--log-level info --log-format text` b
 
 ```sh
 go run ./cmd/hearthd --config configs/hearthd.yaml --log-format json 2>core.log
-jq -c 'select(.event == "command.completed")' core.log
+jq -c 'select(.event == "command.created")' core.log
 ```
 
-See [the logging guide](docs/logging.md) for event lookup, cross-process Command diagnosis, safety rules, and recovery interpretation. Logs describe historical evidence; use `/readyz` and Adapter/Entity reads for current health.
+See [the logging guide](docs/logging.md) for startup/failure diagnosis and safety rules. Use Command-history APIs for durable outcomes, and `/readyz` plus Adapter/Entity reads for current health; logs do not reconstruct those lifecycles.
 
 ## Documentation
 

@@ -116,21 +116,8 @@ func waitForRecord(
 	return slog.Record{}
 }
 
-func errorRecords(records []slog.Record) []slog.Record {
-	var matched []slog.Record
-	for _, record := range records {
-		if record.Level >= slog.LevelError {
-			matched = append(matched, record)
-		}
-	}
-	return matched
-}
-
 // This test protects the explicit-listener contract and fails if a busy HTTP
-// port ever emits core.http_listening or hides the failed stage. The bind
-// failure tears down a live process (NATS connection, transports, consumer,
-// supervisor), so Run must emit one process.stopping with the failed stage
-// before deferred cleanup runs.
+// port ever emits core.http_listening or hides the failed stage.
 func TestRunHTTPBindFailureEmitsNoListeningEvent(t *testing.T) {
 	t.Parallel()
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
@@ -165,38 +152,13 @@ func TestRunHTTPBindFailureEmitsNoListeningEvent(t *testing.T) {
 		t.Fatal("missing core.startup_stage_completed records")
 	}
 	requireRecordAttr(t, stages[0], "component", "core")
-	stopping := recordsWithEvent(records, "process.stopping")
-	if len(stopping) != 1 {
-		t.Fatalf("process.stopping records = %#v, want exactly one before teardown", stopping)
-	}
-	requireRecordAttr(t, stopping[0], "component", "process")
-	requireRecordAttr(t, stopping[0], "reason_code", "startup_failed")
-	requireRecordAttr(t, stopping[0], "stage", "http_listen")
-	for _, stage := range []string{
-		"database_migrated",
-		"active_commands_interrupted",
-		"jetstream_provisioned",
-		"nats_servers_started",
-		"observation_consumer_started",
-	} {
-		found := false
-		for _, record := range recordsWithEvent(records, "core.startup_stage_completed") {
-			if value, ok := recordAttr(record, "stage"); ok && value.String() == stage {
-				found = true
-				break
-			}
-		}
-		if !found {
-			t.Errorf("missing core.startup_stage_completed for stage %q", stage)
-		}
-	}
-	if failures := errorRecords(records); len(failures) != 0 {
-		t.Fatalf("failed startup emitted Error records: %#v", failures)
+	if cleanup := recordsWithEvent(records, "process.cleanup_failed"); len(cleanup) != 0 {
+		t.Fatalf("failed startup emitted process.cleanup_failed: %#v", cleanup)
 	}
 }
 
-// This test protects the normal core lifecycle and fails if startup evidence,
-// readiness, clean cancellation, or error-free shutdown regresses.
+// This test protects the normal core lifecycle and fails if HTTP startup
+// evidence, readiness, clean cancellation, or error-free shutdown regresses.
 func TestRunCancelsCleanlyAfterReady(t *testing.T) {
 	t.Parallel()
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
@@ -221,14 +183,6 @@ func TestRunCancelsCleanlyAfterReady(t *testing.T) {
 		t.Fatalf("core.http_listening omitted http_addr: %#v", listening)
 	}
 	pollReadyz(ctx, t, "http://"+httpAddr.String()+"/readyz")
-	ready := waitForRecord(t, recorder, "core.readiness_changed", 15*time.Second)
-	if readyStatus, statusOk := recordAttr(ready, "status"); !statusOk || readyStatus.String() != "ready" {
-		t.Fatalf("core.readiness_changed status = %#v", ready)
-	}
-	requireRecordAttr(t, ready, "component", "core")
-	if grace, graceOk := recordAttr(ready, "lease_expiry_grace_ms"); !graceOk || grace.Int64() != 15000 {
-		t.Fatalf("core.readiness_changed grace = %#v, want 15000", ready)
-	}
 
 	stopRun()
 	select {
@@ -241,27 +195,9 @@ func TestRunCancelsCleanlyAfterReady(t *testing.T) {
 	}
 
 	records := recorder.snapshot()
-	stopping := recordsWithEvent(records, "process.stopping")
-	if len(stopping) != 1 {
-		t.Fatalf("process.stopping records = %#v, want exactly one", stopping)
-	}
-	if stoppingReason, reasonOk := recordAttr(stopping[0], "reason_code"); !reasonOk ||
-		stoppingReason.String() != "context_cancelled" {
-		t.Fatalf("process.stopping reason = %#v, want context_cancelled", stopping[0])
-	}
-	requireRecordAttr(t, stopping[0], "component", "process")
 	if cleanup := recordsWithEvent(records, "process.cleanup_failed"); len(cleanup) != 0 {
 		t.Fatalf("clean shutdown emitted process.cleanup_failed: %#v", cleanup)
 	}
-	if failures := errorRecords(records); len(failures) != 0 {
-		t.Fatalf("clean shutdown emitted Error records: %#v", failures)
-	}
-	connected := recordsWithEvent(records, "dependency.connected")
-	if len(connected) == 0 {
-		t.Fatal("missing dependency.connected for the core NATS connection")
-	}
-	requireRecordAttr(t, connected[0], "component", "nats")
-	requireRecordAttr(t, connected[0], "dependency", "nats")
 }
 
 // This test protects fatal stage classification and fails if a wrapped stage

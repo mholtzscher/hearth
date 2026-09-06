@@ -33,13 +33,12 @@ func (z2m *Adapter) reconcile(
 	connection mqttConnection,
 	disconnect context.CancelCauseFunc,
 	state *connectionSync,
-	progress *connectionProgress,
 ) error {
 	if state.inventory == nil {
 		return nil
 	}
 
-	snapshot, isolated, err := z2m.buildRouteSnapshot(ctx, generation, *state.inventory)
+	snapshot, err := z2m.buildRouteSnapshot(ctx, generation, *state.inventory)
 	if err != nil {
 		return err
 	}
@@ -66,8 +65,8 @@ func (z2m *Adapter) reconcile(
 	if err = z2m.requestCurrentState(ctx, connection, *state.inventory, snapshot); err != nil {
 		return err
 	}
+	isolated := len(state.inventory.Rejections) + (len(state.inventory.Devices) - len(snapshot.devices))
 	z2m.logReconcileCompleted(ctx, snapshot, isolated)
-	z2m.logUpstreamReady(ctx, progress)
 	return nil
 }
 
@@ -107,24 +106,21 @@ func (z2m *Adapter) buildRouteSnapshot(
 	ctx context.Context,
 	generation uint64,
 	inventory inventoryDiscovery,
-) (routeSnapshot, int, error) {
+) (routeSnapshot, error) {
 	snapshot := routeSnapshot{
 		routes: make(map[string]commandRoute), devices: make(map[string]runtimeDevice),
 	}
-	isolated := 0
 	for _, rejection := range inventory.Rejections {
 		z2m.logIsolatedDevice(ctx, rejection.Code)
-		isolated++
 	}
 	for _, device := range inventory.Devices {
 		binding, registerErr := z2m.session.Register(ctx, device.Registration)
 		if registerErr != nil {
 			if rejected, ok := errors.AsType[*adapter.RegistrationRejectedError](registerErr); ok {
 				z2m.logIsolatedDevice(ctx, string(rejected.Code))
-				isolated++
 				continue
 			}
-			return routeSnapshot{}, 0, &sessionOperationError{
+			return routeSnapshot{}, &sessionOperationError{
 				operation: "register Zigbee2MQTT Device",
 				err:       registerErr,
 			}
@@ -139,13 +135,7 @@ func (z2m *Adapter) buildRouteSnapshot(
 		}
 		runtime, runtimeErr := runtimeDeviceFromBinding(device, binding)
 		if runtimeErr != nil {
-			z2m.logger.WarnContext(
-				ctx,
-				"isolated invalid Zigbee2MQTT registration response",
-				eventKey, "adapter.device_isolated",
-				"error_code", "invalid_registration",
-			)
-			isolated++
+			z2m.logIsolatedDevice(ctx, "invalid_registration")
 			continue
 		}
 		snapshot.devices[runtime.friendly] = runtime
@@ -160,7 +150,7 @@ func (z2m *Adapter) buildRouteSnapshot(
 			snapshot.routes[entity.entityID] = route
 		}
 	}
-	return snapshot, isolated, nil
+	return snapshot, nil
 }
 
 func (z2m *Adapter) replayPendingAvailability(

@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log/slog"
 	"time"
 
 	contractsv1 "github.com/mholtzscher/hearth/contracts/v1"
@@ -118,15 +117,13 @@ func (session *Session) reportAvailabilityBatch(
 	if err != nil {
 		return err
 	}
-	episode := newRetryEpisode("entity_availability", "core")
 	for {
 		attemptContext, cancelAttempt := context.WithTimeout(ctx, requestAttemptTimeout)
 		response, requestErr := sendSessionRequest[entityAvailabilityResponse](attemptContext, session, request)
 		cancelAttempt()
 		if requestErr != nil {
-			if retryErr := episode.waitRetry(ctx, session.log(),
-				slog.String("error_code", requestErrorCode(requestErr)),
-				requestRetryWait, requestErr,
+			if retryErr := waitForRequestRetryLogged(ctx, session.log(),
+				"entity_availability", requestErr,
 			); retryErr != nil {
 				return retryErr
 			}
@@ -148,9 +145,6 @@ func (session *Session) reportAvailabilityBatch(
 		if terminalErr := session.sessionError(); terminalErr != nil {
 			return terminalErr
 		}
-		// Ordinary acknowledged reports stay silent; only a blocked report that
-		// required retries emits recovery evidence.
-		episode.succeeded(ctx, session.log())
 		return nil
 	}
 }

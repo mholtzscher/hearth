@@ -76,13 +76,11 @@ func (service *Service) ExecuteCommand(
 		return CommandResult{}, err
 	}
 	service.logCommandCreated(ctx, command)
-	// startedAt measures log duration with the monotonic clock. RequestedAt
-	// is wall-clock UTC for persistence and deadlines; it is never reused
-	// here so duration math keeps its monotonic reading.
-	startedAt := time.Now()
-	if outcome, terminal := immediateCommandOutcome(command); terminal {
-		service.logCommandOutcome(ctx, command, outcome, startedAt)
-		return CommandResult{}, outcome.err
+	if command.Status == CommandStatusEntityDisabled {
+		return CommandResult{}, commandExecutionError(command.ID, ErrEntityDisabled)
+	}
+	if command.Status == CommandStatusAdapterUnhealthy {
+		return CommandResult{}, commandExecutionError(command.ID, ErrAdapterUnhealthy)
 	}
 	waiter := service.addCommandWaiter(command.ID)
 
@@ -92,13 +90,7 @@ func (service *Service) ExecuteCommand(
 	go func() {
 		defer cancel()
 		defer service.removeCommandWaiter(command.ID)
-		outcome := service.runCommand(lifecycleContext, command, waiter)
-		// Deliver the committed outcome before terminal logging: completed
-		// is buffered, so a stalled synchronous logger cannot block the
-		// HTTP-facing result. Log exactly once after delivery with the
-		// preserved lifecycle context.
-		completed <- outcome
-		service.logCommandOutcome(lifecycleContext, command, outcome, startedAt)
+		completed <- service.runCommand(lifecycleContext, command, waiter)
 	}()
 
 	select {
@@ -117,37 +109,6 @@ func (service *Service) ExecuteCommand(
 type commandOutcome struct {
 	result CommandResult
 	err    error
-	// Empty status means no durable terminal outcome was established here.
-	status      CommandStatus
-	failureCode CommandFailureCode
-}
-
-func commandFailureCodeOr(command CommandRecord, fallback CommandFailureCode) CommandFailureCode {
-	if command.FailureCode != nil {
-		return *command.FailureCode
-	}
-	return fallback
-}
-
-// immediateCommandOutcome returns the terminal outcome for a command that
-// CreateCommand committed as immediately terminal without dispatch. The
-// second return value reports whether the command was immediately terminal.
-func immediateCommandOutcome(command CommandRecord) (commandOutcome, bool) {
-	if command.Status == CommandStatusEntityDisabled {
-		return commandOutcome{
-			err:         commandExecutionError(command.ID, ErrEntityDisabled),
-			status:      command.Status,
-			failureCode: commandFailureCodeOr(command, CommandFailureEntityDisabled),
-		}, true
-	}
-	if command.Status == CommandStatusAdapterUnhealthy {
-		return commandOutcome{
-			err:         commandExecutionError(command.ID, ErrAdapterUnhealthy),
-			status:      command.Status,
-			failureCode: commandFailureCodeOr(command, CommandFailureAdapterUnhealthy),
-		}, true
-	}
-	return commandOutcome{}, false
 }
 
 func classifyCommandDispatchError(err error) (CommandStatus, CommandFailureCode, error) {
@@ -169,11 +130,12 @@ func (service *Service) runCommand(
 	acceptance, err := service.dispatchCommand(ctx, command)
 	if err != nil {
 		status, failureCode, outcome := classifyCommandDispatchError(err)
-		return service.failCommand(command.ID, status, failureCode, outcome, waiter)
+		return service.failCommand(ctx, command, status, failureCode, outcome, waiter)
 	}
 	if !acceptance.Accepted {
 		return service.failCommand(
-			command.ID,
+			ctx,
+			command,
 			CommandStatusRejected,
 			CommandFailureUpstreamRejected,
 			ErrUpstreamRejected,
@@ -183,28 +145,29 @@ func (service *Service) runCommand(
 
 	acceptedAt, err := service.now()
 	if err != nil {
-		return service.failCommand(command.ID, CommandStatusInternalFailure, CommandFailureInternalError, err, waiter)
+		return service.failCommand(ctx, command, CommandStatusInternalFailure, CommandFailureInternalError, err, waiter)
 	}
 	writeContext, cancel := persistenceContext(ctx)
 	err = service.stores.Commands.MarkCommandAccepted(writeContext, command.ID, acceptedAt)
 	cancel()
 	if err != nil && !errors.Is(err, ErrCommandTerminal) {
-		return service.failCommand(command.ID, CommandStatusInternalFailure, CommandFailureInternalError, err, waiter)
+		return service.failCommand(ctx, command, CommandStatusInternalFailure, CommandFailureInternalError, err, waiter)
 	}
 
 	select {
 	case result := <-waiter:
-		return commandOutcome{result: result, status: CommandStatusSatisfied}
+		return commandOutcome{result: result}
 	default:
 	}
 	select {
 	case result := <-waiter:
-		return commandOutcome{result: result, status: CommandStatusSatisfied}
+		return commandOutcome{result: result}
 	case <-ctx.Done():
 		completedAt, nowErr := service.now()
 		if nowErr != nil {
 			return service.failCommand(
-				command.ID,
+				ctx,
+				command,
 				CommandStatusInternalFailure,
 				CommandFailureInternalError,
 				nowErr,
@@ -223,8 +186,12 @@ func (service *Service) runCommand(
 			// that transaction. Preserve the satisfying terminal result.
 			select {
 			case result := <-waiter:
-				return commandOutcome{result: result, status: CommandStatusSatisfied}
+				return commandOutcome{result: result}
 			case <-time.After(commandPersistenceTimeout):
+				// No durable outcome was established here and the satisfying
+				// result never arrived; the caller may already be gone, so log
+				// the diagnostic instead of inventing a terminal status.
+				service.logCommandExecutionFailed(ctx, command)
 				return commandOutcome{
 					err: commandExecutionError(command.ID, errors.New("terminal command outcome was not delivered")),
 				}
@@ -232,18 +199,15 @@ func (service *Service) runCommand(
 		}
 		if completionErr != nil {
 			return service.failCommand(
-				command.ID,
+				ctx,
+				command,
 				CommandStatusInternalFailure,
 				CommandFailureInternalError,
 				completionErr,
 				waiter,
 			)
 		}
-		return commandOutcome{
-			err:         commandExecutionError(command.ID, ErrOutcomeTimeout),
-			status:      CommandStatusOutcomeTimeout,
-			failureCode: CommandFailureOutcomeTimeout,
-		}
+		return commandOutcome{err: commandExecutionError(command.ID, ErrOutcomeTimeout)}
 	}
 }
 
@@ -274,7 +238,8 @@ func (service *Service) dispatchCommand(
 }
 
 func (service *Service) failCommand(
-	id CommandID,
+	ctx context.Context,
+	command CommandRecord,
 	status CommandStatus,
 	failureCode CommandFailureCode,
 	outcome error,
@@ -282,11 +247,14 @@ func (service *Service) failCommand(
 ) commandOutcome {
 	completedAt, err := service.now()
 	if err != nil {
-		return commandOutcome{err: commandExecutionError(id, err)}
+		// The failure clock left no durable outcome; the caller may already
+		// be gone, so log the diagnostic instead of inventing a status.
+		service.logCommandExecutionFailed(ctx, command)
+		return commandOutcome{err: commandExecutionError(command.ID, err)}
 	}
 	writeContext, cancel := persistenceContext(context.Background())
 	err = service.stores.Commands.CompleteCommand(writeContext, CommandCompletion{
-		ID: id, Status: status, CompletedAt: completedAt, FailureCode: failureCode,
+		ID: command.ID, Status: status, CompletedAt: completedAt, FailureCode: failureCode,
 	})
 	cancel()
 	if errors.Is(err, ErrCommandTerminal) {
@@ -294,17 +262,32 @@ func (service *Service) failCommand(
 		// that transaction. Preserve the satisfying terminal result.
 		select {
 		case result := <-waiter:
-			return commandOutcome{result: result, status: CommandStatusSatisfied}
+			return commandOutcome{result: result}
 		case <-time.After(commandPersistenceTimeout):
+			// No durable outcome was established here and the satisfying
+			// result never arrived; the caller may already be gone, so log
+			// the diagnostic instead of inventing a terminal status.
+			service.logCommandExecutionFailed(ctx, command)
 			return commandOutcome{
-				err: commandExecutionError(id, errors.New("terminal command outcome was not delivered")),
+				err: commandExecutionError(command.ID, errors.New("terminal command outcome was not delivered")),
 			}
 		}
 	}
 	if err != nil {
-		return commandOutcome{err: commandExecutionError(id, err)}
+		// The persistence write left no durable outcome; the caller may
+		// already be gone, so log the diagnostic instead of inventing
+		// a status.
+		service.logCommandExecutionFailed(ctx, command)
+		return commandOutcome{err: commandExecutionError(command.ID, err)}
 	}
-	return commandOutcome{err: commandExecutionError(id, outcome), status: status, failureCode: failureCode}
+	if status == CommandStatusInternalFailure {
+		// The internal failure persisted, but the caller may already be
+		// gone and the returned error swallowed, so leave a safe
+		// diagnostic. No status is logged: the durable outcome belongs
+		// to the command API and persistence.
+		service.logCommandExecutionFailed(ctx, command)
+	}
+	return commandOutcome{err: commandExecutionError(command.ID, outcome)}
 }
 
 func (service *Service) now() (time.Time, error) {

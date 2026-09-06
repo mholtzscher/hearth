@@ -100,8 +100,10 @@ func (session *Session) log() *slog.Logger {
 	return session.logger.With("runtime_id", session.runtimeID)
 }
 
-// callbackLog snapshots the session logger and the best available lifecycle
-// context for NATS connection callbacks, which receive no operation context.
+// callbackLog snapshots the session logger and the lifecycle context for
+// NATS connection callbacks, which receive no operation context. The
+// lifecycle derives from the Connect context without inheriting its
+// cancellation, so callback records preserve incoming context values.
 func (session *Session) callbackLog() (*slog.Logger, context.Context) {
 	session.stateMutex.Lock()
 	defer session.stateMutex.Unlock()
@@ -109,35 +111,16 @@ func (session *Session) callbackLog() (*slog.Logger, context.Context) {
 	if session.runtimeID != "" {
 		logger = logger.With("runtime_id", session.runtimeID)
 	}
-	ctx := session.connectCtx
-	if session.lifecycleCtx != nil {
-		ctx = session.lifecycleCtx
-	}
-	return logger, ctx
+	return logger, session.lifecycleCtx
 }
 
-// retryEpisode tracks one operation retry loop so identical failures emit one
-// Warn, further attempts stay at Debug, and eventual success emits one Info
-// recovery record with attempts and elapsed time.
-type retryEpisode struct {
-	operation  string
-	dependency string
-	startedAt  time.Time
-	attempts   int
-	warned     map[string]struct{}
-}
-
-func newRetryEpisode(operation, dependency string) *retryEpisode {
-	return &retryEpisode{operation: operation, dependency: dependency, warned: make(map[string]struct{})}
-}
-
-// waitRetry records one retryable failure and waits before the next attempt.
-// It returns non-nil when the caller must stop without another attempt.
-func (episode *retryEpisode) waitRetry(
+// waitForRequestRetryLogged waits before the next attempt for a transient
+// failure. Every retryable attempt logs at Debug with a fixed safe code:
+// no Warn sets, attempt counters, or recovery events.
+func waitForRequestRetryLogged(
 	ctx context.Context,
 	logger *slog.Logger,
-	code slog.Attr,
-	delay time.Duration,
+	operation string,
 	requestErr error,
 ) error {
 	if ctx.Err() != nil {
@@ -146,53 +129,13 @@ func (episode *retryEpisode) waitRetry(
 	if !isTransientRequestError(requestErr) {
 		return requestErr
 	}
-	episode.failed(ctx, logger, code, delay)
-	return waitForRetry(ctx, delay)
-}
-
-func (episode *retryEpisode) failed(
-	ctx context.Context,
-	logger *slog.Logger,
-	code slog.Attr,
-	delay time.Duration,
-) {
-	if episode.startedAt.IsZero() {
-		episode.startedAt = time.Now()
-	}
-	episode.attempts++
-	class := code.Key + "=" + code.Value.String()
-	level := slog.LevelDebug
-	if _, seen := episode.warned[class]; !seen {
-		episode.warned[class] = struct{}{}
-		level = slog.LevelWarn
-	}
-	logger.LogAttrs(ctx, level, "retrying operation",
+	logger.DebugContext(ctx, "retrying operation",
 		slog.String("event", "dependency.retrying"),
-		slog.String("operation", episode.operation),
-		slog.String("dependency", episode.dependency),
-		slog.Int("attempt", episode.attempts),
-		slog.Int64("retry_in_ms", delay.Milliseconds()),
-		code,
+		slog.String("operation", operation),
+		slog.String("dependency", "core"),
+		slog.String("error_code", requestErrorCode(requestErr)),
 	)
-}
-
-func (episode *retryEpisode) succeeded(ctx context.Context, logger *slog.Logger) {
-	if episode.attempts == 0 {
-		return
-	}
-	logger.LogAttrs(ctx, slog.LevelInfo, "operation recovered",
-		slog.String("event", "dependency.recovered"),
-		slog.String("operation", episode.operation),
-		slog.String("dependency", episode.dependency),
-		slog.Int("attempt", episode.attempts+1),
-		slog.Int64("duration_ms", time.Since(episode.startedAt).Milliseconds()),
-	)
-	// Reset so a reused episode (for example a heartbeat loop continuing to
-	// a newer generation) does not emit duplicate recovery for work that
-	// needed no retries.
-	episode.attempts = 0
-	episode.startedAt = time.Time{}
-	episode.warned = make(map[string]struct{})
+	return waitForRetry(ctx, requestRetryWait)
 }
 
 // requestErrorCode maps a retryable transport failure to a fixed diagnostic
@@ -252,15 +195,13 @@ func (session *Session) claim(ctx context.Context, config Config) error {
 	if err != nil {
 		return err
 	}
-	episode := newRetryEpisode("session_claim", "core")
 	for {
 		attemptContext, cancelAttempt := context.WithTimeout(ctx, requestAttemptTimeout)
 		response, requestErr := sendSessionRequest[adapterClaimResponse](attemptContext, session, request)
 		cancelAttempt()
 		if requestErr != nil {
-			if retryErr := episode.waitRetry(ctx, session.log(),
-				slog.String("error_code", requestErrorCode(requestErr)),
-				requestRetryWait, requestErr,
+			if retryErr := waitForRequestRetryLogged(ctx, session.log(),
+				"session_claim", requestErr,
 			); retryErr != nil {
 				return retryErr
 			}
@@ -270,7 +211,6 @@ func (session *Session) claim(ctx context.Context, config Config) error {
 			session.stateMutex.Lock()
 			session.runtimeID = runtimeID
 			session.stateMutex.Unlock()
-			episode.succeeded(ctx, session.log())
 			session.log().InfoContext(ctx, "adapter session claimed",
 				slog.String("event", "adapter.session_claimed"),
 				slog.String("correlation_id", request.correlationID),
@@ -291,8 +231,11 @@ func (session *Session) claim(ctx context.Context, config Config) error {
 				return fmt.Errorf("parse Adapter claim retry time: %w", parseErr)
 			}
 			delay := max(time.Until(retryAfter), requestRetryWait)
-			episode.failed(
-				ctx, session.log(), slog.String("rejection_code", "adapter_active"), delay,
+			session.log().DebugContext(ctx, "retrying operation",
+				slog.String("event", "dependency.retrying"),
+				slog.String("operation", "session_claim"),
+				slog.String("dependency", "core"),
+				slog.String("rejection_code", "adapter_active"),
 			)
 			if waitErr := waitForRetry(ctx, delay); waitErr != nil {
 				return waitErr
@@ -380,7 +323,6 @@ func (session *Session) runHeartbeats(ctx context.Context) {
 
 //nolint:gocognit // One loop serializes retries, acknowledgements, and superseding health reports.
 func (session *Session) sendLatestHeartbeat(ctx context.Context) error {
-	episode := newRetryEpisode("heartbeat", "core")
 	for {
 		session.stateMutex.Lock()
 		if session.terminalErr != nil {
@@ -408,9 +350,8 @@ func (session *Session) sendLatestHeartbeat(ctx context.Context) error {
 		response, requestErr := sendSessionRequest[adapterHeartbeatResponse](attemptContext, session, request)
 		cancelAttempt()
 		if requestErr != nil {
-			if retryErr := episode.waitRetry(ctx, session.log(),
-				slog.String("error_code", requestErrorCode(requestErr)),
-				requestRetryWait, requestErr,
+			if retryErr := waitForRequestRetryLogged(ctx, session.log(),
+				"heartbeat", requestErr,
 			); retryErr != nil {
 				return retryErr
 			}
@@ -432,27 +373,9 @@ func (session *Session) sendLatestHeartbeat(ctx context.Context) error {
 		if generation > session.ackedGeneration {
 			session.ackedGeneration = generation
 		}
-		previousHealth, hadPrevious := session.ackedHealth, session.ackedHealthSet
-		session.ackedHealth, session.ackedHealthSet = report, true
 		session.notifyHeartbeatLocked()
 		moreRecent := session.desiredGeneration > generation
 		session.stateMutex.Unlock()
-		if !hadPrevious || previousHealth.Status != report.Status ||
-			previousHealth.ReasonCode != report.ReasonCode {
-			level := slog.LevelInfo
-			if report.Status == HealthUnhealthy {
-				level = slog.LevelWarn
-			}
-			attrs := []slog.Attr{
-				slog.String("event", "adapter.health_reported"),
-				slog.String("status", string(report.Status)),
-			}
-			if report.ReasonCode != "" {
-				attrs = append(attrs, slog.String("reason_code", report.ReasonCode))
-			}
-			session.log().LogAttrs(ctx, level, "adapter health reported", attrs...)
-		}
-		episode.succeeded(ctx, session.log())
 		if !moreRecent {
 			return nil
 		}
@@ -460,7 +383,6 @@ func (session *Session) sendLatestHeartbeat(ctx context.Context) error {
 }
 
 func (session *Session) close() error {
-	session.expectedClose.Store(true)
 	session.handlerMutex.Lock()
 	session.closing = true
 	session.handlerMutex.Unlock()
@@ -474,9 +396,6 @@ func (session *Session) close() error {
 	// incoming context values without inheriting cancellation, keeping the
 	// existing timeout semantics.
 	releaseParent := session.lifecycleCtx
-	if releaseParent == nil {
-		releaseParent = session.connectCtx
-	}
 	if session.lifecycleCancel != nil {
 		session.lifecycleCancel()
 	}
@@ -532,22 +451,19 @@ func (session *Session) release(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	episode := newRetryEpisode("session_release", "core")
 	for {
 		attemptContext, cancelAttempt := context.WithTimeout(ctx, requestAttemptTimeout)
 		response, requestErr := sendPrepared[adapterReleaseResponse](attemptContext, session, request)
 		cancelAttempt()
 		if requestErr != nil {
-			if retryErr := episode.waitRetry(ctx, session.log(),
-				slog.String("error_code", requestErrorCode(requestErr)),
-				requestRetryWait, requestErr,
+			if retryErr := waitForRequestRetryLogged(ctx, session.log(),
+				"session_release", requestErr,
 			); retryErr != nil {
 				return retryErr
 			}
 			continue
 		}
 		if response.Data.Status == statusAccepted {
-			episode.succeeded(ctx, session.log())
 			session.log().InfoContext(ctx, "adapter session released",
 				slog.String("event", "adapter.session_released"),
 			)
@@ -714,20 +630,22 @@ func (session *Session) markFenced(ctx context.Context) {
 	session.closing = true
 	session.handlerMutex.Unlock()
 
-	session.expectedClose.Store(true)
 	session.stateMutex.Lock()
+	alreadyFenced := errors.Is(session.terminalErr, ErrRuntimeFenced)
 	session.terminalErr = ErrRuntimeFenced
 	if session.lifecycleCancel != nil {
 		session.lifecycleCancel()
 	}
 	session.signalClosedLocked()
 	session.stateMutex.Unlock()
-	session.fenceLogOnce.Do(func() {
+	// Terminal state is the once-guard: concurrent fencing paths share
+	// terminalErr, so only the first reports the Warn diagnostic.
+	if !alreadyFenced {
 		session.log().WarnContext(ctx, "adapter session fenced; terminating",
 			slog.String("event", "adapter.session_fenced"),
 			slog.String("reason_code", "runtime_fenced"),
 		)
-	})
+	}
 	session.connection.Close()
 }
 

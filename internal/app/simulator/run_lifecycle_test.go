@@ -2,7 +2,6 @@ package simulator_test
 
 import (
 	"context"
-	"errors"
 	"log/slog"
 	"path/filepath"
 	"sync"
@@ -82,8 +81,9 @@ func lifecycleAttr(record slog.Record, key string) (slog.Value, bool) {
 	return found, matched
 }
 
-// This test protects the simulator application lifecycle and fails if
-// initialization evidence is missing, carries the wrong identity, or clean
+// This test protects the simulator startup milestone and fails if the
+// simulator.initialized record is missing or carries the wrong identity, if
+// the adapter health observed through the API is not healthy, or if clean
 // cancellation reports an error.
 func TestRunInitializesAndStopsCleanly(t *testing.T) {
 	t.Parallel()
@@ -143,7 +143,6 @@ func TestRunInitializesAndStopsCleanly(t *testing.T) {
 	case <-ctx.Done():
 		t.Fatalf("Run did not stop after cancellation: %v", ctx.Err())
 	}
-	requireCleanSimulatorStopping(t, recorder)
 }
 
 // startSimulatorTestCore assembles the minimal core transports the simulator
@@ -211,152 +210,6 @@ func requireSimulatorInitialized(t *testing.T, initialized slog.Record) {
 	}
 	if component, ok := lifecycleAttr(initialized, "component"); !ok || component.String() != "simulator" {
 		t.Fatalf("simulator.initialized component = %#v, want simulator", initialized)
-	}
-}
-
-func requireCleanSimulatorStopping(t *testing.T, recorder *lifecycleHandler) {
-	t.Helper()
-	var stopping *slog.Record
-	for _, record := range lifecycleRecords(recorder) {
-		if event, ok := lifecycleAttr(record, "event"); ok && event.String() == "process.stopping" {
-			candidate := record
-			stopping = &candidate
-		}
-	}
-	if stopping == nil {
-		t.Fatal("missing process.stopping after cancellation")
-	}
-	if reason, ok := lifecycleAttr(*stopping, "reason_code"); !ok || reason.String() != "context_cancelled" {
-		t.Fatalf("process.stopping reason = %#v, want context_cancelled", stopping)
-	}
-	for _, record := range lifecycleRecords(recorder) {
-		if record.Level >= slog.LevelError {
-			t.Fatalf("clean simulator shutdown emitted Error record: %#v", record)
-		}
-	}
-}
-
-// This test protects startup-failure teardown and fails if a post-connect
-// registration blocked by cancellation emits no process.stopping, emits it
-// more than once, or releases the live session before stopping is recorded.
-func TestRunBlockedRegistrationStopsBeforeRelease(t *testing.T) {
-	t.Parallel()
-	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
-	defer cancel()
-	logger, recorder := lifecycleLogger(slog.LevelInfo)
-	natsURL := startSessionOnlyCore(ctx, t, logger)
-
-	runContext, stopRun := context.WithCancel(ctx)
-	runErrors := make(chan error, 1)
-	go func() {
-		runErrors <- simulatorapp.Run(runContext, simulatorapp.Config{
-			AdapterID:  "simulator",
-			NATSURL:    natsURL,
-			BindingKey: "simulated-light",
-			Scenario:   "happy",
-		}, logger)
-	}()
-
-	// The claim milestone proves the live session connected before
-	// registration started, so cancelling now deterministically interrupts
-	// the blocked Register retry.
-	waitForLifecycleEvent(t, recorder, "adapter.session_claimed", 10*time.Second)
-	stopRun()
-	select {
-	case runErr := <-runErrors:
-		if !errors.Is(runErr, context.Canceled) {
-			t.Fatalf("Run error = %v, want canceled registration", runErr)
-		}
-	case <-ctx.Done():
-		t.Fatalf("Run did not stop after cancellation: %v", ctx.Err())
-	}
-	requireStoppingBeforeRelease(t, recorder)
-}
-
-// startSessionOnlyCore starts NATS with only the session claim server: the
-// SDK can Connect (live session) but Register has no responder, so it
-// retries until cancelled.
-func startSessionOnlyCore(ctx context.Context, t *testing.T, logger *slog.Logger) string {
-	t.Helper()
-	server, err := natsserver.NewServer(&natsserver.Options{
-		Host: "127.0.0.1", Port: -1, JetStream: true, StoreDir: t.TempDir(), NoSigs: true,
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	go server.Start()
-	if !server.ReadyForConnections(10 * time.Second) {
-		t.Fatal("NATS server did not become ready")
-	}
-	t.Cleanup(func() {
-		server.Shutdown()
-		server.WaitForShutdown()
-	})
-	coreConnection, err := natsgo.Connect(server.ClientURL())
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(coreConnection.Close)
-
-	database, err := platformdb.Open(ctx, filepath.Join(t.TempDir(), "hearth.db"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = database.Close() })
-	if err = platformdb.Migrate(ctx, database); err != nil {
-		t.Fatal(err)
-	}
-	catalog, err := devices.NewBuiltinTypeCatalog()
-	if err != nil {
-		t.Fatal(err)
-	}
-	validator := mustCompileValidator(t)
-	service := devices.NewService(
-		devices.SQLiteStores(devices.NewSQLiteRepository(database, catalog)),
-		devicesnats.NewCommandSender(coreConnection, validator),
-		catalog,
-		devices.Dependencies{Logger: slog.New(slog.DiscardHandler)},
-	)
-	sessions, err := devicesnats.StartSessionServer(coreConnection, validator, service, service, logger)
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = sessions.Drain() })
-	return server.ClientURL()
-}
-
-// requireStoppingBeforeRelease fails unless exactly one process.stopping
-// with the cancellation reason precedes the live session release.
-func requireStoppingBeforeRelease(t *testing.T, recorder *lifecycleHandler) {
-	t.Helper()
-	var stoppingIndexes []int
-	releasedIndex := -1
-	for index, record := range lifecycleRecords(recorder) {
-		event, eventFound := lifecycleAttr(record, "event")
-		if !eventFound {
-			continue
-		}
-		switch event.String() {
-		case "process.stopping":
-			stoppingIndexes = append(stoppingIndexes, index)
-			reason, reasonFound := lifecycleAttr(record, "reason_code")
-			if !reasonFound || reason.String() != "context_cancelled" {
-				t.Fatalf("process.stopping reason = %#v, want context_cancelled", record)
-			}
-		case "adapter.session_released":
-			if releasedIndex == -1 {
-				releasedIndex = index
-			}
-		}
-	}
-	if len(stoppingIndexes) != 1 {
-		t.Fatalf("process.stopping records = %d, want exactly one before teardown", len(stoppingIndexes))
-	}
-	if releasedIndex == -1 {
-		t.Fatal("missing adapter.session_released for the live session")
-	}
-	if stoppingIndexes[0] > releasedIndex {
-		t.Fatal("process.stopping followed session release, want stopping first")
 	}
 }
 

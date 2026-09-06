@@ -122,11 +122,9 @@ func (z2m *Adapter) Run(ctx context.Context) error {
 func (z2m *Adapter) runConnections(ctx context.Context) error {
 	delay := reconnectMinimum
 	var generation uint64
-	var episode retryEpisode
 	for {
 		generation++
-		progress := &connectionProgress{episode: &episode}
-		synchronized, err := z2m.runConnection(ctx, generation, progress)
+		synchronized, err := z2m.runConnection(ctx, generation)
 		if ctx.Err() != nil {
 			return ctx.Err()
 		}
@@ -137,7 +135,6 @@ func (z2m *Adapter) runConnections(ctx context.Context) error {
 			ctx,
 			generation,
 			externalSystemUnavailableReason,
-			progress,
 		); healthErr != nil {
 			return healthErr
 		}
@@ -145,7 +142,14 @@ func (z2m *Adapter) runConnections(ctx context.Context) error {
 			delay = reconnectMinimum
 		}
 		wait := z2m.retryDelay(delay)
-		z2m.logConnectionRetry(ctx, &episode, err, wait)
+		z2m.logger.DebugContext(
+			ctx,
+			"Zigbee2MQTT connection retrying",
+			eventKey, "dependency.retrying",
+			"dependency", adapterComponent,
+			"error_code", zigbee2MQTTErrorCode(err),
+			"retry_in_ms", max(wait.Milliseconds(), 0),
+		)
 		timer := time.NewTimer(wait)
 		select {
 		case <-ctx.Done():

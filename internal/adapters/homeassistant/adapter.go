@@ -98,9 +98,8 @@ func (homeAssistant *Adapter) CommandHandler() (adapter.CommandHandler, error) {
 
 func (homeAssistant *Adapter) Run(ctx context.Context) error {
 	delay := reconnectMinimum
-	var episode retryEpisode
 	for {
-		err := homeAssistant.runConnection(ctx, &episode)
+		err := homeAssistant.runConnection(ctx)
 		if ctx.Err() != nil {
 			return nil //nolint:nilerr // Context cancellation is a graceful shutdown.
 		}
@@ -114,7 +113,14 @@ func (homeAssistant *Adapter) Run(ctx context.Context) error {
 			return err
 		}
 		wait := jitter(delay)
-		homeAssistant.logConnectionRetry(ctx, &episode, err, wait)
+		homeAssistant.logger.DebugContext(
+			ctx,
+			"Home Assistant connection retrying",
+			eventKey, "dependency.retrying",
+			"dependency", adapterComponent,
+			"error_code", homeAssistantErrorCode(err),
+			"retry_in_ms", max(wait.Milliseconds(), 0),
+		)
 		timer := time.NewTimer(wait)
 		select {
 		case <-ctx.Done():
@@ -129,7 +135,7 @@ func (homeAssistant *Adapter) Run(ctx context.Context) error {
 	}
 }
 
-func (homeAssistant *Adapter) runConnection(ctx context.Context, episode *retryEpisode) error {
+func (homeAssistant *Adapter) runConnection(ctx context.Context) error {
 	client, err := dialClient(
 		ctx,
 		homeAssistant.config.URL,
@@ -143,7 +149,7 @@ func (homeAssistant *Adapter) runConnection(ctx context.Context, episode *retryE
 	if subscribeErr := client.SubscribeStateChanges(ctx); subscribeErr != nil {
 		return subscribeErr
 	}
-	return homeAssistant.reconcileAndStream(ctx, client, episode)
+	return homeAssistant.reconcileAndStream(ctx, client)
 }
 
 type snapshotResult struct {
@@ -157,7 +163,6 @@ type snapshotResult struct {
 func (homeAssistant *Adapter) reconcileAndStream(
 	ctx context.Context,
 	client *client,
-	episode *retryEpisode,
 ) error {
 	resultChannel := make(chan snapshotResult, 1)
 	go func() {
@@ -229,7 +234,6 @@ snapshotReady:
 			return err
 		}
 	}
-	homeAssistant.logUpstreamReady(ctx, episode)
 
 	for {
 		select {

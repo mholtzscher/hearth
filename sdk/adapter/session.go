@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"log/slog"
 	"sync"
-	"sync/atomic"
 	"time"
 
 	"github.com/google/uuid"
@@ -37,10 +36,7 @@ type Session struct {
 	jetstream         jetStreamPublisher
 	validator         *contractsv1.Validator
 	logger            *slog.Logger
-	connectCtx        context.Context
 	lifecycleCtx      context.Context
-	expectedClose     atomic.Bool
-	fenceLogOnce      sync.Once
 
 	stateMutex        sync.Mutex
 	terminalErr       error
@@ -48,7 +44,6 @@ type Session struct {
 	closedOnce        sync.Once
 	closeOnce         sync.Once
 	closeErr          error
-	connectedOnce     atomic.Bool
 	lifecycleCancel   context.CancelFunc
 	heartbeatDone     chan struct{}
 	heartbeatWake     chan struct{}
@@ -56,8 +51,6 @@ type Session struct {
 	desiredHealth     HealthReport
 	desiredGeneration uint64
 	ackedGeneration   uint64
-	ackedHealth       HealthReport
-	ackedHealthSet    bool
 	availabilityGate  chan struct{}
 
 	handlerMutex sync.Mutex
@@ -79,12 +72,12 @@ func Connect(ctx context.Context, config Config) (*Session, error) {
 		logger = slog.Default()
 	}
 	session := &Session{
-		adapterID: config.AdapterID,
+		adapterID:    config.AdapterID,
+		lifecycleCtx: ctx,
 		logger: logger.With(
 			"component", "adapter_session",
 			"adapter_id", config.AdapterID,
 		),
-		connectCtx:       ctx,
 		closed:           make(chan struct{}),
 		heartbeatDone:    make(chan struct{}),
 		heartbeatWake:    make(chan struct{}, 1),
@@ -99,10 +92,7 @@ func Connect(ctx context.Context, config Config) (*Session, error) {
 		natsgo.MaxReconnects(-1),
 		natsgo.ReconnectWait(natsReconnectWait),
 		natsgo.RetryOnFailedConnect(true),
-		natsgo.ConnectHandler(session.onConnected),
 		natsgo.DisconnectErrHandler(session.onDisconnected),
-		natsgo.ReconnectHandler(session.onReconnected),
-		natsgo.ClosedHandler(session.onClosed),
 		natsgo.ErrorHandler(session.onAsyncError),
 	}
 	if deadline, ok := ctx.Deadline(); ok {
@@ -116,12 +106,8 @@ func Connect(ctx context.Context, config Config) (*Session, error) {
 	if err != nil {
 		return nil, fmt.Errorf("connect to NATS: %w", err)
 	}
-	// Initial success is reported through onConnected/onReconnected: with
-	// RetryOnFailedConnect the client returns RECONNECTING before any
-	// successful dial, so logging here would claim a milestone not yet reached.
 	js, err := jetstream.New(connection)
 	if err != nil {
-		session.expectedClose.Store(true)
 		connection.Close()
 		return nil, fmt.Errorf("create JetStream client: %w", err)
 	}
@@ -129,7 +115,6 @@ func Connect(ctx context.Context, config Config) (*Session, error) {
 	session.jetstream = js
 	session.validator = validator
 	if claimErr := session.claim(ctx, config); claimErr != nil {
-		session.expectedClose.Store(true)
 		connection.Close()
 		return nil, claimErr
 	}
@@ -145,30 +130,17 @@ func Connect(ctx context.Context, config Config) (*Session, error) {
 	return session, nil
 }
 
-// onConnected reports the initial transport establishment exactly once.
-// With RetryOnFailedConnect the first success may arrive via ReconnectHandler,
-// so both callbacks share connectedOnce to distinguish initial from recovery.
-func (session *Session) onConnected(_ *natsgo.Conn) {
-	if session.isExpectedClose() || session.sessionError() != nil {
-		return
-	}
-	if !session.connectedOnce.CompareAndSwap(false, true) {
+// onDisconnected reports an unexpected live-connection loss as a safe
+// structured diagnostic. Teardown paths set terminal state before closing
+// the connection, so those intentional exits stay silent here.
+func (session *Session) onDisconnected(_ *natsgo.Conn, disconnectErr error) {
+	if disconnectErr == nil || session.isShuttingDown() {
 		return
 	}
 	logger, ctx := session.callbackLog()
-	logger.InfoContext(ctx, "connected to NATS",
-		slog.String("event", "dependency.connected"),
-		slog.String("dependency", "nats"),
-	)
-}
-
-// onDisconnected reports an unexpected live-connection loss. Teardown paths set
-// expectedClose or a terminal error first, so those quiet exits stay silent here.
-func (session *Session) onDisconnected(_ *natsgo.Conn, _ error) {
-	if session.isExpectedClose() || session.sessionError() != nil {
+	if ctx.Err() != nil {
 		return
 	}
-	logger, ctx := session.callbackLog()
 	logger.WarnContext(ctx, "NATS connection lost",
 		slog.String("event", "dependency.disconnected"),
 		slog.String("dependency", "nats"),
@@ -176,78 +148,32 @@ func (session *Session) onDisconnected(_ *natsgo.Conn, _ error) {
 	)
 }
 
-// isExpectedClose reports whether connection teardown already began, either
-// through explicit expectedClose or session lifecycle cancellation. The
-// Connect context is consulted only before the independent lifecycle is
-// established: the heartbeat lifecycle derives via WithoutCancel so cancelling
-// the Connect context after a successful Connect must not quiet unexpected
-// disconnect/reconnect/closed diagnostics while the session stays alive.
-// It reads shared state safely for NATS callbacks, which run on the client
-// library's goroutines.
-func (session *Session) isExpectedClose() bool {
-	if session.expectedClose.Load() {
+// isShuttingDown reports intentional teardown using existing session state.
+// Close, fencing, and heartbeat failure set terminalErr or closing before
+// closing the connection. It reads shared state safely for NATS callbacks,
+// which run on the client library's goroutines.
+func (session *Session) isShuttingDown() bool {
+	if session.sessionError() != nil {
 		return true
 	}
-	session.stateMutex.Lock()
-	lifecycle := session.lifecycleCtx
-	session.stateMutex.Unlock()
-	if lifecycle != nil {
-		return lifecycle.Err() != nil
-	}
-	return session.connectCtx != nil && session.connectCtx.Err() != nil
-}
-
-// onReconnected reports transport recovery without claiming Adapter health.
-// The first success after a failed initial dial arrives here, so it claims the
-// initial connected milestone once before subsequent recoveries log reconnected.
-func (session *Session) onReconnected(_ *natsgo.Conn) {
-	if session.isExpectedClose() || session.sessionError() != nil {
-		return
-	}
-	logger, ctx := session.callbackLog()
-	if session.connectedOnce.CompareAndSwap(false, true) {
-		logger.InfoContext(ctx, "connected to NATS",
-			slog.String("event", "dependency.connected"),
-			slog.String("dependency", "nats"),
-		)
-		return
-	}
-	logger.InfoContext(ctx, "reconnected to NATS",
-		slog.String("event", "dependency.reconnected"),
-		slog.String("dependency", "nats"),
-	)
-}
-
-// onClosed distinguishes expected teardown from an unexpected terminal close.
-// Lifecycle cancellation counts as expected even before Close runs: fencing
-// and failure paths cancel the lifecycle first, so the resulting close is
-// teardown rather than a new unexpected failure.
-func (session *Session) onClosed(_ *natsgo.Conn) {
-	logger, ctx := session.callbackLog()
-	if session.isExpectedClose() {
-		logger.DebugContext(ctx, "NATS connection closed",
-			slog.String("event", "dependency.closed"),
-			slog.String("dependency", "nats"),
-		)
-		return
-	}
-	logger.ErrorContext(ctx, "NATS connection closed unexpectedly",
-		slog.String("event", "dependency.closed"),
-		slog.String("dependency", "nats"),
-		slog.String("reason_code", "unexpected_close"),
-	)
+	session.handlerMutex.Lock()
+	defer session.handlerMutex.Unlock()
+	return session.closing
 }
 
 // onAsyncError replaces the NATS client's default stderr ErrorHandler, which
 // would leak arbitrary error text and full subjects. Async subscription
 // errors carry untrusted content, so the record uses only a fixed diagnostic
-// code and dependency identity. Teardown paths stay quiet here like the other
-// connection callbacks.
+// code and dependency identity. Teardown paths stay quiet here like the
+// disconnect callback.
 func (session *Session) onAsyncError(_ *natsgo.Conn, _ *natsgo.Subscription, _ error) {
-	if session.isExpectedClose() || session.sessionError() != nil {
+	if session.isShuttingDown() {
 		return
 	}
 	logger, ctx := session.callbackLog()
+	if ctx.Err() != nil {
+		return
+	}
 	logger.ErrorContext(ctx, "NATS async error",
 		slog.String("event", "dependency.operation_failed"),
 		slog.String("dependency", "nats"),
@@ -272,15 +198,13 @@ func (session *Session) Register(ctx context.Context, registration Registration)
 	if err != nil {
 		return Binding{}, err
 	}
-	episode := newRetryEpisode("registration", "core")
 	for {
 		attemptContext, cancelAttempt := context.WithTimeout(ctx, requestAttemptTimeout)
 		response, requestErr := sendSessionRequest[RegistrationResponse](attemptContext, session, request)
 		cancelAttempt()
 		if requestErr != nil {
-			if retryErr := episode.waitRetry(ctx, session.log(),
-				slog.String("error_code", requestErrorCode(requestErr)),
-				requestRetryWait, requestErr,
+			if retryErr := waitForRequestRetryLogged(ctx, session.log(),
+				"registration", requestErr,
 			); retryErr != nil {
 				return Binding{}, retryErr
 			}
@@ -302,7 +226,6 @@ func (session *Session) Register(ctx context.Context, registration Registration)
 			}
 		}
 		binding := *response.Data.Binding
-		episode.succeeded(ctx, session.log())
 		session.logRegistrationCompleted(ctx, request.correlationID, binding)
 		return binding, nil
 	}
@@ -371,15 +294,13 @@ func (session *Session) ListOwnedMappings(
 	if err != nil {
 		return OwnedMappingPage{}, err
 	}
-	episode := newRetryEpisode("owned_mappings", "core")
 	for {
 		attemptContext, cancelAttempt := context.WithTimeout(ctx, requestAttemptTimeout)
 		response, requestErr := sendSessionRequest[ownedMappingsResponse](attemptContext, session, request)
 		cancelAttempt()
 		if requestErr != nil {
-			if retryErr := episode.waitRetry(ctx, session.log(),
-				slog.String("error_code", requestErrorCode(requestErr)),
-				requestRetryWait, requestErr,
+			if retryErr := waitForRequestRetryLogged(ctx, session.log(),
+				"owned_mappings", requestErr,
 			); retryErr != nil {
 				return OwnedMappingPage{}, retryErr
 			}
@@ -394,7 +315,6 @@ func (session *Session) ListOwnedMappings(
 				Code: response.Data.Error.Code, Message: response.Data.Error.Message,
 			}
 		}
-		episode.succeeded(ctx, session.log())
 		return OwnedMappingPage{
 			Items: *response.Data.Items, NextCursor: response.Data.NextCursor,
 		}, nil
@@ -564,7 +484,7 @@ func (session *Session) handleCommand(parent context.Context, message *natsgo.Ms
 	command := request.Data
 	command.ID = request.ID
 	command.CorrelationID = request.CorrelationID
-	session.log().InfoContext(ctx, "command received",
+	session.log().DebugContext(ctx, "command received",
 		slog.String("event", "command.received"),
 		slog.String("command_id", request.ID),
 		slog.String("correlation_id", request.CorrelationID),
@@ -633,7 +553,7 @@ func (responder *commandResponder) Accept() (CommandEvidence, error) {
 	responder.mutex.Lock()
 	responder.accepted = true
 	responder.mutex.Unlock()
-	responder.session.log().InfoContext(responder.context, "command accepted",
+	responder.session.log().DebugContext(responder.context, "command accepted",
 		slog.String("event", "command.accepted"),
 		slog.String("command_id", responder.commandID),
 		slog.String("correlation_id", responder.correlationID),

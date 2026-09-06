@@ -13,13 +13,13 @@ import (
 )
 
 // commandTestContextKey carries a caller value that must survive transport
-// handling and asynchronous outcome logging, including after HTTP
+// handling and asynchronous failure diagnostics, including after HTTP
 // cancellation.
 type commandTestContextKey struct{}
 
 // lockedCommandLogWriter is a concurrency-safe slog destination. The command
-// lifecycle logs from a background goroutine, so tests must never read an
-// unlocked [bytes.Buffer] while it writes.
+// failure diagnostic logs from a background goroutine, so tests must never
+// read an unlocked [bytes.Buffer] while it writes.
 type lockedCommandLogWriter struct {
 	mutex  sync.Mutex
 	buffer bytes.Buffer
@@ -155,10 +155,11 @@ func waitForCommandEvent(t *testing.T, writer *lockedCommandLogWriter, event str
 	return nil
 }
 
-// This test protects the happy-path terminal summary and fails if creation,
-// dispatch, or the satisfied outcome is missing, duplicated, or carries the
-// wrong level, status, IDs, or sensitive parameters.
-func TestExecuteCommandLogsSingleSatisfiedOutcome(t *testing.T) {
+// This test protects startup logging and fails if creation or dispatch is
+// missing, duplicated, or carries the wrong level, IDs, or sensitive
+// parameters. Lifecycle outcomes belong to the command API, never to logs,
+// so any terminal summary here is a failure.
+func TestExecuteCommandLogsCreationAndDispatch(t *testing.T) {
 	t.Parallel()
 	writer, observer, logger := newCommandLogSink()
 	repository := newCommandRepository()
@@ -192,43 +193,42 @@ func TestExecuteCommandLogsSingleSatisfiedOutcome(t *testing.T) {
 		t.Fatalf("result = %#v", result)
 	}
 
-	// Terminal logging follows buffered delivery, so wait for the async
-	// emission instead of assuming it completed before ExecuteCommand returned.
-	waitForCommandEvent(t, writer, "command.completed")
+	// Dispatch logging runs on the lifecycle goroutine, so wait for the
+	// async emission instead of assuming it finished before ExecuteCommand
+	// returned.
+	waitForCommandEvent(t, writer, "command.dispatched")
 	records := writer.records(t)
-	if completed := commandEvents(records, "command.completed"); len(completed) != 1 {
-		t.Fatalf("command.completed events = %d, want 1:\n%s", len(completed), writer.output())
-	} else {
-		summary := completed[0]
-		if summary["level"] != "INFO" {
-			t.Fatalf("completed level = %#v, want INFO (record = %#v)", summary["level"], summary)
-		}
-		requireCommandField(t, summary, "status", string(CommandStatusSatisfied))
-		requireCommandField(t, summary, "command_id", string(commandTestID))
-		requireCommandField(t, summary, "correlation_id", string(commandTestCorrelationID))
-		requireCommandField(t, summary, "entity_id", string(commandTestEntityID))
-		requireCommandField(t, summary, "adapter_id", "simulator")
-		requireCommandField(t, summary, "runtime_id", string(commandTestRuntimeID))
-		requireCommandField(t, summary, "operation", string(OperationNameSet))
-		requireCommandField(t, summary, "observation_id", string(commandTestObservationID))
-		if _, ok := summary["failure_code"]; ok {
-			t.Fatalf("satisfied summary carries failure_code (record = %#v)", summary)
-		}
-		duration, ok := summary["duration_ms"].(float64)
-		if !ok || duration < 0 {
-			t.Fatalf("duration_ms = %#v, want nonnegative number (record = %#v)", summary["duration_ms"], summary)
-		}
-	}
 	if created := commandEvents(records, "command.created"); len(created) != 1 {
 		t.Fatalf("command.created events = %d, want 1:\n%s", len(created), writer.output())
 	} else {
+		if created[0]["level"] != "INFO" {
+			t.Fatalf("created level = %#v, want INFO (record = %#v)", created[0]["level"], created[0])
+		}
 		requireCommandField(t, created[0], "command_id", string(commandTestID))
 		requireCommandField(t, created[0], "correlation_id", string(commandTestCorrelationID))
+		requireCommandField(t, created[0], "entity_id", string(commandTestEntityID))
+		requireCommandField(t, created[0], "adapter_id", "simulator")
+		requireCommandField(t, created[0], "operation", string(OperationNameSet))
 	}
 	if dispatched := commandEvents(records, "command.dispatched"); len(dispatched) != 1 {
 		t.Fatalf("command.dispatched events = %d, want 1:\n%s", len(dispatched), writer.output())
-	} else if dispatched[0]["level"] != "DEBUG" {
-		t.Fatalf("dispatched level = %#v, want DEBUG", dispatched[0]["level"])
+	} else {
+		if dispatched[0]["level"] != "DEBUG" {
+			t.Fatalf("dispatched level = %#v, want DEBUG (record = %#v)", dispatched[0]["level"], dispatched[0])
+		}
+		requireCommandField(t, dispatched[0], "command_id", string(commandTestID))
+		requireCommandField(t, dispatched[0], "correlation_id", string(commandTestCorrelationID))
+		requireCommandField(t, dispatched[0], "entity_id", string(commandTestEntityID))
+		requireCommandField(t, dispatched[0], "adapter_id", "simulator")
+		requireCommandField(t, dispatched[0], "runtime_id", string(commandTestRuntimeID))
+		requireCommandField(t, dispatched[0], "operation", string(OperationNameSet))
+	}
+	if completed := commandEvents(records, "command.completed"); len(completed) != 0 {
+		t.Fatalf(
+			"command.completed events = %d, want 0 (lifecycle belongs to the API):\n%s",
+			len(completed),
+			writer.output(),
+		)
 	}
 	if failed := commandEvents(records, "command.execution_failed"); len(failed) != 0 {
 		t.Fatalf("command.execution_failed events = %d, want 0:\n%s", len(failed), writer.output())
@@ -242,73 +242,23 @@ func TestExecuteCommandLogsSingleSatisfiedOutcome(t *testing.T) {
 	}
 }
 
-// This test protects durable failure classification and fails if a terminal
-// failure uses the wrong event, level, status, or failure code, or if an
-// internal failure is additionally reported as a completion.
-func TestExecuteCommandLogsFailureMatrix(t *testing.T) {
+// This test protects honest failure reporting and fails if a failed
+// persistence write is reported as a durable completion, invents a terminal
+// status, or leaks store error text.
+func TestExecuteCommandFailedPersistenceLogsExecutionFailed(t *testing.T) {
 	t.Parallel()
-	tests := []commandLogFailureCase{
-		{
-			"adapter unhealthy", CommandAcceptance{}, ErrAdapterUnhealthy, time.Second, false,
-			"command.completed", "WARN", CommandStatusAdapterUnhealthy, CommandFailureAdapterUnhealthy,
-		},
-		{
-			"entity unavailable", CommandAcceptance{}, ErrEntityUnavailable, time.Second, false,
-			"command.completed", "WARN", CommandStatusEntityUnavailable, CommandFailureEntityUnavailable,
-		},
-		{
-			"upstream rejected", CommandAcceptance{Accepted: false}, nil, time.Second, false,
-			"command.completed", "WARN", CommandStatusRejected, CommandFailureUpstreamRejected,
-		},
-		{
-			"internal send failure", CommandAcceptance{}, errors.New("boom s3cr3t-transport-token"), time.Second,
-			false, "command.execution_failed", "ERROR", CommandStatusInternalFailure, CommandFailureInternalError,
-		},
-		{
-			"outcome timeout", CommandAcceptance{Accepted: true}, nil, 15 * time.Millisecond, false,
-			"command.completed", "WARN", CommandStatusOutcomeTimeout, CommandFailureOutcomeTimeout,
-		},
-		{
-			"immediate disabled", CommandAcceptance{}, nil, time.Second, true,
-			"command.completed", "WARN", CommandStatusEntityDisabled, CommandFailureEntityDisabled,
-		},
-	}
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			t.Parallel()
-			runCommandLogFailureCase(t, test)
-		})
-	}
-}
-
-type commandLogFailureCase struct {
-	name       string
-	acceptance CommandAcceptance
-	sendErr    error
-	deadline   time.Duration
-	disabled   bool
-	event      string
-	level      string
-	status     CommandStatus
-	code       CommandFailureCode
-}
-
-func runCommandLogFailureCase(t *testing.T, test commandLogFailureCase) {
-	t.Helper()
 	writer, _, logger := newCommandLogSink()
 	repository := newCommandRepository()
-	repository.view.Entity.Enabled = !test.disabled
+	repository.completeErr = errors.New("SQLite unavailable s3cr3t-persist")
 	sender := commandSenderFunc(func(
 		context.Context,
 		string,
 		RuntimeID,
 		CommandRequest,
 	) (CommandAcceptance, error) {
-		return test.acceptance, test.sendErr
+		return CommandAcceptance{}, ErrEntityUnavailable
 	})
-	service := newTestService(
-		repository, sender, commandCatalog(t, test.deadline), commandLogDependencies(logger),
-	)
+	service := newTestService(repository, sender, commandCatalog(t, time.Second), commandLogDependencies(logger))
 	if _, err := service.ExecuteCommand(
 		commandOperationContext(),
 		commandTestEntityID,
@@ -317,51 +267,42 @@ func runCommandLogFailureCase(t *testing.T, test commandLogFailureCase) {
 	); err == nil {
 		t.Fatal("expected command execution error")
 	}
-	requireSingleTerminalSummary(t, writer, test)
-	if created := commandEvents(writer.records(t), "command.created"); len(created) != 1 {
-		t.Fatalf("command.created events = %d, want 1:\n%s", len(created), writer.output())
-	}
-	if output := writer.output(); strings.Contains(output, "s3cr3t-transport-token") {
-		t.Fatalf("command logs leak transport error text:\n%s", output)
-	}
-	stored := repository.command(commandTestID)
-	if stored.Status != test.status || stored.FailureCode == nil || *stored.FailureCode != test.code {
-		t.Fatalf("stored command = %#v, want status %q", stored, test.status)
-	}
-}
-
-func requireSingleTerminalSummary(t *testing.T, writer *lockedCommandLogWriter, test commandLogFailureCase) {
-	t.Helper()
-	// Terminal logging follows buffered delivery; wait for the async emission.
-	waitForCommandEvent(t, writer, test.event)
+	// Failure diagnostics log from the lifecycle goroutine; wait for the
+	// async emission.
+	waitForCommandEvent(t, writer, "command.execution_failed")
 	records := writer.records(t)
-	terminal := commandEvents(records, test.event)
-	if len(terminal) != 1 {
-		t.Fatalf("%s events = %d, want 1:\n%s", test.event, len(terminal), writer.output())
+	if completed := commandEvents(records, "command.completed"); len(completed) != 0 {
+		t.Fatalf("command.completed events = %d, want 0 (no durable outcome):\n%s", len(completed), writer.output())
 	}
-	if terminal[0]["level"] != test.level {
-		t.Fatalf("terminal level = %#v, want %q", terminal[0]["level"], test.level)
+	failed := commandEvents(records, "command.execution_failed")
+	if len(failed) != 1 {
+		t.Fatalf("command.execution_failed events = %d, want 1:\n%s", len(failed), writer.output())
 	}
-	requireCommandField(t, terminal[0], "status", string(test.status))
-	requireCommandField(t, terminal[0], "failure_code", string(test.code))
-	requireCommandField(t, terminal[0], "command_id", string(commandTestID))
-	requireCommandField(t, terminal[0], "correlation_id", string(commandTestCorrelationID))
-	other := "command.execution_failed"
-	if test.event == other {
-		other = "command.completed"
+	if failed[0]["level"] != "ERROR" {
+		t.Fatalf("execution_failed level = %#v, want ERROR", failed[0]["level"])
 	}
-	if unexpected := commandEvents(records, other); len(unexpected) != 0 {
-		t.Fatalf("%s events = %d, want 0:\n%s", other, len(unexpected), writer.output())
+	requireCommandField(t, failed[0], "error_code", "internal_error")
+	requireCommandField(t, failed[0], "command_id", string(commandTestID))
+	requireCommandField(t, failed[0], "correlation_id", string(commandTestCorrelationID))
+	if _, ok := failed[0]["status"]; ok {
+		t.Fatalf("execution_failed invents a status (record = %#v)", failed[0])
+	}
+	if output := writer.output(); strings.Contains(output, "s3cr3t-persist") {
+		t.Fatalf("command logs leak persistence error text:\n%s", output)
+	}
+	if stored := repository.command(commandTestID); stored.Status != CommandStatusRequested {
+		t.Fatalf("stored command = %#v, want requested (no fabricated completion)", stored)
 	}
 }
 
-// This test protects async terminal logging after HTTP cancellation and fails
-// if the outcome is missing, duplicated, loses operation context, or diverges
-// from persisted history.
-func TestExecuteCommandLogsOnceAfterCallerCancellation(t *testing.T) {
+// This test protects swallowed async failure diagnostics and fails if a
+// persistence failure after HTTP cancellation is lost, loses operation
+// context, invents a terminal summary, or leaks store error text.
+func TestExecuteCommandLogsSwallowedFailureAfterCallerCancellation(t *testing.T) {
 	t.Parallel()
 	writer, observer, logger := newCommandLogSink()
 	repository := newCommandRepository()
+	repository.completeErr = errors.New("SQLite unavailable s3cr3t-persist")
 	dispatched := make(chan CommandRequest, 1)
 	release := make(chan struct{})
 	sender := commandSenderFunc(func(
@@ -392,78 +333,104 @@ func TestExecuteCommandLogsOnceAfterCallerCancellation(t *testing.T) {
 		t.Fatalf("caller error = %v", err)
 	}
 	close(release)
-	summary := waitForCommandEvent(t, writer, "command.completed")
-	requireCommandField(t, summary, "status", string(CommandStatusRejected))
-	requireCommandField(t, summary, "failure_code", string(CommandFailureUpstreamRejected))
-	requireCommandField(t, summary, "command_id", string(request.ID))
-	if summary["level"] != "WARN" {
-		t.Fatalf("completed level = %#v, want WARN", summary["level"])
+	// The caller is gone and the outcome is swallowed; the background
+	// lifecycle must still leave an execution_failed diagnostic.
+	failed := waitForCommandEvent(t, writer, "command.execution_failed")
+	if failed["level"] != "ERROR" {
+		t.Fatalf("execution_failed level = %#v, want ERROR", failed["level"])
 	}
-	deadline := time.Now().Add(time.Second)
-	for time.Now().Before(deadline) {
-		if repository.command(request.ID).Status == CommandStatusRejected {
-			break
-		}
-		time.Sleep(time.Millisecond)
+	requireCommandField(t, failed, "error_code", "internal_error")
+	requireCommandField(t, failed, "command_id", string(request.ID))
+	requireCommandField(
+		t, failed, "correlation_id", string(repository.command(request.ID).CorrelationID),
+	)
+	if _, ok := failed["status"]; ok {
+		t.Fatalf("execution_failed invents a status (record = %#v)", failed)
 	}
-	stored := repository.command(request.ID)
-	if stored.Status != CommandStatusRejected {
-		t.Fatalf("stored command = %#v, log summary = %#v", stored, summary)
+	if completed := commandEvents(writer.records(t), "command.completed"); len(completed) != 0 {
+		t.Fatalf("command.completed events = %d, want 0 (no durable outcome):\n%s", len(completed), writer.output())
 	}
-	// Allow a quiescence window so a duplicate terminal emission would be observed.
-	time.Sleep(200 * time.Millisecond)
-	if completed := commandEvents(writer.records(t), "command.completed"); len(completed) != 1 {
-		t.Fatalf("command.completed events = %d, want exactly 1:\n%s", len(completed), writer.output())
+	if output := writer.output(); strings.Contains(output, "s3cr3t-persist") {
+		t.Fatalf("command logs leak persistence error text:\n%s", output)
+	}
+	if stored := repository.command(request.ID); stored.Status != CommandStatusRequested {
+		t.Fatalf("stored command = %#v, want requested (no fabricated completion)", stored)
 	}
 	if !observer.allObserved() {
 		t.Fatal("async command log emission lost the originating operation context after cancellation")
 	}
 }
 
-// This test protects honest failure reporting and fails if a failed
-// persistence write is reported as a durable completion or leaks store error
-// text.
-func TestExecuteCommandFailedPersistenceLogsExecutionFailed(t *testing.T) {
+// This test protects swallowed persisted internal-failure diagnostics and
+// fails if an unexpected dispatch error committed as internal_failure after
+// HTTP cancellation is lost, loses operation context, invents a terminal
+// summary, or leaks dispatch error text.
+func TestExecuteCommandLogsPersistedInternalFailureAfterCallerCancellation(t *testing.T) {
 	t.Parallel()
-	writer, _, logger := newCommandLogSink()
+	writer, observer, logger := newCommandLogSink()
 	repository := newCommandRepository()
-	repository.completeErr = errors.New("SQLite unavailable s3cr3t-persist")
+	dispatched := make(chan CommandRequest, 1)
+	release := make(chan struct{})
+	dispatchErr := errors.New("boom s3cr3t-dispatch")
 	sender := commandSenderFunc(func(
-		context.Context,
-		string,
-		RuntimeID,
-		CommandRequest,
+		_ context.Context,
+		_ string,
+		_ RuntimeID,
+		request CommandRequest,
 	) (CommandAcceptance, error) {
-		return CommandAcceptance{}, ErrEntityUnavailable
+		dispatched <- request
+		<-release
+		return CommandAcceptance{}, dispatchErr
 	})
 	service := newTestService(repository, sender, commandCatalog(t, time.Second), commandLogDependencies(logger))
-	if _, err := service.ExecuteCommand(
-		commandOperationContext(),
-		commandTestEntityID,
-		OperationNameSet,
-		CommandParameters(`{"value":true}`),
-	); err == nil {
-		t.Fatal("expected command execution error")
+	ctx, cancel := context.WithCancel(commandOperationContext())
+	returned := make(chan error, 1)
+	go func() {
+		_, err := service.ExecuteCommand(
+			ctx,
+			commandTestEntityID,
+			OperationNameSet,
+			CommandParameters(`{"value":true}`),
+		)
+		returned <- err
+	}()
+	request := <-dispatched
+	cancel()
+	if err := <-returned; !errors.Is(err, context.Canceled) {
+		t.Fatalf("caller error = %v", err)
 	}
-	// Terminal logging follows buffered delivery; wait for the async emission.
-	waitForCommandEvent(t, writer, "command.execution_failed")
-	records := writer.records(t)
-	if completed := commandEvents(records, "command.completed"); len(completed) != 0 {
-		t.Fatalf("command.completed events = %d, want 0 (persistence failed):\n%s", len(completed), writer.output())
+	close(release)
+	// The persisted internal failure has no waiting caller; the background
+	// lifecycle must still leave an execution_failed diagnostic.
+	failed := waitForCommandEvent(t, writer, "command.execution_failed")
+	if failed["level"] != "ERROR" {
+		t.Fatalf("execution_failed level = %#v, want ERROR", failed["level"])
 	}
-	failed := commandEvents(records, "command.execution_failed")
-	if len(failed) != 1 {
-		t.Fatalf("command.execution_failed events = %d, want 1:\n%s", len(failed), writer.output())
+	requireCommandField(t, failed, "error_code", "internal_error")
+	requireCommandField(t, failed, "command_id", string(request.ID))
+	requireCommandField(
+		t, failed, "correlation_id", string(repository.command(request.ID).CorrelationID),
+	)
+	if _, ok := failed["status"]; ok {
+		t.Fatalf("execution_failed invents a status (record = %#v)", failed)
 	}
-	if failed[0]["level"] != "ERROR" {
-		t.Fatalf("execution_failed level = %#v, want ERROR", failed[0]["level"])
+	if completed := commandEvents(writer.records(t), "command.completed"); len(completed) != 0 {
+		t.Fatalf(
+			"command.completed events = %d, want 0 (outcome belongs to the API):\n%s",
+			len(completed),
+			writer.output(),
+		)
 	}
-	requireCommandField(t, failed[0], "error_code", "outcome_unknown")
-	if output := writer.output(); strings.Contains(output, "s3cr3t-persist") {
-		t.Fatalf("command logs leak persistence error text:\n%s", output)
+	if output := writer.output(); strings.Contains(output, "s3cr3t-dispatch") {
+		t.Fatalf("command logs leak dispatch error text:\n%s", output)
 	}
-	if stored := repository.command(commandTestID); stored.Status != CommandStatusRequested {
-		t.Fatalf("stored command = %#v, want requested (no fabricated completion)", stored)
+	stored := repository.command(request.ID)
+	if stored.Status != CommandStatusInternalFailure || stored.FailureCode == nil ||
+		*stored.FailureCode != CommandFailureInternalError || stored.CompletedAt == nil {
+		t.Fatalf("stored command = %#v, want persisted internal_failure", stored)
+	}
+	if !observer.allObserved() {
+		t.Fatal("async command log emission lost the originating operation context after cancellation")
 	}
 }
 
@@ -497,186 +464,5 @@ func TestExecuteCommandLogsNothingBeforeDurableCreation(t *testing.T) {
 	}
 	if records := writer.records(t); len(records) != 0 {
 		t.Fatalf("log records = %d, want 0 before durable creation:\n%s", len(records), writer.output())
-	}
-}
-
-// This test protects terminal race handling and fails if a satisfaction that
-// beats a dispatch failure is reported as that failure instead of satisfied.
-func TestExecuteCommandSatisfactionRaceLogsSingleSatisfiedOutcome(t *testing.T) {
-	t.Parallel()
-	writer, _, logger := newCommandLogSink()
-	repository := newCommandRepository()
-	var service *Service
-	sender := commandSenderFunc(
-		func(
-			ctx context.Context,
-			adapterID string,
-			runtimeID RuntimeID,
-			request CommandRequest,
-		) (CommandAcceptance, error) {
-			_, err := service.ProjectObservation(ctx, adapterID, runtimeID, Observation{
-				ID: commandTestObservationID, EntityID: request.EntityID, Value: Value(`true`),
-				AdapterReceivedAt: time.Now().UTC(), RefreshForCommand: &request.ID,
-			}, time.Now().UTC())
-			if err != nil {
-				return CommandAcceptance{}, err
-			}
-			return CommandAcceptance{Accepted: false}, nil
-		},
-	)
-	service = newTestService(repository, sender, commandCatalog(t, time.Second), commandLogDependencies(logger))
-
-	result, err := service.ExecuteCommand(
-		commandOperationContext(),
-		commandTestEntityID,
-		OperationNameSet,
-		CommandParameters(`{"value":true}`),
-	)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if result.ObservationID != commandTestObservationID {
-		t.Fatalf("result = %#v", result)
-	}
-	// Terminal logging follows buffered delivery; wait for the async emission.
-	waitForCommandEvent(t, writer, "command.completed")
-	records := writer.records(t)
-	completed := commandEvents(records, "command.completed")
-	if len(completed) != 1 {
-		t.Fatalf("command.completed events = %d, want 1:\n%s", len(completed), writer.output())
-	}
-	requireCommandField(t, completed[0], "status", string(CommandStatusSatisfied))
-	requireCommandField(t, completed[0], "observation_id", string(commandTestObservationID))
-	if failed := commandEvents(records, "command.execution_failed"); len(failed) != 0 {
-		t.Fatalf("command.execution_failed events = %d, want 0:\n%s", len(failed), writer.output())
-	}
-}
-
-// blockingTerminalCommandHandler blocks terminal command log emission until
-// released, proving the committed result does not wait for the terminal log.
-type blockingTerminalCommandHandler struct {
-	inner   slog.Handler
-	entered chan struct{}
-	release chan struct{}
-}
-
-func (handler *blockingTerminalCommandHandler) Enabled(ctx context.Context, level slog.Level) bool {
-	return handler.inner.Enabled(ctx, level)
-}
-
-func (handler *blockingTerminalCommandHandler) Handle(ctx context.Context, record slog.Record) error {
-	event := ""
-	record.Attrs(func(attr slog.Attr) bool {
-		if attr.Key == "event" {
-			event = attr.Value.String()
-		}
-		return true
-	})
-	if event == "command.completed" || event == "command.execution_failed" {
-		select {
-		case handler.entered <- struct{}{}:
-		default:
-		}
-		<-handler.release
-	}
-	return handler.inner.Handle(ctx, record)
-}
-
-func (handler *blockingTerminalCommandHandler) WithAttrs(attrs []slog.Attr) slog.Handler {
-	return &blockingTerminalCommandHandler{
-		inner:   handler.inner.WithAttrs(attrs),
-		entered: handler.entered,
-		release: handler.release,
-	}
-}
-
-func (handler *blockingTerminalCommandHandler) WithGroup(name string) slog.Handler {
-	return &blockingTerminalCommandHandler{
-		inner:   handler.inner.WithGroup(name),
-		entered: handler.entered,
-		release: handler.release,
-	}
-}
-
-// This test protects before-delivery terminal logging and fails if a stalled
-// synchronous terminal logger blocks the committed HTTP-facing result or if
-// the deferred emission is missing or duplicated.
-func TestExecuteCommandDeliversResultBeforeTerminalLogCompletes(t *testing.T) {
-	t.Parallel()
-	writer := &lockedCommandLogWriter{}
-	entered := make(chan struct{}, 1)
-	release := make(chan struct{})
-	logger := slog.New(&blockingTerminalCommandHandler{
-		inner:   slog.NewJSONHandler(writer, &slog.HandlerOptions{Level: slog.LevelDebug}),
-		entered: entered,
-		release: release,
-	})
-	repository := newCommandRepository()
-	var service *Service
-	sender := commandSenderFunc(
-		func(ctx context.Context, adapterID string, runtimeID RuntimeID, request CommandRequest) (CommandAcceptance, error) {
-			observation := Observation{
-				ID: commandTestObservationID, EntityID: request.EntityID, Value: Value(`true`),
-				AdapterReceivedAt: time.Now().UTC(), RefreshForCommand: &request.ID,
-			}
-			if _, err := service.ProjectObservation(
-				ctx, adapterID, runtimeID, observation, time.Now().UTC(),
-			); err != nil {
-				return CommandAcceptance{}, err
-			}
-			return CommandAcceptance{Accepted: true}, nil
-		},
-	)
-	service = newTestService(repository, sender, commandCatalog(t, time.Second), commandLogDependencies(logger))
-
-	type commandResult struct {
-		result CommandResult
-		err    error
-	}
-	returned := make(chan commandResult, 1)
-	go func() {
-		result, err := service.ExecuteCommand(
-			commandOperationContext(),
-			commandTestEntityID,
-			OperationNameSet,
-			CommandParameters(`{"value":true}`),
-		)
-		returned <- commandResult{result: result, err: err}
-	}()
-
-	select {
-	case <-entered:
-	case <-time.After(3 * time.Second):
-		t.Fatal("timed out waiting for the blocked terminal log emission")
-	}
-	select {
-	case outcome := <-returned:
-		if outcome.err != nil {
-			t.Fatalf("ExecuteCommand error = %v", outcome.err)
-		}
-		if outcome.result.ObservationID != commandTestObservationID {
-			t.Fatalf("result = %#v", outcome.result)
-		}
-	case <-time.After(3 * time.Second):
-		t.Fatal("committed result did not return while the terminal logger was blocked")
-	}
-	if terminal := append(
-		commandEvents(writer.records(t), "command.completed"),
-		commandEvents(writer.records(t), "command.execution_failed")...,
-	); len(terminal) != 0 {
-		t.Fatalf("terminal events = %d, want 0 while logger blocked:\n%s", len(terminal), writer.output())
-	}
-	close(release)
-	summary := waitForCommandEvent(t, writer, "command.completed")
-	requireCommandField(t, summary, "status", string(CommandStatusSatisfied))
-	requireCommandField(t, summary, "command_id", string(commandTestID))
-	requireCommandField(t, summary, "observation_id", string(commandTestObservationID))
-	// Allow a quiescence window so a duplicate terminal emission would be observed.
-	time.Sleep(200 * time.Millisecond)
-	if completed := commandEvents(writer.records(t), "command.completed"); len(completed) != 1 {
-		t.Fatalf("command.completed events = %d, want exactly 1:\n%s", len(completed), writer.output())
-	}
-	if stored := repository.command(commandTestID); stored.Status != CommandStatusSatisfied {
-		t.Fatalf("stored command = %#v, want satisfied", stored)
 	}
 }
