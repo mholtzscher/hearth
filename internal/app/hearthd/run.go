@@ -92,7 +92,7 @@ func Run(ctx context.Context, config Config, logger *slog.Logger) error { //noli
 
 	connection, connectErr := connectCoreNATS(ctx, config.NATSURL, natsLogger)
 	if connectErr != nil {
-		return connectErr
+		return mapStartupCancellationToNil(ctx, connectErr)
 	}
 	defer connection.Close()
 	js, jetStreamErr := jetstream.New(connection)
@@ -104,7 +104,7 @@ func Run(ctx context.Context, config Config, logger *slog.Logger) error { //noli
 	}
 	durable, provisionErr := devicesnats.ProvisionObservationResources(ctx, js)
 	if provisionErr != nil {
-		return failStage("provision_jetstream", provisionErr)
+		return mapStartupCancellationToNil(ctx, failStage("provision_jetstream", provisionErr))
 	}
 	logStartupStage(ctx, coreLogger, "jetstream_provisioned")
 	validator, compileErr := contractsv1.Compile()
@@ -161,7 +161,7 @@ func Run(ctx context.Context, config Config, logger *slog.Logger) error { //noli
 	logStartupStage(ctx, coreLogger, "nats_servers_started")
 	observations, observationErr := devicesnats.StartObservationConsumer(ctx, durable, validator, service, natsLogger)
 	if observationErr != nil {
-		return failStage("start_observation_consumer", observationErr)
+		return mapStartupCancellationToNil(ctx, failStage("start_observation_consumer", observationErr))
 	}
 	defer observations.Stop()
 	logStartupStage(ctx, coreLogger, "observation_consumer_started")
@@ -201,6 +201,15 @@ func Run(ctx context.Context, config Config, logger *slog.Logger) error { //noli
 			connection,
 		)
 	}
+}
+
+// mapStartupCancellationToNil returns nil when startup failed only because the
+// startup context was cancelled, preserving the startup error otherwise.
+func mapStartupCancellationToNil(ctx context.Context, err error) error {
+	if ctx.Err() != nil {
+		return nil //nolint:nilerr // Cancelled startup is a clean shutdown, not a failure.
+	}
+	return err
 }
 
 // shutdownCore stops lease-expiry supervision and drains core transports after
