@@ -17,11 +17,13 @@ const adapterComponent = "homeassistant"
 const eventKey = "event"
 
 // retryEpisode tracks one consecutive run of retryable connection failures so
-// the first failure (or a new failure class) warns once while repeats stay at
-// Debug. It is owned by a single Run goroutine; no locking is needed.
+// the first failure of each distinct failure class warns once while repeats
+// stay at Debug. Warned classes are remembered until a successful recovery
+// resets the episode. It is owned by a single Run goroutine; no locking is
+// needed.
 type retryEpisode struct {
 	attempts  int
-	lastCode  string
+	warned    map[string]struct{}
 	startedAt time.Time
 }
 
@@ -44,8 +46,8 @@ func homeAssistantErrorCode(err error) string {
 }
 
 // logConnectionRetry records one failed reconnect attempt. The first attempt
-// of an episode and any attempt with a distinct failure class log at Warn;
-// identical repeats log at Debug.
+// with a distinct failure class logs at Warn; repeats of an already warned
+// class in the same episode log at Debug.
 func (homeAssistant *Adapter) logConnectionRetry(
 	ctx context.Context,
 	episode *retryEpisode,
@@ -57,8 +59,14 @@ func (homeAssistant *Adapter) logConnectionRetry(
 	if episode.attempts == 1 {
 		episode.startedAt = time.Now()
 	}
-	warn := episode.attempts == 1 || code != episode.lastCode
-	episode.lastCode = code
+	_, seen := episode.warned[code]
+	warn := !seen
+	if warn {
+		if episode.warned == nil {
+			episode.warned = make(map[string]struct{})
+		}
+		episode.warned[code] = struct{}{}
+	}
 	args := []any{
 		eventKey, "dependency.retrying",
 		"dependency", adapterComponent,

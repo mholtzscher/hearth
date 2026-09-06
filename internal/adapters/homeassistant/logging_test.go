@@ -206,6 +206,71 @@ func TestRetryEpisodeWarnsOnceThenDebugs(t *testing.T) {
 	}
 }
 
+func TestRetryEpisodeWarnsOncePerClassAcrossInterleaving(t *testing.T) {
+	t.Parallel()
+	handler := newRecordingHandler()
+	session := newRecordingSession()
+	migrationAdapter := newRecordingAdapter(t, session, "http://127.0.0.1:1", "test-token", handler)
+
+	ctx := context.Background()
+	var episode retryEpisode
+	migrationAdapter.logConnectionRetry(ctx, &episode, &AuthenticationError{}, time.Second)
+	migrationAdapter.logConnectionRetry(
+		ctx, &episode, &requestRejectedError{Code: "code", Message: "rejected"}, time.Second,
+	)
+	migrationAdapter.logConnectionRetry(ctx, &episode, &AuthenticationError{}, time.Second)
+
+	var levels []slog.Level
+	var codes []string
+	for _, record := range handler.snapshot() {
+		if record.attrs["event"] != "dependency.retrying" {
+			continue
+		}
+		levels = append(levels, record.level)
+		code, _ := record.attrs["error_code"].(string)
+		codes = append(codes, code)
+	}
+	wantLevels := []slog.Level{slog.LevelWarn, slog.LevelWarn, slog.LevelDebug}
+	wantCodes := []string{"authentication_failed", "upstream_rejected", "authentication_failed"}
+	if len(levels) != len(wantLevels) {
+		t.Fatalf("retry records = %d, want %d: %#v", len(levels), len(wantLevels), handler.snapshot())
+	}
+	for index := range wantLevels {
+		if levels[index] != wantLevels[index] || codes[index] != wantCodes[index] {
+			t.Fatalf(
+				"retry record %d = (%v, %q), want (%v, %q)",
+				index, levels[index], codes[index], wantLevels[index], wantCodes[index],
+			)
+		}
+	}
+}
+
+func TestRetryEpisodeResetsWarnedClassesAfterRecovery(t *testing.T) {
+	t.Parallel()
+	handler := newRecordingHandler()
+	session := newRecordingSession()
+	migrationAdapter := newRecordingAdapter(t, session, "http://127.0.0.1:1", "test-token", handler)
+
+	ctx := context.Background()
+	var episode retryEpisode
+	migrationAdapter.logConnectionRetry(ctx, &episode, &AuthenticationError{}, time.Second)
+	migrationAdapter.logUpstreamReady(ctx, &episode)
+	if episode.active() {
+		t.Fatalf("episode still active after recovery: %#v", episode)
+	}
+	migrationAdapter.logConnectionRetry(ctx, &episode, &AuthenticationError{}, time.Second)
+
+	if got := handler.count(slog.LevelWarn, "dependency.retrying"); got != 2 {
+		t.Fatalf("warn retry records = %d, want 2 (one per episode)", got)
+	}
+	if got := handler.count(slog.LevelDebug, "dependency.retrying"); got != 0 {
+		t.Fatalf("debug retry records = %d, want 0", got)
+	}
+	if got := handler.count(slog.LevelInfo, "dependency.recovered"); got != 1 {
+		t.Fatalf("recovered records = %d, want 1", got)
+	}
+}
+
 func TestCancelledRetryBackoffEmitsNoAdditionalWarning(t *testing.T) {
 	t.Parallel()
 	handler := newRecordingHandler()
