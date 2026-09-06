@@ -1,6 +1,7 @@
 #:schema https://mise.jdx.dev/schema/mise.json
 
 [tools]
+python = "3.14"
 go = "1.27.1"
 node = "26.6.0"
 pnpm = "latest"
@@ -146,6 +147,19 @@ run = '''go vet ./...'''
 description = "Run NATS server with JetStream and MQTT (data in .data/nats)"
 run = '''nats-server -c configs/nats-server.conf'''
 
+[tasks."real-device-start"]
+description = "Start local validation against shared homelab NATS and Zigbee2MQTT"
+usage = 'arg "<host>" help="Homelab hostname (for example wanda)"'
+run = '''python3 -B .agents/skills/real-device-validation/scripts/start.py "$usage_host"'''
+
+[tasks."real-device-stop"]
+description = "Close this worktree's recorded real-device validation tab"
+run = '''python3 -B .agents/skills/real-device-validation/scripts/stop.py'''
+
+[tasks."real-device-start-test"]
+description = "Test real-device lifecycle safety with mocked services (no homelab access)"
+run = '''python3 -B -m unittest discover -s .agents/skills/real-device-validation/scripts -p 'test_*.py' -v'''
+
 [tasks."web-install"]
 description = "Install dashboard dependencies"
 run = '''pnpm --dir web install'''
@@ -157,7 +171,7 @@ run = '''pnpm --dir web run build'''
 
 [tasks."web-dev"]
 description = "Run the dashboard dev server (proxies hearthd on 127.0.0.1:8080; run web-install first)"
-run = '''pnpm --dir web run dev'''
+run = '''pnpm --dir web run dev --host 127.0.0.1 --strictPort'''
 
 [tasks."web-dev-remote"]
 description = "Run the dashboard dev server against a remote hearthd (override with HEARTHD_URL and NATS_MONITOR_URL)"
@@ -172,6 +186,7 @@ description = "Run all validation"
 depends = [
   "format-check",
   "generate-check",
+  "real-device-start-test",
   "lint",
   "tidy-check",
   "test",
