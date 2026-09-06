@@ -25,4 +25,15 @@ func TestMainLoggingFlagsAndConfigFailure(t *testing.T) {
 		t.Parallel()
 		cmdtest.CheckMissingConfigJSON(t, binary, "hearth-adapter-zigbee2mqtt")
 	})
+	t.Run("startup cancellation", func(t *testing.T) {
+		t.Parallel()
+		natsURL := cmdtest.StartProcessNATS(t)
+		configYAML :=
+			"adapter_id: \"test-zigbee2mqtt\"\n" +
+				"nats_url: \"" + natsURL + "\"\n" +
+				"mqtt:\n" +
+				"  url: \"tcp://127.0.0.1:1883\"\n" +
+				"  base_topic: \"zigbee2mqtt\"\n"
+		cmdtest.CheckStartupCancellation(t, binary, configYAML, "hearth-adapter-zigbee2mqtt")
+	})
 }

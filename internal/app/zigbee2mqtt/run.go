@@ -31,7 +31,9 @@ func Run(ctx context.Context, config Config, logger *slog.Logger) error {
 		return err
 	}
 	defer func() {
-		if closeErr := session.Close(); closeErr != nil {
+		// Runtime fencing is already reported by the SDK session lifecycle,
+		// so a fenced close stays silent here.
+		if closeErr := session.Close(); closeErr != nil && !errors.Is(closeErr, adapter.ErrRuntimeFenced) {
 			processLogger.WarnContext(
 				ctx,
 				"process cleanup failed",

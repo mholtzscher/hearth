@@ -193,10 +193,11 @@ func TestExecuteCommandLogsCreationAndDispatch(t *testing.T) {
 		t.Fatalf("result = %#v", result)
 	}
 
-	// Dispatch logging runs on the lifecycle goroutine, so wait for the
-	// async emission instead of assuming it finished before ExecuteCommand
-	// returned.
+	// Creation and dispatch logging run on the lifecycle goroutine, so wait
+	// for the async emissions instead of assuming they finished before
+	// ExecuteCommand returned.
 	waitForCommandEvent(t, writer, "command.dispatched")
+	waitForCommandEvent(t, writer, "command.created")
 	records := writer.records(t)
 	if created := commandEvents(records, "command.created"); len(created) != 1 {
 		t.Fatalf("command.created events = %d, want 1:\n%s", len(created), writer.output())
@@ -464,5 +465,182 @@ func TestExecuteCommandLogsNothingBeforeDurableCreation(t *testing.T) {
 	}
 	if records := writer.records(t); len(records) != 0 {
 		t.Fatalf("log records = %d, want 0 before durable creation:\n%s", len(records), writer.output())
+	}
+}
+
+// blockingCommandCreatedHandler blocks the synchronous log destination on
+// the creation record until released. Any lifecycle or cancellation step
+// gated behind creation emission deadlocks while it blocks.
+type blockingCommandCreatedHandler struct {
+	inner   slog.Handler
+	release chan struct{}
+	entered chan struct{}
+	once    sync.Once
+}
+
+func (handler *blockingCommandCreatedHandler) Enabled(ctx context.Context, level slog.Level) bool {
+	return handler.inner.Enabled(ctx, level)
+}
+
+func (handler *blockingCommandCreatedHandler) Handle(ctx context.Context, record slog.Record) error {
+	if record.Message == "command created" {
+		handler.once.Do(func() { close(handler.entered) })
+		<-handler.release
+	}
+	return handler.inner.Handle(ctx, record)
+}
+
+func (handler *blockingCommandCreatedHandler) WithAttrs(attrs []slog.Attr) slog.Handler {
+	return &blockingCommandCreatedHandler{
+		inner: handler.inner.WithAttrs(attrs), release: handler.release, entered: handler.entered,
+	}
+}
+
+func (handler *blockingCommandCreatedHandler) WithGroup(name string) slog.Handler {
+	return &blockingCommandCreatedHandler{
+		inner: handler.inner.WithGroup(name), release: handler.release, entered: handler.entered,
+	}
+}
+
+func newBlockingCommandLogSink() (*lockedCommandLogWriter, *slog.Logger, chan struct{}, chan struct{}) {
+	writer := &lockedCommandLogWriter{}
+	entered := make(chan struct{})
+	release := make(chan struct{})
+	logger := slog.New(&blockingCommandCreatedHandler{
+		inner:   slog.NewJSONHandler(writer, &slog.HandlerOptions{Level: slog.LevelDebug}),
+		release: release,
+		entered: entered,
+	})
+	return writer, logger, entered, release
+}
+
+// This test protects lifecycle progress under a blocked log destination and
+// fails if a stuck command.created writer delays waiter startup, dispatch,
+// or the waiting caller. The creation record must follow the buffered run
+// outcome instead of gating it.
+func TestExecuteCommandLifecycleProgressesUnderBlockedCreationLog(t *testing.T) {
+	t.Parallel()
+	writer, logger, entered, release := newBlockingCommandLogSink()
+	repository := newCommandRepository()
+	var service *Service
+	sender := commandSenderFunc(
+		func(ctx context.Context, adapterID string, runtimeID RuntimeID, request CommandRequest) (CommandAcceptance, error) {
+			observation := Observation{
+				ID: commandTestObservationID, EntityID: request.EntityID, Value: Value(`true`),
+				AdapterReceivedAt: time.Now().UTC(), RefreshForCommand: &request.ID,
+			}
+			if _, err := service.ProjectObservation(
+				ctx, adapterID, runtimeID, observation, time.Now().UTC(),
+			); err != nil {
+				return CommandAcceptance{}, err
+			}
+			return CommandAcceptance{Accepted: true}, nil
+		},
+	)
+	service = newTestService(repository, sender, commandCatalog(t, time.Second), commandLogDependencies(logger))
+
+	type outcome struct {
+		result CommandResult
+		err    error
+	}
+	finished := make(chan outcome, 1)
+	go func() {
+		result, err := service.ExecuteCommand(
+			commandOperationContext(),
+			commandTestEntityID,
+			OperationNameSet,
+			CommandParameters(`{"value":true}`),
+		)
+		finished <- outcome{result: result, err: err}
+	}()
+	select {
+	case completed := <-finished:
+		if completed.err != nil {
+			close(release)
+			t.Fatalf("ExecuteCommand error = %v", completed.err)
+		}
+		if completed.result.ObservationID != commandTestObservationID {
+			close(release)
+			t.Fatalf("result = %#v", completed.result)
+		}
+	case <-time.After(3 * time.Second):
+		close(release)
+		t.Fatal("ExecuteCommand did not return while command.created writer was blocked")
+	}
+	select {
+	case <-entered:
+	case <-time.After(3 * time.Second):
+		close(release)
+		t.Fatal("blocked command.created emission was never attempted")
+	}
+	close(release)
+	created := waitForCommandEvent(t, writer, "command.created")
+	requireCommandField(t, created, "command_id", string(commandTestID))
+}
+
+// This test protects caller cancellation under a blocked log destination
+// and fails if a stuck command.created writer delays waiter startup or the
+// cancellation select. The caller must observe cancellation even though the
+// creation record is still pending.
+func TestExecuteCommandCallerCancellationProgressesUnderBlockedCreationLog(t *testing.T) {
+	t.Parallel()
+	writer, logger, _, release := newBlockingCommandLogSink()
+	repository := newCommandRepository()
+	dispatched := make(chan CommandRequest, 1)
+	dispatchRelease := make(chan struct{})
+	sender := commandSenderFunc(func(
+		_ context.Context,
+		_ string,
+		_ RuntimeID,
+		request CommandRequest,
+	) (CommandAcceptance, error) {
+		dispatched <- request
+		<-dispatchRelease
+		return CommandAcceptance{Accepted: false}, nil
+	})
+	service := newTestService(repository, sender, commandCatalog(t, time.Second), commandLogDependencies(logger))
+	ctx, cancel := context.WithCancel(commandOperationContext())
+	returned := make(chan error, 1)
+	go func() {
+		_, err := service.ExecuteCommand(
+			ctx,
+			commandTestEntityID,
+			OperationNameSet,
+			CommandParameters(`{"value":true}`),
+		)
+		returned <- err
+	}()
+	select {
+	case request := <-dispatched:
+		if request.EntityID != commandTestEntityID {
+			cancel()
+			close(dispatchRelease)
+			close(release)
+			t.Fatalf("dispatched request = %#v", request)
+		}
+	case <-time.After(3 * time.Second):
+		cancel()
+		close(dispatchRelease)
+		close(release)
+		t.Fatal("dispatch never started while command.created writer was blocked")
+	}
+	cancel()
+	select {
+	case err := <-returned:
+		if !errors.Is(err, context.Canceled) {
+			close(dispatchRelease)
+			close(release)
+			t.Fatalf("caller error = %v", err)
+		}
+	case <-time.After(3 * time.Second):
+		close(dispatchRelease)
+		close(release)
+		t.Fatal("caller cancellation did not return while command.created writer was blocked")
+	}
+	close(dispatchRelease)
+	close(release)
+	created := waitForCommandEvent(t, writer, "command.created")
+	if created["level"] != "INFO" {
+		t.Fatalf("created level = %#v, want INFO", created["level"])
 	}
 }

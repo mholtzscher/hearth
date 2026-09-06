@@ -107,8 +107,9 @@ For diagnostics, check adapter logs together with the adapter and Entity reads:
 Hearth executables write to stderr with `--log-level info --log-format text` by default. Use `--log-format json` for filtering, or `--log-level debug` for Observation progress:
 
 ```sh
-go run ./cmd/hearthd --config configs/hearthd.yaml --log-format json 2>core.log
-jq -c 'select(.event == "command.created")' core.log
+log_dir=$(mktemp -d /tmp/hearth-logs.XXXXXX)
+go run ./cmd/hearthd --config configs/hearthd.yaml --log-format json 2>"$log_dir/core.log"
+jq -c 'select(.event == "command.created")' "$log_dir/core.log"
 ```
 
 See [the logging guide](docs/logging.md) for startup/failure diagnosis and safety rules. Use Command-history APIs for durable outcomes, and `/readyz` plus Adapter/Entity reads for current health; logs do not reconstruct those lifecycles.

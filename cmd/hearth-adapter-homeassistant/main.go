@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"log/slog"
@@ -56,12 +57,12 @@ func run() int {
 		"hearth-adapter-homeassistant configuration loaded",
 		slog.String("event", "process.config_loaded"),
 	)
-	if err := homeassistant.Run(ctx, config, logger); err != nil {
+	if err := homeassistant.Run(ctx, config, logger); err != nil && !errors.Is(err, context.Canceled) {
 		processLogger.ErrorContext(
 			ctx,
 			"hearth-adapter-homeassistant failed",
 			slog.String("event", "process.failed"),
-			slog.String("error_code", "run_failed"),
+			slog.String("error_code", homeassistant.ErrorCode(err)),
 			slog.String("stage", "run"),
 		)
 		return 1

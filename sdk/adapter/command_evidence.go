@@ -126,7 +126,7 @@ func (session *Session) publishObservation(
 			if terminalErr := session.sessionError(); terminalErr != nil {
 				return observationID, terminalErr
 			}
-			session.logPublishedObservation(ctx, observationID, observation, link)
+			session.logPublishedObservation(publicationContext, observationID, observation, link)
 			return observationID, nil
 		}
 		if terminalErr := session.sessionError(); terminalErr != nil {
@@ -161,7 +161,7 @@ func (session *Session) publishObservation(
 // command-linked publication carries the command and correlation IDs; an
 // ordinary publication carries only its own Observation ID.
 func (session *Session) logPublishedObservation(
-	ctx context.Context,
+	publicationContext context.Context,
 	observationID ObservationID,
 	observation Observation,
 	link *observationLink,
@@ -177,7 +177,7 @@ func (session *Session) logPublishedObservation(
 			slog.String("correlation_id", link.correlationID),
 		)
 	}
-	session.log().LogAttrs(ctx, slog.LevelDebug, "observation published", attrs...)
+	session.log().LogAttrs(publicationContext, slog.LevelDebug, "observation published", attrs...)
 }
 
 func (session *Session) newPublicationContext(

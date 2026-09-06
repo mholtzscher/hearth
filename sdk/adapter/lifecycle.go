@@ -175,14 +175,14 @@ func validateConfig(ctx context.Context, config Config) error {
 }
 
 //nolint:gocognit // Claim retry keeps one envelope across transport and active-runtime retries.
-func (session *Session) claim(ctx context.Context, config Config) error {
+func (session *Session) claim(ctx context.Context, config Config) (string, error) {
 	subject, err := natswire.AdapterClaimSubject(config.AdapterID)
 	if err != nil {
-		return &ValidationError{Err: err}
+		return "", &ValidationError{Err: err}
 	}
 	runtimeID, err := newID("run")
 	if err != nil {
-		return err
+		return "", err
 	}
 	request, err := prepareRequest(
 		session, "clm", contractsv1.AdapterClaimRequestSchemaID,
@@ -193,7 +193,7 @@ func (session *Session) claim(ctx context.Context, config Config) error {
 		},
 	)
 	if err != nil {
-		return err
+		return "", err
 	}
 	for {
 		attemptContext, cancelAttempt := context.WithTimeout(ctx, requestAttemptTimeout)
@@ -203,7 +203,7 @@ func (session *Session) claim(ctx context.Context, config Config) error {
 			if retryErr := waitForRequestRetryLogged(ctx, session.log(),
 				"session_claim", requestErr,
 			); retryErr != nil {
-				return retryErr
+				return "", retryErr
 			}
 			continue
 		}
@@ -211,24 +211,20 @@ func (session *Session) claim(ctx context.Context, config Config) error {
 			session.stateMutex.Lock()
 			session.runtimeID = runtimeID
 			session.stateMutex.Unlock()
-			session.log().InfoContext(ctx, "adapter session claimed",
-				slog.String("event", "adapter.session_claimed"),
-				slog.String("correlation_id", request.correlationID),
-			)
 			session.heartbeatInterval = heartbeatInterval
-			return nil
+			return request.correlationID, nil
 		}
 		if response.Data.Error == nil {
-			return errors.New("adapter claim rejection omitted error")
+			return "", errors.New("adapter claim rejection omitted error")
 		}
 		switch response.Data.Error.Code {
 		case "adapter_active":
 			if response.Data.Error.RetryAfter == nil {
-				return errors.New("active Adapter claim rejection omitted retry time")
+				return "", errors.New("active Adapter claim rejection omitted retry time")
 			}
 			retryAfter, parseErr := time.Parse(time.RFC3339Nano, *response.Data.Error.RetryAfter)
 			if parseErr != nil {
-				return fmt.Errorf("parse Adapter claim retry time: %w", parseErr)
+				return "", fmt.Errorf("parse Adapter claim retry time: %w", parseErr)
 			}
 			delay := max(time.Until(retryAfter), requestRetryWait)
 			session.log().DebugContext(ctx, "retrying operation",
@@ -238,12 +234,12 @@ func (session *Session) claim(ctx context.Context, config Config) error {
 				slog.String("rejection_code", "adapter_active"),
 			)
 			if waitErr := waitForRetry(ctx, delay); waitErr != nil {
-				return waitErr
+				return "", waitErr
 			}
 		case "claim_conflict":
-			return errors.New("adapter runtime claim conflicts with prior state")
+			return "", errors.New("adapter runtime claim conflicts with prior state")
 		default:
-			return fmt.Errorf("unknown Adapter claim rejection %q", response.Data.Error.Code)
+			return "", fmt.Errorf("unknown Adapter claim rejection %q", response.Data.Error.Code)
 		}
 	}
 }

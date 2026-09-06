@@ -5,8 +5,9 @@
 Hearth executables write structured, one-record-per-line logs to stderr.
 
 ```sh
-go run ./cmd/hearthd --config configs/hearthd.yaml --log-format json 2>core.log
-go run ./cmd/hearth-simulator --config configs/simulator.yaml --log-format json 2>simulator.log
+log_dir=$(mktemp -d /tmp/hearth-logs.XXXXXX)
+go run ./cmd/hearthd --config configs/hearthd.yaml --log-format json 2>"$log_dir/core.log"
+go run ./cmd/hearth-simulator --config configs/simulator.yaml --log-format json 2>"$log_dir/simulator.log"
 ```
 
 `--log-level` accepts `debug`, `info` (default), `warn`, or `error`. `--log-format` accepts `text` (default) or `json`. Values are case-sensitive. Invalid logging options fail before configuration is read or connections open. YAML configuration is unchanged.
@@ -21,7 +22,7 @@ go run ./cmd/hearth-simulator --config configs/simulator.yaml --log-format json 
 | `adapter.session_claimed`, `adapter.registration_completed` | Claimed runtime and canonical registered identities |
 | `adapter.commands_listening` | Command subscription ready, not upstream health |
 | `simulator.initialized` | Scenario initialization and canonical Entity ID |
-| `command.created` | Durable creation, including immediate rejection; not success |
+| `command.created` | Durable creation, including immediate rejection; deferred until execution returns for running Commands, not a startup or success signal |
 | `command.execution_failed` | Unexpected execution/persistence failure, not a terminal status summary |
 | `observation.invalid`, `observation.processing_failed` | Invalid input or processing/acknowledgement failure |
 | `dependency.retrying` | Debug-level retry attempt with safe diagnostic code |
@@ -29,10 +30,10 @@ go run ./cmd/hearth-simulator --config configs/simulator.yaml --log-format json 
 | `process.failed` | Fatal configuration or runtime failure, with safe stage/code |
 
 ```sh
-jq -c 'select(.event == "core.http_listening")' core.log
-jq -c 'select(.event == "adapter.registration_completed")' simulator.log
-jq -c 'select(.level == "ERROR" or .level == "WARN")' core.log simulator.log
-jq -c --arg id 'cmd_...' 'select(.command_id == $id)' core.log simulator.log
+jq -c 'select(.event == "core.http_listening")' "$log_dir/core.log"
+jq -c 'select(.event == "adapter.registration_completed")' "$log_dir/simulator.log"
+jq -c 'select(.level == "ERROR" or .level == "WARN")' "$log_dir/core.log" "$log_dir/simulator.log"
+jq -c --arg id 'cmd_...' 'select(.command_id == $id)' "$log_dir/core.log" "$log_dir/simulator.log"
 ```
 
 Debug adds routine transport/Observation progress and retry attempts. There is no retry-episode warning/recovery summary. Restart the affected process with `--log-level debug` for focused investigation; restarting an Adapter creates a new runtime ID and may wait for its previous lease.
@@ -52,7 +53,7 @@ curl http://127.0.0.1:8080/v1/adapters/simulator
 curl http://127.0.0.1:8080/v1/entities/ent_...
 ```
 
-`command.created` supplies an ID for lookup when the HTTP caller disconnects or gets an error. Command history supplies the durable satisfied/rejected/timeout/interrupted outcome and linked Observation ID; no terminal log record is promised. Acceptance is **not** satisfaction: only committed linked Observation evidence satisfies a Command.
+`command.created` supplies an ID for lookup when the HTTP caller disconnects or gets an error. For running Commands it is deferred until execution returns, so diagnostic output cannot delay dispatch or the caller's cancellation handling; it may follow other Command records. Immediately rejected creations are logged before returning. Command history supplies the durable satisfied/rejected/timeout/interrupted outcome and linked Observation ID; no terminal log record is promised. Acceptance is **not** satisfaction: only committed linked Observation evidence satisfies a Command.
 
 Silence is not current-health evidence. Reconnection does not prove upstream reconciliation or Entity availability. `/readyz` defines Core dependency readiness; Adapter and Entity reads describe their evidence. Logs do not reproduce those state machines or the lease-expiry grace sequence.
 

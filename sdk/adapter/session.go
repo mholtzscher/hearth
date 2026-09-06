@@ -114,7 +114,8 @@ func Connect(ctx context.Context, config Config) (*Session, error) {
 	session.connection = connection
 	session.jetstream = js
 	session.validator = validator
-	if claimErr := session.claim(ctx, config); claimErr != nil {
+	claimCorrelationID, claimErr := session.claim(ctx, config)
+	if claimErr != nil {
 		connection.Close()
 		return nil, claimErr
 	}
@@ -126,7 +127,13 @@ func Connect(ctx context.Context, config Config) (*Session, error) {
 	session.lifecycleCtx = lifecycleContext
 	session.lifecycleCancel = cancelLifecycle
 	session.stateMutex.Unlock()
+	// The heartbeat loop starts before the claim announcement so a blocked
+	// synchronous log sink cannot gate the newly claimed runtime's liveness.
 	go session.runHeartbeats(lifecycleContext)
+	session.log().InfoContext(lifecycleContext, "adapter session claimed",
+		slog.String("event", "adapter.session_claimed"),
+		slog.String("correlation_id", claimCorrelationID),
+	)
 	return session, nil
 }
 
@@ -484,15 +491,6 @@ func (session *Session) handleCommand(parent context.Context, message *natsgo.Ms
 	command := request.Data
 	command.ID = request.ID
 	command.CorrelationID = request.CorrelationID
-	commandLog := session.log().With(
-		slog.String("command_id", request.ID),
-		slog.String("correlation_id", request.CorrelationID),
-		slog.String("entity_id", command.EntityID),
-	)
-	commandLog.DebugContext(ctx, "command received",
-		slog.String("event", "command.received"),
-		slog.String("operation", command.OperationName),
-	)
 	responder := &commandResponder{
 		context:       ctx,
 		session:       session,
@@ -524,7 +522,10 @@ func (session *Session) handleCommand(parent context.Context, message *natsgo.Ms
 		errors.Is(handlerErr, ErrClosed) || errors.Is(handlerErr, ErrRuntimeFenced) {
 		return
 	}
-	commandLog.ErrorContext(ctx, "command handler failed",
+	session.log().ErrorContext(ctx, "command handler failed",
+		slog.String("command_id", request.ID),
+		slog.String("correlation_id", request.CorrelationID),
+		slog.String("entity_id", command.EntityID),
 		slog.String("event", "command.handler_failed"),
 		slog.String("error_code", "handler_failed"),
 	)
@@ -552,12 +553,6 @@ func (responder *commandResponder) Accept() (CommandEvidence, error) {
 	responder.mutex.Lock()
 	responder.accepted = true
 	responder.mutex.Unlock()
-	responder.session.log().DebugContext(responder.context, "command accepted",
-		slog.String("event", "command.accepted"),
-		slog.String("command_id", responder.commandID),
-		slog.String("correlation_id", responder.correlationID),
-		slog.String("entity_id", responder.entityID),
-	)
 	return newCommandEvidence(responder.context, responder.session, observationLink{
 		commandID:     responder.commandID,
 		correlationID: responder.correlationID,

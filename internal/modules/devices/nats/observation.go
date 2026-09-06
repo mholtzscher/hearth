@@ -171,17 +171,6 @@ func handleObservationMessage(
 		}
 		sourceUpdatedAt = &parsed
 	}
-	if adapterReceivedAt.After(metadata.Timestamp.Add(observationFutureClockThreshold)) {
-		logger.WarnContext(ctx, "adapter observation clock is ahead of core receive time",
-			slog.String("observation_id", envelope.ID),
-			slog.String("adapter_id", route.AdapterID),
-			slog.String("entity_id", route.EntityID),
-			slog.String(transportEventKey, "observation.clock_skew"),
-			slog.Time("adapter_received_at", adapterReceivedAt),
-			slog.Time("observed_at", metadata.Timestamp),
-		)
-	}
-
 	domain, domainErr := domainObservation(envelope, adapterReceivedAt, sourceUpdatedAt)
 	if domainErr != nil {
 		permanentFailure("observation_identity_failed", envelope.ID)
@@ -202,8 +191,20 @@ func handleObservationMessage(
 		)
 		return
 	}
+	// A slow diagnostic sink must not delay acknowledgement of committed input.
+	ackErr := message.Ack()
+	if adapterReceivedAt.After(metadata.Timestamp.Add(observationFutureClockThreshold)) {
+		logger.WarnContext(ctx, "adapter observation clock is ahead of core receive time",
+			slog.String("observation_id", envelope.ID),
+			slog.String("adapter_id", route.AdapterID),
+			slog.String("entity_id", route.EntityID),
+			slog.String(transportEventKey, "observation.clock_skew"),
+			slog.Time("adapter_received_at", adapterReceivedAt),
+			slog.Time("observed_at", metadata.Timestamp),
+		)
+	}
 	logObservationProjected(ctx, logger, envelope, route, domain, result)
-	if ackErr := message.Ack(); ackErr != nil {
+	if ackErr != nil {
 		logger.ErrorContext(ctx, "acknowledge projected observation",
 			slog.Uint64("stream_sequence", metadata.Sequence.Stream),
 			slog.String("observation_id", envelope.ID),
@@ -214,9 +215,10 @@ func handleObservationMessage(
 	}
 }
 
-// logInvalidObservation records permanent wire-invalid input at Warn with a
-// fixed validation class and safe sizes and IDs, then acknowledges the
-// message. Raw payloads and decode errors are never logged.
+// logInvalidObservation acknowledges permanent wire-invalid input before
+// recording it at Warn with a fixed validation class and safe sizes and
+// IDs. The warning is retained regardless of the Ack outcome, with Ack
+// failures recorded. Raw payloads and decode errors are never logged.
 func logInvalidObservation(
 	ctx context.Context,
 	logger *slog.Logger,
@@ -225,6 +227,7 @@ func logInvalidObservation(
 	payloadSize int,
 	errorCode, observationID string,
 ) {
+	ackErr := message.Ack()
 	scoped := logger.With(slog.Uint64("stream_sequence", sequence))
 	attributes := []slog.Attr{
 		slog.Int("payload_size", payloadSize),
@@ -235,7 +238,7 @@ func logInvalidObservation(
 		attributes = append(attributes, slog.String("observation_id", observationID))
 	}
 	scoped.LogAttrs(ctx, slog.LevelWarn, "acknowledging invalid observation", attributes...)
-	if ackErr := message.Ack(); ackErr != nil {
+	if ackErr != nil {
 		ackAttributes := []slog.Attr{
 			slog.String(transportEventKey, "observation.processing_failed"),
 			slog.String("stage", "ack"),
@@ -249,7 +252,9 @@ func logInvalidObservation(
 }
 
 // logObservationProjected records the committed projection disposition at
-// Debug with safe identity fields only; State values are never logged.
+// Debug with safe identity fields only; State values are never logged. The
+// handler attempts Ack before calling it, so it is retained regardless of
+// the Ack outcome.
 func logObservationProjected(
 	ctx context.Context,
 	logger *slog.Logger,

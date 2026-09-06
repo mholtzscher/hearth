@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"log/slog"
@@ -48,7 +49,7 @@ func run() int {
 	processLogger.InfoContext(
 		ctx, "hearth-simulator configuration loaded", slog.String("event", "process.config_loaded"),
 	)
-	if err := simulator.Run(ctx, config, logger); err != nil {
+	if err := simulator.Run(ctx, config, logger); err != nil && !errors.Is(err, context.Canceled) {
 		processLogger.ErrorContext(
 			ctx,
 			"hearth-simulator failed",

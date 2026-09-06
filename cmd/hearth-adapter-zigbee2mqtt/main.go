@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"log/slog"
@@ -56,7 +57,7 @@ func run() int {
 		"hearth-adapter-zigbee2mqtt configuration loaded",
 		slog.String("event", "process.config_loaded"),
 	)
-	if err := zigbee2mqtt.Run(ctx, config, logger); err != nil {
+	if err := zigbee2mqtt.Run(ctx, config, logger); err != nil && !errors.Is(err, context.Canceled) {
 		processLogger.ErrorContext(
 			ctx,
 			"hearth-adapter-zigbee2mqtt failed",

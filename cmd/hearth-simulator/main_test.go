@@ -25,4 +25,14 @@ func TestMainLoggingFlagsAndConfigFailure(t *testing.T) {
 		t.Parallel()
 		cmdtest.CheckMissingConfigJSON(t, binary, "hearth-simulator")
 	})
+	t.Run("startup cancellation", func(t *testing.T) {
+		t.Parallel()
+		natsURL := cmdtest.StartProcessNATS(t)
+		configYAML :=
+			"adapter_id: \"test-simulator\"\n" +
+				"nats_url: \"" + natsURL + "\"\n" +
+				"binding_key: \"test-light\"\n" +
+				"scenario: \"happy\"\n"
+		cmdtest.CheckStartupCancellation(t, binary, configYAML, "hearth-simulator")
+	})
 }

@@ -83,14 +83,14 @@ This is a small vocabulary of useful evidence, not an exhaustive required lifecy
 | `adapter.session_claimed`, `adapter.registration_completed`, `adapter.commands_listening` | SDK after the owning operation succeeds; canonical registration IDs remain discoverable |
 | `simulator.initialized` | Simulator after registration/initialization, with scenario and canonical Entity ID |
 | `adapter.reconcile_completed` | Optional aggregate summary from successfully activated work; no extra queries |
-| `command.created` | Devices Service after creation commits, including immediately rejected records; include `command_id` |
+| `command.created` | Devices Service after creation commits; for running Commands, defer until the execution outcome is buffered and lifecycle resources released; immediately rejected records emit before returning; include `command_id` |
 | `command.dispatched` | Debug attempt before transport dispatch, not delivery proof |
 | `command.execution_failed` | Safe unexpected execution/persistence diagnostic, including swallowed async failures; not a durable terminal summary |
 | `observation.invalid`, `observation.processing_failed` | Core transport's safe validation, commit, metadata, or acknowledgement failures |
 | `observation.clock_skew` | Existing safe timestamp diagnosis |
 | `dependency.retrying` | Debug at the existing retry boundary, without episode tracking |
 
-Routine SDK receipt/acceptance and acknowledged Observation publication/projection may remain Debug where useful for investigation. Expected rejection may be Warn with a typed code. None of these records replaces Command history.
+Acknowledged Observation publication/projection may remain Debug where useful for investigation. Attempt Core Observation acknowledgement before projection, clock-skew, or invalid-input diagnostics; retain diagnostics even when acknowledgement fails. Omit routine SDK receipt/acceptance records from the path before handler execution and evidence return. Start SDK heartbeats before announcing a claimed session. Expected rejection may be Warn with a typed code. None of these records replaces Command history.
 
 There is **no `command.completed` guarantee or terminal-log ordering contract**. Do not carry committed statuses through private results solely to log them, re-read the database for diagnostics, or alter waiter/delivery behavior for log ordering. Existing persistence and HTTP APIs own satisfied/rejected/timeout/interrupted outcomes. An acceptance alone is never described as satisfaction.
 

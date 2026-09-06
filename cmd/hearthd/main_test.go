@@ -1,6 +1,7 @@
 package main
 
 import (
+	"path/filepath"
 	"testing"
 
 	"github.com/mholtzscher/hearth/cmd/internal/cmdtest"
@@ -24,5 +25,14 @@ func TestMainLoggingFlagsAndConfigFailure(t *testing.T) {
 	t.Run("missing config json", func(t *testing.T) {
 		t.Parallel()
 		cmdtest.CheckMissingConfigJSON(t, binary, "hearthd")
+	})
+	t.Run("startup cancellation", func(t *testing.T) {
+		t.Parallel()
+		natsURL := cmdtest.StartProcessNATS(t)
+		configYAML :=
+			"http_addr: \"127.0.0.1:" + cmdtest.FreeLoopbackPort(t) + "\"\n" +
+				"nats_url: \"" + natsURL + "\"\n" +
+				"sqlite_path: \"" + filepath.Join(t.TempDir(), "hearth.db") + "\"\n"
+		cmdtest.CheckStartupCancellation(t, binary, configYAML, "hearthd")
 	})
 }

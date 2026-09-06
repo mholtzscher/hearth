@@ -30,9 +30,9 @@ func (service *Service) commandScopedLogger(command CommandRecord) *slog.Logger 
 	return logger
 }
 
-// logCommandCreated emits the durable creation record after CreateCommand
-// commits. The caller invokes it with the operation context that created the
-// command, including for immediately terminal pre-dispatch records.
+// logCommandCreated records durable creation with the creating operation's
+// context. Running commands defer it until their outcome is buffered and
+// lifecycle resources are released; immediately rejected commands emit inline.
 func (service *Service) logCommandCreated(ctx context.Context, command CommandRecord) {
 	service.commandScopedLogger(command).InfoContext(
 		ctx,

@@ -103,6 +103,17 @@ func Run(ctx context.Context, config Config, logger *slog.Logger) error {
 	return nil
 }
 
+// ErrorCode maps a Home Assistant Run failure to a bounded safe process
+// error code. Authentication failures report authentication_failed without
+// exposing tokens, URLs, or upstream error text; every other failure keeps
+// the generic run_failed code.
+func ErrorCode(err error) string {
+	if _, ok := errors.AsType[*homeassistantadapter.AuthenticationError](err); ok {
+		return "authentication_failed"
+	}
+	return "run_failed"
+}
+
 // readTokenFile loads the upstream bearer token without echoing its value.
 func readTokenFile(path string) (string, error) {
 	tokenBytes, err := os.ReadFile(path)
@@ -117,9 +128,10 @@ func readTokenFile(path string) (string, error) {
 }
 
 // closeAdapterSession releases the SDK session, warning on cleanup failure
-// without changing the caller's return semantics.
+// without changing the caller's return semantics. Runtime fencing is already
+// reported by the SDK session lifecycle, so a fenced close stays silent.
 func closeAdapterSession(ctx context.Context, session *adapter.Session, logger *slog.Logger) {
-	if closeErr := session.Close(); closeErr != nil {
+	if closeErr := session.Close(); closeErr != nil && !errors.Is(closeErr, adapter.ErrRuntimeFenced) {
 		logger.WarnContext(
 			ctx,
 			"process cleanup failed",

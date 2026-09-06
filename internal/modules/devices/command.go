@@ -76,11 +76,12 @@ func (service *Service) ExecuteCommand(
 	if err != nil {
 		return CommandResult{}, err
 	}
-	service.logCommandCreated(ctx, command)
 	if command.Status == CommandStatusEntityDisabled {
+		service.logCommandCreated(ctx, command)
 		return CommandResult{}, commandExecutionError(command.ID, ErrEntityDisabled)
 	}
 	if command.Status == CommandStatusAdapterUnhealthy {
+		service.logCommandCreated(ctx, command)
 		return CommandResult{}, commandExecutionError(command.ID, ErrAdapterUnhealthy)
 	}
 	waiter := service.addCommandWaiter(command.ID)
@@ -89,9 +90,12 @@ func (service *Service) ExecuteCommand(
 	lifecycleParent := context.WithoutCancel(ctx)
 	lifecycleContext, cancel := context.WithDeadline(lifecycleParent, command.DeadlineAt)
 	go func() {
-		defer cancel()
-		defer service.removeCommandWaiter(command.ID)
 		completed <- service.runCommand(lifecycleContext, command, waiter)
+		service.removeCommandWaiter(command.ID)
+		cancel()
+		// Publish the outcome and release lifecycle resources before a slow
+		// diagnostic sink can block this existing worker.
+		service.logCommandCreated(lifecycleParent, command)
 	}()
 
 	select {

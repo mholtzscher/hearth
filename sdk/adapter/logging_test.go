@@ -18,6 +18,7 @@ import (
 	"time"
 
 	natsgo "github.com/nats-io/nats.go"
+	"go.opentelemetry.io/otel/trace"
 
 	contractsv1 "github.com/mholtzscher/hearth/contracts/v1"
 	"github.com/mholtzscher/hearth/internal/contracts/v1/natswire"
@@ -415,12 +416,6 @@ func TestLoggingAcceptedHandlerFailure(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	accepted := waitForLogRecord(t, writer, "command.accepted", func(record map[string]any) bool {
-		return record["command_id"] == response.Data.CommandID
-	}, 3*time.Second)
-	requireStringID(t, accepted, "command_id")
-	requireStringID(t, accepted, "correlation_id")
-
 	failed := waitForLogRecord(t, writer, "command.handler_failed", func(record map[string]any) bool {
 		return record["command_id"] == response.Data.CommandID
 	}, 3*time.Second)
@@ -432,6 +427,11 @@ func TestLoggingAcceptedHandlerFailure(t *testing.T) {
 	}
 	if strings.Contains(writer.snapshot(), "post-acceptance bookkeeping failed") {
 		t.Error("handler error text leaked into logs")
+	}
+	for _, record := range parseLogRecords(t, writer.snapshot()) {
+		if record["event"] == "command.accepted" || record["event"] == "command.received" {
+			t.Errorf("optional event %q must not be logged: %v", record["event"], record)
+		}
 	}
 
 	cancelServe()
@@ -470,5 +470,365 @@ func TestLoggingNATSDiagnosticsHideDetail(t *testing.T) {
 		if strings.Contains(writer.snapshot(), sentinel) {
 			t.Errorf("NATS diagnostic leaked %q into logs", sentinel)
 		}
+	}
+}
+
+// logRecordEvent returns the event attribute carried by a log record.
+func logRecordEvent(record slog.Record) string {
+	event := ""
+	record.Attrs(func(attr slog.Attr) bool {
+		if attr.Key == "event" {
+			event = attr.Value.String()
+		}
+		return true
+	})
+	return event
+}
+
+// blockingOptionalCommandLogHandler stalls any optional command debug record.
+// A synchronous slog sink can block indefinitely on stderr, so handler and
+// Accept progress must not depend on command.received or command.accepted.
+type blockingOptionalCommandLogHandler struct {
+	base    slog.Handler
+	blockOn context.Context
+}
+
+func (handler *blockingOptionalCommandLogHandler) Enabled(ctx context.Context, level slog.Level) bool {
+	return handler.base.Enabled(ctx, level)
+}
+
+func (handler *blockingOptionalCommandLogHandler) Handle(ctx context.Context, record slog.Record) error {
+	if event := logRecordEvent(record); event == "command.received" || event == "command.accepted" {
+		<-handler.blockOn.Done()
+		return nil
+	}
+	return handler.base.Handle(ctx, record)
+}
+
+func (handler *blockingOptionalCommandLogHandler) WithAttrs(attrs []slog.Attr) slog.Handler {
+	return &blockingOptionalCommandLogHandler{base: handler.base.WithAttrs(attrs), blockOn: handler.blockOn}
+}
+
+func (handler *blockingOptionalCommandLogHandler) WithGroup(name string) slog.Handler {
+	return &blockingOptionalCommandLogHandler{base: handler.base.WithGroup(name), blockOn: handler.blockOn}
+}
+
+// This test protects command handler and Accept progress and fails if the
+// removed optional debug events return and stall on a blocked log sink.
+func TestLoggingCommandProgressWithBlockedOptionalEvents(t *testing.T) {
+	t.Parallel()
+	server := startServer(t, -1, t.TempDir())
+	core := connectNATS(t, server.ClientURL())
+	writer := &lockedWriter{}
+	base, err := logging.NewApplicationLogger(writer, "hearth-simulator", logging.LogOptions{
+		Level: "debug", Format: "json",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	blockContext, cancelBlock := context.WithCancel(context.Background())
+	defer cancelBlock()
+	blockingLogger := slog.New(&blockingOptionalCommandLogHandler{base: base.Handler(), blockOn: blockContext})
+	session := connectSessionWithLogger(t, server.ClientURL(), blockingLogger)
+
+	serveContext, cancelServe := context.WithCancel(context.Background())
+	defer cancelServe()
+	serveDone := make(chan error, 1)
+	subscriptions := server.NumSubscriptions()
+	handlerEntered := make(chan struct{}, 1)
+	acceptedEvidence := make(chan CommandEvidence, 1)
+	go func() {
+		serveDone <- session.ServeCommands(serveContext, func(_ context.Context, _ Command, responder Responder) error {
+			handlerEntered <- struct{}{}
+			evidence, acceptErr := responder.Accept()
+			if acceptErr != nil {
+				return acceptErr
+			}
+			if evidence == nil {
+				return errors.New("accept returned no command evidence")
+			}
+			acceptedEvidence <- evidence
+			return nil
+		})
+	}()
+	waitForSubscription(t, server, subscriptions, serveDone)
+
+	reply, err := sendCommand(context.Background(), core, session.runtimeID, true)
+	if err != nil {
+		cancelBlock()
+		t.Fatalf("command with blocked optional-event sink failed: %v", err)
+	}
+	response, err := natswire.Decode[CommandResponse](
+		compileValidator(t), contractsv1.CommandResponseSchemaID, reply.Data,
+	)
+	if err != nil {
+		cancelBlock()
+		t.Fatal(err)
+	}
+	if response.Data.Status != statusAccepted {
+		cancelBlock()
+		t.Fatalf("command response = %#v, want accepted", response)
+	}
+	// The reply publishes before Accept returns, so the response alone cannot
+	// prove Accept made progress: wait for the returned evidence itself.
+	select {
+	case <-handlerEntered:
+	case <-time.After(3 * time.Second):
+		cancelBlock()
+		t.Fatal("command handler did not run while optional-event sink was blocked")
+	}
+	select {
+	case evidence := <-acceptedEvidence:
+		if evidence == nil {
+			cancelBlock()
+			t.Fatal("Accept returned no command evidence while optional-event sink was blocked")
+		}
+	case <-time.After(3 * time.Second):
+		cancelBlock()
+		t.Fatal("Accept did not return evidence while optional-event sink was blocked")
+	}
+	for _, record := range parseLogRecords(t, writer.snapshot()) {
+		if record["event"] == "command.received" || record["event"] == "command.accepted" {
+			cancelBlock()
+			t.Fatalf("optional event %q returned and risks blocking handler progress", record["event"])
+		}
+	}
+
+	cancelBlock()
+	cancelServe()
+	if serveErr := <-serveDone; !errors.Is(serveErr, context.Canceled) {
+		t.Fatalf("ServeCommands error = %v, want canceled", serveErr)
+	}
+}
+
+// claimGateLogHandler blocks the session claim announcement until the test
+// releases it, proving heartbeat startup does not wait for that log record.
+type claimGateLogHandler struct {
+	base    slog.Handler
+	entered chan struct{}
+	release chan struct{}
+	once    *sync.Once
+}
+
+func (handler *claimGateLogHandler) Enabled(ctx context.Context, level slog.Level) bool {
+	return handler.base.Enabled(ctx, level)
+}
+
+func (handler *claimGateLogHandler) Handle(ctx context.Context, record slog.Record) error {
+	if logRecordEvent(record) == "adapter.session_claimed" {
+		handler.once.Do(func() { close(handler.entered) })
+		<-handler.release
+	}
+	return handler.base.Handle(ctx, record)
+}
+
+func (handler *claimGateLogHandler) WithAttrs(attrs []slog.Attr) slog.Handler {
+	return &claimGateLogHandler{
+		base: handler.base.WithAttrs(attrs), entered: handler.entered, release: handler.release, once: handler.once,
+	}
+}
+
+func (handler *claimGateLogHandler) WithGroup(name string) slog.Handler {
+	return &claimGateLogHandler{
+		base: handler.base.WithGroup(name), entered: handler.entered, release: handler.release, once: handler.once,
+	}
+}
+
+// This test protects newly claimed runtime heartbeat startup and fails if the
+// session claim log gates the heartbeat goroutine launch.
+func TestConnectHeartbeatStartsBeforeClaimAnnouncement(t *testing.T) {
+	t.Parallel()
+	server := startServer(t, -1, t.TempDir())
+	core := connectNATS(t, server.ClientURL())
+	validator := compileValidator(t)
+	startClaimAndReleaseResponders(t, core, validator)
+	heartbeatReceived := make(chan struct{}, 1)
+	_, err := core.Subscribe(natswire.AdapterHeartbeatWildcard(), func(message *natsgo.Msg) {
+		request, decodeErr := natswire.Decode[adapterHeartbeatRequest](
+			validator, contractsv1.AdapterHeartbeatRequestSchemaID, message.Data,
+		)
+		if decodeErr != nil {
+			return
+		}
+		select {
+		case heartbeatReceived <- struct{}{}:
+		default:
+		}
+		respondAcceptedHeartbeat(t, validator, message, request)
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if flushErr := core.Flush(); flushErr != nil {
+		t.Fatal(flushErr)
+	}
+
+	writer := &lockedWriter{}
+	base, err := logging.NewApplicationLogger(writer, "hearth-simulator", logging.LogOptions{
+		Level: "debug", Format: "json",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	gate := &claimGateLogHandler{
+		base: base.Handler(), entered: make(chan struct{}), release: make(chan struct{}), once: &sync.Once{},
+	}
+	gatedLogger := slog.New(gate)
+	var releaseClaimAnnouncement sync.Once
+	releaseGate := func() { releaseClaimAnnouncement.Do(func() { close(gate.release) }) }
+	defer releaseGate()
+	config := testConfig(server.ClientURL())
+	config.Logger = gatedLogger
+	var session *Session
+	type connectResult struct {
+		session *Session
+		err     error
+	}
+	connected := make(chan connectResult, 1)
+	connectFinished := false
+	connectContext := testContext(t)
+	t.Cleanup(func() {
+		releaseGate()
+		if !connectFinished {
+			select {
+			case result := <-connected:
+				session = result.session
+			case <-time.After(3 * time.Second):
+				t.Error("Connect did not finish during cleanup")
+				return
+			}
+		}
+		if session != nil {
+			_ = session.Close()
+		}
+	})
+	go func() {
+		connectedSession, connectErr := Connect(connectContext, config)
+		connected <- connectResult{session: connectedSession, err: connectErr}
+	}()
+	select {
+	case <-gate.entered:
+	case <-time.After(3 * time.Second):
+		t.Fatal("session claim announcement did not start")
+	}
+	// The claim log stays blocked here: a heartbeat proves the loop started first.
+	select {
+	case <-heartbeatReceived:
+	case <-time.After(8 * time.Second):
+		t.Fatal("heartbeat did not start while session claim announcement was blocked")
+	}
+	releaseGate()
+	select {
+	case result := <-connected:
+		connectFinished = true
+		if result.err != nil {
+			t.Fatal(result.err)
+		}
+		session = result.session
+	case <-time.After(3 * time.Second):
+		t.Fatal("Connect did not return after releasing the claim announcement")
+	}
+	claimed := waitForLogRecord(t, writer, "adapter.session_claimed", nil, 3*time.Second)
+	if claimed["runtime_id"] != session.runtimeID {
+		t.Fatalf("claimed runtime = %v, want %q", claimed["runtime_id"], session.runtimeID)
+	}
+	requireStringID(t, claimed, "correlation_id")
+}
+
+// spanCapturingLogHandler records the trace context of each log record so a
+// test can prove which context reached the observation published evidence.
+type spanCapturingLogHandler struct {
+	base   slog.Handler
+	shared *spanCaptureShared
+}
+
+type spanCaptureShared struct {
+	mutex sync.Mutex
+	spans map[string]trace.SpanContext
+}
+
+func (handler *spanCapturingLogHandler) Enabled(ctx context.Context, level slog.Level) bool {
+	return handler.base.Enabled(ctx, level)
+}
+
+func (handler *spanCapturingLogHandler) Handle(ctx context.Context, record slog.Record) error {
+	if event := logRecordEvent(record); event != "" {
+		handler.shared.mutex.Lock()
+		if handler.shared.spans == nil {
+			handler.shared.spans = make(map[string]trace.SpanContext)
+		}
+		handler.shared.spans[event] = trace.SpanContextFromContext(ctx)
+		handler.shared.mutex.Unlock()
+	}
+	return handler.base.Handle(ctx, record)
+}
+
+func (handler *spanCapturingLogHandler) WithAttrs(attrs []slog.Attr) slog.Handler {
+	return &spanCapturingLogHandler{base: handler.base.WithAttrs(attrs), shared: handler.shared}
+}
+
+func (handler *spanCapturingLogHandler) WithGroup(name string) slog.Handler {
+	return &spanCapturingLogHandler{base: handler.base.WithGroup(name), shared: handler.shared}
+}
+
+func (handler *spanCapturingLogHandler) spanFor(event string) (trace.SpanContext, bool) {
+	handler.shared.mutex.Lock()
+	defer handler.shared.mutex.Unlock()
+	span, ok := handler.shared.spans[event]
+	return span, ok
+}
+
+// This test protects the restored command span on the observation published
+// evidence and fails if the caller context is logged instead of the
+// publication context carrying the restored span.
+func TestLoggingObservationPublishedCarriesRestoredCommandSpan(t *testing.T) {
+	t.Parallel()
+	server := startServer(t, -1, t.TempDir())
+	writer := &lockedWriter{}
+	base, err := logging.NewApplicationLogger(writer, "hearth-simulator", logging.LogOptions{
+		Level: "debug", Format: "json",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	capture := &spanCapturingLogHandler{base: base.Handler(), shared: &spanCaptureShared{}}
+	capturingLogger := slog.New(capture)
+	session := connectSessionWithLogger(t, server.ClientURL(), capturingLogger)
+	publisher := &sequenceJetStreamPublisher{}
+	session.jetstream = publisher
+	commandSpan := sampleSpanContext()
+	callerSpan := trace.NewSpanContext(trace.SpanContextConfig{
+		TraceID:    trace.TraceID{16, 15, 14, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1},
+		SpanID:     trace.SpanID{8, 7, 6, 5, 4, 3, 2, 1},
+		TraceFlags: trace.FlagsSampled,
+	})
+	responder := &commandResponder{
+		context:       trace.ContextWithSpanContext(context.Background(), commandSpan),
+		session:       session,
+		connection:    session.connection,
+		replySubject:  "_INBOX.restored-span",
+		validator:     compileValidator(t),
+		commandID:     mustID(t, "cmd"),
+		correlationID: mustID(t, "cor"),
+		entityID:      testEntityID,
+		deadline:      time.Now().Add(time.Second),
+	}
+	evidence, err := responder.Accept()
+	if err != nil {
+		t.Fatal(err)
+	}
+	callerContext := trace.ContextWithSpanContext(context.Background(), callerSpan)
+	if _, publishErr := evidence.PublishObservation(callerContext, Observation{
+		EntityID: testEntityID, Value: json.RawMessage(`true`), AdapterReceivedAt: nowString(),
+	}); publishErr != nil {
+		t.Fatal(publishErr)
+	}
+	loggedSpan, ok := capture.spanFor("observation.published")
+	if !ok {
+		t.Fatal("observation.published was not logged")
+	}
+	if loggedSpan.TraceID() != commandSpan.TraceID() {
+		t.Fatalf("published log trace = %s, want restored command trace %s",
+			loggedSpan.TraceID(), commandSpan.TraceID())
 	}
 }
