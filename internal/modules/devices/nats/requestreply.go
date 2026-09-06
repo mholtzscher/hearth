@@ -97,7 +97,8 @@ func handleRequest[Req, Resp any](
 	// discard below preserves it even for undecodable input.
 	ctx := natswire.ExtractTrace(context.Background(), message.Header)
 	if message.Reply == "" {
-		logger.With(slog.String("kind", kind)).WarnContext(ctx, "discarding request without reply subject",
+		logger.WarnContext(ctx, "discarding request without reply subject",
+			slog.String("kind", kind),
 			slog.String(transportEventKey, "transport.request_discarded"),
 			slog.String(transportErrorCodeKey, "missing_reply_subject"),
 		)
@@ -105,17 +106,17 @@ func handleRequest[Req, Resp any](
 	}
 	request, err := natswire.Decode[Req](validator, requestSchema, message.Data)
 	if err != nil {
-		logger.With(slog.String("kind", kind)).WarnContext(ctx, fmt.Sprintf("discarding invalid %s", kind),
+		logger.WarnContext(ctx, fmt.Sprintf("discarding invalid %s", kind),
+			slog.String("kind", kind),
 			slog.String(transportEventKey, "transport.request_discarded"),
 			slog.String(transportErrorCodeKey, "request_decode_failed"),
 		)
 		return
 	}
 	if request.CausationID != nil {
-		logger.With(
+		logger.WarnContext(ctx, fmt.Sprintf("discarding caused %s", kind),
 			slog.String("kind", kind),
 			slog.String(idField, request.ID),
-		).WarnContext(ctx, fmt.Sprintf("discarding caused %s", kind),
 			slog.String(transportEventKey, "transport.request_discarded"),
 			slog.String(transportErrorCodeKey, "causation_present"),
 		)
@@ -127,10 +128,9 @@ func handleRequest[Req, Resp any](
 	}
 	replyID, err := newReplyID()
 	if err != nil {
-		logger.With(
+		logger.ErrorContext(ctx, fmt.Sprintf("generate %s reply ID", kind),
 			slog.String("kind", kind),
 			slog.String(idField, request.ID),
-		).ErrorContext(ctx, fmt.Sprintf("generate %s reply ID", kind),
 			slog.String(transportEventKey, "transport.response_failed"),
 			slog.String("stage", "reply_id"),
 			slog.String(transportErrorCodeKey, "reply_id_failed"),
@@ -145,10 +145,9 @@ func handleRequest[Req, Resp any](
 	}
 	payload, err := natswire.Encode(validator, responseSchema, reply)
 	if err != nil {
-		logger.With(
+		logger.ErrorContext(ctx, fmt.Sprintf("encode %s response", kind),
 			slog.String("kind", kind),
 			slog.String(idField, request.ID),
-		).ErrorContext(ctx, fmt.Sprintf("encode %s response", kind),
 			slog.String(transportEventKey, "transport.response_failed"),
 			slog.String("stage", "encode"),
 			slog.String(transportErrorCodeKey, "response_encode_failed"),
@@ -158,10 +157,9 @@ func handleRequest[Req, Resp any](
 	replyMessage := &natsgo.Msg{Subject: message.Reply, Header: make(natsgo.Header), Data: payload}
 	natswire.InjectTrace(ctx, replyMessage.Header)
 	if publishErr := connection.PublishMsg(replyMessage); publishErr != nil {
-		logger.With(
+		logger.ErrorContext(ctx, fmt.Sprintf("publish %s response", kind),
 			slog.String("kind", kind),
 			slog.String(idField, request.ID),
-		).ErrorContext(ctx, fmt.Sprintf("publish %s response", kind),
 			slog.String(transportEventKey, "transport.response_failed"),
 			slog.String("stage", "publish"),
 			slog.String(transportErrorCodeKey, "response_publish_failed"),

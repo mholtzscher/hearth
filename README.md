@@ -104,7 +104,7 @@ For diagnostics, check adapter logs together with the adapter and Entity reads:
 
 ## Application logs
 
-All four executables write to stderr with `--log-level info --log-format text` by default. Use `--log-format json` for filtering, or `--log-level debug` for Observation progress:
+Hearth executables write to stderr with `--log-level info --log-format text` by default. Use `--log-format json` for filtering, or `--log-level debug` for Observation progress:
 
 ```sh
 go run ./cmd/hearthd --config configs/hearthd.yaml --log-format json 2>core.log

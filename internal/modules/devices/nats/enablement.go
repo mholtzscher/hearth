@@ -42,16 +42,18 @@ func StartEntityEnablementServer(
 		) (entityEnablementResponse, bool) {
 			route, routeErr := natswire.ParseEntityEnablementSubject(subject)
 			if routeErr != nil {
-				logger.With(slog.String("enablement_id", request.ID)).WarnContext(ctx,
+				logger.WarnContext(ctx,
 					"discarding Entity enablement request with invalid subject",
+					slog.String("enablement_id", request.ID),
 					slog.String(transportEventKey, "enablement.request_discarded"),
 					slog.String(transportErrorCodeKey, "subject_invalid"),
 				)
 				return entityEnablementResponse{}, false
 			}
 			if route.EntityID != request.Data.EntityID {
-				logger.With(slog.String("enablement_id", request.ID)).WarnContext(ctx,
+				logger.WarnContext(ctx,
 					"discarding Entity enablement request with mismatched routing",
+					slog.String("enablement_id", request.ID),
 					slog.String(transportEventKey, "enablement.request_discarded"),
 					slog.String(transportErrorCodeKey, "routing_mismatch"),
 				)
@@ -59,8 +61,9 @@ func StartEntityEnablementServer(
 			}
 			entityID, entityIDErr := devices.ParseEntityID(request.Data.EntityID)
 			if entityIDErr != nil {
-				logger.With(slog.String("enablement_id", request.ID)).WarnContext(ctx,
+				logger.WarnContext(ctx,
 					"discarding Entity enablement request with invalid Entity ID",
+					slog.String("enablement_id", request.ID),
 					slog.String(transportEventKey, "enablement.request_discarded"),
 					slog.String(transportErrorCodeKey, "entity_id_invalid"),
 				)
@@ -71,11 +74,10 @@ func StartEntityEnablementServer(
 			)
 			response, handled := mapEntityEnablementResult(request.Data.EntityID, confirmed, enablementErr)
 			if !handled {
-				logger.With(
+				logger.ErrorContext(ctx,
+					"set Entity enablement",
 					slog.String("enablement_id", request.ID),
 					slog.String("adapter_id", route.AdapterID),
-				).ErrorContext(ctx,
-					"set Entity enablement",
 					slog.String(transportEventKey, "enablement.failed"),
 					slog.String(transportErrorCodeKey, "enablement_failed"),
 				)

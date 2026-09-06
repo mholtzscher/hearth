@@ -172,11 +172,10 @@ func handleObservationMessage(
 		sourceUpdatedAt = &parsed
 	}
 	if adapterReceivedAt.After(metadata.Timestamp.Add(observationFutureClockThreshold)) {
-		logger.With(
+		logger.WarnContext(ctx, "adapter observation clock is ahead of core receive time",
 			slog.String("observation_id", envelope.ID),
 			slog.String("adapter_id", route.AdapterID),
 			slog.String("entity_id", route.EntityID),
-		).WarnContext(ctx, "adapter observation clock is ahead of core receive time",
 			slog.String(transportEventKey, "observation.clock_skew"),
 			slog.Time("adapter_received_at", adapterReceivedAt),
 			slog.Time("observed_at", metadata.Timestamp),
@@ -192,12 +191,11 @@ func handleObservationMessage(
 		ctx, route.AdapterID, devices.RuntimeID(route.RuntimeID), domain, metadata.Timestamp.UTC(),
 	)
 	if projectionErr != nil {
-		logger.With(
+		logger.ErrorContext(ctx, "project observation",
 			slog.Uint64("stream_sequence", metadata.Sequence.Stream),
 			slog.String("observation_id", envelope.ID),
 			slog.String("adapter_id", route.AdapterID),
 			slog.String("entity_id", route.EntityID),
-		).ErrorContext(ctx, "project observation",
 			slog.String(transportEventKey, "observation.processing_failed"),
 			slog.String("stage", "commit"),
 			slog.String(transportErrorCodeKey, "projection_failed"),
@@ -206,10 +204,9 @@ func handleObservationMessage(
 	}
 	logObservationProjected(ctx, logger, envelope, route, domain, result)
 	if ackErr := message.Ack(); ackErr != nil {
-		logger.With(
+		logger.ErrorContext(ctx, "acknowledge projected observation",
 			slog.Uint64("stream_sequence", metadata.Sequence.Stream),
 			slog.String("observation_id", envelope.ID),
-		).ErrorContext(ctx, "acknowledge projected observation",
 			slog.String(transportEventKey, "observation.processing_failed"),
 			slog.String("stage", "ack"),
 			slog.String(transportErrorCodeKey, "ack_failed"),

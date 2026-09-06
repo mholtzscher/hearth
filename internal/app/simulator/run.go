@@ -70,9 +70,10 @@ func Run(ctx context.Context, config Config, logger *slog.Logger) error {
 	if err := simulated.Initialize(ctx, entityID); err != nil {
 		return fmt.Errorf("initialize simulator health and Entity availability: %w", err)
 	}
-	logger.With(slog.String("component", "simulator")).InfoContext(
+	logger.InfoContext(
 		ctx,
 		"simulator initialized",
+		slog.String("component", "simulator"),
 		slog.String("event", "simulator.initialized"),
 		slog.String("scenario", config.Scenario),
 		slog.String("entity_id", entityID),

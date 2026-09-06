@@ -2,7 +2,7 @@
 
 **Logs explain startup and failures. APIs provide current health and durable Command outcomes.**
 
-All four executables (`hearthd`, `hearth-simulator`, `hearth-adapter-homeassistant`, and `hearth-adapter-zigbee2mqtt`) write structured, one-record-per-line logs to stderr.
+Hearth executables write structured, one-record-per-line logs to stderr.
 
 ```sh
 go run ./cmd/hearthd --config configs/hearthd.yaml --log-format json 2>core.log
