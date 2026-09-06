@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"log/slog"
 	"time"
 
 	natsgo "github.com/nats-io/nats.go"
@@ -125,6 +126,7 @@ func (session *Session) publishObservation(
 			if terminalErr := session.sessionError(); terminalErr != nil {
 				return observationID, terminalErr
 			}
+			session.logPublishedObservation(publicationContext, observationID, observation, link)
 			return observationID, nil
 		}
 		if terminalErr := session.sessionError(); terminalErr != nil {
@@ -136,6 +138,12 @@ func (session *Session) publishObservation(
 		if !isTransientPublishError(err) {
 			return observationID, err
 		}
+		session.log().DebugContext(publicationContext, "retrying operation",
+			slog.String("event", "dependency.retrying"),
+			slog.String("operation", "observation_publish"),
+			slog.String("dependency", "nats"),
+			slog.String("error_code", requestErrorCode(err)),
+		)
 		timer := time.NewTimer(requestRetryWait)
 		select {
 		case <-publicationContext.Done():
@@ -147,6 +155,29 @@ func (session *Session) publishObservation(
 		case <-timer.C:
 		}
 	}
+}
+
+// logPublishedObservation emits the acknowledged publication evidence. A
+// command-linked publication carries the command and correlation IDs; an
+// ordinary publication carries only its own Observation ID.
+func (session *Session) logPublishedObservation(
+	publicationContext context.Context,
+	observationID ObservationID,
+	observation Observation,
+	link *observationLink,
+) {
+	attrs := []slog.Attr{
+		slog.String("event", "observation.published"),
+		slog.String("observation_id", string(observationID)),
+		slog.String("entity_id", observation.EntityID),
+	}
+	if link != nil {
+		attrs = append(attrs,
+			slog.String("command_id", link.commandID),
+			slog.String("correlation_id", link.correlationID),
+		)
+	}
+	session.log().LogAttrs(publicationContext, slog.LevelDebug, "observation published", attrs...)
 }
 
 func (session *Session) newPublicationContext(

@@ -42,24 +42,30 @@ func StartEntityEnablementServer(
 		) (entityEnablementResponse, bool) {
 			route, routeErr := natswire.ParseEntityEnablementSubject(subject)
 			if routeErr != nil {
-				logger.ErrorContext(ctx,
+				logger.WarnContext(ctx,
 					"discarding Entity enablement request with invalid subject",
-					"subject", subject, "error", routeErr,
+					slog.String("enablement_id", request.ID),
+					slog.String(transportEventKey, "enablement.request_discarded"),
+					slog.String(transportErrorCodeKey, "subject_invalid"),
 				)
 				return entityEnablementResponse{}, false
 			}
 			if route.EntityID != request.Data.EntityID {
-				logger.ErrorContext(ctx,
+				logger.WarnContext(ctx,
 					"discarding Entity enablement request with mismatched routing",
-					"subject", subject, "enablement_id", request.ID,
+					slog.String("enablement_id", request.ID),
+					slog.String(transportEventKey, "enablement.request_discarded"),
+					slog.String(transportErrorCodeKey, "routing_mismatch"),
 				)
 				return entityEnablementResponse{}, false
 			}
 			entityID, entityIDErr := devices.ParseEntityID(request.Data.EntityID)
 			if entityIDErr != nil {
-				logger.ErrorContext(ctx,
+				logger.WarnContext(ctx,
 					"discarding Entity enablement request with invalid Entity ID",
-					"subject", subject, "enablement_id", request.ID,
+					slog.String("enablement_id", request.ID),
+					slog.String(transportEventKey, "enablement.request_discarded"),
+					slog.String(transportErrorCodeKey, "entity_id_invalid"),
 				)
 				return entityEnablementResponse{}, false
 			}
@@ -69,8 +75,11 @@ func StartEntityEnablementServer(
 			response, handled := mapEntityEnablementResult(request.Data.EntityID, confirmed, enablementErr)
 			if !handled {
 				logger.ErrorContext(ctx,
-					"set Entity enablement", "subject", subject,
-					"enablement_id", request.ID, "error", enablementErr,
+					"set Entity enablement",
+					slog.String("enablement_id", request.ID),
+					slog.String("adapter_id", route.AdapterID),
+					slog.String(transportEventKey, "enablement.failed"),
+					slog.String(transportErrorCodeKey, "enablement_failed"),
 				)
 			}
 			return response, handled

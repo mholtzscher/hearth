@@ -2,6 +2,7 @@ package hearthd
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 	"sync"
 	"time"
@@ -62,6 +63,12 @@ func (supervisor *healthSupervisor) run(ctx context.Context) {
 }
 
 func (supervisor *healthSupervisor) poll(ctx context.Context, now time.Time) {
+	// A canceled poll races shutdown: the checker then reports dependency
+	// failures for a process that is stopping, not unhealthy. Skip canceled
+	// polls so shutdown stays silent.
+	if ctx.Err() != nil {
+		return
+	}
 	if supervisor.readiness == nil || supervisor.readiness.Check(ctx) != nil {
 		supervisor.ready = false
 		return
@@ -74,7 +81,18 @@ func (supervisor *healthSupervisor) poll(ctx context.Context, now time.Time) {
 		return
 	}
 	if err := supervisor.health.ExpireAdapterLeases(ctx, now); err != nil {
-		supervisor.logger.ErrorContext(ctx, "expire Adapter leases", "error", err)
+		// Shutdown can cancel the poll context mid-expiry. Normal
+		// cancellation is not an error, so suppress that diagnostic while
+		// preserving real expiry failures.
+		if ctx.Err() != nil || errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+			return
+		}
+		supervisor.logger.ErrorContext(
+			ctx,
+			"expire Adapter leases",
+			slog.String("event", "core.lease_expiry_failed"),
+			slog.String("error_code", "adapter_lease_expiry_failed"),
+		)
 	}
 }
 

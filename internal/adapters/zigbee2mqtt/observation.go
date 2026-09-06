@@ -3,6 +3,7 @@ package zigbee2mqtt
 import (
 	"context"
 	"errors"
+	"log/slog"
 
 	"github.com/mholtzscher/hearth/sdk/adapter"
 )
@@ -20,12 +21,10 @@ func (z2m *Adapter) processDeviceMessage(
 			z2m.logger.WarnContext(
 				ctx,
 				"ignored invalid Zigbee2MQTT availability",
-				"topic",
-				message.Topic,
-				"error",
-				err,
+				slog.String(eventKey, "adapter.availability_ignored"),
+				slog.String("error_code", "invalid_availability"),
 			)
-			return nil
+			return nil //nolint:nilerr // Invalid upstream input is skipped by design; the connection continues.
 		}
 		evidence := state.availability[device.ieeeAddress]
 		reports := make([]adapter.EntityAvailabilityReport, 0, len(device.entities))
@@ -60,23 +59,17 @@ func (z2m *Adapter) publishDeviceState(
 		z2m.logger.WarnContext(
 			ctx,
 			"ignored malformed Zigbee2MQTT Device State",
-			"friendly_name",
-			device.friendly,
-			"error",
-			err,
+			slog.String(eventKey, "adapter.device_state_ignored"),
+			slog.String("error_code", "invalid_device_state"),
 		)
-		return nil
+		return nil //nolint:nilerr // Malformed upstream input is skipped by design; the connection continues.
 	}
-	for _, issue := range issues {
+	for range issues {
 		z2m.logger.WarnContext(
 			ctx,
 			"ignored invalid Zigbee2MQTT State property",
-			"friendly_name",
-			device.friendly,
-			"properties",
-			issue.Properties,
-			"error",
-			issue.Err,
+			slog.String(eventKey, "adapter.state_property_ignored"),
+			slog.String("error_code", "invalid_state_property"),
 		)
 	}
 	for _, decoded := range states {

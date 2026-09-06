@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"time"
 
 	"github.com/mholtzscher/hearth/sdk/adapter"
@@ -62,7 +63,12 @@ func (z2m *Adapter) reconcile(
 	if err = z2m.replayPendingState(ctx, generation, state); err != nil {
 		return err
 	}
-	return z2m.requestCurrentState(ctx, connection, *state.inventory, snapshot)
+	if err = z2m.requestCurrentState(ctx, connection, *state.inventory, snapshot); err != nil {
+		return err
+	}
+	isolated := len(state.inventory.Rejections) + (len(state.inventory.Devices) - len(snapshot.devices))
+	z2m.logReconcileCompleted(ctx, snapshot, isolated)
+	return nil
 }
 
 func (z2m *Adapter) activateRoutes(
@@ -106,34 +112,13 @@ func (z2m *Adapter) buildRouteSnapshot(
 		routes: make(map[string]commandRoute), devices: make(map[string]runtimeDevice),
 	}
 	for _, rejection := range inventory.Rejections {
-		z2m.logger.WarnContext(
-			ctx,
-			"isolated Zigbee2MQTT Device",
-			"ieee",
-			rejection.IEEEAddress,
-			"model",
-			rejection.Model,
-			"code",
-			rejection.Code,
-		)
-	}
-	if len(inventory.Devices) == 0 {
-		z2m.logger.InfoContext(ctx, "Zigbee2MQTT inventory contains no eligible Entities")
+		z2m.logIsolatedDevice(ctx, rejection.Code)
 	}
 	for _, device := range inventory.Devices {
 		binding, registerErr := z2m.session.Register(ctx, device.Registration)
 		if registerErr != nil {
 			if rejected, ok := errors.AsType[*adapter.RegistrationRejectedError](registerErr); ok {
-				z2m.logger.WarnContext(
-					ctx,
-					"Zigbee2MQTT Device registration rejected",
-					"ieee",
-					device.IEEEAddress,
-					"model",
-					device.Model,
-					"code",
-					rejected.Code,
-				)
+				z2m.logIsolatedDevice(ctx, string(rejected.Code))
 				continue
 			}
 			return routeSnapshot{}, &sessionOperationError{
@@ -151,16 +136,7 @@ func (z2m *Adapter) buildRouteSnapshot(
 		}
 		runtime, runtimeErr := runtimeDeviceFromBinding(device, binding)
 		if runtimeErr != nil {
-			z2m.logger.WarnContext(
-				ctx,
-				"isolated invalid Zigbee2MQTT registration response",
-				"ieee",
-				device.IEEEAddress,
-				"model",
-				device.Model,
-				"error",
-				runtimeErr,
-			)
+			z2m.logIsolatedDevice(ctx, "invalid_registration")
 			continue
 		}
 		snapshot.devices[runtime.friendly] = runtime
@@ -194,10 +170,8 @@ func (z2m *Adapter) replayPendingAvailability(
 				z2m.logger.WarnContext(
 					ctx,
 					"ignored invalid Zigbee2MQTT availability",
-					"topic",
-					message.Topic,
-					"error",
-					err,
+					slog.String(eventKey, "adapter.availability_ignored"),
+					slog.String("error_code", "invalid_availability"),
 				)
 			}
 		}

@@ -18,6 +18,7 @@ func Run(ctx context.Context, config Config, logger *slog.Logger) error {
 	if logger == nil {
 		logger = slog.Default()
 	}
+	processLogger := logger.With(slog.String("component", "process"))
 
 	session, err := adapter.Connect(ctx, adapter.Config{
 		AdapterID:       config.AdapterID,
@@ -29,7 +30,19 @@ func Run(ctx context.Context, config Config, logger *slog.Logger) error {
 	if err != nil {
 		return err
 	}
-	defer session.Close()
+	defer func() {
+		// Runtime fencing is already reported by the SDK session lifecycle,
+		// so a fenced close stays silent here.
+		if closeErr := session.Close(); closeErr != nil && !errors.Is(closeErr, adapter.ErrRuntimeFenced) {
+			processLogger.WarnContext(
+				ctx,
+				"process cleanup failed",
+				slog.String("event", "process.cleanup_failed"),
+				slog.String("stage", "session_close"),
+				slog.String("error_code", "cleanup_failed"),
+			)
+		}
+	}()
 
 	zigbeeAdapter, err := zigbee2mqttadapter.New(session, zigbee2mqttadapter.Config{
 		MQTTURL:   config.MQTT.URL,

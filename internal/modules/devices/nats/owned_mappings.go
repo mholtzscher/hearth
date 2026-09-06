@@ -70,8 +70,11 @@ func handleOwnedMappings(
 ) (ownedMappingsResponse, bool) {
 	route, err := natswire.ParseOwnedMappingsSubject(subject)
 	if err != nil {
-		logger.ErrorContext(ctx, "discarding owned mappings request with invalid subject",
-			"subject", subject, "mapping_id", request.ID, "error", err)
+		logger.WarnContext(ctx, "discarding owned mappings request with invalid subject",
+			slog.String("mapping_id", request.ID),
+			slog.String(transportEventKey, "owned_mappings.request_discarded"),
+			slog.String(transportErrorCodeKey, "subject_invalid"),
+		)
 		return ownedMappingsResponse{}, false
 	}
 	if len(request.Data.Cursor) > maximumOwnedMappingsCursorBytes {
@@ -99,7 +102,11 @@ func handleOwnedMappings(
 		response, responseErr := acceptedOwnedMappings(route.AdapterID, page)
 		if responseErr != nil {
 			logger.ErrorContext(ctx, "map owned mappings response",
-				"subject", subject, "mapping_id", request.ID, "error", responseErr)
+				slog.String("mapping_id", request.ID),
+				slog.String("adapter_id", route.AdapterID),
+				slog.String(transportEventKey, "owned_mappings.failed"),
+				slog.String(transportErrorCodeKey, "mappings_map_failed"),
+			)
 			return ownedMappingsResponse{}, false
 		}
 		return response, true
@@ -109,7 +116,11 @@ func handleOwnedMappings(
 		return rejectedOwnedMappings(ownedMappingsInvalidCursorCode, ownedMappingsInvalidCursorMessage), true
 	default:
 		logger.ErrorContext(ctx, "list owned mappings",
-			"subject", subject, "mapping_id", request.ID, "error", listErr)
+			slog.String("mapping_id", request.ID),
+			slog.String("adapter_id", route.AdapterID),
+			slog.String(transportEventKey, "owned_mappings.failed"),
+			slog.String(transportErrorCodeKey, "mappings_failed"),
+		)
 		return ownedMappingsResponse{}, false
 	}
 }

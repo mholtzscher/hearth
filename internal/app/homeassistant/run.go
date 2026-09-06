@@ -25,13 +25,10 @@ func Run(ctx context.Context, config Config, logger *slog.Logger) error {
 	if logger == nil {
 		logger = slog.Default()
 	}
-	tokenBytes, err := os.ReadFile(config.Upstream.TokenFile)
+	processLogger := logger.With(slog.String("component", "process"))
+	token, err := readTokenFile(config.Upstream.TokenFile)
 	if err != nil {
-		return fmt.Errorf("read Home Assistant token file: %w", err)
-	}
-	token := strings.TrimSpace(string(tokenBytes))
-	if token == "" {
-		return errors.New("home assistant token file is empty")
+		return err
 	}
 
 	session, err := adapter.Connect(ctx, adapter.Config{
@@ -44,8 +41,7 @@ func Run(ctx context.Context, config Config, logger *slog.Logger) error {
 	if err != nil {
 		return err
 	}
-	defer session.Close()
-
+	defer closeAdapterSession(ctx, session, processLogger)
 	descriptor, err := sdkpowerv1.NewEntityDescriptor(adapter.EntityMetadata{
 		Key:        powerEntityKey,
 		ExternalID: config.Binding.EntityExternalID,
@@ -70,7 +66,8 @@ func Run(ctx context.Context, config Config, logger *slog.Logger) error {
 	if err != nil {
 		return err
 	}
-	logger.InfoContext(ctx, "registered Home Assistant light", "device_id", binding.DeviceID, "entity_id", entityID)
+	// Registration outcome logging belongs to the SDK session claim owner;
+	// no duplicate registration summary is emitted here.
 
 	migrationAdapter, err := homeassistantadapter.New(session, homeassistantadapter.Config{
 		URL:              config.Upstream.URL,
@@ -104,6 +101,45 @@ func Run(ctx context.Context, config Config, logger *slog.Logger) error {
 		}
 	}
 	return nil
+}
+
+// ErrorCode maps a Home Assistant Run failure to a bounded safe process
+// error code. Authentication failures report authentication_failed without
+// exposing tokens, URLs, or upstream error text; every other failure keeps
+// the generic run_failed code.
+func ErrorCode(err error) string {
+	if _, ok := errors.AsType[*homeassistantadapter.AuthenticationError](err); ok {
+		return "authentication_failed"
+	}
+	return "run_failed"
+}
+
+// readTokenFile loads the upstream bearer token without echoing its value.
+func readTokenFile(path string) (string, error) {
+	tokenBytes, err := os.ReadFile(path)
+	if err != nil {
+		return "", fmt.Errorf("read Home Assistant token file: %w", err)
+	}
+	token := strings.TrimSpace(string(tokenBytes))
+	if token == "" {
+		return "", errors.New("home assistant token file is empty")
+	}
+	return token, nil
+}
+
+// closeAdapterSession releases the SDK session, warning on cleanup failure
+// without changing the caller's return semantics. Runtime fencing is already
+// reported by the SDK session lifecycle, so a fenced close stays silent.
+func closeAdapterSession(ctx context.Context, session *adapter.Session, logger *slog.Logger) {
+	if closeErr := session.Close(); closeErr != nil && !errors.Is(closeErr, adapter.ErrRuntimeFenced) {
+		logger.WarnContext(
+			ctx,
+			"process cleanup failed",
+			slog.String("event", "process.cleanup_failed"),
+			slog.String("stage", "session_close"),
+			slog.String("error_code", "cleanup_failed"),
+		)
+	}
 }
 
 func entityIDForKey(binding adapter.Binding, key string) (string, error) {

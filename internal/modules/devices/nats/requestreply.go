@@ -32,10 +32,18 @@ func (server *requestReplyServer) Drain() error {
 
 func defaultLogger(logger *slog.Logger) *slog.Logger {
 	if logger == nil {
-		return slog.Default()
+		return slog.Default().With(slog.String("component", "nats"))
 	}
 	return logger
 }
+
+// Structured field keys shared by transport log emission sites. Event values
+// stay whole literals at each site so searching an event name finds its
+// implementation.
+const (
+	transportEventKey     = "event"
+	transportErrorCodeKey = "error_code"
+)
 
 // startRequestReplyServer validates dependencies, subscribes to the wildcard
 // subject, and answers each message through handleRequest. The respond
@@ -85,27 +93,48 @@ func handleRequest[Req, Resp any](
 	logger *slog.Logger,
 	respond func(context.Context, string, natswire.Envelope[Req]) (Resp, bool),
 ) {
+	// Extract the operation context from headers before decoding so every
+	// discard below preserves it even for undecodable input.
+	ctx := natswire.ExtractTrace(context.Background(), message.Header)
 	if message.Reply == "" {
-		logger.Error(fmt.Sprintf("discarding %s without reply subject", kind), "subject", message.Subject)
+		logger.WarnContext(ctx, "discarding request without reply subject",
+			slog.String("kind", kind),
+			slog.String(transportEventKey, "transport.request_discarded"),
+			slog.String(transportErrorCodeKey, "missing_reply_subject"),
+		)
 		return
 	}
 	request, err := natswire.Decode[Req](validator, requestSchema, message.Data)
 	if err != nil {
-		logger.Error(fmt.Sprintf("discarding invalid %s", kind), "subject", message.Subject, "error", err)
+		logger.WarnContext(ctx, fmt.Sprintf("discarding invalid %s", kind),
+			slog.String("kind", kind),
+			slog.String(transportEventKey, "transport.request_discarded"),
+			slog.String(transportErrorCodeKey, "request_decode_failed"),
+		)
 		return
 	}
 	if request.CausationID != nil {
-		logger.Error(fmt.Sprintf("discarding caused %s", kind), "subject", message.Subject, idField, request.ID)
+		logger.WarnContext(ctx, fmt.Sprintf("discarding caused %s", kind),
+			slog.String("kind", kind),
+			slog.String(idField, request.ID),
+			slog.String(transportEventKey, "transport.request_discarded"),
+			slog.String(transportErrorCodeKey, "causation_present"),
+		)
 		return
 	}
-	ctx := natswire.ExtractTrace(context.Background(), message.Header)
 	response, handled := respond(ctx, message.Subject, request)
 	if !handled {
 		return
 	}
 	replyID, err := newReplyID()
 	if err != nil {
-		logger.Error(fmt.Sprintf("generate %s reply ID", kind), idField, request.ID, "error", err)
+		logger.ErrorContext(ctx, fmt.Sprintf("generate %s reply ID", kind),
+			slog.String("kind", kind),
+			slog.String(idField, request.ID),
+			slog.String(transportEventKey, "transport.response_failed"),
+			slog.String("stage", "reply_id"),
+			slog.String(transportErrorCodeKey, "reply_id_failed"),
+		)
 		return
 	}
 	causationID := request.ID
@@ -116,13 +145,25 @@ func handleRequest[Req, Resp any](
 	}
 	payload, err := natswire.Encode(validator, responseSchema, reply)
 	if err != nil {
-		logger.Error(fmt.Sprintf("encode %s response", kind), idField, request.ID, "error", err)
+		logger.ErrorContext(ctx, fmt.Sprintf("encode %s response", kind),
+			slog.String("kind", kind),
+			slog.String(idField, request.ID),
+			slog.String(transportEventKey, "transport.response_failed"),
+			slog.String("stage", "encode"),
+			slog.String(transportErrorCodeKey, "response_encode_failed"),
+		)
 		return
 	}
 	replyMessage := &natsgo.Msg{Subject: message.Reply, Header: make(natsgo.Header), Data: payload}
 	natswire.InjectTrace(ctx, replyMessage.Header)
 	if publishErr := connection.PublishMsg(replyMessage); publishErr != nil {
-		logger.Error(fmt.Sprintf("publish %s response", kind), idField, request.ID, "error", publishErr)
+		logger.ErrorContext(ctx, fmt.Sprintf("publish %s response", kind),
+			slog.String("kind", kind),
+			slog.String(idField, request.ID),
+			slog.String(transportEventKey, "transport.response_failed"),
+			slog.String("stage", "publish"),
+			slog.String(transportErrorCodeKey, "response_publish_failed"),
+		)
 	}
 }
 

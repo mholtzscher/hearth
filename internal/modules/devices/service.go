@@ -1,11 +1,13 @@
 package devices
 
 import (
+	"log/slog"
 	"sync"
 	"time"
 )
 
 type Dependencies struct {
+	Logger           *slog.Logger
 	Now              func() time.Time
 	NewDeviceID      func() (DeviceID, error)
 	NewEntityID      func() (EntityID, error)
@@ -27,6 +29,7 @@ type Stores struct {
 }
 
 type Service struct {
+	logger       *slog.Logger
 	stores       Stores
 	sender       CommandSender
 	catalog      *TypeCatalog
@@ -40,6 +43,10 @@ type commandWaiters struct {
 }
 
 func NewService(stores Stores, sender CommandSender, catalog *TypeCatalog, dependencies Dependencies) *Service {
+	logger := dependencies.Logger
+	if logger == nil {
+		logger = slog.Default().With(slog.String("component", "devices"))
+	}
 	if dependencies.Now == nil {
 		dependencies.Now = time.Now
 	}
@@ -56,6 +63,7 @@ func NewService(stores Stores, sender CommandSender, catalog *TypeCatalog, depen
 		dependencies.NewCorrelationID = NewCorrelationID
 	}
 	return &Service{
+		logger:       logger,
 		stores:       stores,
 		sender:       sender,
 		catalog:      catalog,

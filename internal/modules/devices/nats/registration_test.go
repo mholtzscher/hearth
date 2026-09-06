@@ -6,6 +6,7 @@ import (
 	"errors"
 	"log/slog"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -346,4 +347,81 @@ func requestRegistration(
 		t.Fatal(err)
 	}
 	return response
+}
+
+// This test protects shared request/reply discard diagnostics and fails if a
+// malicious payload is answered, logged with its secrets, or reported without
+// a fixed error code and kind.
+func TestRegistrationServerDiscardsMaliciousPayloadWithoutLoggingIt(t *testing.T) {
+	t.Parallel()
+	_, connection, _ := startJetStream(t)
+	validator, err := contractsv1.Compile()
+	if err != nil {
+		t.Fatal(err)
+	}
+	logs, observer, logger := newContextObservingSink(observedSpanContext)
+	handled := make(chan struct{}, 1)
+	server, err := StartRegistrationServer(connection, validator, registrarFunc(func(
+		context.Context,
+		string,
+		devices.RuntimeID,
+		devices.Registration,
+	) (devices.Binding, error) {
+		handled <- struct{}{}
+		return devices.Binding{}, nil
+	}), logger)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = server.Drain() })
+
+	subject, err := natswire.RegistrationSubject("simulator", testRuntimeID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	requestContext, cancel := context.WithTimeout(t.Context(), 300*time.Millisecond)
+	defer cancel()
+	discardHeaders := make(natsgo.Header)
+	natswire.InjectTrace(testTraceContext(t), discardHeaders)
+	_, requestErr := connection.RequestMsgWithContext(requestContext, &natsgo.Msg{
+		Subject: subject, Header: discardHeaders,
+		Data: []byte(`{"token":"s3cr3t-registration-token","binding_key":"office-light"}`),
+	})
+	if requestErr == nil {
+		t.Fatal("malicious registration payload unexpectedly received a reply")
+	}
+	select {
+	case <-handled:
+		t.Fatal("malicious registration payload reached the registrar")
+	default:
+	}
+
+	deadline := time.Now().Add(3 * time.Second)
+	for time.Now().Before(deadline) {
+		if len(logEvents(logs.records(t), "transport.request_discarded")) == 1 {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	discarded := logEvents(logs.records(t), "transport.request_discarded")
+	if len(discarded) != 1 {
+		t.Fatalf("transport.request_discarded events = %d, want 1:\n%s", len(discarded), logs.output())
+	}
+	if discarded[0]["level"] != "WARN" {
+		t.Fatalf("discarded level = %#v, want WARN", discarded[0]["level"])
+	}
+	if discarded[0]["error_code"] != "request_decode_failed" || discarded[0]["kind"] != "registration" {
+		t.Fatalf("discarded record = %#v", discarded[0])
+	}
+	for _, key := range []string{"subject", "error"} {
+		if _, ok := discarded[0][key]; ok {
+			t.Fatalf("discarded record logs unsafe %q (record = %#v)", key, discarded[0])
+		}
+	}
+	if output := logs.output(); len(output) == 0 || strings.Contains(output, "s3cr3t-registration-token") {
+		t.Fatalf("discard logs missing or contain sensitive payload:\n%s", output)
+	}
+	if !observer.allObserved() {
+		t.Fatal("discard log emission lost the extracted operation context")
+	}
 }

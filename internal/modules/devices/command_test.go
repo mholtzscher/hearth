@@ -20,10 +20,11 @@ const (
 )
 
 type commandRepository struct {
-	mutex     sync.Mutex
-	view      EntityWithState
-	commands  map[CommandID]CommandRecord
-	createErr error
+	mutex       sync.Mutex
+	view        EntityWithState
+	commands    map[CommandID]CommandRecord
+	createErr   error
+	completeErr error
 }
 
 func newCommandRepository() *commandRepository {
@@ -109,6 +110,9 @@ func (repository *commandRepository) MarkCommandAccepted(_ context.Context, id C
 func (repository *commandRepository) CompleteCommand(_ context.Context, completion CommandCompletion) error {
 	repository.mutex.Lock()
 	defer repository.mutex.Unlock()
+	if repository.completeErr != nil {
+		return repository.completeErr
+	}
 	command := repository.commands[completion.ID]
 	if command.Status != CommandStatusRequested && command.Status != CommandStatusAccepted {
 		return ErrCommandTerminal

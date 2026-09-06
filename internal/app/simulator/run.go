@@ -18,6 +18,9 @@ func Run(ctx context.Context, config Config, logger *slog.Logger) error {
 	if logger == nil {
 		logger = slog.Default()
 	}
+	processLogger := logger.With(slog.String("component", "process"))
+	// The SDK owns session logging and attaches its own adapter_session
+	// component and Adapter/runtime identity, so it receives the root logger.
 	session, connectErr := adapter.Connect(ctx, adapter.Config{
 		AdapterID:       config.AdapterID,
 		SoftwareName:    "hearth-simulator",
@@ -28,7 +31,19 @@ func Run(ctx context.Context, config Config, logger *slog.Logger) error {
 	if connectErr != nil {
 		return connectErr
 	}
-	defer session.Close()
+	defer func() {
+		// Runtime fencing is already reported by the SDK session lifecycle,
+		// so a fenced close stays silent here.
+		if closeErr := session.Close(); closeErr != nil && !errors.Is(closeErr, adapter.ErrRuntimeFenced) {
+			processLogger.WarnContext(
+				ctx,
+				"process cleanup failed",
+				slog.String("event", "process.cleanup_failed"),
+				slog.String("stage", "session_close"),
+				slog.String("error_code", "cleanup_failed"),
+			)
+		}
+	}()
 	simulated, simulatorErr := simulatoradapter.New(session, config.Scenario)
 	if simulatorErr != nil {
 		return simulatorErr
@@ -57,14 +72,20 @@ func Run(ctx context.Context, config Config, logger *slog.Logger) error {
 	if err := simulated.Initialize(ctx, entityID); err != nil {
 		return fmt.Errorf("initialize simulator health and Entity availability: %w", err)
 	}
+	logger.InfoContext(
+		ctx,
+		"simulator initialized",
+		slog.String("component", "simulator"),
+		slog.String("event", "simulator.initialized"),
+		slog.String("scenario", config.Scenario),
+		slog.String("entity_id", entityID),
+	)
 	handler, err := simulated.CommandHandler(entityID)
 	if err != nil {
 		return err
 	}
-	if serveErr := session.ServeCommands(
-		ctx,
-		handler,
-	); serveErr != nil && !errors.Is(serveErr, context.Canceled) &&
+	serveErr := session.ServeCommands(ctx, handler)
+	if serveErr != nil && !errors.Is(serveErr, context.Canceled) &&
 		!errors.Is(serveErr, adapter.ErrClosed) {
 		return serveErr
 	}

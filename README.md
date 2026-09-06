@@ -102,11 +102,24 @@ For diagnostics, check adapter logs together with the adapter and Entity reads:
 - An Entity that stays unknown is missing an explicit availability message. Unavailable reasons distinguish `adapter.hearth-adapter-zigbee2mqtt.device_offline`, `adapter.hearth-adapter-zigbee2mqtt.device_missing`, `adapter.hearth-adapter-zigbee2mqtt.device_disabled`, and `adapter.hearth-adapter-zigbee2mqtt.capability_missing`.
 - A Command timeout means no fresh, non-retained matching State arrived after dispatch. Verify the Device can answer Zigbee2MQTT `/get` requests and that the reported property and value match its discovered expose.
 
+## Application logs
+
+Hearth executables write to stderr with `--log-level info --log-format text` by default. Use `--log-format json` for filtering, or `--log-level debug` for Observation progress:
+
+```sh
+log_dir=$(mktemp -d /tmp/hearth-logs.XXXXXX)
+go run ./cmd/hearthd --config configs/hearthd.yaml --log-format json 2>"$log_dir/core.log"
+jq -c 'select(.event == "command.created")' "$log_dir/core.log"
+```
+
+See [the logging guide](docs/logging.md) for startup/failure diagnosis and safety rules. Use Command-history APIs for durable outcomes, and `/readyz` plus Adapter/Entity reads for current health; logs do not reconstruct those lifecycles.
+
 ## Documentation
 
 - [`CONTEXT.md`](./CONTEXT.md): canonical project language
 - [`docs/product.md`](./docs/product.md): audience, goals, boundaries, and success
 - [`docs/architecture.md`](./docs/architecture.md): current accepted architectural constraints
+- [`docs/logging.md`](./docs/logging.md): application logging and operator diagnosis
 - [`docs/adr/`](./docs/adr/): durable architectural decisions and their rationale
 - [`docs/plans/`](./docs/plans/): implementation plans
 - [`specs/`](./specs/): approved implementation-ready specifications

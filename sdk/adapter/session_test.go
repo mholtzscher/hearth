@@ -38,10 +38,19 @@ func (publisher *blockingJetStreamPublisher) PublishMsg(
 
 func TestConnectUsesDefaultLoggerWhenLoggerIsOmitted(t *testing.T) {
 	t.Parallel()
+	previous := slog.Default()
+	writer := &lockedWriter{}
+	slog.SetDefault(slog.New(slog.NewJSONHandler(writer, &slog.HandlerOptions{Level: slog.LevelDebug})))
+	t.Cleanup(func() { slog.SetDefault(previous) })
 	server := startServer(t, -1, t.TempDir())
 	session := connectSession(t, server.ClientURL())
-	if session.logger != slog.Default() {
-		t.Fatal("Session did not use the default logger")
+	// Other parallel tests share the default logger during this window, so
+	// match the claimed record by this session's runtime identity.
+	claimed := waitForLogRecord(t, writer, "adapter.session_claimed", func(record map[string]any) bool {
+		return record["runtime_id"] == session.runtimeID
+	}, 3*time.Second)
+	if claimed["component"] != "adapter_session" || claimed["runtime_id"] != session.runtimeID {
+		t.Fatalf("default-logger session record = %v", claimed)
 	}
 }
 
@@ -333,7 +342,7 @@ func TestFencingTerminatesPendingObservationPublishWithFencedError(t *testing.T)
 		t.Fatal("Observation publication did not become pending")
 	}
 
-	session.markFenced()
+	session.markFenced(context.Background())
 	close(publisher.release)
 	if err := <-publishDone; !errors.Is(err, ErrRuntimeFenced) {
 		t.Fatalf("pending PublishObservation error = %v, want runtime fenced", err)

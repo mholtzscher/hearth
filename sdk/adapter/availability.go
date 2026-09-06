@@ -122,13 +122,15 @@ func (session *Session) reportAvailabilityBatch(
 		response, requestErr := sendSessionRequest[entityAvailabilityResponse](attemptContext, session, request)
 		cancelAttempt()
 		if requestErr != nil {
-			if retryErr := waitForRequestRetry(ctx, requestErr); retryErr != nil {
+			if retryErr := waitForRequestRetryLogged(ctx, session.log(),
+				"entity_availability", requestErr,
+			); retryErr != nil {
 				return retryErr
 			}
 			continue
 		}
 		if response.Data.Status == statusRejected {
-			return session.handleAvailabilityRejection(response.Data.Error)
+			return session.handleAvailabilityRejection(ctx, response.Data.Error)
 		}
 		if response.Data.Count != len(reports) {
 			return fmt.Errorf(
@@ -171,14 +173,17 @@ func (session *Session) prepareAvailabilityRequest(
 	)
 }
 
-func (session *Session) handleAvailabilityRejection(rejection *entityAvailabilityError) error {
+func (session *Session) handleAvailabilityRejection(
+	ctx context.Context,
+	rejection *entityAvailabilityError,
+) error {
 	if rejection == nil {
 		return errors.New("entity availability rejection omitted error")
 	}
 	code := EntityAvailabilityRejectionCode(rejection.Code)
 	switch code {
 	case entityAvailabilityRuntimeFenced:
-		session.markFenced()
+		session.markFenced(ctx)
 		return ErrRuntimeFenced
 	case EntityAvailabilityAdapterUnhealthy,
 		EntityAvailabilityInvalidRequest,

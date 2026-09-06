@@ -70,6 +70,7 @@ func New(session Session, config Config, logger *slog.Logger) (*Adapter, error) 
 	if logger == nil {
 		logger = slog.Default()
 	}
+	logger = logger.With(slog.String("component", adapterComponent))
 	return &Adapter{
 		session: session,
 		config:  config,
@@ -112,13 +113,13 @@ func (homeAssistant *Adapter) Run(ctx context.Context) error {
 			return err
 		}
 		wait := jitter(delay)
-		homeAssistant.logger.WarnContext(
+		homeAssistant.logger.DebugContext(
 			ctx,
-			"Home Assistant connection ended; reconnecting",
-			"error",
-			err,
-			"retry_in",
-			wait,
+			"Home Assistant connection retrying",
+			slog.String(eventKey, "dependency.retrying"),
+			slog.String("dependency", adapterComponent),
+			slog.String("error_code", homeAssistantErrorCode(err)),
+			slog.Int64("retry_in_ms", max(wait.Milliseconds(), 0)),
 		)
 		timer := time.NewTimer(wait)
 		select {
@@ -227,7 +228,7 @@ snapshotReady:
 		}
 		if err := homeAssistant.processState(ctx, item.State, item.ReceivedAt); err != nil {
 			if errors.Is(err, errUnsupportedState) {
-				homeAssistant.logUnsupportedState(ctx, source, item.State)
+				homeAssistant.logUnsupportedState(ctx, source)
 				continue
 			}
 			return err
@@ -239,7 +240,7 @@ snapshotReady:
 		case event := <-client.Events():
 			if err := homeAssistant.processState(ctx, event.State, event.ReceivedAt); err != nil {
 				if errors.Is(err, errUnsupportedState) {
-					homeAssistant.logUnsupportedState(ctx, "event", event.State)
+					homeAssistant.logUnsupportedState(ctx, "event")
 					continue
 				}
 				return err
@@ -252,12 +253,14 @@ snapshotReady:
 	}
 }
 
-func (homeAssistant *Adapter) logUnsupportedState(ctx context.Context, source string, state upstreamState) {
+func (homeAssistant *Adapter) logUnsupportedState(ctx context.Context, source string) {
 	homeAssistant.logger.WarnContext(
 		ctx,
 		"Home Assistant "+source+" State is not publishable",
-		"entity_id", state.EntityID,
-		"state", state.State,
+		slog.String(eventKey, "adapter.unsupported_state"),
+		slog.String("entity_id", homeAssistant.config.EntityID),
+		slog.String("error_code", "unsupported_state"),
+		slog.String("source", source),
 	)
 }
 
@@ -283,10 +286,9 @@ func (homeAssistant *Adapter) set(
 		homeAssistant.logger.WarnContext(
 			ctx,
 			"Home Assistant service call failed",
-			"entity_id",
-			homeAssistant.config.ExternalEntityID,
-			"error",
-			serviceErr,
+			slog.String(eventKey, "adapter.service_call_failed"),
+			slog.String("entity_id", homeAssistant.config.EntityID),
+			slog.String("error_code", homeAssistantErrorCode(serviceErr)),
 		)
 	}
 	state, receivedAt, stateErr := homeAssistant.getState(ctx, client)
@@ -483,10 +485,9 @@ func (homeAssistant *Adapter) newObservation(
 		homeAssistant.logger.WarnContext(
 			ctx,
 			"Home Assistant State has invalid last_updated",
-			"entity_id",
-			state.EntityID,
-			"error",
-			err,
+			slog.String(eventKey, "adapter.invalid_source_timestamp"),
+			slog.String("entity_id", homeAssistant.config.EntityID),
+			slog.String("error_code", "invalid_timestamp"),
 		)
 		updatedAt = nil
 	}

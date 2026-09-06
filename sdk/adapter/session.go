@@ -36,6 +36,7 @@ type Session struct {
 	jetstream         jetStreamPublisher
 	validator         *contractsv1.Validator
 	logger            *slog.Logger
+	lifecycleCtx      context.Context
 
 	stateMutex        sync.Mutex
 	terminalErr       error
@@ -70,12 +71,29 @@ func Connect(ctx context.Context, config Config) (*Session, error) {
 	if logger == nil {
 		logger = slog.Default()
 	}
+	session := &Session{
+		adapterID:    config.AdapterID,
+		lifecycleCtx: ctx,
+		logger: logger.With(
+			slog.String("component", "adapter_session"),
+			slog.String("adapter_id", config.AdapterID),
+		),
+		closed:           make(chan struct{}),
+		heartbeatDone:    make(chan struct{}),
+		heartbeatWake:    make(chan struct{}, 1),
+		heartbeatNotify:  make(chan struct{}),
+		desiredHealth:    HealthReport{Status: HealthUnknown, SourceObservedAt: time.Now().UTC()},
+		availabilityGate: make(chan struct{}, 1),
+	}
+	session.availabilityGate <- struct{}{}
 
 	options := []natsgo.Option{
 		natsgo.Name("hearth-adapter-" + config.AdapterID),
 		natsgo.MaxReconnects(-1),
 		natsgo.ReconnectWait(natsReconnectWait),
 		natsgo.RetryOnFailedConnect(true),
+		natsgo.DisconnectErrHandler(session.onDisconnected),
+		natsgo.ErrorHandler(session.onAsyncError),
 	}
 	if deadline, ok := ctx.Deadline(); ok {
 		remaining := time.Until(deadline)
@@ -93,23 +111,81 @@ func Connect(ctx context.Context, config Config) (*Session, error) {
 		connection.Close()
 		return nil, fmt.Errorf("create JetStream client: %w", err)
 	}
-	session := &Session{
-		adapterID:  config.AdapterID,
-		connection: connection, jetstream: js, validator: validator, logger: logger,
-		closed: make(chan struct{}), heartbeatDone: make(chan struct{}),
-		heartbeatWake: make(chan struct{}, 1), heartbeatNotify: make(chan struct{}),
-		desiredHealth:    HealthReport{Status: HealthUnknown, SourceObservedAt: time.Now().UTC()},
-		availabilityGate: make(chan struct{}, 1),
-	}
-	session.availabilityGate <- struct{}{}
-	if claimErr := session.claim(ctx, config); claimErr != nil {
+	session.connection = connection
+	session.jetstream = js
+	session.validator = validator
+	claimCorrelationID, claimErr := session.claim(ctx, config)
+	if claimErr != nil {
 		connection.Close()
 		return nil, claimErr
 	}
-	lifecycleContext, cancelLifecycle := context.WithCancel(context.Background())
+	// Derive the lifecycle from the Connect context without inheriting its
+	// cancellation: connection callbacks and release preserve incoming
+	// context values while keeping independent lifetime semantics.
+	lifecycleContext, cancelLifecycle := context.WithCancel(context.WithoutCancel(ctx))
+	session.stateMutex.Lock()
+	session.lifecycleCtx = lifecycleContext
 	session.lifecycleCancel = cancelLifecycle
+	session.stateMutex.Unlock()
+	// The heartbeat loop starts before the claim announcement so a blocked
+	// synchronous log sink cannot gate the newly claimed runtime's liveness.
 	go session.runHeartbeats(lifecycleContext)
+	session.log().InfoContext(lifecycleContext, "adapter session claimed",
+		slog.String("event", "adapter.session_claimed"),
+		slog.String("correlation_id", claimCorrelationID),
+	)
 	return session, nil
+}
+
+// onDisconnected reports an unexpected live-connection loss as a safe
+// structured diagnostic. Teardown paths set terminal state before closing
+// the connection, so those intentional exits stay silent here.
+func (session *Session) onDisconnected(_ *natsgo.Conn, disconnectErr error) {
+	if disconnectErr == nil || session.isShuttingDown() {
+		return
+	}
+	logger, ctx := session.callbackLog()
+	if ctx.Err() != nil {
+		return
+	}
+	logger.WarnContext(ctx, "NATS connection lost",
+		slog.String("event", "dependency.disconnected"),
+		slog.String("dependency", "nats"),
+		slog.String("error_code", "connection_lost"),
+	)
+}
+
+// isShuttingDown reports intentional teardown using existing session state.
+// Close, fencing, and heartbeat failure set terminalErr or closing before
+// closing the connection. It reads shared state safely for NATS callbacks,
+// which run on the client library's goroutines.
+func (session *Session) isShuttingDown() bool {
+	if session.sessionError() != nil {
+		return true
+	}
+	session.handlerMutex.Lock()
+	defer session.handlerMutex.Unlock()
+	return session.closing
+}
+
+// onAsyncError replaces the NATS client's default stderr ErrorHandler, which
+// would leak arbitrary error text and full subjects. Async subscription
+// errors carry untrusted content, so the record uses only a fixed diagnostic
+// code and dependency identity. Teardown paths stay quiet here like the
+// disconnect callback.
+func (session *Session) onAsyncError(_ *natsgo.Conn, _ *natsgo.Subscription, _ error) {
+	if session.isShuttingDown() {
+		return
+	}
+	logger, ctx := session.callbackLog()
+	if ctx.Err() != nil {
+		return
+	}
+	logger.ErrorContext(ctx, "NATS async error",
+		slog.String("event", "dependency.operation_failed"),
+		slog.String("dependency", "nats"),
+		slog.String("error_code", "nats_async_error"),
+	)
 }
 
 // Register retries one schema-validated Core request under ctx. Transient
@@ -134,7 +210,9 @@ func (session *Session) Register(ctx context.Context, registration Registration)
 		response, requestErr := sendSessionRequest[RegistrationResponse](attemptContext, session, request)
 		cancelAttempt()
 		if requestErr != nil {
-			if retryErr := waitForRequestRetry(ctx, requestErr); retryErr != nil {
+			if retryErr := waitForRequestRetryLogged(ctx, session.log(),
+				"registration", requestErr,
+			); retryErr != nil {
 				return Binding{}, retryErr
 			}
 			continue
@@ -142,14 +220,48 @@ func (session *Session) Register(ctx context.Context, registration Registration)
 		if response.Data.Status == statusRejected {
 			code := RegistrationRejectionCode(response.Data.Error.Code)
 			if code == registrationRuntimeFenced {
-				session.markFenced()
+				session.markFenced(ctx)
 				return Binding{}, ErrRuntimeFenced
 			}
+			session.log().WarnContext(ctx, "adapter registration rejected",
+				slog.String("event", "adapter.registration_rejected"),
+				slog.String("rejection_code", string(code)),
+				slog.String("correlation_id", request.correlationID),
+			)
 			return Binding{}, &RegistrationRejectedError{
 				Code: code, Message: response.Data.Error.Message,
 			}
 		}
-		return *response.Data.Binding, nil
+		binding := *response.Data.Binding
+		session.logRegistrationCompleted(ctx, request.correlationID, binding)
+		return binding, nil
+	}
+}
+
+// logRegistrationCompleted emits the bounded registration summary and one
+// Debug record per returned mapping with canonical IDs.
+func (session *Session) logRegistrationCompleted(
+	ctx context.Context,
+	correlationID string,
+	binding Binding,
+) {
+	attrs := []slog.Attr{
+		slog.String("event", "adapter.registration_completed"),
+		slog.String("device_id", binding.DeviceID),
+		slog.Int("entity_count", len(binding.Entities)),
+		slog.String("correlation_id", correlationID),
+	}
+	if len(binding.Entities) == 1 {
+		attrs = append(attrs, slog.String("entity_id", binding.Entities[0].EntityID))
+	}
+	session.log().LogAttrs(ctx, slog.LevelInfo, "adapter registration completed", attrs...)
+	for _, entity := range binding.Entities {
+		session.log().DebugContext(ctx, "adapter registration mapping",
+			slog.String("event", "adapter.registration_mapping"),
+			slog.String("device_id", binding.DeviceID),
+			slog.String("entity_id", entity.EntityID),
+			slog.String("entity_key", entity.Key),
+		)
 	}
 }
 
@@ -194,14 +306,16 @@ func (session *Session) ListOwnedMappings(
 		response, requestErr := sendSessionRequest[ownedMappingsResponse](attemptContext, session, request)
 		cancelAttempt()
 		if requestErr != nil {
-			if retryErr := waitForRequestRetry(ctx, requestErr); retryErr != nil {
+			if retryErr := waitForRequestRetryLogged(ctx, session.log(),
+				"owned_mappings", requestErr,
+			); retryErr != nil {
 				return OwnedMappingPage{}, retryErr
 			}
 			continue
 		}
 		if response.Data.Status == statusRejected {
 			if response.Data.Error.Code == ownedMappingsRuntimeFenced {
-				session.markFenced()
+				session.markFenced(ctx)
 				return OwnedMappingPage{}, ErrRuntimeFenced
 			}
 			return OwnedMappingPage{}, &OwnedMappingsRejectedError{
@@ -244,7 +358,7 @@ func (session *Session) SetEntityEnabled(ctx context.Context, entityID string, e
 	}
 	if response.Data.Status == statusRejected {
 		if response.Data.Error.Code == entityEnablementRuntimeFenced {
-			session.markFenced()
+			session.markFenced(ctx)
 			return false, ErrRuntimeFenced
 		}
 		return false, &EntityEnablementRejectedError{
@@ -288,6 +402,9 @@ func (session *Session) ServeCommands(ctx context.Context, handler CommandHandle
 		_ = subscription.Unsubscribe()
 		return fmt.Errorf("activate command subscription: %w", err)
 	}
+	session.log().InfoContext(ctx, "command subscription active",
+		slog.String("event", "adapter.commands_listening"),
+	)
 	select {
 	case <-ctx.Done():
 		if drainErr := subscription.Drain(); drainErr != nil && !errors.Is(drainErr, natsgo.ErrConnectionClosed) {
@@ -322,57 +439,52 @@ func (session *Session) startCommandHandler(parent context.Context, message *nat
 }
 
 func (session *Session) handleCommand(parent context.Context, message *natsgo.Msg, handler CommandHandler) {
+	// Extract the incoming trace before validation so every discard diagnostic
+	// preserves the sender's trace context instead of a bare parent.
+	traceCtx := natswire.ExtractTrace(parent, message.Header)
 	if message.Reply == "" {
-		session.logger.ErrorContext(parent, "discarding command without reply subject", "subject", message.Subject)
+		session.log().WarnContext(traceCtx, "command discarded",
+			slog.String("event", "command.discarded"),
+			slog.String("error_code", "missing_reply_subject"),
+		)
 		return
 	}
 	request, err := natswire.Decode[Command](session.validator, contractsv1.CommandRequestSchemaID, message.Data)
 	if err != nil {
-		session.logger.ErrorContext(parent, "discarding invalid command", "subject", message.Subject, "error", err)
+		session.log().WarnContext(traceCtx, "command discarded",
+			slog.String("event", "command.discarded"),
+			slog.String("error_code", "invalid_envelope"),
+		)
 		return
 	}
 	route, err := natswire.ParseCommandSubject(message.Subject)
 	if err != nil || route.AdapterID != session.adapterID || route.RuntimeID != session.runtimeID ||
 		route.EntityID != request.Data.EntityID || route.OperationName != request.Data.OperationName ||
 		request.CausationID != nil {
-		session.logger.ErrorContext(
-			parent,
-			"discarding command with mismatched routing",
-			"subject",
-			message.Subject,
-			"command_id",
-			request.ID,
+		session.log().WarnContext(traceCtx, "command discarded",
+			slog.String("event", "command.discarded"),
+			slog.String("command_id", request.ID),
+			slog.String("error_code", "routing_mismatch"),
 		)
 		return
 	}
 	deadline, err := time.Parse(time.RFC3339Nano, request.Data.Deadline)
 	if err != nil {
-		session.logger.ErrorContext(
-			parent,
-			"discarding command with invalid deadline",
-			"subject",
-			message.Subject,
-			"command_id",
-			request.ID,
-			"error",
-			err,
+		session.log().WarnContext(traceCtx, "command discarded",
+			slog.String("event", "command.discarded"),
+			slog.String("command_id", request.ID),
+			slog.String("error_code", "invalid_deadline"),
 		)
 		return
 	}
 
-	ctx := natswire.ExtractTrace(parent, message.Header)
-	ctx, cancel := context.WithDeadline(ctx, deadline)
+	ctx, cancel := context.WithDeadline(traceCtx, deadline)
 	defer cancel()
 	if contextErr := ctx.Err(); contextErr != nil {
-		session.logger.ErrorContext(
-			parent,
-			"discarding expired command",
-			"subject",
-			message.Subject,
-			"command_id",
-			request.ID,
-			"error",
-			contextErr,
+		session.log().WarnContext(ctx, "command discarded",
+			slog.String("event", "command.discarded"),
+			slog.String("command_id", request.ID),
+			slog.String("error_code", "command_expired"),
 		)
 		return
 	}
@@ -390,12 +502,33 @@ func (session *Session) handleCommand(parent context.Context, message *natsgo.Ms
 		entityID:      command.EntityID,
 		deadline:      deadline,
 	}
-	if handlerErr := handler(ctx, command, responder); handlerErr != nil {
-		session.logger.ErrorContext(parent, "command handler failed", "command_id", request.ID, "error", handlerErr)
-	}
+	// A successfully published rejection is the complete record: a handler error
+	// return after it is expected bookkeeping, not an internal failure. An
+	// accepted command whose handler then fails (for example a linked
+	// Observation that never publishes) would otherwise vanish after acceptance,
+	// so it emits a safe Error diagnostic unless the command context ended.
+	handlerErr := handler(ctx, command, responder)
 	if !responder.didRespond() {
-		session.logger.ErrorContext(parent, ErrMissingResponse.Error(), "command_id", request.ID)
+		session.log().ErrorContext(ctx, "command discarded",
+			slog.String("event", "command.discarded"),
+			slog.String("command_id", request.ID),
+			slog.String("entity_id", command.EntityID),
+			slog.String("error_code", "missing_response"),
+		)
+		return
 	}
+	if handlerErr == nil || !responder.didAccept() || ctx.Err() != nil ||
+		errors.Is(handlerErr, context.Canceled) || errors.Is(handlerErr, context.DeadlineExceeded) ||
+		errors.Is(handlerErr, ErrClosed) || errors.Is(handlerErr, ErrRuntimeFenced) {
+		return
+	}
+	session.log().ErrorContext(ctx, "command handler failed",
+		slog.String("command_id", request.ID),
+		slog.String("correlation_id", request.CorrelationID),
+		slog.String("entity_id", command.EntityID),
+		slog.String("event", "command.handler_failed"),
+		slog.String("error_code", "handler_failed"),
+	)
 }
 
 type commandResponder struct {
@@ -410,12 +543,16 @@ type commandResponder struct {
 	deadline      time.Time
 	mutex         sync.Mutex
 	responded     bool
+	accepted      bool
 }
 
 func (responder *commandResponder) Accept() (CommandEvidence, error) {
 	if err := responder.respond(CommandResponse{CommandID: responder.commandID, Status: statusAccepted}); err != nil {
 		return nil, err
 	}
+	responder.mutex.Lock()
+	responder.accepted = true
+	responder.mutex.Unlock()
 	return newCommandEvidence(responder.context, responder.session, observationLink{
 		commandID:     responder.commandID,
 		correlationID: responder.correlationID,
@@ -433,11 +570,21 @@ func (responder *commandResponder) RejectUnavailable(message string) error {
 }
 
 func (responder *commandResponder) reject(code, message string) error {
-	return responder.respond(CommandResponse{
+	if err := responder.respond(CommandResponse{
 		CommandID: responder.commandID,
 		Status:    statusRejected,
 		Error:     &CommandError{Code: code, Message: message},
-	})
+	}); err != nil {
+		return err
+	}
+	responder.session.log().WarnContext(responder.context, "command rejected",
+		slog.String("event", "command.rejected"),
+		slog.String("command_id", responder.commandID),
+		slog.String("correlation_id", responder.correlationID),
+		slog.String("entity_id", responder.entityID),
+		slog.String("rejection_code", code),
+	)
+	return nil
 }
 
 func (responder *commandResponder) respond(response CommandResponse) error {
@@ -480,6 +627,12 @@ func (responder *commandResponder) didRespond() bool {
 	responder.mutex.Lock()
 	defer responder.mutex.Unlock()
 	return responder.responded
+}
+
+func (responder *commandResponder) didAccept() bool {
+	responder.mutex.Lock()
+	defer responder.mutex.Unlock()
+	return responder.responded && responder.accepted
 }
 
 func newID(prefix string) (string, error) {

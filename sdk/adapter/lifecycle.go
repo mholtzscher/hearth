@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"regexp"
 	"strings"
 	"time"
@@ -87,6 +88,72 @@ type preparedRequest struct {
 	payload        []byte
 }
 
+// log returns the session logger scoped to the claimed runtime when known.
+// The base logger already carries component and adapter_id exactly once, so
+// emission sites must not reattach those keys.
+func (session *Session) log() *slog.Logger {
+	session.stateMutex.Lock()
+	defer session.stateMutex.Unlock()
+	if session.runtimeID == "" {
+		return session.logger
+	}
+	return session.logger.With(slog.String("runtime_id", session.runtimeID))
+}
+
+// callbackLog snapshots the session logger and the lifecycle context for
+// NATS connection callbacks, which receive no operation context. The
+// lifecycle derives from the Connect context without inheriting its
+// cancellation, so callback records preserve incoming context values.
+func (session *Session) callbackLog() (*slog.Logger, context.Context) {
+	session.stateMutex.Lock()
+	defer session.stateMutex.Unlock()
+	logger := session.logger
+	if session.runtimeID != "" {
+		logger = logger.With(slog.String("runtime_id", session.runtimeID))
+	}
+	return logger, session.lifecycleCtx
+}
+
+// waitForRequestRetryLogged waits before the next attempt for a transient
+// failure. Every retryable attempt logs at Debug with a fixed safe code:
+// no Warn sets, attempt counters, or recovery events.
+func waitForRequestRetryLogged(
+	ctx context.Context,
+	logger *slog.Logger,
+	operation string,
+	requestErr error,
+) error {
+	if ctx.Err() != nil {
+		return ctx.Err()
+	}
+	if !isTransientRequestError(requestErr) {
+		return requestErr
+	}
+	logger.DebugContext(ctx, "retrying operation",
+		slog.String("event", "dependency.retrying"),
+		slog.String("operation", operation),
+		slog.String("dependency", "core"),
+		slog.String("error_code", requestErrorCode(requestErr)),
+	)
+	return waitForRetry(ctx, requestRetryWait)
+}
+
+// requestErrorCode maps a retryable transport failure to a fixed diagnostic
+// code. Callers must never log the raw error, which can embed rejected
+// payloads or connection details.
+func requestErrorCode(err error) string {
+	switch {
+	case errors.Is(err, natsgo.ErrDisconnected):
+		return "nats_disconnected"
+	case errors.Is(err, natsgo.ErrNoResponders):
+		return "no_responders"
+	case errors.Is(err, natsgo.ErrTimeout), errors.Is(err, context.DeadlineExceeded):
+		return "request_timeout"
+	default:
+		return "request_failed"
+	}
+}
+
 func validateConfig(ctx context.Context, config Config) error {
 	if err := ctx.Err(); err != nil {
 		return err
@@ -108,14 +175,14 @@ func validateConfig(ctx context.Context, config Config) error {
 }
 
 //nolint:gocognit // Claim retry keeps one envelope across transport and active-runtime retries.
-func (session *Session) claim(ctx context.Context, config Config) error {
+func (session *Session) claim(ctx context.Context, config Config) (string, error) {
 	subject, err := natswire.AdapterClaimSubject(config.AdapterID)
 	if err != nil {
-		return &ValidationError{Err: err}
+		return "", &ValidationError{Err: err}
 	}
 	runtimeID, err := newID("run")
 	if err != nil {
-		return err
+		return "", err
 	}
 	request, err := prepareRequest(
 		session, "clm", contractsv1.AdapterClaimRequestSchemaID,
@@ -126,43 +193,53 @@ func (session *Session) claim(ctx context.Context, config Config) error {
 		},
 	)
 	if err != nil {
-		return err
+		return "", err
 	}
 	for {
 		attemptContext, cancelAttempt := context.WithTimeout(ctx, requestAttemptTimeout)
 		response, requestErr := sendSessionRequest[adapterClaimResponse](attemptContext, session, request)
 		cancelAttempt()
 		if requestErr != nil {
-			if retryErr := waitForRequestRetry(ctx, requestErr); retryErr != nil {
-				return retryErr
+			if retryErr := waitForRequestRetryLogged(ctx, session.log(),
+				"session_claim", requestErr,
+			); retryErr != nil {
+				return "", retryErr
 			}
 			continue
 		}
 		if response.Data.Status == statusAccepted {
+			session.stateMutex.Lock()
 			session.runtimeID = runtimeID
+			session.stateMutex.Unlock()
 			session.heartbeatInterval = heartbeatInterval
-			return nil
+			return request.correlationID, nil
 		}
 		if response.Data.Error == nil {
-			return errors.New("adapter claim rejection omitted error")
+			return "", errors.New("adapter claim rejection omitted error")
 		}
 		switch response.Data.Error.Code {
 		case "adapter_active":
 			if response.Data.Error.RetryAfter == nil {
-				return errors.New("active Adapter claim rejection omitted retry time")
+				return "", errors.New("active Adapter claim rejection omitted retry time")
 			}
 			retryAfter, parseErr := time.Parse(time.RFC3339Nano, *response.Data.Error.RetryAfter)
 			if parseErr != nil {
-				return fmt.Errorf("parse Adapter claim retry time: %w", parseErr)
+				return "", fmt.Errorf("parse Adapter claim retry time: %w", parseErr)
 			}
 			delay := max(time.Until(retryAfter), requestRetryWait)
+			session.log().DebugContext(ctx, "retrying operation",
+				slog.String("event", "dependency.retrying"),
+				slog.String("operation", "session_claim"),
+				slog.String("dependency", "core"),
+				slog.String("rejection_code", "adapter_active"),
+			)
 			if waitErr := waitForRetry(ctx, delay); waitErr != nil {
-				return waitErr
+				return "", waitErr
 			}
 		case "claim_conflict":
-			return errors.New("adapter runtime claim conflicts with prior state")
+			return "", errors.New("adapter runtime claim conflicts with prior state")
 		default:
-			return fmt.Errorf("unknown Adapter claim rejection %q", response.Data.Error.Code)
+			return "", fmt.Errorf("unknown Adapter claim rejection %q", response.Data.Error.Code)
 		}
 	}
 }
@@ -229,7 +306,10 @@ func (session *Session) runHeartbeats(ctx context.Context) {
 				errors.Is(err, ErrRuntimeFenced) {
 				return
 			}
-			session.logger.ErrorContext(ctx, "Adapter heartbeat loop stopped", "error", err)
+			session.log().ErrorContext(ctx, "Adapter heartbeat loop stopped",
+				slog.String("event", "adapter.heartbeat_stopped"),
+				slog.String("error_code", "heartbeat_failed"),
+			)
 			session.markClosed()
 			return
 		}
@@ -266,14 +346,16 @@ func (session *Session) sendLatestHeartbeat(ctx context.Context) error {
 		response, requestErr := sendSessionRequest[adapterHeartbeatResponse](attemptContext, session, request)
 		cancelAttempt()
 		if requestErr != nil {
-			if retryErr := waitForRequestRetry(ctx, requestErr); retryErr != nil {
+			if retryErr := waitForRequestRetryLogged(ctx, session.log(),
+				"heartbeat", requestErr,
+			); retryErr != nil {
 				return retryErr
 			}
 			continue
 		}
 		if response.Data.Status == statusRejected {
 			if response.Data.Error != nil && response.Data.Error.Code == "runtime_fenced" {
-				session.markFenced()
+				session.markFenced(ctx)
 				return ErrRuntimeFenced
 			}
 			return errors.New("adapter heartbeat was rejected without runtime fencing")
@@ -306,6 +388,10 @@ func (session *Session) close() error {
 	if session.terminalErr == nil {
 		session.terminalErr = ErrClosed
 	}
+	// Snapshot the lifecycle context before cancelling it: release preserves
+	// incoming context values without inheriting cancellation, keeping the
+	// existing timeout semantics.
+	releaseParent := session.lifecycleCtx
 	if session.lifecycleCancel != nil {
 		session.lifecycleCancel()
 	}
@@ -317,14 +403,22 @@ func (session *Session) close() error {
 	fenced = fenced || errors.Is(session.terminalErr, ErrRuntimeFenced)
 	session.stateMutex.Unlock()
 	if !fenced {
-		releaseContext, cancelRelease := context.WithTimeout(context.Background(), releaseTimeout)
+		releaseBase := context.Background()
+		if releaseParent != nil {
+			releaseBase = context.WithoutCancel(releaseParent)
+		}
+		releaseContext, cancelRelease := context.WithTimeout(releaseBase, releaseTimeout)
 		releaseErr := session.release(releaseContext)
 		cancelRelease()
 		if errors.Is(releaseErr, ErrRuntimeFenced) {
-			session.markFenced()
+			session.markFenced(releaseContext)
 			fenced = true
 		} else if releaseErr != nil {
-			session.logger.Warn("release Adapter runtime; lease expiry will end it", "error", releaseErr)
+			session.log().WarnContext(releaseContext,
+				"adapter session release failed; lease expiry will end it",
+				slog.String("event", "adapter.session_release_failed"),
+				slog.String("error_code", requestErrorCode(releaseErr)),
+			)
 		}
 	}
 
@@ -358,12 +452,17 @@ func (session *Session) release(ctx context.Context) error {
 		response, requestErr := sendPrepared[adapterReleaseResponse](attemptContext, session, request)
 		cancelAttempt()
 		if requestErr != nil {
-			if retryErr := waitForRequestRetry(ctx, requestErr); retryErr != nil {
+			if retryErr := waitForRequestRetryLogged(ctx, session.log(),
+				"session_release", requestErr,
+			); retryErr != nil {
 				return retryErr
 			}
 			continue
 		}
 		if response.Data.Status == statusAccepted {
+			session.log().InfoContext(ctx, "adapter session released",
+				slog.String("event", "adapter.session_released"),
+			)
 			return nil
 		}
 		if response.Data.Error != nil && response.Data.Error.Code == "runtime_fenced" {
@@ -522,34 +621,33 @@ func (session *Session) markClosed() {
 	session.connection.Close()
 }
 
-func (session *Session) markFenced() {
+func (session *Session) markFenced(ctx context.Context) {
 	session.handlerMutex.Lock()
 	session.closing = true
 	session.handlerMutex.Unlock()
 
 	session.stateMutex.Lock()
+	alreadyFenced := errors.Is(session.terminalErr, ErrRuntimeFenced)
 	session.terminalErr = ErrRuntimeFenced
 	if session.lifecycleCancel != nil {
 		session.lifecycleCancel()
 	}
 	session.signalClosedLocked()
 	session.stateMutex.Unlock()
+	// Terminal state is the once-guard: concurrent fencing paths share
+	// terminalErr, so only the first reports the Warn diagnostic.
+	if !alreadyFenced {
+		session.log().WarnContext(ctx, "adapter session fenced; terminating",
+			slog.String("event", "adapter.session_fenced"),
+			slog.String("reason_code", "runtime_fenced"),
+		)
+	}
 	session.connection.Close()
 }
 
 func validTextLength(value string, maximum int) bool {
 	length := utf8.RuneCountInString(value)
 	return length >= 1 && length <= maximum
-}
-
-func waitForRequestRetry(ctx context.Context, requestErr error) error {
-	if ctxErr := ctx.Err(); ctxErr != nil {
-		return ctxErr
-	}
-	if !isTransientRequestError(requestErr) {
-		return requestErr
-	}
-	return waitForRetry(ctx, requestRetryWait)
 }
 
 func waitForRetry(ctx context.Context, delay time.Duration) error {
