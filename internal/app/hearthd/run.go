@@ -57,11 +57,12 @@ func failStage(stage string, err error) error {
 }
 
 // failStartup records the process teardown a startup failure initiates before
-// deferred cleanup runs, then returns the staged error. It is used once a
-// live NATS connection exists, where returning tears down connections,
-// transports, supervisors, and consumers. Earlier failures acquire no running
-// process resources, so they return through failStage without a stopping
-// record. Serve-phase and shutdown paths log stopping at their own sites.
+// deferred cleanup runs, then returns the staged error. It is used once the
+// database is open, where returning tears down the acquired database handle
+// and any later NATS connections, transports, supervisors, and consumers
+// through deferred cleanup. Earlier failures acquire no running process
+// resources, so they return through failStage without a stopping record.
+// Serve-phase and shutdown paths log stopping at their own sites.
 func failStartup(ctx context.Context, logger *slog.Logger, stage string, err error) error {
 	if err == nil {
 		return nil
@@ -72,11 +73,25 @@ func failStartup(ctx context.Context, logger *slog.Logger, stage string, err err
 		"event",
 		"process.stopping",
 		"reason_code",
-		"startup_failed",
+		startupReason(ctx),
 		"stage",
 		stage,
 	)
+	// connectCoreNATS already stages its errors, so preserve a staged error
+	// instead of wrapping it twice.
+	if _, ok := errors.AsType[*runStageError](err); ok {
+		return err
+	}
 	return failStage(stage, err)
+}
+
+// startupReason distinguishes cancellation from failure for a startup
+// teardown record.
+func startupReason(ctx context.Context) string {
+	if ctx.Err() != nil {
+		return "context_cancelled"
+	}
+	return "startup_failed"
 }
 
 func Run(ctx context.Context, config Config, logger *slog.Logger) error { //nolint:funlen // Linear resource lifecycle.
@@ -102,13 +117,13 @@ func Run(ctx context.Context, config Config, logger *slog.Logger) error { //noli
 		logCleanupFailure(ctx, processLogger, "close_database", database.Close())
 	}()
 	if err := platformdb.Migrate(ctx, database); err != nil {
-		return failStage("migrate_database", err)
+		return failStartup(ctx, processLogger, "migrate_database", err)
 	}
 	logStartupStage(ctx, coreLogger, "database_migrated")
 	repository := devices.NewSQLiteRepository(database, catalog)
 	startupTime := time.Now().UTC()
 	if err := repository.InterruptActiveCommands(ctx, startupTime); err != nil {
-		return failStage("interrupt_commands", fmt.Errorf("interrupt active commands: %w", err))
+		return failStartup(ctx, processLogger, "interrupt_commands", fmt.Errorf("interrupt active commands: %w", err))
 	}
 	logStartupStage(ctx, coreLogger, "active_commands_interrupted")
 	// Observation pruning runs only on the hourly pass below, so startup never
@@ -117,7 +132,7 @@ func Run(ctx context.Context, config Config, logger *slog.Logger) error { //noli
 	natsClosing := &atomic.Bool{}
 	connection, connectErr := connectCoreNATS(ctx, config.NATSURL, natsLogger, natsClosing)
 	if connectErr != nil {
-		return connectErr
+		return failStartup(ctx, processLogger, "connect_nats", connectErr)
 	}
 	defer func() {
 		natsClosing.Store(true)
