@@ -93,8 +93,12 @@ func (service *Service) ExecuteCommand(
 		defer cancel()
 		defer service.removeCommandWaiter(command.ID)
 		outcome := service.runCommand(lifecycleContext, command, waiter)
-		service.logCommandOutcome(lifecycleContext, command, outcome, startedAt)
+		// Deliver the committed outcome before terminal logging: completed
+		// is buffered, so a stalled synchronous logger cannot block the
+		// HTTP-facing result. Log exactly once after delivery with the
+		// preserved lifecycle context.
 		completed <- outcome
+		service.logCommandOutcome(lifecycleContext, command, outcome, startedAt)
 	}()
 
 	select {

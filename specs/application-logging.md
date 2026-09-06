@@ -276,7 +276,7 @@ func (service *Service) logCommandOutcome(
 Rules for filling and logging the result:
 
 1. Immediately terminal `CreateCommand` results use their returned durable status/failure code and emit a single summary before returning. Creation failures have no `command.created` event.
-2. The asynchronous goroutine logs the returned outcome once, before delivering it on `completed`. Never defer terminal logging on the outer HTTP-facing `ExecuteCommand` method.
+2. The asynchronous goroutine delivers the known durable outcome on the buffered `completed` channel before terminal logging, then logs the returned outcome exactly once. The committed result must never wait for the terminal log emission, so a stalled synchronous logger cannot block the HTTP-facing return. Never defer terminal logging on the outer HTTP-facing `ExecuteCommand` method.
 3. Receiving the existing waiter result establishes `satisfied`; use its Observation ID. This applies in all `ErrCommandTerminal` race paths too.
 4. Successful `CompleteCommand` establishes its supplied status and code. Failed completion does not establish that status. Empty status emits `command.execution_failed`, not a fabricated completed record.
 5. An established `internal_failure` emits one `command.execution_failed` with that durable status; it is not additionally logged as `command.completed`.

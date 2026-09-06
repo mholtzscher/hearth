@@ -192,6 +192,9 @@ func TestExecuteCommandLogsSingleSatisfiedOutcome(t *testing.T) {
 		t.Fatalf("result = %#v", result)
 	}
 
+	// Terminal logging follows buffered delivery, so wait for the async
+	// emission instead of assuming it completed before ExecuteCommand returned.
+	waitForCommandEvent(t, writer, "command.completed")
 	records := writer.records(t)
 	if completed := commandEvents(records, "command.completed"); len(completed) != 1 {
 		t.Fatalf("command.completed events = %d, want 1:\n%s", len(completed), writer.output())
@@ -329,6 +332,8 @@ func runCommandLogFailureCase(t *testing.T, test commandLogFailureCase) {
 
 func requireSingleTerminalSummary(t *testing.T, writer *lockedCommandLogWriter, test commandLogFailureCase) {
 	t.Helper()
+	// Terminal logging follows buffered delivery; wait for the async emission.
+	waitForCommandEvent(t, writer, test.event)
 	records := writer.records(t)
 	terminal := commandEvents(records, test.event)
 	if len(terminal) != 1 {
@@ -440,6 +445,8 @@ func TestExecuteCommandFailedPersistenceLogsExecutionFailed(t *testing.T) {
 	); err == nil {
 		t.Fatal("expected command execution error")
 	}
+	// Terminal logging follows buffered delivery; wait for the async emission.
+	waitForCommandEvent(t, writer, "command.execution_failed")
 	records := writer.records(t)
 	if completed := commandEvents(records, "command.completed"); len(completed) != 0 {
 		t.Fatalf("command.completed events = %d, want 0 (persistence failed):\n%s", len(completed), writer.output())
@@ -531,6 +538,8 @@ func TestExecuteCommandSatisfactionRaceLogsSingleSatisfiedOutcome(t *testing.T) 
 	if result.ObservationID != commandTestObservationID {
 		t.Fatalf("result = %#v", result)
 	}
+	// Terminal logging follows buffered delivery; wait for the async emission.
+	waitForCommandEvent(t, writer, "command.completed")
 	records := writer.records(t)
 	completed := commandEvents(records, "command.completed")
 	if len(completed) != 1 {
@@ -540,5 +549,134 @@ func TestExecuteCommandSatisfactionRaceLogsSingleSatisfiedOutcome(t *testing.T) 
 	requireCommandField(t, completed[0], "observation_id", string(commandTestObservationID))
 	if failed := commandEvents(records, "command.execution_failed"); len(failed) != 0 {
 		t.Fatalf("command.execution_failed events = %d, want 0:\n%s", len(failed), writer.output())
+	}
+}
+
+// blockingTerminalCommandHandler blocks terminal command log emission until
+// released, proving the committed result does not wait for the terminal log.
+type blockingTerminalCommandHandler struct {
+	inner   slog.Handler
+	entered chan struct{}
+	release chan struct{}
+}
+
+func (handler *blockingTerminalCommandHandler) Enabled(ctx context.Context, level slog.Level) bool {
+	return handler.inner.Enabled(ctx, level)
+}
+
+func (handler *blockingTerminalCommandHandler) Handle(ctx context.Context, record slog.Record) error {
+	event := ""
+	record.Attrs(func(attr slog.Attr) bool {
+		if attr.Key == "event" {
+			event = attr.Value.String()
+		}
+		return true
+	})
+	if event == "command.completed" || event == "command.execution_failed" {
+		select {
+		case handler.entered <- struct{}{}:
+		default:
+		}
+		<-handler.release
+	}
+	return handler.inner.Handle(ctx, record)
+}
+
+func (handler *blockingTerminalCommandHandler) WithAttrs(attrs []slog.Attr) slog.Handler {
+	return &blockingTerminalCommandHandler{
+		inner:   handler.inner.WithAttrs(attrs),
+		entered: handler.entered,
+		release: handler.release,
+	}
+}
+
+func (handler *blockingTerminalCommandHandler) WithGroup(name string) slog.Handler {
+	return &blockingTerminalCommandHandler{
+		inner:   handler.inner.WithGroup(name),
+		entered: handler.entered,
+		release: handler.release,
+	}
+}
+
+// This test protects before-delivery terminal logging and fails if a stalled
+// synchronous terminal logger blocks the committed HTTP-facing result or if
+// the deferred emission is missing or duplicated.
+func TestExecuteCommandDeliversResultBeforeTerminalLogCompletes(t *testing.T) {
+	t.Parallel()
+	writer := &lockedCommandLogWriter{}
+	entered := make(chan struct{}, 1)
+	release := make(chan struct{})
+	logger := slog.New(&blockingTerminalCommandHandler{
+		inner:   slog.NewJSONHandler(writer, &slog.HandlerOptions{Level: slog.LevelDebug}),
+		entered: entered,
+		release: release,
+	})
+	repository := newCommandRepository()
+	var service *Service
+	sender := commandSenderFunc(
+		func(ctx context.Context, adapterID string, runtimeID RuntimeID, request CommandRequest) (CommandAcceptance, error) {
+			observation := Observation{
+				ID: commandTestObservationID, EntityID: request.EntityID, Value: Value(`true`),
+				AdapterReceivedAt: time.Now().UTC(), RefreshForCommand: &request.ID,
+			}
+			if _, err := service.ProjectObservation(
+				ctx, adapterID, runtimeID, observation, time.Now().UTC(),
+			); err != nil {
+				return CommandAcceptance{}, err
+			}
+			return CommandAcceptance{Accepted: true}, nil
+		},
+	)
+	service = newTestService(repository, sender, commandCatalog(t, time.Second), commandLogDependencies(logger))
+
+	type commandResult struct {
+		result CommandResult
+		err    error
+	}
+	returned := make(chan commandResult, 1)
+	go func() {
+		result, err := service.ExecuteCommand(
+			commandOperationContext(),
+			commandTestEntityID,
+			OperationNameSet,
+			CommandParameters(`{"value":true}`),
+		)
+		returned <- commandResult{result: result, err: err}
+	}()
+
+	select {
+	case <-entered:
+	case <-time.After(3 * time.Second):
+		t.Fatal("timed out waiting for the blocked terminal log emission")
+	}
+	select {
+	case outcome := <-returned:
+		if outcome.err != nil {
+			t.Fatalf("ExecuteCommand error = %v", outcome.err)
+		}
+		if outcome.result.ObservationID != commandTestObservationID {
+			t.Fatalf("result = %#v", outcome.result)
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("committed result did not return while the terminal logger was blocked")
+	}
+	if terminal := append(
+		commandEvents(writer.records(t), "command.completed"),
+		commandEvents(writer.records(t), "command.execution_failed")...,
+	); len(terminal) != 0 {
+		t.Fatalf("terminal events = %d, want 0 while logger blocked:\n%s", len(terminal), writer.output())
+	}
+	close(release)
+	summary := waitForCommandEvent(t, writer, "command.completed")
+	requireCommandField(t, summary, "status", string(CommandStatusSatisfied))
+	requireCommandField(t, summary, "command_id", string(commandTestID))
+	requireCommandField(t, summary, "observation_id", string(commandTestObservationID))
+	// Allow a quiescence window so a duplicate terminal emission would be observed.
+	time.Sleep(200 * time.Millisecond)
+	if completed := commandEvents(writer.records(t), "command.completed"); len(completed) != 1 {
+		t.Fatalf("command.completed events = %d, want exactly 1:\n%s", len(completed), writer.output())
+	}
+	if stored := repository.command(commandTestID); stored.Status != CommandStatusSatisfied {
+		t.Fatalf("stored command = %#v, want satisfied", stored)
 	}
 }
