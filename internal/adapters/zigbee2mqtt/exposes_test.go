@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"math"
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
 	"unicode/utf8"
@@ -217,7 +218,7 @@ func TestDiscoveryColorTempEligibilityAndIsolation(t *testing.T) {
 			}
 			want := []string{"power", "brightness"}
 			if test.wantColor {
-				want = append(want, "colortemp")
+				want = append(want, "colortemp", "colormode")
 			}
 			if got := entityKeys(discovered.Entities); !reflect.DeepEqual(got, want) {
 				t.Fatalf("Entity keys = %v, want %v", got, want)
@@ -330,7 +331,10 @@ func TestDiscoveryEnforcesDescriptorRuneBound(t *testing.T) {
 		}
 	}
 
-	for labelRunes, wantColorTemp := range map[int]bool{110: true, 111: false} {
+	for labelRunes, wantKeys := range map[int][]string{
+		110: {"power-ep1", "colortemp-ep1", "colormode-ep1"},
+		111: {"power-ep1"},
+	} {
 		device := eligibleDevice()
 		label := strings.Repeat("c", labelRunes)
 		device.Endpoints = map[string]upstreamEndpoint{"1": {Name: label}}
@@ -342,10 +346,10 @@ func TestDiscoveryEnforcesDescriptorRuneBound(t *testing.T) {
 		if rejection != nil {
 			t.Fatalf("%d-rune color-temperature label rejected Device: %#v", labelRunes, rejection)
 		}
-		if got := len(discovered.Entities) == 2; got != wantColorTemp {
-			t.Fatalf("%d-rune label color temperature present = %t, want %t", labelRunes, got, wantColorTemp)
+		if got := entityKeys(discovered.Entities); !reflect.DeepEqual(got, wantKeys) {
+			t.Fatalf("%d-rune label Entity keys = %v, want %v", labelRunes, got, wantKeys)
 		}
-		if wantColorTemp &&
+		if slices.Contains(wantKeys, "colortemp-ep1") &&
 			utf8.RuneCountInString(discovered.Entities[1].Descriptor.Name) != maximumDescriptorRunes {
 			t.Fatalf("color-temperature name = %q", discovered.Entities[1].Descriptor.Name)
 		}

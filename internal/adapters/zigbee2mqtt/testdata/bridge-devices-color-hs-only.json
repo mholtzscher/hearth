@@ -1,0 +1,43 @@
+[
+  {
+    "ieee_address": "0x00124B0000000013",
+    "type": "Router",
+    "supported": true,
+    "disabled": false,
+    "friendly_name": "fixture-color-hs",
+    "description": "Sanitized Fixture HS Color",
+    "interview_state": "SUCCESSFUL",
+    "endpoints": {"1": {}},
+    "definition": {
+      "model": "SYNTHETIC-HS-COLOR",
+      "vendor": "Fixture Vendor",
+      "description": "Synthetic HS-only color bulb modeled on observed Zigbee2MQTT shapes",
+      "exposes": [
+        {
+          "type": "light",
+          "features": [
+            {
+              "type": "binary",
+              "name": "state",
+              "property": "state",
+              "access": 7,
+              "value_on": "ON",
+              "value_off": "OFF"
+            },
+            {
+              "type": "composite",
+              "name": "color_hs",
+              "property": "color",
+              "access": 7,
+              "features": [
+                {"type": "numeric", "name": "hue", "property": "hue", "access": 7, "value_min": 0, "value_max": 360},
+                {"type": "numeric", "name": "saturation", "property": "saturation", "access": 7, "value_min": 0, "value_max": 100}
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    "power_source": "Mains (single phase)"
+  }
+]

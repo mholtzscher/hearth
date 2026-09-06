@@ -1,0 +1,16 @@
+{
+  "cases": [
+    {
+      "name": "reported-modes",
+      "support": {"state": {}, "operations": {}},
+      "states": [
+        {"value": "xy", "valid": true},
+        {"value": "hs", "valid": true},
+        {"value": "color_temp", "valid": true},
+        {"value": "rgb", "valid": false},
+        {"value": 123, "valid": false}
+      ],
+      "operations": {}
+    }
+  ]
+}

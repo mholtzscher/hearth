@@ -205,7 +205,7 @@ func TestBehaviorRulesAreSchemaChecked(t *testing.T) {
 		compiled, err := compileRule(ruleManifest{
 			Op:    operator,
 			Left:  referenceManifest{Root: "parameters", Path: "/value"},
-			Right: referenceManifest{Root: "support", Path: "/maximum"},
+			Right: &(referenceManifest{Root: "support", Path: "/maximum"}),
 		}, roots)
 		if err != nil {
 			t.Fatal(err)
@@ -217,19 +217,19 @@ func TestBehaviorRulesAreSchemaChecked(t *testing.T) {
 
 	for name, rule := range map[string]ruleManifest{
 		"unknown root": {
-			Op: "eq", Left: referenceManifest{Root: "state"}, Right: referenceManifest{Root: "parameters", Path: "/value"},
+			Op: "eq", Left: referenceManifest{Root: "state"}, Right: &(referenceManifest{Root: "parameters", Path: "/value"}),
 		},
 		"unknown path": {
-			Op: "eq", Left: referenceManifest{Root: "parameters", Path: "/missing"}, Right: referenceManifest{Root: "parameters", Path: "/value"},
+			Op: "eq", Left: referenceManifest{Root: "parameters", Path: "/missing"}, Right: &(referenceManifest{Root: "parameters", Path: "/value"}),
 		},
 		"mismatched types": {
-			Op: "eq", Left: referenceManifest{Root: "parameters", Path: "/value"}, Right: referenceManifest{Root: "support", Path: "/enabled"},
+			Op: "eq", Left: referenceManifest{Root: "parameters", Path: "/value"}, Right: &(referenceManifest{Root: "support", Path: "/enabled"}),
 		},
 		"optional path": {
-			Op: "eq", Left: referenceManifest{Root: "parameters", Path: "/value"}, Right: referenceManifest{Root: "support", Path: "/optional"},
+			Op: "eq", Left: referenceManifest{Root: "parameters", Path: "/value"}, Right: &(referenceManifest{Root: "support", Path: "/optional"}),
 		},
 		"non-numeric gte": {
-			Op: "gte", Left: referenceManifest{Root: "support", Path: "/enabled"}, Right: referenceManifest{Root: "support", Path: "/enabled"},
+			Op: "gte", Left: referenceManifest{Root: "support", Path: "/enabled"}, Right: &(referenceManifest{Root: "support", Path: "/enabled"}),
 		},
 	} {
 		t.Run(name, func(t *testing.T) {
@@ -246,7 +246,7 @@ func TestOutcomeEnvironmentExcludesSupport(t *testing.T) {
 	_, err := compileRule(ruleManifest{
 		Op:    "eq",
 		Left:  referenceManifest{Root: "parameters", Path: ""},
-		Right: referenceManifest{Root: "support", Path: ""},
+		Right: &(referenceManifest{Root: "support", Path: ""}),
 	}, map[string]referenceRoot{
 		"parameters": {Schema: schemaNode{Type: "integer"}, GoExpression: "parameters"},
 		"state":      {Schema: schemaNode{Type: "integer"}, GoExpression: "state"},
@@ -259,9 +259,10 @@ func TestOutcomeEnvironmentExcludesSupport(t *testing.T) {
 func TestMultipleOfGuardsZeroDivisor(t *testing.T) {
 	t.Parallel()
 	rule := ruleModel{
-		Op:    "multiple_of",
-		Left:  referenceModel{Kind: kindInteger, GoExpression: "parameters.Value"},
-		Right: referenceModel{Kind: kindInteger, GoExpression: "operationSupport.Step"},
+		Op:       "multiple_of",
+		Left:     referenceModel{Kind: kindInteger, GoExpression: "parameters.Value"},
+		Right:    referenceModel{Kind: kindInteger, GoExpression: "operationSupport.Step"},
+		HasRight: true,
 	}
 	condition := ruleCondition(rule)
 	if !strings.Contains(condition, "operationSupport.Step) != 0") {
@@ -473,11 +474,11 @@ func TestRootGenerationAddsATypeWithoutPerTypeGo(t *testing.T) {
 		"examples":         "examples.json",
 		"operations": map[string]any{"set": map[string]any{
 			"parameters_schema": "parameters.schema.json", "deadline_ms": 1000,
-			"satisfied_when": map[string]any{
+			"satisfied_when": []any{map[string]any{
 				"op":    "lte",
 				"left":  map[string]any{"root": "parameters", "path": "/value"},
 				"right": map[string]any{"root": "state", "path": ""},
-			},
+			}},
 		}},
 	})
 
@@ -574,6 +575,11 @@ func minimalManifest(typeID string) map[string]any {
 		"operations":       map[string]any{},
 		"examples":         "examples.json",
 	}
+}
+
+func jsonNumber(value string) *json.Number {
+	number := json.Number(value)
+	return &number
 }
 
 func minimalSupportSchema(id string) map[string]any {

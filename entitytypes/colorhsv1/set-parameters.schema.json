@@ -1,0 +1,12 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:hearth:schema:entity-type:colorhs:v1:set-parameters",
+  "title": "Hearth colorhs/v1 set parameters",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["hue", "saturation"],
+  "properties": {
+    "hue": {"type": "integer", "minimum": 0, "maximum": 359},
+    "saturation": {"type": "integer", "minimum": 0, "maximum": 100}
+  }
+}

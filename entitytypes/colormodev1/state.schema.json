@@ -1,0 +1,7 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:hearth:schema:entity-type:colormode:v1:state",
+  "title": "Hearth colormode/v1 State",
+  "type": "string",
+  "enum": ["xy", "hs", "color_temp"]
+}

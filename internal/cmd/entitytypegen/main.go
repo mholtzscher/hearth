@@ -42,13 +42,15 @@ type operationManifest struct {
 	ParametersSchema    string         `json:"parameters_schema"`
 	DeadlineMS          int64          `json:"deadline_ms"`
 	ParameterValidation []ruleManifest `json:"parameter_validation,omitempty"`
-	SatisfiedWhen       *ruleManifest  `json:"satisfied_when"`
+	SatisfiedWhen       []ruleManifest `json:"satisfied_when"`
 }
 
 type ruleManifest struct {
-	Op    string            `json:"op"`
-	Left  referenceManifest `json:"left"`
-	Right referenceManifest `json:"right"`
+	Op        string             `json:"op"`
+	Left      referenceManifest  `json:"left"`
+	Right     *referenceManifest `json:"right"`
+	Tolerance *json.Number       `json:"tolerance"`
+	Modulus   *json.Number       `json:"modulus"`
 }
 
 type referenceManifest struct {
@@ -77,7 +79,7 @@ type operationModel struct {
 	Required            bool
 	DeadlineMS          int64
 	ParameterValidation []ruleModel
-	SatisfiedWhen       ruleModel
+	SatisfiedWhen       []ruleModel
 }
 
 type entityTypeModel struct {
@@ -284,7 +286,7 @@ func loadModel(path string) (entityTypeModel, error) {
 		if operation.DeadlineMS > maximumOperationDeadline {
 			return entityTypeModel{}, fmt.Errorf("operation %q deadline_ms overflows time.Duration", name)
 		}
-		if operation.SatisfiedWhen == nil {
+		if len(operation.SatisfiedWhen) == 0 {
 			return entityTypeModel{}, fmt.Errorf("operation %q requires satisfied_when", name)
 		}
 		parameterValidation, validationErr := compileRules(operation.ParameterValidation, map[string]referenceRoot{
@@ -295,12 +297,12 @@ func loadModel(path string) (entityTypeModel, error) {
 		if validationErr != nil {
 			return entityTypeModel{}, validationErr
 		}
-		satisfied, satisfiedErr := compileRule(*operation.SatisfiedWhen, map[string]referenceRoot{
+		satisfied, satisfiedErr := compileRules(operation.SatisfiedWhen, map[string]referenceRoot{
 			referenceRootParameters: {Schema: parameters, GoExpression: referenceRootParameters},
 			referenceRootState:      {Schema: state, GoExpression: referenceRootState},
-		})
+		}, fmt.Sprintf("operation %q satisfied_when", name))
 		if satisfiedErr != nil {
-			return entityTypeModel{}, fmt.Errorf("operation %q satisfied_when: %w", name, satisfiedErr)
+			return entityTypeModel{}, satisfiedErr
 		}
 		goName, nameErr := exportedName(name)
 		if nameErr != nil {

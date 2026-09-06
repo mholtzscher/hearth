@@ -27,10 +27,11 @@ func TestDecodeCapturedFractionalState(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(issues) != 0 || len(states) != 3 ||
+	if len(issues) != 0 || len(states) != 4 ||
 		states[0].entityID != "entity-power" || string(states[0].report.Observation.Value) != "true" ||
 		states[1].entityID != "entity-brightness" || string(states[1].report.Observation.Value) != "25" ||
-		states[2].entityID != "entity-colortemp" || string(states[2].report.Observation.Value) != "370" {
+		states[2].entityID != "entity-colortemp" || string(states[2].report.Observation.Value) != `{"active":false,"value":370}` ||
+		states[3].entityID != "entity-colormode" || string(states[3].report.Observation.Value) != `"xy"` {
 		t.Fatalf("states = %#v, issues = %#v", states, issues)
 	}
 	if states[2].report.Observation.EntityID != "entity-colortemp" ||
@@ -69,7 +70,8 @@ func TestDecodeDeviceStateIsolatesInvalidAndUnknownProperties(t *testing.T) {
 }
 
 // This test protects strict color-temperature decoding and sibling issue isolation. It fails on conversion, clamping,
-// fractional rounding, numeric-string coercion, or whole-message rejection for one invalid recognized property.
+// fractional rounding, numeric-string coercion, whole-message rejection for one invalid recognized property, or
+// cached assembly when the same-message mode is absent from a mode-sensitive temperature Entity.
 func TestNormalizeColorTempAndIsolateInvalidProperty(t *testing.T) {
 	t.Parallel()
 	for _, test := range []struct {
@@ -90,17 +92,31 @@ func TestNormalizeColorTempAndIsolateInvalidProperty(t *testing.T) {
 	receivedAt := time.Unix(1, 0).UTC()
 	for _, payload := range []string{`153`, `501`, `370.5`, `"370"`, `1e10000`} {
 		states, issues, err := decodeDeviceState(
-			[]byte(`{"state":"OFF","color_temp":`+payload+`}`),
+			[]byte(`{"state":"OFF","color_temp":`+payload+`,"color_mode":"color_temp"}`),
 			entities,
 			receivedAt,
 		)
 		if err != nil {
 			t.Fatalf("decode sibling State with color_temp %s: %v", payload, err)
 		}
-		if len(states) != 1 || string(states[0].report.Observation.Value) != "false" || len(issues) != 1 ||
-			!reflect.DeepEqual(issues[0].Properties, []string{"color_temp"}) {
+		if len(states) != 2 || string(states[0].report.Observation.Value) != "false" ||
+			states[1].entityID != "entity-colormode" ||
+			string(states[1].report.Observation.Value) != `"color_temp"` || len(issues) != 1 ||
+			!reflect.DeepEqual(issues[0].Properties, []string{"color_temp", "color_mode"}) {
 			t.Errorf("color_temp %s: states=%#v issues=%#v", payload, states, issues)
 		}
+	}
+	// A mode-sensitive temperature Entity skips without an issue when the same-message mode is absent.
+	states, issues, err := decodeDeviceState(
+		[]byte(`{"state":"OFF","color_temp":370}`),
+		entities,
+		receivedAt,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(states) != 1 || string(states[0].report.Observation.Value) != "false" || len(issues) != 0 {
+		t.Fatalf("color_temp without mode: states=%#v issues=%#v", states, issues)
 	}
 }
 
@@ -301,18 +317,18 @@ func TestDecodeStatePreservesDiscoveryOrder(t *testing.T) {
 	t.Parallel()
 	device := mustDiscoveredFixtureDevice(t, "bridge-devices-3rcb01057z.json")
 	states, issues, err := decodeDeviceState(
-		[]byte(`{"color_temp":370,"brightness":254,"state":"ON"}`),
+		[]byte(`{"color_temp":370,"color_mode":"color_temp","brightness":254,"state":"ON"}`),
 		bindPlans(device.Entities),
 		time.Unix(1, 0).UTC(),
 	)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(states) != 3 || len(issues) != 0 {
+	if len(states) != 4 || len(issues) != 0 {
 		t.Fatalf("states = %#v, issues = %#v", states, issues)
 	}
-	got := []string{states[0].entityID, states[1].entityID, states[2].entityID}
-	if !reflect.DeepEqual(got, []string{"entity-power", "entity-brightness", "entity-colortemp"}) {
+	got := []string{states[0].entityID, states[1].entityID, states[2].entityID, states[3].entityID}
+	if !reflect.DeepEqual(got, []string{"entity-power", "entity-brightness", "entity-colortemp", "entity-colormode"}) {
 		t.Fatalf("State order = %v", got)
 	}
 }

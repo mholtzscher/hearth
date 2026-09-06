@@ -344,10 +344,20 @@ func commandReadyAdapter(
 	session *fakeSession,
 ) (*Adapter, *runtimeCoordinator, *fakeConnection, runtimeDevice) {
 	t.Helper()
+	return commandReadyAdapterFor(t, recorder, session, "bridge-devices-3rcb01057z.json")
+}
+
+func commandReadyAdapterFor(
+	t *testing.T,
+	recorder *runtimeRecorder,
+	session *fakeSession,
+	fixture string,
+) (*Adapter, *runtimeCoordinator, *fakeConnection, runtimeDevice) {
+	t.Helper()
 	z2m := newRuntimeAdapter(t, session, &fakeDialer{})
 	coordinator := startCoordinator(t, z2m)
 	connection := newFakeConnection(recorder)
-	device := mustDiscoveredFixtureDevice(t, "bridge-devices-3rcb01057z.json")
+	device := mustDiscoveredFixtureDevice(t, fixture)
 	binding := adapter.Binding{BindingKey: device.Registration.BindingKey, DeviceID: "dev-test"}
 	for _, entity := range device.Entities {
 		binding.Entities = append(
@@ -392,7 +402,12 @@ func publishState(
 	payload string,
 	receivedAt time.Time,
 ) error {
-	return z2m.publishDeviceState(ctx, 1, 1, device, mqttMessage{
+	// Decouple delivery from MQTT attempt cancellation, mirroring production
+	// where reports arrive on the long-lived sync context: a satisfying
+	// report completes its attempt and cancels the attempt context while
+	// sibling candidates from the same message are still queued, and those
+	// siblings must publish as ordinary observations.
+	return z2m.publishDeviceState(context.WithoutCancel(ctx), 1, 1, device, mqttMessage{
 		Topic:      "zigbee2mqtt/" + device.friendly,
 		Payload:    []byte(payload),
 		ReceivedAt: receivedAt,

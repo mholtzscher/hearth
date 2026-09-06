@@ -46,17 +46,19 @@
           "type": "array",
           "items": {"$ref": "#/$defs/rule"}
         },
-        "satisfied_when": {"$ref": "#/$defs/rule"}
+        "satisfied_when": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/rule"}}
       }
     },
     "rule": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["op", "left", "right"],
+      "required": ["op", "left"],
       "properties": {
-        "op": {"enum": ["eq", "gte", "lte", "multiple_of"]},
+        "op": {"enum": ["eq", "gte", "lte", "multiple_of", "is_true", "near", "circular_near"]},
         "left": {"$ref": "#/$defs/reference"},
-        "right": {"$ref": "#/$defs/reference"}
+        "right": {"$ref": "#/$defs/reference"},
+        "tolerance": {"type": "number"},
+        "modulus": {"type": "number"}
       }
     },
     "reference": {

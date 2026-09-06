@@ -1,0 +1,13 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:hearth:schema:entity-type:colorxy:v1:state",
+  "title": "Hearth colorxy/v1 State",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["active", "x", "y"],
+  "properties": {
+    "active": {"type": "boolean"},
+    "x": {"type": "integer", "minimum": 0, "maximum": 10000},
+    "y": {"type": "integer", "minimum": 0, "maximum": 10000}
+  }
+}

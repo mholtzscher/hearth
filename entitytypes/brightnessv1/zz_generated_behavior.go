@@ -31,5 +31,5 @@ func ValidateSetParameters(support Support, operationSupport SetSupport, paramet
 }
 
 func SetSatisfied(parameters SetParameters, state State) bool {
-	return int64(parameters.Value) == int64(state)
+	return (int64(parameters.Value) == int64(state))
 }

@@ -1,0 +1,34 @@
+{
+  "cases": [
+    {
+      "name": "hs-target",
+      "support": {
+        "state": {},
+        "operations": {"set": {}}
+      },
+      "states": [
+        {"value": {"active": true, "hue": 120, "saturation": 80}, "valid": true},
+        {"value": {"active": false, "hue": 0, "saturation": 0}, "valid": true},
+        {"value": {"active": true, "hue": 360, "saturation": 80}, "valid": false},
+        {"value": {"hue": 120, "saturation": 80}, "valid": false}
+      ],
+      "operations": {
+        "set": {
+          "parameters": [
+            {"value": {"hue": 120, "saturation": 80}, "valid": true},
+            {"value": {"hue": 0, "saturation": 0}, "valid": true},
+            {"value": {"hue": 360, "saturation": 80}, "valid": false},
+            {"value": {"hue": 120}, "valid": false}
+          ],
+          "outcomes": [
+            {"parameters": {"hue": 359, "saturation": 50}, "state": {"active": true, "hue": 1, "saturation": 50}, "satisfied": true},
+            {"parameters": {"hue": 10, "saturation": 50}, "state": {"active": true, "hue": 10, "saturation": 51}, "satisfied": true},
+            {"parameters": {"hue": 359, "saturation": 50}, "state": {"active": true, "hue": 2, "saturation": 50}, "satisfied": false},
+            {"parameters": {"hue": 10, "saturation": 50}, "state": {"active": true, "hue": 10, "saturation": 52}, "satisfied": false},
+            {"parameters": {"hue": 10, "saturation": 50}, "state": {"active": false, "hue": 10, "saturation": 50}, "satisfied": false}
+          ]
+        }
+      }
+    }
+  ]
+}

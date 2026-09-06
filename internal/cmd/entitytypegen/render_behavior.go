@@ -71,7 +71,7 @@ func renderBehavior(model entityTypeModel) ([]byte, error) {
 			operation.GoName,
 			operation.GoName,
 		)
-		fmt.Fprintf(&source, "\treturn %s\n}\n\n", ruleCondition(operation.SatisfiedWhen))
+		fmt.Fprintf(&source, "\treturn %s\n}\n\n", satisfactionCondition(operation.SatisfiedWhen))
 	}
 	return formatGenerated(source.String())
 }

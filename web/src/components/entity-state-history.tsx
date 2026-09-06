@@ -42,17 +42,20 @@ function isBoundedInteger(value: unknown, min: number, max: number): value is nu
   );
 }
 
-/** Numeric chart value for known Entity types; null for malformed values. */
+/** Numeric chart value for known Entity types; null for malformed values.
+    Color temperature State is the object form `{active, value}`; the chart
+    plots `value` in mireds. XY, HS, and mode States are structured or
+    discrete and have no numeric chart value. */
 function parseHistoryValue(type: string | undefined, value: unknown): PlottedValue | null {
   switch (type) {
     case "hearth.power/v1":
       return typeof value === "boolean" ? { numeric: value ? 1 : 0, label: value ? "On" : "Off" } : null;
     case "hearth.brightness/v1":
       return isBoundedInteger(value, 0, 100) ? { numeric: value, label: String(value) } : null;
-    case "hearth.colortemp/v1":
-      return isBoundedInteger(value, 100, 1000)
-        ? { numeric: value, label: String(value) }
-        : null;
+    case "hearth.colortemp/v1": {
+      const mireds = colorTempHistoryMireds(value);
+      return mireds === null ? null : { numeric: mireds, label: `${mireds} mireds` };
+    }
     case "hearth.temperature/v1":
       return isBoundedInteger(value, -273150, 1000000)
         ? { numeric: value / 1000, label: `${value / 1000} °C` }
@@ -62,8 +65,50 @@ function parseHistoryValue(type: string | undefined, value: unknown): PlottedVal
   }
 }
 
+/** Mired value from an object-form color-temperature State; null unless the
+    shape is `{active: boolean, value: bounded integer}`. Bounds come from the
+    Entity type's State schema, never from live support. */
+function colorTempHistoryMireds(value: unknown): number | null {
+  if (typeof value !== "object" || value === null) return null;
+  const v = value as { active?: unknown; value?: unknown };
+  if (typeof v.active !== "boolean" || !isBoundedInteger(v.value, 100, 1000)) return null;
+  return v.value;
+}
+
+/** Table display for structured color States with coordinates, units, and
+    mode activity; null for malformed values (the caller falls back to raw
+    JSON) and for types without a structured form. */
+function formatStructuredHistoryValue(type: string | undefined, value: unknown): string | null {
+  switch (type) {
+    case "hearth.colorxy/v1": {
+      if (typeof value !== "object" || value === null) return null;
+      const v = value as { active?: unknown; x?: unknown; y?: unknown };
+      if (typeof v.active !== "boolean" || typeof v.x !== "number" || typeof v.y !== "number") return null;
+      return `x ${v.x} (${(v.x / 10000).toFixed(4)}), y ${v.y} (${(v.y / 10000).toFixed(4)}), ${v.active ? "active" : "inactive"}`;
+    }
+    case "hearth.colorhs/v1": {
+      if (typeof value !== "object" || value === null) return null;
+      const v = value as { active?: unknown; hue?: unknown; saturation?: unknown };
+      if (typeof v.active !== "boolean" || typeof v.hue !== "number" || typeof v.saturation !== "number") return null;
+      return `hue ${v.hue}°, saturation ${v.saturation}%, ${v.active ? "active" : "inactive"}`;
+    }
+    case "hearth.colormode/v1":
+      return typeof value === "string" ? value : null;
+    case "hearth.colortemp/v1": {
+      if (typeof value !== "object" || value === null) return null;
+      const v = value as { active?: unknown; value?: unknown };
+      if (typeof v.active !== "boolean" || typeof v.value !== "number") return null;
+      return `${v.value} mireds, ${v.active ? "active" : "inactive"}`;
+    }
+    default:
+      return null;
+  }
+}
+
 /** Table display value; falls back to raw JSON for unknown types and malformed values. */
 function formatHistoryValue(type: string | undefined, value: unknown): string {
+  const structured = formatStructuredHistoryValue(type, value);
+  if (structured !== null) return structured;
   const parsed = parseHistoryValue(type, value);
   if (parsed) return parsed.label;
   try {
@@ -201,6 +246,19 @@ function StateHistoryChart({
     case "hearth.colortemp/v1":
     case "hearth.temperature/v1":
       break;
+    case "hearth.colorxy/v1":
+    case "hearth.colorhs/v1":
+      return (
+        <p className="mt-3 text-sm text-muted-foreground">
+          Structured coordinate values are listed below with units and activity; no chart.
+        </p>
+      );
+    case "hearth.colormode/v1":
+      return (
+        <p className="mt-3 text-sm text-muted-foreground">
+          Discrete mode values are listed below; no chart.
+        </p>
+      );
     default:
       return (
         <p className="mt-3 text-sm text-muted-foreground">

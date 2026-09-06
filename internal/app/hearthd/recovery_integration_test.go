@@ -2,6 +2,7 @@ package hearthd //nolint:testpackage // Tests exercise package-private assembly 
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 	"net"
 	"path/filepath"
@@ -136,9 +137,9 @@ func TestCoreStartupInterruptsActiveCommandsWithoutRedispatch(t *testing.T) {
 		).Scan(&interrupted, &restarted)
 		return interrupted == 2 && restarted == 2, queryErr
 	})
-	// The interruption transaction commits before JetStream and HTTP startup.
-	// Wait for the bound socket rather than canceling mid-startup on slower CI runners.
-	waitForRecord(t, recorder, "core.http_listening", 5*time.Second)
+	// /healthz serves only after startup completes, so reaching it proves the
+	// full startup window passed without redispatching persisted commands.
+	waitForCoreHealthz(ctx, t, httpAddress, runErrors)
 	if got := dispatches.Load(); got != 0 {
 		t.Fatalf("startup redispatched %d persisted commands", got)
 	}
@@ -168,6 +169,58 @@ func TestCoreStartupInterruptsActiveCommandsWithoutRedispatch(t *testing.T) {
 	}
 	if completed := recordsWithEvent(records, "command.completed"); len(completed) != 0 {
 		t.Fatalf("startup recovery fabricated command outcomes: %#v", completed)
+	}
+}
+
+// This test protects clean shutdown when the startup context is cancelled
+// while the core NATS connection is blocked, and fails if cancellation
+// surfaces as the unrelated NATS connection error.
+func TestRunReturnsCancellationWhenStartupNATSConnectCancelled(t *testing.T) {
+	t.Parallel()
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	databasePath := filepath.Join(t.TempDir(), "hearth.db")
+	blocker, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = blocker.Close() })
+	accepted := make(chan net.Conn, 1)
+	go func() {
+		connection, acceptErr := blocker.Accept()
+		if acceptErr != nil {
+			return
+		}
+		accepted <- connection
+	}()
+	httpAddress := unusedLoopbackAddress(t)
+	runContext, stopCore := context.WithCancel(ctx)
+	defer stopCore()
+	runErrors := make(chan error, 1)
+	go func() {
+		runErrors <- Run(runContext, Config{
+			HTTPAddr: httpAddress, NATSURL: "nats://" + blocker.Addr().String(), SQLitePath: databasePath,
+		}, slog.New(slog.DiscardHandler))
+	}()
+	select {
+	case connection := <-accepted:
+		// Fail the pending NATS handshake after the cancellation below, so the
+		// connect error deterministically follows the cancel instead of racing it.
+		time.AfterFunc(500*time.Millisecond, func() { _ = connection.Close() })
+		t.Cleanup(func() { _ = connection.Close() })
+		stopCore()
+	case runErr := <-runErrors:
+		t.Fatalf("Run returned before startup NATS connect blocked: %v", runErr)
+	case <-time.After(5 * time.Second):
+		t.Fatal("startup did not block in NATS connect")
+	}
+	select {
+	case runErr := <-runErrors:
+		if !errors.Is(runErr, context.Canceled) {
+			t.Fatalf("cancelled startup NATS connect returned %v, want context.Canceled", runErr)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("hearthd did not stop after startup cancellation")
 	}
 }
 

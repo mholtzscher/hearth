@@ -19,7 +19,7 @@ func TestGeneratedObservationConformance(t *testing.T) {
 			t.Fatalf("support: %v", err)
 		}
 		{
-			state, _, decodeErr := codecs.State.Decode(json.RawMessage("370"))
+			state, _, decodeErr := codecs.State.Decode(json.RawMessage("{\"active\": true, \"value\": 370}"))
 			valid := false
 			var observationErr error
 			if decodeErr == nil {
@@ -31,7 +31,7 @@ func TestGeneratedObservationConformance(t *testing.T) {
 			}
 		}
 		{
-			state, _, decodeErr := codecs.State.Decode(json.RawMessage("153"))
+			state, _, decodeErr := codecs.State.Decode(json.RawMessage("{\"active\": false, \"value\": 370}"))
 			valid := false
 			var observationErr error
 			if decodeErr == nil {
@@ -43,7 +43,7 @@ func TestGeneratedObservationConformance(t *testing.T) {
 			}
 		}
 		{
-			state, _, decodeErr := codecs.State.Decode(json.RawMessage("500"))
+			state, _, decodeErr := codecs.State.Decode(json.RawMessage("{\"active\": true, \"value\": 153}"))
 			valid := false
 			var observationErr error
 			if decodeErr == nil {
@@ -55,19 +55,19 @@ func TestGeneratedObservationConformance(t *testing.T) {
 			}
 		}
 		{
-			state, _, decodeErr := codecs.State.Decode(json.RawMessage("152"))
+			state, _, decodeErr := codecs.State.Decode(json.RawMessage("{\"active\": true, \"value\": 500}"))
 			valid := false
 			var observationErr error
 			if decodeErr == nil {
 				_, observationErr = NewObservation(ObservationInput{EntityID: "ent_01890f47-7a6b-7c4d-8e9f-0123456789ab", Support: support, State: state, AdapterReceivedAt: time.Unix(0, 0).UTC()})
 				valid = observationErr == nil
 			}
-			if valid != false {
+			if valid != true {
 				t.Errorf("State example 4: valid = %v, decode error = %v, Observation error = %v", valid, decodeErr, observationErr)
 			}
 		}
 		{
-			state, _, decodeErr := codecs.State.Decode(json.RawMessage("501"))
+			state, _, decodeErr := codecs.State.Decode(json.RawMessage("{\"active\": true, \"value\": 152}"))
 			valid := false
 			var observationErr error
 			if decodeErr == nil {
@@ -76,6 +76,42 @@ func TestGeneratedObservationConformance(t *testing.T) {
 			}
 			if valid != false {
 				t.Errorf("State example 5: valid = %v, decode error = %v, Observation error = %v", valid, decodeErr, observationErr)
+			}
+		}
+		{
+			state, _, decodeErr := codecs.State.Decode(json.RawMessage("{\"active\": true, \"value\": 501}"))
+			valid := false
+			var observationErr error
+			if decodeErr == nil {
+				_, observationErr = NewObservation(ObservationInput{EntityID: "ent_01890f47-7a6b-7c4d-8e9f-0123456789ab", Support: support, State: state, AdapterReceivedAt: time.Unix(0, 0).UTC()})
+				valid = observationErr == nil
+			}
+			if valid != false {
+				t.Errorf("State example 6: valid = %v, decode error = %v, Observation error = %v", valid, decodeErr, observationErr)
+			}
+		}
+		{
+			state, _, decodeErr := codecs.State.Decode(json.RawMessage("{\"value\": 370}"))
+			valid := false
+			var observationErr error
+			if decodeErr == nil {
+				_, observationErr = NewObservation(ObservationInput{EntityID: "ent_01890f47-7a6b-7c4d-8e9f-0123456789ab", Support: support, State: state, AdapterReceivedAt: time.Unix(0, 0).UTC()})
+				valid = observationErr == nil
+			}
+			if valid != false {
+				t.Errorf("State example 7: valid = %v, decode error = %v, Observation error = %v", valid, decodeErr, observationErr)
+			}
+		}
+		{
+			state, _, decodeErr := codecs.State.Decode(json.RawMessage("370"))
+			valid := false
+			var observationErr error
+			if decodeErr == nil {
+				_, observationErr = NewObservation(ObservationInput{EntityID: "ent_01890f47-7a6b-7c4d-8e9f-0123456789ab", Support: support, State: state, AdapterReceivedAt: time.Unix(0, 0).UTC()})
+				valid = observationErr == nil
+			}
+			if valid != false {
+				t.Errorf("State example 8: valid = %v, decode error = %v, Observation error = %v", valid, decodeErr, observationErr)
 			}
 		}
 	})

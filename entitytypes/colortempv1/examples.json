@@ -7,11 +7,14 @@
         "operations": {"set": {"step": 1}}
       },
       "states": [
-        {"value": 370, "valid": true},
-        {"value": 153, "valid": true},
-        {"value": 500, "valid": true},
-        {"value": 152, "valid": false},
-        {"value": 501, "valid": false}
+        {"value": {"active": true, "value": 370}, "valid": true},
+        {"value": {"active": false, "value": 370}, "valid": true},
+        {"value": {"active": true, "value": 153}, "valid": true},
+        {"value": {"active": true, "value": 500}, "valid": true},
+        {"value": {"active": true, "value": 152}, "valid": false},
+        {"value": {"active": true, "value": 501}, "valid": false},
+        {"value": {"value": 370}, "valid": false},
+        {"value": 370, "valid": false}
       ],
       "operations": {
         "set": {
@@ -20,8 +23,9 @@
             {"value": {"value": 152}, "valid": false}
           ],
           "outcomes": [
-            {"parameters": {"value": 370}, "state": 370, "satisfied": true},
-            {"parameters": {"value": 370}, "state": 369, "satisfied": false}
+            {"parameters": {"value": 370}, "state": {"active": true, "value": 370}, "satisfied": true},
+            {"parameters": {"value": 370}, "state": {"active": false, "value": 370}, "satisfied": false},
+            {"parameters": {"value": 370}, "state": {"active": true, "value": 369}, "satisfied": false}
           ]
         }
       }

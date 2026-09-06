@@ -39,7 +39,14 @@ func TestCommandsForSameIEEEStaySerializedUntilDisposition(t *testing.T) {
 			return nil
 		}
 		setCount.Add(1)
-		return publishState(ctx, z2m, device, string(payload), time.Now().UTC())
+		// Echo the set payload back as observed State. A mode-sensitive
+		// temperature echo carries its companion mode in the same message,
+		// because the runtime never assembles State across messages.
+		echo := string(payload)
+		if echo == `{"color_temp":370}` {
+			echo = `{"color_temp":370,"color_mode":"color_temp"}`
+		}
+		return publishState(ctx, z2m, device, echo, time.Now().UTC())
 	}
 	results := make(chan error, 2)
 	go func() {

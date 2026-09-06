@@ -46,16 +46,21 @@ func TestDiscoverCapturedThirdRealityLight(t *testing.T) {
 			Type:    "hearth.colortemp/v1",
 			Support: json.RawMessage(`{"state":{"maximum":500,"minimum":154},"operations":{"set":{"step":1}}}`),
 		},
+		{
+			Key: "colormode", ExternalID: "0xa4c1380000000001/root/colormode", Name: "Color Mode",
+			Type: "hearth.colormode/v1", Support: json.RawMessage(`{"state":{},"operations":{}}`),
+		},
 	}
 	if !reflect.DeepEqual(device.Registration.Entities, want) {
 		t.Fatalf("Entity descriptors = %#v, want %#v", device.Registration.Entities, want)
 	}
-	if len(device.Entities) != 3 || !reflect.DeepEqual(device.Entities[0].StateProperties, []string{"state"}) ||
+	if len(device.Entities) != 4 || !reflect.DeepEqual(device.Entities[0].StateProperties, []string{"state"}) ||
 		!reflect.DeepEqual(device.Entities[0].GetProperties, []string{"state"}) ||
 		!reflect.DeepEqual(device.Entities[1].StateProperties, []string{"brightness"}) ||
 		!reflect.DeepEqual(device.Entities[1].GetProperties, []string{"brightness"}) ||
-		!reflect.DeepEqual(device.Entities[2].StateProperties, []string{"color_temp"}) ||
-		!reflect.DeepEqual(device.Entities[2].GetProperties, []string{"color_temp"}) {
+		!reflect.DeepEqual(device.Entities[2].StateProperties, []string{"color_temp", "color_mode"}) ||
+		!reflect.DeepEqual(device.Entities[2].GetProperties, []string{"color_temp"}) ||
+		!reflect.DeepEqual(device.Entities[3].StateProperties, []string{"color_mode"}) {
 		t.Fatalf("Entity routes = %#v", device.Entities)
 	}
 }
@@ -97,7 +102,10 @@ func TestDiscoverNullBrightnessBoundDoesNotCreateBrightness(t *testing.T) {
 	if len(result.Rejections) != 0 || len(result.Devices) != 1 {
 		t.Fatalf("discovery = %#v", result)
 	}
-	if got := entityKeys(result.Devices[0].Entities); !reflect.DeepEqual(got, []string{"power", "colortemp"}) {
+	if got := entityKeys(result.Devices[0].Entities); !reflect.DeepEqual(
+		got,
+		[]string{"power", "colortemp", "colormode"},
+	) {
 		t.Fatalf("Entity keys = %v", got)
 	}
 }
@@ -130,6 +138,10 @@ func TestDiscoverMultiEndpointLight(t *testing.T) {
 			Support: json.RawMessage(`{"state":{"maximum":500,"minimum":153},"operations":{"set":{"step":1}}}`),
 		},
 		{
+			Key: "colormode-ep1", ExternalID: "0x00124b0000000002/ep1/colormode", Name: "left Color Mode",
+			Type: "hearth.colormode/v1", Support: json.RawMessage(`{"state":{},"operations":{}}`),
+		},
+		{
 			Key: "power-ep2", ExternalID: "0x00124b0000000002/ep2/power", Name: "right Power",
 			Type: "hearth.power/v1", Support: json.RawMessage(`{"state":{},"operations":{"set":{}}}`),
 		},
@@ -142,9 +154,19 @@ func TestDiscoverMultiEndpointLight(t *testing.T) {
 	if !reflect.DeepEqual(device.Registration.Entities, wantDescriptors) {
 		t.Fatalf("Entity descriptors = %#v, want %#v", device.Registration.Entities, wantDescriptors)
 	}
-	wantProperties := []string{"state_left", "brightness_left", "color_temp_left", "state_right", "brightness_right"}
+	wantProperties := [][]string{
+		{"state_left"},
+		{"brightness_left"},
+		{"color_temp_left"},
+		{"color_mode_left"},
+		{"state_right"},
+		{"brightness_right"},
+	}
+	if len(device.Entities) != len(wantProperties) {
+		t.Fatalf("Entity count = %d, want %d", len(device.Entities), len(wantProperties))
+	}
 	for index, entity := range device.Entities {
-		if !reflect.DeepEqual(entity.StateProperties, []string{wantProperties[index]}) {
+		if !reflect.DeepEqual(entity.StateProperties, wantProperties[index]) {
 			t.Fatalf("Entity %d State properties = %v", index, entity.StateProperties)
 		}
 	}

@@ -18,7 +18,7 @@ func TestGeneratedConformance(t *testing.T) {
 			t.Fatalf("support: %v", err)
 		}
 		{
-			value, _, decodeErr := codecs.State.Decode(json.RawMessage("370"))
+			value, _, decodeErr := codecs.State.Decode(json.RawMessage("{\"active\": true, \"value\": 370}"))
 			valid := decodeErr == nil
 			if decodeErr == nil {
 				valid = ValidateState(support, value) == nil
@@ -28,7 +28,7 @@ func TestGeneratedConformance(t *testing.T) {
 			}
 		}
 		{
-			value, _, decodeErr := codecs.State.Decode(json.RawMessage("153"))
+			value, _, decodeErr := codecs.State.Decode(json.RawMessage("{\"active\": false, \"value\": 370}"))
 			valid := decodeErr == nil
 			if decodeErr == nil {
 				valid = ValidateState(support, value) == nil
@@ -38,7 +38,7 @@ func TestGeneratedConformance(t *testing.T) {
 			}
 		}
 		{
-			value, _, decodeErr := codecs.State.Decode(json.RawMessage("500"))
+			value, _, decodeErr := codecs.State.Decode(json.RawMessage("{\"active\": true, \"value\": 153}"))
 			valid := decodeErr == nil
 			if decodeErr == nil {
 				valid = ValidateState(support, value) == nil
@@ -48,23 +48,53 @@ func TestGeneratedConformance(t *testing.T) {
 			}
 		}
 		{
-			value, _, decodeErr := codecs.State.Decode(json.RawMessage("152"))
+			value, _, decodeErr := codecs.State.Decode(json.RawMessage("{\"active\": true, \"value\": 500}"))
 			valid := decodeErr == nil
 			if decodeErr == nil {
 				valid = ValidateState(support, value) == nil
 			}
-			if valid != false {
+			if valid != true {
 				t.Errorf("state example 4: valid = %v, decode error = %v", valid, decodeErr)
 			}
 		}
 		{
-			value, _, decodeErr := codecs.State.Decode(json.RawMessage("501"))
+			value, _, decodeErr := codecs.State.Decode(json.RawMessage("{\"active\": true, \"value\": 152}"))
 			valid := decodeErr == nil
 			if decodeErr == nil {
 				valid = ValidateState(support, value) == nil
 			}
 			if valid != false {
 				t.Errorf("state example 5: valid = %v, decode error = %v", valid, decodeErr)
+			}
+		}
+		{
+			value, _, decodeErr := codecs.State.Decode(json.RawMessage("{\"active\": true, \"value\": 501}"))
+			valid := decodeErr == nil
+			if decodeErr == nil {
+				valid = ValidateState(support, value) == nil
+			}
+			if valid != false {
+				t.Errorf("state example 6: valid = %v, decode error = %v", valid, decodeErr)
+			}
+		}
+		{
+			value, _, decodeErr := codecs.State.Decode(json.RawMessage("{\"value\": 370}"))
+			valid := decodeErr == nil
+			if decodeErr == nil {
+				valid = ValidateState(support, value) == nil
+			}
+			if valid != false {
+				t.Errorf("state example 7: valid = %v, decode error = %v", valid, decodeErr)
+			}
+		}
+		{
+			value, _, decodeErr := codecs.State.Decode(json.RawMessage("370"))
+			valid := decodeErr == nil
+			if decodeErr == nil {
+				valid = ValidateState(support, value) == nil
+			}
+			if valid != false {
+				t.Errorf("state example 8: valid = %v, decode error = %v", valid, decodeErr)
 			}
 		}
 		setSupport := support.Operations.Set
@@ -93,7 +123,7 @@ func TestGeneratedConformance(t *testing.T) {
 			if err != nil {
 				t.Fatalf("set outcome 1 parameters: %v", err)
 			}
-			state, _, err := codecs.State.Decode(json.RawMessage("370"))
+			state, _, err := codecs.State.Decode(json.RawMessage("{\"active\": true, \"value\": 370}"))
 			if err != nil {
 				t.Fatalf("set outcome 1 State: %v", err)
 			}
@@ -106,12 +136,25 @@ func TestGeneratedConformance(t *testing.T) {
 			if err != nil {
 				t.Fatalf("set outcome 2 parameters: %v", err)
 			}
-			state, _, err := codecs.State.Decode(json.RawMessage("369"))
+			state, _, err := codecs.State.Decode(json.RawMessage("{\"active\": false, \"value\": 370}"))
 			if err != nil {
 				t.Fatalf("set outcome 2 State: %v", err)
 			}
 			if satisfied := SetSatisfied(parameters, state); satisfied != false {
 				t.Errorf("set outcome 2: satisfied = %v", satisfied)
+			}
+		}
+		{
+			parameters, _, err := codecs.SetParameters.Decode(json.RawMessage("{\"value\": 370}"))
+			if err != nil {
+				t.Fatalf("set outcome 3 parameters: %v", err)
+			}
+			state, _, err := codecs.State.Decode(json.RawMessage("{\"active\": true, \"value\": 369}"))
+			if err != nil {
+				t.Fatalf("set outcome 3 State: %v", err)
+			}
+			if satisfied := SetSatisfied(parameters, state); satisfied != false {
+				t.Errorf("set outcome 3: satisfied = %v", satisfied)
 			}
 		}
 	})

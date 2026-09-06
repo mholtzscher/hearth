@@ -1,0 +1,34 @@
+{
+  "cases": [
+    {
+      "name": "xy-target",
+      "support": {
+        "state": {},
+        "operations": {"set": {}}
+      },
+      "states": [
+        {"value": {"active": true, "x": 3125, "y": 3291}, "valid": true},
+        {"value": {"active": false, "x": 0, "y": 0}, "valid": true},
+        {"value": {"active": true, "x": 10001, "y": 0}, "valid": false},
+        {"value": {"x": 3125, "y": 3291}, "valid": false}
+      ],
+      "operations": {
+        "set": {
+          "parameters": [
+            {"value": {"x": 3125, "y": 3291}, "valid": true},
+            {"value": {"x": 0, "y": 0}, "valid": true},
+            {"value": {"x": 10001, "y": 0}, "valid": false},
+            {"value": {"x": 3125}, "valid": false}
+          ],
+          "outcomes": [
+            {"parameters": {"x": 3125, "y": 3291}, "state": {"active": true, "x": 3125, "y": 3291}, "satisfied": true},
+            {"parameters": {"x": 3125, "y": 3291}, "state": {"active": true, "x": 3126, "y": 3290}, "satisfied": true},
+            {"parameters": {"x": 3125, "y": 3291}, "state": {"active": true, "x": 3127, "y": 3291}, "satisfied": false},
+            {"parameters": {"x": 3125, "y": 3291}, "state": {"active": true, "x": 3125, "y": 3293}, "satisfied": false},
+            {"parameters": {"x": 3125, "y": 3291}, "state": {"active": false, "x": 3125, "y": 3291}, "satisfied": false}
+          ]
+        }
+      }
+    }
+  ]
+}

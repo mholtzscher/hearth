@@ -20,10 +20,17 @@ const (
 	hearthColorTempMaximum = 1000
 )
 
-// newColorTempPlan builds the complete color-temperature translation for one State property.
+// newColorTempPlan builds the complete color-temperature translation for one
+// State property. When mode is required the plan also claims the companion
+// mode property and temperature is active exactly when the same-message mode
+// is color_temp. Without a required mode the decoder still inspects a
+// reported mode when one is present, and an empty mode property disables
+// mode inspection entirely.
 func newColorTempPlan(
 	metadata adapter.EntityMetadata,
 	property string,
+	modeProperty string,
+	requireMode bool,
 	minimum, maximum int64,
 ) (entityPlan, error) {
 	support := colorTempSupport(minimum, maximum)
@@ -31,31 +38,36 @@ func newColorTempPlan(
 	if descriptorErr != nil {
 		return entityPlan{}, descriptorErr
 	}
+	stateProperties := []string{property}
+	if requireMode {
+		stateProperties = []string{property, modeProperty}
+	}
 	return entityPlan{
 		Descriptor:      descriptor,
-		StateProperties: []string{property},
+		StateProperties: stateProperties,
 		GetProperties:   []string{property},
 		DecodeState: func(
 			entityID string,
 			properties map[string]json.RawMessage,
 			receivedAt time.Time,
 		) (stateReport, bool, error) {
-			raw, present := properties[property]
-			if !present {
-				return stateReport{}, false, nil
-			}
-			value, err := normalizeColorTemp(raw, minimum, maximum)
+			state, decoded, err := decodeColorTempState(
+				properties, property, modeProperty, requireMode, minimum, maximum,
+			)
 			if err != nil {
 				return stateReport{}, false, err
 			}
+			if !decoded {
+				return stateReport{}, false, nil
+			}
 			observation, err := sdkcolortempv1.NewObservation(sdkcolortempv1.ObservationInput{
-				EntityID: entityID, Support: support, State: contractcolortempv1.State(value),
+				EntityID: entityID, Support: support, State: state,
 				AdapterReceivedAt: receivedAt,
 			})
 			if err != nil {
 				return stateReport{}, false, err
 			}
-			return stateReport{Observation: observation, semantic: value}, true, nil
+			return stateReport{Observation: observation, semantic: state}, true, nil
 		},
 		TranslateCommand: func(
 			ctx context.Context,
@@ -63,7 +75,7 @@ func newColorTempPlan(
 			command adapter.Command,
 			responder adapter.Responder,
 		) (plannedCommand, error) {
-			var value int64
+			var parameters contractcolortempv1.SetParameters
 			var deadline time.Time
 			handler, err := sdkcolortempv1.NewCommandHandler(entityID, support, sdkcolortempv1.Handlers{
 				Set: func(
@@ -71,7 +83,7 @@ func newColorTempPlan(
 					typedCommand typed.Command[contractcolortempv1.SetParameters],
 					_ adapter.Responder,
 				) error {
-					value = typedCommand.Parameters.Value
+					parameters = typedCommand.Parameters
 					deadline = typedCommand.Deadline
 					return nil
 				},
@@ -82,7 +94,7 @@ func newColorTempPlan(
 			if err = handler(ctx, command, responder); err != nil {
 				return plannedCommand{}, err
 			}
-			translated, valueErr := colorTempCommandValue(value)
+			translated, valueErr := colorTempCommandValue(parameters.Value)
 			if valueErr != nil {
 				return plannedCommand{}, valueErr
 			}
@@ -90,10 +102,60 @@ func newColorTempPlan(
 				SetValues:     map[string]json.RawMessage{property: translated},
 				GetProperties: []string{property},
 				Deadline:      deadline,
-				Matches:       exactMatcher(value),
+				Matches: func(report stateReport) bool {
+					state, ok := report.semantic.(contractcolortempv1.State)
+					if !ok {
+						return false
+					}
+					return contractcolortempv1.SetSatisfied(parameters, state)
+				},
 			}, nil
 		},
 	}, nil
+}
+
+func decodeColorTempState(
+	properties map[string]json.RawMessage,
+	property, modeProperty string,
+	requireMode bool,
+	minimum, maximum int64,
+) (contractcolortempv1.State, bool, error) {
+	raw, present := properties[property]
+	if !present {
+		return contractcolortempv1.State{}, false, nil
+	}
+	value, err := normalizeColorTemp(raw, minimum, maximum)
+	if err != nil {
+		return contractcolortempv1.State{}, false, err
+	}
+	active, decoded, err := decodeColorTempActivity(properties, modeProperty, requireMode)
+	if err != nil || !decoded {
+		return contractcolortempv1.State{}, decoded, err
+	}
+	return contractcolortempv1.State{Active: active, Value: value}, true, nil
+}
+
+// decodeColorTempActivity derives temperature activity from the companion
+// mode: active exactly when the same-message mode is color_temp, always
+// active when no mode is inspected, and falling back to always-active when
+// mode is absent without a requirement.
+func decodeColorTempActivity(
+	properties map[string]json.RawMessage,
+	modeProperty string,
+	requireMode bool,
+) (bool, bool, error) {
+	if modeProperty == "" {
+		return true, true, nil
+	}
+	rawMode, present := properties[modeProperty]
+	if !present {
+		return true, !requireMode, nil
+	}
+	mode, err := decodeReportedColorMode(rawMode)
+	if err != nil {
+		return false, false, fmt.Errorf("color temperature mode: %w", err)
+	}
+	return mode == colorModeColorTemp, true, nil
 }
 
 func colorTempSupport(minimum, maximum int64) contractcolortempv1.Support {
