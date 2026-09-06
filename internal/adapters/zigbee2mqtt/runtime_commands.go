@@ -18,6 +18,13 @@ func (coordinator *runtimeCoordinator) submitCommand(event commandSubmitted) {
 		event.result <- event.responder.RejectUnavailable("Zigbee2MQTT Entity is unavailable")
 		return
 	}
+	// Read-only Entities have no translator: reject without queuing. Falling
+	// through would queue an empty plan whose zero deadline never completes
+	// the handler.
+	if route.entity.plan.TranslateCommand == nil {
+		event.result <- event.responder.RejectUnavailable("Zigbee2MQTT Entity is unavailable")
+		return
+	}
 	payload, planned, err := translateCommand(event.ctx, route, event.command, event.responder)
 	if err != nil {
 		event.result <- err

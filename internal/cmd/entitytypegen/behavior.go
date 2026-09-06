@@ -1,8 +1,11 @@
 package main
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
+	"math/big"
+	"strconv"
 	"strings"
 )
 
@@ -17,9 +20,12 @@ const (
 	schemaTypeArray  = "array"
 	schemaTypeObject = "object"
 
-	ruleOperatorGTE        = "gte"
-	ruleOperatorLTE        = "lte"
-	ruleOperatorMultipleOf = "multiple_of"
+	ruleOperatorGTE          = "gte"
+	ruleOperatorLTE          = "lte"
+	ruleOperatorMultipleOf   = "multiple_of"
+	ruleOperatorIsTrue       = "is_true"
+	ruleOperatorNear         = "near"
+	ruleOperatorCircularNear = "circular_near"
 
 	referenceRootParameters = "parameters"
 	referenceRootState      = "state"
@@ -31,9 +37,12 @@ const (
 )
 
 type ruleModel struct {
-	Op    string
-	Left  referenceModel
-	Right referenceModel
+	Op        string
+	Left      referenceModel
+	Right     referenceModel
+	HasRight  bool
+	Tolerance int64
+	Modulus   int64
 }
 
 type referenceModel struct {
@@ -51,9 +60,9 @@ type referenceRoot struct {
 func compileRules(rules []ruleManifest, roots map[string]referenceRoot, context string) ([]ruleModel, error) {
 	compiled := make([]ruleModel, 0, len(rules))
 	for index, rule := range rules {
-		value, err := compileRule(rule, roots)
-		if err != nil {
-			return nil, fmt.Errorf("%s rule %d: %w", context, index+1, err)
+		value, compileErr := compileRule(rule, roots)
+		if compileErr != nil {
+			return nil, fmt.Errorf("%s rule %d: %w", context, index+1, compileErr)
 		}
 		compiled = append(compiled, value)
 	}
@@ -61,13 +70,50 @@ func compileRules(rules []ruleManifest, roots map[string]referenceRoot, context 
 }
 
 func compileRule(rule ruleManifest, roots map[string]referenceRoot) (ruleModel, error) {
-	left, err := compileReference(rule.Left, roots)
-	if err != nil {
-		return ruleModel{}, fmt.Errorf("left reference: %w", err)
+	left, leftErr := compileReference(rule.Left, roots)
+	if leftErr != nil {
+		return ruleModel{}, fmt.Errorf("left reference: %w", leftErr)
 	}
-	right, err := compileReference(rule.Right, roots)
-	if err != nil {
-		return ruleModel{}, fmt.Errorf("right reference: %w", err)
+	switch rule.Op {
+	case "eq":
+		return compileEqualityRule(rule, roots, left)
+	case ruleOperatorGTE, ruleOperatorLTE:
+		return compileOrderedRule(rule, roots, left)
+	case ruleOperatorMultipleOf:
+		return compileMultipleOfRule(rule, roots, left)
+	case ruleOperatorIsTrue:
+		return compileIsTrueRule(rule, left)
+	case ruleOperatorNear:
+		return compileNearRule(rule, roots, left)
+	case ruleOperatorCircularNear:
+		return compileCircularNearRule(rule, roots, left)
+	default:
+		return ruleModel{}, fmt.Errorf("unsupported operator %q", rule.Op)
+	}
+}
+
+func compileRightReference(rule ruleManifest, roots map[string]referenceRoot) (referenceModel, error) {
+	if rule.Right == nil {
+		return referenceModel{}, fmt.Errorf("operator %q requires right", rule.Op)
+	}
+	right, rightErr := compileReference(*rule.Right, roots)
+	if rightErr != nil {
+		return referenceModel{}, fmt.Errorf("right reference: %w", rightErr)
+	}
+	return right, nil
+}
+
+func compileEqualityRule(
+	rule ruleManifest,
+	roots map[string]referenceRoot,
+	left referenceModel,
+) (ruleModel, error) {
+	right, rightErr := compileRightReference(rule, roots)
+	if rightErr != nil {
+		return ruleModel{}, rightErr
+	}
+	if constantsErr := rejectRuleConstants(rule); constantsErr != nil {
+		return ruleModel{}, constantsErr
 	}
 	if left.Kind != right.Kind {
 		return ruleModel{}, fmt.Errorf(
@@ -77,20 +123,271 @@ func compileRule(rule ruleManifest, roots map[string]referenceRoot) (ruleModel, 
 			right.Kind,
 		)
 	}
-	switch rule.Op {
-	case "eq":
-	case ruleOperatorGTE, ruleOperatorLTE:
-		if left.Kind != kindInteger && left.Kind != kindNumber {
-			return ruleModel{}, fmt.Errorf("operator %q requires numeric operands, got %s", rule.Op, left.Kind)
-		}
-	case ruleOperatorMultipleOf:
-		if left.Kind != kindInteger {
-			return ruleModel{}, fmt.Errorf("operator %q requires integer operands, got %s", rule.Op, left.Kind)
-		}
-	default:
-		return ruleModel{}, fmt.Errorf("unsupported operator %q", rule.Op)
+	return ruleModel{Op: rule.Op, Left: left, Right: right, HasRight: true}, nil
+}
+
+func compileOrderedRule(
+	rule ruleManifest,
+	roots map[string]referenceRoot,
+	left referenceModel,
+) (ruleModel, error) {
+	right, rightErr := compileRightReference(rule, roots)
+	if rightErr != nil {
+		return ruleModel{}, rightErr
 	}
-	return ruleModel{Op: rule.Op, Left: left, Right: right}, nil
+	if constantsErr := rejectRuleConstants(rule); constantsErr != nil {
+		return ruleModel{}, constantsErr
+	}
+	if left.Kind != right.Kind {
+		return ruleModel{}, fmt.Errorf(
+			"operator %q requires matching operand types, got %s and %s",
+			rule.Op,
+			left.Kind,
+			right.Kind,
+		)
+	}
+	if left.Kind != kindInteger && left.Kind != kindNumber {
+		return ruleModel{}, fmt.Errorf("operator %q requires numeric operands, got %s", rule.Op, left.Kind)
+	}
+	return ruleModel{Op: rule.Op, Left: left, Right: right, HasRight: true}, nil
+}
+
+func compileMultipleOfRule(
+	rule ruleManifest,
+	roots map[string]referenceRoot,
+	left referenceModel,
+) (ruleModel, error) {
+	right, rightErr := compileRightReference(rule, roots)
+	if rightErr != nil {
+		return ruleModel{}, rightErr
+	}
+	if constantsErr := rejectRuleConstants(rule); constantsErr != nil {
+		return ruleModel{}, constantsErr
+	}
+	if left.Kind != right.Kind {
+		return ruleModel{}, fmt.Errorf(
+			"operator %q requires matching operand types, got %s and %s",
+			rule.Op,
+			left.Kind,
+			right.Kind,
+		)
+	}
+	if left.Kind != kindInteger {
+		return ruleModel{}, fmt.Errorf("operator %q requires integer operands, got %s", rule.Op, left.Kind)
+	}
+	return ruleModel{Op: rule.Op, Left: left, Right: right, HasRight: true}, nil
+}
+
+func compileIsTrueRule(rule ruleManifest, left referenceModel) (ruleModel, error) {
+	if rule.Right != nil {
+		return ruleModel{}, fmt.Errorf("operator %q does not support right", rule.Op)
+	}
+	if constantsErr := rejectRuleConstants(rule); constantsErr != nil {
+		return ruleModel{}, constantsErr
+	}
+	if left.Kind != kindBoolean {
+		return ruleModel{}, fmt.Errorf("operator %q requires a boolean operand, got %s", rule.Op, left.Kind)
+	}
+	return ruleModel{Op: rule.Op, Left: left}, nil
+}
+
+func compileNearRule(
+	rule ruleManifest,
+	roots map[string]referenceRoot,
+	left referenceModel,
+) (ruleModel, error) {
+	right, rightErr := compileRightReference(rule, roots)
+	if rightErr != nil {
+		return ruleModel{}, rightErr
+	}
+	if rule.Modulus != nil {
+		return ruleModel{}, fmt.Errorf("operator %q does not support modulus", rule.Op)
+	}
+	if rule.Tolerance == nil {
+		return ruleModel{}, fmt.Errorf("operator %q requires tolerance", rule.Op)
+	}
+	if left.Kind != kindInteger || right.Kind != kindInteger {
+		return ruleModel{}, fmt.Errorf(
+			"operator %q requires integer operands, got %s and %s",
+			rule.Op,
+			left.Kind,
+			right.Kind,
+		)
+	}
+	tolerance, toleranceErr := parseIntegerConstant("tolerance", *rule.Tolerance)
+	if toleranceErr != nil {
+		return ruleModel{}, toleranceErr
+	}
+	if tolerance < 0 {
+		return ruleModel{}, fmt.Errorf("operator %q requires tolerance >= 0, got %d", rule.Op, tolerance)
+	}
+	if boundsErr := requireNonnegativeBoundedIntegers(rule.Op, rule.Left, rule.Right, roots); boundsErr != nil {
+		return ruleModel{}, boundsErr
+	}
+	return ruleModel{Op: rule.Op, Left: left, Right: right, HasRight: true, Tolerance: tolerance}, nil
+}
+
+func compileCircularNearRule(
+	rule ruleManifest,
+	roots map[string]referenceRoot,
+	left referenceModel,
+) (ruleModel, error) {
+	right, rightErr := compileRightReference(rule, roots)
+	if rightErr != nil {
+		return ruleModel{}, rightErr
+	}
+	if rule.Tolerance == nil {
+		return ruleModel{}, fmt.Errorf("operator %q requires tolerance", rule.Op)
+	}
+	if rule.Modulus == nil {
+		return ruleModel{}, fmt.Errorf("operator %q requires modulus", rule.Op)
+	}
+	if left.Kind != kindInteger || right.Kind != kindInteger {
+		return ruleModel{}, fmt.Errorf(
+			"operator %q requires integer operands, got %s and %s",
+			rule.Op,
+			left.Kind,
+			right.Kind,
+		)
+	}
+	tolerance, toleranceErr := parseIntegerConstant("tolerance", *rule.Tolerance)
+	if toleranceErr != nil {
+		return ruleModel{}, toleranceErr
+	}
+	modulus, modulusErr := parseIntegerConstant("modulus", *rule.Modulus)
+	if modulusErr != nil {
+		return ruleModel{}, modulusErr
+	}
+	if modulus <= 0 {
+		return ruleModel{}, fmt.Errorf("operator %q requires positive modulus, got %d", rule.Op, modulus)
+	}
+	// Overflow-safe domain check for 2*tolerance >= modulus: tolerance and
+	// modulus are int64, so tolerance*2 can overflow before the comparison.
+	// tolerance >= modulus-tolerance is equivalent over the integers without
+	// any intermediate overflow (modulus-tolerance cannot overflow for
+	// modulus > 0 and tolerance >= 0 within int64 range).
+	if tolerance < 0 || tolerance >= modulus-tolerance {
+		return ruleModel{}, fmt.Errorf(
+			"operator %q requires 0 <= tolerance < modulus/2, got tolerance %d modulus %d",
+			rule.Op,
+			tolerance,
+			modulus,
+		)
+	}
+	if boundsErr := requireNonnegativeBoundedIntegers(rule.Op, rule.Left, rule.Right, roots); boundsErr != nil {
+		return ruleModel{}, boundsErr
+	}
+	if belowErr := requireOperandsBelowModulus(rule.Op, rule.Left, rule.Right, roots, modulus); belowErr != nil {
+		return ruleModel{}, belowErr
+	}
+	return ruleModel{
+		Op: rule.Op, Left: left, Right: right, HasRight: true,
+		Tolerance: tolerance, Modulus: modulus,
+	}, nil
+}
+
+func rejectRuleConstants(rule ruleManifest) error {
+	if rule.Tolerance != nil {
+		return fmt.Errorf("operator %q does not support tolerance", rule.Op)
+	}
+	if rule.Modulus != nil {
+		return fmt.Errorf("operator %q does not support modulus", rule.Op)
+	}
+	return nil
+}
+
+func parseIntegerConstant(name string, raw json.Number) (int64, error) {
+	rational, ok := new(big.Rat).SetString(raw.String())
+	if !ok {
+		return 0, fmt.Errorf("%s %q is not a number", name, raw.String())
+	}
+	if !rational.IsInt() {
+		return 0, fmt.Errorf("%s %q must be an integer", name, raw.String())
+	}
+	numerator := rational.Num()
+	if !numerator.IsInt64() {
+		return 0, fmt.Errorf("%s %q is outside int64", name, raw.String())
+	}
+	return numerator.Int64(), nil
+}
+
+func requireNonnegativeBoundedIntegers(
+	operator string,
+	left referenceManifest,
+	right *referenceManifest,
+	roots map[string]referenceRoot,
+) error {
+	for _, reference := range []referenceManifest{left, *right} {
+		schema, schemaErr := referenceSchema(reference, roots)
+		if schemaErr != nil {
+			return schemaErr
+		}
+		minimum, _, boundsErr := integerBounds(schema)
+		if boundsErr != nil {
+			return fmt.Errorf("operator %q: %w", operator, boundsErr)
+		}
+		if minimum < 0 {
+			return fmt.Errorf("operator %q requires nonnegative integer operands", operator)
+		}
+	}
+	return nil
+}
+
+func requireOperandsBelowModulus(
+	operator string,
+	left referenceManifest,
+	right *referenceManifest,
+	roots map[string]referenceRoot,
+	modulus int64,
+) error {
+	for _, reference := range []referenceManifest{left, *right} {
+		schema, schemaErr := referenceSchema(reference, roots)
+		if schemaErr != nil {
+			return schemaErr
+		}
+		_, maximum, boundsErr := integerBounds(schema)
+		if boundsErr != nil {
+			return fmt.Errorf("operator %q: %w", operator, boundsErr)
+		}
+		if maximum >= modulus {
+			return fmt.Errorf(
+				"operator %q requires operands below modulus %d",
+				operator,
+				modulus,
+			)
+		}
+	}
+	return nil
+}
+
+func integerBounds(schema schemaNode) (int64, int64, error) {
+	if schema.Type != string(kindInteger) {
+		return 0, 0, fmt.Errorf("requires integer operands, got %s", schema.Type)
+	}
+	if schema.Minimum == nil || schema.Maximum == nil {
+		return 0, 0, errors.New("distance operands must be bounded integers with minimum and maximum")
+	}
+	minimum, minimumErr := parseIntegerConstant("minimum", *schema.Minimum)
+	if minimumErr != nil {
+		return 0, 0, minimumErr
+	}
+	maximum, maximumErr := parseIntegerConstant("maximum", *schema.Maximum)
+	if maximumErr != nil {
+		return 0, 0, maximumErr
+	}
+	return minimum, maximum, nil
+}
+
+func referenceSchema(reference referenceManifest, roots map[string]referenceRoot) (schemaNode, error) {
+	root, exists := roots[reference.Root]
+	if !exists {
+		return schemaNode{}, fmt.Errorf("root %q is not available in this context", reference.Root)
+	}
+	schema, _, pathErr := compileReferencePath(root, reference.Path)
+	if pathErr != nil {
+		return schemaNode{}, pathErr
+	}
+	return schema, nil
 }
 
 func compileReference(reference referenceManifest, roots map[string]referenceRoot) (referenceModel, error) {
@@ -102,9 +399,9 @@ func compileReference(reference referenceManifest, roots map[string]referenceRoo
 	if pathErr != nil {
 		return referenceModel{}, pathErr
 	}
-	kind, err := scalarKind(schema)
-	if err != nil {
-		return referenceModel{}, fmt.Errorf("path %q: %w", reference.Path, err)
+	kind, kindErr := scalarKind(schema)
+	if kindErr != nil {
+		return referenceModel{}, fmt.Errorf("path %q: %w", reference.Path, kindErr)
 	}
 	return referenceModel{Root: reference.Root, Path: reference.Path, Kind: kind, GoExpression: expression}, nil
 }
@@ -115,9 +412,9 @@ func compileReferencePath(root referenceRoot, path string) (schemaNode, string, 
 	if path == "" {
 		return schema, expression, nil
 	}
-	segments, err := parseJSONPointer(path)
-	if err != nil {
-		return schemaNode{}, "", err
+	segments, pointerErr := parseJSONPointer(path)
+	if pointerErr != nil {
+		return schemaNode{}, "", pointerErr
 	}
 	var suffix strings.Builder
 	for _, segment := range segments {
@@ -192,18 +489,43 @@ func scalarKind(schema schemaNode) (valueKind, error) {
 	}
 }
 
+func satisfactionCondition(rules []ruleModel) string {
+	conditions := make([]string, 0, len(rules))
+	for _, rule := range rules {
+		conditions = append(conditions, "("+ruleCondition(rule)+")")
+	}
+	return strings.Join(conditions, " && ")
+}
+
 func ruleCondition(rule ruleModel) string {
-	left := ruleOperand(rule.Left)
-	right := ruleOperand(rule.Right)
 	switch rule.Op {
 	case "eq":
-		return left + " == " + right
+		return ruleOperand(rule.Left) + " == " + ruleOperand(rule.Right)
 	case ruleOperatorGTE:
-		return left + " >= " + right
+		return ruleOperand(rule.Left) + " >= " + ruleOperand(rule.Right)
 	case ruleOperatorLTE:
-		return left + " <= " + right
+		return ruleOperand(rule.Left) + " <= " + ruleOperand(rule.Right)
 	case ruleOperatorMultipleOf:
-		return right + " != 0 && " + left + "%" + right + " == 0"
+		return ruleOperand(rule.Right) + " != 0 && " + ruleOperand(rule.Left) + "%" + ruleOperand(rule.Right) + " == 0"
+	case ruleOperatorIsTrue:
+		return ruleOperand(rule.Left)
+	case ruleOperatorNear:
+		left := ruleOperand(rule.Left)
+		right := ruleOperand(rule.Right)
+		tolerance := strconv.FormatInt(rule.Tolerance, 10)
+		return "(" + left + " >= " + right + " && " + left + "-" + right + " <= " + tolerance + ") || " +
+			"(" + right + " > " + left + " && " + right + "-" + left + " <= " + tolerance + ")"
+	case ruleOperatorCircularNear:
+		left := ruleOperand(rule.Left)
+		right := ruleOperand(rule.Right)
+		return fmt.Sprintf(
+			"(func() bool { l := %s; r := %s; var d int64; if l >= r { d = l - r } else { d = r - l }; return d <= %d || %d-d <= %d }())",
+			left,
+			right,
+			rule.Tolerance,
+			rule.Modulus,
+			rule.Tolerance,
+		)
 	default:
 		panic("render unsupported rule operator " + rule.Op)
 	}
@@ -220,6 +542,25 @@ func ruleOperand(reference referenceModel) string {
 }
 
 func ruleDescription(rule ruleModel) string {
+	switch rule.Op {
+	case ruleOperatorIsTrue:
+		return referenceDescription(rule.Left) + " must be true"
+	case ruleOperatorNear:
+		return fmt.Sprintf(
+			"%s must be within %d of %s",
+			referenceDescription(rule.Left),
+			rule.Tolerance,
+			referenceDescription(rule.Right),
+		)
+	case ruleOperatorCircularNear:
+		return fmt.Sprintf(
+			"%s must be within %d of %s modulo %d",
+			referenceDescription(rule.Left),
+			rule.Tolerance,
+			referenceDescription(rule.Right),
+			rule.Modulus,
+		)
+	}
 	symbol := map[string]string{
 		"eq": "equal", ruleOperatorGTE: "greater than or equal to",
 		ruleOperatorLTE: "less than or equal to", ruleOperatorMultipleOf: "a multiple of",

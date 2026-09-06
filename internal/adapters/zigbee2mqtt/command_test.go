@@ -146,9 +146,9 @@ func TestColorTempCommandPassesThroughAndRequiresExactReport(t *testing.T) {
 	connection.onPublish = func(ctx context.Context, _ *fakeConnection, topic string, _ []byte) error {
 		switch {
 		case strings.HasSuffix(topic, "/set"):
-			return publishState(ctx, z2m, device, `{"color_temp":369}`, time.Now().UTC())
+			return publishState(ctx, z2m, device, `{"color_temp":369,"color_mode":"color_temp"}`, time.Now().UTC())
 		case strings.HasSuffix(topic, "/get"):
-			return publishState(ctx, z2m, device, `{"color_temp":370}`, time.Now().UTC())
+			return publishState(ctx, z2m, device, `{"color_temp":370,"color_mode":"color_temp"}`, time.Now().UTC())
 		default:
 			return nil
 		}
@@ -164,7 +164,7 @@ func TestColorTempCommandPassesThroughAndRequiresExactReport(t *testing.T) {
 	waitFor(t, func() bool {
 		session.mutex.Lock()
 		defer session.mutex.Unlock()
-		return len(session.observations) == 1 && len(session.linked) == 1
+		return len(session.observations) == 3 && len(session.linked) == 1
 	})
 	connection.mutex.Lock()
 	publications := append([]mqttPublication(nil), connection.published...)
@@ -175,8 +175,12 @@ func TestColorTempCommandPassesThroughAndRequiresExactReport(t *testing.T) {
 		publications[1].payload != `{"color_temp":""}` || publications[1].qos != mqttQoS || publications[1].retained {
 		t.Fatalf("MQTT publications = %#v", publications)
 	}
-	if responder.accepted != 1 || string(session.observations[0].Value) != "369" ||
-		string(session.linked[0].Value) != "370" || session.linked[0].EntityID != device.entities[2].entityID {
+	if responder.accepted != 1 ||
+		string(session.observations[0].Value) != `{"active":true,"value":369}` ||
+		string(session.observations[1].Value) != `"color_temp"` ||
+		string(session.observations[2].Value) != `"color_temp"` ||
+		string(session.linked[0].Value) != `{"active":true,"value":370}` ||
+		session.linked[0].EntityID != device.entities[2].entityID {
 		t.Fatalf(
 			"responder=%#v ordinary=%#v linked=%#v",
 			responder,

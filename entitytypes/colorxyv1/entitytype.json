@@ -1,0 +1,18 @@
+{
+  "manifest_version": 1,
+  "type": "hearth.colorxy/v1",
+  "state_schema": "state.schema.json",
+  "support_schema": "support.schema.json",
+  "operations": {
+    "set": {
+      "parameters_schema": "set-parameters.schema.json",
+      "deadline_ms": 10000,
+      "satisfied_when": [
+        {"op": "is_true", "left": {"root": "state", "path": "/active"}},
+        {"op": "near", "left": {"root": "parameters", "path": "/x"}, "right": {"root": "state", "path": "/x"}, "tolerance": 1},
+        {"op": "near", "left": {"root": "parameters", "path": "/y"}, "right": {"root": "state", "path": "/y"}, "tolerance": 1}
+      ]
+    }
+  },
+  "examples": "examples.json"
+}

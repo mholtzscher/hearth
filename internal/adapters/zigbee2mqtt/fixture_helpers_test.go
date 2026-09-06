@@ -41,6 +41,49 @@ func colorTempFeature(property string, minimum, maximum float64) upstreamExpose 
 	}
 }
 
+func colorAxisChild(name string, minimum, maximum *float64) upstreamExpose {
+	return upstreamExpose{
+		Type: "numeric", Name: name, Property: name, Access: 7,
+		ValueMin: minimum, ValueMax: maximum,
+	}
+}
+
+func colorXYComposite(property string, children ...upstreamExpose) upstreamExpose {
+	return upstreamExpose{
+		Type: upstreamExposeComposite, Name: upstreamColorXYName, Property: property, Access: 7,
+		Features: children,
+	}
+}
+
+func colorHSComposite(property string, children ...upstreamExpose) upstreamExpose {
+	return upstreamExpose{
+		Type: upstreamExposeComposite, Name: upstreamColorHSName, Property: property, Access: 7,
+		Features: children,
+	}
+}
+
+// colorLightExpose builds one light root with power, optional brightness,
+// and additional color or temperature features.
+func colorLightExpose(endpoint, stateProperty, brightnessProperty string, extra ...upstreamExpose) upstreamExpose {
+	minimum, maximum, step := 0.0, 255.0, 1.0
+	features := []upstreamExpose{
+		{
+			Type: "binary", Name: "state", Property: stateProperty, Access: 7,
+			ValueOn: json.RawMessage(`"ON"`), ValueOff: json.RawMessage(`"OFF"`),
+		},
+	}
+	if brightnessProperty != "" {
+		features = append(features, upstreamExpose{
+			Type: "numeric", Name: "brightness", Property: brightnessProperty, Access: 7,
+			ValueMin: &minimum, ValueMax: &maximum, ValueStep: &step,
+		})
+	}
+	return upstreamExpose{
+		Type: "light", Endpoint: endpoint,
+		Features: append(features, extra...),
+	}
+}
+
 func entityKeys(entities []entityPlan) []string {
 	keys := make([]string, 0, len(entities))
 	for _, entity := range entities {

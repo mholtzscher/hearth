@@ -6,12 +6,12 @@
   "state_validation": [
     {
       "op": "gte",
-      "left": {"root": "state", "path": ""},
+      "left": {"root": "state", "path": "/value"},
       "right": {"root": "support", "path": "/state/minimum"}
     },
     {
       "op": "lte",
-      "left": {"root": "state", "path": ""},
+      "left": {"root": "state", "path": "/value"},
       "right": {"root": "support", "path": "/state/maximum"}
     }
   ],
@@ -36,11 +36,14 @@
           "right": {"root": "operation_support", "path": "/step"}
         }
       ],
-      "satisfied_when": {
-        "op": "eq",
-        "left": {"root": "parameters", "path": "/value"},
-        "right": {"root": "state", "path": ""}
-      }
+      "satisfied_when": [
+        {"op": "is_true", "left": {"root": "state", "path": "/active"}},
+        {
+          "op": "eq",
+          "left": {"root": "parameters", "path": "/value"},
+          "right": {"root": "state", "path": "/value"}
+        }
+      ]
     }
   },
   "examples": "examples.json"

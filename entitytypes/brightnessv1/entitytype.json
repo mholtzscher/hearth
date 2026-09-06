@@ -26,11 +26,13 @@
           "right": {"root": "operation_support", "path": "/step"}
         }
       ],
-      "satisfied_when": {
-        "op": "eq",
-        "left": {"root": "parameters", "path": "/value"},
-        "right": {"root": "state", "path": ""}
-      }
+      "satisfied_when": [
+        {
+          "op": "eq",
+          "left": {"root": "parameters", "path": "/value"},
+          "right": {"root": "state", "path": ""}
+        }
+      ]
     }
   },
   "examples": "examples.json"

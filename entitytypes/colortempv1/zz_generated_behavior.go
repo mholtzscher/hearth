@@ -8,11 +8,11 @@ import (
 )
 
 func ValidateState(support Support, state State) error {
-	if !(int64(state) >= int64(support.State.Minimum)) {
-		return errors.New("state must be greater than or equal to support/state/minimum")
+	if !(int64(state.Value) >= int64(support.State.Minimum)) {
+		return errors.New("state/value must be greater than or equal to support/state/minimum")
 	}
-	if !(int64(state) <= int64(support.State.Maximum)) {
-		return errors.New("state must be less than or equal to support/state/maximum")
+	if !(int64(state.Value) <= int64(support.State.Maximum)) {
+		return errors.New("state/value must be less than or equal to support/state/maximum")
 	}
 	return nil
 }
@@ -37,5 +37,5 @@ func ValidateSetParameters(support Support, operationSupport SetSupport, paramet
 }
 
 func SetSatisfied(parameters SetParameters, state State) bool {
-	return int64(parameters.Value) == int64(state)
+	return (bool(state.Active)) && (int64(parameters.Value) == int64(state.Value))
 }

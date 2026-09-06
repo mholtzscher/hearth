@@ -39,6 +39,10 @@ function presetsFor(type: string | undefined, support?: Record<string, unknown>)
       return brightnessPresets(support);
     case "hearth.colortemp/v1":
       return colorTempPresets(support);
+    case "hearth.colorxy/v1":
+      return colorXYPresets();
+    case "hearth.colorhs/v1":
+      return colorHSPresets();
     default:
       return [];
   }
@@ -51,6 +55,12 @@ function exampleParams(type: string | undefined, support?: Record<string, unknow
   }
   if (type === "hearth.colortemp/v1") {
     return `{"value":${colorTempExample(support)}}`;
+  }
+  if (type === "hearth.colorxy/v1") {
+    return '{"x":3125,"y":3291}';
+  }
+  if (type === "hearth.colorhs/v1") {
+    return '{"hue":120,"saturation":80}';
   }
   return '{"value":true}';
 }
@@ -91,6 +101,57 @@ function colorTempBounds(support?: Record<string, unknown>): { minimum: number; 
     maximum: typeof state?.maximum === "number" ? state.maximum : 500,
     step: typeof set?.step === "number" && set.step > 0 ? set.step : 1,
   };
+}
+/** Fixed XY coordinate presets: support carries no gamut bounds, so these are
+    raw protocol coordinates, not calibrated swatches. */
+function colorXYPresets(): { label: string; params: string }[] {
+  return [
+    { label: "xy 3125 · 3291", params: '{"x":3125,"y":3291}' },
+    { label: "xy 7000 · 3000", params: '{"x":7000,"y":3000}' },
+    { label: "xy 1500 · 7000", params: '{"x":1500,"y":7000}' },
+  ];
+}
+
+/** Fixed HS coordinate presets: both coordinates are always required. */
+function colorHSPresets(): { label: string; params: string }[] {
+  return [
+    { label: "hs 0° · 100%", params: '{"hue":0,"saturation":100}' },
+    { label: "hs 120° · 80%", params: '{"hue":120,"saturation":80}' },
+    { label: "hs 240° · 50%", params: '{"hue":240,"saturation":50}' },
+  ];
+}
+/** True when the Entity type declares at least one command operation.
+    Read-only types (color mode, ambient temperature) carry empty operations. */
+function hasOperations(support?: Record<string, unknown>): boolean {
+  const operations = support?.operations as Record<string, unknown> | undefined;
+  return !!operations && Object.keys(operations).length > 0;
+}
+
+/** Human-readable State summary with units and mode activity.
+    Returns null for types without a summary or malformed values. */
+function formatStateSummary(type: string | undefined, value: unknown): string | null {
+  if (value === null || value === undefined) return null;
+  switch (type) {
+    case "hearth.colorxy/v1": {
+      const v = value as { active?: unknown; x?: unknown; y?: unknown };
+      if (typeof v.active !== "boolean" || typeof v.x !== "number" || typeof v.y !== "number") return null;
+      return `x ${v.x} (${(v.x / 10000).toFixed(4)}), y ${v.y} (${(v.y / 10000).toFixed(4)}), ${v.active ? "active" : "inactive"}`;
+    }
+    case "hearth.colorhs/v1": {
+      const v = value as { active?: unknown; hue?: unknown; saturation?: unknown };
+      if (typeof v.active !== "boolean" || typeof v.hue !== "number" || typeof v.saturation !== "number") return null;
+      return `hue ${v.hue}°, saturation ${v.saturation}%, ${v.active ? "active" : "inactive"}`;
+    }
+    case "hearth.colortemp/v1": {
+      const v = value as { active?: unknown; value?: unknown };
+      if (typeof v.active !== "boolean" || typeof v.value !== "number") return null;
+      return `${v.value} mireds, ${v.active ? "active" : "inactive"}`;
+    }
+    case "hearth.colormode/v1":
+      return typeof value === "string" ? value : null;
+    default:
+      return null;
+  }
 }
 function brightnessPresets(support?: Record<string, unknown>): { label: string; params: string }[] {
   const { maximum, step } = brightnessBounds(support);
@@ -299,6 +360,9 @@ export default function EntityDetailPage() {
     }
   }
 
+  const stateSummary = data ? formatStateSummary(data.type, data.state?.value) : null;
+  const commandable = hasOperations(data?.support);
+
   return (
     <div>
       <div className="flex flex-wrap items-center gap-2">
@@ -337,6 +401,9 @@ export default function EntityDetailPage() {
                         ? `${JSON.stringify(data.state.value)} obs=${data.state.observation_id} at ${data.state.observed_at}`
                         : "null (never observed)",
                     ],
+                    ...(stateSummary !== null
+                      ? ([["State summary", stateSummary]] as [string, string][])
+                      : []),
                   ]}
                 />
                 <div className="mt-3 flex items-center gap-2">
@@ -356,6 +423,7 @@ export default function EntityDetailPage() {
               </CardContent>
             </Card>
 
+            {commandable ? (
             <Card size="sm">
               <CardContent>
                 <div className="flex items-center justify-between gap-2">
@@ -426,6 +494,16 @@ export default function EntityDetailPage() {
                 </div>
               </CardContent>
             </Card>
+            ) : (
+            <Card size="sm">
+              <CardContent>
+                <span className="text-sm font-medium">Read-only entity</span>
+                <p className="mt-1.5 text-xs text-muted-foreground">
+                  {`This ${data.type} entity declares no command operations.`}
+                </p>
+              </CardContent>
+            </Card>
+            )}
           </div>
 
           <Section title="Command history">

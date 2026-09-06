@@ -21,5 +21,5 @@ func ValidateSetParameters(support Support, operationSupport SetSupport, paramet
 }
 
 func SetSatisfied(parameters SetParameters, state State) bool {
-	return bool(parameters.Value) == bool(state)
+	return (bool(parameters.Value) == bool(state))
 }

@@ -1,5 +1,7 @@
 # Zigbee2MQTT color temperature
 
+> Historical slice spec. `specs/z2m-bulb-color.md` supersedes its scalar `hearth.colortemp/v1` State, single-object `satisfied_when` shape, and exact-equality-without-activity outcome: temperature State is now the object form `{active, value}`, satisfaction is a nonempty conjunctive rule array (`is_true` on `/active` plus `eq` on `/value`), and the adapter derives activity from the reported color mode. The upstream MQTT wire format and discovered mired range below are unchanged.
+
 ## Problem
 
 Hearth discovers power and brightness for tunable-white Zigbee lights but drops Zigbee2MQTT's `color_temp`. For example, `internal/adapters/zigbee2mqtt/testdata/state-3rcb01057z.json` reports `"color_temp":370`, and the matching inventory expose declares a 153–500 mired range, but Hearth creates no Entity for it.

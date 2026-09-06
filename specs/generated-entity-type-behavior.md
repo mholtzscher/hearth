@@ -21,7 +21,7 @@ Make Entity-type generation a deep build-time module. Its complete authoring int
 
 A repository-level `go generate` pass will generate all per-type Go, typed SDK facades, semantic conformance tests, core catalog definitions, and the aggregate built-in registry.
 
-The behavior DSL is a small, typed relation language compiled to direct Go. It is not interpreted at runtime. V1 adds only the operators required by power/v1, brightness/v1, and colortemp/v1. CEL, runtime type installation, and a general-purpose expression language remain out of scope.
+The behavior DSL is a small, typed relation language compiled to direct Go. It is not interpreted at runtime. V1 holds the operators required by power/v1, brightness/v1, colortemp/v1, colorxy/v1, colorhs/v1, and colormode/v1. CEL, runtime type installation, and a general-purpose expression language remain out of scope.
 
 ## Goals
 
@@ -94,18 +94,20 @@ Brightness/v1 is the complete v1 example:
           "right": {"root": "operation_support", "path": "/step"}
         }
       ],
-      "satisfied_when": {
-        "op": "eq",
-        "left": {"root": "parameters", "path": "/value"},
-        "right": {"root": "state", "path": ""}
-      }
+      "satisfied_when": [
+        {
+          "op": "eq",
+          "left": {"root": "parameters", "path": "/value"},
+          "right": {"root": "state", "path": ""}
+        }
+      ]
     }
   },
   "examples": "examples.json"
 }
 ```
 
-Power/v1 uses empty State and parameter validation arrays and an `eq` outcome rule.
+Power/v1 uses empty State and parameter validation arrays and a one-element `eq` outcome list.
 
 `deadline_ms` is a positive integer rather than a Go duration string so the manifest remains language-neutral.
 
@@ -128,13 +130,15 @@ type operationManifest struct {
     ParametersSchema   string `json:"parameters_schema"`
     DeadlineMS         int64  `json:"deadline_ms"`
     ParameterValidation []rule `json:"parameter_validation,omitempty"`
-    SatisfiedWhen      rule   `json:"satisfied_when"`
+    SatisfiedWhen      []rule `json:"satisfied_when"`
 }
 
 type rule struct {
-    Op    operator  `json:"op"`
-    Left  reference `json:"left"`
-    Right reference `json:"right"`
+    Op        operator   `json:"op"`
+    Left      reference  `json:"left"`
+    Right     *reference `json:"right,omitempty"`
+    Tolerance *int64     `json:"tolerance,omitempty"`
+    Modulus   *int64     `json:"modulus,omitempty"`
 }
 
 type reference struct {
@@ -143,7 +147,7 @@ type reference struct {
 }
 ```
 
-`operator` is exactly `eq`, `gte`, `lte`, or `multiple_of` in v1.
+`operator` is exactly `eq`, `gte`, `lte`, `multiple_of`, `is_true`, `near`, or `circular_near`. `satisfied_when` is a nonempty array of conjunctive rules, matching the validation arrays. Manifest constants use optional pointers during parsing so absent and zero stay distinct.
 
 `referenceRoot` is context-dependent:
 
@@ -164,11 +168,16 @@ Generation resolves every reference against the loaded schemas and assigns it a 
 - `eq` requires operands of the same scalar kind.
 - `gte` and `lte` require operands of the same numeric kind and compile to `left >= right` and `left <= right`, respectively.
 - `multiple_of` requires integer operands.
+- `is_true` requires a Boolean `left` only and accepts no `right` or constants.
+- `near` requires integer `left` and `right` plus an integer `tolerance >= 0`, and compiles to `abs(left-right) <= tolerance`.
+- `circular_near` requires integer `left` and `right` plus a positive integer `modulus` with `0 <= tolerance < modulus/2`, and compiles to the shortest circular distance `<= tolerance`.
+- Distance operators read only bounded nonnegative integer schemas, and circular operands stay below the modulus; the compiler carries these bounds into rule compilation. Generated distance code subtracts in an order that keeps operands nonnegative, so supported extremes cannot overflow.
+- Unknown operators, per-operator unsupported fields, missing operands or constants, fractional constants, and empty lists fail generation.
 - Unknown roots, invalid pointers, optional paths, incompatible operands, and unsupported schema constructs fail generation with the manifest path, operation, rule index, and offending reference.
 - Generated `multiple_of` code guards a zero divisor even when the support schema excludes zero.
 - State equality defaults to schema-structural typed equality. The generator emits `==` for comparable State types and `reflect.DeepEqual` otherwise. No equality DSL override is added until a concrete type requires one.
 
-Rules in each validation array are conjunctive and evaluated in declaration order. The first failed rule returns a deterministic generated error identifying both references and the relation. Error text is diagnostic, not a versioned wire contract.
+Rules in each validation array are conjunctive and evaluated in declaration order. The first failed rule returns a deterministic generated error identifying both references and the relation. Error text is diagnostic, not a versioned wire contract. Satisfaction arrays render logical conjunction with unchanged public signatures (`func SetSatisfied(parameters SetParameters, state State) bool`); structural State equality remains exact.
 
 ### Conformance examples
 
@@ -330,6 +339,9 @@ D2 and D3 may proceed in parallel after D1.
 - Reject unknown manifest fields and unsupported manifest versions.
 - Reject invalid roots, JSON Pointers, optional paths, and object/array operands.
 - Reject mismatched `eq`, non-numeric `gte`/`lte`, and non-integer `multiple_of` operands.
+- Reject `is_true` on non-Boolean fields, and distance operators on optional, negative-range, unbounded, or incompatible fields.
+- Reject unknown operators, per-operator unsupported fields, missing operands or constants, fractional constants, empty satisfaction lists, and roots other than parameters and state in `satisfied_when`.
+- Reject circular domains that cannot establish `0 <= tolerance < modulus/2` and operands at or above the modulus.
 - Reject `support` references in `satisfied_when`.
 - Reject zero/non-positive deadlines and incomplete conformance fixtures.
 - Golden-test direct Go for no-op power behavior and maximum/step brightness behavior.
@@ -366,6 +378,8 @@ devenv test
 - [x] Brightness State above `support.state.maximum` is rejected.
 - [x] Brightness `set.value` above the maximum or misaligned to the step is rejected.
 - [x] Power and brightness outcomes remain exact equality and do not read current support.
+- [x] `satisfied_when` is a nonempty conjunctive rule array in every manifest; the old single-object shape does not remain.
+- [x] `is_true`, `near`, and `circular_near` outcome operators compile to direct Go with inclusive, overflow-safe distance comparisons.
 - [x] `NewBuiltinTypeCatalog` is generated from all manifests with no per-type core code.
 - [x] A temporary third type generates bindings, behavior, SDK facade, tests, and catalog assembly without handwritten per-type Go.
 - [x] Invalid DSL references and operand types fail during generation with actionable locations.

@@ -674,6 +674,7 @@ Existing identity is immutable under this refactor:
 - Binding key remains `z2m-<normalized IEEE without 0x>`.
 - Device external ID remains normalized IEEE.
 - Existing light keys remain `power`, `brightness`, `colortemp`, and their `-epN` forms.
+- Bulb-color keys (`colorxy`, `colorhs`, `colormode`, and their `-epN` forms; see `specs/z2m-bulb-color.md`, which landed after this spec's baseline) are likewise immutable under this refactor.
 - Existing external IDs remain `<ieee>/root/<kind>` and `<ieee>/epN/<kind>`.
 - Friendly name and endpoint labels remain mutable routing and display metadata.
 - Property names never enter Binding or Entity keys.

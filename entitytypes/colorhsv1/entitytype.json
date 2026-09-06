@@ -1,0 +1,18 @@
+{
+  "manifest_version": 1,
+  "type": "hearth.colorhs/v1",
+  "state_schema": "state.schema.json",
+  "support_schema": "support.schema.json",
+  "operations": {
+    "set": {
+      "parameters_schema": "set-parameters.schema.json",
+      "deadline_ms": 10000,
+      "satisfied_when": [
+        {"op": "is_true", "left": {"root": "state", "path": "/active"}},
+        {"op": "circular_near", "left": {"root": "parameters", "path": "/hue"}, "right": {"root": "state", "path": "/hue"}, "tolerance": 2, "modulus": 360},
+        {"op": "near", "left": {"root": "parameters", "path": "/saturation"}, "right": {"root": "state", "path": "/saturation"}, "tolerance": 1}
+      ]
+    }
+  },
+  "examples": "examples.json"
+}

@@ -9,7 +9,10 @@ const (
 	OperationSet = "set"
 )
 
-type State int64
+type State struct {
+	Active bool  `json:"active"`
+	Value  int64 `json:"value"`
+}
 
 type StateSupport struct {
 	Maximum int64 `json:"maximum"`

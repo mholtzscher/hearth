@@ -1,0 +1,12 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:hearth:schema:entity-type:colorxy:v1:set-parameters",
+  "title": "Hearth colorxy/v1 set parameters",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["x", "y"],
+  "properties": {
+    "x": {"type": "integer", "minimum": 0, "maximum": 10000},
+    "y": {"type": "integer", "minimum": 0, "maximum": 10000}
+  }
+}
