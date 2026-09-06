@@ -70,7 +70,21 @@ func (supervisor *healthSupervisor) run(ctx context.Context) {
 }
 
 func (supervisor *healthSupervisor) poll(ctx context.Context, now time.Time) {
-	if checkErr := supervisor.checkReadiness(ctx); checkErr != nil {
+	// A canceled context races the poll ticker during shutdown: the checker
+	// then reports dependency failures (for example sqlite_unavailable) for a
+	// process that is stopping, not unhealthy. Skip canceled polls before
+	// touching remembered readiness so shutdown stays silent.
+	if ctx.Err() != nil {
+		return
+	}
+	checkErr := supervisor.checkReadiness(ctx)
+	// The context may be canceled while the checker runs, and a checker may
+	// still return nil without observing the cancellation. Re-check before
+	// updating remembered readiness or the recovery grace window.
+	if ctx.Err() != nil {
+		return
+	}
+	if checkErr != nil {
 		supervisor.markNotReady(ctx, readinessFailureReason(checkErr))
 		return
 	}
@@ -85,6 +99,12 @@ func (supervisor *healthSupervisor) poll(ctx context.Context, now time.Time) {
 		)
 	}
 	if err := supervisor.health.ExpireAdapterLeases(ctx, now); err != nil {
+		// Expiry can fail because shutdown canceled the poll context mid-call.
+		// Normal cancellation is not an error, so suppress that diagnostic
+		// while preserving real expiry failures.
+		if ctx.Err() != nil || errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+			return
+		}
 		supervisor.logger.ErrorContext(
 			ctx,
 			"expire Adapter leases",

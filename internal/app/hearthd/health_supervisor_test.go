@@ -3,6 +3,7 @@ package hearthd //nolint:testpackage // Tests exercise package-private lifecycle
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
 	"testing"
 	"time"
@@ -237,6 +238,177 @@ func requireLastReadyStatus(t *testing.T, recorder *recordingHandler) {
 		t.Fatal("missing core.readiness_changed for recovery")
 	}
 	requireRecordAttr(t, matching[len(matching)-1], "status", "ready")
+}
+
+// supervisorCancelingReadinessStub cancels its context while the check runs,
+// deterministically reproducing shutdown racing an in-flight readiness poll.
+type supervisorCancelingReadinessStub struct {
+	cancel context.CancelFunc
+	err    error
+}
+
+func (readiness *supervisorCancelingReadinessStub) Check(context.Context) error {
+	readiness.cancel()
+	return readiness.err
+}
+
+// supervisorExpiringHealthStub reports a fixed expiry result and optionally
+// cancels its context mid-call, reproducing shutdown racing lease expiry.
+type supervisorExpiringHealthStub struct {
+	err     error
+	cancel  context.CancelFunc
+	expires []time.Time
+}
+
+func (health *supervisorExpiringHealthStub) ExpireAdapterLeases(_ context.Context, at time.Time) error {
+	health.expires = append(health.expires, at)
+	if health.cancel != nil {
+		health.cancel()
+	}
+	return health.err
+}
+
+// This test protects silent shutdown polls and fails if a poll entered with
+// an already-canceled context emits readiness_changed, mutates remembered
+// readiness, or runs lease expiry.
+func TestHealthSupervisorIgnoresCanceledEntry(t *testing.T) {
+	t.Parallel()
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	logger, recorder := withRecording(slog.LevelDebug)
+	readiness := &supervisorReadinessStub{err: &readinessCheckError{
+		reasonCode: "sqlite_unavailable", err: errors.New("SQLite is unavailable"),
+	}}
+	health := &supervisorHealthStub{}
+	supervisor := &healthSupervisor{
+		readiness: readiness, health: health, logger: logger,
+	}
+
+	supervisor.poll(ctx, time.Date(2026, 8, 29, 14, 0, 0, 0, time.UTC))
+
+	if got := len(recordsWithEvent(recorder.snapshot(), "core.readiness_changed")); got != 0 {
+		t.Fatalf("readiness_changed records = %d, want 0 for canceled entry", got)
+	}
+	if supervisor.readinessObserved || supervisor.ready || supervisor.leaseExpiryPaused {
+		t.Fatalf(
+			"canceled entry mutated readiness state = %+v, want zero state",
+			supervisor,
+		)
+	}
+	if !supervisor.graceUntil.IsZero() {
+		t.Fatalf("canceled entry graceUntil = %v, want zero", supervisor.graceUntil)
+	}
+	if len(health.expires) != 0 {
+		t.Fatalf("canceled entry expiry calls = %#v, want none", health.expires)
+	}
+}
+
+// This test protects in-flight shutdown polls and fails if a readiness result
+// produced after cancellation updates remembered readiness or the recovery
+// grace window, runs lease expiry, or emits readiness_changed. It covers both
+// a checker that reports sqlite_unavailable after cancellation and a checker
+// that returns nil without observing the cancellation.
+func TestHealthSupervisorIgnoresCancellationDuringReadinessCheck(t *testing.T) {
+	t.Parallel()
+	pollAt := time.Date(2026, 8, 29, 14, 0, 0, 0, time.UTC)
+	cases := []struct {
+		name     string
+		checkErr error
+	}{
+		{
+			name: "checker error",
+			checkErr: &readinessCheckError{
+				reasonCode: "sqlite_unavailable", err: errors.New("SQLite is unavailable"),
+			},
+		},
+		{name: "checker success", checkErr: nil},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			ctx, cancel := context.WithCancel(context.Background())
+			logger, recorder := withRecording(slog.LevelDebug)
+			health := &supervisorHealthStub{}
+			supervisor := &healthSupervisor{
+				readiness: &supervisorCancelingReadinessStub{cancel: cancel, err: tc.checkErr},
+				health:    health,
+				logger:    logger,
+			}
+
+			supervisor.poll(ctx, pollAt)
+
+			if got := len(recordsWithEvent(recorder.snapshot(), "core.readiness_changed")); got != 0 {
+				t.Fatalf("readiness_changed records = %d, want 0 after %s", got, tc.name)
+			}
+			if supervisor.readinessObserved || supervisor.ready || supervisor.leaseExpiryPaused {
+				t.Fatalf(
+					"cancellation during check mutated readiness state = %+v after %s, want zero state",
+					supervisor,
+					tc.name,
+				)
+			}
+			if !supervisor.graceUntil.IsZero() {
+				t.Fatalf(
+					"cancellation during check graceUntil = %v after %s, want zero",
+					supervisor.graceUntil,
+					tc.name,
+				)
+			}
+			if len(health.expires) != 0 {
+				t.Fatalf("cancellation during check expiry calls = %#v after %s, want none", health.expires, tc.name)
+			}
+		})
+	}
+}
+
+// This test protects shutdown-quiet lease expiry and fails if a
+// cancellation-triggered expiry failure emits core.lease_expiry_failed, or if
+// a real expiry failure goes silent.
+func TestHealthSupervisorSuppressesCanceledLeaseExpiryFailure(t *testing.T) {
+	t.Parallel()
+	steadyAt := time.Date(2026, 8, 29, 14, 0, 0, 0, time.UTC)
+	steadySupervisor := func(logger *slog.Logger, health leaseExpiryService) *healthSupervisor {
+		return &healthSupervisor{
+			readiness: &supervisorReadinessStub{}, health: health, logger: logger,
+			ready: true, graceUntil: steadyAt.Add(-time.Second), readinessObserved: true,
+		}
+	}
+
+	// Shutdown cancels the poll context mid-expiry: expiry runs once and the
+	// resulting context.Canceled stays silent.
+	ctx, cancel := context.WithCancel(context.Background())
+	logger, recorder := withRecording(slog.LevelDebug)
+	canceled := &supervisorExpiringHealthStub{err: context.Canceled, cancel: cancel}
+	steadySupervisor(logger, canceled).poll(ctx, steadyAt)
+	if len(canceled.expires) != 1 {
+		t.Fatalf("canceled expiry calls = %#v, want one attempt", canceled.expires)
+	}
+	if got := len(recordsWithEvent(recorder.snapshot(), "core.lease_expiry_failed")); got != 0 {
+		t.Fatalf("lease_expiry_failed records = %d, want 0 for canceled expiry", got)
+	}
+
+	// A wrapped cancellation returned with a live context stays silent too.
+	live := context.Background()
+	logger, recorder = withRecording(slog.LevelDebug)
+	wrapped := &supervisorExpiringHealthStub{err: fmt.Errorf("expire leases: %w", context.Canceled)}
+	steadySupervisor(logger, wrapped).poll(live, steadyAt)
+	if len(wrapped.expires) != 1 {
+		t.Fatalf("wrapped cancellation expiry calls = %#v, want one attempt", wrapped.expires)
+	}
+	if got := len(recordsWithEvent(recorder.snapshot(), "core.lease_expiry_failed")); got != 0 {
+		t.Fatalf("lease_expiry_failed records = %d, want 0 for wrapped cancellation", got)
+	}
+
+	// A real expiry failure with a live context still emits its diagnostic.
+	logger, recorder = withRecording(slog.LevelDebug)
+	failed := &supervisorExpiringHealthStub{err: errors.New("lease table locked")}
+	steadySupervisor(logger, failed).poll(live, steadyAt)
+	if len(failed.expires) != 1 {
+		t.Fatalf("failed expiry calls = %#v, want one attempt", failed.expires)
+	}
+	if got := len(recordsWithEvent(recorder.snapshot(), "core.lease_expiry_failed")); got != 1 {
+		t.Fatalf("lease_expiry_failed records = %d, want 1 for real expiry failure", got)
+	}
 }
 
 func TestHealthSupervisorPerformsInitialCheckAndStops(t *testing.T) {
