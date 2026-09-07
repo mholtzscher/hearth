@@ -1,0 +1,41 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:fixture:unknown:v1:support",
+  "title": "Fixture unknown/v1 support",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["state", "operations"],
+  "properties": {
+    "state": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["maximum"],
+      "properties": {
+        "maximum": {"type": "integer", "minimum": 0, "maximum": 100}
+      }
+    },
+    "operations": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["unknown", "unknown-operation"],
+      "properties": {
+        "unknown": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["step"],
+          "properties": {
+            "step": {"type": "integer", "minimum": 1, "maximum": 10}
+          }
+        },
+        "unknown-operation": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["step"],
+          "properties": {
+            "step": {"type": "integer", "minimum": 1, "maximum": 10}
+          }
+        }
+      }
+    }
+  }
+}

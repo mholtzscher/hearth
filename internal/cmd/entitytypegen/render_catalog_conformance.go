@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"math/big"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -311,8 +312,47 @@ func selectCatalogOutcomes(values operationExamples, probe *catalogOperationProb
 	}
 }
 
+// catalogJSONNumber is the canonical exact form of a JSON number. It is a
+// distinct type so normalized numbers never collide with JSON strings.
+type catalogJSONNumber string
+
+// normalizeCatalogJSONValue replaces every [json.Number] with its canonical
+// exact value ([big.Rat] RatString) so 1/1.0/1e0 and -0/0 compare equal while
+// values beyond float64 precision stay distinct. Objects and arrays recurse.
+func normalizeCatalogJSONValue(value any) (any, error) {
+	switch value := value.(type) {
+	case json.Number:
+		rational, ok := new(big.Rat).SetString(value.String())
+		if !ok {
+			return nil, fmt.Errorf("invalid JSON number %q", value.String())
+		}
+		return catalogJSONNumber(rational.RatString()), nil
+	case []any:
+		for index, item := range value {
+			normalized, err := normalizeCatalogJSONValue(item)
+			if err != nil {
+				return nil, err
+			}
+			value[index] = normalized
+		}
+		return value, nil
+	case map[string]any:
+		for key, item := range value {
+			normalized, err := normalizeCatalogJSONValue(item)
+			if err != nil {
+				return nil, err
+			}
+			value[key] = normalized
+		}
+		return value, nil
+	default:
+		return value, nil
+	}
+}
+
 // equalCatalogJSON compares decoded JSON values so probe selection treats
-// whitespace or key-order variants of one value as the same State.
+// whitespace, key-order, or numeric-spelling variants of one value as the
+// same State. Numbers compare by exact rational value, never float64.
 func equalCatalogJSON(left, right json.RawMessage) (bool, error) {
 	decode := func(raw json.RawMessage) (any, error) {
 		decoder := json.NewDecoder(bytes.NewReader(raw))
@@ -321,7 +361,7 @@ func equalCatalogJSON(left, right json.RawMessage) (bool, error) {
 		if err := decoder.Decode(&value); err != nil {
 			return nil, err
 		}
-		return value, nil
+		return normalizeCatalogJSONValue(value)
 	}
 	leftValue, err := decode(left)
 	if err != nil {
@@ -345,6 +385,62 @@ func compactCatalogJSON(raw json.RawMessage) (string, error) {
 	return compacted.String(), nil
 }
 
+// writeCatalogEqualityHelpers emits the generated-test imports and the exact
+// rational JSON equality helpers shared by every catalog wiring assertion.
+func writeCatalogEqualityHelpers(source *strings.Builder, probes []catalogProbe) {
+	hasOperations := false
+	for _, probe := range probes {
+		if len(probe.operations) > 0 {
+			hasOperations = true
+			break
+		}
+	}
+	if hasOperations {
+		source.WriteString("import (\n\t\"bytes\"\n\t\"encoding/json\"\n\t\"math/big\"\n\t\"reflect\"\n")
+		source.WriteString("\t\"testing\"\n\t\"time\"\n)\n\n")
+	} else {
+		source.WriteString("import (\n\t\"bytes\"\n\t\"encoding/json\"\n")
+		source.WriteString("\t\"math/big\"\n\t\"reflect\"\n\t\"testing\"\n)\n\n")
+	}
+	source.WriteString("// equalGeneratedCatalogJSON compares normalized catalog output against the\n")
+	source.WriteString("// authored example independent of key order, whitespace, or numeric spelling.\n")
+	source.WriteString("// Numbers compare by exact rational value, never float64.\n")
+	source.WriteString("func equalGeneratedCatalogJSON(left, right []byte) bool {\n")
+	source.WriteString("\tleftValue, leftErr := decodeGeneratedCatalogJSON(left)\n")
+	source.WriteString("\trightValue, rightErr := decodeGeneratedCatalogJSON(right)\n")
+	source.WriteString("\tif leftErr != nil || rightErr != nil { return false }\n")
+	source.WriteString("\treturn reflect.DeepEqual(leftValue, rightValue)\n")
+	source.WriteString("}\n\n")
+	source.WriteString("type generatedCatalogJSONNumber string\n\n")
+	source.WriteString("func normalizeGeneratedCatalogJSON(value any) any {\n")
+	source.WriteString("\tswitch value := value.(type) {\n")
+	source.WriteString("\tcase json.Number:\n")
+	source.WriteString("\t\trational, ok := new(big.Rat).SetString(value.String())\n")
+	source.WriteString("\t\tif !ok { return value }\n")
+	source.WriteString("\t\treturn generatedCatalogJSONNumber(rational.RatString())\n")
+	source.WriteString("\tcase []any:\n")
+	source.WriteString("\t\tfor index, item := range value {\n")
+	source.WriteString("\t\t\tvalue[index] = normalizeGeneratedCatalogJSON(item)\n")
+	source.WriteString("\t\t}\n")
+	source.WriteString("\t\treturn value\n")
+	source.WriteString("\tcase map[string]any:\n")
+	source.WriteString("\t\tfor key, item := range value {\n")
+	source.WriteString("\t\t\tvalue[key] = normalizeGeneratedCatalogJSON(item)\n")
+	source.WriteString("\t\t}\n")
+	source.WriteString("\t\treturn value\n")
+	source.WriteString("\tdefault:\n")
+	source.WriteString("\t\treturn value\n")
+	source.WriteString("\t}\n")
+	source.WriteString("}\n\n")
+	source.WriteString("func decodeGeneratedCatalogJSON(raw []byte) (any, error) {\n")
+	source.WriteString("\tdecoder := json.NewDecoder(bytes.NewReader(raw))\n")
+	source.WriteString("\tdecoder.UseNumber()\n")
+	source.WriteString("\tvar value any\n")
+	source.WriteString("\tif err := decoder.Decode(&value); err != nil { return nil, err }\n")
+	source.WriteString("\treturn normalizeGeneratedCatalogJSON(value), nil\n")
+	source.WriteString("}\n\n")
+}
+
 func renderCatalogConformanceTest(models []entityTypeModel, moduleRoot string) (output, error) {
 	ordered := append([]entityTypeModel(nil), models...)
 	sort.Slice(ordered, func(left, right int) bool { return ordered[left].TypeID < ordered[right].TypeID })
@@ -360,34 +456,7 @@ func renderCatalogConformanceTest(models []entityTypeModel, moduleRoot string) (
 	var source strings.Builder
 	generatedHeader(&source)
 	source.WriteString("package devices\n\n")
-	hasOperations := false
-	for _, probe := range probes {
-		if len(probe.operations) > 0 {
-			hasOperations = true
-			break
-		}
-	}
-	if hasOperations {
-		source.WriteString("import (\n\t\"bytes\"\n\t\"encoding/json\"\n\t\"reflect\"\n")
-		source.WriteString("\t\"testing\"\n\t\"time\"\n)\n\n")
-	} else {
-		source.WriteString("import (\n\t\"bytes\"\n\t\"encoding/json\"\n\t\"reflect\"\n\t\"testing\"\n)\n\n")
-	}
-	source.WriteString("// equalGeneratedCatalogJSON compares normalized catalog output against the\n")
-	source.WriteString("// authored example independent of object key order or whitespace.\n")
-	source.WriteString("func equalGeneratedCatalogJSON(left, right []byte) bool {\n")
-	source.WriteString("\tleftValue, leftErr := decodeGeneratedCatalogJSON(left)\n")
-	source.WriteString("\trightValue, rightErr := decodeGeneratedCatalogJSON(right)\n")
-	source.WriteString("\tif leftErr != nil || rightErr != nil { return false }\n")
-	source.WriteString("\treturn reflect.DeepEqual(leftValue, rightValue)\n")
-	source.WriteString("}\n\n")
-	source.WriteString("func decodeGeneratedCatalogJSON(raw []byte) (any, error) {\n")
-	source.WriteString("\tdecoder := json.NewDecoder(bytes.NewReader(raw))\n")
-	source.WriteString("\tdecoder.UseNumber()\n")
-	source.WriteString("\tvar value any\n")
-	source.WriteString("\tif err := decoder.Decode(&value); err != nil { return nil, err }\n")
-	source.WriteString("\treturn value, nil\n")
-	source.WriteString("}\n\n")
+	writeCatalogEqualityHelpers(&source, probes)
 	source.WriteString("func TestGeneratedBuiltinCatalogWiring(t *testing.T) {\n")
 	source.WriteString("\tcatalog, err := NewBuiltinTypeCatalog()\n\tif err != nil { t.Fatal(err) }\n")
 	for _, probe := range probes {

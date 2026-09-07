@@ -403,7 +403,13 @@ func invalidLeaf(schema schemaNode, selector string) (string, int64, bool) {
 		if err != nil {
 			return "", 0, false
 		}
-		return selector, minimum - 1, true
+		// A leaf spanning the full int64 range accepts every Go-representable
+		// value; minimum-1 would wrap to MaxInt64 and stay valid. Report no
+		// mutation so traversal can try the next constrained leaf.
+		if minimum > math.MinInt64 {
+			return selector, minimum - 1, true
+		}
+		return "", 0, false
 	}
 	if schema.Type != schemaTypeObject {
 		return "", 0, false
@@ -423,14 +429,30 @@ func invalidLeaf(schema schemaNode, selector string) (string, int64, bool) {
 	return "", 0, false
 }
 
-//nolint:gocognit // Generated command cases are assembled in one deterministic pass.
-func writeCommandConformanceTest(source *strings.Builder, model entityTypeModel) {
-	unknownOperation := "unknown"
-	for _, operation := range model.Operations {
-		if operation.Name == unknownOperation {
-			unknownOperation = "unknown-operation"
+// unknownOperationCandidate returns a deterministic operation name absent from
+// every declared operation, so the generated unknown operation routing check
+// cannot collide with a real operation name.
+func unknownOperationCandidate(operations []operationModel) string {
+	names := make(map[string]struct{}, len(operations))
+	for _, operation := range operations {
+		names[operation.Name] = struct{}{}
+	}
+	for _, candidate := range []string{"unknown", "unknown-operation"} {
+		if _, exists := names[candidate]; !exists {
+			return candidate
 		}
 	}
+	for index := 2; ; index++ {
+		candidate := "unknown-operation-" + strconv.Itoa(index)
+		if _, exists := names[candidate]; !exists {
+			return candidate
+		}
+	}
+}
+
+//nolint:gocognit // Generated command cases are assembled in one deterministic pass.
+func writeCommandConformanceTest(source *strings.Builder, model entityTypeModel) {
+	unknownOperation := unknownOperationCandidate(model.Operations)
 	source.WriteString("func TestGeneratedCommandConformance(t *testing.T) {\n")
 	source.WriteString("\tcodecs, err := codecs()\n\tif err != nil { t.Fatal(err) }\n")
 	for _, example := range model.Examples.Cases {

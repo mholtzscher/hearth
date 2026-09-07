@@ -5,13 +5,15 @@ package devices
 import (
 	"bytes"
 	"encoding/json"
+	"math/big"
 	"reflect"
 	"testing"
 	"time"
 )
 
 // equalGeneratedCatalogJSON compares normalized catalog output against the
-// authored example independent of object key order or whitespace.
+// authored example independent of key order, whitespace, or numeric spelling.
+// Numbers compare by exact rational value, never float64.
 func equalGeneratedCatalogJSON(left, right []byte) bool {
 	leftValue, leftErr := decodeGeneratedCatalogJSON(left)
 	rightValue, rightErr := decodeGeneratedCatalogJSON(right)
@@ -21,6 +23,31 @@ func equalGeneratedCatalogJSON(left, right []byte) bool {
 	return reflect.DeepEqual(leftValue, rightValue)
 }
 
+type generatedCatalogJSONNumber string
+
+func normalizeGeneratedCatalogJSON(value any) any {
+	switch value := value.(type) {
+	case json.Number:
+		rational, ok := new(big.Rat).SetString(value.String())
+		if !ok {
+			return value
+		}
+		return generatedCatalogJSONNumber(rational.RatString())
+	case []any:
+		for index, item := range value {
+			value[index] = normalizeGeneratedCatalogJSON(item)
+		}
+		return value
+	case map[string]any:
+		for key, item := range value {
+			value[key] = normalizeGeneratedCatalogJSON(item)
+		}
+		return value
+	default:
+		return value
+	}
+}
+
 func decodeGeneratedCatalogJSON(raw []byte) (any, error) {
 	decoder := json.NewDecoder(bytes.NewReader(raw))
 	decoder.UseNumber()
@@ -28,7 +55,7 @@ func decodeGeneratedCatalogJSON(raw []byte) (any, error) {
 	if err := decoder.Decode(&value); err != nil {
 		return nil, err
 	}
-	return value, nil
+	return normalizeGeneratedCatalogJSON(value), nil
 }
 
 func TestGeneratedBuiltinCatalogWiring(t *testing.T) {

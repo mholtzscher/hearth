@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
@@ -36,6 +37,11 @@ func fixtureExpectations() map[string]fixtureExpectation {
 			operations: 2,
 			required:   []string{"set"},
 			optional:   []string{"pulse"},
+		},
+		"fixtureunknownv1": {
+			typeID:     "fixture.unknown/v1",
+			operations: 2,
+			required:   []string{"unknown", "unknown-operation"},
 		},
 	}
 }
@@ -117,54 +123,76 @@ func findOperation(model entityTypeModel, name string) *operationModel {
 // TestFixtureCatalogProbes pins the regression shapes the bounded fixture
 // execution covers: the optional fixture leads with the disabled case, so
 // the operation probe must carry the originating enabled support rather
-// than the first-case support; the required fixture's only unequal State is
-// the schema-valid but support-narrowed recorded outcome (85), which the
-// generated catalog keeps as persisted with the valid State incoming.
-// Selection structure is asserted here; TestFixtureExecution executes the
-// generated catalog wiring built from these probes.
+// than the first-case support; the required fixture spells numbers
+// alternately (support maximum 8e1, valid State 75.0 with an equivalent
+// sibling 7.5e1) and its only unequal State is the schema-valid but
+// support-narrowed recorded outcome (85), which the generated catalog keeps
+// as persisted with the valid State incoming. Selection structure is
+// asserted here; TestFixtureExecution executes the generated catalog wiring
+// built from these probes.
 func TestFixtureCatalogProbes(t *testing.T) {
 	t.Parallel()
 	root := fixtureRoot(t)
 
 	t.Run("optional-disabled-first", func(t *testing.T) {
 		t.Parallel()
-		model, err := loadModel(filepath.Join(root, "fixtureoptv1", "entitytype.json"))
-		if err != nil {
-			t.Fatal(err)
-		}
-		probe, err := selectCatalogProbe(model, newCatalogSchemaChecker())
-		if err != nil {
-			t.Fatal(err)
-		}
-		if len(probe.operations) != 1 {
-			t.Fatalf("operations = %d, want 1", len(probe.operations))
-		}
-		operation := probe.operations[0]
-		if catalogSupportsEqual(probe.support, operation.support) {
-			t.Fatalf("operation support %s reuses the disabled first-case support", operation.support)
-		}
-		if string(operation.support) != `{"state": {"maximum": 900}, "operations": {"activate": {"label": "main"}}}` {
-			t.Fatalf("operation support = %s, want the originating enabled support", operation.support)
-		}
+		checkOptionalDisabledFirstProbe(t, root)
 	})
 
 	t.Run("required-narrowed-outcome-fallback", func(t *testing.T) {
 		t.Parallel()
-		model, err := loadModel(filepath.Join(root, "fixturereqv1", "entitytype.json"))
-		if err != nil {
-			t.Fatal(err)
-		}
-		probe, err := selectCatalogProbe(model, newCatalogSchemaChecker())
-		if err != nil {
-			t.Fatal(err)
-		}
-		if string(probe.validState) != `75` {
-			t.Fatalf("valid State = %s, want 75", probe.validState)
-		}
-		if string(probe.unequalState) != `85` {
-			t.Fatalf("unequal State = %s, want the narrowed recorded outcome 85", probe.unequalState)
-		}
+		checkRequiredNumericProbe(t, root)
 	})
+}
+
+func checkOptionalDisabledFirstProbe(t *testing.T, root string) {
+	t.Helper()
+	model, err := loadModel(filepath.Join(root, "fixtureoptv1", "entitytype.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	probe, err := selectCatalogProbe(model, newCatalogSchemaChecker())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(probe.operations) != 1 {
+		t.Fatalf("operations = %d, want 1", len(probe.operations))
+	}
+	operation := probe.operations[0]
+	if catalogSupportsEqual(probe.support, operation.support) {
+		t.Fatalf("operation support %s reuses the disabled first-case support", operation.support)
+	}
+	if string(operation.support) != `{"state": {"maximum": 900}, "operations": {"activate": {"label": "main"}}}` {
+		t.Fatalf("operation support = %s, want the originating enabled support", operation.support)
+	}
+}
+
+func checkRequiredNumericProbe(t *testing.T, root string) {
+	t.Helper()
+	model, err := loadModel(filepath.Join(root, "fixturereqv1", "entitytype.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	probe, err := selectCatalogProbe(model, newCatalogSchemaChecker())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(probe.validState) != `75.0` {
+		t.Fatalf("valid State = %s, want 75.0", probe.validState)
+	}
+	// The 7.5e1 sibling is numerically equal to 75.0, so exact numeric
+	// comparison must skip it; the narrowed recorded outcome 85 remains
+	// the unequal probe.
+	equivalent, err := equalCatalogJSON(probe.validState, json.RawMessage(`7.5e1`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !equivalent {
+		t.Fatalf("75.0 and 7.5e1 compare unequal, want numeric equivalent")
+	}
+	if string(probe.unequalState) != `85` {
+		t.Fatalf("unequal State = %s, want the narrowed recorded outcome 85", probe.unequalState)
+	}
 }
 
 // TestFixtureExecution materializes the fixture matrix in an isolated module

@@ -157,6 +157,110 @@ func writeDisabledFirstCatalogFixture(t *testing.T) entityTypeModel {
 	}
 }
 
+// TestEqualCatalogJSONNumericSpellings proves probe selection compares JSON
+// numbers by exact rational value, not spelling, whitespace, or float64
+// conversion:
+// 1/1.0/1e0 and -0/0 compare equal inside nested arrays and objects, while
+// precision beyond 2^53 stays distinct and numbers never collide with
+// strings.
+func TestEqualCatalogJSONNumericSpellings(t *testing.T) {
+	t.Parallel()
+	raw := func(value string) json.RawMessage { return json.RawMessage(value) }
+	equalCases := []struct {
+		name  string
+		left  string
+		right string
+	}{
+		{"integer spellings", `1`, `1.0`},
+		{"exponent spelling", `1`, `1e0`},
+		{"negative zero", `-0`, `0`},
+		{"nested", `{"a":[1.0,{"b":-0}],"c":{"d":7.5e1}}`, `{"c":{"d":75.0},"a":[1,{"b":0}]}`},
+		{"fraction spellings", `1.5`, `1.50`},
+		{"fixture support", `{"state":{"maximum":8e1}}`, `{"state":{"maximum":80}}`},
+	}
+	for _, example := range equalCases {
+		t.Run(example.name, func(t *testing.T) {
+			t.Parallel()
+			equal, err := equalCatalogJSON(raw(example.left), raw(example.right))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !equal {
+				t.Fatalf("equalCatalogJSON(%s, %s) = false, want true", example.left, example.right)
+			}
+		})
+	}
+	unequalCases := []struct {
+		name  string
+		left  string
+		right string
+	}{
+		{"beyond float64", `9007199254740993`, `9007199254740992`},
+		{"different integers", `75`, `85`},
+		{"number versus string", `75`, `"75"`},
+		{"nested number versus string", `{"a":1}`, `{"a":"1"}`},
+		{"fraction versus integer", `3`, `1.5`},
+	}
+	for _, example := range unequalCases {
+		t.Run(example.name, func(t *testing.T) {
+			t.Parallel()
+			equal, err := equalCatalogJSON(raw(example.left), raw(example.right))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if equal {
+				t.Fatalf("equalCatalogJSON(%s, %s) = true, want false", example.left, example.right)
+			}
+		})
+	}
+}
+
+// TestCatalogUnequalSkipsNumericEquivalent proves the unequal selector
+// treats 75.0 and 7.5e1 as the same State, falling through to the narrowed
+// recorded outcome 85.
+func TestCatalogUnequalSkipsNumericEquivalent(t *testing.T) {
+	t.Parallel()
+	directory := t.TempDir()
+	writeCatalogSchemas(t, directory)
+	raw := func(value string) json.RawMessage { return json.RawMessage(value) }
+	model := entityTypeModel{
+		Package: "examplev1", Directory: directory, ModuleRoot: directory, TypeID: "example.value/v1",
+		StateFile: "state.schema.json",
+		Operations: []operationModel{{
+			Name: "set", GoName: "Set", ParametersFile: "set-parameters.schema.json", DeadlineMS: 10000,
+		}},
+		Examples: examplesFile{Cases: []exampleCase{{
+			Name:    "dim",
+			Support: raw(`{"state":{"maximum":8e1},"operations":{"set":{"step":5}}}`),
+			States: []validityExample{
+				{Value: raw(`75.0`), Valid: true},
+				{Value: raw(`7.5e1`), Valid: true},
+				{Value: raw(`101`), Valid: false},
+			},
+			Operations: map[string]operationExamples{"set": {
+				Parameters: []validityExample{
+					{Value: raw(`{"value":75.0}`), Valid: true},
+					{Value: raw(`{"value":76}`), Valid: false},
+				},
+				Outcomes: []outcomeExample{
+					{Parameters: raw(`{"value":75.0}`), State: raw(`75.0`), Satisfied: true},
+					{Parameters: raw(`{"value":75.0}`), State: raw(`85`), Satisfied: false},
+				},
+			}},
+		}}},
+	}
+	probe, err := selectCatalogProbe(model, newCatalogSchemaChecker())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(probe.validState) != `75.0` {
+		t.Fatalf("valid State = %s, want 75.0", probe.validState)
+	}
+	if string(probe.unequalState) != `85` {
+		t.Fatalf("unequal State = %s, want 85", probe.unequalState)
+	}
+}
+
 func writeNarrowedOutcomeCatalogFixture(t *testing.T) entityTypeModel {
 	t.Helper()
 	directory := t.TempDir()
