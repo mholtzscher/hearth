@@ -29,9 +29,10 @@ type fixtureExpectation struct {
 
 func fixtureExpectations() map[string]fixtureExpectation {
 	return map[string]fixtureExpectation{
-		"fixturefreev1": {typeID: "fixture.free/v1"},
-		"fixturereqv1":  {typeID: "fixture.required/v1", operations: 1, required: []string{"set"}},
-		"fixtureoptv1":  {typeID: "fixture.optional/v1", operations: 1, optional: []string{"activate"}},
+		"fixturefreev1":      {typeID: "fixture.free/v1"},
+		"fixturereqv1":       {typeID: "fixture.required/v1", operations: 1, required: []string{"set"}},
+		"fixtureoptv1":       {typeID: "fixture.optional/v1", operations: 1, optional: []string{"activate"}},
+		"fixtureprecisionv1": {typeID: "fixture.precision/v1", operations: 1, required: []string{"set"}},
 		"fixturemultiv1": {
 			typeID:     "fixture.multi/v1",
 			operations: 2,
@@ -161,6 +162,9 @@ func checkOptionalDisabledFirstProbe(t *testing.T, root string) {
 	operation := probe.operations[0]
 	if catalogSupportsEqual(probe.support, operation.support) {
 		t.Fatalf("operation support %s reuses the disabled first-case support", operation.support)
+	}
+	if string(probe.unequalState) != `{"code": 100, "note": "armed", "history": [90, 100]}` {
+		t.Fatalf("unequal State = %s, want the valid State from the subsequent enabled case", probe.unequalState)
 	}
 	if string(operation.support) != `{"state": {"maximum": 900}, "operations": {"activate": {"label": "main"}}}` {
 		t.Fatalf("operation support = %s, want the originating enabled support", operation.support)

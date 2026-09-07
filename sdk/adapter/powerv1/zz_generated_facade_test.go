@@ -3,9 +3,13 @@
 package powerv1
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
+	"math/big"
+	"sort"
+	"strconv"
 	"testing"
 	"time"
 
@@ -20,17 +24,60 @@ func requireValidationError(t *testing.T, err error, action string) {
 	}
 }
 
+func canonicalJSONValue(value any) string {
+	switch value := value.(type) {
+	case nil:
+		return "null"
+	case bool:
+		if value {
+			return "bool:true"
+		}
+		return "bool:false"
+	case json.Number:
+		rational, ok := new(big.Rat).SetString(value.String())
+		if !ok {
+			return "number:" + value.String()
+		}
+		return "number:" + rational.RatString()
+	case string:
+		return "string:" + strconv.Quote(value)
+	case []any:
+		canonical := "array:["
+		for index, item := range value {
+			if index > 0 {
+				canonical += ","
+			}
+			canonical += canonicalJSONValue(item)
+		}
+		return canonical + "]"
+	case map[string]any:
+		keys := make([]string, 0, len(value))
+		for key := range value {
+			keys = append(keys, key)
+		}
+		sort.Strings(keys)
+		canonical := "object:{"
+		for index, key := range keys {
+			if index > 0 {
+				canonical += ","
+			}
+			canonical += strconv.Quote(key) + "=" + canonicalJSONValue(value[key])
+		}
+		return canonical + "}"
+	default:
+		return "unsupported"
+	}
+}
+
 func canonicalJSON(t *testing.T, raw json.RawMessage) string {
 	t.Helper()
+	decoder := json.NewDecoder(bytes.NewReader(raw))
+	decoder.UseNumber()
 	var value any
-	if err := json.Unmarshal(raw, &value); err != nil {
+	if err := decoder.Decode(&value); err != nil {
 		t.Fatalf("decode JSON: %v", err)
 	}
-	canonical, err := json.Marshal(value)
-	if err != nil {
-		t.Fatalf("encode JSON: %v", err)
-	}
-	return string(canonical)
+	return canonicalJSONValue(value)
 }
 
 func canonicalValue(t *testing.T, value any) string {
@@ -52,6 +99,34 @@ func parseAdapterTime(t *testing.T, field, raw string) time.Time {
 		t.Fatalf("%s %q is not formatted as UTC", field, raw)
 	}
 	return parsed
+}
+
+func TestGeneratedCanonicalJSONPreservesExactNumbers(t *testing.T) {
+	equal := []struct{ left, right string }{
+		{"1", "1.0"},
+		{"1", "1e0"},
+		{"-0", "0"},
+		{"{\"value\":9007199254740993}", "{\"value\":9.007199254740993e15}"},
+	}
+	for _, example := range equal {
+		left := canonicalJSON(t, json.RawMessage(example.left))
+		right := canonicalJSON(t, json.RawMessage(example.right))
+		if left != right {
+			t.Errorf("canonical numbers differ: %s != %s", left, right)
+		}
+	}
+	unequal := []struct{ left, right string }{
+		{"9007199254740993", "9007199254740992"},
+		{"75", "\"75\""},
+		{"{\"value\":1}", "{\"value\":\"1\"}"},
+	}
+	for _, example := range unequal {
+		left := canonicalJSON(t, json.RawMessage(example.left))
+		right := canonicalJSON(t, json.RawMessage(example.right))
+		if left == right {
+			t.Errorf("canonical values collided: %s == %s", left, right)
+		}
+	}
 }
 
 func TestGeneratedObservationConformance(t *testing.T) {

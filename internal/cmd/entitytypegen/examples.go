@@ -4,6 +4,12 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io/fs"
+	"os"
+	"path/filepath"
+	"strings"
+	"unicode"
+	"unicode/utf8"
 )
 
 type examplesFile struct {
@@ -31,6 +37,123 @@ type outcomeExample struct {
 	Parameters json.RawMessage `json:"parameters"`
 	State      json.RawMessage `json:"state"`
 	Satisfied  bool            `json:"satisfied"`
+}
+
+// normalizeExamplesPath returns the cleaned slash-separated path for the one
+// exact examples file that generated conformance tests embed.
+func normalizeExamplesPath(directory, relative string) (string, error) {
+	if character := strings.IndexAny(relative, `*?[]\`); character >= 0 {
+		return "", fmt.Errorf(
+			"examples path %q contains unsupported Go embed pattern metacharacter %q",
+			relative,
+			relative[character:character+1],
+		)
+	}
+	path, err := localPath(directory, relative)
+	if err != nil {
+		return "", err
+	}
+	normalized, err := filepath.Rel(directory, path)
+	if err != nil {
+		return "", fmt.Errorf("normalize examples path %q: %w", relative, err)
+	}
+	normalized = filepath.ToSlash(normalized)
+	if strings.HasPrefix(normalized, "all:") {
+		return "", fmt.Errorf("examples path %q uses unsupported Go embed pattern prefix %q", relative, "all:")
+	}
+	if validationErr := validateExamplesEmbedPath(directory, normalized); validationErr != nil {
+		return "", fmt.Errorf("examples path %q: %w", relative, validationErr)
+	}
+	return normalized, nil
+}
+
+func validateExamplesEmbedPath(directory, normalized string) error {
+	if !fs.ValidPath(normalized) {
+		return errors.New("is not a valid Go embed path")
+	}
+	components := strings.Split(normalized, "/")
+	for _, component := range components {
+		if err := validateExamplesEmbedComponent(component); err != nil {
+			return fmt.Errorf("component %q is not valid for Go embed: %w", component, err)
+		}
+	}
+
+	path := directory
+	for index, component := range components {
+		path = filepath.Join(path, component)
+		exists, err := validateExamplesEmbedFilesystemComponent(path, component, index == len(components)-1)
+		if err != nil {
+			return err
+		}
+		if !exists {
+			return nil
+		}
+	}
+	return nil
+}
+
+func validateExamplesEmbedFilesystemComponent(path, component string, file bool) (bool, error) {
+	info, statErr := os.Lstat(path)
+	if statErr != nil {
+		if os.IsNotExist(statErr) {
+			return false, nil
+		}
+		return false, fmt.Errorf("stat component %q: %w", component, statErr)
+	}
+	if info.Mode()&os.ModeSymlink != 0 {
+		return true, fmt.Errorf("component %q is a symlink", component)
+	}
+	if file {
+		if !info.Mode().IsRegular() {
+			return true, fmt.Errorf("component %q is not a regular file", component)
+		}
+		return true, nil
+	}
+	if !info.IsDir() {
+		return true, fmt.Errorf("component %q is not a directory", component)
+	}
+	if _, err := os.Stat(filepath.Join(path, "go.mod")); err == nil {
+		return true, fmt.Errorf("component %q is a nested Go module", component)
+	}
+	return true, nil
+}
+
+func validateExamplesEmbedComponent(component string) error {
+	if !utf8.ValidString(component) || component == "" ||
+		strings.Count(component, ".") == len(component) || strings.HasSuffix(component, ".") {
+		return errors.New("invalid filename")
+	}
+	for _, character := range component {
+		if !validExamplesEmbedFilenameCharacter(character) {
+			return fmt.Errorf("invalid character %q", character)
+		}
+	}
+	switch component {
+	case ".bzr", ".git", ".hg", ".svn":
+		return errors.New("reserved filename")
+	}
+	for _, reserved := range []string{"CON", "PRN", "AUX", "NUL", "COM1", "COM2", "COM3", "COM4", "COM5", "COM6", "COM7", "COM8", "COM9", "LPT1", "LPT2", "LPT3", "LPT4", "LPT5", "LPT6", "LPT7", "LPT8", "LPT9"} {
+		short := component
+		if dot := strings.IndexByte(short, '.'); dot >= 0 {
+			short = short[:dot]
+		}
+		if strings.EqualFold(short, reserved) {
+			return errors.New("reserved filename")
+		}
+	}
+	return nil
+}
+
+func validExamplesEmbedFilenameCharacter(character rune) bool {
+	if character < utf8.RuneSelf {
+		if character >= '0' && character <= '9' ||
+			character >= 'A' && character <= 'Z' ||
+			character >= 'a' && character <= 'z' {
+			return true
+		}
+		return strings.ContainsRune("!#$%&()+,-.=@[]^_{}~ ", character)
+	}
+	return unicode.IsLetter(character)
 }
 
 //nolint:gocognit // Validation follows the nested examples document shape in one linear pass.

@@ -340,13 +340,17 @@ func loadModel(path string) (entityTypeModel, error) {
 	if stateValidationErr != nil {
 		return entityTypeModel{}, stateValidationErr
 	}
-	examples, examplesErr := loadExamples(directory, definition.Examples, operations)
+	examplesPath, examplesPathErr := normalizeExamplesPath(directory, definition.Examples)
+	if examplesPathErr != nil {
+		return entityTypeModel{}, fmt.Errorf("examples: %w", examplesPathErr)
+	}
+	examples, examplesErr := loadExamples(directory, examplesPath, operations)
 	if examplesErr != nil {
 		return entityTypeModel{}, fmt.Errorf("examples: %w", examplesErr)
 	}
 	return entityTypeModel{
 		Package: packageName, Directory: directory, ModuleRoot: moduleRoot, TypeID: definition.TypeID,
-		ExamplesFile: definition.Examples,
+		ExamplesFile: examplesPath,
 		StateFile:    definition.StateSchema, StateSchema: state,
 		SupportFile: definition.SupportSchema, SupportSchema: support, StateSupport: stateSupport,
 		StateValidation: stateValidation, Operations: operations, Examples: examples,
@@ -468,12 +472,12 @@ func requireUniqueSchemaIDs(state, support schemaNode, operations []operationMod
 
 func localPath(directory, relative string) (string, error) {
 	if filepath.IsAbs(relative) {
-		return "", fmt.Errorf("schema path %q must be relative", relative)
+		return "", fmt.Errorf("path %q must be relative", relative)
 	}
 	path := filepath.Clean(filepath.Join(directory, relative))
 	rel, err := filepath.Rel(directory, path)
 	if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
-		return "", fmt.Errorf("schema path %q escapes its Entity-type directory", relative)
+		return "", fmt.Errorf("path %q escapes its Entity-type directory", relative)
 	}
 	return path, nil
 }

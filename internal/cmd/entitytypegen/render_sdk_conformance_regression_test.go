@@ -64,6 +64,9 @@ func TestInvalidLeafBoundaryEndpoints(t *testing.T) {
 		ok      bool
 	}{
 		{name: "bounded maximum", minimum: "0", maximum: "100", value: 101, ok: true},
+		{name: "equivalent exponent maximum", minimum: "0", maximum: "1e2", value: 101, ok: true},
+		{name: "fractional maximum", minimum: "0", maximum: "100.0", value: 101, ok: true},
+		{name: "fractional minimum", minimum: "0.5", maximum: strconv.FormatInt(math.MaxInt64, 10), value: 0, ok: true},
 		{
 			name:    "maximum at MaxInt64 falls back to minimum",
 			minimum: "0",
@@ -82,6 +85,12 @@ func TestInvalidLeafBoundaryEndpoints(t *testing.T) {
 			name:    "full range reports no mutation",
 			minimum: strconv.FormatInt(math.MinInt64, 10),
 			maximum: strconv.FormatInt(math.MaxInt64, 10),
+			ok:      false,
+		},
+		{
+			name:    "fractional full range reports no mutation",
+			minimum: "-9223372036854775808.5",
+			maximum: "9223372036854775807.5",
 			ok:      false,
 		},
 	}

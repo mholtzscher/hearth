@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"math"
+	"math/big"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -21,13 +22,18 @@ func renderFacadeConformanceTest(model entityTypeModel) (output, error) {
 	if len(model.Operations) > 0 {
 		source.WriteString("\t\"context\"\n")
 	}
+	source.WriteString("\t\"bytes\"\n")
 	source.WriteString("\t\"encoding/json\"\n")
 	source.WriteString("\t\"errors\"\n")
+	source.WriteString("\t\"math/big\"\n")
+	source.WriteString("\t\"sort\"\n")
+	source.WriteString("\t\"strconv\"\n")
 	source.WriteString("\t\"testing\"\n")
 	source.WriteString("\t\"time\"\n\n")
 	source.WriteString("\t\"github.com/mholtzscher/hearth/sdk/adapter\"\n")
 	source.WriteString(")\n\n")
 	writeSDKTestHelpers(&source)
+	writeCanonicalJSONRegressionTest(&source)
 	writeObservationConformanceTest(&source, model)
 	writeObservationMetadataTest(&source, model)
 	writeObservationValidationTest(&source, model)
@@ -53,18 +59,54 @@ func writeSDKTestHelpers(source *strings.Builder) {
 	source.WriteString("\t\tt.Fatalf(\"%s: expected adapter validation error, got %v\", action, err)\n")
 	source.WriteString("\t}\n")
 	source.WriteString("}\n\n")
+	writeCanonicalJSONHelpers(source)
+	writeCanonicalValueHelper(source)
+	writeParseAdapterTimeHelper(source)
+}
+
+func writeCanonicalJSONHelpers(source *strings.Builder) {
+	source.WriteString("func canonicalJSONValue(value any) string {\n")
+	source.WriteString("\tswitch value := value.(type) {\n")
+	source.WriteString("\tcase nil:\n\t\treturn \"null\"\n")
+	source.WriteString("\tcase bool:\n\t\tif value { return \"bool:true\" }; return \"bool:false\"\n")
+	source.WriteString("\tcase json.Number:\n")
+	source.WriteString("\t\trational, ok := new(big.Rat).SetString(value.String())\n")
+	source.WriteString("\t\tif !ok { return \"number:\" + value.String() }\n")
+	source.WriteString("\t\treturn \"number:\" + rational.RatString()\n")
+	source.WriteString("\tcase string:\n\t\treturn \"string:\" + strconv.Quote(value)\n")
+	source.WriteString("\tcase []any:\n")
+	source.WriteString("\t\tcanonical := \"array:[\"\n")
+	source.WriteString("\t\tfor index, item := range value {\n")
+	source.WriteString("\t\t\tif index > 0 { canonical += \",\" }\n")
+	source.WriteString("\t\t\tcanonical += canonicalJSONValue(item)\n")
+	source.WriteString("\t\t}\n")
+	source.WriteString("\t\treturn canonical + \"]\"\n")
+	source.WriteString("\tcase map[string]any:\n")
+	source.WriteString("\t\tkeys := make([]string, 0, len(value))\n")
+	source.WriteString("\t\tfor key := range value { keys = append(keys, key) }\n")
+	source.WriteString("\t\tsort.Strings(keys)\n")
+	source.WriteString("\t\tcanonical := \"object:{\"\n")
+	source.WriteString("\t\tfor index, key := range keys {\n")
+	source.WriteString("\t\t\tif index > 0 { canonical += \",\" }\n")
+	source.WriteString("\t\t\tcanonical += strconv.Quote(key) + \"=\" + canonicalJSONValue(value[key])\n")
+	source.WriteString("\t\t}\n")
+	source.WriteString("\t\treturn canonical + \"}\"\n")
+	source.WriteString("\tdefault:\n\t\treturn \"unsupported\"\n")
+	source.WriteString("\t}\n")
+	source.WriteString("}\n\n")
 	source.WriteString("func canonicalJSON(t *testing.T, raw json.RawMessage) string {\n")
 	source.WriteString("\tt.Helper()\n")
+	source.WriteString("\tdecoder := json.NewDecoder(bytes.NewReader(raw))\n")
+	source.WriteString("\tdecoder.UseNumber()\n")
 	source.WriteString("\tvar value any\n")
-	source.WriteString("\tif err := json.Unmarshal(raw, &value); err != nil {\n")
+	source.WriteString("\tif err := decoder.Decode(&value); err != nil {\n")
 	source.WriteString("\t\tt.Fatalf(\"decode JSON: %v\", err)\n")
 	source.WriteString("\t}\n")
-	source.WriteString("\tcanonical, err := json.Marshal(value)\n")
-	source.WriteString("\tif err != nil {\n")
-	source.WriteString("\t\tt.Fatalf(\"encode JSON: %v\", err)\n")
-	source.WriteString("\t}\n")
-	source.WriteString("\treturn string(canonical)\n")
+	source.WriteString("\treturn canonicalJSONValue(value)\n")
 	source.WriteString("}\n\n")
+}
+
+func writeCanonicalValueHelper(source *strings.Builder) {
 	source.WriteString("func canonicalValue(t *testing.T, value any) string {\n")
 	source.WriteString("\tt.Helper()\n")
 	source.WriteString("\traw, err := json.Marshal(value)\n")
@@ -73,6 +115,9 @@ func writeSDKTestHelpers(source *strings.Builder) {
 	source.WriteString("\t}\n")
 	source.WriteString("\treturn canonicalJSON(t, raw)\n")
 	source.WriteString("}\n\n")
+}
+
+func writeParseAdapterTimeHelper(source *strings.Builder) {
 	source.WriteString("func parseAdapterTime(t *testing.T, field, raw string) time.Time {\n")
 	source.WriteString("\tt.Helper()\n")
 	source.WriteString("\tparsed, err := time.Parse(time.RFC3339Nano, raw)\n")
@@ -83,6 +128,36 @@ func writeSDKTestHelpers(source *strings.Builder) {
 	source.WriteString("\t\tt.Fatalf(\"%s %q is not formatted as UTC\", field, raw)\n")
 	source.WriteString("\t}\n")
 	source.WriteString("\treturn parsed\n")
+	source.WriteString("}\n\n")
+}
+
+func writeCanonicalJSONRegressionTest(source *strings.Builder) {
+	source.WriteString("func TestGeneratedCanonicalJSONPreservesExactNumbers(t *testing.T) {\n")
+	source.WriteString("\tequal := []struct{ left, right string }{\n")
+	source.WriteString("\t\t{\"1\", \"1.0\"},\n")
+	source.WriteString("\t\t{\"1\", \"1e0\"},\n")
+	source.WriteString("\t\t{\"-0\", \"0\"},\n")
+	source.WriteString("\t\t{\"{\\\"value\\\":9007199254740993}\", \"{\\\"value\\\":9.007199254740993e15}\"},\n")
+	source.WriteString("\t}\n")
+	source.WriteString("\tfor _, example := range equal {\n")
+	source.WriteString("\t\tleft := canonicalJSON(t, json.RawMessage(example.left))\n")
+	source.WriteString("\t\tright := canonicalJSON(t, json.RawMessage(example.right))\n")
+	source.WriteString("\t\tif left != right {\n")
+	source.WriteString("\t\t\tt.Errorf(\"canonical numbers differ: %s != %s\", left, right)\n")
+	source.WriteString("\t\t}\n")
+	source.WriteString("\t}\n")
+	source.WriteString("\tunequal := []struct{ left, right string }{\n")
+	source.WriteString("\t\t{\"9007199254740993\", \"9007199254740992\"},\n")
+	source.WriteString("\t\t{\"75\", \"\\\"75\\\"\"},\n")
+	source.WriteString("\t\t{\"{\\\"value\\\":1}\", \"{\\\"value\\\":\\\"1\\\"}\"},\n")
+	source.WriteString("\t}\n")
+	source.WriteString("\tfor _, example := range unequal {\n")
+	source.WriteString("\t\tleft := canonicalJSON(t, json.RawMessage(example.left))\n")
+	source.WriteString("\t\tright := canonicalJSON(t, json.RawMessage(example.right))\n")
+	source.WriteString("\t\tif left == right {\n")
+	source.WriteString("\t\t\tt.Errorf(\"canonical values collided: %s == %s\", left, right)\n")
+	source.WriteString("\t\t}\n")
+	source.WriteString("\t}\n")
 	source.WriteString("}\n\n")
 }
 
@@ -392,24 +467,9 @@ func invalidSupportMutation(model entityTypeModel) (string, int64, bool) {
 
 func invalidLeaf(schema schemaNode, selector string) (string, int64, bool) {
 	if schema.Type == string(kindInteger) && schema.Minimum != nil && schema.Maximum != nil {
-		maximum, err := strconv.ParseInt(schema.Maximum.String(), 10, 64)
-		if err != nil {
-			return "", 0, false
+		if value, ok := invalidIntegerMutation(schema.Minimum.String(), schema.Maximum.String()); ok {
+			return selector, value, true
 		}
-		if maximum < math.MaxInt64 {
-			return selector, maximum + 1, true
-		}
-		minimum, err := strconv.ParseInt(schema.Minimum.String(), 10, 64)
-		if err != nil {
-			return "", 0, false
-		}
-		// A leaf spanning the full int64 range accepts every Go-representable
-		// value; minimum-1 would wrap to MaxInt64 and stay valid. Report no
-		// mutation so traversal can try the next constrained leaf.
-		if minimum > math.MinInt64 {
-			return selector, minimum - 1, true
-		}
-		return "", 0, false
 	}
 	if schema.Type != schemaTypeObject {
 		return "", 0, false
@@ -427,6 +487,54 @@ func invalidLeaf(schema schemaNode, selector string) (string, int64, bool) {
 		}
 	}
 	return "", 0, false
+}
+
+// invalidIntegerMutation returns a representable int64 outside an inclusive
+// integer schema range, including ranges whose JSON bounds are fractional.
+// It returns no mutation when the range contains every representable int64.
+func invalidIntegerMutation(minimumRaw, maximumRaw string) (int64, bool) {
+	minimum, minimumOK := new(big.Rat).SetString(minimumRaw)
+	maximum, maximumOK := new(big.Rat).SetString(maximumRaw)
+	if !minimumOK || !maximumOK {
+		return 0, false
+	}
+	minInt64 := big.NewInt(math.MinInt64)
+	maxInt64 := big.NewInt(math.MaxInt64)
+	if maximum.Cmp(new(big.Rat).SetInt(minInt64)) < 0 {
+		return math.MinInt64, true
+	}
+	if minimum.Cmp(new(big.Rat).SetInt(maxInt64)) > 0 {
+		return math.MaxInt64, true
+	}
+
+	above := floorRationalInteger(maximum)
+	above.Add(above, big.NewInt(1))
+	if above.Cmp(maxInt64) <= 0 {
+		return above.Int64(), true
+	}
+
+	below := ceilRationalInteger(minimum)
+	below.Sub(below, big.NewInt(1))
+	if below.Cmp(minInt64) >= 0 {
+		return below.Int64(), true
+	}
+	return 0, false
+}
+
+func floorRationalInteger(value *big.Rat) *big.Int {
+	quotient := new(big.Int)
+	remainder := new(big.Int)
+	quotient.QuoRem(value.Num(), value.Denom(), remainder)
+	if value.Sign() < 0 && remainder.Sign() != 0 {
+		quotient.Sub(quotient, big.NewInt(1))
+	}
+	return quotient
+}
+
+func ceilRationalInteger(value *big.Rat) *big.Int {
+	negated := new(big.Rat).Neg(value)
+	floor := floorRationalInteger(negated)
+	return floor.Neg(floor)
 }
 
 // unknownOperationCandidate returns a deterministic operation name absent from
@@ -470,6 +578,7 @@ func writeCommandConformanceTest(source *strings.Builder, model entityTypeModel)
 			}
 		}
 		if len(supported) == 0 {
+			writeNoSupportedOperationCheck(source, "\t\t")
 			for _, operation := range model.Operations {
 				writeAbsentOperationCheck(source, operation, supported, "\t\t", false)
 			}
@@ -790,6 +899,22 @@ func writeInvalidSupportCommandCheck(
 	source.WriteString(indent + "\tt.Error(\"command handler with invalid Entity support was accepted\")\n")
 	source.WriteString(indent + "} else {\n")
 	source.WriteString(indent + "\trequireValidationError(t, err, \"reject invalid Entity support\")\n")
+	source.WriteString(indent + "}\n")
+}
+
+// writeNoSupportedOperationCheck proves that a support value with no enabled
+// operations still requires construction to fail with a validation error.
+func writeNoSupportedOperationCheck(source *strings.Builder, indent string) {
+	fmt.Fprintf(
+		source,
+		"%sif _, err := NewCommandHandler(%s, support, Handlers{}); err == nil {\n",
+		indent,
+		strconv.Quote(sdkTestEntityID),
+	)
+	source.WriteString(indent + "\tt.Error(\"command handler with no supported operations was accepted\")\n")
+	source.WriteString(indent + "} else {\n")
+	source.WriteString(indent + "\trequireValidationError(t, err, ")
+	source.WriteString("\"reject command handler with no supported operations\")\n")
 	source.WriteString(indent + "}\n")
 }
 

@@ -118,6 +118,144 @@ func TestLoadModelRejectsIntegerSchemasOutsideInt64(t *testing.T) {
 	}
 }
 
+func TestLoadModelNormalizesExamplesPathForEmbed(t *testing.T) {
+	t.Parallel()
+	_, manifestPath := writeMinimalEntityTypeFixture(t, "examplev1")
+	definition := minimalManifest("example.value/v1")
+	definition["examples"] = "./examples.json"
+	writeJSON(t, manifestPath, definition)
+
+	model, err := loadModel(manifestPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if model.ExamplesFile != "examples.json" {
+		t.Fatalf("ExamplesFile = %q, want cleaned slash-safe path", model.ExamplesFile)
+	}
+	conformance, err := renderConformanceTest(model, "example.test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(conformance), `//go:embed "examples.json"`) {
+		t.Fatalf("generated conformance test does not embed the normalized path:\n%s", conformance)
+	}
+}
+
+func TestLoadModelRejectsExamplesEmbedPatternMetacharacters(t *testing.T) {
+	t.Parallel()
+	for _, examplesPath := range []string{"*.json", "examples[0].json", "examples?.json", `examples\.json`} {
+		t.Run(examplesPath, func(t *testing.T) {
+			t.Parallel()
+			_, manifestPath := writeMinimalEntityTypeFixture(t, "examplev1")
+			definition := minimalManifest("example.value/v1")
+			definition["examples"] = examplesPath
+			writeJSON(t, manifestPath, definition)
+
+			_, err := loadModel(manifestPath)
+			if err == nil || !strings.Contains(err.Error(), "unsupported Go embed pattern metacharacter") {
+				t.Fatalf("examples path %q error = %v", examplesPath, err)
+			}
+		})
+	}
+}
+
+func TestLoadModelRejectsExamplesEmbedAllPrefix(t *testing.T) {
+	t.Parallel()
+	_, manifestPath := writeMinimalEntityTypeFixture(t, "examplev1")
+	definition := minimalManifest("example.value/v1")
+	definition["examples"] = "all:examples.json"
+	writeJSON(t, manifestPath, definition)
+
+	_, err := loadModel(manifestPath)
+	if err == nil || !strings.Contains(err.Error(), "unsupported Go embed pattern prefix") {
+		t.Fatalf("examples path all: prefix error = %v", err)
+	}
+}
+
+func TestLoadModelRejectsExamplesEmbedInvalidFilename(t *testing.T) {
+	t.Parallel()
+	directory, manifestPath := writeMinimalEntityTypeFixture(t, "examplev1")
+	invalidPath := filepath.Join(directory, "examples:valid.json")
+	if err := os.Rename(filepath.Join(directory, "examples.json"), invalidPath); err != nil {
+		t.Fatal(err)
+	}
+	definition := minimalManifest("example.value/v1")
+	definition["examples"] = "examples:valid.json"
+	writeJSON(t, manifestPath, definition)
+
+	_, err := loadModel(manifestPath)
+	if err == nil || !strings.Contains(err.Error(), `component "examples:valid.json" is not valid for Go embed`) ||
+		!strings.Contains(err.Error(), "invalid character ':'") {
+		t.Fatalf("invalid examples filename error = %v", err)
+	}
+}
+
+func TestLoadModelRejectsExamplesFileSymlink(t *testing.T) {
+	t.Parallel()
+	directory, manifestPath := writeMinimalEntityTypeFixture(t, "examplev1")
+	target := filepath.Join(directory, "examples-target.json")
+	if err := os.Rename(filepath.Join(directory, "examples.json"), target); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(filepath.Base(target), filepath.Join(directory, "examples-link.json")); err != nil {
+		t.Fatal(err)
+	}
+
+	assertExamplesPathRejected(t, manifestPath, "examples-link.json")
+}
+
+func TestLoadModelRejectsExamplesIntermediateDirectorySymlink(t *testing.T) {
+	t.Parallel()
+	directory, manifestPath := writeMinimalEntityTypeFixture(t, "examplev1")
+	target := filepath.Join(directory, "examples-directory")
+	if err := os.Mkdir(target, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Rename(filepath.Join(directory, "examples.json"), filepath.Join(target, "examples.json")); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(filepath.Base(target), filepath.Join(directory, "examples-link")); err != nil {
+		t.Fatal(err)
+	}
+
+	assertExamplesPathRejected(t, manifestPath, "examples-link/examples.json")
+}
+
+func assertExamplesPathRejected(t *testing.T, manifestPath, examplesPath string) {
+	t.Helper()
+	definition := minimalManifest("example.value/v1")
+	definition["examples"] = examplesPath
+	writeJSON(t, manifestPath, definition)
+
+	_, err := loadModel(manifestPath)
+	if err == nil || !strings.Contains(err.Error(), "is a symlink") {
+		t.Fatalf("symlink examples path error = %v", err)
+	}
+}
+
+func TestLoadModelRejectsExamplesNestedModule(t *testing.T) {
+	t.Parallel()
+	directory, manifestPath := writeMinimalEntityTypeFixture(t, "examplev1")
+	nested := filepath.Join(directory, "examples-directory")
+	if err := os.Mkdir(nested, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Rename(filepath.Join(directory, "examples.json"), filepath.Join(nested, "examples.json")); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(nested, "go.mod"), []byte("module example.test/nested\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	definition := minimalManifest("example.value/v1")
+	definition["examples"] = "examples-directory/examples.json"
+	writeJSON(t, manifestPath, definition)
+
+	_, err := loadModel(manifestPath)
+	if err == nil || !strings.Contains(err.Error(), `component "examples-directory" is a nested Go module`) {
+		t.Fatalf("nested module examples path error = %v", err)
+	}
+}
+
 func TestLoadModelRejectsLongTypeID(t *testing.T) {
 	t.Parallel()
 	directory, manifestPath := writeMinimalEntityTypeFixture(t, "examplev1")

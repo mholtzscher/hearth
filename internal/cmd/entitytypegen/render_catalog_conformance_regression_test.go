@@ -12,7 +12,9 @@ import (
 // wider maximum, and the narrower enabled case comes later. The operation
 // wiring must reuse the originating (narrow) support, otherwise the valid
 // command would resolve against a support without the operation and the
-// invalid rep (valid under the wide support) would be wrongly accepted.
+// invalid rep (valid under the wide support) would be wrongly accepted. The
+// unequal State probe must also search the later case while keeping the first
+// case's valid State as incoming.
 func TestCatalogProbePreservesOriginatingSupport(t *testing.T) {
 	t.Parallel()
 	model := writeDisabledFirstCatalogFixture(t)
@@ -36,6 +38,9 @@ func TestCatalogProbePreservesOriginatingSupport(t *testing.T) {
 	if string(operation.supportInvalidParams) != `{"value":60}` {
 		t.Fatalf("support-invalid parameters = %s, want 60", operation.supportInvalidParams)
 	}
+	if string(probe.unequalState) != `45` {
+		t.Fatalf("unequal State = %s, want later-case outcome State 45", probe.unequalState)
+	}
 	if string(operation.invalidSupport) != `{"state":{"maximum":50},"operations":{"set":{"step":5}}}` {
 		t.Fatalf("invalid parameters support = %s, want narrow enabled support", operation.invalidSupport)
 	}
@@ -52,6 +57,9 @@ func TestCatalogProbePreservesOriginatingSupport(t *testing.T) {
 	}
 	if !strings.Contains(text, "catalog.ResolveCommand(entitySet,") {
 		t.Fatalf("rendered wiring does not resolve against the originating entity:\n%s", text)
+	}
+	if !strings.Contains(text, `catalog.EqualState(entity, Value("45"), Value("40"))`) {
+		t.Fatalf("rendered wiring omits the later-case unequal State probe:\n%s", text)
 	}
 }
 

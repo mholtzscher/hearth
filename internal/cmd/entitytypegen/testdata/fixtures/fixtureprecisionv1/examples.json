@@ -1,0 +1,28 @@
+{
+  "cases": [
+    {
+      "name": "large-integers",
+      "support": {"state": {"maximum": 9.007199254740993e15}, "operations": {"set": {"step": 1}}},
+      "states": [
+        {"value": 9007199254740993, "valid": true},
+        {"value": 9.007199254740993e15, "valid": true},
+        {"value": 9007199254740994, "valid": false},
+        {"value": "large", "valid": false}
+      ],
+      "operations": {
+        "set": {
+          "parameters": [
+            {"value": {"value": 9007199254740993}, "valid": true},
+            {"value": {"value": 9.007199254740993e15}, "valid": true},
+            {"value": {"value": 9007199254740994}, "valid": false},
+            {"value": {"value": "large"}, "valid": false}
+          ],
+          "outcomes": [
+            {"parameters": {"value": 9007199254740993}, "state": 9007199254740993, "satisfied": true},
+            {"parameters": {"value": 9007199254740993}, "state": 9007199254740992, "satisfied": false}
+          ]
+        }
+      }
+    }
+  ]
+}

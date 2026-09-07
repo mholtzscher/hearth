@@ -127,7 +127,7 @@ func selectCatalogProbe(model entityTypeModel, checker *catalogSchemaChecker) (c
 	}
 	probe.supportInvalidState = supportInvalid
 	probe.supportInvalidSupport = supportInvalidSupport
-	unequal, err := selectUnequalCatalogState(model, checker, stateSchemaPath, first, probe.validState)
+	unequal, err := selectUnequalCatalogState(model, checker, stateSchemaPath, probe.validState)
 	if err != nil {
 		return catalogProbe{}, err
 	}
@@ -168,31 +168,40 @@ func selectSupportInvalidState(
 	return nil, nil, nil
 }
 
-// selectUnequalCatalogState returns a second schema-decodable State whose
-// value differs from the probe State, preferring sibling valid states before
-// recorded outcome states. Expectations use raw value (in)equality, never
-// production equality behavior.
-func selectUnequalCatalogState(
-	model entityTypeModel,
-	checker *catalogSchemaChecker,
-	stateSchemaPath string,
-	first exampleCase,
-	validState json.RawMessage,
-) (json.RawMessage, error) {
+// catalogStateCandidates returns valid States and recorded outcome States in
+// authored case order, with each case's valid States first.
+func catalogStateCandidates(model entityTypeModel) []json.RawMessage {
 	var candidates []json.RawMessage
-	for _, state := range first.States {
-		if state.Valid {
-			candidates = append(candidates, state.Value)
+	for _, example := range model.Examples.Cases {
+		for _, state := range example.States {
+			if state.Valid {
+				candidates = append(candidates, state.Value)
+			}
 		}
-	}
-	for _, operation := range model.Operations {
-		if values, supported := first.Operations[operation.Name]; supported {
+		for _, operation := range model.Operations {
+			values, supported := example.Operations[operation.Name]
+			if !supported {
+				continue
+			}
 			for _, outcome := range values.Outcomes {
 				candidates = append(candidates, outcome.State)
 			}
 		}
 	}
-	for _, candidate := range candidates {
+	return candidates
+}
+
+// selectUnequalCatalogState searches authored cases in source order for a
+// schema-decodable State differing from the first valid probe State. Each
+// case's valid States precede its recorded outcome States. Expectations use
+// raw value (in)equality, never production equality behavior.
+func selectUnequalCatalogState(
+	model entityTypeModel,
+	checker *catalogSchemaChecker,
+	stateSchemaPath string,
+	validState json.RawMessage,
+) (json.RawMessage, error) {
+	for _, candidate := range catalogStateCandidates(model) {
 		equal, err := equalCatalogJSON(candidate, validState)
 		if err != nil {
 			return nil, err
