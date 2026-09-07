@@ -1,0 +1,31 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:fixture:optional:v1:support",
+  "title": "Fixture optional/v1 support",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["state", "operations"],
+  "properties": {
+    "state": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["maximum"],
+      "properties": {
+        "maximum": {"type": "integer", "minimum": 0, "maximum": 999}
+      }
+    },
+    "operations": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "activate": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "label": {"type": "string"}
+          }
+        }
+      }
+    }
+  }
+}

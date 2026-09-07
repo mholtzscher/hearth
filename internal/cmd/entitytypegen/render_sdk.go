@@ -7,7 +7,7 @@ import (
 )
 
 //nolint:funlen // Keeping the generated facade template together makes its emitted structure reviewable.
-func renderFacade(model entityTypeModel) ([]byte, error) {
+func renderFacade(model entityTypeModel, modulePath string) ([]byte, error) {
 	var source strings.Builder
 	generatedHeader(&source)
 	fmt.Fprintf(&source, "package %s\n\n", model.Package)
@@ -18,9 +18,9 @@ func renderFacade(model entityTypeModel) ([]byte, error) {
 	}
 	fmt.Fprintf(
 		&source,
-		"\tcontract%s \"github.com/mholtzscher/hearth/entitytypes/%s\"\n",
+		"\tcontract%s %s\n",
 		model.Package,
-		model.Package,
+		strconv.Quote(modulePath+"/entitytypes/"+model.Package),
 	)
 	if len(model.Operations) > 0 {
 		source.WriteString(

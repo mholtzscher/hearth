@@ -1,0 +1,28 @@
+{
+  "cases": [
+    {
+      "name": "step-5",
+      "support": {"state": {"maximum": 80}, "operations": {"set": {"step": 5}}},
+      "states": [
+        {"value": 75, "valid": true},
+        {"value": 85, "valid": false},
+        {"value": 101, "valid": false},
+        {"value": "high", "valid": false}
+      ],
+      "operations": {
+        "set": {
+          "parameters": [
+            {"value": {"value": 75}, "valid": true},
+            {"value": {"value": 76}, "valid": false},
+            {"value": {"value": 85}, "valid": false},
+            {"value": {"value": "high"}, "valid": false}
+          ],
+          "outcomes": [
+            {"parameters": {"value": 75}, "state": 75, "satisfied": true},
+            {"parameters": {"value": 75}, "state": 70, "satisfied": false}
+          ]
+        }
+      }
+    }
+  ]
+}

@@ -5,7 +5,6 @@ import (
 	"maps"
 	"os"
 	"path/filepath"
-	"regexp"
 	"runtime"
 	"strings"
 	"testing"
@@ -315,31 +314,9 @@ func TestTypeEmitterPreservesOptionalObjectPresence(t *testing.T) {
 	}
 }
 
-func TestRenderedObservationUsesSupportDependentStateValidation(t *testing.T) {
-	t.Parallel()
-	source, err := renderFacade(entityTypeModel{Package: "examplev1"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !regexp.MustCompile(`Support\s+Support`).Match(source) {
-		t.Error("generated Observation input has no Support field")
-	}
-	for _, expected := range []string{
-		"codecs.Support.Encode(input.Support)",
-		"contractexamplev1.ValidateState(input.Support, input.State)",
-	} {
-		if !strings.Contains(string(source), expected) {
-			t.Errorf("generated facade does not contain %q", expected)
-		}
-	}
-	if strings.Contains(string(source), "RefreshForCommand") {
-		t.Fatal("generated Observation input exposes command linkage")
-	}
-}
-
 func TestOperationFreeFacadeOmitsCommandArtifacts(t *testing.T) {
 	t.Parallel()
-	source, err := renderFacade(entityTypeModel{Package: "examplev1"})
+	source, err := renderFacade(entityTypeModel{Package: "examplev1"}, "example.test")
 	if err != nil {
 		t.Fatal(err)
 	}

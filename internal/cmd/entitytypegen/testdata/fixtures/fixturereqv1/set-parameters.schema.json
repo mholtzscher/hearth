@@ -1,0 +1,11 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:fixture:required:v1:set-parameters",
+  "title": "Fixture required/v1 set parameters",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["value"],
+  "properties": {
+    "value": {"type": "integer", "minimum": 0, "maximum": 100}
+  }
+}

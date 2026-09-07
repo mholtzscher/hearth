@@ -1,0 +1,14 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:fixture:multi:v1:state",
+  "title": "Fixture multi/v1 State",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["level", "count"],
+  "properties": {
+    "level": {"type": "integer", "minimum": 0, "maximum": 100},
+    "count": {"type": "integer", "minimum": 0, "maximum": 100},
+    "mode": {"type": "string"},
+    "trace": {"type": "array", "items": {"type": "integer", "minimum": 0, "maximum": 100}}
+  }
+}

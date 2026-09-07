@@ -1,0 +1,22 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:fixture:free:v1:state",
+  "title": "Fixture free/v1 State",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["level"],
+  "properties": {
+    "level": {"type": "integer", "minimum": 0, "maximum": 100},
+    "label": {"type": "string"},
+    "nested": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["count"],
+      "properties": {
+        "count": {"type": "integer", "minimum": 0, "maximum": 1000},
+        "flag": {"type": "boolean"}
+      }
+    },
+    "tags": {"type": "array", "items": {"type": "string"}}
+  }
+}

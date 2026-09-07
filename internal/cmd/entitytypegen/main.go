@@ -158,7 +158,7 @@ func generateRoot(root string, check bool) error {
 	}
 	var outputs []output
 	for _, model := range models {
-		generated, renderErr := render(model)
+		generated, renderErr := render(model, modulePath)
 		if renderErr != nil {
 			return fmt.Errorf("render %s: %w", model.TypeID, renderErr)
 		}
