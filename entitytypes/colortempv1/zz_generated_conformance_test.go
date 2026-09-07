@@ -3,159 +3,63 @@
 package colortempv1
 
 import (
+	_ "embed"
 	"encoding/json"
 	"testing"
+
+	"github.com/mholtzscher/hearth/internal/entitytypetest"
 )
+
+//go:embed "examples.json"
+var examplesJSON []byte
 
 func TestGeneratedConformance(t *testing.T) {
 	codecs, err := Compile()
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Run("fixture-153-500-step-1", func(t *testing.T) {
-		support, _, err := codecs.Support.Decode(json.RawMessage("{\n        \"state\": {\"minimum\": 153, \"maximum\": 500},\n        \"operations\": {\"set\": {\"step\": 1}}\n      }"))
-		if err != nil {
-			t.Fatalf("support: %v", err)
-		}
-		{
-			value, _, decodeErr := codecs.State.Decode(json.RawMessage("{\"active\": true, \"value\": 370}"))
-			valid := decodeErr == nil
-			if decodeErr == nil {
-				valid = ValidateState(support, value) == nil
-			}
-			if valid != true {
-				t.Errorf("state example 1: valid = %v, decode error = %v", valid, decodeErr)
-			}
-		}
-		{
-			value, _, decodeErr := codecs.State.Decode(json.RawMessage("{\"active\": false, \"value\": 370}"))
-			valid := decodeErr == nil
-			if decodeErr == nil {
-				valid = ValidateState(support, value) == nil
-			}
-			if valid != true {
-				t.Errorf("state example 2: valid = %v, decode error = %v", valid, decodeErr)
-			}
-		}
-		{
-			value, _, decodeErr := codecs.State.Decode(json.RawMessage("{\"active\": true, \"value\": 153}"))
-			valid := decodeErr == nil
-			if decodeErr == nil {
-				valid = ValidateState(support, value) == nil
-			}
-			if valid != true {
-				t.Errorf("state example 3: valid = %v, decode error = %v", valid, decodeErr)
-			}
-		}
-		{
-			value, _, decodeErr := codecs.State.Decode(json.RawMessage("{\"active\": true, \"value\": 500}"))
-			valid := decodeErr == nil
-			if decodeErr == nil {
-				valid = ValidateState(support, value) == nil
-			}
-			if valid != true {
-				t.Errorf("state example 4: valid = %v, decode error = %v", valid, decodeErr)
-			}
-		}
-		{
-			value, _, decodeErr := codecs.State.Decode(json.RawMessage("{\"active\": true, \"value\": 152}"))
-			valid := decodeErr == nil
-			if decodeErr == nil {
-				valid = ValidateState(support, value) == nil
-			}
-			if valid != false {
-				t.Errorf("state example 5: valid = %v, decode error = %v", valid, decodeErr)
-			}
-		}
-		{
-			value, _, decodeErr := codecs.State.Decode(json.RawMessage("{\"active\": true, \"value\": 501}"))
-			valid := decodeErr == nil
-			if decodeErr == nil {
-				valid = ValidateState(support, value) == nil
-			}
-			if valid != false {
-				t.Errorf("state example 6: valid = %v, decode error = %v", valid, decodeErr)
-			}
-		}
-		{
-			value, _, decodeErr := codecs.State.Decode(json.RawMessage("{\"value\": 370}"))
-			valid := decodeErr == nil
-			if decodeErr == nil {
-				valid = ValidateState(support, value) == nil
-			}
-			if valid != false {
-				t.Errorf("state example 7: valid = %v, decode error = %v", valid, decodeErr)
-			}
-		}
-		{
-			value, _, decodeErr := codecs.State.Decode(json.RawMessage("370"))
-			valid := decodeErr == nil
-			if decodeErr == nil {
-				valid = ValidateState(support, value) == nil
-			}
-			if valid != false {
-				t.Errorf("state example 8: valid = %v, decode error = %v", valid, decodeErr)
-			}
-		}
-		setSupport := support.Operations.Set
-		{
-			value, _, decodeErr := codecs.SetParameters.Decode(json.RawMessage("{\"value\": 370}"))
-			valid := decodeErr == nil
-			if decodeErr == nil {
-				valid = ValidateSetParameters(support, setSupport, value) == nil
-			}
-			if valid != true {
-				t.Errorf("set parameter example 1: valid = %v, decode error = %v", valid, decodeErr)
-			}
-		}
-		{
-			value, _, decodeErr := codecs.SetParameters.Decode(json.RawMessage("{\"value\": 152}"))
-			valid := decodeErr == nil
-			if decodeErr == nil {
-				valid = ValidateSetParameters(support, setSupport, value) == nil
-			}
-			if valid != false {
-				t.Errorf("set parameter example 2: valid = %v, decode error = %v", valid, decodeErr)
-			}
-		}
-		{
-			parameters, _, err := codecs.SetParameters.Decode(json.RawMessage("{\"value\": 370}"))
+	entitytypetest.RunContractExamples(t, examplesJSON, entitytypetest.ContractProbe{
+		ValidateSupport: func(support json.RawMessage) error {
+			_, _, err := codecs.Support.Decode(support)
+			return err
+		},
+		ValidateState: func(support, state json.RawMessage) error {
+			decodedSupport, _, err := codecs.Support.Decode(support)
 			if err != nil {
-				t.Fatalf("set outcome 1 parameters: %v", err)
+				return err
 			}
-			state, _, err := codecs.State.Decode(json.RawMessage("{\"active\": true, \"value\": 370}"))
+			decodedState, _, err := codecs.State.Decode(state)
 			if err != nil {
-				t.Fatalf("set outcome 1 State: %v", err)
+				return err
 			}
-			if satisfied := SetSatisfied(parameters, state); satisfied != true {
-				t.Errorf("set outcome 1: satisfied = %v", satisfied)
-			}
-		}
-		{
-			parameters, _, err := codecs.SetParameters.Decode(json.RawMessage("{\"value\": 370}"))
-			if err != nil {
-				t.Fatalf("set outcome 2 parameters: %v", err)
-			}
-			state, _, err := codecs.State.Decode(json.RawMessage("{\"active\": false, \"value\": 370}"))
-			if err != nil {
-				t.Fatalf("set outcome 2 State: %v", err)
-			}
-			if satisfied := SetSatisfied(parameters, state); satisfied != false {
-				t.Errorf("set outcome 2: satisfied = %v", satisfied)
-			}
-		}
-		{
-			parameters, _, err := codecs.SetParameters.Decode(json.RawMessage("{\"value\": 370}"))
-			if err != nil {
-				t.Fatalf("set outcome 3 parameters: %v", err)
-			}
-			state, _, err := codecs.State.Decode(json.RawMessage("{\"active\": true, \"value\": 369}"))
-			if err != nil {
-				t.Fatalf("set outcome 3 State: %v", err)
-			}
-			if satisfied := SetSatisfied(parameters, state); satisfied != false {
-				t.Errorf("set outcome 3: satisfied = %v", satisfied)
-			}
-		}
+			return ValidateState(decodedSupport, decodedState)
+		},
+		Operations: map[string]entitytypetest.OperationProbe{
+			"set": {
+				ValidateParameters: func(support, parameters json.RawMessage) error {
+					decodedSupport, _, err := codecs.Support.Decode(support)
+					if err != nil {
+						return err
+					}
+					setSupport := decodedSupport.Operations.Set
+					decodedParameters, _, err := codecs.SetParameters.Decode(parameters)
+					if err != nil {
+						return err
+					}
+					return ValidateSetParameters(decodedSupport, setSupport, decodedParameters)
+				},
+				Satisfies: func(parameters, state json.RawMessage) (bool, error) {
+					decodedParameters, _, err := codecs.SetParameters.Decode(parameters)
+					if err != nil {
+						return false, err
+					}
+					decodedState, _, err := codecs.State.Decode(state)
+					if err != nil {
+						return false, err
+					}
+					return SetSatisfied(decodedParameters, decodedState), nil
+				},
+			},
+		},
 	})
 }

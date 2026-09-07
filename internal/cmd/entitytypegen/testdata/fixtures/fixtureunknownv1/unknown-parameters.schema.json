@@ -1,0 +1,11 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:fixture:unknown:v1:unknown-parameters",
+  "title": "Fixture unknown/v1 unknown parameters",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["value"],
+  "properties": {
+    "value": {"type": "integer", "minimum": 0, "maximum": 100}
+  }
+}

@@ -1,0 +1,62 @@
+{
+  "manifest_version": 1,
+  "type": "fixture.multi/v1",
+  "state_schema": "state.schema.json",
+  "support_schema": "support.schema.json",
+  "state_validation": [
+    {
+      "op": "lte",
+      "left": {"root": "state", "path": "/level"},
+      "right": {"root": "support", "path": "/state/maximum"}
+    },
+    {
+      "op": "lte",
+      "left": {"root": "state", "path": "/count"},
+      "right": {"root": "support", "path": "/state/maximum"}
+    }
+  ],
+  "operations": {
+    "set": {
+      "parameters_schema": "set-parameters.schema.json",
+      "deadline_ms": 10000,
+      "parameter_validation": [
+        {
+          "op": "lte",
+          "left": {"root": "parameters", "path": "/value"},
+          "right": {"root": "support", "path": "/state/maximum"}
+        },
+        {
+          "op": "multiple_of",
+          "left": {"root": "parameters", "path": "/value"},
+          "right": {"root": "operation_support", "path": "/step"}
+        }
+      ],
+      "satisfied_when": [
+        {
+          "op": "eq",
+          "left": {"root": "parameters", "path": "/value"},
+          "right": {"root": "state", "path": "/level"}
+        }
+      ]
+    },
+    "pulse": {
+      "parameters_schema": "pulse-parameters.schema.json",
+      "deadline_ms": 3000,
+      "parameter_validation": [
+        {
+          "op": "lte",
+          "left": {"root": "parameters", "path": "/count"},
+          "right": {"root": "support", "path": "/state/maximum"}
+        }
+      ],
+      "satisfied_when": [
+        {
+          "op": "eq",
+          "left": {"root": "parameters", "path": "/count"},
+          "right": {"root": "state", "path": "/count"}
+        }
+      ]
+    }
+  },
+  "examples": "examples.json"
+}

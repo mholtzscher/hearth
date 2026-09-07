@@ -2,7 +2,7 @@ package main
 
 import "path/filepath"
 
-func render(model entityTypeModel) ([]output, error) {
+func render(model entityTypeModel, modulePath string) ([]output, error) {
 	typesSource, err := renderTypes(model)
 	if err != nil {
 		return nil, err
@@ -15,11 +15,11 @@ func render(model entityTypeModel) ([]output, error) {
 	if err != nil {
 		return nil, err
 	}
-	conformanceSource, err := renderConformanceTest(model)
+	conformanceSource, err := renderConformanceTest(model, modulePath)
 	if err != nil {
 		return nil, err
 	}
-	facadeSource, err := renderFacade(model)
+	facadeSource, err := renderFacade(model, modulePath)
 	if err != nil {
 		return nil, err
 	}

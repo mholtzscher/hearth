@@ -1,0 +1,38 @@
+{
+  "cases": [
+    {
+      "name": "disabled",
+      "support": {"state": {"maximum": 900}, "operations": {}},
+      "states": [
+        {"value": {"code": 100}, "valid": true},
+        {"value": {"code": 950}, "valid": false}
+      ],
+      "operations": {}
+    },
+    {
+      "name": "enabled",
+      "support": {"state": {"maximum": 900}, "operations": {"activate": {"label": "main"}}},
+      "states": [
+        {"value": {"code": 100, "note": "armed", "history": [90, 100]}, "valid": true},
+        {"value": {"code": 1}, "valid": true},
+        {"value": {"code": 1000}, "valid": false},
+        {"value": {"code": 950}, "valid": false},
+        {"value": "ready", "valid": false}
+      ],
+      "operations": {
+        "activate": {
+          "parameters": [
+            {"value": {"code": 100, "note": "go", "tags": ["day", "night"]}, "valid": true},
+            {"value": {"code": 100}, "valid": true},
+            {"value": {"code": 950}, "valid": false},
+            {"value": {"code": "one hundred"}, "valid": false}
+          ],
+          "outcomes": [
+            {"parameters": {"code": 100}, "state": {"code": 100}, "satisfied": true},
+            {"parameters": {"code": 100}, "state": {"code": 101}, "satisfied": false}
+          ]
+        }
+      }
+    }
+  ]
+}

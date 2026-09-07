@@ -5,7 +5,6 @@ import (
 	"maps"
 	"os"
 	"path/filepath"
-	"regexp"
 	"runtime"
 	"strings"
 	"testing"
@@ -116,6 +115,144 @@ func TestLoadModelRejectsIntegerSchemasOutsideInt64(t *testing.T) {
 				t.Fatalf("integer binding error = %v", err)
 			}
 		})
+	}
+}
+
+func TestLoadModelNormalizesExamplesPathForEmbed(t *testing.T) {
+	t.Parallel()
+	_, manifestPath := writeMinimalEntityTypeFixture(t, "examplev1")
+	definition := minimalManifest("example.value/v1")
+	definition["examples"] = "./examples.json"
+	writeJSON(t, manifestPath, definition)
+
+	model, err := loadModel(manifestPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if model.ExamplesFile != "examples.json" {
+		t.Fatalf("ExamplesFile = %q, want cleaned slash-safe path", model.ExamplesFile)
+	}
+	conformance, err := renderConformanceTest(model, "example.test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(conformance), `//go:embed "examples.json"`) {
+		t.Fatalf("generated conformance test does not embed the normalized path:\n%s", conformance)
+	}
+}
+
+func TestLoadModelRejectsExamplesEmbedPatternMetacharacters(t *testing.T) {
+	t.Parallel()
+	for _, examplesPath := range []string{"*.json", "examples[0].json", "examples?.json", `examples\.json`} {
+		t.Run(examplesPath, func(t *testing.T) {
+			t.Parallel()
+			_, manifestPath := writeMinimalEntityTypeFixture(t, "examplev1")
+			definition := minimalManifest("example.value/v1")
+			definition["examples"] = examplesPath
+			writeJSON(t, manifestPath, definition)
+
+			_, err := loadModel(manifestPath)
+			if err == nil || !strings.Contains(err.Error(), "unsupported Go embed pattern metacharacter") {
+				t.Fatalf("examples path %q error = %v", examplesPath, err)
+			}
+		})
+	}
+}
+
+func TestLoadModelRejectsExamplesEmbedAllPrefix(t *testing.T) {
+	t.Parallel()
+	_, manifestPath := writeMinimalEntityTypeFixture(t, "examplev1")
+	definition := minimalManifest("example.value/v1")
+	definition["examples"] = "all:examples.json"
+	writeJSON(t, manifestPath, definition)
+
+	_, err := loadModel(manifestPath)
+	if err == nil || !strings.Contains(err.Error(), "unsupported Go embed pattern prefix") {
+		t.Fatalf("examples path all: prefix error = %v", err)
+	}
+}
+
+func TestLoadModelRejectsExamplesEmbedInvalidFilename(t *testing.T) {
+	t.Parallel()
+	directory, manifestPath := writeMinimalEntityTypeFixture(t, "examplev1")
+	invalidPath := filepath.Join(directory, "examples:valid.json")
+	if err := os.Rename(filepath.Join(directory, "examples.json"), invalidPath); err != nil {
+		t.Fatal(err)
+	}
+	definition := minimalManifest("example.value/v1")
+	definition["examples"] = "examples:valid.json"
+	writeJSON(t, manifestPath, definition)
+
+	_, err := loadModel(manifestPath)
+	if err == nil || !strings.Contains(err.Error(), `component "examples:valid.json" is not valid for Go embed`) ||
+		!strings.Contains(err.Error(), "invalid character ':'") {
+		t.Fatalf("invalid examples filename error = %v", err)
+	}
+}
+
+func TestLoadModelRejectsExamplesFileSymlink(t *testing.T) {
+	t.Parallel()
+	directory, manifestPath := writeMinimalEntityTypeFixture(t, "examplev1")
+	target := filepath.Join(directory, "examples-target.json")
+	if err := os.Rename(filepath.Join(directory, "examples.json"), target); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(filepath.Base(target), filepath.Join(directory, "examples-link.json")); err != nil {
+		t.Fatal(err)
+	}
+
+	assertExamplesPathRejected(t, manifestPath, "examples-link.json")
+}
+
+func TestLoadModelRejectsExamplesIntermediateDirectorySymlink(t *testing.T) {
+	t.Parallel()
+	directory, manifestPath := writeMinimalEntityTypeFixture(t, "examplev1")
+	target := filepath.Join(directory, "examples-directory")
+	if err := os.Mkdir(target, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Rename(filepath.Join(directory, "examples.json"), filepath.Join(target, "examples.json")); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(filepath.Base(target), filepath.Join(directory, "examples-link")); err != nil {
+		t.Fatal(err)
+	}
+
+	assertExamplesPathRejected(t, manifestPath, "examples-link/examples.json")
+}
+
+func assertExamplesPathRejected(t *testing.T, manifestPath, examplesPath string) {
+	t.Helper()
+	definition := minimalManifest("example.value/v1")
+	definition["examples"] = examplesPath
+	writeJSON(t, manifestPath, definition)
+
+	_, err := loadModel(manifestPath)
+	if err == nil || !strings.Contains(err.Error(), "is a symlink") {
+		t.Fatalf("symlink examples path error = %v", err)
+	}
+}
+
+func TestLoadModelRejectsExamplesNestedModule(t *testing.T) {
+	t.Parallel()
+	directory, manifestPath := writeMinimalEntityTypeFixture(t, "examplev1")
+	nested := filepath.Join(directory, "examples-directory")
+	if err := os.Mkdir(nested, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Rename(filepath.Join(directory, "examples.json"), filepath.Join(nested, "examples.json")); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(nested, "go.mod"), []byte("module example.test/nested\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	definition := minimalManifest("example.value/v1")
+	definition["examples"] = "examples-directory/examples.json"
+	writeJSON(t, manifestPath, definition)
+
+	_, err := loadModel(manifestPath)
+	if err == nil || !strings.Contains(err.Error(), `component "examples-directory" is a nested Go module`) {
+		t.Fatalf("nested module examples path error = %v", err)
 	}
 }
 
@@ -315,38 +452,15 @@ func TestTypeEmitterPreservesOptionalObjectPresence(t *testing.T) {
 	}
 }
 
-func TestRenderedObservationUsesSupportDependentStateValidation(t *testing.T) {
-	t.Parallel()
-	source, err := renderFacade(entityTypeModel{Package: "examplev1"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !regexp.MustCompile(`Support\s+Support`).Match(source) {
-		t.Error("generated Observation input has no Support field")
-	}
-	for _, expected := range []string{
-		"codecs.Support.Encode(input.Support)",
-		"contractexamplev1.ValidateState(input.Support, input.State)",
-	} {
-		if !strings.Contains(string(source), expected) {
-			t.Errorf("generated facade does not contain %q", expected)
-		}
-	}
-	if strings.Contains(string(source), "RefreshForCommand") {
-		t.Fatal("generated Observation input exposes command linkage")
-	}
-}
-
 func TestOperationFreeFacadeOmitsCommandArtifacts(t *testing.T) {
 	t.Parallel()
-	source, err := renderFacade(entityTypeModel{Package: "examplev1"})
+	source, err := renderFacade(entityTypeModel{Package: "examplev1"}, "example.test")
 	if err != nil {
 		t.Fatal(err)
 	}
 	text := string(source)
 	for _, forbidden := range []string{
 		`"encoding/json"`,
-		`"github.com/mholtzscher/hearth/sdk/adapter/typed"`,
 		"type Handlers struct",
 		"NewCommandHandler",
 	} {
@@ -354,7 +468,14 @@ func TestOperationFreeFacadeOmitsCommandArtifacts(t *testing.T) {
 			t.Errorf("operation-free facade contains %q", forbidden)
 		}
 	}
-	for _, required := range []string{"NewEntityDescriptor", "NewObservation", "ObservationInput"} {
+	for _, required := range []string{
+		"NewEntityDescriptor",
+		"NewObservation",
+		"ObservationInput",
+		`"github.com/mholtzscher/hearth/sdk/adapter/typed"`,
+		"NewTypedEntityDescriptor",
+		"NewTypedEntityObservation",
+	} {
 		if !strings.Contains(text, required) {
 			t.Errorf("operation-free facade does not contain %q", required)
 		}
@@ -379,6 +500,129 @@ func TestOperationFreeCatalogConformanceOmitsTimeImport(t *testing.T) {
 		t.Errorf("operation-free catalog conformance imports time:\n%s", conformance.content)
 	}
 	_ = directory
+}
+
+func TestLoadModelRejectsOperationWithoutExamples(t *testing.T) {
+	t.Parallel()
+	directory, manifestPath := writeOptionalOperationFixture(t)
+	writeJSON(t, filepath.Join(directory, "examples.json"), map[string]any{
+		"cases": []any{map[string]any{
+			"name":    "disabled",
+			"support": map[string]any{"state": map[string]any{}, "operations": map[string]any{}},
+			"states": []any{
+				map[string]any{"value": 1, "valid": true},
+				map[string]any{"value": "on", "valid": false},
+			},
+			"operations": map[string]any{},
+		}},
+	})
+
+	_, err := loadModel(manifestPath)
+	if err == nil || !strings.Contains(err.Error(), `operation "activate" has no examples in any case`) {
+		t.Fatalf("missing operation coverage error = %v", err)
+	}
+}
+
+func TestRenderedConformanceEmbedsExactExamplesPath(t *testing.T) {
+	t.Parallel()
+	source, err := renderConformanceTest(entityTypeModel{
+		Package:      "examplev1",
+		TypeID:       "example.value/v1",
+		ExamplesFile: "examples.json",
+		Operations: []operationModel{
+			{Name: "activate", GoName: "Activate"},
+		},
+	}, "example.test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(source)
+	for _, required := range []string{
+		`//go:embed "examples.json"`,
+		`"example.test/internal/entitytypetest"`,
+		`"activate":`,
+		"ValidateActivateParameters",
+		"ActivateSatisfied",
+	} {
+		if !strings.Contains(text, required) {
+			t.Errorf("generated conformance test does not contain %q", required)
+		}
+	}
+}
+
+func TestRenderedConformanceOmitsOperationsForFreeTypes(t *testing.T) {
+	t.Parallel()
+	source, err := renderConformanceTest(entityTypeModel{
+		Package:      "examplev1",
+		TypeID:       "example.value/v1",
+		ExamplesFile: "examples.json",
+	}, "example.test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(source)
+	if !strings.Contains(text, "Operations: nil") {
+		t.Errorf("operation-free conformance test does not declare nil operations:\n%s", text)
+	}
+	if strings.Contains(text, `"errors"`) {
+		t.Errorf("operation-free conformance test imports errors:\n%s", text)
+	}
+}
+
+func writeOptionalOperationFixture(t *testing.T) (string, string) {
+	t.Helper()
+	root := t.TempDir()
+	if err := os.WriteFile(
+		filepath.Join(root, "go.mod"),
+		[]byte("module example.test\n\ngo 1.26\n"),
+		0o644,
+	); err != nil {
+		t.Fatal(err)
+	}
+	writeManifestSchema(t, root)
+	directory := filepath.Join(root, "entitytypes", "examplev1")
+	if err := os.MkdirAll(directory, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	writeJSON(t, filepath.Join(directory, "state.schema.json"), map[string]any{
+		"$id": "urn:test:state", "type": "integer", "minimum": 0, "maximum": 100,
+	})
+	writeJSON(t, filepath.Join(directory, "support.schema.json"), map[string]any{
+		"$id": "urn:test:support", "type": "object", "additionalProperties": false,
+		"required": []string{"state", "operations"},
+		"properties": map[string]any{
+			"state": map[string]any{"type": "object", "additionalProperties": false},
+			"operations": map[string]any{
+				"type": "object", "additionalProperties": false,
+				"properties": map[string]any{
+					"activate": map[string]any{"type": "object", "additionalProperties": false},
+				},
+			},
+		},
+	})
+	writeJSON(t, filepath.Join(directory, "activate-parameters.schema.json"), map[string]any{
+		"$id": "urn:test:activate", "type": "object", "additionalProperties": false,
+		"required": []string{"value"},
+		"properties": map[string]any{
+			"value": map[string]any{"type": "integer", "minimum": 0, "maximum": 100},
+		},
+	})
+	writeJSON(t, filepath.Join(directory, "entitytype.json"), map[string]any{
+		"manifest_version": 1,
+		"type":             "example.value/v1",
+		"state_schema":     "state.schema.json",
+		"support_schema":   "support.schema.json",
+		"examples":         "examples.json",
+		"operations": map[string]any{"activate": map[string]any{
+			"parameters_schema": "activate-parameters.schema.json", "deadline_ms": 1000,
+			"satisfied_when": []any{map[string]any{
+				"op":    "lte",
+				"left":  map[string]any{"root": "parameters", "path": "/value"},
+				"right": map[string]any{"root": "state", "path": ""},
+			}},
+		}},
+	})
+	return directory, filepath.Join(directory, "entitytype.json")
 }
 
 func TestRenderedCodecsEmbedExactManifestPaths(t *testing.T) {
@@ -624,5 +868,164 @@ func writeJSON(t *testing.T, path string, value any) {
 	}
 	if err := os.WriteFile(path, raw, 0o644); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestCatalogProbeSelectsSupportLevelRejections(t *testing.T) {
+	t.Parallel()
+	model := writeCatalogProbeFixture(t)
+	probe, err := selectCatalogProbe(model, newCatalogSchemaChecker())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(probe.validState) != `75` {
+		t.Fatalf("valid State = %s, want 75", probe.validState)
+	}
+	// The schema-invalid "loud" rep is listed first; selection must skip it.
+	if string(probe.supportInvalidState) != `85` {
+		t.Fatalf("support-invalid State = %s, want 85", probe.supportInvalidState)
+	}
+	if len(probe.operations) != 1 {
+		t.Fatalf("operations = %d, want 1", len(probe.operations))
+	}
+	operation := probe.operations[0]
+	if string(operation.parameters) != `{"value":75}` {
+		t.Fatalf("parameters = %s", operation.parameters)
+	}
+	if string(operation.supportInvalidParams) != `{"value":76}` {
+		t.Fatalf("support-invalid parameters = %s", operation.supportInvalidParams)
+	}
+	if operation.model.DeadlineMS != 10000 {
+		t.Fatalf("deadline = %d, want 10000", operation.model.DeadlineMS)
+	}
+	if string(operation.satisfiedState) != `75` || string(operation.unsatisfiedState) != `70` {
+		t.Fatalf(
+			"outcome states = %s, %s",
+			operation.satisfiedState,
+			operation.unsatisfiedState,
+		)
+	}
+	if string(probe.unequalState) != `70` {
+		t.Fatalf("unequal State = %s, want 70", probe.unequalState)
+	}
+}
+
+func TestRenderedCatalogWiringCoversDeadlineOutcomesAndEquality(t *testing.T) {
+	t.Parallel()
+	model := writeCatalogProbeFixture(t)
+	rendered, err := renderCatalogConformanceTest([]entityTypeModel{model}, t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(rendered.content)
+	for _, required := range []string{
+		"TestGeneratedBuiltinCatalogWiring",
+		`"example.value/v1"`,
+		"10000*time.Millisecond",
+		"support-invalid State unexpectedly accepted",
+		"support-invalid set parameters unexpectedly accepted",
+		"catalog set satisfied outcome",
+		"catalog set unsatisfied outcome",
+		"catalog equal State",
+		"catalog unequal State",
+		"equalGeneratedCatalogJSON",
+	} {
+		if !strings.Contains(text, required) {
+			t.Errorf("rendered catalog wiring does not contain %q", required)
+		}
+	}
+}
+
+func TestCatalogProbeOmitsMissingSupportLevelRejections(t *testing.T) {
+	t.Parallel()
+	_, manifestPath := writeMinimalEntityTypeFixture(t, "examplev1")
+	model, err := loadModel(manifestPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	probe, err := selectCatalogProbe(model, newCatalogSchemaChecker())
+	if err != nil {
+		t.Fatal(err)
+	}
+	// The only invalid State (1 for a boolean schema) is schema-invalid, and
+	// the single valid State leaves no unequal partner.
+	if len(probe.supportInvalidState) != 0 {
+		t.Fatalf("support-invalid State = %s, want none", probe.supportInvalidState)
+	}
+	if len(probe.unequalState) != 0 {
+		t.Fatalf("unequal State = %s, want none", probe.unequalState)
+	}
+	rendered, err := renderCatalogConformanceTest([]entityTypeModel{model}, t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(rendered.content)
+	for _, forbidden := range []string{"support-invalid", "unequal State"} {
+		if strings.Contains(text, forbidden) {
+			t.Errorf("rendered catalog wiring unexpectedly contains %q", forbidden)
+		}
+	}
+	if !strings.Contains(text, "catalog equal State") {
+		t.Errorf("rendered catalog wiring omits the equal-State probe")
+	}
+}
+
+func writeCatalogProbeFixture(t *testing.T) entityTypeModel {
+	t.Helper()
+	directory := t.TempDir()
+	writeJSON(t, filepath.Join(directory, "state.schema.json"), map[string]any{
+		"$id": "urn:test:catalog:state", "type": "integer", "minimum": 0, "maximum": 100,
+	})
+	writeJSON(t, filepath.Join(directory, "support.schema.json"), map[string]any{
+		"$id": "urn:test:catalog:support", "type": "object", "additionalProperties": false,
+		"required": []string{"state", "operations"},
+		"properties": map[string]any{
+			"state": map[string]any{
+				"type": "object", "additionalProperties": false,
+				"required":   []string{"maximum"},
+				"properties": map[string]any{"maximum": map[string]any{"type": "integer"}},
+			},
+			"operations": map[string]any{
+				"type": "object", "additionalProperties": false,
+				"properties": map[string]any{
+					"set": map[string]any{"type": "object", "additionalProperties": false},
+				},
+			},
+		},
+	})
+	writeJSON(t, filepath.Join(directory, "set-parameters.schema.json"), map[string]any{
+		"$id": "urn:test:catalog:set-parameters", "type": "object", "additionalProperties": false,
+		"required": []string{"value"},
+		"properties": map[string]any{
+			"value": map[string]any{"type": "integer", "minimum": 0, "maximum": 100},
+		},
+	})
+	raw := func(value string) json.RawMessage { return json.RawMessage(value) }
+	return entityTypeModel{
+		Package: "examplev1", Directory: directory, ModuleRoot: directory, TypeID: "example.value/v1",
+		StateFile: "state.schema.json",
+		Operations: []operationModel{{
+			Name: "set", GoName: "Set", ParametersFile: "set-parameters.schema.json", DeadlineMS: 10000,
+		}},
+		Examples: examplesFile{Cases: []exampleCase{{
+			Name:    "dim",
+			Support: raw(`{"state":{"maximum":80},"operations":{"set":{"step":5}}}`),
+			States: []validityExample{
+				{Value: raw(`75`), Valid: true},
+				{Value: raw(`"loud"`), Valid: false},
+				{Value: raw(`85`), Valid: false},
+			},
+			Operations: map[string]operationExamples{"set": {
+				Parameters: []validityExample{
+					{Value: raw(`{"value":75}`), Valid: true},
+					{Value: raw(`{"value":"loud"}`), Valid: false},
+					{Value: raw(`{"value":76}`), Valid: false},
+				},
+				Outcomes: []outcomeExample{
+					{Parameters: raw(`{"value":75}`), State: raw(`75`), Satisfied: true},
+					{Parameters: raw(`{"value":75}`), State: raw(`70`), Satisfied: false},
+				},
+			}},
+		}}},
 	}
 }

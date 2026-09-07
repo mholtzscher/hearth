@@ -1,0 +1,61 @@
+{
+  "cases": [
+    {
+      "name": "both",
+      "support": {"state": {"maximum": 80}, "operations": {"set": {"step": 5}, "pulse": {"label": "strobe"}}},
+      "states": [
+        {"value": {"level": 50, "count": 10, "mode": "steady", "trace": [50, 10]}, "valid": true},
+        {"value": {"level": 5, "count": 5}, "valid": true},
+        {"value": {"level": 101, "count": 5}, "valid": false},
+        {"value": {"level": 5, "count": 85}, "valid": false},
+        {"value": "bright", "valid": false}
+      ],
+      "operations": {
+        "set": {
+          "parameters": [
+            {"value": {"value": 75}, "valid": true},
+            {"value": {"value": 76}, "valid": false},
+            {"value": {"value": 85}, "valid": false},
+            {"value": {"count": 75}, "valid": false}
+          ],
+          "outcomes": [
+            {"parameters": {"value": 75}, "state": {"level": 75, "count": 10}, "satisfied": true},
+            {"parameters": {"value": 75}, "state": {"level": 70, "count": 10}, "satisfied": false}
+          ]
+        },
+        "pulse": {
+          "parameters": [
+            {"value": {"count": 10, "label": "strobe", "steps": [10, 20]}, "valid": true},
+            {"value": {"count": 10}, "valid": true},
+            {"value": {"count": 85}, "valid": false},
+            {"value": {"value": 10}, "valid": false}
+          ],
+          "outcomes": [
+            {"parameters": {"count": 10}, "state": {"level": 50, "count": 10}, "satisfied": true},
+            {"parameters": {"count": 10}, "state": {"level": 50, "count": 11}, "satisfied": false}
+          ]
+        }
+      }
+    },
+    {
+      "name": "set-only",
+      "support": {"state": {"maximum": 80}, "operations": {"set": {"step": 5}}},
+      "states": [
+        {"value": {"level": 50, "count": 10}, "valid": true},
+        {"value": {"level": 85, "count": 10}, "valid": false}
+      ],
+      "operations": {
+        "set": {
+          "parameters": [
+            {"value": {"value": 75}, "valid": true},
+            {"value": {"value": 76}, "valid": false}
+          ],
+          "outcomes": [
+            {"parameters": {"value": 75}, "state": {"level": 75, "count": 10}, "satisfied": true},
+            {"parameters": {"value": 75}, "state": {"level": 70, "count": 10}, "satisfied": false}
+          ]
+        }
+      }
+    }
+  ]
+}

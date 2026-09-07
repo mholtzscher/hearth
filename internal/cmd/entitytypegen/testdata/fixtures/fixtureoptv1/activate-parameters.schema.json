@@ -1,0 +1,13 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:fixture:optional:v1:activate-parameters",
+  "title": "Fixture optional/v1 activate parameters",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["code"],
+  "properties": {
+    "code": {"type": "integer", "minimum": 0, "maximum": 999},
+    "note": {"type": "string"},
+    "tags": {"type": "array", "items": {"type": "string"}}
+  }
+}

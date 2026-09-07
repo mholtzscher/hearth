@@ -1,0 +1,20 @@
+{
+  "cases": [
+    {
+      "name": "bounded",
+      "support": {"state": {"maximum": 80}, "operations": {}},
+      "states": [
+        {
+          "value": {"level": 50, "label": "half", "nested": {"count": 3, "flag": true}, "tags": ["a", "b"]},
+          "valid": true
+        },
+        {"value": {"level": 10}, "valid": true},
+        {"value": {"level": 101}, "valid": false},
+        {"value": {"level": 85}, "valid": false},
+        {"value": "loud", "valid": false},
+        {"value": {}, "valid": false}
+      ],
+      "operations": {}
+    }
+  ]
+}

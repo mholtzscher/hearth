@@ -3,6 +3,10 @@ package devices //nolint:testpackage // Tests exercise package-private domain se
 import (
 	"encoding/json"
 	"errors"
+	"os"
+	"path/filepath"
+	"runtime"
+	"sort"
 	"testing"
 	"time"
 
@@ -273,4 +277,115 @@ func compileTestCodec[T any](t *testing.T, name, schema string) *entitytypes.JSO
 		t.Fatal(err)
 	}
 	return codec
+}
+
+// TestBuiltinCatalogMatchesEntityTypeInventory protects registration
+// completeness and fails if the generator drops a built-in registration
+// even when the generated catalog test is omitted alongside it.
+func TestBuiltinCatalogMatchesEntityTypeInventory(t *testing.T) {
+	t.Parallel()
+	expected := loadEntityTypeInventory(t)
+	catalog, err := NewBuiltinTypeCatalog()
+	if err != nil {
+		t.Fatal(err)
+	}
+	checkCatalogIDs(t, expected, catalog)
+	checkCatalogOperations(t, expected, catalog)
+}
+
+func loadEntityTypeInventory(t *testing.T) map[EntityTypeID]map[OperationName]struct{} {
+	t.Helper()
+	_, filename, _, ok := runtime.Caller(0)
+	if !ok {
+		t.Fatal("locate catalog test")
+	}
+	root := filepath.Clean(filepath.Join(filepath.Dir(filename), "..", "..", ".."))
+	matches, err := filepath.Glob(filepath.Join(root, "entitytypes", "*", "entitytype.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(matches) == 0 {
+		t.Fatal("no entitytype manifests discovered")
+	}
+	sort.Strings(matches)
+	expected := make(map[EntityTypeID]map[OperationName]struct{}, len(matches))
+	for _, match := range matches {
+		id, operations := decodeInventoryManifest(t, match)
+		if _, duplicate := expected[id]; duplicate {
+			t.Fatalf("duplicate entity type %q", id)
+		}
+		expected[id] = operations
+	}
+	return expected
+}
+
+func decodeInventoryManifest(t *testing.T, path string) (EntityTypeID, map[OperationName]struct{}) {
+	t.Helper()
+	var manifest struct {
+		Type       string                     `json:"type"`
+		Operations map[string]json.RawMessage `json:"operations"`
+	}
+	raw, readErr := os.ReadFile(path)
+	if readErr != nil {
+		t.Fatal(readErr)
+	}
+	if unmarshalErr := json.Unmarshal(raw, &manifest); unmarshalErr != nil {
+		t.Fatalf("decode %s: %v", path, unmarshalErr)
+	}
+	if manifest.Type == "" {
+		t.Fatalf("%s has no type ID", path)
+	}
+	operations := make(map[OperationName]struct{}, len(manifest.Operations))
+	for name := range manifest.Operations {
+		operations[OperationName(name)] = struct{}{}
+	}
+	return EntityTypeID(manifest.Type), operations
+}
+
+func checkCatalogIDs(
+	t *testing.T,
+	expected map[EntityTypeID]map[OperationName]struct{},
+	catalog *TypeCatalog,
+) {
+	t.Helper()
+	var missing, extra []string
+	for id := range expected {
+		if _, exists := catalog.types[id]; !exists {
+			missing = append(missing, string(id))
+		}
+	}
+	for id := range catalog.types {
+		if _, exists := expected[id]; !exists {
+			extra = append(extra, string(id))
+		}
+	}
+	if len(missing) > 0 || len(extra) > 0 {
+		sort.Strings(missing)
+		sort.Strings(extra)
+		t.Fatalf("catalog inventory mismatch: missing=%v extra=%v", missing, extra)
+	}
+}
+
+func checkCatalogOperations(
+	t *testing.T,
+	expected map[EntityTypeID]map[OperationName]struct{},
+	catalog *TypeCatalog,
+) {
+	t.Helper()
+	for id, want := range expected {
+		definition := catalog.types[id]
+		if len(definition.operations) != len(want) {
+			t.Errorf("entity type %q operations = %d, want %d", id, len(definition.operations), len(want))
+		}
+		for name := range want {
+			if _, exists := definition.operations[name]; !exists {
+				t.Errorf("entity type %q is missing operation %q", id, name)
+			}
+		}
+		for name := range definition.operations {
+			if _, exists := want[name]; !exists {
+				t.Errorf("entity type %q has unexpected operation %q", id, name)
+			}
+		}
+	}
 }

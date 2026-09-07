@@ -3,13 +3,13 @@
 package colormodev1
 
 import (
-	"errors"
 	"fmt"
 	"sync"
 	"time"
 
 	contractcolormodev1 "github.com/mholtzscher/hearth/entitytypes/colormodev1"
 	"github.com/mholtzscher/hearth/sdk/adapter"
+	"github.com/mholtzscher/hearth/sdk/adapter/typed"
 )
 
 type Support = contractcolormodev1.Support
@@ -36,43 +36,15 @@ func NewEntityDescriptor(metadata adapter.EntityMetadata, support Support) (adap
 	if err != nil {
 		return adapter.EntityDescriptor{}, err
 	}
-	normalized, err := codecs.Support.Encode(support)
-	if err != nil {
-		return adapter.EntityDescriptor{}, validationError(fmt.Errorf("invalid Entity support: %w", err))
-	}
-	return adapter.EntityDescriptor{Key: metadata.Key, ExternalID: metadata.ExternalID, Name: metadata.Name, Type: contractcolormodev1.TypeID, Support: normalized}, nil
+	return typed.NewTypedEntityDescriptor(metadata, contractcolormodev1.TypeID, support, codecs.Support)
 }
 
 func NewObservation(input ObservationInput) (adapter.Observation, error) {
-	if input.EntityID == "" {
-		return adapter.Observation{}, validationError(errors.New("Observation entity ID is required"))
-	}
-	if input.AdapterReceivedAt.IsZero() {
-		return adapter.Observation{}, validationError(errors.New("Observation adapter received time is required"))
-	}
-	if input.SourceUpdatedAt != nil && input.SourceUpdatedAt.IsZero() {
-		return adapter.Observation{}, validationError(errors.New("Observation source updated time must be non-zero"))
-	}
 	codecs, err := codecs()
 	if err != nil {
 		return adapter.Observation{}, err
 	}
-	if _, err := codecs.Support.Encode(input.Support); err != nil {
-		return adapter.Observation{}, validationError(fmt.Errorf("invalid Entity support: %w", err))
-	}
-	if err := contractcolormodev1.ValidateState(input.Support, input.State); err != nil {
-		return adapter.Observation{}, validationError(fmt.Errorf("unsupported State: %w", err))
-	}
-	value, err := codecs.State.Encode(input.State)
-	if err != nil {
-		return adapter.Observation{}, validationError(fmt.Errorf("invalid State: %w", err))
-	}
-	observation := adapter.Observation{EntityID: input.EntityID, Value: value, AdapterReceivedAt: input.AdapterReceivedAt.UTC().Format(time.RFC3339Nano)}
-	if input.SourceUpdatedAt != nil {
-		formatted := input.SourceUpdatedAt.UTC().Format(time.RFC3339Nano)
-		observation.SourceUpdatedAt = &formatted
-	}
-	return observation, nil
+	return typed.NewTypedEntityObservation(typed.EntityObservationInput[State, Support]{EntityID: input.EntityID, Support: input.Support, State: input.State, AdapterReceivedAt: input.AdapterReceivedAt, SourceUpdatedAt: input.SourceUpdatedAt}, codecs.State, codecs.Support, contractcolormodev1.ValidateState)
 }
 
 func codecs() (*contractcolormodev1.Codecs, error) {
@@ -82,5 +54,3 @@ func codecs() (*contractcolormodev1.Codecs, error) {
 	}
 	return sharedCodecs, nil
 }
-
-func validationError(err error) error { return &adapter.ValidationError{Err: err} }

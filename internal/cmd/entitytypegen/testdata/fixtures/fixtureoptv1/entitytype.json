@@ -1,0 +1,34 @@
+{
+  "manifest_version": 1,
+  "type": "fixture.optional/v1",
+  "state_schema": "state.schema.json",
+  "support_schema": "support.schema.json",
+  "state_validation": [
+    {
+      "op": "lte",
+      "left": {"root": "state", "path": "/code"},
+      "right": {"root": "support", "path": "/state/maximum"}
+    }
+  ],
+  "operations": {
+    "activate": {
+      "parameters_schema": "activate-parameters.schema.json",
+      "deadline_ms": 5000,
+      "parameter_validation": [
+        {
+          "op": "lte",
+          "left": {"root": "parameters", "path": "/code"},
+          "right": {"root": "support", "path": "/state/maximum"}
+        }
+      ],
+      "satisfied_when": [
+        {
+          "op": "eq",
+          "left": {"root": "parameters", "path": "/code"},
+          "right": {"root": "state", "path": "/code"}
+        }
+      ]
+    }
+  },
+  "examples": "examples.json"
+}

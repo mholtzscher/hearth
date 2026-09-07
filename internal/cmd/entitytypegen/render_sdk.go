@@ -7,30 +7,24 @@ import (
 )
 
 //nolint:funlen // Keeping the generated facade template together makes its emitted structure reviewable.
-func renderFacade(model entityTypeModel) ([]byte, error) {
+func renderFacade(model entityTypeModel, modulePath string) ([]byte, error) {
 	var source strings.Builder
 	generatedHeader(&source)
 	fmt.Fprintf(&source, "package %s\n\n", model.Package)
 	if len(model.Operations) > 0 {
 		source.WriteString("import (\n\t\"encoding/json\"\n\t\"errors\"\n\t\"fmt\"\n\t\"sync\"\n\t\"time\"\n\n")
 	} else {
-		source.WriteString("import (\n\t\"errors\"\n\t\"fmt\"\n\t\"sync\"\n\t\"time\"\n\n")
+		source.WriteString("import (\n\t\"fmt\"\n\t\"sync\"\n\t\"time\"\n\n")
 	}
 	fmt.Fprintf(
 		&source,
-		"\tcontract%s \"github.com/mholtzscher/hearth/entitytypes/%s\"\n",
+		"\tcontract%s %s\n",
 		model.Package,
-		model.Package,
+		strconv.Quote(modulePath+"/entitytypes/"+model.Package),
 	)
-	if len(model.Operations) > 0 {
-		source.WriteString(
-			"\t\"github.com/mholtzscher/hearth/sdk/adapter\"\n\t\"github.com/mholtzscher/hearth/sdk/adapter/typed\"\n)\n\n",
-		)
-	} else {
-		source.WriteString(
-			"\t\"github.com/mholtzscher/hearth/sdk/adapter\"\n)\n\n",
-		)
-	}
+	source.WriteString(
+		"\t\"github.com/mholtzscher/hearth/sdk/adapter\"\n\t\"github.com/mholtzscher/hearth/sdk/adapter/typed\"\n)\n\n",
+	)
 	fmt.Fprintf(
 		&source,
 		"type Support = contract%s.Support\ntype State = contract%s.State\n",
@@ -75,11 +69,11 @@ func renderFacade(model entityTypeModel) ([]byte, error) {
 	fmt.Fprintf(&source, "\tsharedCodecs *contract%s.Codecs\n", model.Package)
 	source.WriteString("\tcompileErr error\n)\n\n")
 	source.WriteString(
-		"func NewEntityDescriptor(metadata adapter.EntityMetadata, support Support) (adapter.EntityDescriptor, error) {\n\tcodecs, err := codecs()\n\tif err != nil { return adapter.EntityDescriptor{}, err }\n\tnormalized, err := codecs.Support.Encode(support)\n\tif err != nil { return adapter.EntityDescriptor{}, validationError(fmt.Errorf(\"invalid Entity support: %w\", err)) }\n",
+		"func NewEntityDescriptor(metadata adapter.EntityMetadata, support Support) (adapter.EntityDescriptor, error) {\n\tcodecs, err := codecs()\n\tif err != nil { return adapter.EntityDescriptor{}, err }\n\treturn typed.NewTypedEntityDescriptor(metadata, ",
 	)
 	fmt.Fprintf(
 		&source,
-		"\treturn adapter.EntityDescriptor{Key: metadata.Key, ExternalID: metadata.ExternalID, Name: metadata.Name, Type: contract%s.TypeID, Support: normalized}, nil\n}\n\n",
+		"contract%s.TypeID, support, codecs.Support)\n}\n\n",
 		model.Package,
 	)
 
@@ -131,15 +125,19 @@ func renderFacade(model entityTypeModel) ([]byte, error) {
 	}
 
 	source.WriteString(
-		"func NewObservation(input ObservationInput) (adapter.Observation, error) {\n\tif input.EntityID == \"\" { return adapter.Observation{}, validationError(errors.New(\"Observation entity ID is required\")) }\n\tif input.AdapterReceivedAt.IsZero() { return adapter.Observation{}, validationError(errors.New(\"Observation adapter received time is required\")) }\n\tif input.SourceUpdatedAt != nil && input.SourceUpdatedAt.IsZero() { return adapter.Observation{}, validationError(errors.New(\"Observation source updated time must be non-zero\")) }\n\tcodecs, err := codecs()\n\tif err != nil { return adapter.Observation{}, err }\n\tif _, err := codecs.Support.Encode(input.Support); err != nil { return adapter.Observation{}, validationError(fmt.Errorf(\"invalid Entity support: %w\", err)) }\n\tif err := contract" + model.Package + ".ValidateState(input.Support, input.State); err != nil { return adapter.Observation{}, validationError(fmt.Errorf(\"unsupported State: %w\", err)) }\n\tvalue, err := codecs.State.Encode(input.State)\n\tif err != nil { return adapter.Observation{}, validationError(fmt.Errorf(\"invalid State: %w\", err)) }\n\tobservation := adapter.Observation{EntityID: input.EntityID, Value: value, AdapterReceivedAt: input.AdapterReceivedAt.UTC().Format(time.RFC3339Nano)}\n\tif input.SourceUpdatedAt != nil { formatted := input.SourceUpdatedAt.UTC().Format(time.RFC3339Nano); observation.SourceUpdatedAt = &formatted }\n\treturn observation, nil\n}\n\n",
+		"func NewObservation(input ObservationInput) (adapter.Observation, error) {\n\tcodecs, err := codecs()\n\tif err != nil { return adapter.Observation{}, err }\n\treturn typed.NewTypedEntityObservation(typed.EntityObservationInput[State, Support]{EntityID: input.EntityID, Support: input.Support, State: input.State, AdapterReceivedAt: input.AdapterReceivedAt, SourceUpdatedAt: input.SourceUpdatedAt}, codecs.State, codecs.Support, ",
 	)
+	fmt.Fprintf(&source, "contract%s.ValidateState", model.Package)
+	source.WriteString(")\n}\n\n")
 	fmt.Fprintf(
 		&source,
 		"func codecs() (*contract%s.Codecs, error) {\n\tcompileOnce.Do(func() { sharedCodecs, compileErr = contract%s.Compile() })\n\tif compileErr != nil { return nil, fmt.Errorf(\"compile Entity-type schemas: %%w\", compileErr) }\n\treturn sharedCodecs, nil\n}\n\n",
 		model.Package,
 		model.Package,
 	)
-	source.WriteString("func validationError(err error) error { return &adapter.ValidationError{Err: err} }\n")
+	if len(model.Operations) > 0 {
+		source.WriteString("func validationError(err error) error { return &adapter.ValidationError{Err: err} }\n")
+	}
 	return formatGenerated(source.String())
 }
 

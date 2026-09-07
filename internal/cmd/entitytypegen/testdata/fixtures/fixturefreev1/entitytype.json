@@ -1,0 +1,15 @@
+{
+  "manifest_version": 1,
+  "type": "fixture.free/v1",
+  "state_schema": "state.schema.json",
+  "support_schema": "support.schema.json",
+  "state_validation": [
+    {
+      "op": "lte",
+      "left": {"root": "state", "path": "/level"},
+      "right": {"root": "support", "path": "/state/maximum"}
+    }
+  ],
+  "operations": {},
+  "examples": "examples.json"
+}
