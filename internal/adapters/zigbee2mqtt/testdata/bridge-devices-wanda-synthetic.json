@@ -1,0 +1,115 @@
+[
+  {
+    "_provenance": "SYNTHETIC fixture — Wanda-shaped inventory modeled on the Third Reality 3RCB01057Z office-table-lamp expose layout. NOT live-captured: startup on-wire values and effect dispatch outcomes are unobserved until separately authorized live validation (G2). Sanitized identifiers only.",
+    "ieee_address": "0x00124b0022a9b101",
+    "type": "Router",
+    "network_address": 12345,
+    "supported": true,
+    "disabled": false,
+    "friendly_name": "synthetic-wanda-bulb",
+    "description": "SYNTHETIC Wanda-shaped bulb fixture — not a live capture",
+    "interview_state": "SUCCESSFUL",
+    "endpoints": {
+      "1": {
+        "bindings": [],
+        "clusters": {"input": [0, 3, 4, 5, 6, 8], "output": [25]},
+        "configured_reportings": []
+      }
+    },
+    "definition": {
+      "model": "3RCB01057Z",
+      "vendor": "Third Reality",
+      "description": "SYNTHETIC shape modeled on the Smart Color Bulb ZL1 expose layout",
+      "exposes": [
+        {
+          "type": "light",
+          "features": [
+            {
+              "type": "binary",
+              "name": "state",
+              "property": "state",
+              "access": 7,
+              "value_on": "ON",
+              "value_off": "OFF",
+              "value_toggle": "TOGGLE"
+            },
+            {
+              "type": "numeric",
+              "name": "brightness",
+              "property": "brightness",
+              "access": 7,
+              "value_min": 0,
+              "value_max": 254
+            },
+            {
+              "type": "numeric",
+              "name": "color_temp",
+              "property": "color_temp",
+              "access": 7,
+              "value_min": 154,
+              "value_max": 500
+            },
+            {
+              "type": "numeric",
+              "name": "color_temp_startup",
+              "property": "color_temp_startup",
+              "access": 7,
+              "value_min": 142,
+              "value_max": 454,
+              "presets": [
+                {"name": "previous", "value": 65535, "description": "Previous value"},
+                {"name": "warm", "value": 454, "description": "Warm alias for a plain number"}
+              ]
+            },
+            {
+              "type": "numeric",
+              "name": "bogus_feature",
+              "property": "bogus_feature",
+              "access": 7,
+              "value_min": "broken",
+              "value_max": "also-broken"
+            }
+          ]
+        },
+        {
+          "type": "numeric",
+          "name": "linkquality",
+          "property": "linkquality",
+          "access": 1,
+          "value_min": 0,
+          "value_max": 255
+        },
+        {
+          "type": "enum",
+          "name": "power_on_behavior",
+          "property": "power_on_behavior",
+          "access": 7,
+          "values": ["off", "on", "toggle", "previous"]
+        },
+        {
+          "type": "enum",
+          "name": "effect",
+          "property": "effect",
+          "access": 2,
+          "values": ["blink", "breathe", "okay", "channel_change", "finish_effect", "stop_effect", "stop_hue_effect", "colorloop"]
+        },
+        {
+          "type": "enum",
+          "name": "start_bind",
+          "property": "start_bind",
+          "access": 2,
+          "values": ["bind"]
+        },
+        {
+          "type": "mystery",
+          "name": "mystery_mode",
+          "property": "mystery_mode",
+          "access": 7,
+          "values": "not-an-array"
+        }
+      ]
+    },
+    "power_source": "Mains (single phase)",
+    "software_build_id": "1.00.74"
+  }
+]

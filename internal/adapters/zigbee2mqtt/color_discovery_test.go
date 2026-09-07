@@ -9,6 +9,7 @@ import (
 // combination: XY-only, HS-only, dual, and multi-endpoint devices discover
 // exactly the intended optional Entities beside power and brightness, with
 // stable numeric identities and companion mode suffixes per endpoint label.
+// The dual fixture also carries the device-agnostic linkquality sensor.
 func TestDiscoverColorRepresentationCombinations(t *testing.T) {
 	t.Parallel()
 	for _, test := range []struct {
@@ -17,7 +18,7 @@ func TestDiscoverColorRepresentationCombinations(t *testing.T) {
 	}{
 		{
 			fixture: "bridge-devices-color-dual.json",
-			want:    []string{"power", "brightness", "colortemp", "colorxy", "colorhs", "colormode"},
+			want:    []string{"power", "brightness", "colortemp", "colorxy", "colorhs", "colormode", "linkquality"},
 		},
 		{
 			fixture: "bridge-devices-color-xy-only.json",

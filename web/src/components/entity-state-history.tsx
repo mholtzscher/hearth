@@ -45,7 +45,15 @@ function isBoundedInteger(value: unknown, min: number, max: number): value is nu
 /** Numeric chart value for known Entity types; null for malformed values.
     Color temperature State is the object form `{active, value}`; the chart
     plots `value` in mireds. XY, HS, and mode States are structured or
-    discrete and have no numeric chart value. */
+    discrete and have no numeric chart value. Numeric-setting States plot
+    only `value`-mode numbers with their unit label; `choice`-mode States
+    are listed below. */
+function isNumericSettingChoiceState(value: unknown): boolean {
+  if (typeof value !== "object" || value === null) return false;
+  const state = value as { mode?: unknown; choice?: unknown; value?: unknown };
+  return state.mode === "choice" && typeof state.choice === "string" && state.value === undefined;
+}
+
 function parseHistoryValue(type: string | undefined, value: unknown): PlottedValue | null {
   switch (type) {
     case "hearth.power/v1":
@@ -60,6 +68,17 @@ function parseHistoryValue(type: string | undefined, value: unknown): PlottedVal
       return isBoundedInteger(value, -273150, 1000000)
         ? { numeric: value / 1000, label: `${value / 1000} °C` }
         : null;
+    case "hearth.numericsensor/v1":
+      return typeof value === "number" && Number.isFinite(value)
+        ? { numeric: value, label: String(value) }
+        : null;
+    case "hearth.numericsetting/v1": {
+      if (typeof value !== "object" || value === null) return null;
+      const v = value as { mode?: unknown; value?: unknown };
+      return v.mode === "value" && typeof v.value === "number" && Number.isFinite(v.value)
+        ? { numeric: v.value, label: String(v.value) }
+        : null;
+    }
     default:
       return null;
   }
@@ -94,6 +113,19 @@ function formatStructuredHistoryValue(type: string | undefined, value: unknown):
     }
     case "hearth.colormode/v1":
       return typeof value === "string" ? value : null;
+    case "hearth.numericsensor/v1": {
+      if (typeof value !== "number") return null;
+      return Number.isFinite(value) ? String(value) : null;
+    }
+    case "hearth.enumsetting/v1":
+      return typeof value === "string" ? value : null;
+    case "hearth.numericsetting/v1": {
+      if (typeof value !== "object" || value === null) return null;
+      const v = value as { mode?: unknown; value?: unknown; choice?: unknown };
+      if (v.mode === "value" && typeof v.value === "number") return String(v.value);
+      if (v.mode === "choice" && typeof v.choice === "string") return v.choice;
+      return null;
+    }
     case "hearth.colortemp/v1": {
       if (typeof value !== "object" || value === null) return null;
       const v = value as { active?: unknown; value?: unknown };
@@ -127,6 +159,15 @@ function supportRange(
 ): [number, number] | null {
   if (type === "hearth.power/v1") return [0, 1];
   const state = support?.state as { maximum?: unknown; minimum?: unknown } | undefined;
+  if (type === "hearth.numericsensor/v1" || type === "hearth.numericsetting/v1") {
+    return typeof state?.minimum === "number" &&
+      typeof state?.maximum === "number" &&
+      Number.isFinite(state.minimum) &&
+      Number.isFinite(state.maximum) &&
+      state.minimum <= state.maximum
+      ? [state.minimum, state.maximum]
+      : null;
+  }
   if (type === "hearth.brightness/v1") {
     return isBoundedInteger(state?.maximum, 1, 100) ? [0, state.maximum] : null;
   }
@@ -231,7 +272,10 @@ function StateHistoryChart({
       : null;
   });
   const valid = points.filter((point): point is ChartPoint => point !== null);
-  const malformedSkipped = points.length - valid.length;
+  const choiceSkipped = type === "hearth.numericsetting/v1"
+    ? ascending.filter((entry) => isNumericSettingChoiceState(entry.value)).length
+    : 0;
+  const malformedSkipped = points.length - valid.length - choiceSkipped;
 
   if (accepted.length === 0) {
     return (
@@ -245,6 +289,8 @@ function StateHistoryChart({
     case "hearth.brightness/v1":
     case "hearth.colortemp/v1":
     case "hearth.temperature/v1":
+    case "hearth.numericsensor/v1":
+    case "hearth.numericsetting/v1":
       break;
     case "hearth.colorxy/v1":
     case "hearth.colorhs/v1":
@@ -254,9 +300,16 @@ function StateHistoryChart({
         </p>
       );
     case "hearth.colormode/v1":
+    case "hearth.enumsetting/v1":
       return (
         <p className="mt-3 text-sm text-muted-foreground">
-          Discrete mode values are listed below; no chart.
+          Discrete values are listed below; no chart.
+        </p>
+      );
+    case "hearth.enumaction/v1":
+      return (
+        <p className="mt-3 text-sm text-muted-foreground">
+          Stateless actions record no State; triggers appear in command history.
         </p>
       );
     default:
@@ -269,7 +322,9 @@ function StateHistoryChart({
   if (valid.length === 0) {
     return (
       <p className="mt-3 text-sm text-muted-foreground">
-        No valid State values to chart. ({malformedSkipped} malformed skipped)
+        {choiceSkipped > 0 && malformedSkipped === 0
+          ? "Choice values are listed below; no numeric State values to chart."
+          : `No valid State values to chart. (${malformedSkipped} malformed skipped)`}
       </p>
     );
   }
@@ -309,6 +364,7 @@ function StateHistoryChart({
   );
   const skipped: string[] = [];
   if (rejectedSkipped > 0) skipped.push(`${rejectedSkipped} rejected skipped`);
+  if (choiceSkipped > 0) skipped.push(`${choiceSkipped} choice values listed below`);
   if (malformedSkipped > 0) skipped.push(`${malformedSkipped} malformed skipped`);
 
   return (

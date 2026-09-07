@@ -33,13 +33,26 @@ func (handler *Handler) ExecuteCommand(ctx context.Context, input *ExecuteComman
 	if commandErr != nil {
 		return nil, mapCommandError(commandErr)
 	}
-	var value any
-	if err := decodeJSON(result.Value, &value); err != nil {
-		return nil, apiError(http.StatusInternalServerError, "internal error")
+	status := "satisfied"
+	var observationID *string
+	var bodyValue *any
+	if result.Outcome == devices.OutcomeDispatched {
+		status = "dispatched"
+	} else {
+		if result.ObservationID == nil || result.Value == nil {
+			return nil, apiError(http.StatusInternalServerError, "internal error")
+		}
+		var value any
+		if err := decodeJSON(*result.Value, &value); err != nil {
+			return nil, apiError(http.StatusInternalServerError, "internal error")
+		}
+		id := string(*result.ObservationID)
+		observationID = &id
+		bodyValue = &value
 	}
 	return &ExecuteCommandOutput{Body: CommandResultBody{
-		CommandID: string(result.CommandID), Status: "satisfied",
-		ObservationID: string(result.ObservationID), Value: value,
+		CommandID: string(result.CommandID), Status: status,
+		ObservationID: observationID, Value: bodyValue,
 	}}, nil
 }
 

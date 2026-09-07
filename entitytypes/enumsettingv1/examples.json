@@ -1,0 +1,30 @@
+{
+  "cases": [
+    {
+      "name": "power-behavior",
+      "support": {
+        "state": {"choices": ["on", "off", "previous", "toggle"]},
+        "operations": {"set": {}}
+      },
+      "states": [
+        {"value": "previous", "valid": true},
+        {"value": "on", "valid": true},
+        {"value": "eco", "valid": false},
+        {"value": "", "valid": false}
+      ],
+      "operations": {
+        "set": {
+          "parameters": [
+            {"value": {"value": "on"}, "valid": true},
+            {"value": {"value": "eco"}, "valid": false},
+            {"value": {"value": ""}, "valid": false}
+          ],
+          "outcomes": [
+            {"parameters": {"value": "on"}, "state": "on", "satisfied": true},
+            {"parameters": {"value": "on"}, "state": "off", "satisfied": false}
+          ]
+        }
+      }
+    }
+  ]
+}

@@ -1,0 +1,26 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:hearth:schema:entity-type:numericsetting:v1:set-parameters",
+  "title": "Hearth numericsetting/v1 set parameters",
+  "description": "Bounded numeric value or named choice discriminated by mode.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["mode"],
+  "properties": {
+    "mode": {"type": "string", "enum": ["value", "choice"]},
+    "value": {"type": "number"},
+    "choice": {"type": "string", "minLength": 1, "maxLength": 128}
+  },
+  "oneOf": [
+    {
+      "required": ["value"],
+      "not": {"required": ["choice"]},
+      "properties": {"mode": {"const": "value"}}
+    },
+    {
+      "required": ["choice"],
+      "not": {"required": ["value"]},
+      "properties": {"mode": {"const": "choice"}}
+    }
+  ]
+}

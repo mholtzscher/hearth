@@ -26,6 +26,14 @@ const (
 	ruleOperatorIsTrue       = "is_true"
 	ruleOperatorNear         = "near"
 	ruleOperatorCircularNear = "circular_near"
+	ruleOperatorIn           = "in"
+	ruleOperatorInIfPresent  = "in_if_present"
+	ruleOperatorEqOptional   = "eq_optional"
+	ruleOperatorGTEIfPresent = "gte_if_present"
+	ruleOperatorLTEIfPresent = "lte_if_present"
+
+	outcomeObserved   = "observed"
+	outcomeDispatched = "dispatched"
 
 	referenceRootParameters = "parameters"
 	referenceRootState      = "state"
@@ -50,6 +58,7 @@ type referenceModel struct {
 	Path         string
 	Kind         valueKind
 	GoExpression string
+	Optional     bool
 }
 
 type referenceRoot struct {
@@ -70,6 +79,16 @@ func compileRules(rules []ruleManifest, roots map[string]referenceRoot, context 
 }
 
 func compileRule(rule ruleManifest, roots map[string]referenceRoot) (ruleModel, error) {
+	// Optional-leaf operators resolve their own references: the shared
+	// strict left compilation below rejects optional leaves.
+	switch rule.Op {
+	case ruleOperatorInIfPresent:
+		return compileInIfPresentRule(rule, roots)
+	case ruleOperatorEqOptional:
+		return compileEqOptionalRule(rule, roots)
+	case ruleOperatorGTEIfPresent, ruleOperatorLTEIfPresent:
+		return compileIfPresentOrderedRule(rule, roots)
+	}
 	left, leftErr := compileReference(rule.Left, roots)
 	if leftErr != nil {
 		return ruleModel{}, fmt.Errorf("left reference: %w", leftErr)
@@ -81,6 +100,8 @@ func compileRule(rule ruleManifest, roots map[string]referenceRoot) (ruleModel, 
 		return compileOrderedRule(rule, roots, left)
 	case ruleOperatorMultipleOf:
 		return compileMultipleOfRule(rule, roots, left)
+	case ruleOperatorIn:
+		return compileInRule(rule, roots, left)
 	case ruleOperatorIsTrue:
 		return compileIsTrueRule(rule, left)
 	case ruleOperatorNear:
@@ -176,6 +197,197 @@ func compileMultipleOfRule(
 		return ruleModel{}, fmt.Errorf("operator %q requires integer operands, got %s", rule.Op, left.Kind)
 	}
 	return ruleModel{Op: rule.Op, Left: left, Right: right, HasRight: true}, nil
+}
+
+func compileInRule(
+	rule ruleManifest,
+	roots map[string]referenceRoot,
+	left referenceModel,
+) (ruleModel, error) {
+	right, rightErr := compileArrayRightReference(rule, roots)
+	if rightErr != nil {
+		return ruleModel{}, rightErr
+	}
+	if constantsErr := rejectRuleConstants(rule); constantsErr != nil {
+		return ruleModel{}, constantsErr
+	}
+	if left.Kind != kindString {
+		return ruleModel{}, fmt.Errorf(
+			"operator %q requires a string left operand, got %s",
+			rule.Op,
+			left.Kind,
+		)
+	}
+	if _, schemaErr := stringArraySchema(rule.Op, rule.Right, roots, 1); schemaErr != nil {
+		return ruleModel{}, schemaErr
+	}
+	return ruleModel{Op: rule.Op, Left: left, Right: right, HasRight: true}, nil
+}
+
+func compileInIfPresentRule(rule ruleManifest, roots map[string]referenceRoot) (ruleModel, error) {
+	left, leftErr := compileOptionalLeafReference(rule.Left, roots)
+	if leftErr != nil {
+		return ruleModel{}, fmt.Errorf("left reference: %w", leftErr)
+	}
+	right, rightErr := compileArrayRightReference(rule, roots)
+	if rightErr != nil {
+		return ruleModel{}, rightErr
+	}
+	if constantsErr := rejectRuleConstants(rule); constantsErr != nil {
+		return ruleModel{}, constantsErr
+	}
+	if !left.Optional {
+		return ruleModel{}, fmt.Errorf("operator %q requires an optional left leaf", rule.Op)
+	}
+	if left.Kind != kindString {
+		return ruleModel{}, fmt.Errorf(
+			"operator %q requires a string left operand, got %s",
+			rule.Op,
+			left.Kind,
+		)
+	}
+	items, schemaErr := stringArraySchema(rule.Op, rule.Right, roots, 0)
+	if schemaErr != nil {
+		return ruleModel{}, schemaErr
+	}
+	leftSchema, schemaErr := optionalLeafSchemaValue(rule.Left, roots)
+	if schemaErr != nil {
+		return ruleModel{}, schemaErr
+	}
+	if !equalLengthBounds(items, leftSchema) {
+		return ruleModel{}, fmt.Errorf(
+			"operator %q requires right items matching the left string bounds",
+			rule.Op,
+		)
+	}
+	return ruleModel{Op: rule.Op, Left: left, Right: right, HasRight: true}, nil
+}
+
+// compileArrayRightReference resolves a membership right operand: a
+// required array path. Unlike scalar references it skips the scalar-kind
+// check; the membership schema checks in stringArraySchema apply instead.
+func compileArrayRightReference(
+	rule ruleManifest,
+	roots map[string]referenceRoot,
+) (referenceModel, error) {
+	if rule.Right == nil {
+		return referenceModel{}, fmt.Errorf("operator %q requires right", rule.Op)
+	}
+	root, exists := roots[rule.Right.Root]
+	if !exists {
+		return referenceModel{}, fmt.Errorf(
+			"right reference: root %q is not available in this context",
+			rule.Right.Root,
+		)
+	}
+	_, expression, _, pathErr := compileReferencePathAllowingOptionalLeaf(root, rule.Right.Path, false)
+	if pathErr != nil {
+		return referenceModel{}, fmt.Errorf("right reference: %w", pathErr)
+	}
+	return referenceModel{Root: rule.Right.Root, Path: rule.Right.Path, GoExpression: expression}, nil
+}
+
+func compileEqOptionalRule(rule ruleManifest, roots map[string]referenceRoot) (ruleModel, error) {
+	if rule.Right == nil {
+		return ruleModel{}, fmt.Errorf("operator %q requires right", rule.Op)
+	}
+	left, leftErr := compileOptionalLeafReference(rule.Left, roots)
+	if leftErr != nil {
+		return ruleModel{}, fmt.Errorf("left reference: %w", leftErr)
+	}
+	right, rightErr := compileOptionalLeafReference(*rule.Right, roots)
+	if rightErr != nil {
+		return ruleModel{}, fmt.Errorf("right reference: %w", rightErr)
+	}
+	if constantsErr := rejectRuleConstants(rule); constantsErr != nil {
+		return ruleModel{}, constantsErr
+	}
+	if left.Kind != right.Kind {
+		return ruleModel{}, fmt.Errorf(
+			"operator %q requires matching operand types, got %s and %s",
+			rule.Op,
+			left.Kind,
+			right.Kind,
+		)
+	}
+	return ruleModel{Op: rule.Op, Left: left, Right: right, HasRight: true}, nil
+}
+
+func compileIfPresentOrderedRule(rule ruleManifest, roots map[string]referenceRoot) (ruleModel, error) {
+	left, leftErr := compileOptionalLeafReference(rule.Left, roots)
+	if leftErr != nil {
+		return ruleModel{}, fmt.Errorf("left reference: %w", leftErr)
+	}
+	right, rightErr := compileRightReference(rule, roots)
+	if rightErr != nil {
+		return ruleModel{}, rightErr
+	}
+	if constantsErr := rejectRuleConstants(rule); constantsErr != nil {
+		return ruleModel{}, constantsErr
+	}
+	if !left.Optional {
+		return ruleModel{}, fmt.Errorf("operator %q requires an optional left leaf", rule.Op)
+	}
+	if left.Kind != right.Kind {
+		return ruleModel{}, fmt.Errorf(
+			"operator %q requires matching operand types, got %s and %s",
+			rule.Op,
+			left.Kind,
+			right.Kind,
+		)
+	}
+	if left.Kind != kindInteger && left.Kind != kindNumber {
+		return ruleModel{}, fmt.Errorf("operator %q requires numeric operands, got %s", rule.Op, left.Kind)
+	}
+	return ruleModel{Op: rule.Op, Left: left, Right: right, HasRight: true}, nil
+}
+
+// stringArraySchema checks a membership right operand: a required string
+// array with unique items and at least minimumItems entries. It returns the
+// item schema for further bounds checks.
+func stringArraySchema(
+	operator string,
+	reference *referenceManifest,
+	roots map[string]referenceRoot,
+	minimumItems int,
+) (schemaNode, error) {
+	schema, err := referenceSchema(*reference, roots)
+	if err != nil {
+		return schemaNode{}, err
+	}
+	if schema.Type != schemaTypeArray {
+		return schemaNode{}, fmt.Errorf(
+			"operator %q requires a string array right operand, got %s",
+			operator,
+			schema.Type,
+		)
+	}
+	if schema.Items == nil || schema.Items.Type != string(kindString) {
+		return schemaNode{}, fmt.Errorf("operator %q requires a string array right operand", operator)
+	}
+	if schema.UniqueItems == nil || !*schema.UniqueItems {
+		return schemaNode{}, fmt.Errorf("operator %q requires a right array with uniqueItems", operator)
+	}
+	if minimumItems > 0 && (schema.MinItems == nil || *schema.MinItems < minimumItems) {
+		return schemaNode{}, fmt.Errorf(
+			"operator %q requires a right array with minItems >= %d",
+			operator,
+			minimumItems,
+		)
+	}
+	return *schema.Items, nil
+}
+
+func equalLengthBounds(left, right schemaNode) bool {
+	return equalIntPointer(left.MinLength, right.MinLength) &&
+		equalIntPointer(left.MaxLength, right.MaxLength)
+}
+
+func equalIntPointer(left, right *int) bool {
+	if left == nil || right == nil {
+		return left == nil && right == nil
+	}
+	return *left == *right
 }
 
 func compileIsTrueRule(rule ruleManifest, left referenceModel) (ruleModel, error) {
@@ -406,36 +618,90 @@ func compileReference(reference referenceManifest, roots map[string]referenceRoo
 	return referenceModel{Root: reference.Root, Path: reference.Path, Kind: kind, GoExpression: expression}, nil
 }
 
+func compileOptionalLeafReference(
+	reference referenceManifest,
+	roots map[string]referenceRoot,
+) (referenceModel, error) {
+	root, exists := roots[reference.Root]
+	if !exists {
+		return referenceModel{}, fmt.Errorf("root %q is not available in this context", reference.Root)
+	}
+	schema, expression, optional, pathErr := compileReferencePathAllowingOptionalLeaf(
+		root,
+		reference.Path,
+		true,
+	)
+	if pathErr != nil {
+		return referenceModel{}, pathErr
+	}
+	kind, kindErr := scalarKind(schema)
+	if kindErr != nil {
+		return referenceModel{}, fmt.Errorf("path %q: %w", reference.Path, kindErr)
+	}
+	return referenceModel{
+		Root: reference.Root, Path: reference.Path, Kind: kind,
+		GoExpression: expression, Optional: optional,
+	}, nil
+}
+
+func optionalLeafSchemaValue(
+	reference referenceManifest,
+	roots map[string]referenceRoot,
+) (schemaNode, error) {
+	root, exists := roots[reference.Root]
+	if !exists {
+		return schemaNode{}, fmt.Errorf("root %q is not available in this context", reference.Root)
+	}
+	schema, _, _, pathErr := compileReferencePathAllowingOptionalLeaf(root, reference.Path, true)
+	if pathErr != nil {
+		return schemaNode{}, pathErr
+	}
+	return schema, nil
+}
+
 func compileReferencePath(root referenceRoot, path string) (schemaNode, string, error) {
+	schema, expression, _, err := compileReferencePathAllowingOptionalLeaf(root, path, false)
+	return schema, expression, err
+}
+
+func compileReferencePathAllowingOptionalLeaf(
+	root referenceRoot,
+	path string,
+	allowOptionalLeaf bool,
+) (schemaNode, string, bool, error) {
 	schema := root.Schema
 	expression := root.GoExpression
 	if path == "" {
-		return schema, expression, nil
+		return schema, expression, false, nil
 	}
 	segments, pointerErr := parseJSONPointer(path)
 	if pointerErr != nil {
-		return schemaNode{}, "", pointerErr
+		return schemaNode{}, "", false, pointerErr
 	}
 	var suffix strings.Builder
-	for _, segment := range segments {
+	optional := false
+	for index, segment := range segments {
 		if schema.Type != schemaTypeObject {
-			return schemaNode{}, "", fmt.Errorf("path %q traverses non-object type %q", path, schema.Type)
+			return schemaNode{}, "", false, fmt.Errorf("path %q traverses non-object type %q", path, schema.Type)
 		}
 		property, exists := schema.Properties[segment]
 		if !exists {
-			return schemaNode{}, "", fmt.Errorf("path %q selects unknown property %q", path, segment)
+			return schemaNode{}, "", false, fmt.Errorf("path %q selects unknown property %q", path, segment)
 		}
 		if !required(schema, segment) {
-			return schemaNode{}, "", fmt.Errorf("path %q traverses optional property %q", path, segment)
+			if !allowOptionalLeaf || index != len(segments)-1 {
+				return schemaNode{}, "", false, fmt.Errorf("path %q traverses optional property %q", path, segment)
+			}
+			optional = true
 		}
 		field, nameErr := exportedName(segment)
 		if nameErr != nil {
-			return schemaNode{}, "", nameErr
+			return schemaNode{}, "", false, nameErr
 		}
 		suffix.WriteString("." + field)
 		schema = property
 	}
-	return schema, expression + suffix.String(), nil
+	return schema, expression + suffix.String(), optional, nil
 }
 
 func parseJSONPointer(pointer string) ([]string, error) {
@@ -509,6 +775,19 @@ func ruleCondition(rule ruleModel) string {
 		return ruleOperand(rule.Right) + " != 0 && " + ruleOperand(rule.Left) + "%" + ruleOperand(rule.Right) + " == 0"
 	case ruleOperatorIsTrue:
 		return ruleOperand(rule.Left)
+	case ruleOperatorIn:
+		return membershipCondition(ruleOperand(rule.Left), rule.Right.GoExpression)
+	case ruleOperatorInIfPresent:
+		return "(" + rule.Left.GoExpression + " == nil || " +
+			membershipCondition(optionalRuleOperand(rule.Left), rule.Right.GoExpression) + ")"
+	case ruleOperatorEqOptional:
+		return eqOptionalCondition(rule)
+	case ruleOperatorGTEIfPresent:
+		return "(" + rule.Left.GoExpression + " == nil || " +
+			optionalRuleOperand(rule.Left) + " >= " + ruleOperand(rule.Right) + ")"
+	case ruleOperatorLTEIfPresent:
+		return "(" + rule.Left.GoExpression + " == nil || " +
+			optionalRuleOperand(rule.Left) + " <= " + ruleOperand(rule.Right) + ")"
 	case ruleOperatorNear:
 		left := ruleOperand(rule.Left)
 		right := ruleOperand(rule.Right)
@@ -532,13 +811,48 @@ func ruleCondition(rule ruleModel) string {
 }
 
 func ruleOperand(reference referenceModel) string {
-	goType := map[valueKind]string{
+	return goTypeName(reference.Kind) + "(" + reference.GoExpression + ")"
+}
+
+func optionalRuleOperand(reference referenceModel) string {
+	return goTypeName(reference.Kind) + "(*" + reference.GoExpression + ")"
+}
+
+func goTypeName(kind valueKind) string {
+	return map[valueKind]string{
 		kindBoolean: "bool",
 		kindString:  string(kindString),
 		kindInteger: "int64",
 		kindNumber:  "float64",
-	}[reference.Kind]
-	return goType + "(" + reference.GoExpression + ")"
+	}[kind]
+}
+
+// membershipCondition emits a string-membership loop over a support choice
+// array. Both operators using it are string-only by compile-time checks.
+func membershipCondition(leftOperand, rightExpression string) string {
+	return "(func() bool { for _, candidate := range " + rightExpression +
+		" { if " + leftOperand + " == string(candidate) { return true } }; return false }())"
+}
+
+// eqOptionalCondition compares two discriminated payload leaves where
+// absence participates: both absent is true, one-sided absence is false,
+// and present values must be equal.
+func eqOptionalCondition(rule ruleModel) string {
+	left, right := rule.Left, rule.Right
+	switch {
+	case left.Optional && right.Optional:
+		return "((" + left.GoExpression + " == nil && " + right.GoExpression + " == nil) || (" +
+			left.GoExpression + " != nil && " + right.GoExpression + " != nil && " +
+			optionalRuleOperand(left) + " == " + optionalRuleOperand(right) + "))"
+	case left.Optional:
+		return "(" + left.GoExpression + " != nil && " +
+			optionalRuleOperand(left) + " == " + ruleOperand(right) + ")"
+	case right.Optional:
+		return "(" + right.GoExpression + " != nil && " +
+			ruleOperand(left) + " == " + optionalRuleOperand(right) + ")"
+	default:
+		return ruleOperand(left) + " == " + ruleOperand(right)
+	}
 }
 
 func ruleDescription(rule ruleModel) string {
@@ -560,6 +874,19 @@ func ruleDescription(rule ruleModel) string {
 			referenceDescription(rule.Right),
 			rule.Modulus,
 		)
+	case ruleOperatorIn:
+		return referenceDescription(rule.Left) + " must be one of " + referenceDescription(rule.Right)
+	case ruleOperatorInIfPresent:
+		return referenceDescription(rule.Left) + " must be absent or one of " + referenceDescription(rule.Right)
+	case ruleOperatorEqOptional:
+		return referenceDescription(rule.Left) + " must be equal to " + referenceDescription(rule.Right) +
+			" (absent matches only absent)"
+	case ruleOperatorGTEIfPresent:
+		return referenceDescription(rule.Left) + " must be absent or greater than or equal to " +
+			referenceDescription(rule.Right)
+	case ruleOperatorLTEIfPresent:
+		return referenceDescription(rule.Left) + " must be absent or less than or equal to " +
+			referenceDescription(rule.Right)
 	}
 	symbol := map[string]string{
 		"eq": "equal", ruleOperatorGTE: "greater than or equal to",

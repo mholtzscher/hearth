@@ -19,6 +19,7 @@
     "set": {
       "parameters_schema": "set-parameters.schema.json",
       "deadline_ms": 10000,
+      "outcome": "observed",
       "parameter_validation": [
         {
           "op": "lte",
@@ -42,6 +43,7 @@
     "pulse": {
       "parameters_schema": "pulse-parameters.schema.json",
       "deadline_ms": 3000,
+      "outcome": "observed",
       "parameter_validation": [
         {
           "op": "lte",

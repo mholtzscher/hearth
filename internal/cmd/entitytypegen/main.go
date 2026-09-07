@@ -29,18 +29,21 @@ var (
 )
 
 type manifest struct {
-	ManifestVersion int                          `json:"manifest_version"`
-	TypeID          string                       `json:"type"`
-	StateSchema     string                       `json:"state_schema"`
-	SupportSchema   string                       `json:"support_schema"`
-	StateValidation []ruleManifest               `json:"state_validation,omitempty"`
-	Operations      map[string]operationManifest `json:"operations"`
-	Examples        string                       `json:"examples"`
+	ManifestVersion   int                          `json:"manifest_version"`
+	TypeID            string                       `json:"type"`
+	StateSchema       string                       `json:"state_schema"`
+	SupportSchema     string                       `json:"support_schema"`
+	Stateless         bool                         `json:"stateless,omitempty"`
+	StateValidation   []ruleManifest               `json:"state_validation,omitempty"`
+	SupportValidation []ruleManifest               `json:"support_validation,omitempty"`
+	Operations        map[string]operationManifest `json:"operations"`
+	Examples          string                       `json:"examples"`
 }
 
 type operationManifest struct {
 	ParametersSchema    string         `json:"parameters_schema"`
 	DeadlineMS          int64          `json:"deadline_ms"`
+	Outcome             string         `json:"outcome"`
 	ParameterValidation []ruleManifest `json:"parameter_validation,omitempty"`
 	SatisfiedWhen       []ruleManifest `json:"satisfied_when"`
 }
@@ -68,6 +71,11 @@ type schemaNode struct {
 	MaxProperties        *int                  `json:"maxProperties"`
 	Minimum              *json.Number          `json:"minimum"`
 	Maximum              *json.Number          `json:"maximum"`
+	MinLength            *int                  `json:"minLength"`
+	MaxLength            *int                  `json:"maxLength"`
+	MinItems             *int                  `json:"minItems"`
+	MaxItems             *int                  `json:"maxItems"`
+	UniqueItems          *bool                 `json:"uniqueItems"`
 }
 
 type operationModel struct {
@@ -78,24 +86,27 @@ type operationModel struct {
 	SupportSchema       schemaNode
 	Required            bool
 	DeadlineMS          int64
+	Outcome             string
 	ParameterValidation []ruleModel
 	SatisfiedWhen       []ruleModel
 }
 
 type entityTypeModel struct {
-	Package         string
-	Directory       string
-	ModuleRoot      string
-	TypeID          string
-	ExamplesFile    string
-	StateFile       string
-	StateSchema     schemaNode
-	SupportFile     string
-	SupportSchema   schemaNode
-	StateSupport    schemaNode
-	StateValidation []ruleModel
-	Operations      []operationModel
-	Examples        examplesFile
+	Package           string
+	Directory         string
+	ModuleRoot        string
+	TypeID            string
+	ExamplesFile      string
+	StateFile         string
+	StateSchema       schemaNode
+	SupportFile       string
+	SupportSchema     schemaNode
+	StateSupport      schemaNode
+	Stateless         bool
+	StateValidation   []ruleModel
+	SupportValidation []ruleModel
+	Operations        []operationModel
+	Examples          examplesFile
 }
 
 type output struct {
@@ -287,7 +298,21 @@ func loadModel(path string) (entityTypeModel, error) {
 		if operation.DeadlineMS > maximumOperationDeadline {
 			return entityTypeModel{}, fmt.Errorf("operation %q deadline_ms overflows time.Duration", name)
 		}
-		if len(operation.SatisfiedWhen) == 0 {
+		if operation.Outcome != outcomeObserved && operation.Outcome != outcomeDispatched {
+			return entityTypeModel{}, fmt.Errorf(
+				"operation %q has invalid outcome %q",
+				name,
+				operation.Outcome,
+			)
+		}
+		if operation.Outcome == outcomeDispatched {
+			if len(operation.SatisfiedWhen) != 0 {
+				return entityTypeModel{}, fmt.Errorf(
+					"operation %q is dispatched and must declare empty satisfied_when",
+					name,
+				)
+			}
+		} else if len(operation.SatisfiedWhen) == 0 {
 			return entityTypeModel{}, fmt.Errorf("operation %q requires satisfied_when", name)
 		}
 		parameterValidation, validationErr := compileRules(operation.ParameterValidation, map[string]referenceRoot{
@@ -322,6 +347,7 @@ func loadModel(path string) (entityTypeModel, error) {
 			Name: name, GoName: goName, ParametersFile: operation.ParametersSchema,
 			ParametersSchema: parameters, SupportSchema: supportSchema,
 			Required: required(operationSupport, name), DeadlineMS: operation.DeadlineMS,
+			Outcome:             operation.Outcome,
 			ParameterValidation: parameterValidation, SatisfiedWhen: satisfied,
 		})
 	}
@@ -340,6 +366,12 @@ func loadModel(path string) (entityTypeModel, error) {
 	if stateValidationErr != nil {
 		return entityTypeModel{}, stateValidationErr
 	}
+	supportValidation, supportValidationErr := compileRules(definition.SupportValidation, map[string]referenceRoot{
+		referenceRootSupport: {Schema: support, GoExpression: referenceRootSupport},
+	}, "support validation")
+	if supportValidationErr != nil {
+		return entityTypeModel{}, supportValidationErr
+	}
 	examplesPath, examplesPathErr := normalizeExamplesPath(directory, definition.Examples)
 	if examplesPathErr != nil {
 		return entityTypeModel{}, fmt.Errorf("examples: %w", examplesPathErr)
@@ -348,12 +380,22 @@ func loadModel(path string) (entityTypeModel, error) {
 	if examplesErr != nil {
 		return entityTypeModel{}, fmt.Errorf("examples: %w", examplesErr)
 	}
+	if validationErr := checkInvalidSupports(
+		directory,
+		definition.SupportSchema,
+		supportValidation,
+		examples,
+	); validationErr != nil {
+		return entityTypeModel{}, validationErr
+	}
 	return entityTypeModel{
 		Package: packageName, Directory: directory, ModuleRoot: moduleRoot, TypeID: definition.TypeID,
 		ExamplesFile: examplesPath,
 		StateFile:    definition.StateSchema, StateSchema: state,
 		SupportFile: definition.SupportSchema, SupportSchema: support, StateSupport: stateSupport,
-		StateValidation: stateValidation, Operations: operations, Examples: examples,
+		Stateless:       definition.Stateless,
+		StateValidation: stateValidation, SupportValidation: supportValidation,
+		Operations: operations, Examples: examples,
 	}, nil
 }
 
@@ -504,6 +546,41 @@ func decodeFile(path string, target any, strict bool) error {
 			return errors.New("multiple JSON values")
 		}
 		return err
+	}
+	return nil
+}
+
+// checkInvalidSupports keeps support-validation coverage structural:
+// manifests with support_validation rules must author schema-decodable
+// invalid supports (rejected by the generated catalog conformance test),
+// and manifests without those rules must not carry any.
+func checkInvalidSupports(
+	directory, supportSchema string,
+	supportValidation []ruleModel,
+	examples examplesFile,
+) error {
+	if len(supportValidation) > 0 && len(examples.InvalidSupports) == 0 {
+		return errors.New("support validation requires invalid_supports examples")
+	}
+	if len(supportValidation) == 0 && len(examples.InvalidSupports) > 0 {
+		return errors.New("invalid_supports requires support validation rules")
+	}
+	if len(examples.InvalidSupports) == 0 {
+		return nil
+	}
+	checker := newCatalogSchemaChecker()
+	supportSchemaPath := filepath.Join(directory, supportSchema)
+	for index, raw := range examples.InvalidSupports {
+		if len(raw) == 0 {
+			return fmt.Errorf("invalid_supports example %d has no value", index+1)
+		}
+		decodable, err := checker.decodable(supportSchemaPath, raw)
+		if err != nil {
+			return fmt.Errorf("invalid_supports example %d: %w", index+1, err)
+		}
+		if !decodable {
+			return fmt.Errorf("invalid_supports example %d must schema-decode as support", index+1)
+		}
 	}
 	return nil
 }

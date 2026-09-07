@@ -27,11 +27,12 @@ func TestDecodeCapturedFractionalState(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(issues) != 0 || len(states) != 4 ||
+	if len(issues) != 0 || len(states) != 5 ||
 		states[0].entityID != "entity-power" || string(states[0].report.Observation.Value) != "true" ||
 		states[1].entityID != "entity-brightness" || string(states[1].report.Observation.Value) != "25" ||
 		states[2].entityID != "entity-colortemp" || string(states[2].report.Observation.Value) != `{"active":false,"value":370}` ||
-		states[3].entityID != "entity-colormode" || string(states[3].report.Observation.Value) != `"xy"` {
+		states[3].entityID != "entity-colormode" || string(states[3].report.Observation.Value) != `"xy"` ||
+		states[4].entityID != "entity-linkquality" || string(states[4].report.Observation.Value) != "156" {
 		t.Fatalf("states = %#v, issues = %#v", states, issues)
 	}
 	if states[2].report.Observation.EntityID != "entity-colortemp" ||

@@ -392,12 +392,14 @@ func TestReRegistrationReplacesNormalizedSupport(t *testing.T) {
 		func(value support) (struct{}, bool) { return value.Operations.Set, true },
 		func(_ support, _ struct{}, _ parameters) error { return nil },
 		time.Second,
+		OutcomeObserved,
 		func(parameters parameters, state bool) bool { return parameters.Value == state },
 	)
 	definition, err := DefineEntityType(
 		"test.mutable/v1",
 		stateCodec,
 		supportCodec,
+		func(_ support) error { return nil },
 		func(_ support, _ bool) error { return nil },
 		func(left, right bool) bool { return left == right },
 		set,
@@ -1010,6 +1012,122 @@ func TestCommandLedgerTransitionsAreMonotonicAndIdempotent(t *testing.T) {
 			*interrupted.FailureCode != CommandFailureCoreRestarted || interrupted.CompletedAt == nil ||
 			!interrupted.CompletedAt.Equal(restartedAt) {
 			t.Fatalf("interrupted command = %#v", interrupted)
+		}
+	}
+}
+
+func TestDispatchedCommandPersistsWithoutFailureCodeOrObservation(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	database := openRegistrationDatabase(t, filepath.Join(t.TempDir(), "hearth.db"))
+	catalog := firstLightCatalog(t)
+	repository := NewSQLiteRepository(database, catalog)
+	binding, registrationErr := newTestService(
+		repository,
+		nil,
+		catalog,
+		Dependencies{},
+	).Register(ctx, "simulator", testRuntimeID, validDomainRegistration())
+	if registrationErr != nil {
+		t.Fatal(registrationErr)
+	}
+	requestedAt := time.Date(2026, 8, 20, 12, 0, 0, 0, time.UTC)
+	claimTestAdapterRuntime(t, repository, requestedAt)
+	command := newCommandRecord(t, binding.Entities[0].EntityID, requestedAt)
+	if _, err := repository.CreateCommand(ctx, command); err != nil {
+		t.Fatal(err)
+	}
+	completedAt := requestedAt.Add(2 * time.Second)
+	if err := repository.CompleteCommand(ctx, CommandCompletion{
+		ID: command.ID, Status: CommandStatusDispatched, CompletedAt: time.Time{},
+	}); err == nil {
+		t.Fatal("dispatched completion without completed_at unexpectedly accepted")
+	}
+	if err := repository.CompleteCommand(ctx, CommandCompletion{
+		ID: command.ID, Status: CommandStatusDispatched, CompletedAt: completedAt,
+		FailureCode: CommandFailureUpstreamRejected,
+	}); err == nil {
+		t.Fatal("dispatched completion with failure code unexpectedly accepted")
+	}
+	completion := CommandCompletion{ID: command.ID, Status: CommandStatusDispatched, CompletedAt: completedAt}
+	if err := repository.CompleteCommand(ctx, completion); err != nil {
+		t.Fatal(err)
+	}
+	if err := repository.CompleteCommand(ctx, completion); err != nil {
+		t.Fatalf("repeat dispatched completion: %v", err)
+	}
+	stored, lookupErr := repository.GetCommand(ctx, command.ID)
+	if lookupErr != nil {
+		t.Fatal(lookupErr)
+	}
+	if stored.Status != CommandStatusDispatched || stored.CompletedAt == nil ||
+		!stored.CompletedAt.Equal(completedAt) || stored.FailureCode != nil ||
+		stored.OutcomeObservationID != nil {
+		t.Fatalf("dispatched command = %#v", stored)
+	}
+	var failureCode any
+	var outcomeObservationID any
+	if err := database.QueryRowContext(
+		ctx, `SELECT failure_code, outcome_observation_id FROM commands WHERE id = ?`, command.ID,
+	).Scan(&failureCode, &outcomeObservationID); err != nil {
+		t.Fatal(err)
+	}
+	if failureCode != nil || outcomeObservationID != nil {
+		t.Fatalf("dispatched row failure_code = %v, outcome_observation_id = %v", failureCode, outcomeObservationID)
+	}
+	conflicting := completion
+	conflicting.Status = CommandStatusOutcomeTimeout
+	conflicting.FailureCode = CommandFailureOutcomeTimeout
+	if err := repository.CompleteCommand(ctx, conflicting); !errors.Is(err, ErrCommandTerminal) {
+		t.Fatalf("conflicting dispatched completion error = %v", err)
+	}
+}
+
+func TestCommandStatusFailureCodeCheckRejectsNullAndMismatch(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	database := openMigratedDatabase(t, filepath.Join(t.TempDir(), "hearth.db"))
+	if _, err := database.ExecContext(ctx, `INSERT INTO devices (id, kind, name, created_at, updated_at)
+		VALUES ('dev_check', 'light', 'Check light', '2026-08-20T12:00:00Z', '2026-08-20T12:00:00Z')`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := database.ExecContext(ctx, `INSERT INTO entities
+		(id, device_id, name, type_id, support_json, created_at, updated_at, enabled)
+		VALUES ('ent_check', 'dev_check', 'Check', 'hearth.power/v1', '{}',
+		'2026-08-20T12:00:00Z', '2026-08-20T12:00:00Z', 1)`); err != nil {
+		t.Fatal(err)
+	}
+	insert := func(id, status string, failureCode any, outcomeObservationID any) error {
+		_, err := database.ExecContext(ctx, `INSERT INTO commands
+			(id, entity_id, adapter_id, runtime_id, operation, parameters_json, correlation_id,
+			status, requested_at, deadline_at, accepted_at, completed_at,
+			outcome_observation_id, failure_code)
+			VALUES (?, 'ent_check', 'simulator', NULL, 'set', '{}', 'cor_check',
+			?, '2026-08-20T12:00:00Z', '2026-08-20T12:00:10Z', '2026-08-20T12:00:01Z',
+			'2026-08-20T12:00:02Z', ?, ?)`, id, status, outcomeObservationID, failureCode)
+		return err
+	}
+	tests := []struct {
+		name      string
+		status    string
+		code      any
+		outcome   any
+		wantError bool
+	}{
+		{"dispatched with NULLs", "dispatched", nil, nil, false},
+		{"satisfied with NULL failure", "satisfied", nil, "obs_01890f47-7a6b-7c4d-8e9f-0123456789ab", false},
+		{"rejected with NULL failure", "rejected", nil, nil, true},
+		{"failure status with NULL failure", "outcome_timeout", nil, nil, true},
+		{"rejected with mismatched failure", "rejected", "outcome_timeout", nil, true},
+		{"dispatched with failure code", "dispatched", "upstream_rejected", nil, true},
+	}
+	for index, test := range tests {
+		if err := insert(fmt.Sprintf("cmd_check_%d", index), test.status, test.code, test.outcome); test.wantError {
+			if err == nil {
+				t.Fatalf("%s: invalid command row unexpectedly accepted", test.name)
+			}
+		} else if err != nil {
+			t.Fatalf("%s: %v", test.name, err)
 		}
 	}
 }

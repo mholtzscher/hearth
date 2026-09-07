@@ -108,7 +108,14 @@ func copyProjectionResult(result ProjectionResult) ProjectionResult {
 	}
 	if result.SatisfiedCommand != nil {
 		command := *result.SatisfiedCommand
-		command.Value = append(Value(nil), result.SatisfiedCommand.Value...)
+		if result.SatisfiedCommand.ObservationID != nil {
+			observationID := *result.SatisfiedCommand.ObservationID
+			command.ObservationID = &observationID
+		}
+		if result.SatisfiedCommand.Value != nil {
+			value := append(Value(nil), *result.SatisfiedCommand.Value...)
+			command.Value = &value
+		}
 		cloned.SatisfiedCommand = &command
 	}
 	return cloned

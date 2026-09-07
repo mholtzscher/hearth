@@ -19,6 +19,7 @@
     "set": {
       "parameters_schema": "set-parameters.schema.json",
       "deadline_ms": 10000,
+      "outcome": "observed",
       "parameter_validation": [
         {
           "op": "gte",

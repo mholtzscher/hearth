@@ -7,6 +7,7 @@
     "set": {
       "parameters_schema": "set-parameters.schema.json",
       "deadline_ms": 10000,
+      "outcome": "observed",
       "satisfied_when": [
         {"op": "is_true", "left": {"root": "state", "path": "/active"}},
         {"op": "near", "left": {"root": "parameters", "path": "/x"}, "right": {"root": "state", "path": "/x"}, "tolerance": 1},

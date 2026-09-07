@@ -189,9 +189,7 @@ func TestExecuteCommandLogsCreationAndDispatch(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if result.ObservationID != commandTestObservationID {
-		t.Fatalf("result = %#v", result)
-	}
+	requireObservedResult(t, result)
 
 	// Creation and dispatch logging run on the lifecycle goroutine, so wait
 	// for the async emissions instead of assuming they finished before
@@ -559,10 +557,7 @@ func TestExecuteCommandLifecycleProgressesUnderBlockedCreationLog(t *testing.T) 
 			close(release)
 			t.Fatalf("ExecuteCommand error = %v", completed.err)
 		}
-		if completed.result.ObservationID != commandTestObservationID {
-			close(release)
-			t.Fatalf("result = %#v", completed.result)
-		}
+		requireObservedResult(t, completed.result)
 	case <-time.After(3 * time.Second):
 		close(release)
 		t.Fatal("ExecuteCommand did not return while command.created writer was blocked")

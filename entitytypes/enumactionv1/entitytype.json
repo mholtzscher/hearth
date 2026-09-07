@@ -1,0 +1,23 @@
+{
+  "manifest_version": 1,
+  "type": "hearth.enumaction/v1",
+  "state_schema": "state.schema.json",
+  "support_schema": "support.schema.json",
+  "stateless": true,
+  "operations": {
+    "trigger": {
+      "parameters_schema": "trigger-parameters.schema.json",
+      "deadline_ms": 10000,
+      "outcome": "dispatched",
+      "parameter_validation": [
+        {
+          "op": "in",
+          "left": {"root": "parameters", "path": "/name"},
+          "right": {"root": "support", "path": "/operations/trigger/values"}
+        }
+      ],
+      "satisfied_when": []
+    }
+  },
+  "examples": "examples.json"
+}

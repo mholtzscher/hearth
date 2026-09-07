@@ -215,6 +215,12 @@ func (repository *SQLiteRepository) classifyObservation(
 	if rejection != nil {
 		return nil, DispositionRejected, rejection, nil
 	}
+	if stateless, err := repository.catalog.IsStateless(view.Entity.TypeID); err != nil {
+		return nil, "", nil, err
+	} else if stateless {
+		invalid := RejectionInvalidValue
+		return nil, DispositionRejected, &invalid, nil
+	}
 	if _, err := repository.catalog.NormalizeSupport(view.Entity.TypeID, view.Entity.Support); err != nil {
 		return nil, "", nil, fmt.Errorf("validate persisted entity support: %w", err)
 	}
@@ -346,9 +352,12 @@ func (repository *SQLiteRepository) satisfyCommand(
 	if rows != 1 {
 		return nil, nil //nolint:nilnil // A concurrently completed command has no result.
 	}
-	return &CommandResult{
-		CommandID: command.ID, ObservationID: observationID, Value: append(Value(nil), value...),
-	}, nil
+	clonedValue := append(Value(nil), value...)
+	result, err := NewCommandResult(command.ID, OutcomeObserved, &observationID, &clonedValue)
+	if err != nil {
+		return nil, fmt.Errorf("build observed command result: %w", err)
+	}
+	return &result, nil
 }
 
 func (repository *SQLiteRepository) DeleteExpiredObservations(ctx context.Context, before time.Time) error {

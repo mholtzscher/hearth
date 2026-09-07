@@ -1,0 +1,73 @@
+{
+  "cases": [
+    {
+      "name": "startup-with-previous",
+      "support": {
+        "state": {"minimum": 142, "maximum": 454, "unit": "mired", "choices": ["previous"]},
+        "operations": {"set": {}}
+      },
+      "states": [
+        {"value": {"mode": "value", "value": 250}, "valid": true},
+        {"value": {"mode": "value", "value": 250.5}, "valid": true},
+        {"value": {"mode": "choice", "choice": "previous"}, "valid": true},
+        {"value": {"mode": "value", "value": 455}, "valid": false},
+        {"value": {"mode": "value", "value": 100}, "valid": false},
+        {"value": {"mode": "choice", "choice": "eco"}, "valid": false},
+        {"value": {"mode": "value"}, "valid": false},
+        {"value": {"mode": "value", "value": 250, "choice": "previous"}, "valid": false},
+        {"value": {"mode": "choice", "choice": "previous", "value": 250}, "valid": false}
+      ],
+      "operations": {
+        "set": {
+          "parameters": [
+            {"value": {"mode": "value", "value": 250}, "valid": true},
+            {"value": {"mode": "value", "value": 250.5}, "valid": true},
+            {"value": {"mode": "choice", "choice": "previous"}, "valid": true},
+            {"value": {"mode": "value", "value": 455}, "valid": false},
+            {"value": {"mode": "value", "value": 100}, "valid": false},
+            {"value": {"mode": "choice", "choice": "eco"}, "valid": false},
+            {"value": {"mode": "value"}, "valid": false}
+          ],
+          "outcomes": [
+            {"parameters": {"mode": "value", "value": 250}, "state": {"mode": "value", "value": 250}, "satisfied": true},
+            {"parameters": {"mode": "value", "value": 250}, "state": {"mode": "value", "value": 200}, "satisfied": false},
+            {"parameters": {"mode": "choice", "choice": "previous"}, "state": {"mode": "choice", "choice": "previous"}, "satisfied": true},
+            {"parameters": {"mode": "choice", "choice": "previous"}, "state": {"mode": "value", "value": 250}, "satisfied": false}
+          ]
+        }
+      }
+    },
+    {
+      "name": "plain-numeric-empty-choices",
+      "support": {
+        "state": {"minimum": 0, "maximum": 100, "choices": []},
+        "operations": {"set": {}}
+      },
+      "states": [
+        {"value": {"mode": "value", "value": 50}, "valid": true},
+        {"value": {"mode": "value", "value": 50.25}, "valid": true},
+        {"value": {"mode": "choice", "choice": "previous"}, "valid": false},
+        {"value": {"mode": "value", "value": 101}, "valid": false}
+      ],
+      "operations": {
+        "set": {
+          "parameters": [
+            {"value": {"mode": "value", "value": 50}, "valid": true},
+            {"value": {"mode": "choice", "choice": "previous"}, "valid": false},
+            {"value": {"mode": "value", "value": 101}, "valid": false}
+          ],
+          "outcomes": [
+            {"parameters": {"mode": "value", "value": 50}, "state": {"mode": "value", "value": 50}, "satisfied": true},
+            {"parameters": {"mode": "value", "value": 50}, "state": {"mode": "value", "value": 60}, "satisfied": false}
+          ]
+        }
+      }
+    }
+  ],
+  "invalid_supports": [
+    {
+      "state": {"minimum": 454, "maximum": 142, "unit": "mired", "choices": ["previous"]},
+      "operations": {"set": {}}
+    }
+  ]
+}

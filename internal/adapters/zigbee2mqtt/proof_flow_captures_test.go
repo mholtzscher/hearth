@@ -17,7 +17,7 @@ import (
 
 // This test protects the captured relay proof Device and fails on hard-coded
 // ON/OFF scalars, a non-relay Device kind, power identity that diverges from
-// lights, or linkquality leakage into Entities.
+// lights, or a missing linkquality sensor beside power.
 func TestDiscoverCapturedRelayPlug(t *testing.T) {
 	t.Parallel()
 	device := mustDiscoveredFixtureDevice(t, "bridge-devices-relay-plug.json")
@@ -45,6 +45,11 @@ func TestDiscoverCapturedRelayPlug(t *testing.T) {
 			key: "power", externalID: "0x00124b0024abcd01/root/power", name: "Power",
 			entityType: "hearth.power/v1", support: `{"state":{},"operations":{"set":{}}}`,
 		},
+		{
+			key: "linkquality", externalID: "0x00124b0024abcd01/root/linkquality", name: "Link Quality",
+			entityType: "hearth.numericsensor/v1",
+			support:    `{"state":{"maximum":255,"minimum":0,"unit":"lqi"},"operations":{}}`,
+		},
 	}
 	if len(device.Registration.Entities) != len(want) || len(device.Entities) != len(want) {
 		t.Fatalf("Entities = %#v", device.Entities)
@@ -55,17 +60,35 @@ func TestDiscoverCapturedRelayPlug(t *testing.T) {
 			got.Type != entity.entityType || string(got.Support) != entity.support {
 			t.Fatalf("Entity descriptor %d = %#v, want %#v", index, got, entity)
 		}
-		plan := device.Entities[index]
-		if !reflect.DeepEqual(plan.StateProperties, []string{"state"}) ||
-			!reflect.DeepEqual(plan.GetProperties, []string{"state"}) || plan.TranslateCommand == nil {
-			t.Fatalf("power plan %d = %#v", index, plan)
-		}
+	}
+	plan := device.Entities[0]
+	if !reflect.DeepEqual(plan.StateProperties, []string{"state"}) ||
+		!reflect.DeepEqual(plan.GetProperties, []string{"state"}) || plan.TranslateCommand == nil {
+		t.Fatalf("power plan = %#v", plan)
+	}
+	assertRelayLinkquality(t, device)
+}
+
+// assertRelayLinkquality checks the device-agnostic linkquality sensor
+// beside relay power: exact support, read-only plan, and no translator.
+func assertRelayLinkquality(t *testing.T, device discoveredDevice) {
+	t.Helper()
+	got := device.Registration.Entities[1]
+	if got.Key != "linkquality" || got.ExternalID != "0x00124b0024abcd01/root/linkquality" ||
+		got.Name != "Link Quality" || got.Type != "hearth.numericsensor/v1" ||
+		string(got.Support) != `{"state":{"maximum":255,"minimum":0,"unit":"lqi"},"operations":{}}` {
+		t.Fatalf("linkquality descriptor = %#v", got)
+	}
+	plan := device.Entities[1]
+	if !reflect.DeepEqual(plan.StateProperties, []string{"linkquality"}) ||
+		len(plan.GetProperties) != 0 || plan.TranslateCommand != nil {
+		t.Fatalf("linkquality plan = %#v", plan)
 	}
 }
 
 // This test protects captured relay State projection and fails if the plug
-// State ignores its discovered ON scalar, if linkquality produces State, or if
-// sibling isolation is lost.
+// State ignores its discovered ON scalar, if linkquality does not project
+// its integer reading beside power, or if sibling isolation is lost.
 func TestDecodeCapturedRelayPlugState(t *testing.T) {
 	t.Parallel()
 	device := mustDiscoveredFixtureDevice(t, "bridge-devices-relay-plug.json")
@@ -77,8 +100,10 @@ func TestDecodeCapturedRelayPlugState(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(issues) != 0 || len(states) != 1 || states[0].entityID != "entity-power" ||
-		string(states[0].report.Observation.Value) != "true" {
+	if len(issues) != 0 || len(states) != 2 || states[0].entityID != "entity-power" ||
+		string(states[0].report.Observation.Value) != "true" ||
+		states[1].entityID != "entity-linkquality" ||
+		string(states[1].report.Observation.Value) != "120" {
 		t.Fatalf("states = %#v, issues = %#v", states, issues)
 	}
 }
@@ -120,9 +145,9 @@ func TestCapturedRelayPlugCommandTranslation(t *testing.T) {
 }
 
 // This test protects the captured temperature proof Device and fails if the
-// sensor registers anything other than one read-only milli-Celsius Entity, if
-// humidity/battery/linkquality siblings leak into Entities, or if support
-// gains Operations.
+// sensor registers anything other than one read-only milli-Celsius Entity
+// plus the device-agnostic linkquality sensor, if humidity/battery siblings
+// leak into Entities, or if support gains Operations.
 func TestDiscoverCapturedTemperatureSensor(t *testing.T) {
 	t.Parallel()
 	device := mustDiscoveredFixtureDevice(t, "bridge-devices-temperature.json")
@@ -139,8 +164,21 @@ func TestDiscoverCapturedTemperatureSensor(t *testing.T) {
 	if device.Model != "SNZB-02D" {
 		t.Fatalf("Device model = %q, want SNZB-02D", device.Model)
 	}
-	if len(device.Registration.Entities) != 1 || len(device.Entities) != 1 {
+	if len(device.Registration.Entities) != 2 || len(device.Entities) != 2 {
 		t.Fatalf("Entities = %#v", device.Entities)
+	}
+	linkquality := device.Registration.Entities[1]
+	wantLinkquality := json.RawMessage(`{"state":{"maximum":255,"minimum":0,"unit":"lqi"},"operations":{}}`)
+	if linkquality.Key != "linkquality" ||
+		linkquality.ExternalID != "0x00124b0024abcd02/root/linkquality" ||
+		linkquality.Name != "Link Quality" || linkquality.Type != "hearth.numericsensor/v1" ||
+		!reflect.DeepEqual(linkquality.Support, wantLinkquality) {
+		t.Fatalf("linkquality descriptor = %#v", linkquality)
+	}
+	linkqualityPlan := device.Entities[1]
+	if !reflect.DeepEqual(linkqualityPlan.StateProperties, []string{"linkquality"}) ||
+		len(linkqualityPlan.GetProperties) != 0 || linkqualityPlan.TranslateCommand != nil {
+		t.Fatalf("linkquality plan = %#v", linkqualityPlan)
 	}
 	descriptor := device.Registration.Entities[0]
 	wantSupport := json.RawMessage(`{"state":{},"operations":{}}`)
@@ -159,8 +197,9 @@ func TestDiscoverCapturedTemperatureSensor(t *testing.T) {
 }
 
 // This test protects captured temperature State projection and fails if 22.6
-// °C does not publish exactly 22600 milli-Celsius, if humidity/battery
-// siblings produce State, or if support is not empty.
+// °C does not publish exactly 22600 milli-Celsius, if the linkquality
+// sibling does not project beside it, if humidity/battery siblings produce
+// State, or if support is not empty.
 func TestDecodeCapturedTemperatureState(t *testing.T) {
 	t.Parallel()
 	device := mustDiscoveredFixtureDevice(t, "bridge-devices-temperature.json")
@@ -172,8 +211,10 @@ func TestDecodeCapturedTemperatureState(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(issues) != 0 || len(states) != 1 || states[0].entityID != "entity-temperature" ||
-		string(states[0].report.Observation.Value) != "22600" {
+	if len(issues) != 0 || len(states) != 2 || states[0].entityID != "entity-temperature" ||
+		string(states[0].report.Observation.Value) != "22600" ||
+		states[1].entityID != "entity-linkquality" ||
+		string(states[1].report.Observation.Value) != "105" {
 		t.Fatalf("states = %#v, issues = %#v", states, issues)
 	}
 	if semantic, ok := states[0].report.semantic.(int64); !ok || semantic != 22600 {

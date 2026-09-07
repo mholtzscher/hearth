@@ -25,6 +25,7 @@ func DefineOperation[State, Support, OperationSupport, Parameters any](
 	selectSupport func(Support) (OperationSupport, bool),
 	validateParameters func(Support, OperationSupport, Parameters) error,
 	deadline time.Duration,
+	outcome OutcomeKind,
 	satisfies func(Parameters, State) bool,
 ) OperationDefinition[State, Support] {
 	definition := OperationDefinition[State, Support]{name: name}
@@ -39,11 +40,17 @@ func DefineOperation[State, Support, OperationSupport, Parameters any](
 		definition.err = fmt.Errorf("operation %q has no parameter validator", name)
 	case deadline <= 0:
 		definition.err = fmt.Errorf("operation %q has a non-positive deadline", name)
-	case satisfies == nil:
+	case outcome != OutcomeObserved && outcome != OutcomeDispatched:
+		definition.err = fmt.Errorf("operation %q has invalid outcome %q", name, outcome)
+	case outcome == OutcomeDispatched && satisfies != nil:
+		definition.err = fmt.Errorf("operation %q is dispatched and must have no outcome matcher", name)
+	case outcome == OutcomeObserved && satisfies == nil:
 		definition.err = fmt.Errorf("operation %q has no outcome matcher", name)
 	default:
 		definition.build = func(state *entitytypes.JSONCodec[State], support *entitytypes.JSONCodec[Support]) erasedOperationDefinition {
-			return erasedOperationDefinition{
+			erased := erasedOperationDefinition{
+				outcome:  outcome,
+				deadline: deadline,
 				resolve: func(rawSupport EntitySupport, rawParameters CommandParameters) (CommandParameters, error) {
 					typedSupport, _, err := support.Decode(json.RawMessage(rawSupport))
 					if err != nil {
@@ -64,8 +71,9 @@ func DefineOperation[State, Support, OperationSupport, Parameters any](
 					}
 					return CommandParameters(normalized), nil
 				},
-				deadline: deadline,
-				satisfies: func(rawParameters CommandParameters, rawState Value) (bool, error) {
+			}
+			if satisfies != nil {
+				erased.satisfies = func(rawParameters CommandParameters, rawState Value) (bool, error) {
 					typedParameters, _, err := parameters.Decode(json.RawMessage(rawParameters))
 					if err != nil {
 						return false, fmt.Errorf("decode recorded parameters for operation %q: %w", name, err)
@@ -75,8 +83,9 @@ func DefineOperation[State, Support, OperationSupport, Parameters any](
 						return false, fmt.Errorf("decode state for operation %q: %w", name, err)
 					}
 					return satisfies(typedParameters, typedState), nil
-				},
+				}
 			}
+			return erased
 		}
 	}
 	return definition
@@ -84,6 +93,7 @@ func DefineOperation[State, Support, OperationSupport, Parameters any](
 
 type EntityTypeDefinition struct {
 	id               EntityTypeID
+	stateless        bool // from manifest "stateless" (default false)
 	normalizeSupport func(EntitySupport) (EntitySupport, error)
 	normalizeState   func(EntitySupport, Value) (Value, error)
 	equalState       func(EntitySupport, Value, Value) (bool, error)
@@ -93,7 +103,8 @@ type EntityTypeDefinition struct {
 type erasedOperationDefinition struct {
 	resolve   func(EntitySupport, CommandParameters) (CommandParameters, error)
 	deadline  time.Duration
-	satisfies func(CommandParameters, Value) (bool, error)
+	outcome   OutcomeKind
+	satisfies func(CommandParameters, Value) (bool, error) // nil iff dispatched
 }
 
 //nolint:gocognit // Generic boundary validation is kept with the Entity type definition it protects.
@@ -101,6 +112,7 @@ func DefineEntityType[State, Support any](
 	id EntityTypeID,
 	state *entitytypes.JSONCodec[State],
 	support *entitytypes.JSONCodec[Support],
+	validateSupport func(Support) error,
 	validateSupportedState func(Support, State) error,
 	equalState func(State, State) bool,
 	operations ...OperationDefinition[State, Support],
@@ -113,6 +125,9 @@ func DefineEntityType[State, Support any](
 	}
 	if support == nil {
 		return EntityTypeDefinition{}, fmt.Errorf("entity type %q has no support codec", id)
+	}
+	if validateSupport == nil {
+		return EntityTypeDefinition{}, fmt.Errorf("entity type %q has no support validator", id)
 	}
 	if validateSupportedState == nil {
 		return EntityTypeDefinition{}, fmt.Errorf("entity type %q has no supported-state validator", id)
@@ -138,13 +153,7 @@ func DefineEntityType[State, Support any](
 		definition.operations[operation.name] = operation.build(state, support)
 	}
 
-	definition.normalizeSupport = func(raw EntitySupport) (EntitySupport, error) {
-		_, normalized, err := support.Decode(json.RawMessage(raw))
-		if err != nil {
-			return nil, fmt.Errorf("invalid support for entity type %q: %w", id, err)
-		}
-		return EntitySupport(normalized), nil
-	}
+	definition.normalizeSupport = makeNormalizeSupport(id, support, validateSupport)
 	definition.normalizeState = func(rawSupport EntitySupport, rawState Value) (Value, error) {
 		typedSupport, _, err := support.Decode(json.RawMessage(rawSupport))
 		if err != nil {
@@ -180,9 +189,30 @@ func DefineEntityType[State, Support any](
 	return definition, nil
 }
 
+// makeNormalizeSupport decodes support through its codec and enforces the
+// generated support_validation rules, so registration and command execution
+// reject the same unsupported supports.
+func makeNormalizeSupport[Support any](
+	id EntityTypeID,
+	support *entitytypes.JSONCodec[Support],
+	validateSupport func(Support) error,
+) func(EntitySupport) (EntitySupport, error) {
+	return func(raw EntitySupport) (EntitySupport, error) {
+		typed, normalized, decodeErr := support.Decode(json.RawMessage(raw))
+		if decodeErr != nil {
+			return nil, fmt.Errorf("invalid support for entity type %q: %w", id, decodeErr)
+		}
+		if validateErr := validateSupport(typed); validateErr != nil {
+			return nil, fmt.Errorf("unsupported support for entity type %q: %w", id, validateErr)
+		}
+		return EntitySupport(normalized), nil
+	}
+}
+
 type ResolvedCommand struct {
 	Parameters CommandParameters
 	Deadline   time.Duration
+	Outcome    OutcomeKind
 }
 
 type TypeCatalog struct {
@@ -214,6 +244,14 @@ func (catalog *TypeCatalog) NormalizeSupport(typeID EntityTypeID, support Entity
 		return nil, err
 	}
 	return definition.normalizeSupport(support)
+}
+
+func (catalog *TypeCatalog) IsStateless(typeID EntityTypeID) (bool, error) {
+	definition, err := catalog.resolve(typeID)
+	if err != nil {
+		return false, err
+	}
+	return definition.stateless, nil
 }
 
 func (catalog *TypeCatalog) NormalizeState(entity Entity, value Value) (Value, error) {
@@ -249,11 +287,18 @@ func (catalog *TypeCatalog) ResolveCommand(
 			operationName,
 		)
 	}
+	if _, normalizeErr := definition.normalizeSupport(entity.Support); normalizeErr != nil {
+		return ResolvedCommand{}, normalizeErr
+	}
 	normalized, err := operation.resolve(entity.Support, parameters)
 	if err != nil {
 		return ResolvedCommand{}, fmt.Errorf("resolve operation %q for entity %q: %w", operationName, entity.ID, err)
 	}
-	return ResolvedCommand{Parameters: normalized, Deadline: operation.deadline}, nil
+	return ResolvedCommand{
+		Parameters: normalized,
+		Deadline:   operation.deadline,
+		Outcome:    operation.outcome,
+	}, nil
 }
 
 func (catalog *TypeCatalog) Satisfies(entity Entity, command CommandRecord, value Value) (bool, error) {
@@ -264,6 +309,13 @@ func (catalog *TypeCatalog) Satisfies(entity Entity, command CommandRecord, valu
 	operation, exists := definition.operations[command.OperationName]
 	if !exists {
 		return false, fmt.Errorf("entity type %q does not define operation %q", entity.TypeID, command.OperationName)
+	}
+	if operation.outcome == OutcomeDispatched {
+		return false, fmt.Errorf(
+			"entity type %q operation %q is dispatched and has no outcome matcher",
+			entity.TypeID,
+			command.OperationName,
+		)
 	}
 	return operation.satisfies(command.Parameters, value)
 }

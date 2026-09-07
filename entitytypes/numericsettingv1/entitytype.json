@@ -1,0 +1,72 @@
+{
+  "manifest_version": 1,
+  "type": "hearth.numericsetting/v1",
+  "state_schema": "state.schema.json",
+  "support_schema": "support.schema.json",
+  "state_validation": [
+    {
+      "op": "gte_if_present",
+      "left": {"root": "state", "path": "/value"},
+      "right": {"root": "support", "path": "/state/minimum"}
+    },
+    {
+      "op": "lte_if_present",
+      "left": {"root": "state", "path": "/value"},
+      "right": {"root": "support", "path": "/state/maximum"}
+    },
+    {
+      "op": "in_if_present",
+      "left": {"root": "state", "path": "/choice"},
+      "right": {"root": "support", "path": "/state/choices"}
+    }
+  ],
+  "support_validation": [
+    {
+      "op": "gte",
+      "left": {"root": "support", "path": "/state/maximum"},
+      "right": {"root": "support", "path": "/state/minimum"}
+    }
+  ],
+  "operations": {
+    "set": {
+      "parameters_schema": "set-parameters.schema.json",
+      "deadline_ms": 10000,
+      "outcome": "observed",
+      "parameter_validation": [
+        {
+          "op": "gte_if_present",
+          "left": {"root": "parameters", "path": "/value"},
+          "right": {"root": "support", "path": "/state/minimum"}
+        },
+        {
+          "op": "lte_if_present",
+          "left": {"root": "parameters", "path": "/value"},
+          "right": {"root": "support", "path": "/state/maximum"}
+        },
+        {
+          "op": "in_if_present",
+          "left": {"root": "parameters", "path": "/choice"},
+          "right": {"root": "support", "path": "/state/choices"}
+        }
+      ],
+      "satisfied_when": [
+        {
+          "op": "eq",
+          "left": {"root": "parameters", "path": "/mode"},
+          "right": {"root": "state", "path": "/mode"}
+        },
+        {
+          "op": "eq_optional",
+          "left": {"root": "parameters", "path": "/value"},
+          "right": {"root": "state", "path": "/value"}
+        },
+        {
+          "op": "eq_optional",
+          "left": {"root": "parameters", "path": "/choice"},
+          "right": {"root": "state", "path": "/choice"}
+        }
+      ]
+    }
+  },
+  "examples": "examples.json"
+}

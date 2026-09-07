@@ -7,6 +7,7 @@
     "set": {
       "parameters_schema": "set-parameters.schema.json",
       "deadline_ms": 10000,
+      "outcome": "observed",
       "satisfied_when": [
         {"op": "is_true", "left": {"root": "state", "path": "/active"}},
         {"op": "circular_near", "left": {"root": "parameters", "path": "/hue"}, "right": {"root": "state", "path": "/hue"}, "tolerance": 2, "modulus": 360},

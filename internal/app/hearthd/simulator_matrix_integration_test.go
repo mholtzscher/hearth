@@ -763,8 +763,9 @@ func TestSimulatorNoOpAndOverlappingCommands(t *testing.T) {
 			t.Fatal(decodeErr)
 		}
 		state := harness.waitForState(t)
-		if result.Value != false || state.ObservationID == initial.ObservationID ||
-			string(state.Value) != "false" || state.ObservationID != devices.ObservationID(result.ObservationID) {
+		if result.ObservationID == nil || result.Value == nil || *result.Value != false ||
+			state.ObservationID == initial.ObservationID || string(state.Value) != "false" ||
+			state.ObservationID != devices.ObservationID(*result.ObservationID) {
 			t.Fatalf("initial = %#v, result = %#v, state = %#v", initial, result, state)
 		}
 		commandID, err := devices.ParseCommandID(result.CommandID)
@@ -812,7 +813,10 @@ func TestSimulatorNoOpAndOverlappingCommands(t *testing.T) {
 				t.Fatal(err)
 			}
 			commandIDs[result.CommandID] = struct{}{}
-			observationIDs[result.ObservationID] = struct{}{}
+			if result.ObservationID == nil {
+				t.Fatalf("command outcome carries no observation: %s", commandOutcome.body)
+			}
+			observationIDs[*result.ObservationID] = struct{}{}
 		}
 		if len(commandIDs) != 2 || len(observationIDs) != 2 {
 			t.Fatalf("command IDs = %v, observation IDs = %v", commandIDs, observationIDs)
@@ -1026,7 +1030,7 @@ func TestSimulatorRestartBeforeAckRedeliversWithoutChangingStateOrCommand(t *tes
 			projected, projectionErr := harness.service.ProjectObservation(
 				ctx, adapterID, runtimeID, observation, observedAt,
 			)
-			if observation.ID == devices.ObservationID(result.ObservationID) {
+			if result.ObservationID != nil && observation.ID == devices.ObservationID(*result.ObservationID) {
 				redeliveryOnce.Do(func() { close(redelivered) })
 			}
 			return projected, projectionErr

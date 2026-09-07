@@ -14,6 +14,11 @@ import (
 
 type examplesFile struct {
 	Cases []exampleCase `json:"cases"`
+	// InvalidSupports carries supports that schema-decode but violate
+	// support_validation rules. The generated catalog conformance test
+	// asserts NormalizeSupport rejects each one. Required exactly when the
+	// manifest declares support_validation rules.
+	InvalidSupports []json.RawMessage `json:"invalid_supports,omitempty"`
 }
 
 type exampleCase struct {
@@ -232,7 +237,7 @@ func loadExamples(directory, relative string, operations []operationModel) (exam
 					"case %q operation %q parameters: %w", example.Name, name, coverageErr,
 				)
 			}
-			if coverageErr := requireOutcomeCoverage(values.Outcomes); coverageErr != nil {
+			if coverageErr := requireOutcomeCoverage(name, operations, values.Outcomes); coverageErr != nil {
 				return examplesFile{}, fmt.Errorf(
 					"case %q operation %q outcomes: %w", example.Name, name, coverageErr,
 				)
@@ -281,7 +286,37 @@ func requireValidityCoverage(examples []validityExample) error {
 	return nil
 }
 
-func requireOutcomeCoverage(examples []outcomeExample) error {
+func requireOutcomeCoverage(
+	operationName string,
+	operations []operationModel,
+	examples []outcomeExample,
+) error {
+	// Dispatched operations declare no outcome predicate; the generated
+	// matcher holds vacuously, so authored outcomes (still required by the
+	// contract runner) must all expect satisfaction.
+	for _, operation := range operations {
+		if operation.Name != operationName {
+			continue
+		}
+		if operation.Outcome == outcomeDispatched {
+			if len(examples) == 0 {
+				return errors.New("requires at least one satisfied example")
+			}
+			for index, example := range examples {
+				if len(example.Parameters) == 0 || len(example.State) == 0 {
+					return fmt.Errorf("example %d requires parameters and state", index+1)
+				}
+				if !example.Satisfied {
+					return fmt.Errorf("example %d must expect satisfaction", index+1)
+				}
+			}
+			return nil
+		}
+	}
+	return requireObservedOutcomeCoverage(examples)
+}
+
+func requireObservedOutcomeCoverage(examples []outcomeExample) error {
 	var satisfied, unsatisfied bool
 	for index, example := range examples {
 		if len(example.Parameters) == 0 || len(example.State) == 0 {

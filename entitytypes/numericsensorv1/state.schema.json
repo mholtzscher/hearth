@@ -1,0 +1,7 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:hearth:schema:entity-type:numericsensor:v1:state",
+  "title": "Hearth numericsensor/v1 State",
+  "description": "Unbounded numeric reading; support narrows the range per entity.",
+  "type": "number"
+}

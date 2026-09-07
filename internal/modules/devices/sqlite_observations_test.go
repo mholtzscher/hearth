@@ -140,6 +140,164 @@ func TestObservationProjectionDurablyRejectsIdentityAndValueFailures(t *testing.
 	}
 }
 
+func statelessEffectRegistration() Registration {
+	registration := validDomainRegistration()
+	registration.Entities = append(registration.Entities, EntityDescriptor{
+		Key: "effect", ExternalID: "light.office.effect", Name: "Effect", TypeID: EntityTypeEnumactionV1,
+		Support: EntitySupport(`{"state":{},"operations":{"trigger":{"values":["blink","stop_effect"]}}}`),
+	})
+	return registration
+}
+
+func TestStatelessEntityRejectsEveryObservationWithoutStoringValue(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	database := openRegistrationDatabase(t, filepath.Join(t.TempDir(), "hearth.db"))
+	catalog := firstLightCatalog(t)
+	service := newTestService(NewSQLiteRepository(database, catalog), nil, catalog, Dependencies{})
+	binding, err := service.Register(ctx, "simulator", testRuntimeID, statelessEffectRegistration())
+	if err != nil {
+		t.Fatal(err)
+	}
+	entityID := binding.Entities[1].EntityID
+	observedAt := time.Date(2026, 8, 22, 12, 0, 0, 0, time.UTC)
+
+	// Even the empty state object, null, and member values carry no reportable
+	// state for a stateless action: every observation is invalid_value.
+	for index, value := range []string{`{}`, `null`, `{"unexpected":true}`, `"blink"`} {
+		result, projectionErr := service.ProjectObservation(
+			ctx, "simulator", testRuntimeID, newObservation(t, entityID, value, observedAt),
+			observedAt.Add(time.Duration(index)*time.Second),
+		)
+		if projectionErr != nil {
+			t.Fatalf("value %s: %v", value, projectionErr)
+		}
+		if result.Disposition != DispositionRejected || result.Rejection == nil ||
+			*result.Rejection != RejectionInvalidValue || result.State != nil {
+			t.Fatalf("value %s: projection = %#v", value, result)
+		}
+	}
+	view, err := service.GetEntity(ctx, entityID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if view.State != nil {
+		t.Fatalf("rejected stateless observations created state: %#v", view.State)
+	}
+
+	// The rejections are visible in history reads with no stored value,
+	// distinct from state history; the entity itself still reports null state.
+	page, err := service.ListEntityStateHistory(ctx, ListEntityStateHistoryParams{
+		EntityID: entityID, Filter: EntityStateHistoryFilterRejected, Limit: 10,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(page.Items) != 4 {
+		t.Fatalf("rejected history = %#v", page.Items)
+	}
+	for _, entry := range page.Items {
+		if entry.Disposition != DispositionRejected || entry.Rejection == nil ||
+			*entry.Rejection != RejectionInvalidValue || entry.Value != nil {
+			t.Fatalf("rejected history entry = %#v", entry)
+		}
+	}
+	updates, err := service.ListEntityStateHistory(ctx, ListEntityStateHistoryParams{
+		EntityID: entityID, Filter: EntityStateHistoryFilterUpdates, Limit: 10,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(updates.Items) != 0 {
+		t.Fatalf("state-updates history = %#v, want none", updates.Items)
+	}
+}
+
+func TestStatelessRejectionFollowsIdentityAndEnablementPrecedence(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	database := openRegistrationDatabase(t, filepath.Join(t.TempDir(), "hearth.db"))
+	catalog := firstLightCatalog(t)
+	repository := NewSQLiteRepository(database, catalog)
+	service := newTestService(repository, nil, catalog, Dependencies{})
+	binding, err := service.Register(ctx, "simulator", testRuntimeID, statelessEffectRegistration())
+	if err != nil {
+		t.Fatal(err)
+	}
+	entityID := binding.Entities[1].EntityID
+	observedAt := time.Date(2026, 8, 22, 12, 0, 0, 0, time.UTC)
+	unknownEntityID, err := NewEntityID()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Higher-precedence identity checks win over the stateless rejection.
+	precedence := []struct {
+		name      string
+		adapterID string
+		runtimeID RuntimeID
+		entityID  EntityID
+		want      ObservationRejection
+	}{
+		{"unknown entity", "simulator", testRuntimeID, unknownEntityID, RejectionUnknownEntity},
+		{"wrong adapter", "homeassistant", testAdapterRuntime("homeassistant"), entityID, RejectionWrongAdapter},
+		{
+			"stale runtime", "simulator", RuntimeID("run_01890f47-7a6b-7c4d-8e9f-ffff00000000"),
+			entityID, RejectionStaleRuntime,
+		},
+	}
+	for index, test := range precedence {
+		result, projectionErr := service.ProjectObservation(
+			ctx, test.adapterID, test.runtimeID,
+			newObservation(t, test.entityID, `{}`, observedAt), observedAt.Add(time.Duration(index)*time.Second),
+		)
+		if projectionErr != nil {
+			t.Fatalf("%s: %v", test.name, projectionErr)
+		}
+		if result.Disposition != DispositionRejected || result.Rejection == nil || *result.Rejection != test.want {
+			t.Fatalf("%s: projection = %#v", test.name, result)
+		}
+	}
+
+	// A disabled stateless entity without a linked command reports
+	// entity_disabled, preserving the disabled-before-stateless order.
+	_, enablementErr := service.SetEntityEnabled(ctx, entityID, false)
+	if enablementErr != nil {
+		t.Fatal(enablementErr)
+	}
+	result, err := service.ProjectObservation(
+		ctx, "simulator", testRuntimeID, newObservation(t, entityID, `{}`, observedAt), observedAt,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Disposition != DispositionRejected || result.Rejection == nil ||
+		*result.Rejection != RejectionEntityDisabled {
+		t.Fatalf("disabled stateless projection = %#v", result)
+	}
+	_, reenableErr := service.SetEntityEnabled(ctx, entityID, true)
+	if reenableErr != nil {
+		t.Fatal(reenableErr)
+	}
+
+	// A linked active command does not exempt the stateless rejection: the
+	// observation still carries no reportable state and satisfies nothing.
+	linked := newCommandRecord(t, entityID, observedAt)
+	if _, createErr := repository.CreateCommand(ctx, linked); createErr != nil {
+		t.Fatal(createErr)
+	}
+	refresh := newObservation(t, entityID, `{}`, observedAt)
+	refresh.RefreshForCommand = &linked.ID
+	result, err = service.ProjectObservation(ctx, "simulator", testRuntimeID, refresh, observedAt)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Disposition != DispositionRejected || result.Rejection == nil ||
+		*result.Rejection != RejectionInvalidValue || result.SatisfiedCommand != nil {
+		t.Fatalf("linked stateless projection = %#v", result)
+	}
+}
+
 func TestDisabledEntityRejectsUnlinkedObservationAndAllowsActiveCommandRefresh(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
@@ -319,7 +477,9 @@ func TestObservationProjectionSatisfiesOnlyMatchingActiveLinkedCommand(t *testin
 		t.Fatal(err)
 	}
 	if result.SatisfiedCommand == nil || result.SatisfiedCommand.CommandID != command.ID ||
-		result.SatisfiedCommand.ObservationID != matching.ID || string(result.SatisfiedCommand.Value) != "true" {
+		result.SatisfiedCommand.Outcome != OutcomeObserved || result.SatisfiedCommand.ObservationID == nil ||
+		*result.SatisfiedCommand.ObservationID != matching.ID || result.SatisfiedCommand.Value == nil ||
+		string(*result.SatisfiedCommand.Value) != "true" {
 		t.Fatalf("matching projection = %#v", result)
 	}
 	stored, err = repository.GetCommand(ctx, command.ID)

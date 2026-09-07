@@ -28,6 +28,7 @@ type catalogProbe struct {
 	validState            json.RawMessage
 	supportInvalidState   json.RawMessage
 	supportInvalidSupport json.RawMessage
+	invalidSupports       []json.RawMessage
 	unequalState          json.RawMessage
 	operations            []catalogOperationProbe
 }
@@ -108,7 +109,7 @@ func (checker *catalogSchemaChecker) compile(schemaPath string) (*jsonschema.Sch
 }
 
 func selectCatalogProbe(model entityTypeModel, checker *catalogSchemaChecker) (catalogProbe, error) {
-	probe := catalogProbe{model: model}
+	probe := catalogProbe{model: model, invalidSupports: model.Examples.InvalidSupports}
 	first := model.Examples.Cases[0]
 	probe.support = first.Support
 	for _, state := range first.States {
@@ -220,11 +221,14 @@ func selectUnequalCatalogState(
 	return nil, nil
 }
 
-// selectCatalogOperationProbe picks one valid command and the first
-// satisfied/unsatisfied outcome pair from a single originating case so the
-// generated wiring reuses that case's support, plus the first support-level
-// invalid parameters rep (with its own originating support when it lives in
-// a different case), all in source order.
+// selectCatalogOperationProbe picks one valid command and, for observed
+// operations, the first satisfied/unsatisfied outcome pair from a single
+// originating case so the generated wiring reuses that case's support, plus
+// the first support-level invalid parameters rep (with its own originating
+// support when it lives in a different case), all in source order.
+// Dispatched operations declare no outcome predicate, so only the valid
+// command is selected and the generated wiring asserts the outcome policy
+// and the defensive Satisfies rejection instead.
 func selectCatalogOperationProbe(
 	model entityTypeModel,
 	checker *catalogSchemaChecker,
@@ -239,6 +243,13 @@ func selectCatalogOperationProbe(
 		}
 		candidate := catalogOperationProbe{model: operation, support: example.Support}
 		selectCatalogValidParams(values, &candidate)
+		if operation.Outcome == outcomeDispatched {
+			if len(candidate.parameters) != 0 {
+				probe = candidate
+				break
+			}
+			continue
+		}
 		selectCatalogOutcomes(values, &candidate)
 		if len(candidate.parameters) == 0 ||
 			len(candidate.satisfiedParameters) == 0 ||
@@ -251,7 +262,8 @@ func selectCatalogOperationProbe(
 	if len(probe.parameters) == 0 {
 		return catalogOperationProbe{}, fmt.Errorf("operation %q has no valid parameters", operation.Name)
 	}
-	if len(probe.satisfiedParameters) == 0 || len(probe.unsatisfiedParameters) == 0 {
+	if operation.Outcome != outcomeDispatched &&
+		(len(probe.satisfiedParameters) == 0 || len(probe.unsatisfiedParameters) == 0) {
 		return catalogOperationProbe{}, fmt.Errorf(
 			"operation %q has no satisfied and unsatisfied outcome pair",
 			operation.Name,
@@ -498,6 +510,12 @@ func writeCatalogProbe(source *strings.Builder, probe catalogProbe) error {
 		entityTypeGoName(model),
 		strconv.Quote(support),
 	)
+	fmt.Fprintf(
+		source,
+		"\t\tif stateless, err := catalog.IsStateless(entity.TypeID); err != nil || stateless != %t { t.Errorf(\"catalog stateless = %%v, %%v, want %t\", stateless, err) }\n",
+		model.Stateless,
+		model.Stateless,
+	)
 	source.WriteString(
 		"\t\tnormalizedSupport, err := catalog.NormalizeSupport(entity.TypeID, entity.Support)\n" +
 			"\t\tif err != nil { t.Fatalf(\"catalog support: %v\", err) }\n",
@@ -526,6 +544,9 @@ func writeCatalogProbe(source *strings.Builder, probe catalogProbe) error {
 	)
 	if stateErr := writeCatalogInvalidState(source, probe); stateErr != nil {
 		return stateErr
+	}
+	if supportsErr := writeCatalogInvalidSupports(source, probe); supportsErr != nil {
+		return supportsErr
 	}
 	if operationsErr := writeCatalogOperations(source, probe); operationsErr != nil {
 		return operationsErr
@@ -559,6 +580,25 @@ func writeCatalogInvalidState(source *strings.Builder, probe catalogProbe) error
 		invalidEntity,
 		strconv.Quote(invalidState),
 	)
+	return nil
+}
+
+// writeCatalogInvalidSupports asserts NormalizeSupport rejects every
+// authored invalid support, proving support_validation runs on the
+// registration and command paths rather than only in adapter planning.
+func writeCatalogInvalidSupports(source *strings.Builder, probe catalogProbe) error {
+	for index, raw := range probe.invalidSupports {
+		compacted, err := compactCatalogJSON(raw)
+		if err != nil {
+			return err
+		}
+		fmt.Fprintf(
+			source,
+			"\t\tif _, err := catalog.NormalizeSupport(entity.TypeID, EntitySupport(%s)); err == nil { t.Error(\"catalog invalid support %d unexpectedly accepted\") }\n",
+			strconv.Quote(compacted),
+			index+1,
+		)
+	}
 	return nil
 }
 
@@ -710,6 +750,22 @@ func writeCatalogOperationProbe(
 	if invalidErr := writeCatalogInvalidParams(source, parent, probe, opEntity); invalidErr != nil {
 		return invalidErr
 	}
+	wantOutcome := "OutcomeObserved"
+	if operation.Outcome == outcomeDispatched {
+		wantOutcome = "OutcomeDispatched"
+	}
+	fmt.Fprintf(
+		source,
+		"\t\tif %s.Outcome != %s { t.Errorf(\"catalog %s outcome = %%v, want %%v\", %s.Outcome, %s) }\n",
+		variable,
+		wantOutcome,
+		operation.Name,
+		variable,
+		wantOutcome,
+	)
+	if operation.Outcome == outcomeDispatched {
+		return writeCatalogDispatchedProbe(source, parent, probe, opEntity)
+	}
 	satisfiedParameters, err := compactCatalogJSON(probe.satisfiedParameters)
 	if err != nil {
 		return err
@@ -742,6 +798,36 @@ func writeCatalogOperationProbe(
 		strconv.Quote(operation.Name),
 		strconv.Quote(unsatisfiedParameters),
 		strconv.Quote(unsatisfiedState),
+		operation.Name,
+	)
+	return nil
+}
+
+// writeCatalogDispatchedProbe asserts the defensive dispatched policy:
+// a dispatched operation carries its outcome into the resolved command and
+// has no outcome matcher, so Satisfies rejects every call.
+func writeCatalogDispatchedProbe(
+	source *strings.Builder,
+	parent catalogProbe,
+	probe catalogOperationProbe,
+	opEntity string,
+) error {
+	operation := probe.model
+	parameters, err := compactCatalogJSON(probe.parameters)
+	if err != nil {
+		return err
+	}
+	validState, err := compactCatalogJSON(parent.validState)
+	if err != nil {
+		return err
+	}
+	fmt.Fprintf(
+		source,
+		"\t\tif _, err := catalog.Satisfies(%s, CommandRecord{OperationName: OperationName(%s), Parameters: CommandParameters(%s)}, Value(%s)); err == nil { t.Error(\"catalog %s satisfies unexpectedly succeeded for dispatched operation\") }\n",
+		opEntity,
+		strconv.Quote(operation.Name),
+		strconv.Quote(parameters),
+		strconv.Quote(validState),
 		operation.Name,
 	)
 	return nil

@@ -372,7 +372,8 @@ func TestCoreCommandRoundTripRequiresLinkedSimulatorObservation(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if string(result.Value) != "true" {
+	if result.Outcome != devices.OutcomeObserved || result.ObservationID == nil || result.Value == nil ||
+		string(*result.Value) != "true" {
 		t.Fatalf("command result = %#v", result)
 	}
 	stored, err := repository.GetCommand(ctx, result.CommandID)
@@ -380,14 +381,14 @@ func TestCoreCommandRoundTripRequiresLinkedSimulatorObservation(t *testing.T) {
 		t.Fatal(err)
 	}
 	if stored.Status != devices.CommandStatusSatisfied || stored.AcceptedAt == nil ||
-		stored.OutcomeObservationID == nil || *stored.OutcomeObservationID != result.ObservationID {
+		stored.OutcomeObservationID == nil || *stored.OutcomeObservationID != *result.ObservationID {
 		t.Fatalf("stored command = %#v", stored)
 	}
 	view, err := service.GetEntity(ctx, entityID)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if view.State == nil || view.State.ObservationID != result.ObservationID || string(view.State.Value) != "true" {
+	if view.State == nil || view.State.ObservationID != *result.ObservationID || string(view.State.Value) != "true" {
 		t.Fatalf("entity view = %#v", view)
 	}
 	stopServing()

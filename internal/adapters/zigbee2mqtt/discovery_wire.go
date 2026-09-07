@@ -63,9 +63,25 @@ type upstreamExpose struct {
 	ValueMin    *float64         `json:"value_min"`
 	ValueMax    *float64         `json:"value_max"`
 	ValueStep   *float64         `json:"value_step"`
+	Values      []string         `json:"values,omitempty"`
+	Presets     []upstreamPreset `json:"presets,omitempty"`
 	Features    []upstreamExpose `json:"features"`
 	valueMinRaw json.RawMessage
 	valueMaxRaw json.RawMessage
+	// previousInvalid marks a previous-named preset whose value is missing,
+	// non-integral, or anything other than the 65535 sentinel. It forces
+	// omission of the dependent setting even though Presets holds only the
+	// fully valid entries.
+	previousInvalid bool
+}
+
+// upstreamPreset is one valid Zigbee2MQTT preset entry: a string name with
+// an exact-integer value. Non-integral values are rejected at parse time and
+// never reach planning; in-range numeric presets are wire aliases, not
+// advertised Hearth choices.
+type upstreamPreset struct {
+	Name  string `json:"name"`
+	Value int64  `json:"value"`
 }
 
 // UnmarshalJSON isolates malformed expose metadata so one optional feature cannot suppress valid siblings.
@@ -83,6 +99,8 @@ func (expose *upstreamExpose) UnmarshalJSON(payload []byte) error {
 		ValueMin  json.RawMessage `json:"value_min"`
 		ValueMax  json.RawMessage `json:"value_max"`
 		ValueStep json.RawMessage `json:"value_step"`
+		Values    json.RawMessage `json:"values"`
+		Presets   json.RawMessage `json:"presets"`
 		Features  json.RawMessage `json:"features"`
 	}
 	_ = json.Unmarshal(payload, &wire)
@@ -97,10 +115,87 @@ func (expose *upstreamExpose) UnmarshalJSON(payload []byte) error {
 	expose.ValueMin = decodeOptionalFloat(wire.ValueMin)
 	expose.ValueMax = decodeOptionalFloat(wire.ValueMax)
 	expose.ValueStep = decodeOptionalFloat(wire.ValueStep)
+	expose.Values = decodeExposeValues(wire.Values)
+	expose.Presets, expose.previousInvalid = decodeExposePresets(wire.Presets)
 	expose.valueMinRaw = bytes.Clone(wire.ValueMin)
 	expose.valueMaxRaw = bytes.Clone(wire.ValueMax)
 	_ = json.Unmarshal(wire.Features, &expose.Features)
 	return nil
+}
+
+// decodeExposeValues parses one enum values array tolerantly: any shape
+// other than a JSON string array yields nil, which makes the dependent
+// expose ineligible without affecting valid siblings.
+func decodeExposeValues(payload json.RawMessage) []string {
+	if len(bytes.TrimSpace(payload)) == 0 {
+		return nil
+	}
+	var values []string
+	if decodeJSON(payload, &values) != nil {
+		return nil
+	}
+	return values
+}
+
+// decodeExposePresets parses one presets array tolerantly. Entries with a
+// string name and an exact-integer value are kept; unparseable entries and
+// non-integral values are dropped, except that any previous-named entry
+// failing the exact 65535 sentinel marks the whole preset set invalid so the
+// dependent setting is omitted rather than advertised without its choice.
+func decodeExposePresets(payload json.RawMessage) ([]upstreamPreset, bool) {
+	if len(bytes.TrimSpace(payload)) == 0 {
+		return nil, false
+	}
+	var entries []json.RawMessage
+	if decodeJSON(payload, &entries) != nil {
+		return nil, false
+	}
+	var presets []upstreamPreset
+	invalidPrevious := false
+	for _, entry := range entries {
+		var probe struct {
+			Name  json.RawMessage `json:"name"`
+			Value json.RawMessage `json:"value"`
+		}
+		if decodeJSON(entry, &probe) != nil {
+			continue
+		}
+		var name string
+		if decodeJSON(probe.Name, &name) != nil || name == "" {
+			continue
+		}
+		value, exact := exactPresetValue(probe.Value)
+		if name != upstreamPreviousPreset {
+			if exact {
+				presets = append(presets, upstreamPreset{Name: name, Value: value})
+			}
+			continue
+		}
+		if !exact || value != startupPreviousWireValue {
+			invalidPrevious = true
+			continue
+		}
+		presets = append(presets, upstreamPreset{Name: name, Value: value})
+	}
+	return presets, invalidPrevious
+}
+
+// exactPresetValue decodes one exact-integer JSON number. Fractions,
+// strings, and out-of-int64 values are rejected rather than rounded.
+func exactPresetValue(payload json.RawMessage) (int64, bool) {
+	var decoded any
+	if len(payload) == 0 || decodeJSON(payload, &decoded) != nil {
+		return 0, false
+	}
+	number, ok := decoded.(json.Number)
+	if !ok {
+		return 0, false
+	}
+	exact, ok := new(big.Rat).SetString(number.String())
+	if !ok || !exact.IsInt() || !exact.Num().IsInt64() {
+		return 0, false
+	}
+	return exact.Num().Int64(), true
 }
 
 func decodeOptionalFloat(payload json.RawMessage) *float64 {

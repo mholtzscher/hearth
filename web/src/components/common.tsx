@@ -47,6 +47,8 @@ export function statusTone(status: string): Tone {
     case "ready":
     case "ok":
       return "success";
+    case "dispatched":
+      return "info";
     case "unhealthy":
     case "unavailable":
     case "error":

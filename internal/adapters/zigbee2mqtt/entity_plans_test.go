@@ -160,6 +160,74 @@ func TestValidatePlannedCommand(t *testing.T) {
 	}
 }
 
+// This test protects dispatched command validation and fails if a
+// dispatched plan without refresh or matcher is rejected, or if a
+// dispatched plan carrying refresh properties, a matcher, or no deadline
+// can reach MQTT publication.
+func TestValidateDispatchedPlannedCommand(t *testing.T) {
+	t.Parallel()
+	valid := plannedCommand{
+		SetValues: map[string]json.RawMessage{"effect": json.RawMessage(`"breathe"`)},
+		Deadline:  time.Now().Add(time.Minute),
+		Outcome:   plannedDispatched,
+	}
+	if err := validatePlannedCommand(valid); err != nil {
+		t.Fatalf("valid dispatched Command was rejected: %v", err)
+	}
+	for _, test := range []struct {
+		name string
+		edit func(*plannedCommand)
+	}{
+		{name: "empty set", edit: func(planned *plannedCommand) { planned.SetValues = nil }},
+		{
+			name: "refresh requested",
+			edit: func(planned *plannedCommand) { planned.GetProperties = []string{"effect"} },
+		},
+		{
+			name: "matcher installed",
+			edit: func(planned *plannedCommand) { planned.Matches = exactMatcher(true) },
+		},
+		{name: "zero deadline", edit: func(planned *plannedCommand) { planned.Deadline = time.Time{} }},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			planned := valid
+			planned.SetValues = map[string]json.RawMessage{"effect": json.RawMessage(`"breathe"`)}
+			test.edit(&planned)
+			if err := validatePlannedCommand(planned); err == nil {
+				t.Fatalf("invalid dispatched Command was accepted: %#v", planned)
+			}
+		})
+	}
+}
+
+// This test protects stateless plan validation and fails if a stateless
+// effect plan without State properties or a decoder is rejected, or if an
+// ordinary stateful plan without them is accepted.
+func TestValidateStatelessEntityPlan(t *testing.T) {
+	t.Parallel()
+	plan, err := newEffectPlan(
+		adapter.EntityMetadata{Key: "effect", ExternalID: "0x1/root/effect", Name: "Effect"},
+		"effect",
+		[]string{"blink", "breathe"},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if plan.StatePolicy != entityStateless || len(plan.StateProperties) != 0 || plan.DecodeState != nil ||
+		len(plan.GetProperties) != 0 || plan.TranslateCommand == nil {
+		t.Fatalf("effect plan = %#v", plan)
+	}
+	if planErr := validateEntityPlans([]entityPlan{plan}); planErr != nil {
+		t.Fatalf("stateless plan was rejected: %v", planErr)
+	}
+	stateful := validTestPlan()
+	stateful.StateProperties = nil
+	if statefulErr := validateEntityPlans([]entityPlan{stateful}); statefulErr == nil {
+		t.Fatal("stateful plan without State properties was accepted")
+	}
+}
+
 // This test protects typed outcome matching and fails if a semantic-type
 // mismatch panics instead of returning false.
 func TestExactMatcherRejectsTypeMismatch(t *testing.T) {

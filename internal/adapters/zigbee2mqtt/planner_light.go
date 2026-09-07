@@ -25,7 +25,11 @@ type colorModePolicy struct {
 	usable   bool
 }
 
-//nolint:gocognit // One pass keeps the power gate and optional-feature isolation visibly together.
+type rootCandidate struct {
+	power entityPlan
+	extra []entityPlan
+}
+
 func (lightPlanner) Plan(input devicePlanningInput) plannerContribution {
 	contribution := plannerContribution{Kind: upstreamDeviceKindLight, Role: plannerRolePrimary}
 	expectations := make(map[string]int)
@@ -34,60 +38,11 @@ func (lightPlanner) Plan(input devicePlanningInput) plannerContribution {
 			expectations[colorModeProperty(root)]++
 		}
 	}
-	type rootCandidate struct {
-		power entityPlan
-		extra []entityPlan
-	}
 	var candidates []rootCandidate
 	for _, root := range input.Exposes.Roots(upstreamDeviceKindLight) {
-		if !root.resolved {
-			continue
+		if candidate, ok := planLightRoot(input, root, expectations); ok {
+			candidates = append(candidates, *candidate)
 		}
-		powerFeature, ok := input.Exposes.UniqueFeature(root, featureQuery{Type: upstreamExposeBinary, Name: "state"})
-		if !ok || !validPowerFeature(powerFeature) || !input.Exposes.PropertyUnique(powerFeature.Property) {
-			continue
-		}
-		powerOn, onErr := canonicalScalar(powerFeature.ValueOn)
-		powerOff, offErr := canonicalScalar(powerFeature.ValueOff)
-		if onErr != nil || offErr != nil || powerOn.canonical == powerOff.canonical {
-			continue
-		}
-		metadata, ok := powerMetadata(input.IEEE, root)
-		if !ok {
-			continue
-		}
-		power, err := newPowerPlan(metadata, powerFeature.Property, powerOn, powerOff)
-		if err != nil {
-			continue
-		}
-		entities := []entityPlan{}
-		if brightness := planBrightness(input, root); brightness != nil {
-			entities = append(entities, *brightness)
-		}
-		mode := colorModePolicy{
-			property: colorModeProperty(root),
-			usable: expectations[colorModeProperty(root)] == 1 &&
-				!input.Exposes.propertyHasForeignClaim(colorModeProperty(root)),
-		}
-		advertisedColor := hasColorComposite(root)
-		temperature := planColorTemp(input, root, advertisedColor, mode)
-		colorXY := planColorXY(input, root, mode)
-		colorHS := planColorHS(input, root, mode)
-		if temperature != nil {
-			entities = append(entities, *temperature)
-		}
-		if colorXY != nil {
-			entities = append(entities, *colorXY)
-		}
-		if colorHS != nil {
-			entities = append(entities, *colorHS)
-		}
-		if modeEntity := planColorMode(
-			input.IEEE, root, mode, temperature != nil || colorXY != nil || colorHS != nil,
-		); modeEntity != nil {
-			entities = append(entities, *modeEntity)
-		}
-		candidates = append(candidates, rootCandidate{power: power, extra: entities})
 	}
 	// Same-family dedup omits whole duplicate power-root candidates: when two
 	// roots resolve to one power key, every optional Entity from those roots is
@@ -97,14 +52,206 @@ func (lightPlanner) Plan(input devicePlanningInput) plannerContribution {
 	for _, candidate := range candidates {
 		counts[candidate.power.Descriptor.Key]++
 	}
+	survived := false
 	for _, candidate := range candidates {
 		if counts[candidate.power.Descriptor.Key] != 1 {
 			continue
 		}
 		contribution.Entities = append(contribution.Entities, candidate.power)
 		contribution.Entities = append(contribution.Entities, candidate.extra...)
+		survived = true
+	}
+	// Device-root settings and actions join only under a surviving power
+	// family: without eligible power the device is not a bulb, and each is
+	// planned once per device with a device-unique property.
+	if survived {
+		if powerOnBehavior := planPowerOnBehavior(input); powerOnBehavior != nil {
+			contribution.Entities = append(contribution.Entities, *powerOnBehavior)
+		}
+		if effect := planEffect(input); effect != nil {
+			contribution.Entities = append(contribution.Entities, *effect)
+		}
 	}
 	return contribution
+}
+
+// planLightRoot builds the power candidate and its optional siblings for one
+// resolved light root. Each optional feature is validated independently: an
+// ineligible sibling is omitted while power and the other siblings survive.
+func planLightRoot(
+	input devicePlanningInput,
+	root indexedExpose,
+	expectations map[string]int,
+) (*rootCandidate, bool) {
+	if !root.resolved {
+		return nil, false
+	}
+	powerFeature, ok := input.Exposes.UniqueFeature(root, featureQuery{Type: upstreamExposeBinary, Name: "state"})
+	if !ok || !validPowerFeature(powerFeature) || !input.Exposes.PropertyUnique(powerFeature.Property) {
+		return nil, false
+	}
+	powerOn, onErr := canonicalScalar(powerFeature.ValueOn)
+	powerOff, offErr := canonicalScalar(powerFeature.ValueOff)
+	if onErr != nil || offErr != nil || powerOn.canonical == powerOff.canonical {
+		return nil, false
+	}
+	metadata, ok := powerMetadata(input.IEEE, root)
+	if !ok {
+		return nil, false
+	}
+	power, err := newPowerPlan(metadata, powerFeature.Property, powerOn, powerOff)
+	if err != nil {
+		return nil, false
+	}
+	entities := []entityPlan{}
+	if brightness := planBrightness(input, root); brightness != nil {
+		entities = append(entities, *brightness)
+	}
+	mode := colorModePolicy{
+		property: colorModeProperty(root),
+		usable: expectations[colorModeProperty(root)] == 1 &&
+			!input.Exposes.propertyHasForeignClaim(colorModeProperty(root)),
+	}
+	advertisedColor := hasColorComposite(root)
+	temperature := planColorTemp(input, root, advertisedColor, mode)
+	colorXY := planColorXY(input, root, mode)
+	colorHS := planColorHS(input, root, mode)
+	if temperature != nil {
+		entities = append(entities, *temperature)
+	}
+	if colorXY != nil {
+		entities = append(entities, *colorXY)
+	}
+	if colorHS != nil {
+		entities = append(entities, *colorHS)
+	}
+	if modeEntity := planColorMode(
+		input.IEEE, root, mode, temperature != nil || colorXY != nil || colorHS != nil,
+	); modeEntity != nil {
+		entities = append(entities, *modeEntity)
+	}
+	if startup := planStartupColorTemp(input, root); startup != nil {
+		entities = append(entities, *startup)
+	}
+	return &rootCandidate{power: power, extra: entities}, true
+}
+
+// planStartupColorTemp discovers the optional startup-temperature setting
+// nested in one power-eligible light root. The feature is validated
+// independently: an ineligible startup feature is omitted while power and
+// the other siblings survive.
+func planStartupColorTemp(input devicePlanningInput, root indexedExpose) *entityPlan {
+	feature, ok := input.Exposes.UniqueFeature(
+		root,
+		featureQuery{Type: upstreamExposeNumeric, Name: startupColorTempExposeName},
+	)
+	if !ok || feature.Property == "" || !exposeCanPublish(feature) || !exposeCanSet(feature) ||
+		!exposeCanGet(feature) || !input.Exposes.PropertyUnique(feature.Property) {
+		return nil
+	}
+	minimum, maximum, valid := startupTempRange(feature)
+	if !valid {
+		return nil
+	}
+	choices, valid := startupPreviousChoices(feature)
+	if !valid {
+		return nil
+	}
+	key, name := scopedIdentity(
+		"startupcolortemp",
+		"Startup Color Temperature",
+		root.expose.Endpoint,
+		root.endpoint,
+		root.scoped,
+	)
+	if !validDescriptorName(name) {
+		return nil
+	}
+	plan, err := newStartupColorTempPlan(adapter.EntityMetadata{
+		Key:        key,
+		ExternalID: input.IEEE + "/" + entityLocation(root) + "/startupcolortemp",
+		Name:       name,
+	}, feature.Property, minimum, maximum, choices)
+	if err != nil {
+		return nil
+	}
+	return &plan
+}
+
+// planPowerOnBehavior discovers the optional device-root power-on behavior
+// setting once per device. It requires full publish/set/get access and
+// non-empty unique values within the shared choice bounds.
+func planPowerOnBehavior(input devicePlanningInput) *entityPlan {
+	root, ok := input.Exposes.UniqueRoot(upstreamExposeEnum, powerOnBehaviorExposeName)
+	if !ok || !root.resolved {
+		return nil
+	}
+	expose := root.expose
+	if expose.Property == "" || !exposeCanPublish(expose) || !exposeCanSet(expose) ||
+		!exposeCanGet(expose) || !input.Exposes.PropertyUnique(expose.Property) {
+		return nil
+	}
+	choices, valid := enumChoices(expose.Values)
+	if !valid {
+		return nil
+	}
+	key, name := scopedIdentity(
+		"poweronbehavior",
+		"Power-On Behavior",
+		expose.Endpoint,
+		root.endpoint,
+		root.scoped,
+	)
+	if !validDescriptorName(name) {
+		return nil
+	}
+	plan, err := newPowerOnBehaviorPlan(adapter.EntityMetadata{
+		Key:        key,
+		ExternalID: input.IEEE + "/" + entityLocation(root) + "/poweronbehavior",
+		Name:       name,
+	}, expose.Property, choices)
+	if err != nil {
+		return nil
+	}
+	return &plan
+}
+
+// planEffect discovers the optional device-root set-only effect action once
+// per device. Access must be exactly set-only with a device-unique property
+// and non-empty unique values within the shared choice bounds.
+func planEffect(input devicePlanningInput) *entityPlan {
+	root, ok := input.Exposes.UniqueRoot(upstreamExposeEnum, effectExposeName)
+	if !ok || !root.resolved {
+		return nil
+	}
+	expose := root.expose
+	if expose.Property == "" || expose.Access != exposeSetAccessBit ||
+		!input.Exposes.PropertyUnique(expose.Property) {
+		return nil
+	}
+	values, valid := enumChoices(expose.Values)
+	if !valid {
+		return nil
+	}
+	key, name := scopedIdentity(
+		"effect",
+		"Effect",
+		expose.Endpoint,
+		root.endpoint,
+		root.scoped,
+	)
+	if !validDescriptorName(name) {
+		return nil
+	}
+	plan, err := newEffectPlan(adapter.EntityMetadata{
+		Key:        key,
+		ExternalID: input.IEEE + "/" + entityLocation(root) + "/effect",
+		Name:       name,
+	}, expose.Property, values)
+	if err != nil {
+		return nil
+	}
+	return &plan
 }
 
 func planBrightness(input devicePlanningInput, root indexedExpose) *entityPlan {

@@ -57,38 +57,12 @@ func renderCatalog(models []entityTypeModel, modulePath string, moduleRoot strin
 			strconv.Quote("compile "+model.TypeID+" codecs: %w"),
 		)
 		for _, operation := range model.Operations {
-			variable := lowerFirst(operation.GoName)
-			fmt.Fprintf(&source, "\t%s := DefineOperation(\n", variable)
-			fmt.Fprintf(&source, "\t\tOperationName(contract%s.Operation%s),\n", model.Package, operation.GoName)
-			fmt.Fprintf(&source, "\t\tcodecs.%sParameters,\n", operation.GoName)
-			fmt.Fprintf(
-				&source,
-				"\t\tfunc(support contract%s.Support) (contract%s.%sSupport, bool) {\n",
-				model.Package,
-				model.Package,
-				operation.GoName,
-			)
-			if operation.Required {
-				fmt.Fprintf(&source, "\t\t\treturn support.Operations.%s, true\n", operation.GoName)
-			} else {
-				fmt.Fprintf(
-					&source,
-					"\t\t\tif support.Operations.%s == nil { return contract%s.%sSupport{}, false }\n",
-					operation.GoName,
-					model.Package,
-					operation.GoName,
-				)
-				fmt.Fprintf(&source, "\t\t\treturn *support.Operations.%s, true\n", operation.GoName)
-			}
-			source.WriteString("\t\t},\n")
-			fmt.Fprintf(&source, "\t\tcontract%s.Validate%sParameters,\n", model.Package, operation.GoName)
-			fmt.Fprintf(&source, "\t\tcontract%s.%sDeadline,\n", model.Package, operation.GoName)
-			fmt.Fprintf(&source, "\t\tcontract%s.%sSatisfied,\n", model.Package, operation.GoName)
-			source.WriteString("\t)\n")
+			writeCatalogOperation(&source, model, operation)
 		}
 		fmt.Fprintf(
 			&source,
-			"\tdefinition, err := DefineEntityType(id, codecs.State, codecs.Support, contract%s.ValidateState, contract%s.EqualState",
+			"\tdefinition, err := DefineEntityType(id, codecs.State, codecs.Support, contract%s.ValidateSupport, contract%s.ValidateState, contract%s.EqualState",
+			model.Package,
 			model.Package,
 			model.Package,
 		)
@@ -96,7 +70,11 @@ func renderCatalog(models []entityTypeModel, modulePath string, moduleRoot strin
 			fmt.Fprintf(&source, ", %s", lowerFirst(operation.GoName))
 		}
 		source.WriteString(")\n")
-		source.WriteString("\tif err != nil { return EntityTypeDefinition{}, err }\n\treturn definition, nil\n}\n\n")
+		source.WriteString("\tif err != nil { return EntityTypeDefinition{}, err }\n")
+		if model.Stateless {
+			source.WriteString("\tdefinition.stateless = true\n")
+		}
+		source.WriteString("\treturn definition, nil\n}\n\n")
 	}
 
 	formatted, err := formatGenerated(source.String())
@@ -107,6 +85,57 @@ func renderCatalog(models []entityTypeModel, modulePath string, moduleRoot strin
 		path:    filepath.Join(moduleRoot, "internal", "modules", "devices", "zz_generated_entitytypes.go"),
 		content: formatted,
 	}, nil
+}
+
+// writeCatalogOperation emits one DefineOperation call. Dispatched operations pass a nil matcher with explicit type arguments, since State cannot be inferred from nil.
+func writeCatalogOperation(source *strings.Builder, model entityTypeModel, operation operationModel) {
+	variable := lowerFirst(operation.GoName)
+	if operation.Outcome == outcomeDispatched {
+		fmt.Fprintf(
+			source,
+			"\t%s := DefineOperation[contract%s.State, contract%s.Support, contract%s.%sSupport, contract%s.%sParameters](\n",
+			variable,
+			model.Package,
+			model.Package,
+			model.Package,
+			operation.GoName,
+			model.Package,
+			operation.GoName,
+		)
+	} else {
+		fmt.Fprintf(source, "\t%s := DefineOperation(\n", variable)
+	}
+	fmt.Fprintf(source, "\t\tOperationName(contract%s.Operation%s),\n", model.Package, operation.GoName)
+	fmt.Fprintf(source, "\t\tcodecs.%sParameters,\n", operation.GoName)
+	fmt.Fprintf(
+		source,
+		"\t\tfunc(support contract%s.Support) (contract%s.%sSupport, bool) {\n",
+		model.Package,
+		model.Package,
+		operation.GoName,
+	)
+	if operation.Required {
+		fmt.Fprintf(source, "\t\t\treturn support.Operations.%s, true\n", operation.GoName)
+	} else {
+		fmt.Fprintf(
+			source,
+			"\t\t\tif support.Operations.%s == nil { return contract%s.%sSupport{}, false }\n",
+			operation.GoName,
+			model.Package,
+			operation.GoName,
+		)
+		fmt.Fprintf(source, "\t\t\treturn *support.Operations.%s, true\n", operation.GoName)
+	}
+	source.WriteString("\t\t},\n")
+	fmt.Fprintf(source, "\t\tcontract%s.Validate%sParameters,\n", model.Package, operation.GoName)
+	fmt.Fprintf(source, "\t\tcontract%s.%sDeadline,\n", model.Package, operation.GoName)
+	if operation.Outcome == outcomeDispatched {
+		source.WriteString("\t\tOutcomeDispatched,\n\t\tnil,\n")
+	} else {
+		source.WriteString("\t\tOutcomeObserved,\n")
+		fmt.Fprintf(source, "\t\tcontract%s.%sSatisfied,\n", model.Package, operation.GoName)
+	}
+	source.WriteString("\t)\n")
 }
 
 func entityTypeGoName(model entityTypeModel) string {

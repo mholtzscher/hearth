@@ -1,0 +1,35 @@
+{
+  "manifest_version": 1,
+  "type": "hearth.enumsetting/v1",
+  "state_schema": "state.schema.json",
+  "support_schema": "support.schema.json",
+  "state_validation": [
+    {
+      "op": "in",
+      "left": {"root": "state", "path": ""},
+      "right": {"root": "support", "path": "/state/choices"}
+    }
+  ],
+  "operations": {
+    "set": {
+      "parameters_schema": "set-parameters.schema.json",
+      "deadline_ms": 10000,
+      "outcome": "observed",
+      "parameter_validation": [
+        {
+          "op": "in",
+          "left": {"root": "parameters", "path": "/value"},
+          "right": {"root": "support", "path": "/state/choices"}
+        }
+      ],
+      "satisfied_when": [
+        {
+          "op": "eq",
+          "left": {"root": "parameters", "path": "/value"},
+          "right": {"root": "state", "path": ""}
+        }
+      ]
+    }
+  },
+  "examples": "examples.json"
+}

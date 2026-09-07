@@ -1,0 +1,29 @@
+{
+  "cases": [
+    {
+      "name": "effects",
+      "support": {
+        "state": {},
+        "operations": {"trigger": {"values": ["blink", "breathe", "okay", "channel_change", "finish_effect", "stop_effect"]}}
+      },
+      "states": [
+        {"value": {}, "valid": true},
+        {"value": {"unexpected": true}, "valid": false}
+      ],
+      "operations": {
+        "trigger": {
+          "parameters": [
+            {"value": {"name": "blink"}, "valid": true},
+            {"value": {"name": "stop_effect"}, "valid": true},
+            {"value": {"name": "party"}, "valid": false},
+            {"value": {"name": ""}, "valid": false}
+          ],
+          "outcomes": [
+            {"parameters": {"name": "blink"}, "state": {}, "satisfied": true},
+            {"parameters": {"name": "stop_effect"}, "state": {}, "satisfied": true}
+          ]
+        }
+      }
+    }
+  ]
+}
