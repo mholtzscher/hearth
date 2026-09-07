@@ -3,280 +3,290 @@
 package devices
 
 import (
+	"bytes"
+	"encoding/json"
+	"reflect"
 	"testing"
 	"time"
 )
 
-func TestGeneratedBuiltinCatalogConformance(t *testing.T) {
+// equalGeneratedCatalogJSON compares normalized catalog output against the
+// authored example independent of object key order or whitespace.
+func equalGeneratedCatalogJSON(left, right []byte) bool {
+	leftValue, leftErr := decodeGeneratedCatalogJSON(left)
+	rightValue, rightErr := decodeGeneratedCatalogJSON(right)
+	if leftErr != nil || rightErr != nil {
+		return false
+	}
+	return reflect.DeepEqual(leftValue, rightValue)
+}
+
+func decodeGeneratedCatalogJSON(raw []byte) (any, error) {
+	decoder := json.NewDecoder(bytes.NewReader(raw))
+	decoder.UseNumber()
+	var value any
+	if err := decoder.Decode(&value); err != nil {
+		return nil, err
+	}
+	return value, nil
+}
+
+func TestGeneratedBuiltinCatalogWiring(t *testing.T) {
 	catalog, err := NewBuiltinTypeCatalog()
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Run("hearth.brightness/v1/maximum-80-step-5", func(t *testing.T) {
-		entity := Entity{ID: EntityID("generated_brightnessv1"), TypeID: EntityTypeBrightnessV1, Support: EntitySupport("{\n        \"state\": {\"maximum\": 80},\n        \"operations\": {\"set\": {\"step\": 5}}\n      }")}
-		if _, err := catalog.NormalizeSupport(entity.TypeID, entity.Support); err != nil {
-			t.Fatalf("support: %v", err)
+	t.Run("hearth.brightness/v1", func(t *testing.T) {
+		entity := Entity{ID: EntityID("generated_brightnessv1"), TypeID: EntityTypeBrightnessV1, Support: EntitySupport("{\"state\":{\"maximum\":80},\"operations\":{\"set\":{\"step\":5}}}")}
+		normalizedSupport, err := catalog.NormalizeSupport(entity.TypeID, entity.Support)
+		if err != nil {
+			t.Fatalf("catalog support: %v", err)
 		}
-		if _, err := catalog.NormalizeState(entity, Value("75")); (err == nil) != true {
-			t.Errorf("State example 1 error = %v", err)
+		if !equalGeneratedCatalogJSON(normalizedSupport, []byte("{\"state\":{\"maximum\":80},\"operations\":{\"set\":{\"step\":5}}}")) {
+			t.Errorf("catalog normalized support = %s, want %s", normalizedSupport, "{\"state\":{\"maximum\":80},\"operations\":{\"set\":{\"step\":5}}}")
 		}
-		if _, err := catalog.NormalizeState(entity, Value("85")); (err == nil) != false {
-			t.Errorf("State example 2 error = %v", err)
+		normalizedState, err := catalog.NormalizeState(entity, Value("75"))
+		if err != nil {
+			t.Fatalf("catalog State: %v", err)
 		}
-		if _, err := catalog.NormalizeState(entity, Value("101")); (err == nil) != false {
-			t.Errorf("State example 3 error = %v", err)
+		if !equalGeneratedCatalogJSON(normalizedState, []byte("75")) {
+			t.Errorf("catalog normalized State = %s, want %s", normalizedState, "75")
 		}
-		if resolved, err := catalog.ResolveCommand(entity, OperationName("set"), CommandParameters("{\"value\": 75}")); (err == nil) != true {
-			t.Errorf("set parameter example 1 error = %v", err)
-		} else if err == nil && resolved.Deadline != 10000*time.Millisecond {
-			t.Errorf("set parameter example 1 deadline = %v", resolved.Deadline)
+		if _, err := catalog.NormalizeState(entity, Value("85")); err == nil {
+			t.Error("catalog support-invalid State unexpectedly accepted")
 		}
-		if resolved, err := catalog.ResolveCommand(entity, OperationName("set"), CommandParameters("{\"value\": 76}")); (err == nil) != false {
-			t.Errorf("set parameter example 2 error = %v", err)
-		} else if err == nil && resolved.Deadline != 10000*time.Millisecond {
-			t.Errorf("set parameter example 2 deadline = %v", resolved.Deadline)
+		resolvedSet, err := catalog.ResolveCommand(entity, OperationName("set"), CommandParameters("{\"value\":75}"))
+		if err != nil {
+			t.Fatalf("catalog resolve set: %v", err)
 		}
-		if resolved, err := catalog.ResolveCommand(entity, OperationName("set"), CommandParameters("{\"value\": 85}")); (err == nil) != false {
-			t.Errorf("set parameter example 3 error = %v", err)
-		} else if err == nil && resolved.Deadline != 10000*time.Millisecond {
-			t.Errorf("set parameter example 3 deadline = %v", resolved.Deadline)
+		if !equalGeneratedCatalogJSON(resolvedSet.Parameters, []byte("{\"value\":75}")) {
+			t.Errorf("catalog normalized set parameters = %s, want %s", resolvedSet.Parameters, "{\"value\":75}")
 		}
-		if satisfied, err := catalog.Satisfies(entity, CommandRecord{OperationName: OperationName("set"), Parameters: CommandParameters("{\"value\": 75}")}, Value("75")); err != nil || satisfied != true {
-			t.Errorf("set outcome 1: satisfied = %v, error = %v", satisfied, err)
+		if resolvedSet.Deadline != 10000*time.Millisecond {
+			t.Errorf("catalog set deadline = %v, want %v", resolvedSet.Deadline, 10000*time.Millisecond)
 		}
-		if satisfied, err := catalog.Satisfies(entity, CommandRecord{OperationName: OperationName("set"), Parameters: CommandParameters("{\"value\": 75}")}, Value("70")); err != nil || satisfied != false {
-			t.Errorf("set outcome 2: satisfied = %v, error = %v", satisfied, err)
+		if _, err := catalog.ResolveCommand(entity, OperationName("set"), CommandParameters("{\"value\":76}")); err == nil {
+			t.Error("catalog support-invalid set parameters unexpectedly accepted")
 		}
-		if satisfied, err := catalog.Satisfies(entity, CommandRecord{OperationName: OperationName("set"), Parameters: CommandParameters("{\"value\": 85}")}, Value("85")); err != nil || satisfied != true {
-			t.Errorf("set outcome 3: satisfied = %v, error = %v", satisfied, err)
+		if satisfied, err := catalog.Satisfies(entity, CommandRecord{OperationName: OperationName("set"), Parameters: CommandParameters("{\"value\":75}")}, Value("75")); err != nil || !satisfied {
+			t.Errorf("catalog set satisfied outcome = %v, %v", satisfied, err)
 		}
-	})
-	t.Run("hearth.colorhs/v1/hs-target", func(t *testing.T) {
-		entity := Entity{ID: EntityID("generated_colorhsv1"), TypeID: EntityTypeColorhsV1, Support: EntitySupport("{\n        \"state\": {},\n        \"operations\": {\"set\": {}}\n      }")}
-		if _, err := catalog.NormalizeSupport(entity.TypeID, entity.Support); err != nil {
-			t.Fatalf("support: %v", err)
+		if satisfied, err := catalog.Satisfies(entity, CommandRecord{OperationName: OperationName("set"), Parameters: CommandParameters("{\"value\":75}")}, Value("70")); err != nil || satisfied {
+			t.Errorf("catalog set unsatisfied outcome = %v, %v", satisfied, err)
 		}
-		if _, err := catalog.NormalizeState(entity, Value("{\"active\": true, \"hue\": 120, \"saturation\": 80}")); (err == nil) != true {
-			t.Errorf("State example 1 error = %v", err)
+		if equal, err := catalog.EqualState(entity, Value("75"), Value("75")); err != nil || !equal {
+			t.Errorf("catalog equal State = %v, %v", equal, err)
 		}
-		if _, err := catalog.NormalizeState(entity, Value("{\"active\": false, \"hue\": 0, \"saturation\": 0}")); (err == nil) != true {
-			t.Errorf("State example 2 error = %v", err)
-		}
-		if _, err := catalog.NormalizeState(entity, Value("{\"active\": true, \"hue\": 360, \"saturation\": 80}")); (err == nil) != false {
-			t.Errorf("State example 3 error = %v", err)
-		}
-		if _, err := catalog.NormalizeState(entity, Value("{\"hue\": 120, \"saturation\": 80}")); (err == nil) != false {
-			t.Errorf("State example 4 error = %v", err)
-		}
-		if resolved, err := catalog.ResolveCommand(entity, OperationName("set"), CommandParameters("{\"hue\": 120, \"saturation\": 80}")); (err == nil) != true {
-			t.Errorf("set parameter example 1 error = %v", err)
-		} else if err == nil && resolved.Deadline != 10000*time.Millisecond {
-			t.Errorf("set parameter example 1 deadline = %v", resolved.Deadline)
-		}
-		if resolved, err := catalog.ResolveCommand(entity, OperationName("set"), CommandParameters("{\"hue\": 0, \"saturation\": 0}")); (err == nil) != true {
-			t.Errorf("set parameter example 2 error = %v", err)
-		} else if err == nil && resolved.Deadline != 10000*time.Millisecond {
-			t.Errorf("set parameter example 2 deadline = %v", resolved.Deadline)
-		}
-		if resolved, err := catalog.ResolveCommand(entity, OperationName("set"), CommandParameters("{\"hue\": 360, \"saturation\": 80}")); (err == nil) != false {
-			t.Errorf("set parameter example 3 error = %v", err)
-		} else if err == nil && resolved.Deadline != 10000*time.Millisecond {
-			t.Errorf("set parameter example 3 deadline = %v", resolved.Deadline)
-		}
-		if resolved, err := catalog.ResolveCommand(entity, OperationName("set"), CommandParameters("{\"hue\": 120}")); (err == nil) != false {
-			t.Errorf("set parameter example 4 error = %v", err)
-		} else if err == nil && resolved.Deadline != 10000*time.Millisecond {
-			t.Errorf("set parameter example 4 deadline = %v", resolved.Deadline)
-		}
-		if satisfied, err := catalog.Satisfies(entity, CommandRecord{OperationName: OperationName("set"), Parameters: CommandParameters("{\"hue\": 359, \"saturation\": 50}")}, Value("{\"active\": true, \"hue\": 1, \"saturation\": 50}")); err != nil || satisfied != true {
-			t.Errorf("set outcome 1: satisfied = %v, error = %v", satisfied, err)
-		}
-		if satisfied, err := catalog.Satisfies(entity, CommandRecord{OperationName: OperationName("set"), Parameters: CommandParameters("{\"hue\": 10, \"saturation\": 50}")}, Value("{\"active\": true, \"hue\": 10, \"saturation\": 51}")); err != nil || satisfied != true {
-			t.Errorf("set outcome 2: satisfied = %v, error = %v", satisfied, err)
-		}
-		if satisfied, err := catalog.Satisfies(entity, CommandRecord{OperationName: OperationName("set"), Parameters: CommandParameters("{\"hue\": 359, \"saturation\": 50}")}, Value("{\"active\": true, \"hue\": 2, \"saturation\": 50}")); err != nil || satisfied != false {
-			t.Errorf("set outcome 3: satisfied = %v, error = %v", satisfied, err)
-		}
-		if satisfied, err := catalog.Satisfies(entity, CommandRecord{OperationName: OperationName("set"), Parameters: CommandParameters("{\"hue\": 10, \"saturation\": 50}")}, Value("{\"active\": true, \"hue\": 10, \"saturation\": 52}")); err != nil || satisfied != false {
-			t.Errorf("set outcome 4: satisfied = %v, error = %v", satisfied, err)
-		}
-		if satisfied, err := catalog.Satisfies(entity, CommandRecord{OperationName: OperationName("set"), Parameters: CommandParameters("{\"hue\": 10, \"saturation\": 50}")}, Value("{\"active\": false, \"hue\": 10, \"saturation\": 50}")); err != nil || satisfied != false {
-			t.Errorf("set outcome 5: satisfied = %v, error = %v", satisfied, err)
+		if equal, err := catalog.EqualState(entity, Value("75"), Value("70")); err != nil || equal {
+			t.Errorf("catalog unequal State = %v, %v", equal, err)
 		}
 	})
-	t.Run("hearth.colormode/v1/reported-modes", func(t *testing.T) {
-		entity := Entity{ID: EntityID("generated_colormodev1"), TypeID: EntityTypeColormodeV1, Support: EntitySupport("{\"state\": {}, \"operations\": {}}")}
-		if _, err := catalog.NormalizeSupport(entity.TypeID, entity.Support); err != nil {
-			t.Fatalf("support: %v", err)
+	t.Run("hearth.colorhs/v1", func(t *testing.T) {
+		entity := Entity{ID: EntityID("generated_colorhsv1"), TypeID: EntityTypeColorhsV1, Support: EntitySupport("{\"state\":{},\"operations\":{\"set\":{}}}")}
+		normalizedSupport, err := catalog.NormalizeSupport(entity.TypeID, entity.Support)
+		if err != nil {
+			t.Fatalf("catalog support: %v", err)
 		}
-		if _, err := catalog.NormalizeState(entity, Value("\"xy\"")); (err == nil) != true {
-			t.Errorf("State example 1 error = %v", err)
+		if !equalGeneratedCatalogJSON(normalizedSupport, []byte("{\"state\":{},\"operations\":{\"set\":{}}}")) {
+			t.Errorf("catalog normalized support = %s, want %s", normalizedSupport, "{\"state\":{},\"operations\":{\"set\":{}}}")
 		}
-		if _, err := catalog.NormalizeState(entity, Value("\"hs\"")); (err == nil) != true {
-			t.Errorf("State example 2 error = %v", err)
+		normalizedState, err := catalog.NormalizeState(entity, Value("{\"active\":true,\"hue\":120,\"saturation\":80}"))
+		if err != nil {
+			t.Fatalf("catalog State: %v", err)
 		}
-		if _, err := catalog.NormalizeState(entity, Value("\"color_temp\"")); (err == nil) != true {
-			t.Errorf("State example 3 error = %v", err)
+		if !equalGeneratedCatalogJSON(normalizedState, []byte("{\"active\":true,\"hue\":120,\"saturation\":80}")) {
+			t.Errorf("catalog normalized State = %s, want %s", normalizedState, "{\"active\":true,\"hue\":120,\"saturation\":80}")
 		}
-		if _, err := catalog.NormalizeState(entity, Value("\"rgb\"")); (err == nil) != false {
-			t.Errorf("State example 4 error = %v", err)
+		resolvedSet, err := catalog.ResolveCommand(entity, OperationName("set"), CommandParameters("{\"hue\":120,\"saturation\":80}"))
+		if err != nil {
+			t.Fatalf("catalog resolve set: %v", err)
 		}
-		if _, err := catalog.NormalizeState(entity, Value("123")); (err == nil) != false {
-			t.Errorf("State example 5 error = %v", err)
+		if !equalGeneratedCatalogJSON(resolvedSet.Parameters, []byte("{\"hue\":120,\"saturation\":80}")) {
+			t.Errorf("catalog normalized set parameters = %s, want %s", resolvedSet.Parameters, "{\"hue\":120,\"saturation\":80}")
 		}
-	})
-	t.Run("hearth.colortemp/v1/fixture-153-500-step-1", func(t *testing.T) {
-		entity := Entity{ID: EntityID("generated_colortempv1"), TypeID: EntityTypeColortempV1, Support: EntitySupport("{\n        \"state\": {\"minimum\": 153, \"maximum\": 500},\n        \"operations\": {\"set\": {\"step\": 1}}\n      }")}
-		if _, err := catalog.NormalizeSupport(entity.TypeID, entity.Support); err != nil {
-			t.Fatalf("support: %v", err)
+		if resolvedSet.Deadline != 10000*time.Millisecond {
+			t.Errorf("catalog set deadline = %v, want %v", resolvedSet.Deadline, 10000*time.Millisecond)
 		}
-		if _, err := catalog.NormalizeState(entity, Value("{\"active\": true, \"value\": 370}")); (err == nil) != true {
-			t.Errorf("State example 1 error = %v", err)
+		if satisfied, err := catalog.Satisfies(entity, CommandRecord{OperationName: OperationName("set"), Parameters: CommandParameters("{\"hue\":359,\"saturation\":50}")}, Value("{\"active\":true,\"hue\":1,\"saturation\":50}")); err != nil || !satisfied {
+			t.Errorf("catalog set satisfied outcome = %v, %v", satisfied, err)
 		}
-		if _, err := catalog.NormalizeState(entity, Value("{\"active\": false, \"value\": 370}")); (err == nil) != true {
-			t.Errorf("State example 2 error = %v", err)
+		if satisfied, err := catalog.Satisfies(entity, CommandRecord{OperationName: OperationName("set"), Parameters: CommandParameters("{\"hue\":359,\"saturation\":50}")}, Value("{\"active\":true,\"hue\":2,\"saturation\":50}")); err != nil || satisfied {
+			t.Errorf("catalog set unsatisfied outcome = %v, %v", satisfied, err)
 		}
-		if _, err := catalog.NormalizeState(entity, Value("{\"active\": true, \"value\": 153}")); (err == nil) != true {
-			t.Errorf("State example 3 error = %v", err)
+		if equal, err := catalog.EqualState(entity, Value("{\"active\":true,\"hue\":120,\"saturation\":80}"), Value("{\"active\":true,\"hue\":120,\"saturation\":80}")); err != nil || !equal {
+			t.Errorf("catalog equal State = %v, %v", equal, err)
 		}
-		if _, err := catalog.NormalizeState(entity, Value("{\"active\": true, \"value\": 500}")); (err == nil) != true {
-			t.Errorf("State example 4 error = %v", err)
-		}
-		if _, err := catalog.NormalizeState(entity, Value("{\"active\": true, \"value\": 152}")); (err == nil) != false {
-			t.Errorf("State example 5 error = %v", err)
-		}
-		if _, err := catalog.NormalizeState(entity, Value("{\"active\": true, \"value\": 501}")); (err == nil) != false {
-			t.Errorf("State example 6 error = %v", err)
-		}
-		if _, err := catalog.NormalizeState(entity, Value("{\"value\": 370}")); (err == nil) != false {
-			t.Errorf("State example 7 error = %v", err)
-		}
-		if _, err := catalog.NormalizeState(entity, Value("370")); (err == nil) != false {
-			t.Errorf("State example 8 error = %v", err)
-		}
-		if resolved, err := catalog.ResolveCommand(entity, OperationName("set"), CommandParameters("{\"value\": 370}")); (err == nil) != true {
-			t.Errorf("set parameter example 1 error = %v", err)
-		} else if err == nil && resolved.Deadline != 10000*time.Millisecond {
-			t.Errorf("set parameter example 1 deadline = %v", resolved.Deadline)
-		}
-		if resolved, err := catalog.ResolveCommand(entity, OperationName("set"), CommandParameters("{\"value\": 152}")); (err == nil) != false {
-			t.Errorf("set parameter example 2 error = %v", err)
-		} else if err == nil && resolved.Deadline != 10000*time.Millisecond {
-			t.Errorf("set parameter example 2 deadline = %v", resolved.Deadline)
-		}
-		if satisfied, err := catalog.Satisfies(entity, CommandRecord{OperationName: OperationName("set"), Parameters: CommandParameters("{\"value\": 370}")}, Value("{\"active\": true, \"value\": 370}")); err != nil || satisfied != true {
-			t.Errorf("set outcome 1: satisfied = %v, error = %v", satisfied, err)
-		}
-		if satisfied, err := catalog.Satisfies(entity, CommandRecord{OperationName: OperationName("set"), Parameters: CommandParameters("{\"value\": 370}")}, Value("{\"active\": false, \"value\": 370}")); err != nil || satisfied != false {
-			t.Errorf("set outcome 2: satisfied = %v, error = %v", satisfied, err)
-		}
-		if satisfied, err := catalog.Satisfies(entity, CommandRecord{OperationName: OperationName("set"), Parameters: CommandParameters("{\"value\": 370}")}, Value("{\"active\": true, \"value\": 369}")); err != nil || satisfied != false {
-			t.Errorf("set outcome 3: satisfied = %v, error = %v", satisfied, err)
+		if equal, err := catalog.EqualState(entity, Value("{\"active\":true,\"hue\":120,\"saturation\":80}"), Value("{\"active\":false,\"hue\":0,\"saturation\":0}")); err != nil || equal {
+			t.Errorf("catalog unequal State = %v, %v", equal, err)
 		}
 	})
-	t.Run("hearth.colorxy/v1/xy-target", func(t *testing.T) {
-		entity := Entity{ID: EntityID("generated_colorxyv1"), TypeID: EntityTypeColorxyV1, Support: EntitySupport("{\n        \"state\": {},\n        \"operations\": {\"set\": {}}\n      }")}
-		if _, err := catalog.NormalizeSupport(entity.TypeID, entity.Support); err != nil {
-			t.Fatalf("support: %v", err)
+	t.Run("hearth.colormode/v1", func(t *testing.T) {
+		entity := Entity{ID: EntityID("generated_colormodev1"), TypeID: EntityTypeColormodeV1, Support: EntitySupport("{\"state\":{},\"operations\":{}}")}
+		normalizedSupport, err := catalog.NormalizeSupport(entity.TypeID, entity.Support)
+		if err != nil {
+			t.Fatalf("catalog support: %v", err)
 		}
-		if _, err := catalog.NormalizeState(entity, Value("{\"active\": true, \"x\": 3125, \"y\": 3291}")); (err == nil) != true {
-			t.Errorf("State example 1 error = %v", err)
+		if !equalGeneratedCatalogJSON(normalizedSupport, []byte("{\"state\":{},\"operations\":{}}")) {
+			t.Errorf("catalog normalized support = %s, want %s", normalizedSupport, "{\"state\":{},\"operations\":{}}")
 		}
-		if _, err := catalog.NormalizeState(entity, Value("{\"active\": false, \"x\": 0, \"y\": 0}")); (err == nil) != true {
-			t.Errorf("State example 2 error = %v", err)
+		normalizedState, err := catalog.NormalizeState(entity, Value("\"xy\""))
+		if err != nil {
+			t.Fatalf("catalog State: %v", err)
 		}
-		if _, err := catalog.NormalizeState(entity, Value("{\"active\": true, \"x\": 10001, \"y\": 0}")); (err == nil) != false {
-			t.Errorf("State example 3 error = %v", err)
+		if !equalGeneratedCatalogJSON(normalizedState, []byte("\"xy\"")) {
+			t.Errorf("catalog normalized State = %s, want %s", normalizedState, "\"xy\"")
 		}
-		if _, err := catalog.NormalizeState(entity, Value("{\"x\": 3125, \"y\": 3291}")); (err == nil) != false {
-			t.Errorf("State example 4 error = %v", err)
+		if equal, err := catalog.EqualState(entity, Value("\"xy\""), Value("\"xy\"")); err != nil || !equal {
+			t.Errorf("catalog equal State = %v, %v", equal, err)
 		}
-		if resolved, err := catalog.ResolveCommand(entity, OperationName("set"), CommandParameters("{\"x\": 3125, \"y\": 3291}")); (err == nil) != true {
-			t.Errorf("set parameter example 1 error = %v", err)
-		} else if err == nil && resolved.Deadline != 10000*time.Millisecond {
-			t.Errorf("set parameter example 1 deadline = %v", resolved.Deadline)
-		}
-		if resolved, err := catalog.ResolveCommand(entity, OperationName("set"), CommandParameters("{\"x\": 0, \"y\": 0}")); (err == nil) != true {
-			t.Errorf("set parameter example 2 error = %v", err)
-		} else if err == nil && resolved.Deadline != 10000*time.Millisecond {
-			t.Errorf("set parameter example 2 deadline = %v", resolved.Deadline)
-		}
-		if resolved, err := catalog.ResolveCommand(entity, OperationName("set"), CommandParameters("{\"x\": 10001, \"y\": 0}")); (err == nil) != false {
-			t.Errorf("set parameter example 3 error = %v", err)
-		} else if err == nil && resolved.Deadline != 10000*time.Millisecond {
-			t.Errorf("set parameter example 3 deadline = %v", resolved.Deadline)
-		}
-		if resolved, err := catalog.ResolveCommand(entity, OperationName("set"), CommandParameters("{\"x\": 3125}")); (err == nil) != false {
-			t.Errorf("set parameter example 4 error = %v", err)
-		} else if err == nil && resolved.Deadline != 10000*time.Millisecond {
-			t.Errorf("set parameter example 4 deadline = %v", resolved.Deadline)
-		}
-		if satisfied, err := catalog.Satisfies(entity, CommandRecord{OperationName: OperationName("set"), Parameters: CommandParameters("{\"x\": 3125, \"y\": 3291}")}, Value("{\"active\": true, \"x\": 3125, \"y\": 3291}")); err != nil || satisfied != true {
-			t.Errorf("set outcome 1: satisfied = %v, error = %v", satisfied, err)
-		}
-		if satisfied, err := catalog.Satisfies(entity, CommandRecord{OperationName: OperationName("set"), Parameters: CommandParameters("{\"x\": 3125, \"y\": 3291}")}, Value("{\"active\": true, \"x\": 3126, \"y\": 3290}")); err != nil || satisfied != true {
-			t.Errorf("set outcome 2: satisfied = %v, error = %v", satisfied, err)
-		}
-		if satisfied, err := catalog.Satisfies(entity, CommandRecord{OperationName: OperationName("set"), Parameters: CommandParameters("{\"x\": 3125, \"y\": 3291}")}, Value("{\"active\": true, \"x\": 3127, \"y\": 3291}")); err != nil || satisfied != false {
-			t.Errorf("set outcome 3: satisfied = %v, error = %v", satisfied, err)
-		}
-		if satisfied, err := catalog.Satisfies(entity, CommandRecord{OperationName: OperationName("set"), Parameters: CommandParameters("{\"x\": 3125, \"y\": 3291}")}, Value("{\"active\": true, \"x\": 3125, \"y\": 3293}")); err != nil || satisfied != false {
-			t.Errorf("set outcome 4: satisfied = %v, error = %v", satisfied, err)
-		}
-		if satisfied, err := catalog.Satisfies(entity, CommandRecord{OperationName: OperationName("set"), Parameters: CommandParameters("{\"x\": 3125, \"y\": 3291}")}, Value("{\"active\": false, \"x\": 3125, \"y\": 3291}")); err != nil || satisfied != false {
-			t.Errorf("set outcome 5: satisfied = %v, error = %v", satisfied, err)
+		if equal, err := catalog.EqualState(entity, Value("\"xy\""), Value("\"hs\"")); err != nil || equal {
+			t.Errorf("catalog unequal State = %v, %v", equal, err)
 		}
 	})
-	t.Run("hearth.power/v1/boolean-power", func(t *testing.T) {
-		entity := Entity{ID: EntityID("generated_powerv1"), TypeID: EntityTypePowerV1, Support: EntitySupport("{\n        \"state\": {},\n        \"operations\": {\"set\": {}}\n      }")}
-		if _, err := catalog.NormalizeSupport(entity.TypeID, entity.Support); err != nil {
-			t.Fatalf("support: %v", err)
+	t.Run("hearth.colortemp/v1", func(t *testing.T) {
+		entity := Entity{ID: EntityID("generated_colortempv1"), TypeID: EntityTypeColortempV1, Support: EntitySupport("{\"state\":{\"minimum\":153,\"maximum\":500},\"operations\":{\"set\":{\"step\":1}}}")}
+		normalizedSupport, err := catalog.NormalizeSupport(entity.TypeID, entity.Support)
+		if err != nil {
+			t.Fatalf("catalog support: %v", err)
 		}
-		if _, err := catalog.NormalizeState(entity, Value("true")); (err == nil) != true {
-			t.Errorf("State example 1 error = %v", err)
+		if !equalGeneratedCatalogJSON(normalizedSupport, []byte("{\"state\":{\"minimum\":153,\"maximum\":500},\"operations\":{\"set\":{\"step\":1}}}")) {
+			t.Errorf("catalog normalized support = %s, want %s", normalizedSupport, "{\"state\":{\"minimum\":153,\"maximum\":500},\"operations\":{\"set\":{\"step\":1}}}")
 		}
-		if _, err := catalog.NormalizeState(entity, Value("\"on\"")); (err == nil) != false {
-			t.Errorf("State example 2 error = %v", err)
+		normalizedState, err := catalog.NormalizeState(entity, Value("{\"active\":true,\"value\":370}"))
+		if err != nil {
+			t.Fatalf("catalog State: %v", err)
 		}
-		if resolved, err := catalog.ResolveCommand(entity, OperationName("set"), CommandParameters("{\"value\": true}")); (err == nil) != true {
-			t.Errorf("set parameter example 1 error = %v", err)
-		} else if err == nil && resolved.Deadline != 10000*time.Millisecond {
-			t.Errorf("set parameter example 1 deadline = %v", resolved.Deadline)
+		if !equalGeneratedCatalogJSON(normalizedState, []byte("{\"active\":true,\"value\":370}")) {
+			t.Errorf("catalog normalized State = %s, want %s", normalizedState, "{\"active\":true,\"value\":370}")
 		}
-		if resolved, err := catalog.ResolveCommand(entity, OperationName("set"), CommandParameters("{\"value\": \"on\"}")); (err == nil) != false {
-			t.Errorf("set parameter example 2 error = %v", err)
-		} else if err == nil && resolved.Deadline != 10000*time.Millisecond {
-			t.Errorf("set parameter example 2 deadline = %v", resolved.Deadline)
+		if _, err := catalog.NormalizeState(entity, Value("{\"active\":true,\"value\":152}")); err == nil {
+			t.Error("catalog support-invalid State unexpectedly accepted")
 		}
-		if satisfied, err := catalog.Satisfies(entity, CommandRecord{OperationName: OperationName("set"), Parameters: CommandParameters("{\"value\": true}")}, Value("true")); err != nil || satisfied != true {
-			t.Errorf("set outcome 1: satisfied = %v, error = %v", satisfied, err)
+		resolvedSet, err := catalog.ResolveCommand(entity, OperationName("set"), CommandParameters("{\"value\":370}"))
+		if err != nil {
+			t.Fatalf("catalog resolve set: %v", err)
 		}
-		if satisfied, err := catalog.Satisfies(entity, CommandRecord{OperationName: OperationName("set"), Parameters: CommandParameters("{\"value\": true}")}, Value("false")); err != nil || satisfied != false {
-			t.Errorf("set outcome 2: satisfied = %v, error = %v", satisfied, err)
+		if !equalGeneratedCatalogJSON(resolvedSet.Parameters, []byte("{\"value\":370}")) {
+			t.Errorf("catalog normalized set parameters = %s, want %s", resolvedSet.Parameters, "{\"value\":370}")
+		}
+		if resolvedSet.Deadline != 10000*time.Millisecond {
+			t.Errorf("catalog set deadline = %v, want %v", resolvedSet.Deadline, 10000*time.Millisecond)
+		}
+		if _, err := catalog.ResolveCommand(entity, OperationName("set"), CommandParameters("{\"value\":152}")); err == nil {
+			t.Error("catalog support-invalid set parameters unexpectedly accepted")
+		}
+		if satisfied, err := catalog.Satisfies(entity, CommandRecord{OperationName: OperationName("set"), Parameters: CommandParameters("{\"value\":370}")}, Value("{\"active\":true,\"value\":370}")); err != nil || !satisfied {
+			t.Errorf("catalog set satisfied outcome = %v, %v", satisfied, err)
+		}
+		if satisfied, err := catalog.Satisfies(entity, CommandRecord{OperationName: OperationName("set"), Parameters: CommandParameters("{\"value\":370}")}, Value("{\"active\":false,\"value\":370}")); err != nil || satisfied {
+			t.Errorf("catalog set unsatisfied outcome = %v, %v", satisfied, err)
+		}
+		if equal, err := catalog.EqualState(entity, Value("{\"active\":true,\"value\":370}"), Value("{\"active\":true,\"value\":370}")); err != nil || !equal {
+			t.Errorf("catalog equal State = %v, %v", equal, err)
+		}
+		if equal, err := catalog.EqualState(entity, Value("{\"active\":true,\"value\":370}"), Value("{\"active\":false,\"value\":370}")); err != nil || equal {
+			t.Errorf("catalog unequal State = %v, %v", equal, err)
 		}
 	})
-	t.Run("hearth.temperature/v1/fixed-range-milli-celsius", func(t *testing.T) {
-		entity := Entity{ID: EntityID("generated_temperaturev1"), TypeID: EntityTypeTemperatureV1, Support: EntitySupport("{\"state\": {}, \"operations\": {}}")}
-		if _, err := catalog.NormalizeSupport(entity.TypeID, entity.Support); err != nil {
-			t.Fatalf("support: %v", err)
+	t.Run("hearth.colorxy/v1", func(t *testing.T) {
+		entity := Entity{ID: EntityID("generated_colorxyv1"), TypeID: EntityTypeColorxyV1, Support: EntitySupport("{\"state\":{},\"operations\":{\"set\":{}}}")}
+		normalizedSupport, err := catalog.NormalizeSupport(entity.TypeID, entity.Support)
+		if err != nil {
+			t.Fatalf("catalog support: %v", err)
 		}
-		if _, err := catalog.NormalizeState(entity, Value("21500")); (err == nil) != true {
-			t.Errorf("State example 1 error = %v", err)
+		if !equalGeneratedCatalogJSON(normalizedSupport, []byte("{\"state\":{},\"operations\":{\"set\":{}}}")) {
+			t.Errorf("catalog normalized support = %s, want %s", normalizedSupport, "{\"state\":{},\"operations\":{\"set\":{}}}")
 		}
-		if _, err := catalog.NormalizeState(entity, Value("-273150")); (err == nil) != true {
-			t.Errorf("State example 2 error = %v", err)
+		normalizedState, err := catalog.NormalizeState(entity, Value("{\"active\":true,\"x\":3125,\"y\":3291}"))
+		if err != nil {
+			t.Fatalf("catalog State: %v", err)
 		}
-		if _, err := catalog.NormalizeState(entity, Value("1000000")); (err == nil) != true {
-			t.Errorf("State example 3 error = %v", err)
+		if !equalGeneratedCatalogJSON(normalizedState, []byte("{\"active\":true,\"x\":3125,\"y\":3291}")) {
+			t.Errorf("catalog normalized State = %s, want %s", normalizedState, "{\"active\":true,\"x\":3125,\"y\":3291}")
 		}
-		if _, err := catalog.NormalizeState(entity, Value("-273151")); (err == nil) != false {
-			t.Errorf("State example 4 error = %v", err)
+		resolvedSet, err := catalog.ResolveCommand(entity, OperationName("set"), CommandParameters("{\"x\":3125,\"y\":3291}"))
+		if err != nil {
+			t.Fatalf("catalog resolve set: %v", err)
 		}
-		if _, err := catalog.NormalizeState(entity, Value("1000001")); (err == nil) != false {
-			t.Errorf("State example 5 error = %v", err)
+		if !equalGeneratedCatalogJSON(resolvedSet.Parameters, []byte("{\"x\":3125,\"y\":3291}")) {
+			t.Errorf("catalog normalized set parameters = %s, want %s", resolvedSet.Parameters, "{\"x\":3125,\"y\":3291}")
 		}
-		if _, err := catalog.NormalizeState(entity, Value("21.5")); (err == nil) != false {
-			t.Errorf("State example 6 error = %v", err)
+		if resolvedSet.Deadline != 10000*time.Millisecond {
+			t.Errorf("catalog set deadline = %v, want %v", resolvedSet.Deadline, 10000*time.Millisecond)
+		}
+		if satisfied, err := catalog.Satisfies(entity, CommandRecord{OperationName: OperationName("set"), Parameters: CommandParameters("{\"x\":3125,\"y\":3291}")}, Value("{\"active\":true,\"x\":3125,\"y\":3291}")); err != nil || !satisfied {
+			t.Errorf("catalog set satisfied outcome = %v, %v", satisfied, err)
+		}
+		if satisfied, err := catalog.Satisfies(entity, CommandRecord{OperationName: OperationName("set"), Parameters: CommandParameters("{\"x\":3125,\"y\":3291}")}, Value("{\"active\":true,\"x\":3127,\"y\":3291}")); err != nil || satisfied {
+			t.Errorf("catalog set unsatisfied outcome = %v, %v", satisfied, err)
+		}
+		if equal, err := catalog.EqualState(entity, Value("{\"active\":true,\"x\":3125,\"y\":3291}"), Value("{\"active\":true,\"x\":3125,\"y\":3291}")); err != nil || !equal {
+			t.Errorf("catalog equal State = %v, %v", equal, err)
+		}
+		if equal, err := catalog.EqualState(entity, Value("{\"active\":true,\"x\":3125,\"y\":3291}"), Value("{\"active\":false,\"x\":0,\"y\":0}")); err != nil || equal {
+			t.Errorf("catalog unequal State = %v, %v", equal, err)
+		}
+	})
+	t.Run("hearth.power/v1", func(t *testing.T) {
+		entity := Entity{ID: EntityID("generated_powerv1"), TypeID: EntityTypePowerV1, Support: EntitySupport("{\"state\":{},\"operations\":{\"set\":{}}}")}
+		normalizedSupport, err := catalog.NormalizeSupport(entity.TypeID, entity.Support)
+		if err != nil {
+			t.Fatalf("catalog support: %v", err)
+		}
+		if !equalGeneratedCatalogJSON(normalizedSupport, []byte("{\"state\":{},\"operations\":{\"set\":{}}}")) {
+			t.Errorf("catalog normalized support = %s, want %s", normalizedSupport, "{\"state\":{},\"operations\":{\"set\":{}}}")
+		}
+		normalizedState, err := catalog.NormalizeState(entity, Value("true"))
+		if err != nil {
+			t.Fatalf("catalog State: %v", err)
+		}
+		if !equalGeneratedCatalogJSON(normalizedState, []byte("true")) {
+			t.Errorf("catalog normalized State = %s, want %s", normalizedState, "true")
+		}
+		resolvedSet, err := catalog.ResolveCommand(entity, OperationName("set"), CommandParameters("{\"value\":true}"))
+		if err != nil {
+			t.Fatalf("catalog resolve set: %v", err)
+		}
+		if !equalGeneratedCatalogJSON(resolvedSet.Parameters, []byte("{\"value\":true}")) {
+			t.Errorf("catalog normalized set parameters = %s, want %s", resolvedSet.Parameters, "{\"value\":true}")
+		}
+		if resolvedSet.Deadline != 10000*time.Millisecond {
+			t.Errorf("catalog set deadline = %v, want %v", resolvedSet.Deadline, 10000*time.Millisecond)
+		}
+		if satisfied, err := catalog.Satisfies(entity, CommandRecord{OperationName: OperationName("set"), Parameters: CommandParameters("{\"value\":true}")}, Value("true")); err != nil || !satisfied {
+			t.Errorf("catalog set satisfied outcome = %v, %v", satisfied, err)
+		}
+		if satisfied, err := catalog.Satisfies(entity, CommandRecord{OperationName: OperationName("set"), Parameters: CommandParameters("{\"value\":true}")}, Value("false")); err != nil || satisfied {
+			t.Errorf("catalog set unsatisfied outcome = %v, %v", satisfied, err)
+		}
+		if equal, err := catalog.EqualState(entity, Value("true"), Value("true")); err != nil || !equal {
+			t.Errorf("catalog equal State = %v, %v", equal, err)
+		}
+		if equal, err := catalog.EqualState(entity, Value("true"), Value("false")); err != nil || equal {
+			t.Errorf("catalog unequal State = %v, %v", equal, err)
+		}
+	})
+	t.Run("hearth.temperature/v1", func(t *testing.T) {
+		entity := Entity{ID: EntityID("generated_temperaturev1"), TypeID: EntityTypeTemperatureV1, Support: EntitySupport("{\"state\":{},\"operations\":{}}")}
+		normalizedSupport, err := catalog.NormalizeSupport(entity.TypeID, entity.Support)
+		if err != nil {
+			t.Fatalf("catalog support: %v", err)
+		}
+		if !equalGeneratedCatalogJSON(normalizedSupport, []byte("{\"state\":{},\"operations\":{}}")) {
+			t.Errorf("catalog normalized support = %s, want %s", normalizedSupport, "{\"state\":{},\"operations\":{}}")
+		}
+		normalizedState, err := catalog.NormalizeState(entity, Value("21500"))
+		if err != nil {
+			t.Fatalf("catalog State: %v", err)
+		}
+		if !equalGeneratedCatalogJSON(normalizedState, []byte("21500")) {
+			t.Errorf("catalog normalized State = %s, want %s", normalizedState, "21500")
+		}
+		if equal, err := catalog.EqualState(entity, Value("21500"), Value("21500")); err != nil || !equal {
+			t.Errorf("catalog equal State = %v, %v", equal, err)
+		}
+		if equal, err := catalog.EqualState(entity, Value("21500"), Value("-273150")); err != nil || equal {
+			t.Errorf("catalog unequal State = %v, %v", equal, err)
 		}
 	})
 }

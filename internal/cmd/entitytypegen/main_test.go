@@ -726,3 +726,162 @@ func writeJSON(t *testing.T, path string, value any) {
 		t.Fatal(err)
 	}
 }
+
+func TestCatalogProbeSelectsSupportLevelRejections(t *testing.T) {
+	t.Parallel()
+	model := writeCatalogProbeFixture(t)
+	probe, err := selectCatalogProbe(model, newCatalogSchemaChecker())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(probe.validState) != `75` {
+		t.Fatalf("valid State = %s, want 75", probe.validState)
+	}
+	// The schema-invalid "loud" rep is listed first; selection must skip it.
+	if string(probe.supportInvalidState) != `85` {
+		t.Fatalf("support-invalid State = %s, want 85", probe.supportInvalidState)
+	}
+	if len(probe.operations) != 1 {
+		t.Fatalf("operations = %d, want 1", len(probe.operations))
+	}
+	operation := probe.operations[0]
+	if string(operation.parameters) != `{"value":75}` {
+		t.Fatalf("parameters = %s", operation.parameters)
+	}
+	if string(operation.supportInvalidParams) != `{"value":76}` {
+		t.Fatalf("support-invalid parameters = %s", operation.supportInvalidParams)
+	}
+	if operation.model.DeadlineMS != 10000 {
+		t.Fatalf("deadline = %d, want 10000", operation.model.DeadlineMS)
+	}
+	if string(operation.satisfiedState) != `75` || string(operation.unsatisfiedState) != `70` {
+		t.Fatalf(
+			"outcome states = %s, %s",
+			operation.satisfiedState,
+			operation.unsatisfiedState,
+		)
+	}
+	if string(probe.unequalState) != `70` {
+		t.Fatalf("unequal State = %s, want 70", probe.unequalState)
+	}
+}
+
+func TestRenderedCatalogWiringCoversDeadlineOutcomesAndEquality(t *testing.T) {
+	t.Parallel()
+	model := writeCatalogProbeFixture(t)
+	rendered, err := renderCatalogConformanceTest([]entityTypeModel{model}, t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(rendered.content)
+	for _, required := range []string{
+		"TestGeneratedBuiltinCatalogWiring",
+		`"example.value/v1"`,
+		"10000*time.Millisecond",
+		"support-invalid State unexpectedly accepted",
+		"support-invalid set parameters unexpectedly accepted",
+		"catalog set satisfied outcome",
+		"catalog set unsatisfied outcome",
+		"catalog equal State",
+		"catalog unequal State",
+		"equalGeneratedCatalogJSON",
+	} {
+		if !strings.Contains(text, required) {
+			t.Errorf("rendered catalog wiring does not contain %q", required)
+		}
+	}
+}
+
+func TestCatalogProbeOmitsMissingSupportLevelRejections(t *testing.T) {
+	t.Parallel()
+	_, manifestPath := writeMinimalEntityTypeFixture(t, "examplev1")
+	model, err := loadModel(manifestPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	probe, err := selectCatalogProbe(model, newCatalogSchemaChecker())
+	if err != nil {
+		t.Fatal(err)
+	}
+	// The only invalid State (1 for a boolean schema) is schema-invalid, and
+	// the single valid State leaves no unequal partner.
+	if len(probe.supportInvalidState) != 0 {
+		t.Fatalf("support-invalid State = %s, want none", probe.supportInvalidState)
+	}
+	if len(probe.unequalState) != 0 {
+		t.Fatalf("unequal State = %s, want none", probe.unequalState)
+	}
+	rendered, err := renderCatalogConformanceTest([]entityTypeModel{model}, t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(rendered.content)
+	for _, forbidden := range []string{"support-invalid", "unequal State"} {
+		if strings.Contains(text, forbidden) {
+			t.Errorf("rendered catalog wiring unexpectedly contains %q", forbidden)
+		}
+	}
+	if !strings.Contains(text, "catalog equal State") {
+		t.Errorf("rendered catalog wiring omits the equal-State probe")
+	}
+}
+
+func writeCatalogProbeFixture(t *testing.T) entityTypeModel {
+	t.Helper()
+	directory := t.TempDir()
+	writeJSON(t, filepath.Join(directory, "state.schema.json"), map[string]any{
+		"$id": "urn:test:catalog:state", "type": "integer", "minimum": 0, "maximum": 100,
+	})
+	writeJSON(t, filepath.Join(directory, "support.schema.json"), map[string]any{
+		"$id": "urn:test:catalog:support", "type": "object", "additionalProperties": false,
+		"required": []string{"state", "operations"},
+		"properties": map[string]any{
+			"state": map[string]any{
+				"type": "object", "additionalProperties": false,
+				"required":   []string{"maximum"},
+				"properties": map[string]any{"maximum": map[string]any{"type": "integer"}},
+			},
+			"operations": map[string]any{
+				"type": "object", "additionalProperties": false,
+				"properties": map[string]any{
+					"set": map[string]any{"type": "object", "additionalProperties": false},
+				},
+			},
+		},
+	})
+	writeJSON(t, filepath.Join(directory, "set-parameters.schema.json"), map[string]any{
+		"$id": "urn:test:catalog:set-parameters", "type": "object", "additionalProperties": false,
+		"required": []string{"value"},
+		"properties": map[string]any{
+			"value": map[string]any{"type": "integer", "minimum": 0, "maximum": 100},
+		},
+	})
+	raw := func(value string) json.RawMessage { return json.RawMessage(value) }
+	return entityTypeModel{
+		Package: "examplev1", Directory: directory, ModuleRoot: directory, TypeID: "example.value/v1",
+		StateFile: "state.schema.json",
+		Operations: []operationModel{{
+			Name: "set", GoName: "Set", ParametersFile: "set-parameters.schema.json", DeadlineMS: 10000,
+		}},
+		Examples: examplesFile{Cases: []exampleCase{{
+			Name:    "dim",
+			Support: raw(`{"state":{"maximum":80},"operations":{"set":{"step":5}}}`),
+			States: []validityExample{
+				{Value: raw(`75`), Valid: true},
+				{Value: raw(`"loud"`), Valid: false},
+				{Value: raw(`85`), Valid: false},
+			},
+			Operations: map[string]operationExamples{"set": {
+				Parameters: []validityExample{
+					{Value: raw(`{"value":75}`), Valid: true},
+					{Value: raw(`{"value":"loud"}`), Valid: false},
+					{Value: raw(`{"value":76}`), Valid: false},
+				},
+				Outcomes: []outcomeExample{
+					{Parameters: raw(`{"value":75}`), State: raw(`75`), Satisfied: true},
+					{Parameters: raw(`{"value":75}`), State: raw(`70`), Satisfied: false},
+				},
+			}},
+		}}},
+	}
+}
