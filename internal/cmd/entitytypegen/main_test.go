@@ -323,7 +323,6 @@ func TestOperationFreeFacadeOmitsCommandArtifacts(t *testing.T) {
 	text := string(source)
 	for _, forbidden := range []string{
 		`"encoding/json"`,
-		`"github.com/mholtzscher/hearth/sdk/adapter/typed"`,
 		"type Handlers struct",
 		"NewCommandHandler",
 	} {
@@ -331,7 +330,14 @@ func TestOperationFreeFacadeOmitsCommandArtifacts(t *testing.T) {
 			t.Errorf("operation-free facade contains %q", forbidden)
 		}
 	}
-	for _, required := range []string{"NewEntityDescriptor", "NewObservation", "ObservationInput"} {
+	for _, required := range []string{
+		"NewEntityDescriptor",
+		"NewObservation",
+		"ObservationInput",
+		`"github.com/mholtzscher/hearth/sdk/adapter/typed"`,
+		"NewTypedEntityDescriptor",
+		"NewTypedEntityObservation",
+	} {
 		if !strings.Contains(text, required) {
 			t.Errorf("operation-free facade does not contain %q", required)
 		}
