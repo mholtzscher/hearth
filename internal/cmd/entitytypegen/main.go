@@ -87,6 +87,7 @@ type entityTypeModel struct {
 	Directory       string
 	ModuleRoot      string
 	TypeID          string
+	ExamplesFile    string
 	StateFile       string
 	StateSchema     schemaNode
 	SupportFile     string
@@ -345,7 +346,8 @@ func loadModel(path string) (entityTypeModel, error) {
 	}
 	return entityTypeModel{
 		Package: packageName, Directory: directory, ModuleRoot: moduleRoot, TypeID: definition.TypeID,
-		StateFile: definition.StateSchema, StateSchema: state,
+		ExamplesFile: definition.Examples,
+		StateFile:    definition.StateSchema, StateSchema: state,
 		SupportFile: definition.SupportSchema, SupportSchema: support, StateSupport: stateSupport,
 		StateValidation: stateValidation, Operations: operations, Examples: examples,
 	}, nil

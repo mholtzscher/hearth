@@ -116,7 +116,28 @@ func loadExamples(directory, relative string, operations []operationModel) (exam
 			}
 		}
 	}
+	if coverageErr := requireOperationCoverage(examples.Cases, operations); coverageErr != nil {
+		return examplesFile{}, coverageErr
+	}
 	return examples, nil
+}
+
+// requireOperationCoverage keeps optional operations honest: every
+// manifest-declared operation must appear in at least one case's support and
+// operation examples, otherwise the generated wiring would silently drop it.
+func requireOperationCoverage(cases []exampleCase, operations []operationModel) error {
+	covered := make(map[string]struct{}, len(cases))
+	for _, example := range cases {
+		for name := range example.Operations {
+			covered[name] = struct{}{}
+		}
+	}
+	for _, operation := range operations {
+		if _, ok := covered[operation.Name]; !ok {
+			return fmt.Errorf("operation %q has no examples in any case", operation.Name)
+		}
+	}
+	return nil
 }
 
 func requireValidityCoverage(examples []validityExample) error {

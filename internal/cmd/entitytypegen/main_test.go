@@ -358,6 +358,129 @@ func TestOperationFreeCatalogConformanceOmitsTimeImport(t *testing.T) {
 	_ = directory
 }
 
+func TestLoadModelRejectsOperationWithoutExamples(t *testing.T) {
+	t.Parallel()
+	directory, manifestPath := writeOptionalOperationFixture(t)
+	writeJSON(t, filepath.Join(directory, "examples.json"), map[string]any{
+		"cases": []any{map[string]any{
+			"name":    "disabled",
+			"support": map[string]any{"state": map[string]any{}, "operations": map[string]any{}},
+			"states": []any{
+				map[string]any{"value": 1, "valid": true},
+				map[string]any{"value": "on", "valid": false},
+			},
+			"operations": map[string]any{},
+		}},
+	})
+
+	_, err := loadModel(manifestPath)
+	if err == nil || !strings.Contains(err.Error(), `operation "activate" has no examples in any case`) {
+		t.Fatalf("missing operation coverage error = %v", err)
+	}
+}
+
+func TestRenderedConformanceEmbedsExactExamplesPath(t *testing.T) {
+	t.Parallel()
+	source, err := renderConformanceTest(entityTypeModel{
+		Package:      "examplev1",
+		TypeID:       "example.value/v1",
+		ExamplesFile: "examples.json",
+		Operations: []operationModel{
+			{Name: "activate", GoName: "Activate"},
+		},
+	}, "example.test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(source)
+	for _, required := range []string{
+		`//go:embed "examples.json"`,
+		`"example.test/internal/entitytypetest"`,
+		`"activate":`,
+		"ValidateActivateParameters",
+		"ActivateSatisfied",
+	} {
+		if !strings.Contains(text, required) {
+			t.Errorf("generated conformance test does not contain %q", required)
+		}
+	}
+}
+
+func TestRenderedConformanceOmitsOperationsForFreeTypes(t *testing.T) {
+	t.Parallel()
+	source, err := renderConformanceTest(entityTypeModel{
+		Package:      "examplev1",
+		TypeID:       "example.value/v1",
+		ExamplesFile: "examples.json",
+	}, "example.test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(source)
+	if !strings.Contains(text, "Operations: nil") {
+		t.Errorf("operation-free conformance test does not declare nil operations:\n%s", text)
+	}
+	if strings.Contains(text, `"errors"`) {
+		t.Errorf("operation-free conformance test imports errors:\n%s", text)
+	}
+}
+
+func writeOptionalOperationFixture(t *testing.T) (string, string) {
+	t.Helper()
+	root := t.TempDir()
+	if err := os.WriteFile(
+		filepath.Join(root, "go.mod"),
+		[]byte("module example.test\n\ngo 1.26\n"),
+		0o644,
+	); err != nil {
+		t.Fatal(err)
+	}
+	writeManifestSchema(t, root)
+	directory := filepath.Join(root, "entitytypes", "examplev1")
+	if err := os.MkdirAll(directory, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	writeJSON(t, filepath.Join(directory, "state.schema.json"), map[string]any{
+		"$id": "urn:test:state", "type": "integer", "minimum": 0, "maximum": 100,
+	})
+	writeJSON(t, filepath.Join(directory, "support.schema.json"), map[string]any{
+		"$id": "urn:test:support", "type": "object", "additionalProperties": false,
+		"required": []string{"state", "operations"},
+		"properties": map[string]any{
+			"state": map[string]any{"type": "object", "additionalProperties": false},
+			"operations": map[string]any{
+				"type": "object", "additionalProperties": false,
+				"properties": map[string]any{
+					"activate": map[string]any{"type": "object", "additionalProperties": false},
+				},
+			},
+		},
+	})
+	writeJSON(t, filepath.Join(directory, "activate-parameters.schema.json"), map[string]any{
+		"$id": "urn:test:activate", "type": "object", "additionalProperties": false,
+		"required": []string{"value"},
+		"properties": map[string]any{
+			"value": map[string]any{"type": "integer", "minimum": 0, "maximum": 100},
+		},
+	})
+	writeJSON(t, filepath.Join(directory, "entitytype.json"), map[string]any{
+		"manifest_version": 1,
+		"type":             "example.value/v1",
+		"state_schema":     "state.schema.json",
+		"support_schema":   "support.schema.json",
+		"examples":         "examples.json",
+		"operations": map[string]any{"activate": map[string]any{
+			"parameters_schema": "activate-parameters.schema.json", "deadline_ms": 1000,
+			"satisfied_when": []any{map[string]any{
+				"op":    "lte",
+				"left":  map[string]any{"root": "parameters", "path": "/value"},
+				"right": map[string]any{"root": "state", "path": ""},
+			}},
+		}},
+	})
+	return directory, filepath.Join(directory, "entitytype.json")
+}
+
 func TestRenderedCodecsEmbedExactManifestPaths(t *testing.T) {
 	t.Parallel()
 	source, err := renderCodecs(entityTypeModel{

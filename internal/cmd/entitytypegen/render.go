@@ -15,7 +15,7 @@ func render(model entityTypeModel, modulePath string) ([]output, error) {
 	if err != nil {
 		return nil, err
 	}
-	conformanceSource, err := renderConformanceTest(model)
+	conformanceSource, err := renderConformanceTest(model, modulePath)
 	if err != nil {
 		return nil, err
 	}

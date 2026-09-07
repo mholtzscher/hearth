@@ -3,79 +3,37 @@
 package temperaturev1
 
 import (
+	_ "embed"
 	"encoding/json"
 	"testing"
+
+	"github.com/mholtzscher/hearth/internal/entitytypetest"
 )
+
+//go:embed "examples.json"
+var examplesJSON []byte
 
 func TestGeneratedConformance(t *testing.T) {
 	codecs, err := Compile()
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Run("fixed-range-milli-celsius", func(t *testing.T) {
-		support, _, err := codecs.Support.Decode(json.RawMessage("{\"state\": {}, \"operations\": {}}"))
-		if err != nil {
-			t.Fatalf("support: %v", err)
-		}
-		{
-			value, _, decodeErr := codecs.State.Decode(json.RawMessage("21500"))
-			valid := decodeErr == nil
-			if decodeErr == nil {
-				valid = ValidateState(support, value) == nil
+	entitytypetest.RunContractExamples(t, examplesJSON, entitytypetest.ContractProbe{
+		ValidateSupport: func(support json.RawMessage) error {
+			_, _, err := codecs.Support.Decode(support)
+			return err
+		},
+		ValidateState: func(support, state json.RawMessage) error {
+			decodedSupport, _, err := codecs.Support.Decode(support)
+			if err != nil {
+				return err
 			}
-			if valid != true {
-				t.Errorf("state example 1: valid = %v, decode error = %v", valid, decodeErr)
+			decodedState, _, err := codecs.State.Decode(state)
+			if err != nil {
+				return err
 			}
-		}
-		{
-			value, _, decodeErr := codecs.State.Decode(json.RawMessage("-273150"))
-			valid := decodeErr == nil
-			if decodeErr == nil {
-				valid = ValidateState(support, value) == nil
-			}
-			if valid != true {
-				t.Errorf("state example 2: valid = %v, decode error = %v", valid, decodeErr)
-			}
-		}
-		{
-			value, _, decodeErr := codecs.State.Decode(json.RawMessage("1000000"))
-			valid := decodeErr == nil
-			if decodeErr == nil {
-				valid = ValidateState(support, value) == nil
-			}
-			if valid != true {
-				t.Errorf("state example 3: valid = %v, decode error = %v", valid, decodeErr)
-			}
-		}
-		{
-			value, _, decodeErr := codecs.State.Decode(json.RawMessage("-273151"))
-			valid := decodeErr == nil
-			if decodeErr == nil {
-				valid = ValidateState(support, value) == nil
-			}
-			if valid != false {
-				t.Errorf("state example 4: valid = %v, decode error = %v", valid, decodeErr)
-			}
-		}
-		{
-			value, _, decodeErr := codecs.State.Decode(json.RawMessage("1000001"))
-			valid := decodeErr == nil
-			if decodeErr == nil {
-				valid = ValidateState(support, value) == nil
-			}
-			if valid != false {
-				t.Errorf("state example 5: valid = %v, decode error = %v", valid, decodeErr)
-			}
-		}
-		{
-			value, _, decodeErr := codecs.State.Decode(json.RawMessage("21.5"))
-			valid := decodeErr == nil
-			if decodeErr == nil {
-				valid = ValidateState(support, value) == nil
-			}
-			if valid != false {
-				t.Errorf("state example 6: valid = %v, decode error = %v", valid, decodeErr)
-			}
-		}
+			return ValidateState(decodedSupport, decodedState)
+		},
+		Operations: nil,
 	})
 }

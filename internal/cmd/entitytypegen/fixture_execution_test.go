@@ -165,6 +165,14 @@ func writeFixtureModule(t *testing.T, root, temporary string) {
 		filepath.Join(root, "internal", "cmd", "entitytypegen", "testdata", "fixturemodule", "devices_model.go"),
 		filepath.Join(temporary, "internal", "modules", "devices", "model.go"),
 	)
+	// Generated contract tests import the shared handwritten runner, so the
+	// fixture module carries it along. It depends only on the standard
+	// library, keeping offline module preparation intact.
+	copyDir(
+		t,
+		filepath.Join(root, "internal", "entitytypetest"),
+		filepath.Join(temporary, "internal", "entitytypetest"),
+	)
 }
 
 func readGoVersion(t *testing.T, root string) string {
