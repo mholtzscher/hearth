@@ -114,6 +114,59 @@ func findOperation(model entityTypeModel, name string) *operationModel {
 	return nil
 }
 
+// TestFixtureCatalogProbes pins the regression shapes the bounded fixture
+// execution covers: the optional fixture leads with the disabled case, so
+// the operation probe must carry the originating enabled support rather
+// than the first-case support; the required fixture's only unequal State is
+// the schema-valid but support-narrowed recorded outcome (85), which the
+// generated catalog keeps as persisted with the valid State incoming.
+// Selection structure is asserted here; TestFixtureExecution executes the
+// generated catalog wiring built from these probes.
+func TestFixtureCatalogProbes(t *testing.T) {
+	t.Parallel()
+	root := fixtureRoot(t)
+
+	t.Run("optional-disabled-first", func(t *testing.T) {
+		t.Parallel()
+		model, err := loadModel(filepath.Join(root, "fixtureoptv1", "entitytype.json"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		probe, err := selectCatalogProbe(model, newCatalogSchemaChecker())
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(probe.operations) != 1 {
+			t.Fatalf("operations = %d, want 1", len(probe.operations))
+		}
+		operation := probe.operations[0]
+		if catalogSupportsEqual(probe.support, operation.support) {
+			t.Fatalf("operation support %s reuses the disabled first-case support", operation.support)
+		}
+		if string(operation.support) != `{"state": {"maximum": 900}, "operations": {"activate": {"label": "main"}}}` {
+			t.Fatalf("operation support = %s, want the originating enabled support", operation.support)
+		}
+	})
+
+	t.Run("required-narrowed-outcome-fallback", func(t *testing.T) {
+		t.Parallel()
+		model, err := loadModel(filepath.Join(root, "fixturereqv1", "entitytype.json"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		probe, err := selectCatalogProbe(model, newCatalogSchemaChecker())
+		if err != nil {
+			t.Fatal(err)
+		}
+		if string(probe.validState) != `75` {
+			t.Fatalf("valid State = %s, want 75", probe.validState)
+		}
+		if string(probe.unequalState) != `85` {
+			t.Fatalf("unequal State = %s, want the narrowed recorded outcome 85", probe.unequalState)
+		}
+	})
+}
+
 // TestFixtureExecution materializes the fixture matrix in an isolated module
 // with a local replace to this repository, generates all outputs, and runs
 // the generated tests in a bounded offline subprocess. It is skipped unless

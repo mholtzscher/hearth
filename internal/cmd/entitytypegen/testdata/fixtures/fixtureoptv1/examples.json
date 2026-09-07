@@ -1,6 +1,15 @@
 {
   "cases": [
     {
+      "name": "disabled",
+      "support": {"state": {"maximum": 900}, "operations": {}},
+      "states": [
+        {"value": {"code": 100}, "valid": true},
+        {"value": {"code": 950}, "valid": false}
+      ],
+      "operations": {}
+    },
+    {
       "name": "enabled",
       "support": {"state": {"maximum": 900}, "operations": {"activate": {"label": "main"}}},
       "states": [
@@ -24,15 +33,6 @@
           ]
         }
       }
-    },
-    {
-      "name": "disabled",
-      "support": {"state": {"maximum": 900}, "operations": {}},
-      "states": [
-        {"value": {"code": 100}, "valid": true},
-        {"value": {"code": 950}, "valid": false}
-      ],
-      "operations": {}
     }
   ]
 }

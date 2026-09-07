@@ -19,7 +19,7 @@
           ],
           "outcomes": [
             {"parameters": {"value": 75}, "state": 75, "satisfied": true},
-            {"parameters": {"value": 75}, "state": 70, "satisfied": false}
+            {"parameters": {"value": 75}, "state": 85, "satisfied": false}
           ]
         }
       }
