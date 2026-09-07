@@ -77,7 +77,7 @@ func TestGeneratedBuiltinCatalogWiring(t *testing.T) {
 		if equal, err := catalog.EqualState(entity, Value("75"), Value("75")); err != nil || !equal {
 			t.Errorf("catalog equal State = %v, %v", equal, err)
 		}
-		if equal, err := catalog.EqualState(entity, Value("75"), Value("70")); err != nil || equal {
+		if equal, err := catalog.EqualState(entity, Value("70"), Value("75")); err != nil || equal {
 			t.Errorf("catalog unequal State = %v, %v", equal, err)
 		}
 	})
@@ -116,7 +116,7 @@ func TestGeneratedBuiltinCatalogWiring(t *testing.T) {
 		if equal, err := catalog.EqualState(entity, Value("{\"active\":true,\"hue\":120,\"saturation\":80}"), Value("{\"active\":true,\"hue\":120,\"saturation\":80}")); err != nil || !equal {
 			t.Errorf("catalog equal State = %v, %v", equal, err)
 		}
-		if equal, err := catalog.EqualState(entity, Value("{\"active\":true,\"hue\":120,\"saturation\":80}"), Value("{\"active\":false,\"hue\":0,\"saturation\":0}")); err != nil || equal {
+		if equal, err := catalog.EqualState(entity, Value("{\"active\":false,\"hue\":0,\"saturation\":0}"), Value("{\"active\":true,\"hue\":120,\"saturation\":80}")); err != nil || equal {
 			t.Errorf("catalog unequal State = %v, %v", equal, err)
 		}
 	})
@@ -139,7 +139,7 @@ func TestGeneratedBuiltinCatalogWiring(t *testing.T) {
 		if equal, err := catalog.EqualState(entity, Value("\"xy\""), Value("\"xy\"")); err != nil || !equal {
 			t.Errorf("catalog equal State = %v, %v", equal, err)
 		}
-		if equal, err := catalog.EqualState(entity, Value("\"xy\""), Value("\"hs\"")); err != nil || equal {
+		if equal, err := catalog.EqualState(entity, Value("\"hs\""), Value("\"xy\"")); err != nil || equal {
 			t.Errorf("catalog unequal State = %v, %v", equal, err)
 		}
 	})
@@ -184,7 +184,7 @@ func TestGeneratedBuiltinCatalogWiring(t *testing.T) {
 		if equal, err := catalog.EqualState(entity, Value("{\"active\":true,\"value\":370}"), Value("{\"active\":true,\"value\":370}")); err != nil || !equal {
 			t.Errorf("catalog equal State = %v, %v", equal, err)
 		}
-		if equal, err := catalog.EqualState(entity, Value("{\"active\":true,\"value\":370}"), Value("{\"active\":false,\"value\":370}")); err != nil || equal {
+		if equal, err := catalog.EqualState(entity, Value("{\"active\":false,\"value\":370}"), Value("{\"active\":true,\"value\":370}")); err != nil || equal {
 			t.Errorf("catalog unequal State = %v, %v", equal, err)
 		}
 	})
@@ -223,7 +223,7 @@ func TestGeneratedBuiltinCatalogWiring(t *testing.T) {
 		if equal, err := catalog.EqualState(entity, Value("{\"active\":true,\"x\":3125,\"y\":3291}"), Value("{\"active\":true,\"x\":3125,\"y\":3291}")); err != nil || !equal {
 			t.Errorf("catalog equal State = %v, %v", equal, err)
 		}
-		if equal, err := catalog.EqualState(entity, Value("{\"active\":true,\"x\":3125,\"y\":3291}"), Value("{\"active\":false,\"x\":0,\"y\":0}")); err != nil || equal {
+		if equal, err := catalog.EqualState(entity, Value("{\"active\":false,\"x\":0,\"y\":0}"), Value("{\"active\":true,\"x\":3125,\"y\":3291}")); err != nil || equal {
 			t.Errorf("catalog unequal State = %v, %v", equal, err)
 		}
 	})
@@ -262,7 +262,7 @@ func TestGeneratedBuiltinCatalogWiring(t *testing.T) {
 		if equal, err := catalog.EqualState(entity, Value("true"), Value("true")); err != nil || !equal {
 			t.Errorf("catalog equal State = %v, %v", equal, err)
 		}
-		if equal, err := catalog.EqualState(entity, Value("true"), Value("false")); err != nil || equal {
+		if equal, err := catalog.EqualState(entity, Value("false"), Value("true")); err != nil || equal {
 			t.Errorf("catalog unequal State = %v, %v", equal, err)
 		}
 	})
@@ -285,7 +285,7 @@ func TestGeneratedBuiltinCatalogWiring(t *testing.T) {
 		if equal, err := catalog.EqualState(entity, Value("21500"), Value("21500")); err != nil || !equal {
 			t.Errorf("catalog equal State = %v, %v", equal, err)
 		}
-		if equal, err := catalog.EqualState(entity, Value("21500"), Value("-273150")); err != nil || equal {
+		if equal, err := catalog.EqualState(entity, Value("-273150"), Value("21500")); err != nil || equal {
 			t.Errorf("catalog unequal State = %v, %v", equal, err)
 		}
 	})

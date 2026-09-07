@@ -20,7 +20,7 @@ const runnerScenarioEnv = "HEARTH_ENTITYTYPETEST_SCENARIO"
 // fixedContractExamples is a human-reviewed fixture with one valid and one
 // invalid State, one valid and one invalid parameter set, and one satisfied
 // and one unsatisfied outcome.
-const fixedContractExamples = `{"cases": [{"name": "demo", "support": {"level": 1}, ` +
+const fixedContractExamples = `{"cases": [{"name": "demo", "support": {"level": 1, "operations": {"set": {}}}, ` +
 	`"states": [{"value": "ok", "valid": true}, {"value": "bad", "valid": false}], ` +
 	`"operations": {"set": {"parameters": [{"value": "go", "valid": true}, ` +
 	`{"value": "bad", "valid": false}], "outcomes": [{"parameters": "go", ` +
@@ -110,6 +110,23 @@ func TestContractRunnerAcceptsFixedExamples(t *testing.T) {
 	entitytypetest.RunContractExamples(t, []byte(fixedContractExamples), fixedContractProbe())
 }
 
+// This test protects optional operations: a case that does not support an
+// operation correctly omits its examples while another case covers it.
+func TestContractRunnerAcceptsOptionalAbsent(t *testing.T) {
+	t.Parallel()
+	examples := `{"cases": [` +
+		`{"name": "demo", "support": {"level": 1, "operations": {"set": {}}}, ` +
+		`"states": [{"value": "ok", "valid": true}, {"value": "bad", "valid": false}], ` +
+		`"operations": {"set": {"parameters": [{"value": "go", "valid": true}, ` +
+		`{"value": "bad", "valid": false}], "outcomes": [{"parameters": "go", ` +
+		`"state": "ok", "satisfied": true}, {"parameters": "go", "state": "other", ` +
+		`"satisfied": false}]}}}, ` +
+		`{"name": "disabled", "support": {"level": 1, "operations": {}}, ` +
+		`"states": [{"value": "ok", "valid": true}, {"value": "bad", "valid": false}], ` +
+		`"operations": {}}]}`
+	entitytypetest.RunContractExamples(t, []byte(examples), fixedContractProbe())
+}
+
 type runnerScenario struct {
 	name string
 	// want is a fragment of the child failure output proving the intended
@@ -187,7 +204,7 @@ func runnerScenarios() []runnerScenario {
 			want: "contract case has no State examples",
 			mutate: func(_ []byte, probe entitytypetest.ContractProbe) ([]byte, entitytypetest.ContractProbe) {
 				probe.Operations = nil
-				return []byte(`{"cases": [{"name": "demo", "support": {"level": 1}, "states": [], ` +
+				return []byte(`{"cases": [{"name": "demo", "support": {"level": 1, "operations": {}}, "states": [], ` +
 					`"operations": {}}]}`), probe
 			},
 		},
@@ -195,7 +212,7 @@ func runnerScenarios() []runnerScenario {
 			name: "empty-parameters",
 			want: `operation "set" has no parameter examples`,
 			mutate: func(_ []byte, probe entitytypetest.ContractProbe) ([]byte, entitytypetest.ContractProbe) {
-				return []byte(`{"cases": [{"name": "demo", "support": {"level": 1}, ` +
+				return []byte(`{"cases": [{"name": "demo", "support": {"level": 1, "operations": {"set": {}}}, ` +
 					`"states": [{"value": "ok", "valid": true}], ` +
 					`"operations": {"set": {"parameters": [], "outcomes": [{"parameters": "go", ` +
 					`"state": "ok", "satisfied": true}]}}}]}`), probe
@@ -205,7 +222,7 @@ func runnerScenarios() []runnerScenario {
 			name: "empty-outcomes",
 			want: `operation "set" has no outcome examples`,
 			mutate: func(_ []byte, probe entitytypetest.ContractProbe) ([]byte, entitytypetest.ContractProbe) {
-				return []byte(`{"cases": [{"name": "demo", "support": {"level": 1}, ` +
+				return []byte(`{"cases": [{"name": "demo", "support": {"level": 1, "operations": {"set": {}}}, ` +
 					`"states": [{"value": "ok", "valid": true}], ` +
 					`"operations": {"set": {"parameters": [{"value": "go", "valid": true}], ` +
 					`"outcomes": []}}}]}`), probe
@@ -249,6 +266,62 @@ func runnerScenarios() []runnerScenario {
 					return false, errBadState
 				}
 				return examples, setProbe(probe, operation)
+			},
+		},
+		{
+			name: "missing-state-value",
+			want: "missing \"value\"",
+			mutate: replace(`{"cases": [{"name": "demo", "support": {"level": 1, "operations": {"set": {}}}, ` +
+				`"states": [{"valid": true}], "operations": {"set": {"parameters": [{"value": "go", "valid": true}], ` +
+				`"outcomes": [{"parameters": "go", "state": "ok", "satisfied": true}]}}}]}`),
+		},
+		{
+			name: "missing-state-valid",
+			want: "missing \"valid\"",
+			mutate: replace(`{"cases": [{"name": "demo", "support": {"level": 1, "operations": {"set": {}}}, ` +
+				`"states": [{"value": "ok"}], "operations": {"set": {"parameters": [{"value": "go", "valid": true}], ` +
+				`"outcomes": [{"parameters": "go", "state": "ok", "satisfied": true}]}}}]}`),
+		},
+		{
+			name: "missing-outcome-satisfied",
+			want: "missing \"satisfied\"",
+			mutate: replace(`{"cases": [{"name": "demo", "support": {"level": 1, "operations": {"set": {}}}, ` +
+				`"states": [{"value": "ok", "valid": true}], "operations": {"set": {"parameters": [{"value": "go", "valid": true}], ` +
+				`"outcomes": [{"parameters": "go", "state": "ok"}]}}}]}`),
+		},
+		{
+			name: "missing-operation-parameters",
+			want: "missing \"parameters\"",
+			mutate: replace(`{"cases": [{"name": "demo", "support": {"level": 1, "operations": {"set": {}}}, ` +
+				`"states": [{"value": "ok", "valid": true}], ` +
+				`"operations": {"set": {"outcomes": [{"parameters": "go", "state": "ok", "satisfied": true}]}}}]}`),
+		},
+		{
+			name: "support-missing-operations",
+			want: "has no operations object",
+			mutate: replace(`{"cases": [{"name": "demo", "support": {"level": 1}, ` +
+				`"states": [{"value": "ok", "valid": true}], "operations": {"set": {"parameters": [{"value": "go", "valid": true}], ` +
+				`"outcomes": [{"parameters": "go", "state": "ok", "satisfied": true}]}}}]}`),
+		},
+		{
+			name: "case-omits-supported-operation",
+			want: "missing examples for supported operation",
+			mutate: func(_ []byte, probe entitytypetest.ContractProbe) ([]byte, entitytypetest.ContractProbe) {
+				return []byte(`{"cases": [` +
+					`{"name": "demo", "support": {"level": 1, "operations": {"set": {}}}, ` +
+					`"states": [{"value": "ok", "valid": true}], "operations": {"set": {"parameters": [{"value": "go", "valid": true}], ` +
+					`"outcomes": [{"parameters": "go", "state": "ok", "satisfied": true}]}}}, ` +
+					`{"name": "narrow", "support": {"level": 1, "operations": {"set": {}}}, ` +
+					`"states": [{"value": "ok", "valid": true}], "operations": {}}]}`), probe
+			},
+		},
+		{
+			name: "case-covers-unsupported-operation",
+			want: "has examples for unsupported operation",
+			mutate: func(_ []byte, probe entitytypetest.ContractProbe) ([]byte, entitytypetest.ContractProbe) {
+				return []byte(`{"cases": [{"name": "demo", "support": {"level": 1, "operations": {}}, ` +
+					`"states": [{"value": "ok", "valid": true}], "operations": {"set": {"parameters": [{"value": "go", "valid": true}], ` +
+					`"outcomes": [{"parameters": "go", "state": "ok", "satisfied": true}]}}}]}`), probe
 			},
 		},
 	}

@@ -6,6 +6,7 @@ package entitytypetest
 
 import (
 	"encoding/json"
+	"fmt"
 	"strconv"
 	"testing"
 )
@@ -56,6 +57,148 @@ type contractOutcome struct {
 	Satisfied  bool            `json:"satisfied"`
 }
 
+// UnmarshalJSON rejects authored examples with missing value/valid payloads
+// instead of defaulting them to false/nil.
+func (validity *contractValidity) UnmarshalJSON(raw []byte) error {
+	var decoded struct {
+		Value *json.RawMessage `json:"value"`
+		Valid *bool            `json:"valid"`
+	}
+	if err := json.Unmarshal(raw, &decoded); err != nil {
+		return err
+	}
+	if decoded.Value == nil || len(*decoded.Value) == 0 {
+		return fmt.Errorf("validity example is missing \"value\"")
+	}
+	if decoded.Valid == nil {
+		return fmt.Errorf("validity example is missing \"valid\"")
+	}
+	validity.Value = *decoded.Value
+	validity.Valid = *decoded.Valid
+	return nil
+}
+
+// UnmarshalJSON rejects authored examples with missing parameters/state
+// payloads or satisfied flags instead of defaulting them to false/nil.
+func (outcome *contractOutcome) UnmarshalJSON(raw []byte) error {
+	var decoded struct {
+		Parameters *json.RawMessage `json:"parameters"`
+		State      *json.RawMessage `json:"state"`
+		Satisfied  *bool            `json:"satisfied"`
+	}
+	if err := json.Unmarshal(raw, &decoded); err != nil {
+		return err
+	}
+	if decoded.Parameters == nil || len(*decoded.Parameters) == 0 {
+		return fmt.Errorf("outcome example is missing \"parameters\"")
+	}
+	if decoded.State == nil || len(*decoded.State) == 0 {
+		return fmt.Errorf("outcome example is missing \"state\"")
+	}
+	if decoded.Satisfied == nil {
+		return fmt.Errorf("outcome example is missing \"satisfied\"")
+	}
+	outcome.Parameters = *decoded.Parameters
+	outcome.State = *decoded.State
+	outcome.Satisfied = *decoded.Satisfied
+	return nil
+}
+
+// UnmarshalJSON rejects authored examples with missing parameter/outcome
+// categories instead of defaulting them to empty.
+func (operation *contractOperation) UnmarshalJSON(raw []byte) error {
+	var decoded struct {
+		Parameters *[]contractValidity `json:"parameters"`
+		Outcomes   *[]contractOutcome  `json:"outcomes"`
+	}
+	if err := json.Unmarshal(raw, &decoded); err != nil {
+		return err
+	}
+	if decoded.Parameters == nil {
+		return fmt.Errorf("operation examples are missing \"parameters\"")
+	}
+	if decoded.Outcomes == nil {
+		return fmt.Errorf("operation examples are missing \"outcomes\"")
+	}
+	operation.Parameters = *decoded.Parameters
+	operation.Outcomes = *decoded.Outcomes
+	return nil
+}
+
+// UnmarshalJSON rejects authored cases with missing support/state/operation
+// payloads instead of defaulting them to empty.
+func (example *contractCase) UnmarshalJSON(raw []byte) error {
+	var decoded struct {
+		Name       *string                       `json:"name"`
+		Support    *json.RawMessage              `json:"support"`
+		States     *[]contractValidity           `json:"states"`
+		Operations *map[string]contractOperation `json:"operations"`
+	}
+	if err := json.Unmarshal(raw, &decoded); err != nil {
+		return err
+	}
+	if decoded.Name == nil || *decoded.Name == "" {
+		return fmt.Errorf("contract case is missing \"name\"")
+	}
+	if decoded.Support == nil || len(*decoded.Support) == 0 {
+		return fmt.Errorf("contract case %q is missing \"support\"", *decoded.Name)
+	}
+	if decoded.States == nil {
+		return fmt.Errorf("contract case %q is missing \"states\"", *decoded.Name)
+	}
+	if decoded.Operations == nil {
+		return fmt.Errorf("contract case %q is missing \"operations\"", *decoded.Name)
+	}
+	example.Name = *decoded.Name
+	example.Support = *decoded.Support
+	example.States = *decoded.States
+	example.Operations = *decoded.Operations
+	return nil
+}
+
+// contractSupportedOperations parses the authored support's operation
+// inventory without evaluating DSL semantics. Cases omit optional operations
+// by leaving them out of support; the runner requires examples to match that
+// inventory exactly.
+func contractSupportedOperations(support json.RawMessage) (map[string]struct{}, error) {
+	var decoded struct {
+		Operations *map[string]json.RawMessage `json:"operations"`
+	}
+	if err := json.Unmarshal(support, &decoded); err != nil {
+		return nil, err
+	}
+	if decoded.Operations == nil {
+		return nil, fmt.Errorf("support has no operations object")
+	}
+	supported := make(map[string]struct{}, len(*decoded.Operations))
+	for name := range *decoded.Operations {
+		supported[name] = struct{}{}
+	}
+	return supported, nil
+}
+
+// checkContractCaseInventory requires each case's examples to match its own
+// supported operations exactly, so a case that omits a supported operation
+// fails even when another case covers it. Absence is correct only for
+// operations the case does not support.
+func checkContractCaseInventory(t *testing.T, example contractCase) {
+	t.Helper()
+	supported, err := contractSupportedOperations(example.Support)
+	if err != nil {
+		t.Fatalf("contract case %q support is malformed: %v", example.Name, err)
+	}
+	for name := range supported {
+		if _, ok := example.Operations[name]; !ok {
+			t.Fatalf("contract case %q is missing examples for supported operation %q", example.Name, name)
+		}
+	}
+	for name := range example.Operations {
+		if _, ok := supported[name]; !ok {
+			t.Fatalf("contract case %q has examples for unsupported operation %q", example.Name, name)
+		}
+	}
+}
+
 // RunContractExamples replays every authored case with its original expected
 // result through the supplied probe. Type and package context comes from the
 // caller via named subtests for case, operation, category, and example index.
@@ -101,6 +244,7 @@ func runContractCase(t *testing.T, example contractCase, probe ContractProbe) {
 	if len(example.Support) == 0 {
 		t.Fatal("contract case has no support")
 	}
+	checkContractCaseInventory(t, example)
 	if err := probe.ValidateSupport(example.Support); err != nil {
 		t.Fatalf("contract case support is invalid: %v", err)
 	}

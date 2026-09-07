@@ -22,19 +22,22 @@ import (
 // contract seam; expectations below come from authored flags, the manifest,
 // and raw value (in)equality, never from production validation.
 type catalogProbe struct {
-	model               entityTypeModel
-	support             json.RawMessage
-	validState          json.RawMessage
-	supportInvalidState json.RawMessage
-	unequalState        json.RawMessage
-	operations          []catalogOperationProbe
+	model                 entityTypeModel
+	support               json.RawMessage
+	validState            json.RawMessage
+	supportInvalidState   json.RawMessage
+	supportInvalidSupport json.RawMessage
+	unequalState          json.RawMessage
+	operations            []catalogOperationProbe
 }
 
 // catalogOperationProbe carries one representative valid command, its
 // deadline, and one satisfied/unsatisfied outcome pair for a single operation.
 type catalogOperationProbe struct {
 	model                 operationModel
+	support               json.RawMessage
 	parameters            json.RawMessage
+	invalidSupport        json.RawMessage
 	supportInvalidParams  json.RawMessage
 	satisfiedParameters   json.RawMessage
 	satisfiedState        json.RawMessage
@@ -117,11 +120,12 @@ func selectCatalogProbe(model entityTypeModel, checker *catalogSchemaChecker) (c
 		return catalogProbe{}, fmt.Errorf("case %q has no valid State", first.Name)
 	}
 	stateSchemaPath := filepath.Join(model.Directory, model.StateFile)
-	supportInvalid, err := selectSupportInvalidState(model, checker, stateSchemaPath)
+	supportInvalid, supportInvalidSupport, err := selectSupportInvalidState(model, checker, stateSchemaPath)
 	if err != nil {
 		return catalogProbe{}, err
 	}
 	probe.supportInvalidState = supportInvalid
+	probe.supportInvalidSupport = supportInvalidSupport
 	unequal, err := selectUnequalCatalogState(model, checker, stateSchemaPath, first, probe.validState)
 	if err != nil {
 		return catalogProbe{}, err
@@ -139,13 +143,13 @@ func selectCatalogProbe(model entityTypeModel, checker *catalogSchemaChecker) (c
 
 // selectSupportInvalidState returns the first authored-invalid State that
 // still schema-decodes, proving support-validator wiring rather than mere
-// schema rejection. It returns nil when every invalid example is
-// schema-invalid.
+// schema rejection, along with its originating support. It returns nil when
+// every invalid example is schema-invalid.
 func selectSupportInvalidState(
 	model entityTypeModel,
 	checker *catalogSchemaChecker,
 	stateSchemaPath string,
-) (json.RawMessage, error) {
+) (json.RawMessage, json.RawMessage, error) {
 	for _, example := range model.Examples.Cases {
 		for _, state := range example.States {
 			if state.Valid {
@@ -153,14 +157,14 @@ func selectSupportInvalidState(
 			}
 			decodable, err := checker.decodable(stateSchemaPath, state.Value)
 			if err != nil {
-				return nil, err
+				return nil, nil, err
 			}
 			if decodable {
-				return state.Value, nil
+				return state.Value, example.Support, nil
 			}
 		}
 	}
-	return nil, nil
+	return nil, nil, nil
 }
 
 // selectUnequalCatalogState returns a second schema-decodable State whose
@@ -206,9 +210,11 @@ func selectUnequalCatalogState(
 	return nil, nil
 }
 
-// selectCatalogOperationProbe picks one valid command, one support-level
-// invalid parameters rep when the examples include one, and the first
-// satisfied/unsatisfied outcome pair, all in source order.
+// selectCatalogOperationProbe picks one valid command and the first
+// satisfied/unsatisfied outcome pair from a single originating case so the
+// generated wiring reuses that case's support, plus the first support-level
+// invalid parameters rep (with its own originating support when it lives in
+// a different case), all in source order.
 func selectCatalogOperationProbe(
 	model entityTypeModel,
 	checker *catalogSchemaChecker,
@@ -221,10 +227,16 @@ func selectCatalogOperationProbe(
 		if !supported {
 			continue
 		}
-		if paramsErr := selectCatalogCommandParams(checker, parametersSchemaPath, values, &probe); paramsErr != nil {
-			return catalogOperationProbe{}, paramsErr
+		candidate := catalogOperationProbe{model: operation, support: example.Support}
+		selectCatalogValidParams(values, &candidate)
+		selectCatalogOutcomes(values, &candidate)
+		if len(candidate.parameters) == 0 ||
+			len(candidate.satisfiedParameters) == 0 ||
+			len(candidate.unsatisfiedParameters) == 0 {
+			continue
 		}
-		selectCatalogOutcomes(values, &probe)
+		probe = candidate
+		break
 	}
 	if len(probe.parameters) == 0 {
 		return catalogOperationProbe{}, fmt.Errorf("operation %q has no valid parameters", operation.Name)
@@ -235,32 +247,53 @@ func selectCatalogOperationProbe(
 			operation.Name,
 		)
 	}
+	invalid, invalidSupport, err := selectCatalogInvalidParams(model, checker, parametersSchemaPath, operation.Name)
+	if err != nil {
+		return catalogOperationProbe{}, err
+	}
+	probe.supportInvalidParams = invalid
+	probe.invalidSupport = invalidSupport
 	return probe, nil
 }
 
-// selectCatalogCommandParams picks the first valid parameters and the first
-// support-level invalid parameters rep in source order.
-func selectCatalogCommandParams(
-	checker *catalogSchemaChecker,
-	schemaPath string,
-	values operationExamples,
-	probe *catalogOperationProbe,
-) error {
+// selectCatalogValidParams records the first valid parameters rep in source
+// order.
+func selectCatalogValidParams(values operationExamples, probe *catalogOperationProbe) {
 	for _, parameters := range values.Parameters {
-		switch {
-		case parameters.Valid && probe.parameters == nil:
+		if parameters.Valid && probe.parameters == nil {
 			probe.parameters = parameters.Value
-		case !parameters.Valid && probe.supportInvalidParams == nil:
+		}
+	}
+}
+
+// selectCatalogInvalidParams returns the first authored-invalid parameters
+// rep that still schema-decodes, along with its originating support. The
+// originating case's rep is preferred; otherwise later cases supply the rep
+// with their own support.
+func selectCatalogInvalidParams(
+	model entityTypeModel,
+	checker *catalogSchemaChecker,
+	schemaPath, operationName string,
+) (json.RawMessage, json.RawMessage, error) {
+	for _, example := range model.Examples.Cases {
+		values, supported := example.Operations[operationName]
+		if !supported {
+			continue
+		}
+		for _, parameters := range values.Parameters {
+			if parameters.Valid {
+				continue
+			}
 			decodable, decodableErr := checker.decodable(schemaPath, parameters.Value)
 			if decodableErr != nil {
-				return decodableErr
+				return nil, nil, decodableErr
 			}
 			if decodable {
-				probe.supportInvalidParams = parameters.Value
+				return parameters.Value, example.Support, nil
 			}
 		}
 	}
-	return nil
+	return nil, nil, nil
 }
 
 // selectCatalogOutcomes records the first satisfied and unsatisfied outcome
@@ -413,45 +446,152 @@ func writeCatalogProbe(source *strings.Builder, probe catalogProbe) error {
 		strconv.Quote(validState),
 		strconv.Quote(validState),
 	)
-	if len(probe.supportInvalidState) > 0 {
-		invalidState, invalidErr := compactCatalogJSON(probe.supportInvalidState)
-		if invalidErr != nil {
-			return invalidErr
-		}
-		fmt.Fprintf(
-			source,
-			"\t\tif _, err := catalog.NormalizeState(entity, Value(%s)); err == nil { t.Error(\"catalog support-invalid State unexpectedly accepted\") }\n",
-			strconv.Quote(invalidState),
-		)
+	if stateErr := writeCatalogInvalidState(source, probe); stateErr != nil {
+		return stateErr
 	}
+	if operationsErr := writeCatalogOperations(source, probe); operationsErr != nil {
+		return operationsErr
+	}
+	if equalityErr := writeCatalogEquality(source, probe, validState); equalityErr != nil {
+		return equalityErr
+	}
+	source.WriteString("\t})\n")
+	return nil
+}
+
+// writeCatalogInvalidState emits the support-invalid State rejection against
+// its originating support.
+func writeCatalogInvalidState(source *strings.Builder, probe catalogProbe) error {
+	if len(probe.supportInvalidState) == 0 {
+		return nil
+	}
+	invalidState, err := compactCatalogJSON(probe.supportInvalidState)
+	if err != nil {
+		return err
+	}
+	invalidEntity, entityErr := declareCatalogProbeEntity(
+		source, probe, "entityInvalidState", probe.supportInvalidSupport,
+	)
+	if entityErr != nil {
+		return entityErr
+	}
+	fmt.Fprintf(
+		source,
+		"\t\tif _, err := catalog.NormalizeState(%s, Value(%s)); err == nil { t.Error(\"catalog support-invalid State unexpectedly accepted\") }\n",
+		invalidEntity,
+		strconv.Quote(invalidState),
+	)
+	return nil
+}
+
+// writeCatalogOperations emits one wiring block per operation, each against
+// its originating support.
+func writeCatalogOperations(source *strings.Builder, probe catalogProbe) error {
 	for _, operation := range probe.operations {
-		if operationErr := writeCatalogOperationProbe(source, operation); operationErr != nil {
+		opEntity, entityErr := declareCatalogProbeEntity(
+			source, probe, "entity"+operation.model.GoName, operation.support,
+		)
+		if entityErr != nil {
+			return entityErr
+		}
+		if needsCatalogInvalidParamsEntity(operation) {
+			name := "entity" + operation.model.GoName + "Invalid"
+			if _, invalidEntityErr := declareCatalogProbeEntity(
+				source, probe, name, operation.invalidSupport,
+			); invalidEntityErr != nil {
+				return invalidEntityErr
+			}
+		}
+		if operationErr := writeCatalogOperationProbe(source, probe, operation, opEntity); operationErr != nil {
 			return operationErr
 		}
 	}
+	return nil
+}
+
+// needsCatalogInvalidParamsEntity reports whether the invalid parameters rep
+// needs its own entity because its originating support matches neither the
+// shared probe support (handled by declaration reuse) nor the operation
+// support.
+func needsCatalogInvalidParamsEntity(operation catalogOperationProbe) bool {
+	return len(operation.supportInvalidParams) > 0 && len(operation.invalidSupport) > 0 &&
+		!catalogSupportsEqual(operation.support, operation.invalidSupport)
+}
+
+// writeCatalogEquality emits the equal-State check and the unequal-State
+// check. The unequal probe keeps the authored valid State as incoming
+// (validated against support) and the recorded candidate as persisted
+// (decoded only), so a schema-valid but support-narrowed candidate cannot
+// error the probe.
+func writeCatalogEquality(source *strings.Builder, probe catalogProbe, validState string) error {
 	fmt.Fprintf(
 		source,
 		"\t\tif equal, err := catalog.EqualState(entity, Value(%s), Value(%s)); err != nil || !equal { t.Errorf(\"catalog equal State = %%v, %%v\", equal, err) }\n",
 		strconv.Quote(validState),
 		strconv.Quote(validState),
 	)
-	if len(probe.unequalState) > 0 {
-		unequalState, unequalErr := compactCatalogJSON(probe.unequalState)
-		if unequalErr != nil {
-			return unequalErr
-		}
-		fmt.Fprintf(
-			source,
-			"\t\tif equal, err := catalog.EqualState(entity, Value(%s), Value(%s)); err != nil || equal { t.Errorf(\"catalog unequal State = %%v, %%v\", equal, err) }\n",
-			strconv.Quote(validState),
-			strconv.Quote(unequalState),
-		)
+	if len(probe.unequalState) == 0 {
+		return nil
 	}
-	source.WriteString("\t})\n")
+	unequalState, err := compactCatalogJSON(probe.unequalState)
+	if err != nil {
+		return err
+	}
+	fmt.Fprintf(
+		source,
+		"\t\tif equal, err := catalog.EqualState(entity, Value(%s), Value(%s)); err != nil || equal { t.Errorf(\"catalog unequal State = %%v, %%v\", equal, err) }\n",
+		strconv.Quote(unequalState),
+		strconv.Quote(validState),
+	)
 	return nil
 }
 
-func writeCatalogOperationProbe(source *strings.Builder, probe catalogOperationProbe) error {
+// catalogSupportsEqual reports whether two authored supports carry the same
+// JSON value independent of whitespace or key order.
+func catalogSupportsEqual(left, right json.RawMessage) bool {
+	if len(left) == 0 || len(right) == 0 {
+		return len(left) == 0 && len(right) == 0
+	}
+	equal, err := equalCatalogJSON(left, right)
+	if err != nil {
+		return false
+	}
+	return equal
+}
+
+// declareCatalogProbeEntity emits a dedicated entity variable for a
+// support-dependent probe unless its support matches the shared probe
+// support, in which case it reuses "entity" and emits nothing.
+func declareCatalogProbeEntity(
+	source *strings.Builder,
+	probe catalogProbe,
+	name string,
+	support json.RawMessage,
+) (string, error) {
+	if len(support) == 0 || catalogSupportsEqual(probe.support, support) {
+		return "entity", nil
+	}
+	compacted, err := compactCatalogJSON(support)
+	if err != nil {
+		return "", err
+	}
+	fmt.Fprintf(
+		source,
+		"\t\t%s := Entity{ID: EntityID(%s), TypeID: EntityType%s, Support: EntitySupport(%s)}\n",
+		name,
+		strconv.Quote("generated_"+probe.model.Package),
+		entityTypeGoName(probe.model),
+		strconv.Quote(compacted),
+	)
+	return name, nil
+}
+
+func writeCatalogOperationProbe(
+	source *strings.Builder,
+	parent catalogProbe,
+	probe catalogOperationProbe,
+	opEntity string,
+) error {
 	operation := probe.model
 	variable := "resolved" + operation.GoName
 	parameters, err := compactCatalogJSON(probe.parameters)
@@ -460,8 +600,9 @@ func writeCatalogOperationProbe(source *strings.Builder, probe catalogOperationP
 	}
 	fmt.Fprintf(
 		source,
-		"\t\t%s, err := catalog.ResolveCommand(entity, OperationName(%s), CommandParameters(%s))\n",
+		"\t\t%s, err := catalog.ResolveCommand(%s, OperationName(%s), CommandParameters(%s))\n",
 		variable,
+		opEntity,
 		strconv.Quote(operation.Name),
 		strconv.Quote(parameters),
 	)
@@ -488,18 +629,8 @@ func writeCatalogOperationProbe(source *strings.Builder, probe catalogOperationP
 		variable,
 		operation.DeadlineMS,
 	)
-	if len(probe.supportInvalidParams) > 0 {
-		invalid, paramsErr := compactCatalogJSON(probe.supportInvalidParams)
-		if paramsErr != nil {
-			return paramsErr
-		}
-		fmt.Fprintf(
-			source,
-			"\t\tif _, err := catalog.ResolveCommand(entity, OperationName(%s), CommandParameters(%s)); err == nil { t.Error(\"catalog support-invalid %s parameters unexpectedly accepted\") }\n",
-			strconv.Quote(operation.Name),
-			strconv.Quote(invalid),
-			operation.Name,
-		)
+	if invalidErr := writeCatalogInvalidParams(source, parent, probe, opEntity); invalidErr != nil {
+		return invalidErr
 	}
 	satisfiedParameters, err := compactCatalogJSON(probe.satisfiedParameters)
 	if err != nil {
@@ -511,7 +642,8 @@ func writeCatalogOperationProbe(source *strings.Builder, probe catalogOperationP
 	}
 	fmt.Fprintf(
 		source,
-		"\t\tif satisfied, err := catalog.Satisfies(entity, CommandRecord{OperationName: OperationName(%s), Parameters: CommandParameters(%s)}, Value(%s)); err != nil || !satisfied { t.Errorf(\"catalog %s satisfied outcome = %%v, %%v\", satisfied, err) }\n",
+		"\t\tif satisfied, err := catalog.Satisfies(%s, CommandRecord{OperationName: OperationName(%s), Parameters: CommandParameters(%s)}, Value(%s)); err != nil || !satisfied { t.Errorf(\"catalog %s satisfied outcome = %%v, %%v\", satisfied, err) }\n",
+		opEntity,
 		strconv.Quote(operation.Name),
 		strconv.Quote(satisfiedParameters),
 		strconv.Quote(satisfiedState),
@@ -527,11 +659,51 @@ func writeCatalogOperationProbe(source *strings.Builder, probe catalogOperationP
 	}
 	fmt.Fprintf(
 		source,
-		"\t\tif satisfied, err := catalog.Satisfies(entity, CommandRecord{OperationName: OperationName(%s), Parameters: CommandParameters(%s)}, Value(%s)); err != nil || satisfied { t.Errorf(\"catalog %s unsatisfied outcome = %%v, %%v\", satisfied, err) }\n",
+		"\t\tif satisfied, err := catalog.Satisfies(%s, CommandRecord{OperationName: OperationName(%s), Parameters: CommandParameters(%s)}, Value(%s)); err != nil || satisfied { t.Errorf(\"catalog %s unsatisfied outcome = %%v, %%v\", satisfied, err) }\n",
+		opEntity,
 		strconv.Quote(operation.Name),
 		strconv.Quote(unsatisfiedParameters),
 		strconv.Quote(unsatisfiedState),
 		operation.Name,
 	)
 	return nil
+}
+
+// writeCatalogInvalidParams emits the support-invalid parameters rejection
+// against its originating support.
+func writeCatalogInvalidParams(
+	source *strings.Builder,
+	parent catalogProbe,
+	probe catalogOperationProbe,
+	opEntity string,
+) error {
+	if len(probe.supportInvalidParams) == 0 {
+		return nil
+	}
+	invalid, err := compactCatalogJSON(probe.supportInvalidParams)
+	if err != nil {
+		return err
+	}
+	operation := probe.model
+	fmt.Fprintf(
+		source,
+		"\t\tif _, err := catalog.ResolveCommand(%s, OperationName(%s), CommandParameters(%s)); err == nil { t.Error(\"catalog support-invalid %s parameters unexpectedly accepted\") }\n",
+		catalogInvalidParamsEntity(parent, probe, opEntity),
+		strconv.Quote(operation.Name),
+		strconv.Quote(invalid),
+		operation.Name,
+	)
+	return nil
+}
+
+// catalogInvalidParamsEntity resolves the generated entity variable holding
+// the invalid parameters originating support.
+func catalogInvalidParamsEntity(parent catalogProbe, probe catalogOperationProbe, opEntity string) string {
+	if len(probe.invalidSupport) == 0 || catalogSupportsEqual(probe.support, probe.invalidSupport) {
+		return opEntity
+	}
+	if catalogSupportsEqual(parent.support, probe.invalidSupport) {
+		return "entity"
+	}
+	return "entity" + probe.model.GoName + "Invalid"
 }
