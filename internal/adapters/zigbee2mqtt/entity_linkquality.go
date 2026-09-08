@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"math/big"
 	"time"
 
 	contractnumericsensorv1 "github.com/mholtzscher/hearth/entitytypes/numericsensorv1"
@@ -144,17 +143,15 @@ func (linkqualityPlanner) Plan(input devicePlanningInput) plannerContribution {
 // decode: integer-only is adapter-enforced while NewObservation owns the
 // 0–255 support bounds.
 func normalizeLinkquality(payload json.RawMessage) (float64, error) {
-	var decoded any
-	if err := decodeJSON(payload, &decoded); err != nil {
+	value, err := parseExactIntegerJSON(payload)
+	if err != nil {
+		if errors.Is(err, errExactIntegerNotNumber) {
+			return 0, errors.New("linkquality value must be a JSON number")
+		}
+		if errors.Is(err, errExactIntegerNotInteger) {
+			return 0, errors.New("linkquality value must be a finite integer")
+		}
 		return 0, fmt.Errorf("decode linkquality number: %w", err)
 	}
-	number, ok := decoded.(json.Number)
-	if !ok {
-		return 0, errors.New("linkquality value must be a JSON number")
-	}
-	exact, ok := new(big.Rat).SetString(number.String())
-	if !ok || !exact.IsInt() || !exact.Num().IsInt64() {
-		return 0, errors.New("linkquality value must be a finite integer")
-	}
-	return float64(exact.Num().Int64()), nil
+	return float64(value), nil
 }

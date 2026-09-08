@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"math"
-	"math/big"
 	"time"
 
 	contractnumericsettingv1 "github.com/mholtzscher/hearth/entitytypes/numericsettingv1"
@@ -159,19 +158,17 @@ func decodeStartupColorTempState(payload json.RawMessage) (contractnumericsettin
 // normalizeStartupColorTemp enforces the integer-only Zigbee wire format;
 // bounds and choice membership belong to the typed observation.
 func normalizeStartupColorTemp(payload json.RawMessage) (int64, error) {
-	var decoded any
-	if err := decodeJSON(payload, &decoded); err != nil {
+	value, err := parseExactIntegerJSON(payload)
+	if err != nil {
+		if errors.Is(err, errExactIntegerNotNumber) {
+			return 0, errors.New("startup color temperature value must be a JSON number")
+		}
+		if errors.Is(err, errExactIntegerNotInteger) {
+			return 0, errors.New("startup color temperature value must be a finite integer")
+		}
 		return 0, fmt.Errorf("decode startup color temperature number: %w", err)
 	}
-	number, ok := decoded.(json.Number)
-	if !ok {
-		return 0, errors.New("startup color temperature value must be a JSON number")
-	}
-	exact, ok := new(big.Rat).SetString(number.String())
-	if !ok || !exact.IsInt() || !exact.Num().IsInt64() {
-		return 0, errors.New("startup color temperature value must be a finite integer")
-	}
-	return exact.Num().Int64(), nil
+	return value, nil
 }
 
 // startupColorTempCommandValue encodes parameters validated by the command

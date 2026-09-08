@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"math"
-	"math/big"
 	"time"
 
 	contractcolortempv1 "github.com/mholtzscher/hearth/entitytypes/colortempv1"
@@ -188,37 +187,27 @@ func colorTempBound(payload json.RawMessage, fallback *float64) (int64, bool) {
 		}
 		return int64(*fallback), true
 	}
-	var decoded any
-	if decodeJSON(payload, &decoded) != nil {
+	value, err := parseExactIntegerJSON(payload)
+	if err != nil {
 		return 0, false
 	}
-	number, ok := decoded.(json.Number)
-	if !ok {
-		return 0, false
-	}
-	exact, ok := new(big.Rat).SetString(number.String())
-	if !ok || !exact.IsInt() || !exact.Num().IsInt64() {
-		return 0, false
-	}
-	return exact.Num().Int64(), true
+	return value, true
 }
 
 func normalizeColorTemp(payload json.RawMessage) (int64, error) {
-	var decoded any
-	if err := decodeJSON(payload, &decoded); err != nil {
+	value, err := parseExactIntegerJSON(payload)
+	if err != nil {
+		if errors.Is(err, errExactIntegerNotNumber) {
+			return 0, errors.New("color temperature value must be a JSON number")
+		}
+		if errors.Is(err, errExactIntegerNotInteger) {
+			return 0, errors.New("color temperature value must be a finite integer")
+		}
 		return 0, fmt.Errorf("decode color temperature number: %w", err)
-	}
-	number, ok := decoded.(json.Number)
-	if !ok {
-		return 0, errors.New("color temperature value must be a JSON number")
-	}
-	exact, ok := new(big.Rat).SetString(number.String())
-	if !ok || !exact.IsInt() || !exact.Num().IsInt64() {
-		return 0, errors.New("color temperature value must be a finite integer")
 	}
 	// The discovered and outer ranges are enforced by the colortemp
 	// NewObservation contract; decoding only establishes an exact integer.
-	return exact.Num().Int64(), nil
+	return value, nil
 }
 
 func colorTempCommandValue(value int64) (json.RawMessage, error) {

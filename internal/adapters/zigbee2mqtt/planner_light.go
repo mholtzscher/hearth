@@ -86,21 +86,8 @@ func planLightRoot(
 	if !root.resolved {
 		return nil, false
 	}
-	powerFeature, ok := input.Exposes.UniqueFeature(root, featureQuery{Type: upstreamExposeBinary, Name: "state"})
-	if !ok || !validPowerFeature(powerFeature) || !input.Exposes.PropertyUnique(powerFeature.Property) {
-		return nil, false
-	}
-	powerOn, onErr := canonicalScalar(powerFeature.ValueOn)
-	powerOff, offErr := canonicalScalar(powerFeature.ValueOff)
-	if onErr != nil || offErr != nil || powerOn.canonical == powerOff.canonical {
-		return nil, false
-	}
-	metadata, ok := powerMetadata(input.IEEE, root)
+	power, ok := planPowerEntity(input, root)
 	if !ok {
-		return nil, false
-	}
-	power, err := newPowerPlan(metadata, powerFeature.Property, powerOn, powerOff)
-	if err != nil {
 		return nil, false
 	}
 	entities := []entityPlan{}
