@@ -79,10 +79,7 @@ func newColorHSPlan(
 			if err = handler(ctx, command, responder); err != nil {
 				return plannedCommand{}, err
 			}
-			payload, err := colorHSCommandValue(parameters.Hue, parameters.Saturation)
-			if err != nil {
-				return plannedCommand{}, err
-			}
+			payload := colorHSCommandValue(parameters.Hue, parameters.Saturation)
 			return plannedCommand{
 				SetValues:     map[string]json.RawMessage{colorProperty: payload},
 				GetProperties: []string{colorProperty},
@@ -145,12 +142,10 @@ func decodeColorHSState(
 }
 
 // colorHSCommandValue encodes integer hue and saturation directly. The command
-// schema rejects hue 360, so no folding happens here.
-func colorHSCommandValue(hue, saturation int64) (json.RawMessage, error) {
-	if hue < 0 || hue >= hueExclusiveMaximum || saturation < 0 || saturation > 100 {
-		return nil, errors.New("color HS coordinates are outside Hearth's range")
-	}
+// schema rejects hue 360, so no folding happens here. The Hearth coordinate
+// range is enforced by the color HS NewCommandHandler contract.
+func colorHSCommandValue(hue, saturation int64) json.RawMessage {
 	return json.RawMessage(
 		fmt.Sprintf(`{"hue":%d,"saturation":%d}`, hue, saturation),
-	), nil
+	)
 }

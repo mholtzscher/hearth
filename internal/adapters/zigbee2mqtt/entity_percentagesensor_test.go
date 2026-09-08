@@ -32,10 +32,22 @@ func eligibleHumidityBatteryDevice(access int) upstreamDevice {
 	return device
 }
 
-// This test protects percentage bounds and fractional readings and fails on
-// truncation, clamping, numeric-string coercion, or huge-exponent acceptance.
-func TestNormalizePercentageSensorTable(t *testing.T) {
+// This test protects percentage decoding at the plan boundary and fails on
+// truncation, clamping, numeric-string coercion, or huge-exponent
+// acceptance. The contract State codec owns binary64 decoding, so
+// 100.00000000000000001 reads as 100 and the underflowing -1e-1000 reads
+// as zero; NewObservation owns the 0-100 bounds.
+func TestPercentageSensorPlanStateBoundary(t *testing.T) {
 	t.Parallel()
+	plan, err := newPercentageSensorPlan(adapter.EntityMetadata{
+		Key:        "humidity",
+		ExternalID: "0x1/root/humidity",
+		Name:       "Humidity",
+	}, "humidity", false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	receivedAt := time.Unix(1, 0).UTC()
 	for _, test := range []struct {
 		payload string
 		want    float64
@@ -48,28 +60,45 @@ func TestNormalizePercentageSensorTable(t *testing.T) {
 		{payload: `0.1`, want: 0.1, valid: true},
 		{payload: `99.99`, want: 99.99, valid: true},
 		{payload: `100.0`, want: 100, valid: true},
+		{payload: `100.00000000000000001`, want: 100, valid: true},
+		{payload: `-1e-1000`, want: 0, valid: true},
 		{payload: `"48.2"`},
 		{payload: `null`},
 		{payload: `true`},
 		{payload: `1e10000`},
 		{payload: `-0.1`},
 		{payload: `100.1`},
-		{payload: `100.00000000000000001`},
-		{payload: `-1e-1000`},
 		{payload: `48.2 trailing`},
 		{payload: `{}`},
 	} {
-		got, err := normalizePercentageSensor(json.RawMessage(test.payload))
-		if (err == nil) != test.valid || got != test.want {
+		report, decoded, decodeErr := plan.DecodeState(
+			"entity-humidity",
+			map[string]json.RawMessage{"humidity": json.RawMessage(test.payload)},
+			receivedAt,
+		)
+		if (decodeErr == nil) != test.valid || decoded != test.valid {
 			t.Errorf(
-				"normalizePercentageSensor(%s) = %v, %v; want %v, valid=%t",
+				"DecodeState(%s) decoded=%t, err=%v; want valid=%t",
 				test.payload,
-				got,
-				err,
-				test.want,
+				decoded,
+				decodeErr,
 				test.valid,
 			)
+			continue
 		}
+		if !test.valid {
+			continue
+		}
+		if semantic, ok := report.semantic.(float64); !ok || semantic != test.want {
+			t.Errorf("DecodeState(%s) semantic = %#v; want %v", test.payload, report.semantic, test.want)
+		}
+	}
+	if _, decoded, decodeErr := plan.DecodeState(
+		"entity-humidity",
+		map[string]json.RawMessage{},
+		receivedAt,
+	); decodeErr != nil || decoded {
+		t.Errorf("DecodeState(missing) decoded=%t, err=%v; want absent", decoded, decodeErr)
 	}
 }
 

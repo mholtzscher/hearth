@@ -78,10 +78,7 @@ func newColorXYPlan(
 			if err = handler(ctx, command, responder); err != nil {
 				return plannedCommand{}, err
 			}
-			payload, err := colorXYCommandValue(parameters.X, parameters.Y)
-			if err != nil {
-				return plannedCommand{}, err
-			}
+			payload := colorXYCommandValue(parameters.X, parameters.Y)
 			return plannedCommand{
 				SetValues:     map[string]json.RawMessage{colorProperty: payload},
 				GetProperties: []string{colorProperty},
@@ -138,12 +135,10 @@ func decodeColorXYState(
 }
 
 // colorXYCommandValue encodes scaled XY integers as exact base-10 decimal
-// JSON without float arithmetic.
-func colorXYCommandValue(x, y int64) (json.RawMessage, error) {
-	if x < 0 || x > colorXYScale || y < 0 || y > colorXYScale {
-		return nil, errors.New("color XY coordinates are outside Hearth's range")
-	}
+// JSON without float arithmetic. The Hearth coordinate range is enforced by
+// the color XY NewCommandHandler contract; encoding only renders decimals.
+func colorXYCommandValue(x, y int64) json.RawMessage {
 	return json.RawMessage(
 		`{"x":` + formatScaledUnit(x) + `,"y":` + formatScaledUnit(y) + `}`,
-	), nil
+	)
 }

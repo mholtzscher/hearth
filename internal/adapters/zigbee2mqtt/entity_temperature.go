@@ -12,11 +12,7 @@ import (
 	sdktemperaturev1 "github.com/mholtzscher/hearth/sdk/adapter/temperaturev1"
 )
 
-const (
-	temperatureMinimumMilliCelsius int64 = -273_150
-	temperatureMaximumMilliCelsius int64 = 1_000_000
-	milliCelsiusPerCelsius               = 1_000
-)
+const milliCelsiusPerCelsius = 1_000
 
 // newTemperaturePlan builds the complete read-only temperature translation for
 // one State property. Get access alone controls startup refresh: a
@@ -75,9 +71,11 @@ func temperatureSupport() contracttemperaturev1.Support {
 }
 
 // normalizeTemperature converts an upstream Celsius JSON number to integer
-// milli-Celsius. It parses the value exactly, requires an integral int64
-// result, enforces the Entity-type range, and rejects rather than clamps,
-// truncates, or rounds.
+// milli-Celsius. It parses the value exactly and requires an integral int64
+// result, rejecting rather than clamping, truncating, or rounding. The
+// Hearth range lives in the contract State schema and is enforced by State
+// Encode inside NewObservation, so out-of-range integers surface as
+// per-property plan errors rather than wire conversion failures.
 func normalizeTemperature(payload json.RawMessage) (int64, error) {
 	var decoded any
 	if err := decodeJSON(payload, &decoded); err != nil {
@@ -95,9 +93,5 @@ func normalizeTemperature(payload json.RawMessage) (int64, error) {
 	if !scaled.IsInt() || !scaled.Num().IsInt64() {
 		return 0, errors.New("temperature value requires sub-milli-Celsius precision")
 	}
-	value := scaled.Num().Int64()
-	if value < temperatureMinimumMilliCelsius || value > temperatureMaximumMilliCelsius {
-		return 0, errors.New("temperature value is outside its supported range")
-	}
-	return value, nil
+	return scaled.Num().Int64(), nil
 }

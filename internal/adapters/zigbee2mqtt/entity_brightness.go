@@ -154,10 +154,9 @@ func normalizeBrightnessValue(value, maximum float64) (int64, error) {
 	if value < 0 || value > maximum {
 		return 0, errors.New("brightness value is outside its discovered range")
 	}
+	// The Hearth 0..100 range is enforced by the brightness NewObservation
+	// contract; normalization only scales and rounds here.
 	normalized := math.Floor(value*hearthBrightnessMaximum/maximum + brightnessRoundingOffset)
-	if normalized < 0 || normalized > hearthBrightnessMaximum {
-		return 0, errors.New("normalized brightness is outside Hearth's range")
-	}
 	return int64(normalized), nil
 }
 
@@ -167,9 +166,8 @@ func brightnessCommandValue(maximum float64, percentage int64) (json.RawMessage,
 }
 
 func scaleBrightnessCommand(percentage int64, maximum float64) (json.RawMessage, error) {
-	if percentage < 0 || percentage > hearthBrightnessMaximum {
-		return nil, errors.New("brightness percentage is outside Hearth's range")
-	}
+	// The Hearth 0..100 percentage range is enforced by the brightness
+	// NewCommandHandler contract; scaling only converts a validated value.
 	if !isFinite(maximum) || maximum <= 0 {
 		return nil, errors.New("brightness maximum must be finite and positive")
 	}

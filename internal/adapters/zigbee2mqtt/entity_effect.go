@@ -13,14 +13,6 @@ import (
 
 const effectExposeName = "effect"
 
-// maximumEnumChoices and maximumEnumChoiceRunes mirror the shared
-// string/choice bounds (contracts/v1/common and registration-request
-// bounds): 1–64 unique choices of 1–128 chars each.
-const (
-	maximumEnumChoices     = 64
-	maximumEnumChoiceRunes = 128
-)
-
 // newEffectPlan builds the complete stateless effect action translation for
 // one set-only property. The plan claims no State properties, runs no
 // decoder, requests no refresh, and translates trigger Commands to

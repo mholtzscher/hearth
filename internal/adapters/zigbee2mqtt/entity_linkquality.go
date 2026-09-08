@@ -139,10 +139,10 @@ func (linkqualityPlanner) Plan(input devicePlanningInput) plannerContribution {
 	return contribution
 }
 
-// normalizeLinkquality decodes an exact-integer linkquality reading in
-// 0–255. Fractions and out-of-range payloads are rejected as per-property
-// issues so valid siblings still decode: integer-only is adapter-enforced
-// while core backstops the range via support bounds.
+// normalizeLinkquality decodes an exact-integer linkquality reading.
+// Fractions are rejected as per-property issues so valid siblings still
+// decode: integer-only is adapter-enforced while NewObservation owns the
+// 0–255 support bounds.
 func normalizeLinkquality(payload json.RawMessage) (float64, error) {
 	var decoded any
 	if err := decodeJSON(payload, &decoded); err != nil {
@@ -156,9 +156,5 @@ func normalizeLinkquality(payload json.RawMessage) (float64, error) {
 	if !ok || !exact.IsInt() || !exact.Num().IsInt64() {
 		return 0, errors.New("linkquality value must be a finite integer")
 	}
-	value := exact.Num().Int64()
-	if value < linkqualityMinimum || value > linkqualityMaximum {
-		return 0, errors.New("linkquality value is outside its discovered range")
-	}
-	return float64(value), nil
+	return float64(exact.Num().Int64()), nil
 }

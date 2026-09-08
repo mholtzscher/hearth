@@ -179,8 +179,9 @@ func planStartupColorTemp(input devicePlanningInput, root indexedExpose) *entity
 }
 
 // planPowerOnBehavior discovers the optional device-root power-on behavior
-// setting once per device. It requires full publish/set/get access and
-// non-empty unique values within the shared choice bounds.
+// setting once per device. It requires full publish/set/get access; the
+// constructor validates the expose values against the shared choice bounds
+// and omits the Entity on error.
 func planPowerOnBehavior(input devicePlanningInput) *entityPlan {
 	root, ok := input.Exposes.UniqueRoot(upstreamExposeEnum, powerOnBehaviorExposeName)
 	if !ok || !root.resolved {
@@ -189,10 +190,6 @@ func planPowerOnBehavior(input devicePlanningInput) *entityPlan {
 	expose := root.expose
 	if expose.Property == "" || !exposeCanPublish(expose) || !exposeCanSet(expose) ||
 		!exposeCanGet(expose) || !input.Exposes.PropertyUnique(expose.Property) {
-		return nil
-	}
-	choices, valid := enumChoices(expose.Values)
-	if !valid {
 		return nil
 	}
 	key, name := scopedIdentity(
@@ -209,7 +206,7 @@ func planPowerOnBehavior(input devicePlanningInput) *entityPlan {
 		Key:        key,
 		ExternalID: input.IEEE + "/" + entityLocation(root) + "/poweronbehavior",
 		Name:       name,
-	}, expose.Property, choices)
+	}, expose.Property, expose.Values)
 	if err != nil {
 		return nil
 	}
@@ -217,8 +214,9 @@ func planPowerOnBehavior(input devicePlanningInput) *entityPlan {
 }
 
 // planEffect discovers the optional device-root set-only effect action once
-// per device. Access must be exactly set-only with a device-unique property
-// and non-empty unique values within the shared choice bounds.
+// per device. Access must be exactly set-only with a device-unique
+// property; the constructor validates the expose values against the shared
+// choice bounds and omits the Entity on error.
 func planEffect(input devicePlanningInput) *entityPlan {
 	root, ok := input.Exposes.UniqueRoot(upstreamExposeEnum, effectExposeName)
 	if !ok || !root.resolved {
@@ -227,10 +225,6 @@ func planEffect(input devicePlanningInput) *entityPlan {
 	expose := root.expose
 	if expose.Property == "" || expose.Access != exposeSetAccessBit ||
 		!input.Exposes.PropertyUnique(expose.Property) {
-		return nil
-	}
-	values, valid := enumChoices(expose.Values)
-	if !valid {
 		return nil
 	}
 	key, name := scopedIdentity(
@@ -247,7 +241,7 @@ func planEffect(input devicePlanningInput) *entityPlan {
 		Key:        key,
 		ExternalID: input.IEEE + "/" + entityLocation(root) + "/effect",
 		Name:       name,
-	}, expose.Property, values)
+	}, expose.Property, expose.Values)
 	if err != nil {
 		return nil
 	}

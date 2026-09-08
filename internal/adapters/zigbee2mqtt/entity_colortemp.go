@@ -51,9 +51,7 @@ func newColorTempPlan(
 			properties map[string]json.RawMessage,
 			receivedAt time.Time,
 		) (stateReport, bool, error) {
-			state, decoded, err := decodeColorTempState(
-				properties, property, modeProperty, requireMode, minimum, maximum,
-			)
+			state, decoded, err := decodeColorTempState(properties, property, modeProperty, requireMode)
 			if err != nil {
 				return stateReport{}, false, err
 			}
@@ -118,13 +116,12 @@ func decodeColorTempState(
 	properties map[string]json.RawMessage,
 	property, modeProperty string,
 	requireMode bool,
-	minimum, maximum int64,
 ) (contractcolortempv1.State, bool, error) {
 	raw, present := properties[property]
 	if !present {
 		return contractcolortempv1.State{}, false, nil
 	}
-	value, err := normalizeColorTemp(raw, minimum, maximum)
+	value, err := normalizeColorTemp(raw)
 	if err != nil {
 		return contractcolortempv1.State{}, false, err
 	}
@@ -175,8 +172,9 @@ func colorTempRange(feature upstreamExpose) (int64, int64, bool) {
 	}
 	minimum, minimumOK := colorTempBound(feature.valueMinRaw, feature.ValueMin)
 	maximum, maximumOK := colorTempBound(feature.valueMaxRaw, feature.ValueMax)
-	if !minimumOK || !maximumOK || minimum < hearthColorTempMinimum || maximum > hearthColorTempMaximum ||
-		minimum >= maximum {
+	// The 100..1000 outer envelope is enforced by the colortemp descriptor
+	// support codec in newColorTempPlan; discovery only orders exact bounds.
+	if !minimumOK || !maximumOK || minimum >= maximum {
 		return 0, 0, false
 	}
 	return minimum, maximum, true
@@ -205,7 +203,7 @@ func colorTempBound(payload json.RawMessage, fallback *float64) (int64, bool) {
 	return exact.Num().Int64(), true
 }
 
-func normalizeColorTemp(payload json.RawMessage, minimum, maximum int64) (int64, error) {
+func normalizeColorTemp(payload json.RawMessage) (int64, error) {
 	var decoded any
 	if err := decodeJSON(payload, &decoded); err != nil {
 		return 0, fmt.Errorf("decode color temperature number: %w", err)
@@ -218,11 +216,9 @@ func normalizeColorTemp(payload json.RawMessage, minimum, maximum int64) (int64,
 	if !ok || !exact.IsInt() || !exact.Num().IsInt64() {
 		return 0, errors.New("color temperature value must be a finite integer")
 	}
-	value := exact.Num().Int64()
-	if value < minimum || value > maximum {
-		return 0, errors.New("color temperature value is outside its discovered range")
-	}
-	return value, nil
+	// The discovered and outer ranges are enforced by the colortemp
+	// NewObservation contract; decoding only establishes an exact integer.
+	return exact.Num().Int64(), nil
 }
 
 func colorTempCommandValue(value int64) (json.RawMessage, error) {
