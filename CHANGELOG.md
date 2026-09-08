@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.6.0](https://github.com/mholtzscher/hearth/compare/v0.5.0...v0.6.0) (2026-09-08)
+
+
+### Features
+
+* **logging:** add startup and failure diagnostics ([#59](https://github.com/mholtzscher/hearth/issues/59)) ([01cd29c](https://github.com/mholtzscher/hearth/commit/01cd29c439f6575787c566fac23c29fc0b3a7acc))
+* **zigbee2mqtt:** add bulb settings and actions ([#66](https://github.com/mholtzscher/hearth/issues/66)) ([e41d70f](https://github.com/mholtzscher/hearth/commit/e41d70f0e0ac11d6ad53d8c8b037fca91f6f3d78))
+* **zigbee2mqtt:** add native bulb color support ([#60](https://github.com/mholtzscher/hearth/issues/60)) ([2fb6d12](https://github.com/mholtzscher/hearth/commit/2fb6d12aabd24c2acced37d3bddeddd883b8d45e))
+
 ## [0.5.0](https://github.com/mholtzscher/hearth/compare/v0.4.0...v0.5.0) (2026-09-05)
 
 
