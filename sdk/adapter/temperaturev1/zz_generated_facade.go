@@ -36,7 +36,14 @@ func NewEntityDescriptor(metadata adapter.EntityMetadata, support Support) (adap
 	if err != nil {
 		return adapter.EntityDescriptor{}, err
 	}
-	return typed.NewTypedEntityDescriptor(metadata, contracttemperaturev1.TypeID, support, codecs.Support)
+	descriptor, err := typed.NewTypedEntityDescriptor(metadata, contracttemperaturev1.TypeID, support, codecs.Support)
+	if err != nil {
+		return adapter.EntityDescriptor{}, err
+	}
+	if err := contracttemperaturev1.ValidateSupport(support); err != nil {
+		return adapter.EntityDescriptor{}, &adapter.ValidationError{Err: fmt.Errorf("invalid Entity support: %w", err)}
+	}
+	return descriptor, nil
 }
 
 func NewObservation(input ObservationInput) (adapter.Observation, error) {

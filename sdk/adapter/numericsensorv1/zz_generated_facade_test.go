@@ -381,4 +381,15 @@ func TestGeneratedEntityDescriptor(t *testing.T) {
 	if canonicalJSON(t, descriptor.Support) != canonicalJSON(t, json.RawMessage("{\n        \"state\": {\"minimum\": 0, \"maximum\": 255, \"unit\": \"lqi\"},\n        \"operations\": {}\n      }")) {
 		t.Errorf("descriptor support = %s", descriptor.Support)
 	}
+	{
+		invalidSupport1, _, err := codecs.Support.Decode(json.RawMessage("{\n      \"state\": {\"minimum\": 255, \"maximum\": 0, \"unit\": \"lqi\"},\n      \"operations\": {}\n    }"))
+		if err != nil {
+			t.Fatalf("invalid support 1: %v", err)
+		}
+		if _, err := NewEntityDescriptor(metadata, invalidSupport1); err == nil {
+			t.Error("descriptor with invalid Entity support 1 was accepted")
+		} else {
+			requireValidationError(t, err, "reject invalid Entity support 1")
+		}
+	}
 }

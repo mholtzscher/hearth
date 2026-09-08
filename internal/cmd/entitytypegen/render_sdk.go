@@ -87,17 +87,28 @@ func renderFacade(model entityTypeModel, modulePath string) ([]byte, error) {
 	fmt.Fprintf(&source, "\tsharedCodecs *contract%s.Codecs\n", model.Package)
 	source.WriteString("\tcompileErr error\n)\n\n")
 	source.WriteString(
-		"func NewEntityDescriptor(metadata adapter.EntityMetadata, support Support) (adapter.EntityDescriptor, error) {\n\tcodecs, err := codecs()\n\tif err != nil { return adapter.EntityDescriptor{}, err }\n\treturn typed.NewTypedEntityDescriptor(metadata, ",
+		"func NewEntityDescriptor(metadata adapter.EntityMetadata, support Support) (adapter.EntityDescriptor, error) {\n\tcodecs, err := codecs()\n\tif err != nil { return adapter.EntityDescriptor{}, err }\n\tdescriptor, err := typed.NewTypedEntityDescriptor(metadata, ",
 	)
 	fmt.Fprintf(
 		&source,
-		"contract%s.TypeID, support, codecs.Support)\n}\n\n",
+		"contract%s.TypeID, support, codecs.Support)\n",
+		model.Package,
+	)
+	source.WriteString("\tif err != nil { return adapter.EntityDescriptor{}, err }\n")
+	fmt.Fprintf(
+		&source,
+		"\tif err := contract%s.ValidateSupport(support); err != nil { return adapter.EntityDescriptor{}, &adapter.ValidationError{Err: fmt.Errorf(\"invalid Entity support: %%w\", err)} }\n\treturn descriptor, nil\n}\n\n",
 		model.Package,
 	)
 
 	if len(model.Operations) > 0 {
 		source.WriteString(
-			"func NewCommandHandler(entityID string, support Support, handlers Handlers) (adapter.CommandHandler, error) {\n\tcodecs, err := codecs()\n\tif err != nil { return nil, err }\n\tif _, err := codecs.Support.Encode(support); err != nil { return nil, validationError(fmt.Errorf(\"invalid Entity support: %w\", err)) }\n\tvar routes []typed.Route\n",
+			"func NewCommandHandler(entityID string, support Support, handlers Handlers) (adapter.CommandHandler, error) {\n\tcodecs, err := codecs()\n\tif err != nil { return nil, err }\n\tif _, err := codecs.Support.Encode(support); err != nil { return nil, validationError(fmt.Errorf(\"invalid Entity support: %w\", err)) }\n",
+		)
+		fmt.Fprintf(
+			&source,
+			"\tif err := contract%s.ValidateSupport(support); err != nil { return nil, validationError(fmt.Errorf(\"invalid Entity support: %%w\", err)) }\n\tvar routes []typed.Route\n",
+			model.Package,
 		)
 		for _, operation := range model.Operations {
 			if operation.Required {

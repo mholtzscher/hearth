@@ -545,6 +545,17 @@ func TestGeneratedEntityDescriptor(t *testing.T) {
 	if canonicalJSON(t, descriptor.Support) != canonicalJSON(t, json.RawMessage("{\n        \"state\": {\"minimum\": 142, \"maximum\": 454, \"unit\": \"mired\", \"choices\": [\"previous\"]},\n        \"operations\": {\"set\": {}}\n      }")) {
 		t.Errorf("descriptor support = %s", descriptor.Support)
 	}
+	{
+		invalidSupport1, _, err := codecs.Support.Decode(json.RawMessage("{\n      \"state\": {\"minimum\": 454, \"maximum\": 142, \"unit\": \"mired\", \"choices\": [\"previous\"]},\n      \"operations\": {\"set\": {}}\n    }"))
+		if err != nil {
+			t.Fatalf("invalid support 1: %v", err)
+		}
+		if _, err := NewEntityDescriptor(metadata, invalidSupport1); err == nil {
+			t.Error("descriptor with invalid Entity support 1 was accepted")
+		} else {
+			requireValidationError(t, err, "reject invalid Entity support 1")
+		}
+	}
 }
 
 func TestGeneratedCommandConformance(t *testing.T) {
@@ -732,4 +743,24 @@ func TestGeneratedCommandConformance(t *testing.T) {
 			requireValidationError(t, err, "reject command handler without set handler")
 		}
 	})
+}
+
+func TestGeneratedCommandInvalidSupport(t *testing.T) {
+	codecs, err := codecs()
+	if err != nil {
+		t.Fatal(err)
+	}
+	{
+		invalidSupport, _, err := codecs.Support.Decode(json.RawMessage("{\n      \"state\": {\"minimum\": 454, \"maximum\": 142, \"unit\": \"mired\", \"choices\": [\"previous\"]},\n      \"operations\": {\"set\": {}}\n    }"))
+		if err != nil {
+			t.Fatalf("invalid support 1: %v", err)
+		}
+		if _, err := NewCommandHandler("ent_01890f47-7a6b-7c4d-8e9f-0123456789ab", invalidSupport, Handlers{
+			Set: func(_ context.Context, _ SetCommand, _ adapter.Responder) error { return nil },
+		}); err == nil {
+			t.Error("command handler with invalid Entity support 1 was accepted")
+		} else {
+			requireValidationError(t, err, "reject invalid Entity support 1")
+		}
+	}
 }

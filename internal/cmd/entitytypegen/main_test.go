@@ -1391,6 +1391,51 @@ func TestStatelessFacadeOmitsObservation(t *testing.T) {
 	}
 }
 
+func TestFacadeConstructorsValidateSupport(t *testing.T) {
+	t.Parallel()
+	source, err := renderFacade(entityTypeModel{
+		Package:    "examplev1",
+		Operations: []operationModel{{Name: "set", GoName: "Set", Required: true}},
+	}, "example.test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(source)
+	if count := strings.Count(text, "ValidateSupport(support)"); count != 2 {
+		t.Errorf("facade validates support %d times, want descriptor and command handler", count)
+	}
+	descriptor, handler, found := strings.Cut(text, "func NewCommandHandler(")
+	if !found {
+		t.Fatal("facade omits NewCommandHandler")
+	}
+	handlerSchema := strings.Index(handler, "codecs.Support.Encode(support)")
+	handlerSemantic := strings.Index(handler, "ValidateSupport(support)")
+	if handlerSchema < 0 || handlerSemantic < 0 {
+		t.Error("command handler omits schema or semantic support validation")
+	} else if handlerSchema > handlerSemantic {
+		t.Error("command handler runs semantic support validation before schema validation")
+	}
+	descriptorSchema := strings.Index(descriptor, "NewTypedEntityDescriptor(")
+	descriptorSemantic := strings.Index(descriptor, "ValidateSupport(support)")
+	if descriptorSchema < 0 || descriptorSemantic < 0 {
+		t.Error("descriptor omits schema or semantic support validation")
+	} else if descriptorSchema > descriptorSemantic {
+		t.Error("descriptor runs semantic support validation before schema validation")
+	}
+
+	free, err := renderFacade(entityTypeModel{Package: "examplev1"}, "example.test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	freeText := string(free)
+	if count := strings.Count(freeText, "ValidateSupport(support)"); count != 1 {
+		t.Errorf("operation-free facade validates support %d times, want descriptor only", count)
+	}
+	if !strings.Contains(freeText, "&adapter.ValidationError{Err: fmt.Errorf(\"invalid Entity support:") {
+		t.Error("operation-free descriptor does not wrap invalid support as a validation error")
+	}
+}
+
 func TestStatefulFacadeKeepsObservation(t *testing.T) {
 	t.Parallel()
 	source, err := renderFacade(entityTypeModel{

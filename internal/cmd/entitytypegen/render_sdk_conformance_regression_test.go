@@ -1,8 +1,10 @@
 package main
 
 import (
+	"encoding/json"
 	"math"
 	"strconv"
+	"strings"
 	"testing"
 )
 
@@ -154,5 +156,82 @@ func TestUnknownOperationCandidateAvoidsDeclaredNames(t *testing.T) {
 				t.Fatalf("candidate = %q, want %q", got, example.want)
 			}
 		})
+	}
+}
+
+// TestFacadeConformanceCoversRelationalInvalidSupports protects the SDK
+// conformance seam for schema-valid but relationally invalid supports (for
+// example a numericsetting minimum above its maximum). The schema-mutation
+// probe cannot construct such values, so the generator must also emit
+// rejection checks from the independently authored invalid_supports examples
+// for both descriptor and command construction. It fails if either check is
+// missing.
+func TestFacadeConformanceCoversRelationalInvalidSupports(t *testing.T) {
+	t.Parallel()
+	model := entityTypeModel{
+		Package: "examplev1",
+		TypeID:  "example.value/v1",
+		Operations: []operationModel{
+			{Name: "set", GoName: "Set", Required: true},
+		},
+		Examples: examplesFile{
+			Cases: []exampleCase{{
+				Name:    "basic",
+				Support: json.RawMessage(`{"state":{},"operations":{"set":{}}}`),
+				States: []validityExample{
+					{Value: json.RawMessage(`true`), Valid: true},
+					{Value: json.RawMessage(`1`), Valid: false},
+				},
+				Operations: map[string]operationExamples{
+					"set": {Parameters: []validityExample{
+						{Value: json.RawMessage(`{"value":1}`), Valid: true},
+						{Value: json.RawMessage(`{"value":"on"}`), Valid: false},
+					}},
+				},
+			}},
+			InvalidSupports: []json.RawMessage{
+				json.RawMessage(`{"state":{"minimum":454,"maximum":142},"operations":{"set":{}}}`),
+			},
+		},
+	}
+	rendered, err := renderFacadeConformanceTest(model)
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(rendered.content)
+	for _, required := range []string{
+		"func TestGeneratedCommandInvalidSupport(t *testing.T) {",
+		"descriptor with invalid Entity support 1 was accepted",
+		"command handler with invalid Entity support 1 was accepted",
+	} {
+		if !strings.Contains(text, required) {
+			t.Errorf("facade conformance omits %q", required)
+		}
+	}
+}
+
+// TestInvalidSupportOperationsMatchesEnabledOperations protects handler
+// construction for invalid-support command checks: required operations are
+// always present while optional ones follow the authored value, so only
+// support validity decides the construction outcome.
+func TestInvalidSupportOperationsMatchesEnabledOperations(t *testing.T) {
+	t.Parallel()
+	model := entityTypeModel{Operations: []operationModel{
+		{Name: "set", GoName: "Set", Required: true},
+		{Name: "toggle", GoName: "Toggle"},
+	}}
+	enabled := invalidSupportOperations(
+		model,
+		json.RawMessage(`{"state":{},"operations":{"toggle":{}}}`),
+	)
+	if len(enabled) != 2 || enabled[0].Name != "set" || enabled[1].Name != "toggle" {
+		t.Fatalf("enabled operations = %+v, want required set plus enabled toggle", enabled)
+	}
+	disabled := invalidSupportOperations(
+		model,
+		json.RawMessage(`{"state":{},"operations":{}}`),
+	)
+	if len(disabled) != 1 || disabled[0].Name != "set" {
+		t.Fatalf("enabled operations = %+v, want required set only", disabled)
 	}
 }

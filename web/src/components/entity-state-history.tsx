@@ -54,7 +54,13 @@ function isNumericSettingChoiceState(value: unknown): boolean {
   return state.mode === "choice" && typeof state.choice === "string" && state.value === undefined;
 }
 
-function parseHistoryValue(type: string | undefined, value: unknown): PlottedValue | null {
+/** Nonempty support.state.unit, or empty when absent or malformed. */
+function supportUnit(support: Record<string, unknown> | undefined): string {
+  const unit = (support?.state as { unit?: unknown } | undefined)?.unit;
+  return typeof unit === "string" && unit ? unit : "";
+}
+
+function parseHistoryValue(type: string | undefined, value: unknown, support?: Record<string, unknown> | undefined): PlottedValue | null {
   switch (type) {
     case "hearth.power/v1":
       return typeof value === "boolean" ? { numeric: value ? 1 : 0, label: value ? "On" : "Off" } : null;
@@ -75,9 +81,9 @@ function parseHistoryValue(type: string | undefined, value: unknown): PlottedVal
     case "hearth.numericsetting/v1": {
       if (typeof value !== "object" || value === null) return null;
       const v = value as { mode?: unknown; value?: unknown };
-      return v.mode === "value" && typeof v.value === "number" && Number.isFinite(v.value)
-        ? { numeric: v.value, label: String(v.value) }
-        : null;
+      if (v.mode !== "value" || typeof v.value !== "number" || !Number.isFinite(v.value)) return null;
+      const unit = supportUnit(support);
+      return { numeric: v.value, label: unit ? `${v.value} ${unit}` : String(v.value) };
     }
     default:
       return null;
@@ -97,7 +103,7 @@ function colorTempHistoryMireds(value: unknown): number | null {
 /** Table display for structured color States with coordinates, units, and
     mode activity; null for malformed values (the caller falls back to raw
     JSON) and for types without a structured form. */
-function formatStructuredHistoryValue(type: string | undefined, value: unknown): string | null {
+function formatStructuredHistoryValue(type: string | undefined, value: unknown, support?: Record<string, unknown> | undefined): string | null {
   switch (type) {
     case "hearth.colorxy/v1": {
       if (typeof value !== "object" || value === null) return null;
@@ -122,7 +128,10 @@ function formatStructuredHistoryValue(type: string | undefined, value: unknown):
     case "hearth.numericsetting/v1": {
       if (typeof value !== "object" || value === null) return null;
       const v = value as { mode?: unknown; value?: unknown; choice?: unknown };
-      if (v.mode === "value" && typeof v.value === "number") return String(v.value);
+      if (v.mode === "value" && typeof v.value === "number") {
+        const unit = supportUnit(support);
+        return unit ? `${v.value} ${unit}` : String(v.value);
+      }
       if (v.mode === "choice" && typeof v.choice === "string") return v.choice;
       return null;
     }
@@ -138,10 +147,10 @@ function formatStructuredHistoryValue(type: string | undefined, value: unknown):
 }
 
 /** Table display value; falls back to raw JSON for unknown types and malformed values. */
-function formatHistoryValue(type: string | undefined, value: unknown): string {
-  const structured = formatStructuredHistoryValue(type, value);
+function formatHistoryValue(type: string | undefined, value: unknown, support?: Record<string, unknown> | undefined): string {
+  const structured = formatStructuredHistoryValue(type, value, support);
   if (structured !== null) return structured;
-  const parsed = parseHistoryValue(type, value);
+  const parsed = parseHistoryValue(type, value, support);
   if (parsed) return parsed.label;
   try {
     return JSON.stringify(value) ?? String(value);
@@ -266,7 +275,7 @@ function StateHistoryChart({
   // Response order is newest-first; the chart plots ascending receive order.
   const ascending = [...accepted].reverse();
   const points: (ChartPoint | null)[] = ascending.map((entry, position) => {
-    const parsed = parseHistoryValue(type, entry.value);
+    const parsed = parseHistoryValue(type, entry.value, support);
     return parsed
       ? { position, numeric: parsed.numeric, label: parsed.label, observedAt: entry.observed_at }
       : null;
@@ -564,7 +573,7 @@ function HistoryScope({
                       >
                         {entry.disposition === "rejected"
                           ? "—"
-                          : formatHistoryValue(entityType, entry.value)}
+                          : formatHistoryValue(entityType, entry.value, support)}
                       </TableCell>
                       <TableCell>
                         <span className="flex flex-wrap items-center gap-1.5">
