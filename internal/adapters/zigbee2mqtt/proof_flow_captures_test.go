@@ -145,9 +145,9 @@ func TestCapturedRelayPlugCommandTranslation(t *testing.T) {
 }
 
 // This test protects the captured temperature proof Device and fails if the
-// sensor registers anything other than one read-only milli-Celsius Entity
-// plus the device-agnostic linkquality sensor, if humidity/battery siblings
-// leak into Entities, or if support gains Operations.
+// sensor registers anything other than one read-only milli-Celsius Entity,
+// read-only humidity and battery percent Entities, and the device-agnostic
+// linkquality sensor, or if support gains Operations.
 func TestDiscoverCapturedTemperatureSensor(t *testing.T) {
 	t.Parallel()
 	device := mustDiscoveredFixtureDevice(t, "bridge-devices-temperature.json")
@@ -164,10 +164,10 @@ func TestDiscoverCapturedTemperatureSensor(t *testing.T) {
 	if device.Model != "SNZB-02D" {
 		t.Fatalf("Device model = %q, want SNZB-02D", device.Model)
 	}
-	if len(device.Registration.Entities) != 2 || len(device.Entities) != 2 {
+	if len(device.Registration.Entities) != 4 || len(device.Entities) != 4 {
 		t.Fatalf("Entities = %#v", device.Entities)
 	}
-	linkquality := device.Registration.Entities[1]
+	linkquality := device.Registration.Entities[3]
 	wantLinkquality := json.RawMessage(`{"state":{"maximum":255,"minimum":0,"unit":"lqi"},"operations":{}}`)
 	if linkquality.Key != "linkquality" ||
 		linkquality.ExternalID != "0x00124b0024abcd02/root/linkquality" ||
@@ -175,7 +175,7 @@ func TestDiscoverCapturedTemperatureSensor(t *testing.T) {
 		!reflect.DeepEqual(linkquality.Support, wantLinkquality) {
 		t.Fatalf("linkquality descriptor = %#v", linkquality)
 	}
-	linkqualityPlan := device.Entities[1]
+	linkqualityPlan := device.Entities[3]
 	if !reflect.DeepEqual(linkqualityPlan.StateProperties, []string{"linkquality"}) ||
 		len(linkqualityPlan.GetProperties) != 0 || linkqualityPlan.TranslateCommand != nil {
 		t.Fatalf("linkquality plan = %#v", linkqualityPlan)
@@ -194,12 +194,40 @@ func TestDiscoverCapturedTemperatureSensor(t *testing.T) {
 		plan.TranslateCommand != nil {
 		t.Fatalf("gettable temperature plan = %#v", plan)
 	}
+	wantPercentSupport := json.RawMessage(`{"state":{"maximum":100,"minimum":0,"unit":"%"},"operations":{}}`)
+	assertCapturedPercentPlan(
+		t, device, 1, "humidity", "0x00124b0024abcd02/root/humidity", "Humidity", wantPercentSupport,
+	)
+	assertCapturedPercentPlan(
+		t, device, 2, "battery", "0x00124b0024abcd02/root/battery", "Battery", wantPercentSupport,
+	)
+}
+
+// assertCapturedPercentPlan checks one gettable read-only percent Entity.
+func assertCapturedPercentPlan(
+	t *testing.T,
+	device discoveredDevice,
+	index int,
+	key, externalID, name string,
+	support json.RawMessage,
+) {
+	t.Helper()
+	descriptor := device.Registration.Entities[index]
+	if descriptor.Key != key || descriptor.ExternalID != externalID || descriptor.Name != name ||
+		descriptor.Type != "hearth.numericsensor/v1" || !reflect.DeepEqual(descriptor.Support, support) {
+		t.Fatalf("%s descriptor = %#v", key, descriptor)
+	}
+	plan := device.Entities[index]
+	if !reflect.DeepEqual(plan.StateProperties, []string{key}) ||
+		!reflect.DeepEqual(plan.GetProperties, []string{key}) || plan.TranslateCommand != nil {
+		t.Fatalf("%s plan = %#v", key, plan)
+	}
 }
 
 // This test protects captured temperature State projection and fails if 22.6
-// °C does not publish exactly 22600 milli-Celsius, if the linkquality
-// sibling does not project beside it, if humidity/battery siblings produce
-// State, or if support is not empty.
+// °C does not publish exactly 22600 milli-Celsius, if humidity does not
+// preserve its 48.2 fraction, if battery does not publish 100, if the
+// linkquality sibling does not project beside them.
 func TestDecodeCapturedTemperatureState(t *testing.T) {
 	t.Parallel()
 	device := mustDiscoveredFixtureDevice(t, "bridge-devices-temperature.json")
@@ -211,13 +239,23 @@ func TestDecodeCapturedTemperatureState(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(issues) != 0 || len(states) != 2 || states[0].entityID != "entity-temperature" ||
+	if len(issues) != 0 || len(states) != 4 || states[0].entityID != "entity-temperature" ||
 		string(states[0].report.Observation.Value) != "22600" ||
-		states[1].entityID != "entity-linkquality" ||
-		string(states[1].report.Observation.Value) != "105" {
+		states[1].entityID != "entity-humidity" ||
+		string(states[1].report.Observation.Value) != "48.2" ||
+		states[2].entityID != "entity-battery" ||
+		string(states[2].report.Observation.Value) != "100" ||
+		states[3].entityID != "entity-linkquality" ||
+		string(states[3].report.Observation.Value) != "105" {
 		t.Fatalf("states = %#v, issues = %#v", states, issues)
 	}
 	if semantic, ok := states[0].report.semantic.(int64); !ok || semantic != 22600 {
 		t.Fatalf("temperature semantic = %#v", states[0].report.semantic)
+	}
+	if semantic, ok := states[1].report.semantic.(float64); !ok || semantic != 48.2 {
+		t.Fatalf("humidity semantic = %#v", states[1].report.semantic)
+	}
+	if semantic, ok := states[2].report.semantic.(float64); !ok || semantic != 100 {
+		t.Fatalf("battery semantic = %#v", states[2].report.semantic)
 	}
 }

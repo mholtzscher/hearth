@@ -488,6 +488,16 @@ func TestRunProjectsRelayAndTemperatureDevices(t *testing.T) {
 	}
 	assertProofFlowLinkquality(t, "relay", proof.relayLinkquality, "120")
 	assertProofFlowLinkquality(t, "temperature", proof.temperatureLinkquality, "105")
+	for _, entity := range []devices.EntityWithState{proof.humidity, proof.battery} {
+		if string(entity.Entity.Support) != `{"state":{"maximum":100,"minimum":0,"unit":"%"},"operations":{}}` {
+			t.Fatalf("percentage sensor support = %s", entity.Entity.Support)
+		}
+		if _, commandErr := service.ExecuteCommand(
+			ctx, entity.Entity.ID, devices.OperationNameSet, devices.CommandParameters(`{"value":50}`),
+		); !errors.Is(commandErr, devices.ErrInvalidCommand) {
+			t.Fatalf("percentage sensor command error = %v, want %v", commandErr, devices.ErrInvalidCommand)
+		}
+	}
 	if _, err = service.ExecuteCommand(
 		ctx,
 		proof.relayLinkquality.Entity.ID,
@@ -554,6 +564,8 @@ func TestRunProjectsRelayAndTemperatureDevices(t *testing.T) {
 type proofFlowEntities struct {
 	power                  devices.EntityWithState
 	temperature            devices.EntityWithState
+	humidity               devices.EntityWithState
+	battery                devices.EntityWithState
 	relayLinkquality       devices.EntityWithState
 	temperatureLinkquality devices.EntityWithState
 }
@@ -574,6 +586,7 @@ func waitForProofFlowEntities(
 		}
 		var proof proofFlowEntities
 		var foundPower, foundTemperature, foundRelayLinkquality, foundTemperatureLinkquality bool
+		var foundHumidity, foundBattery bool
 		for _, entity := range page.Items {
 			switch {
 			case entity.Entity.TypeID == "hearth.power/v1" && entity.State != nil &&
@@ -589,6 +602,12 @@ func waitForProofFlowEntities(
 			case entity.Entity.TypeID == "hearth.numericsensor/v1" && entity.State != nil &&
 				entity.Availability.Status == devices.EntityAvailabilityAvailable:
 				switch string(entity.State.Value) {
+				case "48.2":
+					proof.humidity = entity
+					foundHumidity = entity.Entity.Name == "Humidity"
+				case "100":
+					proof.battery = entity
+					foundBattery = entity.Entity.Name == "Battery"
 				case "120":
 					proof.relayLinkquality = entity
 					foundRelayLinkquality = true
@@ -598,7 +617,7 @@ func waitForProofFlowEntities(
 				}
 			}
 		}
-		if len(page.Items) == 4 && foundPower && foundTemperature &&
+		if len(page.Items) == 6 && foundPower && foundTemperature && foundHumidity && foundBattery &&
 			foundRelayLinkquality && foundTemperatureLinkquality {
 			return proof
 		}
