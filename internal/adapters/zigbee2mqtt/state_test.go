@@ -83,7 +83,7 @@ func TestNormalizeColorTempAndIsolateInvalidProperty(t *testing.T) {
 		{payload: `370.0`, want: 370},
 		{payload: `500`, want: 500},
 	} {
-		value, err := normalizeColorTemp(json.RawMessage(test.payload), 154, 500)
+		value, err := normalizeColorTemp(json.RawMessage(test.payload))
 		if err != nil || value != test.want {
 			t.Errorf("normalizeColorTemp(%s) = %d, %v; want %d", test.payload, value, err, test.want)
 		}
@@ -267,12 +267,8 @@ func TestCommandValuesUseDiscoveredMetadata(t *testing.T) {
 	if string(on) != "1" || string(off) != "0" || string(quarter) != "63.75" {
 		t.Fatalf("command values = on:%s off:%s brightness:%s", on, off, quarter)
 	}
-	if _, err = brightnessCommandValue(255, -1); err == nil {
-		t.Fatal("negative brightness command was accepted")
-	}
-	if _, err = brightnessCommandValue(255, 101); err == nil {
-		t.Fatal("brightness command above 100 was accepted")
-	}
+	// Hearth-range command rejection lives in the brightness NewCommandHandler
+	// contract, covered at the translator boundary in light_validation_boundary_test.go.
 	if _, err = brightnessCommandValue(0, 0); err == nil {
 		t.Fatal("zero brightness maximum was accepted")
 	}

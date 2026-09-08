@@ -4,13 +4,23 @@ import (
 	"encoding/json"
 	"reflect"
 	"testing"
+	"time"
 
 	"pgregory.net/rapid"
+
+	"github.com/mholtzscher/hearth/sdk/adapter"
 )
 
-// This test protects exact milli-Celsius conversion and fails on float
-// rounding, truncation, clamping, numeric-string coercion, or huge-exponent
-// acceptance.
+// These bounds are the temperature/v1 State schema's acceptance limits.
+const (
+	temperatureMinimumMilliCelsius int64 = -273_150
+	temperatureMaximumMilliCelsius int64 = 1_000_000
+)
+
+// This test protects exact milli-Celsius wire conversion and fails on
+// float rounding, truncation, numeric-string coercion, or huge-exponent
+// acceptance. Range is owned by the contract at the plan boundary, so
+// out-of-range integers convert here and are rejected there.
 func TestNormalizeTemperatureTable(t *testing.T) {
 	t.Parallel()
 	for _, test := range []struct {
@@ -24,12 +34,12 @@ func TestNormalizeTemperatureTable(t *testing.T) {
 		{payload: `-0.125`, want: -125, valid: true},
 		{payload: `-273.15`, want: -273150, valid: true},
 		{payload: `1000`, want: 1000000, valid: true},
+		{payload: `-273.151`, want: -273151, valid: true},
+		{payload: `1000.001`, want: 1000001, valid: true},
 		{payload: `0.0001`},
 		{payload: `"21.5"`},
 		{payload: `null`},
 		{payload: `1e10000`},
-		{payload: `-273.151`},
-		{payload: `1000.001`},
 		{payload: `21.5 trailing`},
 	} {
 		got, err := normalizeTemperature(json.RawMessage(test.payload))
@@ -42,6 +52,59 @@ func TestNormalizeTemperatureTable(t *testing.T) {
 				test.want,
 				test.valid,
 			)
+		}
+	}
+}
+
+// This test protects contract range rejection at the plan boundary and
+// fails if State outside -273150..1000000 milli-Celsius decodes or a
+// boundary reading is lost. Expected bounds come from the contract-owned
+// range, never the wire converter.
+func TestTemperaturePlanStateRangeBoundary(t *testing.T) {
+	t.Parallel()
+	plan, err := newTemperaturePlan(adapter.EntityMetadata{
+		Key:        "temperature",
+		ExternalID: "0x1/root/temperature",
+		Name:       "Temperature",
+	}, "temperature", false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	receivedAt := time.Unix(1, 0).UTC()
+	for _, test := range []struct {
+		payload string
+		want    int64
+		valid   bool
+	}{
+		{payload: `-273.15`, want: -273150, valid: true},
+		{payload: `1000`, want: 1000000, valid: true},
+		{payload: `21.5`, want: 21500, valid: true},
+		{payload: `-273.151`},
+		{payload: `1000.001`},
+		{payload: `"21.5"`},
+		{payload: `null`},
+		{payload: `0.0001`},
+	} {
+		report, decoded, decodeErr := plan.DecodeState(
+			"entity-temperature",
+			map[string]json.RawMessage{"temperature": json.RawMessage(test.payload)},
+			receivedAt,
+		)
+		if (decodeErr == nil) != test.valid || decoded != test.valid {
+			t.Errorf(
+				"DecodeState(%s) decoded=%t, err=%v; want valid=%t",
+				test.payload,
+				decoded,
+				decodeErr,
+				test.valid,
+			)
+			continue
+		}
+		if !test.valid {
+			continue
+		}
+		if semantic, ok := report.semantic.(int64); !ok || semantic != test.want {
+			t.Errorf("DecodeState(%s) semantic = %#v; want %d", test.payload, report.semantic, test.want)
 		}
 	}
 }
@@ -175,19 +238,54 @@ func TestTemperaturePlanEligibility(t *testing.T) {
 	}
 }
 
-// FuzzNormalizeTemperature protects exact-conversion stability and range
-// enforcement against malformed or extreme numeric input.
-func FuzzNormalizeTemperature(fuzz *testing.F) {
-	for _, seed := range []string{`21.5`, `2.15e1`, `-273.15`, `0.0001`, `"21.5"`, `1e10000`, `null`} {
+// FuzzTemperaturePlanBoundary protects wire/contract separation against
+// malformed or extreme numeric input and fails if the plan accepts
+// out-of-range State, accepts wire-rejected input, or reports a semantic
+// diverging from the wire conversion.
+func FuzzTemperaturePlanBoundary(fuzz *testing.F) {
+	for _, seed := range []string{
+		`21.5`, `2.15e1`, `-273.15`, `1000`, `-273.151`, `1000.001`, `0.0001`, `"21.5"`, `1e10000`, `null`,
+	} {
 		fuzz.Add(seed)
 	}
+	plan, err := newTemperaturePlan(adapter.EntityMetadata{
+		Key:        "temperature",
+		ExternalID: "0x1/root/temperature",
+		Name:       "Temperature",
+	}, "temperature", false)
+	if err != nil {
+		fuzz.Fatal(err)
+	}
+	receivedAt := time.Unix(1, 0).UTC()
 	fuzz.Fuzz(func(t *testing.T, payload string) {
-		value, err := normalizeTemperature(json.RawMessage(payload))
-		if err != nil {
+		raw := json.RawMessage(payload)
+		value, wireErr := normalizeTemperature(raw)
+		report, decoded, planErr := plan.DecodeState(
+			"entity-temperature",
+			map[string]json.RawMessage{"temperature": raw},
+			receivedAt,
+		)
+		if wireErr != nil {
+			if planErr == nil || decoded {
+				t.Fatalf("plan accepted wire-rejected payload %q", payload)
+			}
 			return
 		}
-		if value < temperatureMinimumMilliCelsius || value > temperatureMaximumMilliCelsius {
-			t.Fatalf("temperature State = %d", value)
+		inRange := value >= temperatureMinimumMilliCelsius && value <= temperatureMaximumMilliCelsius
+		if inRange != (planErr == nil && decoded) {
+			t.Fatalf(
+				"payload %q wire=%d inRange=%t decoded=%t err=%v",
+				payload,
+				value,
+				inRange,
+				decoded,
+				planErr,
+			)
+		}
+		if inRange {
+			if semantic, ok := report.semantic.(int64); !ok || semantic != value {
+				t.Fatalf("payload %q semantic = %#v, want %d", payload, report.semantic, value)
+			}
 		}
 	})
 }

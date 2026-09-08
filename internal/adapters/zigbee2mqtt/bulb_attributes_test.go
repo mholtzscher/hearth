@@ -971,6 +971,11 @@ func TestTranslateStartupCommands(t *testing.T) {
 		`{"mode":"choice","choice":"eco"}`,
 		`{"mode":"choice","choice":"previous","value":250}`,
 		`{"mode":"value"}`,
+		`{"mode":"value","value":null}`,
+		`{"mode":"choice"}`,
+		`{"mode":"choice","choice":null}`,
+		`{"mode":"invalid","value":250}`,
+		`null`,
 	} {
 		t.Run("invalid startup "+parameters, func(t *testing.T) {
 			t.Parallel()
@@ -978,6 +983,28 @@ func TestTranslateStartupCommands(t *testing.T) {
 				t.Fatal("invalid startup command was accepted")
 			}
 		})
+	}
+}
+
+// This test protects command-side choice membership and fails if the previous
+// sentinel can be sent when discovery did not advertise that choice.
+func TestTranslateStartupPreviousRequiresSupport(t *testing.T) {
+	t.Parallel()
+	device := bulbTestDevice()
+	device.Definition.Exposes[0].Features[2].Presets = nil
+	discovered, rejection := discoverDevice(device)
+	if rejection != nil {
+		t.Fatal(rejection)
+	}
+	byKey := make(map[string]runtimeEntity)
+	for _, entity := range bindPlans(discovered.Entities) {
+		byKey[entity.plan.Descriptor.Key] = entity
+	}
+	payload, _, err := translateBulb(
+		t, byKey, "startupcolortemp", "set", `{"mode":"choice","choice":"previous"}`,
+	)
+	if err == nil || len(payload) != 0 {
+		t.Fatalf("unsupported previous command payload=%s err=%v", payload, err)
 	}
 }
 

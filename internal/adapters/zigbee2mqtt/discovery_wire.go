@@ -183,19 +183,11 @@ func decodeExposePresets(payload json.RawMessage) ([]upstreamPreset, bool) {
 // exactPresetValue decodes one exact-integer JSON number. Fractions,
 // strings, and out-of-int64 values are rejected rather than rounded.
 func exactPresetValue(payload json.RawMessage) (int64, bool) {
-	var decoded any
-	if len(payload) == 0 || decodeJSON(payload, &decoded) != nil {
+	value, err := parseExactIntegerJSON(payload)
+	if err != nil {
 		return 0, false
 	}
-	number, ok := decoded.(json.Number)
-	if !ok {
-		return 0, false
-	}
-	exact, ok := new(big.Rat).SetString(number.String())
-	if !ok || !exact.IsInt() || !exact.Num().IsInt64() {
-		return 0, false
-	}
-	return exact.Num().Int64(), true
+	return value, true
 }
 
 func decodeOptionalFloat(payload json.RawMessage) *float64 {

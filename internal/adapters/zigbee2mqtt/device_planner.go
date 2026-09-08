@@ -206,6 +206,32 @@ func entityLocation(root indexedExpose) string {
 	return "root"
 }
 
+// planPowerEntity discovers the shared power Entity for one light or relay
+// root. Light power and relay power share binary state eligibility, unique
+// property ownership, on/off canonical distinction, scoped identity, and the
+// shared power constructor; callers keep their own family gating and endpoint
+// resolution behavior.
+func planPowerEntity(input devicePlanningInput, root indexedExpose) (entityPlan, bool) {
+	powerFeature, ok := input.Exposes.UniqueFeature(root, featureQuery{Type: upstreamExposeBinary, Name: "state"})
+	if !ok || !validPowerFeature(powerFeature) || !input.Exposes.PropertyUnique(powerFeature.Property) {
+		return entityPlan{}, false
+	}
+	powerOn, onErr := canonicalScalar(powerFeature.ValueOn)
+	powerOff, offErr := canonicalScalar(powerFeature.ValueOff)
+	if onErr != nil || offErr != nil || powerOn.canonical == powerOff.canonical {
+		return entityPlan{}, false
+	}
+	metadata, ok := powerMetadata(input.IEEE, root)
+	if !ok {
+		return entityPlan{}, false
+	}
+	power, err := newPowerPlan(metadata, powerFeature.Property, powerOn, powerOff)
+	if err != nil {
+		return entityPlan{}, false
+	}
+	return power, true
+}
+
 // powerMetadata builds the shared power Entity identity for light and relay
 // roots. A physical Device changing between a light and relay expose retains
 // its power Entity identity when IEEE and numeric endpoint stay the same.

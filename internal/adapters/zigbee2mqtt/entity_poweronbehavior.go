@@ -4,9 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"slices"
+	"sync"
 	"time"
-	"unicode/utf8"
 
 	contractenumsettingv1 "github.com/mholtzscher/hearth/entitytypes/enumsettingv1"
 	"github.com/mholtzscher/hearth/sdk/adapter"
@@ -15,6 +14,11 @@ import (
 )
 
 const powerOnBehaviorExposeName = "power_on_behavior"
+
+// powerOnBehaviorCodecs shares immutable schemas across power-on behavior plans.
+//
+//nolint:gochecknoglobals // Lazy, concurrency-safe cache of authoritative codecs.
+var powerOnBehaviorCodecs = sync.OnceValues(contractenumsettingv1.Compile)
 
 // newPowerOnBehaviorPlan builds the complete power-on behavior setting
 // translation for one State property. Choices come from the expose values
@@ -43,7 +47,7 @@ func newPowerOnBehaviorPlan(
 			if !present {
 				return stateReport{}, false, nil
 			}
-			state, err := decodePowerOnBehaviorState(raw, choices)
+			state, err := decodePowerOnBehaviorState(raw)
 			if err != nil {
 				return stateReport{}, false, err
 			}
@@ -108,38 +112,17 @@ func powerOnBehaviorSupport(choices []string) contractenumsettingv1.Support {
 	}
 }
 
-func decodePowerOnBehaviorState(
-	payload json.RawMessage,
-	choices []string,
-) (contractenumsettingv1.State, error) {
-	var value string
-	if err := decodeJSON(payload, &value); err != nil {
-		return "", fmt.Errorf("decode power-on behavior string: %w", err)
+// decodePowerOnBehaviorState decodes one wire reading through the contract
+// State codec, which owns JSON string shape. Choice membership is owned by
+// NewObservation against the discovered support choices.
+func decodePowerOnBehaviorState(payload json.RawMessage) (contractenumsettingv1.State, error) {
+	codecs, err := powerOnBehaviorCodecs()
+	if err != nil {
+		return "", err
 	}
-	if !slices.Contains(choices, value) {
-		return "", fmt.Errorf("power-on behavior value is outside its discovered choices")
+	state, _, err := codecs.State.Decode(payload)
+	if err != nil {
+		return "", err
 	}
-	return contractenumsettingv1.State(value), nil
-}
-
-// enumChoices validates dynamic enum choices against the shared string and
-// choice bounds (1–128 chars per item, 1–64 unique items). Anything else
-// omits the dependent expose without affecting valid siblings.
-func enumChoices(values []string) ([]string, bool) {
-	if len(values) == 0 || len(values) > maximumEnumChoices {
-		return nil, false
-	}
-	seen := make(map[string]struct{}, len(values))
-	choices := make([]string, 0, len(values))
-	for _, value := range values {
-		if value == "" || utf8.RuneCountInString(value) > maximumEnumChoiceRunes {
-			return nil, false
-		}
-		if _, duplicate := seen[value]; duplicate {
-			return nil, false
-		}
-		seen[value] = struct{}{}
-		choices = append(choices, value)
-	}
-	return choices, true
+	return state, nil
 }

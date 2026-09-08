@@ -6,8 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"math"
-	"math/big"
-	"slices"
 	"time"
 
 	contractnumericsettingv1 "github.com/mholtzscher/hearth/entitytypes/numericsettingv1"
@@ -44,7 +42,6 @@ func newStartupColorTempPlan(
 	if descriptorErr != nil {
 		return entityPlan{}, descriptorErr
 	}
-	hasPrevious := startupHasPrevious(choices)
 	return entityPlan{
 		Descriptor:      descriptor,
 		StateProperties: []string{property},
@@ -58,7 +55,7 @@ func newStartupColorTempPlan(
 			if !present {
 				return stateReport{}, false, nil
 			}
-			state, err := decodeStartupColorTempState(raw, minimum, maximum, hasPrevious)
+			state, err := decodeStartupColorTempState(raw)
 			if err != nil {
 				return stateReport{}, false, err
 			}
@@ -96,7 +93,7 @@ func newStartupColorTempPlan(
 			if err = handler(ctx, command, responder); err != nil {
 				return plannedCommand{}, err
 			}
-			wire, err := startupColorTempCommandValue(parameters, minimum, maximum, hasPrevious)
+			wire, err := startupColorTempCommandValue(parameters)
 			if err != nil {
 				// Adapter-local validation runs after generic support
 				// validation, so a fractional in-range value reaches
@@ -142,19 +139,11 @@ func startupColorTempSupport(
 	}
 }
 
-func startupHasPrevious(choices []string) bool {
-	return slices.Contains(choices, upstreamPreviousPreset)
-}
-
-// decodeStartupColorTempState maps one wire reading to setting state: the
-// 65535 sentinel becomes the previous choice only when advertised, and any
-// other value must be an exact integer inside the discovered bounds.
-func decodeStartupColorTempState(
-	payload json.RawMessage,
-	minimum, maximum int64,
-	hasPrevious bool,
-) (contractnumericsettingv1.State, error) {
-	value, err := normalizeStartupColorTemp(payload, minimum, maximum, hasPrevious)
+// decodeStartupColorTempState maps the 65535 sentinel to the previous choice
+// and other exact integers to mired values. NewObservation validates both
+// the discovered bounds and whether the previous choice is supported.
+func decodeStartupColorTempState(payload json.RawMessage) (contractnumericsettingv1.State, error) {
+	value, err := normalizeStartupColorTemp(payload)
 	if err != nil {
 		return contractnumericsettingv1.State{}, err
 	}
@@ -166,74 +155,34 @@ func decodeStartupColorTempState(
 	return contractnumericsettingv1.State{Mode: "value", Value: &mireds}, nil
 }
 
-func normalizeStartupColorTemp(
-	payload json.RawMessage,
-	minimum, maximum int64,
-	hasPrevious bool,
-) (int64, error) {
-	var decoded any
-	if err := decodeJSON(payload, &decoded); err != nil {
-		return 0, fmt.Errorf("decode startup color temperature number: %w", err)
-	}
-	number, ok := decoded.(json.Number)
-	if !ok {
-		return 0, errors.New("startup color temperature value must be a JSON number")
-	}
-	exact, ok := new(big.Rat).SetString(number.String())
-	if !ok || !exact.IsInt() || !exact.Num().IsInt64() {
-		return 0, errors.New("startup color temperature value must be a finite integer")
-	}
-	value := exact.Num().Int64()
-	if value == startupPreviousWireValue {
-		if !hasPrevious {
-			return 0, errors.New("startup color temperature previous choice is not supported")
+// normalizeStartupColorTemp enforces the integer-only Zigbee wire format;
+// bounds and choice membership belong to the typed observation.
+func normalizeStartupColorTemp(payload json.RawMessage) (int64, error) {
+	value, err := parseExactIntegerJSON(payload)
+	if err != nil {
+		if errors.Is(err, errExactIntegerNotNumber) {
+			return 0, errors.New("startup color temperature value must be a JSON number")
 		}
-		return value, nil
-	}
-	if value < minimum || value > maximum {
-		return 0, errors.New("startup color temperature value is outside its discovered range")
+		if errors.Is(err, errExactIntegerNotInteger) {
+			return 0, errors.New("startup color temperature value must be a finite integer")
+		}
+		return 0, fmt.Errorf("decode startup color temperature number: %w", err)
 	}
 	return value, nil
 }
 
-// startupColorTempCommandValue maps typed setting parameters to the wire
-// value, enforcing this bulb's integer-only wire contract before any MQTT
-// publish: fractional in-range values pass generic validation but are
-// rejected here.
-func startupColorTempCommandValue(
-	parameters contractnumericsettingv1.SetParameters,
-	minimum, maximum int64,
-	hasPrevious bool,
-) (json.RawMessage, error) {
-	switch parameters.Mode {
-	case "choice":
-		if parameters.Choice == nil || *parameters.Choice != upstreamPreviousPreset || !hasPrevious {
-			return nil, errors.New("startup color temperature choice is not supported")
-		}
-		encoded, err := json.Marshal(startupPreviousWireValue)
-		if err != nil {
-			return nil, fmt.Errorf("encode startup color temperature: %w", err)
-		}
-		return encoded, nil
-	case "value":
-		if parameters.Value == nil {
-			return nil, errors.New("startup color temperature value is required")
-		}
-		value := *parameters.Value
-		if !isFinite(value) || math.Trunc(value) != value {
-			return nil, errors.New("startup color temperature value must be an integer")
-		}
-		if value < float64(minimum) || value > float64(maximum) {
-			return nil, errors.New("startup color temperature value is outside its discovered range")
-		}
-		encoded, err := json.Marshal(int64(value))
-		if err != nil {
-			return nil, fmt.Errorf("encode startup color temperature: %w", err)
-		}
-		return encoded, nil
-	default:
-		return nil, errors.New("startup color temperature mode must be value or choice")
+// startupColorTempCommandValue encodes parameters validated by the command
+// handler. Discovery admits only the previous choice; numeric values still
+// need the integer-only Zigbee check because numericsetting allows fractions.
+func startupColorTempCommandValue(parameters contractnumericsettingv1.SetParameters) (json.RawMessage, error) {
+	if parameters.Mode == "choice" {
+		return json.Marshal(startupPreviousWireValue)
 	}
+	value := *parameters.Value
+	if math.Trunc(value) != value {
+		return nil, errors.New("startup color temperature value must be an integer")
+	}
+	return json.Marshal(int64(value))
 }
 
 // startupTempRange validates the exact-integer mired bounds of a

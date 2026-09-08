@@ -2,8 +2,8 @@ package zigbee2mqtt
 
 import (
 	"encoding/json"
-	"errors"
 	"fmt"
+	"sync"
 	"time"
 
 	contractcolormodev1 "github.com/mholtzscher/hearth/entitytypes/colormodev1"
@@ -19,24 +19,27 @@ const (
 	colorModeColorTemp = "color_temp"
 )
 
-// decodeReportedColorMode parses one reported color-control mode. Hearth
+// reportedColorModeCodecs compiles the authoritative colormode State codec
+// once and shares it across every color decoder.
+//
+//nolint:gochecknoglobals // Lazy, concurrency-safe cache of authoritative codecs.
+var reportedColorModeCodecs = sync.OnceValues(contractcolormodev1.Compile)
+
+// decodeReportedColorMode parses one reported color-control mode through the
+// authoritative colormode State codec, so unknown or malformed modes are
+// invalid observations exactly as the shared contract defines. Hearth
 // publishes reported known enum values even when the matching representation
 // is not an advertised capability.
 func decodeReportedColorMode(payload json.RawMessage) (contractcolormodev1.State, error) {
-	var decoded any
-	if err := decodeJSON(payload, &decoded); err != nil {
+	codecs, err := reportedColorModeCodecs()
+	if err != nil {
+		return "", fmt.Errorf("compile color mode codec: %w", err)
+	}
+	mode, _, err := codecs.State.Decode(payload)
+	if err != nil {
 		return "", fmt.Errorf("decode color mode value: %w", err)
 	}
-	text, ok := decoded.(string)
-	if !ok {
-		return "", errors.New("color mode value must be a JSON string")
-	}
-	switch text {
-	case colorModeXY, colorModeHS, colorModeColorTemp:
-		return contractcolormodev1.State(text), nil
-	default:
-		return "", fmt.Errorf("unknown color mode value %q", text)
-	}
+	return mode, nil
 }
 
 // newColorModePlan builds the read-only color-mode translation for one mode

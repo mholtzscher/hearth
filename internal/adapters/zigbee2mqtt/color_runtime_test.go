@@ -509,8 +509,11 @@ func TestColorCommandsForSameIEEEStaySerialized(t *testing.T) {
 	}
 }
 
-// This test protects exact command-value encoding at the unit boundary,
-// including XY decimal rendering and HS range enforcement.
+// This test protects exact command-value encoding at the unit boundary:
+// XY decimal rendering without float arithmetic and direct HS rendering.
+// Hearth-range command rejection lives in the color NewCommandHandler
+// contracts, covered at the translator boundary below and in
+// light_validation_boundary_test.go.
 func TestColorCommandValueEncoding(t *testing.T) {
 	t.Parallel()
 	for _, test := range []struct {
@@ -522,24 +525,12 @@ func TestColorCommandValueEncoding(t *testing.T) {
 		{x: 5000, y: 100, want: `{"x":0.5,"y":0.01}`},
 		{x: 10000, y: 10000, want: `{"x":1,"y":1}`},
 	} {
-		encoded, err := colorXYCommandValue(test.x, test.y)
-		if err != nil || string(encoded) != test.want {
-			t.Errorf("colorXYCommandValue(%d,%d) = %s, %v; want %s", test.x, test.y, encoded, err, test.want)
+		if encoded := colorXYCommandValue(test.x, test.y); string(encoded) != test.want {
+			t.Errorf("colorXYCommandValue(%d,%d) = %s; want %s", test.x, test.y, encoded, test.want)
 		}
 	}
-	for _, test := range [][2]int64{{-1, 0}, {0, -1}, {10001, 0}, {0, 10001}} {
-		if _, err := colorXYCommandValue(test[0], test[1]); err == nil {
-			t.Errorf("colorXYCommandValue(%d,%d) was accepted", test[0], test[1])
-		}
-	}
-	encoded, err := colorHSCommandValue(120, 80)
-	if err != nil || string(encoded) != `{"hue":120,"saturation":80}` {
-		t.Fatalf("colorHSCommandValue(120,80) = %s, %v", encoded, err)
-	}
-	for _, test := range [][2]int64{{-1, 0}, {360, 80}, {120, -1}, {120, 101}} {
-		if _, hsErr := colorHSCommandValue(test[0], test[1]); hsErr == nil {
-			t.Errorf("colorHSCommandValue(%d,%d) was accepted", test[0], test[1])
-		}
+	if encoded := colorHSCommandValue(120, 80); string(encoded) != `{"hue":120,"saturation":80}` {
+		t.Fatalf("colorHSCommandValue(120,80) = %s", encoded)
 	}
 }
 

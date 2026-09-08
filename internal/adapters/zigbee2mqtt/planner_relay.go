@@ -16,21 +16,8 @@ func (relayPlanner) Plan(input devicePlanningInput) plannerContribution {
 		if !root.resolved {
 			continue
 		}
-		powerFeature, ok := input.Exposes.UniqueFeature(root, featureQuery{Type: upstreamExposeBinary, Name: "state"})
-		if !ok || !validPowerFeature(powerFeature) || !input.Exposes.PropertyUnique(powerFeature.Property) {
-			continue
-		}
-		powerOn, onErr := canonicalScalar(powerFeature.ValueOn)
-		powerOff, offErr := canonicalScalar(powerFeature.ValueOff)
-		if onErr != nil || offErr != nil || powerOn.canonical == powerOff.canonical {
-			continue
-		}
-		metadata, ok := powerMetadata(input.IEEE, root)
+		power, ok := planPowerEntity(input, root)
 		if !ok {
-			continue
-		}
-		power, err := newPowerPlan(metadata, powerFeature.Property, powerOn, powerOff)
-		if err != nil {
 			continue
 		}
 		contribution.Entities = append(contribution.Entities, power)

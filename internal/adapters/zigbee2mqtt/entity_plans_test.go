@@ -443,10 +443,15 @@ type reconciledSensor struct {
 
 func reconcileSensor(t *testing.T, access int) reconciledSensor {
 	t.Helper()
+	return reconcileSensorDevice(t, eligibleSensorDevice("temperature", access))
+}
+
+func reconcileSensorDevice(t *testing.T, device upstreamDevice) reconciledSensor {
+	t.Helper()
 	recorder := &runtimeRecorder{}
 	session := newFakeSession(recorder)
 	z2m := newRuntimeAdapter(t, session, &fakeDialer{})
-	payload, err := json.Marshal([]upstreamDevice{eligibleSensorDevice("temperature", access)})
+	payload, err := json.Marshal([]upstreamDevice{device})
 	if err != nil {
 		t.Fatal(err)
 	}
