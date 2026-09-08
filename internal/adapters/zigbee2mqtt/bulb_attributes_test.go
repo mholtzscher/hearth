@@ -524,6 +524,121 @@ func TestBulbAttributeEligibilityAndIsolation(t *testing.T) {
 	}
 }
 
+// This test protects linkquality startup refresh and fails if get access
+// is not reflected in get properties: publish-only stays refresh-free
+// while publish+get advertises its property for startup /get. Both stay
+// read-only with no command route, and the publish+get sensor still
+// supplements a device whose power family is ineligible.
+func TestLinkqualityGetAccessControlsRefresh(t *testing.T) {
+	t.Parallel()
+	for _, test := range []struct {
+		name        string
+		access      int
+		breakPower  bool
+		wantKind    string
+		wantRefresh []string
+	}{
+		{name: "publish-only has no refresh", access: 1, wantKind: "light", wantRefresh: nil},
+		{
+			name: "publish-get advertises refresh", access: 5,
+			wantKind:    "light",
+			wantRefresh: []string{linkqualityExposeName},
+		},
+		{
+			name: "publish-get supplements broken power family", access: 5,
+			breakPower:  true,
+			wantKind:    "sensor",
+			wantRefresh: []string{linkqualityExposeName},
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			checkLinkqualityAccess(t, test.access, test.breakPower, test.wantKind, test.wantRefresh)
+		})
+	}
+}
+
+// checkLinkqualityAccess discovers one bulb with the given linkquality
+// access and fails if eligibility, refresh properties, or the read-only
+// plan diverge from the expected contract.
+func checkLinkqualityAccess(t *testing.T, access int, breakPower bool, wantKind string, wantRefresh []string) {
+	t.Helper()
+	device := bulbTestDevice()
+	device.Definition.Exposes[1].Access = access
+	if breakPower {
+		device.Definition.Exposes[0].Features[0].Access = 3
+	}
+	discovered, rejection := discoverDevice(device)
+	if rejection != nil {
+		t.Fatalf("Device rejected: %#v", rejection)
+	}
+	if discovered.Registration.Device.Kind != wantKind {
+		t.Fatalf("Device kind = %q, want %q", discovered.Registration.Device.Kind, wantKind)
+	}
+	var plan *entityPlan
+	for index := range discovered.Entities {
+		if discovered.Entities[index].Descriptor.Key == "linkquality" {
+			plan = &discovered.Entities[index]
+		}
+	}
+	if plan == nil {
+		t.Fatal("linkquality Entity was not discovered")
+	}
+	if !reflect.DeepEqual(plan.GetProperties, wantRefresh) {
+		t.Fatalf("linkquality refresh = %v, want %v", plan.GetProperties, wantRefresh)
+	}
+	// Read-only is unchanged: no translator, so reconciliation
+	// never creates a command route.
+	if plan.TranslateCommand != nil {
+		t.Fatal("linkquality gained a command translator")
+	}
+	if err := validateEntityPlans(discovered.Entities); err != nil {
+		t.Fatalf("plans failed validation: %v", err)
+	}
+	assertLinkqualityStartupGet(t, discovered, wantRefresh != nil)
+}
+
+// assertLinkqualityStartupGet reconciles one discovered Device and fails if
+// startup /get does not publish exactly the expected linkquality refresh.
+func assertLinkqualityStartupGet(t *testing.T, discovered discoveredDevice, wantRefresh bool) {
+	t.Helper()
+	recorder := &runtimeRecorder{}
+	session := newFakeSession(recorder)
+	z2m := newRuntimeAdapter(t, session, &fakeDialer{})
+	ctx := context.Background()
+	inventory := inventoryDiscovery{Devices: []discoveredDevice{discovered}}
+	snapshot, err := z2m.buildRouteSnapshot(ctx, 1, inventory)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, entity := range snapshot.devices[discovered.FriendlyName].entities {
+		if entity.plan.Descriptor.Key != "linkquality" {
+			continue
+		}
+		if _, routed := snapshot.routes[entity.entityID]; routed {
+			t.Fatal("read-only linkquality created a command route")
+		}
+	}
+	connection := newFakeConnection(recorder)
+	if refreshErr := z2m.requestCurrentState(ctx, connection, inventory, snapshot); refreshErr != nil {
+		t.Fatal(refreshErr)
+	}
+	refreshing := false
+	for _, publication := range connection.published {
+		if publication.payload == `{"linkquality":""}` {
+			refreshing = true
+		}
+	}
+	if refreshing != wantRefresh {
+		t.Fatalf(
+			"linkquality startup refresh published = %t, want %t: %#v",
+			refreshing,
+			wantRefresh,
+			connection.published,
+		)
+	}
+}
+
 // startupSupportChoices extracts the advertised named choices of the
 // discovered startup entity.
 func startupSupportChoices(t *testing.T, device discoveredDevice) []string {

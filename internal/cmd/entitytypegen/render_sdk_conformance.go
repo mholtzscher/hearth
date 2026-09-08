@@ -34,9 +34,13 @@ func renderFacadeConformanceTest(model entityTypeModel) (output, error) {
 	source.WriteString(")\n\n")
 	writeSDKTestHelpers(&source)
 	writeCanonicalJSONRegressionTest(&source)
-	writeObservationConformanceTest(&source, model)
-	writeObservationMetadataTest(&source, model)
-	writeObservationValidationTest(&source, model)
+	if model.Stateless {
+		writeStatelessOmissionTest(&source, model)
+	} else {
+		writeObservationConformanceTest(&source, model)
+		writeObservationMetadataTest(&source, model)
+		writeObservationValidationTest(&source, model)
+	}
 	writeEntityDescriptorTest(&source, model)
 	if len(model.Operations) > 0 {
 		writeCommandConformanceTest(&source, model)
@@ -158,6 +162,22 @@ func writeCanonicalJSONRegressionTest(source *strings.Builder) {
 	source.WriteString("\t\t\tt.Errorf(\"canonical values collided: %s == %s\", left, right)\n")
 	source.WriteString("\t\t}\n")
 	source.WriteString("\t}\n")
+	source.WriteString("}\n\n")
+}
+
+// writeStatelessOmissionTest marks the stateless policy in the generated
+// facade test: stateless types carry no State observations, so the facade
+// defines no ObservationInput or NewObservation and no observation
+// conformance runs. The generator regression test pins the omission by
+// asserting the rendered facade and facade test never reference either
+// symbol; this marker keeps the policy visible at the conformance seam.
+func writeStatelessOmissionTest(source *strings.Builder, model entityTypeModel) {
+	source.WriteString("func TestGeneratedStatelessOmitsObservation(t *testing.T) {\n")
+	fmt.Fprintf(
+		source,
+		"\tt.Log(%s)\n",
+		strconv.Quote("stateless "+model.TypeID+" defines no ObservationInput or NewObservation"),
+	)
 	source.WriteString("}\n\n")
 }
 

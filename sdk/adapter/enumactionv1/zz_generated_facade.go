@@ -7,7 +7,6 @@ import (
 	"errors"
 	"fmt"
 	"sync"
-	"time"
 
 	contractenumactionv1 "github.com/mholtzscher/hearth/entitytypes/enumactionv1"
 	"github.com/mholtzscher/hearth/sdk/adapter"
@@ -26,13 +25,8 @@ type Handlers struct {
 	Trigger typed.Handler[TriggerParameters]
 }
 
-type ObservationInput struct {
-	EntityID          string
-	Support           Support
-	State             State
-	AdapterReceivedAt time.Time
-	SourceUpdatedAt   *time.Time
-}
+// Stateless entity types carry no State observations; the facade
+// intentionally defines no ObservationInput or NewObservation.
 
 var (
 	compileOnce  sync.Once
@@ -80,14 +74,6 @@ func NewCommandHandler(entityID string, support Support, handlers Handlers) (ada
 		return nil, validationError(err)
 	}
 	return handler, nil
-}
-
-func NewObservation(input ObservationInput) (adapter.Observation, error) {
-	codecs, err := codecs()
-	if err != nil {
-		return adapter.Observation{}, err
-	}
-	return typed.NewTypedEntityObservation(typed.EntityObservationInput[State, Support]{EntityID: input.EntityID, Support: input.Support, State: input.State, AdapterReceivedAt: input.AdapterReceivedAt, SourceUpdatedAt: input.SourceUpdatedAt}, codecs.State, codecs.Support, contractenumactionv1.ValidateState)
 }
 
 func codecs() (*contractenumactionv1.Codecs, error) {

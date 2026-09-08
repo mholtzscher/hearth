@@ -34,8 +34,3 @@ func ValidateTriggerParameters(support Support, operationSupport TriggerSupport,
 	}
 	return nil
 }
-
-func TriggerSatisfied(parameters TriggerParameters, state State) bool {
-	// Dispatched operations declare no outcome predicate.
-	return true
-}

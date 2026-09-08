@@ -23,19 +23,28 @@ const (
 )
 
 // newLinkqualityPlan builds the complete read-only linkquality translation
-// for one State property. Like temperature it has no translator and no get
-// properties, so it never creates a command route or startup refresh.
+// for one State property. Get access alone controls startup refresh: a
+// publish-only sensor has no get properties and a nil command translator,
+// so it never creates a command route.
+//
+//nolint:dupl // Linkquality and temperature are parallel read-only sensors over distinct generated contracts.
 func newLinkqualityPlan(
 	metadata adapter.EntityMetadata,
 	property string,
+	gettable bool,
 ) (entityPlan, error) {
 	descriptor, descriptorErr := sdknumericsensorv1.NewEntityDescriptor(metadata, linkqualitySupport())
 	if descriptorErr != nil {
 		return entityPlan{}, descriptorErr
 	}
+	var getProperties []string
+	if gettable {
+		getProperties = []string{property}
+	}
 	return entityPlan{
 		Descriptor:      descriptor,
 		StateProperties: []string{property},
+		GetProperties:   getProperties,
 		DecodeState: func(
 			entityID string,
 			properties map[string]json.RawMessage,
@@ -87,9 +96,11 @@ func linkqualityUnitFor(unit string) (string, bool) {
 
 // linkqualityPlanner supports numeric device-root linkquality exposes on
 // any Device kind. An eligible expose requires publish access with no set
-// access, a Device-unique property, and an empty or lqi unit. It never
-// gates or joins the power family: it appends as a device-kind-agnostic
-// supplement alongside whatever primary contribution wins.
+// access, a Device-unique property, and an empty or lqi unit. Get access
+// alone controls startup refresh: a publish-only expose has no get
+// properties. It never gates or joins the power family: it appends as a
+// device-kind-agnostic supplement alongside whatever primary contribution
+// wins.
 type linkqualityPlanner struct{}
 
 func (linkqualityPlanner) Plan(input devicePlanningInput) plannerContribution {
@@ -120,7 +131,7 @@ func (linkqualityPlanner) Plan(input devicePlanningInput) plannerContribution {
 		Key:        key,
 		ExternalID: input.IEEE + "/" + entityLocation(root) + "/linkquality",
 		Name:       name,
-	}, expose.Property)
+	}, expose.Property, exposeCanGet(expose))
 	if err != nil {
 		return contribution
 	}

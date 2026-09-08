@@ -68,17 +68,19 @@ func renderBehavior(model entityTypeModel) ([]byte, error) {
 		)
 		writeValidationRules(&source, operation.ParameterValidation, "\t")
 		source.WriteString("\treturn nil\n}\n\n")
+		// Dispatched operations declare no outcome predicate, so no
+		// <Operation>Satisfied matcher is generated. The catalog
+		// installs a nil matcher and Satisfies rejects dispatched calls.
+		if operation.Outcome == outcomeDispatched {
+			continue
+		}
 		fmt.Fprintf(
 			&source,
 			"func %sSatisfied(parameters %sParameters, state State) bool {\n",
 			operation.GoName,
 			operation.GoName,
 		)
-		if operation.Outcome == outcomeDispatched {
-			source.WriteString("\t// Dispatched operations declare no outcome predicate.\n\treturn true\n}\n\n")
-		} else {
-			fmt.Fprintf(&source, "\treturn %s\n}\n\n", satisfactionCondition(operation.SatisfiedWhen))
-		}
+		fmt.Fprintf(&source, "\treturn %s\n}\n\n", satisfactionCondition(operation.SatisfiedWhen))
 	}
 	return formatGenerated(source.String())
 }

@@ -39,6 +39,7 @@ func TestGeneratedConformance(t *testing.T) {
 		},
 		Operations: map[string]entitytypetest.OperationProbe{
 			"trigger": {
+				Dispatched: true,
 				ValidateParameters: func(support, parameters json.RawMessage) error {
 					decodedSupport, _, err := codecs.Support.Decode(support)
 					if err != nil {
@@ -50,17 +51,6 @@ func TestGeneratedConformance(t *testing.T) {
 						return err
 					}
 					return ValidateTriggerParameters(decodedSupport, triggerSupport, decodedParameters)
-				},
-				Satisfies: func(parameters, state json.RawMessage) (bool, error) {
-					decodedParameters, _, err := codecs.TriggerParameters.Decode(parameters)
-					if err != nil {
-						return false, err
-					}
-					decodedState, _, err := codecs.State.Decode(state)
-					if err != nil {
-						return false, err
-					}
-					return TriggerSatisfied(decodedParameters, decodedState), nil
 				},
 			},
 		},

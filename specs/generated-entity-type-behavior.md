@@ -224,7 +224,7 @@ Rules in each validation array are conjunctive and evaluated in declaration orde
 }
 ```
 
-Every manifest requires at least one case and each case requires valid and invalid State examples. Every operation present in that case's support requires valid and invalid parameter examples plus satisfied and unsatisfied outcomes; unsupported optional operations are omitted from the case. Power/v1 and brightness/v1 migrate their handwritten per-type tests into these fixtures.
+Every manifest requires at least one case and each case requires valid and invalid State examples. Every operation present in that case's support requires valid and invalid parameter examples. Observed operations additionally require satisfied and unsatisfied outcomes; dispatched operations require an empty `outcomes` array because they define no outcome predicate. Unsupported optional operations are omitted from the case. Power/v1 and brightness/v1 migrate their handwritten per-type tests into these fixtures.
 
 The generator emits `zz_generated_conformance_test.go`; `go test` executes the authoritative codecs and generated semantic functions against the examples. The generator does not implement a second DSL interpreter merely to evaluate fixtures.
 
@@ -239,10 +239,10 @@ func ValidateSupport(Support) error
 
 const SetDeadline time.Duration
 func ValidateSetParameters(Support, SetSupport, SetParameters) error
-func SetSatisfied(SetParameters, State) bool
+func SetSatisfied(SetParameters, State) bool // observed operations only
 ```
 
-Names are derived from operation names. These functions are the single semantic implementation used by both the core catalog and typed SDK facade. Generated `ObservationInput` includes typed `Support`; Observation construction validates that support and applies `ValidateState` before encoding. Generated SDK conformance tests exercise valid and support-incompatible State examples.
+Names are derived from operation names. Observed operations generate the satisfaction function used by the core catalog; dispatched operations generate no satisfaction function and install a nil matcher. Stateful typed SDK facades generate `ObservationInput` and `NewObservation`, validating typed `Support` and applying `ValidateState` before encoding. Stateless facades omit both observation artifacts because Core rejects observations for those types. Generated SDK conformance tests exercise the applicable command, descriptor, and observation surfaces.
 
 `zz_generated_codecs.go` continues to own document-local JSON Schema validation and normalization. Support-dependent State and parameter rules run after both participating documents have passed their own codecs.
 
@@ -371,7 +371,7 @@ D2 and D3 may proceed in parallel after D1.
 - Normalize the case support.
 - Validate State examples through schema and generated support rules.
 - Validate parameter examples through schema and generated support rules.
-- Evaluate outcome examples without current support.
+- Evaluate observed-operation outcome examples without current support; assert that dispatched operations define no outcomes or satisfaction callback.
 
 ### Repository gates
 
@@ -395,6 +395,8 @@ devenv test
 - [x] Brightness `set.value` above the maximum or misaligned to the step is rejected.
 - [x] Power and brightness outcomes remain exact equality and do not read current support.
 - [x] `satisfied_when` is a nonempty conjunctive rule array in every observed operation and an empty array in every dispatched operation; the old single-object shape does not remain.
+- [x] Observed operations require positive and negative outcome examples; dispatched operations define no outcomes, satisfaction function, or conformance callback.
+- [x] Stateless SDK facades omit `ObservationInput` and `NewObservation`; stateful and read-only facades retain them.
 - [x] `is_true`, `near`, and `circular_near` outcome operators compile to direct Go with inclusive, overflow-safe distance comparisons.
 - [x] `NewBuiltinTypeCatalog` is generated from all manifests with no per-type core code.
 - [x] A temporary third type generates bindings, behavior, SDK facade, tests, and catalog assembly without handwritten per-type Go.
@@ -410,7 +412,7 @@ devenv test
 | Schema-to-Go and schema-to-DSL types diverge | High | Resolve both through one schema model and test through root generation, not separate implementations. |
 | Generated code spans packages and leaves stale files | Medium | One root transaction, deterministic ownership headers, and orphan detection. |
 | Generated diagnostics are difficult to understand | Medium | Include manifest path, operation, rule index, root, and pointer in every generation error. |
-| Semantic examples miss important cases | Medium | Require positive and negative admission/outcome cases; retain shared generic integration tests. |
+| Semantic examples miss important cases | Medium | Require positive and negative admission cases for every operation and positive/negative outcome cases for observed operations; dispatched operations prove outcome absence through conformance policy. |
 | A manifest edit changes historical meaning under the same type ID | High | Treat behavior as part of the versioned Entity-type contract; semantic changes require a new type version. |
 
 ## Reversal trigger

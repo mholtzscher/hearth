@@ -22,6 +22,8 @@ const (
 // one State property. Get access alone controls startup refresh: a
 // publish-only sensor has no get properties and a nil command translator, so
 // it never creates a command route.
+//
+//nolint:dupl // Temperature and linkquality are parallel read-only sensors over distinct generated contracts.
 func newTemperaturePlan(
 	metadata adapter.EntityMetadata,
 	property string,

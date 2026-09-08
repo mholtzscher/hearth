@@ -291,24 +291,16 @@ func requireOutcomeCoverage(
 	operations []operationModel,
 	examples []outcomeExample,
 ) error {
-	// Dispatched operations declare no outcome predicate; the generated
-	// matcher holds vacuously, so authored outcomes (still required by the
-	// contract runner) must all expect satisfaction.
+	// Dispatched operations declare no outcome predicate, so they carry
+	// no satisfaction outcomes. Observed operations keep mandatory
+	// satisfied+unsatisfied coverage.
 	for _, operation := range operations {
 		if operation.Name != operationName {
 			continue
 		}
 		if operation.Outcome == outcomeDispatched {
-			if len(examples) == 0 {
-				return errors.New("requires at least one satisfied example")
-			}
-			for index, example := range examples {
-				if len(example.Parameters) == 0 || len(example.State) == 0 {
-					return fmt.Errorf("example %d requires parameters and state", index+1)
-				}
-				if !example.Satisfied {
-					return fmt.Errorf("example %d must expect satisfaction", index+1)
-				}
+			if len(examples) != 0 {
+				return errors.New("dispatched operations must declare no outcomes")
 			}
 			return nil
 		}

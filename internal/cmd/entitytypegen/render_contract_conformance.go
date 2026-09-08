@@ -104,10 +104,15 @@ func hasOptionalOperation(model entityTypeModel) bool {
 // callbacks decode and validate inputs and return actual errors or outcomes;
 // only the handwritten runner compares expected results. Outcome callbacks
 // schema-decode recorded parameters and State without revalidating against
-// mutable current support.
+// mutable current support. Dispatched operations declare no outcome
+// predicate, so they set Dispatched and omit Satisfies; the runner replays
+// no outcome examples for them.
 func writeContractOperationProbe(source *strings.Builder, operation operationModel) {
 	variable := lowerFirst(operation.GoName) + "Support"
 	fmt.Fprintf(source, "\t\t\t%s: {\n", strconv.Quote(operation.Name))
+	if operation.Outcome == outcomeDispatched {
+		source.WriteString("\t\t\t\tDispatched: true,\n")
+	}
 	source.WriteString("\t\t\t\tValidateParameters: func(support, parameters json.RawMessage) error {\n")
 	source.WriteString("\t\t\t\t\tdecodedSupport, _, err := codecs.Support.Decode(support)\n")
 	source.WriteString("\t\t\t\t\tif err != nil { return err }\n")
@@ -135,6 +140,10 @@ func writeContractOperationProbe(source *strings.Builder, operation operationMod
 		variable,
 	)
 	source.WriteString("\t\t\t\t},\n")
+	if operation.Outcome == outcomeDispatched {
+		source.WriteString("\t\t\t},\n")
+		return
+	}
 	source.WriteString("\t\t\t\tSatisfies: func(parameters, state json.RawMessage) (bool, error) {\n")
 	fmt.Fprintf(
 		source,

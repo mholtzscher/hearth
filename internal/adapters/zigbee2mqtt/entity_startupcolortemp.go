@@ -98,6 +98,16 @@ func newStartupColorTempPlan(
 			}
 			wire, err := startupColorTempCommandValue(parameters, minimum, maximum, hasPrevious)
 			if err != nil {
+				// Adapter-local validation runs after generic support
+				// validation, so a fractional in-range value reaches
+				// here with no responder consumption yet. Reject
+				// promptly with the ordinary rejection instead of
+				// leaving the command without a response, and never
+				// classify it as unavailable. A failed rejection
+				// publication surfaces as the handler error.
+				if rejectErr := responder.Reject(err.Error()); rejectErr != nil {
+					return plannedCommand{}, rejectErr
+				}
 				return plannedCommand{}, err
 			}
 			return plannedCommand{

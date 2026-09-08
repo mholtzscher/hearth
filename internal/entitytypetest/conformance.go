@@ -22,10 +22,14 @@ type ContractProbe struct {
 
 // OperationProbe tests one operation without deriving expected outcomes.
 // Satisfies schema-decodes its recorded inputs but never revalidates them
-// against mutable current support.
+// against mutable current support. Dispatched operations declare no outcome
+// predicate: Dispatched is true, Satisfies is nil, and no outcome examples
+// are replayed. Observed operations keep Satisfies and mandatory
+// satisfied+unsatisfied outcome coverage.
 type OperationProbe struct {
 	ValidateParameters func(support, parameters json.RawMessage) error
 	Satisfies          func(parameters, state json.RawMessage) (bool, error)
+	Dispatched         bool
 }
 
 // contractExamples mirrors the existing examples.json authoring shape. The
@@ -227,7 +231,16 @@ func RunContractExamples(t *testing.T, examplesJSON []byte, probe ContractProbe)
 		if _, ok := covered[name]; !ok {
 			t.Fatalf("contract probe has unknown operation %q", name)
 		}
-		if operation.ValidateParameters == nil || operation.Satisfies == nil {
+		if operation.ValidateParameters == nil {
+			t.Fatalf("contract probe is missing callbacks for operation %q", name)
+		}
+		if operation.Dispatched {
+			if operation.Satisfies != nil {
+				t.Fatalf("contract probe must not define Satisfies for dispatched operation %q", name)
+			}
+			continue
+		}
+		if operation.Satisfies == nil {
 			t.Fatalf("contract probe is missing callbacks for operation %q", name)
 		}
 	}
@@ -276,6 +289,42 @@ func runContractCase(t *testing.T, example contractCase, probe ContractProbe) {
 	}
 }
 
+// checkContractOutcomeCoverage enforces outcome example policy without
+// deriving expectations: dispatched operations declare no outcome
+// predicate and carry no outcomes, while observed operations keep
+// mandatory satisfied+unsatisfied coverage.
+func checkContractOutcomeCoverage(
+	t *testing.T,
+	name string,
+	operation contractOperation,
+	dispatched bool,
+) {
+	t.Helper()
+	switch {
+	case dispatched:
+		if len(operation.Outcomes) != 0 {
+			t.Fatalf("operation %q is dispatched and must declare no outcomes", name)
+		}
+	case len(operation.Outcomes) == 0:
+		t.Fatalf("operation %q has no outcome examples", name)
+	default:
+		var satisfied, unsatisfied bool
+		for _, outcome := range operation.Outcomes {
+			if outcome.Satisfied {
+				satisfied = true
+			} else {
+				unsatisfied = true
+			}
+		}
+		if !satisfied || !unsatisfied {
+			t.Fatalf(
+				"operation %q requires at least one satisfied and one unsatisfied outcome",
+				name,
+			)
+		}
+	}
+}
+
 func runContractOperation(
 	t *testing.T,
 	support json.RawMessage,
@@ -291,9 +340,7 @@ func runContractOperation(
 	if len(operation.Parameters) == 0 {
 		t.Fatalf("operation %q has no parameter examples", name)
 	}
-	if len(operation.Outcomes) == 0 {
-		t.Fatalf("operation %q has no outcome examples", name)
-	}
+	checkContractOutcomeCoverage(t, name, operation, operationProbe.Dispatched)
 	t.Run("parameters", func(t *testing.T) {
 		t.Helper()
 		for index, parameters := range operation.Parameters {
@@ -315,6 +362,13 @@ func runContractOperation(
 	})
 	t.Run("outcomes", func(t *testing.T) {
 		t.Helper()
+		// Dispatched operations declare no outcome predicate and carry
+		// no outcome examples (enforced above); the empty replay
+		// preserves the parameters/outcomes subtest shape without
+		// calling a matcher.
+		if operationProbe.Dispatched {
+			return
+		}
 		for index, outcome := range operation.Outcomes {
 			t.Run(strconv.Itoa(index+1), func(t *testing.T) {
 				t.Helper()

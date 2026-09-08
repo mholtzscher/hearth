@@ -229,6 +229,41 @@ func runnerScenarios() []runnerScenario {
 			},
 		},
 		{
+			name: "dispatched-defines-satisfies",
+			want: "must not define Satisfies for dispatched operation",
+			mutate: func(_ []byte, probe entitytypetest.ContractProbe) ([]byte, entitytypetest.ContractProbe) {
+				operation := validOperation
+				operation.Dispatched = true
+				return []byte(`{"cases": [{"name": "demo", "support": {"level": 1, "operations": {"set": {}}}, ` +
+					`"states": [{"value": "ok", "valid": true}], ` +
+					`"operations": {"set": {"parameters": [{"value": "go", "valid": true}], ` +
+					`"outcomes": []}}}]}`), setProbe(probe, operation)
+			},
+		},
+		{
+			name: "dispatched-with-outcomes",
+			want: "must declare no outcomes",
+			mutate: func(_ []byte, probe entitytypetest.ContractProbe) ([]byte, entitytypetest.ContractProbe) {
+				operation := validOperation
+				operation.Dispatched = true
+				operation.Satisfies = nil
+				return []byte(`{"cases": [{"name": "demo", "support": {"level": 1, "operations": {"set": {}}}, ` +
+					`"states": [{"value": "ok", "valid": true}], ` +
+					`"operations": {"set": {"parameters": [{"value": "go", "valid": true}], ` +
+					`"outcomes": [{"parameters": "go", "state": "ok", "satisfied": true}]}}}]}`), setProbe(probe, operation)
+			},
+		},
+		{
+			name: "observed-single-sided-outcomes",
+			want: "requires at least one satisfied and one unsatisfied outcome",
+			mutate: func(_ []byte, probe entitytypetest.ContractProbe) ([]byte, entitytypetest.ContractProbe) {
+				return []byte(`{"cases": [{"name": "demo", "support": {"level": 1, "operations": {"set": {}}}, ` +
+					`"states": [{"value": "ok", "valid": true}], ` +
+					`"operations": {"set": {"parameters": [{"value": "go", "valid": true}], ` +
+					`"outcomes": [{"parameters": "go", "state": "ok", "satisfied": true}]}}}]}`), probe
+			},
+		},
+		{
 			name: "wrong-state-result",
 			want: "State example valid = true, want false",
 			mutate: func(examples []byte, probe entitytypetest.ContractProbe) ([]byte, entitytypetest.ContractProbe) {
@@ -363,4 +398,47 @@ func runRunnerScenario(t *testing.T, name string) {
 		return
 	}
 	t.Fatalf("unknown runner scenario %q", name)
+}
+
+// This test protects dispatched operations: no outcome predicate means no
+// Satisfies callback and no outcome examples, while parameter and State
+// replay still runs.
+func TestContractRunnerAcceptsDispatchedWithoutOutcomes(t *testing.T) {
+	t.Parallel()
+	examples := `{"cases": [{"name": "demo", "support": {"level": 1, "operations": {"trigger": {}}}, ` +
+		`"states": [{"value": "ok", "valid": true}, {"value": "bad", "valid": false}], ` +
+		`"operations": {"trigger": {"parameters": [{"value": "go", "valid": true}, ` +
+		`{"value": "bad", "valid": false}], "outcomes": []}}}]}`
+	probe := entitytypetest.ContractProbe{
+		ValidateSupport: func(support json.RawMessage) error {
+			if !supportHasLevel(support) {
+				return errBadSupport
+			}
+			return nil
+		},
+		ValidateState: func(support, state json.RawMessage) error {
+			if !supportHasLevel(support) {
+				return errBadSupport
+			}
+			if value, ok := jsonString(state); !ok || value != "ok" {
+				return errBadState
+			}
+			return nil
+		},
+		Operations: map[string]entitytypetest.OperationProbe{
+			"trigger": {
+				ValidateParameters: func(support, parameters json.RawMessage) error {
+					if !supportHasLevel(support) {
+						return errBadSupport
+					}
+					if value, ok := jsonString(parameters); !ok || value != "go" {
+						return errBadParameters
+					}
+					return nil
+				},
+				Dispatched: true,
+			},
+		},
+	}
+	entitytypetest.RunContractExamples(t, []byte(examples), probe)
 }

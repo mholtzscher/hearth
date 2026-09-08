@@ -1065,7 +1065,7 @@ func TestLoadModelValidatesOperationOutcome(t *testing.T) {
 	}
 	t.Run("dispatched stateless operation loads", func(t *testing.T) {
 		t.Parallel()
-		_, manifestPath := writeDispatchedOperationFixture(t, true)
+		_, manifestPath := writeDispatchedOperationFixture(t)
 		patchManifestTopLevel(t, manifestPath, "stateless", true)
 		model, err := loadModel(manifestPath)
 		if err != nil {
@@ -1081,23 +1081,53 @@ func TestLoadModelValidatesOperationOutcome(t *testing.T) {
 			t.Fatalf("dispatched satisfied_when = %d rules, want none", len(model.Operations[0].SatisfiedWhen))
 		}
 	})
-	t.Run("dispatched rejects unsatisfied outcomes", func(t *testing.T) {
+	t.Run("dispatched rejects authored outcomes", func(t *testing.T) {
 		t.Parallel()
-		_, manifestPath := writeDispatchedOperationFixture(t, false)
+		directory, manifestPath := writeDispatchedOperationFixture(t)
+		writeJSON(t, filepath.Join(directory, "examples.json"), map[string]any{
+			"cases": []any{
+				map[string]any{
+					"name": "enabled",
+					"support": map[string]any{
+						"state":      map[string]any{},
+						"operations": map[string]any{"activate": map[string]any{}},
+					},
+					"states": []any{
+						map[string]any{"value": 1, "valid": true},
+						map[string]any{"value": "on", "valid": false},
+					},
+					"operations": map[string]any{"activate": map[string]any{
+						"parameters": []any{
+							map[string]any{"value": map[string]any{"value": 1}, "valid": true},
+							map[string]any{"value": map[string]any{"value": "on"}, "valid": false},
+						},
+						"outcomes": []any{
+							map[string]any{
+								"parameters": map[string]any{"value": 1},
+								"state":      1,
+								"satisfied":  true,
+							},
+						},
+					}},
+				},
+			},
+		})
 		if _, err := loadModel(manifestPath); err == nil ||
-			!strings.Contains(err.Error(), "must expect satisfaction") {
-			t.Fatalf("dispatched unsatisfied outcome error = %v", err)
+			!strings.Contains(err.Error(), "must declare no outcomes") {
+			t.Fatalf("dispatched outcome error = %v", err)
 		}
 	})
 }
 
-func writeDispatchedOperationFixture(t *testing.T, satisfied bool) (string, string) {
+func writeDispatchedOperationFixture(t *testing.T) (string, string) {
 	t.Helper()
 	directory, manifestPath := writeOptionalOperationFixture(t)
 	patchManifestOperation(t, manifestPath, map[string]any{
 		"outcome":        "dispatched",
 		"satisfied_when": []any{},
 	})
+	// Dispatched operations declare no outcome predicate, so the fixture
+	// carries no satisfaction outcomes.
 	writeJSON(t, filepath.Join(directory, "examples.json"), map[string]any{
 		"cases": []any{
 			map[string]any{
@@ -1115,9 +1145,7 @@ func writeDispatchedOperationFixture(t *testing.T, satisfied bool) (string, stri
 						map[string]any{"value": map[string]any{"value": 1}, "valid": true},
 						map[string]any{"value": map[string]any{"value": "on"}, "valid": false},
 					},
-					"outcomes": []any{
-						map[string]any{"parameters": map[string]any{"value": 1}, "state": 1, "satisfied": satisfied},
-					},
+					"outcomes": []any{},
 				}},
 			},
 		},
@@ -1237,5 +1265,173 @@ func TestRenderBehaviorEmitsValidateSupport(t *testing.T) {
 		if !strings.Contains(text, required) {
 			t.Errorf("rendered behavior does not contain %q:\n%s", required, text)
 		}
+	}
+}
+
+func TestRenderBehaviorOmitsSatisfiedForDispatched(t *testing.T) {
+	t.Parallel()
+	source, err := renderBehavior(entityTypeModel{
+		Package:     "examplev1",
+		StateSchema: schemaNode{Type: string(kindBoolean)},
+		Operations: []operationModel{
+			{Name: "trigger", GoName: "Trigger", DeadlineMS: 1000, Outcome: outcomeDispatched},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(source)
+	if strings.Contains(text, "Satisfied") {
+		t.Errorf("dispatched behavior unexpectedly defines a satisfaction matcher:\n%s", text)
+	}
+	if !strings.Contains(text, "func ValidateTriggerParameters") {
+		t.Errorf("dispatched behavior omits parameter validation:\n%s", text)
+	}
+}
+
+func TestRenderBehaviorKeepsSatisfiedForObserved(t *testing.T) {
+	t.Parallel()
+	source, err := renderBehavior(entityTypeModel{
+		Package:     "examplev1",
+		StateSchema: schemaNode{Type: string(kindBoolean)},
+		Operations: []operationModel{
+			{
+				Name: "set", GoName: "Set", DeadlineMS: 1000, Outcome: outcomeObserved,
+				SatisfiedWhen: []ruleModel{{
+					Op: "eq",
+					Left: referenceModel{
+						Root: "parameters", Path: "/value",
+						Kind: kindBoolean, GoExpression: "parameters.Value",
+					},
+					Right: referenceModel{
+						Root: "state", Path: "",
+						Kind: kindBoolean, GoExpression: "state",
+					},
+					HasRight: true,
+				}},
+			},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(source), "func SetSatisfied(") {
+		t.Errorf("observed behavior omits the satisfaction matcher:\n%s", source)
+	}
+}
+
+func TestRenderedContractOmitsSatisfiesForDispatched(t *testing.T) {
+	t.Parallel()
+	source, err := renderConformanceTest(entityTypeModel{
+		Package:      "examplev1",
+		TypeID:       "example.value/v1",
+		ExamplesFile: "examples.json",
+		Operations: []operationModel{
+			{Name: "trigger", GoName: "Trigger", Outcome: outcomeDispatched, Required: true},
+		},
+	}, "example.test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(source)
+	if !strings.Contains(text, "Dispatched: true") {
+		t.Errorf("dispatched conformance probe omits the dispatched marker:\n%s", text)
+	}
+	for _, forbidden := range []string{"Satisfies:", "TriggerSatisfied"} {
+		if strings.Contains(text, forbidden) {
+			t.Errorf("dispatched conformance probe contains %q:\n%s", forbidden, text)
+		}
+	}
+}
+
+func TestRenderedContractKeepsSatisfiesForObserved(t *testing.T) {
+	t.Parallel()
+	source, err := renderConformanceTest(entityTypeModel{
+		Package:      "examplev1",
+		TypeID:       "example.value/v1",
+		ExamplesFile: "examples.json",
+		Operations: []operationModel{
+			{Name: "set", GoName: "Set", Outcome: outcomeObserved, Required: true},
+		},
+	}, "example.test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(source)
+	if !strings.Contains(text, "Satisfies:") || !strings.Contains(text, "SetSatisfied") {
+		t.Errorf("observed conformance probe omits the outcome matcher:\n%s", text)
+	}
+	if strings.Contains(text, "Dispatched:") {
+		t.Errorf("observed conformance probe unexpectedly marks dispatched:\n%s", text)
+	}
+}
+
+func TestStatelessFacadeOmitsObservation(t *testing.T) {
+	t.Parallel()
+	source, err := renderFacade(entityTypeModel{
+		Package:   "examplev1",
+		Stateless: true,
+		Operations: []operationModel{
+			{Name: "trigger", GoName: "Trigger"},
+		},
+	}, "example.test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(source)
+	for _, forbidden := range []string{"type ObservationInput struct", "func NewObservation("} {
+		if strings.Contains(text, forbidden) {
+			t.Errorf("stateless facade contains %q:\n%s", forbidden, text)
+		}
+	}
+	for _, required := range []string{"NewEntityDescriptor", "NewCommandHandler", "type Handlers struct"} {
+		if !strings.Contains(text, required) {
+			t.Errorf("stateless facade omits %q:\n%s", required, text)
+		}
+	}
+}
+
+func TestStatefulFacadeKeepsObservation(t *testing.T) {
+	t.Parallel()
+	source, err := renderFacade(entityTypeModel{
+		Package: "examplev1",
+		Operations: []operationModel{
+			{Name: "set", GoName: "Set"},
+		},
+	}, "example.test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(source)
+	for _, required := range []string{"type ObservationInput struct", "func NewObservation("} {
+		if !strings.Contains(text, required) {
+			t.Errorf("stateful facade omits %q:\n%s", required, text)
+		}
+	}
+}
+
+func TestStatelessFacadeTestOmitsObservation(t *testing.T) {
+	t.Parallel()
+	_, manifestPath := writeDispatchedOperationFixture(t)
+	patchManifestTopLevel(t, manifestPath, "stateless", true)
+	model, err := loadModel(manifestPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rendered, err := renderFacadeConformanceTest(model)
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(rendered.content)
+	for _, forbidden := range []string{"NewObservation(", "ObservationInput{", "TestGeneratedObservationConformance"} {
+		if strings.Contains(text, forbidden) {
+			t.Errorf("stateless facade test contains %q", forbidden)
+		}
+	}
+	if !strings.Contains(text, "TestGeneratedStatelessOmitsObservation") {
+		t.Errorf("stateless facade test omits the omission marker")
+	}
+	if !strings.Contains(text, "TestGeneratedCommandConformance") {
+		t.Errorf("stateless facade test omits command conformance")
 	}
 }
