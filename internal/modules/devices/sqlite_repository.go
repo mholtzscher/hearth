@@ -611,7 +611,7 @@ func (repository *SQLiteRepository) CompleteCommand(ctx context.Context, complet
 	rows, err := queries.CompleteCommand(ctx, dbsqlc.CompleteCommandParams{
 		Status:      string(completion.Status),
 		CompletedAt: sql.NullString{String: formatTime(completion.CompletedAt), Valid: true},
-		FailureCode: sql.NullString{String: string(completion.FailureCode), Valid: true},
+		FailureCode: nullableCompletionFailure(completion.FailureCode),
 		ID:          string(completion.ID),
 	})
 	if err != nil {
@@ -676,6 +676,9 @@ func commandFromRow(row dbsqlc.Command) (CommandRecord, error) {
 }
 
 func validCommandCompletion(completion CommandCompletion) bool {
+	if completion.Status == CommandStatusDispatched {
+		return !completion.CompletedAt.IsZero() && completion.FailureCode == ""
+	}
 	expected := map[CommandStatus]CommandFailureCode{ //nolint:exhaustive // Only terminal failure statuses have failure codes.
 		CommandStatusRejected:          CommandFailureUpstreamRejected,
 		CommandStatusAdapterUnhealthy:  CommandFailureAdapterUnhealthy,
@@ -688,9 +691,29 @@ func validCommandCompletion(completion CommandCompletion) bool {
 }
 
 func sameCompletion(command CommandRecord, completion CommandCompletion) bool {
-	return command.Status == completion.Status && command.FailureCode != nil &&
-		*command.FailureCode == completion.FailureCode && command.CompletedAt != nil &&
+	return command.Status == completion.Status && commandFailureMatches(command, completion) &&
+		command.CompletedAt != nil &&
 		command.CompletedAt.Equal(completion.CompletedAt)
+}
+
+// commandFailureMatches treats dispatched (and any outcome with empty
+// FailureCode) as matching only when the record has no failure code.
+func commandFailureMatches(command CommandRecord, completion CommandCompletion) bool {
+	if completion.FailureCode == "" {
+		return command.FailureCode == nil
+	}
+	return command.FailureCode != nil && *command.FailureCode == completion.FailureCode
+}
+
+// nullableCompletionFailure encodes an empty CommandCompletion.FailureCode
+// as SQL NULL for successful terminal outcomes such as dispatched. The
+// existing nullableCommandFailure stays unchanged for command-record
+// creation from *CommandFailureCode.
+func nullableCompletionFailure(value CommandFailureCode) sql.NullString {
+	if value == "" {
+		return sql.NullString{}
+	}
+	return sql.NullString{String: string(value), Valid: true}
 }
 
 func boolToInt64(value bool) int64 {

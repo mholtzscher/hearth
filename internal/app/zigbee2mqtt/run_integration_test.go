@@ -161,7 +161,8 @@ func TestRunConnectsBothProtocols(t *testing.T) {
 	if completed.err != nil {
 		t.Fatal(completed.err)
 	}
-	if string(completed.result.Value) != "true" {
+	if completed.result.Outcome != devices.OutcomeObserved || completed.result.Value == nil ||
+		string(*completed.result.Value) != "true" {
 		t.Fatalf("Command result = %#v", completed.result)
 	}
 	var observationCount int
@@ -392,7 +393,24 @@ func publishRetainedSnapshots(t *testing.T, client paho.Client) {
 // The process test reads the same checked-in Zigbee2MQTT 2.13.0 proof
 // captures used by the Adapter characterization tests, preventing a reduced
 // duplicate inventory from weakening the end-to-end evidence.
-//
+func assertProofFlowLinkquality(
+	t *testing.T,
+	name string,
+	linkquality devices.EntityWithState,
+	wantState string,
+) {
+	t.Helper()
+	if linkquality.Entity.TypeID != "hearth.numericsensor/v1" {
+		t.Fatalf("%s linkquality type = %s", name, linkquality.Entity.TypeID)
+	}
+	if string(linkquality.Entity.Support) != `{"state":{"maximum":255,"minimum":0,"unit":"lqi"},"operations":{}}` {
+		t.Fatalf("%s linkquality support = %s", name, linkquality.Entity.Support)
+	}
+	if string(linkquality.State.Value) != wantState {
+		t.Fatalf("%s linkquality State = %s, want %s", name, linkquality.State.Value, wantState)
+	}
+}
+
 //nolint:gocognit // One process-level proof flow keeps registration, projection, and rejection causally connected.
 func TestRunProjectsRelayAndTemperatureDevices(t *testing.T) {
 	t.Parallel()
@@ -468,6 +486,16 @@ func TestRunProjectsRelayAndTemperatureDevices(t *testing.T) {
 	if string(proof.temperature.Entity.Support) != `{"state":{},"operations":{}}` {
 		t.Fatalf("temperature support = %s", proof.temperature.Entity.Support)
 	}
+	assertProofFlowLinkquality(t, "relay", proof.relayLinkquality, "120")
+	assertProofFlowLinkquality(t, "temperature", proof.temperatureLinkquality, "105")
+	if _, err = service.ExecuteCommand(
+		ctx,
+		proof.relayLinkquality.Entity.ID,
+		devices.OperationNameSet,
+		devices.CommandParameters(`{"value":100}`),
+	); !errors.Is(err, devices.ErrInvalidCommand) {
+		t.Fatalf("linkquality command error = %v, want %v", err, devices.ErrInvalidCommand)
+	}
 
 	devicesPage, err := service.ListDevices(ctx, devices.ListDevicesParams{Limit: 10})
 	if err != nil {
@@ -524,8 +552,10 @@ func TestRunProjectsRelayAndTemperatureDevices(t *testing.T) {
 }
 
 type proofFlowEntities struct {
-	power       devices.EntityWithState
-	temperature devices.EntityWithState
+	power                  devices.EntityWithState
+	temperature            devices.EntityWithState
+	relayLinkquality       devices.EntityWithState
+	temperatureLinkquality devices.EntityWithState
 }
 
 func waitForProofFlowEntities(
@@ -543,7 +573,7 @@ func waitForProofFlowEntities(
 			t.Fatal(err)
 		}
 		var proof proofFlowEntities
-		var foundPower, foundTemperature bool
+		var foundPower, foundTemperature, foundRelayLinkquality, foundTemperatureLinkquality bool
 		for _, entity := range page.Items {
 			switch {
 			case entity.Entity.TypeID == "hearth.power/v1" && entity.State != nil &&
@@ -556,9 +586,20 @@ func waitForProofFlowEntities(
 				entity.Availability.Status == devices.EntityAvailabilityAvailable:
 				proof.temperature = entity
 				foundTemperature = true
+			case entity.Entity.TypeID == "hearth.numericsensor/v1" && entity.State != nil &&
+				entity.Availability.Status == devices.EntityAvailabilityAvailable:
+				switch string(entity.State.Value) {
+				case "120":
+					proof.relayLinkquality = entity
+					foundRelayLinkquality = true
+				case "105":
+					proof.temperatureLinkquality = entity
+					foundTemperatureLinkquality = true
+				}
 			}
 		}
-		if len(page.Items) == 2 && foundPower && foundTemperature {
+		if len(page.Items) == 4 && foundPower && foundTemperature &&
+			foundRelayLinkquality && foundTemperatureLinkquality {
 			return proof
 		}
 		select {

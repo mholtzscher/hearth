@@ -90,7 +90,7 @@ func (service *Service) ExecuteCommand(
 	lifecycleParent := context.WithoutCancel(ctx)
 	lifecycleContext, cancel := context.WithDeadline(lifecycleParent, command.DeadlineAt)
 	go func() {
-		completed <- service.runCommand(lifecycleContext, command, waiter)
+		completed <- service.runCommand(lifecycleContext, command, resolved.Outcome, waiter)
 		service.removeCommandWaiter(command.ID)
 		cancel()
 		// Publish the outcome and release lifecycle resources before a slow
@@ -130,6 +130,7 @@ func classifyCommandDispatchError(err error) (CommandStatus, CommandFailureCode,
 func (service *Service) runCommand(
 	ctx context.Context,
 	command CommandRecord,
+	outcome OutcomeKind,
 	waiter <-chan CommandResult,
 ) commandOutcome {
 	acceptance, err := service.dispatchCommand(ctx, command)
@@ -158,6 +159,13 @@ func (service *Service) runCommand(
 	if err != nil && !errors.Is(err, ErrCommandTerminal) {
 		return service.failCommand(ctx, command, CommandStatusInternalFailure, CommandFailureInternalError, err, waiter)
 	}
+
+	if outcome == OutcomeDispatched {
+		// Persist CommandStatusDispatched with an empty failure code, then
+		// return the constructor-validated result with no observation/value.
+		return service.completeDispatchedCommand(ctx, command, waiter)
+	}
+	// OutcomeObserved alone continues into the existing waiter/timeout path.
 
 	select {
 	case result := <-waiter:
@@ -214,6 +222,54 @@ func (service *Service) runCommand(
 		}
 		return commandOutcome{err: commandExecutionError(command.ID, ErrOutcomeTimeout)}
 	}
+}
+
+// completeDispatchedCommand durably commits the dispatched terminal outcome
+// after adapter acceptance. It is part of the existing runCommand lifecycle,
+// not a second lifecycle: acceptance is already persisted above, and this
+// step only commits the terminal record. An idempotent same completion is
+// success; a competing terminal completion keeps the existing
+// ErrCommandTerminal waiter-drain behavior.
+func (service *Service) completeDispatchedCommand(
+	ctx context.Context,
+	command CommandRecord,
+	waiter <-chan CommandResult,
+) commandOutcome {
+	completedAt, err := service.now()
+	if err != nil {
+		// The completion clock left no durable outcome; the caller may already
+		// be gone, so log the diagnostic instead of inventing a status.
+		service.logCommandExecutionFailed(ctx, command)
+		return commandOutcome{err: commandExecutionError(command.ID, err)}
+	}
+	writeContext, cancel := persistenceContext(ctx)
+	err = service.stores.Commands.CompleteCommand(writeContext, CommandCompletion{
+		ID: command.ID, Status: CommandStatusDispatched, CompletedAt: completedAt,
+	})
+	cancel()
+	if errors.Is(err, ErrCommandTerminal) {
+		// A competing terminal completion committed first. Preserve whatever
+		// durable outcome its notification carries.
+		select {
+		case result := <-waiter:
+			return commandOutcome{result: result}
+		case <-time.After(commandPersistenceTimeout):
+			service.logCommandExecutionFailed(ctx, command)
+			return commandOutcome{
+				err: commandExecutionError(command.ID, errors.New("terminal command outcome was not delivered")),
+			}
+		}
+	}
+	if err != nil {
+		service.logCommandExecutionFailed(ctx, command)
+		return commandOutcome{err: commandExecutionError(command.ID, err)}
+	}
+	result, err := NewCommandResult(command.ID, OutcomeDispatched, nil, nil)
+	if err != nil {
+		service.logCommandExecutionFailed(ctx, command)
+		return commandOutcome{err: commandExecutionError(command.ID, err)}
+	}
+	return commandOutcome{result: result}
 }
 
 func (service *Service) dispatchCommand(

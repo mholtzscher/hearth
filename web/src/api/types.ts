@@ -72,12 +72,25 @@ export interface HealthTransition {
   observed_at: string;
 }
 
+export type CommandStatus =
+  | "requested"
+  | "accepted"
+  | "satisfied"
+  | "dispatched"
+  | "rejected"
+  | "adapter_unhealthy"
+  | "entity_unavailable"
+  | "outcome_timeout"
+  | "entity_disabled"
+  | "internal_failure"
+  | "interrupted";
+
 export interface CommandRecord {
   id: string;
   entity_id: string;
   operation: string;
   parameters: Record<string, unknown>;
-  status: string;
+  status: CommandStatus;
   requested_at: string;
   deadline_at: string;
   accepted_at?: string;
@@ -86,12 +99,13 @@ export interface CommandRecord {
   failure_code?: string;
 }
 
-export interface CommandResult {
-  command_id: string;
-  status: string;
-  observation_id: string;
-  value: unknown;
-}
+// Satisfied commands carry fresh observation evidence; dispatched commands
+// (stateless actions) are terminally accepted with no observation or value.
+// Field names match the Go JSON tags exactly: dispatched bodies omit both
+// evidence fields instead of rendering null.
+export type CommandResult =
+  | { command_id: string; status: "satisfied"; observation_id: string; value: unknown }
+  | { command_id: string; status: "dispatched" };
 
 export interface Collection<T> {
   items: T[];

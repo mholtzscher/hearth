@@ -130,9 +130,15 @@ func writeDisabledFirstCatalogFixture(t *testing.T) entityTypeModel {
 	return entityTypeModel{
 		Package: "examplev1", Directory: directory, ModuleRoot: directory, TypeID: "example.value/v1",
 		StateFile: "state.schema.json",
-		Operations: []operationModel{{
-			Name: "set", GoName: "Set", ParametersFile: "set-parameters.schema.json", DeadlineMS: 10000,
-		}},
+		Operations: []operationModel{
+			{
+				Name:           "set",
+				GoName:         "Set",
+				ParametersFile: "set-parameters.schema.json",
+				DeadlineMS:     10000,
+				Outcome:        outcomeObserved,
+			},
+		},
 		Examples: examplesFile{Cases: []exampleCase{
 			{
 				Name:    "disabled",
@@ -234,9 +240,15 @@ func TestCatalogUnequalSkipsNumericEquivalent(t *testing.T) {
 	model := entityTypeModel{
 		Package: "examplev1", Directory: directory, ModuleRoot: directory, TypeID: "example.value/v1",
 		StateFile: "state.schema.json",
-		Operations: []operationModel{{
-			Name: "set", GoName: "Set", ParametersFile: "set-parameters.schema.json", DeadlineMS: 10000,
-		}},
+		Operations: []operationModel{
+			{
+				Name:           "set",
+				GoName:         "Set",
+				ParametersFile: "set-parameters.schema.json",
+				DeadlineMS:     10000,
+				Outcome:        outcomeObserved,
+			},
+		},
 		Examples: examplesFile{Cases: []exampleCase{{
 			Name:    "dim",
 			Support: raw(`{"state":{"maximum":8e1},"operations":{"set":{"step":5}}}`),
@@ -277,9 +289,15 @@ func writeNarrowedOutcomeCatalogFixture(t *testing.T) entityTypeModel {
 	return entityTypeModel{
 		Package: "examplev1", Directory: directory, ModuleRoot: directory, TypeID: "example.value/v1",
 		StateFile: "state.schema.json",
-		Operations: []operationModel{{
-			Name: "set", GoName: "Set", ParametersFile: "set-parameters.schema.json", DeadlineMS: 10000,
-		}},
+		Operations: []operationModel{
+			{
+				Name:           "set",
+				GoName:         "Set",
+				ParametersFile: "set-parameters.schema.json",
+				DeadlineMS:     10000,
+				Outcome:        outcomeObserved,
+			},
+		},
 		Examples: examplesFile{Cases: []exampleCase{{
 			Name:    "dim",
 			Support: raw(`{"state":{"maximum":80},"operations":{"set":{"step":5}}}`),

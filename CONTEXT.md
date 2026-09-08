@@ -53,7 +53,7 @@ An Entity's type-specific statement of its supported State space and Operations.
 _Avoid_: Constraints, capability list
 
 **Operation**:
-A named command capability within an Entity type. The type defines its support shape, valid parameters, deadline, and outcome-matching rule; invoking a currently supported Operation creates a Command.
+A named command capability within an Entity type. The type defines its support shape, valid parameters, deadline, and outcome policy — observed with an outcome-matching rule, or dispatched without one; invoking a currently supported Operation creates a Command.
 _Avoid_: Command, service call
 
 **Observation**:
@@ -65,7 +65,7 @@ The current value Hearth has accepted for an entity. It is the latest first-seen
 _Avoid_: Desired state, target
 
 **Command**:
-A request to change one controllable entity before a deadline. Its outcome is satisfied only after a fresh post-dispatch observation linked to that Command matches the requested value; dispatch or acceptance alone is not satisfaction, and an unhealthy owning Adapter causes failure rather than deferred delivery, while an unavailable Entity with a healthy owner is still attempted. Commands for one entity may overlap, each with an independent outcome; a satisfied outcome may be immediately superseded by another observation. The core durably records each attempt and outcome for history, but the record is not executable work: unfinished attempts become interrupted after restart and are never replayed.
+A request to change one controllable entity before a deadline. For observed operations, its outcome is satisfied only after a fresh post-dispatch observation linked to that Command matches the requested value; dispatch or acceptance alone is not satisfaction, and an unhealthy owning Adapter causes failure rather than deferred delivery, while an unavailable Entity with a healthy owner is still attempted. A dispatched operation on a stateless entity instead terminates as `dispatched` once acceptance is durably recorded; it requests no observation and stores no state. Commands for one entity may overlap, each with an independent outcome; a satisfied outcome may be immediately superseded by another observation. The core durably records each attempt and outcome for history, but the record is not executable work: unfinished attempts become interrupted after restart and are never replayed.
 _Avoid_: Action, service call, queued job
 
 **Canonical ID**:

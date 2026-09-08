@@ -155,9 +155,12 @@ func (repository *commandRepository) ProjectObservation(
 	command.CompletedAt = &completedAt
 	command.OutcomeObservationID = &observationID
 	repository.commands[command.ID] = command
-	result.SatisfiedCommand = &CommandResult{
-		CommandID: command.ID, ObservationID: observationID, Value: append(Value(nil), params.Observation.Value...),
+	clonedValue := append(Value(nil), params.Observation.Value...)
+	observed, err := NewCommandResult(command.ID, OutcomeObserved, &observationID, &clonedValue)
+	if err != nil {
+		return ProjectionResult{}, err
 	}
+	result.SatisfiedCommand = &observed
 	return result, nil
 }
 
@@ -216,10 +219,7 @@ func TestExecuteCommandCommitsBeforeDispatchAndHandlesAcceptanceRace(t *testing.
 	if err != nil {
 		t.Fatal(err)
 	}
-	if result.CommandID != commandTestID || result.ObservationID != commandTestObservationID ||
-		string(result.Value) != "true" {
-		t.Fatalf("result = %#v", result)
-	}
+	requireObservedResult(t, result)
 	stored := repository.command(commandTestID)
 	if stored.Status != CommandStatusSatisfied || stored.AcceptedAt == nil || stored.OutcomeObservationID == nil ||
 		*stored.OutcomeObservationID != commandTestObservationID {
@@ -272,10 +272,7 @@ func TestExecuteCommandReturnsSatisfiedWhenObservationWinsDispatchFailureRace(t 
 			if err != nil {
 				t.Fatal(err)
 			}
-			if result.CommandID != commandTestID || result.ObservationID != commandTestObservationID ||
-				string(result.Value) != "true" {
-				t.Fatalf("result = %#v", result)
-			}
+			requireObservedResult(t, result)
 			stored := repository.command(commandTestID)
 			if stored.Status != CommandStatusSatisfied || stored.OutcomeObservationID == nil ||
 				*stored.OutcomeObservationID != commandTestObservationID || stored.FailureCode != nil {
@@ -673,6 +670,131 @@ func TestExecuteCommandContinuesAfterCallerCancellation(t *testing.T) {
 	t.Fatalf("command did not finish after cancellation: %#v", repository.command(request.ID))
 }
 
+func requireObservedResult(t *testing.T, result CommandResult) {
+	t.Helper()
+	if result.Outcome != OutcomeObserved || result.CommandID != commandTestID || result.ObservationID == nil ||
+		*result.ObservationID != commandTestObservationID || result.Value == nil || string(*result.Value) != "true" {
+		t.Fatalf("result = %#v", result)
+	}
+}
+
+func TestExecuteCommandDispatchedCompletesAfterAcceptanceWithoutObservation(t *testing.T) {
+	t.Parallel()
+	repository := newDispatchedCommandRepository()
+	catalog, err := NewBuiltinTypeCatalog()
+	if err != nil {
+		t.Fatal(err)
+	}
+	sender := commandSenderFunc(
+		func(_ context.Context, adapterID string, runtimeID RuntimeID, request CommandRequest) (CommandAcceptance, error) {
+			if adapterID != "simulator" || runtimeID != commandTestRuntimeID ||
+				repository.command(request.ID).Status != CommandStatusRequested {
+				return CommandAcceptance{}, errors.New("dispatched command was not durably requested before dispatch")
+			}
+			return CommandAcceptance{Accepted: true}, nil
+		},
+	)
+	service := newTestService(repository, sender, catalog, commandDependencies())
+
+	result, err := service.ExecuteCommand(
+		context.Background(),
+		commandTestEntityID,
+		OperationName("trigger"),
+		CommandParameters(`{"name":"blink"}`),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.CommandID != commandTestID || result.Outcome != OutcomeDispatched ||
+		result.ObservationID != nil || result.Value != nil {
+		t.Fatalf("result = %#v", result)
+	}
+	stored := repository.command(commandTestID)
+	if stored.Status != CommandStatusDispatched || stored.AcceptedAt == nil || stored.CompletedAt == nil ||
+		stored.OutcomeObservationID != nil {
+		t.Fatalf("stored command = %#v", stored)
+	}
+}
+
+type dispatchedFailureCase struct {
+	name         string
+	parameters   CommandParameters
+	acceptance   CommandAcceptance
+	wantErr      error
+	wantStatus   CommandStatus
+	wantDispatch bool
+}
+
+func TestExecuteCommandDispatchedFailsBeforeCommitWithoutAcceptance(t *testing.T) {
+	t.Parallel()
+	tests := []dispatchedFailureCase{
+		{
+			"upstream rejected", CommandParameters(`{"name":"blink"}`),
+			CommandAcceptance{Accepted: false}, ErrUpstreamRejected, CommandStatusRejected, true,
+		},
+		{
+			"unsupported effect name rejected pre-dispatch", CommandParameters(`{"name":"party"}`),
+			CommandAcceptance{Accepted: true}, ErrInvalidCommand, "", false,
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			runDispatchedFailureCase(t, test)
+		})
+	}
+}
+
+func runDispatchedFailureCase(t *testing.T, test dispatchedFailureCase) {
+	t.Helper()
+	repository := newDispatchedCommandRepository()
+	catalog, err := NewBuiltinTypeCatalog()
+	if err != nil {
+		t.Fatal(err)
+	}
+	dispatches := 0
+	sender := commandSenderFunc(func(
+		context.Context,
+		string,
+		RuntimeID,
+		CommandRequest,
+	) (CommandAcceptance, error) {
+		dispatches++
+		return test.acceptance, nil
+	})
+	service := newTestService(repository, sender, catalog, commandDependencies())
+	_, err = service.ExecuteCommand(
+		context.Background(), commandTestEntityID, OperationName("trigger"), test.parameters,
+	)
+	if !errors.Is(err, test.wantErr) {
+		t.Fatalf("error = %v, want %v", err, test.wantErr)
+	}
+	if !test.wantDispatch {
+		if dispatches != 0 || len(repository.commands) != 0 {
+			t.Fatalf("pre-dispatch rejection dispatched %d and persisted %#v", dispatches, repository.commands)
+		}
+		return
+	}
+	if dispatches != 1 {
+		t.Fatalf("dispatches = %d, want 1", dispatches)
+	}
+	stored := repository.command(commandTestID)
+	if stored.Status != test.wantStatus || stored.OutcomeObservationID != nil {
+		t.Fatalf("stored command = %#v", stored)
+	}
+}
+
+func newDispatchedCommandRepository() *commandRepository {
+	repository := newCommandRepository()
+	repository.view.Entity = Entity{
+		ID: commandTestEntityID, DeviceID: commandTestDeviceID, AdapterID: "simulator", Name: "Effect",
+		TypeID: EntityTypeEnumactionV1, Support: EntitySupport(
+			`{"state":{},"operations":{"trigger":{"values":["blink","stop_effect"]}}}`),
+		Enabled: true,
+	}
+	return repository
+}
+
 func commandDependencies() Dependencies {
 	return Dependencies{
 		Now:              func() time.Time { return time.Now().UTC() },
@@ -689,13 +811,13 @@ func commandCatalog(t *testing.T, deadline time.Duration) *TypeCatalog {
 	}
 	definition, err := DefineEntityType(
 		EntityTypePowerV1, codecs.State, codecs.Support,
-		contractpowerv1.ValidateState, contractpowerv1.EqualState,
+		contractpowerv1.ValidateSupport, contractpowerv1.ValidateState, contractpowerv1.EqualState,
 		DefineOperation(
 			OperationNameSet, codecs.SetParameters,
 			func(support contractpowerv1.Support) (contractpowerv1.SetSupport, bool) {
 				return support.Operations.Set, true
 			},
-			contractpowerv1.ValidateSetParameters, deadline, contractpowerv1.SetSatisfied,
+			contractpowerv1.ValidateSetParameters, deadline, OutcomeObserved, contractpowerv1.SetSatisfied,
 		),
 	)
 	if err != nil {

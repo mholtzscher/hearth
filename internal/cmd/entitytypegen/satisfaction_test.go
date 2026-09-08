@@ -350,3 +350,446 @@ func TestSatisfactionRendersConjunction(t *testing.T) {
 		t.Fatalf("conjunction = %s", condition)
 	}
 }
+
+func boundedString(minLength, maxLength *int) schemaNode {
+	return schemaNode{Type: string(kindString), MinLength: minLength, MaxLength: maxLength}
+}
+
+func stringArray(items schemaNode, minItems *int, uniqueItems *bool) schemaNode {
+	return schemaNode{
+		Type: schemaTypeArray, Items: &items, MinItems: minItems, UniqueItems: uniqueItems,
+	}
+}
+
+func membershipRoots(
+	parameters, support map[string]schemaNode,
+	parametersRequired, supportRequired []string,
+) map[string]referenceRoot {
+	return map[string]referenceRoot{
+		referenceRootParameters: {
+			Schema: schemaNode{
+				Type: schemaTypeObject, Required: parametersRequired, Properties: parameters,
+			},
+			GoExpression: referenceRootParameters,
+		},
+		referenceRootSupport: {
+			Schema: schemaNode{
+				Type: schemaTypeObject, Required: supportRequired, Properties: support,
+			},
+			GoExpression: referenceRootSupport,
+		},
+	}
+}
+
+func choicesSupport(minItems *int) map[string]schemaNode {
+	return map[string]schemaNode{
+		"choices": stringArray(
+			boundedString(new(1), new(128)),
+			minItems,
+			new(true),
+		),
+	}
+}
+
+func TestInCompilesMembershipLoop(t *testing.T) {
+	t.Parallel()
+	roots := membershipRoots(
+		map[string]schemaNode{"value": boundedString(nil, nil)},
+		choicesSupport(new(1)),
+		[]string{"value"},
+		[]string{"choices"},
+	)
+	compiled, err := compileRule(ruleManifest{
+		Op:    ruleOperatorIn,
+		Left:  referenceManifest{Root: "parameters", Path: "/value"},
+		Right: &(referenceManifest{Root: "support", Path: "/choices"}),
+	}, roots)
+	if err != nil {
+		t.Fatal(err)
+	}
+	expected := "(func() bool { for _, candidate := range support.Choices " +
+		"{ if string(parameters.Value) == string(candidate) { return true } }; return false }())"
+	if condition := ruleCondition(compiled); condition != expected {
+		t.Fatalf("in condition = %s", condition)
+	}
+	if description := ruleDescription(compiled); description !=
+		"parameters/value must be one of support/choices" {
+		t.Fatalf("in description = %s", description)
+	}
+
+	for name, rule := range map[string]ruleManifest{
+		"non-string left": {
+			Op:    ruleOperatorIn,
+			Left:  referenceManifest{Root: "support", Path: "/maximum"},
+			Right: &(referenceManifest{Root: "support", Path: "/choices"}),
+		},
+		"missing right": {
+			Op:   ruleOperatorIn,
+			Left: referenceManifest{Root: "parameters", Path: "/value"},
+		},
+		"non-array right": {
+			Op:    ruleOperatorIn,
+			Left:  referenceManifest{Root: "parameters", Path: "/value"},
+			Right: &(referenceManifest{Root: "support", Path: "/maximum"}),
+		},
+		"tolerance present": {
+			Op:        ruleOperatorIn,
+			Left:      referenceManifest{Root: "parameters", Path: "/value"},
+			Right:     &(referenceManifest{Root: "support", Path: "/choices"}),
+			Tolerance: jsonNumber("1"),
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			badRoots := membershipRoots(
+				map[string]schemaNode{"value": boundedString(nil, nil)},
+				map[string]schemaNode{
+					"choices": stringArray(
+						boundedString(nil, nil),
+						new(1),
+						new(true),
+					),
+					"maximum": boundedInteger("0", "100"),
+				},
+				[]string{"value"},
+				[]string{"choices", "maximum"},
+			)
+			if _, compileErr := compileRule(rule, badRoots); compileErr == nil {
+				t.Fatal("invalid in rule unexpectedly accepted")
+			}
+		})
+	}
+}
+
+func TestInRejectsEmptyOrNonUniqueChoices(t *testing.T) {
+	t.Parallel()
+	for name, choices := range map[string]schemaNode{
+		"empty allowed": stringArray(boundedString(nil, nil), nil, new(true)),
+		"zero minimum":  stringArray(boundedString(nil, nil), new(0), new(true)),
+		"non-unique":    stringArray(boundedString(nil, nil), new(1), new(false)),
+		"unique unset":  stringArray(boundedString(nil, nil), new(1), nil),
+	} {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			roots := membershipRoots(
+				map[string]schemaNode{"value": boundedString(nil, nil)},
+				map[string]schemaNode{"choices": choices},
+				[]string{"value"},
+				[]string{"choices"},
+			)
+			rule := ruleManifest{
+				Op:    ruleOperatorIn,
+				Left:  referenceManifest{Root: "parameters", Path: "/value"},
+				Right: &(referenceManifest{Root: "support", Path: "/choices"}),
+			}
+			if _, err := compileRule(rule, roots); err == nil {
+				t.Fatal("invalid in choices unexpectedly accepted")
+			}
+		})
+	}
+}
+
+func TestInIfPresentPassesWhenAbsent(t *testing.T) {
+	t.Parallel()
+	roots := membershipRoots(
+		map[string]schemaNode{"choice": boundedString(new(1), new(128))},
+		choicesSupport(nil),
+		[]string{},
+		[]string{"choices"},
+	)
+	compiled, err := compileRule(ruleManifest{
+		Op:    ruleOperatorInIfPresent,
+		Left:  referenceManifest{Root: "parameters", Path: "/choice"},
+		Right: &(referenceManifest{Root: "support", Path: "/choices"}),
+	}, roots)
+	if err != nil {
+		t.Fatal(err)
+	}
+	expected := "(parameters.Choice == nil || (func() bool { for _, candidate := range support.Choices " +
+		"{ if string(*parameters.Choice) == string(candidate) { return true } }; return false }()))"
+	if condition := ruleCondition(compiled); condition != expected {
+		t.Fatalf("in_if_present condition = %s", condition)
+	}
+
+	for name, test := range map[string]struct {
+		parameters map[string]schemaNode
+		required   []string
+		support    map[string]schemaNode
+	}{
+		"required left": {
+			parameters: map[string]schemaNode{"choice": boundedString(new(1), new(128))},
+			required:   []string{"choice"},
+			support:    choicesSupport(nil),
+		},
+		"mismatched item bounds": {
+			parameters: map[string]schemaNode{"choice": boundedString(new(1), new(128))},
+			required:   []string{},
+			support: map[string]schemaNode{"choices": stringArray(
+				boundedString(new(1), new(64)),
+				nil,
+				new(true),
+			)},
+		},
+		"non-unique choices": {
+			parameters: map[string]schemaNode{"choice": boundedString(new(1), new(128))},
+			required:   []string{},
+			support: map[string]schemaNode{"choices": stringArray(
+				boundedString(new(1), new(128)),
+				nil,
+				new(false),
+			)},
+		},
+		"non-string left": {
+			parameters: map[string]schemaNode{"choice": boundedInteger("0", "100")},
+			required:   []string{},
+			support:    choicesSupport(nil),
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			rule := ruleManifest{
+				Op:    ruleOperatorInIfPresent,
+				Left:  referenceManifest{Root: "parameters", Path: "/choice"},
+				Right: &(referenceManifest{Root: "support", Path: "/choices"}),
+			}
+			badRoots := membershipRoots(test.parameters, test.support, test.required, []string{"choices"})
+			if _, compileErr := compileRule(rule, badRoots); compileErr == nil {
+				t.Fatal("invalid in_if_present rule unexpectedly accepted")
+			}
+		})
+	}
+}
+
+func TestInIfPresentRejectsOptionalIntermediates(t *testing.T) {
+	t.Parallel()
+	roots := map[string]referenceRoot{
+		referenceRootParameters: {
+			Schema: schemaNode{
+				Type:     schemaTypeObject,
+				Required: []string{},
+				Properties: map[string]schemaNode{"nested": {
+					Type:     schemaTypeObject,
+					Required: []string{"choice"},
+					Properties: map[string]schemaNode{
+						"choice": boundedString(new(1), new(128)),
+					},
+				}},
+			},
+			GoExpression: referenceRootParameters,
+		},
+		referenceRootSupport: {
+			Schema: schemaNode{
+				Type:       schemaTypeObject,
+				Required:   []string{"choices"},
+				Properties: choicesSupport(nil),
+			},
+			GoExpression: referenceRootSupport,
+		},
+	}
+	rule := ruleManifest{
+		Op:    ruleOperatorInIfPresent,
+		Left:  referenceManifest{Root: "parameters", Path: "/nested/choice"},
+		Right: &(referenceManifest{Root: "support", Path: "/choices"}),
+	}
+	if _, err := compileRule(rule, roots); err == nil {
+		t.Fatal("optional intermediate unexpectedly accepted")
+	}
+}
+
+func TestEqOptionalTruthTable(t *testing.T) {
+	t.Parallel()
+	for name, test := range map[string]struct {
+		parametersRequired []string
+		stateRequired      []string
+		expected           string
+	}{
+		"absent absent": {
+			expected: "((parameters.A == nil && state.B == nil) || " +
+				"(parameters.A != nil && state.B != nil && " +
+				"string(*parameters.A) == string(*state.B)))",
+		},
+		"left absent only": {
+			stateRequired: []string{"b"},
+			expected: "(parameters.A != nil && " +
+				"string(*parameters.A) == string(state.B))",
+		},
+		"right absent only": {
+			parametersRequired: []string{"a"},
+			expected: "(state.B != nil && " +
+				"string(parameters.A) == string(*state.B))",
+		},
+		"both present": {
+			parametersRequired: []string{"a"},
+			stateRequired:      []string{"b"},
+			expected:           "string(parameters.A) == string(state.B)",
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			roots := satisfactionRoots(
+				map[string]schemaNode{"a": boundedString(new(1), new(128))},
+				map[string]schemaNode{"b": boundedString(new(1), new(128))},
+				test.parametersRequired,
+				test.stateRequired,
+			)
+			compiled, err := compileRule(ruleManifest{
+				Op:    ruleOperatorEqOptional,
+				Left:  referenceManifest{Root: "parameters", Path: "/a"},
+				Right: &(referenceManifest{Root: "state", Path: "/b"}),
+			}, roots)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if condition := ruleCondition(compiled); condition != test.expected {
+				t.Fatalf("eq_optional condition = %s", condition)
+			}
+		})
+	}
+}
+
+func TestEqOptionalComparesOptionalNumbers(t *testing.T) {
+	t.Parallel()
+	roots := satisfactionRoots(
+		map[string]schemaNode{"value": {Type: string(kindNumber)}},
+		map[string]schemaNode{"value": {Type: string(kindNumber)}},
+		[]string{},
+		[]string{},
+	)
+	compiled, err := compileRule(ruleManifest{
+		Op:    ruleOperatorEqOptional,
+		Left:  referenceManifest{Root: "parameters", Path: "/value"},
+		Right: &(referenceManifest{Root: "state", Path: "/value"}),
+	}, roots)
+	if err != nil {
+		t.Fatal(err)
+	}
+	expected := "((parameters.Value == nil && state.Value == nil) || " +
+		"(parameters.Value != nil && state.Value != nil && " +
+		"float64(*parameters.Value) == float64(*state.Value)))"
+	if condition := ruleCondition(compiled); condition != expected {
+		t.Fatalf("eq_optional number condition = %s", condition)
+	}
+
+	mismatched := satisfactionRoots(
+		map[string]schemaNode{"value": {Type: string(kindNumber)}},
+		map[string]schemaNode{"value": boundedInteger("0", "100")},
+		[]string{},
+		[]string{},
+	)
+	if _, compileErr := compileRule(ruleManifest{
+		Op:    ruleOperatorEqOptional,
+		Left:  referenceManifest{Root: "parameters", Path: "/value"},
+		Right: &(referenceManifest{Root: "state", Path: "/value"}),
+	}, mismatched); compileErr == nil {
+		t.Fatal("mismatched eq_optional operands unexpectedly accepted")
+	}
+}
+
+func TestIfPresentOrderedPassesWhenAbsent(t *testing.T) {
+	t.Parallel()
+	for operator, symbol := range map[string]string{
+		ruleOperatorGTEIfPresent: ">=",
+		ruleOperatorLTEIfPresent: "<=",
+	} {
+		t.Run(operator, func(t *testing.T) {
+			t.Parallel()
+			roots := membershipRoots(
+				map[string]schemaNode{"value": {Type: string(kindNumber)}},
+				map[string]schemaNode{"minimum": {Type: string(kindNumber)}},
+				[]string{},
+				[]string{"minimum"},
+			)
+			compiled, err := compileRule(ruleManifest{
+				Op:    operator,
+				Left:  referenceManifest{Root: "parameters", Path: "/value"},
+				Right: &(referenceManifest{Root: "support", Path: "/minimum"}),
+			}, roots)
+			if err != nil {
+				t.Fatal(err)
+			}
+			expected := "(parameters.Value == nil || float64(*parameters.Value) " +
+				symbol + " float64(support.Minimum))"
+			if condition := ruleCondition(compiled); condition != expected {
+				t.Fatalf("%s condition = %s", operator, condition)
+			}
+		})
+	}
+
+	for name, test := range map[string]struct {
+		parameters map[string]schemaNode
+		required   []string
+		support    map[string]schemaNode
+	}{
+		"required left": {
+			parameters: map[string]schemaNode{"value": {Type: string(kindNumber)}},
+			required:   []string{"value"},
+			support:    map[string]schemaNode{"minimum": {Type: string(kindNumber)}},
+		},
+		"non-numeric left": {
+			parameters: map[string]schemaNode{"value": boundedString(nil, nil)},
+			required:   []string{},
+			support:    map[string]schemaNode{"minimum": {Type: string(kindNumber)}},
+		},
+		"mismatched kinds": {
+			parameters: map[string]schemaNode{"value": {Type: string(kindNumber)}},
+			required:   []string{},
+			support:    map[string]schemaNode{"minimum": boundedInteger("0", "100")},
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			rule := ruleManifest{
+				Op:    ruleOperatorGTEIfPresent,
+				Left:  referenceManifest{Root: "parameters", Path: "/value"},
+				Right: &(referenceManifest{Root: "support", Path: "/minimum"}),
+			}
+			badRoots := membershipRoots(test.parameters, test.support, test.required, []string{"minimum"})
+			if _, compileErr := compileRule(rule, badRoots); compileErr == nil {
+				t.Fatal("invalid gte_if_present rule unexpectedly accepted")
+			}
+		})
+	}
+}
+
+func TestSupportValidationRejectsNonSupportRoots(t *testing.T) {
+	t.Parallel()
+	supportOnly := map[string]referenceRoot{
+		referenceRootSupport: {
+			Schema:       schemaNode{Type: string(kindInteger)},
+			GoExpression: referenceRootSupport,
+		},
+	}
+	_, err := compileRules([]ruleManifest{{
+		Op:    "gte",
+		Left:  referenceManifest{Root: "state", Path: ""},
+		Right: &(referenceManifest{Root: "support", Path: ""}),
+	}}, supportOnly, "support validation")
+	if err == nil || !strings.Contains(err.Error(), "not available") {
+		t.Fatalf("support validation root error = %v", err)
+	}
+
+	compiled, err := compileRules([]ruleManifest{{
+		Op:    "gte",
+		Left:  referenceManifest{Root: "support", Path: "/maximum"},
+		Right: &(referenceManifest{Root: "support", Path: "/minimum"}),
+	}}, map[string]referenceRoot{
+		referenceRootSupport: {
+			Schema: schemaNode{
+				Type:     schemaTypeObject,
+				Required: []string{"maximum", "minimum"},
+				Properties: map[string]schemaNode{
+					"maximum": boundedInteger("0", "100"),
+					"minimum": boundedInteger("0", "100"),
+				},
+			},
+			GoExpression: referenceRootSupport,
+		},
+	}, "support validation")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if condition := ruleCondition(compiled[0]); condition !=
+		"int64(support.Maximum) >= int64(support.Minimum)" {
+		t.Fatalf("support validation condition = %s", condition)
+	}
+}

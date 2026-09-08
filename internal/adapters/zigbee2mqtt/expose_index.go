@@ -26,6 +26,7 @@ const (
 	upstreamExposeBinary    = "binary"
 	upstreamExposeNumeric   = "numeric"
 	upstreamExposeComposite = "composite"
+	upstreamExposeEnum      = "enum"
 )
 
 // featureQuery matches one nested expose feature by type and name.
@@ -80,6 +81,22 @@ func (index exposeIndex) UniqueFeature(parent indexedExpose, query featureQuery)
 	for _, feature := range parent.expose.Features {
 		if feature.Type == query.Type && feature.Name == query.Name {
 			found = feature
+			matches++
+		}
+	}
+	return found, matches == 1
+}
+
+// UniqueRoot returns the single top-level expose matching the type and name.
+// Device-root settings and actions (power_on_behavior, effect, linkquality)
+// are allowlisted by exact type and name; duplicates are ambiguous and omit
+// the capability without affecting valid siblings.
+func (index exposeIndex) UniqueRoot(exposeType, name string) (indexedExpose, bool) {
+	var found indexedExpose
+	matches := 0
+	for _, root := range index.roots {
+		if root.expose.Type == exposeType && root.expose.Name == name {
+			found = root
 			matches++
 		}
 	}

@@ -43,9 +43,78 @@ function presetsFor(type: string | undefined, support?: Record<string, unknown>)
       return colorXYPresets();
     case "hearth.colorhs/v1":
       return colorHSPresets();
+    case "hearth.enumsetting/v1":
+      return stringChoices(support, "choices").map((choice) => ({
+        label: choice,
+        params: `{"value":${JSON.stringify(choice)}}`,
+      }));
+    case "hearth.numericsetting/v1":
+      return numericSettingPresets(support);
+    case "hearth.enumaction/v1":
+      return enumActionValues(support).map((value) => ({
+        label: value,
+        params: `{"name":${JSON.stringify(value)}}`,
+      }));
     default:
       return [];
   }
+}
+
+/** String list from support.state; malformed entries dropped. */
+function stringChoices(support?: Record<string, unknown>, key = "choices"): string[] {
+  const state = support?.state as Record<string, unknown> | undefined;
+  const list = state?.[key];
+  return Array.isArray(list) ? list.filter((v): v is string => typeof v === "string") : [];
+}
+
+/** Enum-action values belong to trigger support because they constrain the command. */
+function enumActionValues(support?: Record<string, unknown>): string[] {
+  const operations = support?.operations as { trigger?: { values?: unknown } } | undefined;
+  const values = operations?.trigger?.values;
+  return Array.isArray(values) ? values.filter((value): value is string => typeof value === "string") : [];
+}
+
+/** Per-entity numeric-setting bounds, unit, and named choices. */
+function numericSettingBounds(support?: Record<string, unknown>): {
+  minimum: number;
+  maximum: number;
+  unit: string;
+  choices: string[];
+} {
+  const state = support?.state as
+    | { minimum?: unknown; maximum?: unknown; unit?: unknown }
+    | undefined;
+  return {
+    minimum: typeof state?.minimum === "number" ? state.minimum : 0,
+    maximum: typeof state?.maximum === "number" ? state.maximum : 100,
+    unit: typeof state?.unit === "string" ? state.unit : "",
+    choices: stringChoices(support, "choices"),
+  };
+}
+
+/** Numeric-setting presets: one in-range value plus each named choice. */
+function numericSettingPresets(support?: Record<string, unknown>): {
+  label: string;
+  params: string;
+}[] {
+  const { minimum, maximum, unit, choices } = numericSettingBounds(support);
+  const suffix = unit ? ` ${unit}` : "";
+  const numeric =
+    minimum <= maximum
+      ? [{ label: `set ${minimum}${suffix}`, params: `{"mode":"value","value":${minimum}}` }]
+      : [];
+  return [
+    ...numeric,
+    ...choices.map((choice) => ({
+      label: choice,
+      params: `{"mode":"choice","choice":${JSON.stringify(choice)}}`,
+    })),
+  ];
+}
+
+/** Default command operation per Entity type (stateless actions trigger). */
+function defaultOperation(type: string | undefined): string {
+  return type === "hearth.enumaction/v1" ? "trigger" : "set";
 }
 
 function exampleParams(type: string | undefined, support?: Record<string, unknown>): string {
@@ -61,6 +130,15 @@ function exampleParams(type: string | undefined, support?: Record<string, unknow
   }
   if (type === "hearth.colorhs/v1") {
     return '{"hue":120,"saturation":80}';
+  }
+  if (type === "hearth.enumsetting/v1") {
+    return `{"value":${JSON.stringify(stringChoices(support, "choices")[0] ?? "")}}`;
+  }
+  if (type === "hearth.numericsetting/v1") {
+    return `{"mode":"value","value":${numericSettingBounds(support).minimum}}`;
+  }
+  if (type === "hearth.enumaction/v1") {
+    return `{"name":${JSON.stringify(enumActionValues(support)[0] ?? "")}}`;
   }
   return '{"value":true}';
 }
@@ -128,8 +206,13 @@ function hasOperations(support?: Record<string, unknown>): boolean {
 }
 
 /** Human-readable State summary with units and mode activity.
-    Returns null for types without a summary or malformed values. */
-function formatStateSummary(type: string | undefined, value: unknown): string | null {
+    Returns null for types without a summary, malformed values, or stateless
+    actions (an effect trigger has no reported State to summarize). */
+function formatStateSummary(
+  type: string | undefined,
+  value: unknown,
+  support?: Record<string, unknown>,
+): string | null {
   if (value === null || value === undefined) return null;
   switch (type) {
     case "hearth.colorxy/v1": {
@@ -149,6 +232,26 @@ function formatStateSummary(type: string | undefined, value: unknown): string | 
     }
     case "hearth.colormode/v1":
       return typeof value === "string" ? value : null;
+    case "hearth.numericsensor/v1": {
+      if (typeof value !== "number") return null;
+      const unit = (support?.state as { unit?: unknown } | undefined)?.unit;
+      return typeof unit === "string" && unit ? `${value} ${unit}` : String(value);
+    }
+    case "hearth.enumsetting/v1":
+      return typeof value === "string" ? value : null;
+    case "hearth.numericsetting/v1": {
+      if (typeof value !== "object" || value === null) return null;
+      const v = value as { mode?: unknown; value?: unknown; choice?: unknown };
+      if (v.mode === "value" && typeof v.value === "number") {
+        const unit = (support?.state as { unit?: unknown } | undefined)?.unit;
+        return typeof unit === "string" && unit ? `${v.value} ${unit}` : String(v.value);
+      }
+      if (v.mode === "choice" && typeof v.choice === "string") return v.choice;
+      return null;
+    }
+    case "hearth.enumaction/v1":
+      // Stateless: never render a State summary, even if a value is present.
+      return null;
     default:
       return null;
   }
@@ -290,15 +393,18 @@ export default function EntityDetailPage() {
   const [operation, setOperation] = useState("set");
   const [paramsText, setParamsText] = useState('{"value":true}');
   const [paramsTouched, setParamsTouched] = useState(false);
+  const [operationTouched, setOperationTouched] = useState(false);
   useEffect(() => {
     if (data && !paramsTouched) setParamsText(exampleParams(data.type, data.support));
-  }, [data, paramsTouched]);
+    if (data && !operationTouched) setOperation(defaultOperation(data.type));
+  }, [data, paramsTouched, operationTouched]);
   useEffect(() => {
     // The route reuses this page across entities, and the toolbar can switch
     // servers under the same entity ID: reset form, outcome, and pending state.
     setOperation("set");
     setParamsText('{"value":true}');
     setParamsTouched(false);
+    setOperationTouched(false);
     setParamsError(null);
     setResult(null);
     setSendError(null);
@@ -360,7 +466,7 @@ export default function EntityDetailPage() {
     }
   }
 
-  const stateSummary = data ? formatStateSummary(data.type, data.state?.value) : null;
+  const stateSummary = data ? formatStateSummary(data.type, data.state?.value, data.support) : null;
   const commandable = hasOperations(data?.support);
 
   return (
@@ -454,7 +560,7 @@ export default function EntityDetailPage() {
                         id="cmd-operation"
                         className="font-mono text-xs"
                         value={operation}
-                        onChange={(e) => setOperation(e.target.value)}
+                        onChange={(e) => { setOperation(e.target.value); setOperationTouched(true); }}
                       />
                     </div>
                     <div className="grid gap-1.5">
@@ -468,7 +574,7 @@ export default function EntityDetailPage() {
                         onChange={(e) => { setParamsText(e.target.value); setParamsTouched(true); }}
                       />
                       <p className={`text-xs ${paramsError ? "text-destructive" : "text-muted-foreground"}`}>
-                        {paramsError ?? `e.g. ${exampleParams(data?.type, data?.support)}${data ? ` for ${data.type} set` : ""}`}
+                        {paramsError ?? `e.g. ${exampleParams(data?.type, data?.support)}${data ? ` for ${data.type} ${defaultOperation(data.type)}` : ""}`}
                       </p>
                     </div>
                   </div>
@@ -484,9 +590,15 @@ export default function EntityDetailPage() {
                     <div>
                       <div className="flex items-center gap-2">
                         <StatusChip status={result.status} />
-                        <span className="font-mono text-xs text-muted-foreground">
-                          obs={result.observation_id} value={JSON.stringify(result.value)}
-                        </span>
+                        {result.status === "satisfied" ? (
+                          <span className="font-mono text-xs text-muted-foreground">
+                            obs={result.observation_id} value={JSON.stringify(result.value)}
+                          </span>
+                        ) : (
+                          <span className="text-xs text-muted-foreground">
+                            dispatched — accepted with no observation; the effect was not verified.
+                          </span>
+                        )}
                       </div>
                       <RawJson value={result} title="Command result JSON" />
                     </div>

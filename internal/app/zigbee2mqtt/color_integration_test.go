@@ -222,7 +222,8 @@ func TestRunProjectsColorBulbAndLinksColorCommand(t *testing.T) {
 	if completed.err != nil {
 		t.Fatal(completed.err)
 	}
-	if string(completed.result.Value) != `{"active":true,"x":4000,"y":2000}` {
+	if completed.result.Outcome != devices.OutcomeObserved || completed.result.Value == nil ||
+		string(*completed.result.Value) != `{"active":true,"x":4000,"y":2000}` {
 		t.Fatalf("color Command result = %#v", completed.result)
 	}
 

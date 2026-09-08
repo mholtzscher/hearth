@@ -69,12 +69,14 @@ func TestGenericCatalogCarriesTypedBehaviorAcrossErasure(t *testing.T) {
 			return nil
 		},
 		3*time.Second,
+		OutcomeObserved,
 		func(parameters parameters, state state) bool { return parameters.Target == state.Level },
 	)
 	definition, err := DefineEntityType(
 		"test.level/v1",
 		stateCodec,
 		supportCodec,
+		func(_ support) error { return nil },
 		func(support support, state state) error {
 			if state.Level > support.State.Maximum {
 				return errors.New("level exceeds maximum")
@@ -155,12 +157,14 @@ func TestCatalogRejectsInvalidDefinitions(t *testing.T) {
 		func(struct{}) (struct{}, bool) { return struct{}{}, true },
 		func(struct{}, struct{}, struct{}) error { return nil },
 		time.Second,
+		OutcomeObserved,
 		func(struct{}, bool) bool { return true },
 	)
 	valid, err := DefineEntityType(
 		"test.value/v1",
 		state,
 		support,
+		func(struct{}) error { return nil },
 		func(struct{}, bool) error { return nil },
 		func(left, right bool) bool { return left == right },
 		validOperation,
@@ -181,12 +185,14 @@ func TestCatalogRejectsInvalidDefinitions(t *testing.T) {
 		func(struct{}) (struct{}, bool) { return struct{}{}, true },
 		func(struct{}, struct{}, struct{}) error { return nil },
 		time.Second,
+		OutcomeObserved,
 		func(struct{}, bool) bool { return true },
 	)
 	if _, defineErr := DefineEntityType(
 		"test.duplicate/v1",
 		state,
 		support,
+		func(struct{}) error { return nil },
 		func(struct{}, bool) error { return nil },
 		func(bool, bool) bool { return true },
 		validOperation,
@@ -200,12 +206,14 @@ func TestCatalogRejectsInvalidDefinitions(t *testing.T) {
 		func(struct{}) (struct{}, bool) { return struct{}{}, true },
 		func(struct{}, struct{}, struct{}) error { return nil },
 		time.Second,
+		OutcomeObserved,
 		func(struct{}, bool) bool { return true },
 	)
 	if _, defineErr := DefineEntityType(
 		"test.invalid/v1",
 		state,
 		support,
+		func(struct{}) error { return nil },
 		func(struct{}, bool) error { return nil },
 		func(bool, bool) bool { return true },
 		invalidOperation,
@@ -216,6 +224,7 @@ func TestCatalogRejectsInvalidDefinitions(t *testing.T) {
 		"test.nil/v1",
 		state,
 		support,
+		func(struct{}) error { return nil },
 		nil,
 		func(bool, bool) bool { return true },
 	); defineErr == nil {

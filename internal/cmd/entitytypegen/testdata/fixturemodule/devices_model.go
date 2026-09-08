@@ -15,6 +15,13 @@ type EntityTypeID string
 
 type OperationName string
 
+type OutcomeKind string
+
+const (
+	OutcomeObserved   OutcomeKind = "observed"
+	OutcomeDispatched OutcomeKind = "dispatched"
+)
+
 type EntitySupport json.RawMessage
 
 type Value json.RawMessage

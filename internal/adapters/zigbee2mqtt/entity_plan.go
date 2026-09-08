@@ -15,11 +15,23 @@ import (
 // decode its State and plan its Commands.
 type entityPlan struct {
 	Descriptor       adapter.EntityDescriptor
+	StatePolicy      entityStatePolicy // entityStateful (default) | entityStateless
 	StateProperties  []string
 	GetProperties    []string
 	DecodeState      stateDecoder
 	TranslateCommand commandTranslator
 }
+
+// entityStatePolicy declares whether one planned Entity holds observable
+// State. Stateless plans (effects) claim no State properties, run no
+// decoder, and publish no observations; the core catalog carries the
+// matching stateless flag separately so the adapter never queries it.
+type entityStatePolicy uint8
+
+const (
+	entityStateful entityStatePolicy = iota
+	entityStateless
+)
 
 // runtimeEntity pairs one immutable plan with the canonical Entity ID returned
 // by registration.
@@ -65,7 +77,24 @@ type plannedCommand struct {
 	GetProperties []string
 	Deadline      time.Time
 	Matches       func(stateReport) bool
+	// Outcome selects the terminal path: observed Commands (default)
+	// complete via fresh post-dispatch linked observation, while dispatched
+	// Commands complete on adapter acceptance with no refresh, no matcher,
+	// and no observation. The runtime derives the dispatched path from a
+	// nil matcher with empty refresh, so a dispatched plan must leave both
+	// unset.
+	Outcome plannedOutcome // plannedObserved (default) | plannedDispatched
 }
+
+// plannedOutcome is the adapter-local terminal policy for one Command. It
+// mirrors the core catalog outcome without depending on the catalog: the
+// value is trusted from plan construction and validated at the seam.
+type plannedOutcome uint8
+
+const (
+	plannedObserved plannedOutcome = iota
+	plannedDispatched
+)
 
 // validateEntityPlans runs before registration. It checks descriptor
 // completeness, non-empty and unique State properties, ordered get subsets,
@@ -80,7 +109,8 @@ func validateEntityPlans(plans []entityPlan) error {
 			plan.Descriptor.Type == "" || len(plan.Descriptor.Support) == 0 {
 			return errors.New("entity plan descriptor is incomplete")
 		}
-		if len(plan.StateProperties) == 0 {
+		stateless := plan.StatePolicy == entityStateless
+		if !stateless && len(plan.StateProperties) == 0 {
 			return errors.New("entity plan must claim at least one State property")
 		}
 		claimed := make(map[string]struct{}, len(plan.StateProperties))
@@ -116,10 +146,10 @@ func validateEntityPlans(plans []entityPlan) error {
 			}
 			previous = position
 		}
-		if plan.DecodeState == nil {
+		if !stateless && plan.DecodeState == nil {
 			return errors.New("entity plan is missing its State decoder")
 		}
-		if plan.TranslateCommand != nil && len(plan.GetProperties) == 0 {
+		if !stateless && plan.TranslateCommand != nil && len(plan.GetProperties) == 0 {
 			return errors.New("controllable entity plan must declare refresh properties")
 		}
 		if _, duplicate := keys[plan.Descriptor.Key]; duplicate {
@@ -132,8 +162,10 @@ func validateEntityPlans(plans []entityPlan) error {
 
 // validatePlannedCommand runs after typed Command translation and before MQTT
 // publication. Command-specific output does not exist at discovery time.
-// Active refresh is mandatory: every planned Command must request at least
-// one refresh property so the runtime can confirm the outcome.
+// Active refresh is mandatory for observed Commands: every planned observed
+// Command must request at least one refresh property so the runtime can
+// confirm the outcome. Dispatched Commands complete on acceptance and carry
+// no refresh properties and no matcher.
 func validatePlannedCommand(planned plannedCommand) error {
 	if len(planned.SetValues) == 0 {
 		return errors.New("planned Command must set at least one property")
@@ -142,6 +174,18 @@ func validatePlannedCommand(planned plannedCommand) error {
 		if property == "" || len(value) == 0 {
 			return errors.New("planned Command set property must be non-empty")
 		}
+	}
+	if planned.Outcome == plannedDispatched {
+		if len(planned.GetProperties) != 0 {
+			return errors.New("planned dispatched Command must not request refresh properties")
+		}
+		if planned.Matches != nil {
+			return errors.New("planned dispatched Command must not install a matcher")
+		}
+		if planned.Deadline.IsZero() {
+			return errors.New("planned Command deadline is required")
+		}
+		return nil
 	}
 	if len(planned.GetProperties) == 0 {
 		return errors.New("planned Command must request refresh properties")

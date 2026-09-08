@@ -20,8 +20,11 @@ func TestGeneratedConformance(t *testing.T) {
 	}
 	entitytypetest.RunContractExamples(t, examplesJSON, entitytypetest.ContractProbe{
 		ValidateSupport: func(support json.RawMessage) error {
-			_, _, err := codecs.Support.Decode(support)
-			return err
+			decodedSupport, _, err := codecs.Support.Decode(support)
+			if err != nil {
+				return err
+			}
+			return ValidateSupport(decodedSupport)
 		},
 		ValidateState: func(support, state json.RawMessage) error {
 			decodedSupport, _, err := codecs.Support.Decode(support)

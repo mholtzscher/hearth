@@ -1,6 +1,8 @@
 package main
 
 import (
+	"bytes"
+	"encoding/json"
 	"fmt"
 	"strconv"
 	"strings"
@@ -9,7 +11,8 @@ import (
 // renderConformanceTest generates compact contract test wiring: the
 // manifest's exact examples file plus one typed callback per operation.
 // Expected-result comparison stays in the shared handwritten runner, so the
-// generated file carries no assertion blocks.
+// generated file carries no per-example assertion blocks; only authored
+// invalid supports assert directly against the generated support validator.
 func renderConformanceTest(model entityTypeModel, modulePath string) ([]byte, error) {
 	var source strings.Builder
 	generatedHeader(&source)
@@ -28,8 +31,9 @@ func renderConformanceTest(model entityTypeModel, modulePath string) ([]byte, er
 	source.WriteString("\tcodecs, err := Compile()\n\tif err != nil { t.Fatal(err) }\n")
 	source.WriteString("\tentitytypetest.RunContractExamples(t, examplesJSON, entitytypetest.ContractProbe{\n")
 	source.WriteString("\t\tValidateSupport: func(support json.RawMessage) error {\n")
-	source.WriteString("\t\t\t_, _, err := codecs.Support.Decode(support)\n")
-	source.WriteString("\t\t\treturn err\n")
+	source.WriteString("\t\t\tdecodedSupport, _, err := codecs.Support.Decode(support)\n")
+	source.WriteString("\t\t\tif err != nil { return err }\n")
+	source.WriteString("\t\t\treturn ValidateSupport(decodedSupport)\n")
 	source.WriteString("\t\t},\n")
 	source.WriteString("\t\tValidateState: func(support, state json.RawMessage) error {\n")
 	source.WriteString("\t\t\tdecodedSupport, _, err := codecs.Support.Decode(support)\n")
@@ -48,12 +52,43 @@ func renderConformanceTest(model entityTypeModel, modulePath string) ([]byte, er
 		source.WriteString("\t\t},\n")
 	}
 	source.WriteString("\t})\n")
+	writeInvalidSupportChecks(&source, model)
 	source.WriteString("}\n")
 	formatted, err := formatGenerated(source.String())
 	if err != nil {
 		return nil, err
 	}
 	return formatted, nil
+}
+
+// writeInvalidSupportChecks asserts the generated support validator
+// rejects every authored invalid support. Entries schema-decode by
+// load-time checks, so acceptance here proves support_validation rules
+// rather than schema rejection.
+func writeInvalidSupportChecks(source *strings.Builder, model entityTypeModel) {
+	for index, raw := range model.Examples.InvalidSupports {
+		var compacted bytes.Buffer
+		if err := json.Compact(&compacted, raw); err != nil {
+			panic("invalid support is not compact JSON")
+		}
+		fmt.Fprintf(
+			source,
+			"\tinvalidSupport%d, _, err := codecs.Support.Decode(json.RawMessage(%s))\n",
+			index+1,
+			strconv.Quote(compacted.String()),
+		)
+		fmt.Fprintf(
+			source,
+			"\tif err != nil { t.Fatalf(\"invalid support %d is not schema-decodable: %%v\", err) }\n",
+			index+1,
+		)
+		fmt.Fprintf(
+			source,
+			"\tif err := ValidateSupport(invalidSupport%d); err == nil { t.Error(\"invalid support %d was accepted\") }\n",
+			index+1,
+			index+1,
+		)
+	}
 }
 
 func hasOptionalOperation(model entityTypeModel) bool {
@@ -69,10 +104,15 @@ func hasOptionalOperation(model entityTypeModel) bool {
 // callbacks decode and validate inputs and return actual errors or outcomes;
 // only the handwritten runner compares expected results. Outcome callbacks
 // schema-decode recorded parameters and State without revalidating against
-// mutable current support.
+// mutable current support. Dispatched operations declare no outcome
+// predicate, so they set Dispatched and omit Satisfies; the runner replays
+// no outcome examples for them.
 func writeContractOperationProbe(source *strings.Builder, operation operationModel) {
 	variable := lowerFirst(operation.GoName) + "Support"
 	fmt.Fprintf(source, "\t\t\t%s: {\n", strconv.Quote(operation.Name))
+	if operation.Outcome == outcomeDispatched {
+		source.WriteString("\t\t\t\tDispatched: true,\n")
+	}
 	source.WriteString("\t\t\t\tValidateParameters: func(support, parameters json.RawMessage) error {\n")
 	source.WriteString("\t\t\t\t\tdecodedSupport, _, err := codecs.Support.Decode(support)\n")
 	source.WriteString("\t\t\t\t\tif err != nil { return err }\n")
@@ -100,6 +140,10 @@ func writeContractOperationProbe(source *strings.Builder, operation operationMod
 		variable,
 	)
 	source.WriteString("\t\t\t\t},\n")
+	if operation.Outcome == outcomeDispatched {
+		source.WriteString("\t\t\t},\n")
+		return
+	}
 	source.WriteString("\t\t\t\tSatisfies: func(parameters, state json.RawMessage) (bool, error) {\n")
 	fmt.Fprintf(
 		source,

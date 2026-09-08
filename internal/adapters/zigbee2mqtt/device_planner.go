@@ -72,6 +72,7 @@ func defaultDevicePlanners() []devicePlanner {
 		lightPlanner{},
 		relayPlanner{},
 		sensorPlanner{},
+		linkqualityPlanner{},
 	}
 }
 

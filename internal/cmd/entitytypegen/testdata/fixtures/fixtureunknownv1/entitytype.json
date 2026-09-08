@@ -14,6 +14,7 @@
     "unknown": {
       "parameters_schema": "unknown-parameters.schema.json",
       "deadline_ms": 10000,
+      "outcome": "observed",
       "parameter_validation": [
         {
           "op": "lte",
@@ -37,6 +38,7 @@
     "unknown-operation": {
       "parameters_schema": "unknown-operation-parameters.schema.json",
       "deadline_ms": 10000,
+      "outcome": "observed",
       "parameter_validation": [
         {
           "op": "lte",

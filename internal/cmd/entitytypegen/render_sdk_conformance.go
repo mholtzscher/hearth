@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
 	"math"
 	"math/big"
@@ -34,12 +35,17 @@ func renderFacadeConformanceTest(model entityTypeModel) (output, error) {
 	source.WriteString(")\n\n")
 	writeSDKTestHelpers(&source)
 	writeCanonicalJSONRegressionTest(&source)
-	writeObservationConformanceTest(&source, model)
-	writeObservationMetadataTest(&source, model)
-	writeObservationValidationTest(&source, model)
+	if model.Stateless {
+		writeStatelessOmissionTest(&source, model)
+	} else {
+		writeObservationConformanceTest(&source, model)
+		writeObservationMetadataTest(&source, model)
+		writeObservationValidationTest(&source, model)
+	}
 	writeEntityDescriptorTest(&source, model)
 	if len(model.Operations) > 0 {
 		writeCommandConformanceTest(&source, model)
+		writeCommandInvalidSupportTest(&source, model)
 	}
 	formatted, err := formatGenerated(source.String())
 	if err != nil {
@@ -158,6 +164,22 @@ func writeCanonicalJSONRegressionTest(source *strings.Builder) {
 	source.WriteString("\t\t\tt.Errorf(\"canonical values collided: %s == %s\", left, right)\n")
 	source.WriteString("\t\t}\n")
 	source.WriteString("\t}\n")
+	source.WriteString("}\n\n")
+}
+
+// writeStatelessOmissionTest marks the stateless policy in the generated
+// facade test: stateless types carry no State observations, so the facade
+// defines no ObservationInput or NewObservation and no observation
+// conformance runs. The generator regression test pins the omission by
+// asserting the rendered facade and facade test never reference either
+// symbol; this marker keeps the policy visible at the conformance seam.
+func writeStatelessOmissionTest(source *strings.Builder, model entityTypeModel) {
+	source.WriteString("func TestGeneratedStatelessOmitsObservation(t *testing.T) {\n")
+	fmt.Fprintf(
+		source,
+		"\tt.Log(%s)\n",
+		strconv.Quote("stateless "+model.TypeID+" defines no ObservationInput or NewObservation"),
+	)
 	source.WriteString("}\n\n")
 }
 
@@ -441,7 +463,47 @@ func writeEntityDescriptorTest(source *strings.Builder, model entityTypeModel) {
 		source.WriteString("\t\trequireValidationError(t, err, \"reject invalid Entity support\")\n")
 		source.WriteString("\t}\n")
 	}
+	writeDescriptorInvalidSupports(source, model)
 	source.WriteString("}\n\n")
+}
+
+// writeDescriptorInvalidSupports proves that descriptor construction rejects
+// schema-decodable supports violating support_validation rules (for example
+// a numericsetting minimum above its maximum). The mutation check above only
+// covers schema-invalid values; these independently authored examples cover
+// relational invalidity.
+func writeDescriptorInvalidSupports(source *strings.Builder, model entityTypeModel) {
+	for index, raw := range model.Examples.InvalidSupports {
+		source.WriteString("\t{\n")
+		fmt.Fprintf(
+			source,
+			"\t\tinvalidSupport%d, _, err := codecs.Support.Decode(json.RawMessage(%s))\n",
+			index+1,
+			rawQuote(raw),
+		)
+		fmt.Fprintf(
+			source,
+			"\t\tif err != nil { t.Fatalf(\"invalid support %d: %%v\", err) }\n",
+			index+1,
+		)
+		fmt.Fprintf(
+			source,
+			"\t\tif _, err := NewEntityDescriptor(metadata, invalidSupport%d); err == nil {\n",
+			index+1,
+		)
+		fmt.Fprintf(
+			source,
+			"\t\t\tt.Error(\"descriptor with invalid Entity support %d was accepted\")\n",
+			index+1,
+		)
+		source.WriteString("\t\t} else {\n")
+		fmt.Fprintf(
+			source,
+			"\t\t\trequireValidationError(t, err, \"reject invalid Entity support %d\")\n",
+			index+1,
+		)
+		source.WriteString("\t\t}\n\t}\n")
+	}
 }
 
 // invalidSupportMutation finds a required integer leaf in the support schema and
@@ -900,6 +962,81 @@ func writeInvalidSupportCommandCheck(
 	source.WriteString(indent + "} else {\n")
 	source.WriteString(indent + "\trequireValidationError(t, err, \"reject invalid Entity support\")\n")
 	source.WriteString(indent + "}\n")
+}
+
+// writeCommandInvalidSupportTest proves that command construction rejects
+// schema-decodable supports violating support_validation rules. Handlers
+// match each invalid support's enabled operations so only support validity
+// decides construction. Types without authored invalid supports emit no test:
+// their ValidateSupport accepts every schema-valid value by construction.
+func writeCommandInvalidSupportTest(source *strings.Builder, model entityTypeModel) {
+	if len(model.Examples.InvalidSupports) == 0 {
+		return
+	}
+	source.WriteString("\nfunc TestGeneratedCommandInvalidSupport(t *testing.T) {\n")
+	source.WriteString("\tcodecs, err := codecs()\n\tif err != nil { t.Fatal(err) }\n")
+	for index, raw := range model.Examples.InvalidSupports {
+		source.WriteString("\t{\n")
+		fmt.Fprintf(
+			source,
+			"\t\tinvalidSupport, _, err := codecs.Support.Decode(json.RawMessage(%s))\n",
+			rawQuote(raw),
+		)
+		fmt.Fprintf(
+			source,
+			"\t\tif err != nil { t.Fatalf(\"invalid support %d: %%v\", err) }\n",
+			index+1,
+		)
+		fmt.Fprintf(
+			source,
+			"\t\tif _, err := NewCommandHandler(%s, invalidSupport, Handlers{\n",
+			strconv.Quote(sdkTestEntityID),
+		)
+		for _, operation := range invalidSupportOperations(model, raw) {
+			fmt.Fprintf(
+				source,
+				"\t\t\t%s: func(_ context.Context, _ %sCommand, _ adapter.Responder) error { return nil },\n",
+				operation.GoName,
+				operation.GoName,
+			)
+		}
+		source.WriteString("\t\t}); err == nil {\n")
+		fmt.Fprintf(
+			source,
+			"\t\t\tt.Error(\"command handler with invalid Entity support %d was accepted\")\n",
+			index+1,
+		)
+		source.WriteString("\t\t} else {\n")
+		fmt.Fprintf(
+			source,
+			"\t\t\trequireValidationError(t, err, \"reject invalid Entity support %d\")\n",
+			index+1,
+		)
+		source.WriteString("\t\t}\n\t}\n")
+	}
+	source.WriteString("}\n")
+}
+
+// invalidSupportOperations returns the declared operations enabled by an
+// authored invalid_support value in manifest order. Required operations are
+// always included; optional operations only when the value enables them.
+func invalidSupportOperations(model entityTypeModel, raw json.RawMessage) []operationModel {
+	var shape struct {
+		Operations map[string]json.RawMessage `json:"operations"`
+	}
+	enabled := make(map[string]struct{})
+	if err := json.Unmarshal(raw, &shape); err == nil {
+		for name := range shape.Operations {
+			enabled[name] = struct{}{}
+		}
+	}
+	operations := make([]operationModel, 0, len(model.Operations))
+	for _, operation := range model.Operations {
+		if _, ok := enabled[operation.Name]; ok || operation.Required {
+			operations = append(operations, operation)
+		}
+	}
+	return operations
 }
 
 // writeNoSupportedOperationCheck proves that a support value with no enabled

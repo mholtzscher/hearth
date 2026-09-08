@@ -11,10 +11,21 @@ func renderFacade(model entityTypeModel, modulePath string) ([]byte, error) {
 	var source strings.Builder
 	generatedHeader(&source)
 	fmt.Fprintf(&source, "package %s\n\n", model.Package)
+	// Stateless entity types carry no State observations, so the facade
+	// defines no ObservationInput or NewObservation. Time is only needed
+	// for the observation input timestamps.
 	if len(model.Operations) > 0 {
-		source.WriteString("import (\n\t\"encoding/json\"\n\t\"errors\"\n\t\"fmt\"\n\t\"sync\"\n\t\"time\"\n\n")
+		source.WriteString("import (\n\t\"encoding/json\"\n\t\"errors\"\n\t\"fmt\"\n\t\"sync\"\n")
+		if !model.Stateless {
+			source.WriteString("\t\"time\"\n")
+		}
+		source.WriteString("\n")
 	} else {
-		source.WriteString("import (\n\t\"fmt\"\n\t\"sync\"\n\t\"time\"\n\n")
+		source.WriteString("import (\n\t\"fmt\"\n\t\"sync\"\n")
+		if !model.Stateless {
+			source.WriteString("\t\"time\"\n")
+		}
+		source.WriteString("\n")
 	}
 	fmt.Fprintf(
 		&source,
@@ -62,24 +73,42 @@ func renderFacade(model entityTypeModel, modulePath string) ([]byte, error) {
 		}
 		source.WriteString("}\n\n")
 	}
-	source.WriteString(
-		"type ObservationInput struct {\n\tEntityID string\n\tSupport Support\n\tState State\n\tAdapterReceivedAt time.Time\n\tSourceUpdatedAt *time.Time\n}\n\n",
-	)
+	if model.Stateless {
+		source.WriteString(
+			"// Stateless entity types carry no State observations; the facade\n" +
+				"// intentionally defines no ObservationInput or NewObservation.\n\n",
+		)
+	} else {
+		source.WriteString(
+			"type ObservationInput struct {\n\tEntityID string\n\tSupport Support\n\tState State\n\tAdapterReceivedAt time.Time\n\tSourceUpdatedAt *time.Time\n}\n\n",
+		)
+	}
 	source.WriteString("var (\n\tcompileOnce sync.Once\n")
 	fmt.Fprintf(&source, "\tsharedCodecs *contract%s.Codecs\n", model.Package)
 	source.WriteString("\tcompileErr error\n)\n\n")
 	source.WriteString(
-		"func NewEntityDescriptor(metadata adapter.EntityMetadata, support Support) (adapter.EntityDescriptor, error) {\n\tcodecs, err := codecs()\n\tif err != nil { return adapter.EntityDescriptor{}, err }\n\treturn typed.NewTypedEntityDescriptor(metadata, ",
+		"func NewEntityDescriptor(metadata adapter.EntityMetadata, support Support) (adapter.EntityDescriptor, error) {\n\tcodecs, err := codecs()\n\tif err != nil { return adapter.EntityDescriptor{}, err }\n\tdescriptor, err := typed.NewTypedEntityDescriptor(metadata, ",
 	)
 	fmt.Fprintf(
 		&source,
-		"contract%s.TypeID, support, codecs.Support)\n}\n\n",
+		"contract%s.TypeID, support, codecs.Support)\n",
+		model.Package,
+	)
+	source.WriteString("\tif err != nil { return adapter.EntityDescriptor{}, err }\n")
+	fmt.Fprintf(
+		&source,
+		"\tif err := contract%s.ValidateSupport(support); err != nil { return adapter.EntityDescriptor{}, &adapter.ValidationError{Err: fmt.Errorf(\"invalid Entity support: %%w\", err)} }\n\treturn descriptor, nil\n}\n\n",
 		model.Package,
 	)
 
 	if len(model.Operations) > 0 {
 		source.WriteString(
-			"func NewCommandHandler(entityID string, support Support, handlers Handlers) (adapter.CommandHandler, error) {\n\tcodecs, err := codecs()\n\tif err != nil { return nil, err }\n\tif _, err := codecs.Support.Encode(support); err != nil { return nil, validationError(fmt.Errorf(\"invalid Entity support: %w\", err)) }\n\tvar routes []typed.Route\n",
+			"func NewCommandHandler(entityID string, support Support, handlers Handlers) (adapter.CommandHandler, error) {\n\tcodecs, err := codecs()\n\tif err != nil { return nil, err }\n\tif _, err := codecs.Support.Encode(support); err != nil { return nil, validationError(fmt.Errorf(\"invalid Entity support: %w\", err)) }\n",
+		)
+		fmt.Fprintf(
+			&source,
+			"\tif err := contract%s.ValidateSupport(support); err != nil { return nil, validationError(fmt.Errorf(\"invalid Entity support: %%w\", err)) }\n\tvar routes []typed.Route\n",
+			model.Package,
 		)
 		for _, operation := range model.Operations {
 			if operation.Required {
@@ -124,11 +153,13 @@ func renderFacade(model entityTypeModel, modulePath string) ([]byte, error) {
 		)
 	}
 
-	source.WriteString(
-		"func NewObservation(input ObservationInput) (adapter.Observation, error) {\n\tcodecs, err := codecs()\n\tif err != nil { return adapter.Observation{}, err }\n\treturn typed.NewTypedEntityObservation(typed.EntityObservationInput[State, Support]{EntityID: input.EntityID, Support: input.Support, State: input.State, AdapterReceivedAt: input.AdapterReceivedAt, SourceUpdatedAt: input.SourceUpdatedAt}, codecs.State, codecs.Support, ",
-	)
-	fmt.Fprintf(&source, "contract%s.ValidateState", model.Package)
-	source.WriteString(")\n}\n\n")
+	if !model.Stateless {
+		source.WriteString(
+			"func NewObservation(input ObservationInput) (adapter.Observation, error) {\n\tcodecs, err := codecs()\n\tif err != nil { return adapter.Observation{}, err }\n\treturn typed.NewTypedEntityObservation(typed.EntityObservationInput[State, Support]{EntityID: input.EntityID, Support: input.Support, State: input.State, AdapterReceivedAt: input.AdapterReceivedAt, SourceUpdatedAt: input.SourceUpdatedAt}, codecs.State, codecs.Support, ",
+		)
+		fmt.Fprintf(&source, "contract%s.ValidateState", model.Package)
+		source.WriteString(")\n}\n\n")
+	}
 	fmt.Fprintf(
 		&source,
 		"func codecs() (*contract%s.Codecs, error) {\n\tcompileOnce.Do(func() { sharedCodecs, compileErr = contract%s.Compile() })\n\tif compileErr != nil { return nil, fmt.Errorf(\"compile Entity-type schemas: %%w\", compileErr) }\n\treturn sharedCodecs, nil\n}\n\n",

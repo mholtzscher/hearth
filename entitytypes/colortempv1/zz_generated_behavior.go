@@ -17,6 +17,10 @@ func ValidateState(support Support, state State) error {
 	return nil
 }
 
+func ValidateSupport(support Support) error {
+	return nil
+}
+
 func EqualState(left, right State) bool { return left == right }
 
 const (

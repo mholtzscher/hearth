@@ -45,7 +45,14 @@ func NewEntityDescriptor(metadata adapter.EntityMetadata, support Support) (adap
 	if err != nil {
 		return adapter.EntityDescriptor{}, err
 	}
-	return typed.NewTypedEntityDescriptor(metadata, contractcolorxyv1.TypeID, support, codecs.Support)
+	descriptor, err := typed.NewTypedEntityDescriptor(metadata, contractcolorxyv1.TypeID, support, codecs.Support)
+	if err != nil {
+		return adapter.EntityDescriptor{}, err
+	}
+	if err := contractcolorxyv1.ValidateSupport(support); err != nil {
+		return adapter.EntityDescriptor{}, &adapter.ValidationError{Err: fmt.Errorf("invalid Entity support: %w", err)}
+	}
+	return descriptor, nil
 }
 
 func NewCommandHandler(entityID string, support Support, handlers Handlers) (adapter.CommandHandler, error) {
@@ -54,6 +61,9 @@ func NewCommandHandler(entityID string, support Support, handlers Handlers) (ada
 		return nil, err
 	}
 	if _, err := codecs.Support.Encode(support); err != nil {
+		return nil, validationError(fmt.Errorf("invalid Entity support: %w", err))
+	}
+	if err := contractcolorxyv1.ValidateSupport(support); err != nil {
 		return nil, validationError(fmt.Errorf("invalid Entity support: %w", err))
 	}
 	var routes []typed.Route

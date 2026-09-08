@@ -131,8 +131,8 @@ type CommandBody struct {
 }
 
 type CommandResultBody struct {
-	CommandID     string `json:"command_id"`
-	Status        string `json:"status"`
-	ObservationID string `json:"observation_id"`
-	Value         any    `json:"value"`
+	CommandID     string  `json:"command_id"`
+	Status        string  `json:"status"`                   // "satisfied" | "dispatched"
+	ObservationID *string `json:"observation_id,omitempty"` // present iff satisfied
+	Value         *any    `json:"value,omitempty"`          // present iff satisfied
 }

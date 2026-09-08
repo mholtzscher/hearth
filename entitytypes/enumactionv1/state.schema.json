@@ -1,0 +1,9 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:hearth:schema:entity-type:enumaction:v1:state",
+  "title": "Hearth enumaction/v1 State",
+  "description": "Stateless actions carry no state.",
+  "type": "object",
+  "additionalProperties": false,
+  "maxProperties": 0
+}

@@ -2,6 +2,8 @@ package devices
 
 import (
 	"encoding/json"
+	"errors"
+	"fmt"
 	"time"
 )
 
@@ -21,6 +23,13 @@ const (
 )
 
 type EntityTypeID string
+
+type OutcomeKind string
+
+const (
+	OutcomeObserved   OutcomeKind = "observed"
+	OutcomeDispatched OutcomeKind = "dispatched"
+)
 
 type OperationName string
 
@@ -137,6 +146,7 @@ const (
 	CommandStatusRequested         CommandStatus = "requested"
 	CommandStatusAccepted          CommandStatus = "accepted"
 	CommandStatusSatisfied         CommandStatus = "satisfied"
+	CommandStatusDispatched        CommandStatus = "dispatched"
 	CommandStatusRejected          CommandStatus = "rejected"
 	CommandStatusAdapterUnhealthy  CommandStatus = "adapter_unhealthy"
 	CommandStatusEntityUnavailable CommandStatus = "entity_unavailable"
@@ -197,6 +207,33 @@ type CommandCompletion struct {
 
 type CommandResult struct {
 	CommandID     CommandID
-	ObservationID ObservationID
-	Value         Value
+	Outcome       OutcomeKind
+	ObservationID *ObservationID // non-nil iff Outcome is observed
+	Value         *Value         // non-nil iff Outcome is observed (Value is json.RawMessage)
+}
+
+// NewCommandResult enforces the outcome invariant at both completion sites:
+// observed requires both pointers non-nil; dispatched requires both nil; any
+// other outcome value is rejected.
+func NewCommandResult(
+	commandID CommandID,
+	outcome OutcomeKind,
+	observationID *ObservationID,
+	value *Value,
+) (CommandResult, error) {
+	switch outcome {
+	case OutcomeObserved:
+		if observationID == nil || value == nil {
+			return CommandResult{}, errors.New("observed command result requires an observation ID and value")
+		}
+	case OutcomeDispatched:
+		if observationID != nil || value != nil {
+			return CommandResult{}, errors.New("dispatched command result carries no observation or value")
+		}
+	default:
+		return CommandResult{}, fmt.Errorf("invalid command result outcome %q", outcome)
+	}
+	return CommandResult{
+		CommandID: commandID, Outcome: outcome, ObservationID: observationID, Value: value,
+	}, nil
 }

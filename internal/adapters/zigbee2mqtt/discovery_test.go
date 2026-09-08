@@ -11,7 +11,8 @@ import (
 )
 
 // This test protects captured root-light identity and descriptor construction and fails on friendly-name identity,
-// hard-coded expose values, unsupported capability leakage, incorrect color-temperature bounds, or generated support.
+// hard-coded expose values, unsupported capability leakage, incorrect color-temperature bounds, generated support,
+// or a missing device-agnostic linkquality sensor.
 func TestDiscoverCapturedThirdRealityLight(t *testing.T) {
 	t.Parallel()
 	result, err := discoverInventory(readFixture(t, "bridge-devices-3rcb01057z.json"))
@@ -50,23 +51,30 @@ func TestDiscoverCapturedThirdRealityLight(t *testing.T) {
 			Key: "colormode", ExternalID: "0xa4c1380000000001/root/colormode", Name: "Color Mode",
 			Type: "hearth.colormode/v1", Support: json.RawMessage(`{"state":{},"operations":{}}`),
 		},
+		{
+			Key: "linkquality", ExternalID: "0xa4c1380000000001/root/linkquality", Name: "Link Quality",
+			Type:    "hearth.numericsensor/v1",
+			Support: json.RawMessage(`{"state":{"maximum":255,"minimum":0,"unit":"lqi"},"operations":{}}`),
+		},
 	}
 	if !reflect.DeepEqual(device.Registration.Entities, want) {
 		t.Fatalf("Entity descriptors = %#v, want %#v", device.Registration.Entities, want)
 	}
-	if len(device.Entities) != 4 || !reflect.DeepEqual(device.Entities[0].StateProperties, []string{"state"}) ||
+	if len(device.Entities) != 5 || !reflect.DeepEqual(device.Entities[0].StateProperties, []string{"state"}) ||
 		!reflect.DeepEqual(device.Entities[0].GetProperties, []string{"state"}) ||
 		!reflect.DeepEqual(device.Entities[1].StateProperties, []string{"brightness"}) ||
 		!reflect.DeepEqual(device.Entities[1].GetProperties, []string{"brightness"}) ||
 		!reflect.DeepEqual(device.Entities[2].StateProperties, []string{"color_temp", "color_mode"}) ||
 		!reflect.DeepEqual(device.Entities[2].GetProperties, []string{"color_temp"}) ||
-		!reflect.DeepEqual(device.Entities[3].StateProperties, []string{"color_mode"}) {
+		!reflect.DeepEqual(device.Entities[3].StateProperties, []string{"color_mode"}) ||
+		!reflect.DeepEqual(device.Entities[4].StateProperties, []string{"linkquality"}) ||
+		len(device.Entities[4].GetProperties) != 0 || device.Entities[4].TranslateCommand != nil {
 		t.Fatalf("Entity routes = %#v", device.Entities)
 	}
 }
 
 // This test protects optional-feature isolation at the JSON boundary and fails if malformed color-temperature bounds
-// cause an otherwise valid power and brightness Device to be rejected.
+// cause an otherwise valid power, brightness, and linkquality Device to be rejected.
 func TestDiscoverMalformedColorTempBoundsPreservesSiblings(t *testing.T) {
 	t.Parallel()
 	fixture := readFixture(t, "bridge-devices-3rcb01057z.json")
@@ -84,7 +92,10 @@ func TestDiscoverMalformedColorTempBoundsPreservesSiblings(t *testing.T) {
 		if len(result.Rejections) != 0 || len(result.Devices) != 1 {
 			t.Fatalf("discovery with value_min %s = %#v", invalid, result)
 		}
-		if got := entityKeys(result.Devices[0].Entities); !reflect.DeepEqual(got, []string{"power", "brightness"}) {
+		if got := entityKeys(result.Devices[0].Entities); !reflect.DeepEqual(
+			got,
+			[]string{"power", "brightness", "linkquality"},
+		) {
 			t.Fatalf("Entity keys with value_min %s = %v", invalid, got)
 		}
 	}
@@ -104,7 +115,7 @@ func TestDiscoverNullBrightnessBoundDoesNotCreateBrightness(t *testing.T) {
 	}
 	if got := entityKeys(result.Devices[0].Entities); !reflect.DeepEqual(
 		got,
-		[]string{"power", "colortemp", "colormode"},
+		[]string{"power", "colortemp", "colormode", "linkquality"},
 	) {
 		t.Fatalf("Entity keys = %v", got)
 	}

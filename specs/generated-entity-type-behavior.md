@@ -82,6 +82,7 @@ Brightness/v1 is the complete v1 example:
     "set": {
       "parameters_schema": "set-parameters.schema.json",
       "deadline_ms": 10000,
+      "outcome": "observed",
       "parameter_validation": [
         {
           "op": "lte",
@@ -121,7 +122,9 @@ type manifest struct {
     TypeID           string                       `json:"type"`
     StateSchema      string                       `json:"state_schema"`
     SupportSchema    string                       `json:"support_schema"`
+    Stateless        bool                         `json:"stateless,omitempty"`
     StateValidation  []rule                       `json:"state_validation,omitempty"`
+    SupportValidation []rule                      `json:"support_validation,omitempty"`
     Operations       map[string]operationManifest `json:"operations"`
     Examples         string                       `json:"examples"`
 }
@@ -129,6 +132,7 @@ type manifest struct {
 type operationManifest struct {
     ParametersSchema   string `json:"parameters_schema"`
     DeadlineMS         int64  `json:"deadline_ms"`
+    Outcome            OutcomeKind `json:"outcome"`
     ParameterValidation []rule `json:"parameter_validation,omitempty"`
     SatisfiedWhen      []rule `json:"satisfied_when"`
 }
@@ -147,19 +151,20 @@ type reference struct {
 }
 ```
 
-`operator` is exactly `eq`, `gte`, `lte`, `multiple_of`, `is_true`, `near`, or `circular_near`. `satisfied_when` is a nonempty array of conjunctive rules, matching the validation arrays. Manifest constants use optional pointers during parsing so absent and zero stay distinct.
+`operator` is exactly `eq`, `gte`, `lte`, `multiple_of`, `is_true`, `near`, `circular_near`, `in`, `in_if_present`, `eq_optional`, `gte_if_present`, or `lte_if_present`. `outcome` is required on every operation and is either `observed` or `dispatched`; `stateless` is an optional manifest flag defaulting to false. `satisfied_when` is a nonempty array of conjunctive rules for observed operations and an empty array for dispatched operations, which carry no outcome matcher. Manifest constants use optional pointers during parsing so absent and zero stay distinct.
 
 `referenceRoot` is context-dependent:
 
 | Context | Allowed roots |
 | --- | --- |
 | State validation | `state`, `support` |
+| Support validation | `support` |
 | Parameter validation | `parameters`, `support`, `operation_support` |
 | Outcome matching | `parameters`, `state` |
 
 Outcome matching deliberately cannot reference `support` or `operation_support`. This preserves active Command interpretation when re-registration changes current support.
 
-`path` is an RFC 6901 JSON Pointer relative to its root. An empty path selects the root value. V1 rules may select only required scalar fields; references through optional fields and references to objects or arrays are rejected. Optional operation presence is handled by generated support selection before operation validation.
+`path` is an RFC 6901 JSON Pointer relative to its root. An empty path selects the root value. The `_if_present` and `eq_optional` operators may select optional-leaf fields with required intermediate segments; all other V1 rules may select only required scalar fields, and references to objects or arrays are rejected. Optional operation presence is handled by generated support selection before operation validation.
 
 ### Type checking
 
@@ -171,9 +176,15 @@ Generation resolves every reference against the loaded schemas and assigns it a 
 - `is_true` requires a Boolean `left` only and accepts no `right` or constants.
 - `near` requires integer `left` and `right` plus an integer `tolerance >= 0`, and compiles to `abs(left-right) <= tolerance`.
 - `circular_near` requires integer `left` and `right` plus a positive integer `modulus` with `0 <= tolerance < modulus/2`, and compiles to the shortest circular distance `<= tolerance`.
+- `in` requires a string `left` and a nonempty unique string array `right`, and compiles to a membership loop.
+- `in_if_present` requires an optional string leaf `left` and a possibly empty unique string array `right`; it passes when the leaf is absent and otherwise requires membership.
+- `eq_optional` is true when both sides are absent, or both present and equal; false on one-sided absence or present-but-unequal.
+- `gte_if_present`/`lte_if_present` require an optional numeric leaf `left` and a fully required numeric `right`; they pass vacuously when the leaf is absent.
+- `support_validation` rules reference only the `support` root and compile to a generated `ValidateSupport` function invoked by `normalizeSupport` at registration and command resolution, so invalid support (for example decoded `minimum > maximum`) fails in core regardless of adapter.
+- `type: number` state and support scalars bind to Go `float64`. Integers through 2^53 are exact; validation and equality operate on decoded binary64 values, so overflow fails codec decode while underflow may round to zero.
 - Distance operators read only bounded nonnegative integer schemas, and circular operands stay below the modulus; the compiler carries these bounds into rule compilation. Generated distance code subtracts in an order that keeps operands nonnegative, so supported extremes cannot overflow.
 - Unknown operators, per-operator unsupported fields, missing operands or constants, fractional constants, and empty lists fail generation.
-- Unknown roots, invalid pointers, optional paths, incompatible operands, and unsupported schema constructs fail generation with the manifest path, operation, rule index, and offending reference.
+- Unknown roots, invalid pointers, optional paths outside the `_if_present`/`eq_optional` operators, incompatible operands, and unsupported schema constructs fail generation with the manifest path, operation, rule index, and offending reference.
 - Generated `multiple_of` code guards a zero divisor even when the support schema excludes zero.
 - State equality defaults to schema-structural typed equality. The generator emits `==` for comparable State types and `reflect.DeepEqual` otherwise. No equality DSL override is added until a concrete type requires one.
 
@@ -213,7 +224,7 @@ Rules in each validation array are conjunctive and evaluated in declaration orde
 }
 ```
 
-Every manifest requires at least one case and each case requires valid and invalid State examples. Every operation present in that case's support requires valid and invalid parameter examples plus satisfied and unsatisfied outcomes; unsupported optional operations are omitted from the case. Power/v1 and brightness/v1 migrate their handwritten per-type tests into these fixtures.
+Every manifest requires at least one case and each case requires valid and invalid State examples. Every operation present in that case's support requires valid and invalid parameter examples. Observed operations additionally require satisfied and unsatisfied outcomes; dispatched operations require an empty `outcomes` array because they define no outcome predicate. Unsupported optional operations are omitted from the case. Power/v1 and brightness/v1 migrate their handwritten per-type tests into these fixtures.
 
 The generator emits `zz_generated_conformance_test.go`; `go test` executes the authoritative codecs and generated semantic functions against the examples. The generator does not implement a second DSL interpreter merely to evaluate fixtures.
 
@@ -224,13 +235,14 @@ Each Entity-type package exposes generated functions and constants:
 ```go
 func ValidateState(Support, State) error
 func EqualState(State, State) bool
+func ValidateSupport(Support) error
 
 const SetDeadline time.Duration
 func ValidateSetParameters(Support, SetSupport, SetParameters) error
-func SetSatisfied(SetParameters, State) bool
+func SetSatisfied(SetParameters, State) bool // observed operations only
 ```
 
-Names are derived from operation names. These functions are the single semantic implementation used by both the core catalog and typed SDK facade. Generated `ObservationInput` includes typed `Support`; Observation construction validates that support and applies `ValidateState` before encoding. Generated SDK conformance tests exercise valid and support-incompatible State examples.
+Names are derived from operation names. Observed operations generate the satisfaction function used by the core catalog; dispatched operations generate no satisfaction function and install a nil matcher. Stateful typed SDK facades generate `ObservationInput` and `NewObservation`, validating typed `Support` and applying `ValidateState` before encoding. Stateless facades omit both observation artifacts because Core rejects observations for those types. Generated SDK conformance tests exercise the applicable command, descriptor, and observation surfaces.
 
 `zz_generated_codecs.go` continues to own document-local JSON Schema validation and normalization. Support-dependent State and parameter rules run after both participating documents have passed their own codecs.
 
@@ -240,13 +252,17 @@ Generation emits `internal/modules/devices/zz_generated_entitytypes.go`. It:
 
 - defines stable `EntityTypeID` constants for all manifests;
 - compiles each generated codec set;
-- calls `DefineOperation` with generated support selection, validation, deadline, and outcome functions;
-- calls `DefineEntityType` with generated State validation and equality;
+- calls `DefineOperation` with generated support selection, validation, deadline, outcome kind, and outcome functions (nil matcher for dispatched operations);
+- calls `DefineEntityType` with generated State validation, support validation, equality, and the stateless flag;
 - constructs `NewBuiltinTypeCatalog` from every manifest in sorted type-ID order.
 
 `internal/modules/devices/catalog.go` retains only the generic typed framework and erased `TypeCatalog` implementation. It does not import concrete Entity-type packages or contain per-type switches.
 
 Adding or removing a manifest updates the aggregate registry without a handwritten core edit.
+
+### Bulb attribute types
+
+The registry additionally holds four generic Zigbee2MQTT bulb types. `hearth.numericsensor/v1` is a read-only number sensor with empty operations and `gte`/`lte` state validation plus `support_validation` rejecting `minimum > maximum`. `hearth.enumsetting/v1` is an observable setting whose dynamic choices validate state and parameters through `in` with `eq` satisfaction. `hearth.numericsetting/v1` is an observable bounded number or named choice discriminated by `mode`, using the present-guarded operators for validation and `eq` plus `eq_optional` for satisfaction. `hearth.enumaction/v1` is a stateless action with an empty-object state schema, manifest `"stateless": true`, a `trigger` operation with `"outcome": "dispatched"` and empty `satisfied_when`, and `in` parameter validation against dynamic values. A dispatched command completes with terminal status `dispatched` carrying no observation ID or value; it never satisfies via observation, and stateless types reject all observations with `invalid_value` while reads report `state: null`.
 
 ## Generation interface
 
@@ -355,7 +371,7 @@ D2 and D3 may proceed in parallel after D1.
 - Normalize the case support.
 - Validate State examples through schema and generated support rules.
 - Validate parameter examples through schema and generated support rules.
-- Evaluate outcome examples without current support.
+- Evaluate observed-operation outcome examples without current support; assert that dispatched operations define no outcomes or satisfaction callback.
 
 ### Repository gates
 
@@ -378,7 +394,9 @@ devenv test
 - [x] Brightness State above `support.state.maximum` is rejected.
 - [x] Brightness `set.value` above the maximum or misaligned to the step is rejected.
 - [x] Power and brightness outcomes remain exact equality and do not read current support.
-- [x] `satisfied_when` is a nonempty conjunctive rule array in every manifest; the old single-object shape does not remain.
+- [x] `satisfied_when` is a nonempty conjunctive rule array in every observed operation and an empty array in every dispatched operation; the old single-object shape does not remain.
+- [x] Observed operations require positive and negative outcome examples; dispatched operations define no outcomes, satisfaction function, or conformance callback.
+- [x] Stateless SDK facades omit `ObservationInput` and `NewObservation`; stateful and read-only facades retain them.
 - [x] `is_true`, `near`, and `circular_near` outcome operators compile to direct Go with inclusive, overflow-safe distance comparisons.
 - [x] `NewBuiltinTypeCatalog` is generated from all manifests with no per-type core code.
 - [x] A temporary third type generates bindings, behavior, SDK facade, tests, and catalog assembly without handwritten per-type Go.
@@ -394,7 +412,7 @@ devenv test
 | Schema-to-Go and schema-to-DSL types diverge | High | Resolve both through one schema model and test through root generation, not separate implementations. |
 | Generated code spans packages and leaves stale files | Medium | One root transaction, deterministic ownership headers, and orphan detection. |
 | Generated diagnostics are difficult to understand | Medium | Include manifest path, operation, rule index, root, and pointer in every generation error. |
-| Semantic examples miss important cases | Medium | Require positive and negative admission/outcome cases; retain shared generic integration tests. |
+| Semantic examples miss important cases | Medium | Require positive and negative admission cases for every operation and positive/negative outcome cases for observed operations; dispatched operations prove outcome absence through conformance policy. |
 | A manifest edit changes historical meaning under the same type ID | High | Treat behavior as part of the versioned Entity-type contract; semantic changes require a new type version. |
 
 ## Reversal trigger

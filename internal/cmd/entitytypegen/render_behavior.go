@@ -11,7 +11,7 @@ func renderBehavior(model entityTypeModel) ([]byte, error) {
 	generatedHeader(&source)
 	fmt.Fprintf(&source, "package %s\n\n", model.Package)
 
-	hasValidation := len(model.StateValidation) > 0
+	hasValidation := len(model.StateValidation) > 0 || len(model.SupportValidation) > 0
 	for _, operation := range model.Operations {
 		hasValidation = hasValidation || len(operation.ParameterValidation) > 0
 	}
@@ -36,6 +36,9 @@ func renderBehavior(model entityTypeModel) ([]byte, error) {
 
 	source.WriteString("func ValidateState(support Support, state State) error {\n")
 	writeValidationRules(&source, model.StateValidation, "\t")
+	source.WriteString("\treturn nil\n}\n\n")
+	source.WriteString("func ValidateSupport(support Support) error {\n")
+	writeValidationRules(&source, model.SupportValidation, "\t")
 	source.WriteString("\treturn nil\n}\n\n")
 	if isComparable {
 		source.WriteString("func EqualState(left, right State) bool { return left == right }\n\n")
@@ -65,6 +68,12 @@ func renderBehavior(model entityTypeModel) ([]byte, error) {
 		)
 		writeValidationRules(&source, operation.ParameterValidation, "\t")
 		source.WriteString("\treturn nil\n}\n\n")
+		// Dispatched operations declare no outcome predicate, so no
+		// <Operation>Satisfied matcher is generated. The catalog
+		// installs a nil matcher and Satisfies rejects dispatched calls.
+		if operation.Outcome == outcomeDispatched {
+			continue
+		}
 		fmt.Fprintf(
 			&source,
 			"func %sSatisfied(parameters %sParameters, state State) bool {\n",

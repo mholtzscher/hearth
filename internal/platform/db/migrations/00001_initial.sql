@@ -103,7 +103,7 @@ CREATE TABLE commands (
     correlation_id         TEXT NOT NULL CHECK (substr(correlation_id, 1, 4) = 'cor_'),
     status                 TEXT NOT NULL CHECK (
         status IN (
-            'requested', 'accepted', 'satisfied', 'rejected',
+            'requested', 'accepted', 'satisfied', 'dispatched', 'rejected',
             'adapter_unhealthy', 'entity_unavailable', 'outcome_timeout',
             'entity_disabled', 'internal_failure', 'interrupted'
         )
@@ -130,14 +130,18 @@ CREATE TABLE commands (
         OR (status <> 'satisfied' AND outcome_observation_id IS NULL)
     ),
     CHECK (
-        (status IN ('requested', 'accepted', 'satisfied') AND failure_code IS NULL)
-        OR (status = 'rejected' AND failure_code = 'upstream_rejected')
-        OR (status = 'adapter_unhealthy' AND failure_code = 'adapter_unhealthy')
-        OR (status = 'entity_unavailable' AND failure_code = 'entity_unavailable')
-        OR (status = 'outcome_timeout' AND failure_code = 'outcome_timeout')
-        OR (status = 'entity_disabled' AND failure_code = 'entity_disabled')
-        OR (status = 'internal_failure' AND failure_code = 'internal_error')
-        OR (status = 'interrupted' AND failure_code = 'core_restarted')
+        (status IN ('requested', 'accepted', 'satisfied', 'dispatched') AND failure_code IS NULL)
+        OR (
+            failure_code IS NOT NULL AND (
+                (status = 'rejected' AND failure_code = 'upstream_rejected')
+                OR (status = 'adapter_unhealthy' AND failure_code = 'adapter_unhealthy')
+                OR (status = 'entity_unavailable' AND failure_code = 'entity_unavailable')
+                OR (status = 'outcome_timeout' AND failure_code = 'outcome_timeout')
+                OR (status = 'entity_disabled' AND failure_code = 'entity_disabled')
+                OR (status = 'internal_failure' AND failure_code = 'internal_error')
+                OR (status = 'interrupted' AND failure_code = 'core_restarted')
+            )
+        )
     )
 );
 

@@ -30,8 +30,11 @@ func TestExecuteCommandReturnsSatisfiedResultAndRegistersOpenAPI(t *testing.T) {
 		requestedEntityID = entityID
 		requestedOperation = operation
 		requestedParameters = append(devices.CommandParameters(nil), parameters...)
+		observationID := apiObservationID
+		value := devices.Value(`true`)
 		return devices.CommandResult{
-			CommandID: apiCommandID, ObservationID: apiObservationID, Value: devices.Value(`true`),
+			CommandID: apiCommandID, Outcome: devices.OutcomeObserved,
+			ObservationID: &observationID, Value: &value,
 		}, nil
 	}}
 	router, openapi := testAPI(t, stub)
@@ -56,8 +59,8 @@ func TestExecuteCommandReturnsSatisfiedResultAndRegistersOpenAPI(t *testing.T) {
 		t.Fatal(err)
 	}
 	if body.CommandID != string(apiCommandID) || body.Status != "satisfied" ||
-		body.ObservationID != string(apiObservationID) ||
-		body.Value != true {
+		body.ObservationID == nil || *body.ObservationID != string(apiObservationID) ||
+		body.Value == nil || *body.Value != true {
 		t.Fatalf("body = %#v", body)
 	}
 	operation := openapi.OpenAPI().Paths["/v1/entities/{entity_id}/commands"].Post
@@ -67,6 +70,57 @@ func TestExecuteCommandReturnsSatisfiedResultAndRegistersOpenAPI(t *testing.T) {
 	}
 	if _, ok := operation.Responses["422"]; !ok {
 		t.Fatalf("POST operation is missing standard 422 response: %#v", operation.Responses)
+	}
+}
+
+func TestExecuteCommandReturnsDispatchedResultWithoutEvidenceFields(t *testing.T) {
+	t.Parallel()
+	stub := &stubDevices{executeCommand: func(
+		context.Context,
+		devices.EntityID,
+		devices.OperationName,
+		devices.CommandParameters,
+	) (devices.CommandResult, error) {
+		result, err := devices.NewCommandResult(apiCommandID, devices.OutcomeDispatched, nil, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return result, nil
+	}}
+	router, _ := testAPI(t, stub)
+
+	request := httptest.NewRequest(
+		http.MethodPost,
+		"/v1/entities/"+string(apiEntityID)+"/commands",
+		bytes.NewBufferString(`{"operation":"trigger","parameters":{"name":"blink"}}`),
+	)
+	request.Header.Set("Content-Type", "application/json")
+	response := httptest.NewRecorder()
+	router.ServeHTTP(response, request)
+	if response.Code != http.StatusOK {
+		t.Fatalf("status = %d, body = %s", response.Code, response.Body.String())
+	}
+	var raw map[string]any
+	if err := json.Unmarshal(response.Body.Bytes(), &raw); err != nil {
+		t.Fatal(err)
+	}
+	if raw["command_id"] != string(apiCommandID) || raw["status"] != "dispatched" {
+		t.Fatalf("body = %s", response.Body.String())
+	}
+	// Dispatched results omit both evidence fields instead of rendering null.
+	if _, present := raw["observation_id"]; present {
+		t.Fatalf("dispatched body carries observation_id: %s", response.Body.String())
+	}
+	if _, present := raw["value"]; present {
+		t.Fatalf("dispatched body carries value: %s", response.Body.String())
+	}
+	var body CommandResultBody
+	if err := json.Unmarshal(response.Body.Bytes(), &body); err != nil {
+		t.Fatal(err)
+	}
+	if body.CommandID != string(apiCommandID) || body.Status != "dispatched" ||
+		body.ObservationID != nil || body.Value != nil {
+		t.Fatalf("body = %#v", body)
 	}
 }
 
