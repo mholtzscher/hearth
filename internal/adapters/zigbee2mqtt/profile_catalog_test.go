@@ -219,13 +219,13 @@ func requireProfileCatalogError(
 }
 
 // This test protects embedded catalog startup validity and fails if the loader
-// rejects the repository-owned sensor and linkquality documents or returns a
-// catalog that is indistinguishable from the invalid zero value.
+// rejects the repository-owned relay, sensor, and linkquality documents or
+// returns a catalog that is indistinguishable from the invalid zero value.
 func TestLoadEmbeddedProfileCatalogCompilesSensorProfiles(t *testing.T) {
 	t.Parallel()
 	catalog, err := LoadEmbeddedProfileCatalog()
 	if err != nil {
-		t.Fatalf("expected embedded sensor catalog to compile, got %v", err)
+		t.Fatalf("expected embedded relay and sensor catalog to compile, got %v", err)
 	}
 	if catalog == nil {
 		t.Fatal("expected non-nil catalog for the embedded set")
@@ -233,13 +233,14 @@ func TestLoadEmbeddedProfileCatalogCompilesSensorProfiles(t *testing.T) {
 	if !catalog.loaded {
 		t.Fatal("expected loader-produced catalog to be marked loaded")
 	}
-	if len(catalog.profiles) != 2 || len(catalog.overrides) != 0 {
-		t.Fatalf("expected 2 profiles and 0 overrides, got %d and %d", len(catalog.profiles), len(catalog.overrides))
+	if len(catalog.profiles) != 3 || len(catalog.overrides) != 0 {
+		t.Fatalf("expected 3 profiles and 0 overrides, got %d and %d", len(catalog.profiles), len(catalog.overrides))
 	}
 	for index, want := range []struct {
 		id    string
 		order int
 	}{
+		{"relay", 20},
 		{"ambient-sensors", 30},
 		{"linkquality", 40},
 	} {

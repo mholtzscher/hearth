@@ -1,0 +1,281 @@
+{
+  "$schema": "./profile.schema.json",
+  "version": 1,
+  "kind": "planner-profile",
+  "id": "relay",
+  "order": 20,
+  "contribution": {
+    "device_kind": "relay",
+    "role": "primary"
+  },
+  "candidate_groups": [
+    {
+      "id": "relay.roots",
+      "root": {
+        "type": "switch"
+      },
+      "gate_rule": "relay.power",
+      "entities": [
+        {
+          "id": "relay.power",
+          "source": {
+            "kind": "feature",
+            "type": "binary",
+            "name": "state"
+          },
+          "identity": {
+            "key": "power",
+            "name": "Power"
+          },
+          "strategy": {
+            "name": "binary-power",
+            "parameters": {}
+          }
+        }
+      ]
+    }
+  ],
+  "device_entities": [
+    {
+      "id": "relay.power-on-behavior",
+      "expose": {
+        "type": "enum",
+        "name": "power_on_behavior"
+      },
+      "requires_group_survivor": "relay.roots",
+      "identity": {
+        "key": "poweronbehavior",
+        "name": "Power-On Behavior"
+      },
+      "strategy": {
+        "name": "enum-setting",
+        "parameters": {}
+      }
+    },
+    {
+      "id": "relay.ac-frequency",
+      "expose": {
+        "type": "numeric",
+        "name": "ac_frequency"
+      },
+      "requires_group_survivor": "relay.roots",
+      "identity": {
+        "key": "acfrequency",
+        "name": "AC Frequency"
+      },
+      "strategy": {
+        "name": "numeric-sensor",
+        "parameters": {
+          "accepted_units": ["Hz"],
+          "unit": "Hz",
+          "number_format": "float",
+          "bounds": {
+            "mode": "upstream-or-fallback",
+            "minimum": 0,
+            "maximum": 1000
+          }
+        }
+      }
+    },
+    {
+      "id": "relay.electrical-power",
+      "expose": {
+        "type": "numeric",
+        "name": "power"
+      },
+      "requires_group_survivor": "relay.roots",
+      "identity": {
+        "key": "electricalpower",
+        "name": "Electrical Power"
+      },
+      "strategy": {
+        "name": "numeric-sensor",
+        "parameters": {
+          "accepted_units": ["W"],
+          "unit": "W",
+          "number_format": "float",
+          "bounds": {
+            "mode": "upstream-or-fallback",
+            "minimum": 0,
+            "maximum": 1000000000
+          }
+        }
+      }
+    },
+    {
+      "id": "relay.power-factor",
+      "expose": {
+        "type": "numeric",
+        "name": "power_factor"
+      },
+      "requires_group_survivor": "relay.roots",
+      "identity": {
+        "key": "powerfactor",
+        "name": "Power Factor"
+      },
+      "strategy": {
+        "name": "numeric-sensor",
+        "parameters": {
+          "accepted_units": [""],
+          "unit": "ratio",
+          "number_format": "float",
+          "bounds": {
+            "mode": "upstream-or-fallback",
+            "minimum": 0,
+            "maximum": 1
+          }
+        }
+      }
+    },
+    {
+      "id": "relay.energy",
+      "expose": {
+        "type": "numeric",
+        "name": "energy"
+      },
+      "requires_group_survivor": "relay.roots",
+      "identity": {
+        "key": "energy",
+        "name": "Energy"
+      },
+      "strategy": {
+        "name": "numeric-sensor",
+        "parameters": {
+          "accepted_units": ["kWh"],
+          "unit": "kWh",
+          "number_format": "float",
+          "bounds": {
+            "mode": "upstream-or-fallback",
+            "minimum": 0,
+            "maximum": 1000000000000000
+          }
+        }
+      }
+    },
+    {
+      "id": "relay.current",
+      "expose": {
+        "type": "numeric",
+        "name": "current"
+      },
+      "requires_group_survivor": "relay.roots",
+      "identity": {
+        "key": "current",
+        "name": "Current"
+      },
+      "strategy": {
+        "name": "numeric-sensor",
+        "parameters": {
+          "accepted_units": ["A"],
+          "unit": "A",
+          "number_format": "float",
+          "bounds": {
+            "mode": "upstream-or-fallback",
+            "minimum": 0,
+            "maximum": 1000000
+          }
+        }
+      }
+    },
+    {
+      "id": "relay.voltage",
+      "expose": {
+        "type": "numeric",
+        "name": "voltage"
+      },
+      "requires_group_survivor": "relay.roots",
+      "identity": {
+        "key": "voltage",
+        "name": "Voltage"
+      },
+      "strategy": {
+        "name": "numeric-sensor",
+        "parameters": {
+          "accepted_units": ["V"],
+          "unit": "V",
+          "number_format": "float",
+          "bounds": {
+            "mode": "upstream-or-fallback",
+            "minimum": 0,
+            "maximum": 1000000
+          }
+        }
+      }
+    },
+    {
+      "id": "relay.led-brightness",
+      "expose": {
+        "type": "numeric",
+        "name": "led_brightness"
+      },
+      "requires_group_survivor": "relay.roots",
+      "identity": {
+        "key": "ledbrightness",
+        "name": "LED Brightness"
+      },
+      "strategy": {
+        "name": "numeric-setting",
+        "parameters": {
+          "accepted_units": ["%"],
+          "unit": "%"
+        }
+      }
+    },
+    {
+      "id": "relay.countdown-to-turn-off",
+      "expose": {
+        "type": "numeric",
+        "name": "countdown_to_turn_off"
+      },
+      "requires_group_survivor": "relay.roots",
+      "identity": {
+        "key": "countdowntoturnoff",
+        "name": "Countdown To Turn Off"
+      },
+      "strategy": {
+        "name": "numeric-setting",
+        "parameters": {
+          "accepted_units": ["s"],
+          "unit": "s"
+        }
+      }
+    },
+    {
+      "id": "relay.countdown-to-turn-on",
+      "expose": {
+        "type": "numeric",
+        "name": "countdown_to_turn_on"
+      },
+      "requires_group_survivor": "relay.roots",
+      "identity": {
+        "key": "countdowntoturnon",
+        "name": "Countdown To Turn On"
+      },
+      "strategy": {
+        "name": "numeric-setting",
+        "parameters": {
+          "accepted_units": ["s"],
+          "unit": "s"
+        }
+      }
+    },
+    {
+      "id": "relay.reset-total-energy",
+      "expose": {
+        "type": "enum",
+        "name": "reset_total_energy"
+      },
+      "requires_group_survivor": "relay.roots",
+      "identity": {
+        "key": "resettotalenergy",
+        "name": "Reset Total Energy"
+      },
+      "strategy": {
+        "name": "enum-action",
+        "parameters": {
+          "access": "includes-set"
+        }
+      }
+    }
+  ]
+}
