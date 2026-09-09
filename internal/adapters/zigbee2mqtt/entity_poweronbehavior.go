@@ -15,21 +15,21 @@ import (
 
 const powerOnBehaviorExposeName = "power_on_behavior"
 
-// powerOnBehaviorCodecs shares immutable schemas across power-on behavior plans.
+// enumSettingCodecs shares immutable schemas across enum-setting plans.
 //
 //nolint:gochecknoglobals // Lazy, concurrency-safe cache of authoritative codecs.
-var powerOnBehaviorCodecs = sync.OnceValues(contractenumsettingv1.Compile)
+var enumSettingCodecs = sync.OnceValues(contractenumsettingv1.Compile)
 
-// newPowerOnBehaviorPlan builds the complete power-on behavior setting
-// translation for one State property. Choices come from the expose values
-// and are never hard-coded; validation and satisfaction reuse the generated
-// enumsetting behavior.
-func newPowerOnBehaviorPlan(
+// newEnumSettingPlan builds the complete observable enum-setting translation
+// for one State property. Choices come from the expose values and are never
+// hard-coded; validation and satisfaction reuse the generated enumsetting
+// behavior. Power-on behavior on lights and relays shares this constructor.
+func newEnumSettingPlan(
 	metadata adapter.EntityMetadata,
 	property string,
 	choices []string,
 ) (entityPlan, error) {
-	support := powerOnBehaviorSupport(choices)
+	support := enumSettingSupport(choices)
 	descriptor, descriptorErr := sdkenumsettingv1.NewEntityDescriptor(metadata, support)
 	if descriptorErr != nil {
 		return entityPlan{}, descriptorErr
@@ -47,7 +47,7 @@ func newPowerOnBehaviorPlan(
 			if !present {
 				return stateReport{}, false, nil
 			}
-			state, err := decodePowerOnBehaviorState(raw)
+			state, err := decodeEnumSettingState(raw)
 			if err != nil {
 				return stateReport{}, false, err
 			}
@@ -87,7 +87,7 @@ func newPowerOnBehaviorPlan(
 			}
 			value, err := json.Marshal(parameters.Value)
 			if err != nil {
-				return plannedCommand{}, fmt.Errorf("encode power-on behavior: %w", err)
+				return plannedCommand{}, fmt.Errorf("encode enum setting: %w", err)
 			}
 			return plannedCommand{
 				SetValues:     map[string]json.RawMessage{property: value},
@@ -105,18 +105,18 @@ func newPowerOnBehaviorPlan(
 	}, nil
 }
 
-func powerOnBehaviorSupport(choices []string) contractenumsettingv1.Support {
+func enumSettingSupport(choices []string) contractenumsettingv1.Support {
 	return contractenumsettingv1.Support{
 		State:      contractenumsettingv1.StateSupport{Choices: choices},
 		Operations: contractenumsettingv1.OperationSupport{Set: contractenumsettingv1.SetSupport{}},
 	}
 }
 
-// decodePowerOnBehaviorState decodes one wire reading through the contract
+// decodeEnumSettingState decodes one wire reading through the contract
 // State codec, which owns JSON string shape. Choice membership is owned by
 // NewObservation against the discovered support choices.
-func decodePowerOnBehaviorState(payload json.RawMessage) (contractenumsettingv1.State, error) {
-	codecs, err := powerOnBehaviorCodecs()
+func decodeEnumSettingState(payload json.RawMessage) (contractenumsettingv1.State, error) {
+	codecs, err := enumSettingCodecs()
 	if err != nil {
 		return "", err
 	}
@@ -125,4 +125,40 @@ func decodePowerOnBehaviorState(payload json.RawMessage) (contractenumsettingv1.
 		return "", err
 	}
 	return state, nil
+}
+
+// planPowerOnBehavior discovers the optional device-root power-on behavior
+// setting once per device. It requires full publish/set/get access; the
+// constructor validates the expose values against the shared choice bounds
+// and omits the Entity on error. Light and relay families share this
+// helper; each caller gates it on its own surviving power family.
+func planPowerOnBehavior(input devicePlanningInput) *entityPlan {
+	root, ok := input.Exposes.UniqueRoot(upstreamExposeEnum, powerOnBehaviorExposeName)
+	if !ok || !root.resolved {
+		return nil
+	}
+	expose := root.expose
+	if expose.Property == "" || !exposeCanPublish(expose) || !exposeCanSet(expose) ||
+		!exposeCanGet(expose) || !input.Exposes.PropertyUnique(expose.Property) {
+		return nil
+	}
+	key, name := scopedIdentity(
+		"poweronbehavior",
+		"Power-On Behavior",
+		expose.Endpoint,
+		root.endpoint,
+		root.scoped,
+	)
+	if !validDescriptorName(name) {
+		return nil
+	}
+	plan, err := newEnumSettingPlan(adapter.EntityMetadata{
+		Key:        key,
+		ExternalID: input.IEEE + "/" + entityLocation(root) + "/poweronbehavior",
+		Name:       name,
+	}, expose.Property, expose.Values)
+	if err != nil {
+		return nil
+	}
+	return &plan
 }

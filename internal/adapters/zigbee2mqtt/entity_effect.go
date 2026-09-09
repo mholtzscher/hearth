@@ -13,17 +13,20 @@ import (
 
 const effectExposeName = "effect"
 
-// newEffectPlan builds the complete stateless effect action translation for
-// one set-only property. The plan claims no State properties, runs no
+const resetTotalEnergyExposeName = "reset_total_energy"
+
+// newEnumActionPlan builds the complete stateless enum-action translation
+// for one set-only property. The plan claims no State properties, runs no
 // decoder, requests no refresh, and translates trigger Commands to
 // dispatched plans: after /set PUBACK and acceptance the runtime releases
-// the FIFO slot with no /get, no matcher, and no observation.
-func newEffectPlan(
+// the FIFO slot with no /get, no matcher, and no observation. Light effects
+// and the smart-plug reset action share this constructor.
+func newEnumActionPlan(
 	metadata adapter.EntityMetadata,
 	property string,
 	values []string,
 ) (entityPlan, error) {
-	support := effectSupport(values)
+	support := enumActionSupport(values)
 	descriptor, descriptorErr := sdkenumactionv1.NewEntityDescriptor(metadata, support)
 	if descriptorErr != nil {
 		return entityPlan{}, descriptorErr
@@ -31,11 +34,11 @@ func newEffectPlan(
 	return entityPlan{
 		Descriptor:       descriptor,
 		StatePolicy:      entityStateless,
-		TranslateCommand: effectTranslator(property, support),
+		TranslateCommand: enumActionTranslator(property, support),
 	}, nil
 }
 
-func effectSupport(values []string) sdkenumactionv1.Support {
+func enumActionSupport(values []string) sdkenumactionv1.Support {
 	return sdkenumactionv1.Support{
 		State: sdkenumactionv1.StateSupport{},
 		Operations: sdkenumactionv1.OperationSupport{
@@ -44,7 +47,7 @@ func effectSupport(values []string) sdkenumactionv1.Support {
 	}
 }
 
-func effectTranslator(
+func enumActionTranslator(
 	property string,
 	support sdkenumactionv1.Support,
 ) commandTranslator {
@@ -77,7 +80,7 @@ func effectTranslator(
 		}
 		value, err := json.Marshal(parameters.Name)
 		if err != nil {
-			return plannedCommand{}, fmt.Errorf("encode effect: %w", err)
+			return plannedCommand{}, fmt.Errorf("encode enum action: %w", err)
 		}
 		return plannedCommand{
 			SetValues: map[string]json.RawMessage{property: value},
@@ -85,4 +88,76 @@ func effectTranslator(
 			Outcome:   plannedDispatched,
 		}, nil
 	}
+}
+
+// planEffect discovers the optional device-root set-only effect action once
+// per device. Access must be exactly set-only with a device-unique
+// property; the constructor validates the expose values against the shared
+// choice bounds and omits the Entity on error.
+func planEffect(input devicePlanningInput) *entityPlan {
+	root, ok := input.Exposes.UniqueRoot(upstreamExposeEnum, effectExposeName)
+	if !ok || !root.resolved {
+		return nil
+	}
+	expose := root.expose
+	if expose.Property == "" || expose.Access != exposeSetAccessBit ||
+		!input.Exposes.PropertyUnique(expose.Property) {
+		return nil
+	}
+	key, name := scopedIdentity(
+		"effect",
+		"Effect",
+		expose.Endpoint,
+		root.endpoint,
+		root.scoped,
+	)
+	if !validDescriptorName(name) {
+		return nil
+	}
+	plan, err := newEnumActionPlan(adapter.EntityMetadata{
+		Key:        key,
+		ExternalID: input.IEEE + "/" + entityLocation(root) + "/effect",
+		Name:       name,
+	}, expose.Property, expose.Values)
+	if err != nil {
+		return nil
+	}
+	return &plan
+}
+
+// planResetTotalEnergy discovers the optional device-root reset action once
+// per device. Unlike the light effect it accepts any access granting set
+// (the Third Reality plug advertises access 7): only set access, a unique
+// nonempty property, and valid discovered values are required. The shared
+// stateless constructor validates values; the plan publishes one set and
+// completes as dispatched with no get, matcher, or observation.
+func planResetTotalEnergy(input devicePlanningInput) *entityPlan {
+	root, ok := input.Exposes.UniqueRoot(upstreamExposeEnum, resetTotalEnergyExposeName)
+	if !ok || !root.resolved {
+		return nil
+	}
+	expose := root.expose
+	if expose.Property == "" || !exposeCanSet(expose) ||
+		!input.Exposes.PropertyUnique(expose.Property) {
+		return nil
+	}
+	key, name := scopedIdentity(
+		"resettotalenergy",
+		"Reset Total Energy",
+		expose.Endpoint,
+		root.endpoint,
+		root.scoped,
+	)
+	if !validDescriptorName(name) {
+		return nil
+	}
+	plan, err := newEnumActionPlan(adapter.EntityMetadata{
+		Key:        key,
+		ExternalID: input.IEEE + "/" + entityLocation(root) + "/resettotalenergy",
+		Name:       name,
+	}, expose.Property, expose.Values)
+	if err != nil {
+		return nil
+	}
+	return &plan
 }

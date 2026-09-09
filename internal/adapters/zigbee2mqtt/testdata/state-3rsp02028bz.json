@@ -1,0 +1,13 @@
+{
+  "ac_frequency": 60,
+  "countdown_to_turn_off": 0,
+  "countdown_to_turn_on": 0,
+  "current": 0,
+  "energy": 0.01,
+  "led_brightness": 100,
+  "linkquality": 42,
+  "power": 0,
+  "power_factor": 0,
+  "state": "ON",
+  "voltage": 119.5
+}
