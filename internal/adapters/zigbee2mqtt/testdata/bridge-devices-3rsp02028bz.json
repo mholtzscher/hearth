@@ -1,0 +1,127 @@
+[
+  {
+    "ieee_address": "0x00124b0024abcd03",
+    "type": "Router",
+    "supported": true,
+    "disabled": false,
+    "friendly_name": "fixture-plug-3rsp",
+    "description": "Sanitized Fixture Smart Plug",
+    "interview_state": "SUCCESSFUL",
+    "endpoints": {
+      "1": {}
+    },
+    "definition": {
+      "model": "3RSP02028BZ",
+      "vendor": "Third Reality",
+      "description": "Zigbee smart plug",
+      "exposes": [
+        {
+          "type": "switch",
+          "features": [
+            {
+              "type": "binary",
+              "name": "state",
+              "property": "state",
+              "access": 7,
+              "value_on": "ON",
+              "value_off": "OFF",
+              "value_toggle": "TOGGLE"
+            }
+          ]
+        },
+        {
+          "type": "enum",
+          "name": "power_on_behavior",
+          "property": "power_on_behavior",
+          "access": 7,
+          "values": ["off", "previous", "on"]
+        },
+        {
+          "type": "numeric",
+          "name": "ac_frequency",
+          "property": "ac_frequency",
+          "access": 1,
+          "unit": "Hz"
+        },
+        {
+          "type": "numeric",
+          "name": "power",
+          "property": "power",
+          "access": 1,
+          "unit": "W"
+        },
+        {
+          "type": "numeric",
+          "name": "power_factor",
+          "property": "power_factor",
+          "access": 1
+        },
+        {
+          "type": "numeric",
+          "name": "energy",
+          "property": "energy",
+          "access": 1,
+          "unit": "kWh"
+        },
+        {
+          "type": "numeric",
+          "name": "current",
+          "property": "current",
+          "access": 1,
+          "unit": "A"
+        },
+        {
+          "type": "numeric",
+          "name": "voltage",
+          "property": "voltage",
+          "access": 1,
+          "unit": "V"
+        },
+        {
+          "type": "numeric",
+          "name": "led_brightness",
+          "property": "led_brightness",
+          "access": 7,
+          "value_min": 0,
+          "value_max": 100,
+          "unit": "%"
+        },
+        {
+          "type": "numeric",
+          "name": "countdown_to_turn_off",
+          "property": "countdown_to_turn_off",
+          "access": 7,
+          "value_min": 0,
+          "value_max": 65535,
+          "unit": "s"
+        },
+        {
+          "type": "numeric",
+          "name": "countdown_to_turn_on",
+          "property": "countdown_to_turn_on",
+          "access": 7,
+          "value_min": 0,
+          "value_max": 65535,
+          "unit": "s"
+        },
+        {
+          "type": "enum",
+          "name": "reset_total_energy",
+          "property": "reset_total_energy",
+          "access": 7,
+          "values": ["Reset"]
+        },
+        {
+          "type": "numeric",
+          "name": "linkquality",
+          "property": "linkquality",
+          "access": 1,
+          "value_min": 0,
+          "value_max": 255,
+          "unit": "lqi"
+        }
+      ]
+    },
+    "power_source": "Mains (single phase)"
+  }
+]

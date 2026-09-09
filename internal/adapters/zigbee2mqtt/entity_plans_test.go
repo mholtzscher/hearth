@@ -206,7 +206,7 @@ func TestValidateDispatchedPlannedCommand(t *testing.T) {
 // ordinary stateful plan without them is accepted.
 func TestValidateStatelessEntityPlan(t *testing.T) {
 	t.Parallel()
-	plan, err := newEffectPlan(
+	plan, err := newEnumActionPlan(
 		adapter.EntityMetadata{Key: "effect", ExternalID: "0x1/root/effect", Name: "Effect"},
 		"effect",
 		[]string{"blink", "breathe"},
