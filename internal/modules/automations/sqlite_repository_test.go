@@ -348,10 +348,11 @@ func TestAutomationOrderedTransitionsAndFailureRollback(t *testing.T) {
 	}
 	code := AutomationFailureInvalidCommand
 	completion := AutomationStepCompletion{
-		RunID:       run.ID,
-		Index:       0,
-		Status:      AutomationStepStatusFailed,
-		FailureCode: &code,
+		RunID:              run.ID,
+		Index:              0,
+		Status:             AutomationStepStatusFailed,
+		FailureCode:        &code,
+		PrecreationFailure: true,
 	}
 	if err = repo.CompleteAutomationStep(t.Context(), completion); err == nil {
 		t.Fatal("expected terminal persistence failure")
@@ -523,10 +524,11 @@ func TestAutomationRecoveryOwnershipAndPrecreationExclusions(t *testing.T) {
 				if err := repo.CompleteAutomationStep(
 					t.Context(),
 					AutomationStepCompletion{
-						RunID:       run.ID,
-						Index:       0,
-						Status:      AutomationStepStatusFailed,
-						FailureCode: test.failure,
+						RunID:              run.ID,
+						Index:              0,
+						Status:             AutomationStepStatusFailed,
+						FailureCode:        test.failure,
+						PrecreationFailure: true,
 					},
 				); err != nil {
 					t.Fatal(err)
@@ -830,5 +832,148 @@ func TestAutomationAdmissionCommitRollback(t *testing.T) {
 	)
 	if err != nil || admission.Reused {
 		t.Fatalf("failed commit retained key or claim: %+v %v", admission, err)
+	}
+}
+
+// insertAutomationTerminalFailureEvidence stores a terminal failed command with an
+// explicit failure code, unlike insertAutomationCommandEvidence which only covers
+// successful or pending statuses.
+func insertAutomationTerminalFailureEvidence(
+	t *testing.T,
+	database *sql.DB,
+	start AutomationStepStart,
+	correlation devices.CorrelationID,
+	status, failureCode string,
+) {
+	t.Helper()
+	ctx := t.Context()
+	timestamp := automationTime(time.Date(2026, time.June, 1, 19, 0, 0, 0, time.UTC))
+	for _, statement := range []string{
+		`INSERT OR IGNORE INTO devices(id,kind,name,created_at,updated_at) VALUES ('dev_01900000-0000-7000-8000-000000000001','light','Light','` + timestamp + `','` + timestamp + `')`,
+		`INSERT OR IGNORE INTO entities(id,device_id,name,type_id,support_json,created_at,updated_at) VALUES ('ent_01900000-0000-7000-8000-000000000001','dev_01900000-0000-7000-8000-000000000001','Power','hearth.power/v1','{}','` + timestamp + `','` + timestamp + `')`,
+	} {
+		if _, err := database.ExecContext(ctx, statement); err != nil {
+			t.Fatal(err)
+		}
+	}
+	_, err := database.ExecContext(
+		ctx,
+		`INSERT INTO commands(id,entity_id,adapter_id,operation,parameters_json,correlation_id,status,requested_at,deadline_at,completed_at,failure_code) VALUES (?,'ent_01900000-0000-7000-8000-000000000001','test','set','{}',?,?,?,?,?,?)`,
+		string(start.CommandID),
+		string(correlation),
+		status,
+		timestamp,
+		timestamp,
+		timestamp,
+		failureCode,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+}
+
+// This test protects owned terminal internal_error visibility and fails if
+// ownership falls back to matching the failure code: the copied code must keep
+// its command evidence in history and recovery while the run still fails.
+func TestAutomationOwnedInternalErrorVisible(t *testing.T) {
+	t.Parallel()
+	repo, database := testAutomationRepository(t)
+	code := AutomationFailureInternalError
+	automation := createTestAutomation(t, repo)
+	run := admitTestAutomation(t, repo, automation.ID, "owned")
+	start := beginTestAutomationStep(t, repo, run.ID, 0)
+	insertAutomationTerminalFailureEvidence(t, database, start, start.CorrelationID, "internal_failure", code)
+	completion := AutomationStepCompletion{
+		RunID:       run.ID,
+		Index:       0,
+		Status:      AutomationStepStatusFailed,
+		FailureCode: &code,
+	}
+	if err := repo.CompleteAutomationStep(t.Context(), completion); err != nil {
+		t.Fatal(err)
+	}
+	stored, err := repo.GetAutomationRun(t.Context(), run.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertAutomationOwnedInternalError(t, stored, start, code)
+	if err = repo.InterruptAutomationRuns(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	recovered, err := repo.GetAutomationRun(t.Context(), run.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertAutomationOwnedInternalError(t, recovered, start, code)
+}
+
+func assertAutomationOwnedInternalError(
+	t *testing.T,
+	run AutomationRunRecord,
+	start AutomationStepStart,
+	code string,
+) {
+	t.Helper()
+	step := run.Steps[0]
+	if step.PrecreationFailure || step.FailureCode == nil || *step.FailureCode != code {
+		t.Fatalf("owned failure marker/code not preserved: %+v", step)
+	}
+	if step.CommandID == nil || *step.CommandID != start.CommandID ||
+		step.CommandStatus == nil || *step.CommandStatus != devices.CommandStatusInternalFailure ||
+		step.Outcome != nil {
+		t.Fatalf("owned terminal internal_error hidden: %+v", step)
+	}
+	if run.Status != AutomationRunStatusFailed || run.FailureCode == nil || *run.FailureCode != code {
+		t.Fatalf("owned run failure not preserved: %+v", run)
+	}
+}
+
+// This test protects the confirmed pre-creation failure marker and fails if a
+// confirmed pre-creation internal_error adopts a command with identical reserved
+// identities appearing later, in history or recovery.
+func TestAutomationPrecreationInternalErrorExcludesLaterCommand(t *testing.T) {
+	t.Parallel()
+	repo, database := testAutomationRepository(t)
+	code := AutomationFailureInternalError
+	automation := createTestAutomation(t, repo)
+	run := admitTestAutomation(t, repo, automation.ID, "precreation")
+	start := beginTestAutomationStep(t, repo, run.ID, 0)
+	completion := AutomationStepCompletion{
+		RunID:              run.ID,
+		Index:              0,
+		Status:             AutomationStepStatusFailed,
+		FailureCode:        &code,
+		PrecreationFailure: true,
+	}
+	if err := repo.CompleteAutomationStep(t.Context(), completion); err != nil {
+		t.Fatal(err)
+	}
+	insertAutomationTerminalFailureEvidence(t, database, start, start.CorrelationID, "internal_failure", code)
+	stored, err := repo.GetAutomationRun(t.Context(), run.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertAutomationPrecreationExcluded(t, stored, code)
+	if err = repo.InterruptAutomationRuns(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	recovered, err := repo.GetAutomationRun(t.Context(), run.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertAutomationPrecreationExcluded(t, recovered, code)
+}
+
+func assertAutomationPrecreationExcluded(t *testing.T, run AutomationRunRecord, code string) {
+	t.Helper()
+	step := run.Steps[0]
+	if !step.PrecreationFailure || step.FailureCode == nil || *step.FailureCode != code {
+		t.Fatalf("pre-creation failure marker/code not preserved: %+v", step)
+	}
+	if step.CommandID != nil || step.CommandStatus != nil || step.Outcome != nil {
+		t.Fatalf("confirmed pre-creation internal_error adopted later command: %+v", step)
+	}
+	if run.Status != AutomationRunStatusFailed {
+		t.Fatalf("recovery overwrote terminal pre-creation run: %+v", run)
 	}
 }

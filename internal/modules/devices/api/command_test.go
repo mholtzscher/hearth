@@ -174,6 +174,7 @@ func TestCommandErrorMappingUsesStandardHumaErrors(t *testing.T) {
 		{devices.ErrEntityUnavailable, http.StatusServiceUnavailable, "entity unavailable"},
 		{devices.ErrUpstreamRejected, http.StatusBadGateway, "upstream rejected command"},
 		{devices.ErrOutcomeTimeout, http.StatusGatewayTimeout, "command outcome timed out"},
+		{devices.ErrCommandUnavailable, http.StatusServiceUnavailable, "command admission is unavailable"},
 		{errors.New("SQLite unavailable"), http.StatusInternalServerError, "internal error"},
 	}
 	for _, test := range tests {

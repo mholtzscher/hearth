@@ -41,10 +41,11 @@ ORDER BY started_at DESC, id DESC LIMIT sqlc.arg(page_limit);
 SELECT * FROM automation_runs WHERE status = 'running' ORDER BY id;
 
 -- name: ListAutomationRunSteps :many
-SELECT * FROM automation_run_steps WHERE run_id = ? ORDER BY step_index;
+SELECT run_id, step_index, definition_json, status, reserved_command_id, reserved_correlation_id, outcome, failure_code, precreation_failure, started_at, completed_at FROM automation_run_steps WHERE run_id = ? ORDER BY step_index;
 
 -- Command candidates are deliberately private. The module's one ownership predicate
--- must verify both identities and pre-creation exclusion before exposing evidence.
+-- must verify both identities and the persisted pre-creation failure marker before
+-- exposing evidence.
 -- name: GetAutomationCommandCandidate :one
 SELECT id, correlation_id, status FROM commands WHERE id = ?;
 
@@ -56,7 +57,7 @@ AND NOT EXISTS (SELECT 1 FROM automation_run_steps AS prior WHERE prior.run_id =
     AND prior.step_index < automation_run_steps.step_index AND prior.status NOT IN ('satisfied', 'dispatched'));
 
 -- name: CompleteAutomationStep :execrows
-UPDATE automation_run_steps SET status = ?, outcome = ?, failure_code = ?, completed_at = ?
+UPDATE automation_run_steps SET status = ?, outcome = ?, failure_code = ?, precreation_failure = ?, completed_at = ?
 WHERE run_id = ? AND step_index = ? AND status = 'running'
 AND EXISTS (SELECT 1 FROM automation_runs WHERE id = automation_run_steps.run_id AND status = 'running');
 

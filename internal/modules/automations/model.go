@@ -62,6 +62,10 @@ type AutomationRunSnapshot struct {
 }
 
 // AutomationRunStep retains intent and ownership-verified command evidence.
+// PrecreationFailure marks a confirmed pre-creation failure and durably forbids
+// command adoption even when both reserved identities later match a command.
+// Owned terminal failures preserve the command failure code with PrecreationFailure
+// false so their command evidence stays visible in history and recovery.
 type AutomationRunStep struct {
 	Index                 int // zero based; immutable within this Run
 	Definition            AutomationStep
@@ -72,6 +76,7 @@ type AutomationRunStep struct {
 	CommandStatus         *devices.CommandStatus
 	Outcome               *devices.OutcomeKind
 	FailureCode           *string
+	PrecreationFailure    bool
 	StartedAt             *time.Time
 	CompletedAt           *time.Time
 }
@@ -145,12 +150,16 @@ type AutomationStepStart struct {
 
 // AutomationStepCompletion establishes a durable result, never an ambiguous fault.
 // Failed completion also fails the run and marks later steps not_attempted atomically.
+// PrecreationFailure is true only for confirmed pre-creation failures that durably
+// forbid command adoption; owned terminal failures copy the command failure code
+// with PrecreationFailure false so their evidence stays visible.
 type AutomationStepCompletion struct {
-	RunID       AutomationRunID
-	Index       int
-	Status      AutomationStepStatus
-	Outcome     *devices.OutcomeKind
-	FailureCode *string
+	RunID              AutomationRunID
+	Index              int
+	Status             AutomationStepStatus
+	Outcome            *devices.OutcomeKind
+	FailureCode        *string
+	PrecreationFailure bool
 }
 
 // AutomationRunCompletion terminates a known sequence; interruption skips pending steps.
@@ -162,9 +171,12 @@ type AutomationRunCompletion struct {
 }
 
 // AutomationStepOwnsCommand is the sole command ownership predicate for execution,
-// history evidence and recovery. Confirmed pre-creation codes durably forbid adoption.
+// history evidence and recovery. A confirmed pre-creation failure durably forbids
+// adoption through the persisted pre-creation failure marker, never the failure code:
+// an owned terminal command that copies internal_error stays visible while a
+// confirmed pre-creation internal_error excludes linkage even on matching identities.
 func AutomationStepOwnsCommand(step AutomationRunStep, command devices.CommandRecord) bool {
-	return !AutomationFailureExcludesCommand(step.FailureCode) && step.ReservedCommandID != nil &&
+	return !step.PrecreationFailure && step.ReservedCommandID != nil &&
 		step.ReservedCorrelationID != nil &&
 		command.ID == *step.ReservedCommandID &&
 		command.CorrelationID == *step.ReservedCorrelationID

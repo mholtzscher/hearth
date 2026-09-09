@@ -37,7 +37,10 @@ type stubDevices struct {
 		context.Context,
 		devices.CommandInput,
 	) (devices.CommandResult, error)
+	admissionClosed bool
 }
+
+func (stub *stubDevices) commandAdmissionOpen() bool { return stub == nil || !stub.admissionClosed }
 
 func (stub *stubDevices) GetEntity(ctx context.Context, entityID devices.EntityID) (devices.EntityWithState, error) {
 	if stub.getEntity == nil {
@@ -125,6 +128,8 @@ func (stub *stubDevices) ExecuteCommand(
 	return stub.executeCommand(ctx, input)
 }
 
+func (stub *stubDevices) CommandAdmissionOpen() bool { return stub.commandAdmissionOpen() }
+
 func TestHTTPHandlerServesHealthReadinessAndDeviceOperations(t *testing.T) {
 	t.Parallel()
 	stub := &stubDevices{getEntity: func(context.Context, devices.EntityID) (devices.EntityWithState, error) {
@@ -134,7 +139,7 @@ func TestHTTPHandlerServesHealthReadinessAndDeviceOperations(t *testing.T) {
 		}}, nil
 	}}
 	readiness := &testReadiness{}
-	handler, api := NewHTTPHandler(stub, &stubHTTPAutomations{}, testHTTPAutomationCodec(t), readiness)
+	handler, api := NewHTTPHandler(stub, &stubHTTPAutomations{}, testHTTPAutomationCodec(t), readiness, stub)
 
 	if response := appRequest(handler, "/healthz"); response.Code != http.StatusOK {
 		t.Fatalf("health status = %d", response.Code)
@@ -165,7 +170,13 @@ func TestHTTPHandlerServesHealthReadinessAndDeviceOperations(t *testing.T) {
 //nolint:gocognit // The OpenAPI contract matrix is intentionally verified in one place.
 func TestRuntimeOpenAPIContract(t *testing.T) {
 	t.Parallel()
-	handler, _ := NewHTTPHandler(&stubDevices{}, &stubHTTPAutomations{}, testHTTPAutomationCodec(t), &testReadiness{})
+	handler, _ := NewHTTPHandler(
+		&stubDevices{},
+		&stubHTTPAutomations{},
+		testHTTPAutomationCodec(t),
+		&testReadiness{},
+		&stubDevices{},
+	)
 	response := appRequest(handler, "/openapi.json")
 	if response.Code != http.StatusOK {
 		t.Fatalf("OpenAPI status = %d, body = %s", response.Code, response.Body.String())
@@ -376,7 +387,13 @@ func TestRuntimeOpenAPIContract(t *testing.T) {
 
 func TestHTTPHandlerUsesStandardHumaValidationErrors(t *testing.T) {
 	t.Parallel()
-	handler, _ := NewHTTPHandler(&stubDevices{}, &stubHTTPAutomations{}, testHTTPAutomationCodec(t), nil)
+	handler, _ := NewHTTPHandler(
+		&stubDevices{},
+		&stubHTTPAutomations{},
+		testHTTPAutomationCodec(t),
+		nil,
+		&stubDevices{},
+	)
 	for _, test := range []struct {
 		body   string
 		status int
@@ -412,7 +429,13 @@ func TestNewHTTPHandlerPreservesHumaErrorFactory(t *testing.T) {
 	}
 	t.Cleanup(func() { huma.NewError = original })
 
-	NewHTTPHandler(&stubDevices{}, &stubHTTPAutomations{}, testHTTPAutomationCodec(t), nil)
+	NewHTTPHandler(
+		&stubDevices{},
+		&stubHTTPAutomations{},
+		testHTTPAutomationCodec(t),
+		nil,
+		&stubDevices{},
+	)
 	called = false
 	err := huma.NewError(http.StatusTeapot, "teapot")
 	if !called || err.GetStatus() != http.StatusTeapot || err.Error() != "teapot" {

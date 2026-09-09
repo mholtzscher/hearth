@@ -383,6 +383,7 @@ CREATE TABLE automation_run_steps (
  reserved_correlation_id TEXT UNIQUE,
  outcome TEXT CHECK (outcome IN ('observed', 'dispatched')),
  failure_code TEXT,
+ precreation_failure INTEGER NOT NULL DEFAULT 0 CHECK (precreation_failure IN (0, 1)),
  started_at TEXT,
  completed_at TEXT,
  PRIMARY KEY (run_id, step_index),
@@ -395,7 +396,8 @@ CREATE TABLE automation_run_steps (
      OR (status = 'satisfied' AND outcome IS NOT NULL AND outcome = 'observed' AND failure_code IS NULL)
      OR (status = 'dispatched' AND outcome IS NOT NULL AND outcome = 'dispatched' AND failure_code IS NULL)
      OR (status IN ('failed', 'interrupted') AND failure_code IS NOT NULL)),
- CHECK (failure_code IS NULL OR failure_code NOT IN ('command_id_conflict', 'invalid_command', 'entity_not_found', 'internal_error') OR outcome IS NULL)
+ CHECK (failure_code IS NULL OR failure_code NOT IN ('command_id_conflict', 'invalid_command', 'entity_not_found', 'internal_error') OR outcome IS NULL),
+ CHECK (precreation_failure = 0 OR (status = 'failed' AND outcome IS NULL AND failure_code IN ('command_id_conflict', 'invalid_command', 'entity_not_found', 'internal_error')))
 );
 
 -- +goose Down

@@ -63,6 +63,9 @@ func mapCommandError(err error) error {
 	if errors.Is(err, devices.ErrEntityDisabled) && errors.As(err, &executionError) {
 		return entityDisabledProblem(executionError.CommandID)
 	}
+	if errors.Is(err, devices.ErrCommandUnavailable) {
+		return apiError(http.StatusServiceUnavailable, "command admission is unavailable")
+	}
 	switch {
 	case errors.Is(err, devices.ErrInvalidCommand):
 		return apiError(http.StatusBadRequest, "invalid command")

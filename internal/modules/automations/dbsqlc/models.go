@@ -86,6 +86,7 @@ type AutomationRunStep struct {
 	ReservedCorrelationID sql.NullString
 	Outcome               sql.NullString
 	FailureCode           sql.NullString
+	PrecreationFailure    int64
 	StartedAt             sql.NullString
 	CompletedAt           sql.NullString
 }

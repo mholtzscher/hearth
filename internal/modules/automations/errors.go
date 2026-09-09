@@ -35,13 +35,12 @@ const (
 	AutomationFailureCoreStopping                           = "core_stopping"
 )
 
-// AutomationFailureExcludesCommand identifies confirmed pre-creation failures only.
-// Ambiguous executor faults must never persist these codes.
-func AutomationFailureExcludesCommand(code *string) bool {
-	if code == nil {
-		return false
-	}
-	switch *code {
+// AutomationPrecreationFailureCode reports whether code is a confirmed pre-creation
+// failure code. Use it only when persisting AutomationStepCompletion.PrecreationFailure,
+// never for ownership reads: owned terminal commands may copy internal_error while
+// staying visible. Ambiguous executor faults must never persist these codes.
+func AutomationPrecreationFailureCode(code string) bool {
+	switch code {
 	case AutomationFailureCommandIDConflict,
 		AutomationFailureInvalidCommand,
 		AutomationFailureEntityNotFound,

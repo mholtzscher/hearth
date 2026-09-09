@@ -74,7 +74,9 @@ func (service *Service) executeAutomationRun(runID AutomationRunID, definition A
 			return
 		}
 		// Process-owned, not request- or shutdown-cancelled. Devices own the deadline.
-		_, executionErr := service.commands.ExecuteCommand(context.Background(), devices.CommandInput{
+		// Explicit Step permission: intent committed above, so this dispatches even
+		// after the gates close; later Steps cannot reach this call.
+		_, executionErr := service.commands.ExecuteAutomationStepCommand(context.Background(), devices.CommandInput{
 			ID:            *step.ReservedCommandID,
 			CorrelationID: *step.ReservedCorrelationID,
 			EntityID:      stepDefinition.EntityID,
@@ -99,7 +101,7 @@ func (service *Service) executeAutomationRun(runID AutomationRunID, definition A
 }
 
 // beginAutomationStep uses the same gate as Run admission and shutdown. The
-// registered Run worker owns every committed intent, even before ExecuteCommand.
+// registered Run worker owns every committed intent, even before ExecuteAutomationStepCommand.
 func (service *Service) beginAutomationStep(
 	runID AutomationRunID,
 	index int,
@@ -161,21 +163,21 @@ func (service *Service) reconcileAutomationStep(
 	executionErr error,
 ) (AutomationStepCompletion, bool) {
 	if errors.Is(executionErr, devices.ErrCommandIDConflict) {
-		return failedAutomationStep(AutomationFailureCommandIDConflict), true
+		return failedAutomationPrecreationStep(AutomationFailureCommandIDConflict), true
 	}
 	if _, created := errors.AsType[*devices.CommandExecutionError](executionErr); !created {
 		switch {
 		case errors.Is(executionErr, devices.ErrInvalidCommand):
-			return failedAutomationStep(AutomationFailureInvalidCommand), true
+			return failedAutomationPrecreationStep(AutomationFailureInvalidCommand), true
 		case errors.Is(executionErr, devices.ErrEntityNotFound):
-			return failedAutomationStep(AutomationFailureEntityNotFound), true
+			return failedAutomationPrecreationStep(AutomationFailureEntityNotFound), true
 		}
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), automationPersistenceTimeout)
 	defer cancel()
 	record, err := service.commandRecords.GetCommand(ctx, *step.ReservedCommandID)
 	if errors.Is(err, devices.ErrCommandNotFound) && executionErr != nil {
-		return failedAutomationStep(AutomationFailureInternalError), true
+		return failedAutomationPrecreationStep(AutomationFailureInternalError), true
 	}
 	if err != nil || !AutomationStepOwnsCommand(step, record) || record.CompletedAt == nil {
 		return AutomationStepCompletion{}, false
@@ -204,6 +206,15 @@ func (service *Service) reconcileAutomationStep(
 
 func failedAutomationStep(code string) AutomationStepCompletion {
 	return AutomationStepCompletion{Status: AutomationStepStatusFailed, FailureCode: &code}
+}
+
+// failedAutomationPrecreationStep records a confirmed pre-creation failure that
+// durably forbids command adoption even when both reserved identities later match
+// a command. The code must be a confirmed pre-creation failure code; owned terminal
+// commands copy their failure code through failedAutomationStep so internal_error
+// evidence stays visible.
+func failedAutomationPrecreationStep(code string) AutomationStepCompletion {
+	return AutomationStepCompletion{Status: AutomationStepStatusFailed, FailureCode: &code, PrecreationFailure: true}
 }
 
 // PruneAutomationHistory sweeps eligible terminal history in bounded transactions.

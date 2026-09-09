@@ -49,7 +49,7 @@ type runtimeAutomationOperation struct {
 func TestAutomationRuntimeOpenAPIContract(t *testing.T) {
 	t.Parallel()
 	codec := testHTTPAutomationCodec(t)
-	handler, _ := NewHTTPHandler(&stubDevices{}, &stubHTTPAutomations{}, codec, &testReadiness{})
+	handler, _ := NewHTTPHandler(&stubDevices{}, &stubHTTPAutomations{}, codec, &testReadiness{}, &stubDevices{})
 	response := appRequest(handler, "/openapi.json")
 	if response.Code != http.StatusOK {
 		t.Fatal(response.Body.String())
@@ -154,7 +154,7 @@ func requireRuntimeAutomationParameter(
 func TestAutomationHTTPReadinessGate(t *testing.T) {
 	t.Parallel()
 	service := &stubHTTPAutomations{}
-	handler, _ := NewHTTPHandler(&stubDevices{}, service, testHTTPAutomationCodec(t), &testReadiness{})
+	handler, _ := NewHTTPHandler(&stubDevices{}, service, testHTTPAutomationCodec(t), &testReadiness{}, &stubDevices{})
 	if response := appRequest(handler, "/readyz"); response.Code != http.StatusOK {
 		t.Fatal("open healthy admission must be ready")
 	}
@@ -176,7 +176,10 @@ func (automationFaultCommands) ValidateCommand(
 ) (devices.CommandParameters, error) {
 	return input.Parameters, nil
 }
-func (automationFaultCommands) ExecuteCommand(context.Context, devices.CommandInput) (devices.CommandResult, error) {
+func (automationFaultCommands) ExecuteAutomationStepCommand(
+	context.Context,
+	devices.CommandInput,
+) (devices.CommandResult, error) {
 	return devices.CommandResult{}, errors.New("private execution details")
 }
 func (automationFaultCommands) GetCommand(context.Context, devices.CommandID) (devices.CommandRecord, error) {
@@ -220,7 +223,7 @@ func TestAutomationExecutorFaultDegradesHTTPReadiness(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	handler, _ := NewHTTPHandler(&stubDevices{}, service, codec, &testReadiness{})
+	handler, _ := NewHTTPHandler(&stubDevices{}, service, codec, &testReadiness{}, &stubDevices{})
 	if response := appRequest(handler, "/readyz"); response.Code != http.StatusOK {
 		t.Fatal("healthy service was not ready")
 	}

@@ -29,12 +29,16 @@ type Stores struct {
 }
 
 type Service struct {
-	logger       *slog.Logger
-	stores       Stores
-	sender       CommandSender
-	catalog      *TypeCatalog
-	dependencies Dependencies
-	waiters      commandWaiters
+	logger               *slog.Logger
+	stores               Stores
+	sender               CommandSender
+	catalog              *TypeCatalog
+	dependencies         Dependencies
+	waiters              commandWaiters
+	lifecycleMu          sync.Mutex
+	commandAdmissionOpen bool
+	commandWorkers       int
+	commandIdle          chan struct{}
 }
 
 type commandWaiters struct {
@@ -62,12 +66,16 @@ func NewService(stores Stores, sender CommandSender, catalog *TypeCatalog, depen
 	if dependencies.NewCorrelationID == nil {
 		dependencies.NewCorrelationID = NewCorrelationID
 	}
+	idle := make(chan struct{})
+	close(idle)
 	return &Service{
-		logger:       logger,
-		stores:       stores,
-		sender:       sender,
-		catalog:      catalog,
-		dependencies: dependencies,
-		waiters:      commandWaiters{byID: make(map[CommandID]chan CommandResult)},
+		logger:               logger,
+		stores:               stores,
+		sender:               sender,
+		catalog:              catalog,
+		dependencies:         dependencies,
+		waiters:              commandWaiters{byID: make(map[CommandID]chan CommandResult)},
+		commandAdmissionOpen: true,
+		commandIdle:          idle,
 	}
 }

@@ -59,11 +59,19 @@ func (readiness *RuntimeReadiness) Check(ctx context.Context) error {
 	return nil
 }
 
+// CommandAdmissionChecker is the narrow readiness seam for direct Command
+// admission. It stays separate from the broad Devices API so HTTP handlers,
+// which use ExecuteCommand, can never supply reserved automation Step permission.
+type CommandAdmissionChecker interface {
+	CommandAdmissionOpen() bool
+}
+
 func NewHTTPHandler(
 	devices devicesapi.Devices,
 	automationService automationsapi.Automations,
 	definitions *automations.AutomationDefinitionCodec,
 	readiness ReadinessChecker,
+	commandAdmission CommandAdmissionChecker,
 ) (http.Handler, huma.API) {
 	const statusField = "status"
 	router := echo.New()
@@ -72,7 +80,8 @@ func NewHTTPHandler(
 	})
 	router.GET("/readyz", func(ctx *echo.Context) error {
 		if readiness == nil || readiness.Check(ctx.Request().Context()) != nil || automationService == nil ||
-			!automationService.AutomationExecutionReady() {
+			!automationService.AutomationExecutionReady() || commandAdmission == nil ||
+			!commandAdmission.CommandAdmissionOpen() {
 			return ctx.JSON(http.StatusServiceUnavailable, map[string]string{statusField: "not_ready"})
 		}
 		return ctx.JSON(http.StatusOK, map[string]string{statusField: "ready"})

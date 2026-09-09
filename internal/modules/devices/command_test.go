@@ -20,11 +20,12 @@ const (
 )
 
 type commandRepository struct {
-	mutex       sync.Mutex
-	view        EntityWithState
-	commands    map[CommandID]CommandRecord
-	createErr   error
-	completeErr error
+	mutex          sync.Mutex
+	view           EntityWithState
+	commands       map[CommandID]CommandRecord
+	createErr      error
+	completeErr    error
+	forceUnhealthy bool
 }
 
 func newCommandRepository() *commandRepository {
@@ -77,13 +78,20 @@ func (repository *commandRepository) CreateCommand(_ context.Context, command Co
 	if _, exists := repository.commands[command.ID]; exists {
 		return CommandRecord{}, ErrCommandIDConflict
 	}
-	if !repository.view.Entity.Enabled {
+	switch {
+	case !repository.view.Entity.Enabled:
 		completedAt := command.RequestedAt
 		failureCode := CommandFailureEntityDisabled
 		command.Status = CommandStatusEntityDisabled
 		command.CompletedAt = &completedAt
 		command.FailureCode = &failureCode
-	} else {
+	case repository.forceUnhealthy:
+		completedAt := command.RequestedAt
+		failureCode := CommandFailureAdapterUnhealthy
+		command.Status = CommandStatusAdapterUnhealthy
+		command.CompletedAt = &completedAt
+		command.FailureCode = &failureCode
+	default:
 		runtimeID := commandTestRuntimeID
 		command.RuntimeID = &runtimeID
 	}

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/mholtzscher/hearth/internal/modules/devices"
 )
@@ -110,7 +111,7 @@ type automationCommandsOverride struct {
 	execute func(context.Context, devices.CommandInput) (devices.CommandResult, error)
 }
 
-func (commands automationCommandsOverride) ExecuteCommand(
+func (commands automationCommandsOverride) ExecuteAutomationStepCommand(
 	ctx context.Context,
 	input devices.CommandInput,
 ) (devices.CommandResult, error) {
@@ -154,7 +155,7 @@ func TestAutomationAuthoritativeReconciliation(t *testing.T) {
 					case "entity-not-found":
 						return devices.CommandResult{}, devices.ErrEntityNotFound
 					}
-					result, err := original.ExecuteCommand(ctx, input)
+					result, err := original.ExecuteAutomationStepCommand(ctx, input)
 					if err != nil {
 						return result, err
 					}
@@ -207,13 +208,7 @@ func TestAutomationAuthoritativeReconciliation(t *testing.T) {
 				if mode == "entity-not-found" {
 					code = AutomationFailureEntityNotFound
 				}
-				if run.Status != AutomationRunStatusFailed || run.Steps[0].CommandID != nil || run.FailureCode == nil ||
-					*run.FailureCode != code ||
-					run.Steps[1].Status != AutomationStepStatusNotAttempted ||
-					harness.sends.Load() != 0 ||
-					!harness.service.AutomationExecutionReady() {
-					t.Fatalf("established pre-creation failure = %#v", run)
-				}
+				assertAutomationPrecreationFailure(t, harness, run, code)
 			}
 		})
 	}
@@ -241,9 +236,30 @@ func TestAutomationExecutionRechecksSupportAfterEarlierStep(t *testing.T) {
 	if run.Status != AutomationRunStatusFailed || run.Steps[0].Status != AutomationStepStatusSatisfied ||
 		run.Steps[1].FailureCode == nil ||
 		*run.Steps[1].FailureCode != AutomationFailureInvalidCommand ||
+		!run.Steps[1].PrecreationFailure ||
 		run.Steps[1].CommandID != nil ||
 		harness.sends.Load() != 1 {
 		t.Fatalf("execution trusted stale support: %#v", run)
+	}
+}
+
+// assertAutomationPrecreationFailure checks an established pre-creation failure
+// carries its code with the exclusion marker and no command evidence.
+func assertAutomationPrecreationFailure(
+	t *testing.T,
+	harness *automationExecutionHarness,
+	run AutomationRunRecord,
+	code string,
+) {
+	t.Helper()
+	if run.Status != AutomationRunStatusFailed || run.Steps[0].CommandID != nil || run.FailureCode == nil ||
+		*run.FailureCode != code ||
+		run.Steps[0].FailureCode == nil || *run.Steps[0].FailureCode != code ||
+		!run.Steps[0].PrecreationFailure ||
+		run.Steps[1].Status != AutomationStepStatusNotAttempted ||
+		harness.sends.Load() != 0 ||
+		!harness.service.AutomationExecutionReady() {
+		t.Fatalf("established pre-creation failure = %#v", run)
 	}
 }
 
@@ -251,5 +267,56 @@ func assertAutomationNoCommandEvidence(t *testing.T, step AutomationRunStep) {
 	t.Helper()
 	if step.CommandID != nil || step.CommandStatus != nil || step.Outcome != nil {
 		t.Fatalf("history adopted unowned command evidence: %#v", step)
+	}
+}
+
+// This test protects owned terminal internal_error visibility end to end and
+// fails if the executor marks an owned durable internal_failure as a confirmed
+// pre-creation failure: the copied internal_error code must keep its command
+// evidence while the run still fails.
+func TestAutomationOwnedInternalFailureRemainsVisible(t *testing.T) {
+	t.Parallel()
+	harness := newAutomationExecutionHarness(t)
+	original := harness.devices
+	harness.service.commands = automationCommandsOverride{
+		AutomationCommands: original,
+		execute: func(ctx context.Context, input devices.CommandInput) (devices.CommandResult, error) {
+			result, err := original.ExecuteAutomationStepCommand(ctx, input)
+			if err != nil {
+				return result, err
+			}
+			completed := time.Now().UTC().Format("2006-01-02T15:04:05.000000000Z")
+			if _, err = harness.database.ExecContext(
+				ctx,
+				`UPDATE commands SET status = 'internal_failure', failure_code = 'internal_error', completed_at = ?, outcome_observation_id = NULL WHERE id = ?`,
+				completed,
+				string(input.ID),
+			); err != nil {
+				return devices.CommandResult{}, err
+			}
+			return devices.CommandResult{}, &devices.CommandExecutionError{
+				CommandID: input.ID,
+				Err:       errors.New("ambiguous completion"),
+			}
+		},
+	}
+	automation := createExecutionAutomation(t, harness, harness.definition())
+	admission := startExecutionAutomation(t, harness, automation.ID, "owned-internal-failure")
+	run := waitExecutionRun(t, harness, admission.Run.ID)
+	if run.Status != AutomationRunStatusFailed || run.FailureCode == nil ||
+		*run.FailureCode != AutomationFailureInternalError ||
+		run.Steps[1].Status != AutomationStepStatusNotAttempted ||
+		harness.sends.Load() != 1 ||
+		!harness.service.AutomationExecutionReady() {
+		t.Fatalf("owned internal failure run = %#v", run)
+	}
+	step := run.Steps[0]
+	if step.PrecreationFailure || step.FailureCode == nil || *step.FailureCode != AutomationFailureInternalError {
+		t.Fatalf("owned failure marker/code not preserved: %#v", step)
+	}
+	if step.CommandID == nil || step.ReservedCommandID == nil || *step.CommandID != *step.ReservedCommandID ||
+		step.CommandStatus == nil || *step.CommandStatus != devices.CommandStatusInternalFailure ||
+		step.Outcome != nil {
+		t.Fatalf("owned terminal internal_error hidden from history: %#v", step)
 	}
 }

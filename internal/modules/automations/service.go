@@ -13,10 +13,14 @@ import (
 	"github.com/mholtzscher/hearth/internal/modules/devices"
 )
 
-// AutomationCommands preserves device validation and the detached command lifecycle.
+// AutomationCommands preserves device validation and the detached command
+// lifecycle for already-admitted Steps. Execution requires explicit automation
+// Step permission: only the automation executor calls ExecuteAutomationStepCommand
+// after the automation gate committed the intent. The devices service is wired
+// directly; HTTP handlers use ExecuteCommand and can never supply this permission.
 type AutomationCommands interface {
 	ValidateCommand(context.Context, devices.CommandInput) (devices.CommandParameters, error)
-	ExecuteCommand(context.Context, devices.CommandInput) (devices.CommandResult, error)
+	ExecuteAutomationStepCommand(context.Context, devices.CommandInput) (devices.CommandResult, error)
 }
 
 // AutomationCommandRecords supplies authoritative durable ownership and outcomes.

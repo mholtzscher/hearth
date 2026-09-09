@@ -65,18 +65,19 @@ func (q *Queries) CompleteAutomationRun(ctx context.Context, arg CompleteAutomat
 }
 
 const completeAutomationStep = `-- name: CompleteAutomationStep :execrows
-UPDATE automation_run_steps SET status = ?, outcome = ?, failure_code = ?, completed_at = ?
+UPDATE automation_run_steps SET status = ?, outcome = ?, failure_code = ?, precreation_failure = ?, completed_at = ?
 WHERE run_id = ? AND step_index = ? AND status = 'running'
 AND EXISTS (SELECT 1 FROM automation_runs WHERE id = automation_run_steps.run_id AND status = 'running')
 `
 
 type CompleteAutomationStepParams struct {
-	Status      string
-	Outcome     sql.NullString
-	FailureCode sql.NullString
-	CompletedAt sql.NullString
-	RunID       string
-	StepIndex   int64
+	Status             string
+	Outcome            sql.NullString
+	FailureCode        sql.NullString
+	PrecreationFailure int64
+	CompletedAt        sql.NullString
+	RunID              string
+	StepIndex          int64
 }
 
 func (q *Queries) CompleteAutomationStep(ctx context.Context, arg CompleteAutomationStepParams) (int64, error) {
@@ -84,6 +85,7 @@ func (q *Queries) CompleteAutomationStep(ctx context.Context, arg CompleteAutoma
 		arg.Status,
 		arg.Outcome,
 		arg.FailureCode,
+		arg.PrecreationFailure,
 		arg.CompletedAt,
 		arg.RunID,
 		arg.StepIndex,
@@ -251,7 +253,8 @@ type GetAutomationCommandCandidateRow struct {
 }
 
 // Command candidates are deliberately private. The module's one ownership predicate
-// must verify both identities and pre-creation exclusion before exposing evidence.
+// must verify both identities and the persisted pre-creation failure marker before
+// exposing evidence.
 func (q *Queries) GetAutomationCommandCandidate(ctx context.Context, arg GetAutomationCommandCandidateParams) (GetAutomationCommandCandidateRow, error) {
 	row := q.db.QueryRowContext(ctx, getAutomationCommandCandidate, arg.ID)
 	var i GetAutomationCommandCandidateRow
@@ -332,7 +335,7 @@ func (q *Queries) InterruptRunningAutomationSteps(ctx context.Context, arg Inter
 }
 
 const listAutomationRunSteps = `-- name: ListAutomationRunSteps :many
-SELECT run_id, step_index, definition_json, status, reserved_command_id, reserved_correlation_id, outcome, failure_code, started_at, completed_at FROM automation_run_steps WHERE run_id = ? ORDER BY step_index
+SELECT run_id, step_index, definition_json, status, reserved_command_id, reserved_correlation_id, outcome, failure_code, precreation_failure, started_at, completed_at FROM automation_run_steps WHERE run_id = ? ORDER BY step_index
 `
 
 type ListAutomationRunStepsParams struct {
@@ -357,6 +360,7 @@ func (q *Queries) ListAutomationRunSteps(ctx context.Context, arg ListAutomation
 			&i.ReservedCorrelationID,
 			&i.Outcome,
 			&i.FailureCode,
+			&i.PrecreationFailure,
 			&i.StartedAt,
 			&i.CompletedAt,
 		); err != nil {

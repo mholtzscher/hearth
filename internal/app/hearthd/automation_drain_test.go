@@ -94,7 +94,14 @@ func TestAutomationDrainPrecedesDependencyCancellation(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	service := automations.NewService(repo, deviceService, records, codec, time.UTC, nil)
+	service := automations.NewService(
+		repo,
+		deviceService,
+		records,
+		codec,
+		time.UTC,
+		nil,
+	)
 	step := automations.AutomationStep{
 		EntityID:      binding.Entities[0].EntityID,
 		OperationName: "trigger",
@@ -128,7 +135,7 @@ func TestAutomationDrainPrecedesDependencyCancellation(t *testing.T) {
 	stopped := make(chan struct{})
 	go func() {
 		defer close(stopped)
-		drainAutomationExecution(service, func() {
+		drainExecution(deviceService, service, func() {
 			run, readErr := repo.GetAutomationRun(context.Background(), admission.Run.ID)
 			if readErr != nil {
 				t.Error(readErr)
@@ -140,7 +147,9 @@ func TestAutomationDrainPrecedesDependencyCancellation(t *testing.T) {
 	}()
 	// The accessor is synchronized by the same gate that drain closes. The
 	// condition cannot become true merely because the sender happened to run.
-	waitForMatrixCondition(t, 5*time.Second, func() (bool, error) { return !service.AutomationExecutionReady(), nil })
+	waitForMatrixCondition(t, 5*time.Second, func() (bool, error) {
+		return !service.AutomationExecutionReady() && !deviceService.CommandAdmissionOpen(), nil
+	})
 	if dependencyContext.Err() != nil {
 		t.Fatal("dependencies canceled before current command returned")
 	}

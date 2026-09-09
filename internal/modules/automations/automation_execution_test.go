@@ -349,6 +349,7 @@ func TestAutomationCommandIDCollisionNeverAdoptsOldOutcome(t *testing.T) {
 					*run.FailureCode != AutomationFailureCommandIDConflict ||
 					run.Steps[0].CommandID != nil ||
 					run.Steps[0].Outcome != nil ||
+					!run.Steps[0].PrecreationFailure ||
 					run.Steps[1].Status != AutomationStepStatusNotAttempted ||
 					harness.sends.Load() != 1 {
 					t.Fatalf("collision adopted old command: %#v", run)

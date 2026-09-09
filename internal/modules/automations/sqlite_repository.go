@@ -401,9 +401,15 @@ func (repo *SQLiteRepository) BeginAutomationStep(ctx context.Context, input Aut
 }
 
 // CompleteAutomationStep persists established results before any later admission.
+// PrecreationFailure durably records confirmed pre-creation failures so ownership,
+// history, and recovery exclude adoption by marker rather than failure code.
 func (repo *SQLiteRepository) CompleteAutomationStep(ctx context.Context, input AutomationStepCompletion) error {
 	if input.Status != AutomationStepStatusSatisfied && input.Status != AutomationStepStatusDispatched &&
 		input.Status != AutomationStepStatusFailed {
+		return ErrAutomationTransitionConflict
+	}
+	if input.PrecreationFailure && (input.Status != AutomationStepStatusFailed || input.FailureCode == nil ||
+		!AutomationPrecreationFailureCode(*input.FailureCode)) {
 		return ErrAutomationTransitionConflict
 	}
 	return repo.transaction(ctx, func(q *dbsqlc.Queries) error {
@@ -411,12 +417,13 @@ func (repo *SQLiteRepository) CompleteAutomationStep(ctx context.Context, input 
 		count, err := q.CompleteAutomationStep(
 			ctx,
 			dbsqlc.CompleteAutomationStepParams{
-				RunID:       string(input.RunID),
-				StepIndex:   int64(input.Index),
-				Status:      string(input.Status),
-				Outcome:     automationNullableString(input.Outcome),
-				FailureCode: automationNullableString(input.FailureCode),
-				CompletedAt: now,
+				RunID:              string(input.RunID),
+				StepIndex:          int64(input.Index),
+				Status:             string(input.Status),
+				Outcome:            automationNullableString(input.Outcome),
+				FailureCode:        automationNullableString(input.FailureCode),
+				PrecreationFailure: automationBool(input.PrecreationFailure),
+				CompletedAt:        now,
 			},
 		)
 		if err = automationTransition(count, err); err != nil {

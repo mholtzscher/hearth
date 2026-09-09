@@ -169,6 +169,7 @@ func readAutomationStep(
 		ReservedCommandID:     automationPointer[devices.CommandID](row.ReservedCommandID),
 		ReservedCorrelationID: automationPointer[devices.CorrelationID](row.ReservedCorrelationID),
 		FailureCode:           automationPointer[string](row.FailureCode),
+		PrecreationFailure:    row.PrecreationFailure == 1,
 	}
 	var definition automationStepJSON
 	if err := json.Unmarshal([]byte(row.DefinitionJson), &definition); err != nil {
