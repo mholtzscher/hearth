@@ -43,15 +43,6 @@ type plannerContribution struct {
 	Role     plannerRole
 }
 
-// devicePlanner returns one family contribution without I/O and without
-// retaining Device state. Implementations skip ineligible candidates
-// individually and return an empty contribution when nothing is eligible;
-// planDevice owns generic same-contribution duplicate-key removal.
-// Implementations are immutable and concurrency-safe.
-type devicePlanner interface {
-	Plan(devicePlanningInput) plannerContribution
-}
-
 // devicePlan is the merged registration content for one normalized IEEE address.
 type devicePlan struct {
 	Kind     string
@@ -65,33 +56,30 @@ type devicePlanError struct {
 
 func (err *devicePlanError) Error() string { return "Zigbee2MQTT Device plan rejected: " + err.code }
 
-// defaultDevicePlanners returns the explicit planner assembly in deterministic
-// order. All planners may inspect the same index.
-func defaultDevicePlanners() []devicePlanner {
-	return []devicePlanner{
-		lightPlanner{},
-		relayPlanner{},
-		sensorPlanner{},
-		linkqualityPlanner{},
-	}
+// planDevice calls the four supported families directly in precedence order.
+// All functions share the same expose index and perform no I/O.
+func planDevice(input devicePlanningInput) (devicePlan, error) {
+	return mergeDeviceContributions(input.Exposes, []plannerContribution{
+		planLightFamily(input),
+		planRelayFamily(input),
+		planSensorFamily(input),
+		planLinkquality(input),
+	})
 }
 
-// planDevice chooses one primary contribution and merges every supplemental
+// mergeDeviceContributions chooses one primary contribution and merges every supplemental
 // contribution before one registration. The first non-empty primary
 // contribution wins; later primary contributions are discarded. Every
 // supplemental contribution appends in planner order, and the first non-empty
 // supplemental contribution establishes Device kind when no primary
 // contribution exists. A contribution with an invalid role or an empty kind
 // rejects the Device as invalid_descriptor before selection and merge.
-func planDevice(input devicePlanningInput, planners []devicePlanner) (devicePlan, error) {
-	contributions := make([]plannerContribution, 0, len(planners))
-	for _, planner := range planners {
-		contribution := planner.Plan(input)
+func mergeDeviceContributions(exposes exposeIndex, contributions []plannerContribution) (devicePlan, error) {
+	for index, contribution := range contributions {
 		if !validPlannerContribution(contribution) {
 			return devicePlan{}, &devicePlanError{code: rejectionInvalidDescriptor}
 		}
-		contribution.Entities = deduplicateKeys(contribution.Entities)
-		contributions = append(contributions, contribution)
+		contributions[index].Entities = deduplicateKeys(contribution.Entities)
 	}
 	var primary *plannerContribution
 	for index := range contributions {
@@ -119,7 +107,7 @@ func planDevice(input devicePlanningInput, planners []devicePlanner) (devicePlan
 		}
 	}
 	if len(merged) == 0 {
-		return devicePlan{}, &devicePlanError{code: noEligibleCode(input.Exposes)}
+		return devicePlan{}, &devicePlanError{code: noEligibleCode(exposes)}
 	}
 	if len(merged) > maximumEntitiesPerDevice {
 		return devicePlan{}, &devicePlanError{code: rejectionTooManyEntities}
@@ -150,7 +138,7 @@ func validPlannerContribution(contribution plannerContribution) bool {
 
 // deduplicateKeys removes every same-contribution Entity key that occurs more
 // than once, preserving planner and expose order for the survivors.
-// planDevice applies it to each contribution before selection and merge.
+// mergeDeviceContributions applies it before selection and merge.
 func deduplicateKeys(plans []entityPlan) []entityPlan {
 	counts := make(map[string]int, len(plans))
 	for _, plan := range plans {

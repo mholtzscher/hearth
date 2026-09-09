@@ -1,6 +1,6 @@
 package zigbee2mqtt
 
-// relayPlanner considers switch root exposes. Each eligible root requires
+// planRelayFamily considers switch root exposes. Each eligible root requires
 // exactly one binary state feature with the same rules as light power and
 // produces a hearth.power/v1 Entity through the shared power constructor, so
 // State and Command behavior stay identical across primary families.
@@ -15,9 +15,7 @@ package zigbee2mqtt
 // The Adapter calls the Device kind relay, not plug or switch, because the
 // Zigbee2MQTT expose proves a controllable relay but does not reliably
 // distinguish a plug from an in-wall switch.
-type relayPlanner struct{}
-
-func (relayPlanner) Plan(input devicePlanningInput) plannerContribution {
+func planRelayFamily(input devicePlanningInput) plannerContribution {
 	contribution := plannerContribution{Kind: upstreamDeviceKindRelay, Role: plannerRolePrimary}
 	var powers []entityPlan
 	for _, root := range input.Exposes.Roots(upstreamExposeSwitch) {

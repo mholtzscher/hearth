@@ -27,7 +27,7 @@ func electricalSensorBounds(expose upstreamExpose, fallbackMin, fallbackMax floa
 // planElectricalSensor selects exactly one device-root expose, including
 // unresolved roots in the ambiguity check, then resolves its bounds before
 // using the shared read-only numeric sensor translation. Relay power gates
-// these attributes in relayPlanner, not in the capability catalog.
+// these attributes in planRelayFamily, not in the capability catalog.
 func planElectricalSensor(input devicePlanningInput, mapping numericSensorMapping) *entityPlan {
 	root, ok := input.Exposes.UniqueRoot(upstreamExposeNumeric, mapping.exposeName)
 	if !ok || !root.resolved {

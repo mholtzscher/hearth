@@ -133,10 +133,7 @@ func buildDiscoveredDevice(device upstreamDevice, ieeeAddress string) (discovere
 	if utf8.RuneCountInString(name) > maximumDescriptorRunes {
 		return rejectedDevice(device, ieeeAddress, rejectionInvalidDescriptor)
 	}
-	plan, err := planDevice(
-		devicePlanningInput{IEEE: ieeeAddress, Exposes: newExposeIndex(device)},
-		defaultDevicePlanners(),
-	)
+	plan, err := planDevice(devicePlanningInput{IEEE: ieeeAddress, Exposes: newExposeIndex(device)})
 	if err != nil {
 		code := rejectionInvalidDescriptor
 		if planErr, ok := errors.AsType[*devicePlanError](err); ok {

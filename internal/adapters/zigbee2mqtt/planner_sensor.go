@@ -9,13 +9,11 @@ const (
 	temperatureUnitCelsius = "°C"
 )
 
-// sensorPlanner plans temperature first, then the ambient numeric capability
+// planSensorFamily plans temperature first, then the ambient numeric capability
 // table in order. Each mapping visits retained roots independently so an
 // ineligible root cannot suppress valid siblings. Family order and root
 // selection stay in Go; catalog records contain only capability data.
-type sensorPlanner struct{}
-
-func (sensorPlanner) Plan(input devicePlanningInput) plannerContribution {
+func planSensorFamily(input devicePlanningInput) plannerContribution {
 	contribution := plannerContribution{Kind: upstreamDeviceKindSensor, Role: plannerRoleSupplemental}
 	appendTemperaturePlans(&contribution, input)
 	for _, mapping := range ambientNumericSensors() {

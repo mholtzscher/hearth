@@ -44,6 +44,10 @@ Add one record to the appropriate table, using captured expose evidence:
   decoding and device-wide unique-root selection. A different conversion is code,
   not an expression in a table.
 
+`planDevice` calls `planLightFamily`, `planRelayFamily`, `planSensorFamily`, and
+`planLinkquality` directly. `mergeDeviceContributions` merges their returned
+values; there is no planner interface, registry, or empty planner object.
+
 Table order is observable: ambient temperature precedes the ambient table;
 relay power and power-on behavior precede electrical sensors, then numeric
 settings, then reset. Link quality remains supplemental and last. Family

@@ -11,12 +11,6 @@ const (
 	upstreamColorTempName  = "color_temp"
 )
 
-// lightPlanner moves current light discovery without changing its contract:
-// valid power gates the family, brightness and color temperature join only
-// when each optional feature is valid, and malformed optional features are
-// isolated without suppressing valid siblings.
-type lightPlanner struct{}
-
 // colorModePolicy carries one root's companion mode property and whether
 // Hearth may trust it. An ambiguous or colliding property omits the
 // affected color and mode capabilities instead of guessing.
@@ -30,7 +24,10 @@ type rootCandidate struct {
 	extra []entityPlan
 }
 
-func (lightPlanner) Plan(input devicePlanningInput) plannerContribution {
+// planLightFamily requires valid power and isolates malformed optional
+// features without suppressing valid siblings. Duplicate power keys omit
+// their whole root family before device-wide settings can join.
+func planLightFamily(input devicePlanningInput) plannerContribution {
 	contribution := plannerContribution{Kind: upstreamDeviceKindLight, Role: plannerRolePrimary}
 	expectations := make(map[string]int)
 	for _, root := range input.Exposes.Roots(upstreamDeviceKindLight) {

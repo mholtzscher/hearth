@@ -29,11 +29,6 @@ func contractContributions(t *testing.T, device upstreamDevice) devicePlan {
 	return devicePlan{Kind: discovered.Registration.Device.Kind, Entities: discovered.Entities}
 }
 
-// contractFamilyContribution runs one production family against the fixture.
-func contractFamilyContribution(device upstreamDevice, planner devicePlanner) plannerContribution {
-	return planner.Plan(devicePlanningInput{IEEE: device.IEEEAddress, Exposes: newExposeIndex(device)})
-}
-
 // contractPlansByKey indexes plans by their already-validated unique key.
 func contractPlansByKey(plans []entityPlan) map[string]entityPlan {
 	indexed := make(map[string]entityPlan, len(plans))
@@ -746,7 +741,9 @@ func TestDiscoveryContractLinkqualityUniqueRootAmbiguity(t *testing.T) {
 	for name, device := range devices {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
-			contribution := contractFamilyContribution(device, linkqualityPlanner{})
+			contribution := planLinkquality(devicePlanningInput{
+				IEEE: device.IEEEAddress, Exposes: newExposeIndex(device),
+			})
 			if len(contribution.Entities) != 0 {
 				t.Fatalf("duplicate linkquality roots planned %d entities, want none", len(contribution.Entities))
 			}
@@ -765,7 +762,9 @@ func TestDiscoveryContractSensorIsolatesMalformedSiblings(t *testing.T) {
 		{Type: "numeric", Name: "battery", Property: "shared", Unit: "%", Access: 1},
 		{Type: "numeric", Name: "battery", Property: "battery", Unit: "%", Access: 1},
 	}
-	contribution := contractFamilyContribution(device, sensorPlanner{})
+	contribution := planSensorFamily(devicePlanningInput{
+		IEEE: device.IEEEAddress, Exposes: newExposeIndex(device),
+	})
 	if got := entityKeys(contribution.Entities); len(got) != 1 || got[0] != "battery" {
 		t.Fatalf("isolated entities = %v, want only the valid [battery]", got)
 	}
