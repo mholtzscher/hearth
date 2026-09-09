@@ -27,9 +27,11 @@ func (handler *Handler) ExecuteCommand(ctx context.Context, input *ExecuteComman
 	if marshalErr != nil {
 		return nil, apiError(http.StatusBadRequest, "parameters must be a JSON object")
 	}
-	result, commandErr := handler.devices.ExecuteCommand(
-		ctx, entityID, devices.OperationName(input.Body.OperationName), devices.CommandParameters(parameters),
-	)
+	result, commandErr := handler.devices.ExecuteCommand(ctx, devices.CommandInput{
+		EntityID:      entityID,
+		OperationName: devices.OperationName(input.Body.OperationName),
+		Parameters:    devices.CommandParameters(parameters),
+	})
 	if commandErr != nil {
 		return nil, mapCommandError(commandErr)
 	}

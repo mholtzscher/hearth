@@ -12,6 +12,8 @@ import (
 	natsgo "github.com/nats-io/nats.go"
 	"github.com/nats-io/nats.go/jetstream"
 
+	"github.com/mholtzscher/hearth/internal/modules/automations"
+	automationsapi "github.com/mholtzscher/hearth/internal/modules/automations/api"
 	devicesapi "github.com/mholtzscher/hearth/internal/modules/devices/api"
 	devicesnats "github.com/mholtzscher/hearth/internal/modules/devices/nats"
 )
@@ -57,14 +59,20 @@ func (readiness *RuntimeReadiness) Check(ctx context.Context) error {
 	return nil
 }
 
-func NewHTTPHandler(devices devicesapi.Devices, readiness ReadinessChecker) (http.Handler, huma.API) {
+func NewHTTPHandler(
+	devices devicesapi.Devices,
+	automationService automationsapi.Automations,
+	definitions *automations.AutomationDefinitionCodec,
+	readiness ReadinessChecker,
+) (http.Handler, huma.API) {
 	const statusField = "status"
 	router := echo.New()
 	router.GET("/healthz", func(ctx *echo.Context) error {
 		return ctx.JSON(http.StatusOK, map[string]string{statusField: "ok"})
 	})
 	router.GET("/readyz", func(ctx *echo.Context) error {
-		if readiness == nil || readiness.Check(ctx.Request().Context()) != nil {
+		if readiness == nil || readiness.Check(ctx.Request().Context()) != nil || automationService == nil ||
+			!automationService.AutomationExecutionReady() {
 			return ctx.JSON(http.StatusServiceUnavailable, map[string]string{statusField: "not_ready"})
 		}
 		return ctx.JSON(http.StatusOK, map[string]string{statusField: "ready"})
@@ -73,5 +81,6 @@ func NewHTTPHandler(devices devicesapi.Devices, readiness ReadinessChecker) (htt
 	api := humaecho.New(router, huma.DefaultConfig("Hearth", "1.0.0"))
 	v1 := huma.NewGroup(api, "/v1")
 	devicesapi.Register(v1, devices)
+	automationsapi.Register(v1, automationService, definitions)
 	return router, api
 }

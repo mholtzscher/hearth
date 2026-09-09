@@ -25,50 +25,81 @@ func (err *CommandExecutionError) Error() string {
 
 func (err *CommandExecutionError) Unwrap() error { return err.Err }
 
-func (service *Service) ExecuteCommand(
-	ctx context.Context,
-	entityID EntityID,
-	operationName OperationName,
-	parameters CommandParameters,
-) (CommandResult, error) {
-	if _, err := ParseEntityID(string(entityID)); err != nil {
-		return CommandResult{}, fmt.Errorf("%w: parse entity ID: %w", ErrInvalidCommand, err)
+// ValidateCommand validates current support without generating identities, writing,
+// checking control eligibility, or dispatching. Returned parameters are owned by the caller.
+func (service *Service) ValidateCommand(ctx context.Context, input CommandInput) (CommandParameters, error) {
+	_, resolved, err := service.validateCommand(ctx, input)
+	if err != nil {
+		return nil, err
 	}
-	if !operationNamePattern.MatchString(string(operationName)) {
-		return CommandResult{}, fmt.Errorf("%w: operation name is not subject-safe", ErrInvalidCommand)
+	return append(CommandParameters(nil), resolved.Parameters...), nil
+}
+
+func (service *Service) validateCommand(ctx context.Context, input CommandInput) (Entity, ResolvedCommand, error) {
+	if input.ID != "" {
+		if _, err := ParseCommandID(string(input.ID)); err != nil {
+			return Entity{}, ResolvedCommand{}, fmt.Errorf("%w: parse command ID: %w", ErrInvalidCommand, err)
+		}
 	}
-	if err := validateCommandParameters(parameters); err != nil {
-		return CommandResult{}, fmt.Errorf("%w: %w", ErrInvalidCommand, err)
+	if input.CorrelationID != "" {
+		if _, err := ParseCorrelationID(string(input.CorrelationID)); err != nil {
+			return Entity{}, ResolvedCommand{}, fmt.Errorf("%w: parse correlation ID: %w", ErrInvalidCommand, err)
+		}
 	}
-	view, err := service.stores.Reads.GetEntity(ctx, entityID)
+	if _, err := ParseEntityID(string(input.EntityID)); err != nil {
+		return Entity{}, ResolvedCommand{}, fmt.Errorf("%w: parse entity ID: %w", ErrInvalidCommand, err)
+	}
+	if !operationNamePattern.MatchString(string(input.OperationName)) {
+		return Entity{}, ResolvedCommand{}, fmt.Errorf("%w: operation name is not subject-safe", ErrInvalidCommand)
+	}
+	if err := validateCommandParameters(input.Parameters); err != nil {
+		return Entity{}, ResolvedCommand{}, fmt.Errorf("%w: %w", ErrInvalidCommand, err)
+	}
+	view, err := service.stores.Reads.GetEntity(ctx, input.EntityID)
+	if err != nil {
+		return Entity{}, ResolvedCommand{}, err
+	}
+	resolved, err := service.catalog.ResolveCommand(view.Entity, input.OperationName, input.Parameters)
+	if err != nil {
+		return Entity{}, ResolvedCommand{}, fmt.Errorf("%w: %w", ErrInvalidCommand, err)
+	}
+	return view.Entity, resolved, nil
+}
+
+// ExecuteCommand persists command identity before dispatch; caller cancellation
+// stops waiting but does not cancel a durably created command.
+func (service *Service) ExecuteCommand(ctx context.Context, input CommandInput) (CommandResult, error) {
+	entity, resolved, err := service.validateCommand(ctx, input)
 	if err != nil {
 		return CommandResult{}, err
 	}
-	resolved, err := service.catalog.ResolveCommand(view.Entity, operationName, parameters)
-	if err != nil {
-		return CommandResult{}, fmt.Errorf("%w: %w", ErrInvalidCommand, err)
+	commandID := input.ID
+	if commandID == "" {
+		commandID, err = service.dependencies.NewCommandID()
+		if err != nil {
+			return CommandResult{}, fmt.Errorf("generate command ID: %w", err)
+		}
+		if _, parseErr := ParseCommandID(string(commandID)); parseErr != nil {
+			return CommandResult{}, fmt.Errorf("generate command ID: %w", parseErr)
+		}
 	}
-	commandID, err := service.dependencies.NewCommandID()
-	if err != nil {
-		return CommandResult{}, fmt.Errorf("generate command ID: %w", err)
-	}
-	if _, parseErr := ParseCommandID(string(commandID)); parseErr != nil {
-		return CommandResult{}, fmt.Errorf("generate command ID: %w", parseErr)
-	}
-	correlationID, err := service.dependencies.NewCorrelationID()
-	if err != nil {
-		return CommandResult{}, fmt.Errorf("generate correlation ID: %w", err)
-	}
-	if _, parseErr := ParseCorrelationID(string(correlationID)); parseErr != nil {
-		return CommandResult{}, fmt.Errorf("generate correlation ID: %w", parseErr)
+	correlationID := input.CorrelationID
+	if correlationID == "" {
+		correlationID, err = service.dependencies.NewCorrelationID()
+		if err != nil {
+			return CommandResult{}, fmt.Errorf("generate correlation ID: %w", err)
+		}
+		if _, parseErr := ParseCorrelationID(string(correlationID)); parseErr != nil {
+			return CommandResult{}, fmt.Errorf("generate correlation ID: %w", parseErr)
+		}
 	}
 	requestedAt, err := service.now()
 	if err != nil {
 		return CommandResult{}, err
 	}
 	command := CommandRecord{
-		ID: commandID, EntityID: entityID, AdapterID: view.Entity.AdapterID,
-		OperationName: operationName, Parameters: append(CommandParameters(nil), resolved.Parameters...),
+		ID: commandID, EntityID: input.EntityID, AdapterID: entity.AdapterID,
+		OperationName: input.OperationName, Parameters: append(CommandParameters(nil), resolved.Parameters...),
 		CorrelationID: correlationID, Status: CommandStatusRequested,
 		RequestedAt: requestedAt, DeadlineAt: requestedAt.Add(resolved.Deadline),
 	}

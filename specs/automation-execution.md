@@ -1,6 +1,6 @@
 # Automation execution and management
 
-Status: Draft for technical review. Product behavior is agreed; this documentation task does not authorize implementation.
+Status: Implementation explicitly authorized. E1–E3 are implemented and validated; E4 exposes manual execution and management. Scheduled matching/coalescing remains spec 2 scope.
 Sequence: Spec 1 of 2. Implement manual execution before [cron scheduling](automation-cron-scheduling.md).
 Effort: L to XL, several days including persistence, lifecycle, and integration tests.
 
@@ -317,7 +317,7 @@ Keys contain 1 to 128 printable ASCII characters excluding whitespace. A retaine
 
 Execute Steps in order. Generate a Command ID with `devices.NewCommandID` and an independent fresh Correlation ID with `devices.NewCorrelationID`. Atomically mark the Step running with both identities and its start time, then commit before calling `ExecuteCommand`. Never copy the marker from an existing Command. Step reservation and Command creation use separate transactions; they provide neither atomic Run/Command creation nor exactly-once physical effects.
 
-Use one ownership predicate for reconciliation, history joins, and recovery. Both `record.ID == step.ReservedCommandID` and `record.CorrelationID == step.ReservedCorrelationID` must hold. A persisted `command_id_conflict` excludes linkage even when both match. ID-only matches never supply public Command evidence. Independent marker generation and non-reuse preserve this distinction after a crash before failure persistence. Correlation IDs already exist in Command storage and the wire contract.
+Use one ownership predicate for reconciliation, history joins, and recovery. Both `record.ID == step.ReservedCommandID` and `record.CorrelationID == step.ReservedCorrelationID` must hold. Every persisted pre-creation failure code (`command_id_conflict`, `invalid_command`, `entity_not_found`, and `internal_error`) excludes linkage even when both identities match. ID-only matches never supply public Command evidence. Independent marker generation and non-reuse preserve this distinction after a crash before failure persistence. Correlation IDs already exist in Command storage and the wire contract.
 
 A successful observed Operation produces status `satisfied` with outcome `observed`. A dispatched Operation produces status and outcome `dispatched`; it does not confirm a physical effect. Persist each Step result before advancing. Failures stop the sequence without retries or rollback. There is no cancellation endpoint.
 
@@ -440,7 +440,7 @@ Workers use process-owned contexts independent of request and shutdown cancellat
 
 Keep NATS, health supervision, Observation consumption, and SQLite alive until current automation Commands return and their Step results persist. Interrupt unfinished sequences with `core_stopping`; fully completed Runs may succeed. Join workers before dependency teardown. Draining may take the Operation deadline plus its persistence allowance, beyond the existing five-second HTTP shutdown timeout. A hard kill uses startup recovery. Already-dispatched Commands are not canceled.
 
-Give drain dependencies a separate lifecycle context and cancel it after worker drain, on both normal and error exits. Overall readiness requires device readiness, healthy scheduling from spec 2, open admission, and no latched executor fault. Scheduler recovery clears only its own fault. Direct API Command cancellation behavior remains unchanged. The precedence of fault retention and shutdown interruption needs clarification below.
+Give drain dependencies a separate lifecycle context and cancel it after worker drain, on both normal and error exits. Overall readiness requires device readiness, healthy scheduling from spec 2, open admission, and no latched executor fault. Scheduler recovery clears only its own fault. Direct API Command cancellation behavior remains unchanged. Fault retention takes precedence over shutdown interruption: uncertain faulted Runs remain active during graceful shutdown until startup recovery interrupts them. Known unfinished sequences still use `core_stopping`.
 
 ## Files and deliverables
 
@@ -507,13 +507,13 @@ Use deterministic barriers/channels for ordering and shutdown. Test uniqueness, 
 
 Run `mise run validate` and review any generated, formatting, or module-metadata changes. Use repository mise tasks for focused checks.
 
-## Open decisions
+## Resolved decisions
 
-These ambiguities predate this editorial revision. The automation spec owner must resolve them without treating the shorter wording as a policy change.
+The user explicitly authorized implementation and resolved these questions:
 
-1. E2, E4, and E5 claim A12, whose scheduled coalescing checks require spec 2. Spec 2 depends on E1 through E5. Clarify staged acceptance ownership without dropping those tests.
-2. Executor faults retain uncertain active Runs until restart, while shutdown interrupts unfinished Runs. Specify which rule governs faulted Runs during graceful shutdown.
-3. Confirmed pre-creation failures prohibit Command adoption, but the stored join exclusion names only `command_id_conflict`. Specify how other confirmed pre-creation failures durably exclude a later matching record.
+1. E2/E4/E5 own A12 definition identity/order, uniqueness, bounds, manual provenance, and snapshot-history checks in spec 1. Scheduled matching/coalescing and one Run or overlap skip per Automation/minute are deferred to spec 2, not dropped from acceptance.
+2. Uncertain executor-faulted Runs retain their active claims through graceful shutdown until restart. Shutdown interruption applies only to known unfinished sequences; startup recovery interrupts retained uncertain Runs without replay.
+3. All confirmed pre-creation codes durably exclude Command evidence in reconciliation, history, and recovery: `command_id_conflict`, `invalid_command`, `entity_not_found`, and sanitized `internal_error`. Ambiguous faults must not persist these codes as established failure.
 
 ## Follow-up scope
 

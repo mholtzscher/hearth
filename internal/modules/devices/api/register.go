@@ -15,9 +15,7 @@ type Devices interface {
 	SetEntityEnabled(context.Context, devices.EntityID, bool) (devices.EntityWithState, error)
 	ExecuteCommand(
 		context.Context,
-		devices.EntityID,
-		devices.OperationName,
-		devices.CommandParameters,
+		devices.CommandInput,
 	) (devices.CommandResult, error)
 	ListDevices(context.Context, devices.ListDevicesParams) (devices.Page[devices.Device], error)
 	GetDevice(context.Context, devices.GetDeviceParams) (devices.DeviceAggregate, error)

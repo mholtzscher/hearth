@@ -119,12 +119,11 @@ func TestRunConnectsBothProtocols(t *testing.T) {
 	}
 	commandDone := make(chan commandResult, 1)
 	go func() {
-		result, executeErr := service.ExecuteCommand(
-			ctx,
-			entity.Entity.ID,
-			devices.OperationNameSet,
-			devices.CommandParameters(`{"value":true}`),
-		)
+		result, executeErr := service.ExecuteCommand(ctx, devices.CommandInput{
+			EntityID:      entity.Entity.ID,
+			OperationName: devices.OperationNameSet,
+			Parameters:    devices.CommandParameters(`{"value":true}`),
+		})
 		commandDone <- commandResult{result: result, err: executeErr}
 	}()
 	select {
@@ -492,18 +491,19 @@ func TestRunProjectsRelayAndTemperatureDevices(t *testing.T) {
 		if string(entity.Entity.Support) != `{"state":{"maximum":100,"minimum":0,"unit":"%"},"operations":{}}` {
 			t.Fatalf("percentage sensor support = %s", entity.Entity.Support)
 		}
-		if _, commandErr := service.ExecuteCommand(
-			ctx, entity.Entity.ID, devices.OperationNameSet, devices.CommandParameters(`{"value":50}`),
-		); !errors.Is(commandErr, devices.ErrInvalidCommand) {
+		if _, commandErr := service.ExecuteCommand(ctx, devices.CommandInput{
+			EntityID:      entity.Entity.ID,
+			OperationName: devices.OperationNameSet,
+			Parameters:    devices.CommandParameters(`{"value":50}`),
+		}); !errors.Is(commandErr, devices.ErrInvalidCommand) {
 			t.Fatalf("percentage sensor command error = %v, want %v", commandErr, devices.ErrInvalidCommand)
 		}
 	}
-	if _, err = service.ExecuteCommand(
-		ctx,
-		proof.relayLinkquality.Entity.ID,
-		devices.OperationNameSet,
-		devices.CommandParameters(`{"value":100}`),
-	); !errors.Is(err, devices.ErrInvalidCommand) {
+	if _, err = service.ExecuteCommand(ctx, devices.CommandInput{
+		EntityID:      proof.relayLinkquality.Entity.ID,
+		OperationName: devices.OperationNameSet,
+		Parameters:    devices.CommandParameters(`{"value":100}`),
+	}); !errors.Is(err, devices.ErrInvalidCommand) {
 		t.Fatalf("linkquality command error = %v, want %v", err, devices.ErrInvalidCommand)
 	}
 
@@ -526,12 +526,11 @@ func TestRunProjectsRelayAndTemperatureDevices(t *testing.T) {
 		t.Fatalf("device kinds = %#v", kinds)
 	}
 
-	if _, err = service.ExecuteCommand(
-		ctx,
-		proof.temperature.Entity.ID,
-		devices.OperationNameSet,
-		devices.CommandParameters(`{"value":22600}`),
-	); !errors.Is(err, devices.ErrInvalidCommand) {
+	if _, err = service.ExecuteCommand(ctx, devices.CommandInput{
+		EntityID:      proof.temperature.Entity.ID,
+		OperationName: devices.OperationNameSet,
+		Parameters:    devices.CommandParameters(`{"value":22600}`),
+	}); !errors.Is(err, devices.ErrInvalidCommand) {
 		t.Fatalf("temperature command error = %v, want %v", err, devices.ErrInvalidCommand)
 	}
 	history, err := service.ListEntityCommands(ctx, devices.ListEntityCommandsParams{

@@ -236,7 +236,7 @@ func newSimulatorMatrixHarness(t *testing.T, scenario string, options simulatorM
 	if err != nil {
 		t.Fatal(err)
 	}
-	httpHandler, _ := NewHTTPHandler(harness.service, nil)
+	httpHandler, _ := NewHTTPHandler(harness.service, &stubHTTPAutomations{}, testHTTPAutomationCodec(t), nil)
 	harness.httpServer = httptest.NewServer(httpHandler)
 
 	if options.manual {
@@ -1321,12 +1321,11 @@ func TestSimulatorExpiryTakeoverFencesOldTrafficAndCommands(t *testing.T) {
 			acceptance, oldCommands.Load(), newCommands.Load(),
 		)
 	}
-	_, err = harness.service.ExecuteCommand(
-		harness.ctx,
-		entityID,
-		devices.OperationNameSet,
-		devices.CommandParameters(`{"value":true}`),
-	)
+	_, err = harness.service.ExecuteCommand(harness.ctx, devices.CommandInput{
+		EntityID:      entityID,
+		OperationName: devices.OperationNameSet,
+		Parameters:    devices.CommandParameters(`{"value":true}`),
+	})
 	if !errors.Is(err, devices.ErrUpstreamRejected) {
 		t.Fatalf("replacement Command error = %v", err)
 	}

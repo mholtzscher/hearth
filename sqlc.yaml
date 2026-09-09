@@ -9,3 +9,12 @@ sql:
         out: "internal/modules/devices/dbsqlc"
         sql_package: "database/sql"
         query_parameter_limit: 0
+  - engine: "sqlite"
+    schema: "internal/platform/db/migrations"
+    queries: "internal/modules/automations/dbqueries"
+    gen:
+      go:
+        package: "dbsqlc"
+        out: "internal/modules/automations/dbsqlc"
+        sql_package: "database/sql"
+        query_parameter_limit: 0

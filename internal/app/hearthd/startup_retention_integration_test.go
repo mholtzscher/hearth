@@ -10,6 +10,8 @@ import (
 
 	natsserver "github.com/nats-io/nats-server/v2/server"
 
+	"github.com/mholtzscher/hearth/internal/modules/automations"
+	"github.com/mholtzscher/hearth/internal/modules/devices"
 	platformdb "github.com/mholtzscher/hearth/internal/platform/db"
 )
 
@@ -43,12 +45,25 @@ func TestCoreStartupPreservesRetainedObservations(t *testing.T) {
 	defer stopCore()
 	runErrors := make(chan error, 1)
 	go func() {
-		runErrors <- Run(runContext, Config{
+		runErrors <- Run(runContext, Config{HouseholdTimezone: "UTC",
 			HTTPAddr: httpAddress, NATSURL: server.ClientURL(), SQLitePath: databasePath,
 		}, slog.New(slog.DiscardHandler))
 	}()
 	waitForCoreHealthz(ctx, t, httpAddress, runErrors)
 
+	observer, observerErr := platformdb.Open(ctx, databasePath)
+	if observerErr != nil {
+		t.Fatal(observerErr)
+	}
+	defer func() { _ = observer.Close() }()
+	var retainedRuns int
+	if queryErr := observer.QueryRowContext(ctx, `SELECT count(*) FROM automation_runs`).
+		Scan(&retainedRuns); queryErr != nil {
+		t.Fatal(queryErr)
+	}
+	if retainedRuns != 1 {
+		t.Fatalf("startup pruned expired terminal Run: count=%d", retainedRuns)
+	}
 	if retained := countRetainedObservations(ctx, t, databasePath); retained != 2 {
 		t.Fatalf("observations after startup = %d, want 2", retained)
 	}
@@ -121,6 +136,52 @@ func seedStartupRetentionDatabase(ctx context.Context, t *testing.T, databasePat
 		  FROM observations WHERE observation_id = 'obs_01890f47-7a6b-7c4d-8e9f-0123456789a2'`,
 	); execErr != nil {
 		t.Fatal(execErr)
+	}
+	repo := automations.NewSQLiteRepository(database)
+	automation, createErr := repo.CreateAutomation(ctx, automations.AutomationDefinition{
+		Name: "Expired automation history",
+		Triggers: []automations.AutomationTrigger{
+			{ID: "daily", Kind: automations.AutomationTriggerKindCron, Expression: "0 19 * * *"},
+		},
+		Steps: []automations.AutomationStep{
+			{
+				EntityID:      "ent_01890f47-7a6b-7c4d-8e9f-0123456789a1",
+				OperationName: "set",
+				Parameters:    devices.CommandParameters(`{"value":true}`),
+			},
+		},
+	})
+	if createErr != nil {
+		t.Fatal(createErr)
+	}
+	admission, admissionErr := repo.AdmitManualRun(
+		ctx,
+		automations.AutomationManualAdmission{
+			Request:  automations.AutomationManualRequest{AutomationID: automation.ID, IdempotencyKey: "retained"},
+			Timezone: "UTC",
+		},
+	)
+	if admissionErr != nil {
+		t.Fatal(admissionErr)
+	}
+	code := automations.AutomationFailureCoreStopping
+	if completeErr := repo.CompleteAutomationRun(
+		ctx,
+		automations.AutomationRunCompletion{
+			RunID:       admission.Run.ID,
+			Status:      automations.AutomationRunStatusInterrupted,
+			FailureCode: &code,
+		},
+	); completeErr != nil {
+		t.Fatal(completeErr)
+	}
+	if _, timestampErr := database.ExecContext(
+		ctx,
+		`UPDATE automation_runs SET completed_at = ? WHERE id = ?`,
+		sortableTimestamp(seededAt.Add(-60*24*time.Hour)),
+		admission.Run.ID,
+	); timestampErr != nil {
+		t.Fatal(timestampErr)
 	}
 }
 

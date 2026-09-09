@@ -545,6 +545,13 @@ func (repository *SQLiteRepository) CreateCommand(ctx context.Context, command C
 		RequestedAt: formatSortableTime(command.RequestedAt), DeadlineAt: formatTime(command.DeadlineAt),
 		CompletedAt: nullableTime(command.CompletedAt), FailureCode: nullableCommandFailure(command.FailureCode),
 	}); createErr != nil {
+		// The commands table has only one primary key: id. Do not map UNIQUE
+		// violations (such as outcome observation identity) or other constraints.
+		type sqliteError interface{ Code() int }
+		var databaseError sqliteError
+		if errors.As(createErr, &databaseError) && databaseError.Code() == 1555 {
+			return CommandRecord{}, fmt.Errorf("create command: %w", ErrCommandIDConflict)
+		}
 		return CommandRecord{}, fmt.Errorf("create command: %w", createErr)
 	}
 	if commitErr := tx.Commit(); commitErr != nil {

@@ -45,7 +45,7 @@ func TestRunListsOwnedMappingsAndDrainsEndpoint(t *testing.T) {
 	runDone := make(chan struct{})
 	go func() {
 		defer close(runDone)
-		runErrors <- Run(runContext, Config{
+		runErrors <- Run(runContext, Config{HouseholdTimezone: "UTC",
 			HTTPAddr:   unusedLoopbackAddress(t),
 			NATSURL:    server.ClientURL(),
 			SQLitePath: filepath.Join(t.TempDir(), "hearth.db"),

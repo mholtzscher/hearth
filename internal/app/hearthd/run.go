@@ -7,12 +7,14 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"sync"
 	"time"
 
 	natsgo "github.com/nats-io/nats.go"
 	"github.com/nats-io/nats.go/jetstream"
 
 	contractsv1 "github.com/mholtzscher/hearth/contracts/v1"
+	"github.com/mholtzscher/hearth/internal/modules/automations"
 	"github.com/mholtzscher/hearth/internal/modules/devices"
 	devicesnats "github.com/mholtzscher/hearth/internal/modules/devices/nats"
 	platformdb "github.com/mholtzscher/hearth/internal/platform/db"
@@ -55,12 +57,22 @@ func failStage(stage string, err error) error {
 	return &runStageError{stage: stage, err: err}
 }
 
-func Run(ctx context.Context, config Config, logger *slog.Logger) error { //nolint:funlen // Linear resource lifecycle.
-	if err := config.Validate(); err != nil {
-		return failStage("validate_config", err)
+//nolint:funlen,gocognit // Linear lifecycle keeps drain and teardown order explicit.
+func Run(
+	ctx context.Context,
+	config Config,
+	logger *slog.Logger,
+) error {
+	timezone, configErr := config.validateAndLoadHouseholdTimezone()
+	if configErr != nil {
+		return failStage("validate_config", configErr)
 	}
 	if logger == nil {
 		logger = slog.Default()
+	}
+	definitions, definitionErr := automations.NewAutomationDefinitionCodec()
+	if definitionErr != nil {
+		return failStage("compile_automation_schema", definitionErr)
 	}
 	processLogger := logger.With(slog.String("component", "process"))
 	coreLogger := logger.With(slog.String("component", "core"))
@@ -87,6 +99,11 @@ func Run(ctx context.Context, config Config, logger *slog.Logger) error { //noli
 		return failStage("interrupt_commands", fmt.Errorf("interrupt active commands: %w", err))
 	}
 	logStartupStage(ctx, coreLogger, "active_commands_interrupted")
+	automationRepository := automations.NewSQLiteRepository(database)
+	if err := automationRepository.InterruptAutomationRuns(ctx); err != nil {
+		return failStage("interrupt_automation_runs", err)
+	}
+	logStartupStage(ctx, coreLogger, "active_automation_runs_interrupted")
 	// Observation pruning runs only on the hourly pass below, so startup never
 	// sweeps retained history and uptime under one hour means no sweep yet.
 
@@ -159,7 +176,17 @@ func Run(ctx context.Context, config Config, logger *slog.Logger) error { //noli
 		logCleanupFailure(ctx, processLogger, "drain_enablement_server", enablement.Drain())
 	}()
 	logStartupStage(ctx, coreLogger, "nats_servers_started")
-	observations, observationErr := devicesnats.StartObservationConsumer(ctx, durable, validator, service, natsLogger)
+	// Current automation Commands must retain observation and health dependencies
+	// beyond shutdown cancellation, including on error exits.
+	dependencyContext, cancelDependencies := context.WithCancel(context.WithoutCancel(ctx))
+	defer cancelDependencies()
+	observations, observationErr := devicesnats.StartObservationConsumer(
+		dependencyContext,
+		durable,
+		validator,
+		service,
+		natsLogger,
+	)
 	if observationErr != nil {
 		return mapStartupCancellation(ctx, failStage("start_observation_consumer", observationErr))
 	}
@@ -167,9 +194,17 @@ func Run(ctx context.Context, config Config, logger *slog.Logger) error { //noli
 	logStartupStage(ctx, coreLogger, "observation_consumer_started")
 
 	readiness := NewRuntimeReadiness(database, connection, js, observations)
-	healthSupervisor := startHealthSupervisor(ctx, readiness, service, coreLogger)
+	healthSupervisor := startHealthSupervisor(dependencyContext, readiness, service, coreLogger)
 	defer healthSupervisor.Stop()
-	handler, _ := NewHTTPHandler(service, readiness)
+	automationService := automations.NewService(automationRepository, service, repository, definitions, timezone,
+		logger.With(slog.String("component", "automations")))
+	var maintenance sync.WaitGroup
+	// Registered after dependency cleanup so every exit drains workers first.
+	defer func() {
+		drainAutomationExecution(automationService, cancelDependencies)
+		maintenance.Wait()
+	}()
+	handler, _ := NewHTTPHandler(service, automationService, definitions, readiness)
 	// Bind the socket explicitly so http_listening is only logged after the
 	// address is actually held; a bind failure never produces that event.
 	listener, listenErr := (&net.ListenConfig{}).Listen(ctx, "tcp", config.HTTPAddr)
@@ -187,7 +222,17 @@ func Run(ctx context.Context, config Config, logger *slog.Logger) error { //noli
 	go func() {
 		serverErrors <- server.Serve(listener)
 	}()
-	go pruneObservations(ctx, service, coreLogger, config.EffectiveObservationRetention())
+	maintenance.Go(func() {
+		pruneObservations(dependencyContext, service, coreLogger, config.EffectiveObservationRetention())
+	})
+	maintenance.Go(func() {
+		pruneAutomationHistory(
+			dependencyContext,
+			automationService,
+			coreLogger,
+			config.EffectiveAutomationHistoryRetention(),
+		)
+	})
 
 	select {
 	case err := <-serverErrors:
@@ -196,6 +241,7 @@ func Run(ctx context.Context, config Config, logger *slog.Logger) error { //noli
 		}
 		return nil
 	case <-ctx.Done():
+		drainAutomationExecution(automationService, cancelDependencies)
 		return shutdownCore(
 			healthSupervisor, server, observations, enablement, ownedMappings, registrations, availability, sessions,
 			connection,
@@ -358,6 +404,39 @@ func pruneObservations(
 					"prune observations",
 					slog.String("event", "core.observations_prune_failed"),
 					slog.String("error_code", "observations_prune_failed"),
+				)
+			}
+		}
+	}
+}
+
+// drainAutomationExecution runs before any dependency teardown on every exit.
+// Scheduler stop/join belongs after gate closure and before this wait in spec 2.
+func drainAutomationExecution(service *automations.Service, cancelDependencies context.CancelFunc) {
+	service.StopAutomationExecutionAdmission()
+	_ = service.WaitAutomationRuns(context.Background())
+	cancelDependencies()
+}
+
+func pruneAutomationHistory(
+	ctx context.Context,
+	service *automations.Service,
+	logger *slog.Logger,
+	retention time.Duration,
+) {
+	ticker := time.NewTicker(time.Hour)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case now := <-ticker.C:
+			if err := service.PruneAutomationHistory(ctx, now.UTC().Add(-retention)); err != nil && ctx.Err() == nil {
+				logger.ErrorContext(
+					ctx,
+					"prune automation history",
+					slog.String("event", "core.automation_history_prune_failed"),
+					slog.String("error_code", "automation_history_prune_failed"),
 				)
 			}
 		}

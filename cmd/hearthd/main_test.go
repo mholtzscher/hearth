@@ -32,7 +32,7 @@ func TestMainLoggingFlagsAndConfigFailure(t *testing.T) {
 		configYAML :=
 			"http_addr: \"127.0.0.1:" + cmdtest.FreeLoopbackPort(t) + "\"\n" +
 				"nats_url: \"" + natsURL + "\"\n" +
-				"sqlite_path: \"" + filepath.Join(t.TempDir(), "hearth.db") + "\"\n"
+				"household_timezone: UTC\nsqlite_path: \"" + filepath.Join(t.TempDir(), "hearth.db") + "\"\n"
 		cmdtest.CheckStartupCancellation(t, binary, configYAML, "hearthd")
 	})
 }

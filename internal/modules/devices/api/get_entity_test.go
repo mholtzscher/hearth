@@ -46,9 +46,7 @@ type stubDevices struct {
 	) (devices.Page[devices.EntityStateHistoryEntry], error)
 	executeCommand func(
 		context.Context,
-		devices.EntityID,
-		devices.OperationName,
-		devices.CommandParameters,
+		devices.CommandInput,
 	) (devices.CommandResult, error)
 }
 
@@ -166,14 +164,12 @@ func (stub *stubDevices) ListEntityStateHistory(
 
 func (stub *stubDevices) ExecuteCommand(
 	ctx context.Context,
-	entityID devices.EntityID,
-	operation devices.OperationName,
-	parameters devices.CommandParameters,
+	input devices.CommandInput,
 ) (devices.CommandResult, error) {
 	if stub.executeCommand == nil {
 		panic("unexpected ExecuteCommand call")
 	}
-	return stub.executeCommand(ctx, entityID, operation, parameters)
+	return stub.executeCommand(ctx, input)
 }
 
 func TestGetEntityReturnsMetadataAndNullableState(t *testing.T) {

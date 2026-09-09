@@ -74,6 +74,9 @@ func (repository *commandRepository) CreateCommand(_ context.Context, command Co
 	if repository.createErr != nil {
 		return CommandRecord{}, repository.createErr
 	}
+	if _, exists := repository.commands[command.ID]; exists {
+		return CommandRecord{}, ErrCommandIDConflict
+	}
 	if !repository.view.Entity.Enabled {
 		completedAt := command.RequestedAt
 		failureCode := CommandFailureEntityDisabled
@@ -210,12 +213,11 @@ func TestExecuteCommandCommitsBeforeDispatchAndHandlesAcceptanceRace(t *testing.
 	)
 	service = newTestService(repository, sender, catalog, commandDependencies())
 
-	result, err := service.ExecuteCommand(
-		context.Background(),
-		commandTestEntityID,
-		OperationNameSet,
-		CommandParameters(`{"value":true}`),
-	)
+	result, err := service.ExecuteCommand(context.Background(), CommandInput{
+		EntityID:      commandTestEntityID,
+		OperationName: OperationNameSet,
+		Parameters:    CommandParameters(`{"value":true}`),
+	})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -263,12 +265,11 @@ func TestExecuteCommandReturnsSatisfiedWhenObservationWinsDispatchFailureRace(t 
 			)
 			service = newTestService(repository, sender, commandCatalog(t, time.Second), commandDependencies())
 
-			result, err := service.ExecuteCommand(
-				context.Background(),
-				commandTestEntityID,
-				OperationNameSet,
-				CommandParameters(`{"value":true}`),
-			)
+			result, err := service.ExecuteCommand(context.Background(), CommandInput{
+				EntityID:      commandTestEntityID,
+				OperationName: OperationNameSet,
+				Parameters:    CommandParameters(`{"value":true}`),
+			})
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -352,12 +353,11 @@ func TestExecuteCommandFailureMatrixIsDurablyClassified(t *testing.T) {
 				return test.acceptance, test.sendErr
 			})
 			service := newTestService(repository, sender, commandCatalog(t, test.deadline), commandDependencies())
-			_, err := service.ExecuteCommand(
-				context.Background(),
-				commandTestEntityID,
-				OperationNameSet,
-				CommandParameters(`{"value":true}`),
-			)
+			_, err := service.ExecuteCommand(context.Background(), CommandInput{
+				EntityID:      commandTestEntityID,
+				OperationName: OperationNameSet,
+				Parameters:    CommandParameters(`{"value":true}`),
+			})
 			if test.wantErr != nil && !errors.Is(err, test.wantErr) {
 				t.Fatalf("error = %v, want %v", err, test.wantErr)
 			}
@@ -389,24 +389,22 @@ func TestExecuteCommandRejectsInvalidParametersAndCreationFailureBeforeDispatch(
 	})
 	service := newTestService(repository, sender, commandCatalog(t, time.Second), commandDependencies())
 
-	if _, err := service.ExecuteCommand(
-		context.Background(),
-		commandTestEntityID,
-		OperationNameSet,
-		CommandParameters(`{"value":1}`),
-	); !errors.Is(
+	if _, err := service.ExecuteCommand(context.Background(), CommandInput{
+		EntityID:      commandTestEntityID,
+		OperationName: OperationNameSet,
+		Parameters:    CommandParameters(`{"value":1}`),
+	}); !errors.Is(
 		err,
 		ErrInvalidCommand,
 	) {
 		t.Fatalf("invalid parameters error = %v", err)
 	}
 	repository.createErr = errors.New("SQLite unavailable")
-	if _, err := service.ExecuteCommand(
-		context.Background(),
-		commandTestEntityID,
-		OperationNameSet,
-		CommandParameters(`{"value":true}`),
-	); !errors.Is(
+	if _, err := service.ExecuteCommand(context.Background(), CommandInput{
+		EntityID:      commandTestEntityID,
+		OperationName: OperationNameSet,
+		Parameters:    CommandParameters(`{"value":true}`),
+	}); !errors.Is(
 		err,
 		repository.createErr,
 	) {
@@ -435,12 +433,11 @@ func TestExecuteCommandRejectsTemperatureOperationBeforeDispatch(t *testing.T) {
 	}
 	service := newTestService(repository, sender, catalog, commandDependencies())
 
-	if _, execErr := service.ExecuteCommand(
-		context.Background(),
-		commandTestEntityID,
-		OperationNameSet,
-		CommandParameters(`{"value":21500}`),
-	); !errors.Is(execErr, ErrInvalidCommand) {
+	if _, execErr := service.ExecuteCommand(context.Background(), CommandInput{
+		EntityID:      commandTestEntityID,
+		OperationName: OperationNameSet,
+		Parameters:    CommandParameters(`{"value":21500}`),
+	}); !errors.Is(execErr, ErrInvalidCommand) {
 		t.Fatalf("temperature command error = %v", execErr)
 	}
 	if dispatches != 0 {
@@ -462,9 +459,11 @@ func TestExecuteCommandCreatesTerminalRecordWithoutWaiterOrDispatchWhenDisabled(
 	})
 	service := newTestService(repository, sender, commandCatalog(t, time.Second), commandDependencies())
 
-	_, err := service.ExecuteCommand(
-		context.Background(), commandTestEntityID, OperationNameSet, CommandParameters(`{"value":true}`),
-	)
+	_, err := service.ExecuteCommand(context.Background(), CommandInput{
+		EntityID:      commandTestEntityID,
+		OperationName: OperationNameSet,
+		Parameters:    CommandParameters(`{"value":true}`),
+	})
 	if !errors.Is(err, ErrEntityDisabled) {
 		t.Fatalf("disabled Command error = %v", err)
 	}
@@ -488,9 +487,11 @@ func TestExecuteCommandCreatesTerminalRecordWithoutWaiterOrDispatchWhenDisabled(
 	}
 
 	repository.commands = make(map[CommandID]CommandRecord)
-	if _, commandErr := service.ExecuteCommand(
-		context.Background(), commandTestEntityID, OperationNameSet, CommandParameters(`{"value":1}`),
-	); !errors.Is(commandErr, ErrInvalidCommand) {
+	if _, commandErr := service.ExecuteCommand(context.Background(), CommandInput{
+		EntityID:      commandTestEntityID,
+		OperationName: OperationNameSet,
+		Parameters:    CommandParameters(`{"value":1}`),
+	}); !errors.Is(commandErr, ErrInvalidCommand) {
 		t.Fatalf("invalid disabled Command error = %v", commandErr)
 	}
 	if len(repository.commands) != 0 {
@@ -562,12 +563,11 @@ func TestExecuteCommandKeepsOverlappingCommandsIndependent(t *testing.T) {
 	results := make(chan result, 2)
 	for _, parameters := range []CommandParameters{CommandParameters(`{"value":true}`), CommandParameters(`{"value":false}`)} {
 		go func() {
-			command, err := service.ExecuteCommand(
-				context.Background(),
-				commandTestEntityID,
-				OperationNameSet,
-				parameters,
-			)
+			command, err := service.ExecuteCommand(context.Background(), CommandInput{
+				EntityID:      commandTestEntityID,
+				OperationName: OperationNameSet,
+				Parameters:    parameters,
+			})
 			results <- result{command: command, err: err}
 		}()
 	}
@@ -610,12 +610,11 @@ func TestExecuteCommandIgnoresMismatchedLinkedObservation(t *testing.T) {
 		},
 	)
 	service = newTestService(repository, sender, commandCatalog(t, 15*time.Millisecond), commandDependencies())
-	_, err := service.ExecuteCommand(
-		context.Background(),
-		commandTestEntityID,
-		OperationNameSet,
-		CommandParameters(`{"value":true}`),
-	)
+	_, err := service.ExecuteCommand(context.Background(), CommandInput{
+		EntityID:      commandTestEntityID,
+		OperationName: OperationNameSet,
+		Parameters:    CommandParameters(`{"value":true}`),
+	})
 	if !errors.Is(err, ErrOutcomeTimeout) {
 		t.Fatalf("error = %v", err)
 	}
@@ -646,12 +645,11 @@ func TestExecuteCommandContinuesAfterCallerCancellation(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	returned := make(chan error, 1)
 	go func() {
-		_, err := service.ExecuteCommand(
-			ctx,
-			commandTestEntityID,
-			OperationNameSet,
-			CommandParameters(`{"value":true}`),
-		)
+		_, err := service.ExecuteCommand(ctx, CommandInput{
+			EntityID:      commandTestEntityID,
+			OperationName: OperationNameSet,
+			Parameters:    CommandParameters(`{"value":true}`),
+		})
 		returned <- err
 	}()
 	request := <-dispatched
@@ -696,12 +694,11 @@ func TestExecuteCommandDispatchedCompletesAfterAcceptanceWithoutObservation(t *t
 	)
 	service := newTestService(repository, sender, catalog, commandDependencies())
 
-	result, err := service.ExecuteCommand(
-		context.Background(),
-		commandTestEntityID,
-		OperationName("trigger"),
-		CommandParameters(`{"name":"blink"}`),
-	)
+	result, err := service.ExecuteCommand(context.Background(), CommandInput{
+		EntityID:      commandTestEntityID,
+		OperationName: OperationName("trigger"),
+		Parameters:    CommandParameters(`{"name":"blink"}`),
+	})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -763,9 +760,11 @@ func runDispatchedFailureCase(t *testing.T, test dispatchedFailureCase) {
 		return test.acceptance, nil
 	})
 	service := newTestService(repository, sender, catalog, commandDependencies())
-	_, err = service.ExecuteCommand(
-		context.Background(), commandTestEntityID, OperationName("trigger"), test.parameters,
-	)
+	_, err = service.ExecuteCommand(context.Background(), CommandInput{
+		EntityID:      commandTestEntityID,
+		OperationName: OperationName("trigger"),
+		Parameters:    test.parameters,
+	})
 	if !errors.Is(err, test.wantErr) {
 		t.Fatalf("error = %v, want %v", err, test.wantErr)
 	}

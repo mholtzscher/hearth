@@ -22,7 +22,12 @@ func TestLoadExampleConfig(t *testing.T) {
 
 func TestConfigAcceptsNonLoopbackHTTP(t *testing.T) {
 	t.Parallel()
-	value := hearthd.Config{HTTPAddr: "0.0.0.0:8080", NATSURL: "nats://127.0.0.1:4222", SQLitePath: "hearth.db"}
+	value := hearthd.Config{
+		HouseholdTimezone: "UTC",
+		HTTPAddr:          "0.0.0.0:8080",
+		NATSURL:           "nats://127.0.0.1:4222",
+		SQLitePath:        "hearth.db",
+	}
 	if err := value.Validate(); err != nil {
 		t.Fatalf("validate non-loopback HTTP address: %v", err)
 	}
@@ -78,7 +83,7 @@ func TestObservationRetentionRejectsNegativeAndJustBelowMinimum(t *testing.T) {
 		-time.Hour,
 		hearthd.MinimumObservationRetention - time.Nanosecond,
 	} {
-		value := hearthd.Config{
+		value := hearthd.Config{HouseholdTimezone: "UTC",
 			HTTPAddr: "127.0.0.1:8080", NATSURL: "nats://127.0.0.1:4222", SQLitePath: "hearth.db",
 			ObservationRetention: retention,
 		}
@@ -90,7 +95,7 @@ func TestObservationRetentionRejectsNegativeAndJustBelowMinimum(t *testing.T) {
 
 func TestLoadConfigRejectsObservationRetentionBelowMinimum(t *testing.T) {
 	t.Parallel()
-	short := hearthd.Config{
+	short := hearthd.Config{HouseholdTimezone: "UTC",
 		HTTPAddr: "127.0.0.1:8080", NATSURL: "nats://127.0.0.1:4222", SQLitePath: "hearth.db",
 		ObservationRetention: 7 * 24 * time.Hour,
 	}
@@ -109,7 +114,7 @@ func TestEffectiveObservationRetentionFallsBackToDefault(t *testing.T) {
 	if got := unset.EffectiveObservationRetention(); got != hearthd.DefaultObservationRetention {
 		t.Fatalf("effective retention = %s, want default %s", got, hearthd.DefaultObservationRetention)
 	}
-	set := hearthd.Config{
+	set := hearthd.Config{HouseholdTimezone: "UTC",
 		HTTPAddr: "127.0.0.1:8080", NATSURL: "nats://127.0.0.1:4222", SQLitePath: "hearth.db",
 		ObservationRetention: 8 * 24 * time.Hour,
 	}
@@ -133,7 +138,7 @@ func loadRetentionConfig(t *testing.T, retentionLine string) hearthd.Config {
 func writeRetentionConfig(t *testing.T, retentionLine string) string {
 	t.Helper()
 	contents := "http_addr: 127.0.0.1:8080\nnats_url: nats://127.0.0.1:4222\n" +
-		"sqlite_path: hearth.db\n" + retentionLine
+		"sqlite_path: hearth.db\nhousehold_timezone: UTC\n" + retentionLine
 	path := filepath.Join(t.TempDir(), "hearth.yaml")
 	if err := os.WriteFile(path, []byte(contents), 0o600); err != nil {
 		t.Fatal(err)

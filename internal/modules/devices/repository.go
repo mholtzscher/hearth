@@ -12,6 +12,7 @@ var (
 	ErrDeviceNotFound             = errors.New("device not found")
 	ErrEntityNotFound             = errors.New("entity not found")
 	ErrCommandNotFound            = errors.New("command not found")
+	ErrCommandIDConflict          = errors.New("command ID already exists")
 	ErrInvalidPage                = errors.New("invalid page")
 	ErrCommandTerminal            = errors.New("command is already terminal")
 	ErrInvalidCommand             = errors.New("invalid command")
