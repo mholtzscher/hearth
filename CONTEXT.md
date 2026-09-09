@@ -68,6 +68,26 @@ _Avoid_: Desired state, target
 A request to change one controllable entity before a deadline. For observed operations, its outcome is satisfied only after a fresh post-dispatch observation linked to that Command matches the requested value; dispatch or acceptance alone is not satisfaction, and an unhealthy owning Adapter causes failure rather than deferred delivery, while an unavailable Entity with a healthy owner is still attempted. A dispatched operation on a stateless entity instead terminates as `dispatched` once acceptance is durably recorded; it requests no observation and stores no state. Commands for one entity may overlap, each with an independent outcome; a satisfied outcome may be immediately superseded by another observation. The core durably records each attempt and outcome for history, but the record is not executable work: unfinished attempts become interrupted after restart and are never replayed.
 _Avoid_: Action, service call, queued job
 
+**Automation**:
+A named definition containing one or more Triggers and an ordered sequence of Steps. Any Trigger can initiate execution; enablement governs automatic execution, not explicit manual invocation.
+_Avoid_: Rule, workflow, scene
+
+**Trigger**:
+One identified, configured reason for automatically executing an Automation. Manual invocation starts a Run without a Trigger occurrence; an Entity Operation named `trigger` is a separate device-control concept.
+_Avoid_: Command, invocation
+
+**Step**:
+One Entity Operation request in an Automation's ordered sequence. Attempting a Step creates a Command only if execution-time validation and durable creation succeed; the Step is the definition, not the Command attempt or its outcome.
+_Avoid_: Action, Command
+
+**Run**:
+One recorded execution of an Automation using a snapshot of its definition, started automatically or manually. A successful Run means its Commands reached their Operations' required outcomes, not that all physical effects were confirmed.
+_Avoid_: Command, occurrence
+
+**Occurrence**:
+One scheduled instant at which one or more of an Automation's Triggers match, recording all matching Triggers together. An Occurrence may start one Run or be skipped without executing Steps.
+_Avoid_: Run, timer
+
 **Canonical ID**:
 An immutable Hearth-assigned identity for a device or entity that remains stable when names, external identifiers, or owning adapters change.
 _Avoid_: Name, external ID
