@@ -9,20 +9,16 @@ const (
 	temperatureUnitCelsius = "°C"
 )
 
-// sensorPlanner supports numeric ambient temperature, humidity, and battery
-// root exposes. Temperature uses its milli-Celsius contract; humidity and
-// battery share one 0–100 percent numeric-sensor translation through an
-// explicit allowlist, so no other numeric expose can register. An eligible
-// expose requires its contract unit, a Device-unique property, publish
-// access, and no set access. Get access alone controls startup refresh: a
-// publish-only sensor has no get properties.
-type sensorPlanner struct{}
-
-func (sensorPlanner) Plan(input devicePlanningInput) plannerContribution {
+// planSensorFamily plans temperature first, then the ambient numeric capability
+// table in order. Each mapping visits retained roots independently so an
+// ineligible root cannot suppress valid siblings. Family order and root
+// selection stay in Go; catalog records contain only capability data.
+func planSensorFamily(input devicePlanningInput) plannerContribution {
 	contribution := plannerContribution{Kind: upstreamDeviceKindSensor, Role: plannerRoleSupplemental}
 	appendTemperaturePlans(&contribution, input)
-	appendPercentageSensorPlans(&contribution, input, humidityExposeName, "Humidity")
-	appendPercentageSensorPlans(&contribution, input, batteryExposeName, "Battery")
+	for _, mapping := range ambientNumericSensors() {
+		appendNumericSensorPlans(&contribution, input, mapping)
+	}
 	return contribution
 }
 
@@ -63,44 +59,18 @@ func appendTemperaturePlans(contribution *plannerContribution, input devicePlann
 	}
 }
 
-// appendPercentageSensorPlans adds one read-only percent Entity per
-// eligible resolved root matching one allowlisted expose name, skipping
-// ineligible roots individually so valid siblings survive.
-func appendPercentageSensorPlans(
+// appendNumericSensorPlans adds a read-only Entity for each eligible root
+// matching a capability. Ambient bounds are fixed by the mapping rather
+// than inferred from upstream reports.
+func appendNumericSensorPlans(
 	contribution *plannerContribution,
 	input devicePlanningInput,
-	exposeName, displayName string,
+	mapping numericSensorMapping,
 ) {
 	for _, root := range input.Exposes.roots {
-		if root.expose.Type != upstreamExposeNumeric || root.expose.Name != exposeName {
-			continue
+		if plan := planNumericSensorRoot(input, root, mapping); plan != nil {
+			contribution.Entities = append(contribution.Entities, *plan)
 		}
-		if !root.resolved {
-			continue
-		}
-		expose := root.expose
-		if expose.Unit != percentageSensorUnit || !sensorExposeEligible(input, expose) {
-			continue
-		}
-		key, name := scopedIdentity(
-			exposeName,
-			displayName,
-			expose.Endpoint,
-			root.endpoint,
-			root.scoped,
-		)
-		if !validDescriptorName(name) {
-			continue
-		}
-		plan, err := newPercentageSensorPlan(adapter.EntityMetadata{
-			Key:        key,
-			ExternalID: input.IEEE + "/" + entityLocation(root) + "/" + exposeName,
-			Name:       name,
-		}, expose.Property, exposeCanGet(expose))
-		if err != nil {
-			continue
-		}
-		contribution.Entities = append(contribution.Entities, plan)
 	}
 }
 

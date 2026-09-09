@@ -93,16 +93,14 @@ func linkqualityUnitFor(unit string) (string, bool) {
 	}
 }
 
-// linkqualityPlanner supports numeric device-root linkquality exposes on
+// planLinkquality supports numeric device-root linkquality exposes on
 // any Device kind. An eligible expose requires publish access with no set
 // access, a Device-unique property, and an empty or lqi unit. Get access
 // alone controls startup refresh: a publish-only expose has no get
 // properties. It never gates or joins the power family: it appends as a
 // device-kind-agnostic supplement alongside whatever primary contribution
 // wins.
-type linkqualityPlanner struct{}
-
-func (linkqualityPlanner) Plan(input devicePlanningInput) plannerContribution {
+func planLinkquality(input devicePlanningInput) plannerContribution {
 	contribution := plannerContribution{Kind: upstreamDeviceKindSensor, Role: plannerRoleSupplemental}
 	root, ok := input.Exposes.UniqueRoot(upstreamExposeNumeric, linkqualityExposeName)
 	if !ok || !root.resolved {

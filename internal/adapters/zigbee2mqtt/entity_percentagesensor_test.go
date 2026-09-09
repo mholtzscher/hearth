@@ -39,11 +39,11 @@ func eligibleHumidityBatteryDevice(access int) upstreamDevice {
 // as zero; NewObservation owns the 0-100 bounds.
 func TestPercentageSensorPlanStateBoundary(t *testing.T) {
 	t.Parallel()
-	plan, err := newPercentageSensorPlan(adapter.EntityMetadata{
+	plan, err := newNumericSensorPlan(adapter.EntityMetadata{
 		Key:        "humidity",
 		ExternalID: "0x1/root/humidity",
 		Name:       "Humidity",
-	}, "humidity", false)
+	}, "humidity", 0, 100, "%", false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -384,11 +384,11 @@ func TestReconcileSeparatesHumidityRoutesFromRefresh(t *testing.T) {
 // shared constructor defers completeness to validateEntityPlans.
 func TestPercentageSensorDecodeAndValidationSeams(t *testing.T) {
 	t.Parallel()
-	plan, err := newPercentageSensorPlan(adapter.EntityMetadata{
+	plan, err := newNumericSensorPlan(adapter.EntityMetadata{
 		Key:        "humidity",
 		ExternalID: "0x1/root/humidity",
 		Name:       "Humidity",
-	}, "humidity", false)
+	}, "humidity", 0, 100, "%", false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -400,7 +400,7 @@ func TestPercentageSensorDecodeAndValidationSeams(t *testing.T) {
 	if decodeErr == nil {
 		t.Fatal("non-numeric humidity was accepted")
 	}
-	incomplete, err := newPercentageSensorPlan(adapter.EntityMetadata{}, "battery", false)
+	incomplete, err := newNumericSensorPlan(adapter.EntityMetadata{}, "battery", 0, 100, "%", false)
 	if err != nil {
 		t.Fatal(err)
 	}

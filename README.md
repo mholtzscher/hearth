@@ -78,6 +78,8 @@ curl -X POST http://127.0.0.1:8080/v1/entities/ent_.../commands \
 
 ### Zigbee2MQTT adapter
 
+For adding device capabilities, see [Extending Zigbee2MQTT capabilities](docs/zigbee2mqtt-capabilities.md): typed mapping tables for repetitive sensors/settings, with family planning and conversions kept in Go.
+
 `hearth-adapter-zigbee2mqtt` connects an operator-managed Zigbee2MQTT service to Hearth. Zigbee2MQTT 2.13.0 and NATS Server 2.12 are the tested versions. Other versions are not runtime-blocked, but must provide the same retained MQTT payloads and behavior.
 
 Configure Zigbee2MQTT to use MQTT 3.1.1 and to publish explicit availability while global optimistic updates are disabled. The effective `bridge/info` settings must contain:

@@ -141,17 +141,6 @@ func decodeNumericSettingState(payload json.RawMessage) (contractnumericsettingv
 	return contractnumericsettingv1.State{Mode: "value", Value: &value}, nil
 }
 
-// numericSettingSpec is one allowlisted observable numeric setting: the
-// exact upstream expose name, Entity key/name, and the exact expected unit
-// (nil means no unit expectation beyond an empty upstream unit).
-type numericSettingSpec struct {
-	exposeName   string
-	key          string
-	displayName  string
-	expectedUnit string
-	hasUnit      bool
-}
-
 // numericSettingBounds validates the exact discovered bounds of a numeric
 // setting feature: both bounds must be present, finite, and ordered with
 // minimum < maximum. A missing, malformed, one-sided, or inverted bound
@@ -172,7 +161,7 @@ func numericSettingBounds(feature upstreamExpose) (float64, float64, bool) {
 // device-unique nonempty property, full publish/set/get access, the exact
 // expected unit, and exact discovered bounds. Ineligible siblings are
 // omitted without affecting valid settings.
-func planNumericSetting(input devicePlanningInput, spec numericSettingSpec) *entityPlan {
+func planNumericSetting(input devicePlanningInput, spec numericSettingMapping) *entityPlan {
 	root, ok := input.Exposes.UniqueRoot(upstreamExposeNumeric, spec.exposeName)
 	if !ok || !root.resolved {
 		return nil
@@ -182,11 +171,7 @@ func planNumericSetting(input devicePlanningInput, spec numericSettingSpec) *ent
 		!exposeCanGet(expose) || !input.Exposes.PropertyUnique(expose.Property) {
 		return nil
 	}
-	if spec.hasUnit {
-		if expose.Unit != spec.expectedUnit {
-			return nil
-		}
-	} else if expose.Unit != "" {
+	if expose.Unit != spec.expectedUnit {
 		return nil
 	}
 	minimum, maximum, valid := numericSettingBounds(expose)
@@ -198,7 +183,7 @@ func planNumericSetting(input devicePlanningInput, spec numericSettingSpec) *ent
 		return nil
 	}
 	var unit *string
-	if spec.hasUnit {
+	if spec.expectedUnit != "" {
 		unitValue := spec.expectedUnit
 		unit = &unitValue
 	}
@@ -211,23 +196,4 @@ func planNumericSetting(input devicePlanningInput, spec numericSettingSpec) *ent
 		return nil
 	}
 	return &plan
-}
-
-// smartPlugNumericSettings lists the allowlisted smart-plug numeric
-// settings in deterministic planner order.
-func smartPlugNumericSettings() []numericSettingSpec {
-	return []numericSettingSpec{
-		{
-			exposeName: "led_brightness", key: "ledbrightness", displayName: "LED Brightness",
-			expectedUnit: "%", hasUnit: true,
-		},
-		{
-			exposeName: "countdown_to_turn_off", key: "countdowntoturnoff",
-			displayName: "Countdown To Turn Off", expectedUnit: "s", hasUnit: true,
-		},
-		{
-			exposeName: "countdown_to_turn_on", key: "countdowntoturnon",
-			displayName: "Countdown To Turn On", expectedUnit: "s", hasUnit: true,
-		},
-	}
 }

@@ -258,12 +258,8 @@ type plannerContribution struct {
 	Role     plannerRole
 }
 
-type devicePlanner interface {
-	Plan(devicePlanningInput) plannerContribution
-}
-
-func defaultDevicePlanners() []devicePlanner
-func planDevice(devicePlanningInput, []devicePlanner) (devicePlan, error)
+func planDevice(devicePlanningInput) (devicePlan, error)
+func mergeDeviceContributions(exposeIndex, []plannerContribution) (devicePlan, error)
 
 type devicePlan struct {
 	Kind     string
@@ -271,21 +267,24 @@ type devicePlan struct {
 }
 ```
 
-`defaultDevicePlanners` returns this fixed order:
+`planDevice` calls the fixed family functions directly and passes their values to the merger. No planner interface or registration list is needed:
 
 ```go
-[]devicePlanner{
-	lightPlanner{},
-	relayPlanner{},
-	sensorPlanner{},
+[]plannerContribution{
+	planLightFamily(input),
+	planRelayFamily(input),
+	planSensorFamily(input),
+	planLinkquality(input),
 }
 ```
 
-All planners may inspect the same index. Each contribution declares its role: light and relay compete as primary contributions, while sensor appends as a supplemental contribution. `planDevice` rejects any contribution with an invalid role or an empty kind as `invalid_descriptor` before selection and merge. The first non-empty primary contribution wins Device kind and later primaries are discarded; with the fixed order above this preserves current light behavior when a Device also has a switch root. Every supplemental contribution appends in planner order, and the first non-empty supplemental contribution establishes Device kind only when no primary contribution exists. This also lets relay and light Devices gain read-only measurements without another Device registration.
+Link quality is the later-added device-wide supplement; its exact-integer and unique-root behavior remains independent of the primary family.
 
-Concrete planners skip ineligible candidates individually; the light planner drops whole duplicate power-root candidates with their optional siblings. `planDevice` removes every same-contribution Entity key that occurs more than once, preserves planner and expose order, then validates the complete result before registration.
+All planners may inspect the same index. Each contribution declares its role: light and relay compete as primary contributions, while sensor appends as a supplemental contribution. `mergeDeviceContributions` rejects any contribution with an invalid role or an empty kind as `invalid_descriptor` before selection and merge. The first non-empty primary contribution wins Device kind and later primaries are discarded; with the fixed order above this preserves current light behavior when a Device also has a switch root. Every supplemental contribution appends in planner order, and the first non-empty supplemental contribution establishes Device kind only when no primary contribution exists. This also lets relay and light Devices gain read-only measurements without another Device registration.
 
-Planner implementations are immutable and concurrency-safe. They perform no I/O and retain no Device state.
+Concrete planners skip ineligible candidates individually; the light planner drops whole duplicate power-root candidates with their optional siblings. `mergeDeviceContributions` removes every same-contribution Entity key that occurs more than once, preserves planner and expose order, then validates the complete result before registration.
+
+Family functions perform no I/O and retain no Device state. Merge tests supply contribution values directly rather than implementing fake planners.
 
 ### Discovered and runtime Entities
 
