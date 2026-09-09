@@ -93,7 +93,7 @@ func (repo *SQLiteRepository) ListAutomationRuns(
 			rows = rows[:limit]
 		}
 		for _, row := range rows {
-			record, readErr := readAutomationRun(ctx, q, row)
+			record, readErr := decodeAutomationRunRow(row)
 			if readErr != nil {
 				return readErr
 			}
@@ -103,7 +103,11 @@ func (repo *SQLiteRepository) ListAutomationRuns(
 	})
 	return page, err
 }
-func readAutomationRun(ctx context.Context, q *dbsqlc.Queries, row dbsqlc.AutomationRun) (AutomationRunRecord, error) {
+
+// decodeAutomationRunRow decodes only the automation_runs row. ListAutomationRuns
+// uses this so summary pages never hydrate steps or command evidence that the
+// HTTP summary discards.
+func decodeAutomationRunRow(row dbsqlc.AutomationRun) (AutomationRunRecord, error) {
 	record := AutomationRunRecord{
 		ID:          AutomationRunID(row.ID),
 		Source:      AutomationRunSource(row.Source),
@@ -129,6 +133,14 @@ func readAutomationRun(ctx context.Context, q *dbsqlc.Queries, row dbsqlc.Automa
 		return record, err
 	}
 	record.CompletedAt, err = parseAutomationNullableTime(row.CompletedAt)
+	if err != nil {
+		return record, err
+	}
+	return record, nil
+}
+
+func readAutomationRun(ctx context.Context, q *dbsqlc.Queries, row dbsqlc.AutomationRun) (AutomationRunRecord, error) {
+	record, err := decodeAutomationRunRow(row)
 	if err != nil {
 		return record, err
 	}
