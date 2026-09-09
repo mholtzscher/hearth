@@ -1,4 +1,4 @@
-# Zigbee2MQTT JSON Profile Catalog
+# Zigbee2MQTT JSON profile catalog
 
 **Status:** Ready for task breakdown
 **Approved by:** User
@@ -9,67 +9,38 @@
 
 ## Summary
 
-Replace handwritten Zigbee2MQTT Entity-mapping planners with a repository-owned catalog of embedded JSON profiles validated by JSON Schema. Profiles define which expose shapes produce which stable Hearth Entity identities and select a closed set of audited Go planning strategies. The Go implementation retains tolerant Zigbee2MQTT wire decoding, endpoint and property-ownership rules, typed Entity construction, State conversion, Command translation, outcome matching, and the runtime coordinator.
+Replace handwritten Zigbee2MQTT Entity-mapping planners with embedded JSON profiles validated by JSON Schema. Profiles map expose shapes to stable Hearth Entity identities and select a closed set of Go planning strategies. Version 1 migrates current discovery for lights, relays, smart plugs, ambient sensors, and link quality.
 
-The first version migrates all current Entity discovery for lights, relays, smart plugs, ambient sensors, and link quality. Profiles are compiled once during Adapter startup, before any NATS or MQTT connection. Any invalid or semantically conflicting catalog fails startup as a whole. Malformed devices or exposes remain runtime inventory concerns and continue to be isolated without suppressing unrelated devices or valid sibling Entities.
+The Adapter compiles the full catalog before connecting to NATS or MQTT. Catalog errors fail startup. Malformed runtime inventory remains isolated by device and expose.
 
-The catalog is build-owned configuration, not operator configuration. Version 1 has no external profile path, remote profile source, hot reload, expression language, or runtime Entity-type registration.
+## Problem
 
-## Problem Statement
+Hearth maintainers must change repetitive Go planners and Entity-specific helpers to add standard scalar capabilities. The `3RSP02028BZ` work added mapping code for six numeric sensors, three numeric settings, one enum setting, and one enum action, although existing Hearth Entity types already implement their runtime behavior.
 
-### Who
-
-Hearth maintainers adding or correcting Zigbee2MQTT device capabilities.
-
-### What
-
-Adding a standard Zigbee2MQTT scalar capability currently requires repetitive Go changes across family planners and Entity-specific planning helpers. The repeated implementation usually performs the same work:
-
-1. locate a root expose or nested feature;
-2. validate endpoint resolution, access, property ownership, unit, values, and bounds;
-3. derive a stable Entity key, external ID, and display name;
-4. invoke an existing typed Entity implementation;
-5. gate the result on a surviving family capability; and
-6. isolate malformed siblings.
-
-The Third Reality `3RSP02028BZ` work required new mapping code for six numeric sensors, three numeric settings, one enum setting, and one enum action even though their runtime behavior fits existing Hearth Entity types.
-
-### Why it matters
-
-A data-driven mapping catalog concentrates device-support policy in reviewable JSON. Once a generic strategy exists, adding an ordinary binary, numeric, or enum capability should require one profile edit and fixture coverage rather than another planner implementation. Runtime correctness remains protected by Go-owned strategies and existing command-evidence invariants.
-
-### Evidence
-
-Current mapping policy is distributed across `planner_light.go`, `planner_relay.go`, `planner_sensor.go`, device-root helpers in `entity_*.go`, and fixed tables such as `smartPlugElectricalSensors` and `smartPlugNumericSettings`. The existing expose index and generic `entityPlan` runtime already provide the deeper mechanisms needed behind a profile-catalog seam.
+Current mapping policy spans `planner_light.go`, `planner_relay.go`, `planner_sensor.go`, device-root helpers in `entity_*.go`, and tables such as `smartPlugElectricalSensors` and `smartPlugNumericSettings`. The existing expose index and generic `entityPlan` runtime provide the mechanisms needed behind the catalog.
 
 ## Goals
 
-- Move all current Zigbee2MQTT Entity-mapping definitions and family contribution assembly into embedded JSON profiles.
-- Make a new mapping that fits an existing strategy require only JSON plus tests/fixtures.
-- Validate profiles with an authoritative JSON Schema and semantic compiler.
-- Fail Adapter startup before external connections when the embedded catalog is invalid or conflicting.
+- Move current Entity mappings and family contribution assembly into embedded profiles.
+- Let maintainers add a mapping covered by an existing strategy with profile JSON and fixture tests.
+- Validate the full catalog with an authoritative JSON Schema and semantic compiler before external connections.
 - Preserve every current Binding key, Device kind, Entity key, external ID, name, type, support document, deterministic order, rejection code, State conversion, Command payload, refresh behavior, and outcome policy.
-- Preserve capability-first discovery: profiles match expose shape, not a fixed list of device models.
-- Support explicit vendor/model/software-build overrides for proven upstream quirks.
-- Keep the profile language declarative and bounded; profiles select Go strategies but never define executable behavior.
-- Preserve per-device and per-expose isolation for malformed upstream inventory.
-- Keep the compiled catalog immutable and safe for concurrent inventory reconciliation.
+- Match expose capabilities first and use exact vendor, model, and software-build overrides for proven quirks.
+- Keep behavior in a closed set of Go strategies rather than executable profile syntax.
+- Preserve malformed-inventory isolation and compile an immutable catalog safe for concurrent reconciliation.
 
-## Non-Goals
+## Non-goals
 
-- Operator-provided profile files or Adapter YAML keys for profile paths.
-- Runtime profile reload, NATS distribution, remote downloads, or device-database synchronization.
-- JavaScript, CEL, JSONata, regular expressions, templates, arbitrary boolean expressions, or another general-purpose rule language.
-- New Hearth Entity types or runtime Entity-type registration.
-- Changes to Core registration, persistence, HTTP, NATS wire contracts, MQTT behavior, or SDK contracts.
-- Changes to State freshness, cross-message assembly, Command deadlines, matching, FIFO ordering, or evidence disposition.
-- Automatically exposing every unknown Zigbee2MQTT expose. Only catalogued mappings are eligible.
-- Preserving private handwritten planner interfaces after cutover.
-- A generated effective-catalog artifact. Embedded source JSON remains the single source of truth.
+- Version 1 loads only repository-owned embedded profiles at startup. It accepts no operator or runtime catalog input and generates no effective catalog.
+- Profile syntax is limited to the selectors, dependencies, identities, and strategy parameters defined here. It cannot express executable behavior.
+- Existing Entity types and Core, persistence, HTTP, NATS, MQTT, and SDK contracts remain unchanged.
+- State freshness, cross-message assembly, Command deadlines, matching, FIFO order, and evidence disposition remain unchanged.
+- Only catalogued mappings are eligible.
+- The cutover may change private handwritten planner interfaces.
 
 ## Decision
 
-Build one deep profile-catalog module inside the existing `zigbee2mqtt` package. Its external interface consists of loading an opaque immutable catalog and passing it to the Adapter constructor. Planning remains private to the package.
+Build one profile-catalog module inside the existing `zigbee2mqtt` package. Its external interface loads an opaque immutable catalog and passes it to the Adapter constructor. Profile evaluation remains private to the package.
 
 ```go
 // ProfileCatalog is an immutable, validated catalog of embedded Zigbee2MQTT
@@ -85,24 +56,15 @@ type ProfileCatalog struct {
 func LoadEmbeddedProfileCatalog() (*ProfileCatalog, error)
 ```
 
-The profile catalog replaces only mapping policy. These mechanisms remain Go-owned:
+The catalog replaces mapping policy only. Go retains:
 
-- tolerant `bridge/devices` decoding;
-- IEEE and friendly-name validation;
-- endpoint resolution and scoping;
-- expose indexing and recursive property-claim counting;
-- unique-root and unique-feature selection;
-- the color XY/HS shared-property exception;
-- foreign color-mode claim detection;
-- canonical scalar handling;
-- exact integer and rational-number conversions;
-- typed Entity descriptor and Observation construction;
-- Command translation and generated outcome matching;
-- same-message multi-property completeness;
-- primary/supplemental merge semantics;
-- runtime route fencing, MQTT generations, FIFO queues, deadlines, refresh, and evidence publication.
+- tolerant `bridge/devices` decoding and Device identity validation;
+- endpoint resolution, expose indexing, property ownership, and unique root or feature selection;
+- color property exceptions, foreign color-mode claim detection, canonical scalar handling, and exact numeric conversions;
+- typed Entity and Observation construction, Command translation, outcome matching, and same-message completeness;
+- contribution merging and the runtime coordinator, including route fencing, MQTT generations, FIFO queues, deadlines, refresh, and evidence publication.
 
-This separation keeps the catalog interface deep: profile authors describe mapping intent while the implementation hides protocol and Entity-type complexity.
+Profiles state mapping intent. Go implements protocol and Entity behavior.
 
 ## Architecture
 
@@ -142,7 +104,7 @@ bridge/devices ─► exposeIndex ─► profile evaluation
                       existing reconciliation/runtime
 ```
 
-## Profile Documents
+## Profile documents
 
 ### File organization
 
@@ -246,10 +208,9 @@ Rules use globally unique IDs such as `light.power`, `relay.power`, and `sensor.
 
 ### Candidate-group semantics
 
-A candidate group evaluates roots in retained inventory order.
+A candidate group evaluates roots in retained inventory order. `root` selects upstream roots by exact expose `type` and optional exact `name`.
 
-- `root` selects upstream roots by exact expose `type` and optional exact `name`.
-`source` is a closed JSON Schema `oneOf`; fields not named by the selected form are forbidden:
+`source` is a closed JSON Schema `oneOf`. The selected form forbids fields not shown below:
 
 ```json
 {"kind": "root"}
@@ -259,17 +220,17 @@ A candidate group evaluates roots in retained inventory order.
 
 - `root` permits only `kind` and passes the selected root expose to the strategy.
 - `feature` requires non-empty exact `type` and `name`, then performs the existing exact-one `UniqueFeature(type,name)` lookup inside the selected root.
-- `derived` requires `name`, forbids `type`, and in version 1 accepts only `color-mode`. It passes no expose to the strategy; the strategy receives the selected root, expose index, and plans from its declared `requires_any` rules.
+- `derived` requires `name`, forbids `type`, and accepts only `color-mode` in version 1. It passes no expose to the strategy. The strategy receives the selected root, expose index, and plans from its declared `requires_any` rules.
 - If `gate_rule` is present, that rule must be the first Entity rule. Optional siblings are evaluated only when the gate produces a valid plan.
 - Candidate groups are deduplicated by the scoped key produced by their gate. Every candidate sharing a duplicate gate key is dropped with all its siblings, preserving current light and relay behavior.
-- `requires_any` may reference only earlier rules in the same candidate group. The rule is evaluated only if at least one referenced sibling produced a plan. This represents read-only color mode without creating a general dependency language.
+- `requires_any` may reference only earlier rules in the same candidate group. The evaluator runs the rule only if at least one referenced sibling produced a plan. This supports read-only color mode.
 - A group without a gate evaluates each rule independently; malformed roots or rules do not suppress valid siblings.
 
 ### Device-entity semantics
 
 Device Entities use the existing `UniqueRoot(type,name)` behavior and are evaluated once after candidate groups. `requires_group_survivor` must name a candidate group with a non-empty `gate_rule`; referencing an ungated group is a startup-fatal `invalid_group_reference`. A device Entity is evaluated only when that group retains at least one candidate after gate planning and duplicate-gate-key removal.
 
-This represents light-level power-on behavior and effects, plus relay-level power-on behavior, electrical measurements, numeric settings, and reset action. A missing, duplicate, unresolved, or ineligible root omits only that device Entity.
+This supports light-level power-on behavior and effects, plus relay-level power-on behavior, electrical measurements, numeric settings, and reset action. A missing, duplicate, unresolved, or ineligible root omits only that device Entity.
 
 ### Example profile
 
@@ -306,45 +267,16 @@ This represents light-level power-on behavior and effects, plus relay-level powe
       "requires_group_survivor": "relay.roots",
       "identity": {"key": "poweronbehavior", "name": "Power-On Behavior"},
       "strategy": {"name": "enum-setting", "parameters": {}}
-    },
-    {
-      "id": "relay.electrical-power",
-      "expose": {"type": "numeric", "name": "power"},
-      "requires_group_survivor": "relay.roots",
-      "identity": {"key": "electricalpower", "name": "Electrical Power"},
-      "strategy": {
-        "name": "numeric-sensor",
-        "parameters": {
-          "accepted_units": ["W"],
-          "unit": "W",
-          "number_format": "float",
-          "bounds": {
-            "mode": "upstream-or-fallback",
-            "minimum": 0,
-            "maximum": 1000000000
-          }
-        }
-      }
-    },
-    {
-      "id": "relay.reset-total-energy",
-      "expose": {"type": "enum", "name": "reset_total_energy"},
-      "requires_group_survivor": "relay.roots",
-      "identity": {"key": "resettotalenergy", "name": "Reset Total Energy"},
-      "strategy": {
-        "name": "enum-action",
-        "parameters": {"access": "includes-set"}
-      }
     }
   ]
 }
 ```
 
-Missing voltage, current, energy, or any other optional expose simply produces no corresponding Entity. Profiles describe capability rules, not a mandatory device shape.
+Each eligible optional expose produces its Entity independently. Profiles do not require a fixed device shape.
 
-## Strategy Registry
+## Strategy registry
 
-Profiles select a closed registry of concrete Go strategies. The registry is not an extensibility interface and uses no `init` registration, reflection, or plugins.
+Profiles select from the closed Go strategy registry returned by `defaultProfileStrategyRegistry`.
 
 ```go
 type profileStrategyDefinition struct {
@@ -387,7 +319,7 @@ The registry owns each strategy's Hearth Entity type, State policy, operation ou
 | `numeric-sensor` | accepted upstream units, output unit, integer/float format, fixed or upstream/fallback bounds | Publish-without-set eligibility, property uniqueness, optional get refresh, typed numeric Observation |
 | `numeric-setting` | accepted upstream units | Full publish/set/get eligibility, required finite discovered bounds, value-mode State, observed matching |
 | `enum-setting` | none | Full publish/set/get eligibility, choices from expose, observed matching |
-| `enum-action` | `access: set-only | includes-set` | Choices from expose, stateless dispatched outcome, no State/get/matcher |
+| `enum-action` | `access: set-only \| includes-set` | Choices from expose, stateless dispatched outcome, no State/get/matcher |
 
 Parameters for `binary-power`, `brightness`, `color-temperature`, `color-xy`, `color-hs`, `color-mode`, `startup-color-temperature`, `temperature`, and `enum-setting` are exactly `{}`.
 
@@ -430,7 +362,7 @@ The `numeric-setting` parameters have exactly this shape:
 
 The `enum-action` parameters are exactly `{"access":"set-only"}` or `{"access":"includes-set"}`. The first requires access to equal the set bit; the second requires the set bit and ignores additional publish/get bits. Both require a non-empty Device-unique property and non-empty unique expose values. The strategy always produces a stateless dispatched action.
 
-## Device Overrides
+## Device overrides
 
 Overrides address proven vendor/model/firmware quirks without making the generic catalog model-specific.
 
@@ -464,16 +396,16 @@ Rules:
 - `software_build_ids`, when present, is a non-empty unique list of exact strings. Version 1 does not interpret firmware as semantic versions.
 - For one target rule, evaluation starts from the base rule, overlays at most one matching general vendor/model patch, then overlays at most one matching exact-build patch.
 - Patch fields overlay independently. An omitted field retains the value from the previous layer. `source`, `expose`, and `strategy_parameters`, when present, each replace that complete field rather than deep-merging it. `enabled` defaults to true in the base; an exact-build patch may explicitly re-enable a rule disabled by the general patch.
-- “At most one” is per target rule, not per document. Two general patches for the same vendor/model and target conflict. Exact-build selectors for the same vendor/model and target must have disjoint build-ID sets; intersecting sets conflict. Duplicate patches for one target inside one document also conflict.
+- "At most one" applies per target rule, not per document. Two general patches for the same vendor, model, and target conflict. Exact-build selectors for the same vendor, model, and target must have disjoint build-ID sets. Duplicate patches for one target inside one document also conflict.
 - Candidate-entity patches may specify `source` and must omit `expose`. Device-entity patches may specify `expose` and must omit `source`. Supplying the wrong field for the target rule kind is `override_target_kind_mismatch`.
 - A patch may disable a rule, replace its candidate source or device expose match, or fully replace strategy parameters.
 - A patch cannot change the rule ID, Entity key, display name, strategy name, contribution, group, dependency, or order.
 - A strategy-parameter replacement must validate against the target strategy.
-- Overrides cannot add rules in version 1. A new standard capability belongs in a capability profile; genuinely new behavior requires a Go strategy.
+- Overrides cannot add rules in version 1. A new standard capability belongs in a planner profile. New behavior requires a Go strategy.
 
-`upstreamDevice` gains tolerant decoding for top-level `software_build_id`. Vendor and model come from the existing definition. These strings are matching evidence only and never enter Binding or Entity identities.
+`upstreamDevice` gains tolerant decoding for top-level `software_build_id`. Vendor and model come from the existing definition. These strings only select overrides and never enter Binding or Entity identities.
 
-## JSON Schema Contract
+## JSON Schema contract
 
 `profiles/profile.schema.json` uses JSON Schema draft 2020-12 and an ID such as `urn:hearth:schema:zigbee2mqtt-profile:v1`.
 
@@ -496,9 +428,9 @@ Required schema properties:
 
 Each embedded document is limited to 256 KiB. The catalog permits at most 64 documents, 64 candidate groups per profile, 64 rules per group, 64 device rules per profile, 64 patches per override, and 512 total rules. The compiler checks aggregate limits that JSON Schema cannot express.
 
-The implementation reuses `github.com/santhosh-tekuri/jsonschema/v6` and the repository's `entitytypes.CompileJSONCodec` pattern. It does not place Adapter-local schemas in `contracts/v1` or `entitytypes/`.
+The implementation reuses `github.com/santhosh-tekuri/jsonschema/v6` and the repository's `entitytypes.CompileJSONCodec` pattern. The Adapter owns this schema under `internal/adapters/zigbee2mqtt/profiles/`.
 
-## Catalog Compilation and Conflicts
+## Catalog compilation and conflicts
 
 `LoadEmbeddedProfileCatalog` performs all work before returning:
 
@@ -556,36 +488,22 @@ Stable error codes include:
 
 A catalog conflict means two repository-authored declarations cannot be compiled deterministically. Runtime device data is not a catalog conflict. Duplicate upstream roots, property collisions, unresolved endpoints, unsupported units, and malformed expose metadata retain existing per-device/per-Entity isolation behavior.
 
-## Planning Semantics
+## Planning semantics
 
-For each device:
+For each device, the evaluator:
 
-1. Existing discovery code validates Device type, support, interview, definition, IEEE address, and friendly name.
-2. Build the existing `exposeIndex`, including recursive claims from supported and unsupported exposes.
-3. Select matching overrides from exact vendor/model/software-build evidence.
-4. Evaluate compiled planner profiles by `order`.
-5. Within each profile, evaluate candidate groups and roots in retained inventory order.
-6. Resolve rule sources through existing `UniqueFeature`/`UniqueRoot` behavior.
-7. Apply an override, if any, before invoking the target strategy.
-8. Invoke the Go strategy; ineligible candidates are omitted individually.
-9. Apply candidate gate deduplication and sibling gating.
-10. Evaluate device Entities only when their required candidate group survived.
-11. Return one `plannerContribution` per profile.
-12. Use the existing primary/supplemental merge and validation semantics.
+1. validates Device type, support, interview, definition, IEEE address, and friendly name;
+2. builds the existing `exposeIndex`, including recursive claims from supported and unsupported exposes;
+3. selects overrides by exact vendor, model, and software-build evidence;
+4. evaluates profiles by `order`, then candidate groups and roots in retained inventory order;
+5. resolves sources through `UniqueFeature` or `UniqueRoot`, applies any override, and invokes the strategy;
+6. applies gate deduplication and sibling gating;
+7. evaluates device Entities whose required candidate group survived; and
+8. returns one `plannerContribution` per profile for the existing merge and validation logic.
 
-The following behavior is unchanged:
+An ineligible strategy result omits that candidate. Same-contribution duplicate keys are all omitted. A remaining cross-contribution key collision rejects the device as `ambiguous_entity_plan`. No eligible contribution retains the existing `no_eligible_light`, `no_eligible_relay`, or `no_eligible_entity` attribution. More than 64 Entities rejects the device as `too_many_entities`.
 
-- light is the first primary and wins over relay when both contribute;
-- relay wins when light does not contribute;
-- ambient sensors and link quality supplement either primary family;
-- sensor-only devices use kind `sensor`;
-- same-contribution duplicate keys are all omitted;
-- a remaining cross-contribution key collision rejects the device as `ambiguous_entity_plan`;
-- no eligible contribution uses the existing `no_eligible_light`, `no_eligible_relay`, or `no_eligible_entity` attribution;
-- more than 64 Entities rejects as `too_many_entities`;
-- malformed optional exposes never suppress unrelated valid siblings.
-
-## Identity and Compatibility Contract
+## Identity and compatibility contract
 
 The migration must preserve these values byte-for-byte for every existing fixture:
 
@@ -605,7 +523,7 @@ Property names, profile IDs, rule IDs, vendor, model, firmware, and friendly nam
 
 Because Hearth has no deployments, private planner types may change directly and no compatibility shim is required. Observable identities remain stable to preserve fixtures, mapping reconciliation, and future deployment expectations.
 
-## Startup and Composition
+## Startup and composition
 
 Catalog loading occurs after YAML config validation and logger construction but before `adapter.Connect` or any MQTT work.
 
@@ -642,7 +560,7 @@ diff --git a/internal/adapters/zigbee2mqtt/adapter.go b/internal/adapters/zigbee
 
 The app module adopts the existing Hearth Core `runStageError`/`ErrorStage` pattern so `cmd/hearth-adapter-zigbee2mqtt` emits `process.failed` with `stage=load_profile_catalog` and `error_code=profile_catalog_invalid`. The Adapter logs one safe structured diagnostic with catalog error code, profile ID, rule ID, and JSON pointer. It never logs profile contents, MQTT payloads, URLs, or raw values.
 
-## Discovery Interface Changes
+## Discovery interface changes
 
 Catalog dependency is explicit through discovery and tests:
 
@@ -665,87 +583,63 @@ diff --git a/internal/adapters/zigbee2mqtt/discovery.go b/internal/adapters/zigb
 
 `connection.go` passes `z2m.profiles`. Existing tests update to use `mustEmbeddedProfileCatalog(t)` or compile a focused in-memory catalog. No compatibility wrapper retains implicit global planning.
 
-## Migration Plan
+## Migration plan
 
-Migration is incremental internally but ships only after complete parity. There is no runtime flag or dual behavior in the final state.
+Implement deliverables D1 through D7 in dependency order. Handwritten planners may remain temporarily for differential tests while D2 through D6 establish parity. D7 makes profile planning the sole production path and deletes handwritten planner assembly and mapping tables. The final release has no dual path or runtime flag.
 
-### Stage 1: characterize the baseline
-
-Before cutover, create one differential test harness that compares handwritten planning with profile planning for every existing `bridge-devices-*.json` fixture. Compare Device kind, Entity order, descriptors, support bytes, State/get properties, stateless policy, translator presence, rejection code, and command plan behavior.
-
-### Stage 2: catalog foundation
-
-Add the schema, embedded documents, compiler, typed errors, strategy registry, startup stage, and in-memory test compiler. At this stage handwritten planners may remain the production path while the profile evaluator runs only in differential tests.
-
-### Stage 3: read-only scalar profiles
-
-Migrate ambient temperature, humidity, battery, link quality, and electrical numeric sensors. Preserve integer versus fractional decoding and upstream-get behavior.
-
-### Stage 4: relay profile
-
-Migrate shared relay power, power-on behavior, numeric settings, reset action, endpoint scoping, relay family gating, and smart-plug fixtures.
-
-### Stage 5: light profile
-
-Migrate power, brightness, color temperature, XY, HS, color mode, startup color temperature, effects, shared-color-property rules, same-message mode activity, and multi-endpoint fixtures.
-
-### Stage 6: cutover and deletion
-
-Make profile planning the sole production path. Delete handwritten planner assembly and mapping tables rather than retaining compatibility shims. Keep Go strategy implementations, expose indexing, generic merge, Entity plan validation, and runtime coordination.
-
-## Project Layout
+## Project layout
 
 ```text
 cmd/hearth-adapter-zigbee2mqtt/
-└── main.go                                      # modify — reports load_profile_catalog startup failures
+└── main.go                                      # modify, report load_profile_catalog failures
 internal/app/zigbee2mqtt/
-├── run.go                                       # modify — loads catalog before external connections
-├── run_stage.go                                 # new — startup-stage error classification
-└── run_test.go                                  # modify — proves catalog failure prevents connection
+├── run.go                                       # modify, load catalog before external connections
+├── run_stage.go                                 # new, classify startup-stage errors
+└── run_test.go                                  # modify, prove catalog failure prevents connection
 internal/adapters/zigbee2mqtt/
-├── adapter.go                                   # modify — requires and stores ProfileCatalog
-├── connection.go                                # modify — passes catalog into inventory discovery
-├── discovery.go                                 # modify — explicit catalog dependency
-├── discovery_wire.go                            # modify — decodes software_build_id for overrides
-├── device_planner.go                            # modify — merges compiled profile contributions
-├── expose_index.go                              # retain — endpoint/property ownership implementation
-├── entity_plan.go                               # retain — immutable plan and command invariants
-├── profile_catalog.go                           # new — embed, opaque catalog, public loader
-├── profile_types.go                             # new — private profile and compiled types
-├── profile_compile.go                           # new — schema and semantic compilation
-├── profile_plan.go                              # new — deterministic candidate/profile evaluation
-├── profile_strategy.go                          # new — closed strategy registry and parameter compilation
-├── profile_catalog_test.go                      # new — schema, limits, errors, conflicts, overrides
-├── profile_plan_test.go                         # new — precedence, gating, endpoint, identity behavior
-├── profile_parity_test.go                       # new — differential fixture parity during migration
+├── adapter.go                                   # modify, require and store ProfileCatalog
+├── connection.go                                # modify, pass catalog into inventory discovery
+├── discovery.go                                 # modify, accept an explicit catalog
+├── discovery_wire.go                            # modify, decode software_build_id
+├── device_planner.go                            # modify, merge profile contributions
+├── expose_index.go                              # retain endpoint and property ownership
+├── entity_plan.go                               # retain plan and command invariants
+├── profile_catalog.go                           # new, embed and load the opaque catalog
+├── profile_types.go                             # new, define private profile and compiled types
+├── profile_compile.go                           # new, validate and compile profiles
+├── profile_plan.go                              # new, evaluate profiles
+├── profile_strategy.go                          # new, define and compile closed strategies
+├── profile_catalog_test.go                      # new, test schema, limits, errors, and overrides
+├── profile_plan_test.go                         # new, test planning and identity behavior
+├── profile_parity_test.go                       # new, compare old and new planners
 ├── profiles/
-│   ├── profile.schema.json                      # new — authoritative closed JSON Schema
-│   ├── light.profile.json                       # new — current light mappings
-│   ├── relay.profile.json                       # new — current relay/smart-plug mappings
-│   ├── sensors.profile.json                     # new — temperature/humidity/battery mappings
-│   ├── linkquality.profile.json                 # new — link-quality supplemental mapping
-│   └── overrides/                               # new — proven vendor/model/build patches
-├── planner_light.go                             # delete after parity — mapping replaced by light profile
-├── planner_relay.go                             # delete after parity — mapping replaced by relay profile
-├── planner_sensor.go                            # delete after parity — mapping replaced by sensor profile
-├── entity_*.go                                  # modify selectively — retain strategies, remove plan/mapping tables
-└── testdata/                                    # retain — captured and synthetic device/state fixtures
-internal/adapters/zigbee2mqtt/fixture_helpers_test.go # modify — explicit catalog helper
-internal/app/zigbee2mqtt/run_integration_test.go      # modify — startup and profile-backed flow
-README.md                                             # modify — profile author workflow and supported behavior
-docs/architecture.md                                 # modify — accept embedded profile planning and narrow deferred runtime manifests
-docs/adr/0019-use-embedded-zigbee2mqtt-profiles.md   # new — architecture decision and consequences
-specs/zigbee2mqtt-entity-planning.md                  # modify — mark handwritten-planner design superseded
-specs/zigbee2mqtt-adapter.md                          # modify — profile-backed discovery/startup contract
+│   ├── profile.schema.json                      # new, authoritative JSON Schema
+│   ├── light.profile.json                       # new, current light mappings
+│   ├── relay.profile.json                       # new, current relay and smart-plug mappings
+│   ├── sensors.profile.json                     # new, temperature, humidity, and battery mappings
+│   ├── linkquality.profile.json                 # new, link-quality mapping
+│   └── overrides/                               # new, proven vendor, model, and build patches
+├── planner_light.go                             # delete after parity
+├── planner_relay.go                             # delete after parity
+├── planner_sensor.go                            # delete after parity
+├── entity_*.go                                  # modify, retain strategies and remove mapping tables
+└── testdata/                                    # retain captured and synthetic fixtures
+internal/adapters/zigbee2mqtt/fixture_helpers_test.go # modify, provide explicit catalog helper
+internal/app/zigbee2mqtt/run_integration_test.go      # modify, test startup and profile-backed flow
+README.md                                             # modify, document profile authoring
+docs/architecture.md                                 # modify, accept embedded profiles
+docs/adr/0019-use-embedded-zigbee2mqtt-profiles.md   # new, record the decision
+specs/zigbee2mqtt-entity-planning.md                  # modify, mark handwritten planning superseded
+specs/zigbee2mqtt-adapter.md                          # modify, specify profile-backed discovery
 ```
 
-Profile code stays in the existing Adapter package because it must construct private `entityPlan` values and reuse private expose-index semantics. A separate Go subpackage would either create an import cycle or expose broad internal runtime types, producing a shallower interface.
+Profile code stays in the Adapter package because it constructs private `entityPlan` values and uses private expose-index rules. A separate package would create an import cycle or require public planner types solely for profile evaluation.
 
 ## Deliverables
 
 | ID | Outcome | Effort | Owning paths | Depends on | Acceptance |
 |---|---|---:|---|---|---|
-| D1 | Record the architecture decision and authoritative profile contract | M | `docs/adr/0019-*`, `docs/architecture.md`, `profiles/profile.schema.json`, `profile_types.go` | — | A1, A2 |
+| D1 | Record the architecture decision and authoritative profile contract | M | `docs/adr/0019-*`, `docs/architecture.md`, `profiles/profile.schema.json`, `profile_types.go` | None | A1, A2 |
 | D2 | Compile and validate the embedded catalog with fail-fast startup diagnostics | L | `profile_catalog.go`, `profile_compile.go`, `profile_catalog_test.go`, `internal/app/zigbee2mqtt/run*.go`, command main/tests | D1 | A3, A4, A5 |
 | D3 | Build the closed Go strategy registry around existing Entity behavior | L | `profile_strategy.go`, selected `entity_*.go`, strategy-focused tests | D1 | A6, A7 |
 | D4 | Migrate read-only sensor and link-quality discovery with differential parity | L | `sensors.profile.json`, `linkquality.profile.json`, `profile_plan.go`, parity tests | D2, D3 | A8, A9 |
@@ -753,7 +647,7 @@ Profile code stays in the existing Adapter package because it must construct pri
 | D6 | Migrate light/color discovery with differential parity | XL | `light.profile.json`, color strategy bindings, color/bulb fixtures and tests | D2, D3 | A8, A11 |
 | D7 | Cut over, delete handwritten planners, and update author documentation | L | `device_planner.go`, `planner_*.go`, `discovery.go`, `README.md`, existing specs | D4, D5, D6 | A12, A13, A14 |
 
-## Acceptance Criteria
+## Acceptance criteria
 
 - [ ] **A1:** `profile.schema.json` validates every embedded profile and rejects unknown fields, wrong document versions/kinds, malformed strategy parameters, and out-of-contract limits.
 - [ ] **A2:** The catalog format, strategy list, override restrictions, ordering, and conflict definitions are documented without unspecified behavior or implementation-defined precedence.
@@ -761,23 +655,23 @@ Profile code stays in the existing Adapter package because it must construct pri
 - [ ] **A4:** A catalog load failure occurs before NATS session connection or MQTT dialing; executable logs report `stage=load_profile_catalog` and `error_code=profile_catalog_invalid` without raw profile content.
 - [ ] **A5:** The embedded catalog compiles at startup and under `mise run validate`; no generated effective-catalog file or operator profile path exists.
 - [ ] **A6:** Every strategy reference resolves to a closed Go registry entry, and strategy/source mismatches fail catalog compilation.
-- [ ] **A7:** Generic numeric sensor, numeric setting, enum setting, and enum action strategies can plan a synthetic new scalar mapping using only an in-memory JSON profile and fixture—no mapping-specific Go branch.
+- [ ] **A7:** Generic numeric sensor, numeric setting, enum setting, and enum action strategies can plan a synthetic new scalar mapping using only an in-memory JSON profile and fixture. No mapping-specific Go branch is required.
 - [ ] **A8:** Every existing `bridge-devices-*.json` fixture produces byte-identical Device kind, ordered descriptors/support, Entity keys/external IDs/names/types, State/get routes, and rejection codes under profile planning.
 - [ ] **A9:** Sensor-only, supplemental sensor, link-quality unit/get behavior, exact integer handling, and malformed-sibling isolation remain unchanged.
 - [ ] **A10:** Relay power, smart-plug electrical sensors/settings/actions, endpoint identity, duplicate-power gating, observed settings, dispatched reset, and captured `3RSP02028BZ` behavior remain unchanged.
 - [ ] **A11:** Light precedence, brightness scaling, color-temperature activity, XY/HS shared properties, color-mode derivation, startup sentinel, effects, multi-endpoint identity, and same-message completeness remain unchanged.
 - [ ] **A12:** Existing runtime Command, concurrency, MQTT, reconciliation, and observation tests pass without weakened freshness, matching, or dispatch assertions.
-- [ ] **A13:** Final production discovery has one profile-backed path; handwritten planner mappings and duplicated mapping tables are deleted with no compatibility shim or feature flag.
+- [ ] **A13:** Final production discovery has one profile-backed path. Handwritten planner mappings and all production mapping allowlists or per-expose metadata tables are deleted, with no compatibility shim or feature flag.
 - [ ] **A14:** `mise run validate` passes and final diff review shows no generated, formatted, or module-metadata drift beyond intended changes.
 
-## Test Strategy
+## Test strategy
 
 | Layer | Behavior protected | Approach |
 |---|---|---|
 | Schema | Closed/versioned profile documents and bounded fields | Compile authoritative schema; valid/invalid fixture matrix; trailing JSON and size-limit tests |
 | Compiler | IDs, order, references, strategies, dependencies, overrides, conflicts | Table tests asserting exact `ProfileCatalogError.Code` and JSON pointer |
 | Evaluator | Root order, feature/root selection, gating, supplements, overrides | Pure tests with synthetic `upstreamDevice` values and deterministic expected contributions |
-| Differential | Observable parity with handwritten planners during migration | Run old and new planners over every existing inventory fixture; compare normalized plans and rejection codes |
+| Differential | Observable parity with handwritten planners during migration | Run both planners over every inventory fixture; compare normalized plans, stateless policy, translator presence, rejection codes, and command-plan behavior |
 | Strategy | Eligibility and conversion behavior | Keep existing entity tests; add generic-strategy tests with positive and negative reports/commands |
 | Runtime | State, Command, freshness, dispatched outcomes, FIFO, route fencing | Run existing runtime tests against profile-produced plans without changing their oracles |
 | Startup | Fail before external I/O | Inject catalog loader/connect functions in an internal app test; assert zero connection calls on invalid catalog |
@@ -787,64 +681,40 @@ Profile code stays in the existing Adapter package because it must construct pri
 
 Meaningful tests must state the protected behavior and plausible defect. Differential tests are temporary migration evidence; after handwritten planners are deleted, retained fixture expectations become the independent contract oracle.
 
-## Alternatives Considered
+## Decision rationale
 
-| Option | Advantages | Disadvantages | Decision |
-|---|---|---|---|
-| Keep handwritten planners | Maximum Go type safety; no profile compiler | Repetitive mapping code and scattered policy continue | Rejected |
-| Per-model device profiles | Simple lookup and easy exceptions | Duplicates shared capabilities; fails when firmware changes expose shape; large maintenance surface | Rejected |
-| Generic expression/rule language | Maximum configurability | Turns JSON into executable code, weakens reviewability, and duplicates Go semantics | Rejected |
-| Build-time generated Go catalog | Invalid profiles fail builds and runtime evaluation can be simpler | Introduces generated source/effective catalog as a second representation and does not remove startup validation requirement | Rejected for v1 |
-| Separate profile Go package | Strong package boundary | Must expose private `entityPlan`/expose internals or create an import cycle | Rejected |
-| Embedded profiles plus closed strategies | JSON-only ordinary mappings, exact startup validation, runtime remains typed Go | Front-loaded compiler/schema work and JSON debugging cost | Chosen |
-
-## Trade-offs
-
-| Chose | Over | Because |
+| Decision | Alternative | Reason |
 |---|---|---|
-| Capability profiles | Device-model manifests | Expose shape is the actual runtime contract and varies across models/firmware |
-| Exact vendor/model/build overrides | Regex/semver selectors | Exact matching is deterministic and Zigbee firmware strings are not reliably semantic versions |
-| Explicit profile order | Filename or priority tie-breaking | Current family precedence is an observable contract and must be obvious in review |
-| Closed strategy registry | Configurable operations/outcomes | Command evidence and typed State behavior are safety-critical Go concerns |
-| Startup failure | Skipping bad documents/rules | Profiles are shipped code; partial catalog behavior would hide repository defects |
-| Device-level isolation | Treating upstream conflicts as catalog failures | Real inventories may be malformed without making the shipped catalog invalid |
-| No generated catalog | Build-time materialization | Embedded source plus shared test/startup compiler avoids two sources of truth |
-| Same package implementation | Separate subpackage | Preserves a small interface without exporting private planner/runtime types |
+| Embedded planner profiles | Handwritten planners or per-model manifests | Expose shape is the runtime contract and varies across models and firmware. Profiles remove repeated Go mapping policy. |
+| Closed Go strategy registry | A general expression language | Go retains typed State, Command, and outcome behavior. |
+| Exact vendor, model, and build overrides | Regular expression or semantic-version selectors | Zigbee firmware strings are not reliably semantic versions. Exact matching is deterministic. |
+| Explicit profile order | Filename precedence or tie-breaking | Family precedence is observable and must be explicit. |
+| Whole-catalog startup failure | Skipping invalid documents or rules | Profiles ship with the binary. A partial catalog would hide repository defects. |
+| Runtime inventory isolation | Treating upstream conflicts as catalog failures | One malformed device or expose must not suppress valid inventory. |
+| Embedded source JSON | Generated Go or an effective-catalog artifact | One compiler validates the single source in tests and at startup. |
+| Existing Adapter package | A separate profile package | A separate package would expose private `entityPlan` and expose-index types or create an import cycle. |
 
-## Risks and Mitigations
+## Risks and mitigations
 
 | Risk | Likelihood | Impact | Mitigation |
 |---|---:|---:|---|
 | Identity or ordering drift during migration | Medium | High | Byte-for-byte differential fixtures before each family cutover; no identity fields in overrides |
-| Profile language grows into a programming language | Medium | High | Fixed document structure, closed strategies, no expressions/templates, schema-version review for new syntax |
-| JSON becomes harder to debug than Go branches | Medium | Medium | Stable rule IDs, deterministic typed errors, JSON pointers, debug traces naming the first failed strategy eligibility check |
-| Static conflict detection rejects valid mutually exclusive rules | Low | Medium | Limit catalog conflicts to structural contradictions; preserve device-dependent property/key ambiguity at evaluation time |
-| Override accumulation obscures generic behavior | Medium | Medium | Require real-device fixture provenance; exact selectors; patches only; review generic fix before adding override |
-| Complex color behavior is accidentally reimplemented in profiles | Low | High | Profiles only name color strategies; existing exact math and mode logic remain in Go and retain tests |
-| Startup is bricked by a shipped profile typo | Low | High | Same compiler runs in tests and startup; `mise run validate` required; fail-fast is intentional rather than partial behavior |
-| Temporary dual planner implementation fossilizes | Medium | Medium | D7 explicitly deletes handwritten planners; no release/merge until full parity and cutover are complete |
+| Profile syntax grows beyond mapping policy | Medium | High | Closed documents, closed strategies, and schema-version review for new syntax |
+| Profile errors are hard to diagnose | Medium | Medium | Stable rule IDs, typed errors, JSON pointers, and traces that name the first failed eligibility check |
+| Static conflict checks reject device-dependent alternatives | Low | Medium | Restrict catalog conflicts to structural contradictions and evaluate property or key ambiguity per device |
+| Overrides obscure generic behavior | Medium | Medium | Require captured fixture evidence, exact selectors, patches only, and review a generic fix first |
+| Temporary dual planners remain after migration | Medium | Medium | D7 deletes handwritten planners, and release waits for parity and cutover |
 
-## Success Metrics
+## Success metrics
 
-- Adding a standard numeric sensor/setting or enum setting/action supported by an existing strategy changes only a profile JSON file and fixture/tests.
-- No production mapping allowlist or per-expose metadata table remains in Go after cutover.
-- Every pre-migration fixture and runtime test passes with unchanged expected identities and behavior.
-- Invalid repository profiles cannot establish NATS or MQTT connections.
-- Device-specific overrides remain a minority of profile rules and always cite captured fixture evidence.
+Acceptance criteria A7, A8, A13, and A14 measure the cutover. Device-specific overrides remain a minority of profile rules and cite captured fixture evidence.
 
-## Documentation Decisions
+## Documentation decisions
 
-Implementation must add an ADR accepting repository-owned embedded Adapter profiles and update `docs/architecture.md` to replace “explicit light, relay, and sensor planners” with profile-backed planning. The existing statement deferring runtime manifest loading/general discovery must be narrowed explicitly: user-supplied/runtime-loaded manifests remain deferred, while build-owned embedded Adapter profiles are accepted.
+Implementation must add an ADR accepting repository-owned embedded Adapter profiles. It must update `docs/architecture.md` to replace "explicit light, relay, and sensor planners" with profile-backed planning. The current deferral narrows to user-supplied and runtime-loaded manifests.
 
-`CONTEXT.md` does not change. “Profile,” “rule,” “strategy,” and “override” are Adapter implementation terms, not household domain concepts.
+`CONTEXT.md` does not change. "Profile," "rule," "strategy," and "override" are Adapter implementation terms, not household domain concepts.
 
-## Open Questions
+## Open questions
 
-None. The requested decisions are fixed for version 1:
-
-- all current Entity discovery migrates;
-- profiles are repository-owned embedded JSON;
-- capability rules are primary and exact device overrides handle proven exceptions;
-- invalid/conflicting catalogs fail startup;
-- runtime behavior remains Go;
-- operator configuration and hot reload are excluded.
+None.
