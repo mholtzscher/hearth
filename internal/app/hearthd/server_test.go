@@ -207,7 +207,7 @@ func TestRuntimeOpenAPIContract(t *testing.T) {
 	if document.OpenAPI != "3.1.0" || document.Info.Title != "Hearth" || document.Info.Version != "1.0.0" {
 		t.Fatalf("OpenAPI metadata = %#v", document)
 	}
-	if len(document.Paths) != 16 {
+	if len(document.Paths) != 18 {
 		t.Fatalf("OpenAPI paths = %v", document.Paths)
 	}
 	assertRuntimeOpenAPIOperation(t, document.Paths["/v1/entities"].Get, "list-entities", "200", "400", "422", "500")
@@ -313,6 +313,7 @@ func TestRuntimeOpenAPIContract(t *testing.T) {
 		"422",
 		"500",
 	)
+	assertRuntimeOpenAPIDiagnosticsOperations(t, document.Paths)
 	if executeCommand.RequestBody == nil || !executeCommand.RequestBody.Required {
 		t.Fatalf("command request body = %#v", executeCommand.RequestBody)
 	}
@@ -495,6 +496,83 @@ func assertRuntimeOpenAPIOperation(
 	}
 }
 
+// assertRuntimeOpenAPIDiagnosticsOperations verifies the scheduler diagnostic
+// histories share the automation error contract: Huma's standard ErrorModel
+// for validation and service failures plus the automation
+// application/problem+json body (with its stable code field) for revision
+// conflicts and unavailable admission.
+func assertRuntimeOpenAPIDiagnosticsOperations(
+	t *testing.T,
+	paths map[string]struct {
+		Get    *runtimeOpenAPIOperation `json:"get"`
+		Post   *runtimeOpenAPIOperation `json:"post"`
+		Patch  *runtimeOpenAPIOperation `json:"patch"`
+		Delete *runtimeOpenAPIOperation `json:"delete"`
+	},
+) {
+	t.Helper()
+	for _, diagnostics := range []struct {
+		path        string
+		operationID string
+	}{
+		{"/v1/automation-occurrences", "list-automation-occurrences"},
+		{"/v1/automation-schedule-gaps", "list-automation-schedule-gaps"},
+	} {
+		operation := paths[diagnostics.path].Get
+		if operation == nil || operation.OperationID != diagnostics.operationID {
+			t.Fatalf("OpenAPI operation = %#v, want %q", operation, diagnostics.operationID)
+		}
+		if len(operation.Responses) != 7 {
+			t.Errorf(
+				"OpenAPI operation %q responses = %v, want 200/400/404/409/422/500/503",
+				diagnostics.operationID,
+				operation.Responses,
+			)
+		}
+		for _, status := range []string{"200", "400", "404", "409", "422", "500", "503"} {
+			response, ok := operation.Responses[status]
+			if !ok {
+				t.Errorf("OpenAPI operation %q is missing response %s", diagnostics.operationID, status)
+				continue
+			}
+			assertRuntimeOpenAPIDiagnosticsResponse(t, diagnostics.operationID, status, response)
+		}
+	}
+}
+
+// assertRuntimeOpenAPIDiagnosticsResponse verifies one diagnostics response
+// body: success passes through, conflicts and unavailable admission use the
+// automation problem body, and everything else uses Huma's standard errors.
+func assertRuntimeOpenAPIDiagnosticsResponse(
+	t *testing.T,
+	operationID, status string,
+	response json.RawMessage,
+) {
+	t.Helper()
+	if status == "200" {
+		return
+	}
+	if status == "409" || status == "503" {
+		if !strings.Contains(string(response), `"code"`) {
+			t.Errorf(
+				"OpenAPI operation %q response %s is missing the problem code field: %s",
+				operationID,
+				status,
+				response,
+			)
+		}
+		return
+	}
+	if !strings.Contains(string(response), "#/components/schemas/ErrorModel") {
+		t.Errorf(
+			"OpenAPI operation %q response %s does not use Huma's standard error body: %s",
+			operationID,
+			status,
+			response,
+		)
+	}
+}
+
 func appRequest(handler http.Handler, path string) *httptest.ResponseRecorder {
 	request := httptest.NewRequest(http.MethodGet, path, nil)
 	response := httptest.NewRecorder()
@@ -506,10 +584,14 @@ func appRequest(handler http.Handler, path string) *httptest.ResponseRecorder {
 type stubHTTPAutomations struct {
 	automationsapi.Automations
 
-	unavailable bool
+	unavailable          bool
+	schedulerUnavailable bool
 }
 
 func (stub *stubHTTPAutomations) AutomationExecutionReady() bool { return !stub.unavailable }
+func (stub *stubHTTPAutomations) AutomationSchedulerReady() bool {
+	return !stub.unavailable && !stub.schedulerUnavailable
+}
 func testHTTPAutomationCodec(t *testing.T) *automations.AutomationDefinitionCodec {
 	t.Helper()
 	codec, err := automations.NewAutomationDefinitionCodec()

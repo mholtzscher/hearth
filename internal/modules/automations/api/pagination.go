@@ -23,6 +23,19 @@ type automationRunCursor struct {
 	StartedAt    string `json:"started_at"`
 	ID           string `json:"id"`
 }
+type automationOccurrenceCursor struct {
+	Version      int    `json:"v"`
+	Resource     string `json:"resource"`
+	AutomationID string `json:"automation_id"`
+	ScheduledAt  string `json:"scheduled_at"`
+	ID           string `json:"id"`
+}
+type automationScheduleGapCursor struct {
+	Version    int    `json:"v"`
+	Resource   string `json:"resource"`
+	RecordedAt string `json:"recorded_at"`
+	ID         string `json:"id"`
+}
 
 var errAutomationCursor = errors.New("invalid automation cursor")
 
@@ -81,4 +94,42 @@ func automationRunListPosition(value, filter string) (*time.Time, *automations.A
 		return nil, nil, errAutomationCursor
 	}
 	return &startedAt, &id, nil
+}
+func automationOccurrenceListPosition(
+	value, filter string,
+) (*time.Time, *automations.AutomationID, error) {
+	var cursor automationOccurrenceCursor
+	if err := decodeAutomationCursor(value, &cursor); err != nil {
+		return nil, nil, err
+	}
+	if cursor.Version != 1 || cursor.Resource != "automation_occurrences" || cursor.AutomationID != filter {
+		return nil, nil, errAutomationCursor
+	}
+	id, err := automations.ParseAutomationID(cursor.ID)
+	if err != nil {
+		return nil, nil, errAutomationCursor
+	}
+	scheduledAt, err := time.Parse(time.RFC3339Nano, cursor.ScheduledAt)
+	if err != nil || scheduledAt.IsZero() || scheduledAt.UTC().Format(time.RFC3339Nano) != cursor.ScheduledAt {
+		return nil, nil, errAutomationCursor
+	}
+	return &scheduledAt, &id, nil
+}
+func automationScheduleGapListPosition(value string) (*time.Time, *string, error) {
+	var cursor automationScheduleGapCursor
+	if err := decodeAutomationCursor(value, &cursor); err != nil {
+		return nil, nil, err
+	}
+	if cursor.Version != 1 || cursor.Resource != "automation_schedule_gaps" {
+		return nil, nil, errAutomationCursor
+	}
+	if _, err := automations.ParseAutomationScheduleGapID(cursor.ID); err != nil {
+		return nil, nil, errAutomationCursor
+	}
+	recordedAt, err := time.Parse(time.RFC3339Nano, cursor.RecordedAt)
+	if err != nil || recordedAt.IsZero() || recordedAt.UTC().Format(time.RFC3339Nano) != cursor.RecordedAt {
+		return nil, nil, errAutomationCursor
+	}
+	id := cursor.ID
+	return &recordedAt, &id, nil
 }

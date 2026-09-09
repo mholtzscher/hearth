@@ -96,6 +96,7 @@ type readinessFixture struct {
 	connection *natsgo.Conn
 	jetstream  jetstream.JetStream
 	consumer   *devicesnats.ObservationConsumer
+	scheduler  *stubSchedulerHealth
 	readiness  *RuntimeReadiness
 }
 
@@ -145,8 +146,10 @@ func newReadinessFixture(t *testing.T) readinessFixture {
 		t.Fatal(err)
 	}
 	t.Cleanup(consumer.Stop)
+	scheduler := &stubSchedulerHealth{healthy: true}
 	return readinessFixture{
 		database: database, connection: connection, jetstream: js, consumer: consumer,
-		readiness: NewRuntimeReadiness(database, connection, js, consumer),
+		scheduler: scheduler,
+		readiness: NewRuntimeReadiness(database, connection, js, consumer, scheduler),
 	}
 }

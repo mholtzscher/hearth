@@ -162,6 +162,7 @@ func (repo *SQLiteRepository) evaluateAutomationMinuteOnce(
 	location *time.Location,
 ) (AutomationScheduleBatch, bool, error) {
 	batch := AutomationScheduleBatch{Runs: []AutomationRunRecord{}, Occurrences: []AutomationOccurrence{}}
+	evaluated := false
 	err := repo.transaction(ctx, func(q *dbsqlc.Queries) error {
 		row, err := q.GetAutomationSchedulerState(ctx)
 		if errors.Is(err, sql.ErrNoRows) {
@@ -177,6 +178,9 @@ func (repo *SQLiteRepository) evaluateAutomationMinuteOnce(
 		if !minute.After(highWater) {
 			return nil
 		}
+		// A committed minute evaluation, even one that matches nothing, counts
+		// as evaluated so scheduler health can distinguish it from a no-op.
+		evaluated = true
 		admissions, err := planScheduledMinute(ctx, q, minute, location)
 		if err != nil {
 			return err
@@ -219,6 +223,9 @@ func (repo *SQLiteRepository) evaluateAutomationMinuteOnce(
 	})
 	if errors.Is(err, errAutomationScheduleStale) {
 		return AutomationScheduleBatch{Runs: []AutomationRunRecord{}, Occurrences: []AutomationOccurrence{}}, true, nil
+	}
+	if err == nil {
+		batch.Evaluated = evaluated
 	}
 	return batch, false, err
 }

@@ -57,15 +57,79 @@ func failStage(stage string, err error) error {
 	return &runStageError{stage: stage, err: err}
 }
 
+// RunOption customizes process assembly without broadening Config. Only the
+// automation scheduler loop clock and wakeup are exposed, so later embedded-NATS
+// scheduling tests can share one fake time source between the repository final
+// check and the scheduler loop. Production passes no options.
+type RunOption func(*runOptions)
+
+type runOptions struct {
+	schedulerClock  func() time.Time
+	schedulerWakeup <-chan struct{}
+	// shutdownOrderProbe records the process shutdown order for tests, one
+	// entry per shutdown order step. Nil in production, where no step is
+	// recorded.
+	shutdownOrderProbe func(step string)
+}
+
+// WithSchedulerClock overrides the scheduler loop clock and the repository
+// scheduler final-check clock with the same source, so ticks and the commit
+// check agree on time. A nil clock keeps the default wall-clock behavior.
+func WithSchedulerClock(clock func() time.Time) RunOption {
+	return func(options *runOptions) {
+		options.schedulerClock = clock
+	}
+}
+
+// WithSchedulerWakeup injects a wakeup channel that fully replaces the
+// one-second scheduler process timer. A nil channel keeps production timing.
+func WithSchedulerWakeup(wakeup <-chan struct{}) RunOption {
+	return func(options *runOptions) {
+		options.schedulerWakeup = wakeup
+	}
+}
+
+// automationRepositoryOptions aligns the repository scheduler final-check clock
+// with the loop clock from the same source, so ticks and the commit check
+// agree on time. No option keeps the repository default.
+func (options runOptions) automationRepositoryOptions() []automations.SQLiteRepositoryOption {
+	if options.schedulerClock == nil {
+		return nil
+	}
+	return []automations.SQLiteRepositoryOption{
+		automations.WithAutomationSchedulerClock(options.schedulerClock),
+	}
+}
+
+// automationServiceOptions forwards the narrow scheduler loop seams. No option
+// keeps the production one-second timer and wall clock.
+func (options runOptions) automationServiceOptions() []automations.AutomationServiceOption {
+	var serviceOptions []automations.AutomationServiceOption
+	if options.schedulerClock != nil {
+		serviceOptions = append(serviceOptions, automations.WithSchedulerClock(options.schedulerClock))
+	}
+	if options.schedulerWakeup != nil {
+		serviceOptions = append(serviceOptions, automations.WithSchedulerWakeup(options.schedulerWakeup))
+	}
+	return serviceOptions
+}
+
 //nolint:funlen,gocognit // Linear lifecycle keeps drain and teardown order explicit.
 func Run(
 	ctx context.Context,
 	config Config,
 	logger *slog.Logger,
+	options ...RunOption,
 ) error {
 	timezone, configErr := config.validateAndLoadHouseholdTimezone()
 	if configErr != nil {
 		return failStage("validate_config", configErr)
+	}
+	var assembled runOptions
+	for _, option := range options {
+		if option != nil {
+			option(&assembled)
+		}
 	}
 	if logger == nil {
 		logger = slog.Default()
@@ -99,7 +163,8 @@ func Run(
 		return failStage("interrupt_commands", fmt.Errorf("interrupt active commands: %w", err))
 	}
 	logStartupStage(ctx, coreLogger, "active_commands_interrupted")
-	automationRepository := automations.NewSQLiteRepository(database)
+	automationRepositoryOptions := assembled.automationRepositoryOptions()
+	automationRepository := automations.NewSQLiteRepository(database, automationRepositoryOptions...)
 	if err := automationRepository.InterruptAutomationRuns(ctx); err != nil {
 		return failStage("interrupt_automation_runs", err)
 	}
@@ -193,22 +258,57 @@ func Run(
 	defer observations.Stop()
 	logStartupStage(ctx, coreLogger, "observation_consumer_started")
 
-	readiness := NewRuntimeReadiness(database, connection, js, observations)
-	healthSupervisor := startHealthSupervisor(dependencyContext, readiness, service, coreLogger)
-	defer healthSupervisor.Stop()
 	automationService := automations.NewService(
 		automationRepository,
 		service,
 		repository,
 		definitions,
 		timezone,
-		logger.With(slog.String("component", "automations")))
+		logger.With(slog.String("component", "automations")),
+		assembled.automationServiceOptions()...,
+	)
 	var maintenance sync.WaitGroup
-	// Registered after dependency cleanup so every exit drains workers first.
+	// Single shutdown order for every exit: close Run and next-Step admission
+	// and join the scheduler before stopping health supervision, then cancel
+	// shared dependencies. Registered after the observation and transport
+	// cleanup above, so those defers run later and health plus observations
+	// stay alive until admitted execution drains. Registered before scheduler
+	// start so a scheduler start failure still closes admission; the supervisor
+	// assignment below fills in before any later exit can observe it.
+	// shutdownOnCancel reuses drainAdmittedExecution, so the deferred rerun
+	// after a normal cancel is a no-op instead of a second scheduler join.
+	var healthSupervisor *healthSupervisor
+	var drainOnce sync.Once
+	recordShutdownOrderStep := func(step string) {
+		if assembled.shutdownOrderProbe != nil {
+			assembled.shutdownOrderProbe(step)
+		}
+	}
+	drainAdmittedExecution := func() {
+		drainOnce.Do(func() {
+			joinAdmittedExecution(service, automationService)
+			recordShutdownOrderStep("execution drained")
+			if healthSupervisor != nil {
+				healthSupervisor.Stop()
+				recordShutdownOrderStep("health supervision stopped")
+			}
+		})
+	}
 	defer func() {
-		drainExecution(service, automationService, cancelDependencies)
+		drainAdmittedExecution()
+		cancelDependencies()
+		recordShutdownOrderStep("dependencies canceled")
 		maintenance.Wait()
 	}()
+	// Scheduler progress initializes synchronously after dependencies and
+	// recovery, before readiness. A failure exits through the drain above,
+	// which closes admission and joins the loop before worker drain.
+	if err := automationService.StartAutomationScheduler(ctx); err != nil {
+		return mapStartupCancellation(ctx, failStage("start_automation_scheduler", err))
+	}
+	logStartupStage(ctx, coreLogger, "automation_scheduler_started")
+	readiness := NewRuntimeReadiness(database, connection, js, observations, automationService)
+	healthSupervisor = startHealthSupervisor(dependencyContext, readiness, service, coreLogger)
 	handler, _ := NewHTTPHandler(service, automationService, definitions, readiness, service)
 	// Bind the socket explicitly so http_listening is only logged after the
 	// address is actually held; a bind failure never produces that event.
@@ -247,8 +347,8 @@ func Run(
 		return nil
 	case <-ctx.Done():
 		return shutdownOnCancel(
-			service, automationService, cancelDependencies,
-			healthSupervisor, server, observations, enablement, ownedMappings, registrations, availability, sessions,
+			drainAdmittedExecution, cancelDependencies,
+			server, observations, enablement, ownedMappings, registrations, availability, sessions,
 			connection,
 		)
 	}
@@ -264,18 +364,21 @@ func mapStartupCancellation(ctx context.Context, err error) error {
 }
 
 // joinAdmittedExecution closes both admission gates before joining workers, so
-// no new Run, Step, or direct Command can be registered while draining. Both
-// the normal shutdown path and the deferred error-exit drain share this
-// ordering. Scheduler stop/join belongs after gate closure and before the
-// waits in spec 2.
+// no new Run, Step, or direct Command can be registered while draining. The
+// scheduler loop stops and joins after gate closure and before the waits, so
+// ticks racing shutdown evaluate nothing; already-registered workers drain
+// through the waits below. Both the normal shutdown path and the deferred
+// error-exit drain share this ordering.
 func joinAdmittedExecution(deviceService *devices.Service, automationService *automations.Service) {
 	deviceService.StopCommandAdmission()
 	automationService.StopAutomationExecutionAdmission()
+	automationService.StopAutomationScheduler()
 	_ = automationService.WaitAutomationRuns(context.Background())
 	_ = deviceService.WaitCommands(context.Background())
 }
 
-// shutdownOnCancel drains admitted workers before stopping transports. The HTTP
+// shutdownOnCancel drains admitted workers through the shared once-guarded
+// shutdown order before stopping transports. The HTTP
 // listener stays open during the drain so readiness keeps reporting draining
 // (503) instead of dropping connections; the gates reject new work at the
 // service layer. Handlers that already entered ExecuteCommand own detached
@@ -284,20 +387,18 @@ func joinAdmittedExecution(deviceService *devices.Service, automationService *au
 // listener shutdown after the waits; it never proves commands drained;
 // WaitCommands does, beyond that timeout when an Operation deadline requires
 // it. Dependencies stay alive until both waits return and are canceled only
-// then, on both normal and error exits (error exits reuse drainExecution
-// through the deferred cleanup).
+// then, on both normal and error exits (error exits reuse
+// drainAdmittedExecution through the deferred cleanup, whose rerun after this
+// call is a no-op instead of a second scheduler join).
 func shutdownOnCancel(
-	deviceService *devices.Service,
-	automationService *automations.Service,
+	drainAdmittedExecution func(),
 	cancelDependencies context.CancelFunc,
-	healthSupervisor *healthSupervisor,
 	server *http.Server,
 	observations *devicesnats.ObservationConsumer,
 	enablement, ownedMappings, registrations, availability, sessions interface{ Drain() error },
 	connection *natsgo.Conn,
 ) error {
-	joinAdmittedExecution(deviceService, automationService)
-	healthSupervisor.Stop()
+	drainAdmittedExecution()
 	shutdownContext, shutdownCancel := context.WithTimeout(context.Background(), shutdownTimeout)
 	shutdownErr := server.Shutdown(shutdownContext)
 	shutdownCancel()
@@ -454,10 +555,12 @@ func pruneObservations(
 	}
 }
 
-// drainExecution runs before any dependency teardown on every exit. It joins
-// already-admitted automation and direct workers (including detached direct
-// Commands whose HTTP handlers already returned) before canceling shared
-// observation, health, and persistence dependencies.
+// drainExecution joins already-admitted automation and direct workers
+// (including detached direct Commands whose HTTP handlers already returned)
+// before canceling shared observation, health, and persistence dependencies.
+// App tests exercise this join-before-cancel shutdown order directly; the Run
+// lifecycle above reuses joinAdmittedExecution with the same ordering and
+// additionally stops health supervision between the join and the cancel.
 func drainExecution(
 	deviceService *devices.Service,
 	automationService *automations.Service,

@@ -9,6 +9,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/mholtzscher/hearth/internal/modules/automations"
 )
@@ -238,6 +239,9 @@ func (service *precisionAutomationService) CreateAutomation(
 	service.definition = definition
 	return automations.AutomationRecord{Definition: definition, Revision: 1}, nil
 }
+
+// HouseholdTimezone satisfies the definition-response seam without storage.
+func (service *precisionAutomationService) HouseholdTimezone() *time.Location { return time.UTC }
 func TestAutomationHTTPNumberPrecision(t *testing.T) {
 	t.Parallel()
 	codec, err := automations.NewAutomationDefinitionCodec()

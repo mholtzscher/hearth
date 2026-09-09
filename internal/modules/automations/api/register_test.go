@@ -362,7 +362,7 @@ func TestAutomationHTTPFixtureSchemaContract(t *testing.T) {
 		}
 		requireAutomationStatus(t, response, http.StatusCreated)
 		body := decodeAutomationResponse[map[string]json.RawMessage](t, response)
-		for _, metadata := range []string{"$schema", "id", "revision", "created_at", "updated_at"} {
+		for _, metadata := range []string{"$schema", "id", "revision", "created_at", "updated_at", "household_timezone"} {
 			delete(body, metadata)
 		}
 		encoded, marshalErr := json.Marshal(body)

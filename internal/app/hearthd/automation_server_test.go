@@ -186,6 +186,25 @@ func (automationFaultCommands) GetCommand(context.Context, devices.CommandID) (d
 	return devices.CommandRecord{}, errors.New("private SQL read failure")
 }
 
+// startFaultAutomationScheduler initializes scheduler progress without background
+// ticks: the open wakeup never fires, so nothing races the faulted manual Run.
+// Cleanup mirrors process shutdown: admission closes before the scheduler joins.
+func startFaultAutomationScheduler(t *testing.T, service *automations.Service) {
+	t.Helper()
+	if err := service.StartAutomationScheduler(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		service.StopAutomationExecutionAdmission()
+		service.StopAutomationScheduler()
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		if waitErr := service.WaitAutomationRuns(ctx); waitErr != nil {
+			t.Error(waitErr)
+		}
+	})
+}
+
 func TestAutomationExecutorFaultDegradesHTTPReadiness(t *testing.T) {
 	t.Parallel()
 	database, err := platformdb.Open(t.Context(), filepath.Join(t.TempDir(), "fault.db"))
@@ -202,15 +221,16 @@ func TestAutomationExecutorFaultDegradesHTTPReadiness(t *testing.T) {
 	}
 	codec := testHTTPAutomationCodec(t)
 	repo := automations.NewSQLiteRepository(database)
-	service := automations.NewService(repo, automationFaultCommands{}, automationFaultCommands{}, codec, time.UTC, nil)
-	t.Cleanup(func() {
-		service.StopAutomationExecutionAdmission()
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		defer cancel()
-		if waitErr := service.WaitAutomationRuns(ctx); waitErr != nil {
-			t.Error(waitErr)
-		}
-	})
+	service := automations.NewService(
+		repo,
+		automationFaultCommands{},
+		automationFaultCommands{},
+		codec,
+		time.UTC,
+		nil,
+		automations.WithSchedulerWakeup(make(chan struct{})),
+	)
+	startFaultAutomationScheduler(t, service)
 	definition, err := codec.DecodeAutomationDefinition(
 		[]byte(
 			`{"name":"Fault","triggers":[{"id":"daily","kind":"cron","expression":"0 19 * * *"}],"steps":[{"entity_id":"ent_01900000-0000-7000-8000-000000000001","operation_name":"set","parameters":{"value":true}}]}`,
@@ -252,6 +272,7 @@ func TestAutomationExecutorFaultDegradesHTTPReadiness(t *testing.T) {
 		}
 	}
 	service.StopAutomationExecutionAdmission()
+	service.StopAutomationScheduler()
 	if err = service.WaitAutomationRuns(ctx); err != nil {
 		t.Fatal(err)
 	}

@@ -151,7 +151,9 @@ func TestCoreNATSTransportRegistersAndProjectsDurableObservation(t *testing.T) {
 	).Scan(&runtimeID); scanErr != nil {
 		t.Fatal(scanErr)
 	}
-	if readinessErr := NewRuntimeReadiness(database, coreConnection, js, observations).Check(ctx); readinessErr != nil {
+	scheduler := &stubSchedulerHealth{healthy: true}
+	readiness := NewRuntimeReadiness(database, coreConnection, js, observations, scheduler)
+	if readinessErr := readiness.Check(ctx); readinessErr != nil {
 		t.Fatal(readinessErr)
 	}
 	for time.Now().Before(deadline) {

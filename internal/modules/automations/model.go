@@ -137,10 +137,15 @@ type AutomationSchedulerState struct {
 }
 
 // AutomationScheduleBatch is the committed result of one evaluated UTC minute.
+// Evaluated distinguishes an actual minute evaluation from a duplicate or
+// backward minute no-op: both carry empty Runs and Occurrences with no Gap,
+// but only an actual evaluation advances progress and may clear scheduler
+// health. No-ops alone must never clear an unresolved scheduler failure.
 type AutomationScheduleBatch struct {
 	Runs        []AutomationRunRecord
 	Occurrences []AutomationOccurrence
 	Gap         *AutomationScheduleGap
+	Evaluated   bool // true only when the current UTC minute was actually evaluated
 }
 
 // AutomationOccurrenceListParams is a descending time/ID position, optionally filtered.

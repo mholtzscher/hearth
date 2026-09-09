@@ -30,6 +30,15 @@ type Automations interface {
 		context.Context,
 		automations.AutomationRunListParams,
 	) (automations.AutomationPage[automations.AutomationRunRecord], error)
+	ListAutomationOccurrences(
+		context.Context,
+		automations.AutomationOccurrenceListParams,
+	) (automations.AutomationPage[automations.AutomationOccurrence], error)
+	ListAutomationScheduleGaps(
+		context.Context,
+		automations.AutomationScheduleGapListParams,
+	) (automations.AutomationPage[automations.AutomationScheduleGap], error)
+	HouseholdTimezone() *time.Location
 	AutomationExecutionReady() bool
 }
 
@@ -118,6 +127,26 @@ func Register(api huma.API, service Automations, definitions *automations.Automa
 		automationOperation("get-automation-run", http.MethodGet, "/automation-runs/{run_id}", "Get an Automation Run"),
 		handler.getAutomationRun,
 	)
+	huma.Register(
+		group,
+		automationOperation(
+			"list-automation-occurrences",
+			http.MethodGet,
+			"/automation-occurrences",
+			"List Automation Occurrences",
+		),
+		handler.listAutomationOccurrences,
+	)
+	huma.Register(
+		group,
+		automationOperation(
+			"list-automation-schedule-gaps",
+			http.MethodGet,
+			"/automation-schedule-gaps",
+			"List Automation Schedule Gaps",
+		),
+		handler.listAutomationScheduleGaps,
+	)
 }
 
 func automationOperation(id, method, path, summary string) huma.Operation {
@@ -140,7 +169,10 @@ func (handler *automationHandler) createAutomation(
 	if err != nil {
 		return nil, automationAPIError(err)
 	}
-	return &AutomationOutput{Location: "/v1/automations/" + string(record.ID), Body: automationBody(record)}, nil
+	return &AutomationOutput{
+		Location: "/v1/automations/" + string(record.ID),
+		Body:     automationBody(record, handler.householdTimezone()),
+	}, nil
 }
 
 func (handler *automationHandler) updateAutomation(
@@ -162,7 +194,7 @@ func (handler *automationHandler) updateAutomation(
 	if err != nil {
 		return nil, automationAPIError(err)
 	}
-	return &AutomationOutput{Body: automationBody(record)}, nil
+	return &AutomationOutput{Body: automationBody(record, handler.householdTimezone())}, nil
 }
 
 func (handler *automationHandler) getAutomation(
@@ -177,7 +209,7 @@ func (handler *automationHandler) getAutomation(
 	if err != nil {
 		return nil, automationAPIError(err)
 	}
-	return &AutomationOutput{Body: automationBody(record)}, nil
+	return &AutomationOutput{Body: automationBody(record, handler.householdTimezone())}, nil
 }
 
 func (handler *automationHandler) deleteAutomation(
@@ -254,7 +286,7 @@ func (handler *automationHandler) listAutomations(
 	output := &AutomationListOutput{}
 	output.Body.Items = make([]AutomationBody, len(page.Items))
 	for i, record := range page.Items {
-		output.Body.Items[i] = automationBody(record)
+		output.Body.Items[i] = automationBody(record, handler.householdTimezone())
 	}
 	if page.HasMore && len(page.Items) > 0 {
 		output.Body.NextCursor, err = encodeAutomationCursor(
@@ -267,50 +299,192 @@ func (handler *automationHandler) listAutomations(
 	return output, nil
 }
 
+//nolint:dupl // Filtered newest-first histories are parallel endpoints over distinct run and occurrence contracts.
 func (handler *automationHandler) listAutomationRuns(
 	ctx context.Context,
 	input *ListAutomationRunsInput,
 ) (*AutomationRunListOutput, error) {
-	params := automations.AutomationRunListParams{Limit: input.Limit}
-	if input.AutomationID != "" {
-		id, err := automations.ParseAutomationID(input.AutomationID)
-		if err != nil {
-			return nil, automationAPIError(err)
-		}
-		params.AutomationID = &id
+	items, next, err := listFilteredAutomationHistory(
+		ctx,
+		input.Limit,
+		input.AutomationID,
+		input.Cursor,
+		func(limit int, automationID *automations.AutomationID) automations.AutomationRunListParams {
+			return automations.AutomationRunListParams{Limit: limit, AutomationID: automationID}
+		},
+		func(params *automations.AutomationRunListParams, cursor, filter string) error {
+			startedAt, id, positionErr := automationRunListPosition(cursor, filter)
+			if positionErr != nil {
+				return positionErr
+			}
+			params.BeforeStartedAt, params.BeforeID = startedAt, id
+			return nil
+		},
+		handler.service.ListAutomationRuns,
+		automationRunSummaryBody,
+		func(filter string) func(automations.AutomationRunRecord) any {
+			return func(run automations.AutomationRunRecord) any {
+				return automationRunCursor{
+					Version:      1,
+					Resource:     "automation_runs",
+					AutomationID: filter,
+					StartedAt:    run.StartedAt.UTC().Format(time.RFC3339Nano),
+					ID:           string(run.ID),
+				}
+			}
+		},
+	)
+	if err != nil {
+		return nil, err
 	}
+	output := &AutomationRunListOutput{}
+	output.Body.Items, output.Body.NextCursor = items, next
+	return output, nil
+}
+
+//nolint:dupl // Filtered newest-first histories are parallel endpoints over distinct run and occurrence contracts.
+func (handler *automationHandler) listAutomationOccurrences(
+	ctx context.Context,
+	input *ListAutomationOccurrencesInput,
+) (*AutomationOccurrenceListOutput, error) {
+	items, next, err := listFilteredAutomationHistory(
+		ctx,
+		input.Limit,
+		input.AutomationID,
+		input.Cursor,
+		func(limit int, automationID *automations.AutomationID) automations.AutomationOccurrenceListParams {
+			return automations.AutomationOccurrenceListParams{Limit: limit, AutomationID: automationID}
+		},
+		func(params *automations.AutomationOccurrenceListParams, cursor, filter string) error {
+			scheduledAt, id, positionErr := automationOccurrenceListPosition(cursor, filter)
+			if positionErr != nil {
+				return positionErr
+			}
+			params.BeforeScheduledAt, params.BeforeAutomationID = scheduledAt, id
+			return nil
+		},
+		handler.service.ListAutomationOccurrences,
+		automationOccurrenceBody,
+		func(filter string) func(automations.AutomationOccurrence) any {
+			return func(occurrence automations.AutomationOccurrence) any {
+				return automationOccurrenceCursor{
+					Version:      1,
+					Resource:     "automation_occurrences",
+					AutomationID: filter,
+					ScheduledAt:  occurrence.ScheduledAt.UTC().Format(time.RFC3339Nano),
+					ID:           string(occurrence.AutomationID),
+				}
+			}
+		},
+	)
+	if err != nil {
+		return nil, err
+	}
+	output := &AutomationOccurrenceListOutput{}
+	output.Body.Items, output.Body.NextCursor = items, next
+	return output, nil
+}
+
+func (handler *automationHandler) listAutomationScheduleGaps(
+	ctx context.Context,
+	input *ListAutomationScheduleGapsInput,
+) (*AutomationScheduleGapListOutput, error) {
+	params := automations.AutomationScheduleGapListParams{Limit: input.Limit}
 	if input.Cursor != "" {
-		startedAt, id, err := automationRunListPosition(input.Cursor, input.AutomationID)
+		recordedAt, id, err := automationScheduleGapListPosition(input.Cursor)
 		if err != nil {
 			return nil, huma.Error400BadRequest("invalid automation cursor")
 		}
-		params.BeforeStartedAt, params.BeforeID = startedAt, id
+		params.BeforeRecordedAt, params.BeforeID = recordedAt, id
 	}
-	page, err := handler.service.ListAutomationRuns(ctx, params)
+	page, err := handler.service.ListAutomationScheduleGaps(ctx, params)
 	if err != nil {
 		return nil, automationAPIError(err)
 	}
-	output := &AutomationRunListOutput{}
-	output.Body.Items = make([]AutomationRunSummaryBody, len(page.Items))
-	for i, run := range page.Items {
-		output.Body.Items[i] = automationRunSummaryBody(run)
-	}
-	if page.HasMore && len(page.Items) > 0 {
-		last := page.Items[len(page.Items)-1]
-		output.Body.NextCursor, err = encodeAutomationCursor(
-			automationRunCursor{
-				Version:      1,
-				Resource:     "automation_runs",
-				AutomationID: input.AutomationID,
-				StartedAt:    last.StartedAt.UTC().Format(time.RFC3339Nano),
-				ID:           string(last.ID),
-			},
-		)
-		if err != nil {
-			return nil, automationAPIError(err)
-		}
+	output := &AutomationScheduleGapListOutput{}
+	output.Body.Items, output.Body.NextCursor, err = automationHistoryList(
+		page,
+		automationScheduleGapBody,
+		func(gap automations.AutomationScheduleGap) any {
+			return automationScheduleGapCursor{
+				Version:    1,
+				Resource:   "automation_schedule_gaps",
+				RecordedAt: gap.RecordedAt.UTC().Format(time.RFC3339Nano),
+				ID:         gap.ID,
+			}
+		},
+	)
+	if err != nil {
+		return nil, automationAPIError(err)
 	}
 	return output, nil
+}
+
+// listFilteredAutomationHistory resolves the optional automation filter and its
+// filter-bound cursor, lists one newest-first page, and maps it to transport
+// bodies with its continuation cursor.
+func listFilteredAutomationHistory[Params, Record, Body any](
+	ctx context.Context,
+	limit int,
+	automationFilter string,
+	cursor string,
+	makeParams func(int, *automations.AutomationID) Params,
+	applyCursor func(*Params, string, string) error,
+	list func(context.Context, Params) (automations.AutomationPage[Record], error),
+	convert func(Record) Body,
+	position func(string) func(Record) any,
+) ([]Body, string, error) {
+	var automationID *automations.AutomationID
+	if automationFilter != "" {
+		parsed, err := automations.ParseAutomationID(automationFilter)
+		if err != nil {
+			return nil, "", automationAPIError(err)
+		}
+		automationID = &parsed
+	}
+	params := makeParams(limit, automationID)
+	if cursor != "" {
+		if err := applyCursor(&params, cursor, automationFilter); err != nil {
+			return nil, "", huma.Error400BadRequest("invalid automation cursor")
+		}
+	}
+	page, err := list(ctx, params)
+	if err != nil {
+		return nil, "", automationAPIError(err)
+	}
+	return automationHistoryList(page, convert, position(automationFilter))
+}
+
+// automationHistoryList maps one descending history page to transport bodies
+// and mints its filter-bound continuation cursor. Position closures keep each
+// collection's cursor resource and filter binding next to its position parser.
+func automationHistoryList[Record, Body any](
+	page automations.AutomationPage[Record],
+	convert func(Record) Body,
+	position func(Record) any,
+) ([]Body, string, error) {
+	bodies := make([]Body, len(page.Items))
+	for i, record := range page.Items {
+		bodies[i] = convert(record)
+	}
+	if !page.HasMore || len(page.Items) == 0 {
+		return bodies, "", nil
+	}
+	cursor, err := encodeAutomationCursor(position(page.Items[len(page.Items)-1]))
+	if err != nil {
+		return nil, "", err
+	}
+	return bodies, cursor, nil
+}
+
+// householdTimezone reports the process household zone for definition reads.
+// The service always carries the startup-loaded zone; an absent zone degrades
+// to an empty value rather than failing diagnostic history reads.
+func (handler *automationHandler) householdTimezone() string {
+	if zone := handler.service.HouseholdTimezone(); zone != nil {
+		return zone.String()
+	}
+	return ""
 }
 
 // decodeAutomationDefinition classifies whitespace-only names and cron expressions

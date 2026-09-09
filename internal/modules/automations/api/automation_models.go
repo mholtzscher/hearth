@@ -56,9 +56,13 @@ type ListAutomationRunsInput struct {
 
 // AutomationTriggerBody preserves author identity and order.
 type AutomationTriggerBody struct {
-	ID         automations.AutomationTriggerID `json:"id"`
-	Kind       string                          `json:"kind"       enum:"cron"`
-	Expression string                          `json:"expression"`
+	ID   automations.AutomationTriggerID `json:"id"`
+	Kind string                          `json:"kind" enum:"cron"`
+	// Expression is one five-field household cron rule, interpreted in the
+	// response household_timezone. Syntactically valid but impossible
+	// schedules such as 0 0 31 2 * are stored and never match, so
+	// validation does not imply eventual execution.
+	Expression string `json:"expression" doc:"Cron expression; impossible dates such as 0 0 31 2 * never match."`
 }
 
 // AutomationStepBody contains only public operation inputs.
@@ -76,7 +80,8 @@ type AutomationDefinitionBody struct {
 	Steps    []AutomationStepBody    `json:"steps"`
 }
 
-// AutomationBody adds revision and timestamps to a normalized definition.
+// AutomationBody adds revision, timestamps, and the read-only household
+// timezone used to interpret every cron expression to a normalized definition.
 type AutomationBody struct {
 	AutomationDefinitionBody
 
@@ -84,6 +89,10 @@ type AutomationBody struct {
 	Revision  int64                    `json:"revision"`
 	CreatedAt time.Time                `json:"created_at"`
 	UpdatedAt time.Time                `json:"updated_at"`
+	// HouseholdTimezone is read-only process configuration, not an editable
+	// per-Automation field. Run and Occurrence snapshots retain the timezone
+	// used at admission; this value reflects the currently running process.
+	HouseholdTimezone string `json:"household_timezone" doc:"Household timezone. Read-only process configuration."`
 }
 
 // AutomationOutput carries a creation Location or a normal definition read.
@@ -191,9 +200,10 @@ func automationStepBody(step automations.AutomationStep) AutomationStepBody {
 		Parameters:    bytes.Clone(step.Parameters),
 	}
 }
-func automationBody(record automations.AutomationRecord) AutomationBody {
+func automationBody(record automations.AutomationRecord, householdTimezone string) AutomationBody {
 	return AutomationBody{AutomationDefinitionBody: automationDefinitionBody(record.Definition), ID: record.ID,
-		Revision: record.Revision, CreatedAt: record.CreatedAt, UpdatedAt: record.UpdatedAt}
+		Revision: record.Revision, CreatedAt: record.CreatedAt, UpdatedAt: record.UpdatedAt,
+		HouseholdTimezone: householdTimezone}
 }
 func automationRunBody(run automations.AutomationRunRecord) AutomationRunBody {
 	body := AutomationRunBody{
@@ -239,5 +249,97 @@ func automationRunSummaryBody(run automations.AutomationRunRecord) AutomationRun
 		StartedAt:         run.StartedAt,
 		CompletedAt:       run.CompletedAt,
 		FailureCode:       run.FailureCode,
+	}
+}
+
+// ListAutomationOccurrencesInput pages started and skipped schedule matches
+// newest-first, optionally filtered to one Automation's history.
+type ListAutomationOccurrencesInput struct {
+	AutomationID string `query:"automation_id"`
+	Limit        int    `query:"limit"         default:"50" minimum:"1" maximum:"200"`
+	Cursor       string `query:"cursor"`
+}
+
+// ListAutomationScheduleGapsInput pages unevaluated intervals newest-first.
+type ListAutomationScheduleGapsInput struct {
+	Limit  int    `query:"limit"  default:"50" minimum:"1" maximum:"200"`
+	Cursor string `query:"cursor"`
+}
+
+// AutomationOccurrenceBody exposes one Automation's collected Trigger matches
+// at one UTC minute. MatchedTriggers retains the complete matching Trigger
+// snapshots in definition array order; it is never reconstructed from the
+// current definition, so it survives expression edits, reorder, and deletion.
+type AutomationOccurrenceBody struct {
+	AutomationID automations.AutomationID `json:"automation_id"`
+	Revision     int64                    `json:"revision"`
+	// Name is the retained diagnostic name, even after definition deletion.
+	Name            string                  `json:"name"`
+	MatchedTriggers []AutomationTriggerBody `json:"matched_triggers"`
+	// Timezone is the household zone used at admission, not the current process zone.
+	Timezone    string                                 `json:"timezone"`
+	ScheduledAt time.Time                              `json:"scheduled_at"`
+	EvaluatedAt time.Time                              `json:"evaluated_at"`
+	Status      automations.AutomationOccurrenceStatus `json:"status"       enum:"started,skipped"`
+	// RunID is present only when the match was admitted; skipped matches
+	// carry SkipReason instead and never both.
+	RunID      *automations.AutomationRunID `json:"run_id,omitempty"`
+	SkipReason *string                      `json:"skip_reason,omitempty"`
+}
+
+// AutomationScheduleGapBody explains one unevaluated UTC minute interval.
+// Gaps never claim the number or identity of missed Automations.
+type AutomationScheduleGapBody struct {
+	ID               string    `json:"id"`
+	FromExclusive    time.Time `json:"from_exclusive"`
+	ThroughInclusive time.Time `json:"through_inclusive"`
+	RecordedAt       time.Time `json:"recorded_at"`
+	Reason           string    `json:"reason"            enum:"core_restart,clock_or_processing_gap"`
+}
+
+// AutomationOccurrenceListOutput is a newest-first occurrence page.
+type AutomationOccurrenceListOutput struct {
+	Body struct {
+		Items      []AutomationOccurrenceBody `json:"items"`
+		NextCursor string                     `json:"next_cursor,omitempty"`
+	}
+}
+
+// AutomationScheduleGapListOutput is a newest-first gap page.
+type AutomationScheduleGapListOutput struct {
+	Body struct {
+		Items      []AutomationScheduleGapBody `json:"items"`
+		NextCursor string                      `json:"next_cursor,omitempty"`
+	}
+}
+
+func automationOccurrenceBody(occurrence automations.AutomationOccurrence) AutomationOccurrenceBody {
+	body := AutomationOccurrenceBody{
+		AutomationID: occurrence.AutomationID,
+		Revision:     occurrence.Revision,
+		Name:         occurrence.Name,
+		MatchedTriggers: make(
+			[]AutomationTriggerBody,
+			len(occurrence.MatchedTriggers),
+		),
+		Timezone:    occurrence.Timezone,
+		ScheduledAt: occurrence.ScheduledAt,
+		EvaluatedAt: occurrence.EvaluatedAt,
+		Status:      occurrence.Status,
+		RunID:       occurrence.RunID,
+		SkipReason:  occurrence.SkipReason,
+	}
+	for i, trigger := range occurrence.MatchedTriggers {
+		body.MatchedTriggers[i] = AutomationTriggerBody(trigger)
+	}
+	return body
+}
+func automationScheduleGapBody(gap automations.AutomationScheduleGap) AutomationScheduleGapBody {
+	return AutomationScheduleGapBody{
+		ID:               gap.ID,
+		FromExclusive:    gap.FromExclusive,
+		ThroughInclusive: gap.ThroughInclusive,
+		RecordedAt:       gap.RecordedAt,
+		Reason:           gap.Reason,
 	}
 }

@@ -27,6 +27,23 @@ type RuntimeReadiness struct {
 	connection          *natsgo.Conn
 	jetstream           jetstream.JetStream
 	observationConsumer *devicesnats.ObservationConsumer
+	scheduler           AutomationSchedulerHealth
+}
+
+// AutomationSchedulerHealth is the narrow readiness seam for scheduled-admission
+// persistence. The automations Service satisfies it. Scheduler health is only
+// one readiness input: device dependencies, execution admission, and the sticky
+// executor fault stay separate gates.
+type AutomationSchedulerHealth interface {
+	AutomationSchedulerHealthy() bool
+}
+
+// AutomationReadiness is the HTTP readiness seam: automation management and
+// history plus the scheduler gate. The automations Service satisfies it; test
+// stubs implement it narrowly. It lives here so the api package stays untouched.
+type AutomationReadiness interface {
+	automationsapi.Automations
+	AutomationSchedulerReady() bool
 }
 
 func NewRuntimeReadiness(
@@ -34,14 +51,17 @@ func NewRuntimeReadiness(
 	connection *natsgo.Conn,
 	js jetstream.JetStream,
 	consumer *devicesnats.ObservationConsumer,
+	scheduler AutomationSchedulerHealth,
 ) *RuntimeReadiness {
 	return &RuntimeReadiness{
 		database: database, connection: connection, jetstream: js, observationConsumer: consumer,
+		scheduler: scheduler,
 	}
 }
 
 func (readiness *RuntimeReadiness) Check(ctx context.Context) error {
-	if readiness == nil || readiness.database == nil || readiness.connection == nil || readiness.jetstream == nil {
+	if readiness == nil || readiness.database == nil || readiness.connection == nil || readiness.jetstream == nil ||
+		readiness.scheduler == nil {
 		return errors.New("runtime dependencies are not initialized")
 	}
 	if err := readiness.database.PingContext(ctx); err != nil {
@@ -56,6 +76,9 @@ func (readiness *RuntimeReadiness) Check(ctx context.Context) error {
 	if !readiness.observationConsumer.Active() {
 		return errors.New("observation consumer is inactive")
 	}
+	if !readiness.scheduler.AutomationSchedulerHealthy() {
+		return errors.New("automation scheduler is unhealthy")
+	}
 	return nil
 }
 
@@ -68,7 +91,7 @@ type CommandAdmissionChecker interface {
 
 func NewHTTPHandler(
 	devices devicesapi.Devices,
-	automationService automationsapi.Automations,
+	automationService AutomationReadiness,
 	definitions *automations.AutomationDefinitionCodec,
 	readiness ReadinessChecker,
 	commandAdmission CommandAdmissionChecker,
@@ -80,8 +103,8 @@ func NewHTTPHandler(
 	})
 	router.GET("/readyz", func(ctx *echo.Context) error {
 		if readiness == nil || readiness.Check(ctx.Request().Context()) != nil || automationService == nil ||
-			!automationService.AutomationExecutionReady() || commandAdmission == nil ||
-			!commandAdmission.CommandAdmissionOpen() {
+			!automationService.AutomationExecutionReady() || !automationService.AutomationSchedulerReady() ||
+			commandAdmission == nil || !commandAdmission.CommandAdmissionOpen() {
 			return ctx.JSON(http.StatusServiceUnavailable, map[string]string{statusField: "not_ready"})
 		}
 		return ctx.JSON(http.StatusOK, map[string]string{statusField: "ready"})

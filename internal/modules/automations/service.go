@@ -29,6 +29,9 @@ type AutomationCommandRecords interface {
 }
 
 // Service owns automation management and the shared Run/next-Step admission gate.
+// The scheduler loop fields below belong to the Spec 2 lifecycle in
+// automation_scheduler.go; the admission gate serializes scheduler ticks,
+// manual starts, next-Step admission, and shutdown in one place.
 type Service struct {
 	repo             *SQLiteRepository
 	commands         AutomationCommands
@@ -39,23 +42,41 @@ type Service struct {
 	gate             sync.Mutex
 	admissionOpen    bool
 	executorFault    bool
+	schedulerHealthy bool
 	workers          int
 	idle             chan struct{}
 	newCommandID     func() (devices.CommandID, error)
 	newCorrelationID func() (devices.CorrelationID, error)
+	schedulerClock   func() time.Time
+	schedulerWakeup  <-chan struct{}
+	schedulerMu      sync.Mutex
+	schedulerRunning bool
+	schedulerStop    chan struct{}
+	schedulerDone    chan struct{}
 }
 
 // NewService opens admission only after application-owned startup recovery.
+// Scheduler health starts false until StartAutomationScheduler initializes
+// successfully; options only tune the scheduler loop clock and wakeup.
 func NewService(repo *SQLiteRepository, commands AutomationCommands, commandRecords AutomationCommandRecords,
-	definitions *AutomationDefinitionCodec, timezone *time.Location, logger *slog.Logger) *Service {
+	definitions *AutomationDefinitionCodec, timezone *time.Location, logger *slog.Logger,
+	options ...AutomationServiceOption,
+) *Service {
 	if logger == nil {
 		logger = slog.Default()
 	}
 	idle := make(chan struct{})
 	close(idle)
-	return &Service{repo: repo, commands: commands, commandRecords: commandRecords, definitions: definitions,
+	service := &Service{repo: repo, commands: commands, commandRecords: commandRecords, definitions: definitions,
 		timezone: timezone, logger: logger, admissionOpen: true, idle: idle,
-		newCommandID: devices.NewCommandID, newCorrelationID: devices.NewCorrelationID}
+		newCommandID: devices.NewCommandID, newCorrelationID: devices.NewCorrelationID,
+		schedulerClock: time.Now}
+	for _, option := range options {
+		if option != nil {
+			option(service)
+		}
+	}
+	return service
 }
 
 // CreateAutomation validates every Step without dispatch, including disabled targets.
