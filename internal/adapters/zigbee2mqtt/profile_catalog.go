@@ -50,12 +50,10 @@ const (
 // LoadEmbeddedProfileCatalog validates and compiles every repository-owned
 // profile before the Adapter makes any external connection. It returns a
 // fail-fast startup error without a partial catalog when any document is
-// invalid. The catalog loads with an empty strategy registry in this
-// transitional layer because family profile documents and the default strategy
-// registry arrive in later deliverables; switching to the default registry
-// changes one call below without a compatibility shim.
+// invalid. Profiles select from the closed production strategy registry, so
+// strategy resolution and parameter compilation run here at startup.
 func LoadEmbeddedProfileCatalog() (*ProfileCatalog, error) {
-	return loadEmbeddedProfileCatalogWithRegistry(profileStrategyRegistry{})
+	return loadEmbeddedProfileCatalogWithRegistry(defaultProfileStrategyRegistry())
 }
 
 // loadEmbeddedProfileCatalogWithRegistry compiles the embedded profile
