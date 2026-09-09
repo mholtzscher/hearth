@@ -40,6 +40,23 @@ func ParseAutomationRunID(value string) (AutomationRunID, error) {
 	}
 	return AutomationRunID(value), nil
 }
+
+// NewAutomationScheduleGapID generates a canonical asg_-prefixed UUIDv7 gap identity.
+func NewAutomationScheduleGapID() (string, error) {
+	value, err := uuid.NewV7()
+	if err != nil {
+		return "", fmt.Errorf("automation run ID generation: %w", err)
+	}
+	return "asg_" + value.String(), nil
+}
+
+// ParseAutomationScheduleGapID rejects noncanonical gap identities without echoing them.
+func ParseAutomationScheduleGapID(value string) (string, error) {
+	if !validAutomationIdentity(value, "asg_") {
+		return "", fmt.Errorf("%w: schedule gap ID", ErrInvalidAutomation)
+	}
+	return value, nil
+}
 func validAutomationIdentity(value, prefix string) bool {
 	text, ok := strings.CutPrefix(value, prefix)
 	if !ok {

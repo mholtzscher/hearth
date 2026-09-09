@@ -100,7 +100,32 @@ func (s CronSchedule) matchesCronLocalWallClock(local time.Time) bool {
 	return dayOfMonthMatch || dayOfWeekMatch
 }
 
-// cronFirstFoldUTCInstant reports whether a UTC minute bucket is the first
+// matchScheduledTriggers parses every Trigger expression and collects the matching
+// Trigger snapshots in definition array order for one household minute. The local
+// instant must already be expressed in the household timezone, and firstFold must
+// be the single cronFirstFoldUTCInstant result computed once for that minute.
+// A nonmatching minute returns empty subsets, never an error; an unparsable
+// stored expression aborts the minute visibly instead of dispatching partially.
+func matchScheduledTriggers(
+	triggers []AutomationTrigger,
+	local time.Time,
+	firstFold bool,
+) ([]AutomationTrigger, []AutomationTriggerID, error) {
+	matched := []AutomationTrigger{}
+	ids := []AutomationTriggerID{}
+	for _, trigger := range triggers {
+		schedule, err := ParseCronSchedule(trigger.Expression)
+		if err != nil {
+			return nil, nil, err
+		}
+		if firstFold && schedule.matchesCronLocalWallClock(local) {
+			matched = append(matched, trigger)
+			ids = append(ids, trigger.ID)
+		}
+	}
+	return matched, ids, nil
+}
+
 // chronological occurrence of its local calendar minute. It compares the local
 // year, month, day, hour, and minute fields at the candidate against each of
 // the preceding cronFoldLookbackMinutes UTC minute buckets; an earlier bucket

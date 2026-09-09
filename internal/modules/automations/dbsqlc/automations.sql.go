@@ -97,18 +97,19 @@ func (q *Queries) CompleteAutomationStep(ctx context.Context, arg CompleteAutoma
 }
 
 const createAutomation = `-- name: CreateAutomation :one
-INSERT INTO automations (id, revision, name, enabled, triggers_json, steps_json, created_at, updated_at)
-VALUES (?, 1, ?, ?, ?, ?, ?, ?) RETURNING id, revision, name, enabled, triggers_json, steps_json, created_at, updated_at
+INSERT INTO automations (id, revision, name, enabled, triggers_json, steps_json, schedule_not_before, created_at, updated_at)
+VALUES (?, 1, ?, ?, ?, ?, ?, ?, ?) RETURNING id, revision, name, enabled, triggers_json, steps_json, schedule_not_before, created_at, updated_at
 `
 
 type CreateAutomationParams struct {
-	ID           string
-	Name         string
-	Enabled      int64
-	TriggersJson string
-	StepsJson    string
-	CreatedAt    string
-	UpdatedAt    string
+	ID                string
+	Name              string
+	Enabled           int64
+	TriggersJson      string
+	StepsJson         string
+	ScheduleNotBefore string
+	CreatedAt         string
+	UpdatedAt         string
 }
 
 func (q *Queries) CreateAutomation(ctx context.Context, arg CreateAutomationParams) (Automation, error) {
@@ -118,6 +119,7 @@ func (q *Queries) CreateAutomation(ctx context.Context, arg CreateAutomationPara
 		arg.Enabled,
 		arg.TriggersJson,
 		arg.StepsJson,
+		arg.ScheduleNotBefore,
 		arg.CreatedAt,
 		arg.UpdatedAt,
 	)
@@ -129,10 +131,45 @@ func (q *Queries) CreateAutomation(ctx context.Context, arg CreateAutomationPara
 		&i.Enabled,
 		&i.TriggersJson,
 		&i.StepsJson,
+		&i.ScheduleNotBefore,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
 	return i, err
+}
+
+const createAutomationOccurrence = `-- name: CreateAutomationOccurrence :exec
+INSERT INTO automation_occurrences (automation_id, scheduled_at, revision, name, matched_triggers_json, timezone, evaluated_at, status, run_id, skip_reason)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+`
+
+type CreateAutomationOccurrenceParams struct {
+	AutomationID        string
+	ScheduledAt         string
+	Revision            int64
+	Name                string
+	MatchedTriggersJson string
+	Timezone            string
+	EvaluatedAt         string
+	Status              string
+	RunID               sql.NullString
+	SkipReason          sql.NullString
+}
+
+func (q *Queries) CreateAutomationOccurrence(ctx context.Context, arg CreateAutomationOccurrenceParams) error {
+	_, err := q.db.ExecContext(ctx, createAutomationOccurrence,
+		arg.AutomationID,
+		arg.ScheduledAt,
+		arg.Revision,
+		arg.Name,
+		arg.MatchedTriggersJson,
+		arg.Timezone,
+		arg.EvaluatedAt,
+		arg.Status,
+		arg.RunID,
+		arg.SkipReason,
+	)
+	return err
 }
 
 const createAutomationRun = `-- name: CreateAutomationRun :exec
@@ -182,6 +219,30 @@ func (q *Queries) CreateAutomationRunStep(ctx context.Context, arg CreateAutomat
 	return err
 }
 
+const createAutomationScheduleGap = `-- name: CreateAutomationScheduleGap :exec
+INSERT INTO automation_schedule_gaps (id, from_exclusive, through_inclusive, recorded_at, reason)
+VALUES (?, ?, ?, ?, ?)
+`
+
+type CreateAutomationScheduleGapParams struct {
+	ID               string
+	FromExclusive    string
+	ThroughInclusive string
+	RecordedAt       string
+	Reason           string
+}
+
+func (q *Queries) CreateAutomationScheduleGap(ctx context.Context, arg CreateAutomationScheduleGapParams) error {
+	_, err := q.db.ExecContext(ctx, createAutomationScheduleGap,
+		arg.ID,
+		arg.FromExclusive,
+		arg.ThroughInclusive,
+		arg.RecordedAt,
+		arg.Reason,
+	)
+	return err
+}
+
 const deleteAutomation = `-- name: DeleteAutomation :execrows
 DELETE FROM automations WHERE id = ? AND revision = ?
 `
@@ -215,7 +276,7 @@ func (q *Queries) GetActiveAutomationRun(ctx context.Context, arg GetActiveAutom
 }
 
 const getAutomation = `-- name: GetAutomation :one
-SELECT id, revision, name, enabled, triggers_json, steps_json, created_at, updated_at FROM automations WHERE id = ?
+SELECT id, revision, name, enabled, triggers_json, steps_json, schedule_not_before, created_at, updated_at FROM automations WHERE id = ?
 `
 
 type GetAutomationParams struct {
@@ -232,6 +293,7 @@ func (q *Queries) GetAutomation(ctx context.Context, arg GetAutomationParams) (A
 		&i.Enabled,
 		&i.TriggersJson,
 		&i.StepsJson,
+		&i.ScheduleNotBefore,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
@@ -290,6 +352,17 @@ func (q *Queries) GetAutomationRun(ctx context.Context, arg GetAutomationRunPara
 	return i, err
 }
 
+const getAutomationSchedulerState = `-- name: GetAutomationSchedulerState :one
+SELECT scheduler_key, high_water_minute, timezone FROM automation_scheduler_state WHERE scheduler_key = 1
+`
+
+func (q *Queries) GetAutomationSchedulerState(ctx context.Context) (AutomationSchedulerState, error) {
+	row := q.db.QueryRowContext(ctx, getAutomationSchedulerState)
+	var i AutomationSchedulerState
+	err := row.Scan(&i.SchedulerKey, &i.HighWaterMinute, &i.Timezone)
+	return i, err
+}
+
 const getManualAutomationRun = `-- name: GetManualAutomationRun :one
 SELECT id, automation_id, revision, snapshot_json, source, scheduled_at, matched_trigger_ids_json, status, started_at, completed_at, failure_code, idempotency_key FROM automation_runs WHERE automation_id = ? AND idempotency_key = ?
 `
@@ -332,6 +405,59 @@ type InterruptRunningAutomationStepsParams struct {
 func (q *Queries) InterruptRunningAutomationSteps(ctx context.Context, arg InterruptRunningAutomationStepsParams) error {
 	_, err := q.db.ExecContext(ctx, interruptRunningAutomationSteps, arg.FailureCode, arg.CompletedAt, arg.RunID)
 	return err
+}
+
+const listAutomationOccurrences = `-- name: ListAutomationOccurrences :many
+SELECT automation_id, scheduled_at, revision, name, matched_triggers_json, timezone, evaluated_at, status, run_id, skip_reason FROM automation_occurrences
+WHERE (?1 IS NULL OR automation_id = ?1)
+AND (?2 IS NULL OR (scheduled_at, automation_id) < (?2, ?3))
+ORDER BY scheduled_at DESC, automation_id DESC LIMIT ?4
+`
+
+type ListAutomationOccurrencesParams struct {
+	AutomationFilter interface{}
+	BeforeTime       interface{}
+	BeforeID         sql.NullString
+	PageLimit        int64
+}
+
+func (q *Queries) ListAutomationOccurrences(ctx context.Context, arg ListAutomationOccurrencesParams) ([]AutomationOccurrence, error) {
+	rows, err := q.db.QueryContext(ctx, listAutomationOccurrences,
+		arg.AutomationFilter,
+		arg.BeforeTime,
+		arg.BeforeID,
+		arg.PageLimit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []AutomationOccurrence
+	for rows.Next() {
+		var i AutomationOccurrence
+		if err := rows.Scan(
+			&i.AutomationID,
+			&i.ScheduledAt,
+			&i.Revision,
+			&i.Name,
+			&i.MatchedTriggersJson,
+			&i.Timezone,
+			&i.EvaluatedAt,
+			&i.Status,
+			&i.RunID,
+			&i.SkipReason,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const listAutomationRunSteps = `-- name: ListAutomationRunSteps :many
@@ -432,8 +558,49 @@ func (q *Queries) ListAutomationRuns(ctx context.Context, arg ListAutomationRuns
 	return items, nil
 }
 
+const listAutomationScheduleGaps = `-- name: ListAutomationScheduleGaps :many
+SELECT id, from_exclusive, through_inclusive, recorded_at, reason FROM automation_schedule_gaps
+WHERE (?1 IS NULL OR (recorded_at, id) < (?1, ?2))
+ORDER BY recorded_at DESC, id DESC LIMIT ?3
+`
+
+type ListAutomationScheduleGapsParams struct {
+	BeforeTime interface{}
+	BeforeID   sql.NullString
+	PageLimit  int64
+}
+
+func (q *Queries) ListAutomationScheduleGaps(ctx context.Context, arg ListAutomationScheduleGapsParams) ([]AutomationScheduleGap, error) {
+	rows, err := q.db.QueryContext(ctx, listAutomationScheduleGaps, arg.BeforeTime, arg.BeforeID, arg.PageLimit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []AutomationScheduleGap
+	for rows.Next() {
+		var i AutomationScheduleGap
+		if err := rows.Scan(
+			&i.ID,
+			&i.FromExclusive,
+			&i.ThroughInclusive,
+			&i.RecordedAt,
+			&i.Reason,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listAutomations = `-- name: ListAutomations :many
-SELECT id, revision, name, enabled, triggers_json, steps_json, created_at, updated_at FROM automations WHERE id > ?1 ORDER BY id LIMIT ?2
+SELECT id, revision, name, enabled, triggers_json, steps_json, schedule_not_before, created_at, updated_at FROM automations WHERE id > ?1 ORDER BY id LIMIT ?2
 `
 
 type ListAutomationsParams struct {
@@ -457,6 +624,7 @@ func (q *Queries) ListAutomations(ctx context.Context, arg ListAutomationsParams
 			&i.Enabled,
 			&i.TriggersJson,
 			&i.StepsJson,
+			&i.ScheduleNotBefore,
 			&i.CreatedAt,
 			&i.UpdatedAt,
 		); err != nil {
@@ -513,6 +681,49 @@ func (q *Queries) ListRunningAutomationRuns(ctx context.Context) ([]AutomationRu
 	return items, nil
 }
 
+const listScheduleEligibleAutomations = `-- name: ListScheduleEligibleAutomations :many
+SELECT id, revision, name, enabled, triggers_json, steps_json, schedule_not_before, created_at, updated_at FROM automations WHERE enabled = 1 AND schedule_not_before <= ?1 ORDER BY id
+`
+
+type ListScheduleEligibleAutomationsParams struct {
+	Minute string
+}
+
+// Schedule-eligible definitions are enabled with a write bound at or before the
+// evaluated minute, in deterministic automation order.
+func (q *Queries) ListScheduleEligibleAutomations(ctx context.Context, arg ListScheduleEligibleAutomationsParams) ([]Automation, error) {
+	rows, err := q.db.QueryContext(ctx, listScheduleEligibleAutomations, arg.Minute)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Automation
+	for rows.Next() {
+		var i Automation
+		if err := rows.Scan(
+			&i.ID,
+			&i.Revision,
+			&i.Name,
+			&i.Enabled,
+			&i.TriggersJson,
+			&i.StepsJson,
+			&i.ScheduleNotBefore,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const pruneAutomationHistory = `-- name: PruneAutomationHistory :execrows
 DELETE FROM automation_runs WHERE id IN (
  SELECT id FROM automation_runs WHERE automation_runs.status <> 'running' AND automation_runs.completed_at < ?1
@@ -526,6 +737,45 @@ type PruneAutomationHistoryParams struct {
 
 func (q *Queries) PruneAutomationHistory(ctx context.Context, arg PruneAutomationHistoryParams) (int64, error) {
 	result, err := q.db.ExecContext(ctx, pruneAutomationHistory, arg.Cutoff)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
+
+const pruneAutomationScheduleGaps = `-- name: PruneAutomationScheduleGaps :execrows
+DELETE FROM automation_schedule_gaps WHERE id IN (
+ SELECT inner_gap.id FROM automation_schedule_gaps AS inner_gap WHERE inner_gap.recorded_at < ?1
+ ORDER BY inner_gap.recorded_at, inner_gap.id LIMIT 500
+)
+`
+
+type PruneAutomationScheduleGapsParams struct {
+	Cutoff string
+}
+
+func (q *Queries) PruneAutomationScheduleGaps(ctx context.Context, arg PruneAutomationScheduleGapsParams) (int64, error) {
+	result, err := q.db.ExecContext(ctx, pruneAutomationScheduleGaps, arg.Cutoff)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
+
+const pruneAutomationSkippedOccurrences = `-- name: PruneAutomationSkippedOccurrences :execrows
+DELETE FROM automation_occurrences WHERE (automation_id, scheduled_at) IN (
+ SELECT inner_occurrence.automation_id, inner_occurrence.scheduled_at FROM automation_occurrences AS inner_occurrence
+ WHERE inner_occurrence.status = 'skipped' AND inner_occurrence.evaluated_at < ?1
+ ORDER BY inner_occurrence.evaluated_at, inner_occurrence.automation_id, inner_occurrence.scheduled_at LIMIT 500
+)
+`
+
+type PruneAutomationSkippedOccurrencesParams struct {
+	Cutoff string
+}
+
+func (q *Queries) PruneAutomationSkippedOccurrences(ctx context.Context, arg PruneAutomationSkippedOccurrencesParams) (int64, error) {
+	result, err := q.db.ExecContext(ctx, pruneAutomationSkippedOccurrences, arg.Cutoff)
 	if err != nil {
 		return 0, err
 	}
@@ -547,18 +797,19 @@ func (q *Queries) SkipPendingAutomationSteps(ctx context.Context, arg SkipPendin
 }
 
 const updateAutomation = `-- name: UpdateAutomation :one
-UPDATE automations SET revision = revision + 1, name = ?, enabled = ?, triggers_json = ?, steps_json = ?, updated_at = ?
-WHERE id = ? AND revision = ?7 RETURNING id, revision, name, enabled, triggers_json, steps_json, created_at, updated_at
+UPDATE automations SET revision = revision + 1, name = ?, enabled = ?, triggers_json = ?, steps_json = ?, schedule_not_before = ?, updated_at = ?
+WHERE id = ? AND revision = ?8 RETURNING id, revision, name, enabled, triggers_json, steps_json, schedule_not_before, created_at, updated_at
 `
 
 type UpdateAutomationParams struct {
-	Name             string
-	Enabled          int64
-	TriggersJson     string
-	StepsJson        string
-	UpdatedAt        string
-	ID               string
-	ExpectedRevision int64
+	Name              string
+	Enabled           int64
+	TriggersJson      string
+	StepsJson         string
+	ScheduleNotBefore string
+	UpdatedAt         string
+	ID                string
+	ExpectedRevision  int64
 }
 
 func (q *Queries) UpdateAutomation(ctx context.Context, arg UpdateAutomationParams) (Automation, error) {
@@ -567,6 +818,7 @@ func (q *Queries) UpdateAutomation(ctx context.Context, arg UpdateAutomationPara
 		arg.Enabled,
 		arg.TriggersJson,
 		arg.StepsJson,
+		arg.ScheduleNotBefore,
 		arg.UpdatedAt,
 		arg.ID,
 		arg.ExpectedRevision,
@@ -579,8 +831,24 @@ func (q *Queries) UpdateAutomation(ctx context.Context, arg UpdateAutomationPara
 		&i.Enabled,
 		&i.TriggersJson,
 		&i.StepsJson,
+		&i.ScheduleNotBefore,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
 	return i, err
+}
+
+const upsertAutomationSchedulerState = `-- name: UpsertAutomationSchedulerState :exec
+INSERT INTO automation_scheduler_state (scheduler_key, high_water_minute, timezone) VALUES (1, ?, ?)
+ON CONFLICT(scheduler_key) DO UPDATE SET high_water_minute = excluded.high_water_minute, timezone = excluded.timezone
+`
+
+type UpsertAutomationSchedulerStateParams struct {
+	HighWaterMinute string
+	Timezone        string
+}
+
+func (q *Queries) UpsertAutomationSchedulerState(ctx context.Context, arg UpsertAutomationSchedulerStateParams) error {
+	_, err := q.db.ExecContext(ctx, upsertAutomationSchedulerState, arg.HighWaterMinute, arg.Timezone)
+	return err
 }

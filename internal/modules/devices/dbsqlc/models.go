@@ -52,14 +52,28 @@ type AdapterRuntime struct {
 }
 
 type Automation struct {
-	ID           string
-	Revision     int64
-	Name         string
-	Enabled      int64
-	TriggersJson string
-	StepsJson    string
-	CreatedAt    string
-	UpdatedAt    string
+	ID                string
+	Revision          int64
+	Name              string
+	Enabled           int64
+	TriggersJson      string
+	StepsJson         string
+	ScheduleNotBefore string
+	CreatedAt         string
+	UpdatedAt         string
+}
+
+type AutomationOccurrence struct {
+	AutomationID        string
+	ScheduledAt         string
+	Revision            int64
+	Name                string
+	MatchedTriggersJson string
+	Timezone            string
+	EvaluatedAt         string
+	Status              string
+	RunID               sql.NullString
+	SkipReason          sql.NullString
 }
 
 type AutomationRun struct {
@@ -89,6 +103,20 @@ type AutomationRunStep struct {
 	PrecreationFailure    int64
 	StartedAt             sql.NullString
 	CompletedAt           sql.NullString
+}
+
+type AutomationScheduleGap struct {
+	ID               string
+	FromExclusive    string
+	ThroughInclusive string
+	RecordedAt       string
+	Reason           string
+}
+
+type AutomationSchedulerState struct {
+	SchedulerKey    int64
+	HighWaterMinute string
+	Timezone        string
 }
 
 type Command struct {

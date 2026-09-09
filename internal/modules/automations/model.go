@@ -100,6 +100,64 @@ type AutomationPage[T any] struct {
 	HasMore bool
 }
 
+// AutomationOccurrenceStatus distinguishes admitted schedule matches from overlap skips.
+type AutomationOccurrenceStatus string // "started" | "skipped"
+
+// AutomationOccurrence records one Automation's collected Trigger matches at one
+// UTC minute. MatchedTriggers retains the complete matching Trigger snapshots in
+// definition array order; it is never reconstructed from the current definition.
+type AutomationOccurrence struct {
+	AutomationID    AutomationID
+	Revision        int64
+	Name            string // retained diagnostic name, even after definition deletion
+	MatchedTriggers []AutomationTrigger
+	Timezone        string
+	ScheduledAt     time.Time
+	EvaluatedAt     time.Time
+	Status          AutomationOccurrenceStatus
+	RunID           *AutomationRunID // present only when started
+	SkipReason      *string          // "automation_run_active" only in this version
+}
+
+// AutomationScheduleGap records one unevaluated UTC minute interval. Gaps explain
+// intervals the scheduler did not evaluate; they never claim per-definition
+// historical matches.
+type AutomationScheduleGap struct {
+	ID               string // "asg_" + canonical UUIDv7
+	FromExclusive    time.Time
+	ThroughInclusive time.Time
+	RecordedAt       time.Time
+	Reason           string // "core_restart" | "clock_or_processing_gap"
+}
+
+// AutomationSchedulerState is the persisted minute evaluation progress.
+type AutomationSchedulerState struct {
+	HighWaterMinute time.Time
+	Timezone        string
+}
+
+// AutomationScheduleBatch is the committed result of one evaluated UTC minute.
+type AutomationScheduleBatch struct {
+	Runs        []AutomationRunRecord
+	Occurrences []AutomationOccurrence
+	Gap         *AutomationScheduleGap
+}
+
+// AutomationOccurrenceListParams is a descending time/ID position, optionally filtered.
+type AutomationOccurrenceListParams struct {
+	AutomationID       *AutomationID
+	BeforeScheduledAt  *time.Time
+	BeforeAutomationID *AutomationID
+	Limit              int
+}
+
+// AutomationScheduleGapListParams is a descending time/ID position.
+type AutomationScheduleGapListParams struct {
+	BeforeRecordedAt *time.Time
+	BeforeID         *string
+	Limit            int
+}
+
 // AutomationUpdate replaces a definition using optimistic revision concurrency.
 type AutomationUpdate struct {
 	ID               AutomationID

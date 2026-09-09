@@ -20,19 +20,47 @@ type SQLiteRepository struct {
 	database        *sql.DB
 	queries         *dbsqlc.Queries
 	now             func() time.Time
+	scheduleNow     func() time.Time
 	newAutomationID func() (AutomationID, error)
 	newRunID        func() (AutomationRunID, error)
 }
 
+// SQLiteRepositoryOption customizes repository behavior without changing the
+// manual admission clock.
+type SQLiteRepositoryOption func(*SQLiteRepository)
+
+// WithAutomationSchedulerClock overrides the clock used for the scheduler's
+// final currency check and scheduled admission timestamps. When unset, the
+// scheduler clock follows the manual clock. C3 aligns this seam with the
+// scheduler loop clock so ticks and the final commit check share one source.
+func WithAutomationSchedulerClock(clock func() time.Time) SQLiteRepositoryOption {
+	return func(repo *SQLiteRepository) { repo.scheduleNow = clock }
+}
+
 // NewSQLiteRepository uses the migrated core database; no background work is started.
-func NewSQLiteRepository(database *sql.DB) *SQLiteRepository {
-	return &SQLiteRepository{
+// The repository never launches workers: evaluation only commits Runs that C3
+// registers with the execution lifecycle gate.
+func NewSQLiteRepository(database *sql.DB, options ...SQLiteRepositoryOption) *SQLiteRepository {
+	repo := &SQLiteRepository{
 		database:        database,
 		queries:         dbsqlc.New(database),
 		now:             time.Now,
 		newAutomationID: NewAutomationID,
 		newRunID:        NewAutomationRunID,
 	}
+	for _, option := range options {
+		option(repo)
+	}
+	return repo
+}
+
+// scheduleClock reports the scheduler final-check clock, defaulting to the
+// manual clock so existing deterministic tests keep working unchanged.
+func (repo *SQLiteRepository) scheduleClock() func() time.Time {
+	if repo.scheduleNow != nil {
+		return repo.scheduleNow
+	}
+	return repo.now
 }
 func (repo *SQLiteRepository) transaction(ctx context.Context, action func(*dbsqlc.Queries) error) error {
 	tx, err := repo.database.BeginTx(ctx, nil)
@@ -50,6 +78,8 @@ func (repo *SQLiteRepository) transaction(ctx context.Context, action func(*dbsq
 }
 
 // CreateAutomation persists a service-validated normalized definition at revision 1.
+// The schedule bound is the first whole UTC minute strictly after the write time,
+// so a mid-minute create can never back-trigger that minute.
 func (repo *SQLiteRepository) CreateAutomation(
 	ctx context.Context,
 	definition AutomationDefinition,
@@ -64,17 +94,19 @@ func (repo *SQLiteRepository) CreateAutomation(
 		return result, prepareErr
 	}
 	transactionErr := repo.transaction(ctx, func(q *dbsqlc.Queries) error {
-		now := automationTime(repo.now())
+		write := repo.now().UTC()
+		now := automationTime(write)
 		row, err := q.CreateAutomation(
 			ctx,
 			dbsqlc.CreateAutomationParams{
-				ID:           string(id),
-				Name:         definition.Name,
-				Enabled:      automationBool(definition.Enabled),
-				TriggersJson: triggers,
-				StepsJson:    steps,
-				CreatedAt:    now,
-				UpdatedAt:    now,
+				ID:                string(id),
+				Name:              definition.Name,
+				Enabled:           automationBool(definition.Enabled),
+				TriggersJson:      triggers,
+				StepsJson:         steps,
+				ScheduleNotBefore: automationTime(automationFirstMinuteAfter(write)),
+				CreatedAt:         now,
+				UpdatedAt:         now,
 			},
 		)
 		if err != nil {
@@ -87,6 +119,8 @@ func (repo *SQLiteRepository) CreateAutomation(
 }
 
 // UpdateAutomation serializes revision replacement with admission and deletion.
+// Every whole-definition update resets the schedule bound, including
+// expression-preserving updates and reorder-only edits; it never cancels active Runs.
 func (repo *SQLiteRepository) UpdateAutomation(ctx context.Context, input AutomationUpdate) (AutomationRecord, error) {
 	var result AutomationRecord
 	triggers, steps, prepareErr := encodeAutomationParts(input.Definition)
@@ -97,16 +131,18 @@ func (repo *SQLiteRepository) UpdateAutomation(ctx context.Context, input Automa
 		if err := checkAutomationRevision(ctx, q, input.ID, input.ExpectedRevision); err != nil {
 			return err
 		}
+		write := repo.now().UTC()
 		row, err := q.UpdateAutomation(
 			ctx,
 			dbsqlc.UpdateAutomationParams{
-				ID:               string(input.ID),
-				ExpectedRevision: input.ExpectedRevision,
-				Name:             input.Definition.Name,
-				Enabled:          automationBool(input.Definition.Enabled),
-				TriggersJson:     triggers,
-				StepsJson:        steps,
-				UpdatedAt:        automationTime(repo.now()),
+				ID:                string(input.ID),
+				ExpectedRevision:  input.ExpectedRevision,
+				Name:              input.Definition.Name,
+				Enabled:           automationBool(input.Definition.Enabled),
+				TriggersJson:      triggers,
+				StepsJson:         steps,
+				ScheduleNotBefore: automationTime(automationFirstMinuteAfter(write)),
+				UpdatedAt:         automationTime(write),
 			},
 		)
 		if err != nil {
@@ -535,6 +571,10 @@ func (repo *SQLiteRepository) InterruptAutomationRuns(ctx context.Context) error
 
 // PruneAutomationHistory deletes at most 500 terminal runs strictly before cutoff.
 // Cascading steps and the run's own key are removed in the same transaction.
+// A started Occurrence is deleted atomically with its Run through the
+// occurrence-to-run cascade; skipped Occurrences prune by evaluation time and
+// gaps by recording time, both strictly before cutoff and bounded to 500 rows.
+// Scheduler progress is never pruned, so history expiry cannot re-enable replay.
 func (repo *SQLiteRepository) PruneAutomationHistory(ctx context.Context, cutoff time.Time) (int64, error) {
 	var count int64
 	err := repo.transaction(ctx, func(q *dbsqlc.Queries) error {
@@ -542,6 +582,19 @@ func (repo *SQLiteRepository) PruneAutomationHistory(ctx context.Context, cutoff
 		count, err = q.PruneAutomationHistory(
 			ctx,
 			dbsqlc.PruneAutomationHistoryParams{Cutoff: automationString(automationTime(cutoff))},
+		)
+		if err != nil {
+			return err
+		}
+		if _, err = q.PruneAutomationSkippedOccurrences(
+			ctx,
+			dbsqlc.PruneAutomationSkippedOccurrencesParams{Cutoff: automationTime(cutoff)},
+		); err != nil {
+			return err
+		}
+		_, err = q.PruneAutomationScheduleGaps(
+			ctx,
+			dbsqlc.PruneAutomationScheduleGapsParams{Cutoff: automationTime(cutoff)},
 		)
 		return err
 	})

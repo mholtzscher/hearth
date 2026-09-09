@@ -340,6 +340,10 @@ CREATE TABLE automations (
  enabled INTEGER NOT NULL CHECK (enabled IN (0, 1)),
  triggers_json TEXT NOT NULL CHECK (json_valid(triggers_json)),
  steps_json TEXT NOT NULL CHECK (json_valid(steps_json)),
+ -- First whole UTC minute strictly after the definition write. Schedule
+ -- evaluation only admits minutes at or after this bound, so mid-minute
+ -- creates, edits, and enablement changes cannot back-trigger that minute.
+ schedule_not_before TEXT NOT NULL,
  created_at TEXT NOT NULL,
  updated_at TEXT NOT NULL
 );
@@ -400,7 +404,58 @@ CREATE TABLE automation_run_steps (
  CHECK (precreation_failure = 0 OR (status = 'failed' AND outcome IS NULL AND failure_code IN ('command_id_conflict', 'invalid_command', 'entity_not_found', 'internal_error')))
 );
 
+-- Scheduler progress is a singleton minute high-water mark. It is never pruned,
+-- so retained-history expiry cannot re-enable replay after a backward clock change.
+CREATE TABLE automation_scheduler_state (
+ scheduler_key INTEGER PRIMARY KEY CHECK (scheduler_key = 1),
+ high_water_minute TEXT NOT NULL,
+ timezone TEXT NOT NULL CHECK (length(timezone) BETWEEN 1 AND 128)
+);
+
+-- One row per Automation and evaluated UTC minute. Identity deliberately excludes
+-- trigger IDs, expressions, revision, and timezone. Started rows keep their run
+-- until that run is pruned; skipped rows prune by evaluation time. No cascading
+-- FK to the live definition keeps deleted-definition history readable.
+CREATE TABLE automation_occurrences (
+ automation_id TEXT NOT NULL,
+ scheduled_at TEXT NOT NULL,
+ revision INTEGER NOT NULL CHECK (revision > 0),
+ name TEXT NOT NULL,
+ matched_triggers_json TEXT NOT NULL CHECK (
+   json_valid(matched_triggers_json) AND json_type(matched_triggers_json) = 'array'
+   AND json_array_length(matched_triggers_json) > 0
+ ),
+ timezone TEXT NOT NULL CHECK (length(timezone) BETWEEN 1 AND 128),
+ evaluated_at TEXT NOT NULL,
+ status TEXT NOT NULL CHECK (status IN ('started', 'skipped')),
+ run_id TEXT REFERENCES automation_runs(id) ON DELETE CASCADE,
+ skip_reason TEXT CHECK (skip_reason IS NULL OR skip_reason = 'automation_run_active'),
+ PRIMARY KEY (automation_id, scheduled_at),
+ CHECK ((status = 'started' AND run_id IS NOT NULL AND skip_reason IS NULL)
+     OR (status = 'skipped' AND run_id IS NULL AND skip_reason IS NOT NULL))
+);
+CREATE INDEX automation_occurrences_history_idx
+    ON automation_occurrences(scheduled_at DESC, automation_id DESC);
+CREATE INDEX automation_occurrences_filtered_history_idx
+    ON automation_occurrences(automation_id, scheduled_at DESC, automation_id DESC);
+
+-- Unevaluated UTC minute intervals. Bounds require from_exclusive < through_inclusive.
+-- Gaps explain scheduler downtime, never per-definition historical matches.
+CREATE TABLE automation_schedule_gaps (
+ id TEXT PRIMARY KEY CHECK (substr(id, 1, 4) = 'asg_'),
+ from_exclusive TEXT NOT NULL,
+ through_inclusive TEXT NOT NULL,
+ recorded_at TEXT NOT NULL,
+ reason TEXT NOT NULL CHECK (reason IN ('core_restart', 'clock_or_processing_gap')),
+ CHECK (from_exclusive < through_inclusive)
+);
+CREATE INDEX automation_schedule_gaps_history_idx
+    ON automation_schedule_gaps(recorded_at DESC, id DESC);
+
 -- +goose Down
+DROP TABLE automation_schedule_gaps;
+DROP TABLE automation_occurrences;
+DROP TABLE automation_scheduler_state;
 DROP TABLE automation_run_steps;
 DROP TABLE automation_runs;
 DROP TABLE automations;
