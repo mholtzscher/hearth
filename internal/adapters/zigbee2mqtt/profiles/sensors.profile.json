@@ -1,0 +1,100 @@
+{
+  "$schema": "./profile.schema.json",
+  "version": 1,
+  "kind": "planner-profile",
+  "id": "ambient-sensors",
+  "order": 30,
+  "contribution": {
+    "device_kind": "sensor",
+    "role": "supplemental"
+  },
+  "candidate_groups": [
+    {
+      "id": "sensor.temperature-roots",
+      "root": {
+        "type": "numeric",
+        "name": "temperature"
+      },
+      "entities": [
+        {
+          "id": "sensor.temperature",
+          "source": {
+            "kind": "root"
+          },
+          "identity": {
+            "key": "temperature",
+            "name": "Temperature"
+          },
+          "strategy": {
+            "name": "temperature",
+            "parameters": {}
+          }
+        }
+      ]
+    },
+    {
+      "id": "sensor.humidity-roots",
+      "root": {
+        "type": "numeric",
+        "name": "humidity"
+      },
+      "entities": [
+        {
+          "id": "sensor.humidity",
+          "source": {
+            "kind": "root"
+          },
+          "identity": {
+            "key": "humidity",
+            "name": "Humidity"
+          },
+          "strategy": {
+            "name": "numeric-sensor",
+            "parameters": {
+              "accepted_units": ["%"],
+              "unit": "%",
+              "number_format": "float",
+              "bounds": {
+                "mode": "fixed",
+                "minimum": 0,
+                "maximum": 100
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "sensor.battery-roots",
+      "root": {
+        "type": "numeric",
+        "name": "battery"
+      },
+      "entities": [
+        {
+          "id": "sensor.battery",
+          "source": {
+            "kind": "root"
+          },
+          "identity": {
+            "key": "battery",
+            "name": "Battery"
+          },
+          "strategy": {
+            "name": "numeric-sensor",
+            "parameters": {
+              "accepted_units": ["%"],
+              "unit": "%",
+              "number_format": "float",
+              "bounds": {
+                "mode": "fixed",
+                "minimum": 0,
+                "maximum": 100
+              }
+            }
+          }
+        }
+      ]
+    }
+  ]
+}

@@ -8,9 +8,16 @@ import (
 )
 
 // devicePlanningInput shares one normalized inventory view with every planner.
+// Vendor, Model, and SoftwareBuildID carry the definition evidence the
+// profile evaluator uses to select exact vendor, model, and firmware
+// overrides. Handwritten planners ignore them. None of these strings enters
+// binding or entity identities.
 type devicePlanningInput struct {
-	IEEE    string
-	Exposes exposeIndex
+	IEEE            string
+	Exposes         exposeIndex
+	Vendor          string
+	Model           string
+	SoftwareBuildID string
 }
 
 // plannerRole declares whether one planner contribution competes as the

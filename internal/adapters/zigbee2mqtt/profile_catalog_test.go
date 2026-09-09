@@ -218,23 +218,36 @@ func requireProfileCatalogError(
 	return catalogErr
 }
 
-// This test protects transitional D2 startup validity and fails if the loader
-// rejects the currently empty embedded document set or returns a catalog that
-// is indistinguishable from the invalid zero value.
-func TestLoadEmbeddedProfileCatalogCompilesEmptySet(t *testing.T) {
+// This test protects embedded catalog startup validity and fails if the loader
+// rejects the repository-owned sensor and linkquality documents or returns a
+// catalog that is indistinguishable from the invalid zero value.
+func TestLoadEmbeddedProfileCatalogCompilesSensorProfiles(t *testing.T) {
 	t.Parallel()
 	catalog, err := LoadEmbeddedProfileCatalog()
 	if err != nil {
-		t.Fatalf("expected empty embedded catalog to compile, got %v", err)
+		t.Fatalf("expected embedded sensor catalog to compile, got %v", err)
 	}
 	if catalog == nil {
-		t.Fatal("expected non-nil catalog for the empty embedded set")
+		t.Fatal("expected non-nil catalog for the embedded set")
 	}
 	if !catalog.loaded {
-		t.Fatal("expected loader-produced empty catalog to be marked loaded")
+		t.Fatal("expected loader-produced catalog to be marked loaded")
 	}
-	if len(catalog.profiles) != 0 || len(catalog.overrides) != 0 {
-		t.Fatalf("expected zero profiles and overrides, got %d and %d", len(catalog.profiles), len(catalog.overrides))
+	if len(catalog.profiles) != 2 || len(catalog.overrides) != 0 {
+		t.Fatalf("expected 2 profiles and 0 overrides, got %d and %d", len(catalog.profiles), len(catalog.overrides))
+	}
+	for index, want := range []struct {
+		id    string
+		order int
+	}{
+		{"ambient-sensors", 30},
+		{"linkquality", 40},
+	} {
+		got := catalog.profiles[index].document
+		if got.ID != want.id || got.Order != want.order {
+			t.Fatalf("embedded profile %d = %q order %d, want %q order %d",
+				index, got.ID, got.Order, want.id, want.order)
+		}
 	}
 	var zero ProfileCatalog
 	if zero.loaded {

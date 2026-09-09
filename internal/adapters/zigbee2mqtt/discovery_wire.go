@@ -29,15 +29,36 @@ type bridgeState struct {
 
 // upstreamDevice and its nested DTOs are the private bridge/devices wire model.
 type upstreamDevice struct {
-	IEEEAddress    string                      `json:"ieee_address"`
-	Type           string                      `json:"type"`
-	Supported      bool                        `json:"supported"`
-	Disabled       bool                        `json:"disabled"`
-	FriendlyName   string                      `json:"friendly_name"`
-	Description    string                      `json:"description"`
-	InterviewState string                      `json:"interview_state"`
-	Endpoints      map[string]upstreamEndpoint `json:"endpoints"`
-	Definition     *upstreamDefinition         `json:"definition"`
+	IEEEAddress     string                      `json:"ieee_address"`
+	Type            string                      `json:"type"`
+	Supported       bool                        `json:"supported"`
+	Disabled        bool                        `json:"disabled"`
+	FriendlyName    string                      `json:"friendly_name"`
+	Description     string                      `json:"description"`
+	InterviewState  string                      `json:"interview_state"`
+	SoftwareBuildID tolerantSoftwareBuildID     `json:"software_build_id"`
+	Endpoints       map[string]upstreamEndpoint `json:"endpoints"`
+	Definition      *upstreamDefinition         `json:"definition"`
+}
+
+// tolerantSoftwareBuildID decodes the top-level software build id
+// tolerantly: an absent, null, or non-string JSON value decodes as the
+// empty string so one unexpected inventory field never rejects the device.
+// The value only selects profile overrides and never enters binding or
+// entity identities.
+type tolerantSoftwareBuildID string
+
+// UnmarshalJSON keeps software build id decoding tolerant: any JSON value
+// that is not a string is accepted as absent rather than failing the
+// whole device decode.
+func (buildID *tolerantSoftwareBuildID) UnmarshalJSON(payload []byte) error {
+	var decoded string
+	if json.Unmarshal(payload, &decoded) != nil {
+		*buildID = ""
+	} else {
+		*buildID = tolerantSoftwareBuildID(decoded)
+	}
+	return nil
 }
 
 type upstreamEndpoint struct {
