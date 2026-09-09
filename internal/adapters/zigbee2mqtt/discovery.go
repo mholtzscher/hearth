@@ -17,7 +17,6 @@ const (
 	upstreamDeviceKindLight  = "light"
 	upstreamDeviceKindRelay  = "relay"
 	upstreamDeviceKindSensor = "sensor"
-	upstreamExposeSwitch     = "switch"
 
 	rejectionMalformedDevice     = "malformed_device"
 	rejectionCoordinator         = "coordinator"
@@ -27,8 +26,6 @@ const (
 	rejectionMissingDefinition   = "missing_definition"
 	rejectionInvalidIEEE         = "invalid_ieee_address"
 	rejectionInvalidName         = "invalid_friendly_name"
-	rejectionNoEligibleLight     = "no_eligible_light"
-	rejectionNoEligibleRelay     = "no_eligible_relay"
 	rejectionNoEligibleEntity    = "no_eligible_entity"
 	rejectionAmbiguousEntityPlan = "ambiguous_entity_plan"
 	rejectionTooManyEntities     = "too_many_entities"
@@ -60,7 +57,9 @@ type deviceRejection struct {
 }
 
 // discoverInventory parses one complete bridge/devices document, isolating malformed array elements.
-func discoverInventory(payload []byte) (inventoryDiscovery, error) {
+// The caller supplies the compiled profile catalog explicitly: profile
+// evaluation is the sole planning path and there is no implicit catalog.
+func discoverInventory(payload []byte, profiles *ProfileCatalog) (inventoryDiscovery, error) {
 	items, err := decodeRawArray(payload)
 	if err != nil {
 		return inventoryDiscovery{}, fmt.Errorf("decode Zigbee2MQTT device inventory: %w", err)
@@ -75,7 +74,7 @@ func discoverInventory(payload []byte) (inventoryDiscovery, error) {
 			result.Rejections = append(result.Rejections, diagnosticRejection(item))
 			continue
 		}
-		discovered, rejection := discoverDevice(device)
+		discovered, rejection := discoverDevice(device, profiles)
 		if rejection != nil {
 			if rejection.Code != rejectionCoordinator {
 				result.Rejections = append(result.Rejections, *rejection)
@@ -89,7 +88,7 @@ func discoverInventory(payload []byte) (inventoryDiscovery, error) {
 	return result, nil
 }
 
-func discoverDevice(device upstreamDevice) (discoveredDevice, *deviceRejection) {
+func discoverDevice(device upstreamDevice, profiles *ProfileCatalog) (discoveredDevice, *deviceRejection) {
 	normalizedIEEE, ieeeErr := normalizeIEEEAddress(device.IEEEAddress)
 	rejection := deviceRejection{Model: definitionModel(device.Definition)}
 	if ieeeErr == nil {
@@ -113,7 +112,7 @@ func discoverDevice(device upstreamDevice) (discoveredDevice, *deviceRejection) 
 	case !validRouteSlug(device.FriendlyName):
 		rejection.Code = rejectionInvalidName
 	default:
-		return buildDiscoveredDevice(device, normalizedIEEE)
+		return buildDiscoveredDevice(device, normalizedIEEE, profiles)
 	}
 	return discoveredDevice{}, &rejection
 }
@@ -125,7 +124,11 @@ func definitionModel(definition *upstreamDefinition) string {
 	return definition.Model
 }
 
-func buildDiscoveredDevice(device upstreamDevice, ieeeAddress string) (discoveredDevice, *deviceRejection) {
+func buildDiscoveredDevice(
+	device upstreamDevice,
+	ieeeAddress string,
+	profiles *ProfileCatalog,
+) (discoveredDevice, *deviceRejection) {
 	name := device.FriendlyName
 	if description := strings.TrimSpace(device.Description); description != "" {
 		name = description
@@ -133,10 +136,7 @@ func buildDiscoveredDevice(device upstreamDevice, ieeeAddress string) (discovere
 	if utf8.RuneCountInString(name) > maximumDescriptorRunes {
 		return rejectedDevice(device, ieeeAddress, rejectionInvalidDescriptor)
 	}
-	plan, err := planDevice(
-		devicePlanningInput{IEEE: ieeeAddress, Exposes: newExposeIndex(device)},
-		defaultDevicePlanners(),
-	)
+	plan, err := planDevice(planProfileContributions(profiles, profilePlanningInput(device, ieeeAddress)))
 	if err != nil {
 		code := rejectionInvalidDescriptor
 		if planErr, ok := errors.AsType[*devicePlanError](err); ok {

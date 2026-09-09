@@ -168,7 +168,7 @@ Root endpoints resolve through the existing expose index. Discovery honors disco
 
 Existing `PropertyUnique` counts would reject dual color composites because both claim `color`. One XY composite and one HS composite may each claim a property, sharing it only within the same resolved light root. Duplicate same-representation claims, claims in other roots, and unrelated claims disqualify the affected candidates, and uniqueness is otherwise unchanged. Each color candidate validates independently after ownership checks, so an invalid HS child never suppresses valid XY support.
 
-Dual bulbs plan both native Entities. The planner never keeps the first expose and discards the other. There is no representation conversion and no hidden HS fallback on XY-only bulbs.
+Dual bulbs plan both native Entities. Profile evaluation never keeps the first expose and discards the other. There is no representation conversion and no hidden HS fallback on XY-only bulbs.
 
 Identities follow existing conventions:
 
@@ -279,8 +279,10 @@ internal/
 │   ├── render_behavior.go               # modify: conjunction and safe distance predicates
 │   └── *_test.go, testdata/              # modify: schema failures, generated behavior fixtures
 ├── adapters/zigbee2mqtt/
-│   ├── planner_light.go                 # modify: optional color/mode plans, temperature mode policy
-│   ├── expose_index.go                  # modify: narrowly scoped color-property ownership check
+│   ├── profiles/light.profile.json      # color/mode mappings and sibling dependencies
+│   ├── profile_plan.go                  # evaluate light candidate groups and dependencies
+│   ├── profile_strategy.go              # bind color strategies to typed Entity behavior
+│   ├── expose_index.go                  # narrowly scoped color-property ownership check
 │   ├── entity_color.go                  # new: shared exact numeric decode, if reused
 │   ├── entity_colorxy.go                # new: XY plan and translation
 │   ├── entity_colorhs.go                # new: HS plan and translation

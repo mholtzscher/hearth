@@ -14,7 +14,7 @@ import (
 // routing, color-temperature conversion, or a brightness normalization formula other than nearest integer percent.
 func TestDecodeCapturedFractionalState(t *testing.T) {
 	t.Parallel()
-	discovery, err := discoverInventory(readFixture(t, "bridge-devices-3rcb01057z.json"))
+	discovery, err := discoverInventory(readFixture(t, "bridge-devices-3rcb01057z.json"), mustEmbeddedProfileCatalog(t))
 	if err != nil {
 		t.Fatal(err)
 	}

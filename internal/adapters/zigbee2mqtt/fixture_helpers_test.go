@@ -5,6 +5,17 @@ import (
 	"os"
 )
 
+// Test fixture names mirror profile selectors without keeping mapping metadata
+// in production Go.
+const (
+	effectExposeName           = "effect"
+	powerOnBehaviorExposeName  = "power_on_behavior"
+	startupColorTempExposeName = "color_temp_startup"
+	upstreamColorTempName      = "color_temp"
+	rejectionNoEligibleLight   = "no_eligible_light"
+	rejectionNoEligibleRelay   = "no_eligible_relay"
+)
+
 func eligibleDevice() upstreamDevice {
 	return upstreamDevice{
 		IEEEAddress: "0x00124b0024abcdef", Type: "Router", Supported: true,
@@ -122,7 +133,7 @@ func mustDiscoveredFixtureDevice(testingT interface {
 	Fatal(...any)
 }, fixture string) discoveredDevice {
 	testingT.Helper()
-	result, err := discoverInventory(readFixture(testingT, fixture))
+	result, err := discoverInventory(readFixture(testingT, fixture), mustEmbeddedProfileCatalog(testingT))
 	if err != nil {
 		testingT.Fatal(err)
 	}

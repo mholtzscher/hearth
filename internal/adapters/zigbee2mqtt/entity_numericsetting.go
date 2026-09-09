@@ -141,17 +141,6 @@ func decodeNumericSettingState(payload json.RawMessage) (contractnumericsettingv
 	return contractnumericsettingv1.State{Mode: "value", Value: &value}, nil
 }
 
-// numericSettingSpec is one allowlisted observable numeric setting: the
-// exact upstream expose name, Entity key/name, and the exact expected unit
-// (nil means no unit expectation beyond an empty upstream unit).
-type numericSettingSpec struct {
-	exposeName   string
-	key          string
-	displayName  string
-	expectedUnit string
-	hasUnit      bool
-}
-
 // numericSettingBounds validates the exact discovered bounds of a numeric
 // setting feature: both bounds must be present, finite, and ordered with
 // minimum < maximum. A missing, malformed, one-sided, or inverted bound
@@ -165,69 +154,4 @@ func numericSettingBounds(feature upstreamExpose) (float64, float64, bool) {
 		return 0, 0, false
 	}
 	return minimum, maximum, true
-}
-
-// planNumericSetting discovers one allowlisted observable numeric setting
-// once per device. The expose must be a resolved unique root with a
-// device-unique nonempty property, full publish/set/get access, the exact
-// expected unit, and exact discovered bounds. Ineligible siblings are
-// omitted without affecting valid settings.
-func planNumericSetting(input devicePlanningInput, spec numericSettingSpec) *entityPlan {
-	root, ok := input.Exposes.UniqueRoot(upstreamExposeNumeric, spec.exposeName)
-	if !ok || !root.resolved {
-		return nil
-	}
-	expose := root.expose
-	if expose.Property == "" || !exposeCanPublish(expose) || !exposeCanSet(expose) ||
-		!exposeCanGet(expose) || !input.Exposes.PropertyUnique(expose.Property) {
-		return nil
-	}
-	if spec.hasUnit {
-		if expose.Unit != spec.expectedUnit {
-			return nil
-		}
-	} else if expose.Unit != "" {
-		return nil
-	}
-	minimum, maximum, valid := numericSettingBounds(expose)
-	if !valid {
-		return nil
-	}
-	key, name := scopedIdentity(spec.key, spec.displayName, expose.Endpoint, root.endpoint, root.scoped)
-	if !validDescriptorName(name) {
-		return nil
-	}
-	var unit *string
-	if spec.hasUnit {
-		unitValue := spec.expectedUnit
-		unit = &unitValue
-	}
-	plan, err := newNumericSettingPlan(adapter.EntityMetadata{
-		Key:        key,
-		ExternalID: input.IEEE + "/" + entityLocation(root) + "/" + spec.key,
-		Name:       name,
-	}, expose.Property, minimum, maximum, unit)
-	if err != nil {
-		return nil
-	}
-	return &plan
-}
-
-// smartPlugNumericSettings lists the allowlisted smart-plug numeric
-// settings in deterministic planner order.
-func smartPlugNumericSettings() []numericSettingSpec {
-	return []numericSettingSpec{
-		{
-			exposeName: "led_brightness", key: "ledbrightness", displayName: "LED Brightness",
-			expectedUnit: "%", hasUnit: true,
-		},
-		{
-			exposeName: "countdown_to_turn_off", key: "countdowntoturnoff",
-			displayName: "Countdown To Turn Off", expectedUnit: "s", hasUnit: true,
-		},
-		{
-			exposeName: "countdown_to_turn_on", key: "countdowntoturnon",
-			displayName: "Countdown To Turn On", expectedUnit: "s", hasUnit: true,
-		},
-	}
 }

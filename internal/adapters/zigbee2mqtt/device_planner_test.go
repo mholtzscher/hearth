@@ -43,7 +43,7 @@ func TestPlanDeviceLightWinsOverRelay(t *testing.T) {
 	t.Parallel()
 	device := eligibleDevice()
 	device.Definition.Exposes = append(device.Definition.Exposes, switchExpose("", "state_switch"))
-	discovered, rejection := discoverDevice(device)
+	discovered, rejection := discoverDevice(device, mustEmbeddedProfileCatalog(t))
 	if rejection != nil {
 		t.Fatalf("Device rejected: %#v", rejection)
 	}
@@ -59,7 +59,7 @@ func TestPlanDeviceLightWinsOverRelay(t *testing.T) {
 // a relay-specific Device kind, or power identity that diverges from lights.
 func TestPlanDeviceRelayRegistersSharedPower(t *testing.T) {
 	t.Parallel()
-	discovered, rejection := discoverDevice(eligibleRelayDevice())
+	discovered, rejection := discoverDevice(eligibleRelayDevice(), mustEmbeddedProfileCatalog(t))
 	if rejection != nil {
 		t.Fatalf("Device rejected: %#v", rejection)
 	}
@@ -88,7 +88,7 @@ func TestPlanDeviceRelayEndpointIdentity(t *testing.T) {
 	device := eligibleRelayDevice()
 	device.Endpoints = map[string]upstreamEndpoint{"1": {Name: "left"}}
 	device.Definition.Exposes = []upstreamExpose{switchExpose("left", "state_left")}
-	discovered, rejection := discoverDevice(device)
+	discovered, rejection := discoverDevice(device, mustEmbeddedProfileCatalog(t))
 	if rejection != nil {
 		t.Fatalf("Device rejected: %#v", rejection)
 	}
@@ -112,7 +112,7 @@ func TestPlanDeviceSensorEndpointIdentity(t *testing.T) {
 	device := eligibleSensorDevice("temperature_right", 1|4)
 	device.Endpoints = map[string]upstreamEndpoint{"2": {Name: "right"}}
 	device.Definition.Exposes[0].Endpoint = "right"
-	discovered, rejection := discoverDevice(device)
+	discovered, rejection := discoverDevice(device, mustEmbeddedProfileCatalog(t))
 	if rejection != nil {
 		t.Fatalf("Device rejected: %#v", rejection)
 	}
@@ -137,7 +137,7 @@ func TestPlanDeviceRelayWithTemperatureMergesOneDevice(t *testing.T) {
 	device := eligibleRelayDevice()
 	device.Definition.Exposes = append(device.Definition.Exposes,
 		eligibleSensorDevice("temperature", 1).Definition.Exposes...)
-	discovered, rejection := discoverDevice(device)
+	discovered, rejection := discoverDevice(device, mustEmbeddedProfileCatalog(t))
 	if rejection != nil {
 		t.Fatalf("Device rejected: %#v", rejection)
 	}
@@ -156,7 +156,7 @@ func TestPlanDeviceLightWithTemperatureKeepsLight(t *testing.T) {
 	device := eligibleDevice()
 	device.Definition.Exposes = append(device.Definition.Exposes,
 		eligibleSensorDevice("temperature", 1).Definition.Exposes...)
-	discovered, rejection := discoverDevice(device)
+	discovered, rejection := discoverDevice(device, mustEmbeddedProfileCatalog(t))
 	if rejection != nil {
 		t.Fatalf("Device rejected: %#v", rejection)
 	}
@@ -214,7 +214,7 @@ func TestPlanDeviceRejectionCodesFollowStrongestRoot(t *testing.T) {
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
-			_, rejection := discoverDevice(test.device)
+			_, rejection := discoverDevice(test.device, mustEmbeddedProfileCatalog(t))
 			if rejection == nil || rejection.Code != test.code {
 				t.Fatalf("rejection = %#v, want code %q", rejection, test.code)
 			}
@@ -228,7 +228,7 @@ func TestPlanDeviceDropsDuplicatedRelayKeys(t *testing.T) {
 	t.Parallel()
 	device := eligibleRelayDevice()
 	device.Definition.Exposes = []upstreamExpose{switchExpose("", "state_a"), switchExpose("", "state_b")}
-	_, rejection := discoverDevice(device)
+	_, rejection := discoverDevice(device, mustEmbeddedProfileCatalog(t))
 	if rejection == nil || rejection.Code != rejectionNoEligibleRelay {
 		t.Fatalf("rejection = %#v, want %q", rejection, rejectionNoEligibleRelay)
 	}
@@ -245,7 +245,7 @@ func TestPlanDeviceDropsAsymmetricDuplicateLightRoots(t *testing.T) {
 	second := lightExpose("", "state_b", "")
 	second.Features = second.Features[:1]
 	device.Definition.Exposes = []upstreamExpose{first, second}
-	discovered, rejection := discoverDevice(device)
+	discovered, rejection := discoverDevice(device, mustEmbeddedProfileCatalog(t))
 	if rejection == nil || rejection.Code != rejectionNoEligibleLight {
 		t.Fatalf("discovered = %#v, rejection = %#v, want %q", discovered, rejection, rejectionNoEligibleLight)
 	}
@@ -268,8 +268,8 @@ func TestPlanDeviceKeysIgnoreMutableMetadata(t *testing.T) {
 	second.FriendlyName = "renamed-relay"
 	second.Description = "Renamed Relay"
 	second.Definition.Exposes = []upstreamExpose{switchExpose("", "renamed_state")}
-	firstDiscovered, firstRejection := discoverDevice(first)
-	secondDiscovered, secondRejection := discoverDevice(second)
+	firstDiscovered, firstRejection := discoverDevice(first, mustEmbeddedProfileCatalog(t))
+	secondDiscovered, secondRejection := discoverDevice(second, mustEmbeddedProfileCatalog(t))
 	if firstRejection != nil || secondRejection != nil {
 		t.Fatalf("rejections = %#v, %#v", firstRejection, secondRejection)
 	}

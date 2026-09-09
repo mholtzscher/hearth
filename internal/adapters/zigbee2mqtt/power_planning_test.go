@@ -6,10 +6,7 @@ import (
 	"testing"
 )
 
-func powerPlanningInput(device upstreamDevice) devicePlanningInput {
-	return devicePlanningInput{IEEE: device.IEEEAddress, Exposes: newExposeIndex(device)}
-}
-
+// powerPlanByKey returns one family contribution entity by key.
 func powerPlanByKey(t *testing.T, contribution plannerContribution, key string) entityPlan {
 	t.Helper()
 	for _, entity := range contribution.Entities {
@@ -19,6 +16,17 @@ func powerPlanByKey(t *testing.T, contribution plannerContribution, key string) 
 	}
 	t.Fatalf("power Entity %q missing in %v", key, entityKeys(contribution.Entities))
 	return entityPlan{}
+}
+
+// profileFamilyContribution evaluates one embedded profile family for one
+// device through the production evaluator, so family tests exercise the
+// profile path instead of a handwritten planner.
+func profileFamilyContribution(t *testing.T, profileID string, device upstreamDevice) plannerContribution {
+	t.Helper()
+	catalog := mustEmbeddedProfileCatalog(t)
+	profile := evalTestProfile(t, catalog, profileID)
+	return evaluatePlannerProfile(
+		profile, profilePlanningInput(device, device.IEEEAddress), catalog.overrides, catalog.strategies)
 }
 
 // This test protects shared power identity and fails if light power and relay
@@ -67,8 +75,10 @@ func TestPowerPlanningSharedIdentityAcrossFamilies(t *testing.T) {
 	} {
 		t.Run(scoped.name, func(t *testing.T) {
 			t.Parallel()
-			lightPower := powerPlanByKey(t, lightPlanner{}.Plan(powerPlanningInput(scoped.light)), scoped.key)
-			relayPower := powerPlanByKey(t, relayPlanner{}.Plan(powerPlanningInput(scoped.relay)), scoped.key)
+			lightPower := powerPlanByKey(
+				t, profileFamilyContribution(t, "light", scoped.light), scoped.key)
+			relayPower := powerPlanByKey(
+				t, profileFamilyContribution(t, "relay", scoped.relay), scoped.key)
 			for _, power := range []entityPlan{lightPower, relayPower} {
 				if power.Descriptor.Key != scoped.key || power.Descriptor.Name != scoped.display ||
 					power.Descriptor.ExternalID != scoped.externalID ||
@@ -108,7 +118,7 @@ func TestPowerPlanningRejectsIndistinguishableOnOffInBothFamilies(t *testing.T) 
 			lightDevice := eligibleDevice()
 			lightDevice.Definition.Exposes[0].Features[0].ValueOn = test.valueOn
 			lightDevice.Definition.Exposes[0].Features[0].ValueOff = test.valueOff
-			lightContribution := lightPlanner{}.Plan(powerPlanningInput(lightDevice))
+			lightContribution := profileFamilyContribution(t, "light", lightDevice)
 			if len(lightContribution.Entities) != 0 {
 				t.Fatalf(
 					"light power planned with indistinguishable on/off: %v",
@@ -118,7 +128,7 @@ func TestPowerPlanningRejectsIndistinguishableOnOffInBothFamilies(t *testing.T) 
 			relayDevice := eligibleRelayDevice()
 			relayDevice.Definition.Exposes[0].Features[0].ValueOn = test.valueOn
 			relayDevice.Definition.Exposes[0].Features[0].ValueOff = test.valueOff
-			relayContribution := relayPlanner{}.Plan(powerPlanningInput(relayDevice))
+			relayContribution := profileFamilyContribution(t, "relay", relayDevice)
 			if len(relayContribution.Entities) != 0 {
 				t.Fatalf(
 					"relay power planned with indistinguishable on/off: %v",
@@ -136,13 +146,13 @@ func TestPowerPlanningRequiresUniquePropertyInBothFamilies(t *testing.T) {
 	colliding := upstreamExpose{Type: "numeric", Name: "diagnostic", Property: "state", Access: 1}
 	lightDevice := eligibleDevice()
 	lightDevice.Definition.Exposes = append(lightDevice.Definition.Exposes, colliding)
-	lightContribution := lightPlanner{}.Plan(powerPlanningInput(lightDevice))
+	lightContribution := profileFamilyContribution(t, "light", lightDevice)
 	if len(lightContribution.Entities) != 0 {
 		t.Fatalf("light power planned with colliding property: %v", entityKeys(lightContribution.Entities))
 	}
 	relayDevice := eligibleRelayDevice()
 	relayDevice.Definition.Exposes = append(relayDevice.Definition.Exposes, colliding)
-	relayContribution := relayPlanner{}.Plan(powerPlanningInput(relayDevice))
+	relayContribution := profileFamilyContribution(t, "relay", relayDevice)
 	if len(relayContribution.Entities) != 0 {
 		t.Fatalf("relay power planned with colliding property: %v", entityKeys(relayContribution.Entities))
 	}
@@ -161,7 +171,7 @@ func TestPowerPlanningFamilyGatingDiffers(t *testing.T) {
 			Type: "enum", Name: "power_on_behavior", Property: "power_on_behavior", Access: 7,
 			Values: []string{"off", "on", "toggle", "previous"},
 		})
-		lightContribution := lightPlanner{}.Plan(powerPlanningInput(device))
+		lightContribution := profileFamilyContribution(t, "light", device)
 		if len(lightContribution.Entities) != 0 {
 			t.Fatalf("light family survived invalid power: %v", entityKeys(lightContribution.Entities))
 		}
@@ -177,7 +187,7 @@ func TestPowerPlanningFamilyGatingDiffers(t *testing.T) {
 			switchExpose("right", "state_right"),
 			switchExpose("missing", "state_missing"),
 		}
-		contribution := relayPlanner{}.Plan(powerPlanningInput(device))
+		contribution := profileFamilyContribution(t, "relay", device)
 		if got := entityKeys(contribution.Entities); !reflect.DeepEqual(got, []string{"power-ep2"}) {
 			t.Fatalf("relay Entity keys = %v, want only the valid scoped sibling", got)
 		}

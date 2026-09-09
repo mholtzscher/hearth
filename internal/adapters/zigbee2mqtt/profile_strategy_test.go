@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	contractcolorxyv1 "github.com/mholtzscher/hearth/entitytypes/colorxyv1"
 	"github.com/mholtzscher/hearth/sdk/adapter"
 )
 
@@ -496,8 +497,8 @@ func TestProfileStrategyCompilerRejectsMismatches(t *testing.T) {
 
 // This test protects unresolved-endpoint isolation and fails if a
 // strategy plans an Entity for a root whose endpoint did not resolve.
-// The handwritten families skip such roots before planning, so an
-// unresolved plan would invent an ep0 identity that never matches a device.
+// The evaluator skips such roots before planning, so an unresolved plan
+// would invent an ep0 identity that never matches a device.
 func TestProfileStrategiesOmitUnresolvedRoots(t *testing.T) {
 	t.Parallel()
 	device := strategyTestDevice(lightExpose("left", "state", "brightness"))
@@ -602,29 +603,6 @@ func strategyRootInput(
 	}
 }
 
-// assertEntityPlanParity compares one strategy plan against the handwritten
-// planner plan: identical descriptor, policy, claimed properties, and
-// translator presence. The handwritten plan is the previously trusted
-// implementation, so divergence names a behavior the strategy changed.
-func assertEntityPlanParity(t *testing.T, want, got entityPlan) {
-	t.Helper()
-	if !reflect.DeepEqual(want.Descriptor, got.Descriptor) {
-		t.Fatalf("descriptor diverged:\nwant %#v\ngot  %#v", want.Descriptor, got.Descriptor)
-	}
-	if want.StatePolicy != got.StatePolicy {
-		t.Fatalf("state policy = %v, want %v", got.StatePolicy, want.StatePolicy)
-	}
-	if !reflect.DeepEqual(want.StateProperties, got.StateProperties) {
-		t.Fatalf("state properties = %v, want %v", got.StateProperties, want.StateProperties)
-	}
-	if !reflect.DeepEqual(want.GetProperties, got.GetProperties) {
-		t.Fatalf("get properties = %v, want %v", got.GetProperties, want.GetProperties)
-	}
-	if (want.TranslateCommand == nil) != (got.TranslateCommand == nil) {
-		t.Fatal("command translator presence diverged")
-	}
-}
-
 // decodeStrategyState decodes one property payload through one plan and
 // returns its semantic value, failing the test when the property that must
 // decode is absent or invalid.
@@ -646,64 +624,47 @@ func strategyResponder() adapter.Responder {
 	return newFakeResponder(&runtimeRecorder{}, newFakeSession(&runtimeRecorder{}))
 }
 
-// This test protects binary-power strategy parity and fails if the profile
-// path diverges from the shared light/relay power behavior in eligibility,
-// identity, state decoding, command translation, or outcome matching. The
-// defect would be a light or relay whose power Entity behaves differently
-// under profile planning.
-func TestBinaryPowerProfileStrategyMatchesHandwrittenPower(t *testing.T) {
+// This test protects binary-power strategy behavior and fails if the profile
+// path diverges in eligibility, identity, state decoding, command
+// translation, or outcome matching. The defect would be a light or relay
+// whose power Entity behaves incorrectly under profile planning.
+func TestBinaryPowerProfileStrategyPlansPower(t *testing.T) {
 	t.Parallel()
 	device := strategyTestDevice(lightExpose("", "state", "brightness"))
-	planningInput := devicePlanningInput{IEEE: device.IEEEAddress, Exposes: newExposeIndex(device)}
-	root := planningInput.Exposes.Roots("light")[0]
-	want, ok := planPowerEntity(planningInput, root)
-	if !ok {
-		t.Fatal("handwritten power plan is unexpectedly ineligible")
-	}
 	input := strategyLightFeatureInput(t, device, "binary", "state", "power", "Power")
 	definition := defaultProfileStrategyRegistry()["binary-power"]
 	got, planned := definition.Plan(input, emptyProfileStrategyParameters{})
 	if !planned {
 		t.Fatal("binary-power strategy omitted the eligible power feature")
 	}
-	assertEntityPlanParity(t, want, got)
-	if got.Descriptor.Key != "power" || got.Descriptor.ExternalID != device.IEEEAddress+"/root/power" {
-		t.Fatalf("power identity = %q/%q", got.Descriptor.Key, got.Descriptor.ExternalID)
+	if got.Descriptor.Key != "power" || got.Descriptor.ExternalID != device.IEEEAddress+"/root/power" ||
+		got.Descriptor.Name != "Power" || got.Descriptor.Type != "hearth.power/v1" {
+		t.Fatalf("power descriptor = %#v", got.Descriptor)
+	}
+	if !reflect.DeepEqual(got.StateProperties, []string{"state"}) ||
+		!reflect.DeepEqual(got.GetProperties, []string{"state"}) || got.TranslateCommand == nil {
+		t.Fatalf("power routes = %#v", got)
 	}
 	for payload, state := range map[string]bool{`"ON"`: true, `"OFF"`: false} {
-		wantReport, _ := decodeStrategyState(t, want, "state", payload)
 		gotReport, _ := decodeStrategyState(t, got, "state", payload)
-		if wantReport.semantic != state || gotReport.semantic != state {
-			t.Fatalf(
-				"payload %s decoded to %v/%v, want %v",
-				payload,
-				wantReport.semantic,
-				gotReport.semantic,
-				state,
-			)
+		if gotReport.semantic != state {
+			t.Fatalf("payload %s decoded to %v, want %v", payload, gotReport.semantic, state)
 		}
 	}
 	dimState := map[string]json.RawMessage{"state": json.RawMessage(`"DIM"`)}
-	if _, _, err := want.DecodeState("e", dimState, time.Now().UTC()); err == nil {
-		t.Fatal("handwritten power accepted an off-value scalar")
-	}
 	if _, _, err := got.DecodeState("e", dimState, time.Now().UTC()); err == nil {
 		t.Fatal("strategy power accepted an off-value scalar")
 	}
 	powerOn := testCommand("e", `{"value":true}`)
-	wantPlanned, err := want.TranslateCommand(context.Background(), "e", powerOn, strategyResponder())
-	if err != nil {
-		t.Fatalf("handwritten power command failed: %v", err)
-	}
 	gotPlanned, err := got.TranslateCommand(context.Background(), "e", powerOn, strategyResponder())
 	if err != nil {
 		t.Fatalf("strategy power command failed: %v", err)
 	}
-	if string(wantPlanned.SetValues["state"]) != string(gotPlanned.SetValues["state"]) {
-		t.Fatalf("power set payload = %s, want %s", gotPlanned.SetValues["state"], wantPlanned.SetValues["state"])
+	if string(gotPlanned.SetValues["state"]) != `"ON"` {
+		t.Fatalf("power set payload = %s, want the discovered ON scalar", gotPlanned.SetValues["state"])
 	}
 	report, _ := decodeStrategyState(t, got, "state", `"ON"`)
-	if !gotPlanned.Matches(report) || !wantPlanned.Matches(report) {
+	if !gotPlanned.Matches(report) {
 		t.Fatal("power matcher rejected the commanded state")
 	}
 	// An ineligible feature (missing set access) omits only that candidate.
@@ -713,8 +674,7 @@ func TestBinaryPowerProfileStrategyMatchesHandwrittenPower(t *testing.T) {
 	if _, deniedPlanned := definition.Plan(deniedInput, emptyProfileStrategyParameters{}); deniedPlanned {
 		t.Fatal("binary-power strategy planned a feature without set access")
 	}
-	// Identical on/off scalars are ambiguous and omit the candidate, matching
-	// the handwritten power behavior.
+	// Identical on/off scalars are ambiguous and omit the candidate.
 	ambiguous := strategyTestDevice(lightExpose("", "state", "brightness"))
 	ambiguous.Definition.Exposes[0].Features[0].ValueOff = json.RawMessage(`"ON"`)
 	ambiguousInput := strategyLightFeatureInput(t, ambiguous, "binary", "state", "power", "Power")
@@ -726,29 +686,30 @@ func TestBinaryPowerProfileStrategyMatchesHandwrittenPower(t *testing.T) {
 	}
 }
 
-// This test protects brightness strategy parity and fails if percent
-// scaling, rounding, range checks, or observed matching diverge from the
-// handwritten brightness behavior.
-func TestBrightnessProfileStrategyMatchesHandwrittenBrightness(t *testing.T) {
+// This test protects brightness strategy behavior and fails if percent
+// scaling, rounding, range checks, or observed matching diverge. The defect
+// would be a brightness Entity that mis-scales reports under profile
+// planning.
+func TestBrightnessProfileStrategyPlansBrightness(t *testing.T) {
 	t.Parallel()
 	device := strategyTestDevice(lightExpose("", "state", "brightness"))
-	planningInput := devicePlanningInput{IEEE: device.IEEEAddress, Exposes: newExposeIndex(device)}
-	root := planningInput.Exposes.Roots("light")[0]
-	want := planBrightness(planningInput, root)
-	if want == nil {
-		t.Fatal("handwritten brightness plan is unexpectedly ineligible")
-	}
 	input := strategyLightFeatureInput(t, device, "numeric", "brightness", "brightness", "Brightness")
 	definition := defaultProfileStrategyRegistry()["brightness"]
 	got, planned := definition.Plan(input, emptyProfileStrategyParameters{})
 	if !planned {
 		t.Fatal("brightness strategy omitted the eligible feature")
 	}
-	assertEntityPlanParity(t, *want, got)
-	wantReport, _ := decodeStrategyState(t, *want, "brightness", `254`)
+	if got.Descriptor.Key != "brightness" || got.Descriptor.Name != "Brightness" ||
+		got.Descriptor.ExternalID != device.IEEEAddress+"/root/brightness" {
+		t.Fatalf("brightness descriptor = %#v", got.Descriptor)
+	}
+	if !reflect.DeepEqual(got.StateProperties, []string{"brightness"}) ||
+		!reflect.DeepEqual(got.GetProperties, []string{"brightness"}) || got.TranslateCommand == nil {
+		t.Fatalf("brightness routes = %#v", got)
+	}
 	gotReport, _ := decodeStrategyState(t, got, "brightness", `254`)
-	if wantReport.semantic != gotReport.semantic || gotReport.semantic != int64(100) {
-		t.Fatalf("brightness 254 decoded to %v/%v, want 100", wantReport.semantic, gotReport.semantic)
+	if gotReport.semantic != int64(100) {
+		t.Fatalf("brightness 254 decoded to %v, want 100", gotReport.semantic)
 	}
 }
 
@@ -779,68 +740,56 @@ func colorStrategyTestDevice() upstreamDevice {
 	))
 }
 
-// colorStrategyPlanningInput returns the shared device input plus the
-// companion mode policy the handwritten light planner computes.
-func colorStrategyPlanningInput(device upstreamDevice) (devicePlanningInput, indexedExpose, colorModePolicy) {
-	input := devicePlanningInput{IEEE: device.IEEEAddress, Exposes: newExposeIndex(device)}
-	root := input.Exposes.Roots("light")[0]
-	expectations := map[string]int{colorModeProperty(root): 1}
-	mode := colorModePolicy{
-		property: colorModeProperty(root),
-		usable: expectations[colorModeProperty(root)] == 1 &&
-			!input.Exposes.propertyHasForeignClaim(colorModeProperty(root)),
-	}
-	return input, root, mode
-}
-
-// This test protects color-temperature strategy parity and fails if mired
-// bounds, same-message mode activity, or observed matching diverge from the
-// handwritten behavior.
-func TestColorTemperatureProfileStrategyMatchesHandwrittenColorTemp(t *testing.T) {
+// This test protects color-temperature strategy behavior and fails if mired
+// bounds, same-message mode activity, or observed matching diverge. The
+// defect would be a color-temperature Entity that misbehaves under profile
+// planning.
+func TestColorTemperatureProfileStrategyPlansColorTemp(t *testing.T) {
 	t.Parallel()
 	device := colorStrategyTestDevice()
-	planningInput, root, mode := colorStrategyPlanningInput(device)
-	want := planColorTemp(planningInput, root, hasColorComposite(root), mode)
-	if want == nil {
-		t.Fatal("handwritten color-temperature plan is unexpectedly ineligible")
-	}
 	input := strategyLightFeatureInput(t, device, "numeric", "color_temp", "colortemp", "Color Temperature")
 	definition := defaultProfileStrategyRegistry()["color-temperature"]
 	got, planned := definition.Plan(input, emptyProfileStrategyParameters{})
 	if !planned {
 		t.Fatal("color-temperature strategy omitted the eligible feature")
 	}
-	assertEntityPlanParity(t, *want, got)
-	if !reflect.DeepEqual(want.StateProperties, []string{"color_temp", "color_mode"}) {
-		t.Fatalf("handwritten state properties = %v, want the mode companion claimed", want.StateProperties)
+	if got.Descriptor.Key != "colortemp" || got.Descriptor.Name != "Color Temperature" ||
+		got.Descriptor.ExternalID != device.IEEEAddress+"/root/colortemp" {
+		t.Fatalf("color-temperature descriptor = %#v", got.Descriptor)
+	}
+	if !reflect.DeepEqual(got.StateProperties, []string{"color_temp", "color_mode"}) {
+		t.Fatalf("state properties = %v, want the mode companion claimed", got.StateProperties)
+	}
+	if len(got.GetProperties) != 1 || got.TranslateCommand == nil {
+		t.Fatalf("color temperature must stay controllable with refresh: %#v", got)
 	}
 }
 
-// This test protects XY/HS strategy parity and fails if composite or axis
-// validation, shared property rules, scaling, or tolerance matching diverge
-// from the handwritten color behavior.
-func TestColorXYAndHSProfileStrategiesMatchHandwrittenColor(t *testing.T) {
+// This test protects XY/HS strategy behavior and fails if composite or axis
+// validation, shared property rules, scaling, or tolerance matching diverge.
+// The defect would be a color Entity that misbehaves under profile planning.
+func TestColorXYAndHSProfileStrategiesPlanColor(t *testing.T) {
 	t.Parallel()
 	device := colorStrategyTestDevice()
-	planningInput, root, mode := colorStrategyPlanningInput(device)
-	wantXY := planColorXY(planningInput, root, mode)
-	wantHS := planColorHS(planningInput, root, mode)
-	if wantXY == nil || wantHS == nil {
-		t.Fatal("handwritten XY/HS plans are unexpectedly ineligible")
-	}
 	registry := defaultProfileStrategyRegistry()
 	xyInput := strategyLightFeatureInput(t, device, "composite", "color_xy", "colorxy", "Color XY")
 	gotXY, planned := registry["color-xy"].Plan(xyInput, emptyProfileStrategyParameters{})
 	if !planned {
 		t.Fatal("color-xy strategy omitted the eligible composite")
 	}
-	assertEntityPlanParity(t, *wantXY, gotXY)
+	if gotXY.Descriptor.Key != "colorxy" || gotXY.Descriptor.Name != "Color XY" ||
+		gotXY.Descriptor.ExternalID != device.IEEEAddress+"/root/colorxy" {
+		t.Fatalf("color-xy descriptor = %#v", gotXY.Descriptor)
+	}
 	hsInput := strategyLightFeatureInput(t, device, "composite", "color_hs", "colorhs", "Color Hue/Saturation")
 	gotHS, planned := registry["color-hs"].Plan(hsInput, emptyProfileStrategyParameters{})
 	if !planned {
 		t.Fatal("color-hs strategy omitted the eligible composite")
 	}
-	assertEntityPlanParity(t, *wantHS, gotHS)
+	if gotHS.Descriptor.Key != "colorhs" || gotHS.Descriptor.Name != "Color Hue/Saturation" ||
+		gotHS.Descriptor.ExternalID != device.IEEEAddress+"/root/colorhs" {
+		t.Fatalf("color-hs descriptor = %#v", gotHS.Descriptor)
+	}
 	// Both representations share one color property while staying distinct Entities.
 	if gotXY.StateProperties[0] != "color" || gotHS.StateProperties[0] != "color" {
 		t.Fatalf("shared color property lost: %v / %v", gotXY.StateProperties, gotHS.StateProperties)
@@ -853,49 +802,54 @@ func TestColorXYAndHSProfileStrategiesMatchHandwrittenColor(t *testing.T) {
 	if err != nil || !present {
 		t.Fatalf("strategy XY omitted a complete active report: %v/%v", present, err)
 	}
-	wantActive, wantPresent, err := wantXY.DecodeState("entity-test", map[string]json.RawMessage{
-		"color":      json.RawMessage(`{"x":0.5,"y":0.25}`),
-		"color_mode": json.RawMessage(`"xy"`),
-	}, time.Now().UTC())
-	if err != nil || !wantPresent {
-		t.Fatalf("handwritten XY omitted a complete active report: %v/%v", wantPresent, err)
-	}
-	if !reflect.DeepEqual(wantActive.semantic, active.semantic) {
-		t.Fatalf("XY semantic diverged: %#v vs %#v", wantActive.semantic, active.semantic)
+	if state, ok := active.semantic.(contractcolorxyv1.State); !ok || !state.Active ||
+		state.X != 5000 || state.Y != 2500 {
+		t.Fatalf("XY semantic = %#v, want active 5000/2500", active.semantic)
 	}
 }
 
-// This test protects derived color-mode strategy parity and fails if the
+// This test protects derived color-mode strategy behavior and fails if the
 // companion property, foreign-claim checks, or read-only same-message mode
-// state diverge from the handwritten behavior. The defect would be a mode
-// Entity that guesses across colliding properties or appears without a
-// surviving color capability.
-func TestColorModeProfileStrategyMatchesHandwrittenColorMode(t *testing.T) {
+// state diverge. The defect would be a mode Entity that guesses across
+// colliding properties or appears without a surviving color capability.
+func TestColorModeProfileStrategyPlansColorMode(t *testing.T) {
 	t.Parallel()
 	device := colorStrategyTestDevice()
-	planningInput, root, mode := colorStrategyPlanningInput(device)
-	temperature := planColorTemp(planningInput, root, hasColorComposite(root), mode)
-	if temperature == nil {
-		t.Fatal("handwritten color-temperature plan is unexpectedly ineligible")
-	}
-	want := planColorMode(device.IEEEAddress, root, mode, true)
-	if want == nil {
-		t.Fatal("handwritten color-mode plan is unexpectedly ineligible")
-	}
 	index := newExposeIndex(device)
+	roots := index.Roots("light")
+	if len(roots) == 0 {
+		t.Fatal("no light roots in fixture")
+	}
+	root := roots[0]
+	// The evaluator passes successfully planned color siblings as Prior;
+	// here the temperature plan stands in for one surviving sibling.
+	temperatureInput := strategyLightFeatureInput(
+		t, device, "numeric", "color_temp", "colortemp", "Color Temperature")
+	temperatureDefinition := defaultProfileStrategyRegistry()["color-temperature"]
+	temperature, temperaturePlanned := temperatureDefinition.Plan(
+		temperatureInput, emptyProfileStrategyParameters{})
+	if !temperaturePlanned {
+		t.Fatal("color-temperature strategy omitted the eligible feature")
+	}
 	input := profileStrategyInput{
 		IEEE: device.IEEEAddress, Root: root, Expose: nil, Index: index,
 		Identity: profileEntityIdentity{Key: "colormode", Name: "Color Mode"},
-		Prior:    map[string]entityPlan{"test.colortemp": *temperature},
+		Prior:    map[string]entityPlan{"test.colortemp": temperature},
 	}
 	definition := defaultProfileStrategyRegistry()["color-mode"]
 	got, planned := definition.Plan(input, emptyProfileStrategyParameters{})
 	if !planned {
 		t.Fatal("color-mode strategy omitted the eligible derived companion")
 	}
-	assertEntityPlanParity(t, *want, got)
+	if got.Descriptor.Key != "colormode" || got.Descriptor.Name != "Color Mode" ||
+		got.Descriptor.ExternalID != device.IEEEAddress+"/root/colormode" {
+		t.Fatalf("color-mode descriptor = %#v", got.Descriptor)
+	}
 	if got.TranslateCommand != nil || len(got.GetProperties) != 0 {
 		t.Fatal("color mode must stay read-only with no refresh properties")
+	}
+	if !reflect.DeepEqual(got.StateProperties, []string{"color_mode"}) || got.DecodeState == nil {
+		t.Fatalf("color-mode routes = %#v", got)
 	}
 	report, present := decodeStrategyState(t, got, "color_mode", `"xy"`)
 	if !present || report.semantic == nil {
@@ -909,10 +863,11 @@ func TestColorModeProfileStrategyMatchesHandwrittenColorMode(t *testing.T) {
 	}
 }
 
-// This test protects startup color-temperature strategy parity and fails if
-// the exact-integer mired bounds or the previous to 65535 sentinel mapping
-// diverge from the handwritten behavior.
-func TestStartupColorTemperatureProfileStrategyMatchesHandwrittenStartup(t *testing.T) {
+// This test protects startup color-temperature strategy behavior and fails
+// if the exact-integer mired bounds or the previous to 65535 sentinel
+// mapping diverge. The defect would be a startup Entity that misbehaves
+// under profile planning.
+func TestStartupColorTemperatureProfileStrategyPlansStartup(t *testing.T) {
 	t.Parallel()
 	startupMin, startupMax := 150.0, 500.0
 	device := strategyTestDevice(colorLightExpose("", "state", "",
@@ -922,12 +877,6 @@ func TestStartupColorTemperatureProfileStrategyMatchesHandwrittenStartup(t *test
 			Presets: []upstreamPreset{{Name: "previous", Value: startupPreviousWireValue}},
 		},
 	))
-	planningInput := devicePlanningInput{IEEE: device.IEEEAddress, Exposes: newExposeIndex(device)}
-	root := planningInput.Exposes.Roots("light")[0]
-	want := planStartupColorTemp(planningInput, root)
-	if want == nil {
-		t.Fatal("handwritten startup plan is unexpectedly ineligible")
-	}
 	input := strategyLightFeatureInput(t, device, "numeric", startupColorTempExposeName,
 		"startupcolortemp", "Startup Color Temperature")
 	definition := defaultProfileStrategyRegistry()["startup-color-temperature"]
@@ -935,17 +884,25 @@ func TestStartupColorTemperatureProfileStrategyMatchesHandwrittenStartup(t *test
 	if !planned {
 		t.Fatal("startup-color-temperature strategy omitted the eligible feature")
 	}
-	assertEntityPlanParity(t, *want, got)
+	if got.Descriptor.Key != "startupcolortemp" || got.Descriptor.Name != "Startup Color Temperature" ||
+		got.Descriptor.ExternalID != device.IEEEAddress+"/root/startupcolortemp" {
+		t.Fatalf("startup descriptor = %#v", got.Descriptor)
+	}
+	if !reflect.DeepEqual(got.StateProperties, []string{"color_temp_startup"}) ||
+		!reflect.DeepEqual(got.GetProperties, []string{"color_temp_startup"}) || got.TranslateCommand == nil {
+		t.Fatalf("startup routes = %#v", got)
+	}
 	report, _ := decodeStrategyState(t, got, "color_temp_startup", `65535`)
 	if report.semantic == nil {
 		t.Fatal("startup sentinel did not decode")
 	}
 }
 
-// This test protects temperature strategy parity and fails if the Celsius
-// eligibility or exact milli-Celsius conversion diverge from the
-// handwritten sensor behavior.
-func TestTemperatureProfileStrategyMatchesHandwrittenTemperature(t *testing.T) {
+// This test protects temperature strategy behavior and fails if the Celsius
+// eligibility or exact milli-Celsius conversion diverge. The strategy must
+// produce the same plan as the shared temperature constructor it delegates
+// to, so the comparison below guards the delegation, not a deleted planner.
+func TestTemperatureProfileStrategyPlansTemperature(t *testing.T) {
 	t.Parallel()
 	device := strategyTestDevice(upstreamExpose{
 		Type: "numeric", Name: "temperature", Property: "temperature",
@@ -961,9 +918,14 @@ func TestTemperatureProfileStrategyMatchesHandwrittenTemperature(t *testing.T) {
 		Key: "temperature", ExternalID: device.IEEEAddress + "/root/temperature", Name: "Temperature",
 	}, "temperature", true)
 	if err != nil {
-		t.Fatalf("handwritten temperature constructor failed: %v", err)
+		t.Fatalf("temperature constructor failed: %v", err)
 	}
-	assertEntityPlanParity(t, want, got)
+	if !reflect.DeepEqual(want.Descriptor, got.Descriptor) ||
+		!reflect.DeepEqual(want.StateProperties, got.StateProperties) ||
+		!reflect.DeepEqual(want.GetProperties, got.GetProperties) ||
+		(want.TranslateCommand == nil) != (got.TranslateCommand == nil) {
+		t.Fatalf("strategy plan diverged from the shared constructor:\nwant %#v\ngot  %#v", want, got)
+	}
 	report, _ := decodeStrategyState(t, got, "temperature", `21.5`)
 	if report.semantic != int64(21500) {
 		t.Fatalf("temperature 21.5 decoded to %v, want 21500 milli-Celsius", report.semantic)
@@ -983,10 +945,10 @@ func TestTemperatureProfileStrategyMatchesHandwrittenTemperature(t *testing.T) {
 	}
 }
 
-// This test protects enum-setting strategy parity and fails if choices,
-// observed matching, or full publish/set/get eligibility diverge from the
-// handwritten power-on behavior.
-func TestEnumSettingProfileStrategyMatchesPowerOnBehavior(t *testing.T) {
+// This test protects enum-setting strategy behavior and fails if choices,
+// observed matching, or full publish/set/get eligibility diverge. The defect
+// would be a power-on behavior Entity that misbehaves under profile planning.
+func TestEnumSettingProfileStrategyPlansPowerOnBehavior(t *testing.T) {
 	t.Parallel()
 	device := strategyTestDevice(
 		lightExpose("", "state", "brightness"),
@@ -996,18 +958,20 @@ func TestEnumSettingProfileStrategyMatchesPowerOnBehavior(t *testing.T) {
 			Values: []string{"off", "on", "toggle", "previous"},
 		},
 	)
-	planningInput := devicePlanningInput{IEEE: device.IEEEAddress, Exposes: newExposeIndex(device)}
-	want := planPowerOnBehavior(planningInput)
-	if want == nil {
-		t.Fatal("handwritten power-on behavior is unexpectedly ineligible")
-	}
 	input := strategyRootInput(t, device, "enum", "power_on_behavior", "poweronbehavior", "Power-On Behavior")
 	definition := defaultProfileStrategyRegistry()["enum-setting"]
 	got, planned := definition.Plan(input, emptyProfileStrategyParameters{})
 	if !planned {
 		t.Fatal("enum-setting strategy omitted the eligible root")
 	}
-	assertEntityPlanParity(t, *want, got)
+	if got.Descriptor.Key != "poweronbehavior" || got.Descriptor.Name != "Power-On Behavior" ||
+		got.Descriptor.ExternalID != device.IEEEAddress+"/root/poweronbehavior" {
+		t.Fatalf("enum-setting descriptor = %#v", got.Descriptor)
+	}
+	if !reflect.DeepEqual(got.StateProperties, []string{"power_on_behavior"}) ||
+		!reflect.DeepEqual(got.GetProperties, []string{"power_on_behavior"}) || got.TranslateCommand == nil {
+		t.Fatalf("enum-setting routes = %#v", got)
+	}
 	report, _ := decodeStrategyState(t, got, "power_on_behavior", `"previous"`)
 	if report.semantic == nil {
 		t.Fatal("enum setting omitted a discovered choice")
@@ -1019,9 +983,10 @@ func TestEnumSettingProfileStrategyMatchesPowerOnBehavior(t *testing.T) {
 	}
 }
 
-// This test protects enum-action strategy parity and fails if the effect
-// Entity diverges from the handwritten stateless dispatched behavior.
-func TestEnumActionProfileStrategyMatchesEffect(t *testing.T) {
+// This test protects enum-action strategy behavior and fails if the effect
+// Entity diverges from the stateless dispatched contract. The defect would
+// be an effect Entity that misbehaves under profile planning.
+func TestEnumActionProfileStrategyPlansEffect(t *testing.T) {
 	t.Parallel()
 	values := []string{"blink", "breathe", "okay"}
 	device := strategyTestDevice(
@@ -1031,11 +996,6 @@ func TestEnumActionProfileStrategyMatchesEffect(t *testing.T) {
 			Access: exposeSetAccessBit, Values: values,
 		},
 	)
-	planningInput := devicePlanningInput{IEEE: device.IEEEAddress, Exposes: newExposeIndex(device)}
-	want := planEffect(planningInput)
-	if want == nil {
-		t.Fatal("handwritten effect plan is unexpectedly ineligible")
-	}
 	input := strategyRootInput(t, device, "enum", "effect", "effect", "Effect")
 	definition := defaultProfileStrategyRegistry()["enum-action"]
 	parameters, err := definition.CompileParameters(json.RawMessage(`{"access":"set-only"}`))
@@ -1046,7 +1006,10 @@ func TestEnumActionProfileStrategyMatchesEffect(t *testing.T) {
 	if !planned {
 		t.Fatal("enum-action strategy omitted the eligible set-only root")
 	}
-	assertEntityPlanParity(t, *want, got)
+	if got.Descriptor.Key != "effect" || got.Descriptor.Name != "Effect" ||
+		got.Descriptor.ExternalID != device.IEEEAddress+"/root/effect" {
+		t.Fatalf("enum-action descriptor = %#v", got.Descriptor)
+	}
 	if got.StatePolicy != entityStateless || got.DecodeState != nil {
 		t.Fatal("effect must stay stateless with no decoder")
 	}
@@ -1080,18 +1043,12 @@ func TestEnumActionProfileStrategyMatchesEffect(t *testing.T) {
 	}
 }
 
-// This test protects numeric-setting strategy parity and fails if bounds,
-// unit, access, value-mode state, or observed matching diverge from the
-// handwritten smart-plug setting behavior.
-func TestNumericSettingProfileStrategyMatchesSmartPlugSetting(t *testing.T) {
+// This test protects numeric-setting strategy behavior and fails if bounds,
+// unit, access, value-mode state, or observed matching diverge. The defect
+// would be a smart-plug setting that misbehaves under profile planning.
+func TestNumericSettingProfileStrategyPlansSmartPlugSetting(t *testing.T) {
 	t.Parallel()
 	device := mustPlugDevice(t)
-	planningInput := devicePlanningInput{IEEE: device.IEEEAddress, Exposes: newExposeIndex(device)}
-	specs := smartPlugNumericSettings()
-	want := planNumericSetting(planningInput, specs[0])
-	if want == nil {
-		t.Fatal("handwritten LED brightness setting is unexpectedly ineligible")
-	}
 	input := strategyRootInput(t, device, "numeric", "led_brightness", "ledbrightness", "LED Brightness")
 	definition := defaultProfileStrategyRegistry()["numeric-setting"]
 	parameters, err := definition.CompileParameters(json.RawMessage(`{"accepted_units":["%"],"unit":"%"}`))
@@ -1102,7 +1059,14 @@ func TestNumericSettingProfileStrategyMatchesSmartPlugSetting(t *testing.T) {
 	if !planned {
 		t.Fatal("numeric-setting strategy omitted the eligible setting")
 	}
-	assertEntityPlanParity(t, *want, got)
+	if got.Descriptor.Key != "ledbrightness" || got.Descriptor.Name != "LED Brightness" ||
+		got.Descriptor.ExternalID != device.IEEEAddress+"/root/ledbrightness" {
+		t.Fatalf("numeric-setting descriptor = %#v", got.Descriptor)
+	}
+	if !reflect.DeepEqual(got.StateProperties, []string{"led_brightness"}) ||
+		!reflect.DeepEqual(got.GetProperties, []string{"led_brightness"}) || got.TranslateCommand == nil {
+		t.Fatalf("numeric-setting routes = %#v", got)
+	}
 	report, _ := decodeStrategyState(t, got, "led_brightness", `50`)
 	if report.semantic == nil {
 		t.Fatal("numeric setting omitted an in-range value")
@@ -1120,23 +1084,13 @@ func TestNumericSettingProfileStrategyMatchesSmartPlugSetting(t *testing.T) {
 	}
 }
 
-// This test protects generic numeric-sensor parity with the handwritten
-// electrical sensors and fails if unit gating, publish-without-set access,
-// bounds, or float decoding diverge.
-func TestNumericSensorProfileStrategyMatchesElectricalSensor(t *testing.T) {
+// This test protects generic numeric-sensor behavior on the captured plug
+// voltage expose and fails if unit gating, publish-without-set access,
+// bounds, or float decoding diverge. The defect would be an electrical
+// sensor that misbehaves under profile planning.
+func TestNumericSensorProfileStrategyPlansElectricalSensor(t *testing.T) {
 	t.Parallel()
 	device := mustPlugDevice(t)
-	planningInput := devicePlanningInput{IEEE: device.IEEEAddress, Exposes: newExposeIndex(device)}
-	var spec electricalSensorSpec
-	for _, candidate := range smartPlugElectricalSensors() {
-		if candidate.exposeName == "voltage" {
-			spec = candidate
-		}
-	}
-	want := planElectricalSensor(planningInput, spec)
-	if want == nil {
-		t.Fatal("handwritten voltage sensor is unexpectedly ineligible")
-	}
 	input := strategyRootInput(t, device, "numeric", "voltage", "voltage", "Voltage")
 	definition := defaultProfileStrategyRegistry()["numeric-sensor"]
 	parameters, err := definition.CompileParameters(json.RawMessage(
@@ -1149,7 +1103,14 @@ func TestNumericSensorProfileStrategyMatchesElectricalSensor(t *testing.T) {
 	if !planned {
 		t.Fatal("numeric-sensor strategy omitted the eligible voltage root")
 	}
-	assertEntityPlanParity(t, *want, got)
+	if got.Descriptor.Key != "voltage" || got.Descriptor.Name != "Voltage" ||
+		got.Descriptor.ExternalID != device.IEEEAddress+"/root/voltage" {
+		t.Fatalf("numeric-sensor descriptor = %#v", got.Descriptor)
+	}
+	if !reflect.DeepEqual(got.StateProperties, []string{"voltage"}) ||
+		len(got.GetProperties) != 0 || got.TranslateCommand != nil {
+		t.Fatalf("voltage sensor must stay a publish-only read: %#v", got)
+	}
 	report, _ := decodeStrategyState(t, got, "voltage", `230.5`)
 	if report.semantic != 230.5 {
 		t.Fatalf("voltage 230.5 decoded to %v, want the preserved fraction", report.semantic)

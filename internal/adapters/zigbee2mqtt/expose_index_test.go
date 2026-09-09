@@ -22,7 +22,7 @@ func TestExposeIndexCountsPropertiesDeviceWide(t *testing.T) {
 	if !index.PropertyUnique("state") {
 		t.Fatal("uncontested State property was not unique")
 	}
-	discovered, rejection := discoverDevice(device)
+	discovered, rejection := discoverDevice(device, mustEmbeddedProfileCatalog(t))
 	if rejection != nil {
 		t.Fatalf("Device rejected: %#v", rejection)
 	}
@@ -53,7 +53,7 @@ func TestExposeIndexRootsPreserveOrderAndResolution(t *testing.T) {
 	if !roots[1].resolved || roots[1].endpoint != 1 {
 		t.Fatalf("valid root = %#v, want endpoint 1", roots[1])
 	}
-	discovered, rejection := discoverDevice(device)
+	discovered, rejection := discoverDevice(device, mustEmbeddedProfileCatalog(t))
 	if rejection != nil {
 		t.Fatalf("Device rejected: %#v", rejection)
 	}
@@ -98,7 +98,7 @@ func TestExposeIndexRetainsUnitIndependently(t *testing.T) {
 			{"type": "numeric", "name": "humidity", "property": "humidity", "access": 1, "unit": 7}
 		]}
 	}]`)
-	result, err := discoverInventory(payload)
+	result, err := discoverInventory(payload, mustEmbeddedProfileCatalog(t))
 	if err != nil {
 		t.Fatal(err)
 	}

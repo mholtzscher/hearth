@@ -25,6 +25,11 @@ func contractEnumSettingState(value string) contractenumsettingv1.State {
 	return contractenumsettingv1.State(value)
 }
 
+// linkqualityExposeName is the upstream expose name carrying the
+// device-wide link-quality reading. The linkquality profile owns the
+// mapping; tests use the name to build fixtures.
+const linkqualityExposeName = "linkquality"
+
 // Fixture provenance: testdata/bridge-devices-wanda-synthetic.json is an
 // explicitly SYNTHETIC Wanda-shaped inventory modeled on the Third Reality
 // 3RCB01057Z office-table-lamp expose layout (software 1.00.74). It is NOT a
@@ -215,7 +220,8 @@ func TestBulbPresetsWireParsing(t *testing.T) {
 // or suppress valid ones.
 func TestDiscoverWandaBulbAttributes(t *testing.T) {
 	t.Parallel()
-	result, err := discoverInventory(readFixture(t, "bridge-devices-wanda-synthetic.json"))
+	catalog := mustEmbeddedProfileCatalog(t)
+	result, err := discoverInventory(readFixture(t, "bridge-devices-wanda-synthetic.json"), catalog)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -484,7 +490,7 @@ func TestBulbAttributeEligibilityAndIsolation(t *testing.T) {
 		},
 		{
 			name:     "linkquality lqi unit passthrough",
-			edit:     func(device *upstreamDevice) { device.Definition.Exposes[1].Unit = linkqualityUnit },
+			edit:     func(device *upstreamDevice) { device.Definition.Exposes[1].Unit = "lqi" },
 			wantKeys: fullKeys, wantKind: "light",
 		},
 		{
@@ -507,7 +513,7 @@ func TestBulbAttributeEligibilityAndIsolation(t *testing.T) {
 			t.Parallel()
 			device := bulbTestDevice()
 			test.edit(&device)
-			discovered, rejection := discoverDevice(device)
+			discovered, rejection := discoverDevice(device, mustEmbeddedProfileCatalog(t))
 			if rejection != nil {
 				t.Fatalf("Device rejected: %#v", rejection)
 			}
@@ -568,7 +574,7 @@ func checkLinkqualityAccess(t *testing.T, access int, breakPower bool, wantKind 
 	if breakPower {
 		device.Definition.Exposes[0].Features[0].Access = 3
 	}
-	discovered, rejection := discoverDevice(device)
+	discovered, rejection := discoverDevice(device, mustEmbeddedProfileCatalog(t))
 	if rejection != nil {
 		t.Fatalf("Device rejected: %#v", rejection)
 	}
@@ -678,7 +684,7 @@ func TestStartupWireBoundsStayWithinMiredEnvelope(t *testing.T) {
 		{from: `"value_max": 454`, to: `"value_max": 1001`},
 	} {
 		payload := bytes.Replace(fixture, []byte(replacement.from), []byte(replacement.to), 1)
-		result, err := discoverInventory(payload)
+		result, err := discoverInventory(payload, mustEmbeddedProfileCatalog(t))
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -691,7 +697,7 @@ func TestStartupWireBoundsStayWithinMiredEnvelope(t *testing.T) {
 func TestStartupChoicesFollowPresets(t *testing.T) {
 	t.Parallel()
 	withPrevious := bulbTestDevice()
-	discovered, rejection := discoverDevice(withPrevious)
+	discovered, rejection := discoverDevice(withPrevious, mustEmbeddedProfileCatalog(t))
 	if rejection != nil {
 		t.Fatal(rejection)
 	}
@@ -700,7 +706,7 @@ func TestStartupChoicesFollowPresets(t *testing.T) {
 	}
 	withoutPresets := bulbTestDevice()
 	withoutPresets.Definition.Exposes[0].Features[2].Presets = nil
-	discovered, rejection = discoverDevice(withoutPresets)
+	discovered, rejection = discoverDevice(withoutPresets, mustEmbeddedProfileCatalog(t))
 	if rejection != nil {
 		t.Fatal(rejection)
 	}
@@ -712,7 +718,7 @@ func TestStartupChoicesFollowPresets(t *testing.T) {
 		{Name: upstreamPreviousPreset, Value: startupPreviousWireValue},
 		{Name: "warm", Value: 454},
 	}
-	discovered, rejection = discoverDevice(aliased)
+	discovered, rejection = discoverDevice(aliased, mustEmbeddedProfileCatalog(t))
 	if rejection != nil {
 		t.Fatal(rejection)
 	}
@@ -727,7 +733,7 @@ func mustBulbEntities(testingT interface {
 },
 ) []runtimeEntity {
 	testingT.Helper()
-	discovered, rejection := discoverDevice(bulbTestDevice())
+	discovered, rejection := discoverDevice(bulbTestDevice(), mustEmbeddedProfileCatalog(testingT))
 	if rejection != nil {
 		testingT.Fatal(rejection)
 	}
@@ -858,7 +864,7 @@ func TestDecodeBulbSentinelWithoutPrevious(t *testing.T) {
 	t.Parallel()
 	plain := bulbTestDevice()
 	plain.Definition.Exposes[0].Features[2].Presets = nil
-	unsupported, unsupportedRejection := discoverDevice(plain)
+	unsupported, unsupportedRejection := discoverDevice(plain, mustEmbeddedProfileCatalog(t))
 	if unsupportedRejection != nil {
 		t.Fatal(unsupportedRejection)
 	}
@@ -881,7 +887,7 @@ func bulbRoutedPlans(testingT interface {
 },
 ) map[string]runtimeEntity {
 	testingT.Helper()
-	discovered, rejection := discoverDevice(bulbTestDevice())
+	discovered, rejection := discoverDevice(bulbTestDevice(), mustEmbeddedProfileCatalog(testingT))
 	if rejection != nil {
 		testingT.Fatal(rejection)
 	}
@@ -992,7 +998,7 @@ func TestTranslateStartupPreviousRequiresSupport(t *testing.T) {
 	t.Parallel()
 	device := bulbTestDevice()
 	device.Definition.Exposes[0].Features[2].Presets = nil
-	discovered, rejection := discoverDevice(device)
+	discovered, rejection := discoverDevice(device, mustEmbeddedProfileCatalog(t))
 	if rejection != nil {
 		t.Fatal(rejection)
 	}

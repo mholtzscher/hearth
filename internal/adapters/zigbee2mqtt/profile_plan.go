@@ -9,10 +9,10 @@ import "slices"
 // exact root selection, root and feature and derived source resolution,
 // requires_any sibling dependencies, gate-first sibling gating, duplicate
 // scoped gate key removal, ungated sibling isolation, device entity group
-// survivors, and per-profile contribution assembly. The existing planDevice
-// merge keeps same-contribution duplicate key removal, cross-contribution
-// collision rejection, entity limits, and kind selection, so production
-// discovery stays on handwritten planners until the cutover deliverable.
+// survivors, and per-profile contribution assembly. planDevice keeps
+// same-contribution duplicate key removal, cross-contribution collision
+// rejection, entity limits, and kind selection, and attributes an empty
+// merge from each contribution's candidate-root evidence.
 //
 // A strategy that reports ineligible omits only its candidate. A malformed
 // root or rule never suppresses valid siblings: every candidate resolves and
@@ -53,7 +53,10 @@ func planProfileContributions(
 
 // evaluatePlannerProfile evaluates one compiled planner profile: candidate
 // groups in document order, then device entities whose required candidate
-// group survived gate planning and duplicate gate key removal.
+// group survived gate planning and duplicate gate key removal. Matched
+// reports whether any candidate group selected a root for evaluation, even
+// when no candidate planned, so planDevice can attribute an empty merge to
+// the strongest primary family.
 func evaluatePlannerProfile(
 	profile compiledPlannerProfile,
 	input devicePlanningInput,
@@ -66,6 +69,9 @@ func evaluatePlannerProfile(
 	}
 	survivors := make(map[string]bool, len(profile.document.CandidateGroups))
 	for _, group := range profile.document.CandidateGroups {
+		if len(selectProfileRoots(input.Exposes, group.Root)) > 0 {
+			contribution.Matched = true
+		}
 		plans, survived := evaluateProfileCandidateGroup(group, profile, input, overrides, strategies)
 		contribution.Entities = append(contribution.Entities, plans...)
 		survivors[group.ID] = survived

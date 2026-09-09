@@ -21,9 +21,8 @@ import (
 // the upstream expose is ineligible, omitting only that candidate.
 //
 // Every strategy reuses the existing entity constructors and expose-index
-// helpers behind the handwritten planners, so profile planning preserves the
-// current discovery behavior byte-for-byte. There is no parallel runtime
-// behavior here: only parameter compilation, strategy-owned eligibility
+// helpers, so profile planning preserves the established discovery behavior
+// byte-for-byte. There is no parallel runtime behavior here: only parameter compilation, strategy-owned eligibility
 // gating, and identity assembly from the profile-supplied base key and name.
 
 // Closed profile strategy parameter values. Profiles carry these exact
@@ -395,11 +394,10 @@ func profileStrategyEntityMetadata(
 }
 
 // profileColorModePolicy resolves one root's companion color-mode property
-// and whether Hearth may trust it, preserving the handwritten light-family
-// ownership rule: exactly one resolved light root may expect the property,
-// and no foreign expose may claim it under a different meaning. An
-// ambiguous or colliding property omits the affected color and mode
-// capabilities instead of guessing.
+// and whether Hearth may trust it: exactly one resolved light root may
+// expect the property, and no foreign expose may claim it under a different
+// meaning. An ambiguous or colliding property omits the affected color and
+// mode capabilities instead of guessing.
 func profileColorModePolicy(index exposeIndex, root indexedExpose) (string, bool) {
 	property := colorModeProperty(root)
 	expectations := 0
@@ -515,8 +513,7 @@ func planColorXYProfileStrategy(input profileStrategyInput, _ any) (entityPlan, 
 	if !usable {
 		return entityPlan{}, false
 	}
-	deviceInput := devicePlanningInput{IEEE: input.IEEE, Exposes: input.Index}
-	if !validColorComposite(deviceInput, input.Root, feature, []colorAxisSpec{
+	if !validColorComposite(input.Index, input.Root, feature, []colorAxisSpec{
 		{name: "x", maximum: maxRawXY},
 		{name: "y", maximum: maxRawXY},
 	}) {
@@ -548,8 +545,7 @@ func planColorHSProfileStrategy(input profileStrategyInput, _ any) (entityPlan, 
 	if !usable {
 		return entityPlan{}, false
 	}
-	deviceInput := devicePlanningInput{IEEE: input.IEEE, Exposes: input.Index}
-	if !validColorComposite(deviceInput, input.Root, feature, []colorAxisSpec{
+	if !validColorComposite(input.Index, input.Root, feature, []colorAxisSpec{
 		{name: "hue", maximum: maxRawHue},
 		{name: "saturation", maximum: maxRawSaturation},
 	}) {

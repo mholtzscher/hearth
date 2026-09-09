@@ -6,8 +6,8 @@ package zigbee2mqtt //nolint:testpackage // Evaluator tests exercise package-pri
 // layering, contribution assembly, or malformed candidate isolation diverge
 // from the approved zigbee2mqtt-json-profile-catalog spec. The oracle is the
 // spec planning semantics; each case names the plausible defect it guards.
-// Production discovery stays on handwritten planners: every catalog here is
-// an in-memory document set compiled with the production strategy registry.
+// Every catalog here is an in-memory document set compiled with the
+// production strategy registry.
 
 import (
 	"encoding/json"

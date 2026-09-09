@@ -1,4 +1,4 @@
-package zigbee2mqtt //nolint:testpackage // Tests exercise package-private planDevice merge via a fake planner.
+package zigbee2mqtt //nolint:testpackage // Tests exercise package-private planDevice merge via canned contributions.
 
 import (
 	"errors"
@@ -8,17 +8,11 @@ import (
 	"github.com/mholtzscher/hearth/sdk/adapter"
 )
 
-// staticPlanner is a deterministic fake devicePlanner. It returns one canned
-// contribution without inspecting the input, so tests exercise only
-// planDevice's generic merge contract and never concrete expose parsing.
-type staticPlanner struct {
-	kind     string
-	role     plannerRole
-	entities []entityPlan
-}
-
-func (planner staticPlanner) Plan(devicePlanningInput) plannerContribution {
-	return plannerContribution{Kind: planner.kind, Entities: planner.entities, Role: planner.role}
+// staticContribution returns one canned planner contribution without
+// inspecting any device, so tests exercise only planDevice's generic merge
+// contract and never concrete expose parsing.
+func staticContribution(kind string, role plannerRole, entities ...entityPlan) plannerContribution {
+	return plannerContribution{Kind: kind, Entities: entities, Role: role}
 }
 
 func mustStaticEntity(t *testing.T, key, property string) entityPlan {
@@ -38,10 +32,6 @@ func mustStaticEntity(t *testing.T, key, property string) entityPlan {
 	return plan
 }
 
-func staticInput() devicePlanningInput {
-	return devicePlanningInput{IEEE: "0x00124b0024abcdef"}
-}
-
 func planRejectionCode(t *testing.T, err error) string {
 	t.Helper()
 	planErr, ok := errors.AsType[*devicePlanError](err)
@@ -58,9 +48,9 @@ func TestPlanDeviceFirstPrimaryWins(t *testing.T) {
 	t.Parallel()
 	primary := mustStaticEntity(t, "light-power", "light-state")
 	loser := mustStaticEntity(t, "relay-power", "relay-state")
-	plan, err := planDevice(staticInput(), []devicePlanner{
-		staticPlanner{kind: upstreamDeviceKindLight, role: plannerRolePrimary, entities: []entityPlan{primary}},
-		staticPlanner{kind: upstreamDeviceKindRelay, role: plannerRolePrimary, entities: []entityPlan{loser}},
+	plan, err := planDevice([]plannerContribution{
+		staticContribution(upstreamDeviceKindLight, plannerRolePrimary, primary),
+		staticContribution(upstreamDeviceKindRelay, plannerRolePrimary, loser),
 	})
 	if err != nil {
 		t.Fatalf("plan was rejected: %v", err)
@@ -78,25 +68,14 @@ func TestPlanDeviceFirstPrimaryWins(t *testing.T) {
 // out of planner order.
 func TestPlanDeviceSupplementalsAppendAfterPrimaryInOrder(t *testing.T) {
 	t.Parallel()
-	plan, err := planDevice(staticInput(), []devicePlanner{
-		staticPlanner{
-			kind:     upstreamDeviceKindLight,
-			role:     plannerRolePrimary,
-			entities: []entityPlan{mustStaticEntity(t, "primary-power", "primary-state")},
-		},
-		staticPlanner{
-			kind: upstreamDeviceKindSensor,
-			role: plannerRoleSupplemental,
-			entities: []entityPlan{
-				mustStaticEntity(t, "first-a", "first-a-state"),
-				mustStaticEntity(t, "first-b", "first-b-state"),
-			},
-		},
-		staticPlanner{
-			kind:     upstreamDeviceKindSensor,
-			role:     plannerRoleSupplemental,
-			entities: []entityPlan{mustStaticEntity(t, "second", "second-state")},
-		},
+	plan, err := planDevice([]plannerContribution{
+		staticContribution(upstreamDeviceKindLight, plannerRolePrimary,
+			mustStaticEntity(t, "primary-power", "primary-state")),
+		staticContribution(upstreamDeviceKindSensor, plannerRoleSupplemental,
+			mustStaticEntity(t, "first-a", "first-a-state"),
+			mustStaticEntity(t, "first-b", "first-b-state")),
+		staticContribution(upstreamDeviceKindSensor, plannerRoleSupplemental,
+			mustStaticEntity(t, "second", "second-state")),
 	})
 	if err != nil {
 		t.Fatalf("plan was rejected: %v", err)
@@ -116,19 +95,13 @@ func TestPlanDeviceSupplementalsAppendAfterPrimaryInOrder(t *testing.T) {
 // non-empty supplemental kind.
 func TestPlanDeviceSupplementalOnlyUsesFirstNonEmptyKind(t *testing.T) {
 	t.Parallel()
-	plan, err := planDevice(staticInput(), []devicePlanner{
-		staticPlanner{kind: upstreamDeviceKindLight, role: plannerRolePrimary},
-		staticPlanner{kind: upstreamDeviceKindRelay, role: plannerRoleSupplemental},
-		staticPlanner{
-			kind:     upstreamDeviceKindSensor,
-			role:     plannerRoleSupplemental,
-			entities: []entityPlan{mustStaticEntity(t, "first", "first-state")},
-		},
-		staticPlanner{
-			kind:     upstreamDeviceKindRelay,
-			role:     plannerRoleSupplemental,
-			entities: []entityPlan{mustStaticEntity(t, "second", "second-state")},
-		},
+	plan, err := planDevice([]plannerContribution{
+		staticContribution(upstreamDeviceKindLight, plannerRolePrimary),
+		staticContribution(upstreamDeviceKindRelay, plannerRoleSupplemental),
+		staticContribution(upstreamDeviceKindSensor, plannerRoleSupplemental,
+			mustStaticEntity(t, "first", "first-state")),
+		staticContribution(upstreamDeviceKindRelay, plannerRoleSupplemental,
+			mustStaticEntity(t, "second", "second-state")),
 	})
 	if err != nil {
 		t.Fatalf("plan was rejected: %v", err)
@@ -142,7 +115,7 @@ func TestPlanDeviceSupplementalOnlyUsesFirstNonEmptyKind(t *testing.T) {
 }
 
 // This test protects same-contribution duplicate-key removal and fails if a
-// planner that emits one key twice keeps one copy (leaking an ambiguous route)
+// contribution that emits one key twice keeps one copy (leaking an ambiguous route)
 // or keeps both copies (collapsing the merge into ambiguous_entity_plan
 // instead of quietly dropping the duplicated family).
 func TestPlanDeviceDropsSameContributionDuplicateKeys(t *testing.T) {
@@ -151,17 +124,10 @@ func TestPlanDeviceDropsSameContributionDuplicateKeys(t *testing.T) {
 	first.Descriptor.ExternalID = "0x00124b0024abcdef/root/dup-a"
 	second := mustStaticEntity(t, "dup", "dup-b-state")
 	second.Descriptor.ExternalID = "0x00124b0024abcdef/root/dup-b"
-	plan, err := planDevice(staticInput(), []devicePlanner{
-		staticPlanner{
-			kind:     upstreamDeviceKindLight,
-			role:     plannerRolePrimary,
-			entities: []entityPlan{first, second},
-		},
-		staticPlanner{
-			kind:     upstreamDeviceKindSensor,
-			role:     plannerRoleSupplemental,
-			entities: []entityPlan{mustStaticEntity(t, "kept", "kept-state")},
-		},
+	plan, err := planDevice([]plannerContribution{
+		staticContribution(upstreamDeviceKindLight, plannerRolePrimary, first, second),
+		staticContribution(upstreamDeviceKindSensor, plannerRoleSupplemental,
+			mustStaticEntity(t, "kept", "kept-state")),
 	})
 	if err != nil {
 		t.Fatalf("plan was rejected: %v", err)
@@ -181,17 +147,9 @@ func TestPlanDevicePrimarySupplementalCollisionIsAmbiguous(t *testing.T) {
 	primary.Descriptor.ExternalID = "0x00124b0024abcdef/root/primary-shared"
 	supplemental := mustStaticEntity(t, "shared", "supplemental-state")
 	supplemental.Descriptor.ExternalID = "0x00124b0024abcdef/root/supplemental-shared"
-	_, err := planDevice(staticInput(), []devicePlanner{
-		staticPlanner{
-			kind:     upstreamDeviceKindLight,
-			role:     plannerRolePrimary,
-			entities: []entityPlan{primary},
-		},
-		staticPlanner{
-			kind:     upstreamDeviceKindSensor,
-			role:     plannerRoleSupplemental,
-			entities: []entityPlan{supplemental},
-		},
+	_, err := planDevice([]plannerContribution{
+		staticContribution(upstreamDeviceKindLight, plannerRolePrimary, primary),
+		staticContribution(upstreamDeviceKindSensor, plannerRoleSupplemental, supplemental),
 	})
 	if err == nil {
 		t.Fatal("colliding primary and supplemental keys were merged without rejection")
@@ -201,16 +159,14 @@ func TestPlanDevicePrimarySupplementalCollisionIsAmbiguous(t *testing.T) {
 	}
 }
 
-// This test protects omitted-role rejection and fails if a planner that
-// omits its contribution role (the plannerRole zero value) competes silently
-// instead of rejecting the Device as invalid_descriptor before selection.
+// This test protects omitted-role rejection and fails if a contribution that
+// omits its role (the plannerRole zero value) competes silently instead of
+// rejecting the Device as invalid_descriptor before selection.
 func TestPlanDeviceOmittedRoleRejectsInvalidDescriptor(t *testing.T) {
 	t.Parallel()
-	_, err := planDevice(staticInput(), []devicePlanner{
-		staticPlanner{
-			kind:     upstreamDeviceKindLight,
-			entities: []entityPlan{mustStaticEntity(t, "orphan", "orphan-state")},
-		},
+	_, err := planDevice([]plannerContribution{
+		staticContribution(upstreamDeviceKindLight, plannerRoleInvalid,
+			mustStaticEntity(t, "orphan", "orphan-state")),
 	})
 	if err == nil {
 		t.Fatal("omitted contribution role merged without rejection")
@@ -220,16 +176,14 @@ func TestPlanDeviceOmittedRoleRejectsInvalidDescriptor(t *testing.T) {
 	}
 }
 
-// This test protects omitted-kind rejection and fails if a planner that omits
-// its Device kind merges silently instead of rejecting the Device as
+// This test protects omitted-kind rejection and fails if a contribution that
+// omits its Device kind merges silently instead of rejecting the Device as
 // invalid_descriptor before selection.
 func TestPlanDeviceOmittedKindRejectsInvalidDescriptor(t *testing.T) {
 	t.Parallel()
-	_, err := planDevice(staticInput(), []devicePlanner{
-		staticPlanner{
-			role:     plannerRolePrimary,
-			entities: []entityPlan{mustStaticEntity(t, "orphan", "orphan-state")},
-		},
+	_, err := planDevice([]plannerContribution{
+		staticContribution("", plannerRolePrimary,
+			mustStaticEntity(t, "orphan", "orphan-state")),
 	})
 	if err == nil {
 		t.Fatal("omitted contribution kind merged without rejection")
@@ -244,14 +198,81 @@ func TestPlanDeviceOmittedKindRejectsInvalidDescriptor(t *testing.T) {
 // it as no_eligible_entity.
 func TestPlanDeviceEmptyContributionsRejectNoEligibleEntity(t *testing.T) {
 	t.Parallel()
-	_, err := planDevice(staticInput(), []devicePlanner{
-		staticPlanner{kind: upstreamDeviceKindLight, role: plannerRolePrimary},
-		staticPlanner{kind: upstreamDeviceKindSensor, role: plannerRoleSupplemental},
+	_, err := planDevice([]plannerContribution{
+		staticContribution(upstreamDeviceKindLight, plannerRolePrimary),
+		staticContribution(upstreamDeviceKindSensor, plannerRoleSupplemental),
 	})
 	if err == nil {
 		t.Fatal("empty contributions registered a Device without rejection")
 	}
 	if code := planRejectionCode(t, err); code != rejectionNoEligibleEntity {
 		t.Fatalf("rejection code = %q, want %q", code, rejectionNoEligibleEntity)
+	}
+}
+
+// This test protects generic empty-merge attribution and fails if an empty
+// merge is not attributed to the first matched primary family in profile
+// order: a matched light contribution rejects as no_eligible_light even when
+// a later relay also matched, a matched relay alone rejects as
+// no_eligible_relay, and unmatched contributions fall back to
+// no_eligible_entity. The defect would be a diagnostic that blames the wrong
+// family without any mapping-specific root-type branch.
+func TestPlanDeviceEmptyMergeAttributesStrongestMatchedPrimary(t *testing.T) {
+	t.Parallel()
+	matched := func(kind string, role plannerRole) plannerContribution {
+		contribution := staticContribution(kind, role)
+		contribution.Matched = true
+		return contribution
+	}
+	for _, test := range []struct {
+		name          string
+		contributions []plannerContribution
+		want          string
+	}{
+		{
+			name: "matched light wins over matched relay",
+			contributions: []plannerContribution{
+				matched(upstreamDeviceKindLight, plannerRolePrimary),
+				matched(upstreamDeviceKindRelay, plannerRolePrimary),
+				staticContribution(upstreamDeviceKindSensor, plannerRoleSupplemental),
+			},
+			want: rejectionNoEligibleLight,
+		},
+		{
+			name: "matched relay alone",
+			contributions: []plannerContribution{
+				staticContribution(upstreamDeviceKindLight, plannerRolePrimary),
+				matched(upstreamDeviceKindRelay, plannerRolePrimary),
+				staticContribution(upstreamDeviceKindSensor, plannerRoleSupplemental),
+			},
+			want: rejectionNoEligibleRelay,
+		},
+		{
+			name: "unmatched supplementals only",
+			contributions: []plannerContribution{
+				staticContribution(upstreamDeviceKindLight, plannerRolePrimary),
+				staticContribution(upstreamDeviceKindSensor, plannerRoleSupplemental),
+			},
+			want: rejectionNoEligibleEntity,
+		},
+		{
+			name: "matched supplemental never attributes",
+			contributions: []plannerContribution{
+				staticContribution(upstreamDeviceKindLight, plannerRolePrimary),
+				matched(upstreamDeviceKindSensor, plannerRoleSupplemental),
+			},
+			want: rejectionNoEligibleEntity,
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			_, err := planDevice(test.contributions)
+			if err == nil {
+				t.Fatal("empty contributions registered a Device without rejection")
+			}
+			if code := planRejectionCode(t, err); code != test.want {
+				t.Fatalf("rejection code = %q, want %q", code, test.want)
+			}
+		})
 	}
 }

@@ -32,18 +32,19 @@ func eligibleHumidityBatteryDevice(access int) upstreamDevice {
 	return device
 }
 
-// This test protects percentage decoding at the plan boundary and fails on
-// truncation, clamping, numeric-string coercion, or huge-exponent
-// acceptance. The contract State codec owns binary64 decoding, so
-// 100.00000000000000001 reads as 100 and the underflowing -1e-1000 reads
-// as zero; NewObservation owns the 0-100 bounds.
+// This test protects float numeric-sensor decoding at the plan boundary and
+// fails on truncation, clamping, numeric-string coercion, or huge-exponent
+// acceptance. Humidity and battery plan through the generic float
+// numeric-sensor strategy, so the contract State codec owns binary64
+// decoding here: 100.00000000000000001 reads as 100 and the underflowing
+// -1e-1000 reads as zero; NewObservation owns the 0-100 bounds.
 func TestPercentageSensorPlanStateBoundary(t *testing.T) {
 	t.Parallel()
-	plan, err := newPercentageSensorPlan(adapter.EntityMetadata{
+	plan, err := newNumericSensorProfilePlan(adapter.EntityMetadata{
 		Key:        "humidity",
 		ExternalID: "0x1/root/humidity",
 		Name:       "Humidity",
-	}, "humidity", false)
+	}, "humidity", 0, 100, "%", profileNumericSensorFormatFloat, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -106,7 +107,7 @@ func TestPercentageSensorPlanStateBoundary(t *testing.T) {
 // Entity misses its percent support, read-only plan, or stable identity.
 func TestDiscoverHumidityBatteryRegistersPercentSupport(t *testing.T) {
 	t.Parallel()
-	discovered, rejection := discoverDevice(eligibleHumidityBatteryDevice(1))
+	discovered, rejection := discoverDevice(eligibleHumidityBatteryDevice(1), mustEmbeddedProfileCatalog(t))
 	if rejection != nil {
 		t.Fatalf("Device rejected: %#v", rejection)
 	}
@@ -149,7 +150,7 @@ func TestDiscoverTemperatureHumidityBatteryKeepsOrder(t *testing.T) {
 		device.Definition.Exposes,
 		eligibleHumidityBatteryDevice(1).Definition.Exposes...,
 	)
-	discovered, rejection := discoverDevice(device)
+	discovered, rejection := discoverDevice(device, mustEmbeddedProfileCatalog(t))
 	if rejection != nil {
 		t.Fatalf("Device rejected: %#v", rejection)
 	}
@@ -164,7 +165,7 @@ func TestDiscoverTemperatureHumidityBatteryKeepsOrder(t *testing.T) {
 func TestPercentageSensorPlanSeparatesGetFromCommand(t *testing.T) {
 	t.Parallel()
 	for _, name := range []string{"humidity", "battery"} {
-		publishOnly, rejection := discoverDevice(eligiblePercentageSensorDevice(name, 1))
+		publishOnly, rejection := discoverDevice(eligiblePercentageSensorDevice(name, 1), mustEmbeddedProfileCatalog(t))
 		if rejection != nil {
 			t.Fatalf("%s Device rejected: %#v", name, rejection)
 		}
@@ -173,7 +174,7 @@ func TestPercentageSensorPlanSeparatesGetFromCommand(t *testing.T) {
 			publishOnly.Entities[0].TranslateCommand != nil {
 			t.Fatalf("publish-only %s plan = %#v", name, publishOnly.Entities)
 		}
-		gettable, rejection := discoverDevice(eligiblePercentageSensorDevice(name, 1|4))
+		gettable, rejection := discoverDevice(eligiblePercentageSensorDevice(name, 1|4), mustEmbeddedProfileCatalog(t))
 		if rejection != nil {
 			t.Fatalf("%s Device rejected: %#v", name, rejection)
 		}
@@ -181,7 +182,7 @@ func TestPercentageSensorPlanSeparatesGetFromCommand(t *testing.T) {
 			gettable.Entities[0].TranslateCommand != nil {
 			t.Fatalf("gettable %s plan = %#v", name, gettable.Entities[0])
 		}
-		_, rejection = discoverDevice(eligiblePercentageSensorDevice(name, 1|2))
+		_, rejection = discoverDevice(eligiblePercentageSensorDevice(name, 1|2), mustEmbeddedProfileCatalog(t))
 		if rejection == nil || rejection.Code != rejectionNoEligibleEntity {
 			t.Fatalf("settable %s rejection = %#v", name, rejection)
 		}
@@ -228,7 +229,7 @@ func TestPercentageSensorPlanEligibility(t *testing.T) {
 			t.Parallel()
 			device := eligiblePercentageSensorDevice("battery", 1)
 			test.edit(&device)
-			_, rejection := discoverDevice(device)
+			_, rejection := discoverDevice(device, mustEmbeddedProfileCatalog(t))
 			if rejection == nil || rejection.Code != rejectionNoEligibleEntity {
 				t.Fatalf("rejection = %#v", rejection)
 			}
@@ -244,7 +245,7 @@ func TestDiscoverPercentageSensorEndpointIdentity(t *testing.T) {
 	device.Definition.Exposes[0].Name = "humidity"
 	device.Endpoints = map[string]upstreamEndpoint{"2": {Name: "right"}}
 	device.Definition.Exposes[0].Endpoint = "right"
-	discovered, rejection := discoverDevice(device)
+	discovered, rejection := discoverDevice(device, mustEmbeddedProfileCatalog(t))
 	if rejection != nil {
 		t.Fatalf("Device rejected: %#v", rejection)
 	}
@@ -272,7 +273,7 @@ func TestDecodePercentageSensorStateIsolation(t *testing.T) {
 		device.Definition.Exposes,
 		eligibleHumidityBatteryDevice(1).Definition.Exposes...,
 	)
-	discovered, rejection := discoverDevice(device)
+	discovered, rejection := discoverDevice(device, mustEmbeddedProfileCatalog(t))
 	if rejection != nil {
 		t.Fatalf("Device rejected: %#v", rejection)
 	}
@@ -380,15 +381,16 @@ func TestReconcileSeparatesHumidityRoutesFromRefresh(t *testing.T) {
 }
 
 // This test protects pre-registration descriptor completeness and fails
-// if a percent plan built with empty metadata can pass validation: the
-// shared constructor defers completeness to validateEntityPlans.
+// if a generic float sensor plan built with empty metadata can pass
+// validation: the shared constructor defers completeness to
+// validateEntityPlans.
 func TestPercentageSensorDecodeAndValidationSeams(t *testing.T) {
 	t.Parallel()
-	plan, err := newPercentageSensorPlan(adapter.EntityMetadata{
+	plan, err := newNumericSensorProfilePlan(adapter.EntityMetadata{
 		Key:        "humidity",
 		ExternalID: "0x1/root/humidity",
 		Name:       "Humidity",
-	}, "humidity", false)
+	}, "humidity", 0, 100, "%", profileNumericSensorFormatFloat, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -400,7 +402,8 @@ func TestPercentageSensorDecodeAndValidationSeams(t *testing.T) {
 	if decodeErr == nil {
 		t.Fatal("non-numeric humidity was accepted")
 	}
-	incomplete, err := newPercentageSensorPlan(adapter.EntityMetadata{}, "battery", false)
+	incomplete, err := newNumericSensorProfilePlan(
+		adapter.EntityMetadata{}, "battery", 0, 100, "%", profileNumericSensorFormatFloat, false)
 	if err != nil {
 		t.Fatal(err)
 	}

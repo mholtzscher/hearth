@@ -15,7 +15,7 @@ import (
 // or a missing device-agnostic linkquality sensor.
 func TestDiscoverCapturedThirdRealityLight(t *testing.T) {
 	t.Parallel()
-	result, err := discoverInventory(readFixture(t, "bridge-devices-3rcb01057z.json"))
+	result, err := discoverInventory(readFixture(t, "bridge-devices-3rcb01057z.json"), mustEmbeddedProfileCatalog(t))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -85,7 +85,7 @@ func TestDiscoverMalformedColorTempBoundsPreservesSiblings(t *testing.T) {
 		[]byte(`1e10000`),
 	} {
 		payload := bytes.Replace(fixture, []byte(`"value_min": 154`), []byte(`"value_min": `+string(invalid)), 1)
-		result, err := discoverInventory(payload)
+		result, err := discoverInventory(payload, mustEmbeddedProfileCatalog(t))
 		if err != nil {
 			t.Fatalf("discover inventory with value_min %s: %v", invalid, err)
 		}
@@ -106,7 +106,7 @@ func TestDiscoverNullBrightnessBoundDoesNotCreateBrightness(t *testing.T) {
 	t.Parallel()
 	fixture := readFixture(t, "bridge-devices-3rcb01057z.json")
 	payload := bytes.Replace(fixture, []byte(`"value_min": 0`), []byte(`"value_min": null`), 1)
-	result, err := discoverInventory(payload)
+	result, err := discoverInventory(payload, mustEmbeddedProfileCatalog(t))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -125,7 +125,7 @@ func TestDiscoverNullBrightnessBoundDoesNotCreateBrightness(t *testing.T) {
 // cross-endpoint routing, Entity-type drift, or support drift during planner migration.
 func TestDiscoverMultiEndpointLight(t *testing.T) {
 	t.Parallel()
-	result, err := discoverInventory(readFixture(t, "multi-endpoint-light.json"))
+	result, err := discoverInventory(readFixture(t, "multi-endpoint-light.json"), mustEmbeddedProfileCatalog(t))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -194,13 +194,13 @@ func TestDiscoverEndpointLabelChangePreservesCanonicalIdentity(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	before, rejection := discoverDevice(device)
+	before, rejection := discoverDevice(device, mustEmbeddedProfileCatalog(t))
 	if rejection != nil {
 		t.Fatalf("initial Device rejected: %#v", rejection)
 	}
 	device.Endpoints["1"] = upstreamEndpoint{Name: "renamed-left"}
 	device.Definition.Exposes[0].Endpoint = "renamed-left"
-	after, rejection := discoverDevice(device)
+	after, rejection := discoverDevice(device, mustEmbeddedProfileCatalog(t))
 	if rejection != nil {
 		t.Fatalf("renamed Device rejected: %#v", rejection)
 	}
@@ -263,7 +263,7 @@ func TestDiscoveryDeviceEligibility(t *testing.T) {
 			t.Parallel()
 			device := eligibleDevice()
 			test.edit(&device)
-			_, rejection := discoverDevice(device)
+			_, rejection := discoverDevice(device, mustEmbeddedProfileCatalog(t))
 			if rejection == nil || rejection.Code != test.code {
 				t.Fatalf("rejection = %#v, want code %q", rejection, test.code)
 			}
@@ -284,7 +284,7 @@ func TestDiscoverInventoryRejectsDuplicateIEEE(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	result, err := discoverInventory(payload)
+	result, err := discoverInventory(payload, mustEmbeddedProfileCatalog(t))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -304,7 +304,7 @@ func TestDiscoverInventoryRejectsDuplicateFriendlyNames(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	result, err := discoverInventory(payload)
+	result, err := discoverInventory(payload, mustEmbeddedProfileCatalog(t))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -327,7 +327,7 @@ func TestDiscoverInventoryDocumentBoundaries(t *testing.T) {
 	}
 	payload := append([]byte(`[42,{"ieee_address":7},`), valid...)
 	payload = append(payload, ']')
-	result, err := discoverInventory(payload)
+	result, err := discoverInventory(payload, mustEmbeddedProfileCatalog(t))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -336,8 +336,8 @@ func TestDiscoverInventoryDocumentBoundaries(t *testing.T) {
 		t.Fatalf("discovery = %#v", result)
 	}
 	for _, malformed := range [][]byte{nil, []byte(`null`), []byte(`{}`), []byte(`[] trailing`)} {
-		if _, discoverErr := discoverInventory(malformed); discoverErr == nil {
-			t.Errorf("discoverInventory(%q) accepted malformed document", malformed)
+		if _, discoverErr := discoverInventory(malformed, mustEmbeddedProfileCatalog(t)); discoverErr == nil {
+			t.Errorf("discoverInventory(%q, mustEmbeddedProfileCatalog(t)) accepted malformed document", malformed)
 		}
 	}
 }
@@ -346,7 +346,7 @@ func TestDiscoverInventoryDocumentBoundaries(t *testing.T) {
 // This fixture test protects the valid-power eligibility gate and fails if color temperature creates a Device alone.
 func TestColorTempOnlyFixtureIsNotEligible(t *testing.T) {
 	t.Parallel()
-	result, err := discoverInventory(readFixture(t, "color-temp-only-light.json"))
+	result, err := discoverInventory(readFixture(t, "color-temp-only-light.json"), mustEmbeddedProfileCatalog(t))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -380,7 +380,7 @@ func FuzzDiscoverInventory(fuzz *testing.F) {
 	fuzz.Add(readFixture(fuzz, "multi-endpoint-light.json"))
 	fuzz.Add([]byte(`[]`))
 	fuzz.Fuzz(func(t *testing.T, payload []byte) {
-		result, err := discoverInventory(payload)
+		result, err := discoverInventory(payload, mustEmbeddedProfileCatalog(t))
 		if err != nil {
 			return
 		}
