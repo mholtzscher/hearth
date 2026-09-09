@@ -1,0 +1,646 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:hearth:schema:zigbee2mqtt-profile:v1",
+  "title": "Hearth Zigbee2MQTT entity mapping profile, version 1",
+  "description": "Authoritative contract for embedded Zigbee2MQTT planner profiles and profile overrides. This schema enforces every schema-expressible requirement: closed objects, version 1, the planner/override discriminated union, bounded identifiers and strings, known device kinds and planner roles, the closed entity source oneOf, all twelve strategy parameter shapes, and override selector and patch shapes. Cross-field and cross-document rules (minimum below maximum, reference targets and ordering, strategy and source compatibility, override overlap and target-kind matching, aggregate catalog limits) are semantic compiler checks owned by the catalog loader, not this schema.",
+  "type": "object",
+  "properties": {
+    "$schema": {
+      "type": "string",
+      "description": "Optional schema pointer carried by embedded documents. It is metadata only and never affects planning precedence."
+    },
+    "version": {
+      "const": 1,
+      "description": "Profile contract version. Only version 1 documents are accepted."
+    },
+    "kind": {
+      "enum": ["planner-profile", "profile-override"],
+      "description": "Discriminates planner profiles from profile overrides."
+    },
+    "id": {
+      "$ref": "#/$defs/ruleId",
+      "description": "Document identifier. Planner profile IDs are referenced by diagnostics; override IDs must be unique but carry no planning meaning."
+    },
+    "order": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 1000,
+      "description": "Explicit planner precedence. Profiles evaluate in ascending order; uniqueness is a semantic compiler check."
+    },
+    "contribution": {
+      "$ref": "#/$defs/contribution"
+    },
+    "candidate_groups": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/candidateGroup"
+      },
+      "minItems": 1,
+      "maxItems": 64,
+      "description": "Candidate groups in evaluation order. At most 64 groups per profile; 512 total rules per catalog is a semantic compiler check."
+    },
+    "device_entities": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/deviceEntity"
+      },
+      "maxItems": 64,
+      "description": "Device-level entities evaluated once after candidate groups. May be absent or empty."
+    },
+    "selector": {
+      "$ref": "#/$defs/deviceSelector"
+    },
+    "patches": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/rulePatch"
+      },
+      "minItems": 1,
+      "maxItems": 64,
+      "description": "Rule patches in document order. At most 64 patches per override."
+    }
+  },
+  "required": ["version", "kind", "id"],
+  "additionalProperties": false,
+  "oneOf": [
+    {
+      "title": "planner-profile",
+      "properties": {
+        "kind": {
+          "const": "planner-profile"
+        }
+      },
+      "required": ["order", "contribution", "candidate_groups"],
+      "not": {
+        "anyOf": [
+          {
+            "required": ["selector"]
+          },
+          {
+            "required": ["patches"]
+          }
+        ]
+      }
+    },
+    {
+      "title": "profile-override",
+      "properties": {
+        "kind": {
+          "const": "profile-override"
+        }
+      },
+      "required": ["selector", "patches"],
+      "not": {
+        "anyOf": [
+          {
+            "required": ["order"]
+          },
+          {
+            "required": ["contribution"]
+          },
+          {
+            "required": ["candidate_groups"]
+          },
+          {
+            "required": ["device_entities"]
+          }
+        ]
+      }
+    }
+  ],
+  "$defs": {
+    "ruleId": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9]*(?:[.-][a-z0-9]+)*$",
+      "maxLength": 64,
+      "description": "Profile, group, and rule identifier: lowercase alphanumeric segments joined by single dots or hyphens, at most 64 characters. Applies to document IDs, candidate group IDs, rule IDs, and every rule or group reference."
+    },
+    "entityKey": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9]*$",
+      "maxLength": 64,
+      "description": "Unscoped stable entity base key. Profiles cannot construct endpoint suffixes or external IDs; Go applies scoped identity."
+    },
+    "displayName": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "description": "Human-readable entity display name."
+    },
+    "exposeType": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "description": "Exact upstream expose type matched against retained inventory."
+    },
+    "exposeName": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "description": "Exact upstream expose name matched against retained inventory."
+    },
+    "unitString": {
+      "type": "string",
+      "maxLength": 32,
+      "description": "Unit string of at most 32 characters. An empty string in accepted_units means the upstream unit must be absent; no implicit conversion occurs."
+    },
+    "contribution": {
+      "type": "object",
+      "properties": {
+        "device_kind": {
+          "enum": ["light", "relay", "sensor"],
+          "description": "Device kind this planner contribution establishes."
+        },
+        "role": {
+          "enum": ["primary", "supplemental"],
+          "description": "The first non-empty primary contribution wins; every supplemental contribution appends in order."
+        }
+      },
+      "required": ["device_kind", "role"],
+      "additionalProperties": false
+    },
+    "candidateRootSelector": {
+      "type": "object",
+      "properties": {
+        "type": {
+          "$ref": "#/$defs/exposeType"
+        },
+        "name": {
+          "$ref": "#/$defs/exposeName"
+        },
+        "cardinality": {
+          "const": "unique",
+          "description": "Requires exactly one matching root across the Device. Omission evaluates every retained matching root in inventory order."
+        }
+      },
+      "required": ["type"],
+      "additionalProperties": false,
+      "description": "Selects candidate roots by exact expose type and optional exact name, with optional exact-one cardinality."
+    },
+    "exposeSelector": {
+      "type": "object",
+      "properties": {
+        "type": {
+          "$ref": "#/$defs/exposeType"
+        },
+        "name": {
+          "$ref": "#/$defs/exposeName"
+        }
+      },
+      "required": ["type"],
+      "additionalProperties": false,
+      "description": "Selects one device-level upstream root by exact expose type and optional exact name through UniqueRoot."
+    },
+    "source": {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "enum": ["root", "feature", "derived"]
+        },
+        "type": {
+          "$ref": "#/$defs/exposeType"
+        },
+        "name": {
+          "$ref": "#/$defs/exposeName"
+        }
+      },
+      "required": ["kind"],
+      "additionalProperties": false,
+      "oneOf": [
+        {
+          "title": "root source",
+          "properties": {
+            "kind": {
+              "const": "root"
+            }
+          },
+          "not": {
+            "anyOf": [
+              {
+                "required": ["type"]
+              },
+              {
+                "required": ["name"]
+              }
+            ]
+          },
+          "description": "Passes the selected root expose to the strategy. Permits only kind."
+        },
+        {
+          "title": "feature source",
+          "properties": {
+            "kind": {
+              "const": "feature"
+            }
+          },
+          "required": ["type", "name"],
+          "description": "Performs the exact-one UniqueFeature(type, name) lookup inside the selected root."
+        },
+        {
+          "title": "derived source",
+          "properties": {
+            "kind": {
+              "const": "derived"
+            },
+            "name": {
+              "const": "color-mode"
+            }
+          },
+          "required": ["name"],
+          "not": {
+            "required": ["type"]
+          },
+          "description": "Version 1 accepts only color-mode. It passes no expose to the strategy; the strategy receives the root, the expose index, and declared prior plans."
+        }
+      ],
+      "description": "Closed entity source union. The selected form forbids fields not shown for that form."
+    },
+    "identity": {
+      "type": "object",
+      "properties": {
+        "key": {
+          "$ref": "#/$defs/entityKey"
+        },
+        "name": {
+          "$ref": "#/$defs/displayName"
+        }
+      },
+      "required": ["key", "name"],
+      "additionalProperties": false
+    },
+    "emptyParams": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Exact empty parameter object for strategies with no profile-controlled parameters."
+    },
+    "numericSensorParams": {
+      "type": "object",
+      "properties": {
+        "accepted_units": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/unitString"
+          },
+          "minItems": 1,
+          "maxItems": 4,
+          "uniqueItems": true,
+          "description": "One to four unique exact upstream units. An empty string requires the upstream unit to be absent."
+        },
+        "unit": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 32,
+          "description": "Required non-empty Hearth support unit."
+        },
+        "number_format": {
+          "enum": ["integer", "float"],
+          "description": "integer uses exact-integer decoding; float accepts finite JSON numbers and preserves fractions."
+        },
+        "bounds": {
+          "type": "object",
+          "properties": {
+            "mode": {
+              "enum": ["fixed", "upstream-or-fallback"]
+            },
+            "minimum": {
+              "type": "number"
+            },
+            "maximum": {
+              "type": "number"
+            }
+          },
+          "required": ["mode", "minimum", "maximum"],
+          "additionalProperties": false,
+          "description": "Discriminated bound union. fixed always uses the configured bounds; upstream-or-fallback prefers both present valid finite upstream bounds and uses the configured values only when both are genuinely absent. minimum below maximum is a semantic compiler check."
+        }
+      },
+      "required": ["accepted_units", "unit", "number_format", "bounds"],
+      "additionalProperties": false
+    },
+    "numericSettingParams": {
+      "type": "object",
+      "properties": {
+        "accepted_units": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/unitString"
+          },
+          "minItems": 1,
+          "maxItems": 4,
+          "uniqueItems": true,
+          "description": "One to four unique exact upstream units. Include an empty string when an absent upstream unit is required."
+        },
+        "unit": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 32,
+          "description": "Optional Hearth support unit. When omitted, support omits its optional unit."
+        }
+      },
+      "required": ["accepted_units"],
+      "additionalProperties": false
+    },
+    "enumActionParams": {
+      "type": "object",
+      "properties": {
+        "access": {
+          "enum": ["set-only", "includes-set"],
+          "description": "set-only requires access to equal the set bit; includes-set requires the set bit and ignores additional bits."
+        }
+      },
+      "required": ["access"],
+      "additionalProperties": false
+    },
+    "strategy": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "Closed strategy name. Unknown names are rejected."
+        },
+        "parameters": {
+          "type": "object",
+          "description": "Strategy parameters. Each strategy accepts only its documented parameter object."
+        }
+      },
+      "required": ["name", "parameters"],
+      "additionalProperties": false,
+      "oneOf": [
+        {
+          "properties": {
+            "name": {
+              "const": "binary-power"
+            },
+            "parameters": {
+              "$ref": "#/$defs/emptyParams"
+            }
+          }
+        },
+        {
+          "properties": {
+            "name": {
+              "const": "brightness"
+            },
+            "parameters": {
+              "$ref": "#/$defs/emptyParams"
+            }
+          }
+        },
+        {
+          "properties": {
+            "name": {
+              "const": "color-temperature"
+            },
+            "parameters": {
+              "$ref": "#/$defs/emptyParams"
+            }
+          }
+        },
+        {
+          "properties": {
+            "name": {
+              "const": "color-xy"
+            },
+            "parameters": {
+              "$ref": "#/$defs/emptyParams"
+            }
+          }
+        },
+        {
+          "properties": {
+            "name": {
+              "const": "color-hs"
+            },
+            "parameters": {
+              "$ref": "#/$defs/emptyParams"
+            }
+          }
+        },
+        {
+          "properties": {
+            "name": {
+              "const": "color-mode"
+            },
+            "parameters": {
+              "$ref": "#/$defs/emptyParams"
+            }
+          }
+        },
+        {
+          "properties": {
+            "name": {
+              "const": "startup-color-temperature"
+            },
+            "parameters": {
+              "$ref": "#/$defs/emptyParams"
+            }
+          }
+        },
+        {
+          "properties": {
+            "name": {
+              "const": "temperature"
+            },
+            "parameters": {
+              "$ref": "#/$defs/emptyParams"
+            }
+          }
+        },
+        {
+          "properties": {
+            "name": {
+              "const": "enum-setting"
+            },
+            "parameters": {
+              "$ref": "#/$defs/emptyParams"
+            }
+          }
+        },
+        {
+          "properties": {
+            "name": {
+              "const": "numeric-sensor"
+            },
+            "parameters": {
+              "$ref": "#/$defs/numericSensorParams"
+            }
+          }
+        },
+        {
+          "properties": {
+            "name": {
+              "const": "numeric-setting"
+            },
+            "parameters": {
+              "$ref": "#/$defs/numericSettingParams"
+            }
+          }
+        },
+        {
+          "properties": {
+            "name": {
+              "const": "enum-action"
+            },
+            "parameters": {
+              "$ref": "#/$defs/enumActionParams"
+            }
+          }
+        }
+      ],
+      "description": "Closed strategy reference. The name discriminates which parameter object is accepted."
+    },
+    "candidateGroup": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/ruleId"
+        },
+        "root": {
+          "$ref": "#/$defs/candidateRootSelector"
+        },
+        "gate_rule": {
+          "$ref": "#/$defs/ruleId",
+          "description": "When present, that rule must be the first entity rule; optional siblings evaluate only when the gate produces a valid plan. Gate existence, position, and duplicate-gate-key removal are semantic compiler and evaluator checks."
+        },
+        "entities": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/candidateEntity"
+          },
+          "minItems": 1,
+          "maxItems": 64,
+          "description": "Entity rules in evaluation order. At most 64 rules per group."
+        }
+      },
+      "required": ["id", "root", "entities"],
+      "additionalProperties": false
+    },
+    "candidateEntity": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/ruleId"
+        },
+        "source": {
+          "$ref": "#/$defs/source"
+        },
+        "requires_any": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ruleId"
+          },
+          "minItems": 1,
+          "maxItems": 64,
+          "uniqueItems": true,
+          "description": "Sibling dependency. Referenced rules must be earlier rules in the same candidate group; the reference target and ordering are semantic compiler checks."
+        },
+        "identity": {
+          "$ref": "#/$defs/identity"
+        },
+        "strategy": {
+          "$ref": "#/$defs/strategy"
+        }
+      },
+      "required": ["id", "source", "identity", "strategy"],
+      "additionalProperties": false
+    },
+    "deviceEntity": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/ruleId"
+        },
+        "expose": {
+          "$ref": "#/$defs/exposeSelector"
+        },
+        "requires_group_survivor": {
+          "$ref": "#/$defs/ruleId",
+          "description": "Names a candidate group that must retain at least one candidate after gate planning. The target must exist and carry a gate rule; both are semantic compiler checks."
+        },
+        "identity": {
+          "$ref": "#/$defs/identity"
+        },
+        "strategy": {
+          "$ref": "#/$defs/strategy"
+        }
+      },
+      "required": ["id", "expose", "requires_group_survivor", "identity", "strategy"],
+      "additionalProperties": false
+    },
+    "deviceSelector": {
+      "type": "object",
+      "properties": {
+        "vendor": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "description": "Required exact vendor string. Never enters binding or entity identities."
+        },
+        "model": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "description": "Required exact model string. Never enters binding or entity identities."
+        },
+        "software_build_ids": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "minItems": 1,
+          "maxItems": 64,
+          "uniqueItems": true,
+          "description": "Optional non-empty unique list of exact firmware strings. Firmware is never interpreted as semantic versions."
+        }
+      },
+      "required": ["vendor", "model"],
+      "additionalProperties": false
+    },
+    "rulePatch": {
+      "type": "object",
+      "properties": {
+        "rule": {
+          "$ref": "#/$defs/ruleId",
+          "description": "Target rule. The target must exist; whether the rule is a candidate or device rule is a semantic compiler check."
+        },
+        "enabled": {
+          "type": "boolean",
+          "description": "Defaults to true in the base layer. An exact-build patch may explicitly re-enable a rule disabled by the general patch."
+        },
+        "source": {
+          "$ref": "#/$defs/source",
+          "description": "Complete replacement candidate source. Valid only for candidate-entity targets; target-kind matching is a semantic compiler check."
+        },
+        "expose": {
+          "$ref": "#/$defs/exposeSelector",
+          "description": "Complete replacement device expose match. Valid only for device-entity targets; target-kind matching is a semantic compiler check."
+        },
+        "strategy_parameters": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/emptyParams"
+            },
+            {
+              "$ref": "#/$defs/numericSensorParams"
+            },
+            {
+              "$ref": "#/$defs/numericSettingParams"
+            },
+            {
+              "$ref": "#/$defs/enumActionParams"
+            }
+          ],
+          "description": "Complete replacement strategy parameters. The value must be a valid parameter object for some strategy; matching the target rule strategy is a semantic compiler check."
+        }
+      },
+      "required": ["rule"],
+      "additionalProperties": false,
+      "not": {
+        "required": ["source", "expose"]
+      },
+      "description": "Patch fields overlay independently and each present object field replaces that complete field. Source and expose are mutually exclusive; matching either field to the target rule kind is a semantic compiler check."
+    }
+  }
+}
