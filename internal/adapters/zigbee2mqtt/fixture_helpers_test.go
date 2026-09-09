@@ -131,3 +131,19 @@ func mustDiscoveredFixtureDevice(testingT interface {
 	}
 	return result.Devices[0]
 }
+
+// mustEmbeddedProfileCatalog compiles the repository-owned embedded profile
+// catalog for constructor tests. It fails the test when the embedded catalog
+// itself is invalid so adapter tests always exercise the loader-produced
+// catalog the production startup path stores.
+func mustEmbeddedProfileCatalog(testingT interface {
+	Helper()
+	Fatal(...any)
+}) *ProfileCatalog {
+	testingT.Helper()
+	catalog, err := LoadEmbeddedProfileCatalog()
+	if err != nil {
+		testingT.Fatal(err)
+	}
+	return catalog
+}

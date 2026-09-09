@@ -112,6 +112,7 @@ func newCaptureAdapter(
 	z2m, err := newAdapter(
 		session,
 		Config{MQTTURL: "tcp://127.0.0.1:1883", BaseTopic: "zigbee2mqtt", ClientID: "test-client"},
+		mustEmbeddedProfileCatalog(t),
 		slog.New(handler),
 		dialer,
 	)

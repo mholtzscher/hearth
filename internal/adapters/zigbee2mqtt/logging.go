@@ -27,6 +27,36 @@ func zigbee2MQTTErrorCode(err error) string {
 	return "upstream_connection_failed"
 }
 
+// LogProfileCatalogFailure records one safe structured diagnostic for a failed
+// embedded profile catalog load. The record carries only the catalog error
+// code, profile ID, rule ID, and JSON pointer; it never contains profile
+// contents, MQTT payloads, URLs, or raw values.
+func LogProfileCatalogFailure(ctx context.Context, logger *slog.Logger, err error) {
+	if logger == nil {
+		logger = slog.Default()
+	}
+	logger = logger.With(slog.String("component", adapterComponent))
+	var catalogErr *ProfileCatalogError
+	if !errors.As(err, &catalogErr) {
+		logger.ErrorContext(
+			ctx,
+			"Zigbee2MQTT profile catalog failed to load",
+			slog.String(eventKey, "adapter.profile_catalog_failed"),
+			slog.String("error_code", "profile_catalog_invalid"),
+		)
+		return
+	}
+	logger.ErrorContext(
+		ctx,
+		"Zigbee2MQTT profile catalog failed to load",
+		slog.String(eventKey, "adapter.profile_catalog_failed"),
+		slog.String("error_code", catalogErr.Code),
+		slog.String("profile_id", catalogErr.ProfileID),
+		slog.String("rule_id", catalogErr.RuleID),
+		slog.String("json_pointer", catalogErr.JSONPointer),
+	)
+}
+
 // logReconcileCompleted summarizes successfully activated routes. Counts come
 // from already available reconciliation results; a supported-device count of
 // zero is explicit in the summary.

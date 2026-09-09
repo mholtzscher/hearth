@@ -1,4 +1,3 @@
-//nolint:unused // D1 defines the profile contract; dependent stack layers add the compiler and strategy consumers.
 package zigbee2mqtt
 
 import (
@@ -230,20 +229,38 @@ type compiledPlannerProfile struct {
 	ruleParameters map[string]compiledRuleParameters
 }
 
-// compiledProfileOverride is one schema-validated override with every
-// replacement parameter compiled. The compiler deliverable owns construction.
+// compiledProfileOverride is one schema-validated override with every patch
+// validated and every replacement parameter compiled. The compiler owns
+// construction; the evaluator applies the retained selector and patch layers.
 type compiledProfileOverride struct {
-	document       profileOverrideDocument
-	ruleParameters map[string]compiledRuleParameters
+	document profileOverrideDocument
+	patches  []compiledProfileOverridePatch
+}
+
+// compiledProfileOverridePatch is one validated override patch. Omitted fields
+// retain the previous layer; a present source, expose, or parameters value
+// replaces that complete field. Parameters is nil when the patch keeps the
+// base rule parameters.
+type compiledProfileOverridePatch struct {
+	targetRuleID string
+	// targetDeviceRule distinguishes device-entity targets (expose patches)
+	// from candidate-entity targets (source patches).
+	targetDeviceRule bool
+	enabled          *bool
+	source           *profileEntitySource
+	expose           *profileExposeSelector
+	parameters       *compiledRuleParameters
 }
 
 // ProfileCatalog is an immutable, validated catalog of embedded Zigbee2MQTT
-// entity mapping profiles. Its zero value is invalid. The catalog loader
-// deliverable owns construction; the adapter stores the compiled result.
+// entity mapping profiles. Its zero value is invalid: only the catalog loader
+// sets loaded, so a loader-produced empty catalog is valid while a zero value
+// is not. The adapter stores the compiled result.
 type ProfileCatalog struct {
 	profiles   []compiledPlannerProfile
 	overrides  []compiledProfileOverride
 	strategies profileStrategyRegistry
+	loaded     bool
 }
 
 // Stable profile catalog error codes. A catalog conflict means two

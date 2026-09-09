@@ -47,10 +47,11 @@ type Config struct {
 }
 
 type Adapter struct {
-	session Session
-	config  Config
-	logger  *slog.Logger
-	dialer  mqttDialer
+	session  Session
+	config   Config
+	profiles *ProfileCatalog
+	logger   *slog.Logger
+	dialer   mqttDialer
 
 	runtimeEvents chan runtimeEvent
 	runtimeDone   chan struct{}
@@ -68,11 +69,20 @@ type sessionOperationError struct {
 func (err *sessionOperationError) Error() string { return err.operation + ": " + err.err.Error() }
 func (err *sessionOperationError) Unwrap() error { return err.err }
 
-func New(session Session, config Config, logger *slog.Logger) (*Adapter, error) {
-	return newAdapter(session, config, logger, newPahoDialer())
+// New builds a Zigbee2MQTT adapter that plans discovery from an explicit
+// embedded profile catalog. The catalog must come from the catalog loader;
+// a nil or zero catalog fails startup before any external connection.
+func New(session Session, config Config, profiles *ProfileCatalog, logger *slog.Logger) (*Adapter, error) {
+	return newAdapter(session, config, profiles, logger, newPahoDialer())
 }
 
-func newAdapter(session Session, config Config, logger *slog.Logger, dialer mqttDialer) (*Adapter, error) {
+func newAdapter(
+	session Session,
+	config Config,
+	profiles *ProfileCatalog,
+	logger *slog.Logger,
+	dialer mqttDialer,
+) (*Adapter, error) {
 	switch {
 	case session == nil:
 		return nil, errors.New("Zigbee2MQTT adapter Session is required")
@@ -82,6 +92,8 @@ func newAdapter(session Session, config Config, logger *slog.Logger, dialer mqtt
 		return nil, errors.New("Zigbee2MQTT base topic must be a route-safe slug")
 	case strings.TrimSpace(config.ClientID) == "":
 		return nil, errors.New("Zigbee2MQTT MQTT client ID is required")
+	case profiles == nil || !profiles.loaded:
+		return nil, errors.New("Zigbee2MQTT profile catalog is required")
 	case dialer == nil:
 		return nil, errors.New("Zigbee2MQTT MQTT dialer is required")
 	}
@@ -90,7 +102,7 @@ func newAdapter(session Session, config Config, logger *slog.Logger, dialer mqtt
 	}
 	logger = logger.With(slog.String("component", adapterComponent))
 	return &Adapter{
-		session: session, config: config, logger: logger, dialer: dialer,
+		session: session, config: config, profiles: profiles, logger: logger, dialer: dialer,
 		runtimeEvents: make(chan runtimeEvent, runtimeEventBuffer),
 		runtimeDone:   make(chan struct{}),
 		knownMappings: make(map[mappingKey]adapter.OwnedMapping),
