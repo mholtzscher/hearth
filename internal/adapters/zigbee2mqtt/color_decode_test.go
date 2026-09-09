@@ -367,7 +367,7 @@ func TestDecodeTemperatureOnlyFallback(t *testing.T) {
 	device.Definition.Exposes = []upstreamExpose{
 		colorLightExpose("", "state", "brightness", colorTempFeature("color_temp", 153, 500)),
 	}
-	discovered, rejection := discoverDevice(device, mustEmbeddedProfileCatalog(t))
+	discovered, rejection := discoverDevice(device)
 	if rejection != nil {
 		t.Fatal(rejection)
 	}

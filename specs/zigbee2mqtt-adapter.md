@@ -26,7 +26,7 @@ Hearth HTTP -> hearthd -> native Core NATS -> Go Adapter SDK Session
     -> Zigbee2MQTT -> Zigbee coordinator -> device
 ```
 
-The Adapter registers every eligible physical light, relay, and sensor expose in Zigbee2MQTT's retained `bridge/devices` inventory. One IEEE address maps to one canonical Hearth Device with Device kind `light`, `relay`, or `sensor`. Embedded JSON profiles evaluated against one shared expose index select all mappings: planner profiles run in explicit `order` (`light` at 10 as primary for device kind `light`, `relay` at 20 as primary for `relay`, `ambient-sensors` at 30 and `linkquality` at 40 as supplementals for `sensor`), the first non-empty primary contribution wins while every supplemental contribution appends in order, and sensor plans supplement either family or form a sensor-only Device. Candidate-group roots match by exact expose type and optional exact name in retained inventory order, except a root selector with `"cardinality": "unique"` (used by link quality) which plans nothing unless exactly one device-wide match exists. Unscoped and endpoint-scoped light exposes map to power plus optional brightness, color-temperature, native XY color, native HS color, read-only color-mode, and optional startup-temperature Entities; switch exposes map to power through the same power constructor; numeric Celsius exposes map to read-only temperature Entities; device-root `linkquality`, `power_on_behavior`, and `effect` exposes map to a read-only link-quality sensor, a power-on-behavior setting, and a stateless effect action. The color implementation contract, including satisfaction tolerances and activity semantics, is `specs/z2m-bulb-color.md`. The bulb-attribute contract for linkquality, startup temperature, power-on behavior, and dispatched effects is `specs/z2m-bulb-attributes.md`.
+The Adapter registers every eligible physical light, relay, and sensor expose in Zigbee2MQTT's retained `bridge/devices` inventory. One IEEE address maps to one canonical Hearth Device with Device kind `light`, `relay`, or `sensor`. Explicit light, relay, and sensor planners share one expose index: a non-empty light result is the primary family, otherwise a non-empty relay result wins, and ambient-temperature sensor plans supplement either family or form a sensor-only Device. Unscoped and endpoint-scoped light exposes map to power plus optional brightness, color-temperature, native XY color, native HS color, read-only color-mode, and optional startup-temperature Entities; switch exposes map to power through the same power constructor; numeric Celsius exposes map to read-only temperature Entities; device-root `linkquality`, `power_on_behavior`, and `effect` exposes map to a read-only link-quality sensor, a power-on-behavior setting, and a stateless effect action. The color implementation contract, including satisfaction tolerances and activity semantics, is `specs/z2m-bulb-color.md`. The bulb-attribute contract for linkquality, startup temperature, power-on behavior, and dispatched effects is `specs/z2m-bulb-attributes.md`.
 
 Core remains the only owner of Bindings and canonical identity. At startup, the Adapter pages through `Session.ListOwnedMappings`, reconciles persisted ownership against the complete Zigbee2MQTT inventory, and reports missing Devices or capabilities unavailable. It owns no state file or checkpoint.
 
@@ -223,7 +223,7 @@ A Device is considered for registration only when:
 - `definition` is non-nil;
 - its normalized IEEE address is exactly `0x` plus 16 lowercase hexadecimal characters;
 - `friendly_name` satisfies the route-safe slug rule;
-- at least one eligible Entity plan from the profile catalog exists.
+- at least one eligible Entity plan from the light, relay, or sensor planners exists.
 
 A light expose may be unscoped or endpoint-scoped. Its nested features determine Entities.
 
@@ -253,7 +253,7 @@ A color candidate is a direct light composite feature named `color_xy` or `color
 The full wire-to-entity contract is `specs/z2m-bulb-attributes.md` §Interfaces; this section binds it to adapter planning. The adapter maps only these four named exposes with exact-match eligibility; malformed siblings are omitted without suppressing valid ones.
 
 - `linkquality`: device-root numeric expose with the publish bit required and the set bit forbidden (`access & 1 != 0 && access & 2 == 0`); plans a `hearth.numericsensor/v1` Entity. Decode admits exact integers 0–255 only; fractional or out-of-range payloads are per-property decode issues with siblings intact. Support is `{"state": {"minimum": 0, "maximum": 255, "unit": "lqi"}}`; unit `""` maps to `"lqi"`, `"lqi"` passes through, and any other unit omits the Entity. No command translator; get access alone controls its get properties, so gettable linkquality joins startup refresh while publish-only linkquality does not. A device-kind-agnostic supplement that never gates or joins the power family.
-- `color_temp_startup`: nested `light`-feature numeric with `access & 7 == 7`; plans a `hearth.numericsetting/v1` Entity with discovered mired bounds from exact-integer `value_min`/`value_max` within 100–1000 and minimum below maximum. Exactly one `previous`↔65535 preset yields choice `previous`; no `previous` preset yields empty choices; an advertised but invalid or duplicate `previous` mapping omits only that Entity. Planned in the `light` profile as an optional sibling of a power-eligible root. Key `startupcolortemp`.
+- `color_temp_startup`: nested `light`-feature numeric with `access & 7 == 7`; plans a `hearth.numericsetting/v1` Entity with discovered mired bounds from exact-integer `value_min`/`value_max` within 100–1000 and minimum below maximum. Exactly one `previous`↔65535 preset yields choice `previous`; no `previous` preset yields empty choices; an advertised but invalid or duplicate `previous` mapping omits only that Entity. Planned in `planner_light.go` as an optional sibling of a power-eligible root. Key `startupcolortemp`.
 - `power_on_behavior`: device-root enum with `access & 7 == 7` and non-empty unique `values` (at most 64); plans a `hearth.enumsetting/v1` Entity with dynamic choices. Set publishes the value property plus refresh; outcome matching is exact equality. Key `poweronbehavior`.
 - `effect`: device-root enum with access exactly 2, a device-unique property, and non-empty unique `values` (at most 64); plans a stateless `hearth.enumaction/v1` Entity with `Values` from the expose. The plan carries empty state/get properties, no decoder, and a dispatched translator publishing `{"effect": "<name>"}` with empty refresh: no `/get`, no matcher, no observation. Key `effect`.
 
@@ -331,20 +331,19 @@ A slow callback must not silently drop MQTT messages. The relay queue is unbound
 Startup order is fixed:
 
 1. Load and validate YAML. Invalid configuration terminates the process.
-2. Compile the embedded profile catalog. A catalog failure terminates the process at stage `load_profile_catalog` with `error_code=profile_catalog_invalid` before any NATS or MQTT work.
-3. Connect and claim the Hearth SDK Session.
-4. List all owned mappings.
-5. Connect MQTT and subscribe before interpreting snapshots.
-6. Wait for retained `bridge/state`, `bridge/info`, and `bridge/devices`.
-7. Require an online bridge and compatible global configuration.
-8. Reconcile and register the complete inventory.
-9. Call `Session.SetHealth(healthy)` and wait for acknowledgement.
-10. Publish staged fresh availability batches.
-11. Publish staged retained or cached State.
-12. Publish `/get` for every current Entity with non-empty get properties (power, brightness, color-temperature, color, gettable temperature, gettable linkquality, and gettable settings); publish-only temperature and publish-only linkquality receive no `/get`. Color and mode refresh under the shared `color` attribute, so the read-only mode plan carries no independent get properties.
-13. Begin live operation. Messages received during steps 6 through 12 remain queued by generation and topic.
+2. Connect and claim the Hearth SDK Session.
+3. List all owned mappings.
+4. Connect MQTT and subscribe before interpreting snapshots.
+5. Wait for retained `bridge/state`, `bridge/info`, and `bridge/devices`.
+6. Require an online bridge and compatible global configuration.
+7. Reconcile and register the complete inventory.
+8. Call `Session.SetHealth(healthy)` and wait for acknowledgement.
+9. Publish staged fresh availability batches.
+10. Publish staged retained or cached State.
+11. Publish `/get` for every current Entity with non-empty get properties (power, brightness, color-temperature, color, gettable temperature, gettable linkquality, and gettable settings); publish-only temperature and publish-only linkquality receive no `/get`. Color and mode refresh under the shared `color` attribute, so the read-only mode plan carries no independent get properties.
+12. Begin live operation. Messages received during steps 5 through 11 remain queued by generation and topic.
 
-SDK health remains unknown through step 8. A valid synchronized inventory with no eligible Entities becomes healthy and logs that fact.
+SDK health remains unknown through step 7. A valid synchronized inventory with no eligible Entities becomes healthy and logs that fact.
 
 Use these Adapter health reasons:
 
@@ -461,12 +460,10 @@ type Config struct {
     ClientID  string
 }
 
-func New(session Session, config Config, profiles *ProfileCatalog, logger *slog.Logger) (*Adapter, error)
+func New(session Session, config Config, logger *slog.Logger) (*Adapter, error)
 func (z2m *Adapter) Run(context.Context) error
 func (z2m *Adapter) HandleCommand(context.Context, adapter.Command, adapter.Responder) error
 ```
-
-`New` rejects a nil catalog. Inventory discovery takes the catalog explicitly (`discoverInventory(payload, profiles)`); there is no global catalog, operator profile path, plugin mechanism, feature flag, or dual planning path. The profile catalog under `internal/adapters/zigbee2mqtt/profiles/` (schema `urn:hearth:schema:zigbee2mqtt-profile:v1`) is the sole production mapping source: profiles declare mapping intent while the closed twelve-strategy Go registry owns typed State, Command, and outcome behavior, and `profiles/overrides/` holds only evidence-backed exact vendor, model, and optional firmware-build patches.
 
 `Run` supervises the MQTT reconnect loop and runtime coordinator under one child context, alongside subscription, reconciliation, registration, State, availability, and health. `HandleCommand` submits typed work to the coordinator; the coordinator owns serialization, translation, matcher lifecycle, evidence publication, and refresh correlation.
 
@@ -502,7 +499,7 @@ Owner: `internal/app/zigbee2mqtt/run.go`.
 func Run(context.Context, Config, *slog.Logger) error
 ```
 
-Assembly validates config, compiles the embedded profile catalog before any external connection, derives the client ID, creates one SDK Session with software name `hearth-adapter-zigbee2mqtt` and version `0.1.0`, then creates the Adapter with the explicit catalog dependency. It runs `Adapter.Run` and `Session.ServeCommands(Adapter.HandleCommand)` concurrently, cancels the sibling when either returns, and closes MQTT and the SDK Session. Parent cancellation is graceful; terminal SDK and Paho errors remain failures. A catalog failure reports startup stage `load_profile_catalog` with `error_code=profile_catalog_invalid` and never reaches session claim or MQTT dialing.
+Assembly validates config, derives the client ID, creates one SDK Session with software name `hearth-adapter-zigbee2mqtt` and version `0.1.0`, then creates the Adapter. It runs `Adapter.Run` and `Session.ServeCommands(Adapter.HandleCommand)` concurrently, cancels the sibling when either returns, and closes MQTT and the SDK Session. Parent cancellation is graceful; terminal SDK and Paho errors remain failures.
 
 `cmd/hearth-adapter-zigbee2mqtt` follows existing flag, logging, signal, and exit-code conventions.
 
@@ -598,24 +595,16 @@ internal/adapters/
     ├── entity_colorhs.go
     ├── entity_colormode.go
     ├── entity_temperature.go
+    ├── entity_linkquality.go
     ├── entity_startupcolortemp.go
     ├── entity_poweronbehavior.go
     ├── entity_effect.go
     ├── expose_index.go
     ├── mqtt.go
     ├── observation.go
-    ├── profile_catalog.go
-    ├── profile_types.go
-    ├── profile_compile.go
-    ├── profile_plan.go
-    ├── profile_strategy.go
-    ├── profiles/
-    │   ├── profile.schema.json
-    │   ├── light.profile.json
-    │   ├── relay.profile.json
-    │   ├── sensors.profile.json
-    │   ├── linkquality.profile.json
-    │   └── overrides/
+    ├── planner_light.go
+    ├── planner_relay.go
+    ├── planner_sensor.go
     ├── reconcile.go
     ├── runtime.go
     ├── runtime_routes.go
@@ -643,7 +632,7 @@ go.mod
 go.sum
 ```
 
-Files in the Adapter package split along distinct protocol and change pressure. The expose index and immutable Entity plans are private in-process abstractions; embedded profiles own family mapping while the closed Go strategy registry owns Entity behavior, and generic State, Command, route, and Observation coordination remains independent of Entity type. Handwritten planner assembly and mapping tables are deleted: there is no dual path, feature flag, or compatibility shim. No public subpackage or runtime plugin mechanism is added.
+Files in the Adapter package split along distinct protocol and change pressure. The expose index and immutable Entity plans are private in-process abstractions; explicit planners own family selection while generic State, Command, route, and Observation coordination remains independent of Entity type. No public subpackage or runtime plugin mechanism is added.
 
 ## Delivery and verification
 

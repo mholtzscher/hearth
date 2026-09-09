@@ -26,7 +26,7 @@ func TestDiscoveryIsolatesMalformedAndAmbiguousExposes(t *testing.T) {
 	duplicateRootB.Features = duplicateRootB.Features[:1]
 	device.Definition.Exposes = []upstreamExpose{valid, badBrightness, unresolved, duplicateRootA, duplicateRootB}
 
-	discovered, rejection := discoverDevice(device, mustEmbeddedProfileCatalog(t))
+	discovered, rejection := discoverDevice(device)
 	if rejection != nil {
 		t.Fatalf("Device rejected: %#v", rejection)
 	}
@@ -90,7 +90,7 @@ func TestDiscoveryExposeEligibility(t *testing.T) {
 			t.Parallel()
 			device := eligibleDevice()
 			test.edit(&device)
-			discovered, rejection := discoverDevice(device, mustEmbeddedProfileCatalog(t))
+			discovered, rejection := discoverDevice(device)
 			if test.wantReject {
 				if rejection == nil || rejection.Code != rejectionNoEligibleLight {
 					t.Fatalf("rejection = %#v", rejection)
@@ -212,7 +212,7 @@ func TestDiscoveryColorTempEligibilityAndIsolation(t *testing.T) {
 			t.Parallel()
 			device := eligibleDevice()
 			test.edit(&device)
-			discovered, rejection := discoverDevice(device, mustEmbeddedProfileCatalog(t))
+			discovered, rejection := discoverDevice(device)
 			if rejection != nil {
 				t.Fatalf("Device rejected: %#v", rejection)
 			}
@@ -240,7 +240,7 @@ func TestDiscoveryEndpointResolution(t *testing.T) {
 	device := eligibleDevice()
 	device.Endpoints = map[string]upstreamEndpoint{"1": {Name: "left"}}
 	device.Definition.Exposes = []upstreamExpose{lightExpose("1", "state_1", "brightness_1")}
-	discovered, rejection := discoverDevice(device, mustEmbeddedProfileCatalog(t))
+	discovered, rejection := discoverDevice(device)
 	if rejection != nil {
 		t.Fatalf("numeric endpoint rejected: %#v", rejection)
 	}
@@ -251,7 +251,7 @@ func TestDiscoveryEndpointResolution(t *testing.T) {
 	device.Endpoints["2"] = upstreamEndpoint{Name: "shared"}
 	device.Endpoints["3"] = upstreamEndpoint{Name: "shared"}
 	device.Definition.Exposes = []upstreamExpose{lightExpose("shared", "state_shared", "brightness_shared")}
-	_, rejection = discoverDevice(device, mustEmbeddedProfileCatalog(t))
+	_, rejection = discoverDevice(device)
 	if rejection == nil || rejection.Code != rejectionNoEligibleLight {
 		t.Fatalf("ambiguous endpoint rejection = %#v", rejection)
 	}
@@ -269,7 +269,7 @@ func TestDiscoveryRejectsDuplicatePropertiesWithoutDiscardingIndependentExpose(t
 	independent := lightExpose("independent", "state_independent", "brightness_independent")
 	device.Definition.Exposes = []upstreamExpose{left, right, independent}
 
-	discovered, rejection := discoverDevice(device, mustEmbeddedProfileCatalog(t))
+	discovered, rejection := discoverDevice(device)
 	if rejection != nil {
 		t.Fatalf("Device rejected: %#v", rejection)
 	}
@@ -287,7 +287,7 @@ func TestDiscoveryEnforcesDescriptorRuneBound(t *testing.T) {
 	for runes, accepted := range map[int]bool{128: true, 129: false} {
 		device := eligibleDevice()
 		device.Description = strings.Repeat("d", runes)
-		_, rejection := discoverDevice(device, mustEmbeddedProfileCatalog(t))
+		_, rejection := discoverDevice(device)
 		if accepted && rejection != nil {
 			t.Fatalf("%d-rune Device name rejected: %#v", runes, rejection)
 		}
@@ -303,7 +303,7 @@ func TestDiscoveryEnforcesDescriptorRuneBound(t *testing.T) {
 		expose := lightExpose(label, "state_scoped", "")
 		expose.Features = expose.Features[:1]
 		device.Definition.Exposes = []upstreamExpose{expose}
-		discovered, rejection := discoverDevice(device, mustEmbeddedProfileCatalog(t))
+		discovered, rejection := discoverDevice(device)
 		if accepted && (rejection != nil || len(discovered.Entities) != 1 ||
 			utf8.RuneCountInString(discovered.Entities[0].Descriptor.Name) != maximumDescriptorRunes) {
 			t.Fatalf("%d-rune label discovery = %#v, rejection = %#v", labelRunes, discovered, rejection)
@@ -318,7 +318,7 @@ func TestDiscoveryEnforcesDescriptorRuneBound(t *testing.T) {
 		label := strings.Repeat("b", labelRunes)
 		device.Endpoints = map[string]upstreamEndpoint{"1": {Name: label}}
 		device.Definition.Exposes = []upstreamExpose{lightExpose(label, "state_scoped", "brightness_scoped")}
-		discovered, rejection := discoverDevice(device, mustEmbeddedProfileCatalog(t))
+		discovered, rejection := discoverDevice(device)
 		if rejection != nil {
 			t.Fatalf("%d-rune brightness label rejected Device: %#v", labelRunes, rejection)
 		}
@@ -342,7 +342,7 @@ func TestDiscoveryEnforcesDescriptorRuneBound(t *testing.T) {
 		expose.Features = expose.Features[:1]
 		expose.Features = append(expose.Features, colorTempFeature("color_temp_scoped", 153, 500))
 		device.Definition.Exposes = []upstreamExpose{expose}
-		discovered, rejection := discoverDevice(device, mustEmbeddedProfileCatalog(t))
+		discovered, rejection := discoverDevice(device)
 		if rejection != nil {
 			t.Fatalf("%d-rune color-temperature label rejected Device: %#v", labelRunes, rejection)
 		}
@@ -371,7 +371,7 @@ func TestDiscoveryEnforcesSixtyFourEntityBound(t *testing.T) {
 				lightExpose(label, "state_"+label, "brightness_"+label),
 			)
 		}
-		discovered, rejection := discoverDevice(device, mustEmbeddedProfileCatalog(t))
+		discovered, rejection := discoverDevice(device)
 		if rejected {
 			if rejection == nil || rejection.Code != rejectionTooManyEntities {
 				t.Fatalf("%d exposes rejection = %#v", exposeCount, rejection)
@@ -392,7 +392,7 @@ func TestDiscoveryCountsPropertiesOutsideLightFeatures(t *testing.T) {
 	diagnostic := upstreamExpose{Type: "numeric", Name: "diagnostic", Property: "shared_state"}
 	device.Definition.Exposes = []upstreamExpose{left, diagnostic, right}
 
-	discovered, rejection := discoverDevice(device, mustEmbeddedProfileCatalog(t))
+	discovered, rejection := discoverDevice(device)
 	if rejection != nil {
 		t.Fatalf("Device rejected: %#v", rejection)
 	}

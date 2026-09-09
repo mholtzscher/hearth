@@ -89,9 +89,8 @@ func TestParseExactIntegerJSONErrorCategories(t *testing.T) {
 }
 
 // This test protects domain diagnostic prefixes after consolidation and
-// fails if the generic integer numeric-sensor decoder, color temperature,
-// or startup temperature wrappers lose their property/domain error text or
-// bool-path parity.
+// fails if linkquality, color temperature, or startup temperature wrappers
+// lose their property/domain error text or bool-path parity.
 func TestExactIntegerWrappersPreserveDomainDiagnostics(t *testing.T) {
 	t.Parallel()
 	for _, test := range []struct {
@@ -99,9 +98,9 @@ func TestExactIntegerWrappersPreserveDomainDiagnostics(t *testing.T) {
 		message string
 		payload string
 	}{
-		{name: "numeric-sensor syntax", message: "decode numeric sensor number", payload: `{`},
-		{name: "numeric-sensor type", message: "numeric sensor value must be a JSON number", payload: `"156"`},
-		{name: "numeric-sensor integer", message: "numeric sensor value must be a finite integer", payload: `156.5`},
+		{name: "linkquality syntax", message: "decode linkquality number", payload: `{`},
+		{name: "linkquality type", message: "linkquality value must be a JSON number", payload: `"156"`},
+		{name: "linkquality integer", message: "linkquality value must be a finite integer", payload: `156.5`},
 		{
 			name:    "color temperature syntax",
 			message: "decode color temperature number",
@@ -135,8 +134,8 @@ func TestExactIntegerWrappersPreserveDomainDiagnostics(t *testing.T) {
 	} {
 		var err error
 		switch {
-		case strings.HasPrefix(test.name, "numeric-sensor"):
-			_, err = decodeIntegerNumericSensorProfileValue(json.RawMessage(test.payload))
+		case strings.HasPrefix(test.name, "linkquality"):
+			_, err = normalizeLinkquality(json.RawMessage(test.payload))
 		case strings.HasPrefix(test.name, "color temperature"):
 			_, err = normalizeColorTemp(json.RawMessage(test.payload))
 		default:

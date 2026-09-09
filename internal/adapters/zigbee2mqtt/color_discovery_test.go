@@ -219,7 +219,7 @@ func TestDiscoverColorPropertyOwnership(t *testing.T) {
 			device := eligibleDevice()
 			device.Definition.Exposes = []upstreamExpose{test.expose}
 			device.Definition.Exposes = append(device.Definition.Exposes, test.extra...)
-			discovered, rejection := discoverDevice(device, mustEmbeddedProfileCatalog(t))
+			discovered, rejection := discoverDevice(device)
 			if rejection != nil {
 				t.Fatalf("Device rejected: %#v", rejection)
 			}
@@ -247,7 +247,7 @@ func TestDiscoverColorPropertyAcrossRoots(t *testing.T) {
 	)
 	device.Definition.Exposes = []upstreamExpose{left, right, independent}
 
-	discovered, rejection := discoverDevice(device, mustEmbeddedProfileCatalog(t))
+	discovered, rejection := discoverDevice(device)
 	if rejection != nil {
 		t.Fatalf("Device rejected: %#v", rejection)
 	}
@@ -350,7 +350,7 @@ func TestDiscoverColorCandidateEligibility(t *testing.T) {
 			device.Definition.Exposes = []upstreamExpose{
 				colorLightExpose("", "state", "brightness", composite, colorTempFeature("color_temp", 153, 500)),
 			}
-			discovered, rejection := discoverDevice(device, mustEmbeddedProfileCatalog(t))
+			discovered, rejection := discoverDevice(device)
 			if rejection != nil {
 				t.Fatalf("Device rejected: %#v", rejection)
 			}
@@ -387,7 +387,7 @@ func TestDiscoverTemperatureModePolicy(t *testing.T) {
 		device.Definition.Exposes = []upstreamExpose{
 			colorLightExpose("", "state", "brightness", colorTempFeature("color_temp", 153, 500)),
 		}
-		discovered, rejection := discoverDevice(device, mustEmbeddedProfileCatalog(t))
+		discovered, rejection := discoverDevice(device)
 		if rejection != nil {
 			t.Fatal(rejection)
 		}
@@ -408,7 +408,7 @@ func TestDiscoverTemperatureModePolicy(t *testing.T) {
 			colorLightExpose("", "state", "brightness",
 				colorXYComposite("color", colorAxisChild("x", nil, nil), colorAxisChild("y", nil, nil))),
 		}
-		discovered, rejection := discoverDevice(device, mustEmbeddedProfileCatalog(t))
+		discovered, rejection := discoverDevice(device)
 		if rejection != nil {
 			t.Fatal(rejection)
 		}
@@ -425,7 +425,7 @@ func TestDiscoverTemperatureModePolicy(t *testing.T) {
 		device.Definition.Exposes = []upstreamExpose{
 			colorLightExpose("", "state", "brightness", colorXYComposite("color")),
 		}
-		discovered, rejection := discoverDevice(device, mustEmbeddedProfileCatalog(t))
+		discovered, rejection := discoverDevice(device)
 		if rejection != nil {
 			t.Fatal(rejection)
 		}
@@ -450,7 +450,7 @@ func TestDiscoverColorModeOwnership(t *testing.T) {
 				colorXYComposite("color", children...), colorTempFeature("color_temp", 153, 500)),
 			{Type: "numeric", Name: "diagnostic", Property: "color_mode"},
 		}
-		discovered, rejection := discoverDevice(device, mustEmbeddedProfileCatalog(t))
+		discovered, rejection := discoverDevice(device)
 		if rejection != nil {
 			t.Fatal(rejection)
 		}
@@ -465,7 +465,7 @@ func TestDiscoverColorModeOwnership(t *testing.T) {
 			colorLightExpose("", "state", "brightness", colorTempFeature("color_temp", 153, 500)),
 			{Type: "numeric", Name: "diagnostic", Property: "color_mode"},
 		}
-		discovered, rejection := discoverDevice(device, mustEmbeddedProfileCatalog(t))
+		discovered, rejection := discoverDevice(device)
 		if rejection != nil {
 			t.Fatal(rejection)
 		}
@@ -487,7 +487,7 @@ func TestDiscoverColorModeOwnership(t *testing.T) {
 			colorLightExpose("", "state", "brightness", colorXYComposite("color", children...)),
 			{Type: "enum", Name: "color_mode", Property: "color_mode"},
 		}
-		discovered, rejection := discoverDevice(device, mustEmbeddedProfileCatalog(t))
+		discovered, rejection := discoverDevice(device)
 		if rejection != nil {
 			t.Fatal(rejection)
 		}
@@ -519,7 +519,7 @@ func TestDiscoverColorOwnershipTraversesDescendants(t *testing.T) {
 		device.Definition.Exposes = []upstreamExpose{
 			colorLightExpose("", "state", "brightness", composite),
 		}
-		discovered, rejection := discoverDevice(device, mustEmbeddedProfileCatalog(t))
+		discovered, rejection := discoverDevice(device)
 		if rejection != nil {
 			t.Fatalf("Device rejected: %#v", rejection)
 		}
@@ -539,7 +539,7 @@ func TestDiscoverColorOwnershipTraversesDescendants(t *testing.T) {
 				colorXYComposite("color", freshXYChildren()...), colorTempFeature("color_temp", 153, 500)),
 			nested,
 		}
-		discovered, rejection := discoverDevice(device, mustEmbeddedProfileCatalog(t))
+		discovered, rejection := discoverDevice(device)
 		if rejection != nil {
 			t.Fatalf("Device rejected: %#v", rejection)
 		}

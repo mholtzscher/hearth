@@ -36,69 +36,6 @@ func isColorCompositeName(name string) bool {
 	return name == upstreamColorXYName || name == upstreamColorHSName
 }
 
-// colorModeProperty resolves the Zigbee2MQTT companion mode property: the
-// bare color_mode at root, or color_mode_<endpoint-label> for a scoped root
-// using the exact upstream endpoint label rather than the numeric Hearth
-// identity.
-func colorModeProperty(root indexedExpose) string {
-	if !root.scoped {
-		return upstreamColorMode
-	}
-	return upstreamColorMode + "_" + root.expose.Endpoint
-}
-
-// hasColorComposite reports whether the root advertises any color composite,
-// regardless of whether that composite is plannable.
-func hasColorComposite(root indexedExpose) bool {
-	for _, feature := range root.expose.Features {
-		if feature.Type == upstreamExposeComposite && isColorCompositeName(feature.Name) {
-			return true
-		}
-	}
-	return false
-}
-
-// colorAxisSpec is one required numeric child of a color composite.
-type colorAxisSpec struct {
-	name    string
-	maximum *big.Rat
-}
-
-// validColorComposite validates one color candidate independently after
-// ownership checks: a nonempty property, state/set/get access, exactly one
-// numeric child per required coordinate with a matching child property and
-// the same access, and optional bounds that must match the upstream domain.
-// Extra unrelated children are harmless; duplicate required children
-// disqualify.
-func validColorComposite(
-	index exposeIndex,
-	root indexedExpose,
-	feature upstreamExpose,
-	axes []colorAxisSpec,
-) bool {
-	if feature.Property == "" || !exposeCanPublish(feature) || !exposeCanSet(feature) || !exposeCanGet(feature) ||
-		!index.colorPropertyShareable(root, feature) {
-		return false
-	}
-	for _, axis := range axes {
-		var match *upstreamExpose
-		matches := 0
-		for index := range feature.Features {
-			if feature.Features[index].Name == axis.name {
-				matches++
-				match = &feature.Features[index]
-			}
-		}
-		if matches != 1 || match.Type != upstreamExposeNumeric || match.Property != axis.name ||
-			!exposeCanPublish(*match) || !exposeCanSet(*match) || !exposeCanGet(*match) ||
-			!colorAxisBound(match.valueMinRaw, match.ValueMin, big.NewRat(0, 1)) ||
-			!colorAxisBound(match.valueMaxRaw, match.ValueMax, axis.maximum) {
-			return false
-		}
-	}
-	return true
-}
-
 // decodeScaledCoordinate parses one exact JSON number in 0..maximum, rejects
 // raw out-of-range values before rounding, and rounds half-up to scale steps.
 func decodeScaledCoordinate(payload json.RawMessage, maximum *big.Rat, scale int64) (int64, error) {

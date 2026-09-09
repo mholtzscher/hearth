@@ -150,7 +150,7 @@ func padMillis(fraction int64) string {
 // integer milli-Celsius with empty support and no Operations.
 func TestDiscoverTemperatureSensorRegistersMilliCelsius(t *testing.T) {
 	t.Parallel()
-	discovered, rejection := discoverDevice(eligibleSensorDevice("temperature", 1), mustEmbeddedProfileCatalog(t))
+	discovered, rejection := discoverDevice(eligibleSensorDevice("temperature", 1))
 	if rejection != nil {
 		t.Fatalf("Device rejected: %#v", rejection)
 	}
@@ -180,14 +180,14 @@ func TestDiscoverTemperatureSensorRegistersMilliCelsius(t *testing.T) {
 // route.
 func TestTemperaturePlanSeparatesGetFromCommand(t *testing.T) {
 	t.Parallel()
-	publishOnly, rejection := discoverDevice(eligibleSensorDevice("temperature", 1), mustEmbeddedProfileCatalog(t))
+	publishOnly, rejection := discoverDevice(eligibleSensorDevice("temperature", 1))
 	if rejection != nil {
 		t.Fatalf("Device rejected: %#v", rejection)
 	}
 	if len(publishOnly.Entities[0].GetProperties) != 0 {
 		t.Fatalf("publish-only get properties = %v", publishOnly.Entities[0].GetProperties)
 	}
-	gettable, rejection := discoverDevice(eligibleSensorDevice("temperature", 1|4), mustEmbeddedProfileCatalog(t))
+	gettable, rejection := discoverDevice(eligibleSensorDevice("temperature", 1|4))
 	if rejection != nil {
 		t.Fatalf("Device rejected: %#v", rejection)
 	}
@@ -195,7 +195,7 @@ func TestTemperaturePlanSeparatesGetFromCommand(t *testing.T) {
 		gettable.Entities[0].TranslateCommand != nil {
 		t.Fatalf("gettable temperature plan = %#v", gettable.Entities[0])
 	}
-	withSet, rejection := discoverDevice(eligibleSensorDevice("temperature", 1|2), mustEmbeddedProfileCatalog(t))
+	withSet, rejection := discoverDevice(eligibleSensorDevice("temperature", 1|2))
 	if rejection == nil || rejection.Code != rejectionNoEligibleEntity {
 		t.Fatalf("settable temperature rejection = %#v", rejection)
 	}
@@ -230,7 +230,7 @@ func TestTemperaturePlanEligibility(t *testing.T) {
 			t.Parallel()
 			device := eligibleSensorDevice("temperature", 1)
 			test.edit(&device)
-			_, rejection := discoverDevice(device, mustEmbeddedProfileCatalog(t))
+			_, rejection := discoverDevice(device)
 			if rejection == nil || rejection.Code != rejectionNoEligibleEntity {
 				t.Fatalf("rejection = %#v", rejection)
 			}

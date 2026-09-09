@@ -13,6 +13,8 @@ import (
 	"github.com/mholtzscher/hearth/sdk/adapter/typed"
 )
 
+const powerOnBehaviorExposeName = "power_on_behavior"
+
 // enumSettingCodecs shares immutable schemas across enum-setting plans.
 //
 //nolint:gochecknoglobals // Lazy, concurrency-safe cache of authoritative codecs.
@@ -123,4 +125,40 @@ func decodeEnumSettingState(payload json.RawMessage) (contractenumsettingv1.Stat
 		return "", err
 	}
 	return state, nil
+}
+
+// planPowerOnBehavior discovers the optional device-root power-on behavior
+// setting once per device. It requires full publish/set/get access; the
+// constructor validates the expose values against the shared choice bounds
+// and omits the Entity on error. Light and relay families share this
+// helper; each caller gates it on its own surviving power family.
+func planPowerOnBehavior(input devicePlanningInput) *entityPlan {
+	root, ok := input.Exposes.UniqueRoot(upstreamExposeEnum, powerOnBehaviorExposeName)
+	if !ok || !root.resolved {
+		return nil
+	}
+	expose := root.expose
+	if expose.Property == "" || !exposeCanPublish(expose) || !exposeCanSet(expose) ||
+		!exposeCanGet(expose) || !input.Exposes.PropertyUnique(expose.Property) {
+		return nil
+	}
+	key, name := scopedIdentity(
+		"poweronbehavior",
+		"Power-On Behavior",
+		expose.Endpoint,
+		root.endpoint,
+		root.scoped,
+	)
+	if !validDescriptorName(name) {
+		return nil
+	}
+	plan, err := newEnumSettingPlan(adapter.EntityMetadata{
+		Key:        key,
+		ExternalID: input.IEEE + "/" + entityLocation(root) + "/poweronbehavior",
+		Name:       name,
+	}, expose.Property, expose.Values)
+	if err != nil {
+		return nil
+	}
+	return &plan
 }

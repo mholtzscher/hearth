@@ -203,7 +203,7 @@ func (z2m *Adapter) ingestMessage(
 			state.dirty = true
 		}
 	case bridgeTopicDevices:
-		inventory, err := discoverInventory(message.Payload, z2m.profiles)
+		inventory, err := discoverInventory(message.Payload)
 		if err != nil {
 			state.inventory = nil
 			z2m.clearAvailabilityEvidence(state)

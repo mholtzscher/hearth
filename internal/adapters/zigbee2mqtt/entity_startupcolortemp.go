@@ -15,6 +15,7 @@ import (
 )
 
 const (
+	startupColorTempExposeName = "color_temp_startup"
 	// startupPreviousWireValue is the adapter-local Zigbee2MQTT sentinel for
 	// the named previous choice. It never appears as public Hearth state.
 	startupPreviousWireValue = 65535

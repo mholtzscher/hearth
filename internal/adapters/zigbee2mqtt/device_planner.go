@@ -3,23 +3,19 @@ package zigbee2mqtt
 import (
 	"strconv"
 	"unicode/utf8"
+
+	"github.com/mholtzscher/hearth/sdk/adapter"
 )
 
-// devicePlanningInput shares one normalized inventory view with every profile.
-// Vendor, Model, and SoftwareBuildID carry the definition evidence the
-// profile evaluator uses to select exact vendor, model, and firmware
-// overrides. None of these strings enters binding or entity identities.
+// devicePlanningInput shares one normalized inventory view with every planner.
 type devicePlanningInput struct {
-	IEEE            string
-	Exposes         exposeIndex
-	Vendor          string
-	Model           string
-	SoftwareBuildID string
+	IEEE    string
+	Exposes exposeIndex
 }
 
 // plannerRole declares whether one planner contribution competes as the
 // primary contribution for Device kind or appends as a supplemental contribution.
-// The zero value is invalid so a contribution that omits its role is rejected
+// The zero value is invalid so a planner that omits its role is rejected
 // instead of silently competing as a primary.
 type plannerRole int
 
@@ -37,17 +33,23 @@ const (
 	plannerRoleSupplemental
 )
 
-// plannerContribution is one profile result for one IEEE address. A primary
-// contribution competes to establish Device kind; a supplemental contribution
-// always appends and establishes kind only when no primary contribution
-// exists. Matched reports whether the profile selected at least one
-// candidate root for evaluation, even when no candidate planned; planDevice
-// uses it only to attribute an empty merge to the strongest primary family.
+// plannerContribution is one planner family result for one IEEE address. A
+// primary contribution competes to establish Device kind; a supplemental
+// contribution always appends and establishes kind only when no primary
+// contribution exists.
 type plannerContribution struct {
 	Kind     string
 	Entities []entityPlan
 	Role     plannerRole
-	Matched  bool
+}
+
+// devicePlanner returns one family contribution without I/O and without
+// retaining Device state. Implementations skip ineligible candidates
+// individually and return an empty contribution when nothing is eligible;
+// planDevice owns generic same-contribution duplicate-key removal.
+// Implementations are immutable and concurrency-safe.
+type devicePlanner interface {
+	Plan(devicePlanningInput) plannerContribution
 }
 
 // devicePlan is the merged registration content for one normalized IEEE address.
@@ -63,28 +65,38 @@ type devicePlanError struct {
 
 func (err *devicePlanError) Error() string { return "Zigbee2MQTT Device plan rejected: " + err.code }
 
+// defaultDevicePlanners returns the explicit planner assembly in deterministic
+// order. All planners may inspect the same index.
+func defaultDevicePlanners() []devicePlanner {
+	return []devicePlanner{
+		lightPlanner{},
+		relayPlanner{},
+		sensorPlanner{},
+		linkqualityPlanner{},
+	}
+}
+
 // planDevice chooses one primary contribution and merges every supplemental
-// contribution before one registration. The caller passes one contribution
-// per profile in ascending profile order, produced by
-// planProfileContributions. The first non-empty primary contribution wins;
-// later primary contributions are discarded. Every supplemental contribution
-// appends in order, and the first non-empty supplemental contribution
-// establishes Device kind when no primary contribution exists. A
-// contribution with an invalid role or an empty kind rejects the Device as
-// invalid_descriptor before selection and merge.
-func planDevice(contributions []plannerContribution) (devicePlan, error) {
-	mergedInputs := make([]plannerContribution, 0, len(contributions))
-	for _, contribution := range contributions {
+// contribution before one registration. The first non-empty primary
+// contribution wins; later primary contributions are discarded. Every
+// supplemental contribution appends in planner order, and the first non-empty
+// supplemental contribution establishes Device kind when no primary
+// contribution exists. A contribution with an invalid role or an empty kind
+// rejects the Device as invalid_descriptor before selection and merge.
+func planDevice(input devicePlanningInput, planners []devicePlanner) (devicePlan, error) {
+	contributions := make([]plannerContribution, 0, len(planners))
+	for _, planner := range planners {
+		contribution := planner.Plan(input)
 		if !validPlannerContribution(contribution) {
 			return devicePlan{}, &devicePlanError{code: rejectionInvalidDescriptor}
 		}
 		contribution.Entities = deduplicateKeys(contribution.Entities)
-		mergedInputs = append(mergedInputs, contribution)
+		contributions = append(contributions, contribution)
 	}
 	var primary *plannerContribution
-	for index := range mergedInputs {
-		if mergedInputs[index].Role == plannerRolePrimary && len(mergedInputs[index].Entities) != 0 {
-			primary = &mergedInputs[index]
+	for index := range contributions {
+		if contributions[index].Role == plannerRolePrimary && len(contributions[index].Entities) != 0 {
+			primary = &contributions[index]
 			break
 		}
 	}
@@ -94,20 +106,20 @@ func planDevice(contributions []plannerContribution) (devicePlan, error) {
 		merged = append(merged, primary.Entities...)
 		kind = primary.Kind
 	} else {
-		for index := range mergedInputs {
-			if mergedInputs[index].Role == plannerRoleSupplemental && len(mergedInputs[index].Entities) != 0 {
-				kind = mergedInputs[index].Kind
+		for index := range contributions {
+			if contributions[index].Role == plannerRoleSupplemental && len(contributions[index].Entities) != 0 {
+				kind = contributions[index].Kind
 				break
 			}
 		}
 	}
-	for _, contribution := range mergedInputs {
+	for _, contribution := range contributions {
 		if contribution.Role == plannerRoleSupplemental {
 			merged = append(merged, contribution.Entities...)
 		}
 	}
 	if len(merged) == 0 {
-		return devicePlan{}, &devicePlanError{code: noEligibleAttribution(mergedInputs)}
+		return devicePlan{}, &devicePlanError{code: noEligibleCode(input.Exposes)}
 	}
 	if len(merged) > maximumEntitiesPerDevice {
 		return devicePlan{}, &devicePlanError{code: rejectionTooManyEntities}
@@ -123,9 +135,8 @@ func planDevice(contributions []plannerContribution) (devicePlan, error) {
 
 // validPlannerContribution reports whether a contribution declares a known
 // role and a non-empty kind. The plannerRoleInvalid zero value catches
-// contributions that omit their role, and the default case catches
-// out-of-range roles; both reject as invalid_descriptor before selection and
-// merge.
+// planners that omit their role, and the default case catches out-of-range
+// roles; both reject as invalid_descriptor before selection and merge.
 func validPlannerContribution(contribution plannerContribution) bool {
 	switch contribution.Role {
 	case plannerRoleInvalid:
@@ -165,18 +176,26 @@ func duplicateEntityKey(plans []entityPlan) bool {
 	return false
 }
 
-// noEligibleAttribution attributes an empty merge to the first primary
-// contribution in profile order that selected candidate roots. The compiler
-// restricts primary contribution kinds, so the stable code derives from
-// profile data without a mapping-specific root or family allowlist. A merge
-// no primary family participated in rejects as no_eligible_entity.
-func noEligibleAttribution(contributions []plannerContribution) string {
-	for _, contribution := range contributions {
-		if contribution.Role == plannerRolePrimary && contribution.Matched {
-			return "no_eligible_" + contribution.Kind
+// noEligibleCode attributes an empty merge to the strongest root family
+// present so diagnostics distinguish light, relay, and sensor-only Devices.
+func noEligibleCode(index exposeIndex) string {
+	var hasLight, hasSwitch bool
+	for _, root := range index.roots {
+		switch root.expose.Type {
+		case upstreamDeviceKindLight:
+			hasLight = true
+		case upstreamExposeSwitch:
+			hasSwitch = true
 		}
 	}
-	return rejectionNoEligibleEntity
+	switch {
+	case hasLight:
+		return rejectionNoEligibleLight
+	case hasSwitch:
+		return rejectionNoEligibleRelay
+	default:
+		return rejectionNoEligibleEntity
+	}
 }
 
 // entityLocation names the external-ID path segment for one root.
@@ -185,6 +204,47 @@ func entityLocation(root indexedExpose) string {
 		return "ep" + strconv.Itoa(root.endpoint)
 	}
 	return "root"
+}
+
+// planPowerEntity discovers the shared power Entity for one light or relay
+// root. Light power and relay power share binary state eligibility, unique
+// property ownership, on/off canonical distinction, scoped identity, and the
+// shared power constructor; callers keep their own family gating and endpoint
+// resolution behavior.
+func planPowerEntity(input devicePlanningInput, root indexedExpose) (entityPlan, bool) {
+	powerFeature, ok := input.Exposes.UniqueFeature(root, featureQuery{Type: upstreamExposeBinary, Name: "state"})
+	if !ok || !validPowerFeature(powerFeature) || !input.Exposes.PropertyUnique(powerFeature.Property) {
+		return entityPlan{}, false
+	}
+	powerOn, onErr := canonicalScalar(powerFeature.ValueOn)
+	powerOff, offErr := canonicalScalar(powerFeature.ValueOff)
+	if onErr != nil || offErr != nil || powerOn.canonical == powerOff.canonical {
+		return entityPlan{}, false
+	}
+	metadata, ok := powerMetadata(input.IEEE, root)
+	if !ok {
+		return entityPlan{}, false
+	}
+	power, err := newPowerPlan(metadata, powerFeature.Property, powerOn, powerOff)
+	if err != nil {
+		return entityPlan{}, false
+	}
+	return power, true
+}
+
+// powerMetadata builds the shared power Entity identity for light and relay
+// roots. A physical Device changing between a light and relay expose retains
+// its power Entity identity when IEEE and numeric endpoint stay the same.
+func powerMetadata(ieee string, root indexedExpose) (adapter.EntityMetadata, bool) {
+	key, name := scopedIdentity("power", "Power", root.expose.Endpoint, root.endpoint, root.scoped)
+	if !validDescriptorName(name) {
+		return adapter.EntityMetadata{}, false
+	}
+	return adapter.EntityMetadata{
+		Key:        key,
+		ExternalID: ieee + "/" + entityLocation(root) + "/power",
+		Name:       name,
+	}, true
 }
 
 func validDescriptorName(name string) bool {

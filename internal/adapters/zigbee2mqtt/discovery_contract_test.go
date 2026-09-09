@@ -1,11 +1,9 @@
 package zigbee2mqtt //nolint:testpackage // Contract tests exercise package-private discovery and wire DTOs.
 
-// This file provides independent literal oracles for profile-backed
-// discovery, never comparisons against a handwritten planner. Together with
-// the focused discovery and runtime suites, these tests pin captured device
-// kinds, ordered keys, representative descriptors, route classes, decoded
-// values, command payloads, refresh behavior, and outcome policy after the
-// differential harness is removed at cutover.
+// These literal fixture contracts pin device kinds, ordered keys,
+// representative descriptors, route classes, decoded values, command
+// payloads, refresh behavior, and outcome policy independently of the
+// capability tables and planning implementation.
 
 import (
 	"context"
@@ -20,28 +18,20 @@ import (
 	contractnumericsettingv1 "github.com/mholtzscher/hearth/entitytypes/numericsettingv1"
 )
 
-// contractContributions evaluates every embedded profile for one device
-// through the production evaluator and merges them with the production
-// merge, so contract tests exercise the exact production planning path.
+// contractContributions uses production discovery, including family merge
+// and validation, rather than assembling a separate test planning path.
 func contractContributions(t *testing.T, device upstreamDevice) devicePlan {
 	t.Helper()
-	catalog := mustEmbeddedProfileCatalog(t)
-	plan, err := planDevice(
-		planProfileContributions(catalog, profilePlanningInput(device, device.IEEEAddress)))
-	if err != nil {
-		t.Fatalf("profile planning rejected the fixture: %v", err)
+	discovered, rejection := discoverDevice(device)
+	if rejection != nil {
+		t.Fatalf("discovery rejected the fixture: %v", rejection)
 	}
-	return plan
+	return devicePlan{Kind: discovered.Registration.Device.Kind, Entities: discovered.Entities}
 }
 
-// contractProfileContribution evaluates one embedded profile for one device
-// through the production evaluator.
-func contractProfileContribution(t *testing.T, profileID string, device upstreamDevice) plannerContribution {
-	t.Helper()
-	catalog := mustEmbeddedProfileCatalog(t)
-	profile := evalTestProfile(t, catalog, profileID)
-	return evaluatePlannerProfile(
-		profile, profilePlanningInput(device, device.IEEEAddress), catalog.overrides, catalog.strategies)
+// contractFamilyContribution runs one production family against the fixture.
+func contractFamilyContribution(device upstreamDevice, planner devicePlanner) plannerContribution {
+	return planner.Plan(devicePlanningInput{IEEE: device.IEEEAddress, Exposes: newExposeIndex(device)})
 }
 
 // contractPlansByKey indexes plans by their already-validated unique key.
@@ -92,7 +82,7 @@ func contractTranslate(t *testing.T, plan entityPlan, operation, parameters stri
 
 // requireContractCommand asserts that one command produces the expected wire
 // payload, refresh routes, outcome policy, and matcher behavior. The defect
-// would be a profile that publishes different MQTT or satisfies different
+// would be a translator that publishes different MQTT or satisfies different
 // reports than the captured contract.
 func requireContractCommand(
 	t *testing.T,
@@ -162,43 +152,6 @@ func mustWandaDevice(t *testing.T) upstreamDevice {
 	return devices[0]
 }
 
-// This test protects the embedded catalog shape and fails if a profile is
-// added, removed, reordered, or changes its device-kind contribution: the
-// planner order and kind/role combinations below are the observable family
-// precedence.
-func TestProfileContractCatalogKeepsFamilyOrderAndRoles(t *testing.T) {
-	t.Parallel()
-	catalog := mustEmbeddedProfileCatalog(t)
-	want := []struct {
-		id    string
-		order int
-		kind  string
-		role  plannerRole
-	}{
-		{id: "light", order: 10, kind: upstreamDeviceKindLight, role: plannerRolePrimary},
-		{id: "relay", order: 20, kind: upstreamDeviceKindRelay, role: plannerRolePrimary},
-		{id: "ambient-sensors", order: 30, kind: upstreamDeviceKindSensor, role: plannerRoleSupplemental},
-		{id: "linkquality", order: 40, kind: upstreamDeviceKindSensor, role: plannerRoleSupplemental},
-	}
-	if len(catalog.profiles) != len(want) {
-		t.Fatalf("catalog holds %d profiles, want %d", len(catalog.profiles), len(want))
-	}
-	for index, profile := range catalog.profiles {
-		if profile.document.ID != want[index].id || profile.document.Order != want[index].order {
-			t.Fatalf("profile %d = %q/%d, want %q/%d",
-				index, profile.document.ID, profile.document.Order, want[index].id, want[index].order)
-		}
-		contribution := evaluatePlannerProfile(
-			profile, profilePlanningInput(
-				eligibleSensorDevice("temperature", 1), "0x00124b0024abcdef"),
-			catalog.overrides, catalog.strategies)
-		if contribution.Kind != want[index].kind || contribution.Role != want[index].role {
-			t.Fatalf("profile %q contribution = %q/%v, want %q/%v",
-				profile.document.ID, contribution.Kind, contribution.Role, want[index].kind, want[index].role)
-		}
-	}
-}
-
 // requireLightCapturedRouteShapes checks the Wanda fixture behavioral route
 // classes: power, brightness, temperature, startup, and power-on behavior
 // stay controllable with refresh; color mode stays read-only without a
@@ -227,7 +180,7 @@ func requireLightCapturedRouteShapes(t *testing.T, plans map[string]entityPlan) 
 
 // This test protects the captured Wanda bulb key order, representative power
 // identity, and route classes across the mapped bulb entities.
-func TestProfileContractWandaBulbKeysOrderAndRoutes(t *testing.T) {
+func TestDiscoveryContractWandaBulbKeysOrderAndRoutes(t *testing.T) {
 	t.Parallel()
 	plan := contractContributions(t, mustWandaDevice(t))
 	if plan.Kind != upstreamDeviceKindLight {
@@ -258,7 +211,7 @@ func TestProfileContractWandaBulbKeysOrderAndRoutes(t *testing.T) {
 // This test protects exact color representation discovery and fails if any
 // representation combination discovers different entities: XY-only, HS-only,
 // dual, and multi-endpoint devices must keep the captured key order.
-func TestProfileContractColorRepresentationKeysAndOrder(t *testing.T) {
+func TestDiscoveryContractColorRepresentationKeysAndOrder(t *testing.T) {
 	t.Parallel()
 	for _, test := range []struct {
 		fixture string
@@ -347,12 +300,12 @@ func requireContractSameMessageColorObservations(t *testing.T, device upstreamDe
 	}
 }
 
-// This test protects exact light state conversions and fails if profile
+// This test protects exact light state conversions and fails if
 // planning changes any decoded value: discovered power scalars, percent
 // brightness scaling with rounding, the startup sentinel mapping to the
 // previous choice, or power-on behavior choices. Off-choice behavior and
 // fractional startup stay rejected.
-func TestProfileContractLightStateConversions(t *testing.T) {
+func TestDiscoveryContractLightStateConversions(t *testing.T) {
 	t.Parallel()
 	devices := fixtureDevices(t, "bridge-devices-color-dual.json")
 	if len(devices) != 1 {
@@ -421,7 +374,7 @@ func TestProfileContractLightStateConversions(t *testing.T) {
 // directions with the discovered scalars, brightness percent, color
 // temperature, XY, HS, startup value and previous, power-on behavior, and
 // the dispatched effect trigger.
-func TestProfileContractLightCommands(t *testing.T) {
+func TestDiscoveryContractLightCommands(t *testing.T) {
 	t.Parallel()
 	devices := fixtureDevices(t, "bridge-devices-color-dual.json")
 	if len(devices) != 1 {
@@ -546,9 +499,9 @@ func requireRelayCapturedRouteShapes(t *testing.T, plans map[string]entityPlan) 
 
 // This test protects the captured smart-plug contract and fails on any
 // descriptor, type, support, route, or order drift across all plug entities.
-func TestProfileContractPlugKeysOrderAndRoutes(t *testing.T) {
+func TestDiscoveryContractPlugKeysOrderAndRoutes(t *testing.T) {
 	t.Parallel()
-	discovered, rejection := discoverDevice(mustPlugDevice(t), mustEmbeddedProfileCatalog(t))
+	discovered, rejection := discoverDevice(mustPlugDevice(t))
 	if rejection != nil {
 		t.Fatalf("plug rejected: %#v", rejection)
 	}
@@ -578,12 +531,12 @@ func TestProfileContractPlugKeysOrderAndRoutes(t *testing.T) {
 	requireRelayCapturedRouteShapes(t, byKey)
 }
 
-// This test protects exact plug state conversions and fails if profile
+// This test protects exact plug state conversions and fails if
 // planning changes any decoded value: discovered power scalars, power-on
 // behavior choices, every electrical reading, or every numeric setting.
 // Fractions survive on float electrical sensors; the LED setting keeps
 // value-mode semantics. Off-choice power-on behavior stays rejected.
-func TestProfileContractPlugStateConversions(t *testing.T) {
+func TestDiscoveryContractPlugStateConversions(t *testing.T) {
 	t.Parallel()
 	byKey := contractPlansByKey(contractContributions(t, mustPlugDevice(t)).Entities)
 	for _, testCase := range []struct {
@@ -626,7 +579,7 @@ func TestProfileContractPlugStateConversions(t *testing.T) {
 // different outcome policy, or satisfies different reports: power in both
 // directions with the discovered scalars, one enum setting, every numeric
 // setting including fractions, and the dispatched reset action.
-func TestProfileContractPlugCommands(t *testing.T) {
+func TestDiscoveryContractPlugCommands(t *testing.T) {
 	t.Parallel()
 	byKey := contractPlansByKey(contractContributions(t, mustPlugDevice(t)).Entities)
 	requireContractCommand(t, "power", "set", `{"value":true}`,
@@ -696,7 +649,7 @@ func TestProfileContractPlugCommands(t *testing.T) {
 // order, or get behavior: temperature, humidity, and battery stay
 // publish-only reads with startup refresh, while publish-only linkquality
 // carries no get route.
-func TestProfileContractSensorDeviceKeysUnitsAndGetBehavior(t *testing.T) {
+func TestDiscoveryContractSensorDeviceKeysUnitsAndGetBehavior(t *testing.T) {
 	t.Parallel()
 	devices := fixtureDevices(t, "bridge-devices-temperature.json")
 	if len(devices) != 1 {
@@ -724,11 +677,11 @@ func TestProfileContractSensorDeviceKeysUnitsAndGetBehavior(t *testing.T) {
 	}
 }
 
-// This test protects exact sensor conversions and fails if profile planning
+// This test protects exact sensor conversions and fails if planning
 // changes any decoded value: milli-Celsius temperature, fractional percent
-// humidity, or exact-integer linkquality. The defect would be a profile
-// number format that silently rescales or truncates reports.
-func TestProfileContractSensorExactConversions(t *testing.T) {
+// humidity, or exact-integer linkquality. It catches a numeric translation
+// that silently rescales or truncates reports.
+func TestDiscoveryContractSensorExactConversions(t *testing.T) {
 	t.Parallel()
 	devices := fixtureDevices(t, "bridge-devices-temperature.json")
 	if len(devices) != 1 {
@@ -762,32 +715,38 @@ func TestProfileContractSensorExactConversions(t *testing.T) {
 }
 
 // This test protects link-quality device-wide exact-one selection and fails
-// if the profile evaluates each duplicate root independently. Two resolved
+// if planning evaluates each duplicate root independently. Two resolved
 // endpoint roots are ambiguous, and one valid root plus one unresolved
 // duplicate remains ambiguous: both must omit link quality entirely.
-func TestProfileContractLinkqualityUniqueRootAmbiguity(t *testing.T) {
+func TestDiscoveryContractLinkqualityUniqueRootAmbiguity(t *testing.T) {
 	t.Parallel()
-	resolvedLeft := evalTestNumericRoot("linkquality", "linkquality_left", "")
-	resolvedLeft.Endpoint = "left"
-	resolvedRight := evalTestNumericRoot("linkquality", "linkquality_right", "")
-	resolvedRight.Endpoint = "right"
-	unresolved := evalTestNumericRoot("linkquality", "linkquality_broken", "")
-	unresolved.Endpoint = "missing"
-	resolvedDuplicates := evalTestSwitchDevice(
-		"Fixture", "EVAL", "", resolvedLeft, resolvedRight)
+	resolvedLeft := upstreamExpose{
+		Type: "numeric", Name: "linkquality", Property: "linkquality_left", Access: 1, Endpoint: "left",
+	}
+	resolvedRight := upstreamExpose{
+		Type: "numeric", Name: "linkquality", Property: "linkquality_right", Access: 1, Endpoint: "right",
+	}
+	unresolved := upstreamExpose{
+		Type: "numeric", Name: "linkquality", Property: "linkquality_broken", Access: 1, Endpoint: "missing",
+	}
+	resolvedDuplicates := eligibleSensorDevice("temperature", 1)
+	resolvedDuplicates.Definition.Exposes = []upstreamExpose{resolvedLeft, resolvedRight}
 	resolvedDuplicates.Endpoints = map[string]upstreamEndpoint{
 		"1": {Name: "left"},
 		"2": {Name: "right"},
 	}
+	unresolvedDuplicate := eligibleSensorDevice("temperature", 1)
+	unresolvedDuplicate.Definition.Exposes = []upstreamExpose{
+		{Type: "numeric", Name: "linkquality", Property: "linkquality", Access: 1}, unresolved,
+	}
 	devices := map[string]upstreamDevice{
-		"resolved endpoint duplicates": resolvedDuplicates,
-		"valid plus unresolved duplicate": evalTestSwitchDevice(
-			"Fixture", "EVAL", "", evalTestNumericRoot("linkquality", "linkquality", ""), unresolved),
+		"resolved endpoint duplicates":    resolvedDuplicates,
+		"valid plus unresolved duplicate": unresolvedDuplicate,
 	}
 	for name, device := range devices {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
-			contribution := contractProfileContribution(t, "linkquality", device)
+			contribution := contractFamilyContribution(device, linkqualityPlanner{})
 			if len(contribution.Entities) != 0 {
 				t.Fatalf("duplicate linkquality roots planned %d entities, want none", len(contribution.Entities))
 			}
@@ -798,14 +757,15 @@ func TestProfileContractLinkqualityUniqueRootAmbiguity(t *testing.T) {
 // This test protects malformed sibling isolation and fails if one malformed
 // sensor root suppresses valid siblings: the duplicate property omits only
 // its candidate while the valid battery survives.
-func TestProfileContractSensorIsolatesMalformedSiblings(t *testing.T) {
+func TestDiscoveryContractSensorIsolatesMalformedSiblings(t *testing.T) {
 	t.Parallel()
-	device := evalTestSwitchDevice("Fixture", "EVAL", "",
-		evalTestNumericRoot("humidity", "shared", "%"),
-		evalTestNumericRoot("battery", "shared", "%"),
-		evalTestNumericRoot("battery", "battery", "%"),
-	)
-	contribution := contractProfileContribution(t, "ambient-sensors", device)
+	device := eligibleSensorDevice("temperature", 1)
+	device.Definition.Exposes = []upstreamExpose{
+		{Type: "numeric", Name: "humidity", Property: "shared", Unit: "%", Access: 1},
+		{Type: "numeric", Name: "battery", Property: "shared", Unit: "%", Access: 1},
+		{Type: "numeric", Name: "battery", Property: "battery", Unit: "%", Access: 1},
+	}
+	contribution := contractFamilyContribution(device, sensorPlanner{})
 	if got := entityKeys(contribution.Entities); len(got) != 1 || got[0] != "battery" {
 		t.Fatalf("isolated entities = %v, want only the valid [battery]", got)
 	}

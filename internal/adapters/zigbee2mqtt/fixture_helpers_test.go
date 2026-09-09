@@ -5,17 +5,6 @@ import (
 	"os"
 )
 
-// Test fixture names mirror profile selectors without keeping mapping metadata
-// in production Go.
-const (
-	effectExposeName           = "effect"
-	powerOnBehaviorExposeName  = "power_on_behavior"
-	startupColorTempExposeName = "color_temp_startup"
-	upstreamColorTempName      = "color_temp"
-	rejectionNoEligibleLight   = "no_eligible_light"
-	rejectionNoEligibleRelay   = "no_eligible_relay"
-)
-
 func eligibleDevice() upstreamDevice {
 	return upstreamDevice{
 		IEEEAddress: "0x00124b0024abcdef", Type: "Router", Supported: true,
@@ -133,7 +122,7 @@ func mustDiscoveredFixtureDevice(testingT interface {
 	Fatal(...any)
 }, fixture string) discoveredDevice {
 	testingT.Helper()
-	result, err := discoverInventory(readFixture(testingT, fixture), mustEmbeddedProfileCatalog(testingT))
+	result, err := discoverInventory(readFixture(testingT, fixture))
 	if err != nil {
 		testingT.Fatal(err)
 	}
@@ -141,20 +130,4 @@ func mustDiscoveredFixtureDevice(testingT interface {
 		testingT.Fatal("fixture did not discover exactly one Device")
 	}
 	return result.Devices[0]
-}
-
-// mustEmbeddedProfileCatalog compiles the repository-owned embedded profile
-// catalog for constructor tests. It fails the test when the embedded catalog
-// itself is invalid so adapter tests always exercise the loader-produced
-// catalog the production startup path stores.
-func mustEmbeddedProfileCatalog(testingT interface {
-	Helper()
-	Fatal(...any)
-}) *ProfileCatalog {
-	testingT.Helper()
-	catalog, err := LoadEmbeddedProfileCatalog()
-	if err != nil {
-		testingT.Fatal(err)
-	}
-	return catalog
 }

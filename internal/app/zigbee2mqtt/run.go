@@ -11,15 +11,6 @@ import (
 
 const concurrentComponents = 2
 
-// loadEmbeddedProfileCatalog and connectAdapterSession are package-level seams
-// so startup tests can prove a catalog load failure returns before any NATS
-// connection or MQTT dial attempt. Production always uses the real loader and
-// the real SDK session connection.
-var (
-	loadEmbeddedProfileCatalog = zigbee2mqttadapter.LoadEmbeddedProfileCatalog //nolint:gochecknoglobals // Startup seam reassigned only by sequential tests.
-	connectAdapterSession      = adapter.Connect                               //nolint:gochecknoglobals // Startup seam reassigned only by sequential tests.
-)
-
 func Run(ctx context.Context, config Config, logger *slog.Logger) error {
 	if err := config.Validate(); err != nil {
 		return err
@@ -29,16 +20,7 @@ func Run(ctx context.Context, config Config, logger *slog.Logger) error {
 	}
 	processLogger := logger.With(slog.String("component", "process"))
 
-	// The embedded profile catalog compiles before any external connection; a
-	// catalog failure fails startup with no partial catalog and no NATS or
-	// MQTT attempt.
-	catalog, catalogErr := loadEmbeddedProfileCatalog()
-	if catalogErr != nil {
-		zigbee2mqttadapter.LogProfileCatalogFailure(ctx, logger, catalogErr)
-		return failStage(StageLoadProfileCatalog, catalogErr)
-	}
-
-	session, err := connectAdapterSession(ctx, adapter.Config{
+	session, err := adapter.Connect(ctx, adapter.Config{
 		AdapterID:       config.AdapterID,
 		SoftwareName:    "hearth-adapter-zigbee2mqtt",
 		SoftwareVersion: "0.1.0",
@@ -66,7 +48,7 @@ func Run(ctx context.Context, config Config, logger *slog.Logger) error {
 		MQTTURL:   config.MQTT.URL,
 		BaseTopic: config.MQTT.BaseTopic,
 		ClientID:  DeriveClientID(config.AdapterID),
-	}, catalog, logger)
+	}, logger)
 	if err != nil {
 		return err
 	}

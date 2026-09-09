@@ -571,17 +571,10 @@ func TestSmartPlugResetActionDispatched(t *testing.T) {
 	}
 }
 
-func plugRelayContribution(testingT *testing.T, device upstreamDevice) plannerContribution {
-	testingT.Helper()
-	catalog := mustEmbeddedProfileCatalog(testingT)
-	relay := evalTestProfile(testingT, catalog, "relay")
-	input := profilePlanningInput(device, device.IEEEAddress)
-	return evaluatePlannerProfile(relay, input, catalog.overrides, catalog.strategies)
-}
-
 func plugPlannedKeys(testingT *testing.T, device upstreamDevice) []string {
 	testingT.Helper()
-	return entityKeys(plugRelayContribution(testingT, device).Entities)
+	contribution := relayPlanner{}.Plan(powerPlanningInput(device))
+	return entityKeys(contribution.Entities)
 }
 
 func assertPlugVoltageOmittedWithSetAccess(testingT *testing.T) {
@@ -664,7 +657,7 @@ func assertPlugVoltagePrefersValidUpstreamBounds(testingT *testing.T) {
 	voltage := plugExposeByName(&device, "voltage")
 	voltage.ValueMin = &minimum
 	voltage.ValueMax = &maximum
-	discovered, rejection := discoverDevice(device, mustEmbeddedProfileCatalog(testingT))
+	discovered, rejection := discoverDevice(device)
 	if rejection != nil {
 		testingT.Fatalf("Device rejected: %#v", rejection)
 	}
@@ -816,7 +809,7 @@ func TestSmartPlugRelayFamilyGating(t *testing.T) {
 		t.Parallel()
 		device := mustPlugDevice(t)
 		device.Definition.Exposes[0].Features[0].Access = 3
-		contribution := plugRelayContribution(t, device)
+		contribution := relayPlanner{}.Plan(powerPlanningInput(device))
 		if len(contribution.Entities) != 0 {
 			t.Fatalf("relay family survived invalid power: %v", entityKeys(contribution.Entities))
 		}
@@ -830,7 +823,7 @@ func TestSmartPlugRelayFamilyGating(t *testing.T) {
 		exposes := []upstreamExpose{invalid, switchExpose("right", "state_right")}
 		exposes = append(exposes, device.Definition.Exposes[1:]...)
 		device.Definition.Exposes = exposes
-		contribution := plugRelayContribution(t, device)
+		contribution := relayPlanner{}.Plan(powerPlanningInput(device))
 		keys := entityKeys(contribution.Entities)
 		if len(keys) == 0 || keys[0] != "power-ep2" {
 			t.Fatalf("relay survivor keys = %v, want power-ep2 first", keys)
@@ -847,7 +840,7 @@ func TestSmartPlugRelayFamilyGating(t *testing.T) {
 			}},
 		}
 		device.Definition.Exposes = append([]upstreamExpose{duplicate}, device.Definition.Exposes...)
-		contribution := plugRelayContribution(t, device)
+		contribution := relayPlanner{}.Plan(powerPlanningInput(device))
 		if len(contribution.Entities) != 0 {
 			t.Fatalf("attributes survived ambiguous power: %v", entityKeys(contribution.Entities))
 		}

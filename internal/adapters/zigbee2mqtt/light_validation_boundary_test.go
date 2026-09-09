@@ -116,7 +116,7 @@ func TestLightColorTempOuterBoundsOmittedViaDescriptor(t *testing.T) {
 				device.Definition.Exposes[0].Features,
 				colorTempFeature("color_temp", bounds[0], bounds[1]),
 			)
-			discovered, rejection := discoverDevice(device, mustEmbeddedProfileCatalog(t))
+			discovered, rejection := discoverDevice(device)
 			if rejection != nil {
 				t.Fatalf("Device rejected: %#v", rejection)
 			}

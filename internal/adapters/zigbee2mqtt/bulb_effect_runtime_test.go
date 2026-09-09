@@ -281,8 +281,7 @@ func wandaReconciled(t *testing.T) (routeSnapshot, *fakeConnection) {
 	recorder := &runtimeRecorder{}
 	session := newFakeSession(recorder)
 	z2m := newRuntimeAdapter(t, session, &fakeDialer{})
-	catalog := mustEmbeddedProfileCatalog(t)
-	inventory, err := discoverInventory(readFixture(t, "bridge-devices-wanda-synthetic.json"), catalog)
+	inventory, err := discoverInventory(readFixture(t, "bridge-devices-wanda-synthetic.json"))
 	if err != nil {
 		t.Fatal(err)
 	}

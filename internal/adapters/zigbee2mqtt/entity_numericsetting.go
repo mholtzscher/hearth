@@ -155,3 +155,45 @@ func numericSettingBounds(feature upstreamExpose) (float64, float64, bool) {
 	}
 	return minimum, maximum, true
 }
+
+// planNumericSetting discovers one allowlisted observable numeric setting
+// once per device. The expose must be a resolved unique root with a
+// device-unique nonempty property, full publish/set/get access, the exact
+// expected unit, and exact discovered bounds. Ineligible siblings are
+// omitted without affecting valid settings.
+func planNumericSetting(input devicePlanningInput, spec numericSettingMapping) *entityPlan {
+	root, ok := input.Exposes.UniqueRoot(upstreamExposeNumeric, spec.exposeName)
+	if !ok || !root.resolved {
+		return nil
+	}
+	expose := root.expose
+	if expose.Property == "" || !exposeCanPublish(expose) || !exposeCanSet(expose) ||
+		!exposeCanGet(expose) || !input.Exposes.PropertyUnique(expose.Property) {
+		return nil
+	}
+	if expose.Unit != spec.expectedUnit {
+		return nil
+	}
+	minimum, maximum, valid := numericSettingBounds(expose)
+	if !valid {
+		return nil
+	}
+	key, name := scopedIdentity(spec.key, spec.displayName, expose.Endpoint, root.endpoint, root.scoped)
+	if !validDescriptorName(name) {
+		return nil
+	}
+	var unit *string
+	if spec.expectedUnit != "" {
+		unitValue := spec.expectedUnit
+		unit = &unitValue
+	}
+	plan, err := newNumericSettingPlan(adapter.EntityMetadata{
+		Key:        key,
+		ExternalID: input.IEEE + "/" + entityLocation(root) + "/" + spec.key,
+		Name:       name,
+	}, expose.Property, minimum, maximum, unit)
+	if err != nil {
+		return nil
+	}
+	return &plan
+}

@@ -455,7 +455,7 @@ func reconcileSensorDevice(t *testing.T, device upstreamDevice) reconciledSensor
 	if err != nil {
 		t.Fatal(err)
 	}
-	inventory, err := discoverInventory(payload, mustEmbeddedProfileCatalog(t))
+	inventory, err := discoverInventory(payload)
 	if err != nil {
 		t.Fatal(err)
 	}

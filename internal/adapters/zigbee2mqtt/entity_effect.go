@@ -11,6 +11,10 @@ import (
 	"github.com/mholtzscher/hearth/sdk/adapter/typed"
 )
 
+const effectExposeName = "effect"
+
+const resetTotalEnergyExposeName = "reset_total_energy"
+
 // newEnumActionPlan builds the complete stateless enum-action translation
 // for one set-only property. The plan claims no State properties, runs no
 // decoder, requests no refresh, and translates trigger Commands to
@@ -84,4 +88,76 @@ func enumActionTranslator(
 			Outcome:   plannedDispatched,
 		}, nil
 	}
+}
+
+// planEffect discovers the optional device-root set-only effect action once
+// per device. Access must be exactly set-only with a device-unique
+// property; the constructor validates the expose values against the shared
+// choice bounds and omits the Entity on error.
+func planEffect(input devicePlanningInput) *entityPlan {
+	root, ok := input.Exposes.UniqueRoot(upstreamExposeEnum, effectExposeName)
+	if !ok || !root.resolved {
+		return nil
+	}
+	expose := root.expose
+	if expose.Property == "" || expose.Access != exposeSetAccessBit ||
+		!input.Exposes.PropertyUnique(expose.Property) {
+		return nil
+	}
+	key, name := scopedIdentity(
+		"effect",
+		"Effect",
+		expose.Endpoint,
+		root.endpoint,
+		root.scoped,
+	)
+	if !validDescriptorName(name) {
+		return nil
+	}
+	plan, err := newEnumActionPlan(adapter.EntityMetadata{
+		Key:        key,
+		ExternalID: input.IEEE + "/" + entityLocation(root) + "/effect",
+		Name:       name,
+	}, expose.Property, expose.Values)
+	if err != nil {
+		return nil
+	}
+	return &plan
+}
+
+// planResetTotalEnergy discovers the optional device-root reset action once
+// per device. Unlike the light effect it accepts any access granting set
+// (the Third Reality plug advertises access 7): only set access, a unique
+// nonempty property, and valid discovered values are required. The shared
+// stateless constructor validates values; the plan publishes one set and
+// completes as dispatched with no get, matcher, or observation.
+func planResetTotalEnergy(input devicePlanningInput) *entityPlan {
+	root, ok := input.Exposes.UniqueRoot(upstreamExposeEnum, resetTotalEnergyExposeName)
+	if !ok || !root.resolved {
+		return nil
+	}
+	expose := root.expose
+	if expose.Property == "" || !exposeCanSet(expose) ||
+		!input.Exposes.PropertyUnique(expose.Property) {
+		return nil
+	}
+	key, name := scopedIdentity(
+		"resettotalenergy",
+		"Reset Total Energy",
+		expose.Endpoint,
+		root.endpoint,
+		root.scoped,
+	)
+	if !validDescriptorName(name) {
+		return nil
+	}
+	plan, err := newEnumActionPlan(adapter.EntityMetadata{
+		Key:        key,
+		ExternalID: input.IEEE + "/" + entityLocation(root) + "/resettotalenergy",
+		Name:       name,
+	}, expose.Property, expose.Values)
+	if err != nil {
+		return nil
+	}
+	return &plan
 }

@@ -1,18 +1,6 @@
 # Zigbee2MQTT Entity planning refactor
 
-> **Status: Superseded by [ADR 0019](../docs/adr/0019-use-embedded-zigbee2mqtt-profiles.md) and the profile catalog.**
-> Handwritten planner implementation guidance in this document (explicit `light`/`relay`/`sensor` planner
-> assemblies, `planner_*.go` files, and the `entityPlan` construction described below) is stale and must not
-> be implemented. The profile catalog in `internal/adapters/zigbee2mqtt/profiles/` is the sole production
-> mapping path. The still-valid observable contracts retained below are: canonical Device kinds
-> `light`/`relay`/`sensor`; one IEEE address yields one Hearth Device; Binding keys, Entity keys, external
-> IDs, names, support, order, routes, rejection codes, State conversion, Command payloads, refresh, and
-> outcome policy stay byte-identical; primary-family precedence with supplemental sensors; integer
-> milli-Celsius temperature State; same-message multi-property evidence with no cross-message cache;
-> and per-IEEE FIFO Command queues. For mapping changes, see the profile catalog section of the
-> [Zigbee2MQTT Adapter spec](./zigbee2mqtt-adapter.md) and the README profile catalog guidance.
-
-**Original status:** Ready for task breakdown
+**Status:** Ready for task breakdown
 **Approved by:** User
 **Type:** Refactoring with proof features
 **Effort:** XL, 5 to 9 focused days at 60% confidence

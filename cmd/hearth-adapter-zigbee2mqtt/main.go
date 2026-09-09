@@ -58,26 +58,17 @@ func run() int {
 		slog.String("event", "process.config_loaded"),
 	)
 	if err := zigbee2mqtt.Run(ctx, config, logger); err != nil && !errors.Is(err, context.Canceled) {
-		reportRunFailure(ctx, processLogger, err)
+		processLogger.ErrorContext(
+			ctx,
+			"hearth-adapter-zigbee2mqtt failed",
+			slog.String("event", "process.failed"),
+			slog.String("error_code", "run_failed"),
+			slog.String("stage", "run"),
+		)
 		return 1
 	}
 	processLogger.InfoContext(
 		ctx, "hearth-adapter-zigbee2mqtt stopped", slog.String("event", "process.stopped"),
 	)
 	return 0
-}
-
-// reportRunFailure emits the process.failed record for a run failure with
-// the failed startup stage and its error code. A catalog load failure
-// reports stage load_profile_catalog with error code profile_catalog_invalid;
-// any other run failure reports its stage with error code run_failed. The
-// record never contains configuration values or connection details.
-func reportRunFailure(ctx context.Context, logger *slog.Logger, err error) {
-	logger.ErrorContext(
-		ctx,
-		"hearth-adapter-zigbee2mqtt failed",
-		slog.String("event", "process.failed"),
-		slog.String("error_code", zigbee2mqtt.ErrorCode(err)),
-		slog.String("stage", zigbee2mqtt.ErrorStage(err)),
-	)
 }
