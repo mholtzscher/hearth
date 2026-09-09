@@ -24,9 +24,9 @@ Run a small mutation-testing trial with `mise run mutation-test -- ./contracts/v
 
 Run the first-light simulator with `go run ./cmd/hearth-simulator -config configs/simulator.yaml` after copying `configs/simulator.example.yaml`. Its `scenario` may be `happy`, `adapter-unhealthy`, `entity-unavailable`, `delayed-source-time`, `future-clock-skew`, `upstream-rejection`, `no-op-refresh`, `overlapping-opposite-command`, `outcome-timeout`, `interrupted-command`, or `restart-before-ack`. `happy` reports a healthy Adapter and available Entity before publishing State. `adapter-unhealthy` proves that Core rejects a Command before dispatch. `entity-unavailable` proves that availability is advisory: Core dispatches the Command, and the simulator reports the Entity available after the recovery attempt succeeds. Heartbeat expiry, takeover, stale-runtime isolation, Core readiness recovery overlays, and graceful release remain deterministic process-test scenarios. Raw duplicate and malformed Observation cases remain transport-test scenarios.
 
-### Automation management and manual execution
+### Automation management and scheduling
 
-Automations support schema-backed definitions and inspectable manual Runs. Cron expressions are validated and retained, but **automatic scheduling is not implemented yet** (spec 2). Use the [canonical definition schema](internal/modules/automations/automation-definition.schema.json) or `/openapi.json` for authoring. The [example definition](internal/modules/automations/testdata/automation-definitions/valid-power.json) validates against that schema; replace its example Entity ID with a registered canonical ID before saving.
+Automations support schema-backed definitions, household-local cron scheduling, and inspectable manual and scheduled Runs. Use the [canonical definition schema](internal/modules/automations/automation-definition.schema.json) or `/openapi.json` for authoring. The [example definition](internal/modules/automations/testdata/automation-definitions/valid-power.json) validates against that schema; replace its example Entity ID with a registered canonical ID before saving.
 
 ```sh
 base=http://127.0.0.1:8080
@@ -44,6 +44,9 @@ curl -i -X POST "$base/v1/automations/$automation_id/runs" \
   -H 'Idempotency-Key: evening-test-1'
 curl "$base/v1/automation-runs?automation_id=$automation_id&limit=50"
 curl "$base/v1/automation-runs/arn_..."
+# Scheduled matches (started or overlap-skipped) and unevaluated intervals.
+curl "$base/v1/automation-occurrences?automation_id=$automation_id&limit=50"
+curl "$base/v1/automation-schedule-gaps?limit=50"
 # Delete the live definition at its current revision; history remains retained.
 curl -X DELETE "$base/v1/automations/$automation_id?expected_revision=2"
 ```
@@ -52,9 +55,27 @@ POST returns 201 and a Location. PUT fully replaces the definition and increment
 
 Manual invocation takes **no body** and requires a 1–128 character printable ASCII key without whitespace. A new invocation returns 202 immediately with a Run Location. Repeating a retained key returns 200 and the original Run, even after edits, completion, disablement, or deletion; use a new key for another execution. One Run per Automation may be active. Client disconnects do not cancel admitted work, and there is no cancellation endpoint. Steps execute sequentially without retries or rollback; inspect the Run for failures rather than expecting a delayed HTTP gateway error. `satisfied`/`observed` and `dispatched` describe Command evidence, not guaranteed physical effects.
 
-Collections return `items: []` when empty and an optional `next_cursor`. Limits default to 50 (1–200); pass the opaque cursor with the same collection and Automation filter. Definitions sort by ID ascending, Runs by start time/ID descending. Continuations are not snapshots; concurrent inserts and pruning can change later pages. History summaries omit Step parameters; full Run detail retains the immutable definition snapshot and owned Command evidence, but never idempotency keys or internal correlation markers.
+Collections return `items: []` when empty and an optional `next_cursor`. Limits default to 50 (1–200); pass the opaque cursor with the same collection and Automation filter. Definitions sort by ID ascending, Runs by start time/ID descending, Occurrences by scheduled UTC time/Automation ID descending, and gaps by recording time/ID descending. Continuations are not snapshots; concurrent inserts and pruning can change later pages. History summaries omit Step parameters; full Run detail retains the immutable definition snapshot and owned Command evidence, but never idempotency keys or internal correlation markers.
 
 Terminal history is eligible for hourly pruning strictly before the retention cutoff (no startup pruning). Once a key is pruned, reusing it starts a new Run only if the live definition still exists; deleted definitions and pruned Runs return 404. Shutdown closes Run and next-Step admission and drains current Commands before tearing down dependencies. Executor persistence faults degrade `/readyz` and return `automation_unavailable` (503) for admission; uncertain Runs retain active claims until restart recovery interrupts them without replay.
+
+#### Cron calendar and recovery semantics
+
+Each Automation has 1–32 identified `cron` Triggers with OR semantics. Trigger IDs are unique, stable author-supplied lowercase slugs; reordering does not change their identity. At one UTC evaluation minute, all matching Triggers coalesce into **one** Occurrence and one Run, or one `automation_run_active` skip if that Automation already has a running Run. Nothing queues. Manual invocation ignores enablement and does not alter the schedule.
+
+Expressions use exactly five fields: minute, hour, day-of-month, month, day-of-week (Sunday = 0, not 7). For example, `0 19 * * 1-5` means weekdays at **household-local 19:00**, using startup-loaded `household_timezone`. Definition responses expose that read-only setting. Lists, ascending ranges, positive steps, and three-letter English month/weekday names are supported. Seconds, years, descriptors (`@daily`, `@every`), `TZ=`/`CRON_TZ=`, `?`, `L`, `W`, `#`, wrapping ranges, empty list elements and zero/negative steps are rejected. A valid expression need not ever match: `0 0 31 2 *` (February 31) is accepted but never runs.
+
+Day fields use the pinned robfig v3.0.1 dialect: two restricted day fields combine with OR; when either has wildcard semantics, both tests must pass. Thus `0 0 1 * MON` means the first day **or** Monday, while `0 0 * * MON` means Mondays only. `*` and `*/1` retain wildcard semantics, `*/2` does not: `0 0 */2 * MON` means odd days **or** Mondays. Numeric full ranges remain restricted, so `0 0 1-31 * MON` matches every day. Comma lists combine their masks, including wildcard markers.
+
+Nonexistent local minutes during daylight-saving jumps are skipped. Repeated local minutes are eligible only at their first chronological occurrence, **even after restarting during the second occurrence**; half-hour rollbacks follow the same rule. Hearth evaluates UTC minute buckets with local fields at the bucket start, not a separate exact-second historical civil calendar. Supported IANA offsets stay within ±24 hours; custom timezone data outside that invariant is unsupported.
+
+There is **no offline catch-up, startup replay, or schedule preview**. Startup skips through its current UTC minute and begins at the next future boundary. During normal operation a delayed tick can admit only within the current scheduled minute; crossing its end misses it. Large jumps record one bounded gap, not invented per-Automation matches. Every create or whole-definition update (including enablement, unchanged expressions, or reorder-only edits) becomes eligible at the first UTC minute strictly after its write. Edits and disablement never rewrite or cancel active Runs.
+
+Occurrence history retains the matching Trigger snapshots in definition array order; scheduled Run history retains their `matched_trigger_ids` and the admission timezone. Manual Runs have empty matching IDs. Historical snapshots remain unchanged after edits, deletion, or a timezone change and restart. Gaps explain unevaluated intervals, not how many Automations would have matched. Skipped Occurrences and gaps prune strictly before the configured retention cutoff; started Occurrences remain with their Runs and prune atomically with them. Scheduler high-water progress is never pruned: backward clock movement, even after restart or history expiry, cannot replay evaluated minutes.
+
+A crash interrupts admitted Runs without replaying any Steps, including a crash before worker launch. Shutdown closes Run and next-Step admission, joins the scheduler, and drains already-started Commands before stopping their dependencies, including error exits. Scheduler persistence errors degrade `/readyz`; a later committed evaluation can restore scheduler health, but duplicate-minute no-ops cannot clear the fault. Scheduler recovery never clears a sticky executor fault or reopens shutdown admission. Logs use `automation.scheduler_started`, `automation.schedule_gap`, `automation.occurrence_skipped`, and `automation.scheduler_failed`; they contain safe identifiers and reasons, not Step parameters.
+
+This unreleased schema changes the initial migration directly. Recreate existing development databases explicitly; no automatic migration or retained-history compatibility is provided.
 
 ### Home Assistant migration adapter
 
