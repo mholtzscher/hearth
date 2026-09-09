@@ -131,7 +131,7 @@ func TestRunHTTPBindFailureEmitsNoListeningEvent(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = blocker.Close() })
 
-	runErr := Run(ctx, Config{
+	runErr := Run(ctx, Config{HouseholdTimezone: "UTC",
 		HTTPAddr:   blocker.Addr().String(),
 		NATSURL:    server.ClientURL(),
 		SQLitePath: filepath.Join(t.TempDir(), "hearth.db"),
@@ -169,7 +169,7 @@ func TestRunCancelsCleanlyAfterReady(t *testing.T) {
 	runContext, stopRun := context.WithCancel(ctx)
 	runErrors := make(chan error, 1)
 	go func() {
-		runErrors <- Run(runContext, Config{
+		runErrors <- Run(runContext, Config{HouseholdTimezone: "UTC",
 			HTTPAddr:   freeLoopbackAddr(t),
 			NATSURL:    server.ClientURL(),
 			SQLitePath: filepath.Join(t.TempDir(), "hearth.db"),

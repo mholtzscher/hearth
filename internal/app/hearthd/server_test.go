@@ -12,6 +12,8 @@ import (
 
 	"github.com/danielgtaylor/huma/v2"
 
+	"github.com/mholtzscher/hearth/internal/modules/automations"
+	automationsapi "github.com/mholtzscher/hearth/internal/modules/automations/api"
 	"github.com/mholtzscher/hearth/internal/modules/devices"
 )
 
@@ -33,11 +35,12 @@ type stubDevices struct {
 	setEntityEnabled func(context.Context, devices.EntityID, bool) (devices.EntityWithState, error)
 	executeCommand   func(
 		context.Context,
-		devices.EntityID,
-		devices.OperationName,
-		devices.CommandParameters,
+		devices.CommandInput,
 	) (devices.CommandResult, error)
+	admissionClosed bool
 }
+
+func (stub *stubDevices) commandAdmissionOpen() bool { return stub == nil || !stub.admissionClosed }
 
 func (stub *stubDevices) GetEntity(ctx context.Context, entityID devices.EntityID) (devices.EntityWithState, error) {
 	if stub.getEntity == nil {
@@ -117,15 +120,15 @@ func (*stubDevices) ListEntityStateHistory(
 
 func (stub *stubDevices) ExecuteCommand(
 	ctx context.Context,
-	entityID devices.EntityID,
-	operation devices.OperationName,
-	parameters devices.CommandParameters,
+	input devices.CommandInput,
 ) (devices.CommandResult, error) {
 	if stub.executeCommand == nil {
 		panic("unexpected ExecuteCommand call")
 	}
-	return stub.executeCommand(ctx, entityID, operation, parameters)
+	return stub.executeCommand(ctx, input)
 }
+
+func (stub *stubDevices) CommandAdmissionOpen() bool { return stub.commandAdmissionOpen() }
 
 func TestHTTPHandlerServesHealthReadinessAndDeviceOperations(t *testing.T) {
 	t.Parallel()
@@ -136,7 +139,7 @@ func TestHTTPHandlerServesHealthReadinessAndDeviceOperations(t *testing.T) {
 		}}, nil
 	}}
 	readiness := &testReadiness{}
-	handler, api := NewHTTPHandler(stub, readiness)
+	handler, api := NewHTTPHandler(stub, &stubHTTPAutomations{}, testHTTPAutomationCodec(t), readiness, stub)
 
 	if response := appRequest(handler, "/healthz"); response.Code != http.StatusOK {
 		t.Fatalf("health status = %d", response.Code)
@@ -167,7 +170,13 @@ func TestHTTPHandlerServesHealthReadinessAndDeviceOperations(t *testing.T) {
 //nolint:gocognit // The OpenAPI contract matrix is intentionally verified in one place.
 func TestRuntimeOpenAPIContract(t *testing.T) {
 	t.Parallel()
-	handler, _ := NewHTTPHandler(&stubDevices{}, &testReadiness{})
+	handler, _ := NewHTTPHandler(
+		&stubDevices{},
+		&stubHTTPAutomations{},
+		testHTTPAutomationCodec(t),
+		&testReadiness{},
+		&stubDevices{},
+	)
 	response := appRequest(handler, "/openapi.json")
 	if response.Code != http.StatusOK {
 		t.Fatalf("OpenAPI status = %d, body = %s", response.Code, response.Body.String())
@@ -198,7 +207,7 @@ func TestRuntimeOpenAPIContract(t *testing.T) {
 	if document.OpenAPI != "3.1.0" || document.Info.Title != "Hearth" || document.Info.Version != "1.0.0" {
 		t.Fatalf("OpenAPI metadata = %#v", document)
 	}
-	if len(document.Paths) != 11 {
+	if len(document.Paths) != 16 {
 		t.Fatalf("OpenAPI paths = %v", document.Paths)
 	}
 	assertRuntimeOpenAPIOperation(t, document.Paths["/v1/entities"].Get, "list-entities", "200", "400", "422", "500")
@@ -378,7 +387,13 @@ func TestRuntimeOpenAPIContract(t *testing.T) {
 
 func TestHTTPHandlerUsesStandardHumaValidationErrors(t *testing.T) {
 	t.Parallel()
-	handler, _ := NewHTTPHandler(&stubDevices{}, nil)
+	handler, _ := NewHTTPHandler(
+		&stubDevices{},
+		&stubHTTPAutomations{},
+		testHTTPAutomationCodec(t),
+		nil,
+		&stubDevices{},
+	)
 	for _, test := range []struct {
 		body   string
 		status int
@@ -414,7 +429,13 @@ func TestNewHTTPHandlerPreservesHumaErrorFactory(t *testing.T) {
 	}
 	t.Cleanup(func() { huma.NewError = original })
 
-	NewHTTPHandler(&stubDevices{}, nil)
+	NewHTTPHandler(
+		&stubDevices{},
+		&stubHTTPAutomations{},
+		testHTTPAutomationCodec(t),
+		nil,
+		&stubDevices{},
+	)
 	called = false
 	err := huma.NewError(http.StatusTeapot, "teapot")
 	if !called || err.GetStatus() != http.StatusTeapot || err.Error() != "teapot" {
@@ -479,4 +500,21 @@ func appRequest(handler http.Handler, path string) *httptest.ResponseRecorder {
 	response := httptest.NewRecorder()
 	handler.ServeHTTP(response, request)
 	return response
+}
+
+// Unused methods deliberately panic through the embedded consumer seam.
+type stubHTTPAutomations struct {
+	automationsapi.Automations
+
+	unavailable bool
+}
+
+func (stub *stubHTTPAutomations) AutomationExecutionReady() bool { return !stub.unavailable }
+func testHTTPAutomationCodec(t *testing.T) *automations.AutomationDefinitionCodec {
+	t.Helper()
+	codec, err := automations.NewAutomationDefinitionCodec()
+	if err != nil {
+		t.Fatal(err)
+	}
+	return codec
 }

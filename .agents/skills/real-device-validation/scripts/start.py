@@ -109,7 +109,7 @@ def start(host):
     stage("preflight passed")
 
     prepare_config(Path("configs/homelab-hearthd.yaml"),
-                   f"http_addr: 127.0.0.1:8080\nnats_url: nats://{host}:4222\nsqlite_path: .data/homelab-hearthd.db\n")
+                   f"http_addr: 127.0.0.1:8080\nnats_url: nats://{host}:4222\nsqlite_path: .data/homelab-hearthd.db\nhousehold_timezone: UTC\n")
     prepare_config(Path("configs/homelab-zigbee2mqtt.yaml"),
                    f"adapter_id: zigbee2mqtt\nnats_url: nats://{host}:4222\nmqtt:\n  url: tcp://{host}:1883\n  base_topic: zigbee2mqtt\n")
     run("git", "check-ignore", "-q", ".data/real-device-validation.json")

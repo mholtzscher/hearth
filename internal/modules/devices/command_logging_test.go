@@ -180,12 +180,11 @@ func TestExecuteCommandLogsCreationAndDispatch(t *testing.T) {
 	)
 	service = newTestService(repository, sender, commandCatalog(t, time.Second), commandLogDependencies(logger))
 
-	result, err := service.ExecuteCommand(
-		commandOperationContext(),
-		commandTestEntityID,
-		OperationNameSet,
-		CommandParameters(`{"value":true}`),
-	)
+	result, err := service.ExecuteCommand(commandOperationContext(), CommandInput{
+		EntityID:      commandTestEntityID,
+		OperationName: OperationNameSet,
+		Parameters:    CommandParameters(`{"value":true}`),
+	})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -258,12 +257,11 @@ func TestExecuteCommandFailedPersistenceLogsExecutionFailed(t *testing.T) {
 		return CommandAcceptance{}, ErrEntityUnavailable
 	})
 	service := newTestService(repository, sender, commandCatalog(t, time.Second), commandLogDependencies(logger))
-	if _, err := service.ExecuteCommand(
-		commandOperationContext(),
-		commandTestEntityID,
-		OperationNameSet,
-		CommandParameters(`{"value":true}`),
-	); err == nil {
+	if _, err := service.ExecuteCommand(commandOperationContext(), CommandInput{
+		EntityID:      commandTestEntityID,
+		OperationName: OperationNameSet,
+		Parameters:    CommandParameters(`{"value":true}`),
+	}); err == nil {
 		t.Fatal("expected command execution error")
 	}
 	// Failure diagnostics log from the lifecycle goroutine; wait for the
@@ -318,12 +316,11 @@ func TestExecuteCommandLogsSwallowedFailureAfterCallerCancellation(t *testing.T)
 	ctx, cancel := context.WithCancel(commandOperationContext())
 	returned := make(chan error, 1)
 	go func() {
-		_, err := service.ExecuteCommand(
-			ctx,
-			commandTestEntityID,
-			OperationNameSet,
-			CommandParameters(`{"value":true}`),
-		)
+		_, err := service.ExecuteCommand(ctx, CommandInput{
+			EntityID:      commandTestEntityID,
+			OperationName: OperationNameSet,
+			Parameters:    CommandParameters(`{"value":true}`),
+		})
 		returned <- err
 	}()
 	request := <-dispatched
@@ -385,12 +382,11 @@ func TestExecuteCommandLogsPersistedInternalFailureAfterCallerCancellation(t *te
 	ctx, cancel := context.WithCancel(commandOperationContext())
 	returned := make(chan error, 1)
 	go func() {
-		_, err := service.ExecuteCommand(
-			ctx,
-			commandTestEntityID,
-			OperationNameSet,
-			CommandParameters(`{"value":true}`),
-		)
+		_, err := service.ExecuteCommand(ctx, CommandInput{
+			EntityID:      commandTestEntityID,
+			OperationName: OperationNameSet,
+			Parameters:    CommandParameters(`{"value":true}`),
+		})
 		returned <- err
 	}()
 	request := <-dispatched
@@ -444,21 +440,19 @@ func TestExecuteCommandLogsNothingBeforeDurableCreation(t *testing.T) {
 	})
 	service := newTestService(repository, sender, commandCatalog(t, time.Second), commandLogDependencies(logger))
 
-	if _, err := service.ExecuteCommand(
-		commandOperationContext(),
-		commandTestEntityID,
-		OperationNameSet,
-		CommandParameters(`{"value":1}`),
-	); !errors.Is(err, ErrInvalidCommand) {
+	if _, err := service.ExecuteCommand(commandOperationContext(), CommandInput{
+		EntityID:      commandTestEntityID,
+		OperationName: OperationNameSet,
+		Parameters:    CommandParameters(`{"value":1}`),
+	}); !errors.Is(err, ErrInvalidCommand) {
 		t.Fatalf("invalid parameters error = %v", err)
 	}
 	repository.createErr = errors.New("SQLite unavailable")
-	if _, err := service.ExecuteCommand(
-		commandOperationContext(),
-		commandTestEntityID,
-		OperationNameSet,
-		CommandParameters(`{"value":true}`),
-	); !errors.Is(err, repository.createErr) {
+	if _, err := service.ExecuteCommand(commandOperationContext(), CommandInput{
+		EntityID:      commandTestEntityID,
+		OperationName: OperationNameSet,
+		Parameters:    CommandParameters(`{"value":true}`),
+	}); !errors.Is(err, repository.createErr) {
 		t.Fatalf("creation error = %v", err)
 	}
 	if records := writer.records(t); len(records) != 0 {
@@ -543,12 +537,11 @@ func TestExecuteCommandLifecycleProgressesUnderBlockedCreationLog(t *testing.T) 
 	}
 	finished := make(chan outcome, 1)
 	go func() {
-		result, err := service.ExecuteCommand(
-			commandOperationContext(),
-			commandTestEntityID,
-			OperationNameSet,
-			CommandParameters(`{"value":true}`),
-		)
+		result, err := service.ExecuteCommand(commandOperationContext(), CommandInput{
+			EntityID:      commandTestEntityID,
+			OperationName: OperationNameSet,
+			Parameters:    CommandParameters(`{"value":true}`),
+		})
 		finished <- outcome{result: result, err: err}
 	}()
 	select {
@@ -597,12 +590,11 @@ func TestExecuteCommandCallerCancellationProgressesUnderBlockedCreationLog(t *te
 	ctx, cancel := context.WithCancel(commandOperationContext())
 	returned := make(chan error, 1)
 	go func() {
-		_, err := service.ExecuteCommand(
-			ctx,
-			commandTestEntityID,
-			OperationNameSet,
-			CommandParameters(`{"value":true}`),
-		)
+		_, err := service.ExecuteCommand(ctx, CommandInput{
+			EntityID:      commandTestEntityID,
+			OperationName: OperationNameSet,
+			Parameters:    CommandParameters(`{"value":true}`),
+		})
 		returned <- err
 	}()
 	select {

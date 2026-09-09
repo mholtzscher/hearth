@@ -165,12 +165,11 @@ func TestRunProjectsColorBulbAndLinksColorCommand(t *testing.T) {
 	}
 	commandDone := make(chan commandResult, 1)
 	go func() {
-		result, executeErr := service.ExecuteCommand(
-			ctx,
-			colorXY.Entity.ID,
-			devices.OperationNameSet,
-			devices.CommandParameters(`{"x":4000,"y":2000}`),
-		)
+		result, executeErr := service.ExecuteCommand(ctx, devices.CommandInput{
+			EntityID:      colorXY.Entity.ID,
+			OperationName: devices.OperationNameSet,
+			Parameters:    devices.CommandParameters(`{"x":4000,"y":2000}`),
+		})
 		commandDone <- commandResult{result: result, err: executeErr}
 	}()
 	select {

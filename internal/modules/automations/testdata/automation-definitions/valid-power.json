@@ -1,0 +1,11 @@
+{
+  "name": "Evening lights",
+  "enabled": false,
+  "triggers": [
+    {"id": "weekdays", "kind": "cron", "expression": "0 19 * * 1-5"},
+    {"id": "weekends", "kind": "cron", "expression": "0 18 * * 0,6"}
+  ],
+  "steps": [
+    {"entity_id": "ent_01900000-0000-7000-8000-000000000001", "operation_name": "set", "parameters": {"value": true}}
+  ]
+}

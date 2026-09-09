@@ -363,12 +363,11 @@ func TestCoreCommandRoundTripRequiresLinkedSimulatorObservation(t *testing.T) {
 		t.Fatal("simulator command subscription did not become active")
 	}
 
-	result, err := service.ExecuteCommand(
-		ctx,
-		entityID,
-		devices.OperationNameSet,
-		devices.CommandParameters(`{"value":true}`),
-	)
+	result, err := service.ExecuteCommand(ctx, devices.CommandInput{
+		EntityID:      entityID,
+		OperationName: devices.OperationNameSet,
+		Parameters:    devices.CommandParameters(`{"value":true}`),
+	})
 	if err != nil {
 		t.Fatal(err)
 	}

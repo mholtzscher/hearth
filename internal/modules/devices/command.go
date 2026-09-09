@@ -25,78 +25,93 @@ func (err *CommandExecutionError) Error() string {
 
 func (err *CommandExecutionError) Unwrap() error { return err.Err }
 
-func (service *Service) ExecuteCommand(
-	ctx context.Context,
-	entityID EntityID,
-	operationName OperationName,
-	parameters CommandParameters,
-) (CommandResult, error) {
-	if _, err := ParseEntityID(string(entityID)); err != nil {
-		return CommandResult{}, fmt.Errorf("%w: parse entity ID: %w", ErrInvalidCommand, err)
-	}
-	if !operationNamePattern.MatchString(string(operationName)) {
-		return CommandResult{}, fmt.Errorf("%w: operation name is not subject-safe", ErrInvalidCommand)
-	}
-	if err := validateCommandParameters(parameters); err != nil {
-		return CommandResult{}, fmt.Errorf("%w: %w", ErrInvalidCommand, err)
-	}
-	view, err := service.stores.Reads.GetEntity(ctx, entityID)
+// ValidateCommand validates current support without generating identities, writing,
+// checking control eligibility, or dispatching. Returned parameters are owned by the caller.
+func (service *Service) ValidateCommand(ctx context.Context, input CommandInput) (CommandParameters, error) {
+	_, resolved, err := service.validateCommand(ctx, input)
 	if err != nil {
-		return CommandResult{}, err
+		return nil, err
 	}
-	resolved, err := service.catalog.ResolveCommand(view.Entity, operationName, parameters)
-	if err != nil {
-		return CommandResult{}, fmt.Errorf("%w: %w", ErrInvalidCommand, err)
-	}
-	commandID, err := service.dependencies.NewCommandID()
-	if err != nil {
-		return CommandResult{}, fmt.Errorf("generate command ID: %w", err)
-	}
-	if _, parseErr := ParseCommandID(string(commandID)); parseErr != nil {
-		return CommandResult{}, fmt.Errorf("generate command ID: %w", parseErr)
-	}
-	correlationID, err := service.dependencies.NewCorrelationID()
-	if err != nil {
-		return CommandResult{}, fmt.Errorf("generate correlation ID: %w", err)
-	}
-	if _, parseErr := ParseCorrelationID(string(correlationID)); parseErr != nil {
-		return CommandResult{}, fmt.Errorf("generate correlation ID: %w", parseErr)
-	}
-	requestedAt, err := service.now()
-	if err != nil {
-		return CommandResult{}, err
-	}
-	command := CommandRecord{
-		ID: commandID, EntityID: entityID, AdapterID: view.Entity.AdapterID,
-		OperationName: operationName, Parameters: append(CommandParameters(nil), resolved.Parameters...),
-		CorrelationID: correlationID, Status: CommandStatusRequested,
-		RequestedAt: requestedAt, DeadlineAt: requestedAt.Add(resolved.Deadline),
-	}
-	command, err = service.stores.Commands.CreateCommand(ctx, command)
-	if err != nil {
-		return CommandResult{}, err
-	}
-	if command.Status == CommandStatusEntityDisabled {
-		service.logCommandCreated(ctx, command)
-		return CommandResult{}, commandExecutionError(command.ID, ErrEntityDisabled)
-	}
-	if command.Status == CommandStatusAdapterUnhealthy {
-		service.logCommandCreated(ctx, command)
-		return CommandResult{}, commandExecutionError(command.ID, ErrAdapterUnhealthy)
-	}
-	waiter := service.addCommandWaiter(command.ID)
+	return append(CommandParameters(nil), resolved.Parameters...), nil
+}
 
-	completed := make(chan commandOutcome, 1)
-	lifecycleParent := context.WithoutCancel(ctx)
-	lifecycleContext, cancel := context.WithDeadline(lifecycleParent, command.DeadlineAt)
-	go func() {
-		completed <- service.runCommand(lifecycleContext, command, resolved.Outcome, waiter)
-		service.removeCommandWaiter(command.ID)
-		cancel()
-		// Publish the outcome and release lifecycle resources before a slow
-		// diagnostic sink can block this existing worker.
-		service.logCommandCreated(lifecycleParent, command)
-	}()
+func (service *Service) validateCommand(ctx context.Context, input CommandInput) (Entity, ResolvedCommand, error) {
+	if input.ID != "" {
+		if _, err := ParseCommandID(string(input.ID)); err != nil {
+			return Entity{}, ResolvedCommand{}, fmt.Errorf("%w: parse command ID: %w", ErrInvalidCommand, err)
+		}
+	}
+	if input.CorrelationID != "" {
+		if _, err := ParseCorrelationID(string(input.CorrelationID)); err != nil {
+			return Entity{}, ResolvedCommand{}, fmt.Errorf("%w: parse correlation ID: %w", ErrInvalidCommand, err)
+		}
+	}
+	if _, err := ParseEntityID(string(input.EntityID)); err != nil {
+		return Entity{}, ResolvedCommand{}, fmt.Errorf("%w: parse entity ID: %w", ErrInvalidCommand, err)
+	}
+	if !operationNamePattern.MatchString(string(input.OperationName)) {
+		return Entity{}, ResolvedCommand{}, fmt.Errorf("%w: operation name is not subject-safe", ErrInvalidCommand)
+	}
+	if err := validateCommandParameters(input.Parameters); err != nil {
+		return Entity{}, ResolvedCommand{}, fmt.Errorf("%w: %w", ErrInvalidCommand, err)
+	}
+	view, err := service.stores.Reads.GetEntity(ctx, input.EntityID)
+	if err != nil {
+		return Entity{}, ResolvedCommand{}, err
+	}
+	resolved, err := service.catalog.ResolveCommand(view.Entity, input.OperationName, input.Parameters)
+	if err != nil {
+		return Entity{}, ResolvedCommand{}, fmt.Errorf("%w: %w", ErrInvalidCommand, err)
+	}
+	return view.Entity, resolved, nil
+}
+
+// ExecuteCommand persists direct command identity before dispatch; caller
+// cancellation stops waiting but does not cancel a durably created command.
+// Direct Commands are rejected with ErrCommandUnavailable once
+// StopCommandAdmission closes admission, even when both identities are
+// supplied: only ExecuteAutomationStepCommand carries explicit automation Step
+// permission. Admitted workers are tracked until their detached lifecycle
+// finishes, independent of caller or shutdown cancellation, so WaitCommands
+// drains them before dependencies tear down.
+func (service *Service) ExecuteCommand(ctx context.Context, input CommandInput) (CommandResult, error) {
+	if !service.admitCommandWorker() {
+		return CommandResult{}, ErrCommandUnavailable
+	}
+	return service.executeAdmittedCommand(ctx, input)
+}
+
+// ExecuteAutomationStepCommand persists an already-admitted automation Step
+// before dispatch. Only the automation executor calls this, after the
+// automation gate committed the Step intent, so a Step committed before the
+// gates close still dispatches and drains while later Steps cannot be
+// admitted. Both reserved identities must be supplied.
+func (service *Service) ExecuteAutomationStepCommand(
+	ctx context.Context,
+	input CommandInput,
+) (CommandResult, error) {
+	if input.ID == "" || input.CorrelationID == "" {
+		return CommandResult{}, fmt.Errorf("%w: automation Step must supply both identities", ErrInvalidCommand)
+	}
+	service.admitAutomationStepWorker()
+	return service.executeAdmittedCommand(ctx, input)
+}
+
+// executeAdmittedCommand waits on the worker started by startAdmittedCommand
+// and emits immediate terminal creation records only after lifecycle tracking
+// is released, so a slow diagnostic sink can never block WaitCommands.
+func (service *Service) executeAdmittedCommand(
+	ctx context.Context,
+	input CommandInput,
+) (CommandResult, error) {
+	command, completed, err := service.startAdmittedCommand(ctx, input)
+	if err != nil {
+		if completed == nil &&
+			(command.Status == CommandStatusEntityDisabled || command.Status == CommandStatusAdapterUnhealthy) {
+			service.logCommandCreated(ctx, command)
+		}
+		return CommandResult{}, err
+	}
 
 	select {
 	case outcome := <-completed:
@@ -109,6 +124,114 @@ func (service *Service) ExecuteCommand(
 	case <-ctx.Done():
 		return CommandResult{}, ctx.Err()
 	}
+}
+
+// startAdmittedCommand owns the admitted worker until it transfers ownership
+// to the detached lifecycle goroutine. The defer releases every pre-transfer
+// failure, including immediate terminal records, before the caller logs them;
+// success clears ownership so the worker releases exactly once before its
+// potentially blocking creation logging.
+func (service *Service) startAdmittedCommand(
+	ctx context.Context,
+	input CommandInput,
+) (CommandRecord, <-chan commandOutcome, error) {
+	owned := true
+	defer func() {
+		if owned {
+			service.releaseCommandWorker()
+		}
+	}()
+	entity, resolved, err := service.validateCommand(ctx, input)
+	if err != nil {
+		return CommandRecord{}, nil, err
+	}
+	command, err := service.createCommandRecord(ctx, entity, input, resolved)
+	if err != nil {
+		return CommandRecord{}, nil, err
+	}
+	if command.Status == CommandStatusEntityDisabled {
+		return command, nil, commandExecutionError(command.ID, ErrEntityDisabled)
+	}
+	if command.Status == CommandStatusAdapterUnhealthy {
+		return command, nil, commandExecutionError(command.ID, ErrAdapterUnhealthy)
+	}
+	completed := service.spawnCommandWorker(ctx, command, resolved.Outcome)
+	owned = false
+	return command, completed, nil
+}
+
+// createCommandRecord generates missing identities and persists the requested
+// Command. The caller (startAdmittedCommand) owns the admitted worker:
+// failures return through its defer, and success transfers ownership to
+// spawnCommandWorker.
+func (service *Service) createCommandRecord(
+	ctx context.Context,
+	entity Entity,
+	input CommandInput,
+	resolved ResolvedCommand,
+) (CommandRecord, error) {
+	commandID := input.ID
+	if commandID == "" {
+		generated, err := service.dependencies.NewCommandID()
+		if err != nil {
+			return CommandRecord{}, fmt.Errorf("generate command ID: %w", err)
+		}
+		if _, parseErr := ParseCommandID(string(generated)); parseErr != nil {
+			return CommandRecord{}, fmt.Errorf("generate command ID: %w", parseErr)
+		}
+		commandID = generated
+	}
+	correlationID := input.CorrelationID
+	if correlationID == "" {
+		generated, err := service.dependencies.NewCorrelationID()
+		if err != nil {
+			return CommandRecord{}, fmt.Errorf("generate correlation ID: %w", err)
+		}
+		if _, parseErr := ParseCorrelationID(string(generated)); parseErr != nil {
+			return CommandRecord{}, fmt.Errorf("generate correlation ID: %w", parseErr)
+		}
+		correlationID = generated
+	}
+	requestedAt, err := service.now()
+	if err != nil {
+		return CommandRecord{}, err
+	}
+	command := CommandRecord{
+		ID: commandID, EntityID: input.EntityID, AdapterID: entity.AdapterID,
+		OperationName: input.OperationName, Parameters: append(CommandParameters(nil), resolved.Parameters...),
+		CorrelationID: correlationID, Status: CommandStatusRequested,
+		RequestedAt: requestedAt, DeadlineAt: requestedAt.Add(resolved.Deadline),
+	}
+	command, err = service.stores.Commands.CreateCommand(ctx, command)
+	if err != nil {
+		return CommandRecord{}, err
+	}
+	return command, nil
+}
+
+// spawnCommandWorker registers the waiter and hands the admitted worker to its
+// detached lifecycle goroutine, which releases it when the lifecycle finishes.
+// The returned channel receives exactly one outcome; caller cancellation stops
+// waiting without canceling the worker.
+func (service *Service) spawnCommandWorker(
+	ctx context.Context,
+	command CommandRecord,
+	outcome OutcomeKind,
+) <-chan commandOutcome {
+	waiter := service.addCommandWaiter(command.ID)
+	completed := make(chan commandOutcome, 1)
+	lifecycleParent := context.WithoutCancel(ctx)
+	lifecycleContext, cancel := context.WithDeadline(lifecycleParent, command.DeadlineAt)
+	go func() {
+		completed <- service.runCommand(lifecycleContext, command, outcome, waiter)
+		service.removeCommandWaiter(command.ID)
+		cancel()
+		service.releaseCommandWorker()
+		// Publish the outcome and release lifecycle resources before a slow
+		// diagnostic sink can block this existing worker.
+		service.logCommandCreated(lifecycleParent, command)
+	}()
+	return completed
 }
 
 type commandOutcome struct {

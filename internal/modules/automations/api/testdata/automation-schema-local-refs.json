@@ -1,0 +1,17 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:hearth:test:automation-local-refs",
+  "type": "object",
+  "unevaluatedProperties": false,
+  "required": ["payload"],
+  "$defs": {
+    "payload": {
+      "type": "object",
+      "properties": {
+        "value": {"type": "integer", "minimum": 9007199254740993},
+        "fraction": {"type": "number", "multipleOf": 0.1234567890123456789}
+      }
+    }
+  },
+  "properties": {"payload": {"$ref": "#/$defs/payload"}}
+}

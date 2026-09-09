@@ -13,6 +13,7 @@ import (
 	natsserver "github.com/nats-io/nats-server/v2/server"
 	natsgo "github.com/nats-io/nats.go"
 
+	"github.com/mholtzscher/hearth/internal/modules/automations"
 	"github.com/mholtzscher/hearth/internal/modules/devices"
 	platformdb "github.com/mholtzscher/hearth/internal/platform/db"
 )
@@ -71,6 +72,7 @@ func TestCoreStartupInterruptsActiveCommandsWithoutRedispatch(t *testing.T) {
 	); acceptErr != nil {
 		t.Fatal(acceptErr)
 	}
+	recoveryRuns := seedAutomationRecoveryRuns(t, database, repository, requested, accepted)
 	if closeErr := database.Close(); closeErr != nil {
 		t.Fatal(closeErr)
 	}
@@ -95,7 +97,7 @@ func TestCoreStartupInterruptsActiveCommandsWithoutRedispatch(t *testing.T) {
 	}
 	t.Cleanup(observer.Close)
 	var dispatches atomic.Int64
-	subscription, err := observer.Subscribe("hearth.v1.adapter.simulator.command.>", func(*natsgo.Msg) {
+	subscription, err := observer.Subscribe("hearth.v1.adapter.simulator.runtime.*.command.>", func(*natsgo.Msg) {
 		dispatches.Add(1)
 	})
 	if err != nil {
@@ -111,7 +113,7 @@ func TestCoreStartupInterruptsActiveCommandsWithoutRedispatch(t *testing.T) {
 	defer stopCore()
 	runErrors := make(chan error, 1)
 	go func() {
-		runErrors <- Run(runContext, Config{
+		runErrors <- Run(runContext, Config{HouseholdTimezone: "UTC",
 			HTTPAddr: httpAddress, NATSURL: server.ClientURL(), SQLitePath: databasePath,
 		}, logger)
 	}()
@@ -140,6 +142,7 @@ func TestCoreStartupInterruptsActiveCommandsWithoutRedispatch(t *testing.T) {
 	// /healthz serves only after startup completes, so reaching it proves the
 	// full startup window passed without redispatching persisted commands.
 	waitForCoreHealthz(ctx, t, httpAddress, runErrors)
+	verifyAutomationRecoveryRuns(t, automations.NewSQLiteRepository(observerDatabase), recoveryRuns)
 	if got := dispatches.Load(); got != 0 {
 		t.Fatalf("startup redispatched %d persisted commands", got)
 	}
@@ -198,7 +201,7 @@ func TestRunReturnsCancellationWhenStartupNATSConnectCancelled(t *testing.T) {
 	defer stopCore()
 	runErrors := make(chan error, 1)
 	go func() {
-		runErrors <- Run(runContext, Config{
+		runErrors <- Run(runContext, Config{HouseholdTimezone: "UTC",
 			HTTPAddr: httpAddress, NATSURL: "nats://" + blocker.Addr().String(), SQLitePath: databasePath,
 		}, slog.New(slog.DiscardHandler))
 	}()

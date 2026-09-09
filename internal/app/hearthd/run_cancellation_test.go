@@ -15,7 +15,7 @@ func TestRunCanceledContextReturnsCancellation(t *testing.T) {
 	t.Parallel()
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
-	config := Config{
+	config := Config{HouseholdTimezone: "UTC",
 		HTTPAddr: "127.0.0.1:4222", NATSURL: "nats://127.0.0.1:4222",
 		SQLitePath: filepath.Join(t.TempDir(), "hearth.db"),
 	}

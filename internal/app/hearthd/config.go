@@ -6,6 +6,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	_ "time/tzdata" // Embed household timezone rules instead of requiring host zoneinfo.
 
 	platformconfig "github.com/mholtzscher/hearth/internal/platform/config"
 )
@@ -17,10 +18,19 @@ const (
 	MinimumObservationRetention = 8 * 24 * time.Hour
 )
 
+const (
+	// DefaultAutomationHistoryRetention retains terminal Runs for thirty days.
+	DefaultAutomationHistoryRetention = 30 * 24 * time.Hour
+	// MinimumAutomationHistoryRetention is the shortest supported audit window.
+	MinimumAutomationHistoryRetention = 24 * time.Hour
+)
+
 type Config struct {
-	HTTPAddr   string `yaml:"http_addr"`
-	NATSURL    string `yaml:"nats_url"`
-	SQLitePath string `yaml:"sqlite_path"`
+	HouseholdTimezone          string        `yaml:"household_timezone"`
+	AutomationHistoryRetention time.Duration `yaml:"automation_history_retention"`
+	HTTPAddr                   string        `yaml:"http_addr"`
+	NATSURL                    string        `yaml:"nats_url"`
+	SQLitePath                 string        `yaml:"sqlite_path"`
 	// ObservationRetention bounds how long Core keeps non-current observations.
 	// Zero selects DefaultObservationRetention; a restart applies policy changes
 	// on the next hourly prune pass.
@@ -34,6 +44,9 @@ func LoadConfig(path string) (Config, error) {
 	}
 	if value.ObservationRetention == 0 {
 		value.ObservationRetention = DefaultObservationRetention
+	}
+	if value.AutomationHistoryRetention == 0 {
+		value.AutomationHistoryRetention = DefaultAutomationHistoryRetention
 	}
 	if err := value.Validate(); err != nil {
 		return Config{}, fmt.Errorf("validate config %q: %w", path, err)
@@ -50,7 +63,50 @@ func (value Config) EffectiveObservationRetention() time.Duration {
 	return value.ObservationRetention
 }
 
+// EffectiveAutomationHistoryRetention applies the default to programmatic config too.
+func (value Config) EffectiveAutomationHistoryRetention() time.Duration {
+	if value.AutomationHistoryRetention == 0 {
+		return DefaultAutomationHistoryRetention
+	}
+	return value.AutomationHistoryRetention
+}
+
+// LoadHouseholdTimezone loads an IANA location from embedded timezone data.
+func (value Config) LoadHouseholdTimezone() (*time.Location, error) {
+	name := value.HouseholdTimezone
+	if name == "" || name == "Local" || strings.TrimSpace(name) != name || strings.HasPrefix(name, "+") ||
+		strings.HasPrefix(name, "-") {
+		return nil, fmt.Errorf("household_timezone must be an IANA timezone")
+	}
+	location, err := time.LoadLocation(name)
+	if err != nil {
+		return nil, fmt.Errorf("household_timezone must be an IANA timezone")
+	}
+	return location, nil
+}
+
 func (value Config) Validate() error {
+	_, err := value.validateAndLoadHouseholdTimezone()
+	return err
+}
+
+// validateAndLoadHouseholdTimezone lets Run validate and retain one loaded location.
+func (value Config) validateAndLoadHouseholdTimezone() (*time.Location, error) {
+	location, err := value.LoadHouseholdTimezone()
+	if err != nil {
+		return nil, err
+	}
+	if err = value.validateRuntimeSettings(); err != nil {
+		return nil, err
+	}
+	return location, nil
+}
+
+func (value Config) validateRuntimeSettings() error {
+	if value.AutomationHistoryRetention != 0 && value.AutomationHistoryRetention < MinimumAutomationHistoryRetention {
+		return fmt.Errorf("automation_history_retention must be at least %s", MinimumAutomationHistoryRetention)
+	}
+
 	_, portText, err := net.SplitHostPort(value.HTTPAddr)
 	if err != nil {
 		return fmt.Errorf("http_addr must contain a host and port: %w", err)

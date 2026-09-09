@@ -23,13 +23,14 @@ func TestExecuteCommandReturnsSatisfiedResultAndRegistersOpenAPI(t *testing.T) {
 	var requestedParameters devices.CommandParameters
 	stub := &stubDevices{executeCommand: func(
 		_ context.Context,
-		entityID devices.EntityID,
-		operation devices.OperationName,
-		parameters devices.CommandParameters,
+		input devices.CommandInput,
 	) (devices.CommandResult, error) {
-		requestedEntityID = entityID
-		requestedOperation = operation
-		requestedParameters = append(devices.CommandParameters(nil), parameters...)
+		if input.ID != "" || input.CorrelationID != "" {
+			t.Error("HTTP supplied internal command identities")
+		}
+		requestedEntityID = input.EntityID
+		requestedOperation = input.OperationName
+		requestedParameters = append(devices.CommandParameters(nil), input.Parameters...)
 		observationID := apiObservationID
 		value := devices.Value(`true`)
 		return devices.CommandResult{
@@ -77,9 +78,7 @@ func TestExecuteCommandReturnsDispatchedResultWithoutEvidenceFields(t *testing.T
 	t.Parallel()
 	stub := &stubDevices{executeCommand: func(
 		context.Context,
-		devices.EntityID,
-		devices.OperationName,
-		devices.CommandParameters,
+		devices.CommandInput,
 	) (devices.CommandResult, error) {
 		result, err := devices.NewCommandResult(apiCommandID, devices.OutcomeDispatched, nil, nil)
 		if err != nil {
@@ -128,9 +127,7 @@ func TestExecuteDisabledCommandReturnsDurableProblemDetailsExtension(t *testing.
 	t.Parallel()
 	stub := &stubDevices{executeCommand: func(
 		context.Context,
-		devices.EntityID,
-		devices.OperationName,
-		devices.CommandParameters,
+		devices.CommandInput,
 	) (devices.CommandResult, error) {
 		return devices.CommandResult{}, &devices.CommandExecutionError{
 			CommandID: apiCommandID, Err: devices.ErrEntityDisabled,
@@ -177,6 +174,7 @@ func TestCommandErrorMappingUsesStandardHumaErrors(t *testing.T) {
 		{devices.ErrEntityUnavailable, http.StatusServiceUnavailable, "entity unavailable"},
 		{devices.ErrUpstreamRejected, http.StatusBadGateway, "upstream rejected command"},
 		{devices.ErrOutcomeTimeout, http.StatusGatewayTimeout, "command outcome timed out"},
+		{devices.ErrCommandUnavailable, http.StatusServiceUnavailable, "command admission is unavailable"},
 		{errors.New("SQLite unavailable"), http.StatusInternalServerError, "internal error"},
 	}
 	for _, test := range tests {
@@ -186,5 +184,32 @@ func TestCommandErrorMappingUsesStandardHumaErrors(t *testing.T) {
 		if !ok || status.GetStatus() != test.status || status.Error() != test.detail {
 			t.Fatalf("mapped %v = %#v", test.cause, status)
 		}
+	}
+}
+
+func TestExecuteCommandHTTPRejectsReservedIdentityFields(t *testing.T) {
+	t.Parallel()
+	for _, field := range []string{"id", "command_id", "correlation_id"} {
+		t.Run(field, func(t *testing.T) {
+			t.Parallel()
+			// An unexpected service call panics: identity fields are rejected at the HTTP boundary.
+			router, _ := testAPI(t, &stubDevices{})
+			body := map[string]any{
+				"operation": "set", "parameters": map[string]any{"value": true}, field: string(apiCommandID),
+			}
+			raw, err := json.Marshal(body)
+			if err != nil {
+				t.Fatal(err)
+			}
+			request := httptest.NewRequest(
+				http.MethodPost, "/v1/entities/"+string(apiEntityID)+"/commands", bytes.NewReader(raw),
+			)
+			request.Header.Set("Content-Type", "application/json")
+			response := httptest.NewRecorder()
+			router.ServeHTTP(response, request)
+			if response.Code != http.StatusUnprocessableEntity {
+				t.Fatalf("reserved identity status = %d, body = %s", response.Code, response.Body.String())
+			}
+		})
 	}
 }

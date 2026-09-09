@@ -3,3 +3,9 @@ nats_url: nats://127.0.0.1:4222
 sqlite_path: .data/hearthd.db
 # Observation retention window (default 30d, minimum 8d). Applies on the next hourly prune pass.
 observation_retention: 720h
+
+# IANA timezone; required, changes take effect after restart.
+household_timezone: UTC
+# Terminal automation Run history; default 720h, minimum 24h.
+# Pruned hourly, never on startup; active Runs are retained.
+automation_history_retention: 720h

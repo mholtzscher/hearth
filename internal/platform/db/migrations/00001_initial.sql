@@ -333,7 +333,77 @@ LEFT JOIN entity_availability_current AS current
     ON current.entity_id = e.id
     AND current.adapter_id = m.adapter_id;
 
+CREATE TABLE automations (
+ id TEXT PRIMARY KEY CHECK (substr(id, 1, 4) = 'aut_'),
+ revision INTEGER NOT NULL CHECK (revision > 0),
+ name TEXT NOT NULL,
+ enabled INTEGER NOT NULL CHECK (enabled IN (0, 1)),
+ triggers_json TEXT NOT NULL CHECK (json_valid(triggers_json)),
+ steps_json TEXT NOT NULL CHECK (json_valid(steps_json)),
+ created_at TEXT NOT NULL,
+ updated_at TEXT NOT NULL
+);
+
+CREATE TABLE automation_runs (
+ id TEXT PRIMARY KEY CHECK (substr(id, 1, 4) = 'arn_'),
+ automation_id TEXT NOT NULL,
+ revision INTEGER NOT NULL CHECK (revision > 0),
+ snapshot_json TEXT NOT NULL CHECK (json_valid(snapshot_json)),
+ source TEXT NOT NULL CHECK (source IN ('manual', 'scheduled')),
+ scheduled_at TEXT,
+ matched_trigger_ids_json TEXT NOT NULL CHECK (
+   json_valid(matched_trigger_ids_json) AND json_type(matched_trigger_ids_json) = 'array'
+ ),
+ status TEXT NOT NULL CHECK (status IN ('running', 'succeeded', 'failed', 'interrupted')),
+ started_at TEXT NOT NULL,
+ completed_at TEXT,
+ failure_code TEXT,
+ idempotency_key TEXT,
+ CHECK ((source = 'manual' AND scheduled_at IS NULL AND idempotency_key IS NOT NULL
+         AND length(idempotency_key) BETWEEN 1 AND 128 AND idempotency_key NOT GLOB '*[^!-~]*'
+         AND json_array_length(matched_trigger_ids_json) = 0)
+     OR (source = 'scheduled' AND scheduled_at IS NOT NULL AND idempotency_key IS NULL
+         AND json_array_length(matched_trigger_ids_json) > 0)),
+ CHECK ((status = 'running' AND completed_at IS NULL AND failure_code IS NULL)
+     OR (status = 'succeeded' AND completed_at IS NOT NULL AND failure_code IS NULL)
+     OR (status IN ('failed', 'interrupted') AND completed_at IS NOT NULL AND failure_code IS NOT NULL))
+);
+CREATE UNIQUE INDEX automation_runs_active_idx ON automation_runs(automation_id) WHERE status = 'running';
+CREATE UNIQUE INDEX automation_runs_manual_key_idx ON automation_runs(automation_id, idempotency_key) WHERE idempotency_key IS NOT NULL;
+CREATE INDEX automation_runs_history_idx ON automation_runs(started_at DESC, id DESC);
+CREATE INDEX automation_runs_filtered_history_idx ON automation_runs(automation_id, started_at DESC, id DESC);
+CREATE INDEX automation_runs_pruning_idx ON automation_runs(completed_at) WHERE status <> 'running';
+
+CREATE TABLE automation_run_steps (
+ run_id TEXT NOT NULL REFERENCES automation_runs(id) ON DELETE CASCADE,
+ step_index INTEGER NOT NULL CHECK (step_index >= 0),
+ definition_json TEXT NOT NULL CHECK (json_valid(definition_json)),
+ status TEXT NOT NULL CHECK (status IN ('pending', 'running', 'satisfied', 'dispatched', 'failed', 'not_attempted', 'interrupted')),
+ reserved_command_id TEXT UNIQUE,
+ reserved_correlation_id TEXT UNIQUE,
+ outcome TEXT CHECK (outcome IN ('observed', 'dispatched')),
+ failure_code TEXT,
+ precreation_failure INTEGER NOT NULL DEFAULT 0 CHECK (precreation_failure IN (0, 1)),
+ started_at TEXT,
+ completed_at TEXT,
+ PRIMARY KEY (run_id, step_index),
+ CHECK ((reserved_command_id IS NULL) = (reserved_correlation_id IS NULL)),
+ CHECK ((status IN ('pending', 'not_attempted') AND reserved_command_id IS NULL AND started_at IS NULL AND outcome IS NULL AND failure_code IS NULL)
+     OR (status NOT IN ('pending', 'not_attempted') AND reserved_command_id IS NOT NULL AND started_at IS NOT NULL)),
+ CHECK ((status IN ('pending', 'running') AND completed_at IS NULL)
+     OR (status NOT IN ('pending', 'running') AND completed_at IS NOT NULL)),
+ CHECK ((status IN ('pending', 'running', 'not_attempted') AND outcome IS NULL AND failure_code IS NULL)
+     OR (status = 'satisfied' AND outcome IS NOT NULL AND outcome = 'observed' AND failure_code IS NULL)
+     OR (status = 'dispatched' AND outcome IS NOT NULL AND outcome = 'dispatched' AND failure_code IS NULL)
+     OR (status IN ('failed', 'interrupted') AND failure_code IS NOT NULL)),
+ CHECK (failure_code IS NULL OR failure_code NOT IN ('command_id_conflict', 'invalid_command', 'entity_not_found', 'internal_error') OR outcome IS NULL),
+ CHECK (precreation_failure = 0 OR (status = 'failed' AND outcome IS NULL AND failure_code IN ('command_id_conflict', 'invalid_command', 'entity_not_found', 'internal_error')))
+);
+
 -- +goose Down
+DROP TABLE automation_run_steps;
+DROP TABLE automation_runs;
+DROP TABLE automations;
 DROP VIEW entity_read_projection;
 DROP INDEX health_transitions_entity_history_idx;
 DROP INDEX health_transitions_adapter_history_idx;

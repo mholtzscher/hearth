@@ -9,9 +9,11 @@ import (
 var (
 	errIdentityConflict           = errors.New("registration identity conflict")
 	errImmutableTypeChange        = errors.New("entity type is immutable")
+	ErrCommandUnavailable         = errors.New("command admission is unavailable")
 	ErrDeviceNotFound             = errors.New("device not found")
 	ErrEntityNotFound             = errors.New("entity not found")
 	ErrCommandNotFound            = errors.New("command not found")
+	ErrCommandIDConflict          = errors.New("command ID already exists")
 	ErrInvalidPage                = errors.New("invalid page")
 	ErrCommandTerminal            = errors.New("command is already terminal")
 	ErrInvalidCommand             = errors.New("invalid command")

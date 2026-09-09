@@ -39,6 +39,16 @@ type EntitySupport json.RawMessage
 type Value json.RawMessage
 type CommandParameters json.RawMessage
 
+// CommandInput permits internal callers to reserve command identity before execution.
+// Empty identities are generated; supplied identities must be canonical and the Command ID fresh.
+type CommandInput struct {
+	ID            CommandID
+	CorrelationID CorrelationID
+	EntityID      EntityID
+	OperationName OperationName
+	Parameters    CommandParameters
+}
+
 type Device struct {
 	ID   DeviceID
 	Kind DeviceKind
