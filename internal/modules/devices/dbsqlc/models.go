@@ -51,46 +51,6 @@ type AdapterRuntime struct {
 	EndReason       sql.NullString
 }
 
-type Automation struct {
-	ID           string
-	Revision     int64
-	Name         string
-	Enabled      int64
-	TriggersJson string
-	StepsJson    string
-	CreatedAt    string
-	UpdatedAt    string
-}
-
-type AutomationRun struct {
-	ID                    string
-	AutomationID          string
-	Revision              int64
-	SnapshotJson          string
-	Source                string
-	ScheduledAt           sql.NullString
-	MatchedTriggerIdsJson string
-	Status                string
-	StartedAt             string
-	CompletedAt           sql.NullString
-	FailureCode           sql.NullString
-	IdempotencyKey        sql.NullString
-}
-
-type AutomationRunStep struct {
-	RunID                 string
-	StepIndex             int64
-	DefinitionJson        string
-	Status                string
-	ReservedCommandID     sql.NullString
-	ReservedCorrelationID sql.NullString
-	Outcome               sql.NullString
-	FailureCode           sql.NullString
-	PrecreationFailure    int64
-	StartedAt             sql.NullString
-	CompletedAt           sql.NullString
-}
-
 type Command struct {
 	ID                   string
 	EntityID             string

@@ -1,1 +1,0 @@
-{"name":"test","triggers":[{"id":"daily","kind":"cron","expression":"0 19 * * *"}],"steps":[{"entity_id":"ent_01900000-0000-7000-8000-000000000001","operation_name":"set","parameters":true}]}

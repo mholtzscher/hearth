@@ -6,6 +6,3 @@ observation_retention: 720h
 
 # IANA timezone; required, changes take effect after restart.
 household_timezone: UTC
-# Terminal automation Run history; default 720h, minimum 24h.
-# Pruned hourly, never on startup; active Runs are retained.
-automation_history_retention: 720h

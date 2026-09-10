@@ -69,31 +69,13 @@ func (service *Service) validateCommand(ctx context.Context, input CommandInput)
 // ExecuteCommand persists direct command identity before dispatch; caller
 // cancellation stops waiting but does not cancel a durably created command.
 // Direct Commands are rejected with ErrCommandUnavailable once
-// StopCommandAdmission closes admission, even when both identities are
-// supplied: only ExecuteAutomationStepCommand carries explicit automation Step
-// permission. Admitted workers are tracked until their detached lifecycle
-// finishes, independent of caller or shutdown cancellation, so WaitCommands
-// drains them before dependencies tear down.
+// StopCommandAdmission closes admission. Admitted workers are tracked until
+// their detached lifecycle finishes, independent of caller or shutdown
+// cancellation, so WaitCommands drains them before dependencies tear down.
 func (service *Service) ExecuteCommand(ctx context.Context, input CommandInput) (CommandResult, error) {
 	if !service.admitCommandWorker() {
 		return CommandResult{}, ErrCommandUnavailable
 	}
-	return service.executeAdmittedCommand(ctx, input)
-}
-
-// ExecuteAutomationStepCommand persists an already-admitted automation Step
-// before dispatch. Only the automation executor calls this, after the
-// automation gate committed the Step intent, so a Step committed before the
-// gates close still dispatches and drains while later Steps cannot be
-// admitted. Both reserved identities must be supplied.
-func (service *Service) ExecuteAutomationStepCommand(
-	ctx context.Context,
-	input CommandInput,
-) (CommandResult, error) {
-	if input.ID == "" || input.CorrelationID == "" {
-		return CommandResult{}, fmt.Errorf("%w: automation Step must supply both identities", ErrInvalidCommand)
-	}
-	service.admitAutomationStepWorker()
 	return service.executeAdmittedCommand(ctx, input)
 }
 

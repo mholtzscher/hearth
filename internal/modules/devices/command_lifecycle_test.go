@@ -7,10 +7,10 @@ import (
 	"time"
 )
 
-// Shutdown must reject new direct Commands while still tracking explicit
-// automation Steps admitted before closure, and WaitCommands must join the
-// detached lifecycle even when the caller already returned.
-func TestCommandAdmissionGateRejectsDirectButTracksReserved(t *testing.T) {
+// Shutdown must reject new Commands while an admitted worker drains, and
+// WaitCommands must join the detached lifecycle even when the caller already
+// returned.
+func TestCommandAdmissionGateRejectsDirectWhileAdmittedDrains(t *testing.T) {
 	t.Parallel()
 	repository := newCommandRepository()
 	entered := make(chan CommandRequest, 4)
@@ -41,9 +41,8 @@ func TestCommandAdmissionGateRejectsDirectButTracksReserved(t *testing.T) {
 	if service.CommandAdmissionOpen() {
 		t.Fatal("admission stayed open after stop")
 	}
-	// A new direct Command is rejected without touching persistence, even when
-	// both reserved identities are supplied: HTTP can never supply explicit
-	// automation Step permission.
+	// A new Command is rejected without touching persistence, even when
+	// both reserved identities are supplied.
 	if _, err := service.ExecuteCommand(context.Background(), CommandInput{
 		EntityID: commandTestEntityID, OperationName: OperationNameSet,
 		Parameters: CommandParameters(`{"value":true}`),
@@ -57,9 +56,6 @@ func TestCommandAdmissionGateRejectsDirectButTracksReserved(t *testing.T) {
 	}); !errors.Is(err, ErrCommandUnavailable) {
 		t.Fatalf("direct reserved-identities error = %v, want %v", err, ErrCommandUnavailable)
 	}
-	// Explicit automation Steps still track after closure.
-	service.admitAutomationStepWorker()
-	service.releaseCommandWorker()
 	// The waiter-blocked worker still drains: satisfy it through the retained
 	// observation path after admission closed.
 	refreshFor := commandTestID
@@ -96,69 +92,6 @@ func TestCommandAdmissionGateRejectsDirectButTracksReserved(t *testing.T) {
 	case <-idle:
 	default:
 		t.Fatal("idle channel stayed open with no workers")
-	}
-}
-
-// Explicit automation Step permission dispatches after admission closes while
-// direct Commands cannot: the Step intent committed before closure drains.
-func TestAutomationStepCommandDispatchesAfterAdmissionCloses(t *testing.T) {
-	t.Parallel()
-	repository := newCommandRepository()
-	entered := make(chan CommandRequest, 1)
-	service := newTestService(repository, commandSenderFunc(func(
-		_ context.Context, _ string, _ RuntimeID, request CommandRequest,
-	) (CommandAcceptance, error) {
-		entered <- request
-		return CommandAcceptance{Accepted: true}, nil
-	}), commandCatalog(t, time.Minute), commandDependencies())
-	service.StopCommandAdmission()
-	// Reserved execution without both identities is a caller bug, not admission.
-	if _, err := service.ExecuteAutomationStepCommand(context.Background(), CommandInput{
-		EntityID: commandTestEntityID, OperationName: OperationNameSet,
-		Parameters: CommandParameters(`{"value":true}`),
-	}); !errors.Is(err, ErrInvalidCommand) {
-		t.Fatalf("reserved without identities error = %v, want %v", err, ErrInvalidCommand)
-	}
-	done := make(chan error, 1)
-	go func() {
-		_, err := service.ExecuteAutomationStepCommand(context.Background(), CommandInput{
-			ID: commandTestID, CorrelationID: commandTestCorrelationID,
-			EntityID: commandTestEntityID, OperationName: OperationNameSet,
-			Parameters: CommandParameters(`{"value":true}`),
-		})
-		done <- err
-	}()
-	select {
-	case request := <-entered:
-		if request.ID != commandTestID || request.CorrelationID != commandTestCorrelationID {
-			t.Fatalf("reserved identities not dispatched: %#v", request)
-		}
-	case <-time.After(5 * time.Second):
-		t.Fatal("reserved Step did not dispatch after admission closure")
-	}
-	refreshFor := commandTestID
-	if _, err := service.ProjectObservation(
-		context.Background(),
-		"simulator",
-		commandTestRuntimeID,
-		Observation{
-			ID: commandTestObservationID, EntityID: commandTestEntityID, Value: Value(`true`),
-			AdapterReceivedAt: time.Now().UTC(), RefreshForCommand: &refreshFor,
-		},
-		time.Now().UTC(),
-	); err != nil {
-		t.Fatal(err)
-	}
-	select {
-	case err := <-done:
-		if err != nil {
-			t.Fatalf("reserved drain error = %v", err)
-		}
-	case <-time.After(5 * time.Second):
-		t.Fatal("reserved Step did not drain")
-	}
-	if err := service.WaitCommands(context.Background()); err != nil {
-		t.Fatalf("wait = %v", err)
 	}
 }
 
@@ -466,8 +399,8 @@ func requireTerminalExecutionError(t *testing.T, err, wantErr error) {
 }
 
 // Pre-creation failures must never retain lifecycle tracking, and after
-// admission closes only the explicit automation Step method still admits:
-// direct Commands are rejected even when both reserved identities are supplied.
+// admission closes Commands are rejected even when both reserved identities
+// are supplied.
 func TestCommandErrorPathsReleaseWorkerWithoutLeak(t *testing.T) {
 	t.Parallel()
 	repository := newCommandRepository()
@@ -503,17 +436,6 @@ func TestCommandErrorPathsReleaseWorkerWithoutLeak(t *testing.T) {
 		t.Fatalf("dispatches = %d, want 0 before durable creation", dispatches)
 	}
 
-	// Reserved automation Step calls without both identities are caller bugs,
-	// not admission: they must fail without retaining tracking.
-	if _, err := service.ExecuteAutomationStepCommand(context.Background(), CommandInput{
-		EntityID:      commandTestEntityID,
-		OperationName: OperationNameSet,
-		Parameters:    CommandParameters(`{"value":true}`),
-	}); !errors.Is(err, ErrInvalidCommand) {
-		t.Fatalf("reserved without identities error = %v", err)
-	}
-	assertCommandWorkerIdle(t, service)
-
 	service.StopCommandAdmission()
 	if _, err := service.ExecuteCommand(context.Background(), CommandInput{
 		ID: commandTestID, CorrelationID: commandTestCorrelationID,
@@ -522,22 +444,6 @@ func TestCommandErrorPathsReleaseWorkerWithoutLeak(t *testing.T) {
 		Parameters:    CommandParameters(`{"value":true}`),
 	}); !errors.Is(err, ErrCommandUnavailable) {
 		t.Fatalf("direct reserved-identities error after closure = %v, want %v", err, ErrCommandUnavailable)
-	}
-	assertCommandWorkerIdle(t, service)
-
-	// The explicit Step method still admits after closure: the disabled
-	// terminal record commits without dispatch and releases tracking.
-	repository.view.Entity.Enabled = false
-	if _, err := service.ExecuteAutomationStepCommand(context.Background(), CommandInput{
-		ID: commandTestID, CorrelationID: commandTestCorrelationID,
-		EntityID:      commandTestEntityID,
-		OperationName: OperationNameSet,
-		Parameters:    CommandParameters(`{"value":true}`),
-	}); !errors.Is(err, ErrEntityDisabled) {
-		t.Fatalf("reserved Step after closure error = %v, want %v", err, ErrEntityDisabled)
-	}
-	if stored := repository.command(commandTestID); stored.Status != CommandStatusEntityDisabled {
-		t.Fatalf("stored Step command = %#v, want entity_disabled", stored)
 	}
 	assertCommandWorkerIdle(t, service)
 }

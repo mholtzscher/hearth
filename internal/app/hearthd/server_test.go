@@ -12,8 +12,6 @@ import (
 
 	"github.com/danielgtaylor/huma/v2"
 
-	"github.com/mholtzscher/hearth/internal/modules/automations"
-	automationsapi "github.com/mholtzscher/hearth/internal/modules/automations/api"
 	"github.com/mholtzscher/hearth/internal/modules/devices"
 )
 
@@ -139,7 +137,7 @@ func TestHTTPHandlerServesHealthReadinessAndDeviceOperations(t *testing.T) {
 		}}, nil
 	}}
 	readiness := &testReadiness{}
-	handler, api := NewHTTPHandler(stub, &stubHTTPAutomations{}, testHTTPAutomationCodec(t), readiness, stub)
+	handler, api := NewHTTPHandler(stub, readiness, stub)
 
 	if response := appRequest(handler, "/healthz"); response.Code != http.StatusOK {
 		t.Fatalf("health status = %d", response.Code)
@@ -172,8 +170,6 @@ func TestRuntimeOpenAPIContract(t *testing.T) {
 	t.Parallel()
 	handler, _ := NewHTTPHandler(
 		&stubDevices{},
-		&stubHTTPAutomations{},
-		testHTTPAutomationCodec(t),
 		&testReadiness{},
 		&stubDevices{},
 	)
@@ -207,7 +203,7 @@ func TestRuntimeOpenAPIContract(t *testing.T) {
 	if document.OpenAPI != "3.1.0" || document.Info.Title != "Hearth" || document.Info.Version != "1.0.0" {
 		t.Fatalf("OpenAPI metadata = %#v", document)
 	}
-	if len(document.Paths) != 16 {
+	if len(document.Paths) != 11 {
 		t.Fatalf("OpenAPI paths = %v", document.Paths)
 	}
 	assertRuntimeOpenAPIOperation(t, document.Paths["/v1/entities"].Get, "list-entities", "200", "400", "422", "500")
@@ -389,8 +385,6 @@ func TestHTTPHandlerUsesStandardHumaValidationErrors(t *testing.T) {
 	t.Parallel()
 	handler, _ := NewHTTPHandler(
 		&stubDevices{},
-		&stubHTTPAutomations{},
-		testHTTPAutomationCodec(t),
 		nil,
 		&stubDevices{},
 	)
@@ -431,8 +425,6 @@ func TestNewHTTPHandlerPreservesHumaErrorFactory(t *testing.T) {
 
 	NewHTTPHandler(
 		&stubDevices{},
-		&stubHTTPAutomations{},
-		testHTTPAutomationCodec(t),
 		nil,
 		&stubDevices{},
 	)
@@ -500,21 +492,4 @@ func appRequest(handler http.Handler, path string) *httptest.ResponseRecorder {
 	response := httptest.NewRecorder()
 	handler.ServeHTTP(response, request)
 	return response
-}
-
-// Unused methods deliberately panic through the embedded consumer seam.
-type stubHTTPAutomations struct {
-	automationsapi.Automations
-
-	unavailable bool
-}
-
-func (stub *stubHTTPAutomations) AutomationExecutionReady() bool { return !stub.unavailable }
-func testHTTPAutomationCodec(t *testing.T) *automations.AutomationDefinitionCodec {
-	t.Helper()
-	codec, err := automations.NewAutomationDefinitionCodec()
-	if err != nil {
-		t.Fatal(err)
-	}
-	return codec
 }
