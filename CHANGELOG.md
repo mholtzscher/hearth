@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.7.0](https://github.com/mholtzscher/hearth/compare/v0.6.0...v0.7.0) (2026-09-10)
+
+
+### Features
+
+* **automations:** implement durable manual execution and management ([#70](https://github.com/mholtzscher/hearth/issues/70)) ([02c2f0e](https://github.com/mholtzscher/hearth/commit/02c2f0e3aa03f0258a73a2ae30b4c8705126294d))
+* **automations:** match household cron minutes with first-fold semantics ([#72](https://github.com/mholtzscher/hearth/issues/72)) ([5803374](https://github.com/mholtzscher/hearth/commit/5803374daaeba26864a5374dc80bd1c4e1d5af69))
+* **zigbee2mqtt:** add humidity and battery sensors ([#67](https://github.com/mholtzscher/hearth/issues/67)) ([f94ac04](https://github.com/mholtzscher/hearth/commit/f94ac043e7d50bd5cd69aa9deddb099a69550a3d))
+* **zigbee2mqtt:** support smart plug entities ([#75](https://github.com/mholtzscher/hearth/issues/75)) ([9c76b7c](https://github.com/mholtzscher/hearth/commit/9c76b7cf15c1536e2ac3ea22c7cfd70143c20729))
+
 ## [0.6.0](https://github.com/mholtzscher/hearth/compare/v0.5.0...v0.6.0) (2026-09-08)
 
 
