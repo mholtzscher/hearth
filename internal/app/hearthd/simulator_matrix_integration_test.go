@@ -238,8 +238,6 @@ func newSimulatorMatrixHarness(t *testing.T, scenario string, options simulatorM
 	}
 	httpHandler, _ := NewHTTPHandler(
 		harness.service,
-		&stubHTTPAutomations{},
-		testHTTPAutomationCodec(t),
 		nil,
 		harness.service,
 	)

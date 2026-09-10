@@ -12,8 +12,6 @@ import (
 	natsgo "github.com/nats-io/nats.go"
 	"github.com/nats-io/nats.go/jetstream"
 
-	"github.com/mholtzscher/hearth/internal/modules/automations"
-	automationsapi "github.com/mholtzscher/hearth/internal/modules/automations/api"
 	devicesapi "github.com/mholtzscher/hearth/internal/modules/devices/api"
 	devicesnats "github.com/mholtzscher/hearth/internal/modules/devices/nats"
 )
@@ -59,17 +57,15 @@ func (readiness *RuntimeReadiness) Check(ctx context.Context) error {
 	return nil
 }
 
-// CommandAdmissionChecker is the narrow readiness seam for direct Command
-// admission. It stays separate from the broad Devices API so HTTP handlers,
-// which use ExecuteCommand, can never supply reserved automation Step permission.
+// CommandAdmissionChecker is the narrow readiness seam for Command
+// admission. It stays separate from the broad Devices API so HTTP handlers
+// can never bypass admission.
 type CommandAdmissionChecker interface {
 	CommandAdmissionOpen() bool
 }
 
 func NewHTTPHandler(
 	devices devicesapi.Devices,
-	automationService automationsapi.Automations,
-	definitions *automations.AutomationDefinitionCodec,
 	readiness ReadinessChecker,
 	commandAdmission CommandAdmissionChecker,
 ) (http.Handler, huma.API) {
@@ -79,8 +75,7 @@ func NewHTTPHandler(
 		return ctx.JSON(http.StatusOK, map[string]string{statusField: "ok"})
 	})
 	router.GET("/readyz", func(ctx *echo.Context) error {
-		if readiness == nil || readiness.Check(ctx.Request().Context()) != nil || automationService == nil ||
-			!automationService.AutomationExecutionReady() || commandAdmission == nil ||
+		if readiness == nil || readiness.Check(ctx.Request().Context()) != nil || commandAdmission == nil ||
 			!commandAdmission.CommandAdmissionOpen() {
 			return ctx.JSON(http.StatusServiceUnavailable, map[string]string{statusField: "not_ready"})
 		}
@@ -90,6 +85,5 @@ func NewHTTPHandler(
 	api := humaecho.New(router, huma.DefaultConfig("Hearth", "1.0.0"))
 	v1 := huma.NewGroup(api, "/v1")
 	devicesapi.Register(v1, devices)
-	automationsapi.Register(v1, automationService, definitions)
 	return router, api
 }

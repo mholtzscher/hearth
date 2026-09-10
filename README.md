@@ -18,43 +18,11 @@ The checked-in golangci-lint config tracks [maratori/golangci-lint-config](https
 
 Run a small mutation-testing trial with `mise run mutation-test -- ./contracts/v1`, then pass another package or subtree after `--` to widen the run. Gremlins is much slower than the regular test suite, so it is not part of `validate`; investigate surviving mutants as missing behavioral guarantees rather than chasing the score. `.gremlins.yaml` allows extra test-startup time and excludes checked-in generated Go files.
 
-`hearthd` requires `household_timezone` (an IANA name such as `America/New_York`, or `UTC`); timezone changes require restart. `automation_history_retention` defaults to `720h` and must be at least `24h`. Terminal Run history is pruned hourly, never on startup; active Runs remain until recovery or completion.
+`hearthd` requires `household_timezone` (an IANA name such as `America/New_York`, or `UTC`); timezone changes require restart.
 
 `hearthd` accepts any configured HTTP bind address. The example remains `127.0.0.1:8080`; bind to a non-loopback address only on a trusted network because the HTTP API has no authentication.
 
 Run the first-light simulator with `go run ./cmd/hearth-simulator -config configs/simulator.yaml` after copying `configs/simulator.example.yaml`. Its `scenario` may be `happy`, `adapter-unhealthy`, `entity-unavailable`, `delayed-source-time`, `future-clock-skew`, `upstream-rejection`, `no-op-refresh`, `overlapping-opposite-command`, `outcome-timeout`, `interrupted-command`, or `restart-before-ack`. `happy` reports a healthy Adapter and available Entity before publishing State. `adapter-unhealthy` proves that Core rejects a Command before dispatch. `entity-unavailable` proves that availability is advisory: Core dispatches the Command, and the simulator reports the Entity available after the recovery attempt succeeds. Heartbeat expiry, takeover, stale-runtime isolation, Core readiness recovery overlays, and graceful release remain deterministic process-test scenarios. Raw duplicate and malformed Observation cases remain transport-test scenarios.
-
-### Automation management and manual execution
-
-Automations support schema-backed definitions and inspectable manual Runs. Cron expressions are validated and retained, but **automatic scheduling is not implemented yet** (spec 2). Use the [canonical definition schema](internal/modules/automations/automation-definition.schema.json) or `/openapi.json` for authoring. The [example definition](internal/modules/automations/testdata/automation-definitions/valid-power.json) validates against that schema; replace its example Entity ID with a registered canonical ID before saving.
-
-```sh
-base=http://127.0.0.1:8080
-# Copy the example and replace entity_id; saving validates every Step without dispatch.
-curl -i -X POST "$base/v1/automations" \
-  -H 'content-type: application/json' --data-binary @automation.json
-curl "$base/v1/automations?limit=50"
-# Use the aut_ ID returned by POST, and the current revision from GET.
-automation_id=aut_...
-curl "$base/v1/automations/$automation_id"
-curl -X PUT "$base/v1/automations/$automation_id?expected_revision=1" \
-  -H 'content-type: application/json' --data-binary @automation.json
-# This explicitly actuates devices, even when the Automation is disabled.
-curl -i -X POST "$base/v1/automations/$automation_id/runs" \
-  -H 'Idempotency-Key: evening-test-1'
-curl "$base/v1/automation-runs?automation_id=$automation_id&limit=50"
-curl "$base/v1/automation-runs/arn_..."
-# Delete the live definition at its current revision; history remains retained.
-curl -X DELETE "$base/v1/automations/$automation_id?expected_revision=2"
-```
-
-POST returns 201 and a Location. PUT fully replaces the definition and increments its revision; omitted `enabled` defaults to false for both POST and PUT. Revision metadata is not part of the JSON definition. Missing/nonpositive revisions are 422; stale revisions and active-Run admission/deletion conflicts are 409 with stable codes.
-
-Manual invocation takes **no body** and requires a 1–128 character printable ASCII key without whitespace. A new invocation returns 202 immediately with a Run Location. Repeating a retained key returns 200 and the original Run, even after edits, completion, disablement, or deletion; use a new key for another execution. One Run per Automation may be active. Client disconnects do not cancel admitted work, and there is no cancellation endpoint. Steps execute sequentially without retries or rollback; inspect the Run for failures rather than expecting a delayed HTTP gateway error. `satisfied`/`observed` and `dispatched` describe Command evidence, not guaranteed physical effects.
-
-Collections return `items: []` when empty and an optional `next_cursor`. Limits default to 50 (1–200); pass the opaque cursor with the same collection and Automation filter. Definitions sort by ID ascending, Runs by start time/ID descending. Continuations are not snapshots; concurrent inserts and pruning can change later pages. History summaries omit Step parameters; full Run detail retains the immutable definition snapshot and owned Command evidence, but never idempotency keys or internal correlation markers.
-
-Terminal history is eligible for hourly pruning strictly before the retention cutoff (no startup pruning). Once a key is pruned, reusing it starts a new Run only if the live definition still exists; deleted definitions and pruned Runs return 404. Shutdown closes Run and next-Step admission and drains current Commands before tearing down dependencies. Executor persistence faults degrade `/readyz` and return `automation_unavailable` (503) for admission; uncertain Runs retain active claims until restart recovery interrupts them without replay.
 
 ### Home Assistant migration adapter
 

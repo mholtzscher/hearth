@@ -2,8 +2,7 @@ package devices
 
 import "context"
 
-// StopCommandAdmission atomically closes direct Command admission. Only explicit
-// automation Step calls still execute and drain; new direct Commands are
+// StopCommandAdmission atomically closes Command admission. New Commands are
 // rejected with ErrCommandUnavailable.
 func (service *Service) StopCommandAdmission() {
 	service.lifecycleMu.Lock()
@@ -11,10 +10,9 @@ func (service *Service) StopCommandAdmission() {
 	service.commandAdmissionOpen = false
 }
 
-// CommandAdmissionOpen reports whether direct Commands are still admitted.
-// Application readiness combines this with automation admission and runtime
-// health through a narrow admission seam; shutdown closes both admissions
-// before joining workers.
+// CommandAdmissionOpen reports whether Commands are still admitted.
+// Application readiness combines this with runtime health through a narrow
+// admission seam; shutdown closes admission before joining workers.
 func (service *Service) CommandAdmissionOpen() bool {
 	service.lifecycleMu.Lock()
 	defer service.lifecycleMu.Unlock()
@@ -37,7 +35,7 @@ func (service *Service) WaitCommands(ctx context.Context) error {
 	}
 }
 
-// admitCommandWorker registers one direct Command worker under the lifecycle
+// admitCommandWorker registers one Command worker under the lifecycle
 // gate and reports whether admission is still open. Tracked workers must be
 // released exactly once: the synchronous startAdmittedCommand defer owns the
 // registration until it transfers ownership to the detached lifecycle goroutine.
@@ -49,17 +47,6 @@ func (service *Service) admitCommandWorker() bool {
 	}
 	service.trackCommandWorkerLocked()
 	return true
-}
-
-// admitAutomationStepWorker registers one already-admitted automation Step
-// worker. Only the automation executor calls this, after the automation gate
-// committed the Step intent; HTTP callers use ExecuteCommand and never reach
-// it. The synchronous startAdmittedCommand defer owns the registration until
-// it transfers ownership to the detached lifecycle goroutine.
-func (service *Service) admitAutomationStepWorker() {
-	service.lifecycleMu.Lock()
-	defer service.lifecycleMu.Unlock()
-	service.trackCommandWorkerLocked()
 }
 
 func (service *Service) trackCommandWorkerLocked() {
