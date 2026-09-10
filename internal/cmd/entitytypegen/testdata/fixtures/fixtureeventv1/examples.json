@@ -1,0 +1,17 @@
+{
+  "cases": [
+    {
+      "name": "buttons",
+      "support": {
+        "state": {},
+        "operations": {},
+        "events": {"names": ["single_press", "double_press"]}
+      },
+      "states": [
+        {"value": {}, "valid": true},
+        {"value": {"unexpected": true}, "valid": false}
+      ],
+      "operations": {}
+    }
+  ]
+}

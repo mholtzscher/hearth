@@ -11,6 +11,7 @@ func storesForTest(repository any) Stores {
 	stores.Enablement, _ = repository.(EnablementRepository)
 	stores.Commands, _ = repository.(CommandLedger)
 	stores.Observations, _ = repository.(ObservationRepository)
+	stores.DeviceEvents, _ = repository.(DeviceEventRepository)
 	return stores
 }
 

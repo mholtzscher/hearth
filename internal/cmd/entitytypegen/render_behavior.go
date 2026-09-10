@@ -20,6 +20,9 @@ func renderBehavior(model entityTypeModel) ([]byte, error) {
 	if hasValidation {
 		imports = append(imports, "errors")
 	}
+	if model.EventSource {
+		imports = append(imports, "fmt", "regexp")
+	}
 	if !isComparable {
 		imports = append(imports, "reflect")
 	}
@@ -58,6 +61,9 @@ func renderBehavior(model entityTypeModel) ([]byte, error) {
 		}
 		source.WriteString(")\n\n")
 	}
+	if model.EventSource {
+		writeDeviceEventNameBehavior(&source)
+	}
 	for _, operation := range model.Operations {
 		fmt.Fprintf(
 			&source,
@@ -83,6 +89,34 @@ func renderBehavior(model entityTypeModel) ([]byte, error) {
 		fmt.Fprintf(&source, "\treturn %s\n}\n\n", satisfactionCondition(operation.SatisfiedWhen))
 	}
 	return formatGenerated(source.String())
+}
+
+// writeDeviceEventNameBehavior emits the typed name validation and accessor the
+// catalog selector and SDK facade build on. Names are the only Device Event
+// support, so the generated shape is a closed slug list rather than a command
+// or state surface.
+func writeDeviceEventNameBehavior(source *strings.Builder) {
+	fmt.Fprintf(
+		source,
+		"var deviceEventNamePattern = regexp.MustCompile(%s)\n\n",
+		strconv.Quote(deviceEventNamePattern),
+	)
+	source.WriteString("// DeviceEventNames returns an owned copy of the support's supported Device Event names.\n")
+	source.WriteString("func DeviceEventNames(support Support) []string {\n")
+	source.WriteString("\tnames := make([]string, 0, len(support.Events.Names))\n")
+	source.WriteString("\treturn append(names, support.Events.Names...)\n")
+	source.WriteString("}\n\n")
+	source.WriteString("// ValidateDeviceEventName reports whether name is a canonical Device Event name\n")
+	source.WriteString("// that the Entity's current support accepts.\n")
+	source.WriteString("func ValidateDeviceEventName(support Support, name string) error {\n")
+	source.WriteString("\tif !deviceEventNamePattern.MatchString(name) {\n")
+	source.WriteString("\t\treturn fmt.Errorf(\"Device Event name %q is not a canonical name slug\", name)\n")
+	source.WriteString("\t}\n")
+	source.WriteString("\tfor _, supported := range support.Events.Names {\n")
+	source.WriteString("\t\tif supported == name {\n\t\t\treturn nil\n\t\t}\n")
+	source.WriteString("\t}\n")
+	source.WriteString("\treturn fmt.Errorf(\"Device Event name %q is not supported\", name)\n")
+	source.WriteString("}\n\n")
 }
 
 func writeValidationRules(source *strings.Builder, rules []ruleModel, indent string) {

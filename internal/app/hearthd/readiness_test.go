@@ -17,6 +17,7 @@ import (
 	platformdb "github.com/mholtzscher/hearth/internal/platform/db"
 )
 
+//nolint:gocognit // The required-dependency matrix is clearer as one table of subtests.
 func TestRuntimeReadinessChecksEveryRequiredDependency(t *testing.T) {
 	t.Parallel()
 	t.Run("ready", func(t *testing.T) {
@@ -77,6 +78,39 @@ func TestRuntimeReadinessChecksEveryRequiredDependency(t *testing.T) {
 			t.Fatal("readiness passed with inactive consumer")
 		}
 	})
+	t.Run("device event resources mismatched", func(t *testing.T) {
+		t.Parallel()
+		fixture := newReadinessFixture(t)
+		stream, err := fixture.jetstream.Stream(context.Background(), devicesnats.DeviceEventStreamName)
+		if err != nil {
+			t.Fatal(err)
+		}
+		info, err := stream.Info(context.Background())
+		if err != nil {
+			t.Fatal(err)
+		}
+		config := info.Config
+		config.MaxMsgSize = 1024
+		if _, updateErr := fixture.jetstream.UpdateStream(context.Background(), config); updateErr != nil {
+			t.Fatal(updateErr)
+		}
+		if checkErr := fixture.readiness.Check(context.Background()); checkErr == nil {
+			t.Fatal("readiness passed with mismatched device event stream")
+		}
+	})
+	t.Run("device event consumer inactive", func(t *testing.T) {
+		t.Parallel()
+		fixture := newReadinessFixture(t)
+		fixture.deviceEventConsumer.Stop()
+		select {
+		case <-fixture.deviceEventConsumer.Closed():
+		case <-time.After(3 * time.Second):
+			t.Fatal("device event consumer did not stop")
+		}
+		if err := fixture.readiness.Check(context.Background()); err == nil {
+			t.Fatal("readiness passed with inactive device event consumer")
+		}
+	})
 }
 
 type discardObservationProjector struct{}
@@ -91,12 +125,25 @@ func (discardObservationProjector) ProjectObservation(
 	return devices.ProjectionResult{}, nil
 }
 
+type discardDeviceEventRecorder struct{}
+
+func (discardDeviceEventRecorder) RecordDeviceEvent(
+	context.Context,
+	string,
+	devices.RuntimeID,
+	devices.DeviceEvent,
+	time.Time,
+) (devices.DeviceEventRecordResult, error) {
+	return devices.DeviceEventRecordResult{}, nil
+}
+
 type readinessFixture struct {
-	database   interface{ Close() error }
-	connection *natsgo.Conn
-	jetstream  jetstream.JetStream
-	consumer   *devicesnats.ObservationConsumer
-	readiness  *RuntimeReadiness
+	database            interface{ Close() error }
+	connection          *natsgo.Conn
+	jetstream           jetstream.JetStream
+	consumer            *devicesnats.ObservationConsumer
+	deviceEventConsumer *devicesnats.DeviceEventConsumer
+	readiness           *RuntimeReadiness
 }
 
 func newReadinessFixture(t *testing.T) readinessFixture {
@@ -134,6 +181,10 @@ func newReadinessFixture(t *testing.T) readinessFixture {
 	if err != nil {
 		t.Fatal(err)
 	}
+	deviceEventResource, err := devicesnats.ProvisionDeviceEventResources(ctx, js)
+	if err != nil {
+		t.Fatal(err)
+	}
 	validator, err := contractsv1.Compile()
 	if err != nil {
 		t.Fatal(err)
@@ -145,8 +196,16 @@ func newReadinessFixture(t *testing.T) readinessFixture {
 		t.Fatal(err)
 	}
 	t.Cleanup(consumer.Stop)
+	deviceEventConsumer, err := devicesnats.StartDeviceEventConsumer(
+		ctx, deviceEventResource, validator, discardDeviceEventRecorder{}, slog.New(slog.DiscardHandler),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(deviceEventConsumer.Stop)
 	return readinessFixture{
-		database: database, connection: connection, jetstream: js, consumer: consumer,
-		readiness: NewRuntimeReadiness(database, connection, js, consumer),
+		database: database, connection: connection, jetstream: js,
+		consumer: consumer, deviceEventConsumer: deviceEventConsumer,
+		readiness: NewRuntimeReadiness(database, connection, js, consumer, deviceEventConsumer),
 	}
 }

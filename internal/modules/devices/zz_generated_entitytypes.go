@@ -11,6 +11,7 @@ import (
 	contractcolortempv1 "github.com/mholtzscher/hearth/entitytypes/colortempv1"
 	contractcolorxyv1 "github.com/mholtzscher/hearth/entitytypes/colorxyv1"
 	contractenumactionv1 "github.com/mholtzscher/hearth/entitytypes/enumactionv1"
+	contractenumeventv1 "github.com/mholtzscher/hearth/entitytypes/enumeventv1"
 	contractenumsettingv1 "github.com/mholtzscher/hearth/entitytypes/enumsettingv1"
 	contractnumericsensorv1 "github.com/mholtzscher/hearth/entitytypes/numericsensorv1"
 	contractnumericsettingv1 "github.com/mholtzscher/hearth/entitytypes/numericsettingv1"
@@ -25,6 +26,7 @@ const (
 	EntityTypeColortempV1      EntityTypeID = "hearth.colortemp/v1"
 	EntityTypeColorxyV1        EntityTypeID = "hearth.colorxy/v1"
 	EntityTypeEnumactionV1     EntityTypeID = "hearth.enumaction/v1"
+	EntityTypeEnumeventV1      EntityTypeID = "hearth.enumevent/v1"
 	EntityTypeEnumsettingV1    EntityTypeID = "hearth.enumsetting/v1"
 	EntityTypeNumericsensorV1  EntityTypeID = "hearth.numericsensor/v1"
 	EntityTypeNumericsettingV1 EntityTypeID = "hearth.numericsetting/v1"
@@ -33,7 +35,7 @@ const (
 )
 
 func NewBuiltinTypeCatalog() (*TypeCatalog, error) {
-	definitions := make([]EntityTypeDefinition, 0, 11)
+	definitions := make([]EntityTypeDefinition, 0, 12)
 	brightnessV1, err := newBrightnessV1TypeDefinition(EntityTypeBrightnessV1)
 	if err != nil {
 		return nil, err
@@ -64,6 +66,11 @@ func NewBuiltinTypeCatalog() (*TypeCatalog, error) {
 		return nil, err
 	}
 	definitions = append(definitions, enumactionV1)
+	enumeventV1, err := newEnumeventV1TypeDefinition(EntityTypeEnumeventV1)
+	if err != nil {
+		return nil, err
+	}
+	definitions = append(definitions, enumeventV1)
 	enumsettingV1, err := newEnumsettingV1TypeDefinition(EntityTypeEnumsettingV1)
 	if err != nil {
 		return nil, err
@@ -217,6 +224,26 @@ func newEnumactionV1TypeDefinition(id EntityTypeID) (EntityTypeDefinition, error
 		return EntityTypeDefinition{}, err
 	}
 	definition.stateless = true
+	return definition, nil
+}
+
+func newEnumeventV1TypeDefinition(id EntityTypeID) (EntityTypeDefinition, error) {
+	codecs, err := contractenumeventv1.Compile()
+	if err != nil {
+		return EntityTypeDefinition{}, fmt.Errorf("compile hearth.enumevent/v1 codecs: %w", err)
+	}
+	definition, err := DefineEventSourceEntityType(
+		id,
+		codecs.State,
+		codecs.Support,
+		contractenumeventv1.ValidateSupport,
+		contractenumeventv1.ValidateState,
+		contractenumeventv1.EqualState,
+		contractenumeventv1.DeviceEventNames,
+	)
+	if err != nil {
+		return EntityTypeDefinition{}, err
+	}
 	return definition, nil
 }
 

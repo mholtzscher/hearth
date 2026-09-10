@@ -1,0 +1,9 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:test:fixtureevent:state",
+  "title": "Hearth fixture event source State",
+  "description": "Event sources report named occurrences and carry no State.",
+  "type": "object",
+  "additionalProperties": false,
+  "maxProperties": 0
+}

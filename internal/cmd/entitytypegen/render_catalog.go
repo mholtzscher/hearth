@@ -56,6 +56,11 @@ func renderCatalog(models []entityTypeModel, modulePath string, moduleRoot strin
 			"\tif err != nil { return EntityTypeDefinition{}, fmt.Errorf(%s, err) }\n",
 			strconv.Quote("compile "+model.TypeID+" codecs: %w"),
 		)
+		if model.EventSource {
+			writeCatalogEventSourceDefinition(&source, model)
+			source.WriteString("\treturn definition, nil\n}\n\n")
+			continue
+		}
 		for _, operation := range model.Operations {
 			writeCatalogOperation(&source, model, operation)
 		}
@@ -85,6 +90,23 @@ func renderCatalog(models []entityTypeModel, modulePath string, moduleRoot strin
 		path:    filepath.Join(moduleRoot, "internal", "modules", "devices", "zz_generated_entitytypes.go"),
 		content: formatted,
 	}, nil
+}
+
+// writeCatalogEventSourceDefinition emits the catalog selector for a stateless,
+// non-commandable Device Event Entity type. Core needs no handwritten event
+// branch: the generated selector decodes support through the type's own codec,
+// runs the generated support validator, and hands the catalog the supported
+// names.
+func writeCatalogEventSourceDefinition(source *strings.Builder, model entityTypeModel) {
+	source.WriteString(
+		"\tdefinition, err := DefineEventSourceEntityType(\n\t\tid,\n\t\tcodecs.State,\n\t\tcodecs.Support,\n",
+	)
+	fmt.Fprintf(source, "\t\tcontract%s.ValidateSupport,\n", model.Package)
+	fmt.Fprintf(source, "\t\tcontract%s.ValidateState,\n", model.Package)
+	fmt.Fprintf(source, "\t\tcontract%s.EqualState,\n", model.Package)
+	fmt.Fprintf(source, "\t\tcontract%s.DeviceEventNames,\n", model.Package)
+	source.WriteString("\t)\n")
+	source.WriteString("\tif err != nil { return EntityTypeDefinition{}, err }\n")
 }
 
 // writeCatalogOperation emits one DefineOperation call. Dispatched operations pass a nil matcher with explicit type arguments, since State cannot be inferred from nil.

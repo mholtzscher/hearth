@@ -45,9 +45,18 @@ func renderTypes(model entityTypeModel) ([]byte, error) {
 	); err != nil {
 		return nil, err
 	}
+	supportFields := strings.Builder{}
+	supportFields.WriteString("\tState StateSupport `json:\"state\"`\n")
+	supportFields.WriteString("\tOperations OperationSupport `json:\"operations\"`\n")
+	if model.EventSource {
+		if err := emitter.define("SupportEvents", model.EventSupportSchema); err != nil {
+			return nil, fmt.Errorf("events: %w", err)
+		}
+		supportFields.WriteString("\tEvents SupportEvents `json:\"events\"`\n")
+	}
 	if err := emitter.add(
 		"Support",
-		"type Support struct {\n\tState StateSupport `json:\"state\"`\n\tOperations OperationSupport `json:\"operations\"`\n}\n",
+		"type Support struct {\n"+supportFields.String()+"}\n",
 	); err != nil {
 		return nil, err
 	}

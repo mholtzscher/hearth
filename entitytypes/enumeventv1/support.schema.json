@@ -1,0 +1,39 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:hearth:schema:entity-type:enumevent:v1:support",
+  "title": "Hearth enumevent/v1 Entity support",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["state", "operations", "events"],
+  "properties": {
+    "state": {
+      "type": "object",
+      "additionalProperties": false,
+      "maxProperties": 0
+    },
+    "operations": {
+      "type": "object",
+      "additionalProperties": false,
+      "maxProperties": 0
+    },
+    "events": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["names"],
+      "properties": {
+        "names": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^[a-z0-9][a-z0-9_-]{0,62}$",
+            "minLength": 1,
+            "maxLength": 63
+          },
+          "minItems": 1,
+          "maxItems": 64,
+          "uniqueItems": true
+        }
+      }
+    }
+  }
+}

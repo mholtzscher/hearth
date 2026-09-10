@@ -113,6 +113,12 @@ func TestGeneratedBuiltinCatalogWiring(t *testing.T) {
 		if equal, err := catalog.EqualState(entity, Value("70"), Value("75")); err != nil || equal {
 			t.Errorf("catalog unequal State = %v, %v", equal, err)
 		}
+		if supported, err := catalog.SupportsDeviceEvent(entity, DeviceEventName("single_press")); err != nil || supported {
+			t.Errorf("catalog non-event type accepted a Device Event: %v, %v", supported, err)
+		}
+		if _, err := catalog.NormalizeSupport(entity.TypeID, EntitySupport("{\"events\":{\"names\":[\"single_press\"]},\"operations\":{\"set\":{\"step\":5}},\"state\":{\"maximum\":80}}")); err == nil {
+			t.Error("catalog accepted event support for a closed type")
+		}
 	})
 	t.Run("hearth.colorhs/v1", func(t *testing.T) {
 		entity := Entity{ID: EntityID("generated_colorhsv1"), TypeID: EntityTypeColorhsV1, Support: EntitySupport("{\"state\":{},\"operations\":{\"set\":{}}}")}
@@ -158,6 +164,12 @@ func TestGeneratedBuiltinCatalogWiring(t *testing.T) {
 		if equal, err := catalog.EqualState(entity, Value("{\"active\":false,\"hue\":0,\"saturation\":0}"), Value("{\"active\":true,\"hue\":120,\"saturation\":80}")); err != nil || equal {
 			t.Errorf("catalog unequal State = %v, %v", equal, err)
 		}
+		if supported, err := catalog.SupportsDeviceEvent(entity, DeviceEventName("single_press")); err != nil || supported {
+			t.Errorf("catalog non-event type accepted a Device Event: %v, %v", supported, err)
+		}
+		if _, err := catalog.NormalizeSupport(entity.TypeID, EntitySupport("{\"events\":{\"names\":[\"single_press\"]},\"operations\":{\"set\":{}},\"state\":{}}")); err == nil {
+			t.Error("catalog accepted event support for a closed type")
+		}
 	})
 	t.Run("hearth.colormode/v1", func(t *testing.T) {
 		entity := Entity{ID: EntityID("generated_colormodev1"), TypeID: EntityTypeColormodeV1, Support: EntitySupport("{\"state\":{},\"operations\":{}}")}
@@ -183,6 +195,12 @@ func TestGeneratedBuiltinCatalogWiring(t *testing.T) {
 		}
 		if equal, err := catalog.EqualState(entity, Value("\"hs\""), Value("\"xy\"")); err != nil || equal {
 			t.Errorf("catalog unequal State = %v, %v", equal, err)
+		}
+		if supported, err := catalog.SupportsDeviceEvent(entity, DeviceEventName("single_press")); err != nil || supported {
+			t.Errorf("catalog non-event type accepted a Device Event: %v, %v", supported, err)
+		}
+		if _, err := catalog.NormalizeSupport(entity.TypeID, EntitySupport("{\"events\":{\"names\":[\"single_press\"]},\"operations\":{},\"state\":{}}")); err == nil {
+			t.Error("catalog accepted event support for a closed type")
 		}
 	})
 	t.Run("hearth.colortemp/v1", func(t *testing.T) {
@@ -235,6 +253,12 @@ func TestGeneratedBuiltinCatalogWiring(t *testing.T) {
 		if equal, err := catalog.EqualState(entity, Value("{\"active\":false,\"value\":370}"), Value("{\"active\":true,\"value\":370}")); err != nil || equal {
 			t.Errorf("catalog unequal State = %v, %v", equal, err)
 		}
+		if supported, err := catalog.SupportsDeviceEvent(entity, DeviceEventName("single_press")); err != nil || supported {
+			t.Errorf("catalog non-event type accepted a Device Event: %v, %v", supported, err)
+		}
+		if _, err := catalog.NormalizeSupport(entity.TypeID, EntitySupport("{\"events\":{\"names\":[\"single_press\"]},\"operations\":{\"set\":{\"step\":1}},\"state\":{\"minimum\":153,\"maximum\":500}}")); err == nil {
+			t.Error("catalog accepted event support for a closed type")
+		}
 	})
 	t.Run("hearth.colorxy/v1", func(t *testing.T) {
 		entity := Entity{ID: EntityID("generated_colorxyv1"), TypeID: EntityTypeColorxyV1, Support: EntitySupport("{\"state\":{},\"operations\":{\"set\":{}}}")}
@@ -280,6 +304,12 @@ func TestGeneratedBuiltinCatalogWiring(t *testing.T) {
 		if equal, err := catalog.EqualState(entity, Value("{\"active\":false,\"x\":0,\"y\":0}"), Value("{\"active\":true,\"x\":3125,\"y\":3291}")); err != nil || equal {
 			t.Errorf("catalog unequal State = %v, %v", equal, err)
 		}
+		if supported, err := catalog.SupportsDeviceEvent(entity, DeviceEventName("single_press")); err != nil || supported {
+			t.Errorf("catalog non-event type accepted a Device Event: %v, %v", supported, err)
+		}
+		if _, err := catalog.NormalizeSupport(entity.TypeID, EntitySupport("{\"events\":{\"names\":[\"single_press\"]},\"operations\":{\"set\":{}},\"state\":{}}")); err == nil {
+			t.Error("catalog accepted event support for a closed type")
+		}
 	})
 	t.Run("hearth.enumaction/v1", func(t *testing.T) {
 		entity := Entity{ID: EntityID("generated_enumactionv1"), TypeID: EntityTypeEnumactionV1, Support: EntitySupport("{\"state\":{},\"operations\":{\"trigger\":{\"values\":[\"blink\",\"breathe\",\"okay\",\"channel_change\",\"finish_effect\",\"stop_effect\"]}}}")}
@@ -321,6 +351,48 @@ func TestGeneratedBuiltinCatalogWiring(t *testing.T) {
 		}
 		if equal, err := catalog.EqualState(entity, Value("{}"), Value("{}")); err != nil || !equal {
 			t.Errorf("catalog equal State = %v, %v", equal, err)
+		}
+		if supported, err := catalog.SupportsDeviceEvent(entity, DeviceEventName("single_press")); err != nil || supported {
+			t.Errorf("catalog non-event type accepted a Device Event: %v, %v", supported, err)
+		}
+		if _, err := catalog.NormalizeSupport(entity.TypeID, EntitySupport("{\"events\":{\"names\":[\"single_press\"]},\"operations\":{\"trigger\":{\"values\":[\"blink\",\"breathe\",\"okay\",\"channel_change\",\"finish_effect\",\"stop_effect\"]}},\"state\":{}}")); err == nil {
+			t.Error("catalog accepted event support for a closed type")
+		}
+	})
+	t.Run("hearth.enumevent/v1", func(t *testing.T) {
+		entity := Entity{ID: EntityID("generated_enumeventv1"), TypeID: EntityTypeEnumeventV1, Support: EntitySupport("{\"state\":{},\"operations\":{},\"events\":{\"names\":[\"single_press\",\"double_press\",\"long_press\"]}}")}
+		if stateless, err := catalog.IsStateless(entity.TypeID); err != nil || stateless != true {
+			t.Errorf("catalog stateless = %v, %v, want true", stateless, err)
+		}
+		normalizedSupport, err := catalog.NormalizeSupport(entity.TypeID, entity.Support)
+		if err != nil {
+			t.Fatalf("catalog support: %v", err)
+		}
+		if !equalGeneratedCatalogJSON(normalizedSupport, []byte("{\"state\":{},\"operations\":{},\"events\":{\"names\":[\"single_press\",\"double_press\",\"long_press\"]}}")) {
+			t.Errorf("catalog normalized support = %s, want %s", normalizedSupport, "{\"state\":{},\"operations\":{},\"events\":{\"names\":[\"single_press\",\"double_press\",\"long_press\"]}}")
+		}
+		normalizedState, err := catalog.NormalizeState(entity, Value("{}"))
+		if err != nil {
+			t.Fatalf("catalog State: %v", err)
+		}
+		if !equalGeneratedCatalogJSON(normalizedState, []byte("{}")) {
+			t.Errorf("catalog normalized State = %s, want %s", normalizedState, "{}")
+		}
+		if equal, err := catalog.EqualState(entity, Value("{}"), Value("{}")); err != nil || !equal {
+			t.Errorf("catalog equal State = %v, %v", equal, err)
+		}
+		if supported, err := catalog.SupportsDeviceEvent(entity, DeviceEventName("single_press")); err != nil || !supported {
+			t.Errorf("catalog supported Device Event %q = %v, %v", "single_press", supported, err)
+		}
+		if supported, err := catalog.SupportsDeviceEvent(entity, DeviceEventName("unknown")); err != nil || supported {
+			t.Errorf("catalog unsupported Device Event %q = %v, %v", "unknown", supported, err)
+		}
+		corruptEventEntity := Entity{ID: EntityID("generated_enumeventv1"), TypeID: EntityTypeEnumeventV1, Support: EntitySupport("{\"operations\":{},\"state\":{}}")}
+		if _, err := catalog.SupportsDeviceEvent(corruptEventEntity, DeviceEventName("single_press")); err == nil {
+			t.Error("catalog accepted a corrupt Device Event descriptor")
+		}
+		if _, err := catalog.ResolveCommand(entity, OperationName("set"), CommandParameters(`null`)); err == nil {
+			t.Error("catalog resolved a Command for an event source")
 		}
 	})
 	t.Run("hearth.enumsetting/v1", func(t *testing.T) {
@@ -373,6 +445,12 @@ func TestGeneratedBuiltinCatalogWiring(t *testing.T) {
 		if equal, err := catalog.EqualState(entity, Value("\"on\""), Value("\"previous\"")); err != nil || equal {
 			t.Errorf("catalog unequal State = %v, %v", equal, err)
 		}
+		if supported, err := catalog.SupportsDeviceEvent(entity, DeviceEventName("single_press")); err != nil || supported {
+			t.Errorf("catalog non-event type accepted a Device Event: %v, %v", supported, err)
+		}
+		if _, err := catalog.NormalizeSupport(entity.TypeID, EntitySupport("{\"events\":{\"names\":[\"single_press\"]},\"operations\":{\"set\":{}},\"state\":{\"choices\":[\"on\",\"off\",\"previous\",\"toggle\"]}}")); err == nil {
+			t.Error("catalog accepted event support for a closed type")
+		}
 	})
 	t.Run("hearth.numericsensor/v1", func(t *testing.T) {
 		entity := Entity{ID: EntityID("generated_numericsensorv1"), TypeID: EntityTypeNumericsensorV1, Support: EntitySupport("{\"state\":{\"minimum\":0,\"maximum\":255,\"unit\":\"lqi\"},\"operations\":{}}")}
@@ -404,6 +482,12 @@ func TestGeneratedBuiltinCatalogWiring(t *testing.T) {
 		}
 		if equal, err := catalog.EqualState(entity, Value("18.5"), Value("18")); err != nil || equal {
 			t.Errorf("catalog unequal State = %v, %v", equal, err)
+		}
+		if supported, err := catalog.SupportsDeviceEvent(entity, DeviceEventName("single_press")); err != nil || supported {
+			t.Errorf("catalog non-event type accepted a Device Event: %v, %v", supported, err)
+		}
+		if _, err := catalog.NormalizeSupport(entity.TypeID, EntitySupport("{\"events\":{\"names\":[\"single_press\"]},\"operations\":{},\"state\":{\"minimum\":0,\"maximum\":255,\"unit\":\"lqi\"}}")); err == nil {
+			t.Error("catalog accepted event support for a closed type")
 		}
 	})
 	t.Run("hearth.numericsetting/v1", func(t *testing.T) {
@@ -459,6 +543,12 @@ func TestGeneratedBuiltinCatalogWiring(t *testing.T) {
 		if equal, err := catalog.EqualState(entity, Value("{\"mode\":\"value\",\"value\":250.5}"), Value("{\"mode\":\"value\",\"value\":250}")); err != nil || equal {
 			t.Errorf("catalog unequal State = %v, %v", equal, err)
 		}
+		if supported, err := catalog.SupportsDeviceEvent(entity, DeviceEventName("single_press")); err != nil || supported {
+			t.Errorf("catalog non-event type accepted a Device Event: %v, %v", supported, err)
+		}
+		if _, err := catalog.NormalizeSupport(entity.TypeID, EntitySupport("{\"events\":{\"names\":[\"single_press\"]},\"operations\":{\"set\":{}},\"state\":{\"minimum\":142,\"maximum\":454,\"unit\":\"mired\",\"choices\":[\"previous\"]}}")); err == nil {
+			t.Error("catalog accepted event support for a closed type")
+		}
 	})
 	t.Run("hearth.power/v1", func(t *testing.T) {
 		entity := Entity{ID: EntityID("generated_powerv1"), TypeID: EntityTypePowerV1, Support: EntitySupport("{\"state\":{},\"operations\":{\"set\":{}}}")}
@@ -504,6 +594,12 @@ func TestGeneratedBuiltinCatalogWiring(t *testing.T) {
 		if equal, err := catalog.EqualState(entity, Value("false"), Value("true")); err != nil || equal {
 			t.Errorf("catalog unequal State = %v, %v", equal, err)
 		}
+		if supported, err := catalog.SupportsDeviceEvent(entity, DeviceEventName("single_press")); err != nil || supported {
+			t.Errorf("catalog non-event type accepted a Device Event: %v, %v", supported, err)
+		}
+		if _, err := catalog.NormalizeSupport(entity.TypeID, EntitySupport("{\"events\":{\"names\":[\"single_press\"]},\"operations\":{\"set\":{}},\"state\":{}}")); err == nil {
+			t.Error("catalog accepted event support for a closed type")
+		}
 	})
 	t.Run("hearth.temperature/v1", func(t *testing.T) {
 		entity := Entity{ID: EntityID("generated_temperaturev1"), TypeID: EntityTypeTemperatureV1, Support: EntitySupport("{\"state\":{},\"operations\":{}}")}
@@ -529,6 +625,12 @@ func TestGeneratedBuiltinCatalogWiring(t *testing.T) {
 		}
 		if equal, err := catalog.EqualState(entity, Value("-273150"), Value("21500")); err != nil || equal {
 			t.Errorf("catalog unequal State = %v, %v", equal, err)
+		}
+		if supported, err := catalog.SupportsDeviceEvent(entity, DeviceEventName("single_press")); err != nil || supported {
+			t.Errorf("catalog non-event type accepted a Device Event: %v, %v", supported, err)
+		}
+		if _, err := catalog.NormalizeSupport(entity.TypeID, EntitySupport("{\"events\":{\"names\":[\"single_press\"]},\"operations\":{},\"state\":{}}")); err == nil {
+			t.Error("catalog accepted event support for a closed type")
 		}
 	})
 }

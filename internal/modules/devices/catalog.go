@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"maps"
 	"regexp"
+	"slices"
 	"time"
 
 	"github.com/mholtzscher/hearth/entitytypes"
@@ -94,6 +95,7 @@ func DefineOperation[State, Support, OperationSupport, Parameters any](
 type EntityTypeDefinition struct {
 	id               EntityTypeID
 	stateless        bool // from manifest "stateless" (default false)
+	eventNames       func(EntitySupport) ([]DeviceEventName, error)
 	normalizeSupport func(EntitySupport) (EntitySupport, error)
 	normalizeState   func(EntitySupport, Value) (Value, error)
 	equalState       func(EntitySupport, Value, Value) (bool, error)
@@ -105,6 +107,49 @@ type erasedOperationDefinition struct {
 	deadline  time.Duration
 	outcome   OutcomeKind
 	satisfies func(CommandParameters, Value) (bool, error) // nil iff dispatched
+}
+
+// DefineEventSourceEntityType defines a stateless, non-commandable Entity type
+// whose only reported occurrences are Device Events. selectEventNames returns
+// the supported names of one already-decoded support; the type's own support
+// validator still decides whether that support is accepted at all.
+func DefineEventSourceEntityType[State, Support any](
+	id EntityTypeID,
+	state *entitytypes.JSONCodec[State],
+	support *entitytypes.JSONCodec[Support],
+	validateSupport func(Support) error,
+	validateSupportedState func(Support, State) error,
+	equalState func(State, State) bool,
+	selectEventNames func(Support) []string,
+) (EntityTypeDefinition, error) {
+	if selectEventNames == nil {
+		return EntityTypeDefinition{}, fmt.Errorf("entity type %q has no Device Event name selector", id)
+	}
+	definition, err := DefineEntityType(
+		id, state, support, validateSupport, validateSupportedState, equalState,
+	)
+	if err != nil {
+		return EntityTypeDefinition{}, err
+	}
+	// An event source is stateless and non-commandable: it defines no State
+	// space and no Operations, so Device Events are its only reported input.
+	definition.stateless = true
+	definition.eventNames = func(rawSupport EntitySupport) ([]DeviceEventName, error) {
+		typedSupport, _, decodeErr := support.Decode(json.RawMessage(rawSupport))
+		if decodeErr != nil {
+			return nil, fmt.Errorf("invalid support for entity type %q: %w", id, decodeErr)
+		}
+		if validationErr := validateSupport(typedSupport); validationErr != nil {
+			return nil, fmt.Errorf("unsupported support for entity type %q: %w", id, validationErr)
+		}
+		selected := selectEventNames(typedSupport)
+		names := make([]DeviceEventName, 0, len(selected))
+		for _, name := range selected {
+			names = append(names, DeviceEventName(name))
+		}
+		return names, nil
+	}
+	return definition, nil
 }
 
 //nolint:gocognit // Generic boundary validation is kept with the Entity type definition it protects.
@@ -252,6 +297,25 @@ func (catalog *TypeCatalog) IsStateless(typeID EntityTypeID) (bool, error) {
 		return false, err
 	}
 	return definition.stateless, nil
+}
+
+// SupportsDeviceEvent reports whether an Entity's current support accepts one
+// Device Event name. A type with no event support accepts none, and an
+// unsupported name is a false result rather than an error. An unknown type or a
+// corrupt persisted descriptor is a catalog failure.
+func (catalog *TypeCatalog) SupportsDeviceEvent(entity Entity, name DeviceEventName) (bool, error) {
+	definition, err := catalog.resolve(entity.TypeID)
+	if err != nil {
+		return false, err
+	}
+	if definition.eventNames == nil {
+		return false, nil
+	}
+	names, err := definition.eventNames(entity.Support)
+	if err != nil {
+		return false, err
+	}
+	return slices.Contains(names, name), nil
 }
 
 func (catalog *TypeCatalog) NormalizeState(entity Entity, value Value) (Value, error) {

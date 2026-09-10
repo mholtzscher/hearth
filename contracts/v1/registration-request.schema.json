@@ -51,6 +51,20 @@
                     "type": "object",
                     "propertyNames": { "$ref": "urn:hearth:schema:common:v1#/$defs/operation_name" },
                     "additionalProperties": { "type": "object" }
+                  },
+                  "events": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": ["names"],
+                    "properties": {
+                      "names": {
+                        "type": "array",
+                        "minItems": 1,
+                        "maxItems": 64,
+                        "uniqueItems": true,
+                        "items": { "$ref": "urn:hearth:schema:common:v1#/$defs/slug" }
+                      }
+                    }
                   }
                 }
               }

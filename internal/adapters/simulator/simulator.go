@@ -7,8 +7,10 @@ import (
 	"sync"
 	"time"
 
+	contractenumeventv1 "github.com/mholtzscher/hearth/entitytypes/enumeventv1"
 	contractpowerv1 "github.com/mholtzscher/hearth/entitytypes/powerv1"
 	"github.com/mholtzscher/hearth/sdk/adapter"
+	sdkadapterenumeventv1 "github.com/mholtzscher/hearth/sdk/adapter/enumeventv1"
 	sdkpowerv1 "github.com/mholtzscher/hearth/sdk/adapter/powerv1"
 	"github.com/mholtzscher/hearth/sdk/adapter/typed"
 )
@@ -27,6 +29,13 @@ const (
 	ScenarioDelayedSourceTime   = "delayed-source-time"
 	ScenarioFutureClockSkew     = "future-clock-skew"
 	ScenarioRestartBeforeAck    = "restart-before-ack"
+	ScenarioDeviceEvents        = "device-events"
+
+	// DeviceEventSinglePress and DeviceEventDoublePress are the synthetic
+	// report names the device-events scenario support advertises and the
+	// operator input loop accepts.
+	DeviceEventSinglePress = "single_press"
+	DeviceEventDoublePress = "double_press"
 )
 
 func ValidScenario(value string) bool {
@@ -34,7 +43,7 @@ func ValidScenario(value string) bool {
 	case ScenarioHappy, ScenarioAdapterUnhealthy, ScenarioEntityUnavailable, ScenarioUpstreamRejection,
 		ScenarioOutcomeTimeout, ScenarioNoOpRefresh, ScenarioOverlappingCommands,
 		ScenarioInterruptedCommand, ScenarioDelayedSourceTime, ScenarioFutureClockSkew,
-		ScenarioRestartBeforeAck:
+		ScenarioRestartBeforeAck, ScenarioDeviceEvents:
 		return true
 	default:
 		return false
@@ -43,16 +52,18 @@ func ValidScenario(value string) bool {
 
 type Session interface {
 	PublishObservation(context.Context, adapter.Observation) (adapter.ObservationID, error)
+	PublishDeviceEvent(context.Context, adapter.DeviceEvent) (adapter.DeviceEventID, error)
 	SetHealth(context.Context, adapter.HealthReport) error
 	ReportEntityAvailability(context.Context, []adapter.EntityAvailabilityReport) error
 }
 
 type Adapter struct {
-	session  Session
-	scenario string
-	support  contractpowerv1.Support
-	mutex    sync.Mutex
-	state    contractpowerv1.State
+	session       Session
+	scenario      string
+	support       contractpowerv1.Support
+	mutex         sync.Mutex
+	state         contractpowerv1.State
+	eventEntityID string
 }
 
 func New(session Session, scenario string) (*Adapter, error) {
@@ -75,6 +86,59 @@ func New(session Session, scenario string) (*Adapter, error) {
 }
 
 func (simulator *Adapter) Support() contractpowerv1.Support { return simulator.support }
+
+// DeviceEventSupport returns the generated support for the scenario's event
+// source Entity: no State, no Operations, and exactly the synthetic report
+// names the operator input loop publishes.
+func (simulator *Adapter) DeviceEventSupport() contractenumeventv1.Support {
+	return contractenumeventv1.Support{
+		State:      contractenumeventv1.StateSupport{},
+		Operations: contractenumeventv1.OperationSupport{},
+		Events: contractenumeventv1.SupportEvents{
+			Names: contractenumeventv1.SupportEventsNames{
+				DeviceEventSinglePress, DeviceEventDoublePress,
+			},
+		},
+	}
+}
+
+// InitializeDeviceEventSource binds the canonical ID of a registered event
+// source Entity and reports it available. EmitDeviceEvent refuses to publish
+// before this call, so the simulator never guesses an Entity identity.
+func (simulator *Adapter) InitializeDeviceEventSource(ctx context.Context, entityID string) error {
+	if entityID == "" {
+		return errors.New("event source Entity ID is required")
+	}
+	if err := simulator.session.ReportEntityAvailability(ctx, []adapter.EntityAvailabilityReport{{
+		EntityID: entityID, Status: adapter.AvailabilityAvailable, SourceObservedAt: time.Now().UTC(),
+	}}); err != nil {
+		return err
+	}
+	simulator.mutex.Lock()
+	simulator.eventEntityID = entityID
+	simulator.mutex.Unlock()
+	return nil
+}
+
+// EmitDeviceEvent validates one reported name against the generated event
+// source support and publishes it as a synthetic report. It is deterministic:
+// tests call it directly instead of driving standard input, and the generated
+// facade owns support and name validation.
+func (simulator *Adapter) EmitDeviceEvent(ctx context.Context, name string) (adapter.DeviceEventID, error) {
+	simulator.mutex.Lock()
+	entityID := simulator.eventEntityID
+	simulator.mutex.Unlock()
+	if entityID == "" {
+		return "", errors.New("event source Entity is not initialized")
+	}
+	event, err := sdkadapterenumeventv1.NewDeviceEvent(sdkadapterenumeventv1.DeviceEventInput{
+		EntityID: entityID, Support: simulator.DeviceEventSupport(), Name: name,
+	})
+	if err != nil {
+		return "", err
+	}
+	return simulator.session.PublishDeviceEvent(ctx, event)
+}
 
 func (simulator *Adapter) Initialize(ctx context.Context, entityID string) error {
 	now := time.Now().UTC()

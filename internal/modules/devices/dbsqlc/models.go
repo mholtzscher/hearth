@@ -76,6 +76,22 @@ type Device struct {
 	UpdatedAt string
 }
 
+type DeviceEvent struct {
+	ReceiveOrder  int64
+	EventID       string
+	AdapterID     string
+	RuntimeID     string
+	EntityID      string
+	CorrelationID string
+	Name          string
+	Fingerprint   []byte
+	Disposition   string
+	RejectionCode sql.NullString
+	EmittedAt     string
+	ReceivedAt    string
+	RecordedAt    string
+}
+
 type Entity struct {
 	ID          string
 	DeviceID    string
