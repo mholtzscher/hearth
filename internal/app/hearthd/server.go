@@ -25,7 +25,7 @@ type RuntimeReadiness struct {
 	connection          *natsgo.Conn
 	jetstream           jetstream.JetStream
 	observationConsumer *devicesnats.ObservationConsumer
-	deviceEventConsumer *devicesnats.DeviceEventConsumer
+	entityEventConsumer *devicesnats.EntityEventConsumer
 }
 
 func NewRuntimeReadiness(
@@ -33,11 +33,11 @@ func NewRuntimeReadiness(
 	connection *natsgo.Conn,
 	js jetstream.JetStream,
 	observationConsumer *devicesnats.ObservationConsumer,
-	deviceEventConsumer *devicesnats.DeviceEventConsumer,
+	entityEventConsumer *devicesnats.EntityEventConsumer,
 ) *RuntimeReadiness {
 	return &RuntimeReadiness{
 		database: database, connection: connection, jetstream: js,
-		observationConsumer: observationConsumer, deviceEventConsumer: deviceEventConsumer,
+		observationConsumer: observationConsumer, entityEventConsumer: entityEventConsumer,
 	}
 }
 
@@ -54,17 +54,17 @@ func (readiness *RuntimeReadiness) Check(ctx context.Context) error {
 	if err := devicesnats.ValidateObservationResources(ctx, readiness.jetstream); err != nil {
 		return err
 	}
-	// Device Event resources are validated for configuration compatibility and
+	// Entity Event resources are validated for configuration compatibility and
 	// current consumption, never for backlog: an empty page of unread history
 	// is not a readiness failure and readiness never gates ingestion.
-	if err := devicesnats.ValidateDeviceEventResources(ctx, readiness.jetstream); err != nil {
+	if err := devicesnats.ValidateEntityEventResources(ctx, readiness.jetstream); err != nil {
 		return err
 	}
 	if !readiness.observationConsumer.Active() {
 		return errors.New("observation consumer is inactive")
 	}
-	if !readiness.deviceEventConsumer.Active() {
-		return errors.New("device event consumer is inactive")
+	if !readiness.entityEventConsumer.Active() {
+		return errors.New("entity event consumer is inactive")
 	}
 	return nil
 }

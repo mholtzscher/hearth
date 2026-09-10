@@ -14,15 +14,15 @@ import (
 	"github.com/mholtzscher/hearth/internal/modules/devices"
 )
 
-const apiDeviceEventID = devices.DeviceEventID("evt_01890f47-7a6b-7c4d-8e9f-0123456789ab")
+const apiEntityEventID = devices.EntityEventID("evt_01890f47-7a6b-7c4d-8e9f-0123456789ab")
 
-func apiDeviceEventEntry(receiveOrder int64) devices.DeviceEventHistoryEntry {
+func apiEntityEventEntry(receiveOrder int64) devices.EntityEventHistoryEntry {
 	emittedAt := time.Date(2026, 8, 25, 10, 0, 0, 123456789, time.UTC)
-	return devices.DeviceEventHistoryEntry{
-		EventID:      apiDeviceEventID,
+	return devices.EntityEventHistoryEntry{
+		EventID:      apiEntityEventID,
 		EntityID:     apiEntityID,
-		Name:         devices.DeviceEventName("single_press"),
-		Disposition:  devices.DeviceEventDispositionAccepted,
+		Name:         devices.EntityEventName("single_press"),
+		Disposition:  devices.EntityEventDispositionAccepted,
 		EmittedAt:    emittedAt,
 		ReceivedAt:   emittedAt.Add(time.Second),
 		RecordedAt:   emittedAt.Add(2 * time.Second),
@@ -30,32 +30,32 @@ func apiDeviceEventEntry(receiveOrder int64) devices.DeviceEventHistoryEntry {
 	}
 }
 
-func assertMappedDeviceEventEntry(t *testing.T, entry EntityDeviceEventBody) {
+func assertMappedEntityEventEntry(t *testing.T, entry EntityEventBody) {
 	t.Helper()
-	if entry.EventID != string(apiDeviceEventID) || entry.EntityID != string(apiEntityID) ||
+	if entry.EventID != string(apiEntityEventID) || entry.EntityID != string(apiEntityID) ||
 		entry.Name != "single_press" || entry.Disposition != "accepted" || entry.RejectionCode != nil {
-		t.Fatalf("Device Event entry = %#v", entry)
+		t.Fatalf("Entity Event entry = %#v", entry)
 	}
 	if entry.EmittedAt != "2026-08-25T10:00:00.123456789Z" ||
 		entry.ReceivedAt != "2026-08-25T10:00:01.123456789Z" ||
 		entry.RecordedAt != "2026-08-25T10:00:02.123456789Z" {
-		t.Fatalf("Device Event timestamps = %#v", entry)
+		t.Fatalf("Entity Event timestamps = %#v", entry)
 	}
 }
 
-// This test protects Device Event history entry mapping and fails if transport
+// This test protects Entity Event history entry mapping and fails if transport
 // timestamps or dispositions drift from the domain contract.
-func TestListEntityDeviceEventsReturnsMappedEntries(t *testing.T) {
+func TestListEntityEventsReturnsMappedEntries(t *testing.T) {
 	t.Parallel()
-	stub := &stubDevices{listEntityDeviceEvents: func(
+	stub := &stubDevices{listEntityEvents: func(
 		_ context.Context,
-		params devices.ListEntityDeviceEventsParams,
-	) (devices.Page[devices.DeviceEventHistoryEntry], error) {
+		params devices.ListEntityEventsParams,
+	) (devices.Page[devices.EntityEventHistoryEntry], error) {
 		if params.EntityID != apiEntityID || params.Limit != 50 || params.BeforeReceiveOrder != nil {
-			t.Fatalf("Device Event params = %#v", params)
+			t.Fatalf("Entity Event params = %#v", params)
 		}
-		return devices.Page[devices.DeviceEventHistoryEntry]{
-			Items:   []devices.DeviceEventHistoryEntry{apiDeviceEventEntry(9)},
+		return devices.Page[devices.EntityEventHistoryEntry]{
+			Items:   []devices.EntityEventHistoryEntry{apiEntityEventEntry(9)},
 			HasMore: true,
 		}, nil
 	}}
@@ -65,51 +65,51 @@ func TestListEntityDeviceEventsReturnsMappedEntries(t *testing.T) {
 	if response.Code != http.StatusOK {
 		t.Fatalf("status = %d, body = %s", response.Code, response.Body.String())
 	}
-	var body EntityDeviceEventCollectionBody
+	var body EntityEventCollectionBody
 	if err := json.Unmarshal(response.Body.Bytes(), &body); err != nil {
 		t.Fatal(err)
 	}
 	if len(body.Items) != 1 || body.NextCursor == nil {
 		t.Fatalf("page = %#v", body)
 	}
-	assertMappedDeviceEventEntry(t, body.Items[0])
+	assertMappedEntityEventEntry(t, body.Items[0])
 	operation := openapi.OpenAPI().Paths["/v1/entities/{entity_id}/events"].Get
-	if operation == nil || operation.OperationID != "list-entity-device-events" {
-		t.Fatalf("Device Event operation = %#v", operation)
+	if operation == nil || operation.OperationID != "list-entity-events" {
+		t.Fatalf("Entity Event operation = %#v", operation)
 	}
-	if operation.Summary != "List an Entity's Device Event history" || len(operation.Tags) != 1 ||
+	if operation.Summary != "List an Entity's Entity Event history" || len(operation.Tags) != 1 ||
 		operation.Tags[0] != "Entities" {
-		t.Fatalf("Device Event operation = %#v", operation)
+		t.Fatalf("Entity Event operation = %#v", operation)
 	}
 	if _, ok := operation.Responses["422"]; !ok {
-		t.Fatalf("Device Event operation is missing standard 422 response: %#v", operation.Responses)
+		t.Fatalf("Entity Event operation is missing standard 422 response: %#v", operation.Responses)
 	}
 }
 
-// This test protects Device Event cursor pagination and fails if the
+// This test protects Entity Event cursor pagination and fails if the
 // continuation cursor loses its exclusive receive-order position.
-func TestListEntityDeviceEventsPaginatesWithScopedCursor(t *testing.T) {
+func TestListEntityEventsPaginatesWithScopedCursor(t *testing.T) {
 	t.Parallel()
 	calls := 0
-	stub := &stubDevices{listEntityDeviceEvents: func(
+	stub := &stubDevices{listEntityEvents: func(
 		_ context.Context,
-		params devices.ListEntityDeviceEventsParams,
-	) (devices.Page[devices.DeviceEventHistoryEntry], error) {
+		params devices.ListEntityEventsParams,
+	) (devices.Page[devices.EntityEventHistoryEntry], error) {
 		calls++
 		if calls == 1 {
 			if params.BeforeReceiveOrder != nil {
-				t.Fatalf("first Device Event params = %#v", params)
+				t.Fatalf("first Entity Event params = %#v", params)
 			}
-			return devices.Page[devices.DeviceEventHistoryEntry]{
-				Items:   []devices.DeviceEventHistoryEntry{apiDeviceEventEntry(9)},
+			return devices.Page[devices.EntityEventHistoryEntry]{
+				Items:   []devices.EntityEventHistoryEntry{apiEntityEventEntry(9)},
 				HasMore: true,
 			}, nil
 		}
 		if params.BeforeReceiveOrder == nil || *params.BeforeReceiveOrder != 9 {
-			t.Fatalf("second Device Event params = %#v", params)
+			t.Fatalf("second Entity Event params = %#v", params)
 		}
-		return devices.Page[devices.DeviceEventHistoryEntry]{
-			Items: []devices.DeviceEventHistoryEntry{apiDeviceEventEntry(4)},
+		return devices.Page[devices.EntityEventHistoryEntry]{
+			Items: []devices.EntityEventHistoryEntry{apiEntityEventEntry(4)},
 		}, nil
 	}}
 	router, _ := testAPI(t, stub)
@@ -118,7 +118,7 @@ func TestListEntityDeviceEventsPaginatesWithScopedCursor(t *testing.T) {
 	if response.Code != http.StatusOK {
 		t.Fatalf("status = %d, body = %s", response.Code, response.Body.String())
 	}
-	var first EntityDeviceEventCollectionBody
+	var first EntityEventCollectionBody
 	if err := json.Unmarshal(response.Body.Bytes(), &first); err != nil {
 		t.Fatal(err)
 	}
@@ -129,7 +129,7 @@ func TestListEntityDeviceEventsPaginatesWithScopedCursor(t *testing.T) {
 	if response.Code != http.StatusOK {
 		t.Fatalf("second status = %d, body = %s", response.Code, response.Body.String())
 	}
-	var second EntityDeviceEventCollectionBody
+	var second EntityEventCollectionBody
 	if err := json.Unmarshal(response.Body.Bytes(), &second); err != nil {
 		t.Fatal(err)
 	}
@@ -141,9 +141,9 @@ func TestListEntityDeviceEventsPaginatesWithScopedCursor(t *testing.T) {
 	}
 }
 
-// This test protects the Device Event history error contract and fails if a
+// This test protects the Entity Event history error contract and fails if a
 // parent, cursor, or page error maps to the wrong status.
-func TestListEntityDeviceEventsMapsErrors(t *testing.T) {
+func TestListEntityEventsMapsErrors(t *testing.T) {
 	t.Parallel()
 	stateCursor, cursorErr := encodeEntityStateHistoryCursor(
 		apiEntityID,
@@ -184,11 +184,11 @@ func TestListEntityDeviceEventsMapsErrors(t *testing.T) {
 		{
 			"invalid page",
 			"/v1/entities/" + string(apiEntityID) + "/events",
-			&stubDevices{listEntityDeviceEvents: func(
+			&stubDevices{listEntityEvents: func(
 				context.Context,
-				devices.ListEntityDeviceEventsParams,
-			) (devices.Page[devices.DeviceEventHistoryEntry], error) {
-				return devices.Page[devices.DeviceEventHistoryEntry]{}, devices.ErrInvalidPage
+				devices.ListEntityEventsParams,
+			) (devices.Page[devices.EntityEventHistoryEntry], error) {
+				return devices.Page[devices.EntityEventHistoryEntry]{}, devices.ErrInvalidPage
 			}},
 			http.StatusBadRequest,
 			"invalid page",
@@ -196,11 +196,11 @@ func TestListEntityDeviceEventsMapsErrors(t *testing.T) {
 		{
 			"unknown parent",
 			"/v1/entities/" + string(apiEntityID) + "/events",
-			&stubDevices{listEntityDeviceEvents: func(
+			&stubDevices{listEntityEvents: func(
 				context.Context,
-				devices.ListEntityDeviceEventsParams,
-			) (devices.Page[devices.DeviceEventHistoryEntry], error) {
-				return devices.Page[devices.DeviceEventHistoryEntry]{}, devices.ErrEntityNotFound
+				devices.ListEntityEventsParams,
+			) (devices.Page[devices.EntityEventHistoryEntry], error) {
+				return devices.Page[devices.EntityEventHistoryEntry]{}, devices.ErrEntityNotFound
 			}},
 			http.StatusNotFound,
 			"entity not found",
@@ -208,11 +208,11 @@ func TestListEntityDeviceEventsMapsErrors(t *testing.T) {
 		{
 			"internal",
 			"/v1/entities/" + string(apiEntityID) + "/events",
-			&stubDevices{listEntityDeviceEvents: func(
+			&stubDevices{listEntityEvents: func(
 				context.Context,
-				devices.ListEntityDeviceEventsParams,
-			) (devices.Page[devices.DeviceEventHistoryEntry], error) {
-				return devices.Page[devices.DeviceEventHistoryEntry]{}, errors.New("SQLite unavailable")
+				devices.ListEntityEventsParams,
+			) (devices.Page[devices.EntityEventHistoryEntry], error) {
+				return devices.Page[devices.EntityEventHistoryEntry]{}, errors.New("SQLite unavailable")
 			}},
 			http.StatusInternalServerError,
 			"internal error",
@@ -238,7 +238,7 @@ func TestListEntityDeviceEventsMapsErrors(t *testing.T) {
 
 // This test protects Huma structural validation and fails if out-of-range
 // limits return 400 instead of 422.
-func TestListEntityDeviceEventsRejectsOutOfRangeLimits(t *testing.T) {
+func TestListEntityEventsRejectsOutOfRangeLimits(t *testing.T) {
 	t.Parallel()
 	router, _ := testAPI(t, &stubDevices{})
 	for _, path := range []string{
@@ -254,13 +254,13 @@ func TestListEntityDeviceEventsRejectsOutOfRangeLimits(t *testing.T) {
 
 // This test protects empty-history encoding and fails if an Entity with no
 // events returns null items instead of an empty array.
-func TestListEntityDeviceEventsEncodesEmptyItemsArray(t *testing.T) {
+func TestListEntityEventsEncodesEmptyItemsArray(t *testing.T) {
 	t.Parallel()
-	router, _ := testAPI(t, &stubDevices{listEntityDeviceEvents: func(
+	router, _ := testAPI(t, &stubDevices{listEntityEvents: func(
 		context.Context,
-		devices.ListEntityDeviceEventsParams,
-	) (devices.Page[devices.DeviceEventHistoryEntry], error) {
-		return devices.Page[devices.DeviceEventHistoryEntry]{}, nil
+		devices.ListEntityEventsParams,
+	) (devices.Page[devices.EntityEventHistoryEntry], error) {
+		return devices.Page[devices.EntityEventHistoryEntry]{}, nil
 	}})
 	response := performRequest(router, "/v1/entities/"+string(apiEntityID)+"/events")
 	if response.Code != http.StatusOK {
@@ -281,20 +281,20 @@ func TestListEntityDeviceEventsEncodesEmptyItemsArray(t *testing.T) {
 
 // This test protects the private field boundary and fails if Adapter, runtime,
 // or correlation IDs, the fingerprint, receive order, or a raw envelope leak
-// into a public Device Event body. A rejection code stays visible.
-func TestListEntityDeviceEventsOmitsPrivateFields(t *testing.T) {
+// into a public Entity Event body. A rejection code stays visible.
+func TestListEntityEventsOmitsPrivateFields(t *testing.T) {
 	t.Parallel()
-	rejection := devices.DeviceEventRejectionUnsupportedEvent
-	rejected := apiDeviceEventEntry(9)
-	rejected.Disposition = devices.DeviceEventDispositionRejected
+	rejection := devices.EntityEventRejectionUnsupportedEvent
+	rejected := apiEntityEventEntry(9)
+	rejected.Disposition = devices.EntityEventDispositionRejected
 	rejected.Rejection = &rejection
-	accepted := apiDeviceEventEntry(8)
-	stub := &stubDevices{listEntityDeviceEvents: func(
+	accepted := apiEntityEventEntry(8)
+	stub := &stubDevices{listEntityEvents: func(
 		context.Context,
-		devices.ListEntityDeviceEventsParams,
-	) (devices.Page[devices.DeviceEventHistoryEntry], error) {
-		return devices.Page[devices.DeviceEventHistoryEntry]{
-			Items: []devices.DeviceEventHistoryEntry{rejected, accepted},
+		devices.ListEntityEventsParams,
+	) (devices.Page[devices.EntityEventHistoryEntry], error) {
+		return devices.Page[devices.EntityEventHistoryEntry]{
+			Items: []devices.EntityEventHistoryEntry{rejected, accepted},
 		}, nil
 	}}
 	router, _ := testAPI(t, stub)
@@ -310,31 +310,31 @@ func TestListEntityDeviceEventsOmitsPrivateFields(t *testing.T) {
 			t.Fatalf("%s leaked into %s", field, response.Body.String())
 		}
 	}
-	var body EntityDeviceEventCollectionBody
+	var body EntityEventCollectionBody
 	if err := json.Unmarshal(response.Body.Bytes(), &body); err != nil {
 		t.Fatal(err)
 	}
 	if len(body.Items) != 2 || body.Items[0].RejectionCode == nil ||
 		*body.Items[0].RejectionCode != "unsupported_event" || body.Items[1].RejectionCode != nil {
-		t.Fatalf("Device Event bodies = %#v", body.Items)
+		t.Fatalf("Entity Event bodies = %#v", body.Items)
 	}
 }
 
-// This test protects the Device Event cursor codec and fails if a cursor loses
+// This test protects the Entity Event cursor codec and fails if a cursor loses
 // its Entity, resource, or exclusive position scope.
-func TestEntityDeviceEventCursorRoundTripAndEnforcesScope(t *testing.T) {
+func TestEntityEventCursorRoundTripAndEnforcesScope(t *testing.T) {
 	t.Parallel()
 	otherEntity := devices.EntityID("ent_01890f47-7a6b-7c4d-8e9f-0123456789ac")
-	cursor, err := encodeEntityDeviceEventCursor(apiEntityID, 9)
+	cursor, err := encodeEntityEventCursor(apiEntityID, 9)
 	if err != nil {
 		t.Fatal(err)
 	}
-	receiveOrder, err := decodeEntityDeviceEventCursor(cursor, apiEntityID)
+	receiveOrder, err := decodeEntityEventCursor(cursor, apiEntityID)
 	if err != nil || *receiveOrder != 9 {
-		t.Fatalf("Device Event cursor = %q, %v", cursor, err)
+		t.Fatalf("Entity Event cursor = %q, %v", cursor, err)
 	}
-	if _, decodeErr := decodeEntityDeviceEventCursor(cursor, otherEntity); decodeErr == nil {
-		t.Fatal("Device Event cursor accepted for another Entity")
+	if _, decodeErr := decodeEntityEventCursor(cursor, otherEntity); decodeErr == nil {
+		t.Fatal("Entity Event cursor accepted for another Entity")
 	}
 	stateCursor, stateErr := encodeEntityStateHistoryCursor(
 		apiEntityID,
@@ -344,49 +344,49 @@ func TestEntityDeviceEventCursorRoundTripAndEnforcesScope(t *testing.T) {
 	if stateErr != nil {
 		t.Fatal(stateErr)
 	}
-	if _, decodeErr := decodeEntityDeviceEventCursor(stateCursor, apiEntityID); decodeErr == nil {
-		t.Fatal("State history cursor accepted by the Device Event endpoint")
+	if _, decodeErr := decodeEntityEventCursor(stateCursor, apiEntityID); decodeErr == nil {
+		t.Fatal("State history cursor accepted by the Entity Event endpoint")
 	}
 	if _, decodeErr := decodeEntityStateHistoryCursor(
 		cursor,
 		apiEntityID,
 		devices.EntityStateHistoryFilterUpdates,
 	); decodeErr == nil {
-		t.Fatal("Device Event cursor accepted by the State history endpoint")
+		t.Fatal("Entity Event cursor accepted by the State history endpoint")
 	}
 
 	unknownField := base64.RawURLEncoding.EncodeToString(
 		[]byte(
-			`{"v":1,"resource":"entity-device-events","parent_id":"` + string(
+			`{"v":1,"resource":"entity_events","parent_id":"` + string(
 				apiEntityID,
 			) + `","receive_order":9,"filter":"all"}`,
 		),
 	)
 	trailing := base64.RawURLEncoding.EncodeToString(
 		[]byte(
-			`{"v":1,"resource":"entity-device-events","parent_id":"` + string(
+			`{"v":1,"resource":"entity_events","parent_id":"` + string(
 				apiEntityID,
 			) + `","receive_order":9}{}`,
 		),
 	)
-	wrongVersion, _ := encodeCursor(entityDeviceEventCursor{
-		Version: 2, Resource: "entity-device-events", ParentID: string(apiEntityID), ReceiveOrder: 9,
+	wrongVersion, _ := encodeCursor(entityEventCursor{
+		Version: 2, Resource: "entity_events", ParentID: string(apiEntityID), ReceiveOrder: 9,
 	})
-	wrongResource, _ := encodeCursor(entityDeviceEventCursor{
+	wrongResource, _ := encodeCursor(entityEventCursor{
 		Version: 1, Resource: "entity_state_history", ParentID: string(apiEntityID), ReceiveOrder: 9,
 	})
-	zeroOrder, _ := encodeCursor(entityDeviceEventCursor{
-		Version: 1, Resource: "entity-device-events", ParentID: string(apiEntityID), ReceiveOrder: 0,
+	zeroOrder, _ := encodeCursor(entityEventCursor{
+		Version: 1, Resource: "entity_events", ParentID: string(apiEntityID), ReceiveOrder: 0,
 	})
-	invalidParent, _ := encodeCursor(entityDeviceEventCursor{
-		Version: 1, Resource: "entity-device-events", ParentID: "bad", ReceiveOrder: 9,
+	invalidParent, _ := encodeCursor(entityEventCursor{
+		Version: 1, Resource: "entity_events", ParentID: "bad", ReceiveOrder: 9,
 	})
 	for _, value := range []string{
 		"not base64!", cursor + "=", unknownField, trailing,
 		wrongVersion, wrongResource, zeroOrder, invalidParent,
 	} {
-		if _, decodeErr := decodeEntityDeviceEventCursor(value, apiEntityID); decodeErr == nil {
-			t.Fatalf("decodeEntityDeviceEventCursor(%q) succeeded", value)
+		if _, decodeErr := decodeEntityEventCursor(value, apiEntityID); decodeErr == nil {
+			t.Fatalf("decodeEntityEventCursor(%q) succeeded", value)
 		}
 	}
 }

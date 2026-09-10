@@ -1,8 +1,8 @@
-# Device-event automations: first working slice
+# Entity Event automations: first working slice
 
-**Status:** Deferred design notes; blocked by [Device Events](device-events.md), which will be implemented first. Not implementation-ready.
+**Status:** Deferred design notes; blocked by [Entity Events](entity-events.md), which will be implemented first. Not implementation-ready.
 
-> **Superseded foundation:** `device-events.md` now owns the event type, SDK/wire delivery, durable ingestion and history. The one-shot request/reply, no-retry/no-buffer publication, two-second event expiry, read-only event acceptance and automation-owned ephemeral receipt proposals below are retained as historical design notes, **not instructions to implement**. The “add no event table/store” instruction is superseded by the foundation's `device_events` table. Its `received_at` is JetStream storage time, replacing this draft's Core-callback interpretation. Revise these sections and the D1/D3 breakdown after the Device Events foundation; preserve the separate requirement that future automations must not catch up missed triggers merely because event history does.
+> **Superseded foundation:** `entity-events.md` now owns the event type, SDK/wire delivery, durable ingestion and history. The one-shot request/reply, no-retry/no-buffer publication, two-second event expiry, read-only event acceptance and automation-owned ephemeral receipt proposals below are retained as historical design notes, **not instructions to implement**. The “add no event table/store” instruction is superseded by the foundation's `entity_events` table. Its `received_at` is JetStream storage time, replacing this draft's Core-callback interpretation. Revise these sections and the D1/D3 breakdown after the Entity Events foundation; preserve the separate requirement that future automations must not catch up missed triggers merely because event history does.
 **Baseline:** `378080b`; do not restore the deliberately removed automation module wholesale.
 **Effort:** XL overall, reduced scope across four deliverables. This remains a cross-module feature, not a small endpoint change.
 
@@ -16,18 +16,18 @@ Simulated live press → validate source/name → atomically record Run or skip
                                             existing Entity Commands
 ```
 
-Agreed requirements: device-event Triggers, HTTP/SQLite definitions, manual invocation, ordered Steps, one active Run per Automation, recorded busy skips, no offline catch-up. Physical-device mappings, State conditions, timers and schedules are deferred.
+Agreed requirements: entity-event Triggers, HTTP/SQLite definitions, manual invocation, ordered Steps, one active Run per Automation, recorded busy skips, no offline catch-up. Physical-device mappings, State conditions, timers and schedules are deferred.
 
-**Removed from the earlier draft:** independently browsable Device Event history, device-event write repository, two-stage durable acceptance/handoff, readiness generations, a new readiness controller, startup outcome reconstruction, manual idempotency keys, separate Run/Trigger Decision/event-history API surfaces, configurable history retention, and definition-count quotas.
+**Removed from the earlier draft:** independently browsable Entity Event history, entity-event write repository, two-stage durable acceptance/handoff, readiness generations, a new readiness controller, startup outcome reconstruction, manual idempotency keys, separate Run/Trigger Decision/event-history API surfaces, configurable history retention, and definition-count quotas.
 
 **Retained:** canonical event-source Entities and generated validation, immutable Run snapshots, verified Command links, duplicate protection, bounded concurrency, safe shutdown, and integration tests. These protect the first use case rather than a hypothetical future platform.
 
 ## 2. Ownership and the one durable admission
 
-- `devices` owns Entity identity, event support and source validation. Device Events are not Observations and never update State or satisfy Commands.
+- `devices` owns Entity identity, event support and source validation. Entity Events are not Observations and never update State or satisfy Commands.
 - `automations` owns definitions, matching, Runs, skips, execution history and its small duplicate-receipt table.
 - The device NATS transport decodes live requests. Assembly injects the automation service as its receiver; no app-owned event bus or handoff coordinator is needed.
-- `automations.ReceiveDeviceEvent` asks devices to validate the source, then performs **one automation-owned write transaction**. Receipt, matching outcomes, snapshots and initial Step rows commit together. Acknowledgement follows that commit; Commands run separately.
+- `automations.ReceiveEntityEvent` asks devices to validate the source, then performs **one automation-owned write transaction**. Receipt, matching outcomes, snapshots and initial Step rows commit together. Acknowledgement follows that commit; Commands run separately.
 
 Source validation uses one consistent read of current Entity support/enablement, owner, active runtime and Adapter health. Its meaning is **valid at that read**, not a guarantee that these facts remain unchanged until dispatch. A later source disablement or re-registration does not retroactively retract this input. Definition matching uses the revisions read in the admission transaction. Target Operations are revalidated by normal Command execution.
 
@@ -55,72 +55,72 @@ Changes to existing domain/catalog types (D1):
 ```diff
  // internal/modules/devices/model.go
  type ObservationID string
-+type DeviceEventID string
-+type DeviceEventName string
++type EntityEventID string
++type EntityEventName string
  type CommandID string
 
  // internal/modules/devices/catalog.go
  type EntityTypeDefinition struct {
      id               EntityTypeID
      stateless        bool
-+    eventNames       func(EntitySupport) ([]DeviceEventName, error)
++    eventNames       func(EntitySupport) ([]EntityEventName, error)
 ```
 
-New `internal/modules/devices/device_events.go` contract (D1):
+New `internal/modules/devices/entity_events.go` contract (D1):
 
 ```go
-// DeviceEventInput is decoded input; only ValidateDeviceEvent establishes source eligibility.
-type DeviceEventInput struct {
-    ID            DeviceEventID
+// EntityEventInput is decoded input; only ValidateEntityEvent establishes source eligibility.
+type EntityEventInput struct {
+    ID            EntityEventID
     AdapterID     string
     RuntimeID     RuntimeID
     EntityID      EntityID
-    Name          DeviceEventName
+    Name          EntityEventName
     CorrelationID CorrelationID
     EmittedAt     time.Time // SDK envelope time
     ReceivedAt    time.Time // Core callback time
 }
 
-// ValidatedDeviceEvent captures a point-in-time validation, not durable acceptance.
-type ValidatedDeviceEvent struct { Event DeviceEventInput }
+// ValidatedEntityEvent captures a point-in-time validation, not durable acceptance.
+type ValidatedEntityEvent struct { Event EntityEventInput }
 
-type DeviceEventReceipt struct {
-    ID         DeviceEventID
+type EntityEventReceipt struct {
+    ID         EntityEventID
     ReceivedAt time.Time
     Duplicate  bool
 }
 
-func (s *Service) ValidateDeviceEvent(context.Context, DeviceEventInput) (ValidatedDeviceEvent, error)
-func (s *Service) ValidateDeviceEventTrigger(context.Context, EntityID, DeviceEventName) error
+func (s *Service) ValidateEntityEvent(context.Context, EntityEventInput) (ValidatedEntityEvent, error)
+func (s *Service) ValidateEntityEventTrigger(context.Context, EntityID, EntityEventName) error
 ```
 
-`ValidateDeviceEvent` checks canonical identities, active owning runtime, Entity enablement, healthy Adapter and supported name. Entity availability is diagnostic, not a second input gate. Use a single source-read query through the existing devices read store; add no event table/store. `ValidateDeviceEventTrigger` is the save-time check: only Entity existence and supported name, not enablement/health. Both are read-only.
+`ValidateEntityEvent` checks canonical identities, active owning runtime, Entity enablement, healthy Adapter and supported name. Entity availability is diagnostic, not a second input gate. Use a single source-read query through the existing devices read store; add no event table/store. `ValidateEntityEventTrigger` is the save-time check: only Entity existence and supported name, not enablement/health. Both are read-only.
 
 ## 4. Live delivery, not a recovery protocol
 
 Use one-shot Core NATS request/reply:
 
 ```text
-hearth.v1.adapter.<adapter>.runtime.<runtime>.device-event.<entity_id>
+hearth.v1.adapter.<adapter>.runtime.<runtime>.entity-event.<entity_id>
 ```
 
-Request schema `urn:hearth:schema:device-event-request:v1` uses the shared envelope: `evt_` ID, SDK-minted `emitted_at`, required correlation ID, no causation ID. Data is only `{"entity_id":"ent_…","name":"single_press"}`. Subject and payload Entity must agree.
+Request schema `urn:hearth:schema:entity-event-request:v1` uses the shared envelope: `evt_` ID, SDK-minted `emitted_at`, required correlation ID, no causation ID. Data is only `{"entity_id":"ent_…","name":"single_press"}`. Subject and payload Entity must agree.
 
-Response schema `urn:hearth:schema:device-event-response:v1` uses `rep_` ID, matching correlation and `causation_id` equal to the request ID; add `evt_id` to the common causation union. Accepted data is `{status:"accepted", event_id, received_at, duplicate}`. Rejected data is `{status:"rejected", event_id, error:{code}}`.
+Response schema `urn:hearth:schema:entity-event-response:v1` uses `rep_` ID, matching correlation and `causation_id` equal to the request ID; add `evt_id` to the common causation union. Accepted data is `{status:"accepted", event_id, received_at, duplicate}`. Rejected data is `{status:"rejected", event_id, error:{code}}`.
 
 **Accepted means the automation admission transaction committed**, including the no-match case. It does not mean a Run succeeded. Timeout/internal error is ambiguous and is not permission to resend a press.
 
-New SDK data types in `sdk/adapter/device_events.go` (D1), publication method in D3:
+New SDK data types in `sdk/adapter/entity_events.go` (D1), publication method in D3:
 
 ```go
-type DeviceEventID string
-type DeviceEvent struct { EntityID string; Name string }
+type EntityEventID string
+type EntityEvent struct { EntityID string; Name string }
 
-// PublishDeviceEvent makes one attempt and never retries a missed press.
-func (s *Session) PublishDeviceEvent(context.Context, DeviceEvent) (DeviceEventID, error)
+// PublishEntityEvent makes one attempt and never retries a missed press.
+func (s *Session) PublishEntityEvent(context.Context, EntityEvent) (EntityEventID, error)
 ```
 
-Generated `sdk/adapter/enumeventv1.NewDeviceEvent` takes `{EntityID string; Support Support; Name string}` and returns a validated `adapter.DeviceEvent`. The Session mints identity/time once, performs one `RequestMsgWithContext`, and returns the ID even if a prepared publication fails.
+Generated `sdk/adapter/enumeventv1.NewEntityEvent` takes `{EntityID string; Support Support; Name string}` and returns a validated `adapter.EntityEvent`. The Session mints identity/time once, performs one `RequestMsgWithContext`, and returns the ID even if a prepared publication fails.
 
 Simple freshness policy, with no admission generations:
 
@@ -140,7 +140,7 @@ Definition JSON is strict, defaults `enabled:false`, and permits 0–32 Triggers
 ```json
 {
   "name":"Button turns on light", "enabled":true,
-  "triggers":[{"id":"press","kind":"device_event","entity_id":"ent_<button>","event_name":"single_press"}],
+  "triggers":[{"id":"press","kind":"entity_event","entity_id":"ent_<button>","event_name":"single_press"}],
   "steps":[{"id":"light_on","entity_id":"ent_<power>","operation":"set","parameters":{"value":true}}]
 }
 ```
@@ -183,11 +183,11 @@ New domain types in `internal/modules/automations/automation_model.go`; strings 
 type AutomationID string     // aut_<UUIDv7>
 type AutomationRunID string  // arn_<UUIDv7>; run_ already means Adapter runtime
 type AutomationSkipID string // ask_<UUIDv7>
-type DeviceEventTrigger struct { ID, Kind string; EntityID devices.EntityID; EventName devices.DeviceEventName }
+type EntityEventTrigger struct { ID, Kind string; EntityID devices.EntityID; EventName devices.EntityEventName }
 type AutomationStep struct { ID string; EntityID devices.EntityID; Operation devices.OperationName; Parameters devices.CommandParameters }
-type AutomationDefinition struct { Name string; Enabled bool; Triggers []DeviceEventTrigger; Steps []AutomationStep }
+type AutomationDefinition struct { Name string; Enabled bool; Triggers []EntityEventTrigger; Steps []AutomationStep }
 type AutomationRecord struct { ID AutomationID; Revision int64; Definition AutomationDefinition; CreatedAt, UpdatedAt time.Time }
-type AutomationEventSummary struct { ID devices.DeviceEventID; EntityID devices.EntityID; Name devices.DeviceEventName; ReceivedAt time.Time }
+type AutomationEventSummary struct { ID devices.EntityEventID; EntityID devices.EntityID; Name devices.EntityEventName; ReceivedAt time.Time }
 
 type AutomationStepAttempt struct {
     Position int
@@ -232,14 +232,14 @@ Consuming seam, `automation_service.go`:
 
 ```go
 type AutomationDevices interface {
-    ValidateDeviceEvent(context.Context, devices.DeviceEventInput) (devices.ValidatedDeviceEvent, error)
-    ValidateDeviceEventTrigger(context.Context, devices.EntityID, devices.DeviceEventName) error
+    ValidateEntityEvent(context.Context, devices.EntityEventInput) (devices.ValidatedEntityEvent, error)
+    ValidateEntityEventTrigger(context.Context, devices.EntityID, devices.EntityEventName) error
     ValidateCommand(context.Context, devices.CommandInput) (devices.CommandParameters, error)
     ExecuteCommand(context.Context, devices.CommandInput) (devices.CommandResult, error)
     GetCommand(context.Context, devices.CommandID) (devices.CommandRecord, error)
 }
 func NewAutomationService(*SQLiteAutomationRepository, AutomationDevices, AutomationDependencies) *AutomationService
-func (s *AutomationService) ReceiveDeviceEvent(context.Context, devices.DeviceEventInput) (devices.DeviceEventReceipt, error)
+func (s *AutomationService) ReceiveEntityEvent(context.Context, devices.EntityEventInput) (devices.EntityEventReceipt, error)
 func (s *AutomationService) CreateAutomation(context.Context, AutomationDefinition) (AutomationRecord, error)
 func (s *AutomationService) ReplaceAutomation(context.Context, AutomationID, int64, AutomationDefinition) (AutomationRecord, error)
 func (s *AutomationService) StartManualRun(context.Context, AutomationID) (AutomationRun, error)
@@ -248,7 +248,7 @@ func (s *AutomationService) WaitAutomationRuns(context.Context) error
 func (s *AutomationService) AutomationExecutionReady() bool
 ```
 
-Dependencies are the clock, ID constructors and logger. Use the real SQLite repository for transaction tests and the consuming device interface for deterministic execution tests. Device NATS transport's `DeviceEventReceiver` interface has exactly the `ReceiveDeviceEvent` signature above. App injects the automation service and existing dependency-readiness checker; no devices → automations import.
+Dependencies are the clock, ID constructors and logger. Use the real SQLite repository for transaction tests and the consuming device interface for deterministic execution tests. Device NATS transport's `EntityEventReceiver` interface has exactly the `ReceiveEntityEvent` signature above. App injects the automation service and existing dependency-readiness checker; no devices → automations import.
 
 Four automation-owned tables, in `00001_initial.sql` (recreate development DBs; no compatibility migration):
 
@@ -294,10 +294,10 @@ entitytypes/
 └── enumeventv1/                          # new — schemas/manifest/examples/generated type [D1]
 contracts/v1/
 ├── registration-request.schema.json     # modify — optional event support [D1]
-├── device-event-{request,response}.schema.json # new — live envelope/receipt [D3]
+├── entity-event-{request,response}.schema.json # new — live envelope/receipt [D3]
 └── common.schema.json / embed.go         # modify — event IDs/causation/schema registration [D3]
 sdk/adapter/
-├── device_events.go                      # new — data types [D1], publication [D3]
+├── entity_events.go                      # new — data types [D1], publication [D3]
 ├── enumeventv1/                          # generated — descriptor/event builders [D1]
 └── session.go / lifecycle.go             # modify — no buffering; preserve non-event retries [D3]
 internal/
@@ -305,11 +305,11 @@ internal/
 ├── contracts/v1/natswire/subjects.go      # modify — event route helpers [D3]
 ├── modules/devices/
 │   ├── model.go / ids.go / catalog.go    # modify — event types/parsers/catalog selector [D1]
-│   ├── device_events.go                  # new — read-only validation [D1]
+│   ├── entity_events.go                  # new — read-only validation [D1]
 │   ├── repository.go / sqlite_reads.go   # modify — single source-snapshot read [D1]
-│   ├── dbqueries/device_event_source.sql # new — source lookup, no event storage [D1]
+│   ├── dbqueries/entity_event_source.sql # new — source lookup, no event storage [D1]
 │   ├── dbsqlc/ / zz_generated_entitytypes*.go # generated — source read/catalog [D1]
-│   └── nats/device_event.go              # new — bounded request/reply, injected receiver [D3]
+│   └── nats/entity_event.go              # new — bounded request/reply, injected receiver [D3]
 ├── modules/automations/
 │   ├── automation_model.go              # new — definition/Run/skip types [D2]
 │   ├── automation_definition.go / automation_definition.schema.json # new — strict definition validation [D2]
@@ -322,7 +322,7 @@ internal/
 │   └── api/automations.go               # new — seven routes/DTOs/cursors [D2]
 ├── platform/db/migrations/00001_initial.sql # modify — automation tables [D2,D3]
 ├── app/hearthd/run.go / server.go        # modify — assembly/readiness/drain/routes [D2,D3]
-├── app/hearthd/device_event_automation_integration_test.go # new — whole slice [D4]
+├── app/hearthd/entity_event_automation_integration_test.go # new — whole slice [D4]
 └── adapters/simulator/ / app/simulator/  # modify — event scenario/explicit emission [D4]
 sqlc.yaml / mise.toml                    # modify — automation SQL generation/checks [D2]
 README.md / configs/ / CONTEXT.md / docs/{architecture,logging}.md
@@ -331,7 +331,7 @@ README.md / configs/ / CONTEXT.md / docs/{architecture,logging}.md
 
 D1 includes SDK/domain types required by its generated builders. D2 ships working manual-only execution before D3 transport exists. Update any explicit descriptor DTOs needed to preserve `events` in D1. Serialize changes to shared migration/generation inputs; do not add infrastructure to make the slice artificially parallelizable.
 
-Simulator D4 registers an `events` Entity alongside `power` in scenario `device-events`; existing scenarios and Binding keys stay unchanged. Tests call explicit `EmitDeviceEvent(ctx,name)`, not a timer. Local scenario input accepts `single_press`/`double_press` lines while serving Commands; use an unbuffered reader-to-publisher handoff, dropping/logging while busy or disconnected, never retaining presses for recovery. EOF stops only input; ensure shutdown can close/join its reader. No privileged Core event-injection endpoint and no real-hardware claim.
+Simulator D4 registers an `events` Entity alongside `power` in scenario `entity-events`; existing scenarios and Binding keys stay unchanged. Tests call explicit `EmitEntityEvent(ctx,name)`, not a timer. Local scenario input accepts `single_press`/`double_press` lines while serving Commands; use an unbuffered reader-to-publisher handoff, dropping/logging while busy or disconnected, never retaining presses for recovery. EOF stops only input; ensure shutdown can close/join its reader. No privileged Core event-injection endpoint and no real-hardware claim.
 
 ## 9. Acceptance tests and remaining trade-offs
 
@@ -350,4 +350,4 @@ Use injected clocks and synchronization barriers, real SQLite for atomicity/cons
 
 Risks remain explicit: input before durable admission can be lost; a committed Run can be interrupted before dispatch; clocks bound transport age, not physical truth; source validation is point-in-time; manual POSTs are not idempotent; execution history grows until a later retention feature. These are smaller, understandable limitations instead of extra recovery subsystems.
 
-On implementation, update glossary Entity/Entity support to include named event sources, permit zero Triggers for manual-only Automations, and define Device Event and Automation Skip. Preserve the distinction from outbound `enumaction.trigger`. Remove the unused scheduled Occurrence wording and fix its dangling references together; do not rename a skip into an executed Run. No accepted architecture/glossary is changed merely by this draft revision.
+On implementation, update glossary Entity/Entity support to include named event sources, permit zero Triggers for manual-only Automations, and define Entity Event and Automation Skip. Preserve the distinction from outbound `enumaction.trigger`. Remove the unused scheduled Occurrence wording and fix its dangling references together; do not rename a skip into an executed Run. No accepted architecture/glossary is changed merely by this draft revision.

@@ -17,24 +17,24 @@ func ValidateSupport(support Support) error {
 
 func EqualState(left, right State) bool { return left == right }
 
-var deviceEventNamePattern = regexp.MustCompile("^[a-z0-9][a-z0-9_-]{0,62}$")
+var entityEventNamePattern = regexp.MustCompile("^[a-z0-9][a-z0-9_-]{0,62}$")
 
-// DeviceEventNames returns an owned copy of the support's supported Device Event names.
-func DeviceEventNames(support Support) []string {
+// EntityEventNames returns an owned copy of the support's supported Entity Event names.
+func EntityEventNames(support Support) []string {
 	names := make([]string, 0, len(support.Events.Names))
 	return append(names, support.Events.Names...)
 }
 
-// ValidateDeviceEventName reports whether name is a canonical Device Event name
+// ValidateEntityEventName reports whether name is a canonical Entity Event name
 // that the Entity's current support accepts.
-func ValidateDeviceEventName(support Support, name string) error {
-	if !deviceEventNamePattern.MatchString(name) {
-		return fmt.Errorf("Device Event name %q is not a canonical name slug", name)
+func ValidateEntityEventName(support Support, name string) error {
+	if !entityEventNamePattern.MatchString(name) {
+		return fmt.Errorf("Entity Event name %q is not a canonical name slug", name)
 	}
 	for _, supported := range support.Events.Names {
 		if supported == name {
 			return nil
 		}
 	}
-	return fmt.Errorf("Device Event name %q is not supported", name)
+	return fmt.Errorf("Entity Event name %q is not supported", name)
 }

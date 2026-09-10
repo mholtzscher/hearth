@@ -44,7 +44,7 @@ func renderFacadeConformanceTest(model entityTypeModel) (output, error) {
 	}
 	writeEntityDescriptorTest(&source, model)
 	if model.EventSource {
-		writeDeviceEventFacadeConformanceTest(&source, model)
+		writeEntityEventFacadeConformanceTest(&source, model)
 	}
 	if len(model.Operations) > 0 {
 		writeCommandConformanceTest(&source, model)
@@ -277,17 +277,17 @@ func writeObservationConformanceTest(source *strings.Builder, model entityTypeMo
 	source.WriteString("}\n\n")
 }
 
-// writeDeviceEventFacadeConformanceTest emits the event-source SDK probe: the
+// writeEntityEventFacadeConformanceTest emits the event-source SDK probe: the
 // typed builder accepts a supported name, rejects an unsupported or
 // non-canonical name, rejects a missing Entity identity, and rejects support
 // that no longer satisfies its schema.
-func writeDeviceEventFacadeConformanceTest(source *strings.Builder, model entityTypeModel) {
-	names, err := deviceEventNamesFromSupport(model.Examples.Cases[0].Support)
+func writeEntityEventFacadeConformanceTest(source *strings.Builder, model entityTypeModel) {
+	names, err := entityEventNamesFromSupport(model.Examples.Cases[0].Support)
 	if err != nil {
 		panic("event-source examples lost their names: " + err.Error())
 	}
-	unsupported := unsupportedDeviceEventName(names)
-	source.WriteString("func TestGeneratedDeviceEventConformance(t *testing.T) {\n")
+	unsupported := unsupportedEntityEventName(names)
+	source.WriteString("func TestGeneratedEntityEventConformance(t *testing.T) {\n")
 	source.WriteString("\tcodecs, err := codecs()\n\tif err != nil { t.Fatal(err) }\n")
 	fmt.Fprintf(
 		source,
@@ -297,47 +297,47 @@ func writeDeviceEventFacadeConformanceTest(source *strings.Builder, model entity
 	source.WriteString("\tif err != nil { t.Fatalf(\"support: %v\", err) }\n")
 	fmt.Fprintf(
 		source,
-		"\tif len(support.Events.Names) != %d { t.Fatalf(\"Device Event names = %%v\", support.Events.Names) }\n",
+		"\tif len(support.Events.Names) != %d { t.Fatalf(\"Entity Event names = %%v\", support.Events.Names) }\n",
 		len(names),
 	)
 	source.WriteString("\tsupportedName := string(support.Events.Names[0])\n")
 	source.WriteString(
-		"\tevent, err := NewDeviceEvent(DeviceEventInput{EntityID: " + strconv.Quote(sdkTestEntityID) +
+		"\tevent, err := NewEntityEvent(EntityEventInput{EntityID: " + strconv.Quote(sdkTestEntityID) +
 			", Support: support, Name: supportedName})\n",
 	)
-	source.WriteString("\tif err != nil { t.Fatalf(\"Device Event: %v\", err) }\n")
+	source.WriteString("\tif err != nil { t.Fatalf(\"Entity Event: %v\", err) }\n")
 	fmt.Fprintf(
 		source,
-		"\tif event.EntityID != %s || event.Name != supportedName { t.Errorf(\"Device Event = %%+v\", event) }\n",
+		"\tif event.EntityID != %s || event.Name != supportedName { t.Errorf(\"Entity Event = %%+v\", event) }\n",
 		strconv.Quote(sdkTestEntityID),
 	)
 	fmt.Fprintf(
 		source,
-		"\tif _, err := NewDeviceEvent(DeviceEventInput{EntityID: %s, Support: support, Name: %s}); err == nil {\n",
+		"\tif _, err := NewEntityEvent(EntityEventInput{EntityID: %s, Support: support, Name: %s}); err == nil {\n",
 		strconv.Quote(sdkTestEntityID),
 		strconv.Quote(unsupported),
 	)
-	source.WriteString("\t\tt.Error(\"unsupported Device Event name was accepted\")\n\t} else {\n")
-	source.WriteString("\t\trequireValidationError(t, err, \"reject unsupported Device Event name\")\n\t}\n")
+	source.WriteString("\t\tt.Error(\"unsupported Entity Event name was accepted\")\n\t} else {\n")
+	source.WriteString("\t\trequireValidationError(t, err, \"reject unsupported Entity Event name\")\n\t}\n")
 	fmt.Fprintf(
 		source,
-		"\tif _, err := NewDeviceEvent(DeviceEventInput{EntityID: %s, Support: support, Name: \"not a name\"}); err == nil {\n",
+		"\tif _, err := NewEntityEvent(EntityEventInput{EntityID: %s, Support: support, Name: \"not a name\"}); err == nil {\n",
 		strconv.Quote(sdkTestEntityID),
 	)
-	source.WriteString("\t\tt.Error(\"non-canonical Device Event name was accepted\")\n\t} else {\n")
-	source.WriteString("\t\trequireValidationError(t, err, \"reject non-canonical Device Event name\")\n\t}\n")
+	source.WriteString("\t\tt.Error(\"non-canonical Entity Event name was accepted\")\n\t} else {\n")
+	source.WriteString("\t\trequireValidationError(t, err, \"reject non-canonical Entity Event name\")\n\t}\n")
 	source.WriteString(
-		"\tif _, err := NewDeviceEvent(DeviceEventInput{Support: support, Name: supportedName}); err == nil {\n",
+		"\tif _, err := NewEntityEvent(EntityEventInput{Support: support, Name: supportedName}); err == nil {\n",
 	)
-	source.WriteString("\t\tt.Error(\"Device Event without an entity ID was accepted\")\n\t} else {\n")
+	source.WriteString("\t\tt.Error(\"Entity Event without an entity ID was accepted\")\n\t} else {\n")
 	source.WriteString("\t\trequireValidationError(t, err, \"reject empty entity ID\")\n\t}\n")
 	source.WriteString("\tinvalidSupport := support\n\tinvalidSupport.Events.Names = nil\n")
 	fmt.Fprintf(
 		source,
-		"\tif _, err := NewDeviceEvent(DeviceEventInput{EntityID: %s, Support: invalidSupport, Name: supportedName}); err == nil {\n",
+		"\tif _, err := NewEntityEvent(EntityEventInput{EntityID: %s, Support: invalidSupport, Name: supportedName}); err == nil {\n",
 		strconv.Quote(sdkTestEntityID),
 	)
-	source.WriteString("\t\tt.Error(\"Device Event with invalid Entity support was accepted\")\n\t} else {\n")
+	source.WriteString("\t\tt.Error(\"Entity Event with invalid Entity support was accepted\")\n\t} else {\n")
 	source.WriteString("\t\trequireValidationError(t, err, \"reject invalid Entity support\")\n\t}\n")
 	source.WriteString("}\n\n")
 }

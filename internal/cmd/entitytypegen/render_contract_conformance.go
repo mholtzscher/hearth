@@ -55,7 +55,7 @@ func renderConformanceTest(model entityTypeModel, modulePath string) ([]byte, er
 	writeInvalidSupportChecks(&source, model)
 	source.WriteString("}\n")
 	if model.EventSource {
-		writeDeviceEventNameContractChecks(&source, model)
+		writeEntityEventNameContractChecks(&source, model)
 	}
 	formatted, err := formatGenerated(source.String())
 	if err != nil {
@@ -94,17 +94,17 @@ func writeInvalidSupportChecks(source *strings.Builder, model entityTypeModel) {
 	}
 }
 
-// writeDeviceEventNameContractChecks emits the event-source name probe: the
+// writeEntityEventNameContractChecks emits the event-source name probe: the
 // generated accessor returns an owned name slice and the generated validator
 // separates a canonical supported name from an unsupported name and from a
 // non-canonical one.
-func writeDeviceEventNameContractChecks(source *strings.Builder, model entityTypeModel) {
-	names, err := deviceEventNamesFromSupport(model.Examples.Cases[0].Support)
+func writeEntityEventNameContractChecks(source *strings.Builder, model entityTypeModel) {
+	names, err := entityEventNamesFromSupport(model.Examples.Cases[0].Support)
 	if err != nil {
 		panic("event-source examples lost their names: " + err.Error())
 	}
-	unsupported := unsupportedDeviceEventName(names)
-	source.WriteString("\nfunc TestGeneratedDeviceEventNames(t *testing.T) {\n")
+	unsupported := unsupportedEntityEventName(names)
+	source.WriteString("\nfunc TestGeneratedEntityEventNames(t *testing.T) {\n")
 	source.WriteString("\tcodecs, err := Compile()\n\tif err != nil { t.Fatal(err) }\n")
 	fmt.Fprintf(
 		source,
@@ -112,12 +112,12 @@ func writeDeviceEventNameContractChecks(source *strings.Builder, model entityTyp
 		rawQuote(model.Examples.Cases[0].Support),
 	)
 	source.WriteString("\tif err != nil { t.Fatalf(\"support: %v\", err) }\n")
-	source.WriteString("\tnames := DeviceEventNames(support)\n")
-	fmt.Fprintf(source, "\tif len(names) != %d { t.Fatalf(\"Device Event names = %%v\", names) }\n", len(names))
+	source.WriteString("\tnames := EntityEventNames(support)\n")
+	fmt.Fprintf(source, "\tif len(names) != %d { t.Fatalf(\"Entity Event names = %%v\", names) }\n", len(names))
 	for index, name := range names {
 		fmt.Fprintf(
 			source,
-			"\tif names[%d] != %s { t.Errorf(\"Device Event name = %%q, want %%q\", names[%d], %s) }\n",
+			"\tif names[%d] != %s { t.Errorf(\"Entity Event name = %%q, want %%q\", names[%d], %s) }\n",
 			index,
 			strconv.Quote(name),
 			index,
@@ -126,21 +126,21 @@ func writeDeviceEventNameContractChecks(source *strings.Builder, model entityTyp
 	}
 	fmt.Fprintf(
 		source,
-		"\tif err := ValidateDeviceEventName(support, %s); err != nil { t.Errorf(\"supported Device Event name rejected: %%v\", err) }\n",
+		"\tif err := ValidateEntityEventName(support, %s); err != nil { t.Errorf(\"supported Entity Event name rejected: %%v\", err) }\n",
 		strconv.Quote(names[0]),
 	)
 	fmt.Fprintf(
 		source,
-		"\tif err := ValidateDeviceEventName(support, %s); err == nil { t.Error(\"unsupported Device Event name was accepted\") }\n",
+		"\tif err := ValidateEntityEventName(support, %s); err == nil { t.Error(\"unsupported Entity Event name was accepted\") }\n",
 		strconv.Quote(unsupported),
 	)
 	source.WriteString(
-		"\tif err := ValidateDeviceEventName(support, \"not a name\"); err == nil { t.Error(\"non-canonical Device Event name was accepted\") }\n",
+		"\tif err := ValidateEntityEventName(support, \"not a name\"); err == nil { t.Error(\"non-canonical Entity Event name was accepted\") }\n",
 	)
 	source.WriteString("\tnames[0] = \"mutated\"\n")
 	fmt.Fprintf(
 		source,
-		"\tif got := DeviceEventNames(support); got[0] != %s { t.Errorf(\"DeviceEventNames returned a shared slice: %%v\", got) }\n",
+		"\tif got := EntityEventNames(support); got[0] != %s { t.Errorf(\"EntityEventNames returned a shared slice: %%v\", got) }\n",
 		strconv.Quote(names[0]),
 	)
 	source.WriteString("}\n")

@@ -139,22 +139,22 @@ func decodeFuzzJSONValue(raw json.RawMessage) (any, bool) {
 	return value, true
 }
 
-type fuzzDeviceEvent struct {
+type fuzzEntityEvent struct {
 	EntityID string `json:"entity_id"`
 	Name     string `json:"name"`
 }
 
-// FuzzCodecDeviceEventRoundTrip protects the durable report contract: any
+// FuzzCodecEntityEventRoundTrip protects the durable report contract: any
 // payload Decode accepts must encode and decode to the same typed envelope with
 // stable bytes.
-func FuzzCodecDeviceEventRoundTrip(f *testing.F) {
+func FuzzCodecEntityEventRoundTrip(f *testing.F) {
 	validator, err := contractsv1.Compile()
 	if err != nil {
 		f.Fatal(err)
 	}
 
 	const validEnvelopePrefix = `"id":"evt_01890f47-7a6b-7c4d-8e9f-0123456789ab",` +
-		`"schema":"urn:hearth:schema:device-event:v1",` +
+		`"schema":"urn:hearth:schema:entity-event:v1",` +
 		`"emitted_at":"2026-08-20T12:34:56Z",` +
 		`"correlation_id":"cor_01890f47-7a6b-7c4d-8e9f-0123456789ab",`
 	const validData = `"entity_id":"ent_01890f47-7a6b-7c4d-8e9f-0123456789ab","name":"single_press"`
@@ -193,22 +193,22 @@ func FuzzCodecDeviceEventRoundTrip(f *testing.F) {
 			return
 		}
 
-		decoded, decodeErr := natswire.Decode[fuzzDeviceEvent](
+		decoded, decodeErr := natswire.Decode[fuzzEntityEvent](
 			validator,
-			contractsv1.DeviceEventSchemaID,
+			contractsv1.EntityEventSchemaID,
 			payload,
 		)
 		if decodeErr != nil {
 			return
 		}
 
-		encoded, encodeErr := natswire.Encode(validator, contractsv1.DeviceEventSchemaID, decoded)
+		encoded, encodeErr := natswire.Encode(validator, contractsv1.EntityEventSchemaID, decoded)
 		if encodeErr != nil {
 			t.Fatalf("Decode accepted %q as %#v but Encode rejected it: %v", payload, decoded, encodeErr)
 		}
-		redecoded, redecodeErr := natswire.Decode[fuzzDeviceEvent](
+		redecoded, redecodeErr := natswire.Decode[fuzzEntityEvent](
 			validator,
-			contractsv1.DeviceEventSchemaID,
+			contractsv1.EntityEventSchemaID,
 			encoded,
 		)
 		if redecodeErr != nil {
@@ -218,7 +218,7 @@ func FuzzCodecDeviceEventRoundTrip(f *testing.F) {
 			t.Fatalf("typed envelope changed after Encode and Decode: first %#v, second %#v", decoded, redecoded)
 		}
 
-		reencoded, reencodeErr := natswire.Encode(validator, contractsv1.DeviceEventSchemaID, redecoded)
+		reencoded, reencodeErr := natswire.Encode(validator, contractsv1.EntityEventSchemaID, redecoded)
 		if reencodeErr != nil {
 			t.Fatalf("redecoded envelope %#v could not be encoded: %v", redecoded, reencodeErr)
 		}

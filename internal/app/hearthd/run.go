@@ -93,7 +93,7 @@ func Run(
 		return failStage("interrupt_commands", fmt.Errorf("interrupt active commands: %w", err))
 	}
 	logStartupStage(ctx, coreLogger, "active_commands_interrupted")
-	// Observation and Device Event pruning run only on the hourly pass below, so
+	// Observation and Entity Event pruning run only on the hourly pass below, so
 	// startup never sweeps retained history and uptime under one hour means no
 	// sweep yet.
 
@@ -116,9 +116,9 @@ func Run(
 	// Both durable resources are provisioned and validated before any
 	// transport starts, so a configured stream or consumer mismatch fails
 	// startup instead of accepting traffic it cannot record.
-	deviceEventConsumer, deviceEventProvisionErr := devicesnats.ProvisionDeviceEventResources(ctx, js)
-	if deviceEventProvisionErr != nil {
-		return mapStartupCancellation(ctx, failStage("provision_jetstream", deviceEventProvisionErr))
+	entityEventConsumer, entityEventProvisionErr := devicesnats.ProvisionEntityEventResources(ctx, js)
+	if entityEventProvisionErr != nil {
+		return mapStartupCancellation(ctx, failStage("provision_jetstream", entityEventProvisionErr))
 	}
 	logStartupStage(ctx, coreLogger, "jetstream_provisioned")
 	validator, compileErr := contractsv1.Compile()
@@ -189,24 +189,24 @@ func Run(
 	}
 	defer observations.Stop()
 	logStartupStage(ctx, coreLogger, "observation_consumer_started")
-	// Device Events share the dependency context and stop before the
+	// Entity Events share the dependency context and stop before the
 	// observation consumer, the NATS connection, and SQLite, so a report is
 	// never committed after its dependencies close. Unprocessed or
 	// unacknowledged events stay in the stream for the next Core process.
-	deviceEvents, deviceEventErr := devicesnats.StartDeviceEventConsumer(
+	entityEvents, entityEventErr := devicesnats.StartEntityEventConsumer(
 		dependencyContext,
-		deviceEventConsumer,
+		entityEventConsumer,
 		validator,
 		service,
 		natsLogger,
 	)
-	if deviceEventErr != nil {
-		return mapStartupCancellation(ctx, failStage("start_device_event_consumer", deviceEventErr))
+	if entityEventErr != nil {
+		return mapStartupCancellation(ctx, failStage("start_entity_event_consumer", entityEventErr))
 	}
-	defer deviceEvents.Stop()
-	logStartupStage(ctx, coreLogger, "device_event_consumer_started")
+	defer entityEvents.Stop()
+	logStartupStage(ctx, coreLogger, "entity_event_consumer_started")
 
-	readiness := NewRuntimeReadiness(database, connection, js, observations, deviceEvents)
+	readiness := NewRuntimeReadiness(database, connection, js, observations, entityEvents)
 	healthSupervisor := startHealthSupervisor(dependencyContext, readiness, service, coreLogger)
 	defer healthSupervisor.Stop()
 	var maintenance sync.WaitGroup
@@ -249,7 +249,7 @@ func Run(
 	case <-ctx.Done():
 		return shutdownOnCancel(
 			service, cancelDependencies,
-			healthSupervisor, server, deviceEvents, observations,
+			healthSupervisor, server, entityEvents, observations,
 			enablement, ownedMappings, registrations, availability, sessions,
 			connection,
 		)
@@ -292,7 +292,7 @@ func shutdownOnCancel(
 	cancelDependencies context.CancelFunc,
 	healthSupervisor *healthSupervisor,
 	server *http.Server,
-	deviceEvents *devicesnats.DeviceEventConsumer,
+	entityEvents *devicesnats.EntityEventConsumer,
 	observations *devicesnats.ObservationConsumer,
 	enablement, ownedMappings, registrations, availability, sessions interface{ Drain() error },
 	connection *natsgo.Conn,
@@ -317,12 +317,12 @@ func shutdownOnCancel(
 	}
 	cancelDependencies()
 	return drainTransports(
-		deviceEvents, observations, enablement, ownedMappings, registrations, availability, sessions, connection,
+		entityEvents, observations, enablement, ownedMappings, registrations, availability, sessions, connection,
 	)
 }
 
 // consumerDrain is the shared lifecycle of a durable Core consumer: draining,
-// stopping, and observing termination. Device Event and Observation consumers
+// stopping, and observing termination. Entity Event and Observation consumers
 // implement it without sharing transport behavior.
 type consumerDrain interface {
 	Drain()
@@ -331,17 +331,17 @@ type consumerDrain interface {
 }
 
 // drainTransports stops durable consumption and drains core transports after
-// worker drain, preserving the existing return semantics for each step. Device
+// worker drain, preserving the existing return semantics for each step. Entity
 // Events drain before Observation, and both before the shared NATS connection,
 // so unacknowledged reports remain for the next Core process instead of being
 // acknowledged during teardown.
 func drainTransports(
-	deviceEvents *devicesnats.DeviceEventConsumer,
+	entityEvents *devicesnats.EntityEventConsumer,
 	observations *devicesnats.ObservationConsumer,
 	enablement, ownedMappings, registrations, availability, sessions interface{ Drain() error },
 	connection *natsgo.Conn,
 ) error {
-	drainConsumer(deviceEvents)
+	drainConsumer(entityEvents)
 	drainConsumer(observations)
 	for _, transport := range []interface{ Drain() error }{
 		enablement, ownedMappings, registrations, availability, sessions,
@@ -465,10 +465,10 @@ func connectCoreNATS(
 }
 
 // pruneRetainedHistory is the single hourly maintenance pass that bounds
-// retained history. Device Event history is pruned with the fixed internal
-// DeviceEventHistoryRetention window, not a Core setting, so the same pass
+// retained history. Entity Event history is pruned with the fixed internal
+// EntityEventHistoryRetention window, not a Core setting, so the same pass
 // serves both retentions without adding a timer. Each pass derives one sweep
-// time; Service.DeleteExpiredDeviceEvents then uses one cutoff strict-before
+// time; Service.DeleteExpiredEntityEvents then uses one cutoff strict-before
 // that instant and deletes in bounded batches. Startup never calls it, so
 // uptime under one interval means no sweep has run yet.
 func pruneRetainedHistory(
@@ -494,12 +494,12 @@ func pruneRetainedHistory(
 					slog.String("error_code", "observations_prune_failed"),
 				)
 			}
-			if err := service.DeleteExpiredDeviceEvents(ctx, sweepTime); err != nil {
+			if err := service.DeleteExpiredEntityEvents(ctx, sweepTime); err != nil {
 				logger.ErrorContext(
 					ctx,
-					"prune device events",
-					slog.String("event", "core.device_events_prune_failed"),
-					slog.String("error_code", "device_events_prune_failed"),
+					"prune entity events",
+					slog.String("event", "core.entity_events_prune_failed"),
+					slog.String("error_code", "entity_events_prune_failed"),
 				)
 			}
 		}

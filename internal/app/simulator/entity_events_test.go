@@ -29,10 +29,10 @@ func newGatedPublisher() *gatedPublisher {
 	return &gatedPublisher{entered: make(chan string, 1), release: make(chan struct{})}
 }
 
-func (publisher *gatedPublisher) EmitDeviceEvent(
+func (publisher *gatedPublisher) EmitEntityEvent(
 	_ context.Context,
 	name string,
-) (adapter.DeviceEventID, error) {
+) (adapter.EntityEventID, error) {
 	publisher.entered <- name
 	<-publisher.release
 	publisher.mutex.Lock()
@@ -54,10 +54,10 @@ type recordingPublisher struct {
 	failFor   string
 }
 
-func (publisher *recordingPublisher) EmitDeviceEvent(
+func (publisher *recordingPublisher) EmitEntityEvent(
 	_ context.Context,
 	name string,
-) (adapter.DeviceEventID, error) {
+) (adapter.EntityEventID, error) {
 	if name == publisher.failFor {
 		return "", errors.New("simulated publication failure")
 	}
@@ -115,13 +115,13 @@ func waitForInputCondition(t *testing.T, timeout time.Duration, condition func()
 		time.Sleep(time.Millisecond)
 	}
 	if !condition() {
-		t.Fatal("timed out waiting for device event input condition")
+		t.Fatal("timed out waiting for entity event input condition")
 	}
 }
 
 // This test protects the no-queue operator input contract and fails if a name
 // typed while a report is publishing is buffered, retried, or published.
-func TestRunDeviceEventInputDropsInputWhilePublisherIsBusy(t *testing.T) {
+func TestRunEntityEventInputDropsInputWhilePublisherIsBusy(t *testing.T) {
 	t.Parallel()
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
@@ -131,23 +131,23 @@ func TestRunDeviceEventInputDropsInputWhilePublisherIsBusy(t *testing.T) {
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
-		simulatorapp.RunDeviceEventInput(ctx, reader, publisher, logger)
+		simulatorapp.RunEntityEventInput(ctx, reader, publisher, logger)
 	}()
 
-	writeLine(t, writer, simulatoradapter.DeviceEventSinglePress)
+	writeLine(t, writer, simulatoradapter.EntityEventSinglePress)
 	var inFlight string
 	select {
 	case inFlight = <-publisher.entered:
 	case <-time.After(5 * time.Second):
 		t.Fatal("first input line did not reach the publisher")
 	}
-	if inFlight != simulatoradapter.DeviceEventSinglePress {
+	if inFlight != simulatoradapter.EntityEventSinglePress {
 		t.Fatalf("in-flight name = %q", inFlight)
 	}
-	writeLine(t, writer, simulatoradapter.DeviceEventDoublePress)
-	writeLine(t, writer, simulatoradapter.DeviceEventSinglePress)
+	writeLine(t, writer, simulatoradapter.EntityEventDoublePress)
+	writeLine(t, writer, simulatoradapter.EntityEventSinglePress)
 	waitForInputCondition(t, 5*time.Second, func() bool {
-		return recorder.count("simulator.device_event_input_dropped") == 2
+		return recorder.count("simulator.entity_event_input_dropped") == 2
 	})
 	if published := publisher.names(); len(published) != 0 {
 		t.Fatalf("input published before release: %#v", published)
@@ -161,14 +161,14 @@ func TestRunDeviceEventInputDropsInputWhilePublisherIsBusy(t *testing.T) {
 	case <-time.After(5 * time.Second):
 		t.Fatal("input workers did not stop after EOF")
 	}
-	if published := publisher.names(); len(published) != 1 || published[0] != simulatoradapter.DeviceEventSinglePress {
+	if published := publisher.names(); len(published) != 1 || published[0] != simulatoradapter.EntityEventSinglePress {
 		t.Fatalf("published names = %#v", published)
 	}
 }
 
 // This test protects EOF and cancellation shutdown and fails if either leaves
 // the workers running or drops the already-handed-over name.
-func TestRunDeviceEventInputStopsOnEOFAndCancellation(t *testing.T) {
+func TestRunEntityEventInputStopsOnEOFAndCancellation(t *testing.T) {
 	t.Parallel()
 	t.Run("EOF stops only input", func(t *testing.T) {
 		t.Parallel()
@@ -180,12 +180,12 @@ func TestRunDeviceEventInputStopsOnEOFAndCancellation(t *testing.T) {
 		done := make(chan struct{})
 		go func() {
 			defer close(done)
-			simulatorapp.RunDeviceEventInput(ctx, reader, publisher, logger)
+			simulatorapp.RunEntityEventInput(ctx, reader, publisher, logger)
 		}()
-		writeLine(t, writer, simulatoradapter.DeviceEventSinglePress)
+		writeLine(t, writer, simulatoradapter.EntityEventSinglePress)
 		select {
 		case name := <-publisher.published:
-			if name != simulatoradapter.DeviceEventSinglePress {
+			if name != simulatoradapter.EntityEventSinglePress {
 				t.Fatalf("published name = %q", name)
 			}
 		case <-time.After(5 * time.Second):
@@ -210,7 +210,7 @@ func TestRunDeviceEventInputStopsOnEOFAndCancellation(t *testing.T) {
 		done := make(chan struct{})
 		go func() {
 			defer close(done)
-			simulatorapp.RunDeviceEventInput(ctx, reader, publisher, logger)
+			simulatorapp.RunEntityEventInput(ctx, reader, publisher, logger)
 		}()
 		cancel()
 		select {
@@ -223,21 +223,21 @@ func TestRunDeviceEventInputStopsOnEOFAndCancellation(t *testing.T) {
 
 // This test protects the failure path and fails if an unpublished name is
 // reported as published or stops later input from being handled.
-func TestRunDeviceEventInputReportsPublicationFailure(t *testing.T) {
+func TestRunEntityEventInputReportsPublicationFailure(t *testing.T) {
 	t.Parallel()
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	logger, recorder := newLogRecorder()
-	publisher := &recordingPublisher{published: make(chan string, 4), failFor: simulatoradapter.DeviceEventDoublePress}
+	publisher := &recordingPublisher{published: make(chan string, 4), failFor: simulatoradapter.EntityEventDoublePress}
 	reader, writer := io.Pipe()
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
-		simulatorapp.RunDeviceEventInput(ctx, reader, publisher, logger)
+		simulatorapp.RunEntityEventInput(ctx, reader, publisher, logger)
 	}()
-	writeLine(t, writer, simulatoradapter.DeviceEventDoublePress)
+	writeLine(t, writer, simulatoradapter.EntityEventDoublePress)
 	waitForInputCondition(t, 5*time.Second, func() bool {
-		return recorder.count("simulator.device_event_input_failed") == 1
+		return recorder.count("simulator.entity_event_input_failed") == 1
 	})
 	if err := writer.Close(); err != nil {
 		t.Fatal(err)

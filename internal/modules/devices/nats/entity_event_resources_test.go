@@ -11,19 +11,19 @@ import (
 	"github.com/mholtzscher/hearth/internal/contracts/v1/natswire"
 )
 
-// This test protects the dedicated Device Event stream and consumer settings
-// and fails if Device Events share Observation resources or lose their
+// This test protects the dedicated Entity Event stream and consumer settings
+// and fails if Entity Events share Observation resources or lose their
 // independent limits, delivery policy, or acknowledgement policy.
-func TestProvisionDeviceEventResourcesCreatesAndValidatesRuntimeConfiguration(t *testing.T) {
+func TestProvisionEntityEventResourcesCreatesAndValidatesRuntimeConfiguration(t *testing.T) {
 	t.Parallel()
 	_, _, js := startJetStream(t)
-	consumer, provisionErr := ProvisionDeviceEventResources(context.Background(), js)
+	consumer, provisionErr := ProvisionEntityEventResources(context.Background(), js)
 	if provisionErr != nil {
 		t.Fatal(provisionErr)
 	}
 	consumerConfig := consumer.CachedInfo().Config
-	if consumerConfig.Name != DeviceEventConsumerName ||
-		consumerConfig.FilterSubject != natswire.DeviceEventWildcard() ||
+	if consumerConfig.Name != EntityEventConsumerName ||
+		consumerConfig.FilterSubject != natswire.EntityEventWildcard() ||
 		consumerConfig.DeliverPolicy != jetstream.DeliverAllPolicy ||
 		consumerConfig.AckPolicy != jetstream.AckExplicitPolicy ||
 		consumerConfig.AckWait != 30*time.Second ||
@@ -32,12 +32,12 @@ func TestProvisionDeviceEventResourcesCreatesAndValidatesRuntimeConfiguration(t 
 		consumerConfig.ReplayPolicy != jetstream.ReplayInstantPolicy {
 		t.Fatalf("consumer = %#v", consumerConfig)
 	}
-	stream, streamErr := js.Stream(context.Background(), DeviceEventStreamName)
+	stream, streamErr := js.Stream(context.Background(), EntityEventStreamName)
 	if streamErr != nil {
 		t.Fatal(streamErr)
 	}
 	streamConfig := stream.CachedInfo().Config
-	if len(streamConfig.Subjects) != 1 || streamConfig.Subjects[0] != natswire.DeviceEventWildcard() ||
+	if len(streamConfig.Subjects) != 1 || streamConfig.Subjects[0] != natswire.EntityEventWildcard() ||
 		streamConfig.Subjects[0] == natswire.ObservationWildcard() ||
 		streamConfig.Storage != jetstream.FileStorage ||
 		streamConfig.Retention != jetstream.LimitsPolicy ||
@@ -50,15 +50,15 @@ func TestProvisionDeviceEventResourcesCreatesAndValidatesRuntimeConfiguration(t 
 		streamConfig.NoAck {
 		t.Fatalf("stream = %#v", streamConfig)
 	}
-	if _, provisionAgainErr := ProvisionDeviceEventResources(context.Background(), js); provisionAgainErr != nil {
+	if _, provisionAgainErr := ProvisionEntityEventResources(context.Background(), js); provisionAgainErr != nil {
 		t.Fatalf("second provisioning: %v", provisionAgainErr)
 	}
-	if validationErr := ValidateDeviceEventResources(context.Background(), js); validationErr != nil {
+	if validationErr := ValidateEntityEventResources(context.Background(), js); validationErr != nil {
 		t.Fatal(validationErr)
 	}
 }
 
-func TestProvisionDeviceEventResourcesRejectsMismatchedExistingConfiguration(t *testing.T) {
+func TestProvisionEntityEventResourcesRejectsMismatchedExistingConfiguration(t *testing.T) {
 	t.Parallel()
 	streamTests := []struct {
 		name   string
@@ -68,7 +68,7 @@ func TestProvisionDeviceEventResourcesRejectsMismatchedExistingConfiguration(t *
 			config.Subjects = []string{natswire.ObservationWildcard()}
 		}},
 		{"unscoped subject", func(config *jetstream.StreamConfig) {
-			config.Subjects = []string{"hearth.v1.adapter.*.runtime.*.device-event.>"}
+			config.Subjects = []string{"hearth.v1.adapter.*.runtime.*.entity-event.>"}
 		}},
 		{"max age", func(config *jetstream.StreamConfig) { config.MaxAge = time.Hour }},
 		{"max bytes", func(config *jetstream.StreamConfig) { config.MaxBytes = 42 }},
@@ -82,12 +82,12 @@ func TestProvisionDeviceEventResourcesRejectsMismatchedExistingConfiguration(t *
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
 			_, _, js := startJetStream(t)
-			config := deviceEventStreamConfig()
+			config := entityEventStreamConfig()
 			test.mutate(&config)
 			if _, err := js.CreateStream(context.Background(), config); err != nil {
 				t.Fatal(err)
 			}
-			_, err := ProvisionDeviceEventResources(context.Background(), js)
+			_, err := ProvisionEntityEventResources(context.Background(), js)
 			if err == nil || !strings.Contains(err.Error(), "does not match") {
 				t.Fatalf("provisioning error = %v", err)
 			}
@@ -113,16 +113,16 @@ func TestProvisionDeviceEventResourcesRejectsMismatchedExistingConfiguration(t *
 		t.Run("consumer "+test.name, func(t *testing.T) {
 			t.Parallel()
 			_, _, js := startJetStream(t)
-			stream, err := js.CreateStream(context.Background(), deviceEventStreamConfig())
+			stream, err := js.CreateStream(context.Background(), entityEventStreamConfig())
 			if err != nil {
 				t.Fatal(err)
 			}
-			config := deviceEventConsumerConfig()
+			config := entityEventConsumerConfig()
 			test.mutate(&config)
 			if _, createErr := stream.CreateConsumer(context.Background(), config); createErr != nil {
 				t.Fatal(createErr)
 			}
-			_, err = ProvisionDeviceEventResources(context.Background(), js)
+			_, err = ProvisionEntityEventResources(context.Background(), js)
 			if err == nil || !strings.Contains(err.Error(), "does not match") {
 				t.Fatalf("provisioning error = %v", err)
 			}

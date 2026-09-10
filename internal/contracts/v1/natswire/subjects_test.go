@@ -22,7 +22,7 @@ func TestSubjectWildcardsMatchProtocol(t *testing.T) {
 		"owned mappings": OwnedMappingsWildcard(),
 		"availability":   EntityAvailabilityWildcard(),
 		"observation":    ObservationWildcard(),
-		"device event":   DeviceEventWildcard(),
+		"entity event":   EntityEventWildcard(),
 		"enablement":     EntityEnablementWildcard(),
 		"all commands":   AllCommandsWildcard(),
 	}
@@ -34,7 +34,7 @@ func TestSubjectWildcardsMatchProtocol(t *testing.T) {
 		"owned mappings": "hearth.v1.adapter.*.runtime.*.mappings",
 		"availability":   "hearth.v1.adapter.*.runtime.*.availability",
 		"observation":    "hearth.v1.adapter.*.runtime.*.observation.*",
-		"device event":   "hearth.v1.adapter.*.runtime.*.device-event.*",
+		"entity event":   "hearth.v1.adapter.*.runtime.*.entity-event.*",
 		"enablement":     "hearth.v1.adapter.*.runtime.*.enablement.*",
 		"all commands":   "hearth.v1.adapter.*.runtime.*.command.*.*",
 	}
@@ -107,10 +107,10 @@ func TestSubjectConstructorsAndParsersMatchProtocol(t *testing.T) {
 				parse:     erasedSubjectParser(ParseObservationSubject),
 			},
 			{
-				name: "device event", subject: runtimePrefix + ".device-event." + entityID, usesRuntime: true,
-				wantRoute: DeviceEventRoute{AdapterID: adapterID, RuntimeID: runtimeID, EntityID: entityID},
-				construct: func(value string) (string, error) { return DeviceEventSubject(adapterID, value, entityID) },
-				parse:     erasedSubjectParser(ParseDeviceEventSubject),
+				name: "entity event", subject: runtimePrefix + ".entity-event." + entityID, usesRuntime: true,
+				wantRoute: EntityEventRoute{AdapterID: adapterID, RuntimeID: runtimeID, EntityID: entityID},
+				construct: func(value string) (string, error) { return EntityEventSubject(adapterID, value, entityID) },
+				parse:     erasedSubjectParser(ParseEntityEventSubject),
 			},
 			{
 				name:        "enablement",
@@ -215,13 +215,13 @@ func TestSubjectsRejectUnsafeTokens(t *testing.T) {
 	if _, err := ObservationSubject("simulator", testRuntimeID, "ent_not-a-uuid"); err == nil {
 		t.Fatal("invalid entity ID unexpectedly accepted")
 	}
-	if _, err := DeviceEventSubject("simulator", testRuntimeID, "ent_not-a-uuid"); err == nil {
-		t.Fatal("invalid device event entity ID unexpectedly accepted")
+	if _, err := EntityEventSubject("simulator", testRuntimeID, "ent_not-a-uuid"); err == nil {
+		t.Fatal("invalid entity event entity ID unexpectedly accepted")
 	}
-	if _, err := ParseDeviceEventSubject(
-		"hearth.v1.adapter.simulator.runtime." + testRuntimeID + ".device-event." + testEntityID + ".extra",
+	if _, err := ParseEntityEventSubject(
+		"hearth.v1.adapter.simulator.runtime." + testRuntimeID + ".entity-event." + testEntityID + ".extra",
 	); err == nil {
-		t.Fatal("malformed device event subject unexpectedly accepted")
+		t.Fatal("malformed entity event subject unexpectedly accepted")
 	}
 	if _, err := CommandSubject("simulator", testRuntimeID, testEntityID, "bad.operation"); err == nil {
 		t.Fatal("operation containing a period unexpectedly accepted")

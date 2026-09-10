@@ -46,11 +46,11 @@ type entityStateHistoryCursor struct {
 	Filter       string `json:"filter"`
 }
 
-// entityDeviceEventCursor positions an Entity Device Event history page after
+// entityEventCursor positions an Entity Event history page after
 // the last returned receive order within one Entity. Event history has no
 // filter field, and the resource name keeps the cursor mutually incompatible
 // with State history cursors even though both carry a receive order.
-type entityDeviceEventCursor struct {
+type entityEventCursor struct {
 	Version      int    `json:"v"`
 	Resource     string `json:"resource"`
 	ParentID     string `json:"parent_id"`
@@ -193,24 +193,24 @@ func decodeEntityStateHistoryCursor(
 	return &cursor.ReceiveOrder, nil
 }
 
-func encodeEntityDeviceEventCursor(entityID devices.EntityID, receiveOrder int64) (string, error) {
-	return encodeCursor(entityDeviceEventCursor{
-		Version: cursorVersion, Resource: "entity-device-events", ParentID: string(entityID),
+func encodeEntityEventCursor(entityID devices.EntityID, receiveOrder int64) (string, error) {
+	return encodeCursor(entityEventCursor{
+		Version: cursorVersion, Resource: "entity_events", ParentID: string(entityID),
 		ReceiveOrder: receiveOrder,
 	})
 }
 
-func decodeEntityDeviceEventCursor(value string, entityID devices.EntityID) (*int64, error) {
-	var cursor entityDeviceEventCursor
+func decodeEntityEventCursor(value string, entityID devices.EntityID) (*int64, error) {
+	var cursor entityEventCursor
 	if err := decodeCursor(value, &cursor); err != nil {
 		return nil, err
 	}
-	if cursor.Version != cursorVersion || cursor.Resource != "entity-device-events" ||
+	if cursor.Version != cursorVersion || cursor.Resource != "entity_events" ||
 		cursor.ParentID != string(entityID) || cursor.ReceiveOrder < 1 {
-		return nil, errors.New("invalid Device Event history cursor scope")
+		return nil, errors.New("invalid Entity Event history cursor scope")
 	}
 	if _, err := devices.ParseEntityID(cursor.ParentID); err != nil {
-		return nil, fmt.Errorf("invalid Device Event history cursor entity ID: %w", err)
+		return nil, fmt.Errorf("invalid Entity Event history cursor entity ID: %w", err)
 	}
 	return &cursor.ReceiveOrder, nil
 }

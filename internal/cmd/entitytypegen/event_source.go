@@ -8,22 +8,22 @@ import (
 	"strconv"
 )
 
-// deviceEventNamePattern is the one canonical Device Event name shape. Wire
+// entityEventNamePattern is the one canonical Entity Event name shape. Wire
 // schemas, generated name validation, and the event-source support schema all
 // use it, so a supported name can always travel verbatim.
-const deviceEventNamePattern = `^[a-z0-9][a-z0-9_-]{0,62}$`
+const entityEventNamePattern = `^[a-z0-9][a-z0-9_-]{0,62}$`
 
 const (
-	deviceEventNamesMinimum = 1
-	deviceEventNamesMaximum = 64
-	deviceEventNameLength   = 63
+	entityEventNamesMinimum = 1
+	entityEventNamesMaximum = 64
+	entityEventNameLength   = 63
 )
 
-// requireDeviceEventSupportSchema validates the fixed event-source support
+// requireEntityEventSupportSchema validates the fixed event-source support
 // shape and returns the support.events schema. Event support is closed and
 // name-only: an event-source Entity reports named occurrences, so it supports
 // no State space and no Operations.
-func requireDeviceEventSupportSchema(support schemaNode) (schemaNode, error) {
+func requireEntityEventSupportSchema(support schemaNode) (schemaNode, error) {
 	events, declaresEvents := support.Properties["events"]
 	if !declaresEvents {
 		return schemaNode{}, errors.New("event_source requires a support.events property")
@@ -55,29 +55,29 @@ func requireDeviceEventSupportSchema(support schemaNode) (schemaNode, error) {
 	if names.UniqueItems == nil || !*names.UniqueItems {
 		return schemaNode{}, errors.New("support.events.names must set uniqueItems")
 	}
-	if names.MinItems == nil || *names.MinItems != deviceEventNamesMinimum ||
-		names.MaxItems == nil || *names.MaxItems != deviceEventNamesMaximum {
+	if names.MinItems == nil || *names.MinItems != entityEventNamesMinimum ||
+		names.MaxItems == nil || *names.MaxItems != entityEventNamesMaximum {
 		return schemaNode{}, fmt.Errorf(
 			"support.events.names must accept %d to %d names",
-			deviceEventNamesMinimum,
-			deviceEventNamesMaximum,
+			entityEventNamesMinimum,
+			entityEventNamesMaximum,
 		)
 	}
 	items := names.Items
 	if items == nil || items.Type != string(kindString) {
 		return schemaNode{}, errors.New("support.events.names must describe a string array")
 	}
-	if items.Pattern != deviceEventNamePattern {
+	if items.Pattern != entityEventNamePattern {
 		return schemaNode{}, fmt.Errorf(
 			"support.events.names items must use pattern %s",
-			deviceEventNamePattern,
+			entityEventNamePattern,
 		)
 	}
 	if items.MinLength == nil || *items.MinLength != 1 ||
-		items.MaxLength == nil || *items.MaxLength != deviceEventNameLength {
+		items.MaxLength == nil || *items.MaxLength != entityEventNameLength {
 		return schemaNode{}, fmt.Errorf(
 			"support.events.names items must be 1 to %d characters",
-			deviceEventNameLength,
+			entityEventNameLength,
 		)
 	}
 	return events, nil
@@ -114,10 +114,10 @@ func requireEmptyClosedObject(schema schemaNode, description string) error {
 	return nil
 }
 
-// deviceEventNamesFromSupport reads the authored supported names out of one
+// entityEventNamesFromSupport reads the authored supported names out of one
 // example support value. Generation only reads names to pick deterministic
 // probes; the generated contract and catalog validators own real membership.
-func deviceEventNamesFromSupport(raw json.RawMessage) ([]string, error) {
+func entityEventNamesFromSupport(raw json.RawMessage) ([]string, error) {
 	var shape struct {
 		Events *struct {
 			Names []string `json:"names"`
@@ -132,20 +132,20 @@ func deviceEventNamesFromSupport(raw json.RawMessage) ([]string, error) {
 	return shape.Events.Names, nil
 }
 
-// requireEventSourceExamples keeps the generated Device Event probes honest:
+// requireEventSourceExamples keeps the generated Entity Event probes honest:
 // every authored case must declare at least one supported name, so the
 // generated conformance tests always have a real supported and unsupported
 // name to compare.
 func requireEventSourceExamples(examples examplesFile) error {
 	for index, example := range examples.Cases {
-		if _, err := deviceEventNamesFromSupport(example.Support); err != nil {
+		if _, err := entityEventNamesFromSupport(example.Support); err != nil {
 			return fmt.Errorf("event_source case %d: %w", index+1, err)
 		}
 	}
 	return nil
 }
 
-// supportWithEvents adds a Device Event member to an authored support, so a
+// supportWithEvents adds an Entity Event member to an authored support, so a
 // generated probe can prove a closed Entity type rejects event support even
 // though the shared registration schema can carry it.
 func supportWithEvents(raw json.RawMessage) (json.RawMessage, error) {
@@ -161,10 +161,10 @@ func supportWithEvents(raw json.RawMessage) (json.RawMessage, error) {
 	return json.RawMessage(compacted), nil
 }
 
-// unsupportedDeviceEventName returns a deterministic canonical name absent
+// unsupportedEntityEventName returns a deterministic canonical name absent
 // from the supported names, so generated rejection probes cannot collide with
 // a real name.
-func unsupportedDeviceEventName(names []string) string {
+func unsupportedEntityEventName(names []string) string {
 	for _, candidate := range []string{"unknown", "unknown-event", "unsupported"} {
 		if !slices.Contains(names, candidate) {
 			return candidate

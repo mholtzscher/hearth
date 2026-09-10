@@ -24,8 +24,8 @@ const (
 
 type EntitySupport json.RawMessage
 
-// DeviceEventName is one named occurrence an event-source Entity may report.
-type DeviceEventName string
+// EntityEventName is one named occurrence an event-source Entity may report.
+type EntityEventName string
 
 type Value json.RawMessage
 

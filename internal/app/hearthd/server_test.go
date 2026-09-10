@@ -116,11 +116,11 @@ func (*stubDevices) ListEntityStateHistory(
 	panic("unexpected ListEntityStateHistory call")
 }
 
-func (*stubDevices) ListEntityDeviceEvents(
+func (*stubDevices) ListEntityEvents(
 	context.Context,
-	devices.ListEntityDeviceEventsParams,
-) (devices.Page[devices.DeviceEventHistoryEntry], error) {
-	panic("unexpected ListEntityDeviceEvents call")
+	devices.ListEntityEventsParams,
+) (devices.Page[devices.EntityEventHistoryEntry], error) {
+	panic("unexpected ListEntityEvents call")
 }
 
 func (stub *stubDevices) ExecuteCommand(
@@ -319,7 +319,7 @@ func TestRuntimeOpenAPIContract(t *testing.T) {
 	assertRuntimeOpenAPIOperation(
 		t,
 		document.Paths["/v1/entities/{entity_id}/events"].Get,
-		"list-entity-device-events",
+		"list-entity-events",
 		"200",
 		"400",
 		"404",

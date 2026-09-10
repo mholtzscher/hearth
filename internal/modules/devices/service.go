@@ -26,7 +26,7 @@ type Stores struct {
 	Enablement    EnablementRepository
 	Commands      CommandLedger
 	Observations  ObservationRepository
-	DeviceEvents  DeviceEventRepository
+	EntityEvents  EntityEventRepository
 }
 
 type Service struct {

@@ -554,26 +554,26 @@ func writeCatalogProbe(source *strings.Builder, probe catalogProbe) error {
 	if equalityErr := writeCatalogEquality(source, probe, validState); equalityErr != nil {
 		return equalityErr
 	}
-	if deviceEventsErr := writeCatalogDeviceEvents(source, probe); deviceEventsErr != nil {
-		return deviceEventsErr
+	if entityEventsErr := writeCatalogEntityEvents(source, probe); entityEventsErr != nil {
+		return entityEventsErr
 	}
 	source.WriteString("\t})\n")
 	return nil
 }
 
-// writeCatalogDeviceEvents emits the Device Event selector probe: an event
+// writeCatalogEntityEvents emits the Entity Event selector probe: an event
 // source accepts exactly its supported names and reports a corrupt descriptor as
-// a catalog failure, while a closed type accepts no Device Event at all and
+// a catalog failure, while a closed type accepts no Entity Event at all and
 // resolves no Command.
-func writeCatalogDeviceEvents(source *strings.Builder, probe catalogProbe) error {
+func writeCatalogEntityEvents(source *strings.Builder, probe catalogProbe) error {
 	if !probe.model.EventSource {
-		return writeClosedTypeDeviceEventChecks(source, probe)
+		return writeClosedTypeEntityEventChecks(source, probe)
 	}
-	names, err := deviceEventNamesFromSupport(probe.support)
+	names, err := entityEventNamesFromSupport(probe.support)
 	if err != nil {
 		return err
 	}
-	unsupported := unsupportedDeviceEventName(names)
+	unsupported := unsupportedEntityEventName(names)
 	corrupt, err := supportWithoutEvents(probe.support)
 	if err != nil {
 		return err
@@ -584,13 +584,13 @@ func writeCatalogDeviceEvents(source *strings.Builder, probe catalogProbe) error
 	}
 	fmt.Fprintf(
 		source,
-		"\t\tif supported, err := catalog.SupportsDeviceEvent(entity, DeviceEventName(%s)); err != nil || !supported { t.Errorf(\"catalog supported Device Event %%q = %%v, %%v\", %s, supported, err) }\n",
+		"\t\tif supported, err := catalog.SupportsEntityEvent(entity, EntityEventName(%s)); err != nil || !supported { t.Errorf(\"catalog supported Entity Event %%q = %%v, %%v\", %s, supported, err) }\n",
 		strconv.Quote(names[0]),
 		strconv.Quote(names[0]),
 	)
 	fmt.Fprintf(
 		source,
-		"\t\tif supported, err := catalog.SupportsDeviceEvent(entity, DeviceEventName(%s)); err != nil || supported { t.Errorf(\"catalog unsupported Device Event %%q = %%v, %%v\", %s, supported, err) }\n",
+		"\t\tif supported, err := catalog.SupportsEntityEvent(entity, EntityEventName(%s)); err != nil || supported { t.Errorf(\"catalog unsupported Entity Event %%q = %%v, %%v\", %s, supported, err) }\n",
 		strconv.Quote(unsupported),
 		strconv.Quote(unsupported),
 	)
@@ -603,7 +603,7 @@ func writeCatalogDeviceEvents(source *strings.Builder, probe catalogProbe) error
 	)
 	fmt.Fprintf(
 		source,
-		"\t\tif _, err := catalog.SupportsDeviceEvent(corruptEventEntity, DeviceEventName(%s)); err == nil { t.Error(\"catalog accepted a corrupt Device Event descriptor\") }\n",
+		"\t\tif _, err := catalog.SupportsEntityEvent(corruptEventEntity, EntityEventName(%s)); err == nil { t.Error(\"catalog accepted a corrupt Entity Event descriptor\") }\n",
 		strconv.Quote(names[0]),
 	)
 	source.WriteString(
@@ -613,15 +613,15 @@ func writeCatalogDeviceEvents(source *strings.Builder, probe catalogProbe) error
 	return nil
 }
 
-// writeClosedTypeDeviceEventChecks pins the closed-type half of the selector:
-// a type without event support accepts no Device Event name, and its closed
+// writeClosedTypeEntityEventChecks pins the closed-type half of the selector:
+// a type without event support accepts no Entity Event name, and its closed
 // support schema still rejects a descriptor carrying events even though the
 // shared registration schema can transport one.
-func writeClosedTypeDeviceEventChecks(source *strings.Builder, probe catalogProbe) error {
+func writeClosedTypeEntityEventChecks(source *strings.Builder, probe catalogProbe) error {
 	source.WriteString(
-		"\t\tif supported, err := catalog.SupportsDeviceEvent(entity, DeviceEventName(\"single_press\")); err != nil || supported {",
+		"\t\tif supported, err := catalog.SupportsEntityEvent(entity, EntityEventName(\"single_press\")); err != nil || supported {",
 	)
-	source.WriteString(" t.Errorf(\"catalog non-event type accepted a Device Event: %v, %v\", supported, err) }\n")
+	source.WriteString(" t.Errorf(\"catalog non-event type accepted an Entity Event: %v, %v\", supported, err) }\n")
 	closedEventSupport, err := supportWithEvents(probe.support)
 	if err != nil {
 		return err

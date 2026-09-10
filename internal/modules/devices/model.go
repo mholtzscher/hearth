@@ -11,13 +11,13 @@ type DeviceID string
 type EntityID string
 type ObservationID string
 
-// DeviceEventID identifies one reported occurrence across all publication and
+// EntityEventID identifies one reported occurrence across all publication and
 // delivery retries: redelivery of one ID is the same event, while a new ID is a
 // new occurrence even when it repeats the same name.
-type DeviceEventID string
+type EntityEventID string
 
-// DeviceEventName is one named occurrence an Entity's type may report.
-type DeviceEventName string
+// EntityEventName is one named occurrence an Entity's type may report.
+type EntityEventName string
 
 type CommandID string
 type CorrelationID string

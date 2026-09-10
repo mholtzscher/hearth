@@ -41,7 +41,7 @@ func TestGeneratedConformance(t *testing.T) {
 	})
 }
 
-func TestGeneratedDeviceEventNames(t *testing.T) {
+func TestGeneratedEntityEventNames(t *testing.T) {
 	codecs, err := Compile()
 	if err != nil {
 		t.Fatal(err)
@@ -50,30 +50,30 @@ func TestGeneratedDeviceEventNames(t *testing.T) {
 	if err != nil {
 		t.Fatalf("support: %v", err)
 	}
-	names := DeviceEventNames(support)
+	names := EntityEventNames(support)
 	if len(names) != 3 {
-		t.Fatalf("Device Event names = %v", names)
+		t.Fatalf("Entity Event names = %v", names)
 	}
 	if names[0] != "single_press" {
-		t.Errorf("Device Event name = %q, want %q", names[0], "single_press")
+		t.Errorf("Entity Event name = %q, want %q", names[0], "single_press")
 	}
 	if names[1] != "double_press" {
-		t.Errorf("Device Event name = %q, want %q", names[1], "double_press")
+		t.Errorf("Entity Event name = %q, want %q", names[1], "double_press")
 	}
 	if names[2] != "long_press" {
-		t.Errorf("Device Event name = %q, want %q", names[2], "long_press")
+		t.Errorf("Entity Event name = %q, want %q", names[2], "long_press")
 	}
-	if err := ValidateDeviceEventName(support, "single_press"); err != nil {
-		t.Errorf("supported Device Event name rejected: %v", err)
+	if err := ValidateEntityEventName(support, "single_press"); err != nil {
+		t.Errorf("supported Entity Event name rejected: %v", err)
 	}
-	if err := ValidateDeviceEventName(support, "unknown"); err == nil {
-		t.Error("unsupported Device Event name was accepted")
+	if err := ValidateEntityEventName(support, "unknown"); err == nil {
+		t.Error("unsupported Entity Event name was accepted")
 	}
-	if err := ValidateDeviceEventName(support, "not a name"); err == nil {
-		t.Error("non-canonical Device Event name was accepted")
+	if err := ValidateEntityEventName(support, "not a name"); err == nil {
+		t.Error("non-canonical Entity Event name was accepted")
 	}
 	names[0] = "mutated"
-	if got := DeviceEventNames(support); got[0] != "single_press" {
-		t.Errorf("DeviceEventNames returned a shared slice: %v", got)
+	if got := EntityEventNames(support); got[0] != "single_press" {
+		t.Errorf("EntityEventNames returned a shared slice: %v", got)
 	}
 }

@@ -18,7 +18,7 @@ import (
 	"github.com/mholtzscher/hearth/internal/contracts/v1/natswire"
 )
 
-const testDeviceEventName = "single_press"
+const testEntityEventName = "single_press"
 
 type alwaysFailingJetStreamPublisher struct {
 	mutex    sync.Mutex
@@ -43,15 +43,15 @@ func (publisher *alwaysFailingJetStreamPublisher) publishedAttempts() int {
 	return publisher.attempts
 }
 
-func createDeviceEventStream(t *testing.T, connection *natsgo.Conn) jetstream.Stream {
+func createEntityEventStream(t *testing.T, connection *natsgo.Conn) jetstream.Stream {
 	t.Helper()
 	js, err := jetstream.New(connection)
 	if err != nil {
 		t.Fatal(err)
 	}
 	stream, err := js.CreateStream(testContext(t), jetstream.StreamConfig{
-		Name:     "HEARTH_DEVICE_EVENTS_V1",
-		Subjects: []string{natswire.DeviceEventWildcard()},
+		Name:     "HEARTH_ENTITY_EVENTS_V1",
+		Subjects: []string{natswire.EntityEventWildcard()},
 		Storage:  jetstream.FileStorage,
 	})
 	if err != nil {
@@ -63,50 +63,50 @@ func createDeviceEventStream(t *testing.T, connection *natsgo.Conn) jetstream.St
 // This test protects the durable publication path and fails if the stored
 // report loses its envelope identity, its MsgId, its trace context, or its
 // subject, and if the Session waits for anything beyond JetStream storage.
-func TestPublishDeviceEventWaitsForStorageAcknowledgement(t *testing.T) {
+func TestPublishEntityEventWaitsForStorageAcknowledgement(t *testing.T) {
 	t.Parallel()
 	server := startServer(t, -1, t.TempDir())
 	core := connectNATS(t, server.ClientURL())
-	stream := createDeviceEventStream(t, core)
+	stream := createEntityEventStream(t, core)
 	session := connectSession(t, server.ClientURL())
 
 	publishContext := trace.ContextWithSpanContext(testContext(t), sampleSpanContext())
-	deviceEventID, err := session.PublishDeviceEvent(publishContext, DeviceEvent{
-		EntityID: testEntityID, Name: testDeviceEventName,
+	entityEventID, err := session.PublishEntityEvent(publishContext, EntityEvent{
+		EntityID: testEntityID, Name: testEntityEventName,
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.HasPrefix(string(deviceEventID), "evt_") {
-		t.Fatalf("Device Event ID = %q, want an evt_ ID", deviceEventID)
+	if !strings.HasPrefix(string(entityEventID), "evt_") {
+		t.Fatalf("Entity Event ID = %q, want an evt_ ID", entityEventID)
 	}
 	stored, err := stream.GetMsg(testContext(t), 1)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := stored.Header.Get(natsgo.MsgIdHdr); got != string(deviceEventID) {
-		t.Fatalf("Nats-Msg-Id = %q, want %q", got, deviceEventID)
+	if got := stored.Header.Get(natsgo.MsgIdHdr); got != string(entityEventID) {
+		t.Fatalf("Nats-Msg-Id = %q, want %q", got, entityEventID)
 	}
 	if stored.Header.Get("traceparent") == "" {
-		t.Fatal("Device Event omitted W3C trace context")
+		t.Fatal("Entity Event omitted W3C trace context")
 	}
-	subject, err := natswire.DeviceEventSubject("simulator", session.runtimeID, testEntityID)
+	subject, err := natswire.EntityEventSubject("simulator", session.runtimeID, testEntityID)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if stored.Subject != subject {
 		t.Fatalf("stored subject = %q, want %q", stored.Subject, subject)
 	}
-	envelope, err := natswire.Decode[wireDeviceEvent](
-		compileValidator(t), contractsv1.DeviceEventSchemaID, stored.Data,
+	envelope, err := natswire.Decode[wireEntityEvent](
+		compileValidator(t), contractsv1.EntityEventSchemaID, stored.Data,
 	)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if envelope.ID != string(deviceEventID) || envelope.Schema != contractsv1.DeviceEventSchemaID ||
+	if envelope.ID != string(entityEventID) || envelope.Schema != contractsv1.EntityEventSchemaID ||
 		!strings.HasPrefix(envelope.CorrelationID, "cor_") || envelope.CausationID != nil ||
-		envelope.Data.EntityID != testEntityID || envelope.Data.Name != testDeviceEventName {
-		t.Fatalf("stored Device Event = %#v", envelope)
+		envelope.Data.EntityID != testEntityID || envelope.Data.Name != testEntityEventName {
+		t.Fatalf("stored Entity Event = %#v", envelope)
 	}
 	if _, parseErr := time.Parse(time.RFC3339Nano, envelope.EmittedAt); parseErr != nil {
 		t.Fatalf("emitted_at = %q: %v", envelope.EmittedAt, parseErr)
@@ -125,7 +125,7 @@ func TestPublishDeviceEventWaitsForStorageAcknowledgement(t *testing.T) {
 // This test protects identity stability across a lost PubAck and fails if a
 // transient retry mints a new ID, re-encodes the payload, changes the subject,
 // or drops the trace metadata.
-func TestPublishDeviceEventRetriesOneEncodedReport(t *testing.T) {
+func TestPublishEntityEventRetriesOneEncodedReport(t *testing.T) {
 	t.Parallel()
 	server := startServer(t, -1, t.TempDir())
 	session := connectSession(t, server.ClientURL())
@@ -133,8 +133,8 @@ func TestPublishDeviceEventRetriesOneEncodedReport(t *testing.T) {
 	session.jetstream = publisher
 
 	publishContext := trace.ContextWithSpanContext(testContext(t), sampleSpanContext())
-	deviceEventID, err := session.PublishDeviceEvent(publishContext, DeviceEvent{
-		EntityID: testEntityID, Name: testDeviceEventName,
+	entityEventID, err := session.PublishEntityEvent(publishContext, EntityEvent{
+		EntityID: testEntityID, Name: testEntityEventName,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -147,18 +147,18 @@ func TestPublishDeviceEventRetriesOneEncodedReport(t *testing.T) {
 		t.Fatalf("retry re-encoded the report:\n% X\n% X", published[0].data, published[1].data)
 	}
 	for index, publication := range published {
-		if publication.header.Get(natsgo.MsgIdHdr) != string(deviceEventID) ||
+		if publication.header.Get(natsgo.MsgIdHdr) != string(entityEventID) ||
 			publication.header.Get("traceparent") == "" {
 			t.Fatalf("publication %d headers = %#v", index, publication.header)
 		}
 	}
-	envelope, err := natswire.Decode[wireDeviceEvent](
-		compileValidator(t), contractsv1.DeviceEventSchemaID, published[0].data,
+	envelope, err := natswire.Decode[wireEntityEvent](
+		compileValidator(t), contractsv1.EntityEventSchemaID, published[0].data,
 	)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if envelope.ID != string(deviceEventID) || !strings.HasPrefix(envelope.CorrelationID, "cor_") {
+	if envelope.ID != string(entityEventID) || !strings.HasPrefix(envelope.CorrelationID, "cor_") {
 		t.Fatalf("retried envelope = %#v", envelope)
 	}
 }
@@ -166,12 +166,12 @@ func TestPublishDeviceEventRetriesOneEncodedReport(t *testing.T) {
 // This test protects the reconnect case with a real JetStream server and fails
 // if a report republished after a connection loss is stored under a new
 // identity or more than once.
-func TestPublishDeviceEventRetriesSameIDAfterReconnect(t *testing.T) {
+func TestPublishEntityEventRetriesSameIDAfterReconnect(t *testing.T) {
 	t.Parallel()
 	storeDir := t.TempDir()
 	server := startServer(t, -1, storeDir)
 	core := connectNATS(t, server.ClientURL())
-	createDeviceEventStream(t, core)
+	createEntityEventStream(t, core)
 	session := connectSession(t, server.ClientURL())
 	port := server.Addr().(*net.TCPAddr).Port
 
@@ -180,15 +180,15 @@ func TestPublishDeviceEventRetriesSameIDAfterReconnect(t *testing.T) {
 	waitForConnectionStatus(t, session.connection, natsgo.RECONNECTING)
 
 	type publishResult struct {
-		id  DeviceEventID
+		id  EntityEventID
 		err error
 	}
 	result := make(chan publishResult, 1)
 	publishContext, cancelPublish := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancelPublish()
 	go func() {
-		id, err := session.PublishDeviceEvent(publishContext, DeviceEvent{
-			EntityID: testEntityID, Name: testDeviceEventName,
+		id, err := session.PublishEntityEvent(publishContext, EntityEvent{
+			EntityID: testEntityID, Name: testEntityEventName,
 		})
 		result <- publishResult{id: id, err: err}
 	}()
@@ -205,7 +205,7 @@ func TestPublishDeviceEventRetriesSameIDAfterReconnect(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	stream, err := js.Stream(testContext(t), "HEARTH_DEVICE_EVENTS_V1")
+	stream, err := js.Stream(testContext(t), "HEARTH_ENTITY_EVENTS_V1")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -216,8 +216,8 @@ func TestPublishDeviceEventRetriesSameIDAfterReconnect(t *testing.T) {
 	if stored.Header.Get(natsgo.MsgIdHdr) != string(published.id) {
 		t.Fatalf("Nats-Msg-Id = %q, want %q", stored.Header.Get(natsgo.MsgIdHdr), published.id)
 	}
-	envelope, err := natswire.Decode[wireDeviceEvent](
-		compileValidator(t), contractsv1.DeviceEventSchemaID, stored.Data,
+	envelope, err := natswire.Decode[wireEntityEvent](
+		compileValidator(t), contractsv1.EntityEventSchemaID, stored.Data,
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -236,7 +236,7 @@ func TestPublishDeviceEventRetriesSameIDAfterReconnect(t *testing.T) {
 
 // This test protects the ambiguous-failure contract and fails if the minted ID
 // is hidden behind a permanent publication failure.
-func TestPublishDeviceEventReturnsMintedIdentityOnPermanentFailure(t *testing.T) {
+func TestPublishEntityEventReturnsMintedIdentityOnPermanentFailure(t *testing.T) {
 	t.Parallel()
 	server := startServer(t, -1, t.TempDir())
 	session := connectSession(t, server.ClientURL())
@@ -244,8 +244,8 @@ func TestPublishDeviceEventReturnsMintedIdentityOnPermanentFailure(t *testing.T)
 	publisher := &sequenceJetStreamPublisher{errors: []error{permanent}}
 	session.jetstream = publisher
 
-	id, err := session.PublishDeviceEvent(context.Background(), DeviceEvent{
-		EntityID: testEntityID, Name: testDeviceEventName,
+	id, err := session.PublishEntityEvent(context.Background(), EntityEvent{
+		EntityID: testEntityID, Name: testEntityEventName,
 	})
 	if !errors.Is(err, permanent) {
 		t.Fatalf("error = %v, want the permanent failure", err)
@@ -258,7 +258,7 @@ func TestPublishDeviceEventReturnsMintedIdentityOnPermanentFailure(t *testing.T)
 
 // This test protects caller cancellation and fails if retries continue, hide
 // the minted ID, or publish after the caller gave up.
-func TestPublishDeviceEventCallerCancellationStopsRetries(t *testing.T) {
+func TestPublishEntityEventCallerCancellationStopsRetries(t *testing.T) {
 	t.Parallel()
 	server := startServer(t, -1, t.TempDir())
 	session := connectSession(t, server.ClientURL())
@@ -267,13 +267,13 @@ func TestPublishDeviceEventCallerCancellationStopsRetries(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 
 	type publishResult struct {
-		id  DeviceEventID
+		id  EntityEventID
 		err error
 	}
 	result := make(chan publishResult, 1)
 	go func() {
-		id, err := session.PublishDeviceEvent(ctx, DeviceEvent{
-			EntityID: testEntityID, Name: testDeviceEventName,
+		id, err := session.PublishEntityEvent(ctx, EntityEvent{
+			EntityID: testEntityID, Name: testEntityEventName,
 		})
 		result <- publishResult{id: id, err: err}
 	}()
@@ -290,7 +290,7 @@ func TestPublishDeviceEventCallerCancellationStopsRetries(t *testing.T) {
 
 // This test protects the caller deadline and fails if a transient failure
 // retries past the deadline or loses the minted identity.
-func TestPublishDeviceEventCallerDeadlineStopsRetries(t *testing.T) {
+func TestPublishEntityEventCallerDeadlineStopsRetries(t *testing.T) {
 	t.Parallel()
 	server := startServer(t, -1, t.TempDir())
 	session := connectSession(t, server.ClientURL())
@@ -299,8 +299,8 @@ func TestPublishDeviceEventCallerDeadlineStopsRetries(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 150*time.Millisecond)
 	defer cancel()
 
-	id, err := session.PublishDeviceEvent(ctx, DeviceEvent{
-		EntityID: testEntityID, Name: testDeviceEventName,
+	id, err := session.PublishEntityEvent(ctx, EntityEvent{
+		EntityID: testEntityID, Name: testEntityEventName,
 	})
 	if !errors.Is(err, context.DeadlineExceeded) {
 		t.Fatalf("deadline error = %v", err)
@@ -315,7 +315,7 @@ func TestPublishDeviceEventCallerDeadlineStopsRetries(t *testing.T) {
 
 // This test protects Session termination and fails if a terminated Session
 // publishes or mints an identity it can no longer use.
-func TestPublishDeviceEventStopsAfterSessionTermination(t *testing.T) {
+func TestPublishEntityEventStopsAfterSessionTermination(t *testing.T) {
 	t.Parallel()
 	for name, terminate := range map[string]func(context.Context, *Session){
 		"closed": func(_ context.Context, session *Session) { session.markClosed() },
@@ -328,8 +328,8 @@ func TestPublishDeviceEventStopsAfterSessionTermination(t *testing.T) {
 			publisher := &sequenceJetStreamPublisher{}
 			session.jetstream = publisher
 			terminate(context.Background(), session)
-			id, err := session.PublishDeviceEvent(context.Background(), DeviceEvent{
-				EntityID: testEntityID, Name: testDeviceEventName,
+			id, err := session.PublishEntityEvent(context.Background(), EntityEvent{
+				EntityID: testEntityID, Name: testEntityEventName,
 			})
 			if name == "closed" && !errors.Is(err, ErrClosed) ||
 				name == "fenced" && !errors.Is(err, ErrRuntimeFenced) {
@@ -347,19 +347,19 @@ func TestPublishDeviceEventStopsAfterSessionTermination(t *testing.T) {
 
 // This test protects envelope validation and fails if the Session publishes a
 // report whose envelope is invalid, or claims support knowledge it cannot have.
-func TestPublishDeviceEventValidatesEnvelopeBeforePublishing(t *testing.T) {
+func TestPublishEntityEventValidatesEnvelopeBeforePublishing(t *testing.T) {
 	t.Parallel()
 	server := startServer(t, -1, t.TempDir())
 	session := connectSession(t, server.ClientURL())
 
-	for name, event := range map[string]DeviceEvent{
-		"entity ID": {EntityID: "not-an-entity-id", Name: testDeviceEventName},
+	for name, event := range map[string]EntityEvent{
+		"entity ID": {EntityID: "not-an-entity-id", Name: testEntityEventName},
 		"name":      {EntityID: testEntityID, Name: "Single Press"},
 		"empty":     {EntityID: testEntityID},
 	} {
 		publisher := &sequenceJetStreamPublisher{}
 		session.jetstream = publisher
-		id, err := session.PublishDeviceEvent(context.Background(), event)
+		id, err := session.PublishEntityEvent(context.Background(), event)
 		if _, ok := errors.AsType[*ValidationError](err); !ok {
 			t.Fatalf("%s: error = %v, want a validation error", name, err)
 		}
@@ -375,7 +375,7 @@ func TestPublishDeviceEventValidatesEnvelopeBeforePublishing(t *testing.T) {
 	// publishable, including one the Entity does not currently support.
 	publisher := &sequenceJetStreamPublisher{}
 	session.jetstream = publisher
-	if _, err := session.PublishDeviceEvent(context.Background(), DeviceEvent{
+	if _, err := session.PublishEntityEvent(context.Background(), EntityEvent{
 		EntityID: testEntityID, Name: "unlisted_gesture",
 	}); err != nil {
 		t.Fatal(err)
@@ -385,43 +385,43 @@ func TestPublishDeviceEventValidatesEnvelopeBeforePublishing(t *testing.T) {
 	}
 
 	// Each report mints its own identity.
-	first, err := session.PublishDeviceEvent(context.Background(), DeviceEvent{
-		EntityID: testEntityID, Name: testDeviceEventName,
+	first, err := session.PublishEntityEvent(context.Background(), EntityEvent{
+		EntityID: testEntityID, Name: testEntityEventName,
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	second, err := session.PublishDeviceEvent(context.Background(), DeviceEvent{
-		EntityID: testEntityID, Name: testDeviceEventName,
+	second, err := session.PublishEntityEvent(context.Background(), EntityEvent{
+		EntityID: testEntityID, Name: testEntityEventName,
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if first == second {
-		t.Fatalf("distinct reports reused Device Event ID %q", first)
+		t.Fatalf("distinct reports reused Entity Event ID %q", first)
 	}
 }
 
 // This test protects the publication diagnostic and fails if it loses the
 // bounded identity or logs the encoded envelope.
-func TestPublishDeviceEventLogsIdentityWithoutEnvelope(t *testing.T) {
+func TestPublishEntityEventLogsIdentityWithoutEnvelope(t *testing.T) {
 	t.Parallel()
 	server := startServer(t, -1, t.TempDir())
 	core := connectNATS(t, server.ClientURL())
-	createDeviceEventStream(t, core)
+	createEntityEventStream(t, core)
 	writer := &lockedWriter{}
 	session := connectSessionWithLogger(t, server.ClientURL(), recordingLogger(t, writer))
 
-	deviceEventID, err := session.PublishDeviceEvent(context.Background(), DeviceEvent{
-		EntityID: testEntityID, Name: testDeviceEventName,
+	entityEventID, err := session.PublishEntityEvent(context.Background(), EntityEvent{
+		EntityID: testEntityID, Name: testEntityEventName,
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	record := waitForLogRecord(t, writer, "device_event.published", func(record map[string]any) bool {
-		return record["device_event_id"] == string(deviceEventID)
+	record := waitForLogRecord(t, writer, "entity_event.published", func(record map[string]any) bool {
+		return record["entity_event_id"] == string(entityEventID)
 	}, 3*time.Second)
-	if record["entity_id"] != testEntityID || record["name"] != testDeviceEventName {
+	if record["entity_id"] != testEntityID || record["name"] != testEntityEventName {
 		t.Fatalf("publication record = %#v", record)
 	}
 	if correlationID, ok := record["correlation_id"].(string); !ok || !strings.HasPrefix(correlationID, "cor_") {

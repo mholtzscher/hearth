@@ -76,8 +76,8 @@ func eventSourceSupportSchema() map[string]any {
 					"names": map[string]any{
 						"type": "array", "minItems": 1, "maxItems": 64, "uniqueItems": true,
 						"items": map[string]any{
-							"type": "string", "pattern": deviceEventNamePattern,
-							"minLength": 1, "maxLength": deviceEventNameLength,
+							"type": "string", "pattern": entityEventNamePattern,
+							"minLength": 1, "maxLength": entityEventNameLength,
 						},
 					},
 				},
@@ -322,7 +322,7 @@ func TestLoadModelRejectsEventSupportWithoutEventSource(t *testing.T) {
 
 // TestEventSourceRenderingOmitsObservationAndCommandArtifacts pins the
 // non-commandable, stateless event-source surface: the generated facade, its
-// conformance test, and the catalog expose only support, descriptor, and Device
+// conformance test, and the catalog expose only support, descriptor, and Entity
 // Event name behavior.
 func TestEventSourceRenderingOmitsObservationAndCommandArtifacts(t *testing.T) {
 	t.Parallel()
@@ -348,9 +348,9 @@ func TestEventSourceRenderingOmitsObservationAndCommandArtifacts(t *testing.T) {
 		}
 	}
 	for _, required := range []string{
-		"func NewDeviceEvent(input DeviceEventInput) (adapter.DeviceEvent, error)",
+		"func NewEntityEvent(input EntityEventInput) (adapter.EntityEvent, error)",
 		"func NewEntityDescriptor(",
-		"ValidateDeviceEventName",
+		"ValidateEntityEventName",
 		"ValidateSupport(input.Support)",
 	} {
 		if !strings.Contains(facadeText, required) {
@@ -372,8 +372,8 @@ func TestEventSourceRenderingOmitsObservationAndCommandArtifacts(t *testing.T) {
 			t.Errorf("event-source facade test contains %q:\n%s", forbidden, facadeTestText)
 		}
 	}
-	if !strings.Contains(facadeTestText, "TestGeneratedDeviceEventConformance") {
-		t.Errorf("event-source facade test omits Device Event conformance:\n%s", facadeTestText)
+	if !strings.Contains(facadeTestText, "TestGeneratedEntityEventConformance") {
+		t.Errorf("event-source facade test omits Entity Event conformance:\n%s", facadeTestText)
 	}
 
 	behavior, err := renderBehavior(model)
@@ -381,14 +381,14 @@ func TestEventSourceRenderingOmitsObservationAndCommandArtifacts(t *testing.T) {
 		t.Fatal(err)
 	}
 	behaviorText := string(behavior)
-	for _, required := range []string{"func DeviceEventNames(support Support) []string", "func ValidateDeviceEventName("} {
+	for _, required := range []string{"func EntityEventNames(support Support) []string", "func ValidateEntityEventName("} {
 		if !strings.Contains(behaviorText, required) {
 			t.Errorf("event-source behavior omits %q:\n%s", required, behaviorText)
 		}
 	}
 }
 
-// TestEventSourceFacadeRunsSemanticSupportValidation protects the Device Event
+// TestEventSourceFacadeRunsSemanticSupportValidation protects the Entity Event
 // builder's support check: schema encoding alone accepts relationally invalid
 // support, so the generated builder must also call the generated semantic
 // ValidateSupport, exactly as NewEntityDescriptor and NewCommandHandler do. It
@@ -409,13 +409,13 @@ func TestEventSourceFacadeRunsSemanticSupportValidation(t *testing.T) {
 	encodeIndex := strings.Index(text, "codecs.Support.Encode(input.Support)")
 	validateIndex := strings.Index(text, "contractfixtureeventv1.ValidateSupport(input.Support)")
 	if encodeIndex < 0 {
-		t.Fatalf("Device Event builder does not schema-encode support:\n%s", text)
+		t.Fatalf("Entity Event builder does not schema-encode support:\n%s", text)
 	}
 	if validateIndex < 0 {
-		t.Fatalf("Device Event builder does not call semantic ValidateSupport:\n%s", text)
+		t.Fatalf("Entity Event builder does not call semantic ValidateSupport:\n%s", text)
 	}
 	if validateIndex < encodeIndex {
-		t.Fatalf("Device Event builder validates semantics before schema encoding:\n%s", text)
+		t.Fatalf("Entity Event builder validates semantics before schema encoding:\n%s", text)
 	}
 }
 
@@ -436,7 +436,7 @@ func TestEventSourceCatalogDefinitionUsesGeneratedSelector(t *testing.T) {
 	text := string(catalog.content)
 	for _, required := range []string{
 		"DefineEventSourceEntityType(",
-		"contractfixtureeventv1.DeviceEventNames,",
+		"contractfixtureeventv1.EntityEventNames,",
 		"EntityTypeFixtureeventV1",
 	} {
 		if !strings.Contains(text, required) {
@@ -452,9 +452,9 @@ func TestEventSourceCatalogDefinitionUsesGeneratedSelector(t *testing.T) {
 	}
 	conformanceText := string(conformance.content)
 	for _, required := range []string{
-		`catalog.SupportsDeviceEvent(entity, DeviceEventName("single_press"))`,
-		`catalog.SupportsDeviceEvent(entity, DeviceEventName("unknown"))`,
-		"catalog accepted a corrupt Device Event descriptor",
+		`catalog.SupportsEntityEvent(entity, EntityEventName("single_press"))`,
+		`catalog.SupportsEntityEvent(entity, EntityEventName("unknown"))`,
+		"catalog accepted a corrupt Entity Event descriptor",
 		"catalog resolved a Command for an event source",
 	} {
 		if !strings.Contains(conformanceText, required) {
@@ -463,10 +463,10 @@ func TestEventSourceCatalogDefinitionUsesGeneratedSelector(t *testing.T) {
 	}
 }
 
-// TestUnsupportedDeviceEventNameAvoidsSupportedNames protects the generated
+// TestUnsupportedEntityEventNameAvoidsSupportedNames protects the generated
 // rejection probes: the unsupported candidate must be absent from the complete
 // supported name set.
-func TestUnsupportedDeviceEventNameAvoidsSupportedNames(t *testing.T) {
+func TestUnsupportedEntityEventNameAvoidsSupportedNames(t *testing.T) {
 	t.Parallel()
 	for _, test := range []struct {
 		name  string
@@ -485,7 +485,7 @@ func TestUnsupportedDeviceEventNameAvoidsSupportedNames(t *testing.T) {
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
-			got := unsupportedDeviceEventName(test.names)
+			got := unsupportedEntityEventName(test.names)
 			if got != test.want {
 				t.Fatalf("candidate = %q, want %q", got, test.want)
 			}
@@ -534,7 +534,7 @@ func TestSupportWithEventsBuildsClosedTypeProbe(t *testing.T) {
 	}
 }
 
-// TestRequireEventSourceExamplesRequiresNames keeps generated Device Event
+// TestRequireEventSourceExamplesRequiresNames keeps generated Entity Event
 // probes possible: an authoring mistake must fail generation rather than emit a
 // test without a name to compare.
 func TestRequireEventSourceExamplesRequiresNames(t *testing.T) {

@@ -14,7 +14,7 @@ import (
 )
 
 // TestCoreStartupPreservesRetainedHistory proves startup performs no retention
-// prune: even long-expired Device Event and non-current Observation rows
+// prune: even long-expired Entity Event and non-current Observation rows
 // survive a restart and wait for the next hourly pass.
 func TestCoreStartupPreservesRetainedHistory(t *testing.T) {
 	t.Parallel()
@@ -57,8 +57,8 @@ func TestCoreStartupPreservesRetainedHistory(t *testing.T) {
 	if retained := countRetainedRows(ctx, t, databasePath, "observations"); retained != 2 {
 		t.Fatalf("observations after startup = %d, want 2", retained)
 	}
-	if retained := countRetainedRows(ctx, t, databasePath, "device_events"); retained != 3 {
-		t.Fatalf("device events after startup = %d, want 3", retained)
+	if retained := countRetainedRows(ctx, t, databasePath, "entity_events"); retained != 3 {
+		t.Fatalf("entity events after startup = %d, want 3", retained)
 	}
 
 	stopCore()
@@ -130,10 +130,10 @@ func seedStartupRetentionDatabase(ctx context.Context, t *testing.T, databasePat
 	); execErr != nil {
 		t.Fatal(execErr)
 	}
-	// Device Events have no current-State anchor, so every expired row is
+	// Entity Events have no current-State anchor, so every expired row is
 	// eligible for the next pass; startup must still leave all of them alone.
 	if _, execErr := database.ExecContext(ctx, `
-		INSERT INTO device_events (
+		INSERT INTO entity_events (
 			event_id, adapter_id, runtime_id, entity_id, correlation_id, name,
 			fingerprint, disposition, rejection_code, emitted_at, received_at, recorded_at
 		) VALUES

@@ -24,9 +24,9 @@ func NewObservationID() (ObservationID, error) {
 	return ObservationID(id), err
 }
 
-func NewDeviceEventID() (DeviceEventID, error) {
+func NewEntityEventID() (EntityEventID, error) {
 	id, err := newID("evt")
-	return DeviceEventID(id), err
+	return EntityEventID(id), err
 }
 
 func NewCommandID() (CommandID, error) {
@@ -60,11 +60,11 @@ func ParseObservationID(value string) (ObservationID, error) {
 	return ObservationID(value), nil
 }
 
-func ParseDeviceEventID(value string) (DeviceEventID, error) {
+func ParseEntityEventID(value string) (EntityEventID, error) {
 	if err := validateID(value, "evt"); err != nil {
 		return "", err
 	}
-	return DeviceEventID(value), nil
+	return EntityEventID(value), nil
 }
 
 func ParseCommandID(value string) (CommandID, error) {

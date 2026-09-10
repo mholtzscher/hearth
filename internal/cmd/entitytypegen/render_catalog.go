@@ -93,10 +93,10 @@ func renderCatalog(models []entityTypeModel, modulePath string, moduleRoot strin
 }
 
 // writeCatalogEventSourceDefinition emits the catalog selector for a stateless,
-// non-commandable Device Event Entity type. Core needs no handwritten event
-// branch: the generated selector decodes support through the type's own codec,
-// runs the generated support validator, and hands the catalog the supported
-// names.
+// non-commandable Entity type that reports Entity Events. Core needs no
+// handwritten event branch: the generated selector decodes support through the
+// type's own codec, runs the generated support validator, and hands the catalog
+// the supported names.
 func writeCatalogEventSourceDefinition(source *strings.Builder, model entityTypeModel) {
 	source.WriteString(
 		"\tdefinition, err := DefineEventSourceEntityType(\n\t\tid,\n\t\tcodecs.State,\n\t\tcodecs.Support,\n",
@@ -104,7 +104,7 @@ func writeCatalogEventSourceDefinition(source *strings.Builder, model entityType
 	fmt.Fprintf(source, "\t\tcontract%s.ValidateSupport,\n", model.Package)
 	fmt.Fprintf(source, "\t\tcontract%s.ValidateState,\n", model.Package)
 	fmt.Fprintf(source, "\t\tcontract%s.EqualState,\n", model.Package)
-	fmt.Fprintf(source, "\t\tcontract%s.DeviceEventNames,\n", model.Package)
+	fmt.Fprintf(source, "\t\tcontract%s.EntityEventNames,\n", model.Package)
 	source.WriteString("\t)\n")
 	source.WriteString("\tif err != nil { return EntityTypeDefinition{}, err }\n")
 }

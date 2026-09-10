@@ -5,6 +5,6 @@ binding_key: simulated-light
 # command scenarios: delayed-source-time, future-clock-skew, upstream-rejection,
 #   no-op-refresh, overlapping-opposite-command, outcome-timeout,
 #   interrupted-command, restart-before-ack
-# device-events additionally registers an event-source Entity and publishes
+# entity-events additionally registers an event-source Entity and publishes
 #   synthetic reports for standard-input lines single_press and double_press
 scenario: happy

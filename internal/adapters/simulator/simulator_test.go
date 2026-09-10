@@ -18,7 +18,7 @@ type recordingSession struct {
 	linkedObservations  []adapter.Observation
 	healthReports       []adapter.HealthReport
 	availabilityReports []adapter.EntityAvailabilityReport
-	deviceEvents        []adapter.DeviceEvent
+	entityEvents        []adapter.EntityEvent
 }
 
 func (session *recordingSession) PublishObservation(
@@ -29,11 +29,11 @@ func (session *recordingSession) PublishObservation(
 	return "obs_01890f47-7a6b-7c4d-8e9f-0123456789ab", nil
 }
 
-func (session *recordingSession) PublishDeviceEvent(
+func (session *recordingSession) PublishEntityEvent(
 	_ context.Context,
-	event adapter.DeviceEvent,
-) (adapter.DeviceEventID, error) {
-	session.deviceEvents = append(session.deviceEvents, event)
+	event adapter.EntityEvent,
+) (adapter.EntityEventID, error) {
+	session.entityEvents = append(session.entityEvents, event)
 	return "evt_01890f47-7a6b-7c4d-8e9f-0123456789ab", nil
 }
 
@@ -92,7 +92,7 @@ func TestFailureMatrixScenariosAreRecognized(t *testing.T) {
 		simulatoradapter.ScenarioUpstreamRejection,
 		simulatoradapter.ScenarioNoOpRefresh, simulatoradapter.ScenarioOverlappingCommands, simulatoradapter.ScenarioOutcomeTimeout,
 		simulatoradapter.ScenarioInterruptedCommand, simulatoradapter.ScenarioRestartBeforeAck,
-		simulatoradapter.ScenarioDeviceEvents,
+		simulatoradapter.ScenarioEntityEvents,
 	} {
 		if !simulatoradapter.ValidScenario(scenario) {
 			t.Fatalf("scenario %q is not recognized", scenario)
@@ -251,28 +251,28 @@ func TestFailureScenariosRejectOrWithholdOutcome(t *testing.T) {
 	}
 }
 
-// This test protects the device-events scenario contract and fails if the
+// This test protects the entity-events scenario contract and fails if the
 // event source Entity is not bound before publication, if the generated
 // support loses either synthetic name, or if an unsupported name is published.
-func TestDeviceEventsScenarioEmitsValidatedSyntheticReports(t *testing.T) {
+func TestEntityEventsScenarioEmitsValidatedSyntheticReports(t *testing.T) {
 	t.Parallel()
 	session := &recordingSession{}
-	simulated, err := simulatoradapter.New(session, simulatoradapter.ScenarioDeviceEvents)
+	simulated, err := simulatoradapter.New(session, simulatoradapter.ScenarioEntityEvents)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err = simulated.EmitDeviceEvent(
-		context.Background(), simulatoradapter.DeviceEventSinglePress,
+	if _, err = simulated.EmitEntityEvent(
+		context.Background(), simulatoradapter.EntityEventSinglePress,
 	); err == nil {
-		t.Fatal("EmitDeviceEvent published before the event source Entity was bound")
+		t.Fatal("EmitEntityEvent published before the event source Entity was bound")
 	}
-	support := simulated.DeviceEventSupport()
+	support := simulated.EntityEventSupport()
 	if len(support.Events.Names) != 2 ||
-		support.Events.Names[0] != simulatoradapter.DeviceEventSinglePress ||
-		support.Events.Names[1] != simulatoradapter.DeviceEventDoublePress {
+		support.Events.Names[0] != simulatoradapter.EntityEventSinglePress ||
+		support.Events.Names[1] != simulatoradapter.EntityEventDoublePress {
 		t.Fatalf("event support = %#v", support)
 	}
-	if initializeErr := simulated.InitializeDeviceEventSource(
+	if initializeErr := simulated.InitializeEntityEventSource(
 		context.Background(), simulatorEntityID,
 	); initializeErr != nil {
 		t.Fatal(initializeErr)
@@ -283,31 +283,31 @@ func TestDeviceEventsScenarioEmitsValidatedSyntheticReports(t *testing.T) {
 		t.Fatalf("availability = %#v", session.availabilityReports)
 	}
 	for _, name := range []string{
-		simulatoradapter.DeviceEventSinglePress, simulatoradapter.DeviceEventDoublePress,
+		simulatoradapter.EntityEventSinglePress, simulatoradapter.EntityEventDoublePress,
 	} {
-		eventID, emitErr := simulated.EmitDeviceEvent(context.Background(), name)
+		eventID, emitErr := simulated.EmitEntityEvent(context.Background(), name)
 		if emitErr != nil {
 			t.Fatal(emitErr)
 		}
 		if eventID == "" {
-			t.Fatalf("EmitDeviceEvent(%q) returned no identity", name)
+			t.Fatalf("EmitEntityEvent(%q) returned no identity", name)
 		}
 	}
-	if len(session.deviceEvents) != 2 {
-		t.Fatalf("device events = %#v", session.deviceEvents)
+	if len(session.entityEvents) != 2 {
+		t.Fatalf("entity events = %#v", session.entityEvents)
 	}
-	for _, event := range session.deviceEvents {
+	for _, event := range session.entityEvents {
 		if event.EntityID != simulatorEntityID {
-			t.Fatalf("device event Entity = %#v", event)
+			t.Fatalf("entity event = %#v", event)
 		}
 	}
-	if _, err = simulated.EmitDeviceEvent(context.Background(), "triple_press"); err == nil {
-		t.Fatal("EmitDeviceEvent accepted an unsupported name")
+	if _, err = simulated.EmitEntityEvent(context.Background(), "triple_press"); err == nil {
+		t.Fatal("EmitEntityEvent accepted an unsupported name")
 	}
-	if len(session.deviceEvents) != 2 {
-		t.Fatalf("unsupported name published a report: %#v", session.deviceEvents)
+	if len(session.entityEvents) != 2 {
+		t.Fatalf("unsupported name published a report: %#v", session.entityEvents)
 	}
 	if len(session.observations) != 0 {
-		t.Fatalf("device events published observations: %#v", session.observations)
+		t.Fatalf("entity events published observations: %#v", session.observations)
 	}
 }

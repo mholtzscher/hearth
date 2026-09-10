@@ -58,14 +58,14 @@ func Run(ctx context.Context, config Config, logger *slog.Logger) error {
 		return descriptorErr
 	}
 	entities := []adapter.EntityDescriptor{descriptor}
-	// The device-events scenario adds one event-source Entity beside power. No
+	// The entity-events scenario adds one event-source Entity beside power. No
 	// other scenario changes its Entities or Binding key, so existing
 	// scenarios keep their canonical reads.
-	deviceEventsScenario := config.Scenario == simulatoradapter.ScenarioDeviceEvents
-	if deviceEventsScenario {
+	entityEventsScenario := config.Scenario == simulatoradapter.ScenarioEntityEvents
+	if entityEventsScenario {
 		eventDescriptor, eventDescriptorErr := sdkadapterenumeventv1.NewEntityDescriptor(adapter.EntityMetadata{
 			Key: "events", ExternalID: config.BindingKey + ".events", Name: "Events",
-		}, simulated.DeviceEventSupport())
+		}, simulated.EntityEventSupport())
 		if eventDescriptorErr != nil {
 			return eventDescriptorErr
 		}
@@ -89,13 +89,13 @@ func Run(ctx context.Context, config Config, logger *slog.Logger) error {
 	if err := simulated.Initialize(ctx, entityID); err != nil {
 		return fmt.Errorf("initialize simulator health and Entity availability: %w", err)
 	}
-	if deviceEventsScenario {
-		if err := runDeviceEventScenario(ctx, simulated, binding); err != nil {
+	if entityEventsScenario {
+		if err := runEntityEventScenario(ctx, simulated, binding); err != nil {
 			return err
 		}
 		// Registered after session.Close, so standard-input workers are joined
 		// and the publisher stops before the Session closes.
-		defer startDeviceEventInput(ctx, simulated, logger)()
+		defer startEntityEventInput(ctx, simulated, logger)()
 	}
 	logger.InfoContext(
 		ctx,
@@ -126,9 +126,9 @@ func entityIDForKey(binding adapter.Binding, key string) (string, error) {
 	return "", fmt.Errorf("registration response omitted Entity key %q", key)
 }
 
-// runDeviceEventScenario binds the registered event-source Entity so
-// EmitDeviceEvent publishes for the canonical identity Core returned.
-func runDeviceEventScenario(
+// runEntityEventScenario binds the registered event-source Entity so
+// EmitEntityEvent publishes for the canonical identity Core returned.
+func runEntityEventScenario(
 	ctx context.Context,
 	simulated *simulatoradapter.Adapter,
 	binding adapter.Binding,
@@ -137,16 +137,16 @@ func runDeviceEventScenario(
 	if err != nil {
 		return err
 	}
-	if initializeErr := simulated.InitializeDeviceEventSource(ctx, eventsEntityID); initializeErr != nil {
+	if initializeErr := simulated.InitializeEntityEventSource(ctx, eventsEntityID); initializeErr != nil {
 		return fmt.Errorf("initialize event source Entity availability: %w", initializeErr)
 	}
 	return nil
 }
 
-// startDeviceEventInput starts the cancellable standard-input reader and
+// startEntityEventInput starts the cancellable standard-input reader and
 // returns a function that stops it and joins its workers. Callers invoke the
 // returned function before the Session closes.
-func startDeviceEventInput(
+func startEntityEventInput(
 	ctx context.Context,
 	simulated *simulatoradapter.Adapter,
 	logger *slog.Logger,
@@ -154,7 +154,7 @@ func startDeviceEventInput(
 	inputContext, stopInput := context.WithCancel(ctx)
 	var workers sync.WaitGroup
 	workers.Go(func() {
-		RunDeviceEventInput(inputContext, os.Stdin, simulated, logger)
+		RunEntityEventInput(inputContext, os.Stdin, simulated, logger)
 	})
 	return func() {
 		stopInput()

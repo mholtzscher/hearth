@@ -33,7 +33,7 @@ type ObservationConsumer struct {
 	active  atomic.Bool
 }
 
-//nolint:dupl // Observation and Device Event consumers are parallel durables over distinct resources.
+//nolint:dupl // Observation and Entity Event consumers are parallel durables over distinct resources.
 func StartObservationConsumer(
 	baseContext context.Context,
 	consumer jetstream.Consumer,
@@ -221,7 +221,7 @@ func handleObservationMessage(
 // IDs. The warning is retained regardless of the Ack outcome, with Ack
 // failures recorded. Raw payloads and decode errors are never logged.
 //
-//nolint:dupl // Observation and Device Event invalid-input diagnostics share one ack-then-warn shape.
+//nolint:dupl // Observation and Entity Event invalid-input diagnostics share one ack-then-warn shape.
 func logInvalidObservation(
 	ctx context.Context,
 	logger *slog.Logger,

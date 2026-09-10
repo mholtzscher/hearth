@@ -53,7 +53,7 @@ type ObservationRoute struct {
 	EntityID  string
 }
 
-type DeviceEventRoute struct {
+type EntityEventRoute struct {
 	AdapterID string
 	RuntimeID string
 	EntityID  string
@@ -153,14 +153,14 @@ func EntityEnablementSubject(adapterID, runtimeID, entityID string) (string, err
 	return base + "." + entityID, nil
 }
 
-// DeviceEventWildcard is the Adapter-originated device event route: one
+// EntityEventWildcard is the Adapter-originated entity event route: one
 // occurrence report for one Entity, scoped to the publishing Adapter runtime.
-func DeviceEventWildcard() string {
-	return runtimeWildcard("device-event") + ".*"
+func EntityEventWildcard() string {
+	return runtimeWildcard("entity-event") + ".*"
 }
 
-func DeviceEventSubject(adapterID, runtimeID, entityID string) (string, error) {
-	base, err := runtimeSubject(adapterID, runtimeID, "device-event")
+func EntityEventSubject(adapterID, runtimeID, entityID string) (string, error) {
+	base, err := runtimeSubject(adapterID, runtimeID, "entity-event")
 	if err != nil {
 		return "", err
 	}
@@ -273,16 +273,16 @@ func ParseEntityEnablementSubject(subject string) (EntityEnablementRoute, error)
 	return EntityEnablementRoute{AdapterID: adapterID, RuntimeID: runtimeID, EntityID: parts[7]}, nil
 }
 
-func ParseDeviceEventSubject(subject string) (DeviceEventRoute, error) {
+func ParseEntityEventSubject(subject string) (EntityEventRoute, error) {
 	parts := strings.Split(subject, ".")
-	adapterID, runtimeID, err := parseRuntimeSubjectParts(parts, "device-event", 1)
+	adapterID, runtimeID, err := parseRuntimeSubjectParts(parts, "entity-event", 1)
 	if err != nil {
-		return DeviceEventRoute{}, fmt.Errorf("invalid device event subject %q: %w", subject, err)
+		return EntityEventRoute{}, fmt.Errorf("invalid entity event subject %q: %w", subject, err)
 	}
 	if validationErr := validateEntityID(parts[7]); validationErr != nil {
-		return DeviceEventRoute{}, fmt.Errorf("invalid device event subject %q: %w", subject, validationErr)
+		return EntityEventRoute{}, fmt.Errorf("invalid entity event subject %q: %w", subject, validationErr)
 	}
-	return DeviceEventRoute{AdapterID: adapterID, RuntimeID: runtimeID, EntityID: parts[7]}, nil
+	return EntityEventRoute{AdapterID: adapterID, RuntimeID: runtimeID, EntityID: parts[7]}, nil
 }
 
 func ParseCommandSubject(subject string) (CommandRoute, error) {

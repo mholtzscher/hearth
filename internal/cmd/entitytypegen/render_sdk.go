@@ -14,7 +14,7 @@ func renderFacade(model entityTypeModel, modulePath string) ([]byte, error) {
 	// Stateless entity types carry no State observations, so the facade
 	// defines no ObservationInput or NewObservation. Event-source types also
 	// carry no Operations, so the facade defines only name validation and a
-	// typed Device Event builder. Time is only needed for the observation
+	// typed Entity Event builder. Time is only needed for the observation
 	// input timestamps.
 	writesJSON := len(model.Operations) > 0
 	writesErrors := len(model.Operations) > 0 || model.EventSource
@@ -83,7 +83,7 @@ func renderFacade(model entityTypeModel, modulePath string) ([]byte, error) {
 		if model.EventSource {
 			source.WriteString(
 				"// Event-source entity types carry no State observations and no Operations;\n" +
-					"// the facade defines only typed support and Device Event name behavior.\n\n",
+					"// the facade defines only typed support and Entity Event name behavior.\n\n",
 			)
 		} else {
 			source.WriteString(
@@ -114,7 +114,7 @@ func renderFacade(model entityTypeModel, modulePath string) ([]byte, error) {
 		model.Package,
 	)
 	if model.EventSource {
-		writeDeviceEventBuilder(&source, model)
+		writeEntityEventBuilder(&source, model)
 	}
 
 	if len(model.Operations) > 0 {
@@ -188,25 +188,25 @@ func renderFacade(model entityTypeModel, modulePath string) ([]byte, error) {
 	return formatGenerated(source.String())
 }
 
-// writeDeviceEventBuilder emits the typed Device Event builder for an
+// writeEntityEventBuilder emits the typed Entity Event builder for an
 // event-source facade. The builder validates local support and name shape so a
 // report leaves the Adapter well-formed; Core still decides whether the name is
 // currently supported when the report arrives.
-func writeDeviceEventBuilder(source *strings.Builder, model entityTypeModel) {
-	source.WriteString("// DeviceEventInput carries one Device Event report for typed validation.\n")
-	source.WriteString("type DeviceEventInput struct {\n\tEntityID string\n\tSupport Support\n\tName string\n}\n\n")
-	source.WriteString("// NewDeviceEvent validates Entity identity, Entity support, and the reported\n")
+func writeEntityEventBuilder(source *strings.Builder, model entityTypeModel) {
+	source.WriteString("// EntityEventInput carries one Entity Event report for typed validation.\n")
+	source.WriteString("type EntityEventInput struct {\n\tEntityID string\n\tSupport Support\n\tName string\n}\n\n")
+	source.WriteString("// NewEntityEvent validates Entity identity, Entity support, and the reported\n")
 	source.WriteString("// name, then returns the report a Session publishes.\n")
-	source.WriteString("func NewDeviceEvent(input DeviceEventInput) (adapter.DeviceEvent, error) {\n")
-	source.WriteString("\tcodecs, err := codecs()\n\tif err != nil { return adapter.DeviceEvent{}, err }\n")
+	source.WriteString("func NewEntityEvent(input EntityEventInput) (adapter.EntityEvent, error) {\n")
+	source.WriteString("\tcodecs, err := codecs()\n\tif err != nil { return adapter.EntityEvent{}, err }\n")
 	source.WriteString("\tif input.EntityID == \"\" {\n")
 	source.WriteString(
-		"\t\treturn adapter.DeviceEvent{}, validationError(errors.New(\"Device Event entity ID is required\"))\n",
+		"\t\treturn adapter.EntityEvent{}, validationError(errors.New(\"Entity Event entity ID is required\"))\n",
 	)
 	source.WriteString("\t}\n")
 	source.WriteString("\tif _, err := codecs.Support.Encode(input.Support); err != nil {\n")
 	source.WriteString(
-		"\t\treturn adapter.DeviceEvent{}, validationError(fmt.Errorf(\"invalid Entity support: %w\", err))\n",
+		"\t\treturn adapter.EntityEvent{}, validationError(fmt.Errorf(\"invalid Entity support: %w\", err))\n",
 	)
 	source.WriteString("\t}\n")
 	// Schema encoding alone accepts relationally invalid supports, so the
@@ -219,16 +219,16 @@ func writeDeviceEventBuilder(source *strings.Builder, model entityTypeModel) {
 		model.Package,
 	)
 	source.WriteString(
-		"\t\treturn adapter.DeviceEvent{}, validationError(fmt.Errorf(\"invalid Entity support: %w\", err))\n",
+		"\t\treturn adapter.EntityEvent{}, validationError(fmt.Errorf(\"invalid Entity support: %w\", err))\n",
 	)
 	source.WriteString("\t}\n")
 	fmt.Fprintf(
 		source,
-		"\tif err := contract%s.ValidateDeviceEventName(input.Support, input.Name); err != nil {\n",
+		"\tif err := contract%s.ValidateEntityEventName(input.Support, input.Name); err != nil {\n",
 		model.Package,
 	)
-	source.WriteString("\t\treturn adapter.DeviceEvent{}, validationError(err)\n\t}\n")
-	source.WriteString("\treturn adapter.DeviceEvent{EntityID: input.EntityID, Name: input.Name}, nil\n}\n\n")
+	source.WriteString("\t\treturn adapter.EntityEvent{}, validationError(err)\n\t}\n")
+	source.WriteString("\treturn adapter.EntityEvent{EntityID: input.EntityID, Name: input.Name}, nil\n}\n\n")
 }
 
 func writeRoute(

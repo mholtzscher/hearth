@@ -275,7 +275,7 @@ func loadModel(path string) (entityTypeModel, error) {
 		if stateShapeErr := requireEventSourceStateShape(state, stateSupport); stateShapeErr != nil {
 			return entityTypeModel{}, stateShapeErr
 		}
-		events, eventsErr := requireDeviceEventSupportSchema(support)
+		events, eventsErr := requireEntityEventSupportSchema(support)
 		if eventsErr != nil {
 			return entityTypeModel{}, eventsErr
 		}

@@ -10,7 +10,7 @@ import (
 	"github.com/mholtzscher/hearth/internal/contracts/v1/natswire"
 )
 
-type testDeviceEvent struct {
+type testEntityEvent struct {
 	EntityID string `json:"entity_id"`
 	Name     string `json:"name"`
 }
@@ -35,74 +35,74 @@ type testEntityDescriptorWire struct {
 }
 
 const (
-	testDeviceEventID = "evt_01890f47-7a6b-7c4d-8e9f-0123456789ab"
+	testEntityEventID = "evt_01890f47-7a6b-7c4d-8e9f-0123456789ab"
 	testEnvelopeTime  = "2026-08-20T12:34:56.123456789Z"
 	testEntityID      = "ent_01890f47-7a6b-7c4d-8e9f-0123456789ab"
 )
 
-// TestDeviceEventEnvelopeRoundTrip pins the D1 wire contract: a strict
+// TestEntityEventEnvelopeRoundTrip pins the D1 wire contract: a strict
 // evt_/cor_ envelope carrying only the Entity identity and the reported name
 // survives validation, decode, and re-encode unchanged.
-func TestDeviceEventEnvelopeRoundTrip(t *testing.T) {
+func TestEntityEventEnvelopeRoundTrip(t *testing.T) {
 	t.Parallel()
 	validator, err := contractsv1.Compile()
 	if err != nil {
 		t.Fatal(err)
 	}
-	envelope := natswire.Envelope[testDeviceEvent]{
-		ID:            testDeviceEventID,
-		Schema:        contractsv1.DeviceEventSchemaID,
+	envelope := natswire.Envelope[testEntityEvent]{
+		ID:            testEntityEventID,
+		Schema:        contractsv1.EntityEventSchemaID,
 		EmittedAt:     testEnvelopeTime,
 		CorrelationID: "cor_01890f47-7a6b-7c4d-8e9f-0123456789ab",
-		Data:          testDeviceEvent{EntityID: testEntityID, Name: "single_press"},
+		Data:          testEntityEvent{EntityID: testEntityID, Name: "single_press"},
 	}
-	payload, err := natswire.Encode(validator, contractsv1.DeviceEventSchemaID, envelope)
+	payload, err := natswire.Encode(validator, contractsv1.EntityEventSchemaID, envelope)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if bytes.Contains(payload, []byte("causation_id")) {
-		t.Fatalf("encoded device event carries a causation ID: %s", payload)
+		t.Fatalf("encoded entity event carries a causation ID: %s", payload)
 	}
-	decoded, err := natswire.Decode[testDeviceEvent](validator, contractsv1.DeviceEventSchemaID, payload)
+	decoded, err := natswire.Decode[testEntityEvent](validator, contractsv1.EntityEventSchemaID, payload)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if decoded.ID != envelope.ID || decoded.Schema != envelope.Schema ||
 		decoded.EmittedAt != envelope.EmittedAt || decoded.CorrelationID != envelope.CorrelationID ||
 		decoded.Data != envelope.Data {
-		t.Fatalf("decoded device event = %#v, want %#v", decoded, envelope)
+		t.Fatalf("decoded entity event = %#v, want %#v", decoded, envelope)
 	}
-	reencoded, err := natswire.Encode(validator, contractsv1.DeviceEventSchemaID, decoded)
+	reencoded, err := natswire.Encode(validator, contractsv1.EntityEventSchemaID, decoded)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if !bytes.Equal(reencoded, payload) {
-		t.Fatalf("device event encoding is not stable: first %q, second %q", payload, reencoded)
+		t.Fatalf("entity event encoding is not stable: first %q, second %q", payload, reencoded)
 	}
 }
 
-// TestDeviceEventEnvelopeRejectsNonContractMessages pins the strict envelope:
+// TestEntityEventEnvelopeRejectsNonContractMessages pins the strict envelope:
 // no causation, no Command link, no payload, no source time, one canonical ID
 // shape, and a slug name.
-func TestDeviceEventEnvelopeRejectsNonContractMessages(t *testing.T) {
+func TestEntityEventEnvelopeRejectsNonContractMessages(t *testing.T) {
 	t.Parallel()
 	validator, err := contractsv1.Compile()
 	if err != nil {
 		t.Fatal(err)
 	}
-	valid := `{"id":"` + testDeviceEventID + `",` +
-		`"schema":"urn:hearth:schema:device-event:v1",` +
+	valid := `{"id":"` + testEntityEventID + `",` +
+		`"schema":"urn:hearth:schema:entity-event:v1",` +
 		`"emitted_at":"` + testEnvelopeTime + `",` +
 		`"correlation_id":"cor_01890f47-7a6b-7c4d-8e9f-0123456789ab",` +
 		`"data":{"entity_id":"` + testEntityID + `","name":"single_press"}}`
-	if _, decodeErr := natswire.Decode[testDeviceEvent](
-		validator, contractsv1.DeviceEventSchemaID, []byte(valid),
+	if _, decodeErr := natswire.Decode[testEntityEvent](
+		validator, contractsv1.EntityEventSchemaID, []byte(valid),
 	); decodeErr != nil {
-		t.Fatalf("canonical device event rejected: %v", decodeErr)
+		t.Fatalf("canonical entity event rejected: %v", decodeErr)
 	}
 	payloads := map[string]string{
-		"causation id": `{"id":"` + testDeviceEventID + `",` +
-			`"schema":"urn:hearth:schema:device-event:v1",` +
+		"causation id": `{"id":"` + testEntityEventID + `",` +
+			`"schema":"urn:hearth:schema:entity-event:v1",` +
 			`"emitted_at":"` + testEnvelopeTime + `",` +
 			`"correlation_id":"cor_01890f47-7a6b-7c4d-8e9f-0123456789ab",` +
 			`"causation_id":"cmd_01890f47-7a6b-7c4d-8e9f-0123456789ab",` +
@@ -117,17 +117,17 @@ func TestDeviceEventEnvelopeRejectsNonContractMessages(t *testing.T) {
 		"unsafe name":  strings.Replace(valid, `"single_press"`, `"single press"`, 1),
 		"missing data": strings.Replace(valid, `,"data":{`, `,"unused":{`, 1),
 		"other schema": strings.Replace(
-			valid, "urn:hearth:schema:device-event:v1", "urn:hearth:schema:observation:v1", 1,
+			valid, "urn:hearth:schema:entity-event:v1", "urn:hearth:schema:observation:v1", 1,
 		),
 		"trailing value": valid + ` true`,
 	}
 	for name, payload := range payloads {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
-			if _, decodeErr := natswire.Decode[testDeviceEvent](
-				validator, contractsv1.DeviceEventSchemaID, []byte(payload),
+			if _, decodeErr := natswire.Decode[testEntityEvent](
+				validator, contractsv1.EntityEventSchemaID, []byte(payload),
 			); decodeErr == nil {
-				t.Fatalf("device event payload unexpectedly accepted: %s", payload)
+				t.Fatalf("entity event payload unexpectedly accepted: %s", payload)
 			}
 		})
 	}
@@ -184,7 +184,7 @@ func TestRegistrationEnvelopePreservesEventSupport(t *testing.T) {
 	}
 	if len(names.Events.Names) != 2 || names.Events.Names[0] != "single_press" ||
 		names.Events.Names[1] != "double_press" {
-		t.Fatalf("preserved Device Event names = %#v", names.Events.Names)
+		t.Fatalf("preserved Entity Event names = %#v", names.Events.Names)
 	}
 }
 

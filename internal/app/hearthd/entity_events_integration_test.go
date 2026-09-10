@@ -29,9 +29,9 @@ import (
 	sdkpowerv1 "github.com/mholtzscher/hearth/sdk/adapter/powerv1"
 )
 
-// deviceEventWire is the test's own view of the device-event payload, kept
+// entityEventWire is the test's own view of the entity-event payload, kept
 // local so the assembly test never depends on the transport DTO.
-type deviceEventWire struct {
+type entityEventWire struct {
 	EntityID string `json:"entity_id"`
 	Name     string `json:"name"`
 }
@@ -42,14 +42,14 @@ type deviceEventWire struct {
 // reads synthetic State.
 //
 //nolint:gocognit,gocyclo,cyclop // The offline recovery sequence is clearer as one causal test.
-func TestCoreOfflineDeviceEventRecoveryVerticalSlice(t *testing.T) {
+func TestCoreOfflineEntityEventRecoveryVerticalSlice(t *testing.T) {
 	t.Parallel()
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
 	sessionLogger, sessionRecords := withRecording(slog.LevelDebug)
 	client := newNonPoolingHTTPClient(t)
 	databasePath := filepath.Join(t.TempDir(), "hearth.db")
-	server := startDeviceEventNATSServer(t)
+	server := startEntityEventNATSServer(t)
 
 	firstAddress := unusedLoopbackAddress(t)
 	firstContext, stopFirstCore := context.WithCancel(ctx)
@@ -75,7 +75,7 @@ func TestCoreOfflineDeviceEventRecoveryVerticalSlice(t *testing.T) {
 			t.Errorf("close simulator Session: %v", closeErr)
 		}
 	})
-	simulated, err := simulatoradapter.New(session, simulatoradapter.ScenarioDeviceEvents)
+	simulated, err := simulatoradapter.New(session, simulatoradapter.ScenarioEntityEvents)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -87,7 +87,7 @@ func TestCoreOfflineDeviceEventRecoveryVerticalSlice(t *testing.T) {
 	}
 	eventsDescriptor, err := sdkadapterenumeventv1.NewEntityDescriptor(adapter.EntityMetadata{
 		Key: "events", ExternalID: "simulated-light.events", Name: "Events",
-	}, simulated.DeviceEventSupport())
+	}, simulated.EntityEventSupport())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -110,7 +110,7 @@ func TestCoreOfflineDeviceEventRecoveryVerticalSlice(t *testing.T) {
 	if err = simulated.Initialize(ctx, string(powerEntityID)); err != nil {
 		t.Fatal(err)
 	}
-	if err = simulated.InitializeDeviceEventSource(ctx, string(eventsEntityID)); err != nil {
+	if err = simulated.InitializeEntityEventSource(ctx, string(eventsEntityID)); err != nil {
 		t.Fatal(err)
 	}
 	waitForCoreHTTPStatus(ctx, t, client, firstAddress, "/readyz", firstErrors)
@@ -129,16 +129,16 @@ func TestCoreOfflineDeviceEventRecoveryVerticalSlice(t *testing.T) {
 	// durable stream and returns JetStream acknowledgements only.
 	expected := map[string]string{}
 	for _, name := range []string{
-		simulatoradapter.DeviceEventSinglePress,
-		simulatoradapter.DeviceEventDoublePress,
-		simulatoradapter.DeviceEventSinglePress,
+		simulatoradapter.EntityEventSinglePress,
+		simulatoradapter.EntityEventDoublePress,
+		simulatoradapter.EntityEventSinglePress,
 	} {
-		eventID, emitErr := simulated.EmitDeviceEvent(ctx, name)
+		eventID, emitErr := simulated.EmitEntityEvent(ctx, name)
 		if emitErr != nil {
-			t.Fatalf("offline EmitDeviceEvent(%q): %v", name, emitErr)
+			t.Fatalf("offline EmitEntityEvent(%q): %v", name, emitErr)
 		}
 		if eventID == "" {
-			t.Fatalf("offline EmitDeviceEvent(%q) returned no identity", name)
+			t.Fatalf("offline EmitEntityEvent(%q) returned no identity", name)
 		}
 		if _, duplicate := expected[string(eventID)]; duplicate {
 			t.Fatalf("offline reports reused event ID %s", eventID)
@@ -156,11 +156,11 @@ func TestCoreOfflineDeviceEventRecoveryVerticalSlice(t *testing.T) {
 		}
 		return retries >= 2, nil
 	})
-	lateEventID, err := simulated.EmitDeviceEvent(ctx, simulatoradapter.DeviceEventSinglePress)
+	lateEventID, err := simulated.EmitEntityEvent(ctx, simulatoradapter.EntityEventSinglePress)
 	if err != nil {
-		t.Fatalf("EmitDeviceEvent after missed heartbeats: %v", err)
+		t.Fatalf("EmitEntityEvent after missed heartbeats: %v", err)
 	}
-	expected[string(lateEventID)] = simulatoradapter.DeviceEventSinglePress
+	expected[string(lateEventID)] = simulatoradapter.EntityEventSinglePress
 	if stopped := recordsWithEvent(sessionRecords.snapshot(), "adapter.heartbeat_stopped"); len(stopped) != 0 {
 		t.Fatalf("missed heartbeats stopped the Session: %#v", stopped)
 	}
@@ -179,12 +179,12 @@ func TestCoreOfflineDeviceEventRecoveryVerticalSlice(t *testing.T) {
 	waitForCoreHTTPStatus(ctx, t, client, secondAddress, "/readyz", secondErrors)
 
 	// Every broker-acknowledged report is recorded exactly once after restart.
-	var collection devicesapi.EntityDeviceEventCollectionBody
+	var collection devicesapi.EntityEventCollectionBody
 	waitForMatrixCondition(t, 20*time.Second, func() (bool, error) {
-		collection = getEntityDeviceEvents(ctx, t, client, secondAddress, string(eventsEntityID))
+		collection = getEntityEvents(ctx, t, client, secondAddress, string(eventsEntityID))
 		return len(collection.Items) == len(expected), nil
 	})
-	recorded := map[string]devicesapi.EntityDeviceEventBody{}
+	recorded := map[string]devicesapi.EntityEventBody{}
 	for _, item := range collection.Items {
 		if _, duplicate := recorded[item.EventID]; duplicate {
 			t.Fatalf("event %s was recorded more than once", item.EventID)
@@ -197,7 +197,7 @@ func TestCoreOfflineDeviceEventRecoveryVerticalSlice(t *testing.T) {
 			t.Fatalf("event %s was not recorded", eventID)
 		}
 		if item.Name != wantName || item.EntityID != string(eventsEntityID) ||
-			item.Disposition != string(devices.DeviceEventDispositionAccepted) || item.RejectionCode != nil {
+			item.Disposition != string(devices.EntityEventDispositionAccepted) || item.RejectionCode != nil {
 			t.Fatalf("recorded event = %#v", item)
 		}
 	}
@@ -221,12 +221,12 @@ func TestCoreOfflineDeviceEventRecoveryVerticalSlice(t *testing.T) {
 // process.
 //
 //nolint:gocognit // The drain and restart sequence is clearer as one causal test.
-func TestDeviceEventDrainCommitsInFlightReportAndLeavesUnreadInputForNextProcess(t *testing.T) {
+func TestEntityEventDrainCommitsInFlightReportAndLeavesUnreadInputForNextProcess(t *testing.T) {
 	t.Parallel()
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 	logger := slog.New(slog.DiscardHandler)
-	server := startDeviceEventNATSServer(t)
+	server := startEntityEventNATSServer(t)
 	connection, err := natsgo.Connect(server.ClientURL())
 	if err != nil {
 		t.Fatal(err)
@@ -240,7 +240,7 @@ func TestDeviceEventDrainCommitsInFlightReportAndLeavesUnreadInputForNextProcess
 	if err != nil {
 		t.Fatal(err)
 	}
-	durable, err := devicesnats.ProvisionDeviceEventResources(ctx, js)
+	durable, err := devicesnats.ProvisionEntityEventResources(ctx, js)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -279,12 +279,12 @@ func TestDeviceEventDrainCommitsInFlightReportAndLeavesUnreadInputForNextProcess
 	}
 	entityID := binding.Entities[0].EntityID
 
-	recorder := newGatedDeviceEventRecorder(service)
-	deviceEvents, err := devicesnats.StartDeviceEventConsumer(ctx, durable, validator, recorder, logger)
+	recorder := newGatedEntityEventRecorder(service)
+	entityEvents, err := devicesnats.StartEntityEventConsumer(ctx, durable, validator, recorder, logger)
 	if err != nil {
 		t.Fatal(err)
 	}
-	committedEventID := publishDeviceEventForTest(
+	committedEventID := publishEntityEventForTest(
 		ctx, t, js, validator, "simulator", runtimeID, entityID,
 		"single_press", "evt_01890f47-7a6b-7c4d-8e9f-0123456789b1",
 	)
@@ -298,7 +298,7 @@ func TestDeviceEventDrainCommitsInFlightReportAndLeavesUnreadInputForNextProcess
 	// the consumer stops before its database and NATS dependencies.
 	drained := make(chan struct{})
 	go func() {
-		deviceEvents.Drain()
+		entityEvents.Drain()
 		close(drained)
 	}()
 	select {
@@ -314,45 +314,45 @@ func TestDeviceEventDrainCommitsInFlightReportAndLeavesUnreadInputForNextProcess
 		t.Fatal("drain did not finish after the in-flight report committed")
 	}
 	select {
-	case <-deviceEvents.Closed():
+	case <-entityEvents.Closed():
 	case <-time.After(5 * time.Second):
 		t.Fatal("drained consumer did not close")
 	}
-	if deviceEvents.Active() {
+	if entityEvents.Active() {
 		t.Fatal("drained consumer still reports active")
 	}
 	waitForMatrixCondition(t, 5*time.Second, func() (bool, error) {
-		return countDeviceEventRows(t, database, entityID) == 1, nil
+		return countEntityEventRows(t, database, entityID) == 1, nil
 	})
 
 	// Input the drained consumer never read stays in the stream and is
 	// recorded exactly once by the next Core process.
-	unreadEventID := publishDeviceEventForTest(
+	unreadEventID := publishEntityEventForTest(
 		ctx, t, js, validator, "simulator", runtimeID, entityID,
 		"single_press", "evt_01890f47-7a6b-7c4d-8e9f-0123456789b2",
 	)
-	if rows := countDeviceEventRows(t, database, entityID); rows != 1 {
-		t.Fatalf("device event rows before the next process = %d", rows)
+	if rows := countEntityEventRows(t, database, entityID); rows != 1 {
+		t.Fatalf("entity event rows before the next process = %d", rows)
 	}
-	nextDurable, err := devicesnats.ProvisionDeviceEventResources(ctx, js)
+	nextDurable, err := devicesnats.ProvisionEntityEventResources(ctx, js)
 	if err != nil {
 		t.Fatal(err)
 	}
-	nextProcess, err := devicesnats.StartDeviceEventConsumer(ctx, nextDurable, validator, service, logger)
+	nextProcess, err := devicesnats.StartEntityEventConsumer(ctx, nextDurable, validator, service, logger)
 	if err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(nextProcess.Stop)
 	waitForMatrixCondition(t, 5*time.Second, func() (bool, error) {
-		return countDeviceEventRows(t, database, entityID) == 2, nil
+		return countEntityEventRows(t, database, entityID) == 2, nil
 	})
-	history, err := service.ListEntityDeviceEvents(ctx, devices.ListEntityDeviceEventsParams{
+	history, err := service.ListEntityEvents(ctx, devices.ListEntityEventsParams{
 		EntityID: entityID, Limit: 50,
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	seen := map[devices.DeviceEventID]int{}
+	seen := map[devices.EntityEventID]int{}
 	for _, entry := range history.Items {
 		seen[entry.EventID]++
 	}
@@ -362,12 +362,12 @@ func TestDeviceEventDrainCommitsInFlightReportAndLeavesUnreadInputForNextProcess
 }
 
 // This test protects startup resource validation and fails if an incompatible
-// existing Device Event stream is accepted instead of failing the assembly.
-func TestCoreStartupRejectsIncompatibleDeviceEventResources(t *testing.T) {
+// existing Entity Event stream is accepted instead of failing the assembly.
+func TestCoreStartupRejectsIncompatibleEntityEventResources(t *testing.T) {
 	t.Parallel()
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
-	server := startDeviceEventNATSServer(t)
+	server := startEntityEventNATSServer(t)
 	connection, err := natsgo.Connect(server.ClientURL())
 	if err != nil {
 		t.Fatal(err)
@@ -378,8 +378,8 @@ func TestCoreStartupRejectsIncompatibleDeviceEventResources(t *testing.T) {
 		t.Fatal(err)
 	}
 	stream, err := js.CreateStream(ctx, jetstream.StreamConfig{
-		Name:     devicesnats.DeviceEventStreamName,
-		Subjects: []string{natswire.DeviceEventWildcard()},
+		Name:     devicesnats.EntityEventStreamName,
+		Subjects: []string{natswire.EntityEventWildcard()},
 		Storage:  jetstream.FileStorage,
 	})
 	if err != nil {
@@ -393,37 +393,37 @@ func TestCoreStartupRejectsIncompatibleDeviceEventResources(t *testing.T) {
 		NATSURL: server.ClientURL(), SQLitePath: filepath.Join(t.TempDir(), "hearth.db"),
 	}, slog.New(slog.DiscardHandler))
 	if runErr == nil {
-		t.Fatal("Run accepted an incompatible Device Event stream")
+		t.Fatal("Run accepted an incompatible Entity Event stream")
 	}
 	if stage := ErrorStage(runErr); stage != "provision_jetstream" {
 		t.Fatalf("Run stage = %q, want provision_jetstream (err: %v)", stage, runErr)
 	}
 }
 
-type gatedDeviceEventRecorder struct {
-	inner   devicesnats.DeviceEventRecorder
+type gatedEntityEventRecorder struct {
+	inner   devicesnats.EntityEventRecorder
 	once    sync.Once
 	entered chan struct{}
 	release chan struct{}
 }
 
-func newGatedDeviceEventRecorder(inner devicesnats.DeviceEventRecorder) *gatedDeviceEventRecorder {
-	return &gatedDeviceEventRecorder{inner: inner, entered: make(chan struct{}), release: make(chan struct{})}
+func newGatedEntityEventRecorder(inner devicesnats.EntityEventRecorder) *gatedEntityEventRecorder {
+	return &gatedEntityEventRecorder{inner: inner, entered: make(chan struct{}), release: make(chan struct{})}
 }
 
-func (recorder *gatedDeviceEventRecorder) RecordDeviceEvent(
+func (recorder *gatedEntityEventRecorder) RecordEntityEvent(
 	ctx context.Context,
 	adapterID string,
 	runtimeID devices.RuntimeID,
-	event devices.DeviceEvent,
+	event devices.EntityEvent,
 	receivedAt time.Time,
-) (devices.DeviceEventRecordResult, error) {
+) (devices.EntityEventRecordResult, error) {
 	recorder.once.Do(func() { close(recorder.entered) })
 	<-recorder.release
-	return recorder.inner.RecordDeviceEvent(ctx, adapterID, runtimeID, event, receivedAt)
+	return recorder.inner.RecordEntityEvent(ctx, adapterID, runtimeID, event, receivedAt)
 }
 
-func startDeviceEventNATSServer(t *testing.T) *natsserver.Server {
+func startEntityEventNATSServer(t *testing.T) *natsserver.Server {
 	t.Helper()
 	server, err := natsserver.NewServer(&natsserver.Options{
 		Host: "127.0.0.1", Port: -1, JetStream: true, StoreDir: t.TempDir(), NoSigs: true,
@@ -457,7 +457,7 @@ func bindingEntityID(t *testing.T, binding adapter.Binding, key string) devices.
 	return ""
 }
 
-func publishDeviceEventForTest(
+func publishEntityEventForTest(
 	ctx context.Context,
 	t *testing.T,
 	js jetstream.JetStream,
@@ -466,9 +466,9 @@ func publishDeviceEventForTest(
 	runtimeID devices.RuntimeID,
 	entityID devices.EntityID,
 	name, eventIDValue string,
-) devices.DeviceEventID {
+) devices.EntityEventID {
 	t.Helper()
-	eventID, err := devices.ParseDeviceEventID(eventIDValue)
+	eventID, err := devices.ParseEntityEventID(eventIDValue)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -476,17 +476,17 @@ func publishDeviceEventForTest(
 	if err != nil {
 		t.Fatal(err)
 	}
-	payload, err := natswire.Encode(validator, contractsv1.DeviceEventSchemaID,
-		natswire.Envelope[deviceEventWire]{
-			ID: string(eventID), Schema: contractsv1.DeviceEventSchemaID,
+	payload, err := natswire.Encode(validator, contractsv1.EntityEventSchemaID,
+		natswire.Envelope[entityEventWire]{
+			ID: string(eventID), Schema: contractsv1.EntityEventSchemaID,
 			EmittedAt: time.Now().UTC().Format(time.RFC3339Nano), CorrelationID: string(correlationID),
-			Data: deviceEventWire{EntityID: string(entityID), Name: name},
+			Data: entityEventWire{EntityID: string(entityID), Name: name},
 		},
 	)
 	if err != nil {
 		t.Fatal(err)
 	}
-	subject, err := natswire.DeviceEventSubject(adapterID, string(runtimeID), string(entityID))
+	subject, err := natswire.EntityEventSubject(adapterID, string(runtimeID), string(entityID))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -498,11 +498,11 @@ func publishDeviceEventForTest(
 	return eventID
 }
 
-func countDeviceEventRows(t *testing.T, database *sql.DB, entityID devices.EntityID) int {
+func countEntityEventRows(t *testing.T, database *sql.DB, entityID devices.EntityID) int {
 	t.Helper()
 	var rows int
 	if err := database.QueryRow(
-		`SELECT count(*) FROM device_events WHERE entity_id = ?`, string(entityID),
+		`SELECT count(*) FROM entity_events WHERE entity_id = ?`, string(entityID),
 	).Scan(&rows); err != nil {
 		t.Fatal(err)
 	}
@@ -524,12 +524,12 @@ func newNonPoolingHTTPClient(t *testing.T) *http.Client {
 	return &http.Client{Transport: transport}
 }
 
-func getEntityDeviceEvents(
+func getEntityEvents(
 	ctx context.Context,
 	t *testing.T,
 	client *http.Client,
 	baseURL, entityID string,
-) devicesapi.EntityDeviceEventCollectionBody {
+) devicesapi.EntityEventCollectionBody {
 	t.Helper()
 	request, err := http.NewRequestWithContext(
 		ctx, http.MethodGet, "http://"+baseURL+"/v1/entities/"+entityID+"/events?limit=50", nil,
@@ -539,7 +539,7 @@ func getEntityDeviceEvents(
 	}
 	response, err := client.Do(request)
 	if err != nil {
-		return devicesapi.EntityDeviceEventCollectionBody{}
+		return devicesapi.EntityEventCollectionBody{}
 	}
 	defer response.Body.Close()
 	body, err := io.ReadAll(response.Body)
@@ -549,7 +549,7 @@ func getEntityDeviceEvents(
 	if response.StatusCode != http.StatusOK {
 		t.Fatalf("event history status = %d, body = %s", response.StatusCode, body)
 	}
-	var collection devicesapi.EntityDeviceEventCollectionBody
+	var collection devicesapi.EntityEventCollectionBody
 	if decodeErr := json.Unmarshal(body, &collection); decodeErr != nil {
 		t.Fatal(decodeErr)
 	}

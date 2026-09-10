@@ -299,10 +299,10 @@ CREATE INDEX health_transitions_entity_history_idx
     ON health_transitions(entity_id, receive_order DESC)
     WHERE resource_kind = 'entity';
 
--- Device Events are first-seen occurrence reports, not State: the row is the
+-- Entity Events are first-seen occurrence reports, not State: the row is the
 -- history record and the duplicate guard at the same time, and it holds no
 -- foreign keys so a report survives runtime, ownership, and descriptor churn.
-CREATE TABLE device_events (
+CREATE TABLE entity_events (
     receive_order  INTEGER PRIMARY KEY AUTOINCREMENT,
     event_id       TEXT NOT NULL UNIQUE CHECK (
         length(event_id) = 40 AND substr(event_id, 1, 4) = 'evt_'
@@ -346,11 +346,11 @@ CREATE TABLE device_events (
     )
 );
 
-CREATE INDEX device_events_entity_history_idx
-    ON device_events(entity_id, receive_order DESC);
+CREATE INDEX entity_events_entity_history_idx
+    ON entity_events(entity_id, receive_order DESC);
 
-CREATE INDEX device_events_retention_idx
-    ON device_events(recorded_at, receive_order);
+CREATE INDEX entity_events_retention_idx
+    ON entity_events(recorded_at, receive_order);
 
 CREATE VIEW entity_read_projection AS
 SELECT
@@ -388,9 +388,9 @@ LEFT JOIN entity_availability_current AS current
 
 -- +goose Down
 DROP VIEW entity_read_projection;
-DROP INDEX device_events_retention_idx;
-DROP INDEX device_events_entity_history_idx;
-DROP TABLE device_events;
+DROP INDEX entity_events_retention_idx;
+DROP INDEX entity_events_entity_history_idx;
+DROP TABLE entity_events;
 DROP INDEX health_transitions_entity_history_idx;
 DROP INDEX health_transitions_adapter_history_idx;
 DROP TABLE health_transitions;

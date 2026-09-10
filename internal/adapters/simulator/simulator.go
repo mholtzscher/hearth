@@ -29,13 +29,13 @@ const (
 	ScenarioDelayedSourceTime   = "delayed-source-time"
 	ScenarioFutureClockSkew     = "future-clock-skew"
 	ScenarioRestartBeforeAck    = "restart-before-ack"
-	ScenarioDeviceEvents        = "device-events"
+	ScenarioEntityEvents        = "entity-events"
 
-	// DeviceEventSinglePress and DeviceEventDoublePress are the synthetic
-	// report names the device-events scenario support advertises and the
+	// EntityEventSinglePress and EntityEventDoublePress are the synthetic
+	// report names the entity-events scenario support advertises and the
 	// operator input loop accepts.
-	DeviceEventSinglePress = "single_press"
-	DeviceEventDoublePress = "double_press"
+	EntityEventSinglePress = "single_press"
+	EntityEventDoublePress = "double_press"
 )
 
 func ValidScenario(value string) bool {
@@ -43,7 +43,7 @@ func ValidScenario(value string) bool {
 	case ScenarioHappy, ScenarioAdapterUnhealthy, ScenarioEntityUnavailable, ScenarioUpstreamRejection,
 		ScenarioOutcomeTimeout, ScenarioNoOpRefresh, ScenarioOverlappingCommands,
 		ScenarioInterruptedCommand, ScenarioDelayedSourceTime, ScenarioFutureClockSkew,
-		ScenarioRestartBeforeAck, ScenarioDeviceEvents:
+		ScenarioRestartBeforeAck, ScenarioEntityEvents:
 		return true
 	default:
 		return false
@@ -52,7 +52,7 @@ func ValidScenario(value string) bool {
 
 type Session interface {
 	PublishObservation(context.Context, adapter.Observation) (adapter.ObservationID, error)
-	PublishDeviceEvent(context.Context, adapter.DeviceEvent) (adapter.DeviceEventID, error)
+	PublishEntityEvent(context.Context, adapter.EntityEvent) (adapter.EntityEventID, error)
 	SetHealth(context.Context, adapter.HealthReport) error
 	ReportEntityAvailability(context.Context, []adapter.EntityAvailabilityReport) error
 }
@@ -87,25 +87,25 @@ func New(session Session, scenario string) (*Adapter, error) {
 
 func (simulator *Adapter) Support() contractpowerv1.Support { return simulator.support }
 
-// DeviceEventSupport returns the generated support for the scenario's event
+// EntityEventSupport returns the generated support for the scenario's event
 // source Entity: no State, no Operations, and exactly the synthetic report
 // names the operator input loop publishes.
-func (simulator *Adapter) DeviceEventSupport() contractenumeventv1.Support {
+func (simulator *Adapter) EntityEventSupport() contractenumeventv1.Support {
 	return contractenumeventv1.Support{
 		State:      contractenumeventv1.StateSupport{},
 		Operations: contractenumeventv1.OperationSupport{},
 		Events: contractenumeventv1.SupportEvents{
 			Names: contractenumeventv1.SupportEventsNames{
-				DeviceEventSinglePress, DeviceEventDoublePress,
+				EntityEventSinglePress, EntityEventDoublePress,
 			},
 		},
 	}
 }
 
-// InitializeDeviceEventSource binds the canonical ID of a registered event
-// source Entity and reports it available. EmitDeviceEvent refuses to publish
+// InitializeEntityEventSource binds the canonical ID of a registered event
+// source Entity and reports it available. EmitEntityEvent refuses to publish
 // before this call, so the simulator never guesses an Entity identity.
-func (simulator *Adapter) InitializeDeviceEventSource(ctx context.Context, entityID string) error {
+func (simulator *Adapter) InitializeEntityEventSource(ctx context.Context, entityID string) error {
 	if entityID == "" {
 		return errors.New("event source Entity ID is required")
 	}
@@ -120,24 +120,24 @@ func (simulator *Adapter) InitializeDeviceEventSource(ctx context.Context, entit
 	return nil
 }
 
-// EmitDeviceEvent validates one reported name against the generated event
+// EmitEntityEvent validates one reported name against the generated event
 // source support and publishes it as a synthetic report. It is deterministic:
 // tests call it directly instead of driving standard input, and the generated
 // facade owns support and name validation.
-func (simulator *Adapter) EmitDeviceEvent(ctx context.Context, name string) (adapter.DeviceEventID, error) {
+func (simulator *Adapter) EmitEntityEvent(ctx context.Context, name string) (adapter.EntityEventID, error) {
 	simulator.mutex.Lock()
 	entityID := simulator.eventEntityID
 	simulator.mutex.Unlock()
 	if entityID == "" {
 		return "", errors.New("event source Entity is not initialized")
 	}
-	event, err := sdkadapterenumeventv1.NewDeviceEvent(sdkadapterenumeventv1.DeviceEventInput{
-		EntityID: entityID, Support: simulator.DeviceEventSupport(), Name: name,
+	event, err := sdkadapterenumeventv1.NewEntityEvent(sdkadapterenumeventv1.EntityEventInput{
+		EntityID: entityID, Support: simulator.EntityEventSupport(), Name: name,
 	})
 	if err != nil {
 		return "", err
 	}
-	return simulator.session.PublishDeviceEvent(ctx, event)
+	return simulator.session.PublishEntityEvent(ctx, event)
 }
 
 func (simulator *Adapter) Initialize(ctx context.Context, entityID string) error {

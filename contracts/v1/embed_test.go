@@ -45,9 +45,9 @@ func TestSchemaFixtures(t *testing.T) {
 			"correlation_id":"cor_01890f47-7a6b-7c4d-8e9f-0123456789ab",
 			"data":{"entity_id":"ent_01890f47-7a6b-7c4d-8e9f-0123456789ab","value":false,"adapter_received_at":"2026-08-20T12:34:56Z"}
 		}`,
-		contractsv1.DeviceEventSchemaID: `{
+		contractsv1.EntityEventSchemaID: `{
 			"id":"evt_01890f47-7a6b-7c4d-8e9f-0123456789ab",
-			"schema":"urn:hearth:schema:device-event:v1",
+			"schema":"urn:hearth:schema:entity-event:v1",
 			"emitted_at":"2026-08-20T12:34:56.123456789Z",
 			"correlation_id":"cor_01890f47-7a6b-7c4d-8e9f-0123456789ab",
 			"data":{"entity_id":"ent_01890f47-7a6b-7c4d-8e9f-0123456789ab","name":"single_press"}
@@ -290,12 +290,12 @@ func TestEntityEnablementAndRegistrationBooleanShapes(t *testing.T) {
 	}
 }
 
-// TestDeviceEventSchemaEnforcesStrictEnvelope pins the durable report contract:
+// TestEntityEventSchemaEnforcesStrictEnvelope pins the durable report contract:
 // one canonical evt_ identity, one slug name, UTC SDK time, and no causation,
 // Command link, payload, or source time.
-func TestDeviceEventSchemaEnforcesStrictEnvelope(t *testing.T) {
+func TestEntityEventSchemaEnforcesStrictEnvelope(t *testing.T) {
 	t.Parallel()
-	schema := compileSchemas(t)[contractsv1.DeviceEventSchemaID]
+	schema := compileSchemas(t)[contractsv1.EntityEventSchemaID]
 	for _, test := range []struct {
 		name     string
 		mutate   func(value map[string]any)
@@ -326,31 +326,31 @@ func TestDeviceEventSchemaEnforcesStrictEnvelope(t *testing.T) {
 		}},
 		{name: "missing emitted time", mutate: func(value map[string]any) { delete(value, "emitted_at") }},
 		{name: "wrong entity prefix", mutate: func(value map[string]any) {
-			deviceEventData(value)["entity_id"] = "dev_01890f47-7a6b-7c4d-8e9f-0123456789ab"
+			entityEventData(value)["entity_id"] = "dev_01890f47-7a6b-7c4d-8e9f-0123456789ab"
 		}},
-		{name: "missing name", mutate: func(value map[string]any) { delete(deviceEventData(value), "name") }},
+		{name: "missing name", mutate: func(value map[string]any) { delete(entityEventData(value), "name") }},
 		{name: "uppercase name", mutate: func(value map[string]any) {
-			deviceEventData(value)["name"] = "Single_Press"
+			entityEventData(value)["name"] = "Single_Press"
 		}},
 		{name: "spaced name", mutate: func(value map[string]any) {
-			deviceEventData(value)["name"] = "single press"
+			entityEventData(value)["name"] = "single press"
 		}},
 		{name: "dot name", mutate: func(value map[string]any) {
-			deviceEventData(value)["name"] = "single.press"
+			entityEventData(value)["name"] = "single.press"
 		}},
 		{name: "overlong name", mutate: func(value map[string]any) {
-			deviceEventData(value)["name"] = strings.Repeat("a", 64)
+			entityEventData(value)["name"] = strings.Repeat("a", 64)
 		}},
 		{name: "payload is refused", mutate: func(value map[string]any) {
-			deviceEventData(value)["payload"] = map[string]any{"battery": 90}
+			entityEventData(value)["payload"] = map[string]any{"battery": 90}
 		}},
 		{name: "source time is refused", mutate: func(value map[string]any) {
-			deviceEventData(value)["source_updated_at"] = "2026-08-20T12:34:56Z"
+			entityEventData(value)["source_updated_at"] = "2026-08-20T12:34:56Z"
 		}},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
-			value := decodeDeviceEventFixture(t)
+			value := decodeEntityEventFixture(t)
 			if test.mutate != nil {
 				test.mutate(value)
 			}
@@ -362,16 +362,16 @@ func TestDeviceEventSchemaEnforcesStrictEnvelope(t *testing.T) {
 	}
 }
 
-func deviceEventData(value map[string]any) map[string]any {
+func entityEventData(value map[string]any) map[string]any {
 	return value["data"].(map[string]any)
 }
 
-func decodeDeviceEventFixture(t *testing.T) map[string]any {
+func decodeEntityEventFixture(t *testing.T) map[string]any {
 	t.Helper()
 	var value map[string]any
 	if err := json.Unmarshal([]byte(`{
 		"id":"evt_01890f47-7a6b-7c4d-8e9f-0123456789ab",
-		"schema":"urn:hearth:schema:device-event:v1",
+		"schema":"urn:hearth:schema:entity-event:v1",
 		"emitted_at":"2026-08-20T12:34:56.123456789Z",
 		"correlation_id":"cor_01890f47-7a6b-7c4d-8e9f-0123456789ab",
 		"data":{"entity_id":"ent_01890f47-7a6b-7c4d-8e9f-0123456789ab","name":"single_press"}
@@ -381,10 +381,10 @@ func decodeDeviceEventFixture(t *testing.T) map[string]any {
 	return value
 }
 
-// TestDeviceEventIDIsNotACausationID pins the deliberate omission: this slice
+// TestEntityEventIDIsNotACausationID pins the deliberate omission: this slice
 // produces no message caused by an event, so an evt_ identity must not satisfy
 // the shared causation union even though the definition is registered.
-func TestDeviceEventIDIsNotACausationID(t *testing.T) {
+func TestEntityEventIDIsNotACausationID(t *testing.T) {
 	t.Parallel()
 	schema := compileSchemas(t)[contractsv1.RegistrationRequestSchemaID]
 	for _, test := range []struct {
@@ -398,7 +398,7 @@ func TestDeviceEventIDIsNotACausationID(t *testing.T) {
 			accepted:    true,
 		},
 		{
-			name:        "device event causation",
+			name:        "entity event causation",
 			causationID: "evt_01890f47-7a6b-7c4d-8e9f-0123456789ab",
 		},
 	} {

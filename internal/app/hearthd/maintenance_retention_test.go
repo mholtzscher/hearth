@@ -12,7 +12,7 @@ import (
 	platformdb "github.com/mholtzscher/hearth/internal/platform/db"
 )
 
-// This test protects the single hourly maintenance pass and fails if Device
+// This test protects the single hourly maintenance pass and fails if Entity
 // Event retention is not wired into it, if Observation pruning stops running
 // beside it, or if the pass sweeps rows inside a window. The injected interval
 // keeps the pass testable without waiting an hour.
@@ -29,8 +29,8 @@ func TestMaintenancePrunesBothRetentions(t *testing.T) {
 		t.Fatal(migrateErr)
 	}
 	seedMaintenanceRetentionRows(ctx, t, database)
-	if count := countRetentionRows(ctx, database, "device_events"); count != 2 {
-		t.Fatalf("seeded device events = %d, want 2", count)
+	if count := countRetentionRows(ctx, database, "entity_events"); count != 2 {
+		t.Fatalf("seeded entity events = %d, want 2", count)
 	}
 	if count := countRetentionRows(ctx, database, "observations"); count != 2 {
 		t.Fatalf("seeded observations = %d, want 2", count)
@@ -55,7 +55,7 @@ func TestMaintenancePrunesBothRetentions(t *testing.T) {
 		)
 	}()
 	waitForMatrixCondition(t, 10*time.Second, func() (bool, error) {
-		return countRetentionRows(ctx, database, "device_events") == 1 &&
+		return countRetentionRows(ctx, database, "entity_events") == 1 &&
 			countRetentionRows(ctx, database, "observations") == 1, nil
 	})
 	cancelRun()
@@ -67,7 +67,7 @@ func TestMaintenancePrunesBothRetentions(t *testing.T) {
 
 	// Only the rows inside their window survive, and the worker touched both
 	// retentions in the same pass.
-	assertRetentionIDs(ctx, t, database, "device_events", "event_id",
+	assertRetentionIDs(ctx, t, database, "entity_events", "event_id",
 		[]string{"evt_01890f47-7a6b-7c4d-8e9f-0123456789b2"})
 	assertRetentionIDs(ctx, t, database, "observations", "observation_id",
 		[]string{"obs_01890f47-7a6b-7c4d-8e9f-0123456789a2"})
@@ -96,7 +96,7 @@ func seedMaintenanceRetentionRows(ctx context.Context, t *testing.T, database *s
 		t.Fatal(err)
 	}
 	if _, err := database.ExecContext(ctx, `
-		INSERT INTO device_events (
+		INSERT INTO entity_events (
 			event_id, adapter_id, runtime_id, entity_id, correlation_id, name,
 			fingerprint, disposition, rejection_code, emitted_at, received_at, recorded_at
 		) VALUES

@@ -16,12 +16,12 @@ import (
 	simulatorapp "github.com/mholtzscher/hearth/internal/app/simulator"
 )
 
-// This test protects the device-events scenario assembly and fails if the
+// This test protects the entity-events scenario assembly and fails if the
 // scenario drops the power Entity, omits the generated event-source Entity, or
 // reports the event source with State instead of Events support.
 //
 //nolint:gocognit // One assembly sequence keeps registration and Entity reads causal.
-func TestRunDeviceEventsRegistersEventSourceBesidePower(t *testing.T) {
+func TestRunEntityEventsRegistersEventSourceBesidePower(t *testing.T) {
 	t.Parallel()
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()
@@ -56,13 +56,13 @@ func TestRunDeviceEventsRegistersEventSourceBesidePower(t *testing.T) {
 			AdapterID:  "simulator",
 			NATSURL:    server.ClientURL(),
 			BindingKey: "simulated-light",
-			Scenario:   simulatoradapter.ScenarioDeviceEvents,
+			Scenario:   simulatoradapter.ScenarioEntityEvents,
 		}, logger)
 	}()
 
 	initialized := waitForLifecycleEvent(t, recorder, "simulator.initialized", 10*time.Second)
 	if scenario, ok := lifecycleAttr(initialized, "scenario"); !ok ||
-		scenario.String() != simulatoradapter.ScenarioDeviceEvents {
+		scenario.String() != simulatoradapter.ScenarioEntityEvents {
 		t.Fatalf("simulator.initialized = %#v", initialized)
 	}
 	if entityID, ok := lifecycleAttr(initialized, "entity_id"); !ok || entityID.String() == "" {
@@ -94,7 +94,7 @@ func TestRunDeviceEventsRegistersEventSourceBesidePower(t *testing.T) {
 	}
 	support := string(events.Entity.Support)
 	for _, name := range []string{
-		simulatoradapter.DeviceEventSinglePress, simulatoradapter.DeviceEventDoublePress,
+		simulatoradapter.EntityEventSinglePress, simulatoradapter.EntityEventDoublePress,
 	} {
 		if !strings.Contains(support, name) {
 			t.Fatalf("event source support %s omitted %q", support, name)

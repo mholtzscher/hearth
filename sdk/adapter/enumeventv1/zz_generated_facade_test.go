@@ -163,7 +163,7 @@ func TestGeneratedEntityDescriptor(t *testing.T) {
 	}
 }
 
-func TestGeneratedDeviceEventConformance(t *testing.T) {
+func TestGeneratedEntityEventConformance(t *testing.T) {
 	codecs, err := codecs()
 	if err != nil {
 		t.Fatal(err)
@@ -173,35 +173,35 @@ func TestGeneratedDeviceEventConformance(t *testing.T) {
 		t.Fatalf("support: %v", err)
 	}
 	if len(support.Events.Names) != 3 {
-		t.Fatalf("Device Event names = %v", support.Events.Names)
+		t.Fatalf("Entity Event names = %v", support.Events.Names)
 	}
 	supportedName := string(support.Events.Names[0])
-	event, err := NewDeviceEvent(DeviceEventInput{EntityID: "ent_01890f47-7a6b-7c4d-8e9f-0123456789ab", Support: support, Name: supportedName})
+	event, err := NewEntityEvent(EntityEventInput{EntityID: "ent_01890f47-7a6b-7c4d-8e9f-0123456789ab", Support: support, Name: supportedName})
 	if err != nil {
-		t.Fatalf("Device Event: %v", err)
+		t.Fatalf("Entity Event: %v", err)
 	}
 	if event.EntityID != "ent_01890f47-7a6b-7c4d-8e9f-0123456789ab" || event.Name != supportedName {
-		t.Errorf("Device Event = %+v", event)
+		t.Errorf("Entity Event = %+v", event)
 	}
-	if _, err := NewDeviceEvent(DeviceEventInput{EntityID: "ent_01890f47-7a6b-7c4d-8e9f-0123456789ab", Support: support, Name: "unknown"}); err == nil {
-		t.Error("unsupported Device Event name was accepted")
+	if _, err := NewEntityEvent(EntityEventInput{EntityID: "ent_01890f47-7a6b-7c4d-8e9f-0123456789ab", Support: support, Name: "unknown"}); err == nil {
+		t.Error("unsupported Entity Event name was accepted")
 	} else {
-		requireValidationError(t, err, "reject unsupported Device Event name")
+		requireValidationError(t, err, "reject unsupported Entity Event name")
 	}
-	if _, err := NewDeviceEvent(DeviceEventInput{EntityID: "ent_01890f47-7a6b-7c4d-8e9f-0123456789ab", Support: support, Name: "not a name"}); err == nil {
-		t.Error("non-canonical Device Event name was accepted")
+	if _, err := NewEntityEvent(EntityEventInput{EntityID: "ent_01890f47-7a6b-7c4d-8e9f-0123456789ab", Support: support, Name: "not a name"}); err == nil {
+		t.Error("non-canonical Entity Event name was accepted")
 	} else {
-		requireValidationError(t, err, "reject non-canonical Device Event name")
+		requireValidationError(t, err, "reject non-canonical Entity Event name")
 	}
-	if _, err := NewDeviceEvent(DeviceEventInput{Support: support, Name: supportedName}); err == nil {
-		t.Error("Device Event without an entity ID was accepted")
+	if _, err := NewEntityEvent(EntityEventInput{Support: support, Name: supportedName}); err == nil {
+		t.Error("Entity Event without an entity ID was accepted")
 	} else {
 		requireValidationError(t, err, "reject empty entity ID")
 	}
 	invalidSupport := support
 	invalidSupport.Events.Names = nil
-	if _, err := NewDeviceEvent(DeviceEventInput{EntityID: "ent_01890f47-7a6b-7c4d-8e9f-0123456789ab", Support: invalidSupport, Name: supportedName}); err == nil {
-		t.Error("Device Event with invalid Entity support was accepted")
+	if _, err := NewEntityEvent(EntityEventInput{EntityID: "ent_01890f47-7a6b-7c4d-8e9f-0123456789ab", Support: invalidSupport, Name: supportedName}); err == nil {
+		t.Error("Entity Event with invalid Entity support was accepted")
 	} else {
 		requireValidationError(t, err, "reject invalid Entity support")
 	}

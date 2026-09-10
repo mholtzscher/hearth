@@ -71,7 +71,7 @@ func TestCoreNATSTransportRegistersAndProjectsDurableObservation(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	deviceEventConsumer, err := devicesnats.ProvisionDeviceEventResources(ctx, js)
+	entityEventConsumer, err := devicesnats.ProvisionEntityEventResources(ctx, js)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -94,11 +94,11 @@ func TestCoreNATSTransportRegistersAndProjectsDurableObservation(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(observations.Stop)
-	deviceEvents, err := devicesnats.StartDeviceEventConsumer(ctx, deviceEventConsumer, validator, service, logger)
+	entityEvents, err := devicesnats.StartEntityEventConsumer(ctx, entityEventConsumer, validator, service, logger)
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(deviceEvents.Stop)
+	t.Cleanup(entityEvents.Stop)
 
 	session, err := adapter.Connect(ctx, adapter.Config{
 		AdapterID: "simulator", SoftwareName: "hearth-simulator",
@@ -160,7 +160,7 @@ func TestCoreNATSTransportRegistersAndProjectsDurableObservation(t *testing.T) {
 	).Scan(&runtimeID); scanErr != nil {
 		t.Fatal(scanErr)
 	}
-	readiness := NewRuntimeReadiness(database, coreConnection, js, observations, deviceEvents)
+	readiness := NewRuntimeReadiness(database, coreConnection, js, observations, entityEvents)
 	if readinessErr := readiness.Check(ctx); readinessErr != nil {
 		t.Fatal(readinessErr)
 	}

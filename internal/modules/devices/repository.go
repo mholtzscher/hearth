@@ -29,7 +29,7 @@ var (
 	ErrOutcomeTimeout             = errors.New("command outcome timeout")
 	ErrEntityDisabled             = errors.New("entity disabled")
 	ErrEntityWrongAdapter         = errors.New("entity belongs to another adapter")
-	ErrInvalidDeviceEvent         = errors.New("invalid device event")
+	ErrInvalidEntityEvent         = errors.New("invalid entity event")
 )
 
 type RegisterEntityParams struct {
@@ -114,13 +114,13 @@ type ObservationRepository interface {
 	DeleteExpiredObservations(context.Context, time.Time) error
 }
 
-// DeviceEventRepository stores first-seen Device Event reports and their
+// EntityEventRepository stores first-seen Entity Event reports and their
 // disposition. The row doubles as history and as the duplicate guard, so a
 // repeated event ID never creates a second row.
-type DeviceEventRepository interface {
-	RecordDeviceEvent(context.Context, RecordDeviceEventParams) (DeviceEventRecordResult, error)
-	ListEntityDeviceEvents(context.Context, ListEntityDeviceEventsParams) (Page[DeviceEventHistoryEntry], error)
-	DeleteDeviceEventsBefore(context.Context, time.Time, int) (int64, error)
+type EntityEventRepository interface {
+	RecordEntityEvent(context.Context, RecordEntityEventParams) (EntityEventRecordResult, error)
+	ListEntityEvents(context.Context, ListEntityEventsParams) (Page[EntityEventHistoryEntry], error)
+	DeleteEntityEventsBefore(context.Context, time.Time, int) (int64, error)
 }
 
 type CommandLedger interface {

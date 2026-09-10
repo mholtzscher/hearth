@@ -19,7 +19,7 @@ type OperationSupport = contractenumeventv1.OperationSupport
 type SupportEvents = contractenumeventv1.SupportEvents
 
 // Event-source entity types carry no State observations and no Operations;
-// the facade defines only typed support and Device Event name behavior.
+// the facade defines only typed support and Entity Event name behavior.
 
 var (
 	compileOnce  sync.Once
@@ -42,33 +42,33 @@ func NewEntityDescriptor(metadata adapter.EntityMetadata, support Support) (adap
 	return descriptor, nil
 }
 
-// DeviceEventInput carries one Device Event report for typed validation.
-type DeviceEventInput struct {
+// EntityEventInput carries one Entity Event report for typed validation.
+type EntityEventInput struct {
 	EntityID string
 	Support  Support
 	Name     string
 }
 
-// NewDeviceEvent validates Entity identity, Entity support, and the reported
+// NewEntityEvent validates Entity identity, Entity support, and the reported
 // name, then returns the report a Session publishes.
-func NewDeviceEvent(input DeviceEventInput) (adapter.DeviceEvent, error) {
+func NewEntityEvent(input EntityEventInput) (adapter.EntityEvent, error) {
 	codecs, err := codecs()
 	if err != nil {
-		return adapter.DeviceEvent{}, err
+		return adapter.EntityEvent{}, err
 	}
 	if input.EntityID == "" {
-		return adapter.DeviceEvent{}, validationError(errors.New("Device Event entity ID is required"))
+		return adapter.EntityEvent{}, validationError(errors.New("Entity Event entity ID is required"))
 	}
 	if _, err := codecs.Support.Encode(input.Support); err != nil {
-		return adapter.DeviceEvent{}, validationError(fmt.Errorf("invalid Entity support: %w", err))
+		return adapter.EntityEvent{}, validationError(fmt.Errorf("invalid Entity support: %w", err))
 	}
 	if err := contractenumeventv1.ValidateSupport(input.Support); err != nil {
-		return adapter.DeviceEvent{}, validationError(fmt.Errorf("invalid Entity support: %w", err))
+		return adapter.EntityEvent{}, validationError(fmt.Errorf("invalid Entity support: %w", err))
 	}
-	if err := contractenumeventv1.ValidateDeviceEventName(input.Support, input.Name); err != nil {
-		return adapter.DeviceEvent{}, validationError(err)
+	if err := contractenumeventv1.ValidateEntityEventName(input.Support, input.Name); err != nil {
+		return adapter.EntityEvent{}, validationError(err)
 	}
-	return adapter.DeviceEvent{EntityID: input.EntityID, Name: input.Name}, nil
+	return adapter.EntityEvent{EntityID: input.EntityID, Name: input.Name}, nil
 }
 
 func codecs() (*contractenumeventv1.Codecs, error) {

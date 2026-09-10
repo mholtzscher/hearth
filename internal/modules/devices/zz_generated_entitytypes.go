@@ -239,7 +239,7 @@ func newEnumeventV1TypeDefinition(id EntityTypeID) (EntityTypeDefinition, error)
 		contractenumeventv1.ValidateSupport,
 		contractenumeventv1.ValidateState,
 		contractenumeventv1.EqualState,
-		contractenumeventv1.DeviceEventNames,
+		contractenumeventv1.EntityEventNames,
 	)
 	if err != nil {
 		return EntityTypeDefinition{}, err

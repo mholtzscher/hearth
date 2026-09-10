@@ -13,14 +13,14 @@ import (
 	platformdb "github.com/mholtzscher/hearth/internal/platform/db"
 )
 
-const deviceEventAPIAdapter = "simulator"
+const entityEventAPIAdapter = "simulator"
 
-const deviceEventAPIRuntimeID = devices.RuntimeID("run_01890f47-7a6b-7c4d-8e9f-0123456789ab")
+const entityEventAPIRuntimeID = devices.RuntimeID("run_01890f47-7a6b-7c4d-8e9f-0123456789ab")
 
-// deviceEventAPIFixture assembles the real devices Service over real SQLite and
+// entityEventAPIFixture assembles the real devices Service over real SQLite and
 // the real Huma route, so history reads exercise SQL, domain validation, and
 // transport mapping together.
-type deviceEventAPIFixture struct {
+type entityEventAPIFixture struct {
 	router   http.Handler
 	service  *devices.Service
 	database *sql.DB
@@ -28,7 +28,7 @@ type deviceEventAPIFixture struct {
 	power    devices.EntityID
 }
 
-func newDeviceEventAPIFixture(t *testing.T) deviceEventAPIFixture {
+func newEntityEventAPIFixture(t *testing.T) entityEventAPIFixture {
 	t.Helper()
 	ctx := context.Background()
 	database, err := platformdb.Open(ctx, filepath.Join(t.TempDir(), "hearth.db"))
@@ -49,14 +49,14 @@ func newDeviceEventAPIFixture(t *testing.T) deviceEventAPIFixture {
 		Now: func() time.Time { return now },
 	})
 	if claimErr := repository.ClaimAdapterRuntime(ctx, devices.ClaimRuntimeWrite{
-		RuntimeID: deviceEventAPIRuntimeID, AdapterID: deviceEventAPIAdapter,
+		RuntimeID: entityEventAPIRuntimeID, AdapterID: entityEventAPIAdapter,
 		SoftwareName: "hearth-simulator", SoftwareVersion: "0.1.0",
 		ClaimedAt: now, LeaseExpiresAt: now.Add(time.Hour),
 	}); claimErr != nil {
 		t.Fatal(claimErr)
 	}
 	externalID := "sim-buttons"
-	binding, err := service.Register(ctx, deviceEventAPIAdapter, deviceEventAPIRuntimeID, devices.Registration{
+	binding, err := service.Register(ctx, entityEventAPIAdapter, entityEventAPIRuntimeID, devices.Registration{
 		BindingKey: "office-buttons",
 		Device: devices.DeviceDescriptor{
 			ExternalID: &externalID, Name: "Office buttons", Kind: devices.DeviceKindSensor,
@@ -80,7 +80,7 @@ func newDeviceEventAPIFixture(t *testing.T) deviceEventAPIFixture {
 		t.Fatal(err)
 	}
 	router, _ := testAPI(t, service)
-	return deviceEventAPIFixture{
+	return entityEventAPIFixture{
 		router: router, service: service, database: database,
 		buttons: binding.Entities[0].EntityID, power: binding.Entities[1].EntityID,
 	}
@@ -88,9 +88,9 @@ func newDeviceEventAPIFixture(t *testing.T) deviceEventAPIFixture {
 
 // record publishes one report for the event-source Entity with the client-owned
 // minted identity the wire path would produce.
-func (fixture deviceEventAPIFixture) record(t *testing.T, name string, emittedAt time.Time) {
+func (fixture entityEventAPIFixture) record(t *testing.T, name string, emittedAt time.Time) {
 	t.Helper()
-	eventID, err := devices.NewDeviceEventID()
+	eventID, err := devices.NewEntityEventID()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -98,9 +98,9 @@ func (fixture deviceEventAPIFixture) record(t *testing.T, name string, emittedAt
 	if correlationErr != nil {
 		t.Fatal(correlationErr)
 	}
-	if _, recordErr := fixture.service.RecordDeviceEvent(
-		context.Background(), deviceEventAPIAdapter, deviceEventAPIRuntimeID, devices.DeviceEvent{
-			ID: eventID, EntityID: fixture.buttons, Name: devices.DeviceEventName(name),
+	if _, recordErr := fixture.service.RecordEntityEvent(
+		context.Background(), entityEventAPIAdapter, entityEventAPIRuntimeID, devices.EntityEvent{
+			ID: eventID, EntityID: fixture.buttons, Name: devices.EntityEventName(name),
 			CorrelationID: correlationID, EmittedAt: emittedAt,
 		}, emittedAt.Add(time.Minute),
 	); recordErr != nil {
@@ -108,7 +108,7 @@ func (fixture deviceEventAPIFixture) record(t *testing.T, name string, emittedAt
 	}
 }
 
-func countDeviceEventAPIRows(t *testing.T, database *sql.DB, table string) int {
+func countEntityEventAPIRows(t *testing.T, database *sql.DB, table string) int {
 	t.Helper()
 	var count int
 	if err := database.QueryRow("SELECT count(*) FROM " + table).Scan(&count); err != nil {
@@ -121,9 +121,9 @@ func countDeviceEventAPIRows(t *testing.T, database *sql.DB, table string) int {
 // behavior through real SQLite and the Huma route. It fails if page order
 // follows emitted_at instead of Core receive order, if a rejection code or
 // timestamp drifts, or if an internal identifier leaks.
-func TestEntityDeviceEventHistoryThroughRealSQLiteAndHumaRoute(t *testing.T) {
+func TestEntityEventHistoryThroughRealSQLiteAndHumaRoute(t *testing.T) {
 	t.Parallel()
-	fixture := newDeviceEventAPIFixture(t)
+	fixture := newEntityEventAPIFixture(t)
 	// Receive order is A, B, C. C claims the oldest emitted_at, so page order
 	// must disagree with emitted_at order and follow Core receive order.
 	fixture.record(t, "single_press", time.Date(2026, 9, 10, 9, 0, 0, 0, time.UTC))
@@ -134,7 +134,7 @@ func TestEntityDeviceEventHistoryThroughRealSQLiteAndHumaRoute(t *testing.T) {
 	if response.Code != http.StatusOK {
 		t.Fatalf("status = %d, body = %s", response.Code, response.Body.String())
 	}
-	var first EntityDeviceEventCollectionBody
+	var first EntityEventCollectionBody
 	if err := json.Unmarshal(response.Body.Bytes(), &first); err != nil {
 		t.Fatal(err)
 	}
@@ -169,7 +169,7 @@ func TestEntityDeviceEventHistoryThroughRealSQLiteAndHumaRoute(t *testing.T) {
 	if response.Code != http.StatusOK {
 		t.Fatalf("second status = %d, body = %s", response.Code, response.Body.String())
 	}
-	var second EntityDeviceEventCollectionBody
+	var second EntityEventCollectionBody
 	if err := json.Unmarshal(response.Body.Bytes(), &second); err != nil {
 		t.Fatal(err)
 	}
@@ -181,10 +181,10 @@ func TestEntityDeviceEventHistoryThroughRealSQLiteAndHumaRoute(t *testing.T) {
 // This test protects the parent contract and non-execution through real SQLite
 // and the Huma route. It fails if an existing Entity with no events returns 404,
 // if an unknown parent returns an empty page, or if reading history writes
-// State, Observations, Commands, or Device Events.
-func TestEntityDeviceEventHistoryDistinguishesUnknownAndEmptyParents(t *testing.T) {
+// State, Observations, Commands, or Entity Events.
+func TestEntityEventHistoryDistinguishesUnknownAndEmptyParents(t *testing.T) {
 	t.Parallel()
-	fixture := newDeviceEventAPIFixture(t)
+	fixture := newEntityEventAPIFixture(t)
 	fixture.record(t, "single_press", time.Date(2026, 9, 10, 9, 0, 0, 0, time.UTC))
 
 	// An existing non-event Entity has no events and is not a 404.
@@ -213,11 +213,11 @@ func TestEntityDeviceEventHistoryDistinguishesUnknownAndEmptyParents(t *testing.
 	}
 
 	// Reading history executes no work.
-	if count := countDeviceEventAPIRows(t, fixture.database, "device_events"); count != 1 {
-		t.Fatalf("device_events count after reads = %d, want 1", count)
+	if count := countEntityEventAPIRows(t, fixture.database, "entity_events"); count != 1 {
+		t.Fatalf("entity_events count after reads = %d, want 1", count)
 	}
 	for _, table := range []string{"observations", "entity_states", "commands"} {
-		if count := countDeviceEventAPIRows(t, fixture.database, table); count != 0 {
+		if count := countEntityEventAPIRows(t, fixture.database, table); count != 0 {
 			t.Fatalf("%s count after reads = %d, want 0", table, count)
 		}
 	}

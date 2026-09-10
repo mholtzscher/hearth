@@ -24,7 +24,7 @@ func FuzzSubjectParsersCanonicalRoundTrip(f *testing.F) {
 		validRuntimePrefix + ".mappings",
 		validRuntimePrefix + ".availability",
 		validRuntimePrefix + ".observation." + fuzzEntityID,
-		validRuntimePrefix + ".device-event." + fuzzEntityID,
+		validRuntimePrefix + ".entity-event." + fuzzEntityID,
 		validRuntimePrefix + ".enablement." + fuzzEntityID,
 		validRuntimePrefix + ".command." + fuzzEntityID + ".set",
 
@@ -104,9 +104,9 @@ func FuzzSubjectParsersCanonicalRoundTrip(f *testing.F) {
 			},
 		)
 		checkAcceptedSubject(
-			t, subject, natswire.ParseDeviceEventSubject,
-			func(route natswire.DeviceEventRoute) (string, error) {
-				return natswire.DeviceEventSubject(route.AdapterID, route.RuntimeID, route.EntityID)
+			t, subject, natswire.ParseEntityEventSubject,
+			func(route natswire.EntityEventRoute) (string, error) {
+				return natswire.EntityEventSubject(route.AdapterID, route.RuntimeID, route.EntityID)
 			},
 		)
 		checkAcceptedSubject(
