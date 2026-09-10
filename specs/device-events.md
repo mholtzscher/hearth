@@ -1,18 +1,12 @@
 # Device Events: durable ingestion and history
 
-**Status:** Draft for review; implement this foundation before automations after approval.
+**Status:** Draft for review. Implement this foundation before automations after approval.
 **Baseline:** `378080b`.
-**Effort:** XL overall, four bounded deliverables. Reuse existing device infrastructure; no new product module or event framework.
+**Effort:** XL across four deliverables. Reuse the existing devices module and infrastructure.
 
 ## 1. Purpose and scope
 
-Hearth can record that something happened to an Entity without pretending it is State. A simulated button publishes two `single_press` events; both remain inspectable, including when Core was temporarily offline.
-
-User decisions:
-
-- Device Events are a separate foundational feature, implemented before automations.
-- Events published to NATS while Core is offline should survive for history when Core returns.
-- The first slice includes a minimal paginated per-Entity history API, not a dashboard.
+Hearth records named occurrences without treating them as State. Broker-acknowledged reports survive Core outages and remain inspectable through a paginated per-Entity history API. This foundation precedes automations.
 
 ```text
 Adapter SDK → dedicated JetStream stream → devices consumer → SQLite
@@ -20,30 +14,27 @@ Adapter SDK → dedicated JetStream stream → devices consumer → SQLite
                                                GET /v1/entities/{id}/events
 ```
 
-This spec owns the event Entity type, wire schema, SDK publication, durable ingestion, history and simulator proof. It supersedes the one-shot event transport and ephemeral event-receipt proposals in [the deferred automation draft](device-event-automations.md).
+This spec owns the event Entity type, wire and SDK contracts, durable ingestion, history, and simulator proof. The [deferred automation draft](device-event-automations.md) depends on it.
 
-**Non-goals:** Triggers, Runs, automation hooks, replay execution, a generic event bus, event sourcing of other domain models, arbitrary event payloads, a global event search API, a dashboard, configurable retention, physical-device mappings, and Adapter disk outboxes.
+**Non-goals:** automation execution or replay, a generic event bus or event sourcing, arbitrary payloads, global search or a dashboard, configurable retention, physical-device mappings, and Adapter disk outboxes.
 
-Historical ingestion and automatic execution are different policies. Preserving an old press does **not** authorize running an automation for it. Future automation design must distinguish fresh accepted input from history/backlog; this feature makes no live-trigger delivery guarantee.
+Historical ingestion does not authorize automatic execution. Future automations must distinguish fresh input from backlog. This feature makes no live-trigger delivery guarantee.
 
 ## 2. Existing foundations and ownership
 
-The cohesive `devices` module already owns identity, registration, runtime fencing, enablement, State/Observation persistence and Command history. Add Device Events there, not under automations or platform.
+The `devices` module owns identity, registration, runtime fencing, enablement, State and Observation persistence, Command history, and Device Events.
 
-Reuse established patterns:
+Reuse these established patterns:
 
-- `sdk/adapter/command_evidence.go`: stable publication identity, JetStream acknowledgement and same-message transient retry.
-- `internal/modules/devices/nats/jetstream.go` and `observation.go`: resource provisioning/validation, durable consumption, acknowledgement after SQLite commit.
-- `sqlite_observations.go`: first-seen identity and transactional runtime/owner/enablement checks, preserving rejection evidence.
-- `entity_state_history.go` and `api/entity_state_history.go`: parent existence, keyset paging, explicit transport models.
-- `entitytypes/` and `internal/cmd/entitytypegen/`: schema/manifest-owned Entity behavior and generated SDK facades.
-- `internal/app/hearthd/run.go`: assembly, readiness, maintenance and dependency-safe shutdown.
+- `sdk/adapter/command_evidence.go` for stable identity, PubAck, and same-message retry.
+- `internal/modules/devices/nats/jetstream.go` and `observation.go` for resources, durable consumption, and commit-before-ack handling.
+- `sqlite_observations.go` for first-seen identity, rejection evidence, and transactional runtime, owner, and enablement checks.
 
-No generated SQL or NATS types cross the devices service interface. App assembly still owns connections and process lifecycle. Do not refactor Observations into a new general “event processing” abstraction as a prerequisite.
+Generated SQL and NATS types stay behind the devices service interface. App assembly owns connections and process lifecycle. Device Events require no general Observation-processing abstraction.
 
 ## 3. What a Device Event means
 
-A **Device Event** is one named occurrence reported by an Adapter for an Entity. Its identity distinguishes reports, not names: two `single_press` reports with different IDs are two events; redelivery of one identity is not another press. Acceptance establishes valid reported input under Core's processing-time rules, not physical truth or causation.
+A **Device Event** is one named occurrence reported by an Adapter for an Entity. IDs distinguish reports: two `single_press` IDs are two events, while redelivery of one ID is the same event. Acceptance means the report passed Core's processing-time rules, not that it proves physical truth or causation.
 
 Introduce **`hearth.enumevent/v1`**, stateless and non-commandable, with this support shape:
 
@@ -51,17 +42,17 @@ Introduce **`hearth.enumevent/v1`**, stateless and non-commandable, with this su
 {"state":{},"operations":{},"events":{"names":["single_press","double_press"]}}
 ```
 
-Names are unique slugs (`^[a-z0-9][a-z0-9_-]{0,62}$`), 1–64 entries. One Entity may represent several buttons/gestures through distinct names. No last-event State, sequence counter disguised as State, implicit Operation, or extra Device kind.
+Names are unique slugs (`^[a-z0-9][a-z0-9_-]{0,62}$`), with 1 to 64 entries. One Entity may represent several buttons or gestures through distinct names. The type has no State or Operations and adds no Device kind.
 
 Generated implementation:
 
 - Add optional manifest boolean `event_source` (default false). True requires `stateless:true`, an empty Operations map, and required `support.events.names` with the shape above.
-- Verify the fixed schema structure during generation; emit typed support validation, name membership, descriptor/event builders and conformance examples. No generic selector DSL or handwritten branch for the new type in Core.
-- Allow optional `events` in the outer registration support schema and preserve it through descriptor DTOs. Existing per-type support schemas remain closed and reject it on other types.
-- Extend the catalog with an optional generated supported-name selector. A type without it cannot emit accepted Device Events, even if it is otherwise stateless.
-- Existing `classifyObservation` rejects all stateless Observations as `invalid_value`. Preserve that behavior. The new facade generates neither Observation builders nor Command handlers, and Entity reads return `state:null`.
+- Validate the fixed schema during generation. Emit typed support and name validation, descriptor and event builders, conformance examples, and the catalog selector. Core has no handwritten event-type branch or selector DSL.
+- Allow optional `events` in the outer registration support schema and preserve it through descriptor DTOs. Per-type schemas stay closed; only event-source types allow it.
+- Only types with a generated supported-name selector can emit accepted Device Events.
+- Preserve `classifyObservation` behavior: all stateless Observations are `invalid_value`. The new facade generates no Observation builders or Command handlers, and Entity reads return `state:null`.
 
-Proposed glossary changes at implementation: define Device Event, widen Entity to include event sources, and widen Entity support to include supported event names. Keep Observation and State meanings unchanged; distinguish an inbound Device Event from the outbound `enumaction.trigger` Operation. No automation glossary changes are required for this foundation.
+During implementation, update the glossary definitions of Device Event, Entity, Entity support, and Entity enablement for event sources, supported names, and disabled-source rejection. Keep Observation and State unchanged, and distinguish Device Events from the outbound `enumaction.trigger` Operation.
 
 ## 4. Wire and SDK contract
 
@@ -77,7 +68,7 @@ One new schema, **`urn:hearth:schema:device-event:v1`**, in `contracts/v1/device
 }
 ```
 
-The shared envelope is strict; `causation_id` is absent for Device Events. Add `evt_id` to common ID definitions and embed/register the schema, but do not add it to the common causation union: this slice has no Hearth message caused by an event or event request/response exchange. There is no Hearth request/response pair, no `expires_at`, no Command link, and no arbitrary payload or source-time fields in this first version. `emitted_at` is SDK publication time, not claimed physical occurrence time.
+The strict envelope omits `causation_id`. Add `evt_id` to common ID definitions and embed and register the schema, but leave it out of the causation union because this slice produces no message caused by an event. Device Events have no Command link, arbitrary payload, or source-time field. `emitted_at` is SDK publication time, not claimed physical occurrence time.
 
 Subject: `hearth.v1.adapter.<adapter>.runtime.<runtime>.device-event.<entity_id>`. The SDK sets `Nats-Msg-Id` to the envelope event ID and preserves W3C trace headers. Core verifies subject/payload Entity agreement and MsgId/envelope identity before persistence.
 
@@ -98,15 +89,13 @@ func (s *Session) PublishDeviceEvent(context.Context, DeviceEvent) (DeviceEventI
 
 The generated `sdk/adapter/enumeventv1` facade adds `DeviceEventInput{EntityID string; Support Support; Name string}` and `NewDeviceEvent(DeviceEventInput) (adapter.DeviceEvent, error)` for typed support/name checks. Generic Session publication still validates the envelope; only Core owns current support validation.
 
-Publication mints `evt_` and `cor_` UUIDv7 values once, encodes once, and retries transient JetStream failures with the same ID, bytes, subject, MsgId and trace metadata. Reuse the existing publication context/session cancellation pattern. Retry until PubAck, caller cancellation/deadline, a permanent error, or Session termination. Return a minted ID on subsequent errors for diagnosis. A caller must not rebuild the same report with a new identity after an ambiguous failure.
-
-**Keep existing NATS reconnect buffering and Session lifecycle behavior.** This replaces the automation draft's no-buffer/no-retry rule; there is no new two-second expiry, heartbeat policy or SDK offline queue. Acknowledged events survive an Adapter exit within stream limits. Unacknowledged work is not protected against Adapter process death.
+Publication mints `evt_` and `cor_` UUIDv7 values once and encodes once. Transient JetStream retries reuse the ID, bytes, subject, MsgId, and trace metadata until PubAck, caller cancellation or deadline, a permanent error, or Session termination. Return the minted ID with later errors. After an ambiguous failure, the caller must not assign the report a new identity. Reuse existing publication context, Session cancellation, reconnect buffering, and lifecycle behavior.
 
 ### Core-offline guarantee and its limits
 
-A previously connected/registered SDK Session can publish to an already-provisioned JetStream stream without a running Core consumer. Existing transient heartbeat failures retry in the Session lifecycle context; there is no fixed number of missed heartbeat ticks that automatically ends a Session. A permanent/fenced outcome or explicit close still terminates it.
+A connected, registered Session can publish to an existing stream without a Core consumer. Transient heartbeat failures retry in the Session lifecycle context, with no fixed missed-tick cutoff. A permanent or fenced outcome or explicit close still terminates the Session.
 
-The guarantee is specifically **broker-acknowledged input while NATS/JetStream remains available**, within the retention limits below. Initial claim/registration still needs Core. When NATS itself is unavailable, the SDK can retry while alive, but this is not a disk-backed outbox or a guarantee through Adapter/NATS process loss. If Core is absent longer than broker retention/capacity permits, older input can be discarded.
+The guarantee covers **broker-acknowledged input while NATS and JetStream remain available** within the limits below. Initial claim and registration need Core. During a NATS outage, the SDK retries only while its Adapter process lives. Broker-acknowledged input survives Adapter exit within stream limits. Unacknowledged work is not protected against Adapter process death. The guarantee does not cover NATS process loss. Stream limits can discard old input during a long Core outage.
 
 ## 5. Dedicated durable stream and consumer
 
@@ -122,58 +111,58 @@ Follow the Observation resource pattern, with independent subjects/resources so 
 | Delivery | DeliverAll, ReplayInstant, explicit acknowledgement |
 | Retry/order | AckWait 30s, unlimited redelivery, MaxAckPending 1 |
 
-Leave unconstrained count/per-subject limits at the same explicit values used for Observations. Provision absent resources; reject incompatible existing configuration rather than silently changing retention/delivery policy. No retention-based replay tasks or stream administration API.
+Match the Observation stream's explicit unconstrained count and per-subject limits. Provision absent resources and reject incompatible existing configuration. Add no replay tasks or stream administration API.
 
-`DeviceEventConsumer` has the existing consumer lifecycle shape (`Active`, `Stop`, `Drain`, `Closed`). It decodes, validates the route/envelope, gets the JetStream timestamp, calls the devices recorder, then acknowledges. No synchronous downstream subscribers, commands or automation callbacks.
+`DeviceEventConsumer` has `Active`, `Stop`, `Drain`, and `Closed` lifecycle methods. It validates the route and envelope, reads the JetStream timestamp, records the event, then acknowledges. It calls no synchronous subscribers, Commands, or automations.
 
-- Wire-invalid input, missing/mismatched MsgId, unexpected causation and route mismatch: acknowledge and log a safe permanent class. No SQLite row when trustworthy domain input cannot be formed; raw input remains only in the bounded stream.
-- First-seen accepted/rejected input: acknowledge only after the SQLite transaction commits.
-- Exact duplicate or identity conflict: acknowledge after the repository has established that result; do not mutate the existing row.
-- Infrastructure/commit errors: leave unacknowledged for redelivery. Slow logs must not delay acknowledgement of a committed result.
+- Acknowledge wire-invalid input, missing or mismatched MsgId, unexpected causation, and route mismatch. Log a safe permanent class. Create no SQLite row when Core cannot form trustworthy domain input; raw input remains only in the bounded stream.
+- Acknowledge first-seen accepted or rejected input only after the SQLite transaction commits.
+- Acknowledge a duplicate or identity conflict after the repository establishes the result, without changing the existing row.
+- Leave infrastructure and commit errors unacknowledged for redelivery. Slow logs must not delay acknowledgement of a committed result.
 
-Backlog is intentionally consumed. **Age is not a rejection reason.** Future SDK clock skew may be logged using the existing one-minute diagnostic threshold; it does not prevent recording or define ordering.
+Backlog is consumed. **Age is not a rejection reason.** Core may log SDK clock skew using the existing one-minute diagnostic threshold, but skew does not prevent recording or define ordering.
 
 ## 6. SQLite acceptance and rejection history
 
-One new `device_events` table contains each first-seen, wire-valid report and its disposition. It is both history and the duplicate ledger—not two tables or an outbox.
+One `device_events` table stores each first-seen, wire-valid report and its disposition. The same row provides history and duplicate detection.
 
 In one devices-owned transaction:
 
-1. Look up event ID. Identical immutable input is `duplicate`; changed input is `identity_conflict`. Preserve the first row in both cases.
-2. Check active Adapter runtime using existing supervisor-owned fencing semantics, not an independent wall-clock lease check. Inactive/unknown runtime → `stale_runtime`.
-3. Check Entity existence and owning Adapter → `unknown_entity` or `wrong_adapter`.
-4. Check Entity enablement → `entity_disabled`. Events have no Command-linked exception.
-5. Check current Entity event support/name → `unsupported_event` for a non-event type or unsupported name. Corrupt persisted descriptors/catalog errors are infrastructure failures, not evidence of a bad event.
-6. Persist `accepted` if these checks pass, otherwise `rejected` with the first rejection code above. Commit once.
+1. Look up the event ID. Identical immutable input returns `duplicate`; changed input returns `identity_conflict`. Preserve the first row in both cases.
+2. Check the active Adapter runtime using the supervisor's fencing semantics, not an independent wall-clock lease check. An inactive or unknown runtime returns `stale_runtime`.
+3. Check Entity existence and ownership. Return `unknown_entity` or `wrong_adapter`.
+4. Check Entity enablement. A disabled Entity returns `entity_disabled`, with no Command-linked exception.
+5. Check current Entity event support and name. A non-event type or unsupported name returns `unsupported_event`. Treat corrupt persisted descriptors and catalog errors as infrastructure failures.
+6. Persist `accepted` if all checks pass. Otherwise persist `rejected` with the first rejection code above. Commit once.
 
-Adapter health and Entity availability do not separately gate historical input, matching the Observation distinction between reports and reachability. No write to State, Commands, bindings, enablement, health or availability occurs.
+Adapter health and Entity availability do not gate historical input. Recording changes no State, Commands, bindings, enablement, health, or availability.
 
-Validation uses **processing-time** runtime/ownership/enablement/support. If those changed while Core was offline, an old report can be durably recorded as rejected. Reprocessing the same identity never reclassifies it after a later enablement/support change. We do not reconstruct historical descriptors or claim that a rejected old report was invalid when physically emitted.
+An old report may be rejected if runtime, ownership, enablement, or support changed while Core was offline. Reprocessing the same identity never reclassifies it after later metadata changes. Core does not reconstruct historical descriptors or claim that a rejected report was invalid when physically emitted.
 
-Store the bounded, wire-valid **reported name even for rejected events**, with an explicit rejected disposition. Unlike an arbitrary rejected State payload, this is only a schema-constrained label and is useful for diagnosing unsupported names. Do not log it as an unrestricted payload or mistake it for validated support membership.
+Store the bounded, wire-valid reported name for accepted and rejected events. The schema-constrained label diagnoses unsupported names. Do not log it as an unrestricted payload or treat it as validated support membership.
 
-Identity fingerprint: the raw 32 bytes of SHA-256 over UTF-8 `json.Marshal([]string{adapterID, string(runtimeID), string(entityID), string(name), emittedAt.UTC().Format(time.RFC3339Nano), string(correlationID)})`. IDs are already parsed canonical strings; array field order is fixed and the encoding contains no extra whitespace. Event ID is the lookup key. Ignore transport delivery count, Core receipt/recording time and trace headers. Same ID/different tuple delivered to Core logs `device_event.identity_conflict`; it does not overwrite or create a second event row. JetStream may suppress a same-MsgId copy before Core can compare its contents, so this is not a guarantee that every conflicting publication is logged. Deduplication protects report identity, not upstream duplicates that an Adapter incorrectly labels with two new IDs.
+The fingerprint is the raw 32-byte SHA-256 hash of UTF-8 `json.Marshal([]string{adapterID, string(runtimeID), string(entityID), string(name), emittedAt.UTC().Format(time.RFC3339Nano), string(correlationID)})`. Inputs are canonical strings, array order is fixed, and the encoding has no extra whitespace. Use the event ID as the lookup key. Exclude delivery count, Core receipt and recording times, and trace headers. A changed tuple for the same ID logs `device_event.identity_conflict` without changing or adding a row. JetStream may suppress a duplicate MsgId before Core compares it, so Core cannot log every conflict.
 
 ### Record shape and retention
 
 | Column | Meaning |
 |---|---|
-| `receive_order INTEGER PRIMARY KEY AUTOINCREMENT` | Tie-free first-seen Core recording order, independent of Observation order. |
+| `receive_order INTEGER PRIMARY KEY AUTOINCREMENT` | First-seen Core recording order, independent of Observation order and without ties. |
 | `event_id TEXT UNIQUE NOT NULL` | Immutable `evt_` report identity. |
-| `adapter_id`, `runtime_id`, `entity_id`, `correlation_id` | All `TEXT NOT NULL`, with no FKs. Retain the reported canonical runtime ID even when it has no Core row; do not replace it with NULL. Private except Entity/event IDs. |
+| `adapter_id`, `runtime_id`, `entity_id`, `correlation_id` | `TEXT NOT NULL` without foreign keys. Keep the reported canonical runtime ID even when Core has no runtime row. Adapter, runtime, and correlation IDs are private. |
 | `name`, `fingerprint` | Bounded reported name and immutable-input fingerprint. |
-| `disposition`, `rejection_code` | `accepted` with no rejection, or `rejected` with exactly one enumerated code. |
-| `emitted_at` | SDK envelope time. Diagnostic, not ordering authority. |
-| `received_at` | JetStream server storage time, not consumer callback time. |
+| `disposition`, `rejection_code` | `accepted` without a rejection, or `rejected` with one enumerated code. |
+| `emitted_at` | SDK envelope time for diagnosis, not ordering. |
+| `received_at` | JetStream storage time, not consumer callback time. |
 | `recorded_at` | Core time of the first SQLite record, retained across redelivery. |
 
-All name/disposition/timestamp columns are NOT NULL; `fingerprint` is a NOT NULL BLOB with a 32-byte length CHECK. `rejection_code` alone is nullable: CHECK accepted implies NULL, and rejected implies exactly one of the five enumerated codes. Add basic ID prefix/length and slug/name checks; wire/service parsers enforce full canonical UUIDv7 syntax. Use the existing fixed-width sortable UTC encoding; index `(entity_id,receive_order DESC)` for history and `(recorded_at,receive_order)` for pruning. Public history is newest-first by receive order, not an assertion of physical or cross-stream chronology.
+Name, disposition, and timestamp columns are NOT NULL. `fingerprint` is a NOT NULL BLOB with a 32-byte length CHECK. A CHECK allows a nullable `rejection_code` only for accepted rows and requires one of the five codes for rejected rows. Add basic ID prefix, length, slug, and name checks; wire and service parsers enforce canonical UUIDv7. Use the fixed-width sortable UTC encoding. Index `(entity_id,receive_order DESC)` for history and `(recorded_at,receive_order)` for pruning. Public history is newest first by receive order, not physical or cross-stream chronology.
 
-**Fixed SQLite retention: 30 days from `recorded_at`.** That is comfortably longer than the seven-day stream window and keeps newly recovered history available for a full window after recording. There is no current-State anchor for an event. Add `DeviceEventHistoryRetention` as an internal constant, not a new Core config option.
+**SQLite retains events for 30 days from `recorded_at`.** This exceeds the seven-day stream window, and events have no current-State anchor. Define internal constant `DeviceEventHistoryRetention`; do not add Core configuration.
 
-Extend the existing hourly maintenance worker with one call to `Service.DeleteExpiredDeviceEvents`. That service method owns the batch loop: delete eligible events in batches of 500, one transaction per batch, until fewer than 500 were deleted or its context ends. Derive one cutoff per sweep, delete strictly older records, release the connection between batches, and never prune events at startup. This adds no independent timer/controller and does not change Observation retention semantics.
+The existing hourly maintenance worker calls `Service.DeleteExpiredDeviceEvents`. The service deletes eligible events in batches of 500, using one transaction per batch, until a batch deletes fewer than 500 rows or the context ends. Use one cutoff per sweep, delete records strictly older than it, and release the connection between batches. Never prune at startup. Do not add another timer or change Observation retention.
 
-History/deduplication are bounded, not indefinite. Normal retained broker redelivery remains inside the longer SQLite window. Deleting the database, clock anomalies that defeat retention assumptions, or manually republishing archived envelopes outside the window are not an exactly-once guarantee. Event history is not executable work, even when deliberately re-read.
+The SQLite row provides duplicate protection only while retained. Database loss, clock anomalies that invalidate retention assumptions, or publication of an archived envelope after pruning can produce another first-seen record. Reading history never executes work.
 
 ## 7. Concrete Core interfaces
 
@@ -195,7 +184,7 @@ Catalog extension in `internal/modules/devices/catalog.go`:
 +    eventNames       func(EntitySupport) ([]DeviceEventName, error)
 ```
 
-`TypeCatalog.SupportsDeviceEvent(entity Entity, name DeviceEventName) (bool, error)` returns false/nil for a type without event support or an unsupported name; unknown persisted types/corrupt descriptors return an error. The generated selector validates/decodes support and returns an owned name slice. This keeps unsupported input distinct from infrastructure/catalog corruption.
+`TypeCatalog.SupportsDeviceEvent(entity Entity, name DeviceEventName) (bool, error)` returns false/nil for a type without event support or an unsupported name. Unknown persisted types and corrupt descriptors return errors. The generated selector validates and decodes support, returns an owned name slice, and separates unsupported input from catalog failures.
 
 New `internal/modules/devices/device_events.go` defines:
 
@@ -248,7 +237,7 @@ func (s *Service) ListEntityDeviceEvents(context.Context, ListEntityDeviceEvents
 func (s *Service) DeleteExpiredDeviceEvents(context.Context, time.Time) error // argument is Core sweep time
 ```
 
-Use named constants for the closed outcome/disposition/rejection vocabularies. The service supplies `Dependencies.Now` to record persistence; no transport-supplied `recorded_at`. The SQLite repository computes the fingerprint from the validated tuple, not an unchecked client hash. Zero/invalid trusted-method arguments produce errors before writing; the transport filters permanent wire errors before calling this seam.
+Use named constants for the closed outcome, disposition, and rejection values. The service supplies `Dependencies.Now`; transport cannot set `recorded_at`. SQLite computes the fingerprint from the validated tuple. Trusted methods reject zero or invalid arguments before writing, while transport filters permanent wire errors before calling them.
 
 Add the persistence capability to the existing `Stores`, implemented by the existing SQLite repository and existing devices sqlc package:
 
@@ -268,7 +257,7 @@ type DeviceEventRepository interface {
 }
 ```
 
-Consumer-owned `DeviceEventRecorder` exposes only the Service's `RecordDeviceEvent` signature. HTTP calls the Service, which validates parent/pagination before reading. No new automation interface, generic publisher/subscriber interface or outward notification is part of this feature.
+Consumer-owned `DeviceEventRecorder` exposes only the Service's `RecordDeviceEvent` signature. HTTP calls the Service, which validates the parent and pagination before reading.
 
 ## 8. Minimal history API
 
@@ -286,86 +275,81 @@ Consumer-owned `DeviceEventRecorder` exposes only the Service's `RecordDeviceEve
 }
 ```
 
-- Include accepted and rejected records, with no disposition filter in v1. No global endpoint or per-event detail endpoint is needed for this slice.
-- Existing Entity with no events (including a non-event type): 200 with `items:[]`. Unknown parent: 404. Rejection rows for unknown Entity IDs remain internal diagnostics, consistent with Observation history; do not introduce a global browse endpoint to expose them.
-- Use existing paging conventions: default 50, allowed 1–200, query parameters `limit` and `cursor`, `limit+1` internally, no totals, omit next cursor on the last page.
-- Cursor is the existing unsigned versioned base64url JSON pattern, bound to resource `entity-device-events`, Entity ID, and exclusive lower `receive_order`; no filter field. State-history cursors are rejected here and event-history cursors rejected there. First/after-page SQL queries use the same index. No snapshot guarantee; newer input requires restarting pagination, and pruning can empty a continuation.
-- Explicit Huma models map UTC timestamps and rejection optionality. Never expose Adapter/runtime/correlation IDs, fingerprint, internal receive order or raw envelopes. Domain/schema/page errors follow existing 400/422 conventions; unexpected errors=500.
+- Return accepted and rejected records without filters. This slice has no global or per-event detail endpoint.
+- An existing Entity with no events returns 200 with `items:[]`, including non-event types. An unknown parent returns 404. Rejections for unknown Entity IDs stay private and have no browse route.
+- Accept `limit` and `cursor`. Default to 50, allow 1 to 200, query `limit+1`, omit totals, and omit the last page's cursor.
+- Use the unsigned, versioned base64url JSON cursor. Bind it to `entity-device-events`, the Entity ID, and an exclusive lower `receive_order`, with no filter field. State and event history reject each other's cursors. Both SQL queries use the same index. Pages are not snapshots; restart for newer input, and pruning may empty a continuation.
+- Huma models map UTC timestamps and optional rejection codes. Never expose Adapter, runtime, or correlation IDs, fingerprint, receive order, or raw envelopes. Domain, schema, and page errors use existing 400 and 422 conventions; unexpected errors return 500.
 
-This endpoint provides direct household debugging value before any Automation exists: “Was the report recorded, and if not accepted, why?” A missing row alone cannot prove no physical press occurred or distinguish all transport losses; wire-invalid/lost/expired-broker input can be absent.
+The endpoint shows whether Core recorded a report and why Core rejected it. A missing row does not prove that no physical press occurred because wire-invalid, lost, or broker-expired input can be absent.
 
 ## 9. Assembly, simulator and implementation layout
 
-Core provisions both streams before starting transports, starts both durable consumers, and includes both resource configurations and consumer activity in existing readiness. Do not require backlog exhaustion for ready status. Adding the consumer extends the existing dependency check; it does not create a generation gate, change the health supervisor's policy, or gate ingestion on its own readiness.
+Core provisions both streams before transports, starts both consumers, and includes their configuration and activity in readiness. Readiness neither waits for backlog exhaustion nor gates ingestion.
 
-Keep Observation/health dependencies alive for current Commands during drain. Drain/stop the event consumer before closing its DB/NATS dependencies, on normal shutdown and startup-error exits. Unprocessed/unacknowledged events remain durable for the next Core process. No startup event replay into Commands and no callback waits for a Command.
+Keep Observation and health dependencies alive for draining Commands. On shutdown or startup error, drain or stop the event consumer before its database and NATS dependencies. Unprocessed or unacknowledged events remain for the next Core process. Startup does not replay events into Commands, and callbacks do not wait for Commands.
 
-Simulator scenario `device-events` registers an `events` Entity alongside its existing `power` Entity, preserving existing scenarios/Binding keys. Use generated registration/event builders. Expose deterministic `EmitDeviceEvent(ctx,name)` for tests; local stdin lines `single_press`/`double_press` generate explicit synthetic reports while the Session remains connected. A cancellable reader and bounded, non-queued handoff prevent a blocked publisher from accumulating unlimited reports; log/drop excess local input rather than adding an outbox. EOF stops only input, shutdown joins workers. No privileged Core HTTP injection endpoint or physical-device validation is claimed.
+Simulator scenario `device-events` registers an `events` Entity beside its existing `power` Entity without changing existing scenarios or Binding keys. Use generated registration and event builders. Expose deterministic `EmitDeviceEvent(ctx,name)` for tests. While the Session is connected, local stdin lines `single_press` and `double_press` publish synthetic reports. A cancellable reader does not queue input; it logs and drops input while the publisher is busy. EOF stops only input; shutdown joins workers. Do not add a privileged Core HTTP injection endpoint or claim physical-device validation.
 
 | ID | Outcome | Effort | Depends on | Acceptance |
 |---|---|---|---|---|
-| D1 | Schema-backed event-source Entity and wire/SDK data contract | L | — | A1–A2 |
-| D2 | SDK PubAck publication, dedicated consumer and transactional SQLite event history | L | D1 | A3–A6 |
-| D3 | Per-Entity history API and fixed retention maintenance | M | D2 | A7–A8 |
-| D4 | Simulator Core-offline recovery proof and operator documentation | L | D2,D3 | A9–A10 |
+| D1 | Schema-backed event-source Entity and wire/SDK data contract | L | None | A1, A2 |
+| D2 | SDK PubAck publication, dedicated consumer, and transactional SQLite event history | L | D1 | A3 to A6 |
+| D3 | Per-Entity history API and fixed retention maintenance | M | D2 | A7, A8 |
+| D4 | Simulator Core-offline recovery proof and operator documentation | L | D2, D3 | A9, A10 |
 
 ```text
 contracts/v1/
-├── device-event.schema.json             # new — durable report schema [D1]
-├── common.schema.json / embed.go        # modify — evt_ ID/schema registration [D1]
-└── registration-request.schema.json     # modify — optional event support [D1]
+├── device-event.schema.json             # new, durable report schema [D1]
+├── common.schema.json / embed.go        # modify, evt_ ID/schema registration [D1]
+└── registration-request.schema.json     # modify, optional event support [D1]
 entitytypes/
-├── entitytype-manifest.schema.json      # modify — event_source flag [D1]
-└── enumeventv1/                         # new — schemas/manifest/examples/generated type [D1]
+├── entitytype-manifest.schema.json      # modify, event_source flag [D1]
+└── enumeventv1/                         # new, schemas/manifest/examples/generated type [D1]
 sdk/adapter/
-├── device_events.go                     # new — public data types [D1], PubAck/retry publication [D2]
-└── enumeventv1/                         # generated — typed descriptor/event builders [D1]
+├── device_events.go                     # new, public types [D1] and PubAck/retry publication [D2]
+└── enumeventv1/                         # generated, typed descriptor/event builders [D1]
 internal/
-├── cmd/entitytypegen/                   # modify — event-source generation and fixtures [D1]
-├── contracts/v1/natswire/subjects.go     # modify — runtime-scoped event subject helpers [D1]
+├── cmd/entitytypegen/                   # modify, event-source generation and fixtures [D1]
+├── contracts/v1/natswire/subjects.go     # modify, runtime-scoped event subject helpers [D1]
 ├── modules/devices/
-│   ├── model.go / ids.go / catalog.go   # modify — event IDs/name selector [D1]
-│   ├── zz_generated_entitytypes*.go     # generated — event catalog/conformance [D1]
-│   ├── device_events.go                 # new — domain recording/retention [D2]
-│   ├── device_event_history.go          # new — parent/paging reads [D3]
-│   ├── service.go / repository.go       # modify — event persistence capability [D2]
-│   ├── sqlite_repository.go             # modify — include event capability in SQLiteStores [D2]
-│   ├── sqlite_device_events.go          # new — atomic disposition, dedup, history/prune [D2,D3]
-│   ├── dbqueries/device_events.sql      # new — insert/dedup/history/retention SQL [D2,D3]
-│   ├── dbsqlc/                          # generated — existing devices SQL package [D2,D3]
-│   ├── nats/device_event.go             # new — DeviceEventConsumer and DTO mapping [D2]
-│   ├── nats/device_event_resources.go   # new — provision/validate dedicated stream/consumer [D2]
-│   └── api/device_events.go             # new — history endpoint/DTOs/cursor [D3]
-├── platform/db/migrations/00001_initial.sql # modify — device_events table/indexes [D2]
-├── app/hearthd/run.go / server.go       # modify — second consumer/readiness/drain/maintenance [D2,D3]
-├── app/hearthd/device_events_integration_test.go # new — full SDK/NATS/DB/HTTP proof [D4]
-└── adapters/simulator/ / app/simulator/ # modify — named event scenario [D4]
+│   ├── model.go / ids.go / catalog.go   # modify, event IDs/name selector [D1]
+│   ├── zz_generated_entitytypes*.go     # generated, event catalog/conformance [D1]
+│   ├── device_events.go                 # new, domain recording/retention [D2]
+│   ├── device_event_history.go          # new, parent/paging reads [D3]
+│   ├── service.go / repository.go       # modify, event persistence capability [D2]
+│   ├── sqlite_repository.go             # modify, event capability in SQLiteStores [D2]
+│   ├── sqlite_device_events.go          # new, disposition/dedup/history/prune [D2,D3]
+│   ├── dbqueries/device_events.sql      # new, insert/dedup/history/retention SQL [D2,D3]
+│   ├── dbsqlc/                          # generated, existing devices SQL package [D2,D3]
+│   ├── nats/device_event.go             # new, DeviceEventConsumer and DTO mapping [D2]
+│   ├── nats/device_event_resources.go   # new, stream/consumer provisioning [D2]
+│   └── api/device_events.go             # new, history endpoint/DTOs/cursor [D3]
+├── platform/db/migrations/00001_initial.sql # modify, device_events table/indexes [D2]
+├── app/hearthd/run.go / server.go       # modify, consumer/readiness/drain/maintenance [D2,D3]
+├── app/hearthd/device_events_integration_test.go # new, SDK/NATS/DB/HTTP proof [D4]
+└── adapters/simulator/ / app/simulator/ # modify, named event scenario [D4]
 README.md / configs/ / CONTEXT.md / docs/{architecture,logging}.md
-                                       # modify during implementation — guarantees and usage [D4]
+                                       # modify, guarantees and usage [D4]
 ```
 
-Update explicit descriptor DTOs/route registration interfaces where required; no unrelated module rearrangement. Tests live with their behavior and share deliverable ownership. D1 includes SDK types needed by its generated builders so it compiles without D2 publication. Use the existing devices sqlc stanza and generation-check task: no new SQL package/configuration framework. Modify the initial migration and recreate development databases under Hearth's no-deployments policy; no legacy migration path. Keep shared migration/generation writers serialized.
+Update required descriptor DTOs and route registration interfaces without rearranging unrelated modules. Tests share their behavior's deliverable. D1 includes SDK types needed by generated builders, so it compiles before D2. Use the existing devices sqlc stanza and generation-check task. Modify the initial migration and recreate development databases because Hearth has no deployments. Add no legacy migration. Serialize changes to shared migration and generation files.
 
 ## 10. Acceptance tests and review gates
 
-- **A1 — Generated contracts:** new support round-trips SDK → registration wire → Core → Entity read. Closed existing types still reject event support; zero-Operation event type generates cleanly and validates supported/unsupported names. No event Observation/Command facade and no State/Command side effects.
-- **A2 — Wire:** authoritative schema/route/ID/time/MsgId checks, unexpected causation, oversized input and subject/Entity mismatch behave as specified. Neither raw rejected envelopes nor unsafe names are logged. Generated/embedded contract tests cover the new schema.
-- **A3 — Durable SDK:** a lost PubAck causes same-ID/same-payload retry, not a second report; caller/Session cancellation ends waits. PubAck is distinguishable from Core recording/acceptance. Existing Session, Observation and Command-evidence behavior is unchanged.
-- **A4 — SQLite identity/disposition:** same name/different IDs creates two rows; duplicate ID creates none and never changes first timestamps/disposition; changed immutable input conflicts without overwriting. Runtime/unknown Entity/wrong owner/disabled/unsupported precedence persists rejection evidence. Health/availability alone do not reject. Corrupt stored descriptors and DB failures are not acknowledged as successful recording.
-- **A5 — Commit-before-ack:** inject failure before commit and prove redelivery with no partial row; inject response/ack loss after commit and prove one row after restart/redelivery. A permanently wire-invalid event is acknowledged so it cannot block valid later input.
-- **A6 — Backlog semantics:** old but valid input is recorded without a freshness rejection; runtime takeover or narrowed support during downtime yields the specified rejection, not silent loss or invented historical acceptance. Same identity stays first-seen after metadata changes. Event input never appears in State history or satisfies a Command.
-- **A7 — HTTP history:** all dispositions, correct parent errors/empty collections, exclusive keyset continuation, endpoint/Entity cursor scope, limits, timestamp fields and private-field exclusion. History ordering follows receive order even when wall clocks tie or disagree. Use real SQLite and the Huma route, not only mocked repository rows.
-- **A8 — Retention:** fixed 30 days from first `recorded_at`, exact cutoff boundary, batched removal, no startup prune, no State anchor, no alteration of Observation pruning. Duplicate evidence remains for ordinary retained stream redelivery, and pruning does not execute anything. Verify history/prune indexes with representative data.
-- **A9 — Core-offline vertical slice:** initialize Core/stream and a registered SDK simulator, stop only Core while NATS stays up, obtain PubAck for multiple named events, restart Core and read each exactly once through HTTP. Cover transient heartbeat failures without assuming a fixed missed-heartbeat shutdown limit. Also test consumer lifecycle/readiness and preservation of unprocessed input on drain.
-- **A10 — Delivery:** documented local simulator/history recipe works without automations or physical hardware; `mise run validate` passes; generation remains reproducible. Only the devices module is required. No automation type, table, transport hook or executable replay path is introduced.
+- **A1. Generated contracts.** Support round-trips from SDK registration through Core Entity reads. Closed types reject event support. The zero-Operation event type validates names, generates no Observation or Command facade, and changes no State or Command.
+- **A2. Wire.** Test schema, route, ID, time, MsgId, causation, size, and subject/Entity checks. Logs omit raw envelopes and unsafe names. Generated and embedded tests cover the schema.
+- **A3. Durable SDK.** A lost PubAck retries the same ID and payload. Caller or Session cancellation stops retries. PubAck does not claim Core recording or acceptance. Existing Session, Observation, and Command-evidence behavior remains unchanged.
+- **A4. SQLite identity and disposition.** Different IDs create separate rows. Duplicates and changed-input conflicts preserve the first row, its timestamps, and its disposition. Test rejection precedence and health and availability exclusion. Descriptor corruption and database failures remain unacknowledged.
+- **A5. Commit before acknowledgement.** Failure before commit causes redelivery without a partial row. Response or acknowledgement loss after commit still yields one row after restart and redelivery. Permanent wire errors are acknowledged and cannot block valid input.
+- **A6. Backlog semantics.** Old valid input is recorded. Runtime takeover or narrowed support during downtime produces the specified rejection. Metadata changes never reclassify an ID. Events never enter State history or satisfy Commands.
+- **A7. HTTP history.** Test dispositions, parent errors, empty results, keyset continuation, cursor scope, limits, timestamps, ordering under clock disagreement, and private fields through real SQLite and the Huma route.
+- **A8. Retention.** Test the exact 30-day boundary, batching, startup behavior, absence of a State anchor, unchanged Observation pruning, retained duplicate evidence, non-execution, and both indexes.
+- **A9. Core-offline vertical slice.** With NATS running, stop Core and obtain PubAcks for several simulator events. Restart Core and read each once through HTTP. Test heartbeat retry without a fixed missed-tick cutoff, consumer lifecycle and readiness, and drain durability.
+- **A10. Delivery.** The documented simulator and history recipe works without automations or hardware. `mise run validate` and reproducible generation pass. Only the devices module is required; no automation type, table, transport hook, or replay path appears.
 
-Use real SQLite/embedded NATS for durability and transaction claims, injected clocks for retention, and synchronization barriers for acknowledgement/drain races. SDK failure injection can prove identity stability without waiting for real outages. Existing dependencies suffice; no new test framework is needed.
+Use real SQLite and embedded NATS for durability and transaction claims, injected clocks for retention, and synchronization barriers for acknowledgement and drain races. SDK failure injection proves identity stability without real outages. Use the existing test framework.
 
-## 11. Trade-offs and automation follow-up
+## 11. Automation follow-up
 
-- **Dedicated durable Device Event stream rather than live request/reply:** solves Core-offline history, but retains/re-delivers old input. That is intentional and separate from future live-only Triggers.
-- **One stored report with disposition rather than accepted-only history:** explains disabled, unsupported and stale-runtime reports without reconstructing the past or hiding them as transport drops.
-- **Fixed bounded retention and one read endpoint rather than a history product:** enough for debugging; archive/search/UI/configuration can follow actual demand.
-- **Existing generated event type rather than raw Adapter payloads:** preserves canonical ownership and discoverability; real Zigbee2MQTT event mapping remains separate work and must distinguish actual events from retained/cache-expanded/repeated upstream values.
-
-Before implementing automations, revise its deferred spec to consume Core-accepted Device Event facts, define the fresh-trigger boundary independently from this history consumer, and decide how Run admission relates to recorded events. Do not reuse that draft's one-shot request/response schema, no-retry SDK method, two-second history expiry, or automation-owned ephemeral event receipts. This feature deliberately stops short of choosing the downstream execution seam.
+Before implementing automations, revise the deferred spec to consume Core-accepted Device Event facts. Define the fresh-trigger boundary independently from this history consumer and decide how Run admission relates to recorded events. This spec does not choose the downstream execution interface. Real Zigbee2MQTT mapping remains separate work and must distinguish actual events from retained, cache-expanded, or repeated upstream values.
