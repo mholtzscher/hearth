@@ -38,6 +38,7 @@ type Session interface {
 	SetHealth(context.Context, adapter.HealthReport) error
 	ReportEntityAvailability(context.Context, []adapter.EntityAvailabilityReport) error
 	PublishObservation(context.Context, adapter.Observation) (adapter.ObservationID, error)
+	PublishEntityEvent(context.Context, adapter.EntityEvent) (adapter.EntityEventID, error)
 }
 
 type Config struct {

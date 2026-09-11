@@ -19,19 +19,20 @@ import (
 // ackOrderingTestMessage is a fake JetStream message that records Ack attempts
 // without a server, so tests prove acknowledgement precedes log emission.
 type ackOrderingTestMessage struct {
-	metadata *jetstream.MsgMetadata
-	data     []byte
-	headers  natsgo.Header
-	subject  string
-	acked    chan struct{}
-	ackErr   error
-	once     sync.Once
-	mutex    sync.Mutex
-	ackCalls int
+	metadata    *jetstream.MsgMetadata
+	metadataErr error
+	data        []byte
+	headers     natsgo.Header
+	subject     string
+	acked       chan struct{}
+	ackErr      error
+	once        sync.Once
+	mutex       sync.Mutex
+	ackCalls    int
 }
 
 func (message *ackOrderingTestMessage) Metadata() (*jetstream.MsgMetadata, error) {
-	return message.metadata, nil
+	return message.metadata, message.metadataErr
 }
 
 func (message *ackOrderingTestMessage) Data() []byte { return message.data }

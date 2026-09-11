@@ -54,7 +54,7 @@ func (z2m *Adapter) publishDeviceState(
 	device runtimeDevice,
 	message mqttMessage,
 ) error {
-	states, issues, err := decodeDeviceState(message.Payload, device.entities, message.ReceivedAt)
+	properties, err := decodeDeviceProperties(message.Payload)
 	if err != nil {
 		z2m.logger.WarnContext(
 			ctx,
@@ -64,6 +64,7 @@ func (z2m *Adapter) publishDeviceState(
 		)
 		return nil //nolint:nilerr // Malformed upstream input is skipped by design; the connection continues.
 	}
+	states, issues := decodeStatesFromProperties(properties, device.entities, message.ReceivedAt)
 	for range issues {
 		z2m.logger.WarnContext(
 			ctx,
@@ -72,32 +73,93 @@ func (z2m *Adapter) publishDeviceState(
 			slog.String("error_code", "invalid_state_property"),
 		)
 	}
+	// One message's State candidates publish before its Events, and each
+	// publication waits for its disposition, so a burst of action reports
+	// stays in upstream arrival order and never interleaves siblings.
 	for _, decoded := range states {
-		result := make(chan stateDisposition, 1)
-		candidate := stateCandidate{
-			ctx:           ctx,
-			generation:    generation,
-			routeRevision: routeRevision,
-			entityID:      decoded.entityID,
-			report:        decoded.report,
-			retained:      message.Retained,
-			receivedAt:    message.ReceivedAt,
-			result:        result,
+		if err = z2m.publishStateCandidate(ctx, generation, routeRevision, message, decoded); err != nil {
+			return err
 		}
-		select {
-		case z2m.runtimeEvents <- candidate:
-		case <-ctx.Done():
-			return ctx.Err()
-		case <-z2m.runtimeDone:
-			return errors.New("Zigbee2MQTT runtime stopped")
+	}
+	// Zigbee2MQTT's State cache excludes action properties, so a retained
+	// message replays cached sensor values only and never a fresh occurrence.
+	if message.Retained {
+		return nil
+	}
+	events, eventIssues := decodeEventsFromProperties(properties, device.entities)
+	for range eventIssues {
+		z2m.logger.WarnContext(
+			ctx,
+			"ignored invalid Zigbee2MQTT Device event",
+			slog.String(eventKey, "adapter.device_event_ignored"),
+			slog.String("error_code", "invalid_device_event"),
+		)
+	}
+	for _, event := range events {
+		if err = z2m.publishEntityEventCandidate(ctx, event); err != nil {
+			return err
 		}
-		select {
-		case <-result:
-		case <-ctx.Done():
-			return ctx.Err()
-		case <-z2m.runtimeDone:
-			return errors.New("Zigbee2MQTT runtime stopped")
-		}
+	}
+	return nil
+}
+
+// publishStateCandidate routes one decoded State through the runtime
+// coordinator and waits for its disposition.
+func (z2m *Adapter) publishStateCandidate(
+	ctx context.Context,
+	generation uint64,
+	routeRevision uint64,
+	message mqttMessage,
+	decoded decodedState,
+) error {
+	result := make(chan stateDisposition, 1)
+	candidate := stateCandidate{
+		ctx:           ctx,
+		generation:    generation,
+		routeRevision: routeRevision,
+		entityID:      decoded.entityID,
+		report:        decoded.report,
+		retained:      message.Retained,
+		receivedAt:    message.ReceivedAt,
+		result:        result,
+	}
+	select {
+	case z2m.runtimeEvents <- candidate:
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-z2m.runtimeDone:
+		return errors.New("Zigbee2MQTT runtime stopped")
+	}
+	select {
+	case <-result:
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-z2m.runtimeDone:
+		return errors.New("Zigbee2MQTT runtime stopped")
+	}
+	return nil
+}
+
+// publishEntityEventCandidate routes one decoded Entity Event through the
+// runtime coordinator and waits for its publication disposition, exactly as
+// an ordinary Observation does, so a caller cannot outrun publication and a
+// non-cancellation SDK failure stops the runtime.
+func (z2m *Adapter) publishEntityEventCandidate(ctx context.Context, event adapter.EntityEvent) error {
+	result := make(chan struct{}, 1)
+	candidate := eventCandidate{ctx: ctx, event: event, result: result}
+	select {
+	case z2m.runtimeEvents <- candidate:
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-z2m.runtimeDone:
+		return errors.New("Zigbee2MQTT runtime stopped")
+	}
+	select {
+	case <-result:
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-z2m.runtimeDone:
+		return errors.New("Zigbee2MQTT runtime stopped")
 	}
 	return nil
 }

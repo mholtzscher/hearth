@@ -352,4 +352,4 @@ Use real SQLite and embedded NATS for durability and transaction claims, injecte
 
 ## 11. Automation follow-up
 
-Before implementing automations, revise the deferred spec to consume Core-accepted Entity Event facts. Define the fresh-trigger boundary independently from this history consumer and decide how Run admission relates to recorded events. This spec does not choose the downstream execution interface. Real Zigbee2MQTT mapping remains separate work and must distinguish actual events from retained, cache-expanded, or repeated upstream values.
+Before implementing automations, revise the deferred spec to consume Core-accepted Entity Event facts. Define the fresh-trigger boundary independently from this history consumer and decide how Run admission relates to recorded events. This spec does not choose the downstream execution interface. Real Zigbee2MQTT mapping remains separately owned by `specs/zigbee2mqtt-adapter.md`; its freshness contract must distinguish actual Events from retained or cache-expanded values while preserving repeated equal occurrences.

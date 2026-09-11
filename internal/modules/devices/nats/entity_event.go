@@ -3,9 +3,7 @@ package nats
 import (
 	"context"
 	"errors"
-	"fmt"
 	"log/slog"
-	"sync/atomic"
 	"time"
 
 	natsgo "github.com/nats-io/nats.go"
@@ -34,12 +32,28 @@ type entityEvent struct {
 	Name     string `json:"name"`
 }
 
+// EntityEventConsumer is the durable Entity Event consumer. It embeds the
+// shared durable lifecycle, so activity reporting and shutdown behave exactly
+// as they do for the Observation consumer.
 type EntityEventConsumer struct {
-	consume jetstream.ConsumeContext
-	active  atomic.Bool
+	*durableConsumer
 }
 
-//nolint:dupl // Entity Event and Observation consumers are parallel durables over distinct resources.
+// entityEventClass is the Entity Event wire vocabulary shared consumer code
+// uses for diagnostics. An Entity Event is a report, never a reaction, so
+// invalid, consume, and processing failures all report under entity_event.*.
+func entityEventClass() consumerClass {
+	return consumerClass{
+		kind:         "entity event",
+		invalidEvent: "entity_event.invalid",
+		failureEvent: "entity_event.processing_failed",
+		idKey:        "entity_event_id",
+	}
+}
+
+// StartEntityEventConsumer subscribes the Entity Event consumer and starts
+// reporting its activity. Nil dependencies fail before any subscription, and a
+// subscription that cannot activate leaves no consumer running.
 func StartEntityEventConsumer(
 	baseContext context.Context,
 	consumer jetstream.Consumer,
@@ -53,65 +67,19 @@ func StartEntityEventConsumer(
 	if recorder == nil {
 		return nil, errors.New("entity event recorder is required")
 	}
-	if logger == nil {
-		logger = defaultLogger(logger)
-	}
-	if baseContext == nil {
-		baseContext = context.Background()
-	}
-
-	running := &EntityEventConsumer{}
-	consume, err := consumer.Consume(
-		func(message jetstream.Msg) {
-			handleEntityEventMessage(baseContext, message, validator, recorder, logger)
+	durable, err := startDurableConsumer(
+		baseContext,
+		consumer,
+		entityEventClass(),
+		logger,
+		func(ctx context.Context, logger *slog.Logger, message jetstream.Msg) {
+			handleEntityEventMessage(ctx, message, validator, recorder, logger)
 		},
-		jetstream.ConsumeErrHandler(func(_ jetstream.ConsumeContext, _ error) {
-			logger.ErrorContext(baseContext, "entity event consume error",
-				slog.String(transportEventKey, "entity_event.processing_failed"),
-				slog.String("stage", "consume"),
-				slog.String(transportErrorCodeKey, "consumer_error"),
-			)
-		}),
 	)
 	if err != nil {
-		return nil, fmt.Errorf("start entity event consumer: %w", err)
+		return nil, err
 	}
-	running.consume = consume
-	running.active.Store(true)
-	go func() {
-		<-consume.Closed()
-		running.active.Store(false)
-	}()
-	return running, nil
-}
-
-func (consumer *EntityEventConsumer) Active() bool {
-	return consumer != nil && consumer.active.Load()
-}
-
-func (consumer *EntityEventConsumer) Stop() {
-	if consumer == nil || consumer.consume == nil {
-		return
-	}
-	consumer.active.Store(false)
-	consumer.consume.Stop()
-}
-
-func (consumer *EntityEventConsumer) Drain() {
-	if consumer == nil || consumer.consume == nil {
-		return
-	}
-	consumer.active.Store(false)
-	consumer.consume.Drain()
-}
-
-func (consumer *EntityEventConsumer) Closed() <-chan struct{} {
-	if consumer == nil || consumer.consume == nil {
-		closed := make(chan struct{})
-		close(closed)
-		return closed
-	}
-	return consumer.consume.Closed()
+	return &EntityEventConsumer{durableConsumer: durable}, nil
 }
 
 // handleEntityEventMessage decodes, validates, records, and acknowledges one
@@ -126,23 +94,13 @@ func handleEntityEventMessage(
 	recorder EntityEventRecorder,
 	logger *slog.Logger,
 ) {
-	// Extract the operation context from headers before decoding so every
-	// emission below, including permanent invalid input, preserves it.
-	ctx := natswire.ExtractTrace(baseContext, message.Headers())
-	metadata, metadataErr := message.Metadata()
-	if metadataErr != nil {
-		logger.ErrorContext(ctx, "cannot read entity event metadata",
-			slog.String(transportEventKey, "entity_event.processing_failed"),
-			slog.String("stage", "metadata"),
-			slog.String(transportErrorCodeKey, "metadata_unavailable"),
-		)
+	opened, ok := openConsumerMessage(baseContext, message, logger, entityEventClass())
+	if !ok {
 		return
 	}
-	sequence := metadata.Sequence.Stream
-	payloadSize := len(message.Data())
-	permanentFailure := func(errorCode, entityEventID string) {
-		logInvalidEntityEvent(ctx, logger, message, sequence, payloadSize, errorCode, entityEventID)
-	}
+	ctx := opened.operation
+	metadata := opened.metadata
+	permanentFailure := opened.reject
 
 	envelope, decodeErr := natswire.Decode[entityEvent](
 		validator, contractsv1.EntityEventSchemaID, message.Data(),
@@ -220,43 +178,6 @@ func handleEntityEventMessage(
 			slog.String("stage", "ack"),
 			slog.String(transportErrorCodeKey, "ack_failed"),
 		)
-	}
-}
-
-// logInvalidEntityEvent acknowledges permanent wire-invalid input before
-// recording it at Warn with a fixed validation class and safe sizes and IDs.
-// Raw payloads and decode errors are never logged.
-//
-//nolint:dupl // Entity Event and Observation invalid-input diagnostics share one ack-then-warn shape.
-func logInvalidEntityEvent(
-	ctx context.Context,
-	logger *slog.Logger,
-	message jetstream.Msg,
-	sequence uint64,
-	payloadSize int,
-	errorCode, entityEventID string,
-) {
-	ackErr := message.Ack()
-	scoped := logger.With(slog.Uint64("stream_sequence", sequence))
-	attributes := []slog.Attr{
-		slog.Int("payload_size", payloadSize),
-		slog.String(transportEventKey, "entity_event.invalid"),
-		slog.String(transportErrorCodeKey, errorCode),
-	}
-	if entityEventID != "" {
-		attributes = append(attributes, slog.String("entity_event_id", entityEventID))
-	}
-	scoped.LogAttrs(ctx, slog.LevelWarn, "acknowledging invalid entity event", attributes...)
-	if ackErr != nil {
-		ackAttributes := []slog.Attr{
-			slog.String(transportEventKey, "entity_event.processing_failed"),
-			slog.String("stage", "ack"),
-			slog.String(transportErrorCodeKey, "ack_failed"),
-		}
-		if entityEventID != "" {
-			ackAttributes = append(ackAttributes, slog.String("entity_event_id", entityEventID))
-		}
-		scoped.LogAttrs(ctx, slog.LevelError, "acknowledge invalid entity event", ackAttributes...)
 	}
 }
 

@@ -12,20 +12,24 @@ import (
 )
 
 // entityPlan is one immutable Entity description plus the functions needed to
-// decode its State and plan its Commands.
+// decode its State and Events and plan its Commands.
 type entityPlan struct {
 	Descriptor       adapter.EntityDescriptor
 	StatePolicy      entityStatePolicy // entityStateful (default) | entityStateless
 	StateProperties  []string
 	GetProperties    []string
+	EventProperties  []string
 	DecodeState      stateDecoder
+	DecodeEvent      eventDecoder
 	TranslateCommand commandTranslator
 }
 
 // entityStatePolicy declares whether one planned Entity holds observable
-// State. Stateless plans (effects) claim no State properties, run no
-// decoder, and publish no observations; the core catalog carries the
-// matching stateless flag separately so the adapter never queries it.
+// State. Stateless plans (read-only action Events and dispatched Command
+// acts) claim no State properties, run no State decoder, and publish no
+// observations, but each still carries exactly one behavior; the core
+// catalog carries the matching stateless flag separately so the adapter
+// never queries it.
 type entityStatePolicy uint8
 
 const (
@@ -54,6 +58,16 @@ type stateReport struct {
 	Observation adapter.Observation
 	semantic    any
 }
+
+// eventDecoder projects zero or one Entity Event from one parsed MQTT object.
+// It returns present == false for an absent, empty, or null source value so a
+// message without a report emits no event and never replays a cached one. An
+// invalid or unsupported value returns an error, which becomes a per-Entity
+// issue so valid sibling State still publishes.
+type eventDecoder func(
+	entityID string,
+	properties map[string]json.RawMessage,
+) (adapter.EntityEvent, bool, error)
 
 // stateDecodeIssue identifies one Entity whose claimed properties were all
 // present but invalid, without suppressing valid siblings.
@@ -97,9 +111,9 @@ const (
 )
 
 // validateEntityPlans runs before registration. It checks descriptor
-// completeness, non-empty and unique State properties, ordered get subsets,
-// decoder presence, duplicate Entity keys, and the controllable refresh
-// invariant.
+// completeness, non-empty and unique State properties, explicit Event source
+// ownership, ordered get subsets, decoder presence, exactly one stateless
+// behavior, duplicate Entity keys, and the controllable refresh invariant.
 //
 //nolint:gocognit // One function keeps every pre-registration plan invariant together.
 func validateEntityPlans(plans []entityPlan) error {
@@ -110,7 +124,14 @@ func validateEntityPlans(plans []entityPlan) error {
 			return errors.New("entity plan descriptor is incomplete")
 		}
 		stateless := plan.StatePolicy == entityStateless
-		if !stateless && len(plan.StateProperties) == 0 {
+		switch {
+		case stateless:
+			if err := validateStatelessPlan(plan); err != nil {
+				return err
+			}
+		case plan.DecodeEvent != nil:
+			return errors.New("stateful entity plan must not decode events")
+		case len(plan.StateProperties) == 0:
 			return errors.New("entity plan must claim at least one State property")
 		}
 		claimed := make(map[string]struct{}, len(plan.StateProperties))
@@ -146,6 +167,9 @@ func validateEntityPlans(plans []entityPlan) error {
 			}
 			previous = position
 		}
+		if err := validateEventProperties(plan); err != nil {
+			return err
+		}
 		if !stateless && plan.DecodeState == nil {
 			return errors.New("entity plan is missing its State decoder")
 		}
@@ -156,6 +180,45 @@ func validateEntityPlans(plans []entityPlan) error {
 			return errors.New("duplicate Entity key in merged device plan")
 		}
 		keys[plan.Descriptor.Key] = struct{}{}
+	}
+	return nil
+}
+
+// validateEventProperties enforces explicit Event source ownership: a plan
+// that decodes Events must name at least one non-empty, unique source
+// property, and a plan without an Event decoder must name none. The names
+// tell the pending replay queue which not-yet-activated messages are Event
+// occurrences, so a plan that decodes Events must never silently own nothing.
+func validateEventProperties(plan entityPlan) error {
+	seen := make(map[string]struct{}, len(plan.EventProperties))
+	for _, property := range plan.EventProperties {
+		if property == "" {
+			return errors.New("entity plan event property must not be empty")
+		}
+		if _, duplicate := seen[property]; duplicate {
+			return errors.New("entity plan event property is duplicated")
+		}
+		seen[property] = struct{}{}
+	}
+	if plan.DecodeEvent != nil && len(plan.EventProperties) == 0 {
+		return errors.New("entity plan with an event decoder must claim at least one event property")
+	}
+	if plan.DecodeEvent == nil && len(plan.EventProperties) != 0 {
+		return errors.New("entity plan without an event decoder must not claim event properties")
+	}
+	return nil
+}
+
+// validateStatelessPlan enforces the stateless invariant: an Entity that
+// claims no State carries exactly one behavior. It either decodes Events or
+// translates Commands, so an action plan that silently loses its decoder can
+// never register as a permanently mute Entity.
+func validateStatelessPlan(plan entityPlan) error {
+	if len(plan.StateProperties) != 0 || len(plan.GetProperties) != 0 || plan.DecodeState != nil {
+		return errors.New("stateless entity plan must not claim State")
+	}
+	if (plan.DecodeEvent == nil) == (plan.TranslateCommand == nil) {
+		return errors.New("stateless entity plan must declare exactly one of event decoding or command translation")
 	}
 	return nil
 }

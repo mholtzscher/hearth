@@ -48,7 +48,6 @@ func (z2m *Adapter) runConnection(ctx context.Context, generation uint64) (bool,
 	}
 
 	state := connectionSync{
-		pending:      make(map[string]mqttMessage),
 		availability: make(map[string]availabilityEvidence),
 		snapshot:     routeSnapshot{routes: make(map[string]commandRoute), devices: make(map[string]runtimeDevice)},
 	}
@@ -128,11 +127,23 @@ type connectionSync struct {
 	info           *bridgeInfo
 	inventory      *inventoryDiscovery
 	dirty          bool
-	pendingOrder   []string
-	pending        map[string]mqttMessage
-	availability   map[string]availabilityEvidence
-	snapshot       routeSnapshot
-	routeRevision  uint64
+	// pending holds every device message received before route activation, in
+	// replay order. An occurrence entry is always kept individually; every
+	// other entry coalesces to the latest message per topic so a stalled
+	// connection never replays stale State and availability history.
+	pending       []pendingMessage
+	availability  map[string]availabilityEvidence
+	snapshot      routeSnapshot
+	routeRevision uint64
+}
+
+// pendingMessage is one queued upstream message awaiting route activation.
+// occurrence marks a message that may carry an Entity Event occurrence and
+// therefore must replay individually, in arrival order, exactly once. Every
+// other queued message coalesces with later messages on the same topic.
+type pendingMessage struct {
+	message    mqttMessage
+	occurrence bool
 }
 
 type availabilityEvidence struct {
@@ -231,7 +242,7 @@ func (z2m *Adapter) ingestMessage(
 			return z2m.processDeviceMessage(ctx, generation, state, message)
 		}
 		if queueableDeviceTopic(z2m.config.BaseTopic, message.Topic, state.inventory) {
-			state.queuePending(message)
+			state.queuePending(message, z2m.carriesEventOccurrence(state, message))
 		}
 	}
 	return nil
@@ -241,19 +252,87 @@ func compatibleBridgeInfo(info bridgeInfo) bool {
 	return info.MQTTVersion == mqttProtocolVersion311 && info.AvailabilityEnabled && !info.Optimistic
 }
 
-func (state *connectionSync) queuePending(message mqttMessage) {
-	if state.pending == nil {
-		state.pending = make(map[string]mqttMessage)
+// queuePending records one device message received before route activation.
+// An occurrence is always appended individually so two equal action reports
+// stay two occurrences, and so a later unrelated report on the same topic can
+// never erase one. Any other message replaces the queued message for its
+// topic and moves to the end of the queue, so the latest State per topic still
+// replays last without keeping unbounded history for every topic.
+func (state *connectionSync) queuePending(message mqttMessage, occurrence bool) {
+	if occurrence {
+		state.pending = append(state.pending, pendingMessage{message: message, occurrence: true})
+		return
 	}
-	if _, exists := state.pending[message.Topic]; !exists {
-		state.pendingOrder = append(state.pendingOrder, message.Topic)
+	for index, entry := range state.pending {
+		if entry.occurrence || entry.message.Topic != message.Topic {
+			continue
+		}
+		state.pending = append(state.pending[:index], state.pending[index+1:]...)
+		break
 	}
-	state.pending[message.Topic] = message
+	state.pending = append(state.pending, pendingMessage{message: message})
+}
+
+// carriesEventOccurrence reports whether one not-yet-activated device message
+// may carry an Entity Event occurrence. A retained message is a cached replay,
+// never an occurrence. Before inventory arrives the adapter cannot know which
+// properties an Entity owns, so it conservatively treats a top-level action or
+// action_* property as event-bearing; once inventory exists it uses the
+// discovered Event property ownership instead of guessing.
+func (z2m *Adapter) carriesEventOccurrence(state *connectionSync, message mqttMessage) bool {
+	if message.Retained {
+		return false
+	}
+	friendly, kind := parseDeviceTopic(z2m.config.BaseTopic, message.Topic)
+	if kind != deviceTopicState {
+		return false
+	}
+	properties, err := decodeDeviceProperties(message.Payload)
+	if err != nil {
+		return false
+	}
+	if state.inventory == nil {
+		return hasConservativeActionProperty(properties)
+	}
+	for _, device := range state.inventory.Devices {
+		if device.FriendlyName == friendly {
+			return deviceOwnsEventProperty(device, properties)
+		}
+	}
+	return false
+}
+
+// hasConservativeActionProperty is the pre-inventory occurrence test. It
+// deliberately over-approximates by accepting every action or action_*
+// property, because an unknown device could own any such Event source.
+func hasConservativeActionProperty(properties map[string]json.RawMessage) bool {
+	for property := range properties {
+		if isActionEventProperty(property) {
+			return true
+		}
+	}
+	return false
+}
+
+// deviceOwnsEventProperty is the post-inventory occurrence test: exactly the
+// properties of decoded Event plans count, so a message that only carries a
+// State or Command property still coalesces by topic.
+func deviceOwnsEventProperty(device discoveredDevice, properties map[string]json.RawMessage) bool {
+	for _, entity := range device.Entities {
+		if entity.DecodeEvent == nil {
+			continue
+		}
+		for _, property := range entity.EventProperties {
+			if _, present := properties[property]; present {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func (state *connectionSync) clearPending() {
-	state.pendingOrder = nil
-	clear(state.pending)
+	state.pending = nil
 }
 
 func (z2m *Adapter) reportUnhealthy(

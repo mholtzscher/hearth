@@ -378,6 +378,11 @@ func TestDecodeCapturedBridgeInfo(t *testing.T) {
 func FuzzDiscoverInventory(fuzz *testing.F) {
 	fuzz.Add(readFixture(fuzz, "bridge-devices-3rcb01057z.json"))
 	fuzz.Add(readFixture(fuzz, "multi-endpoint-light.json"))
+	// The button fixture carries a stateless Event plan and the plug fixture
+	// carries stateless dispatched Command plans, so both stateless shapes are
+	// seeds for the invariant below.
+	fuzz.Add(readFixture(fuzz, buttonFixtureName))
+	fuzz.Add(readFixture(fuzz, "bridge-devices-3rsp02028bz.json"))
 	fuzz.Add([]byte(`[]`))
 	fuzz.Fuzz(func(t *testing.T, payload []byte) {
 		result, err := discoverInventory(payload)
@@ -394,6 +399,20 @@ func FuzzDiscoverInventory(fuzz *testing.F) {
 					t.Fatalf("duplicate Entity key %q", entity.Descriptor.Key)
 				}
 				seen[entity.Descriptor.Key] = struct{}{}
+				if entity.StatePolicy == entityStateless {
+					// A valid stateless plan claims no State and carries exactly
+					// one behavior; an Event plan also names the properties it
+					// decodes, while a Command plan owns none.
+					if len(entity.StateProperties) != 0 || len(entity.GetProperties) != 0 ||
+						entity.DecodeState != nil ||
+						(entity.DecodeEvent == nil) == (entity.TranslateCommand == nil) {
+						t.Fatalf("accepted incomplete stateless Entity plan %q", entity.Descriptor.Key)
+					}
+					if entity.DecodeEvent != nil && len(entity.EventProperties) == 0 {
+						t.Fatalf("accepted event Entity plan %q without source properties", entity.Descriptor.Key)
+					}
+					continue
+				}
 				if len(entity.StateProperties) == 0 || entity.DecodeState == nil {
 					t.Fatalf("accepted incomplete Entity plan %q", entity.Descriptor.Key)
 				}

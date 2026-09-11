@@ -159,14 +159,13 @@ func (z2m *Adapter) replayPendingAvailability(
 	state *connectionSync,
 	snapshot routeSnapshot,
 ) error {
-	for _, topic := range state.pendingOrder {
-		message := state.pending[topic]
+	for _, entry := range state.pending {
 		if _, kind := classifyDeviceTopic(
 			z2m.config.BaseTopic,
-			message.Topic,
+			entry.message.Topic,
 			snapshot.devices,
 		); kind == deviceTopicAvailability {
-			if err := z2m.cacheAvailability(state, message, snapshot.devices); err != nil {
+			if err := z2m.cacheAvailability(state, entry.message, snapshot.devices); err != nil {
 				z2m.logger.WarnContext(
 					ctx,
 					"ignored invalid Zigbee2MQTT availability",
@@ -179,19 +178,21 @@ func (z2m *Adapter) replayPendingAvailability(
 	return z2m.reportReconciledAvailability(ctx, *state.inventory, snapshot, state.availability)
 }
 
+// replayPendingState replays the queued State and preserved Event occurrence
+// messages in upstream arrival order, then clears the queue. Availability was
+// already replayed into one reconciled evidence batch, so it is skipped here.
 func (z2m *Adapter) replayPendingState(
 	ctx context.Context,
 	generation uint64,
 	state *connectionSync,
 ) error {
-	for _, topic := range state.pendingOrder {
-		message := state.pending[topic]
+	for _, entry := range state.pending {
 		if _, kind := classifyDeviceTopic(
 			z2m.config.BaseTopic,
-			message.Topic,
+			entry.message.Topic,
 			state.snapshot.devices,
 		); kind == deviceTopicState {
-			if err := z2m.processDeviceMessage(ctx, generation, state, message); err != nil {
+			if err := z2m.processDeviceMessage(ctx, generation, state, entry.message); err != nil {
 				return err
 			}
 		}

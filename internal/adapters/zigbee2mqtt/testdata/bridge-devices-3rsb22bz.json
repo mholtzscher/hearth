@@ -1,0 +1,48 @@
+[
+  {
+    "ieee_address": "0x00124b0024abcd04",
+    "type": "EndDevice",
+    "supported": true,
+    "disabled": false,
+    "friendly_name": "fixture-button-3rsb",
+    "description": "Sanitized Fixture Button",
+    "interview_state": "SUCCESSFUL",
+    "endpoints": {
+      "1": {}
+    },
+    "definition": {
+      "model": "3RSB22BZ",
+      "vendor": "Third Reality",
+      "description": "Zigbee smart button",
+      "exposes": [
+        {
+          "type": "enum",
+          "name": "action",
+          "property": "action",
+          "access": 1,
+          "values": ["single", "double", "hold", "release"]
+        },
+        {
+          "type": "numeric",
+          "name": "battery",
+          "property": "battery",
+          "access": 5,
+          "value_min": 0,
+          "value_max": 100,
+          "unit": "%"
+        },
+        {
+          "type": "numeric",
+          "name": "linkquality",
+          "property": "linkquality",
+          "access": 1,
+          "value_min": 0,
+          "value_max": 255,
+          "unit": "lqi"
+        }
+      ]
+    },
+    "software_build_id": "v1.00.35",
+    "power_source": "Battery"
+  }
+]
