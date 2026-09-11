@@ -614,14 +614,33 @@ func writeCatalogEntityEvents(source *strings.Builder, probe catalogProbe) error
 }
 
 // writeClosedTypeEntityEventChecks pins the closed-type half of the selector:
-// a type without event support accepts no Entity Event name, and its closed
-// support schema still rejects a descriptor carrying events even though the
-// shared registration schema can transport one.
+// a type without event support accepts no Entity Event name even when its
+// persisted support is malformed, and its closed support schema still rejects a
+// descriptor carrying events even though the shared registration schema can
+// transport one.
 func writeClosedTypeEntityEventChecks(source *strings.Builder, probe catalogProbe) error {
 	source.WriteString(
 		"\t\tif supported, err := catalog.SupportsEntityEvent(entity, EntityEventName(\"single_press\")); err != nil || supported {",
 	)
 	source.WriteString(" t.Errorf(\"catalog non-event type accepted an Entity Event: %v, %v\", supported, err) }\n")
+	// A resolved non-event type is classified before its unrelated support is
+	// decoded, so a malformed persisted descriptor stays an ordinary
+	// unsupported_event rejection instead of a catalog failure.
+	malformedEntity, malformedErr := declareCatalogProbeEntity(
+		source, probe, "malformedNonEventEntity", json.RawMessage(`[]`),
+	)
+	if malformedErr != nil {
+		return malformedErr
+	}
+	fmt.Fprintf(
+		source,
+		"\t\tif supported, err := catalog.SupportsEntityEvent(%s, EntityEventName(%s)); err != nil || supported {",
+		malformedEntity,
+		strconv.Quote("single_press"),
+	)
+	source.WriteString(
+		" t.Errorf(\"catalog non-event type with malformed support accepted an Entity Event: %v, %v\", supported, err) }\n",
+	)
 	closedEventSupport, err := supportWithEvents(probe.support)
 	if err != nil {
 		return err

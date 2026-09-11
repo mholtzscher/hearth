@@ -226,8 +226,6 @@ func TestEntityEventRecordingSeparatesIDsAndPreservesFirstSeenRows(t *testing.T)
 // This test protects the persisted rejection precedence and fails if a
 // rejection is misclassified, skipped, or not durable, and if Adapter health or
 // Entity availability gate historical input.
-//
-//nolint:gocognit // One table keeps every rejection and precedence case under the same Entity fixture.
 func TestEntityEventRecordingRejectionPrecedence(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
@@ -354,29 +352,91 @@ func TestEntityEventRecordingRejectionPrecedence(t *testing.T) {
 		*result.Rejection != EntityEventRejectionUnsupportedEvent {
 		t.Fatalf("unsupported name recording = %#v", result)
 	}
+}
 
-	// A corrupt persisted descriptor is an infrastructure failure, not a
-	// rejection: validation never persists a guessed disposition.
+// This test protects the permanent descriptor classification boundary: it
+// fails if a persisted descriptor Core cannot interpret is not reported as
+// ErrEntityEventDescriptorCorrupt, if that report leaks raw descriptor bytes,
+// if it writes a row, or if an ordinary storage failure is mistaken for the
+// permanent class.
+func TestEntityEventRecordingClassifiesOnlyDescriptorInterpretationAsPermanent(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	database := openRegistrationDatabase(t, filepath.Join(t.TempDir(), "hearth.db"))
+	now := time.Date(2026, 9, 4, 10, 0, 0, 0, time.UTC)
+	service, _ := newEntityEventTestService(t, database, &now)
+	entityID := registerEntityEventEntity(t, service)
+
+	// A malformed persisted descriptor is a permanent interpretation failure,
+	// never a rejection and never a guessed disposition.
+	const descriptorSecret = "leaky_descriptor_value"
 	if _, err := database.ExecContext(ctx,
 		"UPDATE entities SET support_json = ? WHERE id = ?",
-		`{"state":{},"operations":{}}`, string(entityID),
+		`{"state":{},"operations":{},"events":{"names":["single_press"]},"`+descriptorSecret+`":true}`,
+		string(entityID),
 	); err != nil {
 		t.Fatal(err)
 	}
 	corrupt := newEntityEvent(t, entityID, "single_press", now)
-	if _, err := service.RecordEntityEvent(
+	_, corruptErr := service.RecordEntityEvent(
 		ctx, entityEventTestAdapter, entityEventTestRuntimeID, corrupt, now,
-	); err == nil {
-		t.Fatal("corrupt descriptor error = nil, want catalog failure")
+	)
+	if !errors.Is(corruptErr, ErrEntityEventDescriptorCorrupt) {
+		t.Fatalf("malformed descriptor error = %v, want %v", corruptErr, ErrEntityEventDescriptorCorrupt)
 	}
-	if count := countEntityEvents(t, database); count != len(tests)+2 {
-		t.Fatalf("row count with corrupt descriptor = %d, want %d", count, len(tests)+2)
+	var failure *EntityEventDescriptorError
+	if !errors.As(corruptErr, &failure) {
+		t.Fatalf("malformed descriptor error = %v, want a typed failure", corruptErr)
 	}
+	if failure.EntityID != entityID || failure.TypeID != EntityTypeEnumeventV1 {
+		t.Fatalf("descriptor failure = %#v, want entity %q of type %q", failure, entityID, EntityTypeEnumeventV1)
+	}
+	// The wrapped catalog cause keeps the detail for inspection while the
+	// classified message stays free of persisted descriptor bytes.
+	if failure.cause == nil || !strings.Contains(failure.cause.Error(), descriptorSecret) {
+		t.Fatalf("wrapped cause = %v, want the decoded descriptor detail", failure.cause)
+	}
+	if strings.Contains(corruptErr.Error(), descriptorSecret) {
+		t.Fatalf("classified error %q exposes persisted descriptor bytes", corruptErr)
+	}
+	if count := countEntityEvents(t, database); count != 0 {
+		t.Fatalf("rows after a malformed descriptor = %d, want 0", count)
+	}
+
+	// An unknown Entity Type is the other permanent interpretation failure:
+	// the persisted row names a type this build cannot resolve.
+	if _, err := database.ExecContext(ctx,
+		"UPDATE entities SET type_id = ? WHERE id = ?",
+		"hearth.unknown/v1", string(entityID),
+	); err != nil {
+		t.Fatal(err)
+	}
+	unknownType := newEntityEvent(t, entityID, "single_press", now)
 	if _, err := service.RecordEntityEvent(
+		ctx, entityEventTestAdapter, entityEventTestRuntimeID, unknownType, now,
+	); !errors.Is(err, ErrEntityEventDescriptorCorrupt) {
+		t.Fatalf("unknown type error = %v, want %v", err, ErrEntityEventDescriptorCorrupt)
+	}
+	if count := countEntityEvents(t, database); count != 0 {
+		t.Fatalf("rows after an unknown type = %d, want 0", count)
+	}
+
+	// An ordinary storage failure is retryable, so it must never carry the
+	// permanent class.
+	unreachable := openRegistrationDatabase(t, filepath.Join(t.TempDir(), "closed.db"))
+	unreachableService, _ := newEntityEventTestService(t, unreachable, &now)
+	if err := unreachable.Close(); err != nil {
+		t.Fatal(err)
+	}
+	_, storageErr := unreachableService.RecordEntityEvent(
 		ctx, entityEventTestAdapter, entityEventTestRuntimeID,
 		newEntityEvent(t, entityID, "single_press", now), now,
-	); err == nil {
-		t.Fatal("second corrupt descriptor error = nil, want catalog failure")
+	)
+	if storageErr == nil {
+		t.Fatal("closed database error = nil, want a storage failure")
+	}
+	if errors.Is(storageErr, ErrEntityEventDescriptorCorrupt) {
+		t.Fatalf("storage failure %v was classified as permanent", storageErr)
 	}
 }
 

@@ -96,8 +96,11 @@ func (repository *SQLiteRepository) RecordEntityEvent(
 // classifyEntityEvent applies the processing-time checks in their fixed
 // precedence: runtime fencing, Entity existence, ownership, enablement, and
 // current event support. Adapter health and Entity availability never appear
-// here: historical input is not gated on either. A corrupt persisted
-// descriptor or an unknown type is an infrastructure failure, not a rejection.
+// here: historical input is not gated on either. An unknown Entity Type or a
+// persisted descriptor that no longer satisfies its schema returns a
+// permanent EntityEventDescriptorError rather than a rejection, because
+// redelivering such a report can never succeed. Ordinary storage failures
+// return their own errors and stay retryable.
 func (repository *SQLiteRepository) classifyEntityEvent(
 	ctx context.Context,
 	queries *dbsqlc.Queries,
@@ -134,7 +137,13 @@ func (repository *SQLiteRepository) classifyEntityEvent(
 	}
 	supported, err := repository.catalog.SupportsEntityEvent(entity, params.Event.Name)
 	if err != nil {
-		return "", nil, fmt.Errorf("validate entity event support: %w", err)
+		// Only interpreting the persisted descriptor can fail here: an unknown
+		// Entity Type or event-source support that no longer satisfies its
+		// schema. Both are deterministic for this row, so the report gets the
+		// permanent descriptor class instead of an ordinary retryable error.
+		return "", nil, &EntityEventDescriptorError{
+			EntityID: entity.ID, TypeID: entity.TypeID, cause: err,
+		}
 	}
 	if !supported {
 		return rejectedEntityEvent(EntityEventRejectionUnsupportedEvent)

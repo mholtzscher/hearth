@@ -32,6 +32,13 @@ func TestProvisionEntityEventResourcesCreatesAndValidatesRuntimeConfiguration(t 
 		consumerConfig.ReplayPolicy != jetstream.ReplayInstantPolicy {
 		t.Fatalf("consumer = %#v", consumerConfig)
 	}
+	if EntityEventRedeliveryDelay != consumerConfig.AckWait {
+		t.Fatalf(
+			"record-failure redelivery delay = %v, want AckWait %v",
+			EntityEventRedeliveryDelay,
+			consumerConfig.AckWait,
+		)
+	}
 	stream, streamErr := js.Stream(context.Background(), EntityEventStreamName)
 	if streamErr != nil {
 		t.Fatal(streamErr)

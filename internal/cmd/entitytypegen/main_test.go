@@ -928,6 +928,10 @@ func TestRenderedCatalogWiringCoversDeadlineOutcomesAndEquality(t *testing.T) {
 		"catalog equal State",
 		"catalog unequal State",
 		"equalGeneratedCatalogJSON",
+		// A malformed persisted support must stay false, nil for a non-event
+		// type rather than becoming a catalog failure.
+		"malformedNonEventEntity",
+		"catalog non-event type with malformed support accepted an Entity Event",
 	} {
 		if !strings.Contains(text, required) {
 			t.Errorf("rendered catalog wiring does not contain %q", required)

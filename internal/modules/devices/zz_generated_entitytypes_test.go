@@ -116,6 +116,10 @@ func TestGeneratedBuiltinCatalogWiring(t *testing.T) {
 		if supported, err := catalog.SupportsEntityEvent(entity, EntityEventName("single_press")); err != nil || supported {
 			t.Errorf("catalog non-event type accepted an Entity Event: %v, %v", supported, err)
 		}
+		malformedNonEventEntity := Entity{ID: EntityID("generated_brightnessv1"), TypeID: EntityTypeBrightnessV1, Support: EntitySupport("[]")}
+		if supported, err := catalog.SupportsEntityEvent(malformedNonEventEntity, EntityEventName("single_press")); err != nil || supported {
+			t.Errorf("catalog non-event type with malformed support accepted an Entity Event: %v, %v", supported, err)
+		}
 		if _, err := catalog.NormalizeSupport(entity.TypeID, EntitySupport("{\"events\":{\"names\":[\"single_press\"]},\"operations\":{\"set\":{\"step\":5}},\"state\":{\"maximum\":80}}")); err == nil {
 			t.Error("catalog accepted event support for a closed type")
 		}
@@ -167,6 +171,10 @@ func TestGeneratedBuiltinCatalogWiring(t *testing.T) {
 		if supported, err := catalog.SupportsEntityEvent(entity, EntityEventName("single_press")); err != nil || supported {
 			t.Errorf("catalog non-event type accepted an Entity Event: %v, %v", supported, err)
 		}
+		malformedNonEventEntity := Entity{ID: EntityID("generated_colorhsv1"), TypeID: EntityTypeColorhsV1, Support: EntitySupport("[]")}
+		if supported, err := catalog.SupportsEntityEvent(malformedNonEventEntity, EntityEventName("single_press")); err != nil || supported {
+			t.Errorf("catalog non-event type with malformed support accepted an Entity Event: %v, %v", supported, err)
+		}
 		if _, err := catalog.NormalizeSupport(entity.TypeID, EntitySupport("{\"events\":{\"names\":[\"single_press\"]},\"operations\":{\"set\":{}},\"state\":{}}")); err == nil {
 			t.Error("catalog accepted event support for a closed type")
 		}
@@ -198,6 +206,10 @@ func TestGeneratedBuiltinCatalogWiring(t *testing.T) {
 		}
 		if supported, err := catalog.SupportsEntityEvent(entity, EntityEventName("single_press")); err != nil || supported {
 			t.Errorf("catalog non-event type accepted an Entity Event: %v, %v", supported, err)
+		}
+		malformedNonEventEntity := Entity{ID: EntityID("generated_colormodev1"), TypeID: EntityTypeColormodeV1, Support: EntitySupport("[]")}
+		if supported, err := catalog.SupportsEntityEvent(malformedNonEventEntity, EntityEventName("single_press")); err != nil || supported {
+			t.Errorf("catalog non-event type with malformed support accepted an Entity Event: %v, %v", supported, err)
 		}
 		if _, err := catalog.NormalizeSupport(entity.TypeID, EntitySupport("{\"events\":{\"names\":[\"single_press\"]},\"operations\":{},\"state\":{}}")); err == nil {
 			t.Error("catalog accepted event support for a closed type")
@@ -256,6 +268,10 @@ func TestGeneratedBuiltinCatalogWiring(t *testing.T) {
 		if supported, err := catalog.SupportsEntityEvent(entity, EntityEventName("single_press")); err != nil || supported {
 			t.Errorf("catalog non-event type accepted an Entity Event: %v, %v", supported, err)
 		}
+		malformedNonEventEntity := Entity{ID: EntityID("generated_colortempv1"), TypeID: EntityTypeColortempV1, Support: EntitySupport("[]")}
+		if supported, err := catalog.SupportsEntityEvent(malformedNonEventEntity, EntityEventName("single_press")); err != nil || supported {
+			t.Errorf("catalog non-event type with malformed support accepted an Entity Event: %v, %v", supported, err)
+		}
 		if _, err := catalog.NormalizeSupport(entity.TypeID, EntitySupport("{\"events\":{\"names\":[\"single_press\"]},\"operations\":{\"set\":{\"step\":1}},\"state\":{\"minimum\":153,\"maximum\":500}}")); err == nil {
 			t.Error("catalog accepted event support for a closed type")
 		}
@@ -307,6 +323,10 @@ func TestGeneratedBuiltinCatalogWiring(t *testing.T) {
 		if supported, err := catalog.SupportsEntityEvent(entity, EntityEventName("single_press")); err != nil || supported {
 			t.Errorf("catalog non-event type accepted an Entity Event: %v, %v", supported, err)
 		}
+		malformedNonEventEntity := Entity{ID: EntityID("generated_colorxyv1"), TypeID: EntityTypeColorxyV1, Support: EntitySupport("[]")}
+		if supported, err := catalog.SupportsEntityEvent(malformedNonEventEntity, EntityEventName("single_press")); err != nil || supported {
+			t.Errorf("catalog non-event type with malformed support accepted an Entity Event: %v, %v", supported, err)
+		}
 		if _, err := catalog.NormalizeSupport(entity.TypeID, EntitySupport("{\"events\":{\"names\":[\"single_press\"]},\"operations\":{\"set\":{}},\"state\":{}}")); err == nil {
 			t.Error("catalog accepted event support for a closed type")
 		}
@@ -354,6 +374,10 @@ func TestGeneratedBuiltinCatalogWiring(t *testing.T) {
 		}
 		if supported, err := catalog.SupportsEntityEvent(entity, EntityEventName("single_press")); err != nil || supported {
 			t.Errorf("catalog non-event type accepted an Entity Event: %v, %v", supported, err)
+		}
+		malformedNonEventEntity := Entity{ID: EntityID("generated_enumactionv1"), TypeID: EntityTypeEnumactionV1, Support: EntitySupport("[]")}
+		if supported, err := catalog.SupportsEntityEvent(malformedNonEventEntity, EntityEventName("single_press")); err != nil || supported {
+			t.Errorf("catalog non-event type with malformed support accepted an Entity Event: %v, %v", supported, err)
 		}
 		if _, err := catalog.NormalizeSupport(entity.TypeID, EntitySupport("{\"events\":{\"names\":[\"single_press\"]},\"operations\":{\"trigger\":{\"values\":[\"blink\",\"breathe\",\"okay\",\"channel_change\",\"finish_effect\",\"stop_effect\"]}},\"state\":{}}")); err == nil {
 			t.Error("catalog accepted event support for a closed type")
@@ -448,6 +472,10 @@ func TestGeneratedBuiltinCatalogWiring(t *testing.T) {
 		if supported, err := catalog.SupportsEntityEvent(entity, EntityEventName("single_press")); err != nil || supported {
 			t.Errorf("catalog non-event type accepted an Entity Event: %v, %v", supported, err)
 		}
+		malformedNonEventEntity := Entity{ID: EntityID("generated_enumsettingv1"), TypeID: EntityTypeEnumsettingV1, Support: EntitySupport("[]")}
+		if supported, err := catalog.SupportsEntityEvent(malformedNonEventEntity, EntityEventName("single_press")); err != nil || supported {
+			t.Errorf("catalog non-event type with malformed support accepted an Entity Event: %v, %v", supported, err)
+		}
 		if _, err := catalog.NormalizeSupport(entity.TypeID, EntitySupport("{\"events\":{\"names\":[\"single_press\"]},\"operations\":{\"set\":{}},\"state\":{\"choices\":[\"on\",\"off\",\"previous\",\"toggle\"]}}")); err == nil {
 			t.Error("catalog accepted event support for a closed type")
 		}
@@ -485,6 +513,10 @@ func TestGeneratedBuiltinCatalogWiring(t *testing.T) {
 		}
 		if supported, err := catalog.SupportsEntityEvent(entity, EntityEventName("single_press")); err != nil || supported {
 			t.Errorf("catalog non-event type accepted an Entity Event: %v, %v", supported, err)
+		}
+		malformedNonEventEntity := Entity{ID: EntityID("generated_numericsensorv1"), TypeID: EntityTypeNumericsensorV1, Support: EntitySupport("[]")}
+		if supported, err := catalog.SupportsEntityEvent(malformedNonEventEntity, EntityEventName("single_press")); err != nil || supported {
+			t.Errorf("catalog non-event type with malformed support accepted an Entity Event: %v, %v", supported, err)
 		}
 		if _, err := catalog.NormalizeSupport(entity.TypeID, EntitySupport("{\"events\":{\"names\":[\"single_press\"]},\"operations\":{},\"state\":{\"minimum\":0,\"maximum\":255,\"unit\":\"lqi\"}}")); err == nil {
 			t.Error("catalog accepted event support for a closed type")
@@ -546,6 +578,10 @@ func TestGeneratedBuiltinCatalogWiring(t *testing.T) {
 		if supported, err := catalog.SupportsEntityEvent(entity, EntityEventName("single_press")); err != nil || supported {
 			t.Errorf("catalog non-event type accepted an Entity Event: %v, %v", supported, err)
 		}
+		malformedNonEventEntity := Entity{ID: EntityID("generated_numericsettingv1"), TypeID: EntityTypeNumericsettingV1, Support: EntitySupport("[]")}
+		if supported, err := catalog.SupportsEntityEvent(malformedNonEventEntity, EntityEventName("single_press")); err != nil || supported {
+			t.Errorf("catalog non-event type with malformed support accepted an Entity Event: %v, %v", supported, err)
+		}
 		if _, err := catalog.NormalizeSupport(entity.TypeID, EntitySupport("{\"events\":{\"names\":[\"single_press\"]},\"operations\":{\"set\":{}},\"state\":{\"minimum\":142,\"maximum\":454,\"unit\":\"mired\",\"choices\":[\"previous\"]}}")); err == nil {
 			t.Error("catalog accepted event support for a closed type")
 		}
@@ -597,6 +633,10 @@ func TestGeneratedBuiltinCatalogWiring(t *testing.T) {
 		if supported, err := catalog.SupportsEntityEvent(entity, EntityEventName("single_press")); err != nil || supported {
 			t.Errorf("catalog non-event type accepted an Entity Event: %v, %v", supported, err)
 		}
+		malformedNonEventEntity := Entity{ID: EntityID("generated_powerv1"), TypeID: EntityTypePowerV1, Support: EntitySupport("[]")}
+		if supported, err := catalog.SupportsEntityEvent(malformedNonEventEntity, EntityEventName("single_press")); err != nil || supported {
+			t.Errorf("catalog non-event type with malformed support accepted an Entity Event: %v, %v", supported, err)
+		}
 		if _, err := catalog.NormalizeSupport(entity.TypeID, EntitySupport("{\"events\":{\"names\":[\"single_press\"]},\"operations\":{\"set\":{}},\"state\":{}}")); err == nil {
 			t.Error("catalog accepted event support for a closed type")
 		}
@@ -628,6 +668,10 @@ func TestGeneratedBuiltinCatalogWiring(t *testing.T) {
 		}
 		if supported, err := catalog.SupportsEntityEvent(entity, EntityEventName("single_press")); err != nil || supported {
 			t.Errorf("catalog non-event type accepted an Entity Event: %v, %v", supported, err)
+		}
+		malformedNonEventEntity := Entity{ID: EntityID("generated_temperaturev1"), TypeID: EntityTypeTemperatureV1, Support: EntitySupport("[]")}
+		if supported, err := catalog.SupportsEntityEvent(malformedNonEventEntity, EntityEventName("single_press")); err != nil || supported {
+			t.Errorf("catalog non-event type with malformed support accepted an Entity Event: %v, %v", supported, err)
 		}
 		if _, err := catalog.NormalizeSupport(entity.TypeID, EntitySupport("{\"events\":{\"names\":[\"single_press\"]},\"operations\":{},\"state\":{}}")); err == nil {
 			t.Error("catalog accepted event support for a closed type")

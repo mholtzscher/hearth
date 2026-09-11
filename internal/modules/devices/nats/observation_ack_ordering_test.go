@@ -16,19 +16,26 @@ import (
 	"github.com/mholtzscher/hearth/internal/modules/devices"
 )
 
-// ackOrderingTestMessage is a fake JetStream message that records Ack attempts
-// without a server, so tests prove acknowledgement precedes log emission.
+// ackOrderingTestMessage is a fake JetStream message that records Ack, Nak,
+// NakWithDelay, and Term attempts without a server, so tests prove
+// acknowledgement ordering and redelivery classification.
 type ackOrderingTestMessage struct {
-	metadata    *jetstream.MsgMetadata
-	metadataErr error
-	data        []byte
-	headers     natsgo.Header
-	subject     string
-	acked       chan struct{}
-	ackErr      error
-	once        sync.Once
-	mutex       sync.Mutex
-	ackCalls    int
+	metadata          *jetstream.MsgMetadata
+	metadataErr       error
+	data              []byte
+	headers           natsgo.Header
+	subject           string
+	acked             chan struct{}
+	ackErr            error
+	nakErr            error
+	termErr           error
+	once              sync.Once
+	mutex             sync.Mutex
+	ackCalls          int
+	nakCalls          int
+	nakWithDelayCalls int
+	termCalls         int
+	nakDelay          time.Duration
 }
 
 func (message *ackOrderingTestMessage) Metadata() (*jetstream.MsgMetadata, error) {
@@ -59,15 +66,61 @@ func (message *ackOrderingTestMessage) ackCount() int {
 
 func (*ackOrderingTestMessage) DoubleAck(context.Context) error { return nil }
 
-func (*ackOrderingTestMessage) Nak() error { return nil }
+// Nak records a plain negative acknowledgement. A failed record must use
+// NakWithDelay instead, so tests assert this counter stays zero.
+func (message *ackOrderingTestMessage) Nak() error {
+	message.mutex.Lock()
+	message.nakCalls++
+	message.mutex.Unlock()
+	return nil
+}
 
-func (*ackOrderingTestMessage) NakWithDelay(time.Duration) error { return nil }
+// NakWithDelay records the requested redelivery wait, the value that keeps a
+// report repairable without retrying it in a hot loop.
+func (message *ackOrderingTestMessage) NakWithDelay(delay time.Duration) error {
+	message.mutex.Lock()
+	message.nakWithDelayCalls++
+	message.nakDelay = delay
+	message.mutex.Unlock()
+	return message.nakErr
+}
+
+func (message *ackOrderingTestMessage) nakWithDelayCount() int {
+	message.mutex.Lock()
+	defer message.mutex.Unlock()
+	return message.nakWithDelayCalls
+}
+
+func (message *ackOrderingTestMessage) nakDelayRequested() time.Duration {
+	message.mutex.Lock()
+	defer message.mutex.Unlock()
+	return message.nakDelay
+}
+
+func (message *ackOrderingTestMessage) plainNakCount() int {
+	message.mutex.Lock()
+	defer message.mutex.Unlock()
+	return message.nakCalls
+}
 
 func (*ackOrderingTestMessage) InProgress() error { return nil }
 
-func (*ackOrderingTestMessage) Term() error { return nil }
+// Term counts termination attempts: a deterministic descriptor failure must be
+// terminated rather than redelivered, so tests assert both directions.
+func (message *ackOrderingTestMessage) Term() error {
+	message.mutex.Lock()
+	message.termCalls++
+	message.mutex.Unlock()
+	return message.termErr
+}
 
-func (*ackOrderingTestMessage) TermWithReason(string) error { return nil }
+func (message *ackOrderingTestMessage) TermWithReason(string) error { return message.Term() }
+
+func (message *ackOrderingTestMessage) termCount() int {
+	message.mutex.Lock()
+	defer message.mutex.Unlock()
+	return message.termCalls
+}
 
 // blockingObservationLogHandler blocks the synchronous log destination on the
 // first record until released. Any Ack gated behind log emission deadlocks

@@ -31,6 +31,41 @@ type EntityEvent struct {
 	EmittedAt     time.Time
 }
 
+// ErrEntityEventDescriptorCorrupt is the permanent Entity Event descriptor
+// class: Core resolved the Entity but could not interpret its persisted
+// descriptor as an Entity Event source, either because the Entity Type is
+// unknown or because the persisted event-source support no longer satisfies
+// its schema. The failure is deterministic for a given persisted row, so a
+// report that hits it can never succeed by redelivery and the consumer
+// terminates it instead. Ordinary query, transaction, and commit failures
+// never match it.
+var ErrEntityEventDescriptorCorrupt = errors.New("entity event source descriptor cannot be interpreted")
+
+// EntityEventDescriptorError carries one permanent descriptor
+// interpretation failure for an Entity Event report. Error returns a fixed
+// message naming only the Entity and its type, so a diagnostic can classify
+// the failure without exposing persisted descriptor bytes. Unwrap keeps both
+// the sentinel class and the underlying catalog cause available to callers.
+type EntityEventDescriptorError struct {
+	EntityID EntityID
+	TypeID   EntityTypeID
+	cause    error
+}
+
+func (failure *EntityEventDescriptorError) Error() string {
+	return fmt.Sprintf(
+		"%s: entity %q has entity type %q",
+		ErrEntityEventDescriptorCorrupt, failure.EntityID, failure.TypeID,
+	)
+}
+
+// Unwrap exposes the permanent class for [errors.Is] and the wrapped catalog
+// cause for inspection. Error never renders the cause, so nothing that logs
+// this failure can leak raw descriptor bytes.
+func (failure *EntityEventDescriptorError) Unwrap() []error {
+	return []error{ErrEntityEventDescriptorCorrupt, failure.cause}
+}
+
 // RecordEntityEventParams carries one trusted recording request. Now is called
 // by persistence only when Core records a first-seen row, so duplicates and
 // identity conflicts never move or refresh the stored timestamps.

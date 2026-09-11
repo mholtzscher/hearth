@@ -109,16 +109,22 @@ Follow the Observation resource pattern, with independent subjects/resources so 
 | Limits | 7 days or 1 GiB, whichever is reached first; max message size 4 KiB |
 | Consumer | `hearthd-entity-events-v1`, durable |
 | Delivery | DeliverAll, ReplayInstant, explicit acknowledgement |
-| Retry/order | AckWait 30s, unlimited redelivery, MaxAckPending 1 |
+| Retry/order | AckWait 30s, unlimited redelivery, one maximum pending acknowledgement |
 
 Match the Observation stream's explicit unconstrained count and per-subject limits. Provision absent resources and reject incompatible existing configuration. Add no replay tasks or stream administration API.
 
-`EntityEventConsumer` has `Active`, `Stop`, `Drain`, and `Closed` lifecycle methods. It validates the route and envelope, reads the JetStream timestamp, records the event, then acknowledges. It calls no synchronous subscribers, Commands, or automations.
+One pending slot is safe because Core resolves every deterministic per-report failure before it can occupy that slot. A report whose persisted event-source descriptor Core cannot interpret is terminated, which releases the slot immediately, and a report that only storage failed to record is negatively acknowledged with a bounded delay. A report that storage cannot record may hold the sole slot until that retry, which is acceptable: while storage is unavailable no other report can be safely persisted either, and the reports queued behind it remain in the stream until storage recovers.
+
+`EntityEventConsumer` has `Active`, `Stop`, `Drain`, and `Closed` lifecycle methods. It validates the route and envelope, reads the JetStream timestamp, records the event, then acknowledges it or resolves a record failure as either a termination or a delayed negative acknowledgement. It calls no synchronous subscribers, Commands, or automations.
 
 - Acknowledge wire-invalid input, missing or mismatched MsgId, unexpected causation, and route mismatch. Log a safe permanent class. Create no SQLite row when Core cannot form trustworthy domain input; raw input remains only in the bounded stream.
 - Acknowledge first-seen accepted or rejected input only after the SQLite transaction commits.
 - Acknowledge a duplicate or identity conflict after the repository establishes the result, without changing the existing row.
-- Leave infrastructure and commit errors unacknowledged for redelivery. Slow logs must not delay acknowledgement of a committed result.
+- Never positively acknowledge a record or commit failure, and never write a partial row. Log a safe structured failure, then classify the failure:
+  - A failure Core attributes to interpreting the Entity's persisted event-source descriptor—an unknown Entity Type or support that no longer satisfies its type's schema—is permanent and record-local. Report it as the devices-level `ErrEntityEventDescriptorCorrupt` descriptor error without exposing persisted descriptor bytes, terminate the report, and release its pending slot. Log a further safe `stage=term`, `error_code=term_failed` failure if termination itself fails. A terminated report gets no history row and is never redelivered to this consumer; the bounded stream remains its only raw evidence.
+  - Every other record or commit failure is transient storage trouble. Send a delayed negative acknowledgement after `EntityEventRedeliveryDelay`, which equals `AckWait`. The delay bounds the retry cadence and returns the report for redelivery while keeping it repairable for as long as the stream retains it; nothing terminates or drops it. If the negative acknowledgement itself fails, log a further safe structured failure and let `AckWait` expire, which redelivers the report anyway.
+- A transiently failed report holds the sole pending entry until its delayed redelivery. A report that commits on a later attempt records at that later Core time, so history follows Core recording order rather than stream order.
+- A slow log must not delay acknowledgement of a committed result.
 
 Backlog is consumed. **Age is not a rejection reason.** Core may log SDK clock skew using the existing one-minute diagnostic threshold, but skew does not prevent recording or define ordering.
 
@@ -132,7 +138,7 @@ In one devices-owned transaction:
 2. Check the active Adapter runtime using the supervisor's fencing semantics, not an independent wall-clock lease check. An inactive or unknown runtime returns `stale_runtime`.
 3. Check Entity existence and ownership. Return `unknown_entity` or `wrong_adapter`.
 4. Check Entity enablement. A disabled Entity returns `entity_disabled`, with no Command-linked exception.
-5. Check current Entity event support and name. A non-event type or unsupported name returns `unsupported_event`. Treat corrupt persisted descriptors and catalog errors as infrastructure failures.
+5. Check current Entity event support and name. A non-event type or unsupported name returns `unsupported_event`. Non-event classification wins before any support decoding, so a resolved non-event type returns `unsupported_event` even when its persisted support is malformed. An unknown persisted type, or a persisted event-source descriptor that no longer satisfies its schema, is not a rejection: Core reports it as `ErrEntityEventDescriptorCorrupt` and writes no row, because redelivering such a report can never succeed.
 6. Persist `accepted` if all checks pass. Otherwise persist `rejected` with the first rejection code above. Commit once.
 
 Adapter health and Entity availability do not gate historical input. Recording changes no State, Commands, bindings, enablement, health, or availability.
@@ -184,7 +190,7 @@ Catalog extension in `internal/modules/devices/catalog.go`:
 +    eventNames       func(EntitySupport) ([]EntityEventName, error)
 ```
 
-`TypeCatalog.SupportsEntityEvent(entity Entity, name EntityEventName) (bool, error)` returns false/nil for a type without event support or an unsupported name. Unknown persisted types and corrupt descriptors return errors. The generated selector validates and decodes support, returns an owned name slice, and separates unsupported input from catalog failures.
+`TypeCatalog.SupportsEntityEvent(entity Entity, name EntityEventName) (bool, error)` returns false/nil for a type without event support or an unsupported name. The non-event check precedes support decoding, so a resolved non-event type returns false/nil even when its persisted support is malformed. An unknown persisted type and a corrupt event-source descriptor return errors, because the generated selector decodes and validates support only for a type that owns it. The selector returns an owned name slice and separates unsupported input from catalog failures. Every error it returns is a deterministic failure to interpret the persisted descriptor, which the repository reports as the permanent `ErrEntityEventDescriptorCorrupt` class.
 
 New `internal/modules/devices/entity_events.go` defines:
 
@@ -226,6 +232,21 @@ type EntityEventRecordResult struct {
     Rejection *EntityEventRejection // only for a newly rejected event
 }
 
+// ErrEntityEventDescriptorCorrupt is the permanent class for a persisted
+// descriptor Core cannot interpret: an unknown Entity Type or event-source
+// support that no longer satisfies its schema. The consumer terminates such a
+// report instead of redelivering it.
+var ErrEntityEventDescriptorCorrupt error
+
+type EntityEventDescriptorError struct {
+    EntityID EntityID
+    TypeID   EntityTypeID
+    cause    error // never rendered by Error
+}
+
+func (failure *EntityEventDescriptorError) Error() string   // fixed, safe message
+func (failure *EntityEventDescriptorError) Unwrap() []error // sentinel class + catalog cause
+
 type ListEntityEventsParams struct {
     EntityID          EntityID
     BeforeReceiveOrder *int64
@@ -237,7 +258,7 @@ func (s *Service) ListEntityEvents(context.Context, ListEntityEventsParams) (Pag
 func (s *Service) DeleteExpiredEntityEvents(context.Context, time.Time) error // argument is Core sweep time
 ```
 
-Use named constants for the closed outcome, disposition, and rejection values. The service supplies `Dependencies.Now`; transport cannot set `recorded_at`. SQLite computes the fingerprint from the validated tuple. Trusted methods reject zero or invalid arguments before writing, while transport filters permanent wire errors before calling them.
+Use named constants for the closed outcome, disposition, and rejection values. The service supplies `Dependencies.Now`; transport cannot set `recorded_at`. SQLite computes the fingerprint from the validated tuple. Trusted methods reject zero or invalid arguments before writing, while transport filters permanent wire errors before calling them. `RecordEntityEvent` returns `ErrEntityEventDescriptorCorrupt` (as an `EntityEventDescriptorError`) only when the persisted descriptor cannot be interpreted; ordinary query, transaction, and commit failures return their own retryable errors.
 
 Add the persistence capability to the existing `Stores`, implemented by the existing SQLite repository and existing devices sqlc package:
 
@@ -337,11 +358,11 @@ Update required descriptor DTOs and route registration interfaces without rearra
 
 ## 10. Acceptance tests and review gates
 
-- **A1. Generated contracts.** Support round-trips from SDK registration through Core Entity reads. Closed types reject event support. The zero-Operation event type validates names, generates no Observation or Command facade, and changes no State or Command.
+- **A1. Generated contracts.** Support round-trips from SDK registration through Core Entity reads. Closed types reject event support, and generated catalog conformance proves a resolved non-event type rejects Events before decoding malformed unrelated support. The zero-Operation event type validates names, generates no Observation or Command facade, and changes no State or Command.
 - **A2. Wire.** Test schema, route, ID, time, MsgId, causation, size, and subject/Entity checks. Logs omit raw envelopes and unsafe names. Generated and embedded tests cover the schema.
 - **A3. Durable SDK.** A lost PubAck retries the same ID and payload. Caller or Session cancellation stops retries. PubAck does not claim Core recording or acceptance. Existing Session, Observation, and Command-evidence behavior remains unchanged.
-- **A4. SQLite identity and disposition.** Different IDs create separate rows. Duplicates and changed-input conflicts preserve the first row, its timestamps, and its disposition. Test rejection precedence and health and availability exclusion. Descriptor corruption and database failures remain unacknowledged.
-- **A5. Commit before acknowledgement.** Failure before commit causes redelivery without a partial row. Response or acknowledgement loss after commit still yields one row after restart and redelivery. Permanent wire errors are acknowledged and cannot block valid input.
+- **A4. SQLite identity and disposition.** Different IDs create separate rows. Duplicates and changed-input conflicts preserve the first row, its timestamps, and its disposition. Test rejection precedence and health and availability exclusion. Only a persisted descriptor Core cannot interpret—an unknown Entity Type or malformed event-source support—gets the permanent `ErrEntityEventDescriptorCorrupt` class, its message exposes no descriptor bytes, and it writes no row; ordinary storage failures stay retryable. A transiently failed record is never positively acknowledged, writes no partial row, and is redelivered without limit.
+- **A5. Commit before acknowledgement.** Failure before commit causes delayed redelivery without a partial row. Response or acknowledgement loss after commit still yields one row after restart and redelivery. Permanent wire errors and permanently uninterpretable descriptors are acknowledged or terminated respectively and cannot block valid input with one maximum pending acknowledgement.
 - **A6. Backlog semantics.** Old valid input is recorded. Runtime takeover or narrowed support during downtime produces the specified rejection. Metadata changes never reclassify an ID. Events never enter State history or satisfy Commands.
 - **A7. HTTP history.** Test dispositions, parent errors, empty results, keyset continuation, cursor scope, limits, timestamps, ordering under clock disagreement, and private fields through real SQLite and the Huma route.
 - **A8. Retention.** Test the exact 30-day boundary, batching, startup behavior, absence of a State anchor, unchanged Observation pruning, retained duplicate evidence, non-execution, and both indexes.

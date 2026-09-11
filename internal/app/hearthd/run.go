@@ -177,36 +177,39 @@ func Run(
 	// beyond shutdown cancellation, including on error exits.
 	dependencyContext, cancelDependencies := context.WithCancel(context.WithoutCancel(ctx))
 	defer cancelDependencies()
-	observations, observationErr := devicesnats.StartObservationConsumer(
-		dependencyContext,
+	// Durable consumer callbacks never share dependencyContext: it is canceled
+	// before transports drain, which would abort a report or observation that
+	// already entered SQLite with context.Canceled. The consumers own a detached
+	// lifecycle context that is canceled only after both have drained or
+	// stopped, so an already dispatched callback always reaches its commit.
+	consumers := newCoreConsumers(ctx)
+	defer consumers.close()
+	if observationErr := consumers.startObservations(
 		durable,
 		validator,
 		service,
 		natsLogger,
-	)
-	if observationErr != nil {
+	); observationErr != nil {
 		return mapStartupCancellation(ctx, failStage("start_observation_consumer", observationErr))
 	}
-	defer observations.Stop()
 	logStartupStage(ctx, coreLogger, "observation_consumer_started")
-	// Entity Events share the dependency context and stop before the
-	// observation consumer, the NATS connection, and SQLite, so a report is
-	// never committed after its dependencies close. Unprocessed or
-	// unacknowledged events stay in the stream for the next Core process.
-	entityEvents, entityEventErr := devicesnats.StartEntityEventConsumer(
-		dependencyContext,
+	// Entity Events stop before the observation consumer, the NATS connection,
+	// and SQLite, so a report is never committed after its dependencies close.
+	// Unprocessed or unacknowledged events stay in the stream for the next Core
+	// process.
+	if entityEventErr := consumers.startEntityEvents(
 		entityEventConsumer,
 		validator,
 		service,
 		natsLogger,
-	)
-	if entityEventErr != nil {
+	); entityEventErr != nil {
 		return mapStartupCancellation(ctx, failStage("start_entity_event_consumer", entityEventErr))
 	}
-	defer entityEvents.Stop()
 	logStartupStage(ctx, coreLogger, "entity_event_consumer_started")
 
-	readiness := NewRuntimeReadiness(database, connection, js, observations, entityEvents)
+	readiness := NewRuntimeReadiness(
+		database, connection, js, consumers.observations, consumers.entityEvents,
+	)
 	healthSupervisor := startHealthSupervisor(dependencyContext, readiness, service, coreLogger)
 	defer healthSupervisor.Stop()
 	var maintenance sync.WaitGroup
@@ -249,7 +252,7 @@ func Run(
 	case <-ctx.Done():
 		return shutdownOnCancel(
 			service, cancelDependencies,
-			healthSupervisor, server, entityEvents, observations,
+			healthSupervisor, server, consumers,
 			enablement, ownedMappings, registrations, availability, sessions,
 			connection,
 		)
@@ -286,14 +289,15 @@ func joinAdmittedExecution(deviceService *devices.Service) {
 // window, so an expired window force-closes it rather than failing the
 // cancellation. Dependencies stay alive until both waits return and are
 // canceled only then, on both normal and error exits (error exits reuse
-// drainExecution through the deferred cleanup).
+// drainExecution through the deferred cleanup). That cancellation cannot reach
+// a durable consumer callback, which runs under the consumer lifecycle context
+// canceled only after both consumers drain below.
 func shutdownOnCancel(
 	deviceService *devices.Service,
 	cancelDependencies context.CancelFunc,
 	healthSupervisor *healthSupervisor,
 	server *http.Server,
-	entityEvents *devicesnats.EntityEventConsumer,
-	observations *devicesnats.ObservationConsumer,
+	consumers *coreConsumers,
 	enablement, ownedMappings, registrations, availability, sessions interface{ Drain() error },
 	connection *natsgo.Conn,
 ) error {
@@ -317,8 +321,96 @@ func shutdownOnCancel(
 	}
 	cancelDependencies()
 	return drainTransports(
-		entityEvents, observations, enablement, ownedMappings, registrations, availability, sessions, connection,
+		consumers, enablement, ownedMappings, registrations, availability, sessions, connection,
 	)
+}
+
+// coreConsumers owns the two durable Core consumers and the lifecycle context
+// their callbacks run under. Commands, health, and hourly maintenance share the
+// dependency context, which shutdownOnCancel cancels before transports drain; a
+// consumer callback that inherited that context would abort an already
+// dispatched Observation projection or Entity Event record with
+// [context.Canceled] instead of committing. Consumer callbacks therefore run
+// under a context of their own, detached from process cancellation and canceled
+// only after both consumers have drained or stopped on every exit, including a
+// failed startup and a shutdown timeout.
+type coreConsumers struct {
+	callbackContext context.Context
+	cancelCallbacks context.CancelFunc
+	observations    *devicesnats.ObservationConsumer
+	entityEvents    *devicesnats.EntityEventConsumer
+}
+
+// newCoreConsumers returns the lifecycle both durable consumers share. The
+// callback context is detached from parent cancellation so a canceled process
+// context never reaches an in-flight callback, and it is separate from every
+// other dependency context so dependency teardown never does either.
+func newCoreConsumers(parent context.Context) *coreConsumers {
+	callbackContext, cancelCallbacks := context.WithCancel(context.WithoutCancel(parent))
+	return &coreConsumers{callbackContext: callbackContext, cancelCallbacks: cancelCallbacks}
+}
+
+// startObservations subscribes the Observation consumer under the consumer
+// lifecycle context, so its projector keeps a live context through shutdown.
+func (consumers *coreConsumers) startObservations(
+	durable jetstream.Consumer,
+	validator *contractsv1.Validator,
+	projector devicesnats.ObservationProjector,
+	logger *slog.Logger,
+) error {
+	observations, err := devicesnats.StartObservationConsumer(
+		consumers.callbackContext, durable, validator, projector, logger,
+	)
+	if err != nil {
+		return err
+	}
+	consumers.observations = observations
+	return nil
+}
+
+// startEntityEvents subscribes the Entity Event consumer under the same
+// consumer lifecycle context as the Observation consumer.
+func (consumers *coreConsumers) startEntityEvents(
+	durable jetstream.Consumer,
+	validator *contractsv1.Validator,
+	recorder devicesnats.EntityEventRecorder,
+	logger *slog.Logger,
+) error {
+	entityEvents, err := devicesnats.StartEntityEventConsumer(
+		consumers.callbackContext, durable, validator, recorder, logger,
+	)
+	if err != nil {
+		return err
+	}
+	consumers.entityEvents = entityEvents
+	return nil
+}
+
+// drain drains both durable consumers, Entity Events before Observations. It is
+// the one drain order Core uses: unacknowledged reports remain for the next Core
+// process instead of being acknowledged during teardown. A consumer that leaves
+// nothing in flight closes promptly; a later close cancels its context. A
+// consumer whose subscription never started is skipped: the embedded lifecycle
+// is reached through a nil pointer before its own nil check can run.
+func (consumers *coreConsumers) drain() {
+	if consumers.entityEvents != nil {
+		drainConsumer(consumers.entityEvents)
+	}
+	if consumers.observations != nil {
+		drainConsumer(consumers.observations)
+	}
+}
+
+// close ends both consumers and only then cancels the context their callbacks
+// run under. Canceling first would abort an already-dispatched record with
+// [context.Canceled]; draining first lets a callback that already entered
+// persistence commit, and the bounded drain window still ends a callback that
+// never returns. Anything unprocessed or unacknowledged when that window closes
+// stays in the stream for the next Core process, and a startup failure before
+// either subscription still leaves nothing running and nothing to stop.
+func (consumers *coreConsumers) close() {
+	consumers.drain()
+	consumers.cancelCallbacks()
 }
 
 // consumerDrain is the shared lifecycle of a durable Core consumer: draining,
@@ -334,15 +426,14 @@ type consumerDrain interface {
 // worker drain, preserving the existing return semantics for each step. Entity
 // Events drain before Observation, and both before the shared NATS connection,
 // so unacknowledged reports remain for the next Core process instead of being
-// acknowledged during teardown.
+// acknowledged during teardown. The consumers' own context is canceled by
+// coreConsumers.close after every exit, never here.
 func drainTransports(
-	entityEvents *devicesnats.EntityEventConsumer,
-	observations *devicesnats.ObservationConsumer,
+	consumers *coreConsumers,
 	enablement, ownedMappings, registrations, availability, sessions interface{ Drain() error },
 	connection *natsgo.Conn,
 ) error {
-	drainConsumer(entityEvents)
-	drainConsumer(observations)
+	consumers.drain()
 	for _, transport := range []interface{ Drain() error }{
 		enablement, ownedMappings, registrations, availability, sessions,
 	} {

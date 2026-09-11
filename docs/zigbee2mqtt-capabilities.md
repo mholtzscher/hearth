@@ -97,7 +97,13 @@ message marked retained. Each non-retained message with a present, supported
 value-deduplicated. An action report that arrives before MQTT routes are active
 is queued as its own occurrence, in arrival order, and replayed exactly once
 when routes activate; it is never coalesced with a sibling action report, and a
-later battery-only report on the same topic cannot erase it. An absent, empty,
+later battery-only report on the same topic cannot erase it. Queued occurrences
+live only in that connection's memory: the pending queue is bounded (1024
+entries, with ordinary topics coalesced per topic), so it is a short-lived
+pre-activation buffer, not a durable outbox. If admitting a message would exceed
+the bound, the adapter never drops a chosen occurrence silently; it ends the MQTT
+generation, reports the adapter unhealthy, and reconnects with backoff so the
+next generation resynchronizes from retained bridge topics. An absent, empty,
 null, malformed, or unsupported action emits nothing and never suppresses a
 valid sibling State observation from the same message. If a future Zigbee2MQTT
 version caches actions again, later non-retained State reports could repeat a

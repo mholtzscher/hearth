@@ -93,8 +93,11 @@ func DefineOperation[State, Support, OperationSupport, Parameters any](
 }
 
 type EntityTypeDefinition struct {
-	id               EntityTypeID
-	stateless        bool // from manifest "stateless" (default false)
+	id        EntityTypeID
+	stateless bool // from manifest "stateless" (default false)
+	// eventNames is nil for a type that is not an Entity Event source. A nil
+	// selector classifies the type as a non-event before any support decoding, so
+	// a malformed persisted support is never a catalog failure for such a type.
 	eventNames       func(EntitySupport) ([]EntityEventName, error)
 	normalizeSupport func(EntitySupport) (EntitySupport, error)
 	normalizeState   func(EntitySupport, Value) (Value, error)
@@ -300,9 +303,15 @@ func (catalog *TypeCatalog) IsStateless(typeID EntityTypeID) (bool, error) {
 }
 
 // SupportsEntityEvent reports whether an Entity's current support accepts one
-// Entity Event name. A type with no event support accepts none, and an
-// unsupported name is a false result rather than an error. An unknown type or a
-// corrupt persisted descriptor is a catalog failure.
+// Entity Event name. Non-event classification wins before any support decoding:
+// a resolved type with no Entity Event selector reports false with no error even
+// when its persisted support is malformed, because such a report is an ordinary
+// unsupported_event rejection rather than a catalog failure. A type with the
+// selector decodes and validates its persisted descriptor, so an unsupported
+// name is false with no error while a corrupt event-source descriptor is a
+// catalog failure. An unknown type is a catalog failure in both cases. Every
+// returned error is a deterministic failure to interpret the persisted
+// descriptor, which the repository reports as ErrEntityEventDescriptorCorrupt.
 func (catalog *TypeCatalog) SupportsEntityEvent(entity Entity, name EntityEventName) (bool, error) {
 	definition, err := catalog.resolve(entity.TypeID)
 	if err != nil {

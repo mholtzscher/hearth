@@ -25,7 +25,7 @@ go run ./cmd/hearth-simulator --config configs/simulator.yaml --log-format json 
 | `command.created` | Durable creation, including immediate rejection; deferred until execution returns for running Commands, not a startup or success signal |
 | `command.execution_failed` | Unexpected execution/persistence failure, not a terminal status summary |
 | `observation.invalid`, `observation.processing_failed` | Invalid input or processing/acknowledgement failure |
-| `entity_event.invalid`, `entity_event.processing_failed` | Invalid Entity Event input or processing/acknowledgement failure |
+| `entity_event.invalid`, `entity_event.processing_failed` | Invalid Entity Event input or processing/acknowledgement failure, including a failed termination of a permanently uninterpretable report |
 | `entity_event.recorded`, `entity_event.identity_conflict` | Committed Entity Event disposition, or changed input for an already recorded event ID (Debug and Warn) |
 | `entity_event.clock_skew` | Adapter Entity Event publication time is ahead of Core receive time; diagnostic only, never a rejection reason |
 | `core.entity_events_prune_failed` | The hourly Entity Event retention sweep failed |

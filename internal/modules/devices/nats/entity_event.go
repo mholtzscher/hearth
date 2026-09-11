@@ -27,6 +27,14 @@ type EntityEventRecorder interface {
 	) (devices.EntityEventRecordResult, error)
 }
 
+// EntityEventRedeliveryDelay is how long JetStream waits before redelivering a
+// report whose recording failed for a transient storage reason. It matches the
+// consumer's AckWait, so such a report is retried no more often than once per
+// ordinary retry window instead of in a hot loop, and unlimited redelivery
+// keeps it repairable for as long as the stream retains it. A deterministic
+// descriptor failure never reaches this delay: it is terminated instead.
+const EntityEventRedeliveryDelay = EntityEventAckWait
+
 type entityEvent struct {
 	EntityID string `json:"entity_id"`
 	Name     string `json:"name"`
@@ -83,10 +91,14 @@ func StartEntityEventConsumer(
 }
 
 // handleEntityEventMessage decodes, validates, records, and acknowledges one
-// Entity Event. Wire-invalid input is acknowledged with a safe permanent
-// class and creates no row; a recorded report is acknowledged only after the
-// SQLite transaction commits; and infrastructure or commit failures stay
-// unacknowledged so JetStream redelivers them.
+// Entity Event. Wire-invalid input is acknowledged with a safe permanent class
+// and creates no row. A recorded report is acknowledged only after the SQLite
+// transaction commits. A recording failure is never positively acknowledged
+// and never writes a partial row: a failure to interpret the Entity's persisted
+// event-source descriptor is deterministic, so the report is terminated and
+// never redelivered to this consumer, while every other recording failure is
+// negatively acknowledged with EntityEventRedeliveryDelay so it stays
+// redeliverable without retrying in a hot loop.
 func handleEntityEventMessage(
 	baseContext context.Context,
 	message jetstream.Msg,
@@ -153,6 +165,9 @@ func handleEntityEventMessage(
 			slog.String("stage", "record"),
 			slog.String(transportErrorCodeKey, "record_failed"),
 		)
+		resolveEntityEventRecordFailure(
+			ctx, message, logger, envelope.ID, metadata.Sequence.Stream, recordErr,
+		)
 		return
 	}
 	// A slow diagnostic sink must not delay acknowledgement of committed input.
@@ -177,6 +192,45 @@ func handleEntityEventMessage(
 			slog.String(transportEventKey, "entity_event.processing_failed"),
 			slog.String("stage", "ack"),
 			slog.String(transportErrorCodeKey, "ack_failed"),
+		)
+	}
+}
+
+// resolveEntityEventRecordFailure resolves one already logged record failure
+// without a positive acknowledgement. A deterministic descriptor failure is
+// terminated: redelivery would fail identically forever, and the report keeps
+// its raw bytes in the bounded stream as the only remaining evidence while no
+// disposition row is invented for it. Every other record or commit failure is
+// negatively acknowledged after a bounded delay, which returns it for
+// redelivery without retrying it in a hot loop. A failed Term or Nak is
+// reported through its own safe structured diagnostic.
+func resolveEntityEventRecordFailure(
+	ctx context.Context,
+	message jetstream.Msg,
+	logger *slog.Logger,
+	envelopeID string,
+	streamSequence uint64,
+	recordErr error,
+) {
+	if errors.Is(recordErr, devices.ErrEntityEventDescriptorCorrupt) {
+		if termErr := message.Term(); termErr != nil {
+			logger.ErrorContext(ctx, "terminate unrecordable entity event",
+				slog.Uint64("stream_sequence", streamSequence),
+				slog.String("entity_event_id", envelopeID),
+				slog.String(transportEventKey, "entity_event.processing_failed"),
+				slog.String("stage", "term"),
+				slog.String(transportErrorCodeKey, "term_failed"),
+			)
+		}
+		return
+	}
+	if nakErr := message.NakWithDelay(EntityEventRedeliveryDelay); nakErr != nil {
+		logger.ErrorContext(ctx, "negatively acknowledge failed entity event",
+			slog.Uint64("stream_sequence", streamSequence),
+			slog.String("entity_event_id", envelopeID),
+			slog.String(transportEventKey, "entity_event.processing_failed"),
+			slog.String("stage", "nak"),
+			slog.String(transportErrorCodeKey, "nak_failed"),
 		)
 	}
 }

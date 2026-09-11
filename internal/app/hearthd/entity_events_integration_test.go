@@ -9,7 +9,6 @@ import (
 	"log/slog"
 	"net/http"
 	"path/filepath"
-	"sync"
 	"testing"
 	"time"
 
@@ -49,7 +48,7 @@ func TestCoreOfflineEntityEventRecoveryVerticalSlice(t *testing.T) {
 	sessionLogger, sessionRecords := withRecording(slog.LevelDebug)
 	client := newNonPoolingHTTPClient(t)
 	databasePath := filepath.Join(t.TempDir(), "hearth.db")
-	server := startEntityEventNATSServer(t)
+	server := startCoreNATSServer(t)
 
 	firstAddress := unusedLoopbackAddress(t)
 	firstContext, stopFirstCore := context.WithCancel(ctx)
@@ -218,7 +217,10 @@ func TestCoreOfflineEntityEventRecoveryVerticalSlice(t *testing.T) {
 // This test protects assembly consumer lifecycle and restart durability and
 // fails if a drained consumer stays active, abandons an already dispatched
 // report, or loses input it never read instead of leaving it for the next Core
-// process.
+// process. It also pins the prior shutdown defect: both durable consumers used
+// to inherit the dependency context, which Run cancels before transports drain,
+// so a report that had already entered RecordEntityEvent returned
+// [context.Canceled] instead of committing.
 //
 //nolint:gocognit // The drain and restart sequence is clearer as one causal test.
 func TestEntityEventDrainCommitsInFlightReportAndLeavesUnreadInputForNextProcess(t *testing.T) {
@@ -226,7 +228,7 @@ func TestEntityEventDrainCommitsInFlightReportAndLeavesUnreadInputForNextProcess
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 	logger := slog.New(slog.DiscardHandler)
-	server := startEntityEventNATSServer(t)
+	server := startCoreNATSServer(t)
 	connection, err := natsgo.Connect(server.ClientURL())
 	if err != nil {
 		t.Fatal(err)
@@ -279,26 +281,38 @@ func TestEntityEventDrainCommitsInFlightReportAndLeavesUnreadInputForNextProcess
 	}
 	entityID := binding.Entities[0].EntityID
 
-	recorder := newGatedEntityEventRecorder(service)
-	entityEvents, err := devicesnats.StartEntityEventConsumer(ctx, durable, validator, recorder, logger)
-	if err != nil {
-		t.Fatal(err)
+	// The assembly under test is the production one: dependencies get their own
+	// context and the durable consumers get a detached lifecycle context whose
+	// cancel happens only after they stop.
+	dependencyContext, cancelDependencies := context.WithCancel(context.WithoutCancel(ctx))
+	consumers := newCoreConsumers(ctx)
+	t.Cleanup(consumers.close)
+	inFlight := newGatedCallback()
+	recorder := newGatedEntityEventRecorder(service, inFlight)
+	if startErr := consumers.startEntityEvents(durable, validator, recorder, logger); startErr != nil {
+		t.Fatal(startErr)
 	}
 	committedEventID := publishEntityEventForTest(
 		ctx, t, js, validator, "simulator", runtimeID, entityID,
 		"single_press", "evt_01890f47-7a6b-7c4d-8e9f-0123456789b1",
 	)
-	select {
-	case <-recorder.entered:
-	case <-time.After(5 * time.Second):
-		t.Fatal("in-flight report did not reach persistence")
+	waitForGatedCallback(t, inFlight, "in-flight report did not reach persistence")
+	// Shutdown cancels its dependency contexts while this report is gated in
+	// flight. The callback context must stay live, because cancelDependencies
+	// runs before transports drain in production.
+	cancelDependencies()
+	if dependencyContext.Err() == nil {
+		t.Fatal("dependency context was not canceled")
+	}
+	if callbackErr := recorder.callbackContext().Err(); callbackErr != nil {
+		t.Fatalf("dependency cancellation reached the in-flight Entity Event callback: %v", callbackErr)
 	}
 	// Drain or stop can be called while a report is in flight. The already
 	// dispatched report still commits, so shutdown never leaves a partial row;
 	// the consumer stops before its database and NATS dependencies.
 	drained := make(chan struct{})
 	go func() {
-		entityEvents.Drain()
+		consumers.drain()
 		close(drained)
 	}()
 	select {
@@ -307,12 +321,13 @@ func TestEntityEventDrainCommitsInFlightReportAndLeavesUnreadInputForNextProcess
 	case <-time.After(200 * time.Millisecond):
 		// Drain is waiting for the in-flight callback to return.
 	}
-	close(recorder.release)
+	close(inFlight.release)
 	select {
 	case <-drained:
 	case <-time.After(5 * time.Second):
 		t.Fatal("drain did not finish after the in-flight report committed")
 	}
+	entityEvents := consumers.entityEvents
 	select {
 	case <-entityEvents.Closed():
 	case <-time.After(5 * time.Second):
@@ -324,6 +339,22 @@ func TestEntityEventDrainCommitsInFlightReportAndLeavesUnreadInputForNextProcess
 	waitForMatrixCondition(t, 5*time.Second, func() (bool, error) {
 		return countEntityEventRows(t, database, entityID) == 1, nil
 	})
+	// A committed row is not enough on its own: the report is acknowledged only
+	// after that commit, so an empty ack backlog is the evidence that the
+	// callback context outlived dependency cancellation.
+	waitForMatrixCondition(t, 5*time.Second, func() (bool, error) {
+		info, infoErr := durable.Info(ctx)
+		if infoErr != nil {
+			return false, infoErr
+		}
+		return info.NumAckPending == 0, nil
+	})
+	// The consumer lifecycle context is canceled last, after every started
+	// consumer has stopped, and that cancel still reaches callbacks.
+	consumers.close()
+	if cancelErr := recorder.callbackContext().Err(); !errors.Is(cancelErr, context.Canceled) {
+		t.Fatalf("consumer context after close = %v, want context.Canceled", cancelErr)
+	}
 
 	// Input the drained consumer never read stays in the stream and is
 	// recorded exactly once by the next Core process.
@@ -367,7 +398,7 @@ func TestCoreStartupRejectsIncompatibleEntityEventResources(t *testing.T) {
 	t.Parallel()
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
-	server := startEntityEventNATSServer(t)
+	server := startCoreNATSServer(t)
 	connection, err := natsgo.Connect(server.ClientURL())
 	if err != nil {
 		t.Fatal(err)
@@ -400,30 +431,9 @@ func TestCoreStartupRejectsIncompatibleEntityEventResources(t *testing.T) {
 	}
 }
 
-type gatedEntityEventRecorder struct {
-	inner   devicesnats.EntityEventRecorder
-	once    sync.Once
-	entered chan struct{}
-	release chan struct{}
-}
-
-func newGatedEntityEventRecorder(inner devicesnats.EntityEventRecorder) *gatedEntityEventRecorder {
-	return &gatedEntityEventRecorder{inner: inner, entered: make(chan struct{}), release: make(chan struct{})}
-}
-
-func (recorder *gatedEntityEventRecorder) RecordEntityEvent(
-	ctx context.Context,
-	adapterID string,
-	runtimeID devices.RuntimeID,
-	event devices.EntityEvent,
-	receivedAt time.Time,
-) (devices.EntityEventRecordResult, error) {
-	recorder.once.Do(func() { close(recorder.entered) })
-	<-recorder.release
-	return recorder.inner.RecordEntityEvent(ctx, adapterID, runtimeID, event, receivedAt)
-}
-
-func startEntityEventNATSServer(t *testing.T) *natsserver.Server {
+// startCoreNATSServer starts a JetStream-enabled NATS server for an assembly
+// test that needs Core's durable Observation or Entity Event consumer.
+func startCoreNATSServer(t *testing.T) *natsserver.Server {
 	t.Helper()
 	server, err := natsserver.NewServer(&natsserver.Options{
 		Host: "127.0.0.1", Port: -1, JetStream: true, StoreDir: t.TempDir(), NoSigs: true,
