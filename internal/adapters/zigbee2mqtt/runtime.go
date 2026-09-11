@@ -91,6 +91,21 @@ type ordinaryPublishFinished struct {
 
 func (ordinaryPublishFinished) runtimeEvent() {}
 
+type eventCandidate struct {
+	ctx    context.Context
+	event  adapter.EntityEvent
+	result chan struct{}
+}
+
+func (eventCandidate) runtimeEvent() {}
+
+type ordinaryEventPublishFinished struct {
+	result chan struct{}
+	err    error
+}
+
+func (ordinaryEventPublishFinished) runtimeEvent() {}
+
 type attemptDeadlineReached struct{ attemptID uint64 }
 
 func (attemptDeadlineReached) runtimeEvent() {}
@@ -225,6 +240,13 @@ func (coordinator *runtimeCoordinator) handle(event runtimeEvent) error {
 		event.result <- stateOrdinary
 		if event.err != nil && !errors.Is(event.err, context.Canceled) {
 			return &sessionOperationError{operation: "publish Zigbee2MQTT Observation", err: event.err}
+		}
+	case eventCandidate:
+		coordinator.startOrdinaryEvent(event)
+	case ordinaryEventPublishFinished:
+		event.result <- struct{}{}
+		if event.err != nil && !errors.Is(event.err, context.Canceled) {
+			return &sessionOperationError{operation: "publish Zigbee2MQTT Entity Event", err: event.err}
 		}
 	case attemptDeadlineReached:
 		coordinator.reachDeadline(event.attemptID)

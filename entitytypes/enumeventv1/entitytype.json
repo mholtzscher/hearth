@@ -1,0 +1,10 @@
+{
+  "manifest_version": 1,
+  "type": "hearth.enumevent/v1",
+  "state_schema": "state.schema.json",
+  "support_schema": "support.schema.json",
+  "stateless": true,
+  "event_source": true,
+  "operations": {},
+  "examples": "examples.json"
+}

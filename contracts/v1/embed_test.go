@@ -3,6 +3,7 @@ package v1_test
 import (
 	"bytes"
 	"encoding/json"
+	"strings"
 	"testing"
 
 	contractsv1 "github.com/mholtzscher/hearth/contracts/v1"
@@ -13,8 +14,8 @@ import (
 func TestEmbeddedSchemasCompile(t *testing.T) {
 	t.Parallel()
 	schemas := compileSchemas(t)
-	if len(schemas) != 18 {
-		t.Fatalf("compiled %d schemas, want 18", len(schemas))
+	if len(schemas) != 19 {
+		t.Fatalf("compiled %d schemas, want 19", len(schemas))
 	}
 }
 
@@ -43,6 +44,13 @@ func TestSchemaFixtures(t *testing.T) {
 			"emitted_at":"2026-08-20T12:34:56Z",
 			"correlation_id":"cor_01890f47-7a6b-7c4d-8e9f-0123456789ab",
 			"data":{"entity_id":"ent_01890f47-7a6b-7c4d-8e9f-0123456789ab","value":false,"adapter_received_at":"2026-08-20T12:34:56Z"}
+		}`,
+		contractsv1.EntityEventSchemaID: `{
+			"id":"evt_01890f47-7a6b-7c4d-8e9f-0123456789ab",
+			"schema":"urn:hearth:schema:entity-event:v1",
+			"emitted_at":"2026-08-20T12:34:56.123456789Z",
+			"correlation_id":"cor_01890f47-7a6b-7c4d-8e9f-0123456789ab",
+			"data":{"entity_id":"ent_01890f47-7a6b-7c4d-8e9f-0123456789ab","name":"single_press"}
 		}`,
 		contractsv1.CommandRequestSchemaID: `{
 			"id":"cmd_01890f47-7a6b-7c4d-8e9f-0123456789ab",
@@ -279,6 +287,241 @@ func TestEntityEnablementAndRegistrationBooleanShapes(t *testing.T) {
 	delete(data, "entity_id")
 	if err := schemas[contractsv1.EntityEnablementResponseSchemaID].Validate(response); err != nil {
 		t.Fatalf("rejected response rejected: %v", err)
+	}
+}
+
+// TestEntityEventSchemaEnforcesStrictEnvelope pins the durable report contract:
+// one canonical evt_ identity, one slug name, UTC SDK time, and no causation,
+// Command link, payload, or source time.
+func TestEntityEventSchemaEnforcesStrictEnvelope(t *testing.T) {
+	t.Parallel()
+	schema := compileSchemas(t)[contractsv1.EntityEventSchemaID]
+	for _, test := range []struct {
+		name     string
+		mutate   func(value map[string]any)
+		accepted bool
+	}{
+		{name: "canonical", accepted: true},
+		{name: "unknown envelope property", mutate: func(value map[string]any) { value["extra"] = true }},
+		{
+			name: "causation is refused",
+			mutate: func(value map[string]any) {
+				value["causation_id"] = "cmd_01890f47-7a6b-7c4d-8e9f-0123456789ab"
+			},
+		},
+		{name: "wrong id prefix", mutate: func(value map[string]any) {
+			value["id"] = "obs_01890f47-7a6b-7c4d-8e9f-0123456789ab"
+		}},
+		{name: "non-canonical id", mutate: func(value map[string]any) {
+			value["id"] = "evt_01890F47-7A6B-7C4D-8E9F-0123456789AB"
+		}},
+		{name: "version four id", mutate: func(value map[string]any) {
+			value["id"] = "evt_01890f47-7a6b-4c4d-8e9f-0123456789ab"
+		}},
+		{name: "wrong schema", mutate: func(value map[string]any) {
+			value["schema"] = contractsv1.ObservationSchemaID
+		}},
+		{name: "non-UTC emitted time", mutate: func(value map[string]any) {
+			value["emitted_at"] = "2026-08-20T12:34:56+02:00"
+		}},
+		{name: "missing emitted time", mutate: func(value map[string]any) { delete(value, "emitted_at") }},
+		{name: "wrong entity prefix", mutate: func(value map[string]any) {
+			entityEventData(value)["entity_id"] = "dev_01890f47-7a6b-7c4d-8e9f-0123456789ab"
+		}},
+		{name: "missing name", mutate: func(value map[string]any) { delete(entityEventData(value), "name") }},
+		{name: "uppercase name", mutate: func(value map[string]any) {
+			entityEventData(value)["name"] = "Single_Press"
+		}},
+		{name: "spaced name", mutate: func(value map[string]any) {
+			entityEventData(value)["name"] = "single press"
+		}},
+		{name: "dot name", mutate: func(value map[string]any) {
+			entityEventData(value)["name"] = "single.press"
+		}},
+		{name: "overlong name", mutate: func(value map[string]any) {
+			entityEventData(value)["name"] = strings.Repeat("a", 64)
+		}},
+		{name: "payload is refused", mutate: func(value map[string]any) {
+			entityEventData(value)["payload"] = map[string]any{"battery": 90}
+		}},
+		{name: "source time is refused", mutate: func(value map[string]any) {
+			entityEventData(value)["source_updated_at"] = "2026-08-20T12:34:56Z"
+		}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			value := decodeEntityEventFixture(t)
+			if test.mutate != nil {
+				test.mutate(value)
+			}
+			accepted := schema.Validate(value) == nil
+			if accepted != test.accepted {
+				t.Fatalf("accepted = %v, want %v", accepted, test.accepted)
+			}
+		})
+	}
+}
+
+func entityEventData(value map[string]any) map[string]any {
+	return value["data"].(map[string]any)
+}
+
+func decodeEntityEventFixture(t *testing.T) map[string]any {
+	t.Helper()
+	var value map[string]any
+	if err := json.Unmarshal([]byte(`{
+		"id":"evt_01890f47-7a6b-7c4d-8e9f-0123456789ab",
+		"schema":"urn:hearth:schema:entity-event:v1",
+		"emitted_at":"2026-08-20T12:34:56.123456789Z",
+		"correlation_id":"cor_01890f47-7a6b-7c4d-8e9f-0123456789ab",
+		"data":{"entity_id":"ent_01890f47-7a6b-7c4d-8e9f-0123456789ab","name":"single_press"}
+	}`), &value); err != nil {
+		t.Fatal(err)
+	}
+	return value
+}
+
+// TestEntityEventIDIsNotACausationID pins the deliberate omission: this slice
+// produces no message caused by an event, so an evt_ identity must not satisfy
+// the shared causation union even though the definition is registered.
+func TestEntityEventIDIsNotACausationID(t *testing.T) {
+	t.Parallel()
+	schema := compileSchemas(t)[contractsv1.RegistrationRequestSchemaID]
+	for _, test := range []struct {
+		name        string
+		causationID string
+		accepted    bool
+	}{
+		{
+			name:        "registration causation",
+			causationID: "reg_01890f47-7a6b-7c4d-8e9f-0123456789ab",
+			accepted:    true,
+		},
+		{
+			name:        "entity event causation",
+			causationID: "evt_01890f47-7a6b-7c4d-8e9f-0123456789ab",
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			request := map[string]any{
+				"id":             "reg_01890f47-7a6b-7c4d-8e9f-0123456789ab",
+				"schema":         contractsv1.RegistrationRequestSchemaID,
+				"emitted_at":     "2026-08-20T12:34:56Z",
+				"correlation_id": "cor_01890f47-7a6b-7c4d-8e9f-0123456789ab",
+				"causation_id":   test.causationID,
+				"data": map[string]any{
+					"binding_key": "office-light",
+					"device":      map[string]any{"name": "Office Light", "kind": "light"},
+					"entities": []any{map[string]any{
+						"key": "power", "external_id": "light.office", "name": "Power",
+						"type": "hearth.power/v1",
+						"support": map[string]any{
+							"state": map[string]any{}, "operations": map[string]any{"set": map[string]any{}},
+						},
+					}},
+				},
+			}
+			accepted := schema.Validate(request) == nil
+			if accepted != test.accepted {
+				t.Fatalf("accepted = %v, want %v", accepted, test.accepted)
+			}
+		})
+	}
+}
+
+// TestRegistrationRequestCarriesOptionalEventSupport pins the outer wire shape
+// that lets an event-source descriptor reach Core unchanged. Per-type schemas
+// stay authoritative for membership, so only the shared structural bounds live
+// here.
+func TestRegistrationRequestCarriesOptionalEventSupport(t *testing.T) {
+	t.Parallel()
+	schema := compileSchemas(t)[contractsv1.RegistrationRequestSchemaID]
+	for _, test := range []struct {
+		name     string
+		support  map[string]any
+		accepted bool
+	}{
+		{
+			name: "event source support",
+			support: map[string]any{
+				"state": map[string]any{}, "operations": map[string]any{},
+				"events": map[string]any{"names": []any{"single_press", "double_press"}},
+			},
+			accepted: true,
+		},
+		{
+			name: "single name",
+			support: map[string]any{
+				"state": map[string]any{}, "operations": map[string]any{},
+				"events": map[string]any{"names": []any{"single_press"}},
+			},
+			accepted: true,
+		},
+		{
+			name: "non-event type support",
+			support: map[string]any{
+				"state": map[string]any{}, "operations": map[string]any{"set": map[string]any{}},
+			},
+			accepted: true,
+		},
+		{
+			name: "no names",
+			support: map[string]any{
+				"state": map[string]any{}, "operations": map[string]any{},
+				"events": map[string]any{"names": []any{}},
+			},
+		},
+		{
+			name: "duplicate names",
+			support: map[string]any{
+				"state": map[string]any{}, "operations": map[string]any{},
+				"events": map[string]any{"names": []any{"single_press", "single_press"}},
+			},
+		},
+		{
+			name: "unsafe name",
+			support: map[string]any{
+				"state": map[string]any{}, "operations": map[string]any{},
+				"events": map[string]any{"names": []any{"single press"}},
+			},
+		},
+		{
+			name: "missing names",
+			support: map[string]any{
+				"state": map[string]any{}, "operations": map[string]any{},
+				"events": map[string]any{},
+			},
+		},
+		{
+			name: "unknown events property",
+			support: map[string]any{
+				"state": map[string]any{}, "operations": map[string]any{},
+				"events": map[string]any{"names": []any{"single_press"}, "extra": true},
+			},
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			request := map[string]any{
+				"id":             "reg_01890f47-7a6b-7c4d-8e9f-0123456789ab",
+				"schema":         contractsv1.RegistrationRequestSchemaID,
+				"emitted_at":     "2026-08-20T12:34:56Z",
+				"correlation_id": "cor_01890f47-7a6b-7c4d-8e9f-0123456789ab",
+				"data": map[string]any{
+					"binding_key": "office-button",
+					"device":      map[string]any{"name": "Office Button", "kind": "sensor"},
+					"entities": []any{map[string]any{
+						"key": "events", "external_id": "button.office", "name": "Office Button",
+						"type": "hearth.enumevent/v1", "support": test.support,
+					}},
+				},
+			}
+			accepted := schema.Validate(request) == nil
+			if accepted != test.accepted {
+				t.Fatalf("accepted = %v, want %v", accepted, test.accepted)
+			}
+		})
 	}
 }
 

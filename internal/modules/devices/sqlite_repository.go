@@ -21,6 +21,7 @@ var (
 	_ EnablementRepository   = (*SQLiteRepository)(nil)
 	_ CommandLedger          = (*SQLiteRepository)(nil)
 	_ ObservationRepository  = (*SQLiteRepository)(nil)
+	_ EntityEventRepository  = (*SQLiteRepository)(nil)
 )
 
 type SQLiteRepository struct {
@@ -52,6 +53,7 @@ func SQLiteStores(repository *SQLiteRepository) Stores {
 		Enablement:    repository,
 		Commands:      repository,
 		Observations:  repository,
+		EntityEvents:  repository,
 	}
 }
 

@@ -24,6 +24,9 @@ const (
 
 type EntitySupport json.RawMessage
 
+// EntityEventName is one named occurrence an event-source Entity may report.
+type EntityEventName string
+
 type Value json.RawMessage
 
 type CommandParameters json.RawMessage

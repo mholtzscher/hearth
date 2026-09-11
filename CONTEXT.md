@@ -37,7 +37,7 @@ A physical or virtual thing represented in Hearth that groups related entities.
 _Avoid_: Accessory, node
 
 **Entity**:
-One independently addressable state or control point belonging to a device. State reads and commands target entities.
+One independently addressable state or control point belonging to a device. State reads and commands target entities. An event-source entity is the exception: it carries no State and no Operations and instead reports named Entity Events.
 _Avoid_: Device capability, endpoint
 
 **Entity availability**:
@@ -45,12 +45,16 @@ The current assessment of whether an Entity can be reached through its owning Ad
 _Avoid_: Entity health, Device health
 
 **Entity enablement**:
-Whether an Entity participates in normal control and State projection. An enabled Entity accepts valid Commands and Observations. Disabling immediately rejects new Commands, while Commands already requested or accepted retain their normal lifecycle; only Observations linked to those active Commands may still update State and satisfy them. A disabled Entity retains its canonical identity, Binding, history, and last accepted State, while other incoming Observations do not update State or satisfy Commands. The management API and owning Adapter may each explicitly enable or disable an Entity, with the last accepted change taking effect. Registration may choose a newly created Entity's initial enablement, which defaults to enabled; subsequent registration reconciles identity and descriptors without changing existing enablement. Disablement is reversible and distinct from temporary unavailability or removal from the household.
+Whether an Entity participates in normal control and State projection. An enabled Entity accepts valid Commands and Observations. Disabling immediately rejects new Commands, while Commands already requested or accepted retain their normal lifecycle; only Observations linked to those active Commands may still update State and satisfy them. A disabled event-source Entity rejects Entity Events with `entity_disabled` and has no Command-linked exception. A disabled Entity retains its canonical identity, Binding, history, and last accepted State, while other incoming Observations do not update State or satisfy Commands. The management API and owning Adapter may each explicitly enable or disable an Entity, with the last accepted change taking effect. Registration may choose a newly created Entity's initial enablement, which defaults to enabled; subsequent registration reconciles identity and descriptors without changing existing enablement. Disablement is reversible and distinct from temporary unavailability or removal from the household.
 _Avoid_: Retirement, availability
 
 **Entity support**:
-An Entity's type-specific statement of its supported State space and Operations. An Operation is supported exactly when it is present in Entity support; support may change without changing the Entity's identity or the meaning of active Commands.
+An Entity's type-specific statement of its supported State space and Operations. An Operation is supported exactly when it is present in Entity support; support may change without changing the Entity's identity or the meaning of active Commands. An event-source Entity's support instead states its supported Entity Event names, and only a listed name is a supported name; an Entity Event whose name is not listed is rejected as `unsupported_event`.
 _Avoid_: Constraints, capability list
+
+**Entity Event**:
+One named occurrence an Adapter durably reports for an Entity, identified by its event ID so redelivery of one ID is the same event while a new ID is a new occurrence even when the name repeats. Acceptance means the report passed Core's processing-time rules, not that it proves physical truth or causation. An Entity Event carries no State, Command link, arbitrary payload, or claimed source time, and recording one changes no State, Commands, bindings, enablement, health, or availability. Distinct from the outbound `enumaction.trigger` Operation, which requests a device action rather than reporting one.
+_Avoid_: State change, Trigger, Observation
 
 **Operation**:
 A named command capability within an Entity type. The type defines its support shape, valid parameters, deadline, and outcome policy — observed with an outcome-matching rule, or dispatched without one; invoking a currently supported Operation creates a Command.

@@ -120,6 +120,7 @@ func (session *Session) publishObservation(
 	headers.Set(natsgo.MsgIdHdr, generated)
 	natswire.InjectTrace(publicationContext, headers)
 
+	//nolint:dupl // One encoded report stays one report across every transient retry.
 	for {
 		message := &natsgo.Msg{Subject: subject, Header: headers, Data: payload}
 		if _, err = session.jetstream.PublishMsg(publicationContext, message); err == nil {

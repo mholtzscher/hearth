@@ -34,6 +34,7 @@ type manifest struct {
 	StateSchema       string                       `json:"state_schema"`
 	SupportSchema     string                       `json:"support_schema"`
 	Stateless         bool                         `json:"stateless,omitempty"`
+	EventSource       bool                         `json:"event_source,omitempty"`
 	StateValidation   []ruleManifest               `json:"state_validation,omitempty"`
 	SupportValidation []ruleManifest               `json:"support_validation,omitempty"`
 	Operations        map[string]operationManifest `json:"operations"`
@@ -67,6 +68,7 @@ type schemaNode struct {
 	Properties           map[string]schemaNode `json:"properties"`
 	Required             []string              `json:"required"`
 	Items                *schemaNode           `json:"items"`
+	Pattern              string                `json:"pattern"`
 	AdditionalProperties json.RawMessage       `json:"additionalProperties"`
 	MaxProperties        *int                  `json:"maxProperties"`
 	Minimum              *json.Number          `json:"minimum"`
@@ -92,21 +94,23 @@ type operationModel struct {
 }
 
 type entityTypeModel struct {
-	Package           string
-	Directory         string
-	ModuleRoot        string
-	TypeID            string
-	ExamplesFile      string
-	StateFile         string
-	StateSchema       schemaNode
-	SupportFile       string
-	SupportSchema     schemaNode
-	StateSupport      schemaNode
-	Stateless         bool
-	StateValidation   []ruleModel
-	SupportValidation []ruleModel
-	Operations        []operationModel
-	Examples          examplesFile
+	Package            string
+	Directory          string
+	ModuleRoot         string
+	TypeID             string
+	ExamplesFile       string
+	StateFile          string
+	StateSchema        schemaNode
+	SupportFile        string
+	SupportSchema      schemaNode
+	StateSupport       schemaNode
+	Stateless          bool
+	EventSource        bool
+	EventSupportSchema schemaNode
+	StateValidation    []ruleModel
+	SupportValidation  []ruleModel
+	Operations         []operationModel
+	Examples           examplesFile
 }
 
 type output struct {
@@ -240,8 +244,12 @@ func loadModel(path string) (entityTypeModel, error) {
 	if !required(support, referenceRootState) || !required(support, "operations") {
 		return entityTypeModel{}, errors.New("support schema must require state and operations")
 	}
+	allowedSupportProperties := map[string]struct{}{referenceRootState: {}, "operations": {}}
+	if definition.EventSource {
+		allowedSupportProperties["events"] = struct{}{}
+	}
 	for _, property := range sortedProperties(support.Properties) {
-		if property != referenceRootState && property != "operations" {
+		if _, allowed := allowedSupportProperties[property]; !allowed {
 			return entityTypeModel{}, fmt.Errorf("support schema has unsupported top-level property %q", property)
 		}
 	}
@@ -255,6 +263,23 @@ func loadModel(path string) (entityTypeModel, error) {
 	}
 	if err := requireClosedObject(operationSupport); err != nil {
 		return entityTypeModel{}, fmt.Errorf("support.operations schema: %w", err)
+	}
+	var eventSupportSchema schemaNode
+	if definition.EventSource {
+		if !definition.Stateless {
+			return entityTypeModel{}, errors.New("event_source requires stateless: true")
+		}
+		if len(definition.Operations) != 0 {
+			return entityTypeModel{}, errors.New("event_source requires an empty operations map")
+		}
+		if stateShapeErr := requireEventSourceStateShape(state, stateSupport); stateShapeErr != nil {
+			return entityTypeModel{}, stateShapeErr
+		}
+		events, eventsErr := requireEntityEventSupportSchema(support)
+		if eventsErr != nil {
+			return entityTypeModel{}, eventsErr
+		}
+		eventSupportSchema = events
 	}
 	if len(definition.Operations) != len(operationSupport.Properties) {
 		return entityTypeModel{}, errors.New("manifest operations must exactly match support.operations properties")
@@ -380,6 +405,11 @@ func loadModel(path string) (entityTypeModel, error) {
 	if examplesErr != nil {
 		return entityTypeModel{}, fmt.Errorf("examples: %w", examplesErr)
 	}
+	if definition.EventSource {
+		if eventExamplesErr := requireEventSourceExamples(examples); eventExamplesErr != nil {
+			return entityTypeModel{}, fmt.Errorf("examples: %w", eventExamplesErr)
+		}
+	}
 	if validationErr := checkInvalidSupports(
 		directory,
 		definition.SupportSchema,
@@ -393,8 +423,10 @@ func loadModel(path string) (entityTypeModel, error) {
 		ExamplesFile: examplesPath,
 		StateFile:    definition.StateSchema, StateSchema: state,
 		SupportFile: definition.SupportSchema, SupportSchema: support, StateSupport: stateSupport,
-		Stateless:       definition.Stateless,
-		StateValidation: stateValidation, SupportValidation: supportValidation,
+		Stateless:          definition.Stateless,
+		EventSource:        definition.EventSource,
+		EventSupportSchema: eventSupportSchema,
+		StateValidation:    stateValidation, SupportValidation: supportValidation,
 		Operations: operations, Examples: examples,
 	}, nil
 }

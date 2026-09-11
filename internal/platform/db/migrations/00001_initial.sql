@@ -299,6 +299,59 @@ CREATE INDEX health_transitions_entity_history_idx
     ON health_transitions(entity_id, receive_order DESC)
     WHERE resource_kind = 'entity';
 
+-- Entity Events are first-seen occurrence reports, not State: the row is the
+-- history record and the duplicate guard at the same time, and it holds no
+-- foreign keys so a report survives runtime, ownership, and descriptor churn.
+CREATE TABLE entity_events (
+    receive_order  INTEGER PRIMARY KEY AUTOINCREMENT,
+    event_id       TEXT NOT NULL UNIQUE CHECK (
+        length(event_id) = 40 AND substr(event_id, 1, 4) = 'evt_'
+    ),
+    adapter_id     TEXT NOT NULL CHECK (
+        length(adapter_id) BETWEEN 1 AND 63
+        AND substr(adapter_id, 1, 1) GLOB '[a-z0-9]'
+        AND adapter_id NOT GLOB '*[^a-z0-9_-]*'
+    ),
+    runtime_id     TEXT NOT NULL CHECK (
+        length(runtime_id) = 40 AND substr(runtime_id, 1, 4) = 'run_'
+    ),
+    entity_id      TEXT NOT NULL CHECK (
+        length(entity_id) = 40 AND substr(entity_id, 1, 4) = 'ent_'
+    ),
+    correlation_id TEXT NOT NULL CHECK (
+        length(correlation_id) = 40 AND substr(correlation_id, 1, 4) = 'cor_'
+    ),
+    name           TEXT NOT NULL CHECK (
+        length(name) BETWEEN 1 AND 63
+        AND substr(name, 1, 1) GLOB '[a-z0-9]'
+        AND name NOT GLOB '*[^a-z0-9_-]*'
+    ),
+    -- Raw 32-byte SHA-256 of the immutable reported tuple; duplicate
+    -- detection compares this hash, never mutable delivery metadata.
+    fingerprint    BLOB NOT NULL CHECK (length(fingerprint) = 32),
+    disposition    TEXT NOT NULL CHECK (disposition IN ('accepted', 'rejected')),
+    rejection_code TEXT CHECK (
+        rejection_code IS NULL OR rejection_code IN (
+            'stale_runtime', 'unknown_entity', 'wrong_adapter',
+            'entity_disabled', 'unsupported_event'
+        )
+    ),
+    -- Fixed-width UTC timestamps so the retention cutoff compares lexicographically.
+    emitted_at     TEXT NOT NULL,
+    received_at    TEXT NOT NULL,
+    recorded_at    TEXT NOT NULL,
+    CHECK (
+        (disposition = 'accepted' AND rejection_code IS NULL)
+        OR (disposition = 'rejected' AND rejection_code IS NOT NULL)
+    )
+);
+
+CREATE INDEX entity_events_entity_history_idx
+    ON entity_events(entity_id, receive_order DESC);
+
+CREATE INDEX entity_events_retention_idx
+    ON entity_events(recorded_at, receive_order);
+
 CREATE VIEW entity_read_projection AS
 SELECT
     e.id,
@@ -335,6 +388,9 @@ LEFT JOIN entity_availability_current AS current
 
 -- +goose Down
 DROP VIEW entity_read_projection;
+DROP INDEX entity_events_retention_idx;
+DROP INDEX entity_events_entity_history_idx;
+DROP TABLE entity_events;
 DROP INDEX health_transitions_entity_history_idx;
 DROP INDEX health_transitions_adapter_history_idx;
 DROP TABLE health_transitions;

@@ -92,17 +92,20 @@ func (z2m *Adapter) reportReconciledAvailability(
 	return z2m.reportAvailability(ctx, reports)
 }
 
+// clearAvailabilityEvidence drops cached availability and every queued
+// availability message while preserving queued State and Event occurrences, so
+// an unhealthy bridge cannot replay stale availability evidence but a pending
+// occurrence still waits for the next reconciled route snapshot.
 func (z2m *Adapter) clearAvailabilityEvidence(state *connectionSync) {
 	clear(state.availability)
-	kept := state.pendingOrder[:0]
-	for _, topic := range state.pendingOrder {
-		if strings.HasPrefix(topic, z2m.config.BaseTopic+"/") && strings.HasSuffix(topic, "/availability") {
-			delete(state.pending, topic)
+	kept := state.pending[:0]
+	for _, entry := range state.pending {
+		if _, kind := parseDeviceTopic(z2m.config.BaseTopic, entry.message.Topic); kind == deviceTopicAvailability {
 			continue
 		}
-		kept = append(kept, topic)
+		kept = append(kept, entry)
 	}
-	state.pendingOrder = kept
+	state.pending = kept
 }
 
 func (z2m *Adapter) cacheAvailability(

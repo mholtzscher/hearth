@@ -3,9 +3,7 @@ package nats
 import (
 	"context"
 	"errors"
-	"fmt"
 	"log/slog"
-	"sync/atomic"
 	"time"
 
 	natsgo "github.com/nats-io/nats.go"
@@ -28,11 +26,28 @@ type ObservationProjector interface {
 	) (devices.ProjectionResult, error)
 }
 
+// ObservationConsumer is the durable Observation consumer. It embeds the
+// shared durable lifecycle, so activity reporting and shutdown behave exactly
+// as they do for the Entity Event consumer.
 type ObservationConsumer struct {
-	consume jetstream.ConsumeContext
-	active  atomic.Bool
+	*durableConsumer
 }
 
+// observationClass is the Observation wire vocabulary shared consumer code
+// uses for diagnostics. An Observation is State evidence, so invalid, consume,
+// and processing failures all report under observation.*.
+func observationClass() consumerClass {
+	return consumerClass{
+		kind:         "observation",
+		invalidEvent: "observation.invalid",
+		failureEvent: "observation.processing_failed",
+		idKey:        "observation_id",
+	}
+}
+
+// StartObservationConsumer subscribes the Observation consumer and starts
+// reporting its activity. Nil dependencies fail before any subscription, and a
+// subscription that cannot activate leaves no consumer running.
 func StartObservationConsumer(
 	baseContext context.Context,
 	consumer jetstream.Consumer,
@@ -46,68 +61,21 @@ func StartObservationConsumer(
 	if projector == nil {
 		return nil, errors.New("observation handler is required")
 	}
-	if logger == nil {
-		logger = defaultLogger(logger)
-	}
-	if baseContext == nil {
-		baseContext = context.Background()
-	}
-
-	running := &ObservationConsumer{}
-	consume, err := consumer.Consume(
-		func(message jetstream.Msg) {
-			handleObservationMessage(baseContext, message, validator, projector, logger)
+	durable, err := startDurableConsumer(
+		baseContext,
+		consumer,
+		observationClass(),
+		logger,
+		func(ctx context.Context, logger *slog.Logger, message jetstream.Msg) {
+			handleObservationMessage(ctx, message, validator, projector, logger)
 		},
-		jetstream.ConsumeErrHandler(func(_ jetstream.ConsumeContext, _ error) {
-			logger.ErrorContext(baseContext, "observation consume error",
-				slog.String(transportEventKey, "observation.processing_failed"),
-				slog.String("stage", "consume"),
-				slog.String(transportErrorCodeKey, "consumer_error"),
-			)
-		}),
 	)
 	if err != nil {
-		return nil, fmt.Errorf("start observation consumer: %w", err)
+		return nil, err
 	}
-	running.consume = consume
-	running.active.Store(true)
-	go func() {
-		<-consume.Closed()
-		running.active.Store(false)
-	}()
-	return running, nil
+	return &ObservationConsumer{durableConsumer: durable}, nil
 }
 
-func (consumer *ObservationConsumer) Active() bool {
-	return consumer != nil && consumer.active.Load()
-}
-
-func (consumer *ObservationConsumer) Stop() {
-	if consumer == nil || consumer.consume == nil {
-		return
-	}
-	consumer.active.Store(false)
-	consumer.consume.Stop()
-}
-
-func (consumer *ObservationConsumer) Drain() {
-	if consumer == nil || consumer.consume == nil {
-		return
-	}
-	consumer.active.Store(false)
-	consumer.consume.Drain()
-}
-
-func (consumer *ObservationConsumer) Closed() <-chan struct{} {
-	if consumer == nil || consumer.consume == nil {
-		closed := make(chan struct{})
-		close(closed)
-		return closed
-	}
-	return consumer.consume.Closed()
-}
-
-//nolint:funlen // The handler is a linear decode, validate, project, and acknowledge pipeline.
 func handleObservationMessage(
 	baseContext context.Context,
 	message jetstream.Msg,
@@ -115,23 +83,13 @@ func handleObservationMessage(
 	projector ObservationProjector,
 	logger *slog.Logger,
 ) {
-	// Extract the operation context from headers before decoding so every
-	// emission below, including permanent invalid input, preserves it.
-	ctx := natswire.ExtractTrace(baseContext, message.Headers())
-	metadata, metadataErr := message.Metadata()
-	if metadataErr != nil {
-		logger.ErrorContext(ctx, "cannot read observation metadata",
-			slog.String(transportEventKey, "observation.processing_failed"),
-			slog.String("stage", "metadata"),
-			slog.String(transportErrorCodeKey, "metadata_unavailable"),
-		)
+	opened, ok := openConsumerMessage(baseContext, message, logger, observationClass())
+	if !ok {
 		return
 	}
-	sequence := metadata.Sequence.Stream
-	payloadSize := len(message.Data())
-	permanentFailure := func(errorCode, observationID string) {
-		logInvalidObservation(ctx, logger, message, sequence, payloadSize, errorCode, observationID)
-	}
+	ctx := opened.operation
+	metadata := opened.metadata
+	permanentFailure := opened.reject
 
 	envelope, decodeErr := natswire.Decode[observation](validator, contractsv1.ObservationSchemaID, message.Data())
 	if decodeErr != nil {
@@ -212,42 +170,6 @@ func handleObservationMessage(
 			slog.String("stage", "ack"),
 			slog.String(transportErrorCodeKey, "ack_failed"),
 		)
-	}
-}
-
-// logInvalidObservation acknowledges permanent wire-invalid input before
-// recording it at Warn with a fixed validation class and safe sizes and
-// IDs. The warning is retained regardless of the Ack outcome, with Ack
-// failures recorded. Raw payloads and decode errors are never logged.
-func logInvalidObservation(
-	ctx context.Context,
-	logger *slog.Logger,
-	message jetstream.Msg,
-	sequence uint64,
-	payloadSize int,
-	errorCode, observationID string,
-) {
-	ackErr := message.Ack()
-	scoped := logger.With(slog.Uint64("stream_sequence", sequence))
-	attributes := []slog.Attr{
-		slog.Int("payload_size", payloadSize),
-		slog.String(transportEventKey, "observation.invalid"),
-		slog.String(transportErrorCodeKey, errorCode),
-	}
-	if observationID != "" {
-		attributes = append(attributes, slog.String("observation_id", observationID))
-	}
-	scoped.LogAttrs(ctx, slog.LevelWarn, "acknowledging invalid observation", attributes...)
-	if ackErr != nil {
-		ackAttributes := []slog.Attr{
-			slog.String(transportEventKey, "observation.processing_failed"),
-			slog.String("stage", "ack"),
-			slog.String(transportErrorCodeKey, "ack_failed"),
-		}
-		if observationID != "" {
-			ackAttributes = append(ackAttributes, slog.String("observation_id", observationID))
-		}
-		scoped.LogAttrs(ctx, slog.LevelError, "acknowledge invalid observation", ackAttributes...)
 	}
 }
 

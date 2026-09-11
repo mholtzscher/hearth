@@ -56,7 +56,7 @@ type devicePlanError struct {
 
 func (err *devicePlanError) Error() string { return "Zigbee2MQTT Device plan rejected: " + err.code }
 
-// planDevice calls the four supported families directly in precedence order.
+// planDevice calls the supported families directly in precedence order.
 // All functions share the same expose index and perform no I/O.
 func planDevice(input devicePlanningInput) (devicePlan, error) {
 	return mergeDeviceContributions(input.Exposes, []plannerContribution{
@@ -64,6 +64,7 @@ func planDevice(input devicePlanningInput) (devicePlan, error) {
 		planRelayFamily(input),
 		planSensorFamily(input),
 		planLinkquality(input),
+		planActionEvent(input),
 	})
 }
 

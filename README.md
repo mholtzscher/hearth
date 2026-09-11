@@ -22,7 +22,30 @@ Run a small mutation-testing trial with `mise run mutation-test -- ./contracts/v
 
 `hearthd` accepts any configured HTTP bind address. The example remains `127.0.0.1:8080`; bind to a non-loopback address only on a trusted network because the HTTP API has no authentication.
 
-Run the first-light simulator with `go run ./cmd/hearth-simulator -config configs/simulator.yaml` after copying `configs/simulator.example.yaml`. Its `scenario` may be `happy`, `adapter-unhealthy`, `entity-unavailable`, `delayed-source-time`, `future-clock-skew`, `upstream-rejection`, `no-op-refresh`, `overlapping-opposite-command`, `outcome-timeout`, `interrupted-command`, or `restart-before-ack`. `happy` reports a healthy Adapter and available Entity before publishing State. `adapter-unhealthy` proves that Core rejects a Command before dispatch. `entity-unavailable` proves that availability is advisory: Core dispatches the Command, and the simulator reports the Entity available after the recovery attempt succeeds. Heartbeat expiry, takeover, stale-runtime isolation, Core readiness recovery overlays, and graceful release remain deterministic process-test scenarios. Raw duplicate and malformed Observation cases remain transport-test scenarios.
+Run the first-light simulator with `go run ./cmd/hearth-simulator -config configs/simulator.yaml` after copying `configs/simulator.example.yaml`. Its `scenario` may be `happy`, `adapter-unhealthy`, `entity-unavailable`, `delayed-source-time`, `future-clock-skew`, `upstream-rejection`, `no-op-refresh`, `overlapping-opposite-command`, `outcome-timeout`, `interrupted-command`, `restart-before-ack`, or `entity-events`. `happy` reports a healthy Adapter and available Entity before publishing State. `adapter-unhealthy` proves that Core rejects a Command before dispatch. `entity-unavailable` proves that availability is advisory: Core dispatches the Command, and the simulator reports the Entity available after the recovery attempt succeeds. Heartbeat expiry, takeover, stale-runtime isolation, Core readiness recovery overlays, and graceful release remain deterministic process-test scenarios. Raw duplicate and malformed Observation cases remain transport-test scenarios.
+
+### Entity Event recovery recipe
+
+Entity Events are named occurrences, not State. `entity-events` registers an `events` Entity beside the unchanged `power` Entity and Binding key; `power` still accepts `set` Commands and reports State, while `events` advertises `single_press` and `double_press` and reads `state: null` forever. This is the proof recipe for the Core-offline guarantee and requires no hardware and no automations:
+
+```sh
+cp configs/hearthd.example.yaml configs/hearthd.yaml
+cp configs/simulator.example.yaml configs/simulator.yaml
+# edit configs/simulator.yaml so that: scenario: entity-events
+mise run nats
+go run ./cmd/hearthd -config configs/hearthd.yaml
+go run ./cmd/hearth-simulator -config configs/simulator.yaml
+```
+
+Type `single_press` and `double_press` as separate lines on the simulator's standard input and press Enter for each. While the Session is connected, each accepted line publishes one synthetic report; a line typed while a report is still publishing is logged and dropped rather than queued, and end of input stops only input. Stop `hearthd` (Ctrl-C) with the simulator still running and connected, keep typing for a few reports, then start `hearthd` again with the same `sqlite_path`. After the restart, Core records the backlog and the history endpoint returns each report exactly once:
+
+```sh
+curl http://127.0.0.1:8080/v1/entities/<power_ent_id>
+curl http://127.0.0.1:8080/v1/entities/<events_ent_id>
+curl 'http://127.0.0.1:8080/v1/entities/<events_ent_id>/events?limit=50'
+```
+
+The registration log reports both canonical Entity IDs. The event history response shows the schema-constrained reported name together with whether Core recorded the report (`accepted`) or why Core rejected it (`stale_runtime`, `unknown_entity`, `wrong_adapter`, `entity_disabled`, or `unsupported_event`). It never proves that a physical press happened, and it is not State history: `GET /v1/entities/{entity_id}/state/history` never contains events. Readiness covers the session, the Observation consumer, the Entity Event stream and consumer configuration, and both consumers' activity; it never waits for unread backlog. The guarantee covers broker-acknowledged input only while NATS and JetStream remain available and the Adapter process is alive: initial claim and registration need Core, an Adapter restart during a Core outage loses unacknowledged work, a NATS process loss is not covered, and stream limits can discard old input during a long outage. Reports are not replayed into Commands, and nothing in this path executes work.
 
 ### Home Assistant migration adapter
 
@@ -48,7 +71,7 @@ curl -X POST http://127.0.0.1:8080/v1/entities/ent_.../commands \
 
 For adding device capabilities, see [Extending Zigbee2MQTT capabilities](docs/zigbee2mqtt-capabilities.md): typed mapping tables for repetitive sensors/settings, with family planning and conversions kept in Go.
 
-`hearth-adapter-zigbee2mqtt` connects an operator-managed Zigbee2MQTT service to Hearth. Zigbee2MQTT 2.13.0 and NATS Server 2.12 are the tested versions. Other versions are not runtime-blocked, but must provide the same retained MQTT payloads and behavior.
+`hearth-adapter-zigbee2mqtt` connects an operator-managed Zigbee2MQTT service to Hearth. Tested versions are Zigbee2MQTT 2.13.0 and 2.14.1 with NATS Server 2.12. Other versions are not runtime-blocked, but must provide the same retained MQTT payloads and behavior.
 
 Configure Zigbee2MQTT to use MQTT 3.1.1 and to publish explicit availability while global optimistic updates are disabled. The effective `bridge/info` settings must contain:
 
@@ -118,7 +141,7 @@ For diagnostics, check adapter logs together with the adapter and Entity reads:
 
 ## Application logs
 
-Hearth executables write to stderr with `--log-level info --log-format text` by default. Use `--log-format json` for filtering, or `--log-level debug` for Observation progress:
+Hearth executables write to stderr with `--log-level info --log-format text` by default. Use `--log-format json` for filtering, or `--log-level debug` for Observation and Entity Event progress:
 
 ```sh
 log_dir=$(mktemp -d /tmp/hearth-logs.XXXXXX)

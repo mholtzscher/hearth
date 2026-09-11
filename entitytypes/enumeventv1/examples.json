@@ -1,0 +1,30 @@
+{
+  "cases": [
+    {
+      "name": "buttons",
+      "support": {
+        "state": {},
+        "operations": {},
+        "events": {"names": ["single_press", "double_press", "long_press"]}
+      },
+      "states": [
+        {"value": {}, "valid": true},
+        {"value": {"unexpected": true}, "valid": false}
+      ],
+      "operations": {}
+    },
+    {
+      "name": "gestures",
+      "support": {
+        "state": {},
+        "operations": {},
+        "events": {"names": ["swipe_left", "swipe_right", "shake"]}
+      },
+      "states": [
+        {"value": {}, "valid": true},
+        {"value": {"unexpected": true}, "valid": false}
+      ],
+      "operations": {}
+    }
+  ]
+}

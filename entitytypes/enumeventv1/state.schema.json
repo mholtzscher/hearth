@@ -1,0 +1,9 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:hearth:schema:entity-type:enumevent:v1:state",
+  "title": "Hearth enumevent/v1 State",
+  "description": "Event sources report named occurrences and carry no State.",
+  "type": "object",
+  "additionalProperties": false,
+  "maxProperties": 0
+}

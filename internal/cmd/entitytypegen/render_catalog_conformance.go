@@ -554,7 +554,107 @@ func writeCatalogProbe(source *strings.Builder, probe catalogProbe) error {
 	if equalityErr := writeCatalogEquality(source, probe, validState); equalityErr != nil {
 		return equalityErr
 	}
+	if entityEventsErr := writeCatalogEntityEvents(source, probe); entityEventsErr != nil {
+		return entityEventsErr
+	}
 	source.WriteString("\t})\n")
+	return nil
+}
+
+// writeCatalogEntityEvents emits the Entity Event selector probe: an event
+// source accepts exactly its supported names and reports a corrupt descriptor as
+// a catalog failure, while a closed type accepts no Entity Event at all and
+// resolves no Command.
+func writeCatalogEntityEvents(source *strings.Builder, probe catalogProbe) error {
+	if !probe.model.EventSource {
+		return writeClosedTypeEntityEventChecks(source, probe)
+	}
+	names, err := entityEventNamesFromSupport(probe.support)
+	if err != nil {
+		return err
+	}
+	unsupported := unsupportedEntityEventName(names)
+	corrupt, err := supportWithoutEvents(probe.support)
+	if err != nil {
+		return err
+	}
+	corruptSupport, err := compactCatalogJSON(corrupt)
+	if err != nil {
+		return err
+	}
+	fmt.Fprintf(
+		source,
+		"\t\tif supported, err := catalog.SupportsEntityEvent(entity, EntityEventName(%s)); err != nil || !supported { t.Errorf(\"catalog supported Entity Event %%q = %%v, %%v\", %s, supported, err) }\n",
+		strconv.Quote(names[0]),
+		strconv.Quote(names[0]),
+	)
+	fmt.Fprintf(
+		source,
+		"\t\tif supported, err := catalog.SupportsEntityEvent(entity, EntityEventName(%s)); err != nil || supported { t.Errorf(\"catalog unsupported Entity Event %%q = %%v, %%v\", %s, supported, err) }\n",
+		strconv.Quote(unsupported),
+		strconv.Quote(unsupported),
+	)
+	fmt.Fprintf(
+		source,
+		"\t\tcorruptEventEntity := Entity{ID: EntityID(%s), TypeID: EntityType%s, Support: EntitySupport(%s)}\n",
+		strconv.Quote("generated_"+probe.model.Package),
+		entityTypeGoName(probe.model),
+		strconv.Quote(corruptSupport),
+	)
+	fmt.Fprintf(
+		source,
+		"\t\tif _, err := catalog.SupportsEntityEvent(corruptEventEntity, EntityEventName(%s)); err == nil { t.Error(\"catalog accepted a corrupt Entity Event descriptor\") }\n",
+		strconv.Quote(names[0]),
+	)
+	source.WriteString(
+		"\t\tif _, err := catalog.ResolveCommand(entity, OperationName(\"set\"), CommandParameters(`null`)); err == nil {",
+	)
+	source.WriteString(" t.Error(\"catalog resolved a Command for an event source\") }\n")
+	return nil
+}
+
+// writeClosedTypeEntityEventChecks pins the closed-type half of the selector:
+// a type without event support accepts no Entity Event name even when its
+// persisted support is malformed, and its closed support schema still rejects a
+// descriptor carrying events even though the shared registration schema can
+// transport one.
+func writeClosedTypeEntityEventChecks(source *strings.Builder, probe catalogProbe) error {
+	source.WriteString(
+		"\t\tif supported, err := catalog.SupportsEntityEvent(entity, EntityEventName(\"single_press\")); err != nil || supported {",
+	)
+	source.WriteString(" t.Errorf(\"catalog non-event type accepted an Entity Event: %v, %v\", supported, err) }\n")
+	// A resolved non-event type is classified before its unrelated support is
+	// decoded, so a malformed persisted descriptor stays an ordinary
+	// unsupported_event rejection instead of a catalog failure.
+	malformedEntity, malformedErr := declareCatalogProbeEntity(
+		source, probe, "malformedNonEventEntity", json.RawMessage(`[]`),
+	)
+	if malformedErr != nil {
+		return malformedErr
+	}
+	fmt.Fprintf(
+		source,
+		"\t\tif supported, err := catalog.SupportsEntityEvent(%s, EntityEventName(%s)); err != nil || supported {",
+		malformedEntity,
+		strconv.Quote("single_press"),
+	)
+	source.WriteString(
+		" t.Errorf(\"catalog non-event type with malformed support accepted an Entity Event: %v, %v\", supported, err) }\n",
+	)
+	closedEventSupport, err := supportWithEvents(probe.support)
+	if err != nil {
+		return err
+	}
+	compacted, err := compactCatalogJSON(closedEventSupport)
+	if err != nil {
+		return err
+	}
+	fmt.Fprintf(
+		source,
+		"\t\tif _, err := catalog.NormalizeSupport(entity.TypeID, EntitySupport(%s)); err == nil {",
+		strconv.Quote(compacted),
+	)
+	source.WriteString(" t.Error(\"catalog accepted event support for a closed type\") }\n")
 	return nil
 }
 

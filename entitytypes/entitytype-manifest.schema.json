@@ -30,6 +30,7 @@
       "items": {"$ref": "#/$defs/rule"}
     },
     "stateless": {"type": "boolean", "default": false},
+    "event_source": {"type": "boolean", "default": false},
     "operations": {
       "type": "object",
       "propertyNames": {

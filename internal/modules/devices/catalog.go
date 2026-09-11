@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"maps"
 	"regexp"
+	"slices"
 	"time"
 
 	"github.com/mholtzscher/hearth/entitytypes"
@@ -92,8 +93,12 @@ func DefineOperation[State, Support, OperationSupport, Parameters any](
 }
 
 type EntityTypeDefinition struct {
-	id               EntityTypeID
-	stateless        bool // from manifest "stateless" (default false)
+	id        EntityTypeID
+	stateless bool // from manifest "stateless" (default false)
+	// eventNames is nil for a type that is not an Entity Event source. A nil
+	// selector classifies the type as a non-event before any support decoding, so
+	// a malformed persisted support is never a catalog failure for such a type.
+	eventNames       func(EntitySupport) ([]EntityEventName, error)
 	normalizeSupport func(EntitySupport) (EntitySupport, error)
 	normalizeState   func(EntitySupport, Value) (Value, error)
 	equalState       func(EntitySupport, Value, Value) (bool, error)
@@ -105,6 +110,49 @@ type erasedOperationDefinition struct {
 	deadline  time.Duration
 	outcome   OutcomeKind
 	satisfies func(CommandParameters, Value) (bool, error) // nil iff dispatched
+}
+
+// DefineEventSourceEntityType defines a stateless, non-commandable Entity type
+// whose only reported occurrences are Entity Events. selectEventNames returns
+// the supported names of one already-decoded support; the type's own support
+// validator still decides whether that support is accepted at all.
+func DefineEventSourceEntityType[State, Support any](
+	id EntityTypeID,
+	state *entitytypes.JSONCodec[State],
+	support *entitytypes.JSONCodec[Support],
+	validateSupport func(Support) error,
+	validateSupportedState func(Support, State) error,
+	equalState func(State, State) bool,
+	selectEventNames func(Support) []string,
+) (EntityTypeDefinition, error) {
+	if selectEventNames == nil {
+		return EntityTypeDefinition{}, fmt.Errorf("entity type %q has no Entity Event name selector", id)
+	}
+	definition, err := DefineEntityType(
+		id, state, support, validateSupport, validateSupportedState, equalState,
+	)
+	if err != nil {
+		return EntityTypeDefinition{}, err
+	}
+	// An event source is stateless and non-commandable: it defines no State
+	// space and no Operations, so Entity Events are its only reported input.
+	definition.stateless = true
+	definition.eventNames = func(rawSupport EntitySupport) ([]EntityEventName, error) {
+		typedSupport, _, decodeErr := support.Decode(json.RawMessage(rawSupport))
+		if decodeErr != nil {
+			return nil, fmt.Errorf("invalid support for entity type %q: %w", id, decodeErr)
+		}
+		if validationErr := validateSupport(typedSupport); validationErr != nil {
+			return nil, fmt.Errorf("unsupported support for entity type %q: %w", id, validationErr)
+		}
+		selected := selectEventNames(typedSupport)
+		names := make([]EntityEventName, 0, len(selected))
+		for _, name := range selected {
+			names = append(names, EntityEventName(name))
+		}
+		return names, nil
+	}
+	return definition, nil
 }
 
 //nolint:gocognit // Generic boundary validation is kept with the Entity type definition it protects.
@@ -252,6 +300,31 @@ func (catalog *TypeCatalog) IsStateless(typeID EntityTypeID) (bool, error) {
 		return false, err
 	}
 	return definition.stateless, nil
+}
+
+// SupportsEntityEvent reports whether an Entity's current support accepts one
+// Entity Event name. Non-event classification wins before any support decoding:
+// a resolved type with no Entity Event selector reports false with no error even
+// when its persisted support is malformed, because such a report is an ordinary
+// unsupported_event rejection rather than a catalog failure. A type with the
+// selector decodes and validates its persisted descriptor, so an unsupported
+// name is false with no error while a corrupt event-source descriptor is a
+// catalog failure. An unknown type is a catalog failure in both cases. Every
+// returned error is a deterministic failure to interpret the persisted
+// descriptor, which the repository reports as ErrEntityEventDescriptorCorrupt.
+func (catalog *TypeCatalog) SupportsEntityEvent(entity Entity, name EntityEventName) (bool, error) {
+	definition, err := catalog.resolve(entity.TypeID)
+	if err != nil {
+		return false, err
+	}
+	if definition.eventNames == nil {
+		return false, nil
+	}
+	names, err := definition.eventNames(entity.Support)
+	if err != nil {
+		return false, err
+	}
+	return slices.Contains(names, name), nil
 }
 
 func (catalog *TypeCatalog) NormalizeState(entity Entity, value Value) (Value, error) {

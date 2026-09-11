@@ -1,5 +1,10 @@
 adapter_id: simulator
 nats_url: nats://127.0.0.1:4222
 binding_key: simulated-light
-# Health scenarios: happy, adapter-unhealthy, entity-unavailable.
+# health scenarios: happy, adapter-unhealthy, entity-unavailable
+# command scenarios: delayed-source-time, future-clock-skew, upstream-rejection,
+#   no-op-refresh, overlapping-opposite-command, outcome-timeout,
+#   interrupted-command, restart-before-ack
+# entity-events additionally registers an event-source Entity and publishes
+#   synthetic reports for standard-input lines single_press and double_press
 scenario: happy

@@ -48,7 +48,6 @@ func (z2m *Adapter) runConnection(ctx context.Context, generation uint64) (bool,
 	}
 
 	state := connectionSync{
-		pending:      make(map[string]mqttMessage),
 		availability: make(map[string]availabilityEvidence),
 		snapshot:     routeSnapshot{routes: make(map[string]commandRoute), devices: make(map[string]runtimeDevice)},
 	}
@@ -122,17 +121,53 @@ func preferConnectionError(
 	return operationErr
 }
 
+// pendingMessageLimit bounds the connection-local queue of device messages
+// that arrived before route activation, counted in entries rather than
+// occurrences so unique ordinary topics cannot grow it without limit. It is
+// deliberately generous: a Zigbee2MQTT broker replays retained State and
+// availability for every Device on subscribe (two topics per Device), so 1024
+// entries cover a 512-Device network, far beyond a practical Zigbee mesh, and
+// still tolerate hundreds of queued Event occurrences. The bound keeps memory
+// at entries times a device-sized MQTT payload, on the order of a few hundred
+// kibibytes, and keeps the ordinary-state coalescing scan O(n) over a bounded
+// queue. Exceeding it is treated as a stalled connection, not as a reason to
+// discard one arbitrarily chosen message.
+const pendingMessageLimit = 1024
+
+// errPendingMessageLimit ends the current connection generation when admitting
+// one more pending message would exceed pendingMessageLimit. It is a plain
+// sentinel rather than a sessionOperationError so the retry loop reports the
+// adapter unhealthy, releases the generation-local queue, and reconnects with
+// existing backoff instead of terminating the process. It carries no topic,
+// payload, or device identity.
+var errPendingMessageLimit = errors.New(
+	"Zigbee2MQTT pending message limit reached; reconnecting to resynchronize",
+)
+
 type connectionSync struct {
 	hasBridgeState bool
 	bridgeOnline   bool
 	info           *bridgeInfo
 	inventory      *inventoryDiscovery
 	dirty          bool
-	pendingOrder   []string
-	pending        map[string]mqttMessage
-	availability   map[string]availabilityEvidence
-	snapshot       routeSnapshot
-	routeRevision  uint64
+	// pending holds every device message received before route activation, in
+	// replay order, bounded by pendingMessageLimit. An occurrence entry is
+	// always kept individually; every other entry coalesces to the latest
+	// message per topic so a stalled connection never replays stale State and
+	// availability history.
+	pending       []pendingMessage
+	availability  map[string]availabilityEvidence
+	snapshot      routeSnapshot
+	routeRevision uint64
+}
+
+// pendingMessage is one queued upstream message awaiting route activation.
+// occurrence marks a message that may carry an Entity Event occurrence and
+// therefore must replay individually, in arrival order, exactly once. Every
+// other queued message coalesces with later messages on the same topic.
+type pendingMessage struct {
+	message    mqttMessage
+	occurrence bool
 }
 
 type availabilityEvidence struct {
@@ -231,29 +266,133 @@ func (z2m *Adapter) ingestMessage(
 			return z2m.processDeviceMessage(ctx, generation, state, message)
 		}
 		if queueableDeviceTopic(z2m.config.BaseTopic, message.Topic, state.inventory) {
-			state.queuePending(message)
+			if err := state.queuePending(message, z2m.carriesEventOccurrence(state, message)); err != nil {
+				return z2m.rejectPendingOverflow(ctx, err)
+			}
 		}
 	}
 	return nil
+}
+
+// rejectPendingOverflow emits one fixed diagnostic at the pending-limit
+// decision and returns the limit error so the connection generation ends. Only
+// the bound and its stable code are logged: never the topic, payload, or
+// device.
+func (z2m *Adapter) rejectPendingOverflow(ctx context.Context, cause error) error {
+	z2m.logger.WarnContext(
+		ctx,
+		"Zigbee2MQTT pending message limit reached",
+		slog.String(eventKey, "adapter.pending_message_limit_reached"),
+		slog.String("error_code", pendingMessageLimitErrorCode),
+		slog.Int("pending_limit", pendingMessageLimit),
+	)
+	return cause
 }
 
 func compatibleBridgeInfo(info bridgeInfo) bool {
 	return info.MQTTVersion == mqttProtocolVersion311 && info.AvailabilityEnabled && !info.Optimistic
 }
 
-func (state *connectionSync) queuePending(message mqttMessage) {
-	if state.pending == nil {
-		state.pending = make(map[string]mqttMessage)
+// queuePending records one device message received before route activation.
+// An occurrence is always appended individually so two equal action reports
+// stay two occurrences, and so a later unrelated report on the same topic can
+// never erase one. Any other message replaces the queued message for its
+// topic and moves to the end of the queue, so the latest State per topic still
+// replays last without keeping unbounded history for every topic.
+//
+// The queue is bounded by pendingMessageLimit. Coalescing an existing ordinary
+// entry for the same topic replaces it in place and so never increases the
+// entry count, which keeps replay working at the bound. Only an occurrence or
+// a new ordinary topic would grow the queue, and when that would exceed the
+// bound queuePending returns errPendingMessageLimit without touching the
+// queue: the caller must end the connection generation rather than pick one
+// message to evict, because silently dropping a chosen Event occurrence would
+// lose or reorder an upstream event with no operator-visible signal.
+func (state *connectionSync) queuePending(message mqttMessage, occurrence bool) error {
+	if occurrence {
+		return state.appendPending(pendingMessage{message: message, occurrence: true})
 	}
-	if _, exists := state.pending[message.Topic]; !exists {
-		state.pendingOrder = append(state.pendingOrder, message.Topic)
+	for index, entry := range state.pending {
+		if entry.occurrence || entry.message.Topic != message.Topic {
+			continue
+		}
+		state.pending = append(state.pending[:index], state.pending[index+1:]...)
+		state.pending = append(state.pending, pendingMessage{message: message})
+		return nil
 	}
-	state.pending[message.Topic] = message
+	return state.appendPending(pendingMessage{message: message})
+}
+
+// appendPending admits one new entry only while the queue is below
+// pendingMessageLimit, so a refused append never mutates order or content.
+func (state *connectionSync) appendPending(entry pendingMessage) error {
+	if len(state.pending) >= pendingMessageLimit {
+		return errPendingMessageLimit
+	}
+	state.pending = append(state.pending, entry)
+	return nil
+}
+
+// carriesEventOccurrence reports whether one not-yet-activated device message
+// may carry an Entity Event occurrence. A retained message is a cached replay,
+// never an occurrence. Before inventory arrives the adapter cannot know which
+// properties an Entity owns, so it conservatively treats a top-level action or
+// action_* property as event-bearing; once inventory exists it uses the
+// discovered Event property ownership instead of guessing.
+func (z2m *Adapter) carriesEventOccurrence(state *connectionSync, message mqttMessage) bool {
+	if message.Retained {
+		return false
+	}
+	friendly, kind := parseDeviceTopic(z2m.config.BaseTopic, message.Topic)
+	if kind != deviceTopicState {
+		return false
+	}
+	properties, err := decodeDeviceProperties(message.Payload)
+	if err != nil {
+		return false
+	}
+	if state.inventory == nil {
+		return hasConservativeActionProperty(properties)
+	}
+	for _, device := range state.inventory.Devices {
+		if device.FriendlyName == friendly {
+			return deviceOwnsEventProperty(device, properties)
+		}
+	}
+	return false
+}
+
+// hasConservativeActionProperty is the pre-inventory occurrence test. It
+// deliberately over-approximates by accepting every action or action_*
+// property, because an unknown device could own any such Event source.
+func hasConservativeActionProperty(properties map[string]json.RawMessage) bool {
+	for property := range properties {
+		if isActionEventProperty(property) {
+			return true
+		}
+	}
+	return false
+}
+
+// deviceOwnsEventProperty is the post-inventory occurrence test: exactly the
+// properties of decoded Event plans count, so a message that only carries a
+// State or Command property still coalesces by topic.
+func deviceOwnsEventProperty(device discoveredDevice, properties map[string]json.RawMessage) bool {
+	for _, entity := range device.Entities {
+		if entity.DecodeEvent == nil {
+			continue
+		}
+		for _, property := range entity.EventProperties {
+			if _, present := properties[property]; present {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func (state *connectionSync) clearPending() {
-	state.pendingOrder = nil
-	clear(state.pending)
+	state.pending = nil
 }
 
 func (z2m *Adapter) reportUnhealthy(

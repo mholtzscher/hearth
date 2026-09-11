@@ -53,6 +53,12 @@ type ObservationRoute struct {
 	EntityID  string
 }
 
+type EntityEventRoute struct {
+	AdapterID string
+	RuntimeID string
+	EntityID  string
+}
+
 type CommandRoute struct {
 	AdapterID     string
 	RuntimeID     string
@@ -138,6 +144,23 @@ func EntityEnablementWildcard() string {
 
 func EntityEnablementSubject(adapterID, runtimeID, entityID string) (string, error) {
 	base, err := runtimeSubject(adapterID, runtimeID, "enablement")
+	if err != nil {
+		return "", err
+	}
+	if validationErr := validateEntityID(entityID); validationErr != nil {
+		return "", validationErr
+	}
+	return base + "." + entityID, nil
+}
+
+// EntityEventWildcard is the Adapter-originated entity event route: one
+// occurrence report for one Entity, scoped to the publishing Adapter runtime.
+func EntityEventWildcard() string {
+	return runtimeWildcard("entity-event") + ".*"
+}
+
+func EntityEventSubject(adapterID, runtimeID, entityID string) (string, error) {
+	base, err := runtimeSubject(adapterID, runtimeID, "entity-event")
 	if err != nil {
 		return "", err
 	}
@@ -248,6 +271,18 @@ func ParseEntityEnablementSubject(subject string) (EntityEnablementRoute, error)
 		)
 	}
 	return EntityEnablementRoute{AdapterID: adapterID, RuntimeID: runtimeID, EntityID: parts[7]}, nil
+}
+
+func ParseEntityEventSubject(subject string) (EntityEventRoute, error) {
+	parts := strings.Split(subject, ".")
+	adapterID, runtimeID, err := parseRuntimeSubjectParts(parts, "entity-event", 1)
+	if err != nil {
+		return EntityEventRoute{}, fmt.Errorf("invalid entity event subject %q: %w", subject, err)
+	}
+	if validationErr := validateEntityID(parts[7]); validationErr != nil {
+		return EntityEventRoute{}, fmt.Errorf("invalid entity event subject %q: %w", subject, validationErr)
+	}
+	return EntityEventRoute{AdapterID: adapterID, RuntimeID: runtimeID, EntityID: parts[7]}, nil
 }
 
 func ParseCommandSubject(subject string) (CommandRoute, error) {

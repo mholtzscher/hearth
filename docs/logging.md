@@ -25,6 +25,11 @@ go run ./cmd/hearth-simulator --config configs/simulator.yaml --log-format json 
 | `command.created` | Durable creation, including immediate rejection; deferred until execution returns for running Commands, not a startup or success signal |
 | `command.execution_failed` | Unexpected execution/persistence failure, not a terminal status summary |
 | `observation.invalid`, `observation.processing_failed` | Invalid input or processing/acknowledgement failure |
+| `entity_event.invalid`, `entity_event.processing_failed` | Invalid Entity Event input or processing/acknowledgement failure, including a failed termination of a permanently uninterpretable report |
+| `entity_event.recorded`, `entity_event.identity_conflict` | Committed Entity Event disposition, or changed input for an already recorded event ID (Debug and Warn) |
+| `entity_event.clock_skew` | Adapter Entity Event publication time is ahead of Core receive time; diagnostic only, never a rejection reason |
+| `core.entity_events_prune_failed` | The hourly Entity Event retention sweep failed |
+| `simulator.entity_event_input_dropped`, `simulator.entity_event_input_failed` | Standard input typed while a report was publishing, or a report that was not published |
 | `dependency.retrying` | Debug-level retry attempt with safe diagnostic code |
 | `process.cleanup_failed` | An otherwise ignored cleanup operation failed |
 | `process.failed` | Fatal configuration or runtime failure, with safe stage/code |
@@ -48,10 +53,13 @@ curl -X POST http://127.0.0.1:8080/v1/entities/ent_.../commands \
   -d '{"operation":"set","parameters":{"value":true}}'
 curl http://127.0.0.1:8080/v1/commands/cmd_...
 curl http://127.0.0.1:8080/v1/entities/ent_.../commands
+curl 'http://127.0.0.1:8080/v1/entities/ent_.../events?limit=50'
 curl http://127.0.0.1:8080/readyz
 curl http://127.0.0.1:8080/v1/adapters/simulator
 curl http://127.0.0.1:8080/v1/entities/ent_...
 ```
+
+`GET /v1/entities/{entity_id}/events` is the durable Entity Event history for one Entity: it shows whether Core recorded a report and why Core rejected it, and it never contains State. A missing row does not prove that no physical event happened, and the code does not execute work. `entity_event.recorded` and `entity_event.identity_conflict` are diagnostics only; the history endpoint is authoritative for what Core retained.
 
 `command.created` supplies an ID for lookup when the HTTP caller disconnects or gets an error. For running Commands it is deferred until execution returns, so diagnostic output cannot delay dispatch or the caller's cancellation handling; it may follow other Command records. Immediately rejected creations are logged before returning. Command history supplies the durable satisfied/rejected/timeout/interrupted outcome and linked Observation ID; no terminal log record is promised. Acceptance is **not** satisfaction: only committed linked Observation evidence satisfies a Command.
 

@@ -41,6 +41,8 @@ type fakeSession struct {
 	availability []adapter.EntityAvailabilityReport
 	observations []adapter.Observation
 	linked       []adapter.Observation
+	entityEvents []adapter.EntityEvent
+	eventHook    func(context.Context, adapter.EntityEvent) error
 }
 
 func newFakeSession(recorder *runtimeRecorder) *fakeSession {
@@ -136,6 +138,22 @@ func (session *fakeSession) publishLinked(
 	session.mutex.Unlock()
 	session.recorder.add("linked-observation")
 	return "obs-linked", nil
+}
+
+func (session *fakeSession) PublishEntityEvent(
+	ctx context.Context,
+	event adapter.EntityEvent,
+) (adapter.EntityEventID, error) {
+	if session.eventHook != nil {
+		if err := session.eventHook(ctx, event); err != nil {
+			return "evt-test", err
+		}
+	}
+	session.mutex.Lock()
+	session.entityEvents = append(session.entityEvents, event)
+	session.mutex.Unlock()
+	session.recorder.add("entity-event")
+	return "evt-test", nil
 }
 
 type fakeEvidence struct{ session *fakeSession }

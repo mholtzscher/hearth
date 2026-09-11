@@ -5,9 +5,12 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"os"
+	"sync"
 
 	simulatoradapter "github.com/mholtzscher/hearth/internal/adapters/simulator"
 	"github.com/mholtzscher/hearth/sdk/adapter"
+	sdkadapterenumeventv1 "github.com/mholtzscher/hearth/sdk/adapter/enumeventv1"
 	sdkpowerv1 "github.com/mholtzscher/hearth/sdk/adapter/powerv1"
 )
 
@@ -54,13 +57,27 @@ func Run(ctx context.Context, config Config, logger *slog.Logger) error {
 	if descriptorErr != nil {
 		return descriptorErr
 	}
+	entities := []adapter.EntityDescriptor{descriptor}
+	// The entity-events scenario adds one event-source Entity beside power. No
+	// other scenario changes its Entities or Binding key, so existing
+	// scenarios keep their canonical reads.
+	entityEventsScenario := config.Scenario == simulatoradapter.ScenarioEntityEvents
+	if entityEventsScenario {
+		eventDescriptor, eventDescriptorErr := sdkadapterenumeventv1.NewEntityDescriptor(adapter.EntityMetadata{
+			Key: "events", ExternalID: config.BindingKey + ".events", Name: "Events",
+		}, simulated.EntityEventSupport())
+		if eventDescriptorErr != nil {
+			return eventDescriptorErr
+		}
+		entities = append(entities, eventDescriptor)
+	}
 	deviceExternalID := config.BindingKey
 	binding, registrationErr := session.Register(ctx, adapter.Registration{
 		BindingKey: config.BindingKey,
 		Device: adapter.DeviceDescriptor{
 			ExternalID: &deviceExternalID, Name: "Simulated light", Kind: "light",
 		},
-		Entities: []adapter.EntityDescriptor{descriptor},
+		Entities: entities,
 	})
 	if registrationErr != nil {
 		return registrationErr
@@ -71,6 +88,14 @@ func Run(ctx context.Context, config Config, logger *slog.Logger) error {
 	}
 	if err := simulated.Initialize(ctx, entityID); err != nil {
 		return fmt.Errorf("initialize simulator health and Entity availability: %w", err)
+	}
+	if entityEventsScenario {
+		if err := runEntityEventScenario(ctx, simulated, binding); err != nil {
+			return err
+		}
+		// Registered after session.Close, so standard-input workers are joined
+		// and the publisher stops before the Session closes.
+		defer startEntityEventInput(ctx, simulated, logger)()
 	}
 	logger.InfoContext(
 		ctx,
@@ -99,4 +124,40 @@ func entityIDForKey(binding adapter.Binding, key string) (string, error) {
 		}
 	}
 	return "", fmt.Errorf("registration response omitted Entity key %q", key)
+}
+
+// runEntityEventScenario binds the registered event-source Entity so
+// EmitEntityEvent publishes for the canonical identity Core returned.
+func runEntityEventScenario(
+	ctx context.Context,
+	simulated *simulatoradapter.Adapter,
+	binding adapter.Binding,
+) error {
+	eventsEntityID, err := entityIDForKey(binding, "events")
+	if err != nil {
+		return err
+	}
+	if initializeErr := simulated.InitializeEntityEventSource(ctx, eventsEntityID); initializeErr != nil {
+		return fmt.Errorf("initialize event source Entity availability: %w", initializeErr)
+	}
+	return nil
+}
+
+// startEntityEventInput starts the cancellable standard-input reader and
+// returns a function that stops it and joins its workers. Callers invoke the
+// returned function before the Session closes.
+func startEntityEventInput(
+	ctx context.Context,
+	simulated *simulatoradapter.Adapter,
+	logger *slog.Logger,
+) func() {
+	inputContext, stopInput := context.WithCancel(ctx)
+	var workers sync.WaitGroup
+	workers.Go(func() {
+		RunEntityEventInput(inputContext, os.Stdin, simulated, logger)
+	})
+	return func() {
+		stopInput()
+		workers.Wait()
+	}
 }

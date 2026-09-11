@@ -36,6 +36,10 @@ type Devices interface {
 		context.Context,
 		devices.ListEntityStateHistoryParams,
 	) (devices.Page[devices.EntityStateHistoryEntry], error)
+	ListEntityEvents(
+		context.Context,
+		devices.ListEntityEventsParams,
+	) (devices.Page[devices.EntityEventHistoryEntry], error)
 }
 
 type Handler struct {
@@ -130,4 +134,10 @@ func Register(api huma.API, service Devices) {
 		Tags:   []string{entitiesTag},
 		Errors: []int{http.StatusBadRequest, http.StatusNotFound, http.StatusInternalServerError},
 	}, handler.ListEntityStateHistory)
+	huma.Register(api, huma.Operation{
+		OperationID: "list-entity-events", Method: http.MethodGet,
+		Path: "/entities/{entity_id}/events", Summary: "List an Entity's Entity Event history",
+		Tags:   []string{entitiesTag},
+		Errors: []int{http.StatusBadRequest, http.StatusNotFound, http.StatusInternalServerError},
+	}, handler.ListEntityEvents)
 }

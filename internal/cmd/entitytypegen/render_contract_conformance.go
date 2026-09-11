@@ -54,6 +54,9 @@ func renderConformanceTest(model entityTypeModel, modulePath string) ([]byte, er
 	source.WriteString("\t})\n")
 	writeInvalidSupportChecks(&source, model)
 	source.WriteString("}\n")
+	if model.EventSource {
+		writeEntityEventNameContractChecks(&source, model)
+	}
 	formatted, err := formatGenerated(source.String())
 	if err != nil {
 		return nil, err
@@ -89,6 +92,58 @@ func writeInvalidSupportChecks(source *strings.Builder, model entityTypeModel) {
 			index+1,
 		)
 	}
+}
+
+// writeEntityEventNameContractChecks emits the event-source name probe: the
+// generated accessor returns an owned name slice and the generated validator
+// separates a canonical supported name from an unsupported name and from a
+// non-canonical one.
+func writeEntityEventNameContractChecks(source *strings.Builder, model entityTypeModel) {
+	names, err := entityEventNamesFromSupport(model.Examples.Cases[0].Support)
+	if err != nil {
+		panic("event-source examples lost their names: " + err.Error())
+	}
+	unsupported := unsupportedEntityEventName(names)
+	source.WriteString("\nfunc TestGeneratedEntityEventNames(t *testing.T) {\n")
+	source.WriteString("\tcodecs, err := Compile()\n\tif err != nil { t.Fatal(err) }\n")
+	fmt.Fprintf(
+		source,
+		"\tsupport, _, err := codecs.Support.Decode(json.RawMessage(%s))\n",
+		rawQuote(model.Examples.Cases[0].Support),
+	)
+	source.WriteString("\tif err != nil { t.Fatalf(\"support: %v\", err) }\n")
+	source.WriteString("\tnames := EntityEventNames(support)\n")
+	fmt.Fprintf(source, "\tif len(names) != %d { t.Fatalf(\"Entity Event names = %%v\", names) }\n", len(names))
+	for index, name := range names {
+		fmt.Fprintf(
+			source,
+			"\tif names[%d] != %s { t.Errorf(\"Entity Event name = %%q, want %%q\", names[%d], %s) }\n",
+			index,
+			strconv.Quote(name),
+			index,
+			strconv.Quote(name),
+		)
+	}
+	fmt.Fprintf(
+		source,
+		"\tif err := ValidateEntityEventName(support, %s); err != nil { t.Errorf(\"supported Entity Event name rejected: %%v\", err) }\n",
+		strconv.Quote(names[0]),
+	)
+	fmt.Fprintf(
+		source,
+		"\tif err := ValidateEntityEventName(support, %s); err == nil { t.Error(\"unsupported Entity Event name was accepted\") }\n",
+		strconv.Quote(unsupported),
+	)
+	source.WriteString(
+		"\tif err := ValidateEntityEventName(support, \"not a name\"); err == nil { t.Error(\"non-canonical Entity Event name was accepted\") }\n",
+	)
+	source.WriteString("\tnames[0] = \"mutated\"\n")
+	fmt.Fprintf(
+		source,
+		"\tif got := EntityEventNames(support); got[0] != %s { t.Errorf(\"EntityEventNames returned a shared slice: %%v\", got) }\n",
+		strconv.Quote(names[0]),
+	)
+	source.WriteString("}\n")
 }
 
 func hasOptionalOperation(model entityTypeModel) bool {

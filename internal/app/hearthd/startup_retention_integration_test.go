@@ -13,10 +13,10 @@ import (
 	platformdb "github.com/mholtzscher/hearth/internal/platform/db"
 )
 
-// TestCoreStartupPreservesRetainedObservations proves startup performs no
-// observation prune: even long-expired non-current rows survive a restart and
-// wait for the next hourly pass.
-func TestCoreStartupPreservesRetainedObservations(t *testing.T) {
+// TestCoreStartupPreservesRetainedHistory proves startup performs no retention
+// prune: even long-expired Entity Event and non-current Observation rows
+// survive a restart and wait for the next hourly pass.
+func TestCoreStartupPreservesRetainedHistory(t *testing.T) {
 	t.Parallel()
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
@@ -54,8 +54,11 @@ func TestCoreStartupPreservesRetainedObservations(t *testing.T) {
 		t.Fatal(observerErr)
 	}
 	defer func() { _ = observer.Close() }()
-	if retained := countRetainedObservations(ctx, t, databasePath); retained != 2 {
+	if retained := countRetainedRows(ctx, t, databasePath, "observations"); retained != 2 {
 		t.Fatalf("observations after startup = %d, want 2", retained)
+	}
+	if retained := countRetainedRows(ctx, t, databasePath, "entity_events"); retained != 3 {
+		t.Fatalf("entity events after startup = %d, want 3", retained)
 	}
 
 	stopCore()
@@ -127,6 +130,36 @@ func seedStartupRetentionDatabase(ctx context.Context, t *testing.T, databasePat
 	); execErr != nil {
 		t.Fatal(execErr)
 	}
+	// Entity Events have no current-State anchor, so every expired row is
+	// eligible for the next pass; startup must still leave all of them alone.
+	if _, execErr := database.ExecContext(ctx, `
+		INSERT INTO entity_events (
+			event_id, adapter_id, runtime_id, entity_id, correlation_id, name,
+			fingerprint, disposition, rejection_code, emitted_at, received_at, recorded_at
+		) VALUES
+			('evt_01890f47-7a6b-7c4d-8e9f-0123456789b1', 'simulator',
+				'run_01890f47-7a6b-7c4d-8e9f-0123456789a1',
+				'ent_01890f47-7a6b-7c4d-8e9f-0123456789a1',
+				'cor_01890f47-7a6b-7c4d-8e9f-0123456789c1', 'single_press',
+				zeroblob(32), 'accepted', NULL, ?, ?, ?),
+			('evt_01890f47-7a6b-7c4d-8e9f-0123456789b2', 'simulator',
+				'run_01890f47-7a6b-7c4d-8e9f-0123456789a1',
+				'ent_01890f47-7a6b-7c4d-8e9f-0123456789a1',
+				'cor_01890f47-7a6b-7c4d-8e9f-0123456789c2', 'double_press',
+				zeroblob(32), 'rejected', 'unsupported_event', ?, ?, ?),
+			('evt_01890f47-7a6b-7c4d-8e9f-0123456789b3', 'simulator',
+				'run_01890f47-7a6b-7c4d-8e9f-0123456789a1',
+				'ent_01890f47-7a6b-7c4d-8e9f-0123456789a1',
+				'cor_01890f47-7a6b-7c4d-8e9f-0123456789c3', 'single_press',
+				zeroblob(32), 'accepted', NULL, ?, ?, ?)`,
+		sortableTimestamp(seededAt.Add(-60*24*time.Hour)), seedTimestamp,
+		sortableTimestamp(seededAt.Add(-60*24*time.Hour)),
+		sortableTimestamp(seededAt.Add(-90*24*time.Hour)), seedTimestamp,
+		sortableTimestamp(seededAt.Add(-90*24*time.Hour)),
+		seedTimestamp, seedTimestamp, seedTimestamp,
+	); execErr != nil {
+		t.Fatal(execErr)
+	}
 }
 
 // waitForCoreHealthz waits until /healthz serves, which happens only after
@@ -163,7 +196,7 @@ func waitForCoreHealthz(
 	})
 }
 
-func countRetainedObservations(ctx context.Context, t *testing.T, databasePath string) int {
+func countRetainedRows(ctx context.Context, t *testing.T, databasePath, table string) int {
 	t.Helper()
 	database, err := platformdb.Open(ctx, databasePath)
 	if err != nil {
@@ -172,7 +205,7 @@ func countRetainedObservations(ctx context.Context, t *testing.T, databasePath s
 	t.Cleanup(func() { _ = database.Close() })
 	var retained int
 	if queryErr := database.QueryRowContext(
-		ctx, `SELECT count(*) FROM observations`,
+		ctx, "SELECT count(*) FROM "+table,
 	).Scan(&retained); queryErr != nil {
 		t.Fatal(queryErr)
 	}

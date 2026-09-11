@@ -29,6 +29,7 @@ var (
 	ErrOutcomeTimeout             = errors.New("command outcome timeout")
 	ErrEntityDisabled             = errors.New("entity disabled")
 	ErrEntityWrongAdapter         = errors.New("entity belongs to another adapter")
+	ErrInvalidEntityEvent         = errors.New("invalid entity event")
 )
 
 type RegisterEntityParams struct {
@@ -111,6 +112,15 @@ type EnablementRepository interface {
 type ObservationRepository interface {
 	ProjectObservation(context.Context, ProjectObservationParams) (ProjectionResult, error)
 	DeleteExpiredObservations(context.Context, time.Time) error
+}
+
+// EntityEventRepository stores first-seen Entity Event reports and their
+// disposition. The row doubles as history and as the duplicate guard, so a
+// repeated event ID never creates a second row.
+type EntityEventRepository interface {
+	RecordEntityEvent(context.Context, RecordEntityEventParams) (EntityEventRecordResult, error)
+	ListEntityEvents(context.Context, ListEntityEventsParams) (Page[EntityEventHistoryEntry], error)
+	DeleteEntityEventsBefore(context.Context, time.Time, int) (int64, error)
 }
 
 type CommandLedger interface {

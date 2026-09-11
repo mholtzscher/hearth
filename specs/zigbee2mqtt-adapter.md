@@ -6,15 +6,15 @@
 **Date:** 2026-09-01
 **Baseline:** branch `z2m` at `fd9d55b`
 **Depends on:** `adapter-owned-mapping-inventory.md`
-**Live evidence:** Zigbee2MQTT 2.13.0, Third Reality 3RCB01057Z, NATS Server 2.12 MQTT 3.1.1 listener
+**Live evidence:** Zigbee2MQTT 2.13.0 and 2.14.1; Third Reality 3RCB01057Z and 3RSB22BZ; NATS Server 2.12 MQTT 3.1.1 listener
 
 ## Problem
 
-Hearth can observe and control one Home Assistant-managed light through a disposable migration Adapter, but it cannot natively own lights, relays, and sensors paired through Zigbee2MQTT. Removing Home Assistant requires an Adapter that discovers Zigbee lights, relays, and sensors, preserves canonical Hearth identity, projects power, brightness, color-temperature, native XY and HS color, color-mode, ambient-temperature, link-quality, startup-temperature, and power-on-behavior State, reports health and availability, and translates Commands without adding Zigbee2MQTT concepts to Core.
+Hearth can observe and control one Home Assistant-managed light through a disposable migration Adapter, but it cannot natively own lights, relays, sensors, and button Event sources paired through Zigbee2MQTT. Removing Home Assistant requires an Adapter that discovers Zigbee lights, relays, sensors, and buttons, preserves canonical Hearth identity, projects power, brightness, color-temperature, native XY and HS color, color-mode, ambient-temperature, link-quality, startup-temperature, and power-on-behavior State, reports named button Events, reports health and availability, and translates Commands without adding Zigbee2MQTT concepts to Core.
 
 Zigbee2MQTT, the coordinator, and the MQTT broker remain operator-managed specialist services. The Adapter bridges Zigbee2MQTT's MQTT 3.1.1 contract to the Hearth Adapter SDK rather than reimplementing Zigbee or owning those services.
 
-The first household Device is a Third Reality 3RCB01057Z on Zigbee2MQTT 2.13.0. The deployment uses one file-backed NATS 2.12 server for native Hearth NATS and its MQTT listener. Live payloads include finite fractional brightness values, so decoding cannot require integer JSON syntax.
+The first household Device is a Third Reality 3RCB01057Z on Zigbee2MQTT 2.13.0. A Third Reality 3RSB22BZ button on Zigbee2MQTT 2.14.1 supplies the first physical Event-source evidence. The deployment uses one file-backed NATS 2.12 server for native Hearth NATS and its MQTT listener. Live payloads include finite fractional brightness values, so decoding cannot require integer JSON syntax.
 
 ## Decision and scope
 
@@ -26,7 +26,7 @@ Hearth HTTP -> hearthd -> native Core NATS -> Go Adapter SDK Session
     -> Zigbee2MQTT -> Zigbee coordinator -> device
 ```
 
-The Adapter registers every eligible physical light, relay, and sensor expose in Zigbee2MQTT's retained `bridge/devices` inventory. One IEEE address maps to one canonical Hearth Device with Device kind `light`, `relay`, or `sensor`. Explicit light, relay, and sensor planners share one expose index: a non-empty light result is the primary family, otherwise a non-empty relay result wins, and ambient-temperature sensor plans supplement either family or form a sensor-only Device. Unscoped and endpoint-scoped light exposes map to power plus optional brightness, color-temperature, native XY color, native HS color, read-only color-mode, and optional startup-temperature Entities; switch exposes map to power through the same power constructor; numeric Celsius exposes map to read-only temperature Entities; device-root `linkquality`, `power_on_behavior`, and `effect` exposes map to a read-only link-quality sensor, a power-on-behavior setting, and a stateless effect action. The color implementation contract, including satisfaction tolerances and activity semantics, is `specs/z2m-bulb-color.md`. The bulb-attribute contract for linkquality, startup temperature, power-on behavior, and dispatched effects is `specs/z2m-bulb-attributes.md`.
+The Adapter registers every eligible physical light, relay, sensor, and button expose in Zigbee2MQTT's retained `bridge/devices` inventory. One IEEE address maps to one canonical Hearth Device with Device kind `light`, `relay`, or `sensor`. Explicit light, relay, and sensor planners share one expose index: a non-empty light result is the primary family, otherwise a non-empty relay result wins, and ambient-temperature sensor plans supplement either family or form a sensor-only Device. Unscoped and endpoint-scoped light exposes map to power plus optional brightness, color-temperature, native XY color, native HS color, read-only color-mode, and optional startup-temperature Entities; switch exposes map to power through the same power constructor; numeric Celsius exposes map to read-only temperature Entities; device-root `linkquality`, `power_on_behavior`, `effect`, and publish-only `action` exposes map to a read-only link-quality sensor, a power-on-behavior setting, a stateless effect action, and a stateless Event source. The color implementation contract, including satisfaction tolerances and activity semantics, is `specs/z2m-bulb-color.md`. The bulb-attribute contract for linkquality, startup temperature, power-on behavior, and dispatched effects is `specs/z2m-bulb-attributes.md`; the button Event mapping and freshness rule are documented in `docs/zigbee2mqtt-capabilities.md`.
 
 Core remains the only owner of Bindings and canonical identity. At startup, the Adapter pages through `Session.ListOwnedMappings`, reconciles persisted ownership against the complete Zigbee2MQTT inventory, and reports missing Devices or capabilities unavailable. It owns no state file or checkpoint.
 
@@ -35,7 +35,7 @@ The private Zigbee2MQTT package owns vendor payloads, topic rules, MQTT lifecycl
 V1 includes:
 
 - automatic discovery of all eligible unscoped and resolvable endpoint-scoped physical lights, relays, and temperature sensors with light-over-relay primary precedence and supplemental temperature merged into one IEEE registration;
-- power, brightness, color-temperature, native XY color, native HS color, read-only color-mode, read-only ambient-temperature, read-only link-quality, startup-temperature and power-on-behavior settings, and stateless effect Entities with stable IEEE and endpoint identity;
+- power, brightness, color-temperature, native XY color, native HS color, read-only color-mode, read-only ambient-temperature, read-only link-quality, startup-temperature and power-on-behavior settings, stateless effect actions, and stateless button Event sources with stable IEEE and endpoint identity;
 - mutable friendly-name routing and display metadata;
 - Adapter health, explicit Entity availability, retained or cached State, and startup refresh;
 - a private generic runtime coordinator that serializes power, brightness, color-temperature, color, setting, and effect Commands per IEEE Device and publishes fresh post-dispatch evidence for observed Commands while completing dispatched effect Commands on acceptance;
@@ -88,7 +88,7 @@ friendly_name: office-table-lamp
 description: Office Table Lamp
 ```
 
-V1 records but does not runtime-gate Zigbee2MQTT 2.13.0, NATS Server 2.12, MQTT 3.1.1, or the observed Third Reality 3RCB01057Z firmware. The Adapter logs Zigbee2MQTT's reported version and ignores unknown fields. Other versions may work when all required fields and behavior remain compatible, but v1 promises no broader range.
+V1 records but does not runtime-gate Zigbee2MQTT 2.13.0 or 2.14.1, NATS Server 2.12, MQTT 3.1.1, or the observed Third Reality 3RCB01057Z and 3RSB22BZ firmware. The Adapter logs Zigbee2MQTT's reported version and ignores unknown fields. Other versions may work when all required fields and behavior remain compatible, but v1 promises no broader range.
 
 ### Static configuration
 
@@ -223,7 +223,7 @@ A Device is considered for registration only when:
 - `definition` is non-nil;
 - its normalized IEEE address is exactly `0x` plus 16 lowercase hexadecimal characters;
 - `friendly_name` satisfies the route-safe slug rule;
-- at least one eligible Entity plan from the light, relay, or sensor planners exists.
+- at least one eligible Entity plan from the light, relay, sensor, link-quality, or button Event planners exists.
 
 A light expose may be unscoped or endpoint-scoped. Its nested features determine Entities.
 
@@ -259,12 +259,18 @@ The full wire-to-entity contract is `specs/z2m-bulb-attributes.md` §Interfaces;
 
 `values`/`presets` metadata comes from tolerant `discovery_wire.go` parsing: non-integral preset values are rejected per entry and malformed siblings never suppress valid Entities.
 
+### Button action Events
+
+A single device-root or endpoint-scoped enum expose named `action`, with access exactly publish-only (`access == 1`), a Device-unique `action` or `action_*` property covered by Zigbee2MQTT's cache exclusion, a resolvable endpoint, and valid unique `values`, plans a stateless `hearth.enumevent/v1` Entity. Its support names pass through unchanged from `values`; the generated facade validates registration support and every reported name. The plan claims no State or get properties and has no Command translator, so it produces no Observation, startup `/get`, or command route. The contribution is supplemental and keeps Device kind `sensor` when it is the only non-link-quality capability.
+
+Each non-retained Device message containing a present supported action produces one Entity Event, including consecutive messages with the same action. Retained messages, absent actions, empty strings, nulls, malformed values, and unsupported names produce no Event and never suppress valid sibling State. This freshness rule depends on the verified Zigbee2MQTT 2.14.1 `CACHE_IGNORE_PROPERTIES` entries for `action` and `action_.*`, which prevent later cache-expanded or startup-cache messages from carrying stale actions. MQTT-retained messages are rejected independently from that cache rule.
+
 ### Endpoint resolution
 
-- Unscoped exposes use Entity keys `power`, `brightness`, `colortemp`, `colorxy`, `colorhs`, `colormode`, `temperature`, `linkquality`, `startupcolortemp`, `poweronbehavior`, and `effect`.
+- Unscoped exposes use Entity keys `power`, `brightness`, `colortemp`, `colorxy`, `colorhs`, `colormode`, `temperature`, `linkquality`, `startupcolortemp`, `poweronbehavior`, `effect`, and `action`.
 - Scoped exposes resolve `expose.endpoint` against numeric endpoint keys and `endpoints[*].name`.
 - Resolution requires exactly one numeric endpoint.
-- Scoped keys are `power-ep<N>`, `brightness-ep<N>`, `colortemp-ep<N>`, `colorxy-ep<N>`, `colorhs-ep<N>`, `colormode-ep<N>`, `temperature-ep<N>`, `linkquality-ep<N>`, `startupcolortemp-ep<N>`, `poweronbehavior-ep<N>`, and `effect-ep<N>`.
+- Scoped keys are `power-ep<N>`, `brightness-ep<N>`, `colortemp-ep<N>`, `colorxy-ep<N>`, `colorhs-ep<N>`, `colormode-ep<N>`, `temperature-ep<N>`, `linkquality-ep<N>`, `startupcolortemp-ep<N>`, `poweronbehavior-ep<N>`, `effect-ep<N>`, and `action-ep<N>`.
 - Duplicate root exposes, duplicate numeric endpoints for one Entity kind, unresolved names, or duplicate MQTT properties isolate the ambiguous expose.
 - One malformed expose does not discard independent valid exposes on the Device unless their identity or property routes conflict.
 
@@ -278,14 +284,14 @@ For normalized IEEE `0x00124b0024abcdef`:
 |---|---|---|
 | Binding key | `z2m-00124b0024abcdef` | same Binding |
 | Device external ID | `0x00124b0024abcdef` | same Device |
-| Entity key | `power`, `brightness`, `colortemp`, `colorxy`, `colorhs`, `colormode`, `temperature`, `linkquality`, `startupcolortemp`, `poweronbehavior`, `effect` | `power-ep1`, `brightness-ep1`, `colortemp-ep1`, `colorxy-ep1`, `colorhs-ep1`, `colormode-ep1`, `temperature-ep1`, `linkquality-ep1`, `startupcolortemp-ep1`, `poweronbehavior-ep1`, `effect-ep1` |
+| Entity key | `power`, `brightness`, `colortemp`, `colorxy`, `colorhs`, `colormode`, `temperature`, `linkquality`, `startupcolortemp`, `poweronbehavior`, `effect`, `action` | `power-ep1`, `brightness-ep1`, `colortemp-ep1`, `colorxy-ep1`, `colorhs-ep1`, `colormode-ep1`, `temperature-ep1`, `linkquality-ep1`, `startupcolortemp-ep1`, `poweronbehavior-ep1`, `effect-ep1`, `action-ep1` |
 | Entity external ID | `0x00124b0024abcdef/root/power` | `0x00124b0024abcdef/ep1/power` |
 
-Non-power external IDs replace the final `power` segment with `brightness`, `colortemp`, `temperature`, `linkquality`, `startupcolortemp`, `poweronbehavior`, or `effect`. Binding keys and external IDs never include `friendly_name`, so a rename changes routing and mutable metadata without changing identity.
+Non-power external IDs replace the final `power` segment with `brightness`, `colortemp`, `temperature`, `linkquality`, `startupcolortemp`, `poweronbehavior`, `effect`, or `action`. Binding keys and external IDs never include `friendly_name`, so a rename changes routing and mutable metadata without changing identity.
 
-The Device name is trimmed `description` when non-empty, otherwise the exact valid `friendly_name`. Root Entity names are `Power`, `Brightness`, `Color Temperature`, `Color XY`, `Color Hue/Saturation`, `Color Mode`, `Temperature`, `Link Quality`, `Startup Color Temperature`, `Power-On Behavior`, and `Effect`. Scoped names prefix the endpoint label, with `ep<N>` as fallback. A descriptor over Hearth's 128-rune limit is rejected, never truncated.
+The Device name is trimmed `description` when non-empty, otherwise the exact valid `friendly_name`. Root Entity names are `Power`, `Brightness`, `Color Temperature`, `Color XY`, `Color Hue/Saturation`, `Color Mode`, `Temperature`, `Link Quality`, `Startup Color Temperature`, `Power-On Behavior`, `Effect`, and `Action`. Scoped names prefix the endpoint label, with `ep<N>` as fallback. A descriptor over Hearth's 128-rune limit is rejected, never truncated.
 
-Registration uses Device kind `light`, `relay`, or `sensor`, generated `powerv1`, `brightnessv1`, `colortempv1`, `colorxyv1`, `colorhsv1`, `colormodev1`, `temperaturev1`, `numericsensorv1`, `enumsettingv1`, `numericsettingv1`, and `enumactionv1` descriptors, and additive Core reconciliation. Re-registration updates names, external IDs, and normalized support without changing canonical IDs. Reconciliation sends the coordinator an immutable MQTT route snapshot.
+Registration uses Device kind `light`, `relay`, or `sensor`, generated `powerv1`, `brightnessv1`, `colortempv1`, `colorxyv1`, `colorhsv1`, `colormodev1`, `temperaturev1`, `numericsensorv1`, `enumsettingv1`, `numericsettingv1`, `enumactionv1`, and `enumeventv1` descriptors, and additive Core reconciliation. Re-registration updates names, external IDs, and normalized support without changing canonical IDs. Reconciliation sends the coordinator an immutable MQTT route snapshot.
 
 ### Owned-mapping reconciliation
 
@@ -322,9 +328,11 @@ Ignore `/set`, `/get`, bridge request and response topics, groups, and unknown t
 
 The MQTT client uses MQTT 3.1.1, `CleanSession=true`, the deterministic client ID, and QoS 1 for subscription and `/set` or `/get` publication. Adapter publications are not retained. Every Paho token wait is context-bounded. Paho automatic reconnect is disabled because the Adapter owns reconnect with bounded exponential backoff and jitter.
 
-Each connection is newly created, subscribed, and synchronized from retained bridge topics. MQTT callbacks copy messages into an internal relay queue. The serial connection loop owns parsing, inventory generations, registration, availability evidence, pending MQTT messages, and its immutable runtime-Device snapshot. A separate runtime coordinator owns route activation, Command queues and attempts, matchers, deadlines, and State disposition. Command handlers submit to that coordinator and never read routes directly.
+Each connection is newly created, subscribed, and synchronized from retained bridge topics. MQTT callbacks copy messages into an internal relay queue. The serial connection loop owns parsing, inventory generations, registration, availability evidence, pending MQTT messages, and its immutable runtime-Device snapshot. Before route activation, ordinary State and availability coalesce to the latest message per topic, while each non-retained message carrying a planned Event property remains a separate ordered occurrence. A later ordinary State message cannot erase it; replay publishes each occurrence exactly once after activation. Before inventory arrives, top-level `action` and `action_*` properties are conservatively treated as occurrences. That pending queue is bounded (see below). A separate runtime coordinator owns route activation, Command queues and attempts, matchers, deadlines, and State disposition. Command handlers submit to that coordinator and never read routes directly.
 
-A slow callback must not silently drop MQTT messages. The relay queue is unbounded only for one connection's lifetime and is released on disconnect. NATS and Zigbee2MQTT packet limits bound each message. Explicit backpressure waits for measurement.
+A slow callback must not silently drop MQTT messages, so pre-activation device messages queue in the connection loop. That pending queue is bounded in entries by the fixed `pendingMessageLimit` constant of 1024, chosen because a broker replays retained State and availability for every Device on subscribe and low-rate physical events (button presses, sensor reports) fill occurrences slowly; the bound keeps queue memory proportional to a device-sized MQTT payload and keeps the per-message latest-per-topic coalescing scan linear over a bounded queue. The bound counts entries, not occurrences, so pre-inventory unique ordinary topics cannot grow it without limit. Coalescing an ordinary same-topic message replaces its entry in place and stays allowed at the bound because it does not increase the count.
+
+Admitting an occurrence or a new ordinary topic that would exceed the bound returns a dedicated pending-limit error from ingestion instead of evicting any queued message: the serial connection loop ends that MQTT generation, releases the generation-local pending queue, reports `hearth.external_system_unavailable`, logs one fixed warning carrying only the limit and a stable error code, and reconnects with the existing bounded backoff. No occurrence is ever silently selected for eviction while the connection stays alive. The queue is a connection-lifetime buffer only, not a durable outbox: queued occurrences survive neither a disconnect nor a process restart.
 
 ### Startup, health, and recovery
 
@@ -417,13 +425,19 @@ Command upstream:     p * M / 100, where 0 <= p <= 100
 
 Command JSON may contain a fraction. Observation normalization produces an integer from 0 through 100, and outcome matching uses that integer. For example, `63.75` satisfies a 25% Command when normalization yields 25.
 
-Color temperature uses native integer mireds within the Entity's discovered range, published as object State `{active, value}` with outcome matching on exact active equality. XY color uses scaled integers in ten-thousandths (`3125` means `0.3125`) with per-axis tolerance 1; HS color uses whole degrees `0..359` (observed `360` canonicalizes to `0`) and whole percentage points with circular hue tolerance 2 and saturation tolerance 1. Each coordinate Entity is active exactly when the same-message `color_mode` selects it; messages missing the mode or value skip that observation without cached assembly, and malformed values are per-Entity decode issues that leave valid siblings intact. The read-only mode Entity publishes reported `xy`, `hs`, and `color_temp` values. Ambient temperature uses integer milli-Celsius State from -273150 through 1000000 (for example, `21.5` becomes `21500`); upstream values are parsed exactly and values requiring sub-milli precision, numeric strings, or out-of-range values are rejected rather than clamped, truncated, or rounded. Temperature Entities are read-only: their plans carry a nil command translator, never enter command routes, and multi-property plans require complete same-message evidence with no cross-message State cache. Link-quality, startup-temperature, and power-on-behavior values decode per the bulb-attribute contract (§Discovery): integer-only linkquality and startup payloads, the 65535↔`previous` mapping only when supported, and per-Entity decode issues that leave valid siblings intact. Effect Entities hold no State and publish no Observations.
+Color temperature uses native integer mireds within the Entity's discovered range, published as object State `{active, value}` with outcome matching on exact active equality. XY color uses scaled integers in ten-thousandths (`3125` means `0.3125`) with per-axis tolerance 1; HS color uses whole degrees `0..359` (observed `360` canonicalizes to `0`) and whole percentage points with circular hue tolerance 2 and saturation tolerance 1. Each coordinate Entity is active exactly when the same-message `color_mode` selects it; messages missing the mode or value skip that observation without cached assembly, and malformed values are per-Entity decode issues that leave valid siblings intact. The read-only mode Entity publishes reported `xy`, `hs`, and `color_temp` values. Ambient temperature uses integer milli-Celsius State from -273150 through 1000000 (for example, `21.5` becomes `21500`); upstream values are parsed exactly and values requiring sub-milli precision, numeric strings, or out-of-range values are rejected rather than clamped, truncated, or rounded. Temperature Entities are read-only: their plans carry a nil command translator, never enter command routes, and multi-property plans require complete same-message evidence with no cross-message State cache. Link-quality, startup-temperature, and power-on-behavior values decode per the bulb-attribute contract (§Discovery): integer-only linkquality and startup payloads, the 65535↔`previous` mapping only when supported, and per-Entity decode issues that leave valid siblings intact. Effect and action Event Entities hold no State and publish no Observations.
 
 The Adapter does not clamp out-of-range values, parse numeric strings, infer power from zero brightness, or infer brightness from power. A brightness Command publishes only its brightness property.
 
+## Entity Event projection
+
+The connection loop parses each Device message once, publishes valid State candidates in registration order, then considers Event plans only when Paho marks the MQTT message non-retained. Each valid action is built through the generated `enumeventv1` facade and sent through the runtime coordinator as a tracked SDK `Session.PublishEntityEvent` effect. The connection loop waits for each publication disposition before processing the next Event, preserving upstream message order. JetStream acknowledgement confirms storage, not Core acceptance. A non-cancellation SDK publication failure is terminal in the same way as an ordinary Observation publication failure.
+
+The Adapter does not infer occurrence identity from value changes. Two separate non-retained MQTT messages with the same supported action are two Entity Events with independently minted IDs. It does not emit an Event for a retained MQTT replay or for an action copied into a future cache-expanded message; the latter guarantee depends on the tested Zigbee2MQTT cache exclusion and must be revalidated before adding a tested version.
+
 ## Command runtime and correlation
 
-A private runtime coordinator is the only owner of active routes and route revisions, MQTT generations and the dispatchable connection, per-IEEE FIFO queues, Command attempts, matchers, claimed State, and deadline timers. The connection loop sends it immutable route snapshots and State candidates carrying the connection generation and route revision. The coordinator changes only its state and completion events; blocking MQTT and JetStream work runs in tracked effect goroutines. The MQTT relay keeps its mutex because Paho callbacks, queue consumption, and closure remain concurrent.
+A private runtime coordinator is the only owner of active routes and route revisions, MQTT generations and the dispatchable connection, per-IEEE FIFO queues, Command attempts, matchers, claimed State, and deadline timers. The connection loop sends it immutable route snapshots, State candidates carrying the connection generation and route revision, and Entity Event candidates. The coordinator changes only its state and completion events; blocking MQTT and JetStream work runs in tracked effect goroutines. The MQTT relay keeps its mutex because Paho callbacks, queue consumption, and closure remain concurrent.
 
 One long-lived generic SDK handler submits each Command to the coordinator and waits only for its buffered result, caller cancellation, or coordinator shutdown. It never reads routes directly. Generated `powerv1`, `brightnessv1`, `colortempv1`, `colorxyv1`, `colorhsv1`, `enumsettingv1`, `numericsettingv1`, and `enumactionv1` facades decode and validate parameters and build the MQTT payload and normalized target; the temperature, color-mode, and link-quality facades build descriptors and Observations only and their read-only plans never enter command routes. The Adapter does not decode Hearth parameters by hand.
 
@@ -452,6 +466,7 @@ type Session interface {
     SetHealth(context.Context, adapter.HealthReport) error
     ReportEntityAvailability(context.Context, []adapter.EntityAvailabilityReport) error
     PublishObservation(context.Context, adapter.Observation) (adapter.ObservationID, error)
+    PublishEntityEvent(context.Context, adapter.EntityEvent) (adapter.EntityEventID, error)
 }
 
 type Config struct {
@@ -465,7 +480,7 @@ func (z2m *Adapter) Run(context.Context) error
 func (z2m *Adapter) HandleCommand(context.Context, adapter.Command, adapter.Responder) error
 ```
 
-`Run` supervises the MQTT reconnect loop and runtime coordinator under one child context, alongside subscription, reconciliation, registration, State, availability, and health. `HandleCommand` submits typed work to the coordinator; the coordinator owns serialization, translation, matcher lifecycle, evidence publication, and refresh correlation.
+`Run` supervises the MQTT reconnect loop and runtime coordinator under one child context, alongside subscription, reconciliation, registration, State, Entity Events, availability, and health. `HandleCommand` submits typed work to the coordinator; the coordinator owns serialization, translation, matcher lifecycle, evidence publication, and refresh correlation.
 
 ### Private MQTT seam
 
@@ -654,12 +669,13 @@ Tests must state the protected behavior and plausible defect. Oracles come from 
 | Discovery | Root and endpoint fixtures map deterministically without friendly-name identity, wrong endpoints, color leakage, or access-bit mistakes. XY-only, HS-only, dual, temperature-only, and color-without-temperature Devices discover exactly the intended optional Entities. Bulb-attribute fixtures prove linkquality/startup/power/effect eligibility, `values`/`presets` handling, and sibling isolation. |
 | Brightness | Exhaustive or property tests prove every Hearth 0 to 100 Command normalizes back after scaling, including fractions and boundaries. |
 | State | Multi-property examples prevent endpoint cross-talk, inferred power, and malformed-value fanout failure. |
+| Entity Events | Captured button inventory and payloads prove exact support names, stateless registration, no route or `/get`, one Event per fresh non-retained action, repeated-equal occurrences, retained replay rejection, and invalid-action sibling isolation. |
 | Reconciliation | Present registrations and absent owned mappings converge without canonical ID loss, deletion, or restart ambiguity. |
 | Health and availability | Recoverable bridge failures, isolated Device errors, explicit reports, stale-report clearing, and exact reason codes prevent false health or availability. |
 | Commands | Coordinator ownership, freshness, exact-once claiming, property/generation/revision matching, one report disposition, no-op refresh, and cross-IEEE concurrency tests catch duplicate, retained, stale-event, cross-Command, and blocked-effect defects. Effect dispatch publishes no `/get`/matcher/observation and terminates `dispatched`. |
 | MQTT integration | Real Paho against NATS proves MQTT 3.1.1, clean session, QoS 1, SUBACK and PUBACK handling, and disconnect recovery. |
-| Process integration | One shared NATS server carries SDK registration, Observation, and Command flows without schema, subject, assembly, or lifecycle mismatch. |
-| Manual | The real bulb proves power, brightness, color temperature, color mode-switch, setting control, effect dispatch, restart, offline recovery, and no-op refresh behavior. |
+| Process integration | One shared NATS server carries SDK registration, Observation, Entity Event, and Command flows without schema, subject, assembly, or lifecycle mismatch. |
+| Manual | The real bulb proves power, brightness, color temperature, color mode-switch, setting control, effect dispatch, restart, offline recovery, and no-op refresh behavior; the real 3RSB22BZ button proves event discovery and accepted single, double, hold, and release history. |
 
 Native fuzzing covers inventory, exposes, State, and availability with these invariants: no panic, no accepted non-finite brightness, no accepted fractional or out-of-range linkquality, no accepted sub-milli or out-of-range temperature, no invalid slug output, and no duplicate Entity keys. Rapid or exhaustive integer iteration covers brightness round trips.
 

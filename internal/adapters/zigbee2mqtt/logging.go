@@ -17,10 +17,18 @@ const adapterComponent = "zigbee2mqtt"
 // literals at each emission site so searching a value finds its site.
 const eventKey = "event"
 
+// pendingMessageLimitErrorCode is the stable classification for a connection
+// that exceeded pendingMessageLimit and is ending so the next generation can
+// resynchronize. It never carries topics, payloads, or device identity.
+const pendingMessageLimitErrorCode = "pending_message_limit_reached"
+
 // zigbee2MQTTErrorCode maps a retry-loop failure to a fixed diagnostic
 // classification. The code never carries MQTT URLs, topics, payloads, or
 // broker free-form text.
 func zigbee2MQTTErrorCode(err error) string {
+	if errors.Is(err, errPendingMessageLimit) {
+		return pendingMessageLimitErrorCode
+	}
 	if _, ok := errors.AsType[*sessionOperationError](err); ok {
 		return "session_operation_failed"
 	}

@@ -46,6 +46,17 @@ type entityStateHistoryCursor struct {
 	Filter       string `json:"filter"`
 }
 
+// entityEventCursor positions an Entity Event history page after
+// the last returned receive order within one Entity. Event history has no
+// filter field, and the resource name keeps the cursor mutually incompatible
+// with State history cursors even though both carry a receive order.
+type entityEventCursor struct {
+	Version      int    `json:"v"`
+	Resource     string `json:"resource"`
+	ParentID     string `json:"parent_id"`
+	ReceiveOrder int64  `json:"receive_order"`
+}
+
 func encodeDevicesCursor(id devices.DeviceID) (string, error) {
 	return encodeCursor(idCursor{Version: cursorVersion, Resource: "devices", ID: string(id)})
 }
@@ -178,6 +189,28 @@ func decodeEntityStateHistoryCursor(
 		devices.EntityStateHistoryFilterRejected:
 	default:
 		return nil, errors.New("invalid State history cursor scope")
+	}
+	return &cursor.ReceiveOrder, nil
+}
+
+func encodeEntityEventCursor(entityID devices.EntityID, receiveOrder int64) (string, error) {
+	return encodeCursor(entityEventCursor{
+		Version: cursorVersion, Resource: "entity_events", ParentID: string(entityID),
+		ReceiveOrder: receiveOrder,
+	})
+}
+
+func decodeEntityEventCursor(value string, entityID devices.EntityID) (*int64, error) {
+	var cursor entityEventCursor
+	if err := decodeCursor(value, &cursor); err != nil {
+		return nil, err
+	}
+	if cursor.Version != cursorVersion || cursor.Resource != "entity_events" ||
+		cursor.ParentID != string(entityID) || cursor.ReceiveOrder < 1 {
+		return nil, errors.New("invalid Entity Event history cursor scope")
+	}
+	if _, err := devices.ParseEntityID(cursor.ParentID); err != nil {
+		return nil, fmt.Errorf("invalid Entity Event history cursor entity ID: %w", err)
 	}
 	return &cursor.ReceiveOrder, nil
 }

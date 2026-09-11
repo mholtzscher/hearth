@@ -105,6 +105,22 @@ type EntityAvailabilityReceipt struct {
 	ReportedAt  string
 }
 
+type EntityEvent struct {
+	ReceiveOrder  int64
+	EventID       string
+	AdapterID     string
+	RuntimeID     string
+	EntityID      string
+	CorrelationID string
+	Name          string
+	Fingerprint   []byte
+	Disposition   string
+	RejectionCode sql.NullString
+	EmittedAt     string
+	ReceivedAt    string
+	RecordedAt    string
+}
+
 type EntityReadProjection struct {
 	ID                                   string
 	DeviceID                             string

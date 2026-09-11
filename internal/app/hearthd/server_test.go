@@ -116,6 +116,13 @@ func (*stubDevices) ListEntityStateHistory(
 	panic("unexpected ListEntityStateHistory call")
 }
 
+func (*stubDevices) ListEntityEvents(
+	context.Context,
+	devices.ListEntityEventsParams,
+) (devices.Page[devices.EntityEventHistoryEntry], error) {
+	panic("unexpected ListEntityEvents call")
+}
+
 func (stub *stubDevices) ExecuteCommand(
 	ctx context.Context,
 	input devices.CommandInput,
@@ -203,7 +210,7 @@ func TestRuntimeOpenAPIContract(t *testing.T) {
 	if document.OpenAPI != "3.1.0" || document.Info.Title != "Hearth" || document.Info.Version != "1.0.0" {
 		t.Fatalf("OpenAPI metadata = %#v", document)
 	}
-	if len(document.Paths) != 11 {
+	if len(document.Paths) != 12 {
 		t.Fatalf("OpenAPI paths = %v", document.Paths)
 	}
 	assertRuntimeOpenAPIOperation(t, document.Paths["/v1/entities"].Get, "list-entities", "200", "400", "422", "500")
@@ -303,6 +310,16 @@ func TestRuntimeOpenAPIContract(t *testing.T) {
 		t,
 		document.Paths["/v1/entities/{entity_id}/state/history"].Get,
 		"list-entity-state-history",
+		"200",
+		"400",
+		"404",
+		"422",
+		"500",
+	)
+	assertRuntimeOpenAPIOperation(
+		t,
+		document.Paths["/v1/entities/{entity_id}/events"].Get,
+		"list-entity-events",
 		"200",
 		"400",
 		"404",
