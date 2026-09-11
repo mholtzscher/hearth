@@ -1,5 +1,6 @@
 import tailwindcss from "@tailwindcss/vite";
 import react from "@vitejs/plugin-react";
+import { execFileSync } from "node:child_process";
 import path from "node:path";
 import { defineConfig } from "vite";
 
@@ -10,6 +11,39 @@ import { defineConfig } from "vite";
 const HEARTHD = process.env.HEARTHD_URL ?? "http://127.0.0.1:8080";
 const NATS_MONITOR = process.env.NATS_MONITOR_URL ?? "http://127.0.0.1:8222";
 
+/**
+ * Hosts allowed to reach the dev server. Vite only answers `localhost` and
+ * IP-literal Host headers by default, but `tailscale serve` forwards the
+ * original Host header and the dev server is otherwise addressed by its
+ * MagicDNS name, so add this machine's tailnet names when Tailscale is
+ * installed. HEARTH_ALLOWED_HOSTS adds more (comma-separated; a leading dot
+ * allows a whole suffix).
+ */
+function resolveAllowedHosts(): string[] {
+  const configured = (process.env.HEARTH_ALLOWED_HOSTS ?? "")
+    .split(",")
+    .map((host) => host.trim())
+    .filter(Boolean);
+  return [...tailnetHosts(), ...configured];
+}
+
+function tailnetHosts(): string[] {
+  let status: { Self?: { DNSName?: string }; MagicDNSSuffix?: string };
+  try {
+    status = JSON.parse(
+      execFileSync("tailscale", ["status", "--json"], { encoding: "utf8", timeout: 2000 }),
+    );
+  } catch {
+    return []; // Not installed, not running, or too slow: keep Vite's default allowlist.
+  }
+  // Tailscale reports DNS names with a trailing dot; Vite compares hostnames.
+  const suffix = status.MagicDNSSuffix?.replace(/\.+$/, "");
+  const self = status.Self?.DNSName?.replace(/\.+$/, "");
+  return [suffix ? `.${suffix}` : null, self ?? null].filter(
+    (host): host is string => host !== null,
+  );
+}
+
 export default defineConfig({
   plugins: [react(), tailwindcss()],
   resolve: {
@@ -19,6 +53,7 @@ export default defineConfig({
   },
   server: {
     port: 5173,
+    allowedHosts: resolveAllowedHosts(),
     proxy: {
       "/v1": HEARTHD,
       "/healthz": HEARTHD,

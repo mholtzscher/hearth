@@ -34,6 +34,26 @@ Browsers block cross-origin reads unless the server sends CORS headers, and
 same-origin vite proxy. A non-empty base URL only works from a same-origin
 deployment or once `hearthd` gains CORS support.
 
+## Remote access (Tailscale)
+
+The dev server binds loopback only (`mise run web-dev` passes `--host 127.0.0.1`),
+so expose it with `tailscale serve` instead of widening the bind:
+
+```sh
+mise run web-dev                                          # loopback
+tailscale serve --bg --http=8088 http://127.0.0.1:5173    # tailnet only
+```
+
+→ `http://<machine>.<tailnet>.ts.net:8088/` (use `--https=443` for a TLS
+certificate). Tailscale forwards the original Host header, so `vite.config.ts`
+allowlists this machine's tailnet names automatically when `tailscale` is on
+`PATH`. Set `HEARTH_ALLOWED_HOSTS=host.example,.suffix.example` for any other
+name (a leading dot allows the whole suffix).
+
+Only the dashboard port needs to be reachable: `hearthd` stays on
+`127.0.0.1:8080` because the proxy runs server-side. Neither the dashboard nor
+the HTTP API authenticates, so every device your tailnet ACLs allow can use it.
+
 ## Build
 
 ```sh
