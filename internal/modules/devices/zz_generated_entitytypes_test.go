@@ -343,14 +343,14 @@ func TestGeneratedBuiltinCatalogWiring(t *testing.T) {
 		if err != nil {
 			t.Fatalf("catalog support: %v", err)
 		}
-		if !equalGeneratedCatalogJSON(normalizedSupport, []byte("{\"state\":{},\"operations\":{},\"events\":{\"names\":[\"single_press\",\"double_press\",\"long_press\"]}}")) {
+		if !entitytypetest.EqualJSON(t, normalizedSupport, []byte("{\"state\":{},\"operations\":{},\"events\":{\"names\":[\"single_press\",\"double_press\",\"long_press\"]}}")) {
 			t.Errorf("catalog normalized support = %s, want %s", normalizedSupport, "{\"state\":{},\"operations\":{},\"events\":{\"names\":[\"single_press\",\"double_press\",\"long_press\"]}}")
 		}
 		normalizedState, err := catalog.NormalizeState(entity, Value("{}"))
 		if err != nil {
 			t.Fatalf("catalog State: %v", err)
 		}
-		if !equalGeneratedCatalogJSON(normalizedState, []byte("{}")) {
+		if !entitytypetest.EqualJSON(t, normalizedState, []byte("{}")) {
 			t.Errorf("catalog normalized State = %s, want %s", normalizedState, "{}")
 		}
 		if equal, err := catalog.EqualState(entity, Value("{}"), Value("{}")); err != nil || !equal {

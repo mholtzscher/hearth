@@ -202,19 +202,22 @@ func writeEntityEventFacadeConformanceTest(source *strings.Builder, model entity
 		strconv.Quote(unsupported),
 	)
 	source.WriteString("\t\tt.Error(\"unsupported Entity Event name was accepted\")\n\t} else {\n")
-	source.WriteString("\t\tadaptertest.RequireValidationError(t, err, \"reject unsupported Entity Event name\")\n\t}\n")
+	writeAdapterValidationError(source, "\t\t", "err", "reject unsupported Entity Event name")
+	source.WriteString("\t}\n")
 	fmt.Fprintf(
 		source,
 		"\tif _, err := NewEntityEvent(EntityEventInput{EntityID: %s, Support: support, Name: \"not a name\"}); err == nil {\n",
 		strconv.Quote(sdkTestEntityID),
 	)
 	source.WriteString("\t\tt.Error(\"non-canonical Entity Event name was accepted\")\n\t} else {\n")
-	source.WriteString("\t\tadaptertest.RequireValidationError(t, err, \"reject non-canonical Entity Event name\")\n\t}\n")
+	writeAdapterValidationError(source, "\t\t", "err", "reject non-canonical Entity Event name")
+	source.WriteString("\t}\n")
 	source.WriteString(
 		"\tif _, err := NewEntityEvent(EntityEventInput{Support: support, Name: supportedName}); err == nil {\n",
 	)
 	source.WriteString("\t\tt.Error(\"Entity Event without an entity ID was accepted\")\n\t} else {\n")
-	source.WriteString("\t\tadaptertest.RequireValidationError(t, err, \"reject empty entity ID\")\n\t}\n")
+	writeAdapterValidationError(source, "\t\t", "err", "reject empty entity ID")
+	source.WriteString("\t}\n")
 	source.WriteString("\tinvalidSupport := support\n\tinvalidSupport.Events.Names = nil\n")
 	fmt.Fprintf(
 		source,
@@ -222,12 +225,23 @@ func writeEntityEventFacadeConformanceTest(source *strings.Builder, model entity
 		strconv.Quote(sdkTestEntityID),
 	)
 	source.WriteString("\t\tt.Error(\"Entity Event with invalid Entity support was accepted\")\n\t} else {\n")
-	source.WriteString("\t\tadaptertest.RequireValidationError(t, err, \"reject invalid Entity support\")\n\t}\n")
+	writeAdapterValidationError(source, "\t\t", "err", "reject invalid Entity support")
+	source.WriteString("\t}\n")
 	source.WriteString("}\n\n")
 }
 
 func writeRequireValidationError(source *strings.Builder, indent, action string) {
-	fmt.Fprintf(source, "%sadaptertest.RequireValidationError(t, observationErr, %s)\n", indent, strconv.Quote(action))
+	writeAdapterValidationError(source, indent, "observationErr", action)
+}
+
+func writeAdapterValidationError(source *strings.Builder, indent, errorVariable, action string) {
+	fmt.Fprintf(
+		source,
+		"%sadaptertest.RequireValidationError(t, %s, %s)\n",
+		indent,
+		errorVariable,
+		strconv.Quote(action),
+	)
 }
 
 func firstValidState(model entityTypeModel) (exampleCase, validityExample) {
