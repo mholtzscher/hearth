@@ -13,6 +13,7 @@ import {
   StatusChip,
 } from "../components/common.tsx";
 import { Button } from "../components/ui/button.tsx";
+import EntityEventHistory from "../components/entity-event-history.tsx";
 import EntityStateHistory from "../components/entity-state-history.tsx";
 import { Card, CardContent } from "../components/ui/card.tsx";
 import { Input } from "../components/ui/input.tsx";
@@ -203,6 +204,16 @@ function colorHSPresets(): { label: string; params: string }[] {
 function hasOperations(support?: Record<string, unknown>): boolean {
   const operations = support?.operations as Record<string, unknown> | undefined;
   return !!operations && Object.keys(operations).length > 0;
+}
+
+/** Supported Entity Event names from support.events.names with malformed values
+    dropped. A non-empty result identifies an event-source Entity: it sources
+    Entity Events and therefore declares no State and no command Operations. */
+function eventSourceNames(support?: Record<string, unknown>): string[] {
+  const names = (support?.events as { names?: unknown } | undefined)?.names;
+  return Array.isArray(names)
+    ? names.filter((name): name is string => typeof name === "string" && name !== "")
+    : [];
 }
 
 /** Human-readable State summary with units and mode activity.
@@ -468,6 +479,8 @@ export default function EntityDetailPage() {
 
   const stateSummary = data ? formatStateSummary(data.type, data.state?.value, data.support) : null;
   const commandable = hasOperations(data?.support);
+  const eventNames = eventSourceNames(data?.support);
+  const eventSource = eventNames.length > 0;
 
   return (
     <div>
@@ -606,6 +619,22 @@ export default function EntityDetailPage() {
                 </div>
               </CardContent>
             </Card>
+            ) : eventSource ? (
+            <Card size="sm">
+              <CardContent>
+                <span className="text-sm font-medium">Event source</span>
+                <p className="mt-1.5 text-xs text-muted-foreground">
+                  {`This ${data.type} entity sources Entity Events and declares no command operations. Supported event names:`}
+                </p>
+                <ul className="mt-1.5 flex flex-wrap gap-1.5">
+                  {eventNames.map((name, index) => (
+                    <li key={`${index}-${name}`} className="rounded-md border px-1.5 py-0.5 font-mono text-xs">
+                      {name}
+                    </li>
+                  ))}
+                </ul>
+              </CardContent>
+            </Card>
             ) : (
             <Card size="sm">
               <CardContent>
@@ -618,22 +647,34 @@ export default function EntityDetailPage() {
             )}
           </div>
 
-          <Section title="Command history">
-            <CommandHistory key={entityId} entityId={entityId} />
-          </Section>
+          {eventSource ? (
+            <Section title="Entity events">
+              <EntityEventHistory
+                key={entityId}
+                entityId={entityId}
+                supportedNames={eventNames}
+              />
+            </Section>
+          ) : (
+            <Section title="Command history">
+              <CommandHistory key={entityId} entityId={entityId} />
+            </Section>
+          )}
 
           <Section title="Availability history">
             <AvailabilityHistory key={entityId} entityId={entityId} />
           </Section>
 
-          <Section title="State history">
-            <EntityStateHistory
-              key={entityId}
-              entityId={entityId}
-              entityType={data.type}
-              support={data.support}
-            />
-          </Section>
+          {!eventSource && (
+            <Section title="State history">
+              <EntityStateHistory
+                key={entityId}
+                entityId={entityId}
+                entityType={data.type}
+                support={data.support}
+              />
+            </Section>
+          )}
 
           <Section title="Support">
             <RawJson value={data.support} title="support JSON" />

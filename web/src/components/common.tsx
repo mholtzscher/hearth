@@ -44,6 +44,7 @@ export function statusTone(status: string): Tone {
     case "healthy":
     case "available":
     case "satisfied":
+    case "accepted":
     case "ready":
     case "ok":
       return "success";
@@ -51,6 +52,7 @@ export function statusTone(status: string): Tone {
       return "info";
     case "unhealthy":
     case "unavailable":
+    case "rejected":
     case "error":
       return "error";
     case "unknown":
