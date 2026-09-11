@@ -112,6 +112,21 @@ export interface Collection<T> {
   next_cursor?: string;
 }
 
+// One retained Entity Event report, newest-first by receive order. Accepted
+// reports were recorded; rejected reports carry the rejection_code Core gave.
+// An Entity Event has no State value, Command link, or payload to show.
+// Field names match the Go JSON tags exactly.
+export interface EntityEventEntry {
+  event_id: string;
+  entity_id: string;
+  name: string;
+  disposition: "accepted" | "rejected" | string;
+  rejection_code?: string;
+  emitted_at: string;
+  received_at: string;
+  recorded_at: string;
+}
+
 export interface EntityStateHistoryEntry {
   observation_id: string;
   value?: unknown;
