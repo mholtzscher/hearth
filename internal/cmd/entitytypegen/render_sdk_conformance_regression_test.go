@@ -194,10 +194,10 @@ func TestFacadeConformanceCoversRelationalInvalidSupports(t *testing.T) {
 			},
 		},
 	}
-	rendered, err := renderFacadeConformanceTest(model)
-	if err != nil {
-		t.Fatal(err)
-	}
+	rendered := renderFacadeConformanceTest(
+		model,
+		"example.test",
+	)
 	text := string(rendered.content)
 	for _, required := range []string{
 		"func TestGeneratedCommandInvalidSupport(t *testing.T) {",

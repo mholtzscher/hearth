@@ -1,41 +1,20 @@
 package main
 
-import "path/filepath"
-
+// render builds every output for one Entity type: the generated files in the
+// type's own package plus its SDK adapter facade and facade test. Each renderer
+// owns its destination and returns unformatted Go; generateRoot runs
+// formatGeneratedOutputs over the collected outputs before writing them.
 func render(model entityTypeModel, modulePath string) ([]output, error) {
-	typesSource, err := renderTypes(model)
-	if err != nil {
-		return nil, err
-	}
-	codecsSource, err := renderCodecs(model)
-	if err != nil {
-		return nil, err
-	}
-	behaviorSource, err := renderBehavior(model)
-	if err != nil {
-		return nil, err
-	}
-	conformanceSource, err := renderConformanceTest(model, modulePath)
-	if err != nil {
-		return nil, err
-	}
-	facadeSource, err := renderFacade(model, modulePath)
-	if err != nil {
-		return nil, err
-	}
-	facadeTest, err := renderFacadeConformanceTest(model)
+	types, err := renderTypes(model)
 	if err != nil {
 		return nil, err
 	}
 	return []output{
-		{path: filepath.Join(model.Directory, "zz_generated_types.go"), content: typesSource},
-		{path: filepath.Join(model.Directory, "zz_generated_codecs.go"), content: codecsSource},
-		{path: filepath.Join(model.Directory, "zz_generated_behavior.go"), content: behaviorSource},
-		{path: filepath.Join(model.Directory, "zz_generated_conformance_test.go"), content: conformanceSource},
-		{
-			path:    filepath.Join(model.ModuleRoot, "sdk", "adapter", model.Package, "zz_generated_facade.go"),
-			content: facadeSource,
-		},
-		facadeTest,
+		types,
+		renderCodecs(model),
+		renderBehavior(model),
+		renderConformanceTest(model, modulePath),
+		renderFacade(model, modulePath),
+		renderFacadeConformanceTest(model, modulePath),
 	}, nil
 }

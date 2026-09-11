@@ -15,26 +15,21 @@ const (
 	sdkTestWrongEntityID = "ent_6ba7b810-9b21-11d1-80b4-00c04fd430c8"
 )
 
-func renderFacadeConformanceTest(model entityTypeModel) (output, error) {
+func renderFacadeConformanceTest(model entityTypeModel, modulePath string) output {
 	var source strings.Builder
 	generatedHeader(&source)
 	fmt.Fprintf(&source, "package %s\n\n", model.Package)
+	// The import block is declared in full and pruned by formatting, so a
+	// renderer never maintains conditional import lists by hand.
 	source.WriteString("import (\n")
-	if len(model.Operations) > 0 {
-		source.WriteString("\t\"context\"\n")
-	}
-	source.WriteString("\t\"bytes\"\n")
+	source.WriteString("\t\"context\"\n")
 	source.WriteString("\t\"encoding/json\"\n")
-	source.WriteString("\t\"errors\"\n")
-	source.WriteString("\t\"math/big\"\n")
-	source.WriteString("\t\"sort\"\n")
-	source.WriteString("\t\"strconv\"\n")
 	source.WriteString("\t\"testing\"\n")
 	source.WriteString("\t\"time\"\n\n")
 	source.WriteString("\t\"github.com/mholtzscher/hearth/sdk/adapter\"\n")
+	source.WriteString("\t\"github.com/mholtzscher/hearth/sdk/adapter/adaptertest\"\n")
+	fmt.Fprintf(&source, "\t%s\n", strconv.Quote(modulePath+"/internal/entitytypetest"))
 	source.WriteString(")\n\n")
-	writeSDKTestHelpers(&source)
-	writeCanonicalJSONRegressionTest(&source)
 	if model.Stateless {
 		writeStatelessOmissionTest(&source, model)
 	} else {
@@ -50,124 +45,10 @@ func renderFacadeConformanceTest(model entityTypeModel) (output, error) {
 		writeCommandConformanceTest(&source, model)
 		writeCommandInvalidSupportTest(&source, model)
 	}
-	formatted, err := formatGenerated(source.String())
-	if err != nil {
-		return output{}, err
-	}
 	return output{
 		path:    filepath.Join(model.ModuleRoot, "sdk", "adapter", model.Package, "zz_generated_facade_test.go"),
-		content: formatted,
-	}, nil
-}
-
-func writeSDKTestHelpers(source *strings.Builder) {
-	source.WriteString("func requireValidationError(t *testing.T, err error, action string) {\n")
-	source.WriteString("\tt.Helper()\n")
-	source.WriteString("\tvar validationErr *adapter.ValidationError\n")
-	source.WriteString("\tif err == nil || !errors.As(err, &validationErr) {\n")
-	source.WriteString("\t\tt.Fatalf(\"%s: expected adapter validation error, got %v\", action, err)\n")
-	source.WriteString("\t}\n")
-	source.WriteString("}\n\n")
-	writeCanonicalJSONHelpers(source)
-	writeCanonicalValueHelper(source)
-	writeParseAdapterTimeHelper(source)
-}
-
-func writeCanonicalJSONHelpers(source *strings.Builder) {
-	source.WriteString("func canonicalJSONValue(value any) string {\n")
-	source.WriteString("\tswitch value := value.(type) {\n")
-	source.WriteString("\tcase nil:\n\t\treturn \"null\"\n")
-	source.WriteString("\tcase bool:\n\t\tif value { return \"bool:true\" }; return \"bool:false\"\n")
-	source.WriteString("\tcase json.Number:\n")
-	source.WriteString("\t\trational, ok := new(big.Rat).SetString(value.String())\n")
-	source.WriteString("\t\tif !ok { return \"number:\" + value.String() }\n")
-	source.WriteString("\t\treturn \"number:\" + rational.RatString()\n")
-	source.WriteString("\tcase string:\n\t\treturn \"string:\" + strconv.Quote(value)\n")
-	source.WriteString("\tcase []any:\n")
-	source.WriteString("\t\tcanonical := \"array:[\"\n")
-	source.WriteString("\t\tfor index, item := range value {\n")
-	source.WriteString("\t\t\tif index > 0 { canonical += \",\" }\n")
-	source.WriteString("\t\t\tcanonical += canonicalJSONValue(item)\n")
-	source.WriteString("\t\t}\n")
-	source.WriteString("\t\treturn canonical + \"]\"\n")
-	source.WriteString("\tcase map[string]any:\n")
-	source.WriteString("\t\tkeys := make([]string, 0, len(value))\n")
-	source.WriteString("\t\tfor key := range value { keys = append(keys, key) }\n")
-	source.WriteString("\t\tsort.Strings(keys)\n")
-	source.WriteString("\t\tcanonical := \"object:{\"\n")
-	source.WriteString("\t\tfor index, key := range keys {\n")
-	source.WriteString("\t\t\tif index > 0 { canonical += \",\" }\n")
-	source.WriteString("\t\t\tcanonical += strconv.Quote(key) + \"=\" + canonicalJSONValue(value[key])\n")
-	source.WriteString("\t\t}\n")
-	source.WriteString("\t\treturn canonical + \"}\"\n")
-	source.WriteString("\tdefault:\n\t\treturn \"unsupported\"\n")
-	source.WriteString("\t}\n")
-	source.WriteString("}\n\n")
-	source.WriteString("func canonicalJSON(t *testing.T, raw json.RawMessage) string {\n")
-	source.WriteString("\tt.Helper()\n")
-	source.WriteString("\tdecoder := json.NewDecoder(bytes.NewReader(raw))\n")
-	source.WriteString("\tdecoder.UseNumber()\n")
-	source.WriteString("\tvar value any\n")
-	source.WriteString("\tif err := decoder.Decode(&value); err != nil {\n")
-	source.WriteString("\t\tt.Fatalf(\"decode JSON: %v\", err)\n")
-	source.WriteString("\t}\n")
-	source.WriteString("\treturn canonicalJSONValue(value)\n")
-	source.WriteString("}\n\n")
-}
-
-func writeCanonicalValueHelper(source *strings.Builder) {
-	source.WriteString("func canonicalValue(t *testing.T, value any) string {\n")
-	source.WriteString("\tt.Helper()\n")
-	source.WriteString("\traw, err := json.Marshal(value)\n")
-	source.WriteString("\tif err != nil {\n")
-	source.WriteString("\t\tt.Fatalf(\"encode JSON: %v\", err)\n")
-	source.WriteString("\t}\n")
-	source.WriteString("\treturn canonicalJSON(t, raw)\n")
-	source.WriteString("}\n\n")
-}
-
-func writeParseAdapterTimeHelper(source *strings.Builder) {
-	source.WriteString("func parseAdapterTime(t *testing.T, field, raw string) time.Time {\n")
-	source.WriteString("\tt.Helper()\n")
-	source.WriteString("\tparsed, err := time.Parse(time.RFC3339Nano, raw)\n")
-	source.WriteString("\tif err != nil {\n")
-	source.WriteString("\t\tt.Fatalf(\"%s %q is not RFC3339Nano: %v\", field, raw, err)\n")
-	source.WriteString("\t}\n")
-	source.WriteString("\tif _, offset := parsed.Zone(); offset != 0 {\n")
-	source.WriteString("\t\tt.Fatalf(\"%s %q is not formatted as UTC\", field, raw)\n")
-	source.WriteString("\t}\n")
-	source.WriteString("\treturn parsed\n")
-	source.WriteString("}\n\n")
-}
-
-func writeCanonicalJSONRegressionTest(source *strings.Builder) {
-	source.WriteString("func TestGeneratedCanonicalJSONPreservesExactNumbers(t *testing.T) {\n")
-	source.WriteString("\tequal := []struct{ left, right string }{\n")
-	source.WriteString("\t\t{\"1\", \"1.0\"},\n")
-	source.WriteString("\t\t{\"1\", \"1e0\"},\n")
-	source.WriteString("\t\t{\"-0\", \"0\"},\n")
-	source.WriteString("\t\t{\"{\\\"value\\\":9007199254740993}\", \"{\\\"value\\\":9.007199254740993e15}\"},\n")
-	source.WriteString("\t}\n")
-	source.WriteString("\tfor _, example := range equal {\n")
-	source.WriteString("\t\tleft := canonicalJSON(t, json.RawMessage(example.left))\n")
-	source.WriteString("\t\tright := canonicalJSON(t, json.RawMessage(example.right))\n")
-	source.WriteString("\t\tif left != right {\n")
-	source.WriteString("\t\t\tt.Errorf(\"canonical numbers differ: %s != %s\", left, right)\n")
-	source.WriteString("\t\t}\n")
-	source.WriteString("\t}\n")
-	source.WriteString("\tunequal := []struct{ left, right string }{\n")
-	source.WriteString("\t\t{\"9007199254740993\", \"9007199254740992\"},\n")
-	source.WriteString("\t\t{\"75\", \"\\\"75\\\"\"},\n")
-	source.WriteString("\t\t{\"{\\\"value\\\":1}\", \"{\\\"value\\\":\\\"1\\\"}\"},\n")
-	source.WriteString("\t}\n")
-	source.WriteString("\tfor _, example := range unequal {\n")
-	source.WriteString("\t\tleft := canonicalJSON(t, json.RawMessage(example.left))\n")
-	source.WriteString("\t\tright := canonicalJSON(t, json.RawMessage(example.right))\n")
-	source.WriteString("\t\tif left == right {\n")
-	source.WriteString("\t\t\tt.Errorf(\"canonical values collided: %s == %s\", left, right)\n")
-	source.WriteString("\t\t}\n")
-	source.WriteString("\t}\n")
-	source.WriteString("}\n\n")
+		content: []byte(source.String()),
+	}
 }
 
 // writeStatelessOmissionTest marks the stateless policy in the generated
@@ -253,7 +134,10 @@ func writeObservationConformanceTest(source *strings.Builder, model entityTypeMo
 				source.WriteString("\t\t\t\t// becomes a valid zero-filled field); only inputs that survive\n")
 				source.WriteString("\t\t\t\t// an ordinary JSON roundtrip carry a constructor claim, judged\n")
 				source.WriteString("\t\t\t\t// without production validation.\n")
-				source.WriteString("\t\t\t\tif canonicalValue(t, plainState) == canonicalJSON(t, raw) {\n")
+				source.WriteString(
+					"\t\t\t\tif entitytypetest.CanonicalValue(t, plainState) == " +
+						"entitytypetest.CanonicalJSON(t, raw) {\n",
+				)
 				fmt.Fprintf(
 					source,
 					"\t\t\t\t\tif _, observationErr := NewObservation(ObservationInput{EntityID: %s, Support: support, State: plainState, AdapterReceivedAt: time.Unix(0, 0).UTC()}); observationErr == nil {\n",
@@ -318,19 +202,22 @@ func writeEntityEventFacadeConformanceTest(source *strings.Builder, model entity
 		strconv.Quote(unsupported),
 	)
 	source.WriteString("\t\tt.Error(\"unsupported Entity Event name was accepted\")\n\t} else {\n")
-	source.WriteString("\t\trequireValidationError(t, err, \"reject unsupported Entity Event name\")\n\t}\n")
+	writeAdapterValidationError(source, "\t\t", "err", "reject unsupported Entity Event name")
+	source.WriteString("\t}\n")
 	fmt.Fprintf(
 		source,
 		"\tif _, err := NewEntityEvent(EntityEventInput{EntityID: %s, Support: support, Name: \"not a name\"}); err == nil {\n",
 		strconv.Quote(sdkTestEntityID),
 	)
 	source.WriteString("\t\tt.Error(\"non-canonical Entity Event name was accepted\")\n\t} else {\n")
-	source.WriteString("\t\trequireValidationError(t, err, \"reject non-canonical Entity Event name\")\n\t}\n")
+	writeAdapterValidationError(source, "\t\t", "err", "reject non-canonical Entity Event name")
+	source.WriteString("\t}\n")
 	source.WriteString(
 		"\tif _, err := NewEntityEvent(EntityEventInput{Support: support, Name: supportedName}); err == nil {\n",
 	)
 	source.WriteString("\t\tt.Error(\"Entity Event without an entity ID was accepted\")\n\t} else {\n")
-	source.WriteString("\t\trequireValidationError(t, err, \"reject empty entity ID\")\n\t}\n")
+	writeAdapterValidationError(source, "\t\t", "err", "reject empty entity ID")
+	source.WriteString("\t}\n")
 	source.WriteString("\tinvalidSupport := support\n\tinvalidSupport.Events.Names = nil\n")
 	fmt.Fprintf(
 		source,
@@ -338,12 +225,23 @@ func writeEntityEventFacadeConformanceTest(source *strings.Builder, model entity
 		strconv.Quote(sdkTestEntityID),
 	)
 	source.WriteString("\t\tt.Error(\"Entity Event with invalid Entity support was accepted\")\n\t} else {\n")
-	source.WriteString("\t\trequireValidationError(t, err, \"reject invalid Entity support\")\n\t}\n")
+	writeAdapterValidationError(source, "\t\t", "err", "reject invalid Entity support")
+	source.WriteString("\t}\n")
 	source.WriteString("}\n\n")
 }
 
 func writeRequireValidationError(source *strings.Builder, indent, action string) {
-	fmt.Fprintf(source, "%srequireValidationError(t, observationErr, %s)\n", indent, strconv.Quote(action))
+	writeAdapterValidationError(source, indent, "observationErr", action)
+}
+
+func writeAdapterValidationError(source *strings.Builder, indent, errorVariable, action string) {
+	fmt.Fprintf(
+		source,
+		"%sadaptertest.RequireValidationError(t, %s, %s)\n",
+		indent,
+		errorVariable,
+		strconv.Quote(action),
+	)
 }
 
 func firstValidState(model entityTypeModel) (exampleCase, validityExample) {
@@ -388,11 +286,11 @@ func writeObservationMetadataTest(source *strings.Builder, model entityTypeModel
 	)
 	fmt.Fprintf(
 		source,
-		"\tif canonicalJSON(t, observation.Value) != canonicalJSON(t, json.RawMessage(%s)) { t.Errorf(\"observation value = %%s\", observation.Value) }\n",
+		"\tif entitytypetest.CanonicalJSON(t, observation.Value) != entitytypetest.CanonicalJSON(t, json.RawMessage(%s)) { t.Errorf(\"observation value = %%s\", observation.Value) }\n",
 		rawQuote(state.Value),
 	)
 	source.WriteString(
-		"\tif received := parseAdapterTime(t, \"adapter received time\", observation.AdapterReceivedAt); !received.Equal(receivedAt) {\n",
+		"\tif received := adaptertest.ParseAdapterTime(t, \"adapter received time\", observation.AdapterReceivedAt); !received.Equal(receivedAt) {\n",
 	)
 	source.WriteString(
 		"\t\tt.Errorf(\"adapter received time = %s, want %s\", observation.AdapterReceivedAt, receivedAt.UTC().Format(time.RFC3339Nano))\n",
@@ -414,7 +312,7 @@ func writeObservationMetadataTest(source *strings.Builder, model entityTypeModel
 		"\tif sourced.SourceUpdatedAt == nil { t.Fatal(\"observation with source time has no SourceUpdatedAt\") }\n",
 	)
 	source.WriteString(
-		"\tif updated := parseAdapterTime(t, \"source updated time\", *sourced.SourceUpdatedAt); !updated.Equal(sourceAt) {\n",
+		"\tif updated := adaptertest.ParseAdapterTime(t, \"source updated time\", *sourced.SourceUpdatedAt); !updated.Equal(sourceAt) {\n",
 	)
 	source.WriteString(
 		"\t\tt.Errorf(\"source updated time = %s, want %s\", *sourced.SourceUpdatedAt, sourceAt.UTC().Format(time.RFC3339Nano))\n",
@@ -445,7 +343,7 @@ func writeObservationValidationTest(source *strings.Builder, model entityTypeMod
 	)
 	source.WriteString("\t\tt.Error(\"Observation without entity ID was accepted\")\n")
 	source.WriteString("\t} else {\n")
-	source.WriteString("\t\trequireValidationError(t, err, \"reject empty entity ID\")\n")
+	source.WriteString("\t\tadaptertest.RequireValidationError(t, err, \"reject empty entity ID\")\n")
 	source.WriteString("\t}\n")
 	fmt.Fprintf(
 		source,
@@ -454,7 +352,7 @@ func writeObservationValidationTest(source *strings.Builder, model entityTypeMod
 	)
 	source.WriteString("\t\tt.Error(\"Observation without adapter received time was accepted\")\n")
 	source.WriteString("\t} else {\n")
-	source.WriteString("\t\trequireValidationError(t, err, \"reject zero adapter received time\")\n")
+	source.WriteString("\t\tadaptertest.RequireValidationError(t, err, \"reject zero adapter received time\")\n")
 	source.WriteString("\t}\n")
 	source.WriteString("\tzeroSource := time.Time{}\n")
 	fmt.Fprintf(
@@ -464,7 +362,7 @@ func writeObservationValidationTest(source *strings.Builder, model entityTypeMod
 	)
 	source.WriteString("\t\tt.Error(\"Observation with zero source updated time was accepted\")\n")
 	source.WriteString("\t} else {\n")
-	source.WriteString("\t\trequireValidationError(t, err, \"reject zero source updated time\")\n")
+	source.WriteString("\t\tadaptertest.RequireValidationError(t, err, \"reject zero source updated time\")\n")
 	source.WriteString("\t}\n")
 	if selector, value, ok := invalidSupportMutation(model); ok {
 		fmt.Fprintf(
@@ -480,7 +378,7 @@ func writeObservationValidationTest(source *strings.Builder, model entityTypeMod
 		)
 		source.WriteString("\t\tt.Error(\"Observation with invalid Entity support was accepted\")\n")
 		source.WriteString("\t} else {\n")
-		source.WriteString("\t\trequireValidationError(t, err, \"reject invalid Entity support\")\n")
+		source.WriteString("\t\tadaptertest.RequireValidationError(t, err, \"reject invalid Entity support\")\n")
 		source.WriteString("\t}\n")
 	}
 	source.WriteString("}\n\n")
@@ -515,7 +413,7 @@ func writeEntityDescriptorTest(source *strings.Builder, model entityTypeModel) {
 	)
 	fmt.Fprintf(
 		source,
-		"\tif canonicalJSON(t, descriptor.Support) != canonicalJSON(t, json.RawMessage(%s)) { t.Errorf(\"descriptor support = %%s\", descriptor.Support) }\n",
+		"\tif entitytypetest.CanonicalJSON(t, descriptor.Support) != entitytypetest.CanonicalJSON(t, json.RawMessage(%s)) { t.Errorf(\"descriptor support = %%s\", descriptor.Support) }\n",
 		rawQuote(example.Support),
 	)
 	if selector, value, ok := invalidSupportMutation(model); ok {
@@ -528,7 +426,7 @@ func writeEntityDescriptorTest(source *strings.Builder, model entityTypeModel) {
 		source.WriteString("\tif _, err := NewEntityDescriptor(metadata, invalidSupport); err == nil {\n")
 		source.WriteString("\t\tt.Error(\"descriptor with invalid Entity support was accepted\")\n")
 		source.WriteString("\t} else {\n")
-		source.WriteString("\t\trequireValidationError(t, err, \"reject invalid Entity support\")\n")
+		source.WriteString("\t\tadaptertest.RequireValidationError(t, err, \"reject invalid Entity support\")\n")
 		source.WriteString("\t}\n")
 	}
 	writeDescriptorInvalidSupports(source, model)
@@ -567,7 +465,7 @@ func writeDescriptorInvalidSupports(source *strings.Builder, model entityTypeMod
 		source.WriteString("\t\t} else {\n")
 		fmt.Fprintf(
 			source,
-			"\t\t\trequireValidationError(t, err, \"reject invalid Entity support %d\")\n",
+			"\t\t\tadaptertest.RequireValidationError(t, err, \"reject invalid Entity support %d\")\n",
 			index+1,
 		)
 		source.WriteString("\t\t}\n\t}\n")
@@ -847,7 +745,7 @@ func writeValidCommandCheck(source *strings.Builder, example exampleCase, operat
 	)
 	fmt.Fprintf(
 		source,
-		"%sif canonicalValue(t, received%s.Parameters) != canonicalJSON(t, json.RawMessage(%s)) { t.Errorf(\"%s command parameters = %%+v\", received%s.Parameters) }\n",
+		"%sif entitytypetest.CanonicalValue(t, received%s.Parameters) != entitytypetest.CanonicalJSON(t, json.RawMessage(%s)) { t.Errorf(\"%s command parameters = %%+v\", received%s.Parameters) }\n",
 		indent,
 		operation.GoName,
 		rawQuote(parameters.Value),
@@ -1028,7 +926,7 @@ func writeInvalidSupportCommandCheck(
 	source.WriteString(indent + "}); err == nil {\n")
 	source.WriteString(indent + "\tt.Error(\"command handler with invalid Entity support was accepted\")\n")
 	source.WriteString(indent + "} else {\n")
-	source.WriteString(indent + "\trequireValidationError(t, err, \"reject invalid Entity support\")\n")
+	source.WriteString(indent + "\tadaptertest.RequireValidationError(t, err, \"reject invalid Entity support\")\n")
 	source.WriteString(indent + "}\n")
 }
 
@@ -1077,7 +975,7 @@ func writeCommandInvalidSupportTest(source *strings.Builder, model entityTypeMod
 		source.WriteString("\t\t} else {\n")
 		fmt.Fprintf(
 			source,
-			"\t\t\trequireValidationError(t, err, \"reject invalid Entity support %d\")\n",
+			"\t\t\tadaptertest.RequireValidationError(t, err, \"reject invalid Entity support %d\")\n",
 			index+1,
 		)
 		source.WriteString("\t\t}\n\t}\n")
@@ -1118,7 +1016,7 @@ func writeNoSupportedOperationCheck(source *strings.Builder, indent string) {
 	)
 	source.WriteString(indent + "\tt.Error(\"command handler with no supported operations was accepted\")\n")
 	source.WriteString(indent + "} else {\n")
-	source.WriteString(indent + "\trequireValidationError(t, err, ")
+	source.WriteString(indent + "\tadaptertest.RequireValidationError(t, err, ")
 	source.WriteString("\"reject command handler with no supported operations\")\n")
 	source.WriteString(indent + "}\n")
 }
@@ -1159,7 +1057,7 @@ func writeMissingHandlerCheck(
 	source.WriteString(indent + "} else {\n")
 	fmt.Fprintf(
 		source,
-		"%s\trequireValidationError(t, err, \"reject command handler without %s handler\")\n",
+		"%s\tadaptertest.RequireValidationError(t, err, \"reject command handler without %s handler\")\n",
 		indent,
 		operation.Name,
 	)
@@ -1216,7 +1114,7 @@ func writeAbsentOperationCheck(
 	source.WriteString(indent + "} else {\n")
 	fmt.Fprintf(
 		source,
-		"%s\trequireValidationError(t, err, \"reject command handler for unsupported %s operation\")\n",
+		"%s\tadaptertest.RequireValidationError(t, err, \"reject command handler for unsupported %s operation\")\n",
 		indent,
 		target.Name,
 	)

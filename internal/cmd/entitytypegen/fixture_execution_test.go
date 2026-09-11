@@ -259,6 +259,8 @@ func writeFixtureModule(t *testing.T, root, temporary string) {
 		filepath.Join(root, "internal", "entitytypetest"),
 		filepath.Join(temporary, "internal", "entitytypetest"),
 	)
+	// Generated facade tests also import sdk/adapter/adaptertest, which the
+	// replace directive resolves to this repository like sdk/adapter itself.
 }
 
 func readGoVersion(t *testing.T, root string) string {

@@ -44,7 +44,7 @@ func TestCatalogProbePreservesOriginatingSupport(t *testing.T) {
 	if string(operation.invalidSupport) != `{"state":{"maximum":50},"operations":{"set":{"step":5}}}` {
 		t.Fatalf("invalid parameters support = %s, want narrow enabled support", operation.invalidSupport)
 	}
-	rendered, err := renderCatalogConformanceTest([]entityTypeModel{model}, t.TempDir())
+	rendered, err := renderCatalogConformanceTest([]entityTypeModel{model}, "example.test", t.TempDir())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -81,7 +81,7 @@ func TestCatalogUnequalKeepsValidIncoming(t *testing.T) {
 	if string(probe.unequalState) != `85` {
 		t.Fatalf("unequal State = %s, want 85", probe.unequalState)
 	}
-	rendered, err := renderCatalogConformanceTest([]entityTypeModel{model}, t.TempDir())
+	rendered, err := renderCatalogConformanceTest([]entityTypeModel{model}, "example.test", t.TempDir())
 	if err != nil {
 		t.Fatal(err)
 	}

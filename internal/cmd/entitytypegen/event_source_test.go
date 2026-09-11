@@ -331,11 +331,8 @@ func TestEventSourceRenderingOmitsObservationAndCommandArtifacts(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	facade, err := renderFacade(model, "example.test")
-	if err != nil {
-		t.Fatal(err)
-	}
-	facadeText := string(facade)
+	facade := renderFacade(model, "example.test")
+	facadeText := string(facade.content)
 	for _, forbidden := range []string{
 		"ObservationInput",
 		"NewObservation",
@@ -358,29 +355,29 @@ func TestEventSourceRenderingOmitsObservationAndCommandArtifacts(t *testing.T) {
 		}
 	}
 
-	facadeTest, err := renderFacadeConformanceTest(model)
-	if err != nil {
-		t.Fatal(err)
-	}
+	facadeTest := renderFacadeConformanceTest(model, "example.test")
 	facadeTestText := string(facadeTest.content)
 	for _, forbidden := range []string{
 		"TestGeneratedObservationConformance",
 		"TestGeneratedCommandConformance",
 		"NewObservation(",
+		"func requireValidationError",
 	} {
 		if strings.Contains(facadeTestText, forbidden) {
 			t.Errorf("event-source facade test contains %q:\n%s", forbidden, facadeTestText)
 		}
 	}
-	if !strings.Contains(facadeTestText, "TestGeneratedEntityEventConformance") {
-		t.Errorf("event-source facade test omits Entity Event conformance:\n%s", facadeTestText)
+	for _, required := range []string{
+		"TestGeneratedEntityEventConformance",
+		"adaptertest.RequireValidationError",
+	} {
+		if !strings.Contains(facadeTestText, required) {
+			t.Errorf("event-source facade test omits %q:\n%s", required, facadeTestText)
+		}
 	}
 
-	behavior, err := renderBehavior(model)
-	if err != nil {
-		t.Fatal(err)
-	}
-	behaviorText := string(behavior)
+	behavior := renderBehavior(model)
+	behaviorText := string(behavior.content)
 	for _, required := range []string{"func EntityEventNames(support Support) []string", "func ValidateEntityEventName("} {
 		if !strings.Contains(behaviorText, required) {
 			t.Errorf("event-source behavior omits %q:\n%s", required, behaviorText)
@@ -401,11 +398,8 @@ func TestEventSourceFacadeRunsSemanticSupportValidation(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	facade, err := renderFacade(model, "example.test")
-	if err != nil {
-		t.Fatal(err)
-	}
-	text := string(facade)
+	facade := renderFacade(model, "example.test")
+	text := string(facade.content)
 	encodeIndex := strings.Index(text, "codecs.Support.Encode(input.Support)")
 	validateIndex := strings.Index(text, "contractfixtureeventv1.ValidateSupport(input.Support)")
 	if encodeIndex < 0 {
@@ -429,10 +423,7 @@ func TestEventSourceCatalogDefinitionUsesGeneratedSelector(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	catalog, err := renderCatalog([]entityTypeModel{model}, "example.test", t.TempDir())
-	if err != nil {
-		t.Fatal(err)
-	}
+	catalog := renderCatalog([]entityTypeModel{model}, "example.test", t.TempDir())
 	text := string(catalog.content)
 	for _, required := range []string{
 		"DefineEventSourceEntityType(",
@@ -446,7 +437,7 @@ func TestEventSourceCatalogDefinitionUsesGeneratedSelector(t *testing.T) {
 	if strings.Contains(text, "DefineOperation") {
 		t.Errorf("generated catalog defines an operation for an event source:\n%s", text)
 	}
-	conformance, err := renderCatalogConformanceTest([]entityTypeModel{model}, t.TempDir())
+	conformance, err := renderCatalogConformanceTest([]entityTypeModel{model}, "example.test", t.TempDir())
 	if err != nil {
 		t.Fatal(err)
 	}

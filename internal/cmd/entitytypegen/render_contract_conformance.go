@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"path/filepath"
 	"strconv"
 	"strings"
 )
@@ -13,7 +14,7 @@ import (
 // Expected-result comparison stays in the shared handwritten runner, so the
 // generated file carries no per-example assertion blocks; only authored
 // invalid supports assert directly against the generated support validator.
-func renderConformanceTest(model entityTypeModel, modulePath string) ([]byte, error) {
+func renderConformanceTest(model entityTypeModel, modulePath string) output {
 	var source strings.Builder
 	generatedHeader(&source)
 	fmt.Fprintf(&source, "package %s\n\n", model.Package)
@@ -57,11 +58,10 @@ func renderConformanceTest(model entityTypeModel, modulePath string) ([]byte, er
 	if model.EventSource {
 		writeEntityEventNameContractChecks(&source, model)
 	}
-	formatted, err := formatGenerated(source.String())
-	if err != nil {
-		return nil, err
+	return output{
+		path:    filepath.Join(model.Directory, "zz_generated_conformance_test.go"),
+		content: []byte(source.String()),
 	}
-	return formatted, nil
 }
 
 // writeInvalidSupportChecks asserts the generated support validator

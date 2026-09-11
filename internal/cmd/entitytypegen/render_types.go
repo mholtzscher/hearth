@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
@@ -14,18 +15,18 @@ type typeEmitter struct {
 	order        []string
 }
 
-func renderTypes(model entityTypeModel) ([]byte, error) {
+func renderTypes(model entityTypeModel) (output, error) {
 	emitter := &typeEmitter{declarations: make(map[string]string)}
 	if err := emitter.define("State", model.StateSchema); err != nil {
-		return nil, fmt.Errorf("state: %w", err)
+		return output{}, fmt.Errorf("state: %w", err)
 	}
 	if err := emitter.define("StateSupport", model.StateSupport); err != nil {
-		return nil, fmt.Errorf("StateSupport: %w", err)
+		return output{}, fmt.Errorf("StateSupport: %w", err)
 	}
 	operationsSchema := model.SupportSchema.Properties["operations"]
 	for _, operation := range model.Operations {
 		if err := emitter.define(operation.GoName+"Support", operationsSchema.Properties[operation.Name]); err != nil {
-			return nil, fmt.Errorf("%s support: %w", operation.Name, err)
+			return output{}, fmt.Errorf("%s support: %w", operation.Name, err)
 		}
 	}
 
@@ -43,14 +44,14 @@ func renderTypes(model entityTypeModel) ([]byte, error) {
 		"OperationSupport",
 		"type OperationSupport struct {\n"+operationFields.String()+"}\n",
 	); err != nil {
-		return nil, err
+		return output{}, err
 	}
 	supportFields := strings.Builder{}
 	supportFields.WriteString("\tState StateSupport `json:\"state\"`\n")
 	supportFields.WriteString("\tOperations OperationSupport `json:\"operations\"`\n")
 	if model.EventSource {
 		if err := emitter.define("SupportEvents", model.EventSupportSchema); err != nil {
-			return nil, fmt.Errorf("events: %w", err)
+			return output{}, fmt.Errorf("events: %w", err)
 		}
 		supportFields.WriteString("\tEvents SupportEvents `json:\"events\"`\n")
 	}
@@ -58,11 +59,11 @@ func renderTypes(model entityTypeModel) ([]byte, error) {
 		"Support",
 		"type Support struct {\n"+supportFields.String()+"}\n",
 	); err != nil {
-		return nil, err
+		return output{}, err
 	}
 	for _, operation := range model.Operations {
 		if err := emitter.define(operation.GoName+"Parameters", operation.ParametersSchema); err != nil {
-			return nil, fmt.Errorf("%s parameters: %w", operation.Name, err)
+			return output{}, fmt.Errorf("%s parameters: %w", operation.Name, err)
 		}
 	}
 
@@ -87,7 +88,10 @@ func renderTypes(model entityTypeModel) ([]byte, error) {
 		source.WriteString(emitter.declarations[name])
 		source.WriteByte('\n')
 	}
-	return formatGenerated(source.String())
+	return output{
+		path:    filepath.Join(model.Directory, "zz_generated_types.go"),
+		content: []byte(source.String()),
+	}, nil
 }
 
 //nolint:gocognit // Recursive type emission mirrors the supported JSON Schema node kinds.
@@ -191,7 +195,7 @@ func requireClosedObject(schema schemaNode) error {
 	return nil
 }
 
-func renderCodecs(model entityTypeModel) ([]byte, error) {
+func renderCodecs(model entityTypeModel) output {
 	var source strings.Builder
 	generatedHeader(&source)
 	fmt.Fprintf(&source, "package %s\n\n", model.Package)
@@ -276,5 +280,8 @@ func renderCodecs(model entityTypeModel) ([]byte, error) {
 	source.WriteString(
 		"func compileCodec[T any](schemaID, path string) (*entitytypes.JSONCodec[T], error) {\n\traw, err := FS.ReadFile(path)\n\tif err != nil { return nil, fmt.Errorf(\"read %s: %w\", path, err) }\n\treturn entitytypes.CompileJSONCodec[T](schemaID, json.RawMessage(raw), nil)\n}\n",
 	)
-	return formatGenerated(source.String())
+	return output{
+		path:    filepath.Join(model.Directory, "zz_generated_codecs.go"),
+		content: []byte(source.String()),
+	}
 }
