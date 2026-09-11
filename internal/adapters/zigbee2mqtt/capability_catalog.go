@@ -31,6 +31,13 @@ func ambientNumericSensors() []numericSensorMapping {
 			upstreamUnit: "%", unit: "%", minimum: 0, maximum: 100,
 		},
 		{
+			// The Third Reality 3RSNL02043Z night light reports a root
+			// illuminance expose in lux. The envelope is a validation bound,
+			// not a claimed operating range.
+			exposeName: "illuminance", key: "illuminance", displayName: "Illuminance",
+			upstreamUnit: "lx", unit: "lx", minimum: 0, maximum: 1e9,
+		},
+		{
 			exposeName: "battery", key: "battery", displayName: "Battery",
 			upstreamUnit: "%", unit: "%", minimum: 0, maximum: 100,
 		},

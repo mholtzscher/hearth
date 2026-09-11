@@ -64,6 +64,8 @@ function parseHistoryValue(type: string | undefined, value: unknown, support?: R
   switch (type) {
     case "hearth.power/v1":
       return typeof value === "boolean" ? { numeric: value ? 1 : 0, label: value ? "On" : "Off" } : null;
+    case "hearth.binarysensor/v1":
+      return typeof value === "boolean" ? { numeric: value ? 1 : 0, label: value ? "True" : "False" } : null;
     case "hearth.brightness/v1":
       return isBoundedInteger(value, 0, 100) ? { numeric: value, label: String(value) } : null;
     case "hearth.colortemp/v1": {
@@ -159,16 +161,16 @@ function formatHistoryValue(type: string | undefined, value: unknown, support?: 
   }
 }
 
-/** Current support bounds in chart units, when the Entity type defines them.
-    Support fields are validated as integers within their static support-schema
-    ranges; malformed support is ignored so it cannot distort the domain. */
+/** Fixed semantic or control bounds in chart units. Generic numeric sensor
+    bounds are validation envelopes rather than operating ranges, so their
+    charts scale to the page's observed values instead. */
 function supportRange(
   type: string | undefined,
   support: Record<string, unknown> | undefined,
 ): [number, number] | null {
-  if (type === "hearth.power/v1") return [0, 1];
+  if (type === "hearth.power/v1" || type === "hearth.binarysensor/v1") return [0, 1];
   const state = support?.state as { maximum?: unknown; minimum?: unknown } | undefined;
-  if (type === "hearth.numericsensor/v1" || type === "hearth.numericsetting/v1") {
+  if (type === "hearth.numericsetting/v1") {
     return typeof state?.minimum === "number" &&
       typeof state?.maximum === "number" &&
       Number.isFinite(state.minimum) &&
@@ -209,6 +211,11 @@ function tickLabel(type: string | undefined, tick: number, min: number, max: num
   if (type === "hearth.power/v1") {
     if (tick === min) return "Off";
     if (tick === max) return "On";
+    return String(tick);
+  }
+  if (type === "hearth.binarysensor/v1") {
+    if (tick === min) return "False";
+    if (tick === max) return "True";
     return String(tick);
   }
   if (type === "hearth.temperature/v1") return `${tick} °C`;
@@ -295,6 +302,7 @@ function StateHistoryChart({
   }
   switch (type) {
     case "hearth.power/v1":
+    case "hearth.binarysensor/v1":
     case "hearth.brightness/v1":
     case "hearth.colortemp/v1":
     case "hearth.temperature/v1":

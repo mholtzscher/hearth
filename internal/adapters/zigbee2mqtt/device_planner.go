@@ -63,6 +63,7 @@ func planDevice(input devicePlanningInput) (devicePlan, error) {
 		planLightFamily(input),
 		planRelayFamily(input),
 		planSensorFamily(input),
+		planOccupancy(input),
 		planLinkquality(input),
 		planActionEvent(input),
 	})

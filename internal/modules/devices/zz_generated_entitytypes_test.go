@@ -14,6 +14,42 @@ func TestGeneratedBuiltinCatalogWiring(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	t.Run("hearth.binarysensor/v1", func(t *testing.T) {
+		entity := Entity{ID: EntityID("generated_binarysensorv1"), TypeID: EntityTypeBinarysensorV1, Support: EntitySupport("{\"state\":{},\"operations\":{}}")}
+		if stateless, err := catalog.IsStateless(entity.TypeID); err != nil || stateless != false {
+			t.Errorf("catalog stateless = %v, %v, want false", stateless, err)
+		}
+		normalizedSupport, err := catalog.NormalizeSupport(entity.TypeID, entity.Support)
+		if err != nil {
+			t.Fatalf("catalog support: %v", err)
+		}
+		if !entitytypetest.EqualJSON(t, normalizedSupport, []byte("{\"state\":{},\"operations\":{}}")) {
+			t.Errorf("catalog normalized support = %s, want %s", normalizedSupport, "{\"state\":{},\"operations\":{}}")
+		}
+		normalizedState, err := catalog.NormalizeState(entity, Value("true"))
+		if err != nil {
+			t.Fatalf("catalog State: %v", err)
+		}
+		if !entitytypetest.EqualJSON(t, normalizedState, []byte("true")) {
+			t.Errorf("catalog normalized State = %s, want %s", normalizedState, "true")
+		}
+		if equal, err := catalog.EqualState(entity, Value("true"), Value("true")); err != nil || !equal {
+			t.Errorf("catalog equal State = %v, %v", equal, err)
+		}
+		if equal, err := catalog.EqualState(entity, Value("false"), Value("true")); err != nil || equal {
+			t.Errorf("catalog unequal State = %v, %v", equal, err)
+		}
+		if supported, err := catalog.SupportsEntityEvent(entity, EntityEventName("single_press")); err != nil || supported {
+			t.Errorf("catalog non-event type accepted an Entity Event: %v, %v", supported, err)
+		}
+		malformedNonEventEntity := Entity{ID: EntityID("generated_binarysensorv1"), TypeID: EntityTypeBinarysensorV1, Support: EntitySupport("[]")}
+		if supported, err := catalog.SupportsEntityEvent(malformedNonEventEntity, EntityEventName("single_press")); err != nil || supported {
+			t.Errorf("catalog non-event type with malformed support accepted an Entity Event: %v, %v", supported, err)
+		}
+		if _, err := catalog.NormalizeSupport(entity.TypeID, EntitySupport("{\"events\":{\"names\":[\"single_press\"]},\"operations\":{},\"state\":{}}")); err == nil {
+			t.Error("catalog accepted event support for a closed type")
+		}
+	})
 	t.Run("hearth.brightness/v1", func(t *testing.T) {
 		entity := Entity{ID: EntityID("generated_brightnessv1"), TypeID: EntityTypeBrightnessV1, Support: EntitySupport("{\"state\":{\"maximum\":80},\"operations\":{\"set\":{\"step\":5}}}")}
 		if stateless, err := catalog.IsStateless(entity.TypeID); err != nil || stateless != false {

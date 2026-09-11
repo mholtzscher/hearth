@@ -69,6 +69,33 @@ func TestNumericSensorMappingAddsCapabilityWithoutNewTranslation(t *testing.T) {
 	}
 }
 
+// The captured 3RSNL02043Z night light is the sole lux sensor in the ambient
+// numeric capability catalog. This test pins that catalog entry to the live
+// expose name, Entity key, display name, exact unit, and conservative
+// validation envelope independently of the device fixture, and fails if a
+// second illuminance entry appears or any field drifts.
+func TestAmbientNumericSensorsMapCapturedIlluminance(t *testing.T) {
+	t.Parallel()
+	matches := 0
+	var got numericSensorMapping
+	for _, mapping := range ambientNumericSensors() {
+		if mapping.exposeName == "illuminance" {
+			matches++
+			got = mapping
+		}
+	}
+	if matches != 1 {
+		t.Fatalf("illuminance catalog entries = %d, want exactly one", matches)
+	}
+	want := numericSensorMapping{
+		exposeName: "illuminance", key: "illuminance", displayName: "Illuminance",
+		upstreamUnit: "lx", unit: "lx", minimum: 0, maximum: 1e9,
+	}
+	if got != want {
+		t.Fatalf("illuminance mapping = %#v, want %#v", got, want)
+	}
+}
+
 // A new relay numeric setting needs only a mapping, while its actual bounds
 // and MQTT property come from inventory. This test catches hard-coded units,
 // properties, bounds, or integer-only translation in the shared constructor.

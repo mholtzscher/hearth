@@ -10,6 +10,7 @@ exposes normally needs a captured regression fixture, not a new mapping.
 | --- | --- |
 | Read-only ambient numeric capability | `ambientNumericSensors` in `internal/adapters/zigbee2mqtt/capability_catalog.go` |
 | Read-only smart-plug electrical capability | `smartPlugElectricalSensors` in the same file |
+| Read-only binary occupancy capability | `planOccupancy` in `internal/adapters/zigbee2mqtt/entity_binarysensor.go` |
 | Observable relay numeric setting | `smartPlugNumericSettings` in the same file |
 | Read-only `action` Event source | `planActionEvent` in `internal/adapters/zigbee2mqtt/entity_event.go` |
 | Light/color composition or dependency | `planner_light.go` |
@@ -45,16 +46,65 @@ Add one record to the appropriate table, using captured expose evidence:
   decoding and device-wide unique-root selection. A different conversion is code,
   not an expression in a table.
 
-`planDevice` calls `planLightFamily`, `planRelayFamily`, `planSensorFamily`,
-`planLinkquality`, and `planActionEvent` directly. `mergeDeviceContributions`
-merges their returned values; there is no planner interface, registry, or empty
-planner object.
+Ambient illuminance is a record in the same `ambientNumericSensors` table: exact
+expose name `illuminance`, exact unit `lx`, and a fixed 0–1000000000 lx
+validation envelope because Zigbee2MQTT omits ambient bounds. Its non-empty,
+Device-unique State property still comes from inventory. It uses the same
+`newNumericSensorPlan` rules (publish required, set forbidden, get access alone
+enabling refresh), so it needs no new constructor.
 
-Table order is observable: ambient temperature precedes the ambient table;
-relay power and power-on behavior precede electrical sensors, then numeric
-settings, then reset. Link quality and the read-only action Event remain
-supplemental and last, in that order. Family precedence and color/power
-dependencies remain explicit in the existing planners.
+`planDevice` calls `planLightFamily`, `planRelayFamily`, `planSensorFamily`,
+`planOccupancy`, `planLinkquality`, and `planActionEvent` directly.
+`mergeDeviceContributions` merges their returned values; there is no planner
+interface, registry, or empty planner object.
+
+Planner order is observable. The first non-empty light or relay family is
+primary and keeps Device kind `light` or `relay`; every later family is
+supplemental, so a light that also reports occupancy stays a light while an
+occupancy-only Device is a sensor. Within the sensor family, ambient temperature
+precedes the ambient table, whose capability records run humidity, illuminance,
+then battery. Occupancy follows the sensor family, then link quality, then the
+read-only action Event last, in that order. Relay power and power-on behavior
+precede electrical sensors, then numeric settings, then reset. Family precedence
+and color/power dependencies remain explicit in the existing planners.
+
+## Add a binary occupancy sensor
+
+Occupancy is a boolean reading, so it uses the generic read-only
+`hearth.binarysensor/v1` type rather than a numeric table. `planOccupancy`
+accepts one resolved root binary expose that is named and property-aliased
+`occupancy`, with publish access, no set access, a Device-unique property, and
+present distinct `value_on`/`value_off` scalars. Those declared scalars, not an
+assumed boolean, define decoding: `true`/`false`, `"ON"`/`"OFF"`, and `1`/`0`
+each decode exactly when the expose declares them, and any other value is a
+per-property decode issue that leaves valid siblings intact.
+
+The plan builds support `{"state":{},"operations":{}}` through
+`newBinarySensorPlan`, requires publish access, forbids set access, and creates
+no command route; get access alone controls startup `/get`. An absent,
+non-scalar, or identical on/off pair, a duplicate root, a foreign claim on the
+property, or set
+access omits occupancy without affecting valid siblings. The contribution is
+supplemental, so a light or relay that also reports occupancy keeps its actuator
+kind and an occupancy-only Device is a sensor.
+
+Occupancy is not a device-model special case and needs no model table. A new
+model with the same declared binary expose needs only a captured regression
+fixture.
+
+Evidence: `testdata/bridge-devices-3rsnl02043z.json` and
+`testdata/state-3rsnl02043z.json` are handcrafted minimal sanitized shapes of a
+2026-09-11 passive capture from the Third Reality `3RSNL02043Z` night light on
+host Wanda (`software_build_id` `v1.00.86`). Sanitization changed only the IEEE
+address, friendly name, and description; model, vendor, build, expose nesting,
+expose type/name/property/access, units, enum values, declared binary
+`value_on`/`value_off`, numeric bounds, and the reported values are retained. The
+fixture discovers nine Entities on a light Device in planner order — power,
+brightness, colorxy, colormode, poweronbehavior, effect, illuminance, occupancy,
+linkquality — and the live payload reported illuminance `20` and occupancy
+`true`. This is passive evidence for discovery, support, and State translation
+only: no physical command was exercised, and occupancy and illuminance are
+read-only.
 
 ## Add a numeric setting
 

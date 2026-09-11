@@ -321,7 +321,7 @@ func canonicalScalar(payload json.RawMessage) (scalarValue, error) {
 		}
 		canonical = "number:" + number.RatString()
 	default:
-		return scalarValue{}, errors.New("power value must be a JSON scalar")
+		return scalarValue{}, errors.New("Zigbee2MQTT value must be a JSON scalar")
 	}
 	return scalarValue{Raw: bytes.Clone(bytes.TrimSpace(payload)), canonical: canonical}, nil
 }

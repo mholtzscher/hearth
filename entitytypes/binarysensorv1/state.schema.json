@@ -1,0 +1,7 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:hearth:schema:entity-type:binarysensor:v1:state",
+  "title": "Hearth binarysensor/v1 State",
+  "description": "Read-only boolean reading, such as occupancy. The adapter translates the declared upstream on/off representations into true and false; support carries no bounds.",
+  "type": "boolean"
+}
