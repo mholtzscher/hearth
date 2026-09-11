@@ -1,4 +1,4 @@
-package zigbee2mqtt //nolint:testpackage // Tests exercise package-private occupancy translation.
+package zigbee2mqtt //nolint:testpackage // Tests exercise package-private binary sensor planning and translation.
 
 import (
 	"encoding/json"
@@ -108,6 +108,105 @@ func TestDiscoverOccupancyOnlyDeviceRegistersSensor(t *testing.T) {
 	}
 }
 
+// This test protects inventory property aliasing: the mapped expose name
+// selects the capability while the State property, and therefore the MQTT
+// route, comes from inventory. It fails if the planner required the property
+// to equal the mapped name, so a renamed non-empty unique property would be
+// dropped.
+func TestOccupancyPlanUsesInventoryPropertyAlias(t *testing.T) {
+	t.Parallel()
+	device := occupancyOnlyDevice()
+	device.Definition.Exposes[0].Property = "presence"
+	discovered, rejection := discoverDevice(device)
+	if rejection != nil {
+		t.Fatalf("Device rejected: %#v", rejection)
+	}
+	if got := entityKeys(discovered.Entities); !reflect.DeepEqual(got, []string{"occupancy"}) {
+		t.Fatalf("Entity keys = %v", got)
+	}
+	occupancy := discovered.Entities[0]
+	if !reflect.DeepEqual(occupancy.StateProperties, []string{"presence"}) {
+		t.Fatalf("occupancy State properties = %v, want the inventory alias", occupancy.StateProperties)
+	}
+	states, issues := decodeOccupancy(t, bindPlans(discovered.Entities), `{"presence":true}`)
+	if len(issues) != 0 || len(states) != 1 || string(states[0].report.Observation.Value) != "true" {
+		t.Fatalf("aliased decode states = %#v, issues = %#v", states, issues)
+	}
+}
+
+// This test protects endpoint-scoped root identity: two roots of the same
+// mapped capability on distinct resolved endpoints produce distinct Entities,
+// each bound to its own inventory property. It fails if the planner collapsed
+// scoped roots to one unscoped key, losing an endpoint sensor.
+func TestOccupancyPlanKeepsEndpointScopedRootsDistinct(t *testing.T) {
+	t.Parallel()
+	left, right := occupancyExpose(), occupancyExpose()
+	left.Endpoint, left.Property = "left", "occupancy_left"
+	right.Endpoint, right.Property = "right", "occupancy_right"
+	device := occupancyOnlyDevice()
+	device.Endpoints = map[string]upstreamEndpoint{"1": {Name: "left"}, "2": {Name: "right"}}
+	device.Definition.Exposes = []upstreamExpose{left, right}
+	discovered, rejection := discoverDevice(device)
+	if rejection != nil {
+		t.Fatalf("Device rejected: %#v", rejection)
+	}
+	if got := entityKeys(discovered.Entities); !reflect.DeepEqual(got, []string{"occupancy-ep1", "occupancy-ep2"}) {
+		t.Fatalf("Entity keys = %v", got)
+	}
+	for index, want := range []struct {
+		key, name, externalID, property string
+	}{
+		{
+			key: "occupancy-ep1", name: "left Occupancy",
+			externalID: "0x00124b0024abcdef/ep1/occupancy", property: "occupancy_left",
+		},
+		{
+			key: "occupancy-ep2", name: "right Occupancy",
+			externalID: "0x00124b0024abcdef/ep2/occupancy", property: "occupancy_right",
+		},
+	} {
+		plan := discovered.Entities[index]
+		if plan.Descriptor.Key != want.key || plan.Descriptor.Name != want.name ||
+			plan.Descriptor.ExternalID != want.externalID ||
+			!reflect.DeepEqual(plan.StateProperties, []string{want.property}) {
+			t.Fatalf("scoped occupancy plan %d = %#v", index, plan)
+		}
+	}
+}
+
+// This test protects cross-table isolation inside the shared sensor family:
+// an ineligible binary root must omit only its own Entity and never suppress a
+// valid ambient numeric sibling. It fails if one capability table's gate
+// leaks into the other's roots.
+func TestIneligibleOccupancyKeepsAmbientNumericSibling(t *testing.T) {
+	t.Parallel()
+	for _, test := range []struct {
+		name string
+		edit func(*upstreamExpose)
+	}{
+		{name: "set access", edit: func(expose *upstreamExpose) { expose.Access = 1 | 2 }},
+		{name: "missing declaration", edit: func(expose *upstreamExpose) { expose.ValueOff = nil }},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			occupancy := occupancyExpose()
+			test.edit(&occupancy)
+			device := occupancyOnlyDevice()
+			device.Definition.Exposes = []upstreamExpose{
+				{Type: "numeric", Name: "illuminance", Property: "illuminance", Unit: "lx", Access: 5},
+				occupancy,
+			}
+			discovered, rejection := discoverDevice(device)
+			if rejection != nil {
+				t.Fatalf("Device rejected: %#v", rejection)
+			}
+			if got := entityKeys(discovered.Entities); !reflect.DeepEqual(got, []string{"illuminance"}) {
+				t.Fatalf("Entity keys = %v, want only the valid illuminance sibling", got)
+			}
+		})
+	}
+}
+
 // This test protects the captured live shape and fails if the real device's
 // true/false occupancy payload does not decode to the declared on/off
 // mapping. Expected values come from the expose declaration and the captured
@@ -191,16 +290,17 @@ func TestDecodeOccupancyRejectsUnmappedValues(t *testing.T) {
 	}
 }
 
-// This test protects the occupancy eligibility gate and fails if an ambiguous
-// root, a foreign property claim, missing or non-publish access, or an
-// absent/indistinct/non-scalar declaration still registers an Entity.
+// This test protects the occupancy eligibility gate and fails if a same-key
+// duplicate root, a foreign property claim, an empty property, missing or
+// non-publish access, or an absent/indistinct/non-scalar declaration still
+// registers an Entity.
 func TestOccupancyPlanEligibility(t *testing.T) {
 	t.Parallel()
 	for _, test := range []struct {
 		name string
 		edit func(*upstreamDevice)
 	}{
-		{name: "duplicate occupancy roots", edit: func(device *upstreamDevice) {
+		{name: "duplicate unscoped occupancy roots share one key", edit: func(device *upstreamDevice) {
 			duplicate := occupancyExpose()
 			duplicate.Property = "occupancy_2"
 			device.Definition.Exposes = append(device.Definition.Exposes, duplicate)
@@ -213,9 +313,6 @@ func TestOccupancyPlanEligibility(t *testing.T) {
 		}},
 		{name: "empty property", edit: func(device *upstreamDevice) {
 			device.Definition.Exposes[0].Property = ""
-		}},
-		{name: "renamed property", edit: func(device *upstreamDevice) {
-			device.Definition.Exposes[0].Property = "presence"
 		}},
 		{name: "get-only access", edit: func(device *upstreamDevice) {
 			device.Definition.Exposes[0].Access = 4

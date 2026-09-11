@@ -11,12 +11,6 @@ import (
 	sdkbinarysensorv1 "github.com/mholtzscher/hearth/sdk/adapter/binarysensorv1"
 )
 
-const (
-	occupancyExposeName  = "occupancy"
-	occupancyKey         = "occupancy"
-	occupancyDisplayName = "Occupancy"
-)
-
 // newBinarySensorPlan builds the complete read-only boolean translation for
 // one State property. The declared upstream on/off scalars, not an assumed
 // boolean, define decoding; translateBinarySensorState canonicalizes the raw
@@ -110,51 +104,55 @@ func declaredBinarySensorValues(expose upstreamExpose) (scalarValue, scalarValue
 	return on, off, true
 }
 
-// planOccupancy supports one device-root binary occupancy expose on any
-// Device kind. Eligibility requires the single resolved root expose to be
-// named and property-aliased occupancy, to publish without accepting set
-// commands, to own its property device-wide, and to declare explicit distinct
-// value_on/value_off scalars. A duplicate occupancy root, a foreign claim on
-// the property, or an absent/ambiguous declaration omits occupancy without
-// affecting valid siblings.
-//
-// The contribution is supplemental: occupancy does not displace a primary
-// light or relay kind, while an occupancy-only Device is a sensor. Get access
-// alone controls startup refresh and never adds a command route.
-func planOccupancy(input devicePlanningInput) plannerContribution {
-	contribution := plannerContribution{Kind: upstreamDeviceKindSensor, Role: plannerRoleSupplemental}
-	root, ok := input.Exposes.UniqueRoot(upstreamExposeBinary, occupancyExposeName)
-	if !ok || !root.resolved {
-		return contribution
+// appendBinarySensorPlans adds one read-only Entity for each eligible root
+// matching a binary capability in inventory order. Because it visits every
+// retained root, endpoint-scoped roots of the same capability keep distinct
+// keys while same-key duplicates are omitted later by per-contribution
+// deduplication.
+func appendBinarySensorPlans(
+	contribution *plannerContribution,
+	input devicePlanningInput,
+	mapping binarySensorMapping,
+) {
+	for _, root := range input.Exposes.roots {
+		if plan := planBinarySensorRoot(input, root, mapping); plan != nil {
+			contribution.Entities = append(contribution.Entities, *plan)
+		}
+	}
+}
+
+// planBinarySensorRoot applies a binary capability mapping to one resolved
+// root. Root selection, the Device-unique State property, endpoint identity,
+// and the declared distinct value_on/value_off scalars all come from
+// inventory, never from the record. An ineligible root returns nil and never
+// suppresses a valid sibling.
+func planBinarySensorRoot(
+	input devicePlanningInput,
+	root indexedExpose,
+	mapping binarySensorMapping,
+) *entityPlan {
+	if !root.resolved || root.expose.Type != upstreamExposeBinary || root.expose.Name != mapping.exposeName {
+		return nil
 	}
 	expose := root.expose
-	if expose.Property != occupancyExposeName ||
-		!exposeCanPublish(expose) || exposeCanSet(expose) ||
-		!input.Exposes.PropertyUnique(expose.Property) {
-		return contribution
+	if !readOnlySensorEligible(input, expose) {
+		return nil
 	}
 	on, off, declared := declaredBinarySensorValues(expose)
 	if !declared {
-		return contribution
+		return nil
 	}
-	key, name := scopedIdentity(
-		occupancyKey,
-		occupancyDisplayName,
-		expose.Endpoint,
-		root.endpoint,
-		root.scoped,
-	)
+	key, name := scopedIdentity(mapping.key, mapping.displayName, expose.Endpoint, root.endpoint, root.scoped)
 	if !validDescriptorName(name) {
-		return contribution
+		return nil
 	}
 	plan, err := newBinarySensorPlan(adapter.EntityMetadata{
 		Key:        key,
-		ExternalID: input.IEEE + "/" + entityLocation(root) + "/" + occupancyKey,
+		ExternalID: input.IEEE + "/" + entityLocation(root) + "/" + mapping.key,
 		Name:       name,
 	}, expose.Property, on, off, exposeCanGet(expose))
 	if err != nil {
-		return contribution
+		return nil
 	}
-	contribution.Entities = append(contribution.Entities, plan)
-	return contribution
+	return &plan
 }

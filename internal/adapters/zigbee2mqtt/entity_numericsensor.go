@@ -82,7 +82,7 @@ func planNumericSensorRoot(input devicePlanningInput, root indexedExpose, mappin
 		return nil
 	}
 	expose := root.expose
-	if expose.Unit != mapping.upstreamUnit || !sensorExposeEligible(input, expose) {
+	if expose.Unit != mapping.upstreamUnit || !readOnlySensorEligible(input, expose) {
 		return nil
 	}
 	key, name := scopedIdentity(mapping.key, mapping.displayName, expose.Endpoint, root.endpoint, root.scoped)

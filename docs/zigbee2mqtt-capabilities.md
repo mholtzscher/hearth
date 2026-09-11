@@ -10,7 +10,7 @@ exposes normally needs a captured regression fixture, not a new mapping.
 | --- | --- |
 | Read-only ambient numeric capability | `ambientNumericSensors` in `internal/adapters/zigbee2mqtt/capability_catalog.go` |
 | Read-only smart-plug electrical capability | `smartPlugElectricalSensors` in the same file |
-| Read-only binary occupancy capability | `planOccupancy` in `internal/adapters/zigbee2mqtt/entity_binarysensor.go` |
+| Read-only binary capability | `binarySensorMappings` in `internal/adapters/zigbee2mqtt/capability_catalog.go` |
 | Observable relay numeric setting | `smartPlugNumericSettings` in the same file |
 | Read-only `action` Event source | `planActionEvent` in `internal/adapters/zigbee2mqtt/entity_event.go` |
 | Light/color composition or dependency | `planner_light.go` |
@@ -54,7 +54,8 @@ Device-unique State property still comes from inventory. It uses the same
 enabling refresh), so it needs no new constructor.
 
 `planDevice` calls `planLightFamily`, `planRelayFamily`, `planSensorFamily`,
-`planOccupancy`, `planLinkquality`, and `planActionEvent` directly.
+`planLinkquality`, and `planActionEvent` directly. `planSensorFamily` itself runs
+the temperature, ambient numeric, and binary capability records.
 `mergeDeviceContributions` merges their returned values; there is no planner
 interface, registry, or empty planner object.
 
@@ -62,35 +63,59 @@ Planner order is observable. The first non-empty light or relay family is
 primary and keeps Device kind `light` or `relay`; every later family is
 supplemental, so a light that also reports occupancy stays a light while an
 occupancy-only Device is a sensor. Within the sensor family, ambient temperature
-precedes the ambient table, whose capability records run humidity, illuminance,
-then battery. Occupancy follows the sensor family, then link quality, then the
+precedes the ambient numeric table, whose capability records run humidity,
+illuminance, then battery, followed by the binary table, whose capability
+records run occupancy. Binary planning is therefore part of the sensor family,
+not a separate planner. Link quality follows the sensor family, then the
 read-only action Event last, in that order. Relay power and power-on behavior
 precede electrical sensors, then numeric settings, then reset. Family precedence
 and color/power dependencies remain explicit in the existing planners.
 
-## Add a binary occupancy sensor
+## Add a read-only binary sensor
 
-Occupancy is a boolean reading, so it uses the generic read-only
-`hearth.binarysensor/v1` type rather than a numeric table. `planOccupancy`
-accepts one resolved root binary expose that is named and property-aliased
-`occupancy`, with publish access, no set access, a Device-unique property, and
-present distinct `value_on`/`value_off` scalars. Those declared scalars, not an
-assumed boolean, define decoding: `true`/`false`, `"ON"`/`"OFF"`, and `1`/`0`
-each decode exactly when the expose declares them, and any other value is a
-per-property decode issue that leaves valid siblings intact.
+A binary reading is boolean, so it uses the generic read-only
+`hearth.binarysensor/v1` type rather than a numeric table. Add one
+`binarySensorMapping` record to `binarySensorMappings`, using captured expose
+evidence:
+
+```go
+{
+    exposeName: "occupancy", key: "occupancy", displayName: "Occupancy",
+},
+```
+
+- `exposeName` selects the capability and must match the expose name exactly; it
+  is not a wildcard.
+- The State property, endpoint, and declared `value_on`/`value_off` scalars all
+  come from inventory, never from the record. The State property is the MQTT
+  route, so a differently named non-empty property is an alias, not a mismatch.
+- `key` determines stable Entity identity. Do not rename existing keys casually.
+- Planning visits every retained root in inventory order. Two roots of one
+  capability on distinct resolved endpoints keep distinct `-ep<N>` keys; only
+  same-key duplicates are removed by per-contribution deduplication.
+
+An eligible root is a resolved binary expose whose name matches the record and
+that carries publish access, no set access, a non-empty Device-unique State
+property, and present distinct `value_on`/`value_off` scalars. Those declared
+scalars, not an assumed boolean, define decoding: `true`/`false`, `"ON"`/`"OFF"`,
+and `1`/`0` each decode exactly when the expose declares them, and any other
+value is a per-property decode issue that leaves valid siblings intact.
 
 The plan builds support `{"state":{},"operations":{}}` through
-`newBinarySensorPlan`, requires publish access, forbids set access, and creates
-no command route; get access alone controls startup `/get`. An absent,
-non-scalar, or identical on/off pair, a duplicate root, a foreign claim on the
-property, or set
-access omits occupancy without affecting valid siblings. The contribution is
-supplemental, so a light or relay that also reports occupancy keeps its actuator
-kind and an occupancy-only Device is a sensor.
+`newBinarySensorPlan`, forbids set access, and creates no command route; get
+access alone controls startup `/get`. An absent, non-scalar, or identical on/off
+pair, an empty property, a foreign claim on the property, or set access omits
+only that Entity without affecting valid siblings. The contribution is
+supplemental, so a light or relay that also reports a binary reading keeps its
+actuator kind and a binary-only Device is a sensor.
 
-Occupancy is not a device-model special case and needs no model table. A new
-model with the same declared binary expose needs only a captured regression
-fixture.
+Occupancy is the first `binarySensorMappings` record and the only one with
+captured evidence. A record describes capability data — one exact expose name
+and its Entity identity — not a device model, and a new model with the same
+declared expose needs only a captured regression fixture. A future contact,
+leak, or smoke capability is one more record plus captured contract tests, not
+new translation code; none of those capabilities is implemented yet, and
+discovery does not support an expose without a matching record.
 
 Evidence: `testdata/bridge-devices-3rsnl02043z.json` and
 `testdata/state-3rsnl02043z.json` are handcrafted minimal sanitized shapes of a
@@ -177,8 +202,9 @@ linkquality.
 3. Run `mise run validate`. Existing discovery, command, reconciliation, and
    race-enabled runtime tests must continue to pass.
 
-`capability_catalog_test.go` uses synthetic, test-only sensor/setting mappings to
-prove that these additions need data rather than a new translation implementation.
+`capability_catalog_test.go` uses synthetic, test-only sensor, binary, and
+setting mappings to prove that these additions need data rather than a new
+translation implementation.
 `discovery_contract_test.go` retains literal device contracts independent of the
 tables. Synthetic extension examples do not add unverified production capabilities.
 
