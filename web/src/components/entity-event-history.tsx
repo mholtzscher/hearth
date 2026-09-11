@@ -94,7 +94,10 @@ function EventHistoryScope({
                   <TableRow key={entry.event_id}>
                     <TableCell>{entry.name}</TableCell>
                     <TableCell>
-                      <StatusChip status={entry.disposition} />
+                      <StatusChip
+                        status={entry.disposition}
+                        tone={entry.disposition === "accepted" ? "success" : undefined}
+                      />
                     </TableCell>
                     <TableCell className="font-mono text-xs">
                       {entry.rejection_code ?? "—"}

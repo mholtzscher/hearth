@@ -44,7 +44,6 @@ export function statusTone(status: string): Tone {
     case "healthy":
     case "available":
     case "satisfied":
-    case "accepted":
     case "ready":
     case "ok":
       return "success";
@@ -72,9 +71,18 @@ const toneClass: Record<Tone, string> = {
   info: "border-link/35 bg-link/10 text-link",
 };
 
-export function StatusChip({ label, status }: { label?: string; status: string }) {
+/** Status badge with an optional context-specific tone override. */
+export function StatusChip({
+  label,
+  status,
+  tone,
+}: {
+  label?: string;
+  status: string;
+  tone?: Tone;
+}) {
   return (
-    <Badge variant="outline" className={toneClass[statusTone(status)]}>
+    <Badge variant="outline" className={toneClass[tone ?? statusTone(status)]}>
       {label ? `${label}: ${status}` : status}
     </Badge>
   );
