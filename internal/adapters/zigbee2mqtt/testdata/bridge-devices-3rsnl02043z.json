@@ -1,0 +1,102 @@
+[
+  {
+    "ieee_address": "0x00124b0024abcd05",
+    "type": "Router",
+    "supported": true,
+    "disabled": false,
+    "friendly_name": "fixture-night-light",
+    "description": "Sanitized Fixture Night Light",
+    "interview_state": "SUCCESSFUL",
+    "endpoints": {
+      "1": {}
+    },
+    "definition": {
+      "model": "3RSNL02043Z",
+      "vendor": "Third Reality",
+      "description": "Zigbee multi-function night light",
+      "exposes": [
+        {
+          "type": "binary",
+          "name": "occupancy",
+          "property": "occupancy",
+          "access": 1,
+          "value_on": true,
+          "value_off": false
+        },
+        {
+          "type": "light",
+          "features": [
+            {
+              "type": "binary",
+              "name": "state",
+              "property": "state",
+              "access": 7,
+              "value_on": "ON",
+              "value_off": "OFF",
+              "value_toggle": "TOGGLE"
+            },
+            {
+              "type": "numeric",
+              "name": "brightness",
+              "property": "brightness",
+              "access": 7,
+              "value_min": 0,
+              "value_max": 254
+            },
+            {
+              "type": "composite",
+              "name": "color_xy",
+              "property": "color",
+              "access": 7,
+              "features": [
+                {"type": "numeric", "name": "x", "property": "x", "access": 7},
+                {"type": "numeric", "name": "y", "property": "y", "access": 7}
+              ]
+            }
+          ]
+        },
+        {
+          "type": "enum",
+          "name": "effect",
+          "property": "effect",
+          "access": 2,
+          "values": [
+            "blink",
+            "breathe",
+            "okay",
+            "channel_change",
+            "finish_effect",
+            "stop_effect",
+            "colorloop",
+            "stop_colorloop"
+          ]
+        },
+        {
+          "type": "enum",
+          "name": "power_on_behavior",
+          "property": "power_on_behavior",
+          "access": 7,
+          "values": ["off", "on", "toggle", "previous"]
+        },
+        {
+          "type": "numeric",
+          "name": "illuminance",
+          "property": "illuminance",
+          "access": 5,
+          "unit": "lx"
+        },
+        {
+          "type": "numeric",
+          "name": "linkquality",
+          "property": "linkquality",
+          "access": 1,
+          "unit": "lqi",
+          "value_min": 0,
+          "value_max": 255
+        }
+      ]
+    },
+    "software_build_id": "v1.00.86",
+    "power_source": "Mains (single phase)"
+  }
+]

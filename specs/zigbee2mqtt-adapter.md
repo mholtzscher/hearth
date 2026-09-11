@@ -6,15 +6,15 @@
 **Date:** 2026-09-01
 **Baseline:** branch `z2m` at `fd9d55b`
 **Depends on:** `adapter-owned-mapping-inventory.md`
-**Live evidence:** Zigbee2MQTT 2.13.0 and 2.14.1; Third Reality 3RCB01057Z and 3RSB22BZ; NATS Server 2.12 MQTT 3.1.1 listener
+**Live evidence:** Zigbee2MQTT 2.13.0 and 2.14.1; Third Reality 3RCB01057Z, 3RSB22BZ, and 3RSNL02043Z; NATS Server 2.12 MQTT 3.1.1 listener
 
 ## Problem
 
-Hearth can observe and control one Home Assistant-managed light through a disposable migration Adapter, but it cannot natively own lights, relays, sensors, and button Event sources paired through Zigbee2MQTT. Removing Home Assistant requires an Adapter that discovers Zigbee lights, relays, sensors, and buttons, preserves canonical Hearth identity, projects power, brightness, color-temperature, native XY and HS color, color-mode, ambient-temperature, link-quality, startup-temperature, and power-on-behavior State, reports named button Events, reports health and availability, and translates Commands without adding Zigbee2MQTT concepts to Core.
+Hearth can observe and control one Home Assistant-managed light through a disposable migration Adapter, but it cannot natively own lights, relays, sensors, and button Event sources paired through Zigbee2MQTT. Removing Home Assistant requires an Adapter that discovers Zigbee lights, relays, sensors, and buttons, preserves canonical Hearth identity, projects power, brightness, color-temperature, native XY and HS color, color-mode, ambient-temperature, ambient-illuminance, binary-occupancy, link-quality, startup-temperature, and power-on-behavior State, reports named button Events, reports health and availability, and translates Commands without adding Zigbee2MQTT concepts to Core.
 
 Zigbee2MQTT, the coordinator, and the MQTT broker remain operator-managed specialist services. The Adapter bridges Zigbee2MQTT's MQTT 3.1.1 contract to the Hearth Adapter SDK rather than reimplementing Zigbee or owning those services.
 
-The first household Device is a Third Reality 3RCB01057Z on Zigbee2MQTT 2.13.0. A Third Reality 3RSB22BZ button on Zigbee2MQTT 2.14.1 supplies the first physical Event-source evidence. The deployment uses one file-backed NATS 2.12 server for native Hearth NATS and its MQTT listener. Live payloads include finite fractional brightness values, so decoding cannot require integer JSON syntax.
+The first household Device is a Third Reality 3RCB01057Z on Zigbee2MQTT 2.13.0. A Third Reality 3RSB22BZ button on Zigbee2MQTT 2.14.1 supplies the first physical Event-source evidence. A passive capture from a Third Reality 3RSNL02043Z night light on host Wanda on 2026-09-11 (firmware `v1.00.86`) supplies the ambient-illuminance and binary-occupancy evidence; no physical command was exercised there. The deployment uses one file-backed NATS 2.12 server for native Hearth NATS and its MQTT listener. Live payloads include finite fractional brightness values, so decoding cannot require integer JSON syntax.
 
 ## Decision and scope
 
@@ -26,7 +26,7 @@ Hearth HTTP -> hearthd -> native Core NATS -> Go Adapter SDK Session
     -> Zigbee2MQTT -> Zigbee coordinator -> device
 ```
 
-The Adapter registers every eligible physical light, relay, sensor, and button expose in Zigbee2MQTT's retained `bridge/devices` inventory. One IEEE address maps to one canonical Hearth Device with Device kind `light`, `relay`, or `sensor`. Explicit light, relay, and sensor planners share one expose index: a non-empty light result is the primary family, otherwise a non-empty relay result wins, and ambient-temperature sensor plans supplement either family or form a sensor-only Device. Unscoped and endpoint-scoped light exposes map to power plus optional brightness, color-temperature, native XY color, native HS color, read-only color-mode, and optional startup-temperature Entities; switch exposes map to power through the same power constructor; numeric Celsius exposes map to read-only temperature Entities; device-root `linkquality`, `power_on_behavior`, `effect`, and publish-only `action` exposes map to a read-only link-quality sensor, a power-on-behavior setting, a stateless effect action, and a stateless Event source. The color implementation contract, including satisfaction tolerances and activity semantics, is `specs/z2m-bulb-color.md`. The bulb-attribute contract for linkquality, startup temperature, power-on behavior, and dispatched effects is `specs/z2m-bulb-attributes.md`; the button Event mapping and freshness rule are documented in `docs/zigbee2mqtt-capabilities.md`.
+The Adapter registers every eligible physical light, relay, sensor, and button expose in Zigbee2MQTT's retained `bridge/devices` inventory. One IEEE address maps to one canonical Hearth Device with Device kind `light`, `relay`, or `sensor`. Explicit light, relay, sensor, link-quality, and action planners share one expose index: a non-empty light result is the primary family, otherwise a non-empty relay result wins, and every later plan is supplemental, so temperature, humidity, illuminance, battery, and occupancy Entities supplement either actuator family and form a sensor-only Device only when no light or relay plan exists, because binary capability planning runs inside the sensor family. Unscoped and endpoint-scoped light exposes map to power plus optional brightness, color-temperature, native XY color, native HS color, read-only color-mode, and optional startup-temperature Entities; switch exposes map to power through the same power constructor; numeric Celsius exposes map to read-only temperature Entities; other exact-unit ambient numeric exposes (`humidity` in `%`, `illuminance` in `lx`, `battery` in `%`) map to read-only number sensors and a resolved root binary expose named by a binary capability record (`occupancy` first) maps to a read-only boolean sensor; device-root `linkquality`, `power_on_behavior`, `effect`, and publish-only `action` exposes map to a read-only link-quality sensor, a power-on-behavior setting, a stateless effect action, and a stateless Event source. The color implementation contract, including satisfaction tolerances and activity semantics, is `specs/z2m-bulb-color.md`. The bulb-attribute contract for linkquality, startup temperature, power-on behavior, and dispatched effects is `specs/z2m-bulb-attributes.md`; the button Event mapping and freshness rule and the ambient numeric and binary capability tables are documented in `docs/zigbee2mqtt-capabilities.md`.
 
 Core remains the only owner of Bindings and canonical identity. At startup, the Adapter pages through `Session.ListOwnedMappings`, reconciles persisted ownership against the complete Zigbee2MQTT inventory, and reports missing Devices or capabilities unavailable. It owns no state file or checkpoint.
 
@@ -34,8 +34,8 @@ The private Zigbee2MQTT package owns vendor payloads, topic rules, MQTT lifecycl
 
 V1 includes:
 
-- automatic discovery of all eligible unscoped and resolvable endpoint-scoped physical lights, relays, and temperature sensors with light-over-relay primary precedence and supplemental temperature merged into one IEEE registration;
-- power, brightness, color-temperature, native XY color, native HS color, read-only color-mode, read-only ambient-temperature, read-only link-quality, startup-temperature and power-on-behavior settings, stateless effect actions, and stateless button Event sources with stable IEEE and endpoint identity;
+- automatic discovery of all eligible unscoped and resolvable endpoint-scoped physical lights, relays, and sensors with light-over-relay primary precedence and every supplemental temperature, humidity, illuminance, battery, occupancy, link-quality, and action plan merged into one IEEE registration;
+- power, brightness, color-temperature, native XY color, native HS color, read-only color-mode, read-only ambient-temperature, humidity, illuminance, and battery readings, read-only binary occupancy, read-only link-quality, startup-temperature and power-on-behavior settings, stateless effect actions, and stateless button Event sources with stable IEEE and endpoint identity;
 - mutable friendly-name routing and display metadata;
 - Adapter health, explicit Entity availability, retained or cached State, and startup refresh;
 - a private generic runtime coordinator that serializes power, brightness, color-temperature, color, setting, and effect Commands per IEEE Device and publishes fresh post-dispatch evidence for observed Commands while completing dispatched effect Commands on acceptance;
@@ -246,11 +246,11 @@ An eligible power expose also produces brightness when it has exactly one unambi
 
 `value_step` does not change the canonical Hearth step. V1 support has maximum 100 and step 1. Missing or incompatible brightness does not disqualify power. An eligible light power expose also produces color temperature when it has exactly one unambiguous numeric `color_temp` feature with publish, set, and get access, a Device-unique non-empty property, and an integer mired range inside 100–1000 mireds with minimum below maximum; support reports the discovered range with step 1. Color-temperature State is the object form `{active, value}` and a command is satisfied only on an exact active match.
 
-A color candidate is a direct light composite feature named `color_xy` or `color_hs` with a nonempty property and state, set, and get access, carrying exactly one numeric child per required coordinate (`x`/`y` or `hue`/`saturation`) with matching child properties and the same access. Explicit child bounds must match the upstream domain (XY 0..1, hue 0..360, saturation 0..100); standard boundless children are allowed. One XY and one HS composite may share the `color` property within the same resolved light root; duplicate same-representation claims, cross-root claims, and unrelated claims disqualify the affected candidates. Dual bulbs plan both native Entities with no conversion. Mode is the companion `color_mode` property at root (or `color_mode_<endpoint-label>` when scoped); discovery omits the affected color and mode capabilities when companion ownership is ambiguous. A temperature-only root with no reported mode stays active through the missing-mode fallback; an advertised but unplannable color composite keeps the root mode-sensitive with no silent fallback. A numeric `temperature` expose with unit `°C`, a Device-unique non-empty property, publish access, and no set access produces a read-only `hearth.temperature/v1` Entity with integer milli-Celsius State and empty operation support; get access alone controls its get properties. Transition, scene, and unrelated configuration features neither create Entities nor disqualify valid siblings. `linkquality`, `color_temp_startup`, `power_on_behavior`, and `effect` plan Entities per §Bulb attributes below; all other color, diagnostic, and configuration features neither create Entities nor disqualify valid siblings.
+A color candidate is a direct light composite feature named `color_xy` or `color_hs` with a nonempty property and state, set, and get access, carrying exactly one numeric child per required coordinate (`x`/`y` or `hue`/`saturation`) with matching child properties and the same access. Explicit child bounds must match the upstream domain (XY 0..1, hue 0..360, saturation 0..100); standard boundless children are allowed. One XY and one HS composite may share the `color` property within the same resolved light root; duplicate same-representation claims, cross-root claims, and unrelated claims disqualify the affected candidates. Dual bulbs plan both native Entities with no conversion. Mode is the companion `color_mode` property at root (or `color_mode_<endpoint-label>` when scoped); discovery omits the affected color and mode capabilities when companion ownership is ambiguous. A temperature-only root with no reported mode stays active through the missing-mode fallback; an advertised but unplannable color composite keeps the root mode-sensitive with no silent fallback. A numeric `temperature` expose with unit `°C`, a Device-unique non-empty property, publish access, and no set access produces a read-only `hearth.temperature/v1` Entity with integer milli-Celsius State and empty operation support; get access alone controls its get properties. Other ambient numeric exposes map through the capability catalog documented in `docs/zigbee2mqtt-capabilities.md`: a resolved root numeric expose named `humidity` (unit `%`), `illuminance` (unit `lx`), or `battery` (unit `%`) with publish access, no set access, and a non-empty Device-unique property supplied by inventory produces a read-only `hearth.numericsensor/v1` Entity whose finite State preserves fractions, with get access alone controlling refresh; humidity and battery use 0–100 percent bounds and illuminance uses a fixed 0–1000000000 lx validation envelope because Zigbee2MQTT omits ambient bounds. A resolved root binary expose whose name matches a binary capability record (`occupancy` first, documented in `docs/zigbee2mqtt-capabilities.md`) and that carries publish access, no set access, a non-empty Device-unique State property, and present distinct `value_on`/`value_off` scalars produces a read-only `hearth.binarysensor/v1` Entity with `{"state":{},"operations":{}}` support, taking its State property and endpoint from inventory and decoding exactly the declared scalars to `true` and `false`; an absent, non-scalar, or identical pair, an empty property, a foreign property claim, set access, or a same-key duplicate root omits only that Entity without affecting valid siblings, while two roots of one capability on distinct resolved endpoints remain distinct `-ep<N>` Entities. Transition, scene, and unrelated configuration features neither create Entities nor disqualify valid siblings. `linkquality`, `color_temp_startup`, `power_on_behavior`, and `effect` plan Entities per §Bulb attributes below; all other color, diagnostic, and configuration features neither create Entities nor disqualify valid siblings.
 
 ### Bulb attributes (linkquality, startup temperature, power-on behavior, effect)
 
-The full wire-to-entity contract is `specs/z2m-bulb-attributes.md` §Interfaces; this section binds it to adapter planning. The adapter maps only these four named exposes with exact-match eligibility; malformed siblings are omitted without suppressing valid ones.
+The full wire-to-entity contract is `specs/z2m-bulb-attributes.md` §Interfaces; this section binds those four exposes to adapter planning. Exact-match eligibility in this section covers only `linkquality`, `color_temp_startup`, `power_on_behavior`, and `effect`; §Discovery and `docs/zigbee2mqtt-capabilities.md` define the separate `temperature`, `humidity`, `illuminance`, `battery`, and `occupancy` mappings, and §Button action Events defines the `action` Event source. Malformed siblings are omitted without suppressing valid ones.
 
 - `linkquality`: device-root numeric expose with the publish bit required and the set bit forbidden (`access & 1 != 0 && access & 2 == 0`); plans a `hearth.numericsensor/v1` Entity. Decode admits exact integers 0–255 only; fractional or out-of-range payloads are per-property decode issues with siblings intact. Support is `{"state": {"minimum": 0, "maximum": 255, "unit": "lqi"}}`; unit `""` maps to `"lqi"`, `"lqi"` passes through, and any other unit omits the Entity. No command translator; get access alone controls its get properties, so gettable linkquality joins startup refresh while publish-only linkquality does not. A device-kind-agnostic supplement that never gates or joins the power family.
 - `color_temp_startup`: nested `light`-feature numeric with `access & 7 == 7`; plans a `hearth.numericsetting/v1` Entity with discovered mired bounds from exact-integer `value_min`/`value_max` within 100–1000 and minimum below maximum. Exactly one `previous`↔65535 preset yields choice `previous`; no `previous` preset yields empty choices; an advertised but invalid or duplicate `previous` mapping omits only that Entity. Planned in `planner_light.go` as an optional sibling of a power-eligible root. Key `startupcolortemp`.
@@ -267,11 +267,11 @@ Each non-retained Device message containing a present supported action produces 
 
 ### Endpoint resolution
 
-- Unscoped exposes use Entity keys `power`, `brightness`, `colortemp`, `colorxy`, `colorhs`, `colormode`, `temperature`, `linkquality`, `startupcolortemp`, `poweronbehavior`, `effect`, and `action`.
+- Unscoped exposes use Entity keys `power`, `brightness`, `colortemp`, `colorxy`, `colorhs`, `colormode`, `temperature`, `humidity`, `illuminance`, `battery`, `occupancy`, `linkquality`, `startupcolortemp`, `poweronbehavior`, `effect`, and `action`.
 - Scoped exposes resolve `expose.endpoint` against numeric endpoint keys and `endpoints[*].name`.
 - Resolution requires exactly one numeric endpoint.
-- Scoped keys are `power-ep<N>`, `brightness-ep<N>`, `colortemp-ep<N>`, `colorxy-ep<N>`, `colorhs-ep<N>`, `colormode-ep<N>`, `temperature-ep<N>`, `linkquality-ep<N>`, `startupcolortemp-ep<N>`, `poweronbehavior-ep<N>`, `effect-ep<N>`, and `action-ep<N>`.
-- Duplicate root exposes, duplicate numeric endpoints for one Entity kind, unresolved names, or duplicate MQTT properties isolate the ambiguous expose.
+- Scoped keys are `power-ep<N>`, `brightness-ep<N>`, `colortemp-ep<N>`, `colorxy-ep<N>`, `colorhs-ep<N>`, `colormode-ep<N>`, `temperature-ep<N>`, `humidity-ep<N>`, `illuminance-ep<N>`, `battery-ep<N>`, `occupancy-ep<N>`, `linkquality-ep<N>`, `startupcolortemp-ep<N>`, `poweronbehavior-ep<N>`, `effect-ep<N>`, and `action-ep<N>`.
+- Same-key duplicate root exposes, duplicate numeric endpoints for one Entity kind, unresolved names, or duplicate MQTT properties isolate the ambiguous expose; distinct resolved endpoints for one capability stay distinct Entities.
 - One malformed expose does not discard independent valid exposes on the Device unless their identity or property routes conflict.
 
 One registration contains every currently eligible Entity for an IEEE Device. More than 64 eligible Entities is an unsupported Device shape and is rejected rather than split. This is the registration protocol bound, not a practical v1 Device limit.
@@ -284,14 +284,14 @@ For normalized IEEE `0x00124b0024abcdef`:
 |---|---|---|
 | Binding key | `z2m-00124b0024abcdef` | same Binding |
 | Device external ID | `0x00124b0024abcdef` | same Device |
-| Entity key | `power`, `brightness`, `colortemp`, `colorxy`, `colorhs`, `colormode`, `temperature`, `linkquality`, `startupcolortemp`, `poweronbehavior`, `effect`, `action` | `power-ep1`, `brightness-ep1`, `colortemp-ep1`, `colorxy-ep1`, `colorhs-ep1`, `colormode-ep1`, `temperature-ep1`, `linkquality-ep1`, `startupcolortemp-ep1`, `poweronbehavior-ep1`, `effect-ep1`, `action-ep1` |
+| Entity key | `power`, `brightness`, `colortemp`, `colorxy`, `colorhs`, `colormode`, `temperature`, `humidity`, `illuminance`, `battery`, `occupancy`, `linkquality`, `startupcolortemp`, `poweronbehavior`, `effect`, `action` | `power-ep1`, `brightness-ep1`, `colortemp-ep1`, `colorxy-ep1`, `colorhs-ep1`, `colormode-ep1`, `temperature-ep1`, `humidity-ep1`, `illuminance-ep1`, `battery-ep1`, `occupancy-ep1`, `linkquality-ep1`, `startupcolortemp-ep1`, `poweronbehavior-ep1`, `effect-ep1`, `action-ep1` |
 | Entity external ID | `0x00124b0024abcdef/root/power` | `0x00124b0024abcdef/ep1/power` |
 
-Non-power external IDs replace the final `power` segment with `brightness`, `colortemp`, `temperature`, `linkquality`, `startupcolortemp`, `poweronbehavior`, `effect`, or `action`. Binding keys and external IDs never include `friendly_name`, so a rename changes routing and mutable metadata without changing identity.
+Non-power external IDs replace the final `power` segment with `brightness`, `colortemp`, `colorxy`, `colorhs`, `colormode`, `temperature`, `humidity`, `illuminance`, `battery`, `occupancy`, `linkquality`, `startupcolortemp`, `poweronbehavior`, `effect`, or `action`. Binding keys and external IDs never include `friendly_name`, so a rename changes routing and mutable metadata without changing identity.
 
-The Device name is trimmed `description` when non-empty, otherwise the exact valid `friendly_name`. Root Entity names are `Power`, `Brightness`, `Color Temperature`, `Color XY`, `Color Hue/Saturation`, `Color Mode`, `Temperature`, `Link Quality`, `Startup Color Temperature`, `Power-On Behavior`, `Effect`, and `Action`. Scoped names prefix the endpoint label, with `ep<N>` as fallback. A descriptor over Hearth's 128-rune limit is rejected, never truncated.
+The Device name is trimmed `description` when non-empty, otherwise the exact valid `friendly_name`. Root Entity names are `Power`, `Brightness`, `Color Temperature`, `Color XY`, `Color Hue/Saturation`, `Color Mode`, `Temperature`, `Humidity`, `Illuminance`, `Battery`, `Occupancy`, `Link Quality`, `Startup Color Temperature`, `Power-On Behavior`, `Effect`, and `Action`. Scoped names prefix the endpoint label, with `ep<N>` as fallback. A descriptor over Hearth's 128-rune limit is rejected, never truncated.
 
-Registration uses Device kind `light`, `relay`, or `sensor`, generated `powerv1`, `brightnessv1`, `colortempv1`, `colorxyv1`, `colorhsv1`, `colormodev1`, `temperaturev1`, `numericsensorv1`, `enumsettingv1`, `numericsettingv1`, `enumactionv1`, and `enumeventv1` descriptors, and additive Core reconciliation. Re-registration updates names, external IDs, and normalized support without changing canonical IDs. Reconciliation sends the coordinator an immutable MQTT route snapshot.
+Registration uses Device kind `light`, `relay`, or `sensor`, generated `powerv1`, `brightnessv1`, `colortempv1`, `colorxyv1`, `colorhsv1`, `colormodev1`, `temperaturev1`, `numericsensorv1`, `binarysensorv1`, `enumsettingv1`, `numericsettingv1`, `enumactionv1`, and `enumeventv1` descriptors, and additive Core reconciliation. Re-registration updates names, external IDs, and normalized support without changing canonical IDs. Reconciliation sends the coordinator an immutable MQTT route snapshot.
 
 ### Owned-mapping reconciliation
 
@@ -348,7 +348,7 @@ Startup order is fixed:
 8. Call `Session.SetHealth(healthy)` and wait for acknowledgement.
 9. Publish staged fresh availability batches.
 10. Publish staged retained or cached State.
-11. Publish `/get` for every current Entity with non-empty get properties (power, brightness, color-temperature, color, gettable temperature, gettable linkquality, and gettable settings); publish-only temperature and publish-only linkquality receive no `/get`. Color and mode refresh under the shared `color` attribute, so the read-only mode plan carries no independent get properties.
+11. Publish `/get` for every current Entity with non-empty get properties (power, brightness, color-temperature, color, gettable temperature, humidity, illuminance, and battery sensors, gettable occupancy, gettable linkquality, and gettable settings); publish-only sensors and publish-only linkquality receive no `/get`. Color and mode refresh under the shared `color` attribute, so the read-only mode plan carries no independent get properties.
 12. Begin live operation. Messages received during steps 5 through 11 remain queued by generation and topic.
 
 SDK health remains unknown through step 7. A valid synchronized inventory with no eligible Entities becomes healthy and logs that fact.
@@ -425,7 +425,7 @@ Command upstream:     p * M / 100, where 0 <= p <= 100
 
 Command JSON may contain a fraction. Observation normalization produces an integer from 0 through 100, and outcome matching uses that integer. For example, `63.75` satisfies a 25% Command when normalization yields 25.
 
-Color temperature uses native integer mireds within the Entity's discovered range, published as object State `{active, value}` with outcome matching on exact active equality. XY color uses scaled integers in ten-thousandths (`3125` means `0.3125`) with per-axis tolerance 1; HS color uses whole degrees `0..359` (observed `360` canonicalizes to `0`) and whole percentage points with circular hue tolerance 2 and saturation tolerance 1. Each coordinate Entity is active exactly when the same-message `color_mode` selects it; messages missing the mode or value skip that observation without cached assembly, and malformed values are per-Entity decode issues that leave valid siblings intact. The read-only mode Entity publishes reported `xy`, `hs`, and `color_temp` values. Ambient temperature uses integer milli-Celsius State from -273150 through 1000000 (for example, `21.5` becomes `21500`); upstream values are parsed exactly and values requiring sub-milli precision, numeric strings, or out-of-range values are rejected rather than clamped, truncated, or rounded. Temperature Entities are read-only: their plans carry a nil command translator, never enter command routes, and multi-property plans require complete same-message evidence with no cross-message State cache. Link-quality, startup-temperature, and power-on-behavior values decode per the bulb-attribute contract (§Discovery): integer-only linkquality and startup payloads, the 65535↔`previous` mapping only when supported, and per-Entity decode issues that leave valid siblings intact. Effect and action Event Entities hold no State and publish no Observations.
+Color temperature uses native integer mireds within the Entity's discovered range, published as object State `{active, value}` with outcome matching on exact active equality. XY color uses scaled integers in ten-thousandths (`3125` means `0.3125`) with per-axis tolerance 1; HS color uses whole degrees `0..359` (observed `360` canonicalizes to `0`) and whole percentage points with circular hue tolerance 2 and saturation tolerance 1. Each coordinate Entity is active exactly when the same-message `color_mode` selects it; messages missing the mode or value skip that observation without cached assembly, and malformed values are per-Entity decode issues that leave valid siblings intact. The read-only mode Entity publishes reported `xy`, `hs`, and `color_temp` values. Ambient temperature uses integer milli-Celsius State from -273150 through 1000000 (for example, `21.5` becomes `21500`); upstream values are parsed exactly and values requiring sub-milli precision, numeric strings, or out-of-range values are rejected rather than clamped, truncated, or rounded. Humidity, illuminance, and battery use `hearth.numericsensor/v1`: JSON numbers become finite State with fractions preserved, publish is required, set is forbidden, and get access alone controls refresh; humidity and battery use percent State in 0–100 while illuminance uses lux State under a fixed 0–1000000000 validation envelope. Occupancy uses `hearth.binarysensor/v1`: the expose's declared `value_on` and `value_off` scalars decode to `true` and `false`, and any other value, including a scalar of the wrong JSON type, is a per-property decode issue that leaves valid siblings intact. Temperature, humidity, illuminance, battery, occupancy, color-mode, and link-quality Entities are read-only: their plans carry a nil command translator, never enter command routes, and multi-property plans require complete same-message evidence with no cross-message State cache. Link-quality, startup-temperature, and power-on-behavior values decode per the bulb-attribute contract (§Discovery): integer-only linkquality and startup payloads, the 65535↔`previous` mapping only when supported, and per-Entity decode issues that leave valid siblings intact. Effect and action Event Entities hold no State and publish no Observations.
 
 The Adapter does not clamp out-of-range values, parse numeric strings, infer power from zero brightness, or infer brightness from power. A brightness Command publishes only its brightness property.
 
@@ -439,7 +439,7 @@ The Adapter does not infer occurrence identity from value changes. Two separate 
 
 A private runtime coordinator is the only owner of active routes and route revisions, MQTT generations and the dispatchable connection, per-IEEE FIFO queues, Command attempts, matchers, claimed State, and deadline timers. The connection loop sends it immutable route snapshots, State candidates carrying the connection generation and route revision, and Entity Event candidates. The coordinator changes only its state and completion events; blocking MQTT and JetStream work runs in tracked effect goroutines. The MQTT relay keeps its mutex because Paho callbacks, queue consumption, and closure remain concurrent.
 
-One long-lived generic SDK handler submits each Command to the coordinator and waits only for its buffered result, caller cancellation, or coordinator shutdown. It never reads routes directly. Generated `powerv1`, `brightnessv1`, `colortempv1`, `colorxyv1`, `colorhsv1`, `enumsettingv1`, `numericsettingv1`, and `enumactionv1` facades decode and validate parameters and build the MQTT payload and normalized target; the temperature, color-mode, and link-quality facades build descriptors and Observations only and their read-only plans never enter command routes. The Adapter does not decode Hearth parameters by hand.
+One long-lived generic SDK handler submits each Command to the coordinator and waits only for its buffered result, caller cancellation, or coordinator shutdown. It never reads routes directly. Generated `powerv1`, `brightnessv1`, `colortempv1`, `colorxyv1`, `colorhsv1`, `enumsettingv1`, `numericsettingv1`, and `enumactionv1` facades decode and validate parameters and build the MQTT payload and normalized target; the temperature, color-mode, numeric-sensor, and binary-sensor facades build descriptors and Observations only and their read-only plans never enter command routes. The Adapter does not decode Hearth parameters by hand.
 
 The coordinator queues Commands FIFO by IEEE address. Queue time consumes the existing absolute deadline; an expired queued Command never reaches MQTT. Different IEEE Devices may dispatch concurrently. When a Device becomes idle, the coordinator records dispatch immediately before it launches the QoS 1 `/set` effect with one deterministic JSON object containing every planned set property at `<base>/<friendly_name>/set`; observed Commands additionally install their matcher first. It keeps handling State, route changes, deadlines, and other Device queues while PUBACK is pending.
 
@@ -566,6 +566,11 @@ entitytypes/
     ├── examples.json
     ├── state.schema.json
     └── support.schema.json
+└── binarysensorv1/
+    ├── entitytype.json
+    ├── examples.json
+    ├── state.schema.json
+    └── support.schema.json
 └── enumsettingv1/
     ├── entitytype.json
     ├── examples.json
@@ -585,6 +590,8 @@ sdk/adapter/
 └── temperaturev1/
     └── zz_generated_*.go
 └── numericsensorv1/
+    └── zz_generated_*.go
+└── binarysensorv1/
     └── zz_generated_*.go
 └── enumsettingv1/
     └── zz_generated_*.go
@@ -614,6 +621,7 @@ internal/adapters/
     ├── entity_startupcolortemp.go
     ├── entity_poweronbehavior.go
     ├── entity_effect.go
+    ├── entity_binarysensor.go
     ├── expose_index.go
     ├── mqtt.go
     ├── observation.go
@@ -636,7 +644,9 @@ internal/adapters/
         ├── bridge-devices-relay-plug.json
         ├── state-relay-plug.json
         ├── bridge-devices-temperature.json
-        └── state-temperature.json
+        ├── state-temperature.json
+        ├── bridge-devices-3rsnl02043z.json
+        └── state-3rsnl02043z.json
 README.md
 mise.toml
 .ko.yaml
@@ -666,9 +676,9 @@ Tests must state the protected behavior and plausible defect. Oracles come from 
 | Layer | Required behavior and likely defects |
 |---|---|
 | Config | Plain MQTT URL shape, secret rejection, and slug routes catch unsupported security claims and ambiguous topics. |
-| Discovery | Root and endpoint fixtures map deterministically without friendly-name identity, wrong endpoints, color leakage, or access-bit mistakes. XY-only, HS-only, dual, temperature-only, and color-without-temperature Devices discover exactly the intended optional Entities. Bulb-attribute fixtures prove linkquality/startup/power/effect eligibility, `values`/`presets` handling, and sibling isolation. |
+| Discovery | Root and endpoint fixtures map deterministically without friendly-name identity, wrong endpoints, color leakage, or access-bit mistakes. XY-only, HS-only, dual, temperature-only, and color-without-temperature Devices discover exactly the intended optional Entities. Bulb-attribute fixtures prove linkquality/startup/power/effect eligibility, `values`/`presets` handling, and sibling isolation, while the captured night-light fixture proves illuminance and occupancy eligibility on a light Device with sibling isolation. Binary fixtures additionally prove that the inventory State property and the declared scalar pair select the mapping without the property matching the expose name, and that distinct endpoint-scoped roots stay distinct while same-key duplicates are omitted. |
 | Brightness | Exhaustive or property tests prove every Hearth 0 to 100 Command normalizes back after scaling, including fractions and boundaries. |
-| State | Multi-property examples prevent endpoint cross-talk, inferred power, and malformed-value fanout failure. |
+| State | Multi-property examples prevent endpoint cross-talk, inferred power, and malformed-value fanout failure. Ambient numeric fixtures preserve fractional humidity, illuminance, and battery values, and occupancy decodes only its declared on/off scalars. |
 | Entity Events | Captured button inventory and payloads prove exact support names, stateless registration, no route or `/get`, one Event per fresh non-retained action, repeated-equal occurrences, retained replay rejection, and invalid-action sibling isolation. |
 | Reconciliation | Present registrations and absent owned mappings converge without canonical ID loss, deletion, or restart ambiguity. |
 | Health and availability | Recoverable bridge failures, isolated Device errors, explicit reports, stale-report clearing, and exact reason codes prevent false health or availability. |
@@ -696,6 +706,7 @@ Against the shared file-backed NATS server, Zigbee2MQTT 2.13.0, and Third Realit
 9. Remove or hide a capability during downtime in a controlled fixture or process test. Owned mappings must become unavailable rather than unknown.
 10. Restart NATS and Zigbee2MQTT. Recovery must transition unhealthy to healthy and require fresh availability.
 11. Verify normal logs contain no raw household inventory, credentials, or payload dumps.
+12. Passive evidence only: the sanitized Third Reality 3RSNL02043Z night-light fixtures (`testdata/bridge-devices-3rsnl02043z.json`, `testdata/state-3rsnl02043z.json`) record the 2026-09-11 capture on host Wanda (firmware `v1.00.86`) for illuminance and occupancy discovery and State; no physical command was exercised against that Device and both Entities are read-only.
 
 The unfinished disposable Paho smoke test from discovery is not evidence. D1 replaces it with a checked-in deterministic NATS MQTT integration test.
 
@@ -712,8 +723,8 @@ The unfinished disposable Paho smoke test from discovery is not evidence. D1 rep
 
 #### Discovery and identity
 
-- [ ] Complete retained inventory registers every eligible physical root and endpoint light, relay, and temperature expose with one IEEE registration and light-over-relay precedence plus supplemental temperature.
-- [ ] One IEEE address creates one Device with power plus optional brightness, color-temperature, temperature, link-quality, startup-temperature, power-on-behavior, and effect sibling Entities.
+- [ ] Complete retained inventory registers every eligible physical root and endpoint light, relay, and sensor expose with one IEEE registration and light-over-relay precedence plus supplemental temperature, humidity, illuminance, battery, occupancy, link-quality, and action plans.
+- [ ] One IEEE address creates one Device with power plus optional brightness, color-temperature, temperature, humidity, illuminance, battery, occupancy, link-quality, startup-temperature, power-on-behavior, and effect sibling Entities.
 - [ ] IEEE and numeric endpoint identity preserve canonical IDs across restart and friendly-name changes.
 - [ ] Description changes update the Device name without changing identity.
 - [ ] Disabled, unsupported, incomplete, malformed, and ambiguous Devices or exposes follow the stated isolation rules.
@@ -732,7 +743,8 @@ The unfinished disposable Paho smoke test from discovery is not evidence. D1 rep
 
 #### State
 
-- [ ] Retained or cached State is accepted after registration, then active `/get` refreshes every Entity with non-empty get properties; publish-only temperature and publish-only linkquality receive no `/get`.
+- [ ] Retained or cached State is accepted after registration, then active `/get` refreshes every Entity with non-empty get properties; publish-only sensors and publish-only linkquality receive no `/get`.
+- [ ] Ambient humidity, illuminance, and battery values normalize to finite numeric State with fractions preserved, and occupancy decodes exactly the declared `value_on`/`value_off` scalars to boolean State while every other value stays a per-property decode issue that leaves siblings intact.
 - [ ] One multi-property payload projects each valid current Entity independently with one receive timestamp.
 - [ ] Power values use expose metadata.
 - [ ] Finite integer and fractional brightness values normalize to integer State from 0 through 100.
@@ -745,7 +757,7 @@ The unfinished disposable Paho smoke test from discovery is not evidence. D1 rep
 
 #### Commands
 
-- [ ] Power, brightness, color-temperature, color, setting, and effect parameters use generated typed SDK facades; temperature, color-mode, and link-quality plans carry no command translator and never enter command routes.
+- [ ] Power, brightness, color-temperature, color, setting, and effect parameters use generated typed SDK facades; temperature, humidity, illuminance, battery, occupancy, color-mode, and link-quality plans carry no command translator and never enter command routes.
 - [ ] Same-IEEE Commands remain FIFO until their linked or ordinary claimed-State disposition finishes, while different IEEE Devices may make progress concurrently.
 - [ ] Offline availability does not prevent an attempted `/set`.
 - [ ] Missing or replaced routes and non-context `/set` failures return `entity_unavailable` when a response remains possible; queued or `/set` deadline expiry sends no late response.

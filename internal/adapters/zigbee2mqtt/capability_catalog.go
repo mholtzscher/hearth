@@ -31,6 +31,13 @@ func ambientNumericSensors() []numericSensorMapping {
 			upstreamUnit: "%", unit: "%", minimum: 0, maximum: 100,
 		},
 		{
+			// The Third Reality 3RSNL02043Z night light reports a root
+			// illuminance expose in lux. The envelope is a validation bound,
+			// not a claimed operating range.
+			exposeName: "illuminance", key: "illuminance", displayName: "Illuminance",
+			upstreamUnit: "lx", unit: "lx", minimum: 0, maximum: 1e9,
+		},
+		{
 			exposeName: "battery", key: "battery", displayName: "Battery",
 			upstreamUnit: "%", unit: "%", minimum: 0, maximum: 100,
 		},
@@ -67,6 +74,32 @@ func smartPlugElectricalSensors() []numericSensorMapping {
 		{
 			exposeName: "voltage", key: "voltage", displayName: "Voltage",
 			upstreamUnit: "V", unit: "V", minimum: 0, maximum: 1e6,
+		},
+	}
+}
+
+// binarySensorMapping maps one exact Zigbee2MQTT binary expose to a
+// read-only Hearth Entity. The record carries capability identity only: the
+// root's Device-unique State property, endpoint, and declared value_on/
+// value_off all come from inventory, so a new on/off capability such as
+// contact, leak, or smoke is one record plus capture tests.
+//
+// This is capability data, not a device-model catalog or a planning language.
+type binarySensorMapping struct {
+	exposeName  string
+	key         string
+	displayName string
+}
+
+// binarySensorMappings preserves read-only binary capability order. These
+// records follow the numeric sensor records so the 3RSNL02043Z night light
+// keeps illuminance before occupancy.
+func binarySensorMappings() []binarySensorMapping {
+	return []binarySensorMapping{
+		{
+			// The Third Reality 3RSNL02043Z night light reports a device-root
+			// occupancy expose with declared true/false scalars.
+			exposeName: "occupancy", key: "occupancy", displayName: "Occupancy",
 		},
 	}
 }

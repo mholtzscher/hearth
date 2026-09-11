@@ -5,6 +5,7 @@ package devices
 import (
 	"fmt"
 
+	contractbinarysensorv1 "github.com/mholtzscher/hearth/entitytypes/binarysensorv1"
 	contractbrightnessv1 "github.com/mholtzscher/hearth/entitytypes/brightnessv1"
 	contractcolorhsv1 "github.com/mholtzscher/hearth/entitytypes/colorhsv1"
 	contractcolormodev1 "github.com/mholtzscher/hearth/entitytypes/colormodev1"
@@ -20,6 +21,7 @@ import (
 )
 
 const (
+	EntityTypeBinarysensorV1   EntityTypeID = "hearth.binarysensor/v1"
 	EntityTypeBrightnessV1     EntityTypeID = "hearth.brightness/v1"
 	EntityTypeColorhsV1        EntityTypeID = "hearth.colorhs/v1"
 	EntityTypeColormodeV1      EntityTypeID = "hearth.colormode/v1"
@@ -35,7 +37,12 @@ const (
 )
 
 func NewBuiltinTypeCatalog() (*TypeCatalog, error) {
-	definitions := make([]EntityTypeDefinition, 0, 12)
+	definitions := make([]EntityTypeDefinition, 0, 13)
+	binarysensorV1, err := newBinarysensorV1TypeDefinition(EntityTypeBinarysensorV1)
+	if err != nil {
+		return nil, err
+	}
+	definitions = append(definitions, binarysensorV1)
 	brightnessV1, err := newBrightnessV1TypeDefinition(EntityTypeBrightnessV1)
 	if err != nil {
 		return nil, err
@@ -97,6 +104,18 @@ func NewBuiltinTypeCatalog() (*TypeCatalog, error) {
 	}
 	definitions = append(definitions, temperatureV1)
 	return NewTypeCatalog(definitions)
+}
+
+func newBinarysensorV1TypeDefinition(id EntityTypeID) (EntityTypeDefinition, error) {
+	codecs, err := contractbinarysensorv1.Compile()
+	if err != nil {
+		return EntityTypeDefinition{}, fmt.Errorf("compile hearth.binarysensor/v1 codecs: %w", err)
+	}
+	definition, err := DefineEntityType(id, codecs.State, codecs.Support, contractbinarysensorv1.ValidateSupport, contractbinarysensorv1.ValidateState, contractbinarysensorv1.EqualState)
+	if err != nil {
+		return EntityTypeDefinition{}, err
+	}
+	return definition, nil
 }
 
 func newBrightnessV1TypeDefinition(id EntityTypeID) (EntityTypeDefinition, error) {

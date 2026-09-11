@@ -1,0 +1,15 @@
+{
+  "cases": [
+    {
+      "name": "boolean-sensor",
+      "support": {"state": {}, "operations": {}},
+      "states": [
+        {"value": true, "valid": true},
+        {"value": false, "valid": true},
+        {"value": "on", "valid": false},
+        {"value": 1, "valid": false}
+      ],
+      "operations": {}
+    }
+  ]
+}

@@ -200,7 +200,7 @@ function colorHSPresets(): { label: string; params: string }[] {
   ];
 }
 /** True when the Entity type declares at least one command operation.
-    Read-only types (color mode, ambient temperature) carry empty operations. */
+    Read-only types such as color mode and sensors carry empty operations. */
 function hasOperations(support?: Record<string, unknown>): boolean {
   const operations = support?.operations as Record<string, unknown> | undefined;
   return !!operations && Object.keys(operations).length > 0;
@@ -243,6 +243,8 @@ function formatStateSummary(
     }
     case "hearth.colormode/v1":
       return typeof value === "string" ? value : null;
+    case "hearth.binarysensor/v1":
+      return typeof value === "boolean" ? (value ? "True" : "False") : null;
     case "hearth.numericsensor/v1": {
       if (typeof value !== "number") return null;
       const unit = (support?.state as { unit?: unknown } | undefined)?.unit;

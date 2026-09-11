@@ -1,0 +1,10 @@
+{
+  "brightness": 127,
+  "color": {"x": 0.3333, "y": 0.3333},
+  "color_mode": "xy",
+  "illuminance": 20,
+  "linkquality": 108,
+  "occupancy": true,
+  "power_on_behavior": "previous",
+  "state": "ON"
+}

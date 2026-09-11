@@ -9,15 +9,19 @@ const (
 	temperatureUnitCelsius = "°C"
 )
 
-// planSensorFamily plans temperature first, then the ambient numeric capability
-// table in order. Each mapping visits retained roots independently so an
-// ineligible root cannot suppress valid siblings. Family order and root
-// selection stay in Go; catalog records contain only capability data.
+// planSensorFamily plans temperature first, then the ambient numeric
+// capability table, then the binary capability table, each in order. Every
+// mapping visits retained roots independently so an ineligible root cannot
+// suppress valid siblings. Family order and root selection stay in Go;
+// catalog records contain only capability data.
 func planSensorFamily(input devicePlanningInput) plannerContribution {
 	contribution := plannerContribution{Kind: upstreamDeviceKindSensor, Role: plannerRoleSupplemental}
 	appendTemperaturePlans(&contribution, input)
 	for _, mapping := range ambientNumericSensors() {
 		appendNumericSensorPlans(&contribution, input, mapping)
+	}
+	for _, mapping := range binarySensorMappings() {
+		appendBinarySensorPlans(&contribution, input, mapping)
 	}
 	return contribution
 }
@@ -34,7 +38,7 @@ func appendTemperaturePlans(contribution *plannerContribution, input devicePlann
 			continue
 		}
 		expose := root.expose
-		if expose.Unit != temperatureUnitCelsius || !sensorExposeEligible(input, expose) {
+		if expose.Unit != temperatureUnitCelsius || !readOnlySensorEligible(input, expose) {
 			continue
 		}
 		key, name := scopedIdentity(
@@ -74,10 +78,11 @@ func appendNumericSensorPlans(
 	}
 }
 
-// sensorExposeEligible reports whether one resolved numeric root expose may
-// register a read-only sensor: a Device-unique property, publish access,
-// and no set access. Callers add their own contract-unit gate.
-func sensorExposeEligible(input devicePlanningInput, expose upstreamExpose) bool {
+// readOnlySensorEligible reports whether one resolved root expose may
+// register a read-only sensor: a non-empty Device-unique State property,
+// publish access, and no set access. Callers add their own type, name, unit,
+// or declaration gate.
+func readOnlySensorEligible(input devicePlanningInput, expose upstreamExpose) bool {
 	return expose.Property != "" &&
 		exposeCanPublish(expose) && !exposeCanSet(expose) &&
 		input.Exposes.PropertyUnique(expose.Property)
