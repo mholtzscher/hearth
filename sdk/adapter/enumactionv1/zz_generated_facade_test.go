@@ -3,131 +3,15 @@
 package enumactionv1
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
-	"errors"
-	"math/big"
-	"sort"
-	"strconv"
 	"testing"
 	"time"
 
+	"github.com/mholtzscher/hearth/internal/entitytypetest"
 	"github.com/mholtzscher/hearth/sdk/adapter"
+	"github.com/mholtzscher/hearth/sdk/adapter/adaptertest"
 )
-
-func requireValidationError(t *testing.T, err error, action string) {
-	t.Helper()
-	var validationErr *adapter.ValidationError
-	if err == nil || !errors.As(err, &validationErr) {
-		t.Fatalf("%s: expected adapter validation error, got %v", action, err)
-	}
-}
-
-func canonicalJSONValue(value any) string {
-	switch value := value.(type) {
-	case nil:
-		return "null"
-	case bool:
-		if value {
-			return "bool:true"
-		}
-		return "bool:false"
-	case json.Number:
-		rational, ok := new(big.Rat).SetString(value.String())
-		if !ok {
-			return "number:" + value.String()
-		}
-		return "number:" + rational.RatString()
-	case string:
-		return "string:" + strconv.Quote(value)
-	case []any:
-		canonical := "array:["
-		for index, item := range value {
-			if index > 0 {
-				canonical += ","
-			}
-			canonical += canonicalJSONValue(item)
-		}
-		return canonical + "]"
-	case map[string]any:
-		keys := make([]string, 0, len(value))
-		for key := range value {
-			keys = append(keys, key)
-		}
-		sort.Strings(keys)
-		canonical := "object:{"
-		for index, key := range keys {
-			if index > 0 {
-				canonical += ","
-			}
-			canonical += strconv.Quote(key) + "=" + canonicalJSONValue(value[key])
-		}
-		return canonical + "}"
-	default:
-		return "unsupported"
-	}
-}
-
-func canonicalJSON(t *testing.T, raw json.RawMessage) string {
-	t.Helper()
-	decoder := json.NewDecoder(bytes.NewReader(raw))
-	decoder.UseNumber()
-	var value any
-	if err := decoder.Decode(&value); err != nil {
-		t.Fatalf("decode JSON: %v", err)
-	}
-	return canonicalJSONValue(value)
-}
-
-func canonicalValue(t *testing.T, value any) string {
-	t.Helper()
-	raw, err := json.Marshal(value)
-	if err != nil {
-		t.Fatalf("encode JSON: %v", err)
-	}
-	return canonicalJSON(t, raw)
-}
-
-func parseAdapterTime(t *testing.T, field, raw string) time.Time {
-	t.Helper()
-	parsed, err := time.Parse(time.RFC3339Nano, raw)
-	if err != nil {
-		t.Fatalf("%s %q is not RFC3339Nano: %v", field, raw, err)
-	}
-	if _, offset := parsed.Zone(); offset != 0 {
-		t.Fatalf("%s %q is not formatted as UTC", field, raw)
-	}
-	return parsed
-}
-
-func TestGeneratedCanonicalJSONPreservesExactNumbers(t *testing.T) {
-	equal := []struct{ left, right string }{
-		{"1", "1.0"},
-		{"1", "1e0"},
-		{"-0", "0"},
-		{"{\"value\":9007199254740993}", "{\"value\":9.007199254740993e15}"},
-	}
-	for _, example := range equal {
-		left := canonicalJSON(t, json.RawMessage(example.left))
-		right := canonicalJSON(t, json.RawMessage(example.right))
-		if left != right {
-			t.Errorf("canonical numbers differ: %s != %s", left, right)
-		}
-	}
-	unequal := []struct{ left, right string }{
-		{"9007199254740993", "9007199254740992"},
-		{"75", "\"75\""},
-		{"{\"value\":1}", "{\"value\":\"1\"}"},
-	}
-	for _, example := range unequal {
-		left := canonicalJSON(t, json.RawMessage(example.left))
-		right := canonicalJSON(t, json.RawMessage(example.right))
-		if left == right {
-			t.Errorf("canonical values collided: %s == %s", left, right)
-		}
-	}
-}
 
 func TestGeneratedStatelessOmitsObservation(t *testing.T) {
 	t.Log("stateless hearth.enumaction/v1 defines no ObservationInput or NewObservation")
@@ -159,7 +43,7 @@ func TestGeneratedEntityDescriptor(t *testing.T) {
 	if descriptor.Type != "hearth.enumaction/v1" {
 		t.Errorf("descriptor type = %q", descriptor.Type)
 	}
-	if canonicalJSON(t, descriptor.Support) != canonicalJSON(t, json.RawMessage("{\n        \"state\": {},\n        \"operations\": {\"trigger\": {\"values\": [\"blink\", \"breathe\", \"okay\", \"channel_change\", \"finish_effect\", \"stop_effect\"]}}\n      }")) {
+	if entitytypetest.CanonicalJSON(t, descriptor.Support) != entitytypetest.CanonicalJSON(t, json.RawMessage("{\n        \"state\": {},\n        \"operations\": {\"trigger\": {\"values\": [\"blink\", \"breathe\", \"okay\", \"channel_change\", \"finish_effect\", \"stop_effect\"]}}\n      }")) {
 		t.Errorf("descriptor support = %s", descriptor.Support)
 	}
 }
@@ -198,7 +82,7 @@ func TestGeneratedCommandConformance(t *testing.T) {
 		if !receivedTrigger.Deadline.Equal(deadline) {
 			t.Errorf("trigger command deadline = %v", receivedTrigger.Deadline)
 		}
-		if canonicalValue(t, receivedTrigger.Parameters) != canonicalJSON(t, json.RawMessage("{\"name\": \"blink\"}")) {
+		if entitytypetest.CanonicalValue(t, receivedTrigger.Parameters) != entitytypetest.CanonicalJSON(t, json.RawMessage("{\"name\": \"blink\"}")) {
 			t.Errorf("trigger command parameters = %+v", receivedTrigger.Parameters)
 		}
 		{
@@ -246,7 +130,7 @@ func TestGeneratedCommandConformance(t *testing.T) {
 		if _, err := NewCommandHandler("ent_01890f47-7a6b-7c4d-8e9f-0123456789ab", support, Handlers{}); err == nil {
 			t.Error("command handler without trigger handler was accepted")
 		} else {
-			requireValidationError(t, err, "reject command handler without trigger handler")
+			adaptertest.RequireValidationError(t, err, "reject command handler without trigger handler")
 		}
 	})
 }

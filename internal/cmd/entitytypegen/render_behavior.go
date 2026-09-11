@@ -2,11 +2,12 @@ package main
 
 import (
 	"fmt"
+	"path/filepath"
 	"strconv"
 	"strings"
 )
 
-func renderBehavior(model entityTypeModel) ([]byte, error) {
+func renderBehavior(model entityTypeModel) output {
 	var source strings.Builder
 	generatedHeader(&source)
 	fmt.Fprintf(&source, "package %s\n\n", model.Package)
@@ -88,7 +89,10 @@ func renderBehavior(model entityTypeModel) ([]byte, error) {
 		)
 		fmt.Fprintf(&source, "\treturn %s\n}\n\n", satisfactionCondition(operation.SatisfiedWhen))
 	}
-	return formatGenerated(source.String())
+	return output{
+		path:    filepath.Join(model.Directory, "zz_generated_behavior.go"),
+		content: []byte(source.String()),
+	}
 }
 
 // writeEntityEventNameBehavior emits the typed name validation and accessor the

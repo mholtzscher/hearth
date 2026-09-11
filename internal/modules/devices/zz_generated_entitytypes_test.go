@@ -3,60 +3,11 @@
 package devices
 
 import (
-	"bytes"
-	"encoding/json"
-	"math/big"
-	"reflect"
 	"testing"
 	"time"
+
+	"github.com/mholtzscher/hearth/internal/entitytypetest"
 )
-
-// equalGeneratedCatalogJSON compares normalized catalog output against the
-// authored example independent of key order, whitespace, or numeric spelling.
-// Numbers compare by exact rational value, never float64.
-func equalGeneratedCatalogJSON(left, right []byte) bool {
-	leftValue, leftErr := decodeGeneratedCatalogJSON(left)
-	rightValue, rightErr := decodeGeneratedCatalogJSON(right)
-	if leftErr != nil || rightErr != nil {
-		return false
-	}
-	return reflect.DeepEqual(leftValue, rightValue)
-}
-
-type generatedCatalogJSONNumber string
-
-func normalizeGeneratedCatalogJSON(value any) any {
-	switch value := value.(type) {
-	case json.Number:
-		rational, ok := new(big.Rat).SetString(value.String())
-		if !ok {
-			return value
-		}
-		return generatedCatalogJSONNumber(rational.RatString())
-	case []any:
-		for index, item := range value {
-			value[index] = normalizeGeneratedCatalogJSON(item)
-		}
-		return value
-	case map[string]any:
-		for key, item := range value {
-			value[key] = normalizeGeneratedCatalogJSON(item)
-		}
-		return value
-	default:
-		return value
-	}
-}
-
-func decodeGeneratedCatalogJSON(raw []byte) (any, error) {
-	decoder := json.NewDecoder(bytes.NewReader(raw))
-	decoder.UseNumber()
-	var value any
-	if err := decoder.Decode(&value); err != nil {
-		return nil, err
-	}
-	return normalizeGeneratedCatalogJSON(value), nil
-}
 
 func TestGeneratedBuiltinCatalogWiring(t *testing.T) {
 	catalog, err := NewBuiltinTypeCatalog()
@@ -72,14 +23,14 @@ func TestGeneratedBuiltinCatalogWiring(t *testing.T) {
 		if err != nil {
 			t.Fatalf("catalog support: %v", err)
 		}
-		if !equalGeneratedCatalogJSON(normalizedSupport, []byte("{\"state\":{\"maximum\":80},\"operations\":{\"set\":{\"step\":5}}}")) {
+		if !entitytypetest.EqualJSON(t, normalizedSupport, []byte("{\"state\":{\"maximum\":80},\"operations\":{\"set\":{\"step\":5}}}")) {
 			t.Errorf("catalog normalized support = %s, want %s", normalizedSupport, "{\"state\":{\"maximum\":80},\"operations\":{\"set\":{\"step\":5}}}")
 		}
 		normalizedState, err := catalog.NormalizeState(entity, Value("75"))
 		if err != nil {
 			t.Fatalf("catalog State: %v", err)
 		}
-		if !equalGeneratedCatalogJSON(normalizedState, []byte("75")) {
+		if !entitytypetest.EqualJSON(t, normalizedState, []byte("75")) {
 			t.Errorf("catalog normalized State = %s, want %s", normalizedState, "75")
 		}
 		if _, err := catalog.NormalizeState(entity, Value("85")); err == nil {
@@ -89,7 +40,7 @@ func TestGeneratedBuiltinCatalogWiring(t *testing.T) {
 		if err != nil {
 			t.Fatalf("catalog resolve set: %v", err)
 		}
-		if !equalGeneratedCatalogJSON(resolvedSet.Parameters, []byte("{\"value\":75}")) {
+		if !entitytypetest.EqualJSON(t, resolvedSet.Parameters, []byte("{\"value\":75}")) {
 			t.Errorf("catalog normalized set parameters = %s, want %s", resolvedSet.Parameters, "{\"value\":75}")
 		}
 		if resolvedSet.Deadline != 10000*time.Millisecond {
@@ -133,21 +84,21 @@ func TestGeneratedBuiltinCatalogWiring(t *testing.T) {
 		if err != nil {
 			t.Fatalf("catalog support: %v", err)
 		}
-		if !equalGeneratedCatalogJSON(normalizedSupport, []byte("{\"state\":{},\"operations\":{\"set\":{}}}")) {
+		if !entitytypetest.EqualJSON(t, normalizedSupport, []byte("{\"state\":{},\"operations\":{\"set\":{}}}")) {
 			t.Errorf("catalog normalized support = %s, want %s", normalizedSupport, "{\"state\":{},\"operations\":{\"set\":{}}}")
 		}
 		normalizedState, err := catalog.NormalizeState(entity, Value("{\"active\":true,\"hue\":120,\"saturation\":80}"))
 		if err != nil {
 			t.Fatalf("catalog State: %v", err)
 		}
-		if !equalGeneratedCatalogJSON(normalizedState, []byte("{\"active\":true,\"hue\":120,\"saturation\":80}")) {
+		if !entitytypetest.EqualJSON(t, normalizedState, []byte("{\"active\":true,\"hue\":120,\"saturation\":80}")) {
 			t.Errorf("catalog normalized State = %s, want %s", normalizedState, "{\"active\":true,\"hue\":120,\"saturation\":80}")
 		}
 		resolvedSet, err := catalog.ResolveCommand(entity, OperationName("set"), CommandParameters("{\"hue\":120,\"saturation\":80}"))
 		if err != nil {
 			t.Fatalf("catalog resolve set: %v", err)
 		}
-		if !equalGeneratedCatalogJSON(resolvedSet.Parameters, []byte("{\"hue\":120,\"saturation\":80}")) {
+		if !entitytypetest.EqualJSON(t, resolvedSet.Parameters, []byte("{\"hue\":120,\"saturation\":80}")) {
 			t.Errorf("catalog normalized set parameters = %s, want %s", resolvedSet.Parameters, "{\"hue\":120,\"saturation\":80}")
 		}
 		if resolvedSet.Deadline != 10000*time.Millisecond {
@@ -188,14 +139,14 @@ func TestGeneratedBuiltinCatalogWiring(t *testing.T) {
 		if err != nil {
 			t.Fatalf("catalog support: %v", err)
 		}
-		if !equalGeneratedCatalogJSON(normalizedSupport, []byte("{\"state\":{},\"operations\":{}}")) {
+		if !entitytypetest.EqualJSON(t, normalizedSupport, []byte("{\"state\":{},\"operations\":{}}")) {
 			t.Errorf("catalog normalized support = %s, want %s", normalizedSupport, "{\"state\":{},\"operations\":{}}")
 		}
 		normalizedState, err := catalog.NormalizeState(entity, Value("\"xy\""))
 		if err != nil {
 			t.Fatalf("catalog State: %v", err)
 		}
-		if !equalGeneratedCatalogJSON(normalizedState, []byte("\"xy\"")) {
+		if !entitytypetest.EqualJSON(t, normalizedState, []byte("\"xy\"")) {
 			t.Errorf("catalog normalized State = %s, want %s", normalizedState, "\"xy\"")
 		}
 		if equal, err := catalog.EqualState(entity, Value("\"xy\""), Value("\"xy\"")); err != nil || !equal {
@@ -224,14 +175,14 @@ func TestGeneratedBuiltinCatalogWiring(t *testing.T) {
 		if err != nil {
 			t.Fatalf("catalog support: %v", err)
 		}
-		if !equalGeneratedCatalogJSON(normalizedSupport, []byte("{\"state\":{\"minimum\":153,\"maximum\":500},\"operations\":{\"set\":{\"step\":1}}}")) {
+		if !entitytypetest.EqualJSON(t, normalizedSupport, []byte("{\"state\":{\"minimum\":153,\"maximum\":500},\"operations\":{\"set\":{\"step\":1}}}")) {
 			t.Errorf("catalog normalized support = %s, want %s", normalizedSupport, "{\"state\":{\"minimum\":153,\"maximum\":500},\"operations\":{\"set\":{\"step\":1}}}")
 		}
 		normalizedState, err := catalog.NormalizeState(entity, Value("{\"active\":true,\"value\":370}"))
 		if err != nil {
 			t.Fatalf("catalog State: %v", err)
 		}
-		if !equalGeneratedCatalogJSON(normalizedState, []byte("{\"active\":true,\"value\":370}")) {
+		if !entitytypetest.EqualJSON(t, normalizedState, []byte("{\"active\":true,\"value\":370}")) {
 			t.Errorf("catalog normalized State = %s, want %s", normalizedState, "{\"active\":true,\"value\":370}")
 		}
 		if _, err := catalog.NormalizeState(entity, Value("{\"active\":true,\"value\":152}")); err == nil {
@@ -241,7 +192,7 @@ func TestGeneratedBuiltinCatalogWiring(t *testing.T) {
 		if err != nil {
 			t.Fatalf("catalog resolve set: %v", err)
 		}
-		if !equalGeneratedCatalogJSON(resolvedSet.Parameters, []byte("{\"value\":370}")) {
+		if !entitytypetest.EqualJSON(t, resolvedSet.Parameters, []byte("{\"value\":370}")) {
 			t.Errorf("catalog normalized set parameters = %s, want %s", resolvedSet.Parameters, "{\"value\":370}")
 		}
 		if resolvedSet.Deadline != 10000*time.Millisecond {
@@ -285,21 +236,21 @@ func TestGeneratedBuiltinCatalogWiring(t *testing.T) {
 		if err != nil {
 			t.Fatalf("catalog support: %v", err)
 		}
-		if !equalGeneratedCatalogJSON(normalizedSupport, []byte("{\"state\":{},\"operations\":{\"set\":{}}}")) {
+		if !entitytypetest.EqualJSON(t, normalizedSupport, []byte("{\"state\":{},\"operations\":{\"set\":{}}}")) {
 			t.Errorf("catalog normalized support = %s, want %s", normalizedSupport, "{\"state\":{},\"operations\":{\"set\":{}}}")
 		}
 		normalizedState, err := catalog.NormalizeState(entity, Value("{\"active\":true,\"x\":3125,\"y\":3291}"))
 		if err != nil {
 			t.Fatalf("catalog State: %v", err)
 		}
-		if !equalGeneratedCatalogJSON(normalizedState, []byte("{\"active\":true,\"x\":3125,\"y\":3291}")) {
+		if !entitytypetest.EqualJSON(t, normalizedState, []byte("{\"active\":true,\"x\":3125,\"y\":3291}")) {
 			t.Errorf("catalog normalized State = %s, want %s", normalizedState, "{\"active\":true,\"x\":3125,\"y\":3291}")
 		}
 		resolvedSet, err := catalog.ResolveCommand(entity, OperationName("set"), CommandParameters("{\"x\":3125,\"y\":3291}"))
 		if err != nil {
 			t.Fatalf("catalog resolve set: %v", err)
 		}
-		if !equalGeneratedCatalogJSON(resolvedSet.Parameters, []byte("{\"x\":3125,\"y\":3291}")) {
+		if !entitytypetest.EqualJSON(t, resolvedSet.Parameters, []byte("{\"x\":3125,\"y\":3291}")) {
 			t.Errorf("catalog normalized set parameters = %s, want %s", resolvedSet.Parameters, "{\"x\":3125,\"y\":3291}")
 		}
 		if resolvedSet.Deadline != 10000*time.Millisecond {
@@ -340,21 +291,21 @@ func TestGeneratedBuiltinCatalogWiring(t *testing.T) {
 		if err != nil {
 			t.Fatalf("catalog support: %v", err)
 		}
-		if !equalGeneratedCatalogJSON(normalizedSupport, []byte("{\"state\":{},\"operations\":{\"trigger\":{\"values\":[\"blink\",\"breathe\",\"okay\",\"channel_change\",\"finish_effect\",\"stop_effect\"]}}}")) {
+		if !entitytypetest.EqualJSON(t, normalizedSupport, []byte("{\"state\":{},\"operations\":{\"trigger\":{\"values\":[\"blink\",\"breathe\",\"okay\",\"channel_change\",\"finish_effect\",\"stop_effect\"]}}}")) {
 			t.Errorf("catalog normalized support = %s, want %s", normalizedSupport, "{\"state\":{},\"operations\":{\"trigger\":{\"values\":[\"blink\",\"breathe\",\"okay\",\"channel_change\",\"finish_effect\",\"stop_effect\"]}}}")
 		}
 		normalizedState, err := catalog.NormalizeState(entity, Value("{}"))
 		if err != nil {
 			t.Fatalf("catalog State: %v", err)
 		}
-		if !equalGeneratedCatalogJSON(normalizedState, []byte("{}")) {
+		if !entitytypetest.EqualJSON(t, normalizedState, []byte("{}")) {
 			t.Errorf("catalog normalized State = %s, want %s", normalizedState, "{}")
 		}
 		resolvedTrigger, err := catalog.ResolveCommand(entity, OperationName("trigger"), CommandParameters("{\"name\":\"blink\"}"))
 		if err != nil {
 			t.Fatalf("catalog resolve trigger: %v", err)
 		}
-		if !equalGeneratedCatalogJSON(resolvedTrigger.Parameters, []byte("{\"name\":\"blink\"}")) {
+		if !entitytypetest.EqualJSON(t, resolvedTrigger.Parameters, []byte("{\"name\":\"blink\"}")) {
 			t.Errorf("catalog normalized trigger parameters = %s, want %s", resolvedTrigger.Parameters, "{\"name\":\"blink\"}")
 		}
 		if resolvedTrigger.Deadline != 10000*time.Millisecond {
@@ -428,14 +379,14 @@ func TestGeneratedBuiltinCatalogWiring(t *testing.T) {
 		if err != nil {
 			t.Fatalf("catalog support: %v", err)
 		}
-		if !equalGeneratedCatalogJSON(normalizedSupport, []byte("{\"state\":{\"choices\":[\"on\",\"off\",\"previous\",\"toggle\"]},\"operations\":{\"set\":{}}}")) {
+		if !entitytypetest.EqualJSON(t, normalizedSupport, []byte("{\"state\":{\"choices\":[\"on\",\"off\",\"previous\",\"toggle\"]},\"operations\":{\"set\":{}}}")) {
 			t.Errorf("catalog normalized support = %s, want %s", normalizedSupport, "{\"state\":{\"choices\":[\"on\",\"off\",\"previous\",\"toggle\"]},\"operations\":{\"set\":{}}}")
 		}
 		normalizedState, err := catalog.NormalizeState(entity, Value("\"previous\""))
 		if err != nil {
 			t.Fatalf("catalog State: %v", err)
 		}
-		if !equalGeneratedCatalogJSON(normalizedState, []byte("\"previous\"")) {
+		if !entitytypetest.EqualJSON(t, normalizedState, []byte("\"previous\"")) {
 			t.Errorf("catalog normalized State = %s, want %s", normalizedState, "\"previous\"")
 		}
 		if _, err := catalog.NormalizeState(entity, Value("\"eco\"")); err == nil {
@@ -445,7 +396,7 @@ func TestGeneratedBuiltinCatalogWiring(t *testing.T) {
 		if err != nil {
 			t.Fatalf("catalog resolve set: %v", err)
 		}
-		if !equalGeneratedCatalogJSON(resolvedSet.Parameters, []byte("{\"value\":\"on\"}")) {
+		if !entitytypetest.EqualJSON(t, resolvedSet.Parameters, []byte("{\"value\":\"on\"}")) {
 			t.Errorf("catalog normalized set parameters = %s, want %s", resolvedSet.Parameters, "{\"value\":\"on\"}")
 		}
 		if resolvedSet.Deadline != 10000*time.Millisecond {
@@ -489,14 +440,14 @@ func TestGeneratedBuiltinCatalogWiring(t *testing.T) {
 		if err != nil {
 			t.Fatalf("catalog support: %v", err)
 		}
-		if !equalGeneratedCatalogJSON(normalizedSupport, []byte("{\"state\":{\"minimum\":0,\"maximum\":255,\"unit\":\"lqi\"},\"operations\":{}}")) {
+		if !entitytypetest.EqualJSON(t, normalizedSupport, []byte("{\"state\":{\"minimum\":0,\"maximum\":255,\"unit\":\"lqi\"},\"operations\":{}}")) {
 			t.Errorf("catalog normalized support = %s, want %s", normalizedSupport, "{\"state\":{\"minimum\":0,\"maximum\":255,\"unit\":\"lqi\"},\"operations\":{}}")
 		}
 		normalizedState, err := catalog.NormalizeState(entity, Value("18"))
 		if err != nil {
 			t.Fatalf("catalog State: %v", err)
 		}
-		if !equalGeneratedCatalogJSON(normalizedState, []byte("18")) {
+		if !entitytypetest.EqualJSON(t, normalizedState, []byte("18")) {
 			t.Errorf("catalog normalized State = %s, want %s", normalizedState, "18")
 		}
 		if _, err := catalog.NormalizeState(entity, Value("256")); err == nil {
@@ -531,14 +482,14 @@ func TestGeneratedBuiltinCatalogWiring(t *testing.T) {
 		if err != nil {
 			t.Fatalf("catalog support: %v", err)
 		}
-		if !equalGeneratedCatalogJSON(normalizedSupport, []byte("{\"state\":{\"minimum\":142,\"maximum\":454,\"unit\":\"mired\",\"choices\":[\"previous\"]},\"operations\":{\"set\":{}}}")) {
+		if !entitytypetest.EqualJSON(t, normalizedSupport, []byte("{\"state\":{\"minimum\":142,\"maximum\":454,\"unit\":\"mired\",\"choices\":[\"previous\"]},\"operations\":{\"set\":{}}}")) {
 			t.Errorf("catalog normalized support = %s, want %s", normalizedSupport, "{\"state\":{\"minimum\":142,\"maximum\":454,\"unit\":\"mired\",\"choices\":[\"previous\"]},\"operations\":{\"set\":{}}}")
 		}
 		normalizedState, err := catalog.NormalizeState(entity, Value("{\"mode\":\"value\",\"value\":250}"))
 		if err != nil {
 			t.Fatalf("catalog State: %v", err)
 		}
-		if !equalGeneratedCatalogJSON(normalizedState, []byte("{\"mode\":\"value\",\"value\":250}")) {
+		if !entitytypetest.EqualJSON(t, normalizedState, []byte("{\"mode\":\"value\",\"value\":250}")) {
 			t.Errorf("catalog normalized State = %s, want %s", normalizedState, "{\"mode\":\"value\",\"value\":250}")
 		}
 		if _, err := catalog.NormalizeState(entity, Value("{\"mode\":\"value\",\"value\":455}")); err == nil {
@@ -551,7 +502,7 @@ func TestGeneratedBuiltinCatalogWiring(t *testing.T) {
 		if err != nil {
 			t.Fatalf("catalog resolve set: %v", err)
 		}
-		if !equalGeneratedCatalogJSON(resolvedSet.Parameters, []byte("{\"mode\":\"value\",\"value\":250}")) {
+		if !entitytypetest.EqualJSON(t, resolvedSet.Parameters, []byte("{\"mode\":\"value\",\"value\":250}")) {
 			t.Errorf("catalog normalized set parameters = %s, want %s", resolvedSet.Parameters, "{\"mode\":\"value\",\"value\":250}")
 		}
 		if resolvedSet.Deadline != 10000*time.Millisecond {
@@ -595,21 +546,21 @@ func TestGeneratedBuiltinCatalogWiring(t *testing.T) {
 		if err != nil {
 			t.Fatalf("catalog support: %v", err)
 		}
-		if !equalGeneratedCatalogJSON(normalizedSupport, []byte("{\"state\":{},\"operations\":{\"set\":{}}}")) {
+		if !entitytypetest.EqualJSON(t, normalizedSupport, []byte("{\"state\":{},\"operations\":{\"set\":{}}}")) {
 			t.Errorf("catalog normalized support = %s, want %s", normalizedSupport, "{\"state\":{},\"operations\":{\"set\":{}}}")
 		}
 		normalizedState, err := catalog.NormalizeState(entity, Value("true"))
 		if err != nil {
 			t.Fatalf("catalog State: %v", err)
 		}
-		if !equalGeneratedCatalogJSON(normalizedState, []byte("true")) {
+		if !entitytypetest.EqualJSON(t, normalizedState, []byte("true")) {
 			t.Errorf("catalog normalized State = %s, want %s", normalizedState, "true")
 		}
 		resolvedSet, err := catalog.ResolveCommand(entity, OperationName("set"), CommandParameters("{\"value\":true}"))
 		if err != nil {
 			t.Fatalf("catalog resolve set: %v", err)
 		}
-		if !equalGeneratedCatalogJSON(resolvedSet.Parameters, []byte("{\"value\":true}")) {
+		if !entitytypetest.EqualJSON(t, resolvedSet.Parameters, []byte("{\"value\":true}")) {
 			t.Errorf("catalog normalized set parameters = %s, want %s", resolvedSet.Parameters, "{\"value\":true}")
 		}
 		if resolvedSet.Deadline != 10000*time.Millisecond {
@@ -650,14 +601,14 @@ func TestGeneratedBuiltinCatalogWiring(t *testing.T) {
 		if err != nil {
 			t.Fatalf("catalog support: %v", err)
 		}
-		if !equalGeneratedCatalogJSON(normalizedSupport, []byte("{\"state\":{},\"operations\":{}}")) {
+		if !entitytypetest.EqualJSON(t, normalizedSupport, []byte("{\"state\":{},\"operations\":{}}")) {
 			t.Errorf("catalog normalized support = %s, want %s", normalizedSupport, "{\"state\":{},\"operations\":{}}")
 		}
 		normalizedState, err := catalog.NormalizeState(entity, Value("21500"))
 		if err != nil {
 			t.Fatalf("catalog State: %v", err)
 		}
-		if !equalGeneratedCatalogJSON(normalizedState, []byte("21500")) {
+		if !entitytypetest.EqualJSON(t, normalizedState, []byte("21500")) {
 			t.Errorf("catalog normalized State = %s, want %s", normalizedState, "21500")
 		}
 		if equal, err := catalog.EqualState(entity, Value("21500"), Value("21500")); err != nil || !equal {

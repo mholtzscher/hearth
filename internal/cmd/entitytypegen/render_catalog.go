@@ -8,7 +8,7 @@ import (
 	"strings"
 )
 
-func renderCatalog(models []entityTypeModel, modulePath string, moduleRoot string) (output, error) {
+func renderCatalog(models []entityTypeModel, modulePath string, moduleRoot string) output {
 	ordered := append([]entityTypeModel(nil), models...)
 	sort.Slice(ordered, func(left, right int) bool { return ordered[left].TypeID < ordered[right].TypeID })
 
@@ -82,14 +82,11 @@ func renderCatalog(models []entityTypeModel, modulePath string, moduleRoot strin
 		source.WriteString("\treturn definition, nil\n}\n\n")
 	}
 
-	formatted, err := formatGenerated(source.String())
-	if err != nil {
-		return output{}, err
-	}
+	filename := filepath.Join(moduleRoot, "internal", "modules", "devices", "zz_generated_entitytypes.go")
 	return output{
-		path:    filepath.Join(moduleRoot, "internal", "modules", "devices", "zz_generated_entitytypes.go"),
-		content: formatted,
-	}, nil
+		path:    filename,
+		content: []byte(source.String()),
+	}
 }
 
 // writeCatalogEventSourceDefinition emits the catalog selector for a stateless,

@@ -3,131 +3,15 @@
 package colorxyv1
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
-	"errors"
-	"math/big"
-	"sort"
-	"strconv"
 	"testing"
 	"time"
 
+	"github.com/mholtzscher/hearth/internal/entitytypetest"
 	"github.com/mholtzscher/hearth/sdk/adapter"
+	"github.com/mholtzscher/hearth/sdk/adapter/adaptertest"
 )
-
-func requireValidationError(t *testing.T, err error, action string) {
-	t.Helper()
-	var validationErr *adapter.ValidationError
-	if err == nil || !errors.As(err, &validationErr) {
-		t.Fatalf("%s: expected adapter validation error, got %v", action, err)
-	}
-}
-
-func canonicalJSONValue(value any) string {
-	switch value := value.(type) {
-	case nil:
-		return "null"
-	case bool:
-		if value {
-			return "bool:true"
-		}
-		return "bool:false"
-	case json.Number:
-		rational, ok := new(big.Rat).SetString(value.String())
-		if !ok {
-			return "number:" + value.String()
-		}
-		return "number:" + rational.RatString()
-	case string:
-		return "string:" + strconv.Quote(value)
-	case []any:
-		canonical := "array:["
-		for index, item := range value {
-			if index > 0 {
-				canonical += ","
-			}
-			canonical += canonicalJSONValue(item)
-		}
-		return canonical + "]"
-	case map[string]any:
-		keys := make([]string, 0, len(value))
-		for key := range value {
-			keys = append(keys, key)
-		}
-		sort.Strings(keys)
-		canonical := "object:{"
-		for index, key := range keys {
-			if index > 0 {
-				canonical += ","
-			}
-			canonical += strconv.Quote(key) + "=" + canonicalJSONValue(value[key])
-		}
-		return canonical + "}"
-	default:
-		return "unsupported"
-	}
-}
-
-func canonicalJSON(t *testing.T, raw json.RawMessage) string {
-	t.Helper()
-	decoder := json.NewDecoder(bytes.NewReader(raw))
-	decoder.UseNumber()
-	var value any
-	if err := decoder.Decode(&value); err != nil {
-		t.Fatalf("decode JSON: %v", err)
-	}
-	return canonicalJSONValue(value)
-}
-
-func canonicalValue(t *testing.T, value any) string {
-	t.Helper()
-	raw, err := json.Marshal(value)
-	if err != nil {
-		t.Fatalf("encode JSON: %v", err)
-	}
-	return canonicalJSON(t, raw)
-}
-
-func parseAdapterTime(t *testing.T, field, raw string) time.Time {
-	t.Helper()
-	parsed, err := time.Parse(time.RFC3339Nano, raw)
-	if err != nil {
-		t.Fatalf("%s %q is not RFC3339Nano: %v", field, raw, err)
-	}
-	if _, offset := parsed.Zone(); offset != 0 {
-		t.Fatalf("%s %q is not formatted as UTC", field, raw)
-	}
-	return parsed
-}
-
-func TestGeneratedCanonicalJSONPreservesExactNumbers(t *testing.T) {
-	equal := []struct{ left, right string }{
-		{"1", "1.0"},
-		{"1", "1e0"},
-		{"-0", "0"},
-		{"{\"value\":9007199254740993}", "{\"value\":9.007199254740993e15}"},
-	}
-	for _, example := range equal {
-		left := canonicalJSON(t, json.RawMessage(example.left))
-		right := canonicalJSON(t, json.RawMessage(example.right))
-		if left != right {
-			t.Errorf("canonical numbers differ: %s != %s", left, right)
-		}
-	}
-	unequal := []struct{ left, right string }{
-		{"9007199254740993", "9007199254740992"},
-		{"75", "\"75\""},
-		{"{\"value\":1}", "{\"value\":\"1\"}"},
-	}
-	for _, example := range unequal {
-		left := canonicalJSON(t, json.RawMessage(example.left))
-		right := canonicalJSON(t, json.RawMessage(example.right))
-		if left == right {
-			t.Errorf("canonical values collided: %s == %s", left, right)
-		}
-	}
-}
 
 func TestGeneratedObservationConformance(t *testing.T) {
 	codecs, err := codecs()
@@ -172,7 +56,7 @@ func TestGeneratedObservationConformance(t *testing.T) {
 				if _, observationErr := NewObservation(ObservationInput{EntityID: "ent_01890f47-7a6b-7c4d-8e9f-0123456789ab", Support: support, State: state, AdapterReceivedAt: time.Unix(0, 0).UTC()}); observationErr == nil {
 					t.Errorf("State example 3 marked invalid was accepted by Observation constructor")
 				} else {
-					requireValidationError(t, observationErr, "reject support-incompatible State")
+					adaptertest.RequireValidationError(t, observationErr, "reject support-incompatible State")
 				}
 			} else if plainErr == nil {
 				// Schema-invalid but Go-representable values must reach the
@@ -183,11 +67,11 @@ func TestGeneratedObservationConformance(t *testing.T) {
 				// becomes a valid zero-filled field); only inputs that survive
 				// an ordinary JSON roundtrip carry a constructor claim, judged
 				// without production validation.
-				if canonicalValue(t, plainState) == canonicalJSON(t, raw) {
+				if entitytypetest.CanonicalValue(t, plainState) == entitytypetest.CanonicalJSON(t, raw) {
 					if _, observationErr := NewObservation(ObservationInput{EntityID: "ent_01890f47-7a6b-7c4d-8e9f-0123456789ab", Support: support, State: plainState, AdapterReceivedAt: time.Unix(0, 0).UTC()}); observationErr == nil {
 						t.Errorf("typed-invalid State example 3 was accepted by Observation constructor")
 					} else {
-						requireValidationError(t, observationErr, "reject typed-invalid State")
+						adaptertest.RequireValidationError(t, observationErr, "reject typed-invalid State")
 					}
 				}
 			}
@@ -201,7 +85,7 @@ func TestGeneratedObservationConformance(t *testing.T) {
 				if _, observationErr := NewObservation(ObservationInput{EntityID: "ent_01890f47-7a6b-7c4d-8e9f-0123456789ab", Support: support, State: state, AdapterReceivedAt: time.Unix(0, 0).UTC()}); observationErr == nil {
 					t.Errorf("State example 4 marked invalid was accepted by Observation constructor")
 				} else {
-					requireValidationError(t, observationErr, "reject support-incompatible State")
+					adaptertest.RequireValidationError(t, observationErr, "reject support-incompatible State")
 				}
 			} else if plainErr == nil {
 				// Schema-invalid but Go-representable values must reach the
@@ -212,11 +96,11 @@ func TestGeneratedObservationConformance(t *testing.T) {
 				// becomes a valid zero-filled field); only inputs that survive
 				// an ordinary JSON roundtrip carry a constructor claim, judged
 				// without production validation.
-				if canonicalValue(t, plainState) == canonicalJSON(t, raw) {
+				if entitytypetest.CanonicalValue(t, plainState) == entitytypetest.CanonicalJSON(t, raw) {
 					if _, observationErr := NewObservation(ObservationInput{EntityID: "ent_01890f47-7a6b-7c4d-8e9f-0123456789ab", Support: support, State: plainState, AdapterReceivedAt: time.Unix(0, 0).UTC()}); observationErr == nil {
 						t.Errorf("typed-invalid State example 4 was accepted by Observation constructor")
 					} else {
-						requireValidationError(t, observationErr, "reject typed-invalid State")
+						adaptertest.RequireValidationError(t, observationErr, "reject typed-invalid State")
 					}
 				}
 			}
@@ -246,10 +130,10 @@ func TestGeneratedObservationMetadata(t *testing.T) {
 	if observation.EntityID != "ent_01890f47-7a6b-7c4d-8e9f-0123456789ab" {
 		t.Errorf("observation entity ID = %q", observation.EntityID)
 	}
-	if canonicalJSON(t, observation.Value) != canonicalJSON(t, json.RawMessage("{\"active\": true, \"x\": 3125, \"y\": 3291}")) {
+	if entitytypetest.CanonicalJSON(t, observation.Value) != entitytypetest.CanonicalJSON(t, json.RawMessage("{\"active\": true, \"x\": 3125, \"y\": 3291}")) {
 		t.Errorf("observation value = %s", observation.Value)
 	}
-	if received := parseAdapterTime(t, "adapter received time", observation.AdapterReceivedAt); !received.Equal(receivedAt) {
+	if received := adaptertest.ParseAdapterTime(t, "adapter received time", observation.AdapterReceivedAt); !received.Equal(receivedAt) {
 		t.Errorf("adapter received time = %s, want %s", observation.AdapterReceivedAt, receivedAt.UTC().Format(time.RFC3339Nano))
 	}
 	if observation.SourceUpdatedAt != nil {
@@ -263,7 +147,7 @@ func TestGeneratedObservationMetadata(t *testing.T) {
 	if sourced.SourceUpdatedAt == nil {
 		t.Fatal("observation with source time has no SourceUpdatedAt")
 	}
-	if updated := parseAdapterTime(t, "source updated time", *sourced.SourceUpdatedAt); !updated.Equal(sourceAt) {
+	if updated := adaptertest.ParseAdapterTime(t, "source updated time", *sourced.SourceUpdatedAt); !updated.Equal(sourceAt) {
 		t.Errorf("source updated time = %s, want %s", *sourced.SourceUpdatedAt, sourceAt.UTC().Format(time.RFC3339Nano))
 	}
 }
@@ -285,18 +169,18 @@ func TestGeneratedObservationValidation(t *testing.T) {
 	if _, err := NewObservation(ObservationInput{Support: support, State: state, AdapterReceivedAt: receivedAt}); err == nil {
 		t.Error("Observation without entity ID was accepted")
 	} else {
-		requireValidationError(t, err, "reject empty entity ID")
+		adaptertest.RequireValidationError(t, err, "reject empty entity ID")
 	}
 	if _, err := NewObservation(ObservationInput{EntityID: "ent_01890f47-7a6b-7c4d-8e9f-0123456789ab", Support: support, State: state}); err == nil {
 		t.Error("Observation without adapter received time was accepted")
 	} else {
-		requireValidationError(t, err, "reject zero adapter received time")
+		adaptertest.RequireValidationError(t, err, "reject zero adapter received time")
 	}
 	zeroSource := time.Time{}
 	if _, err := NewObservation(ObservationInput{EntityID: "ent_01890f47-7a6b-7c4d-8e9f-0123456789ab", Support: support, State: state, AdapterReceivedAt: receivedAt, SourceUpdatedAt: &zeroSource}); err == nil {
 		t.Error("Observation with zero source updated time was accepted")
 	} else {
-		requireValidationError(t, err, "reject zero source updated time")
+		adaptertest.RequireValidationError(t, err, "reject zero source updated time")
 	}
 }
 
@@ -326,7 +210,7 @@ func TestGeneratedEntityDescriptor(t *testing.T) {
 	if descriptor.Type != "hearth.colorxy/v1" {
 		t.Errorf("descriptor type = %q", descriptor.Type)
 	}
-	if canonicalJSON(t, descriptor.Support) != canonicalJSON(t, json.RawMessage("{\n        \"state\": {},\n        \"operations\": {\"set\": {}}\n      }")) {
+	if entitytypetest.CanonicalJSON(t, descriptor.Support) != entitytypetest.CanonicalJSON(t, json.RawMessage("{\n        \"state\": {},\n        \"operations\": {\"set\": {}}\n      }")) {
 		t.Errorf("descriptor support = %s", descriptor.Support)
 	}
 }
@@ -365,7 +249,7 @@ func TestGeneratedCommandConformance(t *testing.T) {
 		if !receivedSet.Deadline.Equal(deadline) {
 			t.Errorf("set command deadline = %v", receivedSet.Deadline)
 		}
-		if canonicalValue(t, receivedSet.Parameters) != canonicalJSON(t, json.RawMessage("{\"x\": 3125, \"y\": 3291}")) {
+		if entitytypetest.CanonicalValue(t, receivedSet.Parameters) != entitytypetest.CanonicalJSON(t, json.RawMessage("{\"x\": 3125, \"y\": 3291}")) {
 			t.Errorf("set command parameters = %+v", receivedSet.Parameters)
 		}
 		{
@@ -413,7 +297,7 @@ func TestGeneratedCommandConformance(t *testing.T) {
 		if _, err := NewCommandHandler("ent_01890f47-7a6b-7c4d-8e9f-0123456789ab", support, Handlers{}); err == nil {
 			t.Error("command handler without set handler was accepted")
 		} else {
-			requireValidationError(t, err, "reject command handler without set handler")
+			adaptertest.RequireValidationError(t, err, "reject command handler without set handler")
 		}
 	})
 }

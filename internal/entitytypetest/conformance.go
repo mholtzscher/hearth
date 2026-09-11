@@ -1,7 +1,9 @@
-// Package entitytypetest provides the shared handwritten runner for generated
-// Entity-type contract conformance tests. It replays human-authored example
-// expectations without evaluating the manifest DSL or importing production
-// contract, SDK, or catalog code.
+// Package entitytypetest provides the shared handwritten support for generated
+// Entity-type conformance tests: the contract runner that replays
+// human-authored example expectations, and exact-JSON helpers that compare
+// values independent of key order, whitespace, and numeric spelling. It stays
+// standard-library only, so generated contract and catalog tests can depend on
+// it without pulling in production contract, SDK, or catalog code.
 package entitytypetest
 
 import (

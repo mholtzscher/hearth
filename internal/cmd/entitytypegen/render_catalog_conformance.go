@@ -406,63 +406,7 @@ func compactCatalogJSON(raw json.RawMessage) (string, error) {
 	return compacted.String(), nil
 }
 
-// writeCatalogEqualityHelpers emits the generated-test imports and the exact
-// rational JSON equality helpers shared by every catalog wiring assertion.
-func writeCatalogEqualityHelpers(source *strings.Builder, probes []catalogProbe) {
-	hasOperations := false
-	for _, probe := range probes {
-		if len(probe.operations) > 0 {
-			hasOperations = true
-			break
-		}
-	}
-	if hasOperations {
-		source.WriteString("import (\n\t\"bytes\"\n\t\"encoding/json\"\n\t\"math/big\"\n\t\"reflect\"\n")
-		source.WriteString("\t\"testing\"\n\t\"time\"\n)\n\n")
-	} else {
-		source.WriteString("import (\n\t\"bytes\"\n\t\"encoding/json\"\n")
-		source.WriteString("\t\"math/big\"\n\t\"reflect\"\n\t\"testing\"\n)\n\n")
-	}
-	source.WriteString("// equalGeneratedCatalogJSON compares normalized catalog output against the\n")
-	source.WriteString("// authored example independent of key order, whitespace, or numeric spelling.\n")
-	source.WriteString("// Numbers compare by exact rational value, never float64.\n")
-	source.WriteString("func equalGeneratedCatalogJSON(left, right []byte) bool {\n")
-	source.WriteString("\tleftValue, leftErr := decodeGeneratedCatalogJSON(left)\n")
-	source.WriteString("\trightValue, rightErr := decodeGeneratedCatalogJSON(right)\n")
-	source.WriteString("\tif leftErr != nil || rightErr != nil { return false }\n")
-	source.WriteString("\treturn reflect.DeepEqual(leftValue, rightValue)\n")
-	source.WriteString("}\n\n")
-	source.WriteString("type generatedCatalogJSONNumber string\n\n")
-	source.WriteString("func normalizeGeneratedCatalogJSON(value any) any {\n")
-	source.WriteString("\tswitch value := value.(type) {\n")
-	source.WriteString("\tcase json.Number:\n")
-	source.WriteString("\t\trational, ok := new(big.Rat).SetString(value.String())\n")
-	source.WriteString("\t\tif !ok { return value }\n")
-	source.WriteString("\t\treturn generatedCatalogJSONNumber(rational.RatString())\n")
-	source.WriteString("\tcase []any:\n")
-	source.WriteString("\t\tfor index, item := range value {\n")
-	source.WriteString("\t\t\tvalue[index] = normalizeGeneratedCatalogJSON(item)\n")
-	source.WriteString("\t\t}\n")
-	source.WriteString("\t\treturn value\n")
-	source.WriteString("\tcase map[string]any:\n")
-	source.WriteString("\t\tfor key, item := range value {\n")
-	source.WriteString("\t\t\tvalue[key] = normalizeGeneratedCatalogJSON(item)\n")
-	source.WriteString("\t\t}\n")
-	source.WriteString("\t\treturn value\n")
-	source.WriteString("\tdefault:\n")
-	source.WriteString("\t\treturn value\n")
-	source.WriteString("\t}\n")
-	source.WriteString("}\n\n")
-	source.WriteString("func decodeGeneratedCatalogJSON(raw []byte) (any, error) {\n")
-	source.WriteString("\tdecoder := json.NewDecoder(bytes.NewReader(raw))\n")
-	source.WriteString("\tdecoder.UseNumber()\n")
-	source.WriteString("\tvar value any\n")
-	source.WriteString("\tif err := decoder.Decode(&value); err != nil { return nil, err }\n")
-	source.WriteString("\treturn normalizeGeneratedCatalogJSON(value), nil\n")
-	source.WriteString("}\n\n")
-}
-
-func renderCatalogConformanceTest(models []entityTypeModel, moduleRoot string) (output, error) {
+func renderCatalogConformanceTest(models []entityTypeModel, modulePath, moduleRoot string) (output, error) {
 	ordered := append([]entityTypeModel(nil), models...)
 	sort.Slice(ordered, func(left, right int) bool { return ordered[left].TypeID < ordered[right].TypeID })
 	checker := newCatalogSchemaChecker()
@@ -477,7 +421,12 @@ func renderCatalogConformanceTest(models []entityTypeModel, moduleRoot string) (
 	var source strings.Builder
 	generatedHeader(&source)
 	source.WriteString("package devices\n\n")
-	writeCatalogEqualityHelpers(&source, probes)
+	// The import block is declared in full and pruned by formatting, so the
+	// catalog test never maintains a conditional import list by hand, and it
+	// stays free of any sdk/adapter dependency.
+	source.WriteString("import (\n\t\"testing\"\n\t\"time\"\n\n")
+	fmt.Fprintf(&source, "\t%s\n", strconv.Quote(modulePath+"/internal/entitytypetest"))
+	source.WriteString(")\n\n")
 	source.WriteString("func TestGeneratedBuiltinCatalogWiring(t *testing.T) {\n")
 	source.WriteString("\tcatalog, err := NewBuiltinTypeCatalog()\n\tif err != nil { t.Fatal(err) }\n")
 	for _, probe := range probes {
@@ -486,13 +435,10 @@ func renderCatalogConformanceTest(models []entityTypeModel, moduleRoot string) (
 		}
 	}
 	source.WriteString("}\n")
-	formatted, err := formatGenerated(source.String())
-	if err != nil {
-		return output{}, err
-	}
+	filename := filepath.Join(moduleRoot, "internal", "modules", "devices", "zz_generated_entitytypes_test.go")
 	return output{
-		path:    filepath.Join(moduleRoot, "internal", "modules", "devices", "zz_generated_entitytypes_test.go"),
-		content: formatted,
+		path:    filename,
+		content: []byte(source.String()),
 	}, nil
 }
 
@@ -522,7 +468,7 @@ func writeCatalogProbe(source *strings.Builder, probe catalogProbe) error {
 	)
 	fmt.Fprintf(
 		source,
-		"\t\tif !equalGeneratedCatalogJSON(normalizedSupport, []byte(%s)) { t.Errorf(\"catalog normalized support = %%s, want %%s\", normalizedSupport, %s) }\n",
+		"\t\tif !entitytypetest.EqualJSON(t, normalizedSupport, []byte(%s)) { t.Errorf(\"catalog normalized support = %%s, want %%s\", normalizedSupport, %s) }\n",
 		strconv.Quote(support),
 		strconv.Quote(support),
 	)
@@ -538,7 +484,7 @@ func writeCatalogProbe(source *strings.Builder, probe catalogProbe) error {
 	source.WriteString("\t\tif err != nil { t.Fatalf(\"catalog State: %v\", err) }\n")
 	fmt.Fprintf(
 		source,
-		"\t\tif !equalGeneratedCatalogJSON(normalizedState, []byte(%s)) { t.Errorf(\"catalog normalized State = %%s, want %%s\", normalizedState, %s) }\n",
+		"\t\tif !entitytypetest.EqualJSON(t, normalizedState, []byte(%s)) { t.Errorf(\"catalog normalized State = %%s, want %%s\", normalizedState, %s) }\n",
 		strconv.Quote(validState),
 		strconv.Quote(validState),
 	)
@@ -831,7 +777,7 @@ func writeCatalogOperationProbe(
 	)
 	fmt.Fprintf(
 		source,
-		"\t\tif !equalGeneratedCatalogJSON(%s.Parameters, []byte(%s)) { t.Errorf(\"catalog normalized %s parameters = %%s, want %%s\", %s.Parameters, %s) }\n",
+		"\t\tif !entitytypetest.EqualJSON(t, %s.Parameters, []byte(%s)) { t.Errorf(\"catalog normalized %s parameters = %%s, want %%s\", %s.Parameters, %s) }\n",
 		variable,
 		strconv.Quote(parameters),
 		operation.Name,

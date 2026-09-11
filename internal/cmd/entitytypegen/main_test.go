@@ -1,11 +1,17 @@
 package main
 
 import (
+	"bytes"
 	"encoding/json"
+	"go/format"
+	"go/parser"
+	"go/token"
 	"maps"
 	"os"
 	"path/filepath"
 	"runtime"
+	"slices"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -132,12 +138,9 @@ func TestLoadModelNormalizesExamplesPathForEmbed(t *testing.T) {
 	if model.ExamplesFile != "examples.json" {
 		t.Fatalf("ExamplesFile = %q, want cleaned slash-safe path", model.ExamplesFile)
 	}
-	conformance, err := renderConformanceTest(model, "example.test")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !strings.Contains(string(conformance), `//go:embed "examples.json"`) {
-		t.Fatalf("generated conformance test does not embed the normalized path:\n%s", conformance)
+	conformance := renderConformanceTest(model, "example.test")
+	if !strings.Contains(string(conformance.content), `//go:embed "examples.json"`) {
+		t.Fatalf("generated conformance test does not embed the normalized path:\n%s", conformance.content)
 	}
 }
 
@@ -453,11 +456,11 @@ func TestTypeEmitterPreservesOptionalObjectPresence(t *testing.T) {
 
 func TestOperationFreeFacadeOmitsCommandArtifacts(t *testing.T) {
 	t.Parallel()
-	source, err := renderFacade(entityTypeModel{Package: "examplev1"}, "example.test")
-	if err != nil {
-		t.Fatal(err)
-	}
-	text := string(source)
+	source := renderFacade(
+		entityTypeModel{Package: "examplev1"},
+		"example.test",
+	)
+	text := string(source.content)
 	for _, forbidden := range []string{
 		`"encoding/json"`,
 		"type Handlers struct",
@@ -491,12 +494,16 @@ func TestOperationFreeCatalogConformanceOmitsTimeImport(t *testing.T) {
 	if len(model.Operations) != 0 {
 		t.Fatalf("fixture operations = %d, want 0", len(model.Operations))
 	}
-	conformance, err := renderCatalogConformanceTest([]entityTypeModel{model}, t.TempDir())
+	conformance, err := renderCatalogConformanceTest([]entityTypeModel{model}, "example.test", t.TempDir())
 	if err != nil {
 		t.Fatal(err)
 	}
-	if strings.Contains(string(conformance.content), `"time"`) {
-		t.Errorf("operation-free catalog conformance imports time:\n%s", conformance.content)
+	formatted, err := formatGeneratedOutputs([]output{conformance})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(formatted[0].content), `"time"`) {
+		t.Errorf("operation-free catalog conformance imports time:\n%s", formatted[0].content)
 	}
 	_ = directory
 }
@@ -524,7 +531,7 @@ func TestLoadModelRejectsOperationWithoutExamples(t *testing.T) {
 
 func TestRenderedConformanceEmbedsExactExamplesPath(t *testing.T) {
 	t.Parallel()
-	source, err := renderConformanceTest(entityTypeModel{
+	source := renderConformanceTest(entityTypeModel{
 		Package:      "examplev1",
 		TypeID:       "example.value/v1",
 		ExamplesFile: "examples.json",
@@ -532,10 +539,7 @@ func TestRenderedConformanceEmbedsExactExamplesPath(t *testing.T) {
 			{Name: "activate", GoName: "Activate"},
 		},
 	}, "example.test")
-	if err != nil {
-		t.Fatal(err)
-	}
-	text := string(source)
+	text := string(source.content)
 	for _, required := range []string{
 		`//go:embed "examples.json"`,
 		`"example.test/internal/entitytypetest"`,
@@ -551,15 +555,12 @@ func TestRenderedConformanceEmbedsExactExamplesPath(t *testing.T) {
 
 func TestRenderedConformanceOmitsOperationsForFreeTypes(t *testing.T) {
 	t.Parallel()
-	source, err := renderConformanceTest(entityTypeModel{
+	source := renderConformanceTest(entityTypeModel{
 		Package:      "examplev1",
 		TypeID:       "example.value/v1",
 		ExamplesFile: "examples.json",
 	}, "example.test")
-	if err != nil {
-		t.Fatal(err)
-	}
-	text := string(source)
+	text := string(source.content)
 	if !strings.Contains(text, "Operations: nil") {
 		t.Errorf("operation-free conformance test does not declare nil operations:\n%s", text)
 	}
@@ -626,7 +627,7 @@ func writeOptionalOperationFixture(t *testing.T) (string, string) {
 
 func TestRenderedCodecsEmbedExactManifestPaths(t *testing.T) {
 	t.Parallel()
-	source, err := renderCodecs(entityTypeModel{
+	source := renderCodecs(entityTypeModel{
 		Package:       "examplev1",
 		StateFile:     "schemas/state.json",
 		StateSchema:   schemaNode{ID: "urn:test:state"},
@@ -637,12 +638,186 @@ func TestRenderedCodecsEmbedExactManifestPaths(t *testing.T) {
 			ParametersSchema: schemaNode{ID: "urn:test:set-parameters"},
 		}},
 	})
+	directive := `//go:embed "schemas/set-parameters.json" "schemas/state.json" "support.schema.json"`
+	if !strings.Contains(string(source.content), directive) {
+		t.Errorf("generated codecs do not contain %s", directive)
+	}
+}
+
+// testGeneratedPath names a generated file inside a fresh temporary
+// destination directory. Formatting resolves imports relative to the
+// destination directory, so formatter tests use the same shape of path that
+// generation does.
+func testGeneratedPath(t *testing.T, name string) string {
+	t.Helper()
+	return filepath.Join(t.TempDir(), name)
+}
+
+// generatedImportPaths reports the imports a generated file declares, in
+// source order.
+func generatedImportPaths(t *testing.T, source []byte) []string {
+	t.Helper()
+	file, err := parser.ParseFile(token.NewFileSet(), "zz_generated.go", source, parser.ImportsOnly)
+	if err != nil {
+		t.Fatalf("generated source does not parse: %v\n%s", err, source)
+	}
+	paths := make([]string, 0, len(file.Imports))
+	for _, spec := range file.Imports {
+		path, unquoteErr := strconv.Unquote(spec.Path.Value)
+		if unquoteErr != nil {
+			t.Fatalf("generated import %s is not a quoted path: %v", spec.Path.Value, unquoteErr)
+		}
+		paths = append(paths, path)
+	}
+	return paths
+}
+
+// TestFormatGeneratedOutputsRemovesUnusedImports pins the contract renderers
+// rely on: a renderer may declare an import block without hand-tuning it,
+// because the central formatting stage keeps exactly the imports the generated
+// code uses. Generated packages therefore compile, and generate-check stays
+// byte-stable.
+func TestFormatGeneratedOutputsRemovesUnusedImports(t *testing.T) {
+	t.Parallel()
+	generated := output{path: testGeneratedPath(t, "zz_generated_example.go"), content: []byte(`package example
+
+import (
+	"errors"
+	"fmt"
+	"strings"
+)
+
+func describe(value string) error {
+	if strings.TrimSpace(value) == "" {
+		return fmt.Errorf("empty value")
+	}
+	return nil
+}
+`)}
+	formatted, err := formatGeneratedOutputs([]output{generated})
 	if err != nil {
 		t.Fatal(err)
 	}
-	directive := `//go:embed "schemas/set-parameters.json" "schemas/state.json" "support.schema.json"`
-	if !strings.Contains(string(source), directive) {
-		t.Errorf("generated codecs do not contain %s", directive)
+	if got := generatedImportPaths(t, formatted[0].content); !slices.Equal(got, []string{"fmt", "strings"}) {
+		t.Errorf("generated imports = %v, want the used imports only:\n%s", got, formatted[0].content)
+	}
+	unformatted, formatErr := format.Source(formatted[0].content)
+	if formatErr != nil {
+		t.Fatalf("formatted source is not valid Go: %v\n%s", formatErr, formatted[0].content)
+	}
+	if !bytes.Equal(unformatted, formatted[0].content) {
+		t.Errorf("formatted source is not gofmt-clean:\n%s", formatted[0].content)
+	}
+	// Generation formats each file once and -check compares the result byte for
+	// byte, so formatting a generated file twice must not change it.
+	again, err := formatGeneratedOutputs(formatted)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(again[0].content, formatted[0].content) {
+		t.Errorf("formatting is not idempotent:\n%s", again[0].content)
+	}
+}
+
+// TestFormatGeneratedOutputsFormatsEachOutputAtItsOwnPath pins the central
+// stage's key invariant: several outputs are formatted in one pass, and each
+// keeps its own destination while its own unused imports are dropped.
+func TestFormatGeneratedOutputsFormatsEachOutputAtItsOwnPath(t *testing.T) {
+	t.Parallel()
+	first := output{
+		path: testGeneratedPath(t, "zz_generated_first.go"),
+		content: []byte(`package first
+
+import (
+	"errors"
+	"strings"
+)
+
+func describe(value string) string { return strings.TrimSpace(value) }
+`),
+	}
+	second := output{
+		path: testGeneratedPath(t, "zz_generated_second.go"),
+		content: []byte(`package second
+
+import (
+	"errors"
+	"fmt"
+)
+
+func describe() error { return fmt.Errorf("empty value") }
+`),
+	}
+	formatted, err := formatGeneratedOutputs([]output{first, second})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if formatted[0].path != first.path || formatted[1].path != second.path {
+		t.Errorf(
+			"formatted paths = %q, %q, want %q, %q",
+			formatted[0].path,
+			formatted[1].path,
+			first.path,
+			second.path,
+		)
+	}
+	if got := generatedImportPaths(t, formatted[0].content); !slices.Equal(got, []string{"strings"}) {
+		t.Errorf("first output imports = %v, want only its used import:\n%s", got, formatted[0].content)
+	}
+	if got := generatedImportPaths(t, formatted[1].content); !slices.Equal(got, []string{"fmt"}) {
+		t.Errorf("second output imports = %v, want only its used import:\n%s", got, formatted[1].content)
+	}
+}
+
+// TestFormatGeneratedOutputsErrorNamesTheFailingOutputPath keeps a broken
+// renderer diagnosable: when one of several outputs cannot be formatted, the
+// error names that output's own destination and carries its unparsable source.
+// Naming the second output also pins that every output is formatted against its
+// own path rather than a shared one.
+func TestFormatGeneratedOutputsErrorNamesTheFailingOutputPath(t *testing.T) {
+	t.Parallel()
+	valid := output{path: testGeneratedPath(t, "zz_generated_valid.go"), content: []byte("package example\n")}
+	brokenPath := testGeneratedPath(t, "zz_generated_broken.go")
+	broken := output{path: brokenPath, content: []byte("package broken\n\nfunc (\n")}
+	_, err := formatGeneratedOutputs([]output{valid, broken})
+	if err == nil {
+		t.Fatal("unparsable generated source was accepted")
+	}
+	if !strings.Contains(err.Error(), brokenPath) {
+		t.Errorf("error = %v, want it to name %s", err, brokenPath)
+	}
+	if strings.Contains(err.Error(), valid.path) {
+		t.Errorf("error = %v, must not name the successfully formatted %s", err, valid.path)
+	}
+	if !strings.Contains(err.Error(), "func (") {
+		t.Errorf("error = %v, want it to include the unparsable source", err)
+	}
+}
+
+// TestFormatGeneratedOutputsDoesNotMutateInputs pins that the central stage
+// returns fresh outputs: callers still hold the unformatted content they passed
+// in, so they can compare pre- and post-formatting bytes.
+func TestFormatGeneratedOutputsDoesNotMutateInputs(t *testing.T) {
+	t.Parallel()
+	unformatted := `package example
+
+import (
+	"errors"
+	"fmt"
+)
+
+func describe() error { return fmt.Errorf("empty value") }
+`
+	generated := []output{{path: testGeneratedPath(t, "zz_generated_example.go"), content: []byte(unformatted)}}
+	formatted, err := formatGeneratedOutputs(generated)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(generated[0].content) != unformatted {
+		t.Errorf("formatting mutated the caller's output:\n%s", generated[0].content)
+	}
+	if bytes.Equal(formatted[0].content, generated[0].content) {
+		t.Error("formatting left the unused-import content unchanged")
 	}
 }
 
@@ -912,7 +1087,7 @@ func TestCatalogProbeSelectsSupportLevelRejections(t *testing.T) {
 func TestRenderedCatalogWiringCoversDeadlineOutcomesAndEquality(t *testing.T) {
 	t.Parallel()
 	model := writeCatalogProbeFixture(t)
-	rendered, err := renderCatalogConformanceTest([]entityTypeModel{model}, t.TempDir())
+	rendered, err := renderCatalogConformanceTest([]entityTypeModel{model}, "example.test", t.TempDir())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -927,7 +1102,7 @@ func TestRenderedCatalogWiringCoversDeadlineOutcomesAndEquality(t *testing.T) {
 		"catalog set unsatisfied outcome",
 		"catalog equal State",
 		"catalog unequal State",
-		"equalGeneratedCatalogJSON",
+		"entitytypetest.EqualJSON",
 		// A malformed persisted support must stay false, nil for a non-event
 		// type rather than becoming a catalog failure.
 		"malformedNonEventEntity",
@@ -958,7 +1133,7 @@ func TestCatalogProbeOmitsMissingSupportLevelRejections(t *testing.T) {
 	if len(probe.unequalState) != 0 {
 		t.Fatalf("unequal State = %s, want none", probe.unequalState)
 	}
-	rendered, err := renderCatalogConformanceTest([]entityTypeModel{model}, t.TempDir())
+	rendered, err := renderCatalogConformanceTest([]entityTypeModel{model}, "example.test", t.TempDir())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1242,7 +1417,7 @@ func TestCheckInvalidSupportsRequiresPairing(t *testing.T) {
 
 func TestRenderBehaviorEmitsValidateSupport(t *testing.T) {
 	t.Parallel()
-	source, err := renderBehavior(entityTypeModel{
+	source := renderBehavior(entityTypeModel{
 		Package:     "examplev1",
 		StateSchema: schemaNode{Type: string(kindBoolean)},
 		StateSupport: schemaNode{
@@ -1256,10 +1431,7 @@ func TestRenderBehaviorEmitsValidateSupport(t *testing.T) {
 			HasRight: true,
 		}},
 	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	text := string(source)
+	text := string(source.content)
 	for _, required := range []string{
 		`"errors"`,
 		"func ValidateSupport(support Support) error",
@@ -1274,17 +1446,14 @@ func TestRenderBehaviorEmitsValidateSupport(t *testing.T) {
 
 func TestRenderBehaviorOmitsSatisfiedForDispatched(t *testing.T) {
 	t.Parallel()
-	source, err := renderBehavior(entityTypeModel{
+	source := renderBehavior(entityTypeModel{
 		Package:     "examplev1",
 		StateSchema: schemaNode{Type: string(kindBoolean)},
 		Operations: []operationModel{
 			{Name: "trigger", GoName: "Trigger", DeadlineMS: 1000, Outcome: outcomeDispatched},
 		},
 	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	text := string(source)
+	text := string(source.content)
 	if strings.Contains(text, "Satisfied") {
 		t.Errorf("dispatched behavior unexpectedly defines a satisfaction matcher:\n%s", text)
 	}
@@ -1295,7 +1464,7 @@ func TestRenderBehaviorOmitsSatisfiedForDispatched(t *testing.T) {
 
 func TestRenderBehaviorKeepsSatisfiedForObserved(t *testing.T) {
 	t.Parallel()
-	source, err := renderBehavior(entityTypeModel{
+	source := renderBehavior(entityTypeModel{
 		Package:     "examplev1",
 		StateSchema: schemaNode{Type: string(kindBoolean)},
 		Operations: []operationModel{
@@ -1316,17 +1485,14 @@ func TestRenderBehaviorKeepsSatisfiedForObserved(t *testing.T) {
 			},
 		},
 	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !strings.Contains(string(source), "func SetSatisfied(") {
-		t.Errorf("observed behavior omits the satisfaction matcher:\n%s", source)
+	if !strings.Contains(string(source.content), "func SetSatisfied(") {
+		t.Errorf("observed behavior omits the satisfaction matcher:\n%s", source.content)
 	}
 }
 
 func TestRenderedContractOmitsSatisfiesForDispatched(t *testing.T) {
 	t.Parallel()
-	source, err := renderConformanceTest(entityTypeModel{
+	source := renderConformanceTest(entityTypeModel{
 		Package:      "examplev1",
 		TypeID:       "example.value/v1",
 		ExamplesFile: "examples.json",
@@ -1334,10 +1500,7 @@ func TestRenderedContractOmitsSatisfiesForDispatched(t *testing.T) {
 			{Name: "trigger", GoName: "Trigger", Outcome: outcomeDispatched, Required: true},
 		},
 	}, "example.test")
-	if err != nil {
-		t.Fatal(err)
-	}
-	text := string(source)
+	text := string(source.content)
 	if !strings.Contains(text, "Dispatched: true") {
 		t.Errorf("dispatched conformance probe omits the dispatched marker:\n%s", text)
 	}
@@ -1350,7 +1513,7 @@ func TestRenderedContractOmitsSatisfiesForDispatched(t *testing.T) {
 
 func TestRenderedContractKeepsSatisfiesForObserved(t *testing.T) {
 	t.Parallel()
-	source, err := renderConformanceTest(entityTypeModel{
+	source := renderConformanceTest(entityTypeModel{
 		Package:      "examplev1",
 		TypeID:       "example.value/v1",
 		ExamplesFile: "examples.json",
@@ -1358,10 +1521,7 @@ func TestRenderedContractKeepsSatisfiesForObserved(t *testing.T) {
 			{Name: "set", GoName: "Set", Outcome: outcomeObserved, Required: true},
 		},
 	}, "example.test")
-	if err != nil {
-		t.Fatal(err)
-	}
-	text := string(source)
+	text := string(source.content)
 	if !strings.Contains(text, "Satisfies:") || !strings.Contains(text, "SetSatisfied") {
 		t.Errorf("observed conformance probe omits the outcome matcher:\n%s", text)
 	}
@@ -1372,17 +1532,14 @@ func TestRenderedContractKeepsSatisfiesForObserved(t *testing.T) {
 
 func TestStatelessFacadeOmitsObservation(t *testing.T) {
 	t.Parallel()
-	source, err := renderFacade(entityTypeModel{
+	source := renderFacade(entityTypeModel{
 		Package:   "examplev1",
 		Stateless: true,
 		Operations: []operationModel{
 			{Name: "trigger", GoName: "Trigger"},
 		},
 	}, "example.test")
-	if err != nil {
-		t.Fatal(err)
-	}
-	text := string(source)
+	text := string(source.content)
 	for _, forbidden := range []string{"type ObservationInput struct", "func NewObservation("} {
 		if strings.Contains(text, forbidden) {
 			t.Errorf("stateless facade contains %q:\n%s", forbidden, text)
@@ -1397,14 +1554,11 @@ func TestStatelessFacadeOmitsObservation(t *testing.T) {
 
 func TestFacadeConstructorsValidateSupport(t *testing.T) {
 	t.Parallel()
-	source, err := renderFacade(entityTypeModel{
+	source := renderFacade(entityTypeModel{
 		Package:    "examplev1",
 		Operations: []operationModel{{Name: "set", GoName: "Set", Required: true}},
 	}, "example.test")
-	if err != nil {
-		t.Fatal(err)
-	}
-	text := string(source)
+	text := string(source.content)
 	if count := strings.Count(text, "ValidateSupport(support)"); count != 2 {
 		t.Errorf("facade validates support %d times, want descriptor and command handler", count)
 	}
@@ -1427,11 +1581,11 @@ func TestFacadeConstructorsValidateSupport(t *testing.T) {
 		t.Error("descriptor runs semantic support validation before schema validation")
 	}
 
-	free, err := renderFacade(entityTypeModel{Package: "examplev1"}, "example.test")
-	if err != nil {
-		t.Fatal(err)
-	}
-	freeText := string(free)
+	free := renderFacade(
+		entityTypeModel{Package: "examplev1"},
+		"example.test",
+	)
+	freeText := string(free.content)
 	if count := strings.Count(freeText, "ValidateSupport(support)"); count != 1 {
 		t.Errorf("operation-free facade validates support %d times, want descriptor only", count)
 	}
@@ -1442,16 +1596,13 @@ func TestFacadeConstructorsValidateSupport(t *testing.T) {
 
 func TestStatefulFacadeKeepsObservation(t *testing.T) {
 	t.Parallel()
-	source, err := renderFacade(entityTypeModel{
+	source := renderFacade(entityTypeModel{
 		Package: "examplev1",
 		Operations: []operationModel{
 			{Name: "set", GoName: "Set"},
 		},
 	}, "example.test")
-	if err != nil {
-		t.Fatal(err)
-	}
-	text := string(source)
+	text := string(source.content)
 	for _, required := range []string{"type ObservationInput struct", "func NewObservation("} {
 		if !strings.Contains(text, required) {
 			t.Errorf("stateful facade omits %q:\n%s", required, text)
@@ -1467,10 +1618,7 @@ func TestStatelessFacadeTestOmitsObservation(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	rendered, err := renderFacadeConformanceTest(model)
-	if err != nil {
-		t.Fatal(err)
-	}
+	rendered := renderFacadeConformanceTest(model, "example.test")
 	text := string(rendered.content)
 	for _, forbidden := range []string{"NewObservation(", "ObservationInput{", "TestGeneratedObservationConformance"} {
 		if strings.Contains(text, forbidden) {

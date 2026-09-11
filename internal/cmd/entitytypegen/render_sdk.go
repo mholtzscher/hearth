@@ -2,12 +2,13 @@ package main
 
 import (
 	"fmt"
+	"path/filepath"
 	"strconv"
 	"strings"
 )
 
 //nolint:funlen,gocognit // Keeping the generated facade template together makes its emitted structure reviewable.
-func renderFacade(model entityTypeModel, modulePath string) ([]byte, error) {
+func renderFacade(model entityTypeModel, modulePath string) output {
 	var source strings.Builder
 	generatedHeader(&source)
 	fmt.Fprintf(&source, "package %s\n\n", model.Package)
@@ -185,7 +186,10 @@ func renderFacade(model entityTypeModel, modulePath string) ([]byte, error) {
 	if len(model.Operations) > 0 || model.EventSource {
 		source.WriteString("func validationError(err error) error { return &adapter.ValidationError{Err: err} }\n")
 	}
-	return formatGenerated(source.String())
+	return output{
+		path:    filepath.Join(model.ModuleRoot, "sdk", "adapter", model.Package, "zz_generated_facade.go"),
+		content: []byte(source.String()),
+	}
 }
 
 // writeEntityEventBuilder emits the typed Entity Event builder for an

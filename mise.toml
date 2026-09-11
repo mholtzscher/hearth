@@ -140,6 +140,7 @@ mise run fuzz-zigbee2mqtt-state
 
 [tasks."test-entitytype-fixtures"]
 description = "Compile and execute generated entity-type fixtures in an isolated module"
+depends = ["tidy"]
 run = '''HEARTH_FIXTURE_EXEC=1 go test ./internal/cmd/entitytypegen -run='^TestFixtureExecution$' -count=1 -v'''
 
 [tasks."vet"]
@@ -194,5 +195,6 @@ depends = [
   "lint",
   "tidy-check",
   "test",
+  "test-entitytype-fixtures",
   "vet",
 ]

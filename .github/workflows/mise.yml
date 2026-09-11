@@ -36,8 +36,6 @@ jobs:
             go-${{ runner.os }}-${{ runner.arch }}-${{ steps.go-cache-paths.outputs.version }}-
       - name: Run checks
         run: mise run validate
-      - name: Execute generated Entity-type fixtures
-        run: mise run test-entitytype-fixtures
       - name: Verify clean working tree
         run: |
           git diff --exit-code
