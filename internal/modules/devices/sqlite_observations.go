@@ -98,7 +98,7 @@ func (repository *SQLiteRepository) ProjectObservation(
 		return ProjectionResult{}, fmt.Errorf("insert observation: %w", err)
 	}
 
-	state, satisfied, err := repository.persistObservationState(
+	state, satisfied, satisfiedRecord, err := repository.persistObservationState(
 		ctx, tx, stateQueries, params, view, normalized, rejection, linkedCommand, projectionNow, receiveOrder,
 	)
 	if err != nil {
@@ -108,7 +108,8 @@ func (repository *SQLiteRepository) ProjectObservation(
 		return ProjectionResult{}, fmt.Errorf("commit observation projection: %w", commitErr)
 	}
 	return ProjectionResult{
-		Disposition: disposition, Rejection: rejection, State: state, SatisfiedCommand: satisfied,
+		Disposition: disposition, Rejection: rejection, State: state,
+		SatisfiedCommand: satisfied, SatisfiedCommandRecord: satisfiedRecord,
 	}, nil
 }
 
@@ -247,6 +248,9 @@ func (repository *SQLiteRepository) normalizeObservationState(entity Entity, val
 	return normalized, err == nil
 }
 
+// persistObservationState upserts the committed State and, when the same
+// transaction satisfied a linked Command, returns both the waiter result and
+// the external fact projection of the one committed transition.
 func (repository *SQLiteRepository) persistObservationState(
 	ctx context.Context,
 	tx *sql.Tx,
@@ -258,9 +262,9 @@ func (repository *SQLiteRepository) persistObservationState(
 	linkedCommand *CommandRecord,
 	projectionNow time.Time,
 	receiveOrder int64,
-) (*State, *CommandResult, error) {
+) (*State, *CommandResult, *CommandRecord, error) {
 	if rejection != nil {
-		return nil, nil, nil
+		return nil, nil, nil, nil
 	}
 	state := State{
 		EntityID: params.Observation.EntityID, Value: append(Value(nil), normalized...),
@@ -273,19 +277,19 @@ func (repository *SQLiteRepository) persistObservationState(
 		AdapterReceivedAt: formatTime(state.AdapterReceivedAt), SourceUpdatedAt: nullableTime(state.SourceUpdatedAt),
 		ObservedAt: formatTime(state.ObservedAt), ReceiveOrder: state.ReceiveOrder,
 	}); err != nil {
-		return nil, nil, fmt.Errorf("upsert entity state: %w", err)
+		return nil, nil, nil, fmt.Errorf("upsert entity state: %w", err)
 	}
 	if linkedCommand == nil {
-		return &state, nil, nil
+		return &state, nil, nil, nil
 	}
-	satisfied, err := repository.satisfyCommand(
+	satisfied, record, err := repository.satisfyCommand(
 		ctx, tx, view.Entity, *linkedCommand, params.RuntimeID,
 		params.Observation.ID, normalized, projectionNow,
 	)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
-	return &state, satisfied, nil
+	return &state, satisfied, record, nil
 }
 
 func (repository *SQLiteRepository) activeLinkedCommand(
@@ -320,6 +324,10 @@ func (repository *SQLiteRepository) activeLinkedCommand(
 	return &command, completedAt, nil
 }
 
+// satisfyCommand commits one observation-driven satisfaction and returns the
+// waiter result plus the committed Command record. The record is the same
+// committed row the fact projection reports, so the Observation fact and the
+// satisfied Command fact describe one transaction.
 func (repository *SQLiteRepository) satisfyCommand(
 	ctx context.Context,
 	tx *sql.Tx,
@@ -329,16 +337,16 @@ func (repository *SQLiteRepository) satisfyCommand(
 	observationID ObservationID,
 	value Value,
 	completedAt time.Time,
-) (*CommandResult, error) {
+) (*CommandResult, *CommandRecord, error) {
 	matches, err := repository.catalog.Satisfies(entity, command, value)
 	if err != nil {
-		return nil, fmt.Errorf("evaluate linked command outcome: %w", err)
+		return nil, nil, fmt.Errorf("evaluate linked command outcome: %w", err)
 	}
 	if !matches {
-		return nil, nil //nolint:nilnil // No matching outcome is a successful projection.
+		return nil, nil, nil // No matching outcome is a successful projection.
 	}
 	queries := repository.queries.WithTx(tx)
-	rows, err := queries.SatisfyCommandFromObservation(ctx, dbsqlc.SatisfyCommandFromObservationParams{
+	satisfied, err := queries.SatisfyCommandFromObservation(ctx, dbsqlc.SatisfyCommandFromObservationParams{
 		CompletedAt:          sql.NullString{String: formatTime(completedAt), Valid: true},
 		OutcomeObservationID: sql.NullString{String: string(observationID), Valid: true},
 		ID:                   string(command.ID),
@@ -346,18 +354,23 @@ func (repository *SQLiteRepository) satisfyCommand(
 		AdapterID:            command.AdapterID,
 		RuntimeID:            nullableText(string(runtimeID)),
 	})
-	if err != nil {
-		return nil, fmt.Errorf("satisfy linked command: %w", err)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, nil, nil // A concurrently completed command has no result.
 	}
-	if rows != 1 {
-		return nil, nil //nolint:nilnil // A concurrently completed command has no result.
+	if err != nil {
+		return nil, nil, fmt.Errorf("satisfy linked command: %w", err)
+	}
+	record, err := commandFromRow(satisfied)
+	if err != nil {
+		return nil, nil, err
 	}
 	clonedValue := append(Value(nil), value...)
 	result, err := NewCommandResult(command.ID, OutcomeObserved, &observationID, &clonedValue)
 	if err != nil {
-		return nil, fmt.Errorf("build observed command result: %w", err)
+		return nil, nil, fmt.Errorf("build observed command result: %w", err)
 	}
-	return &result, nil
+	clonedRecord := copyCommandRecord(record)
+	return &result, &clonedRecord, nil
 }
 
 func (repository *SQLiteRepository) DeleteExpiredObservations(ctx context.Context, before time.Time) error {

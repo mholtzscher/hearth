@@ -160,7 +160,12 @@ func TestCoreNATSTransportRegistersAndProjectsDurableObservation(t *testing.T) {
 	).Scan(&runtimeID); scanErr != nil {
 		t.Fatal(scanErr)
 	}
-	readiness := NewRuntimeReadiness(database, coreConnection, js, observations, entityEvents)
+	factConnection, dispatcher := startDeviceFactTransport(
+		t, coreConnection, server.ClientURL(), slog.New(slog.DiscardHandler),
+	)
+	readiness := NewRuntimeReadiness(
+		database, coreConnection, factConnection, js, observations, entityEvents, dispatcher,
+	)
 	if readinessErr := readiness.Check(ctx); readinessErr != nil {
 		t.Fatal(readinessErr)
 	}
@@ -213,9 +218,16 @@ func TestCoreNATSTransportRegistersAndProjectsDurableObservation(t *testing.T) {
 		recovered.State.ReceiveOrder != projected.ReceiveOrder || string(recovered.State.Value) != "true" {
 		t.Fatalf("recovered state = %#v, want %#v", recovered.State, projected)
 	}
+	// The wire correlation is validated on every projection. A redelivery of an
+	// already durable Observation is a duplicate regardless of its correlation,
+	// and no persistence column exists because facts are never reconstructed.
+	redeliveredCorrelationID, correlationErr := devices.NewCorrelationID()
+	if correlationErr != nil {
+		t.Fatal(correlationErr)
+	}
 	result, err := recoveredService.ProjectObservation(ctx, "simulator", runtimeID, devices.Observation{
 		ID: devices.ObservationID(observationID), EntityID: entityID, Value: devices.Value(`true`),
-		AdapterReceivedAt: adapterReceivedAt,
+		CorrelationID: redeliveredCorrelationID, AdapterReceivedAt: adapterReceivedAt,
 	}, projected.ObservedAt)
 	if err != nil {
 		t.Fatal(err)

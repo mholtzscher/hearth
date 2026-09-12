@@ -217,10 +217,15 @@ func domainObservation(
 	if entityIDErr != nil {
 		return devices.Observation{}, entityIDErr
 	}
+	correlationID, correlationIDErr := devices.ParseCorrelationID(envelope.CorrelationID)
+	if correlationIDErr != nil {
+		return devices.Observation{}, correlationIDErr
+	}
 	domain := devices.Observation{
 		ID:                observationID,
 		EntityID:          entityID,
 		Value:             append(devices.Value(nil), envelope.Data.Value...),
+		CorrelationID:     correlationID,
 		AdapterReceivedAt: adapterReceivedAt,
 	}
 	if sourceUpdatedAt != nil {

@@ -41,6 +41,9 @@ func (service *Service) ProjectObservation(
 			return ProjectionResult{}, fmt.Errorf("parse refresh command ID: %w", err)
 		}
 	}
+	if _, err := ParseCorrelationID(string(observation.CorrelationID)); err != nil {
+		return ProjectionResult{}, fmt.Errorf("parse observation correlation ID: %w", err)
+	}
 
 	observedAt = observedAt.UTC()
 	params := ProjectObservationParams{
@@ -50,12 +53,31 @@ func (service *Service) ProjectObservation(
 		ObservedAt:  observedAt,
 		Now:         service.dependencies.Now,
 	}
+	// An Observation that refreshes a Command competes with that Command's own
+	// lifecycle for the same durable row, so it takes the Command's transition
+	// stripe before opening the transaction and holds it through waiter
+	// notification and fact enqueue. Unrelated Commands hash to their own
+	// stripes and are unaffected.
+	release := func() {}
+	if observation.RefreshForCommand != nil {
+		release = service.commandTransitions.lock(*observation.RefreshForCommand)
+	}
+	defer release()
 	result, err := service.stores.Observations.ProjectObservation(ctx, params)
 	if err != nil {
 		return ProjectionResult{}, err
 	}
+	// The waiter is notified before any transport work so fact enqueue latency
+	// can never delay authoritative Command completion.
 	if result.SatisfiedCommand != nil {
 		service.notifyCommand(*result.SatisfiedCommand)
+	}
+	// Order is part of the contract: the Observation evidence for the
+	// committing transaction is enqueued before the Command transition that
+	// the same transaction satisfied.
+	service.emitObservationFact(ctx, params.Observation, result, observedAt)
+	if result.SatisfiedCommandRecord != nil {
+		service.emitCommandTransition(ctx, *result.SatisfiedCommandRecord)
 	}
 	return copyProjectionResult(result), nil
 }
@@ -117,6 +139,10 @@ func copyProjectionResult(result ProjectionResult) ProjectionResult {
 			command.Value = &value
 		}
 		cloned.SatisfiedCommand = &command
+	}
+	if result.SatisfiedCommandRecord != nil {
+		record := copyCommandRecord(*result.SatisfiedCommandRecord)
+		cloned.SatisfiedCommandRecord = &record
 	}
 	return cloned
 }

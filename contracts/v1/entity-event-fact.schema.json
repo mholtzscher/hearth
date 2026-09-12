@@ -1,0 +1,35 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:hearth:schema:entity-event-fact:v1",
+  "title": "Hearth v1 entity event fact",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["id", "schema", "emitted_at", "correlation_id", "causation_id", "data"],
+  "properties": {
+    "id": { "$ref": "urn:hearth:schema:common:v1#/$defs/fct_id" },
+    "schema": { "const": "urn:hearth:schema:entity-event-fact:v1" },
+    "emitted_at": { "$ref": "urn:hearth:schema:common:v1#/$defs/utc_timestamp" },
+    "correlation_id": { "$ref": "urn:hearth:schema:common:v1#/$defs/cor_id" },
+    "causation_id": { "$ref": "urn:hearth:schema:common:v1#/$defs/evt_id" },
+    "data": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "event_id",
+        "entity_id",
+        "name",
+        "reported_at",
+        "received_at",
+        "recorded_at"
+      ],
+      "properties": {
+        "event_id": { "$ref": "urn:hearth:schema:common:v1#/$defs/evt_id" },
+        "entity_id": { "$ref": "urn:hearth:schema:common:v1#/$defs/ent_id" },
+        "name": { "$ref": "urn:hearth:schema:common:v1#/$defs/slug" },
+        "reported_at": { "$ref": "urn:hearth:schema:common:v1#/$defs/utc_timestamp" },
+        "received_at": { "$ref": "urn:hearth:schema:common:v1#/$defs/utc_timestamp" },
+        "recorded_at": { "$ref": "urn:hearth:schema:common:v1#/$defs/utc_timestamp" }
+      }
+    }
+  }
+}

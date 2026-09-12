@@ -96,6 +96,10 @@
       "type": "string",
       "pattern": "^cor_[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
     },
+    "fct_id": {
+      "type": "string",
+      "pattern": "^fct_[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+    },
     "reason_code": {
       "type": "string",
       "maxLength": 128,

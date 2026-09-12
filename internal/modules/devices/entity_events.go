@@ -109,9 +109,13 @@ const (
 )
 
 // EntityEventRecordResult reports what Core did with one recording attempt.
+// RecordedAt is the Core first-record time committed with a first-seen accepted
+// or rejected row; duplicates and identity conflicts leave the existing row
+// untouched and leave it zero.
 type EntityEventRecordResult struct {
-	Outcome   EntityEventRecordOutcome
-	Rejection *EntityEventRejection // only for a newly rejected event
+	Outcome    EntityEventRecordOutcome
+	Rejection  *EntityEventRejection // only for a newly rejected event
+	RecordedAt time.Time
 }
 
 // RecordEntityEvent validates one trusted recording request before writing and
@@ -163,6 +167,7 @@ func (service *Service) RecordEntityEvent(
 	if err != nil {
 		return EntityEventRecordResult{}, err
 	}
+	service.emitEntityEventFact(ctx, event, receivedAt, result)
 	return copyEntityEventRecordResult(result), nil
 }
 

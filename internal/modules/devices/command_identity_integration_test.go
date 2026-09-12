@@ -59,7 +59,8 @@ func testReservedCommandIdentity(t *testing.T, outcome OutcomeKind) {
 		if outcome == OutcomeObserved {
 			_, projectErr := service.ProjectObservation(ctx, adapter, runtime, Observation{
 				ID: commandTestObservationID, EntityID: input.EntityID, Value: Value(`true`),
-				AdapterReceivedAt: time.Now().UTC(), RefreshForCommand: &request.ID,
+				CorrelationID: commandTestCorrelationID, AdapterReceivedAt: time.Now().UTC(),
+				RefreshForCommand: &request.ID,
 			}, time.Now().UTC())
 			if projectErr != nil {
 				return CommandAcceptance{}, projectErr

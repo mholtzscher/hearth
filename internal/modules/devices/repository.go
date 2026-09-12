@@ -123,11 +123,16 @@ type EntityEventRepository interface {
 	DeleteEntityEventsBefore(context.Context, time.Time, int) (int64, error)
 }
 
+// CommandLedger persists Command lifecycle transitions and reports exactly
+// which writes changed a durable row. Creation returns the committed record;
+// approval, completion and interruption report their transitions so the
+// service can publish one Device Fact per real transition and none for a
+// no-op repeat.
 type CommandLedger interface {
 	CreateCommand(context.Context, CommandRecord) (CommandRecord, error)
-	MarkCommandAccepted(context.Context, CommandID, time.Time) error
-	CompleteCommand(context.Context, CommandCompletion) error
-	InterruptActiveCommands(context.Context, time.Time) error
+	MarkCommandAccepted(context.Context, CommandID, time.Time) (CommandTransition, error)
+	CompleteCommand(context.Context, CommandCompletion) (CommandTransition, error)
+	InterruptActiveCommands(context.Context, time.Time) ([]CommandRecord, error)
 }
 
 type CommandSender interface {

@@ -1,0 +1,158 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:hearth:schema:command-fact:v1",
+  "title": "Hearth v1 command fact",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["id", "schema", "emitted_at", "correlation_id", "causation_id", "data"],
+  "properties": {
+    "id": { "$ref": "urn:hearth:schema:common:v1#/$defs/fct_id" },
+    "schema": { "const": "urn:hearth:schema:command-fact:v1" },
+    "emitted_at": { "$ref": "urn:hearth:schema:common:v1#/$defs/utc_timestamp" },
+    "correlation_id": { "$ref": "urn:hearth:schema:common:v1#/$defs/cor_id" },
+    "causation_id": { "$ref": "urn:hearth:schema:common:v1#/$defs/cmd_id" },
+    "data": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "command_id",
+        "entity_id",
+        "operation",
+        "parameters",
+        "status",
+        "requested_at",
+        "deadline_at"
+      ],
+      "properties": {
+        "command_id": { "$ref": "urn:hearth:schema:common:v1#/$defs/cmd_id" },
+        "entity_id": { "$ref": "urn:hearth:schema:common:v1#/$defs/ent_id" },
+        "operation": { "$ref": "urn:hearth:schema:common:v1#/$defs/operation_name" },
+        "parameters": { "type": "object" },
+        "status": {
+          "enum": [
+            "requested",
+            "accepted",
+            "satisfied",
+            "dispatched",
+            "rejected",
+            "adapter_unhealthy",
+            "entity_unavailable",
+            "outcome_timeout",
+            "entity_disabled",
+            "internal_failure",
+            "interrupted"
+          ]
+        },
+        "requested_at": { "$ref": "urn:hearth:schema:common:v1#/$defs/utc_timestamp" },
+        "deadline_at": { "$ref": "urn:hearth:schema:common:v1#/$defs/utc_timestamp" },
+        "accepted_at": { "$ref": "urn:hearth:schema:common:v1#/$defs/utc_timestamp" },
+        "completed_at": { "$ref": "urn:hearth:schema:common:v1#/$defs/utc_timestamp" },
+        "failure_code": {
+          "enum": [
+            "adapter_unhealthy",
+            "entity_unavailable",
+            "upstream_rejected",
+            "outcome_timeout",
+            "entity_disabled",
+            "internal_error",
+            "core_restarted"
+          ]
+        },
+        "outcome_observation_id": { "$ref": "urn:hearth:schema:common:v1#/$defs/obs_id" }
+      },
+      "oneOf": [
+        {
+          "properties": { "status": { "const": "requested" } },
+          "not": {
+            "anyOf": [
+              { "required": ["completed_at"] },
+              { "required": ["failure_code"] },
+              { "required": ["outcome_observation_id"] }
+            ]
+          }
+        },
+        {
+          "properties": { "status": { "const": "accepted" } },
+          "not": {
+            "anyOf": [
+              { "required": ["completed_at"] },
+              { "required": ["failure_code"] },
+              { "required": ["outcome_observation_id"] }
+            ]
+          }
+        },
+        {
+          "properties": { "status": { "const": "satisfied" } },
+          "required": ["completed_at", "outcome_observation_id"],
+          "not": { "required": ["failure_code"] }
+        },
+        {
+          "properties": { "status": { "const": "dispatched" } },
+          "required": ["completed_at"],
+          "not": {
+            "anyOf": [
+              { "required": ["failure_code"] },
+              { "required": ["outcome_observation_id"] }
+            ]
+          }
+        },
+        {
+          "properties": {
+            "status": { "const": "rejected" },
+            "failure_code": { "const": "upstream_rejected" }
+          },
+          "required": ["completed_at", "failure_code"],
+          "not": { "required": ["outcome_observation_id"] }
+        },
+        {
+          "properties": {
+            "status": { "const": "adapter_unhealthy" },
+            "failure_code": { "const": "adapter_unhealthy" }
+          },
+          "required": ["completed_at", "failure_code"],
+          "not": { "required": ["outcome_observation_id"] }
+        },
+        {
+          "properties": {
+            "status": { "const": "entity_unavailable" },
+            "failure_code": { "const": "entity_unavailable" }
+          },
+          "required": ["completed_at", "failure_code"],
+          "not": { "required": ["outcome_observation_id"] }
+        },
+        {
+          "properties": {
+            "status": { "const": "outcome_timeout" },
+            "failure_code": { "const": "outcome_timeout" }
+          },
+          "required": ["completed_at", "failure_code"],
+          "not": { "required": ["outcome_observation_id"] }
+        },
+        {
+          "properties": {
+            "status": { "const": "entity_disabled" },
+            "failure_code": { "const": "entity_disabled" }
+          },
+          "required": ["completed_at", "failure_code"],
+          "not": { "required": ["outcome_observation_id"] }
+        },
+        {
+          "properties": {
+            "status": { "const": "internal_failure" },
+            "failure_code": { "const": "internal_error" }
+          },
+          "required": ["completed_at", "failure_code"],
+          "not": { "required": ["outcome_observation_id"] }
+        },
+        {
+          "properties": {
+            "status": { "const": "interrupted" },
+            "failure_code": { "const": "core_restarted" }
+          },
+          "required": ["completed_at", "failure_code"],
+          "not": { "required": ["outcome_observation_id"] }
+        }
+      ]
+    }
+  }
+}

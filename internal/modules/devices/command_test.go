@@ -99,34 +99,42 @@ func (repository *commandRepository) CreateCommand(_ context.Context, command Co
 	return copyCommandRecord(command), nil
 }
 
-func (repository *commandRepository) MarkCommandAccepted(_ context.Context, id CommandID, acceptedAt time.Time) error {
+func (repository *commandRepository) MarkCommandAccepted(
+	_ context.Context,
+	id CommandID,
+	acceptedAt time.Time,
+) (CommandTransition, error) {
 	repository.mutex.Lock()
 	defer repository.mutex.Unlock()
 	command := repository.commands[id]
 	if command.Status != CommandStatusRequested && command.Status != CommandStatusAccepted &&
 		command.Status != CommandStatusSatisfied {
-		return ErrCommandTerminal
+		return CommandTransition{}, ErrCommandTerminal
 	}
+	changed := command.Status == CommandStatusRequested
 	if command.AcceptedAt == nil {
 		value := acceptedAt
 		command.AcceptedAt = &value
 	}
-	if command.Status == CommandStatusRequested {
+	if changed {
 		command.Status = CommandStatusAccepted
 	}
 	repository.commands[id] = command
-	return nil
+	return CommandTransition{Record: copyCommandRecord(command), Changed: changed}, nil
 }
 
-func (repository *commandRepository) CompleteCommand(_ context.Context, completion CommandCompletion) error {
+func (repository *commandRepository) CompleteCommand(
+	_ context.Context,
+	completion CommandCompletion,
+) (CommandTransition, error) {
 	repository.mutex.Lock()
 	defer repository.mutex.Unlock()
 	if repository.completeErr != nil {
-		return repository.completeErr
+		return CommandTransition{}, repository.completeErr
 	}
 	command := repository.commands[completion.ID]
 	if command.Status != CommandStatusRequested && command.Status != CommandStatusAccepted {
-		return ErrCommandTerminal
+		return CommandTransition{}, ErrCommandTerminal
 	}
 	completedAt := completion.CompletedAt
 	failureCode := completion.FailureCode
@@ -134,10 +142,10 @@ func (repository *commandRepository) CompleteCommand(_ context.Context, completi
 	command.CompletedAt = &completedAt
 	command.FailureCode = &failureCode
 	repository.commands[completion.ID] = command
-	return nil
+	return CommandTransition{Record: copyCommandRecord(command), Changed: true}, nil
 }
 
-func (*commandRepository) InterruptActiveCommands(context.Context, time.Time) error {
+func (*commandRepository) InterruptActiveCommands(context.Context, time.Time) ([]CommandRecord, error) {
 	panic("unexpected InterruptActiveCommands call")
 }
 
@@ -147,7 +155,14 @@ func (repository *commandRepository) ProjectObservation(
 ) (ProjectionResult, error) {
 	repository.mutex.Lock()
 	defer repository.mutex.Unlock()
-	result := ProjectionResult{Disposition: DispositionUnchanged}
+	result := ProjectionResult{
+		Disposition: DispositionUnchanged,
+		State: &State{
+			EntityID: params.Observation.EntityID, Value: append(Value(nil), params.Observation.Value...),
+			ObservationID: params.Observation.ID, AdapterReceivedAt: params.Observation.AdapterReceivedAt.UTC(),
+			ObservedAt: params.ObservedAt.UTC(),
+		},
+	}
 	if params.Observation.RefreshForCommand == nil {
 		return result, nil
 	}
@@ -172,6 +187,8 @@ func (repository *commandRepository) ProjectObservation(
 		return ProjectionResult{}, err
 	}
 	result.SatisfiedCommand = &observed
+	clonedRecord := copyCommandRecord(command)
+	result.SatisfiedCommandRecord = &clonedRecord
 	return result, nil
 }
 
@@ -209,7 +226,8 @@ func TestExecuteCommandCommitsBeforeDispatchAndHandlesAcceptanceRace(t *testing.
 			}
 			observation := Observation{
 				ID: commandTestObservationID, EntityID: request.EntityID, Value: Value(`true`),
-				AdapterReceivedAt: time.Now().UTC(), RefreshForCommand: &request.ID,
+				CorrelationID: commandTestCorrelationID, AdapterReceivedAt: time.Now().UTC(),
+				RefreshForCommand: &request.ID,
 			}
 			if _, err := service.ProjectObservation(
 				ctx, adapterID, runtimeID, observation, time.Now().UTC(),
@@ -263,7 +281,8 @@ func TestExecuteCommandReturnsSatisfiedWhenObservationWinsDispatchFailureRace(t 
 				) (CommandAcceptance, error) {
 					_, err := service.ProjectObservation(ctx, adapterID, runtimeID, Observation{
 						ID: commandTestObservationID, EntityID: request.EntityID, Value: Value(`true`),
-						AdapterReceivedAt: time.Now().UTC(), RefreshForCommand: &request.ID,
+						CorrelationID: commandTestCorrelationID, AdapterReceivedAt: time.Now().UTC(),
+						RefreshForCommand: &request.ID,
 					}, time.Now().UTC())
 					if err != nil {
 						return CommandAcceptance{}, err
@@ -557,7 +576,8 @@ func TestExecuteCommandKeepsOverlappingCommandsIndependent(t *testing.T) {
 			observationID := observationIDs[request.ID]
 			_, err := service.ProjectObservation(ctx, adapterID, runtimeID, Observation{
 				ID: observationID, EntityID: request.EntityID, Value: value,
-				AdapterReceivedAt: time.Now().UTC(), RefreshForCommand: &request.ID,
+				CorrelationID: commandTestCorrelationID, AdapterReceivedAt: time.Now().UTC(),
+				RefreshForCommand: &request.ID,
 			}, time.Now().UTC())
 			return CommandAcceptance{Accepted: true}, err
 		},
@@ -612,7 +632,8 @@ func TestExecuteCommandIgnoresMismatchedLinkedObservation(t *testing.T) {
 		func(ctx context.Context, adapterID string, runtimeID RuntimeID, request CommandRequest) (CommandAcceptance, error) {
 			_, err := service.ProjectObservation(ctx, adapterID, runtimeID, Observation{
 				ID: commandTestObservationID, EntityID: request.EntityID, Value: Value(`false`),
-				AdapterReceivedAt: time.Now().UTC(), RefreshForCommand: &request.ID,
+				CorrelationID: commandTestCorrelationID, AdapterReceivedAt: time.Now().UTC(),
+				RefreshForCommand: &request.ID,
 			}, time.Now().UTC())
 			return CommandAcceptance{Accepted: true}, err
 		},

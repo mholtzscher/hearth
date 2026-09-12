@@ -9,6 +9,7 @@ import (
 type Dependencies struct {
 	Logger           *slog.Logger
 	Now              func() time.Time
+	DeviceFacts      DeviceFactSink
 	NewDeviceID      func() (DeviceID, error)
 	NewEntityID      func() (EntityID, error)
 	NewCommandID     func() (CommandID, error)
@@ -35,6 +36,8 @@ type Service struct {
 	sender               CommandSender
 	catalog              *TypeCatalog
 	dependencies         Dependencies
+	deviceFacts          DeviceFactSink
+	commandTransitions   commandTransitionStripes
 	waiters              commandWaiters
 	lifecycleMu          sync.Mutex
 	commandAdmissionOpen bool
@@ -75,6 +78,7 @@ func NewService(stores Stores, sender CommandSender, catalog *TypeCatalog, depen
 		sender:               sender,
 		catalog:              catalog,
 		dependencies:         dependencies,
+		deviceFacts:          dependencies.DeviceFacts,
 		waiters:              commandWaiters{byID: make(map[CommandID]chan CommandResult)},
 		commandAdmissionOpen: true,
 		commandIdle:          idle,

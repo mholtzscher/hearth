@@ -72,6 +72,10 @@ _Avoid_: Desired state, target
 A request to change one controllable entity before a deadline. For observed operations, its outcome is satisfied only after a fresh post-dispatch observation linked to that Command matches the requested value; dispatch or acceptance alone is not satisfaction, and an unhealthy owning Adapter causes failure rather than deferred delivery, while an unavailable Entity with a healthy owner is still attempted. A dispatched operation on a stateless entity instead terminates as `dispatched` once acceptance is durably recorded; it requests no observation and stores no state. Commands for one entity may overlap, each with an independent outcome; a satisfied outcome may be immediately superseded by another observation. The core durably records each attempt and outcome for history, but the record is not executable work: unfinished attempts become interrupted after restart and are never replayed.
 _Avoid_: Action, service call, queued job
 
+**Device Fact**:
+One Core-verified statement published after the devices transaction establishing an accepted Observation, accepted Entity Event or durable Command status transition commits. It reaches only live Core NATS subscribers and is never acknowledged, retried, replayed or stored by Hearth. A missing fact proves nothing about the underlying activity: the durable record and HTTP read API remain authoritative, and a fact reports what Core recorded, not physical truth.
+_Avoid_: Entity Event, Observation, event stream, event sourcing, change log
+
 **Automation**:
 A named definition containing one or more Triggers and an ordered sequence of Steps. Any Trigger can initiate execution; enablement governs automatic execution, not explicit manual invocation.
 _Avoid_: Rule, workflow, scene

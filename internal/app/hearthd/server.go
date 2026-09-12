@@ -23,26 +23,36 @@ type ReadinessChecker interface {
 type RuntimeReadiness struct {
 	database            *sql.DB
 	connection          *natsgo.Conn
+	factConnection      *natsgo.Conn
 	jetstream           jetstream.JetStream
 	observationConsumer *devicesnats.ObservationConsumer
 	entityEventConsumer *devicesnats.EntityEventConsumer
+	dispatcher          *devicesnats.DeviceFactDispatcher
 }
 
+// NewRuntimeReadiness assembles the readiness dependencies. Both NATS
+// connections are required: the shared ingest/request connection and the
+// dedicated Device Fact publication connection, since a Core process that can
+// record device work but cannot announce it is not ready.
 func NewRuntimeReadiness(
 	database *sql.DB,
 	connection *natsgo.Conn,
+	factConnection *natsgo.Conn,
 	js jetstream.JetStream,
 	observationConsumer *devicesnats.ObservationConsumer,
 	entityEventConsumer *devicesnats.EntityEventConsumer,
+	dispatcher *devicesnats.DeviceFactDispatcher,
 ) *RuntimeReadiness {
 	return &RuntimeReadiness{
-		database: database, connection: connection, jetstream: js,
+		database: database, connection: connection, factConnection: factConnection, jetstream: js,
 		observationConsumer: observationConsumer, entityEventConsumer: entityEventConsumer,
+		dispatcher: dispatcher,
 	}
 }
 
 func (readiness *RuntimeReadiness) Check(ctx context.Context) error {
-	if readiness == nil || readiness.database == nil || readiness.connection == nil || readiness.jetstream == nil {
+	if readiness == nil || readiness.database == nil || readiness.connection == nil ||
+		readiness.factConnection == nil || readiness.jetstream == nil || readiness.dispatcher == nil {
 		return errors.New("runtime dependencies are not initialized")
 	}
 	if err := readiness.database.PingContext(ctx); err != nil {
@@ -50,6 +60,14 @@ func (readiness *RuntimeReadiness) Check(ctx context.Context) error {
 	}
 	if !readiness.connection.IsConnected() {
 		return errors.New("NATS is disconnected")
+	}
+	if !readiness.factConnection.IsConnected() {
+		return errors.New("device fact NATS is disconnected")
+	}
+	// Readiness requires an active dispatcher but no subscriber, no fact stream
+	// and no proof that any publication was received.
+	if !readiness.dispatcher.Active() {
+		return errors.New("device fact dispatcher is inactive")
 	}
 	if err := devicesnats.ValidateObservationResources(ctx, readiness.jetstream); err != nil {
 		return err

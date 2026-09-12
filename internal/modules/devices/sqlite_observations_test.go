@@ -394,7 +394,7 @@ func TestDisabledEntityDoesNotExemptUnknownExpiredOrTerminalCommandLinks(t *test
 	if _, createErr := repository.CreateCommand(ctx, terminal); createErr != nil {
 		t.Fatal(createErr)
 	}
-	if completionErr := repository.CompleteCommand(ctx, CommandCompletion{
+	if _, completionErr := repository.CompleteCommand(ctx, CommandCompletion{
 		ID: terminal.ID, Status: CommandStatusOutcomeTimeout, CompletedAt: now,
 		FailureCode: CommandFailureOutcomeTimeout,
 	}); completionErr != nil {
@@ -517,7 +517,7 @@ func TestObservationProjectionSatisfiesOnlyMatchingActiveLinkedCommand(t *testin
 	if _, createErr := repository.CreateCommand(ctx, terminal); createErr != nil {
 		t.Fatal(createErr)
 	}
-	if interruptErr := repository.InterruptActiveCommands(ctx, completedAt.Add(time.Minute)); interruptErr != nil {
+	if _, interruptErr := repository.InterruptActiveCommands(ctx, completedAt.Add(time.Minute)); interruptErr != nil {
 		t.Fatal(interruptErr)
 	}
 	linked := newObservation(t, entityID, `true`, completedAt.Add(time.Minute))
@@ -810,13 +810,20 @@ func TestObservationPruningRejectsMissingTimeAndRetention(t *testing.T) {
 	}
 }
 
+// observationTestCorrelationID is the wire correlation every Observation
+// report in these tests carries; an accepted Observation fact copies it.
+const observationTestCorrelationID = CorrelationID("cor_01890f47-7a6b-7c4d-8e9f-0123456789ab")
+
 func newObservation(t *testing.T, entityID EntityID, value string, adapterReceivedAt time.Time) Observation {
 	t.Helper()
 	id, err := NewObservationID()
 	if err != nil {
 		t.Fatal(err)
 	}
-	return Observation{ID: id, EntityID: entityID, Value: Value(value), AdapterReceivedAt: adapterReceivedAt}
+	return Observation{
+		ID: id, EntityID: entityID, Value: Value(value),
+		CorrelationID: observationTestCorrelationID, AdapterReceivedAt: adapterReceivedAt,
+	}
 }
 
 func assertObservationCount(t *testing.T, database *sql.DB, want int) {

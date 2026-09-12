@@ -10,7 +10,55 @@ import (
 	"time"
 
 	natsgo "github.com/nats-io/nats.go"
+
+	devicesnats "github.com/mholtzscher/hearth/internal/modules/devices/nats"
 )
+
+// TestCoreNATSConnectionBoundsSocketWrites protects the shared Core
+// connection's policy: unlimited reconnects on the shared cadence, nats.go's
+// default reconnect buffering, so a publication during reconnect is buffered
+// and delivered afterwards exactly as before (A10), and one bounded socket
+// write deadline. Without the bound a stalled shared connection holds Conn.mu
+// for nats.go's one-minute default, and both readiness and the Device Fact
+// worker's per-fact freshness check — which read IsConnected and Stats on this
+// connection — keep dispatcher Drain past its five-second budget.
+func TestCoreNATSConnectionBoundsSocketWrites(t *testing.T) {
+	t.Parallel()
+	server := startLifecycleNATSServer(t)
+	connection, err := connectCoreNATS(t.Context(), server.ClientURL(), slog.New(slog.DiscardHandler))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(connection.Close)
+
+	if connection.Opts.FlusherTimeout != devicesnats.CoreNATSWriteTimeout {
+		t.Fatalf(
+			"shared connection FlusherTimeout = %s, want %s",
+			connection.Opts.FlusherTimeout, devicesnats.CoreNATSWriteTimeout,
+		)
+	}
+	if devicesnats.CoreNATSWriteTimeout >= 3*time.Second {
+		t.Fatalf(
+			"CoreNATSWriteTimeout = %s, want a bound far inside the five-second shutdown budget",
+			devicesnats.CoreNATSWriteTimeout,
+		)
+	}
+	if connection.Opts.ReconnectBufSize != natsgo.DefaultReconnectBufSize {
+		t.Fatalf(
+			"shared connection ReconnectBufSize = %d, want the default %d",
+			connection.Opts.ReconnectBufSize, natsgo.DefaultReconnectBufSize,
+		)
+	}
+	if connection.Opts.MaxReconnect != -1 {
+		t.Fatalf("shared connection MaxReconnect = %d, want -1", connection.Opts.MaxReconnect)
+	}
+	if connection.Opts.ReconnectWait != natsReconnectWait {
+		t.Fatalf(
+			"shared connection ReconnectWait = %s, want %s",
+			connection.Opts.ReconnectWait, natsReconnectWait,
+		)
+	}
+}
 
 // This test protects startup cancellation reporting and fails if a canceled
 // operation context still dials NATS or reports a connection.

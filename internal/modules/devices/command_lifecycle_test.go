@@ -65,7 +65,8 @@ func TestCommandAdmissionGateRejectsDirectWhileAdmittedDrains(t *testing.T) {
 		commandTestRuntimeID,
 		Observation{
 			ID: commandTestObservationID, EntityID: commandTestEntityID, Value: Value(`true`),
-			AdapterReceivedAt: time.Now().UTC(), RefreshForCommand: &refreshFor,
+			CorrelationID: commandTestCorrelationID, AdapterReceivedAt: time.Now().UTC(),
+			RefreshForCommand: &refreshFor,
 		},
 		time.Now().UTC(),
 	); err != nil {
@@ -231,7 +232,8 @@ func TestWaitCommandsCompletesWhileCreationLogBlocked(t *testing.T) {
 		func(ctx context.Context, adapterID string, runtimeID RuntimeID, request CommandRequest) (CommandAcceptance, error) {
 			observation := Observation{
 				ID: commandTestObservationID, EntityID: request.EntityID, Value: Value(`true`),
-				AdapterReceivedAt: time.Now().UTC(), RefreshForCommand: &request.ID,
+				CorrelationID: commandTestCorrelationID, AdapterReceivedAt: time.Now().UTC(),
+				RefreshForCommand: &request.ID,
 			}
 			if _, err := service.ProjectObservation(
 				ctx, adapterID, runtimeID, observation, time.Now().UTC(),

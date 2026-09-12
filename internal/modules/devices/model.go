@@ -124,10 +124,15 @@ type Page[T any] struct {
 	HasMore bool
 }
 
+// Observation is one inbound State report plus the Core-verified identities
+// Core needs to describe the accepted commit. CorrelationID is the wire
+// correlation Core copies into an accepted Observation fact; it is never
+// persisted because facts are never reconstructed from history.
 type Observation struct {
 	ID                ObservationID
 	EntityID          EntityID
 	Value             Value
+	CorrelationID     CorrelationID
 	AdapterReceivedAt time.Time
 	SourceUpdatedAt   *time.Time
 	RefreshForCommand *CommandID
@@ -153,10 +158,11 @@ const (
 )
 
 type ProjectionResult struct {
-	Disposition      ObservationDisposition
-	State            *State
-	Rejection        *ObservationRejection
-	SatisfiedCommand *CommandResult
+	Disposition            ObservationDisposition
+	State                  *State
+	Rejection              *ObservationRejection
+	SatisfiedCommand       *CommandResult
+	SatisfiedCommandRecord *CommandRecord // external fact projection of the same committed transition
 }
 
 type CommandStatus string
@@ -222,6 +228,15 @@ type CommandCompletion struct {
 	Status      CommandStatus
 	CompletedAt time.Time
 	FailureCode CommandFailureCode
+}
+
+// CommandTransition is one persistence-reported Command status transition: the
+// committed record plus whether the write actually changed the durable row.
+// Only a changed transition is a Device Fact; a no-op repeat or a racing
+// completion reports Changed false and stays silent.
+type CommandTransition struct {
+	Record  CommandRecord
+	Changed bool
 }
 
 type CommandResult struct {

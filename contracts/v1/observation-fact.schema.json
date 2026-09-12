@@ -1,0 +1,36 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:hearth:schema:observation-fact:v1",
+  "title": "Hearth v1 observation fact",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["id", "schema", "emitted_at", "correlation_id", "causation_id", "data"],
+  "properties": {
+    "id": { "$ref": "urn:hearth:schema:common:v1#/$defs/fct_id" },
+    "schema": { "const": "urn:hearth:schema:observation-fact:v1" },
+    "emitted_at": { "$ref": "urn:hearth:schema:common:v1#/$defs/utc_timestamp" },
+    "correlation_id": { "$ref": "urn:hearth:schema:common:v1#/$defs/cor_id" },
+    "causation_id": { "$ref": "urn:hearth:schema:common:v1#/$defs/obs_id" },
+    "data": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "observation_id",
+        "entity_id",
+        "disposition",
+        "value",
+        "adapter_received_at",
+        "observed_at"
+      ],
+      "properties": {
+        "observation_id": { "$ref": "urn:hearth:schema:common:v1#/$defs/obs_id" },
+        "entity_id": { "$ref": "urn:hearth:schema:common:v1#/$defs/ent_id" },
+        "disposition": { "enum": ["applied", "unchanged"] },
+        "value": true,
+        "adapter_received_at": { "$ref": "urn:hearth:schema:common:v1#/$defs/utc_timestamp" },
+        "source_updated_at": { "$ref": "urn:hearth:schema:common:v1#/$defs/utc_timestamp" },
+        "observed_at": { "$ref": "urn:hearth:schema:common:v1#/$defs/utc_timestamp" }
+      }
+    }
+  }
+}

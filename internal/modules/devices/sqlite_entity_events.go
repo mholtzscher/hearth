@@ -90,7 +90,9 @@ func (repository *SQLiteRepository) RecordEntityEvent(
 	if commitErr := tx.Commit(); commitErr != nil {
 		return EntityEventRecordResult{}, fmt.Errorf("commit entity event recording: %w", commitErr)
 	}
-	return EntityEventRecordResult{Outcome: outcomeForDisposition(disposition), Rejection: rejection}, nil
+	return EntityEventRecordResult{
+		Outcome: outcomeForDisposition(disposition), Rejection: rejection, RecordedAt: recordedAt,
+	}, nil
 }
 
 // classifyEntityEvent applies the processing-time checks in their fixed

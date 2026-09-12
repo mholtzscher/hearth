@@ -111,6 +111,33 @@ func TestRuntimeReadinessChecksEveryRequiredDependency(t *testing.T) {
 			t.Fatal("readiness passed with inactive entity event consumer")
 		}
 	})
+	t.Run("device fact NATS unavailable", func(t *testing.T) {
+		t.Parallel()
+		fixture := newReadinessFixture(t)
+		fixture.factConnection.Close()
+		if err := fixture.readiness.Check(context.Background()); err == nil {
+			t.Fatal("readiness passed with a closed device fact NATS connection")
+		}
+	})
+	t.Run("dispatcher inactive", func(t *testing.T) {
+		t.Parallel()
+		fixture := newReadinessFixture(t)
+		fixture.dispatcher.StopAdmission()
+		if err := fixture.readiness.Check(context.Background()); err == nil {
+			t.Fatal("readiness passed with an inactive device fact dispatcher")
+		}
+	})
+}
+
+// TestRuntimeReadinessDoesNotRequireASubscriber proves the fact path needs no
+// subscriber, no fact stream and no received publication: an active dispatcher
+// on both connected connections is the whole requirement.
+func TestRuntimeReadinessDoesNotRequireASubscriber(t *testing.T) {
+	t.Parallel()
+	fixture := newReadinessFixture(t)
+	if err := fixture.readiness.Check(context.Background()); err != nil {
+		t.Fatalf("readiness without any fact subscriber = %v", err)
+	}
 }
 
 type discardObservationProjector struct{}
@@ -140,9 +167,11 @@ func (discardEntityEventRecorder) RecordEntityEvent(
 type readinessFixture struct {
 	database            interface{ Close() error }
 	connection          *natsgo.Conn
+	factConnection      *natsgo.Conn
 	jetstream           jetstream.JetStream
 	consumer            *devicesnats.ObservationConsumer
 	entityEventConsumer *devicesnats.EntityEventConsumer
+	dispatcher          *devicesnats.DeviceFactDispatcher
 	readiness           *RuntimeReadiness
 }
 
@@ -203,9 +232,14 @@ func newReadinessFixture(t *testing.T) readinessFixture {
 		t.Fatal(err)
 	}
 	t.Cleanup(entityEventConsumer.Stop)
+	factConnection, dispatcher := startDeviceFactTransport(
+		t, connection, server.ClientURL(), slog.New(slog.DiscardHandler),
+	)
 	return readinessFixture{
-		database: database, connection: connection, jetstream: js,
-		consumer: consumer, entityEventConsumer: entityEventConsumer,
-		readiness: NewRuntimeReadiness(database, connection, js, consumer, entityEventConsumer),
+		database: database, connection: connection, factConnection: factConnection, jetstream: js,
+		consumer: consumer, entityEventConsumer: entityEventConsumer, dispatcher: dispatcher,
+		readiness: NewRuntimeReadiness(
+			database, connection, factConnection, js, consumer, entityEventConsumer, dispatcher,
+		),
 	}
 }

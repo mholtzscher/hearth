@@ -89,8 +89,13 @@ func Run(
 	logStartupStage(ctx, coreLogger, "database_migrated")
 	repository := devices.NewSQLiteRepository(database, catalog)
 	startupTime := time.Now().UTC()
-	if err := repository.InterruptActiveCommands(ctx, startupTime); err != nil {
-		return failStage("interrupt_commands", fmt.Errorf("interrupt active commands: %w", err))
+	// Interrupted records are retained in memory: the committed interruptions
+	// are authoritative even if a later NATS startup step fails, and their facts
+	// are enqueued once both connections and the dispatcher are live and before
+	// JetStream is provisioned, so no later failure can strand them.
+	retainedInterruptions, interruptErr := repository.InterruptActiveCommands(ctx, startupTime)
+	if interruptErr != nil {
+		return failStage("interrupt_commands", fmt.Errorf("interrupt active commands: %w", interruptErr))
 	}
 	logStartupStage(ctx, coreLogger, "active_commands_interrupted")
 	// Observation and Entity Event pruning run only on the hourly pass below, so
@@ -102,6 +107,55 @@ func Run(
 		return mapStartupCancellation(ctx, connectErr)
 	}
 	defer connection.Close()
+	// The dedicated fact connection buffers nothing, so a publication attempted
+	// while it is reconnecting fails instead of reaching a subscriber after
+	// reconnect. The shared connection keeps its own buffering above.
+	factConnection, factConnectErr := connectDeviceFactNATS(ctx, config.NATSURL, natsLogger)
+	if factConnectErr != nil {
+		return mapStartupCancellation(ctx, factConnectErr)
+	}
+	defer factConnection.Close()
+	// One fence owns both connections' live windows. It is attached before the
+	// dispatcher starts, so the first fact is already gated by both initial
+	// generations and no backlog can be published as live.
+	epochs, epochsErr := devicesnats.NewDeviceFactEpochs(connection, factConnection, time.Now)
+	if epochsErr != nil {
+		return failStage("connect_nats", epochsErr)
+	}
+	epochs.Track()
+	validator, compileErr := contractsv1.Compile()
+	if compileErr != nil {
+		return failStage("compile_schemas", fmt.Errorf("compile wire schemas: %w", compileErr))
+	}
+	dispatcher, dispatcherErr := devicesnats.StartDeviceFactDispatcher(
+		factConnection, validator, epochs, natsLogger,
+	)
+	if dispatcherErr != nil {
+		return failStage("start_device_facts", dispatcherErr)
+	}
+	// The dispatcher drain runs after every transport that can commit a fact has
+	// drained, and the dedicated connection outlives it.
+	defer func() {
+		drainContext, cancelDrain := context.WithTimeout(context.Background(), shutdownTimeout)
+		defer cancelDrain()
+		logCleanupFailure(ctx, processLogger, "drain_device_facts", dispatcher.Drain(drainContext))
+	}()
+	commandSender := devicesnats.NewCommandSender(connection, validator)
+	service := devices.NewService(
+		devices.SQLiteStores(repository),
+		commandSender,
+		catalog,
+		devices.Dependencies{Logger: devicesLogger, DeviceFacts: dispatcher},
+	)
+	// Startup interruption facts are enqueued immediately after the service
+	// exists and before JetStream provisioning can fail: the transitions
+	// committed before either connection opened, both connections have
+	// established their initial epochs above, and no later startup's
+	// interruption call returns these rows again. Provisioning therefore can
+	// never strand committed interruptions without their facts.
+	for _, record := range retainedInterruptions {
+		dispatcher.CommandTransitioned(ctx, devices.CommandFact{Record: record})
+	}
 	js, jetStreamErr := jetstream.New(connection)
 	if jetStreamErr != nil {
 		return failStage(
@@ -121,18 +175,6 @@ func Run(
 		return mapStartupCancellation(ctx, failStage("provision_jetstream", entityEventProvisionErr))
 	}
 	logStartupStage(ctx, coreLogger, "jetstream_provisioned")
-	validator, compileErr := contractsv1.Compile()
-	if compileErr != nil {
-		return failStage("compile_schemas", fmt.Errorf("compile wire schemas: %w", compileErr))
-	}
-	commandSender := devicesnats.NewCommandSender(connection, validator)
-	service := devices.NewService(
-		devices.SQLiteStores(repository),
-		commandSender,
-		catalog,
-		devices.Dependencies{Logger: devicesLogger},
-	)
-
 	sessions, sessionErr := devicesnats.StartSessionServer(connection, validator, service, service, natsLogger)
 	if sessionErr != nil {
 		return failStage("start_transports", sessionErr)
@@ -208,7 +250,8 @@ func Run(
 	logStartupStage(ctx, coreLogger, "entity_event_consumer_started")
 
 	readiness := NewRuntimeReadiness(
-		database, connection, js, consumers.observations, consumers.entityEvents,
+		database, connection, factConnection, js,
+		consumers.observations, consumers.entityEvents, dispatcher,
 	)
 	healthSupervisor := startHealthSupervisor(dependencyContext, readiness, service, coreLogger)
 	defer healthSupervisor.Stop()
@@ -254,7 +297,7 @@ func Run(
 			service, cancelDependencies,
 			healthSupervisor, server, consumers,
 			enablement, ownedMappings, registrations, availability, sessions,
-			connection,
+			dispatcher, connection, factConnection, processLogger,
 		)
 	}
 }
@@ -299,7 +342,10 @@ func shutdownOnCancel(
 	server *http.Server,
 	consumers *coreConsumers,
 	enablement, ownedMappings, registrations, availability, sessions interface{ Drain() error },
+	dispatcher *devicesnats.DeviceFactDispatcher,
 	connection *natsgo.Conn,
+	factConnection *natsgo.Conn,
+	logger *slog.Logger,
 ) error {
 	joinAdmittedExecution(deviceService)
 	healthSupervisor.Stop()
@@ -321,7 +367,8 @@ func shutdownOnCancel(
 	}
 	cancelDependencies()
 	return drainTransports(
-		consumers, enablement, ownedMappings, registrations, availability, sessions, connection,
+		context.Background(), logger, consumers, dispatcher, enablement, ownedMappings, registrations,
+		availability, sessions, connection, factConnection,
 	)
 }
 
@@ -424,16 +471,28 @@ type consumerDrain interface {
 
 // drainTransports stops durable consumption and drains core transports after
 // worker drain, preserving the existing return semantics for each step. Entity
-// Events drain before Observation, and both before the shared NATS connection,
-// so unacknowledged reports remain for the next Core process instead of being
-// acknowledged during teardown. The consumers' own context is canceled by
+// Events drain before Observation, and both before the dispatcher, so facts for
+// work that already committed still reach live subscribers. The dispatcher then
+// drains its bounded queue with the shutdown deadline; on a timeout it closes
+// the dedicated fact connection itself, discards the queue and joins its worker,
+// and that loss is recorded without failing an otherwise clean shutdown. The
+// shared and dedicated connections drain last, so no publication reaches a
+// connection being torn down. The consumers' own context is canceled by
 // coreConsumers.close after every exit, never here.
 func drainTransports(
+	ctx context.Context,
+	logger *slog.Logger,
 	consumers *coreConsumers,
+	dispatcher *devicesnats.DeviceFactDispatcher,
 	enablement, ownedMappings, registrations, availability, sessions interface{ Drain() error },
 	connection *natsgo.Conn,
+	factConnection *natsgo.Conn,
 ) error {
 	consumers.drain()
+	drainContext, cancelDrain := context.WithTimeout(context.Background(), shutdownTimeout)
+	drainErr := dispatcher.Drain(drainContext)
+	cancelDrain()
+	logCleanupFailure(ctx, logger, "drain_device_facts", drainErr)
 	for _, transport := range []interface{ Drain() error }{
 		enablement, ownedMappings, registrations, availability, sessions,
 	} {
@@ -444,6 +503,7 @@ func drainTransports(
 	if err := connection.Drain(); err != nil && !errors.Is(err, natsgo.ErrConnectionClosed) {
 		return fmt.Errorf("drain NATS connection: %w", err)
 	}
+	factConnection.Close()
 	return nil
 }
 
@@ -488,6 +548,14 @@ func logCleanupFailure(ctx context.Context, logger *slog.Logger, stage string, e
 	)
 }
 
+// connectCoreNATS opens the shared Core ingest/request connection. It keeps
+// nats.go's default reconnect buffering and unlimited reconnects on the shared
+// reconnect cadence, and it bounds one socket write by
+// devicesnats.CoreNATSWriteTimeout: pinned nats.go v1.53.1 holds a connection's
+// mutex across a socket write for up to its one-minute default FlusherTimeout,
+// and both readiness and the Device Fact worker's per-fact freshness check read
+// this connection synchronously, so an unbounded stalled write would hold
+// shutdown past its five-second budget.
 func connectCoreNATS(
 	ctx context.Context,
 	url string,
@@ -504,6 +572,7 @@ func connectCoreNATS(
 		natsgo.Name("hearthd"),
 		natsgo.MaxReconnects(-1),
 		natsgo.ReconnectWait(natsReconnectWait),
+		natsgo.FlusherTimeout(devicesnats.CoreNATSWriteTimeout),
 		natsgo.DisconnectErrHandler(func(_ *natsgo.Conn, disconnectErr error) {
 			if disconnectErr == nil || ctx.Err() != nil {
 				return
@@ -551,6 +620,85 @@ func connectCoreNATS(
 	}
 	logger.InfoContext(
 		ctx, "NATS connected", slog.String("event", "dependency.connected"),
+	)
+	return connection, nil
+}
+
+// connectDeviceFactNATS opens the dedicated Device Fact publication connection:
+// a distinct client name, unlimited reconnects and no reconnect buffering, so a
+// publication attempted while the connection is reconnecting fails and is
+// dropped rather than delivered later. Its diagnostics mirror the shared Core
+// connection's, tagged with the connection they belong to.
+func connectDeviceFactNATS(
+	ctx context.Context,
+	url string,
+	logger *slog.Logger,
+) (*natsgo.Conn, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, failStage("connect_nats", err)
+	}
+	if logger == nil {
+		logger = slog.Default()
+	}
+	logger = logger.With(slog.String("dependency", "nats_device_facts"))
+	const connectionAttribute = "device_facts"
+	options := devicesnats.DeviceFactConnectionOptions()
+	options = append(options,
+		natsgo.DisconnectErrHandler(func(_ *natsgo.Conn, disconnectErr error) {
+			if disconnectErr == nil || ctx.Err() != nil {
+				return
+			}
+			logger.WarnContext(
+				ctx,
+				"device fact NATS disconnected",
+				slog.String("event", "dependency.disconnected"),
+				slog.String("connection", connectionAttribute),
+				slog.String("error_code", "nats_disconnected"),
+			)
+		}),
+		natsgo.ReconnectHandler(func(_ *natsgo.Conn) {
+			if ctx.Err() != nil {
+				return
+			}
+			logger.InfoContext(
+				ctx, "device fact NATS reconnected",
+				slog.String("event", "dependency.reconnected"),
+				slog.String("connection", connectionAttribute),
+			)
+		}),
+		natsgo.ErrorHandler(func(_ *natsgo.Conn, _ *natsgo.Subscription, _ error) {
+			if ctx.Err() != nil {
+				return
+			}
+			logger.ErrorContext(ctx, "device fact NATS operation failed",
+				slog.String("event", "dependency.operation_failed"),
+				slog.String("connection", connectionAttribute),
+				slog.String("error_code", "nats_async_error"),
+			)
+		}),
+		natsgo.ClosedHandler(func(_ *natsgo.Conn) {
+			logger.DebugContext(
+				ctx, "device fact NATS connection closed",
+				slog.String("event", "dependency.closed"),
+				slog.String("connection", connectionAttribute),
+			)
+		}),
+	)
+	if deadline, ok := ctx.Deadline(); ok {
+		remaining := time.Until(deadline)
+		if remaining <= 0 {
+			return nil, failStage("connect_nats", context.DeadlineExceeded)
+		}
+		options = append(options, natsgo.Timeout(remaining))
+	}
+	connection, err := natsgo.Connect(url, options...)
+	if err != nil {
+		return nil, failStage("connect_nats", fmt.Errorf("connect device fact NATS: %w", err))
+	}
+	logger.InfoContext(
+		ctx, "device fact NATS connected",
+		slog.String("event", "dependency.connected"),
+		slog.String("connection", connectionAttribute),
 	)
 	return connection, nil
 }
