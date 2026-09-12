@@ -1,353 +1,482 @@
-# Entity Event automations: first working slice
+# Entity Event automations
 
-**Status:** Deferred design notes; blocked by [Entity Events](entity-events.md), which will be implemented first. Not implementation-ready.
+**Status:** Deferred design; the Device Facts foundation defined by `specs/device-facts.md` is implemented, and this spec now names its exact Entity Event fact DTO, subject, schema, stream and lifecycle seams plus the automations consumer's own durability policy. Automations remain unimplemented and this spec is not implementation-ready until the completeness review passes.
+**Baseline:** `d9760b8`. Do not restore the automation module removed in `423addb` wholesale.
+**Effort:** XL after the Device Facts foundation, across four remaining deliverables.
 
-> **Superseded foundation:** `entity-events.md` now owns the event type, SDK/wire delivery, durable ingestion and history. The one-shot request/reply, no-retry/no-buffer publication, two-second event expiry, read-only event acceptance and automation-owned ephemeral receipt proposals below are retained as historical design notes, **not instructions to implement**. The “add no event table/store” instruction is superseded by the foundation's `entity_events` table. Its `received_at` is JetStream storage time, replacing this draft's Core-callback interpretation. Revise these sections and the D1/D3 breakdown after the Entity Events foundation; preserve the separate requirement that future automations must not catch up missed triggers merely because event history does.
-**Baseline:** `378080b`; do not restore the deliberately removed automation module wholesale.
-**Effort:** XL overall, reduced scope across four deliverables. This remains a cross-module feature, not a small endpoint change.
+## 1. Purpose and scope
 
-## 1. Scope and simplification
-
-Build one useful path:
+Build one useful automation path on Core-verified facts:
 
 ```text
-Simulated live press → validate source/name → atomically record Run or skip
-                                                        ↓
-                                            existing Entity Commands
+Adapter Entity Event
+        ↓
+implemented durable Entity Event ingestion and history (devices)
+        ↓ accepted Device Fact queued in the devices transaction
+        ↓ relay publishes to HEARTH_DEVICE_FACTS_V1 (JetStream)
+exact Trigger match → atomically record Run or skip
+                                      ↓
+                         existing Entity Commands
 ```
 
-Agreed requirements: entity-event Triggers, HTTP/SQLite definitions, manual invocation, ordered Steps, one active Run per Automation, recorded busy skips, no offline catch-up. Physical-device mappings, State conditions, timers and schedules are deferred.
+This spec owns:
 
-**Removed from the earlier draft:** independently browsable Entity Event history, entity-event write repository, two-stage durable acceptance/handoff, readiness generations, a new readiness controller, startup outcome reconstruction, manual idempotency keys, separate Run/Trigger Decision/event-history API surfaces, configurable history retention, and definition-count quotas.
+- strict HTTP/SQLite Automation definitions;
+- Entity Event Triggers and manual invocation;
+- exact Trigger matching and bounded Run admission;
+- ordered Steps executed through existing Entity Commands;
+- immutable Run snapshots, recorded skips and truthful execution history;
+- automation durable fact consumer, subscription, lifecycle and application assembly after Device Facts exist.
 
-**Retained:** canonical event-source Entities and generated validation, immutable Run snapshots, verified Command links, duplicate protection, bounded concurrency, safe shutdown, and integration tests. These protect the first use case rather than a hypothetical future platform.
+This spec does **not** own Entity Event identity, registration, wire ingestion, validation, duplicate detection, history or retention. Those are implemented by `devices` and specified in [Entity Events](entity-events.md).
 
-## 2. Ownership and the one durable admission
+**Non-goals:** State or Observation Triggers, Command-outcome Triggers, timers or schedules, conditions, branching, retries, compensation, cancellation, replay, history-scan catch-up, deletion, configurable history retention, manual idempotency keys, definition-count quotas, and a privileged event-injection endpoint.
 
-- `devices` owns Entity identity, event support and source validation. Entity Events are not Observations and never update State or satisfy Commands.
-- `automations` owns definitions, matching, Runs, skips, execution history and its small duplicate-receipt table.
-- The device NATS transport decodes live requests. Assembly injects the automation service as its receiver; no app-owned event bus or handoff coordinator is needed.
-- `automations.ReceiveEntityEvent` asks devices to validate the source, then performs **one automation-owned write transaction**. Receipt, matching outcomes, snapshots and initial Step rows commit together. Acknowledgement follows that commit; Commands run separately.
+Physical Entity Event mappings are separately owned by Adapters. The simulator and Zigbee2MQTT already publish Entity Events; this slice only consumes accepted facts about them.
 
-Source validation uses one consistent read of current Entity support/enablement, owner, active runtime and Adapter health. Its meaning is **valid at that read**, not a guarantee that these facts remain unchanged until dispatch. A later source disablement or re-registration does not retroactively retract this input. Definition matching uses the revisions read in the admission transaction. Target Operations are revalidated by normal Command execution.
+## 2. Implemented Entity Event foundation
 
-This is a deliberate, simple ordering contract: no nested transactions, cross-module SQL writes, source locks spanning execution, or attempt to make all device metadata and automation edits one global transaction. Hearth's single SQLite connection makes calling another module's repository inside a held transaction unsafe.
+The following foundation is already present and must be reused rather than recreated:
 
-## 3. Event model and generated type
+- `hearth.enumevent/v1` is a stateless, non-commandable Entity type whose support lists 1–64 named events.
+- `sdk/adapter.Session.PublishEntityEvent` publishes one stable `evt_` identity through JetStream and retries the same encoded report until PubAck, caller cancellation or termination.
+- `HEARTH_ENTITY_EVENTS_V1` durably retains Adapter reports for the devices consumer.
+- `devices.Service.RecordEntityEvent` records each first-seen wire-valid report and its accepted or rejected disposition in one devices-owned transaction.
+- The `entity_events` table owns report identity, fingerprint conflict detection, processing-time validation evidence and fixed 30-day history retention.
+- `GET /v1/entities/{entity_id}/events` exposes accepted and rejected per-Entity history.
+- `received_at` is JetStream storage time; `recorded_at` is Core's first-record time. Event age is not an ingestion rejection rule.
+- Duplicate and changed-input handling are devices concerns. Automations add no parallel event receipt, fingerprint, expiry or cleanup table.
 
-Add `hearth.enumevent/v1`: a stateless, non-commandable Entity with multiple supported names:
+An accepted Entity Event changes no State or Command. It only establishes a durable Core fact that the report passed runtime, Entity ownership, enablement and supported-name checks at processing time.
 
-```json
-{"state":{},"operations":{},"events":{"names":["single_press","double_press"]}}
-```
+## 3. Implemented Device Facts foundation
 
-Names are unique slugs, `^[a-z0-9][a-z0-9_-]{0,62}$`, with 1–64 names. Each press has a separate `evt_<UUIDv7>` identity even when its name repeats. No arbitrary event payload, source-time model, last-event pseudo-State, or new Device-kind taxonomy.
+`specs/device-facts.md` defines and has landed a shared **Device Fact** publishing seam.
 
-Extend the existing generator, not a handwritten parallel type system:
+The foundation owns all cross-module and external delivery decisions, including:
 
-- Manifest flag `event_source` defaults false; true requires `stateless:true`, no Operations, and the fixed required support shape `events.names`.
-- The generator verifies this schema structure and emits a typed name selector, codecs, conformance tests, descriptor helper and event builder. No generic selector/predicate language.
-- Registration's outer support schema allows optional `events`. Existing type schemas remain closed and still reject it. Preserve the field through SDK/NATS DTO mappings.
-- Core catalog exposes supported names through the generated selector. Existing stateless Observation rejection in `sqlite_observations.go:classifyObservation` remains `invalid_value`; event Entities have `state:null` and no Command handlers or Observation builders.
+- versioned, strict contracts for accepted Observations and accepted Entity Events;
+- an external Core-originated NATS subject namespace distinct from Adapter input subjects;
+- a transactional outbox row written in the same devices-owned SQLite transaction that establishes the fact, so a fact and its evidence commit atomically and an outbox failure rolls the evidence back;
+- one JetStream stream, `HEARTH_DEVICE_FACTS_V1`, retaining facts for seven days or one GiB (DiscardOld), with no Core-owned consumer and no subject transform;
+- a single relay that publishes pending facts oldest-first, waits for a broker `PubAck` naming that stream and deletes the outbox row only after the acknowledgement;
+- at-least-once publication from the outbox with broker deduplication bounded by the stream's two-hour duplicate window, so a retry outside the window can store the same fact twice;
+- subject/payload agreement, canonical IDs, timestamps, correlation, restored trace propagation and safe logging;
+- exact ordering, duplicate, poison, eviction, startup, shutdown and publish-failure semantics;
+- the rule that durable HTTP/SQLite records remain authoritative and a fact reports only what Core recorded;
+- application wiring and documentation for trusted external subscribers and durable consumers;
+- transactional enqueue hooks for both agreed fact families, even though this automation slice consumes only accepted Entity Event facts.
 
-Changes to existing domain/catalog types (D1):
-
-```diff
- // internal/modules/devices/model.go
- type ObservationID string
-+type EntityEventID string
-+type EntityEventName string
- type CommandID string
-
- // internal/modules/devices/catalog.go
- type EntityTypeDefinition struct {
-     id               EntityTypeID
-     stateless        bool
-+    eventNames       func(EntitySupport) ([]EntityEventName, error)
-```
-
-New `internal/modules/devices/entity_events.go` contract (D1):
+The implemented `devices.EntityEventFact` DTO, queued by the devices transaction and published from `HEARTH_DEVICE_FACTS_V1`, gives automations:
 
 ```go
-// EntityEventInput is decoded input; only ValidateEntityEvent establishes source eligibility.
-type EntityEventInput struct {
-    ID            EntityEventID
-    AdapterID     string
-    RuntimeID     RuntimeID
-    EntityID      EntityID
-    Name          EntityEventName
-    CorrelationID CorrelationID
-    EmittedAt     time.Time // SDK envelope time
-    ReceivedAt    time.Time // Core callback time
+type EntityEventFact struct {
+    ID            devices.DeviceFactID // stable fct_ identity, also the published Nats-Msg-Id
+    EventID       devices.EntityEventID
+    EntityID      devices.EntityID
+    Name          devices.EntityEventName
+    CorrelationID devices.CorrelationID
+    ReportedAt    time.Time // SDK emitted_at
+    ReceivedAt    time.Time // JetStream storage time
+    RecordedAt    time.Time // Core first-record time
+    CreatedAt     time.Time // Core commit time, published as emitted_at
+    Trace         devices.DeviceFactTraceContext
 }
-
-// ValidatedEntityEvent captures a point-in-time validation, not durable acceptance.
-type ValidatedEntityEvent struct { Event EntityEventInput }
-
-type EntityEventReceipt struct {
-    ID         EntityEventID
-    ReceivedAt time.Time
-    Duplicate  bool
-}
-
-func (s *Service) ValidateEntityEvent(context.Context, EntityEventInput) (ValidatedEntityEvent, error)
-func (s *Service) ValidateEntityEventTrigger(context.Context, EntityID, EntityEventName) error
 ```
 
-`ValidateEntityEvent` checks canonical identities, active owning runtime, Entity enablement, healthy Adapter and supported name. Entity availability is diagnostic, not a second input gate. Use a single source-read query through the existing devices read store; add no event table/store. `ValidateEntityEventTrigger` is the save-time check: only Entity existence and supported name, not enablement/health. Both are read-only.
+Its strict wire schema is `urn:hearth:schema:entity-event-fact:v1`, whose `data` object is exactly `{event_id, entity_id, name, reported_at, received_at, recorded_at}`; `correlation_id` stays in the envelope, `id` is the stable `fct_` fact identity, and `emitted_at` is Core's commit time stored at enqueue rather than publication time.
 
-## 4. Live delivery, not a recovery protocol
+The Entity Event fact contract guarantees:
 
-Use one-shot Core NATS request/reply:
+1. only a first-seen `devices.EntityEventOutcomeAccepted` transition queues a fact;
+2. rejected events, duplicates and identity conflicts queue no fact;
+3. the fact and the recorded event commit in one devices transaction, so an identity-mint or insert failure rolls the event back and inbound redelivery retries both together;
+4. a broker outage, a relay restart or a Core restart delays publication but never discards a queued fact, and a retry reuses the same identity, subject and payload bytes;
+5. a fact stored in `HEARTH_DEVICE_FACTS_V1` stays readable until the stream's seven-day or one-GiB bound evicts it, so an automation with a durable consumer can recover a fact published while it was down;
+6. a retry outside the two-hour duplicate window can store the same fact twice, so automations must stay idempotent;
+7. the publisher never turns a devices ingestion failure into an accepted fact;
+8. Core provisions the stream and no consumer, and no automation reads Entity Event history to discover work.
+
+These guarantees make missed automatic execution an explicit consumer-policy choice. An automation that owns a durable consumer and acknowledges only after its admission transaction commits does not miss a broker-stored fact; an automation that keeps a live-only subscription can. Either way a historical Entity Event without a corresponding Automation Run is truthful.
+
+This file now names the implemented Entity Event fact contract exactly: the durable DTO is `devices.EntityEventFact`, the Core JetStream stream is `devicesnats.DeviceFactStreamName` (`HEARTH_DEVICE_FACTS_V1`), the Core subject wildcard is `hearth.v1.core.fact.entity.*.entity-event.>` and the strict wire schema is `urn:hearth:schema:entity-event-fact:v1`. No automation implementation should invent those details independently.
+
+## 4. Ownership and module seams
+
+- `devices` owns Entity identity, Entity Event ingestion and history, Command creation and outcomes, and the transactional Device Fact enqueue that writes the durable outbox row.
+- `automations` owns definitions, its durable subscription to accepted Entity Event facts, matching, Runs, skips, Steps and execution history.
+- `contracts/v1` and `internal/contracts/v1/natswire` own the language-neutral Device Fact schemas and subject mechanics defined by the Device Facts spec.
+- `internal/modules/automations/nats` owns schema-validated mapping from the external fact contract into the automation domain.
+- `internal/app/hearthd` assembles both modules, the shared SQLite database and NATS connection, and owns startup/readiness/drain ordering.
+
+The dependency direction remains acyclic:
 
 ```text
-hearth.v1.adapter.<adapter>.runtime.<runtime>.entity-event.<entity_id>
+contracts/v1 ← natswire ← devices/nats ← hearthd → automations/nats → automations
+                               ↑                         ↓
+                            devices ← AutomationDevices ┘
 ```
 
-Request schema `urn:hearth:schema:entity-event-request:v1` uses the shared envelope: `evt_` ID, SDK-minted `emitted_at`, required correlation ID, no causation ID. Data is only `{"entity_id":"ent_…","name":"single_press"}`. Subject and payload Entity must agree.
+`devices` never imports `automations`, and the only runtime handoff between the two modules is the fact stream: the automations consumer reads only accepted facts from `HEARTH_DEVICE_FACTS_V1`, never Adapter-originated Entity Event subjects, and never reads Entity Event history to discover work. Neither module reads the other's tables.
 
-Response schema `urn:hearth:schema:entity-event-response:v1` uses `rep_` ID, matching correlation and `causation_id` equal to the request ID; add `evt_id` to the common causation union. Accepted data is `{status:"accepted", event_id, received_at, duplicate}`. Rejected data is `{status:"rejected", event_id, error:{code}}`.
+No SQLite transaction may call another module, publish NATS, or wait for a Command. Automation admission is one automation-owned transaction over an already verified fact, and the broker, not a transaction, hands the fact to it. Command execution begins only after that transaction commits.
 
-**Accepted means the automation admission transaction committed**, including the no-match case. It does not mean a Run succeeded. Timeout/internal error is ambiguous and is not permission to resend a press.
+## 5. Definitions and save-time validation
 
-New SDK data types in `sdk/adapter/entity_events.go` (D1), publication method in D3:
-
-```go
-type EntityEventID string
-type EntityEvent struct { EntityID string; Name string }
-
-// PublishEntityEvent makes one attempt and never retries a missed press.
-func (s *Session) PublishEntityEvent(context.Context, EntityEvent) (EntityEventID, error)
-```
-
-Generated `sdk/adapter/enumeventv1.NewEntityEvent` takes `{EntityID string; Support Support; Name string}` and returns a validated `adapter.EntityEvent`. The Session mints identity/time once, performs one `RequestMsgWithContext`, and returns the ID even if a prepared publication fails.
-
-Simple freshness policy, with no admission generations:
-
-- One request deadline: earlier of caller deadline and SDK now + two seconds. Adapters publish newly acquired live input; they must not queue, reconstruct or retry missed presses.
-- Core accepts envelope age in `[-1 second, 2 seconds)`; future skew beyond one second and age at least two seconds reject. Recheck expiry immediately before recording admission outcomes. The admission deadline derives from envelope time, not a second wire deadline field.
-- This bounds transport freshness and requires reasonably synchronized SDK/Core clocks. It cannot prove physical press time. An unexpired in-flight request spanning a brief disruption may still be admitted; no historical catch-up is promised or implemented.
-- Disable SDK reconnect buffering with **`ReconnectBufSize(-1)`**, verified against pinned `nats.go v1.53.1`; zero restores its default buffer. Events never use retry wrappers. Keep existing non-event retries, adding `ErrReconnectBufExceeded` to their transient classifications; Observation retries preserve ID, payload, MsgId and existing deadline.
-- Use existing dependency readiness to reject new input with `core_unavailable` while unready. On drain, close automation admission before closing device Command admission. No new controller, connection epoch or readiness-supervisor behavior.
-- Event callbacks perform short validation/admission work synchronously, not Command execution. Set pending limits to 64 messages/256 KiB and cap input at 4 KiB before decoding. Overflow may drop input; it never creates a work queue. These are safety constants, not new operator configuration.
-
-Rejections: `invalid_event`, `event_expired`, `clock_skew`, `unknown_entity`, `wrong_adapter`, `runtime_fenced`, `entity_disabled`, `adapter_unhealthy`, `unsupported_event`, `event_id_conflict`, `core_unavailable`, `internal_error`. Undecodable input or unsafe request identities are discarded/logged instead of echoed. Runtime fencing retains normal SDK termination behavior. Log safe IDs/reasons, not raw payloads, parameters or full subjects.
-
-## 5. Definitions, matching and admission
-
-Definition JSON is strict, defaults `enabled:false`, and permits 0–32 Triggers and 1–32 ordered Steps. Zero Triggers means manual-only. Trigger/Step IDs are unique slugs within their arrays. Name length is 1–200; total body is at most 64 KiB. Keep revision-checked replacement to avoid silently overwriting another edit.
+Definition JSON is strict, defaults `enabled:false`, and permits 0–32 Triggers and 1–32 ordered Steps. Zero Triggers means manual-only. Trigger and Step IDs are unique slugs within their arrays. Name length is 1–200 and the total body is at most 64 KiB. Replacement remains revision-checked.
 
 ```json
 {
-  "name":"Button turns on light", "enabled":true,
-  "triggers":[{"id":"press","kind":"entity_event","entity_id":"ent_<button>","event_name":"single_press"}],
-  "steps":[{"id":"light_on","entity_id":"ent_<power>","operation":"set","parameters":{"value":true}}]
+  "name":"Button turns on light",
+  "enabled":true,
+  "triggers":[
+    {"id":"press","kind":"entity_event","entity_id":"ent_<button>","event_name":"single_press"}
+  ],
+  "steps":[
+    {"id":"light_on","entity_id":"ent_<power>","operation":"set","parameters":{"value":true}}
+  ]
 }
 ```
 
-Validate source names and call existing `ValidateCommand` at save, persisting normalized parameters. Disabled/unavailable targets can be saved. Edits or disablement affect future admission, not a Run's immutable snapshot.
+At create and replacement:
 
-In one automation transaction:
+- validate each Trigger's Entity exists and currently supports its event name;
+- do not require the source Entity to be enabled, available or owned by a healthy Adapter at save time;
+- validate every Step through `devices.Service.ValidateCommand` and persist its normalized parameters;
+- allow currently disabled or unavailable targets to be saved;
+- reject unknown fields, duplicate IDs, unsupported Trigger names and invalid Step parameters atomically.
 
-1. Reject expired input. Look up its internal receipt by event ID. Identical fingerprint returns the original receipt without rematching; different content returns `event_id_conflict`.
-2. Read current enabled definitions and match exact `(entity_id,event_name)`. Group all matching Trigger IDs per Automation; visit Automations by ID for deterministic capacity decisions.
-3. For each match, admit one Run or record one skip. Busy reason is `automation_busy`; the global bound is 16 active Runs, with excess matches skipped as `run_capacity`. Never queue skips. The active-Run partial unique index backs up the busy check; count/global capacity and writes share this transaction.
-4. Write the event receipt even when nothing matches, plus every Run snapshot/initial Step row or skip, and commit them together. Schedule workers only after commit.
+Add one read-only devices seam because the implemented ingestion method is deliberately not a save-time validator:
 
-The receipt is **not event history**: just event ID, immutable-input fingerprint, first Core receipt time and `expires_at = emitted_at + 2 seconds`. Unexpired identical input returns `duplicate:true` with the original receipt time; expired input returns `event_expired` before receipt lookup, never an accepted duplicate or a new match. Hash a canonical encoding of Adapter/runtime/Entity/name/correlation/envelope-time fields (not whitespace or Core arrival time). It suppresses even an unmatched duplicate after definition edits. Each admission deletes at most 256 expired receipts; expiry is checked before duplicate lookup, so deleting old receipts cannot revive old input. No receipt API, payload archive, separate retention setting or replay consumer.
+```go
+func (service *Service) ValidateEntityEventTrigger(
+    context.Context,
+    EntityID,
+    EntityEventName,
+) error
+```
 
-If validation or the admission transaction fails, acknowledge no success and start no worker. If a commit's outcome is uncertain, or a committed Run cannot get its worker, stop new automation admission and surface an executor fault; restart interrupts any recorded work. Do not add rollback classification frameworks, repair loops or replay to resolve this rare case.
+It reads the current Entity and calls the existing catalog support selector. It checks existence and supported name only and performs no write.
 
-Manual invocation uses the same Run admission rules but ignores definition enablement. It has no event, receipt or matched Trigger IDs. Each successful POST creates a new Run: **manual idempotency keys are deferred**, like the existing direct-Command API. Clients must not automatically retry an ambiguous manual request; inspect history first.
+Edits and disablement affect future admission. Existing Run and skip history retains the definition revision and matching explanation that existed when recorded.
 
-## 6. Execution, truthful history and restart
+## 6. Fact subscription and automatic admission
 
-Reuse `devices.ExecuteCommand` without a special automation bypass:
+`internal/modules/automations/nats` creates or opens exactly one named durable JetStream consumer on `devicesnats.DeviceFactStreamName` (`HEARTH_DEVICE_FACTS_V1`) filtered to the accepted Entity Event fact wildcard `hearth.v1.core.fact.entity.*.entity-event.>`, and validates each message against `urn:hearth:schema:entity-event-fact:v1`. It does not create one consumer or subscription per Trigger: matching belongs to the automation transaction, so definition edits require no broker churn.
 
-- Before each Step, persist its `running` status, start time and freshly reserved Command/correlation IDs. Use `devices.NewCommandID` / `devices.NewCorrelationID` (`cmd_<UUIDv7>` / `cor_<UUIDv7>`), with equivalent constructors injected for tests. Only then call devices outside the transaction, using a process-owned context detached from the HTTP/NATS caller.
-- Wait for the existing Operation outcome. `satisfied` and `dispatched` are distinct successful Step statuses; Run success requires all Steps successful. Preexisting matching State is not evidence of a new Command's success.
-- Stop on the first known failure; later Steps remain `not_attempted`. No retry, compensation or rollback of earlier physical effects.
-- Known precreation errors (`ErrInvalidCommand`, `ErrEntityNotFound`, `ErrCommandIDConflict`) become `invalid_command`, `entity_not_found`, `command_id_conflict`; they never acquire a Command link. `CommandExecutionError` proves creation, not the eventual outcome: verify the owned Command record and use its durable status/failure code. Unknown existence/outcome faults admission rather than inventing a terminal result.
-- Bare `devices.ErrCommandUnavailable` during drain maps to Step `interrupted/core_stopping`, with no Command link; it is not a failed Operation or executor fault. Outside drain it is an unexpected admission inconsistency, not evidence that shutdown occurred.
-- A public Command link is exposed only after checking reserved Command ID, correlation ID, Entity and Operation. Never adopt a collision or an unrelated record. Already failed-before-creation Steps are excluded from later lookup.
+The automations consumer **must choose its recovery policy explicitly**, and the recommended policy is durable resume, because an automation that should not miss a Trigger cannot rely on a live connection:
 
-Startup recovery is deliberately **not execution reconciliation**: run existing `InterruptActiveCommands`, mark all still-running automation Steps/Runs `interrupted/core_restarted`, leave untouched Steps `not_attempted`, and preserve already recorded terminal Steps. Do not infer a successful Run from Command history, resume Steps, or process receipts. History may read an interrupted Step's verified Command link without rewriting that Step's status: “Run interrupted; its Command satisfied” is a truthful possible result.
+1. it creates its own named durable consumer (for example name and durable `hearthd-automation-entity-event-facts-v1`) with `DeliverPolicy: jetstream.DeliverAllPolicy`, `AckPolicy: jetstream.AckExplicitPolicy` and the Entity Event filter subject, so the broker tracks its acknowledgement floor and the consumer resumes there after a restart;
+2. it reports active only after the subscription is live, and Core's Device Fact stream provisioning creates no consumer for it;
+3. it bounds its own in-flight work; the durable stream, not a private recovery queue, is the only recovery surface, and a fact older than the stream's seven-day or one-GiB bound can be evicted and then never redelivered;
+4. it validates the strict `urn:hearth:schema:entity-event-fact:v1` schema, `entity-event` subject shape, canonical `fct_`/`evt_`/`ent_` identities, `Nats-Msg-Id` equal to the envelope `id`, and subject/payload agreement;
+5. it maps one accepted `devices.EntityEventFact` to the automation-owned `automations.EntityEventFact`;
+6. it calls `AutomationService.ReceiveEntityEventFact` synchronously for short admission work only;
+7. it acknowledges a fact only after the admission transaction commits, so a crash before commit leaves the fact unacknowledged and redelivered; a fact matching no Automation commits nothing and is acknowledged; a transient admission failure is negatively acknowledged so the fact is redelivered;
+8. it terminates a fact that can never be valid (schema, identity or subject/payload failure) as a permanent error, logs it once and never lets one malformed fact block the consumer;
+9. it never executes Commands in the consumer callback.
 
-Drain order: stop new automation admission/Steps → stop device Command admission → join automation workers → join device Command workers → drain Observation/health/DB dependencies. In-progress Commands keep their normal deadlines and Observation access. A remaining sequence becomes `interrupted/core_stopping`; an already attempted last Step may finish normally. A Step losing the race to device admission is interrupted with no created Command. An executor fault is distinct from ordinary dependency unavailability and remains closed until restart.
+Redelivery is expected and benign: admission is idempotent on the durable source event, so the unique `(event_id, automation_id)` constraint below makes a redelivered or duplicated fact produce at most one outcome per Automation. A consumer that instead chooses a live-only subscription accepts that facts published while it was absent are missed; that is a legitimate choice only for advisory consumers, never for the recommended automation path.
 
-## 7. Minimal types, storage and API
+The automation-owned domain type mapped from the validated `devices.EntityEventFact` fact is:
 
-New domain types in `internal/modules/automations/automation_model.go`; strings below denote closed named status/code types in implementation:
+```go
+type EntityEventFact struct {
+    EventID    devices.EntityEventID
+    EntityID   devices.EntityID
+    Name       devices.EntityEventName
+    ReportedAt time.Time // SDK emitted_at
+    ReceivedAt time.Time
+    RecordedAt time.Time
+}
+
+type EntityEventFactReceiver interface {
+    ReceiveEntityEventFact(context.Context, EntityEventFact) (AdmissionOutcome, error)
+}
+
+type AdmissionOutcome struct {
+    MatchedAutomations int
+    StartedRuns        int
+    RecordedSkips      int
+}
+```
+
+In one automation-owned transaction, `ReceiveEntityEventFact`:
+
+1. reads current enabled definitions matching exact `(entity_id,event_name)`;
+2. groups all matching Trigger IDs per Automation;
+3. visits matching Automations by ID for deterministic capacity decisions;
+4. records one Run or one skip per matching Automation;
+5. commits each Run snapshot, event summary, matching Trigger IDs and initial Step rows atomically;
+6. registers workers only after commit.
+
+The same Event may match several Automations. Several matching Triggers in one Automation produce one outcome carrying all matching Trigger IDs.
+
+Only one Run may be active per Automation. A second match records an `automation_busy` skip. At most 16 Runs may be active globally; excess matches record `run_capacity` skips. Skips never queue.
+
+Use a unique `(event_id, automation_id)` constraint on event-backed history as defense against accidental duplicate fact delivery or duplicate local subscription. A conflicting insert reads and returns the existing outcome without scheduling another worker. Unmatched facts write nothing and need no receipt.
+
+No timestamp freshness or expiry rule exists in automations. Whether a fact is recoverable is the automations consumer's own durability choice, not a property of the payload, and the recommendation above is durable resume. Automations must not query Entity Event history on startup, reconnect, definition edits or consumer recovery: recovery is the broker redelivering unacknowledged facts, never a history scan.
+
+Manual invocation uses the same busy and global-capacity rules but ignores definition enablement. It has no Event or matched Trigger IDs. Every successful POST creates a new Run; manual idempotency keys remain deferred. Clients must not automatically retry an ambiguous manual request.
+
+## 7. Execution and truthful history
+
+Reuse `devices.Service.ExecuteCommand` without an automation bypass:
+
+- Before each Step, persist `running`, start time and freshly reserved Command/correlation IDs.
+- Generate IDs through `devices.NewCommandID` and `devices.NewCorrelationID`, with constructors injected for deterministic tests.
+- Call devices outside the automation transaction using a process-owned context detached from the HTTP or NATS caller.
+- Wait for the existing Operation outcome before starting the next Step.
+- `satisfied` and `dispatched` are distinct successful Step statuses; all Steps must succeed for the Run to succeed.
+- Existing matching State is never evidence of a new Command's success.
+- Stop after the first known failure. Later Steps remain `not_attempted`; do not retry, compensate or roll back earlier physical effects.
+
+Known precreation errors (`ErrInvalidCommand`, `ErrEntityNotFound`, `ErrCommandIDConflict`) become Step failures `invalid_command`, `entity_not_found` and `command_id_conflict` and acquire no public Command link.
+
+`CommandExecutionError` proves a Command was created, not its eventual outcome. Read the owned Command and verify reserved Command ID, correlation ID, Entity and Operation before exposing a link or adopting its durable status. Never expose a merely reserved identity.
+
+A bare `devices.ErrCommandUnavailable` during drain maps to `interrupted/core_stopping` with no Command link. Outside drain it is an executor fault because the Automation admitted work while Command admission was unexpectedly closed.
+
+Startup recovery is not execution replay:
+
+- preserve terminal Steps;
+- mark still-running Steps and Runs `interrupted/core_restarted`;
+- leave untouched later Steps `not_attempted`;
+- never infer Run success from later Command history;
+- never redispatch or resume Steps.
+
+History may show an interrupted Step whose verified Command later satisfied. That is truthful: the Run was interrupted while the separately owned Command reached a terminal outcome.
+
+## 8. Domain model, storage and API
+
+New domain types in `internal/modules/automations/automation_model.go`:
 
 ```go
 type AutomationID string     // aut_<UUIDv7>
-type AutomationRunID string  // arn_<UUIDv7>; run_ already means Adapter runtime
+type AutomationRunID string  // arn_<UUIDv7>; run_ identifies Adapter runtimes
 type AutomationSkipID string // ask_<UUIDv7>
-type EntityEventTrigger struct { ID, Kind string; EntityID devices.EntityID; EventName devices.EntityEventName }
-type AutomationStep struct { ID string; EntityID devices.EntityID; Operation devices.OperationName; Parameters devices.CommandParameters }
-type AutomationDefinition struct { Name string; Enabled bool; Triggers []EntityEventTrigger; Steps []AutomationStep }
-type AutomationRecord struct { ID AutomationID; Revision int64; Definition AutomationDefinition; CreatedAt, UpdatedAt time.Time }
-type AutomationEventSummary struct { ID devices.EntityEventID; EntityID devices.EntityID; Name devices.EntityEventName; ReceivedAt time.Time }
+
+type EntityEventTrigger struct {
+    ID        string
+    Kind      string // entity_event
+    EntityID  devices.EntityID
+    EventName devices.EntityEventName
+}
+
+type AutomationStep struct {
+    ID            string
+    EntityID      devices.EntityID
+    Operation     devices.OperationName
+    Parameters    devices.CommandParameters
+}
+
+type AutomationDefinition struct {
+    Name     string
+    Enabled  bool
+    Triggers []EntityEventTrigger
+    Steps    []AutomationStep
+}
+
+type AutomationRecord struct {
+    ID         AutomationID
+    Revision   int64
+    Definition AutomationDefinition
+    CreatedAt  time.Time
+    UpdatedAt  time.Time
+}
+
+type AutomationEventSummary struct {
+    ID         devices.EntityEventID
+    EntityID   devices.EntityID
+    Name       devices.EntityEventName
+    ReceivedAt time.Time // JetStream storage time
+}
 
 type AutomationStepAttempt struct {
-    Position int
-    StepID, Status string // not_attempted | running | satisfied | dispatched | failed | interrupted
-    ReservedCommandID *devices.CommandID       // private; not proof a Command exists
-    ReservedCorrelationID *devices.CorrelationID // private; paired with reserved Command ID
-    FailureCode *string
-    StartedAt, CompletedAt *time.Time
+    Position              int
+    StepID                string
+    Status                string // not_attempted | running | satisfied | dispatched | failed | interrupted
+    ReservedCommandID     *devices.CommandID
+    ReservedCorrelationID *devices.CorrelationID
+    FailureCode           *string
+    StartedAt             *time.Time
+    CompletedAt           *time.Time
 }
+
 type AutomationRun struct {
-    ID AutomationRunID
-    AutomationID AutomationID
-    Revision int64
-    Snapshot AutomationDefinition
-    Event *AutomationEventSummary // nil for manual
-    MatchedTriggerIDs []string     // empty for manual
-    Status string // running | succeeded | failed | interrupted
-    FailureCode *string
-    StartedAt time.Time
-    CompletedAt *time.Time
-    Steps []AutomationStepAttempt
+    ID                AutomationRunID
+    AutomationID      AutomationID
+    Revision          int64
+    Snapshot          AutomationDefinition
+    Event             *AutomationEventSummary // nil for manual
+    MatchedTriggerIDs []string                 // empty for manual
+    Status            string                   // running | succeeded | failed | interrupted
+    FailureCode       *string
+    StartedAt         time.Time
+    CompletedAt       *time.Time
+    Steps             []AutomationStepAttempt
 }
+
 type AutomationSkip struct {
-    ID AutomationSkipID
-    AutomationID AutomationID
-    Revision int64
-    Event AutomationEventSummary
+    ID                AutomationSkipID
+    AutomationID      AutomationID
+    Revision          int64
+    Event             AutomationEventSummary
     MatchedTriggerIDs []string
-    Reason string // automation_busy | run_capacity
-    SkippedAt time.Time
-}
-type AutomationHistoryEntry struct {
-    Kind string // run | skip
-    Run *AutomationRun
-    Skip *AutomationSkip // exactly one alternative, matching Kind
+    Reason            string // automation_busy | run_capacity
+    SkippedAt         time.Time
 }
 ```
 
-A skip is not a Run. Store the alternatives in one feature-owned history table, with CHECK constraints and constructor/read validation; do not create a second “started Trigger Decision” record duplicating each Run. Keep source summary and matching Trigger IDs in both alternatives so later edits cannot erase their explanation.
+A skip is not a Run. Store both alternatives in one feature-owned history table so list and detail ordering remain uniform.
 
-Consuming seam, `automation_service.go`:
+Three automation-owned tables are added to `00001_initial.sql`:
+
+| Table | Required invariants |
+|---|---|
+| `automations` | ID PK, revision starts at 1, normalized strict definition JSON, created/updated times; replacement is revision-checked atomically. |
+| `automation_history` | ID PK (`arn_` for Run, `ask_` for skip), Automation FK, kind, revision, recorded time, nullable event summary, matching IDs; Run-only snapshot/status/failure/completion and skip-only reason; partial unique Automation ID for running Runs; unique `(event_id,automation_id)` for event-backed outcomes. |
+| `automation_run_steps` | `(run_id,position)` PK, history FK, Step ID/status/failure/times and nullable reserved Command/correlation pair; repository validation proves the parent is a Run. |
+
+There is no `automation_event_receipts` table and no FK from automation history to `entity_events`: Event history has fixed retention and may be pruned while Automation history remains. The copied event summary is immutable explanation, not an executable record.
+
+Run/skip history is retained indefinitely in this slice, like Command history. SQLite growth is an explicit limitation until Automation retention is designed.
+
+Service seam:
 
 ```go
 type AutomationDevices interface {
-    ValidateEntityEvent(context.Context, devices.EntityEventInput) (devices.ValidatedEntityEvent, error)
     ValidateEntityEventTrigger(context.Context, devices.EntityID, devices.EntityEventName) error
     ValidateCommand(context.Context, devices.CommandInput) (devices.CommandParameters, error)
     ExecuteCommand(context.Context, devices.CommandInput) (devices.CommandResult, error)
     GetCommand(context.Context, devices.CommandID) (devices.CommandRecord, error)
 }
+
 func NewAutomationService(*SQLiteAutomationRepository, AutomationDevices, AutomationDependencies) *AutomationService
-func (s *AutomationService) ReceiveEntityEvent(context.Context, devices.EntityEventInput) (devices.EntityEventReceipt, error)
-func (s *AutomationService) CreateAutomation(context.Context, AutomationDefinition) (AutomationRecord, error)
-func (s *AutomationService) ReplaceAutomation(context.Context, AutomationID, int64, AutomationDefinition) (AutomationRecord, error)
-func (s *AutomationService) StartManualRun(context.Context, AutomationID) (AutomationRun, error)
-func (s *AutomationService) StopAutomationAdmission()
-func (s *AutomationService) WaitAutomationRuns(context.Context) error
-func (s *AutomationService) AutomationExecutionReady() bool
+func (service *AutomationService) CreateAutomation(context.Context, AutomationDefinition) (AutomationRecord, error)
+func (service *AutomationService) ReplaceAutomation(context.Context, AutomationID, int64, AutomationDefinition) (AutomationRecord, error)
+func (service *AutomationService) StartManualRun(context.Context, AutomationID) (AutomationRun, error)
+func (service *AutomationService) ReceiveEntityEventFact(context.Context, EntityEventFact) (AdmissionOutcome, error)
+func (service *AutomationService) StopAdmission()
+func (service *AutomationService) AdmissionOpen() bool
+func (service *AutomationService) WaitRuns(context.Context) error
+func (service *AutomationService) InterruptActiveRuns(context.Context, time.Time) error
 ```
 
-Dependencies are the clock, ID constructors and logger. Use the real SQLite repository for transaction tests and the consuming device interface for deterministic execution tests. Device NATS transport's `EntityEventReceiver` interface has exactly the `ReceiveEntityEvent` signature above. App injects the automation service and existing dependency-readiness checker; no devices → automations import.
-
-Four automation-owned tables, in `00001_initial.sql` (recreate development DBs; no compatibility migration):
-
-| Table | Required columns/invariants |
-|---|---|
-| `automations` | ID PK, revision starting at 1, strict normalized definition JSON, created/updated times. Revision-checked replacement is atomic. |
-| `automation_event_receipts` | Event ID PK, fingerprint, received_at, expires_at. Internal duplicate suppression only; no FK from history, no executable work. |
-| `automation_history` | ID PK (`arn_` or `ask_` according to kind), Automation FK, kind, revision, recorded_at, nullable event summary, matching IDs. Run-only snapshot/status/failure/completed_at; skip-only reason. Partial unique Automation ID where kind=run/status=running; unique `(event_id,automation_id)` when event_id is non-null. |
-| `automation_run_steps` | `(run_id,position)` PK; `run_id` FK to `automation_history(id)`; Step ID/status/failure/times, nullable reserved Command/correlation pair. Repository write/read validation enforces a run-kind parent: the FK alone cannot filter by kind. No Command FK for a merely reserved identity and no rows for skips. |
-
-Use existing fixed-width sortable UTC encoding. Check legal kind/field/status combinations, terminal timestamps and reserved-ID pairing. Match/receipt/capacity/snapshot writes share one transaction; worker registration is tracked so drain cannot miss a committed Run. Never hold a transaction while calling another module, NATS, or waiting for a Command.
-
-Run/skip history is retained indefinitely in this first slice, like existing Command history. Configurable pruning is deferred, with SQLite growth an explicit operational limitation before broad household rollout. Only expired duplicate receipts receive the small admission-time cleanup above.
-
-One execution-history API surface; standard module-owned Huma DTOs and RFC 9457 errors:
+HTTP routes use module-owned Huma DTOs and RFC 9457 errors:
 
 | Route | Result |
 |---|---|
-| `POST /v1/automations` | Definition → 201 record/Location. |
+| `POST /v1/automations` | Definition → 201 record and Location. |
 | `GET /v1/automations` | ID-ascending list. |
-| `GET /v1/automations/{id}` | Definition/revision/times. |
-| `PUT /v1/automations/{id}` | `{expected_revision,definition}` → updated record; stale revision=409. |
-| `POST /v1/automations/{id}/runs` | Empty body → 202 Run summary and Location to history detail; busy=409, capacity/unready=503. |
-| `GET /v1/automations/{id}/history` | Newest-first Run/skip summaries with `kind`, `id`, revision, recorded time, event/matched IDs and status or skip reason. |
-| `GET /v1/automations/{id}/history/{entry_id}` | Run snapshot/ordered Steps/verified Command links, or skip detail. Parent mismatch=404. |
+| `GET /v1/automations/{id}` | Definition, revision and timestamps. |
+| `PUT /v1/automations/{id}` | `{expected_revision,definition}` → replacement; stale revision is 409. |
+| `POST /v1/automations/{id}/runs` | Empty body → 202 Run summary and history Location; busy is 409, capacity or closed admission is 503. |
+| `GET /v1/automations/{id}/history` | Newest-first Run/skip summaries. |
+| `GET /v1/automations/{id}/history/{entry_id}` | Run snapshot and ordered Steps with verified Command links, or skip detail; parent mismatch is 404. |
 
-History list excludes full snapshots/Steps; detail includes them. Public Step command link is `{command_id,status}` from a verified read, with full evidence available at the existing Command endpoint; private reserved identities/correlation never leak. Both collections use existing keyset conventions: default 50, limits 1–200, no totals; history key `(recorded_at,id)`, endpoint/parent-scoped opaque cursors, no snapshot guarantee. Unknown resources=404, semantic validation=400, body schema errors follow Huma 422, unexpected errors=500. Async failures belong in history, not the completed 202 request. No deletion/cancellation/replay APIs.
+List responses omit full snapshots and Steps. Collections use existing keyset conventions: default 50, limits 1–200, no totals, history key `(recorded_at,id)`, endpoint- and parent-scoped opaque cursors, and no snapshot guarantee.
 
-## 8. Four implementation slices
+## 9. Lifecycle
+
+Preserve the Device Facts foundation's startup ordering, including interruption of active Commands into durable history before the shared NATS connection attempt. Insert automation work at these points:
+
+1. open/migrate SQLite and interrupt active Commands into durable history as required by Device Facts;
+2. interrupt active Automation Runs before the shared NATS connection attempt;
+3. connect the one shared Core NATS connection, provision and validate `HEARTH_DEVICE_FACTS_V1`, and start the `devicesnats.DeviceFactRelay` over the durable outbox;
+4. construct the devices and automation services;
+5. provision the remaining JetStream resources and start request/reply transports;
+6. create and start the automations durable Entity Event fact consumer and report active once it is consuming;
+7. start durable Observation and Entity Event consumers;
+8. expose HTTP and readiness.
+
+Starting the automations consumer before the durable Observation and Entity Event consumers means the broker holds its position while fresh facts are produced during startup, and a fact published after the consumer exists is retained by the stream whether or not the callback has started. A consumer created later still receives earlier facts, because its `DeliverAll` policy resumes from its stored acknowledgement floor. An external reader owns its own consumer and can miss a fact only in the ways §11 and §12 of the Device Facts spec describe.
+
+Readiness requires the automations fact consumer to be active and automation admission to be open, in addition to the device requirements: the shared NATS connection connected, the Device Fact stream validated, the relay active, and the Observation and Entity Event resources validated with both consumers active. It never waits for Entity Event backlog and never waits for a fact consumer Core does not own.
+
+Drain order:
+
+1. stop/drain the automations fact consumer and close new automation admission;
+2. close device Command admission;
+3. join automation workers;
+4. join device Command workers;
+5. drain Entity Event and Observation consumers while dependencies remain available and the Device Fact relay still publishes;
+6. drain `devicesnats.DeviceFactRelay` within the foundation's five-second deadline, leaving any unpublished rows in the durable outbox for the next Core process;
+7. drain transports, the shared NATS connection and SQLite.
+
+A Run admitted before drain may finish its current Command. It starts no later Step after Command admission closes; such a Step becomes `interrupted/core_stopping` without a Command link.
+
+An automation executor fault closes admission until restart. A fact that the stream's retention bound has already evicted, or the absence of an external reader, is not a readiness failure.
+
+## 10. Deliverables
+
+The Device Facts foundation is a separate prerequisite and is not a deliverable of this spec.
 
 | ID | Outcome | Effort | Depends on | Acceptance |
 |---|---|---|---|---|
-| D1 | Registered event-source type and read-only source validation | L | — | A1–A2 |
-| D2 | API definitions, manual Runs, sequential execution and unified history | L | D1 | A3–A5 |
-| D3 | Live SDK event → one atomic automation admission → Run/skip | L | D1,D2 | A6–A9 |
-| D4 | Simulator-to-light proof, failure tests and operator documentation | L | D3 | A10 |
+| D1 | Definitions, save-time validation, manual Runs and history API | L | Device Facts foundation implemented | A1–A3 |
+| D2 | Sequential Step execution, verified Command links and restart/drain behavior | L | D1 | A4–A5 |
+| D3 | Entity Event fact durable consumer and atomic Run/skip admission | L | Device Facts implementation, D1 | A6–A8 |
+| D4 | Simulator-to-light proof, operator documentation and full integration validation | L | D2,D3 | A9–A10 |
 
-Owning paths (tests colocate with behavior; generated outputs ship with their sources):
+Owning paths:
 
 ```text
-entitytypes/
-├── entitytype-manifest.schema.json       # modify — event_source flag [D1]
-└── enumeventv1/                          # new — schemas/manifest/examples/generated type [D1]
-contracts/v1/
-├── registration-request.schema.json     # modify — optional event support [D1]
-├── entity-event-{request,response}.schema.json # new — live envelope/receipt [D3]
-└── common.schema.json / embed.go         # modify — event IDs/causation/schema registration [D3]
-sdk/adapter/
-├── entity_events.go                      # new — data types [D1], publication [D3]
-├── enumeventv1/                          # generated — descriptor/event builders [D1]
-└── session.go / lifecycle.go             # modify — no buffering; preserve non-event retries [D3]
-internal/
-├── cmd/entitytypegen/                    # modify — event generation/conformance fixtures [D1]
-├── contracts/v1/natswire/subjects.go      # modify — event route helpers [D3]
-├── modules/devices/
-│   ├── model.go / ids.go / catalog.go    # modify — event types/parsers/catalog selector [D1]
-│   ├── entity_events.go                  # new — read-only validation [D1]
-│   ├── repository.go / sqlite_reads.go   # modify — single source-snapshot read [D1]
-│   ├── dbqueries/entity_event_source.sql # new — source lookup, no event storage [D1]
-│   ├── dbsqlc/ / zz_generated_entitytypes*.go # generated — source read/catalog [D1]
-│   └── nats/entity_event.go              # new — bounded request/reply, injected receiver [D3]
-├── modules/automations/
-│   ├── automation_model.go              # new — definition/Run/skip types [D2]
-│   ├── automation_definition.go / automation_definition.schema.json # new — strict definition validation [D2]
-│   ├── automation_service.go            # new — management/admission/lifecycle [D2,D3]
-│   ├── automation_execution.go          # new — Steps using existing Commands [D2]
-│   ├── automation_events.go             # new — exact matching, receipts and skips [D3]
-│   ├── automation_history.go            # new — summary/detail/verified links [D2]
-│   ├── sqlite_automations.go / dbqueries/automations.sql # new — owned transactions [D2,D3]
-│   ├── dbsqlc/                          # generated — owned SQL [D2,D3]
-│   └── api/automations.go               # new — seven routes/DTOs/cursors [D2]
-├── platform/db/migrations/00001_initial.sql # modify — automation tables [D2,D3]
-├── app/hearthd/run.go / server.go        # modify — assembly/readiness/drain/routes [D2,D3]
-├── app/hearthd/entity_event_automation_integration_test.go # new — whole slice [D4]
-└── adapters/simulator/ / app/simulator/  # modify — event scenario/explicit emission [D4]
-sqlc.yaml / mise.toml                    # modify — automation SQL generation/checks [D2]
-README.md / configs/ / CONTEXT.md / docs/{architecture,logging}.md
-                                        # modify at implementation — semantics/local usage [D4]
+internal/modules/devices/
+└── entity_events.go                         # modify — save-time ValidateEntityEventTrigger [D1]
+internal/modules/automations/
+├── automation_model.go                     # new — definitions, Runs, skips and Steps [D1]
+├── automation_definition.go                # new — strict validation and normalization [D1]
+├── automation_definition.schema.json       # new — stored definition contract [D1]
+├── automation_service.go                   # new — management, admission and lifecycle [D1,D3]
+├── automation_admission.go                 # new — exact fact matching and Run/skip transaction [D3]
+├── automation_execution.go                 # new — ordered Commands [D2]
+├── automation_history.go                   # new — summaries, detail and verified links [D1,D2]
+├── sqlite_automations.go                   # new — repository and transaction ownership [D1,D3]
+├── dbqueries/automations.sql               # new — definitions/history/admission SQL [D1,D3]
+├── dbsqlc/                                 # generated — automation SQL package [D1,D3]
+├── api/automations.go                      # new — seven routes and DTOs [D1]
+└── nats/entity_event_facts.go              # new — durable JetStream consumer and wire mapping [D3]
+internal/platform/db/migrations/00001_initial.sql
+                                               # modify — three automation tables [D1]
+internal/app/hearthd/run.go / server.go         # modify — assembly/readiness/drain [D2,D3]
+internal/app/hearthd/entity_event_automation_integration_test.go
+                                               # new — whole slice [D4]
+sqlc.yaml / mise.toml                          # modify — automation generation [D1]
+README.md / CONTEXT.md / docs/{architecture,logging}.md
+                                               # modify — semantics and operator usage [D4]
 ```
 
-D1 includes SDK/domain types required by its generated builders. D2 ships working manual-only execution before D3 transport exists. Update any explicit descriptor DTOs needed to preserve `events` in D1. Serialize changes to shared migration/generation inputs; do not add infrastructure to make the slice artificially parallelizable.
+Do not list or modify Device Fact contracts, subjects, stream, relay or transactional enqueue hooks here; those belong to `specs/device-facts.md` and must land first.
 
-Simulator D4 registers an `events` Entity alongside `power` in scenario `entity-events`; existing scenarios and Binding keys stay unchanged. Tests call explicit `EmitEntityEvent(ctx,name)`, not a timer. Local scenario input accepts `single_press`/`double_press` lines while serving Commands; use an unbuffered reader-to-publisher handoff, dropping/logging while busy or disconnected, never retaining presses for recovery. EOF stops only input; ensure shutdown can close/join its reader. No privileged Core event-injection endpoint and no real-hardware claim.
+## 11. Acceptance tests
 
-## 9. Acceptance tests and remaining trade-offs
+- **A1 — Definitions:** strict schema limits, save-time event-name and Command validation, parameter normalization, zero-Trigger manual-only definitions and revision conflicts work through real SQLite and HTTP.
+- **A2 — History:** Run snapshots and matching Trigger IDs remain immutable after edits; Run and skip alternatives satisfy table and constructor invariants; parent-scoped pagination is newest-first and excludes private reserved IDs.
+- **A3 — Manual admission:** each manual POST creates a new Run, ignores definition enablement, enforces busy/global capacity, and reports asynchronous failures only in history.
+- **A4 — Execution:** two Steps run in order and the second never starts until the first reaches its required outcome. First failure prevents later Steps. Existing matching State is insufficient.
+- **A5 — Truthful lifecycle:** caller disconnect does not cancel an admitted Run; precreation failures expose no Command link; collisions cannot adopt unrelated Commands; restart and drain interrupt without replay or invented success.
+- **A6 — Fact validation:** embedded NATS tests prove malformed schema, unsafe identity, wrong subject family, a `Nats-Msg-Id` mismatch and subject/payload mismatch never reach admission and are terminated instead of blocking the consumer. A committed admission is acknowledged; a transient admission failure is not, so the fact redelivers and `(event_id, automation_id)` idempotency absorbs it.
+- **A7 — Atomic admission:** injected failures before commit leave no partial Run, skip or Step rows and schedule no worker. One event produces at most one outcome per matching Automation; multiple matching Triggers produce one grouped outcome.
+- **A8 — Busy and capacity:** deterministic concurrent facts produce one active Run plus `automation_busy` skips, never exceed 16 active Runs, and record `run_capacity` for excess matches. Accidental duplicate fact delivery does not schedule duplicate work.
+- **A9 — Durable recovery and idempotency:** with automations absent, accepted Entity Events appear in Entity Event history and their facts stay in `HEARTH_DEVICE_FACTS_V1`; on restart the automations durable consumer resumes from its acknowledgement floor and each retained fact produces at most one outcome per Automation, with a redelivered or duplicated fact producing no second Run or skip. Starting or editing definitions never scans history.
+- **A10 — Whole slice:** real SDK registration/publication, implemented Entity Event ingestion, durable Device Fact delivery from `HEARTH_DEVICE_FACTS_V1`, HTTP Automation definition/history, embedded NATS and real SQLite demonstrate simulated press → successful light Command, busy skip and restart interruption. `mise run validate` passes.
 
-- **A1 — Type contract:** generated zero-Operation event type registers and round-trips supported names through SDK/wire/Core; existing types still reject event support. Event Entities never gain State or satisfy Commands; invalid schema shapes fail generation.
-- **A2 — Source validation:** read-only validation rejects wrong owner/runtime, disabled source, unhealthy Adapter and unsupported name. Barrier-test source changes between validation and admission against the explicit point-in-time contract; no cross-module transaction is held.
-- **A3 — Definitions/history:** save-time parameter normalization, revision conflict, immutable Run snapshots, manual-only definitions, parent-scoped pagination and Run/skip detail shapes. Editing a definition never rewrites existing history.
-- **A4 — Command execution:** a two-Step Run waits for the first required outcome; failure prevents the second. Existing matching State is insufficient. Precreation failure/ID collision yields no false Command link; distinct Automations may still issue overlapping Commands as Hearth permits.
-- **A5 — Lifecycle:** caller disconnect does not cancel an admitted Run; shutdown starts no later Steps and keeps Observations alive for current Commands. Crash after reservation, dispatch or Command completion interrupts the Run on restart without rewriting it to success or redispatching. Verified Command evidence remains separately inspectable.
-- **A6 — Atomic admission:** injected failures before commit leave neither receipt nor partial Runs/skips/Steps and schedule no workers. Post-commit response loss never re-executes an identical event. Unmatched duplicates remain unmatched even after adding a definition; same-ID changed input conflicts; two different IDs with the same name are distinct presses.
-- **A7 — Busy/capacity:** deterministic concurrent events produce one active Run plus recorded busy skips with all matching Trigger IDs. Global active count never exceeds 16. Multiple Triggers on one Automation yield one outcome, not multiple Runs. Expired events produce no new receipt/history or delayed execution.
-- **A8 — Live NATS:** use real embedded NATS to prove absence/reconnect does not queue event requests, expiry boundaries are enforced, malformed subject/payload/identity/oversized input safely rejects or drops, and publication never retries. Ordinary Observations and Session recovery still retry correctly with buffering disabled and preserve their identities/deadlines.
-- **A9 — No deadlock:** event admission, SQL and lifecycle locks never wait for Command outcomes. With the real single-connection SQLite DB, a linked Observation completes a Command while other events are admitted. Duplicate-receipt cleanup cannot revive expired input; restart never scans receipts for work.
-- **A10 — Whole slice:** real SDK registration/publication + HTTP definition/history + embedded NATS/SQLite demonstrate simulated press → successful light Command, busy skip and restart interruption. README recipe works locally; `mise run validate` passes and generation checks cover both SQL packages and the new type.
+Use injected clocks and synchronization barriers, real SQLite for transaction and constraint claims, and embedded NATS for fact consumer behavior. Do not use sleeps as correctness oracles.
 
-Use injected clocks and synchronization barriers, real SQLite for atomicity/constraints and embedded NATS for transport behavior. No new test dependencies or sleeps-as-oracles. Keep ordinary size limits and concurrency bounds; do not add a general queue or scheduler to make tests easier.
+## 12. Risks and follow-up
 
-Risks remain explicit: input before durable admission can be lost; a committed Run can be interrupted before dispatch; clocks bound transport age, not physical truth; source validation is point-in-time; manual POSTs are not idempotent; execution history grows until a later retention feature. These are smaller, understandable limitations instead of extra recovery subsystems.
+Accepted limitations:
 
-On implementation, update glossary Entity/Entity support to include named event sources, permit zero Triggers for manual-only Automations, and define Entity Event and Automation Skip. Preserve the distinction from outbound `enumaction.trigger`. Remove the unused scheduled Occurrence wording and fix its dangling references together; do not rename a skip into an executed Run. No accepted architecture/glossary is changed merely by this draft revision.
+- a durable accepted Entity Event can outlive its fact when the stream's seven-day or one-GiB bound evicts it before the automations durable consumer reaches it, or when an operator purges the stream; a fact republished after the two-hour duplicate window can also be delivered twice, which `(event_id, automation_id)` idempotency absorbs;
+- a crash may occur after automation admission commits but before a worker starts, leaving restart to mark the Run interrupted;
+- source validity is the devices processing-time verdict carried by the accepted fact; automations do not revalidate it at admission;
+- targets may change after definition save and are revalidated by normal Command execution;
+- manual POSTs are not idempotent;
+- Automation history grows until a separate retention feature exists;
+- external fact publishers are trusted according to the NATS deployment boundary defined by the Device Facts spec.
+
+The Device Facts foundation has landed and this file now carries its exact `devices.EntityEventFact` DTO, `devicesnats.DeviceFactStreamName` (`HEARTH_DEVICE_FACTS_V1`) stream, `hearth.v1.core.fact.entity.*.entity-event.>` wildcard, `urn:hearth:schema:entity-event-fact:v1` schema, `devicesnats.DeviceFactRelay` lifecycle seam and this automation consumer's own durable recovery policy; run the completeness review before marking this design implementation-ready.
+
+On automation implementation, update `CONTEXT.md` to define Entity Event Trigger and Automation Skip, permit zero Triggers for manual-only Automations, and remove the obsolete scheduled `Occurrence` wording. Keep Entity Event distinct from Trigger and from the outbound `enumaction.trigger` Operation.

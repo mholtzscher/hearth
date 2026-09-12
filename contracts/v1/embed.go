@@ -16,6 +16,8 @@ const (
 	RegistrationResponseSchemaID       = "urn:hearth:schema:registration-response:v1"
 	ObservationSchemaID                = "urn:hearth:schema:observation:v1"
 	EntityEventSchemaID                = "urn:hearth:schema:entity-event:v1"
+	ObservationFactSchemaID            = "urn:hearth:schema:observation-fact:v1"
+	EntityEventFactSchemaID            = "urn:hearth:schema:entity-event-fact:v1"
 	CommandRequestSchemaID             = "urn:hearth:schema:command-request:v1"
 	CommandResponseSchemaID            = "urn:hearth:schema:command-response:v1"
 	EntityEnablementRequestSchemaID    = "urn:hearth:schema:entity-enablement-request:v1"
@@ -44,6 +46,8 @@ func SchemaFiles() map[string]string {
 		RegistrationResponseSchemaID:       "registration-response.schema.json",
 		ObservationSchemaID:                "observation.schema.json",
 		EntityEventSchemaID:                "entity-event.schema.json",
+		ObservationFactSchemaID:            "observation-fact.schema.json",
+		EntityEventFactSchemaID:            "entity-event-fact.schema.json",
 		CommandRequestSchemaID:             "command-request.schema.json",
 		CommandResponseSchemaID:            "command-response.schema.json",
 		EntityEnablementRequestSchemaID:    "entity-enablement-request.schema.json",

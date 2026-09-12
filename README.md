@@ -47,6 +47,41 @@ curl 'http://127.0.0.1:8080/v1/entities/<events_ent_id>/events?limit=50'
 
 The registration log reports both canonical Entity IDs. The event history response shows the schema-constrained reported name together with whether Core recorded the report (`accepted`) or why Core rejected it (`stale_runtime`, `unknown_entity`, `wrong_adapter`, `entity_disabled`, or `unsupported_event`). It never proves that a physical press happened, and it is not State history: `GET /v1/entities/{entity_id}/state/history` never contains events. Readiness covers the session, the Observation consumer, the Entity Event stream and consumer configuration, and both consumers' activity; it never waits for unread backlog. The guarantee covers broker-acknowledged input only while NATS and JetStream remain available and the Adapter process is alive: initial claim and registration need Core, an Adapter restart during a Core outage loses unacknowledged work, a NATS process loss is not covered, and stream limits can discard old input during a long outage. Reports are not replayed into Commands, and nothing in this path executes work.
 
+### Device Facts
+
+Core publishes **Device Facts** for accepted Observations and accepted Entity Events. The devices SQLite transaction that records the evidence also writes a pending fact row in the same commit, and one relay publishes pending facts oldest-first into the JetStream stream `HEARTH_DEVICE_FACTS_V1` (`hearth.v1.core.fact.>`), deleting each row only after the broker acknowledges it. The durable SQLite record and the HTTP read APIs stay authoritative: a fact reports what Core recorded, not physical truth, and it never turns an HTTP history read into automatic catch-up.
+
+Publication is at-least-once from that durable outbox. A broker outage, a relay restart or a Core restart delays publication but does not lose a queued fact, and a retry reuses the same fact identity, subject and payload bytes. The broker collapses a repeated fact identity only inside the stream's two-hour duplicate window, so a retry after a long outage can store the same fact twice: treat the fact `id` as an idempotency key. The stream retains facts for seven days or one GiB, whichever comes first, and evicts the oldest first, so a reader that falls further behind than that permanently misses the evicted facts.
+
+Command lifecycle is deliberately not a fact family. Requested, accepted, satisfied, dispatched and every failure or interrupted status are exposed only through durable Command history (`GET /v1/commands/{command_id}` and `GET /v1/entities/{entity_id}/commands`), never as a fact, and a linked Observation fact is not a substitute for a Command's status transition. A stateless `dispatched` or a failure outcome has no fact at all.
+
+With NATS and `hearthd` running, subscribe live with any NATS client while driving the Entity Event or simulator paths above:
+
+```sh
+nats sub 'hearth.v1.core.fact.>'                              # every Device Fact
+nats sub 'hearth.v1.core.fact.entity.<ent_id>.>'              # one Entity, every family
+nats sub 'hearth.v1.core.fact.entity.*.entity-event.>'        # accepted Entity Events
+nats sub 'hearth.v1.core.fact.entity.*.observation.applied'   # state-changing Observations
+```
+
+A plain subscription is live-only: it receives only facts published while it is connected, and it can neither acknowledge nor recover one. When a missed fact is unacceptable, read the stream `HEARTH_DEVICE_FACTS_V1` with a **named durable JetStream consumer** created in your own client library:
+
+- choose `DeliverAll` with an explicit acknowledgement policy to resume from your own acknowledgement floor after a restart, which is the choice that does not miss a stored fact;
+- choose `DeliverNew` when a new consumer should see only facts published after it asked;
+- narrow the consumer's filter subject to one family or one Entity when that is all you need;
+- acknowledge only after your side effect commits, and stay idempotent on the fact `id` because a duplicate is possible;
+- remember the seven-day/one-GiB bound: a reader that falls further behind than the stream's retention loses the evicted facts.
+
+Core provisions the stream and no consumer, and never resumes or repairs a reader's position for it. Readiness requires the shared NATS connection, the validated fact stream and an active relay, but never a subscriber and never a fact consumer Core does not own.
+
+The Hearth Debug dashboard exposes `#/device-facts`. It reads a bounded recent snapshot directly from JetStream over the configured NATS websocket, and live streaming remains off until explicitly enabled. Its temporary `DeliverNew` consumer is advisory and non-durable: switching live off or leaving the page deletes it, and reconnecting resumes at the current tail rather than recovering missed facts.
+
+Subjects are `hearth.v1.core.fact.entity.<entity_id>.<family>.<variant>` with Entity-first routing, where `<family>` is `observation` or `entity-event`. Each fact validates against one strict `contracts/v1` schema — `urn:hearth:schema:observation-fact:v1` or `urn:hearth:schema:entity-event-fact:v1` — carries a stable `fct_<uuidv7>` `id` that is also published as `Nats-Msg-Id`, and keeps the durable `obs_`/`evt_` source ID as `causation_id`. `emitted_at` is Core's commit time, not publication time, and the inbound W3C `traceparent`/`tracestate` are restored on every (re)publication. Subscribers must reject a payload whose Entity, family or variant disagrees with its subject, and must not sort by UUID or envelope time to invent a global order.
+
+When a pending fact cannot be mapped to a valid message, the relay preserves the row, stops, logs `device_fact.poison` and fails readiness instead of discarding durable evidence. A transient outbox, publish, acknowledgement or delete failure keeps the row and retries, logging `device_fact.retry`. Neither event contains State values, raw envelopes or full subjects. See [the logging guide](docs/logging.md).
+
+Anyone with broker access can read canonical State values, forge a fact or publish directly into `HEARTH_DEVICE_FACTS_V1`. Facts are unsigned, Hearth adds no fact authentication or authorization, and this feature widens no deployment boundary: trust the broker exactly as for the rest of Hearth's trusted network, and reserve `hearth.v1.core.fact.>` publish permission for Core when NATS authorization exists.
+
 ### Home Assistant migration adapter
 
 Copy `configs/homeassistant.example.yaml` to the ignored `configs/homeassistant.yaml`, configure one Home Assistant light, and place a long-lived access token at the configured ignored `token_file` path. With NATS and `hearthd` running, start the disposable adapter:

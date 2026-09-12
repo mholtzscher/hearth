@@ -147,7 +147,7 @@ func handleEntityEventMessage(
 		permanentFailure("entity_event_emitted_at_parse_failed", envelope.ID)
 		return
 	}
-	domain, domainErr := domainEntityEvent(envelope, emittedAt)
+	domain, domainErr := domainEntityEvent(envelope, emittedAt, deviceFactTraceFromHeaders(message.Headers()))
 	if domainErr != nil {
 		permanentFailure("entity_event_identity_failed", envelope.ID)
 		return
@@ -273,6 +273,7 @@ func logEntityEventRecorded(
 func domainEntityEvent(
 	envelope natswire.Envelope[entityEvent],
 	emittedAt time.Time,
+	trace devices.DeviceFactTraceContext,
 ) (devices.EntityEvent, error) {
 	eventID, eventIDErr := devices.ParseEntityEventID(envelope.ID)
 	if eventIDErr != nil {
@@ -292,5 +293,6 @@ func domainEntityEvent(
 		Name:          devices.EntityEventName(envelope.Data.Name),
 		CorrelationID: correlationID,
 		EmittedAt:     emittedAt,
+		Trace:         trace,
 	}, nil
 }

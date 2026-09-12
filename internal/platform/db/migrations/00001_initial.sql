@@ -352,6 +352,82 @@ CREATE INDEX entity_events_entity_history_idx
 CREATE INDEX entity_events_retention_idx
     ON entity_events(recorded_at, receive_order);
 
+-- This table is not fact history: it is the durable pending set of accepted
+-- Observation and Entity Event facts waiting for JetStream acknowledgement.
+-- The relay deletes each row it has published, so the table is empty whenever
+-- publication has caught up. Each row carries both enqueue order and stable fact
+-- identity; no attempt, backoff or delivery state exists because an unpublished
+-- row simply is a pending fact.
+--
+-- One row holds exactly one family, enforced by the CHECK constraints below: an
+-- Observation row carries the committed normalized value and Core receive
+-- times, an Entity Event row carries the first-seen record times, and the other
+-- family's columns stay NULL. source_id names the durable record the fact
+-- reports (obs_... or evt_...), variant is the family-defined publication
+-- variant (the Observation disposition or the Entity Event name), created_at is
+-- Core's commit time for the fact and becomes the published envelope emitted_at,
+-- and traceparent/tracestate are the inbound W3C trace context copied from the
+-- report. Like entity_events, this table holds no foreign keys: a pending fact
+-- must survive runtime, ownership, descriptor and retained-history pruning.
+CREATE TABLE device_facts_outbox (
+    enqueue_order    INTEGER PRIMARY KEY AUTOINCREMENT,
+    fact_id          TEXT NOT NULL UNIQUE CHECK (
+        length(fact_id) = 40 AND substr(fact_id, 1, 4) = 'fct_'
+    ),
+    family           TEXT NOT NULL CHECK (family IN ('observation', 'entity-event')),
+    entity_id        TEXT NOT NULL CHECK (
+        length(entity_id) = 40 AND substr(entity_id, 1, 4) = 'ent_'
+    ),
+    variant          TEXT NOT NULL CHECK (
+        (family = 'observation' AND variant IN ('applied', 'unchanged'))
+        OR (family = 'entity-event'
+            AND length(variant) BETWEEN 1 AND 63
+            AND substr(variant, 1, 1) GLOB '[a-z0-9]'
+            AND variant NOT GLOB '*[^a-z0-9_-]*')
+    ),
+    source_id        TEXT NOT NULL CHECK (
+        (family = 'observation' AND length(source_id) = 40 AND substr(source_id, 1, 4) = 'obs_')
+        OR (family = 'entity-event' AND length(source_id) = 40 AND substr(source_id, 1, 4) = 'evt_')
+    ),
+    correlation_id   TEXT NOT NULL CHECK (
+        length(correlation_id) = 40 AND substr(correlation_id, 1, 4) = 'cor_'
+    ),
+    created_at       TEXT NOT NULL,
+    -- Inbound W3C trace context, empty when the report carried none. Only size
+    -- and printability are bounded here: interpreting the values belongs to
+    -- transport, so storage never has to model a wire header.
+    traceparent      TEXT NOT NULL CHECK (
+        length(traceparent) <= 128 AND traceparent NOT GLOB '*[^ -~]*'
+    ),
+    tracestate       TEXT NOT NULL CHECK (
+        length(tracestate) <= 512 AND tracestate NOT GLOB '*[^ -~]*'
+    ),
+    value_json          TEXT CHECK (value_json IS NULL OR json_valid(value_json)),
+    adapter_received_at TEXT,
+    source_updated_at   TEXT,
+    observed_at         TEXT,
+    reported_at         TEXT,
+    received_at         TEXT,
+    recorded_at         TEXT,
+    CHECK (
+        (family = 'observation'
+            AND value_json IS NOT NULL
+            AND adapter_received_at IS NOT NULL
+            AND observed_at IS NOT NULL
+            AND reported_at IS NULL
+            AND received_at IS NULL
+            AND recorded_at IS NULL)
+        OR (family = 'entity-event'
+            AND value_json IS NULL
+            AND adapter_received_at IS NULL
+            AND source_updated_at IS NULL
+            AND observed_at IS NULL
+            AND reported_at IS NOT NULL
+            AND received_at IS NOT NULL
+            AND recorded_at IS NOT NULL)
+    )
+);
+
 CREATE VIEW entity_read_projection AS
 SELECT
     e.id,
@@ -388,6 +464,7 @@ LEFT JOIN entity_availability_current AS current
 
 -- +goose Down
 DROP VIEW entity_read_projection;
+DROP TABLE device_facts_outbox;
 DROP INDEX entity_events_retention_idx;
 DROP INDEX entity_events_entity_history_idx;
 DROP TABLE entity_events;

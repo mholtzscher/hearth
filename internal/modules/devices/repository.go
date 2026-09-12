@@ -30,6 +30,7 @@ var (
 	ErrEntityDisabled             = errors.New("entity disabled")
 	ErrEntityWrongAdapter         = errors.New("entity belongs to another adapter")
 	ErrInvalidEntityEvent         = errors.New("invalid entity event")
+	ErrInvalidDeviceFactLimit     = errors.New("invalid device fact limit")
 )
 
 type RegisterEntityParams struct {
@@ -121,6 +122,37 @@ type EntityEventRepository interface {
 	RecordEntityEvent(context.Context, RecordEntityEventParams) (EntityEventRecordResult, error)
 	ListEntityEvents(context.Context, ListEntityEventsParams) (Page[EntityEventHistoryEntry], error)
 	DeleteEntityEventsBefore(context.Context, time.Time, int) (int64, error)
+}
+
+// DeviceFactOutbox is the durable pending set of Device Facts the relay drains.
+// Publication never stores a fact: a row exists only between the commit that
+// accepted its evidence and the publication that consumed it, so
+// ListPendingDeviceFacts returns exactly the unpublished work.
+type DeviceFactOutbox interface {
+	// ListPendingDeviceFacts returns up to limit pending facts in enqueue order,
+	// oldest first, so a relay that deletes what it publishes makes progress
+	// instead of re-reading the whole set. A stored row that cannot be decoded
+	// must be reported as [DeviceFactRowError], which matches
+	// [ErrInvalidDeviceFactRow]: the failure is permanent, so the relay faults and
+	// preserves the row instead of retrying a decode that can never succeed. Every
+	// other failure must stay an ordinary retryable error.
+	ListPendingDeviceFacts(ctx context.Context, limit int) ([]PendingDeviceFact, error)
+	// DeleteDeviceFact removes one published fact. Deleting a fact that is
+	// already gone is not an error, so a relay cannot fail on work another drain
+	// consumed.
+	DeleteDeviceFact(ctx context.Context, factID DeviceFactID) error
+}
+
+// DeviceFactNotifier is the one nonblocking wake hint devices needs to hand
+// durable pending work to the Device Fact relay.
+//
+// An implementation signals that new pending facts may exist. It must return
+// promptly, must never perform network I/O, must never return an error and is
+// allowed to lose a hint: the relay also polls the outbox, so a lost hint costs
+// latency and never a fact. A nil notifier is a no-op, so focused tests and
+// non-relay assembly need no implementation.
+type DeviceFactNotifier interface {
+	NotifyPendingDeviceFacts()
 }
 
 type CommandLedger interface {

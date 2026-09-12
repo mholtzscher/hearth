@@ -41,6 +41,12 @@ func (service *Service) ProjectObservation(
 			return ProjectionResult{}, fmt.Errorf("parse refresh command ID: %w", err)
 		}
 	}
+	if _, err := ParseCorrelationID(string(observation.CorrelationID)); err != nil {
+		return ProjectionResult{}, fmt.Errorf("parse observation correlation ID: %w", err)
+	}
+	if err := observation.Trace.Validate(); err != nil {
+		return ProjectionResult{}, err
+	}
 
 	observedAt = observedAt.UTC()
 	params := ProjectObservationParams{
@@ -50,6 +56,8 @@ func (service *Service) ProjectObservation(
 		ObservedAt:  observedAt,
 		Now:         service.dependencies.Now,
 	}
+	// The waiter is notified before any transport work so fact enqueue latency
+	// can never delay authoritative Command completion.
 	result, err := service.stores.Observations.ProjectObservation(ctx, params)
 	if err != nil {
 		return ProjectionResult{}, err
@@ -57,6 +65,7 @@ func (service *Service) ProjectObservation(
 	if result.SatisfiedCommand != nil {
 		service.notifyCommand(*result.SatisfiedCommand)
 	}
+	service.notifyPendingDeviceFact(result.PendingFactID)
 	return copyProjectionResult(result), nil
 }
 
@@ -96,6 +105,8 @@ func copyObservation(observation Observation) Observation {
 	return cloned
 }
 
+// copyProjectionResult deep-copies every owned buffer and pointer so the
+// caller owns its result and the repository keeps no shared mutable state.
 func copyProjectionResult(result ProjectionResult) ProjectionResult {
 	cloned := result
 	if result.State != nil {
@@ -105,6 +116,10 @@ func copyProjectionResult(result ProjectionResult) ProjectionResult {
 	if result.Rejection != nil {
 		rejection := *result.Rejection
 		cloned.Rejection = &rejection
+	}
+	if result.PendingFactID != nil {
+		factID := *result.PendingFactID
+		cloned.PendingFactID = &factID
 	}
 	if result.SatisfiedCommand != nil {
 		command := *result.SatisfiedCommand

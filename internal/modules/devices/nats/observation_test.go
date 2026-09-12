@@ -94,6 +94,7 @@ func TestObservationConsumerMapsProjectsAndAcknowledgesByFailureClass(t *testing
 	case projection := <-projections:
 		if projection.observation.ID != devices.ObservationID(testObservationID) ||
 			projection.observation.EntityID != devices.EntityID(testEntityID) ||
+			projection.observation.CorrelationID != devices.CorrelationID(testCorrelationID) ||
 			string(projection.observation.Value) != "true" || projection.adapterID != "simulator" ||
 			projection.runtimeID != devices.RuntimeID(testRuntimeID) ||
 			projection.observedAt.IsZero() || projection.observedAt.Location() != time.UTC {
@@ -226,13 +227,14 @@ func TestDomainObservationCopiesWireDataAndPointers(t *testing.T) {
 	t.Parallel()
 	commandID := "cmd_01890f47-7a6b-7c4d-8e9f-0123456789ab"
 	wire := natswire.Envelope[observation]{
-		ID: testObservationID,
+		ID: testObservationID, CorrelationID: testCorrelationID,
 		Data: observation{
 			EntityID: testEntityID, Value: json.RawMessage(`true`), RefreshForCommand: &commandID,
 		},
 	}
 	sourceUpdatedAt := time.Date(2026, 8, 20, 12, 34, 56, 0, time.UTC)
-	mapped, err := domainObservation(wire, sourceUpdatedAt.Add(time.Second), &sourceUpdatedAt)
+	trace := devices.DeviceFactTraceContext{Traceparent: testFactTraceparent, Tracestate: testFactTracestate}
+	mapped, err := domainObservation(wire, sourceUpdatedAt.Add(time.Second), &sourceUpdatedAt, trace)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -241,8 +243,21 @@ func TestDomainObservationCopiesWireDataAndPointers(t *testing.T) {
 	sourceUpdatedAt = time.Time{}
 	if string(mapped.Value) != "true" || mapped.RefreshForCommand == nil ||
 		*mapped.RefreshForCommand != devices.CommandID("cmd_01890f47-7a6b-7c4d-8e9f-0123456789ab") ||
-		mapped.SourceUpdatedAt == nil || mapped.SourceUpdatedAt.IsZero() {
+		mapped.CorrelationID != devices.CorrelationID(testCorrelationID) ||
+		mapped.SourceUpdatedAt == nil || mapped.SourceUpdatedAt.IsZero() ||
+		mapped.Trace != trace {
 		t.Fatalf("mapped observation = %#v", mapped)
+	}
+
+	// A wire correlation is a canonical identity: mapping must reject a value
+	// that is not one, because the accepted Observation fact carries it.
+	malformed := wire
+	malformed.CorrelationID = "not-a-correlation"
+	malformed.Data.RefreshForCommand = nil
+	if mapped2, malformedErr := domainObservation(
+		malformed, sourceUpdatedAt.Add(time.Second), nil, devices.DeviceFactTraceContext{},
+	); malformedErr == nil {
+		t.Fatalf("malformed wire correlation was mapped as %q", mapped2.CorrelationID)
 	}
 }
 

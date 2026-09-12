@@ -2,6 +2,7 @@ package hearthd //nolint:testpackage // Tests exercise package-private assembly 
 
 import (
 	"context"
+	"database/sql"
 	"log/slog"
 	"path/filepath"
 	"testing"
@@ -111,6 +112,50 @@ func TestRuntimeReadinessChecksEveryRequiredDependency(t *testing.T) {
 			t.Fatal("readiness passed with inactive entity event consumer")
 		}
 	})
+	t.Run("device fact stream mismatched", func(t *testing.T) {
+		t.Parallel()
+		fixture := newReadinessFixture(t)
+		stream, err := fixture.jetstream.Stream(context.Background(), devicesnats.DeviceFactStreamName)
+		if err != nil {
+			t.Fatal(err)
+		}
+		info, err := stream.Info(context.Background())
+		if err != nil {
+			t.Fatal(err)
+		}
+		config := info.Config
+		config.MaxBytes = 42
+		if _, updateErr := fixture.jetstream.UpdateStream(context.Background(), config); updateErr != nil {
+			t.Fatal(updateErr)
+		}
+		if checkErr := fixture.readiness.Check(context.Background()); checkErr == nil {
+			t.Fatal("readiness passed with a mismatched device fact stream")
+		}
+	})
+	t.Run("relay inactive", func(t *testing.T) {
+		t.Parallel()
+		fixture := newReadinessFixture(t)
+		drainContext, cancelDrain := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancelDrain()
+		if err := fixture.relay.Drain(drainContext); err != nil {
+			t.Fatal(err)
+		}
+		if err := fixture.readiness.Check(context.Background()); err == nil {
+			t.Fatal("readiness passed with an inactive device fact relay")
+		}
+	})
+}
+
+// TestRuntimeReadinessDoesNotRequireASubscriber proves the fact path needs no
+// subscriber, no Core-owned consumer and no received publication: one connected
+// shared NATS connection, the provisioned fact stream and an active relay are
+// the whole requirement.
+func TestRuntimeReadinessDoesNotRequireASubscriber(t *testing.T) {
+	t.Parallel()
+	fixture := newReadinessFixture(t)
+	if err := fixture.readiness.Check(context.Background()); err != nil {
+		t.Fatalf("readiness without any fact subscriber = %v", err)
+	}
 }
 
 type discardObservationProjector struct{}
@@ -138,11 +183,12 @@ func (discardEntityEventRecorder) RecordEntityEvent(
 }
 
 type readinessFixture struct {
-	database            interface{ Close() error }
+	database            *sql.DB
 	connection          *natsgo.Conn
 	jetstream           jetstream.JetStream
 	consumer            *devicesnats.ObservationConsumer
 	entityEventConsumer *devicesnats.EntityEventConsumer
+	relay               *devicesnats.DeviceFactRelay
 	readiness           *RuntimeReadiness
 }
 
@@ -154,6 +200,9 @@ func newReadinessFixture(t *testing.T) readinessFixture {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = database.Close() })
+	if migrateErr := platformdb.Migrate(ctx, database); migrateErr != nil {
+		t.Fatal(migrateErr)
+	}
 	server, err := natsserver.NewServer(&natsserver.Options{
 		Host: "127.0.0.1", Port: -1, JetStream: true, StoreDir: t.TempDir(), NoSigs: true,
 	})
@@ -176,6 +225,9 @@ func newReadinessFixture(t *testing.T) readinessFixture {
 	js, err := jetstream.New(connection)
 	if err != nil {
 		t.Fatal(err)
+	}
+	if provisionErr := devicesnats.ProvisionDeviceFactStream(ctx, js); provisionErr != nil {
+		t.Fatal(provisionErr)
 	}
 	durable, err := devicesnats.ProvisionObservationResources(ctx, js)
 	if err != nil {
@@ -203,9 +255,12 @@ func newReadinessFixture(t *testing.T) readinessFixture {
 		t.Fatal(err)
 	}
 	t.Cleanup(entityEventConsumer.Stop)
+	relay := startDeviceFactRelay(t, js, devices.NewSQLiteRepository(database, nil))
 	return readinessFixture{
 		database: database, connection: connection, jetstream: js,
-		consumer: consumer, entityEventConsumer: entityEventConsumer,
-		readiness: NewRuntimeReadiness(database, connection, js, consumer, entityEventConsumer),
+		consumer: consumer, entityEventConsumer: entityEventConsumer, relay: relay,
+		readiness: NewRuntimeReadiness(
+			database, connection, js, consumer, entityEventConsumer, relay,
+		),
 	}
 }

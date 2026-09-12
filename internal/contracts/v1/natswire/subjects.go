@@ -10,6 +10,10 @@ const (
 	subjectPrefix         = "hearth.v1.adapter"
 	runtimeBaseTokenCount = 7
 	commandTrailingTokens = 2
+
+	deviceFactSubjectPrefix = "hearth.v1.core.fact"
+	deviceFactEntityScope   = "entity"
+	deviceFactTokenCount    = 8
 )
 
 var (
@@ -70,6 +74,32 @@ type EntityEnablementRoute struct {
 	AdapterID string
 	RuntimeID string
 	EntityID  string
+}
+
+// DeviceFactFamily is the closed family token of a Device Fact subject:
+// hearth.v1.core.fact.entity.<entity_id>.<family>.<variant>.
+type DeviceFactFamily string
+
+const (
+	DeviceFactFamilyObservation DeviceFactFamily = "observation"
+	DeviceFactFamilyEntityEvent DeviceFactFamily = "entity-event"
+)
+
+// DeviceFact variants. These closed vocabularies mirror the strict fact
+// schemas and the devices domain values they are built from.
+const (
+	ObservationFactApplied   = "applied"
+	ObservationFactUnchanged = "unchanged"
+)
+
+// DeviceFactRoute is the routing identity carried by one concrete Device Fact
+// subject: the canonical Entity, the fact family and the family-specific
+// variant. Subscribers must reject a payload whose Entity, family and variant
+// disagree with the subject they received it on.
+type DeviceFactRoute struct {
+	EntityID string
+	Family   DeviceFactFamily
+	Variant  string
 }
 
 func AdapterClaimWildcard() string {
@@ -190,6 +220,102 @@ func CommandWildcard(adapterID, runtimeID string) (string, error) {
 		return "", err
 	}
 	return base + ".*.*", nil
+}
+
+// DeviceFactWildcard is the subscription pattern for every Device Fact.
+func DeviceFactWildcard() string {
+	return deviceFactSubjectPrefix + ".>"
+}
+
+// EntityDeviceFactsWildcard is the subscription pattern for every Device Fact
+// of one Entity, across all families and variants.
+func EntityDeviceFactsWildcard(entityID string) (string, error) {
+	if err := validateEntityID(entityID); err != nil {
+		return "", err
+	}
+	return deviceFactEntityPrefix(entityID) + ".>", nil
+}
+
+// DeviceFactFamilyWildcard is the subscription pattern for every variant of
+// one Device Fact family across all Entities.
+func DeviceFactFamilyWildcard(family DeviceFactFamily) (string, error) {
+	if err := validateDeviceFactFamily(family); err != nil {
+		return "", err
+	}
+	return deviceFactSubjectPrefix + "." + deviceFactEntityScope + ".*." + string(family) + ".>", nil
+}
+
+// ObservationFactSubject builds the subject for one accepted Observation fact.
+// The disposition must be applied or unchanged; rejected and duplicate
+// Observations are not facts.
+func ObservationFactSubject(entityID, disposition string) (string, error) {
+	return deviceFactSubject(entityID, DeviceFactFamilyObservation, disposition)
+}
+
+// EntityEventFactSubject builds the subject for one first-seen accepted Entity
+// Event fact. The name must be a canonical event-name slug.
+func EntityEventFactSubject(entityID, name string) (string, error) {
+	return deviceFactSubject(entityID, DeviceFactFamilyEntityEvent, name)
+}
+
+// ParseDeviceFactSubject parses one concrete Device Fact subject. Wildcards,
+// unknown families and variants, noncanonical Entity IDs and any subject whose
+// tokens do not round-trip are rejected. Callers must compare the returned
+// route with the decoded payload and reject disagreement.
+func ParseDeviceFactSubject(subject string) (DeviceFactRoute, error) {
+	parts := strings.Split(subject, ".")
+	if len(parts) != deviceFactTokenCount || strings.Join(parts[:4], ".") != deviceFactSubjectPrefix ||
+		parts[4] != deviceFactEntityScope {
+		return DeviceFactRoute{}, fmt.Errorf("invalid Device Fact subject %q", subject)
+	}
+	route := DeviceFactRoute{EntityID: parts[5], Family: DeviceFactFamily(parts[6]), Variant: parts[7]}
+	canonical, err := deviceFactSubject(route.EntityID, route.Family, route.Variant)
+	if err != nil {
+		return DeviceFactRoute{}, fmt.Errorf("invalid Device Fact subject %q: %w", subject, err)
+	}
+	if canonical != subject {
+		return DeviceFactRoute{}, fmt.Errorf("invalid Device Fact subject %q: subject is not canonical", subject)
+	}
+	return route, nil
+}
+
+func deviceFactEntityPrefix(entityID string) string {
+	return deviceFactSubjectPrefix + "." + deviceFactEntityScope + "." + entityID
+}
+
+func deviceFactSubject(entityID string, family DeviceFactFamily, variant string) (string, error) {
+	if err := validateEntityID(entityID); err != nil {
+		return "", err
+	}
+	if err := validateDeviceFactFamily(family); err != nil {
+		return "", err
+	}
+	if err := validateDeviceFactVariant(family, variant); err != nil {
+		return "", err
+	}
+	return deviceFactEntityPrefix(entityID) + "." + string(family) + "." + variant, nil
+}
+
+func validateDeviceFactFamily(family DeviceFactFamily) error {
+	switch family {
+	case DeviceFactFamilyObservation, DeviceFactFamilyEntityEvent:
+		return nil
+	}
+	return fmt.Errorf("invalid Device Fact family %q", family)
+}
+
+func validateDeviceFactVariant(family DeviceFactFamily, variant string) error {
+	switch family {
+	case DeviceFactFamilyObservation:
+		if variant != ObservationFactApplied && variant != ObservationFactUnchanged {
+			return fmt.Errorf("invalid Observation fact disposition %q", variant)
+		}
+	case DeviceFactFamilyEntityEvent:
+		if !slugPattern.MatchString(variant) {
+			return fmt.Errorf("invalid Entity Event fact name %q", variant)
+		}
+	}
+	return nil
 }
 
 func AllCommandsWildcard() string {

@@ -29,6 +29,10 @@ type EntityEvent struct {
 	Name          EntityEventName
 	CorrelationID CorrelationID
 	EmittedAt     time.Time
+	// Trace is the inbound W3C trace context the report carried, retained with
+	// any Device Fact this Entity Event produces so publication continues the
+	// originating trace.
+	Trace DeviceFactTraceContext
 }
 
 // ErrEntityEventDescriptorCorrupt is the permanent Entity Event descriptor
@@ -109,9 +113,15 @@ const (
 )
 
 // EntityEventRecordResult reports what Core did with one recording attempt.
+// RecordedAt is the Core first-record time committed with a first-seen accepted
+// or rejected row; duplicates and identity conflicts leave the existing row
+// untouched and leave it zero. PendingFactID is the stable identity of the
+// Device Fact a first-seen accepted report queued, nil for every other outcome.
 type EntityEventRecordResult struct {
-	Outcome   EntityEventRecordOutcome
-	Rejection *EntityEventRejection // only for a newly rejected event
+	Outcome       EntityEventRecordOutcome
+	Rejection     *EntityEventRejection // only for a newly rejected event
+	RecordedAt    time.Time
+	PendingFactID *DeviceFactID
 }
 
 // RecordEntityEvent validates one trusted recording request before writing and
@@ -152,6 +162,9 @@ func (service *Service) RecordEntityEvent(
 	if receivedAt.IsZero() {
 		return EntityEventRecordResult{}, fmt.Errorf("%w: received_at is required", ErrInvalidEntityEvent)
 	}
+	if traceErr := event.Trace.Validate(); traceErr != nil {
+		return EntityEventRecordResult{}, fmt.Errorf("%w: %w", ErrInvalidEntityEvent, traceErr)
+	}
 
 	result, err := service.stores.EntityEvents.RecordEntityEvent(ctx, RecordEntityEventParams{
 		AdapterID:  adapterID,
@@ -163,6 +176,7 @@ func (service *Service) RecordEntityEvent(
 	if err != nil {
 		return EntityEventRecordResult{}, err
 	}
+	service.notifyPendingDeviceFact(result.PendingFactID)
 	return copyEntityEventRecordResult(result), nil
 }
 
@@ -197,6 +211,10 @@ func copyEntityEventRecordResult(result EntityEventRecordResult) EntityEventReco
 	if result.Rejection != nil {
 		rejection := *result.Rejection
 		cloned.Rejection = &rejection
+	}
+	if result.PendingFactID != nil {
+		factID := *result.PendingFactID
+		cloned.PendingFactID = &factID
 	}
 	return cloned
 }

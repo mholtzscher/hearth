@@ -935,10 +935,14 @@ func TestSimulatorInterruptedCommandSurvivesLateLinkedObservation(t *testing.T) 
 	if !acceptance.Accepted {
 		t.Fatal("simulator did not accept interrupted command")
 	}
-	if acceptErr := harness.repository.MarkCommandAccepted(harness.ctx, commandID, time.Now().UTC()); acceptErr != nil {
+	if acceptErr := harness.repository.MarkCommandAccepted(
+		harness.ctx, commandID, time.Now().UTC(),
+	); acceptErr != nil {
 		t.Fatal(acceptErr)
 	}
-	if interruptErr := harness.repository.InterruptActiveCommands(harness.ctx, time.Now().UTC()); interruptErr != nil {
+	if interruptErr := harness.repository.InterruptActiveCommands(
+		harness.ctx, time.Now().UTC(),
+	); interruptErr != nil {
 		t.Fatal(interruptErr)
 	}
 	observationID := publishMatrixLinkedObservation(t, harness, commandID, correlationID, true)

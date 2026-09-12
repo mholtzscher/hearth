@@ -2,12 +2,11 @@ import { useEffect, useRef, useState } from "react";
 import { ApiError } from "../api/client.ts";
 import type { ProblemDetail } from "../api/types.ts";
 import { useApi, usePolling } from "../api/hooks.ts";
-import type { NatsMessage, Subscription } from "../api/nats.ts";
+import type { NatsConnectionLease, NatsMessage, Subscription } from "../api/nats.ts";
 import {
+  acquireNatsConnection,
   decodeNatsMessage,
   getNatsWsUrl,
-  natsConnect,
-  natsDisconnect,
   setNatsWsUrl,
 } from "../api/nats.ts";
 import {
@@ -66,6 +65,7 @@ function LiveMessages() {
   const [filter, setFilter] = useState("");
   const [messages, setMessages] = useState<NatsMessage[]>([]);
   const subRef = useRef<Subscription | null>(null);
+  const leaseRef = useRef<NatsConnectionLease | null>(null);
   const pausedRef = useRef(false);
   const mountedRef = useRef(true);
   const attemptRef = useRef(0);
@@ -77,6 +77,14 @@ function LiveMessages() {
     pausedRef.current = paused;
   }, [paused]);
 
+  // Drop this page's lease on the shared websocket. The connection closes only
+  // when no other owner (for example the Device Facts page) still holds one.
+  async function releaseLease() {
+    const lease = leaseRef.current;
+    leaseRef.current = null;
+    await lease?.release();
+  }
+
   useEffect(
     () => {
       mountedRef.current = true;
@@ -84,7 +92,7 @@ function LiveMessages() {
         mountedRef.current = false;
         subRef.current?.unsubscribe();
         subRef.current = null;
-        void natsDisconnect();
+        void releaseLease();
       };
     },
     [],
@@ -97,18 +105,18 @@ function LiveMessages() {
     const target = subject.trim() || SUBJECT_PRESETS[0].subject;
     setStatus("connecting");
     try {
-      const nc = await natsConnect();
+      const lease = await acquireNatsConnection();
       if (attempt !== attemptRef.current) {
-        // Superseded by Unsubscribe: don't resurrect the subscription. Tear
-        // down the just-opened connection unless a newer attempt already
-        // claimed it for a live subscription.
-        if (subRef.current == null) await natsDisconnect();
+        // Superseded by Unsubscribe: don't resurrect the subscription.
+        await lease.release();
         return;
       }
       if (!mountedRef.current) {
-        await natsDisconnect();
+        await lease.release();
         return;
       }
+      leaseRef.current = lease;
+      const nc = lease.connection;
       const sub = nc.subscribe(target);
       subRef.current = sub;
       setStatus("connected");
@@ -126,6 +134,7 @@ function LiveMessages() {
           if (subRef.current === sub) {
             subRef.current = null;
             setStatus("disconnected");
+            void releaseLease();
           }
         }
       })();
@@ -141,6 +150,7 @@ function LiveMessages() {
     subRef.current?.unsubscribe();
     subRef.current = null;
     setStatus("disconnected");
+    void releaseLease();
   }
 
   const visible = messages.filter((m) => !filter || m.subject.includes(filter));

@@ -29,8 +29,11 @@ go run ./cmd/hearth-simulator --config configs/simulator.yaml --log-format json 
 | `entity_event.recorded`, `entity_event.identity_conflict` | Committed Entity Event disposition, or changed input for an already recorded event ID (Debug and Warn) |
 | `entity_event.clock_skew` | Adapter Entity Event publication time is ahead of Core receive time; diagnostic only, never a rejection reason |
 | `core.entity_events_prune_failed` | The hourly Entity Event retention sweep failed |
+| `device_fact.retry` | Warn-level relay retry: a pending fact was not published and its durable outbox row was kept, with `stage` (`list`, `publish`, `ack`, `delete`) and a fixed `error_code` (`list_failed`, `publish_failed`, `ack_missing`, `unexpected_stream`, `delete_failed`), plus `family` and the safe source ID (`observation_id` or `event_id`) when the failing stage identified a row |
+| `device_fact.poison` | Error-level relay fault: a deterministic row Core cannot map or decode stopped publication, with `stage` (`list`, `map`, `encode`), fixed `error_code` (`invalid_row`, `fact_invalid`, `subject_invalid`, `unknown_family`, `encode_failed`) and the `fact_id`, plus `family` and the safe source ID when the row decoded that far; the row is preserved and readiness fails until an operator resolves it |
 | `simulator.entity_event_input_dropped`, `simulator.entity_event_input_failed` | Standard input typed while a report was publishing, or a report that was not published |
 | `dependency.retrying` | Debug-level retry attempt with safe diagnostic code |
+| `dependency.connected`, `dependency.disconnected`, `dependency.reconnected`, `dependency.operation_failed`, `dependency.closed` | NATS connection lifecycle for the one shared Core connection, which carries subscriptions, JetStream ingestion and Device Fact publication |
 | `process.cleanup_failed` | An otherwise ignored cleanup operation failed |
 | `process.failed` | Fatal configuration or runtime failure, with safe stage/code |
 
@@ -60,6 +63,8 @@ curl http://127.0.0.1:8080/v1/entities/ent_...
 ```
 
 `GET /v1/entities/{entity_id}/events` is the durable Entity Event history for one Entity: it shows whether Core recorded a report and why Core rejected it, and it never contains State. A missing row does not prove that no physical event happened, and the code does not execute work. `entity_event.recorded` and `entity_event.identity_conflict` are diagnostics only; the history endpoint is authoritative for what Core retained.
+
+Device Facts follow the same rule. `device_fact.retry` reports a transient failure whose durable outbox row is kept and retried, and `device_fact.poison` reports the deterministic row that stopped the relay and failed readiness; neither contains State values, raw envelopes or full subjects, and neither reconstructs durable fact delivery. Command status transitions have no fact to diagnose: Command outcomes appear only in durable HTTP/SQLite history. The stream `HEARTH_DEVICE_FACTS_V1` stores what Core published, and the durable SQLite record and HTTP read APIs stay authoritative, so a missing fact — a reader that never chose a durable consumer, a fact evicted past the seven-day or one-GiB bound, or a poison row an operator has not resolved — is expected under the documented durability limits, not a logging failure. Investigate `device_fact.poison` first: it means the relay stopped and every later pending fact is queued behind the preserved row.
 
 `command.created` supplies an ID for lookup when the HTTP caller disconnects or gets an error. For running Commands it is deferred until execution returns, so diagnostic output cannot delay dispatch or the caller's cancellation handling; it may follow other Command records. Immediately rejected creations are logged before returning. Command history supplies the durable satisfied/rejected/timeout/interrupted outcome and linked Observation ID; no terminal log record is promised. Acceptance is **not** satisfaction: only committed linked Observation evidence satisfies a Command.
 

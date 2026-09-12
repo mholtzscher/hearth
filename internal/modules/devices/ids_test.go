@@ -45,6 +45,12 @@ func TestTypedIDsGenerateCanonicalUUIDv7(t *testing.T) {
 			func() (string, error) { value, err := devices.NewCorrelationID(); return string(value), err },
 			func(value string) error { _, err := devices.ParseCorrelationID(value); return err },
 		},
+		{
+			"device fact",
+			"fct_",
+			func() (string, error) { value, err := devices.NewDeviceFactID(); return string(value), err },
+			func(value string) error { _, err := devices.ParseDeviceFactID(value); return err },
+		},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -87,6 +93,25 @@ func TestParseEntityIDRejectsNonCanonicalOrWrongVersion(t *testing.T) {
 	} {
 		if _, err := devices.ParseEntityID(value); err == nil {
 			t.Fatalf("devices.ParseEntityID(%q) unexpectedly succeeded", value)
+		}
+	}
+}
+
+// TestParseDeviceFactIDRejectsNonCanonicalOrWrongVersion keeps the durable fact
+// envelope identity as strict as every durable source identity.
+func TestParseDeviceFactIDRejectsNonCanonicalOrWrongVersion(t *testing.T) {
+	t.Parallel()
+	for _, value := range []string{
+		"",
+		"obs_01890f47-7a6b-7c4d-8e9f-0123456789ab",
+		"fct_01890f47-7a6b-4c4d-8e9f-0123456789ab",
+		"fct_01890f47-7a6b-7c4d-7e9f-0123456789ab",
+		"fct_01890F47-7A6B-7C4D-8E9F-0123456789AB",
+		"fct_not-a-uuid",
+		"fct_",
+	} {
+		if _, err := devices.ParseDeviceFactID(value); err == nil {
+			t.Fatalf("devices.ParseDeviceFactID(%q) unexpectedly succeeded", value)
 		}
 	}
 }

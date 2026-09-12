@@ -89,6 +89,9 @@ func Run(
 	logStartupStage(ctx, coreLogger, "database_migrated")
 	repository := devices.NewSQLiteRepository(database, catalog)
 	startupTime := time.Now().UTC()
+	// Interrupted records are committed before either transport opens; their
+	// Command history is authoritative and no Device Fact is published for Core's
+	// own startup interruption.
 	if err := repository.InterruptActiveCommands(ctx, startupTime); err != nil {
 		return failStage("interrupt_commands", fmt.Errorf("interrupt active commands: %w", err))
 	}
@@ -102,6 +105,10 @@ func Run(
 		return mapStartupCancellation(ctx, connectErr)
 	}
 	defer connection.Close()
+	validator, compileErr := contractsv1.Compile()
+	if compileErr != nil {
+		return failStage("compile_schemas", fmt.Errorf("compile wire schemas: %w", compileErr))
+	}
 	js, jetStreamErr := jetstream.New(connection)
 	if jetStreamErr != nil {
 		return failStage(
@@ -109,6 +116,34 @@ func Run(
 			fmt.Errorf("create JetStream client: %w", jetStreamErr),
 		)
 	}
+	// The Device Fact stream is provisioned and validated before the relay and
+	// before any transport that can commit a fact, so a wrong stream
+	// configuration fails startup instead of accepting evidence that nothing can
+	// publish durably.
+	if streamErr := devicesnats.ProvisionDeviceFactStream(ctx, js); streamErr != nil {
+		return mapStartupCancellation(ctx, failStage("provision_jetstream", streamErr))
+	}
+	// The relay publishes from the durable outbox the repository owns, so it
+	// starts before the first fact-producing consumer and before any transport.
+	// Its drain runs after every consumer that can commit a fact has drained, and
+	// the shared connection outlives it so the drain can still publish what those
+	// consumers committed.
+	relay, relayErr := devicesnats.StartDeviceFactRelay(js, repository, validator, natsLogger)
+	if relayErr != nil {
+		return failStage("start_device_facts", relayErr)
+	}
+	defer func() {
+		drainContext, cancelDrain := context.WithTimeout(context.Background(), shutdownTimeout)
+		defer cancelDrain()
+		logCleanupFailure(ctx, processLogger, "drain_device_facts", relay.Drain(drainContext))
+	}()
+	commandSender := devicesnats.NewCommandSender(connection, validator)
+	service := devices.NewService(
+		devices.SQLiteStores(repository),
+		commandSender,
+		catalog,
+		devices.Dependencies{Logger: devicesLogger, DeviceFacts: relay},
+	)
 	durable, provisionErr := devicesnats.ProvisionObservationResources(ctx, js)
 	if provisionErr != nil {
 		return mapStartupCancellation(ctx, failStage("provision_jetstream", provisionErr))
@@ -121,18 +156,6 @@ func Run(
 		return mapStartupCancellation(ctx, failStage("provision_jetstream", entityEventProvisionErr))
 	}
 	logStartupStage(ctx, coreLogger, "jetstream_provisioned")
-	validator, compileErr := contractsv1.Compile()
-	if compileErr != nil {
-		return failStage("compile_schemas", fmt.Errorf("compile wire schemas: %w", compileErr))
-	}
-	commandSender := devicesnats.NewCommandSender(connection, validator)
-	service := devices.NewService(
-		devices.SQLiteStores(repository),
-		commandSender,
-		catalog,
-		devices.Dependencies{Logger: devicesLogger},
-	)
-
 	sessions, sessionErr := devicesnats.StartSessionServer(connection, validator, service, service, natsLogger)
 	if sessionErr != nil {
 		return failStage("start_transports", sessionErr)
@@ -208,7 +231,8 @@ func Run(
 	logStartupStage(ctx, coreLogger, "entity_event_consumer_started")
 
 	readiness := NewRuntimeReadiness(
-		database, connection, js, consumers.observations, consumers.entityEvents,
+		database, connection, js,
+		consumers.observations, consumers.entityEvents, relay,
 	)
 	healthSupervisor := startHealthSupervisor(dependencyContext, readiness, service, coreLogger)
 	defer healthSupervisor.Stop()
@@ -254,7 +278,7 @@ func Run(
 			service, cancelDependencies,
 			healthSupervisor, server, consumers,
 			enablement, ownedMappings, registrations, availability, sessions,
-			connection,
+			relay, connection, processLogger,
 		)
 	}
 }
@@ -299,7 +323,9 @@ func shutdownOnCancel(
 	server *http.Server,
 	consumers *coreConsumers,
 	enablement, ownedMappings, registrations, availability, sessions interface{ Drain() error },
+	relay *devicesnats.DeviceFactRelay,
 	connection *natsgo.Conn,
+	logger *slog.Logger,
 ) error {
 	joinAdmittedExecution(deviceService)
 	healthSupervisor.Stop()
@@ -321,7 +347,8 @@ func shutdownOnCancel(
 	}
 	cancelDependencies()
 	return drainTransports(
-		consumers, enablement, ownedMappings, registrations, availability, sessions, connection,
+		context.Background(), logger, consumers, relay, enablement, ownedMappings, registrations,
+		availability, sessions, connection,
 	)
 }
 
@@ -424,16 +451,28 @@ type consumerDrain interface {
 
 // drainTransports stops durable consumption and drains core transports after
 // worker drain, preserving the existing return semantics for each step. Entity
-// Events drain before Observation, and both before the shared NATS connection,
-// so unacknowledged reports remain for the next Core process instead of being
-// acknowledged during teardown. The consumers' own context is canceled by
-// coreConsumers.close after every exit, never here.
+// Events drain before Observation, and both before the relay. The relay then
+// publishes every pending fact out of the durable outbox inside the shutdown
+// deadline. That deadline is a bound, not a discard: rows still pending when it
+// expires stay in the outbox for the next Core process, which always re-reads
+// the oldest pending fact first. Core owns no fact consumer, so draining the
+// relay never consumes its own publications. Transports drain next and the
+// shared connection drains last, so no publication reaches a connection being
+// torn down. The consumers' own context is canceled by coreConsumers.close
+// after every exit, never here.
 func drainTransports(
+	ctx context.Context,
+	logger *slog.Logger,
 	consumers *coreConsumers,
+	relay *devicesnats.DeviceFactRelay,
 	enablement, ownedMappings, registrations, availability, sessions interface{ Drain() error },
 	connection *natsgo.Conn,
 ) error {
 	consumers.drain()
+	drainContext, cancelDrain := context.WithTimeout(context.Background(), shutdownTimeout)
+	drainErr := relay.Drain(drainContext)
+	cancelDrain()
+	logCleanupFailure(ctx, logger, "drain_device_facts", drainErr)
 	for _, transport := range []interface{ Drain() error }{
 		enablement, ownedMappings, registrations, availability, sessions,
 	} {
@@ -488,6 +527,14 @@ func logCleanupFailure(ctx context.Context, logger *slog.Logger, stage string, e
 	)
 }
 
+// connectCoreNATS opens the shared Core ingest/request connection. It keeps
+// nats.go's default reconnect buffering and unlimited reconnects on the shared
+// reconnect cadence, and it bounds one socket write by
+// devicesnats.CoreNATSWriteTimeout: pinned nats.go v1.53.1 holds a connection's
+// mutex across a socket write for up to its one-minute default FlusherTimeout,
+// and both readiness and the Device Fact worker's per-fact freshness check read
+// this connection synchronously, so an unbounded stalled write would hold
+// shutdown past its five-second budget.
 func connectCoreNATS(
 	ctx context.Context,
 	url string,
@@ -504,6 +551,7 @@ func connectCoreNATS(
 		natsgo.Name("hearthd"),
 		natsgo.MaxReconnects(-1),
 		natsgo.ReconnectWait(natsReconnectWait),
+		natsgo.FlusherTimeout(devicesnats.CoreNATSWriteTimeout),
 		natsgo.DisconnectErrHandler(func(_ *natsgo.Conn, disconnectErr error) {
 			if disconnectErr == nil || ctx.Err() != nil {
 				return

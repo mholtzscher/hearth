@@ -39,6 +39,13 @@ func NewCorrelationID() (CorrelationID, error) {
 	return CorrelationID(id), err
 }
 
+// NewDeviceFactID mints the stable envelope and deduplication identity for one
+// durable Device Fact. It is unrelated to the durable source ID the fact reports.
+func NewDeviceFactID() (DeviceFactID, error) {
+	id, err := newID("fct")
+	return DeviceFactID(id), err
+}
+
 func ParseDeviceID(value string) (DeviceID, error) {
 	if err := validateID(value, "dev"); err != nil {
 		return "", err
@@ -86,6 +93,14 @@ func ParseRuntimeID(value string) (RuntimeID, error) {
 		return "", err
 	}
 	return RuntimeID(value), nil
+}
+
+// ParseDeviceFactID validates one canonical Device Fact envelope identity.
+func ParseDeviceFactID(value string) (DeviceFactID, error) {
+	if err := validateID(value, "fct"); err != nil {
+		return "", err
+	}
+	return DeviceFactID(value), nil
 }
 
 func newID(prefix string) (string, error) {

@@ -209,6 +209,7 @@ func TestExecuteCommandCommitsBeforeDispatchAndHandlesAcceptanceRace(t *testing.
 			}
 			observation := Observation{
 				ID: commandTestObservationID, EntityID: request.EntityID, Value: Value(`true`),
+				CorrelationID:     commandTestCorrelationID,
 				AdapterReceivedAt: time.Now().UTC(), RefreshForCommand: &request.ID,
 			}
 			if _, err := service.ProjectObservation(
@@ -263,6 +264,7 @@ func TestExecuteCommandReturnsSatisfiedWhenObservationWinsDispatchFailureRace(t 
 				) (CommandAcceptance, error) {
 					_, err := service.ProjectObservation(ctx, adapterID, runtimeID, Observation{
 						ID: commandTestObservationID, EntityID: request.EntityID, Value: Value(`true`),
+						CorrelationID:     commandTestCorrelationID,
 						AdapterReceivedAt: time.Now().UTC(), RefreshForCommand: &request.ID,
 					}, time.Now().UTC())
 					if err != nil {
@@ -557,6 +559,7 @@ func TestExecuteCommandKeepsOverlappingCommandsIndependent(t *testing.T) {
 			observationID := observationIDs[request.ID]
 			_, err := service.ProjectObservation(ctx, adapterID, runtimeID, Observation{
 				ID: observationID, EntityID: request.EntityID, Value: value,
+				CorrelationID:     commandTestCorrelationID,
 				AdapterReceivedAt: time.Now().UTC(), RefreshForCommand: &request.ID,
 			}, time.Now().UTC())
 			return CommandAcceptance{Accepted: true}, err
@@ -612,6 +615,7 @@ func TestExecuteCommandIgnoresMismatchedLinkedObservation(t *testing.T) {
 		func(ctx context.Context, adapterID string, runtimeID RuntimeID, request CommandRequest) (CommandAcceptance, error) {
 			_, err := service.ProjectObservation(ctx, adapterID, runtimeID, Observation{
 				ID: commandTestObservationID, EntityID: request.EntityID, Value: Value(`false`),
+				CorrelationID:     commandTestCorrelationID,
 				AdapterReceivedAt: time.Now().UTC(), RefreshForCommand: &request.ID,
 			}, time.Now().UTC())
 			return CommandAcceptance{Accepted: true}, err

@@ -22,12 +22,17 @@ var (
 	_ CommandLedger          = (*SQLiteRepository)(nil)
 	_ ObservationRepository  = (*SQLiteRepository)(nil)
 	_ EntityEventRepository  = (*SQLiteRepository)(nil)
+	_ DeviceFactOutbox       = (*SQLiteRepository)(nil)
 )
 
 type SQLiteRepository struct {
 	database *sql.DB
 	queries  *dbsqlc.Queries
 	catalog  *TypeCatalog
+	// deviceFactID mints the stable identity of one Device Fact. It is called
+	// inside the transaction that commits the fact's evidence, so a mint failure
+	// rolls the evidence back and inbound redelivery can retry both together.
+	deviceFactID func() (DeviceFactID, error)
 }
 
 type entityReconciliation struct {
@@ -38,7 +43,27 @@ type entityReconciliation struct {
 }
 
 func NewSQLiteRepository(database *sql.DB, catalog *TypeCatalog) *SQLiteRepository {
-	return &SQLiteRepository{database: database, queries: dbsqlc.New(database), catalog: catalog}
+	return newSQLiteRepository(database, catalog, NewDeviceFactID)
+}
+
+// newSQLiteRepository is the single repository constructor. The Device Fact ID
+// generator is injected so one test can make a mint fail inside a devices
+// transaction and prove the evidence rolls back with it; production always
+// mints canonical fct_ identities.
+func newSQLiteRepository(
+	database *sql.DB,
+	catalog *TypeCatalog,
+	deviceFactID func() (DeviceFactID, error),
+) *SQLiteRepository {
+	if deviceFactID == nil {
+		deviceFactID = NewDeviceFactID
+	}
+	return &SQLiteRepository{
+		database:     database,
+		queries:      dbsqlc.New(database),
+		catalog:      catalog,
+		deviceFactID: deviceFactID,
+	}
 }
 
 // SQLiteStores exposes one SQLite repository through each Service capability.

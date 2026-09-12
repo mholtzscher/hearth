@@ -1,0 +1,30 @@
+# Make Device Facts durable with a transactional outbox and a JetStream stream
+
+A Device Fact is queued as a row in the `device_facts_outbox` table by the same devices SQLite transaction that commits the accepted Observation or accepted Entity Event it reports. One relay publishes pending rows oldest-first into the single JetStream stream `HEARTH_DEVICE_FACTS_V1` and deletes each row only after a `PubAck` naming that stream. The published `Nats-Msg-Id` is the fact's stable `fct_` identity, `emitted_at` is the Core commit time stored in the row, and the persisted inbound W3C `traceparent`/`tracestate` are restored on every publication and republication.
+
+This supersedes the live-only delivery mechanism of [ADR 0019](0019-device-facts-over-core-nats.md) while keeping that ADR's namespace, subject grammar, schemas, stable identity and Command exclusion.
+
+## Decision
+
+- **Atomic enqueue.** The fact row and its evidence commit together. An identity-mint or insert failure rolls the evidence back, so inbound JetStream redelivery retries both. There is no post-commit emission hook and no in-memory fact buffer, so a crash or broker outage between commit and publication cannot lose a fact.
+- **One stream, no Core consumer.** `HEARTH_DEVICE_FACTS_V1` is `LimitsPolicy`/`FileStorage` over the subject filter `hearth.v1.core.fact.>`, retaining seven days or one GiB and evicting the oldest first, with unlimited messages and message size, a two-hour duplicate window and no subject transform. Core provisions and validates the stream and creates no consumer, so Core never pins an acknowledgement floor or a delivery policy for a reader it does not have.
+- **One relay, oldest-first, acknowledged deletes.** A single worker reads a batch of 64 pending rows in durable enqueue order, publishes each with one JetStream `PublishMsg`, and deletes the row only after a `PubAck` naming the expected stream; a `Nats-Expected-Stream` header makes the broker reject a publication into any other stream. A missing acknowledgement, an unexpected stream, a publish failure or a delete failure keeps the row and retries after a fixed one-second backoff, reusing the same identity, subject and payload bytes. A nonblocking wake hint shortens latency and a five-second poll is the authoritative rediscovery, so a lost hint costs latency and never a fact.
+- **Deliver or fault, never discard.** A deterministic poison row — one Core cannot decode or map — is preserved, logged as `device_fact.poison`, and stops the relay; readiness then fails rather than reporting a publisher that cannot make progress. Facts queued behind the poison row stay durable and are published only after an operator resolves it.
+- **At-least-once with a bounded deduplication window, stated honestly.** Broker deduplication collapses a repeated `Nats-Msg-Id` only inside the two-hour window, and the relay's retry span is unbounded because a broker outage or a restart can outlast it. A retry after the window is stored again, so consumers stay idempotent on the fact identity and never assume one stored message per durable fact.
+- **One shared connection.** Publication uses the same Core NATS connection and JetStream context as ingestion and request/reply. There is no dedicated fact connection, no connection epoch or freshness fence, no volatile queue and no reconnect-buffer distinction.
+- **Consumer-owned recovery.** A reader that must not miss a fact creates a named durable JetStream consumer and resumes from its own acknowledgement floor; a reader that wants only future facts creates a `DeliverNew` consumer; a plain Core NATS subscription remains live-only. Core filters, rewrites and reorders nothing for a reader, and retention bounds what any consumer can still recover.
+- **Readiness and lifecycle.** Readiness requires the shared connection, the validated stream and an active relay, never a subscriber and never a fact consumer Core does not own. Shutdown drains the durable ingestion consumers while the relay still publishes, then drains the relay within its five-second deadline; rows still pending stay in the outbox for the next process, which re-reads the oldest row first.
+
+## Trade-offs
+
+- Durable at-least-once publication over a live-only at-most-once guarantee, because a committed fact must survive a broker outage, a relay restart and a Core process exit.
+- A transactional outbox in the devices database over a separate durable store, because the fact row and its evidence must commit atomically and `devices` already owns the durable record.
+- Consumer-owned recovery over Core-owned fact consumers, because each reader's durability requirement differs and Core should not pin a position for a reader it does not have.
+- One shared connection over a dedicated no-buffer connection with connection epochs, because the stream makes backlog suppression unnecessary and one connection is one broker-reachability fact.
+- Broker deduplication with a bounded window over claiming exactly-once, because the window is real, finite and better documented than assumed.
+- A fixed seven-day/one-GiB retention bound over a configurable policy, because no deployment exists yet and one honest bound is simpler than a setting nobody can tune.
+- Rejecting a subject transform over tolerating one, because a transform would silently break the canonical subject while the publish still succeeded and the outbox row was deleted.
+
+## Consequences
+
+Publication is at-least-once and may duplicate. Retention and eviction are hard bounds: a reader that falls behind them permanently misses the evicted facts, and Core recovers nothing on its behalf. Command lifecycle stays excluded and has no outbox row and no stream subject. A poison row faults readiness until an operator resolves it, which is the intended trade of availability for preserving durable evidence. Anyone with broker access can read canonical State values, forge a fact, publish into the stream bypassing the relay, or purge the stream, so the trusted-network boundary and the future Core-only publish ACL are unchanged.
