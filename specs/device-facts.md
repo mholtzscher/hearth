@@ -570,6 +570,18 @@ A plain Core NATS subscription (`nats sub ...`) is still supported and remains l
 
 Consumers that only need one family or one Entity should narrow `FilterSubject` to `hearth.v1.core.fact.entity.*.entity-event.>` or `hearth.v1.core.fact.entity.<entity_id>.>`; the subject grammar is stable and Core validates it.
 
+### 12.1 Debug dashboard reader
+
+The Hearth Debug dashboard exposes `#/device-facts` without adding an HTTP fact endpoint. It connects through the configured NATS websocket and creates only anonymous ephemeral JetStream consumers:
+
+- a bounded snapshot consumer starts at the newest retained sequence range, reads at most 200 messages and is deleted when the read finishes;
+- live streaming is off by default; enabling it creates a separate `DeliverNewPolicy` tail with no acknowledgement floor, and disabling it or leaving the page deletes that consumer;
+- a five-minute inactive threshold lets the broker remove a consumer orphaned by an abruptly closed browser tab;
+- snapshot and live deliveries merge by stable fact ID, retaining the highest stream sequence while marking both origins;
+- malformed facts and subject, schema or `Nats-Msg-Id` mismatches remain visible diagnostics rather than trusted input.
+
+This page is advisory debugging tooling, not an automation consumer. It does not resume missed live facts, and reconnecting starts at the then-current stream tail. A consumer that owns side effects still uses the named durable pattern above.
+
 ## 13. Assembly, readiness and lifecycle
 
 Startup order:

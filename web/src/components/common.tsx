@@ -133,10 +133,13 @@ export function JsonCode({ code }: { code: string }) {
     <Highlight code={code} language="json" theme={jsonTheme}>
       {({ tokens, getLineProps, getTokenProps }) => (
         <pre className="m-0 overflow-auto text-xs">
-          {tokens.map((line, i) => (
-            <div key={i} {...getLineProps({ line, key: i })}>
-              {line.map((token, key) => (
-                <span key={key} {...getTokenProps({ token, key })} />
+          {/* getLineProps/getTokenProps echo every extra input key back into
+              the props they return, so ask for line and token props only and
+              pass the React key explicitly: spreading a key into JSX warns. */}
+          {tokens.map((line, lineIndex) => (
+            <div key={lineIndex} {...getLineProps({ line })}>
+              {line.map((token, tokenIndex) => (
+                <span key={tokenIndex} {...getTokenProps({ token })} />
               ))}
             </div>
           ))}

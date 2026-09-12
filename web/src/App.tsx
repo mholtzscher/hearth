@@ -16,6 +16,7 @@ import {
 import AdaptersPage from "./pages/AdaptersPage.tsx";
 import CommandsPage from "./pages/CommandsPage.tsx";
 import DevicesPage from "./pages/DevicesPage.tsx";
+import DeviceFactsPage from "./pages/DeviceFactsPage.tsx";
 import EntitiesPage from "./pages/EntitiesPage.tsx";
 import EntityDetailPage from "./pages/EntityDetailPage.tsx";
 import NatsPage from "./pages/NatsPage.tsx";
@@ -26,6 +27,7 @@ const NAV_ITEMS = [
   { to: "/adapters", label: "Adapters" },
   { to: "/commands", label: "Commands" },
   { to: "/nats", label: "NATS" },
+  { to: "/device-facts", label: "Device facts" },
 ];
 
 function HealthBadges() {
@@ -57,7 +59,7 @@ function EntityJump() {
     <Input
       aria-label="Jump to entity id"
       placeholder="Jump to entity id…"
-      className="w-56"
+      className="w-56 max-w-full shrink"
       value={value}
       onChange={(e) => setValue(e.target.value)}
       onKeyDown={(e) => {
@@ -134,7 +136,10 @@ function Shell() {
               </NavLink>
             ))}
           </nav>
-          <div className="ms-auto flex items-center gap-2">
+          {/* max-w-full + wrap keeps this cluster inside a narrow viewport
+              instead of pushing the page wider; it is unchanged when the
+              header row has room. */}
+          <div className="ms-auto flex min-w-0 max-w-full flex-wrap items-center gap-2">
             <EntityJump />
             <HealthBadges />
             <ConnectionSettings />
@@ -150,6 +155,7 @@ function Shell() {
           <Route path="/adapters" element={<AdaptersPage />} />
           <Route path="/commands" element={<CommandsPage />} />
           <Route path="/nats" element={<NatsPage />} />
+          <Route path="/device-facts" element={<DeviceFactsPage />} />
         </Routes>
       </main>
     </div>

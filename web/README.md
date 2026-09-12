@@ -91,14 +91,25 @@ the NATS page (stored in `localStorage`), so it needs no proxy.
   subject presets, pause/clear, and subject filter; plus server info from the
   NATS monitoring endpoint (connections with subscriptions, JetStream stream
   `HEARTH_OBSERVATIONS_V1` state and consumer lag).
+- **Device facts**: reads Core's `HEARTH_DEVICE_FACTS_V1` JetStream stream over
+  the same websocket. A bounded retained snapshot (newest 200, newest-first,
+  `hearth.v1.core.fact.>`) is read through a short-lived ephemeral consumer that
+  is deleted as soon as the read completes; live streaming is off by default and
+  adds a separate ephemeral `DeliverNew` tail that sees only facts published
+  after it is created. Both consumers are page-owned and deleted on completion or
+  disable, with `inactive_threshold` as orphan safety for a closed tab. Entity and
+  device names are enrichment from the HTTP read API; the payload and subject
+  carry only the canonical entity id. Neither path offers durable recovery.
 
 Health (`/healthz`) and readiness (`/readyz`) poll every 10s in the header.
 
 ## NATS debugging prerequisites
 
-The NATS page needs the dev-only loopback listeners in
+The NATS and Device facts pages need the dev-only loopback listeners in
 `configs/nats-server.conf` (already present: `websocket` on
 `127.0.0.1:4223`, `http` monitoring on `127.0.0.1:8222`). Restart NATS after
 changing that file (`mise run nats`). Vite proxies `/nats-monitor` to the
 monitoring port (override with `NATS_MONITOR_URL`); the websocket URL is
-editable in the page (stored in `localStorage`).
+editable in the NATS page (stored in `localStorage`) and both pages share one
+refcounted connection per URL, so one page's teardown never closes the other's
+socket.
