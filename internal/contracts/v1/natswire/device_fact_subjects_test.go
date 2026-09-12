@@ -26,7 +26,6 @@ func TestDeviceFactWildcardsMatchProtocol(t *testing.T) {
 	families := map[natswire.DeviceFactFamily]string{
 		natswire.DeviceFactFamilyObservation: "hearth.v1.core.fact.entity.*.observation.>",
 		natswire.DeviceFactFamilyEntityEvent: "hearth.v1.core.fact.entity.*.entity-event.>",
-		natswire.DeviceFactFamilyCommand:     "hearth.v1.core.fact.entity.*.command.>",
 	}
 	for family, want := range families {
 		got, familyErr := natswire.DeviceFactFamilyWildcard(family)
@@ -61,72 +60,6 @@ func TestDeviceFactSubjectsCoverEveryFamilyAndVariant(t *testing.T) {
 			family:  natswire.DeviceFactFamilyEntityEvent,
 			variant: "single_press",
 			want:    "hearth.v1.core.fact.entity." + factEntityID + ".entity-event.single_press",
-		},
-		{
-			name:    "command requested",
-			family:  natswire.DeviceFactFamilyCommand,
-			variant: natswire.CommandFactRequested,
-			want:    "hearth.v1.core.fact.entity." + factEntityID + ".command.requested",
-		},
-		{
-			name:    "command accepted",
-			family:  natswire.DeviceFactFamilyCommand,
-			variant: natswire.CommandFactAccepted,
-			want:    "hearth.v1.core.fact.entity." + factEntityID + ".command.accepted",
-		},
-		{
-			name:    "command satisfied",
-			family:  natswire.DeviceFactFamilyCommand,
-			variant: natswire.CommandFactSatisfied,
-			want:    "hearth.v1.core.fact.entity." + factEntityID + ".command.satisfied",
-		},
-		{
-			name:    "command dispatched",
-			family:  natswire.DeviceFactFamilyCommand,
-			variant: natswire.CommandFactDispatched,
-			want:    "hearth.v1.core.fact.entity." + factEntityID + ".command.dispatched",
-		},
-		{
-			name:    "command rejected",
-			family:  natswire.DeviceFactFamilyCommand,
-			variant: natswire.CommandFactRejected,
-			want:    "hearth.v1.core.fact.entity." + factEntityID + ".command.rejected",
-		},
-		{
-			name:    "command adapter unhealthy",
-			family:  natswire.DeviceFactFamilyCommand,
-			variant: natswire.CommandFactAdapterUnhealthy,
-			want:    "hearth.v1.core.fact.entity." + factEntityID + ".command.adapter_unhealthy",
-		},
-		{
-			name:    "command entity unavailable",
-			family:  natswire.DeviceFactFamilyCommand,
-			variant: natswire.CommandFactEntityUnavailable,
-			want:    "hearth.v1.core.fact.entity." + factEntityID + ".command.entity_unavailable",
-		},
-		{
-			name:    "command outcome timeout",
-			family:  natswire.DeviceFactFamilyCommand,
-			variant: natswire.CommandFactOutcomeTimeout,
-			want:    "hearth.v1.core.fact.entity." + factEntityID + ".command.outcome_timeout",
-		},
-		{
-			name:    "command entity disabled",
-			family:  natswire.DeviceFactFamilyCommand,
-			variant: natswire.CommandFactEntityDisabled,
-			want:    "hearth.v1.core.fact.entity." + factEntityID + ".command.entity_disabled",
-		},
-		{
-			name:    "command internal failure",
-			family:  natswire.DeviceFactFamilyCommand,
-			variant: natswire.CommandFactInternalFailure,
-			want:    "hearth.v1.core.fact.entity." + factEntityID + ".command.internal_failure",
-		},
-		{
-			name:    "command interrupted",
-			family:  natswire.DeviceFactFamilyCommand,
-			variant: natswire.CommandFactInterrupted,
-			want:    "hearth.v1.core.fact.entity." + factEntityID + ".command.interrupted",
 		},
 	}
 	for _, test := range tests {
@@ -165,9 +98,6 @@ func TestDeviceFactSubjectBuildersRejectUnsafeInput(t *testing.T) {
 		natswire.DeviceFactFamilyEntityEvent: {
 			"", "Single Press", "single.press", "single>press", "*", strings.Repeat("a", 64),
 		},
-		natswire.DeviceFactFamilyCommand: {
-			"", "cancelled", "Satisfied", "satisfied.extra", "satisfied>", "*",
-		},
 	}
 	for family, variants := range invalidVariants {
 		for _, variant := range variants {
@@ -191,7 +121,6 @@ func TestDeviceFactSubjectBuildersRejectUnsafeInput(t *testing.T) {
 		for family, variant := range map[natswire.DeviceFactFamily]string{
 			natswire.DeviceFactFamilyObservation: natswire.ObservationFactApplied,
 			natswire.DeviceFactFamilyEntityEvent: "single_press",
-			natswire.DeviceFactFamilyCommand:     natswire.CommandFactSatisfied,
 		} {
 			if _, err := buildDeviceFactSubject(natswire.DeviceFactRoute{
 				EntityID: entityID, Family: family, Variant: variant,
@@ -215,33 +144,32 @@ func TestParseDeviceFactSubjectRejectsNonCanonicalInput(t *testing.T) {
 	t.Parallel()
 	prefix := "hearth.v1.core.fact.entity." + factEntityID
 	invalidSubjects := map[string]string{
-		"empty":                     "",
-		"not a subject":             "not-a-subject",
-		"too few tokens":            "hearth.v1.core.fact.entity." + factEntityID + ".command",
-		"too many tokens":           prefix + ".command.satisfied.extra",
-		"trailing empty token":      prefix + ".command.satisfied.",
-		"missing scope token":       "hearth.v1.core.fact." + factEntityID + ".command.satisfied",
-		"unknown scope":             "hearth.v1.core.fact.adapter." + factEntityID + ".command.satisfied",
-		"wrong namespace":           "hearth.v1.adapter.simulator.claim",
-		"adapter fact namespace":    "hearth.v2.core.fact.entity." + factEntityID + ".command.satisfied",
-		"unknown family":            prefix + ".fact.satisfied",
-		"empty family":              prefix + "..satisfied",
-		"noncanonical family case":  prefix + ".Command.satisfied",
-		"entity wildcard":           "hearth.v1.core.fact.entity.*.command.satisfied",
-		"family wildcard":           prefix + ".*.satisfied",
-		"variant wildcard":          prefix + ".command.*",
-		"variant wildcard suffix":   prefix + ".command.satisfied.*",
-		"variant token wildcard":    prefix + ".entity-event.>",
-		"operation is not a status": prefix + ".command.set",
-		"illegal observation":       prefix + ".observation.rejected",
-		"illegal command status":    prefix + ".command.cancelled",
-		"illegal event name":        prefix + ".entity-event.Single Press",
-		"noncanonical entity case":  "hearth.v1.core.fact.entity.ent_01890F47-7A6B-7C4D-8E9F-0123456789AB.observation.applied",
-		"wrong UUID version":        "hearth.v1.core.fact.entity.ent_01890f47-7a6b-4c4d-8e9f-0123456789ab.observation.applied",
-		"wrong entity prefix":       "hearth.v1.core.fact.entity.dev_01890f47-7a6b-7c4d-8e9f-0123456789ab.observation.applied",
-		"empty entity":              "hearth.v1.core.fact.entity..observation.applied",
-		"unsafe event token":        prefix + ".entity-event.bad>event",
-		"uppercase disposition":     prefix + ".observation.Applied",
+		"empty":                    "",
+		"not a subject":            "not-a-subject",
+		"too few tokens":           "hearth.v1.core.fact.entity." + factEntityID + ".observation",
+		"too many tokens":          prefix + ".observation.applied.extra",
+		"trailing empty token":     prefix + ".observation.applied.",
+		"missing scope token":      "hearth.v1.core.fact." + factEntityID + ".observation.applied",
+		"unknown scope":            "hearth.v1.core.fact.adapter." + factEntityID + ".observation.applied",
+		"wrong namespace":          "hearth.v1.adapter.simulator.claim",
+		"adapter fact namespace":   "hearth.v2.core.fact.entity." + factEntityID + ".observation.applied",
+		"unknown family":           prefix + ".fact.applied",
+		"empty family":             prefix + "..applied",
+		"noncanonical family case": prefix + ".Observation.applied",
+		"entity wildcard":          "hearth.v1.core.fact.entity.*.observation.applied",
+		"family wildcard":          prefix + ".*.applied",
+		"variant wildcard":         prefix + ".observation.*",
+		"variant wildcard suffix":  prefix + ".observation.applied.*",
+		"variant token wildcard":   prefix + ".entity-event.>",
+		"illegal observation":      prefix + ".observation.rejected",
+		"illegal event name":       prefix + ".entity-event.Single Press",
+		"noncanonical entity case": "hearth.v1.core.fact.entity.ent_01890F47-7A6B-7C4D-8E9F-0123456789AB.observation.applied",
+		"wrong UUID version":       "hearth.v1.core.fact.entity.ent_01890f47-7a6b-4c4d-8e9f-0123456789ab.observation.applied",
+		"wrong entity prefix":      "hearth.v1.core.fact.entity.dev_01890f47-7a6b-7c4d-8e9f-0123456789ab.observation.applied",
+		"empty entity":             "hearth.v1.core.fact.entity..observation.applied",
+		"unsafe event token":       prefix + ".entity-event.bad>event",
+		"uppercase disposition":    prefix + ".observation.Applied",
+		"retired command family":   prefix + ".command.satisfied",
 	}
 	for name, subject := range invalidSubjects {
 		if _, err := natswire.ParseDeviceFactSubject(subject); err == nil {
@@ -251,15 +179,15 @@ func TestParseDeviceFactSubjectRejectsNonCanonicalInput(t *testing.T) {
 	// A canonical subject for another Entity must parse to that Entity, so the
 	// parser cannot be short-circuiting on any fixed Entity or variant.
 	route, err := natswire.ParseDeviceFactSubject(
-		"hearth.v1.core.fact.entity." + otherFactEntityID + ".command.interrupted",
+		"hearth.v1.core.fact.entity." + otherFactEntityID + ".entity-event.single_press",
 	)
 	if err != nil {
 		t.Fatal(err)
 	}
 	want := natswire.DeviceFactRoute{
 		EntityID: otherFactEntityID,
-		Family:   natswire.DeviceFactFamilyCommand,
-		Variant:  natswire.CommandFactInterrupted,
+		Family:   natswire.DeviceFactFamilyEntityEvent,
+		Variant:  "single_press",
 	}
 	if route != want {
 		t.Fatalf("route = %#v, want %#v", route, want)
@@ -276,18 +204,15 @@ func FuzzParseDeviceFactSubjectCanonicalRoundTrip(f *testing.F) {
 		prefix + ".observation.applied",
 		prefix + ".observation.unchanged",
 		prefix + ".entity-event.single_press",
-		prefix + ".command.requested",
-		prefix + ".command.satisfied",
-		prefix + ".command.interrupted",
 		"",
 		"not-a-subject",
-		"hearth.v1.core.fact.entity.*.command.satisfied",
-		prefix + ".command.cancelled",
+		"hearth.v1.core.fact.entity.*.observation.applied",
 		prefix + ".observation.rejected",
 		prefix + ".entity-event.Single Press",
 		"hearth.v1.core.fact.entity.ent_01890F47-7A6B-7C4D-8E9F-0123456789AB.observation.applied",
 		"hearth.v1.core.fact.entity.ent_01890f47-7a6b-4c4d-8e9f-0123456789ab.observation.applied",
-		prefix + ".command.satisfied.extra",
+		prefix + ".observation.applied.extra",
+		prefix + ".command.satisfied",
 	}
 	for _, subject := range seeds {
 		f.Add(subject)
@@ -324,8 +249,6 @@ func buildDeviceFactSubject(route natswire.DeviceFactRoute) (string, error) {
 		return natswire.ObservationFactSubject(route.EntityID, route.Variant)
 	case natswire.DeviceFactFamilyEntityEvent:
 		return natswire.EntityEventFactSubject(route.EntityID, route.Variant)
-	case natswire.DeviceFactFamilyCommand:
-		return natswire.CommandFactSubject(route.EntityID, route.Variant)
 	}
 	return "", errors.New("unexpected Device Fact family")
 }

@@ -573,139 +573,77 @@ func (repository *SQLiteRepository) GetCommand(ctx context.Context, id CommandID
 	return commandFromRow(row)
 }
 
-// MarkCommandAccepted commits one acceptance write inside one transaction and
-// reports whether it actually transitioned the row. Only requested -> accepted
-// is a real transition: an already accepted or satisfied row is a no-op success
-// with Changed false, and every other terminal status keeps ErrCommandTerminal.
-func (repository *SQLiteRepository) MarkCommandAccepted(
-	ctx context.Context,
-	id CommandID,
-	acceptedAt time.Time,
-) (CommandTransition, error) {
-	tx, err := repository.database.BeginTx(ctx, &sql.TxOptions{Isolation: sql.LevelSerializable})
-	if err != nil {
-		return CommandTransition{}, fmt.Errorf("begin command acceptance: %w", err)
-	}
-	defer func() { _ = tx.Rollback() }()
-	queries := repository.queries.WithTx(tx)
-	prior, err := queries.GetCommand(ctx, dbsqlc.GetCommandParams{ID: string(id)})
-	if errors.Is(err, sql.ErrNoRows) {
-		return CommandTransition{}, ErrCommandNotFound
-	}
-	if err != nil {
-		return CommandTransition{}, fmt.Errorf("get command for acceptance: %w", err)
-	}
-	current, err := commandFromRow(prior)
-	if err != nil {
-		return CommandTransition{}, err
-	}
-	if current.Status != CommandStatusRequested && current.Status != CommandStatusAccepted &&
-		current.Status != CommandStatusSatisfied {
-		return CommandTransition{}, ErrCommandTerminal
-	}
-	accepted, err := queries.MarkCommandAccepted(ctx, dbsqlc.MarkCommandAcceptedParams{
+func (repository *SQLiteRepository) MarkCommandAccepted(ctx context.Context, id CommandID, acceptedAt time.Time) error {
+	queries := repository.queries
+	rows, err := queries.MarkCommandAccepted(ctx, dbsqlc.MarkCommandAcceptedParams{
 		AcceptedAt: sql.NullString{String: formatTime(acceptedAt), Valid: true}, ID: string(id),
 	})
-	if errors.Is(err, sql.ErrNoRows) {
-		// The row left the accept-admitting statuses between the read and the
-		// write, so this call committed no transition.
-		return CommandTransition{}, ErrCommandTerminal
-	}
 	if err != nil {
-		return CommandTransition{}, fmt.Errorf("mark command accepted: %w", err)
+		return fmt.Errorf("mark command accepted: %w", err)
 	}
-	record, err := commandFromRow(accepted)
-	if err != nil {
-		return CommandTransition{}, err
+	if rows > 0 {
+		return nil
 	}
-	if commitErr := tx.Commit(); commitErr != nil {
-		return CommandTransition{}, fmt.Errorf("commit command acceptance: %w", commitErr)
+	if _, lookupErr := repository.GetCommand(ctx, id); lookupErr != nil {
+		return lookupErr
 	}
-	return CommandTransition{
-		Record: copyCommandRecord(record), Changed: current.Status == CommandStatusRequested,
-	}, nil
+	return ErrCommandTerminal
 }
 
-// CompleteCommand commits one terminal transition inside one transaction and
-// reports whether it actually transitioned the row. A repeated identical
-// completion is a no-op success with the unchanged durable record, and a
-// conflicting completion keeps ErrCommandTerminal without changing the row.
-func (repository *SQLiteRepository) CompleteCommand(
-	ctx context.Context,
-	completion CommandCompletion,
-) (CommandTransition, error) {
+func (repository *SQLiteRepository) CompleteCommand(ctx context.Context, completion CommandCompletion) error {
 	if !validCommandCompletion(completion) {
-		return CommandTransition{}, errors.New("invalid command completion")
+		return errors.New("invalid command completion")
 	}
 	tx, err := repository.database.BeginTx(ctx, &sql.TxOptions{Isolation: sql.LevelSerializable})
 	if err != nil {
-		return CommandTransition{}, fmt.Errorf("begin command completion: %w", err)
+		return fmt.Errorf("begin command completion: %w", err)
 	}
 	defer func() { _ = tx.Rollback() }()
 	queries := repository.queries.WithTx(tx)
 	row, err := queries.GetCommand(ctx, dbsqlc.GetCommandParams{ID: string(completion.ID)})
 	if errors.Is(err, sql.ErrNoRows) {
-		return CommandTransition{}, ErrCommandNotFound
+		return ErrCommandNotFound
 	}
 	if err != nil {
-		return CommandTransition{}, fmt.Errorf("get command for completion: %w", err)
+		return fmt.Errorf("get command for completion: %w", err)
 	}
 	command, err := commandFromRow(row)
 	if err != nil {
-		return CommandTransition{}, err
+		return err
 	}
 	if command.Status != CommandStatusRequested && command.Status != CommandStatusAccepted {
 		if sameCompletion(command, completion) {
-			return CommandTransition{Record: copyCommandRecord(command)}, nil
+			return nil
 		}
-		return CommandTransition{}, ErrCommandTerminal
+		return ErrCommandTerminal
 	}
-	completed, err := queries.CompleteCommand(ctx, dbsqlc.CompleteCommandParams{
+	rows, err := queries.CompleteCommand(ctx, dbsqlc.CompleteCommandParams{
 		Status:      string(completion.Status),
 		CompletedAt: sql.NullString{String: formatTime(completion.CompletedAt), Valid: true},
 		FailureCode: nullableCompletionFailure(completion.FailureCode),
 		ID:          string(completion.ID),
 	})
-	if errors.Is(err, sql.ErrNoRows) {
-		return CommandTransition{}, ErrCommandTerminal
-	}
 	if err != nil {
-		return CommandTransition{}, fmt.Errorf("complete command: %w", err)
+		return fmt.Errorf("complete command: %w", err)
 	}
-	record, err := commandFromRow(completed)
-	if err != nil {
-		return CommandTransition{}, err
+	if rows != 1 {
+		return ErrCommandTerminal
 	}
 	if commitErr := tx.Commit(); commitErr != nil {
-		return CommandTransition{}, fmt.Errorf("commit command completion: %w", commitErr)
+		return fmt.Errorf("commit command completion: %w", commitErr)
 	}
-	return CommandTransition{Record: copyCommandRecord(record), Changed: true}, nil
+	return nil
 }
 
-// InterruptActiveCommands interrupts every active Command in one atomic write
-// and returns each post-transition record, so Core can retain the interrupted
-// evidence before any connection or consumer starts. Repeating the call finds
-// no active row and returns an empty slice.
-func (repository *SQLiteRepository) InterruptActiveCommands(
-	ctx context.Context,
-	completedAt time.Time,
-) ([]CommandRecord, error) {
-	rows, err := repository.queries.
+func (repository *SQLiteRepository) InterruptActiveCommands(ctx context.Context, completedAt time.Time) error {
+	_, err := repository.queries.
 		InterruptActiveCommands(ctx, dbsqlc.InterruptActiveCommandsParams{
 			CompletedAt: sql.NullString{String: formatTime(completedAt), Valid: true},
 		})
 	if err != nil {
-		return nil, fmt.Errorf("interrupt active commands: %w", err)
+		return fmt.Errorf("interrupt active commands: %w", err)
 	}
-	records := make([]CommandRecord, 0, len(rows))
-	for _, row := range rows {
-		record, mapErr := commandFromRow(row)
-		if mapErr != nil {
-			return nil, mapErr
-		}
-		records = append(records, copyCommandRecord(record))
-	}
-	return records, nil
+	return nil
 }
 
 func commandFromRow(row dbsqlc.Command) (CommandRecord, error) {

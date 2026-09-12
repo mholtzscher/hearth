@@ -7,8 +7,8 @@ import (
 
 // DeviceFactID is the envelope identity of one ephemeral Device Fact
 // publication: a canonical fct_<UUIDv7>. It identifies the published message,
-// not the durable Observation, Entity Event or Command transition the fact
-// reports, and it is never reused, retried or replayed.
+// not the durable Observation or Entity Event the fact reports, and it is
+// never reused, retried or replayed.
 type DeviceFactID string
 
 // ObservationFact is the external projection of one accepted Observation. It
@@ -40,26 +40,18 @@ type EntityEventFact struct {
 	RecordedAt    time.Time
 }
 
-// CommandFact is the external projection of one durable Command status
-// transition. The record carries the parameters already exposed by Command
-// history and omits Adapter and runtime identity.
-type CommandFact struct {
-	Record CommandRecord
-}
-
 // DeviceFactSink receives only facts whose owning SQLite transition committed.
 // Implementations own transport validation, freshness, logging and delivery.
 // They must never return an error, block on NATS I/O, retry, durably retain a
 // fact, or make a committed devices operation depend on publication.
 //
-// The three methods make invalid family and type combinations unrepresentable
-// and state the devices-owned eligibility rule at each call site. A nil sink is
-// a no-op, so focused devices tests and non-NATS assembly need no transport
+// The methods make invalid family and type combinations unrepresentable and
+// state the devices-owned eligibility rule at each call site. A nil sink is a
+// no-op, so focused devices tests and non-NATS assembly need no transport
 // setup.
 type DeviceFactSink interface {
 	ObservationAccepted(ctx context.Context, fact ObservationFact)
 	EntityEventAccepted(ctx context.Context, fact EntityEventFact)
-	CommandTransitioned(ctx context.Context, fact CommandFact)
 }
 
 // emitObservationFact enqueues one accepted Observation fact after its owning
@@ -120,16 +112,4 @@ func (service *Service) emitEntityEventFact(
 		ReceivedAt:    receivedAt.UTC(),
 		RecordedAt:    result.RecordedAt.UTC(),
 	})
-}
-
-// emitCommandTransition enqueues one Command fact for a durable transition that
-// actually changed the row. Creation publishes exactly the persisted status, so
-// an immediate terminal insert emits one terminal fact and never invents a
-// preceding requested transition. A nil sink is a no-op, and the record is
-// copied so the sink owns no committed buffer.
-func (service *Service) emitCommandTransition(ctx context.Context, record CommandRecord) {
-	if service.deviceFacts == nil {
-		return
-	}
-	service.deviceFacts.CommandTransitioned(ctx, CommandFact{Record: copyCommandRecord(record)})
 }

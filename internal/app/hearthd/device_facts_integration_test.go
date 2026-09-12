@@ -151,8 +151,6 @@ func (subscriber *deviceFactSubscriber) assertVariantAgrees(
 		field = "disposition"
 	case natswire.DeviceFactFamilyEntityEvent:
 		field = "name"
-	case natswire.DeviceFactFamilyCommand:
-		field = "status"
 	}
 	var value string
 	if err := json.Unmarshal(data[field], &value); err != nil {
@@ -170,44 +168,9 @@ func factSchemaIDForFamily(t *testing.T, family natswire.DeviceFactFamily) strin
 		return contractsv1.ObservationFactSchemaID
 	case natswire.DeviceFactFamilyEntityEvent:
 		return contractsv1.EntityEventFactSchemaID
-	case natswire.DeviceFactFamilyCommand:
-		return contractsv1.CommandFactSchemaID
 	}
 	t.Fatalf("unknown Device Fact family %q", family)
 	return ""
-}
-
-func factString(t *testing.T, record deviceFactRecord, field string) string {
-	t.Helper()
-	var value string
-	if err := json.Unmarshal(record.data[field], &value); err != nil {
-		t.Fatalf("decode %s: %v", field, err)
-	}
-	return value
-}
-
-// indexOfFact returns the position of the first fact matching family and
-// variant, or -1.
-func indexOfFact(facts []deviceFactRecord, family natswire.DeviceFactFamily, variant string) int {
-	for index, fact := range facts {
-		if fact.route.Family == family && fact.route.Variant == variant {
-			return index
-		}
-	}
-	return -1
-}
-
-// indexOfObservationCausation returns the position of the accepted Observation
-// fact whose durable source is causation, whether it was applied or unchanged,
-// or -1.
-func indexOfObservationCausation(facts []deviceFactRecord, causation string) int {
-	for index, fact := range facts {
-		if fact.route.Family == natswire.DeviceFactFamilyObservation &&
-			fact.envelope.CausationID == causation {
-			return index
-		}
-	}
-	return -1
 }
 
 // startDeviceFactsCore starts Core over one embedded JetStream server and
@@ -279,9 +242,10 @@ func waitForCoreReady(
 }
 
 // TestCorePublishesDeviceFactsForSDKAndHTTPActivity is the external vertical
-// slice: a real SDK Observation, a real SDK Entity Event and a real HTTP
-// Command lifecycle each produce schema-valid facts observable by a plain NATS
-// subscriber while the authoritative SQLite records agree.
+// slice: a real SDK Observation, a real SDK Entity Event and the Observation
+// published by a real SDK Command handler each produce schema-valid facts
+// observable by a plain NATS subscriber while the authoritative SQLite records
+// agree. Commands are no longer evidence, so no Command fact exists.
 //
 //nolint:gocognit,gocyclo,cyclop // The end-to-end fact slice is clearer as one integration test.
 func TestCorePublishesDeviceFactsForSDKAndHTTPActivity(t *testing.T) {
@@ -373,6 +337,9 @@ func TestCorePublishesDeviceFactsForSDKAndHTTPActivity(t *testing.T) {
 
 	serveContext, stopServing := context.WithCancel(ctx)
 	defer stopServing()
+	// The handler reports the Observation identity it published, so the test can
+	// wait for the fact of the Observation that satisfied the Command.
+	outcomeObservations := make(chan string, 1)
 	handler, err := sdkpowerv1.NewCommandHandler(powerEntity, powerSupport, sdkpowerv1.Handlers{
 		Set: func(commandContext context.Context, command sdkpowerv1.SetCommand, responder adapter.Responder) error {
 			evidence, acceptErr := responder.Accept()
@@ -387,8 +354,12 @@ func TestCorePublishesDeviceFactsForSDKAndHTTPActivity(t *testing.T) {
 			if observationErr != nil {
 				return observationErr
 			}
-			_, publishErr := evidence.PublishObservation(commandContext, observation)
-			return publishErr
+			publishedID, publishErr := evidence.PublishObservation(commandContext, observation)
+			if publishErr != nil {
+				return publishErr
+			}
+			outcomeObservations <- string(publishedID)
+			return nil
 		},
 	})
 	if err != nil {
@@ -408,63 +379,53 @@ func TestCorePublishesDeviceFactsForSDKAndHTTPActivity(t *testing.T) {
 	if commandStatus != http.StatusOK {
 		t.Fatalf("command response = %d: %s", commandStatus, commandBody)
 	}
+	var outcomeObservationID string
+	select {
+	case outcomeObservationID = <-outcomeObservations:
+	case <-time.After(15 * time.Second):
+		t.Fatal("the SDK command handler published no outcome Observation")
+	}
 
-	// Collect facts until the satisfied transition arrives.
+	// Collect facts until the Observation driven by the Command outcome arrives.
 	var facts []deviceFactRecord
+	appliedIndex := -1
+	entityEventIndex := -1
+	outcomeIndex := -1
 	for range 16 {
 		record := subscriber.next(t)
 		facts = append(facts, record)
-		if record.route.Family == natswire.DeviceFactFamilyCommand &&
-			record.route.Variant == string(devices.CommandStatusSatisfied) {
+		index := len(facts) - 1
+		switch {
+		case appliedIndex < 0 && record.route.Family == natswire.DeviceFactFamilyObservation &&
+			record.envelope.CausationID == string(observationID):
+			appliedIndex = index
+		case entityEventIndex < 0 && record.route.Family == natswire.DeviceFactFamilyEntityEvent:
+			entityEventIndex = index
+		case outcomeIndex < 0 && record.route.Family == natswire.DeviceFactFamilyObservation &&
+			record.envelope.CausationID == outcomeObservationID:
+			outcomeIndex = index
+		}
+		if appliedIndex >= 0 && entityEventIndex >= 0 && outcomeIndex >= 0 {
 			break
 		}
 	}
-	requested := indexOfFact(facts, natswire.DeviceFactFamilyCommand, string(devices.CommandStatusRequested))
-	accepted := indexOfFact(facts, natswire.DeviceFactFamilyCommand, string(devices.CommandStatusAccepted))
-	satisfied := indexOfFact(facts, natswire.DeviceFactFamilyCommand, string(devices.CommandStatusSatisfied))
-	entityEventIndex := indexOfFact(facts, natswire.DeviceFactFamilyEntityEvent, "single_press")
-	observationIndex := indexOfFact(facts, natswire.DeviceFactFamilyObservation, natswire.ObservationFactApplied)
-	if requested < 0 || accepted < 0 || satisfied < 0 {
-		t.Fatalf("command fact sequence = %#v", facts)
-	}
-	if requested >= accepted || accepted >= satisfied {
-		t.Fatalf("command transitions were published out of durable order: %d, %d, %d", requested, accepted, satisfied)
+	if appliedIndex < 0 {
+		t.Fatalf("no Observation fact for %q: %#v", observationID, facts)
 	}
 	if entityEventIndex < 0 {
 		t.Fatalf("no Entity Event fact was published: %#v", facts)
 	}
-	if observationIndex < 0 {
-		t.Fatalf("no Observation fact was published: %#v", facts)
+	if outcomeIndex < 0 {
+		t.Fatalf("no Observation fact for the Command outcome %q: %#v", outcomeObservationID, facts)
 	}
-	satisfiedFact := facts[satisfied]
-	commandID := satisfiedFact.envelope.CausationID
-	if satisfiedFact.envelope.CorrelationID == "" {
-		t.Fatal("command fact omitted its correlation")
-	}
-	outcomeObservationID := factString(t, satisfiedFact, "outcome_observation_id")
-	if outcomeObservationID == "" {
-		t.Fatal("satisfied command fact omitted its outcome Observation")
-	}
-	linkedObservation := indexOfObservationCausation(facts[:satisfied], outcomeObservationID)
-	if linkedObservation < 0 {
+	if facts[entityEventIndex].envelope.CausationID != string(entityEventID) {
 		t.Fatalf(
-			"the Observation-driven satisfaction published no Observation evidence before the Command fact: %#v",
-			facts,
+			"Entity Event fact causation = %q, want %q",
+			facts[entityEventIndex].envelope.CausationID, entityEventID,
 		)
-	}
-	if facts[observationIndex].envelope.CausationID != string(observationID) {
-		t.Fatalf(
-			"first Observation fact causation = %q, want %q",
-			facts[observationIndex].envelope.CausationID, observationID,
-		)
-	}
-	if entityEventCausation := facts[entityEventIndex].envelope.CausationID; entityEventCausation != string(
-		entityEventID,
-	) {
-		t.Fatalf("Entity Event fact causation = %q, want %q", entityEventCausation, entityEventID)
 	}
 
-	// Authoritative agreement: SQLite holds the same satisfied Command and the
+	// Authoritative agreement: SQLite holds the satisfied Command and the
 	// committed State the facts reported.
 	database, err := platformdb.Open(ctx, databasePath)
 	if err != nil {
@@ -473,10 +434,9 @@ func TestCorePublishesDeviceFactsForSDKAndHTTPActivity(t *testing.T) {
 	defer func() { _ = database.Close() }()
 	var status string
 	var outcome sql.NullString
-	if scanErr := database.QueryRowContext(
-		ctx,
-		"SELECT status, outcome_observation_id FROM commands WHERE id = ?",
-		commandID,
+	if scanErr := database.QueryRowContext(ctx, `
+		SELECT status, outcome_observation_id FROM commands
+		ORDER BY requested_at DESC, id DESC LIMIT 1`,
 	).Scan(&status, &outcome); scanErr != nil {
 		t.Fatal(scanErr)
 	}
@@ -510,79 +470,6 @@ func TestCorePublishesDeviceFactsForSDKAndHTTPActivity(t *testing.T) {
 	waitForMatrixCondition(t, 5*time.Second, func() (bool, error) {
 		return server.NumClients() == 1, nil
 	})
-}
-
-// TestCorePublishesStartupInterruptionFactsForRetainedCommands protects startup
-// interruption publication: Commands interrupted before either connection
-// opened still produce exactly one interrupted fact each once the dispatcher is
-// live, and no synthetic lifecycle fact is invented.
-//
-//nolint:gocognit // The startup interruption lifecycle is clearer as one integration test.
-func TestCorePublishesStartupInterruptionFactsForRetainedCommands(t *testing.T) {
-	t.Parallel()
-	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
-	defer cancel()
-	databasePath := filepath.Join(t.TempDir(), "hearth.db")
-	entityID, requestedCorrelations := seedRetainedActiveCommands(ctx, t, databasePath)
-
-	server := startLifecycleNATSServer(t)
-	subscriber := newDeviceFactSubscriber(t, server.ClientURL())
-	httpAddress, stopCore, runErrors := startDeviceFactsCore(ctx, t, server.ClientURL(), databasePath)
-	defer stopCore()
-	waitForCoreHealthz(ctx, t, httpAddress, runErrors)
-
-	seen := map[string]bool{}
-	for range len(requestedCorrelations) {
-		record := subscriber.next(t)
-		if record.route.Family != natswire.DeviceFactFamilyCommand ||
-			record.route.Variant != string(devices.CommandStatusInterrupted) {
-			t.Fatalf("startup interruption fact route = %#v", record.route)
-		}
-		if record.route.EntityID != string(entityID) {
-			t.Fatalf("interruption fact Entity = %q, want %q", record.route.EntityID, entityID)
-		}
-		if factString(t, record, "status") != string(devices.CommandStatusInterrupted) {
-			t.Fatalf("interruption payload = %s", record.envelope.Data)
-		}
-		if factString(t, record, "failure_code") != string(devices.CommandFailureCoreRestarted) {
-			t.Fatalf("interruption payload = %s", record.envelope.Data)
-		}
-		if _, ok := record.data["completed_at"]; !ok {
-			t.Fatal("interruption fact omitted completed_at")
-		}
-		if _, ok := record.data["outcome_observation_id"]; ok {
-			t.Fatal("interruption fact carried outcome evidence")
-		}
-		if !requestedCorrelations[record.envelope.CorrelationID] {
-			t.Fatalf("interruption correlation = %q, want one of the retained Commands", record.envelope.CorrelationID)
-		}
-		if seen[record.envelope.CausationID] {
-			t.Fatalf("Command %q published more than one interruption fact", record.envelope.CausationID)
-		}
-		seen[record.envelope.CausationID] = true
-	}
-	if len(seen) != len(requestedCorrelations) {
-		t.Fatalf("interruption facts = %d, want %d", len(seen), len(requestedCorrelations))
-	}
-	// Only the retained interruptions exist: no requested, accepted, satisfied
-	// or duplicate interrupted fact is fabricated.
-	subscriber.assertNone(t)
-
-	database, err := platformdb.Open(ctx, databasePath)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer func() { _ = database.Close() }()
-	var interrupted int
-	if scanErr := database.QueryRowContext(ctx, `
-		SELECT count(*) FROM commands WHERE status = 'interrupted' AND failure_code = 'core_restarted'`,
-	).Scan(&interrupted); scanErr != nil {
-		t.Fatal(scanErr)
-	}
-	if interrupted != len(requestedCorrelations) {
-		t.Fatalf("authoritative interrupted commands = %d, want %d", interrupted, len(requestedCorrelations))
-	}
-	stopDeviceFactsCore(t, stopCore, runErrors)
 }
 
 // TestCoreDoesNotPublishFactsForPreStartupBacklog protects the no-catch-up
@@ -726,68 +613,6 @@ func postFactsCommand(
 	defer response.Body.Close()
 	body, err := io.ReadAll(response.Body)
 	return response.StatusCode, body, err
-}
-
-// seedRetainedActiveCommands registers one power Entity and creates two
-// Commands, one still requested and one already accepted, so Core startup
-// interrupts both before any connection opens.
-func seedRetainedActiveCommands(
-	ctx context.Context,
-	t *testing.T,
-	databasePath string,
-) (devices.EntityID, map[string]bool) {
-	t.Helper()
-	database, err := platformdb.Open(ctx, databasePath)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer func() { _ = database.Close() }()
-	if migrateErr := platformdb.Migrate(ctx, database); migrateErr != nil {
-		t.Fatal(migrateErr)
-	}
-	catalog, err := devices.NewBuiltinTypeCatalog()
-	if err != nil {
-		t.Fatal(err)
-	}
-	repository := devices.NewSQLiteRepository(database, catalog)
-	service := devices.NewService(devices.SQLiteStores(repository), nil, catalog, devices.Dependencies{})
-	runtimeID := devices.RuntimeID("run_01890f47-7a6b-7c4d-8e9f-0123456789ab")
-	if claimErr := service.ClaimAdapterRuntime(ctx, devices.ClaimAdapterRuntimeParams{
-		AdapterID: "simulator", RuntimeID: runtimeID,
-		SoftwareName: "hearth-facts-test", SoftwareVersion: "0.1.0",
-	}); claimErr != nil {
-		t.Fatal(claimErr)
-	}
-	binding, err := service.Register(ctx, "simulator", runtimeID, devices.Registration{
-		BindingKey: "facts-light",
-		Device:     devices.DeviceDescriptor{Name: "Facts light", Kind: devices.DeviceKindLight},
-		Entities: []devices.EntityDescriptor{{
-			Key: "power", ExternalID: "facts.power", Name: "Power",
-			TypeID:  devices.EntityTypePowerV1,
-			Support: devices.EntitySupport(`{"state":{},"operations":{"set":{}}}`),
-		}},
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	entityID := binding.Entities[0].EntityID
-	requested := recoveryCommandRecord(t, entityID, time.Now().UTC())
-	accepted := recoveryCommandRecord(t, entityID, requested.RequestedAt.Add(time.Second))
-	if _, createErr := repository.CreateCommand(ctx, requested); createErr != nil {
-		t.Fatal(createErr)
-	}
-	if _, createErr := repository.CreateCommand(ctx, accepted); createErr != nil {
-		t.Fatal(createErr)
-	}
-	if _, acceptErr := repository.MarkCommandAccepted(
-		ctx, accepted.ID, accepted.RequestedAt.Add(time.Millisecond),
-	); acceptErr != nil {
-		t.Fatal(acceptErr)
-	}
-	return entityID, map[string]bool{
-		string(requested.CorrelationID): true,
-		string(accepted.CorrelationID):  true,
-	}
 }
 
 // seedDeviceFactsRegistration registers one power Entity and one event-source

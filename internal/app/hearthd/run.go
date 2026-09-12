@@ -89,13 +89,11 @@ func Run(
 	logStartupStage(ctx, coreLogger, "database_migrated")
 	repository := devices.NewSQLiteRepository(database, catalog)
 	startupTime := time.Now().UTC()
-	// Interrupted records are retained in memory: the committed interruptions
-	// are authoritative even if a later NATS startup step fails, and their facts
-	// are enqueued once both connections and the dispatcher are live and before
-	// JetStream is provisioned, so no later failure can strand them.
-	retainedInterruptions, interruptErr := repository.InterruptActiveCommands(ctx, startupTime)
-	if interruptErr != nil {
-		return failStage("interrupt_commands", fmt.Errorf("interrupt active commands: %w", interruptErr))
+	// Interrupted records are committed before either transport opens; their
+	// Command history is authoritative and no Device Fact is published for Core's
+	// own startup interruption.
+	if err := repository.InterruptActiveCommands(ctx, startupTime); err != nil {
+		return failStage("interrupt_commands", fmt.Errorf("interrupt active commands: %w", err))
 	}
 	logStartupStage(ctx, coreLogger, "active_commands_interrupted")
 	// Observation and Entity Event pruning run only on the hourly pass below, so
@@ -147,15 +145,6 @@ func Run(
 		catalog,
 		devices.Dependencies{Logger: devicesLogger, DeviceFacts: dispatcher},
 	)
-	// Startup interruption facts are enqueued immediately after the service
-	// exists and before JetStream provisioning can fail: the transitions
-	// committed before either connection opened, both connections have
-	// established their initial epochs above, and no later startup's
-	// interruption call returns these rows again. Provisioning therefore can
-	// never strand committed interruptions without their facts.
-	for _, record := range retainedInterruptions {
-		dispatcher.CommandTransitioned(ctx, devices.CommandFact{Record: record})
-	}
 	js, jetStreamErr := jetstream.New(connection)
 	if jetStreamErr != nil {
 		return failStage(

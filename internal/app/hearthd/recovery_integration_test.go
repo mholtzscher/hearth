@@ -64,7 +64,7 @@ func TestCoreStartupInterruptsActiveCommandsWithoutRedispatch(t *testing.T) {
 	if _, createErr := repository.CreateCommand(ctx, accepted); createErr != nil {
 		t.Fatal(createErr)
 	}
-	if _, acceptErr := repository.MarkCommandAccepted(
+	if acceptErr := repository.MarkCommandAccepted(
 		ctx,
 		accepted.ID,
 		accepted.RequestedAt.Add(time.Millisecond),

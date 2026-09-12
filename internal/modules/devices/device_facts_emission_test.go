@@ -16,10 +16,8 @@ type recordingDeviceFactSink struct {
 	mutex         sync.Mutex
 	observations  []ObservationFact
 	entityEvents  []EntityEventFact
-	commands      []CommandFact
 	order         []string
 	onObservation func(ObservationFact)
-	onCommand     func(CommandFact)
 }
 
 func (sink *recordingDeviceFactSink) ObservationAccepted(_ context.Context, fact ObservationFact) {
@@ -40,17 +38,6 @@ func (sink *recordingDeviceFactSink) EntityEventAccepted(_ context.Context, fact
 	sink.order = append(sink.order, "entity-event."+string(fact.Name))
 }
 
-func (sink *recordingDeviceFactSink) CommandTransitioned(_ context.Context, fact CommandFact) {
-	sink.mutex.Lock()
-	sink.commands = append(sink.commands, fact)
-	sink.order = append(sink.order, "command."+string(fact.Record.Status))
-	hook := sink.onCommand
-	sink.mutex.Unlock()
-	if hook != nil {
-		hook(fact)
-	}
-}
-
 func (sink *recordingDeviceFactSink) observationFacts() []ObservationFact {
 	sink.mutex.Lock()
 	defer sink.mutex.Unlock()
@@ -61,12 +48,6 @@ func (sink *recordingDeviceFactSink) entityEventFacts() []EntityEventFact {
 	sink.mutex.Lock()
 	defer sink.mutex.Unlock()
 	return append([]EntityEventFact(nil), sink.entityEvents...)
-}
-
-func (sink *recordingDeviceFactSink) commandFacts() []CommandFact {
-	sink.mutex.Lock()
-	defer sink.mutex.Unlock()
-	return append([]CommandFact(nil), sink.commands...)
 }
 
 func (sink *recordingDeviceFactSink) factOrder() []string {
@@ -367,265 +348,14 @@ func TestRecordEntityEventFactsCoverOnlyFirstSeenAccepted(t *testing.T) {
 	}
 }
 
-// TestCommandCreationFactsCarryOnlyThePersistedStatus proves creation reports
-// exactly the committed row: a dispatchable Command publishes requested, and an
-// immediate terminal insert publishes only its terminal status without
-// inventing a preceding requested transition.
-func TestCommandCreationFactsCarryOnlyThePersistedStatus(t *testing.T) {
-	t.Parallel()
-	tests := []struct {
-		name       string
-		configure  func(*commandRepository)
-		wantStatus CommandStatus
-		wantErr    error
-	}{
-		{
-			name:       "dispatchable",
-			configure:  func(*commandRepository) {},
-			wantStatus: CommandStatusRequested,
-			wantErr:    ErrOutcomeTimeout,
-		},
-		{
-			name: "disabled entity",
-			configure: func(repository *commandRepository) {
-				repository.view.Entity.Enabled = false
-			},
-			wantStatus: CommandStatusEntityDisabled,
-			wantErr:    ErrEntityDisabled,
-		},
-		{
-			name: "unhealthy adapter",
-			configure: func(repository *commandRepository) {
-				repository.forceUnhealthy = true
-			},
-			wantStatus: CommandStatusAdapterUnhealthy,
-			wantErr:    ErrAdapterUnhealthy,
-		},
-	}
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			t.Parallel()
-			repository := newCommandRepository()
-			test.configure(repository)
-			sink := &recordingDeviceFactSink{}
-			dependencies := commandDependencies()
-			dependencies.DeviceFacts = sink
-			deadline := time.Second
-			if test.wantStatus == CommandStatusRequested {
-				deadline = 15 * time.Millisecond
-			}
-			service := newTestService(
-				repository,
-				commandSenderFunc(
-					func(context.Context, string, RuntimeID, CommandRequest) (CommandAcceptance, error) {
-						return CommandAcceptance{Accepted: true}, nil
-					},
-				),
-				commandCatalog(t, deadline),
-				dependencies,
-			)
-			if _, err := service.ExecuteCommand(context.Background(), CommandInput{
-				EntityID:      commandTestEntityID,
-				OperationName: OperationNameSet,
-				Parameters:    CommandParameters(`{"value":true}`),
-			}); !errors.Is(err, test.wantErr) {
-				t.Fatalf("command error = %v, want %v", err, test.wantErr)
-			}
-			facts := sink.commandFacts()
-			if test.wantStatus == CommandStatusRequested {
-				// The requested fact precedes acceptance and the outcome
-				// timeout, so the first fact is creation and it is published
-				// before any post-creation transition.
-				if len(facts) == 0 || facts[0].Record.Status != CommandStatusRequested {
-					t.Fatalf("command facts = %#v", facts)
-				}
-				return
-			}
-			if len(facts) != 1 || facts[0].Record.Status != test.wantStatus {
-				t.Fatalf("terminal creation facts = %#v, want one %q", facts, test.wantStatus)
-			}
-		})
-	}
-}
-
-// TestCommandPersistenceFailuresPublishNoFact proves the post-commit rule on
-// the Command path: a creation, acceptance or completion write that fails
-// commits nothing, so it publishes nothing, and a failed terminal write leaves
-// only the facts of the transitions that really committed. Moving any emission
-// before its error check fails this test.
-func TestCommandPersistenceFailuresPublishNoFact(t *testing.T) {
-	t.Parallel()
-	acceptedSender := func() CommandSender {
-		return commandSenderFunc(
-			func(context.Context, string, RuntimeID, CommandRequest) (CommandAcceptance, error) {
-				return CommandAcceptance{Accepted: true}, nil
-			},
-		)
-	}
-	input := func() CommandInput {
-		return CommandInput{
-			EntityID:      commandTestEntityID,
-			OperationName: OperationNameSet,
-			Parameters:    CommandParameters(`{"value":true}`),
-		}
-	}
-
-	t.Run("creation commit failure", func(t *testing.T) {
-		t.Parallel()
-		repository := newCommandRepository()
-		repository.createErr = errors.New("SQLite unavailable at creation")
-		sink := &recordingDeviceFactSink{}
-		dependencies := commandDependencies()
-		dependencies.DeviceFacts = sink
-		service := newTestService(repository, acceptedSender(), commandCatalog(t, time.Second), dependencies)
-		if _, err := service.ExecuteCommand(context.Background(), input()); !errors.Is(err, repository.createErr) {
-			t.Fatalf("creation error = %v", err)
-		}
-		if facts := sink.commandFacts(); len(facts) != 0 {
-			t.Fatalf("a failed creation published facts: %#v", facts)
-		}
-	})
-
-	t.Run("acceptance commit failure", func(t *testing.T) {
-		t.Parallel()
-		ledger := &scriptedCommandLedger{
-			commandRepository: newCommandRepository(),
-			acceptErr:         errors.New("SQLite unavailable at acceptance"),
-		}
-		sink := &recordingDeviceFactSink{}
-		dependencies := commandDependencies()
-		dependencies.DeviceFacts = sink
-		service := newTestService(ledger, acceptedSender(), commandCatalog(t, time.Second), dependencies)
-		if _, err := service.ExecuteCommand(context.Background(), input()); !errors.Is(err, ledger.acceptErr) {
-			t.Fatalf("acceptance error = %v", err)
-		}
-		assertCommandFactStatuses(t, sink, []CommandStatus{CommandStatusRequested})
-		if stored := ledger.command(commandTestID); stored.Status != CommandStatusRequested {
-			t.Fatalf("dataless acceptance changed the stored command: %#v", stored)
-		}
-	})
-
-	t.Run("terminal commit failure", func(t *testing.T) {
-		t.Parallel()
-		repository := newCommandRepository()
-		repository.completeErr = errors.New("SQLite unavailable at completion")
-		sink := &recordingDeviceFactSink{}
-		dependencies := commandDependencies()
-		dependencies.DeviceFacts = sink
-		service := newTestService(repository, acceptedSender(), commandCatalog(t, 15*time.Millisecond), dependencies)
-		if _, err := service.ExecuteCommand(context.Background(), input()); !errors.Is(err, repository.completeErr) {
-			t.Fatalf("completion error = %v", err)
-		}
-		assertCommandFactStatuses(t, sink, []CommandStatus{CommandStatusRequested, CommandStatusAccepted})
-		if stored := repository.command(commandTestID); stored.Status != CommandStatusAccepted {
-			t.Fatalf("a failed terminal write fabricated a durable outcome: %#v", stored)
-		}
-	})
-}
-
-// assertCommandFactStatuses pins the exact published Command statuses in order.
-func assertCommandFactStatuses(t *testing.T, sink *recordingDeviceFactSink, want []CommandStatus) {
-	t.Helper()
-	facts := sink.commandFacts()
-	statuses := make([]CommandStatus, len(facts))
-	for index, fact := range facts {
-		statuses[index] = fact.Record.Status
-	}
-	if !equalStrings(commandStatusStrings(statuses), commandStatusStrings(want)) {
-		t.Fatalf("published command statuses = %v, want %v", statuses, want)
-	}
-}
-
-func commandStatusStrings(statuses []CommandStatus) []string {
-	values := make([]string, len(statuses))
-	for index, status := range statuses {
-		values[index] = string(status)
-	}
-	return values
-}
-
-// scriptedCommandLedger reports transitions chosen by the test while delegating
-// Command creation and linked-Observation satisfaction to the command fake.
-type scriptedCommandLedger struct {
-	*commandRepository
-
-	acceptance  CommandTransition
-	complete    CommandTransition
-	acceptErr   error
-	completeErr error
-}
-
-func (ledger *scriptedCommandLedger) MarkCommandAccepted(
-	context.Context,
-	CommandID,
-	time.Time,
-) (CommandTransition, error) {
-	if ledger.acceptErr != nil {
-		return CommandTransition{}, ledger.acceptErr
-	}
-	return ledger.acceptance, nil
-}
-
-func (ledger *scriptedCommandLedger) CompleteCommand(context.Context, CommandCompletion) (CommandTransition, error) {
-	if ledger.completeErr != nil {
-		return CommandTransition{}, ledger.completeErr
-	}
-	return ledger.complete, nil
-}
-
-// TestCommandNoOpTransitionsPublishNothing proves a transition that reports
-// Changed false is not a fact, even when persistence also returns the unchanged
-// record, and that the Command still reaches its existing terminal outcome.
-func TestCommandNoOpTransitionsPublishNothing(t *testing.T) {
-	t.Parallel()
-	stale := CommandRecord{
-		ID: commandTestID, EntityID: commandTestEntityID, Status: CommandStatusOutcomeTimeout,
-		Parameters: CommandParameters(`{"value":true}`), FailureCode: new(CommandFailureOutcomeTimeout),
-	}
-	ledger := &scriptedCommandLedger{
-		commandRepository: newCommandRepository(),
-		acceptance:        CommandTransition{Record: CommandRecord{ID: commandTestID, Status: CommandStatusAccepted}},
-		complete:          CommandTransition{Record: stale},
-	}
-	sink := &recordingDeviceFactSink{}
-	dependencies := commandDependencies()
-	dependencies.DeviceFacts = sink
-	service := newTestService(
-		ledger,
-		commandSenderFunc(
-			func(context.Context, string, RuntimeID, CommandRequest) (CommandAcceptance, error) {
-				return CommandAcceptance{Accepted: true}, nil
-			},
-		),
-		commandCatalog(t, 15*time.Millisecond),
-		dependencies,
-	)
-	if _, err := service.ExecuteCommand(context.Background(), CommandInput{
-		EntityID:      commandTestEntityID,
-		OperationName: OperationNameSet,
-		Parameters:    CommandParameters(`{"value":true}`),
-	}); !errors.Is(err, ErrOutcomeTimeout) {
-		t.Fatalf("command error = %v", err)
-	}
-	facts := sink.commandFacts()
-	if len(facts) != 1 || facts[0].Record.Status != CommandStatusRequested {
-		t.Fatalf("command facts for no-op transitions = %#v, want only the creation fact", facts)
-	}
-}
-
-// TestObservationSatisfactionPublishesObservationBeforeCommandAndNotifiesWaiterFirst
-// pins the ordering guarantee for the one transaction that both commits an
-// Observation and satisfies a linked Command: the waiter is notified before any
-// transport work, the Observation fact is enqueued before the Command fact, and
-// both facts carry the committed records rather than repository buffers.
-func TestObservationSatisfactionPublishesObservationBeforeCommandAndNotifiesWaiterFirst(t *testing.T) {
+// TestObservationSatisfactionNotifiesWaiterBeforeObservationFact pins the
+// ordering guarantee for the one transaction that both commits an Observation
+// and satisfies a linked Command: the waiter is notified before any transport
+// work, and the Observation fact carries committed bytes rather than repository
+// buffers.
+func TestObservationSatisfactionNotifiesWaiterBeforeObservationFact(t *testing.T) {
 	t.Parallel()
 	observedAt := time.Date(2026, 9, 1, 12, 0, 0, 0, time.UTC)
-	satisfiedRecord := CommandRecord{
-		ID: commandTestID, EntityID: commandTestEntityID, AdapterID: "simulator",
-		Status: CommandStatusSatisfied, Parameters: CommandParameters(`{"value":true}`),
-		CompletedAt: &observedAt, OutcomeObservationID: new(commandTestObservationID),
-	}
 	result := ProjectionResult{
 		Disposition: DispositionApplied,
 		State:       &State{EntityID: commandTestEntityID, Value: Value(`true`)},
@@ -633,7 +363,6 @@ func TestObservationSatisfactionPublishesObservationBeforeCommandAndNotifiesWait
 			CommandID: commandTestID, Outcome: OutcomeObserved,
 			ObservationID: new(commandTestObservationID), Value: new(Value(`true`)),
 		},
-		SatisfiedCommandRecord: &satisfiedRecord,
 	}
 	repository := &scriptedObservationRepository{result: result}
 	var service *Service
@@ -660,7 +389,7 @@ func TestObservationSatisfactionPublishesObservationBeforeCommandAndNotifiesWait
 	if err != nil {
 		t.Fatal(err)
 	}
-	if projected.SatisfiedCommandRecord == nil || projected.SatisfiedCommandRecord.Status != CommandStatusSatisfied {
+	if projected.SatisfiedCommand == nil || projected.SatisfiedCommand.Outcome != OutcomeObserved {
 		t.Fatalf("projection result = %#v", projected)
 	}
 	select {
@@ -672,144 +401,17 @@ func TestObservationSatisfactionPublishesObservationBeforeCommandAndNotifiesWait
 		t.Fatal("waiter was not notified")
 	}
 	if !waiterNotifiedBeforeFacts {
-		t.Fatal("facts were enqueued before the Command waiter was notified")
+		t.Fatal("the Observation fact was enqueued before the Command waiter was notified")
 	}
-	want := []string{"observation.applied", "command.satisfied"}
+	want := []string{"observation.applied"}
 	if got := sink.factOrder(); !equalStrings(got, want) {
 		t.Fatalf("fact order = %v, want %v", got, want)
 	}
-	// Both facts own their data: the committed records the repository still
-	// holds cannot rewrite what was enqueued.
-	satisfiedRecord.Parameters[0] = 'x'
+	// The fact owns its data: the committed State the repository still holds
+	// cannot rewrite what was enqueued.
 	result.State.Value[0] = 'x'
-	facts := sink.commandFacts()
-	if string(facts[0].Record.Parameters) != `{"value":true}` {
-		t.Fatalf("command fact parameters = %s", facts[0].Record.Parameters)
-	}
 	if got := string(sink.observationFacts()[0].Value); got != "true" {
 		t.Fatalf("observation fact value = %s", got)
-	}
-}
-
-// barrierCommandRepository holds acceptance inside the client's callback, which
-// is the point at which the service holds the Command's transition stripe, and
-// waits for the competing satisfaction fact.
-type barrierCommandRepository struct {
-	*commandRepository
-
-	acceptanceCommitted chan struct{}
-	satisfiedObserved   chan struct{}
-	closeOnce           sync.Once
-	barrier             time.Duration
-}
-
-func (repository *barrierCommandRepository) MarkCommandAccepted(
-	ctx context.Context,
-	id CommandID,
-	acceptedAt time.Time,
-) (CommandTransition, error) {
-	transition, err := repository.commandRepository.MarkCommandAccepted(ctx, id, acceptedAt)
-	if err != nil {
-		return transition, err
-	}
-	repository.closeOnce.Do(func() { close(repository.acceptanceCommitted) })
-	// Waiting here can only end early when the acceptance fact was not fenced
-	// against the competing Observation, which is exactly the defect the stripe
-	// prevents. The stripe itself decides the race, never this duration.
-	select {
-	case <-repository.satisfiedObserved:
-	case <-time.After(repository.barrier):
-	}
-	return transition, nil
-}
-
-// TestCommandFactsFollowDurableOrderWhenSatisfactionRacesAcceptance pins the
-// striped per-Command sequencing: an accepted transition already committed to
-// SQLite is published before the satisfied transition of a competing
-// Observation, so published facts for one Command follow durable order.
-func TestCommandFactsFollowDurableOrderWhenSatisfactionRacesAcceptance(t *testing.T) {
-	t.Parallel()
-	satisfiedObserved := make(chan struct{})
-	var signalSatisfied sync.Once
-	observedAt := time.Now().UTC()
-	sink := &recordingDeviceFactSink{}
-	sink.onCommand = func(fact CommandFact) {
-		if fact.Record.Status == CommandStatusSatisfied {
-			signalSatisfied.Do(func() { close(satisfiedObserved) })
-		}
-	}
-	repository := &barrierCommandRepository{
-		commandRepository:   newCommandRepository(),
-		acceptanceCommitted: make(chan struct{}),
-		satisfiedObserved:   satisfiedObserved,
-		barrier:             250 * time.Millisecond,
-	}
-	dependencies := commandDependencies()
-	dependencies.DeviceFacts = sink
-	dependencies.Now = func() time.Time { return observedAt }
-	service := newTestService(
-		repository,
-		commandSenderFunc(
-			func(context.Context, string, RuntimeID, CommandRequest) (CommandAcceptance, error) {
-				return CommandAcceptance{Accepted: true}, nil
-			},
-		),
-		commandCatalog(t, 10*time.Second),
-		dependencies,
-	)
-
-	completed := make(chan CommandResult, 1)
-	failures := make(chan error, 1)
-	go func() {
-		result, err := service.ExecuteCommand(context.Background(), CommandInput{
-			EntityID:      commandTestEntityID,
-			OperationName: OperationNameSet,
-			Parameters:    CommandParameters(`{"value":true}`),
-		})
-		if err != nil {
-			failures <- err
-			return
-		}
-		completed <- result
-	}()
-
-	select {
-	case <-repository.acceptanceCommitted:
-	case err := <-failures:
-		t.Fatal(err)
-	case <-time.After(5 * time.Second):
-		t.Fatal("acceptance was never committed")
-	}
-	// The Observation arrives only after acceptance is durable, so acceptance
-	// precedes satisfaction in SQLite.
-	if _, err := service.ProjectObservation(
-		context.Background(), "simulator", commandTestRuntimeID, Observation{
-			ID: commandTestObservationID, EntityID: commandTestEntityID, Value: Value(`true`),
-			CorrelationID: factScriptCorrelationID(), AdapterReceivedAt: observedAt,
-			RefreshForCommand: new(commandTestID),
-		}, observedAt,
-	); err != nil {
-		t.Fatal(err)
-	}
-	select {
-	case result := <-completed:
-		if result.CommandID != commandTestID || result.Outcome != OutcomeObserved {
-			t.Fatalf("command result = %#v", result)
-		}
-	case err := <-failures:
-		t.Fatal(err)
-	case <-time.After(5 * time.Second):
-		t.Fatal("command did not complete")
-	}
-
-	// Durable order is requested, accepted, satisfied. The observation fact for
-	// the same transaction is enqueued before the satisfied Command fact, and
-	// the accepted fact can never be enqueued after satisfied.
-	want := []string{
-		"command.requested", "command.accepted", "observation.unchanged", "command.satisfied",
-	}
-	if got := sink.factOrder(); !equalStrings(got, want) {
-		t.Fatalf("fact order = %v, want %v", got, want)
 	}
 }
 

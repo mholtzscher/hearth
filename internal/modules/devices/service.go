@@ -37,7 +37,6 @@ type Service struct {
 	catalog              *TypeCatalog
 	dependencies         Dependencies
 	deviceFacts          DeviceFactSink
-	commandTransitions   commandTransitionStripes
 	waiters              commandWaiters
 	lifecycleMu          sync.Mutex
 	commandAdmissionOpen bool

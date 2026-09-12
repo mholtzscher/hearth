@@ -83,7 +83,6 @@ type DeviceFactFamily string
 const (
 	DeviceFactFamilyObservation DeviceFactFamily = "observation"
 	DeviceFactFamilyEntityEvent DeviceFactFamily = "entity-event"
-	DeviceFactFamilyCommand     DeviceFactFamily = "command"
 )
 
 // DeviceFact variants. These closed vocabularies mirror the strict fact
@@ -91,20 +90,6 @@ const (
 const (
 	ObservationFactApplied   = "applied"
 	ObservationFactUnchanged = "unchanged"
-)
-
-const (
-	CommandFactRequested         = "requested"
-	CommandFactAccepted          = "accepted"
-	CommandFactSatisfied         = "satisfied"
-	CommandFactDispatched        = "dispatched"
-	CommandFactRejected          = "rejected"
-	CommandFactAdapterUnhealthy  = "adapter_unhealthy"
-	CommandFactEntityUnavailable = "entity_unavailable"
-	CommandFactOutcomeTimeout    = "outcome_timeout"
-	CommandFactEntityDisabled    = "entity_disabled"
-	CommandFactInternalFailure   = "internal_failure"
-	CommandFactInterrupted       = "interrupted"
 )
 
 // DeviceFactRoute is the routing identity carried by one concrete Device Fact
@@ -273,12 +258,6 @@ func EntityEventFactSubject(entityID, name string) (string, error) {
 	return deviceFactSubject(entityID, DeviceFactFamilyEntityEvent, name)
 }
 
-// CommandFactSubject builds the subject for one durable Command status
-// transition fact. The status must be a Command status.
-func CommandFactSubject(entityID, status string) (string, error) {
-	return deviceFactSubject(entityID, DeviceFactFamilyCommand, status)
-}
-
 // ParseDeviceFactSubject parses one concrete Device Fact subject. Wildcards,
 // unknown families and variants, noncanonical Entity IDs and any subject whose
 // tokens do not round-trip are rejected. Callers must compare the returned
@@ -319,7 +298,7 @@ func deviceFactSubject(entityID string, family DeviceFactFamily, variant string)
 
 func validateDeviceFactFamily(family DeviceFactFamily) error {
 	switch family {
-	case DeviceFactFamilyObservation, DeviceFactFamilyEntityEvent, DeviceFactFamilyCommand:
+	case DeviceFactFamilyObservation, DeviceFactFamilyEntityEvent:
 		return nil
 	}
 	return fmt.Errorf("invalid Device Fact family %q", family)
@@ -335,30 +314,8 @@ func validateDeviceFactVariant(family DeviceFactFamily, variant string) error {
 		if !slugPattern.MatchString(variant) {
 			return fmt.Errorf("invalid Entity Event fact name %q", variant)
 		}
-	case DeviceFactFamilyCommand:
-		if !isCommandFactStatus(variant) {
-			return fmt.Errorf("invalid Command fact status %q", variant)
-		}
 	}
 	return nil
-}
-
-func isCommandFactStatus(status string) bool {
-	switch status {
-	case CommandFactRequested,
-		CommandFactAccepted,
-		CommandFactSatisfied,
-		CommandFactDispatched,
-		CommandFactRejected,
-		CommandFactAdapterUnhealthy,
-		CommandFactEntityUnavailable,
-		CommandFactOutcomeTimeout,
-		CommandFactEntityDisabled,
-		CommandFactInternalFailure,
-		CommandFactInterrupted:
-		return true
-	}
-	return false
 }
 
 func AllCommandsWildcard() string {

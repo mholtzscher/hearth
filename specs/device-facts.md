@@ -1,6 +1,6 @@
 # Device Facts over Core NATS
 
-**Status:** Implemented. D1–D3 landed with the implementation; D4 operator/developer documentation and downstream exact-name updates land with this change.
+**Status:** Implemented for the Observation and Entity Event families. D1–D3 landed with the implementation; D4 operator/developer documentation and downstream exact-name updates land with this change.
 **Baseline:** `9bfee97`.
 **Effort:** XL across four deliverables. This is a prerequisite for [Entity Event automations](entity-event-automations.md).
 
@@ -8,23 +8,25 @@
 
 Hearth durably verifies device activity inside the `devices` module, but downstream consumers have no supported live interface for learning what Core committed.
 
-Introduce **Device Facts**: versioned Core NATS messages published only after the devices-owned SQLite transaction establishing an accepted Observation, accepted Entity Event or Command status transition commits.
+Introduce **Device Facts**: versioned Core NATS messages published only after the devices-owned SQLite transaction establishing an accepted Observation or an accepted Entity Event commits.
 
 ```text
-Adapter input / Core Command lifecycle
-                 ↓
-        devices SQLite transaction
-                 ↓ commit
-       devices.DeviceFactSink
-                 ↓
-  ephemeral Core NATS publication
-                 ↓
+        Adapter input
+             ↓
+   devices SQLite transaction
+             ↓ commit
+      devices.DeviceFactSink
+             ↓
+ephemeral Core NATS publication
+             ↓
  live internal and external subscribers
 ```
 
 They are a live, at-most-once notification surface, not another history or execution log; the durable SQLite record and HTTP read API remain authoritative.
 
 Automations consume Core-verified accepted Entity Events through this surface, so their admission never couples to devices transactions and never replays missed events.
+
+Command lifecycle is deliberately **not** a fact family. Commands remain authoritative in the SQLite `commands` table and the HTTP Command read API, and no Command Fact exists: there is no Command schema, subject, family token, sink method, transition evidence, transition-stripe ordering or startup-interruption publication. Observations are not Command lifecycle substitutes, because an Observation reports accepted State evidence from an Adapter rather than a Command status transition, and a stateless (`dispatched`) or failure (`rejected`, `adapter_unhealthy`, `entity_unavailable`, `outcome_timeout`, `entity_disabled`, `internal_failure`, `interrupted`) Command outcome produces no accepted Observation, so those outcomes have no live fact at all. A consumer that needs Command lifecycle must read durable HTTP/SQLite history.
 
 ## 2. Decisions
 
@@ -36,8 +38,7 @@ Automations consume Core-verified accepted Entity Events through this surface, s
   ```
 
 - Each publication receives a new `fct_<UUIDv7>` envelope identity; the durable source identity remains in `data` and in `causation_id`.
-- Accepted first-seen Observations publish `applied` or `unchanged`. Accepted first-seen Entity Events publish a fact whose variant is the event name. Rejected, duplicate and identity-conflict inputs publish nothing.
-- Every actual durable Command status transition publishes a fact, including startup interruption. A command inserted directly in a terminal status publishes that terminal status only.
+- Accepted first-seen Observations publish `applied` or `unchanged`. Accepted first-seen Entity Events publish a fact whose variant is the event name. Rejected, duplicate and identity-conflict inputs publish nothing, and no Command lifecycle transition publishes anything.
 - Publication occurs after commit, never inside a transaction, and a failed publication never changes the committed operation's result.
 - No acknowledgement, retry, reconnect buffering, outbox, offset, replay or Core-owned fact retention exists. One bounded in-memory dispatcher queue isolates committed device work from NATS write latency and drops rather than carrying facts across connection generations.
 - Accepted Observation and Entity Event facts are gated by continuously connected NATS generations and epochs, so JetStream backlog never becomes live facts.
@@ -47,14 +48,14 @@ Automations consume Core-verified accepted Entity Events through this surface, s
 
 This spec owns:
 
-- Device Fact vocabulary, domain projections and three strict external wire schemas;
+- Device Fact vocabulary, domain projections and two strict external wire schemas;
 - Core-originated subject construction and parsing;
-- post-commit emission hooks in the devices service, including exact Command-transition reporting from persistence;
+- post-commit emission hooks in the devices service for accepted Observations and accepted Entity Events;
 - a best-effort, non-buffering Core NATS fact publisher with generation-fenced connection-epoch freshness;
 - application assembly, readiness, lifecycle, logging and operator documentation;
 - integration tests proving post-commit, live-only external delivery.
 
-**Non-goals:** durable facts, replay, offsets and delivery acknowledgements, or any Core-owned fact storage; subscriber registration APIs, a Go subscriber SDK and an HTTP fact endpoint; signing and authorization implementation; automation implementation; facts for rejected input, Adapter health, Entity availability, enablement, registration or Device-level Entities; global ordering; configurable freshness. The bounded volatile dispatcher queue is transport isolation, not durable delivery.
+**Non-goals:** durable facts, replay, offsets and delivery acknowledgements, or any Core-owned fact storage; subscriber registration APIs, a Go subscriber SDK and an HTTP fact endpoint; signing and authorization implementation; automation implementation; facts for rejected input, Command lifecycle transitions, Adapter health, Entity availability, enablement, registration or Device-level Entities; global ordering; configurable freshness. The bounded volatile dispatcher queue is transport isolation, not durable delivery.
 
 An external subscriber may independently persist received facts, but Hearth owns no behavior or compatibility guarantee for that downstream store beyond the published v1 wire contract.
 
@@ -63,8 +64,8 @@ An external subscriber may independently persist received facts, but Hearth owns
 Add this term to `CONTEXT.md` during implementation:
 
 **Device Fact**:
-One Core-verified statement published after the devices transaction establishing an accepted Observation, accepted Entity Event or durable Command status transition commits. It reaches only live Core NATS subscribers and is never acknowledged, retried, replayed or stored by Hearth. A missing fact proves nothing about the underlying activity: the durable record and HTTP read API remain authoritative, and a fact reports what Core recorded, not physical truth.
-_Avoid_: Entity Event, Observation, event stream, event sourcing, change log
+One Core-verified statement published after the devices transaction establishing an accepted Observation or accepted Entity Event commits. It reaches only live Core NATS subscribers and is never acknowledged, retried, replayed or stored by Hearth. A missing fact proves nothing about the underlying activity: the durable record and HTTP read API remain authoritative, and a fact reports what Core recorded, not physical truth. Command lifecycle is not a Device Fact source — durable Command status transitions, including startup interruption, publish no live fact — and Observations are not Command lifecycle substitutes.
+_Avoid_: Entity Event, Observation, Command, event stream, event sourcing, change log
 
 The external guarantee is:
 
@@ -87,7 +88,7 @@ The subject has exactly eight tokens:
 | 1 to 4 | `hearth.v1.core.fact` | fixed v1 Core Fact namespace |
 | 5 | `entity` | fixed scope; leaves room for future non-Entity facts |
 | 6 | `<entity_id>` | canonical `ent_<UUIDv7>` |
-| 7 | `<family>` | `observation`, `entity-event` or `command` |
+| 7 | `<family>` | `observation` or `entity-event` |
 | 8 | `<variant>` | family-specific closed token or event-name slug |
 
 Concrete subjects:
@@ -96,9 +97,6 @@ Concrete subjects:
 hearth.v1.core.fact.entity.ent_<uuidv7>.observation.applied
 hearth.v1.core.fact.entity.ent_<uuidv7>.observation.unchanged
 hearth.v1.core.fact.entity.ent_<uuidv7>.entity-event.single_press
-hearth.v1.core.fact.entity.ent_<uuidv7>.command.requested
-hearth.v1.core.fact.entity.ent_<uuidv7>.command.satisfied
-hearth.v1.core.fact.entity.ent_<uuidv7>.command.interrupted
 ```
 
 Useful subscriptions:
@@ -107,10 +105,10 @@ Useful subscriptions:
 hearth.v1.core.fact.>                              # every Device Fact
 hearth.v1.core.fact.entity.<entity_id>.>           # one Entity
 hearth.v1.core.fact.entity.*.observation.applied   # State-changing Observations
-hearth.v1.core.fact.entity.*.command.satisfied     # satisfied Commands
+hearth.v1.core.fact.entity.*.entity-event.>        # every accepted Entity Event
 ```
 
-Any family or variant can be pinned the same way; `hearth.v1.core.fact.entity.*.entity-event.>` selects every accepted Entity Event. Subject and payload Entity, family and variant must agree, and subscribers must reject disagreement.
+Any family or variant can be pinned the same way. Subject and payload Entity, family and variant must agree, and subscribers must reject disagreement.
 
 ### 5.2 Subject types
 
@@ -122,7 +120,6 @@ type DeviceFactFamily string
 const (
     DeviceFactFamilyObservation DeviceFactFamily = "observation"
     DeviceFactFamilyEntityEvent DeviceFactFamily = "entity-event"
-    DeviceFactFamilyCommand     DeviceFactFamily = "command"
 )
 
 type DeviceFactRoute struct {
@@ -136,11 +133,10 @@ func EntityDeviceFactsWildcard(entityID string) (string, error)
 func DeviceFactFamilyWildcard(family DeviceFactFamily) (string, error)
 func ObservationFactSubject(entityID string, disposition string) (string, error)
 func EntityEventFactSubject(entityID string, name string) (string, error)
-func CommandFactSubject(entityID string, status string) (string, error)
 func ParseDeviceFactSubject(subject string) (DeviceFactRoute, error)
 ```
 
-Builders reject noncanonical Entity IDs and invalid family variants, and each validates its exact variant set: Observation variants are `applied` and `unchanged`, Command variants are the eleven `CommandStatus` values, and Entity Event variants satisfy the implemented event-name slug pattern. The parser rejects any subject whose tokens do not round-trip.
+Builders reject noncanonical Entity IDs and invalid family variants, and each validates its exact variant set: Observation variants are `applied` and `unchanged`, and Entity Event variants satisfy the implemented event-name slug pattern. The parser rejects any subject whose tokens do not round-trip.
 
 `natswire` remains domain-neutral and imports no `devices` package. Its closed string constants mirror the schemas and are conformance-tested against devices values.
 
@@ -152,9 +148,9 @@ Add `fct_id` to `contracts/v1/common.schema.json`:
 {"type":"string","pattern":"^fct_[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"}
 ```
 
-Each fact schema constrains its own `causation_id` directly to the durable source ID type (`obs_id`, `evt_id` or `cmd_id`). `fct_id` stays out of the common `causation_id` union because facts do not cause existing inbound contracts.
+Each fact schema constrains its own `causation_id` directly to the durable source ID type (`obs_id` or `evt_id`). `fct_id` stays out of the common `causation_id` union because facts do not cause existing inbound contracts.
 
-All three schemas use the standard envelope fields:
+Both schemas use the standard envelope fields:
 
 ```json
 {
@@ -169,8 +165,8 @@ All three schemas use the standard envelope fields:
 
 Envelope semantics:
 
-- `id` identifies this one ephemeral publication, not the durable record, and `correlation_id` is copied from the accepted report or Command record.
-- `emitted_at` is Core publication time from the fact publisher's clock, and `causation_id` identifies the durable Observation, Entity Event or Command transition source.
+- `id` identifies this one ephemeral publication, not the durable record, and `correlation_id` is copied from the accepted report.
+- `emitted_at` is Core publication time from the fact publisher's clock, and `causation_id` identifies the durable Observation or Entity Event source.
 - W3C trace headers continue the context that caused Core to process the transition. `Nats-Msg-Id` is absent because no Core-owned stream or broker deduplication applies.
 
 ### 6.1 Observation fact
@@ -221,49 +217,7 @@ The envelope is the standard one above, with `data`:
 
 `reported_at` deliberately differs from envelope `emitted_at`: it is the Adapter SDK's publication time copied from the durable event record. The schema represents accepted events only, so it carries no disposition field.
 
-### 6.3 Command fact
-
-File: `contracts/v1/command-fact.schema.json`  
-Schema ID: `urn:hearth:schema:command-fact:v1`  
-Causation: `cmd_id`
-
-The envelope is the standard one above, with `data`:
-
-```json
-{
-  "command_id":"cmd_…",
-  "entity_id":"ent_…",
-  "operation":"set",
-  "parameters":{"value":true},
-  "status":"satisfied",
-  "requested_at":"…Z",
-  "deadline_at":"…Z",
-  "accepted_at":"…Z",
-  "completed_at":"…Z",
-  "outcome_observation_id":"obs_…"
-}
-```
-
-The schema enumerates:
-
-```text
-requested | accepted | satisfied | dispatched | rejected |
-adapter_unhealthy | entity_unavailable | outcome_timeout |
-entity_disabled | internal_failure | interrupted
-```
-
-It mirrors the `commands` table invariants:
-
-- `requested` and `accepted` are nonterminal and omit `completed_at`, `failure_code` and `outcome_observation_id`;
-- `satisfied` requires `completed_at` and `outcome_observation_id` and omits `failure_code`;
-- `dispatched` requires `completed_at` and omits outcome evidence and failure;
-- failure statuses require `completed_at` and their matching `failure_code`;
-- `interrupted` requires `completed_at` and `failure_code:core_restarted`;
-- `accepted_at` is optional because satisfaction can race acceptance persistence under the existing Command contract.
-
-Command facts include normalized parameters already exposed by Command history. They omit Adapter and runtime identity.
-
-### 6.4 Compatibility
+### 6.3 Compatibility
 
 The strict schemas and `hearth.v1` subject prefix are one external v1 contract. Adding a family or a new major subject or schema is compatible. Adding a property, variant or enum value to an existing strict v1 schema is not assumed compatible; make an explicit versioned change.
 
@@ -295,10 +249,6 @@ type EntityEventFact struct {
     RecordedAt    time.Time // Core first-record time
 }
 
-type CommandFact struct {
-    Record CommandRecord
-}
-
 // DeviceFactSink receives only facts whose owning SQLite transition committed.
 // Implementations own transport validation, freshness, logging and delivery.
 // They must never return an error, block on NATS I/O, retry, durably retain a
@@ -306,11 +256,10 @@ type CommandFact struct {
 type DeviceFactSink interface {
     ObservationAccepted(context.Context, ObservationFact)
     EntityEventAccepted(context.Context, EntityEventFact)
-    CommandTransitioned(context.Context, CommandFact)
 }
 ```
 
-The three methods make invalid family and type combinations unrepresentable and state the devices-owned eligibility rule at each call site. A nil sink is a no-op, so focused devices tests and non-NATS assembly need no transport setup. The service stores the sink privately and calls it only after repository success: repositories never publish, and transport code never decides whether a rejection is a fact.
+The two methods make invalid family and type combinations unrepresentable and state the devices-owned eligibility rule at each call site. A nil sink is a no-op, so focused devices tests and non-NATS assembly need no transport setup. The service stores the sink privately and calls it only after repository success: repositories never publish, and transport code never decides whether a rejection is a fact.
 
 Extend `devices.Dependencies`:
 
@@ -325,6 +274,8 @@ Extend `devices.Dependencies`:
 Add `NewDeviceFactID` and `ParseDeviceFactID` beside existing canonical ID constructors in `internal/modules/devices/ids.go`.
 
 ## 8. Post-commit emission
+
+`devices.Service` emits facts only for accepted Observations and accepted Entity Events. No Command emission hook exists: `CommandLedger` keeps its transition methods returning only their existing error results, and `CommandTransition`, transition stripes and startup-interruption fact publication are removed, so Command status changes are observable only through durable SQLite and HTTP Command history.
 
 ### 8.1 Observations
 
@@ -344,22 +295,9 @@ Extend the in-memory Observation input with the wire correlation; do not add a p
 After `stores.Observations.ProjectObservation` returns successfully:
 
 1. notify the existing in-memory Command waiter first, so transport work cannot delay authoritative Command completion;
-2. enqueue `ObservationFact` for `applied` and `unchanged` only, using `ProjectionResult.State.Value` as the normalized value, and enqueue nothing for `rejected` or `duplicate`;
-3. if the same transaction satisfied a Command, enqueue the Observation fact before the satisfied Command fact.
+2. enqueue `ObservationFact` for `applied` and `unchanged` only, using `ProjectionResult.State.Value` as the normalized value, and enqueue nothing for `rejected` or `duplicate`.
 
-Add the durable satisfied Command record alongside the existing waiter result:
-
-```diff
- type ProjectionResult struct {
-     Disposition      ObservationDisposition
-     State            *State
-     Rejection        *ObservationRejection
-     SatisfiedCommand *CommandResult
-+    SatisfiedCommandRecord *CommandRecord
- }
-```
-
-The SQLite projection constructs both values from the one committed transition. `SatisfiedCommand` continues serving the waiter; `SatisfiedCommandRecord` is the external fact projection.
+An Observation that satisfies a Command still publishes exactly its own Observation fact; the Command's `satisfied` status publishes nothing.
 
 ### 8.2 Entity events
 
@@ -374,51 +312,6 @@ Extend first-seen results with Core record time:
 ```
 
 `SQLiteRepository.RecordEntityEvent` returns the same `recordedAt` it wrote in its transaction; duplicates and identity conflicts leave it zero. `Service.RecordEntityEvent` publishes only when `Outcome == EntityEventOutcomeAccepted`, using the trusted input event, the JetStream `receivedAt` parameter and the result `RecordedAt`.
-
-### 8.3 Commands
-
-Every real durable status transition produces one fact. Persistence must report whether a transition actually changed the row:
-
-```go
-type CommandTransition struct {
-    Record  CommandRecord
-    Changed bool
-}
-```
-
-Change the ledger interface:
-
-```diff
- type CommandLedger interface {
-     CreateCommand(context.Context, CommandRecord) (CommandRecord, error)
--    MarkCommandAccepted(context.Context, CommandID, time.Time) error
--    CompleteCommand(context.Context, CommandCompletion) error
--    InterruptActiveCommands(context.Context, time.Time) error
-+    MarkCommandAccepted(context.Context, CommandID, time.Time) (CommandTransition, error)
-+    CompleteCommand(context.Context, CommandCompletion) (CommandTransition, error)
-+    InterruptActiveCommands(context.Context, time.Time) ([]CommandRecord, error)
- }
-```
-
-Rules:
-
-- `CreateCommand` returns the committed row. Publish exactly its persisted status. Immediate `entity_disabled` or `adapter_unhealthy` insertion emits one terminal fact and never invents a preceding `requested` transition.
-- `MarkCommandAccepted` returns `Changed:true` only for `requested → accepted`. An already accepted or already satisfied row returns `Changed:false` without error. Other terminal states preserve their current error classification.
-- `CompleteCommand` returns `Changed:true` only when it commits a terminal transition. Repeating the identical completion returns `Changed:false`; a conflicting completion retains `ErrCommandTerminal`.
-- Observation-driven satisfaction returns the completed `CommandRecord` through `ProjectionResult.SatisfiedCommandRecord` and does not also call `CompleteCommand`.
-- `InterruptActiveCommands` updates active rows atomically and returns every post-transition record; repeating the call returns an empty slice.
-
-Publish only transitions that report `Changed`.
-
-A fixed set of striped per-Command transition mutexes, owned by `devices.Service`, keeps facts for one Command in durable transition order. Every post-creation transition path (`MarkCommandAccepted`, completion, failure, timeout, and Observation projection carrying `RefreshForCommand`) locks the stripe before entering the transaction and holds it through fact enqueue; Command creation enqueues before spawning its worker. Hash collisions may conservatively serialize unrelated Commands, but cannot deadlock because each path acquires at most one stripe, and it acquires it before SQLite.
-
-### 8.4 Startup interruption
-
-Active Commands are interrupted even when later NATS startup fails:
-
-1. `InterruptActiveCommands` commits before either NATS connection opens, and Core retains the returned records in memory;
-2. once both connections and the dispatcher are up, Core enqueues one `interrupted` fact per retained record;
-3. if either connection cannot start, Core startup fails as today. The committed interruptions remain authoritative and their facts are lost permanently, because a later startup's interruption call returns no rows.
 
 ## 9. Connection epochs and freshness
 
@@ -475,7 +368,7 @@ The NATS dispatcher uses two stages of eligibility:
 caller/enqueue stage:
   read only the epoch tracker's cached snapshot
   never call nats.Conn methods
-  for Observation/Event require receive time >= cached LiveSince
+  require receive time >= cached LiveSince
   capture both cached generations in the queued item
 
 worker/publication stage:
@@ -486,7 +379,7 @@ worker/publication stage:
 
 The caller stage is a conservative fast filter; correctness belongs to the worker stage. A delayed disconnect callback can only queue work from a stale snapshot, which the worker's synchronous connection and generation check drops. A delayed reconnect callback leaves the cached generation old, so new work queues under the old generation and is dropped, or waits until the callback establishes the new one.
 
-Observation `ObservedAt` and Entity Event `ReceivedAt` are JetStream storage times; Adapter clocks and SDK `emitted_at` never decide fact freshness. Startup interruption facts capture both initial generations after both connections establish their epochs, and other Command transitions originate inside Core and have no JetStream receive time.
+Observation `ObservedAt` and Entity Event `ReceivedAt` are JetStream storage times; Adapter clocks and SDK `emitted_at` never decide fact freshness. Every eligible fact therefore has a JetStream receive time, because no fact family originates purely inside Core: Commands are the only Core-internal lifecycle and they publish no fact.
 
 There is no skew tolerance, because a tolerance would deliberately admit some backlog after a short outage. Hearth assumes the Core and NATS clocks used for connection and JetStream storage evidence are synchronized; if they are not, the conservative failure is a missing fact while durable history remains correct. Log a safe clock-skew diagnostic when a newly processed report is suppressed because its receive time precedes the current epoch.
 
@@ -538,7 +431,7 @@ One worker dequeues FIFO and, immediately before each single `connection.Publish
 
 The queue exists only to keep a slow socket write off authoritative devices paths; it is not a recovery buffer, and a queued item cannot survive dispatcher restart, Core restart or either NATS connection generation change. `StopAdmission` rejects new work. `Drain` publishes currently eligible queued work until empty or its context expires; on timeout, app assembly closes the dedicated fact connection to unblock a stalled write, drops the remainder and joins the worker.
 
-Errors are owned by the sink and never returned to devices. Invalid internal facts, a zero clock, and ID generation, subject, size or encoding failures log `device_fact.not_published` with `stage` and a fixed `error_code`; disconnected, draining and reconnect-buffer errors log one safe `device_fact.not_published` diagnostic and drop the fact; queue overflow logs `device_fact.not_published` with `error_code=fact_queue_full` and the current bounded counts; epoch or generation suppression logs `device_fact.suppressed` at debug with family, safe source ID and reason `not_live`, `generation_changed` or `before_epoch`. Logs never include State values, Command parameters, raw envelopes or full subjects.
+Errors are owned by the sink and never returned to devices. Invalid internal facts, a zero clock, and ID generation, subject, size or encoding failures log `device_fact.not_published` with `stage` and a fixed `error_code`; disconnected, draining and reconnect-buffer errors log one safe `device_fact.not_published` diagnostic and drop the fact; queue overflow logs `device_fact.not_published` with `error_code=fact_queue_full` and the current bounded counts; epoch or generation suppression logs `device_fact.suppressed` at debug with family, safe source ID and reason `not_live`, `generation_changed` or `before_epoch`. Logs never include State values, raw envelopes or full subjects.
 
 A slow subscriber cannot back-pressure the publisher; NATS owns subscriber pending limits and disconnect behavior.
 
@@ -547,10 +440,9 @@ A slow subscriber cannot back-pressure the publisher; NATS owns subscriber pendi
 ### 11.1 Ordering
 
 - Observation facts preserve committed Observation consumer order, and Entity Event facts preserve committed Entity Event consumer order, because each durable consumer processes one pending message at a time.
-- An Observation fact is enqueued before a satisfied Command fact committed by the same transaction.
-- Command creation is enqueued before its worker can persist acceptance or completion, and the striped per-Command sequencing from §8.3 covers persistence through enqueue, so published facts for one Command follow durable transition order, including an Observation-driven satisfaction race.
 - The single dispatcher worker publishes eligible queued messages FIFO. Drops may create gaps but never reorder the facts that remain in one dispatcher generation.
 - No global durable order exists across families, Entities or Core restarts. Fact IDs are identities, not sequence numbers, so consumers must not sort by UUID or envelope timestamp to invent a total order.
+- Command status transitions have no live order at all, because no Command fact exists; their order is the durable order of the `commands` table and the HTTP history endpoints.
 
 ### 11.2 Duplicates
 
@@ -558,21 +450,20 @@ Core sets no `Nats-Msg-Id` and promises no broker deduplication. A subscriber ca
 
 ### 11.3 Loss windows
 
-A fact is permanently lost when no subscriber is present, when the publisher connection is unavailable, reconnecting or draining, when Core crashes after SQLite commit and before publication, when ID generation, schema mapping, encoding or publication fails, when a subscriber exceeds its own pending limits or disconnects, or when epoch freshness suppresses backlog. None of these failures rolls back, reclassifies or retries the durable source record. HTTP history remains the recovery and diagnostic surface, but consumers must not turn an HTTP recovery read into automatic catch-up unless a separate future feature explicitly permits it.
+A fact is permanently lost when no subscriber is present, when the publisher connection is unavailable, reconnecting or draining, when Core crashes after SQLite commit and before publication, when ID generation, schema mapping, encoding or publication fails, when a subscriber exceeds its own pending limits or disconnects, or when epoch freshness suppresses backlog. None of these failures rolls back, reclassifies or retries the durable source record. HTTP history remains the recovery and diagnostic surface, but consumers must not turn an HTTP recovery read into automatic catch-up unless a separate future feature explicitly permits it. Command outcomes have no live fact to lose: their only surface is durable HTTP/SQLite history.
 
 ## 12. Assembly, readiness and lifecycle
 
 Startup order:
 
 1. open and migrate SQLite;
-2. interrupt active Commands and retain the transitioned records;
+2. interrupt active Commands so they remain durable `interrupted` history (no fact is produced);
 3. connect the shared ingest/request connection and the dedicated no-buffer fact connection, attach one `DeviceFactEpochs` to both connections' lifecycle callbacks, and mark each connection's initial epoch;
 4. start the bounded dispatcher;
 5. construct the devices service with the fact sink;
-6. enqueue the retained startup interruption facts;
-7. provision JetStream resources and start request/reply transports;
-8. start the Observation and Entity Event consumers;
-9. expose HTTP and readiness.
+6. provision JetStream resources and start request/reply transports;
+7. start the Observation and Entity Event consumers;
+8. expose HTTP and readiness.
 
 Readiness requires both NATS connections connected and the dispatcher active, in addition to the existing SQLite, resource and consumer checks. It does not require a subscriber, a fact stream, an empty dispatcher queue or proof that a publication was received, and it does not prove that any external subscriber is present or keeping up. A later automation feature adds its own subscription and admission checks.
 
@@ -596,7 +487,7 @@ nats sub 'hearth.v1.core.fact.entity.ent_<uuidv7>.>'
 nats sub 'hearth.v1.core.fact.entity.*.entity-event.single_press'
 ```
 
-Facts do not justify widening the current trusted-network deployment boundary. Until NATS authentication and authorization are implemented, anyone with broker access may forge a fact or read its canonical State values and Command parameters. Documentation must state that external consumers trust the broker boundary, not a cryptographic Core signature.
+Facts do not justify widening the current trusted-network deployment boundary. Until NATS authentication and authorization are implemented, anyone with broker access may forge a fact or read its canonical State values. Documentation must state that external consumers trust the broker boundary, not a cryptographic Core signature.
 
 When permissions exist, expected policy is:
 
@@ -612,10 +503,10 @@ No Adapter SDK fact consumer is added. `sdk/adapter` remains the Adapter-facing 
 
 | ID | Outcome | Effort | Depends on | Acceptance |
 |---|---|---|---|---|
-| D1 | Device Fact vocabulary, `fct_` identity, three schemas and subject builders/parsers | L | none | A1 to A3 |
-| D2 | Exact post-commit devices facts and Command transition evidence | L | D1 | A4 to A7 |
-| D3 | No-buffer NATS publisher, connection epochs, assembly, readiness and drain | L | D1,D2 | A8 to A11 |
-| D4 | External vertical slices, ADR and operator/developer documentation | L | D3 | A12 to A14 |
+| D1 | Device Fact vocabulary, `fct_` identity, two schemas and subject builders/parsers | L | none | A1 to A3 |
+| D2 | Exact post-commit Observation and Entity Event facts | L | D1 | A4 to A6 |
+| D3 | No-buffer NATS publisher, connection epochs, assembly, readiness and drain | L | D1,D2 | A7 to A10 |
+| D4 | External vertical slices, ADR and operator/developer documentation | L | D3 | A11 to A13 |
 
 ## 15. Project layout
 
@@ -624,22 +515,16 @@ contracts/v1/
 ├── common.schema.json                    # modify [D1]: fct_ identity
 ├── observation-fact.schema.json          # new [D1]: accepted Observation wire contract
 ├── entity-event-fact.schema.json         # new [D1]: accepted Entity Event wire contract
-├── command-fact.schema.json              # new [D1]: Command transition wire contract
 └── embed.go                              # modify [D1]: schema IDs and registration
 internal/contracts/v1/natswire/
 └── subjects.go                           # modify [D1]: Core Fact subjects/routes
 internal/modules/devices/
-├── model.go                              # modify [D2]: Observation correlation and satisfied record
+├── model.go                              # modify [D2]: Observation correlation
 ├── ids.go                                # modify [D1]: DeviceFactID constructors/parsers
-├── repository.go                         # modify [D2]: CommandTransition ledger returns
 ├── service.go                            # modify [D2]: optional DeviceFactSink dependency
 ├── device_facts.go                       # new [D1,D2]: fact types and sink interface
-├── observation.go                        # modify [D2]: accepted Observation and satisfaction emission
+├── observation.go                        # modify [D2]: accepted Observation emission
 ├── entity_events.go                      # modify [D2]: accepted Entity Event emission/record time
-├── command.go                            # modify [D2]: Command transition emission
-├── sqlite_observations.go                # modify [D2]: satisfied Command record result
-├── sqlite_repository.go                  # modify [D2]: exact transition reporting/interruption rows
-├── dbqueries/commands.sql                # modify [D2]: transition RETURNING queries
 └── nats/
     ├── observation.go                    # modify [D2]: Observation correlation mapping
     ├── device_fact_epochs.go             # new [D3]: generation-fenced live epochs
@@ -658,24 +543,23 @@ docs/
 specs/entity-event-automations.md         # modified [D4]: exact Entity Event Fact subject, schema and DTO names
 ```
 
-Generated `dbsqlc` output changes when Command queries change, but no migration or observation persistence column is added, and tests colocate with each owning path.
+No Command schema, Command subject, Command sink method or transition-stripe file is added, because Command lifecycle is not a fact family. Generated `dbsqlc` output is unchanged by this feature: no Command query changes for fact reporting, and no migration or Observation persistence column is added. Tests colocate with each owning path.
 
 ## 16. Acceptance criteria
 
-- **A1. Schemas.** All three strict schemas compile and are embedded. Valid fixtures pass; wrong `fct_` or source prefixes, unknown fields, illegal dispositions or statuses, invalid Command field combinations and causation mismatches fail.
+- **A1. Schemas.** Both strict schemas compile and are embedded. Valid fixtures pass; wrong `fct_` or source prefixes, unknown fields, illegal dispositions and causation mismatches fail.
 - **A2. Subjects.** Builders and parser round-trip every family and variant, reject wrong token counts, wildcards, unsafe variants, unknown families and noncanonical Entity IDs, and reject subject and payload disagreement.
 - **A3. Identity.** `NewDeviceFactID` mints canonical UUIDv7 values; parsing rejects other prefixes, UUID versions, variants, uppercase and malformed values.
 - **A4. Observation facts.** First-seen applied and unchanged Observations publish the normalized committed value exactly once, with correct correlation and timestamps; rejected and duplicate Observations publish none.
 - **A5. Entity event facts.** Only first-seen accepted events publish; rejected, duplicate and identity-conflict outcomes publish none; `recorded_at` equals the value committed to SQLite.
-- **A6. Command facts.** Requested, accepted, every normal terminal status and interrupted each publish exactly once per real transition. Immediate terminal creation emits no synthetic requested fact, and repeated or racing no-op transitions emit none.
-- **A7. Commit ordering.** Injected repository or commit failures produce no fact. Observation-driven satisfaction enqueues Observation evidence before the Command transition, preserves existing waiter behavior, and a barrier-controlled acceptance/satisfaction race cannot publish statuses out of durable order.
-- **A8. Dispatcher.** Each typed fact maps to the exact subject and a schema-valid payload, mints a unique `fct_` ID, carries source correlation and causation, injects trace headers, omits `Nats-Msg-Id`, and receives at most one plain publish attempt. Sink methods never call `nats.Conn`; a worker stalled while holding the NATS connection mutex cannot delay Command dispatch, Command waiter notification or durable consumer acknowledgement; queue overflow drops safely.
-- **A9. Epochs.** Initial connection, ingest disconnect/reconnect and publisher disconnect/reconnect deterministically advance the combined live epoch. Reports before the boundary are suppressed and reports at or after it are eligible; Commands require both connections live; a reconnect-generation mismatch suppresses facts even when reconnect callbacks are deliberately delayed.
-- **A10. No buffering.** With real `nats.go v1.53.1`, a fact publication during publisher reconnect fails and is never observed after reconnect, and existing shared-connection retry and buffering behavior stays unchanged.
-- **A11. Lifecycle.** Readiness requires both connections and an active dispatcher but no subscriber. Shutdown keeps the dispatcher available through Command completion and durable-consumer drain, then drains or safely aborts its bounded queue without leaking a goroutine.
-- **A12. External vertical slice.** A real SDK Observation, Entity Event and HTTP Command lifecycle produce schema-valid facts observable by a plain NATS subscriber while their authoritative HTTP and SQLite records agree.
-- **A13. No catch-up.** Reports broker-acknowledged before Core startup or during either connection outage later enter durable history but emit no Device Fact, and a subsequent live report emits one; no fact stream or replay resource is provisioned.
-- **A14. Delivery.** The README subscription recipe works; the ADR, architecture, logging and glossary state the at-most-once, loss and security semantics; `mise run validate` and generation checks pass.
+- **A6. Commit ordering.** Injected repository or commit failures produce no fact, and publication happens only after the owning transaction commits. No Command status transition, including startup interruption, produces a fact.
+- **A7. Dispatcher.** Each typed fact maps to the exact subject and a schema-valid payload, mints a unique `fct_` ID, carries source correlation and causation, injects trace headers, omits `Nats-Msg-Id`, and receives at most one plain publish attempt. Sink methods never call `nats.Conn`; a worker stalled while holding the NATS connection mutex cannot delay Command dispatch, Command waiter notification or durable consumer acknowledgement; queue overflow drops safely.
+- **A8. Epochs.** Initial connection, ingest disconnect/reconnect and publisher disconnect/reconnect deterministically advance the combined live epoch. Reports before the boundary are suppressed and reports at or after it are eligible; a reconnect-generation mismatch suppresses facts even when reconnect callbacks are deliberately delayed.
+- **A9. No buffering.** With real `nats.go v1.53.1`, a fact publication during publisher reconnect fails and is never observed after reconnect, and existing shared-connection retry and buffering behavior stays unchanged.
+- **A10. Lifecycle.** Readiness requires both connections and an active dispatcher but no subscriber. Shutdown keeps the dispatcher available through Command completion and durable-consumer drain, then drains or safely aborts its bounded queue without leaking a goroutine.
+- **A11. External vertical slice.** A real SDK Observation, Entity Event and HTTP Command lifecycle produce schema-valid Observation and Entity Event facts observable by a plain NATS subscriber while their authoritative HTTP and SQLite records agree; the Command lifecycle itself produces no fact.
+- **A12. No catch-up.** Reports broker-acknowledged before Core startup or during either connection outage later enter durable history but emit no Device Fact, and a subsequent live report emits one; no fact stream or replay resource is provisioned.
+- **A13. Delivery.** The README subscription recipe works; the ADR, architecture, logging and glossary state the at-most-once, loss and security semantics; `mise run validate` and generation checks pass.
 
 ## 17. Test strategy
 
@@ -683,12 +567,12 @@ Generated `dbsqlc` output changes when Command queries change, but no migration 
 |---|---|---|
 | Contract | schemas, IDs, subject grammar | fixtures, table tests and existing NATS wire fuzz harness |
 | Devices unit | fact eligibility and ordering | recording sink plus repository fault doubles |
-| SQLite | exact Command transitions and event record time | real single-connection SQLite transaction tests |
+| SQLite | accepted Observation and Entity Event record time | real single-connection SQLite transaction tests |
 | NATS transport | mapping, queue bounds, generations, epochs, no reconnect buffer, stalled writer and loss | embedded NATS, injected clock/IDs and lifecycle callbacks |
-| Assembly | readiness, startup interruption and drain | existing hearthd integration harness and synchronization barriers |
+| Assembly | readiness and drain | existing hearthd integration harness and synchronization barriers |
 | Vertical slice | SDK/HTTP → SQLite → external fact subscriber | embedded NATS and real SQLite; no sleeps as correctness oracles |
 
-Mutation-resistant tests must fail if any accepted-only guard, transition `Changed` guard, post-commit placement, epoch comparison, reconnect-buffer option, subject/payload check or Command schema invariant is removed.
+Mutation-resistant tests must fail if any accepted-only guard, post-commit placement, epoch comparison, reconnect-buffer option or subject/payload check is removed.
 
 ## 18. Risks and mitigations
 
@@ -697,7 +581,7 @@ Mutation-resistant tests must fail if any accepted-only guard, transition `Chang
 | Commit-to-publish crash window loses a fact | missed notification or Automation Trigger | explicit at-most-once contract; durable HTTP history remains truthful; no automatic catch-up |
 | Core/NATS clock disagreement suppresses a new report | missed fact | use only Core and NATS receive evidence, log safe skew diagnostics, document clock synchronization requirement |
 | Separate fact connection and dispatcher increase lifecycle complexity | startup/readiness/drain defects | one app-owned generation-fenced epoch tracker, one bounded worker, focused reconnect and shutdown integration tests |
-| Command transition races emit duplicates | external lifecycle becomes untruthful | repository returns `CommandTransition.Changed`; publish only changed transitions |
+| Consumers expect Command lifecycle on the fact surface | missing external Command state | docs, schemas and glossary state that Command status transitions have no live fact and durable HTTP/SQLite history is authoritative |
 | External clients treat facts as authoritative history | incomplete downstream state | schemas and docs state notification semantics; HTTP and SQLite remain authoritative |
 | Broker access permits fact forgery or disclosure | unintended actions or data exposure | preserve the trusted-network boundary and reserve the Core namespace for future publish ACLs |
 | High Observation volume or stalled NATS writer fills the local queue | dropped facts | fixed message and byte bounds, nonblocking enqueue, safe overflow diagnostics; subscribers filter `observation.applied` |
@@ -709,10 +593,10 @@ Mutation-resistant tests must fail if any accepted-only guard, transition `Chang
 | External Core NATS facts | in-process callbacks | one contract serves automations and external consumers without devices importing either |
 | Plain NATS, with no persisted fact state | JetStream, an outbox or publication metadata | live-only delivery is required, durability already lives in SQLite and the inbound streams, and facts are never reconstructed or replayed |
 | Entity-first subjects | family-first subjects | the canonical Entity is the stable routing identity, and one Entity subscription covers every family |
-| Variant in subject and payload | payload-only routing | NATS subscribers filter event names, dispositions and statuses without decoding unrelated messages |
-| A new `fct_` identity | the source ID as envelope ID | each Command transition is a distinct message while source identity stays explicit |
-| Three schemas and sink methods | one generic union | invalid family and data combinations stay unrepresentable, and consumers validate only their family |
-| Every Command transition | terminal-only facts | external consumers receive the complete durable lifecycle instead of a selectively lossy projection |
+| Variant in subject and payload | payload-only routing | NATS subscribers filter event names and dispositions without decoding unrelated messages |
+| A new `fct_` identity | the source ID as envelope ID | each accepted Observation or Entity Event publication is a distinct message while source identity stays explicit |
+| Two schemas and sink methods | one generic union | invalid family and data combinations stay unrepresentable, and consumers validate only their family |
+| Observation and Entity Event families only | a Command lifecycle family | accepted State and event evidence is Core-verified data, while Command status already has an authoritative durable HTTP/SQLite history and Observations are not its substitute |
 | Combined connection epochs | a fixed age window | no arbitrary TTL and no Adapter-clock dependency, and slow live processing stays eligible while outage backlog is suppressed |
 | A separate no-buffer connection | disabling shared buffering | fact reconnect behavior changes without regressing existing Command and request/reply recovery |
 | One bounded dispatcher worker | synchronous NATS writes on devices paths | socket stalls cannot consume Command deadlines or delay durable acknowledgements, and the generation checks keep the queue from becoming recovery storage |
@@ -724,6 +608,7 @@ The foundation is complete when:
 1. external clients can subscribe to stable, schema-valid Core facts without consuming Adapter input;
 2. a fact publication failure cannot change durable device behavior, and only the fact connection itself can affect readiness;
 3. Core and connection outages never replay retained Observation or Entity Event history as facts;
-4. the Entity Event automation spec carries the implemented Entity Event Fact subject, schema and DTO names without any change to the Device Facts module.
+4. Command lifecycle is exposed only through durable HTTP/SQLite history, with no Command fact, subject or schema anywhere, and Observations are not treated as its substitute;
+5. the Entity Event automation spec carries the implemented Entity Event Fact subject, schema and DTO names without any change to the Device Facts module.
 
 No open implementation questions remain. Any expansion to additional fact families requires a separate reviewed change.

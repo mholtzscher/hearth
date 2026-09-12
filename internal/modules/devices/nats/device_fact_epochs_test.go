@@ -17,8 +17,6 @@ const (
 	deviceFactTestObservationID = "obs_01890f47-7a6b-7c4d-8e9f-0123456789ab"
 	// deviceFactTestEventID is a canonical Entity Event identity.
 	deviceFactTestEventID = "evt_01890f47-7a6b-7c4d-8e9f-0123456789ab"
-	// deviceFactTestCommandID is a canonical Command identity.
-	deviceFactTestCommandID = "cmd_01890f47-7a6b-7c4d-8e9f-0123456789ab"
 )
 
 // startDeviceFactServer starts one plain NATS server on the requested port; -1

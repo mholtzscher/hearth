@@ -54,7 +54,7 @@ An accepted Entity Event changes no State or Command. It only establishes a dura
 
 The foundation owns all cross-module and external delivery decisions, including:
 
-- versioned, strict contracts for accepted Observations, accepted Entity Events and durable Command status transitions;
+- versioned, strict contracts for accepted Observations and accepted Entity Events;
 - an external Core-originated NATS subject namespace distinct from Adapter input subjects;
 - publication only after the devices-owned SQLite transaction establishing the fact commits;
 - plain Core NATS pub/sub, not JetStream: no acknowledgement, retry, persistence, offset, replay or catch-up;
@@ -64,7 +64,7 @@ The foundation owns all cross-module and external delivery decisions, including:
 - no reconnect buffering that can publish a fact acquired while the fact transport was disconnected;
 - the rule that durable HTTP/SQLite records remain authoritative and a missing Device Fact proves nothing;
 - application wiring and documentation for trusted external subscribers;
-- emission hooks for all three agreed fact families, even though this automation slice consumes only accepted Entity Event facts.
+- emission hooks for both agreed fact families, even though this automation slice consumes only accepted Entity Event facts.
 
 The implemented `devices.EntityEventFact` DTO, delivered by `devices.DeviceFactSink.EntityEventAccepted`, gives automations:
 
@@ -372,12 +372,12 @@ List responses omit full snapshots and Steps. Collections use existing keyset co
 
 ## 9. Lifecycle
 
-Preserve the Device Facts foundation's startup ordering, including interruption of active Commands before either NATS connection attempt. Insert automation work at these points:
+Preserve the Device Facts foundation's startup ordering, including interruption of active Commands into durable history before either NATS connection attempt. Insert automation work at these points:
 
-1. open/migrate SQLite and interrupt active Commands as required by Device Facts;
+1. open/migrate SQLite and interrupt active Commands into durable history as required by Device Facts;
 2. interrupt active Automation Runs before either NATS connection attempt;
 3. establish the shared and dedicated Device Fact connections, `devicesnats.DeviceFactEpochs` and `devicesnats.DeviceFactDispatcher`;
-4. construct devices and automation services and enqueue retained Command interruption facts;
+4. construct the devices and automation services;
 5. provision JetStream resources and start request/reply transports;
 6. start and flush the automation Entity Event fact subscription;
 7. start durable Observation and Entity Event consumers;

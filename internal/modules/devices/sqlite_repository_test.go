@@ -912,21 +912,11 @@ func TestCommandLedgerTransitionsAreMonotonicAndIdempotent(t *testing.T) {
 		t.Fatal(err)
 	}
 	acceptedAt := requestedAt.Add(time.Second)
-	acceptance, acceptErr := repository.MarkCommandAccepted(ctx, command.ID, acceptedAt)
-	if acceptErr != nil {
-		t.Fatal(acceptErr)
+	if err := repository.MarkCommandAccepted(ctx, command.ID, acceptedAt); err != nil {
+		t.Fatal(err)
 	}
-	if !acceptance.Changed || acceptance.Record.Status != CommandStatusAccepted ||
-		acceptance.Record.AcceptedAt == nil || !acceptance.Record.AcceptedAt.Equal(acceptedAt) {
-		t.Fatalf("acceptance transition = %#v", acceptance)
-	}
-	repeat, repeatErr := repository.MarkCommandAccepted(ctx, command.ID, acceptedAt.Add(time.Second))
-	if repeatErr != nil {
-		t.Fatal(repeatErr)
-	}
-	if repeat.Changed || repeat.Record.Status != CommandStatusAccepted ||
-		repeat.Record.AcceptedAt == nil || !repeat.Record.AcceptedAt.Equal(acceptedAt) {
-		t.Fatalf("repeated acceptance transition = %#v", repeat)
+	if err := repository.MarkCommandAccepted(ctx, command.ID, acceptedAt.Add(time.Second)); err != nil {
+		t.Fatal(err)
 	}
 	stored, lookupErr := repository.GetCommand(ctx, command.ID)
 	if lookupErr != nil {
@@ -940,31 +930,19 @@ func TestCommandLedgerTransitionsAreMonotonicAndIdempotent(t *testing.T) {
 		ID: command.ID, Status: CommandStatusRejected, CompletedAt: completedAt,
 		FailureCode: CommandFailureUpstreamRejected,
 	}
-	completionTransition, completionErr := repository.CompleteCommand(ctx, completion)
-	if completionErr != nil {
-		t.Fatal(completionErr)
+	if err := repository.CompleteCommand(ctx, completion); err != nil {
+		t.Fatal(err)
 	}
-	if !completionTransition.Changed || completionTransition.Record.Status != CommandStatusRejected ||
-		completionTransition.Record.CompletedAt == nil ||
-		!completionTransition.Record.CompletedAt.Equal(completedAt) ||
-		completionTransition.Record.FailureCode == nil ||
-		*completionTransition.Record.FailureCode != CommandFailureUpstreamRejected {
-		t.Fatalf("completion transition = %#v", completionTransition)
+	if err := repository.CompleteCommand(ctx, completion); err != nil {
+		t.Fatalf("repeat completion: %v", err)
 	}
-	repeatedCompletion, repeatedCompletionErr := repository.CompleteCommand(ctx, completion)
-	if repeatedCompletionErr != nil {
-		t.Fatalf("repeat completion: %v", repeatedCompletionErr)
-	}
-	if repeatedCompletion.Changed || repeatedCompletion.Record.Status != CommandStatusRejected {
-		t.Fatalf("repeated completion transition = %#v", repeatedCompletion)
-	}
-	if _, err := repository.MarkCommandAccepted(ctx, command.ID, completedAt); !errors.Is(err, ErrCommandTerminal) {
+	if err := repository.MarkCommandAccepted(ctx, command.ID, completedAt); !errors.Is(err, ErrCommandTerminal) {
 		t.Fatalf("accept terminal command error = %v", err)
 	}
 	conflicting := completion
 	conflicting.Status = CommandStatusOutcomeTimeout
 	conflicting.FailureCode = CommandFailureOutcomeTimeout
-	if _, err := repository.CompleteCommand(ctx, conflicting); !errors.Is(err, ErrCommandTerminal) {
+	if err := repository.CompleteCommand(ctx, conflicting); !errors.Is(err, ErrCommandTerminal) {
 		t.Fatalf("conflicting completion error = %v", err)
 	}
 
@@ -983,13 +961,8 @@ func TestCommandLedgerTransitionsAreMonotonicAndIdempotent(t *testing.T) {
 		WHERE id = ?`, formatTime(satisfiedAt), observationID, satisfied.ID); err != nil {
 		t.Fatal(err)
 	}
-	if satisfiedAcceptance, satisfiedAcceptErr := repository.MarkCommandAccepted(
-		ctx, satisfied.ID, satisfiedAt.Add(time.Second),
-	); satisfiedAcceptErr != nil {
-		t.Fatalf("accept after linked outcome: %v", satisfiedAcceptErr)
-	} else if satisfiedAcceptance.Changed ||
-		satisfiedAcceptance.Record.Status != CommandStatusSatisfied {
-		t.Fatalf("satisfied acceptance transition = %#v", satisfiedAcceptance)
+	if err := repository.MarkCommandAccepted(ctx, satisfied.ID, satisfiedAt.Add(time.Second)); err != nil {
+		t.Fatalf("accept after linked outcome: %v", err)
 	}
 	storedSatisfied, lookupErr := repository.GetCommand(ctx, satisfied.ID)
 	if lookupErr != nil {
@@ -1007,15 +980,11 @@ func TestCommandLedgerTransitionsAreMonotonicAndIdempotent(t *testing.T) {
 	if _, err := repository.CreateCommand(ctx, accepted); err != nil {
 		t.Fatal(err)
 	}
-	if acceptedAcceptance, acceptedAcceptErr := repository.MarkCommandAccepted(
-		ctx, accepted.ID, accepted.RequestedAt.Add(time.Second),
-	); acceptedAcceptErr != nil {
-		t.Fatal(acceptedAcceptErr)
-	} else if !acceptedAcceptance.Changed {
-		t.Fatalf("acceptance transition = %#v", acceptedAcceptance)
+	if err := repository.MarkCommandAccepted(ctx, accepted.ID, accepted.RequestedAt.Add(time.Second)); err != nil {
+		t.Fatal(err)
 	}
 	restartedAt := requestedAt.Add(3 * time.Minute)
-	if _, err := repository.CompleteCommand(ctx, CommandCompletion{
+	if err := repository.CompleteCommand(ctx, CommandCompletion{
 		ID: requested.ID, Status: CommandStatusInterrupted, CompletedAt: restartedAt,
 		FailureCode: CommandFailureCoreRestarted,
 	}); err == nil {
@@ -1028,46 +997,21 @@ func TestCommandLedgerTransitionsAreMonotonicAndIdempotent(t *testing.T) {
 	if stillRequested.Status != CommandStatusRequested {
 		t.Fatalf("rejected per-command interruption changed status to %q", stillRequested.Status)
 	}
-	interrupted, interruptErr := repository.InterruptActiveCommands(ctx, restartedAt)
-	if interruptErr != nil {
-		t.Fatal(interruptErr)
+	if err := repository.InterruptActiveCommands(ctx, restartedAt); err != nil {
+		t.Fatal(err)
 	}
-	if len(interrupted) != 2 {
-		t.Fatalf("interrupted records = %#v, want two", interrupted)
-	}
-	interruptedByID := make(map[CommandID]CommandRecord, len(interrupted))
-	for _, record := range interrupted {
-		interruptedByID[record.ID] = record
+	if err := repository.InterruptActiveCommands(ctx, restartedAt.Add(time.Second)); err != nil {
+		t.Fatalf("repeat interruption: %v", err)
 	}
 	for _, id := range []CommandID{requested.ID, accepted.ID} {
-		record, ok := interruptedByID[id]
-		if !ok {
-			t.Fatalf("interrupted records = %#v, want %s", interrupted, id)
-		}
-		if record.Status != CommandStatusInterrupted || record.FailureCode == nil ||
-			*record.FailureCode != CommandFailureCoreRestarted || record.CompletedAt == nil ||
-			!record.CompletedAt.Equal(restartedAt) {
-			t.Fatalf("interrupted record = %#v", record)
-		}
-	}
-	repeated, repeatedInterruptErr := repository.InterruptActiveCommands(
-		ctx, restartedAt.Add(time.Second),
-	)
-	if repeatedInterruptErr != nil {
-		t.Fatalf("repeat interruption: %v", repeatedInterruptErr)
-	}
-	if len(repeated) != 0 {
-		t.Fatalf("repeated interruption records = %#v, want none", repeated)
-	}
-	for _, id := range []CommandID{requested.ID, accepted.ID} {
-		committed, interruptedErr := repository.GetCommand(ctx, id)
+		interrupted, interruptedErr := repository.GetCommand(ctx, id)
 		if interruptedErr != nil {
 			t.Fatal(interruptedErr)
 		}
-		if committed.Status != CommandStatusInterrupted || committed.FailureCode == nil ||
-			*committed.FailureCode != CommandFailureCoreRestarted || committed.CompletedAt == nil ||
-			!committed.CompletedAt.Equal(restartedAt) {
-			t.Fatalf("interrupted command = %#v", committed)
+		if interrupted.Status != CommandStatusInterrupted || interrupted.FailureCode == nil ||
+			*interrupted.FailureCode != CommandFailureCoreRestarted || interrupted.CompletedAt == nil ||
+			!interrupted.CompletedAt.Equal(restartedAt) {
+			t.Fatalf("interrupted command = %#v", interrupted)
 		}
 	}
 }
@@ -1094,31 +1038,23 @@ func TestDispatchedCommandPersistsWithoutFailureCodeOrObservation(t *testing.T) 
 		t.Fatal(err)
 	}
 	completedAt := requestedAt.Add(2 * time.Second)
-	if _, err := repository.CompleteCommand(ctx, CommandCompletion{
+	if err := repository.CompleteCommand(ctx, CommandCompletion{
 		ID: command.ID, Status: CommandStatusDispatched, CompletedAt: time.Time{},
 	}); err == nil {
 		t.Fatal("dispatched completion without completed_at unexpectedly accepted")
 	}
-	if _, err := repository.CompleteCommand(ctx, CommandCompletion{
+	if err := repository.CompleteCommand(ctx, CommandCompletion{
 		ID: command.ID, Status: CommandStatusDispatched, CompletedAt: completedAt,
 		FailureCode: CommandFailureUpstreamRejected,
 	}); err == nil {
 		t.Fatal("dispatched completion with failure code unexpectedly accepted")
 	}
 	completion := CommandCompletion{ID: command.ID, Status: CommandStatusDispatched, CompletedAt: completedAt}
-	dispatched, dispatchedErr := repository.CompleteCommand(ctx, completion)
-	if dispatchedErr != nil {
-		t.Fatal(dispatchedErr)
+	if err := repository.CompleteCommand(ctx, completion); err != nil {
+		t.Fatal(err)
 	}
-	if !dispatched.Changed || dispatched.Record.Status != CommandStatusDispatched {
-		t.Fatalf("dispatched transition = %#v", dispatched)
-	}
-	repeated, repeatedErr := repository.CompleteCommand(ctx, completion)
-	if repeatedErr != nil {
-		t.Fatalf("repeat dispatched completion: %v", repeatedErr)
-	}
-	if repeated.Changed || repeated.Record.Status != CommandStatusDispatched {
-		t.Fatalf("repeated dispatched transition = %#v", repeated)
+	if err := repository.CompleteCommand(ctx, completion); err != nil {
+		t.Fatalf("repeat dispatched completion: %v", err)
 	}
 	stored, lookupErr := repository.GetCommand(ctx, command.ID)
 	if lookupErr != nil {
@@ -1142,7 +1078,7 @@ func TestDispatchedCommandPersistsWithoutFailureCodeOrObservation(t *testing.T) 
 	conflicting := completion
 	conflicting.Status = CommandStatusOutcomeTimeout
 	conflicting.FailureCode = CommandFailureOutcomeTimeout
-	if _, err := repository.CompleteCommand(ctx, conflicting); !errors.Is(err, ErrCommandTerminal) {
+	if err := repository.CompleteCommand(ctx, conflicting); !errors.Is(err, ErrCommandTerminal) {
 		t.Fatalf("conflicting dispatched completion error = %v", err)
 	}
 }

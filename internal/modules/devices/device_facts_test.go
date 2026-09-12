@@ -17,19 +17,17 @@ const (
 	factTestEntityID      = "ent_01890f47-7a6b-7c4d-8e9f-0123456789ab"
 	factTestObservationID = "obs_01890f47-7a6b-7c4d-8e9f-0123456789ab"
 	factTestEventID       = "evt_01890f47-7a6b-7c4d-8e9f-0123456789ab"
-	factTestCommandID     = "cmd_01890f47-7a6b-7c4d-8e9f-0123456789ab"
 	factTestCorrelationID = "cor_01890f47-7a6b-7c4d-8e9f-0123456789ab"
 )
 
 // TestDeviceFactFamiliesMatchEmbeddedSchemas proves the subject family token is
-// exactly the family of the embedded strict schema, and that no fourth fact
+// exactly the family of the embedded strict schema, and that no extra fact
 // schema exists without a subject family.
 func TestDeviceFactFamiliesMatchEmbeddedSchemas(t *testing.T) {
 	t.Parallel()
 	families := []natswire.DeviceFactFamily{
 		natswire.DeviceFactFamilyObservation,
 		natswire.DeviceFactFamilyEntityEvent,
-		natswire.DeviceFactFamilyCommand,
 	}
 	files := contractsv1.SchemaFiles()
 	factSchemas := 0
@@ -54,7 +52,6 @@ func TestDeviceFactFamiliesMatchEmbeddedSchemas(t *testing.T) {
 // vocabulary, so drift in any of the three fails here.
 func TestDeviceFactVocabularyMatchesSchemasAndDomain(t *testing.T) {
 	t.Parallel()
-	commandDocument := embeddedSchemaDocument(t, contractsv1.CommandFactSchemaID)
 	assertSameStringSet(
 		t,
 		"Observation fact dispositions",
@@ -62,51 +59,6 @@ func TestDeviceFactVocabularyMatchesSchemasAndDomain(t *testing.T) {
 		[]string{natswire.ObservationFactApplied, natswire.ObservationFactUnchanged},
 		schemaEnum(t, embeddedSchemaDocument(t, contractsv1.ObservationFactSchemaID),
 			"properties", "data", "properties", "disposition", "enum"),
-	)
-	assertSameStringSet(
-		t,
-		"Command fact statuses",
-		[]string{
-			string(devices.CommandStatusRequested),
-			string(devices.CommandStatusAccepted),
-			string(devices.CommandStatusSatisfied),
-			string(devices.CommandStatusDispatched),
-			string(devices.CommandStatusRejected),
-			string(devices.CommandStatusAdapterUnhealthy),
-			string(devices.CommandStatusEntityUnavailable),
-			string(devices.CommandStatusOutcomeTimeout),
-			string(devices.CommandStatusEntityDisabled),
-			string(devices.CommandStatusInternalFailure),
-			string(devices.CommandStatusInterrupted),
-		},
-		[]string{
-			natswire.CommandFactRequested,
-			natswire.CommandFactAccepted,
-			natswire.CommandFactSatisfied,
-			natswire.CommandFactDispatched,
-			natswire.CommandFactRejected,
-			natswire.CommandFactAdapterUnhealthy,
-			natswire.CommandFactEntityUnavailable,
-			natswire.CommandFactOutcomeTimeout,
-			natswire.CommandFactEntityDisabled,
-			natswire.CommandFactInternalFailure,
-			natswire.CommandFactInterrupted,
-		},
-		schemaEnum(t, commandDocument, "properties", "data", "properties", "status", "enum"),
-	)
-	assertSameStringSet(
-		t,
-		"Command fact failure codes",
-		[]string{
-			string(devices.CommandFailureAdapterUnhealthy),
-			string(devices.CommandFailureEntityUnavailable),
-			string(devices.CommandFailureUpstreamRejected),
-			string(devices.CommandFailureOutcomeTimeout),
-			string(devices.CommandFailureEntityDisabled),
-			string(devices.CommandFailureInternalError),
-			string(devices.CommandFailureCoreRestarted),
-		},
-		schemaEnum(t, commandDocument, "properties", "data", "properties", "failure_code", "enum"),
 	)
 }
 
@@ -124,7 +76,7 @@ type deviceFactAgreementCase struct {
 
 // TestDeviceFactSubjectsAgreeWithSchemaPayloads connects the subject a
 // subscriber receives to the payload it validates, using the devices domain
-// values that D2 will publish.
+// values the dispatcher publishes.
 func TestDeviceFactSubjectsAgreeWithSchemaPayloads(t *testing.T) {
 	t.Parallel()
 	validator, err := contractsv1.Compile()
@@ -232,25 +184,6 @@ func deviceFactAgreementCases() []deviceFactAgreementCase {
 				"recorded_at": "2026-08-20T12:34:56Z",
 			}),
 		},
-		{
-			name:         "satisfied command",
-			entityID:     factTestEntityID,
-			family:       natswire.DeviceFactFamilyCommand,
-			variant:      string(devices.CommandStatusSatisfied),
-			variantField: "status",
-			schemaID:     contractsv1.CommandFactSchemaID,
-			payload: commandFactPayload(map[string]any{
-				"command_id":             factTestCommandID,
-				"entity_id":              factTestEntityID,
-				"operation":              "set",
-				"parameters":             map[string]any{"value": true},
-				"status":                 string(devices.CommandStatusSatisfied),
-				"requested_at":           "2026-08-20T12:34:56Z",
-				"deadline_at":            "2026-08-20T12:35:06Z",
-				"completed_at":           "2026-08-20T12:35:00Z",
-				"outcome_observation_id": factTestObservationID,
-			}),
-		},
 	}
 }
 
@@ -260,8 +193,6 @@ func buildDeviceFactSubject(entityID string, family natswire.DeviceFactFamily, v
 		return natswire.ObservationFactSubject(entityID, variant)
 	case natswire.DeviceFactFamilyEntityEvent:
 		return natswire.EntityEventFactSubject(entityID, variant)
-	case natswire.DeviceFactFamilyCommand:
-		return natswire.CommandFactSubject(entityID, variant)
 	}
 	return "", errors.New("unexpected Device Fact family")
 }
@@ -328,10 +259,6 @@ func observationFactPayload(data map[string]any) map[string]any {
 
 func entityEventFactPayload(data map[string]any) map[string]any {
 	return factTestEnvelope(contractsv1.EntityEventFactSchemaID, factTestEventID, data)
-}
-
-func commandFactPayload(data map[string]any) map[string]any {
-	return factTestEnvelope(contractsv1.CommandFactSchemaID, factTestCommandID, data)
 }
 
 func factTestEnvelope(schemaID, causationID string, data map[string]any) map[string]any {

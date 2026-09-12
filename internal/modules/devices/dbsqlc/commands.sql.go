@@ -10,13 +10,10 @@ import (
 	"database/sql"
 )
 
-const completeCommand = `-- name: CompleteCommand :one
+const completeCommand = `-- name: CompleteCommand :execrows
 UPDATE commands
 SET status = ?, completed_at = ?, failure_code = ?
 WHERE id = ? AND status IN ('requested', 'accepted')
-RETURNING id, entity_id, adapter_id, runtime_id, operation, parameters_json,
-          correlation_id, status, requested_at, deadline_at, accepted_at,
-          completed_at, outcome_observation_id, failure_code
 `
 
 type CompleteCommandParams struct {
@@ -26,31 +23,17 @@ type CompleteCommandParams struct {
 	ID          string
 }
 
-func (q *Queries) CompleteCommand(ctx context.Context, arg CompleteCommandParams) (Command, error) {
-	row := q.db.QueryRowContext(ctx, completeCommand,
+func (q *Queries) CompleteCommand(ctx context.Context, arg CompleteCommandParams) (int64, error) {
+	result, err := q.db.ExecContext(ctx, completeCommand,
 		arg.Status,
 		arg.CompletedAt,
 		arg.FailureCode,
 		arg.ID,
 	)
-	var i Command
-	err := row.Scan(
-		&i.ID,
-		&i.EntityID,
-		&i.AdapterID,
-		&i.RuntimeID,
-		&i.Operation,
-		&i.ParametersJson,
-		&i.CorrelationID,
-		&i.Status,
-		&i.RequestedAt,
-		&i.DeadlineAt,
-		&i.AcceptedAt,
-		&i.CompletedAt,
-		&i.OutcomeObservationID,
-		&i.FailureCode,
-	)
-	return i, err
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
 }
 
 const createCommand = `-- name: CreateCommand :exec
@@ -132,58 +115,22 @@ func (q *Queries) GetCommand(ctx context.Context, arg GetCommandParams) (Command
 	return i, err
 }
 
-const interruptActiveCommands = `-- name: InterruptActiveCommands :many
+const interruptActiveCommands = `-- name: InterruptActiveCommands :execrows
 UPDATE commands
 SET status = 'interrupted', completed_at = ?, failure_code = 'core_restarted'
 WHERE status IN ('requested', 'accepted')
-RETURNING id, entity_id, adapter_id, runtime_id, operation, parameters_json,
-          correlation_id, status, requested_at, deadline_at, accepted_at,
-          completed_at, outcome_observation_id, failure_code
 `
 
 type InterruptActiveCommandsParams struct {
 	CompletedAt sql.NullString
 }
 
-// InterruptActiveCommands commits one interruption of every active row and
-// returns each post-transition record. Repeating the call matches no active
-// row and returns an empty slice.
-func (q *Queries) InterruptActiveCommands(ctx context.Context, arg InterruptActiveCommandsParams) ([]Command, error) {
-	rows, err := q.db.QueryContext(ctx, interruptActiveCommands, arg.CompletedAt)
+func (q *Queries) InterruptActiveCommands(ctx context.Context, arg InterruptActiveCommandsParams) (int64, error) {
+	result, err := q.db.ExecContext(ctx, interruptActiveCommands, arg.CompletedAt)
 	if err != nil {
-		return nil, err
+		return 0, err
 	}
-	defer rows.Close()
-	var items []Command
-	for rows.Next() {
-		var i Command
-		if err := rows.Scan(
-			&i.ID,
-			&i.EntityID,
-			&i.AdapterID,
-			&i.RuntimeID,
-			&i.Operation,
-			&i.ParametersJson,
-			&i.CorrelationID,
-			&i.Status,
-			&i.RequestedAt,
-			&i.DeadlineAt,
-			&i.AcceptedAt,
-			&i.CompletedAt,
-			&i.OutcomeObservationID,
-			&i.FailureCode,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Close(); err != nil {
-		return nil, err
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
+	return result.RowsAffected()
 }
 
 const listEntityCommandsAfter = `-- name: ListEntityCommandsAfter :many
@@ -302,14 +249,11 @@ func (q *Queries) ListEntityCommandsFirstPage(ctx context.Context, arg ListEntit
 	return items, nil
 }
 
-const markCommandAccepted = `-- name: MarkCommandAccepted :one
+const markCommandAccepted = `-- name: MarkCommandAccepted :execrows
 UPDATE commands
 SET accepted_at = COALESCE(accepted_at, ?),
     status = CASE WHEN status = 'requested' THEN 'accepted' ELSE status END
 WHERE id = ? AND status IN ('requested', 'accepted', 'satisfied')
-RETURNING id, entity_id, adapter_id, runtime_id, operation, parameters_json,
-          correlation_id, status, requested_at, deadline_at, accepted_at,
-          completed_at, outcome_observation_id, failure_code
 `
 
 type MarkCommandAcceptedParams struct {
@@ -317,32 +261,15 @@ type MarkCommandAcceptedParams struct {
 	ID         string
 }
 
-// MarkCommandAccepted commits one acceptance write and returns the committed
-// row. Callers read the prior row in the same transaction to classify the
-// transition: only requested -> accepted is a real transition.
-func (q *Queries) MarkCommandAccepted(ctx context.Context, arg MarkCommandAcceptedParams) (Command, error) {
-	row := q.db.QueryRowContext(ctx, markCommandAccepted, arg.AcceptedAt, arg.ID)
-	var i Command
-	err := row.Scan(
-		&i.ID,
-		&i.EntityID,
-		&i.AdapterID,
-		&i.RuntimeID,
-		&i.Operation,
-		&i.ParametersJson,
-		&i.CorrelationID,
-		&i.Status,
-		&i.RequestedAt,
-		&i.DeadlineAt,
-		&i.AcceptedAt,
-		&i.CompletedAt,
-		&i.OutcomeObservationID,
-		&i.FailureCode,
-	)
-	return i, err
+func (q *Queries) MarkCommandAccepted(ctx context.Context, arg MarkCommandAcceptedParams) (int64, error) {
+	result, err := q.db.ExecContext(ctx, markCommandAccepted, arg.AcceptedAt, arg.ID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
 }
 
-const satisfyCommandFromObservation = `-- name: SatisfyCommandFromObservation :one
+const satisfyCommandFromObservation = `-- name: SatisfyCommandFromObservation :execrows
 UPDATE commands
 SET status = 'satisfied', completed_at = ?, outcome_observation_id = ?
 WHERE id = ?
@@ -350,9 +277,6 @@ WHERE id = ?
   AND adapter_id = ?
   AND runtime_id = ?
   AND status IN ('requested', 'accepted')
-RETURNING id, entity_id, adapter_id, runtime_id, operation, parameters_json,
-          correlation_id, status, requested_at, deadline_at, accepted_at,
-          completed_at, outcome_observation_id, failure_code
 `
 
 type SatisfyCommandFromObservationParams struct {
@@ -364,8 +288,8 @@ type SatisfyCommandFromObservationParams struct {
 	RuntimeID            sql.NullString
 }
 
-func (q *Queries) SatisfyCommandFromObservation(ctx context.Context, arg SatisfyCommandFromObservationParams) (Command, error) {
-	row := q.db.QueryRowContext(ctx, satisfyCommandFromObservation,
+func (q *Queries) SatisfyCommandFromObservation(ctx context.Context, arg SatisfyCommandFromObservationParams) (int64, error) {
+	result, err := q.db.ExecContext(ctx, satisfyCommandFromObservation,
 		arg.CompletedAt,
 		arg.OutcomeObservationID,
 		arg.ID,
@@ -373,22 +297,8 @@ func (q *Queries) SatisfyCommandFromObservation(ctx context.Context, arg Satisfy
 		arg.AdapterID,
 		arg.RuntimeID,
 	)
-	var i Command
-	err := row.Scan(
-		&i.ID,
-		&i.EntityID,
-		&i.AdapterID,
-		&i.RuntimeID,
-		&i.Operation,
-		&i.ParametersJson,
-		&i.CorrelationID,
-		&i.Status,
-		&i.RequestedAt,
-		&i.DeadlineAt,
-		&i.AcceptedAt,
-		&i.CompletedAt,
-		&i.OutcomeObservationID,
-		&i.FailureCode,
-	)
-	return i, err
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
 }

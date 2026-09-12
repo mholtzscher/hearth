@@ -158,11 +158,10 @@ const (
 )
 
 type ProjectionResult struct {
-	Disposition            ObservationDisposition
-	State                  *State
-	Rejection              *ObservationRejection
-	SatisfiedCommand       *CommandResult
-	SatisfiedCommandRecord *CommandRecord // external fact projection of the same committed transition
+	Disposition      ObservationDisposition
+	State            *State
+	Rejection        *ObservationRejection
+	SatisfiedCommand *CommandResult
 }
 
 type CommandStatus string
@@ -228,15 +227,6 @@ type CommandCompletion struct {
 	Status      CommandStatus
 	CompletedAt time.Time
 	FailureCode CommandFailureCode
-}
-
-// CommandTransition is one persistence-reported Command status transition: the
-// committed record plus whether the write actually changed the durable row.
-// Only a changed transition is a Device Fact; a no-op repeat or a racing
-// completion reports Changed false and stays silent.
-type CommandTransition struct {
-	Record  CommandRecord
-	Changed bool
 }
 
 type CommandResult struct {

@@ -131,22 +131,6 @@ type entityEventFactData struct {
 	RecordedAt string `json:"recorded_at"`
 }
 
-// commandFactData is the strict external Command transition payload. It mirrors
-// the durable commands table invariants and omits Adapter and runtime identity.
-type commandFactData struct {
-	CommandID            string          `json:"command_id"`
-	EntityID             string          `json:"entity_id"`
-	Operation            string          `json:"operation"`
-	Parameters           json.RawMessage `json:"parameters"`
-	Status               string          `json:"status"`
-	RequestedAt          string          `json:"requested_at"`
-	DeadlineAt           string          `json:"deadline_at"`
-	AcceptedAt           *string         `json:"accepted_at,omitempty"`
-	CompletedAt          *string         `json:"completed_at,omitempty"`
-	FailureCode          *string         `json:"failure_code,omitempty"`
-	OutcomeObservationID *string         `json:"outcome_observation_id,omitempty"`
-}
-
 // queuedDeviceFact is one mapped, encoded, validated Device Fact waiting for
 // the single publication worker. It captures the generations observed at
 // enqueue time so the worker can detect a connection generation change and
@@ -432,67 +416,6 @@ func (dispatcher *DeviceFactDispatcher) EntityEventAccepted(ctx context.Context,
 		return
 	}
 	dispatcher.offer(ctx, family, sourceID, snapshot, fact.ReceivedAt, subject, payload)
-}
-
-// CommandTransitioned enqueues one durable Command status transition fact.
-// Command transitions originate inside Core, so they carry no JetStream receive
-// time and are gated only by the combined connection window.
-func (dispatcher *DeviceFactDispatcher) CommandTransitioned(ctx context.Context, fact devices.CommandFact) {
-	const family = natswire.DeviceFactFamilyCommand
-	record := fact.Record
-	sourceID := string(record.ID)
-	snapshot := dispatcher.epochs.Snapshot()
-	if !dispatcher.cachedEligible(ctx, family, sourceID, snapshot, time.Time{}) {
-		return
-	}
-	if record.ID == "" || record.EntityID == "" || record.RequestedAt.IsZero() || record.DeadlineAt.IsZero() {
-		dispatcher.logNotPublished(
-			ctx, family, sourceID, deviceFactStageMap, deviceFactCodeInvalid, slog.LevelError,
-		)
-		return
-	}
-	factID, emittedAt, ok := dispatcher.identify(ctx, family, sourceID)
-	if !ok {
-		return
-	}
-	subject, subjectErr := natswire.CommandFactSubject(string(record.EntityID), string(record.Status))
-	if subjectErr != nil {
-		dispatcher.logNotPublished(
-			ctx, family, sourceID, deviceFactStageMap, deviceFactCodeInvalid, slog.LevelError,
-		)
-		return
-	}
-	payload, encodeErr := natswire.Encode(
-		dispatcher.validator,
-		contractsv1.CommandFactSchemaID,
-		natswire.Envelope[commandFactData]{
-			ID:            factID,
-			Schema:        contractsv1.CommandFactSchemaID,
-			EmittedAt:     formatFactTime(emittedAt),
-			CorrelationID: string(record.CorrelationID),
-			CausationID:   new(string(record.ID)),
-			Data: commandFactData{
-				CommandID:            string(record.ID),
-				EntityID:             string(record.EntityID),
-				Operation:            string(record.OperationName),
-				Parameters:           json.RawMessage(record.Parameters),
-				Status:               string(record.Status),
-				RequestedAt:          formatFactTime(record.RequestedAt),
-				DeadlineAt:           formatFactTime(record.DeadlineAt),
-				AcceptedAt:           formatOptionalFactTime(record.AcceptedAt),
-				CompletedAt:          formatOptionalFactTime(record.CompletedAt),
-				FailureCode:          formatOptionalFailureCode(record.FailureCode),
-				OutcomeObservationID: formatOptionalObservationID(record.OutcomeObservationID),
-			},
-		},
-	)
-	if encodeErr != nil {
-		dispatcher.logNotPublished(
-			ctx, family, sourceID, deviceFactStageEncode, deviceFactCodeEncodeFailed, slog.LevelError,
-		)
-		return
-	}
-	dispatcher.offer(ctx, family, sourceID, snapshot, time.Time{}, subject, payload)
 }
 
 // identify mints the publication identity and Core publication time. Failure
@@ -838,8 +761,6 @@ func deviceFactSourceIDAttr(family natswire.DeviceFactFamily, sourceID string) s
 		return slog.String("observation_id", sourceID)
 	case natswire.DeviceFactFamilyEntityEvent:
 		return slog.String("event_id", sourceID)
-	case natswire.DeviceFactFamilyCommand:
-		return slog.String("command_id", sourceID)
 	}
 	return slog.String("source_id", sourceID)
 }
@@ -848,28 +769,4 @@ func deviceFactSourceIDAttr(family natswire.DeviceFactFamily, sourceID string) s
 // canonical UTC RFC 3339 form the strict schemas require.
 func formatFactTime(value time.Time) string {
 	return value.UTC().Format(time.RFC3339Nano)
-}
-
-func formatOptionalFactTime(value *time.Time) *string {
-	if value == nil {
-		return nil
-	}
-	formatted := formatFactTime(*value)
-	return &formatted
-}
-
-func formatOptionalFailureCode(value *devices.CommandFailureCode) *string {
-	if value == nil {
-		return nil
-	}
-	formatted := string(*value)
-	return &formatted
-}
-
-func formatOptionalObservationID(value *devices.ObservationID) *string {
-	if value == nil {
-		return nil
-	}
-	formatted := string(*value)
-	return &formatted
 }

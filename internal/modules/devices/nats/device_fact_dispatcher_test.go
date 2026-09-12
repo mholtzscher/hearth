@@ -145,8 +145,6 @@ func factSchemaID(t *testing.T, family natswire.DeviceFactFamily) string {
 		return contractsv1.ObservationFactSchemaID
 	case natswire.DeviceFactFamilyEntityEvent:
 		return contractsv1.EntityEventFactSchemaID
-	case natswire.DeviceFactFamilyCommand:
-		return contractsv1.CommandFactSchemaID
 	}
 	t.Fatalf("unknown fact family %q", family)
 	return ""
@@ -176,180 +174,6 @@ func entityEventFact(entityID string, receivedAt time.Time) devices.EntityEventF
 	}
 }
 
-func commandFact(entityID string, requestedAt time.Time) devices.CommandFact {
-	return devices.CommandFact{Record: devices.CommandRecord{
-		ID:            devices.CommandID(deviceFactTestCommandID),
-		EntityID:      devices.EntityID(entityID),
-		AdapterID:     "simulator",
-		OperationName: devices.OperationNameSet,
-		Parameters:    devices.CommandParameters(`{"value":true}`),
-		CorrelationID: devices.CorrelationID(testCorrelationID),
-		Status:        devices.CommandStatusSatisfied,
-		RequestedAt:   requestedAt.Add(-time.Second),
-		DeadlineAt:    requestedAt.Add(time.Minute),
-		AcceptedAt:    new(requestedAt.Add(-time.Millisecond)),
-		CompletedAt:   new(requestedAt),
-		OutcomeObservationID: new(
-			devices.ObservationID(deviceFactTestObservationID),
-		),
-	}}
-}
-
-// commandFactWireCase is one Command lifecycle status with exactly the terminal
-// fields its strict schema permits.
-type commandFactWireCase struct {
-	status      devices.CommandStatus
-	terminal    bool
-	outcome     bool
-	hasFailure  bool
-	failureCode devices.CommandFailureCode
-}
-
-// commandFactWireCases covers every status a durable Command transition can
-// publish, with the field combination the schema requires for it.
-func commandFactWireCases() []commandFactWireCase {
-	return []commandFactWireCase{
-		{status: devices.CommandStatusRequested},
-		{status: devices.CommandStatusAccepted},
-		{status: devices.CommandStatusSatisfied, terminal: true, outcome: true},
-		{status: devices.CommandStatusDispatched, terminal: true},
-		{
-			status: devices.CommandStatusRejected, terminal: true, hasFailure: true,
-			failureCode: devices.CommandFailureUpstreamRejected,
-		},
-		{
-			status: devices.CommandStatusAdapterUnhealthy, terminal: true, hasFailure: true,
-			failureCode: devices.CommandFailureAdapterUnhealthy,
-		},
-		{
-			status: devices.CommandStatusEntityUnavailable, terminal: true, hasFailure: true,
-			failureCode: devices.CommandFailureEntityUnavailable,
-		},
-		{
-			status: devices.CommandStatusOutcomeTimeout, terminal: true, hasFailure: true,
-			failureCode: devices.CommandFailureOutcomeTimeout,
-		},
-		{
-			status: devices.CommandStatusEntityDisabled, terminal: true, hasFailure: true,
-			failureCode: devices.CommandFailureEntityDisabled,
-		},
-		{
-			status: devices.CommandStatusInternalFailure, terminal: true, hasFailure: true,
-			failureCode: devices.CommandFailureInternalError,
-		},
-		{
-			status: devices.CommandStatusInterrupted, terminal: true, hasFailure: true,
-			failureCode: devices.CommandFailureCoreRestarted,
-		},
-	}
-}
-
-// TestDeviceFactDispatcherPublishesEveryCommandStatusVariantWireValid covers the
-// Command wire mapping for every lifecycle status a durable transition can
-// publish, including the dispatch terminal and the failure statuses: each maps
-// to its exact subject variant and a strict-schema-valid payload carrying only
-// the fields its status permits.
-func TestDeviceFactDispatcherPublishesEveryCommandStatusVariantWireValid(t *testing.T) {
-	t.Parallel()
-	fixture := newDeviceFactFixture(t)
-	now := time.Now().UTC().Add(time.Second)
-	fixture.dispatcher.now = func() time.Time { return now }
-	for _, test := range commandFactWireCases() {
-		fixture.dispatcher.CommandTransitioned(context.Background(), devices.CommandFact{
-			Record: commandFactWireRecord(now, test),
-		})
-		assertCommandFactWire(t, fixture, test)
-	}
-	if err := fixture.dispatcher.Drain(context.Background()); err != nil {
-		t.Fatal(err)
-	}
-	fixture.assertNoFact(t)
-}
-
-// commandFactWireRecord builds the durable record one Command status commits.
-func commandFactWireRecord(now time.Time, test commandFactWireCase) devices.CommandRecord {
-	record := devices.CommandRecord{
-		ID:            devices.CommandID(deviceFactTestCommandID),
-		EntityID:      devices.EntityID(deviceFactTestEntityID),
-		AdapterID:     "simulator",
-		OperationName: devices.OperationNameSet,
-		Parameters:    devices.CommandParameters(`{"value":true}`),
-		CorrelationID: devices.CorrelationID(testCorrelationID),
-		Status:        test.status,
-		RequestedAt:   now.Add(-time.Second),
-		DeadlineAt:    now.Add(time.Minute),
-	}
-	// A requested transition is published before acceptance, so it is the one
-	// status whose fact carries no accepted_at.
-	if test.status != devices.CommandStatusRequested {
-		record.AcceptedAt = new(now.Add(-time.Millisecond))
-	}
-	if test.terminal {
-		record.CompletedAt = new(now)
-	}
-	if test.hasFailure {
-		record.FailureCode = new(test.failureCode)
-	}
-	if test.outcome {
-		record.OutcomeObservationID = new(devices.ObservationID(deviceFactTestObservationID))
-	}
-	return record
-}
-
-// assertCommandFactWire validates one published Command status fact: exact
-// subject variant, source causation, and exactly the terminal fields the status
-// permits.
-func assertCommandFactWire(t *testing.T, fixture *deviceFactFixture, test commandFactWireCase) {
-	t.Helper()
-	envelope, route := decodeFact(t, fixture.validator, fixture.nextFact(t))
-	if route.Family != natswire.DeviceFactFamilyCommand || route.Variant != string(test.status) {
-		t.Fatalf("status %q published route %#v", test.status, route)
-	}
-	if envelope.CausationID != deviceFactTestCommandID {
-		t.Fatalf("status %q causation = %q", test.status, envelope.CausationID)
-	}
-	var data map[string]json.RawMessage
-	if err := json.Unmarshal(envelope.Data, &data); err != nil {
-		t.Fatal(err)
-	}
-	if status := commandFactWireString(t, data, "status"); status != string(test.status) {
-		t.Fatalf("payload status %q disagrees with subject variant %q", status, route.Variant)
-	}
-	assertCommandFactOptionalField(t, envelope.Data, data, "completed_at", test.terminal)
-	assertCommandFactOptionalField(t, envelope.Data, data, "outcome_observation_id", test.outcome)
-	assertCommandFactOptionalField(t, envelope.Data, data, "failure_code", test.hasFailure)
-	if !test.hasFailure {
-		return
-	}
-	if code := commandFactWireString(t, data, "failure_code"); code != string(test.failureCode) {
-		t.Fatalf("status %q failure_code = %q, want %q", test.status, code, test.failureCode)
-	}
-}
-
-// assertCommandFactOptionalField pins one fact field's presence.
-func assertCommandFactOptionalField(
-	t *testing.T,
-	payload []byte,
-	data map[string]json.RawMessage,
-	field string,
-	want bool,
-) {
-	t.Helper()
-	_, present := data[field]
-	if present != want {
-		t.Fatalf("fact %s present = %t, want %t: %s", field, present, want, payload)
-	}
-}
-
-func commandFactWireString(t *testing.T, data map[string]json.RawMessage, field string) string {
-	t.Helper()
-	var value string
-	if err := json.Unmarshal(data[field], &value); err != nil {
-		t.Fatal(err)
-	}
-	return value
-}
-
 // TestDeviceFactDispatcherPublishesEachFamilyOnceWithStrictWire protects the
 // mapping contract: exact subject, schema-valid payload, subject/payload
 // agreement, fresh fct_ identity, source correlation and causation, injected
@@ -365,10 +189,9 @@ func TestDeviceFactDispatcherPublishesEachFamilyOnceWithStrictWire(t *testing.T)
 
 	fixture.dispatcher.ObservationAccepted(ctx, observationFact(deviceFactTestEntityID, now))
 	fixture.dispatcher.EntityEventAccepted(ctx, entityEventFact(deviceFactTestEntityID, now))
-	fixture.dispatcher.CommandTransitioned(ctx, commandFact(deviceFactTestEntityID, now))
 
 	seen := map[string]string{}
-	for range 3 {
+	for range 2 {
 		message := fixture.nextFact(t)
 		envelope, route := decodeFact(t, fixture.validator, message)
 		if envelope.EmittedAt != now.Format(time.RFC3339Nano) {
@@ -413,26 +236,14 @@ func TestDeviceFactDispatcherPublishesEachFamilyOnceWithStrictWire(t *testing.T)
 			if route.Variant != "single_press" || envelope.CausationID != deviceFactTestEventID {
 				t.Fatalf("Entity Event fact route = %#v, causation = %q", route, envelope.CausationID)
 			}
-		case natswire.DeviceFactFamilyCommand:
-			if route.Variant != string(devices.CommandStatusSatisfied) ||
-				envelope.CausationID != deviceFactTestCommandID {
-				t.Fatalf("Command fact route = %#v, causation = %q", route, envelope.CausationID)
-			}
-			var status string
-			if err := json.Unmarshal(data["status"], &status); err != nil {
-				t.Fatal(err)
-			}
-			if status != route.Variant {
-				t.Fatalf("payload status %q disagrees with subject variant %q", status, route.Variant)
-			}
 		}
 		if previous, duplicate := seen[envelope.ID]; duplicate {
 			t.Fatalf("fact ID %q published twice (%s and %s)", envelope.ID, previous, route.Family)
 		}
 		seen[envelope.ID] = string(route.Family)
 	}
-	if len(seen) != 3 {
-		t.Fatalf("published identities = %d, want 3 unique", len(seen))
+	if len(seen) != 2 {
+		t.Fatalf("published identities = %d, want 2 unique", len(seen))
 	}
 	if err := fixture.dispatcher.Drain(context.Background()); err != nil {
 		t.Fatal(err)
@@ -473,7 +284,6 @@ func TestDeviceFactDispatcherSinkNeverTouchesTheConnection(t *testing.T) {
 		go func() {
 			defer close(done)
 			fixture.dispatcher.EntityEventAccepted(ctx, entityEventFact(deviceFactTestEntityID, now))
-			fixture.dispatcher.CommandTransitioned(ctx, commandFact(deviceFactTestEntityID, now))
 		}()
 		select {
 		case <-done:
@@ -488,8 +298,8 @@ func TestDeviceFactDispatcherSinkNeverTouchesTheConnection(t *testing.T) {
 	if err := fixture.dispatcher.Drain(context.Background()); err != nil {
 		t.Fatal(err)
 	}
-	if got := attempts.Load(); got != 7 {
-		t.Fatalf("publication attempts = %d, want 7 (one stalled plus six queued)", got)
+	if got := attempts.Load(); got != 4 {
+		t.Fatalf("publication attempts = %d, want 4 (one stalled plus three queued)", got)
 	}
 }
 
@@ -776,30 +586,6 @@ func TestDeviceFactDispatcherSuppressesReportsBeforeTheLiveEpoch(t *testing.T) {
 	published := fixture.nextFact(t)
 	if published.Subject != mustObservationFactSubject(t, natswire.ObservationFactApplied) {
 		t.Fatalf("boundary report was not published: %q", published.Subject)
-	}
-	if err := fixture.dispatcher.Drain(context.Background()); err != nil {
-		t.Fatal(err)
-	}
-	fixture.assertNoFact(t)
-}
-
-// TestDeviceFactDispatcherRequiresBothConnectionsLiveForCommands protects the
-// Command side of the gate: Command transitions originate inside Core, so they
-// carry no receive time and are published only while both connections are live.
-func TestDeviceFactDispatcherRequiresBothConnectionsLiveForCommands(t *testing.T) {
-	t.Parallel()
-	fixture := newDeviceFactFixture(t)
-	// Mark only the ingest side: the publication connection never established
-	// an epoch, so no Command fact may be published.
-	fixture.epochs.IngestConnected(NATSConnectionGeneration{}, time.Now().UTC())
-	fixture.epochs.PublishDisconnected()
-	fixture.dispatcher.CommandTransitioned(context.Background(), commandFact(deviceFactTestEntityID, time.Now().UTC()))
-	suppressed := logEvents(fixture.logs.records(t), "device_fact.suppressed")
-	if len(suppressed) != 1 || suppressed[0]["reason"] != deviceFactReasonNotLive {
-		t.Fatalf("command diagnostics = %#v, want one not_live suppression", suppressed)
-	}
-	if suppressed[0]["family"] != string(natswire.DeviceFactFamilyCommand) {
-		t.Fatalf("suppression family = %#v, want command", suppressed[0]["family"])
 	}
 	if err := fixture.dispatcher.Drain(context.Background()); err != nil {
 		t.Fatal(err)

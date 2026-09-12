@@ -131,10 +131,6 @@ func (service *Service) startAdmittedCommand(
 	if err != nil {
 		return CommandRecord{}, nil, err
 	}
-	// Creation is a durable transition, and it is published before the worker
-	// can persist acceptance or completion. An immediate terminal insert
-	// publishes exactly that terminal status and never a requested fact.
-	service.emitCommandTransition(ctx, command)
 	if command.Status == CommandStatusEntityDisabled {
 		return command, nil, commandExecutionError(command.ID, ErrEntityDisabled)
 	}
@@ -263,7 +259,7 @@ func (service *Service) runCommand(
 		return service.failCommand(ctx, command, CommandStatusInternalFailure, CommandFailureInternalError, err, waiter)
 	}
 	writeContext, cancel := persistenceContext(ctx)
-	err = service.acceptCommand(writeContext, command.ID, acceptedAt)
+	err = service.stores.Commands.MarkCommandAccepted(writeContext, command.ID, acceptedAt)
 	cancel()
 	if err != nil && !errors.Is(err, ErrCommandTerminal) {
 		return service.failCommand(ctx, command, CommandStatusInternalFailure, CommandFailureInternalError, err, waiter)
@@ -301,7 +297,7 @@ func (service *Service) runCommand(
 			FailureCode: CommandFailureOutcomeTimeout,
 		}
 		completionContext, cancelCompletion := persistenceContext(ctx)
-		completionErr := service.completeCommand(completionContext, completion)
+		completionErr := service.stores.Commands.CompleteCommand(completionContext, completion)
 		cancelCompletion()
 		if errors.Is(completionErr, ErrCommandTerminal) {
 			// A matching Observation committed first and its notification follows
@@ -352,7 +348,7 @@ func (service *Service) completeDispatchedCommand(
 		return commandOutcome{err: commandExecutionError(command.ID, err)}
 	}
 	writeContext, cancel := persistenceContext(ctx)
-	err = service.completeCommand(writeContext, CommandCompletion{
+	err = service.stores.Commands.CompleteCommand(writeContext, CommandCompletion{
 		ID: command.ID, Status: CommandStatusDispatched, CompletedAt: completedAt,
 	})
 	cancel()
@@ -417,7 +413,7 @@ func (service *Service) failCommand(
 		return commandOutcome{err: commandExecutionError(command.ID, err)}
 	}
 	writeContext, cancel := persistenceContext(context.Background())
-	err = service.completeCommand(writeContext, CommandCompletion{
+	err = service.stores.Commands.CompleteCommand(writeContext, CommandCompletion{
 		ID: command.ID, Status: status, CompletedAt: completedAt, FailureCode: failureCode,
 	})
 	cancel()
@@ -452,38 +448,6 @@ func (service *Service) failCommand(
 		service.logCommandExecutionFailed(ctx, command)
 	}
 	return commandOutcome{err: commandExecutionError(command.ID, outcome)}
-}
-
-// acceptCommand commits one acceptance transition and publishes its fact while
-// holding the Command's transition stripe, so a racing Observation-driven
-// satisfaction can never publish statuses out of durable order.
-func (service *Service) acceptCommand(ctx context.Context, id CommandID, acceptedAt time.Time) error {
-	release := service.commandTransitions.lock(id)
-	defer release()
-	transition, err := service.stores.Commands.MarkCommandAccepted(ctx, id, acceptedAt)
-	if err != nil {
-		return err
-	}
-	if transition.Changed {
-		service.emitCommandTransition(ctx, transition.Record)
-	}
-	return nil
-}
-
-// completeCommand commits one terminal transition and publishes its fact while
-// holding the Command's transition stripe. A no-op repeat or a racing
-// completion reports Changed false and publishes nothing.
-func (service *Service) completeCommand(ctx context.Context, completion CommandCompletion) error {
-	release := service.commandTransitions.lock(completion.ID)
-	defer release()
-	transition, err := service.stores.Commands.CompleteCommand(ctx, completion)
-	if err != nil {
-		return err
-	}
-	if transition.Changed {
-		service.emitCommandTransition(ctx, transition.Record)
-	}
-	return nil
 }
 
 func (service *Service) now() (time.Time, error) {

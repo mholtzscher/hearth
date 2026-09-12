@@ -394,7 +394,7 @@ func TestDisabledEntityDoesNotExemptUnknownExpiredOrTerminalCommandLinks(t *test
 	if _, createErr := repository.CreateCommand(ctx, terminal); createErr != nil {
 		t.Fatal(createErr)
 	}
-	if _, completionErr := repository.CompleteCommand(ctx, CommandCompletion{
+	if completionErr := repository.CompleteCommand(ctx, CommandCompletion{
 		ID: terminal.ID, Status: CommandStatusOutcomeTimeout, CompletedAt: now,
 		FailureCode: CommandFailureOutcomeTimeout,
 	}); completionErr != nil {
@@ -517,7 +517,7 @@ func TestObservationProjectionSatisfiesOnlyMatchingActiveLinkedCommand(t *testin
 	if _, createErr := repository.CreateCommand(ctx, terminal); createErr != nil {
 		t.Fatal(createErr)
 	}
-	if _, interruptErr := repository.InterruptActiveCommands(ctx, completedAt.Add(time.Minute)); interruptErr != nil {
+	if interruptErr := repository.InterruptActiveCommands(ctx, completedAt.Add(time.Minute)); interruptErr != nil {
 		t.Fatal(interruptErr)
 	}
 	linked := newObservation(t, entityID, `true`, completedAt.Add(time.Minute))

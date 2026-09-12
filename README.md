@@ -49,7 +49,9 @@ The registration log reports both canonical Entity IDs. The event history respon
 
 ### Live Device Facts
 
-Core publishes **Device Facts** on Core NATS after the devices SQLite transaction that records an accepted Observation, accepted Entity Event or changed Command status commits. They are a live, at-most-once notification surface: plain pub/sub, no JetStream, no acknowledgement, no retry, no outbox, no Core-owned retention and no replay. The durable SQLite record and the HTTP read APIs stay authoritative, and a missing fact proves nothing about the underlying activity, so never treat a fact stream as a catch-up feed.
+Core publishes **Device Facts** on Core NATS after the devices SQLite transaction that records an accepted Observation or accepted Entity Event commits. They are a live, at-most-once notification surface: plain pub/sub, no JetStream, no acknowledgement, no retry, no outbox, no Core-owned retention and no replay. The durable SQLite record and the HTTP read APIs stay authoritative, and a missing fact proves nothing about the underlying activity, so never treat a fact stream as a catch-up feed.
+
+Command lifecycle is deliberately not a fact family. Requested, accepted, satisfied, dispatched and every failure or interrupted status are exposed only through durable Command history (`GET /v1/commands/{command_id}` and `GET /v1/entities/{entity_id}/commands`), never as a live fact, and a linked Observation fact is not a substitute for a Command's status transition. A stateless `dispatched` or a failure outcome has no live fact at all.
 
 With NATS and `hearthd` running, subscribe with any NATS client while driving the Entity Event or simulator paths above:
 
@@ -58,16 +60,15 @@ nats sub 'hearth.v1.core.fact.>'                              # every Device Fac
 nats sub 'hearth.v1.core.fact.entity.<ent_id>.>'              # one Entity, every family
 nats sub 'hearth.v1.core.fact.entity.*.entity-event.>'        # accepted Entity Events
 nats sub 'hearth.v1.core.fact.entity.*.observation.applied'   # state-changing Observations
-nats sub 'hearth.v1.core.fact.entity.*.command.satisfied'     # satisfied Commands
 ```
 
-Subjects are `hearth.v1.core.fact.entity.<entity_id>.<family>.<variant>` with Entity-first routing, where `<family>` is `observation`, `entity-event` or `command`. Each publication validates against one strict `contracts/v1` schema — `urn:hearth:schema:observation-fact:v1`, `urn:hearth:schema:entity-event-fact:v1` or `urn:hearth:schema:command-fact:v1` — carries a fresh `fct_<uuidv7>` `id` for that one message, and keeps the durable `obs_`/`evt_`/`cmd_` source ID as `causation_id`. Subscribers must reject a payload whose Entity, family or variant disagrees with its subject, must not sort by UUID or envelope time to invent a global order, and must stay idempotent on the durable source ID and variant because duplicates are possible.
+Subjects are `hearth.v1.core.fact.entity.<entity_id>.<family>.<variant>` with Entity-first routing, where `<family>` is `observation` or `entity-event`. Each publication validates against one strict `contracts/v1` schema — `urn:hearth:schema:observation-fact:v1` or `urn:hearth:schema:entity-event-fact:v1` — carries a fresh `fct_<uuidv7>` `id` for that one message, and keeps the durable `obs_`/`evt_` source ID as `causation_id`. Subscribers must reject a payload whose Entity, family or variant disagrees with its subject, must not sort by UUID or envelope time to invent a global order, and must stay idempotent on the durable source ID and variant because duplicates are possible.
 
 Facts reach only subscribers connected at publication time; every unacknowledged fact is lost permanently. A fact is dropped whenever no subscriber is present, the publication connection is unavailable, reconnecting or draining, Core crashes after commit and before publication, mapping/encoding/publication fails, a subscriber exceeds its pending limits, or connection freshness suppresses backlog. None of those failures roll back or retry the durable source record. Readiness requires both NATS connections and the active fact dispatcher, but never a subscriber, a fact stream or a nonempty queue.
 
 Core and NATS clocks must stay synchronized: freshness is decided only from Core publication time and JetStream receive evidence, never from an Adapter clock. A report stored before the current live connection epoch is suppressed instead of published as a live fact. Suppression logs `device_fact.suppressed` at debug, with reason `before_epoch` for a newly processed report that arrives behind the epoch; publication failures and queue drops log `device_fact.not_published` with a fixed `stage` and `error_code`. See [the logging guide](docs/logging.md).
 
-Anyone with broker access can read canonical State values and Command parameters or forge a fact. Facts are unsigned, Hearth adds no fact authentication or authorization, and this feature widens no deployment boundary: trust the broker exactly as for the rest of Hearth's trusted network, and reserve `hearth.v1.core.fact.>` publish permission for Core when NATS authorization exists.
+Anyone with broker access can read canonical State values or forge a fact. Facts are unsigned, Hearth adds no fact authentication or authorization, and this feature widens no deployment boundary: trust the broker exactly as for the rest of Hearth's trusted network, and reserve `hearth.v1.core.fact.>` publish permission for Core when NATS authorization exists.
 
 ### Home Assistant migration adapter
 
