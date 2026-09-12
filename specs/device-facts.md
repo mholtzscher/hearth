@@ -1,77 +1,88 @@
-# Device Facts over Core NATS
+# Device Facts over durable JetStream
 
-**Status:** Implemented for the Observation and Entity Event families. D1–D3 landed with the implementation; D4 operator/developer documentation and downstream exact-name updates land with this change.
-**Baseline:** `9bfee97`.
+**Status:** Implemented for the Observation and Entity Event families. The owning devices transaction queues each fact in a transactional outbox; one relay publishes pending facts oldest-first into `HEARTH_DEVICE_FACTS_V1` and deletes each row only after the broker acknowledges it; every consumer chooses its own delivery and recovery policy.
+**Baseline:** `d9760b8`.
 **Effort:** XL across four deliverables. This is a prerequisite for [Entity Event automations](entity-event-automations.md).
 
 ## 1. Problem and purpose
 
-Hearth durably verifies device activity inside the `devices` module, but downstream consumers have no supported live interface for learning what Core committed.
+Hearth durably verifies device activity inside the `devices` module. Downstream consumers need a supported interface for learning what Core committed that neither reads Core's database nor loses every fact to one broker outage or process restart.
 
-Introduce **Device Facts**: versioned Core NATS messages published only after the devices-owned SQLite transaction establishing an accepted Observation or an accepted Entity Event commits.
+Introduce **Device Facts**: versioned Core messages queued by the same devices-owned SQLite transaction that establishes an accepted Observation or an accepted Entity Event, published oldest-first by one relay into one bounded JetStream stream, and read by consumers that own their own delivery and recovery policy.
 
 ```text
-        Adapter input
-             ↓
-   devices SQLite transaction
-             ↓ commit
-      devices.DeviceFactSink
-             ↓
-ephemeral Core NATS publication
-             ↓
- live internal and external subscribers
+              Adapter input
+                   ↓
+       devices SQLite transaction
+       ├── durable evidence (observation / entity event)
+       └── device_facts_outbox row      (one atomic commit)
+                   ↓ commit
+           DeviceFactRelay
+                   ↓ JetStream publish, PubAck required
+        HEARTH_DEVICE_FACTS_V1  (Limits/File, 7d / 1 GiB)
+                   ↓                    ↓
+     pending row deleted        consumer-owned policy:
+     only after PubAck          named durable resume, or
+                                new DeliverNew tail
 ```
 
-They are a live, at-most-once notification surface, not another history or execution log; the durable SQLite record and HTTP read API remain authoritative.
+The outbox makes Core's recording durable: a fact survives a relay restart, a broker outage and a Core process exit, and the relay republishes it with the same identity, subject and payload bytes. The stream gives consumers a bounded retention window. Durable SQLite evidence and the HTTP read APIs remain authoritative, and a fact reports what Core recorded, not physical truth.
 
-Automations consume Core-verified accepted Entity Events through this surface, so their admission never couples to devices transactions and never replays missed events.
+Publication is **at-least-once from the outbox**, with broker-side deduplication that is bounded by the stream's duplicate window. A retry whose PubAck or row delete was lost is collapsed by the broker only while that window lasts; after it, the same fact is stored again. Every consumer must therefore stay idempotent on the stable fact identity.
 
-Command lifecycle is deliberately **not** a fact family. Commands remain authoritative in the SQLite `commands` table and the HTTP Command read API, and no Command Fact exists: there is no Command schema, subject, family token, sink method, transition evidence, transition-stripe ordering or startup-interruption publication. Observations are not Command lifecycle substitutes, because an Observation reports accepted State evidence from an Adapter rather than a Command status transition, and a stateless (`dispatched`) or failure (`rejected`, `adapter_unhealthy`, `entity_unavailable`, `outcome_timeout`, `entity_disabled`, `internal_failure`, `interrupted`) Command outcome produces no accepted Observation, so those outcomes have no live fact at all. A consumer that needs Command lifecycle must read durable HTTP/SQLite history.
+Entity Event automations consume accepted Entity Events through this surface and choose durable recovery, so a short Core outage no longer silently drops a Trigger.
+
+Command lifecycle is deliberately **not** a fact family. Commands remain authoritative in the SQLite `commands` table and the HTTP Command read API, and no Command Fact exists: there is no Command schema, subject, family token, outbox row, relay path, transition evidence, transition-stripe ordering or startup-interruption publication. Observations are not Command lifecycle substitutes, because an Observation reports accepted State evidence from an Adapter rather than a Command status transition, and a stateless (`dispatched`) or failure (`rejected`, `adapter_unhealthy`, `entity_unavailable`, `outcome_timeout`, `entity_disabled`, `internal_failure`, `interrupted`) Command outcome produces no accepted Observation, so those outcomes have no fact at all. A consumer that needs Command lifecycle must read durable HTTP/SQLite history.
 
 ## 2. Decisions
 
-- Core publishes on `hearth.v1.core.fact.>` using plain NATS pub/sub, not JetStream. Facts are externally supported, language-neutral contracts under `contracts/v1`.
-- Subjects are Entity-first:
+- Facts are externally supported, language-neutral contracts under `contracts/v1`, published under `hearth.v1.core.fact.>`.
+- Delivery is durable and broker-mediated. One relay publishes pending outbox rows into the one JetStream stream `HEARTH_DEVICE_FACTS_V1`; a row is deleted only after a `PubAck` naming that stream. The same publish is also delivered to any connected plain Core NATS subscriber, which stays live-only and can neither acknowledge nor recover a fact.
+- The outbox row is written **inside** the devices transaction that commits the evidence, so a fact and the evidence it reports are one atomic unit and an outbox failure rolls the evidence back.
+- Subjects stay Entity-first:
 
   ```text
   hearth.v1.core.fact.entity.<entity_id>.<family>.<variant>
   ```
 
-- Each publication receives a new `fct_<UUIDv7>` envelope identity; the durable source identity remains in `data` and in `causation_id`.
-- Accepted first-seen Observations publish `applied` or `unchanged`. Accepted first-seen Entity Events publish a fact whose variant is the event name. Rejected, duplicate and identity-conflict inputs publish nothing, and no Command lifecycle transition publishes anything.
-- Publication occurs after commit, never inside a transaction, and a failed publication never changes the committed operation's result.
-- No acknowledgement, retry, reconnect buffering, outbox, offset, replay or Core-owned fact retention exists. One bounded in-memory dispatcher queue isolates committed device work from NATS write latency and drops rather than carrying facts across connection generations.
-- Accepted Observation and Entity Event facts are gated by continuously connected NATS generations and epochs, so JetStream backlog never becomes live facts.
+- Each queued fact receives one stable `fct_<UUIDv7>` identity at enqueue time. That identity is the durable row key, the published envelope `id` and the published `Nats-Msg-Id`; the durable source identity stays in `data` and in `causation_id`.
+- Accepted first-seen Observations queue `applied` or `unchanged`. Accepted first-seen Entity Events queue a fact whose variant is the event name. Rejected, duplicate and identity-conflict inputs queue nothing, and no Command lifecycle transition queues anything.
+- `emitted_at` is Core's fact **creation/commit time**, stored in the outbox row at enqueue. A fact published late still reports when Core committed it, and a retried publish reuses the same value.
+- The inbound W3C `traceparent` and `tracestate` are persisted with the pending fact and restored as headers on publication.
+- The stream is `LimitsPolicy` + `FileStorage`, subject filter `hearth.v1.core.fact.>`, `MaxAge` seven days, `MaxBytes` one GiB, `MaxMsgs`/`MaxMsgsPerSubject`/`MaxMsgSize` unlimited, `DiscardOld`, a two-hour duplicate window, and no subject transform. Core provisions the stream and **no consumer**.
+- One shared Core NATS connection carries subscriptions, request/reply, JetStream ingestion and fact publication. There is no dedicated fact connection, no connection epoch or freshness fence, no volatile queue, no reconnect-buffer distinction and no freshness suppression.
 - Schemas expose canonical Entity and source-record data, not Adapter/runtime identities, bindings, fingerprints, receive-order counters or raw rejected values.
 
 ## 3. Scope
 
 This spec owns:
 
-- Device Fact vocabulary, domain projections and two strict external wire schemas;
+- Device Fact vocabulary, the outbox row, the domain projections and two strict external wire schemas;
 - Core-originated subject construction and parsing;
-- post-commit emission hooks in the devices service for accepted Observations and accepted Entity Events;
-- a best-effort, non-buffering Core NATS fact publisher with generation-fenced connection-epoch freshness;
-- application assembly, readiness, lifecycle, logging and operator documentation;
-- integration tests proving post-commit, live-only external delivery.
+- transactional enqueue of a pending fact inside the devices transaction for accepted Observations and accepted Entity Events;
+- the one Device Fact JetStream stream, its exact configuration and its validation;
+- the single relay that publishes pending facts oldest-first, waits for a PubAck, deletes only what the broker acknowledged and retries or faults honestly;
+- application assembly, readiness, lifecycle and logging;
+- consumer-owned delivery/recovery policy guidance for internal and external readers;
+- integration tests proving transactional enqueue, oldest-first durable publication and consumer-owned recovery.
 
-**Non-goals:** durable facts, replay, offsets and delivery acknowledgements, or any Core-owned fact storage; subscriber registration APIs, a Go subscriber SDK and an HTTP fact endpoint; signing and authorization implementation; automation implementation; facts for rejected input, Command lifecycle transitions, Adapter health, Entity availability, enablement, registration or Device-level Entities; global ordering; configurable freshness. The bounded volatile dispatcher queue is transport isolation, not durable delivery.
-
-An external subscriber may independently persist received facts, but Hearth owns no behavior or compatibility guarantee for that downstream store beyond the published v1 wire contract.
+**Non-goals:** a Core-owned fact consumer, replay or catch-up endpoints, subscriber registration APIs, a subscriber SDK, an HTTP fact endpoint, signing and authorization implementation, automation implementation, facts for rejected input, Command lifecycle transitions, Adapter health, Entity availability, enablement, registration or Device-level Entities, and configurable retention or duplicate windows. Core never interprets a subscriber's delivery position.
 
 ## 4. Domain language and guarantees
 
-Add this term to `CONTEXT.md` during implementation:
+`CONTEXT.md` carries this term:
 
-**Device Fact**:
-One Core-verified statement published after the devices transaction establishing an accepted Observation or accepted Entity Event commits. It reaches only live Core NATS subscribers and is never acknowledged, retried, replayed or stored by Hearth. A missing fact proves nothing about the underlying activity: the durable record and HTTP read API remain authoritative, and a fact reports what Core recorded, not physical truth. Command lifecycle is not a Device Fact source — durable Command status transitions, including startup interruption, publish no live fact — and Observations are not Command lifecycle substitutes.
-_Avoid_: Entity Event, Observation, Command, event stream, event sourcing, change log
+> **Device Fact**:
+> One Core-verified statement Core durably queues in the same devices transaction that establishes an accepted Observation or accepted Entity Event, then publishes to a bounded JetStream stream, so it has exactly two sources: accepted Observation evidence and accepted Entity Events. Publication is at-least-once from that durable queue with broker-side deduplication bounded by the stream's duplicate window, so a consumer may see a duplicate and must stay idempotent; a fact can still be evicted by the stream's age or size bound, and a consumer that chooses no durable recovery policy can still miss facts published while it was absent. A fact reports what Core recorded, not physical truth, and Command status transitions, including startup interruption, publish no fact: durable HTTP/SQLite Command history is authoritative and Observations are not its substitute.
+> _Avoid_: Entity Event, Observation, Command, Command lifecycle, event sourcing, change log
 
-The external guarantee is:
+The two guarantees Core owns:
 
-> If a qualifying devices transition commits while its input is inside the current live connection epoch and the fact publishing connection accepts the publication, Core emits one schema-valid fact. Any subscriber, connection or process failure may lose that fact permanently, and Hearth never recreates it from history.
+> **Atomic enqueue.** A qualifying devices transition commits exactly one pending fact together with its evidence, or commits neither. An outbox identity-mint or insert failure rolls the evidence back, so JetStream redelivers the inbound report and retries the evidence and its fact together.
 
-This is at-most-once notification, not exactly-once delivery. "One fact" describes Core emission for one transition, not receipt by every subscriber.
+> **Eventual publication from the outbox.** Once a pending row commits, the relay republishes it until the broker acknowledges it into `HEARTH_DEVICE_FACTS_V1`, at which point the row is deleted. A failed publish, a missing acknowledgement, an unexpected stream or a failed delete keeps the row and retries. Only a deterministic poison row stops the relay, and it preserves the row and fails readiness rather than discarding evidence.
+
+Publication is not exactly-once. A retry after the duplicate window has elapsed is stored again, and any consumer may see a duplicate; consumers stay idempotent on the fact identity. Retention is bounded: the stream evicts the oldest facts when it reaches seven days or one GiB, whichever comes first.
 
 ## 5. Subject contract
 
@@ -99,7 +110,7 @@ hearth.v1.core.fact.entity.ent_<uuidv7>.observation.unchanged
 hearth.v1.core.fact.entity.ent_<uuidv7>.entity-event.single_press
 ```
 
-Useful subscriptions:
+The stream stores every subject matched by `hearth.v1.core.fact.>`, which is also `natswire.DeviceFactWildcard()`. Useful reader subscriptions:
 
 ```text
 hearth.v1.core.fact.>                              # every Device Fact
@@ -112,7 +123,7 @@ Any family or variant can be pinned the same way. Subject and payload Entity, fa
 
 ### 5.2 Subject types
 
-Add to `internal/contracts/v1/natswire/subjects.go`:
+`internal/contracts/v1/natswire/subjects.go` exposes:
 
 ```go
 type DeviceFactFamily string
@@ -120,6 +131,11 @@ type DeviceFactFamily string
 const (
     DeviceFactFamilyObservation DeviceFactFamily = "observation"
     DeviceFactFamilyEntityEvent DeviceFactFamily = "entity-event"
+)
+
+const (
+    ObservationFactApplied   = "applied"
+    ObservationFactUnchanged = "unchanged"
 )
 
 type DeviceFactRoute struct {
@@ -136,9 +152,9 @@ func EntityEventFactSubject(entityID string, name string) (string, error)
 func ParseDeviceFactSubject(subject string) (DeviceFactRoute, error)
 ```
 
-Builders reject noncanonical Entity IDs and invalid family variants, and each validates its exact variant set: Observation variants are `applied` and `unchanged`, and Entity Event variants satisfy the implemented event-name slug pattern. The parser rejects any subject whose tokens do not round-trip.
+Builders reject noncanonical Entity IDs and invalid family variants, and each validates its exact variant set: Observation variants are `applied` and `unchanged`, and Entity Event variants satisfy the implemented event-name slug pattern. The parser rejects any subject whose tokens do not round-trip, and it rejects a subject transform because the stream is provisioned without one.
 
-`natswire` remains domain-neutral and imports no `devices` package. Its closed string constants mirror the schemas and are conformance-tested against devices values.
+`natswire` remains domain-neutral and imports no `devices` package. Its closed string constants mirror the schemas and the devices values and are conformance-tested against them.
 
 ## 6. Wire schemas
 
@@ -156,7 +172,7 @@ Both schemas use the standard envelope fields:
 {
   "id":"fct_<uuidv7>",
   "schema":"urn:hearth:schema:<family>-fact:v1",
-  "emitted_at":"<Core publication time>",
+  "emitted_at":"<Core fact creation time>",
   "correlation_id":"cor_<uuidv7>",
   "causation_id":"<durable source ID>",
   "data":{}
@@ -165,9 +181,11 @@ Both schemas use the standard envelope fields:
 
 Envelope semantics:
 
-- `id` identifies this one ephemeral publication, not the durable record, and `correlation_id` is copied from the accepted report.
-- `emitted_at` is Core publication time from the fact publisher's clock, and `causation_id` identifies the durable Observation or Entity Event source.
-- W3C trace headers continue the context that caused Core to process the transition. `Nats-Msg-Id` is absent because no Core-owned stream or broker deduplication applies.
+- `id` is the stable fact identity minted at enqueue. It is the outbox row key, the envelope identity and the published `Nats-Msg-Id`, so the broker's duplicate window can collapse a retry of the same row.
+- `correlation_id` is copied from the accepted report.
+- `emitted_at` is Core's fact creation/commit time, stored once at enqueue and reused byte-for-byte by every retry of that row.
+- `causation_id` identifies the durable Observation or Entity Event source.
+- W3C trace headers continue the context that caused Core to process the transition. The persisted `traceparent` and `tracestate` are restored on every (re)publication, including a retry after a restart.
 
 ### 6.1 Observation fact
 
@@ -194,7 +212,7 @@ Causation: `obs_id`
 }
 ```
 
-`disposition` is `applied` or `unchanged`, so the schema cannot represent rejected or duplicate dispositions. `value` is the normalized canonical State JSON committed for the accepted Observation, and `source_updated_at` is optional.
+`disposition` is `applied` or `unchanged`, so the schema cannot represent rejected or duplicate dispositions. `value` is the normalized canonical State JSON committed for the accepted Observation, `source_updated_at` is optional, and `observed_at` is JetStream storage time.
 
 ### 6.2 Entity event fact
 
@@ -221,25 +239,36 @@ The envelope is the standard one above, with `data`:
 
 The strict schemas and `hearth.v1` subject prefix are one external v1 contract. Adding a family or a new major subject or schema is compatible. Adding a property, variant or enum value to an existing strict v1 schema is not assumed compatible; make an explicit versioned change.
 
-## 7. Domain types and sink interface
+## 7. Domain types, the outbox and the notifier
 
-New file `internal/modules/devices/device_facts.go`:
+`internal/modules/devices/device_facts.go` defines:
 
 ```go
-type DeviceFactID string // fct_<UUIDv7>
+type DeviceFactID string     // fct_<UUIDv7>; the durable row key and message identity
+type DeviceFactFamily string // observation | entity-event
+
+type DeviceFactTraceContext struct {
+    Traceparent string // at most 128 printable ASCII bytes
+    Tracestate  string // at most 512 printable ASCII bytes
+}
+func (DeviceFactTraceContext) Validate() error // bounded size, printable ASCII
 
 type ObservationFact struct {
+    ID                DeviceFactID
     ObservationID     ObservationID
     EntityID          EntityID
     Disposition       ObservationDisposition // applied | unchanged
-    Value             Value
+    Value             Value                  // normalized State JSON committed with the Observation
     CorrelationID     CorrelationID
     AdapterReceivedAt time.Time
     SourceUpdatedAt   *time.Time
     ObservedAt        time.Time // JetStream storage time
+    CreatedAt         time.Time // Core commit time, published as emitted_at
+    Trace             DeviceFactTraceContext
 }
 
 type EntityEventFact struct {
+    ID            DeviceFactID
     EventID       EntityEventID
     EntityID      EntityID
     Name          EntityEventName
@@ -247,368 +276,485 @@ type EntityEventFact struct {
     ReportedAt    time.Time // SDK emitted_at
     ReceivedAt    time.Time // JetStream storage time
     RecordedAt    time.Time // Core first-record time
+    CreatedAt     time.Time // Core commit time, published as emitted_at
+    Trace         DeviceFactTraceContext
 }
 
-// DeviceFactSink receives only facts whose owning SQLite transition committed.
-// Implementations own transport validation, freshness, logging and delivery.
-// They must never return an error, block on NATS I/O, retry, durably retain a
-// fact, or make a committed devices operation depend on publication.
-type DeviceFactSink interface {
-    ObservationAccepted(context.Context, ObservationFact)
-    EntityEventAccepted(context.Context, EntityEventFact)
+// DeviceFact is exactly one typed pending fact.
+type DeviceFact interface {
+    DeviceFactFamily() DeviceFactFamily
+    deviceFact()
+}
+
+type PendingDeviceFact struct {
+    Sequence int64 // durable enqueue order, oldest first
+    Fact     DeviceFact
 }
 ```
 
-The two methods make invalid family and type combinations unrepresentable and state the devices-owned eligibility rule at each call site. A nil sink is a no-op, so focused devices tests and non-NATS assembly need no transport setup. The service stores the sink privately and calls it only after repository success: repositories never publish, and transport code never decides whether a rejection is a fact.
+The unexported `deviceFact()` method seals the family set, so a pending row always carries one of the two canonical projections and never an opaque payload or a third family. `NewDeviceFactID` and `ParseDeviceFactID` live beside the other canonical ID constructors in `internal/modules/devices/ids.go`.
 
-Extend `devices.Dependencies`:
+Two narrow seams keep the dependency direction one-way:
+
+```go
+// DeviceFactOutbox is the durable pending set the relay drains. It is
+// implemented by the devices SQLite repository.
+type DeviceFactOutbox interface {
+    ListPendingDeviceFacts(ctx context.Context, limit int) ([]PendingDeviceFact, error)
+    DeleteDeviceFact(ctx context.Context, factID DeviceFactID) error
+}
+
+// DeviceFactNotifier is the one nonblocking wake hint devices needs. It never
+// performs I/O, never blocks, never returns an error and may lose a hint: the
+// relay also polls the outbox, so a lost hint costs latency, never a fact.
+type DeviceFactNotifier interface {
+    NotifyPendingDeviceFacts()
+}
+```
+
+Extend `devices.Dependencies` with the notifier only:
 
 ```diff
  type Dependencies struct {
      Logger           *slog.Logger
      Now              func() time.Time
-+    DeviceFacts      DeviceFactSink
++    DeviceFacts      DeviceFactNotifier
      NewDeviceID      func() (DeviceID, error)
 ```
 
-Add `NewDeviceFactID` and `ParseDeviceFactID` beside existing canonical ID constructors in `internal/modules/devices/ids.go`.
+A nil notifier is a no-op, so focused devices tests and non-NATS assembly need no transport setup. The service stores the notifier privately, calls it only after repository success, and never imports a transport package. `devices` depends on nothing about JetStream, streams, subjects or consumer policy.
 
-## 8. Post-commit emission
+`DeleteDeviceFact` rejects a noncanonical identity and treats an already-deleted fact as success, so a relay cannot fail on work another drain consumed. `ListPendingDeviceFacts` rejects a non-positive limit with `ErrInvalidDeviceFactLimit`.
 
-`devices.Service` emits facts only for accepted Observations and accepted Entity Events. No Command emission hook exists: `CommandLedger` keeps its transition methods returning only their existing error results, and `CommandTransition`, transition stripes and startup-interruption fact publication are removed, so Command status changes are observable only through durable SQLite and HTTP Command history.
+## 8. Transactional enqueue
+
+The outbox row is written **inside** the transaction that commits the evidence. There is no post-commit emission hook and no in-memory fact queue: the committed row is the pending fact.
+
+SQLite table `device_facts_outbox`:
+
+| Column | Role |
+|---|---|
+| `enqueue_order` | `INTEGER PRIMARY KEY AUTOINCREMENT`; the durable oldest-first publication order |
+| `fact_id` | unique canonical `fct_` identity, minted inside the transaction |
+| `family` | `observation` or `entity-event` |
+| `entity_id` | canonical `ent_` identity carried in the subject and payload |
+| `variant` | Observation disposition (`applied`/`unchanged`) or Entity Event name |
+| `source_id` | durable `obs_`/`evt_` identity published as `causation_id` |
+| `correlation_id` | canonical `cor_` copied from the accepted report |
+| `created_at` | Core fact creation/commit time, published as `emitted_at` |
+| `traceparent`, `tracestate` | persisted inbound W3C trace context, size- and printability-checked |
+| `value_json`, `adapter_received_at`, `source_updated_at`, `observed_at` | Observation-only committed evidence |
+| `reported_at`, `received_at`, `recorded_at` | Entity Event-only committed evidence |
+
+`CHECK` constraints enforce one family per row, so an Observation row leaves every Entity Event column `NULL` and the reverse. The table has no foreign keys, like `entity_events`: a pending fact must survive runtime, ownership, descriptor and retained-history pruning. The table holds **only** the unpublished set and is empty whenever the relay has caught up; it is not fact retention.
 
 ### 8.1 Observations
 
-Extend the in-memory Observation input with the wire correlation; do not add a persistence column because facts are never reconstructed:
+`internal/modules/devices/model.go` carries the inbound correlation and trace on the in-memory input; `devices/nats.domainObservation` maps them from the envelope headers. `Service.ProjectObservation` validates the correlation and trace, and `sqlite_observations.go` calls `queueAcceptedObservationDeviceFact` as the last write before `tx.Commit()`:
 
-```diff
- type Observation struct {
-     ID                ObservationID
-     EntityID          EntityID
-     Value             Value
-+    CorrelationID     CorrelationID
-     AdapterReceivedAt time.Time
-```
+1. eligibility is checked first: only `DispositionApplied` and `DispositionUnchanged` queue a row — a rejected outcome and a duplicate that never reached this transaction mint no identity and insert no row;
+2. `created_at` is Core's transaction time and becomes `emitted_at`, so a fact published late still reports when Core committed it;
+3. the fact identity is minted and validated before it reaches SQLite, so a defective generator fails the transaction that would have carried it instead of persisting an unpublishable row.
 
-`devices/nats.domainObservation` maps `envelope.CorrelationID`. `Service.ProjectObservation` validates and passes it through the transaction input.
+A mint, validation or insert failure returns an error and rolls the evidence back, so the inbound JetStream report is not acknowledged and both the evidence and its fact are retried together.
 
-After `stores.Observations.ProjectObservation` returns successfully:
-
-1. notify the existing in-memory Command waiter first, so transport work cannot delay authoritative Command completion;
-2. enqueue `ObservationFact` for `applied` and `unchanged` only, using `ProjectionResult.State.Value` as the normalized value, and enqueue nothing for `rejected` or `duplicate`.
-
-An Observation that satisfies a Command still publishes exactly its own Observation fact; the Command's `satisfied` status publishes nothing.
+After the repository returns a committed result, `ProjectObservation` notifies the existing in-memory Command waiter first and then calls `NotifyPendingDeviceFacts` only when `result.PendingFactID != nil`. Transport work can therefore never delay authoritative Command completion. An Observation that satisfies a Command still queues exactly its own Observation fact; the Command's `satisfied` status queues nothing.
 
 ### 8.2 Entity events
 
-Extend first-seen results with Core record time:
+`EntityEventRecordResult` gains `PendingFactID *DeviceFactID`, set only for a first-seen accepted row. `SQLiteRepository.RecordEntityEvent` calls `queueAcceptedEntityEventDeviceFact` before `tx.Commit()`, reusing the committed `recorded_at` as `created_at` so the fact reports exactly Core's record time. Duplicates and identity conflicts return an existing outcome and queue nothing; rejected first-seen rows queue nothing.
 
-```diff
- type EntityEventRecordResult struct {
-     Outcome   EntityEventRecordOutcome
-     Rejection *EntityEventRejection
-+    RecordedAt time.Time // set only for first-seen accepted or rejected rows
- }
-```
+`Service.RecordEntityEvent` validates the trace and then notifies the relay only when `result.PendingFactID != nil`.
 
-`SQLiteRepository.RecordEntityEvent` returns the same `recordedAt` it wrote in its transaction; duplicates and identity conflicts leave it zero. `Service.RecordEntityEvent` publishes only when `Outcome == EntityEventOutcomeAccepted`, using the trusted input event, the JetStream `receivedAt` parameter and the result `RecordedAt`.
+### 8.3 Trace capture
 
-## 9. Connection epochs and freshness
+`deviceFactTraceFromHeaders` reads exactly `traceparent` and `tracestate` from the inbound message and nothing else, so an arbitrary inbound header can never reach SQLite. Capture is bounded and sanitizing rather than rejecting: a value outside `DeviceFactTraceContext.Validate`'s size and printable-ASCII bound is dropped for that report instead of failing it. A malformed trace costs trace continuity, never the report.
 
-Plain NATS prevents subscriber replay, but the existing Observation and Entity Event JetStream consumers use `DeliverAll`. Without an additional gate, Core restart or reconnect backlog would be published as apparently live Device Facts.
+### 8.4 Commands
 
-### 9.1 Two Core connections
+No Command path touches the outbox. `CommandLedger` keeps its transition methods returning only their existing error results, and `TestCommandLifecycleQueuesNoDeviceFact` pins the absence of a Command row. Command status, including startup interruption, is observable only through durable SQLite and HTTP Command history.
 
-Keep the existing shared Core connection for request/reply and JetStream ingestion. Add a dedicated fact publication connection using the same configured NATS URL:
+## 9. Durable JetStream stream
 
-```go
-natsgo.Name("hearthd-device-facts")
-natsgo.MaxReconnects(-1)
-natsgo.ReconnectWait(natsReconnectWait)
-natsgo.ReconnectBufSize(-1)
-natsgo.FlusherTimeout(coreNATSWriteTimeout)
-```
-
-`ReconnectBufSize(-1)` is required by pinned `nats.go v1.53.1`; zero restores the default buffer. A fact published while this connection is reconnecting returns an error and is dropped instead of being delivered later. `FlusherTimeout` is bounded to one second on both Core connections so the synchronous generation check, shutdown close and dispatcher join cannot wait on either connection's mutex for the client's one-minute default. The existing shared connection keeps its reconnect buffering and retry behavior.
-
-The publisher waits for no PubAck and calls no `Flush` per message. `PublishMsg` success means the client accepted the live publication, not that any subscriber received it.
-
-### 9.2 Generation-fenced epoch tracker
-
-NATS lifecycle callbacks are asynchronous and may run after subscriptions resume. Callback time alone is therefore not a safe freshness fence. Add a concurrency-safe `DeviceFactEpochs` that records both the connection's observed reconnect generation and its UTC epoch:
-
-```go
-type NATSConnectionGeneration struct {
-    Reconnects uint64
-}
-
-type DeviceFactEpochs struct {
-    // private mutex; per-connection connectivity, generation and UTC epoch
-}
-
-func (epochs *DeviceFactEpochs) IngestConnected(generation NATSConnectionGeneration, at time.Time)
-func (epochs *DeviceFactEpochs) IngestDisconnected()
-func (epochs *DeviceFactEpochs) PublishConnected(generation NATSConnectionGeneration, at time.Time)
-func (epochs *DeviceFactEpochs) PublishDisconnected()
-func (epochs *DeviceFactEpochs) LiveSince(
-    ingestGeneration NATSConnectionGeneration,
-    publishGeneration NATSConnectionGeneration,
-) (time.Time, bool)
-```
-
-The transport derives `NATSConnectionGeneration.Reconnects` synchronously from `connection.Stats().Reconnects`. `LiveSince` returns true only when both connections report `IsConnected()`, both supplied current reconnect counts equal the generations established by their initial-connect or reconnect handlers, and both stored epochs are nonzero; it then returns the later stored epoch. A reconnect count mismatch closes the live window conservatively even if the asynchronous reconnect callback has not run yet.
-
-Initial successful connects establish generation zero, and each reconnect handler reads the connection's current stats and establishes that generation with the callback's Core time, before facts may flow for that generation. Disconnect callbacks also close the window for diagnostics, but correctness does not depend on their delivery preceding reconnection.
-
-### 9.3 Eligibility
-
-The NATS dispatcher uses two stages of eligibility:
-
-```text
-caller/enqueue stage:
-  read only the epoch tracker's cached snapshot
-  never call nats.Conn methods
-  require receive time >= cached LiveSince
-  capture both cached generations in the queued item
-
-worker/publication stage:
-  require both connections currently connected
-  require connection.Stats().Reconnects to match the queued generations
-  require receive time >= the current established LiveSince
-```
-
-The caller stage is a conservative fast filter; correctness belongs to the worker stage. A delayed disconnect callback can only queue work from a stale snapshot, which the worker's synchronous connection and generation check drops. A delayed reconnect callback leaves the cached generation old, so new work queues under the old generation and is dropped, or waits until the callback establishes the new one.
-
-Observation `ObservedAt` and Entity Event `ReceivedAt` are JetStream storage times; Adapter clocks and SDK `emitted_at` never decide fact freshness. Every eligible fact therefore has a JetStream receive time, because no fact family originates purely inside Core: Commands are the only Core-internal lifecycle and they publish no fact.
-
-There is no skew tolerance, because a tolerance would deliberately admit some backlog after a short outage. Hearth assumes the Core and NATS clocks used for connection and JetStream storage evidence are synchronized; if they are not, the conservative failure is a missing fact while durable history remains correct. Log a safe clock-skew diagnostic when a newly processed report is suppressed because its receive time precedes the current epoch.
-
-The generation and epoch gates suppress backlog retained while Core was stopped or while either connection was disconnected, work queued ahead of an epoch boundary and processed after reconnect, and facts still waiting in the local dispatcher when either connection generation changes. They never expire a live report merely because processing is slow: a report stored after the current live epoch remains eligible even when an earlier JetStream backlog delays its processing.
-
-## 10. Bounded NATS dispatcher
-
-New `internal/modules/devices/nats/device_fact_dispatcher.go` implements `devices.DeviceFactSink` and owns one publisher worker.
+`internal/modules/devices/nats/device_fact_stream.go` owns one stream:
 
 ```go
 const (
-    DeviceFactMaxMessageBytes = 64 * 1024
-    DeviceFactPendingMessages = 256
-    DeviceFactPendingBytes    = 4 * 1024 * 1024
+    DeviceFactStreamName            = "HEARTH_DEVICE_FACTS_V1"
+    DeviceFactStreamMaxAge          = 7 * 24 * time.Hour
+    DeviceFactStreamMaxBytes  int64 = 1 << 30
+    DeviceFactStreamDuplicateWindow = 2 * time.Hour
 )
-
-type DeviceFactDispatcher struct {
-    connection *natsgo.Conn
-    validator  *contractsv1.Validator
-    epochs     *DeviceFactEpochs
-    logger     *slog.Logger
-    now        func() time.Time
-    newFactID  func() (devices.DeviceFactID, error)
-    // private bounded queue, queued-byte count, lifecycle state and worker
-}
-
-func StartDeviceFactDispatcher(
-    connection *natsgo.Conn,
-    validator *contractsv1.Validator,
-    epochs *DeviceFactEpochs,
-    logger *slog.Logger,
-) (*DeviceFactDispatcher, error)
-func (dispatcher *DeviceFactDispatcher) Active() bool
-func (dispatcher *DeviceFactDispatcher) StopAdmission()
-func (dispatcher *DeviceFactDispatcher) Drain(context.Context) error
-func (dispatcher *DeviceFactDispatcher) Closed() <-chan struct{}
 ```
 
-Each sink method performs bounded CPU work on the caller and never calls `nats.Conn`:
+Live configuration:
 
-1. read the epoch tracker's independently synchronized cached snapshot and apply the enqueue-stage eligibility from §9.3;
-2. mint one `fct_` ID and capture both cached reconnect generations;
-3. map the typed devices value to its private wire DTO, build the family-specific strict envelope with Core publication time, source correlation and source ID causation, and derive the exact Entity/family/variant subject;
-4. validate and encode with `natswire.Encode`;
-5. reject an encoded message over 64 KiB and inject W3C trace headers;
-6. enqueue without waiting if both message-count and byte limits permit; otherwise log and drop.
+| Setting | Value |
+|---|---|
+| Subjects | `hearth.v1.core.fact.>` (`natswire.DeviceFactWildcard()`) |
+| Storage / retention | `FileStorage` / `LimitsPolicy` |
+| `MaxAge` | 7 days |
+| `MaxBytes` | 1 GiB |
+| `MaxMsgs`, `MaxMsgsPerSubject`, `MaxMsgSize` | `-1` (unlimited) |
+| `Discard` | `DiscardOld` |
+| `Duplicates` | 2 hours |
+| `SubjectTransform` | none |
+| Consumers created by Core | none |
 
-One worker dequeues FIFO and, immediately before each single `connection.PublishMsg` call, rechecks the worker-stage eligibility from §9.3. It drops stale queued work, never holds the epoch mutex across a NATS call, and never retries. A single worker preserves enqueue order for facts that are actually published.
+`ProvisionDeviceFactStream(ctx, js)` creates the stream when it is absent and then validates the live configuration; `ValidateDeviceFactStream(ctx, js)` only validates. Validation fails on any name, subject, storage, retention, limit, discard, duplicate-window, `NoAck` or `SubjectTransform` mismatch.
 
-The queue exists only to keep a slow socket write off authoritative devices paths; it is not a recovery buffer, and a queued item cannot survive dispatcher restart, Core restart or either NATS connection generation change. `StopAdmission` rejects new work. `Drain` publishes currently eligible queued work until empty or its context expires; on timeout, app assembly closes the dedicated fact connection to unblock a stalled write, drops the remainder and joins the worker.
+A subject transform is rejected outright rather than tolerated. It would rewrite a canonical fact subject before the broker stores it while the publish call still returned a successful `PubAck` for the original subject; the relay would then delete the outbox row even though no consumer could ever read that fact under the canonical subject it published.
 
-Errors are owned by the sink and never returned to devices. Invalid internal facts, a zero clock, and ID generation, subject, size or encoding failures log `device_fact.not_published` with `stage` and a fixed `error_code`; disconnected, draining and reconnect-buffer errors log one safe `device_fact.not_published` diagnostic and drop the fact; queue overflow logs `device_fact.not_published` with `error_code=fact_queue_full` and the current bounded counts; epoch or generation suppression logs `device_fact.suppressed` at debug with family, safe source ID and reason `not_live`, `generation_changed` or `before_epoch`. Logs never include State values, raw envelopes or full subjects.
+Core provisions **no consumer** for the fact stream. Every reader that needs a position, an ack floor or a filter owns its own consumer, so Core never pins a delivery policy or an acknowledgement floor for a reader it does not have. `ProvisionDeviceFactStream` is idempotent and leaves the stream with zero consumers.
 
-A slow subscriber cannot back-pressure the publisher; NATS owns subscriber pending limits and disconnect behavior.
+## 10. The relay
 
-## 11. Ordering, duplicates and failure semantics
+`internal/modules/devices/nats/device_fact_relay.go` implements the single publisher. `DeviceFactRelay` implements `devices.DeviceFactNotifier`, reads `devices.DeviceFactOutbox`, and owns exactly one worker goroutine.
+
+```go
+const (
+    DeviceFactRelayBatchSize      = 64
+    DeviceFactRelayPollInterval   = 5 * time.Second
+    DeviceFactRelayRetryBackoff   = time.Second
+    DeviceFactPublishTimeout      = 5 * time.Second
+)
+
+func StartDeviceFactRelay(
+    js jetstream.JetStream,
+    outbox devices.DeviceFactOutbox,
+    validator *contractsv1.Validator,
+    logger *slog.Logger,
+) (*DeviceFactRelay, error)
+
+func (relay *DeviceFactRelay) NotifyPendingDeviceFacts()
+func (relay *DeviceFactRelay) Active() bool
+func (relay *DeviceFactRelay) Closed() <-chan struct{}
+func (relay *DeviceFactRelay) Drain(ctx context.Context) error
+```
+
+The relay publishes over the shared Core NATS connection's JetStream context exactly as `js.PublishMsg` does: one `PublishMsg` per pending row, waiting for the broker's `PubAck`. It creates and modifies nothing.
+
+### 10.1 Publication pass
+
+One pass:
+
+1. `ListPendingDeviceFacts(ctx, 64)` returns the oldest pending rows in durable enqueue order;
+2. each row is mapped to its stable strict message and published with `js.PublishMsg`;
+3. a `PubAck` naming `HEARTH_DEVICE_FACTS_V1` deletes that row;
+4. the whole batch is published before the next read, so the worker always restarts from the oldest pending row.
+
+The wake hint only shortens latency. A lost hint, a restart or work committed while the worker was busy is always found by the five-second poll, because the outbox is authoritative.
+
+### 10.2 Message mapping
+
+`mapPendingDeviceFact` is a pure function of the stored row, so retrying a row reuses its identity, subject and payload byte-for-byte:
+
+- the exact subject is derived from the canonical Entity, family and variant;
+- `emitted_at` is the stored `created_at`, not the current clock;
+- the payload is produced by `natswire.Encode` against the strict family schema, so an unmappable row is caught here and never published partially;
+- headers are set explicitly:
+
+| Header | Value |
+|---|---|
+| `Nats-Msg-Id` | the stable `fct_` fact identity |
+| `Nats-Expected-Stream` | `HEARTH_DEVICE_FACTS_V1` |
+| `traceparent` | the persisted inbound traceparent, when present |
+| `tracestate` | the persisted inbound tracestate, when present |
+
+`Nats-Expected-Stream` makes the broker reject a publication into any other stream, so an acknowledgement naming another stream means the fact is not where Core must delete it: the relay keeps the row and retries rather than losing it. A duplicate acknowledgement is a success, because the fact is already stored under the same `Nats-Msg-Id`.
+
+### 10.3 Retry and poison
+
+The relay delivers or faults; it never discards a row.
+
+**Retryable (row preserved, fixed one-second backoff, then retried oldest-first).** A transient outbox read failure, a publish failure or timeout, a missing acknowledgement, an acknowledgement naming another stream, and a delete failure. Each retry logs `device_fact.retry` at warn with a `stage` and one fixed `error_code`:
+
+| Stage | `error_code` |
+|---|---|
+| `list` | `list_failed` |
+| `publish` | `publish_failed` |
+| `ack` | `ack_missing` |
+| `ack` | `unexpected_stream` |
+| `delete` | `delete_failed` |
+
+A retry reuses the same identity, subject and bytes, so the stream's duplicate window collapses a republish whose `PubAck` or delete was lost. Beyond that bounded window the republish is stored again as a duplicate, which is why consumers must stay idempotent.
+
+**Poison (row preserved, relay faults).** A deterministic failure that will fail the same way on every attempt:
+
+| Stage | `error_code` | Cause |
+|---|---|---|
+| `list` | `invalid_row` | stored bytes Core cannot decode (`devices.ErrInvalidDeviceFactRow`) |
+| `map` | `fact_invalid` | a stored zero/missing field or empty payload |
+| `map` | `subject_invalid` | noncanonical Entity, family or variant |
+| `map` | `unknown_family` | a row carrying no known family |
+| `encode` | `encode_failed` | strict schema validation failure |
+
+A poison row is never retried, never rewritten and never deleted, because deleting a fact Core cannot represent would silently lose durable evidence. The relay records the fault, logs `device_fact.poison` at error with `stage`, `error_code`, `fact_id` and — when the row decoded far enough to have them — `family` and the safe source identity, and stops. `Active()` then reports false, so **readiness fails** instead of reporting a publisher that can no longer make progress. Facts queued behind the poison row remain in the outbox and are published only after the operator resolves the row; restarting Core re-reads the oldest row first and hits the same poison.
+
+`Drain` is idempotent: it clears `Active()`, cancels an in-flight publication pass, joins the worker, and then publishes the remaining pending rows itself under the caller's context until the outbox is empty. On context expiry the remaining rows stay in the outbox for the next Core process instead of being discarded. Drain returns the recorded poison fault when one exists.
+
+### 10.4 Identity and deduplication limits, stated honestly
+
+- The durable row guarantees publication is attempted until acknowledged. A crash between commit and publish loses nothing.
+- The broker collapses a repeated `Nats-Msg-Id` only inside the two-hour duplicate window. A retry outside it is stored again, so the stream can hold two stored messages with the same fact identity.
+- The relay's retry span is unbounded: a broker outage or a Core restart can easily outlast the window.
+- Therefore a consumer must treat a fact identity as an idempotency key and must never assume one stored message per durable fact.
+
+## 11. Ordering, duplicates and retention
 
 ### 11.1 Ordering
 
-- Observation facts preserve committed Observation consumer order, and Entity Event facts preserve committed Entity Event consumer order, because each durable consumer processes one pending message at a time.
-- The single dispatcher worker publishes eligible queued messages FIFO. Drops may create gaps but never reorder the facts that remain in one dispatcher generation.
-- No global durable order exists across families, Entities or Core restarts. Fact IDs are identities, not sequence numbers, so consumers must not sort by UUID or envelope timestamp to invent a total order.
-- Command status transitions have no live order at all, because no Command fact exists; their order is the durable order of the `commands` table and the HTTP history endpoints.
+- The outbox assigns `enqueue_order` inside the committing transaction, and the single worker publishes pending rows in that order. Facts that remain in the outbox keep their relative order.
+- Publication is batched, but the worker never starts the next batch until the current one has been published and deleted, so no row is skipped and no row is reordered behind another.
+- No document-level order exists across Core restarts or across a stream eviction boundary. Fact IDs are identities, not sequence numbers, so consumers must not sort by UUID or envelope timestamp to invent a total order.
+- Command status transitions have no fact order at all, because no Command fact exists; their order is the durable order of the `commands` table and the HTTP history endpoints.
 
 ### 11.2 Duplicates
 
-Core sets no `Nats-Msg-Id` and promises no broker deduplication. A subscriber can receive duplicates if it creates duplicate subscriptions, or if another publisher violates the trust boundary. Consumers that cause side effects must stay idempotent using the durable source ID and the relevant variant.
+A consumer can receive duplicates because (a) the relay republishes a row whose acknowledgement or delete was lost and the retry arrives after the duplicate window, (b) two consumers overlap during a handover, or (c) another publisher violates the trust boundary. Consumers that cause side effects must stay idempotent on the fact identity and the relevant variant. A recommended key for an event-driven consumer is `(fact_id)` for at-most-once side effects, or `(event_id, owner_id)` when the consumer wants one outcome per durable source event.
 
-### 11.3 Loss windows
+### 11.3 Retention and eviction
 
-A fact is permanently lost when no subscriber is present, when the publisher connection is unavailable, reconnecting or draining, when Core crashes after SQLite commit and before publication, when ID generation, schema mapping, encoding or publication fails, when a subscriber exceeds its own pending limits or disconnects, or when epoch freshness suppresses backlog. None of these failures rolls back, reclassifies or retries the durable source record. HTTP history remains the recovery and diagnostic surface, but consumers must not turn an HTTP recovery read into automatic catch-up unless a separate future feature explicitly permits it. Command outcomes have no live fact to lose: their only surface is durable HTTP/SQLite history.
+The stream retains facts for at most seven days and one GiB and evicts the oldest first. A fact deleted from the outbox lives only in the stream, so a reader that falls further behind than the stream's age or size bound loses the evicted facts permanently. Retention is a fixed v1 bound, not a setting, and Core proxies no read of the stream on a consumer's behalf.
 
-## 12. Assembly, readiness and lifecycle
+### 11.4 Loss windows
+
+A fact can be permanently missed when:
+
+- the stream evicts it before any consumer reaches it, either because no consumer existed within the seven-day or one-GiB bound or because a reader fell behind that bound;
+- the relay is faulted on a poison row, so the fact was never published and later rows stay unpublished until an operator intervenes;
+- a plain Core NATS subscriber was not connected at publication time, because such a subscription is live-only;
+- a reader exceeds its own pending limits or disconnects under a policy that does not recover.
+
+None of these failures rolls back, reclassifies or loses the durable source evidence. HTTP history remains the diagnostic surface. When a fact **is** stored, a consumer with a durable consumer can recover it inside the retention window; Core does not, and consumers must not turn an HTTP recovery read into automatic catch-up unless a separate future feature explicitly permits it.
+
+## 12. Consumer-owned recovery policy
+
+Core owns the stream and nothing else. Each reader chooses a policy that matches its own durability requirement, and Core never creates, resumes or deletes a reader's consumer.
+
+Two policies cover the implemented use cases:
+
+**Durable resume (recommended when a reader must not miss a fact).** Create one named durable consumer with an explicit ack policy; the broker tracks its acknowledgement floor, so a restart resumes from the last acknowledged fact instead of replaying or skipping.
+
+```go
+consumer, err := stream.CreateOrUpdateConsumer(ctx, jetstream.ConsumerConfig{
+    Name:          "cooking-events-v1",              // stable durable name
+    Durable:       "cooking-events-v1",
+    FilterSubject: natswire.DeviceFactWildcard(),     // or a narrower family/entity filter
+    DeliverPolicy: jetstream.DeliverAllPolicy,        // resume from the stored ack floor
+    AckPolicy:     jetstream.AckExplicitPolicy,
+})
+```
+
+**Tail only (a reader that wants only future facts).** A new consumer with `DeliverNewPolicy` receives nothing that is already stored and everything published after it asked:
+
+```go
+consumer, err := stream.CreateOrUpdateConsumer(ctx, jetstream.ConsumerConfig{
+    Name:          "live-dashboard-v1",
+    Durable:       "live-dashboard-v1",
+    FilterSubject: natswire.DeviceFactWildcard(),
+    DeliverPolicy: jetstream.DeliverNewPolicy,        // never sees retained history
+    AckPolicy:     jetstream.AckExplicitPolicy,
+})
+```
+
+Both policies retain consumer responsibilities:
+
+- stay idempotent on the fact identity because retries beyond the duplicate window may duplicate a fact;
+- use `AckExplicitPolicy` and acknowledge only after the side effect commits, so a crash mid-handler redelivers;
+- bind a consumer name to one reader and one filter, because changing either on an existing durable consumer is a configuration mismatch;
+- accept that an unacknowledged fact older than the stream's age or size bound can be evicted and then redelivered never;
+- never assume Core filters, rewrites or reorders facts for it.
+
+A plain Core NATS subscription (`nats sub ...`) is still supported and remains live-only: it receives only facts published while it is connected, and it can neither acknowledge nor recover a fact. Use it for observation and debugging; use a durable consumer when a miss is unacceptable.
+
+Consumers that only need one family or one Entity should narrow `FilterSubject` to `hearth.v1.core.fact.entity.*.entity-event.>` or `hearth.v1.core.fact.entity.<entity_id>.>`; the subject grammar is stable and Core validates it.
+
+## 13. Assembly, readiness and lifecycle
 
 Startup order:
 
 1. open and migrate SQLite;
-2. interrupt active Commands so they remain durable `interrupted` history (no fact is produced);
-3. connect the shared ingest/request connection and the dedicated no-buffer fact connection, attach one `DeviceFactEpochs` to both connections' lifecycle callbacks, and mark each connection's initial epoch;
-4. start the bounded dispatcher;
-5. construct the devices service with the fact sink;
-6. provision JetStream resources and start request/reply transports;
-7. start the Observation and Entity Event consumers;
-8. expose HTTP and readiness.
+2. interrupt active Commands so they remain durable `interrupted` history (no fact is queued);
+3. connect the one shared Core NATS connection;
+4. compile the wire schemas and create the JetStream context;
+5. provision and validate `HEARTH_DEVICE_FACTS_V1`; a wrong stream configuration fails startup instead of accepting evidence nothing can publish;
+6. start the Device Fact relay over the repository outbox;
+7. construct the devices service with the relay as its `DeviceFactNotifier`;
+8. provision the Observation and Entity Event JetStream resources and start request/reply transports;
+9. start the Observation and Entity Event consumers;
+10. expose HTTP and readiness.
 
-Readiness requires both NATS connections connected and the dispatcher active, in addition to the existing SQLite, resource and consumer checks. It does not require a subscriber, a fact stream, an empty dispatcher queue or proof that a publication was received, and it does not prove that any external subscriber is present or keeping up. A later automation feature adds its own subscription and admission checks.
+Readiness requires:
 
-Shutdown keeps the fact connection available until fact-producing work stops:
+- a responsive SQLite database;
+- the shared NATS connection connected;
+- `ValidateDeviceFactStream` to pass;
+- `DeviceFactRelay.Active()` to be true;
+- the Observation and Entity Event resources to validate and both consumers to be active.
+
+Readiness never requires a subscriber, a fact consumer Core does not own, a nonempty outbox or proof that any publication was received. It does prove that the fact stream is configured correctly and that the relay can still make progress; a poison fault or the start of a drain turns readiness false.
+
+Shutdown order:
 
 1. close Command admission and join Command workers;
-2. drain the Entity Event and Observation consumers while the dispatcher still accepts facts;
-3. stop dispatcher admission and drain its bounded queue with a five-second deadline;
-4. drain request/reply transports, the shared connection and the dedicated fact connection;
-5. close SQLite.
+2. stop the health supervisor and shut down HTTP;
+3. cancel the dependency context used by Command workers, health and hourly maintenance;
+4. drain the Entity Event consumer and then the Observation consumer while the relay still publishes pending facts;
+5. `DeviceFactRelay.Drain` publishes every pending fact for five seconds, then leaves any remainder in the outbox;
+6. drain the request/reply transports and then the shared NATS connection;
+7. close SQLite.
 
-If either connection disconnects during drain, the epoch closes and queued or later facts drop. If dispatcher drain times out, close the dedicated fact connection, discard the queue and join the worker before continuing.
+The shared connection outlives the relay so a drain can still publish what the consumers committed. The relay drains again on every exit path through the deferred cleanup, and `Drain` is idempotent, so a failed startup or an error exit never leaves a publication goroutine behind. If the drain deadline expires, the unpublished rows stay durable for the next Core process; that is a bound, not a discard.
 
-## 13. External usage and security
+## 14. External usage and security
 
-The contracts are observable with any NATS client:
+The contracts are observable with any NATS client or JetStream-enabled client:
 
 ```sh
-nats sub 'hearth.v1.core.fact.>'
-nats sub 'hearth.v1.core.fact.entity.ent_<uuidv7>.>'
+nats sub 'hearth.v1.core.fact.>'                              # live only
+nats sub 'hearth.v1.core.fact.entity.ent_<uuidv7>.>'          # one Entity, live only
 nats sub 'hearth.v1.core.fact.entity.*.entity-event.single_press'
 ```
 
-Facts do not justify widening the current trusted-network deployment boundary. Until NATS authentication and authorization are implemented, anyone with broker access may forge a fact or read its canonical State values. Documentation must state that external consumers trust the broker boundary, not a cryptographic Core signature.
+For durable reads, create a consumer on `HEARTH_DEVICE_FACTS_V1` in the client's own library and language; see §12 for the two policies and their exact configuration values.
+
+Facts do not justify widening the current trusted-network deployment boundary. Until NATS authentication and authorization are implemented, anyone with broker access may forge a fact, read its canonical State values, publish into `HEARTH_DEVICE_FACTS_V1` bypassing the relay, or purge or evict stream data. Documentation must state that external consumers trust the broker boundary, not a cryptographic Core signature.
 
 When permissions exist, expected policy is:
 
 ```text
-Core:       publish hearth.v1.core.fact.>
-Subscriber: subscribe hearth.v1.core.fact.>; publish denied
+Core:       publish hearth.v1.core.fact.>; consume HEARTH_DEVICE_FACTS_V1
+Subscriber: subscribe hearth.v1.core.fact.> and read HEARTH_DEVICE_FACTS_V1; publish denied
 Adapter:    no publish or subscribe permission under hearth.v1.core.>
 ```
 
-No Adapter SDK fact consumer is added. `sdk/adapter` remains the Adapter-facing interface; external consumers use the schemas and subject contract directly.
+No Adapter SDK consumer is added. `sdk/adapter` remains the Adapter-facing interface; external consumers use the schemas, the subject contract and the stream directly.
 
-## 14. Deliverables
+## 15. Deliverables
 
 | ID | Outcome | Effort | Depends on | Acceptance |
 |---|---|---|---|---|
-| D1 | Device Fact vocabulary, `fct_` identity, two schemas and subject builders/parsers | L | none | A1 to A3 |
-| D2 | Exact post-commit Observation and Entity Event facts | L | D1 | A4 to A6 |
-| D3 | No-buffer NATS publisher, connection epochs, assembly, readiness and drain | L | D1,D2 | A7 to A10 |
-| D4 | External vertical slices, ADR and operator/developer documentation | L | D3 | A11 to A13 |
+| D1 | Device Fact vocabulary, `fct_` identity, two schemas, outbox row and subject builders/parsers | L | none | A1 to A3 |
+| D2 | Transactional enqueue for accepted Observations and Entity Events with rollback | L | D1 | A4 to A6 |
+| D3 | Device Fact stream, single relay, shared-connection publication, assembly, readiness and drain | L | D1,D2 | A7 to A10 |
+| D4 | Consumer-owned recovery guidance, ADR, external usage and operator/developer documentation | L | D3 | A11 to A13 |
 
-## 15. Project layout
+## 16. Project layout
 
 ```text
 contracts/v1/
-├── common.schema.json                    # modify [D1]: fct_ identity
-├── observation-fact.schema.json          # new [D1]: accepted Observation wire contract
-├── entity-event-fact.schema.json         # new [D1]: accepted Entity Event wire contract
-└── embed.go                              # modify [D1]: schema IDs and registration
+├── common.schema.json                    # fct_ identity
+├── observation-fact.schema.json          # accepted Observation wire contract
+├── entity-event-fact.schema.json         # accepted Entity Event wire contract
+└── embed.go                              # schema IDs and registration
 internal/contracts/v1/natswire/
-└── subjects.go                           # modify [D1]: Core Fact subjects/routes
+└── subjects.go                           # Core Fact subjects/routes
 internal/modules/devices/
-├── model.go                              # modify [D2]: Observation correlation
-├── ids.go                                # modify [D1]: DeviceFactID constructors/parsers
-├── service.go                            # modify [D2]: optional DeviceFactSink dependency
-├── device_facts.go                       # new [D1,D2]: fact types and sink interface
-├── observation.go                        # modify [D2]: accepted Observation emission
-├── entity_events.go                      # modify [D2]: accepted Entity Event emission/record time
+├── model.go                              # Observation correlation and trace
+├── ids.go                                # DeviceFactID constructors/parsers
+├── service.go                            # DeviceFactNotifier dependency
+├── device_facts.go                       # fact types, outbox/notifier seams, trace validation
+├── observation.go                        # accepted Observation enqueue result
+├── entity_events.go                      # accepted Entity Event enqueue result
+├── repository.go                         # DeviceFactOutbox and DeviceFactNotifier
+├── sqlite_repository.go                  # injected fact ID generator
+├── sqlite_observations.go                # enqueue inside the projection transaction
+├── sqlite_entity_events.go               # enqueue inside the recording transaction
+├── sqlite_device_facts.go                # pending-row read/delete and family mapping
+├── dbqueries/device_facts.sql            # outbox SQL
 └── nats/
-    ├── observation.go                    # modify [D2]: Observation correlation mapping
-    ├── device_fact_epochs.go             # new [D3]: generation-fenced live epochs
-    └── device_fact_dispatcher.go         # new [D3]: bounded queue, epoch gate and Core NATS publication
+    ├── core_nats.go                      # bounded socket write for the shared connection
+    ├── observation.go                    # Observation correlation/trace mapping
+    ├── entity_event.go                   # Entity Event trace mapping
+    ├── device_fact_trace.go              # bounded inbound trace capture
+    ├── device_fact_stream.go             # stream provision/validation
+    ├── device_fact_mapping.go            # stable row → wire message mapping and poison class
+    └── device_fact_relay.go              # single durable publisher
 internal/app/hearthd/
-├── run.go                                # modify [D3]: second connection, epochs, assembly and drain
-└── server.go                             # modify [D3]: fact connection readiness
+├── run.go                                # stream, relay, assembly and drain
+└── server.go                             # shared-connection, stream and relay readiness
 internal/platform/db/migrations/
-└── 00001_initial.sql                     # unchanged: no new durable fact data
-README.md                                 # modify [D4]: external subscription recipe and limitations
-CONTEXT.md                                # modify [D4]: Device Fact vocabulary
+└── 00001_initial.sql                     # device_facts_outbox table
+README.md                                 # subscription recipe and durable consumer guidance
+CONTEXT.md                                # Device Fact vocabulary
 docs/
-├── architecture.md                       # modify [D4]: accepted delivery/lifecycle constraints
-├── logging.md                            # modify [D4]: safe fact diagnostics
-└── adr/0019-device-facts-over-core-nats.md # new [D4]: durable architectural decision
-specs/entity-event-automations.md         # modified [D4]: exact Entity Event Fact subject, schema and DTO names
+├── architecture.md                       # accepted delivery/lifecycle constraints
+├── logging.md                            # safe relay diagnostics
+└── adr/
+    ├── 0019-device-facts-over-core-nats.md # superseded in part by 0020
+    └── 0020-durable-device-facts-via-outbox.md # this decision
+specs/entity-event-automations.md         # Entity Event fact subscriber recovery policy
 ```
 
-No Command schema, Command subject, Command sink method or transition-stripe file is added, because Command lifecycle is not a fact family. Generated `dbsqlc` output is unchanged by this feature: no Command query changes for fact reporting, and no migration or Observation persistence column is added. Tests colocate with each owning path.
+No Command schema, Command subject, Command outbox row or Command sink method exists, because Command lifecycle is not a fact family.
 
-## 16. Acceptance criteria
+## 17. Acceptance criteria
 
 - **A1. Schemas.** Both strict schemas compile and are embedded. Valid fixtures pass; wrong `fct_` or source prefixes, unknown fields, illegal dispositions and causation mismatches fail.
-- **A2. Subjects.** Builders and parser round-trip every family and variant, reject wrong token counts, wildcards, unsafe variants, unknown families and noncanonical Entity IDs, and reject subject and payload disagreement.
-- **A3. Identity.** `NewDeviceFactID` mints canonical UUIDv7 values; parsing rejects other prefixes, UUID versions, variants, uppercase and malformed values.
-- **A4. Observation facts.** First-seen applied and unchanged Observations publish the normalized committed value exactly once, with correct correlation and timestamps; rejected and duplicate Observations publish none.
-- **A5. Entity event facts.** Only first-seen accepted events publish; rejected, duplicate and identity-conflict outcomes publish none; `recorded_at` equals the value committed to SQLite.
-- **A6. Commit ordering.** Injected repository or commit failures produce no fact, and publication happens only after the owning transaction commits. No Command status transition, including startup interruption, produces a fact.
-- **A7. Dispatcher.** Each typed fact maps to the exact subject and a schema-valid payload, mints a unique `fct_` ID, carries source correlation and causation, injects trace headers, omits `Nats-Msg-Id`, and receives at most one plain publish attempt. Sink methods never call `nats.Conn`; a worker stalled while holding the NATS connection mutex cannot delay Command dispatch, Command waiter notification or durable consumer acknowledgement; queue overflow drops safely.
-- **A8. Epochs.** Initial connection, ingest disconnect/reconnect and publisher disconnect/reconnect deterministically advance the combined live epoch. Reports before the boundary are suppressed and reports at or after it are eligible; a reconnect-generation mismatch suppresses facts even when reconnect callbacks are deliberately delayed.
-- **A9. No buffering.** With real `nats.go v1.53.1`, a fact publication during publisher reconnect fails and is never observed after reconnect, and existing shared-connection retry and buffering behavior stays unchanged.
-- **A10. Lifecycle.** Readiness requires both connections and an active dispatcher but no subscriber. Shutdown keeps the dispatcher available through Command completion and durable-consumer drain, then drains or safely aborts its bounded queue without leaking a goroutine.
-- **A11. External vertical slice.** A real SDK Observation, Entity Event and HTTP Command lifecycle produce schema-valid Observation and Entity Event facts observable by a plain NATS subscriber while their authoritative HTTP and SQLite records agree; the Command lifecycle itself produces no fact.
-- **A12. No catch-up.** Reports broker-acknowledged before Core startup or during either connection outage later enter durable history but emit no Device Fact, and a subsequent live report emits one; no fact stream or replay resource is provisioned.
-- **A13. Delivery.** The README subscription recipe works; the ADR, architecture, logging and glossary state the at-most-once, loss and security semantics; `mise run validate` and generation checks pass.
+- **A2. Subjects.** Builders and parser round-trip every family and variant, reject wrong token counts, wildcards, unsafe variants, unknown families and noncanonical Entity IDs, and reject subject and payload disagreement; the stream validation rejects a subject transform.
+- **A3. Identity.** `NewDeviceFactID` mints canonical UUIDv7 values; parsing rejects other prefixes, UUID versions, variants, uppercase and malformed values. The identity is stable across every retry of one row.
+- **A4. Observation facts.** A first-seen applied or unchanged Observation commits exactly one pending row carrying the normalized committed value, correlation, evidence timestamps and trace; rejected and duplicate Observations commit none.
+- **A5. Entity event facts.** Only a first-seen accepted event commits a pending row; rejected, duplicate and identity-conflict outcomes commit none; `recorded_at` equals the value committed to SQLite and becomes `created_at`.
+- **A6. Atomic enqueue.** An injected fact-identity or outbox-insert failure rolls the evidence back, so no evidence and no pending row commit and inbound redelivery retries both together. No Command status transition, including startup interruption, queues a row.
+- **A7. Relay.** Each pending row maps to the exact subject and a schema-valid payload, reuses its identity, `emitted_at` and bytes across retries, injects the persisted trace headers, sets `Nats-Msg-Id` to the fact identity and `Nats-Expected-Stream` to the stream name, and is deleted only after an acknowledgement naming that stream.
+- **A8. Retry and poison.** A transient list, publish, acknowledgement or delete failure keeps the row and retries. A deterministic corrupt or unmappable row keeps the row, logs `device_fact.poison`, sets `Active()` false and fails readiness.
+- **A9. Stream.** Provisioning creates the exact configuration and no consumer; validation rejects a missing stream, a subject transform and any mismatched setting.
+- **A10. Lifecycle.** Readiness requires the shared connection, the validated stream and an active relay, but no subscriber and no Core-owned consumer. Shutdown drains consumers before the relay, drains or safely abandons the outbox within five seconds, and leaks no goroutine.
+- **A11. External vertical slice.** A real SDK Observation, Entity Event and HTTP Command lifecycle produce schema-valid Observation and Entity Event facts read from `HEARTH_DEVICE_FACTS_V1` while their authoritative HTTP and SQLite records agree; the Command lifecycle itself queues and publishes no fact.
+- **A12. Consumer-owned recovery.** A named durable consumer that acknowledges part of the stream and returns must resume from its own acknowledgement floor, and a new `DeliverNew` consumer must see none of the retained stream and then every fact published after it asked; provisioning creates no consumer.
+- **A13. Delivery.** The README subscription recipe works; the ADR, architecture, logging, glossary and automation spec state the durability, duplicate, retention and security semantics; `mise run validate` and generation checks pass.
 
-## 17. Test strategy
+## 18. Test strategy
 
 | Layer | What | Approach |
 |---|---|---|
-| Contract | schemas, IDs, subject grammar | fixtures, table tests and existing NATS wire fuzz harness |
-| Devices unit | fact eligibility and ordering | recording sink plus repository fault doubles |
-| SQLite | accepted Observation and Entity Event record time | real single-connection SQLite transaction tests |
-| NATS transport | mapping, queue bounds, generations, epochs, no reconnect buffer, stalled writer and loss | embedded NATS, injected clock/IDs and lifecycle callbacks |
-| Assembly | readiness and drain | existing hearthd integration harness and synchronization barriers |
-| Vertical slice | SDK/HTTP → SQLite → external fact subscriber | embedded NATS and real SQLite; no sleeps as correctness oracles |
+| Contract | schemas, IDs, subject grammar | fixtures, table tests and the existing NATS wire fuzz harness |
+| Devices unit | enqueue eligibility, trace validation, notifier ordering | recording notifier plus repository fault doubles |
+| SQLite | atomic enqueue, rollback, oldest-first read, corrupt-row class | real single-connection SQLite transaction tests |
+| NATS transport | mapping stability, stream validation, retry, poison, durable resume, `DeliverNew`, drain | embedded NATS, injected clock/IDs, fake outbox and publication seam |
+| Assembly | readiness, startup order and drain | existing hearthd integration harness and synchronization barriers |
+| Vertical slice | SDK/HTTP → SQLite outbox → stream → external consumer | embedded NATS and real SQLite; no sleeps as correctness oracles |
 
-Mutation-resistant tests must fail if any accepted-only guard, post-commit placement, epoch comparison, reconnect-buffer option or subject/payload check is removed.
+Mutation-resistant tests must fail if any accepted-only guard, transactional-enqueue placement, oldest-first ordering, acknowledgement-naming-the-stream check, duplicate-window setting, `Nats-Msg-Id`, poison classification or trace restoration is removed.
 
-## 18. Risks and mitigations
+## 19. Risks and trade-offs
 
 | Risk | Impact | Mitigation |
 |---|---|---|
-| Commit-to-publish crash window loses a fact | missed notification or Automation Trigger | explicit at-most-once contract; durable HTTP history remains truthful; no automatic catch-up |
-| Core/NATS clock disagreement suppresses a new report | missed fact | use only Core and NATS receive evidence, log safe skew diagnostics, document clock synchronization requirement |
-| Separate fact connection and dispatcher increase lifecycle complexity | startup/readiness/drain defects | one app-owned generation-fenced epoch tracker, one bounded worker, focused reconnect and shutdown integration tests |
-| Consumers expect Command lifecycle on the fact surface | missing external Command state | docs, schemas and glossary state that Command status transitions have no live fact and durable HTTP/SQLite history is authoritative |
-| External clients treat facts as authoritative history | incomplete downstream state | schemas and docs state notification semantics; HTTP and SQLite remain authoritative |
-| Broker access permits fact forgery or disclosure | unintended actions or data exposure | preserve the trusted-network boundary and reserve the Core namespace for future publish ACLs |
-| High Observation volume or stalled NATS writer fills the local queue | dropped facts | fixed message and byte bounds, nonblocking enqueue, safe overflow diagnostics; subscribers filter `observation.applied` |
+| A poison row stops publication of later facts | delayed notification while readiness fails | preserve the row, fault readiness loudly, keep later facts durable in the outbox until an operator resolves the row |
+| A retry outside the duplicate window stores the fact twice | duplicate consumer side effects | explicit two-hour window, stable identity as the idempotency key, documented consumer obligation |
+| Stream eviction outruns a slow reader | permanently missed facts | fixed seven-day/one-GiB bound, documented as a hard limit, durable consumer guidance |
+| Consumers assume Core recovers facts for them | silent missed triggers | Core owns no consumer; recovery policy is an explicit per-reader choice |
+| Consumers expect Command lifecycle on the fact surface | missing external Command state | docs, schemas and glossary state that Command status transitions have no fact and durable HTTP/SQLite history is authoritative |
+| External clients treat facts as authoritative history | incomplete downstream state | schemas and docs state that Core's record is authoritative and a fact is a report |
+| Broker access permits fact forgery, stream purge or data disclosure | unintended actions or data exposure | preserve the trusted-network boundary and reserve the Core namespace and stream for future publish/consume ACLs |
+| The outbox grows while the broker is unreachable | unbounded local growth | the relay keeps retrying and retains rows; document that a long outage grows the outbox until the broker returns |
 
-## 19. Trade-offs
+## 20. Trade-offs
 
 | Chose | Over | Because |
 |---|---|---|
-| External Core NATS facts | in-process callbacks | one contract serves automations and external consumers without devices importing either |
-| Plain NATS, with no persisted fact state | JetStream, an outbox or publication metadata | live-only delivery is required, durability already lives in SQLite and the inbound streams, and facts are never reconstructed or replayed |
-| Entity-first subjects | family-first subjects | the canonical Entity is the stable routing identity, and one Entity subscription covers every family |
-| Variant in subject and payload | payload-only routing | NATS subscribers filter event names and dispositions without decoding unrelated messages |
-| A new `fct_` identity | the source ID as envelope ID | each accepted Observation or Entity Event publication is a distinct message while source identity stays explicit |
-| Two schemas and sink methods | one generic union | invalid family and data combinations stay unrepresentable, and consumers validate only their family |
-| Observation and Entity Event families only | a Command lifecycle family | accepted State and event evidence is Core-verified data, while Command status already has an authoritative durable HTTP/SQLite history and Observations are not its substitute |
-| Combined connection epochs | a fixed age window | no arbitrary TTL and no Adapter-clock dependency, and slow live processing stays eligible while outage backlog is suppressed |
-| A separate no-buffer connection | disabling shared buffering | fact reconnect behavior changes without regressing existing Command and request/reply recovery |
-| One bounded dispatcher worker | synchronous NATS writes on devices paths | socket stalls cannot consume Command deadlines or delay durable acknowledgements, and the generation checks keep the queue from becoming recovery storage |
+| A transactional outbox in the owning transaction | a post-commit in-memory emission hook | a fact and its evidence commit atomically, and a crash or broker outage between commit and publication cannot lose the fact |
+| One JetStream stream with consumer-owned recovery | Core-owned fact consumers | Core never pins a delivery policy or ack floor for a reader it does not have, and each reader picks resume or tail |
+| At-least-once from the outbox with a bounded broker duplicate window | a claim of exactly-once or a claim of at-most-once without recovery | both limits are stated honestly and consumers get an idempotency key that works |
+| One shared Core NATS connection | a dedicated no-buffer publication connection with connection epochs | one connection means one broker reachability fact, no freshness fence, and no second lifecycle to reason about |
+| Entity-first subjects | family-first subjects | the canonical Entity is the stable routing identity and one Entity subscription covers every family |
+| Variant in the subject and the payload | payload-only routing | subscribers filter event names and dispositions without decoding unrelated messages |
+| A stable `fct_` identity minted at enqueue | a new identity per publication attempt | the identity is the row key, the envelope ID and the broker deduplication key at once |
+| Observation and Entity Event families only | a Command lifecycle family | accepted State and event evidence is Core-verified data, while Command status already has an authoritative durable HTTP/SQLite history that Observations cannot substitute for |
+| Rejecting a subject transform | tolerating one | a transform would silently break the subject contract while the publish still succeeded and the outbox row was deleted |
+| A fixed seven-day/one-GiB retention bound | a configurable retention policy | v1 has no deployments and one honest, documented bound is simpler than a setting nobody can tune yet |
 
-## 20. Success criteria
+## 21. Success criteria
 
 The foundation is complete when:
 
-1. external clients can subscribe to stable, schema-valid Core facts without consuming Adapter input;
-2. a fact publication failure cannot change durable device behavior, and only the fact connection itself can affect readiness;
-3. Core and connection outages never replay retained Observation or Entity Event history as facts;
-4. Command lifecycle is exposed only through durable HTTP/SQLite history, with no Command fact, subject or schema anywhere, and Observations are not treated as its substitute;
-5. the Entity Event automation spec carries the implemented Entity Event Fact subject, schema and DTO names without any change to the Device Facts module.
+1. external clients read stable, schema-valid facts from one stream without reading Core's database;
+2. a fact and the evidence it reports commit atomically, and a publication failure never changes the committed devices result;
+3. a broker outage, a relay restart or a Core restart delays publication but never discards a committed fact, and the retry reuses the same identity and bytes;
+4. every reader states its own recovery policy, and Core neither requires a subscriber nor pins a consumer position;
+5. duplicate, retention and eviction limits are documented and match the implementation;
+6. Command lifecycle is exposed only through durable HTTP/SQLite history, with no Command fact, subject, schema or outbox row anywhere.
 
-No open implementation questions remain. Any expansion to additional fact families requires a separate reviewed change.
+No open implementation questions remain. Any expansion to additional fact families, configurable retention or a Core-owned recovery reader requires a separate reviewed change.

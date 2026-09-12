@@ -23,36 +23,34 @@ type ReadinessChecker interface {
 type RuntimeReadiness struct {
 	database            *sql.DB
 	connection          *natsgo.Conn
-	factConnection      *natsgo.Conn
 	jetstream           jetstream.JetStream
 	observationConsumer *devicesnats.ObservationConsumer
 	entityEventConsumer *devicesnats.EntityEventConsumer
-	dispatcher          *devicesnats.DeviceFactDispatcher
+	relay               *devicesnats.DeviceFactRelay
 }
 
-// NewRuntimeReadiness assembles the readiness dependencies. Both NATS
-// connections are required: the shared ingest/request connection and the
-// dedicated Device Fact publication connection, since a Core process that can
-// record device work but cannot announce it is not ready.
+// NewRuntimeReadiness assembles the readiness dependencies. One shared NATS
+// connection carries every Core subscription and every Device Fact publication,
+// so a Core process either has the broker or does not; readiness never requires
+// a subscriber, a consumer Core does not own, or an empty backlog.
 func NewRuntimeReadiness(
 	database *sql.DB,
 	connection *natsgo.Conn,
-	factConnection *natsgo.Conn,
 	js jetstream.JetStream,
 	observationConsumer *devicesnats.ObservationConsumer,
 	entityEventConsumer *devicesnats.EntityEventConsumer,
-	dispatcher *devicesnats.DeviceFactDispatcher,
+	relay *devicesnats.DeviceFactRelay,
 ) *RuntimeReadiness {
 	return &RuntimeReadiness{
-		database: database, connection: connection, factConnection: factConnection, jetstream: js,
+		database: database, connection: connection, jetstream: js,
 		observationConsumer: observationConsumer, entityEventConsumer: entityEventConsumer,
-		dispatcher: dispatcher,
+		relay: relay,
 	}
 }
 
 func (readiness *RuntimeReadiness) Check(ctx context.Context) error {
 	if readiness == nil || readiness.database == nil || readiness.connection == nil ||
-		readiness.factConnection == nil || readiness.jetstream == nil || readiness.dispatcher == nil {
+		readiness.jetstream == nil || readiness.relay == nil {
 		return errors.New("runtime dependencies are not initialized")
 	}
 	if err := readiness.database.PingContext(ctx); err != nil {
@@ -61,13 +59,15 @@ func (readiness *RuntimeReadiness) Check(ctx context.Context) error {
 	if !readiness.connection.IsConnected() {
 		return errors.New("NATS is disconnected")
 	}
-	if !readiness.factConnection.IsConnected() {
-		return errors.New("device fact NATS is disconnected")
+	// Readiness requires the fact stream configuration and an active relay, but
+	// no subscriber, no Core-owned consumer and no proof that any publication
+	// was received. The relay is active until it faults on a poison row or
+	// begins draining, so readiness fails when it can no longer make progress.
+	if err := devicesnats.ValidateDeviceFactStream(ctx, readiness.jetstream); err != nil {
+		return err
 	}
-	// Readiness requires an active dispatcher but no subscriber, no fact stream
-	// and no proof that any publication was received.
-	if !readiness.dispatcher.Active() {
-		return errors.New("device fact dispatcher is inactive")
+	if !readiness.relay.Active() {
+		return errors.New("device fact relay is inactive")
 	}
 	if err := devicesnats.ValidateObservationResources(ctx, readiness.jetstream); err != nil {
 		return err

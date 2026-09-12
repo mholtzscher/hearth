@@ -73,8 +73,8 @@ A request to change one controllable entity before a deadline. For observed oper
 _Avoid_: Action, service call, queued job
 
 **Device Fact**:
-One Core-verified statement published after the devices transaction establishing an accepted Observation or accepted Entity Event commits, so it has exactly two sources: accepted Observation evidence and accepted Entity Events. It reaches only live Core NATS subscribers and is never acknowledged, retried, replayed or stored by Hearth. A missing fact proves nothing about the underlying activity: the durable record and HTTP read API remain authoritative, and a fact reports what Core recorded, not physical truth. Command status transitions, including startup interruption, publish no fact: Command lifecycle remains authoritative in durable HTTP/SQLite history, and Observations are not its substitute.
-_Avoid_: Entity Event, Observation, Command, Command lifecycle, event stream, event sourcing, change log
+One Core-verified statement Core durably queues in the same devices transaction that establishes an accepted Observation or accepted Entity Event, then publishes to one bounded JetStream stream, so it has exactly two sources: accepted Observation evidence and accepted Entity Events. Publication is at-least-once from that durable queue with broker-side deduplication bounded by the stream's duplicate window, so a consumer may see a duplicate and must stay idempotent; a fact can still be evicted by the stream's age or size bound, and a consumer that chooses no durable recovery policy can still miss facts published while it was absent. A fact reports what Core recorded, not physical truth, and Command status transitions, including startup interruption, publish no fact: Command lifecycle remains authoritative in durable HTTP/SQLite history, and Observations are not its substitute.
+_Avoid_: Entity Event, Observation, Command, Command lifecycle, event sourcing, change log
 
 **Automation**:
 A named definition containing one or more Triggers and an ordered sequence of Steps. Any Trigger can initiate execution; enablement governs automatic execution, not explicit manual invocation.

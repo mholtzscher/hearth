@@ -39,8 +39,8 @@ func NewCorrelationID() (CorrelationID, error) {
 	return CorrelationID(id), err
 }
 
-// NewDeviceFactID mints the envelope identity for one ephemeral Device Fact
-// publication. It is unrelated to the durable source ID that the fact reports.
+// NewDeviceFactID mints the stable envelope and deduplication identity for one
+// durable Device Fact. It is unrelated to the durable source ID the fact reports.
 func NewDeviceFactID() (DeviceFactID, error) {
 	id, err := newID("fct")
 	return DeviceFactID(id), err

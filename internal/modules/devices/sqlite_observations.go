@@ -104,11 +104,20 @@ func (repository *SQLiteRepository) ProjectObservation(
 	if err != nil {
 		return ProjectionResult{}, err
 	}
+	// The device fact is queued inside this transaction, after every sibling
+	// write, so the committed evidence and its pending fact are one atomic unit.
+	pendingFactID, err := repository.queueAcceptedObservationDeviceFact(
+		ctx, stateQueries, params, disposition, normalized,
+	)
+	if err != nil {
+		return ProjectionResult{}, err
+	}
 	if commitErr := tx.Commit(); commitErr != nil {
 		return ProjectionResult{}, fmt.Errorf("commit observation projection: %w", commitErr)
 	}
 	return ProjectionResult{
 		Disposition: disposition, Rejection: rejection, State: state, SatisfiedCommand: satisfied,
+		PendingFactID: pendingFactID,
 	}, nil
 }
 

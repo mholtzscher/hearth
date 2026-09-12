@@ -44,6 +44,9 @@ func (service *Service) ProjectObservation(
 	if _, err := ParseCorrelationID(string(observation.CorrelationID)); err != nil {
 		return ProjectionResult{}, fmt.Errorf("parse observation correlation ID: %w", err)
 	}
+	if err := observation.Trace.Validate(); err != nil {
+		return ProjectionResult{}, err
+	}
 
 	observedAt = observedAt.UTC()
 	params := ProjectObservationParams{
@@ -62,7 +65,7 @@ func (service *Service) ProjectObservation(
 	if result.SatisfiedCommand != nil {
 		service.notifyCommand(*result.SatisfiedCommand)
 	}
-	service.emitObservationFact(ctx, params.Observation, result, observedAt)
+	service.notifyPendingDeviceFact(result.PendingFactID)
 	return copyProjectionResult(result), nil
 }
 
@@ -102,6 +105,8 @@ func copyObservation(observation Observation) Observation {
 	return cloned
 }
 
+// copyProjectionResult deep-copies every owned buffer and pointer so the
+// caller owns its result and the repository keeps no shared mutable state.
 func copyProjectionResult(result ProjectionResult) ProjectionResult {
 	cloned := result
 	if result.State != nil {
@@ -111,6 +116,10 @@ func copyProjectionResult(result ProjectionResult) ProjectionResult {
 	if result.Rejection != nil {
 		rejection := *result.Rejection
 		cloned.Rejection = &rejection
+	}
+	if result.PendingFactID != nil {
+		factID := *result.PendingFactID
+		cloned.PendingFactID = &factID
 	}
 	if result.SatisfiedCommand != nil {
 		command := *result.SatisfiedCommand

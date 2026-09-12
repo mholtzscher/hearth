@@ -233,7 +233,8 @@ func TestDomainObservationCopiesWireDataAndPointers(t *testing.T) {
 		},
 	}
 	sourceUpdatedAt := time.Date(2026, 8, 20, 12, 34, 56, 0, time.UTC)
-	mapped, err := domainObservation(wire, sourceUpdatedAt.Add(time.Second), &sourceUpdatedAt)
+	trace := devices.DeviceFactTraceContext{Traceparent: testFactTraceparent, Tracestate: testFactTracestate}
+	mapped, err := domainObservation(wire, sourceUpdatedAt.Add(time.Second), &sourceUpdatedAt, trace)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -243,7 +244,8 @@ func TestDomainObservationCopiesWireDataAndPointers(t *testing.T) {
 	if string(mapped.Value) != "true" || mapped.RefreshForCommand == nil ||
 		*mapped.RefreshForCommand != devices.CommandID("cmd_01890f47-7a6b-7c4d-8e9f-0123456789ab") ||
 		mapped.CorrelationID != devices.CorrelationID(testCorrelationID) ||
-		mapped.SourceUpdatedAt == nil || mapped.SourceUpdatedAt.IsZero() {
+		mapped.SourceUpdatedAt == nil || mapped.SourceUpdatedAt.IsZero() ||
+		mapped.Trace != trace {
 		t.Fatalf("mapped observation = %#v", mapped)
 	}
 
@@ -253,7 +255,7 @@ func TestDomainObservationCopiesWireDataAndPointers(t *testing.T) {
 	malformed.CorrelationID = "not-a-correlation"
 	malformed.Data.RefreshForCommand = nil
 	if mapped2, malformedErr := domainObservation(
-		malformed, sourceUpdatedAt.Add(time.Second), nil,
+		malformed, sourceUpdatedAt.Add(time.Second), nil, devices.DeviceFactTraceContext{},
 	); malformedErr == nil {
 		t.Fatalf("malformed wire correlation was mapped as %q", mapped2.CorrelationID)
 	}

@@ -97,8 +97,8 @@ func TestParseEntityIDRejectsNonCanonicalOrWrongVersion(t *testing.T) {
 	}
 }
 
-// TestParseDeviceFactIDRejectsNonCanonicalOrWrongVersion keeps the ephemeral
-// fact envelope identity as strict as every durable source identity.
+// TestParseDeviceFactIDRejectsNonCanonicalOrWrongVersion keeps the durable fact
+// envelope identity as strict as every durable source identity.
 func TestParseDeviceFactIDRejectsNonCanonicalOrWrongVersion(t *testing.T) {
 	t.Parallel()
 	for _, value := range []string{

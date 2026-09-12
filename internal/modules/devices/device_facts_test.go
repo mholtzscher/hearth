@@ -47,6 +47,36 @@ func TestDeviceFactFamiliesMatchEmbeddedSchemas(t *testing.T) {
 	}
 }
 
+// TestDeviceFactFamilyVocabularyMatchesWireFamilies proves the family token a
+// pending outbox row stores is the same token transport uses in the subject and
+// the schema identity, so the outbox row and the published fact cannot drift
+// into two families. The relay therefore routes a stored family without a
+// translation table.
+func TestDeviceFactFamilyVocabularyMatchesWireFamilies(t *testing.T) {
+	t.Parallel()
+	assertSameStringSet(
+		t,
+		"Device Fact families",
+		[]string{
+			string(devices.DeviceFactFamilyObservation),
+			string(devices.DeviceFactFamilyEntityEvent),
+		},
+		[]string{
+			string(natswire.DeviceFactFamilyObservation),
+			string(natswire.DeviceFactFamilyEntityEvent),
+		},
+	)
+	for _, family := range []devices.DeviceFactFamily{
+		devices.DeviceFactFamilyObservation,
+		devices.DeviceFactFamilyEntityEvent,
+	} {
+		schemaID := "urn:hearth:schema:" + string(family) + "-fact:v1"
+		if _, ok := contractsv1.SchemaFiles()[schemaID]; !ok {
+			t.Fatalf("domain family %q has no embedded fact schema %q", family, schemaID)
+		}
+	}
+}
+
 // TestDeviceFactVocabularyMatchesSchemasAndDomain keeps the subject constants,
 // the strict schema enums and the devices domain values in one closed
 // vocabulary, so drift in any of the three fails here.

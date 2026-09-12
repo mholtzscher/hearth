@@ -71,6 +71,9 @@ func TestCoreNATSTransportRegistersAndProjectsDurableObservation(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	if factStreamErr := devicesnats.ProvisionDeviceFactStream(ctx, js); factStreamErr != nil {
+		t.Fatal(factStreamErr)
+	}
 	entityEventConsumer, err := devicesnats.ProvisionEntityEventResources(ctx, js)
 	if err != nil {
 		t.Fatal(err)
@@ -160,11 +163,9 @@ func TestCoreNATSTransportRegistersAndProjectsDurableObservation(t *testing.T) {
 	).Scan(&runtimeID); scanErr != nil {
 		t.Fatal(scanErr)
 	}
-	factConnection, dispatcher := startDeviceFactTransport(
-		t, coreConnection, server.ClientURL(), slog.New(slog.DiscardHandler),
-	)
+	relay := startDeviceFactRelay(t, js, devices.NewSQLiteRepository(database, catalog))
 	readiness := NewRuntimeReadiness(
-		database, coreConnection, factConnection, js, observations, entityEvents, dispatcher,
+		database, coreConnection, js, observations, entityEvents, relay,
 	)
 	if readinessErr := readiness.Check(ctx); readinessErr != nil {
 		t.Fatal(readinessErr)

@@ -76,6 +76,26 @@ type Device struct {
 	UpdatedAt string
 }
 
+type DeviceFactsOutbox struct {
+	EnqueueOrder      int64
+	FactID            string
+	Family            string
+	EntityID          string
+	Variant           string
+	SourceID          string
+	CorrelationID     string
+	CreatedAt         string
+	Traceparent       string
+	Tracestate        string
+	ValueJson         sql.NullString
+	AdapterReceivedAt sql.NullString
+	SourceUpdatedAt   sql.NullString
+	ObservedAt        sql.NullString
+	ReportedAt        sql.NullString
+	ReceivedAt        sql.NullString
+	RecordedAt        sql.NullString
+}
+
 type Entity struct {
 	ID          string
 	DeviceID    string

@@ -17,11 +17,12 @@ import (
 // TestCoreNATSConnectionBoundsSocketWrites protects the shared Core
 // connection's policy: unlimited reconnects on the shared cadence, nats.go's
 // default reconnect buffering, so a publication during reconnect is buffered
-// and delivered afterwards exactly as before (A10), and one bounded socket
-// write deadline. Without the bound a stalled shared connection holds Conn.mu
-// for nats.go's one-minute default, and both readiness and the Device Fact
-// worker's per-fact freshness check — which read IsConnected and Stats on this
-// connection — keep dispatcher Drain past its five-second budget.
+// and delivered afterwards exactly as before, and one bounded socket write
+// deadline. One connection now carries every Core subscription and the Device
+// Fact relay's publications; without the bound a stalled shared connection
+// holds Conn.mu for nats.go's one-minute default, and both readiness and the
+// relay's outbox read on that connection keep relay Drain past its five-second
+// budget.
 func TestCoreNATSConnectionBoundsSocketWrites(t *testing.T) {
 	t.Parallel()
 	server := startLifecycleNATSServer(t)

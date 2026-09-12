@@ -136,6 +136,10 @@ type Observation struct {
 	AdapterReceivedAt time.Time
 	SourceUpdatedAt   *time.Time
 	RefreshForCommand *CommandID
+	// Trace is the inbound W3C trace context the report carried, retained with
+	// any Device Fact this Observation produces so publication continues the
+	// originating trace.
+	Trace DeviceFactTraceContext
 }
 
 type ObservationDisposition string
@@ -162,6 +166,11 @@ type ProjectionResult struct {
 	State            *State
 	Rejection        *ObservationRejection
 	SatisfiedCommand *CommandResult
+	// PendingFactID is the stable identity of the Device Fact this transaction
+	// durably queued, or nil when the outcome is not eligible evidence
+	// (rejected or duplicate) and nothing was queued. It is a domain signal for
+	// the fact relay, not part of any wire response.
+	PendingFactID *DeviceFactID
 }
 
 type CommandStatus string

@@ -87,11 +87,21 @@ func (repository *SQLiteRepository) RecordEntityEvent(
 	}); insertErr != nil {
 		return EntityEventRecordResult{}, fmt.Errorf("insert entity event: %w", insertErr)
 	}
+	// The device fact is queued inside this transaction, so a recorded accepted
+	// event and its pending fact are one atomic unit. created_at reuses the
+	// committed recorded_at, so the fact reports exactly Core's record time.
+	pendingFactID, err := repository.queueAcceptedEntityEventDeviceFact(
+		ctx, queries, params, disposition, recordedAt,
+	)
+	if err != nil {
+		return EntityEventRecordResult{}, err
+	}
 	if commitErr := tx.Commit(); commitErr != nil {
 		return EntityEventRecordResult{}, fmt.Errorf("commit entity event recording: %w", commitErr)
 	}
 	return EntityEventRecordResult{
 		Outcome: outcomeForDisposition(disposition), Rejection: rejection, RecordedAt: recordedAt,
+		PendingFactID: pendingFactID,
 	}, nil
 }
 

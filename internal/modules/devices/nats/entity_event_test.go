@@ -1180,7 +1180,8 @@ func TestDomainEntityEventRequiresCanonicalIdentities(t *testing.T) {
 		ID: testEntityEventID, CorrelationID: testCorrelationID,
 		Data: entityEvent{EntityID: testEntityID, Name: "single_press"},
 	}
-	mapped, err := domainEntityEvent(valid, emittedAt)
+	trace := devices.DeviceFactTraceContext{Traceparent: testFactTraceparent, Tracestate: testFactTracestate}
+	mapped, err := domainEntityEvent(valid, emittedAt, trace)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1188,7 +1189,8 @@ func TestDomainEntityEventRequiresCanonicalIdentities(t *testing.T) {
 		mapped.EntityID != devices.EntityID(testEntityID) ||
 		mapped.Name != devices.EntityEventName("single_press") ||
 		mapped.CorrelationID != devices.CorrelationID(testCorrelationID) ||
-		!mapped.EmittedAt.Equal(emittedAt) {
+		!mapped.EmittedAt.Equal(emittedAt) ||
+		mapped.Trace != trace {
 		t.Fatalf("mapped event = %#v", mapped)
 	}
 
@@ -1203,7 +1205,9 @@ func TestDomainEntityEventRequiresCanonicalIdentities(t *testing.T) {
 	for _, test := range invalid {
 		envelope := valid
 		test.mutate(&envelope)
-		if _, mappingErr := domainEntityEvent(envelope, emittedAt); mappingErr == nil {
+		if _, mappingErr := domainEntityEvent(
+			envelope, emittedAt, devices.DeviceFactTraceContext{},
+		); mappingErr == nil {
 			t.Fatalf("%s mapping error = nil, want validation failure", test.name)
 		}
 	}

@@ -129,7 +129,9 @@ func handleObservationMessage(
 		}
 		sourceUpdatedAt = &parsed
 	}
-	domain, domainErr := domainObservation(envelope, adapterReceivedAt, sourceUpdatedAt)
+	domain, domainErr := domainObservation(
+		envelope, adapterReceivedAt, sourceUpdatedAt, deviceFactTraceFromHeaders(message.Headers()),
+	)
 	if domainErr != nil {
 		permanentFailure("observation_identity_failed", envelope.ID)
 		return
@@ -208,6 +210,7 @@ func domainObservation(
 	envelope natswire.Envelope[observation],
 	adapterReceivedAt time.Time,
 	sourceUpdatedAt *time.Time,
+	trace devices.DeviceFactTraceContext,
 ) (devices.Observation, error) {
 	observationID, observationIDErr := devices.ParseObservationID(envelope.ID)
 	if observationIDErr != nil {
@@ -227,6 +230,7 @@ func domainObservation(
 		Value:             append(devices.Value(nil), envelope.Data.Value...),
 		CorrelationID:     correlationID,
 		AdapterReceivedAt: adapterReceivedAt,
+		Trace:             trace,
 	}
 	if sourceUpdatedAt != nil {
 		cloned := *sourceUpdatedAt

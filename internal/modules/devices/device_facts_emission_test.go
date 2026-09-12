@@ -1,59 +1,36 @@
-package devices //nolint:testpackage // Tests drive package-private fact emission seams and barriers.
+package devices //nolint:testpackage // Tests drive package-private fact notification seams and barriers.
 
 import (
 	"context"
 	"errors"
-	"slices"
+	"strings"
 	"sync"
 	"testing"
 	"time"
 )
 
-// recordingDeviceFactSink records every fact a service enqueues, in call order,
-// and exposes optional hooks so a test can observe a fact at the exact moment
-// the service enqueues it.
-type recordingDeviceFactSink struct {
-	mutex         sync.Mutex
-	observations  []ObservationFact
-	entityEvents  []EntityEventFact
-	order         []string
-	onObservation func(ObservationFact)
+// recordingDeviceFactNotifier counts the wake hints a service sends and exposes
+// an optional hook so a test can observe the exact moment one arrives.
+type recordingDeviceFactNotifier struct {
+	mutex    sync.Mutex
+	notified int
+	onNotify func()
 }
 
-func (sink *recordingDeviceFactSink) ObservationAccepted(_ context.Context, fact ObservationFact) {
-	sink.mutex.Lock()
-	sink.observations = append(sink.observations, fact)
-	sink.order = append(sink.order, "observation."+string(fact.Disposition))
-	hook := sink.onObservation
-	sink.mutex.Unlock()
+func (notifier *recordingDeviceFactNotifier) NotifyPendingDeviceFacts() {
+	notifier.mutex.Lock()
+	notifier.notified++
+	hook := notifier.onNotify
+	notifier.mutex.Unlock()
 	if hook != nil {
-		hook(fact)
+		hook()
 	}
 }
 
-func (sink *recordingDeviceFactSink) EntityEventAccepted(_ context.Context, fact EntityEventFact) {
-	sink.mutex.Lock()
-	defer sink.mutex.Unlock()
-	sink.entityEvents = append(sink.entityEvents, fact)
-	sink.order = append(sink.order, "entity-event."+string(fact.Name))
-}
-
-func (sink *recordingDeviceFactSink) observationFacts() []ObservationFact {
-	sink.mutex.Lock()
-	defer sink.mutex.Unlock()
-	return append([]ObservationFact(nil), sink.observations...)
-}
-
-func (sink *recordingDeviceFactSink) entityEventFacts() []EntityEventFact {
-	sink.mutex.Lock()
-	defer sink.mutex.Unlock()
-	return append([]EntityEventFact(nil), sink.entityEvents...)
-}
-
-func (sink *recordingDeviceFactSink) factOrder() []string {
-	sink.mutex.Lock()
-	defer sink.mutex.Unlock()
-	return append([]string(nil), sink.order...)
+func (notifier *recordingDeviceFactNotifier) count() int {
+	notifier.mutex.Lock()
+	defer notifier.mutex.Unlock()
+	return notifier.notified
 }
 
 type scriptedObservationRepository struct {
@@ -109,113 +86,97 @@ func (*scriptedEntityEventRepository) DeleteEntityEventsBefore(context.Context, 
 	panic("unexpected DeleteEntityEventsBefore call")
 }
 
-// TestProjectObservationFactsCoverOnlyAcceptedDispositions pins the accepted
-// Observation eligibility rule: applied and unchanged commit one fact carrying
-// the committed normalized State value and the wire correlation, while
-// rejected, duplicate and every result that is not an accepted disposition
-// commit none.
-func TestProjectObservationFactsCoverOnlyAcceptedDispositions(t *testing.T) {
+// TestProjectObservationNotifiesOnlyForQueuedPendingFact pins the service side
+// of the eligibility contract: the repository decides eligibility and reports
+// the queued fact identity, and the service wakes the relay exactly when that
+// identity is present. Rejected and duplicate outcomes carry no identity, so
+// they wake nobody.
+func TestProjectObservationNotifiesOnlyForQueuedPendingFact(t *testing.T) {
 	t.Parallel()
 	observedAt := time.Date(2026, 9, 1, 12, 0, 0, 0, time.UTC)
-	adapterReceivedAt := observedAt.Add(-2 * time.Second)
-	sourceUpdatedAt := observedAt.Add(-3 * time.Second)
+	pendingFactID := DeviceFactID("fct_01890f47-7a6b-7c4d-8e9f-0123456789ab")
 	tests := []struct {
-		name         string
-		result       ProjectionResult
-		wantFacts    int
-		wantValue    string
-		wantDisposal ObservationDisposition
+		name       string
+		result     ProjectionResult
+		wantNotify int
 	}{
 		{
-			name: "applied",
+			name: "applied with queued fact",
+			result: ProjectionResult{
+				Disposition:   DispositionApplied,
+				State:         &State{EntityID: factScriptEntityID(), Value: Value(`{"on":true}`)},
+				PendingFactID: &pendingFactID,
+			},
+			wantNotify: 1,
+		},
+		{
+			name: "unchanged with queued fact",
+			result: ProjectionResult{
+				Disposition:   DispositionUnchanged,
+				State:         &State{EntityID: factScriptEntityID(), Value: Value(`true`)},
+				PendingFactID: &pendingFactID,
+			},
+			wantNotify: 1,
+		},
+		{
+			// Eligibility is the repository's committed pending fact, never the
+			// presence of a disposition or a State the repository happened to
+			// return.
+			name: "applied without queued fact",
 			result: ProjectionResult{
 				Disposition: DispositionApplied,
-				State:       &State{EntityID: factScriptEntityID(), Value: Value(`{"on":true}`)},
-			},
-			wantFacts: 1, wantValue: `{"on":true}`, wantDisposal: DispositionApplied,
-		},
-		{
-			name: "unchanged",
-			result: ProjectionResult{
-				Disposition: DispositionUnchanged,
 				State:       &State{EntityID: factScriptEntityID(), Value: Value(`true`)},
 			},
-			wantFacts: 1, wantValue: `true`, wantDisposal: DispositionUnchanged,
+			wantNotify: 0,
 		},
 		{
-			name:      "rejected",
-			result:    ProjectionResult{Disposition: DispositionRejected},
-			wantFacts: 0,
+			name:       "rejected",
+			result:     ProjectionResult{Disposition: DispositionRejected},
+			wantNotify: 0,
 		},
 		{
-			name:      "duplicate",
-			result:    ProjectionResult{Disposition: DispositionDuplicate},
-			wantFacts: 0,
+			name:       "duplicate",
+			result:     ProjectionResult{Disposition: DispositionDuplicate},
+			wantNotify: 0,
 		},
 		{
-			// A rejected verdict is never a fact even if a repository result
-			// inconsistently carries State: eligibility is the disposition, not
-			// the presence of a value.
 			name: "rejected with state",
 			result: ProjectionResult{
 				Disposition: DispositionRejected,
 				State:       &State{EntityID: factScriptEntityID(), Value: Value(`true`)},
 			},
-			wantFacts: 0,
+			wantNotify: 0,
 		},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
 			repository := &scriptedObservationRepository{result: test.result}
-			sink := &recordingDeviceFactSink{}
+			notifier := &recordingDeviceFactNotifier{}
 			service := newTestService(repository, nil, nil, Dependencies{
-				DeviceFacts: sink,
+				DeviceFacts: notifier,
 				Now:         func() time.Time { return observedAt },
 			})
 			observation := Observation{
 				ID: factScriptObservationID(), EntityID: factScriptEntityID(),
-				// The raw report differs from the committed State on purpose:
-				// the fact must project the committed value.
-				Value:             Value(`"raw report value"`),
-				CorrelationID:     factScriptCorrelationID(),
-				AdapterReceivedAt: adapterReceivedAt, SourceUpdatedAt: &sourceUpdatedAt,
+				Value:         Value(`"raw report value"`),
+				CorrelationID: factScriptCorrelationID(), AdapterReceivedAt: observedAt.Add(-time.Second),
 			}
 			if _, err := service.ProjectObservation(
 				context.Background(), "simulator", factScriptRuntimeID(), observation, observedAt,
 			); err != nil {
 				t.Fatal(err)
 			}
-			facts := sink.observationFacts()
-			if len(facts) != test.wantFacts {
-				t.Fatalf("observation facts = %#v, want %d", facts, test.wantFacts)
-			}
-			if test.wantFacts == 0 {
-				return
-			}
-			fact := facts[0]
-			if fact.ObservationID != observation.ID || fact.EntityID != observation.EntityID ||
-				fact.Disposition != test.wantDisposal || string(fact.Value) != test.wantValue ||
-				fact.CorrelationID != observation.CorrelationID ||
-				!fact.AdapterReceivedAt.Equal(adapterReceivedAt) ||
-				!fact.ObservedAt.Equal(observedAt) ||
-				fact.SourceUpdatedAt == nil || !fact.SourceUpdatedAt.Equal(sourceUpdatedAt) {
-				t.Fatalf("observation fact = %#v", fact)
-			}
-			// The enqueued fact owns its bytes: mutating the repository result
-			// after the call must not reach the sink.
-			test.result.State.Value[0] = 'x'
-			if got := sink.observationFacts()[0]; string(got.Value) != test.wantValue {
-				t.Fatalf("fact value changed with the repository result: %s", got.Value)
+			if got := notifier.count(); got != test.wantNotify {
+				t.Fatalf("notifications = %d, want %d", got, test.wantNotify)
 			}
 		})
 	}
 }
 
 // TestProjectObservationRejectsNoncanonicalCorrelation proves the wire
-// correlation is validated before persistence: an Observation fact always
-// carries a canonical cor_ identity, so a report without one never reaches the
-// transaction and publishes nothing.
+// correlation is validated before persistence: a rejected input never reaches
+// the transaction, so it can queue no pending fact and wake nobody.
 func TestProjectObservationRejectsNoncanonicalCorrelation(t *testing.T) {
 	t.Parallel()
 	observedAt := time.Date(2026, 9, 1, 12, 0, 0, 0, time.UTC)
@@ -230,8 +191,8 @@ func TestProjectObservationRejectsNoncanonicalCorrelation(t *testing.T) {
 			repository := &scriptedObservationRepository{
 				result: ProjectionResult{Disposition: DispositionApplied},
 			}
-			sink := &recordingDeviceFactSink{}
-			service := newTestService(repository, nil, nil, Dependencies{DeviceFacts: sink})
+			notifier := &recordingDeviceFactNotifier{}
+			service := newTestService(repository, nil, nil, Dependencies{DeviceFacts: notifier})
 			if _, err := service.ProjectObservation(
 				context.Background(), "simulator", factScriptRuntimeID(), Observation{
 					ID: factScriptObservationID(), EntityID: factScriptEntityID(), Value: Value(`true`),
@@ -243,23 +204,76 @@ func TestProjectObservationRejectsNoncanonicalCorrelation(t *testing.T) {
 			if repository.calls != 0 {
 				t.Fatalf("persistence calls = %d, want 0", repository.calls)
 			}
-			if facts := sink.observationFacts(); len(facts) != 0 {
-				t.Fatalf("observation facts after rejection = %#v", facts)
+			if got := notifier.count(); got != 0 {
+				t.Fatalf("notifications after rejection = %d, want 0", got)
 			}
 		})
 	}
 }
 
-// TestProjectObservationFailureCommitsNoFact proves the post-commit placement:
-// a projection that fails, including a commit failure reported by persistence,
-// publishes nothing.
+// TestObservationAndEntityEventRejectUnboundedTrace proves the persistence
+// bound on the carried trace context is enforced before any transaction, so an
+// oversized or non-printable header can never reach SQLite and never queues a
+// pending fact.
+func TestObservationAndEntityEventRejectUnboundedTrace(t *testing.T) {
+	t.Parallel()
+	observedAt := time.Date(2026, 9, 1, 12, 0, 0, 0, time.UTC)
+	traces := []DeviceFactTraceContext{
+		{Traceparent: "00-" + strings.Repeat("a", 256) + "-0000000000000001-01"},
+		{Tracestate: strings.Repeat("a", 513)},
+		{Traceparent: "00-00000000000000000000000000000001-0000000000000001-01\n"},
+		{Tracestate: "vendor=value\x00"},
+	}
+	for _, trace := range traces {
+		observationRepository := &scriptedObservationRepository{
+			result: ProjectionResult{Disposition: DispositionApplied, PendingFactID: deviceFactIDPointer()},
+		}
+		notifier := &recordingDeviceFactNotifier{}
+		service := newTestService(
+			observationRepository, nil, nil, Dependencies{DeviceFacts: notifier},
+		)
+		_, err := service.ProjectObservation(
+			context.Background(), "simulator", factScriptRuntimeID(), Observation{
+				ID: factScriptObservationID(), EntityID: factScriptEntityID(), Value: Value(`true`),
+				CorrelationID: factScriptCorrelationID(), AdapterReceivedAt: observedAt, Trace: trace,
+			}, observedAt,
+		)
+		if !errors.Is(err, ErrInvalidDeviceFactTrace) {
+			t.Fatalf("observation trace %#v error = %v", trace, err)
+		}
+		if observationRepository.calls != 0 || notifier.count() != 0 {
+			t.Fatalf("bounded trace rejection still reached persistence or the relay: %#v", trace)
+		}
+
+		eventRepository := &scriptedEntityEventRepository{results: []EntityEventRecordResult{{
+			Outcome: EntityEventOutcomeAccepted, RecordedAt: observedAt,
+		}}}
+		eventNotifier := &recordingDeviceFactNotifier{}
+		eventService := newTestService(eventRepository, nil, nil, Dependencies{DeviceFacts: eventNotifier})
+		event := factScriptEntityEvent(observedAt)
+		event.Trace = trace
+		_, eventErr := eventService.RecordEntityEvent(
+			context.Background(), "simulator", factScriptRuntimeID(), event, observedAt,
+		)
+		if !errors.Is(eventErr, ErrInvalidEntityEvent) || !errors.Is(eventErr, ErrInvalidDeviceFactTrace) {
+			t.Fatalf("entity event trace %#v error = %v", trace, eventErr)
+		}
+		if eventRepository.calls != 0 || eventNotifier.count() != 0 {
+			t.Fatalf("bounded trace rejection still reached persistence or the relay: %#v", trace)
+		}
+	}
+}
+
+// TestProjectObservationFailureCommitsNoFact proves the post-commit placement: a
+// projection that fails, including a commit failure reported by persistence,
+// wakes no relay because nothing committed.
 func TestProjectObservationFailureCommitsNoFact(t *testing.T) {
 	t.Parallel()
 	observedAt := time.Date(2026, 9, 1, 12, 0, 0, 0, time.UTC)
 	commitErr := errors.New("commit observation projection: SQLite write failed")
 	repository := &scriptedObservationRepository{err: commitErr}
-	sink := &recordingDeviceFactSink{}
-	service := newTestService(repository, nil, nil, Dependencies{DeviceFacts: sink})
+	notifier := &recordingDeviceFactNotifier{}
+	service := newTestService(repository, nil, nil, Dependencies{DeviceFacts: notifier})
 	_, err := service.ProjectObservation(context.Background(), "simulator", factScriptRuntimeID(), Observation{
 		ID: factScriptObservationID(), EntityID: factScriptEntityID(), Value: Value(`true`),
 		CorrelationID: factScriptCorrelationID(), AdapterReceivedAt: observedAt,
@@ -267,29 +281,41 @@ func TestProjectObservationFailureCommitsNoFact(t *testing.T) {
 	if !errors.Is(err, commitErr) {
 		t.Fatalf("projection error = %v", err)
 	}
-	if facts := sink.observationFacts(); len(facts) != 0 {
-		t.Fatalf("observation facts after failure = %#v", facts)
+	if got := notifier.count(); got != 0 {
+		t.Fatalf("notifications after failure = %d, want 0", got)
 	}
 }
 
-// TestRecordEntityEventFactsCoverOnlyFirstSeenAccepted pins the Entity Event
-// eligibility rule and the record time the fact carries.
-func TestRecordEntityEventFactsCoverOnlyFirstSeenAccepted(t *testing.T) {
+// TestRecordEntityEventNotifiesOnlyForQueuedPendingFact pins the Entity Event
+// side of the relay hint: only a first-seen accepted report carries a queued
+// fact identity, so rejected, duplicate and identity-conflict outcomes and a
+// failed recording all wake nobody.
+func TestRecordEntityEventNotifiesOnlyForQueuedPendingFact(t *testing.T) {
 	t.Parallel()
 	recordedAt := time.Date(2026, 9, 1, 12, 0, 1, 0, time.UTC)
 	emittedAt := time.Date(2026, 9, 1, 12, 0, 0, 0, time.UTC)
 	receivedAt := time.Date(2026, 9, 1, 12, 0, 0, 500_000_000, time.UTC)
 	rejection := EntityEventRejectionUnsupportedEvent
 	tests := []struct {
-		name      string
-		result    EntityEventRecordResult
-		err       error
-		wantFacts int
+		name       string
+		result     EntityEventRecordResult
+		err        error
+		wantNotify int
 	}{
 		{
-			name:      "accepted",
-			result:    EntityEventRecordResult{Outcome: EntityEventOutcomeAccepted, RecordedAt: recordedAt},
-			wantFacts: 1,
+			name: "accepted",
+			result: EntityEventRecordResult{
+				Outcome: EntityEventOutcomeAccepted, RecordedAt: recordedAt,
+				PendingFactID: deviceFactIDPointer(),
+			},
+			wantNotify: 1,
+		},
+		{
+			name: "accepted without queued fact",
+			result: EntityEventRecordResult{
+				Outcome: EntityEventOutcomeAccepted, RecordedAt: recordedAt,
+			},
+			wantNotify: 0,
 		},
 		{
 			name: "rejected",
@@ -298,22 +324,22 @@ func TestRecordEntityEventFactsCoverOnlyFirstSeenAccepted(t *testing.T) {
 				Rejection:  &rejection,
 				RecordedAt: recordedAt,
 			},
-			wantFacts: 0,
+			wantNotify: 0,
 		},
 		{
-			name:      "duplicate",
-			result:    EntityEventRecordResult{Outcome: EntityEventOutcomeDuplicate},
-			wantFacts: 0,
+			name:       "duplicate",
+			result:     EntityEventRecordResult{Outcome: EntityEventOutcomeDuplicate},
+			wantNotify: 0,
 		},
 		{
-			name:      "identity conflict",
-			result:    EntityEventRecordResult{Outcome: EntityEventOutcomeIdentityConflict},
-			wantFacts: 0,
+			name:       "identity conflict",
+			result:     EntityEventRecordResult{Outcome: EntityEventOutcomeIdentityConflict},
+			wantNotify: 0,
 		},
 		{
-			name:      "recording failure",
-			err:       errors.New("insert entity event: SQLite write failed"),
-			wantFacts: 0,
+			name:       "recording failure",
+			err:        errors.New("insert entity event: SQLite write failed"),
+			wantNotify: 0,
 		},
 	}
 	for _, test := range tests {
@@ -322,8 +348,8 @@ func TestRecordEntityEventFactsCoverOnlyFirstSeenAccepted(t *testing.T) {
 			repository := &scriptedEntityEventRepository{
 				results: []EntityEventRecordResult{test.result}, err: test.err,
 			}
-			sink := &recordingDeviceFactSink{}
-			service := newTestService(repository, nil, nil, Dependencies{DeviceFacts: sink})
+			notifier := &recordingDeviceFactNotifier{}
+			service := newTestService(repository, nil, nil, Dependencies{DeviceFacts: notifier})
 			event := factScriptEntityEvent(emittedAt)
 			_, recordErr := service.RecordEntityEvent(
 				context.Background(), "simulator", factScriptRuntimeID(), event, receivedAt,
@@ -331,29 +357,18 @@ func TestRecordEntityEventFactsCoverOnlyFirstSeenAccepted(t *testing.T) {
 			if !errors.Is(recordErr, test.err) {
 				t.Fatalf("record error = %v, want %v", recordErr, test.err)
 			}
-			facts := sink.entityEventFacts()
-			if len(facts) != test.wantFacts {
-				t.Fatalf("entity event facts = %#v, want %d", facts, test.wantFacts)
-			}
-			if test.wantFacts == 0 {
-				return
-			}
-			fact := facts[0]
-			if fact.EventID != event.ID || fact.EntityID != event.EntityID || fact.Name != event.Name ||
-				fact.CorrelationID != event.CorrelationID || !fact.ReportedAt.Equal(emittedAt) ||
-				!fact.ReceivedAt.Equal(receivedAt) || !fact.RecordedAt.Equal(recordedAt) {
-				t.Fatalf("entity event fact = %#v", fact)
+			if got := notifier.count(); got != test.wantNotify {
+				t.Fatalf("notifications = %d, want %d", got, test.wantNotify)
 			}
 		})
 	}
 }
 
-// TestObservationSatisfactionNotifiesWaiterBeforeObservationFact pins the
+// TestObservationSatisfactionNotifiesWaiterBeforeDeviceFactNotifier pins the
 // ordering guarantee for the one transaction that both commits an Observation
-// and satisfies a linked Command: the waiter is notified before any transport
-// work, and the Observation fact carries committed bytes rather than repository
-// buffers.
-func TestObservationSatisfactionNotifiesWaiterBeforeObservationFact(t *testing.T) {
+// and satisfies a linked Command: the waiter is notified before the relay hint,
+// because the hint is transport latency and Command completion is not.
+func TestObservationSatisfactionNotifiesWaiterBeforeDeviceFactNotifier(t *testing.T) {
 	t.Parallel()
 	observedAt := time.Date(2026, 9, 1, 12, 0, 0, 0, time.UTC)
 	result := ProjectionResult{
@@ -363,19 +378,20 @@ func TestObservationSatisfactionNotifiesWaiterBeforeObservationFact(t *testing.T
 			CommandID: commandTestID, Outcome: OutcomeObserved,
 			ObservationID: new(commandTestObservationID), Value: new(Value(`true`)),
 		},
+		PendingFactID: deviceFactIDPointer(),
 	}
 	repository := &scriptedObservationRepository{result: result}
 	var service *Service
-	sink := &recordingDeviceFactSink{}
-	waiterNotifiedBeforeFacts := false
-	sink.onObservation = func(ObservationFact) {
+	notifier := &recordingDeviceFactNotifier{}
+	waiterNotifiedBeforeHint := false
+	notifier.onNotify = func() {
 		service.waiters.mutex.Lock()
 		waiter := service.waiters.byID[commandTestID]
 		service.waiters.mutex.Unlock()
-		waiterNotifiedBeforeFacts = len(waiter) == 1
+		waiterNotifiedBeforeHint = len(waiter) == 1
 	}
 	dependencies := commandDependencies()
-	dependencies.DeviceFacts = sink
+	dependencies.DeviceFacts = notifier
 	service = newTestService(repository, nil, nil, dependencies)
 	waiter := service.addCommandWaiter(commandTestID)
 	defer service.removeCommandWaiter(commandTestID)
@@ -392,6 +408,9 @@ func TestObservationSatisfactionNotifiesWaiterBeforeObservationFact(t *testing.T
 	if projected.SatisfiedCommand == nil || projected.SatisfiedCommand.Outcome != OutcomeObserved {
 		t.Fatalf("projection result = %#v", projected)
 	}
+	if projected.PendingFactID == nil {
+		t.Fatal("projection result carries no pending fact identity")
+	}
 	select {
 	case delivered := <-waiter:
 		if delivered.CommandID != commandTestID {
@@ -400,23 +419,17 @@ func TestObservationSatisfactionNotifiesWaiterBeforeObservationFact(t *testing.T
 	default:
 		t.Fatal("waiter was not notified")
 	}
-	if !waiterNotifiedBeforeFacts {
-		t.Fatal("the Observation fact was enqueued before the Command waiter was notified")
+	if notifier.count() != 1 {
+		t.Fatalf("notifications = %d, want 1", notifier.count())
 	}
-	want := []string{"observation.applied"}
-	if got := sink.factOrder(); !equalStrings(got, want) {
-		t.Fatalf("fact order = %v, want %v", got, want)
-	}
-	// The fact owns its data: the committed State the repository still holds
-	// cannot rewrite what was enqueued.
-	result.State.Value[0] = 'x'
-	if got := string(sink.observationFacts()[0].Value); got != "true" {
-		t.Fatalf("observation fact value = %s", got)
+	if !waiterNotifiedBeforeHint {
+		t.Fatal("the relay was woken before the Command waiter was notified")
 	}
 }
 
-func equalStrings(got, want []string) bool {
-	return slices.Equal(got, want)
+func deviceFactIDPointer() *DeviceFactID {
+	factID := DeviceFactID("fct_01890f47-7a6b-7c4d-8e9f-0123456789ab")
+	return &factID
 }
 
 func factScriptEntityID() EntityID {

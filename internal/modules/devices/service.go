@@ -9,7 +9,7 @@ import (
 type Dependencies struct {
 	Logger           *slog.Logger
 	Now              func() time.Time
-	DeviceFacts      DeviceFactSink
+	DeviceFacts      DeviceFactNotifier
 	NewDeviceID      func() (DeviceID, error)
 	NewEntityID      func() (EntityID, error)
 	NewCommandID     func() (CommandID, error)
@@ -36,7 +36,7 @@ type Service struct {
 	sender               CommandSender
 	catalog              *TypeCatalog
 	dependencies         Dependencies
-	deviceFacts          DeviceFactSink
+	deviceFacts          DeviceFactNotifier
 	waiters              commandWaiters
 	lifecycleMu          sync.Mutex
 	commandAdmissionOpen bool
