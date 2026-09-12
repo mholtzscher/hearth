@@ -64,6 +64,7 @@ func assertDeviceFactStreamMatchesPinnedSettings(t *testing.T, config jetstream.
 		{"discard", config.Discard, jetstream.DiscardOld},
 		{"duplicate window", config.Duplicates, 2 * time.Hour},
 		{"subject transform", config.SubjectTransform, (*jetstream.SubjectTransformConfig)(nil)},
+		{"sealed", config.Sealed, false},
 		{"no acknowledgements", config.NoAck, false},
 	}
 	for _, check := range checks {
@@ -111,6 +112,54 @@ func TestValidateDeviceFactStreamRejectsSubjectTransform(t *testing.T) {
 	}
 	if validationErr := ValidateDeviceFactStream(ctx, js); validationErr == nil {
 		t.Fatal("readiness validation accepted a subject transform")
+	}
+}
+
+// TestValidateDeviceFactStreamRejectsSealedStream proves the live readiness path
+// rejects a stream an operator sealed after provisioning. A sealed stream accepts
+// no publication, so the relay could never drain a row or make progress, and
+// readiness must fail instead of reporting a publisher that cannot publish.
+func TestValidateDeviceFactStreamRejectsSealedStream(t *testing.T) {
+	t.Parallel()
+	_, _, js := startJetStream(t)
+	ctx := context.Background()
+	if _, err := js.CreateStream(ctx, deviceFactStreamConfig()); err != nil {
+		t.Fatal(err)
+	}
+	sealed := deviceFactStreamConfig()
+	sealed.Sealed = true
+	if _, err := js.UpdateStream(ctx, sealed); err != nil {
+		t.Fatal(err)
+	}
+	stream, err := js.Stream(ctx, DeviceFactStreamName)
+	if err != nil {
+		t.Fatal(err)
+	}
+	info, err := stream.Info(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !info.Config.Sealed {
+		t.Fatal("the live stream is not sealed, so this test proves nothing")
+	}
+	if validationErr := ValidateDeviceFactStream(ctx, js); validationErr == nil {
+		t.Fatal("readiness validation accepted a sealed stream")
+	}
+}
+
+// TestValidateDeviceFactStreamConfigRejectsSealed proves the readiness predicate
+// rejects a sealed stream in isolation. The broker rewrites MaxAge and Discard
+// when it seals a stream, so only a directly supplied configuration can show that
+// Sealed alone fails validation.
+func TestValidateDeviceFactStreamConfigRejectsSealed(t *testing.T) {
+	t.Parallel()
+	if err := validateDeviceFactStreamConfig(deviceFactStreamConfig()); err != nil {
+		t.Fatalf("required configuration rejected: %v", err)
+	}
+	sealed := deviceFactStreamConfig()
+	sealed.Sealed = true
+	if err := validateDeviceFactStreamConfig(sealed); err == nil {
+		t.Fatal("validation accepted a sealed stream configuration")
 	}
 }
 

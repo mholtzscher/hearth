@@ -449,6 +449,31 @@ func countPendingDeviceFacts(t *testing.T, database *sql.DB) int {
 	return count
 }
 
+// pendingFactIDs reads the durable outbox identities in enqueue order, so a test
+// can prove exactly which rows a fault left blocked.
+func pendingFactIDs(t *testing.T, database *sql.DB) []string {
+	t.Helper()
+	rows, err := database.QueryContext(
+		context.Background(), `SELECT fact_id FROM device_facts_outbox ORDER BY enqueue_order`,
+	)
+	if err != nil {
+		t.Fatalf("read pending device facts: %v", err)
+	}
+	defer rows.Close()
+	identities := make([]string, 0, 1)
+	for rows.Next() {
+		var factID string
+		if scanErr := rows.Scan(&factID); scanErr != nil {
+			t.Fatal(scanErr)
+		}
+		identities = append(identities, factID)
+	}
+	if rowsErr := rows.Err(); rowsErr != nil {
+		t.Fatal(rowsErr)
+	}
+	return identities
+}
+
 func testDeviceFactValidator(t *testing.T) *contractsv1.Validator {
 	t.Helper()
 	validator, err := contractsv1.Compile()

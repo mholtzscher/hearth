@@ -110,7 +110,9 @@ func defaultDeviceFactRelayOptions() deviceFactRelayOptions {
 // deterministic poison row -- one Core cannot map, or one Core cannot even
 // decode from the outbox -- keeps the row, stops the relay and makes
 // [DeviceFactRelay.Active] false, because deleting a fact Core cannot represent
-// would silently lose durable evidence.
+// would silently lose durable evidence. Rows older than a poison row are still
+// published and deleted first, so only the poison row and the rows behind it
+// stay blocked (ADR 0020, "deliver or fault, never discard").
 type DeviceFactRelay struct {
 	outbox    devices.DeviceFactOutbox
 	validator *contractsv1.Validator
@@ -358,10 +360,13 @@ func (relay *DeviceFactRelay) drainPending(ctx context.Context) error {
 // publishPending publishes pending facts oldest-first until the outbox is empty.
 // It returns nil when a read finds nothing pending, the permanent poison error
 // for a row Core cannot decode or map, and errDeviceFactRetry for a transient
-// failure after logging it. A transient read failure is always retryable; only
-// the outbox's own permanent row class faults the relay. It deliberately returns
-// on the first transient failure so no row is skipped and the retry starts again
-// from the oldest pending row.
+// failure after logging it. When a stored row cannot be decoded, the read also
+// returns the decodable rows older than it, and publishPending publishes and
+// deletes that prefix before it returns the poison error, so only the poison row
+// and the rows behind it stay blocked. A transient read failure is always
+// retryable and carries no prefix; only the outbox's own permanent row class
+// faults the relay. It deliberately returns on the first transient failure so no
+// row is skipped and the retry starts again from the oldest pending row.
 func (relay *DeviceFactRelay) publishPending(ctx context.Context) error {
 	for {
 		if ctxErr := ctx.Err(); ctxErr != nil {
@@ -371,22 +376,41 @@ func (relay *DeviceFactRelay) publishPending(ctx context.Context) error {
 		if listErr != nil {
 			// A row whose stored bytes cannot be decoded is deterministic, so the
 			// relay faults and preserves it instead of retrying a decode that can
-			// never succeed. Every other read failure is transient.
+			// never succeed. Decoding stopped at that row, so pending is the valid
+			// older prefix; deliver it first, then fault, so the poison row and the
+			// rows behind it are the only ones still blocked.
 			if poisonErr := asInvalidOutboxRowPoison(listErr); poisonErr != nil {
+				if publishErr := relay.publishBatch(ctx, pending); publishErr != nil {
+					return publishErr
+				}
 				return poisonErr
 			}
+			// Every other read failure is transient and carries no prefix.
 			relay.logRetry(ctx, deviceFactStageList, deviceFactCodeListFailed, "", "")
 			return errDeviceFactRetry
 		}
 		if len(pending) == 0 {
 			return nil
 		}
-		for _, item := range pending {
-			if err := relay.publishPendingFact(ctx, item); err != nil {
-				return err
-			}
+		if err := relay.publishBatch(ctx, pending); err != nil {
+			return err
 		}
 	}
+}
+
+// publishBatch publishes and deletes one decoded batch in enqueue order. It
+// stops at the first retryable failure so no row is skipped and the retry
+// restarts from the oldest row the batch left pending.
+func (relay *DeviceFactRelay) publishBatch(
+	ctx context.Context,
+	pending []devices.PendingDeviceFact,
+) error {
+	for _, item := range pending {
+		if err := relay.publishPendingFact(ctx, item); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // publishPendingFact maps one pending fact, publishes it and deletes its row only

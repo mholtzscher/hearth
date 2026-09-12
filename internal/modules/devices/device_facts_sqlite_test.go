@@ -672,6 +672,69 @@ func TestListPendingDeviceFactsFaultsCorruptRowAndRetriesReadFailure(t *testing.
 	})
 }
 
+// TestListPendingDeviceFactsReturnsThePrefixOlderThanACorruptRow pins the outbox
+// contract the relay's poison handling depends on: decoding stops at the first
+// undecodable row and the call returns the valid older rows together with the
+// permanent ErrInvalidDeviceFactRow error, so the relay can publish them. The
+// corrupt row and every row behind it are neither decoded nor deleted, because
+// ADR 0020 preserves the poison row and blocks only the facts queued behind it.
+func TestListPendingDeviceFactsReturnsThePrefixOlderThanACorruptRow(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	const insertStatement = `INSERT INTO device_facts_outbox (
+        fact_id, family, entity_id, variant, source_id, correlation_id, created_at,
+        traceparent, tracestate, value_json, adapter_received_at, observed_at
+    ) VALUES (?, 'observation', ?, 'applied', ?, ?, ?, '', '', 'true', ?, ?)`
+	const (
+		entityID      = "ent_01890f47-7a6b-7c4d-8e9f-0123456789ab"
+		correlationID = "cor_01890f47-7a6b-7c4d-8e9f-0123456789ab"
+		committedAt   = "2026-09-01T12:00:00Z"
+	)
+	database := openRegistrationDatabase(t, filepath.Join(t.TempDir(), "hearth.db"))
+	repository := NewSQLiteRepository(database, nil)
+	insertRow := func(factID string, sourceID string) {
+		t.Helper()
+		if _, err := database.ExecContext(
+			ctx, insertStatement, factID, entityID, sourceID, correlationID,
+			committedAt, committedAt, committedAt,
+		); err != nil {
+			t.Fatal(err)
+		}
+	}
+	oldest := "fct_01890f47-7a6b-7c4d-8e9f-0123456789a1"
+	poison := "fct_01890f47-7a6b-7c4d-8e9f-0123456789a2"
+	behindPoison := "fct_01890f47-7a6b-7c4d-8e9f-0123456789a3"
+	insertRow(oldest, "obs_01890f47-7a6b-7c4d-8e9f-0123456789a1")
+	insertRow(poison, "obs_01890f47-7a6b-7c4d-8e9f-0123456789a2")
+	insertRow(behindPoison, "obs_01890f47-7a6b-7c4d-8e9f-0123456789a3")
+	if _, err := database.ExecContext(
+		ctx, `UPDATE device_facts_outbox SET created_at = 'not-a-timestamp' WHERE fact_id = ?`, poison,
+	); err != nil {
+		t.Fatal(err)
+	}
+
+	facts, listErr := repository.ListPendingDeviceFacts(ctx, 10)
+	if !errors.Is(listErr, ErrInvalidDeviceFactRow) {
+		t.Fatalf("list error = %v, want %v", listErr, ErrInvalidDeviceFactRow)
+	}
+	var rowErr *DeviceFactRowError
+	if !errors.As(listErr, &rowErr) || rowErr.FactID != poison {
+		t.Fatalf("list error = %#v, want the corrupt row %s", rowErr, poison)
+	}
+	if len(facts) != 1 {
+		t.Fatalf("decoded prefix = %#v, want only the row older than the corrupt row", facts)
+	}
+	decoded := requireObservationFact(t, facts[0])
+	if string(decoded.ID) != oldest || facts[0].Sequence != 1 {
+		t.Fatalf("decoded prefix = %#v, want the oldest row %s first", facts[0], oldest)
+	}
+	// Only the poison row and the rows behind it remain durable; the prefix is
+	// returned for the relay to publish, not deleted by the read.
+	if got := countPendingDeviceFacts(t, database); got != 3 {
+		t.Fatalf("pending rows = %d, want every row preserved", got)
+	}
+}
+
 func newFactObservationWithTrace(
 	t *testing.T,
 	entityID EntityID,

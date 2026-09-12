@@ -134,8 +134,11 @@ type DeviceFactOutbox interface {
 	// instead of re-reading the whole set. A stored row that cannot be decoded
 	// must be reported as [DeviceFactRowError], which matches
 	// [ErrInvalidDeviceFactRow]: the failure is permanent, so the relay faults and
-	// preserves the row instead of retrying a decode that can never succeed. Every
-	// other failure must stay an ordinary retryable error.
+	// preserves the row instead of retrying a decode that can never succeed.
+	// Decoding stops at that row, so the returned slice is the valid older prefix
+	// the relay must publish and delete before it faults; every row from the
+	// poison row onward stays durable. Every other failure must stay an ordinary
+	// retryable error and must return no prefix.
 	ListPendingDeviceFacts(ctx context.Context, limit int) ([]PendingDeviceFact, error)
 	// DeleteDeviceFact removes one published fact. Deleting a fact that is
 	// already gone is not an error, so a relay cannot fail on work another drain

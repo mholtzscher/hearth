@@ -18,8 +18,10 @@ import (
 // A row that cannot be decoded is reported as [DeviceFactRowError], which
 // matches [ErrInvalidDeviceFactRow] and is permanent: the same stored bytes fail
 // the same way on every read, so the caller must preserve the row instead of
-// retrying. A storage failure of the read itself is returned as an ordinary
-// error and stays retryable.
+// retrying. Because decoding stops at the first such row, the returned slice is
+// the valid older prefix read before it, and the caller delivers that prefix
+// before faulting on the preserved row. A storage failure of the read itself is
+// returned as an ordinary error, carries no prefix, and stays retryable.
 func (repository *SQLiteRepository) ListPendingDeviceFacts(
 	ctx context.Context,
 	limit int,
@@ -37,7 +39,11 @@ func (repository *SQLiteRepository) ListPendingDeviceFacts(
 	for _, row := range rows {
 		fact, mapErr := pendingDeviceFactFromRow(row)
 		if mapErr != nil {
-			return nil, &DeviceFactRowError{FactID: row.FactID, Cause: mapErr}
+			// Return the valid older prefix with the error: the caller publishes
+			// and deletes it, so only the poison row and the rows behind it stay
+			// blocked. Discarding the prefix would lose durable evidence the
+			// fault did not have to block.
+			return facts, &DeviceFactRowError{FactID: row.FactID, Cause: mapErr}
 		}
 		facts = append(facts, fact)
 	}

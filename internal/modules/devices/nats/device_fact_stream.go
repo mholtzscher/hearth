@@ -80,15 +80,27 @@ func validateDeviceFactStream(ctx context.Context, stream jetstream.Stream) erro
 	if err != nil {
 		return fmt.Errorf("inspect device fact stream: %w", err)
 	}
-	config := info.Config
+	return validateDeviceFactStreamConfig(info.Config)
+}
+
+// validateDeviceFactStreamConfig reports whether one live stream configuration
+// carries the required v1 settings. It is a pure predicate over the live config,
+// because the broker rewrites other limits while it seals a stream, so only a
+// directly supplied configuration can pin the sealed rejection.
+func validateDeviceFactStreamConfig(config jetstream.StreamConfig) error {
 	// A subject transform is rejected outright: it would rewrite a canonical fact
 	// subject before the broker stores it, while PublishMsg still returns a
 	// successful PubAck for the original subject. The relay would then delete the
 	// outbox row even though no consumer can ever read that fact under the
 	// canonical subject it was published with.
+	//
+	// A sealed stream is rejected for the same reason: a sealed stream accepts no
+	// publication at all, so PublishMsg fails while the relay keeps retrying and
+	// reporting itself active, and every outbox row stays stuck.
 	if config.Name != DeviceFactStreamName ||
 		!slices.Equal(config.Subjects, []string{natswire.DeviceFactWildcard()}) ||
 		config.SubjectTransform != nil ||
+		config.Sealed ||
 		config.Storage != jetstream.FileStorage ||
 		config.Retention != jetstream.LimitsPolicy ||
 		config.MaxMsgs != -1 ||
@@ -101,7 +113,7 @@ func validateDeviceFactStream(ctx context.Context, stream jetstream.Stream) erro
 		config.NoAck {
 		return errors.New(
 			"device fact stream configuration does not match required v1 settings " +
-				"(canonical subjects, no subject transform, exact bounded limits)",
+				"(canonical subjects, no subject transform, no sealed stream, exact bounded limits)",
 		)
 	}
 	return nil
