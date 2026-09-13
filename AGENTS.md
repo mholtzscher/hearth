@@ -8,7 +8,8 @@
 - After making any change, prefer `mise run validate`; it regenerates code, formats it, and tidies module metadata before running all checks.
 - Review the resulting diff and include intended generated or formatting changes.
 - Hearth has no deployments yet. Do not preserve backward compatibility by default. Make direct breaking changes and update all in-repository callers; add compatibility shims, legacy paths, or migration handling only when explicitly requested.
-- To run NATS locally (JetStream enabled) while developing: `mise run nats`.
+- To run the local NATS and Mosquitto brokers while developing: `mise run brokers`.
+- Real-Mosquitto integration tests skip when no Docker daemon is reachable; `mise run test` sets `HEARTH_REQUIRE_MOSQUITTO=1` so they must run.
 
 ## Commands
 
@@ -22,9 +23,11 @@
 | Tidy module metadata           | `mise run --skip-deps tidy`           |
 | Check module tidiness          | `mise run --skip-deps tidy-check`     |
 | Test with the race detector    | `mise run --skip-deps test`           |
+| Run real-Mosquitto integration | `mise run --skip-deps test-brokers`   |
 | Vet                            | `mise run --skip-deps vet`            |
 | Run all validation (preferred) | `mise run validate`                   |
-| Run NATS server locally        | `mise run nats`                       |
+| Start local NATS and Mosquitto | `mise run brokers`                    |
+| Stop local NATS and Mosquitto  | `mise run brokers-down`               |
 
 ## External References
 

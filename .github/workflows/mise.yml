@@ -34,6 +34,8 @@ jobs:
           key: go-${{ runner.os }}-${{ runner.arch }}-${{ steps.go-cache-paths.outputs.version }}-${{ hashFiles('go.sum') }}
           restore-keys: |
             go-${{ runner.os }}-${{ runner.arch }}-${{ steps.go-cache-paths.outputs.version }}-
+      - name: Pre-pull broker image
+        run: mise run --skip-deps broker-images-pull
       - name: Run checks
         run: mise run validate
       - name: Verify clean working tree

@@ -8,7 +8,7 @@ everywhere.
 ## Prerequisites
 
 - `hearthd` running, default `http://127.0.0.1:8080`
-  (see root `README.md`; start NATS with `mise run nats` first).
+  (see root `README.md`; start the local brokers with `mise run brokers` first).
 - Node + pnpm, provided by mise: run `mise install` from the repo root.
 
 ## Run
@@ -107,9 +107,9 @@ Health (`/healthz`) and readiness (`/readyz`) poll every 10s in the header.
 
 The NATS and Device facts pages need the dev-only loopback listeners in
 `configs/nats-server.conf` (already present: `websocket` on
-`127.0.0.1:4223`, `http` monitoring on `127.0.0.1:8222`). Restart NATS after
-changing that file (`mise run nats`). Vite proxies `/nats-monitor` to the
-monitoring port (override with `NATS_MONITOR_URL`); the websocket URL is
-editable in the NATS page (stored in `localStorage`) and both pages share one
-refcounted connection per URL, so one page's teardown never closes the other's
-socket.
+`127.0.0.1:4223`, `http` monitoring on `127.0.0.1:8222`). Restart the local
+brokers after changing that file (`mise run brokers-down && mise run brokers`).
+Vite proxies `/nats-monitor` to the monitoring port (override with
+`NATS_MONITOR_URL`); the websocket URL is editable in the NATS page (stored in
+`localStorage`) and both pages share one refcounted connection per URL, so one
+page's teardown never closes the other's socket.

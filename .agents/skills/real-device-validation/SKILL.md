@@ -1,21 +1,21 @@
 ---
 name: real-device-validation
-description: Validate Hearth against REAL Zigbee devices through the homelab's shared NATS and Zigbee2MQTT dev environment, and collect real device payloads for fixtures. Use this skill whenever the user mentions real devices, real hardware, the homelab, physical lights or sensors, validating against Zigbee2MQTT, capturing live device data, or debugging behavior the simulator cannot reproduce. Do NOT use it for pure simulator runs, unit tests, or local-loopback development.
+description: Validate Hearth against REAL Zigbee devices through the homelab's shared NATS, Mosquitto, and Zigbee2MQTT dev environment, and collect real device payloads for fixtures. Use this skill whenever the user mentions real devices, real hardware, the homelab, physical lights or sensors, validating against Zigbee2MQTT, capturing live device data, or debugging behavior the simulator cannot reproduce. Do NOT use it for pure simulator runs, unit tests, or local-loopback development.
 ---
 
 # Real-Device Validation
 
 Run local `hearthd`, the Zigbee2MQTT adapter, and the debug dashboard against
-shared homelab NATS + Zigbee2MQTT. Read these safety rules, then run the startup
-task; do not reconstruct its steps with separate tool calls.
+shared homelab NATS, Mosquitto, and Zigbee2MQTT. Read these safety rules, then
+run the startup task; do not reconstruct its steps with separate tool calls.
 
 ## Safety and topology
 
 - Use the hostname supplied by the user. If unknown, check ignored
   `configs/homelab-*.yaml` with shell path tests, then `~/.ssh/config`, then
   ask. Never assume a hostname. No SSH access, tunnel, or VPN is required.
-- The operator-managed server provides NATS `:4222`, MQTT `:1883`, NATS
-  monitoring `:8222`, and the Z2M frontend `:8082`. Its MQTT base topic is
+- The operator-managed server provides NATS `:4222`, Mosquitto MQTT `:1883`,
+  NATS monitoring `:8222`, and the Z2M frontend `:8082`. Its MQTT base topic is
   `zigbee2mqtt`, availability enabled, global optimistic `false`.
 - Never start local NATS in real-device mode. Never change the shared server,
   Z2M settings, pairing, names, OTA, or coordinator without explicit approval.

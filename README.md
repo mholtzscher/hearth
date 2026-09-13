@@ -12,7 +12,7 @@ Hearth's first vertical slice observes and controls one Home Assistant-managed l
 
 ## Development
 
-Install tools with `mise install` and start local NATS/JetStream with `mise run nats`. The validation gate is `mise run validate`; it regenerates checked-in code, formats Go files, tidies module metadata, and then checks generation, formatting, module tidiness, linting, all authoritative schemas and cross-binary fixtures, race-enabled tests (including runtime OpenAPI and recovery), and vetting. Run `mise run ko-build` for no-push multi-platform release container builds. Regenerate checked-in Entity-type and database access code after changing its inputs with `mise run generate`.
+Install tools with `mise install` and start the local NATS/JetStream and Mosquitto brokers with `mise run brokers`. The validation gate is `mise run validate`; it regenerates checked-in code, formats Go files, tidies module metadata, and then checks generation, formatting, module tidiness, linting, all authoritative schemas and cross-binary fixtures, race-enabled tests (including runtime OpenAPI and recovery), and vetting. Run `mise run ko-build` for no-push multi-platform release container builds. Regenerate checked-in Entity-type and database access code after changing its inputs with `mise run generate`.
 
 The checked-in golangci-lint config tracks [maratori/golangci-lint-config](https://github.com/maratori/golangci-lint-config) at the version of golangci-lint locked by mise. Existing findings are baselined at the commit recorded in the lint task, while validation rejects findings introduced afterward. Update the tool and config together with `mise upgrade golangci-lint && mise run update-lint-config`, then review and validate the resulting changes.
 
@@ -32,7 +32,7 @@ Entity Events are named occurrences, not State. `entity-events` registers an `ev
 cp configs/hearthd.example.yaml configs/hearthd.yaml
 cp configs/simulator.example.yaml configs/simulator.yaml
 # edit configs/simulator.yaml so that: scenario: entity-events
-mise run nats
+mise run brokers
 go run ./cmd/hearthd -config configs/hearthd.yaml
 go run ./cmd/hearth-simulator -config configs/simulator.yaml
 ```
@@ -106,7 +106,7 @@ curl -X POST http://127.0.0.1:8080/v1/entities/ent_.../commands \
 
 For adding device capabilities, see [Extending Zigbee2MQTT capabilities](docs/zigbee2mqtt-capabilities.md): typed mapping tables for repetitive sensors/settings, with family planning and conversions kept in Go.
 
-`hearth-adapter-zigbee2mqtt` connects an operator-managed Zigbee2MQTT service to Hearth. Tested versions are Zigbee2MQTT 2.13.0 and 2.14.1 with NATS Server 2.12. Other versions are not runtime-blocked, but must provide the same retained MQTT payloads and behavior.
+`hearth-adapter-zigbee2mqtt` connects an operator-managed Zigbee2MQTT service to Hearth. Tested versions are Zigbee2MQTT 2.13.0 and 2.14.1 with Mosquitto 2.0.22. Other versions are not runtime-blocked, but must provide the same retained MQTT payloads and behavior.
 
 Configure Zigbee2MQTT to use MQTT 3.1.1 and to publish explicit availability while global optimistic updates are disabled. The effective `bridge/info` settings must contain:
 
@@ -121,17 +121,17 @@ device_options:
 
 Every Zigbee2MQTT `friendly_name` considered by the adapter must match `^[a-z0-9][a-z0-9_-]{0,62}$`; slashes, dots, whitespace, wildcards, and uppercase letters are not supported. Set a human-readable Zigbee2MQTT `description` when a display name distinct from the route-safe friendly name is wanted.
 
-The checked-in NATS configuration enables file-backed JetStream and both native NATS and MQTT listeners on loopback. Copy the adapter example, then verify that its MQTT URL, base topic, and Zigbee2MQTT broker settings refer to the same MQTT listener:
+The local Compose stack runs file-backed JetStream on NATS and Mosquitto for MQTT 1883, publishing every broker port on loopback only. MQTT is not a NATS listener. Copy the adapter example, then verify that its MQTT URL, base topic, and Zigbee2MQTT broker settings refer to the Mosquitto listener:
 
 ```sh
 cp configs/hearthd.example.yaml configs/hearthd.yaml
 cp configs/zigbee2mqtt.example.yaml configs/zigbee2mqtt.yaml
-mise run nats
+mise run brokers
 go run ./cmd/hearthd -config configs/hearthd.yaml
 go run ./cmd/hearth-adapter-zigbee2mqtt -config configs/zigbee2mqtt.yaml
 ```
 
-Run Zigbee2MQTT separately under the operator's normal supervision. The adapter configuration accepts only plain `mqtt://` or `tcp://` endpoints with an explicit host and port. It has no MQTT username, password, TLS, or certificate settings. Native NATS, MQTT, Hearth HTTP, and Zigbee2MQTT management endpoints must remain on loopback or a trusted private network; exposing this configuration to an untrusted network is unsupported.
+Run Zigbee2MQTT separately under the operator's normal supervision. The adapter configuration accepts only plain `mqtt://` or `tcp://` endpoints with an explicit host and port. It has no MQTT username, password, TLS, or certificate settings. The NATS listener, Mosquitto MQTT, Hearth HTTP, and Zigbee2MQTT management endpoints must remain on loopback or a trusted private network; exposing this configuration to an untrusted network is unsupported.
 
 The adapter remains `unknown` until it has claimed a Hearth session, connected and subscribed to MQTT, received retained `bridge/state`, `bridge/info`, and `bridge/devices`, and completed registration. It becomes healthy after an online bridge and compatible configuration are reconciled. Device availability comes only from explicit `<friendly_name>/availability` messages; State does not imply availability.
 

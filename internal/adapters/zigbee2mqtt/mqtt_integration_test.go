@@ -8,23 +8,21 @@ import (
 	"time"
 
 	paho "github.com/eclipse/paho.mqtt.golang"
-	natsserver "github.com/nats-io/nats-server/v2/server"
+
+	"github.com/mholtzscher/hearth/internal/testbroker"
 )
 
-// TestPahoDialerAgainstNATSMQTT protects protocol-compatible QoS 1 traffic,
+// TestPahoDialerAgainstMosquitto protects protocol-compatible QoS 1 traffic,
 // retained metadata, loss reporting, and the no-drop relay. It fails if Paho is
-// misconfigured for NATS MQTT or a blocked consumer stalls or drops callbacks.
+// misconfigured for a real MQTT broker or a blocked consumer stalls or drops
+// callbacks. It owns its Mosquitto container so it can end the broker mid-test.
 //
 //nolint:gocognit // One broker lifecycle proves retained, clean-session, backpressure, and loss behavior.
-func TestPahoDialerAgainstNATSMQTT(t *testing.T) {
+func TestPahoDialerAgainstMosquitto(t *testing.T) {
 	t.Parallel()
 
-	server := startMQTTServer(t)
-	varz, varzErr := server.Varz(nil)
-	if varzErr != nil {
-		t.Fatal(varzErr)
-	}
-	brokerURL := fmt.Sprintf("mqtt://127.0.0.1:%d", varz.MQTT.Port)
+	broker := testbroker.StartMosquitto(t)
+	brokerURL := broker.URL()
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
@@ -128,8 +126,7 @@ func TestPahoDialerAgainstNATSMQTT(t *testing.T) {
 		t.Fatalf("reconnected payload = %q, want live", message.Payload)
 	}
 
-	server.Shutdown()
-	server.WaitForShutdown()
+	broker.Stop()
 	select {
 	case lostErr := <-reconnected.Lost():
 		if lostErr == nil {
@@ -184,36 +181,6 @@ func TestWaitPahoTokenHonorsContext(t *testing.T) {
 	if err := waitPahoToken(ctx, stalledPahoToken{}); !errors.Is(err, context.Canceled) {
 		t.Fatalf("wait error = %v, want context cancellation", err)
 	}
-}
-
-func startMQTTServer(t *testing.T) *natsserver.Server {
-	t.Helper()
-	server, err := natsserver.NewServer(&natsserver.Options{
-		ServerName: "hearth-zigbee2mqtt-test",
-		Host:       "127.0.0.1",
-		Port:       -1,
-		NoSigs:     true,
-		NoLog:      true,
-		JetStream:  true,
-		StoreDir:   t.TempDir(),
-		MQTT: natsserver.MQTTOpts{
-			Host: "127.0.0.1",
-			Port: -1,
-		},
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	go server.Start()
-	if !server.ReadyForConnections(10 * time.Second) {
-		server.Shutdown()
-		t.Fatal("NATS server did not become ready")
-	}
-	t.Cleanup(func() {
-		server.Shutdown()
-		server.WaitForShutdown()
-	})
-	return server
 }
 
 func receiveMQTTMessage(ctx context.Context, t *testing.T, messages <-chan mqttMessage) mqttMessage {
