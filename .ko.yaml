@@ -9,5 +9,7 @@ builds:
     main: ./cmd/hearth-adapter-homeassistant
   - id: hearth-adapter-zigbee2mqtt
     main: ./cmd/hearth-adapter-zigbee2mqtt
+  - id: hearth-adapter-ecowitt
+    main: ./cmd/hearth-adapter-ecowitt
   - id: hearth-simulator
     main: ./cmd/hearth-simulator

@@ -17,27 +17,33 @@ import (
 	contractnumericsensorv1 "github.com/mholtzscher/hearth/entitytypes/numericsensorv1"
 	contractnumericsettingv1 "github.com/mholtzscher/hearth/entitytypes/numericsettingv1"
 	contractpowerv1 "github.com/mholtzscher/hearth/entitytypes/powerv1"
+	contractpressurev1 "github.com/mholtzscher/hearth/entitytypes/pressurev1"
+	contractrelativehumidityv1 "github.com/mholtzscher/hearth/entitytypes/relativehumidityv1"
+	contractspeedv1 "github.com/mholtzscher/hearth/entitytypes/speedv1"
 	contracttemperaturev1 "github.com/mholtzscher/hearth/entitytypes/temperaturev1"
 )
 
 const (
-	EntityTypeBinarysensorV1   EntityTypeID = "hearth.binarysensor/v1"
-	EntityTypeBrightnessV1     EntityTypeID = "hearth.brightness/v1"
-	EntityTypeColorhsV1        EntityTypeID = "hearth.colorhs/v1"
-	EntityTypeColormodeV1      EntityTypeID = "hearth.colormode/v1"
-	EntityTypeColortempV1      EntityTypeID = "hearth.colortemp/v1"
-	EntityTypeColorxyV1        EntityTypeID = "hearth.colorxy/v1"
-	EntityTypeEnumactionV1     EntityTypeID = "hearth.enumaction/v1"
-	EntityTypeEnumeventV1      EntityTypeID = "hearth.enumevent/v1"
-	EntityTypeEnumsettingV1    EntityTypeID = "hearth.enumsetting/v1"
-	EntityTypeNumericsensorV1  EntityTypeID = "hearth.numericsensor/v1"
-	EntityTypeNumericsettingV1 EntityTypeID = "hearth.numericsetting/v1"
-	EntityTypePowerV1          EntityTypeID = "hearth.power/v1"
-	EntityTypeTemperatureV1    EntityTypeID = "hearth.temperature/v1"
+	EntityTypeBinarysensorV1     EntityTypeID = "hearth.binarysensor/v1"
+	EntityTypeBrightnessV1       EntityTypeID = "hearth.brightness/v1"
+	EntityTypeColorhsV1          EntityTypeID = "hearth.colorhs/v1"
+	EntityTypeColormodeV1        EntityTypeID = "hearth.colormode/v1"
+	EntityTypeColortempV1        EntityTypeID = "hearth.colortemp/v1"
+	EntityTypeColorxyV1          EntityTypeID = "hearth.colorxy/v1"
+	EntityTypeEnumactionV1       EntityTypeID = "hearth.enumaction/v1"
+	EntityTypeEnumeventV1        EntityTypeID = "hearth.enumevent/v1"
+	EntityTypeEnumsettingV1      EntityTypeID = "hearth.enumsetting/v1"
+	EntityTypeNumericsensorV1    EntityTypeID = "hearth.numericsensor/v1"
+	EntityTypeNumericsettingV1   EntityTypeID = "hearth.numericsetting/v1"
+	EntityTypePowerV1            EntityTypeID = "hearth.power/v1"
+	EntityTypePressureV1         EntityTypeID = "hearth.pressure/v1"
+	EntityTypeRelativehumidityV1 EntityTypeID = "hearth.relativehumidity/v1"
+	EntityTypeSpeedV1            EntityTypeID = "hearth.speed/v1"
+	EntityTypeTemperatureV1      EntityTypeID = "hearth.temperature/v1"
 )
 
 func NewBuiltinTypeCatalog() (*TypeCatalog, error) {
-	definitions := make([]EntityTypeDefinition, 0, 13)
+	definitions := make([]EntityTypeDefinition, 0, 16)
 	binarysensorV1, err := newBinarysensorV1TypeDefinition(EntityTypeBinarysensorV1)
 	if err != nil {
 		return nil, err
@@ -98,6 +104,21 @@ func NewBuiltinTypeCatalog() (*TypeCatalog, error) {
 		return nil, err
 	}
 	definitions = append(definitions, powerV1)
+	pressureV1, err := newPressureV1TypeDefinition(EntityTypePressureV1)
+	if err != nil {
+		return nil, err
+	}
+	definitions = append(definitions, pressureV1)
+	relativehumidityV1, err := newRelativehumidityV1TypeDefinition(EntityTypeRelativehumidityV1)
+	if err != nil {
+		return nil, err
+	}
+	definitions = append(definitions, relativehumidityV1)
+	speedV1, err := newSpeedV1TypeDefinition(EntityTypeSpeedV1)
+	if err != nil {
+		return nil, err
+	}
+	definitions = append(definitions, speedV1)
 	temperatureV1, err := newTemperatureV1TypeDefinition(EntityTypeTemperatureV1)
 	if err != nil {
 		return nil, err
@@ -341,6 +362,42 @@ func newPowerV1TypeDefinition(id EntityTypeID) (EntityTypeDefinition, error) {
 		contractpowerv1.SetSatisfied,
 	)
 	definition, err := DefineEntityType(id, codecs.State, codecs.Support, contractpowerv1.ValidateSupport, contractpowerv1.ValidateState, contractpowerv1.EqualState, set)
+	if err != nil {
+		return EntityTypeDefinition{}, err
+	}
+	return definition, nil
+}
+
+func newPressureV1TypeDefinition(id EntityTypeID) (EntityTypeDefinition, error) {
+	codecs, err := contractpressurev1.Compile()
+	if err != nil {
+		return EntityTypeDefinition{}, fmt.Errorf("compile hearth.pressure/v1 codecs: %w", err)
+	}
+	definition, err := DefineEntityType(id, codecs.State, codecs.Support, contractpressurev1.ValidateSupport, contractpressurev1.ValidateState, contractpressurev1.EqualState)
+	if err != nil {
+		return EntityTypeDefinition{}, err
+	}
+	return definition, nil
+}
+
+func newRelativehumidityV1TypeDefinition(id EntityTypeID) (EntityTypeDefinition, error) {
+	codecs, err := contractrelativehumidityv1.Compile()
+	if err != nil {
+		return EntityTypeDefinition{}, fmt.Errorf("compile hearth.relativehumidity/v1 codecs: %w", err)
+	}
+	definition, err := DefineEntityType(id, codecs.State, codecs.Support, contractrelativehumidityv1.ValidateSupport, contractrelativehumidityv1.ValidateState, contractrelativehumidityv1.EqualState)
+	if err != nil {
+		return EntityTypeDefinition{}, err
+	}
+	return definition, nil
+}
+
+func newSpeedV1TypeDefinition(id EntityTypeID) (EntityTypeDefinition, error) {
+	codecs, err := contractspeedv1.Compile()
+	if err != nil {
+		return EntityTypeDefinition{}, fmt.Errorf("compile hearth.speed/v1 codecs: %w", err)
+	}
+	definition, err := DefineEntityType(id, codecs.State, codecs.Support, contractspeedv1.ValidateSupport, contractspeedv1.ValidateState, contractspeedv1.EqualState)
 	if err != nil {
 		return EntityTypeDefinition{}, err
 	}

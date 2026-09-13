@@ -75,7 +75,8 @@ description = "Build container images locally"
 depends = ["tidy"]
 run = '''
 KO_DOCKER_REPO=example.invalid/hearth ko build --base-import-paths --tags validation --push=false \
-  ./cmd/hearthd ./cmd/hearth-adapter-homeassistant ./cmd/hearth-adapter-zigbee2mqtt ./cmd/hearth-simulator
+  ./cmd/hearthd ./cmd/hearth-adapter-homeassistant ./cmd/hearth-adapter-zigbee2mqtt \
+  ./cmd/hearth-adapter-ecowitt ./cmd/hearth-simulator
 '''
 
 [tasks."web-docker-build"]
@@ -112,7 +113,7 @@ run = '''HEARTH_REQUIRE_MOSQUITTO=1 go test -race -count=1 -p 4 ./...'''
 
 [tasks."test-brokers"]
 description = "Run the real-Mosquitto integration tests with the race detector"
-run = '''HEARTH_REQUIRE_MOSQUITTO=1 go test -race -count=1 ./internal/adapters/zigbee2mqtt ./internal/app/zigbee2mqtt'''
+run = '''HEARTH_REQUIRE_MOSQUITTO=1 go test -race -count=1 ./internal/adapters/zigbee2mqtt ./internal/app/zigbee2mqtt ./internal/adapters/ecowitt ./internal/app/ecowitt'''
 
 [tasks."fuzz-entitytypes-json-codec"]
 description = "Run a bounded JSONCodec fuzz campaign"
@@ -134,6 +135,14 @@ run = '''go test ./internal/adapters/zigbee2mqtt -run='^$' -fuzz='^FuzzDiscoverI
 description = "Run a bounded Zigbee2MQTT State fuzz campaign"
 run = '''go test ./internal/adapters/zigbee2mqtt -run='^$' -fuzz='^FuzzDeviceState$' -fuzztime="${FUZZTIME:-5s}"'''
 
+[tasks."fuzz-ecowitt-report"]
+description = "Run a bounded Ecowitt report parser fuzz campaign"
+run = '''go test ./internal/adapters/ecowitt -run='^$' -fuzz='^FuzzParseStationReport$' -fuzztime="${FUZZTIME:-5s}"'''
+
+[tasks."fuzz-ecowitt-projection"]
+description = "Run a bounded Ecowitt Observation projection fuzz campaign"
+run = '''go test ./internal/adapters/ecowitt -run='^$' -fuzz='^FuzzProjectReport$' -fuzztime="${FUZZTIME:-5s}"'''
+
 [tasks."fuzz"]
 description = "Run all bounded fuzz campaigns"
 run = '''
@@ -142,6 +151,8 @@ mise run fuzz-entitytypes-json-codec
 mise run fuzz-natswire-codec
 mise run fuzz-zigbee2mqtt-discovery
 mise run fuzz-zigbee2mqtt-state
+mise run fuzz-ecowitt-report
+mise run fuzz-ecowitt-projection
 '''
 
 [tasks."test-entitytype-fixtures"]

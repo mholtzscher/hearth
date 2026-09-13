@@ -174,6 +174,70 @@ For diagnostics, check adapter logs together with the adapter and Entity reads:
 - An Entity that stays unknown is missing an explicit availability message. Unavailable reasons distinguish `adapter.hearth-adapter-zigbee2mqtt.device_offline`, `adapter.hearth-adapter-zigbee2mqtt.device_missing`, `adapter.hearth-adapter-zigbee2mqtt.device_disabled`, and `adapter.hearth-adapter-zigbee2mqtt.capability_missing`.
 - A Command timeout means no fresh, non-retained matching State arrived after dispatch. Verify the Device can answer Zigbee2MQTT `/get` requests and that the reported property and value match its discovered expose.
 
+### Ecowitt adapter
+
+`hearth-adapter-ecowitt` connects an operator-managed Ecowitt GW2000 gateway to Hearth through the gateway's **Customized Server** MQTT upload. The adapter targets a `GW2000`-prefixed station with a WS90 outdoor array; the captured household firmware it is validated against is a GW2000B running V3.3.2. The station PASSKEY prevents accidental cross-station ingestion on a shared broker.
+
+V1 uses plain MQTT 3.1.1 with no username, password, TLS, or WebSocket transport, and it never publishes to MQTT. The MQTT listener must bind to loopback or a trusted private network, and the gateway, broker, adapter, and native NATS connection must stay inside that boundary; exposing this configuration to an untrusted network is unsupported. The adapter configuration accepts only plain `mqtt://` or `tcp://` endpoints with an explicit host and port, normalizes `mqtt://` to `tcp://`, subscribes at QoS 1 to exactly one two-segment topic, and uses a clean session with a deterministic 23-character client ID so reconnects create no durable adapter state.
+
+Configure the GW2000 Customized Server to match the adapter configuration:
+
+```text
+Enabled:         yes
+Protocol:        MQTT
+Broker host:     trusted-private address of the MQTT listener
+Broker port:     1883
+Topic:           exact value from mqtt.topic
+Upload interval: exact value from station.upload_interval_seconds
+```
+
+Store the 32-character hexadecimal PASSKEY in a separate secret file and point `station.passkey_file` at it. The adapter reads the PASSKEY only at startup, compares it in constant time, and never logs, exports, persists, or writes it into Device or Entity identity. The gateway chooses its own MQTT client ID and keepalive; a subscriber cannot observe those portably, so v1 does not gate them, and gateway publish QoS and retain behavior are otherwise not assumed.
+
+The local Compose stack runs Mosquitto for MQTT 1883 on loopback only. Copy the example, keeping its loopback broker URL, fake two-segment topic, and non-secret placeholders:
+
+```sh
+cp configs/hearthd.example.yaml configs/hearthd.yaml
+cp configs/ecowitt.example.yaml configs/ecowitt.yaml
+mkdir -p .secrets
+printf '%s\n' '<32-hex-passkey>' > .secrets/ecowitt-passkey   # ignored; never commit a real PASSKEY
+# edit configs/ecowitt.yaml: set station.passkey_file to .secrets/ecowitt-passkey
+mise run brokers
+go run ./cmd/hearthd -config configs/hearthd.yaml
+go run ./cmd/hearth-adapter-ecowitt -config configs/ecowitt.yaml
+```
+
+The adapter registers both Device slots before it connects MQTT, so identity exists before any report arrives:
+
+| Device slot (Binding key and external ID) | Kind | Entities |
+| --- | --- | --- |
+| `gateway` | `sensor` | indoor temperature, indoor humidity, relative pressure, absolute pressure |
+| `outdoor-array` | `sensor` | outdoor temperature, outdoor humidity, wind direction, wind speed, wind gust, maximum daily gust, solar radiation, UV index, rain rate, event rain, hourly rain, daily rain, weekly rain, monthly rain, yearly rain |
+
+Entity external IDs are `<device external ID>/<entity key>` (for example `gateway/indoor-temperature`), and each Entity is read-only with empty operation support. Temperature is integer milli-Celsius (`hearth.temperature/v1`, for example `22.2` °C reports `22200`); indoor and outdoor humidity use `hearth.relativehumidity/v1` in percent; relative and absolute pressure use `hearth.pressure/v1` in hPa; wind speed, gust, and maximum daily gust use `hearth.speed/v1` in m/s; wind direction, solar radiation, UV index, and the seven rain Entities use `hearth.numericsensor/v1` with the declared unit and validation envelope. Fahrenheit, inches of mercury, miles per hour, and inches normalize with fixed constants, and an out-of-envelope value is rejected rather than clamped.
+
+Because Ecowitt reports no stable attached-sensor identifiers, the adapter models configured slots rather than replaceable radio hardware. PASSKEY, MQTT topic, station MAC, firmware, and display name do not participate in Binding or Entity identity, so replacing hardware in a configured slot preserves canonical IDs; reusing one adapter configuration for different physical hardware is an explicit operator statement that it is the same household station, and a separately meaningful station requires a different `adapter_id`.
+
+The adapter remains `unknown` until it has positive or negative external-system evidence. It becomes healthy only after a live, non-retained, non-duplicate, structurally valid, compatible report arrives on the exact topic. Use the HTTP API to inspect adapter health, the registered slot Devices and Entity IDs, and current typed State:
+
+```sh
+curl http://127.0.0.1:8080/v1/adapters/ecowitt
+curl http://127.0.0.1:8080/v1/devices
+curl http://127.0.0.1:8080/v1/entities
+curl http://127.0.0.1:8080/v1/entities/ent_...
+```
+
+Entity availability comes only from explicit measurement evidence, never from State. A valid field in an accepted report reports its Entity available; an Entity without a valid measurement for three configured upload intervals becomes unavailable, and a never-observed Entity stays unknown until its first valid measurement or three intervals after the first accepted report. Every unhealthy transition clears availability, so recovery requires a fresh live report, a healthy acknowledgement, and fresh availability before Observations.
+
+For diagnostics, check adapter logs together with the adapter and Entity reads:
+
+- `hearth.external_system_unavailable` indicates that the MQTT broker cannot be reached or the connection was lost; verify the listener, URL, and trusted-network boundary.
+- `adapter.hearth-adapter-ecowitt.station_silent` indicates an established subscription with no accepted fresh report before three upload intervals; check gateway power, its Customized Server settings, and the configured topic and upload cadence.
+- `adapter.hearth-adapter-ecowitt.measurement_stale` indicates one Entity's field has not produced a valid value for three upload intervals; an absent or malformed field is isolated and never fails a valid sibling or station health.
+- An Entity that stays unknown is missing its first valid measurement. A retained, wrong-topic, wrong-PASSKEY, wrong-station-type, malformed, oversized, or over-field-limit report produces no evidence; fix the gateway destination or firmware and confirm the PASSKEY matches.
+- Runtime diagnostics log fixed codes and payload lengths only and never include the configured topic (whose second segment is commonly a station MAC), raw payload, PASSKEY, secret-file contents, or weather values.
+
+Real evidence compatibility: the checked-in fixture `internal/adapters/ecowitt/testdata/gw2000-ws90-report.txt` preserves the field names and representative value shapes of a captured 712-byte GW2000B V3.3.2 report for a WS90 array, with the PASSKEY and source timestamp sanitized. The capture arrived roughly every eight seconds, unretained, at effective QoS 0 while the subscriber requested QoS 1; the example's 16-second upload interval is an operator cadence choice, and unknown firmware works only when it keeps the specified field semantics.
+
 ## Application logs
 
 Hearth executables write to stderr with `--log-level info --log-format text` by default. Use `--log-format json` for filtering, or `--log-level debug` for Observation and Entity Event progress:

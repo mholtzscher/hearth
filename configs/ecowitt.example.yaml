@@ -1,0 +1,10 @@
+adapter_id: ecowitt
+nats_url: nats://127.0.0.1:4222
+mqtt:
+  url: tcp://127.0.0.1:1883
+  topic: ecowitt/943cc64457a7
+station:
+  gateway_name: Weather Station Gateway
+  outdoor_array_name: Outdoor Weather Array
+  passkey_file: /run/secrets/ecowitt-passkey
+  upload_interval_seconds: 16

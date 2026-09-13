@@ -1,0 +1,19 @@
+{
+  "cases": [
+    {
+      "name": "hectopascal-envelope",
+      "support": {"state": {}, "operations": {}},
+      "states": [
+        {"value": 0, "valid": true},
+        {"value": 1013, "valid": true},
+        {"value": 1013.25, "valid": true},
+        {"value": 1999.999, "valid": true},
+        {"value": 2000, "valid": true},
+        {"value": -0.001, "valid": false},
+        {"value": 2000.001, "valid": false},
+        {"value": "1013.25", "valid": false}
+      ],
+      "operations": {}
+    }
+  ]
+}

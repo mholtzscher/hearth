@@ -1,0 +1,9 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:hearth:schema:entity-type:relativehumidity:v1:state",
+  "title": "Hearth relativehumidity/v1 State",
+  "description": "Relative humidity in percent; 0 percent is bone dry and 100 percent is saturation.",
+  "type": "number",
+  "minimum": 0,
+  "maximum": 100
+}
