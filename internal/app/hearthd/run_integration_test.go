@@ -163,7 +163,15 @@ func TestCoreNATSTransportRegistersAndProjectsDurableObservation(t *testing.T) {
 	).Scan(&runtimeID); scanErr != nil {
 		t.Fatal(scanErr)
 	}
-	relay := startDeviceFactRelay(t, js, devices.NewSQLiteRepository(database, catalog))
+	// Keep the relay's outbox handle alive while this test closes and reopens the
+	// service handle to prove durable recovery. Otherwise relay cleanup retries a
+	// deliberately closed database for its full drain timeout.
+	relayDatabase, err := platformdb.Open(ctx, databasePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = relayDatabase.Close() })
+	relay := startDeviceFactRelay(t, js, devices.NewSQLiteRepository(relayDatabase, catalog))
 	readiness := NewRuntimeReadiness(
 		database, coreConnection, js, observations, entityEvents, relay,
 	)

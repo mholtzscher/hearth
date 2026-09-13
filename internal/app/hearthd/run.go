@@ -26,6 +26,27 @@ const (
 	natsReconnectWait      = 250 * time.Millisecond
 )
 
+// runBounds carries the two HTTP lifecycle bounds one Core run applies.
+// httpShutdownTimeout bounds listener shutdown after admitted work drains;
+// httpReadHeaderTimeout bounds reading one request's headers, and net/http can
+// only reclaim a connection that never completed a request after it elapses.
+// Production always runs [defaultRunBounds]; the seam exists so a test can keep
+// the shutdown window below the read-header window and reach the force-close
+// branch without waiting out both production windows. Every other lifecycle
+// bound stays the production constant.
+type runBounds struct {
+	httpShutdownTimeout   time.Duration
+	httpReadHeaderTimeout time.Duration
+}
+
+// defaultRunBounds returns the production HTTP lifecycle bounds.
+func defaultRunBounds() runBounds {
+	return runBounds{
+		httpShutdownTimeout:   shutdownTimeout,
+		httpReadHeaderTimeout: httpReadHeaderTimeout,
+	}
+}
+
 // runStageError identifies the startup stage that failed without echoing
 // configuration values or upstream connection details.
 type runStageError struct {
@@ -56,11 +77,27 @@ func failStage(stage string, err error) error {
 	return &runStageError{stage: stage, err: err}
 }
 
-//nolint:funlen,gocognit // Linear lifecycle keeps drain and teardown order explicit.
+// Run starts Core with the production lifecycle bounds and returns when ctx is
+// canceled or the HTTP listener fails. Production uses this entry point only;
+// tests that must reach the force-close branch below without waiting out the
+// five-second windows call [runWithBounds] with shorter HTTP bounds.
 func Run(
 	ctx context.Context,
 	config Config,
 	logger *slog.Logger,
+) error {
+	return runWithBounds(ctx, config, logger, defaultRunBounds())
+}
+
+// runWithBounds is the assembly [Run] delegates to. The injected bounds change
+// only the HTTP listener's read-header and shutdown windows.
+//
+//nolint:funlen,gocognit // Linear lifecycle keeps drain and teardown order explicit.
+func runWithBounds(
+	ctx context.Context,
+	config Config,
+	logger *slog.Logger,
+	bounds runBounds,
 ) error {
 	if err := config.Validate(); err != nil {
 		return failStage("validate_config", err)
@@ -255,7 +292,7 @@ func Run(
 		slog.String("event", "core.http_listening"),
 		slog.String("http_addr", listener.Addr().String()),
 	)
-	server := &http.Server{Handler: handler, ReadHeaderTimeout: httpReadHeaderTimeout}
+	server := &http.Server{Handler: handler, ReadHeaderTimeout: bounds.httpReadHeaderTimeout}
 	serverErrors := make(chan error, 1)
 	go func() {
 		serverErrors <- server.Serve(listener)
@@ -278,7 +315,7 @@ func Run(
 			service, cancelDependencies,
 			healthSupervisor, server, consumers,
 			enablement, ownedMappings, registrations, availability, sessions,
-			relay, connection, processLogger,
+			relay, connection, bounds.httpShutdownTimeout, processLogger,
 		)
 	}
 }
@@ -306,13 +343,13 @@ func joinAdmittedExecution(deviceService *devices.Service) {
 // (503) instead of dropping connections; the gates reject new work at the
 // service layer. Handlers that already entered ExecuteCommand own detached
 // workers that outlive request cancellation and are joined below with
-// process-owned contexts. The five-second HTTP shutdown timeout only bounds
-// listener shutdown after the waits; it never proves commands drained;
-// WaitCommands does, beyond that timeout when an Operation deadline requires
-// it. A connection that no request completed cannot be reclaimed inside that
-// window, so an expired window force-closes it rather than failing the
-// cancellation. Dependencies stay alive until both waits return and are
-// canceled only then, on both normal and error exits (error exits reuse
+// process-owned contexts. The HTTP shutdown timeout (five seconds in
+// production) only bounds listener shutdown after the waits; it never proves
+// commands drained; WaitCommands does, beyond that timeout when an Operation
+// deadline requires it. A connection that no request completed cannot be
+// reclaimed inside that window, so an expired window force-closes it rather than
+// failing the cancellation. Dependencies stay alive until both waits return and
+// are canceled only then, on both normal and error exits (error exits reuse
 // drainExecution through the deferred cleanup). That cancellation cannot reach
 // a durable consumer callback, which runs under the consumer lifecycle context
 // canceled only after both consumers drain below.
@@ -325,11 +362,12 @@ func shutdownOnCancel(
 	enablement, ownedMappings, registrations, availability, sessions interface{ Drain() error },
 	relay *devicesnats.DeviceFactRelay,
 	connection *natsgo.Conn,
+	httpShutdownTimeout time.Duration,
 	logger *slog.Logger,
 ) error {
 	joinAdmittedExecution(deviceService)
 	healthSupervisor.Stop()
-	shutdownContext, shutdownCancel := context.WithTimeout(context.Background(), shutdownTimeout)
+	shutdownContext, shutdownCancel := context.WithTimeout(context.Background(), httpShutdownTimeout)
 	shutdownErr := server.Shutdown(shutdownContext)
 	shutdownCancel()
 	// Shutdown only reclaims a connection the server has already seen go idle.

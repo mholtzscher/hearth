@@ -28,9 +28,38 @@ func TestRunCanceledContextReturnsCancellation(t *testing.T) {
 	}
 }
 
+// TestDefaultRunBoundsKeepProductionHTTPWindows fails if the production entry
+// point is wired to anything but the fixed HTTP windows, which would silently
+// change the bound production honors during shutdown now that the seam can
+// inject shorter ones for tests.
+func TestDefaultRunBoundsKeepProductionHTTPWindows(t *testing.T) {
+	t.Parallel()
+	if got := defaultRunBounds(); got.httpShutdownTimeout != shutdownTimeout ||
+		got.httpReadHeaderTimeout != httpReadHeaderTimeout {
+		t.Fatalf(
+			"default run bounds = %+v, want HTTP windows %v and %v",
+			got, shutdownTimeout, httpReadHeaderTimeout,
+		)
+	}
+}
+
+// Cancellation test HTTP bounds. runWithBounds injects these instead of the
+// production five-second windows. The shutdown window stays far below the
+// read-header window so net/http cannot reclaim the unfinished connection
+// before Shutdown expires and the force-close branch runs; the read-header
+// window stays above the socket wait below so an unfinished connection left
+// open is observed as still open rather than freed mid-read. Production keeps
+// both windows at five seconds; the restart below still covers that through
+// [Run].
+const (
+	cancellationTestShutdownWindow   = time.Second
+	cancellationTestReadHeaderWindow = 10 * time.Second
+	cancellationTestSocketWait       = 2 * time.Second
+)
+
 // This test protects the bounded shutdown contract and fails if a client that
 // connected without completing a request turns a clean cancellation into a
-// staged failure or delays teardown past the five-second HTTP window. net/http
+// staged failure or delays teardown past the HTTP shutdown window. net/http
 // cannot reclaim such a socket inside that window: it is indistinguishable from
 // a slow client, and freeing it needs ReadHeaderTimeout plus a shutdown poll
 // interval. The connection also stays open, so a bounded window must force it
@@ -50,8 +79,12 @@ func TestRunCancellationForceClosesUnfinishedClientConnection(t *testing.T) {
 	runContext, stopCore := context.WithCancel(ctx)
 	defer stopCore()
 	runErrors := make(chan error, 1)
+	bounds := runBounds{
+		httpShutdownTimeout:   cancellationTestShutdownWindow,
+		httpReadHeaderTimeout: cancellationTestReadHeaderWindow,
+	}
 	go func() {
-		runErrors <- Run(runContext, config, slog.New(slog.DiscardHandler))
+		runErrors <- runWithBounds(runContext, config, slog.New(slog.DiscardHandler), bounds)
 	}()
 	waitForCoreHTTPStatus(ctx, t, client, address, "/healthz", runErrors)
 	waitForCoreHTTPStatus(ctx, t, client, address, "/readyz", runErrors)
@@ -75,16 +108,23 @@ func TestRunCancellationForceClosesUnfinishedClientConnection(t *testing.T) {
 	case <-time.After(10 * time.Second):
 		t.Fatal("Run did not stop")
 	}
-	if elapsed := time.Since(started); elapsed > shutdownTimeout+2*time.Second {
-		t.Fatalf("cancellation took %v, want within the %v HTTP shutdown window", elapsed, shutdownTimeout)
+	if elapsed := time.Since(started); elapsed > cancellationTestShutdownWindow+2*time.Second {
+		t.Fatalf(
+			"cancellation took %v, want within the injected %v HTTP shutdown window",
+			elapsed, cancellationTestShutdownWindow,
+		)
 	}
-	unfinished.SetReadDeadline(time.Now().Add(2 * time.Second))
+	// The read deadline below is longer than the shutdown window and shorter than
+	// the read-header window, so only the forced close can end the read in time.
+	unfinished.SetReadDeadline(time.Now().Add(cancellationTestSocketWait))
 	if _, readErr := unfinished.Read(make([]byte, 1)); readErr == nil || errors.Is(readErr, os.ErrDeadlineExceeded) {
 		t.Fatalf("cancellation left the unfinished client connection open (read err: %v)", readErr)
 	}
 
 	// The forced close still releases the address, database, and NATS
-	// connection, so the same configuration starts again and stops cleanly.
+	// connection, so the same configuration starts again and stops cleanly. This
+	// restart calls the public entry point, so it also covers the production
+	// five-second HTTP bounds the first run replaced with test windows.
 	secondContext, stopSecondCore := context.WithCancel(ctx)
 	defer stopSecondCore()
 	secondErrors := make(chan error, 1)

@@ -136,6 +136,36 @@ func TestConnectRetriesLostClaimResponseWithSameEnvelope(t *testing.T) {
 	}
 }
 
+// This test protects the heartbeat cadence contract: the public Connect path
+// uses the production heartbeatInterval, and a non-positive injected cadence
+// falls back to that interval instead of letting the heartbeat loop spin.
+func TestHeartbeatCadenceUsesProductionInterval(t *testing.T) {
+	t.Parallel()
+	server := startServer(t, -1, t.TempDir())
+	startTestLifecycleResponder(t, server.ClientURL())
+	config := testConfig(server.ClientURL())
+
+	published, err := Connect(testContext(t), config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = published.Close() })
+	if published.heartbeatInterval != heartbeatInterval {
+		t.Fatalf("Connect heartbeat interval = %s, want production %s",
+			published.heartbeatInterval, heartbeatInterval)
+	}
+
+	fallback, err := connectWithHeartbeatInterval(testContext(t), config, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = fallback.Close() })
+	if fallback.heartbeatInterval != heartbeatInterval {
+		t.Fatalf("zero-cadence heartbeat interval = %s, want fallback %s",
+			fallback.heartbeatInterval, heartbeatInterval)
+	}
+}
+
 func TestSetHealthSerializesImmediateHeartbeats(t *testing.T) {
 	t.Parallel()
 	server := startServer(t, -1, t.TempDir())
@@ -754,8 +784,14 @@ func TestServeCommandsInvokesHandlersConcurrentlyAndRespondsOnce(t *testing.T) {
 func TestCommandHandlerUsesTransmittedDeadline(t *testing.T) {
 	t.Parallel()
 	const (
-		commandDeadlineLeadTime = 2 * time.Second
-		asyncWaitTimeout        = 5 * time.Second
+		// The transmitted deadline must be far enough ahead that the command is
+		// dispatched before it expires; the requester's own timeout must outlive
+		// that deadline so a missing response, not an early give-up, is what
+		// fails the request. Both bounds stay far above a loopback round trip
+		// while keeping the test off a multi-second wait.
+		commandDeadlineLeadTime = 500 * time.Millisecond
+		requestTimeout          = 750 * time.Millisecond
+		asyncWaitTimeout        = 2 * time.Second
 	)
 	server := startServer(t, -1, t.TempDir())
 	core := connectNATS(t, server.ClientURL())
@@ -788,7 +824,7 @@ func TestCommandHandlerUsesTransmittedDeadline(t *testing.T) {
 	requestDone := make(chan error, 1)
 	go func() {
 		_, err := sendCommandWithDeadline(
-			context.Background(), core, session.runtimeID, true, asyncWaitTimeout, commandDeadline,
+			context.Background(), core, session.runtimeID, true, requestTimeout, commandDeadline,
 		)
 		requestDone <- err
 	}()

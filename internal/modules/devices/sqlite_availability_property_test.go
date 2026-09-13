@@ -261,14 +261,7 @@ func TestSQLiteEntityAvailabilityHistoryMatchesReferenceModel(t *testing.T) {
 			// Check the fixed prefix once, then snapshot its committed database.
 			// Each generated sequence still gets an isolated database and model.
 			assertAvailabilityPropertyHistory(t, repository, entityID, model.effectiveHistory(), 1)
-			if _, err := repository.database.ExecContext(t.Context(), "VACUUM INTO ?", preparedPath); err != nil {
-				t.Fatal(err)
-			}
-			image, err := os.ReadFile(preparedPath)
-			if err != nil {
-				t.Fatal(err)
-			}
-			databaseImage = image
+			databaseImage = prepareAvailabilityPropertyDatabaseImage(t, repository, preparedPath)
 			prepared = true
 		}
 		for _, operation := range generated {
@@ -280,10 +273,52 @@ func TestSQLiteEntityAvailabilityHistoryMatchesReferenceModel(t *testing.T) {
 	})
 }
 
+// availabilityPropertySynchronousDSN relaxes durability for the throwaway
+// databases this property builds. platformdb.Open keeps SQLite's default
+// synchronous=FULL, so every commit fsyncs the WAL; this property commits many
+// small transactions per generated check, and that fsync wait, not extra query
+// work, accounts for a material share of its wall time under the race detector
+// (about 12 syncs per check, roughly 1.2s of a 10s run). NORMAL keeps the file
+// database, WAL journal, transaction and constraint semantics and only drops
+// those per-commit fsyncs, so a host crash could lose committed rows from a
+// temporary database that no production code opens. Passing a DSN parameter
+// makes platformdb.Open append its own parameters with "&", leaving production
+// database opening untouched.
+const availabilityPropertySynchronousDSN = "_pragma=synchronous(NORMAL)"
+
+func prepareAvailabilityPropertyDatabaseImage(
+	t *rapid.T,
+	repository *SQLiteRepository,
+	preparedPath string,
+) []byte {
+	t.Helper()
+	if _, err := repository.database.ExecContext(t.Context(), "VACUUM INTO ?", preparedPath); err != nil {
+		t.Fatal(err)
+	}
+	// VACUUM INTO does not carry journal mode to its target. Reopen the snapshot
+	// once so every generated database starts in WAL mode instead of converting
+	// its fresh copy through a synced rollback journal.
+	preparedDatabase, err := platformdb.Open(
+		t.Context(),
+		preparedPath+"?"+availabilityPropertySynchronousDSN,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if closeErr := preparedDatabase.Close(); closeErr != nil {
+		t.Fatal(closeErr)
+	}
+	image, err := os.ReadFile(preparedPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return image
+}
+
 func newAvailabilityPropertyDatabaseImage(t *testing.T) []byte {
 	t.Helper()
 	path := filepath.Join(t.TempDir(), "template.db")
-	database, err := platformdb.Open(t.Context(), path)
+	database, err := platformdb.Open(t.Context(), path+"?"+availabilityPropertySynchronousDSN)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -317,7 +352,7 @@ func newAvailabilityPropertyFixture(
 	if writeErr := os.WriteFile(path, databaseImage, 0o600); writeErr != nil {
 		t.Fatal(writeErr)
 	}
-	database, err := platformdb.Open(t.Context(), path)
+	database, err := platformdb.Open(t.Context(), path+"?"+availabilityPropertySynchronousDSN)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -113,6 +113,13 @@ func requireStringID(t *testing.T, record map[string]any, key string) {
 	}
 }
 
+func requireHeartbeatCadence(t *testing.T, session *Session, cadence time.Duration) {
+	t.Helper()
+	if session.heartbeatInterval != cadence {
+		t.Fatalf("session heartbeat interval = %s, want %s", session.heartbeatInterval, cadence)
+	}
+}
+
 // Serves accepted bindings and one rejected binding with a sentinel that must never reach logs.
 func startLoggingRegistrationResponder(t *testing.T, connection *natsgo.Conn, validator *contractsv1.Validator) {
 	t.Helper()
@@ -634,6 +641,12 @@ func (handler *claimGateLogHandler) WithGroup(name string) slog.Handler {
 	}
 }
 
+// testHeartbeatCadence is a positive stand-in for the production
+// heartbeatInterval, short enough that a passing run observes the first
+// heartbeat immediately. Production callers reach the 5s interval through
+// Connect; only tests use the connectWithHeartbeatInterval seam.
+const testHeartbeatCadence = 25 * time.Millisecond
+
 // This test protects newly claimed runtime heartbeat startup and fails if the
 // session claim log gates the heartbeat goroutine launch.
 func TestConnectHeartbeatStartsBeforeClaimAnnouncement(t *testing.T) {
@@ -703,7 +716,9 @@ func TestConnectHeartbeatStartsBeforeClaimAnnouncement(t *testing.T) {
 		}
 	})
 	go func() {
-		connectedSession, connectErr := Connect(connectContext, config)
+		connectedSession, connectErr := connectWithHeartbeatInterval(
+			connectContext, config, testHeartbeatCadence,
+		)
 		connected <- connectResult{session: connectedSession, err: connectErr}
 	}()
 	select {
@@ -714,7 +729,7 @@ func TestConnectHeartbeatStartsBeforeClaimAnnouncement(t *testing.T) {
 	// The claim log stays blocked here: a heartbeat proves the loop started first.
 	select {
 	case <-heartbeatReceived:
-	case <-time.After(8 * time.Second):
+	case <-time.After(3 * time.Second):
 		t.Fatal("heartbeat did not start while session claim announcement was blocked")
 	}
 	releaseGate()
@@ -733,6 +748,7 @@ func TestConnectHeartbeatStartsBeforeClaimAnnouncement(t *testing.T) {
 		t.Fatalf("claimed runtime = %v, want %q", claimed["runtime_id"], session.runtimeID)
 	}
 	requireStringID(t, claimed, "correlation_id")
+	requireHeartbeatCadence(t, session, testHeartbeatCadence)
 }
 
 // spanCapturingLogHandler records the trace context of each log record so a

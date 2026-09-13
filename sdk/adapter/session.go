@@ -60,6 +60,22 @@ type Session struct {
 
 // Connect validates config, connects to NATS, and claims one Core runtime before returning.
 func Connect(ctx context.Context, config Config) (*Session, error) {
+	return connectWithHeartbeatInterval(ctx, config, heartbeatInterval)
+}
+
+// connectWithHeartbeatInterval claims one Core runtime and runs its heartbeat
+// loop at heartbeatCadence. Tests inject a short cadence so they observe the
+// first heartbeat without waiting a production interval. A non-positive
+// cadence falls back to the production heartbeatInterval, so the loop can
+// never spin on a zero-duration timer.
+func connectWithHeartbeatInterval(
+	ctx context.Context,
+	config Config,
+	heartbeatCadence time.Duration,
+) (*Session, error) {
+	if heartbeatCadence <= 0 {
+		heartbeatCadence = heartbeatInterval
+	}
 	if err := validateConfig(ctx, config); err != nil {
 		return nil, err
 	}
@@ -72,8 +88,9 @@ func Connect(ctx context.Context, config Config) (*Session, error) {
 		logger = slog.Default()
 	}
 	session := &Session{
-		adapterID:    config.AdapterID,
-		lifecycleCtx: ctx,
+		adapterID:         config.AdapterID,
+		heartbeatInterval: heartbeatCadence,
+		lifecycleCtx:      ctx,
 		logger: logger.With(
 			slog.String("component", "adapter_session"),
 			slog.String("adapter_id", config.AdapterID),

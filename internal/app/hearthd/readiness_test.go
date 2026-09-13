@@ -255,7 +255,21 @@ func newReadinessFixture(t *testing.T) readinessFixture {
 		t.Fatal(err)
 	}
 	t.Cleanup(entityEventConsumer.Stop)
-	relay := startDeviceFactRelay(t, js, devices.NewSQLiteRepository(database, nil))
+	// The relay publishes from an outbox handle of its own, distinct from the one
+	// readiness checks. A subtest that closes the readiness handle to prove
+	// readiness fails must not stall the relay's cleanup drain on a dead outbox:
+	// that drain retries a closed database for its whole five-second budget. The
+	// outbox handle closes after the relay drains, because cleanup functions run
+	// last-registered first and the relay registers its drain below.
+	relayDatabase, err := platformdb.Open(ctx, filepath.Join(t.TempDir(), "relay.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = relayDatabase.Close() })
+	if migrateErr := platformdb.Migrate(ctx, relayDatabase); migrateErr != nil {
+		t.Fatal(migrateErr)
+	}
+	relay := startDeviceFactRelay(t, js, devices.NewSQLiteRepository(relayDatabase, nil))
 	return readinessFixture{
 		database: database, connection: connection, jetstream: js,
 		consumer: consumer, entityEventConsumer: entityEventConsumer, relay: relay,
