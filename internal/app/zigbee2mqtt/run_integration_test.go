@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -20,28 +19,29 @@ import (
 	"github.com/mholtzscher/hearth/internal/modules/devices"
 	devicesnats "github.com/mholtzscher/hearth/internal/modules/devices/nats"
 	platformdb "github.com/mholtzscher/hearth/internal/platform/db"
+	"github.com/mholtzscher/hearth/internal/testbroker"
 )
 
-// TestRunConnectsBothProtocols protects application assembly across one shared
-// native-NATS/MQTT server and fails on SDK metadata, logger wiring,
-// registration, command serving, linked observation, sibling cancellation, or
-// graceful release defects.
+// TestRunConnectsNATSAndMosquitto protects application assembly across an
+// embedded native-NATS server and a real Mosquitto MQTT broker and fails on SDK
+// metadata, logger wiring, registration, command serving, linked observation,
+// sibling cancellation, or graceful release defects.
 //
 //nolint:cyclop,gocognit,gocyclo // One process-level lifecycle is clearest in one test.
-func TestRunConnectsBothProtocols(t *testing.T) {
+func TestRunConnectsNATSAndMosquitto(t *testing.T) {
 	t.Parallel()
-	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
-	defer cancel()
 	logRecords := make(chan slog.Record, 16)
 	logger := slog.New(recordHandler{records: logRecords})
 
-	server := startSharedNATSServer(t)
-	mqttURL := mqttServerURL(t, server)
+	server := startTestNATSServer(t)
+	mqttURL := testbroker.StartMosquitto(t).URL()
 	coreConnection, err := natsgo.Connect(server.ClientURL())
 	if err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(coreConnection.Close)
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
 
 	database, err := platformdb.Open(ctx, filepath.Join(t.TempDir(), "hearth.db"))
 	if err != nil {
@@ -250,7 +250,7 @@ func waitForLog(t *testing.T, records <-chan slog.Record, message string) {
 	}
 }
 
-func startSharedNATSServer(t *testing.T) *natsserver.Server {
+func startTestNATSServer(t *testing.T) *natsserver.Server {
 	t.Helper()
 	server, err := natsserver.NewServer(&natsserver.Options{
 		ServerName: "hearth-zigbee2mqtt-process-test",
@@ -260,10 +260,6 @@ func startSharedNATSServer(t *testing.T) *natsserver.Server {
 		NoLog:      true,
 		JetStream:  true,
 		StoreDir:   t.TempDir(),
-		MQTT: natsserver.MQTTOpts{
-			Host: "127.0.0.1",
-			Port: -1,
-		},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -278,15 +274,6 @@ func startSharedNATSServer(t *testing.T) *natsserver.Server {
 		server.WaitForShutdown()
 	})
 	return server
-}
-
-func mqttServerURL(t *testing.T, server *natsserver.Server) string {
-	t.Helper()
-	varz, err := server.Varz(nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	return fmt.Sprintf("tcp://127.0.0.1:%d", varz.MQTT.Port)
 }
 
 func startCoreTransports(
@@ -413,17 +400,17 @@ func assertProofFlowLinkquality(
 //nolint:gocognit // One process-level proof flow keeps registration, projection, and rejection causally connected.
 func TestRunProjectsRelayAndTemperatureDevices(t *testing.T) {
 	t.Parallel()
-	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
-	defer cancel()
 	logger := slog.New(slog.DiscardHandler)
 
-	server := startSharedNATSServer(t)
-	mqttURL := mqttServerURL(t, server)
+	server := startTestNATSServer(t)
+	mqttURL := testbroker.StartMosquitto(t).URL()
 	coreConnection, err := natsgo.Connect(server.ClientURL())
 	if err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(coreConnection.Close)
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
 
 	database, err := platformdb.Open(ctx, filepath.Join(t.TempDir(), "hearth.db"))
 	if err != nil {

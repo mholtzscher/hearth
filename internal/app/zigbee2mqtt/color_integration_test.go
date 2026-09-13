@@ -16,6 +16,7 @@ import (
 	"github.com/mholtzscher/hearth/internal/modules/devices"
 	devicesnats "github.com/mholtzscher/hearth/internal/modules/devices/nats"
 	platformdb "github.com/mholtzscher/hearth/internal/platform/db"
+	"github.com/mholtzscher/hearth/internal/testbroker"
 )
 
 // TestRunProjectsColorBulbAndLinksColorCommand protects the end-to-end color
@@ -28,17 +29,17 @@ import (
 //nolint:cyclop,gocognit,gocyclo // One process-level color flow keeps discovery, command, and audit causally connected.
 func TestRunProjectsColorBulbAndLinksColorCommand(t *testing.T) {
 	t.Parallel()
-	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
-	defer cancel()
 	logger := slog.New(slog.DiscardHandler)
 
-	server := startSharedNATSServer(t)
-	mqttURL := mqttServerURL(t, server)
+	server := startTestNATSServer(t)
+	mqttURL := testbroker.StartMosquitto(t).URL()
 	coreConnection, err := natsgo.Connect(server.ClientURL())
 	if err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(coreConnection.Close)
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
 
 	database, err := platformdb.Open(ctx, filepath.Join(t.TempDir(), "hearth.db"))
 	if err != nil {

@@ -6,7 +6,7 @@
 **Date:** 2026-09-01
 **Baseline:** branch `z2m` at `fd9d55b`
 **Depends on:** `adapter-owned-mapping-inventory.md`
-**Live evidence:** Zigbee2MQTT 2.13.0 and 2.14.1; Third Reality 3RCB01057Z, 3RSB22BZ, and 3RSNL02043Z; NATS Server 2.12 MQTT 3.1.1 listener
+**Live evidence:** Zigbee2MQTT 2.13.0 and 2.14.1; Third Reality 3RCB01057Z, 3RSB22BZ, and 3RSNL02043Z; Mosquitto 2.0.22 MQTT 3.1.1 broker
 
 ## Problem
 
@@ -14,7 +14,7 @@ Hearth can observe and control one Home Assistant-managed light through a dispos
 
 Zigbee2MQTT, the coordinator, and the MQTT broker remain operator-managed specialist services. The Adapter bridges Zigbee2MQTT's MQTT 3.1.1 contract to the Hearth Adapter SDK rather than reimplementing Zigbee or owning those services.
 
-The first household Device is a Third Reality 3RCB01057Z on Zigbee2MQTT 2.13.0. A Third Reality 3RSB22BZ button on Zigbee2MQTT 2.14.1 supplies the first physical Event-source evidence. A passive capture from a Third Reality 3RSNL02043Z night light on host Wanda on 2026-09-11 (firmware `v1.00.86`) supplies the ambient-illuminance and binary-occupancy evidence; no physical command was exercised there. The deployment uses one file-backed NATS 2.12 server for native Hearth NATS and its MQTT listener. Live payloads include finite fractional brightness values, so decoding cannot require integer JSON syntax.
+The first household Device is a Third Reality 3RCB01057Z on Zigbee2MQTT 2.13.0. A Third Reality 3RSB22BZ button on Zigbee2MQTT 2.14.1 supplies the first physical Event-source evidence. A passive capture from a Third Reality 3RSNL02043Z night light on host Wanda on 2026-09-11 (firmware `v1.00.86`) supplies the ambient-illuminance and binary-occupancy evidence; no physical command was exercised there. The deployment uses one file-backed NATS 2.12 server for native Hearth NATS and a Mosquitto 2.0.22 broker for MQTT. Live payloads include finite fractional brightness values, so decoding cannot require integer JSON syntax.
 
 ## Decision and scope
 
@@ -22,7 +22,7 @@ Add `hearth-adapter-zigbee2mqtt`, a stateless Go process with a Hearth SDK Sessi
 
 ```text
 Hearth HTTP -> hearthd -> native Core NATS -> Go Adapter SDK Session
-    -> hearth-adapter-zigbee2mqtt -> MQTT 3.1.1 -> NATS MQTT listener
+    -> hearth-adapter-zigbee2mqtt -> MQTT 3.1.1 -> Mosquitto broker
     -> Zigbee2MQTT -> Zigbee coordinator -> device
 ```
 
@@ -39,12 +39,12 @@ V1 includes:
 - mutable friendly-name routing and display metadata;
 - Adapter health, explicit Entity availability, retained or cached State, and startup refresh;
 - a private generic runtime coordinator that serializes power, brightness, color-temperature, color, setting, and effect Commands per IEEE Device and publishes fresh post-dispatch evidence for observed Commands while completing dispatched effect Commands on acceptance;
-- clean-session MQTT 3.1.1 at QoS 1 through NATS MQTT;
+- clean-session MQTT 3.1.1 at QoS 1 through Mosquitto;
 - loopback local configuration, operator documentation, and captured, official, synthetic, integration, and real-bulb tests.
 
 V1 defers:
 
-- Mosquitto and EMQX compatibility;
+- EMQX compatibility;
 - Zigbee2MQTT groups, pairing, permit-join, interview, removal, and rename endpoints;
 - transitions and scenes;
 - MQTT authentication, TLS, client certificates, and untrusted-network exposure;
@@ -56,9 +56,9 @@ V1 defers:
 
 ### Security and required Zigbee2MQTT settings
 
-V1 MQTT is plain TCP with no username, password, or TLS configuration. Native NATS and MQTT listeners must bind to loopback or a trusted private network. Untrusted-network exposure is unsupported.
+V1 MQTT is plain TCP with no username, password, or TLS configuration. The native NATS listener and the Mosquitto MQTT broker must bind to loopback or a trusted private network. Untrusted-network exposure is unsupported.
 
-The Adapter uses Paho for every Zigbee2MQTT message. It never uses `nats.go` to publish or subscribe to translated MQTT subjects, even when both protocols share one NATS server.
+The Adapter uses Paho for every Zigbee2MQTT message. It never uses `nats.go` to publish or subscribe to translated MQTT subjects; the MQTT broker is a separate service and is not a NATS listener.
 
 Before registration, the Adapter validates these effective global settings from retained `bridge/info`:
 
@@ -88,7 +88,7 @@ friendly_name: office-table-lamp
 description: Office Table Lamp
 ```
 
-V1 records but does not runtime-gate Zigbee2MQTT 2.13.0 or 2.14.1, NATS Server 2.12, MQTT 3.1.1, or the observed Third Reality 3RCB01057Z and 3RSB22BZ firmware. The Adapter logs Zigbee2MQTT's reported version and ignores unknown fields. Other versions may work when all required fields and behavior remain compatible, but v1 promises no broader range.
+V1 records but does not runtime-gate Zigbee2MQTT 2.13.0 or 2.14.1, Mosquitto 2.0.22, MQTT 3.1.1, or the observed Third Reality 3RCB01057Z and 3RSB22BZ firmware. The Adapter logs Zigbee2MQTT's reported version and ignores unknown fields. Other versions may work when all required fields and behavior remain compatible, but v1 promises no broader range.
 
 ### Static configuration
 
@@ -520,27 +520,40 @@ Assembly validates config, derives the client ID, creates one SDK Session with s
 
 ## Local operation and project layout
 
-Add loopback-only, file-backed `configs/nats-server.conf`:
+The local Compose stack (`compose.yaml`) runs loopback-only, file-backed
+`configs/nats-server.conf` for native NATS and `configs/mosquitto.conf` for
+Mosquitto:
 
 ```hcl
-listen: 127.0.0.1:4222
+# configs/nats-server.conf
+listen: 0.0.0.0:4222
 jetstream {
-  store_dir: ".data/nats"
+  store_dir: "/data/nats"
 }
-mqtt {
-  listen: 127.0.0.1:1883
+websocket {
+  listen: 0.0.0.0:4223
+  no_tls: true
 }
+http: 0.0.0.0:8222
 ```
 
-`mise run nats` runs:
+```
+# configs/mosquitto.conf
+listener 1883
+allow_anonymous true
+persistence true
+persistence_location /mosquitto/data/
+```
+
+`mise run brokers` publishes every broker port on host loopback only:
 
 ```sh
-nats-server -c configs/nats-server.conf
+docker compose up
 ```
 
-Generic docs may show an equivalent trusted-private-network fragment for a separately supervised deployment. They must not include household hosts, Docker network names, Mosquitto removal, destructive cutover, or reconstruction rollback scripts.
+Generic docs may show an equivalent trusted-private-network fragment for a separately supervised deployment. They must not include household hosts, Docker network names, destructive cutover, or reconstruction rollback scripts.
 
-README instructions cover copying the example config; required Zigbee2MQTT version, availability, optimistic, slug, and description settings; starting NATS, `hearthd`, and the Adapter; discovering Entities; checking health and availability; issuing power, brightness, color-temperature, color, setting, and effect Commands; and diagnosing bridge config, invalid topics, missing availability, unsupported exposes, and timeouts.
+README instructions cover copying the example config; required Zigbee2MQTT version, availability, optimistic, slug, and description settings; starting the local brokers, `hearthd`, and the Adapter; discovering Entities; checking health and availability; issuing power, brightness, color-temperature, color, setting, and effect Commands; and diagnosing bridge config, invalid topics, missing availability, unsupported exposes, and timeouts.
 
 ```text
 cmd/
@@ -548,6 +561,7 @@ cmd/
     └── main.go
 configs/
 ├── nats-server.conf
+├── mosquitto.conf
 └── zigbee2mqtt.example.yaml
 internal/app/
 └── zigbee2mqtt/
@@ -663,7 +677,7 @@ Files in the Adapter package split along distinct protocol and change pressure. 
 
 | Deliverable | Effort | Depends on |
 |---|---:|---|
-| D1. Config, Paho MQTT transport, local NATS MQTT config, protocol integration | L | owned-mapping spec |
+| D1. Config, Paho MQTT transport, local Mosquitto broker config, protocol integration | L | owned-mapping spec |
 | D2. Inventory, eligibility, identity, registration, restart reconciliation | L | D1 |
 | D3. Health, availability, retained or live State, startup `/get` | L | D2 |
 | D4. Runtime coordinator, per-IEEE queues, matcher claiming, and asynchronous command evidence | XL | D3 |
@@ -671,7 +685,7 @@ Files in the Adapter package split along distinct protocol and change pressure. 
 
 Implementation proceeds from the Core prerequisite through observation, D1 to D3, then control, D4 and D5. Each stage passes focused tests. There is no temporary configured-single-light path.
 
-Tests must state the protected behavior and plausible defect. Oracles come from Hearth domain contracts, authoritative JSON Schemas, official Zigbee2MQTT documentation, captured 2.13.0 payloads, MQTT 3.1.1 and NATS behavior, or independent normalization math.
+Tests must state the protected behavior and plausible defect. Oracles come from Hearth domain contracts, authoritative JSON Schemas, official Zigbee2MQTT documentation, captured 2.13.0 payloads, MQTT 3.1.1 and Mosquitto behavior, or independent normalization math.
 
 | Layer | Required behavior and likely defects |
 |---|---|
@@ -683,8 +697,8 @@ Tests must state the protected behavior and plausible defect. Oracles come from 
 | Reconciliation | Present registrations and absent owned mappings converge without canonical ID loss, deletion, or restart ambiguity. |
 | Health and availability | Recoverable bridge failures, isolated Device errors, explicit reports, stale-report clearing, and exact reason codes prevent false health or availability. |
 | Commands | Coordinator ownership, freshness, exact-once claiming, property/generation/revision matching, one report disposition, no-op refresh, and cross-IEEE concurrency tests catch duplicate, retained, stale-event, cross-Command, and blocked-effect defects. Effect dispatch publishes no `/get`/matcher/observation and terminates `dispatched`. |
-| MQTT integration | Real Paho against NATS proves MQTT 3.1.1, clean session, QoS 1, SUBACK and PUBACK handling, and disconnect recovery. |
-| Process integration | One shared NATS server carries SDK registration, Observation, Entity Event, and Command flows without schema, subject, assembly, or lifecycle mismatch. |
+| MQTT integration | Real Paho against Mosquitto proves MQTT 3.1.1, clean session, QoS 1, SUBACK and PUBACK handling, and disconnect recovery. |
+| Process integration | An embedded NATS server carries SDK registration, Observation, Entity Event, and Command flows while a real Mosquitto broker carries Zigbee2MQTT MQTT traffic, without schema, subject, assembly, or lifecycle mismatch. |
 | Manual | The real bulb proves power, brightness, color temperature, color mode-switch, setting control, effect dispatch, restart, offline recovery, and no-op refresh behavior; the real 3RSB22BZ button proves event discovery and accepted single, double, hold, and release history. |
 
 Native fuzzing covers inventory, exposes, State, and availability with these invariants: no panic, no accepted non-finite brightness, no accepted fractional or out-of-range linkquality, no accepted sub-milli or out-of-range temperature, no invalid slug output, and no duplicate Entity keys. Rapid or exhaustive integer iteration covers brightness round trips.
@@ -693,9 +707,9 @@ After adding tests, run Gremlins against `./internal/adapters/zigbee2mqtt` and t
 
 ### Real-bulb acceptance
 
-Against the shared file-backed NATS server, Zigbee2MQTT 2.13.0, and Third Reality 3RCB01057Z:
+Against the shared file-backed NATS server and Mosquitto broker, Zigbee2MQTT 2.13.0, and Third Reality 3RCB01057Z:
 
-1. Stop Home Assistant, then start NATS, `hearthd`, Zigbee2MQTT, and the Adapter with required config.
+1. Stop Home Assistant, then start the brokers, `hearthd`, Zigbee2MQTT, and the Adapter with required config.
 2. Verify the light remains discoverable, observable, and controllable, with healthy Adapter status and one Device containing power, brightness, color-temperature, link-quality, startup-temperature, power-on-behavior, and effect Entities.
 3. Verify `GET /v1/entities` shows display name, support, availability, and current State.
 4. Issue power off and on Commands and require linked post-dispatch satisfaction.
@@ -704,11 +718,11 @@ Against the shared file-backed NATS server, Zigbee2MQTT 2.13.0, and Third Realit
 7. Mark or observe the Device offline and prove Core still dispatches while the Adapter attempts MQTT.
 8. Restart the Adapter and verify clean-session inventory, availability, and State recovery.
 9. Remove or hide a capability during downtime in a controlled fixture or process test. Owned mappings must become unavailable rather than unknown.
-10. Restart NATS and Zigbee2MQTT. Recovery must transition unhealthy to healthy and require fresh availability.
+10. Restart the brokers and Zigbee2MQTT. Recovery must transition unhealthy to healthy and require fresh availability.
 11. Verify normal logs contain no raw household inventory, credentials, or payload dumps.
 12. Passive evidence only: the sanitized Third Reality 3RSNL02043Z night-light fixtures (`testdata/bridge-devices-3rsnl02043z.json`, `testdata/state-3rsnl02043z.json`) record the 2026-09-11 capture on host Wanda (firmware `v1.00.86`) for illuminance and occupancy discovery and State; no physical command was exercised against that Device and both Entities are read-only.
 
-The unfinished disposable Paho smoke test from discovery is not evidence. D1 replaces it with a checked-in deterministic NATS MQTT integration test.
+The unfinished disposable Paho smoke test from discovery is not evidence. D1 replaces it with a checked-in deterministic real-Mosquitto integration test.
 
 ### Acceptance criteria
 
@@ -718,7 +732,7 @@ The unfinished disposable Paho smoke test from discovery is not evidence. D1 rep
 - [ ] MQTT URLs accept only explicit plain `mqtt://` or `tcp://` host and port values without credentials.
 - [ ] Base and friendly names require subject-safe slugs.
 - [ ] Client ID derivation is stable, bounded, and collision-tested for representative Adapter IDs.
-- [ ] Paho negotiates MQTT 3.1.1, clean session, and QoS 1 against NATS 2.12 MQTT.
+- [ ] Paho negotiates MQTT 3.1.1, clean session, and QoS 1 against Mosquitto 2.0.22.
 - [ ] Zigbee2MQTT traffic crosses MQTT, never native `nats.go` publication.
 
 #### Discovery and identity
@@ -772,11 +786,11 @@ The unfinished disposable Paho smoke test from discovery is not evidence. D1 rep
 
 #### Delivery
 
-- [ ] `mise run nats` uses a loopback file-backed NATS config with native and MQTT listeners.
+- [ ] `mise run brokers` starts a loopback Compose stack with a file-backed NATS listener and a separate Mosquitto MQTT broker.
 - [ ] README and example YAML document trusted-network and Zigbee2MQTT prerequisites.
 - [ ] The repository contains no host-specific destructive cutover or rollback artifacts.
 - [ ] Sanitized fixtures preserve payload shape without household IEEE addresses or friendly names.
-- [ ] NATS MQTT integration, real-bulb acceptance, focused mutation tests, and `mise run validate` pass.
+- [ ] Real-Mosquitto integration, real-bulb acceptance, focused mutation tests, and `mise run validate` pass.
 - [ ] Release or container command enumeration includes the executable where applicable.
 
 ## Key rationale and risks
@@ -791,7 +805,7 @@ The unfinished disposable Paho smoke test from discovery is not evidence. D1 rep
 - Context-bounded Paho waits and real disconnect tests protect against hangs.
 - Strict slugs trade naming flexibility for deterministic MQTT and NATS classification.
 - Plain MQTT is acceptable only on the stated trusted network boundary.
-- The shared NATS process couples failure of native NATS and MQTT, so readiness, health, file-backed JetStream, and restart acceptance must make that failure visible and recoverable.
+- Native NATS and the Mosquitto broker are separate processes, so one can fail without the other; readiness, health, file-backed JetStream, and restart acceptance must still surface either failure and recover.
 - Eligibility requires `/get` for observed Commands; when a Device cannot confirm a no-op Command, timeout is the honest result. Dispatched effect Commands carry no refresh property by plan.
 
 ## Open questions
