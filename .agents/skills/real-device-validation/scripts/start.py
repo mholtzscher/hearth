@@ -15,6 +15,17 @@ import urllib.request
 
 ROOT = Path(__file__).resolve().parents[4]
 EXIT_MARKER = "REAL_DEVICE_START_PROCESS_EXIT"
+STATE_RELPATH = Path(".data/real-device-validation.json")
+DASHBOARD_URL = "http://127.0.0.1:5173"
+SERVE_HTTP_PORT = 8088
+SERVE_PROXY_TARGET = DASHBOARD_URL
+# The only mount this workflow creates or removes. `serve_route` accepts no
+# other arrangement, so pinning `--set-path` on both the publish and the
+# removal keeps a `tailscale serve` invocation from touching a sibling handler
+# that another client added in the meantime.
+SERVE_MOUNT = "/"
+# Every message this script prints starts with this, so operators can tell which task failed.
+FAULT = "real-device-start"
 
 
 def run(*args):
@@ -36,6 +47,167 @@ def port_open(host, port):
 def http_read(url):
     with urllib.request.urlopen(url, timeout=2) as response:
         return response.read()
+
+
+def tailscale_json(*args, fault):
+    """Run a read-only Tailscale command and parse its JSON output.
+
+    A missing binary, a stopped daemon, and a rejected command all look like a
+    broken tailnet to the caller, so each one fails closed with `fault` prefixed.
+    """
+    command = ("tailscale",) + args
+    try:
+        completed = subprocess.run(command, text=True, cwd=ROOT, capture_output=True)
+    except OSError as error:
+        raise RuntimeError(f"{fault}: {' '.join(command)} could not run: {error}")
+    if completed.returncode != 0:
+        detail = (completed.stderr or completed.stdout or "").strip().splitlines()
+        raise RuntimeError(f"{fault}: {' '.join(command)} failed: {detail[0] if detail else 'no output'}")
+    try:
+        return json.loads(completed.stdout or "{}")
+    except ValueError as error:
+        raise RuntimeError(f"{fault}: {' '.join(command)} returned no JSON: {error}")
+
+
+def tailscale_serve_status(fault):
+    """Return the parsed `tailscale serve status --json` document."""
+    return tailscale_json("serve", "status", "--json", fault=fault)
+
+
+def tailscale_dns_name(fault):
+    """Return this node's MagicDNS name, refusing to continue without a running tailnet."""
+    status = tailscale_json("status", "--json", fault=fault)
+    dns_name = ((status.get("Self") or {}).get("DNSName") or "").rstrip(".")
+    if status.get("BackendState") != "Running" or not dns_name:
+        raise RuntimeError(f"{fault}: Tailscale is not running (state {status.get('BackendState') or 'unknown'})")
+    return dns_name
+
+
+def tailscale_serve_command(*arguments):
+    """Build a `tailscale serve` command for the dashboard's tailnet-only HTTP port."""
+    return ["tailscale", "serve", "--bg", "--yes", f"--http={SERVE_HTTP_PORT}", *arguments]
+
+
+def tailscale_serve(*arguments, fault):
+    """Run `tailscale serve` for the dashboard port; `off` removes the route.
+
+    Callers pass `--set-path SERVE_MOUNT` so the command can only add or remove
+    this workflow's own root handler.
+    """
+    command = tailscale_serve_command(*arguments)
+    try:
+        subprocess.run(command, text=True, cwd=ROOT, capture_output=True, check=True)
+    except OSError as error:
+        raise RuntimeError(f"{fault}: {' '.join(command)} could not run: {error}")
+    except subprocess.CalledProcessError as error:
+        detail = (error.stderr or error.stdout or "").strip().splitlines()
+        raise RuntimeError(f"{fault}: {' '.join(command)} failed: {detail[0] if detail else 'no output'}")
+
+
+def serve_config_claims_port(config, port):
+    """Report whether one ServeConfig layer claims `port`.
+
+    `tailscale serve status --json` nests ephemeral foreground sessions under a
+    top-level `Foreground` map, each value a ServeConfig shaped like the
+    document root (a foreground config never nests another `Foreground`). A
+    claim is a `TCP` entry for the port or any `Web` host whose name ends in
+    `:port`.
+    """
+    config = config or {}
+    if str(port) in (config.get("TCP") or {}):
+        return True
+    return any(host.rsplit(":", 1)[-1] == str(port) for host in (config.get("Web") or {}))
+
+
+def serve_route(status, port=SERVE_HTTP_PORT):
+    """Describe the node-level HTTP Serve route that claims `port`.
+
+    Serve routes on one port share a single HTTP server, so only an exact root
+    proxy is safe to reuse or remove. `status` is a parsed
+    `tailscale serve status --json` document; the result is one of:
+
+    - `{"kind": "absent"}` when no Serve route claims the port.
+    - `{"kind": "proxy", "host": ..., "proxy": ...}` when one host serves only
+      the root path as a proxy to one target.
+    - `{"kind": "conflict", "summary": ...}` for every other arrangement, which
+      must never be overwritten because nothing here can tell whose it is.
+
+    A foreground session that claims the port is always a conflict, even when
+    it looks identical: its config lives only for that client's IPN bus session,
+    so this workflow can neither adopt it nor end it.
+    """
+    status = status or {}
+    foreground = {session: config for session, config in (status.get("Foreground") or {}).items()
+                  if serve_config_claims_port(config, port)}
+    if foreground:
+        return {"kind": "conflict", "summary": json.dumps({"Foreground": foreground}, sort_keys=True)}
+    tcp = (status.get("TCP") or {}).get(str(port)) or {}
+    hosts = {host: config for host, config in (status.get("Web") or {}).items()
+             if host.rsplit(":", 1)[-1] == str(port)}
+    if not tcp and not hosts:
+        return {"kind": "absent"}
+    if len(hosts) != 1 or not tcp.get("HTTP"):
+        return {"kind": "conflict", "summary": json.dumps(
+            {"TCP": {str(port): tcp} if tcp else {}, "Web": hosts}, sort_keys=True)}
+    host, config = next(iter(hosts.items()))
+    handlers = config.get("Handlers") or {}
+    root = handlers.get("/") or {}
+    if len(handlers) == 1 and root.get("Proxy") and not root.get("Path") and not root.get("Text"):
+        return {"kind": "proxy", "host": host.rsplit(":", 1)[0], "proxy": root["Proxy"]}
+    return {"kind": "conflict", "summary": json.dumps(hosts, sort_keys=True)}
+
+
+def serve_route_matches(route, host, proxy):
+    """Report whether `route` is exactly the root proxy to `proxy` served by `host`."""
+    return route["kind"] == "proxy" and route["host"] == host and route["proxy"] == proxy
+
+
+def dashboard_serve_plan(fault):
+    """Plan this run's tailnet dashboard route as `{"host", "url", "ownership"}`.
+
+    `ownership` is the record cleanup needs when this run creates the route; it
+    is None when an identical route already exists and must be reused untouched.
+    Any other route on the port is refused rather than replaced.
+
+    This is a preflight read, not an atomic guard. `tailscale serve` re-reads
+    the config itself, so a route that lands after this read and before the
+    publish command's own read is invisible here and cannot be preserved; the
+    CLI's ETag/If-Match only rejects a change that arrives mid-command. There is
+    no CLI flag that makes the write conditional on this inspected config
+    (`tailscale debug localapi` cannot send If-Match), so port 8088 must stay
+    owned by this workflow and operators must coordinate before serving it.
+    """
+    dns_name = tailscale_dns_name(fault)
+    url = f"http://{dns_name}:{SERVE_HTTP_PORT}/"
+    route = serve_route(tailscale_serve_status(fault))
+    if route["kind"] == "conflict":
+        raise RuntimeError(f"{fault}: tailscale serve port {SERVE_HTTP_PORT} already serves "
+                           f"{route['summary']}; refusing to replace it")
+    if serve_route_matches(route, dns_name, SERVE_PROXY_TARGET):
+        return {"host": dns_name, "url": url, "ownership": None}
+    if route["kind"] == "proxy":
+        raise RuntimeError(f"{fault}: tailscale serve port {SERVE_HTTP_PORT} already maps "
+                           f"{route['host']} to {route['proxy']}; refusing to replace it")
+    return {"host": dns_name, "url": url,
+            "ownership": {"host": dns_name, "proxy": SERVE_PROXY_TARGET, "url": url}}
+
+
+def save_state(state):
+    """Persist the environment record that cleanup reads."""
+    (ROOT / STATE_RELPATH).write_text(json.dumps(state) + "\n")
+
+
+def enable_serve_route(record, fault):
+    """Publish the recorded dashboard route, then confirm it landed exactly.
+
+    Pinning `--set-path SERVE_MOUNT` keeps the command from replacing a sibling
+    handler, but it still replaces whatever occupies `/` on the port at the
+    moment of the CLI's own read (see `dashboard_serve_plan`).
+    """
+    tailscale_serve("--set-path", SERVE_MOUNT, SERVE_PROXY_TARGET, fault=fault)
+    if not serve_route_matches(serve_route(tailscale_serve_status(fault)), record["host"], record["proxy"]):
+        raise RuntimeError(f"{fault}: tailscale serve did not publish {record['url']} exactly; "
+                           f"inspect tailscale serve status")
 
 
 def prepare_config(path, expected):
@@ -94,7 +266,7 @@ def start(host):
         raise RuntimeError("real-device-start: supply a hostname or IPv4 address, not a URL")
     if os.environ.get("HERDR_ENV") != "1":
         raise RuntimeError("real-device-start: run inside Herdr")
-    if (ROOT / ".data/real-device-validation.json").exists():
+    if (ROOT / STATE_RELPATH).exists():
         raise RuntimeError("real-device-start: saved environment exists; run mise run real-device-stop first")
     for port in (8080, 5173):
         if port_open("127.0.0.1", port) or port_open("::1", port):
@@ -106,13 +278,16 @@ def start(host):
     for port in (4222, 1883):
         if not port_open(host, port):
             raise RuntimeError(f"real-device-start: {host}:{port} is unreachable")
+    # Plan the tailnet route before any Herdr tab exists, so a missing Tailscale
+    # or an occupied Serve port fails closed without leaving a tab to diagnose.
+    dashboard_serve_plan(FAULT)
     stage("preflight passed")
 
     prepare_config(Path("configs/homelab-hearthd.yaml"),
                    f"http_addr: 127.0.0.1:8080\nnats_url: nats://{host}:4222\nsqlite_path: .data/homelab-hearthd.db\nhousehold_timezone: UTC\n")
     prepare_config(Path("configs/homelab-zigbee2mqtt.yaml"),
                    f"adapter_id: zigbee2mqtt\nnats_url: nats://{host}:4222\nmqtt:\n  url: tcp://{host}:1883\n  base_topic: zigbee2mqtt\n")
-    run("git", "check-ignore", "-q", ".data/real-device-validation.json")
+    run("git", "check-ignore", "-q", str(STATE_RELPATH))
     (ROOT / ".data").mkdir(exist_ok=True)
     if not (ROOT / "web/node_modules").is_dir():
         subprocess.run(["mise", "run", "web-install"], cwd=ROOT, check=True)
@@ -123,10 +298,9 @@ def start(host):
         tab = created["tab"]["tab_id"]
         core = created["root_pane"]["pane_id"]
         panes.append(core)
-        (ROOT / ".data/real-device-validation.json").write_text(json.dumps({
-            "tab_id": tab, "root_pane_id": core, "worktree": str(ROOT),
-            "workspace_id": created["tab"]["workspace_id"],
-        }) + "\n")
+        state = {"tab_id": tab, "root_pane_id": core, "worktree": str(ROOT),
+                 "workspace_id": created["tab"]["workspace_id"]}
+        save_state(state)
         print(f"real-device-start: tab={tab} core={core}", flush=True)
         launch(core, "go run ./cmd/hearthd -config configs/homelab-hearthd.yaml")
         wait_ready("core health", lambda: http_read("http://127.0.0.1:8080/healthz"), (core,))
@@ -156,8 +330,21 @@ def start(host):
         wait_ready("dashboard", lambda: http_read("http://127.0.0.1:5173/"), (dashboard,))
         wait_ready("API proxy", lambda: http_read("http://127.0.0.1:5173/readyz"), (core, dashboard))
         wait_ready("monitor proxy", lambda: http_read("http://127.0.0.1:5173/nats-monitor/varz"), (dashboard,))
+
+        # Replan against the live Serve config: another client may have changed it
+        # while the services compiled. Only this run's own route is ever published.
+        plan = dashboard_serve_plan(FAULT)
+        if plan["ownership"]:
+            # Record ownership before mutating, so cleanup still removes a route
+            # whose publish command failed after the Serve config changed.
+            state["serve"] = plan["ownership"]
+            save_state(state)
+            enable_serve_route(plan["ownership"], FAULT)
+            print(f"real-device-start: published tailnet route {plan['url']}", flush=True)
+        else:
+            print(f"real-device-start: reusing existing tailnet route {plan['url']}", flush=True)
         stage("all startup gates passed")
-        print(f"Ready for validation: http://127.0.0.1:5173/ — tab {tab}", flush=True)
+        print(f"Ready for validation: {DASHBOARD_URL}/ — tailnet {plan['url']} — tab {tab}", flush=True)
     except Exception:
         # Leave only this run's tab available for diagnosis; never kill other work.
         if tab:

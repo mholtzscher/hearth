@@ -167,12 +167,12 @@ description = "Pre-pull the pinned Mosquitto image used by tests and the local s
 run = '''docker pull eclipse-mosquitto:2.0.22'''
 
 [tasks."real-device-start"]
-description = "Start local validation against shared homelab NATS and Zigbee2MQTT"
+description = "Start local validation against shared homelab NATS and Zigbee2MQTT, published to the tailnet"
 usage = 'arg "<host>" help="Homelab hostname (for example wanda)"'
 run = '''python3 -B .agents/skills/real-device-validation/scripts/start.py "$usage_host"'''
 
 [tasks."real-device-stop"]
-description = "Close this worktree's recorded real-device validation tab"
+description = "Close this worktree's recorded real-device validation tab and tailnet route"
 run = '''python3 -B .agents/skills/real-device-validation/scripts/stop.py'''
 
 [tasks."real-device-start-test"]
