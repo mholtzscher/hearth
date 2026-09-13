@@ -98,11 +98,16 @@ type EntityTypeDefinition struct {
 	// eventNames is nil for a type that is not an Entity Event source. A nil
 	// selector classifies the type as a non-event before any support decoding, so
 	// a malformed persisted support is never a catalog failure for such a type.
-	eventNames       func(EntitySupport) ([]EntityEventName, error)
-	normalizeSupport func(EntitySupport) (EntitySupport, error)
-	normalizeState   func(EntitySupport, Value) (Value, error)
-	equalState       func(EntitySupport, Value, Value) (bool, error)
-	operations       map[OperationName]erasedOperationDefinition
+	eventNames func(EntitySupport) ([]EntityEventName, error)
+	// sameSupportIdentity reports whether two raw supports for this type share
+	// the manifest-declared immutable fields. It decodes and behavior-validates
+	// both supports before the generated typed comparison, so an invalid
+	// descriptor is an error rather than an identity change.
+	sameSupportIdentity func(EntitySupport, EntitySupport) (bool, error)
+	normalizeSupport    func(EntitySupport) (EntitySupport, error)
+	normalizeState      func(EntitySupport, Value) (Value, error)
+	equalState          func(EntitySupport, Value, Value) (bool, error)
+	operations          map[OperationName]erasedOperationDefinition
 }
 
 type erasedOperationDefinition struct {
@@ -123,13 +128,14 @@ func DefineEventSourceEntityType[State, Support any](
 	validateSupport func(Support) error,
 	validateSupportedState func(Support, State) error,
 	equalState func(State, State) bool,
+	sameSupportIdentity func(Support, Support) bool,
 	selectEventNames func(Support) []string,
 ) (EntityTypeDefinition, error) {
 	if selectEventNames == nil {
 		return EntityTypeDefinition{}, fmt.Errorf("entity type %q has no Entity Event name selector", id)
 	}
 	definition, err := DefineEntityType(
-		id, state, support, validateSupport, validateSupportedState, equalState,
+		id, state, support, validateSupport, validateSupportedState, equalState, sameSupportIdentity,
 	)
 	if err != nil {
 		return EntityTypeDefinition{}, err
@@ -163,6 +169,7 @@ func DefineEntityType[State, Support any](
 	validateSupport func(Support) error,
 	validateSupportedState func(Support, State) error,
 	equalState func(State, State) bool,
+	sameSupportIdentity func(Support, Support) bool,
 	operations ...OperationDefinition[State, Support],
 ) (EntityTypeDefinition, error) {
 	if id == "" {
@@ -183,6 +190,9 @@ func DefineEntityType[State, Support any](
 	if equalState == nil {
 		return EntityTypeDefinition{}, fmt.Errorf("entity type %q has no state equality function", id)
 	}
+	if sameSupportIdentity == nil {
+		return EntityTypeDefinition{}, fmt.Errorf("entity type %q has no support identity function", id)
+	}
 
 	definition := EntityTypeDefinition{
 		id:         id,
@@ -202,6 +212,7 @@ func DefineEntityType[State, Support any](
 	}
 
 	definition.normalizeSupport = makeNormalizeSupport(id, support, validateSupport)
+	definition.sameSupportIdentity = makeSameSupportIdentity(id, support, validateSupport, sameSupportIdentity)
 	definition.normalizeState = func(rawSupport EntitySupport, rawState Value) (Value, error) {
 		typedSupport, _, err := support.Decode(json.RawMessage(rawSupport))
 		if err != nil {
@@ -257,6 +268,35 @@ func makeNormalizeSupport[Support any](
 	}
 }
 
+// makeSameSupportIdentity adapts the generated typed comparison to the erased
+// catalog. Both raw supports must decode and pass behavior validation first, so
+// a corrupt persisted descriptor surfaces as an error instead of silently
+// looking like an identity change.
+func makeSameSupportIdentity[Support any](
+	id EntityTypeID,
+	support *entitytypes.JSONCodec[Support],
+	validateSupport func(Support) error,
+	sameSupportIdentity func(Support, Support) bool,
+) func(EntitySupport, EntitySupport) (bool, error) {
+	return func(previous, next EntitySupport) (bool, error) {
+		typedPrevious, _, decodeErr := support.Decode(json.RawMessage(previous))
+		if decodeErr != nil {
+			return false, fmt.Errorf("invalid previous support for entity type %q: %w", id, decodeErr)
+		}
+		typedNext, _, decodeErr := support.Decode(json.RawMessage(next))
+		if decodeErr != nil {
+			return false, fmt.Errorf("invalid next support for entity type %q: %w", id, decodeErr)
+		}
+		if validationErr := validateSupport(typedPrevious); validationErr != nil {
+			return false, fmt.Errorf("previous support is unsupported by entity type %q: %w", id, validationErr)
+		}
+		if validationErr := validateSupport(typedNext); validationErr != nil {
+			return false, fmt.Errorf("next support is unsupported by entity type %q: %w", id, validationErr)
+		}
+		return sameSupportIdentity(typedPrevious, typedNext), nil
+	}
+}
+
 type ResolvedCommand struct {
 	Parameters CommandParameters
 	Deadline   time.Duration
@@ -271,7 +311,7 @@ func NewTypeCatalog(definitions []EntityTypeDefinition) (*TypeCatalog, error) {
 	catalog := &TypeCatalog{types: make(map[EntityTypeID]EntityTypeDefinition, len(definitions))}
 	for _, definition := range definitions {
 		if definition.id == "" || definition.normalizeSupport == nil || definition.normalizeState == nil ||
-			definition.equalState == nil ||
+			definition.equalState == nil || definition.sameSupportIdentity == nil ||
 			definition.operations == nil {
 			return nil, fmt.Errorf("invalid entity type definition")
 		}
@@ -292,6 +332,23 @@ func (catalog *TypeCatalog) NormalizeSupport(typeID EntityTypeID, support Entity
 		return nil, err
 	}
 	return definition.normalizeSupport(support)
+}
+
+// SameSupportIdentity reports whether two descriptors for one Entity type share
+// the manifest-declared immutable support fields. Both supports are decoded,
+// normalized, and behavior-validated before the generated typed comparison, so
+// an invalid descriptor is a catalog error rather than an identity change. A
+// type that declares no immutable support paths reports true for any valid pair.
+func (catalog *TypeCatalog) SameSupportIdentity(
+	typeID EntityTypeID,
+	previous EntitySupport,
+	next EntitySupport,
+) (bool, error) {
+	definition, err := catalog.resolve(typeID)
+	if err != nil {
+		return false, err
+	}
+	return definition.sameSupportIdentity(previous, next)
 }
 
 func (catalog *TypeCatalog) IsStateless(typeID EntityTypeID) (bool, error) {

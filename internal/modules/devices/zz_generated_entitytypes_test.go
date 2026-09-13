@@ -467,6 +467,57 @@ func TestGeneratedBuiltinCatalogWiring(t *testing.T) {
 			t.Error("catalog accepted event support for a closed type")
 		}
 	})
+	t.Run("hearth.measurement/v1", func(t *testing.T) {
+		entity := Entity{ID: EntityID("generated_measurementv1"), TypeID: EntityTypeMeasurementV1, Support: EntitySupport("{\"state\":{\"measurement_kind\":\"temperature\",\"unit\":\"Cel\",\"minimum\":-273.15,\"maximum\":1000},\"operations\":{}}")}
+		if stateless, err := catalog.IsStateless(entity.TypeID); err != nil || stateless != false {
+			t.Errorf("catalog stateless = %v, %v, want false", stateless, err)
+		}
+		normalizedSupport, err := catalog.NormalizeSupport(entity.TypeID, entity.Support)
+		if err != nil {
+			t.Fatalf("catalog support: %v", err)
+		}
+		if !entitytypetest.EqualJSON(t, normalizedSupport, []byte("{\"state\":{\"measurement_kind\":\"temperature\",\"unit\":\"Cel\",\"minimum\":-273.15,\"maximum\":1000},\"operations\":{}}")) {
+			t.Errorf("catalog normalized support = %s, want %s", normalizedSupport, "{\"state\":{\"measurement_kind\":\"temperature\",\"unit\":\"Cel\",\"minimum\":-273.15,\"maximum\":1000},\"operations\":{}}")
+		}
+		normalizedState, err := catalog.NormalizeState(entity, Value("-273.15"))
+		if err != nil {
+			t.Fatalf("catalog State: %v", err)
+		}
+		if !entitytypetest.EqualJSON(t, normalizedState, []byte("-273.15")) {
+			t.Errorf("catalog normalized State = %s, want %s", normalizedState, "-273.15")
+		}
+		if _, err := catalog.NormalizeState(entity, Value("-273.16")); err == nil {
+			t.Error("catalog support-invalid State unexpectedly accepted")
+		}
+		if _, err := catalog.NormalizeSupport(entity.TypeID, EntitySupport("{\"state\":{\"measurement_kind\":\"temperature\",\"unit\":\"Cel\",\"minimum\":1000,\"maximum\":-273.15},\"operations\":{}}")); err == nil {
+			t.Error("catalog invalid support 1 unexpectedly accepted")
+		}
+		if _, err := catalog.NormalizeSupport(entity.TypeID, EntitySupport("{\"state\":{\"measurement_kind\":\"relative_humidity\",\"unit\":\"%\",\"minimum\":100,\"maximum\":0},\"operations\":{}}")); err == nil {
+			t.Error("catalog invalid support 2 unexpectedly accepted")
+		}
+		if _, err := catalog.NormalizeSupport(entity.TypeID, EntitySupport("{\"state\":{\"measurement_kind\":\"illuminance\",\"unit\":\"lx\",\"minimum\":1000000000,\"maximum\":0},\"operations\":{}}")); err == nil {
+			t.Error("catalog invalid support 3 unexpectedly accepted")
+		}
+		if _, err := catalog.NormalizeSupport(entity.TypeID, EntitySupport("{\"state\":{\"measurement_kind\":\"battery_level\",\"unit\":\"%\",\"minimum\":100,\"maximum\":0},\"operations\":{}}")); err == nil {
+			t.Error("catalog invalid support 4 unexpectedly accepted")
+		}
+		if equal, err := catalog.EqualState(entity, Value("-273.15"), Value("-273.15")); err != nil || !equal {
+			t.Errorf("catalog equal State = %v, %v", equal, err)
+		}
+		if equal, err := catalog.EqualState(entity, Value("21.5"), Value("-273.15")); err != nil || equal {
+			t.Errorf("catalog unequal State = %v, %v", equal, err)
+		}
+		if supported, err := catalog.SupportsEntityEvent(entity, EntityEventName("single_press")); err != nil || supported {
+			t.Errorf("catalog non-event type accepted an Entity Event: %v, %v", supported, err)
+		}
+		malformedNonEventEntity := Entity{ID: EntityID("generated_measurementv1"), TypeID: EntityTypeMeasurementV1, Support: EntitySupport("[]")}
+		if supported, err := catalog.SupportsEntityEvent(malformedNonEventEntity, EntityEventName("single_press")); err != nil || supported {
+			t.Errorf("catalog non-event type with malformed support accepted an Entity Event: %v, %v", supported, err)
+		}
+		if _, err := catalog.NormalizeSupport(entity.TypeID, EntitySupport("{\"events\":{\"names\":[\"single_press\"]},\"operations\":{},\"state\":{\"measurement_kind\":\"temperature\",\"unit\":\"Cel\",\"minimum\":-273.15,\"maximum\":1000}}")); err == nil {
+			t.Error("catalog accepted event support for a closed type")
+		}
+	})
 	t.Run("hearth.numericsensor/v1", func(t *testing.T) {
 		entity := Entity{ID: EntityID("generated_numericsensorv1"), TypeID: EntityTypeNumericsensorV1, Support: EntitySupport("{\"state\":{\"minimum\":0,\"maximum\":255,\"unit\":\"lqi\"},\"operations\":{}}")}
 		if stateless, err := catalog.IsStateless(entity.TypeID); err != nil || stateless != false {
@@ -625,42 +676,6 @@ func TestGeneratedBuiltinCatalogWiring(t *testing.T) {
 			t.Errorf("catalog non-event type with malformed support accepted an Entity Event: %v, %v", supported, err)
 		}
 		if _, err := catalog.NormalizeSupport(entity.TypeID, EntitySupport("{\"events\":{\"names\":[\"single_press\"]},\"operations\":{\"set\":{}},\"state\":{}}")); err == nil {
-			t.Error("catalog accepted event support for a closed type")
-		}
-	})
-	t.Run("hearth.temperature/v1", func(t *testing.T) {
-		entity := Entity{ID: EntityID("generated_temperaturev1"), TypeID: EntityTypeTemperatureV1, Support: EntitySupport("{\"state\":{},\"operations\":{}}")}
-		if stateless, err := catalog.IsStateless(entity.TypeID); err != nil || stateless != false {
-			t.Errorf("catalog stateless = %v, %v, want false", stateless, err)
-		}
-		normalizedSupport, err := catalog.NormalizeSupport(entity.TypeID, entity.Support)
-		if err != nil {
-			t.Fatalf("catalog support: %v", err)
-		}
-		if !entitytypetest.EqualJSON(t, normalizedSupport, []byte("{\"state\":{},\"operations\":{}}")) {
-			t.Errorf("catalog normalized support = %s, want %s", normalizedSupport, "{\"state\":{},\"operations\":{}}")
-		}
-		normalizedState, err := catalog.NormalizeState(entity, Value("21500"))
-		if err != nil {
-			t.Fatalf("catalog State: %v", err)
-		}
-		if !entitytypetest.EqualJSON(t, normalizedState, []byte("21500")) {
-			t.Errorf("catalog normalized State = %s, want %s", normalizedState, "21500")
-		}
-		if equal, err := catalog.EqualState(entity, Value("21500"), Value("21500")); err != nil || !equal {
-			t.Errorf("catalog equal State = %v, %v", equal, err)
-		}
-		if equal, err := catalog.EqualState(entity, Value("-273150"), Value("21500")); err != nil || equal {
-			t.Errorf("catalog unequal State = %v, %v", equal, err)
-		}
-		if supported, err := catalog.SupportsEntityEvent(entity, EntityEventName("single_press")); err != nil || supported {
-			t.Errorf("catalog non-event type accepted an Entity Event: %v, %v", supported, err)
-		}
-		malformedNonEventEntity := Entity{ID: EntityID("generated_temperaturev1"), TypeID: EntityTypeTemperatureV1, Support: EntitySupport("[]")}
-		if supported, err := catalog.SupportsEntityEvent(malformedNonEventEntity, EntityEventName("single_press")); err != nil || supported {
-			t.Errorf("catalog non-event type with malformed support accepted an Entity Event: %v, %v", supported, err)
-		}
-		if _, err := catalog.NormalizeSupport(entity.TypeID, EntitySupport("{\"events\":{\"names\":[\"single_press\"]},\"operations\":{},\"state\":{}}")); err == nil {
 			t.Error("catalog accepted event support for a closed type")
 		}
 	})

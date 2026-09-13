@@ -21,6 +21,11 @@
     },
     "state_schema": {"type": "string", "minLength": 1},
     "support_schema": {"type": "string", "minLength": 1},
+    "immutable_support_paths": {
+      "type": "array",
+      "default": [],
+      "items": {"type": "string", "minLength": 1, "pattern": "^/"}
+    },
     "state_validation": {
       "type": "array",
       "items": {"$ref": "#/$defs/rule"}

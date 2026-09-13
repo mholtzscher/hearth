@@ -15,10 +15,11 @@ var (
 type RegistrationRejectionCode string
 
 const (
-	RegistrationInvalidDescriptor   RegistrationRejectionCode = "invalid_descriptor"
-	RegistrationImmutableTypeChange RegistrationRejectionCode = "immutable_type_change"
-	RegistrationIdentityConflict    RegistrationRejectionCode = "identity_conflict"
-	registrationRuntimeFenced       RegistrationRejectionCode = "runtime_fenced"
+	RegistrationInvalidDescriptor      RegistrationRejectionCode = "invalid_descriptor"
+	RegistrationImmutableTypeChange    RegistrationRejectionCode = "immutable_type_change"
+	RegistrationImmutableSupportChange RegistrationRejectionCode = "immutable_support_change"
+	RegistrationIdentityConflict       RegistrationRejectionCode = "identity_conflict"
+	registrationRuntimeFenced          RegistrationRejectionCode = "runtime_fenced"
 )
 
 type RegistrationRejectedError struct {

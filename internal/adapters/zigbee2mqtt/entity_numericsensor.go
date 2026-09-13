@@ -15,8 +15,8 @@ var numericSensorCodecs = sync.OnceValues(contractnumericsensorv1.Compile)
 
 // newNumericSensorPlan translates a read-only JSON number without changing
 // its scale. The contract enforces finite bounds and preserves fractions;
-// get access alone controls refresh. Specialized conversions, such as
-// temperature and exact-integer link quality, keep separate constructors.
+// get access alone controls refresh. Semantic measurements and exact-integer
+// link quality use separate constructors.
 func newNumericSensorPlan(
 	metadata adapter.EntityMetadata,
 	property string,

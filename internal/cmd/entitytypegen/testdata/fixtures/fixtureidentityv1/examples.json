@@ -1,0 +1,26 @@
+{
+  "cases": [
+    {
+      "name": "temperature-range",
+      "support": {
+        "state": {"kind": "temperature", "minimum": -273.15, "maximum": 1000},
+        "operations": {}
+      },
+      "states": [
+        {"value": 21.5, "valid": true},
+        {"value": -273.15, "valid": true},
+        {"value": 1000, "valid": true},
+        {"value": 1000.01, "valid": false},
+        {"value": -274, "valid": false},
+        {"value": "warm", "valid": false}
+      ],
+      "operations": {}
+    }
+  ],
+  "invalid_supports": [
+    {
+      "state": {"kind": "temperature", "minimum": 1000, "maximum": -273.15},
+      "operations": {}
+    }
+  ]
+}

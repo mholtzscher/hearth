@@ -135,7 +135,7 @@ func (repository *SQLiteRepository) RegisterBinding(
 	if err != nil {
 		return Binding{}, err
 	}
-	reconciliations, err := prepareEntityReconciliations(ctx, queries, params, deviceID)
+	reconciliations, err := prepareEntityReconciliations(ctx, repository.catalog, queries, params, deviceID)
 	if err != nil {
 		return Binding{}, err
 	}
@@ -231,13 +231,14 @@ func createRegistrationDevice(
 
 func prepareEntityReconciliations(
 	ctx context.Context,
+	catalog *TypeCatalog,
 	queries *dbsqlc.Queries,
 	params RegisterBindingParams,
 	deviceID DeviceID,
 ) ([]entityReconciliation, error) {
 	reconciliations := make([]entityReconciliation, len(params.Entities))
 	for index, entity := range params.Entities {
-		reconciliation, err := prepareEntityReconciliation(ctx, queries, params, entity, deviceID)
+		reconciliation, err := prepareEntityReconciliation(ctx, catalog, queries, params, entity, deviceID)
 		if err != nil {
 			return nil, err
 		}
@@ -248,6 +249,7 @@ func prepareEntityReconciliations(
 
 func prepareEntityReconciliation(
 	ctx context.Context,
+	catalog *TypeCatalog,
 	queries *dbsqlc.Queries,
 	params RegisterBindingParams,
 	entity RegisterEntityParams,
@@ -267,6 +269,17 @@ func prepareEntityReconciliation(
 		}
 		if EntityTypeID(mapping.TypeID) != entity.Entity.TypeID {
 			return entityReconciliation{}, errImmutableTypeChange
+		}
+		sameIdentity, identityErr := catalog.SameSupportIdentity(
+			entity.Entity.TypeID,
+			EntitySupport(mapping.SupportJson),
+			entity.Entity.Support,
+		)
+		if identityErr != nil {
+			return entityReconciliation{}, fmt.Errorf("compare entity support identity: %w", identityErr)
+		}
+		if !sameIdentity {
+			return entityReconciliation{}, errImmutableSupportChange
 		}
 	case errors.Is(err, sql.ErrNoRows):
 	default:

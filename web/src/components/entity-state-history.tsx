@@ -2,6 +2,7 @@ import { useState } from "react";
 import { apiFetch, useBaseUrlVersion } from "../api/client.ts";
 import { useApi } from "../api/hooks.ts";
 import type { Collection, EntityStateHistoryEntry } from "../api/types.ts";
+import { readMeasurementDescriptor, readMeasurementReading } from "../lib/measurement.ts";
 import { ErrorBox, MonoId, StatusChip } from "./common.tsx";
 import { Button } from "./ui/button.tsx";
 import {
@@ -47,7 +48,9 @@ function isBoundedInteger(value: unknown, min: number, max: number): value is nu
     plots `value` in mireds. XY, HS, and mode States are structured or
     discrete and have no numeric chart value. Numeric-setting States plot
     only `value`-mode numbers with their unit label; `choice`-mode States
-    are listed below. */
+    are listed below. A measurement State is a finite number under a
+    structurally validated descriptor, plotted in its canonical unit; null
+    here (malformed descriptor or non-finite value) falls back to raw JSON. */
 function isNumericSettingChoiceState(value: unknown): boolean {
   if (typeof value !== "object" || value === null) return false;
   const state = value as { mode?: unknown; choice?: unknown; value?: unknown };
@@ -72,10 +75,10 @@ function parseHistoryValue(type: string | undefined, value: unknown, support?: R
       const mireds = colorTempHistoryMireds(value);
       return mireds === null ? null : { numeric: mireds, label: `${mireds} mireds` };
     }
-    case "hearth.temperature/v1":
-      return isBoundedInteger(value, -273150, 1000000)
-        ? { numeric: value / 1000, label: `${value / 1000} °C` }
-        : null;
+    case "hearth.measurement/v1": {
+      const reading = readMeasurementReading(value, support);
+      return reading ? { numeric: reading.numeric, label: reading.label } : null;
+    }
     case "hearth.numericsensor/v1":
       return typeof value === "number" && Number.isFinite(value)
         ? { numeric: value, label: String(value) }
@@ -163,12 +166,18 @@ function formatHistoryValue(type: string | undefined, value: unknown, support?: 
 
 /** Fixed semantic or control bounds in chart units. Generic numeric sensor
     bounds are validation envelopes rather than operating ranges, so their
-    charts scale to the page's observed values instead. */
+    charts scale to the page's observed values instead. A measurement's
+    descriptor bounds are its registered support range, so they seed the chart
+    domain; observed values outside them still extend the domain. */
 function supportRange(
   type: string | undefined,
   support: Record<string, unknown> | undefined,
 ): [number, number] | null {
   if (type === "hearth.power/v1" || type === "hearth.binarysensor/v1") return [0, 1];
+  if (type === "hearth.measurement/v1") {
+    const descriptor = readMeasurementDescriptor(support);
+    return descriptor ? [descriptor.minimum, descriptor.maximum] : null;
+  }
   const state = support?.state as { maximum?: unknown; minimum?: unknown } | undefined;
   if (type === "hearth.numericsetting/v1") {
     return typeof state?.minimum === "number" &&
@@ -207,7 +216,13 @@ function padCollapsedDomain(type: string | undefined, value: number): [number, n
   }
 }
 
-function tickLabel(type: string | undefined, tick: number, min: number, max: number): string {
+function tickLabel(
+  type: string | undefined,
+  tick: number,
+  min: number,
+  max: number,
+  unitLabel: string,
+): string {
   if (type === "hearth.power/v1") {
     if (tick === min) return "Off";
     if (tick === max) return "On";
@@ -218,7 +233,7 @@ function tickLabel(type: string | undefined, tick: number, min: number, max: num
     if (tick === max) return "True";
     return String(tick);
   }
-  if (type === "hearth.temperature/v1") return `${tick} °C`;
+  if (type === "hearth.measurement/v1") return unitLabel ? `${tick} ${unitLabel}` : String(tick);
   return String(tick);
 }
 
@@ -261,7 +276,8 @@ function observedAtBounds(stamps: string[]): [string, string] {
 
 const CHART_WIDTH = 560;
 const CHART_HEIGHT = 200;
-const PAD_LEFT = 48;
+// Leave room for canonical measurement ticks such as "1000000000 lx".
+const PAD_LEFT = 96;
 const PAD_RIGHT = 12;
 const PAD_TOP = 12;
 const PAD_BOTTOM = 30;
@@ -305,7 +321,7 @@ function StateHistoryChart({
     case "hearth.binarysensor/v1":
     case "hearth.brightness/v1":
     case "hearth.colortemp/v1":
-    case "hearth.temperature/v1":
+    case "hearth.measurement/v1":
     case "hearth.numericsensor/v1":
     case "hearth.numericsetting/v1":
       break;
@@ -347,6 +363,7 @@ function StateHistoryChart({
   }
 
   const range = supportRange(type, support);
+  const unitLabel = type === "hearth.measurement/v1" ? (readMeasurementDescriptor(support)?.unitLabel ?? "") : "";
   const seeds = range ? [range[0], range[1]] : [];
   let min = Math.min(...seeds, ...valid.map((point) => point.numeric));
   let max = Math.max(...seeds, ...valid.map((point) => point.numeric));
@@ -403,7 +420,7 @@ function StateHistoryChart({
               strokeWidth={1}
             />
             <text x={PAD_LEFT - 6} y={y(tick) + 3.5} textAnchor="end" fontSize={10} fill="currentColor">
-              {tickLabel(type, tick, min, max)}
+              {tickLabel(type, tick, min, max, unitLabel)}
             </text>
           </g>
         ))}

@@ -150,6 +150,39 @@ func TestRegistrationServerMapsDomainRejection(t *testing.T) {
 	}
 }
 
+func TestRegistrationServerMapsImmutableSupportChange(t *testing.T) {
+	t.Parallel()
+	_, connection, _ := startJetStream(t)
+	validator, err := contractsv1.Compile()
+	if err != nil {
+		t.Fatal(err)
+	}
+	server, err := StartRegistrationServer(connection, validator, registrarFunc(func(
+		context.Context,
+		string,
+		devices.RuntimeID,
+		devices.Registration,
+	) (devices.Binding, error) {
+		return devices.Binding{}, &devices.RegistrationRejectedError{
+			Code:    devices.RegistrationImmutableSupportChange,
+			Message: "an existing entity cannot change immutable support",
+		}
+	}), slog.New(slog.DiscardHandler))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = server.Drain() })
+
+	// requestRegistration validates the response against the authoritative
+	// registration-response schema, so this proves the wire code is declared.
+	response := requestRegistration(t, connection, validator, validRegistrationEnvelope())
+	if response.Data.Status != "rejected" || response.Data.Error == nil ||
+		response.Data.Error.Code != "immutable_support_change" ||
+		response.Data.Error.Message != "an existing entity cannot change immutable support" {
+		t.Fatalf("response = %#v", response)
+	}
+}
+
 func TestRegistrationServerMapsRuntimeFencingToTypedRejection(t *testing.T) {
 	t.Parallel()
 	_, connection, _ := startJetStream(t)

@@ -28,6 +28,7 @@ import {
   TableRow,
 } from "../components/ui/table.tsx";
 import { Textarea } from "../components/ui/textarea.tsx";
+import { readMeasurementReading } from "../lib/measurement.ts";
 
 function presetsFor(type: string | undefined, support?: Record<string, unknown>): { label: string; params: string }[] {
   switch (type) {
@@ -245,6 +246,10 @@ function formatStateSummary(
       return typeof value === "string" ? value : null;
     case "hearth.binarysensor/v1":
       return typeof value === "boolean" ? (value ? "True" : "False") : null;
+    case "hearth.measurement/v1": {
+      const reading = readMeasurementReading(value, support);
+      return reading ? reading.label : null;
+    }
     case "hearth.numericsensor/v1": {
       if (typeof value !== "number") return null;
       const unit = (support?.state as { unit?: unknown } | undefined)?.unit;

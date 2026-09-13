@@ -17,6 +17,12 @@ func ValidateSupport(support Support) error {
 
 func EqualState(left, right State) bool { return left == right }
 
+// SameSupportIdentity reports whether support fields that define an
+// Entity's stable semantic identity are unchanged.
+func SameSupportIdentity(previous, next Support) bool {
+	return true
+}
+
 var entityEventNamePattern = regexp.MustCompile("^[a-z0-9][a-z0-9_-]{0,62}$")
 
 // EntityEventNames returns an owned copy of the support's supported Entity Event names.

@@ -101,8 +101,10 @@ func TestDiscoverCapturedButton3RSB22BZ(t *testing.T) {
 	want := []adapter.EntityDescriptor{
 		{
 			Key: "battery", ExternalID: ieee + "/root/battery", Name: "Battery",
-			Type:    "hearth.numericsensor/v1",
-			Support: json.RawMessage(`{"state":{"maximum":100,"minimum":0,"unit":"%"},"operations":{}}`),
+			Type: "hearth.measurement/v1",
+			Support: json.RawMessage(
+				`{"state":{"maximum":100,"measurement_kind":"battery_level","minimum":0,"unit":"%"},"operations":{}}`,
+			),
 		},
 		{
 			Key: "linkquality", ExternalID: ieee + "/root/linkquality", Name: "Link Quality",

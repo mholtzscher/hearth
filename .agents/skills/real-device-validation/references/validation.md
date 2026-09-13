@@ -28,8 +28,14 @@ curl -fsS http://127.0.0.1:8080/v1/entities/ent_<id>
 
 For browser smoke tests, inspect the entity/device/adapter views and NATS
 monitoring. Do not click enablement switches, command presets, or Send command
-without confirmation. Temperature entities (`hearth.temperature/v1`) are
-read-only, use milli-Celsius state, and have empty operation support.
+without confirmation. Measurement entities (`hearth.measurement/v1`)
+— temperature, humidity, illuminance, and battery — are read-only, have empty
+operation support, and never create a command route. Each reads a finite JSON
+number in the canonical unit declared by its own support (`Cel` for temperature,
+`%` for humidity and battery, `lx` for illuminance), so read the descriptor
+instead of inferring meaning from the Entity name or unit; the web client labels
+`Cel` as °C. `measurement_kind` is immutable support and a changed kind rejects
+re-registration.
 
 ## Physical commands — confirmation required
 

@@ -1,9 +1,0 @@
-{
-  "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "urn:hearth:schema:entity-type:temperature:v1:state",
-  "title": "Hearth temperature/v1 State",
-  "description": "Temperature in milli-Celsius; one degree Celsius equals 1000 milli-Celsius.",
-  "type": "integer",
-  "minimum": -273150,
-  "maximum": 1000000
-}

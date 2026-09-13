@@ -1,0 +1,126 @@
+{
+  "cases": [
+    {
+      "name": "temperature-celsius-range",
+      "support": {
+        "state": {
+          "measurement_kind": "temperature",
+          "unit": "Cel",
+          "minimum": -273.15,
+          "maximum": 1000
+        },
+        "operations": {}
+      },
+      "states": [
+        {"value": -273.15, "valid": true},
+        {"value": 21.5, "valid": true},
+        {"value": 1000, "valid": true},
+        {"value": -273.16, "valid": false},
+        {"value": 1000.01, "valid": false},
+        {"value": "21.5", "valid": false}
+      ],
+      "operations": {}
+    },
+    {
+      "name": "relative-humidity-percent-range",
+      "support": {
+        "state": {
+          "measurement_kind": "relative_humidity",
+          "unit": "%",
+          "minimum": 0,
+          "maximum": 100
+        },
+        "operations": {}
+      },
+      "states": [
+        {"value": 0, "valid": true},
+        {"value": 55.5, "valid": true},
+        {"value": 100, "valid": true},
+        {"value": -0.1, "valid": false},
+        {"value": 100.1, "valid": false},
+        {"value": "55.5", "valid": false}
+      ],
+      "operations": {}
+    },
+    {
+      "name": "illuminance-lux-range",
+      "support": {
+        "state": {
+          "measurement_kind": "illuminance",
+          "unit": "lx",
+          "minimum": 0,
+          "maximum": 1000000000
+        },
+        "operations": {}
+      },
+      "states": [
+        {"value": 0, "valid": true},
+        {"value": 1234.5, "valid": true},
+        {"value": 1000000000, "valid": true},
+        {"value": -1, "valid": false},
+        {"value": 1000000000.5, "valid": false},
+        {"value": true, "valid": false}
+      ],
+      "operations": {}
+    },
+    {
+      "name": "battery-level-percent-range",
+      "support": {
+        "state": {
+          "measurement_kind": "battery_level",
+          "unit": "%",
+          "minimum": 0,
+          "maximum": 100
+        },
+        "operations": {}
+      },
+      "states": [
+        {"value": 0, "valid": true},
+        {"value": 87, "valid": true},
+        {"value": 100, "valid": true},
+        {"value": -0.5, "valid": false},
+        {"value": 100.5, "valid": false},
+        {"value": "87", "valid": false}
+      ],
+      "operations": {}
+    }
+  ],
+  "invalid_supports": [
+    {
+      "state": {
+        "measurement_kind": "temperature",
+        "unit": "Cel",
+        "minimum": 1000,
+        "maximum": -273.15
+      },
+      "operations": {}
+    },
+    {
+      "state": {
+        "measurement_kind": "relative_humidity",
+        "unit": "%",
+        "minimum": 100,
+        "maximum": 0
+      },
+      "operations": {}
+    },
+    {
+      "state": {
+        "measurement_kind": "illuminance",
+        "unit": "lx",
+        "minimum": 1000000000,
+        "maximum": 0
+      },
+      "operations": {}
+    },
+    {
+      "state": {
+        "measurement_kind": "battery_level",
+        "unit": "%",
+        "minimum": 100,
+        "maximum": 0
+      },
+      "operations": {}
+    }
+  ]
+}

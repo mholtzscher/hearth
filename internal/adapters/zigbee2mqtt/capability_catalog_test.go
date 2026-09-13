@@ -7,10 +7,11 @@ import (
 	"time"
 )
 
-// A new numeric capability needs only data, not a strategy implementation.
-// This synthetic pressure mapping must preserve fractions and exact units,
-// use the MQTT property rather than the expose name, and stay read-only.
-// It is test-only: it does not claim support for an uncaptured device.
+// A new diagnostic numeric capability needs only data, not a strategy
+// implementation. This synthetic pressure mapping must preserve fractions and
+// exact units, use the MQTT property rather than the expose name, and stay
+// read-only. It is test-only: it does not claim support for an uncaptured
+// device.
 func TestNumericSensorMappingAddsCapabilityWithoutNewTranslation(t *testing.T) {
 	t.Parallel()
 	mapping := numericSensorMapping{
@@ -22,12 +23,10 @@ func TestNumericSensorMappingAddsCapabilityWithoutNewTranslation(t *testing.T) {
 		{Type: "numeric", Name: "pressure", Property: "pressure_report", Unit: "hPa", Access: 5},
 	}
 	input := devicePlanningInput{IEEE: device.IEEEAddress, Exposes: newExposeIndex(device)}
-	var contribution plannerContribution
-	appendNumericSensorPlans(&contribution, input, mapping)
-	if len(contribution.Entities) != 1 {
-		t.Fatalf("pressure plans = %d, want one", len(contribution.Entities))
+	plan := planNumericSensorRoot(input, input.Exposes.roots[0], mapping)
+	if plan == nil {
+		t.Fatal("new numeric capability mapping was not planned")
 	}
-	plan := contribution.Entities[0]
 	if plan.Descriptor.Key != "airpressure" || plan.Descriptor.Name != "Air Pressure" ||
 		plan.Descriptor.ExternalID != "0x00124b0024abcdef/root/airpressure" ||
 		plan.Descriptor.Type != "hearth.numericsensor/v1" ||
@@ -38,7 +37,7 @@ func TestNumericSensorMappingAddsCapabilityWithoutNewTranslation(t *testing.T) {
 		!reflect.DeepEqual(plan.GetProperties, []string{"pressure_report"}) || plan.TranslateCommand != nil {
 		t.Fatalf("pressure routes = %#v", plan)
 	}
-	if report := contractDecode(t, plan, "pressure_report", `1013.25`); report.semantic != 1013.25 {
+	if report := contractDecode(t, *plan, "pressure_report", `1013.25`); report.semantic != 1013.25 {
 		t.Fatalf("pressure = %v, want 1013.25", report.semantic)
 	}
 	for _, payload := range []string{`299.9`, `1100.1`, `"1013.25"`} {
@@ -61,9 +60,7 @@ func TestNumericSensorMappingAddsCapabilityWithoutNewTranslation(t *testing.T) {
 	} {
 		device.Definition.Exposes = []upstreamExpose{expose}
 		input.Exposes = newExposeIndex(device)
-		contribution.Entities = nil
-		appendNumericSensorPlans(&contribution, input, mapping)
-		if len(contribution.Entities) != 0 {
+		if planNumericSensorRoot(input, input.Exposes.roots[0], mapping) != nil {
 			t.Fatalf("ineligible pressure expose registered: %#v", expose)
 		}
 	}
@@ -184,33 +181,6 @@ func TestBinarySensorMappingsMapCapturedOccupancy(t *testing.T) {
 	want := binarySensorMapping{exposeName: "occupancy", key: "occupancy", displayName: "Occupancy"}
 	if got != want {
 		t.Fatalf("occupancy mapping = %#v, want %#v", got, want)
-	}
-}
-
-// The captured 3RSNL02043Z night light is the sole lux sensor in the ambient
-// numeric capability catalog. This test pins that catalog entry to the live
-// expose name, Entity key, display name, exact unit, and conservative
-// validation envelope independently of the device fixture, and fails if a
-// second illuminance entry appears or any field drifts.
-func TestAmbientNumericSensorsMapCapturedIlluminance(t *testing.T) {
-	t.Parallel()
-	matches := 0
-	var got numericSensorMapping
-	for _, mapping := range ambientNumericSensors() {
-		if mapping.exposeName == "illuminance" {
-			matches++
-			got = mapping
-		}
-	}
-	if matches != 1 {
-		t.Fatalf("illuminance catalog entries = %d, want exactly one", matches)
-	}
-	want := numericSensorMapping{
-		exposeName: "illuminance", key: "illuminance", displayName: "Illuminance",
-		upstreamUnit: "lx", unit: "lx", minimum: 0, maximum: 1e9,
-	}
-	if got != want {
-		t.Fatalf("illuminance mapping = %#v, want %#v", got, want)
 	}
 }
 

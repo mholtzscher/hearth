@@ -23,6 +23,7 @@ import type { Collection, Device, Entity } from "../api/types.ts";
 import { acquireNatsConnection } from "../api/nats.ts";
 import type { NatsConnectionLease } from "../api/nats.ts";
 import { ErrorBox, Facts, JsonCode, RawJson, Section, StatusChip } from "../components/common.tsx";
+import { readMeasurementReading } from "../lib/measurement.ts";
 import { Button } from "../components/ui/button.tsx";
 import { Input } from "../components/ui/input.tsx";
 import { Label } from "../components/ui/label.tsx";
@@ -57,7 +58,7 @@ interface EntityEnrichment {
   type: string;
   deviceId: string;
   deviceName: string;
-  unit?: string;
+  support: Record<string, unknown>;
 }
 
 const FAMILY_OPTIONS: { value: FamilyFilter; label: string }[] = [
@@ -137,18 +138,22 @@ function compactJson(value: unknown): string {
 function renderObservationValue(
   value: unknown,
   entityType: string | undefined,
-  unit: string | undefined,
+  support: Record<string, unknown> | undefined,
 ): string {
   switch (entityType) {
     case "hearth.power/v1":
       return typeof value === "boolean" ? (value ? "On" : "Off") : compactJson(value);
     case "hearth.binarysensor/v1":
       return typeof value === "boolean" ? (value ? "True" : "False") : compactJson(value);
-    case "hearth.temperature/v1":
-      return typeof value === "number" ? `${(value / 1000).toFixed(2)} °C` : compactJson(value);
-    case "hearth.numericsensor/v1":
+    case "hearth.measurement/v1": {
+      const reading = readMeasurementReading(value, support);
+      return reading ? reading.label : compactJson(value);
+    }
+    case "hearth.numericsensor/v1": {
       if (typeof value !== "number") return compactJson(value);
+      const unit = supportStateUnit(support);
       return unit ? `${value} ${unit}` : String(value);
+    }
     case "hearth.brightness/v1":
     case "hearth.colormode/v1":
     case "hearth.enumsetting/v1":
@@ -176,6 +181,7 @@ function renderObservationValue(
       if (value.mode === "choice") return String(value.choice);
       if (value.mode === "value") {
         const rendered = typeof value.value === "number" ? String(value.value) : compactJson(value.value);
+        const unit = supportStateUnit(support);
         return unit ? `${rendered} ${unit}` : rendered;
       }
       return compactJson(value);
@@ -185,11 +191,10 @@ function renderObservationValue(
   }
 }
 
-/** numericsensor support carries a display unit under support.state.unit. */
-function entityUnit(entity: Entity): string | undefined {
-  const support = entity.support;
-  if (!isPlainObject(support)) return undefined;
-  const state = support.state;
+/** numericsensor and numericsetting support carry a display unit under
+    support.state.unit. */
+function supportStateUnit(support: Record<string, unknown> | undefined): string | undefined {
+  const state = support?.state;
   if (!isPlainObject(state)) return undefined;
   const unit = state.unit;
   return typeof unit === "string" && unit.length > 0 ? unit : undefined;
@@ -255,7 +260,7 @@ export default function DeviceFactsPage() {
       type: entity.type,
       deviceId: entity.device_id,
       deviceName: device?.name ?? "",
-      unit: entityUnit(entity),
+      support: entity.support,
     };
   }
 
@@ -721,7 +726,7 @@ export default function DeviceFactsPage() {
                   ? renderObservationValue(
                       (fact.data as ObservationFactData).value,
                       enrichment?.type,
-                      enrichment?.unit,
+                      enrichment?.support,
                     )
                   : "—";
               const source = sourceTimeOf(fact);
@@ -1007,7 +1012,7 @@ function FactDetail({
                 renderObservationValue(
                   (fact.data as ObservationFactData).value,
                   enrichment?.type,
-                  enrichment?.unit,
+                  enrichment?.support,
                 ),
               ],
               ["Entity type", enrichment?.type ?? "unknown (no enrichment)"],

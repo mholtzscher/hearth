@@ -28,16 +28,26 @@ var (
 )
 
 type manifest struct {
-	ManifestVersion   int                          `json:"manifest_version"`
-	TypeID            string                       `json:"type"`
-	StateSchema       string                       `json:"state_schema"`
-	SupportSchema     string                       `json:"support_schema"`
-	Stateless         bool                         `json:"stateless,omitempty"`
-	EventSource       bool                         `json:"event_source,omitempty"`
-	StateValidation   []ruleManifest               `json:"state_validation,omitempty"`
-	SupportValidation []ruleManifest               `json:"support_validation,omitempty"`
-	Operations        map[string]operationManifest `json:"operations"`
-	Examples          string                       `json:"examples"`
+	ManifestVersion       int                          `json:"manifest_version"`
+	TypeID                string                       `json:"type"`
+	ImmutableSupportPaths []string                     `json:"immutable_support_paths,omitempty"`
+	StateSchema           string                       `json:"state_schema"`
+	SupportSchema         string                       `json:"support_schema"`
+	Stateless             bool                         `json:"stateless,omitempty"`
+	EventSource           bool                         `json:"event_source,omitempty"`
+	StateValidation       []ruleManifest               `json:"state_validation,omitempty"`
+	SupportValidation     []ruleManifest               `json:"support_validation,omitempty"`
+	Operations            map[string]operationManifest `json:"operations"`
+	Examples              string                       `json:"examples"`
+}
+
+// immutableSupportPath is one manifest-declared immutable support field after
+// the generator resolved it against the support schema. Pointer is the
+// authored canonical JSON Pointer; Field is the equivalent exported Go field
+// chain within a decoded Support value (for example "State.MeasurementKind").
+type immutableSupportPath struct {
+	Pointer string
+	Field   string
 }
 
 type operationManifest struct {
@@ -93,23 +103,24 @@ type operationModel struct {
 }
 
 type entityTypeModel struct {
-	Package            string
-	Directory          string
-	ModuleRoot         string
-	TypeID             string
-	ExamplesFile       string
-	StateFile          string
-	StateSchema        schemaNode
-	SupportFile        string
-	SupportSchema      schemaNode
-	StateSupport       schemaNode
-	Stateless          bool
-	EventSource        bool
-	EventSupportSchema schemaNode
-	StateValidation    []ruleModel
-	SupportValidation  []ruleModel
-	Operations         []operationModel
-	Examples           examplesFile
+	Package               string
+	Directory             string
+	ModuleRoot            string
+	TypeID                string
+	ExamplesFile          string
+	StateFile             string
+	StateSchema           schemaNode
+	SupportFile           string
+	SupportSchema         schemaNode
+	StateSupport          schemaNode
+	ImmutableSupportPaths []immutableSupportPath
+	Stateless             bool
+	EventSource           bool
+	EventSupportSchema    schemaNode
+	StateValidation       []ruleModel
+	SupportValidation     []ruleModel
+	Operations            []operationModel
+	Examples              examplesFile
 }
 
 type output struct {
@@ -384,6 +395,13 @@ func loadModel(path string) (entityTypeModel, error) {
 	if err := requireUniqueSchemaIDs(state, support, operations); err != nil {
 		return entityTypeModel{}, err
 	}
+	immutableSupportPaths, immutableSupportPathsErr := resolveImmutableSupportPaths(
+		support,
+		definition.ImmutableSupportPaths,
+	)
+	if immutableSupportPathsErr != nil {
+		return entityTypeModel{}, immutableSupportPathsErr
+	}
 	stateValidation, stateValidationErr := compileRules(definition.StateValidation, map[string]referenceRoot{
 		referenceRootState:   {Schema: state, GoExpression: referenceRootState},
 		referenceRootSupport: {Schema: support, GoExpression: referenceRootSupport},
@@ -423,10 +441,11 @@ func loadModel(path string) (entityTypeModel, error) {
 		ExamplesFile: examplesPath,
 		StateFile:    definition.StateSchema, StateSchema: state,
 		SupportFile: definition.SupportSchema, SupportSchema: support, StateSupport: stateSupport,
-		Stateless:          definition.Stateless,
-		EventSource:        definition.EventSource,
-		EventSupportSchema: eventSupportSchema,
-		StateValidation:    stateValidation, SupportValidation: supportValidation,
+		ImmutableSupportPaths: immutableSupportPaths,
+		Stateless:             definition.Stateless,
+		EventSource:           definition.EventSource,
+		EventSupportSchema:    eventSupportSchema,
+		StateValidation:       stateValidation, SupportValidation: supportValidation,
 		Operations: operations, Examples: examples,
 	}, nil
 }
@@ -542,6 +561,128 @@ func requireUniqueSchemaIDs(state, support schemaNode, operations []operationMod
 		}
 	}
 	return nil
+}
+
+// resolveImmutableSupportPaths validates the manifest's immutable support paths
+// and resolves each to the exported Go field chain of a decoded Support value.
+// Every path must be a unique canonical JSON Pointer to a required scalar leaf
+// of the support schema, so the generated typed comparison can never dereference
+// an optional or non-scalar field.
+func resolveImmutableSupportPaths(
+	support schemaNode,
+	pointers []string,
+) ([]immutableSupportPath, error) {
+	paths := make([]immutableSupportPath, 0, len(pointers))
+	seen := make(map[string]struct{}, len(pointers))
+	for _, pointer := range pointers {
+		segments, parseErr := parseCanonicalJSONPointer(pointer)
+		if parseErr != nil {
+			return nil, fmt.Errorf("immutable_support_paths: %w", parseErr)
+		}
+		if _, duplicate := seen[pointer]; duplicate {
+			return nil, fmt.Errorf("immutable_support_paths: path %q is declared more than once", pointer)
+		}
+		seen[pointer] = struct{}{}
+		fields, resolveErr := resolveImmutableSupportPointer(support, pointer, segments)
+		if resolveErr != nil {
+			return nil, fmt.Errorf("immutable_support_paths: %w", resolveErr)
+		}
+		paths = append(paths, immutableSupportPath{Pointer: pointer, Field: fields})
+	}
+	return paths, nil
+}
+
+// parseCanonicalJSONPointer splits one RFC 6901 JSON Pointer into its decoded
+// reference tokens, rejecting malformed pointers such as missing leading
+// slashes, empty tokens, and invalid escape sequences.
+func parseCanonicalJSONPointer(pointer string) ([]string, error) {
+	if pointer == "" || !strings.HasPrefix(pointer, "/") {
+		return nil, fmt.Errorf("path %q must be a non-empty JSON Pointer beginning with /", pointer)
+	}
+	rawTokens := strings.Split(pointer[1:], "/")
+	tokens := make([]string, len(rawTokens))
+	for index, raw := range rawTokens {
+		token, err := unescapeJSONPointerToken(raw)
+		if err != nil {
+			return nil, fmt.Errorf("path %q: %w", pointer, err)
+		}
+		tokens[index] = token
+	}
+	return tokens, nil
+}
+
+func unescapeJSONPointerToken(token string) (string, error) {
+	if token == "" {
+		return "", errors.New("reference token is empty")
+	}
+	if !strings.Contains(token, "~") {
+		return token, nil
+	}
+	var decoded strings.Builder
+	for index := 0; index < len(token); index++ {
+		if token[index] != '~' {
+			decoded.WriteByte(token[index])
+			continue
+		}
+		if index+1 >= len(token) {
+			return "", errors.New("escape sequence is not terminated")
+		}
+		switch token[index+1] {
+		case '0':
+			decoded.WriteByte('~')
+		case '1':
+			decoded.WriteByte('/')
+		default:
+			return "", fmt.Errorf("invalid escape sequence %q", token[index:index+2])
+		}
+		index++
+	}
+	return decoded.String(), nil
+}
+
+// resolveImmutableSupportPointer walks the support schema along the decoded
+// pointer tokens. Every traversed or targeted property must be required, and
+// the final token must name a required scalar leaf with a supported Go binding.
+func resolveImmutableSupportPointer(
+	support schemaNode,
+	pointer string,
+	tokens []string,
+) (string, error) {
+	current := support
+	fields := make([]string, 0, len(tokens))
+	for index, token := range tokens {
+		if current.Type != schemaTypeObject {
+			return "", fmt.Errorf("path %q traverses a non-object schema", pointer)
+		}
+		property, exists := current.Properties[token]
+		if !exists {
+			return "", fmt.Errorf("path %q does not exist in the support schema", pointer)
+		}
+		if !required(current, token) {
+			return "", fmt.Errorf("path %q traverses or targets an optional property", pointer)
+		}
+		field, nameErr := exportedName(token)
+		if nameErr != nil {
+			return "", fmt.Errorf("path %q: %w", pointer, nameErr)
+		}
+		fields = append(fields, field)
+		isLeaf := index == len(tokens)-1
+		if !isLeaf {
+			if property.Type != schemaTypeObject {
+				return "", fmt.Errorf("path %q traverses non-object property %q", pointer, token)
+			}
+			current = property
+			continue
+		}
+		switch property.Type {
+		case string(kindBoolean), string(kindString), string(kindInteger), string(kindNumber):
+		case schemaTypeObject, schemaTypeArray:
+			return "", fmt.Errorf("path %q must target a scalar leaf, not an object or array", pointer)
+		default:
+			return "", fmt.Errorf("path %q targets an unsupported scalar binding %q", pointer, property.Type)
+		}
+	}
+	return strings.Join(fields, "."), nil
 }
 
 func localPath(directory, relative string) (string, error) {

@@ -66,7 +66,8 @@ func renderCatalog(models []entityTypeModel, modulePath string, moduleRoot strin
 		}
 		fmt.Fprintf(
 			&source,
-			"\tdefinition, err := DefineEntityType(id, codecs.State, codecs.Support, contract%s.ValidateSupport, contract%s.ValidateState, contract%s.EqualState",
+			"\tdefinition, err := DefineEntityType(id, codecs.State, codecs.Support, contract%s.ValidateSupport, contract%s.ValidateState, contract%s.EqualState, contract%s.SameSupportIdentity",
+			model.Package,
 			model.Package,
 			model.Package,
 			model.Package,
@@ -101,6 +102,7 @@ func writeCatalogEventSourceDefinition(source *strings.Builder, model entityType
 	fmt.Fprintf(source, "\t\tcontract%s.ValidateSupport,\n", model.Package)
 	fmt.Fprintf(source, "\t\tcontract%s.ValidateState,\n", model.Package)
 	fmt.Fprintf(source, "\t\tcontract%s.EqualState,\n", model.Package)
+	fmt.Fprintf(source, "\t\tcontract%s.SameSupportIdentity,\n", model.Package)
 	fmt.Fprintf(source, "\t\tcontract%s.EntityEventNames,\n", model.Package)
 	source.WriteString("\t)\n")
 	source.WriteString("\tif err != nil { return EntityTypeDefinition{}, err }\n")

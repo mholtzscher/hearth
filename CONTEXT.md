@@ -40,6 +40,18 @@ _Avoid_: Accessory, node
 One independently addressable state or control point belonging to a device. State reads and commands target entities. An event-source entity is the exception: it carries no State and no Operations and instead reports named Entity Events.
 _Avoid_: Device capability, endpoint
 
+**Measurement**:
+A numeric reading of a defined physical or device property. Its Measurement kind identifies what the number means independently of the Entity's name and unit.
+_Avoid_: Metric, numeric sensor, quantity
+
+**Measurement kind**:
+The stable semantic category of a Measurement, such as temperature or relative humidity. It is not an individual sensor, Device role, location, display label, or unit.
+_Avoid_: Device class, property, phenomenon
+
+**Canonical unit**:
+The sole wire and storage unit the Measurement contract assigns to one Measurement kind. Adapters convert native values into it; clients may format or convert it only for presentation.
+_Avoid_: Display unit, adapter-native unit
+
 **Entity availability**:
 The current assessment of whether an Entity can be reached through its owning Adapter, distinct from Entity enablement and State freshness. It is `unknown` without a current explicit report, `available` only while the owner is healthy and reports it available, and `unavailable` when the owner is unhealthy or reports it unavailable.
 _Avoid_: Entity health, Device health

@@ -18,7 +18,7 @@ package zigbee2mqtt //nolint:testpackage // Tests exercise package-private disco
 // effect, illuminance, occupancy, linkquality. Illuminance is the only new
 // capability this capture adds: a root numeric expose named illuminance,
 // property illuminance, unit lx, access 5 (publish+get), mapped to a
-// read-only hearth.numericsensor/v1 Entity with a 0..1e9 lx validation
+// read-only hearth.measurement/v1 Entity with a 0..1e9 lx validation
 // envelope. Occupancy (access 1, value_on true, value_off false) supplies
 // the binary sibling that must survive an invalid illuminance reading.
 
@@ -101,8 +101,10 @@ func TestDiscoverCapturedNightLight3RSNL02043Z(t *testing.T) {
 		},
 		{
 			Key: "illuminance", ExternalID: nightLightIEEE + "/root/illuminance", Name: "Illuminance",
-			Type:    "hearth.numericsensor/v1",
-			Support: json.RawMessage(`{"state":{"maximum":1000000000,"minimum":0,"unit":"lx"},"operations":{}}`),
+			Type: "hearth.measurement/v1",
+			Support: json.RawMessage(
+				`{"state":{"maximum":1000000000,"measurement_kind":"illuminance","minimum":0,"unit":"lx"},"operations":{}}`,
+			),
 		},
 		{
 			Key: "occupancy", ExternalID: nightLightIEEE + "/root/occupancy", Name: "Occupancy",

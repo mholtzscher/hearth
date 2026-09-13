@@ -10,13 +10,14 @@ import (
 
 func mustStaticEntity(t *testing.T, key, property string) entityPlan {
 	t.Helper()
-	plan, err := newTemperaturePlan(
+	plan, err := newMeasurementPlan(
 		adapter.EntityMetadata{
 			Key:        key,
 			ExternalID: "0x00124b0024abcdef/root/" + key,
 			Name:       key + " Name",
 		},
 		property,
+		measurementSupport(t, "temperature"),
 		true,
 	)
 	if err != nil {

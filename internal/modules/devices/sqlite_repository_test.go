@@ -402,6 +402,7 @@ func TestReRegistrationReplacesNormalizedSupport(t *testing.T) {
 		func(_ support) error { return nil },
 		func(_ support, _ bool) error { return nil },
 		func(left, right bool) bool { return left == right },
+		func(_, _ support) bool { return true },
 		set,
 	)
 	if err != nil {
@@ -443,6 +444,67 @@ func TestReRegistrationReplacesNormalizedSupport(t *testing.T) {
 	}
 	if stored != `{"state":{"mode":"second"},"operations":{"set":{}}}` {
 		t.Fatalf("stored support = %s", stored)
+	}
+}
+
+func TestReRegistrationRejectsImmutableSupportChange(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	database := openRegistrationDatabase(t, filepath.Join(t.TempDir(), "hearth.db"))
+	catalog := immutableSupportCatalog(t)
+	service := newTestService(NewSQLiteRepository(database, catalog), nil, catalog, Dependencies{})
+	registration := Registration{
+		BindingKey: "identity-sensor",
+		Device:     DeviceDescriptor{Name: "Identity sensor", Kind: DeviceKindSensor},
+		Entities: []EntityDescriptor{{
+			Key: "reading", ExternalID: "sensor.reading", Name: "Reading",
+			TypeID:  "test.identity/v1",
+			Support: EntitySupport(`{"state":{"kind":"temperature","minimum":0,"maximum":100},"operations":{}}`),
+		}},
+	}
+	first, err := service.Register(ctx, "simulator", testRuntimeID, registration)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// An ordinary mutable bounds change reconciles the existing Entity in place.
+	registration.Entities[0].Support = EntitySupport(
+		`{"state":{"kind":"temperature","minimum":-10,"maximum":50},"operations":{}}`,
+	)
+	second, err := service.Register(ctx, "simulator", testRuntimeID, registration)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if first.DeviceID != second.DeviceID || first.Entities[0].EntityID != second.Entities[0].EntityID {
+		t.Fatalf("support update changed IDs: first=%#v second=%#v", first, second)
+	}
+
+	// A declared immutable support change rejects the whole registration.
+	registration.Device.Name = "must roll back"
+	registration.Entities[0].Name = "Must roll back"
+	registration.Entities[0].Support = EntitySupport(
+		`{"state":{"kind":"relative_humidity","minimum":0,"maximum":100},"operations":{}}`,
+	)
+	_, err = service.Register(ctx, "simulator", testRuntimeID, registration)
+	assertRegistrationRejection(t, err, RegistrationImmutableSupportChange)
+	assertCounts(t, database, 1, 1)
+
+	var deviceName string
+	if scanErr := database.QueryRowContext(ctx, "SELECT name FROM devices").Scan(&deviceName); scanErr != nil {
+		t.Fatal(scanErr)
+	}
+	var entityName, support string
+	if scanErr := database.QueryRowContext(
+		ctx,
+		"SELECT name, support_json FROM entities",
+	).Scan(&entityName, &support); scanErr != nil {
+		t.Fatal(scanErr)
+	}
+	if deviceName != "Identity sensor" || entityName != "Reading" {
+		t.Fatalf("rejected registration changed names: device=%q entity=%q", deviceName, entityName)
+	}
+	if support != `{"state":{"kind":"temperature","minimum":-10,"maximum":50},"operations":{}}` {
+		t.Fatalf("rejected registration changed stored support: %s", support)
 	}
 }
 
@@ -1179,6 +1241,48 @@ func testAdapterRuntime(adapterID string) RuntimeID {
 		return RuntimeID("run_01890f47-7a6b-7c4d-8e9f-0123456789ad")
 	}
 	return testRuntimeID
+}
+
+// immutableSupportCatalog builds a test type whose manifest-equivalent policy
+// declares /state/kind immutable through the same erased callback the generator
+// wires into the built-in catalog.
+type identityStateSupport struct {
+	Kind    string  `json:"kind"`
+	Minimum float64 `json:"minimum"`
+	Maximum float64 `json:"maximum"`
+}
+
+type identitySupport struct {
+	State      identityStateSupport `json:"state"`
+	Operations struct{}             `json:"operations"`
+}
+
+func immutableSupportCatalog(t *testing.T) *TypeCatalog {
+	t.Helper()
+	stateCodec := compileTestCodec[float64](t, "identity-repository-state", `{"type":"number"}`)
+	supportCodec := compileTestCodec[identitySupport](t, "identity-repository-support", `{
+		"type":"object","additionalProperties":false,"required":["state","operations"],
+		"properties":{
+			"state":{"type":"object","additionalProperties":false,"required":["kind","minimum","maximum"],
+				"properties":{"kind":{"type":"string"},"minimum":{"type":"number"},"maximum":{"type":"number"}}},
+			"operations":{"type":"object","maxProperties":0,"additionalProperties":false}}}`)
+	definition, err := DefineEntityType[float64, identitySupport](
+		"test.identity/v1",
+		stateCodec,
+		supportCodec,
+		func(identitySupport) error { return nil },
+		func(identitySupport, float64) error { return nil },
+		func(left, right float64) bool { return left == right },
+		func(previous, next identitySupport) bool { return previous.State.Kind == next.State.Kind },
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	catalog, err := NewTypeCatalog([]EntityTypeDefinition{definition})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return catalog
 }
 
 func firstLightCatalog(t *testing.T) *TypeCatalog {

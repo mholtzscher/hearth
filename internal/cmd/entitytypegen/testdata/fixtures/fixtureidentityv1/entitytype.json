@@ -1,0 +1,28 @@
+{
+  "manifest_version": 1,
+  "type": "fixture.identity/v1",
+  "immutable_support_paths": ["/state/kind"],
+  "state_schema": "state.schema.json",
+  "support_schema": "support.schema.json",
+  "state_validation": [
+    {
+      "op": "gte",
+      "left": {"root": "state", "path": ""},
+      "right": {"root": "support", "path": "/state/minimum"}
+    },
+    {
+      "op": "lte",
+      "left": {"root": "state", "path": ""},
+      "right": {"root": "support", "path": "/state/maximum"}
+    }
+  ],
+  "support_validation": [
+    {
+      "op": "gte",
+      "left": {"root": "support", "path": "/state/maximum"},
+      "right": {"root": "support", "path": "/state/minimum"}
+    }
+  ],
+  "operations": {},
+  "examples": "examples.json"
+}

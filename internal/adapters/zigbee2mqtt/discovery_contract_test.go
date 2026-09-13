@@ -673,9 +673,9 @@ func TestDiscoveryContractSensorDeviceKeysUnitsAndGetBehavior(t *testing.T) {
 }
 
 // This test protects exact sensor conversions and fails if planning
-// changes any decoded value: milli-Celsius temperature, fractional percent
-// humidity, or exact-integer linkquality. It catches a numeric translation
-// that silently rescales or truncates reports.
+// changes any decoded value: canonical Celsius temperature, fractional
+// percent humidity or battery, or exact-integer linkquality. It catches a
+// numeric translation that silently rescales or truncates reports.
 func TestDiscoveryContractSensorExactConversions(t *testing.T) {
 	t.Parallel()
 	devices := fixtureDevices(t, "bridge-devices-temperature.json")
@@ -689,7 +689,7 @@ func TestDiscoveryContractSensorExactConversions(t *testing.T) {
 		payload  string
 		semantic any
 	}{
-		{"temperature", "temperature", `21.5`, int64(21500)},
+		{"temperature", "temperature", `21.5`, 21.5},
 		{"humidity", "humidity", `50.5`, 50.5},
 		{"battery", "battery", `99.25`, 99.25},
 		{"linkquality", "linkquality", `42`, 42.0},

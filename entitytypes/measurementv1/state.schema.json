@@ -1,0 +1,7 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:hearth:schema:entity-type:measurement:v1:state",
+  "title": "Hearth measurement/v1 State",
+  "description": "Numeric reading expressed in the canonical unit declared by Entity support.",
+  "type": "number"
+}

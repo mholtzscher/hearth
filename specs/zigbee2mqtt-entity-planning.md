@@ -1,11 +1,20 @@
 # Zigbee2MQTT Entity planning refactor
 
-**Status:** Ready for task breakdown
+**Status:** Implemented (historical plan); its `hearth.temperature/v1` milli-Celsius representation is superseded.
 **Approved by:** User
 **Type:** Refactoring with proof features
 **Effort:** XL, 5 to 9 focused days at 60% confidence
 **Date:** 2026-09-03
 **Baseline:** `f1e628a`
+
+> **Superseded representation.** This plan introduced `hearth.temperature/v1`
+> with integer milli-Celsius State. That type was removed: temperature,
+> relative humidity, illuminance, and battery now register as read-only
+> `hearth.measurement/v1` with canonical UCUM units, kind-wide bounds, and an
+> immutable `measurement_kind`; see
+> [`specs/semantic-measurements.md`](./semantic-measurements.md). The
+> milli-Celsius schema, conversion, and acceptance details below are the
+> historical record of this plan, not current adapter behavior.
 
 ## Problem
 

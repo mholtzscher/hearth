@@ -49,6 +49,7 @@ func renderBehavior(model entityTypeModel) output {
 	} else {
 		source.WriteString("func EqualState(left, right State) bool { return reflect.DeepEqual(left, right) }\n\n")
 	}
+	writeSameSupportIdentity(&source, model)
 
 	if len(model.Operations) > 0 {
 		source.WriteString("const (\n")
@@ -120,6 +121,30 @@ func writeEntityEventNameBehavior(source *strings.Builder) {
 	source.WriteString("\t\tif supported == name {\n\t\t\treturn nil\n\t\t}\n")
 	source.WriteString("\t}\n")
 	source.WriteString("\treturn fmt.Errorf(\"Entity Event name %q is not supported\", name)\n")
+	source.WriteString("}\n\n")
+}
+
+// writeSameSupportIdentity emits the typed immutable-support comparison the
+// built-in catalog passes into DefineEntityType. A type that declares no
+// immutable support paths always reports the same identity, so existing types
+// keep permitting every currently valid support change.
+func writeSameSupportIdentity(source *strings.Builder, model entityTypeModel) {
+	source.WriteString("// SameSupportIdentity reports whether support fields that define an\n")
+	source.WriteString("// Entity's stable semantic identity are unchanged.\n")
+	source.WriteString("func SameSupportIdentity(previous, next Support) bool {\n")
+	if len(model.ImmutableSupportPaths) == 0 {
+		source.WriteString("\treturn true\n")
+		source.WriteString("}\n\n")
+		return
+	}
+	conditions := make([]string, 0, len(model.ImmutableSupportPaths))
+	for _, path := range model.ImmutableSupportPaths {
+		conditions = append(
+			conditions,
+			fmt.Sprintf("previous.%s == next.%s", path.Field, path.Field),
+		)
+	}
+	fmt.Fprintf(source, "\treturn %s\n", strings.Join(conditions, " &&\n\t\t"))
 	source.WriteString("}\n\n")
 }
 

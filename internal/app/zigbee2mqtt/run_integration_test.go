@@ -469,21 +469,37 @@ func TestRunProjectsRelayAndTemperatureDevices(t *testing.T) {
 	}()
 
 	proof := waitForProofFlowEntities(ctx, t, service, runErrors)
-	if string(proof.temperature.Entity.Support) != `{"state":{},"operations":{}}` {
+	if string(proof.temperature.Entity.Support) !=
+		`{"state":{"maximum":1000,"measurement_kind":"temperature","minimum":-273.15,"unit":"Cel"},"operations":{}}` {
 		t.Fatalf("temperature support = %s", proof.temperature.Entity.Support)
 	}
 	assertProofFlowLinkquality(t, "relay", proof.relayLinkquality, "120")
 	assertProofFlowLinkquality(t, "temperature", proof.temperatureLinkquality, "105")
-	for _, entity := range []devices.EntityWithState{proof.humidity, proof.battery} {
-		if string(entity.Entity.Support) != `{"state":{"maximum":100,"minimum":0,"unit":"%"},"operations":{}}` {
-			t.Fatalf("percentage sensor support = %s", entity.Entity.Support)
+	for _, measurement := range []struct {
+		entity  devices.EntityWithState
+		support string
+	}{
+		{
+			entity: proof.humidity,
+			support: `{"state":{"maximum":100,"measurement_kind":"relative_humidity",` +
+				`"minimum":0,"unit":"%"},"operations":{}}`,
+		},
+		{
+			entity: proof.battery,
+			support: `{"state":{"maximum":100,"measurement_kind":"battery_level",` +
+				`"minimum":0,"unit":"%"},"operations":{}}`,
+		},
+	} {
+		if string(measurement.entity.Entity.Support) != measurement.support {
+			t.Fatalf("measurement support = %s, want %s",
+				measurement.entity.Entity.Support, measurement.support)
 		}
 		if _, commandErr := service.ExecuteCommand(ctx, devices.CommandInput{
-			EntityID:      entity.Entity.ID,
+			EntityID:      measurement.entity.Entity.ID,
 			OperationName: devices.OperationNameSet,
 			Parameters:    devices.CommandParameters(`{"value":50}`),
 		}); !errors.Is(commandErr, devices.ErrInvalidCommand) {
-			t.Fatalf("percentage sensor command error = %v, want %v", commandErr, devices.ErrInvalidCommand)
+			t.Fatalf("measurement command error = %v, want %v", commandErr, devices.ErrInvalidCommand)
 		}
 	}
 	if _, err = service.ExecuteCommand(ctx, devices.CommandInput{
@@ -516,7 +532,7 @@ func TestRunProjectsRelayAndTemperatureDevices(t *testing.T) {
 	if _, err = service.ExecuteCommand(ctx, devices.CommandInput{
 		EntityID:      proof.temperature.Entity.ID,
 		OperationName: devices.OperationNameSet,
-		Parameters:    devices.CommandParameters(`{"value":22600}`),
+		Parameters:    devices.CommandParameters(`{"value":21.5}`),
 	}); !errors.Is(err, devices.ErrInvalidCommand) {
 		t.Fatalf("temperature command error = %v, want %v", err, devices.ErrInvalidCommand)
 	}
@@ -556,6 +572,62 @@ type proofFlowEntities struct {
 	temperatureLinkquality devices.EntityWithState
 }
 
+// proofFlowFound records which proof-flow Entity roles have been satisfied.
+type proofFlowFound struct {
+	power                  bool
+	temperature            bool
+	humidity               bool
+	battery                bool
+	relayLinkquality       bool
+	temperatureLinkquality bool
+}
+
+func (found proofFlowFound) complete() bool {
+	return found.power && found.temperature && found.humidity && found.battery &&
+		found.relayLinkquality && found.temperatureLinkquality
+}
+
+// matchProofFlowEntity applies one listed Entity to the proof accumulator. It
+// keeps the poll loop free of the per-type classification so registration and
+// projection stay causally connected without a complexity budget detour.
+func matchProofFlowEntity(
+	entity devices.EntityWithState,
+	proof *proofFlowEntities,
+	found *proofFlowFound,
+) {
+	if entity.State == nil || entity.Availability.Status != devices.EntityAvailabilityAvailable {
+		return
+	}
+	switch string(entity.Entity.TypeID) {
+	case "hearth.power/v1":
+		if string(entity.State.Value) == "true" {
+			proof.power = entity
+			found.power = true
+		}
+	case "hearth.measurement/v1":
+		switch string(entity.State.Value) {
+		case "22.6":
+			proof.temperature = entity
+			found.temperature = true
+		case "48.2":
+			proof.humidity = entity
+			found.humidity = entity.Entity.Name == "Humidity"
+		case "100":
+			proof.battery = entity
+			found.battery = entity.Entity.Name == "Battery"
+		}
+	case "hearth.numericsensor/v1":
+		switch string(entity.State.Value) {
+		case "120":
+			proof.relayLinkquality = entity
+			found.relayLinkquality = true
+		case "105":
+			proof.temperatureLinkquality = entity
+			found.temperatureLinkquality = true
+		}
+	}
+}
+
 func waitForProofFlowEntities(
 	ctx context.Context,
 	t *testing.T,
@@ -571,40 +643,11 @@ func waitForProofFlowEntities(
 			t.Fatal(err)
 		}
 		var proof proofFlowEntities
-		var foundPower, foundTemperature, foundRelayLinkquality, foundTemperatureLinkquality bool
-		var foundHumidity, foundBattery bool
+		var found proofFlowFound
 		for _, entity := range page.Items {
-			switch {
-			case entity.Entity.TypeID == "hearth.power/v1" && entity.State != nil &&
-				string(entity.State.Value) == "true" &&
-				entity.Availability.Status == devices.EntityAvailabilityAvailable:
-				proof.power = entity
-				foundPower = true
-			case entity.Entity.TypeID == "hearth.temperature/v1" && entity.State != nil &&
-				string(entity.State.Value) == "22600" &&
-				entity.Availability.Status == devices.EntityAvailabilityAvailable:
-				proof.temperature = entity
-				foundTemperature = true
-			case entity.Entity.TypeID == "hearth.numericsensor/v1" && entity.State != nil &&
-				entity.Availability.Status == devices.EntityAvailabilityAvailable:
-				switch string(entity.State.Value) {
-				case "48.2":
-					proof.humidity = entity
-					foundHumidity = entity.Entity.Name == "Humidity"
-				case "100":
-					proof.battery = entity
-					foundBattery = entity.Entity.Name == "Battery"
-				case "120":
-					proof.relayLinkquality = entity
-					foundRelayLinkquality = true
-				case "105":
-					proof.temperatureLinkquality = entity
-					foundTemperatureLinkquality = true
-				}
-			}
+			matchProofFlowEntity(entity, &proof, &found)
 		}
-		if len(page.Items) == 6 && foundPower && foundTemperature && foundHumidity && foundBattery &&
-			foundRelayLinkquality && foundTemperatureLinkquality {
+		if len(page.Items) == 6 && found.complete() {
 			return proof
 		}
 		select {

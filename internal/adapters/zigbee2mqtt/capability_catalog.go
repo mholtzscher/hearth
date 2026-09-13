@@ -1,10 +1,10 @@
 package zigbee2mqtt
 
 // numericSensorMapping maps one exact Zigbee2MQTT numeric expose to a
-// read-only Hearth Entity. Upstream units must match exactly; an empty unit
-// is not a wildcard. The family planner decides root selection and bounds:
-// ambient sensors use these fixed bounds, electrical sensors prefer valid
-// upstream bounds and use these bounds only when both are absent.
+// read-only hearth.numericsensor/v1 Entity. Upstream units must match
+// exactly; an empty unit is not a wildcard. It is retained for numeric
+// readings that intentionally carry no first-class measurement semantics:
+// link quality and the smart-plug electrical diagnostics.
 //
 // This is capability data, not a device-model catalog or a planning language.
 // Familiar exposes on another model need no entry. New conversion or family
@@ -19,27 +19,41 @@ type numericSensorMapping struct {
 	maximum      float64
 }
 
-// ambientNumericSensors preserves capability order, then inventory order
-// within each capability. Temperature has a different contract and is
-// planned separately before these read-only numeric sensors.
+// measurementMappings preserves semantic-measurement capability order, then
+// inventory order within each capability. Every record selects one
+// measurement kind, its single canonical UCUM unit, and the kind-wide
+// envelope from the authoritative contract; the mapping is not authoritative
+// and the generated facade rejects a kind/unit pair the contract does not
+// admit.
 //
-//nolint:mnd // Literal catalog bounds are capability data, not algorithmic constants.
-func ambientNumericSensors() []numericSensorMapping {
-	return []numericSensorMapping{
+//nolint:goconst,mnd // Literal capability data: bounds and initial-kind names, not algorithmic constants.
+func measurementMappings() []measurementMapping {
+	return []measurementMapping{
+		{
+			// Zigbee2MQTT reports ambient temperature in °C. Celsius magnitude
+			// is unchanged; the canonical UCUM unit is Cel, so upstream 21.5
+			// stays 21.5 rather than a scaled integer.
+			exposeName: "temperature", key: "temperature", displayName: "Temperature",
+			upstreamUnit: "°C", measurementKind: "temperature", canonicalUnit: "Cel",
+			minimum: -273.15, maximum: 1000,
+		},
 		{
 			exposeName: "humidity", key: "humidity", displayName: "Humidity",
-			upstreamUnit: "%", unit: "%", minimum: 0, maximum: 100,
+			upstreamUnit: "%", measurementKind: "relative_humidity", canonicalUnit: "%",
+			minimum: 0, maximum: 100,
 		},
 		{
 			// The Third Reality 3RSNL02043Z night light reports a root
 			// illuminance expose in lux. The envelope is a validation bound,
 			// not a claimed operating range.
 			exposeName: "illuminance", key: "illuminance", displayName: "Illuminance",
-			upstreamUnit: "lx", unit: "lx", minimum: 0, maximum: 1e9,
+			upstreamUnit: "lx", measurementKind: "illuminance", canonicalUnit: "lx",
+			minimum: 0, maximum: 1e9,
 		},
 		{
 			exposeName: "battery", key: "battery", displayName: "Battery",
-			upstreamUnit: "%", unit: "%", minimum: 0, maximum: 100,
+			upstreamUnit: "%", measurementKind: "battery_level", canonicalUnit: "%",
+			minimum: 0, maximum: 100,
 		},
 	}
 }

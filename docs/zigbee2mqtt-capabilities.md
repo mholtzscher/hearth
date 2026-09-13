@@ -8,8 +8,8 @@ exposes normally needs a captured regression fixture, not a new mapping.
 
 | Change | Location |
 | --- | --- |
-| Read-only ambient numeric capability | `ambientNumericSensors` in `internal/adapters/zigbee2mqtt/capability_catalog.go` |
-| Read-only smart-plug electrical capability | `smartPlugElectricalSensors` in the same file |
+| Read-only semantic measurement capability | `measurementMappings` in `internal/adapters/zigbee2mqtt/capability_catalog.go` |
+| Read-only smart-plug electrical numeric capability | `smartPlugElectricalSensors` in the same file |
 | Read-only binary capability | `binarySensorMappings` in `internal/adapters/zigbee2mqtt/capability_catalog.go` |
 | Observable relay numeric setting | `smartPlugNumericSettings` in the same file |
 | Read-only `action` Event source | `planActionEvent` in `internal/adapters/zigbee2mqtt/entity_event.go` |
@@ -21,52 +21,111 @@ The catalog is ordinary typed Go data. There is no JSON schema, compiler,
 strategy registry, evaluator, runtime catalog dependency, or override engine.
 Changing a mapping requires rebuilding the adapter, just like other code.
 
-## Add a numeric sensor
+## Add a semantic measurement
 
-Add one record to the appropriate table, using captured expose evidence:
+Temperature, relative humidity, illuminance, and battery level are semantic
+measurements: read-only `hearth.measurement/v1` Entities whose State is a
+JSON number in one canonical unit. Add one record to `measurementMappings`, using
+captured expose evidence:
 
 ```go
 {
     exposeName: "humidity", key: "humidity", displayName: "Humidity",
-    upstreamUnit: "%", unit: "%", minimum: 0, maximum: 100,
+    upstreamUnit: "%", measurementKind: "relative_humidity", canonicalUnit: "%",
+    minimum: 0, maximum: 100,
 },
 ```
 
 - `exposeName` and `upstreamUnit` match exactly; an empty unit is not a wildcard.
 - The State property and endpoint come from inventory, not the table.
 - `key` determines stable Entity identity. Do not rename existing keys casually.
-- Ambient sensors use fixed table bounds and visit all matching roots in inventory
-  order. Electrical sensors require exactly one matching device-root expose;
-  valid upstream bounds win, both absent use the table's fallback envelope, and
-  malformed or partial bounds omit only that sensor.
-- Both use `newNumericSensorPlan`: JSON numbers retain their fractions, support
-  validates their range, publish is required, set is forbidden, and get access
-  alone enables refresh. These rules do not become per-record options.
-- Temperature keeps its milli-Celsius constructor. Link quality keeps exact-integer
-  decoding and device-wide unique-root selection. A different conversion is code,
-  not an expression in a table.
+- `measurementKind`, `canonicalUnit`, and the bounds must match one kind branch in
+  `entitytypes/measurementv1/support.schema.json`. The record repeats them so the
+  descriptor is self-describing, but the generated facade is authoritative and
+  rejects any kind/unit pair the contract does not admit, so a wrong
+  `canonicalUnit` or an out-of-envelope bound omits only that Entity.
+- Every record visits all matching roots in inventory order.
+- `newMeasurementPlan` preserves finite fractional JSON numbers, validates each
+  reading against the descriptor bounds through generated behavior, requires
+  publish and forbids set access, and enables startup `/get` from get access
+  alone. These rules do not become per-record options. The `measurement_kind` is
+  immutable Entity support, so a kind change is a re-registration rejection, not
+  a support update.
 
-Ambient illuminance is a record in the same `ambientNumericSensors` table: exact
-expose name `illuminance`, exact unit `lx`, and a fixed 0–1000000000 lx
-validation envelope because Zigbee2MQTT omits ambient bounds. Its non-empty,
-Device-unique State property still comes from inventory. It uses the same
-`newNumericSensorPlan` rules (publish required, set forbidden, get access alone
-enabling refresh), so it needs no new constructor.
+Exact upstream-unit matching and native-to-canonical conversion remain
+adapter-owned. The initial records need no conversion: each upstream numeric
+magnitude is already canonical, and Celsius `°C` is relabeled to UCUM `Cel`. A
+different conversion is code, not an expression in a table.
+
+### Add a measurement kind
+
+The v1 kind catalog is closed at any released revision: the four kinds above,
+with their exact units and envelopes, are the whole contract. A new kind is an
+additive contract change, not a table row, and is complete only when it:
+
+1. names one stable `measurement_kind` and distinguishes ambiguous temporal
+   meanings such as rate versus accumulation;
+2. selects one canonical UCUM unit;
+3. defines a defensible kind-wide envelope;
+4. adds a `support.schema.json` branch plus positive and negative examples under
+   `entitytypes/measurementv1/`;
+5. adds an adapter mapping backed by captured upstream expose and State evidence;
+6. adds literal adapter and integration expectations;
+7. verifies UI rendering in `web/src/lib/measurement.ts` and decides whether
+   preferred-unit conversion is needed;
+8. updates canonical docs and runs `mise run validate`.
+
+Changing an existing kind's meaning, unit, envelope, or State representation is
+not additive and requires `hearth.measurement/v2`.
+
+## Add a smart-plug electrical numeric sensor
+
+`hearth.numericsensor/v1` is retained only for read-only numeric readings that
+intentionally carry no first-class measurement semantics: link quality and the
+smart-plug electrical diagnostics (AC frequency, electrical power under the
+`electricalpower` key, power factor, energy, current, and voltage). Add one record
+to `smartPlugElectricalSensors`, using captured expose evidence:
+
+```go
+{
+    exposeName: "ac_frequency", key: "acfrequency", displayName: "AC Frequency",
+    upstreamUnit: "Hz", unit: "Hz", minimum: 0, maximum: 1000,
+},
+```
+
+- `exposeName` and `upstreamUnit` match exactly; an empty unit is not a wildcard.
+  Power factor's empty upstream unit maps explicitly to the Hearth unit `ratio`.
+- The State property and endpoint come from inventory, not the table.
+- `key` determines stable Entity identity. Do not rename existing keys casually.
+- Electrical sensors require exactly one matching device-root expose. Valid
+  upstream bounds win; both absent use the table's fallback envelope; malformed or
+  partial bounds omit only that sensor, and the fallback is a conservative
+  validation envelope rather than a claimed operating range.
+- `newNumericSensorPlan` keeps JSON-number fractions, validates the range,
+  requires publish, forbids set, and enables startup `/get` from get access
+  alone. These rules do not become per-record options.
+- Link quality keeps exact-integer decoding and device-wide unique-root selection
+  in its own constructor. A different conversion is code, not an expression in a
+  table.
+
+A numeric reading that a released measurement kind claims belongs in
+`measurementMappings` rather than here; link quality
+and the plug diagnostics stay generic because no measurement kind claims them.
 
 `planDevice` calls `planLightFamily`, `planRelayFamily`, `planSensorFamily`,
 `planLinkquality`, and `planActionEvent` directly. `planSensorFamily` itself runs
-the temperature, ambient numeric, and binary capability records.
+the semantic measurement and binary capability records.
 `mergeDeviceContributions` merges their returned values; there is no planner
 interface, registry, or empty planner object.
 
 Planner order is observable. The first non-empty light or relay family is
 primary and keeps Device kind `light` or `relay`; every later family is
 supplemental, so a light that also reports occupancy stays a light while an
-occupancy-only Device is a sensor. Within the sensor family, ambient temperature
-precedes the ambient numeric table, whose capability records run humidity,
-illuminance, then battery, followed by the binary table, whose capability
-records run occupancy. Binary planning is therefore part of the sensor family,
-not a separate planner. Link quality follows the sensor family, then the
+occupancy-only Device is a sensor. Within the sensor family, the semantic
+measurement records run temperature, humidity, illuminance, then battery,
+followed by the binary table, whose capability records run occupancy. Binary
+planning is therefore part of the sensor family, not a separate planner. Link
+quality follows the sensor family, then the
 read-only action Event last, in that order. Relay power and power-on behavior
 precede electrical sensors, then numeric settings, then reset. Family precedence
 and color/power dependencies remain explicit in the existing planners.

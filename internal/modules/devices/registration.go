@@ -53,9 +53,10 @@ type EntityBinding struct {
 type RegistrationRejectionCode string
 
 const (
-	RegistrationInvalidDescriptor   RegistrationRejectionCode = "invalid_descriptor"
-	RegistrationImmutableTypeChange RegistrationRejectionCode = "immutable_type_change"
-	RegistrationIdentityConflict    RegistrationRejectionCode = "identity_conflict"
+	RegistrationInvalidDescriptor      RegistrationRejectionCode = "invalid_descriptor"
+	RegistrationImmutableTypeChange    RegistrationRejectionCode = "immutable_type_change"
+	RegistrationImmutableSupportChange RegistrationRejectionCode = "immutable_support_change"
+	RegistrationIdentityConflict       RegistrationRejectionCode = "identity_conflict"
 )
 
 type RegistrationRejectedError struct {
@@ -112,6 +113,11 @@ func (service *Service) Register(
 	if errors.Is(err, errImmutableTypeChange) {
 		return Binding{}, &RegistrationRejectedError{
 			Code: RegistrationImmutableTypeChange, Message: "an existing entity cannot change type",
+		}
+	}
+	if errors.Is(err, errImmutableSupportChange) {
+		return Binding{}, &RegistrationRejectedError{
+			Code: RegistrationImmutableSupportChange, Message: "an existing entity cannot change immutable support",
 		}
 	}
 	if errors.Is(err, errIdentityConflict) {

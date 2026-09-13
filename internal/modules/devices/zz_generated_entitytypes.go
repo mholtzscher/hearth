@@ -14,10 +14,10 @@ import (
 	contractenumactionv1 "github.com/mholtzscher/hearth/entitytypes/enumactionv1"
 	contractenumeventv1 "github.com/mholtzscher/hearth/entitytypes/enumeventv1"
 	contractenumsettingv1 "github.com/mholtzscher/hearth/entitytypes/enumsettingv1"
+	contractmeasurementv1 "github.com/mholtzscher/hearth/entitytypes/measurementv1"
 	contractnumericsensorv1 "github.com/mholtzscher/hearth/entitytypes/numericsensorv1"
 	contractnumericsettingv1 "github.com/mholtzscher/hearth/entitytypes/numericsettingv1"
 	contractpowerv1 "github.com/mholtzscher/hearth/entitytypes/powerv1"
-	contracttemperaturev1 "github.com/mholtzscher/hearth/entitytypes/temperaturev1"
 )
 
 const (
@@ -30,10 +30,10 @@ const (
 	EntityTypeEnumactionV1     EntityTypeID = "hearth.enumaction/v1"
 	EntityTypeEnumeventV1      EntityTypeID = "hearth.enumevent/v1"
 	EntityTypeEnumsettingV1    EntityTypeID = "hearth.enumsetting/v1"
+	EntityTypeMeasurementV1    EntityTypeID = "hearth.measurement/v1"
 	EntityTypeNumericsensorV1  EntityTypeID = "hearth.numericsensor/v1"
 	EntityTypeNumericsettingV1 EntityTypeID = "hearth.numericsetting/v1"
 	EntityTypePowerV1          EntityTypeID = "hearth.power/v1"
-	EntityTypeTemperatureV1    EntityTypeID = "hearth.temperature/v1"
 )
 
 func NewBuiltinTypeCatalog() (*TypeCatalog, error) {
@@ -83,6 +83,11 @@ func NewBuiltinTypeCatalog() (*TypeCatalog, error) {
 		return nil, err
 	}
 	definitions = append(definitions, enumsettingV1)
+	measurementV1, err := newMeasurementV1TypeDefinition(EntityTypeMeasurementV1)
+	if err != nil {
+		return nil, err
+	}
+	definitions = append(definitions, measurementV1)
 	numericsensorV1, err := newNumericsensorV1TypeDefinition(EntityTypeNumericsensorV1)
 	if err != nil {
 		return nil, err
@@ -98,11 +103,6 @@ func NewBuiltinTypeCatalog() (*TypeCatalog, error) {
 		return nil, err
 	}
 	definitions = append(definitions, powerV1)
-	temperatureV1, err := newTemperatureV1TypeDefinition(EntityTypeTemperatureV1)
-	if err != nil {
-		return nil, err
-	}
-	definitions = append(definitions, temperatureV1)
 	return NewTypeCatalog(definitions)
 }
 
@@ -111,7 +111,7 @@ func newBinarysensorV1TypeDefinition(id EntityTypeID) (EntityTypeDefinition, err
 	if err != nil {
 		return EntityTypeDefinition{}, fmt.Errorf("compile hearth.binarysensor/v1 codecs: %w", err)
 	}
-	definition, err := DefineEntityType(id, codecs.State, codecs.Support, contractbinarysensorv1.ValidateSupport, contractbinarysensorv1.ValidateState, contractbinarysensorv1.EqualState)
+	definition, err := DefineEntityType(id, codecs.State, codecs.Support, contractbinarysensorv1.ValidateSupport, contractbinarysensorv1.ValidateState, contractbinarysensorv1.EqualState, contractbinarysensorv1.SameSupportIdentity)
 	if err != nil {
 		return EntityTypeDefinition{}, err
 	}
@@ -134,7 +134,7 @@ func newBrightnessV1TypeDefinition(id EntityTypeID) (EntityTypeDefinition, error
 		OutcomeObserved,
 		contractbrightnessv1.SetSatisfied,
 	)
-	definition, err := DefineEntityType(id, codecs.State, codecs.Support, contractbrightnessv1.ValidateSupport, contractbrightnessv1.ValidateState, contractbrightnessv1.EqualState, set)
+	definition, err := DefineEntityType(id, codecs.State, codecs.Support, contractbrightnessv1.ValidateSupport, contractbrightnessv1.ValidateState, contractbrightnessv1.EqualState, contractbrightnessv1.SameSupportIdentity, set)
 	if err != nil {
 		return EntityTypeDefinition{}, err
 	}
@@ -157,7 +157,7 @@ func newColorhsV1TypeDefinition(id EntityTypeID) (EntityTypeDefinition, error) {
 		OutcomeObserved,
 		contractcolorhsv1.SetSatisfied,
 	)
-	definition, err := DefineEntityType(id, codecs.State, codecs.Support, contractcolorhsv1.ValidateSupport, contractcolorhsv1.ValidateState, contractcolorhsv1.EqualState, set)
+	definition, err := DefineEntityType(id, codecs.State, codecs.Support, contractcolorhsv1.ValidateSupport, contractcolorhsv1.ValidateState, contractcolorhsv1.EqualState, contractcolorhsv1.SameSupportIdentity, set)
 	if err != nil {
 		return EntityTypeDefinition{}, err
 	}
@@ -169,7 +169,7 @@ func newColormodeV1TypeDefinition(id EntityTypeID) (EntityTypeDefinition, error)
 	if err != nil {
 		return EntityTypeDefinition{}, fmt.Errorf("compile hearth.colormode/v1 codecs: %w", err)
 	}
-	definition, err := DefineEntityType(id, codecs.State, codecs.Support, contractcolormodev1.ValidateSupport, contractcolormodev1.ValidateState, contractcolormodev1.EqualState)
+	definition, err := DefineEntityType(id, codecs.State, codecs.Support, contractcolormodev1.ValidateSupport, contractcolormodev1.ValidateState, contractcolormodev1.EqualState, contractcolormodev1.SameSupportIdentity)
 	if err != nil {
 		return EntityTypeDefinition{}, err
 	}
@@ -192,7 +192,7 @@ func newColortempV1TypeDefinition(id EntityTypeID) (EntityTypeDefinition, error)
 		OutcomeObserved,
 		contractcolortempv1.SetSatisfied,
 	)
-	definition, err := DefineEntityType(id, codecs.State, codecs.Support, contractcolortempv1.ValidateSupport, contractcolortempv1.ValidateState, contractcolortempv1.EqualState, set)
+	definition, err := DefineEntityType(id, codecs.State, codecs.Support, contractcolortempv1.ValidateSupport, contractcolortempv1.ValidateState, contractcolortempv1.EqualState, contractcolortempv1.SameSupportIdentity, set)
 	if err != nil {
 		return EntityTypeDefinition{}, err
 	}
@@ -215,7 +215,7 @@ func newColorxyV1TypeDefinition(id EntityTypeID) (EntityTypeDefinition, error) {
 		OutcomeObserved,
 		contractcolorxyv1.SetSatisfied,
 	)
-	definition, err := DefineEntityType(id, codecs.State, codecs.Support, contractcolorxyv1.ValidateSupport, contractcolorxyv1.ValidateState, contractcolorxyv1.EqualState, set)
+	definition, err := DefineEntityType(id, codecs.State, codecs.Support, contractcolorxyv1.ValidateSupport, contractcolorxyv1.ValidateState, contractcolorxyv1.EqualState, contractcolorxyv1.SameSupportIdentity, set)
 	if err != nil {
 		return EntityTypeDefinition{}, err
 	}
@@ -238,7 +238,7 @@ func newEnumactionV1TypeDefinition(id EntityTypeID) (EntityTypeDefinition, error
 		OutcomeDispatched,
 		nil,
 	)
-	definition, err := DefineEntityType(id, codecs.State, codecs.Support, contractenumactionv1.ValidateSupport, contractenumactionv1.ValidateState, contractenumactionv1.EqualState, trigger)
+	definition, err := DefineEntityType(id, codecs.State, codecs.Support, contractenumactionv1.ValidateSupport, contractenumactionv1.ValidateState, contractenumactionv1.EqualState, contractenumactionv1.SameSupportIdentity, trigger)
 	if err != nil {
 		return EntityTypeDefinition{}, err
 	}
@@ -258,6 +258,7 @@ func newEnumeventV1TypeDefinition(id EntityTypeID) (EntityTypeDefinition, error)
 		contractenumeventv1.ValidateSupport,
 		contractenumeventv1.ValidateState,
 		contractenumeventv1.EqualState,
+		contractenumeventv1.SameSupportIdentity,
 		contractenumeventv1.EntityEventNames,
 	)
 	if err != nil {
@@ -282,7 +283,19 @@ func newEnumsettingV1TypeDefinition(id EntityTypeID) (EntityTypeDefinition, erro
 		OutcomeObserved,
 		contractenumsettingv1.SetSatisfied,
 	)
-	definition, err := DefineEntityType(id, codecs.State, codecs.Support, contractenumsettingv1.ValidateSupport, contractenumsettingv1.ValidateState, contractenumsettingv1.EqualState, set)
+	definition, err := DefineEntityType(id, codecs.State, codecs.Support, contractenumsettingv1.ValidateSupport, contractenumsettingv1.ValidateState, contractenumsettingv1.EqualState, contractenumsettingv1.SameSupportIdentity, set)
+	if err != nil {
+		return EntityTypeDefinition{}, err
+	}
+	return definition, nil
+}
+
+func newMeasurementV1TypeDefinition(id EntityTypeID) (EntityTypeDefinition, error) {
+	codecs, err := contractmeasurementv1.Compile()
+	if err != nil {
+		return EntityTypeDefinition{}, fmt.Errorf("compile hearth.measurement/v1 codecs: %w", err)
+	}
+	definition, err := DefineEntityType(id, codecs.State, codecs.Support, contractmeasurementv1.ValidateSupport, contractmeasurementv1.ValidateState, contractmeasurementv1.EqualState, contractmeasurementv1.SameSupportIdentity)
 	if err != nil {
 		return EntityTypeDefinition{}, err
 	}
@@ -294,7 +307,7 @@ func newNumericsensorV1TypeDefinition(id EntityTypeID) (EntityTypeDefinition, er
 	if err != nil {
 		return EntityTypeDefinition{}, fmt.Errorf("compile hearth.numericsensor/v1 codecs: %w", err)
 	}
-	definition, err := DefineEntityType(id, codecs.State, codecs.Support, contractnumericsensorv1.ValidateSupport, contractnumericsensorv1.ValidateState, contractnumericsensorv1.EqualState)
+	definition, err := DefineEntityType(id, codecs.State, codecs.Support, contractnumericsensorv1.ValidateSupport, contractnumericsensorv1.ValidateState, contractnumericsensorv1.EqualState, contractnumericsensorv1.SameSupportIdentity)
 	if err != nil {
 		return EntityTypeDefinition{}, err
 	}
@@ -317,7 +330,7 @@ func newNumericsettingV1TypeDefinition(id EntityTypeID) (EntityTypeDefinition, e
 		OutcomeObserved,
 		contractnumericsettingv1.SetSatisfied,
 	)
-	definition, err := DefineEntityType(id, codecs.State, codecs.Support, contractnumericsettingv1.ValidateSupport, contractnumericsettingv1.ValidateState, contractnumericsettingv1.EqualState, set)
+	definition, err := DefineEntityType(id, codecs.State, codecs.Support, contractnumericsettingv1.ValidateSupport, contractnumericsettingv1.ValidateState, contractnumericsettingv1.EqualState, contractnumericsettingv1.SameSupportIdentity, set)
 	if err != nil {
 		return EntityTypeDefinition{}, err
 	}
@@ -340,19 +353,7 @@ func newPowerV1TypeDefinition(id EntityTypeID) (EntityTypeDefinition, error) {
 		OutcomeObserved,
 		contractpowerv1.SetSatisfied,
 	)
-	definition, err := DefineEntityType(id, codecs.State, codecs.Support, contractpowerv1.ValidateSupport, contractpowerv1.ValidateState, contractpowerv1.EqualState, set)
-	if err != nil {
-		return EntityTypeDefinition{}, err
-	}
-	return definition, nil
-}
-
-func newTemperatureV1TypeDefinition(id EntityTypeID) (EntityTypeDefinition, error) {
-	codecs, err := contracttemperaturev1.Compile()
-	if err != nil {
-		return EntityTypeDefinition{}, fmt.Errorf("compile hearth.temperature/v1 codecs: %w", err)
-	}
-	definition, err := DefineEntityType(id, codecs.State, codecs.Support, contracttemperaturev1.ValidateSupport, contracttemperaturev1.ValidateState, contracttemperaturev1.EqualState)
+	definition, err := DefineEntityType(id, codecs.State, codecs.Support, contractpowerv1.ValidateSupport, contractpowerv1.ValidateState, contractpowerv1.EqualState, contractpowerv1.SameSupportIdentity, set)
 	if err != nil {
 		return EntityTypeDefinition{}, err
 	}

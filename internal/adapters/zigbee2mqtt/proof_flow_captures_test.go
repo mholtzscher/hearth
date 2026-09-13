@@ -145,9 +145,10 @@ func TestCapturedRelayPlugCommandTranslation(t *testing.T) {
 }
 
 // This test protects the captured temperature proof Device and fails if the
-// sensor registers anything other than one read-only milli-Celsius Entity,
-// read-only humidity and battery percent Entities, and the device-agnostic
-// linkquality sensor, or if support gains Operations.
+// sensor registers anything other than one read-only canonical-Celsius
+// measurement Entity, read-only relative-humidity and battery-level
+// measurement Entities, and the device-agnostic linkquality sensor, or if
+// support gains Operations.
 func TestDiscoverCapturedTemperatureSensor(t *testing.T) {
 	t.Parallel()
 	device := mustDiscoveredFixtureDevice(t, "bridge-devices-temperature.json")
@@ -181,10 +182,12 @@ func TestDiscoverCapturedTemperatureSensor(t *testing.T) {
 		t.Fatalf("linkquality plan = %#v", linkqualityPlan)
 	}
 	descriptor := device.Registration.Entities[0]
-	wantSupport := json.RawMessage(`{"state":{},"operations":{}}`)
+	wantSupport := json.RawMessage(
+		`{"state":{"maximum":1000,"measurement_kind":"temperature","minimum":-273.15,"unit":"Cel"},"operations":{}}`,
+	)
 	if descriptor.Key != "temperature" ||
 		descriptor.ExternalID != "0x00124b0024abcd02/root/temperature" ||
-		descriptor.Name != "Temperature" || descriptor.Type != "hearth.temperature/v1" ||
+		descriptor.Name != "Temperature" || descriptor.Type != "hearth.measurement/v1" ||
 		!reflect.DeepEqual(descriptor.Support, wantSupport) {
 		t.Fatalf("temperature descriptor = %#v", descriptor)
 	}
@@ -194,17 +197,22 @@ func TestDiscoverCapturedTemperatureSensor(t *testing.T) {
 		plan.TranslateCommand != nil {
 		t.Fatalf("gettable temperature plan = %#v", plan)
 	}
-	wantPercentSupport := json.RawMessage(`{"state":{"maximum":100,"minimum":0,"unit":"%"},"operations":{}}`)
-	assertCapturedPercentPlan(
-		t, device, 1, "humidity", "0x00124b0024abcd02/root/humidity", "Humidity", wantPercentSupport,
+	wantHumiditySupport := json.RawMessage(
+		`{"state":{"maximum":100,"measurement_kind":"relative_humidity","minimum":0,"unit":"%"},"operations":{}}`,
 	)
-	assertCapturedPercentPlan(
-		t, device, 2, "battery", "0x00124b0024abcd02/root/battery", "Battery", wantPercentSupport,
+	assertCapturedMeasurementPlan(
+		t, device, 1, "humidity", "0x00124b0024abcd02/root/humidity", "Humidity", wantHumiditySupport,
+	)
+	wantBatterySupport := json.RawMessage(
+		`{"state":{"maximum":100,"measurement_kind":"battery_level","minimum":0,"unit":"%"},"operations":{}}`,
+	)
+	assertCapturedMeasurementPlan(
+		t, device, 2, "battery", "0x00124b0024abcd02/root/battery", "Battery", wantBatterySupport,
 	)
 }
 
-// assertCapturedPercentPlan checks one gettable read-only percent Entity.
-func assertCapturedPercentPlan(
+// assertCapturedMeasurementPlan checks one gettable read-only measurement Entity.
+func assertCapturedMeasurementPlan(
 	t *testing.T,
 	device discoveredDevice,
 	index int,
@@ -214,7 +222,7 @@ func assertCapturedPercentPlan(
 	t.Helper()
 	descriptor := device.Registration.Entities[index]
 	if descriptor.Key != key || descriptor.ExternalID != externalID || descriptor.Name != name ||
-		descriptor.Type != "hearth.numericsensor/v1" || !reflect.DeepEqual(descriptor.Support, support) {
+		descriptor.Type != "hearth.measurement/v1" || !reflect.DeepEqual(descriptor.Support, support) {
 		t.Fatalf("%s descriptor = %#v", key, descriptor)
 	}
 	plan := device.Entities[index]
@@ -225,7 +233,7 @@ func assertCapturedPercentPlan(
 }
 
 // This test protects captured temperature State projection and fails if 22.6
-// °C does not publish exactly 22600 milli-Celsius, if humidity does not
+// °C does not publish exactly 22.6 canonical Celsius, if humidity does not
 // preserve its 48.2 fraction, if battery does not publish 100, if the
 // linkquality sibling does not project beside them.
 func TestDecodeCapturedTemperatureState(t *testing.T) {
@@ -240,7 +248,7 @@ func TestDecodeCapturedTemperatureState(t *testing.T) {
 		t.Fatal(err)
 	}
 	if len(issues) != 0 || len(states) != 4 || states[0].entityID != "entity-temperature" ||
-		string(states[0].report.Observation.Value) != "22600" ||
+		string(states[0].report.Observation.Value) != "22.6" ||
 		states[1].entityID != "entity-humidity" ||
 		string(states[1].report.Observation.Value) != "48.2" ||
 		states[2].entityID != "entity-battery" ||
@@ -249,7 +257,7 @@ func TestDecodeCapturedTemperatureState(t *testing.T) {
 		string(states[3].report.Observation.Value) != "105" {
 		t.Fatalf("states = %#v, issues = %#v", states, issues)
 	}
-	if semantic, ok := states[0].report.semantic.(int64); !ok || semantic != 22600 {
+	if semantic, ok := states[0].report.semantic.(float64); !ok || semantic != 22.6 {
 		t.Fatalf("temperature semantic = %#v", states[0].report.semantic)
 	}
 	if semantic, ok := states[1].report.semantic.(float64); !ok || semantic != 48.2 {

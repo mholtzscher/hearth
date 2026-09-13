@@ -425,12 +425,15 @@ func TestExecuteCommandRejectsInvalidParametersAndCreationFailureBeforeDispatch(
 	}
 }
 
-func TestExecuteCommandRejectsTemperatureOperationBeforeDispatch(t *testing.T) {
+func TestExecuteCommandRejectsMeasurementOperationBeforeDispatch(t *testing.T) {
 	t.Parallel()
 	repository := newCommandRepository()
 	repository.view.Entity = Entity{
 		ID: commandTestEntityID, DeviceID: commandTestDeviceID, AdapterID: "simulator", Name: "Temperature",
-		TypeID: EntityTypeTemperatureV1, Support: EntitySupport(`{"state":{},"operations":{}}`), Enabled: true,
+		TypeID: EntityTypeMeasurementV1,
+		Support: EntitySupport(
+			`{"state":{"measurement_kind":"temperature","unit":"Cel","minimum":-273.15,"maximum":1000},"operations":{}}`,
+		), Enabled: true,
 	}
 	dispatches := 0
 	sender := commandSenderFunc(func(context.Context, string, RuntimeID, CommandRequest) (CommandAcceptance, error) {
@@ -446,9 +449,9 @@ func TestExecuteCommandRejectsTemperatureOperationBeforeDispatch(t *testing.T) {
 	if _, execErr := service.ExecuteCommand(context.Background(), CommandInput{
 		EntityID:      commandTestEntityID,
 		OperationName: OperationNameSet,
-		Parameters:    CommandParameters(`{"value":21500}`),
+		Parameters:    CommandParameters(`{"value":21.5}`),
 	}); !errors.Is(execErr, ErrInvalidCommand) {
-		t.Fatalf("temperature command error = %v", execErr)
+		t.Fatalf("measurement command error = %v", execErr)
 	}
 	if dispatches != 0 {
 		t.Fatalf("dispatches = %d, want 0", dispatches)
@@ -823,6 +826,7 @@ func commandCatalog(t *testing.T, deadline time.Duration) *TypeCatalog {
 	definition, err := DefineEntityType(
 		EntityTypePowerV1, codecs.State, codecs.Support,
 		contractpowerv1.ValidateSupport, contractpowerv1.ValidateState, contractpowerv1.EqualState,
+		contractpowerv1.SameSupportIdentity,
 		DefineOperation(
 			OperationNameSet, codecs.SetParameters,
 			func(support contractpowerv1.Support) (contractpowerv1.SetSupport, bool) {

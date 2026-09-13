@@ -44,7 +44,8 @@ func fixtureExpectations() map[string]fixtureExpectation {
 			operations: 2,
 			required:   []string{"unknown", "unknown-operation"},
 		},
-		"fixtureeventv1": {typeID: "fixture.event/v1"},
+		"fixtureeventv1":    {typeID: "fixture.event/v1"},
+		"fixtureidentityv1": {typeID: "fixture.identity/v1"},
 	}
 }
 

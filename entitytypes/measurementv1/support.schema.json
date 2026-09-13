@@ -1,0 +1,64 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:hearth:schema:entity-type:measurement:v1:support",
+  "title": "Hearth measurement/v1 Entity support",
+  "description": "Closed measurement-kind catalog: each kind admits exactly one canonical UCUM unit and a kind-wide physical envelope.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["state", "operations"],
+  "properties": {
+    "state": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["measurement_kind", "unit", "minimum", "maximum"],
+      "properties": {
+        "measurement_kind": {
+          "type": "string",
+          "enum": ["temperature", "relative_humidity", "illuminance", "battery_level"]
+        },
+        "unit": {"type": "string", "minLength": 1, "maxLength": 32},
+        "minimum": {"type": "number"},
+        "maximum": {"type": "number"}
+      },
+      "oneOf": [
+        {
+          "properties": {
+            "measurement_kind": {"const": "temperature"},
+            "unit": {"const": "Cel"},
+            "minimum": {"minimum": -273.15},
+            "maximum": {"maximum": 1000}
+          }
+        },
+        {
+          "properties": {
+            "measurement_kind": {"const": "relative_humidity"},
+            "unit": {"const": "%"},
+            "minimum": {"minimum": 0},
+            "maximum": {"maximum": 100}
+          }
+        },
+        {
+          "properties": {
+            "measurement_kind": {"const": "illuminance"},
+            "unit": {"const": "lx"},
+            "minimum": {"minimum": 0},
+            "maximum": {"maximum": 1000000000}
+          }
+        },
+        {
+          "properties": {
+            "measurement_kind": {"const": "battery_level"},
+            "unit": {"const": "%"},
+            "minimum": {"minimum": 0},
+            "maximum": {"maximum": 100}
+          }
+        }
+      ]
+    },
+    "operations": {
+      "type": "object",
+      "additionalProperties": false,
+      "maxProperties": 0
+    }
+  }
+}

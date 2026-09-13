@@ -409,7 +409,7 @@ Per Entity type:
 - `hearth.power/v1`: 0/1 steps with Off/On labels.
 - `hearth.brightness/v1`: integer stepped line using current support bounds when available.
 - `hearth.colortemp/v1`: integer-mired stepped line using current support bounds when available.
-- `hearth.temperature/v1`: milli-Celsius values displayed as °C.
+- `hearth.measurement/v1`: finite numeric values rendered with the descriptor's canonical unit label (`Cel` as °C; `%` and `lx` unchanged), using registered support bounds when available.
 - unknown future types: table remains available and the chart displays `Chart unavailable for this Entity type.`
 
 For every numeric chart, the vertical domain is the union of current support bounds, when available, and every plotted accepted historical value. Apply constant-value padding only after that union is computed. A support range narrowed after an Observation was recorded therefore cannot clip or misposition that retained historical value.

@@ -17,6 +17,12 @@ func ValidateSupport(support Support) error {
 
 func EqualState(left, right State) bool { return left == right }
 
+// SameSupportIdentity reports whether support fields that define an
+// Entity's stable semantic identity are unchanged.
+func SameSupportIdentity(previous, next Support) bool {
+	return true
+}
+
 const (
 	TriggerDeadline time.Duration = 10000 * time.Millisecond
 )
