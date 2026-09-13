@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.8.1](https://github.com/mholtzscher/hearth/compare/v0.8.0...v0.8.1) (2026-09-13)
+
+
+### Bug Fixes
+
+* **release:** publish ecowitt adapter image ([#101](https://github.com/mholtzscher/hearth/issues/101)) ([3e7ba43](https://github.com/mholtzscher/hearth/commit/3e7ba4354fd3a560ab8fd3081ca0d1f79944463b))
+
 ## [0.8.0](https://github.com/mholtzscher/hearth/compare/v0.7.0...v0.8.0) (2026-09-13)
 
 
