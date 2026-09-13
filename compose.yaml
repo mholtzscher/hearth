@@ -3,8 +3,8 @@
 # Every published port binds the host loopback interface only. NATS serves
 # native NATS, JetStream, the dashboard websocket, and HTTP monitoring;
 # Mosquitto owns MQTT 1883. Broker data persists under the ignored .data/
-# directory. Start with `mise run brokers`.
-name: hearth-local
+# directory. Start with `mise run brokers`. Compose derives the project name
+# from the checkout directory so one worktree cannot manage another's brokers.
 
 services:
   nats:

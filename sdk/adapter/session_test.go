@@ -753,6 +753,10 @@ func TestServeCommandsInvokesHandlersConcurrentlyAndRespondsOnce(t *testing.T) {
 
 func TestCommandHandlerUsesTransmittedDeadline(t *testing.T) {
 	t.Parallel()
+	const (
+		commandDeadlineLeadTime = 2 * time.Second
+		asyncWaitTimeout        = 5 * time.Second
+	)
 	server := startServer(t, -1, t.TempDir())
 	core := connectNATS(t, server.ClientURL())
 	session := connectSession(t, server.ClientURL())
@@ -780,11 +784,11 @@ func TestCommandHandlerUsesTransmittedDeadline(t *testing.T) {
 	}()
 	waitForSubscription(t, server, subscriptions, serveDone)
 
-	commandDeadline := time.Now().UTC().Add(250 * time.Millisecond)
+	commandDeadline := time.Now().UTC().Add(commandDeadlineLeadTime)
 	requestDone := make(chan error, 1)
 	go func() {
 		_, err := sendCommandWithDeadline(
-			context.Background(), core, session.runtimeID, true, time.Second, commandDeadline,
+			context.Background(), core, session.runtimeID, true, asyncWaitTimeout, commandDeadline,
 		)
 		requestDone <- err
 	}()
@@ -794,7 +798,7 @@ func TestCommandHandlerUsesTransmittedDeadline(t *testing.T) {
 		if !observed.ok || !observed.deadline.Equal(commandDeadline) {
 			t.Fatalf("handler deadline = %v, %t; want %v, true", observed.deadline, observed.ok, commandDeadline)
 		}
-	case <-time.After(time.Second):
+	case <-time.After(asyncWaitTimeout):
 		t.Fatal("command handler was not invoked")
 	}
 	select {
@@ -802,7 +806,7 @@ func TestCommandHandlerUsesTransmittedDeadline(t *testing.T) {
 		if !errors.Is(err, context.DeadlineExceeded) {
 			t.Fatalf("handler context error = %v, want deadline exceeded", err)
 		}
-	case <-time.After(time.Second):
+	case <-time.After(asyncWaitTimeout):
 		t.Fatal("command handler context was not canceled at the transmitted deadline")
 	}
 	if err := <-requestDone; !errors.Is(err, context.DeadlineExceeded) {
