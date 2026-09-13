@@ -5,11 +5,11 @@
 - When calling the `Agent` tool, always specify `agent` explicitly (including `"general-purpose"`) so its configured model and thinking settings are honored.
 
 - For focused formatting, generation, module tidying, linting, testing, and vetting, always use the mise tasks below instead of invoking the underlying tools directly.
-- After making any change, prefer `mise run validate`; it regenerates code, formats it, and tidies module metadata before running all checks.
+- After making any change, prefer `mise run validate`; it regenerates code, formats it, and tidies module metadata before running all checks. While iterating, `mise run validate-fast` runs the same checks with race-free tests; the gate to pass before finishing is still `mise run validate`.
 - Review the resulting diff and include intended generated or formatting changes.
 - Hearth has no deployments yet. Do not preserve backward compatibility by default. Make direct breaking changes and update all in-repository callers; add compatibility shims, legacy paths, or migration handling only when explicitly requested.
 - To run the local NATS and Mosquitto brokers while developing: `mise run brokers`.
-- Real-Mosquitto integration tests skip when no Docker daemon is reachable; `mise run test` sets `HEARTH_REQUIRE_MOSQUITTO=1` so they must run.
+- Real-Mosquitto integration tests skip when no Docker daemon is reachable; `mise run test` and `mise run test-fast` set `HEARTH_REQUIRE_MOSQUITTO=1` so they must run.
 
 ## Commands
 
@@ -23,9 +23,11 @@
 | Tidy module metadata           | `mise run --skip-deps tidy`           |
 | Check module tidiness          | `mise run --skip-deps tidy-check`     |
 | Test with the race detector    | `mise run --skip-deps test`           |
+| Test without the race detector | `mise run --skip-deps test-fast`      |
 | Run real-Mosquitto integration | `mise run --skip-deps test-brokers`   |
 | Vet                            | `mise run --skip-deps vet`            |
 | Run all validation (preferred) | `mise run validate`                   |
+| Run fast validation (no race)  | `mise run validate-fast`              |
 | Start local NATS and Mosquitto | `mise run brokers`                    |
 | Stop local NATS and Mosquitto  | `mise run brokers-down`               |
 

@@ -211,7 +211,6 @@ func (session *Session) claim(ctx context.Context, config Config) (string, error
 			session.stateMutex.Lock()
 			session.runtimeID = runtimeID
 			session.stateMutex.Unlock()
-			session.heartbeatInterval = heartbeatInterval
 			return request.correlationID, nil
 		}
 		if response.Data.Error == nil {

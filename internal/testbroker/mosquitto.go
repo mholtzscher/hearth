@@ -25,7 +25,8 @@ const MosquittoImage = "eclipse-mosquitto:2.0.22"
 
 // RequireMosquittoEnv gates real-Mosquitto integration tests. When it is set to
 // "1", an unavailable container runtime fails the test instead of skipping it.
-// The mise test task sets it so `mise run test` always exercises a real broker.
+// The mise test and test-fast tasks set it so `mise run test` and
+// `mise run test-fast` always exercise a real broker.
 const RequireMosquittoEnv = "HEARTH_REQUIRE_MOSQUITTO"
 
 // MosquittoTestConfig is the checked-in Mosquitto config copied into each test
