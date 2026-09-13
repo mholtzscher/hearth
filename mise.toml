@@ -199,6 +199,11 @@ description = "Typecheck and build the dashboard"
 depends = ["web-install"]
 run = '''pnpm --dir web run build'''
 
+[tasks."web-test"]
+description = "Run the dashboard frontend tests (Vitest + jsdom)"
+depends = ["web-install"]
+run = '''pnpm --dir web run test'''
+
 [tasks."web-dev"]
 description = "Run the dashboard dev server (proxies hearthd on 127.0.0.1:8080; run web-install first)"
 run = '''pnpm --dir web run dev --host 127.0.0.1 --strictPort'''
@@ -221,5 +226,6 @@ depends = [
   "tidy-check",
   "test",
   "test-entitytype-fixtures",
+  "web-test",
   "vet",
 ]

@@ -1,3 +1,4 @@
+/// <reference types="vitest/config" />
 import tailwindcss from "@tailwindcss/vite";
 import react from "@vitejs/plugin-react";
 import { execFileSync } from "node:child_process";
@@ -50,6 +51,11 @@ export default defineConfig({
     alias: {
       "@": path.resolve(__dirname, "./src"),
     },
+  },
+  test: {
+    // Page tests render React into jsdom; fetch and localStorage come from the
+    // Node runtime the tests stub and read. See `pnpm run test`.
+    environment: "jsdom",
   },
   server: {
     port: 5173,
