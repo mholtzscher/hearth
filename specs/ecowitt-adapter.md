@@ -197,7 +197,7 @@ Parsing rules:
 - parse `dateutc` as UTC with layout `2006-01-02 15:04:05`, and keep it as `SourceTime` only when it is on or after 2000-01-01 UTC and no more than five minutes after `ReceivedAt`; otherwise accept the report with `SourceTime=nil`;
 - permit an absent `model`, ignore unknown fields, and accept a structurally valid compatible report even when one or every measurement is absent or malformed.
 
-Expected URL-encoded numeric values are decimal strings. Numeric parsing rejects empty values, whitespace, signs without digits, exponent notation, trailing data, values that cannot become a finite number, and values outside the Entity support envelope.
+Expected URL-encoded numeric values are decimal strings. Numeric parsing rejects empty values, whitespace, signs without digits, exponent notation, trailing data, values that cannot become a finite number, and values outside the Entity's validation envelope.
 
 ### Duplicate reports
 
@@ -229,13 +229,13 @@ Entity external IDs are `<device external ID>/<entity key>`. PASSKEY, MQTT topic
 
 The catalog is closed and static in v1. Registration order is the table order within `gateway`, followed by the table order within `outdoor-array`.
 
-| Device | Entity key | Name | Ecowitt field | Hearth type | Canonical State unit and support |
+| Device | Entity key | Name | Ecowitt field | Hearth type | Canonical State unit and validation envelope |
 |---|---|---|---|---|---|
-| gateway | `indoor-temperature` | Indoor Temperature | `tempinf` | `hearth.temperature/v1` | integer milli-Celsius |
+| gateway | `indoor-temperature` | Indoor Temperature | `tempinf` | `hearth.temperature/v1` | integer milli-Celsius (`mCel`) |
 | gateway | `indoor-humidity` | Indoor Humidity | `humidityin` | `hearth.relativehumidity/v1` | decimal percent, 0..100 |
 | gateway | `relative-pressure` | Relative Pressure | `baromrelin` | `hearth.pressure/v1` | decimal hPa, 0..2000 |
 | gateway | `absolute-pressure` | Absolute Pressure | `baromabsin` | `hearth.pressure/v1` | decimal hPa, 0..2000 |
-| outdoor-array | `outdoor-temperature` | Outdoor Temperature | `tempf` | `hearth.temperature/v1` | integer milli-Celsius |
+| outdoor-array | `outdoor-temperature` | Outdoor Temperature | `tempf` | `hearth.temperature/v1` | integer milli-Celsius (`mCel`) |
 | outdoor-array | `outdoor-humidity` | Outdoor Humidity | `humidity` | `hearth.relativehumidity/v1` | decimal percent, 0..100 |
 | outdoor-array | `wind-direction` | Wind Direction | `winddir` | `hearth.numericsensor/v1` | `deg`, 0..360 |
 | outdoor-array | `wind-speed` | Wind Speed | `windspeedmph` | `hearth.speed/v1` | decimal m/s, 0..200 |
@@ -251,7 +251,7 @@ The catalog is closed and static in v1. Registration order is the table order wi
 | outdoor-array | `monthly-rain` | Monthly Rain | `mrain_piezo` | `hearth.numericsensor/v1` | `mm`, 0..10000000 |
 | outdoor-array | `yearly-rain` | Yearly Rain | `yrain_piezo` | `hearth.numericsensor/v1` | `mm`, 0..10000000 |
 
-`hearth.relativehumidity/v1`, `hearth.pressure/v1`, and `hearth.speed/v1` are reusable read-only physical-quantity types introduced with this Adapter. Their State is a finite JSON number in a fixed canonical unit—percent, hPa, and m/s respectively—and their support is the closed empty-operation shape `{"state":{},"operations":{}}`. Their State schemas fix the catalog envelopes at 0..100, 0..2000, and 0..200. Numeric sensor support carries an empty `operations` object and declares its unit and bounds; temperature uses the existing empty-operation `temperature/v1` contract. No Entity accepts Commands. The broad finite bounds are validation envelopes, not expected operating ranges, so v1 rejects out-of-envelope values rather than clamping them.
+`hearth.relativehumidity/v1`, `hearth.pressure/v1`, and `hearth.speed/v1` are reusable read-only physical-quantity types introduced with this Adapter. Their State is a finite JSON number in a fixed canonical unit—percent, hPa, and m/s respectively—and each declares that unit in structured State support: `{"state":{"unit":"%"},"operations":{}}`, `{"state":{"unit":"hPa"},"operations":{}}`, and `{"state":{"unit":"m/s"},"operations":{}}`. Their State schemas fix the catalog envelopes at 0..100, 0..2000, and 0..200. Temperature works the same way: the existing `temperature/v1` type keeps integer milli-Celsius State and declares its fixed canonical unit as `{"state":{"unit":"mCel"},"operations":{}}`. A client therefore reads any semantic measurement's unit from Entity support instead of inferring it from the type identifier, while every State and Observation value stays a bare JSON number and the type's State schema enforces the envelope. Numeric sensor support is the configurable counterpart: it declares a per-Entity unit and bounds, for example `{"state":{"unit":"deg","minimum":0,"maximum":360},"operations":{}}`. No Entity accepts Commands—every `operations` object is empty—so the distinction is between a populated State object that fixes the measurement's unit and an empty operations object that keeps the Entity read-only. The broad finite bounds are validation envelopes, not expected operating ranges, so v1 rejects out-of-envelope values rather than clamping them.
 
 ### Unit normalization
 
@@ -570,7 +570,7 @@ Use the household GW2000 only after confirming the target MQTT screen and firmwa
 | Native MQTT through Mosquitto | Customized Server HTTP | It uses Hearth's broker prerequisite and Paho client pattern while avoiding an inbound Adapter HTTP server. |
 | One exact topic and station | Wildcard multi-station discovery | Routing, health, identity, and secret validation stay deterministic. |
 | Slot Devices | Claimed physical hardware identity | Ecowitt supplies no stable attached-sensor IDs. |
-| Reusable physical-quantity types for humidity, pressure, and speed | A generic numeric sensor for every measurement | Fixed canonical units give common measurements semantic contracts without introducing weather-specific types; direction, solar, UV, and rain remain generic until broader reuse justifies more types. |
+| Reusable physical-quantity types for humidity, pressure, and speed | A generic numeric sensor for every measurement | Fixed canonical units, declared in structured Entity support, give common measurements semantic contracts without introducing weather-specific types; direction, solar, UV, and rain remain generic until broader reuse justifies more types. |
 
 ## Success metrics
 

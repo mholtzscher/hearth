@@ -18,7 +18,7 @@ func TestGeneratedObservationConformance(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Run("hectopascal-envelope", func(t *testing.T) {
-		support, _, err := codecs.Support.Decode(json.RawMessage("{\"state\": {}, \"operations\": {}}"))
+		support, _, err := codecs.Support.Decode(json.RawMessage("{\"state\": {\"unit\": \"hPa\"}, \"operations\": {}}"))
 		if err != nil {
 			t.Fatalf("support: %v", err)
 		}
@@ -177,7 +177,7 @@ func TestGeneratedObservationMetadata(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	support, _, err := codecs.Support.Decode(json.RawMessage("{\"state\": {}, \"operations\": {}}"))
+	support, _, err := codecs.Support.Decode(json.RawMessage("{\"state\": {\"unit\": \"hPa\"}, \"operations\": {}}"))
 	if err != nil {
 		t.Fatalf("support: %v", err)
 	}
@@ -221,7 +221,7 @@ func TestGeneratedObservationValidation(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	support, _, err := codecs.Support.Decode(json.RawMessage("{\"state\": {}, \"operations\": {}}"))
+	support, _, err := codecs.Support.Decode(json.RawMessage("{\"state\": {\"unit\": \"hPa\"}, \"operations\": {}}"))
 	if err != nil {
 		t.Fatalf("support: %v", err)
 	}
@@ -246,6 +246,19 @@ func TestGeneratedObservationValidation(t *testing.T) {
 	} else {
 		adaptertest.RequireValidationError(t, err, "reject zero source updated time")
 	}
+	invalidSupport := support
+	invalidSupport.State.Unit = "hPa-invalid"
+	if _, err := NewObservation(ObservationInput{EntityID: "ent_01890f47-7a6b-7c4d-8e9f-0123456789ab", Support: invalidSupport, State: state, AdapterReceivedAt: receivedAt}); err == nil {
+		t.Error("Observation with invalid Entity support was accepted")
+	} else {
+		adaptertest.RequireValidationError(t, err, "reject invalid Entity support")
+	}
+	var emptySupport Support
+	if _, err := NewObservation(ObservationInput{EntityID: "ent_01890f47-7a6b-7c4d-8e9f-0123456789ab", Support: emptySupport, State: state, AdapterReceivedAt: receivedAt}); err == nil {
+		t.Error("Observation with empty Entity support was accepted")
+	} else {
+		adaptertest.RequireValidationError(t, err, "reject empty Entity support")
+	}
 }
 
 func TestGeneratedEntityDescriptor(t *testing.T) {
@@ -253,7 +266,7 @@ func TestGeneratedEntityDescriptor(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	support, _, err := codecs.Support.Decode(json.RawMessage("{\"state\": {}, \"operations\": {}}"))
+	support, _, err := codecs.Support.Decode(json.RawMessage("{\"state\": {\"unit\": \"hPa\"}, \"operations\": {}}"))
 	if err != nil {
 		t.Fatalf("support: %v", err)
 	}
@@ -274,7 +287,20 @@ func TestGeneratedEntityDescriptor(t *testing.T) {
 	if descriptor.Type != "hearth.pressure/v1" {
 		t.Errorf("descriptor type = %q", descriptor.Type)
 	}
-	if entitytypetest.CanonicalJSON(t, descriptor.Support) != entitytypetest.CanonicalJSON(t, json.RawMessage("{\"state\": {}, \"operations\": {}}")) {
+	if entitytypetest.CanonicalJSON(t, descriptor.Support) != entitytypetest.CanonicalJSON(t, json.RawMessage("{\"state\": {\"unit\": \"hPa\"}, \"operations\": {}}")) {
 		t.Errorf("descriptor support = %s", descriptor.Support)
+	}
+	invalidSupport := support
+	invalidSupport.State.Unit = "hPa-invalid"
+	if _, err := NewEntityDescriptor(metadata, invalidSupport); err == nil {
+		t.Error("descriptor with invalid Entity support was accepted")
+	} else {
+		adaptertest.RequireValidationError(t, err, "reject invalid Entity support")
+	}
+	var emptySupport Support
+	if _, err := NewEntityDescriptor(metadata, emptySupport); err == nil {
+		t.Error("descriptor with empty Entity support was accepted")
+	} else {
+		adaptertest.RequireValidationError(t, err, "reject empty Entity support")
 	}
 }

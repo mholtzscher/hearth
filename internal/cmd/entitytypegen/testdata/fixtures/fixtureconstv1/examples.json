@@ -1,0 +1,13 @@
+{
+  "cases": [
+    {
+      "name": "fixed-unit",
+      "support": {"state": {"maximum": 80, "unit": "celsius"}, "operations": {}},
+      "states": [
+        {"value": 50, "valid": true},
+        {"value": 101, "valid": false}
+      ],
+      "operations": {}
+    }
+  ]
+}

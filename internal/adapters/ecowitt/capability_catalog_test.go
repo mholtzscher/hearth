@@ -31,15 +31,15 @@ func planByKey(t *testing.T, plans []measurementPlan, key string) measurementPla
 // from the Adapter contract, not derived from the production catalog, so a
 // catalog defect cannot restate its own expectation.
 type catalogueEntry struct {
-	slot               deviceSlot
-	field              string
-	key                string
-	name               string
-	typeID             string
-	unit               string
-	minimum            float64
-	maximum            float64
-	expectsNumericUnit bool
+	slot            deviceSlot
+	field           string
+	key             string
+	name            string
+	typeID          string
+	unit            string
+	minimum         float64
+	maximum         float64
+	numericEnvelope bool
 }
 
 // catalogueOracle is the closed v1 capability contract in registration order:
@@ -72,7 +72,7 @@ func catalogueOracle() []catalogueEntry {
 		},
 		{
 			slot: outdoorArraySlot, field: "winddir", key: "wind-direction", name: "Wind Direction",
-			typeID: "hearth.numericsensor/v1", unit: "deg", minimum: 0, maximum: 360, expectsNumericUnit: true,
+			typeID: "hearth.numericsensor/v1", unit: "deg", minimum: 0, maximum: 360, numericEnvelope: true,
 		},
 		{
 			slot: outdoorArraySlot, field: "windspeedmph", key: "wind-speed", name: "Wind Speed",
@@ -88,39 +88,39 @@ func catalogueOracle() []catalogueEntry {
 		},
 		{
 			slot: outdoorArraySlot, field: "solarradiation", key: "solar-radiation", name: "Solar Radiation",
-			typeID: "hearth.numericsensor/v1", unit: "W/m²", minimum: 0, maximum: 10000, expectsNumericUnit: true,
+			typeID: "hearth.numericsensor/v1", unit: "W/m²", minimum: 0, maximum: 10000, numericEnvelope: true,
 		},
 		{
 			slot: outdoorArraySlot, field: "uv", key: "uv-index", name: "UV Index",
-			typeID: "hearth.numericsensor/v1", unit: "index", minimum: 0, maximum: 100, expectsNumericUnit: true,
+			typeID: "hearth.numericsensor/v1", unit: "index", minimum: 0, maximum: 100, numericEnvelope: true,
 		},
 		{
 			slot: outdoorArraySlot, field: "rrain_piezo", key: "rain-rate", name: "Rain Rate",
-			typeID: "hearth.numericsensor/v1", unit: "mm/h", minimum: 0, maximum: 10000, expectsNumericUnit: true,
+			typeID: "hearth.numericsensor/v1", unit: "mm/h", minimum: 0, maximum: 10000, numericEnvelope: true,
 		},
 		{
 			slot: outdoorArraySlot, field: "erain_piezo", key: "event-rain", name: "Event Rain",
-			typeID: "hearth.numericsensor/v1", unit: "mm", minimum: 0, maximum: 10000000, expectsNumericUnit: true,
+			typeID: "hearth.numericsensor/v1", unit: "mm", minimum: 0, maximum: 10000000, numericEnvelope: true,
 		},
 		{
 			slot: outdoorArraySlot, field: "hrain_piezo", key: "hourly-rain", name: "Hourly Rain",
-			typeID: "hearth.numericsensor/v1", unit: "mm", minimum: 0, maximum: 10000000, expectsNumericUnit: true,
+			typeID: "hearth.numericsensor/v1", unit: "mm", minimum: 0, maximum: 10000000, numericEnvelope: true,
 		},
 		{
 			slot: outdoorArraySlot, field: "drain_piezo", key: "daily-rain", name: "Daily Rain",
-			typeID: "hearth.numericsensor/v1", unit: "mm", minimum: 0, maximum: 10000000, expectsNumericUnit: true,
+			typeID: "hearth.numericsensor/v1", unit: "mm", minimum: 0, maximum: 10000000, numericEnvelope: true,
 		},
 		{
 			slot: outdoorArraySlot, field: "wrain_piezo", key: "weekly-rain", name: "Weekly Rain",
-			typeID: "hearth.numericsensor/v1", unit: "mm", minimum: 0, maximum: 10000000, expectsNumericUnit: true,
+			typeID: "hearth.numericsensor/v1", unit: "mm", minimum: 0, maximum: 10000000, numericEnvelope: true,
 		},
 		{
 			slot: outdoorArraySlot, field: "mrain_piezo", key: "monthly-rain", name: "Monthly Rain",
-			typeID: "hearth.numericsensor/v1", unit: "mm", minimum: 0, maximum: 10000000, expectsNumericUnit: true,
+			typeID: "hearth.numericsensor/v1", unit: "mm", minimum: 0, maximum: 10000000, numericEnvelope: true,
 		},
 		{
 			slot: outdoorArraySlot, field: "yrain_piezo", key: "yearly-rain", name: "Yearly Rain",
-			typeID: "hearth.numericsensor/v1", unit: "mm", minimum: 0, maximum: 10000000, expectsNumericUnit: true,
+			typeID: "hearth.numericsensor/v1", unit: "mm", minimum: 0, maximum: 10000000, numericEnvelope: true,
 		},
 	}
 }
@@ -208,9 +208,10 @@ func TestCatalogRegistersFourGatewayAndFifteenOutdoorEntities(t *testing.T) {
 }
 
 // TestCatalogSupportMatchesEntityTypeContracts protects each registered
-// support document: the reusable physical quantities declare the closed empty
-// state shape, and each generic numeric sensor carries exactly its unit and
-// envelope.
+// support document: every Entity declares exactly its canonical State unit, and
+// each generic numeric sensor additionally carries its unit and envelope. The
+// expected units come from the hand-written catalogue oracle, not the
+// production catalog.
 func TestCatalogSupportMatchesEntityTypeContracts(t *testing.T) {
 	t.Parallel()
 
@@ -222,20 +223,23 @@ func TestCatalogSupportMatchesEntityTypeContracts(t *testing.T) {
 		if !ok {
 			t.Fatalf("%s support has no state object: %s", expected.key, plan.Descriptor.Support)
 		}
-		if !expected.expectsNumericUnit {
-			if len(state) != 0 {
-				t.Fatalf("%s state support = %v, want the closed empty shape", expected.key, state)
-			}
-			continue
-		}
 		if state["unit"] != expected.unit {
 			t.Fatalf("%s unit = %v, want %q", expected.key, state["unit"], expected.unit)
+		}
+		if !expected.numericEnvelope {
+			if len(state) != 1 {
+				t.Fatalf("%s state support = %v, want only the canonical unit", expected.key, state)
+			}
+			continue
 		}
 		if state["minimum"] != expected.minimum || state["maximum"] != expected.maximum {
 			t.Fatalf(
 				"%s envelope = [%v, %v], want [%v, %v]",
 				expected.key, state["minimum"], state["maximum"], expected.minimum, expected.maximum,
 			)
+		}
+		if len(state) != 3 {
+			t.Fatalf("%s state support = %v, want unit, minimum, and maximum", expected.key, state)
 		}
 	}
 }

@@ -181,7 +181,7 @@ func TestDiscoverCapturedTemperatureSensor(t *testing.T) {
 		t.Fatalf("linkquality plan = %#v", linkqualityPlan)
 	}
 	descriptor := device.Registration.Entities[0]
-	wantSupport := json.RawMessage(`{"state":{},"operations":{}}`)
+	wantSupport := json.RawMessage(`{"state":{"unit":"mCel"},"operations":{}}`)
 	if descriptor.Key != "temperature" ||
 		descriptor.ExternalID != "0x00124b0024abcd02/root/temperature" ||
 		descriptor.Name != "Temperature" || descriptor.Type != "hearth.temperature/v1" ||

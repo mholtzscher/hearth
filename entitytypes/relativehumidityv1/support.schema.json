@@ -9,7 +9,14 @@
     "state": {
       "type": "object",
       "additionalProperties": false,
-      "maxProperties": 0
+      "required": ["unit"],
+      "properties": {
+        "unit": {
+          "type": "string",
+          "const": "%",
+          "description": "The one canonical State unit: percent."
+        }
+      }
     },
     "operations": {
       "type": "object",

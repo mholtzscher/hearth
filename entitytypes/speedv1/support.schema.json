@@ -9,7 +9,14 @@
     "state": {
       "type": "object",
       "additionalProperties": false,
-      "maxProperties": 0
+      "required": ["unit"],
+      "properties": {
+        "unit": {
+          "type": "string",
+          "const": "m/s",
+          "description": "The one canonical State unit: metres per second."
+        }
+      }
     },
     "operations": {
       "type": "object",

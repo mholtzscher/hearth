@@ -2,7 +2,7 @@
   "cases": [
     {
       "name": "percent-envelope",
-      "support": {"state": {}, "operations": {}},
+      "support": {"state": {"unit": "%"}, "operations": {}},
       "states": [
         {"value": 0, "valid": true},
         {"value": 45, "valid": true},

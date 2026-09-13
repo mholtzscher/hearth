@@ -2,7 +2,7 @@
   "cases": [
     {
       "name": "hectopascal-envelope",
-      "support": {"state": {}, "operations": {}},
+      "support": {"state": {"unit": "hPa"}, "operations": {}},
       "states": [
         {"value": 0, "valid": true},
         {"value": 1013, "valid": true},

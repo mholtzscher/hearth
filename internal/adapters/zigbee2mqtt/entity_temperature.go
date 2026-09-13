@@ -12,7 +12,10 @@ import (
 	sdktemperaturev1 "github.com/mholtzscher/hearth/sdk/adapter/temperaturev1"
 )
 
-const milliCelsiusPerCelsius = 1_000
+const (
+	milliCelsiusPerCelsius      = 1_000
+	temperatureUnitMilliCelsius = "mCel"
+)
 
 // newTemperaturePlan builds the complete read-only temperature translation for
 // one State property. Get access alone controls startup refresh: a
@@ -63,9 +66,12 @@ func newTemperaturePlan(
 	}, nil
 }
 
+// temperatureSupport declares the one canonical temperature unit. The
+// temperature/v1 support schema requires exactly this unit, so a zero-value
+// support would be rejected instead of publishing unlabeled milli-Celsius.
 func temperatureSupport() contracttemperaturev1.Support {
 	return contracttemperaturev1.Support{
-		State:      contracttemperaturev1.StateSupport{},
+		State:      contracttemperaturev1.StateSupport{Unit: temperatureUnitMilliCelsius},
 		Operations: contracttemperaturev1.OperationSupport{},
 	}
 }

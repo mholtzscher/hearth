@@ -64,6 +64,7 @@ type referenceManifest struct {
 type schemaNode struct {
 	ID                   string                `json:"$id"`
 	Type                 string                `json:"type"`
+	Const                json.RawMessage       `json:"const"`
 	Properties           map[string]schemaNode `json:"properties"`
 	Required             []string              `json:"required"`
 	Items                *schemaNode           `json:"items"`

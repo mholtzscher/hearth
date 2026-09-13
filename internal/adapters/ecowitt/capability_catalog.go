@@ -62,9 +62,10 @@ const (
 	maximumDeviceNameRunes = 128
 )
 
-// Canonical unit values fixed by the catalog contract. Pressure, relative
-// humidity, and speed units are owned by their reusable Entity types; the
-// generic numeric sensor carries its unit in Entity support.
+// Canonical unit values fixed by the catalog contract. Temperature, pressure,
+// relative humidity, and speed units are pinned by their reusable Entity types'
+// support schemas, which reject a plan whose unit disagrees; the generic
+// numeric sensor carries whatever unit its plan declares.
 const (
 	unitMilliCelsius        = "mCel"
 	unitPercent             = "%"

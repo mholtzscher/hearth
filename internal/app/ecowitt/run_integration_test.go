@@ -331,13 +331,42 @@ func assertProjectedValues(t *testing.T, observed []devices.EntityWithState) {
 			t.Errorf("%s TypeID = %s, want %s", entity.Entity.Name, entity.Entity.TypeID, wantType)
 		}
 	}
-	windDirection := entityNamed(t, observed, "Wind Direction")
-	if string(windDirection.Entity.Support) != `{"state":{"maximum":360,"minimum":0,"unit":"deg"},"operations":{}}` {
-		t.Fatalf("wind direction support = %s", windDirection.Entity.Support)
+	assertCanonicalSupports(t, observed)
+}
+
+// assertCanonicalSupports protects the registered support of every Entity and
+// fails if a reusable physical quantity stops pinning its canonical unit or a
+// generic numeric sensor loses its own unit and envelope. The expected shapes
+// are hand-written oracles, independent of the Adapter catalog.
+func assertCanonicalSupports(t *testing.T, observed []devices.EntityWithState) {
+	t.Helper()
+	supports := map[string]string{
+		"Indoor Temperature":  `{"state":{"unit":"mCel"},"operations":{}}`,
+		"Outdoor Temperature": `{"state":{"unit":"mCel"},"operations":{}}`,
+		"Indoor Humidity":     `{"state":{"unit":"%"},"operations":{}}`,
+		"Outdoor Humidity":    `{"state":{"unit":"%"},"operations":{}}`,
+		"Relative Pressure":   `{"state":{"unit":"hPa"},"operations":{}}`,
+		"Absolute Pressure":   `{"state":{"unit":"hPa"},"operations":{}}`,
+		"Wind Speed":          `{"state":{"unit":"m/s"},"operations":{}}`,
+		"Wind Gust":           `{"state":{"unit":"m/s"},"operations":{}}`,
+		"Maximum Daily Gust":  `{"state":{"unit":"m/s"},"operations":{}}`,
+		"Wind Direction":      `{"state":{"maximum":360,"minimum":0,"unit":"deg"},"operations":{}}`,
 	}
-	temperature := entityNamed(t, observed, "Indoor Temperature")
-	if string(temperature.Entity.Support) != `{"state":{},"operations":{}}` {
-		t.Fatalf("temperature support = %s", temperature.Entity.Support)
+	seen := make(map[string]bool, len(supports))
+	for _, entity := range observed {
+		wantSupport, present := supports[entity.Entity.Name]
+		if !present {
+			continue
+		}
+		seen[entity.Entity.Name] = true
+		if string(entity.Entity.Support) != wantSupport {
+			t.Errorf("%s support = %s, want %s", entity.Entity.Name, entity.Entity.Support, wantSupport)
+		}
+	}
+	for name := range supports {
+		if !seen[name] {
+			t.Errorf("canonical support oracle Entity %q was not registered", name)
+		}
 	}
 }
 
