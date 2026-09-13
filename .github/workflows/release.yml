@@ -51,6 +51,7 @@ jobs:
             ./cmd/hearthd \
             ./cmd/hearth-adapter-homeassistant \
             ./cmd/hearth-adapter-zigbee2mqtt \
+            ./cmd/hearth-adapter-ecowitt \
             ./cmd/hearth-simulator
       - name: Log in to GHCR
         uses: docker/login-action@v4
