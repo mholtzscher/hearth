@@ -364,12 +364,12 @@ func writeObservationValidationTest(source *strings.Builder, model entityTypeMod
 	source.WriteString("\t} else {\n")
 	source.WriteString("\t\tadaptertest.RequireValidationError(t, err, \"reject zero source updated time\")\n")
 	source.WriteString("\t}\n")
-	if selector, value, ok := invalidSupportMutation(model); ok {
+	if mutation, ok := invalidSupportMutation(model); ok {
 		fmt.Fprintf(
 			source,
-			"\tinvalidSupport := support\n\tinvalidSupport.%s = %d\n",
-			selector,
-			value,
+			"\tinvalidSupport := support\n\tinvalidSupport.%s = %s\n",
+			mutation.Selector,
+			mutation.Expression,
 		)
 		fmt.Fprintf(
 			source,
@@ -381,6 +381,7 @@ func writeObservationValidationTest(source *strings.Builder, model entityTypeMod
 		source.WriteString("\t\tadaptertest.RequireValidationError(t, err, \"reject invalid Entity support\")\n")
 		source.WriteString("\t}\n")
 	}
+	writeEmptySupportObservationCheck(source, model)
 	source.WriteString("}\n\n")
 }
 
@@ -416,12 +417,12 @@ func writeEntityDescriptorTest(source *strings.Builder, model entityTypeModel) {
 		"\tif entitytypetest.CanonicalJSON(t, descriptor.Support) != entitytypetest.CanonicalJSON(t, json.RawMessage(%s)) { t.Errorf(\"descriptor support = %%s\", descriptor.Support) }\n",
 		rawQuote(example.Support),
 	)
-	if selector, value, ok := invalidSupportMutation(model); ok {
+	if mutation, ok := invalidSupportMutation(model); ok {
 		fmt.Fprintf(
 			source,
-			"\tinvalidSupport := support\n\tinvalidSupport.%s = %d\n",
-			selector,
-			value,
+			"\tinvalidSupport := support\n\tinvalidSupport.%s = %s\n",
+			mutation.Selector,
+			mutation.Expression,
 		)
 		source.WriteString("\tif _, err := NewEntityDescriptor(metadata, invalidSupport); err == nil {\n")
 		source.WriteString("\t\tt.Error(\"descriptor with invalid Entity support was accepted\")\n")
@@ -429,6 +430,7 @@ func writeEntityDescriptorTest(source *strings.Builder, model entityTypeModel) {
 		source.WriteString("\t\tadaptertest.RequireValidationError(t, err, \"reject invalid Entity support\")\n")
 		source.WriteString("\t}\n")
 	}
+	writeEmptySupportDescriptorCheck(source, model)
 	writeDescriptorInvalidSupports(source, model)
 	source.WriteString("}\n\n")
 }
@@ -472,35 +474,59 @@ func writeDescriptorInvalidSupports(source *strings.Builder, model entityTypeMod
 	}
 }
 
-// invalidSupportMutation finds a required integer leaf in the support schema and
-// returns the Go field selector and an out-of-range value that ordinary JSON can
-// still represent. Types whose support schemas accept every Go-representable
-// value report false; their invalid-support coverage is impossible to construct.
-func invalidSupportMutation(model entityTypeModel) (string, int64, bool) {
-	names := sortedProperties(model.SupportSchema.Properties)
-	for _, name := range names {
-		if !required(model.SupportSchema, name) {
-			continue
-		}
-		field, err := exportedName(name)
-		if err != nil {
-			continue
-		}
-		if selector, value, ok := invalidLeaf(model.SupportSchema.Properties[name], field); ok {
-			return selector, value, true
-		}
+// writeEmptySupportDescriptorCheck proves a descriptor cannot be built from the
+// Go zero value of a support type whose schema fixes a required string. It is
+// emitted only when the schema guarantees Support{} is schema-invalid.
+func writeEmptySupportDescriptorCheck(source *strings.Builder, model entityTypeModel) {
+	if !supportZeroValueRejected(model) {
+		return
 	}
-	return "", 0, false
+	source.WriteString("\tvar emptySupport Support\n")
+	source.WriteString("\tif _, err := NewEntityDescriptor(metadata, emptySupport); err == nil {\n")
+	source.WriteString("\t\tt.Error(\"descriptor with empty Entity support was accepted\")\n")
+	source.WriteString("\t} else {\n")
+	source.WriteString("\t\tadaptertest.RequireValidationError(t, err, \"reject empty Entity support\")\n")
+	source.WriteString("\t}\n")
 }
 
-func invalidLeaf(schema schemaNode, selector string) (string, int64, bool) {
-	if schema.Type == string(kindInteger) && schema.Minimum != nil && schema.Maximum != nil {
-		if value, ok := invalidIntegerMutation(schema.Minimum.String(), schema.Maximum.String()); ok {
-			return selector, value, true
-		}
+// writeEmptySupportObservationCheck proves an observation cannot be built from
+// the Go zero value of a support type whose schema fixes a required string. It
+// is emitted only when the schema guarantees Support{} is schema-invalid.
+func writeEmptySupportObservationCheck(source *strings.Builder, model entityTypeModel) {
+	if !supportZeroValueRejected(model) {
+		return
 	}
+	source.WriteString("\tvar emptySupport Support\n")
+	fmt.Fprintf(
+		source,
+		"\tif _, err := NewObservation(ObservationInput{EntityID: %s, Support: emptySupport, State: state, AdapterReceivedAt: receivedAt}); err == nil {\n",
+		strconv.Quote(sdkTestEntityID),
+	)
+	source.WriteString("\t\tt.Error(\"Observation with empty Entity support was accepted\")\n")
+	source.WriteString("\t} else {\n")
+	source.WriteString("\t\tadaptertest.RequireValidationError(t, err, \"reject empty Entity support\")\n")
+	source.WriteString("\t}\n")
+}
+
+// supportMutation names one required support field and the schema-invalid Go
+// expression generated facade tests assign to it. Expression is already a
+// rendered Go literal so callers never re-encode kind-specific values.
+type supportMutation struct {
+	Selector   string
+	Expression string
+}
+
+// findSupportLeafMutation finds the first required support leaf for which
+// leafMutation yields a mutation, descending through required object properties
+// in property order. It carries the accumulating Go field selector into
+// selector so a leaf predicate never builds selectors itself.
+func findSupportLeafMutation(
+	schema schemaNode,
+	selector string,
+	leafMutation func(schemaNode, string) (supportMutation, bool),
+) (supportMutation, bool) {
 	if schema.Type != schemaTypeObject {
-		return "", 0, false
+		return leafMutation(schema, selector)
 	}
 	for _, name := range sortedProperties(schema.Properties) {
 		if !required(schema, name) {
@@ -510,11 +536,94 @@ func invalidLeaf(schema schemaNode, selector string) (string, int64, bool) {
 		if err != nil {
 			continue
 		}
-		if result, value, ok := invalidLeaf(schema.Properties[name], selector+"."+field); ok {
-			return result, value, true
+		childSelector := field
+		if selector != "" {
+			childSelector = selector + "." + field
+		}
+		if mutation, ok := findSupportLeafMutation(
+			schema.Properties[name],
+			childSelector,
+			leafMutation,
+		); ok {
+			return mutation, true
 		}
 	}
-	return "", 0, false
+	return supportMutation{}, false
+}
+
+// invalidSupportMutation finds a required support leaf that can be mutated to a
+// schema-invalid value and returns the rendered mutation. String consts win over
+// bounded integers across the whole schema: a fixed support value is the most
+// faithful thing for generated tests to prove immutable, and an appended-suffix
+// string plus an out-of-range bounded integer are both schema-invalid yet
+// ordinary JSON can represent them. Types whose support schemas accept every
+// Go-representable required value report false; their invalid-support coverage
+// is impossible to construct.
+func invalidSupportMutation(model entityTypeModel) (supportMutation, bool) {
+	for _, leafMutation := range []func(schemaNode, string) (supportMutation, bool){
+		stringConstLeafMutation,
+		integerLeafMutation,
+	} {
+		if mutation, ok := findSupportLeafMutation(model.SupportSchema, "", leafMutation); ok {
+			return mutation, true
+		}
+	}
+	return supportMutation{}, false
+}
+
+// stringConstLeafMutation returns a rendered mutation for a required string
+// leaf carrying an authoritative const. A literal with an appended suffix is a
+// deterministic Go string that always differs from the const, so the schema
+// rejects it regardless of any other constraint.
+func stringConstLeafMutation(schema schemaNode, selector string) (supportMutation, bool) {
+	if schema.Type != string(kindString) || len(schema.Const) == 0 {
+		return supportMutation{}, false
+	}
+	var constValue string
+	if err := json.Unmarshal(schema.Const, &constValue); err != nil {
+		return supportMutation{}, false
+	}
+	return supportMutation{
+		Selector:   selector,
+		Expression: strconv.Quote(constValue + "-invalid"),
+	}, true
+}
+
+// integerLeafMutation returns a rendered mutation for a required integer leaf
+// with an inclusive schema range that cannot accept some representable int64.
+func integerLeafMutation(schema schemaNode, selector string) (supportMutation, bool) {
+	if schema.Type != string(kindInteger) || schema.Minimum == nil || schema.Maximum == nil {
+		return supportMutation{}, false
+	}
+	value, ok := invalidIntegerMutation(schema.Minimum.String(), schema.Maximum.String())
+	if !ok {
+		return supportMutation{}, false
+	}
+	return supportMutation{Selector: selector, Expression: strconv.FormatInt(value, 10)}, true
+}
+
+// supportZeroValueRejected reports whether the Go zero value of the generated
+// Support type violates the support schema, so generated facade tests can prove
+// required support cannot be omitted. A required string const with a non-empty
+// value guarantees this: the generated field is a non-pointer Go string, so
+// Support{} marshals the empty string, which no non-empty const accepts.
+func supportZeroValueRejected(model entityTypeModel) bool {
+	_, ok := findSupportLeafMutation(model.SupportSchema, "", zeroValueStringConstLeaf)
+	return ok
+}
+
+// zeroValueStringConstLeaf reports a required string const whose non-empty value
+// rejects the Go zero value. Only the leaf predicate result matters here, so it
+// returns no selector or expression.
+func zeroValueStringConstLeaf(schema schemaNode, _ string) (supportMutation, bool) {
+	if schema.Type != string(kindString) || len(schema.Const) == 0 {
+		return supportMutation{}, false
+	}
+	var constValue string
+	if json.Unmarshal(schema.Const, &constValue) != nil || constValue == "" {
+		return supportMutation{}, false
+	}
+	return supportMutation{}, true
 }
 
 // invalidIntegerMutation returns a representable int64 outside an inclusive
@@ -631,8 +740,8 @@ func writeCommandConformanceTest(source *strings.Builder, model entityTypeModel)
 			}
 			writeAbsentOperationCheck(source, operation, supported, "\t\t", true)
 		}
-		if selector, value, ok := invalidSupportMutation(model); ok {
-			writeInvalidSupportCommandCheck(source, supported, selector, value, "\t\t")
+		if mutation, ok := invalidSupportMutation(model); ok {
+			writeInvalidSupportCommandCheck(source, supported, mutation, "\t\t")
 		}
 		source.WriteString("\t})\n")
 	}
@@ -903,11 +1012,17 @@ func routingCallTotal(supported []operationModel) string {
 func writeInvalidSupportCommandCheck(
 	source *strings.Builder,
 	supported []operationModel,
-	selector string,
-	value int64,
+	mutation supportMutation,
 	indent string,
 ) {
-	fmt.Fprintf(source, "%sinvalidSupport := support\n%sinvalidSupport.%s = %d\n", indent, indent, selector, value)
+	fmt.Fprintf(
+		source,
+		"%sinvalidSupport := support\n%sinvalidSupport.%s = %s\n",
+		indent,
+		indent,
+		mutation.Selector,
+		mutation.Expression,
+	)
 	fmt.Fprintf(
 		source,
 		"%sif _, err := NewCommandHandler(%s, invalidSupport, Handlers{\n",

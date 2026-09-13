@@ -42,9 +42,17 @@ Add one record to the appropriate table, using captured expose evidence:
 - Both use `newNumericSensorPlan`: JSON numbers retain their fractions, support
   validates their range, publish is required, set is forbidden, and get access
   alone enables refresh. These rules do not become per-record options.
-- Temperature keeps its milli-Celsius constructor. Link quality keeps exact-integer
-  decoding and device-wide unique-root selection. A different conversion is code,
-  not an expression in a table.
+- Temperature keeps its milli-Celsius constructor and declares its fixed
+  canonical unit (`mCel`) in structured State support. Link quality keeps
+  exact-integer decoding and device-wide unique-root selection. A different
+  conversion is code, not an expression in a table.
+
+Semantic measurement Entities declare their fixed canonical unit in structured
+State support — a temperature plan emits
+`{"state":{"unit":"mCel"},"operations":{}}` — whereas a generic number sensor
+keeps its configurable `unit` and bounds in the table and declares them per
+Entity. Either way the State value stays a plain JSON number and the `operations`
+object stays empty, so the Entity is read-only.
 
 Ambient illuminance is a record in the same `ambientNumericSensors` table: exact
 expose name `illuminance`, exact unit `lx`, and a fixed 0–1000000000 lx

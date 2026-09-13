@@ -31,7 +31,7 @@ The refactor includes two proof features:
 - a relay-only Zigbee2MQTT plug that registers one `hearth.power/v1` Entity;
 - a read-only Zigbee2MQTT temperature sensor that registers one new `hearth.temperature/v1` Entity.
 
-`hearth.temperature/v1` uses integer milli-Celsius State. An upstream value of `21.375` becomes `21375`. The type has no Operations.
+`hearth.temperature/v1` uses integer milli-Celsius State. An upstream value of `21.375` becomes `21375`. The type has no Operations; its support is `{"state":{"unit":"mCel"},"operations":{}}`, declaring the fixed canonical unit `mCel`.
 
 One normalized IEEE address remains one Hearth Device. Endpoint identity remains part of Entity keys and external IDs. Child Devices are deferred.
 
@@ -473,7 +473,7 @@ Owner: `entitytypes/temperaturev1` and generated `sdk/adapter/temperaturev1`.
 }
 ```
 
-The inclusive range is -273.15 through 1000 degrees Celsius. The type identifier fixes the unit, so State support does not repeat it.
+The inclusive range is -273.15 through 1000 degrees Celsius. State support declares the type's fixed canonical unit `mCel`, so a client reads the unit from support instead of inferring it from the type identifier.
 
 ### Support schema
 
@@ -489,7 +489,10 @@ The inclusive range is -273.15 through 1000 degrees Celsius. The type identifier
     "state": {
       "type": "object",
       "additionalProperties": false,
-      "maxProperties": 0
+      "required": ["unit"],
+      "properties": {
+        "unit": {"const": "mCel"}
+      }
     },
     "operations": {
       "type": "object",
@@ -503,7 +506,7 @@ The inclusive range is -273.15 through 1000 degrees Celsius. The type identifier
 Normalized support is:
 
 ```json
-{"state":{},"operations":{}}
+{"state":{"unit":"mCel"},"operations":{}}
 ```
 
 ### Examples
@@ -513,7 +516,7 @@ Normalized support is:
   "cases": [
     {
       "name": "fixed-range-milli-celsius",
-      "support": {"state": {}, "operations": {}},
+      "support": {"state": {"unit": "mCel"}, "operations": {}},
       "states": [
         {"value": 21500, "valid": true},
         {"value": -273150, "valid": true},
@@ -704,7 +707,7 @@ entitytypes/
     ├── entitytype.json                     # new, operation-free Entity manifest
     ├── examples.json                       # new, State conformance cases
     ├── state.schema.json                   # new, milli-Celsius integer State
-    ├── support.schema.json                 # new, empty State and Operation support
+    ├── support.schema.json                 # new, fixed-unit State support and empty Operation support
     └── zz_generated_*.go                   # generated, bindings, codecs, behavior, tests
 
 sdk/adapter/
@@ -803,7 +806,7 @@ Required focused tests include:
 - Plug State uses captured `value_on` and `value_off` scalars.
 - Plug Commands preserve `/set`, PUBACK, acceptance, `/get`, and linked evidence behavior.
 - The captured temperature sensor registers Device kind `sensor` and one `hearth.temperature/v1` Entity.
-- Temperature `21.5` publishes State `21500` with support `{"state":{},"operations":{}}`.
+- Temperature `21.5` publishes State `21500` with support `{"state":{"unit":"mCel"},"operations":{}}`.
 - Publish-only temperature produces no startup `/get`.
 - A gettable temperature expose produces startup `/get` but no command route.
 - Core rejects every temperature Operation before adapter dispatch.
@@ -840,7 +843,7 @@ Finish with `mise run validate` as required by the repository workflow.
 ### New proof behavior
 
 - [ ] Core accepts canonical Device kinds `light`, `relay`, and `sensor` and rejects unknown kinds.
-- [ ] `hearth.temperature/v1` is generated from schemas and a manifest with integer milli-Celsius State and no Operations.
+- [ ] `hearth.temperature/v1` is generated from schemas and a manifest with integer milli-Celsius State, support declaring the fixed canonical unit `mCel`, and no Operations.
 - [ ] The operation-free SDK facade has descriptor and Observation constructors and no command handler.
 - [ ] The captured plug registers one relay Device and one power Entity.
 - [ ] The captured temperature sensor registers one sensor Device and one temperature Entity.
@@ -915,5 +918,5 @@ None. D1 uses Zigbee2MQTT 2.13.0 and selects the simplest qualifying household d
 - Entity plans support multi-property State and Commands now.
 - Light, relay, and sensor planner implementations ship in this slice.
 - One IEEE address remains one Hearth Device.
-- Temperature State is integer milli-Celsius.
+- Temperature State is integer milli-Celsius, and its support declares the fixed canonical unit `mCel`.
 - Plug and temperature contracts use sanitized real Zigbee2MQTT captures.

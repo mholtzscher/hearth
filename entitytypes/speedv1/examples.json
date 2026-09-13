@@ -1,0 +1,19 @@
+{
+  "cases": [
+    {
+      "name": "metres-per-second-envelope",
+      "support": {"state": {"unit": "m/s"}, "operations": {}},
+      "states": [
+        {"value": 0, "valid": true},
+        {"value": 3.58, "valid": true},
+        {"value": 0.44704, "valid": true},
+        {"value": 199.999, "valid": true},
+        {"value": 200, "valid": true},
+        {"value": -0.001, "valid": false},
+        {"value": 200.001, "valid": false},
+        {"value": "3.58", "valid": false}
+      ],
+      "operations": {}
+    }
+  ]
+}

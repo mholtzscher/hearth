@@ -1,0 +1,9 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:hearth:schema:entity-type:pressure:v1:state",
+  "title": "Hearth pressure/v1 State",
+  "description": "Atmospheric pressure in hectopascals (hPa); one hectopascal equals 100 pascals.",
+  "type": "number",
+  "minimum": 0,
+  "maximum": 2000
+}

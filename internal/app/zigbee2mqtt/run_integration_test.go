@@ -469,7 +469,7 @@ func TestRunProjectsRelayAndTemperatureDevices(t *testing.T) {
 	}()
 
 	proof := waitForProofFlowEntities(ctx, t, service, runErrors)
-	if string(proof.temperature.Entity.Support) != `{"state":{},"operations":{}}` {
+	if string(proof.temperature.Entity.Support) != `{"state":{"unit":"mCel"},"operations":{}}` {
 		t.Fatalf("temperature support = %s", proof.temperature.Entity.Support)
 	}
 	assertProofFlowLinkquality(t, "relay", proof.relayLinkquality, "120")

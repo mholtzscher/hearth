@@ -8,6 +8,7 @@ const TypeID = "hearth.temperature/v1"
 type State int64
 
 type StateSupport struct {
+	Unit string `json:"unit"`
 }
 
 type OperationSupport struct {

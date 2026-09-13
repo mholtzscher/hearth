@@ -1,0 +1,8 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:fixture:const:v1:state",
+  "title": "Fixture const/v1 State",
+  "type": "integer",
+  "minimum": 0,
+  "maximum": 100
+}

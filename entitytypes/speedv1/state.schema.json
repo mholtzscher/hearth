@@ -1,0 +1,9 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:hearth:schema:entity-type:speed:v1:state",
+  "title": "Hearth speed/v1 State",
+  "description": "Speed in metres per second (m/s).",
+  "type": "number",
+  "minimum": 0,
+  "maximum": 200
+}

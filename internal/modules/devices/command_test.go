@@ -430,7 +430,8 @@ func TestExecuteCommandRejectsTemperatureOperationBeforeDispatch(t *testing.T) {
 	repository := newCommandRepository()
 	repository.view.Entity = Entity{
 		ID: commandTestEntityID, DeviceID: commandTestDeviceID, AdapterID: "simulator", Name: "Temperature",
-		TypeID: EntityTypeTemperatureV1, Support: EntitySupport(`{"state":{},"operations":{}}`), Enabled: true,
+		TypeID:  EntityTypeTemperatureV1,
+		Support: EntitySupport(`{"state":{"unit":"mCel"},"operations":{}}`), Enabled: true,
 	}
 	dispatches := 0
 	sender := commandSenderFunc(func(context.Context, string, RuntimeID, CommandRequest) (CommandAcceptance, error) {

@@ -30,6 +30,7 @@ type fixtureExpectation struct {
 func fixtureExpectations() map[string]fixtureExpectation {
 	return map[string]fixtureExpectation{
 		"fixturefreev1":      {typeID: "fixture.free/v1"},
+		"fixtureconstv1":     {typeID: "fixture.const/v1"},
 		"fixturereqv1":       {typeID: "fixture.required/v1", operations: 1, required: []string{"set"}},
 		"fixtureoptv1":       {typeID: "fixture.optional/v1", operations: 1, optional: []string{"activate"}},
 		"fixtureprecisionv1": {typeID: "fixture.precision/v1", operations: 1, required: []string{"set"}},

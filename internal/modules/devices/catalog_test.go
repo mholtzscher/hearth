@@ -240,12 +240,25 @@ func TestTemperatureTypeExposesStateWithoutOperations(t *testing.T) {
 	}
 	entity := Entity{
 		ID: EntityID("ent_01890f47-7a6b-7c4d-8e9f-0123456789ab"), TypeID: EntityTypeTemperatureV1,
-		Support: EntitySupport(`{"state":{},"operations":{}}`),
+		Support: EntitySupport(`{"state":{"unit":"mCel"},"operations":{}}`),
 	}
 
-	normalized, err := catalog.NormalizeSupport(entity.TypeID, EntitySupport(`{"state":{},"operations":{}}`))
-	if err != nil || string(normalized) != `{"state":{},"operations":{}}` {
+	normalized, err := catalog.NormalizeSupport(
+		entity.TypeID,
+		EntitySupport(`{"state":{"unit":"mCel"},"operations":{}}`),
+	)
+	if err != nil || string(normalized) != `{"state":{"unit":"mCel"},"operations":{}}` {
 		t.Fatalf("normalized support = %s, %v", normalized, err)
+	}
+	// Temperature support must pin the one canonical unit: a missing or wrong
+	// unit is a descriptor failure, not an unlabeled reading.
+	for _, invalidSupport := range []EntitySupport{
+		EntitySupport(`{"state":{},"operations":{}}`),
+		EntitySupport(`{"state":{"unit":"hPa"},"operations":{}}`),
+	} {
+		if _, invalidErr := catalog.NormalizeSupport(entity.TypeID, invalidSupport); invalidErr == nil {
+			t.Errorf("NormalizeSupport(%s) unexpectedly succeeded", invalidSupport)
+		}
 	}
 	for _, state := range []struct {
 		value string

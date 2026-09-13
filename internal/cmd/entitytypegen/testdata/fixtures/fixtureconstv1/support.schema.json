@@ -1,0 +1,24 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:fixture:const:v1:support",
+  "title": "Fixture const/v1 support",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["state", "operations"],
+  "properties": {
+    "state": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["maximum", "unit"],
+      "properties": {
+        "maximum": {"type": "integer", "minimum": 0, "maximum": 100},
+        "unit": {"type": "string", "const": "celsius"}
+      }
+    },
+    "operations": {
+      "type": "object",
+      "maxProperties": 0,
+      "additionalProperties": false
+    }
+  }
+}
