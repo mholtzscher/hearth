@@ -17,7 +17,7 @@ import type {
   EntityEventFactData,
   ObservationFactData,
 } from "../api/device-facts.ts";
-import { apiFetch } from "../api/client.ts";
+import { fetchAllCollectionPages } from "../api/pagination.ts";
 import { useApi } from "../api/hooks.ts";
 import type { Collection, Device, Entity } from "../api/types.ts";
 import { acquireNatsConnection } from "../api/nats.ts";
@@ -231,11 +231,15 @@ export default function DeviceFactsPage() {
 
   // Enrichment is dashboard-only and may fail: the fact payload carries the
   // canonical entity id and nothing else, so unresolved rows stay truthful.
+  // Both reads must be complete, not one bounded page: an entity or device that
+  // landed on a later page would otherwise render as "(unresolved entity)" and
+  // lose its name. fetchAllCollectionPages follows next_cursor to the end and
+  // fails loudly rather than returning a partial map.
   const entities = useApi<Collection<Entity>>("device-facts-entities", () =>
-    apiFetch<Collection<Entity>>("/v1/entities?limit=200"),
+    fetchAllCollectionPages<Entity>("/v1/entities"),
   );
   const devices = useApi<Collection<Device>>("device-facts-devices", () =>
-    apiFetch<Collection<Device>>("/v1/devices?limit=200"),
+    fetchAllCollectionPages<Device>("/v1/devices"),
   );
   const entityById = useMemo(
     () => new Map((entities.data?.items ?? []).map((entity) => [entity.id, entity])),
