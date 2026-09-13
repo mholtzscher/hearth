@@ -1,5 +1,22 @@
 # Changelog
 
+## [0.8.0](https://github.com/mholtzscher/hearth/compare/v0.7.0...v0.8.0) (2026-09-13)
+
+
+### Features
+
+* **devices:** add durable entity event ingestion and history ([#89](https://github.com/mholtzscher/hearth/issues/89)) ([8aaba1d](https://github.com/mholtzscher/hearth/commit/8aaba1df808961473a19c01dc9c4e52bfefdab48))
+* **ecowitt:** add MQTT weather adapter ([#100](https://github.com/mholtzscher/hearth/issues/100)) ([70f89fa](https://github.com/mholtzscher/hearth/commit/70f89faa7676ba726d72d34d05b17bce6abf19f8))
+* **web:** show entity event history ([#92](https://github.com/mholtzscher/hearth/issues/92)) ([e4e5478](https://github.com/mholtzscher/hearth/commit/e4e547810c3100414dc8a79f13ceeca697080c80))
+* **web:** support Tailscale remote access in dev server ([381cc53](https://github.com/mholtzscher/hearth/commit/381cc537553ffd9acc92cf85352f76c7f408a649))
+* **zigbee2mqtt:** support occupancy and illuminance ([#93](https://github.com/mholtzscher/hearth/issues/93)) ([9bfee97](https://github.com/mholtzscher/hearth/commit/9bfee9770939174dcea35d822a88344b53add7bb))
+* **zigbee2mqtt:** use Mosquitto broker ([#96](https://github.com/mholtzscher/hearth/issues/96)) ([b4d9342](https://github.com/mholtzscher/hearth/commit/b4d9342fbeedb152a1baa05d38f968f1340abe3c))
+
+
+### Bug Fixes
+
+* **devices:** resolve durable fact review findings ([37f381b](https://github.com/mholtzscher/hearth/commit/37f381bfb6632c7909d80c72fbaf2a695347e214))
+
 ## [0.7.0](https://github.com/mholtzscher/hearth/compare/v0.6.0...v0.7.0) (2026-09-10)
 
 
