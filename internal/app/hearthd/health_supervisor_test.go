@@ -5,7 +5,10 @@ import (
 	"errors"
 	"log/slog"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
+	"testing/synctest"
 	"time"
 )
 
@@ -130,6 +133,65 @@ func TestHealthSupervisorLogsLeaseExpiryFailureWithoutRawError(t *testing.T) {
 	if got := len(recordsWithEvent(recorder.snapshot(), "core.lease_expiry_failed")); got != 1 {
 		t.Fatalf("lease_expiry_failed records = %d, want 1 after canceled poll", got)
 	}
+}
+
+type supervisorReadinessFunc func(context.Context) error
+
+func (check supervisorReadinessFunc) Check(ctx context.Context) error { return check(ctx) }
+
+// Stop must cancel an in-flight check and still join its cleanup before returning.
+func TestHealthSupervisorStopJoinsReadinessCheck(t *testing.T) {
+	t.Parallel()
+	synctest.Test(t, func(t *testing.T) {
+		cleanup := make(chan struct{})
+		release := sync.OnceFunc(func() { close(cleanup) })
+		defer release()
+		var calls atomic.Int32
+		checkContexts := make(chan context.Context, 1)
+		readiness := supervisorReadinessFunc(func(ctx context.Context) error {
+			if calls.Add(1) == 1 {
+				return nil
+			}
+			checkContexts <- ctx
+			<-ctx.Done()
+			<-cleanup
+			return ctx.Err()
+		})
+		health := &supervisorHealthStub{}
+		logger, recorder := withRecording(slog.LevelDebug)
+		supervisor := startHealthSupervisor(t.Context(), readiness, health, logger)
+		if calls.Load() != 1 {
+			t.Fatalf("initial readiness calls = %d, want one synchronous check", calls.Load())
+		}
+		time.Sleep(leaseExpiryInterval)
+		synctest.Wait()
+		if calls.Load() != 2 {
+			t.Fatalf("readiness calls = %d, want initial check and first tick", calls.Load())
+		}
+		stopped := make(chan struct{})
+		go func() {
+			supervisor.Stop()
+			close(stopped)
+		}()
+		synctest.Wait()
+		if checkContext := <-checkContexts; checkContext.Err() != context.Canceled {
+			t.Fatal("Stop did not cancel the readiness check")
+		}
+		select {
+		case <-stopped:
+			t.Fatal("Stop returned before readiness cleanup")
+		default:
+		}
+		release()
+		<-stopped
+		supervisor.Stop()
+		if len(health.expires) != 0 {
+			t.Fatal("shutdown ran lease expiry")
+		}
+		if records := recordsWithEvent(recorder.snapshot(), "core.lease_expiry_failed"); len(records) != 0 {
+			t.Fatal("shutdown emitted a lease expiry failure")
+		}
+	})
 }
 
 func TestHealthSupervisorPerformsInitialCheckAndStops(t *testing.T) {

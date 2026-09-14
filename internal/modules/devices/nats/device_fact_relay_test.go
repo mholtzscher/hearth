@@ -6,6 +6,8 @@ import (
 	"encoding/json"
 	"errors"
 	"slices"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -653,6 +655,62 @@ func TestDeviceFactRelayDrainAbortsAnInFlightPublication(t *testing.T) {
 	}
 	if deleted := outbox.deletedIDs(); !slices.Equal(deleted, []devices.DeviceFactID{fact.ID}) {
 		t.Fatalf("deletions after drain = %v, want the row published by the drain", deleted)
+	}
+}
+
+// An expired join must not start a drain publisher beside a worker still in I/O.
+func TestDeviceFactRelayDrainTimeoutKeepsSinglePublisher(t *testing.T) {
+	t.Parallel()
+	outbox := newFakeDeviceFactOutbox(newDeviceFactChange())
+	fact := testObservationFact(t, mustEntityID(t), time.Now().UTC(), `true`, devices.DispositionApplied)
+	outbox.enqueue(pendingFact(1, fact))
+	entered := make(chan context.Context, 1)
+	blocked := make(chan struct{})
+	release := sync.OnceFunc(func() { close(blocked) })
+	defer release()
+	var attempts atomic.Int32
+	publish := func(ctx context.Context, _ *natsgo.Msg) (*jetstream.PubAck, error) {
+		if attempts.Add(1) == 1 {
+			entered <- ctx
+			<-blocked
+			return nil, ctx.Err()
+		}
+		return &jetstream.PubAck{Stream: DeviceFactStreamName}, nil
+	}
+	relay := startTestDeviceFactRelay(t, outbox, publish, testDeviceFactRelayOptions())
+	var publicationContext context.Context
+	select {
+	case publicationContext = <-entered:
+	case <-time.After(testFactLiveness):
+		t.Fatal("worker did not enter publication")
+	}
+	canceled, cancel := context.WithCancel(t.Context())
+	cancel()
+	if err := relay.Drain(canceled); !errors.Is(err, context.Canceled) {
+		t.Fatalf("Drain = %v, want canceled wait", err)
+	}
+	if publicationContext.Err() != context.Canceled {
+		t.Fatal("Drain did not cancel the worker publication")
+	}
+	if relay.Active() {
+		t.Fatal("expired Drain left readiness active")
+	}
+	select {
+	case <-relay.Closed():
+		t.Fatal("expired Drain untracked a live publisher")
+	default:
+	}
+	if attempts.Load() != 1 || len(outbox.deletedIDs()) != 0 {
+		t.Fatal("expired join started another publisher or deleted the pending row")
+	}
+	release()
+	joined, cancelJoin := context.WithTimeout(t.Context(), testFactLiveness)
+	defer cancelJoin()
+	if err := relay.Drain(joined); err != nil {
+		t.Fatalf("later Drain = %v", err)
+	}
+	if attempts.Load() != 2 || !slices.Equal(outbox.deletedIDs(), []devices.DeviceFactID{fact.ID}) {
+		t.Fatal("later Drain did not publish and delete the retained row once")
 	}
 }
 

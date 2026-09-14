@@ -14,6 +14,7 @@ import (
 
 	contractsv1 "github.com/mholtzscher/hearth/contracts/v1"
 	"github.com/mholtzscher/hearth/internal/modules/devices"
+	"github.com/mholtzscher/hearth/internal/platform/lifecycle"
 )
 
 const (
@@ -124,16 +125,9 @@ type DeviceFactRelay struct {
 	retryBackoff   time.Duration
 	publishTimeout time.Duration
 
-	wake    chan struct{}
-	stop    chan struct{}
-	stopped chan struct{}
+	wake   chan struct{}
+	worker *lifecycle.WorkerHandle
 
-	// workerCtx bounds the worker's publication pass. Drain cancels it, so a busy
-	// outbox or an in-flight publish cannot delay shutdown.
-	workerCtx    context.Context
-	cancelWorker context.CancelFunc
-
-	stopOnce   sync.Once
 	active     atomic.Bool
 	faultMutex sync.Mutex
 	faultErr   error
@@ -197,12 +191,9 @@ func startDeviceFactRelay(
 		retryBackoff:   options.retryBackoff,
 		publishTimeout: options.publishTimeout,
 		wake:           make(chan struct{}, 1),
-		stop:           make(chan struct{}),
-		stopped:        make(chan struct{}),
 	}
-	relay.workerCtx, relay.cancelWorker = context.WithCancel(context.Background())
 	relay.active.Store(true)
-	go relay.run()
+	relay.worker = lifecycle.StartWorker(context.Background(), relay.run)
 	return relay, nil
 }
 
@@ -236,7 +227,7 @@ func (relay *DeviceFactRelay) Closed() <-chan struct{} {
 		close(closed)
 		return closed
 	}
-	return relay.stopped
+	return relay.worker.Closed()
 }
 
 // Drain stops readiness, publishes every pending fact until the outbox is empty
@@ -257,21 +248,13 @@ func (relay *DeviceFactRelay) Drain(ctx context.Context) error {
 		ctx = context.Background()
 	}
 	relay.active.Store(false)
-	relay.stopOnce.Do(func() {
-		close(relay.stop)
-		// Cancelling the worker context aborts an in-flight publication pass (and
-		// any publish waiting on the broker) instead of waiting out its timeout.
-		relay.cancelWorker()
-	})
-	// The worker is the only other publisher. Joining it first means the drain
-	// below is the single publisher and still preserves outbox order. A worker
-	// that cannot leave the publication path inside the context budget is
-	// reported as an expired drain rather than joined past it, because publishing
-	// from two goroutines at once would break outbox order.
-	select {
-	case <-relay.stopped:
-	case <-ctx.Done():
-		return fmt.Errorf("drain device fact relay: %w", ctx.Err())
+	// Cancel the publication pass and join before taking over the outbox.
+	// A timed-out join must not start a second publisher.
+	if err := relay.worker.Stop(ctx); err != nil {
+		if asDeviceFactPoisonError(err) != nil {
+			return err
+		}
+		return fmt.Errorf("drain device fact relay: %w", err)
 	}
 	if fault := relay.fault(); fault != nil {
 		return fault
@@ -281,16 +264,15 @@ func (relay *DeviceFactRelay) Drain(ctx context.Context) error {
 
 // run is the single publication worker. It reads the outbox oldest-first,
 // publishes and deletes in order, and exits only on shutdown or a poison fault.
-func (relay *DeviceFactRelay) run() {
-	defer close(relay.stopped)
+func (relay *DeviceFactRelay) run(ctx context.Context) error {
 	poll := time.NewTicker(relay.pollInterval)
 	defer poll.Stop()
 	for {
-		err := relay.publishPending(relay.workerCtx)
+		err := relay.publishPending(ctx)
 		if err == nil {
 			select {
-			case <-relay.stop:
-				return
+			case <-ctx.Done():
+				return nil
 			case <-relay.wake:
 			case <-poll.C:
 			}
@@ -299,32 +281,21 @@ func (relay *DeviceFactRelay) run() {
 		if poisonErr := asDeviceFactPoisonError(err); poisonErr != nil {
 			relay.recordFault(poisonErr)
 			relay.logPoison(context.Background(), poisonErr)
-			return
+			return poisonErr
 		}
 		// A cancelled worker context is shutdown, not a retry.
-		if relay.shutdown() {
-			return
+		if ctx.Err() != nil {
+			return nil
 		}
 		// A transient failure already logged its stage and code. Wait out the
 		// fixed backoff, but never delay shutdown.
 		timer := time.NewTimer(relay.retryBackoff)
 		select {
-		case <-relay.stop:
+		case <-ctx.Done():
 			timer.Stop()
-			return
+			return nil
 		case <-timer.C:
 		}
-	}
-}
-
-// shutdown reports whether Drain has begun. A cancelled worker context is a
-// shutdown signal, never a retryable failure.
-func (relay *DeviceFactRelay) shutdown() bool {
-	select {
-	case <-relay.stop:
-		return true
-	default:
-		return false
 	}
 }
 

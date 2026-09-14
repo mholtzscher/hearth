@@ -4,8 +4,9 @@ import (
 	"context"
 	"errors"
 	"log/slog"
-	"sync"
 	"time"
+
+	"github.com/mholtzscher/hearth/internal/platform/lifecycle"
 )
 
 const (
@@ -24,9 +25,7 @@ type healthSupervisor struct {
 	now        func() time.Time
 	ready      bool
 	graceUntil time.Time
-	cancel     context.CancelFunc
-	done       chan struct{}
-	stopOnce   sync.Once
+	worker     *lifecycle.WorkerHandle
 }
 
 func startHealthSupervisor(
@@ -38,24 +37,21 @@ func startHealthSupervisor(
 	if logger == nil {
 		logger = slog.Default()
 	}
-	supervisorContext, cancel := context.WithCancel(ctx) //nolint:gosec // Stop owns and invokes cancel.
 	supervisor := &healthSupervisor{
 		readiness: readiness, health: health, logger: logger, now: time.Now,
-		cancel: cancel, done: make(chan struct{}),
 	}
-	supervisor.poll(supervisorContext, supervisor.now().UTC())
-	go supervisor.run(supervisorContext)
+	supervisor.poll(ctx, supervisor.now().UTC())
+	supervisor.worker = lifecycle.StartWorker(ctx, supervisor.run)
 	return supervisor
 }
 
-func (supervisor *healthSupervisor) run(ctx context.Context) {
-	defer close(supervisor.done)
+func (supervisor *healthSupervisor) run(ctx context.Context) error {
 	ticker := time.NewTicker(leaseExpiryInterval)
 	defer ticker.Stop()
 	for {
 		select {
 		case <-ctx.Done():
-			return
+			return nil
 		case now := <-ticker.C:
 			supervisor.poll(ctx, now.UTC())
 		}
@@ -97,6 +93,5 @@ func (supervisor *healthSupervisor) poll(ctx context.Context, now time.Time) {
 }
 
 func (supervisor *healthSupervisor) Stop() {
-	supervisor.stopOnce.Do(supervisor.cancel)
-	<-supervisor.done
+	_ = supervisor.worker.Stop(context.Background())
 }
