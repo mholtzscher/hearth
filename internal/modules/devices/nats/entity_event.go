@@ -3,6 +3,7 @@ package nats
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
 	"time"
 
@@ -56,6 +57,8 @@ func entityEventClass() consumerClass {
 // StartEntityEventConsumer subscribes the Entity Event consumer and starts
 // reporting its activity. Nil dependencies fail before any subscription, and a
 // subscription that cannot activate leaves no consumer running.
+//
+//nolint:dupl // Keep this consumer's lifecycle and diagnostic policy visible here.
 func StartEntityEventConsumer(
 	baseContext context.Context,
 	consumer jetstream.Consumer,
@@ -69,15 +72,30 @@ func StartEntityEventConsumer(
 	if recorder == nil {
 		return nil, errors.New("entity event recorder is required")
 	}
-	return startDurableConsumer(
-		baseContext,
+	if baseContext == nil {
+		baseContext = context.Background()
+	}
+	logger = defaultLogger(logger)
+
+	managed, err := platformnats.StartConsumer(
 		consumer,
-		entityEventClass(),
-		logger,
-		func(ctx context.Context, logger *slog.Logger, message jetstream.Msg) {
-			handleEntityEventMessage(ctx, message, validator, recorder, logger)
+		func(message jetstream.Msg) {
+			handleEntityEventMessage(baseContext, message, validator, recorder, logger)
+		},
+		platformnats.ConsumerOptions{
+			OnConsumeError: func(_ error) {
+				logger.ErrorContext(baseContext, "entity event consume error",
+					slog.String(transportEventKey, "entity_event.processing_failed"),
+					slog.String("stage", "consume"),
+					slog.String(transportErrorCodeKey, "consumer_error"),
+				)
+			},
 		},
 	)
+	if err != nil {
+		return nil, fmt.Errorf("start entity event consumer: %w", err)
+	}
+	return managed, nil
 }
 
 // handleEntityEventMessage decodes, validates, records, and acknowledges one

@@ -15,7 +15,7 @@
 
 Define a two-method `Devices` interface in the consuming `devices/api` package. `Handler`, `Register`, and `hearthd.NewHTTPHandler` accept it; the existing `*devices.Service` satisfies it unchanged. Transport tests use direct function-field adapters.
 
-Move Huma error policy to `internal/app/hearthd/server.go`. Every `NewHTTPHandler` call installs the Hearth factory before constructing the Huma API. The constructor is limited to single-threaded startup or test setup and deliberately overwrites prior `huma.NewError` customization.
+Move Huma error policy to `internal/app/hearthd/http_handler.go`. Every `NewHTTPHandler` call installs the Hearth factory before constructing the Huma API. The constructor is limited to single-threaded startup or test setup and deliberately overwrites prior `huma.NewError` customization.
 
 Keep the stable error envelope and concrete status error in `devices/api`. Export a minimal factory so application assembly can create that wire shape; command-specific construction, including optional `command_id`, remains private to endpoint mapping.
 
@@ -45,7 +45,7 @@ func Register(api huma.API, devices Devices)
 
 The interface contains exactly the use cases invoked by this route family and uses existing domain inputs, outputs, and errors. It owns no lifecycle or framework methods. `*devices.Service` is the production implementation; compilation through existing assembly is sufficient proof of conformance.
 
-`internal/app/hearthd/server.go` carries the same seam through assembly:
+`internal/app/hearthd/http_handler.go` carries the same seam through assembly:
 
 ```go
 // NewHTTPHandler configures process-global Huma error behavior and must only
@@ -86,7 +86,7 @@ func apiError(status int, code, message string) error {
 
 ### Process-wide Huma policy
 
-Owner: `internal/app/hearthd/server.go`.
+Owner: `internal/app/hearthd/http_handler.go`.
 
 ```go
 var defaultHumaNewError = huma.NewError
@@ -117,7 +117,7 @@ The process hosts one Hearth Huma policy. This preserves the validation-status s
 
 ### Test adapters and ownership
 
-API tests define a package-local `stubDevices` with one function field per `Devices` method. Each method panics as an unexpected call when its field is unset; otherwise it forwards the exact interface arguments and result. `internal/app/hearthd/server_test.go` defines its own equivalent adapter rather than sharing test-only types across packages.
+API tests define a package-local `stubDevices` with one function field per `Devices` method. Each method panics as an unexpected call when its field is unset; otherwise it forwards the exact interface arguments and result. `internal/app/hearthd/http_handler_test.go` defines its own equivalent adapter rather than sharing test-only types across packages.
 
 Tests follow behavior ownership:
 
@@ -149,8 +149,8 @@ Expected changes:
 
 ```text
 docs/architecture.md
-internal/app/hearthd/server.go
-internal/app/hearthd/server_test.go
+internal/app/hearthd/http_handler.go
+internal/app/hearthd/http_handler_test.go
 internal/modules/devices/api/command_test.go
 internal/modules/devices/api/get_entity.go
 internal/modules/devices/api/get_entity_test.go

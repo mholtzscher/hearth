@@ -497,7 +497,7 @@ contracts/v1/
 docs/architecture.md                                        # modify — accepted behavior and contracts
 internal/app/hearthd/
 ├── run.go                                                   # modify — start/drain NATS server
-├── server_test.go                                           # modify — PATCH and OpenAPI compatibility
+├── http_handler_test.go                                     # modify — PATCH and OpenAPI compatibility
 └── simulator_matrix_integration_test.go                     # modify — assembled scenario
 internal/contracts/v1/natswire/
 ├── subjects.go                                              # modify — subject and parser

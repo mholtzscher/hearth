@@ -12,13 +12,6 @@ import (
 	platformnats "github.com/mholtzscher/hearth/internal/platform/nats"
 )
 
-// AutomationAdmissionChecker is the narrow readiness seam for Automation
-// admission. Like [CommandAdmissionChecker] it stays separate from the HTTP
-// Automations seam so a transport handler can never bypass admission.
-type AutomationAdmissionChecker interface {
-	AdmissionOpen() bool
-}
-
 // automationActivity gives readiness a read-only view of Device Fact consumption.
 type automationActivity interface {
 	Active() bool

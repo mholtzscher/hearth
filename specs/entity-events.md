@@ -347,7 +347,7 @@ internal/
 │   ├── nats/entity_event_resources.go   # new, stream/consumer provisioning [D2]
 │   └── api/entity_events.go             # new, history endpoint/DTOs/cursor [D3]
 ├── platform/db/migrations/00001_initial.sql # modify, entity_events table/indexes [D2]
-├── app/hearthd/run.go / server.go       # modify, consumer/readiness/drain/maintenance [D2,D3]
+├── app/hearthd/run.go / runtime_readiness.go # modify, consumer/readiness/drain/maintenance [D2,D3]
 ├── app/hearthd/entity_events_integration_test.go # new, SDK/NATS/DB/HTTP proof [D4]
 └── adapters/simulator/ / app/simulator/ # modify, named event scenario [D4]
 README.md / configs/ / CONTEXT.md / docs/{architecture,logging}.md

@@ -367,7 +367,7 @@ internal/
 │   ├── hearthd/
 │   │   ├── run.go                             # modify — assembly only; remove transport translation
 │   │   ├── run_integration_test.go            # modify — use domain-facing devices/nats constructors
-│   │   ├── server.go                          # modify — readiness imports devices/nats
+│   │   ├── runtime_readiness.go               # modify — readiness imports devices/nats
 │   │   ├── readiness_test.go                  # modify — moved resource/consumer imports
 │   │   └── simulator_matrix_integration_test.go # modify — domain projector decorators and natswire raw fixtures
 │   └── simulator/

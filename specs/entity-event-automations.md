@@ -440,7 +440,7 @@ internal/modules/automations/
 └── nats/entity_event_facts.go              # new — durable JetStream consumer and wire mapping [D3]
 internal/platform/db/migrations/00001_initial.sql
                                                # modify — three automation tables [D1]
-internal/app/hearthd/run.go / server.go         # modify — assembly/readiness/drain [D2,D3]
+internal/app/hearthd/run.go / runtime_readiness.go # modify — assembly/readiness/drain [D2,D3]
 internal/app/hearthd/entity_event_automation_integration_test.go
                                                # new — whole slice [D4]
 sqlc.yaml / mise.toml                          # modify — automation generation [D1]

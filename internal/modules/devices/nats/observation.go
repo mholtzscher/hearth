@@ -3,6 +3,7 @@ package nats
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
 	"time"
 
@@ -42,6 +43,8 @@ func observationClass() consumerClass {
 // StartObservationConsumer subscribes the Observation consumer and starts
 // reporting its activity. Nil dependencies fail before any subscription, and a
 // subscription that cannot activate leaves no consumer running.
+//
+//nolint:dupl // Keep this consumer's lifecycle and diagnostic policy visible here.
 func StartObservationConsumer(
 	baseContext context.Context,
 	consumer jetstream.Consumer,
@@ -55,15 +58,30 @@ func StartObservationConsumer(
 	if projector == nil {
 		return nil, errors.New("observation handler is required")
 	}
-	return startDurableConsumer(
-		baseContext,
+	if baseContext == nil {
+		baseContext = context.Background()
+	}
+	logger = defaultLogger(logger)
+
+	managed, err := platformnats.StartConsumer(
 		consumer,
-		observationClass(),
-		logger,
-		func(ctx context.Context, logger *slog.Logger, message jetstream.Msg) {
-			handleObservationMessage(ctx, message, validator, projector, logger)
+		func(message jetstream.Msg) {
+			handleObservationMessage(baseContext, message, validator, projector, logger)
+		},
+		platformnats.ConsumerOptions{
+			OnConsumeError: func(_ error) {
+				logger.ErrorContext(baseContext, "observation consume error",
+					slog.String(transportEventKey, "observation.processing_failed"),
+					slog.String("stage", "consume"),
+					slog.String(transportErrorCodeKey, "consumer_error"),
+				)
+			},
 		},
 	)
+	if err != nil {
+		return nil, fmt.Errorf("start observation consumer: %w", err)
+	}
+	return managed, nil
 }
 
 func handleObservationMessage(

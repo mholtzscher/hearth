@@ -660,7 +660,7 @@ internal/modules/automations/
 internal/app/hearthd/
 ├── config.go                                  # modify — retention setting and validation
 ├── run.go                                     # modify — composition, startup, maintenance, and drain
-├── server.go                                  # modify — API registration and readiness dependencies
+├── http_handler.go / runtime_readiness.go     # modify — API registration and readiness dependencies
 ├── automation_integration_test.go             # new — whole fact-to-Command vertical slice
 ├── automation_recovery_integration_test.go    # new — durable resume, stale skip, restart interruption
 └── automation_readiness_test.go                # new — consumer/admission health gates
