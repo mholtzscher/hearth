@@ -143,8 +143,7 @@ func TestWaitCommandsDrainsDetachedWorkerAfterCallerCancellation(t *testing.T) {
 	}
 }
 
-// A canceled wait reports the caller's error without disturbing the workers:
-// the admitted lifecycle stays live until its sender releases it.
+// Canceling WaitCommands must leave the blocked worker tracked.
 func TestWaitCommandsCanceledWaitKeepsWorkers(t *testing.T) {
 	t.Parallel()
 	repository := newCommandRepository()
@@ -175,15 +174,13 @@ func TestWaitCommandsCanceledWaitKeepsWorkers(t *testing.T) {
 	if err := service.WaitCommands(ctx); !errors.Is(err, context.Canceled) {
 		t.Fatalf("wait = %v, want context.Canceled", err)
 	}
-	// The canceled wait left the admitted lifecycle registered, so a fresh
-	// bounded wait still observes the group as live.
+	// A second wait must still block on the worker.
 	bounded, cancelBounded := context.WithTimeout(context.Background(), 50*time.Millisecond)
 	defer cancelBounded()
 	if err := service.WaitCommands(bounded); !errors.Is(err, context.DeadlineExceeded) {
 		t.Fatalf("wait after canceled wait = %v, want %v while the worker was live", err, context.DeadlineExceeded)
 	}
-	// Releasing the sender lets the detached lifecycle finish and the next wait
-	// succeed.
+	// Unblock the worker so the next wait can finish.
 	close(release)
 	select {
 	case err := <-done:
@@ -422,8 +419,7 @@ func TestCommandErrorPathsReleaseWorkerWithoutLeak(t *testing.T) {
 	requireCommandsIdle(t, service)
 }
 
-// requireCommandsIdle checks that every admitted Command has drained and no
-// outcome waiter remains registered.
+// requireCommandsIdle checks that Commands have drained and no waiters remain.
 func requireCommandsIdle(t *testing.T, service *Service) {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)

@@ -10,17 +10,14 @@ import (
 	"github.com/mholtzscher/hearth/internal/modules/automations"
 )
 
-// Admission diagnostics that must never delay the lifecycle join. These strings
-// match the messages logRunStarted and logSkipped emit.
+// Messages emitted by logRunStarted and logSkipped.
 const (
 	runStartedLogMessage = "automation run started"
 	skippedLogMessage    = "automation run skipped"
 )
 
-// blockingMessageLogHandler stalls one selected diagnostic message until its
-// release channel closes, so a test can observe the lifecycle join while a
-// diagnostic sink is stuck. Every other message, including the Run completion
-// emitted inside executeRun's own lifetime, passes straight through.
+// blockingMessageLogHandler blocks one message until release closes.
+// Run completion logs pass through so tracked workers can finish.
 type blockingMessageLogHandler struct {
 	inner   slog.Handler
 	blocked string
@@ -61,11 +58,8 @@ func (handler *blockingMessageLogHandler) WithGroup(name string) slog.Handler {
 	}
 }
 
-// newBlockedAdmissionLogger returns a logger whose selected admission message
-// blocks until the returned unblock runs, the JSON sink receiving every record
-// it does not block, and a channel that reports the first blocked record.
-// Unblocking is registered as cleanup so a failed assertion can never leave an
-// admission caller stuck inside the sink.
+// newBlockedAdmissionLogger returns a selective logger, its sink, a blocked-message
+// signal, and an unblock function. Cleanup also unblocks the logger.
 func newBlockedAdmissionLogger(
 	t *testing.T,
 	blocked string,
@@ -86,8 +80,7 @@ func newBlockedAdmissionLogger(
 	return logger, writer, entered, unblock
 }
 
-// requireLoggedEvents asserts the sink recorded exactly the wanted number of one
-// event, so a blocked admission diagnostic cannot hide sibling diagnostics.
+// requireLoggedEvents checks the exact count of an event in the sink.
 func requireLoggedEvents(
 	t *testing.T,
 	writer *lockedAutomationLogWriter,
@@ -100,8 +93,7 @@ func requireLoggedEvents(
 	}
 }
 
-// requireAdmissionInFlight fails when the blocking repository never reaches the
-// admission transaction under test, so a broken admission cannot hang the test.
+// requireAdmissionInFlight waits for admission to reach the blocking repository.
 func requireAdmissionInFlight(t *testing.T, blocking *blockingAdmissionRepository) {
 	t.Helper()
 	select {
@@ -111,8 +103,7 @@ func requireAdmissionInFlight(t *testing.T, blocking *blockingAdmissionRepositor
 	}
 }
 
-// requireBlockedDiagnostic fails when the selected admission diagnostic is never
-// attempted, so a passing wait cannot hide a missing log call.
+// requireBlockedDiagnostic ensures the log call was reached, not omitted.
 func requireBlockedDiagnostic(t *testing.T, entered <-chan struct{}) {
 	t.Helper()
 	select {
@@ -122,8 +113,7 @@ func requireBlockedDiagnostic(t *testing.T, entered <-chan struct{}) {
 	}
 }
 
-// requireWaitRunsCompletesWhileLogBlocked proves shutdown joins admitted work
-// without waiting for a diagnostic sink that is still blocked.
+// requireWaitRunsCompletesWhileLogBlocked joins Runs without unblocking the sink.
 func requireWaitRunsCompletesWhileLogBlocked(t *testing.T, service *automations.Service) {
 	t.Helper()
 	waited := make(chan error, 1)
@@ -138,8 +128,7 @@ func requireWaitRunsCompletesWhileLogBlocked(t *testing.T, service *automations.
 	}
 }
 
-// requireDrainedRun asserts one automation's only Run is durably interrupted
-// with core_stopping, proving its tracked worker finished its own lifecycle.
+// requireDrainedRun checks that the sole Run is durably interrupted with core_stopping.
 func requireDrainedRun(
 	t *testing.T,
 	service *automations.Service,
@@ -157,11 +146,7 @@ func requireDrainedRun(
 	}
 }
 
-// This test protects shutdown drain under a blocked diagnostic sink and fails
-// if a completed manual admission still holds its reservation while the
-// run_started log blocks. The admission must release the reservation and start
-// the Run worker before logging, so WaitRuns completes even though
-// automation.run_started is still pending.
+// A blocked run_started log must not keep a completed manual Run tracked.
 func TestWaitRunsCompletesWhileManualRunStartedLogBlocked(t *testing.T) {
 	t.Parallel()
 	scripted := newScriptedDevices()
@@ -181,17 +166,13 @@ func TestWaitRunsCompletesWhileManualRunStartedLogBlocked(t *testing.T) {
 	}()
 	requireAdmissionInFlight(t, blocking)
 
-	// Admission closes while the transaction is still in flight, so the Run it
-	// commits drains with core_stopping instead of executing Commands.
+	// Close mid-transaction so the Run drains without executing Commands.
 	service.StopAdmission()
 	close(blocking.release)
 
 	requireBlockedDiagnostic(t, entered)
 	requireWaitRunsCompletesWhileLogBlocked(t, service)
-	// The worker drained while the sink stayed blocked: the join covered the
-	// whole Run, not just the admission transaction, and the Run's own completion
-	// diagnostic was emitted inside executeRun rather than behind the blocked
-	// admission diagnostic.
+	// The join must cover Run completion, including its unblocked diagnostic.
 	requireDrainedRun(t, service, record.ID)
 	requireLoggedEvents(t, writer, "automation.run_completed", 1)
 
@@ -210,10 +191,7 @@ func TestWaitRunsCompletesWhileManualRunStartedLogBlocked(t *testing.T) {
 	}
 }
 
-// This test protects shutdown drain for an admission that commits no Run: a
-// zero-run fact admission must release its reservation before the skipped
-// diagnostic, so a blocked sink cannot hold WaitRuns. It fails if the
-// reservation is released only after logging.
+// An admission that starts no Run must release its reservation before logging.
 func TestWaitRunsCompletesWhileSkippedLogBlocked(t *testing.T) {
 	t.Parallel()
 	scripted := newScriptedDevices()
@@ -224,8 +202,7 @@ func TestWaitRunsCompletesWhileSkippedLogBlocked(t *testing.T) {
 	entity := newEntityID(t)
 	record := createRuntimeAutomation(t, service, runtimeDefinitionFor(t, entity))
 
-	// A matching Fact older than the freshness bound records stale_fact and
-	// starts no Run, so the skipped diagnostic is the admission's only log.
+	// A stale Fact records a Skip without starting a Run.
 	stale := newObservationFact(t, entity, runtimeTestNow.Add(-automations.AutomationFactMaximumAge-time.Second))
 	outcome := make(chan automations.AdmissionOutcome, 1)
 	admitFailed := make(chan error, 1)
@@ -265,10 +242,7 @@ func TestWaitRunsCompletesWhileSkippedLogBlocked(t *testing.T) {
 	}
 }
 
-// This test protects shutdown drain for a fact admission that fans out to
-// several Runs and fails if worker start and logging interleave per Run. Every
-// committed Run must have its worker started before the first run_started
-// diagnostic, so a blocked sink cannot strand a later Run without a worker.
+// All committed Runs need workers before the first run_started log can block.
 func TestWaitRunsCompletesWhileFanOutRunStartedLogBlocked(t *testing.T) {
 	t.Parallel()
 	scripted := newScriptedDevices()
@@ -295,12 +269,10 @@ func TestWaitRunsCompletesWhileFanOutRunStartedLogBlocked(t *testing.T) {
 
 	requireBlockedDiagnostic(t, entered)
 	requireWaitRunsCompletesWhileLogBlocked(t, service)
-	// Both committed Runs already drained with core_stopping while the first
-	// run_started record waited. A later Run whose worker had not started yet
-	// would still be running here, and the join would not have called it done.
+	// A stranded second Run would still be Running, not interrupted.
 	requireDrainedRun(t, service, first.ID)
 	requireDrainedRun(t, service, second.ID)
-	// Both Runs' completion diagnostics passed the blocked admission record.
+	// Completion logs must pass the blocked admission log.
 	requireLoggedEvents(t, writer, "automation.run_completed", 2)
 
 	unblock()

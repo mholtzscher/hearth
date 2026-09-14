@@ -5,17 +5,11 @@ import (
 	"sync"
 )
 
-// AdmissionGroup gates admission while open and tracks every admitted
-// Reservation and every child goroutine started with Reservation.Go, so a
-// caller can join admitted work. NewAdmissionGroup starts open and idle.
+// AdmissionGroup gates new work and tracks reservations and their child goroutines.
+// Close admission before Wait to ensure all admitted work is joined.
 //
-// CloseAdmission permanently refuses later admissions and never waits for work
-// already admitted. Close admission before Wait for a reliable final join;
-// otherwise a new admission can race with Wait returning from an idle group.
-//
-// Construct an AdmissionGroup with NewAdmissionGroup; its zero value is not
-// usable. It must not be copied after first use. All methods are safe for
-// concurrent use.
+// Use NewAdmissionGroup; the zero value is not usable. Do not copy after first
+// use. All methods are safe for concurrent use.
 type AdmissionGroup struct {
 	mu            sync.Mutex
 	admissionOpen bool
@@ -23,16 +17,14 @@ type AdmissionGroup struct {
 	idle          chan struct{}
 }
 
-// NewAdmissionGroup returns an open, idle group that admits work until
-// CloseAdmission runs.
+// NewAdmissionGroup returns an open, idle group.
 func NewAdmissionGroup() *AdmissionGroup {
 	idle := make(chan struct{})
 	close(idle)
 	return &AdmissionGroup{admissionOpen: true, idle: idle}
 }
 
-// TryAcquire atomically admits the caller and returns an active Reservation. It
-// reports false and returns no Reservation once CloseAdmission has run.
+// TryAcquire atomically reserves admission, or returns nil, false if closed.
 func (group *AdmissionGroup) TryAcquire() (*Reservation, bool) {
 	group.mu.Lock()
 	defer group.mu.Unlock()
@@ -53,18 +45,18 @@ func (group *AdmissionGroup) AdmissionOpen() bool {
 	return group.admissionOpen
 }
 
-// CloseAdmission permanently closes admission and returns without waiting for
-// admitted work. Repeated and concurrent calls are safe.
+// CloseAdmission permanently closes admission without waiting for admitted work.
+// Repeated calls are no-ops.
 func (group *AdmissionGroup) CloseAdmission() {
 	group.mu.Lock()
 	defer group.mu.Unlock()
 	group.admissionOpen = false
 }
 
-// Wait joins the group's idle transition without canceling or otherwise
-// changing admitted work. It returns nil when the idle channel it snapshots
-// closes, or the context error if canceled. If both are ready, either result is
-// possible. Close admission before Wait for a reliable final join.
+// Wait snapshots the current idle channel and returns nil when it closes, or
+// ctx.Err() on cancellation. If both are ready, either result is possible.
+// Cancellation does not affect admitted work. Close admission first to prevent
+// new work from starting after Wait observes an idle group.
 func (group *AdmissionGroup) Wait(ctx context.Context) error {
 	group.mu.Lock()
 	idle := group.idle
@@ -77,23 +69,19 @@ func (group *AdmissionGroup) Wait(ctx context.Context) error {
 	}
 }
 
-// Reservation is one active admission granted by AdmissionGroup.TryAcquire. It
-// tracks the child goroutines started with Go, so the group stays busy until
-// those children finish. Release ends only the parent admission, never its
-// children.
+// Reservation holds an admission until Release. Children started with Go keep
+// the group busy independently of the reservation.
 //
-// Obtain a Reservation through TryAcquire; its zero value is not usable. It
-// must not be copied. Go and Release are safe for concurrent use.
+// Use AdmissionGroup.TryAcquire; the zero value is not usable. Do not copy.
+// Methods are synchronized, but Go panics if Release takes effect first.
 type Reservation struct {
 	group    *AdmissionGroup
 	released bool // Protected by group.mu.
 }
 
-// Go registers work as a tracked child before starting its goroutine, so Wait
-// never observes an idle gap between registration and execution. A live
-// Reservation may still start children after the group closes admission. Go
-// panics when the Reservation is already released. Panics in work are not
-// recovered, so a failing child crashes the process instead of disappearing.
+// Go registers a child before starting its goroutine, preventing a gap in tracking.
+// It is allowed after admission closes but panics after Release.
+// Worker panics are not recovered.
 func (reservation *Reservation) Go(work func()) {
 	group := reservation.group
 	group.mu.Lock()
@@ -109,8 +97,8 @@ func (reservation *Reservation) Go(work func()) {
 	}()
 }
 
-// Release ends the parent admission and leaves children started with Go running
-// until they finish on their own. Repeated calls are no-ops.
+// Release ends this reservation without canceling or untracking its children.
+// Repeated calls are no-ops.
 func (reservation *Reservation) Release() {
 	group := reservation.group
 	group.mu.Lock()
@@ -130,7 +118,7 @@ func (group *AdmissionGroup) releaseActiveLocked() {
 	}
 }
 
-// childDone records one tracked child goroutine completion.
+// childDone releases a completed child's tracking slot.
 func (group *AdmissionGroup) childDone() {
 	group.mu.Lock()
 	defer group.mu.Unlock()

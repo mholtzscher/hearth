@@ -23,9 +23,7 @@ func (service *Service) StartManualRun(ctx context.Context, id AutomationID) (Au
 	if !admitted {
 		return AutomationRun{}, ErrAdmissionUnavailable
 	}
-	// The reservation is held across the whole admission so WaitRuns tracks work
-	// before it commits, and every committed Run is handed to the reservation
-	// before it releases.
+	// Track admission until the committed Run has a worker; release on errors too.
 	defer reservation.Release()
 	// The device gate is checked separately: automation admission closes first on
 	// shutdown, and the cross-module gates never claim an atomic check-and-admit.
@@ -36,19 +34,17 @@ func (service *Service) StartManualRun(ctx context.Context, id AutomationID) (Au
 	if err != nil {
 		return AutomationRun{}, err
 	}
-	// Process-owned: detached from the HTTP request so caller cancellation cannot
-	// cancel an admitted Command, and tracked by the reservation so shutdown joins
-	// it. A reservation may add children even after admission closes.
+	// Caller cancellation must not cancel an admitted Run.
 	workerContext := context.WithoutCancel(ctx)
 	reservation.Go(func() { service.executeRun(workerContext, run) })
-	// Diagnostic logging does not own admission or delay the lifecycle join.
+	// Release before logging so a blocked sink cannot hold WaitRuns.
 	reservation.Release()
 	service.logRunStarted(ctx, run)
 	return run, nil
 }
 
 // ReceiveDeviceFact admits one Device Fact against current enabled definitions
-// and hands every started Run its worker only after the admission transaction
+// and starts Run workers only after the admission transaction
 // commits.
 func (service *Service) ReceiveDeviceFact(
 	ctx context.Context,
@@ -63,8 +59,7 @@ func (service *Service) ReceiveDeviceFact(
 	if err != nil {
 		return AdmissionOutcome{}, err
 	}
-	// Register every committed Run before releasing admission or logging. A
-	// blocked diagnostic sink must not strand later Runs without workers.
+	// Start all committed Runs before logging can block, then release admission.
 	workerContext := context.WithoutCancel(ctx)
 	for _, run := range result.StartedRuns {
 		reservation.Go(func() { service.executeRun(workerContext, run) })

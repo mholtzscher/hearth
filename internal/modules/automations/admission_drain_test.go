@@ -166,8 +166,7 @@ func TestWaitRunsJoinsFactAdmissionInFlightAtStop(t *testing.T) {
 	}
 }
 
-// WaitRuns must join every Run one Fact admission fans out to when admission
-// closes while the transaction is still in flight.
+// Closing admission mid-transaction must still let WaitRuns join every resulting Run.
 func TestWaitRunsJoinsFactFanOutAdmissionInFlightAtStop(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
@@ -189,9 +188,7 @@ func TestWaitRunsJoinsFactFanOutAdmissionInFlightAtStop(t *testing.T) {
 	<-blocking.entered
 
 	service.StopAdmission()
-	// Both committed Runs must be handed to the reservation before it releases;
-	// otherwise WaitRuns could return after the first Run finishes while the
-	// second is still starting.
+	// WaitRuns must cover the transaction and both workers, with no gap.
 	waited := make(chan error, 1)
 	go func() { waited <- service.WaitRuns(context.Background()) }()
 	select {

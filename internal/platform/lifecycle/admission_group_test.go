@@ -17,31 +17,28 @@ import (
 )
 
 const (
-	// idleWaitTimeout bounds a Wait that should have returned already. Inside a
-	// synctest bubble the fake clock skips the wait, so it only bites on a real
-	// stuck group.
+	// Bound a stuck Wait; synctest advances the clock without a real delay.
 	idleWaitTimeout = 5 * time.Second
 
-	// testChildCount is the fan-out width one reservation must track.
+	// One reservation must track multiple children.
 	testChildCount = 3
 
-	// concurrencyIterations widens the overlap between close and acquire.
+	// Repeat the race to exercise different interleavings.
 	concurrencyIterations = 100
 
-	// concurrentAcquirers races CloseAdmission from many goroutines.
+	// Race acquisitions against admission closure.
 	concurrentAcquirers = 8
 
-	// concurrentClosers repeats CloseAdmission from many goroutines.
+	// Exercise concurrent CloseAdmission and Release calls.
 	concurrentClosers = 16
 
-	// concurrentChildren widens the overlap between concurrent child starts.
+	// Start children concurrently on one reservation.
 	concurrentChildren = 8
 
-	// workerPanicHelperEnv marks the re-executed test binary that panics a child.
+	// Select the subprocess that panics in a tracked child.
 	workerPanicHelperEnv = "LIFECYCLE_WORKER_PANIC_HELPER"
 
-	// workerPanicGrace lets a recovered panic fall through before the helper
-	// gives up; a real panic kills the process first.
+	// Allow an unrecovered panic to terminate the subprocess before fallback exit.
 	workerPanicGrace = 200 * time.Millisecond
 )
 
@@ -55,7 +52,7 @@ func requireIdle(t *testing.T, group *lifecycle.AdmissionGroup) {
 	}
 }
 
-// A new group is open and idle, so Wait joins immediately without an admission.
+// An empty group must not block Wait.
 func TestNewAdmissionGroupStartsOpenAndIdle(t *testing.T) {
 	t.Parallel()
 	synctest.Test(t, func(t *testing.T) {
@@ -84,7 +81,7 @@ func TestCloseAdmissionRefusesTryAcquirePermanently(t *testing.T) {
 	})
 }
 
-// Closing admission while a reservation is live still joins it after release.
+// Closing admission must not prevent an existing reservation from draining.
 func TestCloseAdmissionWhileReservedJoinsAfterRelease(t *testing.T) {
 	t.Parallel()
 	synctest.Test(t, func(t *testing.T) {
@@ -102,10 +99,7 @@ func TestCloseAdmissionWhileReservedJoinsAfterRelease(t *testing.T) {
 	})
 }
 
-// A group that went idle must reopen its idle channel for a later admission, so
-// a wait taken after admission closes joins the new work instead of an
-// already-closed idle channel. This is the admit, drain, admit, stop, join
-// sequence the services perform.
+// A later admission must replace the closed idle channel so Wait tracks new work.
 func TestWaitReopensIdleForLaterAdmission(t *testing.T) {
 	t.Parallel()
 	synctest.Test(t, func(t *testing.T) {
@@ -137,8 +131,7 @@ func TestWaitReopensIdleForLaterAdmission(t *testing.T) {
 	})
 }
 
-// Go registers the child before its goroutine starts, so releasing the parent
-// cannot let Wait observe an idle gap while the child still runs.
+// Releasing the parent must not leave an idle gap before the child finishes.
 func TestReleaseDoesNotIdleGroupWhileChildRuns(t *testing.T) {
 	t.Parallel()
 	synctest.Test(t, func(t *testing.T) {
@@ -176,7 +169,7 @@ func TestReleaseDoesNotIdleGroupWhileChildRuns(t *testing.T) {
 	})
 }
 
-// Wait must join every child one reservation starts, not only the last one.
+// One reservation must track all children it starts.
 func TestReservationGoTracksEveryChild(t *testing.T) {
 	t.Parallel()
 	synctest.Test(t, func(t *testing.T) {
@@ -214,9 +207,7 @@ func TestReservationGoTracksEveryChild(t *testing.T) {
 	})
 }
 
-// Each tracked child must keep the group busy on its own: when siblings finish
-// one at a time, Wait may not report idle before the last one finishes. This is
-// the sequenced counterpart of the simultaneous fan-out above.
+// Finish siblings separately to catch a join that returns after only one child.
 func TestReservationGoJoinsChildrenThatFinishOneAtATime(t *testing.T) {
 	t.Parallel()
 	synctest.Test(t, func(t *testing.T) {
@@ -255,8 +246,7 @@ func TestReservationGoJoinsChildrenThatFinishOneAtATime(t *testing.T) {
 	})
 }
 
-// A child finishing must not idle the group while its parent admission is still
-// live: the parent's own reservation keeps the group busy until Release.
+// The parent reservation must keep the group busy after its child finishes.
 func TestChildCompletionKeepsGroupBusyWhileParentReserved(t *testing.T) {
 	t.Parallel()
 	synctest.Test(t, func(t *testing.T) {
@@ -273,7 +263,7 @@ func TestChildCompletionKeepsGroupBusyWhileParentReserved(t *testing.T) {
 		})
 		<-childStarted
 		close(childFinish)
-		// The tracked child has finished and recorded its own completion.
+		// Let the child release its tracking slot.
 		synctest.Wait()
 
 		waited := make(chan error, 1)
@@ -291,8 +281,7 @@ func TestChildCompletionKeepsGroupBusyWhileParentReserved(t *testing.T) {
 	})
 }
 
-// A live reservation may start children after admission closes so shutdown can
-// join work admitted before the close.
+// Admission closure must not prevent an existing reservation from starting work.
 func TestGoAllowedAfterCloseAdmissionWhileReservationLive(t *testing.T) {
 	t.Parallel()
 	synctest.Test(t, func(t *testing.T) {
@@ -332,8 +321,7 @@ func TestGoAfterReleasePanics(t *testing.T) {
 	reservation.Go(func() {})
 }
 
-// A canceled Wait must not close admission, cancel admitted work, or refuse a
-// later admission.
+// Canceling Wait must leave admission open and existing work tracked.
 func TestWaitContextCancellationHasNoSideEffects(t *testing.T) {
 	t.Parallel()
 	synctest.Test(t, func(t *testing.T) {
@@ -364,8 +352,7 @@ func TestWaitContextCancellationHasNoSideEffects(t *testing.T) {
 	})
 }
 
-// Repeated Release calls release one admission exactly once, so a still-live
-// second reservation keeps the group busy.
+// Releasing one reservation twice must not release another reservation's slot.
 func TestReleaseRepeatedIsIdempotent(t *testing.T) {
 	t.Parallel()
 	synctest.Test(t, func(t *testing.T) {
@@ -393,9 +380,7 @@ func TestReleaseRepeatedIsIdempotent(t *testing.T) {
 	})
 }
 
-// Concurrent TryAcquire, CloseAdmission, and Release must leave a consistent
-// group: no double-closed idle channel, no leaked reservation, and no admission
-// once close has returned.
+// Racing acquisition and closure must leave the group closed and idle.
 func TestCloseAdmissionConcurrentWithAcquireLeavesGroupIdle(t *testing.T) {
 	t.Parallel()
 	for range concurrencyIterations {
@@ -427,7 +412,7 @@ func TestCloseAdmissionConcurrentWithAcquireLeavesGroupIdle(t *testing.T) {
 	}
 }
 
-// Concurrent CloseAdmission calls must not close the idle channel twice.
+// Concurrent closure must be idempotent.
 func TestCloseAdmissionRepeatedConcurrentlyIsIdempotent(t *testing.T) {
 	t.Parallel()
 	group := lifecycle.NewAdmissionGroup()
@@ -444,8 +429,7 @@ func TestCloseAdmissionRepeatedConcurrentlyIsIdempotent(t *testing.T) {
 	requireIdle(t, group)
 }
 
-// Concurrent Go calls must each register a tracked child, so a concurrent
-// fan-out keeps the group busy until the last tracked child finishes.
+// Concurrent Go calls must register every child before the parent releases.
 func TestConcurrentGoRegistersEveryChild(t *testing.T) {
 	t.Parallel()
 	synctest.Test(t, func(t *testing.T) {
@@ -485,8 +469,7 @@ func TestConcurrentGoRegistersEveryChild(t *testing.T) {
 	})
 }
 
-// Concurrent Release calls must release one admission exactly once: the group
-// stays busy while a tracked child is live and goes idle once it finishes.
+// Concurrent releases must not consume the live child's tracking slot.
 func TestConcurrentReleaseJoinsLiveChild(t *testing.T) {
 	t.Parallel()
 	synctest.Test(t, func(t *testing.T) {
@@ -525,8 +508,7 @@ func TestConcurrentReleaseJoinsLiveChild(t *testing.T) {
 	})
 }
 
-// A panicking child must crash the process: the group never recovers worker
-// panics, so it cannot silently drop tracked work.
+// A worker panic must terminate the subprocess, not be swallowed.
 func TestGoWorkerPanicIsNotRecovered(t *testing.T) {
 	t.Parallel()
 	if os.Getenv(workerPanicHelperEnv) == "1" {
@@ -544,8 +526,7 @@ func TestGoWorkerPanicIsNotRecovered(t *testing.T) {
 	}
 }
 
-// runWorkerPanicHelper panics inside a tracked child. A framework that recovered
-// the panic would fall through and exit 3 instead of crashing.
+// runWorkerPanicHelper exits 3 if the tracked child's panic does not crash the process.
 func runWorkerPanicHelper() {
 	group := lifecycle.NewAdmissionGroup()
 	reservation, ok := group.TryAcquire()

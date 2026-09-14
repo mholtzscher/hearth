@@ -49,14 +49,14 @@ internal/
     admission_group.go          new: admission and tracking primitive
     admission_group_test.go     new: deterministic concurrency contracts
   modules/devices/
-    service.go                 modify: own Command AdmissionGroup
-    command_lifecycle.go       modify: keep public wrappers, remove bookkeeping
+    service.go                 modify: own Command AdmissionGroup and lifecycle wrappers
+    command_lifecycle.go       remove: consolidate lifecycle methods in service.go
     command.go                 modify: explicitly transfer Reservation ownership
     command_logging.go         modify: document the reservation release boundary
     command_lifecycle_test.go  modify: assert behavior rather than counters
   modules/automations/
-    service.go                 modify: own Automation AdmissionGroup
-    lifecycle.go               modify: wrappers and domain fault logging
+    service.go                 modify: own Automation AdmissionGroup, lifecycle wrappers, and domain fault logging
+    lifecycle.go               remove: consolidate lifecycle methods in service.go
     admission.go               modify: reserve, commit, launch children, release
     execution.go               modify: remove duplicate worker release
     admission*_test.go         modify/new: admission handoff and logging regressions

@@ -1,6 +1,7 @@
 package devices
 
 import (
+	"context"
 	"log/slog"
 	"sync"
 	"time"
@@ -78,4 +79,21 @@ func NewService(stores Stores, sender CommandSender, catalog *TypeCatalog, depen
 		waiters:          commandWaiters{byID: make(map[CommandID]chan CommandResult)},
 		commandAdmission: lifecycle.NewAdmissionGroup(),
 	}
+}
+
+// StopCommandAdmission rejects new Commands with ErrCommandUnavailable.
+// It is idempotent and does not wait for admitted Commands.
+func (service *Service) StopCommandAdmission() {
+	service.commandAdmission.CloseAdmission()
+}
+
+// CommandAdmissionOpen reports whether new Commands are allowed.
+func (service *Service) CommandAdmissionOpen() bool {
+	return service.commandAdmission.AdmissionOpen()
+}
+
+// WaitCommands joins admitted Commands without canceling them.
+// Close admission first and keep shared dependencies alive until it returns.
+func (service *Service) WaitCommands(ctx context.Context) error {
+	return service.commandAdmission.Wait(ctx)
 }
