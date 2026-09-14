@@ -37,7 +37,7 @@ func (service *Service) StartManualRun(ctx context.Context, id AutomationID) (Au
 	// Caller cancellation must not cancel an admitted Run.
 	workerContext := context.WithoutCancel(ctx)
 	reservation.Go(func() { service.executeRun(workerContext, run) })
-	// Release before logging so a blocked sink cannot hold WaitRuns.
+	// Release before logging so a blocked sink cannot hold Drain.
 	reservation.Release()
 	service.logRunStarted(ctx, run)
 	return run, nil

@@ -105,7 +105,15 @@ func newAutomationService(t *testing.T, stub *apiDevices) *automations.Service {
 	database := openAutomationTestDatabase(t)
 	dependencies := automations.AutomationDependencies{}
 	repository := automations.NewSQLiteRepository(database, dependencies)
-	return automations.NewService(repository, stub, dependencies)
+	service := automations.NewService(repository, stub, dependencies)
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		if err := service.Drain(ctx); err != nil {
+			t.Errorf("drain automations: %v", err)
+		}
+	})
+	return service
 }
 
 // definitionDocument renders one valid strict definition document with one
@@ -142,12 +150,26 @@ func definitionDocument(t *testing.T, stepCount int) string {
 	}`, string(triggerEntity), steps.String())
 }
 
-func waitForAPI(t *testing.T, service *automations.Service) {
+// waitForAPI observes a terminal Run without closing admission for later requests.
+func waitForAPI(t *testing.T, service *automations.Service, automationID, runID string) {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	if err := service.WaitRuns(ctx); err != nil {
-		t.Fatal(err)
+	ticker := time.NewTicker(time.Millisecond)
+	defer ticker.Stop()
+	for {
+		entry, err := service.GetHistoryEntry(ctx, automations.AutomationID(automationID), runID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if entry.Run != nil && entry.Run.Status != automations.RunRunning {
+			return
+		}
+		select {
+		case <-ctx.Done():
+			t.Fatalf("Run %s did not finish: %v", runID, ctx.Err())
+		case <-ticker.C:
+		}
 	}
 }
 

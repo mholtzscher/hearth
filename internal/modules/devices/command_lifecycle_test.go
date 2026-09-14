@@ -8,7 +8,7 @@ import (
 )
 
 // Shutdown must reject new Commands while an admitted worker drains, and
-// WaitCommands must join the detached lifecycle even when the caller already
+// Drain must join the detached lifecycle even when the caller already
 // returned.
 func TestCommandAdmissionGateRejectsDirectWhileAdmittedDrains(t *testing.T) {
 	t.Parallel()
@@ -37,7 +37,7 @@ func TestCommandAdmissionGateRejectsDirectWhileAdmittedDrains(t *testing.T) {
 	case <-time.After(5 * time.Second):
 		t.Fatal("command did not enter sender")
 	}
-	service.StopCommandAdmission()
+	service.StopAdmission()
 	if service.CommandAdmissionOpen() {
 		t.Fatal("admission stayed open after stop")
 	}
@@ -84,8 +84,8 @@ func TestCommandAdmissionGateRejectsDirectWhileAdmittedDrains(t *testing.T) {
 }
 
 // Caller cancellation stops waiting but the detached worker must still drain
-// through WaitCommands before dependencies tear down.
-func TestWaitCommandsDrainsDetachedWorkerAfterCallerCancellation(t *testing.T) {
+// through Drain before dependencies tear down.
+func TestDrainJoinsDetachedWorkerAfterCallerCancellation(t *testing.T) {
 	t.Parallel()
 	repository := newCommandRepository()
 	dispatched := make(chan CommandRequest, 1)
@@ -121,9 +121,9 @@ func TestWaitCommandsDrainsDetachedWorkerAfterCallerCancellation(t *testing.T) {
 	case <-time.After(5 * time.Second):
 		t.Fatal("caller did not return after cancellation")
 	}
-	service.StopCommandAdmission()
+	service.StopAdmission()
 	waited := make(chan error, 1)
-	go func() { waited <- service.WaitCommands(context.Background()) }()
+	go func() { waited <- service.Drain(context.Background()) }()
 	select {
 	case err := <-waited:
 		t.Fatalf("wait returned while detached worker blocked: %v", err)
@@ -143,8 +143,27 @@ func TestWaitCommandsDrainsDetachedWorkerAfterCallerCancellation(t *testing.T) {
 	}
 }
 
-// Canceling WaitCommands must leave the blocked worker tracked.
-func TestWaitCommandsCanceledWaitKeepsWorkers(t *testing.T) {
+func TestDrainClosesIdleCommandAdmission(t *testing.T) {
+	t.Parallel()
+	service := newTestService(newCommandRepository(), nil, commandCatalog(t, time.Second), commandDependencies())
+	for range 2 {
+		if err := service.Drain(t.Context()); err != nil {
+			t.Fatalf("idle Drain = %v", err)
+		}
+		if service.CommandAdmissionOpen() {
+			t.Fatal("idle Drain left Command admission open")
+		}
+	}
+	if _, err := service.ExecuteCommand(t.Context(), CommandInput{
+		EntityID: commandTestEntityID, OperationName: OperationNameSet,
+		Parameters: CommandParameters(`{"value":true}`),
+	}); !errors.Is(err, ErrCommandUnavailable) {
+		t.Fatalf("Command admission after idle Drain = %v", err)
+	}
+}
+
+// Canceling Drain must close admission but leave the blocked worker tracked.
+func TestDrainCanceledWaitKeepsWorkers(t *testing.T) {
 	t.Parallel()
 	repository := newCommandRepository()
 	entered := make(chan struct{}, 1)
@@ -171,13 +190,22 @@ func TestWaitCommandsCanceledWaitKeepsWorkers(t *testing.T) {
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
-	if err := service.WaitCommands(ctx); !errors.Is(err, context.Canceled) {
-		t.Fatalf("wait = %v, want context.Canceled", err)
+	if err := service.Drain(ctx); !errors.Is(err, context.Canceled) {
+		t.Fatalf("Drain = %v, want context.Canceled", err)
 	}
-	// A second wait must still block on the worker.
+	if service.CommandAdmissionOpen() {
+		t.Fatal("canceled Drain left Command admission open")
+	}
+	if _, err := service.ExecuteCommand(context.Background(), CommandInput{
+		EntityID: commandTestEntityID, OperationName: OperationNameSet,
+		Parameters: CommandParameters(`{"value":true}`),
+	}); !errors.Is(err, ErrCommandUnavailable) {
+		t.Fatalf("Command admission after canceled Drain = %v", err)
+	}
+	// A second drain must still block on the worker.
 	bounded, cancelBounded := context.WithTimeout(context.Background(), 50*time.Millisecond)
 	defer cancelBounded()
-	if err := service.WaitCommands(bounded); !errors.Is(err, context.DeadlineExceeded) {
+	if err := service.Drain(bounded); !errors.Is(err, context.DeadlineExceeded) {
 		t.Fatalf("wait after canceled wait = %v, want %v while the worker was live", err, context.DeadlineExceeded)
 	}
 	// Unblock the worker so the next wait can finish.
@@ -198,9 +226,9 @@ func TestWaitCommandsCanceledWaitKeepsWorkers(t *testing.T) {
 
 // This test protects shutdown drain under a blocked diagnostic sink and fails
 // if a completed worker still holds lifecycle tracking while the synchronous
-// creation log blocks. The worker must release before logging so WaitCommands
+// creation log blocks. The worker must release before logging so Drain
 // completes even though command.created is still pending.
-func TestWaitCommandsCompletesWhileCreationLogBlocked(t *testing.T) {
+func TestDrainCompletesWhileCreationLogBlocked(t *testing.T) {
 	t.Parallel()
 	writer, logger, entered, release := newBlockingCommandLogSink()
 	defer func() {
@@ -248,16 +276,16 @@ func TestWaitCommandsCompletesWhileCreationLogBlocked(t *testing.T) {
 
 	// Shutdown closes admission, then drains: the wait must succeed without
 	// waiting for the still-blocked diagnostic sink.
-	service.StopCommandAdmission()
+	service.StopAdmission()
 	waited := make(chan error, 1)
-	go func() { waited <- service.WaitCommands(context.Background()) }()
+	go func() { waited <- service.Drain(context.Background()) }()
 	select {
 	case waitErr := <-waited:
 		if waitErr != nil {
 			t.Fatalf("wait = %v", waitErr)
 		}
 	case <-time.After(3 * time.Second):
-		t.Fatal("WaitCommands did not complete while command.created writer was blocked")
+		t.Fatal("Drain did not complete while command.created writer was blocked")
 	}
 
 	close(release)
@@ -269,7 +297,7 @@ func TestWaitCommandsCompletesWhileCreationLogBlocked(t *testing.T) {
 // synchronous creation log, so shutdown drain finishes while the diagnostic
 // sink is still blocked. The caller stays blocked in the log emission until
 // released, then observes the terminal error and the creation record.
-func TestWaitCommandsCompletesWhileImmediateTerminalCreationLogBlocked(t *testing.T) {
+func TestDrainCompletesWhileImmediateTerminalCreationLogBlocked(t *testing.T) {
 	t.Parallel()
 	tests := []struct {
 		name      string
@@ -328,8 +356,8 @@ func requireImmediateTerminalDrainsWhileLogBlocked(t *testing.T, disabled, unhea
 		t.Fatal("blocked immediate terminal command.created emission was never attempted")
 	}
 
-	service.StopCommandAdmission()
-	requireWaitCommandsSucceedsWhileLogBlocked(t, service)
+	service.StopAdmission()
+	requireDrainSucceedsWhileLogBlocked(t, service)
 
 	close(release)
 	select {
@@ -344,17 +372,17 @@ func requireImmediateTerminalDrainsWhileLogBlocked(t *testing.T, disabled, unhea
 	requireCommandsIdle(t, service)
 }
 
-func requireWaitCommandsSucceedsWhileLogBlocked(t *testing.T, service *Service) {
+func requireDrainSucceedsWhileLogBlocked(t *testing.T, service *Service) {
 	t.Helper()
 	waited := make(chan error, 1)
-	go func() { waited <- service.WaitCommands(context.Background()) }()
+	go func() { waited <- service.Drain(context.Background()) }()
 	select {
 	case waitErr := <-waited:
 		if waitErr != nil {
 			t.Fatalf("wait = %v", waitErr)
 		}
 	case <-time.After(3 * time.Second):
-		t.Fatal("WaitCommands did not complete while command.created was blocked")
+		t.Fatal("Drain did not complete while command.created was blocked")
 	}
 }
 
@@ -407,7 +435,7 @@ func TestCommandErrorPathsReleaseWorkerWithoutLeak(t *testing.T) {
 		t.Fatalf("dispatches = %d, want 0 before durable creation", dispatches)
 	}
 
-	service.StopCommandAdmission()
+	service.StopAdmission()
 	if _, err := service.ExecuteCommand(context.Background(), CommandInput{
 		ID: commandTestID, CorrelationID: commandTestCorrelationID,
 		EntityID:      commandTestEntityID,
@@ -424,8 +452,8 @@ func requireCommandsIdle(t *testing.T, service *Service) {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	if err := service.WaitCommands(ctx); err != nil {
-		t.Fatalf("WaitCommands = %v, want nil while idle", err)
+	if err := service.commandAdmission.Wait(ctx); err != nil {
+		t.Fatalf("Command worker wait = %v, want nil while idle", err)
 	}
 	service.waiters.mutex.Lock()
 	waiters := len(service.waiters.byID)

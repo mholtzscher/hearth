@@ -70,7 +70,19 @@ release the reservation before logging.
 Automations reserve before persistence, launch every committed Run through `Go`,
 then release the parent before admission diagnostics. Error paths defer release.
 Domain busy checks, stop-before-next-Step, and executor fault logging remain in
-Automations. Public admission/readiness/wait interfaces remain unchanged.
+Automations. Readiness interfaces remain unchanged.
+
+Both services expose `StopAdmission()` and `Drain(ctx)`. StopAdmission closes
+admission without waiting; Drain closes it idempotently before joining work.
+Cancellation ends only the wait and leaves admission closed, so callers can retry
+Drain with a new context. Dependencies must stay alive until draining succeeds.
+The low-level group's `Wait` remains a side-effect-free synchronization primitive,
+not a service shutdown API.
+
+Core shutdown stops both services first, then drains Automation Runs before
+Commands. This preserves cross-service shutdown ordering. Behavior tests that
+admit successive Runs use a test-only worker join rather than shutting down the
+service between admissions.
 
 ## Deliverables and acceptance
 

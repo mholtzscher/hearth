@@ -14,7 +14,7 @@ type Service struct {
 	devices      AutomationDevices
 	dependencies AutomationDependencies
 
-	// admission tracks both admission transactions and Run workers for WaitRuns.
+	// admission tracks both admission transactions and Run workers for Drain.
 	admission *lifecycle.AdmissionGroup
 }
 
@@ -45,9 +45,11 @@ func (service *Service) AdmissionOpen() bool {
 	return service.admission.AdmissionOpen()
 }
 
-// WaitRuns joins in-flight admissions and Run workers without canceling Commands.
-// Close admission first and keep shared dependencies alive until it returns.
-func (service *Service) WaitRuns(ctx context.Context) error {
+// Drain closes admission and joins admitted Runs without canceling Commands.
+// A context error stops waiting, not the Runs; admission stays closed.
+// Keep shared dependencies alive until a drain succeeds.
+func (service *Service) Drain(ctx context.Context) error {
+	service.StopAdmission()
 	return service.admission.Wait(ctx)
 }
 

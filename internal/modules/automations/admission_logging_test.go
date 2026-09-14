@@ -113,18 +113,18 @@ func requireBlockedDiagnostic(t *testing.T, entered <-chan struct{}) {
 	}
 }
 
-// requireWaitRunsCompletesWhileLogBlocked joins Runs without unblocking the sink.
-func requireWaitRunsCompletesWhileLogBlocked(t *testing.T, service *automations.Service) {
+// requireDrainCompletesWhileLogBlocked joins Runs without unblocking the sink.
+func requireDrainCompletesWhileLogBlocked(t *testing.T, service *automations.Service) {
 	t.Helper()
 	waited := make(chan error, 1)
-	go func() { waited <- service.WaitRuns(context.Background()) }()
+	go func() { waited <- service.Drain(context.Background()) }()
 	select {
 	case err := <-waited:
 		if err != nil {
-			t.Fatalf("WaitRuns = %v, want nil while the diagnostic sink was blocked", err)
+			t.Fatalf("Drain = %v, want nil while the diagnostic sink was blocked", err)
 		}
 	case <-time.After(5 * time.Second):
-		t.Fatal("WaitRuns did not complete while the admission diagnostic was blocked")
+		t.Fatal("Drain did not complete while the admission diagnostic was blocked")
 	}
 }
 
@@ -147,7 +147,7 @@ func requireDrainedRun(
 }
 
 // A blocked run_started log must not keep a completed manual Run tracked.
-func TestWaitRunsCompletesWhileManualRunStartedLogBlocked(t *testing.T) {
+func TestDrainCompletesWhileManualRunStartedLogBlocked(t *testing.T) {
 	t.Parallel()
 	scripted := newScriptedDevices()
 	logger, writer, entered, unblock := newBlockedAdmissionLogger(t, runStartedLogMessage)
@@ -171,7 +171,7 @@ func TestWaitRunsCompletesWhileManualRunStartedLogBlocked(t *testing.T) {
 	close(blocking.release)
 
 	requireBlockedDiagnostic(t, entered)
-	requireWaitRunsCompletesWhileLogBlocked(t, service)
+	requireDrainCompletesWhileLogBlocked(t, service)
 	// The join must cover Run completion, including its unblocked diagnostic.
 	requireDrainedRun(t, service, record.ID)
 	requireLoggedEvents(t, writer, "automation.run_completed", 1)
@@ -192,7 +192,7 @@ func TestWaitRunsCompletesWhileManualRunStartedLogBlocked(t *testing.T) {
 }
 
 // An admission that starts no Run must release its reservation before logging.
-func TestWaitRunsCompletesWhileSkippedLogBlocked(t *testing.T) {
+func TestDrainCompletesWhileSkippedLogBlocked(t *testing.T) {
 	t.Parallel()
 	scripted := newScriptedDevices()
 	logger, writer, entered, unblock := newBlockedAdmissionLogger(t, skippedLogMessage)
@@ -217,7 +217,7 @@ func TestWaitRunsCompletesWhileSkippedLogBlocked(t *testing.T) {
 
 	requireBlockedDiagnostic(t, entered)
 	service.StopAdmission()
-	requireWaitRunsCompletesWhileLogBlocked(t, service)
+	requireDrainCompletesWhileLogBlocked(t, service)
 
 	unblock()
 	select {
@@ -243,7 +243,7 @@ func TestWaitRunsCompletesWhileSkippedLogBlocked(t *testing.T) {
 }
 
 // All committed Runs need workers before the first run_started log can block.
-func TestWaitRunsCompletesWhileFanOutRunStartedLogBlocked(t *testing.T) {
+func TestDrainCompletesWhileFanOutRunStartedLogBlocked(t *testing.T) {
 	t.Parallel()
 	scripted := newScriptedDevices()
 	logger, writer, entered, unblock := newBlockedAdmissionLogger(t, runStartedLogMessage)
@@ -268,7 +268,7 @@ func TestWaitRunsCompletesWhileFanOutRunStartedLogBlocked(t *testing.T) {
 	close(blocking.release)
 
 	requireBlockedDiagnostic(t, entered)
-	requireWaitRunsCompletesWhileLogBlocked(t, service)
+	requireDrainCompletesWhileLogBlocked(t, service)
 	// A stranded second Run would still be Running, not interrupted.
 	requireDrainedRun(t, service, first.ID)
 	requireDrainedRun(t, service, second.ID)

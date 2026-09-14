@@ -69,7 +69,7 @@ func (service *Service) validateCommand(ctx context.Context, input CommandInput)
 }
 
 // ExecuteCommand persists Command identity before dispatch. Caller cancellation
-// stops waiting, not the admitted worker; WaitCommands joins that worker.
+// stops waiting, not the admitted worker; Drain joins that worker.
 // Closed admission returns ErrCommandUnavailable.
 func (service *Service) ExecuteCommand(ctx context.Context, input CommandInput) (CommandResult, error) {
 	reservation, admitted := service.commandAdmission.TryAcquire()
@@ -189,7 +189,7 @@ func (service *Service) createCommandRecord(
 
 // spawnCommandWorker transfers the reservation to a detached worker and returns
 // a channel receiving one outcome. It releases explicitly rather than using
-// Reservation.Go so a blocked creation log cannot hold WaitCommands.
+// Reservation.Go so a blocked creation log cannot hold Drain.
 func (service *Service) spawnCommandWorker(
 	ctx context.Context,
 	command CommandRecord,

@@ -234,7 +234,7 @@ func waitForRuns(t *testing.T, service *automations.Service) {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	if err := service.WaitRuns(ctx); err != nil {
+	if err := automations.WaitForRunWorkers(ctx, service); err != nil {
 		t.Fatal(err)
 	}
 }

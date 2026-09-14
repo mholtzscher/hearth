@@ -81,9 +81,9 @@ func NewService(stores Stores, sender CommandSender, catalog *TypeCatalog, depen
 	}
 }
 
-// StopCommandAdmission rejects new Commands with ErrCommandUnavailable.
+// StopAdmission rejects new Commands with ErrCommandUnavailable.
 // It is idempotent and does not wait for admitted Commands.
-func (service *Service) StopCommandAdmission() {
+func (service *Service) StopAdmission() {
 	service.commandAdmission.CloseAdmission()
 }
 
@@ -92,8 +92,10 @@ func (service *Service) CommandAdmissionOpen() bool {
 	return service.commandAdmission.AdmissionOpen()
 }
 
-// WaitCommands joins admitted Commands without canceling them.
-// Close admission first and keep shared dependencies alive until it returns.
-func (service *Service) WaitCommands(ctx context.Context) error {
+// Drain closes admission and joins admitted Commands without canceling them.
+// A context error stops waiting, not the Commands; admission stays closed.
+// Keep shared dependencies alive until a drain succeeds.
+func (service *Service) Drain(ctx context.Context) error {
+	service.StopAdmission()
 	return service.commandAdmission.Wait(ctx)
 }

@@ -485,10 +485,12 @@ func (service *Service) GetHistoryEntry(context.Context, AutomationID, string) (
 func (service *Service) ListHistory(context.Context, ListHistoryParams) (AutomationPage[AutomationHistorySummary], error)
 func (service *Service) StopAdmission()
 func (service *Service) AdmissionOpen() bool
-func (service *Service) WaitRuns(context.Context) error
+func (service *Service) Drain(context.Context) error
 func (service *Service) InterruptActiveRuns(context.Context, time.Time) error
 func (service *Service) PruneHistory(context.Context, time.Time, int) (int64, error)
 ```
+
+`StopAdmission` closes admission without waiting. `Drain` closes admission and joins admitted Runs; cancellation stops waiting without canceling Commands or reopening admission.
 
 `Service` owns admission gating and per-Automation active-worker registration. The database partial unique index is the final busy guard across racing HTTP and NATS calls. No global worker semaphore exists.
 

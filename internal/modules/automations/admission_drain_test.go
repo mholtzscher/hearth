@@ -48,9 +48,9 @@ func (repository *blockingAdmissionRepository) AdmitDeviceFact(
 	return repository.AutomationRepository.AdmitDeviceFact(ctx, fact, now)
 }
 
-// WaitRuns must track a manual admission before commit, then join its worker
+// Drain must track a manual admission before commit, then join its worker
 // as it drains with core_stopping.
-func TestWaitRunsJoinsManualAdmissionInFlightAtStop(t *testing.T) {
+func TestDrainJoinsManualAdmissionInFlightAtStop(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	scripted := newScriptedDevices()
@@ -74,13 +74,13 @@ func TestWaitRunsJoinsManualAdmissionInFlightAtStop(t *testing.T) {
 	<-blocking.entered
 
 	// Admission closes while the transaction is still in flight. The reservation
-	// it already holds must keep WaitRuns blocked until the Run drains.
+	// it already holds must keep Drain blocked until the Run drains.
 	service.StopAdmission()
 	waited := make(chan error, 1)
-	go func() { waited <- service.WaitRuns(context.Background()) }()
+	go func() { waited <- service.Drain(context.Background()) }()
 	select {
 	case err := <-waited:
-		t.Fatalf("WaitRuns returned while a manual admission was in flight: %v", err)
+		t.Fatalf("Drain returned while a manual admission was in flight: %v", err)
 	case <-time.After(50 * time.Millisecond):
 	}
 
@@ -88,10 +88,10 @@ func TestWaitRunsJoinsManualAdmissionInFlightAtStop(t *testing.T) {
 	select {
 	case err := <-waited:
 		if err != nil {
-			t.Fatalf("WaitRuns = %v, want nil", err)
+			t.Fatalf("Drain = %v, want nil", err)
 		}
 	case <-time.After(5 * time.Second):
-		t.Fatal("WaitRuns did not join the in-flight manual admission's Run")
+		t.Fatal("Drain did not join the in-flight manual admission's Run")
 	}
 	select {
 	case err := <-admitFailed:
@@ -111,8 +111,8 @@ func TestWaitRunsJoinsManualAdmissionInFlightAtStop(t *testing.T) {
 	}
 }
 
-// WaitRuns must track a Fact admission before commit and join every Run it starts.
-func TestWaitRunsJoinsFactAdmissionInFlightAtStop(t *testing.T) {
+// Drain must track a Fact admission before commit and join every Run it starts.
+func TestDrainJoinsFactAdmissionInFlightAtStop(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	scripted := newScriptedDevices()
@@ -133,10 +133,10 @@ func TestWaitRunsJoinsFactAdmissionInFlightAtStop(t *testing.T) {
 
 	service.StopAdmission()
 	waited := make(chan error, 1)
-	go func() { waited <- service.WaitRuns(context.Background()) }()
+	go func() { waited <- service.Drain(context.Background()) }()
 	select {
 	case err := <-waited:
-		t.Fatalf("WaitRuns returned while a fact admission was in flight: %v", err)
+		t.Fatalf("Drain returned while a fact admission was in flight: %v", err)
 	case <-time.After(50 * time.Millisecond):
 	}
 
@@ -144,10 +144,10 @@ func TestWaitRunsJoinsFactAdmissionInFlightAtStop(t *testing.T) {
 	select {
 	case err := <-waited:
 		if err != nil {
-			t.Fatalf("WaitRuns = %v, want nil", err)
+			t.Fatalf("Drain = %v, want nil", err)
 		}
 	case <-time.After(5 * time.Second):
-		t.Fatal("WaitRuns did not join the in-flight fact admission's Run")
+		t.Fatal("Drain did not join the in-flight fact admission's Run")
 	}
 	if err := <-admitFailed; err != nil {
 		t.Fatalf("ReceiveDeviceFact = %v, want a committed admission", err)
@@ -166,8 +166,8 @@ func TestWaitRunsJoinsFactAdmissionInFlightAtStop(t *testing.T) {
 	}
 }
 
-// Closing admission mid-transaction must still let WaitRuns join every resulting Run.
-func TestWaitRunsJoinsFactFanOutAdmissionInFlightAtStop(t *testing.T) {
+// Closing admission mid-transaction must still let Drain join every resulting Run.
+func TestDrainJoinsFactFanOutAdmissionInFlightAtStop(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	scripted := newScriptedDevices()
@@ -188,12 +188,12 @@ func TestWaitRunsJoinsFactFanOutAdmissionInFlightAtStop(t *testing.T) {
 	<-blocking.entered
 
 	service.StopAdmission()
-	// WaitRuns must cover the transaction and both workers, with no gap.
+	// Drain must cover the transaction and both workers, with no gap.
 	waited := make(chan error, 1)
-	go func() { waited <- service.WaitRuns(context.Background()) }()
+	go func() { waited <- service.Drain(context.Background()) }()
 	select {
 	case err := <-waited:
-		t.Fatalf("WaitRuns returned while a fact fan-out admission was in flight: %v", err)
+		t.Fatalf("Drain returned while a fact fan-out admission was in flight: %v", err)
 	case <-time.After(50 * time.Millisecond):
 	}
 
@@ -201,10 +201,10 @@ func TestWaitRunsJoinsFactFanOutAdmissionInFlightAtStop(t *testing.T) {
 	select {
 	case err := <-waited:
 		if err != nil {
-			t.Fatalf("WaitRuns = %v, want nil", err)
+			t.Fatalf("Drain = %v, want nil", err)
 		}
 	case <-time.After(5 * time.Second):
-		t.Fatal("WaitRuns did not join every Run the in-flight fact admission started")
+		t.Fatal("Drain did not join every Run the in-flight fact admission started")
 	}
 	if err := <-admitFailed; err != nil {
 		t.Fatalf("ReceiveDeviceFact = %v, want a committed admission", err)
@@ -225,8 +225,8 @@ func TestWaitRunsJoinsFactFanOutAdmissionInFlightAtStop(t *testing.T) {
 	}
 }
 
-// A refused admission must release its reservation rather than block WaitRuns.
-func TestWaitRunsReturnsWhenRefusedAdmissionReservationReleases(t *testing.T) {
+// A refused admission must release its reservation rather than block Drain.
+func TestDrainReturnsWhenRefusedAdmissionReservationReleases(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	scripted := newScriptedDevices()
@@ -241,7 +241,7 @@ func TestWaitRunsReturnsWhenRefusedAdmissionReservationReleases(t *testing.T) {
 	}
 	waiting, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	if err := service.WaitRuns(waiting); err != nil {
-		t.Fatalf("WaitRuns after a refused admission = %v, want nil", err)
+	if err := service.Drain(waiting); err != nil {
+		t.Fatalf("Drain after a refused admission = %v, want nil", err)
 	}
 }
