@@ -115,7 +115,7 @@ Match the Observation stream's explicit unconstrained count and per-subject limi
 
 One pending slot is safe because Core resolves every deterministic per-report failure before it can occupy that slot. A report whose persisted event-source descriptor Core cannot interpret is terminated, which releases the slot immediately, and a report that only storage failed to record is negatively acknowledged with a bounded delay. A report that storage cannot record may hold the sole slot until that retry, which is acceptable: while storage is unavailable no other report can be safely persisted either, and the reports queued behind it remain in the stream until storage recovers.
 
-`EntityEventConsumer` has `Active`, `Stop`, `Drain`, and `Closed` lifecycle methods. It validates the route and envelope, reads the JetStream timestamp, records the event, then acknowledges it or resolves a record failure as either a termination or a delayed negative acknowledgement. It calls no synchronous subscribers, Commands, or automations.
+`StartEntityEventConsumer` returns `*platformnats.Consumer` with `Active`, `Stop`, `Drain(context.Context) error`, and `Closed` lifecycle methods. It validates the route and envelope, reads the JetStream timestamp, records the event, then acknowledges it or resolves a record failure as either a termination or a delayed negative acknowledgement. It calls no synchronous subscribers, Commands, or automations.
 
 - Acknowledge wire-invalid input, missing or mismatched MsgId, unexpected causation, and route mismatch. Log a safe permanent class. Create no SQLite row when Core cannot form trustworthy domain input; raw input remains only in the bounded stream.
 - Acknowledge first-seen accepted or rejected input only after the SQLite transaction commits.
@@ -343,7 +343,7 @@ internal/
 │   ├── sqlite_entity_events.go          # new, disposition/dedup/history/prune [D2,D3]
 │   ├── dbqueries/entity_events.sql      # new, insert/dedup/history/retention SQL [D2,D3]
 │   ├── dbsqlc/                          # generated, existing devices SQL package [D2,D3]
-│   ├── nats/entity_event.go             # new, EntityEventConsumer and DTO mapping [D2]
+│   ├── nats/entity_event.go             # new, StartEntityEventConsumer and DTO mapping [D2]
 │   ├── nats/entity_event_resources.go   # new, stream/consumer provisioning [D2]
 │   └── api/entity_events.go             # new, history endpoint/DTOs/cursor [D3]
 ├── platform/db/migrations/00001_initial.sql # modify, entity_events table/indexes [D2]

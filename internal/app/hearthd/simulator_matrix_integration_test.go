@@ -31,6 +31,7 @@ import (
 	devicesapi "github.com/mholtzscher/hearth/internal/modules/devices/api"
 	devicesnats "github.com/mholtzscher/hearth/internal/modules/devices/nats"
 	platformdb "github.com/mholtzscher/hearth/internal/platform/db"
+	platformnats "github.com/mholtzscher/hearth/internal/platform/nats"
 	"github.com/mholtzscher/hearth/sdk/adapter"
 	sdkpowerv1 "github.com/mholtzscher/hearth/sdk/adapter/powerv1"
 )
@@ -88,7 +89,7 @@ type simulatorMatrixHarness struct {
 	connection      *natsgo.Conn
 	jetstream       jetstream.JetStream
 	durable         jetstream.Consumer
-	consumer        *devicesnats.ObservationConsumer
+	consumer        *platformnats.Consumer
 	sessions        *devicesnats.SessionServer
 	availability    *devicesnats.EntityAvailabilityServer
 	registrations   *devicesnats.RegistrationServer

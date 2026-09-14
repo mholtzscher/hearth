@@ -84,7 +84,7 @@ func TestDeviceFactConsumerResumesAcknowledgeFloorAfterRestart(t *testing.T) {
 	waitForConsumerInfo(t, firstBroker, func(info *jetstream.ConsumerInfo) bool {
 		return info.AckFloor.Stream == 1 && info.NumAckPending == 0
 	})
-	if err := first.Drain(); err != nil {
+	if err := first.Drain(context.Background()); err != nil {
 		t.Fatalf("drain first consumer: %v", err)
 	}
 
@@ -184,9 +184,7 @@ func TestDeviceFactConsumerDrainStopsDelivery(t *testing.T) {
 	if !running.Active() {
 		t.Fatal("a live consumer reports itself inactive")
 	}
-	if err := running.Drain(); err != nil {
-		t.Fatalf("drain device fact consumer: %v", err)
-	}
+	drainDeviceFactConsumer(t, running)
 	if running.Active() {
 		t.Fatal("a drained consumer still reports itself active")
 	}

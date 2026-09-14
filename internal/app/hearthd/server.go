@@ -16,6 +16,7 @@ import (
 	automationsnats "github.com/mholtzscher/hearth/internal/modules/automations/nats"
 	devicesapi "github.com/mholtzscher/hearth/internal/modules/devices/api"
 	devicesnats "github.com/mholtzscher/hearth/internal/modules/devices/nats"
+	platformnats "github.com/mholtzscher/hearth/internal/platform/nats"
 )
 
 type ReadinessChecker interface {
@@ -26,8 +27,8 @@ type RuntimeReadiness struct {
 	database            *sql.DB
 	connection          *natsgo.Conn
 	jetstream           jetstream.JetStream
-	observationConsumer *devicesnats.ObservationConsumer
-	entityEventConsumer *devicesnats.EntityEventConsumer
+	observationConsumer *platformnats.Consumer
+	entityEventConsumer *platformnats.Consumer
 	relay               *devicesnats.DeviceFactRelay
 	automationConsumer  automationActivity
 }
@@ -40,8 +41,8 @@ func NewRuntimeReadiness(
 	database *sql.DB,
 	connection *natsgo.Conn,
 	js jetstream.JetStream,
-	observationConsumer *devicesnats.ObservationConsumer,
-	entityEventConsumer *devicesnats.EntityEventConsumer,
+	observationConsumer *platformnats.Consumer,
+	entityEventConsumer *platformnats.Consumer,
 	relay *devicesnats.DeviceFactRelay,
 	automationConsumer automationActivity,
 ) *RuntimeReadiness {

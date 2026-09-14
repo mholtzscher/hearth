@@ -12,6 +12,7 @@ import (
 	contractsv1 "github.com/mholtzscher/hearth/contracts/v1"
 	"github.com/mholtzscher/hearth/internal/contracts/v1/natswire"
 	"github.com/mholtzscher/hearth/internal/modules/devices"
+	platformnats "github.com/mholtzscher/hearth/internal/platform/nats"
 )
 
 // EntityEventRecorder is the only devices capability the Entity Event consumer
@@ -40,13 +41,6 @@ type entityEvent struct {
 	Name     string `json:"name"`
 }
 
-// EntityEventConsumer is the durable Entity Event consumer. It embeds the
-// shared durable lifecycle, so activity reporting and shutdown behave exactly
-// as they do for the Observation consumer.
-type EntityEventConsumer struct {
-	*durableConsumer
-}
-
 // entityEventClass is the Entity Event wire vocabulary shared consumer code
 // uses for diagnostics. An Entity Event is a report, never a reaction, so
 // invalid, consume, and processing failures all report under entity_event.*.
@@ -68,14 +62,14 @@ func StartEntityEventConsumer(
 	validator *contractsv1.Validator,
 	recorder EntityEventRecorder,
 	logger *slog.Logger,
-) (*EntityEventConsumer, error) {
+) (*platformnats.Consumer, error) {
 	if validator == nil {
 		return nil, errors.New("entity event validator is required")
 	}
 	if recorder == nil {
 		return nil, errors.New("entity event recorder is required")
 	}
-	durable, err := startDurableConsumer(
+	return startDurableConsumer(
 		baseContext,
 		consumer,
 		entityEventClass(),
@@ -84,10 +78,6 @@ func StartEntityEventConsumer(
 			handleEntityEventMessage(ctx, message, validator, recorder, logger)
 		},
 	)
-	if err != nil {
-		return nil, err
-	}
-	return &EntityEventConsumer{durableConsumer: durable}, nil
 }
 
 // handleEntityEventMessage decodes, validates, records, and acknowledges one

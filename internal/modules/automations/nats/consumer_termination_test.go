@@ -5,10 +5,12 @@ import (
 	"sync"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/nats-io/nats.go/jetstream"
 
 	"github.com/mholtzscher/hearth/internal/modules/automations"
+	platformnats "github.com/mholtzscher/hearth/internal/platform/nats"
 )
 
 // controllableConsumeContext lets tests terminate consumption with or without Drain.
@@ -63,11 +65,11 @@ func (receiver *gatedDeviceFactReceiver) StopAdmission() {
 }
 
 // startStubbedDeviceFactConsumer starts one consumer over the controllable
-// ConsumeContext and joins its termination watcher before the test ends.
+// ConsumeContext and always drains it before the test ends.
 func startStubbedDeviceFactConsumer(
 	t *testing.T,
 	receiver DeviceFactReceiver,
-) (*DeviceFactConsumer, *controllableConsumeContext) {
+) (*platformnats.Consumer, *controllableConsumeContext) {
 	t.Helper()
 	consume := newControllableConsumeContext()
 	running, err := StartDeviceFactConsumer(
@@ -80,12 +82,20 @@ func startStubbedDeviceFactConsumer(
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() {
-		if drainErr := running.Drain(); drainErr != nil {
-			t.Errorf("drain device fact consumer: %v", drainErr)
-		}
-	})
+	t.Cleanup(func() { drainDeviceFactConsumer(t, running) })
 	return running, consume
+}
+
+// waitForConsumerClosed waits for the consumer's lifecycle handling, including
+// its fault decision, to finish. The wait is bounded so a termination the
+// broker never reports fails the test instead of hanging it.
+func waitForConsumerClosed(t *testing.T, running *platformnats.Consumer) {
+	t.Helper()
+	select {
+	case <-running.Closed():
+	case <-time.After(testLiveness):
+		t.Fatal("device fact consumer did not report closure")
+	}
 }
 
 // Unexpected termination must close admission.
@@ -99,14 +109,9 @@ func TestDeviceFactConsumerLatchesAdmissionOnUnexpectedTermination(t *testing.T)
 	}
 	consume.Stop()
 
-	<-running.terminated
+	waitForConsumerClosed(t, running)
 	if running.Active() {
 		t.Fatal("a terminated consumer still reports itself active")
-	}
-	select {
-	case <-running.Closed():
-	default:
-		t.Fatal("a terminated consumer did not report itself closed")
 	}
 	if calls := receiver.gateCalls.Load(); calls != 1 {
 		t.Fatalf("closing automation admission %d times, want exactly 1", calls)
@@ -122,11 +127,9 @@ func TestDeviceFactConsumerDoesNotLatchAdmissionOnDrain(t *testing.T) {
 	receiver := &gatedDeviceFactReceiver{}
 	running, _ := startStubbedDeviceFactConsumer(t, receiver)
 
-	if err := running.Drain(); err != nil {
-		t.Fatalf("drain device fact consumer: %v", err)
-	}
-	// Drain joins the termination watcher, so its fault decision is already
-	// final and no late latch can arrive after this point.
+	// Drain joins the lifecycle watcher, so its fault decision is already final
+	// and no late latch can arrive after this point.
+	drainDeviceFactConsumer(t, running)
 	if calls := receiver.gateCalls.Load(); calls != 0 {
 		t.Fatalf("intentional drain closed automation admission %d times, want 0", calls)
 	}
@@ -142,18 +145,20 @@ func TestDeviceFactConsumerWithoutGateToleratesUnexpectedTermination(t *testing.
 	running, consume := startStubbedDeviceFactConsumer(t, receiver)
 
 	consume.Stop()
-	<-running.terminated
+	waitForConsumerClosed(t, running)
 	if running.Active() {
 		t.Fatal("a terminated consumer still reports itself active")
 	}
 }
 
-// Deleting the durable consumer at the broker must close the real service's
-// admission gate. No Facts are published, so persistence is unnecessary.
+// Broker-reported termination must close the real service's admission gate.
+// Wait for an outstanding pull so deletion reaches it as a terminal status;
+// deletion between pulls may leave nats.go retrying without reporting closure.
 func TestDeviceFactConsumerLatchesAdmissionWhenConsumerIsDeleted(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	js := startDeviceFactServer(t)
+	validator := testValidator(t)
 	resource, err := ProvisionDeviceFactConsumer(ctx, js, testDeviceFactStreamName)
 	if err != nil {
 		t.Fatal(err)
@@ -162,16 +167,21 @@ func TestDeviceFactConsumerLatchesAdmissionWhenConsumerIsDeleted(t *testing.T) {
 	if !service.AdmissionOpen() {
 		t.Fatal("a freshly assembled service reports admission closed")
 	}
-	running, err := StartDeviceFactConsumer(
-		ctx, resource, service, testValidator(t), discardLogger(),
-	)
+	running, err := StartDeviceFactConsumer(ctx, resource, service, validator, discardLogger())
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() {
-		if drainErr := running.Drain(); drainErr != nil {
-			t.Errorf("drain device fact consumer: %v", drainErr)
-		}
+	t.Cleanup(func() { drainDeviceFactConsumer(t, running) })
+
+	// A malformed Fact is terminated by the consumer and never reaches
+	// admission, so the delivery cycle is observable without a repository.
+	publishDeviceFact(t, js, testDeviceFactMessage{
+		subject:   rawDeviceFactSubject(testEntityAID, "observation", "applied"),
+		messageID: testFactOneID,
+		payload:   []byte(`{"id":`),
+	})
+	waitForConsumerInfo(t, resource, func(info *jetstream.ConsumerInfo) bool {
+		return info.AckFloor.Stream == 1 && info.NumAckPending == 0 && info.NumWaiting > 0
 	})
 
 	stream, err := js.Stream(ctx, testDeviceFactStreamName)
@@ -182,7 +192,7 @@ func TestDeviceFactConsumerLatchesAdmissionWhenConsumerIsDeleted(t *testing.T) {
 		t.Fatalf("delete device fact consumer: %v", deleteErr)
 	}
 
-	<-running.terminated
+	waitForConsumerClosed(t, running)
 	if service.AdmissionOpen() {
 		t.Fatal("automation admission stayed open after the consumer was deleted")
 	}

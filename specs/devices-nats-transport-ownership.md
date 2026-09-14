@@ -157,7 +157,7 @@ type commandError struct {
 }
 ```
 
-Domain, HTTP, persistence, configuration, schema, and exported SDK types do not change. `RegistrationServer` and `ObservationConsumer` move to `internal/modules/devices/nats` with their lifecycle semantics unchanged. The observation resource constants retain their names, values, and exported visibility:
+Domain, HTTP, persistence, configuration, schema, and exported SDK types do not change. `RegistrationServer` and the Observation consumer constructor belong to `internal/modules/devices/nats`. `StartObservationConsumer` now returns the shared `*platformnats.Consumer` lifecycle; see [Managed durable consumer](managed-consumer.md). The observation resource constants retain their names, values, and exported visibility:
 
 ```go
 const (
@@ -273,12 +273,7 @@ func StartObservationConsumer(
     validator *contractsv1.Validator,
     projector ObservationProjector,
     logger *slog.Logger,
-) (*ObservationConsumer, error)
-
-func (consumer *ObservationConsumer) Active() bool
-func (consumer *ObservationConsumer) Stop()
-func (consumer *ObservationConsumer) Drain()
-func (consumer *ObservationConsumer) Closed() <-chan struct{}
+) (*platformnats.Consumer, error)
 
 func ProvisionObservationResources(
     context.Context,

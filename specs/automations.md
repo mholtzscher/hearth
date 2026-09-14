@@ -521,12 +521,10 @@ func StartDeviceFactConsumer(
     DeviceFactReceiver,
     *contractsv1.Validator,
     *slog.Logger,
-) (*DeviceFactConsumer, error)
-
-func (consumer *DeviceFactConsumer) Active() bool
-func (consumer *DeviceFactConsumer) Drain() error
-func (consumer *DeviceFactConsumer) Closed() <-chan struct{}
+) (*platformnats.Consumer, error)
 ```
+
+The returned platform consumer supplies `Active`, `Stop`, `Drain(context.Context) error`, and `Closed`; see [Managed durable consumer](managed-consumer.md).
 
 Expected JetStream consumer configuration:
 

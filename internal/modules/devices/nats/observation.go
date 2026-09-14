@@ -12,6 +12,7 @@ import (
 	contractsv1 "github.com/mholtzscher/hearth/contracts/v1"
 	"github.com/mholtzscher/hearth/internal/contracts/v1/natswire"
 	"github.com/mholtzscher/hearth/internal/modules/devices"
+	platformnats "github.com/mholtzscher/hearth/internal/platform/nats"
 )
 
 const observationFutureClockThreshold = time.Minute
@@ -24,13 +25,6 @@ type ObservationProjector interface {
 		devices.Observation,
 		time.Time,
 	) (devices.ProjectionResult, error)
-}
-
-// ObservationConsumer is the durable Observation consumer. It embeds the
-// shared durable lifecycle, so activity reporting and shutdown behave exactly
-// as they do for the Entity Event consumer.
-type ObservationConsumer struct {
-	*durableConsumer
 }
 
 // observationClass is the Observation wire vocabulary shared consumer code
@@ -54,14 +48,14 @@ func StartObservationConsumer(
 	validator *contractsv1.Validator,
 	projector ObservationProjector,
 	logger *slog.Logger,
-) (*ObservationConsumer, error) {
+) (*platformnats.Consumer, error) {
 	if validator == nil {
 		return nil, errors.New("observation validator is required")
 	}
 	if projector == nil {
 		return nil, errors.New("observation handler is required")
 	}
-	durable, err := startDurableConsumer(
+	return startDurableConsumer(
 		baseContext,
 		consumer,
 		observationClass(),
@@ -70,10 +64,6 @@ func StartObservationConsumer(
 			handleObservationMessage(ctx, message, validator, projector, logger)
 		},
 	)
-	if err != nil {
-		return nil, err
-	}
-	return &ObservationConsumer{durableConsumer: durable}, nil
 }
 
 func handleObservationMessage(
