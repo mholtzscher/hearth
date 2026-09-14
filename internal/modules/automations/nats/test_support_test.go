@@ -16,6 +16,7 @@ import (
 	"github.com/mholtzscher/hearth/internal/contracts/v1/natswire"
 	"github.com/mholtzscher/hearth/internal/modules/automations"
 	"github.com/mholtzscher/hearth/internal/modules/devices"
+	platformnats "github.com/mholtzscher/hearth/internal/platform/nats"
 )
 
 const (
@@ -374,7 +375,7 @@ func startDeviceFactConsumer(
 	t *testing.T,
 	js jetstream.JetStream,
 	receiver *fakeDeviceFactReceiver,
-) (*DeviceFactConsumer, jetstream.Consumer) {
+) (*platformnats.Consumer, jetstream.Consumer) {
 	t.Helper()
 	consumer, err := ProvisionDeviceFactConsumer(context.Background(), js, testDeviceFactStreamName)
 	if err != nil {
@@ -386,12 +387,19 @@ func startDeviceFactConsumer(
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() {
-		if drainErr := running.Drain(); drainErr != nil {
-			t.Errorf("drain device fact consumer: %v", drainErr)
-		}
-	})
+	t.Cleanup(func() { drainDeviceFactConsumer(t, running) })
 	return running, consumer
+}
+
+// drainDeviceFactConsumer drains one consumer inside the test liveness budget,
+// so a receiver that never returns fails the test instead of hanging cleanup.
+func drainDeviceFactConsumer(t *testing.T, running *platformnats.Consumer) {
+	t.Helper()
+	drainContext, cancelDrain := context.WithTimeout(context.Background(), testLiveness)
+	defer cancelDrain()
+	if drainErr := running.Drain(drainContext); drainErr != nil {
+		t.Errorf("drain device fact consumer: %v", drainErr)
+	}
 }
 
 // waitForConsumerInfo waits for matching broker state within the liveness budget.

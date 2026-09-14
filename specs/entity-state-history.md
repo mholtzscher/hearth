@@ -441,7 +441,7 @@ docs/
 internal/
 ├── app/
 │   └── hearthd/
-│       └── server_test.go                               # modify — runtime OpenAPI and existing-operation regression coverage
+│       └── http_handler_test.go                         # modify — runtime OpenAPI and existing-operation regression coverage
 ├── modules/
 │   └── devices/
 │       ├── api/

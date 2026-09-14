@@ -233,20 +233,3 @@ func TestHandleDeviceFactMessageLeavesUnreadableMetadataPending(t *testing.T) {
 		t.Fatalf("admitted %d facts without metadata, want 0", receiver.callCount())
 	}
 }
-
-// A consumer that never subscribed must report closure immediately.
-func TestDeviceFactConsumerClosedWithoutSubscriptionIsClosed(t *testing.T) {
-	t.Parallel()
-	consumer := &DeviceFactConsumer{}
-	select {
-	case <-consumer.Closed():
-	default:
-		t.Fatal("a consumer without a subscription is not closed")
-	}
-	if consumer.Active() {
-		t.Fatal("a consumer without a subscription reports itself active")
-	}
-	if err := consumer.Drain(); err != nil {
-		t.Fatalf("draining an unstarted consumer: %v", err)
-	}
-}

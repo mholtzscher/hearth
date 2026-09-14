@@ -685,7 +685,7 @@ internal/modules/devices/
     └── device_fact_relay.go              # single durable publisher
 internal/app/hearthd/
 ├── run.go                                # stream, relay, assembly and drain
-└── server.go                             # shared-connection, stream and relay readiness
+└── runtime_readiness.go                  # shared-connection, stream and relay readiness
 internal/platform/db/migrations/
 └── 00001_initial.sql                     # device_facts_outbox table
 README.md                                 # subscription recipe and durable consumer guidance

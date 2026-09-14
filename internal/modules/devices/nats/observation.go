@@ -3,6 +3,7 @@ package nats
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
 	"time"
 
@@ -12,6 +13,7 @@ import (
 	contractsv1 "github.com/mholtzscher/hearth/contracts/v1"
 	"github.com/mholtzscher/hearth/internal/contracts/v1/natswire"
 	"github.com/mholtzscher/hearth/internal/modules/devices"
+	platformnats "github.com/mholtzscher/hearth/internal/platform/nats"
 )
 
 const observationFutureClockThreshold = time.Minute
@@ -24,13 +26,6 @@ type ObservationProjector interface {
 		devices.Observation,
 		time.Time,
 	) (devices.ProjectionResult, error)
-}
-
-// ObservationConsumer is the durable Observation consumer. It embeds the
-// shared durable lifecycle, so activity reporting and shutdown behave exactly
-// as they do for the Entity Event consumer.
-type ObservationConsumer struct {
-	*durableConsumer
 }
 
 // observationClass is the Observation wire vocabulary shared consumer code
@@ -48,32 +43,45 @@ func observationClass() consumerClass {
 // StartObservationConsumer subscribes the Observation consumer and starts
 // reporting its activity. Nil dependencies fail before any subscription, and a
 // subscription that cannot activate leaves no consumer running.
+//
+//nolint:dupl // Keep this consumer's lifecycle and diagnostic policy visible here.
 func StartObservationConsumer(
 	baseContext context.Context,
 	consumer jetstream.Consumer,
 	validator *contractsv1.Validator,
 	projector ObservationProjector,
 	logger *slog.Logger,
-) (*ObservationConsumer, error) {
+) (*platformnats.Consumer, error) {
 	if validator == nil {
 		return nil, errors.New("observation validator is required")
 	}
 	if projector == nil {
 		return nil, errors.New("observation handler is required")
 	}
-	durable, err := startDurableConsumer(
-		baseContext,
+	if baseContext == nil {
+		baseContext = context.Background()
+	}
+	logger = defaultLogger(logger)
+
+	managed, err := platformnats.StartConsumer(
 		consumer,
-		observationClass(),
-		logger,
-		func(ctx context.Context, logger *slog.Logger, message jetstream.Msg) {
-			handleObservationMessage(ctx, message, validator, projector, logger)
+		func(message jetstream.Msg) {
+			handleObservationMessage(baseContext, message, validator, projector, logger)
+		},
+		platformnats.ConsumerOptions{
+			OnConsumeError: func(_ error) {
+				logger.ErrorContext(baseContext, "observation consume error",
+					slog.String(transportEventKey, "observation.processing_failed"),
+					slog.String("stage", "consume"),
+					slog.String(transportErrorCodeKey, "consumer_error"),
+				)
+			},
 		},
 	)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("start observation consumer: %w", err)
 	}
-	return &ObservationConsumer{durableConsumer: durable}, nil
+	return managed, nil
 }
 
 func handleObservationMessage(

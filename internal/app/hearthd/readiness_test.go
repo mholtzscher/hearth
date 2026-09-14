@@ -18,6 +18,7 @@ import (
 	"github.com/mholtzscher/hearth/internal/modules/devices"
 	devicesnats "github.com/mholtzscher/hearth/internal/modules/devices/nats"
 	platformdb "github.com/mholtzscher/hearth/internal/platform/db"
+	platformnats "github.com/mholtzscher/hearth/internal/platform/nats"
 )
 
 //nolint:gocognit // The required-dependency matrix is clearer as one table of subtests.
@@ -237,8 +238,8 @@ type readinessFixture struct {
 	database            *sql.DB
 	connection          *natsgo.Conn
 	jetstream           jetstream.JetStream
-	consumer            *devicesnats.ObservationConsumer
-	entityEventConsumer *devicesnats.EntityEventConsumer
+	consumer            *platformnats.Consumer
+	entityEventConsumer *platformnats.Consumer
 	relay               *devicesnats.DeviceFactRelay
 	automationConsumers *automationConsumers
 	readiness           *RuntimeReadiness

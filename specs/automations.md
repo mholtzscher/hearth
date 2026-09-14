@@ -521,12 +521,10 @@ func StartDeviceFactConsumer(
     DeviceFactReceiver,
     *contractsv1.Validator,
     *slog.Logger,
-) (*DeviceFactConsumer, error)
-
-func (consumer *DeviceFactConsumer) Active() bool
-func (consumer *DeviceFactConsumer) Drain() error
-func (consumer *DeviceFactConsumer) Closed() <-chan struct{}
+) (*platformnats.Consumer, error)
 ```
+
+The returned platform consumer supplies `Active`, `Stop`, `Drain(context.Context) error`, and `Closed`; see [Managed durable consumer](managed-consumer.md).
 
 Expected JetStream consumer configuration:
 
@@ -662,7 +660,7 @@ internal/modules/automations/
 internal/app/hearthd/
 ├── config.go                                  # modify — retention setting and validation
 ├── run.go                                     # modify — composition, startup, maintenance, and drain
-├── server.go                                  # modify — API registration and readiness dependencies
+├── http_handler.go / runtime_readiness.go     # modify — API registration and readiness dependencies
 ├── automation_integration_test.go             # new — whole fact-to-Command vertical slice
 ├── automation_recovery_integration_test.go    # new — durable resume, stale skip, restart interruption
 └── automation_readiness_test.go                # new — consumer/admission health gates

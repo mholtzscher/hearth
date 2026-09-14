@@ -375,8 +375,8 @@ The baseline `entity_read_projection` view owns the explicit joined Entity colum
 ```text
 docs/architecture.md                                      # modify: accepted HTTP behavior
 internal/app/hearthd/
-├── server.go                                             # modify: pass /v1 group
-└── server_test.go                                        # modify: route/OpenAPI compatibility
+├── http_handler.go                                       # modify: pass /v1 group
+└── http_handler_test.go                                  # modify: route/OpenAPI compatibility
 internal/modules/devices/
 ├── api/
 │   ├── command_history.go, command_history_test.go       # new: Command reads

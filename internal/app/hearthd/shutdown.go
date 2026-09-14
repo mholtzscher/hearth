@@ -17,6 +17,7 @@ import (
 	"github.com/mholtzscher/hearth/internal/modules/automations"
 	"github.com/mholtzscher/hearth/internal/modules/devices"
 	devicesnats "github.com/mholtzscher/hearth/internal/modules/devices/nats"
+	platformnats "github.com/mholtzscher/hearth/internal/platform/nats"
 )
 
 // registeredDrain is one started request/reply transport paired with the
@@ -137,8 +138,8 @@ func (shutdown *coreShutdown) stopHTTP() error {
 type coreConsumers struct {
 	callbackContext context.Context
 	cancelCallbacks context.CancelFunc
-	observations    *devicesnats.ObservationConsumer
-	entityEvents    *devicesnats.EntityEventConsumer
+	observations    *platformnats.Consumer
+	entityEvents    *platformnats.Consumer
 }
 
 // newCoreConsumers gives both consumers a context detached from parent cancellation.
@@ -199,22 +200,10 @@ func (consumers *coreConsumers) close() {
 	consumers.cancelCallbacks()
 }
 
-// consumerDrain is the lifecycle shared by Entity Event and Observation consumers.
-type consumerDrain interface {
-	Drain()
-	Stop()
-	Closed() <-chan struct{}
-}
-
-// drainConsumer allows in-flight callbacks a bounded drain window, then stops
-// delivery. Unprocessed or unacknowledged input stays in the stream for restart.
-func drainConsumer(consumer consumerDrain) {
-	consumer.Drain()
-	drainContext, cancel := context.WithTimeout(context.Background(), shutdownTimeout)
-	defer cancel()
-	select {
-	case <-consumer.Closed():
-	case <-drainContext.Done():
-		consumer.Stop()
-	}
+// drainConsumer bounds the wait, not the callbacks. Unacknowledged input stays
+// in the stream for restart; Stop cannot interrupt an already-started drain.
+func drainConsumer(consumer *platformnats.Consumer) {
+	drainContext, cancelDrain := context.WithTimeout(context.Background(), shutdownTimeout)
+	defer cancelDrain()
+	_ = consumer.Drain(drainContext)
 }

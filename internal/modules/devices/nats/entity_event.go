@@ -3,6 +3,7 @@ package nats
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
 	"time"
 
@@ -12,6 +13,7 @@ import (
 	contractsv1 "github.com/mholtzscher/hearth/contracts/v1"
 	"github.com/mholtzscher/hearth/internal/contracts/v1/natswire"
 	"github.com/mholtzscher/hearth/internal/modules/devices"
+	platformnats "github.com/mholtzscher/hearth/internal/platform/nats"
 )
 
 // EntityEventRecorder is the only devices capability the Entity Event consumer
@@ -40,13 +42,6 @@ type entityEvent struct {
 	Name     string `json:"name"`
 }
 
-// EntityEventConsumer is the durable Entity Event consumer. It embeds the
-// shared durable lifecycle, so activity reporting and shutdown behave exactly
-// as they do for the Observation consumer.
-type EntityEventConsumer struct {
-	*durableConsumer
-}
-
 // entityEventClass is the Entity Event wire vocabulary shared consumer code
 // uses for diagnostics. An Entity Event is a report, never a reaction, so
 // invalid, consume, and processing failures all report under entity_event.*.
@@ -62,32 +57,45 @@ func entityEventClass() consumerClass {
 // StartEntityEventConsumer subscribes the Entity Event consumer and starts
 // reporting its activity. Nil dependencies fail before any subscription, and a
 // subscription that cannot activate leaves no consumer running.
+//
+//nolint:dupl // Keep this consumer's lifecycle and diagnostic policy visible here.
 func StartEntityEventConsumer(
 	baseContext context.Context,
 	consumer jetstream.Consumer,
 	validator *contractsv1.Validator,
 	recorder EntityEventRecorder,
 	logger *slog.Logger,
-) (*EntityEventConsumer, error) {
+) (*platformnats.Consumer, error) {
 	if validator == nil {
 		return nil, errors.New("entity event validator is required")
 	}
 	if recorder == nil {
 		return nil, errors.New("entity event recorder is required")
 	}
-	durable, err := startDurableConsumer(
-		baseContext,
+	if baseContext == nil {
+		baseContext = context.Background()
+	}
+	logger = defaultLogger(logger)
+
+	managed, err := platformnats.StartConsumer(
 		consumer,
-		entityEventClass(),
-		logger,
-		func(ctx context.Context, logger *slog.Logger, message jetstream.Msg) {
-			handleEntityEventMessage(ctx, message, validator, recorder, logger)
+		func(message jetstream.Msg) {
+			handleEntityEventMessage(baseContext, message, validator, recorder, logger)
+		},
+		platformnats.ConsumerOptions{
+			OnConsumeError: func(_ error) {
+				logger.ErrorContext(baseContext, "entity event consume error",
+					slog.String(transportEventKey, "entity_event.processing_failed"),
+					slog.String("stage", "consume"),
+					slog.String(transportErrorCodeKey, "consumer_error"),
+				)
+			},
 		},
 	)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("start entity event consumer: %w", err)
 	}
-	return &EntityEventConsumer{durableConsumer: durable}, nil
+	return managed, nil
 }
 
 // handleEntityEventMessage decodes, validates, records, and acknowledges one

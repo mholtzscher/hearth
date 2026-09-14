@@ -9,14 +9,8 @@ import (
 
 	contractsv1 "github.com/mholtzscher/hearth/contracts/v1"
 	automationsnats "github.com/mholtzscher/hearth/internal/modules/automations/nats"
+	platformnats "github.com/mholtzscher/hearth/internal/platform/nats"
 )
-
-// AutomationAdmissionChecker is the narrow readiness seam for Automation
-// admission. Like [CommandAdmissionChecker] it stays separate from the HTTP
-// Automations seam so a transport handler can never bypass admission.
-type AutomationAdmissionChecker interface {
-	AdmissionOpen() bool
-}
 
 // automationActivity gives readiness a read-only view of Device Fact consumption.
 type automationActivity interface {
@@ -29,7 +23,7 @@ type automationConsumers struct {
 	callbackContext context.Context
 	cancelCallbacks context.CancelFunc
 	logger          *slog.Logger
-	deviceFacts     *automationsnats.DeviceFactConsumer
+	deviceFacts     *platformnats.Consumer
 }
 
 // newAutomationConsumers detaches admission callbacks from parent cancellation.
@@ -72,7 +66,7 @@ func (consumers *automationConsumers) close() {
 	if consumers.deviceFacts != nil {
 		logCleanupFailure(
 			context.Background(), consumers.logger, "drain_automation_consumer",
-			consumers.deviceFacts.Drain(),
+			consumers.deviceFacts.Drain(context.Background()),
 		)
 	}
 	consumers.cancelCallbacks()

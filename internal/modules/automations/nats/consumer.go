@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"sync/atomic"
 
 	natsgo "github.com/nats-io/nats.go"
 	"github.com/nats-io/nats.go/jetstream"
@@ -13,6 +12,7 @@ import (
 	contractsv1 "github.com/mholtzscher/hearth/contracts/v1"
 	"github.com/mholtzscher/hearth/internal/contracts/v1/natswire"
 	"github.com/mholtzscher/hearth/internal/modules/automations"
+	platformnats "github.com/mholtzscher/hearth/internal/platform/nats"
 )
 
 // Shared log field keys; event values remain searchable literals at each log site.
@@ -55,28 +55,17 @@ type AdmissionGate interface {
 	StopAdmission()
 }
 
-// DeviceFactConsumer admits both Fact families through one durable subscription.
-// Unexpected termination closes the optional AdmissionGate; intentional Drain does not.
-type DeviceFactConsumer struct {
-	consume jetstream.ConsumeContext
-	active  atomic.Bool
-	// Mark intentional shutdown before stopping delivery, so it is not a fault.
-	draining atomic.Bool
-	// Closed after the termination watcher finishes its fault decision.
-	terminated chan struct{}
-	gate       AdmissionGate
-}
-
 // StartDeviceFactConsumer subscribes with strict Fact decoding and trace propagation.
 // It acknowledges only after synchronous admission succeeds, using
 // DeviceFactAdmissionTimeout for each admission's context deadline.
+// Unexpected termination closes the optional AdmissionGate; intentional shutdown does not.
 func StartDeviceFactConsumer(
 	baseContext context.Context,
 	consumer jetstream.Consumer,
 	receiver DeviceFactReceiver,
 	validator *contractsv1.Validator,
 	logger *slog.Logger,
-) (*DeviceFactConsumer, error) {
+) (*platformnats.Consumer, error) {
 	switch {
 	case consumer == nil:
 		return nil, errors.New("device fact consumer is required")
@@ -90,81 +79,36 @@ func StartDeviceFactConsumer(
 	}
 	logger = defaultLogger(logger)
 
-	running := &DeviceFactConsumer{terminated: make(chan struct{})}
-	if gate, ok := receiver.(AdmissionGate); ok {
-		running.gate = gate
-	}
-	consume, err := consumer.Consume(
+	managed, err := platformnats.StartConsumer(
+		consumer,
 		func(message jetstream.Msg) {
 			handleDeviceFactMessage(baseContext, message, validator, receiver, logger)
 		},
-		jetstream.ConsumeErrHandler(func(_ jetstream.ConsumeContext, _ error) {
-			logger.ErrorContext(baseContext, "automation device fact consume error",
-				slog.String(transportEventKey, "automation.fact_processing_failed"),
-				slog.String("stage", transportStageConsume),
-				slog.String(transportErrorCodeKey, transportCodeConsumerError),
-			)
-		}),
+		platformnats.ConsumerOptions{
+			OnConsumeError: func(_ error) {
+				logger.ErrorContext(baseContext, "automation device fact consume error",
+					slog.String(transportEventKey, "automation.fact_processing_failed"),
+					slog.String("stage", transportStageConsume),
+					slog.String(transportErrorCodeKey, transportCodeConsumerError),
+				)
+			},
+			// Close admission before diagnostics can block fault reporting.
+			OnUnexpectedTermination: func() {
+				if gate, ok := receiver.(AdmissionGate); ok {
+					gate.StopAdmission()
+				}
+				logger.ErrorContext(baseContext, "automation device fact consumer terminated unexpectedly",
+					slog.String(transportEventKey, "automation.fact_processing_failed"),
+					slog.String("stage", transportStageConsume),
+					slog.String(transportErrorCodeKey, transportCodeConsumerFault),
+				)
+			},
+		},
 	)
 	if err != nil {
 		return nil, fmt.Errorf("start device fact consumer: %w", err)
 	}
-	running.consume = consume
-	running.active.Store(true)
-	go running.watchTermination(baseContext, logger)
-	return running, nil
-}
-
-// watchTermination logs unexpected closure and closes admission when a gate
-// is available. Intentional Drain suppresses both actions.
-func (consumer *DeviceFactConsumer) watchTermination(ctx context.Context, logger *slog.Logger) {
-	defer close(consumer.terminated)
-	<-consumer.consume.Closed()
-	consumer.active.Store(false)
-	if consumer.draining.Load() {
-		return
-	}
-	if consumer.gate != nil {
-		consumer.gate.StopAdmission()
-	}
-	logger.ErrorContext(ctx, "automation device fact consumer terminated unexpectedly",
-		slog.String(transportEventKey, "automation.fact_processing_failed"),
-		slog.String("stage", transportStageConsume),
-		slog.String(transportErrorCodeKey, transportCodeConsumerFault),
-	)
-}
-
-// Active reports whether the subscription is still consuming. Drain clears it
-// before teardown begins, so readiness fails as soon as shutdown starts.
-func (consumer *DeviceFactConsumer) Active() bool {
-	return consumer != nil && consumer.active.Load()
-}
-
-// Drain stops delivery and joins callbacks and the termination watcher.
-// It relies on receivers honoring their admission deadline; it has no separate timeout.
-func (consumer *DeviceFactConsumer) Drain() error {
-	if consumer == nil || consumer.consume == nil {
-		return nil
-	}
-	consumer.draining.Store(true)
-	consumer.active.Store(false)
-	consumer.consume.Drain()
-	<-consumer.consume.Closed()
-	if consumer.terminated != nil {
-		<-consumer.terminated
-	}
-	return nil
-}
-
-// Closed reports subscription termination. A consumer that never subscribed is
-// already closed.
-func (consumer *DeviceFactConsumer) Closed() <-chan struct{} {
-	if consumer == nil || consumer.consume == nil {
-		closed := make(chan struct{})
-		close(closed)
-		return closed
-	}
-	return consumer.consume.Closed()
+	return managed, nil
 }
 
 // handleDeviceFactMessage maps and admits exactly one received Device Fact. It
