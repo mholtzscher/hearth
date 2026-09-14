@@ -193,10 +193,8 @@ func TestObservationConsumerCallbackSurvivesDependencyCancellation(t *testing.T)
 		t.Fatalf("dependency cancellation reached the in-flight Observation callback: %v", callbackErr)
 	}
 
-	// Deferred error-exit cleanup calls close directly rather than the normal
-	// shutdown path's earlier drainTransports call. Closing while this projection
-	// is in flight must drain before canceling the callback context; reversing
-	// those two operations would make the projection below fail to commit.
+	// Closing must drain before canceling callbacks, or this in-flight
+	// Observation projection cannot commit.
 	closed := make(chan struct{})
 	go func() {
 		consumers.close()

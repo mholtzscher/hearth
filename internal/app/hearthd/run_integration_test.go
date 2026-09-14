@@ -15,6 +15,7 @@ import (
 
 	contractsv1 "github.com/mholtzscher/hearth/contracts/v1"
 	contractpowerv1 "github.com/mholtzscher/hearth/entitytypes/powerv1"
+	automationsnats "github.com/mholtzscher/hearth/internal/modules/automations/nats"
 	"github.com/mholtzscher/hearth/internal/modules/devices"
 	devicesnats "github.com/mholtzscher/hearth/internal/modules/devices/nats"
 	platformdb "github.com/mholtzscher/hearth/internal/platform/db"
@@ -164,8 +165,21 @@ func TestCoreNATSTransportRegistersAndProjectsDurableObservation(t *testing.T) {
 		t.Fatal(scanErr)
 	}
 	relay := startDeviceFactRelay(t, js, devices.NewSQLiteRepository(database, catalog))
+	automationResource, err := automationsnats.ProvisionDeviceFactConsumer(
+		ctx, js, devicesnats.DeviceFactStreamName,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	automationConsumers := newAutomationConsumers(ctx, logger)
+	t.Cleanup(automationConsumers.close)
+	if startErr := automationConsumers.start(
+		automationResource, discardDeviceFactReceiver{}, validator,
+	); startErr != nil {
+		t.Fatal(startErr)
+	}
 	readiness := NewRuntimeReadiness(
-		database, coreConnection, js, observations, entityEvents, relay,
+		database, coreConnection, js, observations, entityEvents, relay, automationConsumers,
 	)
 	if readinessErr := readiness.Check(ctx); readinessErr != nil {
 		t.Fatal(readinessErr)

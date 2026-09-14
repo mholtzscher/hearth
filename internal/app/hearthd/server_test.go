@@ -144,7 +144,7 @@ func TestHTTPHandlerServesHealthReadinessAndDeviceOperations(t *testing.T) {
 		}}, nil
 	}}
 	readiness := &testReadiness{}
-	handler, api := NewHTTPHandler(stub, readiness, stub)
+	handler, api := NewHTTPHandler(stub, &stubAutomations{}, readiness, stub, &stubAutomations{})
 
 	if response := appRequest(handler, "/healthz"); response.Code != http.StatusOK {
 		t.Fatalf("health status = %d", response.Code)
@@ -177,8 +177,10 @@ func TestRuntimeOpenAPIContract(t *testing.T) {
 	t.Parallel()
 	handler, _ := NewHTTPHandler(
 		&stubDevices{},
+		&stubAutomations{},
 		&testReadiness{},
 		&stubDevices{},
+		&stubAutomations{},
 	)
 	response := appRequest(handler, "/openapi.json")
 	if response.Code != http.StatusOK {
@@ -210,7 +212,7 @@ func TestRuntimeOpenAPIContract(t *testing.T) {
 	if document.OpenAPI != "3.1.0" || document.Info.Title != "Hearth" || document.Info.Version != "1.0.0" {
 		t.Fatalf("OpenAPI metadata = %#v", document)
 	}
-	if len(document.Paths) != 12 {
+	if len(document.Paths) != 17 {
 		t.Fatalf("OpenAPI paths = %v", document.Paths)
 	}
 	assertRuntimeOpenAPIOperation(t, document.Paths["/v1/entities"].Get, "list-entities", "200", "400", "422", "500")
@@ -402,8 +404,10 @@ func TestHTTPHandlerUsesStandardHumaValidationErrors(t *testing.T) {
 	t.Parallel()
 	handler, _ := NewHTTPHandler(
 		&stubDevices{},
+		&stubAutomations{},
 		nil,
 		&stubDevices{},
+		&stubAutomations{},
 	)
 	for _, test := range []struct {
 		body   string
@@ -442,8 +446,10 @@ func TestNewHTTPHandlerPreservesHumaErrorFactory(t *testing.T) {
 
 	NewHTTPHandler(
 		&stubDevices{},
+		&stubAutomations{},
 		nil,
 		&stubDevices{},
+		&stubAutomations{},
 	)
 	called = false
 	err := huma.NewError(http.StatusTeapot, "teapot")

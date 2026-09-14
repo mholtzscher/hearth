@@ -108,6 +108,69 @@ func TestLoadConfigRejectsObservationRetentionBelowMinimum(t *testing.T) {
 	}
 }
 
+func TestLoadConfigDefaultsAutomationHistoryRetention(t *testing.T) {
+	t.Parallel()
+	value := loadRetentionConfig(t, "")
+	if value.AutomationHistoryRetention != hearthd.DefaultAutomationHistoryRetention {
+		t.Fatalf(
+			"automation_history_retention = %s, want default %s",
+			value.AutomationHistoryRetention,
+			hearthd.DefaultAutomationHistoryRetention,
+		)
+	}
+	if hearthd.DefaultAutomationHistoryRetention != 30*24*time.Hour {
+		t.Fatalf("default automation history retention = %s, want 720h", hearthd.DefaultAutomationHistoryRetention)
+	}
+	if hearthd.MinimumAutomationHistoryRetention != 8*24*time.Hour {
+		t.Fatalf("minimum automation history retention = %s, want 192h", hearthd.MinimumAutomationHistoryRetention)
+	}
+	if hearthd.AutomationFactMaximumAge != 30*time.Second {
+		t.Fatalf("automation fact maximum age = %s, want 30s", hearthd.AutomationFactMaximumAge)
+	}
+}
+
+func TestLoadConfigParsesExplicitAutomationHistoryRetention(t *testing.T) {
+	t.Parallel()
+	value := loadRetentionConfig(t, "automation_history_retention: 192h\n")
+	if value.AutomationHistoryRetention != 192*time.Hour {
+		t.Fatalf("automation_history_retention = %s, want 192h", value.AutomationHistoryRetention)
+	}
+	if got := value.EffectiveAutomationHistoryRetention(); got != 192*time.Hour {
+		t.Fatalf("effective automation history retention = %s, want 192h", got)
+	}
+}
+
+func TestAutomationHistoryRetentionRejectsBelowMinimum(t *testing.T) {
+	t.Parallel()
+	for _, retention := range []time.Duration{
+		-time.Hour,
+		hearthd.MinimumAutomationHistoryRetention - time.Nanosecond,
+	} {
+		value := hearthd.Config{HouseholdTimezone: "UTC",
+			HTTPAddr: "127.0.0.1:8080", NATSURL: "nats://127.0.0.1:4222", SQLitePath: "hearth.db",
+			AutomationHistoryRetention: retention,
+		}
+		if err := value.Validate(); err == nil {
+			t.Fatalf("automation history retention %s unexpectedly accepted", retention)
+		}
+	}
+	var unset hearthd.Config
+	if got := unset.EffectiveAutomationHistoryRetention(); got != hearthd.DefaultAutomationHistoryRetention {
+		t.Fatalf("effective unset retention = %s, want default", got)
+	}
+}
+
+func TestLoadExampleConfigDocumentsAutomationHistoryRetention(t *testing.T) {
+	t.Parallel()
+	value, err := hearthd.LoadConfig(filepath.Join("..", "..", "..", "configs", "hearthd.example.yaml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if value.AutomationHistoryRetention != 720*time.Hour {
+		t.Fatalf("example automation_history_retention = %s, want 720h", value.AutomationHistoryRetention)
+	}
+}
+
 func TestEffectiveObservationRetentionFallsBackToDefault(t *testing.T) {
 	t.Parallel()
 	var unset hearthd.Config

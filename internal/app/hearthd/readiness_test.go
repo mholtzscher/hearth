@@ -13,6 +13,8 @@ import (
 	"github.com/nats-io/nats.go/jetstream"
 
 	contractsv1 "github.com/mholtzscher/hearth/contracts/v1"
+	"github.com/mholtzscher/hearth/internal/modules/automations"
+	automationsnats "github.com/mholtzscher/hearth/internal/modules/automations/nats"
 	"github.com/mholtzscher/hearth/internal/modules/devices"
 	devicesnats "github.com/mholtzscher/hearth/internal/modules/devices/nats"
 	platformdb "github.com/mholtzscher/hearth/internal/platform/db"
@@ -144,6 +146,41 @@ func TestRuntimeReadinessChecksEveryRequiredDependency(t *testing.T) {
 			t.Fatal("readiness passed with an inactive device fact relay")
 		}
 	})
+	t.Run("automation consumer inactive", func(t *testing.T) {
+		t.Parallel()
+		fixture := newReadinessFixture(t)
+		// close stops delivery and waits for in-flight callbacks, so Active() is
+		// already false once it returns: no sleep is used as an oracle.
+		fixture.automationConsumers.close()
+		if err := fixture.readiness.Check(context.Background()); err == nil {
+			t.Fatal("readiness passed with an inactive automation device fact consumer")
+		}
+	})
+	t.Run("automation consumer resources mismatched", func(t *testing.T) {
+		t.Parallel()
+		fixture := newReadinessFixture(t)
+		ctx := context.Background()
+		consumer, err := fixture.jetstream.Consumer(
+			ctx, devicesnats.DeviceFactStreamName, automationsnats.DeviceFactConsumerName,
+		)
+		if err != nil {
+			t.Fatal(err)
+		}
+		info, err := consumer.Info(ctx)
+		if err != nil {
+			t.Fatal(err)
+		}
+		config := info.Config
+		config.AckWait = 30 * time.Second
+		if _, updateErr := fixture.jetstream.UpdateConsumer(
+			ctx, devicesnats.DeviceFactStreamName, config,
+		); updateErr != nil {
+			t.Fatal(updateErr)
+		}
+		if checkErr := fixture.readiness.Check(ctx); checkErr == nil {
+			t.Fatal("readiness passed with a mismatched automation device fact consumer")
+		}
+	})
 }
 
 // TestRuntimeReadinessDoesNotRequireASubscriber proves the fact path needs no
@@ -182,6 +219,20 @@ func (discardEntityEventRecorder) RecordEntityEvent(
 	return devices.EntityEventRecordResult{}, nil
 }
 
+// discardDeviceFactReceiver is the automation consumer's admission seam. It
+// admits nothing and reports no outcome, which is exactly what an unconfigured
+// automation set decides; it never executes a Command. The readiness fixture
+// publishes no Fact, and transport tests that do publish one only need the
+// consumer to acknowledge it.
+type discardDeviceFactReceiver struct{}
+
+func (discardDeviceFactReceiver) ReceiveDeviceFact(
+	_ context.Context,
+	_ automations.DeviceFact,
+) (automations.AdmissionOutcome, error) {
+	return automations.AdmissionOutcome{}, nil
+}
+
 type readinessFixture struct {
 	database            *sql.DB
 	connection          *natsgo.Conn
@@ -189,6 +240,7 @@ type readinessFixture struct {
 	consumer            *devicesnats.ObservationConsumer
 	entityEventConsumer *devicesnats.EntityEventConsumer
 	relay               *devicesnats.DeviceFactRelay
+	automationConsumers *automationConsumers
 	readiness           *RuntimeReadiness
 }
 
@@ -256,11 +308,25 @@ func newReadinessFixture(t *testing.T) readinessFixture {
 	}
 	t.Cleanup(entityEventConsumer.Stop)
 	relay := startDeviceFactRelay(t, js, devices.NewSQLiteRepository(database, nil))
+	automationResource, err := automationsnats.ProvisionDeviceFactConsumer(
+		ctx, js, devicesnats.DeviceFactStreamName,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	automationConsumers := newAutomationConsumers(ctx, slog.New(slog.DiscardHandler))
+	t.Cleanup(automationConsumers.close)
+	if startErr := automationConsumers.start(
+		automationResource, discardDeviceFactReceiver{}, validator,
+	); startErr != nil {
+		t.Fatal(startErr)
+	}
 	return readinessFixture{
 		database: database, connection: connection, jetstream: js,
 		consumer: consumer, entityEventConsumer: entityEventConsumer, relay: relay,
+		automationConsumers: automationConsumers,
 		readiness: NewRuntimeReadiness(
-			database, connection, js, consumer, entityEventConsumer, relay,
+			database, connection, js, consumer, entityEventConsumer, relay, automationConsumers,
 		),
 	}
 }

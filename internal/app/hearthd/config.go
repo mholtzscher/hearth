@@ -8,6 +8,7 @@ import (
 	"time"
 	_ "time/tzdata" // Embed household timezone rules instead of requiring host zoneinfo.
 
+	"github.com/mholtzscher/hearth/internal/modules/automations"
 	platformconfig "github.com/mholtzscher/hearth/internal/platform/config"
 )
 
@@ -16,6 +17,14 @@ const (
 	DefaultObservationRetention = 30 * 24 * time.Hour
 	// MinimumObservationRetention keeps the Core window above the seven-day JetStream retention.
 	MinimumObservationRetention = 8 * 24 * time.Hour
+	// DefaultAutomationHistoryRetention bounds how long Core keeps terminal Automation history.
+	DefaultAutomationHistoryRetention = 30 * 24 * time.Hour
+	// MinimumAutomationHistoryRetention keeps pruned Automation history above the
+	// seven-day Device Fact retention so retained evidence stays explainable.
+	MinimumAutomationHistoryRetention = 8 * 24 * time.Hour
+	// AutomationFactMaximumAge is the fixed semantic freshness bound for one
+	// Device Fact. It is deliberately not operator configuration.
+	AutomationFactMaximumAge = automations.AutomationFactMaximumAge
 )
 
 type Config struct {
@@ -27,6 +36,10 @@ type Config struct {
 	// Zero selects DefaultObservationRetention; a restart applies policy changes
 	// on the next hourly prune pass.
 	ObservationRetention time.Duration `yaml:"observation_retention"`
+	// AutomationHistoryRetention bounds how long Core keeps terminal Automation
+	// Runs and Skips. Zero selects DefaultAutomationHistoryRetention; a restart
+	// applies policy changes on the next hourly prune pass.
+	AutomationHistoryRetention time.Duration `yaml:"automation_history_retention"`
 }
 
 func LoadConfig(path string) (Config, error) {
@@ -36,6 +49,9 @@ func LoadConfig(path string) (Config, error) {
 	}
 	if value.ObservationRetention == 0 {
 		value.ObservationRetention = DefaultObservationRetention
+	}
+	if value.AutomationHistoryRetention == 0 {
+		value.AutomationHistoryRetention = DefaultAutomationHistoryRetention
 	}
 	if err := value.Validate(); err != nil {
 		return Config{}, fmt.Errorf("validate config %q: %w", path, err)
@@ -50,6 +66,15 @@ func (value Config) EffectiveObservationRetention() time.Duration {
 		return DefaultObservationRetention
 	}
 	return value.ObservationRetention
+}
+
+// EffectiveAutomationHistoryRetention returns the configured Automation history
+// retention, or DefaultAutomationHistoryRetention when the setting is unset.
+func (value Config) EffectiveAutomationHistoryRetention() time.Duration {
+	if value.AutomationHistoryRetention == 0 {
+		return DefaultAutomationHistoryRetention
+	}
+	return value.AutomationHistoryRetention
 }
 
 // LoadHouseholdTimezone loads an IANA location from embedded timezone data.
@@ -101,6 +126,12 @@ func (value Config) validateRuntimeSettings() error {
 	if value.ObservationRetention != 0 && value.ObservationRetention < MinimumObservationRetention {
 		return fmt.Errorf(
 			"observation_retention must be at least %s", MinimumObservationRetention,
+		)
+	}
+	if value.AutomationHistoryRetention != 0 &&
+		value.AutomationHistoryRetention < MinimumAutomationHistoryRetention {
+		return fmt.Errorf(
+			"automation_history_retention must be at least %s", MinimumAutomationHistoryRetention,
 		)
 	}
 	return nil
