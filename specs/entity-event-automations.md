@@ -1,8 +1,8 @@
 # Entity Event automations
 
-**Status:** Deferred design; the Device Facts foundation defined by `specs/device-facts.md` is implemented, and this spec now names its exact Entity Event fact DTO, subject, schema, stream and lifecycle seams plus the automations consumer's own durability policy. Automations remain unimplemented and this spec is not implementation-ready until the completeness review passes.
+**Status:** Superseded by [Fact-driven automations](automations.md). Retained only as historical rationale for the earlier Entity Event-only proposal; do not implement this design.
 **Baseline:** `d9760b8`. Do not restore the automation module removed in `423addb` wholesale.
-**Effort:** XL after the Device Facts foundation, across four remaining deliverables.
+**Effort:** Superseded.
 
 ## 1. Purpose and scope
 

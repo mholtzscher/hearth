@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/mholtzscher/hearth/internal/modules/automations"
 	"github.com/mholtzscher/hearth/internal/modules/devices"
 	platformdb "github.com/mholtzscher/hearth/internal/platform/db"
 )
@@ -44,14 +45,22 @@ func TestMaintenancePrunesBothRetentions(t *testing.T) {
 		devices.SQLiteStores(devices.NewSQLiteRepository(database, catalog)),
 		nil, catalog, devices.Dependencies{},
 	)
+	// The same pass bounds Automation history through the automations service.
+	// This fixture seeds no Automation rows, so the pass must not disturb the
+	// device retentions it also runs beside.
+	automationService := automations.NewService(
+		automations.NewSQLiteRepository(database, automations.AutomationDependencies{}),
+		nil,
+		automations.AutomationDependencies{},
+	)
 	runContext, cancelRun := context.WithCancel(ctx)
 	defer cancelRun()
 	workerStopped := make(chan struct{})
 	go func() {
 		defer close(workerStopped)
 		pruneRetainedHistory(
-			runContext, service, slog.New(slog.DiscardHandler),
-			30*24*time.Hour, 5*time.Millisecond,
+			runContext, service, automationService, slog.New(slog.DiscardHandler),
+			30*24*time.Hour, 30*24*time.Hour, 5*time.Millisecond,
 		)
 	}()
 	waitForMatrixCondition(t, 10*time.Second, func() (bool, error) {

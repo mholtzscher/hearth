@@ -12,6 +12,8 @@ import (
 	natsgo "github.com/nats-io/nats.go"
 	"github.com/nats-io/nats.go/jetstream"
 
+	automationsapi "github.com/mholtzscher/hearth/internal/modules/automations/api"
+	automationsnats "github.com/mholtzscher/hearth/internal/modules/automations/nats"
 	devicesapi "github.com/mholtzscher/hearth/internal/modules/devices/api"
 	devicesnats "github.com/mholtzscher/hearth/internal/modules/devices/nats"
 )
@@ -27,6 +29,7 @@ type RuntimeReadiness struct {
 	observationConsumer *devicesnats.ObservationConsumer
 	entityEventConsumer *devicesnats.EntityEventConsumer
 	relay               *devicesnats.DeviceFactRelay
+	automationConsumer  automationActivity
 }
 
 // NewRuntimeReadiness assembles the readiness dependencies. One shared NATS
@@ -40,17 +43,18 @@ func NewRuntimeReadiness(
 	observationConsumer *devicesnats.ObservationConsumer,
 	entityEventConsumer *devicesnats.EntityEventConsumer,
 	relay *devicesnats.DeviceFactRelay,
+	automationConsumer automationActivity,
 ) *RuntimeReadiness {
 	return &RuntimeReadiness{
 		database: database, connection: connection, jetstream: js,
 		observationConsumer: observationConsumer, entityEventConsumer: entityEventConsumer,
-		relay: relay,
+		relay: relay, automationConsumer: automationConsumer,
 	}
 }
 
 func (readiness *RuntimeReadiness) Check(ctx context.Context) error {
 	if readiness == nil || readiness.database == nil || readiness.connection == nil ||
-		readiness.jetstream == nil || readiness.relay == nil {
+		readiness.jetstream == nil || readiness.relay == nil || readiness.automationConsumer == nil {
 		return errors.New("runtime dependencies are not initialized")
 	}
 	if err := readiness.database.PingContext(ctx); err != nil {
@@ -84,6 +88,17 @@ func (readiness *RuntimeReadiness) Check(ctx context.Context) error {
 	if !readiness.entityEventConsumer.Active() {
 		return errors.New("entity event consumer is inactive")
 	}
+	// The automations-owned Device Fact consumer is validated against its exact
+	// broker configuration and live consumption. Its backlog is never a
+	// readiness failure: automatic admission recovers what the stream retained.
+	if err := automationsnats.ValidateDeviceFactConsumer(
+		ctx, readiness.jetstream, devicesnats.DeviceFactStreamName,
+	); err != nil {
+		return err
+	}
+	if !readiness.automationConsumer.Active() {
+		return errors.New("automation device fact consumer is inactive")
+	}
 	return nil
 }
 
@@ -96,17 +111,24 @@ type CommandAdmissionChecker interface {
 
 func NewHTTPHandler(
 	devices devicesapi.Devices,
+	automations automationsapi.Automations,
 	readiness ReadinessChecker,
 	commandAdmission CommandAdmissionChecker,
+	automationAdmission AutomationAdmissionChecker,
 ) (http.Handler, huma.API) {
 	const statusField = "status"
 	router := echo.New()
 	router.GET("/healthz", func(ctx *echo.Context) error {
 		return ctx.JSON(http.StatusOK, map[string]string{statusField: "ok"})
 	})
+	// Readiness requires the broker and persistence resources, both consumer
+	// lifecycles, and both admission gates. Automation admission is checked
+	// beside Command admission because a manual or fact-driven Run needs a
+	// device Command to take effect.
 	router.GET("/readyz", func(ctx *echo.Context) error {
 		if readiness == nil || readiness.Check(ctx.Request().Context()) != nil || commandAdmission == nil ||
-			!commandAdmission.CommandAdmissionOpen() {
+			!commandAdmission.CommandAdmissionOpen() || automationAdmission == nil ||
+			!automationAdmission.AdmissionOpen() {
 			return ctx.JSON(http.StatusServiceUnavailable, map[string]string{statusField: "not_ready"})
 		}
 		return ctx.JSON(http.StatusOK, map[string]string{statusField: "ready"})
@@ -115,5 +137,6 @@ func NewHTTPHandler(
 	api := humaecho.New(router, huma.DefaultConfig("Hearth", "1.0.0"))
 	v1 := huma.NewGroup(api, "/v1")
 	devicesapi.Register(v1, devices)
+	automationsapi.Register(v1, automations)
 	return router, api
 }

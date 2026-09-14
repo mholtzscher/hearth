@@ -1,0 +1,437 @@
+package automations_test
+
+import (
+	"context"
+	"database/sql"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"path/filepath"
+	"testing"
+
+	platformdb "github.com/mholtzscher/hearth/internal/platform/db"
+
+	"github.com/mholtzscher/hearth/internal/modules/automations"
+	"github.com/mholtzscher/hearth/internal/modules/devices"
+)
+
+// migrationTimestamp is a fixed-width UTC stamp accepted by every automation
+// table's TEXT columns.
+const migrationTimestamp = "2026-09-01T00:00:00.000000000Z"
+
+func openAutomationDatabase(t *testing.T) *sql.DB {
+	t.Helper()
+	database, err := platformdb.Open(context.Background(), filepath.Join(t.TempDir(), "hearth.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = database.Close() })
+	if err = platformdb.Migrate(context.Background(), database); err != nil {
+		t.Fatal(err)
+	}
+	return database
+}
+
+func newAutomationRepository(t *testing.T, database *sql.DB) *automations.SQLiteRepository {
+	t.Helper()
+	return automations.NewSQLiteRepository(database, automations.AutomationDependencies{})
+}
+
+// TestSQLiteRepositoryCreateReplaceDeleteRevisions protects revisioned CRUD
+// against real migrated SQLite: create starts at revision 1 with a normalized
+// stored document, replacement increments exactly one revision under the
+// expected revision, and deletion removes the definition. Each assertion fails
+// on last-write-wins, revision drift, or a definition that survives deletion.
+func TestSQLiteRepositoryCreateReplaceDeleteRevisions(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	database := openAutomationDatabase(t)
+	repository := newAutomationRepository(t, database)
+
+	definition := validDomainDefinition(t)
+	definition.Name = "  Office light  "
+	created, err := repository.CreateAutomation(ctx, definition)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if created.Revision != 1 {
+		t.Fatalf("created revision = %d, want 1", created.Revision)
+	}
+	if _, err = automations.ParseAutomationID(string(created.ID)); err != nil {
+		t.Fatalf("created ID = %q: %v", created.ID, err)
+	}
+	if created.Definition.Name != "Office light" {
+		t.Fatalf("stored name = %q, want trimmed", created.Definition.Name)
+	}
+	if created.CreatedAt.IsZero() || !created.CreatedAt.Equal(created.UpdatedAt) {
+		t.Fatalf("created timestamps = %v / %v", created.CreatedAt, created.UpdatedAt)
+	}
+	assertStoredAutomationJSON(t, database, created.ID)
+
+	replaced, err := repository.ReplaceAutomation(ctx, created.ID, 1, definition)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if replaced.Revision != 2 {
+		t.Fatalf("replaced revision = %d, want 2", replaced.Revision)
+	}
+	if !replaced.CreatedAt.Equal(created.CreatedAt) {
+		t.Fatalf("replacement changed created_at: %v -> %v", created.CreatedAt, replaced.CreatedAt)
+	}
+
+	if _, err = repository.ReplaceAutomation(ctx, created.ID, 1, definition); !errors.Is(
+		err, automations.ErrRevisionConflict,
+	) {
+		t.Fatalf("stale replacement error = %v, want ErrRevisionConflict", err)
+	}
+	missingID, err := automations.NewAutomationID()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = repository.ReplaceAutomation(ctx, missingID, 1, definition); !errors.Is(
+		err, automations.ErrAutomationNotFound,
+	) {
+		t.Fatalf("unknown replacement error = %v, want ErrAutomationNotFound", err)
+	}
+
+	if err = repository.DeleteAutomation(ctx, created.ID, 1); !errors.Is(err, automations.ErrRevisionConflict) {
+		t.Fatalf("stale deletion error = %v, want ErrRevisionConflict", err)
+	}
+	if err = repository.DeleteAutomation(ctx, created.ID, 2); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = repository.GetAutomation(ctx, created.ID); !errors.Is(err, automations.ErrAutomationNotFound) {
+		t.Fatalf("read after deletion error = %v, want ErrAutomationNotFound", err)
+	}
+	if err = repository.DeleteAutomation(ctx, created.ID, 2); !errors.Is(err, automations.ErrAutomationNotFound) {
+		t.Fatalf("second deletion error = %v, want ErrAutomationNotFound", err)
+	}
+}
+
+// TestSQLiteRepositoryListIsKeysetStable protects ID-ascending keyset listing:
+// pages never overlap, always advance, and together reproduce the full ordered
+// set without a total. It fails on off-by-one limits or unstable ordering.
+//
+//nolint:gocognit // One ordered pagination sequence proves keyset stability.
+func TestSQLiteRepositoryListIsKeysetStable(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	database := openAutomationDatabase(t)
+	repository := newAutomationRepository(t, database)
+	for index := range 5 {
+		definition := validDomainDefinition(t)
+		definition.Name = fmt.Sprintf("Automation %d", index)
+		if _, err := repository.CreateAutomation(ctx, definition); err != nil {
+			t.Fatal(err)
+		}
+	}
+	all, err := repository.ListAutomations(ctx, automations.ListAutomationsParams{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(all.Items) != 5 || all.HasMore {
+		t.Fatalf("unpaged list = %d items, HasMore %v", len(all.Items), all.HasMore)
+	}
+
+	var paged []automations.AutomationRecord
+	var after *automations.AutomationID
+	pages := 0
+	for {
+		page, pageErr := repository.ListAutomations(ctx, automations.ListAutomationsParams{
+			AfterID: after, Limit: 2,
+		})
+		if pageErr != nil {
+			t.Fatal(pageErr)
+		}
+		if len(page.Items) == 0 {
+			break
+		}
+		pages++
+		paged = append(paged, page.Items...)
+		last := page.Items[len(page.Items)-1].ID
+		after = &last
+		if !page.HasMore {
+			break
+		}
+		if pages > 10 {
+			t.Fatal("pagination did not terminate")
+		}
+	}
+	if pages != 3 {
+		t.Fatalf("pages = %d, want 3", pages)
+	}
+	if len(paged) != len(all.Items) {
+		t.Fatalf("paged items = %d, want %d", len(paged), len(all.Items))
+	}
+	for index := range all.Items {
+		if paged[index].ID != all.Items[index].ID {
+			t.Fatalf("paged[%d] = %s, want %s", index, paged[index].ID, all.Items[index].ID)
+		}
+	}
+
+	if _, err = repository.ListAutomations(
+		ctx,
+		automations.ListAutomationsParams{Limit: -1},
+	); !errors.Is(
+		err,
+		automations.ErrInvalidAutomation,
+	) {
+		t.Fatalf("negative limit error = %v, want ErrInvalidAutomation", err)
+	}
+	if _, err = repository.ListAutomations(
+		ctx,
+		automations.ListAutomationsParams{Limit: 201},
+	); !errors.Is(
+		err,
+		automations.ErrInvalidAutomation,
+	) {
+		t.Fatalf("oversized limit error = %v, want ErrInvalidAutomation", err)
+	}
+}
+
+// TestSQLiteRepositoryRejectsMalformedStoredDefinition protects repository
+// decoding: a row whose stored document no longer satisfies the strict schema is
+// a permanent invalid error rather than a partially trusted Automation.
+func TestSQLiteRepositoryRejectsMalformedStoredDefinition(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	database := openAutomationDatabase(t)
+	repository := newAutomationRepository(t, database)
+
+	id, err := automations.NewAutomationID()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = database.ExecContext(
+		ctx,
+		`INSERT INTO automations (id, revision, definition_json, created_at, updated_at) VALUES (?, 1, ?, ?, ?)`,
+		string(id), `{"name":"only a name"}`, migrationTimestamp, migrationTimestamp,
+	); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = repository.GetAutomation(ctx, id); !errors.Is(err, automations.ErrInvalidAutomation) {
+		t.Fatalf("malformed stored definition error = %v, want ErrInvalidAutomation", err)
+	}
+}
+
+// TestMigrationEnforcesAutomationStorageInvariants protects the storage-level
+// rules in §7.1 with real SQLite CHECK constraints: strict normalized
+// definitions, one running Run per Automation, one retained outcome per
+// (fact_id, automation_id), typed Run/Skip exclusivity, and ordered Step
+// evidence. Each case fails if the migration stops enforcing the invariant.
+func TestMigrationEnforcesAutomationStorageInvariants(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	database := openAutomationDatabase(t)
+
+	automationID := newAutomationIDString(t)
+	runID := newRunIDString(t)
+	secondRunID := newRunIDString(t)
+	skipID := newSkipIDString(t)
+	factID := newFactIDString(t)
+	factEntityID := string(newEntityID(t))
+	factObservationID := newObservationIDString(t)
+
+	rejected := []struct {
+		name string
+		sql  string
+		args []any
+	}{
+		{"definition not an object", `INSERT INTO automations VALUES (?, 1, ?, ?, ?)`,
+			[]any{automationID, `[]`, migrationTimestamp, migrationTimestamp}},
+		{"definition not json", `INSERT INTO automations VALUES (?, 1, ?, ?, ?)`,
+			[]any{automationID, `not json`, migrationTimestamp, migrationTimestamp}},
+		{"revision below one", `INSERT INTO automations VALUES (?, 0, ?, ?, ?)`,
+			[]any{automationID, `{}`, migrationTimestamp, migrationTimestamp}},
+		{"run running with completion", insertHistoryRunSQL,
+			[]any{runID, automationID, "running", nil, migrationTimestamp, `[]`}},
+		{"run failed without failure code", insertHistoryRunSQL,
+			[]any{runID, automationID, "failed", nil, migrationTimestamp, `[]`}},
+		{"skip without fact", `INSERT INTO automation_history (
+			id, automation_id, automation_name, kind, revision, recorded_at,
+			skip_matched_triggers_json, skip_reason) VALUES (?, ?, 'Office light', 'skip', 1, ?, '[]', 'stale_fact')`,
+			[]any{skipID, automationID, migrationTimestamp}},
+		{
+			"skip without reason",
+			`INSERT INTO automation_history (
+			id, automation_id, automation_name, kind, revision, recorded_at,
+			fact_id, fact_family, fact_entity_id, fact_variant, fact_causation_id, fact_value_json, fact_emitted_at,
+			skip_matched_triggers_json) VALUES (?, ?, 'Office light', 'skip', 1, ?, ?, 'observation', ?, 'applied', ?, 'true', ?, '[]')`,
+			[]any{
+				skipID,
+				automationID,
+				migrationTimestamp,
+				factID,
+				factEntityID,
+				factObservationID,
+				migrationTimestamp,
+			},
+		},
+		{"run carries skip reason", `INSERT INTO automation_history (
+			id, automation_id, automation_name, kind, revision, recorded_at,
+			run_snapshot_json, run_source, run_status, run_started_at,
+			run_matched_trigger_ids_json, skip_reason) VALUES (?, ?, 'Office light', 'run', 1, ?, '{}', 'manual', 'running', ?, '[]', 'stale_fact')`,
+			[]any{runID, automationID, migrationTimestamp, migrationTimestamp}},
+		{"receipt with unknown kind", `INSERT INTO automation_fact_receipts VALUES (?, ?, 'later', ?)`,
+			[]any{factID, automationID, runID}},
+		{"receipt with wrong history prefix", `INSERT INTO automation_fact_receipts VALUES (?, ?, 'run', ?)`,
+			[]any{factID, automationID, automationID}},
+	}
+	for _, test := range rejected {
+		if _, err := database.ExecContext(ctx, test.sql, test.args...); err == nil {
+			t.Fatalf("%s: invalid row was accepted", test.name)
+		}
+	}
+
+	// A valid manual running Run, its not_attempted Step, a valid Skip carrying
+	// Fact evidence, and one receipt all commit.
+	mustExec(t, database, insertHistoryRunSQL, runID, automationID, "running", nil, nil, `[]`)
+	mustExec(
+		t,
+		database,
+		`INSERT INTO automation_run_steps (run_id, position, step_id, status) VALUES (?, 0, 'light_on', 'not_attempted')`,
+		runID,
+	)
+	mustExec(t, database, insertHistorySkipSQL,
+		skipID, automationID, migrationTimestamp, factID, factEntityID, factObservationID, `true`, migrationTimestamp)
+	mustExec(t, database, `INSERT INTO automation_fact_receipts VALUES (?, ?, 'skip', ?)`,
+		factID, automationID, skipID)
+
+	rejectedAfter := []struct {
+		name string
+		sql  string
+		args []any
+	}{
+		{
+			"step without run parent",
+			`INSERT INTO automation_run_steps (run_id, position, step_id, status) VALUES (?, 0, 'light_on', 'not_attempted')`,
+			[]any{newRunIDString(t)},
+		},
+		{
+			"Step satisfied without verified command",
+			`INSERT INTO automation_run_steps (run_id, position, step_id, status, reserved_command_id, reserved_correlation_id, started_at, completed_at) VALUES (?, 1, 'light_off', 'satisfied', ?, ?, ?, ?)`,
+			[]any{runID, newCommandIDString(t), newCorrelationIDString(t), migrationTimestamp, migrationTimestamp},
+		},
+		{"second running run for same automation", insertHistoryRunSQL,
+			[]any{secondRunID, automationID, "running", nil, nil, `[]`}},
+		{"duplicate fact receipt", `INSERT INTO automation_fact_receipts VALUES (?, ?, 'skip', ?)`,
+			[]any{factID, automationID, skipID}},
+	}
+	for _, test := range rejectedAfter {
+		if _, err := database.ExecContext(ctx, test.sql, test.args...); err == nil {
+			t.Fatalf("%s: invalid row was accepted", test.name)
+		}
+	}
+
+	var steps int
+	if err := database.QueryRowContext(
+		ctx, `SELECT count(*) FROM automation_run_steps WHERE run_id = ?`, runID,
+	).Scan(&steps); err != nil {
+		t.Fatal(err)
+	}
+	if steps != 1 {
+		t.Fatalf("steps = %d, want 1", steps)
+	}
+}
+
+const insertHistoryRunSQL = `INSERT INTO automation_history (
+    id, automation_id, automation_name, kind, revision, recorded_at,
+    run_snapshot_json, run_source, run_status, run_failure_code, run_started_at,
+    run_completed_at, run_matched_trigger_ids_json
+) VALUES (?, ?, 'Office light', 'run', 1, '2026-09-01T00:00:00.000000000Z', '{}', 'manual', ?, ?,
+    '2026-09-01T00:00:00.000000000Z', ?, ?)`
+
+const insertHistorySkipSQL = `INSERT INTO automation_history (
+    id, automation_id, automation_name, kind, revision, recorded_at,
+    fact_id, fact_family, fact_entity_id, fact_variant, fact_causation_id, fact_value_json, fact_emitted_at,
+    skip_matched_triggers_json, skip_reason
+) VALUES (?, ?, 'Office light', 'skip', 1, ?, ?, 'observation', ?, 'applied', ?, ?, ?, '[]', 'automation_busy')`
+
+func mustExec(t *testing.T, database *sql.DB, statement string, args ...any) {
+	t.Helper()
+	if _, err := database.ExecContext(context.Background(), statement, args...); err != nil {
+		t.Fatalf("exec %s: %v", statement, err)
+	}
+}
+
+func assertStoredAutomationJSON(t *testing.T, database *sql.DB, id automations.AutomationID) {
+	t.Helper()
+	var stored string
+	if err := database.QueryRow(
+		`SELECT definition_json FROM automations WHERE id = ?`, string(id),
+	).Scan(&stored); err != nil {
+		t.Fatal(err)
+	}
+	var document map[string]any
+	if err := json.Unmarshal([]byte(stored), &document); err != nil {
+		t.Fatalf("stored definition is not JSON: %v", err)
+	}
+	for _, required := range []string{"name", "enabled", "triggers", "steps"} {
+		if _, found := document[required]; !found {
+			t.Fatalf("stored definition is missing %q: %s", required, stored)
+		}
+	}
+}
+
+func newAutomationIDString(t *testing.T) string {
+	t.Helper()
+	id, err := automations.NewAutomationID()
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(id)
+}
+
+func newRunIDString(t *testing.T) string {
+	t.Helper()
+	id, err := automations.NewAutomationRunID()
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(id)
+}
+
+func newSkipIDString(t *testing.T) string {
+	t.Helper()
+	id, err := automations.NewAutomationSkipID()
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(id)
+}
+
+func newFactIDString(t *testing.T) string {
+	t.Helper()
+	id, err := devices.NewDeviceFactID()
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(id)
+}
+
+func newObservationIDString(t *testing.T) string {
+	t.Helper()
+	id, err := devices.NewObservationID()
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(id)
+}
+
+func newCommandIDString(t *testing.T) string {
+	t.Helper()
+	id, err := devices.NewCommandID()
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(id)
+}
+
+func newCorrelationIDString(t *testing.T) string {
+	t.Helper()
+	id, err := devices.NewCorrelationID()
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(id)
+}

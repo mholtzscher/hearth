@@ -462,7 +462,223 @@ LEFT JOIN entity_availability_current AS current
     ON current.entity_id = e.id
     AND current.adapter_id = m.adapter_id;
 
+-- Automations are operator-owned durable definitions. The definition column is
+-- the normalized strict section 6.1 JSON document: one object holding the name,
+-- explicit enabled state, and the typed Trigger and ordered Step lists. It is
+-- never a bag of separately validated columns, so a stored definition either
+-- satisfies the whole strict schema or is rejected on read. There is no
+-- foreign key to devices: save-time validation proves current references, and
+-- execution-time eligibility stays with the normal Command path.
+CREATE TABLE automations (
+    id              TEXT PRIMARY KEY CHECK (
+        length(id) = 40 AND substr(id, 1, 4) = 'aut_'
+    ),
+    revision        INTEGER NOT NULL CHECK (revision >= 1),
+    definition_json TEXT NOT NULL CHECK (
+        json_valid(definition_json)
+        AND json_type(definition_json) = 'object'
+        AND length(CAST(definition_json AS BLOB)) <= 65536
+    ),
+    created_at      TEXT NOT NULL,
+    updated_at      TEXT NOT NULL
+);
+
+-- Automation history is the immutable explanation of every admitted Run and
+-- recorded Skip. It deliberately has no foreign key to automations: a
+-- definition may be hard-deleted while active Runs and retained history
+-- survive, and history stays queryable by the former Automation ID. The
+-- definition snapshot, Fact summary, and matched Trigger snapshots are copied
+-- explanation, never executable work, so there is no foreign key to
+-- observations, entity_events or commands either.
+--
+-- One row is either a Run or a Skip, enforced below: a Run carries the full
+-- definition snapshot, source, status, timestamps and matched Trigger IDs, a
+-- Skip carries the matched Trigger snapshots and reason, and the other family's
+-- columns stay NULL. A fact-backed row carries the copied Fact summary;
+-- a manual Run carries none.
+CREATE TABLE automation_history (
+    id                            TEXT PRIMARY KEY CHECK (
+        (length(id) = 40 AND substr(id, 1, 4) = 'arn_')
+        OR (length(id) = 40 AND substr(id, 1, 4) = 'ask_')
+    ),
+    automation_id                 TEXT NOT NULL CHECK (
+        length(automation_id) = 40 AND substr(automation_id, 1, 4) = 'aut_'
+    ),
+    automation_name               TEXT NOT NULL CHECK (
+        length(automation_name) BETWEEN 1 AND 200
+    ),
+    kind                          TEXT NOT NULL CHECK (kind IN ('run', 'skip')),
+    revision                      INTEGER NOT NULL CHECK (revision >= 1),
+    recorded_at                   TEXT NOT NULL,
+    -- Copied Device Fact summary; present exactly when the outcome is
+    -- fact-backed, which is every Skip and every device-fact Run.
+    fact_id                       TEXT CHECK (
+        fact_id IS NULL OR (length(fact_id) = 40 AND substr(fact_id, 1, 4) = 'fct_')
+    ),
+    fact_family                   TEXT CHECK (
+        fact_family IS NULL OR fact_family IN ('observation', 'entity_event')
+    ),
+    fact_entity_id                TEXT CHECK (
+        fact_entity_id IS NULL OR (length(fact_entity_id) = 40 AND substr(fact_entity_id, 1, 4) = 'ent_')
+    ),
+    fact_variant                  TEXT,
+    fact_causation_id             TEXT,
+    fact_value_json               TEXT CHECK (
+        fact_value_json IS NULL OR json_valid(fact_value_json)
+    ),
+    fact_emitted_at               TEXT,
+    -- Run-only columns.
+    run_snapshot_json             TEXT CHECK (
+        run_snapshot_json IS NULL OR (
+            json_valid(run_snapshot_json)
+            AND json_type(run_snapshot_json) = 'object'
+            AND length(CAST(run_snapshot_json AS BLOB)) <= 65536
+        )
+    ),
+    run_source                    TEXT CHECK (
+        run_source IS NULL OR run_source IN ('device_fact', 'manual')
+    ),
+    run_status                    TEXT CHECK (
+        run_status IS NULL OR run_status IN ('running', 'succeeded', 'failed', 'interrupted')
+    ),
+    run_failure_code              TEXT,
+    run_started_at                TEXT,
+    run_completed_at              TEXT,
+    run_matched_trigger_ids_json  TEXT CHECK (
+        run_matched_trigger_ids_json IS NULL
+        OR (json_valid(run_matched_trigger_ids_json)
+            AND json_type(run_matched_trigger_ids_json) = 'array')
+    ),
+    -- Skip-only columns.
+    skip_matched_triggers_json    TEXT CHECK (
+        skip_matched_triggers_json IS NULL
+        OR (json_valid(skip_matched_triggers_json)
+            AND json_type(skip_matched_triggers_json) = 'array')
+    ),
+    skip_reason                   TEXT CHECK (
+        skip_reason IS NULL OR skip_reason IN ('automation_busy', 'stale_fact')
+    ),
+    CHECK (
+        (fact_id IS NULL AND fact_family IS NULL AND fact_entity_id IS NULL
+            AND fact_variant IS NULL AND fact_causation_id IS NULL
+            AND fact_value_json IS NULL AND fact_emitted_at IS NULL)
+        OR (fact_id IS NOT NULL AND fact_family IS NOT NULL AND fact_entity_id IS NOT NULL
+            AND fact_variant IS NOT NULL AND fact_causation_id IS NOT NULL
+            AND fact_emitted_at IS NOT NULL
+            AND (fact_family <> 'observation' OR fact_value_json IS NOT NULL)
+            AND (fact_family <> 'entity_event' OR fact_value_json IS NULL))
+    ),
+    CHECK (
+        (kind = 'run'
+            AND run_snapshot_json IS NOT NULL AND run_source IS NOT NULL
+            AND run_status IS NOT NULL AND run_started_at IS NOT NULL
+            AND run_matched_trigger_ids_json IS NOT NULL
+            AND skip_matched_triggers_json IS NULL AND skip_reason IS NULL
+            AND (run_status = 'running') = (run_completed_at IS NULL)
+            AND (run_status IN ('failed', 'interrupted')) = (run_failure_code IS NOT NULL)
+            AND (run_source = 'device_fact') = (fact_id IS NOT NULL))
+        OR (kind = 'skip'
+            AND skip_matched_triggers_json IS NOT NULL AND skip_reason IS NOT NULL
+            AND fact_id IS NOT NULL
+            AND run_snapshot_json IS NULL AND run_source IS NULL AND run_status IS NULL
+            AND run_failure_code IS NULL AND run_started_at IS NULL
+            AND run_completed_at IS NULL AND run_matched_trigger_ids_json IS NULL)
+    )
+);
+
+CREATE INDEX automation_history_page_idx
+    ON automation_history(automation_id, recorded_at DESC, id DESC);
+
+-- At most one running Run per Automation. This partial unique index is the final
+-- busy guard that serializes racing HTTP and Device Fact admission.
+CREATE UNIQUE INDEX automation_history_one_running_run_idx
+    ON automation_history(automation_id)
+    WHERE kind = 'run' AND run_status = 'running';
+
+-- At most one retained outcome per (fact_id, automation_id) while history
+-- exists. Retained automation_fact_receipts extend the same guarantee after a
+-- history row is pruned.
+CREATE UNIQUE INDEX automation_history_fact_outcome_idx
+    ON automation_history(fact_id, automation_id)
+    WHERE fact_id IS NOT NULL;
+
+-- Ordered Step rows of a Run. The foreign key cascades so pruning a Run removes
+-- its Steps in the same transaction. Only the repository ever writes a Step for
+-- a Run parent, and every decoder rejects a parent that does not decode as a
+-- Run. Reserved identities stay private until a verified Command is linked.
+CREATE TABLE automation_run_steps (
+    run_id                  TEXT NOT NULL REFERENCES automation_history(id) ON DELETE CASCADE,
+    position                INTEGER NOT NULL CHECK (position >= 0),
+    step_id                 TEXT NOT NULL CHECK (
+        length(step_id) BETWEEN 1 AND 63
+        AND substr(step_id, 1, 1) GLOB '[a-z0-9]'
+        AND step_id NOT GLOB '*[^a-z0-9_-]*'
+    ),
+    status                  TEXT NOT NULL CHECK (
+        status IN ('not_attempted', 'running', 'satisfied', 'dispatched', 'failed', 'interrupted')
+    ),
+    reserved_command_id     TEXT CHECK (
+        reserved_command_id IS NULL
+        OR (length(reserved_command_id) = 40 AND substr(reserved_command_id, 1, 4) = 'cmd_')
+    ),
+    reserved_correlation_id TEXT CHECK (
+        reserved_correlation_id IS NULL
+        OR (length(reserved_correlation_id) = 40 AND substr(reserved_correlation_id, 1, 4) = 'cor_')
+    ),
+    verified_command_id     TEXT CHECK (
+        verified_command_id IS NULL
+        OR (length(verified_command_id) = 40 AND substr(verified_command_id, 1, 4) = 'cmd_')
+    ),
+    failure_code            TEXT,
+    started_at              TEXT,
+    completed_at            TEXT,
+    PRIMARY KEY (run_id, position),
+    CHECK (
+        (status = 'not_attempted'
+            AND reserved_command_id IS NULL AND reserved_correlation_id IS NULL
+            AND verified_command_id IS NULL AND started_at IS NULL
+            AND completed_at IS NULL AND failure_code IS NULL)
+        OR (status = 'running'
+            AND reserved_command_id IS NOT NULL AND reserved_correlation_id IS NOT NULL
+            AND verified_command_id IS NULL AND started_at IS NOT NULL
+            AND completed_at IS NULL AND failure_code IS NULL)
+        OR (status IN ('satisfied', 'dispatched')
+            AND reserved_command_id IS NOT NULL AND reserved_correlation_id IS NOT NULL
+            AND verified_command_id IS NOT NULL AND started_at IS NOT NULL
+            AND completed_at IS NOT NULL AND failure_code IS NULL)
+        OR (status IN ('failed', 'interrupted')
+            AND started_at IS NOT NULL AND completed_at IS NOT NULL
+            AND failure_code IS NOT NULL)
+    )
+);
+
+-- One receipt for every matched (fact_id, automation_id) outcome. Receipts are
+-- written atomically with the Run or Skip and kept after history pruning, so a
+-- late republished Fact can never execute or re-record the same pair. No row is
+-- written for an unmatched Automation or an unmatched Fact.
+CREATE TABLE automation_fact_receipts (
+    fact_id       TEXT NOT NULL CHECK (
+        length(fact_id) = 40 AND substr(fact_id, 1, 4) = 'fct_'
+    ),
+    automation_id TEXT NOT NULL CHECK (
+        length(automation_id) = 40 AND substr(automation_id, 1, 4) = 'aut_'
+    ),
+    outcome_kind  TEXT NOT NULL CHECK (outcome_kind IN ('run', 'skip')),
+    history_id    TEXT NOT NULL CHECK (
+        (length(history_id) = 40 AND substr(history_id, 1, 4) = 'arn_')
+        OR (length(history_id) = 40 AND substr(history_id, 1, 4) = 'ask_')
+    ),
+    PRIMARY KEY (fact_id, automation_id)
+);
+
 -- +goose Down
+DROP TABLE automation_fact_receipts;
+DROP TABLE automation_run_steps;
+DROP INDEX automation_history_fact_outcome_idx;
+DROP INDEX automation_history_one_running_run_idx;
+DROP INDEX automation_history_page_idx;
+DROP TABLE automation_history;
+DROP TABLE automations;
 DROP VIEW entity_read_projection;
 DROP TABLE device_facts_outbox;
 DROP INDEX entity_events_retention_idx;

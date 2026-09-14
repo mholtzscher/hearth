@@ -81,8 +81,16 @@ A named definition containing one or more Triggers and an ordered sequence of St
 _Avoid_: Rule, workflow, scene
 
 **Trigger**:
-One identified, configured reason for automatically executing an Automation. Manual invocation starts a Run without a Trigger occurrence; an Entity Operation named `trigger` is a separate device-control concept.
-_Avoid_: Command, invocation
+One identified matcher for one Device Fact that can automatically start an Automation. Multiple Triggers are alternative reasons, while manual invocation starts a Run without one; an Entity Operation named `trigger` is a separate device-control concept.
+_Avoid_: Command, invocation, condition
+
+**Entity Event Trigger**:
+A Trigger that matches one accepted Entity Event fact by exact Entity and event name.
+_Avoid_: Entity Event, event handler
+
+**Observation Trigger**:
+A Trigger that matches one accepted Observation fact by exact Entity, accepted disposition, and configured comparisons against that one reported value.
+_Avoid_: State Trigger, State query
 
 **Step**:
 One Entity Operation request in an Automation's ordered sequence. Attempting a Step creates a Command only if execution-time validation and durable creation succeed; the Step is the definition, not the Command attempt or its outcome.
@@ -92,9 +100,9 @@ _Avoid_: Action, Command
 One recorded execution of an Automation using a snapshot of its definition, started automatically or manually. A successful Run means its Commands reached their Operations' required outcomes, not that all physical effects were confirmed.
 _Avoid_: Command, occurrence
 
-**Occurrence**:
-One scheduled instant at which one or more of an Automation's Triggers match, recording all matching Triggers together. An Occurrence may start one Run or be skipped without executing Steps.
-_Avoid_: Run, timer
+**Automation Skip**:
+One recorded outcome in which a Device Fact matched an Automation but started no Run because the match was stale or that Automation was already running. A Skip never queues execution.
+_Avoid_: Run, failure, ignored fact
 
 **Canonical ID**:
 An immutable Hearth-assigned identity for a device or entity that remains stable when names, external identifiers, or owning adapters change.

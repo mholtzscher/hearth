@@ -14,6 +14,8 @@ import (
 	"github.com/nats-io/nats.go/jetstream"
 
 	contractsv1 "github.com/mholtzscher/hearth/contracts/v1"
+	"github.com/mholtzscher/hearth/internal/modules/automations"
+	automationsnats "github.com/mholtzscher/hearth/internal/modules/automations/nats"
 	"github.com/mholtzscher/hearth/internal/modules/devices"
 	devicesnats "github.com/mholtzscher/hearth/internal/modules/devices/nats"
 	platformdb "github.com/mholtzscher/hearth/internal/platform/db"
@@ -71,6 +73,7 @@ func Run(
 	processLogger := logger.With(slog.String("component", "process"))
 	coreLogger := logger.With(slog.String("component", "core"))
 	devicesLogger := logger.With(slog.String("component", "devices"))
+	automationsLogger := logger.With(slog.String("component", "automations"))
 	natsLogger := logger.With(slog.String("component", "nats"))
 	catalog, catalogErr := devices.NewBuiltinTypeCatalog()
 	if catalogErr != nil {
@@ -96,6 +99,23 @@ func Run(
 		return failStage("interrupt_commands", fmt.Errorf("interrupt active commands: %w", err))
 	}
 	logStartupStage(ctx, coreLogger, "active_commands_interrupted")
+	// Automation Runs are interrupted directly through the repository seam, in
+	// the same pre-NATS startup window as Commands. The automation service is
+	// constructed later, once the devices-facing seam exists, and it owns no
+	// workers yet, so the repository is the honest seam here. Interrupted records
+	// are committed before either transport opens, so no stale Run can be advanced
+	// and no fact-driven or manual Run can observe a half-open gate.
+	automationRepository := automations.NewSQLiteRepository(database, automations.AutomationDependencies{})
+	if err := automationRepository.InterruptActiveRuns(
+		ctx, startupTime, automations.AutomationFailureCoreRestarted,
+	); err != nil {
+		return failStage("interrupt_automations", fmt.Errorf("interrupt active automation runs: %w", err))
+	}
+	automationsLogger.WarnContext(ctx, "automation runs interrupted",
+		slog.String("event", "automation.run_interrupted"),
+		slog.String("reason", automations.AutomationFailureCoreRestarted),
+	)
+	logStartupStage(ctx, coreLogger, "active_automation_runs_interrupted")
 	// Observation and Entity Event pruning run only on the hourly pass below, so
 	// startup never sweeps retained history and uptime under one hour means no
 	// sweep yet.
@@ -144,6 +164,13 @@ func Run(
 		catalog,
 		devices.Dependencies{Logger: devicesLogger, DeviceFacts: relay},
 	)
+	// The devices service implements the read-only devices-facing seam the
+	// automations module consumes, so construction order is devices first.
+	automationService := automations.NewService(
+		automationRepository,
+		service,
+		automations.AutomationDependencies{Logger: automationsLogger},
+	)
 	durable, provisionErr := devicesnats.ProvisionObservationResources(ctx, js)
 	if provisionErr != nil {
 		return mapStartupCancellation(ctx, failStage("provision_jetstream", provisionErr))
@@ -155,58 +182,100 @@ func Run(
 	if entityEventProvisionErr != nil {
 		return mapStartupCancellation(ctx, failStage("provision_jetstream", entityEventProvisionErr))
 	}
+	// The automation consumer rides the Device Fact stream, which devices owns.
+	// Provisioning validates the exact live configuration before any transport
+	// starts, so a mismatched durable consumer fails startup instead of
+	// admitting facts under unexpected delivery semantics.
+	automationDurable, automationProvisionErr := automationsnats.ProvisionDeviceFactConsumer(
+		ctx, js, devicesnats.DeviceFactStreamName,
+	)
+	if automationProvisionErr != nil {
+		return mapStartupCancellation(ctx, failStage("provision_jetstream", automationProvisionErr))
+	}
 	logStartupStage(ctx, coreLogger, "jetstream_provisioned")
+	// Current command workers must retain observation and health dependencies
+	// beyond shutdown cancellation, including on error exits. Durable consumer
+	// callbacks never share dependencyContext: it is canceled before transports
+	// drain, which would abort a report or observation that already entered
+	// SQLite with context.Canceled. The consumers own a detached lifecycle
+	// context that is canceled only after both have drained or stopped, so an
+	// already dispatched callback always reaches its commit.
+	dependencyContext, cancelDependencies := context.WithCancel(context.WithoutCancel(ctx))
+	consumers := newCoreConsumers(ctx)
+	defer consumers.close()
+	// Automatic admission starts before the inbound Fact producers below, so
+	// every Observation or Entity Event that can commit a Fact already has a
+	// consumer able to admit it. A first-time consumer begins at the tail; an
+	// existing one resumes its durable acknowledgement floor.
+	automationFactConsumers := newAutomationConsumers(ctx, automationsLogger)
+	defer automationFactConsumers.close()
+	var maintenance sync.WaitGroup
+	// Every component that can execute work starts below, so the execution
+	// cleanup is installed before the first of them. It is registered after the
+	// database, NATS connection, consumer, and relay teardowns above, so Go's
+	// reverse defer order always runs it before those dependencies are
+	// withdrawn. Every teardown registered after it is wrapped with
+	// [executionCleanup.teardown], so the health supervisor and the request/reply
+	// transports wait for the same cleanup instead of running ahead of it.
+	//
+	// cleanup.run also cancels dependencyContext, so exactly one path cancels
+	// shared observation, health, and persistence dependencies.
+	cleanup := &executionCleanup{
+		automationService:   automationService,
+		automationConsumers: automationFactConsumers,
+		deviceService:       service,
+		cancelDependencies:  cancelDependencies,
+		maintenance:         &maintenance,
+	}
+	defer cleanup.run()
 	sessions, sessionErr := devicesnats.StartSessionServer(connection, validator, service, service, natsLogger)
 	if sessionErr != nil {
 		return failStage("start_transports", sessionErr)
 	}
-	defer func() {
+	defer cleanup.teardown(func() {
 		logCleanupFailure(ctx, processLogger, "drain_session_server", sessions.Drain())
-	}()
+	})()
 	availability, availabilityErr := devicesnats.StartEntityAvailabilityServer(
 		connection, validator, service, natsLogger,
 	)
 	if availabilityErr != nil {
 		return failStage("start_transports", availabilityErr)
 	}
-	defer func() {
+	defer cleanup.teardown(func() {
 		logCleanupFailure(ctx, processLogger, "drain_availability_server", availability.Drain())
-	}()
+	})()
 	registrations, registrationErr := devicesnats.StartRegistrationServer(connection, validator, service, natsLogger)
 	if registrationErr != nil {
 		return failStage("start_transports", registrationErr)
 	}
-	defer func() {
+	defer cleanup.teardown(func() {
 		logCleanupFailure(ctx, processLogger, "drain_registration_server", registrations.Drain())
-	}()
+	})()
 	ownedMappings, ownedMappingsErr := devicesnats.StartOwnedMappingsServer(
 		connection, validator, service, natsLogger,
 	)
 	if ownedMappingsErr != nil {
 		return failStage("start_transports", ownedMappingsErr)
 	}
-	defer func() {
+	defer cleanup.teardown(func() {
 		logCleanupFailure(ctx, processLogger, "drain_owned_mappings_server", ownedMappings.Drain())
-	}()
+	})()
 	enablement, enablementErr := devicesnats.StartEntityEnablementServer(connection, validator, service, natsLogger)
 	if enablementErr != nil {
 		return failStage("start_transports", enablementErr)
 	}
-	defer func() {
+	defer cleanup.teardown(func() {
 		logCleanupFailure(ctx, processLogger, "drain_enablement_server", enablement.Drain())
-	}()
+	})()
 	logStartupStage(ctx, coreLogger, "nats_servers_started")
-	// Current command workers must retain observation and health dependencies
-	// beyond shutdown cancellation, including on error exits.
-	dependencyContext, cancelDependencies := context.WithCancel(context.WithoutCancel(ctx))
-	defer cancelDependencies()
-	// Durable consumer callbacks never share dependencyContext: it is canceled
-	// before transports drain, which would abort a report or observation that
-	// already entered SQLite with context.Canceled. The consumers own a detached
-	// lifecycle context that is canceled only after both have drained or
-	// stopped, so an already dispatched callback always reaches its commit.
-	consumers := newCoreConsumers(ctx)
-	defer consumers.close()
+	if automationErr := automationFactConsumers.start(
+		automationDurable,
+		automationService,
+		validator,
+	); automationErr != nil {
+		return mapStartupCancellation(ctx, failStage("start_automation_consumer", automationErr))
+	}
+	logStartupStage(ctx, coreLogger, "automation_consumer_started")
 	if observationErr := consumers.startObservations(
 		durable,
 		validator,
@@ -233,16 +302,11 @@ func Run(
 	readiness := NewRuntimeReadiness(
 		database, connection, js,
 		consumers.observations, consumers.entityEvents, relay,
+		automationFactConsumers,
 	)
 	healthSupervisor := startHealthSupervisor(dependencyContext, readiness, service, coreLogger)
-	defer healthSupervisor.Stop()
-	var maintenance sync.WaitGroup
-	// Registered after dependency cleanup so every exit drains workers first.
-	defer func() {
-		drainExecution(service, cancelDependencies)
-		maintenance.Wait()
-	}()
-	handler, _ := NewHTTPHandler(service, readiness, service)
+	defer cleanup.teardown(healthSupervisor.Stop)()
+	handler, _ := NewHTTPHandler(service, automationService, readiness, service, automationService)
 	// Bind the socket explicitly so http_listening is only logged after the
 	// address is actually held; a bind failure never produces that event.
 	listener, listenErr := (&net.ListenConfig{}).Listen(ctx, "tcp", config.HTTPAddr)
@@ -262,8 +326,9 @@ func Run(
 	}()
 	maintenance.Go(func() {
 		pruneRetainedHistory(
-			dependencyContext, service, coreLogger,
-			config.EffectiveObservationRetention(), retentionPruneInterval,
+			dependencyContext, service, automationService, coreLogger,
+			config.EffectiveObservationRetention(), config.EffectiveAutomationHistoryRetention(),
+			retentionPruneInterval,
 		)
 	})
 
@@ -275,8 +340,7 @@ func Run(
 		return nil
 	case <-ctx.Done():
 		return shutdownOnCancel(
-			service, cancelDependencies,
-			healthSupervisor, server, consumers,
+			cleanup, healthSupervisor, server, consumers,
 			enablement, ownedMappings, registrations, availability, sessions,
 			relay, connection, processLogger,
 		)
@@ -292,33 +356,57 @@ func mapStartupCancellation(ctx context.Context, err error) error {
 	return err
 }
 
-// joinAdmittedExecution closes admission before joining workers, so
-// no new Command can be registered while draining. Both
-// the normal shutdown path and the deferred error-exit drain share this
-// ordering.
-func joinAdmittedExecution(deviceService *devices.Service) {
+// closeAdmission stops every admission path before any worker is joined. It
+// drains the automation Device Fact consumer so no new automatic admission
+// enters, then closes automation admission, then closes device Command
+// admission. Both gates close before [joinAdmittedExecution] waits, so no
+// callback or request handler can register new work while admitted work drains.
+// The ordered shutdown path and the deferred error-exit drain share it, and each
+// step is idempotent.
+func closeAdmission(
+	automationService *automations.Service,
+	automationConsumers *automationConsumers,
+	deviceService *devices.Service,
+) {
+	automationConsumers.drain()
+	automationService.StopAdmission()
 	deviceService.StopCommandAdmission()
+}
+
+// joinAdmittedExecution joins Automation workers before device Command workers,
+// because an Automation Step needs a device Command: Automation workers must
+// finish before the Command workers they depend on. Both gates are already
+// closed by [closeAdmission], so no worker can be registered during the waits.
+func joinAdmittedExecution(
+	automationService *automations.Service,
+	deviceService *devices.Service,
+) {
+	_ = automationService.WaitRuns(context.Background())
 	_ = deviceService.WaitCommands(context.Background())
 }
 
-// shutdownOnCancel drains admitted workers before stopping transports. The HTTP
-// listener stays open during the drain so readiness keeps reporting draining
-// (503) instead of dropping connections; the gates reject new work at the
-// service layer. Handlers that already entered ExecuteCommand own detached
-// workers that outlive request cancellation and are joined below with
+// shutdownOnCancel stops new admission and drains admitted workers before
+// stopping transports. It runs the shared [executionCleanup] first: it drains
+// the automation Device Fact consumer, closes automation admission, then closes
+// Command admission, then joins Automation workers before Command workers,
+// because an Automation Step needs a Command, and only then cancels shared
+// dependencies. The deferred error-exit cleanup runs the same once, so no step
+// runs twice and health, transports, NATS, and SQLite are withdrawn only after
+// both waits returned.
+// The HTTP listener stays open during the drain so readiness keeps reporting
+// draining (503) instead of dropping connections; the gates reject new work at
+// the service layer. Handlers that already entered ExecuteCommand own detached
+// workers that outlive request cancellation and are joined above with
 // process-owned contexts. The five-second HTTP shutdown timeout only bounds
 // listener shutdown after the waits; it never proves commands drained;
-// WaitCommands does, beyond that timeout when an Operation deadline requires
-// it. A connection that no request completed cannot be reclaimed inside that
-// window, so an expired window force-closes it rather than failing the
-// cancellation. Dependencies stay alive until both waits return and are
-// canceled only then, on both normal and error exits (error exits reuse
-// drainExecution through the deferred cleanup). That cancellation cannot reach
-// a durable consumer callback, which runs under the consumer lifecycle context
-// canceled only after both consumers drain below.
+// WaitCommands does, beyond that timeout when an Operation deadline requires it.
+// A connection that no request completed cannot be reclaimed inside that window,
+// so an expired window force-closes it rather than failing the cancellation.
+// That dependency cancellation cannot reach a durable consumer callback, which
+// runs under its consumer lifecycle context canceled only after that consumer
+// drains below.
 func shutdownOnCancel(
-	deviceService *devices.Service,
-	cancelDependencies context.CancelFunc,
+	cleanup *executionCleanup,
 	healthSupervisor *healthSupervisor,
 	server *http.Server,
 	consumers *coreConsumers,
@@ -327,7 +415,7 @@ func shutdownOnCancel(
 	connection *natsgo.Conn,
 	logger *slog.Logger,
 ) error {
-	joinAdmittedExecution(deviceService)
+	cleanup.run()
 	healthSupervisor.Stop()
 	shutdownContext, shutdownCancel := context.WithTimeout(context.Background(), shutdownTimeout)
 	shutdownErr := server.Shutdown(shutdownContext)
@@ -345,7 +433,6 @@ func shutdownOnCancel(
 		}
 		_ = server.Close()
 	}
-	cancelDependencies()
 	return drainTransports(
 		context.Background(), logger, consumers, relay, enablement, ownedMappings, registrations,
 		availability, sessions, connection,
@@ -608,13 +695,17 @@ func connectCoreNATS(
 // EntityEventHistoryRetention window, not a Core setting, so the same pass
 // serves both retentions without adding a timer. Each pass derives one sweep
 // time; Service.DeleteExpiredEntityEvents then uses one cutoff strict-before
-// that instant and deletes in bounded batches. Startup never calls it, so
+// that instant and deletes in bounded batches. Automation history uses the
+// configured `automation_history_retention` window and the same sweep time, so
+// a shorter window takes effect on the next pass. Startup never calls it, so
 // uptime under one interval means no sweep has run yet.
 func pruneRetainedHistory(
 	ctx context.Context,
 	service *devices.Service,
+	automationService *automations.Service,
 	logger *slog.Logger,
 	observationRetention time.Duration,
+	automationRetention time.Duration,
 	interval time.Duration,
 ) {
 	ticker := time.NewTicker(interval)
@@ -641,18 +732,85 @@ func pruneRetainedHistory(
 					slog.String("error_code", "entity_events_prune_failed"),
 				)
 			}
+			pruneAutomationHistory(ctx, automationService, sweepTime, automationRetention)
 		}
 	}
 }
 
-// drainExecution runs before any dependency teardown on every exit. It joins
-// already-admitted workers (including detached Commands whose HTTP handlers
-// already returned) before canceling shared observation, health, and
-// persistence dependencies.
+// pruneAutomationHistory bounds terminal Automation Runs and Skips. The zero
+// batch lets the automations service choose its own bounded batch size, active
+// Runs and matched-Fact receipts are never selected, and the service records
+// core.automation_history_prune_failed itself. A failed pass logs and retries
+// next hour; it never fails readiness.
+func pruneAutomationHistory(
+	ctx context.Context,
+	service *automations.Service,
+	sweepTime time.Time,
+	retention time.Duration,
+) {
+	_, _ = service.PruneHistory(ctx, sweepTime.Add(-retention), 0)
+}
+
+// drainExecution runs before any dependency teardown on every exit. It stops
+// new admission, then joins already-admitted Automation workers and then device
+// Command workers (including detached Commands whose HTTP handlers already
+// returned) before canceling shared observation, health, and persistence
+// dependencies. [executionCleanup] runs it exactly once and wraps every
+// dependency teardown that registered after it, so the normal shutdown path and
+// every error exit observe the same order.
 func drainExecution(
+	automationService *automations.Service,
+	automationConsumers *automationConsumers,
 	deviceService *devices.Service,
 	cancelDependencies context.CancelFunc,
 ) {
-	joinAdmittedExecution(deviceService)
+	closeAdmission(automationService, automationConsumers, deviceService)
+	joinAdmittedExecution(automationService, deviceService)
 	cancelDependencies()
+}
+
+// executionCleanup is Core's ordered execution teardown, performed exactly once
+// per process. It drains the automation Device Fact consumer, closes automation
+// admission and then device Command admission, joins Automation workers and then
+// Command workers, cancels the shared dependency context, and waits for hourly
+// maintenance to return.
+//
+// Go runs deferred calls in reverse registration order. Run installs
+// [executionCleanup.run] as a fallback defer after the database, NATS
+// connection, consumer, and relay teardowns, so those dependencies are always
+// withdrawn after it. Every teardown registered after the fallback is wrapped
+// with [executionCleanup.teardown] instead, because a plain defer would
+// otherwise stop health, drain the request/reply transports, and close what
+// admitted work still needs before the gates closed and the workers joined. The
+// ordered shutdown path calls the same run, so the once keeps a single wait and
+// a single dependency cancellation on normal and error exits alike.
+type executionCleanup struct {
+	once                sync.Once
+	automationService   *automations.Service
+	automationConsumers *automationConsumers
+	deviceService       *devices.Service
+	cancelDependencies  context.CancelFunc
+	maintenance         *sync.WaitGroup
+}
+
+// run performs the ordered execution teardown the first time any defer reaches
+// it and is a no-op afterwards.
+func (cleanup *executionCleanup) run() {
+	cleanup.once.Do(func() {
+		drainExecution(
+			cleanup.automationService, cleanup.automationConsumers,
+			cleanup.deviceService, cleanup.cancelDependencies,
+		)
+		cleanup.maintenance.Wait()
+	})
+}
+
+// teardown wraps one health or dependency teardown so it can only withdraw its
+// resource after the execution cleanup has run. It returns the deferred
+// function, so a call site reads `defer cleanup.teardown(step)()`.
+func (cleanup *executionCleanup) teardown(withdraw func()) func() {
+	return func() {
+		cleanup.run()
+		withdraw()
+	}
 }
