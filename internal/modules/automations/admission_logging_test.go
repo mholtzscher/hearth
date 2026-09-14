@@ -1,0 +1,319 @@
+package automations_test
+
+import (
+	"context"
+	"log/slog"
+	"sync"
+	"testing"
+	"time"
+
+	"github.com/mholtzscher/hearth/internal/modules/automations"
+)
+
+// Admission diagnostics that must never delay the lifecycle join. These strings
+// match the messages logRunStarted and logSkipped emit.
+const (
+	runStartedLogMessage = "automation run started"
+	skippedLogMessage    = "automation run skipped"
+)
+
+// blockingMessageLogHandler stalls one selected diagnostic message until its
+// release channel closes, so a test can observe the lifecycle join while a
+// diagnostic sink is stuck. Every other message, including the Run completion
+// emitted inside executeRun's own lifetime, passes straight through.
+type blockingMessageLogHandler struct {
+	inner   slog.Handler
+	blocked string
+	entered chan struct{}
+	release chan struct{}
+}
+
+func (handler *blockingMessageLogHandler) Enabled(ctx context.Context, level slog.Level) bool {
+	return handler.inner.Enabled(ctx, level)
+}
+
+func (handler *blockingMessageLogHandler) Handle(ctx context.Context, record slog.Record) error {
+	if record.Message == handler.blocked {
+		select {
+		case handler.entered <- struct{}{}:
+		default:
+		}
+		<-handler.release
+	}
+	return handler.inner.Handle(ctx, record)
+}
+
+func (handler *blockingMessageLogHandler) WithAttrs(attrs []slog.Attr) slog.Handler {
+	return &blockingMessageLogHandler{
+		inner:   handler.inner.WithAttrs(attrs),
+		blocked: handler.blocked,
+		entered: handler.entered,
+		release: handler.release,
+	}
+}
+
+func (handler *blockingMessageLogHandler) WithGroup(name string) slog.Handler {
+	return &blockingMessageLogHandler{
+		inner:   handler.inner.WithGroup(name),
+		blocked: handler.blocked,
+		entered: handler.entered,
+		release: handler.release,
+	}
+}
+
+// newBlockedAdmissionLogger returns a logger whose selected admission message
+// blocks until the returned unblock runs, the JSON sink receiving every record
+// it does not block, and a channel that reports the first blocked record.
+// Unblocking is registered as cleanup so a failed assertion can never leave an
+// admission caller stuck inside the sink.
+func newBlockedAdmissionLogger(
+	t *testing.T,
+	blocked string,
+) (*slog.Logger, *lockedAutomationLogWriter, <-chan struct{}, func()) {
+	t.Helper()
+	writer := &lockedAutomationLogWriter{}
+	entered := make(chan struct{}, 1)
+	release := make(chan struct{})
+	var unblockOnce sync.Once
+	unblock := func() { unblockOnce.Do(func() { close(release) }) }
+	t.Cleanup(unblock)
+	logger := slog.New(&blockingMessageLogHandler{
+		inner:   slog.NewJSONHandler(writer, &slog.HandlerOptions{Level: slog.LevelDebug}),
+		blocked: blocked,
+		entered: entered,
+		release: release,
+	})
+	return logger, writer, entered, unblock
+}
+
+// requireLoggedEvents asserts the sink recorded exactly the wanted number of one
+// event, so a blocked admission diagnostic cannot hide sibling diagnostics.
+func requireLoggedEvents(
+	t *testing.T,
+	writer *lockedAutomationLogWriter,
+	event string,
+	want int,
+) {
+	t.Helper()
+	if got := automationLogEvents(writer.records(t), event); len(got) != want {
+		t.Fatalf("%s events = %d, want %d:\n%s", event, len(got), want, writer.output())
+	}
+}
+
+// requireAdmissionInFlight fails when the blocking repository never reaches the
+// admission transaction under test, so a broken admission cannot hang the test.
+func requireAdmissionInFlight(t *testing.T, blocking *blockingAdmissionRepository) {
+	t.Helper()
+	select {
+	case <-blocking.entered:
+	case <-time.After(5 * time.Second):
+		t.Fatal("the admission transaction never started")
+	}
+}
+
+// requireBlockedDiagnostic fails when the selected admission diagnostic is never
+// attempted, so a passing wait cannot hide a missing log call.
+func requireBlockedDiagnostic(t *testing.T, entered <-chan struct{}) {
+	t.Helper()
+	select {
+	case <-entered:
+	case <-time.After(5 * time.Second):
+		t.Fatal("the blocked admission diagnostic was never attempted")
+	}
+}
+
+// requireWaitRunsCompletesWhileLogBlocked proves shutdown joins admitted work
+// without waiting for a diagnostic sink that is still blocked.
+func requireWaitRunsCompletesWhileLogBlocked(t *testing.T, service *automations.Service) {
+	t.Helper()
+	waited := make(chan error, 1)
+	go func() { waited <- service.WaitRuns(context.Background()) }()
+	select {
+	case err := <-waited:
+		if err != nil {
+			t.Fatalf("WaitRuns = %v, want nil while the diagnostic sink was blocked", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("WaitRuns did not complete while the admission diagnostic was blocked")
+	}
+}
+
+// requireDrainedRun asserts one automation's only Run is durably interrupted
+// with core_stopping, proving its tracked worker finished its own lifecycle.
+func requireDrainedRun(
+	t *testing.T,
+	service *automations.Service,
+	automationID automations.AutomationID,
+) {
+	t.Helper()
+	history := listHistory(t, service, automationID)
+	if len(history) != 1 || history[0].Status != automations.RunInterrupted {
+		t.Fatalf("automation %s history = %#v, want one interrupted Run", automationID, history)
+	}
+	entry := historyEntry(t, service, automationID, history[0].ID)
+	if entry.Run == nil || entry.Run.FailureCode == nil ||
+		*entry.Run.FailureCode != automations.AutomationFailureCoreStopping {
+		t.Fatalf("automation %s Run = %#v, want core_stopping", automationID, entry.Run)
+	}
+}
+
+// This test protects shutdown drain under a blocked diagnostic sink and fails
+// if a completed manual admission still holds its reservation while the
+// run_started log blocks. The admission must release the reservation and start
+// the Run worker before logging, so WaitRuns completes even though
+// automation.run_started is still pending.
+func TestWaitRunsCompletesWhileManualRunStartedLogBlocked(t *testing.T) {
+	t.Parallel()
+	scripted := newScriptedDevices()
+	logger, writer, entered, unblock := newBlockedAdmissionLogger(t, runStartedLogMessage)
+	dependencies := runtimeTestDependencies()
+	dependencies.Logger = logger
+	blocking := newBlockingAdmissionRepository(
+		automations.NewSQLiteRepository(openAutomationDatabase(t), dependencies),
+	)
+	service := automations.NewService(blocking, scripted, dependencies)
+	record := createRuntimeAutomation(t, service, runtimeDefinition(t, 1))
+
+	admitted := make(chan error, 1)
+	go func() {
+		_, err := service.StartManualRun(context.Background(), record.ID)
+		admitted <- err
+	}()
+	requireAdmissionInFlight(t, blocking)
+
+	// Admission closes while the transaction is still in flight, so the Run it
+	// commits drains with core_stopping instead of executing Commands.
+	service.StopAdmission()
+	close(blocking.release)
+
+	requireBlockedDiagnostic(t, entered)
+	requireWaitRunsCompletesWhileLogBlocked(t, service)
+	// The worker drained while the sink stayed blocked: the join covered the
+	// whole Run, not just the admission transaction, and the Run's own completion
+	// diagnostic was emitted inside executeRun rather than behind the blocked
+	// admission diagnostic.
+	requireDrainedRun(t, service, record.ID)
+	requireLoggedEvents(t, writer, "automation.run_completed", 1)
+
+	unblock()
+	select {
+	case err := <-admitted:
+		if err != nil {
+			t.Fatalf("StartManualRun = %v, want a committed Run", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("StartManualRun did not return after the diagnostic sink was released")
+	}
+	requireLoggedEvents(t, writer, "automation.run_started", 1)
+	if scripted.executionCount() != 0 {
+		t.Fatalf("drain executed %d Commands, want 0", scripted.executionCount())
+	}
+}
+
+// This test protects shutdown drain for an admission that commits no Run: a
+// zero-run fact admission must release its reservation before the skipped
+// diagnostic, so a blocked sink cannot hold WaitRuns. It fails if the
+// reservation is released only after logging.
+func TestWaitRunsCompletesWhileSkippedLogBlocked(t *testing.T) {
+	t.Parallel()
+	scripted := newScriptedDevices()
+	logger, writer, entered, unblock := newBlockedAdmissionLogger(t, skippedLogMessage)
+	dependencies := runtimeTestDependencies()
+	dependencies.Logger = logger
+	service, _ := newRuntimeService(t, scripted, dependencies)
+	entity := newEntityID(t)
+	record := createRuntimeAutomation(t, service, runtimeDefinitionFor(t, entity))
+
+	// A matching Fact older than the freshness bound records stale_fact and
+	// starts no Run, so the skipped diagnostic is the admission's only log.
+	stale := newObservationFact(t, entity, runtimeTestNow.Add(-automations.AutomationFactMaximumAge-time.Second))
+	outcome := make(chan automations.AdmissionOutcome, 1)
+	admitFailed := make(chan error, 1)
+	go func() {
+		result, err := service.ReceiveDeviceFact(context.Background(), stale)
+		if err != nil {
+			admitFailed <- err
+			return
+		}
+		outcome <- result
+	}()
+
+	requireBlockedDiagnostic(t, entered)
+	service.StopAdmission()
+	requireWaitRunsCompletesWhileLogBlocked(t, service)
+
+	unblock()
+	select {
+	case err := <-admitFailed:
+		t.Fatalf("ReceiveDeviceFact = %v, want a recorded stale_fact Skip", err)
+	case result := <-outcome:
+		if result.StartedRuns != 0 || result.RecordedSkips != 1 {
+			t.Fatalf("admission outcome = %#v, want one skip and no Run", result)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("ReceiveDeviceFact did not return after the diagnostic sink was released")
+	}
+	history := listHistory(t, service, record.ID)
+	if len(history) != 1 || history[0].Kind != automations.AutomationHistorySkip ||
+		history[0].Reason != automations.AutomationSkipStaleFact {
+		t.Fatalf("automation %s history = %#v, want one stale_fact Skip", record.ID, history)
+	}
+	requireLoggedEvents(t, writer, "automation.skipped", 1)
+	requireLoggedEvents(t, writer, "automation.run_started", 0)
+	if scripted.executionCount() != 0 {
+		t.Fatalf("skipped admission executed %d Commands, want 0", scripted.executionCount())
+	}
+}
+
+// This test protects shutdown drain for a fact admission that fans out to
+// several Runs and fails if worker start and logging interleave per Run. Every
+// committed Run must have its worker started before the first run_started
+// diagnostic, so a blocked sink cannot strand a later Run without a worker.
+func TestWaitRunsCompletesWhileFanOutRunStartedLogBlocked(t *testing.T) {
+	t.Parallel()
+	scripted := newScriptedDevices()
+	logger, writer, entered, unblock := newBlockedAdmissionLogger(t, runStartedLogMessage)
+	dependencies := runtimeTestDependencies()
+	dependencies.Logger = logger
+	blocking := newBlockingAdmissionRepository(
+		automations.NewSQLiteRepository(openAutomationDatabase(t), dependencies),
+	)
+	service := automations.NewService(blocking, scripted, dependencies)
+	entity := newEntityID(t)
+	first := createRuntimeAutomation(t, service, runtimeDefinitionFor(t, entity))
+	second := createRuntimeAutomation(t, service, runtimeDefinitionFor(t, entity))
+
+	admitted := make(chan error, 1)
+	go func() {
+		_, err := service.ReceiveDeviceFact(context.Background(), newObservationFact(t, entity, runtimeTestNow))
+		admitted <- err
+	}()
+	requireAdmissionInFlight(t, blocking)
+
+	service.StopAdmission()
+	close(blocking.release)
+
+	requireBlockedDiagnostic(t, entered)
+	requireWaitRunsCompletesWhileLogBlocked(t, service)
+	// Both committed Runs already drained with core_stopping while the first
+	// run_started record waited. A later Run whose worker had not started yet
+	// would still be running here, and the join would not have called it done.
+	requireDrainedRun(t, service, first.ID)
+	requireDrainedRun(t, service, second.ID)
+	// Both Runs' completion diagnostics passed the blocked admission record.
+	requireLoggedEvents(t, writer, "automation.run_completed", 2)
+
+	unblock()
+	select {
+	case err := <-admitted:
+		if err != nil {
+			t.Fatalf("ReceiveDeviceFact = %v, want a committed fan-out admission", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("ReceiveDeviceFact did not return after the diagnostic sink was released")
+	}
+	requireLoggedEvents(t, writer, "automation.run_started", 2)
+	if scripted.executionCount() != 0 {
+		t.Fatalf("drain executed %d Commands, want 0", scripted.executionCount())
+	}
+}

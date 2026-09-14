@@ -19,45 +19,58 @@ const AutomationFactMaximumAge = 30 * time.Second
 // running Run returns [ErrAutomationBusy] and a closed gate returns
 // [ErrAdmissionUnavailable].
 func (service *Service) StartManualRun(ctx context.Context, id AutomationID) (AutomationRun, error) {
-	if !service.beginAdmission() {
+	reservation, admitted := service.admission.TryAcquire()
+	if !admitted {
 		return AutomationRun{}, ErrAdmissionUnavailable
 	}
+	// The reservation is held across the whole admission so WaitRuns tracks work
+	// before it commits, and every committed Run is handed to the reservation
+	// before it releases.
+	defer reservation.Release()
 	// The device gate is checked separately: automation admission closes first on
 	// shutdown, and the cross-module gates never claim an atomic check-and-admit.
 	if service.devices == nil || !service.devices.CommandAdmissionOpen() {
-		service.abandonAdmission()
 		return AutomationRun{}, ErrAdmissionUnavailable
 	}
 	run, err := service.repository.AdmitManualRun(ctx, id, service.dependencies.Now())
 	if err != nil {
-		service.abandonAdmission()
 		return AutomationRun{}, err
 	}
-	service.registerAdmittedRuns(run)
-	service.startRun(ctx, run)
+	// Process-owned: detached from the HTTP request so caller cancellation cannot
+	// cancel an admitted Command, and tracked by the reservation so shutdown joins
+	// it. A reservation may add children even after admission closes.
+	workerContext := context.WithoutCancel(ctx)
+	reservation.Go(func() { service.executeRun(workerContext, run) })
+	// Diagnostic logging does not own admission or delay the lifecycle join.
+	reservation.Release()
 	service.logRunStarted(ctx, run)
 	return run, nil
 }
 
 // ReceiveDeviceFact admits one Device Fact against current enabled definitions
-// and registers every started Run worker only after the admission transaction
+// and hands every started Run its worker only after the admission transaction
 // commits.
 func (service *Service) ReceiveDeviceFact(
 	ctx context.Context,
 	fact DeviceFact,
 ) (AdmissionOutcome, error) {
-	if !service.beginAdmission() {
+	reservation, admitted := service.admission.TryAcquire()
+	if !admitted {
 		return AdmissionOutcome{}, ErrAdmissionUnavailable
 	}
+	defer reservation.Release()
 	result, err := service.repository.AdmitDeviceFact(ctx, fact, service.dependencies.Now())
 	if err != nil {
-		service.abandonAdmission()
 		return AdmissionOutcome{}, err
 	}
-	service.registerAdmittedRuns(result.StartedRuns...)
-	for index := range result.StartedRuns {
-		run := result.StartedRuns[index]
-		service.startRun(ctx, run)
+	// Register every committed Run before releasing admission or logging. A
+	// blocked diagnostic sink must not strand later Runs without workers.
+	workerContext := context.WithoutCancel(ctx)
+	for _, run := range result.StartedRuns {
+		reservation.Go(func() { service.executeRun(workerContext, run) })
+	}
+	reservation.Release()
+	for _, run := range result.StartedRuns {
 		service.logRunStarted(ctx, run)
 	}
 	for _, skip := range result.Skips {
@@ -99,13 +112,6 @@ func (service *Service) logSkipped(ctx context.Context, skip AdmissionSkip) {
 		slog.String("family", string(skip.Family)),
 		slog.String("variant", skip.Variant),
 	)
-}
-
-// startRun launches a committed Run independently of caller cancellation.
-// registerAdmittedRuns must track the worker first so shutdown joins it.
-func (service *Service) startRun(ctx context.Context, run AutomationRun) {
-	workerContext := context.WithoutCancel(ctx)
-	go service.executeRun(workerContext, run)
 }
 
 // factSummary copies one Device Fact into immutable history evidence so a

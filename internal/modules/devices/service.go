@@ -4,6 +4,8 @@ import (
 	"log/slog"
 	"sync"
 	"time"
+
+	"github.com/mholtzscher/hearth/internal/platform/lifecycle"
 )
 
 type Dependencies struct {
@@ -31,17 +33,14 @@ type Stores struct {
 }
 
 type Service struct {
-	logger               *slog.Logger
-	stores               Stores
-	sender               CommandSender
-	catalog              *TypeCatalog
-	dependencies         Dependencies
-	deviceFacts          DeviceFactNotifier
-	waiters              commandWaiters
-	lifecycleMu          sync.Mutex
-	commandAdmissionOpen bool
-	commandWorkers       int
-	commandIdle          chan struct{}
+	logger           *slog.Logger
+	stores           Stores
+	sender           CommandSender
+	catalog          *TypeCatalog
+	dependencies     Dependencies
+	deviceFacts      DeviceFactNotifier
+	waiters          commandWaiters
+	commandAdmission *lifecycle.AdmissionGroup
 }
 
 type commandWaiters struct {
@@ -69,17 +68,14 @@ func NewService(stores Stores, sender CommandSender, catalog *TypeCatalog, depen
 	if dependencies.NewCorrelationID == nil {
 		dependencies.NewCorrelationID = NewCorrelationID
 	}
-	idle := make(chan struct{})
-	close(idle)
 	return &Service{
-		logger:               logger,
-		stores:               stores,
-		sender:               sender,
-		catalog:              catalog,
-		dependencies:         dependencies,
-		deviceFacts:          dependencies.DeviceFacts,
-		waiters:              commandWaiters{byID: make(map[CommandID]chan CommandResult)},
-		commandAdmissionOpen: true,
-		commandIdle:          idle,
+		logger:           logger,
+		stores:           stores,
+		sender:           sender,
+		catalog:          catalog,
+		dependencies:     dependencies,
+		deviceFacts:      dependencies.DeviceFacts,
+		waiters:          commandWaiters{byID: make(map[CommandID]chan CommandResult)},
+		commandAdmission: lifecycle.NewAdmissionGroup(),
 	}
 }

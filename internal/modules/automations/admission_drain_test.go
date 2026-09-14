@@ -166,6 +166,68 @@ func TestWaitRunsJoinsFactAdmissionInFlightAtStop(t *testing.T) {
 	}
 }
 
+// WaitRuns must join every Run one Fact admission fans out to when admission
+// closes while the transaction is still in flight.
+func TestWaitRunsJoinsFactFanOutAdmissionInFlightAtStop(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	scripted := newScriptedDevices()
+	dependencies := runtimeTestDependencies()
+	blocking := newBlockingAdmissionRepository(
+		automations.NewSQLiteRepository(openAutomationDatabase(t), dependencies),
+	)
+	service := automations.NewService(blocking, scripted, dependencies)
+	entity := newEntityID(t)
+	first := createRuntimeAutomation(t, service, runtimeDefinitionFor(t, entity))
+	second := createRuntimeAutomation(t, service, runtimeDefinitionFor(t, entity))
+
+	admitFailed := make(chan error, 1)
+	go func() {
+		_, err := service.ReceiveDeviceFact(ctx, newObservationFact(t, entity, runtimeTestNow))
+		admitFailed <- err
+	}()
+	<-blocking.entered
+
+	service.StopAdmission()
+	// Both committed Runs must be handed to the reservation before it releases;
+	// otherwise WaitRuns could return after the first Run finishes while the
+	// second is still starting.
+	waited := make(chan error, 1)
+	go func() { waited <- service.WaitRuns(context.Background()) }()
+	select {
+	case err := <-waited:
+		t.Fatalf("WaitRuns returned while a fact fan-out admission was in flight: %v", err)
+	case <-time.After(50 * time.Millisecond):
+	}
+
+	close(blocking.release)
+	select {
+	case err := <-waited:
+		if err != nil {
+			t.Fatalf("WaitRuns = %v, want nil", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("WaitRuns did not join every Run the in-flight fact admission started")
+	}
+	if err := <-admitFailed; err != nil {
+		t.Fatalf("ReceiveDeviceFact = %v, want a committed admission", err)
+	}
+	for _, record := range []automations.AutomationRecord{first, second} {
+		history := listHistory(t, service, record.ID)
+		if len(history) != 1 || history[0].Status != automations.RunInterrupted {
+			t.Fatalf("automation %s history = %#v, want one interrupted Run", record.ID, history)
+		}
+		entry := historyEntry(t, service, record.ID, history[0].ID)
+		if entry.Run == nil || entry.Run.FailureCode == nil ||
+			*entry.Run.FailureCode != automations.AutomationFailureCoreStopping {
+			t.Fatalf("automation %s Run = %#v, want core_stopping", record.ID, entry.Run)
+		}
+	}
+	if scripted.executionCount() != 0 {
+		t.Fatalf("drain executed %d Commands, want 0", scripted.executionCount())
+	}
+}
+
 // A refused admission must release its reservation rather than block WaitRuns.
 func TestWaitRunsReturnsWhenRefusedAdmissionReservationReleases(t *testing.T) {
 	t.Parallel()

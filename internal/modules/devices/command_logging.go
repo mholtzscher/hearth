@@ -31,9 +31,9 @@ func (service *Service) commandScopedLogger(command CommandRecord) *slog.Logger 
 }
 
 // logCommandCreated records durable creation with the creating operation's
-// context. Running commands defer it until their outcome is buffered and
-// lifecycle resources are released; immediate terminal commands emit after
-// startAdmittedCommand already released lifecycle tracking.
+// context. Running commands defer it until their outcome is buffered and their
+// admission reservation is released; immediate terminal commands emit after
+// startAdmittedCommand already released the reservation.
 func (service *Service) logCommandCreated(ctx context.Context, command CommandRecord) {
 	service.commandScopedLogger(command).InfoContext(
 		ctx,

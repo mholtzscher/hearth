@@ -3,25 +3,22 @@ package automations
 import (
 	"context"
 	"log/slog"
-	"sync"
+
+	"github.com/mholtzscher/hearth/internal/platform/lifecycle"
 )
 
 // Service owns automation behavior. Definition management validates every
 // current reference before one short persistence transaction; admission gating
-// and worker registration build on the same service.
+// and Run worker tracking build on the same service.
 type Service struct {
 	repository   AutomationRepository
 	devices      AutomationDevices
 	dependencies AutomationDependencies
 
-	// gate serializes admission gating, in-flight admission tracking, and
-	// worker registration. idle is closed whenever nothing is admitted: no
-	// admission is in flight and no Run worker is registered.
-	gate          sync.Mutex
-	admissionOpen bool
-	admitting     int
-	workers       int
-	idle          chan struct{}
+	// admission gates new Runs and tracks in-flight admissions and their Run
+	// workers, so WaitRuns drains admitted work without inventing its own
+	// goroutine bookkeeping.
+	admission *lifecycle.AdmissionGroup
 }
 
 // NewService assembles the automation service from its persistence seam, the
@@ -32,14 +29,11 @@ func NewService(
 	automationDevices AutomationDevices,
 	dependencies AutomationDependencies,
 ) *Service {
-	idle := make(chan struct{})
-	close(idle)
 	return &Service{
-		repository:    repository,
-		devices:       automationDevices,
-		dependencies:  dependencies.withDefaults(),
-		admissionOpen: true,
-		idle:          idle,
+		repository:   repository,
+		devices:      automationDevices,
+		dependencies: dependencies.withDefaults(),
+		admission:    lifecycle.NewAdmissionGroup(),
 	}
 }
 
