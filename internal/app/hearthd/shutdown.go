@@ -65,15 +65,15 @@ func (shutdown *coreShutdown) run() error {
 		shutdown.automationService.StopAdmission()
 	}
 	if shutdown.deviceService != nil {
-		shutdown.deviceService.StopCommandAdmission()
+		shutdown.deviceService.StopAdmission()
 	}
 	// Ignore process cancellation: admitted work runs to its own deadline.
 	// Join Automation Runs first because their Steps depend on Commands.
 	if shutdown.automationService != nil {
-		_ = shutdown.automationService.WaitRuns(context.Background())
+		_ = shutdown.automationService.Drain(context.Background())
 	}
 	if shutdown.deviceService != nil {
-		_ = shutdown.deviceService.WaitCommands(context.Background())
+		_ = shutdown.deviceService.Drain(context.Background())
 	}
 	if shutdown.cancelDependencies != nil {
 		shutdown.cancelDependencies()

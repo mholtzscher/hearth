@@ -8,6 +8,8 @@ import (
 	"fmt"
 	"log/slog"
 	"time"
+
+	"github.com/mholtzscher/hearth/internal/platform/lifecycle"
 )
 
 const commandPersistenceTimeout = 5 * time.Second
@@ -66,27 +68,25 @@ func (service *Service) validateCommand(ctx context.Context, input CommandInput)
 	return view.Entity, resolved, nil
 }
 
-// ExecuteCommand persists direct command identity before dispatch; caller
-// cancellation stops waiting but does not cancel a durably created command.
-// Direct Commands are rejected with ErrCommandUnavailable once
-// StopCommandAdmission closes admission. Admitted workers are tracked until
-// their detached lifecycle finishes, independent of caller or shutdown
-// cancellation, so WaitCommands drains them before dependencies tear down.
+// ExecuteCommand persists Command identity before dispatch. Caller cancellation
+// stops waiting, not the admitted worker; Drain joins that worker.
+// Closed admission returns ErrCommandUnavailable.
 func (service *Service) ExecuteCommand(ctx context.Context, input CommandInput) (CommandResult, error) {
-	if !service.admitCommandWorker() {
+	reservation, admitted := service.commandAdmission.TryAcquire()
+	if !admitted {
 		return CommandResult{}, ErrCommandUnavailable
 	}
-	return service.executeAdmittedCommand(ctx, input)
+	return service.executeAdmittedCommand(ctx, input, reservation)
 }
 
-// executeAdmittedCommand waits on the worker started by startAdmittedCommand
-// and emits immediate terminal creation records only after lifecycle tracking
-// is released, so a slow diagnostic sink can never block WaitCommands.
+// executeAdmittedCommand waits for the worker or caller cancellation.
+// Immediately terminal Commands are logged after reservation release.
 func (service *Service) executeAdmittedCommand(
 	ctx context.Context,
 	input CommandInput,
+	reservation *lifecycle.Reservation,
 ) (CommandResult, error) {
-	command, completed, err := service.startAdmittedCommand(ctx, input)
+	command, completed, err := service.startAdmittedCommand(ctx, input, reservation)
 	if err != nil {
 		if completed == nil &&
 			(command.Status == CommandStatusEntityDisabled || command.Status == CommandStatusAdapterUnhealthy) {
@@ -108,19 +108,17 @@ func (service *Service) executeAdmittedCommand(
 	}
 }
 
-// startAdmittedCommand owns the admitted worker until it transfers ownership
-// to the detached lifecycle goroutine. The defer releases every pre-transfer
-// failure, including immediate terminal records, before the caller logs them;
-// success clears ownership so the worker releases exactly once before its
-// potentially blocking creation logging.
+// startAdmittedCommand transfers the reservation to a worker or releases it
+// before returning, including for immediately terminal Commands.
 func (service *Service) startAdmittedCommand(
 	ctx context.Context,
 	input CommandInput,
+	reservation *lifecycle.Reservation,
 ) (CommandRecord, <-chan commandOutcome, error) {
 	owned := true
 	defer func() {
 		if owned {
-			service.releaseCommandWorker()
+			reservation.Release()
 		}
 	}()
 	entity, resolved, err := service.validateCommand(ctx, input)
@@ -137,15 +135,13 @@ func (service *Service) startAdmittedCommand(
 	if command.Status == CommandStatusAdapterUnhealthy {
 		return command, nil, commandExecutionError(command.ID, ErrAdapterUnhealthy)
 	}
-	completed := service.spawnCommandWorker(ctx, command, resolved.Outcome)
+	completed := service.spawnCommandWorker(ctx, command, resolved.Outcome, reservation)
 	owned = false
 	return command, completed, nil
 }
 
-// createCommandRecord generates missing identities and persists the requested
-// Command. The caller (startAdmittedCommand) owns the admitted worker:
-// failures return through its defer, and success transfers ownership to
-// spawnCommandWorker.
+// createCommandRecord generates missing identities and persists the Command.
+// Reservation ownership remains with startAdmittedCommand.
 func (service *Service) createCommandRecord(
 	ctx context.Context,
 	entity Entity,
@@ -191,14 +187,14 @@ func (service *Service) createCommandRecord(
 	return command, nil
 }
 
-// spawnCommandWorker registers the waiter and hands the admitted worker to its
-// detached lifecycle goroutine, which releases it when the lifecycle finishes.
-// The returned channel receives exactly one outcome; caller cancellation stops
-// waiting without canceling the worker.
+// spawnCommandWorker transfers the reservation to a detached worker and returns
+// a channel receiving one outcome. It releases explicitly rather than using
+// Reservation.Go so a blocked creation log cannot hold Drain.
 func (service *Service) spawnCommandWorker(
 	ctx context.Context,
 	command CommandRecord,
 	outcome OutcomeKind,
+	reservation *lifecycle.Reservation,
 ) <-chan commandOutcome {
 	waiter := service.addCommandWaiter(command.ID)
 	completed := make(chan commandOutcome, 1)
@@ -208,7 +204,7 @@ func (service *Service) spawnCommandWorker(
 		completed <- service.runCommand(lifecycleContext, command, outcome, waiter)
 		service.removeCommandWaiter(command.ID)
 		cancel()
-		service.releaseCommandWorker()
+		reservation.Release()
 		// Publish the outcome and release lifecycle resources before a slow
 		// diagnostic sink can block this existing worker.
 		service.logCommandCreated(lifecycleParent, command)

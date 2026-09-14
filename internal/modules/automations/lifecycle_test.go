@@ -2,6 +2,7 @@ package automations_test
 
 import (
 	"context"
+	"errors"
 	"sync"
 	"testing"
 	"time"
@@ -9,6 +10,27 @@ import (
 	"github.com/mholtzscher/hearth/internal/modules/automations"
 	"github.com/mholtzscher/hearth/internal/modules/devices"
 )
+
+func TestDrainClosesIdleAutomationAdmission(t *testing.T) {
+	t.Parallel()
+	service, _ := newRuntimeService(t, newScriptedDevices(), runtimeTestDependencies())
+	record := createRuntimeAutomation(t, service, runtimeDefinition(t, 1))
+	for range 2 {
+		if err := service.Drain(t.Context()); err != nil {
+			t.Fatalf("idle Drain = %v", err)
+		}
+		if service.AdmissionOpen() {
+			t.Fatal("idle Drain left admission open")
+		}
+	}
+	if _, err := service.StartManualRun(t.Context(), record.ID); !errors.Is(err, automations.ErrAdmissionUnavailable) {
+		t.Fatalf("manual admission after idle Drain = %v", err)
+	}
+	_, factErr := service.ReceiveDeviceFact(t.Context(), automations.DeviceFact{})
+	if !errors.Is(factErr, automations.ErrAdmissionUnavailable) {
+		t.Fatalf("Fact admission after idle Drain = %v", factErr)
+	}
+}
 
 // Caller cancellation must not prevent an admitted Run from reaching verified completion.
 func TestRunSurvivesCallerCancellation(t *testing.T) {
@@ -120,7 +142,7 @@ func TestInterruptActiveRunsClassifiesUnfinishedWork(t *testing.T) {
 
 // Drain must let the current Command finish, then interrupt the next Step
 // without reserving or linking another Command.
-func TestDrainStopsRunBeforeNextStep(t *testing.T) {
+func TestCanceledDrainStopsRunBeforeNextStep(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	scripted := newScriptedDevices()
@@ -137,9 +159,35 @@ func TestDrainStopsRunBeforeNextStep(t *testing.T) {
 		t.Fatal(err)
 	}
 	<-started
-	service.StopAdmission()
+	drainContext, cancelDrain := context.WithCancel(ctx)
+	cancelDrain()
+	if err = service.Drain(drainContext); !errors.Is(err, context.Canceled) {
+		t.Fatalf("canceled Drain = %v, want context.Canceled", err)
+	}
+	if service.AdmissionOpen() {
+		t.Fatal("canceled Drain left admission open")
+	}
+	if _, err = service.StartManualRun(ctx, record.ID); !errors.Is(err, automations.ErrAdmissionUnavailable) {
+		t.Fatalf("manual admission after Drain = %v", err)
+	}
+	_, err = service.ReceiveDeviceFact(ctx, automations.DeviceFact{})
+	if !errors.Is(err, automations.ErrAdmissionUnavailable) {
+		t.Fatalf("Fact admission after Drain = %v", err)
+	}
+	waiting, cancelWait := context.WithTimeout(ctx, 10*time.Millisecond)
+	defer cancelWait()
+	if err = service.Drain(waiting); !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("Drain with a blocked Command = %v, want context.DeadlineExceeded", err)
+	}
 	close(gate)
-	waitForRuns(t, service)
+	draining, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	if err = service.Drain(draining); err != nil {
+		t.Fatalf("Drain after Command completion = %v", err)
+	}
+	if err = service.Drain(draining); err != nil {
+		t.Fatalf("repeated Drain = %v", err)
+	}
 
 	entry := historyEntry(t, service, record.ID, string(run.ID))
 	if entry.Run == nil || entry.Run.Status != automations.RunInterrupted ||

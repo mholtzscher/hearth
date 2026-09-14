@@ -360,7 +360,7 @@ func (service *AutomationService) StartManualRun(context.Context, AutomationID) 
 func (service *AutomationService) ReceiveEntityEventFact(context.Context, EntityEventFact) (AdmissionOutcome, error)
 func (service *AutomationService) StopAdmission()
 func (service *AutomationService) AdmissionOpen() bool
-func (service *AutomationService) WaitRuns(context.Context) error
+func (service *AutomationService) Drain(context.Context) error
 func (service *AutomationService) InterruptActiveRuns(context.Context, time.Time) error
 ```
 

@@ -358,7 +358,7 @@ func TestAutomationAPIManualRunGates(t *testing.T) {
 	if location := response.Header().Get("Location"); location != wantLocation {
 		t.Fatalf("run Location = %q, want %q", location, wantLocation)
 	}
-	waitForAPI(t, service)
+	waitForAPI(t, service, created.ID, run.ID)
 
 	if response = performJSON(
 		router, http.MethodGet, "/v1/automations/"+created.ID+"/history/"+run.ID, "",
@@ -380,6 +380,9 @@ func TestAutomationAPIManualRunGates(t *testing.T) {
 	); response.Code != http.StatusAccepted {
 		t.Fatalf("second manual run status = %d: %s", response.Code, response.Body.String())
 	}
+	if err := json.Unmarshal(response.Body.Bytes(), &run); err != nil {
+		t.Fatal(err)
+	}
 	<-started
 	if response = performJSON(
 		router,
@@ -399,7 +402,7 @@ func TestAutomationAPIManualRunGates(t *testing.T) {
 		t.Fatalf("closed admission status = %d, want 503: %s", response.Code, response.Body.String())
 	}
 	close(gate)
-	waitForAPI(t, service)
+	waitForAPI(t, service, created.ID, run.ID)
 }
 
 // Deleted Automations retain queryable history; a mismatched parent must return 404.
@@ -413,7 +416,7 @@ func TestAutomationAPIHistoryRemainsQueryableAfterDeletion(t *testing.T) {
 	if err := json.Unmarshal(runResponse.Body.Bytes(), &run); err != nil {
 		t.Fatal(err)
 	}
-	waitForAPI(t, service)
+	waitForAPI(t, service, created.ID, run.ID)
 	if response := performJSON(
 		router, http.MethodDelete, "/v1/automations/"+created.ID+"?expected_revision=1", "",
 	); response.Code != http.StatusNoContent {

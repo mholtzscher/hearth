@@ -3,25 +3,19 @@ package automations
 import (
 	"context"
 	"log/slog"
-	"sync"
+	"time"
+
+	"github.com/mholtzscher/hearth/internal/platform/lifecycle"
 )
 
-// Service owns automation behavior. Definition management validates every
-// current reference before one short persistence transaction; admission gating
-// and worker registration build on the same service.
+// Service manages automation definitions, Run admission, and execution.
 type Service struct {
 	repository   AutomationRepository
 	devices      AutomationDevices
 	dependencies AutomationDependencies
 
-	// gate serializes admission gating, in-flight admission tracking, and
-	// worker registration. idle is closed whenever nothing is admitted: no
-	// admission is in flight and no Run worker is registered.
-	gate          sync.Mutex
-	admissionOpen bool
-	admitting     int
-	workers       int
-	idle          chan struct{}
+	// admission tracks both admission transactions and Run workers for Drain.
+	admission *lifecycle.AdmissionGroup
 }
 
 // NewService assembles the automation service from its persistence seam, the
@@ -32,15 +26,60 @@ func NewService(
 	automationDevices AutomationDevices,
 	dependencies AutomationDependencies,
 ) *Service {
-	idle := make(chan struct{})
-	close(idle)
 	return &Service{
-		repository:    repository,
-		devices:       automationDevices,
-		dependencies:  dependencies.withDefaults(),
-		admissionOpen: true,
-		idle:          idle,
+		repository:   repository,
+		devices:      automationDevices,
+		dependencies: dependencies.withDefaults(),
+		admission:    lifecycle.NewAdmissionGroup(),
 	}
+}
+
+// StopAdmission rejects new Runs with [ErrAdmissionUnavailable]. Admitted Runs
+// finish their current Command and drain. It is idempotent and does not wait.
+func (service *Service) StopAdmission() {
+	service.admission.CloseAdmission()
+}
+
+// AdmissionOpen reports whether new Runs are allowed; executor faults close admission.
+func (service *Service) AdmissionOpen() bool {
+	return service.admission.AdmissionOpen()
+}
+
+// Drain closes admission and joins admitted Runs without canceling Commands.
+// A context error stops waiting, not the Runs; admission stays closed.
+// Keep shared dependencies alive until a drain succeeds.
+func (service *Service) Drain(ctx context.Context) error {
+	service.StopAdmission()
+	return service.admission.Wait(ctx)
+}
+
+// InterruptActiveRuns marks running Runs and Steps interrupted on restart.
+// Call before opening transports; it never replays Commands or infers success.
+func (service *Service) InterruptActiveRuns(ctx context.Context, at time.Time) error {
+	if err := service.repository.InterruptActiveRuns(ctx, at, AutomationFailureCoreRestarted); err != nil {
+		return err
+	}
+	service.dependencies.Logger.WarnContext(
+		ctx,
+		"automation runs interrupted",
+		slog.String("event", "automation.run_interrupted"),
+		slog.String("reason", AutomationFailureCoreRestarted),
+	)
+	return nil
+}
+
+// latchExecutorFault closes admission until restart when Run progress cannot be
+// verified or persisted.
+func (service *Service) latchExecutorFault(ctx context.Context, runID AutomationRunID, position int) {
+	service.admission.CloseAdmission()
+	service.dependencies.Logger.ErrorContext(
+		ctx,
+		"automation executor fault latched until restart",
+		slog.String("event", "automation.executor_fault"),
+		slog.String("run_id", string(runID)),
+		slog.Int("step_position", position),
+		slog.String("error_code", AutomationFailureExecutorFault),
+	)
 }
 
 // CreateAutomation validates every current reference and persists one new
