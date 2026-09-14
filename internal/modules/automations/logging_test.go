@@ -17,9 +17,7 @@ import (
 	"github.com/mholtzscher/hearth/internal/modules/devices"
 )
 
-// lockedAutomationLogWriter is a concurrency-safe slog destination. Run workers
-// emit terminal diagnostics from background goroutines, so tests must never read
-// an unlocked [bytes.Buffer] while it writes.
+// lockedAutomationLogWriter allows assertions while Run workers log concurrently.
 type lockedAutomationLogWriter struct {
 	mutex  sync.Mutex
 	buffer bytes.Buffer
@@ -85,14 +83,12 @@ func requireAutomationLogInt(t *testing.T, record map[string]any, field string, 
 	}
 }
 
-// fixedAutomationLogID builds one canonical UUIDv7 identity whose body is a fixed
-// ordinal, so log assertions never depend on a random value.
+// fixedAutomationLogID builds a canonical UUIDv7 from a deterministic ordinal.
 func fixedAutomationLogID(prefix string, ordinal int64) string {
 	return fmt.Sprintf("%s_018f9c1e-0000-7000-8000-%012d", prefix, ordinal)
 }
 
-// fixedAutomationLogDependencies supplies the fixed clock and deterministic
-// identity constructors log assertions require across the repository and service.
+// fixedAutomationLogDependencies fixes time and identities for log assertions.
 func fixedAutomationLogDependencies(logger *slog.Logger) automations.AutomationDependencies {
 	var automationOrdinal, runOrdinal, skipOrdinal, commandOrdinal, correlationOrdinal atomic.Int64
 	return automations.AutomationDependencies{
@@ -116,9 +112,7 @@ func fixedAutomationLogDependencies(logger *slog.Logger) automations.AutomationD
 	}
 }
 
-// failingAutomationPruneRepository makes the hourly retention write fail without
-// changing any other repository behavior, so the prune-failure diagnostic can be
-// observed.
+// failingAutomationPruneRepository fails only retention writes.
 type failingAutomationPruneRepository struct {
 	*automations.SQLiteRepository
 
@@ -133,11 +127,8 @@ func (repo *failingAutomationPruneRepository) DeleteHistoryBefore(
 	return 0, repo.pruneErr
 }
 
-// TestAutomationRunStartedLogsManualAndAutomaticAdmission protects A15: a Run
-// admitted by a matching Device Fact emits the same stable automation.run_started
-// event as a manual Run, and the automatic record additionally carries only the
-// safe Fact family and disposition. It fails if automatic admission stays silent
-// or if a manual record invents Fact provenance.
+// Manual and automatic admission must log automation.run_started; only automatic
+// admission carries Fact provenance.
 func TestAutomationRunStartedLogsManualAndAutomaticAdmission(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
@@ -199,10 +190,7 @@ func TestAutomationRunStartedLogsManualAndAutomaticAdmission(t *testing.T) {
 	}
 }
 
-// TestAutomationSkippedLogsExactBusyAndStaleReasons protects A11/A15: a matching
-// Fact that starts no Run records automation.skipped with the exact fixed reason,
-// and freshness precedes busy. It fails if a skip is silent, mislabelled, or
-// attributed to the wrong Fact.
+// Skip logs must identify the Fact and exact reason, with stale taking precedence over busy.
 func TestAutomationSkippedLogsExactBusyAndStaleReasons(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
@@ -273,10 +261,8 @@ func TestAutomationSkippedLogsExactBusyAndStaleReasons(t *testing.T) {
 	}
 }
 
-// TestAutomationDecisionLogsCarryNoSensitiveMaterial protects A15 and the §9.4
-// safety rule: every automation decision emits its stable event while no
-// definition JSON, Fact value, Command parameter, or upstream error text reaches
-// the logs. It fails if an event literal disappears or a secret sentinel leaks.
+// Decision logs must retain stable events without leaking definition JSON,
+// Fact values, Command parameters, or upstream error text.
 func TestAutomationDecisionLogsCarryNoSensitiveMaterial(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()

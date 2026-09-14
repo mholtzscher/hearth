@@ -10,9 +10,7 @@ import (
 	"github.com/mholtzscher/hearth/internal/modules/devices"
 )
 
-// TestRunSurvivesCallerCancellation protects A7: canceling the admitted
-// caller's context does not cancel detached work; the Run still reaches its
-// verified terminal state.
+// Caller cancellation must not prevent an admitted Run from reaching verified completion.
 func TestRunSurvivesCallerCancellation(t *testing.T) {
 	t.Parallel()
 	scripted := newScriptedDevices()
@@ -43,9 +41,7 @@ func TestRunSurvivesCallerCancellation(t *testing.T) {
 	}
 }
 
-// TestDeletingDefinitionLetsActiveRunContinue protects A7: hard-deleting a
-// definition leaves an active snapshotted Run running and keeps its history
-// queryable by the former Automation ID.
+// Deleting a definition must preserve its active snapshot and queryable history.
 func TestDeletingDefinitionLetsActiveRunContinue(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
@@ -85,9 +81,7 @@ func TestDeletingDefinitionLetsActiveRunContinue(t *testing.T) {
 	}
 }
 
-// TestInterruptActiveRunsClassifiesUnfinishedWork protects A7/A13: startup
-// interruption marks running Runs and Steps interrupted/core_restarted without
-// replaying any Command.
+// Startup recovery must mark unfinished work interrupted/core_restarted without replay.
 func TestInterruptActiveRunsClassifiesUnfinishedWork(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
@@ -124,9 +118,8 @@ func TestInterruptActiveRunsClassifiesUnfinishedWork(t *testing.T) {
 	}
 }
 
-// TestDrainStopsRunBeforeNextStep protects A7/A13: closing admission while a
-// Command is in flight lets that Command finish, then marks the next Step and
-// the Run interrupted/core_stopping with no Command link.
+// Drain must let the current Command finish, then interrupt the next Step
+// without reserving or linking another Command.
 func TestDrainStopsRunBeforeNextStep(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
@@ -166,9 +159,7 @@ func TestDrainStopsRunBeforeNextStep(t *testing.T) {
 	}
 }
 
-// TestPruneHistoryKeepsRunningRunsAndFactReceipts protects A7/A9: hourly
-// pruning removes only terminal history older than the cutoff and never removes
-// matched-Fact receipts.
+// Retention must remove only old terminal history, preserving active Runs and Fact receipts.
 func TestPruneHistoryKeepsRunningRunsAndFactReceipts(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()

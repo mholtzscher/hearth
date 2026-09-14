@@ -1,6 +1,4 @@
--- Definition management replaces whole documents under optimistic revision
--- control. Persisted JSON is the normalized strict section 6.1 representation, so the
--- adapter never reconstructs a definition from loose columns.
+-- Store normalized definition documents under optimistic revision control.
 
 -- name: CreateAutomation :one
 INSERT INTO automations (id, revision, definition_json, created_at, updated_at)
@@ -37,9 +35,7 @@ RETURNING id, revision, definition_json, created_at, updated_at;
 DELETE FROM automations
 WHERE id = ? AND revision = ?;
 
--- Runtime admission, execution, and history persistence. Every query here is
--- called only from inside one automation-owned transaction; none of them calls
--- devices, NATS, or a worker.
+-- Runtime admission, execution, and history queries use automation-owned transactions.
 
 -- name: ListAllAutomations :many
 SELECT id, revision, definition_json, created_at, updated_at

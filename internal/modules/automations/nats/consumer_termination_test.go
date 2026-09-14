@@ -11,10 +11,7 @@ import (
 	"github.com/mholtzscher/hearth/internal/modules/automations"
 )
 
-// controllableConsumeContext is a ConsumeContext whose termination one test
-// controls. stop closes it without a drain, exactly as a deleted consumer or a
-// dropped subscription does, while the consumer's own Drain closes it through
-// the same channel after marking the drain intentional.
+// controllableConsumeContext lets tests terminate consumption with or without Drain.
 type controllableConsumeContext struct {
 	closed chan struct{}
 	once   sync.Once
@@ -33,9 +30,7 @@ func (consume *controllableConsumeContext) terminate() {
 	consume.once.Do(func() { close(consume.closed) })
 }
 
-// stubDeviceFactConsumerResource is a jetstream.Consumer whose only implemented
-// method is Consume, which hands back the supplied ConsumeContext. Start never
-// calls another Consumer method, so the embedded interface stays unused.
+// stubDeviceFactConsumerResource implements only Consume, returning a controlled context.
 type stubDeviceFactConsumerResource struct {
 	jetstream.Consumer
 
@@ -49,9 +44,7 @@ func (stub *stubDeviceFactConsumerResource) Consume(
 	return stub.consume, nil
 }
 
-// gatedDeviceFactReceiver is a DeviceFactReceiver that also implements
-// AdmissionGate, recording whether the transport closed admission. It admits no
-// Fact, which the termination tests never publish.
+// gatedDeviceFactReceiver records gate closure; these termination tests publish no Facts.
 type gatedDeviceFactReceiver struct {
 	gateCalls atomic.Int32
 	admitted  atomic.Int32
@@ -95,9 +88,7 @@ func startStubbedDeviceFactConsumer(
 	return running, consume
 }
 
-// TestDeviceFactConsumerLatchesAdmissionOnUnexpectedTermination protects the
-// consumer-fault contract and fails if a consume loop that ends without an
-// intentional Drain leaves automation admission open.
+// Unexpected termination must close admission.
 func TestDeviceFactConsumerLatchesAdmissionOnUnexpectedTermination(t *testing.T) {
 	t.Parallel()
 	receiver := &gatedDeviceFactReceiver{}
@@ -125,9 +116,7 @@ func TestDeviceFactConsumerLatchesAdmissionOnUnexpectedTermination(t *testing.T)
 	}
 }
 
-// TestDeviceFactConsumerDoesNotLatchAdmissionOnDrain protects the intentional
-// shutdown path and fails if a requested drain is misread as a consumer fault
-// and falsely closes automation admission.
+// Intentional Drain must not be classified as a consumer fault.
 func TestDeviceFactConsumerDoesNotLatchAdmissionOnDrain(t *testing.T) {
 	t.Parallel()
 	receiver := &gatedDeviceFactReceiver{}
@@ -146,9 +135,7 @@ func TestDeviceFactConsumerDoesNotLatchAdmissionOnDrain(t *testing.T) {
 	}
 }
 
-// TestDeviceFactConsumerWithoutGateToleratesUnexpectedTermination protects the
-// optional gate capability and fails if unexpected termination panics or
-// misbehaves for a receiver that does not implement AdmissionGate.
+// Unexpected termination must tolerate a receiver without the optional gate.
 func TestDeviceFactConsumerWithoutGateToleratesUnexpectedTermination(t *testing.T) {
 	t.Parallel()
 	receiver := newFakeDeviceFactReceiver()
@@ -161,11 +148,8 @@ func TestDeviceFactConsumerWithoutGateToleratesUnexpectedTermination(t *testing.
 	}
 }
 
-// TestDeviceFactConsumerLatchesAdmissionWhenConsumerIsDeleted proves the fault
-// path against a real broker and the real automations service: deleting the
-// durable consumer out from under the subscription closes automation admission
-// through Service.StopAdmission, so the existing readiness check fails until
-// restart. It never publishes a Fact, so the service performs no persistence.
+// Deleting the durable consumer at the broker must close the real service's
+// admission gate. No Facts are published, so persistence is unnecessary.
 func TestDeviceFactConsumerLatchesAdmissionWhenConsumerIsDeleted(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
@@ -207,13 +191,10 @@ func TestDeviceFactConsumerLatchesAdmissionWhenConsumerIsDeleted(t *testing.T) {
 	}
 }
 
-// assertAdmissionGate is a compile-time check that the automations service keeps
-// the narrow gate capability the transport latches on, so hearthd can never wire
-// a receiver whose admission the consumer cannot close.
+// assertAdmissionGate checks that the service implements the optional gate interface.
 func assertAdmissionGate(AdmissionGate) {}
 
-// TestAutomationServiceSatisfiesAdmissionGate protects the fault-latch boundary
-// and fails to compile if the consumer's gate seam and the service drift.
+// The service must remain compatible with the consumer's fault-latch interface.
 func TestAutomationServiceSatisfiesAdmissionGate(t *testing.T) {
 	t.Parallel()
 	assertAdmissionGate((*automations.Service)(nil))

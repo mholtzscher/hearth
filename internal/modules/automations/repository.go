@@ -8,10 +8,8 @@ import (
 	"github.com/mholtzscher/hearth/internal/modules/devices"
 )
 
-// AutomationDevices is the read-only device seam the automations module consumes.
-// It is defined here, by the consumer, and implemented by devices. Save-time
-// validation proves current references; execution-time eligibility stays with
-// the normal Command path.
+// AutomationDevices provides reference validation, Command execution, and
+// ownership verification. Runtime eligibility stays with the devices Command path.
 type AutomationDevices interface {
 	// ValidateObservationTrigger reports whether the Entity currently exists and
 	// can be the source of an Observation Trigger.
@@ -30,9 +28,7 @@ type AutomationDevices interface {
 	GetCommand(context.Context, devices.CommandID) (devices.CommandRecord, error)
 }
 
-// AutomationDefinitionRepository is the definition-management subset of
-// [AutomationRepository]. It is the narrow seam a caller needs to manage
-// definitions without admitting or executing Runs.
+// AutomationDefinitionRepository manages definitions without admitting or executing Runs.
 type AutomationDefinitionRepository interface {
 	CreateAutomation(context.Context, AutomationDefinition) (AutomationRecord, error)
 	GetAutomation(context.Context, AutomationID) (AutomationRecord, error)
@@ -71,9 +67,8 @@ type AutomationRepository interface {
 	DeleteHistoryBefore(context.Context, time.Time, int) (int64, error)
 }
 
-// AutomationDependencies carries the process-owned collaborators and identity
-// constructors the module needs. Zero-valued fields fall back to production
-// defaults, so focused tests override only what they observe.
+// AutomationDependencies supplies logging, time, and identity constructors.
+// Zero-valued fields use production defaults.
 type AutomationDependencies struct {
 	Logger           *slog.Logger
 	Now              func() time.Time

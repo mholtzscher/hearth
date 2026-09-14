@@ -37,11 +37,8 @@ func newAutomationRepository(t *testing.T, database *sql.DB) *automations.SQLite
 	return automations.NewSQLiteRepository(database, automations.AutomationDependencies{})
 }
 
-// TestSQLiteRepositoryCreateReplaceDeleteRevisions protects revisioned CRUD
-// against real migrated SQLite: create starts at revision 1 with a normalized
-// stored document, replacement increments exactly one revision under the
-// expected revision, and deletion removes the definition. Each assertion fails
-// on last-write-wins, revision drift, or a definition that survives deletion.
+// SQLite must persist normalized definitions, increment revisions on replacement,
+// and enforce optimistic concurrency for replacement and deletion.
 func TestSQLiteRepositoryCreateReplaceDeleteRevisions(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
@@ -108,9 +105,7 @@ func TestSQLiteRepositoryCreateReplaceDeleteRevisions(t *testing.T) {
 	}
 }
 
-// TestSQLiteRepositoryListIsKeysetStable protects ID-ascending keyset listing:
-// pages never overlap, always advance, and together reproduce the full ordered
-// set without a total. It fails on off-by-one limits or unstable ordering.
+// Keyset pages must advance without overlap and reproduce the full ID-ordered set.
 //
 //nolint:gocognit // One ordered pagination sequence proves keyset stability.
 func TestSQLiteRepositoryListIsKeysetStable(t *testing.T) {
@@ -189,9 +184,7 @@ func TestSQLiteRepositoryListIsKeysetStable(t *testing.T) {
 	}
 }
 
-// TestSQLiteRepositoryRejectsMalformedStoredDefinition protects repository
-// decoding: a row whose stored document no longer satisfies the strict schema is
-// a permanent invalid error rather than a partially trusted Automation.
+// Malformed stored JSON must return a permanent error, not a partially trusted definition.
 func TestSQLiteRepositoryRejectsMalformedStoredDefinition(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
@@ -214,11 +207,8 @@ func TestSQLiteRepositoryRejectsMalformedStoredDefinition(t *testing.T) {
 	}
 }
 
-// TestMigrationEnforcesAutomationStorageInvariants protects the storage-level
-// rules in §7.1 with real SQLite CHECK constraints: strict normalized
-// definitions, one running Run per Automation, one retained outcome per
-// (fact_id, automation_id), typed Run/Skip exclusivity, and ordered Step
-// evidence. Each case fails if the migration stops enforcing the invariant.
+// Real SQLite constraints must enforce definition shape, unique active Runs and
+// Fact outcomes, Run/Skip exclusivity, and consistent Step evidence.
 func TestMigrationEnforcesAutomationStorageInvariants(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
@@ -436,11 +426,8 @@ func newCorrelationIDString(t *testing.T) string {
 	return string(id)
 }
 
-// TestSQLiteRepositoryRejectsMalformedTypedDefinitions protects the persistence
-// boundary: a typed definition that contradicts its own shape is rejected before
-// encoding, so a write can never silently drop a family payload or store
-// parameters that are not a JSON object. It fails if persistence trusts the
-// encoder to discard invalid input.
+// Persistence must reject contradictory typed families and non-object parameters
+// before encoding can discard invalid input.
 func TestSQLiteRepositoryRejectsMalformedTypedDefinitions(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()

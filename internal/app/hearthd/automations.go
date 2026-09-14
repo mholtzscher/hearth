@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
-	"sync"
 
 	"github.com/nats-io/nats.go/jetstream"
 
@@ -19,31 +18,21 @@ type AutomationAdmissionChecker interface {
 	AdmissionOpen() bool
 }
 
-// automationActivity reports whether the automations-owned Device Fact consumer
-// is still consuming. Readiness observes it; the consumer's drain owns stopping
-// it, so readiness never mutates the consumer it reports on.
+// automationActivity gives readiness a read-only view of Device Fact consumption.
 type automationActivity interface {
 	Active() bool
 }
 
-// automationConsumers owns the automations-owned Device Fact consumer and the
-// lifecycle context its callbacks run under. Its callback context is detached
-// from process cancellation, so a Fact already dispatched to admission reaches
-// its commit; it is canceled only after the consumer has drained. This mirrors
-// how [coreConsumers] protects Observation and Entity Event callbacks.
+// automationConsumers owns the Device Fact consumer and its callback context.
+// Like [coreConsumers], it keeps in-flight admissions alive during shutdown.
 type automationConsumers struct {
 	callbackContext context.Context
 	cancelCallbacks context.CancelFunc
 	logger          *slog.Logger
 	deviceFacts     *automationsnats.DeviceFactConsumer
-	// drainOnce makes the drain idempotent: the ordered shutdown path and the
-	// deferred error-exit cleanup both stop the same consumer.
-	drainOnce sync.Once
 }
 
-// newAutomationConsumers returns the lifecycle the automation Device Fact
-// consumer runs under, detached from parent cancellation so a canceled process
-// context never reaches an in-flight admission.
+// newAutomationConsumers detaches admission callbacks from parent cancellation.
 func newAutomationConsumers(parent context.Context, logger *slog.Logger) *automationConsumers {
 	if logger == nil {
 		logger = slog.Default()
@@ -56,9 +45,8 @@ func newAutomationConsumers(parent context.Context, logger *slog.Logger) *automa
 	}
 }
 
-// start subscribes the automations-owned Device Fact consumer under the consumer
-// lifecycle context. It starts before the inbound Observation and Entity Event
-// consumers so automatic admission is live before any new Fact can be committed.
+// start subscribes under the callback context. Call it before starting inbound
+// Fact producers so automatic admission is ready for their first Fact.
 func (consumers *automationConsumers) start(
 	resource jetstream.Consumer,
 	receiver automationsnats.DeviceFactReceiver,
@@ -75,32 +63,17 @@ func (consumers *automationConsumers) start(
 }
 
 // Active reports whether the automation Device Fact consumer is still consuming.
-// It is the readiness view of the same consumer shutdown drains.
 func (consumers *automationConsumers) Active() bool {
 	return consumers != nil && consumers.deviceFacts != nil && consumers.deviceFacts.Active()
 }
 
-// drain stops the automation Device Fact consumer so no new automatic admission
-// enters, and waits for in-flight callbacks within the consumer's own bounded
-// admission window. It is idempotent so both the ordered shutdown path and the
-// deferred error-exit cleanup can call it, and a drain failure is recorded once
-// without changing the caller's teardown order.
-func (consumers *automationConsumers) drain() {
-	consumers.drainOnce.Do(func() {
-		if consumers.deviceFacts == nil {
-			return
-		}
+// close drains before canceling callbacks so in-flight admissions can commit.
+func (consumers *automationConsumers) close() {
+	if consumers.deviceFacts != nil {
 		logCleanupFailure(
 			context.Background(), consumers.logger, "drain_automation_consumer",
 			consumers.deviceFacts.Drain(),
 		)
-	})
-}
-
-// close drains the consumer and only then cancels the context its callbacks run
-// under. Canceling first would abort an already-dispatched admission with
-// [context.Canceled]; draining first lets it reach its commit.
-func (consumers *automationConsumers) close() {
-	consumers.drain()
+	}
 	consumers.cancelCallbacks()
 }

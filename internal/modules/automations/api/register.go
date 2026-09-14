@@ -15,9 +15,8 @@ import (
 	"github.com/mholtzscher/hearth/internal/modules/automations"
 )
 
-// Automations is the HTTP consumer's definition and history seam. It is
-// deliberately narrower than the module service so transport code cannot start
-// fact-driven admission or mutate execution state.
+// Automations exposes definition management, manual admission, and history to
+// HTTP handlers, excluding Fact admission and execution-state writes.
 type Automations interface {
 	CreateAutomation(context.Context, automations.AutomationDefinition) (automations.AutomationRecord, error)
 	GetAutomation(context.Context, automations.AutomationID) (automations.AutomationRecord, error)
@@ -147,11 +146,8 @@ func definitionRequestBody() *huma.RequestBody {
 	}}
 }
 
-// publishReplacementSchema names the exact replacement envelope the handler
-// decodes: a required expected_revision and the nested strict definition. The
-// replacement request body references this component, so the published contract
-// never advertises a bare definition for an operation that requires the
-// envelope.
+// publishReplacementSchema documents the required expected_revision/definition
+// envelope, not the bare definition accepted by create.
 func publishReplacementSchema(api huma.API) {
 	minimumRevision := float64(1)
 	api.OpenAPI().Components.Schemas.Map()["AutomationReplacement"] = &huma.Schema{

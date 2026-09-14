@@ -16,10 +16,8 @@ import (
 // automationPointerMaxBytes bounds one comparison pointer in UTF-8 bytes.
 const automationPointerMaxBytes = 256
 
-// ValidateJSONPointer reports whether pointer is a syntactically valid RFC 6901
-// JSON Pointer of at most 256 UTF-8 bytes. The empty pointer selects the whole
-// value. Only ~0 and ~1 are accepted as escapes, and no token is interpreted
-// here: array index rules are applied when the pointer is read against a value.
+// ValidateJSONPointer checks RFC 6901 syntax and the 256-byte UTF-8 limit.
+// The empty pointer selects the whole value; array indices are checked at lookup.
 func ValidateJSONPointer(pointer string) error {
 	if len(pointer) > automationPointerMaxBytes {
 		return fmt.Errorf("%w: pointer exceeds %d bytes", ErrInvalidAutomation, automationPointerMaxBytes)
@@ -42,11 +40,8 @@ func ValidateJSONPointer(pointer string) error {
 	return nil
 }
 
-// ValidateObservationComparison reports whether one comparison may be persisted:
-// the pointer is valid, the operator is closed to eq, ne, lt, lte, gt and gte,
-// the operand is exactly one JSON value, and an ordering operator has a numeric
-// operand. Pointer existence cannot be proven against future values, so it is
-// deliberately not checked here.
+// ValidateObservationComparison checks pointer syntax, operator, and operand.
+// Ordering requires a number; pointer existence is checked only at runtime.
 func ValidateObservationComparison(comparison ObservationComparison) error {
 	if err := ValidateJSONPointer(comparison.Pointer); err != nil {
 		return err
@@ -66,12 +61,9 @@ func ValidateObservationComparison(comparison ObservationComparison) error {
 	return nil
 }
 
-// MatchObservationComparison reports whether one comparison matches the given
-// Observation value. A missing pointer, an array index that is invalid for the
-// runtime array, or a value and operand that are not comparable returns false,
-// including for ne; those are ordinary evidence, not admission errors. An error
-// is returned only when the comparison or value itself is not one JSON value,
-// which no validated comparison can produce at runtime.
+// MatchObservationComparison matches an Observation value against a comparison.
+// Missing paths, invalid array indices, and incompatible types return false even
+// for ne. Malformed JSON, pointer syntax, or operators can return an error.
 func MatchObservationComparison(comparison ObservationComparison, value devices.Value) (bool, error) {
 	operand, err := decodeJSONValue(comparison.Operand)
 	if err != nil {
@@ -246,9 +238,8 @@ func compareJSONValues(operator ComparisonOperator, left, right any) (bool, erro
 	return equal, nil
 }
 
-// jsonValueKind classifies one decoded JSON value so equality and inequality
-// require the same JSON type. [json.Number] and float64 are both numbers because
-// an operand decoded without UseNumber would otherwise look like a third type.
+// jsonValueKind groups decoded values by JSON type, treating [json.Number] and
+// float64 alike for equality and inequality.
 func jsonValueKind(value any) string {
 	switch value.(type) {
 	case nil:
@@ -268,9 +259,8 @@ func jsonValueKind(value any) string {
 	}
 }
 
-// jsonValuesEqual reports whether two decoded JSON values are equal. It first
-// requires the same JSON type, including at every nested array element and
-// object member, so a nested null never equals a value of another type.
+// jsonValuesEqual compares JSON values recursively, requiring matching types
+// at every level, ignoring object key order, and preserving array order.
 func jsonValuesEqual(left, right any) (bool, error) {
 	if jsonValueKind(left) != jsonValueKind(right) {
 		return false, nil

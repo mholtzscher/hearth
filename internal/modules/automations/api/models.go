@@ -138,7 +138,7 @@ type AutomationStepAttemptBody struct {
 	CompletedAt       *time.Time `json:"completed_at,omitempty"`
 }
 
-// AutomationRunBody is one immutable Run snapshot with ordered Step attempts.
+// AutomationRunBody exposes an immutable definition snapshot and current Step attempts.
 type AutomationRunBody struct {
 	ID                string                      `json:"id"`
 	AutomationID      string                      `json:"automation_id"`

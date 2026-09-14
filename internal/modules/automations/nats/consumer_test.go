@@ -28,9 +28,7 @@ func observationWire(
 	return observationFactMessage(t, validator, input)
 }
 
-// TestDeviceFactConsumerAdmitsBothFactFamilies protects the whole accepted-fact
-// path and fails if either family is dropped, mis-decoded, or acknowledged
-// before admission.
+// Both Fact families must reach admission with their mapped evidence intact.
 func TestDeviceFactConsumerAdmitsBothFactFamilies(t *testing.T) {
 	t.Parallel()
 	js := startDeviceFactServer(t)
@@ -49,9 +47,7 @@ func TestDeviceFactConsumerAdmitsBothFactFamilies(t *testing.T) {
 	})
 }
 
-// TestDeviceFactConsumerStartsAtStreamTailOnFirstProvision protects the
-// DeliverNew first-creation policy and fails if a new process replays retained
-// facts published before it started.
+// First provisioning must start at the stream tail, not replay retained Facts.
 func TestDeviceFactConsumerStartsAtStreamTailOnFirstProvision(t *testing.T) {
 	t.Parallel()
 	js := startDeviceFactServer(t)
@@ -75,9 +71,7 @@ func TestDeviceFactConsumerStartsAtStreamTailOnFirstProvision(t *testing.T) {
 	}
 }
 
-// TestDeviceFactConsumerResumesAcknowledgeFloorAfterRestart protects durable
-// recovery and fails if a restarted consumer replays acknowledged facts or
-// jumps past unacknowledged ones.
+// Restart must resume unacknowledged Facts without replaying acknowledged ones.
 func TestDeviceFactConsumerResumesAcknowledgeFloorAfterRestart(t *testing.T) {
 	t.Parallel()
 	js := startDeviceFactServer(t)
@@ -106,9 +100,7 @@ func TestDeviceFactConsumerResumesAcknowledgeFloorAfterRestart(t *testing.T) {
 	})
 }
 
-// TestDeviceFactConsumerRedeliversTransientAdmissionFailure protects the
-// NakWithDelay retry path and fails if a transient storage failure is positively
-// acknowledged or retried without a bounded delay.
+// Transient admission failure must cause delayed redelivery, not acknowledgement.
 func TestDeviceFactConsumerRedeliversTransientAdmissionFailure(t *testing.T) {
 	t.Parallel()
 	js := startDeviceFactServer(t)
@@ -129,9 +121,7 @@ func TestDeviceFactConsumerRedeliversTransientAdmissionFailure(t *testing.T) {
 	})
 }
 
-// TestDeviceFactConsumerSuppressesBrokerDuplicate protects at-least-once
-// insurance and fails if a republished row inside the duplicate window creates a
-// second admission.
+// Broker deduplication must suppress republished Facts inside the duplicate window.
 func TestDeviceFactConsumerSuppressesBrokerDuplicate(t *testing.T) {
 	t.Parallel()
 	js := startDeviceFactServer(t)
@@ -155,9 +145,7 @@ func TestDeviceFactConsumerSuppressesBrokerDuplicate(t *testing.T) {
 	}
 }
 
-// TestDeviceFactConsumerTerminatesMalformedFactThroughBroker protects the trust
-// boundary end to end and fails if a deterministic malformed message blocks the
-// one-at-a-time consumer instead of being terminated.
+// Malformed Facts must be terminated so later valid Facts can reach admission.
 func TestDeviceFactConsumerTerminatesMalformedFactThroughBroker(t *testing.T) {
 	t.Parallel()
 	js := startDeviceFactServer(t)
@@ -180,8 +168,7 @@ func TestDeviceFactConsumerTerminatesMalformedFactThroughBroker(t *testing.T) {
 	})
 }
 
-// TestDeviceFactConsumerDrainStopsDelivery protects shutdown ordering and fails
-// if a drained consumer keeps admitting facts or reports itself active.
+// Drain must stop admission and clear consumer activity.
 func TestDeviceFactConsumerDrainStopsDelivery(t *testing.T) {
 	t.Parallel()
 	js := startDeviceFactServer(t)
@@ -218,8 +205,7 @@ func TestDeviceFactConsumerDrainStopsDelivery(t *testing.T) {
 	}
 }
 
-// TestStartDeviceFactConsumerRequiresDependencies protects application assembly
-// and fails if a missing receiver or validator silently starts a subscription.
+// Missing dependencies must fail before subscription starts.
 func TestStartDeviceFactConsumerRequiresDependencies(t *testing.T) {
 	t.Parallel()
 	js := startDeviceFactServer(t)
@@ -249,9 +235,7 @@ func TestStartDeviceFactConsumerRequiresDependencies(t *testing.T) {
 	}
 }
 
-// TestDeviceFactConsumerAdmitsSynchronously protects the synchronous admission
-// contract and fails if the callback acknowledges or starts the next Fact before
-// the current admission returns, which would allow overlapping household actions.
+// The callback must wait for admission before acknowledging or admitting the next Fact.
 func TestDeviceFactConsumerAdmitsSynchronously(t *testing.T) {
 	t.Parallel()
 	js := startDeviceFactServer(t)
@@ -295,20 +279,16 @@ func TestDeviceFactConsumerAdmitsSynchronously(t *testing.T) {
 	}
 }
 
-// assertDeviceFactReceiver is a compile-time check that the automations service
-// satisfies the transport's admission seam, so hearthd can never wire a
-// capability the consumer does not use.
+// assertDeviceFactReceiver checks service compatibility with the consumer's admission interface.
 func assertDeviceFactReceiver(DeviceFactReceiver) {}
 
-// TestAutomationServiceSatisfiesDeviceFactReceiver protects the module boundary
-// and fails to compile if the consumer's admission seam and the service drift.
+// The service must implement the transport's admission interface.
 func TestAutomationServiceSatisfiesDeviceFactReceiver(t *testing.T) {
 	t.Parallel()
 	assertDeviceFactReceiver((*automations.Service)(nil))
 }
 
-// assertObservationFact asserts one mapped Observation fact's identity so a
-// defect that swaps identity, entity, or family is visible.
+// assertObservationFact checks mapped Observation identity, Entity, and family.
 func assertObservationFact(
 	t *testing.T,
 	fact automations.DeviceFact,

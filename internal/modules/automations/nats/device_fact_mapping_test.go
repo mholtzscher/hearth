@@ -9,16 +9,12 @@ import (
 	"github.com/mholtzscher/hearth/internal/modules/devices"
 )
 
-// rawDeviceFactSubject builds one arbitrary Device Fact subject with no builder
-// validation, so a test can publish a family or variant the canonical builders
-// reject.
+// rawDeviceFactSubject bypasses subject validation for malformed fixtures.
 func rawDeviceFactSubject(entityID, family, variant string) string {
 	return "hearth.v1.core.fact.entity." + entityID + "." + family + "." + variant
 }
 
-// TestMapObservationDeviceFactMapsExactEvidence protects the Observation trust
-// boundary and fails if a well-formed fact loses or alters its identity,
-// disposition, value, or emit time on the way to admission.
+// Observation mapping must preserve identity, disposition, value, and emit time.
 func TestMapObservationDeviceFactMapsExactEvidence(t *testing.T) {
 	t.Parallel()
 	validator := testValidator(t)
@@ -52,9 +48,7 @@ func TestMapObservationDeviceFactMapsExactEvidence(t *testing.T) {
 	}
 }
 
-// TestMapEntityEventDeviceFactMapsExactEvidence protects the Entity Event trust
-// boundary and fails if a well-formed fact loses or alters its identity, event
-// name, or emit time on the way to admission.
+// Entity Event mapping must preserve identity, event name, and emit time.
 func TestMapEntityEventDeviceFactMapsExactEvidence(t *testing.T) {
 	t.Parallel()
 	validator := testValidator(t)
@@ -82,9 +76,7 @@ func TestMapEntityEventDeviceFactMapsExactEvidence(t *testing.T) {
 	}
 }
 
-// TestMapDeviceFactMessageRejectsDeterministicWireInput protects the trust
-// boundary and fails if any malformed, mismatched, or unsafe fact maps to
-// admission input instead of a permanent rejection.
+// Malformed or inconsistent wire input must produce a permanent rejection.
 func TestMapDeviceFactMessageRejectsDeterministicWireInput(t *testing.T) {
 	t.Parallel()
 	validator := testValidator(t)

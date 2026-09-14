@@ -10,19 +10,14 @@ import (
 	"github.com/mholtzscher/hearth/internal/modules/devices"
 )
 
-// definitionTestRepository promotes the real SQLite definition adapter and
-// declares the runtime persistence methods the full seam carries. D1 service
-// tests never call those methods, so an explicit error keeps a stray call from
-// silently passing.
+// definitionTestRepository uses SQLite for definitions and rejects runtime calls.
 type definitionTestRepository struct {
 	*automations.SQLiteRepository
 }
 
 var _ automations.AutomationRepository = (*definitionTestRepository)(nil)
 
-// The concrete devices service must satisfy the consumer-defined seam the
-// automation service validates against; a signature drift here would otherwise
-// surface only at application wiring time.
+// Catch devices/automations interface drift before application wiring.
 var _ automations.AutomationDevices = (*devices.Service)(nil)
 
 func (*definitionTestRepository) AdmitDeviceFact(
@@ -129,11 +124,8 @@ func newAutomationService(
 	return automations.NewService(repository, devicesStub, automations.AutomationDependencies{})
 }
 
-// TestServiceCreateAutomationValidatesEveryCurrentReference protects A2: create
-// validates each Observation Trigger Entity, each Entity Event Trigger name, and
-// each Step Operation and parameters through the devices seam before persisting
-// once. It also proves the persisted Step parameters are the devices-normalized
-// form rather than the caller's input.
+// Creation must validate all device references before persisting once, using
+// devices-normalized Step parameters.
 func TestServiceCreateAutomationValidatesEveryCurrentReference(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
@@ -175,10 +167,7 @@ func TestServiceCreateAutomationValidatesEveryCurrentReference(t *testing.T) {
 	}
 }
 
-// TestServiceCreateAutomationRejectsInvalidReferencesAtomically protects A2:
-// a missing or wrong-kind Trigger Entity, an unsupported Entity Event name, or
-// an unsupported Operation and invalid parameters rejects the whole definition
-// and persists nothing.
+// Any invalid Trigger or Step reference must reject the entire definition without writes.
 func TestServiceCreateAutomationRejectsInvalidReferencesAtomically(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
@@ -215,9 +204,7 @@ func TestServiceCreateAutomationRejectsInvalidReferencesAtomically(t *testing.T)
 	}
 }
 
-// TestServiceReplaceAndDeleteGuardExpectedRevision protects A3 through the
-// service: replacement and deletion compare the caller's expected revision and
-// reject a stale one without mutating the stored definition.
+// Stale revisions must prevent replacement and deletion without changing stored data.
 func TestServiceReplaceAndDeleteGuardExpectedRevision(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
@@ -258,8 +245,7 @@ func TestServiceReplaceAndDeleteGuardExpectedRevision(t *testing.T) {
 	}
 }
 
-// TestServiceRequiresDeviceValidation protects that a definition is never
-// persisted when the devices seam is missing, which would otherwise bypass A2.
+// Missing device validation must prevent persistence.
 func TestServiceRequiresDeviceValidation(t *testing.T) {
 	t.Parallel()
 	service := newAutomationService(t, nil)
@@ -270,8 +256,7 @@ func TestServiceRequiresDeviceValidation(t *testing.T) {
 	}
 }
 
-// TestServiceCreateAutomationRejectsInvalidDefinition protects that structural
-// validation still runs before reference validation and persistence.
+// Structural validation must run before reference validation and persistence.
 func TestServiceCreateAutomationRejectsInvalidDefinition(t *testing.T) {
 	t.Parallel()
 	service := newAutomationService(t, &stubAutomationDevices{})

@@ -27,9 +27,7 @@ func NewAutomationID() (AutomationID, error) {
 	return AutomationID("aut_" + value), nil
 }
 
-// NewAutomationRunID mints the durable identity of one Automation Run. It is
-// deliberately distinct from the adapter runtime identity that also uses a
-// "run_" prefix.
+// NewAutomationRunID mints an arn_-prefixed UUIDv7, distinct from adapter run_ identities.
 func NewAutomationRunID() (AutomationRunID, error) {
 	value, err := newAutomationUUID("automation run")
 	if err != nil {
@@ -72,8 +70,7 @@ func ParseAutomationSkipID(value string) (AutomationSkipID, error) {
 	return AutomationSkipID(value), nil
 }
 
-// ParseTriggerID validates one Trigger identity. Trigger IDs are subject-safe
-// slugs, so they are unique only within their own definition's Trigger list.
+// ParseTriggerID validates a subject-safe slug; definition validation checks uniqueness.
 func ParseTriggerID(value string) (TriggerID, error) {
 	if !subjectSlugPattern.MatchString(value) {
 		return "", fmt.Errorf("%w: trigger ID is not a subject-safe slug", ErrInvalidAutomation)
@@ -81,8 +78,7 @@ func ParseTriggerID(value string) (TriggerID, error) {
 	return TriggerID(value), nil
 }
 
-// ParseStepID validates one Step identity. Step IDs are subject-safe slugs, so
-// they are unique only within their own definition's Step list.
+// ParseStepID validates a subject-safe slug; definition validation checks uniqueness.
 func ParseStepID(value string) (StepID, error) {
 	if !subjectSlugPattern.MatchString(value) {
 		return "", fmt.Errorf("%w: step ID is not a subject-safe slug", ErrInvalidAutomation)

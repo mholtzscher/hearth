@@ -11,9 +11,7 @@ import (
 	"github.com/mholtzscher/hearth/internal/contracts/v1/natswire"
 )
 
-// TestProvisionDeviceFactConsumerCreatesExactConfiguration protects the one
-// durable consumer's required broker contract and fails if first creation uses
-// any other delivery, acknowledgement, redelivery, or filter setting.
+// First provisioning must create the exact delivery, acknowledgement, and filter settings.
 func TestProvisionDeviceFactConsumerCreatesExactConfiguration(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
@@ -49,9 +47,7 @@ func TestProvisionDeviceFactConsumerCreatesExactConfiguration(t *testing.T) {
 	}
 }
 
-// TestProvisionDeviceFactConsumerIsIdempotent protects restart behavior and
-// fails if a second provisioning pass recreates, mutates, or rejects its own
-// existing durable consumer.
+// Repeated provisioning must reuse the existing durable consumer unchanged.
 func TestProvisionDeviceFactConsumerIsIdempotent(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
@@ -83,8 +79,7 @@ func TestProvisionDeviceFactConsumerIsIdempotent(t *testing.T) {
 	}
 }
 
-// TestProvisionDeviceFactConsumerRequiresStreamName protects the supplied-stream
-// contract and fails if an empty stream name silently opens anything.
+// Provisioning must reject an empty stream name.
 func TestProvisionDeviceFactConsumerRequiresStreamName(t *testing.T) {
 	t.Parallel()
 	if _, err := ProvisionDeviceFactConsumer(context.Background(), nil, ""); err == nil {
@@ -92,9 +87,7 @@ func TestProvisionDeviceFactConsumerRequiresStreamName(t *testing.T) {
 	}
 }
 
-// TestProvisionDeviceFactConsumerRejectsUnknownStream protects startup ordering
-// and fails if the automations consumer is created before devices provisions the
-// Device Fact stream.
+// The devices-owned Fact stream must exist before consumer provisioning.
 func TestProvisionDeviceFactConsumerRejectsUnknownStream(t *testing.T) {
 	t.Parallel()
 	_, err := ProvisionDeviceFactConsumer(
@@ -105,9 +98,7 @@ func TestProvisionDeviceFactConsumerRejectsUnknownStream(t *testing.T) {
 	}
 }
 
-// TestProvisionDeviceFactConsumerRejectsMismatchedExistingConfiguration protects
-// exact broker resource validation and fails if an existing durable consumer
-// with different delivery semantics or a delivery override is silently reused.
+// Provisioning must reject existing consumers with mismatched delivery semantics.
 func TestProvisionDeviceFactConsumerRejectsMismatchedExistingConfiguration(t *testing.T) {
 	t.Parallel()
 	tests := []struct {
@@ -197,9 +188,7 @@ func TestProvisionDeviceFactConsumerRejectsMismatchedExistingConfiguration(t *te
 	}
 }
 
-// TestValidateDeviceFactConsumerConfigRejectsEachField pins the exact
-// configuration predicate without a broker, so a drift in any single required
-// field is caught even if embedded provisioning could tolerate it.
+// Check each required field directly, independent of broker normalization.
 func TestValidateDeviceFactConsumerConfigRejectsEachField(t *testing.T) {
 	t.Parallel()
 	base := deviceFactConsumerConfig()
@@ -240,11 +229,7 @@ func TestValidateDeviceFactConsumerConfigRejectsEachField(t *testing.T) {
 	}
 }
 
-// TestValidateDeviceFactConsumerConfigRejectsDeliveryOverrides pins every
-// delivery-affecting override the required pull consumer forbids without a
-// broker, so a HeadersOnly or otherwise delivery-altering live consumer is
-// rejected even when all required fields still match. It fails if any override
-// is accepted or if the rejection does not name the offending field.
+// Delivery overrides must be rejected by field name even when required settings match.
 func TestValidateDeviceFactConsumerConfigRejectsDeliveryOverrides(t *testing.T) {
 	t.Parallel()
 	base := deviceFactConsumerConfig()

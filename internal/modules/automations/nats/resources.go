@@ -1,7 +1,5 @@
-// Package nats owns the automations module's Device Fact transport: its one
-// durable JetStream consumer, strict wire decoding for both fact families, ack
-// disposition, and mapping into automation-owned admission input. It never
-// executes a Command and never reads another module's tables.
+// Package nats owns the automation Device Fact consumer, strict wire decoding,
+// and message acknowledgements. Command execution belongs to Run workers.
 package nats
 
 import (
@@ -16,9 +14,8 @@ import (
 )
 
 const (
-	// DeviceFactConsumerName is the one named durable consumer the automations
-	// module owns. One consumer reads both fact families; definition edits never
-	// create, recreate, or filter a consumer per Trigger.
+	// DeviceFactConsumerName identifies the single durable consumer for both Fact
+	// families. Definition edits do not change its subscription.
 	DeviceFactConsumerName = "hearthd-automation-device-facts-v1"
 	// DeviceFactConsumerAckWait bounds how long the broker waits for one
 	// admission disposition before redelivering the Fact.
@@ -26,30 +23,20 @@ const (
 	// DeviceFactConsumerNakDelay is the delayed negative acknowledgement used for
 	// a transient admission or storage failure, so a retry is not a hot loop.
 	DeviceFactConsumerNakDelay = 1 * time.Second
-	// DeviceFactConsumerMaxAckPending keeps exactly one Fact in flight, so one
-	// slow admission cannot reorder or overlap household actions.
+	// DeviceFactConsumerMaxAckPending limits unacknowledged Facts, not concurrent Runs.
 	DeviceFactConsumerMaxAckPending = 1
 	// DeviceFactConsumerUnlimitedRedelivery keeps a transiently failing Fact
 	// repairable for as long as the bounded stream retains it.
 	DeviceFactConsumerUnlimitedRedelivery = -1
-	// DeviceFactAdmissionTimeout bounds one synchronous admission call so a live
-	// callback either commits before AckWait or negatively acknowledges before the
-	// broker creates concurrent delivery.
+	// DeviceFactAdmissionTimeout sets an admission deadline shorter than AckWait
+	// to allow a disposition before broker redelivery.
 	DeviceFactAdmissionTimeout = 2 * time.Second
 )
 
-// ProvisionDeviceFactConsumer opens or creates the automations-owned durable
-// Device Fact consumer on the supplied Device Fact stream and validates its live
-// configuration. The stream is provisioned and owned by devices; the automations
-// transport receives its name rather than importing the devices transport to
-// learn a constant.
-//
-// A consumer created for the first time starts at the then-current stream tail
-// (DeliverNewPolicy). A consumer that already exists is reused exactly as it is,
-// so it resumes from its own durable acknowledgement floor; an existing consumer
-// whose live configuration does not match the required settings, or that carries
-// a delivery override such as HeadersOnly, fails provisioning instead of
-// silently changing delivery semantics.
+// ProvisionDeviceFactConsumer creates or validates a durable consumer on the
+// supplied devices-owned stream. New consumers start at the tail; existing ones
+// resume their acknowledgement floor. Configuration mismatches fail startup
+// rather than changing delivery semantics.
 func ProvisionDeviceFactConsumer(
 	ctx context.Context,
 	js jetstream.JetStream,
@@ -75,10 +62,8 @@ func ProvisionDeviceFactConsumer(
 	return consumer, nil
 }
 
-// ValidateDeviceFactConsumer reports whether the live durable Device Fact
-// consumer already carries the required configuration. It never creates or
-// updates anything, so readiness can re-check the exact broker resources without
-// changing delivery policy.
+// ValidateDeviceFactConsumer checks live configuration without changing it,
+// allowing readiness checks to preserve delivery policy.
 func ValidateDeviceFactConsumer(ctx context.Context, js jetstream.JetStream, streamName string) error {
 	if streamName == "" {
 		return errors.New("device fact stream name is required")
@@ -116,11 +101,7 @@ func validateDeviceFactConsumer(ctx context.Context, consumer jetstream.Consumer
 	return validateDeviceFactConsumerConfig(info.Config)
 }
 
-// validateDeviceFactConsumerConfig reports whether one live consumer
-// configuration carries the required durable settings and none of the delivery
-// overrides that would change what the consumer receives. It is a pure predicate
-// over the live config so a directly supplied configuration can pin the exact
-// rejection without a broker.
+// validateDeviceFactConsumerConfig checks required settings and rejects delivery overrides.
 func validateDeviceFactConsumerConfig(config jetstream.ConsumerConfig) error {
 	if override := deviceFactConsumerDeliveryOverride(config); override != "" {
 		return fmt.Errorf(
@@ -147,17 +128,9 @@ func validateDeviceFactConsumerConfig(config jetstream.ConsumerConfig) error {
 	return nil
 }
 
-// deviceFactConsumerDeliveryOverride names the first delivery-affecting field a
-// live consumer carries away from the required consumer's absent default, or the
-// empty string when it carries none. The required consumer is a plain
-// payload-delivering pull consumer, so each of these fields changes what it
-// receives or how it redelivers even when every required field still matches:
-// HeadersOnly drops the payload, FilterSubjects widens the filter, DeliverSubject
-// and DeliverGroup turn it into a push consumer, BackOff replaces AckWait,
-// PauseUntil and InactiveThreshold stop or delete it, and the request limits
-// override pull batching. Broker-populated values are deliberately excluded:
-// Metadata carries server keys, and MaxWaiting inherits a server default that
-// MaxAckPending already bounds.
+// deviceFactConsumerDeliveryOverride names the first unexpected delivery override,
+// or returns empty. Ignore broker-populated Metadata and MaxWaiting; they need
+// not match absent defaults, and MaxAckPending already limits in-flight Facts.
 func deviceFactConsumerDeliveryOverride(config jetstream.ConsumerConfig) string {
 	switch {
 	case config.HeadersOnly:

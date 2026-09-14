@@ -149,9 +149,9 @@ func TestRuntimeReadinessChecksEveryRequiredDependency(t *testing.T) {
 	t.Run("automation consumer inactive", func(t *testing.T) {
 		t.Parallel()
 		fixture := newReadinessFixture(t)
-		// drain stops delivery and waits for in-flight callbacks, so Active() is
+		// close stops delivery and waits for in-flight callbacks, so Active() is
 		// already false once it returns: no sleep is used as an oracle.
-		fixture.automationConsumers.drain()
+		fixture.automationConsumers.close()
 		if err := fixture.readiness.Check(context.Background()); err == nil {
 			t.Fatal("readiness passed with an inactive automation device fact consumer")
 		}

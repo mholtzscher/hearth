@@ -2,8 +2,7 @@ package automations
 
 import "errors"
 
-// Stable domain error classes. Every error the module returns wraps exactly one
-// of these, so transport boundaries map them without inspecting error text.
+// Stable domain error classes for transport mapping without inspecting error text.
 var (
 	// ErrAutomationNotFound reports that no current Automation definition exists
 	// for the requested identity, including one that was hard-deleted.

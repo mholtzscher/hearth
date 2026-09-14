@@ -103,10 +103,7 @@ func validDomainRun(t *testing.T) automations.AutomationRun {
 	}
 }
 
-// TestValidateAutomationRunRejectsImpossibleCombinations protects the retained
-// Run invariants: fact provenance, snapshot-matched Trigger and Step lists,
-// terminal timestamps, and Step evidence are all internally consistent. Each
-// case fails if a repository decoder could accept a contradictory Run.
+// Retained Runs must have consistent provenance, snapshots, timestamps, and Step evidence.
 func TestValidateAutomationRunRejectsImpossibleCombinations(t *testing.T) {
 	t.Parallel()
 	valid := validDomainRun(t)
@@ -204,9 +201,7 @@ func validDomainSkip(t *testing.T) automations.AutomationSkip {
 	}
 }
 
-// TestValidateAutomationSkipRejectsImpossibleCombinations protects the retained
-// Skip invariants: a Skip always carries Fact evidence, immutable matched Trigger
-// snapshots, a closed reason, and a nonzero time.
+// Retained Skips require Fact evidence, matched Trigger snapshots, a valid reason, and time.
 func TestValidateAutomationSkipRejectsImpossibleCombinations(t *testing.T) {
 	t.Parallel()
 	if err := automations.ValidateAutomationSkip(validDomainSkip(t)); err != nil {
@@ -237,8 +232,7 @@ func TestValidateAutomationSkipRejectsImpossibleCombinations(t *testing.T) {
 	}
 }
 
-// TestValidateDeviceFactRejectsMismatchedFamilies protects the typed family
-// exclusivity of an admitted Fact input.
+// A Fact must carry exactly the payload its family names.
 func TestValidateDeviceFactRejectsMismatchedFamilies(t *testing.T) {
 	t.Parallel()
 	observationID, observationErr := devices.NewObservationID()

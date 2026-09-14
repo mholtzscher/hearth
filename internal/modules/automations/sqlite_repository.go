@@ -22,9 +22,8 @@ const (
 	automationMaximumPageLimit = 200
 )
 
-// SQLiteRepository owns automation definition transactions on the core's single
-// connection. Every method here owns its own short transaction and never calls
-// devices, NATS, or a worker.
+// SQLiteRepository persists automation definitions, admission, execution, and
+// history. Transactions never call devices, NATS, or workers.
 type SQLiteRepository struct {
 	database        *sql.DB
 	queries         *dbsqlc.Queries
@@ -34,13 +33,11 @@ type SQLiteRepository struct {
 	newSkipID       func() (AutomationSkipID, error)
 }
 
-// compile-time proof that the adapter implements the definition-management
-// subset it serves today.
+// Verify the definition-management interface independently of runtime persistence.
 var _ AutomationDefinitionRepository = (*SQLiteRepository)(nil)
 
-// NewSQLiteRepository adapts the migrated core database. Zero-valued dependency
-// fields fall back to the process clock and canonical identity constructors, so
-// production assembly passes an empty AutomationDependencies.
+// NewSQLiteRepository uses a migrated Core database. Zero-valued dependencies
+// default to the process clock and canonical identity constructors.
 func NewSQLiteRepository(database *sql.DB, dependencies AutomationDependencies) *SQLiteRepository {
 	dependencies = dependencies.withDefaults()
 	return &SQLiteRepository{
@@ -53,10 +50,8 @@ func NewSQLiteRepository(database *sql.DB, dependencies AutomationDependencies) 
 	}
 }
 
-// CreateAutomation persists one normalized definition at revision 1. The
-// definition is normalized again here, so a caller that skipped the service
-// cannot store a non-canonical document. Normalization and encoding share one
-// pass, so the canonical bytes are never produced twice.
+// CreateAutomation persists a definition at revision 1, normalizing it even
+// when the caller bypasses the service.
 func (repo *SQLiteRepository) CreateAutomation(
 	ctx context.Context,
 	definition AutomationDefinition,
@@ -138,9 +133,8 @@ func (repo *SQLiteRepository) ListAutomations(
 	return page, nil
 }
 
-// ReplaceAutomation atomically compares the expected revision, replaces the
-// definition, and increments the revision by one. Normalization and encoding
-// share one pass, so the canonical bytes are never produced twice.
+// ReplaceAutomation normalizes and replaces the definition under the expected
+// revision, atomically incrementing the revision by one.
 func (repo *SQLiteRepository) ReplaceAutomation(
 	ctx context.Context,
 	id AutomationID,

@@ -68,10 +68,8 @@ func decodeDefinition(t *testing.T, raw string) (automations.AutomationDefinitio
 	return automations.DecodeAutomationDefinition(json.RawMessage(raw))
 }
 
-// TestDecodeAutomationDefinitionNormalizesValidDocuments protects the strict
-// persisted shape: a valid document decodes with a trimmed name, canonical
-// disposition order, typed family payloads, and ordered Steps. It fails if
-// normalization drops or reorders identity-bearing fields.
+// Normalization trims names and orders dispositions without changing Trigger
+// identities, family payloads, or Step order.
 func TestDecodeAutomationDefinitionNormalizesValidDocuments(t *testing.T) {
 	t.Parallel()
 	observationEntity := newEntityID(t)
@@ -116,9 +114,7 @@ func TestDecodeAutomationDefinitionNormalizesValidDocuments(t *testing.T) {
 	}
 }
 
-// TestDecodeAutomationDefinitionIsStableUnderRoundTrip protects the canonical
-// persisted representation: decode(normalize(definition)) encodes to identical
-// bytes on a second pass. It fails on unstable ordering or omitted defaults.
+// A second decode/encode pass must preserve the canonical bytes.
 func TestDecodeAutomationDefinitionIsStableUnderRoundTrip(t *testing.T) {
 	t.Parallel()
 	first, err := decodeDefinition(t, definitionFixture(t, newEntityID(t), newEntityID(t), newEntityID(t)))
@@ -142,9 +138,7 @@ func TestDecodeAutomationDefinitionIsStableUnderRoundTrip(t *testing.T) {
 	}
 }
 
-// TestDecodeAutomationDefinitionRejectsInvalidDocuments protects every strict
-// structural rule in §3.1 and §6.1 as a permanent input error. Each case fails
-// if a malformed or partially validated definition can reach persistence.
+// Malformed definitions must fail as permanent input errors before persistence.
 func TestDecodeAutomationDefinitionRejectsInvalidDocuments(t *testing.T) {
 	t.Parallel()
 	observationEntity := newEntityID(t)
@@ -365,9 +359,7 @@ func TestDecodeAutomationDefinitionRejectsInvalidDocuments(t *testing.T) {
 	}
 }
 
-// TestDecodeAutomationDefinitionAcceptsEqualityOperandTypes protects the
-// documented eq/ne operand freedom: any single JSON value is accepted, while
-// ordering operators remain numeric-only.
+// Equality operands may be any single JSON value.
 func TestDecodeAutomationDefinitionAcceptsEqualityOperandTypes(t *testing.T) {
 	t.Parallel()
 	observationEntity := newEntityID(t)
@@ -385,10 +377,7 @@ func TestDecodeAutomationDefinitionAcceptsEqualityOperandTypes(t *testing.T) {
 	}
 }
 
-// TestEmbeddedDefinitionSchemaCompiles protects the embedded persisted shape
-// against an unparseable or unresolvable schema, which would otherwise surface
-// as every definition failing validation at runtime. It also pins the explicit
-// enabled member: the schema must require it so enablement can never default.
+// The embedded schema must compile and require explicit enablement.
 func TestEmbeddedDefinitionSchemaCompiles(t *testing.T) {
 	t.Parallel()
 	codec, err := automations.NewAutomationDefinitionCodec()
@@ -412,10 +401,7 @@ func TestEmbeddedDefinitionSchemaCompiles(t *testing.T) {
 	}
 }
 
-// TestDecodeAutomationDefinitionRequiresEnabled protects the explicit enabled
-// state rule in §3.1: omitting enabled is a permanent input error, while an
-// explicit false is accepted and preserved. It fails if enablement can default
-// silently to false.
+// Missing enabled is invalid; explicit false must survive decoding.
 func TestDecodeAutomationDefinitionRequiresEnabled(t *testing.T) {
 	t.Parallel()
 	observationEntity := newEntityID(t)
@@ -520,10 +506,8 @@ func typedEntityEventTrigger(t *testing.T) *automations.EntityEventTrigger {
 	return &automations.EntityEventTrigger{EntityID: newEntityID(t), EventName: "single_press"}
 }
 
-// TestNormalizeAutomationDefinitionRejectsContradictoryTriggerFamilies protects
-// the typed boundary: a Trigger whose pointers contradict its kind is rejected
-// instead of being normalized by silently dropping one payload. It fails if the
-// encoder can discard a family payload before any validation sees it.
+// Contradictory typed Trigger payloads must be rejected before encoding can
+// silently discard a family.
 func TestNormalizeAutomationDefinitionRejectsContradictoryTriggerFamilies(t *testing.T) {
 	t.Parallel()
 	tests := []struct {
@@ -584,11 +568,8 @@ func TestNormalizeAutomationDefinitionRejectsContradictoryTriggerFamilies(t *tes
 	}
 }
 
-// TestNormalizeAutomationDefinitionRejectsMalformedTypedDefinitions protects
-// every typed bound the previous Encode→Decode round trip enforced: name, list
-// and family counts, canonical IDs, comparison rules, parameter object shape,
-// and the canonical size bound. It fails if direct normalization is laxer than
-// the strict JSON boundary.
+// Typed normalization must enforce the same structural and size limits as
+// strict JSON decoding.
 func TestNormalizeAutomationDefinitionRejectsMalformedTypedDefinitions(t *testing.T) {
 	t.Parallel()
 	trigger := func(definition *automations.AutomationDefinition, mutate func(*automations.AutomationTrigger)) {
@@ -794,10 +775,7 @@ func TestNormalizeAutomationDefinitionRejectsMalformedTypedDefinitions(t *testin
 	}
 }
 
-// TestNormalizeAutomationDefinitionMatchesDecodedForm protects the single
-// canonical representation: normalizing a typed definition produces the same
-// value as decoding and normalizing its strict JSON form, so the direct path
-// never diverges from the serialization boundary.
+// Typed and JSON normalization must produce the same canonical representation.
 func TestNormalizeAutomationDefinitionMatchesDecodedForm(t *testing.T) {
 	t.Parallel()
 	raw := definitionFixture(t, newEntityID(t), newEntityID(t), newEntityID(t))
@@ -822,9 +800,7 @@ func TestNormalizeAutomationDefinitionMatchesDecodedForm(t *testing.T) {
 	}
 }
 
-// TestNormalizeAutomationDefinitionOwnsCallerMemory protects the owned-copy
-// invariant: mutating caller slices and byte buffers after normalization cannot
-// change the normalized value or its canonical bytes.
+// Caller mutations must not change the normalized definition or its encoded bytes.
 func TestNormalizeAutomationDefinitionOwnsCallerMemory(t *testing.T) {
 	t.Parallel()
 	dispositions := []devices.ObservationDisposition{devices.DispositionUnchanged, devices.DispositionApplied}

@@ -52,9 +52,7 @@ func decodeAutomation(t *testing.T, response *httptest.ResponseRecorder) automat
 	return body
 }
 
-// TestAutomationAPIRevisionedCRUDAndStrictDTOs protects A3: strict create,
-// revisioned replacement and deletion, and hard deletion behave through Huma
-// against real SQLite, and malformed or unknown-field bodies are rejected.
+// HTTP CRUD must enforce strict bodies and revision checks against real SQLite.
 func TestAutomationAPIRevisionedCRUDAndStrictDTOs(t *testing.T) {
 	t.Parallel()
 	router, _, _ := newAutomationHTTP(t, newAPIDevices())
@@ -174,12 +172,8 @@ type automationOpenAPIRequestBody struct {
 	} `json:"content"`
 }
 
-// TestAutomationAPIReplacementRequestEnvelopeDocument protects the published
-// replacement contract in §8.4 and A3: PUT advertises exactly the strict
-// {expected_revision, definition} envelope the handler decodes, its nested
-// definition stays the strict AutomationDefinition component, and create keeps
-// advertising a bare definition. It fails if the document and the runtime
-// contract diverge again.
+// OpenAPI must document PUT's strict {expected_revision, definition} envelope
+// while create continues to accept a bare definition.
 func TestAutomationAPIReplacementRequestEnvelopeDocument(t *testing.T) {
 	t.Parallel()
 	_, openapi, _ := newAutomationHTTP(t, newAPIDevices())
@@ -196,10 +190,7 @@ func TestAutomationAPIReplacementRequestEnvelopeDocument(t *testing.T) {
 	assertReplacementEnvelopeSchema(t, document.Components.Schemas["AutomationReplacement"])
 }
 
-// TestAutomationAPIReplacementEnvelopeIsAccepted protects A3 at the transport
-// boundary: the advertised envelope replaces an Automation, while a bare
-// definition body and an envelope without expected_revision are rejected. It
-// fails if the documented request body stops matching what the handler accepts.
+// Replacement must accept the documented envelope and reject bare or revisionless bodies.
 func TestAutomationAPIReplacementEnvelopeIsAccepted(t *testing.T) {
 	t.Parallel()
 	router, _, _ := newAutomationHTTP(t, newAPIDevices())
@@ -251,10 +242,8 @@ func requestBodyRef(t *testing.T, document automationOpenAPIDocument, path, meth
 	return ref
 }
 
-// assertReplacementEnvelopeSchema pins every member rule the handler enforces:
-// an object closed to unknown members that requires exactly expected_revision
-// and definition, an integer revision of at least one, and the strict nested
-// definition component.
+// assertReplacementEnvelopeSchema checks required fields, revision bounds,
+// unknown-field rejection, and the strict nested definition reference.
 func assertReplacementEnvelopeSchema(t *testing.T, raw json.RawMessage) {
 	t.Helper()
 	if len(raw) == 0 {
@@ -301,8 +290,7 @@ func assertReplacementEnvelopeSchema(t *testing.T, raw json.RawMessage) {
 	}
 }
 
-// TestAutomationAPIListIsKeysetStable protects A3 keyset listing: pages never
-// overlap, always advance, and reproduce the full ordered set.
+// HTTP keyset pages must advance without overlap and reproduce the ordered set.
 func TestAutomationAPIListIsKeysetStable(t *testing.T) {
 	t.Parallel()
 	router, _, _ := newAutomationHTTP(t, newAPIDevices())
@@ -349,9 +337,7 @@ func TestAutomationAPIListIsKeysetStable(t *testing.T) {
 	}
 }
 
-// TestAutomationAPIManualRunGates protects A4 through Huma: an accepted POST
-// returns 202 with a history Location, a busy Automation returns 409, and closed
-// admission returns 503.
+// Manual start returns 202 with a history Location, 409 when busy, and 503 when closed.
 func TestAutomationAPIManualRunGates(t *testing.T) {
 	t.Parallel()
 	stub := newAPIDevices()
@@ -416,9 +402,7 @@ func TestAutomationAPIManualRunGates(t *testing.T) {
 	waitForAPI(t, service)
 }
 
-// TestAutomationAPIHistoryRemainsQueryableAfterDeletion protects A7/A3: history
-// for a hard-deleted Automation stays listed and directly queryable, and a
-// parent mismatch is a 404.
+// Deleted Automations retain queryable history; a mismatched parent must return 404.
 func TestAutomationAPIHistoryRemainsQueryableAfterDeletion(t *testing.T) {
 	t.Parallel()
 	router, _, service := newAutomationHTTP(t, newAPIDevices())
@@ -459,9 +443,7 @@ func TestAutomationAPIHistoryRemainsQueryableAfterDeletion(t *testing.T) {
 	}
 }
 
-// TestAutomationAPIOperationIDsAndTags protects A3: the eight operations keep
-// stable IDs and the Automations tag, and reserved Command identities are never
-// part of the response schema.
+// OpenAPI must preserve operation IDs and tags without exposing reserved Command identities.
 func TestAutomationAPIOperationIDsAndTags(t *testing.T) {
 	t.Parallel()
 	_, openapi, _ := newAutomationHTTP(t, newAPIDevices())

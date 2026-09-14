@@ -10,10 +10,8 @@ import (
 	"github.com/mholtzscher/hearth/internal/modules/devices"
 )
 
-// AutomationFactMaximumAge is the fixed semantic freshness bound for one Device
-// Fact. A matching Fact whose envelope `emitted_at` is older than this records
-// stale_fact skips instead of executing delayed Commands. It is deliberately not
-// operator configuration.
+// AutomationFactMaximumAge is the fixed freshness limit measured from emitted_at.
+// Older matching Facts record stale_fact Skips instead of starting Runs.
 const AutomationFactMaximumAge = 30 * time.Second
 
 // StartManualRun admits one Run from the current definition snapshot, even when
@@ -68,10 +66,8 @@ func (service *Service) ReceiveDeviceFact(
 	return result.Outcome, nil
 }
 
-// logRunStarted records one committed Run with only safe structured attributes,
-// never the definition JSON or a Command parameter. It covers manual and
-// Device-Fact Runs; an automatic Run also carries the matching Fact's family and
-// disposition or event name.
+// logRunStarted logs committed Run identity and Fact provenance, never definition
+// JSON or Command parameters.
 func (service *Service) logRunStarted(ctx context.Context, run AutomationRun) {
 	attributes := []slog.Attr{
 		slog.String("event", "automation.run_started"),
@@ -89,9 +85,7 @@ func (service *Service) logRunStarted(ctx context.Context, run AutomationRun) {
 	service.dependencies.Logger.LogAttrs(ctx, slog.LevelInfo, "automation run started", attributes...)
 }
 
-// logSkipped records one committed Skip with its exact fixed reason and the
-// Fact's safe identity. It never logs a Fact value, a definition snapshot, or a
-// Command parameter.
+// logSkipped logs committed Skip identity and reason without payload values.
 func (service *Service) logSkipped(ctx context.Context, skip AdmissionSkip) {
 	service.dependencies.Logger.InfoContext(
 		ctx,
@@ -107,9 +101,8 @@ func (service *Service) logSkipped(ctx context.Context, skip AdmissionSkip) {
 	)
 }
 
-// startRun launches one committed Run's worker detached from the caller's
-// cancellation. [Service.registerAdmittedRuns] already registered and tracks the
-// worker before this call, so drain joins it before dependencies are torn down.
+// startRun launches a committed Run independently of caller cancellation.
+// registerAdmittedRuns must track the worker first so shutdown joins it.
 func (service *Service) startRun(ctx context.Context, run AutomationRun) {
 	workerContext := context.WithoutCancel(ctx)
 	go service.executeRun(workerContext, run)

@@ -131,9 +131,8 @@ const (
 	DeviceFactEntityEvent DeviceFactFamily = "entity_event"
 )
 
-// ObservationFact is one admitted Observation: stable fact identity, the
-// durable Observation the fact reports, the Entity, the applied or unchanged
-// disposition, the committed normalized value, and the envelope emit time.
+// ObservationFact reports a committed, applied or unchanged Observation.
+// EmittedAt is the Fact envelope time, not the Observation time.
 type ObservationFact struct {
 	FactID        devices.DeviceFactID
 	ObservationID devices.ObservationID
@@ -143,9 +142,8 @@ type ObservationFact struct {
 	EmittedAt     time.Time
 }
 
-// EntityEventFact is one admitted Entity Event: stable fact identity, the
-// durable Entity Event the fact reports, the Entity, the exact event name, and
-// the envelope emit time.
+// EntityEventFact reports a committed Entity Event.
+// EmittedAt is the Fact envelope time, not the Entity Event time.
 type EntityEventFact struct {
 	FactID    devices.DeviceFactID
 	EventID   devices.EntityEventID
@@ -182,20 +180,16 @@ type AdmissionOutcome struct {
 	DuplicateOutcomes  int
 }
 
-// AdmissionResult is the transaction-local evidence one Device Fact admission
-// commits. Outcome is the public count; StartedRuns lists exactly the Runs the
-// caller may register workers for, and only after the commit returns. Skips
-// lists exactly the Skips the caller may report, each carrying only safe
-// identity and the fixed reason.
+// AdmissionResult contains committed admission outcomes. Register StartedRuns
+// workers and log Skips only after the transaction commits.
 type AdmissionResult struct {
 	Outcome     AdmissionOutcome
 	StartedRuns []AutomationRun
 	Skips       []AdmissionSkip
 }
 
-// AdmissionSkip is the transaction-local evidence one recorded Skip committed:
-// its durable identity, the Automation that matched, the fixed reason, and the
-// Fact's safe identity. It never carries a Fact value or a definition snapshot.
+// AdmissionSkip carries committed Skip identity and reason for logging,
+// without Fact values or definition snapshots.
 type AdmissionSkip struct {
 	SkipID       AutomationSkipID
 	AutomationID AutomationID
@@ -249,8 +243,8 @@ const (
 	StepInterrupted StepStatus = "interrupted"
 )
 
-// AutomationStepAttempt is one immutable, ordered Step attempt. Reserved
-// identities are private until a verified Command is linked.
+// AutomationStepAttempt records an ordered Step's execution state.
+// Reserved identities are private; only verified Command links are exposed.
 type AutomationStepAttempt struct {
 	Position              int
 	StepID                StepID
@@ -263,8 +257,8 @@ type AutomationStepAttempt struct {
 	CompletedAt           *time.Time
 }
 
-// AutomationRun is one immutable admitted Run: the definition snapshot, its
-// provenance, and the ordered Step attempts.
+// AutomationRun tracks execution of an immutable definition snapshot,
+// retaining admission provenance and ordered Step attempts.
 type AutomationRun struct {
 	ID                AutomationRunID
 	AutomationID      AutomationID
@@ -281,7 +275,7 @@ type AutomationRun struct {
 	Steps             []AutomationStepAttempt
 }
 
-// AutomationSkipReason is the closed reason one Skip explains itself with.
+// AutomationSkipReason identifies why a matching Fact did not start a Run.
 type AutomationSkipReason string
 
 const (

@@ -121,9 +121,7 @@ type CreateAutomationParams struct {
 	UpdatedAt      string
 }
 
-// Definition management replaces whole documents under optimistic revision
-// control. Persisted JSON is the normalized strict section 6.1 representation, so the
-// adapter never reconstructs a definition from loose columns.
+// Store normalized definition documents under optimistic revision control.
 func (q *Queries) CreateAutomation(ctx context.Context, arg CreateAutomationParams) (Automation, error) {
 	row := q.db.QueryRowContext(ctx, createAutomation,
 		arg.ID,
@@ -430,9 +428,7 @@ FROM automations
 ORDER BY id
 `
 
-// Runtime admission, execution, and history persistence. Every query here is
-// called only from inside one automation-owned transaction; none of them calls
-// devices, NATS, or a worker.
+// Runtime admission, execution, and history queries use automation-owned transactions.
 func (q *Queries) ListAllAutomations(ctx context.Context) ([]Automation, error) {
 	rows, err := q.db.QueryContext(ctx, listAllAutomations)
 	if err != nil {

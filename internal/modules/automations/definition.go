@@ -92,11 +92,9 @@ func (*AutomationDefinitionCodec) AutomationDefinitionSchema() json.RawMessage {
 	return bytes.Clone(automationDefinitionSchema)
 }
 
-// DecodeAutomationDefinition strictly validates and normalizes one encoded
-// definition: unknown fields, typed-family exclusivity, bounds, slugs, pointers,
-// operators, and operands are all rejected before any value is trusted. It never
-// consults devices, so verification of current Entity and Operation references
-// belongs to [ValidateAutomationDefinition].
+// DecodeAutomationDefinition validates and normalizes JSON against the strict
+// schema and structural rules. Current device references are checked separately
+// by [ValidateAutomationDefinition].
 func DecodeAutomationDefinition(raw json.RawMessage) (AutomationDefinition, error) {
 	if len(raw) == 0 {
 		return AutomationDefinition{}, definitionIssue("", "definition is required")
@@ -160,19 +158,15 @@ func EncodeAutomationDefinition(definition AutomationDefinition) (json.RawMessag
 	return raw, nil
 }
 
-// NormalizeAutomationDefinition structurally validates and normalizes one
-// in-memory definition without consulting devices, so equal definitions always
-// have one representation. It also proves the canonical persisted encoding fits
-// the 64 KiB definition bound.
+// NormalizeAutomationDefinition returns a structurally validated, canonical copy
+// without consulting devices. Its encoded form must fit the 64 KiB limit.
 func NormalizeAutomationDefinition(definition AutomationDefinition) (AutomationDefinition, error) {
 	normalized, _, err := normalizeAndEncodeAutomationDefinition(definition)
 	return normalized, err
 }
 
-// normalizeAndEncodeAutomationDefinition is the single write-side canonical
-// path: it normalizes the typed definition once and returns the canonical
-// persisted bytes, so persistence never normalizes or encodes the same value
-// twice.
+// normalizeAndEncodeAutomationDefinition returns the normalized definition and
+// persisted bytes in one pass.
 func normalizeAndEncodeAutomationDefinition(
 	definition AutomationDefinition,
 ) (AutomationDefinition, json.RawMessage, error) {
@@ -192,12 +186,9 @@ func normalizeAndEncodeAutomationDefinition(
 	return normalized, raw, nil
 }
 
-// ValidateAutomationDefinition normalizes one definition and then verifies every
-// current reference through the devices seam: each Trigger's Entity and event
-// name and each Step's Entity, Operation, and static parameters. It returns the
-// definition with Step parameters replaced by their normalized form. Save-time
-// validation proves current references only; it deliberately does not require
-// enablement, availability, or owner health.
+// ValidateAutomationDefinition normalizes a definition and validates its Entity,
+// event, Operation, and parameter references through devices. It returns normalized
+// Step parameters without requiring enablement, availability, or owner health.
 func ValidateAutomationDefinition(
 	ctx context.Context,
 	automationDevices AutomationDevices,
@@ -314,11 +305,9 @@ func encodeAutomationTrigger(trigger AutomationTrigger) automationTriggerJSON {
 	return encoded
 }
 
-// normalizeAutomationDefinition structurally validates one already-typed
-// definition and returns an owned copy without a whole-definition JSON round
-// trip. Raw operands and parameters are still checked as JSON. Required fields
-// and unknown fields are checked by [DecodeAutomationDefinition] at the JSON
-// boundary; [normalizeAndEncodeAutomationDefinition] checks the encoded size.
+// normalizeAutomationDefinition validates typed fields and returns an owned copy.
+// DecodeAutomationDefinition checks JSON field presence and unknown fields;
+// normalizeAndEncodeAutomationDefinition checks the encoded size.
 func normalizeAutomationDefinition(definition AutomationDefinition) (AutomationDefinition, error) {
 	trimmedName := strings.TrimSpace(definition.Name)
 	trimmedNameRunes := utf8.RuneCountInString(trimmedName)
@@ -363,9 +352,8 @@ func normalizeAutomationDefinition(definition AutomationDefinition) (AutomationD
 	}, nil
 }
 
-// normalizeAutomationTriggerValue rejects a contradictory or malformed typed
-// Trigger before anything can encode it, so a family payload can never be
-// silently discarded, then returns an owned canonical copy.
+// normalizeAutomationTriggerValue returns a canonical copy, rejecting contradictory
+// family payloads before encoding could silently discard one.
 func normalizeAutomationTriggerValue(trigger AutomationTrigger) (AutomationTrigger, error) {
 	if err := ValidateAutomationTrigger(trigger); err != nil {
 		return AutomationTrigger{}, err
@@ -431,9 +419,8 @@ func normalizeAutomationStepValue(step AutomationStep) (AutomationStep, error) {
 	}, nil
 }
 
-// validateAutomationStepParameters rejects parameters that are not exactly one
-// JSON object, mirroring the strict schema's `"parameters": {"type": "object"}`
-// and the devices Command contract at the typed boundary.
+// validateAutomationStepParameters requires exactly one JSON object, matching
+// the definition schema and devices Command contract.
 func validateAutomationStepParameters(parameters devices.CommandParameters) error {
 	value, err := decodeJSONValue(json.RawMessage(parameters))
 	if err != nil {
@@ -445,9 +432,7 @@ func validateAutomationStepParameters(parameters devices.CommandParameters) erro
 	return nil
 }
 
-// automationDefinitionFromJSON maps one strictly schema-validated document into
-// the typed domain shape. It never invents a family payload, so a document can
-// only produce the pointer its discriminator names.
+// automationDefinitionFromJSON maps a schema-validated document to domain types.
 func automationDefinitionFromJSON(value automationDefinitionJSON) AutomationDefinition {
 	definition := AutomationDefinition{
 		Name:     value.Name,
@@ -484,9 +469,7 @@ func automationTriggerFromJSON(item automationTriggerJSON) AutomationTrigger {
 	return trigger
 }
 
-// canonicalDispositions returns an owned copy of one valid disposition set in
-// canonical order, so equal semantics always encode to equal bytes without
-// aliasing the caller's slice.
+// canonicalDispositions copies a valid disposition set into canonical order.
 func canonicalDispositions(dispositions []devices.ObservationDisposition) []devices.ObservationDisposition {
 	canonical := append([]devices.ObservationDisposition(nil), dispositions...)
 	if len(canonical) > 1 {
@@ -495,9 +478,8 @@ func canonicalDispositions(dispositions []devices.ObservationDisposition) []devi
 	return canonical
 }
 
-// cloneObservationComparisons returns owned comparisons, including owned
-// operand bytes, so a normalized definition never aliases caller memory. An
-// empty set canonicalizes to nil so equal semantics always encode equally.
+// cloneObservationComparisons copies comparisons and operand bytes without
+// aliasing caller memory. Empty sets canonicalize to nil.
 func cloneObservationComparisons(comparisons []ObservationComparison) []ObservationComparison {
 	if len(comparisons) == 0 {
 		return nil

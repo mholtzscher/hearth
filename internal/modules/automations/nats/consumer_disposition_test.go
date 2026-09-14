@@ -13,9 +13,7 @@ import (
 	"github.com/mholtzscher/hearth/internal/modules/automations"
 )
 
-// recordingDeviceFactMsg is a minimal jetstream.Msg that records exactly which
-// disposition the handler chose, so a test can distinguish Ack, NakWithDelay,
-// and Term without a broker.
+// recordingDeviceFactMsg records Ack, NakWithDelay, and Term without a broker.
 type recordingDeviceFactMsg struct {
 	subject     string
 	header      natsgo.Header
@@ -91,10 +89,8 @@ func (msg *recordingDeviceFactMsg) dispositions() (int, int, []time.Duration) {
 	return msg.acks, msg.terms, append([]time.Duration(nil), msg.nakDelays...)
 }
 
-// TestHandleDeviceFactMessageDisposition protects ack-after-admission, permanent
-// termination of deterministic wire input, and delayed negative acknowledgement
-// of transient admission failures. It fails if any malformed or retryable fact is
-// positively acknowledged or executed.
+// Acknowledge only successful admission; terminate malformed input and delay
+// redelivery after transient failure.
 func TestHandleDeviceFactMessageDisposition(t *testing.T) {
 	t.Parallel()
 	validator := testValidator(t)
@@ -202,9 +198,7 @@ func TestHandleDeviceFactMessageDisposition(t *testing.T) {
 	}
 }
 
-// TestHandleDeviceFactMessageBoundsAdmission protects the two-second admission
-// context and fails if a live callback could run for an unbounded time and let
-// the broker create concurrent delivery.
+// Admission must receive a deadline within DeviceFactAdmissionTimeout.
 func TestHandleDeviceFactMessageBoundsAdmission(t *testing.T) {
 	t.Parallel()
 	validator := testValidator(t)
@@ -222,9 +216,7 @@ func TestHandleDeviceFactMessageBoundsAdmission(t *testing.T) {
 	}
 }
 
-// TestHandleDeviceFactMessageLeavesUnreadableMetadataPending protects metadata
-// handling and fails if a message whose broker metadata cannot be read is
-// positively acknowledged, terminated, or executed.
+// Unreadable broker metadata must leave the message pending without admission.
 func TestHandleDeviceFactMessageLeavesUnreadableMetadataPending(t *testing.T) {
 	t.Parallel()
 	validator := testValidator(t)
@@ -242,8 +234,7 @@ func TestHandleDeviceFactMessageLeavesUnreadableMetadataPending(t *testing.T) {
 	}
 }
 
-// TestDeviceFactConsumerClosedWithoutSubscriptionIsClosed protects shutdown
-// readiness and fails if a consumer that never subscribed can block a drain.
+// A consumer that never subscribed must report closure immediately.
 func TestDeviceFactConsumerClosedWithoutSubscriptionIsClosed(t *testing.T) {
 	t.Parallel()
 	consumer := &DeviceFactConsumer{}

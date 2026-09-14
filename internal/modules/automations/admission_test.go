@@ -11,10 +11,7 @@ import (
 	"github.com/mholtzscher/hearth/internal/modules/devices"
 )
 
-// TestStartManualRunCreatesDistinctRunsEvenWhenDisabled protects A4: each
-// accepted POST creates a distinct snapshotted Run with manual provenance, even
-// for a disabled Automation. It fails if callers share Runs or if disabled
-// Automations cannot be started manually.
+// Each accepted manual start creates a distinct snapshot, even when disabled.
 func TestStartManualRunCreatesDistinctRunsEvenWhenDisabled(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
@@ -60,9 +57,7 @@ func TestStartManualRunCreatesDistinctRunsEvenWhenDisabled(t *testing.T) {
 	}
 }
 
-// TestStartManualRunBusyReturns409WithoutHistory protects A4: a manual start
-// while that Automation already has a running Run returns automation_busy and
-// writes no Skip or extra Run.
+// A busy manual start must return automation_busy without writing history.
 func TestStartManualRunBusyReturns409WithoutHistory(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
@@ -90,8 +85,7 @@ func TestStartManualRunBusyReturns409WithoutHistory(t *testing.T) {
 	waitForRuns(t, service)
 }
 
-// TestStartManualRunRefusesClosedAdmission protects A4: a closed automation gate
-// or a closed Command gate returns admission_unavailable and creates no Run.
+// Either closed admission gate must refuse the start without creating a Run.
 func TestStartManualRunRefusesClosedAdmission(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
@@ -124,8 +118,7 @@ func TestStartManualRunRefusesClosedAdmission(t *testing.T) {
 	}
 }
 
-// TestStartManualRunUnknownAutomation protects A4: an unknown Automation ID
-// returns ErrAutomationNotFound and writes no history.
+// An unknown Automation must return ErrAutomationNotFound without writing history.
 func TestStartManualRunUnknownAutomation(t *testing.T) {
 	t.Parallel()
 	service, _ := newRuntimeService(t, newScriptedDevices(), runtimeTestDependencies())
@@ -140,9 +133,8 @@ func TestStartManualRunUnknownAutomation(t *testing.T) {
 	}
 }
 
-// TestReceiveDeviceFactFanOutAndDedupe protects admission grouping and the
-// retained (fact_id, automation_id) receipt: one fresh Fact starts all matching
-// Automations, and a republished duplicate starts no second Run.
+// One fresh Fact starts all matching Automations; retained receipts prevent
+// a republished duplicate from starting more Runs.
 func TestReceiveDeviceFactFanOutAndDedupe(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
@@ -181,8 +173,7 @@ func TestReceiveDeviceFactFanOutAndDedupe(t *testing.T) {
 	}
 }
 
-// TestReceiveDeviceFactStaleBeforeBusy protects freshness precedence: an old Fact
-// records stale_fact rather than automation_busy even while a Run is active.
+// Staleness takes precedence over busy when classifying a matching Fact.
 func TestReceiveDeviceFactStaleBeforeBusy(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
@@ -234,8 +225,7 @@ func TestReceiveDeviceFactStaleBeforeBusy(t *testing.T) {
 	waitForRuns(t, service)
 }
 
-// TestReceiveDeviceFactBusyRecordsSkip protects the busy guard: a second fresh
-// Fact for one already-running Automation writes automation_busy and no Run.
+// A fresh Fact matching a busy Automation records a Skip, not another Run.
 func TestReceiveDeviceFactBusyRecordsSkip(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
@@ -268,9 +258,7 @@ func TestReceiveDeviceFactBusyRecordsSkip(t *testing.T) {
 	waitForRuns(t, service)
 }
 
-// TestReceiveDeviceFactRejectsMalformedFact protects the admission input
-// boundary: a contradictory family payload is ErrInvalidDeviceFact and writes
-// nothing.
+// Contradictory Fact families must return ErrInvalidDeviceFact without writes.
 func TestReceiveDeviceFactRejectsMalformedFact(t *testing.T) {
 	t.Parallel()
 	service, _ := newRuntimeService(t, newScriptedDevices(), runtimeTestDependencies())

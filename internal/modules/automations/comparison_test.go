@@ -35,11 +35,8 @@ func match(t *testing.T, target automations.ObservationComparison, value string)
 	return matched
 }
 
-// TestObservationComparisonSemantics protects the typed matching contract in
-// §3.2: RFC 6901 escapes and root selection, canonical array indices, missing
-// paths that are false even for ne, JSON type equality, object-order
-// irrelevance, and array-order significance. Each case fails if the
-// corresponding rule is inverted or treated as an error.
+// Matching must preserve JSON Pointer and typed equality semantics, including
+// false for missing paths under ne, unordered objects, and ordered arrays.
 func TestObservationComparisonSemantics(t *testing.T) {
 	t.Parallel()
 	tests := []struct {
@@ -171,9 +168,7 @@ func TestObservationComparisonSemantics(t *testing.T) {
 	}
 }
 
-// TestMatchObservationComparisonRejectsUndecodableInput protects the boundary
-// between runtime matching and corrupt input: a value or operand that is not
-// exactly one JSON value is a deterministic error, never a silent false.
+// Undecodable input is an error, not an ordinary non-match.
 func TestMatchObservationComparisonRejectsUndecodableInput(t *testing.T) {
 	t.Parallel()
 	_, err := automations.MatchObservationComparison(
@@ -192,8 +187,7 @@ func TestMatchObservationComparisonRejectsUndecodableInput(t *testing.T) {
 	}
 }
 
-// TestValidateJSONPointer protects the save-time pointer syntax rules: the empty
-// pointer, leading slash, ~0/~1 escapes only, and the 256-byte bound.
+// Pointer syntax accepts root and RFC 6901 escapes within the 256-byte bound.
 func TestValidateJSONPointer(t *testing.T) {
 	t.Parallel()
 	valid := []string{"", "/", "/a", "/a/b", "/a~0b", "/a~1b", "/0", "/-", "/a~0~1b"}
@@ -214,9 +208,8 @@ func TestValidateJSONPointer(t *testing.T) {
 	}
 }
 
-// TestValidateObservationComparison protects save-time operator/operand
-// compatibility: ordering operators require a numeric operand while eq and ne
-// accept any JSON value, and an unknown operator is rejected.
+// Ordering requires numeric operands; equality accepts any JSON value.
+// Unknown operators must fail validation.
 func TestValidateObservationComparison(t *testing.T) {
 	t.Parallel()
 	accepted := []automations.ObservationComparison{
@@ -249,10 +242,8 @@ func TestValidateObservationComparison(t *testing.T) {
 	}
 }
 
-// TestObservationComparisonOrderingMatchesIntegerOracle is a property test: for
-// any int64 pair, all six operators agree with Go's own integer comparison. It
-// fails if ordering goes through binary floating point, where values above 2^53
-// would collapse to equal, or if any operator branch is inverted.
+// All six operators must agree with integer comparison, including values above
+// 2^53 that binary floating point cannot distinguish.
 func TestObservationComparisonOrderingMatchesIntegerOracle(t *testing.T) {
 	t.Parallel()
 	rapid.Check(t, func(t *rapid.T) {

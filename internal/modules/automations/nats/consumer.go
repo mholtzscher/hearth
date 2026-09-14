@@ -15,9 +15,7 @@ import (
 	"github.com/mholtzscher/hearth/internal/modules/automations"
 )
 
-// Structured field keys shared by this transport's log sites. Event values stay
-// whole literals at each site, so searching an event name finds its
-// implementation.
+// Shared log field keys; event values remain searchable literals at each log site.
 const (
 	transportEventKey     = "event"
 	transportErrorCodeKey = "error_code"
@@ -45,47 +43,33 @@ const (
 	transportCodeTermFailed          = "term_failed"
 )
 
-// DeviceFactReceiver is the only automation capability the consumer needs:
-// synchronous admission of one already-mapped Device Fact. It cannot execute a
-// Command, so no Command can ever run in the consumer callback.
+// DeviceFactReceiver admits a mapped Fact synchronously. Implementations must
+// honor the context deadline and leave Command execution to detached workers.
 type DeviceFactReceiver interface {
 	ReceiveDeviceFact(context.Context, automations.DeviceFact) (automations.AdmissionOutcome, error)
 }
 
-// AdmissionGate is the optional receiver capability the consumer uses to close
-// automation admission when its consume loop terminates unexpectedly. The
-// automations Service implements it as StopAdmission, so a consumer fault closes
-// automation admission and fails readiness until process restart; a receiver
-// that does not implement it leaves admission under its own control.
+// AdmissionGate optionally lets the consumer close its receiver's admission
+// after unexpected termination. Receivers without it manage their own gate.
 type AdmissionGate interface {
 	StopAdmission()
 }
 
-// DeviceFactConsumer is the automations-owned durable Device Fact consumer. It
-// reads both fact families through one subscription, admits one Fact at a time,
-// and reports activity so shutdown and readiness drain before dependencies. An
-// unexpected termination latches automation admission closed through the
-// receiver's optional [AdmissionGate]; an intentional [DeviceFactConsumer.Drain]
-// never does.
+// DeviceFactConsumer admits both Fact families through one durable subscription.
+// Unexpected termination closes the optional AdmissionGate; intentional Drain does not.
 type DeviceFactConsumer struct {
 	consume jetstream.ConsumeContext
 	active  atomic.Bool
-	// draining marks an intentional Drain before it stops the subscription, so
-	// the termination watcher can tell a requested shutdown from a fault.
+	// Mark intentional shutdown before stopping delivery, so it is not a fault.
 	draining atomic.Bool
-	// terminated is closed after the termination watcher has applied its fault
-	// decision, so Drain and lifecycle tests can join it without racing it.
+	// Closed after the termination watcher finishes its fault decision.
 	terminated chan struct{}
 	gate       AdmissionGate
 }
 
-// StartDeviceFactConsumer subscribes the durable consumer and starts reporting
-// its activity. Nil dependencies fail before any subscription, and a
-// subscription that cannot activate leaves no consumer running.
-//
-// Each message restores its trace context, maps one strict Device Fact, calls
-// ReceiveDeviceFact synchronously under a two-second admission context, and only
-// then acknowledges. It never executes a Command.
+// StartDeviceFactConsumer subscribes with strict Fact decoding and trace propagation.
+// It acknowledges only after synchronous admission succeeds, using
+// DeviceFactAdmissionTimeout for each admission's context deadline.
 func StartDeviceFactConsumer(
 	baseContext context.Context,
 	consumer jetstream.Consumer,
@@ -131,13 +115,8 @@ func StartDeviceFactConsumer(
 	return running, nil
 }
 
-// watchTermination closes automation admission when the consume loop ends
-// without an intentional Drain. Drain marks draining before it stops the
-// subscription, so a requested shutdown never latches a fault while any other
-// closure does. The consume error handler records a real broker or connection
-// fault's cause under its own code; this latch records the outcome under the
-// fixed consumer_fault code using the already documented
-// automation.fact_processing_failed event.
+// watchTermination logs unexpected closure and closes admission when a gate
+// is available. Intentional Drain suppresses both actions.
 func (consumer *DeviceFactConsumer) watchTermination(ctx context.Context, logger *slog.Logger) {
 	defer close(consumer.terminated)
 	<-consumer.consume.Closed()
@@ -161,11 +140,8 @@ func (consumer *DeviceFactConsumer) Active() bool {
 	return consumer != nil && consumer.active.Load()
 }
 
-// Drain stops new deliveries and waits for in-flight callbacks to finish, so no
-// new automatic admission enters and no callback outlives the drain. In-flight
-// admission is already bounded by DeviceFactAdmissionTimeout, so the join is
-// finite. It also joins the termination watcher, so once Drain returns its fault
-// decision is final and no late latch can close admission.
+// Drain stops delivery and joins callbacks and the termination watcher.
+// It relies on receivers honoring their admission deadline; it has no separate timeout.
 func (consumer *DeviceFactConsumer) Drain() error {
 	if consumer == nil || consumer.consume == nil {
 		return nil
@@ -244,11 +220,8 @@ func handleDeviceFactMessage(
 	}
 }
 
-// resolveDeviceFactAdmissionFailure disposes one already-mapped Fact whose
-// admission failed. A deterministic fact-invalid rejection is terminated because
-// redelivery would fail identically forever. Every other failure, including a
-// closed admission gate and a bounded-timeout expiry, is negatively
-// acknowledged with the fixed delay so the Fact stays redeliverable.
+// resolveDeviceFactAdmissionFailure terminates invalid Facts. Other failures,
+// including closed admission and timeouts, receive a delayed Nak for redelivery.
 func resolveDeviceFactAdmissionFailure(
 	ctx context.Context,
 	message jetstream.Msg,
@@ -334,9 +307,7 @@ func logDeviceFactFailure(
 	logger.LogAttrs(ctx, slog.LevelError, "process automation device fact", attributes...)
 }
 
-// deviceFactAttributes returns the safe structured identity of one mapped Fact:
-// its stable identity, family, and variant. It never includes the Observation
-// value or any Command parameter.
+// deviceFactAttributes returns Fact identity, family, and variant without payload values.
 func deviceFactAttributes(fact automations.DeviceFact) []slog.Attr {
 	switch fact.Family {
 	case automations.DeviceFactObservation:

@@ -35,10 +35,8 @@ type entityEventFactData struct {
 	RecordedAt string `json:"recorded_at"`
 }
 
-// Fixed deterministic wire-rejection codes. Every code names the stage that
-// rejected the message, so a diagnostic never depends on raw payload or error
-// text. A rejected message is deterministic: the same bytes fail the same way on
-// every attempt, so the transport terminates it instead of redelivering it.
+// Fixed wire-rejection codes keep diagnostics free of payloads and error text.
+// These failures are deterministic, so the consumer terminates rather than retries.
 const (
 	wireCodeSubjectInvalid   = "fact_subject_invalid"
 	wireCodeFamilyInvalid    = "fact_family_invalid"
@@ -51,19 +49,14 @@ const (
 	wireCodeFactInvalid      = "fact_invalid"
 )
 
-// deviceFactWireMessage is the strict wire input of one received Device Fact:
-// the subject it arrived on, the broker message identity header, and the exact
-// payload bytes. Keeping them together lets the mapping functions validate
-// subject/payload/header agreement without touching the message again.
+// deviceFactWireMessage groups the subject, message ID, and payload for agreement checks.
 type deviceFactWireMessage struct {
 	subject   string
 	messageID string
 	payload   []byte
 }
 
-// wireRejectionError is the deterministic malformed-input class. It is permanent by
-// construction: it is returned only for input whose bytes can never map to an
-// admissible Fact, so the consumer terminates rather than redelivers it.
+// wireRejectionError marks malformed wire input that redelivery cannot repair.
 type wireRejectionError struct {
 	code  string
 	cause error
@@ -79,9 +72,7 @@ func reject(code string, cause error) *wireRejectionError {
 	return &wireRejectionError{code: code, cause: cause}
 }
 
-// asWireRejection reports whether an error is the deterministic wire-rejection
-// class, so the consumer can distinguish permanent malformed input from a
-// transient admission or storage failure.
+// asWireRejection distinguishes permanent wire rejection from retryable admission failures.
 func asWireRejection(err error) *wireRejectionError {
 	rejection, ok := errors.AsType[*wireRejectionError](err)
 	if !ok {
@@ -99,11 +90,8 @@ func rejectionCode(err error) string {
 	return wireCodeFactInvalid
 }
 
-// mapDeviceFactMessage maps one received Device Fact message to trusted
-// automation admission input. It parses the exact subject route, decodes against
-// that route's strict schema, and validates canonical identity, family/variant
-// agreement, Nats-Msg-Id identity, and causation agreement before any domain
-// value is trusted. Every failure it returns is deterministic.
+// mapDeviceFactMessage validates the route, strict schema, and agreement of
+// subject, payload, Nats-Msg-Id, and causation before admission. Failures are permanent.
 func mapDeviceFactMessage(
 	validator *contractsv1.Validator,
 	wire deviceFactWireMessage,
@@ -124,9 +112,7 @@ func mapDeviceFactMessage(
 	}
 }
 
-// mapObservationDeviceFact maps one Observation Fact route. The strict schema is
-// selected from the route, so an Entity Event payload delivered on an
-// Observation subject fails decoding rather than reaching admission.
+// mapObservationDeviceFact decodes against the route's strict Observation schema.
 func mapObservationDeviceFact(
 	validator *contractsv1.Validator,
 	wire deviceFactWireMessage,
@@ -183,9 +169,7 @@ func mapObservationDeviceFact(
 	return fact, nil
 }
 
-// mapEntityEventDeviceFact maps one Entity Event Fact route. The strict schema is
-// selected from the route, so an Observation payload delivered on an Entity
-// Event subject fails decoding rather than reaching admission.
+// mapEntityEventDeviceFact decodes against the route's strict Entity Event schema.
 func mapEntityEventDeviceFact(
 	validator *contractsv1.Validator,
 	wire deviceFactWireMessage,

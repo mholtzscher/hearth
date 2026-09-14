@@ -16,10 +16,8 @@ import (
 // domain-oriented persistence seam, including admission, execution, and history.
 var _ AutomationRepository = (*SQLiteRepository)(nil)
 
-// AdmitDeviceFact evaluates one Device Fact against every current enabled
-// definition in one transaction. It commits each matching Automation's receipt,
-// Run or Skip explanation, and initial Step rows together, and it registers no
-// workers: the caller starts them only after the commit returns.
+// AdmitDeviceFact atomically commits matching enabled Automations' receipts,
+// Runs, Skips, and initial Steps. The caller starts workers only after commit.
 func (repo *SQLiteRepository) AdmitDeviceFact(
 	ctx context.Context,
 	fact DeviceFact,
@@ -94,10 +92,8 @@ func (repo *SQLiteRepository) admitAutomationRow(
 	return nil
 }
 
-// admitMatchedDeviceFact resolves one already-matched Automation inside the
-// admission transaction. It reports a started Run, a recorded Skip, or neither
-// for a duplicate receipt. Freshness precedes the busy check, so an old Fact
-// always explains itself as stale_fact.
+// admitMatchedDeviceFact records a Run or Skip, ignoring duplicate receipts.
+// Freshness precedes the busy check, so old matching Facts record stale_fact.
 func (repo *SQLiteRepository) admitMatchedDeviceFact(
 	ctx context.Context,
 	queries *dbsqlc.Queries,
@@ -233,9 +229,8 @@ func (repo *SQLiteRepository) MarkStepRunning(ctx context.Context, start StepSta
 	})
 }
 
-// CompleteStep records one Step's established terminal outcome. A Step that
-// never started but is interrupted before its Command is created keeps its
-// started_at empty and receives one at completion.
+// CompleteStep records a terminal outcome. If the Step never started, its
+// started_at is set to the completion time.
 func (repo *SQLiteRepository) CompleteStep(ctx context.Context, completion StepCompletion) error {
 	if _, err := ParseAutomationRunID(string(completion.RunID)); err != nil {
 		return err
@@ -438,9 +433,7 @@ func (repo *SQLiteRepository) DeleteHistoryBefore(
 	return deleted, err
 }
 
-// buildRun assembles one immutable Run from a current definition record. Every
-// Step starts not_attempted, so no reserved identity ever leaks before the
-// external call.
+// buildRun snapshots the current definition with all Steps not_attempted.
 func (repo *SQLiteRepository) buildRun(
 	record AutomationRecord,
 	source RunSource,

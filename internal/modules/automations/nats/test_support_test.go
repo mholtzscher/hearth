@@ -22,20 +22,16 @@ const (
 	// testDeviceFactStreamName is the stream name devices owns; hearthd supplies
 	// it to the automations transport, so tests must supply it too.
 	testDeviceFactStreamName = "HEARTH_DEVICE_FACTS_V1"
-	// testLiveness bounds every broker wait. It is long enough that healthy
-	// plumbing always wins and short enough to fail a hung one.
+	// testLiveness bounds broker waits.
 	testLiveness = 5 * time.Second
-	// testPollInterval is the bounded re-check cadence for a liveness wait. It is
-	// never the correctness oracle; the condition is.
+	// testPollInterval sets polling cadence; the observed condition decides success.
 	testPollInterval = 10 * time.Millisecond
 	// testDuplicateWindow mirrors the stream's bounded broker duplicate window so
 	// a republished fact collapses into one stored message.
 	testDuplicateWindow = 2 * time.Hour
 )
 
-// Fixed canonical identities shared by fixtures. Every one of them is a
-// lowercase UUIDv7 with the RFC 4122 variant, matching the strict schemas and the
-// devices canonical parsers.
+// Canonical UUIDv7 fixtures accepted by the strict schemas and device parsers.
 const (
 	testEntityAID       = "ent_01890f47-7a6b-7c4d-8e9f-0123456789a1"
 	testEntityBID       = "ent_01890f47-7a6b-7c4d-8e9f-0123456789a2"
@@ -58,9 +54,7 @@ type testDeviceFactMessage struct {
 	payload   []byte
 }
 
-// observationFactInput describes one Observation wire fixture. Empty override
-// fields fall back to the canonical defaults, so a test changes exactly the one
-// property it protects.
+// observationFactInput describes a wire fixture; empty overrides use canonical defaults.
 type observationFactInput struct {
 	factID          string
 	observationID   string
@@ -230,9 +224,7 @@ func (message testDeviceFactMessage) asWire() deviceFactWireMessage {
 	return deviceFactWireMessage(message)
 }
 
-// publishDeviceFact publishes one fixture into the embedded stream with its
-// Nats-Msg-Id header, exactly as the relay publishes a real fact, and returns the
-// broker acknowledgement so a test can observe duplicate suppression.
+// publishDeviceFact includes Nats-Msg-Id and returns the broker's duplicate indication.
 func publishDeviceFact(
 	t *testing.T,
 	js jetstream.JetStream,
@@ -251,9 +243,7 @@ func publishDeviceFact(
 	return ack
 }
 
-// fakeDeviceFactReceiver is a deterministic admission seam. It records every
-// Fact it admits, the admission deadline it observed, and can fail a bounded
-// number of calls so a test can prove redelivery.
+// fakeDeviceFactReceiver records Facts and deadlines and can fail calls to test redelivery.
 type fakeDeviceFactReceiver struct {
 	mutex       sync.Mutex
 	facts       []automations.DeviceFact
@@ -340,10 +330,8 @@ func (receiver *fakeDeviceFactReceiver) failNext(count int, err error) {
 	receiver.failErr = err
 }
 
-// startDeviceFactServer starts one embedded JetStream server with the devices
-// stream subjects and duplicate window, and returns the stream's JetStream
-// context. The stream here is created exactly as much as the automations
-// transport needs; devices owns the real stream configuration.
+// startDeviceFactServer starts embedded JetStream with the subjects and duplicate
+// window these tests need. Devices owns the production stream configuration.
 func startDeviceFactServer(t *testing.T) jetstream.JetStream {
 	t.Helper()
 	server, err := natsserver.NewServer(&natsserver.Options{
@@ -406,9 +394,7 @@ func startDeviceFactConsumer(
 	return running, consumer
 }
 
-// waitForConsumerInfo blocks until the live consumer reports a matching state or
-// the liveness budget expires. The condition is the oracle; the poll is only a
-// bounded re-check.
+// waitForConsumerInfo waits for matching broker state within the liveness budget.
 func waitForConsumerInfo(
 	t *testing.T,
 	consumer jetstream.Consumer,

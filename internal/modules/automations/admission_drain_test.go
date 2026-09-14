@@ -9,9 +9,7 @@ import (
 	"github.com/mholtzscher/hearth/internal/modules/automations"
 )
 
-// blockingAdmissionRepository holds one admission call at a deterministic
-// barrier before it commits, so a test can close automation admission while an
-// admission is in flight and before any worker is registered.
+// blockingAdmissionRepository holds admission before commit and worker registration.
 type blockingAdmissionRepository struct {
 	automations.AutomationRepository
 
@@ -50,12 +48,8 @@ func (repository *blockingAdmissionRepository) AdmitDeviceFact(
 	return repository.AutomationRepository.AdmitDeviceFact(ctx, fact, now)
 }
 
-// TestWaitRunsJoinsManualAdmissionInFlightAtStop protects A13: a manual
-// admission that passed the gate but has not committed when StopAdmission runs
-// must participate in WaitRuns, so its committed Run worker is joined and drains
-// with core_stopping instead of registering after the wait. It fails if
-// registration escapes the gate by only being tracked after the admission
-// transaction returns.
+// WaitRuns must track a manual admission before commit, then join its worker
+// as it drains with core_stopping.
 func TestWaitRunsJoinsManualAdmissionInFlightAtStop(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
@@ -117,11 +111,7 @@ func TestWaitRunsJoinsManualAdmissionInFlightAtStop(t *testing.T) {
 	}
 }
 
-// TestWaitRunsJoinsFactAdmissionInFlightAtStop protects A13 for automatic
-// admission: a fact admission that passed the gate but has not committed when
-// StopAdmission runs must participate in WaitRuns, so every Run it started is
-// joined and drains with core_stopping. It fails if a committed fan-out Run can
-// be registered after the wait returned.
+// WaitRuns must track a Fact admission before commit and join every Run it starts.
 func TestWaitRunsJoinsFactAdmissionInFlightAtStop(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
@@ -176,11 +166,7 @@ func TestWaitRunsJoinsFactAdmissionInFlightAtStop(t *testing.T) {
 	}
 }
 
-// TestWaitRunsReturnsWhenRefusedAdmissionReservationReleases protects the
-// inverse of A13: an admission that reserves a slot but is refused before it
-// commits must release it, so a later WaitRuns is not blocked by an admission
-// that created no work. It fails if a refused manual admission leaves the
-// service permanently non-idle.
+// A refused admission must release its reservation rather than block WaitRuns.
 func TestWaitRunsReturnsWhenRefusedAdmissionReservationReleases(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()

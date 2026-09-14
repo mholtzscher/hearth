@@ -31,9 +31,7 @@ func terminalCommand(
 	}
 }
 
-// TestRunExecutesStepsSequentially protects A5: the next Step never starts before
-// the prior Command reaches a successful terminal outcome. It fails on
-// overlapping or speculative Step starts.
+// The next Step must wait for the prior Command's successful terminal outcome.
 func TestRunExecutesStepsSequentially(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
@@ -81,8 +79,7 @@ func TestRunExecutesStepsSequentially(t *testing.T) {
 	}
 }
 
-// TestRunStopsAtFirstFailureWithoutRetry protects A5: the first failed Step stops
-// the Run, later Steps stay not_attempted, and no Step is retried.
+// The first failure stops the Run without retries; later Steps stay not_attempted.
 func TestRunStopsAtFirstFailureWithoutRetry(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
@@ -123,9 +120,8 @@ func TestRunStopsAtFirstFailureWithoutRetry(t *testing.T) {
 	}
 }
 
-// TestRunLinksCommandOnlyAfterOwnershipVerification protects A6: a Command whose
-// correlation does not match the reserved identity is never adopted. The Run
-// records executor_fault, exposes no verified link, and closes admission.
+// A mismatched Command must latch executor_fault and close admission without
+// exposing an unverified link.
 func TestRunLinksCommandOnlyAfterOwnershipVerification(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
@@ -170,9 +166,8 @@ func TestRunLinksCommandOnlyAfterOwnershipVerification(t *testing.T) {
 	}
 }
 
-// TestRunTreatsMissingOrNonterminalCommandAsFault protects A6: a
-// CommandExecutionError proves creation, so a missing or nonterminal Command is
-// an executor fault rather than an invented outcome.
+// CommandExecutionError proves creation; missing or nonterminal durable evidence
+// must therefore fault rather than invent an outcome.
 func TestRunTreatsMissingOrNonterminalCommandAsFault(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
@@ -231,9 +226,7 @@ func TestRunTreatsMissingOrNonterminalCommandAsFault(t *testing.T) {
 	}
 }
 
-// TestRunClassifiesPreCreationFailureWithoutFault protects A5/A6: a confirmed
-// pre-creation rejection fails the Step and stops the Run without latching an
-// executor fault or inventing a Command link.
+// Confirmed pre-creation rejection fails the Step without an executor fault or Command link.
 func TestRunClassifiesPreCreationFailureWithoutFault(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
