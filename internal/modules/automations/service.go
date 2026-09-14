@@ -15,12 +15,10 @@ type Service struct {
 	dependencies AutomationDependencies
 
 	// gate serializes admission gating, in-flight admission tracking, and
-	// per-Automation worker registration. idle is closed whenever nothing is
-	// admitted: no admission is in flight and no Run worker is registered.
+	// worker registration. idle is closed whenever nothing is admitted: no
+	// admission is in flight and no Run worker is registered.
 	gate          sync.Mutex
 	admissionOpen bool
-	executorFault bool
-	activeRuns    map[AutomationID]AutomationRunID
 	admitting     int
 	workers       int
 	idle          chan struct{}
@@ -41,7 +39,6 @@ func NewService(
 		devices:       automationDevices,
 		dependencies:  dependencies.withDefaults(),
 		admissionOpen: true,
-		activeRuns:    make(map[AutomationID]AutomationRunID),
 		idle:          idle,
 	}
 }

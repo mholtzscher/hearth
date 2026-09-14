@@ -15,12 +15,13 @@ func (service *Service) StopAdmission() {
 	service.admissionOpen = false
 }
 
-// AdmissionOpen reports whether new Runs may still be admitted and whether the
-// executor is healthy. Readiness combines this with device Command admission.
+// AdmissionOpen reports whether new Runs may still be admitted. An executor
+// fault permanently closes admission, so a latched fault is already reflected
+// here. Readiness combines this with device Command admission.
 func (service *Service) AdmissionOpen() bool {
 	service.gate.Lock()
 	defer service.gate.Unlock()
-	return service.admissionOpen && !service.executorFault
+	return service.admissionOpen
 }
 
 // WaitRuns joins already-admitted Run workers and any admission still in flight
@@ -60,22 +61,18 @@ func (service *Service) InterruptActiveRuns(ctx context.Context, at time.Time) e
 // failed transaction, and a simultaneous [Service.StopAdmission] plus
 // [Service.WaitRuns] can never observe the service idle while a committed Run is
 // about to start. The database's partial unique index remains the final busy
-// guard; activeRuns and the counters only mirror what still needs to drain.
+// guard; the counters only mirror what still needs to drain.
 func (service *Service) registerAdmittedRuns(runs ...AutomationRun) {
 	service.gate.Lock()
 	defer service.gate.Unlock()
 	service.admitting--
-	for index := range runs {
-		service.activeRuns[runs[index].AutomationID] = runs[index].ID
-		service.workers++
-	}
+	service.workers += len(runs)
 	service.closeIdleLocked()
 }
 
-func (service *Service) releaseRunWorker(automationID AutomationID) {
+func (service *Service) releaseRunWorker() {
 	service.gate.Lock()
 	defer service.gate.Unlock()
-	delete(service.activeRuns, automationID)
 	service.workers--
 	service.closeIdleLocked()
 }
@@ -124,13 +121,14 @@ func (service *Service) reopenIdleLocked() {
 	}
 }
 
-// latchExecutorFault closes automation admission for the rest of the process
-// after any Step start, Step completion, Run completion, or ownership check
-// could not be established truthfully.
+// latchExecutorFault closes automation admission permanently for the rest of
+// the process after any Step start, Step completion, Run completion, or
+// ownership check could not be established truthfully. Admission never reopens,
+// so the closed gate is the only latched state.
 func (service *Service) latchExecutorFault(ctx context.Context, runID AutomationRunID, position int) {
 	service.gate.Lock()
 	defer service.gate.Unlock()
-	service.latchExecutorFaultLocked()
+	service.admissionOpen = false
 	service.dependencies.Logger.ErrorContext(
 		ctx,
 		"automation executor fault latched until restart",
@@ -139,9 +137,4 @@ func (service *Service) latchExecutorFault(ctx context.Context, runID Automation
 		slog.Int("step_position", position),
 		slog.String("error_code", AutomationFailureExecutorFault),
 	)
-}
-
-func (service *Service) latchExecutorFaultLocked() {
-	service.executorFault = true
-	service.admissionOpen = false
 }

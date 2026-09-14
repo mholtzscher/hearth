@@ -947,7 +947,7 @@ func decodeMatchedTriggers(raw json.RawMessage) ([]AutomationTrigger, error) {
 	}
 	triggers := make([]AutomationTrigger, 0, len(encoded))
 	for _, item := range encoded {
-		trigger, err := normalizeAutomationTrigger(item)
+		trigger, err := normalizeAutomationTriggerValue(automationTriggerFromJSON(item))
 		if err != nil {
 			return nil, err
 		}

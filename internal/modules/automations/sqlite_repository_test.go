@@ -435,3 +435,53 @@ func newCorrelationIDString(t *testing.T) string {
 	}
 	return string(id)
 }
+
+// TestSQLiteRepositoryRejectsMalformedTypedDefinitions protects the persistence
+// boundary: a typed definition that contradicts its own shape is rejected before
+// encoding, so a write can never silently drop a family payload or store
+// parameters that are not a JSON object. It fails if persistence trusts the
+// encoder to discard invalid input.
+func TestSQLiteRepositoryRejectsMalformedTypedDefinitions(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	repository := newAutomationRepository(t, openAutomationDatabase(t))
+	missingID, err := automations.NewAutomationID()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, test := range []struct {
+		name   string
+		mutate func(definition *automations.AutomationDefinition)
+	}{
+		{
+			"observation trigger carries event payload",
+			func(definition *automations.AutomationDefinition) {
+				definition.Triggers[0].EntityEvent = &automations.EntityEventTrigger{
+					EntityID: newEntityID(t), EventName: "single_press",
+				}
+			},
+		},
+		{
+			"parameters are not an object",
+			func(definition *automations.AutomationDefinition) {
+				definition.Steps[0].Parameters = devices.CommandParameters(`[]`)
+			},
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			definition := validDomainDefinition(t)
+			test.mutate(&definition)
+			if _, createErr := repository.CreateAutomation(ctx, definition); !errors.Is(
+				createErr, automations.ErrInvalidAutomation,
+			) {
+				t.Fatalf("create error = %v, want ErrInvalidAutomation", createErr)
+			}
+			if _, replaceErr := repository.ReplaceAutomation(
+				ctx, missingID, 1, definition,
+			); !errors.Is(replaceErr, automations.ErrInvalidAutomation) {
+				t.Fatalf("replace error = %v, want ErrInvalidAutomation", replaceErr)
+			}
+		})
+	}
+}

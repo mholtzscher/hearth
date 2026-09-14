@@ -55,16 +55,13 @@ func NewSQLiteRepository(database *sql.DB, dependencies AutomationDependencies) 
 
 // CreateAutomation persists one normalized definition at revision 1. The
 // definition is normalized again here, so a caller that skipped the service
-// cannot store a non-canonical document.
+// cannot store a non-canonical document. Normalization and encoding share one
+// pass, so the canonical bytes are never produced twice.
 func (repo *SQLiteRepository) CreateAutomation(
 	ctx context.Context,
 	definition AutomationDefinition,
 ) (AutomationRecord, error) {
-	normalized, err := NormalizeAutomationDefinition(definition)
-	if err != nil {
-		return AutomationRecord{}, err
-	}
-	raw, err := EncodeAutomationDefinition(normalized)
+	_, raw, err := normalizeAndEncodeAutomationDefinition(definition)
 	if err != nil {
 		return AutomationRecord{}, err
 	}
@@ -142,18 +139,15 @@ func (repo *SQLiteRepository) ListAutomations(
 }
 
 // ReplaceAutomation atomically compares the expected revision, replaces the
-// definition, and increments the revision by one.
+// definition, and increments the revision by one. Normalization and encoding
+// share one pass, so the canonical bytes are never produced twice.
 func (repo *SQLiteRepository) ReplaceAutomation(
 	ctx context.Context,
 	id AutomationID,
 	expectedRevision int64,
 	definition AutomationDefinition,
 ) (AutomationRecord, error) {
-	normalized, err := NormalizeAutomationDefinition(definition)
-	if err != nil {
-		return AutomationRecord{}, err
-	}
-	raw, err := EncodeAutomationDefinition(normalized)
+	_, raw, err := normalizeAndEncodeAutomationDefinition(definition)
 	if err != nil {
 		return AutomationRecord{}, err
 	}

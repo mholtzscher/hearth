@@ -38,7 +38,7 @@ const (
 // starts only after the prior Command reaches a successful terminal outcome, and
 // the first failure or interruption stops the Run without retry.
 func (service *Service) executeRun(ctx context.Context, run AutomationRun) {
-	defer service.releaseRunWorker(run.AutomationID)
+	defer service.releaseRunWorker()
 	for position := range run.Snapshot.Steps {
 		step := run.Snapshot.Steps[position]
 		if !service.AdmissionOpen() || service.devices == nil || !service.devices.CommandAdmissionOpen() {

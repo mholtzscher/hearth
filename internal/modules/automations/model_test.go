@@ -144,6 +144,11 @@ func TestValidateAutomationRunRejectsImpossibleCombinations(t *testing.T) {
 		{"step count mismatch", func(run *automations.AutomationRun) { run.Steps = nil }},
 		{"unknown run status", func(run *automations.AutomationRun) { run.Status = automations.RunStatus("paused") }},
 		{"step id mismatch", func(run *automations.AutomationRun) { run.Steps[0].StepID = "other" }},
+		{"contradictory snapshot trigger", func(run *automations.AutomationRun) {
+			run.Snapshot.Triggers[0].EntityEvent = &automations.EntityEventTrigger{
+				EntityID: newEntityID(t), EventName: "single_press",
+			}
+		}},
 		{"not attempted with reserved identity", func(run *automations.AutomationRun) {
 			run.Steps[0].Status = automations.StepNotAttempted
 		}},

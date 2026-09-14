@@ -127,7 +127,9 @@ func DecodeAutomationDefinition(raw json.RawMessage) (AutomationDefinition, erro
 	if err = json.Unmarshal(raw, &value); err != nil {
 		return AutomationDefinition{}, definitionIssue("", "definition cannot be bound")
 	}
-	return normalizeAutomationDefinition(value)
+	// The raw document passed the size check above; normalize its typed shape
+	// without serializing the whole definition again.
+	return normalizeAutomationDefinition(automationDefinitionFromJSON(value))
 }
 
 // EncodeAutomationDefinition renders one definition in the strict persisted
@@ -160,13 +162,34 @@ func EncodeAutomationDefinition(definition AutomationDefinition) (json.RawMessag
 
 // NormalizeAutomationDefinition structurally validates and normalizes one
 // in-memory definition without consulting devices, so equal definitions always
-// have one representation.
+// have one representation. It also proves the canonical persisted encoding fits
+// the 64 KiB definition bound.
 func NormalizeAutomationDefinition(definition AutomationDefinition) (AutomationDefinition, error) {
-	raw, err := EncodeAutomationDefinition(definition)
+	normalized, _, err := normalizeAndEncodeAutomationDefinition(definition)
+	return normalized, err
+}
+
+// normalizeAndEncodeAutomationDefinition is the single write-side canonical
+// path: it normalizes the typed definition once and returns the canonical
+// persisted bytes, so persistence never normalizes or encodes the same value
+// twice.
+func normalizeAndEncodeAutomationDefinition(
+	definition AutomationDefinition,
+) (AutomationDefinition, json.RawMessage, error) {
+	normalized, err := normalizeAutomationDefinition(definition)
 	if err != nil {
-		return AutomationDefinition{}, err
+		return AutomationDefinition{}, nil, err
 	}
-	return DecodeAutomationDefinition(raw)
+	raw, err := EncodeAutomationDefinition(normalized)
+	if err != nil {
+		return AutomationDefinition{}, nil, err
+	}
+	if len(raw) > automationDefinitionMaxBytes {
+		return AutomationDefinition{}, nil, definitionIssue(
+			"", fmt.Sprintf("definition exceeds %d bytes", automationDefinitionMaxBytes),
+		)
+	}
+	return normalized, raw, nil
 }
 
 // ValidateAutomationDefinition normalizes one definition and then verifies every
@@ -291,27 +314,34 @@ func encodeAutomationTrigger(trigger AutomationTrigger) automationTriggerJSON {
 	return encoded
 }
 
-func normalizeAutomationDefinition(raw automationDefinitionJSON) (AutomationDefinition, error) {
-	name := strings.TrimSpace(raw.Name)
-	if runeCount := utf8.RuneCountInString(name); runeCount < 1 || runeCount > automationNameMaxRunes {
+// normalizeAutomationDefinition structurally validates one already-typed
+// definition and returns an owned copy without a whole-definition JSON round
+// trip. Raw operands and parameters are still checked as JSON. Required fields
+// and unknown fields are checked by [DecodeAutomationDefinition] at the JSON
+// boundary; [normalizeAndEncodeAutomationDefinition] checks the encoded size.
+func normalizeAutomationDefinition(definition AutomationDefinition) (AutomationDefinition, error) {
+	trimmedName := strings.TrimSpace(definition.Name)
+	trimmedNameRunes := utf8.RuneCountInString(trimmedName)
+	rawNameRunes := utf8.RuneCountInString(definition.Name)
+	if rawNameRunes > automationNameMaxRunes || trimmedNameRunes < 1 || trimmedNameRunes > automationNameMaxRunes {
 		return AutomationDefinition{}, definitionIssue(
 			"/name", fmt.Sprintf("name must be 1 to %d characters after trimming", automationNameMaxRunes),
 		)
 	}
-	if len(raw.Triggers) < 1 || len(raw.Triggers) > automationTriggerMaxCount {
+	if len(definition.Triggers) < 1 || len(definition.Triggers) > automationTriggerMaxCount {
 		return AutomationDefinition{}, definitionIssue(
 			"/triggers", fmt.Sprintf("definition needs 1 to %d triggers", automationTriggerMaxCount),
 		)
 	}
-	if len(raw.Steps) < 1 || len(raw.Steps) > automationStepMaxCount {
+	if len(definition.Steps) < 1 || len(definition.Steps) > automationStepMaxCount {
 		return AutomationDefinition{}, definitionIssue(
 			"/steps", fmt.Sprintf("definition needs 1 to %d steps", automationStepMaxCount),
 		)
 	}
-	triggers := make([]AutomationTrigger, 0, len(raw.Triggers))
-	seenTriggers := make(map[TriggerID]bool, len(raw.Triggers))
-	for _, item := range raw.Triggers {
-		trigger, err := normalizeAutomationTrigger(item)
+	triggers := make([]AutomationTrigger, 0, len(definition.Triggers))
+	seenTriggers := make(map[TriggerID]bool, len(definition.Triggers))
+	for _, item := range definition.Triggers {
+		trigger, err := normalizeAutomationTriggerValue(item)
 		if err != nil {
 			return AutomationDefinition{}, err
 		}
@@ -321,83 +351,166 @@ func normalizeAutomationDefinition(raw automationDefinitionJSON) (AutomationDefi
 		seenTriggers[trigger.ID] = true
 		triggers = append(triggers, trigger)
 	}
-	steps, err := normalizeAutomationSteps(raw.Steps)
+	steps, err := normalizeAutomationStepValues(definition.Steps)
 	if err != nil {
 		return AutomationDefinition{}, err
 	}
-	return AutomationDefinition{Name: name, Enabled: raw.Enabled, Triggers: triggers, Steps: steps}, nil
+	return AutomationDefinition{
+		Name:     trimmedName,
+		Enabled:  definition.Enabled,
+		Triggers: triggers,
+		Steps:    steps,
+	}, nil
 }
 
-func normalizeAutomationTrigger(raw automationTriggerJSON) (AutomationTrigger, error) {
-	id, err := ParseTriggerID(string(raw.ID))
-	if err != nil {
+// normalizeAutomationTriggerValue rejects a contradictory or malformed typed
+// Trigger before anything can encode it, so a family payload can never be
+// silently discarded, then returns an owned canonical copy.
+func normalizeAutomationTriggerValue(trigger AutomationTrigger) (AutomationTrigger, error) {
+	if err := ValidateAutomationTrigger(trigger); err != nil {
 		return AutomationTrigger{}, err
 	}
-	switch raw.Kind {
+	normalized := AutomationTrigger{ID: trigger.ID, Kind: trigger.Kind}
+	switch trigger.Kind {
 	case TriggerKindObservation:
-		observation := &ObservationTrigger{
-			EntityID:     raw.EntityID,
-			Dispositions: canonicalDispositions(raw.Dispositions),
+		observation := trigger.Observation
+		normalized.Observation = &ObservationTrigger{
+			EntityID:     observation.EntityID,
+			Dispositions: canonicalDispositions(observation.Dispositions),
+			Comparisons:  cloneObservationComparisons(observation.Comparisons),
 		}
-		for _, comparison := range raw.Comparisons {
-			observation.Comparisons = append(observation.Comparisons, ObservationComparison{
-				Pointer:  comparison.Pointer,
-				Operator: comparison.Operator,
-				Operand:  append(json.RawMessage(nil), comparison.Operand...),
-			})
-		}
-		if err = validateObservationTrigger(*observation); err != nil {
-			return AutomationTrigger{}, fmt.Errorf("trigger %q: %w", id, err)
-		}
-		return AutomationTrigger{ID: id, Kind: TriggerKindObservation, Observation: observation}, nil
 	case TriggerKindEntityEvent:
-		entityEvent := &EntityEventTrigger{EntityID: raw.EntityID, EventName: raw.EventName}
-		if err = validateEntityEventTrigger(*entityEvent); err != nil {
-			return AutomationTrigger{}, fmt.Errorf("trigger %q: %w", id, err)
+		entityEvent := trigger.EntityEvent
+		normalized.EntityEvent = &EntityEventTrigger{
+			EntityID:  entityEvent.EntityID,
+			EventName: entityEvent.EventName,
 		}
-		return AutomationTrigger{ID: id, Kind: TriggerKindEntityEvent, EntityEvent: entityEvent}, nil
-	default:
-		return AutomationTrigger{}, fmt.Errorf("%w: trigger %q has unknown kind %q", ErrInvalidAutomation, id, raw.Kind)
 	}
+	return normalized, nil
 }
 
-func normalizeAutomationSteps(raw []automationStepJSON) ([]AutomationStep, error) {
-	steps := make([]AutomationStep, 0, len(raw))
-	seen := make(map[StepID]bool, len(raw))
-	for _, item := range raw {
-		id, err := ParseStepID(string(item.ID))
+func normalizeAutomationStepValues(steps []AutomationStep) ([]AutomationStep, error) {
+	normalized := make([]AutomationStep, 0, len(steps))
+	seen := make(map[StepID]bool, len(steps))
+	for _, item := range steps {
+		step, err := normalizeAutomationStepValue(item)
 		if err != nil {
 			return nil, err
 		}
-		if seen[id] {
+		if seen[step.ID] {
 			return nil, definitionIssue("/steps", "step IDs must be unique")
 		}
-		seen[id] = true
-		if _, err = devices.ParseEntityID(string(item.EntityID)); err != nil {
-			return nil, fmt.Errorf("step %q entity: %w", id, err)
-		}
-		if !subjectSlugPattern.MatchString(string(item.Operation)) {
-			return nil, fmt.Errorf("%w: step %q operation is not a subject-safe slug", ErrInvalidAutomation, id)
-		}
-		steps = append(steps, AutomationStep{
-			ID:            id,
-			EntityID:      item.EntityID,
-			OperationName: item.Operation,
-			Parameters:    devices.CommandParameters(append(json.RawMessage(nil), item.Parameters...)),
-		})
+		seen[step.ID] = true
+		normalized = append(normalized, step)
 	}
-	return steps, nil
+	return normalized, nil
 }
 
-// canonicalDispositions orders a valid disposition set so equal semantics always
-// encode to equal bytes.
-func canonicalDispositions(dispositions []devices.ObservationDisposition) []devices.ObservationDisposition {
-	if len(dispositions) <= 1 {
-		return dispositions
+func normalizeAutomationStepValue(step AutomationStep) (AutomationStep, error) {
+	id, err := ParseStepID(string(step.ID))
+	if err != nil {
+		return AutomationStep{}, err
 	}
+	entityID, err := devices.ParseEntityID(string(step.EntityID))
+	if err != nil {
+		return AutomationStep{}, fmt.Errorf("%w: step %q entity: %w", ErrInvalidAutomation, id, err)
+	}
+	if !subjectSlugPattern.MatchString(string(step.OperationName)) {
+		return AutomationStep{}, fmt.Errorf(
+			"%w: step %q operation is not a subject-safe slug", ErrInvalidAutomation, id,
+		)
+	}
+	if err = validateAutomationStepParameters(step.Parameters); err != nil {
+		return AutomationStep{}, fmt.Errorf("%w: step %q: %w", ErrInvalidAutomation, id, err)
+	}
+	return AutomationStep{
+		ID:            id,
+		EntityID:      entityID,
+		OperationName: step.OperationName,
+		Parameters:    devices.CommandParameters(append(json.RawMessage(nil), step.Parameters...)),
+	}, nil
+}
+
+// validateAutomationStepParameters rejects parameters that are not exactly one
+// JSON object, mirroring the strict schema's `"parameters": {"type": "object"}`
+// and the devices Command contract at the typed boundary.
+func validateAutomationStepParameters(parameters devices.CommandParameters) error {
+	value, err := decodeJSONValue(json.RawMessage(parameters))
+	if err != nil {
+		return errors.New("parameters must contain exactly one JSON value")
+	}
+	if _, ok := value.(map[string]any); !ok {
+		return errors.New("parameters must be a JSON object")
+	}
+	return nil
+}
+
+// automationDefinitionFromJSON maps one strictly schema-validated document into
+// the typed domain shape. It never invents a family payload, so a document can
+// only produce the pointer its discriminator names.
+func automationDefinitionFromJSON(value automationDefinitionJSON) AutomationDefinition {
+	definition := AutomationDefinition{
+		Name:     value.Name,
+		Enabled:  value.Enabled,
+		Triggers: make([]AutomationTrigger, 0, len(value.Triggers)),
+		Steps:    make([]AutomationStep, 0, len(value.Steps)),
+	}
+	for _, item := range value.Triggers {
+		definition.Triggers = append(definition.Triggers, automationTriggerFromJSON(item))
+	}
+	for _, item := range value.Steps {
+		definition.Steps = append(definition.Steps, AutomationStep{
+			ID:            item.ID,
+			EntityID:      item.EntityID,
+			OperationName: item.Operation,
+			Parameters:    devices.CommandParameters(item.Parameters),
+		})
+	}
+	return definition
+}
+
+func automationTriggerFromJSON(item automationTriggerJSON) AutomationTrigger {
+	trigger := AutomationTrigger{ID: item.ID, Kind: item.Kind}
+	switch item.Kind {
+	case TriggerKindObservation:
+		observation := &ObservationTrigger{EntityID: item.EntityID, Dispositions: item.Dispositions}
+		for _, comparison := range item.Comparisons {
+			observation.Comparisons = append(observation.Comparisons, ObservationComparison(comparison))
+		}
+		trigger.Observation = observation
+	case TriggerKindEntityEvent:
+		trigger.EntityEvent = &EntityEventTrigger{EntityID: item.EntityID, EventName: item.EventName}
+	}
+	return trigger
+}
+
+// canonicalDispositions returns an owned copy of one valid disposition set in
+// canonical order, so equal semantics always encode to equal bytes without
+// aliasing the caller's slice.
+func canonicalDispositions(dispositions []devices.ObservationDisposition) []devices.ObservationDisposition {
 	canonical := append([]devices.ObservationDisposition(nil), dispositions...)
-	slices.Sort(canonical)
+	if len(canonical) > 1 {
+		slices.Sort(canonical)
+	}
 	return canonical
+}
+
+// cloneObservationComparisons returns owned comparisons, including owned
+// operand bytes, so a normalized definition never aliases caller memory. An
+// empty set canonicalizes to nil so equal semantics always encode equally.
+func cloneObservationComparisons(comparisons []ObservationComparison) []ObservationComparison {
+	if len(comparisons) == 0 {
+		return nil
+	}
+	cloned := make([]ObservationComparison, 0, len(comparisons))
+	for _, comparison := range comparisons {
+		cloned = append(cloned, ObservationComparison{
+			Pointer:  comparison.Pointer,
+			Operator: comparison.Operator,
+			Operand:  append(json.RawMessage(nil), comparison.Operand...),
+		})
+	}
+	return cloned
 }
 
 func definitionIssue(path, message string) error {
