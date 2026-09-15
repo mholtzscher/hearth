@@ -21,12 +21,12 @@ func TestStartManualRunCreatesDistinctRunsEvenWhenDisabled(t *testing.T) {
 	definition.Enabled = false
 	record := createRuntimeAutomation(t, service, definition)
 
-	first, err := service.StartManualRun(ctx, record.ID)
+	first, err := service.StartManualRun(ctx, automations.ManualRunInput{AutomationID: record.ID})
 	if err != nil {
 		t.Fatal(err)
 	}
 	waitForRuns(t, service)
-	second, err := service.StartManualRun(ctx, record.ID)
+	second, err := service.StartManualRun(ctx, automations.ManualRunInput{AutomationID: record.ID})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -70,11 +70,13 @@ func TestStartManualRunBusyReturns409WithoutHistory(t *testing.T) {
 	service, _ := newRuntimeService(t, scripted, runtimeTestDependencies())
 	record := createRuntimeAutomation(t, service, runtimeDefinition(t, 1))
 
-	if _, err := service.StartManualRun(ctx, record.ID); err != nil {
+	if _, err := service.StartManualRun(ctx, automations.ManualRunInput{AutomationID: record.ID}); err != nil {
 		t.Fatal(err)
 	}
 	<-started
-	if _, err := service.StartManualRun(ctx, record.ID); !errors.Is(err, automations.ErrAutomationBusy) {
+	if _, err := service.StartManualRun(
+		ctx, automations.ManualRunInput{AutomationID: record.ID},
+	); !errors.Is(err, automations.ErrAutomationBusy) {
 		t.Fatalf("busy start error = %v, want ErrAutomationBusy", err)
 	}
 	history := listHistory(t, service, record.ID)
@@ -106,7 +108,7 @@ func TestStartManualRunRefusesClosedAdmission(t *testing.T) {
 			service, _ := newRuntimeService(t, scripted, runtimeTestDependencies())
 			record := createRuntimeAutomation(t, service, runtimeDefinition(t, 1))
 			test.closer(service, scripted)
-			if _, err := service.StartManualRun(ctx, record.ID); !errors.Is(
+			if _, err := service.StartManualRun(ctx, automations.ManualRunInput{AutomationID: record.ID}); !errors.Is(
 				err, automations.ErrAdmissionUnavailable,
 			) {
 				t.Fatalf("closed admission error = %v, want ErrAdmissionUnavailable", err)
@@ -126,9 +128,9 @@ func TestStartManualRunUnknownAutomation(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err = service.StartManualRun(context.Background(), missing); !errors.Is(
-		err, automations.ErrAutomationNotFound,
-	) {
+	if _, err = service.StartManualRun(
+		context.Background(), automations.ManualRunInput{AutomationID: missing},
+	); !errors.Is(err, automations.ErrAutomationNotFound) {
 		t.Fatalf("unknown automation error = %v, want ErrAutomationNotFound", err)
 	}
 }

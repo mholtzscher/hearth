@@ -11,6 +11,7 @@ import (
 	"github.com/nats-io/nats.go/jetstream"
 
 	"github.com/mholtzscher/hearth/internal/contracts/v1/natswire"
+	"github.com/mholtzscher/hearth/internal/modules/automations"
 )
 
 const (
@@ -29,8 +30,10 @@ const (
 	// repairable for as long as the bounded stream retains it.
 	DeviceFactConsumerUnlimitedRedelivery = -1
 	// DeviceFactAdmissionTimeout sets an admission deadline shorter than AckWait
-	// to allow a disposition before broker redelivery.
-	DeviceFactAdmissionTimeout = 2 * time.Second
+	// to allow a disposition before broker redelivery. It is an alias of the
+	// authoritative automations.AutomationAdmissionTimeout, which also covers
+	// Condition State snapshot reads; the duration is never repeated here.
+	DeviceFactAdmissionTimeout = automations.AutomationAdmissionTimeout
 )
 
 // ProvisionDeviceFactConsumer creates or validates a durable consumer on the

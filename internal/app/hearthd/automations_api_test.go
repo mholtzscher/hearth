@@ -54,7 +54,7 @@ func (*stubAutomations) DeleteAutomation(context.Context, automations.Automation
 
 func (*stubAutomations) StartManualRun(
 	context.Context,
-	automations.AutomationID,
+	automations.ManualRunInput,
 ) (automations.AutomationRun, error) {
 	panic("unexpected StartManualRun call")
 }
@@ -141,9 +141,128 @@ func TestRuntimeExposesAutomationOperations(t *testing.T) {
 			)
 		}
 	}
-	for _, schema := range []string{"AutomationDefinition", "AutomationBody", "AutomationCollectionBody"} {
+	for _, schema := range []string{
+		"AutomationDefinition",
+		"AutomationBody",
+		"AutomationCollectionBody",
+		"AutomationConditionBody",
+		"AutomationConditionDecisionBody",
+		"AutomationSkipBody",
+	} {
 		if _, ok := document.Components.Schemas[schema]; !ok {
 			t.Errorf("OpenAPI is missing automation schema %q", schema)
+		}
+	}
+}
+
+// TestRuntimeOpenAPIPublishesManualBypassAndConditionContract protects A15 at
+// the assembled runtime: the manual Run operation must publish the optional
+// closed bypass body with an optional boolean member, and the documented 409
+// must carry the optional committed-Skip history reference. It fails if the
+// manual body becomes required, accepts unknown members, or is not boolean.
+func TestRuntimeOpenAPIPublishesManualBypassAndConditionContract(t *testing.T) {
+	t.Parallel()
+	handler, _ := NewHTTPHandler(
+		&stubDevices{},
+		&stubAutomations{},
+		&testReadiness{},
+		&stubDevices{},
+		&stubAutomations{},
+	)
+	response := appRequest(handler, "/openapi.json")
+	if response.Code != http.StatusOK {
+		t.Fatalf("OpenAPI status = %d, body = %s", response.Code, response.Body.String())
+	}
+	var document map[string]any
+	if err := json.Unmarshal(response.Body.Bytes(), &document); err != nil {
+		t.Fatal(err)
+	}
+
+	paths, ok := document["paths"].(map[string]any)
+	if !ok {
+		t.Fatal("OpenAPI document has no paths")
+	}
+	runPath, ok := paths["/v1/automations/{automation_id}/runs"].(map[string]any)
+	if !ok {
+		t.Fatal("OpenAPI is missing the manual Run path")
+	}
+	operation, ok := runPath["post"].(map[string]any)
+	if !ok {
+		t.Fatal("OpenAPI is missing the manual Run operation")
+	}
+	assertRuntimeManualRunBypassBody(t, operation)
+	assertRuntimeConflictHistoryReference(t, operation)
+}
+
+// assertRuntimeManualRunBypassBody checks the assembled runtime publishes an
+// optional, closed, non-nullable manual bypass body with one boolean member.
+func assertRuntimeManualRunBypassBody(t *testing.T, operation map[string]any) {
+	t.Helper()
+	requestBody, ok := operation["requestBody"].(map[string]any)
+	if !ok {
+		t.Fatal("manual Run publishes no request body schema")
+	}
+	if required, present := requestBody["required"]; present && required != false {
+		t.Fatalf("manual Run request body required = %v, want optional", required)
+	}
+	content, ok := requestBody["content"].(map[string]any)
+	if !ok {
+		t.Fatal("manual Run request body has no content")
+	}
+	mediaType, ok := content["application/json"].(map[string]any)
+	if !ok {
+		t.Fatal("manual Run request body has no JSON content type")
+	}
+	bodySchema, ok := mediaType["schema"].(map[string]any)
+	if !ok {
+		t.Fatal("manual Run request body has no JSON schema")
+	}
+	if bodySchema["type"] != "object" {
+		t.Fatalf("manual Run body type = %v, want object", bodySchema["type"])
+	}
+	if additional, present := bodySchema["additionalProperties"]; !present || additional != false {
+		t.Fatalf("manual Run body additionalProperties = %v, want false", additional)
+	}
+	properties, ok := bodySchema["properties"].(map[string]any)
+	if !ok || len(properties) != 1 {
+		t.Fatalf("manual Run body properties = %v, want only bypass_conditions", properties)
+	}
+	bypass, ok := properties["bypass_conditions"].(map[string]any)
+	if !ok || bypass["type"] != "boolean" {
+		t.Fatalf("bypass_conditions schema = %v, want boolean", properties["bypass_conditions"])
+	}
+	if nullable, present := bodySchema["nullable"]; present && nullable == true {
+		t.Fatalf("manual Run body is nullable: %v", bodySchema)
+	}
+}
+
+// assertRuntimeConflictHistoryReference checks the assembled runtime documents
+// the optional committed-Skip history reference on the manual Run 409 response.
+func assertRuntimeConflictHistoryReference(t *testing.T, operation map[string]any) {
+	t.Helper()
+	responses, ok := operation["responses"].(map[string]any)
+	if !ok {
+		t.Fatal("manual Run operation has no responses")
+	}
+	conflict, ok := responses["409"].(map[string]any)
+	if !ok {
+		t.Fatal("manual Run operation documents no 409")
+	}
+	mediaType, ok := conflict["content"].(map[string]any)["application/problem+json"].(map[string]any)
+	if !ok {
+		t.Fatal("manual Run 409 has no problem content type")
+	}
+	problem, ok := mediaType["schema"].(map[string]any)
+	if !ok {
+		t.Fatal("manual Run 409 has no problem schema")
+	}
+	properties, ok := problem["properties"].(map[string]any)
+	if !ok {
+		t.Fatal("manual Run 409 problem schema has no properties")
+	}
+	for _, member := range []string{"history_id", "history_url"} {
+		if _, published := properties[member]; !published {
+			t.Fatalf("manual Run 409 problem schema is missing %q", member)
 		}
 	}
 }

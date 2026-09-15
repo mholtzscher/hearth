@@ -77,12 +77,16 @@ One Core-verified statement Core durably queues in the same devices transaction 
 _Avoid_: Entity Event, Observation, Command, Command lifecycle, event sourcing, change log
 
 **Automation**:
-A named definition containing one or more Triggers and an ordered sequence of Steps. Any Trigger can initiate execution; enablement governs automatic execution, not explicit manual invocation.
+A named definition containing one or more Triggers, optional Conditions, and an ordered sequence of Steps. Any Trigger can initiate an admission decision; enablement governs automatic execution, not explicit manual invocation.
 _Avoid_: Rule, workflow, scene
 
 **Trigger**:
-One identified matcher for one Device Fact that can automatically start an Automation. Multiple Triggers are alternative reasons, while manual invocation starts a Run without one; an Entity Operation named `trigger` is a separate device-control concept.
+One identified matcher for one Device Fact that can automatically start an Automation. Multiple Triggers are alternative reasons, while manual invocation requests admission without one; an Entity Operation named `trigger` is a separate device-control concept.
 _Avoid_: Command, invocation, condition
+
+**Condition**:
+A requirement over current Entity State evaluated once when deciding whether to admit a Run, with requirements composable as all, any, or not; only a true root result permits admission, while missing or incompatible evidence, or evidence outside an explicit age bound, is unknown. A Condition does not initiate execution, and manual invocation applies Conditions unless the operator explicitly bypasses them.
+_Avoid_: Trigger, State Trigger, Step
 
 **Entity Event Trigger**:
 A Trigger that matches one accepted Entity Event fact by exact Entity and event name.
@@ -101,7 +105,7 @@ One recorded execution of an Automation using a snapshot of its definition, star
 _Avoid_: Command, occurrence
 
 **Automation Skip**:
-One recorded outcome in which a Device Fact matched an Automation but started no Run because the match was stale or that Automation was already running. A Skip never queues execution.
+One recorded outcome in which a matching Device Fact or a manual invocation started no Run; automatic matches may be stale or busy, and either source may be prevented by false or unknown Conditions. A Skip never queues execution.
 _Avoid_: Run, failure, ignored fact
 
 **Canonical ID**:

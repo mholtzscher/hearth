@@ -36,9 +36,12 @@ type ListAutomationsInput struct {
 	Cursor string `query:"cursor"`
 }
 
-// StartAutomationRunInput never accepts caller-supplied Command identities.
+// StartAutomationRunInput never accepts caller-supplied Command identities. Body
+// is optional: an omitted body applies Conditions, and a present body must be
+// the strict StartAutomationRunBody object.
 type StartAutomationRunInput struct {
-	AutomationID string `path:"automation_id" doc:"Canonical Hearth Automation ID"`
+	AutomationID string                  `path:"automation_id" doc:"Canonical Hearth Automation ID"`
+	Body         *StartAutomationRunBody `                     doc:"Optional Condition bypass request"`
 }
 
 // ListHistoryInput pages newest-first history for one Automation, including a
@@ -81,12 +84,15 @@ type AutomationStepBody struct {
 	Parameters json.RawMessage `json:"parameters"`
 }
 
-// AutomationDefinitionBody is the strict definition representation.
+// AutomationDefinitionBody is the strict definition representation. Conditions
+// is absent when the definition omitted them, which preserves
+// unconditional-after-Trigger behavior.
 type AutomationDefinitionBody struct {
-	Name     string                  `json:"name"`
-	Enabled  bool                    `json:"enabled"`
-	Triggers []AutomationTriggerBody `json:"triggers"`
-	Steps    []AutomationStepBody    `json:"steps"`
+	Name       string                   `json:"name"`
+	Enabled    bool                     `json:"enabled"`
+	Triggers   []AutomationTriggerBody  `json:"triggers"`
+	Conditions *AutomationConditionBody `json:"conditions,omitempty"`
+	Steps      []AutomationStepBody     `json:"steps"`
 }
 
 // AutomationBody is one current definition with its revision and timestamps.
@@ -140,19 +146,20 @@ type AutomationStepAttemptBody struct {
 
 // AutomationRunBody exposes an immutable definition snapshot and current Step attempts.
 type AutomationRunBody struct {
-	ID                string                      `json:"id"`
-	AutomationID      string                      `json:"automation_id"`
-	AutomationName    string                      `json:"automation_name"`
-	Revision          int64                       `json:"revision"`
-	Source            string                      `json:"source"                 enum:"device_fact,manual"`
-	Fact              *DeviceFactSummaryBody      `json:"fact,omitempty"`
-	MatchedTriggerIDs []string                    `json:"matched_trigger_ids"`
-	Status            string                      `json:"status"                 enum:"running,succeeded,failed,interrupted"`
-	FailureCode       *string                     `json:"failure_code,omitempty"`
-	StartedAt         time.Time                   `json:"started_at"`
-	CompletedAt       *time.Time                  `json:"completed_at,omitempty"`
-	Snapshot          AutomationDefinitionBody    `json:"snapshot"`
-	Steps             []AutomationStepAttemptBody `json:"steps"`
+	ID                string                          `json:"id"`
+	AutomationID      string                          `json:"automation_id"`
+	AutomationName    string                          `json:"automation_name"`
+	Revision          int64                           `json:"revision"`
+	Source            string                          `json:"source"                 enum:"device_fact,manual"`
+	Fact              *DeviceFactSummaryBody          `json:"fact,omitempty"`
+	MatchedTriggerIDs []string                        `json:"matched_trigger_ids"`
+	Status            string                          `json:"status"                 enum:"running,succeeded,failed,interrupted"`
+	FailureCode       *string                         `json:"failure_code,omitempty"`
+	StartedAt         time.Time                       `json:"started_at"`
+	CompletedAt       *time.Time                      `json:"completed_at,omitempty"`
+	Snapshot          AutomationDefinitionBody        `json:"snapshot"`
+	ConditionDecision AutomationConditionDecisionBody `json:"condition_decision"`
+	Steps             []AutomationStepAttemptBody     `json:"steps"`
 }
 
 // AutomationRunOutput uses 202 for admission with a history Location.
@@ -161,29 +168,39 @@ type AutomationRunOutput struct {
 	Body     AutomationRunBody
 }
 
-// AutomationSkipBody is one retained Skip with immutable matched Triggers.
+// AutomationSkipBody is one retained Skip with immutable matched Triggers. A
+// manual Skip carries no Fact body and no matched Triggers, so Source
+// discriminates the two families while Fact stays optional.
 type AutomationSkipBody struct {
-	ID              string                  `json:"id"`
-	AutomationID    string                  `json:"automation_id"`
-	AutomationName  string                  `json:"automation_name"`
-	Revision        int64                   `json:"revision"`
-	Fact            DeviceFactSummaryBody   `json:"fact"`
-	MatchedTriggers []AutomationTriggerBody `json:"matched_triggers"`
-	Reason          string                  `json:"reason"           enum:"automation_busy,stale_fact"`
-	SkippedAt       time.Time               `json:"skipped_at"`
+	ID                string                          `json:"id"`
+	AutomationID      string                          `json:"automation_id"`
+	AutomationName    string                          `json:"automation_name"`
+	Revision          int64                           `json:"revision"`
+	Source            string                          `json:"source"             enum:"device_fact,manual"`
+	Fact              *DeviceFactSummaryBody          `json:"fact,omitempty"`
+	MatchedTriggers   []AutomationTriggerBody         `json:"matched_triggers"`
+	Reason            string                          `json:"reason"             enum:"automation_busy,stale_fact,conditions_false,conditions_unknown"`
+	ConditionDecision AutomationConditionDecisionBody `json:"condition_decision"`
+	SkippedAt         time.Time                       `json:"skipped_at"`
 }
 
-// AutomationHistorySummaryBody is the lightweight history listing projection.
+// AutomationHistorySummaryBody is the lightweight history listing projection. It
+// carries admission provenance and the Condition decision mode, root result, and
+// bypass flag, but never the full tree or predicate values.
 type AutomationHistorySummaryBody struct {
-	ID             string                 `json:"id"`
-	Kind           string                 `json:"kind"             enum:"run,skip"`
-	AutomationID   string                 `json:"automation_id"`
-	AutomationName string                 `json:"automation_name"`
-	Revision       int64                  `json:"revision"`
-	RecordedAt     time.Time              `json:"recorded_at"`
-	Status         string                 `json:"status,omitempty"`
-	Reason         string                 `json:"reason,omitempty"`
-	Fact           *DeviceFactSummaryBody `json:"fact,omitempty"`
+	ID              string                 `json:"id"`
+	Kind            string                 `json:"kind"                       enum:"run,skip"`
+	AutomationID    string                 `json:"automation_id"`
+	AutomationName  string                 `json:"automation_name"`
+	Revision        int64                  `json:"revision"`
+	RecordedAt      time.Time              `json:"recorded_at"`
+	Status          string                 `json:"status,omitempty"`
+	Reason          string                 `json:"reason,omitempty"`
+	Source          string                 `json:"source"                     enum:"device_fact,manual"`
+	ConditionMode   string                 `json:"condition_mode"             enum:"not_configured,not_evaluated,bypassed,evaluated"`
+	ConditionResult *string                `json:"condition_result,omitempty" enum:"true,false,unknown"`
+	BypassRequested bool                   `json:"bypass_requested"`
+	Fact            *DeviceFactSummaryBody `json:"fact,omitempty"`
 }
 
 // AutomationHistoryCollectionBody is one newest-first history page.
@@ -211,10 +228,11 @@ type AutomationHistoryEntryOutput struct {
 
 func automationDefinitionBody(definition automations.AutomationDefinition) AutomationDefinitionBody {
 	body := AutomationDefinitionBody{
-		Name:     definition.Name,
-		Enabled:  definition.Enabled,
-		Triggers: make([]AutomationTriggerBody, len(definition.Triggers)),
-		Steps:    make([]AutomationStepBody, len(definition.Steps)),
+		Name:       definition.Name,
+		Enabled:    definition.Enabled,
+		Triggers:   make([]AutomationTriggerBody, len(definition.Triggers)),
+		Conditions: conditionBody(definition.Conditions),
+		Steps:      make([]AutomationStepBody, len(definition.Steps)),
 	}
 	for index, trigger := range definition.Triggers {
 		body.Triggers[index] = automationTriggerBody(trigger)
@@ -279,6 +297,7 @@ func automationRunBody(run automations.AutomationRun) AutomationRunBody {
 		StartedAt:         run.StartedAt,
 		CompletedAt:       run.CompletedAt,
 		Snapshot:          automationDefinitionBody(run.Snapshot),
+		ConditionDecision: conditionDecisionBody(run.ConditionDecision),
 		Steps:             make([]AutomationStepAttemptBody, len(run.Steps)),
 	}
 	for index, triggerID := range run.MatchedTriggerIDs {
@@ -312,14 +331,19 @@ func automationStepAttemptBody(step automations.AutomationStepAttempt) Automatio
 
 func automationSkipBody(skip automations.AutomationSkip) AutomationSkipBody {
 	body := AutomationSkipBody{
-		ID:              string(skip.ID),
-		AutomationID:    string(skip.AutomationID),
-		AutomationName:  skip.AutomationName,
-		Revision:        skip.Revision,
-		Fact:            deviceFactSummaryBody(skip.Fact),
-		MatchedTriggers: make([]AutomationTriggerBody, len(skip.MatchedTriggers)),
-		Reason:          string(skip.Reason),
-		SkippedAt:       skip.SkippedAt,
+		ID:                string(skip.ID),
+		AutomationID:      string(skip.AutomationID),
+		AutomationName:    skip.AutomationName,
+		Revision:          skip.Revision,
+		Source:            string(skip.Source),
+		MatchedTriggers:   make([]AutomationTriggerBody, len(skip.MatchedTriggers)),
+		Reason:            string(skip.Reason),
+		ConditionDecision: conditionDecisionBody(skip.ConditionDecision),
+		SkippedAt:         skip.SkippedAt,
+	}
+	if skip.Fact != nil {
+		fact := deviceFactSummaryBody(*skip.Fact)
+		body.Fact = &fact
 	}
 	for index, trigger := range skip.MatchedTriggers {
 		body.MatchedTriggers[index] = automationTriggerBody(trigger)
@@ -344,12 +368,19 @@ func deviceFactSummaryBody(summary automations.DeviceFactSummary) DeviceFactSumm
 
 func historySummaryBody(summary automations.AutomationHistorySummary) AutomationHistorySummaryBody {
 	body := AutomationHistorySummaryBody{
-		ID:             summary.ID,
-		Kind:           string(summary.Kind),
-		AutomationID:   string(summary.AutomationID),
-		AutomationName: summary.AutomationName,
-		Revision:       summary.Revision,
-		RecordedAt:     summary.RecordedAt,
+		ID:              summary.ID,
+		Kind:            string(summary.Kind),
+		AutomationID:    string(summary.AutomationID),
+		AutomationName:  summary.AutomationName,
+		Revision:        summary.Revision,
+		RecordedAt:      summary.RecordedAt,
+		Source:          string(summary.Source),
+		ConditionMode:   string(summary.ConditionMode),
+		BypassRequested: summary.BypassRequested,
+	}
+	if summary.ConditionResult != nil {
+		result := string(*summary.ConditionResult)
+		body.ConditionResult = &result
 	}
 	if summary.Kind == automations.AutomationHistoryRun {
 		body.Status = string(summary.Status)

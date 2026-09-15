@@ -23,12 +23,17 @@ type scriptedDevices struct {
 
 	admissionOpen  bool
 	observationErr error
+	conditionErr   error
 	entityEventErr error
+	snapshotErr    error
+	snapshot       devices.EntityStateSnapshot
+	onSnapshotRead func()
 	block          <-chan struct{}
 	onStart        func(devices.CommandInput)
 	execute        func(context.Context, devices.CommandInput) (devices.CommandResult, error)
 	getCommand     func(context.Context, devices.CommandID) (devices.CommandRecord, error)
 	executions     []devices.CommandInput
+	snapshotReads  [][]devices.EntityID
 	commands       map[devices.CommandID]devices.CommandRecord
 }
 
@@ -40,10 +45,79 @@ func (scripted *scriptedDevices) ValidateObservationTrigger(context.Context, dev
 	return scripted.observationErr
 }
 
+func (scripted *scriptedDevices) ValidateConditionEntity(context.Context, devices.EntityID) error {
+	return scripted.conditionErr
+}
+
 func (scripted *scriptedDevices) ValidateEntityEventTrigger(
 	context.Context, devices.EntityID, devices.EntityEventName,
 ) error {
 	return scripted.entityEventErr
+}
+
+// GetEntityStateSnapshot serves the configured coherent State snapshot and
+// records every requested Entity set, so tests can prove which Entities one
+// admission needed and that a replacement read never merges samples.
+func (scripted *scriptedDevices) GetEntityStateSnapshot(
+	_ context.Context, ids []devices.EntityID,
+) (devices.EntityStateSnapshot, error) {
+	scripted.mu.Lock()
+	scripted.snapshotReads = append(scripted.snapshotReads, append([]devices.EntityID(nil), ids...))
+	snapshotErr := scripted.snapshotErr
+	snapshot := copyEntityStateSnapshot(scripted.snapshot)
+	onRead := scripted.onSnapshotRead
+	scripted.mu.Unlock()
+	// The hook runs without the lock so a test can advance its clock or install
+	// new definitions between two coverage attempts.
+	if onRead != nil {
+		onRead()
+	}
+	if snapshotErr != nil {
+		return devices.EntityStateSnapshot{}, snapshotErr
+	}
+	return snapshot, nil
+}
+
+// setEntityStateSnapshot installs the snapshot every later read returns.
+func (scripted *scriptedDevices) setEntityStateSnapshot(snapshot devices.EntityStateSnapshot) {
+	scripted.mu.Lock()
+	defer scripted.mu.Unlock()
+	scripted.snapshot = snapshot
+}
+
+// setEntityStateSnapshotError makes every later read fail with err.
+func (scripted *scriptedDevices) setEntityStateSnapshotError(err error) {
+	scripted.mu.Lock()
+	defer scripted.mu.Unlock()
+	scripted.snapshotErr = err
+}
+
+func (scripted *scriptedDevices) snapshotRequests() [][]devices.EntityID {
+	scripted.mu.Lock()
+	defer scripted.mu.Unlock()
+	requests := make([][]devices.EntityID, len(scripted.snapshotReads))
+	for index, ids := range scripted.snapshotReads {
+		requests[index] = append([]devices.EntityID(nil), ids...)
+	}
+	return requests
+}
+
+// copyEntityStateSnapshot owns the JSON bytes of every entry so a returned
+// snapshot cannot alias the configured fixture.
+func copyEntityStateSnapshot(snapshot devices.EntityStateSnapshot) devices.EntityStateSnapshot {
+	cloned := devices.EntityStateSnapshot{
+		Entries: make(map[devices.EntityID]devices.EntityStateSnapshotEntry, len(snapshot.Entries)),
+	}
+	for id, entry := range snapshot.Entries {
+		copied := devices.EntityStateSnapshotEntry{EntityID: entry.EntityID, Exists: entry.Exists}
+		if entry.State != nil {
+			state := *entry.State
+			state.Value = append(devices.Value(nil), entry.State.Value...)
+			copied.State = &state
+		}
+		cloned.Entries[id] = copied
+	}
+	return cloned
 }
 
 func (scripted *scriptedDevices) ValidateCommand(

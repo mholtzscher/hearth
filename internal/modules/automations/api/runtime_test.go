@@ -18,13 +18,18 @@ import (
 )
 
 // apiDevices is a minimal AutomationDevices seam for HTTP behavior tests. It
-// validates nothing and serves every created Command as satisfied.
+// validates nothing, serves every created Command as satisfied, and returns the
+// State snapshot the test scripted so Condition admission can be exercised
+// through real HTTP.
 type apiDevices struct {
 	mu            sync.Mutex
 	admissionOpen bool
 	block         <-chan struct{}
 	onExecute     func(devices.CommandInput)
 	commands      map[devices.CommandID]devices.CommandRecord
+	snapshot      devices.EntityStateSnapshot
+	snapshotErr   error
+	snapshotReads [][]devices.EntityID
 }
 
 func newAPIDevices() *apiDevices {
@@ -32,6 +37,55 @@ func newAPIDevices() *apiDevices {
 }
 
 func (*apiDevices) ValidateObservationTrigger(context.Context, devices.EntityID) error { return nil }
+
+func (*apiDevices) ValidateConditionEntity(context.Context, devices.EntityID) error { return nil }
+
+// GetEntityStateSnapshot serves the scripted snapshot or error and records every
+// requested Entity set, so tests can prove a bypass or unconditioned admission
+// read no State.
+func (stub *apiDevices) GetEntityStateSnapshot(
+	_ context.Context, ids []devices.EntityID,
+) (devices.EntityStateSnapshot, error) {
+	stub.mu.Lock()
+	defer stub.mu.Unlock()
+	stub.snapshotReads = append(stub.snapshotReads, append([]devices.EntityID(nil), ids...))
+	if stub.snapshotErr != nil {
+		return devices.EntityStateSnapshot{}, stub.snapshotErr
+	}
+	if stub.snapshot.Entries == nil {
+		return devices.EntityStateSnapshot{}, nil
+	}
+	return stub.snapshot, nil
+}
+
+// setEntityStateSnapshot scripts the next snapshot returned through the seam.
+func (stub *apiDevices) setEntityStateSnapshot(snapshot devices.EntityStateSnapshot) {
+	stub.mu.Lock()
+	defer stub.mu.Unlock()
+	stub.snapshot = snapshot
+	stub.snapshotErr = nil
+}
+
+// setEntityStateSnapshotError scripts a failing snapshot read.
+func (stub *apiDevices) setEntityStateSnapshotError(err error) {
+	stub.mu.Lock()
+	defer stub.mu.Unlock()
+	stub.snapshotErr = err
+}
+
+// snapshotRequests returns the recorded requested Entity sets in order.
+func (stub *apiDevices) snapshotRequests() [][]devices.EntityID {
+	stub.mu.Lock()
+	defer stub.mu.Unlock()
+	return append([][]devices.EntityID(nil), stub.snapshotReads...)
+}
+
+// executionCount returns how many Step Commands the seam has served.
+func (stub *apiDevices) executionCount() int {
+	stub.mu.Lock()
+	defer stub.mu.Unlock()
+	return len(stub.commands)
+}
 
 func (*apiDevices) ValidateEntityEventTrigger(context.Context, devices.EntityID, devices.EntityEventName) error {
 	return nil
