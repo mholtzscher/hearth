@@ -28,13 +28,13 @@ go run ./cmd/hearth-simulator --config configs/simulator.yaml --log-format json 
 | `entity_event.invalid`, `entity_event.processing_failed` | Invalid Entity Event input or processing/acknowledgement failure, including a failed termination of a permanently uninterpretable report |
 | `entity_event.recorded`, `entity_event.identity_conflict` | Committed Entity Event disposition, or changed input for an already recorded event ID (Debug and Warn) |
 | `entity_event.clock_skew` | Adapter Entity Event publication time is ahead of Core receive time; diagnostic only, never a rejection reason |
-| `core.entity_events_prune_failed` | The hourly Entity Event retention sweep failed |
+| `core.devices_history_prune_failed` | The startup or hourly devices history retention pass failed (`module=devices`); one safe app-owned record per failed pass, no raw error text |
 | `automation.created`, `automation.replaced`, `automation.deleted` | A definition mutation committed; includes identity and revision, never definition JSON |
 | `automation.run_started`, `automation.run_completed`, `automation.run_interrupted` | A Run was admitted or reached a durable terminal outcome |
 | `automation.skipped` | A matching Device Fact started no Run; `reason` is `automation_busy` or `stale_fact` |
 | `automation.fact_invalid`, `automation.fact_processing_failed` | The automation consumer rejected malformed input or could not durably admit valid input |
 | `automation.executor_fault` | Command ownership or Automation progress could not be established safely; Automation admission closes until restart |
-| `core.automation_history_prune_failed` | The hourly Automation history retention sweep failed |
+| `core.automation_history_prune_failed` | The startup or hourly Automation history retention pass failed (`module=automations`); one safe app-owned record per failed pass, no raw error text |
 | `device_fact.retry` | Warn-level relay retry: a pending fact was not published and its durable outbox row was kept, with `stage` (`list`, `publish`, `ack`, `delete`) and a fixed `error_code` (`list_failed`, `publish_failed`, `ack_missing`, `unexpected_stream`, `delete_failed`), plus `family` and the safe source ID (`observation_id` or `event_id`) when the failing stage identified a row |
 | `device_fact.poison` | Error-level relay fault: a deterministic row Core cannot map or decode stopped publication, with `stage` (`list`, `map`, `encode`), fixed `error_code` (`invalid_row`, `fact_invalid`, `subject_invalid`, `unknown_family`, `encode_failed`) and the `fact_id`, plus `family` and the safe source ID when the row decoded that far; the row is preserved and readiness fails until an operator resolves it |
 | `simulator.entity_event_input_dropped`, `simulator.entity_event_input_failed` | Standard input typed while a report was publishing, or a report that was not published |

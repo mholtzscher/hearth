@@ -2,9 +2,18 @@ package automations
 
 import (
 	"context"
-	"log/slog"
+	"errors"
+	"fmt"
 	"time"
 )
+
+// MinimumAutomationHistoryRetention is the shortest Automation history retention
+// the automations module will prune with. It matches the application's
+// `automation_history_retention` configuration floor and keeps pruned history
+// above the seven-day Device Fact retention so retained evidence stays
+// explainable. A shorter or unconfigured retention makes PruneHistory fail
+// instead of deleting too much.
+const MinimumAutomationHistoryRetention = 8 * 24 * time.Hour
 
 // automationHistoryPruneBatch bounds one retention transaction so hourly
 // maintenance never holds a long write lock.
@@ -35,34 +44,41 @@ func (service *Service) ListHistory(
 	return service.repository.ListHistory(ctx, params)
 }
 
-// PruneHistory deletes terminal Runs and Skips older than the cutoff in bounded
-// batches and returns how many records were removed. Running Runs are never
-// selected, and matched-Fact receipts are retained for deduplication.
-func (service *Service) PruneHistory(ctx context.Context, cutoff time.Time, batch int) (int64, error) {
-	if batch < 1 {
-		batch = automationHistoryPruneBatch
+// PruneHistory deletes terminal Runs and Skips older than the cutoff derived
+// from the injected AutomationDependencies.HistoryRetention window. Deletion
+// runs in batches of automationHistoryPruneBatch so one pass never holds a long
+// write lock, and the loop rechecks cancellation between batches. Running Runs
+// are never selected, and matched-Fact receipts are retained for
+// deduplication.
+//
+// The sweep time must be non-zero and the injected retention at least
+// MinimumAutomationHistoryRetention; otherwise nothing is deleted and the
+// misconfiguration is reported. The caller owns the schedule and the failure
+// logging.
+func (service *Service) PruneHistory(ctx context.Context, now time.Time) error {
+	if now.IsZero() {
+		return errors.New("automation history prune time is required")
 	}
-	var total int64
+	retention := service.dependencies.HistoryRetention
+	if retention < MinimumAutomationHistoryRetention {
+		return fmt.Errorf(
+			"automation history retention %s is below the minimum %s",
+			retention, MinimumAutomationHistoryRetention,
+		)
+	}
+	cutoff := now.UTC().Add(-retention)
 	for {
-		deleted, err := service.repository.DeleteHistoryBefore(ctx, cutoff, batch)
-		if err != nil {
-			service.logPruneFailure(ctx)
-			return total, err
+		if err := ctx.Err(); err != nil {
+			return err
 		}
-		total += deleted
-		if deleted < int64(batch) {
-			return total, nil
+		deleted, err := service.repository.DeleteHistoryBefore(
+			ctx, cutoff, automationHistoryPruneBatch,
+		)
+		if err != nil {
+			return err
+		}
+		if deleted < automationHistoryPruneBatch {
+			return nil
 		}
 	}
-}
-
-// logPruneFailure records one failed hourly retention pass with a fixed event.
-// It never logs the upstream error text.
-func (service *Service) logPruneFailure(ctx context.Context) {
-	service.dependencies.Logger.ErrorContext(
-		ctx,
-		"automation history prune failed",
-		slog.String("event", "core.automation_history_prune_failed"),
-		slog.String("error_code", "automation_history_prune_failed"),
-	)
 }

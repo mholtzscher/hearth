@@ -925,7 +925,7 @@ WHERE observed_at < ?
   );
 ```
 
-Checking `observation_id` protects both State foreign keys because they reference the same observation. The cutoff derives from Core now minus the configured retention on each hourly pass, so policy changes apply to already persisted rows without rewriting them. Superseded State observations become eligible at the next pruning pass.
+Checking `observation_id` protects both State foreign keys because they reference the same observation. The cutoff derives from Core now minus the configured retention on each startup or hourly pass, so policy changes apply to already persisted rows without rewriting them. Superseded State observations become eligible at the next pruning pass.
 
 `RegisterBinding`, `ProjectObservation`, and all Command transitions own their SQLite transactions behind the repository; generated sqlc types never cross that seam. The concrete `devices` repository receives the same required `TypeCatalog` instance as the service so projection can validate values, compare State, and evaluate a linked Command's outcome policy inside the transaction. Projection atomically inserts the observation, updates State, and satisfies a matching active Command. Registration stores the catalog-normalized `support_json` in the existing binding transaction; re-registration replaces that one document atomically.
 
@@ -943,7 +943,7 @@ For each schema-valid Observation, one transaction:
 6. An `applied`/`unchanged` Observation with `refresh_for_command_id` satisfies only an active `requested`/`accepted` Command for the same Entity/adapter when its catalog outcome policy matches the Command operation and parameters. Set `completed_at`/`outcome_observation_id` and notify its waiter. No rejected, nonmatching, wrong-identity, or terminal link satisfies a Command.
 7. Atomically commit observation, State, and satisfaction before JetStream acknowledgement. No per-row expiry is stored.
 
-On the hourly pass, delete non-current observations with `observed_at` older than the configured window, except the current-State observation; it becomes eligible after State advances. Startup performs no prune.
+On each startup or hourly pass, delete non-current observations with `observed_at` older than the configured window, except the current-State observation; it becomes eligible after State advances. The shared worker performs a background startup sweep after recovery, then waits one hour after each pass completes; pruning never gates readiness.
 
 ## Home Assistant adapter
 
@@ -1004,7 +1004,7 @@ Core startup order:
 1. Parse and validate YAML.
 2. Open SQLite; enable foreign keys/WAL/busy timeout; apply Goose migrations.
 3. Mark any `requested` or `accepted` Command records `interrupted` with failure code `core_restarted`; do not redispatch them.
-4. Perform no observation prune; retained history waits for the next hourly pass.
+4. After dependencies and module recovery are ready, start the shared history pruning worker: one background startup sweep, then hourly passes. Join this worker before SQLite closes.
 5. Connect to NATS.
 6. Idempotently provision/validate the stream and durable consumer.
 7. Construct and validate the closed first-light Entity-type catalog.

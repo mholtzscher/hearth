@@ -487,7 +487,7 @@ func (service *Service) StopAdmission()
 func (service *Service) AdmissionOpen() bool
 func (service *Service) Drain(context.Context) error
 func (service *Service) InterruptActiveRuns(context.Context, time.Time) error
-func (service *Service) PruneHistory(context.Context, time.Time, int) (int64, error)
+func (service *Service) PruneHistory(ctx context.Context, now time.Time) error
 ```
 
 `StopAdmission` closes admission without waiting. `Drain` closes admission and joins admitted Runs; cancellation stops waiting without canceling Commands or reopening admission.
@@ -579,9 +579,9 @@ Preserve existing startup ordering and add automations at these exact seams:
 3. Connect the shared Core NATS connection; compile contracts; provision/validate `HEARTH_DEVICE_FACTS_V1`; start the Device Fact relay.
 4. Construct devices, then automations repository/service with the devices-facing seam.
 5. Provision existing Observation/Entity Event resources and the automation Device Fact consumer.
-6. Start existing request/reply transports.
+6. Start existing request/reply transports and the shared history pruning worker after startup recovery. Its startup sweep runs in the background, independently of readiness.
 7. Start the automation Device Fact consumer before starting the inbound Observation and Entity Event consumers.
-8. Construct readiness and HTTP, bind the listener, then start hourly maintenance.
+8. Construct readiness and HTTP, then bind the listener. Pruning never gates serving.
 
 A consumer created for the first time begins at the then-current tail. A previously created consumer resumes from its durable ack floor. Readiness requires its exact broker configuration, `Active()`, and open automation admission; it does not require an empty backlog.
 
@@ -590,7 +590,7 @@ A consumer created for the first time begins at the then-current tail. A previou
 1. Drain/stop the automation Device Fact consumer so no new automatic admission enters.
 2. Close automation admission, then close device Command admission.
 3. Wait for Automation workers, then device Command workers.
-4. Shut down HTTP and the health supervisor according to the existing deadline behavior.
+4. Cancel dependencies and join the history pruning worker before SQLite closes; shut down HTTP and the health supervisor according to the existing deadline behavior.
 5. Drain inbound Entity Event and Observation consumers.
 6. Drain the Device Fact relay within its existing deadline.
 7. Drain request/reply transports, shared NATS, and SQLite.
@@ -599,7 +599,7 @@ The process-owned execution context outlives HTTP and NATS caller cancellation b
 
 ### 9.3 Retention
 
-`automation_history_retention` defaults to 30 days and must be at least eight days. The existing hourly maintenance runner prunes terminal Runs and Skips older than `now-retention` in bounded batches. Active Runs are never selected. A shorter newly configured window takes effect on the next pass. Cleanup failure logs and retries next hour; it does not fail readiness.
+`automation_history_retention` defaults to 30 days and must be at least eight days. App assembly injects the effective window through `AutomationDependencies.HistoryRetention`; the module enforces the eight-day minimum and derives the cutoff from the UTC sweep time passed to `PruneHistory`. The app-owned shared worker performs one background startup pass, then another pass one hour after each preceding pass completes, without overlapping or replaying missed ticks. The service prunes terminal Runs and Skips strictly older than `now-retention` in batches of 500, rechecking cancellation between batches. Active Runs and matched-Fact receipts are never selected. A newly configured window takes effect on the restart's startup pass. The service returns failures without logging; the app logs one safe `core.automation_history_prune_failed` record per failed module pass and retries next hour without failing readiness.
 
 ### 9.4 Logging
 
@@ -685,7 +685,7 @@ internal/app/hearthd/
 - [ ] **A4 — Manual admission:** Each successful POST creates a distinct snapshotted Run even when disabled; busy returns 409 without history; closed admission returns 503. This protects the explicitly non-idempotent manual contract and fails if callers share Runs or bypass busy/admission gates.
 - [ ] **A5 — Ordered execution:** A two-Step Run never starts Step 2 before Step 1 reaches `satisfied` or `dispatched`; first failure leaves later Steps `not_attempted`; no engine retry occurs. This protects ordered effects and fails on overlap, retry, or continuation after failure.
 - [ ] **A6 — Truthful Command links:** Reserved identities remain private; created Commands are linked only after ID/correlation/Entity/Operation/parameter verification; collisions cannot adopt unrelated Commands. This protects cross-module ownership and fails if reservation is mistaken for durable creation.
-- [ ] **A7 — Interruption, deletion, and retention:** Caller disconnect does not cancel admitted work; deleting a definition lets an active Run continue and leaves history queryable; startup and drain mark unfinished work with the correct reason without replay; hourly pruning removes only terminal history older than the configured cutoff and preserves matched-Fact receipts. This protects durable truth and fails on cascading deletion, invented success, redispatch, pruning active Runs, or lost deduplication.
+- [ ] **A7 — Interruption, deletion, and retention:** Caller disconnect does not cancel admitted work; deleting a definition lets an active Run continue and leaves history queryable; startup and drain mark unfinished work with the correct reason without replay; startup and hourly pruning remove only terminal history older than the configured cutoff and preserves matched-Fact receipts. This protects durable truth and fails on cascading deletion, invented success, redispatch, pruning active Runs, or lost deduplication.
 - [ ] **A8 — Comparison semantics:** Independent examples and property tests cover RFC 6901 escapes/arrays, root selection, missing-path false behavior (including `ne`), JSON type equality, object order, array order, and exact decimal ordering without float loss. This protects typed matching and fails on lexical-number, float-rounding, or missing-path mistakes.
 - [ ] **A9 — Fact transport validation:** Embedded NATS tests prove both exact schemas/routes reach admission, while malformed schema, unsafe identity, unknown family/variant, `causation_id` unequal to the payload Observation/Event ID, `Nats-Msg-Id` mismatch, and subject/payload mismatch terminate without admission. Transient storage failures redeliver. This protects the trust boundary and fails if malformed or mismatched Facts become actions.
 - [ ] **A10 — Atomic admission:** Injected failures before commit leave no partial receipt, Run, Skip, or Step and schedule no worker. One Fact produces at most one outcome per matching Automation; multiple matching Triggers group into one outcome and Skips preserve immutable matching Trigger snapshots. A duplicate after history pruning is suppressed by its retained receipt. This protects transactional admission and fails on partial history, unexplained Skips, or duplicate work.

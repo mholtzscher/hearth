@@ -112,21 +112,6 @@ func fixedAutomationLogDependencies(logger *slog.Logger) automations.AutomationD
 	}
 }
 
-// failingAutomationPruneRepository fails only retention writes.
-type failingAutomationPruneRepository struct {
-	*automations.SQLiteRepository
-
-	pruneErr error
-}
-
-var _ automations.AutomationRepository = (*failingAutomationPruneRepository)(nil)
-
-func (repo *failingAutomationPruneRepository) DeleteHistoryBefore(
-	context.Context, time.Time, int,
-) (int64, error) {
-	return 0, repo.pruneErr
-}
-
 // Manual and automatic admission must log automation.run_started; only automatic
 // admission carries Fact provenance.
 func TestAutomationRunStartedLogsManualAndAutomaticAdmission(t *testing.T) {
@@ -270,11 +255,7 @@ func TestAutomationDecisionLogsCarryNoSensitiveMaterial(t *testing.T) {
 	dependencies := fixedAutomationLogDependencies(logger)
 	scripted := newScriptedDevices()
 	repository := automations.NewSQLiteRepository(openAutomationDatabase(t), dependencies)
-	pruneFailure := &failingAutomationPruneRepository{
-		SQLiteRepository: repository,
-		pruneErr:         errors.New("s3cr3t-prune-error"),
-	}
-	service := automations.NewService(pruneFailure, scripted, dependencies)
+	service := automations.NewService(repository, scripted, dependencies)
 
 	const (
 		definitionSentinel = "s3cr3t-definition-name"
@@ -366,9 +347,6 @@ func TestAutomationDecisionLogsCarryNoSensitiveMaterial(t *testing.T) {
 	}
 	waitForRuns(t, service)
 
-	if _, err := service.PruneHistory(ctx, runtimeTestNow, 10); err == nil {
-		t.Fatal("prune failure was not reported")
-	}
 	if err := service.DeleteAutomation(ctx, record.ID, record.Revision+1); err != nil {
 		t.Fatal(err)
 	}
@@ -383,7 +361,6 @@ func TestAutomationDecisionLogsCarryNoSensitiveMaterial(t *testing.T) {
 		"automation.run_interrupted",
 		"automation.skipped",
 		"automation.executor_fault",
-		"core.automation_history_prune_failed",
 	} {
 		if len(automationLogEvents(records, event)) == 0 {
 			t.Fatalf("missing stable log event %q:\n%s", event, writer.output())

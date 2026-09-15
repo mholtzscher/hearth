@@ -9,6 +9,7 @@ import (
 	_ "time/tzdata" // Embed household timezone rules instead of requiring host zoneinfo.
 
 	"github.com/mholtzscher/hearth/internal/modules/automations"
+	"github.com/mholtzscher/hearth/internal/modules/devices"
 	platformconfig "github.com/mholtzscher/hearth/internal/platform/config"
 )
 
@@ -16,12 +17,12 @@ const (
 	// DefaultObservationRetention bounds how long Core keeps non-current observations.
 	DefaultObservationRetention = 30 * 24 * time.Hour
 	// MinimumObservationRetention keeps the Core window above the seven-day JetStream retention.
-	MinimumObservationRetention = 8 * 24 * time.Hour
+	MinimumObservationRetention = devices.MinimumObservationRetention
 	// DefaultAutomationHistoryRetention bounds how long Core keeps terminal Automation history.
 	DefaultAutomationHistoryRetention = 30 * 24 * time.Hour
 	// MinimumAutomationHistoryRetention keeps pruned Automation history above the
 	// seven-day Device Fact retention so retained evidence stays explainable.
-	MinimumAutomationHistoryRetention = 8 * 24 * time.Hour
+	MinimumAutomationHistoryRetention = automations.MinimumAutomationHistoryRetention
 	// AutomationFactMaximumAge is the fixed semantic freshness bound for one
 	// Device Fact. It is deliberately not operator configuration.
 	AutomationFactMaximumAge = automations.AutomationFactMaximumAge
@@ -34,11 +35,11 @@ type Config struct {
 	SQLitePath        string `yaml:"sqlite_path"`
 	// ObservationRetention bounds how long Core keeps non-current observations.
 	// Zero selects DefaultObservationRetention; a restart applies policy changes
-	// on the next hourly prune pass.
+	// on the startup prune pass.
 	ObservationRetention time.Duration `yaml:"observation_retention"`
 	// AutomationHistoryRetention bounds how long Core keeps terminal Automation
 	// Runs and Skips. Zero selects DefaultAutomationHistoryRetention; a restart
-	// applies policy changes on the next hourly prune pass.
+	// applies policy changes on the startup prune pass.
 	AutomationHistoryRetention time.Duration `yaml:"automation_history_retention"`
 }
 

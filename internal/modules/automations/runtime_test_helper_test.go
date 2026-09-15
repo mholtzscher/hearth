@@ -124,12 +124,18 @@ func (scripted *scriptedDevices) executionCount() int {
 }
 
 // runtimeTestDependencies is a fixed clock and deterministic identity source so
-// tests never depend on wall time or random UUID ordering.
+// tests never depend on wall time or random UUID ordering. The fixed retention
+// window lets retention tests prune against the same fixture clock.
 func runtimeTestDependencies() automations.AutomationDependencies {
 	return automations.AutomationDependencies{
-		Now: func() time.Time { return runtimeTestNow },
+		Now:              func() time.Time { return runtimeTestNow },
+		HistoryRetention: runtimeTestHistoryRetention,
 	}
 }
+
+// runtimeTestHistoryRetention is the terminal history window runtime tests
+// inject; it clears the module's eight-day safety floor.
+const runtimeTestHistoryRetention = 30 * 24 * time.Hour
 
 //nolint:gochecknoglobals // Fixed fixture instant shared by runtime tests.
 var runtimeTestNow = time.Date(2026, 9, 1, 12, 0, 0, 0, time.UTC)

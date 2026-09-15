@@ -10,13 +10,18 @@ import (
 )
 
 type Dependencies struct {
-	Logger           *slog.Logger
-	Now              func() time.Time
-	DeviceFacts      DeviceFactNotifier
-	NewDeviceID      func() (DeviceID, error)
-	NewEntityID      func() (EntityID, error)
-	NewCommandID     func() (CommandID, error)
-	NewCorrelationID func() (CorrelationID, error)
+	Logger *slog.Logger
+	Now    func() time.Time
+	// ObservationRetention is the non-current observation retention window
+	// PruneHistory applies. It must be at least MinimumObservationRetention;
+	// zero is unconfigured and fails safely at prune time, never at
+	// construction.
+	ObservationRetention time.Duration
+	DeviceFacts          DeviceFactNotifier
+	NewDeviceID          func() (DeviceID, error)
+	NewEntityID          func() (EntityID, error)
+	NewCommandID         func() (CommandID, error)
+	NewCorrelationID     func() (CorrelationID, error)
 }
 
 // Stores groups persistence capabilities consumed by Service.

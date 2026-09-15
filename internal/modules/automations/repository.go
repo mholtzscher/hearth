@@ -68,7 +68,7 @@ type AutomationRepository interface {
 }
 
 // AutomationDependencies supplies logging, time, and identity constructors.
-// Zero-valued fields use production defaults.
+// Zero-valued fields use production defaults except HistoryRetention.
 type AutomationDependencies struct {
 	Logger           *slog.Logger
 	Now              func() time.Time
@@ -77,6 +77,11 @@ type AutomationDependencies struct {
 	NewSkipID        func() (AutomationSkipID, error)
 	NewCommandID     func() (devices.CommandID, error)
 	NewCorrelationID func() (devices.CorrelationID, error)
+	// HistoryRetention is the terminal Automation history retention window
+	// PruneHistory applies. It must be at least
+	// MinimumAutomationHistoryRetention; zero is unconfigured and fails safely
+	// at prune time, never at construction.
+	HistoryRetention time.Duration
 }
 
 func (dependencies AutomationDependencies) withDefaults() AutomationDependencies {
