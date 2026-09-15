@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.9.0](https://github.com/mholtzscher/hearth/compare/v0.8.1...v0.9.0) (2026-09-15)
+
+
+### Features
+
+* **automations:** drive commands from device facts ([#106](https://github.com/mholtzscher/hearth/issues/106)) ([4205275](https://github.com/mholtzscher/hearth/commit/42052750fab10c3e7a5d6d7bf5cf968a82246b2f))
+
+
+### Bug Fixes
+
+* **web:** paginate device facts enrichment ([#104](https://github.com/mholtzscher/hearth/issues/104)) ([5b47096](https://github.com/mholtzscher/hearth/commit/5b4709659b8d325e1cc82c94dd89d97d4bc733f0))
+
 ## [0.8.1](https://github.com/mholtzscher/hearth/compare/v0.8.0...v0.8.1) (2026-09-13)
 
 
