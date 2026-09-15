@@ -45,7 +45,7 @@ func (service *Service) ListEntityStateHistory(
 	if _, err := ParseEntityID(string(params.EntityID)); err != nil {
 		return Page[EntityStateHistoryEntry]{}, fmt.Errorf("%w: parse entity ID: %w", ErrInvalidPage, err)
 	}
-	if !validPageLimit(params.Limit) {
+	if !ValidPageLimit(params.Limit) {
 		return Page[EntityStateHistoryEntry]{}, ErrInvalidPage
 	}
 	filter := params.Filter

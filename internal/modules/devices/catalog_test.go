@@ -411,3 +411,14 @@ func checkCatalogOperations(
 		}
 	}
 }
+
+// firstLightCatalog returns the built-in Entity type catalog that the
+// registration, health, availability, and read fixtures register against.
+func firstLightCatalog(t *testing.T) *TypeCatalog {
+	t.Helper()
+	catalog, err := NewBuiltinTypeCatalog()
+	if err != nil {
+		t.Fatal(err)
+	}
+	return catalog
+}

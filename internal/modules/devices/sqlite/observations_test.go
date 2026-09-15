@@ -1,4 +1,4 @@
-package devices //nolint:testpackage // Tests exercise package-private domain seams and repository fixtures.
+package sqlite //nolint:testpackage // Tests exercise package-private SQLite persistence behavior.
 
 import (
 	"context"
@@ -7,6 +7,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/mholtzscher/hearth/internal/modules/devices"
 )
 
 func TestObservationProjectionAdvancesStateByReceiveOrderAndDeduplicates(t *testing.T) {
@@ -15,8 +17,8 @@ func TestObservationProjectionAdvancesStateByReceiveOrderAndDeduplicates(t *test
 	path := filepath.Join(t.TempDir(), "hearth.db")
 	database := openRegistrationDatabase(t, path)
 	catalog := firstLightCatalog(t)
-	repository := NewSQLiteRepository(database, catalog)
-	service := newTestService(repository, nil, catalog, Dependencies{})
+	repository := NewDeviceRepository(database, catalog)
+	service := newTestService(repository, nil, catalog, devices.Dependencies{})
 	binding, err := service.Register(ctx, "simulator", testRuntimeID, validDomainRegistration())
 	if err != nil {
 		t.Fatal(err)
@@ -29,7 +31,7 @@ func TestObservationProjectionAdvancesStateByReceiveOrderAndDeduplicates(t *test
 	if err != nil {
 		t.Fatal(err)
 	}
-	if result.Disposition != DispositionApplied || result.State == nil || string(result.State.Value) != "true" {
+	if result.Disposition != devices.DispositionApplied || result.State == nil || string(result.State.Value) != "true" {
 		t.Fatalf("first projection = %#v", result)
 	}
 
@@ -42,21 +44,21 @@ func TestObservationProjectionAdvancesStateByReceiveOrderAndDeduplicates(t *test
 	if err != nil {
 		t.Fatal(err)
 	}
-	if result.Disposition != DispositionUnchanged || result.State == nil ||
+	if result.Disposition != devices.DispositionUnchanged || result.State == nil ||
 		result.State.ReceiveOrder <= 1 || result.State.ObservationID != second.ID ||
 		!result.State.AdapterReceivedAt.Equal(second.AdapterReceivedAt) {
 		t.Fatalf("same-value projection = %#v", result)
 	}
 
 	redelivery := second
-	redelivery.Value = Value(`false`)
+	redelivery.Value = devices.Value(`false`)
 	result, err = service.ProjectObservation(
 		ctx, "simulator", testRuntimeID, redelivery, observedAt.Add(2*time.Second),
 	)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if result.Disposition != DispositionDuplicate || result.State != nil {
+	if result.Disposition != devices.DispositionDuplicate || result.State != nil {
 		t.Fatalf("duplicate projection = %#v", result)
 	}
 
@@ -74,7 +76,7 @@ func TestObservationProjectionAdvancesStateByReceiveOrderAndDeduplicates(t *test
 		t.Fatal(closeErr)
 	}
 	database = openRegistrationDatabase(t, path)
-	restarted := newTestService(NewSQLiteRepository(database, catalog), nil, catalog, Dependencies{})
+	restarted := newTestService(NewDeviceRepository(database, catalog), nil, catalog, devices.Dependencies{})
 	view, err = restarted.GetEntity(ctx, entityID)
 	if err != nil {
 		t.Fatal(err)
@@ -90,14 +92,14 @@ func TestObservationProjectionDurablyRejectsIdentityAndValueFailures(t *testing.
 	ctx := context.Background()
 	database := openRegistrationDatabase(t, filepath.Join(t.TempDir(), "hearth.db"))
 	catalog := firstLightCatalog(t)
-	service := newTestService(NewSQLiteRepository(database, catalog), nil, catalog, Dependencies{})
+	service := newTestService(NewDeviceRepository(database, catalog), nil, catalog, devices.Dependencies{})
 	binding, err := service.Register(ctx, "simulator", testRuntimeID, validDomainRegistration())
 	if err != nil {
 		t.Fatal(err)
 	}
 	entityID := binding.Entities[0].EntityID
 	observedAt := time.Date(2026, 8, 22, 12, 0, 0, 0, time.UTC)
-	unknownEntityID, err := NewEntityID()
+	unknownEntityID, err := devices.NewEntityID()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -105,14 +107,18 @@ func TestObservationProjectionDurablyRejectsIdentityAndValueFailures(t *testing.
 	tests := []struct {
 		name        string
 		adapterID   string
-		observation Observation
-		want        ObservationRejection
+		observation devices.Observation
+		want        devices.ObservationRejection
 	}{
-		{"unknown entity", "simulator", newObservation(t, unknownEntityID, `true`, observedAt), RejectionUnknownEntity},
 		{
-			"wrong adapter", "homeassistant", newObservation(t, entityID, `true`, observedAt), RejectionWrongAdapter,
+			"unknown entity", "simulator", newObservation(t, unknownEntityID, `true`, observedAt),
+			devices.RejectionUnknownEntity,
 		},
-		{"invalid value", "simulator", newObservation(t, entityID, `1`, observedAt), RejectionInvalidValue},
+		{
+			"wrong adapter", "homeassistant", newObservation(t, entityID, `true`, observedAt),
+			devices.RejectionWrongAdapter,
+		},
+		{"invalid value", "simulator", newObservation(t, entityID, `1`, observedAt), devices.RejectionInvalidValue},
 	}
 	for index, test := range tests {
 		result, projectionErr := service.ProjectObservation(
@@ -125,7 +131,8 @@ func TestObservationProjectionDurablyRejectsIdentityAndValueFailures(t *testing.
 		if projectionErr != nil {
 			t.Fatalf("%s: %v", test.name, projectionErr)
 		}
-		if result.Disposition != DispositionRejected || result.Rejection == nil || *result.Rejection != test.want ||
+		if result.Disposition != devices.DispositionRejected || result.Rejection == nil ||
+			*result.Rejection != test.want ||
 			result.State != nil {
 			t.Fatalf("%s: projection = %#v", test.name, result)
 		}
@@ -140,11 +147,11 @@ func TestObservationProjectionDurablyRejectsIdentityAndValueFailures(t *testing.
 	}
 }
 
-func statelessEffectRegistration() Registration {
+func statelessEffectRegistration() devices.Registration {
 	registration := validDomainRegistration()
-	registration.Entities = append(registration.Entities, EntityDescriptor{
-		Key: "effect", ExternalID: "light.office.effect", Name: "Effect", TypeID: EntityTypeEnumactionV1,
-		Support: EntitySupport(`{"state":{},"operations":{"trigger":{"values":["blink","stop_effect"]}}}`),
+	registration.Entities = append(registration.Entities, devices.EntityDescriptor{
+		Key: "effect", ExternalID: "light.office.effect", Name: "Effect", TypeID: devices.EntityTypeEnumactionV1,
+		Support: devices.EntitySupport(`{"state":{},"operations":{"trigger":{"values":["blink","stop_effect"]}}}`),
 	})
 	return registration
 }
@@ -154,7 +161,7 @@ func TestStatelessEntityRejectsEveryObservationWithoutStoringValue(t *testing.T)
 	ctx := context.Background()
 	database := openRegistrationDatabase(t, filepath.Join(t.TempDir(), "hearth.db"))
 	catalog := firstLightCatalog(t)
-	service := newTestService(NewSQLiteRepository(database, catalog), nil, catalog, Dependencies{})
+	service := newTestService(NewDeviceRepository(database, catalog), nil, catalog, devices.Dependencies{})
 	binding, err := service.Register(ctx, "simulator", testRuntimeID, statelessEffectRegistration())
 	if err != nil {
 		t.Fatal(err)
@@ -172,8 +179,8 @@ func TestStatelessEntityRejectsEveryObservationWithoutStoringValue(t *testing.T)
 		if projectionErr != nil {
 			t.Fatalf("value %s: %v", value, projectionErr)
 		}
-		if result.Disposition != DispositionRejected || result.Rejection == nil ||
-			*result.Rejection != RejectionInvalidValue || result.State != nil {
+		if result.Disposition != devices.DispositionRejected || result.Rejection == nil ||
+			*result.Rejection != devices.RejectionInvalidValue || result.State != nil {
 			t.Fatalf("value %s: projection = %#v", value, result)
 		}
 	}
@@ -187,8 +194,8 @@ func TestStatelessEntityRejectsEveryObservationWithoutStoringValue(t *testing.T)
 
 	// The rejections are visible in history reads with no stored value,
 	// distinct from state history; the entity itself still reports null state.
-	page, err := service.ListEntityStateHistory(ctx, ListEntityStateHistoryParams{
-		EntityID: entityID, Filter: EntityStateHistoryFilterRejected, Limit: 10,
+	page, err := service.ListEntityStateHistory(ctx, devices.ListEntityStateHistoryParams{
+		EntityID: entityID, Filter: devices.EntityStateHistoryFilterRejected, Limit: 10,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -197,13 +204,13 @@ func TestStatelessEntityRejectsEveryObservationWithoutStoringValue(t *testing.T)
 		t.Fatalf("rejected history = %#v", page.Items)
 	}
 	for _, entry := range page.Items {
-		if entry.Disposition != DispositionRejected || entry.Rejection == nil ||
-			*entry.Rejection != RejectionInvalidValue || entry.Value != nil {
+		if entry.Disposition != devices.DispositionRejected || entry.Rejection == nil ||
+			*entry.Rejection != devices.RejectionInvalidValue || entry.Value != nil {
 			t.Fatalf("rejected history entry = %#v", entry)
 		}
 	}
-	updates, err := service.ListEntityStateHistory(ctx, ListEntityStateHistoryParams{
-		EntityID: entityID, Filter: EntityStateHistoryFilterUpdates, Limit: 10,
+	updates, err := service.ListEntityStateHistory(ctx, devices.ListEntityStateHistoryParams{
+		EntityID: entityID, Filter: devices.EntityStateHistoryFilterUpdates, Limit: 10,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -218,15 +225,15 @@ func TestStatelessRejectionFollowsIdentityAndEnablementPrecedence(t *testing.T) 
 	ctx := context.Background()
 	database := openRegistrationDatabase(t, filepath.Join(t.TempDir(), "hearth.db"))
 	catalog := firstLightCatalog(t)
-	repository := NewSQLiteRepository(database, catalog)
-	service := newTestService(repository, nil, catalog, Dependencies{})
+	repository := NewDeviceRepository(database, catalog)
+	service := newTestService(repository, nil, catalog, devices.Dependencies{})
 	binding, err := service.Register(ctx, "simulator", testRuntimeID, statelessEffectRegistration())
 	if err != nil {
 		t.Fatal(err)
 	}
 	entityID := binding.Entities[1].EntityID
 	observedAt := time.Date(2026, 8, 22, 12, 0, 0, 0, time.UTC)
-	unknownEntityID, err := NewEntityID()
+	unknownEntityID, err := devices.NewEntityID()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -235,15 +242,18 @@ func TestStatelessRejectionFollowsIdentityAndEnablementPrecedence(t *testing.T) 
 	precedence := []struct {
 		name      string
 		adapterID string
-		runtimeID RuntimeID
-		entityID  EntityID
-		want      ObservationRejection
+		runtimeID devices.RuntimeID
+		entityID  devices.EntityID
+		want      devices.ObservationRejection
 	}{
-		{"unknown entity", "simulator", testRuntimeID, unknownEntityID, RejectionUnknownEntity},
-		{"wrong adapter", "homeassistant", testAdapterRuntime("homeassistant"), entityID, RejectionWrongAdapter},
+		{"unknown entity", "simulator", testRuntimeID, unknownEntityID, devices.RejectionUnknownEntity},
 		{
-			"stale runtime", "simulator", RuntimeID("run_01890f47-7a6b-7c4d-8e9f-ffff00000000"),
-			entityID, RejectionStaleRuntime,
+			"wrong adapter", "homeassistant", testAdapterRuntime("homeassistant"),
+			entityID, devices.RejectionWrongAdapter,
+		},
+		{
+			"stale runtime", "simulator", devices.RuntimeID("run_01890f47-7a6b-7c4d-8e9f-ffff00000000"),
+			entityID, devices.RejectionStaleRuntime,
 		},
 	}
 	for index, test := range precedence {
@@ -254,7 +264,8 @@ func TestStatelessRejectionFollowsIdentityAndEnablementPrecedence(t *testing.T) 
 		if projectionErr != nil {
 			t.Fatalf("%s: %v", test.name, projectionErr)
 		}
-		if result.Disposition != DispositionRejected || result.Rejection == nil || *result.Rejection != test.want {
+		if result.Disposition != devices.DispositionRejected || result.Rejection == nil ||
+			*result.Rejection != test.want {
 			t.Fatalf("%s: projection = %#v", test.name, result)
 		}
 	}
@@ -271,8 +282,8 @@ func TestStatelessRejectionFollowsIdentityAndEnablementPrecedence(t *testing.T) 
 	if err != nil {
 		t.Fatal(err)
 	}
-	if result.Disposition != DispositionRejected || result.Rejection == nil ||
-		*result.Rejection != RejectionEntityDisabled {
+	if result.Disposition != devices.DispositionRejected || result.Rejection == nil ||
+		*result.Rejection != devices.RejectionEntityDisabled {
 		t.Fatalf("disabled stateless projection = %#v", result)
 	}
 	_, reenableErr := service.SetEntityEnabled(ctx, entityID, true)
@@ -292,8 +303,8 @@ func TestStatelessRejectionFollowsIdentityAndEnablementPrecedence(t *testing.T) 
 	if err != nil {
 		t.Fatal(err)
 	}
-	if result.Disposition != DispositionRejected || result.Rejection == nil ||
-		*result.Rejection != RejectionInvalidValue || result.SatisfiedCommand != nil {
+	if result.Disposition != devices.DispositionRejected || result.Rejection == nil ||
+		*result.Rejection != devices.RejectionInvalidValue || result.SatisfiedCommand != nil {
 		t.Fatalf("linked stateless projection = %#v", result)
 	}
 }
@@ -303,9 +314,9 @@ func TestDisabledEntityRejectsUnlinkedObservationAndAllowsActiveCommandRefresh(t
 	ctx := context.Background()
 	database := openRegistrationDatabase(t, filepath.Join(t.TempDir(), "hearth.db"))
 	catalog := firstLightCatalog(t)
-	repository := NewSQLiteRepository(database, catalog)
+	repository := NewDeviceRepository(database, catalog)
 	now := time.Date(2026, 8, 26, 12, 0, 0, 0, time.UTC)
-	service := newTestService(repository, nil, catalog, Dependencies{Now: func() time.Time { return now }})
+	service := newTestService(repository, nil, catalog, devices.Dependencies{Now: func() time.Time { return now }})
 	binding, err := service.Register(ctx, "simulator", testRuntimeID, validDomainRegistration())
 	if err != nil {
 		t.Fatal(err)
@@ -320,7 +331,7 @@ func TestDisabledEntityRejectsUnlinkedObservationAndAllowsActiveCommandRefresh(t
 	}
 
 	active := newCommandRecord(t, entityID, now.Add(time.Second))
-	active.Parameters = CommandParameters(`{"value":false}`)
+	active.Parameters = devices.CommandParameters(`{"value":false}`)
 	if _, createErr := repository.CreateCommand(ctx, active); createErr != nil {
 		t.Fatal(createErr)
 	}
@@ -334,14 +345,14 @@ func TestDisabledEntityRejectsUnlinkedObservationAndAllowsActiveCommandRefresh(t
 	if err != nil {
 		t.Fatal(err)
 	}
-	if result.Disposition != DispositionRejected || result.Rejection == nil ||
-		*result.Rejection != RejectionEntityDisabled || result.State != nil {
+	if result.Disposition != devices.DispositionRejected || result.Rejection == nil ||
+		*result.Rejection != devices.RejectionEntityDisabled || result.State != nil {
 		t.Fatalf("disabled projection = %#v", result)
 	}
 	duplicate, err := service.ProjectObservation(
 		ctx, "simulator", testRuntimeID, rejected, now.Add(time.Second),
 	)
-	if err != nil || duplicate.Disposition != DispositionDuplicate {
+	if err != nil || duplicate.Disposition != devices.DispositionDuplicate {
 		t.Fatalf("disabled duplicate = %#v, %v", duplicate, err)
 	}
 	view, err := service.GetEntity(ctx, entityID)
@@ -358,7 +369,7 @@ func TestDisabledEntityRejectsUnlinkedObservationAndAllowsActiveCommandRefresh(t
 	if err != nil {
 		t.Fatal(err)
 	}
-	if result.Disposition != DispositionApplied || result.State == nil || result.SatisfiedCommand == nil ||
+	if result.Disposition != devices.DispositionApplied || result.State == nil || result.SatisfiedCommand == nil ||
 		result.SatisfiedCommand.CommandID != active.ID {
 		t.Fatalf("active refresh projection = %#v", result)
 	}
@@ -366,7 +377,7 @@ func TestDisabledEntityRejectsUnlinkedObservationAndAllowsActiveCommandRefresh(t
 	if err != nil {
 		t.Fatal(err)
 	}
-	if stored.Status != CommandStatusSatisfied || stored.OutcomeObservationID == nil ||
+	if stored.Status != devices.CommandStatusSatisfied || stored.OutcomeObservationID == nil ||
 		*stored.OutcomeObservationID != refresh.ID {
 		t.Fatalf("active Command = %#v", stored)
 	}
@@ -377,9 +388,9 @@ func TestDisabledEntityDoesNotExemptUnknownExpiredOrTerminalCommandLinks(t *test
 	ctx := context.Background()
 	database := openRegistrationDatabase(t, filepath.Join(t.TempDir(), "hearth.db"))
 	catalog := firstLightCatalog(t)
-	repository := NewSQLiteRepository(database, catalog)
+	repository := NewDeviceRepository(database, catalog)
 	now := time.Date(2026, 8, 26, 12, 0, 20, 0, time.UTC)
-	service := newTestService(repository, nil, catalog, Dependencies{Now: func() time.Time { return now }})
+	service := newTestService(repository, nil, catalog, devices.Dependencies{Now: func() time.Time { return now }})
 	binding, err := service.Register(ctx, "simulator", testRuntimeID, validDomainRegistration())
 	if err != nil {
 		t.Fatal(err)
@@ -394,20 +405,20 @@ func TestDisabledEntityDoesNotExemptUnknownExpiredOrTerminalCommandLinks(t *test
 	if _, createErr := repository.CreateCommand(ctx, terminal); createErr != nil {
 		t.Fatal(createErr)
 	}
-	if completionErr := repository.CompleteCommand(ctx, CommandCompletion{
-		ID: terminal.ID, Status: CommandStatusOutcomeTimeout, CompletedAt: now,
-		FailureCode: CommandFailureOutcomeTimeout,
+	if completionErr := repository.CompleteCommand(ctx, devices.CommandCompletion{
+		ID: terminal.ID, Status: devices.CommandStatusOutcomeTimeout, CompletedAt: now,
+		FailureCode: devices.CommandFailureOutcomeTimeout,
 	}); completionErr != nil {
 		t.Fatal(completionErr)
 	}
 	if _, enablementErr := service.SetEntityEnabled(ctx, entityID, false); enablementErr != nil {
 		t.Fatal(enablementErr)
 	}
-	unknown, err := NewCommandID()
+	unknown, err := devices.NewCommandID()
 	if err != nil {
 		t.Fatal(err)
 	}
-	for index, id := range []CommandID{unknown, expired.ID, terminal.ID} {
+	for index, id := range []devices.CommandID{unknown, expired.ID, terminal.ID} {
 		observation := newObservation(t, entityID, `true`, now)
 		observation.RefreshForCommand = &id
 		result, projectionErr := service.ProjectObservation(
@@ -420,8 +431,9 @@ func TestDisabledEntityDoesNotExemptUnknownExpiredOrTerminalCommandLinks(t *test
 		if projectionErr != nil {
 			t.Fatal(projectionErr)
 		}
-		if result.Disposition != DispositionRejected || result.Rejection == nil ||
-			*result.Rejection != RejectionEntityDisabled || result.State != nil || result.SatisfiedCommand != nil {
+		if result.Disposition != devices.DispositionRejected || result.Rejection == nil ||
+			*result.Rejection != devices.RejectionEntityDisabled ||
+			result.State != nil || result.SatisfiedCommand != nil {
 			t.Fatalf("linked disabled projection %d = %#v", index, result)
 		}
 	}
@@ -433,10 +445,10 @@ func TestObservationProjectionSatisfiesOnlyMatchingActiveLinkedCommand(t *testin
 	ctx := context.Background()
 	database := openRegistrationDatabase(t, filepath.Join(t.TempDir(), "hearth.db"))
 	catalog := firstLightCatalog(t)
-	repository := NewSQLiteRepository(database, catalog)
+	repository := NewDeviceRepository(database, catalog)
 	completedAt := time.Date(2026, 8, 22, 12, 0, 2, 0, time.UTC)
 	now := completedAt
-	service := newTestService(repository, nil, catalog, Dependencies{Now: func() time.Time { return now }})
+	service := newTestService(repository, nil, catalog, devices.Dependencies{Now: func() time.Time { return now }})
 	binding, err := service.Register(ctx, "simulator", testRuntimeID, validDomainRegistration())
 	if err != nil {
 		t.Fatal(err)
@@ -464,7 +476,7 @@ func TestObservationProjectionSatisfiesOnlyMatchingActiveLinkedCommand(t *testin
 	if err != nil {
 		t.Fatal(err)
 	}
-	if stored.Status != CommandStatusRequested {
+	if stored.Status != devices.CommandStatusRequested {
 		t.Fatalf("mismatched command status = %q", stored.Status)
 	}
 
@@ -477,7 +489,7 @@ func TestObservationProjectionSatisfiesOnlyMatchingActiveLinkedCommand(t *testin
 		t.Fatal(err)
 	}
 	if result.SatisfiedCommand == nil || result.SatisfiedCommand.CommandID != command.ID ||
-		result.SatisfiedCommand.Outcome != OutcomeObserved || result.SatisfiedCommand.ObservationID == nil ||
+		result.SatisfiedCommand.Outcome != devices.OutcomeObserved || result.SatisfiedCommand.ObservationID == nil ||
 		*result.SatisfiedCommand.ObservationID != matching.ID || result.SatisfiedCommand.Value == nil ||
 		string(*result.SatisfiedCommand.Value) != "true" {
 		t.Fatalf("matching projection = %#v", result)
@@ -486,7 +498,8 @@ func TestObservationProjectionSatisfiesOnlyMatchingActiveLinkedCommand(t *testin
 	if err != nil {
 		t.Fatal(err)
 	}
-	if stored.Status != CommandStatusSatisfied || stored.CompletedAt == nil || !stored.CompletedAt.Equal(completedAt) ||
+	if stored.Status != devices.CommandStatusSatisfied || stored.CompletedAt == nil ||
+		!stored.CompletedAt.Equal(completedAt) ||
 		stored.OutcomeObservationID == nil || *stored.OutcomeObservationID != matching.ID {
 		t.Fatalf("satisfied command = %#v", stored)
 	}
@@ -509,7 +522,8 @@ func TestObservationProjectionSatisfiesOnlyMatchingActiveLinkedCommand(t *testin
 	if err != nil {
 		t.Fatal(err)
 	}
-	if stored.Status != CommandStatusRequested || stored.CompletedAt != nil || stored.OutcomeObservationID != nil {
+	if stored.Status != devices.CommandStatusRequested || stored.CompletedAt != nil ||
+		stored.OutcomeObservationID != nil {
 		t.Fatalf("post-deadline command = %#v", stored)
 	}
 
@@ -535,7 +549,7 @@ func TestObservationProjectionSatisfiesOnlyMatchingActiveLinkedCommand(t *testin
 	if err != nil {
 		t.Fatal(err)
 	}
-	if stored.Status != CommandStatusInterrupted {
+	if stored.Status != devices.CommandStatusInterrupted {
 		t.Fatalf("terminal command status = %q", stored.Status)
 	}
 }
@@ -546,9 +560,9 @@ func TestObservationRuntimeFencingRecordsStaleObservationAndIsolatesCommands(t *
 	ctx := context.Background()
 	database := openRegistrationDatabase(t, filepath.Join(t.TempDir(), "hearth.db"))
 	catalog := firstLightCatalog(t)
-	repository := NewSQLiteRepository(database, catalog)
+	repository := NewDeviceRepository(database, catalog)
 	now := time.Date(2026, 8, 20, 0, 0, 0, 0, time.UTC)
-	service := newTestService(repository, nil, catalog, Dependencies{Now: func() time.Time { return now }})
+	service := newTestService(repository, nil, catalog, devices.Dependencies{Now: func() time.Time { return now }})
 	binding, err := service.Register(ctx, "simulator", testRuntimeID, validDomainRegistration())
 	if err != nil {
 		t.Fatal(err)
@@ -559,7 +573,7 @@ func TestObservationRuntimeFencingRecordsStaleObservationAndIsolatesCommands(t *
 	if err != nil || command.RuntimeID == nil || *command.RuntimeID != testRuntimeID {
 		t.Fatalf("old-runtime Command = %#v, %v", command, err)
 	}
-	if releaseErr := repository.ReleaseAdapterRuntime(ctx, ReleaseRuntimeWrite{
+	if releaseErr := repository.ReleaseAdapterRuntime(ctx, devices.ReleaseRuntimeWrite{
 		AdapterID: "simulator", RuntimeID: testRuntimeID, ReleasedAt: now.Add(2 * time.Second),
 	}); releaseErr != nil {
 		t.Fatal(releaseErr)
@@ -578,8 +592,8 @@ func TestObservationRuntimeFencingRecordsStaleObservationAndIsolatesCommands(t *
 	if err != nil {
 		t.Fatal(err)
 	}
-	if result.Disposition != DispositionRejected || result.Rejection == nil ||
-		*result.Rejection != RejectionStaleRuntime || result.State != nil || result.SatisfiedCommand != nil {
+	if result.Disposition != devices.DispositionRejected || result.Rejection == nil ||
+		*result.Rejection != devices.RejectionStaleRuntime || result.State != nil || result.SatisfiedCommand != nil {
 		t.Fatalf("stale projection = %#v", result)
 	}
 	var observationRuntime, rejectionCode string
@@ -590,17 +604,17 @@ func TestObservationRuntimeFencingRecordsStaleObservationAndIsolatesCommands(t *
 	).Scan(&observationRuntime, &rejectionCode); scanErr != nil {
 		t.Fatal(scanErr)
 	}
-	if observationRuntime != string(testRuntimeID) || rejectionCode != string(RejectionStaleRuntime) {
+	if observationRuntime != string(testRuntimeID) || rejectionCode != string(devices.RejectionStaleRuntime) {
 		t.Fatalf("stale observation = %q/%q", observationRuntime, rejectionCode)
 	}
 
-	unknownRuntime := RuntimeID("run_01890f47-7a6b-7c4d-8e9f-0123456789ae")
+	unknownRuntime := devices.RuntimeID("run_01890f47-7a6b-7c4d-8e9f-0123456789ae")
 	unknownRuntimeObservation := newObservation(t, entityID, `false`, now)
 	unknownResult, err := service.ProjectObservation(
 		ctx, "simulator", unknownRuntime, unknownRuntimeObservation, now,
 	)
-	if err != nil || unknownResult.Disposition != DispositionRejected || unknownResult.Rejection == nil ||
-		*unknownResult.Rejection != RejectionStaleRuntime {
+	if err != nil || unknownResult.Disposition != devices.DispositionRejected || unknownResult.Rejection == nil ||
+		*unknownResult.Rejection != devices.RejectionStaleRuntime {
 		t.Fatalf("unknown-runtime projection = %#v, %v", unknownResult, err)
 	}
 	var unknownObservationRuntime sql.NullString
@@ -614,7 +628,7 @@ func TestObservationRuntimeFencingRecordsStaleObservationAndIsolatesCommands(t *
 	}
 
 	duplicate, err := service.ProjectObservation(ctx, "simulator", testSecondRuntime, stale, now.Add(time.Second))
-	if err != nil || duplicate.Disposition != DispositionDuplicate || duplicate.State != nil {
+	if err != nil || duplicate.Disposition != devices.DispositionDuplicate || duplicate.State != nil {
 		t.Fatalf("cross-runtime redelivery = %#v, %v", duplicate, err)
 	}
 	fresh := newObservation(t, entityID, `true`, now.Add(time.Second))
@@ -625,7 +639,7 @@ func TestObservationRuntimeFencingRecordsStaleObservationAndIsolatesCommands(t *
 	if err != nil {
 		t.Fatal(err)
 	}
-	if result.Disposition != DispositionApplied || result.State == nil ||
+	if result.Disposition != devices.DispositionApplied || result.State == nil ||
 		result.State.ObservationID != fresh.ID || result.SatisfiedCommand != nil {
 		t.Fatalf("replacement projection = %#v", result)
 	}
@@ -633,7 +647,7 @@ func TestObservationRuntimeFencingRecordsStaleObservationAndIsolatesCommands(t *
 	if err != nil {
 		t.Fatal(err)
 	}
-	if stored.Status != CommandStatusRequested || stored.OutcomeObservationID != nil {
+	if stored.Status != devices.CommandStatusRequested || stored.OutcomeObservationID != nil {
 		t.Fatalf("old-runtime Command changed = %#v", stored)
 	}
 }
@@ -643,7 +657,7 @@ func TestObservationPruningPinsCurrentStateUntilItAdvances(t *testing.T) {
 	ctx := context.Background()
 	database := openRegistrationDatabase(t, filepath.Join(t.TempDir(), "hearth.db"))
 	catalog := firstLightCatalog(t)
-	service := newTestService(NewSQLiteRepository(database, catalog), nil, catalog, Dependencies{})
+	service := newTestService(NewDeviceRepository(database, catalog), nil, catalog, devices.Dependencies{})
 	binding, err := service.Register(ctx, "simulator", testRuntimeID, validDomainRegistration())
 	if err != nil {
 		t.Fatal(err)
@@ -667,7 +681,7 @@ func TestObservationPruningPinsCurrentStateUntilItAdvances(t *testing.T) {
 	if pruneErr := service.DeleteExpiredObservations(ctx, cutoff, time.Hour); pruneErr != nil {
 		t.Fatal(pruneErr)
 	}
-	assertObservationIDs(t, database, []ObservationID{second.ID})
+	assertObservationIDs(t, database, []devices.ObservationID{second.ID})
 
 	third := newObservation(t, entityID, `false`, cutoff)
 	if _, projectionErr := service.ProjectObservation(
@@ -680,7 +694,7 @@ func TestObservationPruningPinsCurrentStateUntilItAdvances(t *testing.T) {
 	); pruneErr != nil {
 		t.Fatal(pruneErr)
 	}
-	assertObservationIDs(t, database, []ObservationID{third.ID})
+	assertObservationIDs(t, database, []devices.ObservationID{third.ID})
 }
 
 // This test protects the exclusive retention cutoff keyed on Core observed
@@ -691,7 +705,7 @@ func TestObservationPruningUsesCoreObservedTimeExclusively(t *testing.T) {
 	ctx := context.Background()
 	database := openRegistrationDatabase(t, filepath.Join(t.TempDir(), "hearth.db"))
 	catalog := firstLightCatalog(t)
-	service := newTestService(NewSQLiteRepository(database, catalog), nil, catalog, Dependencies{})
+	service := newTestService(NewDeviceRepository(database, catalog), nil, catalog, devices.Dependencies{})
 	binding, err := service.Register(ctx, "simulator", testRuntimeID, validDomainRegistration())
 	if err != nil {
 		t.Fatal(err)
@@ -704,8 +718,8 @@ func TestObservationPruningUsesCoreObservedTimeExclusively(t *testing.T) {
 		value string,
 		observedAt, adapterReceivedAt time.Time,
 		source *time.Time,
-		want ObservationDisposition,
-	) Observation {
+		want devices.ObservationDisposition,
+	) devices.Observation {
 		t.Helper()
 		observation := newObservation(t, entityID, value, adapterReceivedAt)
 		observation.SourceUpdatedAt = source
@@ -722,21 +736,21 @@ func TestObservationPruningUsesCoreObservedTimeExclusively(t *testing.T) {
 	}
 
 	// A newer Adapter timestamp does not protect an old observation.
-	project(`false`, cutoff.Add(-2*time.Hour), cutoff.Add(time.Hour), nil, DispositionApplied)
+	project(`false`, cutoff.Add(-2*time.Hour), cutoff.Add(time.Hour), nil, devices.DispositionApplied)
 	// Repeating the current value is unchanged through the same projection
 	// path, and the newer Adapter timestamp still does not protect it.
-	project(`false`, cutoff.Add(-time.Nanosecond), cutoff.Add(time.Hour), nil, DispositionUnchanged)
+	project(`false`, cutoff.Add(-time.Nanosecond), cutoff.Add(time.Hour), nil, devices.DispositionUnchanged)
 	// Old Adapter and source timestamps do not condemn observations exactly
 	// on the cutoff; the boundary itself is retained.
 	edgeAdapter := project(
-		`true`, cutoff, cutoff.Add(-30*24*time.Hour), nil, DispositionApplied,
+		`true`, cutoff, cutoff.Add(-30*24*time.Hour), nil, devices.DispositionApplied,
 	)
-	edgeUnchanged := project(`true`, cutoff, cutoff, &oldSource, DispositionUnchanged)
+	edgeUnchanged := project(`true`, cutoff, cutoff, &oldSource, devices.DispositionUnchanged)
 	// Rejected observations follow the same observed_at rule.
-	project(`1`, cutoff.Add(-time.Nanosecond), cutoff, nil, DispositionRejected)
-	rejectedEdge := project(`1`, cutoff, cutoff, nil, DispositionRejected)
+	project(`1`, cutoff.Add(-time.Nanosecond), cutoff, nil, devices.DispositionRejected)
+	rejectedEdge := project(`1`, cutoff, cutoff, nil, devices.DispositionRejected)
 	// The anchor row is newer than the cutoff either way.
-	anchor := project(`false`, cutoff.Add(time.Hour), cutoff.Add(time.Hour), nil, DispositionApplied)
+	anchor := project(`false`, cutoff.Add(time.Hour), cutoff.Add(time.Hour), nil, devices.DispositionApplied)
 
 	if pruneErr := service.DeleteExpiredObservations(
 		ctx, cutoff.Add(time.Hour), time.Hour,
@@ -745,7 +759,7 @@ func TestObservationPruningUsesCoreObservedTimeExclusively(t *testing.T) {
 	}
 	assertObservationIDs(
 		t, database,
-		[]ObservationID{edgeAdapter.ID, edgeUnchanged.ID, rejectedEdge.ID, anchor.ID},
+		[]devices.ObservationID{edgeAdapter.ID, edgeUnchanged.ID, rejectedEdge.ID, anchor.ID},
 	)
 }
 
@@ -756,14 +770,14 @@ func TestObservationPruningAppliesChangedPolicyToPersistedData(t *testing.T) {
 	ctx := context.Background()
 	database := openRegistrationDatabase(t, filepath.Join(t.TempDir(), "hearth.db"))
 	catalog := firstLightCatalog(t)
-	service := newTestService(NewSQLiteRepository(database, catalog), nil, catalog, Dependencies{})
+	service := newTestService(NewDeviceRepository(database, catalog), nil, catalog, devices.Dependencies{})
 	binding, err := service.Register(ctx, "simulator", testRuntimeID, validDomainRegistration())
 	if err != nil {
 		t.Fatal(err)
 	}
 	entityID := binding.Entities[0].EntityID
 	base := time.Date(2026, 8, 1, 0, 0, 0, 0, time.UTC)
-	var ids []ObservationID
+	var ids []devices.ObservationID
 	for index, value := range []string{`false`, `true`, `false`} {
 		observation := newObservation(t, entityID, value, base.Add(time.Duration(index)*time.Hour))
 		if _, projectionErr := service.ProjectObservation(
@@ -800,7 +814,7 @@ func TestObservationPruningRejectsMissingTimeAndRetention(t *testing.T) {
 	ctx := context.Background()
 	database := openRegistrationDatabase(t, filepath.Join(t.TempDir(), "hearth.db"))
 	catalog := firstLightCatalog(t)
-	service := newTestService(NewSQLiteRepository(database, catalog), nil, catalog, Dependencies{})
+	service := newTestService(NewDeviceRepository(database, catalog), nil, catalog, devices.Dependencies{})
 	now := time.Date(2026, 8, 1, 0, 0, 0, 0, time.UTC)
 	if err := service.DeleteExpiredObservations(ctx, time.Time{}, time.Hour); err == nil {
 		t.Fatal("prune without a prune time unexpectedly succeeded")
@@ -812,16 +826,18 @@ func TestObservationPruningRejectsMissingTimeAndRetention(t *testing.T) {
 
 // observationTestCorrelationID is the wire correlation every Observation
 // report in these tests carries; an accepted Observation fact copies it.
-const observationTestCorrelationID = CorrelationID("cor_01890f47-7a6b-7c4d-8e9f-0123456789ab")
+const observationTestCorrelationID = devices.CorrelationID("cor_01890f47-7a6b-7c4d-8e9f-0123456789ab")
 
-func newObservation(t *testing.T, entityID EntityID, value string, adapterReceivedAt time.Time) Observation {
+func newObservation(
+	t *testing.T, entityID devices.EntityID, value string, adapterReceivedAt time.Time,
+) devices.Observation {
 	t.Helper()
-	id, err := NewObservationID()
+	id, err := devices.NewObservationID()
 	if err != nil {
 		t.Fatal(err)
 	}
-	return Observation{
-		ID: id, EntityID: entityID, Value: Value(value),
+	return devices.Observation{
+		ID: id, EntityID: entityID, Value: devices.Value(value),
 		CorrelationID: observationTestCorrelationID, AdapterReceivedAt: adapterReceivedAt,
 	}
 }
@@ -837,16 +853,16 @@ func assertObservationCount(t *testing.T, database *sql.DB, want int) {
 	}
 }
 
-func assertObservationIDs(t *testing.T, database *sql.DB, want []ObservationID) {
+func assertObservationIDs(t *testing.T, database *sql.DB, want []devices.ObservationID) {
 	t.Helper()
 	rows, err := database.Query("SELECT observation_id FROM observations ORDER BY receive_order")
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer rows.Close()
-	var got []ObservationID
+	var got []devices.ObservationID
 	for rows.Next() {
-		var id ObservationID
+		var id devices.ObservationID
 		if scanErr := rows.Scan(&id); scanErr != nil {
 			t.Fatal(scanErr)
 		}
@@ -865,7 +881,7 @@ func assertObservationIDs(t *testing.T, database *sql.DB, want []ObservationID) 
 	}
 }
 
-func resultReceiveOrder(t *testing.T, database *sql.DB, id ObservationID) int64 {
+func resultReceiveOrder(t *testing.T, database *sql.DB, id devices.ObservationID) int64 {
 	t.Helper()
 	var order int64
 	if err := database.QueryRow("SELECT receive_order FROM observations WHERE observation_id = ?", id).
@@ -880,7 +896,7 @@ func TestObservationProjectionEnrichesObservationsWithNormalizedState(t *testing
 	ctx := context.Background()
 	database := openRegistrationDatabase(t, filepath.Join(t.TempDir(), "hearth.db"))
 	catalog := firstLightCatalog(t)
-	service := newTestService(NewSQLiteRepository(database, catalog), nil, catalog, Dependencies{})
+	service := newTestService(NewDeviceRepository(database, catalog), nil, catalog, devices.Dependencies{})
 	binding, err := service.Register(ctx, "simulator", testRuntimeID, validDomainRegistration())
 	if err != nil {
 		t.Fatal(err)
@@ -914,13 +930,16 @@ func TestObservationProjectionEnrichesObservationsWithNormalizedState(t *testing
 	if projectionErr != nil {
 		t.Fatal(projectionErr)
 	}
-	if result.Disposition != DispositionRejected || result.Rejection == nil ||
-		*result.Rejection != RejectionInvalidValue {
+	if result.Disposition != devices.DispositionRejected || result.Rejection == nil ||
+		*result.Rejection != devices.RejectionInvalidValue {
 		t.Fatalf("invalid-value projection = %#v", result)
 	}
-	assertObservationRow(t, database, rejected.ID, "rejected", "", string(RejectionInvalidValue), sourceUpdatedAt)
+	assertObservationRow(
+		t, database, rejected.ID, "rejected", "",
+		string(devices.RejectionInvalidValue), sourceUpdatedAt,
+	)
 
-	unknownEntityID, err := NewEntityID()
+	unknownEntityID, err := devices.NewEntityID()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -932,14 +951,17 @@ func TestObservationProjectionEnrichesObservationsWithNormalizedState(t *testing
 	if projectionErr != nil {
 		t.Fatal(projectionErr)
 	}
-	if result.Disposition != DispositionRejected || result.Rejection == nil ||
-		*result.Rejection != RejectionUnknownEntity {
+	if result.Disposition != devices.DispositionRejected || result.Rejection == nil ||
+		*result.Rejection != devices.RejectionUnknownEntity {
 		t.Fatalf("unknown-entity projection = %#v", result)
 	}
-	assertObservationRow(t, database, unknown.ID, "rejected", "", string(RejectionUnknownEntity), sourceUpdatedAt)
+	assertObservationRow(
+		t, database, unknown.ID, "rejected", "",
+		string(devices.RejectionUnknownEntity), sourceUpdatedAt,
+	)
 
 	redelivery := unchanged
-	redelivery.Value = Value(`false`)
+	redelivery.Value = devices.Value(`false`)
 	redelivery.SourceUpdatedAt = &sourceUpdatedAt
 	result, projectionErr = service.ProjectObservation(
 		ctx, "simulator", testRuntimeID, redelivery, observedAt.Add(4*time.Second),
@@ -947,7 +969,7 @@ func TestObservationProjectionEnrichesObservationsWithNormalizedState(t *testing
 	if projectionErr != nil {
 		t.Fatal(projectionErr)
 	}
-	if result.Disposition != DispositionDuplicate {
+	if result.Disposition != devices.DispositionDuplicate {
 		t.Fatalf("duplicate projection = %#v", result)
 	}
 	assertObservationCount(t, database, 4)
@@ -956,7 +978,7 @@ func TestObservationProjectionEnrichesObservationsWithNormalizedState(t *testing
 func assertObservationRow(
 	t *testing.T,
 	database *sql.DB,
-	id ObservationID,
+	id devices.ObservationID,
 	disposition, value, rejection string,
 	sourceUpdatedAt time.Time,
 ) {
@@ -999,7 +1021,7 @@ func TestObservationProjectionStoresNormalizedStateValue(t *testing.T) {
 	ctx := context.Background()
 	database := openRegistrationDatabase(t, filepath.Join(t.TempDir(), "hearth.db"))
 	catalog := firstLightCatalog(t)
-	service := newTestService(NewSQLiteRepository(database, catalog), nil, catalog, Dependencies{})
+	service := newTestService(NewDeviceRepository(database, catalog), nil, catalog, devices.Dependencies{})
 	binding, err := service.Register(ctx, "simulator", testRuntimeID, validDomainRegistration())
 	if err != nil {
 		t.Fatal(err)
@@ -1010,12 +1032,12 @@ func TestObservationProjectionStoresNormalizedStateValue(t *testing.T) {
 	// This test protects normalized-value persistence and fails if the raw
 	// Observation Value is stored instead of the canonical normalized form.
 	padded := newObservation(t, entityID, `true`, observedAt)
-	padded.Value = Value("  true \n")
+	padded.Value = devices.Value("  true \n")
 	result, err := service.ProjectObservation(ctx, "simulator", testRuntimeID, padded, observedAt)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if result.Disposition != DispositionApplied || result.State == nil || string(result.State.Value) != "true" {
+	if result.Disposition != devices.DispositionApplied || result.State == nil || string(result.State.Value) != "true" {
 		t.Fatalf("whitespace-padded projection = %#v", result)
 	}
 	assertObservationRow(t, database, padded.ID, "applied", `true`, "", time.Time{})
@@ -1027,7 +1049,7 @@ func TestObservationProjectionStoresNormalizedStateValue(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if second.Disposition != DispositionUnchanged || second.State == nil ||
+	if second.Disposition != devices.DispositionUnchanged || second.State == nil ||
 		string(second.State.Value) != "true" {
 		t.Fatalf("canonical repeat projection = %#v", second)
 	}
@@ -1047,8 +1069,8 @@ func TestObservationProjectionRollsBackObservationWhenStateWriteFails(t *testing
 	ctx := context.Background()
 	database := openRegistrationDatabase(t, filepath.Join(t.TempDir(), "hearth.db"))
 	catalog := firstLightCatalog(t)
-	repository := NewSQLiteRepository(database, catalog)
-	service := newTestService(repository, nil, catalog, Dependencies{})
+	repository := NewDeviceRepository(database, catalog)
+	service := newTestService(repository, nil, catalog, devices.Dependencies{})
 	binding, err := service.Register(ctx, "simulator", testRuntimeID, validDomainRegistration())
 	if err != nil {
 		t.Fatal(err)
@@ -1110,7 +1132,7 @@ func TestObservationProjectionRollsBackObservationWhenStateWriteFails(t *testing
 	if err != nil {
 		t.Fatal(err)
 	}
-	if stored.Status != CommandStatusRequested || stored.CompletedAt != nil ||
+	if stored.Status != devices.CommandStatusRequested || stored.CompletedAt != nil ||
 		stored.OutcomeObservationID != nil {
 		t.Fatalf("command after aborted projection = %#v", stored)
 	}

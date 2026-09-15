@@ -55,5 +55,5 @@ func (service *Service) setEntityEnabled(
 	if err != nil {
 		return EntityWithState{}, err
 	}
-	return copyEntityWithState(view), nil
+	return CopyEntityWithState(view), nil
 }

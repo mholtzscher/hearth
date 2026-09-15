@@ -18,6 +18,7 @@ import (
 	contractsv1 "github.com/mholtzscher/hearth/contracts/v1"
 	"github.com/mholtzscher/hearth/internal/contracts/v1/natswire"
 	"github.com/mholtzscher/hearth/internal/modules/devices"
+	devicessqlite "github.com/mholtzscher/hearth/internal/modules/devices/sqlite"
 	platformdb "github.com/mholtzscher/hearth/internal/platform/db"
 )
 
@@ -349,7 +350,7 @@ func openDeviceFactOutbox(
 	if migrateErr := platformdb.Migrate(context.Background(), database); migrateErr != nil {
 		t.Fatal(migrateErr)
 	}
-	repository := devices.NewSQLiteRepository(database, nil)
+	repository := devicessqlite.NewDeviceRepository(database, nil)
 	return database, &observingDeviceFactOutbox{DeviceFactOutbox: repository, change: change}
 }
 

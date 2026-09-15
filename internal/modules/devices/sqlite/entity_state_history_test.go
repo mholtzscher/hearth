@@ -1,4 +1,4 @@
-package devices //nolint:testpackage // Tests exercise package-private domain seams and repository fixtures.
+package sqlite //nolint:testpackage // Tests exercise package-private SQLite persistence behavior.
 
 import (
 	"context"
@@ -9,14 +9,21 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/mholtzscher/hearth/internal/modules/devices"
 )
 
 type historyProjection struct {
-	id          ObservationID
-	disposition ObservationDisposition
+	id          devices.ObservationID
+	disposition devices.ObservationDisposition
 }
 
-func seedStateHistory(t *testing.T, service *Service, entityID EntityID, base time.Time) []historyProjection {
+func seedStateHistory(
+	t *testing.T,
+	service *devices.Service,
+	entityID devices.EntityID,
+	base time.Time,
+) []historyProjection {
 	t.Helper()
 	ctx := context.Background()
 	source := base.Add(-time.Hour)
@@ -42,8 +49,9 @@ func seedStateHistory(t *testing.T, service *Service, entityID EntityID, base ti
 		}
 		projected = append(projected, historyProjection{id: observation.ID, disposition: result.Disposition})
 	}
-	want := []ObservationDisposition{
-		DispositionApplied, DispositionUnchanged, DispositionApplied, DispositionRejected, DispositionUnchanged,
+	want := []devices.ObservationDisposition{
+		devices.DispositionApplied, devices.DispositionUnchanged, devices.DispositionApplied,
+		devices.DispositionRejected, devices.DispositionUnchanged,
 	}
 	for index := range want {
 		if projected[index].disposition != want[index] {
@@ -55,17 +63,17 @@ func seedStateHistory(t *testing.T, service *Service, entityID EntityID, base ti
 
 func collectStateHistory(
 	t *testing.T,
-	service *Service,
-	entityID EntityID,
-	filter EntityStateHistoryFilter,
+	service *devices.Service,
+	entityID devices.EntityID,
+	filter devices.EntityStateHistoryFilter,
 	limit int,
-) []EntityStateHistoryEntry {
+) []devices.EntityStateHistoryEntry {
 	t.Helper()
 	ctx := context.Background()
-	var collected []EntityStateHistoryEntry
+	var collected []devices.EntityStateHistoryEntry
 	var before *int64
 	for {
-		page, err := service.ListEntityStateHistory(ctx, ListEntityStateHistoryParams{
+		page, err := service.ListEntityStateHistory(ctx, devices.ListEntityStateHistoryParams{
 			EntityID: entityID, Filter: filter, BeforeReceiveOrder: before, Limit: limit,
 		})
 		if err != nil {
@@ -81,7 +89,7 @@ func collectStateHistory(
 		}
 		if !page.HasMore {
 			if len(page.Items) == 0 && len(collected) == 0 {
-				return []EntityStateHistoryEntry{}
+				return []devices.EntityStateHistoryEntry{}
 			}
 			return collected
 		}
@@ -91,15 +99,15 @@ func collectStateHistory(
 	}
 }
 
-func historyIDs(entries []EntityStateHistoryEntry) []ObservationID {
-	ids := make([]ObservationID, len(entries))
+func historyIDs(entries []devices.EntityStateHistoryEntry) []devices.ObservationID {
+	ids := make([]devices.ObservationID, len(entries))
 	for index, entry := range entries {
 		ids[index] = entry.ObservationID
 	}
 	return ids
 }
 
-func assertHistoryIDs(t *testing.T, filter EntityStateHistoryFilter, got, want []ObservationID) {
+func assertHistoryIDs(t *testing.T, filter devices.EntityStateHistoryFilter, got, want []devices.ObservationID) {
 	t.Helper()
 	if len(got) != len(want) {
 		t.Fatalf("%s history IDs = %v, want %v", filter, got, want)
@@ -111,14 +119,14 @@ func assertHistoryIDs(t *testing.T, filter EntityStateHistoryFilter, got, want [
 	}
 }
 
-func openHistoryService(t *testing.T, database *sql.DB) *Service {
+func openHistoryService(t *testing.T, database *sql.DB) *devices.Service {
 	t.Helper()
 	catalog := firstLightCatalog(t)
-	repository := NewSQLiteRepository(database, catalog)
-	return newTestService(repository, nil, catalog, Dependencies{})
+	repository := NewDeviceRepository(database, catalog)
+	return newTestService(repository, nil, catalog, devices.Dependencies{})
 }
 
-func registerHistoryEntity(t *testing.T, service *Service) EntityID {
+func registerHistoryEntity(t *testing.T, service *devices.Service) devices.EntityID {
 	t.Helper()
 	binding, err := service.Register(context.Background(), "simulator", testRuntimeID, validDomainRegistration())
 	if err != nil {
@@ -136,32 +144,32 @@ func TestSQLiteEntityStateHistoryFiltersOrderAndPaginate(t *testing.T) {
 	base := time.Date(2026, 8, 22, 12, 0, 0, 0, time.UTC)
 	projected := seedStateHistory(t, service, entityID, base)
 	// Newest-first receive order: 5, 4, 3, 2, 1.
-	id := func(index int) ObservationID { return projected[index].id }
+	id := func(index int) devices.ObservationID { return projected[index].id }
 
 	for _, test := range []struct {
-		filter EntityStateHistoryFilter
-		want   []ObservationID
+		filter devices.EntityStateHistoryFilter
+		want   []devices.ObservationID
 	}{
-		{EntityStateHistoryFilterAll, []ObservationID{id(4), id(3), id(2), id(1), id(0)}},
-		{EntityStateHistoryFilterUpdates, []ObservationID{id(4), id(2), id(1), id(0)}},
-		{EntityStateHistoryFilterApplied, []ObservationID{id(2), id(0)}},
-		{EntityStateHistoryFilterUnchanged, []ObservationID{id(4), id(1)}},
-		{EntityStateHistoryFilterRejected, []ObservationID{id(3)}},
+		{devices.EntityStateHistoryFilterAll, []devices.ObservationID{id(4), id(3), id(2), id(1), id(0)}},
+		{devices.EntityStateHistoryFilterUpdates, []devices.ObservationID{id(4), id(2), id(1), id(0)}},
+		{devices.EntityStateHistoryFilterApplied, []devices.ObservationID{id(2), id(0)}},
+		{devices.EntityStateHistoryFilterUnchanged, []devices.ObservationID{id(4), id(1)}},
+		{devices.EntityStateHistoryFilterRejected, []devices.ObservationID{id(3)}},
 	} {
 		collected := collectStateHistory(t, service, entityID, test.filter, 2)
 		assertHistoryIDs(t, test.filter, historyIDs(collected), test.want)
 		for _, entry := range collected {
-			if entry.Disposition == DispositionRejected && entry.Value != nil {
+			if entry.Disposition == devices.DispositionRejected && entry.Value != nil {
 				t.Fatalf("%s rejected entry %q carries a value", test.filter, entry.ObservationID)
 			}
-			if entry.Disposition != DispositionRejected && entry.Value == nil {
+			if entry.Disposition != devices.DispositionRejected && entry.Value == nil {
 				t.Fatalf("%s accepted entry %q is missing its value", test.filter, entry.ObservationID)
 			}
 		}
 	}
 
-	repository := NewSQLiteRepository(database, firstLightCatalog(t))
-	unfiltered, err := repository.ListEntityStateHistory(ctx, ListEntityStateHistoryParams{
+	repository := NewDeviceRepository(database, firstLightCatalog(t))
+	unfiltered, err := repository.ListEntityStateHistory(ctx, devices.ListEntityStateHistoryParams{
 		EntityID: entityID, Limit: 50,
 	})
 	if err != nil {
@@ -171,10 +179,10 @@ func TestSQLiteEntityStateHistoryFiltersOrderAndPaginate(t *testing.T) {
 		t,
 		"empty-filter",
 		historyIDs(unfiltered.Items),
-		[]ObservationID{id(4), id(2), id(1), id(0)},
+		[]devices.ObservationID{id(4), id(2), id(1), id(0)},
 	)
 
-	if _, filterErr := repository.ListEntityStateHistory(ctx, ListEntityStateHistoryParams{
+	if _, filterErr := repository.ListEntityStateHistory(ctx, devices.ListEntityStateHistoryParams{
 		EntityID: entityID, Filter: "recent", Limit: 50,
 	}); filterErr == nil {
 		t.Fatal("unknown adapter filter unexpectedly succeeded")
@@ -190,8 +198,8 @@ func TestSQLiteEntityStateHistoryMapsOwnedDomainValues(t *testing.T) {
 	base := time.Date(2026, 8, 22, 12, 0, 0, 0, time.UTC)
 	projected := seedStateHistory(t, service, entityID, base)
 
-	page, err := service.ListEntityStateHistory(ctx, ListEntityStateHistoryParams{
-		EntityID: entityID, Filter: EntityStateHistoryFilterAll, Limit: 50,
+	page, err := service.ListEntityStateHistory(ctx, devices.ListEntityStateHistoryParams{
+		EntityID: entityID, Filter: devices.EntityStateHistoryFilterAll, Limit: 50,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -200,26 +208,26 @@ func TestSQLiteEntityStateHistoryMapsOwnedDomainValues(t *testing.T) {
 		t.Fatalf("history items = %d, want %d", len(page.Items), len(projected))
 	}
 	applied := page.Items[4]
-	if applied.Disposition != DispositionApplied || string(applied.Value) != "true" ||
+	if applied.Disposition != devices.DispositionApplied || string(applied.Value) != "true" ||
 		applied.Rejection != nil || applied.SourceUpdatedAt == nil ||
 		!applied.SourceUpdatedAt.Equal(base.Add(-time.Hour)) ||
 		applied.AdapterReceivedAt.Location() != time.UTC || applied.ObservedAt.Location() != time.UTC {
 		t.Fatalf("applied entry = %#v", applied)
 	}
 	rejected := page.Items[1]
-	if rejected.Disposition != DispositionRejected || rejected.Value != nil ||
-		rejected.Rejection == nil || *rejected.Rejection != RejectionInvalidValue ||
+	if rejected.Disposition != devices.DispositionRejected || rejected.Value != nil ||
+		rejected.Rejection == nil || *rejected.Rejection != devices.RejectionInvalidValue ||
 		rejected.SourceUpdatedAt == nil {
 		t.Fatalf("rejected entry = %#v", rejected)
 	}
 
 	page.Items[4].Value[0] = 'f'
 	*page.Items[4].SourceUpdatedAt = time.Time{}
-	mutation := RejectionStaleRuntime
+	mutation := devices.RejectionStaleRuntime
 	page.Items[4].Rejection = &mutation
 
-	reread, err := service.ListEntityStateHistory(ctx, ListEntityStateHistoryParams{
-		EntityID: entityID, Filter: EntityStateHistoryFilterAll, Limit: 50,
+	reread, err := service.ListEntityStateHistory(ctx, devices.ListEntityStateHistoryParams{
+		EntityID: entityID, Filter: devices.EntityStateHistoryFilterAll, Limit: 50,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -235,7 +243,7 @@ func TestSQLiteEntityStateHistoryListsObservationsForUnknownEntities(t *testing.
 	ctx := context.Background()
 	database := openRegistrationDatabase(t, filepath.Join(t.TempDir(), "hearth.db"))
 	service := openHistoryService(t, database)
-	unknownEntityID, err := NewEntityID()
+	unknownEntityID, err := devices.NewEntityID()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -245,23 +253,23 @@ func TestSQLiteEntityStateHistoryListsObservationsForUnknownEntities(t *testing.
 	if err != nil {
 		t.Fatal(err)
 	}
-	if result.Disposition != DispositionRejected {
+	if result.Disposition != devices.DispositionRejected {
 		t.Fatalf("unknown-entity projection = %#v", result)
 	}
 
-	repository := NewSQLiteRepository(database, firstLightCatalog(t))
-	page, err := repository.ListEntityStateHistory(ctx, ListEntityStateHistoryParams{
-		EntityID: unknownEntityID, Filter: EntityStateHistoryFilterAll, Limit: 50,
+	repository := NewDeviceRepository(database, firstLightCatalog(t))
+	page, err := repository.ListEntityStateHistory(ctx, devices.ListEntityStateHistoryParams{
+		EntityID: unknownEntityID, Filter: devices.EntityStateHistoryFilterAll, Limit: 50,
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if len(page.Items) != 1 || page.Items[0].ObservationID != observation.ID ||
-		page.Items[0].Disposition != DispositionRejected || page.Items[0].Value != nil {
+		page.Items[0].Disposition != devices.DispositionRejected || page.Items[0].Value != nil {
 		t.Fatalf("unknown-entity history = %#v", page)
 	}
 
-	if _, unknownErr := service.ListEntityStateHistory(ctx, ListEntityStateHistoryParams{
+	if _, unknownErr := service.ListEntityStateHistory(ctx, devices.ListEntityStateHistoryParams{
 		EntityID: unknownEntityID, Limit: 50,
 	}); unknownErr == nil {
 		t.Fatal("service history for unknown Entity unexpectedly succeeded")
@@ -273,13 +281,13 @@ func TestSQLiteEntityStateHistorySurvivesInsertsAndPruning(t *testing.T) {
 	ctx := context.Background()
 	database := openRegistrationDatabase(t, filepath.Join(t.TempDir(), "hearth.db"))
 	service := openHistoryService(t, database)
-	repository := NewSQLiteRepository(database, firstLightCatalog(t))
+	repository := NewDeviceRepository(database, firstLightCatalog(t))
 	entityID := registerHistoryEntity(t, service)
 	base := time.Date(2026, 8, 22, 12, 0, 0, 0, time.UTC)
 	projected := seedStateHistory(t, service, entityID, base)
 
-	first, err := repository.ListEntityStateHistory(ctx, ListEntityStateHistoryParams{
-		EntityID: entityID, Filter: EntityStateHistoryFilterUpdates, Limit: 2,
+	first, err := repository.ListEntityStateHistory(ctx, devices.ListEntityStateHistoryParams{
+		EntityID: entityID, Filter: devices.EntityStateHistoryFilterUpdates, Limit: 2,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -289,7 +297,7 @@ func TestSQLiteEntityStateHistorySurvivesInsertsAndPruning(t *testing.T) {
 	}
 	cursor := first.Items[len(first.Items)-1].ReceiveOrder
 
-	newer := []ObservationID{}
+	newer := []devices.ObservationID{}
 	for index, value := range []string{`true`, `false`} {
 		observation := newObservation(t, entityID, value, base.Add(time.Duration(10+index)*time.Second))
 		if _, projectionErr := service.ProjectObservation(
@@ -300,8 +308,8 @@ func TestSQLiteEntityStateHistorySurvivesInsertsAndPruning(t *testing.T) {
 		newer = append(newer, observation.ID)
 	}
 
-	second, err := repository.ListEntityStateHistory(ctx, ListEntityStateHistoryParams{
-		EntityID: entityID, Filter: EntityStateHistoryFilterUpdates,
+	second, err := repository.ListEntityStateHistory(ctx, devices.ListEntityStateHistoryParams{
+		EntityID: entityID, Filter: devices.EntityStateHistoryFilterUpdates,
 		BeforeReceiveOrder: &cursor, Limit: 10,
 	})
 	if err != nil {
@@ -313,7 +321,7 @@ func TestSQLiteEntityStateHistorySurvivesInsertsAndPruning(t *testing.T) {
 		t,
 		"continuation",
 		historyIDs(second.Items),
-		[]ObservationID{projected[1].id, projected[0].id},
+		[]devices.ObservationID{projected[1].id, projected[0].id},
 	)
 	if second.HasMore {
 		t.Fatalf("continuation page still reports more rows: %#v", second)
@@ -336,8 +344,8 @@ func TestSQLiteEntityStateHistorySurvivesInsertsAndPruning(t *testing.T) {
 	if err = service.DeleteExpiredObservations(ctx, base.Add(time.Hour), time.Hour); err != nil {
 		t.Fatal(err)
 	}
-	afterPrune, err := repository.ListEntityStateHistory(ctx, ListEntityStateHistoryParams{
-		EntityID: entityID, Filter: EntityStateHistoryFilterUpdates,
+	afterPrune, err := repository.ListEntityStateHistory(ctx, devices.ListEntityStateHistoryParams{
+		EntityID: entityID, Filter: devices.EntityStateHistoryFilterUpdates,
 		BeforeReceiveOrder: &cursor, Limit: 10,
 	})
 	if err != nil {
@@ -348,7 +356,7 @@ func TestSQLiteEntityStateHistorySurvivesInsertsAndPruning(t *testing.T) {
 	}
 }
 
-func newerCursor(t *testing.T, database *sql.DB, id ObservationID) int64 {
+func newerCursor(t *testing.T, database *sql.DB, id devices.ObservationID) int64 {
 	t.Helper()
 	var order int64
 	if err := database.QueryRow(
@@ -364,7 +372,7 @@ func TestSQLiteEntityStateHistoryRetentionKeepsCurrentAnchor(t *testing.T) {
 	ctx := context.Background()
 	database := openRegistrationDatabase(t, filepath.Join(t.TempDir(), "hearth.db"))
 	service := openHistoryService(t, database)
-	repository := NewSQLiteRepository(database, firstLightCatalog(t))
+	repository := NewDeviceRepository(database, firstLightCatalog(t))
 	entityID := registerHistoryEntity(t, service)
 	base := time.Date(2026, 8, 1, 0, 0, 0, 0, time.UTC)
 	first := newObservation(t, entityID, `false`, base)
@@ -386,13 +394,13 @@ func TestSQLiteEntityStateHistoryRetentionKeepsCurrentAnchor(t *testing.T) {
 	); err != nil {
 		t.Fatal(err)
 	}
-	page, err := repository.ListEntityStateHistory(ctx, ListEntityStateHistoryParams{
-		EntityID: entityID, Filter: EntityStateHistoryFilterAll, Limit: 50,
+	page, err := repository.ListEntityStateHistory(ctx, devices.ListEntityStateHistoryParams{
+		EntityID: entityID, Filter: devices.EntityStateHistoryFilterAll, Limit: 50,
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	assertHistoryIDs(t, "retained", historyIDs(page.Items), []ObservationID{second.ID})
+	assertHistoryIDs(t, "retained", historyIDs(page.Items), []devices.ObservationID{second.ID})
 }
 
 // loadObservationHistoryQueries reads the named history queries from the actual
@@ -493,7 +501,7 @@ func assertHistoryQueryPlan(
 func seedTargetHistory(
 	t *testing.T,
 	database *sql.DB,
-	target EntityID,
+	target devices.EntityID,
 	applied, unchanged, rejected int,
 ) {
 	t.Helper()
@@ -525,12 +533,12 @@ func seedTargetHistory(
 			t.Fatal(execErr)
 		}
 	}
-	insertDisposition(0, applied, string(DispositionApplied),
+	insertDisposition(0, applied, string(devices.DispositionApplied),
 		sql.NullString{}, sql.NullString{String: `true`, Valid: true})
-	insertDisposition(applied, unchanged, string(DispositionUnchanged),
+	insertDisposition(applied, unchanged, string(devices.DispositionUnchanged),
 		sql.NullString{}, sql.NullString{String: `true`, Valid: true})
-	insertDisposition(applied+unchanged, rejected, string(DispositionRejected),
-		sql.NullString{String: string(RejectionInvalidValue), Valid: true}, sql.NullString{})
+	insertDisposition(applied+unchanged, rejected, string(devices.DispositionRejected),
+		sql.NullString{String: string(devices.RejectionInvalidValue), Valid: true}, sql.NullString{})
 	if commitErr := transaction.Commit(); commitErr != nil {
 		t.Fatal(commitErr)
 	}
@@ -607,38 +615,38 @@ func assertAllHistoryQueryPlans(t *testing.T, database *sql.DB, entityID string,
 func TestSQLiteEntityStateHistoryUnchangedHeavyQueryPlans(t *testing.T) {
 	t.Parallel()
 	database := openMigratedDatabase(t, filepath.Join(t.TempDir(), "hearth.db"))
-	target := EntityID("ent_01890f47-7a6b-7c4d-8e9f-0123456789a1")
+	target := devices.EntityID("ent_01890f47-7a6b-7c4d-8e9f-0123456789a1")
 	// Small skewed fixtures protect index selection and sparse pagination;
 	// they deliberately do not measure scale or latency.
 	seedTargetHistory(t, database, target, 10, 200, 5)
 
-	repository := NewSQLiteRepository(database, firstLightCatalog(t))
-	applied := requireHistoryPage(t, repository, ListEntityStateHistoryParams{
-		EntityID: target, Filter: EntityStateHistoryFilterApplied, Limit: 50,
+	repository := NewDeviceRepository(database, firstLightCatalog(t))
+	applied := requireHistoryPage(t, repository, devices.ListEntityStateHistoryParams{
+		EntityID: target, Filter: devices.EntityStateHistoryFilterApplied, Limit: 50,
 	}, 10, false)
-	requireHistoryPage(t, repository, ListEntityStateHistoryParams{
-		EntityID: target, Filter: EntityStateHistoryFilterRejected, Limit: 50,
+	requireHistoryPage(t, repository, devices.ListEntityStateHistoryParams{
+		EntityID: target, Filter: devices.EntityStateHistoryFilterRejected, Limit: 50,
 	}, 5, false)
-	unchanged := requireHistoryPage(t, repository, ListEntityStateHistoryParams{
-		EntityID: target, Filter: EntityStateHistoryFilterUnchanged, Limit: 50,
+	unchanged := requireHistoryPage(t, repository, devices.ListEntityStateHistoryParams{
+		EntityID: target, Filter: devices.EntityStateHistoryFilterUnchanged, Limit: 50,
 	}, 50, true)
-	requireHistoryContinuation(t, repository, ListEntityStateHistoryParams{
-		EntityID: target, Filter: EntityStateHistoryFilterUnchanged, Limit: 50,
+	requireHistoryContinuation(t, repository, devices.ListEntityStateHistoryParams{
+		EntityID: target, Filter: devices.EntityStateHistoryFilterUnchanged, Limit: 50,
 	}, unchanged, 50, true)
-	requireHistoryPage(t, repository, ListEntityStateHistoryParams{
-		EntityID: target, Filter: EntityStateHistoryFilterUpdates, Limit: 50,
+	requireHistoryPage(t, repository, devices.ListEntityStateHistoryParams{
+		EntityID: target, Filter: devices.EntityStateHistoryFilterUpdates, Limit: 50,
 	}, 50, true)
-	requireHistoryPage(t, repository, ListEntityStateHistoryParams{
-		EntityID: target, Filter: EntityStateHistoryFilterAll, Limit: 50,
+	requireHistoryPage(t, repository, devices.ListEntityStateHistoryParams{
+		EntityID: target, Filter: devices.EntityStateHistoryFilterAll, Limit: 50,
 	}, 50, true)
 	oldestApplied := applied[len(applied)-1].ReceiveOrder
-	requireEmptyHistoryPage(t, repository, ListEntityStateHistoryParams{
-		EntityID: target, Filter: EntityStateHistoryFilterApplied,
+	requireEmptyHistoryPage(t, repository, devices.ListEntityStateHistoryParams{
+		EntityID: target, Filter: devices.EntityStateHistoryFilterApplied,
 		BeforeReceiveOrder: &oldestApplied, Limit: 50,
 	})
-	requireEmptyHistoryPage(t, repository, ListEntityStateHistoryParams{
-		EntityID: EntityID("ent_01890f47-7a6b-7c4d-8e9f-0123456789ff"),
-		Filter:   EntityStateHistoryFilterApplied, Limit: 50,
+	requireEmptyHistoryPage(t, repository, devices.ListEntityStateHistoryParams{
+		EntityID: devices.EntityID("ent_01890f47-7a6b-7c4d-8e9f-0123456789ff"),
+		Filter:   devices.EntityStateHistoryFilterApplied, Limit: 50,
 	})
 	assertAllHistoryQueryPlans(t, database, string(target), 100)
 }
@@ -646,41 +654,41 @@ func TestSQLiteEntityStateHistoryUnchangedHeavyQueryPlans(t *testing.T) {
 func TestSQLiteEntityStateHistoryRejectedHeavyQueryPlans(t *testing.T) {
 	t.Parallel()
 	database := openMigratedDatabase(t, filepath.Join(t.TempDir(), "hearth.db"))
-	target := EntityID("ent_01890f47-7a6b-7c4d-8e9f-0123456789a1")
+	target := devices.EntityID("ent_01890f47-7a6b-7c4d-8e9f-0123456789a1")
 	seedTargetHistory(t, database, target, 10, 10, 200)
 
-	repository := NewSQLiteRepository(database, firstLightCatalog(t))
-	applied := requireHistoryPage(t, repository, ListEntityStateHistoryParams{
-		EntityID: target, Filter: EntityStateHistoryFilterApplied, Limit: 50,
+	repository := NewDeviceRepository(database, firstLightCatalog(t))
+	applied := requireHistoryPage(t, repository, devices.ListEntityStateHistoryParams{
+		EntityID: target, Filter: devices.EntityStateHistoryFilterApplied, Limit: 50,
 	}, 10, false)
-	requireHistoryPage(t, repository, ListEntityStateHistoryParams{
-		EntityID: target, Filter: EntityStateHistoryFilterUnchanged, Limit: 50,
+	requireHistoryPage(t, repository, devices.ListEntityStateHistoryParams{
+		EntityID: target, Filter: devices.EntityStateHistoryFilterUnchanged, Limit: 50,
 	}, 10, false)
-	requireHistoryPage(t, repository, ListEntityStateHistoryParams{
-		EntityID: target, Filter: EntityStateHistoryFilterUpdates, Limit: 50,
+	requireHistoryPage(t, repository, devices.ListEntityStateHistoryParams{
+		EntityID: target, Filter: devices.EntityStateHistoryFilterUpdates, Limit: 50,
 	}, 20, false)
-	rejected := requireHistoryPage(t, repository, ListEntityStateHistoryParams{
-		EntityID: target, Filter: EntityStateHistoryFilterRejected, Limit: 50,
+	rejected := requireHistoryPage(t, repository, devices.ListEntityStateHistoryParams{
+		EntityID: target, Filter: devices.EntityStateHistoryFilterRejected, Limit: 50,
 	}, 50, true)
-	requireHistoryContinuation(t, repository, ListEntityStateHistoryParams{
-		EntityID: target, Filter: EntityStateHistoryFilterRejected, Limit: 50,
+	requireHistoryContinuation(t, repository, devices.ListEntityStateHistoryParams{
+		EntityID: target, Filter: devices.EntityStateHistoryFilterRejected, Limit: 50,
 	}, rejected, 50, true)
-	requireHistoryPage(t, repository, ListEntityStateHistoryParams{
-		EntityID: target, Filter: EntityStateHistoryFilterAll, Limit: 50,
+	requireHistoryPage(t, repository, devices.ListEntityStateHistoryParams{
+		EntityID: target, Filter: devices.EntityStateHistoryFilterAll, Limit: 50,
 	}, 50, true)
 	oldestApplied := applied[len(applied)-1].ReceiveOrder
-	requireEmptyHistoryPage(t, repository, ListEntityStateHistoryParams{
-		EntityID: target, Filter: EntityStateHistoryFilterApplied,
+	requireEmptyHistoryPage(t, repository, devices.ListEntityStateHistoryParams{
+		EntityID: target, Filter: devices.EntityStateHistoryFilterApplied,
 		BeforeReceiveOrder: &oldestApplied, Limit: 50,
 	})
-	requireEmptyHistoryPage(t, repository, ListEntityStateHistoryParams{
-		EntityID: EntityID("ent_01890f47-7a6b-7c4d-8e9f-0123456789ff"),
-		Filter:   EntityStateHistoryFilterApplied, Limit: 50,
+	requireEmptyHistoryPage(t, repository, devices.ListEntityStateHistoryParams{
+		EntityID: devices.EntityID("ent_01890f47-7a6b-7c4d-8e9f-0123456789ff"),
+		Filter:   devices.EntityStateHistoryFilterApplied, Limit: 50,
 	})
 	assertAllHistoryQueryPlans(t, database, string(target), 100)
 }
 
-func assertStrictReceiveOrder(t *testing.T, entries []EntityStateHistoryEntry) {
+func assertStrictReceiveOrder(t *testing.T, entries []devices.EntityStateHistoryEntry) {
 	t.Helper()
 	for index := 1; index < len(entries); index++ {
 		if entries[index].ReceiveOrder >= entries[index-1].ReceiveOrder {
@@ -691,11 +699,11 @@ func assertStrictReceiveOrder(t *testing.T, entries []EntityStateHistoryEntry) {
 
 func requireHistoryPage(
 	t *testing.T,
-	repository *SQLiteRepository,
-	params ListEntityStateHistoryParams,
+	repository *DeviceRepository,
+	params devices.ListEntityStateHistoryParams,
 	wantCount int,
 	wantMore bool,
-) []EntityStateHistoryEntry {
+) []devices.EntityStateHistoryEntry {
 	t.Helper()
 	page, err := repository.ListEntityStateHistory(context.Background(), params)
 	if err != nil {
@@ -713,9 +721,9 @@ func requireHistoryPage(
 
 func requireHistoryContinuation(
 	t *testing.T,
-	repository *SQLiteRepository,
-	params ListEntityStateHistoryParams,
-	previous []EntityStateHistoryEntry,
+	repository *DeviceRepository,
+	params devices.ListEntityStateHistoryParams,
+	previous []devices.EntityStateHistoryEntry,
 	wantCount int,
 	wantMore bool,
 ) {
@@ -730,8 +738,8 @@ func requireHistoryContinuation(
 
 func requireEmptyHistoryPage(
 	t *testing.T,
-	repository *SQLiteRepository,
-	params ListEntityStateHistoryParams,
+	repository *DeviceRepository,
+	params devices.ListEntityStateHistoryParams,
 ) {
 	t.Helper()
 	page, err := repository.ListEntityStateHistory(context.Background(), params)

@@ -14,6 +14,7 @@ import (
 	natsgo "github.com/nats-io/nats.go"
 
 	"github.com/mholtzscher/hearth/internal/modules/devices"
+	devicessqlite "github.com/mholtzscher/hearth/internal/modules/devices/sqlite"
 	platformdb "github.com/mholtzscher/hearth/internal/platform/db"
 )
 
@@ -35,8 +36,8 @@ func TestCoreStartupInterruptsActiveCommandsWithoutRedispatch(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	repository := devices.NewSQLiteRepository(database, catalog)
-	service := devices.NewService(devices.SQLiteStores(repository), nil, catalog, devices.Dependencies{})
+	repository := devicessqlite.NewDeviceRepository(database, catalog)
+	service := devices.NewService(devicessqlite.DeviceStores(repository), nil, catalog, devices.Dependencies{})
 	runtimeID := devices.RuntimeID("run_01890f47-7a6b-7c4d-8e9f-0123456789ab")
 	if claimErr := service.ClaimAdapterRuntime(ctx, devices.ClaimAdapterRuntimeParams{
 		AdapterID: "simulator", RuntimeID: runtimeID,

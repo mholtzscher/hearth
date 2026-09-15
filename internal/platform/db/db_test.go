@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/mholtzscher/hearth/internal/modules/devices/dbsqlc"
+	"github.com/mholtzscher/hearth/internal/modules/devices/sqlite/dbsqlc"
 )
 
 func TestMigrateEmptySQLiteDatabase(t *testing.T) {

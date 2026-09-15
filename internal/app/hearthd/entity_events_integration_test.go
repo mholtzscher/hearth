@@ -22,6 +22,7 @@ import (
 	"github.com/mholtzscher/hearth/internal/modules/devices"
 	devicesapi "github.com/mholtzscher/hearth/internal/modules/devices/api"
 	devicesnats "github.com/mholtzscher/hearth/internal/modules/devices/nats"
+	devicessqlite "github.com/mholtzscher/hearth/internal/modules/devices/sqlite"
 	platformdb "github.com/mholtzscher/hearth/internal/platform/db"
 	"github.com/mholtzscher/hearth/sdk/adapter"
 	sdkadapterenumeventv1 "github.com/mholtzscher/hearth/sdk/adapter/enumeventv1"
@@ -258,7 +259,7 @@ func TestEntityEventDrainCommitsInFlightReportAndLeavesUnreadInputForNextProcess
 	if err != nil {
 		t.Fatal(err)
 	}
-	stored := devices.SQLiteStores(devices.NewSQLiteRepository(database, catalog))
+	stored := devicessqlite.DeviceStores(devicessqlite.NewDeviceRepository(database, catalog))
 	service := devices.NewService(stored, nil, catalog, devices.Dependencies{})
 	runtimeID := devices.RuntimeID("run_01890f47-7a6b-7c4d-8e9f-0123456789ab")
 	if claimErr := service.ClaimAdapterRuntime(ctx, devices.ClaimAdapterRuntimeParams{

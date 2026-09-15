@@ -20,6 +20,17 @@ const entityEventDeleteBatchSize = 500
 
 var entityEventNamePattern = regexp.MustCompile(`^[a-z0-9][a-z0-9_-]{0,62}$`)
 
+// ParseEntityEventName validates one canonical Entity Event name: a lowercase
+// slug of at most 63 characters that starts with a letter or digit. Persistence
+// adapters revalidate a stored event name with it before a Device Fact carries
+// that name.
+func ParseEntityEventName(value string) (EntityEventName, error) {
+	if !entityEventNamePattern.MatchString(value) {
+		return "", fmt.Errorf("Entity Event name %q is not a canonical name slug", value)
+	}
+	return EntityEventName(value), nil
+}
+
 // EntityEvent is one wire-valid occurrence report Core is asked to record. The
 // event ID identifies the report, not the occurrence: redelivery of one ID is
 // the same event, and a new ID is a new occurrence even when the name repeats.
@@ -54,6 +65,19 @@ type EntityEventDescriptorError struct {
 	EntityID EntityID
 	TypeID   EntityTypeID
 	cause    error
+}
+
+// NewEntityEventDescriptorError builds the permanent descriptor-interpretation
+// failure for one Entity Event report from the catalog cause that made the
+// persisted descriptor unreadable. The cause stays private, so only
+// [EntityEventDescriptorError.Unwrap] can expose it to a caller that explicitly
+// unwraps the failure.
+func NewEntityEventDescriptorError(
+	entityID EntityID,
+	typeID EntityTypeID,
+	cause error,
+) *EntityEventDescriptorError {
+	return &EntityEventDescriptorError{EntityID: entityID, TypeID: typeID, cause: cause}
 }
 
 func (failure *EntityEventDescriptorError) Error() string {
@@ -151,10 +175,8 @@ func (service *Service) RecordEntityEvent(
 	if _, err := ParseCorrelationID(string(event.CorrelationID)); err != nil {
 		return EntityEventRecordResult{}, fmt.Errorf("%w: parse correlation ID: %w", ErrInvalidEntityEvent, err)
 	}
-	if !entityEventNamePattern.MatchString(string(event.Name)) {
-		return EntityEventRecordResult{}, fmt.Errorf(
-			"%w: Entity Event name %q is not a canonical name slug", ErrInvalidEntityEvent, event.Name,
-		)
+	if _, nameErr := ParseEntityEventName(string(event.Name)); nameErr != nil {
+		return EntityEventRecordResult{}, fmt.Errorf("%w: %w", ErrInvalidEntityEvent, nameErr)
 	}
 	if event.EmittedAt.IsZero() {
 		return EntityEventRecordResult{}, fmt.Errorf("%w: emitted_at is required", ErrInvalidEntityEvent)

@@ -16,6 +16,7 @@ import (
 	contractsv1 "github.com/mholtzscher/hearth/contracts/v1"
 	"github.com/mholtzscher/hearth/internal/contracts/v1/natswire"
 	"github.com/mholtzscher/hearth/internal/modules/devices"
+	devicessqlite "github.com/mholtzscher/hearth/internal/modules/devices/sqlite"
 	platformdb "github.com/mholtzscher/hearth/internal/platform/db"
 )
 
@@ -102,7 +103,7 @@ func (recorder *committedEntityEventRecorder) RecordEntityEvent(
 type coreEntityEvents struct {
 	database   *sql.DB
 	path       string
-	repository *devices.SQLiteRepository
+	repository *devicessqlite.DeviceRepository
 	service    *devices.Service
 	entityID   devices.EntityID
 }
@@ -122,10 +123,10 @@ func openCoreEntityEvents(t *testing.T, path string) *coreEntityEvents {
 	if err != nil {
 		t.Fatal(err)
 	}
-	repository := devices.NewSQLiteRepository(database, catalog)
+	repository := devicessqlite.NewDeviceRepository(database, catalog)
 	core := &coreEntityEvents{
 		database: database, path: path, repository: repository,
-		service: devices.NewService(devices.SQLiteStores(repository), nil, catalog, devices.Dependencies{}),
+		service: devices.NewService(devicessqlite.DeviceStores(repository), nil, catalog, devices.Dependencies{}),
 	}
 	core.entityID = core.register(t)
 	return core

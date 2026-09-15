@@ -96,7 +96,7 @@ func (repository *commandRepository) CreateCommand(_ context.Context, command Co
 		command.RuntimeID = &runtimeID
 	}
 	repository.commands[command.ID] = command
-	return copyCommandRecord(command), nil
+	return CopyCommandRecord(command), nil
 }
 
 func (repository *commandRepository) MarkCommandAccepted(_ context.Context, id CommandID, acceptedAt time.Time) error {

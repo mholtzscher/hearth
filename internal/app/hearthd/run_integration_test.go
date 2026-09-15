@@ -18,6 +18,7 @@ import (
 	automationsnats "github.com/mholtzscher/hearth/internal/modules/automations/nats"
 	"github.com/mholtzscher/hearth/internal/modules/devices"
 	devicesnats "github.com/mholtzscher/hearth/internal/modules/devices/nats"
+	devicessqlite "github.com/mholtzscher/hearth/internal/modules/devices/sqlite"
 	platformdb "github.com/mholtzscher/hearth/internal/platform/db"
 	"github.com/mholtzscher/hearth/sdk/adapter"
 	sdkpowerv1 "github.com/mholtzscher/hearth/sdk/adapter/powerv1"
@@ -42,8 +43,8 @@ func TestCoreNATSTransportRegistersAndProjectsDurableObservation(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	repository := devices.NewSQLiteRepository(database, catalog)
-	service := devices.NewService(devices.SQLiteStores(repository), nil, catalog, devices.Dependencies{})
+	repository := devicessqlite.NewDeviceRepository(database, catalog)
+	service := devices.NewService(devicessqlite.DeviceStores(repository), nil, catalog, devices.Dependencies{})
 
 	server, err := natsserver.NewServer(&natsserver.Options{
 		Host: "127.0.0.1", Port: -1, JetStream: true, StoreDir: t.TempDir(), NoSigs: true,
@@ -164,7 +165,7 @@ func TestCoreNATSTransportRegistersAndProjectsDurableObservation(t *testing.T) {
 	).Scan(&runtimeID); scanErr != nil {
 		t.Fatal(scanErr)
 	}
-	relay := startDeviceFactRelay(t, js, devices.NewSQLiteRepository(database, catalog))
+	relay := startDeviceFactRelay(t, js, devicessqlite.NewDeviceRepository(database, catalog))
 	automationResource, err := automationsnats.ProvisionDeviceFactConsumer(
 		ctx, js, devicesnats.DeviceFactStreamName,
 	)
@@ -220,7 +221,7 @@ func TestCoreNATSTransportRegistersAndProjectsDurableObservation(t *testing.T) {
 		t.Fatal(err)
 	}
 	recoveredService := devices.NewService(
-		devices.SQLiteStores(devices.NewSQLiteRepository(database, catalog)),
+		devicessqlite.DeviceStores(devicessqlite.NewDeviceRepository(database, catalog)),
 		nil,
 		catalog,
 		devices.Dependencies{},
@@ -280,7 +281,7 @@ func TestCoreCommandRoundTripRequiresLinkedSimulatorObservation(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	repository := devices.NewSQLiteRepository(database, catalog)
+	repository := devicessqlite.NewDeviceRepository(database, catalog)
 
 	server, err := natsserver.NewServer(&natsserver.Options{
 		Host: "127.0.0.1", Port: -1, JetStream: true, StoreDir: t.TempDir(), NoSigs: true,
@@ -314,7 +315,7 @@ func TestCoreCommandRoundTripRequiresLinkedSimulatorObservation(t *testing.T) {
 		t.Fatal(err)
 	}
 	service := devices.NewService(
-		devices.SQLiteStores(repository),
+		devicessqlite.DeviceStores(repository),
 		devicesnats.NewCommandSender(coreConnection, validator),
 		catalog,
 		devices.Dependencies{},

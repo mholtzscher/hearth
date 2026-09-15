@@ -22,6 +22,13 @@ func (err *EntityAvailabilityReportError) Unwrap() error {
 	return err.Err
 }
 
+// ValidateAvailabilityRequestID reports whether value is one canonical avl_
+// availability request identity. Persistence adapters revalidate a batch's
+// stored request ID with it, so an unvalidated request can never reach SQLite.
+func ValidateAvailabilityRequestID(value string) error {
+	return validateID(value, "avl")
+}
+
 func (service *Service) ReportEntityAvailability(
 	ctx context.Context,
 	requestID string,
@@ -37,7 +44,7 @@ func (service *Service) ReportEntityAvailability(
 	for index, report := range reports {
 		owned[index] = report
 		owned[index].SourceObservedAt = report.SourceObservedAt.UTC()
-		owned[index].Reason = copyHealthReason(report.Reason)
+		owned[index].Reason = CopyHealthReason(report.Reason)
 	}
 	return service.stores.Availability.ReportEntityAvailability(ctx, AvailabilityBatchWrite{
 		RequestID: requestID, AdapterID: adapterID, RuntimeID: runtimeID,
@@ -51,7 +58,7 @@ func validateAvailabilityBatch(
 	runtimeID RuntimeID,
 	reports []EntityAvailabilityReport,
 ) error {
-	if err := validateID(requestID, "avl"); err != nil {
+	if err := ValidateAvailabilityRequestID(requestID); err != nil {
 		return fmt.Errorf("parse Entity availability request ID: %w", err)
 	}
 	if !registrationSlugPattern.MatchString(adapterID) {

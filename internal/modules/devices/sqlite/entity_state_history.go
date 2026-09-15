@@ -1,53 +1,57 @@
-package devices
+package sqlite
 
 import (
 	"context"
 	"database/sql"
 	"fmt"
 
-	"github.com/mholtzscher/hearth/internal/modules/devices/dbsqlc"
+	"github.com/mholtzscher/hearth/internal/modules/devices"
+	"github.com/mholtzscher/hearth/internal/modules/devices/sqlite/dbsqlc"
 )
 
 // ListEntityStateHistory returns one keyset page of an Entity's retained
 // first-seen observations, newest-first by receive order. The caller
 // validates the Entity, filter, cursor, and limit; the adapter owns query
 // selection, limit+1 truncation, row mapping, and error wrapping.
-func (repository *SQLiteRepository) ListEntityStateHistory(
+func (repository *DeviceRepository) ListEntityStateHistory(
 	ctx context.Context,
-	params ListEntityStateHistoryParams,
-) (Page[EntityStateHistoryEntry], error) {
-	if !validPageLimit(params.Limit) {
-		return Page[EntityStateHistoryEntry]{}, ErrInvalidPage
+	params devices.ListEntityStateHistoryParams,
+) (devices.Page[devices.EntityStateHistoryEntry], error) {
+	if !devices.ValidPageLimit(params.Limit) {
+		return devices.Page[devices.EntityStateHistoryEntry]{}, devices.ErrInvalidPage
 	}
 	rows, err := repository.entityStateHistoryRows(ctx, params)
 	if err != nil {
-		return Page[EntityStateHistoryEntry]{}, err
+		return devices.Page[devices.EntityStateHistoryEntry]{}, err
 	}
-	items := make([]EntityStateHistoryEntry, 0, len(rows))
+	items := make([]devices.EntityStateHistoryEntry, 0, len(rows))
 	for _, row := range rows {
 		entry, mappingErr := entityStateHistoryEntryFromRow(row)
 		if mappingErr != nil {
-			return Page[EntityStateHistoryEntry]{}, fmt.Errorf("map entity State history: %w", mappingErr)
+			return devices.Page[devices.EntityStateHistoryEntry]{}, fmt.Errorf(
+				"map entity State history: %w",
+				mappingErr,
+			)
 		}
 		items = append(items, entry)
 	}
 	return pageFromExtra(items, params.Limit), nil
 }
 
-func (repository *SQLiteRepository) entityStateHistoryRows(
+func (repository *DeviceRepository) entityStateHistoryRows(
 	ctx context.Context,
-	params ListEntityStateHistoryParams,
+	params devices.ListEntityStateHistoryParams,
 ) ([]entityStateHistoryRow, error) {
 	queries := repository.queries
 	limit := int64(params.Limit + 1)
 	entityID := string(params.EntityID)
 	filter := params.Filter
 	if filter == "" {
-		filter = EntityStateHistoryFilterUpdates
+		filter = devices.EntityStateHistoryFilterUpdates
 	}
 	if params.BeforeReceiveOrder == nil {
 		switch filter {
-		case EntityStateHistoryFilterAll:
+		case devices.EntityStateHistoryFilterAll:
 			rows, err := queries.ListEntityStateHistoryFirstPage(ctx, dbsqlc.ListEntityStateHistoryFirstPageParams{
 				EntityID: entityID, Limit: limit,
 			})
@@ -55,7 +59,7 @@ func (repository *SQLiteRepository) entityStateHistoryRows(
 				return nil, fmt.Errorf("list entity State history: %w", err)
 			}
 			return toEntityStateHistoryRowsHistoryFirstPage(rows), nil
-		case EntityStateHistoryFilterUpdates:
+		case devices.EntityStateHistoryFilterUpdates:
 			rows, err := queries.ListEntityStateUpdatesFirstPage(ctx, dbsqlc.ListEntityStateUpdatesFirstPageParams{
 				EntityID: entityID, Limit: limit,
 			})
@@ -63,9 +67,9 @@ func (repository *SQLiteRepository) entityStateHistoryRows(
 				return nil, fmt.Errorf("list entity State history: %w", err)
 			}
 			return toEntityStateHistoryRowsUpdatesFirstPage(rows), nil
-		case EntityStateHistoryFilterApplied,
-			EntityStateHistoryFilterUnchanged,
-			EntityStateHistoryFilterRejected:
+		case devices.EntityStateHistoryFilterApplied,
+			devices.EntityStateHistoryFilterUnchanged,
+			devices.EntityStateHistoryFilterRejected:
 			rows, err := queries.ListEntityStateHistoryByDispositionFirstPage(
 				ctx,
 				dbsqlc.ListEntityStateHistoryByDispositionFirstPageParams{
@@ -77,12 +81,12 @@ func (repository *SQLiteRepository) entityStateHistoryRows(
 			}
 			return toEntityStateHistoryRowsDispositionFirstPage(rows), nil
 		default:
-			return nil, fmt.Errorf("%w: unknown State history filter %q", ErrInvalidPage, params.Filter)
+			return nil, fmt.Errorf("%w: unknown State history filter %q", devices.ErrInvalidPage, params.Filter)
 		}
 	}
 	before := *params.BeforeReceiveOrder
 	switch filter {
-	case EntityStateHistoryFilterAll:
+	case devices.EntityStateHistoryFilterAll:
 		rows, err := queries.ListEntityStateHistoryAfter(ctx, dbsqlc.ListEntityStateHistoryAfterParams{
 			EntityID: entityID, ReceiveOrder: before, Limit: limit,
 		})
@@ -90,7 +94,7 @@ func (repository *SQLiteRepository) entityStateHistoryRows(
 			return nil, fmt.Errorf("list entity State history: %w", err)
 		}
 		return toEntityStateHistoryRowsHistoryAfter(rows), nil
-	case EntityStateHistoryFilterUpdates:
+	case devices.EntityStateHistoryFilterUpdates:
 		rows, err := queries.ListEntityStateUpdatesAfter(ctx, dbsqlc.ListEntityStateUpdatesAfterParams{
 			EntityID: entityID, ReceiveOrder: before, Limit: limit,
 		})
@@ -98,9 +102,9 @@ func (repository *SQLiteRepository) entityStateHistoryRows(
 			return nil, fmt.Errorf("list entity State history: %w", err)
 		}
 		return toEntityStateHistoryRowsUpdatesAfter(rows), nil
-	case EntityStateHistoryFilterApplied,
-		EntityStateHistoryFilterUnchanged,
-		EntityStateHistoryFilterRejected:
+	case devices.EntityStateHistoryFilterApplied,
+		devices.EntityStateHistoryFilterUnchanged,
+		devices.EntityStateHistoryFilterRejected:
 		rows, err := queries.ListEntityStateHistoryByDispositionAfter(
 			ctx,
 			dbsqlc.ListEntityStateHistoryByDispositionAfterParams{
@@ -112,7 +116,7 @@ func (repository *SQLiteRepository) entityStateHistoryRows(
 		}
 		return toEntityStateHistoryRowsDispositionAfter(rows), nil
 	default:
-		return nil, fmt.Errorf("%w: unknown State history filter %q", ErrInvalidPage, params.Filter)
+		return nil, fmt.Errorf("%w: unknown State history filter %q", devices.ErrInvalidPage, params.Filter)
 	}
 }
 
@@ -127,40 +131,43 @@ type entityStateHistoryRow struct {
 	ReceiveOrder      int64
 }
 
-func entityStateHistoryEntryFromRow(row entityStateHistoryRow) (EntityStateHistoryEntry, error) {
-	disposition := ObservationDisposition(row.Disposition)
-	var value Value
+func entityStateHistoryEntryFromRow(row entityStateHistoryRow) (devices.EntityStateHistoryEntry, error) {
+	disposition := devices.ObservationDisposition(row.Disposition)
+	var value devices.Value
 	if row.StateValueJSON.Valid {
-		value = Value(row.StateValueJSON.String)
+		value = devices.Value(row.StateValueJSON.String)
 	}
-	if disposition == DispositionRejected && value != nil {
-		return EntityStateHistoryEntry{}, fmt.Errorf("rejected State history row %q carries a value", row.ObservationID)
+	if disposition == devices.DispositionRejected && value != nil {
+		return devices.EntityStateHistoryEntry{}, fmt.Errorf(
+			"rejected State history row %q carries a value",
+			row.ObservationID,
+		)
 	}
-	if disposition != DispositionRejected && value == nil {
-		return EntityStateHistoryEntry{}, fmt.Errorf(
+	if disposition != devices.DispositionRejected && value == nil {
+		return devices.EntityStateHistoryEntry{}, fmt.Errorf(
 			"accepted State history row %q is missing its value",
 			row.ObservationID,
 		)
 	}
-	var rejection *ObservationRejection
+	var rejection *devices.ObservationRejection
 	if row.RejectionCode.Valid {
-		code := ObservationRejection(row.RejectionCode.String)
+		code := devices.ObservationRejection(row.RejectionCode.String)
 		rejection = &code
 	}
 	adapterReceivedAt, err := parseTime(row.AdapterReceivedAt)
 	if err != nil {
-		return EntityStateHistoryEntry{}, fmt.Errorf("parse State history adapter_received_at: %w", err)
+		return devices.EntityStateHistoryEntry{}, fmt.Errorf("parse State history adapter_received_at: %w", err)
 	}
 	sourceUpdatedAt, err := parseOptionalTime(row.SourceUpdatedAt)
 	if err != nil {
-		return EntityStateHistoryEntry{}, fmt.Errorf("parse State history source_updated_at: %w", err)
+		return devices.EntityStateHistoryEntry{}, fmt.Errorf("parse State history source_updated_at: %w", err)
 	}
 	observedAt, err := parseTime(row.ObservedAt)
 	if err != nil {
-		return EntityStateHistoryEntry{}, fmt.Errorf("parse State history observed_at: %w", err)
+		return devices.EntityStateHistoryEntry{}, fmt.Errorf("parse State history observed_at: %w", err)
 	}
-	return EntityStateHistoryEntry{
-		ObservationID:     ObservationID(row.ObservationID),
+	return devices.EntityStateHistoryEntry{
+		ObservationID:     devices.ObservationID(row.ObservationID),
 		Value:             value,
 		Disposition:       disposition,
 		Rejection:         rejection,

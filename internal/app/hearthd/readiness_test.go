@@ -17,6 +17,7 @@ import (
 	automationsnats "github.com/mholtzscher/hearth/internal/modules/automations/nats"
 	"github.com/mholtzscher/hearth/internal/modules/devices"
 	devicesnats "github.com/mholtzscher/hearth/internal/modules/devices/nats"
+	devicessqlite "github.com/mholtzscher/hearth/internal/modules/devices/sqlite"
 	platformdb "github.com/mholtzscher/hearth/internal/platform/db"
 	platformnats "github.com/mholtzscher/hearth/internal/platform/nats"
 )
@@ -308,7 +309,7 @@ func newReadinessFixture(t *testing.T) readinessFixture {
 		t.Fatal(err)
 	}
 	t.Cleanup(entityEventConsumer.Stop)
-	relay := startDeviceFactRelay(t, js, devices.NewSQLiteRepository(database, nil))
+	relay := startDeviceFactRelay(t, js, devicessqlite.NewDeviceRepository(database, nil))
 	automationResource, err := automationsnats.ProvisionDeviceFactConsumer(
 		ctx, js, devicesnats.DeviceFactStreamName,
 	)

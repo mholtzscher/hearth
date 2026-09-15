@@ -58,6 +58,16 @@ const (
 	RegistrationIdentityConflict    RegistrationRejectionCode = "identity_conflict"
 )
 
+// ErrRegistrationIdentityConflict is the permanent registration conflict class:
+// a submitted binding key or external ID is already assigned to other canonical
+// identity, so a registration rejected with it can never succeed by retrying.
+var ErrRegistrationIdentityConflict = errors.New("registration identity conflict")
+
+// ErrEntityTypeImmutable is the permanent registration class for a submitted
+// Entity whose canonical identity already exists with another Entity type. An
+// Entity type is immutable, so redelivering the registration cannot succeed.
+var ErrEntityTypeImmutable = errors.New("entity type is immutable")
+
 type RegistrationRejectedError struct {
 	Code    RegistrationRejectionCode
 	Message string
@@ -109,12 +119,12 @@ func (service *Service) Register(
 		UpdatedAt:  registeredAt,
 	}
 	binding, err := service.stores.Registration.RegisterBinding(ctx, params)
-	if errors.Is(err, errImmutableTypeChange) {
+	if errors.Is(err, ErrEntityTypeImmutable) {
 		return Binding{}, &RegistrationRejectedError{
 			Code: RegistrationImmutableTypeChange, Message: "an existing entity cannot change type",
 		}
 	}
-	if errors.Is(err, errIdentityConflict) {
+	if errors.Is(err, ErrRegistrationIdentityConflict) {
 		return Binding{}, &RegistrationRejectedError{
 			Code: RegistrationIdentityConflict, Message: "the binding or external ID is already assigned",
 		}
@@ -137,7 +147,7 @@ func (service *Service) checkRegistrationRuntime(
 	if err != nil {
 		return err
 	}
-	if instance.Health.Runtime == nil || instance.Health.Runtime.Status != runtimeStatusOnline ||
+	if instance.Health.Runtime == nil || instance.Health.Runtime.Status != RuntimeStatusOnline ||
 		instance.Health.Runtime.ID != runtimeID {
 		return ErrRuntimeFenced
 	}

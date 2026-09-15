@@ -36,7 +36,7 @@ func (repository *stubRegistrationRepository) GetAdapter(
 	return AdapterInstance{
 		ID: adapterID,
 		Health: AdapterHealth{Runtime: &RuntimeEvidence{
-			ID: commandTestRuntimeID, Status: runtimeStatusOnline,
+			ID: commandTestRuntimeID, Status: RuntimeStatusOnline,
 		}},
 	}, nil
 }
@@ -253,5 +253,16 @@ func registrationEntity(key, externalID string) EntityDescriptor {
 	return EntityDescriptor{
 		Key: key, ExternalID: externalID, Name: "Power", TypeID: EntityTypePowerV1,
 		Support: EntitySupport(`{"state":{},"operations":{"set":{}}}`),
+	}
+}
+
+// validDomainRegistration is one adapter registration carrying a single
+// stateful, commandable power Entity: the shape the domain fixtures register.
+func validDomainRegistration() Registration {
+	externalID := "ha-device"
+	return Registration{
+		BindingKey: "office-light",
+		Device:     DeviceDescriptor{ExternalID: &externalID, Name: "Office light", Kind: DeviceKindLight},
+		Entities:   []EntityDescriptor{registrationEntity("power", "light.office")},
 	}
 }

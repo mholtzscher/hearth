@@ -30,6 +30,7 @@ import (
 	"github.com/mholtzscher/hearth/internal/modules/devices"
 	devicesapi "github.com/mholtzscher/hearth/internal/modules/devices/api"
 	devicesnats "github.com/mholtzscher/hearth/internal/modules/devices/nats"
+	devicessqlite "github.com/mholtzscher/hearth/internal/modules/devices/sqlite"
 	platformdb "github.com/mholtzscher/hearth/internal/platform/db"
 	platformnats "github.com/mholtzscher/hearth/internal/platform/nats"
 	"github.com/mholtzscher/hearth/sdk/adapter"
@@ -83,7 +84,7 @@ type simulatorMatrixHarness struct {
 	ctx             context.Context
 	cancel          context.CancelFunc
 	database        *sql.DB
-	repository      *devices.SQLiteRepository
+	repository      *devicessqlite.DeviceRepository
 	service         *devices.Service
 	server          *natsserver.Server
 	connection      *natsgo.Conn
@@ -145,7 +146,7 @@ func newSimulatorMatrixHarness(t *testing.T, scenario string, options simulatorM
 	if err != nil {
 		t.Fatal(err)
 	}
-	harness.repository = devices.NewSQLiteRepository(harness.database, catalog)
+	harness.repository = devicessqlite.NewDeviceRepository(harness.database, catalog)
 
 	harness.server, err = natsserver.NewServer(&natsserver.Options{
 		Host: "127.0.0.1", Port: -1, JetStream: true, StoreDir: t.TempDir(), NoSigs: true,
@@ -194,7 +195,7 @@ func newSimulatorMatrixHarness(t *testing.T, scenario string, options simulatorM
 		serviceDependencies.Logger = logger.With("component", "devices")
 	}
 	harness.service = devices.NewService(
-		devices.SQLiteStores(harness.repository),
+		devicessqlite.DeviceStores(harness.repository),
 		devicesnats.NewCommandSender(harness.connection, harness.validator),
 		catalog,
 		serviceDependencies,

@@ -35,7 +35,7 @@ func (service *Service) ListOwnedMappings(
 	runtimeID RuntimeID,
 	page OwnedMappingPageParams,
 ) (Page[OwnedMapping], error) {
-	if !registrationSlugPattern.MatchString(adapterID) || !validPageLimit(page.Limit) {
+	if !registrationSlugPattern.MatchString(adapterID) || !ValidPageLimit(page.Limit) {
 		return Page[OwnedMapping]{}, ErrInvalidPage
 	}
 	if _, err := ParseRuntimeID(string(runtimeID)); err != nil {
@@ -52,7 +52,7 @@ func (service *Service) ListOwnedMappings(
 	if err != nil {
 		return Page[OwnedMapping]{}, err
 	}
-	if instance.Health.Runtime == nil || instance.Health.Runtime.Status != runtimeStatusOnline ||
+	if instance.Health.Runtime == nil || instance.Health.Runtime.Status != RuntimeStatusOnline ||
 		instance.Health.Runtime.ID != runtimeID {
 		return Page[OwnedMapping]{}, ErrRuntimeFenced
 	}

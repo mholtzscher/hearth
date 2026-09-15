@@ -15,6 +15,7 @@ import (
 
 	"github.com/mholtzscher/hearth/internal/modules/automations"
 	"github.com/mholtzscher/hearth/internal/modules/devices"
+	devicessqlite "github.com/mholtzscher/hearth/internal/modules/devices/sqlite"
 	platformdb "github.com/mholtzscher/hearth/internal/platform/db"
 )
 
@@ -249,7 +250,7 @@ func startBlockedAutomationRun(
 		t.Fatal(err)
 	}
 	deviceService := devices.NewService(
-		devices.SQLiteStores(devices.NewSQLiteRepository(database, catalog)),
+		devicessqlite.DeviceStores(devicessqlite.NewDeviceRepository(database, catalog)),
 		nil, catalog, devices.Dependencies{},
 	)
 	seam := newBlockingAutomationDevices()
