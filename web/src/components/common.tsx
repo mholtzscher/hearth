@@ -46,20 +46,45 @@ export function statusTone(status: string): Tone {
     case "satisfied":
     case "ready":
     case "ok":
+    // Automation enablement and a Run that reached its required outcomes.
+    case "enabled":
+    case "succeeded":
       return "success";
+    // `dispatched` is in-flight-ish: accepted with no observation to verify.
     case "dispatched":
+    // A Run still executing, and where its work came from.
+    case "running":
+    case "run":
+    case "manual":
+    case "device_fact":
       return "info";
     case "unhealthy":
     case "unavailable":
     case "rejected":
     case "error":
+    case "failed":
       return "error";
     case "unknown":
     case "disabled":
+    // An unfinished Step or Run: interrupted work is never a success.
+    case "interrupted":
+    // A Skip is a match that started no Run, and its two reasons.
+    case "skip":
+    case "automation_busy":
+    case "stale_fact":
       return "warning";
     default:
       return "default";
   }
+}
+
+/** Machine-readable `code` from a hearthd RFC 9457 problem response, or null
+    when the failure was not a problem detail carrying one. Callers branch on
+    this instead of matching error message text. */
+export function problemCode(error: unknown): string | null {
+  if (!(error instanceof ApiError) || typeof error.detail !== "object") return null;
+  const code = (error.detail as { code?: unknown }).code;
+  return typeof code === "string" ? code : null;
 }
 
 /** Healthy states stay quiet; problems carry the color weight. */
