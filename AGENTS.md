@@ -7,7 +7,6 @@
 - For focused formatting, generation, module tidying, linting, testing, and vetting, always use the mise tasks below instead of invoking the underlying tools directly.
 - After making any change, prefer `mise run validate`; it regenerates code, formats it, and tidies module metadata before running all checks.
 - Review the resulting diff and include intended generated or formatting changes.
-- Hearth has no deployments yet. Do not preserve backward compatibility by default. Make direct breaking changes and update all in-repository callers; add compatibility shims, legacy paths, or migration handling only when explicitly requested.
 - To run the local NATS and Mosquitto brokers while developing: `mise run brokers`.
 - Real-Mosquitto integration tests skip when no Docker daemon is reachable; `mise run test` sets `HEARTH_REQUIRE_MOSQUITTO=1` so they must run.
 
