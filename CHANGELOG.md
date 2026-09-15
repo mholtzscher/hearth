@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.10.0](https://github.com/mholtzscher/hearth/compare/v0.9.0...v0.10.0) (2026-09-15)
+
+
+### Features
+
+* **web:** add automations dashboard ([#117](https://github.com/mholtzscher/hearth/issues/117)) ([7e30017](https://github.com/mholtzscher/hearth/commit/7e300179f3555c3bd172b37b5c5c2b8ee8039b18))
+
 ## [0.9.0](https://github.com/mholtzscher/hearth/compare/v0.8.1...v0.9.0) (2026-09-15)
 
 
