@@ -18,6 +18,15 @@ func Run(ctx context.Context, config Config, logger *slog.Logger) error {
 	if err := config.Validate(); err != nil {
 		return err
 	}
+	if len(config.Devices) > 0 {
+		return runScripted(ctx, config, logger)
+	}
+	return runLegacyScenario(ctx, config, logger)
+}
+
+// runLegacyScenario runs the fixed failure-matrix scenarios. It stays
+// separate from Run so the mode dispatch adds no complexity to either path.
+func runLegacyScenario(ctx context.Context, config Config, logger *slog.Logger) error {
 	if logger == nil {
 		logger = slog.Default()
 	}

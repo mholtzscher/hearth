@@ -1,0 +1,192 @@
+# Full-coverage scripted simulator config: exercises every harness feature in
+# one file. Copy to configs/simulator.yaml (gitignored) and run:
+#   go run ./cmd/hearth-simulator -config configs/simulator.yaml
+#
+# Either `scenario:` (legacy failure matrix) or `devices:` (this file) is
+# required; the two are mutually exclusive. See specs/simulator-harness.md.
+adapter_id: simulator
+nats_url: nats://127.0.0.1:4222
+# Optional agent control channel (loopback only; omit to disable):
+#   GET  /v1/sim/entities
+#   POST /v1/sim/entities/{id}/publish {"value": <json>} | {"name": "<event>"}
+#   POST /v1/sim/entities/{id}/pause | /resume
+control_addr: 127.0.0.1:8181
+devices:
+  # Every controllable light Entity type, each with its own loop interval.
+  - binding_key: demo-light
+    name: Demo light
+    kind: light
+    health: healthy
+    entities:
+      - key: power
+        name: Power
+        type: hearth.power/v1
+        support: {state: {}, operations: {set: {}}}
+        initial: true
+        outputs: {interval: 5s, values: [true, false]}
+        # Explicit accept-and-publish: applies {"value": X} to scalar State,
+        # accepts, then publishes one Command-linked Observation.
+        commands: {set: {behavior: accept-and-publish, apply_parameters: true}}
+      - key: brightness
+        name: Brightness
+        type: hearth.brightness/v1
+        support: {state: {maximum: 100}, operations: {set: {step: 5}}}
+        initial: 80
+        outputs: {interval: 7s, values: [80, 20, 60]}
+        # No commands: section exercises the default (accept-and-publish).
+      - key: colortemp
+        name: Color temperature
+        type: hearth.colortemp/v1
+        support: {state: {minimum: 153, maximum: 500}, operations: {set: {step: 1}}}
+        initial: {active: true, value: 370}
+        outputs:
+          interval: 11s
+          values:
+            - {active: true, value: 370}
+            - {active: true, value: 153}
+            - {active: false, value: 370}
+        # Object State with a value member: {"value": 250} merges into it.
+      - key: colorxy
+        name: Color XY
+        type: hearth.colorxy/v1
+        support: {state: {}, operations: {set: {}}}
+        initial: {active: true, x: 3125, y: 3291}
+        outputs:
+          interval: 13s
+          values:
+            - {active: true, x: 3125, y: 3291}
+            - {active: false, x: 0, y: 0}
+        # XY set parameters are {x, y}, not {value}, so applying is disabled:
+        # the Command is accepted and the current value republished unchanged.
+        commands: {set: {behavior: accept-and-publish, apply_parameters: false}}
+      - key: colorhs
+        name: Color HS
+        type: hearth.colorhs/v1
+        support: {state: {}, operations: {set: {}}}
+        initial: {active: true, hue: 120, saturation: 80}
+        outputs:
+          interval: 17s
+          values:
+            - {active: true, hue: 120, saturation: 80}
+            - {active: false, hue: 0, saturation: 0}
+        # Object State with no value member: parameters leave State unchanged.
+        commands: {set: {behavior: accept-and-publish, apply_parameters: true}}
+      - key: colormode
+        name: Color mode
+        type: hearth.colormode/v1
+        support: {state: {}, operations: {}}
+        initial: xy
+        outputs: {interval: 19s, values: [xy, hs]}
+      - key: effect
+        name: Effect
+        type: hearth.enumaction/v1
+        support: {state: {}, operations: {trigger: {values: [blink, breathe, stop_effect]}}}
+        initial: {}
+        # Stateless trigger: a dispatched Operation completing on acceptance.
+
+  # Every read-only sensor Entity type.
+  - binding_key: demo-climate
+    name: Demo climate
+    kind: sensor
+    entities:
+      - key: temperature
+        name: Temperature
+        type: hearth.temperature/v1
+        support: {state: {unit: mCel}, operations: {}}
+        initial: 21500
+        outputs: {interval: 10s, values: [21500, 21600, 21400]}
+      - key: humidity
+        name: Humidity
+        type: hearth.relativehumidity/v1
+        support: {state: {unit: "%"}, operations: {}}
+        initial: 45
+        outputs: {interval: 12s, values: [45, 46.5]}
+      - key: pressure
+        name: Pressure
+        type: hearth.pressure/v1
+        support: {state: {unit: hPa}, operations: {}}
+        initial: 1013
+        outputs: {interval: 15s, values: [1013, 1013.25]}
+      - key: linkquality
+        name: Link quality
+        type: hearth.numericsensor/v1
+        support: {state: {minimum: 0, maximum: 255, unit: lqi}, operations: {}}
+        initial: 18
+        outputs: {interval: 23s, values: [18, 120, 200]}
+      - key: occupancy
+        name: Occupancy
+        type: hearth.binarysensor/v1
+        support: {state: {}, operations: {}}
+        initial: false
+        outputs: {interval: 29s, values: [false, true]}
+      - key: wind
+        name: Wind speed
+        type: hearth.speed/v1
+        support: {state: {unit: m/s}, operations: {}}
+        initial: 0
+        outputs: {interval: 31s, values: [0, 3.58]}
+
+  # Rejection, silent accept (Command timeout), and single-value scripts.
+  - binding_key: demo-plug
+    name: Demo plug
+    kind: relay
+    entities:
+      - key: power
+        name: Power
+        type: hearth.power/v1
+        support: {state: {}, operations: {set: {}}}
+        initial: true
+        # One value: published once at startup, then no ticker goroutine.
+        outputs: {interval: 5s, values: [true]}
+        commands: {set: {behavior: reject, reason: simulated upstream rejection}}
+      - key: mode
+        name: Power-on mode
+        type: hearth.enumsetting/v1
+        support: {state: {choices: ["on", "off", "previous"]}, operations: {set: {}}}
+        initial: previous
+        outputs: {interval: 9s, values: [previous, "on"]}
+        # Accepted, but parameters are not applied: current value republished.
+        commands: {set: {behavior: accept-and-publish, apply_parameters: false}}
+      - key: countdown
+        name: Countdown
+        type: hearth.numericsetting/v1
+        support: {state: {minimum: 142, maximum: 454, unit: mired, choices: [previous]}, operations: {set: {}}}
+        initial: {mode: value, value: 250}
+        outputs:
+          interval: 21s
+          values:
+            - {mode: value, value: 250}
+            - {mode: choice, choice: previous}
+        # Accepted with no outcome Observation: observed Commands time out.
+        commands: {set: {behavior: accept-no-publish}}
+
+  # Unhealthy Adapter and an Entity with no script (initial published once,
+  # then silent). Effective availability goes unavailable with the Adapter.
+  - binding_key: demo-broken
+    name: Demo broken sensor
+    kind: sensor
+    health: "unhealthy:hearth.external_system_unavailable"
+    entities:
+      - key: temperature
+        name: Temperature
+        type: hearth.temperature/v1
+        support: {state: {unit: mCel}, operations: {}}
+        initial: 20000
+
+  # Entity Events plus an explicitly unavailable Entity.
+  - binding_key: demo-button
+    name: Demo button
+    kind: sensor
+    entities:
+      - key: events
+        name: Events
+        type: hearth.enumevent/v1
+        support: {state: {}, operations: {}, events: {names: [single_press, double_press]}}
+        outputs: {interval: 30s, values: [single_press, double_press]}
+      - key: signal
+        name: Signal temperature
+        type: hearth.temperature/v1
+        support: {state: {unit: mCel}, operations: {}}
+        initial: 21000
+        available: false
+        availability_reason: adapter.demo-button.measurement_stale

@@ -179,6 +179,22 @@ run = '''docker compose down'''
 description = "Pre-pull the pinned Mosquitto image used by tests and the local stack"
 run = '''docker pull eclipse-mosquitto:2.0.22'''
 
+[tasks."simulator-start"]
+description = "Start an isolated NATS-only simulator stack in Herdr (optional --devices PATH or --preset full, --dashboard)"
+run = '''python3 -B .agents/skills/simulator-validation/scripts/start.py'''
+
+[tasks."simulator-smoke"]
+description = "Assert default running simulator Command, State, and Entity Event behavior; save Core evidence"
+run = '''python3 -B .agents/skills/simulator-validation/scripts/smoke.py'''
+
+[tasks."simulator-stop"]
+description = "Close this worktree's owned simulator validation tab, preserving configs and data"
+run = '''python3 -B .agents/skills/simulator-validation/scripts/stop.py'''
+
+[tasks."simulator-start-test"]
+description = "Test simulator lifecycle safety with mocked local services"
+run = '''python3 -B -m unittest discover -s .agents/skills/simulator-validation/scripts -p 'test_*.py' -v'''
+
 [tasks."real-device-start"]
 description = "Start local validation against shared homelab NATS and Zigbee2MQTT, published to the tailnet"
 usage = 'arg "<host>" help="Homelab hostname (for example wanda)"'
@@ -224,6 +240,7 @@ depends = [
   "format-check",
   "generate-check",
   "real-device-start-test",
+  "simulator-start-test",
   "lint",
   "tidy-check",
   "test",

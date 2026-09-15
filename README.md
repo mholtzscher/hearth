@@ -22,7 +22,15 @@ Run a small mutation-testing trial with `mise run mutation-test -- ./contracts/v
 
 `hearthd` accepts any configured HTTP bind address. The example remains `127.0.0.1:8080`; bind to a non-loopback address only on a trusted network because the HTTP API has no authentication.
 
-Run the first-light simulator with `go run ./cmd/hearth-simulator -config configs/simulator.yaml` after copying `configs/simulator.example.yaml`. Its `scenario` may be `happy`, `adapter-unhealthy`, `entity-unavailable`, `delayed-source-time`, `future-clock-skew`, `upstream-rejection`, `no-op-refresh`, `overlapping-opposite-command`, `outcome-timeout`, `interrupted-command`, `restart-before-ack`, or `entity-events`. `happy` reports a healthy Adapter and available Entity before publishing State. `adapter-unhealthy` proves that Core rejects a Command before dispatch. `entity-unavailable` proves that availability is advisory: Core dispatches the Command, and the simulator reports the Entity available after the recovery attempt succeeds. Heartbeat expiry, takeover, stale-runtime isolation, Core readiness recovery overlays, and graceful release remain deterministic process-test scenarios. Raw duplicate and malformed Observation cases remain transport-test scenarios.
+Run the first-light simulator with `go run ./cmd/hearth-simulator -config configs/simulator.yaml` after copying `configs/simulator.example.yaml`. Its `scenario` may be `happy`, `adapter-unhealthy`, `entity-unavailable`, `delayed-source-time`, `future-clock-skew`, `upstream-rejection`, `no-op-refresh`, `overlapping-opposite-command`, `outcome-timeout`, `interrupted-command`, `restart-before-ack`, or `entity-events`. `happy` reports a healthy Adapter and available Entity before publishing State. `adapter-unhealthy` proves that Core rejects a Command before dispatch. `entity-unavailable` proves that availability is advisory: Core dispatches the Command, and the simulator reports the Entity available after the recovery attempt succeeds. Heartbeat expiry, takeover, stale-runtime isolation, Core readiness recovery overlays, and graceful release remain deterministic process-test scenarios. Raw duplicate and malformed Observation cases remain transport-test scenarios. For agent-driven validation against simulated Devices, copy `configs/simulator.scripted.example.yaml` instead: its `devices` block declares Devices and Entities of any built-in type with looping output values on an interval, per-operation Command behavior, and an optional loopback control channel for publishing, pausing, and resuming scripts; see `specs/simulator-harness.md`. `configs/simulator.full.example.yaml` exercises every harness feature across all sixteen built-in Entity types.
+
+For automated simulator validation inside Herdr, run `mise run simulator-start`
+(or add `-- --dashboard`). It creates an isolated local NATS/JetStream, Core,
+and scripted simulator stack in an owned tab; Docker and Mosquitto are not
+needed. Use `-- --preset full` for the broad inventory or `-- --devices PATH`
+for a YAML sequence of custom Devices. Run `mise run simulator-stop` to close
+only that tab while preserving configs, logs, and data. See the
+[simulator validation skill](.agents/skills/simulator-validation/SKILL.md).
 
 ### Entity Event recovery recipe
 
