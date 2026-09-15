@@ -148,11 +148,42 @@ const insertHistoryRunSQL = `INSERT INTO automation_history (
 ) VALUES (?, ?, 'Office light', 'run', 1, '2026-09-01T00:00:00.000000000Z', '{}', 'manual', ?, ?,
     '2026-09-01T00:00:00.000000000Z', ?, ?)`
 
+// insertHistorySkipSQL inserts one valid device-fact Skip. The matched-Trigger
+// snapshot and the Condition decision are supplied so provenance tests can
+// exercise every accepted and rejected combination.
 const insertHistorySkipSQL = `INSERT INTO automation_history (
     id, automation_id, automation_name, kind, revision, recorded_at,
     fact_id, fact_family, fact_entity_id, fact_variant, fact_causation_id, fact_value_json, fact_emitted_at,
+    skip_matched_triggers_json, skip_reason, skip_source, condition_decision_json
+) VALUES (?, ?, 'Office light', 'skip', 1, ?, ?, 'observation', ?, 'applied', ?, ?, ?, ?, 'automation_busy',
+    'device_fact', ?)`
+
+// legacyInsertHistorySkipSQL inserts one legacy unconditioned automatic Skip
+// with NULL skip_source and NULL condition_decision_json; domain decoding must
+// normalize it to the explicit not_configured device-fact form.
+const legacyInsertHistorySkipSQL = `INSERT INTO automation_history (
+    id, automation_id, automation_name, kind, revision, recorded_at,
+    fact_id, fact_family, fact_entity_id, fact_variant, fact_causation_id, fact_value_json, fact_emitted_at,
     skip_matched_triggers_json, skip_reason
-) VALUES (?, ?, 'Office light', 'skip', 1, ?, ?, 'observation', ?, 'applied', ?, ?, ?, '[]', 'automation_busy')`
+) VALUES (?, ?, 'Office light', 'skip', 1, ?, ?, 'observation', ?, 'applied', ?, ?, ?, ?, 'stale_fact')`
+
+// matchedTriggerJSON renders one valid matched-Trigger snapshot so a stored Skip
+// decodes instead of failing trigger validation.
+func matchedTriggerJSON(t *testing.T) string {
+	t.Helper()
+	raw, err := automations.EncodeMatchedTriggers([]automations.AutomationTrigger{{
+		ID:   "occupied_and_warm",
+		Kind: automations.TriggerKindObservation,
+		Observation: &automations.ObservationTrigger{
+			EntityID:     newEntityID(t),
+			Dispositions: []devices.ObservationDisposition{devices.DispositionApplied},
+		},
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(raw)
+}
 
 func mustExec(t *testing.T, database *sql.DB, statement string, args ...any) {
 	t.Helper()

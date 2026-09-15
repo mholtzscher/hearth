@@ -13,6 +13,19 @@ import (
 // to its own invalid-input class.
 var ErrAutomationTriggerSource = errors.New("entity is not a valid automation trigger source")
 
+// ErrAutomationConditionEntity is the permanent classification for one Entity
+// that cannot be the current source of an Automation Condition reference: it
+// exists but is stateless, so it has no State a Condition could select. A
+// missing Entity stays [ErrEntityNotFound]. The automations module maps both to
+// its own invalid-input class, so a definition referencing either is rejected at
+// save time.
+var ErrAutomationConditionEntity = errors.New("entity is not a valid automation condition reference")
+
+// errStatefulEntityRequired is the private shared classification for one Entity
+// that exists but has no State. Each public save-time validator translates it
+// into its own permanent class, so callers never depend on this internal one.
+var errStatefulEntityRequired = errors.New("entity has no State")
+
 // ValidateObservationTrigger reports whether one Entity can be the source of an
 // Observation Trigger: it must currently exist and be stateful. Enablement,
 // availability, and owner health are deliberately not required, because
@@ -22,6 +35,52 @@ func (service *Service) ValidateObservationTrigger(ctx context.Context, entityID
 	if _, err := ParseEntityID(string(entityID)); err != nil {
 		return fmt.Errorf("%w: parse entity ID: %w", ErrAutomationTriggerSource, err)
 	}
+	if err := service.validateStatefulEntityReference(ctx, entityID); err != nil {
+		if errors.Is(err, errStatefulEntityRequired) {
+			return fmt.Errorf(
+				"%w: stateless entity %q has no State to observe",
+				ErrAutomationTriggerSource, entityID,
+			)
+		}
+		return err
+	}
+	return nil
+}
+
+// ValidateConditionEntity reports whether one Entity can be the source of an
+// Automation Condition: it must currently exist and be stateful. It shares the
+// private stateful-Entity reference rule with [Service.ValidateObservationTrigger]
+// without widening Trigger semantics.
+//
+// Save-time validation deliberately does not require a present State, a
+// compatible current selected value, availability, enablement, or a healthy
+// owner: those are evaluation results, not definition errors, and retained
+// State must not be reinterpreted against current support. A missing Entity
+// stays [ErrEntityNotFound]; a stateless Entity is [ErrAutomationConditionEntity].
+func (service *Service) ValidateConditionEntity(ctx context.Context, entityID EntityID) error {
+	if _, err := ParseEntityID(string(entityID)); err != nil {
+		return fmt.Errorf("%w: parse entity ID: %w", ErrAutomationConditionEntity, err)
+	}
+	if err := service.validateStatefulEntityReference(ctx, entityID); err != nil {
+		if errors.Is(err, errStatefulEntityRequired) {
+			return fmt.Errorf(
+				"%w: stateless entity %q has no State to compare",
+				ErrAutomationConditionEntity, entityID,
+			)
+		}
+		return err
+	}
+	return nil
+}
+
+// validateStatefulEntityReference implements the save-time reference rule shared
+// by Observation Trigger sources and Condition Entity references: the Entity
+// must currently exist and be stateful. A missing Entity returns
+// [ErrEntityNotFound] unchanged; a stateless Entity returns
+// [errStatefulEntityRequired]; an unreadable Entity type returns the catalog
+// failure. Enablement, availability, and owner health are never consulted, so a
+// disabled or unavailable Entity still proves a current reference.
+func (service *Service) validateStatefulEntityReference(ctx context.Context, entityID EntityID) error {
 	view, err := service.stores.Reads.GetEntity(ctx, entityID)
 	if err != nil {
 		return err
@@ -31,10 +90,7 @@ func (service *Service) ValidateObservationTrigger(ctx context.Context, entityID
 		return fmt.Errorf("resolve entity type %q: %w", view.Entity.TypeID, err)
 	}
 	if stateless {
-		return fmt.Errorf(
-			"%w: stateless entity %q has no State to observe",
-			ErrAutomationTriggerSource, entityID,
-		)
+		return fmt.Errorf("%w: entity %q", errStatefulEntityRequired, entityID)
 	}
 	return nil
 }

@@ -15,10 +15,13 @@ import (
 const AutomationFactMaximumAge = 30 * time.Second
 
 // StartManualRun admits one Run from the current definition snapshot, even when
-// the Automation is disabled. Each accepted call creates a distinct Run; a
-// running Run returns [ErrAutomationBusy] and a closed gate returns
+// the Automation is disabled. Conditions are evaluated unless
+// [ManualRunInput.BypassConditions] requests an explicit bypass. A committed
+// Condition Skip returns [ErrAutomationConditionsBlocked] after the transaction,
+// so the Skip's history is never rolled back. A running Run returns
+// [ErrAutomationBusy] with no new Skip and a closed gate returns
 // [ErrAdmissionUnavailable].
-func (service *Service) StartManualRun(ctx context.Context, id AutomationID) (AutomationRun, error) {
+func (service *Service) StartManualRun(ctx context.Context, input ManualRunInput) (AutomationRun, error) {
 	reservation, admitted := service.admission.TryAcquire()
 	if !admitted {
 		return AutomationRun{}, ErrAdmissionUnavailable
@@ -30,10 +33,33 @@ func (service *Service) StartManualRun(ctx context.Context, id AutomationID) (Au
 	if service.devices == nil || !service.devices.CommandAdmissionOpen() {
 		return AutomationRun{}, ErrAdmissionUnavailable
 	}
-	run, err := service.repository.AdmitManualRun(ctx, id, service.dependencies.Now())
+	// The reservation spans every coverage attempt and State read.
+	result, err := service.admitManualRun(ctx, input)
 	if err != nil {
+		// Release before diagnostics so a blocked log sink cannot hold Drain.
+		reservation.Release()
+		service.logConditionStateCorrupt(ctx, err)
 		return AutomationRun{}, err
 	}
+	if result.Skip != nil {
+		skip := *result.Skip
+		// Release before logging so a blocked sink cannot hold Drain, then turn
+		// the committed Skip into the typed blocked error outside the transaction.
+		reservation.Release()
+		service.logSkipped(ctx, AdmissionSkip{
+			SkipID:       skip.ID,
+			AutomationID: skip.AutomationID,
+			Revision:     skip.Revision,
+			Source:       skip.Source,
+			Reason:       skip.Reason,
+		})
+		return AutomationRun{}, &AutomationConditionsBlockedError{
+			AutomationID: skip.AutomationID,
+			SkipID:       skip.ID,
+			Reason:       skip.Reason,
+		}
+	}
+	run := *result.Run
 	// Caller cancellation must not cancel an admitted Run.
 	workerContext := context.WithoutCancel(ctx)
 	reservation.Go(func() { service.executeRun(workerContext, run) })
@@ -55,8 +81,13 @@ func (service *Service) ReceiveDeviceFact(
 		return AdmissionOutcome{}, ErrAdmissionUnavailable
 	}
 	defer reservation.Release()
-	result, err := service.repository.AdmitDeviceFact(ctx, fact, service.dependencies.Now())
+	// The reservation spans every coverage attempt and State read, and only a
+	// committed outcome registers workers.
+	result, err := service.admitAutomaticFact(ctx, fact)
 	if err != nil {
+		// Release before diagnostics so a blocked log sink cannot hold Drain.
+		reservation.Release()
+		service.logConditionStateCorrupt(ctx, err)
 		return AdmissionOutcome{}, err
 	}
 	// Start all committed Runs before logging can block, then release admission.
@@ -93,20 +124,26 @@ func (service *Service) logRunStarted(ctx context.Context, run AutomationRun) {
 	service.dependencies.Logger.LogAttrs(ctx, slog.LevelInfo, "automation run started", attributes...)
 }
 
-// logSkipped logs committed Skip identity and reason without payload values.
+// logSkipped logs committed Skip identity, admission source, and reason without
+// payload values. A manual Skip has no Fact identity, so it logs no fabricated
+// empty Fact fields.
 func (service *Service) logSkipped(ctx context.Context, skip AdmissionSkip) {
-	service.dependencies.Logger.InfoContext(
-		ctx,
-		"automation run skipped",
+	attributes := []slog.Attr{
 		slog.String("event", "automation.skipped"),
 		slog.String("automation_id", string(skip.AutomationID)),
 		slog.String("skip_id", string(skip.SkipID)),
 		slog.Int64("revision", skip.Revision),
+		slog.String("source", string(skip.Source)),
 		slog.String("reason", string(skip.Reason)),
-		slog.String("fact_id", string(skip.FactID)),
-		slog.String("family", string(skip.Family)),
-		slog.String("variant", skip.Variant),
-	)
+	}
+	if skip.FactID != nil {
+		attributes = append(attributes,
+			slog.String("fact_id", string(*skip.FactID)),
+			slog.String("family", string(skip.Family)),
+			slog.String("variant", skip.Variant),
+		)
+	}
+	service.dependencies.Logger.LogAttrs(ctx, slog.LevelInfo, "automation run skipped", attributes...)
 }
 
 // NewDeviceFactSummary copies one Device Fact into immutable history evidence so

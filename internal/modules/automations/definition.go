@@ -64,9 +64,12 @@ func (*AutomationDefinitionError) Error() string {
 // Is classifies every structural definition failure as ErrInvalidAutomation.
 func (*AutomationDefinitionError) Is(target error) bool { return target == ErrInvalidAutomation }
 
-// AutomationDefinitionCodec owns the compiled strict definition schema.
+// AutomationDefinitionCodec owns the compiled strict definition schema and its
+// reusable Condition subtree, so persisted Condition snapshots are validated by
+// exactly the same recursive family rules as a definition document.
 type AutomationDefinitionCodec struct {
-	schema *jsonschema.Schema
+	schema    *jsonschema.Schema
+	condition *jsonschema.Schema
 }
 
 // NewAutomationDefinitionCodec compiles the canonical embedded schema.
@@ -84,12 +87,33 @@ func NewAutomationDefinitionCodec() (*AutomationDefinitionCodec, error) {
 	if err != nil {
 		return nil, fmt.Errorf("automation definition schema compile: %w", err)
 	}
-	return &AutomationDefinitionCodec{schema: compiled}, nil
+	condition, err := compiler.Compile(schemaID + "#/$defs/condition")
+	if err != nil {
+		return nil, fmt.Errorf("automation condition schema compile: %w", err)
+	}
+	return &AutomationDefinitionCodec{schema: compiled, condition: condition}, nil
 }
 
 // AutomationDefinitionSchema returns owned copies of the embedded strict shape.
 func (*AutomationDefinitionCodec) AutomationDefinitionSchema() json.RawMessage {
 	return bytes.Clone(automationDefinitionSchema)
+}
+
+// ValidateCondition validates one raw flattened Condition node against the same
+// strict recursive schema a definition document uses. It rejects an omitted or
+// JSON-null required family field, a contradictory family payload, and any
+// unknown member, so a persisted decision snapshot can never be more permissive
+// than the definition it explains. A selected empty pointer stays valid because
+// the schema requires the member, not a nonempty value.
+func (codec *AutomationDefinitionCodec) ValidateCondition(raw json.RawMessage) error {
+	document, err := decodeJSONValue(raw)
+	if err != nil {
+		return definitionIssue("", "condition must be exactly one JSON value")
+	}
+	if validationErr := codec.condition.Validate(document); validationErr != nil {
+		return definitionIssue("", "condition does not satisfy the strict schema")
+	}
+	return nil
 }
 
 // DecodeAutomationDefinition validates and normalizes JSON against the strict
@@ -135,10 +159,11 @@ func DecodeAutomationDefinition(raw json.RawMessage) (AutomationDefinition, erro
 // before persisting caller-supplied values.
 func EncodeAutomationDefinition(definition AutomationDefinition) (json.RawMessage, error) {
 	value := automationDefinitionJSON{
-		Name:     definition.Name,
-		Enabled:  definition.Enabled,
-		Triggers: make([]automationTriggerJSON, 0, len(definition.Triggers)),
-		Steps:    make([]automationStepJSON, 0, len(definition.Steps)),
+		Name:       definition.Name,
+		Enabled:    definition.Enabled,
+		Triggers:   make([]automationTriggerJSON, 0, len(definition.Triggers)),
+		Conditions: encodeAutomationConditionTree(definition.Conditions),
+		Steps:      make([]automationStepJSON, 0, len(definition.Steps)),
 	}
 	for _, trigger := range definition.Triggers {
 		value.Triggers = append(value.Triggers, encodeAutomationTrigger(trigger))
@@ -247,6 +272,9 @@ func validateAutomationReferences(
 			return AutomationDefinition{}, err
 		}
 	}
+	if err := validateAutomationConditionReferences(ctx, automationDevices, definition.Conditions); err != nil {
+		return AutomationDefinition{}, err
+	}
 	steps := make([]AutomationStep, len(definition.Steps))
 	copy(steps, definition.Steps)
 	for index, step := range definition.Steps {
@@ -287,11 +315,37 @@ func validateAutomationTriggerReference(
 	return nil
 }
 
+// validateAutomationConditionReferences checks that every Entity a Condition tree
+// explicitly references currently exists and is stateful, reusing devices'
+// condition reference rule. Save-time validation deliberately does not require a
+// present State, a compatible selected value, availability, enablement, or a
+// healthy owner: those are evaluation results, not definition errors.
+func validateAutomationConditionReferences(
+	ctx context.Context,
+	automationDevices AutomationDevices,
+	conditions *AutomationCondition,
+) error {
+	if conditions == nil {
+		return nil
+	}
+	entityIDs, err := RequiredConditionEntityIDs(*conditions)
+	if err != nil {
+		return err
+	}
+	for _, entityID := range entityIDs {
+		if validationErr := automationDevices.ValidateConditionEntity(ctx, entityID); validationErr != nil {
+			return fmt.Errorf("%w: conditions: %w", ErrInvalidAutomation, validationErr)
+		}
+	}
+	return nil
+}
+
 type automationDefinitionJSON struct {
-	Name     string                  `json:"name"`
-	Enabled  bool                    `json:"enabled"`
-	Triggers []automationTriggerJSON `json:"triggers"`
-	Steps    []automationStepJSON    `json:"steps"`
+	Name       string                   `json:"name"`
+	Enabled    bool                     `json:"enabled"`
+	Triggers   []automationTriggerJSON  `json:"triggers"`
+	Conditions *automationConditionJSON `json:"conditions,omitempty"`
+	Steps      []automationStepJSON     `json:"steps"`
 }
 
 type automationTriggerJSON struct {
@@ -377,11 +431,20 @@ func normalizeAutomationDefinition(definition AutomationDefinition) (AutomationD
 	if err != nil {
 		return AutomationDefinition{}, err
 	}
+	conditions := definition.Conditions
+	if conditions != nil {
+		normalized, conditionErr := NormalizeAutomationConditions(*conditions)
+		if conditionErr != nil {
+			return AutomationDefinition{}, conditionErr
+		}
+		conditions = &normalized
+	}
 	return AutomationDefinition{
-		Name:     trimmedName,
-		Enabled:  definition.Enabled,
-		Triggers: triggers,
-		Steps:    steps,
+		Name:       trimmedName,
+		Enabled:    definition.Enabled,
+		Triggers:   triggers,
+		Conditions: conditions,
+		Steps:      steps,
 	}, nil
 }
 
@@ -468,10 +531,11 @@ func validateAutomationStepParameters(parameters devices.CommandParameters) erro
 // automationDefinitionFromJSON maps a schema-validated document to domain types.
 func automationDefinitionFromJSON(value automationDefinitionJSON) AutomationDefinition {
 	definition := AutomationDefinition{
-		Name:     value.Name,
-		Enabled:  value.Enabled,
-		Triggers: make([]AutomationTrigger, 0, len(value.Triggers)),
-		Steps:    make([]AutomationStep, 0, len(value.Steps)),
+		Name:       value.Name,
+		Enabled:    value.Enabled,
+		Triggers:   make([]AutomationTrigger, 0, len(value.Triggers)),
+		Conditions: decodeConditionTree(value.Conditions),
+		Steps:      make([]AutomationStep, 0, len(value.Steps)),
 	}
 	for _, item := range value.Triggers {
 		definition.Triggers = append(definition.Triggers, automationTriggerFromJSON(item))

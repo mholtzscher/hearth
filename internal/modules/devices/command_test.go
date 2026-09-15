@@ -54,6 +54,10 @@ func (repository *commandRepository) GetEntity(context.Context, EntityID) (Entit
 	return repository.view, nil
 }
 
+func (*commandRepository) GetEntityStateSnapshot(context.Context, []EntityID) (EntityStateSnapshot, error) {
+	panic("unexpected GetEntityStateSnapshot call")
+}
+
 func (*commandRepository) GetCommand(context.Context, CommandID) (CommandRecord, error) {
 	panic("unexpected GetCommand call")
 }

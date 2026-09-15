@@ -91,6 +91,9 @@
         ]
       }
     },
+    "conditions": {
+      "$ref": "#/$defs/condition"
+    },
     "steps": {
       "type": "array",
       "minItems": 1,
@@ -116,6 +119,82 @@
             "type": "object"
           }
         }
+      }
+    }
+  },
+  "$defs": {
+    "condition": {
+      "oneOf": [
+        { "$ref": "#/$defs/entityStateCondition" },
+        { "$ref": "#/$defs/allCondition" },
+        { "$ref": "#/$defs/anyCondition" },
+        { "$ref": "#/$defs/notCondition" }
+      ]
+    },
+    "conditionID": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9_-]{0,62}$"
+    },
+    "children": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 63,
+      "items": { "$ref": "#/$defs/condition" }
+    },
+    "entityStateCondition": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "kind", "entity_id", "pointer", "operator", "operand"],
+      "properties": {
+        "id": { "$ref": "#/$defs/conditionID" },
+        "kind": { "const": "entity_state" },
+        "entity_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "pointer": {
+          "type": "string",
+          "maxLength": 256
+        },
+        "operator": {
+          "enum": ["eq", "ne", "lt", "lte", "gt", "gte"]
+        },
+        "operand": {},
+        "max_age_seconds": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 2592000
+        }
+      }
+    },
+    "allCondition": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "kind", "children"],
+      "properties": {
+        "id": { "$ref": "#/$defs/conditionID" },
+        "kind": { "const": "all" },
+        "children": { "$ref": "#/$defs/children" }
+      }
+    },
+    "anyCondition": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "kind", "children"],
+      "properties": {
+        "id": { "$ref": "#/$defs/conditionID" },
+        "kind": { "const": "any" },
+        "children": { "$ref": "#/$defs/children" }
+      }
+    },
+    "notCondition": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "kind", "child"],
+      "properties": {
+        "id": { "$ref": "#/$defs/conditionID" },
+        "kind": { "const": "not" },
+        "child": { "$ref": "#/$defs/condition" }
       }
     }
   }

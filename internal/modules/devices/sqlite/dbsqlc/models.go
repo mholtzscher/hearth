@@ -89,6 +89,8 @@ type AutomationHistory struct {
 	RunMatchedTriggerIdsJson sql.NullString
 	SkipMatchedTriggersJson  sql.NullString
 	SkipReason               sql.NullString
+	SkipSource               sql.NullString
+	ConditionDecisionJson    sql.NullString
 }
 
 type AutomationRunStep struct {

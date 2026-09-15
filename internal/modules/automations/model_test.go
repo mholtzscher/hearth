@@ -87,9 +87,12 @@ func validDomainRun(t *testing.T) automations.AutomationRun {
 		Source:            automations.RunSourceDeviceFact,
 		Fact:              &fact,
 		MatchedTriggerIDs: []automations.TriggerID{"occupied_and_warm"},
-		Status:            automations.RunSucceeded,
-		StartedAt:         modelTestTime,
-		CompletedAt:       &completedAt,
+		ConditionDecision: automations.AutomationConditionDecision{
+			Mode: automations.AutomationConditionDecisionNotConfigured,
+		},
+		Status:      automations.RunSucceeded,
+		StartedAt:   modelTestTime,
+		CompletedAt: &completedAt,
 		Steps: []automations.AutomationStepAttempt{{
 			Position:              0,
 			StepID:                "light_on",
@@ -182,12 +185,14 @@ func validDomainSkip(t *testing.T) automations.AutomationSkip {
 	if err != nil {
 		t.Fatal(err)
 	}
+	fact := newObservationFactSummary(t)
 	return automations.AutomationSkip{
 		ID:             skipID,
 		AutomationID:   automationID,
 		AutomationName: "Office light",
 		Revision:       3,
-		Fact:           newObservationFactSummary(t),
+		Source:         automations.RunSourceDeviceFact,
+		Fact:           &fact,
 		MatchedTriggers: []automations.AutomationTrigger{{
 			ID:   "occupied_and_warm",
 			Kind: automations.TriggerKindObservation,
@@ -196,7 +201,10 @@ func validDomainSkip(t *testing.T) automations.AutomationSkip {
 				Dispositions: []devices.ObservationDisposition{devices.DispositionApplied},
 			},
 		}},
-		Reason:    automations.AutomationSkipBusy,
+		Reason: automations.AutomationSkipBusy,
+		ConditionDecision: automations.AutomationConditionDecision{
+			Mode: automations.AutomationConditionDecisionNotConfigured,
+		},
 		SkippedAt: modelTestTime,
 	}
 }
@@ -215,7 +223,17 @@ func TestValidateAutomationSkipRejectsImpossibleCombinations(t *testing.T) {
 		{"unknown reason", func(skip *automations.AutomationSkip) { skip.Reason = "later" }},
 		{"zero skip time", func(skip *automations.AutomationSkip) { skip.SkippedAt = time.Time{} }},
 		{"zero revision", func(skip *automations.AutomationSkip) { skip.Revision = 0 }},
-		{"missing fact", func(skip *automations.AutomationSkip) { skip.Fact = automations.DeviceFactSummary{} }},
+		{"missing fact", func(skip *automations.AutomationSkip) { skip.Fact = nil }},
+		{"manual source with fact", func(skip *automations.AutomationSkip) {
+			skip.Source = automations.RunSourceManual
+		}},
+		{"unknown source", func(skip *automations.AutomationSkip) { skip.Source = "later" }},
+		{"bypass decision", func(skip *automations.AutomationSkip) {
+			skip.ConditionDecision.BypassRequested = true
+		}},
+		{"condition reason without evaluation", func(skip *automations.AutomationSkip) {
+			skip.Reason = automations.AutomationSkipConditionsFalse
+		}},
 		{"duplicate matched trigger", func(skip *automations.AutomationSkip) {
 			skip.MatchedTriggers = append(skip.MatchedTriggers, skip.MatchedTriggers[0])
 		}},

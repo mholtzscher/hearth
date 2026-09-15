@@ -123,7 +123,7 @@ func TestAutomationRunStartedLogsManualAndAutomaticAdmission(t *testing.T) {
 	service, _ := newRuntimeService(t, newScriptedDevices(), dependencies)
 
 	manual := createRuntimeAutomation(t, service, runtimeDefinition(t, 1))
-	manualRun, err := service.StartManualRun(ctx, manual.ID)
+	manualRun, err := service.StartManualRun(ctx, automations.ManualRunInput{AutomationID: manual.ID})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -287,7 +287,7 @@ func TestAutomationDecisionLogsCarryNoSensitiveMaterial(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if _, err := service.StartManualRun(ctx, record.ID); err != nil {
+	if _, err := service.StartManualRun(ctx, automations.ManualRunInput{AutomationID: record.ID}); err != nil {
 		t.Fatal(err)
 	}
 	waitForRuns(t, service)
@@ -326,7 +326,9 @@ func TestAutomationDecisionLogsCarryNoSensitiveMaterial(t *testing.T) {
 	// A Run left running with no worker, exactly like a crash, then classified by
 	// startup interruption.
 	interrupted := createRuntimeAutomation(t, service, runtimeDefinitionFor(t, newEntityID(t)))
-	if _, err := repository.AdmitManualRun(ctx, interrupted.ID, runtimeTestNow); err != nil {
+	if _, err := repository.AdmitManualRun(
+		ctx, automations.ManualRunInput{AutomationID: interrupted.ID}, devices.EntityStateSnapshot{}, runtimeTestNow,
+	); err != nil {
 		t.Fatal(err)
 	}
 	if err := service.InterruptActiveRuns(ctx, runtimeTestNow); err != nil {
@@ -343,7 +345,7 @@ func TestAutomationDecisionLogsCarryNoSensitiveMaterial(t *testing.T) {
 		fmt.Sprintf(`{"value":%q}`, parameterSentinel+"-fault"),
 	)
 	faultAutomation := createRuntimeAutomation(t, service, faultDefinition)
-	if _, err := service.StartManualRun(ctx, faultAutomation.ID); err != nil {
+	if _, err := service.StartManualRun(ctx, automations.ManualRunInput{AutomationID: faultAutomation.ID}); err != nil {
 		t.Fatal(err)
 	}
 	waitForRuns(t, service)

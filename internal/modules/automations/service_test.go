@@ -22,15 +22,15 @@ var _ automations.AutomationRepository = (*definitionTestRepository)(nil)
 var _ automations.AutomationDevices = (*devices.Service)(nil)
 
 func (*definitionTestRepository) AdmitDeviceFact(
-	context.Context, automations.DeviceFact, time.Time,
+	context.Context, automations.DeviceFact, devices.EntityStateSnapshot, time.Time,
 ) (automations.AdmissionResult, error) {
 	return automations.AdmissionResult{}, errRuntimePersistenceUnavailable
 }
 
 func (*definitionTestRepository) AdmitManualRun(
-	context.Context, automations.AutomationID, time.Time,
-) (automations.AutomationRun, error) {
-	return automations.AutomationRun{}, errRuntimePersistenceUnavailable
+	context.Context, automations.ManualRunInput, devices.EntityStateSnapshot, time.Time,
+) (automations.ManualAdmissionResult, error) {
+	return automations.ManualAdmissionResult{}, errRuntimePersistenceUnavailable
 }
 
 func (*definitionTestRepository) MarkStepRunning(context.Context, automations.StepStart) error {
@@ -69,10 +69,12 @@ var errRuntimePersistenceUnavailable = errors.New("automation runtime persistenc
 
 type stubAutomationDevices struct {
 	observationError  error
+	conditionError    error
 	entityEventError  error
 	commandError      error
 	normalizedCommand devices.CommandParameters
 	observationCalls  []devices.EntityID
+	conditionCalls    []devices.EntityID
 	entityEventCalls  []string
 	commandCalls      []devices.CommandInput
 }
@@ -80,6 +82,17 @@ type stubAutomationDevices struct {
 func (stub *stubAutomationDevices) ValidateObservationTrigger(_ context.Context, entityID devices.EntityID) error {
 	stub.observationCalls = append(stub.observationCalls, entityID)
 	return stub.observationError
+}
+
+func (stub *stubAutomationDevices) ValidateConditionEntity(_ context.Context, entityID devices.EntityID) error {
+	stub.conditionCalls = append(stub.conditionCalls, entityID)
+	return stub.conditionError
+}
+
+func (*stubAutomationDevices) GetEntityStateSnapshot(
+	context.Context, []devices.EntityID,
+) (devices.EntityStateSnapshot, error) {
+	return devices.EntityStateSnapshot{}, errors.New("GetEntityStateSnapshot is not available in D1 tests")
 }
 
 func (stub *stubAutomationDevices) ValidateEntityEventTrigger(

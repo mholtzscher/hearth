@@ -24,7 +24,9 @@ func TestDrainClosesIdleAutomationAdmission(t *testing.T) {
 			t.Fatal("idle Drain left admission open")
 		}
 	}
-	if _, err := service.StartManualRun(t.Context(), record.ID); !errors.Is(err, automations.ErrAdmissionUnavailable) {
+	if _, err := service.StartManualRun(
+		t.Context(), automations.ManualRunInput{AutomationID: record.ID},
+	); !errors.Is(err, automations.ErrAdmissionUnavailable) {
 		t.Fatalf("manual admission after idle Drain = %v", err)
 	}
 	_, factErr := service.ReceiveDeviceFact(t.Context(), automations.DeviceFact{})
@@ -46,7 +48,7 @@ func TestRunSurvivesCallerCancellation(t *testing.T) {
 	record := createRuntimeAutomation(t, service, runtimeDefinition(t, 1))
 
 	ctx, cancel := context.WithCancel(context.Background())
-	run, err := service.StartManualRun(ctx, record.ID)
+	run, err := service.StartManualRun(ctx, automations.ManualRunInput{AutomationID: record.ID})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -77,7 +79,7 @@ func TestDeletingDefinitionLetsActiveRunContinue(t *testing.T) {
 	service, _ := newRuntimeService(t, scripted, runtimeTestDependencies())
 	record := createRuntimeAutomation(t, service, runtimeDefinition(t, 2))
 
-	run, err := service.StartManualRun(ctx, record.ID)
+	run, err := service.StartManualRun(ctx, automations.ManualRunInput{AutomationID: record.ID})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -116,10 +118,16 @@ func TestInterruptActiveRunsClassifiesUnfinishedWork(t *testing.T) {
 	record := createRuntimeAutomation(t, service, runtimeDefinition(t, 2))
 
 	// Admit a Run with no worker, exactly like a Run left running by a crash.
-	run, err := repository.AdmitManualRun(ctx, record.ID, runtimeTestNow)
+	admitted, err := repository.AdmitManualRun(
+		ctx, automations.ManualRunInput{AutomationID: record.ID}, devices.EntityStateSnapshot{}, runtimeTestNow,
+	)
 	if err != nil {
 		t.Fatal(err)
 	}
+	if admitted.Run == nil {
+		t.Fatal("manual admission did not commit a Run")
+	}
+	run := *admitted.Run
 	if err = service.InterruptActiveRuns(ctx, runtimeTestNow); err != nil {
 		t.Fatal(err)
 	}
@@ -155,7 +163,7 @@ func TestCanceledDrainStopsRunBeforeNextStep(t *testing.T) {
 	service, _ := newRuntimeService(t, scripted, runtimeTestDependencies())
 	record := createRuntimeAutomation(t, service, runtimeDefinition(t, 2))
 
-	run, err := service.StartManualRun(ctx, record.ID)
+	run, err := service.StartManualRun(ctx, automations.ManualRunInput{AutomationID: record.ID})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -168,7 +176,9 @@ func TestCanceledDrainStopsRunBeforeNextStep(t *testing.T) {
 	if service.AdmissionOpen() {
 		t.Fatal("canceled Drain left admission open")
 	}
-	if _, err = service.StartManualRun(ctx, record.ID); !errors.Is(err, automations.ErrAdmissionUnavailable) {
+	if _, err = service.StartManualRun(
+		ctx, automations.ManualRunInput{AutomationID: record.ID},
+	); !errors.Is(err, automations.ErrAdmissionUnavailable) {
 		t.Fatalf("manual admission after Drain = %v", err)
 	}
 	_, err = service.ReceiveDeviceFact(ctx, automations.DeviceFact{})
@@ -231,7 +241,9 @@ func TestPruneHistoryKeepsRunningRunsAndFactReceipts(t *testing.T) {
 	scripted.block = gate
 	scripted.onStart = func(devices.CommandInput) { once.Do(func() { close(started) }) }
 	runningAutomation := createRuntimeAutomation(t, service, runtimeDefinitionFor(t, newEntityID(t)))
-	if _, err := service.StartManualRun(ctx, runningAutomation.ID); err != nil {
+	if _, err := service.StartManualRun(
+		ctx, automations.ManualRunInput{AutomationID: runningAutomation.ID},
+	); err != nil {
 		t.Fatal(err)
 	}
 	<-started

@@ -14,6 +14,14 @@ type AutomationDevices interface {
 	// ValidateObservationTrigger reports whether the Entity currently exists and
 	// can be the source of an Observation Trigger.
 	ValidateObservationTrigger(context.Context, devices.EntityID) error
+	// ValidateConditionEntity reports whether the Entity currently exists and is
+	// stateful, so a Condition may select its retained State. A present State is
+	// not required; compatibility and availability are evaluation results.
+	ValidateConditionEntity(context.Context, devices.EntityID) error
+	// GetEntityStateSnapshot reads one coherent State snapshot covering exactly
+	// the requested Entity IDs. Admission calls it outside its transaction with
+	// the complete set current Conditions require.
+	GetEntityStateSnapshot(context.Context, []devices.EntityID) (devices.EntityStateSnapshot, error)
 	// ValidateEntityEventTrigger reports whether the Entity currently exists and
 	// supports the exact Entity Event name.
 	ValidateEntityEventTrigger(context.Context, devices.EntityID, devices.EntityEventName) error
@@ -45,10 +53,18 @@ type AutomationRepository interface {
 	// AdmitDeviceFact evaluates one Device Fact against current enabled
 	// definitions and commits every matching outcome in one transaction. It
 	// registers no workers; the caller starts them only after the commit returns.
-	AdmitDeviceFact(context.Context, DeviceFact, time.Time) (AdmissionResult, error)
-	// AdmitManualRun starts one Run from the current definition snapshot even
-	// when the Automation is disabled.
-	AdmitManualRun(context.Context, AutomationID, time.Time) (AutomationRun, error)
+	// The supplied snapshot must cover every Entity current eligible Conditions
+	// require; otherwise it returns [ConditionSnapshotRequiredError] carrying the
+	// complete required set and writes nothing.
+	AdmitDeviceFact(
+		context.Context, DeviceFact, devices.EntityStateSnapshot, time.Time,
+	) (AdmissionResult, error)
+	// AdmitManualRun starts one Run, or commits one Condition Skip, from the
+	// current definition snapshot even when the Automation is disabled. The
+	// supplied snapshot follows the same coverage rule as AdmitDeviceFact.
+	AdmitManualRun(
+		context.Context, ManualRunInput, devices.EntityStateSnapshot, time.Time,
+	) (ManualAdmissionResult, error)
 	// MarkStepRunning persists one Step's reserved Command identities.
 	MarkStepRunning(context.Context, StepStart) error
 	// CompleteStep persists one Step's established terminal outcome.
