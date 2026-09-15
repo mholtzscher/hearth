@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/mholtzscher/hearth/internal/modules/automations"
+	automationssqlite "github.com/mholtzscher/hearth/internal/modules/automations/sqlite"
 	"github.com/mholtzscher/hearth/internal/modules/devices"
 )
 
@@ -110,7 +111,7 @@ func TestInterruptActiveRunsClassifiesUnfinishedWork(t *testing.T) {
 	scripted := newScriptedDevices()
 	dependencies := runtimeTestDependencies()
 	database := openAutomationDatabase(t)
-	repository := automations.NewSQLiteRepository(database, dependencies)
+	repository := automationssqlite.NewAutomationRepository(database, dependencies)
 	service := automations.NewService(repository, scripted, dependencies)
 	record := createRuntimeAutomation(t, service, runtimeDefinition(t, 2))
 

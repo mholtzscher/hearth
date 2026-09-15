@@ -158,6 +158,39 @@ func EncodeAutomationDefinition(definition AutomationDefinition) (json.RawMessag
 	return raw, nil
 }
 
+// EncodeMatchedTriggers renders matching Trigger snapshots in the same strict
+// persisted shape as a definition's Triggers, so a retained Skip stays
+// explainable after the definition is edited or deleted. It does not validate.
+func EncodeMatchedTriggers(triggers []AutomationTrigger) (json.RawMessage, error) {
+	encoded := make([]automationTriggerJSON, 0, len(triggers))
+	for _, trigger := range triggers {
+		encoded = append(encoded, encodeAutomationTrigger(trigger))
+	}
+	raw, err := json.Marshal(encoded)
+	if err != nil {
+		return nil, fmt.Errorf("%w: matched triggers cannot be encoded: %w", ErrInvalidAutomation, err)
+	}
+	return raw, nil
+}
+
+// DecodeMatchedTriggers validates and normalizes a persisted Trigger snapshot
+// list back into domain values.
+func DecodeMatchedTriggers(raw json.RawMessage) ([]AutomationTrigger, error) {
+	var encoded []automationTriggerJSON
+	if err := json.Unmarshal(raw, &encoded); err != nil {
+		return nil, err
+	}
+	triggers := make([]AutomationTrigger, 0, len(encoded))
+	for _, item := range encoded {
+		trigger, err := normalizeAutomationTriggerValue(automationTriggerFromJSON(item))
+		if err != nil {
+			return nil, err
+		}
+		triggers = append(triggers, trigger)
+	}
+	return triggers, nil
+}
+
 // NormalizeAutomationDefinition returns a structurally validated, canonical copy
 // without consulting devices. Its encoded form must fit the 64 KiB limit.
 func NormalizeAutomationDefinition(definition AutomationDefinition) (AutomationDefinition, error) {

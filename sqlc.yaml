@@ -11,10 +11,10 @@ sql:
         query_parameter_limit: 0
   - engine: "sqlite"
     schema: "internal/platform/db/migrations"
-    queries: "internal/modules/automations/dbqueries"
+    queries: "internal/modules/automations/sqlite/dbqueries"
     gen:
       go:
         package: "dbsqlc"
-        out: "internal/modules/automations/dbsqlc"
+        out: "internal/modules/automations/sqlite/dbsqlc"
         sql_package: "database/sql"
         query_parameter_limit: 0

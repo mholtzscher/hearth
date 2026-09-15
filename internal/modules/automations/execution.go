@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
 	"time"
 
@@ -33,6 +34,35 @@ const (
 	// failure with no more specific durable code.
 	AutomationFailureInternalError = "internal_error"
 )
+
+// ValidateStepCompletion rejects a Step completion that is not a terminal
+// outcome, or whose status does not carry the evidence it requires. Persistence
+// calls it before writing; it performs no reads or writes of its own.
+func ValidateStepCompletion(completion StepCompletion) error {
+	switch completion.Status {
+	case StepNotAttempted, StepRunning:
+		return fmt.Errorf("%w: step completion status %q is not terminal", ErrInvalidAutomation, completion.Status)
+	case StepSatisfied, StepDispatched:
+		if completion.VerifiedCommandID == nil || completion.FailureCode != nil {
+			return fmt.Errorf(
+				"%w: successful step requires a verified Command and no failure code",
+				ErrInvalidAutomation,
+			)
+		}
+	case StepFailed, StepInterrupted:
+		if completion.FailureCode == nil {
+			return fmt.Errorf("%w: failing step requires a failure code", ErrInvalidAutomation)
+		}
+	default:
+		return fmt.Errorf("%w: unknown step completion status %q", ErrInvalidAutomation, completion.Status)
+	}
+	if completion.VerifiedCommandID != nil {
+		if _, err := devices.ParseCommandID(string(*completion.VerifiedCommandID)); err != nil {
+			return fmt.Errorf("%w: verified command ID: %w", ErrInvalidAutomation, err)
+		}
+	}
+	return nil
+}
 
 // executeRun executes one immutable Run snapshot sequentially. The next Step
 // starts only after the prior Command reaches a successful terminal outcome, and

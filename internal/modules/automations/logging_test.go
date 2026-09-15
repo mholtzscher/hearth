@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/mholtzscher/hearth/internal/modules/automations"
+	automationssqlite "github.com/mholtzscher/hearth/internal/modules/automations/sqlite"
 	"github.com/mholtzscher/hearth/internal/modules/devices"
 )
 
@@ -254,7 +255,7 @@ func TestAutomationDecisionLogsCarryNoSensitiveMaterial(t *testing.T) {
 	writer, logger := newAutomationLogSink()
 	dependencies := fixedAutomationLogDependencies(logger)
 	scripted := newScriptedDevices()
-	repository := automations.NewSQLiteRepository(openAutomationDatabase(t), dependencies)
+	repository := automationssqlite.NewAutomationRepository(openAutomationDatabase(t), dependencies)
 	service := automations.NewService(repository, scripted, dependencies)
 
 	const (

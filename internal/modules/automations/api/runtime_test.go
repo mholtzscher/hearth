@@ -12,6 +12,7 @@ import (
 
 	"github.com/mholtzscher/hearth/internal/modules/automations"
 	automationsapi "github.com/mholtzscher/hearth/internal/modules/automations/api"
+	automationssqlite "github.com/mholtzscher/hearth/internal/modules/automations/sqlite"
 	"github.com/mholtzscher/hearth/internal/modules/devices"
 	platformdb "github.com/mholtzscher/hearth/internal/platform/db"
 )
@@ -104,7 +105,7 @@ func newAutomationService(t *testing.T, stub *apiDevices) *automations.Service {
 	t.Helper()
 	database := openAutomationTestDatabase(t)
 	dependencies := automations.AutomationDependencies{}
-	repository := automations.NewSQLiteRepository(database, dependencies)
+	repository := automationssqlite.NewAutomationRepository(database, dependencies)
 	service := automations.NewService(repository, stub, dependencies)
 	t.Cleanup(func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)

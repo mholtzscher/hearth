@@ -15,6 +15,7 @@ import (
 	contractsv1 "github.com/mholtzscher/hearth/contracts/v1"
 	"github.com/mholtzscher/hearth/internal/modules/automations"
 	automationsnats "github.com/mholtzscher/hearth/internal/modules/automations/nats"
+	automationssqlite "github.com/mholtzscher/hearth/internal/modules/automations/sqlite"
 	"github.com/mholtzscher/hearth/internal/modules/devices"
 	devicesnats "github.com/mholtzscher/hearth/internal/modules/devices/nats"
 	devicessqlite "github.com/mholtzscher/hearth/internal/modules/devices/sqlite"
@@ -106,7 +107,9 @@ func Run(
 	logStartupStage(ctx, coreLogger, "active_commands_interrupted")
 	// Interrupt Automation Runs before opening transports, so stale Runs cannot
 	// advance. The service is constructed later; recovery needs only the repository.
-	automationRepository := automations.NewSQLiteRepository(database, automations.AutomationDependencies{})
+	automationRepository := automationssqlite.NewAutomationRepository(
+		database, automations.AutomationDependencies{},
+	)
 	if err := automationRepository.InterruptActiveRuns(
 		ctx, startupTime, automations.AutomationFailureCoreRestarted,
 	); err != nil {

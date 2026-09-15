@@ -1,41 +1,14 @@
-package automations_test
+package sqlite_test
 
 import (
 	"context"
-	"database/sql"
-	"encoding/json"
 	"errors"
 	"fmt"
-	"path/filepath"
 	"testing"
-
-	platformdb "github.com/mholtzscher/hearth/internal/platform/db"
 
 	"github.com/mholtzscher/hearth/internal/modules/automations"
 	"github.com/mholtzscher/hearth/internal/modules/devices"
 )
-
-// migrationTimestamp is a fixed-width UTC stamp accepted by every automation
-// table's TEXT columns.
-const migrationTimestamp = "2026-09-01T00:00:00.000000000Z"
-
-func openAutomationDatabase(t *testing.T) *sql.DB {
-	t.Helper()
-	database, err := platformdb.Open(context.Background(), filepath.Join(t.TempDir(), "hearth.db"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = database.Close() })
-	if err = platformdb.Migrate(context.Background(), database); err != nil {
-		t.Fatal(err)
-	}
-	return database
-}
-
-func newAutomationRepository(t *testing.T, database *sql.DB) *automations.SQLiteRepository {
-	t.Helper()
-	return automations.NewSQLiteRepository(database, automations.AutomationDependencies{})
-}
 
 // SQLite must persist normalized definitions, increment revisions on replacement,
 // and enforce optimistic concurrency for replacement and deletion.
@@ -207,6 +180,53 @@ func TestSQLiteRepositoryRejectsMalformedStoredDefinition(t *testing.T) {
 	}
 }
 
+// Persistence must reject contradictory typed families and non-object parameters
+// before encoding can discard invalid input.
+func TestSQLiteRepositoryRejectsMalformedTypedDefinitions(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	repository := newAutomationRepository(t, openAutomationDatabase(t))
+	missingID, err := automations.NewAutomationID()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, test := range []struct {
+		name   string
+		mutate func(definition *automations.AutomationDefinition)
+	}{
+		{
+			"observation trigger carries event payload",
+			func(definition *automations.AutomationDefinition) {
+				definition.Triggers[0].EntityEvent = &automations.EntityEventTrigger{
+					EntityID: newEntityID(t), EventName: "single_press",
+				}
+			},
+		},
+		{
+			"parameters are not an object",
+			func(definition *automations.AutomationDefinition) {
+				definition.Steps[0].Parameters = devices.CommandParameters(`[]`)
+			},
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			definition := validDomainDefinition(t)
+			test.mutate(&definition)
+			if _, createErr := repository.CreateAutomation(ctx, definition); !errors.Is(
+				createErr, automations.ErrInvalidAutomation,
+			) {
+				t.Fatalf("create error = %v, want ErrInvalidAutomation", createErr)
+			}
+			if _, replaceErr := repository.ReplaceAutomation(
+				ctx, missingID, 1, definition,
+			); !errors.Is(replaceErr, automations.ErrInvalidAutomation) {
+				t.Fatalf("replace error = %v, want ErrInvalidAutomation", replaceErr)
+			}
+		})
+	}
+}
+
 // Real SQLite constraints must enforce definition shape, unique active Runs and
 // Fact outcomes, Run/Skip exclusivity, and consistent Step evidence.
 func TestMigrationEnforcesAutomationStorageInvariants(t *testing.T) {
@@ -321,154 +341,5 @@ func TestMigrationEnforcesAutomationStorageInvariants(t *testing.T) {
 	}
 	if steps != 1 {
 		t.Fatalf("steps = %d, want 1", steps)
-	}
-}
-
-const insertHistoryRunSQL = `INSERT INTO automation_history (
-    id, automation_id, automation_name, kind, revision, recorded_at,
-    run_snapshot_json, run_source, run_status, run_failure_code, run_started_at,
-    run_completed_at, run_matched_trigger_ids_json
-) VALUES (?, ?, 'Office light', 'run', 1, '2026-09-01T00:00:00.000000000Z', '{}', 'manual', ?, ?,
-    '2026-09-01T00:00:00.000000000Z', ?, ?)`
-
-const insertHistorySkipSQL = `INSERT INTO automation_history (
-    id, automation_id, automation_name, kind, revision, recorded_at,
-    fact_id, fact_family, fact_entity_id, fact_variant, fact_causation_id, fact_value_json, fact_emitted_at,
-    skip_matched_triggers_json, skip_reason
-) VALUES (?, ?, 'Office light', 'skip', 1, ?, ?, 'observation', ?, 'applied', ?, ?, ?, '[]', 'automation_busy')`
-
-func mustExec(t *testing.T, database *sql.DB, statement string, args ...any) {
-	t.Helper()
-	if _, err := database.ExecContext(context.Background(), statement, args...); err != nil {
-		t.Fatalf("exec %s: %v", statement, err)
-	}
-}
-
-func assertStoredAutomationJSON(t *testing.T, database *sql.DB, id automations.AutomationID) {
-	t.Helper()
-	var stored string
-	if err := database.QueryRow(
-		`SELECT definition_json FROM automations WHERE id = ?`, string(id),
-	).Scan(&stored); err != nil {
-		t.Fatal(err)
-	}
-	var document map[string]any
-	if err := json.Unmarshal([]byte(stored), &document); err != nil {
-		t.Fatalf("stored definition is not JSON: %v", err)
-	}
-	for _, required := range []string{"name", "enabled", "triggers", "steps"} {
-		if _, found := document[required]; !found {
-			t.Fatalf("stored definition is missing %q: %s", required, stored)
-		}
-	}
-}
-
-func newAutomationIDString(t *testing.T) string {
-	t.Helper()
-	id, err := automations.NewAutomationID()
-	if err != nil {
-		t.Fatal(err)
-	}
-	return string(id)
-}
-
-func newRunIDString(t *testing.T) string {
-	t.Helper()
-	id, err := automations.NewAutomationRunID()
-	if err != nil {
-		t.Fatal(err)
-	}
-	return string(id)
-}
-
-func newSkipIDString(t *testing.T) string {
-	t.Helper()
-	id, err := automations.NewAutomationSkipID()
-	if err != nil {
-		t.Fatal(err)
-	}
-	return string(id)
-}
-
-func newFactIDString(t *testing.T) string {
-	t.Helper()
-	id, err := devices.NewDeviceFactID()
-	if err != nil {
-		t.Fatal(err)
-	}
-	return string(id)
-}
-
-func newObservationIDString(t *testing.T) string {
-	t.Helper()
-	id, err := devices.NewObservationID()
-	if err != nil {
-		t.Fatal(err)
-	}
-	return string(id)
-}
-
-func newCommandIDString(t *testing.T) string {
-	t.Helper()
-	id, err := devices.NewCommandID()
-	if err != nil {
-		t.Fatal(err)
-	}
-	return string(id)
-}
-
-func newCorrelationIDString(t *testing.T) string {
-	t.Helper()
-	id, err := devices.NewCorrelationID()
-	if err != nil {
-		t.Fatal(err)
-	}
-	return string(id)
-}
-
-// Persistence must reject contradictory typed families and non-object parameters
-// before encoding can discard invalid input.
-func TestSQLiteRepositoryRejectsMalformedTypedDefinitions(t *testing.T) {
-	t.Parallel()
-	ctx := context.Background()
-	repository := newAutomationRepository(t, openAutomationDatabase(t))
-	missingID, err := automations.NewAutomationID()
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, test := range []struct {
-		name   string
-		mutate func(definition *automations.AutomationDefinition)
-	}{
-		{
-			"observation trigger carries event payload",
-			func(definition *automations.AutomationDefinition) {
-				definition.Triggers[0].EntityEvent = &automations.EntityEventTrigger{
-					EntityID: newEntityID(t), EventName: "single_press",
-				}
-			},
-		},
-		{
-			"parameters are not an object",
-			func(definition *automations.AutomationDefinition) {
-				definition.Steps[0].Parameters = devices.CommandParameters(`[]`)
-			},
-		},
-	} {
-		t.Run(test.name, func(t *testing.T) {
-			t.Parallel()
-			definition := validDomainDefinition(t)
-			test.mutate(&definition)
-			if _, createErr := repository.CreateAutomation(ctx, definition); !errors.Is(
-				createErr, automations.ErrInvalidAutomation,
-			) {
-				t.Fatalf("create error = %v, want ErrInvalidAutomation", createErr)
-			}
-			if _, replaceErr := repository.ReplaceAutomation(
-				ctx, missingID, 1, definition,
-			); !errors.Is(replaceErr, automations.ErrInvalidAutomation) {
-				t.Fatalf("replace error = %v, want ErrInvalidAutomation", replaceErr)
-			}
-		})
 	}
 }

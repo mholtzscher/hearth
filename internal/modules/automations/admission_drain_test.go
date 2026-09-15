@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/mholtzscher/hearth/internal/modules/automations"
+	automationssqlite "github.com/mholtzscher/hearth/internal/modules/automations/sqlite"
 )
 
 // blockingAdmissionRepository holds admission before commit and worker registration.
@@ -56,7 +57,7 @@ func TestDrainJoinsManualAdmissionInFlightAtStop(t *testing.T) {
 	scripted := newScriptedDevices()
 	dependencies := runtimeTestDependencies()
 	blocking := newBlockingAdmissionRepository(
-		automations.NewSQLiteRepository(openAutomationDatabase(t), dependencies),
+		automationssqlite.NewAutomationRepository(openAutomationDatabase(t), dependencies),
 	)
 	service := automations.NewService(blocking, scripted, dependencies)
 	record := createRuntimeAutomation(t, service, runtimeDefinition(t, 1))
@@ -118,7 +119,7 @@ func TestDrainJoinsFactAdmissionInFlightAtStop(t *testing.T) {
 	scripted := newScriptedDevices()
 	dependencies := runtimeTestDependencies()
 	blocking := newBlockingAdmissionRepository(
-		automations.NewSQLiteRepository(openAutomationDatabase(t), dependencies),
+		automationssqlite.NewAutomationRepository(openAutomationDatabase(t), dependencies),
 	)
 	service := automations.NewService(blocking, scripted, dependencies)
 	entity := newEntityID(t)
@@ -173,7 +174,7 @@ func TestDrainJoinsFactFanOutAdmissionInFlightAtStop(t *testing.T) {
 	scripted := newScriptedDevices()
 	dependencies := runtimeTestDependencies()
 	blocking := newBlockingAdmissionRepository(
-		automations.NewSQLiteRepository(openAutomationDatabase(t), dependencies),
+		automationssqlite.NewAutomationRepository(openAutomationDatabase(t), dependencies),
 	)
 	service := automations.NewService(blocking, scripted, dependencies)
 	entity := newEntityID(t)

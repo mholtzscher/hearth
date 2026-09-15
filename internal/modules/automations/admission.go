@@ -109,10 +109,11 @@ func (service *Service) logSkipped(ctx context.Context, skip AdmissionSkip) {
 	)
 }
 
-// factSummary copies one Device Fact into immutable history evidence so a
-// retained Run or Skip stays explainable after Fact and Observation history are
-// pruned.
-func factSummary(fact DeviceFact) DeviceFactSummary {
+// NewDeviceFactSummary copies one Device Fact into immutable history evidence so
+// a retained Run or Skip stays explainable after Fact and Observation history
+// are pruned. Persistence calls it on the validated inbound Fact before opening
+// its admission transaction; it performs no reads or writes of its own.
+func NewDeviceFactSummary(fact DeviceFact) DeviceFactSummary {
 	summary := DeviceFactSummary{Family: fact.Family}
 	switch fact.Family {
 	case DeviceFactObservation:
@@ -132,10 +133,12 @@ func factSummary(fact DeviceFact) DeviceFactSummary {
 	return summary
 }
 
-// matchAutomationTriggers returns the IDs of every Trigger in one definition the
+// MatchAutomationTriggers returns the IDs of every Trigger in one definition the
 // Fact matches, in definition order. Triggers combine with OR and one Fact
-// creates at most one outcome per Automation.
-func matchAutomationTriggers(fact DeviceFact, definition AutomationDefinition) ([]TriggerID, error) {
+// creates at most one outcome per Automation. Persistence calls it with the
+// definitions it loaded inside its admission transaction; it performs no reads
+// or writes of its own.
+func MatchAutomationTriggers(fact DeviceFact, definition AutomationDefinition) ([]TriggerID, error) {
 	var matched []TriggerID
 	for _, trigger := range definition.Triggers {
 		matches, err := matchAutomationTrigger(fact, trigger)
@@ -147,6 +150,29 @@ func matchAutomationTriggers(fact DeviceFact, definition AutomationDefinition) (
 		}
 	}
 	return matched, nil
+}
+
+// MatchedTriggerSnapshots selects Triggers in the supplied match order so a
+// retained Skip can preserve the definition that matched. MatchAutomationTriggers
+// supplies IDs in definition order. Nested values remain shared with definition;
+// callers must not mutate them before persistence encodes the snapshots.
+func MatchedTriggerSnapshots(
+	definition AutomationDefinition,
+	matched []TriggerID,
+) ([]AutomationTrigger, error) {
+	byID := make(map[TriggerID]AutomationTrigger, len(definition.Triggers))
+	for _, trigger := range definition.Triggers {
+		byID[trigger.ID] = trigger
+	}
+	snapshots := make([]AutomationTrigger, 0, len(matched))
+	for _, id := range matched {
+		trigger, found := byID[id]
+		if !found {
+			return nil, fmt.Errorf("%w: matched trigger %q is not in the definition", ErrInvalidAutomation, id)
+		}
+		snapshots = append(snapshots, trigger)
+	}
+	return snapshots, nil
 }
 
 func matchAutomationTrigger(fact DeviceFact, trigger AutomationTrigger) (bool, error) {
