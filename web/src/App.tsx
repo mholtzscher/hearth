@@ -14,6 +14,8 @@ import {
   PopoverTrigger,
 } from "./components/ui/popover.tsx";
 import AdaptersPage from "./pages/AdaptersPage.tsx";
+import AutomationDetailPage from "./pages/AutomationDetailPage.tsx";
+import AutomationsPage from "./pages/AutomationsPage.tsx";
 import CommandsPage from "./pages/CommandsPage.tsx";
 import DevicesPage from "./pages/DevicesPage.tsx";
 import DeviceFactsPage from "./pages/DeviceFactsPage.tsx";
@@ -25,6 +27,7 @@ const NAV_ITEMS = [
   { to: "/entities", label: "Entities" },
   { to: "/devices", label: "Devices" },
   { to: "/adapters", label: "Adapters" },
+  { to: "/automations", label: "Automations" },
   { to: "/commands", label: "Commands" },
   { to: "/nats", label: "NATS" },
   { to: "/device-facts", label: "Device facts" },
@@ -153,6 +156,8 @@ function Shell() {
           <Route path="/entities/:entityId" element={<EntityDetailPage />} />
           <Route path="/devices" element={<DevicesPage />} />
           <Route path="/adapters" element={<AdaptersPage />} />
+          <Route path="/automations" element={<AutomationsPage />} />
+          <Route path="/automations/:automationId" element={<AutomationDetailPage />} />
           <Route path="/commands" element={<CommandsPage />} />
           <Route path="/nats" element={<NatsPage />} />
           <Route path="/device-facts" element={<DeviceFactsPage />} />
