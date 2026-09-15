@@ -350,6 +350,32 @@ type AutomationPage[T any] struct {
 	HasMore bool
 }
 
+const (
+	// automationDefaultPageLimit is the page size used when a caller omits one.
+	automationDefaultPageLimit = 50
+	// automationMaximumPageLimit bounds one definition or history page.
+	automationMaximumPageLimit = 200
+)
+
+// AutomationPageLimit resolves one requested page limit to the effective page
+// size: an omitted limit becomes automationDefaultPageLimit, and anything
+// outside 1 through automationMaximumPageLimit is an [ErrInvalidAutomation].
+// Persistence applies it so a direct repository caller gets the same bounded
+// page as one that arrived through the HTTP request schema's matching bounds.
+func AutomationPageLimit(limit int) (int, error) {
+	switch {
+	case limit == 0:
+		return automationDefaultPageLimit, nil
+	case limit < 1 || limit > automationMaximumPageLimit:
+		return 0, fmt.Errorf(
+			"%w: page limit must be between 1 and %d",
+			ErrInvalidAutomation, automationMaximumPageLimit,
+		)
+	default:
+		return limit, nil
+	}
+}
+
 // StepStart reserves and records one Step's Command identity before execution.
 type StepStart struct {
 	RunID         AutomationRunID
@@ -372,6 +398,43 @@ type RunCompletion struct {
 	RunID       AutomationRunID
 	Status      RunStatus
 	FailureCode *string
+}
+
+// NewAutomationRunSnapshot builds one Run from a persisted definition record and
+// an identity the caller already minted. It takes ownership of record.Definition
+// and fact, which callers must not mutate afterward, and copies matchedTriggerIDs.
+// Every Step starts at not_attempted in definition order. Persistence mints the
+// Run identity inside its admission transaction and then writes this snapshot;
+// construction performs no reads or writes of its own.
+func NewAutomationRunSnapshot(
+	record AutomationRecord,
+	runID AutomationRunID,
+	source RunSource,
+	fact *DeviceFactSummary,
+	matchedTriggerIDs []TriggerID,
+	admittedAt time.Time,
+) AutomationRun {
+	steps := make([]AutomationStepAttempt, len(record.Definition.Steps))
+	for position, step := range record.Definition.Steps {
+		steps[position] = AutomationStepAttempt{
+			Position: position,
+			StepID:   step.ID,
+			Status:   StepNotAttempted,
+		}
+	}
+	return AutomationRun{
+		ID:                runID,
+		AutomationID:      record.ID,
+		AutomationName:    record.Definition.Name,
+		Revision:          record.Revision,
+		Snapshot:          record.Definition,
+		Source:            source,
+		Fact:              fact,
+		MatchedTriggerIDs: append([]TriggerID(nil), matchedTriggerIDs...),
+		Status:            RunRunning,
+		StartedAt:         admittedAt.UTC(),
+		Steps:             steps,
+	}
 }
 
 // EntityID reports the single Entity this Trigger constrains.

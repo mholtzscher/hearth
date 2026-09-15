@@ -7,12 +7,13 @@ import (
 	"time"
 
 	"github.com/mholtzscher/hearth/internal/modules/automations"
+	automationssqlite "github.com/mholtzscher/hearth/internal/modules/automations/sqlite"
 	"github.com/mholtzscher/hearth/internal/modules/devices"
 )
 
 // definitionTestRepository uses SQLite for definitions and rejects runtime calls.
 type definitionTestRepository struct {
-	*automations.SQLiteRepository
+	*automationssqlite.AutomationRepository
 }
 
 var _ automations.AutomationRepository = (*definitionTestRepository)(nil)
@@ -119,7 +120,7 @@ func newAutomationService(
 ) *automations.Service {
 	t.Helper()
 	repository := &definitionTestRepository{
-		SQLiteRepository: newAutomationRepository(t, openAutomationDatabase(t)),
+		AutomationRepository: newAutomationRepository(t, openAutomationDatabase(t)),
 	}
 	return automations.NewService(repository, devicesStub, automations.AutomationDependencies{})
 }

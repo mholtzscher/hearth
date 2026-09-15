@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/mholtzscher/hearth/internal/modules/automations"
+	automationssqlite "github.com/mholtzscher/hearth/internal/modules/automations/sqlite"
 	"github.com/mholtzscher/hearth/internal/modules/devices"
 	devicessqlite "github.com/mholtzscher/hearth/internal/modules/devices/sqlite"
 	platformdb "github.com/mholtzscher/hearth/internal/platform/db"
@@ -51,7 +52,7 @@ func TestHistoryPruneSchedulerPrunesDeviceRetentions(t *testing.T) {
 	// This fixture seeds no Automation rows, so the pass must not disturb the
 	// device retentions it also runs beside.
 	automationService := automations.NewService(
-		automations.NewSQLiteRepository(database, automations.AutomationDependencies{}),
+		automationssqlite.NewAutomationRepository(database, automations.AutomationDependencies{}),
 		nil,
 		automations.AutomationDependencies{HistoryRetention: 30 * 24 * time.Hour},
 	)

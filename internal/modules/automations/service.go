@@ -29,7 +29,7 @@ func NewService(
 	return &Service{
 		repository:   repository,
 		devices:      automationDevices,
-		dependencies: dependencies.withDefaults(),
+		dependencies: dependencies.WithDefaults(),
 		admission:    lifecycle.NewAdmissionGroup(),
 	}
 }

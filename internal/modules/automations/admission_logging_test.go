@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/mholtzscher/hearth/internal/modules/automations"
+	automationssqlite "github.com/mholtzscher/hearth/internal/modules/automations/sqlite"
 )
 
 // Messages emitted by logRunStarted and logSkipped.
@@ -154,7 +155,7 @@ func TestDrainCompletesWhileManualRunStartedLogBlocked(t *testing.T) {
 	dependencies := runtimeTestDependencies()
 	dependencies.Logger = logger
 	blocking := newBlockingAdmissionRepository(
-		automations.NewSQLiteRepository(openAutomationDatabase(t), dependencies),
+		automationssqlite.NewAutomationRepository(openAutomationDatabase(t), dependencies),
 	)
 	service := automations.NewService(blocking, scripted, dependencies)
 	record := createRuntimeAutomation(t, service, runtimeDefinition(t, 1))
@@ -250,7 +251,7 @@ func TestDrainCompletesWhileFanOutRunStartedLogBlocked(t *testing.T) {
 	dependencies := runtimeTestDependencies()
 	dependencies.Logger = logger
 	blocking := newBlockingAdmissionRepository(
-		automations.NewSQLiteRepository(openAutomationDatabase(t), dependencies),
+		automationssqlite.NewAutomationRepository(openAutomationDatabase(t), dependencies),
 	)
 	service := automations.NewService(blocking, scripted, dependencies)
 	entity := newEntityID(t)

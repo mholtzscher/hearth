@@ -4,12 +4,15 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"path/filepath"
 	"sync"
 	"testing"
 	"time"
 
 	"github.com/mholtzscher/hearth/internal/modules/automations"
+	automationssqlite "github.com/mholtzscher/hearth/internal/modules/automations/sqlite"
 	"github.com/mholtzscher/hearth/internal/modules/devices"
+	platformdb "github.com/mholtzscher/hearth/internal/platform/db"
 )
 
 // scriptedDevices is a controllable AutomationDevices seam. It records every
@@ -140,6 +143,28 @@ const runtimeTestHistoryRetention = 30 * 24 * time.Hour
 //nolint:gochecknoglobals // Fixed fixture instant shared by runtime tests.
 var runtimeTestNow = time.Date(2026, 9, 1, 12, 0, 0, 0, time.UTC)
 
+// openAutomationDatabase opens one migrated Core database in a temporary
+// directory, so Automation SQLite tests exercise the real schema.
+func openAutomationDatabase(t *testing.T) *sql.DB {
+	t.Helper()
+	database, err := platformdb.Open(context.Background(), filepath.Join(t.TempDir(), "hearth.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = database.Close() })
+	if err = platformdb.Migrate(context.Background(), database); err != nil {
+		t.Fatal(err)
+	}
+	return database
+}
+
+// newAutomationRepository builds the SQLite Automation repository with
+// production-default dependencies.
+func newAutomationRepository(t *testing.T, database *sql.DB) *automationssqlite.AutomationRepository {
+	t.Helper()
+	return automationssqlite.NewAutomationRepository(database, automations.AutomationDependencies{})
+}
+
 func newRuntimeService(
 	t *testing.T,
 	scripted *scriptedDevices,
@@ -147,7 +172,7 @@ func newRuntimeService(
 ) (*automations.Service, *sql.DB) {
 	t.Helper()
 	database := openAutomationDatabase(t)
-	repository := automations.NewSQLiteRepository(database, dependencies)
+	repository := automationssqlite.NewAutomationRepository(database, dependencies)
 	service := automations.NewService(repository, scripted, dependencies)
 	return service, database
 }

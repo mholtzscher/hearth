@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/mholtzscher/hearth/internal/modules/automations"
+	automationssqlite "github.com/mholtzscher/hearth/internal/modules/automations/sqlite"
 	"github.com/mholtzscher/hearth/internal/modules/devices"
 	devicessqlite "github.com/mholtzscher/hearth/internal/modules/devices/sqlite"
 	platformdb "github.com/mholtzscher/hearth/internal/platform/db"
@@ -47,7 +48,7 @@ func TestHistoryPruneSchedulerPrunesAutomationHistory(t *testing.T) {
 		devices.Dependencies{ObservationRetention: 30 * 24 * time.Hour},
 	)
 	automationService := automations.NewService(
-		automations.NewSQLiteRepository(database, automations.AutomationDependencies{}),
+		automationssqlite.NewAutomationRepository(database, automations.AutomationDependencies{}),
 		nil,
 		automations.AutomationDependencies{HistoryRetention: 30 * 24 * time.Hour},
 	)

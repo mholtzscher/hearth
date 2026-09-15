@@ -62,14 +62,14 @@ go run ./internal/cmd/entitytypegen -root . -check
 
 tmp="$(mktemp -d)"
 trap 'rm -rf "$tmp"' EXIT
-mkdir -p "$tmp/internal/platform/db" "$tmp/internal/modules/devices/sqlite" "$tmp/internal/modules/automations"
+mkdir -p "$tmp/internal/platform/db" "$tmp/internal/modules/devices/sqlite" "$tmp/internal/modules/automations/sqlite"
 cp sqlc.yaml "$tmp/"
 cp -R internal/platform/db/migrations "$tmp/internal/platform/db/"
 cp -R internal/modules/devices/sqlite/dbqueries internal/modules/devices/sqlite/dbsqlc "$tmp/internal/modules/devices/sqlite/"
-cp -R internal/modules/automations/dbqueries internal/modules/automations/dbsqlc "$tmp/internal/modules/automations/"
+cp -R internal/modules/automations/sqlite/dbqueries internal/modules/automations/sqlite/dbsqlc "$tmp/internal/modules/automations/sqlite/"
 (cd "$tmp" && sqlc generate)
 diff -ru internal/modules/devices/sqlite/dbsqlc "$tmp/internal/modules/devices/sqlite/dbsqlc"
-diff -ru internal/modules/automations/dbsqlc "$tmp/internal/modules/automations/dbsqlc"
+diff -ru internal/modules/automations/sqlite/dbsqlc "$tmp/internal/modules/automations/sqlite/dbsqlc"
 '''
 
 [tasks."ko-build"]

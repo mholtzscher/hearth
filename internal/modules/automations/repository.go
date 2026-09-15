@@ -84,7 +84,12 @@ type AutomationDependencies struct {
 	HistoryRetention time.Duration
 }
 
-func (dependencies AutomationDependencies) withDefaults() AutomationDependencies {
+// WithDefaults returns a copy that replaces every zero-valued collaborator
+// with its production default, so one shared normalization serves the domain
+// Service and the SQLite adapter. HistoryRetention deliberately keeps zero:
+// an unconfigured retention must fail safely at prune time, never silently
+// become a deletion window.
+func (dependencies AutomationDependencies) WithDefaults() AutomationDependencies {
 	logger := dependencies.Logger
 	if logger == nil {
 		logger = slog.Default().With(slog.String("component", "automations"))
