@@ -1,4 +1,4 @@
-package devices //nolint:testpackage // Tests exercise package-private domain seams and repository fixtures.
+package sqlite //nolint:testpackage // Tests exercise package-private SQLite persistence behavior.
 
 import (
 	"context"
@@ -11,6 +11,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/mholtzscher/hearth/internal/modules/devices"
 )
 
 const (
@@ -18,17 +20,17 @@ const (
 	entityEventTestAdapter   = "simulator"
 )
 
-func entityEventRegistration() Registration {
+func entityEventRegistration() devices.Registration {
 	externalID := "sim-buttons"
-	return Registration{
+	return devices.Registration{
 		BindingKey: "office-buttons",
-		Device: DeviceDescriptor{
-			ExternalID: &externalID, Name: "Office buttons", Kind: DeviceKindSensor,
+		Device: devices.DeviceDescriptor{
+			ExternalID: &externalID, Name: "Office buttons", Kind: devices.DeviceKindSensor,
 		},
-		Entities: []EntityDescriptor{{
+		Entities: []devices.EntityDescriptor{{
 			Key: "buttons", ExternalID: "sim.buttons", Name: "Buttons",
-			TypeID: EntityTypeEnumeventV1,
-			Support: EntitySupport(
+			TypeID: devices.EntityTypeEnumeventV1,
+			Support: devices.EntitySupport(
 				`{"state":{},"operations":{},"events":{"names":["single_press","double_press"]}}`,
 			),
 		}},
@@ -39,17 +41,17 @@ func newEntityEventTestService(
 	t *testing.T,
 	database *sql.DB,
 	now *time.Time,
-) (*Service, *SQLiteRepository) {
+) (*devices.Service, *DeviceRepository) {
 	t.Helper()
 	catalog := firstLightCatalog(t)
-	repository := NewSQLiteRepository(database, catalog)
-	service := newTestService(repository, nil, catalog, Dependencies{
+	repository := NewDeviceRepository(database, catalog)
+	service := newTestService(repository, nil, catalog, devices.Dependencies{
 		Now: func() time.Time { return *now },
 	})
 	return service, repository
 }
 
-func registerEntityEventEntity(t *testing.T, service *Service) EntityID {
+func registerEntityEventEntity(t *testing.T, service *devices.Service) devices.EntityID {
 	t.Helper()
 	binding, err := service.Register(
 		context.Background(), entityEventTestAdapter, entityEventTestRuntimeID, entityEventRegistration(),
@@ -60,36 +62,36 @@ func registerEntityEventEntity(t *testing.T, service *Service) EntityID {
 	return binding.Entities[0].EntityID
 }
 
-func newTestEntityID(t *testing.T) EntityID {
+func newTestEntityID(t *testing.T) devices.EntityID {
 	t.Helper()
-	id, err := NewEntityID()
+	id, err := devices.NewEntityID()
 	if err != nil {
 		t.Fatal(err)
 	}
 	return id
 }
 
-func parseTestRuntimeID(t *testing.T, value string) RuntimeID {
+func parseTestRuntimeID(t *testing.T, value string) devices.RuntimeID {
 	t.Helper()
-	id, err := ParseRuntimeID(value)
+	id, err := devices.ParseRuntimeID(value)
 	if err != nil {
 		t.Fatal(err)
 	}
 	return id
 }
 
-func newEntityEvent(t *testing.T, entityID EntityID, name string, emittedAt time.Time) EntityEvent {
+func newEntityEvent(t *testing.T, entityID devices.EntityID, name string, emittedAt time.Time) devices.EntityEvent {
 	t.Helper()
-	eventID, err := NewEntityEventID()
+	eventID, err := devices.NewEntityEventID()
 	if err != nil {
 		t.Fatal(err)
 	}
-	correlationID, err := NewCorrelationID()
+	correlationID, err := devices.NewCorrelationID()
 	if err != nil {
 		t.Fatal(err)
 	}
-	return EntityEvent{
-		ID: eventID, EntityID: entityID, Name: EntityEventName(name),
+	return devices.EntityEvent{
+		ID: eventID, EntityID: entityID, Name: devices.EntityEventName(name),
 		CorrelationID: correlationID, EmittedAt: emittedAt,
 	}
 }
@@ -109,7 +111,7 @@ type storedEntityEvent struct {
 	recordedAt    string
 }
 
-func readStoredEntityEvent(t *testing.T, database *sql.DB, eventID EntityEventID) storedEntityEvent {
+func readStoredEntityEvent(t *testing.T, database *sql.DB, eventID devices.EntityEventID) storedEntityEvent {
 	t.Helper()
 	row, err := readStoredEntityEventErr(t, database, eventID)
 	if err != nil {
@@ -148,7 +150,7 @@ func TestEntityEventRecordingSeparatesIDsAndPreservesFirstSeenRows(t *testing.T)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if result.Outcome != EntityEventOutcomeAccepted || result.Rejection != nil {
+	if result.Outcome != devices.EntityEventOutcomeAccepted || result.Rejection != nil {
 		t.Fatalf("first recording = %#v", result)
 	}
 	second := newEntityEvent(t, entityID, "single_press", now.Add(-3*time.Minute))
@@ -161,7 +163,7 @@ func TestEntityEventRecordingSeparatesIDsAndPreservesFirstSeenRows(t *testing.T)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if result.Outcome != EntityEventOutcomeAccepted {
+	if result.Outcome != devices.EntityEventOutcomeAccepted {
 		t.Fatalf("second recording = %#v", result)
 	}
 	if countEntityEvents(t, database) != 2 {
@@ -185,7 +187,7 @@ func TestEntityEventRecordingSeparatesIDsAndPreservesFirstSeenRows(t *testing.T)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if result.Outcome != EntityEventOutcomeDuplicate || result.Rejection != nil {
+	if result.Outcome != devices.EntityEventOutcomeDuplicate || result.Rejection != nil {
 		t.Fatalf("duplicate recording = %#v", result)
 	}
 	if got := readStoredEntityEvent(t, database, first.ID); !reflect.DeepEqual(got, before) {
@@ -194,14 +196,14 @@ func TestEntityEventRecordingSeparatesIDsAndPreservesFirstSeenRows(t *testing.T)
 
 	// Changed immutable input for a known ID is a conflict: still no rewrite.
 	changed := first
-	changed.Name = EntityEventName("double_press")
+	changed.Name = devices.EntityEventName("double_press")
 	result, err = service.RecordEntityEvent(
 		ctx, entityEventTestAdapter, entityEventTestRuntimeID, changed, now.Add(time.Hour),
 	)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if result.Outcome != EntityEventOutcomeIdentityConflict || result.Rejection != nil {
+	if result.Outcome != devices.EntityEventOutcomeIdentityConflict || result.Rejection != nil {
 		t.Fatalf("identity conflict recording = %#v", result)
 	}
 	changed = first
@@ -212,7 +214,7 @@ func TestEntityEventRecordingSeparatesIDsAndPreservesFirstSeenRows(t *testing.T)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if result.Outcome != EntityEventOutcomeIdentityConflict {
+	if result.Outcome != devices.EntityEventOutcomeIdentityConflict {
 		t.Fatalf("changed emitted_at outcome = %#v", result)
 	}
 	if got := readStoredEntityEvent(t, database, first.ID); !reflect.DeepEqual(got, before) {
@@ -235,32 +237,33 @@ func TestEntityEventRecordingRejectionPrecedence(t *testing.T) {
 	entityID := registerEntityEventEntity(t, service)
 	unknownEntityID := newTestEntityID(t)
 	staleRuntimeID := parseTestRuntimeID(t, "run_01890f47-7a6b-7c4d-8e9f-0123456789af")
-	homeAssistantRuntime := RuntimeID("run_01890f47-7a6b-7c4d-8e9f-0123456789ad")
+	homeAssistantRuntime := devices.RuntimeID("run_01890f47-7a6b-7c4d-8e9f-0123456789ad")
 
 	// Health and availability are not gates: an unhealthy owner and an
 	// unavailable Entity still record historical input. Availability reports
 	// themselves need a healthy owner, so the healthy heartbeat and the
 	// unavailable report come first.
-	if _, err := repository.RecordAdapterHeartbeat(ctx, HeartbeatWrite{
+	if _, err := repository.RecordAdapterHeartbeat(ctx, devices.HeartbeatWrite{
 		AdapterID: entityEventTestAdapter, RuntimeID: entityEventTestRuntimeID,
-		ExternalStatus: AdapterHealthHealthy, SourceObservedAt: now.Add(-2 * time.Second),
+		ExternalStatus: devices.AdapterHealthHealthy, SourceObservedAt: now.Add(-2 * time.Second),
 		ReceivedAt: now.Add(-time.Second), LeaseExpiresAt: now.Add(time.Minute),
 	}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := repository.ReportEntityAvailability(ctx, testAvailabilityWrite(t, AvailabilityBatchWrite{
+	if _, err := repository.ReportEntityAvailability(ctx, testAvailabilityWrite(t, devices.AvailabilityBatchWrite{
 		AdapterID: entityEventTestAdapter, RuntimeID: entityEventTestRuntimeID,
-		Reports: []EntityAvailabilityReport{{
-			EntityID: entityID, Status: EntityAvailabilityUnavailable,
-			SourceObservedAt: now.Add(-time.Second), Reason: &HealthReason{Code: "hearth.upstream_offline"},
+		Reports: []devices.EntityAvailabilityReport{{
+			EntityID: entityID, Status: devices.EntityAvailabilityUnavailable,
+			SourceObservedAt: now.Add(-time.Second), Reason: &devices.HealthReason{Code: "hearth.upstream_offline"},
 		}},
 		ReportedAt: now,
 	})); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := repository.RecordAdapterHeartbeat(ctx, HeartbeatWrite{
+	if _, err := repository.RecordAdapterHeartbeat(ctx, devices.HeartbeatWrite{
 		AdapterID: entityEventTestAdapter, RuntimeID: entityEventTestRuntimeID,
-		ExternalStatus: AdapterHealthUnhealthy, Reason: &HealthReason{Code: "hearth.network_unreachable"},
+		ExternalStatus:   devices.AdapterHealthUnhealthy,
+		Reason:           &devices.HealthReason{Code: "hearth.network_unreachable"},
 		SourceObservedAt: now.Add(-time.Second), ReceivedAt: now, LeaseExpiresAt: now.Add(time.Minute),
 	}); err != nil {
 		t.Fatal(err)
@@ -272,7 +275,7 @@ func TestEntityEventRecordingRejectionPrecedence(t *testing.T) {
 	if recordErr != nil {
 		t.Fatal(recordErr)
 	}
-	if result.Outcome != EntityEventOutcomeAccepted || result.Rejection != nil {
+	if result.Outcome != devices.EntityEventOutcomeAccepted || result.Rejection != nil {
 		t.Fatalf("ungated recording = %#v", result)
 	}
 
@@ -284,38 +287,38 @@ func TestEntityEventRecordingRejectionPrecedence(t *testing.T) {
 	tests := []struct {
 		name       string
 		adapterID  string
-		runtimeID  RuntimeID
-		entityID   EntityID
+		runtimeID  devices.RuntimeID
+		entityID   devices.EntityID
 		eventName  string
-		wantReason EntityEventRejection
+		wantReason devices.EntityEventRejection
 	}{
 		{
 			"stale runtime", entityEventTestAdapter, staleRuntimeID, entityID,
-			"single_press", EntityEventRejectionStaleRuntime,
+			"single_press", devices.EntityEventRejectionStaleRuntime,
 		},
 		{
 			"stale runtime outranks unknown Entity", entityEventTestAdapter, staleRuntimeID,
-			unknownEntityID, "not_supported", EntityEventRejectionStaleRuntime,
+			unknownEntityID, "not_supported", devices.EntityEventRejectionStaleRuntime,
 		},
 		{
 			"stale runtime outranks disabled and unsupported", entityEventTestAdapter, staleRuntimeID,
-			entityID, "not_supported", EntityEventRejectionStaleRuntime,
+			entityID, "not_supported", devices.EntityEventRejectionStaleRuntime,
 		},
 		{
 			"unknown Entity", entityEventTestAdapter, entityEventTestRuntimeID, unknownEntityID,
-			"single_press", EntityEventRejectionUnknownEntity,
+			"single_press", devices.EntityEventRejectionUnknownEntity,
 		},
 		{
 			"wrong adapter", "homeassistant", homeAssistantRuntime, entityID,
-			"not_supported", EntityEventRejectionWrongAdapter,
+			"not_supported", devices.EntityEventRejectionWrongAdapter,
 		},
 		{
 			"disabled Entity", entityEventTestAdapter, entityEventTestRuntimeID, entityID,
-			"single_press", EntityEventRejectionEntityDisabled,
+			"single_press", devices.EntityEventRejectionEntityDisabled,
 		},
 		{
 			"disabled Entity outranks unsupported name", entityEventTestAdapter, entityEventTestRuntimeID,
-			entityID, "not_supported", EntityEventRejectionEntityDisabled,
+			entityID, "not_supported", devices.EntityEventRejectionEntityDisabled,
 		},
 	}
 	for index, test := range tests {
@@ -326,7 +329,7 @@ func TestEntityEventRecordingRejectionPrecedence(t *testing.T) {
 		if outcomeErr != nil {
 			t.Fatalf("%s: %v", test.name, outcomeErr)
 		}
-		if outcome.Outcome != EntityEventOutcomeRejected || outcome.Rejection == nil ||
+		if outcome.Outcome != devices.EntityEventOutcomeRejected || outcome.Rejection == nil ||
 			*outcome.Rejection != test.wantReason {
 			t.Fatalf("%s: recording = %#v, want %q", test.name, outcome, test.wantReason)
 		}
@@ -348,8 +351,8 @@ func TestEntityEventRecordingRejectionPrecedence(t *testing.T) {
 	if recordErr != nil {
 		t.Fatal(recordErr)
 	}
-	if result.Outcome != EntityEventOutcomeRejected || result.Rejection == nil ||
-		*result.Rejection != EntityEventRejectionUnsupportedEvent {
+	if result.Outcome != devices.EntityEventOutcomeRejected || result.Rejection == nil ||
+		*result.Rejection != devices.EntityEventRejectionUnsupportedEvent {
 		t.Fatalf("unsupported name recording = %#v", result)
 	}
 }
@@ -381,20 +384,30 @@ func TestEntityEventRecordingClassifiesOnlyDescriptorInterpretationAsPermanent(t
 	_, corruptErr := service.RecordEntityEvent(
 		ctx, entityEventTestAdapter, entityEventTestRuntimeID, corrupt, now,
 	)
-	if !errors.Is(corruptErr, ErrEntityEventDescriptorCorrupt) {
-		t.Fatalf("malformed descriptor error = %v, want %v", corruptErr, ErrEntityEventDescriptorCorrupt)
+	if !errors.Is(corruptErr, devices.ErrEntityEventDescriptorCorrupt) {
+		t.Fatalf("malformed descriptor error = %v, want %v", corruptErr, devices.ErrEntityEventDescriptorCorrupt)
 	}
-	var failure *EntityEventDescriptorError
+	var failure *devices.EntityEventDescriptorError
 	if !errors.As(corruptErr, &failure) {
 		t.Fatalf("malformed descriptor error = %v, want a typed failure", corruptErr)
 	}
-	if failure.EntityID != entityID || failure.TypeID != EntityTypeEnumeventV1 {
-		t.Fatalf("descriptor failure = %#v, want entity %q of type %q", failure, entityID, EntityTypeEnumeventV1)
+	if failure.EntityID != entityID || failure.TypeID != devices.EntityTypeEnumeventV1 {
+		t.Fatalf(
+			"descriptor failure = %#v, want entity %q of type %q",
+			failure, entityID, devices.EntityTypeEnumeventV1,
+		)
 	}
 	// The wrapped catalog cause keeps the detail for inspection while the
-	// classified message stays free of persisted descriptor bytes.
-	if failure.cause == nil || !strings.Contains(failure.cause.Error(), descriptorSecret) {
-		t.Fatalf("wrapped cause = %v, want the decoded descriptor detail", failure.cause)
+	// classified message stays free of persisted descriptor bytes. The cause is
+	// private, so the test reads it back the way a caller can: through Unwrap.
+	var causeErr error
+	for _, unwrapped := range failure.Unwrap() {
+		if unwrapped != nil && !errors.Is(unwrapped, devices.ErrEntityEventDescriptorCorrupt) {
+			causeErr = unwrapped
+		}
+	}
+	if causeErr == nil || !strings.Contains(causeErr.Error(), descriptorSecret) {
+		t.Fatalf("wrapped cause = %v, want the decoded descriptor detail", causeErr)
 	}
 	if strings.Contains(corruptErr.Error(), descriptorSecret) {
 		t.Fatalf("classified error %q exposes persisted descriptor bytes", corruptErr)
@@ -414,8 +427,8 @@ func TestEntityEventRecordingClassifiesOnlyDescriptorInterpretationAsPermanent(t
 	unknownType := newEntityEvent(t, entityID, "single_press", now)
 	if _, err := service.RecordEntityEvent(
 		ctx, entityEventTestAdapter, entityEventTestRuntimeID, unknownType, now,
-	); !errors.Is(err, ErrEntityEventDescriptorCorrupt) {
-		t.Fatalf("unknown type error = %v, want %v", err, ErrEntityEventDescriptorCorrupt)
+	); !errors.Is(err, devices.ErrEntityEventDescriptorCorrupt) {
+		t.Fatalf("unknown type error = %v, want %v", err, devices.ErrEntityEventDescriptorCorrupt)
 	}
 	if count := countEntityEvents(t, database); count != 0 {
 		t.Fatalf("rows after an unknown type = %d, want 0", count)
@@ -435,7 +448,7 @@ func TestEntityEventRecordingClassifiesOnlyDescriptorInterpretationAsPermanent(t
 	if storageErr == nil {
 		t.Fatal("closed database error = nil, want a storage failure")
 	}
-	if errors.Is(storageErr, ErrEntityEventDescriptorCorrupt) {
+	if errors.Is(storageErr, devices.ErrEntityEventDescriptorCorrupt) {
 		t.Fatalf("storage failure %v was classified as permanent", storageErr)
 	}
 }
@@ -454,28 +467,28 @@ func TestEntityEventRecordingRejectsInvalidTrustedInput(t *testing.T) {
 	tests := []struct {
 		name       string
 		adapterID  string
-		runtimeID  RuntimeID
-		event      EntityEvent
+		runtimeID  devices.RuntimeID
+		event      devices.EntityEvent
 		receivedAt time.Time
 	}{
 		{"invalid adapter", "Simulator", entityEventTestRuntimeID, valid, now},
 		{"invalid runtime", entityEventTestAdapter, "run_not-a-uuid", valid, now},
 		{"invalid event ID", entityEventTestAdapter, entityEventTestRuntimeID,
-			func() EntityEvent { event := valid; event.ID = "evt_not-a-uuid"; return event }(), now},
+			func() devices.EntityEvent { event := valid; event.ID = "evt_not-a-uuid"; return event }(), now},
 		{"invalid entity", entityEventTestAdapter, entityEventTestRuntimeID,
-			func() EntityEvent { event := valid; event.EntityID = "nope"; return event }(), now},
+			func() devices.EntityEvent { event := valid; event.EntityID = "nope"; return event }(), now},
 		{"invalid correlation", entityEventTestAdapter, entityEventTestRuntimeID,
-			func() EntityEvent { event := valid; event.CorrelationID = "cor_x"; return event }(), now},
+			func() devices.EntityEvent { event := valid; event.CorrelationID = "cor_x"; return event }(), now},
 		{"invalid name", entityEventTestAdapter, entityEventTestRuntimeID,
-			func() EntityEvent { event := valid; event.Name = "SinglePress"; return event }(), now},
+			func() devices.EntityEvent { event := valid; event.Name = "SinglePress"; return event }(), now},
 		{"missing emitted_at", entityEventTestAdapter, entityEventTestRuntimeID,
-			func() EntityEvent { event := valid; event.EmittedAt = time.Time{}; return event }(), now},
+			func() devices.EntityEvent { event := valid; event.EmittedAt = time.Time{}; return event }(), now},
 		{"missing received_at", entityEventTestAdapter, entityEventTestRuntimeID, valid, time.Time{}},
 	}
 	for _, test := range tests {
 		if _, err := service.RecordEntityEvent(
 			ctx, test.adapterID, test.runtimeID, test.event, test.receivedAt,
-		); !errors.Is(err, ErrInvalidEntityEvent) {
+		); !errors.Is(err, devices.ErrInvalidEntityEvent) {
 			t.Fatalf("%s: error = %v, want invalid entity event", test.name, err)
 		}
 	}
@@ -519,7 +532,7 @@ func TestEntityEventHistoryPagesNewestFirstByReceiveOrder(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	firstPage, listErr := service.ListEntityEvents(ctx, ListEntityEventsParams{
+	firstPage, listErr := service.ListEntityEvents(ctx, devices.ListEntityEventsParams{
 		EntityID: entityID, Limit: 2,
 	})
 	if listErr != nil {
@@ -529,12 +542,12 @@ func TestEntityEventHistoryPagesNewestFirstByReceiveOrder(t *testing.T) {
 		t.Fatalf("first page = %#v", firstPage)
 	}
 	if firstPage.Items[0].EventID != newest.ID || firstPage.Items[1].EventID != rejected.ID ||
-		firstPage.Items[0].Disposition != EntityEventDispositionAccepted ||
+		firstPage.Items[0].Disposition != devices.EntityEventDispositionAccepted ||
 		firstPage.Items[0].Rejection != nil ||
-		firstPage.Items[1].Disposition != EntityEventDispositionRejected ||
+		firstPage.Items[1].Disposition != devices.EntityEventDispositionRejected ||
 		firstPage.Items[1].Rejection == nil ||
-		*firstPage.Items[1].Rejection != EntityEventRejectionEntityDisabled ||
-		firstPage.Items[1].Name != EntityEventName("double_press") ||
+		*firstPage.Items[1].Rejection != devices.EntityEventRejectionEntityDisabled ||
+		firstPage.Items[1].Name != devices.EntityEventName("double_press") ||
 		firstPage.Items[0].ReceiveOrder <= firstPage.Items[1].ReceiveOrder {
 		t.Fatalf("first page items = %#v", firstPage.Items)
 	}
@@ -544,7 +557,7 @@ func TestEntityEventHistoryPagesNewestFirstByReceiveOrder(t *testing.T) {
 	}
 
 	cursor := firstPage.Items[len(firstPage.Items)-1].ReceiveOrder
-	secondPage, listErr := service.ListEntityEvents(ctx, ListEntityEventsParams{
+	secondPage, listErr := service.ListEntityEvents(ctx, devices.ListEntityEventsParams{
 		EntityID: entityID, BeforeReceiveOrder: &cursor, Limit: 2,
 	})
 	if listErr != nil {
@@ -554,24 +567,24 @@ func TestEntityEventHistoryPagesNewestFirstByReceiveOrder(t *testing.T) {
 		t.Fatalf("second page = %#v", secondPage)
 	}
 
-	if _, err := service.ListEntityEvents(ctx, ListEntityEventsParams{
+	if _, err := service.ListEntityEvents(ctx, devices.ListEntityEventsParams{
 		EntityID: entityID, Limit: 2,
 	}); err != nil {
 		t.Fatal(err)
 	}
 	unknown := newTestEntityID(t)
-	if _, err := service.ListEntityEvents(ctx, ListEntityEventsParams{
+	if _, err := service.ListEntityEvents(ctx, devices.ListEntityEventsParams{
 		EntityID: unknown, Limit: 2,
-	}); !errors.Is(err, ErrEntityNotFound) {
+	}); !errors.Is(err, devices.ErrEntityNotFound) {
 		t.Fatalf("unknown Entity error = %v, want entity not found", err)
 	}
-	for name, params := range map[string]ListEntityEventsParams{
+	for name, params := range map[string]devices.ListEntityEventsParams{
 		"zero limit":       {EntityID: entityID},
 		"excessive limit":  {EntityID: entityID, Limit: 201},
 		"invalid position": {EntityID: entityID, Limit: 2, BeforeReceiveOrder: new(int64)},
 		"invalid Entity":   {EntityID: "nope", Limit: 2},
 	} {
-		if _, err := service.ListEntityEvents(ctx, params); !errors.Is(err, ErrInvalidPage) {
+		if _, err := service.ListEntityEvents(ctx, params); !errors.Is(err, devices.ErrInvalidPage) {
 			t.Fatalf("%s error = %v, want invalid page", name, err)
 		}
 	}
@@ -609,7 +622,7 @@ func TestEntityEventRecordingLeavesStateCommandsHealthAndAvailabilityUntouched(t
 	if err != nil {
 		t.Fatal(err)
 	}
-	if result.Outcome != EntityEventOutcomeAccepted {
+	if result.Outcome != devices.EntityEventOutcomeAccepted {
 		t.Fatalf("backlog recording = %#v", result)
 	}
 
@@ -627,8 +640,8 @@ func TestEntityEventRecordingLeavesStateCommandsHealthAndAvailabilityUntouched(t
 	if !reflect.DeepEqual(before, after) || !reflect.DeepEqual(adapterBefore, adapterAfter) {
 		t.Fatalf("recording changed health or availability:\nbefore %#v\n after %#v", before, after)
 	}
-	history, err := service.ListEntityStateHistory(ctx, ListEntityStateHistoryParams{
-		EntityID: entityID, Filter: EntityStateHistoryFilterAll, Limit: 10,
+	history, err := service.ListEntityStateHistory(ctx, devices.ListEntityStateHistoryParams{
+		EntityID: entityID, Filter: devices.EntityStateHistoryFilterAll, Limit: 10,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -665,14 +678,14 @@ func TestEntityEventIdentityOutcomeSurvivesRuntimeAndSupportChanges(t *testing.T
 	// Runtime takeover: the original runtime is released and a new one claims
 	// the Adapter. A later report from the fenced runtime is stale, and a fresh
 	// ID from the new runtime is recorded.
-	if err := repository.ReleaseAdapterRuntime(ctx, ReleaseRuntimeWrite{
+	if err := repository.ReleaseAdapterRuntime(ctx, devices.ReleaseRuntimeWrite{
 		AdapterID: entityEventTestAdapter, RuntimeID: entityEventTestRuntimeID,
 		ReleasedAt: now,
 	}); err != nil {
 		t.Fatal(err)
 	}
 	replacement := parseTestRuntimeID(t, "run_01890f47-7a6b-7c4d-8e9f-0123456789ac")
-	if err := repository.ClaimAdapterRuntime(ctx, ClaimRuntimeWrite{
+	if err := repository.ClaimAdapterRuntime(ctx, devices.ClaimRuntimeWrite{
 		RuntimeID: replacement, AdapterID: entityEventTestAdapter,
 		SoftwareName: "hearth-simulator", SoftwareVersion: "0.1.0",
 		ClaimedAt: now, LeaseExpiresAt: now.Add(time.Minute),
@@ -686,8 +699,8 @@ func TestEntityEventIdentityOutcomeSurvivesRuntimeAndSupportChanges(t *testing.T
 	if recordErr != nil {
 		t.Fatal(recordErr)
 	}
-	if result.Outcome != EntityEventOutcomeRejected || result.Rejection == nil ||
-		*result.Rejection != EntityEventRejectionStaleRuntime {
+	if result.Outcome != devices.EntityEventOutcomeRejected || result.Rejection == nil ||
+		*result.Rejection != devices.EntityEventRejectionStaleRuntime {
 		t.Fatalf("fenced runtime recording = %#v", result)
 	}
 	fresh := newEntityEvent(t, entityID, "single_press", now)
@@ -695,13 +708,13 @@ func TestEntityEventIdentityOutcomeSurvivesRuntimeAndSupportChanges(t *testing.T
 	if recordErr != nil {
 		t.Fatal(recordErr)
 	}
-	if result.Outcome != EntityEventOutcomeAccepted {
+	if result.Outcome != devices.EntityEventOutcomeAccepted {
 		t.Fatalf("replacement runtime recording = %#v", result)
 	}
 
 	// Narrowed support while Core was offline rejects a newly reported name.
 	narrowed := entityEventRegistration()
-	narrowed.Entities[0].Support = EntitySupport(
+	narrowed.Entities[0].Support = devices.EntitySupport(
 		`{"state":{},"operations":{},"events":{"names":["single_press"]}}`,
 	)
 	if _, registerErr := service.Register(
@@ -714,8 +727,8 @@ func TestEntityEventIdentityOutcomeSurvivesRuntimeAndSupportChanges(t *testing.T
 	if recordErr != nil {
 		t.Fatal(recordErr)
 	}
-	if result.Outcome != EntityEventOutcomeRejected || result.Rejection == nil ||
-		*result.Rejection != EntityEventRejectionUnsupportedEvent {
+	if result.Outcome != devices.EntityEventOutcomeRejected || result.Rejection == nil ||
+		*result.Rejection != devices.EntityEventRejectionUnsupportedEvent {
 		t.Fatalf("narrowed support recording = %#v", result)
 	}
 
@@ -726,7 +739,7 @@ func TestEntityEventIdentityOutcomeSurvivesRuntimeAndSupportChanges(t *testing.T
 	if recordErr != nil {
 		t.Fatal(recordErr)
 	}
-	if result.Outcome != EntityEventOutcomeDuplicate || result.Rejection != nil {
+	if result.Outcome != devices.EntityEventOutcomeDuplicate || result.Rejection != nil {
 		t.Fatalf("reprocessed ID outcome = %#v", result)
 	}
 	// The fingerprint covers the reporting runtime, so the same ID from a
@@ -736,7 +749,7 @@ func TestEntityEventIdentityOutcomeSurvivesRuntimeAndSupportChanges(t *testing.T
 	if recordErr != nil {
 		t.Fatal(recordErr)
 	}
-	if result.Outcome != EntityEventOutcomeIdentityConflict || result.Rejection != nil {
+	if result.Outcome != devices.EntityEventOutcomeIdentityConflict || result.Rejection != nil {
 		t.Fatalf("replacement runtime reprocessed ID outcome = %#v", result)
 	}
 	if _, err := service.SetEntityEnabled(ctx, entityID, false); err != nil {
@@ -746,7 +759,7 @@ func TestEntityEventIdentityOutcomeSurvivesRuntimeAndSupportChanges(t *testing.T
 	if recordErr != nil {
 		t.Fatal(recordErr)
 	}
-	if result.Outcome != EntityEventOutcomeDuplicate {
+	if result.Outcome != devices.EntityEventOutcomeDuplicate {
 		t.Fatalf("disabled reprocessed ID outcome = %#v", result)
 	}
 	if got := readStoredEntityEvent(t, database, accepted.ID); !reflect.DeepEqual(got, before) {
@@ -765,7 +778,7 @@ func TestEntityEventRetentionDeletesOnlyRecordsOlderThanCutoff(t *testing.T) {
 	service, repository := newEntityEventTestService(t, database, &now)
 	entityID := registerEntityEventEntity(t, service)
 
-	seed := func(recordedAt time.Time, name string) EntityEvent {
+	seed := func(recordedAt time.Time, name string) devices.EntityEvent {
 		event := newEntityEvent(t, entityID, name, recordedAt)
 		now = recordedAt
 		if _, err := service.RecordEntityEvent(
@@ -775,14 +788,14 @@ func TestEntityEventRetentionDeletesOnlyRecordsOlderThanCutoff(t *testing.T) {
 		}
 		return event
 	}
-	expired := []EntityEvent{
+	expired := []devices.EntityEvent{
 		seed(sweepTime.Add(-31*24*time.Hour), "single_press"),
 		seed(sweepTime.Add(-40*24*time.Hour), "single_press"),
 		seed(sweepTime.Add(-90*24*time.Hour), "double_press"),
 	}
 	// Strictly older than the cutoff: a record exactly on the boundary and a
 	// newer record both survive.
-	boundary := seed(sweepTime.Add(-EntityEventHistoryRetention), "single_press")
+	boundary := seed(sweepTime.Add(-devices.EntityEventHistoryRetention), "single_press")
 	retained := seed(sweepTime.Add(-time.Hour), "single_press")
 
 	if err := service.DeleteExpiredEntityEvents(ctx, time.Time{}); err == nil {
@@ -811,12 +824,12 @@ func TestEntityEventRetentionDeletesOnlyRecordsOlderThanCutoff(t *testing.T) {
 	if _, cutoffErr := repository.DeleteEntityEventsBefore(ctx, time.Time{}, 1); cutoffErr == nil {
 		t.Fatal("retention cutoff 0 unexpectedly succeeded")
 	}
-	batched := []EntityEvent{
+	batched := []devices.EntityEvent{
 		seed(sweepTime.Add(-60*24*time.Hour), "single_press"),
 		seed(sweepTime.Add(-61*24*time.Hour), "single_press"),
 		seed(sweepTime.Add(-62*24*time.Hour), "single_press"),
 	}
-	cutoff := sweepTime.Add(-EntityEventHistoryRetention)
+	cutoff := sweepTime.Add(-devices.EntityEventHistoryRetention)
 	deleted, deleteErr := repository.DeleteEntityEventsBefore(ctx, cutoff, 2)
 	if deleteErr != nil {
 		t.Fatal(deleteErr)
@@ -844,7 +857,7 @@ func TestEntityEventRetentionDeletesOnlyRecordsOlderThanCutoff(t *testing.T) {
 func readStoredEntityEventErr(
 	t *testing.T,
 	database *sql.DB,
-	eventID EntityEventID,
+	eventID devices.EntityEventID,
 ) (storedEntityEvent, error) {
 	t.Helper()
 	var row storedEntityEvent
@@ -915,7 +928,7 @@ func TestEntityEventRetentionIgnoresStateAnchorAndKeepsDuplicateEvidence(t *test
 	if rejectedErr != nil {
 		t.Fatal(rejectedErr)
 	}
-	if outcome.Outcome != EntityEventOutcomeRejected {
+	if outcome.Outcome != devices.EntityEventOutcomeRejected {
 		t.Fatalf("power Entity recording = %#v, want rejected", outcome)
 	}
 	now = sweepTime
@@ -930,7 +943,7 @@ func TestEntityEventRetentionIgnoresStateAnchorAndKeepsDuplicateEvidence(t *test
 	if sweepErr := service.DeleteExpiredEntityEvents(ctx, sweepTime); sweepErr != nil {
 		t.Fatal(sweepErr)
 	}
-	for _, expired := range []EntityEvent{expiredAccepted, expiredRejected} {
+	for _, expired := range []devices.EntityEvent{expiredAccepted, expiredRejected} {
 		if _, readErr := readStoredEntityEventErr(t, database, expired.ID); readErr == nil {
 			t.Fatalf("expired Entity Event %s survived the sweep", expired.ID)
 		}
@@ -947,7 +960,7 @@ func TestEntityEventRetentionIgnoresStateAnchorAndKeepsDuplicateEvidence(t *test
 	if duplicateErr != nil {
 		t.Fatal(duplicateErr)
 	}
-	if duplicate.Outcome != EntityEventOutcomeDuplicate || duplicate.Rejection != nil {
+	if duplicate.Outcome != devices.EntityEventOutcomeDuplicate || duplicate.Rejection != nil {
 		t.Fatalf("retained Entity Event duplicate = %#v", duplicate)
 	}
 	if got := readStoredEntityEvent(t, database, retained.ID); !reflect.DeepEqual(got, before) {
@@ -1020,7 +1033,7 @@ func TestEntityEventRetentionLeavesObservationRetentionUnchanged(t *testing.T) {
 	); pruneErr != nil {
 		t.Fatal(pruneErr)
 	}
-	assertObservationIDs(t, database, []ObservationID{currentObservation.ID})
+	assertObservationIDs(t, database, []devices.ObservationID{currentObservation.ID})
 	assertTableCount(t, database, "entity_events", 1)
 	readStoredEntityEvent(t, database, retainedEvent.ID)
 }
@@ -1143,7 +1156,7 @@ func TestEntityEventRetentionSweepsMoreThanOneBatch(t *testing.T) {
 		return value.UTC().Format("2006-01-02T15:04:05.000000000Z")
 	}
 	// More than two full batches, so the sweep must iterate until a short batch.
-	const expiredCount = 2*entityEventDeleteBatchSize + 1
+	const expiredCount = 2*testEntityEventDeleteBatchSize + 1
 	if _, err := database.ExecContext(ctx, `
 		WITH RECURSIVE sequence(value) AS (
 			SELECT 1 UNION ALL SELECT value + 1 FROM sequence WHERE value < ?
@@ -1163,7 +1176,7 @@ func TestEntityEventRetentionSweepsMoreThanOneBatch(t *testing.T) {
 	); err != nil {
 		t.Fatal(err)
 	}
-	const retainedEventID = EntityEventID("evt_01890f47-7a6b-7c4d-8e9f-000000999999")
+	const retainedEventID = devices.EntityEventID("evt_01890f47-7a6b-7c4d-8e9f-000000999999")
 	if _, err := database.ExecContext(ctx, `
 		INSERT INTO entity_events (
 			event_id, adapter_id, runtime_id, entity_id, correlation_id, name,

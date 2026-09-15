@@ -18,6 +18,7 @@ import (
 	"github.com/mholtzscher/hearth/internal/contracts/v1/natswire"
 	"github.com/mholtzscher/hearth/internal/modules/devices"
 	devicesnats "github.com/mholtzscher/hearth/internal/modules/devices/nats"
+	devicessqlite "github.com/mholtzscher/hearth/internal/modules/devices/sqlite"
 	platformdb "github.com/mholtzscher/hearth/internal/platform/db"
 )
 
@@ -384,7 +385,7 @@ func startCoreConsumerHarness(
 		t.Fatal(err)
 	}
 	service := devices.NewService(
-		devices.SQLiteStores(devices.NewSQLiteRepository(database, catalog)),
+		devicessqlite.DeviceStores(devicessqlite.NewDeviceRepository(database, catalog)),
 		nil,
 		catalog,
 		devices.Dependencies{},

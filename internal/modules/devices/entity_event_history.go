@@ -40,7 +40,7 @@ func (service *Service) ListEntityEvents(
 	if _, err := ParseEntityID(string(params.EntityID)); err != nil {
 		return Page[EntityEventHistoryEntry]{}, fmt.Errorf("%w: parse entity ID: %w", ErrInvalidPage, err)
 	}
-	if !validPageLimit(params.Limit) {
+	if !ValidPageLimit(params.Limit) {
 		return Page[EntityEventHistoryEntry]{}, ErrInvalidPage
 	}
 	if params.BeforeReceiveOrder != nil && *params.BeforeReceiveOrder < 1 {

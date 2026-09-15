@@ -1,4 +1,4 @@
-package devices
+package sqlite
 
 import (
 	"bytes"
@@ -10,7 +10,8 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/mholtzscher/hearth/internal/modules/devices/dbsqlc"
+	"github.com/mholtzscher/hearth/internal/modules/devices"
+	"github.com/mholtzscher/hearth/internal/modules/devices/sqlite/dbsqlc"
 )
 
 // RecordEntityEvent records one wire-valid Entity Event inside one
@@ -24,26 +25,26 @@ import (
 // and no extra whitespace. Delivery count, Core receipt and recording times,
 // and trace headers stay out of it, so Core cannot manufacture a conflict from
 // its own metadata.
-func (repository *SQLiteRepository) RecordEntityEvent(
+func (repository *DeviceRepository) RecordEntityEvent(
 	ctx context.Context,
-	params RecordEntityEventParams,
-) (EntityEventRecordResult, error) {
+	params devices.RecordEntityEventParams,
+) (devices.EntityEventRecordResult, error) {
 	if repository.catalog == nil {
-		return EntityEventRecordResult{}, errors.New("record entity event: entity type catalog is required")
+		return devices.EntityEventRecordResult{}, errors.New("record entity event: entity type catalog is required")
 	}
 	if params.Now == nil {
-		return EntityEventRecordResult{}, errors.New("record entity event: clock is required")
+		return devices.EntityEventRecordResult{}, errors.New("record entity event: clock is required")
 	}
 	if params.Event.EmittedAt.IsZero() || params.ReceivedAt.IsZero() {
-		return EntityEventRecordResult{}, errors.New("record entity event: report times are required")
+		return devices.EntityEventRecordResult{}, errors.New("record entity event: report times are required")
 	}
 	fingerprint, err := entityEventFingerprint(params)
 	if err != nil {
-		return EntityEventRecordResult{}, err
+		return devices.EntityEventRecordResult{}, err
 	}
 	tx, err := repository.database.BeginTx(ctx, &sql.TxOptions{Isolation: sql.LevelSerializable})
 	if err != nil {
-		return EntityEventRecordResult{}, fmt.Errorf("begin entity event recording: %w", err)
+		return devices.EntityEventRecordResult{}, fmt.Errorf("begin entity event recording: %w", err)
 	}
 	defer func() { _ = tx.Rollback() }()
 	queries := repository.queries.WithTx(tx)
@@ -53,21 +54,21 @@ func (repository *SQLiteRepository) RecordEntityEvent(
 	case err == nil:
 		// The row exists: the ID already means something in this household.
 		if bytes.Equal(existing.Fingerprint, fingerprint) {
-			return EntityEventRecordResult{Outcome: EntityEventOutcomeDuplicate}, nil
+			return devices.EntityEventRecordResult{Outcome: devices.EntityEventOutcomeDuplicate}, nil
 		}
-		return EntityEventRecordResult{Outcome: EntityEventOutcomeIdentityConflict}, nil
+		return devices.EntityEventRecordResult{Outcome: devices.EntityEventOutcomeIdentityConflict}, nil
 	case !errors.Is(err, sql.ErrNoRows):
-		return EntityEventRecordResult{}, fmt.Errorf("look up entity event: %w", err)
+		return devices.EntityEventRecordResult{}, fmt.Errorf("look up entity event: %w", err)
 	default:
 	}
 
 	disposition, rejection, err := repository.classifyEntityEvent(ctx, queries, params)
 	if err != nil {
-		return EntityEventRecordResult{}, err
+		return devices.EntityEventRecordResult{}, err
 	}
 	recordedAt := params.Now().UTC()
 	if recordedAt.IsZero() {
-		return EntityEventRecordResult{}, errors.New("record entity event: clock returned zero time")
+		return devices.EntityEventRecordResult{}, errors.New("record entity event: clock returned zero time")
 	}
 	if _, insertErr := queries.InsertEntityEvent(ctx, dbsqlc.InsertEntityEventParams{
 		EventID:       string(params.Event.ID),
@@ -85,7 +86,7 @@ func (repository *SQLiteRepository) RecordEntityEvent(
 		ReceivedAt: formatSortableTime(params.ReceivedAt),
 		RecordedAt: formatSortableTime(recordedAt),
 	}); insertErr != nil {
-		return EntityEventRecordResult{}, fmt.Errorf("insert entity event: %w", insertErr)
+		return devices.EntityEventRecordResult{}, fmt.Errorf("insert entity event: %w", insertErr)
 	}
 	// The device fact is queued inside this transaction, so a recorded accepted
 	// event and its pending fact are one atomic unit. created_at reuses the
@@ -94,12 +95,12 @@ func (repository *SQLiteRepository) RecordEntityEvent(
 		ctx, queries, params, disposition, recordedAt,
 	)
 	if err != nil {
-		return EntityEventRecordResult{}, err
+		return devices.EntityEventRecordResult{}, err
 	}
 	if commitErr := tx.Commit(); commitErr != nil {
-		return EntityEventRecordResult{}, fmt.Errorf("commit entity event recording: %w", commitErr)
+		return devices.EntityEventRecordResult{}, fmt.Errorf("commit entity event recording: %w", commitErr)
 	}
-	return EntityEventRecordResult{
+	return devices.EntityEventRecordResult{
 		Outcome: outcomeForDisposition(disposition), Rejection: rejection, RecordedAt: recordedAt,
 		PendingFactID: pendingFactID,
 	}, nil
@@ -113,16 +114,16 @@ func (repository *SQLiteRepository) RecordEntityEvent(
 // permanent EntityEventDescriptorError rather than a rejection, because
 // redelivering such a report can never succeed. Ordinary storage failures
 // return their own errors and stay retryable.
-func (repository *SQLiteRepository) classifyEntityEvent(
+func (repository *DeviceRepository) classifyEntityEvent(
 	ctx context.Context,
 	queries *dbsqlc.Queries,
-	params RecordEntityEventParams,
-) (EntityEventDisposition, *EntityEventRejection, error) {
+	params devices.RecordEntityEventParams,
+) (devices.EntityEventDisposition, *devices.EntityEventRejection, error) {
 	_, err := queries.GetActiveAdapterRuntime(ctx, dbsqlc.GetActiveAdapterRuntimeParams{
 		AdapterID: params.AdapterID, RuntimeID: string(params.RuntimeID),
 	})
 	if errors.Is(err, sql.ErrNoRows) {
-		return rejectedEntityEvent(EntityEventRejectionStaleRuntime)
+		return rejectedEntityEvent(devices.EntityEventRejectionStaleRuntime)
 	}
 	if err != nil {
 		return "", nil, fmt.Errorf("validate entity event runtime: %w", err)
@@ -130,22 +131,22 @@ func (repository *SQLiteRepository) classifyEntityEvent(
 
 	row, err := queries.GetEntity(ctx, dbsqlc.GetEntityParams{ID: string(params.Event.EntityID)})
 	if errors.Is(err, sql.ErrNoRows) {
-		return rejectedEntityEvent(EntityEventRejectionUnknownEntity)
+		return rejectedEntityEvent(devices.EntityEventRejectionUnknownEntity)
 	}
 	if err != nil {
 		return "", nil, fmt.Errorf("get entity for entity event: %w", err)
 	}
-	entity := Entity{
-		ID: EntityID(row.ID), DeviceID: DeviceID(row.DeviceID), AdapterID: row.AdapterID,
-		Name: row.Name, TypeID: EntityTypeID(row.TypeID), Support: EntitySupport(row.SupportJson),
+	entity := devices.Entity{
+		ID: devices.EntityID(row.ID), DeviceID: devices.DeviceID(row.DeviceID), AdapterID: row.AdapterID,
+		Name: row.Name, TypeID: devices.EntityTypeID(row.TypeID), Support: devices.EntitySupport(row.SupportJson),
 		Enabled: row.Enabled != 0,
 	}
 	if entity.AdapterID != params.AdapterID {
-		return rejectedEntityEvent(EntityEventRejectionWrongAdapter)
+		return rejectedEntityEvent(devices.EntityEventRejectionWrongAdapter)
 	}
 	if !entity.Enabled {
 		// A disabled event source has no Command-linked exception.
-		return rejectedEntityEvent(EntityEventRejectionEntityDisabled)
+		return rejectedEntityEvent(devices.EntityEventRejectionEntityDisabled)
 	}
 	supported, err := repository.catalog.SupportsEntityEvent(entity, params.Event.Name)
 	if err != nil {
@@ -153,32 +154,32 @@ func (repository *SQLiteRepository) classifyEntityEvent(
 		// Entity Type or event-source support that no longer satisfies its
 		// schema. Both are deterministic for this row, so the report gets the
 		// permanent descriptor class instead of an ordinary retryable error.
-		return "", nil, &EntityEventDescriptorError{
-			EntityID: entity.ID, TypeID: entity.TypeID, cause: err,
-		}
+		return "", nil, devices.NewEntityEventDescriptorError(entity.ID, entity.TypeID, err)
 	}
 	if !supported {
-		return rejectedEntityEvent(EntityEventRejectionUnsupportedEvent)
+		return rejectedEntityEvent(devices.EntityEventRejectionUnsupportedEvent)
 	}
-	return EntityEventDispositionAccepted, nil, nil
+	return devices.EntityEventDispositionAccepted, nil, nil
 }
 
-func rejectedEntityEvent(rejection EntityEventRejection) (EntityEventDisposition, *EntityEventRejection, error) {
+func rejectedEntityEvent(
+	rejection devices.EntityEventRejection,
+) (devices.EntityEventDisposition, *devices.EntityEventRejection, error) {
 	code := rejection
-	return EntityEventDispositionRejected, &code, nil
+	return devices.EntityEventDispositionRejected, &code, nil
 }
 
-func outcomeForDisposition(disposition EntityEventDisposition) EntityEventRecordOutcome {
-	if disposition == EntityEventDispositionRejected {
-		return EntityEventOutcomeRejected
+func outcomeForDisposition(disposition devices.EntityEventDisposition) devices.EntityEventRecordOutcome {
+	if disposition == devices.EntityEventDispositionRejected {
+		return devices.EntityEventOutcomeRejected
 	}
-	return EntityEventOutcomeAccepted
+	return devices.EntityEventOutcomeAccepted
 }
 
 // entityEventFingerprint returns the raw 32-byte SHA-256 of the canonical
 // immutable-input tuple. Array order is fixed and the encoding has no extra
 // whitespace, so the same reported tuple always hashes the same way.
-func entityEventFingerprint(params RecordEntityEventParams) ([]byte, error) {
+func entityEventFingerprint(params devices.RecordEntityEventParams) ([]byte, error) {
 	tuple, err := json.Marshal([]string{
 		params.AdapterID,
 		string(params.RuntimeID),
@@ -194,7 +195,7 @@ func entityEventFingerprint(params RecordEntityEventParams) ([]byte, error) {
 	return sum[:], nil
 }
 
-func nullableEntityEventRejection(value *EntityEventRejection) sql.NullString {
+func nullableEntityEventRejection(value *devices.EntityEventRejection) sql.NullString {
 	if value == nil {
 		return sql.NullString{}
 	}
@@ -205,12 +206,12 @@ func nullableEntityEventRejection(value *EntityEventRejection) sql.NullString {
 // Entity Events, newest-first by receive order. The caller validates the
 // parent Entity and pagination; the adapter owns query selection, limit+1
 // truncation, row mapping, and error wrapping.
-func (repository *SQLiteRepository) ListEntityEvents(
+func (repository *DeviceRepository) ListEntityEvents(
 	ctx context.Context,
-	params ListEntityEventsParams,
-) (Page[EntityEventHistoryEntry], error) {
-	if !validPageLimit(params.Limit) {
-		return Page[EntityEventHistoryEntry]{}, ErrInvalidPage
+	params devices.ListEntityEventsParams,
+) (devices.Page[devices.EntityEventHistoryEntry], error) {
+	if !devices.ValidPageLimit(params.Limit) {
+		return devices.Page[devices.EntityEventHistoryEntry]{}, devices.ErrInvalidPage
 	}
 	limit := int64(params.Limit + 1)
 	entityID := string(params.EntityID)
@@ -222,7 +223,7 @@ func (repository *SQLiteRepository) ListEntityEvents(
 			dbsqlc.ListEntityEventsFirstPageParams{EntityID: entityID, Limit: limit},
 		)
 		if err != nil {
-			return Page[EntityEventHistoryEntry]{}, fmt.Errorf("list Entity Events: %w", err)
+			return devices.Page[devices.EntityEventHistoryEntry]{}, fmt.Errorf("list Entity Events: %w", err)
 		}
 		rows = make([]entityEventHistoryRow, len(firstPage))
 		for index, row := range firstPage {
@@ -233,18 +234,18 @@ func (repository *SQLiteRepository) ListEntityEvents(
 			EntityID: entityID, ReceiveOrder: *params.BeforeReceiveOrder, Limit: limit,
 		})
 		if err != nil {
-			return Page[EntityEventHistoryEntry]{}, fmt.Errorf("list Entity Events: %w", err)
+			return devices.Page[devices.EntityEventHistoryEntry]{}, fmt.Errorf("list Entity Events: %w", err)
 		}
 		rows = make([]entityEventHistoryRow, len(after))
 		for index, row := range after {
 			rows[index] = entityEventHistoryRowFromAfter(row)
 		}
 	}
-	items := make([]EntityEventHistoryEntry, 0, len(rows))
+	items := make([]devices.EntityEventHistoryEntry, 0, len(rows))
 	for _, row := range rows {
 		entry, mappingErr := entityEventHistoryEntryFromRow(row)
 		if mappingErr != nil {
-			return Page[EntityEventHistoryEntry]{}, fmt.Errorf("map Entity Events: %w", mappingErr)
+			return devices.Page[devices.EntityEventHistoryEntry]{}, fmt.Errorf("map Entity Events: %w", mappingErr)
 		}
 		items = append(items, entry)
 	}
@@ -255,7 +256,7 @@ func (repository *SQLiteRepository) ListEntityEvents(
 // recorded strictly before cutoff, oldest first, and returns how many rows it
 // removed. One call is one transaction; the caller sweeps until a batch is
 // short or its context ends.
-func (repository *SQLiteRepository) DeleteEntityEventsBefore(
+func (repository *DeviceRepository) DeleteEntityEventsBefore(
 	ctx context.Context,
 	cutoff time.Time,
 	batchSize int,
@@ -308,46 +309,46 @@ func entityEventHistoryRowFromAfter(row dbsqlc.ListEntityEventsAfterRow) entityE
 	}
 }
 
-func entityEventHistoryEntryFromRow(row entityEventHistoryRow) (EntityEventHistoryEntry, error) {
-	disposition := EntityEventDisposition(row.Disposition)
-	var rejection *EntityEventRejection
+func entityEventHistoryEntryFromRow(row entityEventHistoryRow) (devices.EntityEventHistoryEntry, error) {
+	disposition := devices.EntityEventDisposition(row.Disposition)
+	var rejection *devices.EntityEventRejection
 	if row.RejectionCode.Valid {
-		code := EntityEventRejection(row.RejectionCode.String)
+		code := devices.EntityEventRejection(row.RejectionCode.String)
 		rejection = &code
 	}
 	switch disposition {
-	case EntityEventDispositionAccepted:
+	case devices.EntityEventDispositionAccepted:
 		if rejection != nil {
-			return EntityEventHistoryEntry{}, fmt.Errorf(
+			return devices.EntityEventHistoryEntry{}, fmt.Errorf(
 				"accepted Entity Event row %q carries a rejection code", row.EventID,
 			)
 		}
-	case EntityEventDispositionRejected:
+	case devices.EntityEventDispositionRejected:
 		if rejection == nil {
-			return EntityEventHistoryEntry{}, fmt.Errorf(
+			return devices.EntityEventHistoryEntry{}, fmt.Errorf(
 				"rejected Entity Event row %q is missing its rejection code", row.EventID,
 			)
 		}
 	default:
-		return EntityEventHistoryEntry{}, fmt.Errorf(
-			"Entity Event row %q has unknown disposition %q", row.EventID, row.Disposition,
+		return devices.EntityEventHistoryEntry{}, fmt.Errorf(
+			"entity event row %q has unknown disposition %q", row.EventID, row.Disposition,
 		)
 	}
 	emittedAt, err := parseTime(row.EmittedAt)
 	if err != nil {
-		return EntityEventHistoryEntry{}, fmt.Errorf("parse Entity Event emitted_at: %w", err)
+		return devices.EntityEventHistoryEntry{}, fmt.Errorf("parse Entity Event emitted_at: %w", err)
 	}
 	receivedAt, err := parseTime(row.ReceivedAt)
 	if err != nil {
-		return EntityEventHistoryEntry{}, fmt.Errorf("parse Entity Event received_at: %w", err)
+		return devices.EntityEventHistoryEntry{}, fmt.Errorf("parse Entity Event received_at: %w", err)
 	}
 	recordedAt, err := parseTime(row.RecordedAt)
 	if err != nil {
-		return EntityEventHistoryEntry{}, fmt.Errorf("parse Entity Event recorded_at: %w", err)
+		return devices.EntityEventHistoryEntry{}, fmt.Errorf("parse Entity Event recorded_at: %w", err)
 	}
-	return EntityEventHistoryEntry{
-		EventID: EntityEventID(row.EventID), EntityID: EntityID(row.EntityID),
-		Name: EntityEventName(row.Name), Disposition: disposition, Rejection: rejection,
+	return devices.EntityEventHistoryEntry{
+		EventID: devices.EntityEventID(row.EventID), EntityID: devices.EntityID(row.EntityID),
+		Name: devices.EntityEventName(row.Name), Disposition: disposition, Rejection: rejection,
 		EmittedAt: emittedAt, ReceivedAt: receivedAt, RecordedAt: recordedAt,
 		ReceiveOrder: row.ReceiveOrder,
 	}, nil

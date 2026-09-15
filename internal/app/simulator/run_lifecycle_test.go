@@ -15,6 +15,7 @@ import (
 	contractsv1 "github.com/mholtzscher/hearth/contracts/v1"
 	"github.com/mholtzscher/hearth/internal/modules/devices"
 	devicesnats "github.com/mholtzscher/hearth/internal/modules/devices/nats"
+	devicessqlite "github.com/mholtzscher/hearth/internal/modules/devices/sqlite"
 	platformdb "github.com/mholtzscher/hearth/internal/platform/db"
 
 	simulatorapp "github.com/mholtzscher/hearth/internal/app/simulator"
@@ -167,9 +168,9 @@ func startSimulatorTestCore(
 	if err != nil {
 		t.Fatal(err)
 	}
-	repository := devices.NewSQLiteRepository(database, catalog)
+	repository := devicessqlite.NewDeviceRepository(database, catalog)
 	service := devices.NewService(
-		devices.SQLiteStores(repository),
+		devicessqlite.DeviceStores(repository),
 		devicesnats.NewCommandSender(coreConnection, mustCompileValidator(t)),
 		catalog,
 		devices.Dependencies{Logger: slog.New(slog.DiscardHandler)},

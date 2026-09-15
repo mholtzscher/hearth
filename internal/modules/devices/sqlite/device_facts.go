@@ -1,4 +1,4 @@
-package devices
+package sqlite
 
 import (
 	"context"
@@ -7,7 +7,8 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/mholtzscher/hearth/internal/modules/devices/dbsqlc"
+	"github.com/mholtzscher/hearth/internal/modules/devices"
+	"github.com/mholtzscher/hearth/internal/modules/devices/sqlite/dbsqlc"
 )
 
 // ListPendingDeviceFacts returns one bounded, oldest-first slice of the
@@ -22,12 +23,12 @@ import (
 // the valid older prefix read before it, and the caller delivers that prefix
 // before faulting on the preserved row. A storage failure of the read itself is
 // returned as an ordinary error, carries no prefix, and stays retryable.
-func (repository *SQLiteRepository) ListPendingDeviceFacts(
+func (repository *DeviceRepository) ListPendingDeviceFacts(
 	ctx context.Context,
 	limit int,
-) ([]PendingDeviceFact, error) {
+) ([]devices.PendingDeviceFact, error) {
 	if limit < 1 {
-		return nil, ErrInvalidDeviceFactLimit
+		return nil, devices.ErrInvalidDeviceFactLimit
 	}
 	rows, err := repository.queries.ListPendingDeviceFacts(
 		ctx, dbsqlc.ListPendingDeviceFactsParams{Limit: int64(limit)},
@@ -35,7 +36,7 @@ func (repository *SQLiteRepository) ListPendingDeviceFacts(
 	if err != nil {
 		return nil, fmt.Errorf("list pending device facts: %w", err)
 	}
-	facts := make([]PendingDeviceFact, 0, len(rows))
+	facts := make([]devices.PendingDeviceFact, 0, len(rows))
 	for _, row := range rows {
 		fact, mapErr := pendingDeviceFactFromRow(row)
 		if mapErr != nil {
@@ -43,7 +44,7 @@ func (repository *SQLiteRepository) ListPendingDeviceFacts(
 			// and deletes it, so only the poison row and the rows behind it stay
 			// blocked. Discarding the prefix would lose durable evidence the
 			// fault did not have to block.
-			return facts, &DeviceFactRowError{FactID: row.FactID, Cause: mapErr}
+			return facts, &devices.DeviceFactRowError{FactID: row.FactID, Cause: mapErr}
 		}
 		facts = append(facts, fact)
 	}
@@ -53,8 +54,8 @@ func (repository *SQLiteRepository) ListPendingDeviceFacts(
 // DeleteDeviceFact removes one published fact. A fact that is already gone is
 // not an error: the row is a pending-work marker, so deleting it twice, or
 // after another drain consumed it, has the same meaning as deleting it once.
-func (repository *SQLiteRepository) DeleteDeviceFact(ctx context.Context, factID DeviceFactID) error {
-	if _, err := ParseDeviceFactID(string(factID)); err != nil {
+func (repository *DeviceRepository) DeleteDeviceFact(ctx context.Context, factID devices.DeviceFactID) error {
+	if _, err := devices.ParseDeviceFactID(string(factID)); err != nil {
 		return fmt.Errorf("delete device fact: %w", err)
 	}
 	if err := repository.queries.DeleteDeviceFact(
@@ -68,46 +69,46 @@ func (repository *SQLiteRepository) DeleteDeviceFact(ctx context.Context, factID
 // deviceFactIdentity is the family-independent part of one pending row, parsed
 // once so each family mapper only reads its own columns.
 type deviceFactIdentity struct {
-	factID        DeviceFactID
-	entityID      EntityID
-	correlationID CorrelationID
+	factID        devices.DeviceFactID
+	entityID      devices.EntityID
+	correlationID devices.CorrelationID
 	createdAt     time.Time
-	trace         DeviceFactTraceContext
+	trace         devices.DeviceFactTraceContext
 }
 
-func pendingDeviceFactFromRow(row dbsqlc.DeviceFactsOutbox) (PendingDeviceFact, error) {
+func pendingDeviceFactFromRow(row dbsqlc.DeviceFactsOutbox) (devices.PendingDeviceFact, error) {
 	identity, err := deviceFactIdentityFromRow(row)
 	if err != nil {
-		return PendingDeviceFact{}, err
+		return devices.PendingDeviceFact{}, err
 	}
-	switch DeviceFactFamily(row.Family) {
-	case DeviceFactFamilyObservation:
+	switch devices.DeviceFactFamily(row.Family) {
+	case devices.DeviceFactFamilyObservation:
 		fact, observationErr := observationFactFromRow(row, identity)
 		if observationErr != nil {
-			return PendingDeviceFact{}, observationErr
+			return devices.PendingDeviceFact{}, observationErr
 		}
-		return PendingDeviceFact{Sequence: row.EnqueueOrder, Fact: fact}, nil
-	case DeviceFactFamilyEntityEvent:
+		return devices.PendingDeviceFact{Sequence: row.EnqueueOrder, Fact: fact}, nil
+	case devices.DeviceFactFamilyEntityEvent:
 		fact, entityEventErr := entityEventFactFromRow(row, identity)
 		if entityEventErr != nil {
-			return PendingDeviceFact{}, entityEventErr
+			return devices.PendingDeviceFact{}, entityEventErr
 		}
-		return PendingDeviceFact{Sequence: row.EnqueueOrder, Fact: fact}, nil
+		return devices.PendingDeviceFact{Sequence: row.EnqueueOrder, Fact: fact}, nil
 	default:
-		return PendingDeviceFact{}, fmt.Errorf("unknown device fact family %q", row.Family)
+		return devices.PendingDeviceFact{}, fmt.Errorf("unknown device fact family %q", row.Family)
 	}
 }
 
 func deviceFactIdentityFromRow(row dbsqlc.DeviceFactsOutbox) (deviceFactIdentity, error) {
-	factID, err := ParseDeviceFactID(row.FactID)
+	factID, err := devices.ParseDeviceFactID(row.FactID)
 	if err != nil {
 		return deviceFactIdentity{}, fmt.Errorf("parse device fact ID: %w", err)
 	}
-	entityID, err := ParseEntityID(row.EntityID)
+	entityID, err := devices.ParseEntityID(row.EntityID)
 	if err != nil {
 		return deviceFactIdentity{}, fmt.Errorf("parse device fact entity ID: %w", err)
 	}
-	correlationID, err := ParseCorrelationID(row.CorrelationID)
+	correlationID, err := devices.ParseCorrelationID(row.CorrelationID)
 	if err != nil {
 		return deviceFactIdentity{}, fmt.Errorf("parse device fact correlation ID: %w", err)
 	}
@@ -117,43 +118,43 @@ func deviceFactIdentityFromRow(row dbsqlc.DeviceFactsOutbox) (deviceFactIdentity
 	}
 	return deviceFactIdentity{
 		factID: factID, entityID: entityID, correlationID: correlationID, createdAt: createdAt,
-		trace: DeviceFactTraceContext{Traceparent: row.Traceparent, Tracestate: row.Tracestate},
+		trace: devices.DeviceFactTraceContext{Traceparent: row.Traceparent, Tracestate: row.Tracestate},
 	}, nil
 }
 
 func observationFactFromRow(
 	row dbsqlc.DeviceFactsOutbox,
 	identity deviceFactIdentity,
-) (ObservationFact, error) {
+) (devices.ObservationFact, error) {
 	if !row.ValueJson.Valid || !row.AdapterReceivedAt.Valid || !row.ObservedAt.Valid {
-		return ObservationFact{}, errors.New("observation device fact row is incomplete")
+		return devices.ObservationFact{}, errors.New("observation device fact row is incomplete")
 	}
-	observationID, err := ParseObservationID(row.SourceID)
+	observationID, err := devices.ParseObservationID(row.SourceID)
 	if err != nil {
-		return ObservationFact{}, fmt.Errorf("parse device fact observation ID: %w", err)
+		return devices.ObservationFact{}, fmt.Errorf("parse device fact observation ID: %w", err)
 	}
-	disposition := ObservationDisposition(row.Variant)
-	if disposition != DispositionApplied && disposition != DispositionUnchanged {
-		return ObservationFact{}, fmt.Errorf("device fact disposition %q is not eligible evidence", row.Variant)
+	disposition := devices.ObservationDisposition(row.Variant)
+	if disposition != devices.DispositionApplied && disposition != devices.DispositionUnchanged {
+		return devices.ObservationFact{}, fmt.Errorf("device fact disposition %q is not eligible evidence", row.Variant)
 	}
 	adapterReceivedAt, err := parseTime(row.AdapterReceivedAt.String)
 	if err != nil {
-		return ObservationFact{}, fmt.Errorf("parse device fact adapter_received_at: %w", err)
+		return devices.ObservationFact{}, fmt.Errorf("parse device fact adapter_received_at: %w", err)
 	}
 	observedAt, err := parseTime(row.ObservedAt.String)
 	if err != nil {
-		return ObservationFact{}, fmt.Errorf("parse device fact observed_at: %w", err)
+		return devices.ObservationFact{}, fmt.Errorf("parse device fact observed_at: %w", err)
 	}
 	sourceUpdatedAt, err := parseOptionalTime(row.SourceUpdatedAt)
 	if err != nil {
-		return ObservationFact{}, fmt.Errorf("parse device fact source_updated_at: %w", err)
+		return devices.ObservationFact{}, fmt.Errorf("parse device fact source_updated_at: %w", err)
 	}
-	return ObservationFact{
+	return devices.ObservationFact{
 		ID:                identity.factID,
 		ObservationID:     observationID,
 		EntityID:          identity.entityID,
 		Disposition:       disposition,
-		Value:             Value(row.ValueJson.String),
+		Value:             devices.Value(row.ValueJson.String),
 		CorrelationID:     identity.correlationID,
 		AdapterReceivedAt: adapterReceivedAt,
 		SourceUpdatedAt:   sourceUpdatedAt,
@@ -166,34 +167,34 @@ func observationFactFromRow(
 func entityEventFactFromRow(
 	row dbsqlc.DeviceFactsOutbox,
 	identity deviceFactIdentity,
-) (EntityEventFact, error) {
+) (devices.EntityEventFact, error) {
 	if !row.ReportedAt.Valid || !row.ReceivedAt.Valid || !row.RecordedAt.Valid {
-		return EntityEventFact{}, errors.New("entity event device fact row is incomplete")
+		return devices.EntityEventFact{}, errors.New("entity event device fact row is incomplete")
 	}
-	eventID, err := ParseEntityEventID(row.SourceID)
+	eventID, err := devices.ParseEntityEventID(row.SourceID)
 	if err != nil {
-		return EntityEventFact{}, fmt.Errorf("parse device fact event ID: %w", err)
+		return devices.EntityEventFact{}, fmt.Errorf("parse device fact event ID: %w", err)
 	}
-	if !entityEventNamePattern.MatchString(row.Variant) {
-		return EntityEventFact{}, fmt.Errorf("device fact event name %q is not canonical", row.Variant)
+	if _, nameErr := devices.ParseEntityEventName(row.Variant); nameErr != nil {
+		return devices.EntityEventFact{}, fmt.Errorf("device fact event name %q is not canonical", row.Variant)
 	}
 	reportedAt, err := parseTime(row.ReportedAt.String)
 	if err != nil {
-		return EntityEventFact{}, fmt.Errorf("parse device fact reported_at: %w", err)
+		return devices.EntityEventFact{}, fmt.Errorf("parse device fact reported_at: %w", err)
 	}
 	receivedAt, err := parseTime(row.ReceivedAt.String)
 	if err != nil {
-		return EntityEventFact{}, fmt.Errorf("parse device fact received_at: %w", err)
+		return devices.EntityEventFact{}, fmt.Errorf("parse device fact received_at: %w", err)
 	}
 	recordedAt, err := parseTime(row.RecordedAt.String)
 	if err != nil {
-		return EntityEventFact{}, fmt.Errorf("parse device fact recorded_at: %w", err)
+		return devices.EntityEventFact{}, fmt.Errorf("parse device fact recorded_at: %w", err)
 	}
-	return EntityEventFact{
+	return devices.EntityEventFact{
 		ID:            identity.factID,
 		EventID:       eventID,
 		EntityID:      identity.entityID,
-		Name:          EntityEventName(row.Variant),
+		Name:          devices.EntityEventName(row.Variant),
 		CorrelationID: identity.correlationID,
 		ReportedAt:    reportedAt,
 		ReceivedAt:    receivedAt,
@@ -211,14 +212,14 @@ func entityEventFactFromRow(
 // ID and insert no row. A mint or insert failure is returned to roll the
 // evidence back, so inbound redelivery retries the evidence and its fact
 // together.
-func (repository *SQLiteRepository) queueAcceptedObservationDeviceFact(
+func (repository *DeviceRepository) queueAcceptedObservationDeviceFact(
 	ctx context.Context,
 	queries *dbsqlc.Queries,
-	params ProjectObservationParams,
-	disposition ObservationDisposition,
-	value Value,
-) (*DeviceFactID, error) {
-	if disposition != DispositionApplied && disposition != DispositionUnchanged {
+	params devices.ProjectObservationParams,
+	disposition devices.ObservationDisposition,
+	value devices.Value,
+) (*devices.DeviceFactID, error) {
+	if disposition != devices.DispositionApplied && disposition != devices.DispositionUnchanged {
 		return nil, nil //nolint:nilnil // No pending fact is a successful projection.
 	}
 	createdAt := params.Now().UTC()
@@ -259,14 +260,14 @@ func (repository *SQLiteRepository) queueAcceptedObservationDeviceFact(
 // rejected, duplicate or identity-conflict outcome mints no ID and inserts no
 // row. A mint or insert failure is returned to roll the recorded event back, so
 // inbound redelivery retries the event and its fact together.
-func (repository *SQLiteRepository) queueAcceptedEntityEventDeviceFact(
+func (repository *DeviceRepository) queueAcceptedEntityEventDeviceFact(
 	ctx context.Context,
 	queries *dbsqlc.Queries,
-	params RecordEntityEventParams,
-	disposition EntityEventDisposition,
+	params devices.RecordEntityEventParams,
+	disposition devices.EntityEventDisposition,
 	recordedAt time.Time,
-) (*DeviceFactID, error) {
-	if disposition != EntityEventDispositionAccepted {
+) (*devices.DeviceFactID, error) {
+	if disposition != devices.EntityEventDispositionAccepted {
 		return nil, nil //nolint:nilnil // No pending fact is a successful record.
 	}
 	factID, err := repository.mintDeviceFactID()
@@ -297,12 +298,12 @@ func (repository *SQLiteRepository) queueAcceptedEntityEventDeviceFact(
 // mintDeviceFactID mints one stable fact identity and validates it before it
 // reaches SQLite, so a defect in the generator fails the transaction that would
 // have carried it instead of persisting a row no relay can publish.
-func (repository *SQLiteRepository) mintDeviceFactID() (DeviceFactID, error) {
+func (repository *DeviceRepository) mintDeviceFactID() (devices.DeviceFactID, error) {
 	factID, err := repository.deviceFactID()
 	if err != nil {
 		return "", fmt.Errorf("mint device fact ID: %w", err)
 	}
-	if _, parseErr := ParseDeviceFactID(string(factID)); parseErr != nil {
+	if _, parseErr := devices.ParseDeviceFactID(string(factID)); parseErr != nil {
 		return "", fmt.Errorf("mint device fact ID: %w", parseErr)
 	}
 	return factID, nil

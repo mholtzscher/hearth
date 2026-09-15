@@ -7,6 +7,15 @@ import (
 	"testing"
 )
 
+// testAdapterRuntime returns the runtime identity the named Adapter claims in
+// owned-mapping fixtures.
+func testAdapterRuntime(adapterID string) RuntimeID {
+	if adapterID == "homeassistant" {
+		return RuntimeID("run_01890f47-7a6b-7c4d-8e9f-0123456789ad")
+	}
+	return testRuntimeID
+}
+
 type ownedMappingRepositoryStub struct {
 	instance AdapterInstance
 	getErr   error
@@ -105,12 +114,12 @@ func TestListOwnedMappingsFencesInactiveRuntimeBeforeMappingRead(t *testing.T) {
 		},
 		"offline runtime": {
 			instance: AdapterInstance{ID: "homeassistant", Health: AdapterHealth{Runtime: &RuntimeEvidence{
-				ID: commandTestRuntimeID, Status: runtimeStatusOffline,
+				ID: commandTestRuntimeID, Status: RuntimeStatusOffline,
 			}}},
 		},
 		"superseded runtime": {
 			instance: AdapterInstance{ID: "homeassistant", Health: AdapterHealth{Runtime: &RuntimeEvidence{
-				ID: testAdapterRuntime("homeassistant"), Status: runtimeStatusOnline,
+				ID: testAdapterRuntime("homeassistant"), Status: RuntimeStatusOnline,
 			}}},
 		},
 	}
@@ -138,7 +147,7 @@ func TestListOwnedMappingsVerifiesRuntimeThenScopesAndCopiesRepositoryPage(t *te
 	position := &OwnedMappingPosition{BindingKey: "office-light", EntityKey: "brightness"}
 	repository := &ownedMappingRepositoryStub{
 		instance: AdapterInstance{ID: "homeassistant", Health: AdapterHealth{Runtime: &RuntimeEvidence{
-			ID: commandTestRuntimeID, Status: runtimeStatusOnline,
+			ID: commandTestRuntimeID, Status: RuntimeStatusOnline,
 		}}},
 		page: Page[OwnedMapping]{Items: []OwnedMapping{{
 			BindingKey: "office-light", DeviceID: "dev_01890f47-7a6b-7c4d-8e9f-0123456789ab",
@@ -178,7 +187,7 @@ func TestListOwnedMappingsReturnsRepositoryErrors(t *testing.T) {
 		"runtime verification": {getErr: getFailure},
 		"mapping read": {
 			instance: AdapterInstance{Health: AdapterHealth{Runtime: &RuntimeEvidence{
-				ID: commandTestRuntimeID, Status: runtimeStatusOnline,
+				ID: commandTestRuntimeID, Status: RuntimeStatusOnline,
 			}}},
 			listErr: listFailure,
 		},

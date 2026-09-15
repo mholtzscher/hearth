@@ -25,6 +25,7 @@ import (
 	"github.com/mholtzscher/hearth/internal/contracts/v1/natswire"
 	"github.com/mholtzscher/hearth/internal/modules/devices"
 	devicesnats "github.com/mholtzscher/hearth/internal/modules/devices/nats"
+	devicessqlite "github.com/mholtzscher/hearth/internal/modules/devices/sqlite"
 	platformdb "github.com/mholtzscher/hearth/internal/platform/db"
 	"github.com/mholtzscher/hearth/sdk/adapter"
 	sdkadapterenumeventv1 "github.com/mholtzscher/hearth/sdk/adapter/enumeventv1"
@@ -849,7 +850,7 @@ func seedDeviceFactsRegistration(
 		t.Fatal(err)
 	}
 	service := devices.NewService(
-		devices.SQLiteStores(devices.NewSQLiteRepository(database, catalog)), nil, catalog,
+		devicessqlite.DeviceStores(devicessqlite.NewDeviceRepository(database, catalog)), nil, catalog,
 		devices.Dependencies{},
 	)
 	runtimeID := devices.RuntimeID("run_01890f47-7a6b-7c4d-8e9f-0123456789ab")

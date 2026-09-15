@@ -40,7 +40,7 @@ func (service *Service) RecordAdapterHeartbeat(
 	return service.stores.Runtimes.RecordAdapterHeartbeat(ctx, HeartbeatWrite{
 		AdapterID: heartbeat.AdapterID, RuntimeID: heartbeat.RuntimeID,
 		ExternalStatus: heartbeat.ExternalStatus, SourceObservedAt: heartbeat.SourceObservedAt.UTC(),
-		Reason: copyHealthReason(heartbeat.Reason), ReceivedAt: receivedAt,
+		Reason: CopyHealthReason(heartbeat.Reason), ReceivedAt: receivedAt,
 		LeaseExpiresAt: receivedAt.Add(adapterLeaseDuration),
 	})
 }

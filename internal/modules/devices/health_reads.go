@@ -10,7 +10,7 @@ func (service *Service) ListAdapters(
 	ctx context.Context,
 	params ListAdaptersParams,
 ) (Page[AdapterInstance], error) {
-	if !validPageLimit(params.Limit) {
+	if !ValidPageLimit(params.Limit) {
 		return Page[AdapterInstance]{}, ErrInvalidPage
 	}
 	if params.AfterID != nil && !registrationSlugPattern.MatchString(*params.AfterID) {
@@ -42,7 +42,7 @@ func (service *Service) ListAdapterHealthHistory(
 	ctx context.Context,
 	params ListAdapterHealthParams,
 ) (Page[HealthTransition], error) {
-	if !registrationSlugPattern.MatchString(params.AdapterID) || !validPageLimit(params.Limit) ||
+	if !registrationSlugPattern.MatchString(params.AdapterID) || !ValidPageLimit(params.Limit) ||
 		(params.BeforeReceiveOrder != nil && *params.BeforeReceiveOrder < 1) {
 		return Page[HealthTransition]{}, ErrInvalidPage
 	}
@@ -57,7 +57,7 @@ func (service *Service) ListEntityAvailabilityHistory(
 	ctx context.Context,
 	params ListEntityAvailabilityParams,
 ) (Page[HealthTransition], error) {
-	if _, err := ParseEntityID(string(params.EntityID)); err != nil || !validPageLimit(params.Limit) ||
+	if _, err := ParseEntityID(string(params.EntityID)); err != nil || !ValidPageLimit(params.Limit) ||
 		(params.BeforeReceiveOrder != nil && *params.BeforeReceiveOrder < 1) {
 		return Page[HealthTransition]{}, ErrInvalidPage
 	}
@@ -78,7 +78,7 @@ func copyHealthTransitionPage(page Page[HealthTransition]) Page[HealthTransition
 
 func copyAdapterInstance(instance AdapterInstance) AdapterInstance {
 	cloned := instance
-	cloned.Health.Reason = copyHealthReason(instance.Health.Reason)
+	cloned.Health.Reason = CopyHealthReason(instance.Health.Reason)
 	if instance.Health.SourceObservedAt != nil {
 		sourceObservedAt := *instance.Health.SourceObservedAt
 		cloned.Health.SourceObservedAt = &sourceObservedAt
@@ -96,7 +96,7 @@ func copyAdapterInstance(instance AdapterInstance) AdapterInstance {
 
 func copyHealthTransition(transition HealthTransition) HealthTransition {
 	cloned := transition
-	cloned.Reason = copyHealthReason(transition.Reason)
+	cloned.Reason = CopyHealthReason(transition.Reason)
 	if transition.SourceObservedAt != nil {
 		sourceObservedAt := *transition.SourceObservedAt
 		cloned.SourceObservedAt = &sourceObservedAt

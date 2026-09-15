@@ -1,4 +1,4 @@
-package devices //nolint:testpackage // Tests verify the transactional Device Fact outbox through real migrated SQLite.
+package sqlite //nolint:testpackage // Tests exercise package-private SQLite persistence behavior.
 
 import (
 	"context"
@@ -8,6 +8,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/mholtzscher/hearth/internal/modules/devices"
 )
 
 const (
@@ -30,9 +32,9 @@ func TestAcceptedObservationCommitsExactlyOnePendingDeviceFact(t *testing.T) {
 	catalog := firstLightCatalog(t)
 	coreCommitTime := time.Date(2026, 9, 1, 12, 0, 2, 0, time.UTC)
 	observedAt := time.Date(2026, 9, 1, 12, 0, 0, 0, time.UTC)
-	repository := NewSQLiteRepository(database, catalog)
+	repository := NewDeviceRepository(database, catalog)
 	notifier := &recordingDeviceFactNotifier{}
-	service := newTestService(repository, nil, catalog, Dependencies{
+	service := newTestService(repository, nil, catalog, devices.Dependencies{
 		DeviceFacts: notifier,
 		Now:         func() time.Time { return coreCommitTime },
 	})
@@ -41,13 +43,13 @@ func TestAcceptedObservationCommitsExactlyOnePendingDeviceFact(t *testing.T) {
 		t.Fatal(err)
 	}
 	entityID := binding.Entities[0].EntityID
-	correlationID, err := NewCorrelationID()
+	correlationID, err := devices.NewCorrelationID()
 	if err != nil {
 		t.Fatal(err)
 	}
 	sourceUpdatedAt := observedAt.Add(-3 * time.Second)
 	adapterReceivedAt := observedAt.Add(-2 * time.Second)
-	trace := DeviceFactTraceContext{Traceparent: factSQLiteTraceparent, Tracestate: factSQLiteTracestate}
+	trace := devices.DeviceFactTraceContext{Traceparent: factSQLiteTraceparent, Tracestate: factSQLiteTracestate}
 
 	applied := newFactObservationWithTrace(
 		t, entityID, `true`, correlationID, adapterReceivedAt, &sourceUpdatedAt, trace,
@@ -56,7 +58,7 @@ func TestAcceptedObservationCommitsExactlyOnePendingDeviceFact(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if result.Disposition != DispositionApplied || result.PendingFactID == nil {
+	if result.Disposition != devices.DispositionApplied || result.PendingFactID == nil {
 		t.Fatalf("first projection result = %#v", result)
 	}
 	committedValue := readCommittedStateValue(t, database, entityID)
@@ -66,7 +68,7 @@ func TestAcceptedObservationCommitsExactlyOnePendingDeviceFact(t *testing.T) {
 	}
 	fact := requireObservationFact(t, pending[0])
 	if fact.ID != *result.PendingFactID || fact.ObservationID != applied.ID || fact.EntityID != entityID ||
-		fact.Disposition != DispositionApplied || string(fact.Value) != committedValue ||
+		fact.Disposition != devices.DispositionApplied || string(fact.Value) != committedValue ||
 		fact.CorrelationID != correlationID ||
 		!fact.AdapterReceivedAt.Equal(adapterReceivedAt) ||
 		fact.SourceUpdatedAt == nil || !fact.SourceUpdatedAt.Equal(sourceUpdatedAt) ||
@@ -84,7 +86,7 @@ func TestAcceptedObservationCommitsExactlyOnePendingDeviceFact(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if duplicate.Disposition != DispositionDuplicate || duplicate.PendingFactID != nil {
+	if duplicate.Disposition != devices.DispositionDuplicate || duplicate.PendingFactID != nil {
 		t.Fatalf("duplicate projection result = %#v", duplicate)
 	}
 	if got := countPendingDeviceFacts(t, database); got != 1 || notifier.count() != 1 {
@@ -100,7 +102,7 @@ func TestAcceptedObservationCommitsExactlyOnePendingDeviceFact(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if unchanged.Disposition != DispositionUnchanged || unchanged.PendingFactID == nil {
+	if unchanged.Disposition != devices.DispositionUnchanged || unchanged.PendingFactID == nil {
 		t.Fatalf("unchanged projection result = %#v", unchanged)
 	}
 	pending = listPendingDeviceFacts(t, repository)
@@ -108,7 +110,7 @@ func TestAcceptedObservationCommitsExactlyOnePendingDeviceFact(t *testing.T) {
 		t.Fatalf("pending facts after unchanged observation = %#v", pending)
 	}
 	unchangedFact := requireObservationFact(t, pending[1])
-	if unchangedFact.Disposition != DispositionUnchanged || unchangedFact.ID != *unchanged.PendingFactID ||
+	if unchangedFact.Disposition != devices.DispositionUnchanged || unchangedFact.ID != *unchanged.PendingFactID ||
 		unchangedFact.ObservationID != unchangedObservation.ID ||
 		string(unchangedFact.Value) != committedValue ||
 		!unchangedFact.ObservedAt.Equal(observedAt.Add(2*time.Second)) ||
@@ -123,8 +125,8 @@ func TestAcceptedObservationCommitsExactlyOnePendingDeviceFact(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if result.Disposition != DispositionRejected || result.Rejection == nil ||
-		*result.Rejection != RejectionInvalidValue || result.PendingFactID != nil {
+	if result.Disposition != devices.DispositionRejected || result.Rejection == nil ||
+		*result.Rejection != devices.RejectionInvalidValue || result.PendingFactID != nil {
 		t.Fatalf("rejected projection result = %#v", result)
 	}
 	if got := countPendingDeviceFacts(t, database); got != 2 {
@@ -152,22 +154,22 @@ func TestAcceptedEntityEventCommitsExactlyOnePendingDeviceFact(t *testing.T) {
 	catalog := firstLightCatalog(t)
 	recordedAt := time.Date(2026, 9, 1, 12, 0, 1, 0, time.UTC)
 	receivedAt := time.Date(2026, 9, 1, 12, 0, 0, 500_000_000, time.UTC)
-	repository := NewSQLiteRepository(database, catalog)
+	repository := NewDeviceRepository(database, catalog)
 	notifier := &recordingDeviceFactNotifier{}
-	service := newTestService(repository, nil, catalog, Dependencies{
+	service := newTestService(repository, nil, catalog, devices.Dependencies{
 		DeviceFacts: notifier,
 		Now:         func() time.Time { return recordedAt },
 	})
 	entityID := registerEntityEventEntity(t, service)
 	emittedAt := recordedAt.Add(-time.Minute)
 	event := newEntityEvent(t, entityID, "single_press", emittedAt)
-	event.Trace = DeviceFactTraceContext{Traceparent: factSQLiteTraceparent, Tracestate: factSQLiteTracestate}
+	event.Trace = devices.DeviceFactTraceContext{Traceparent: factSQLiteTraceparent, Tracestate: factSQLiteTracestate}
 
 	result, err := service.RecordEntityEvent(ctx, entityEventTestAdapter, testRuntimeID, event, receivedAt)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if result.Outcome != EntityEventOutcomeAccepted || result.PendingFactID == nil {
+	if result.Outcome != devices.EntityEventOutcomeAccepted || result.PendingFactID == nil {
 		t.Fatalf("recording result = %#v", result)
 	}
 	stored := readStoredEntityEvent(t, database, event.ID)
@@ -197,7 +199,7 @@ func TestAcceptedEntityEventCommitsExactlyOnePendingDeviceFact(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if duplicate.Outcome != EntityEventOutcomeDuplicate || duplicate.PendingFactID != nil {
+	if duplicate.Outcome != devices.EntityEventOutcomeDuplicate || duplicate.PendingFactID != nil {
 		t.Fatalf("duplicate result = %#v", duplicate)
 	}
 	conflict := event
@@ -208,7 +210,7 @@ func TestAcceptedEntityEventCommitsExactlyOnePendingDeviceFact(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if conflicted.Outcome != EntityEventOutcomeIdentityConflict || conflicted.PendingFactID != nil {
+	if conflicted.Outcome != devices.EntityEventOutcomeIdentityConflict || conflicted.PendingFactID != nil {
 		t.Fatalf("identity conflict result = %#v", conflicted)
 	}
 	rejected := newEntityEvent(t, entityID, "triple_press", emittedAt)
@@ -218,7 +220,7 @@ func TestAcceptedEntityEventCommitsExactlyOnePendingDeviceFact(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if rejectedResult.Outcome != EntityEventOutcomeRejected || rejectedResult.PendingFactID != nil {
+	if rejectedResult.Outcome != devices.EntityEventOutcomeRejected || rejectedResult.PendingFactID != nil {
 		t.Fatalf("rejected result = %#v", rejectedResult)
 	}
 	if got := countPendingDeviceFacts(t, database); got != 1 {
@@ -247,9 +249,9 @@ func TestPendingDeviceFactsKeepOneEnqueueOrderAcrossFamilies(t *testing.T) {
 	database := openRegistrationDatabase(t, filepath.Join(t.TempDir(), "hearth.db"))
 	catalog := firstLightCatalog(t)
 	recordedAt := time.Date(2026, 9, 1, 12, 0, 1, 0, time.UTC)
-	repository := NewSQLiteRepository(database, catalog)
+	repository := NewDeviceRepository(database, catalog)
 	notifier := &recordingDeviceFactNotifier{}
-	service := newTestService(repository, nil, catalog, Dependencies{
+	service := newTestService(repository, nil, catalog, devices.Dependencies{
 		DeviceFacts: notifier,
 		Now:         func() time.Time { return recordedAt },
 	})
@@ -260,7 +262,7 @@ func TestPendingDeviceFactsKeepOneEnqueueOrderAcrossFamilies(t *testing.T) {
 	powerEntityID := binding.Entities[0].EntityID
 	eventEntityID := registerEntityEventEntity(t, service)
 
-	traces := []DeviceFactTraceContext{
+	traces := []devices.DeviceFactTraceContext{
 		{Traceparent: factSQLiteTraceparent},
 		{Traceparent: factSQLiteTraceparent, Tracestate: factSQLiteTracestate},
 		{},
@@ -328,7 +330,9 @@ func TestPendingDeviceFactsKeepOneEnqueueOrderAcrossFamilies(t *testing.T) {
 	if len(oldest) != 1 || oldest[0].Sequence != facts[0].Sequence {
 		t.Fatalf("single pending read = %#v", oldest)
 	}
-	if _, limitErr := repository.ListPendingDeviceFacts(ctx, 0); !errors.Is(limitErr, ErrInvalidDeviceFactLimit) {
+	if _, limitErr := repository.ListPendingDeviceFacts(ctx, 0); !errors.Is(
+		limitErr, devices.ErrInvalidDeviceFactLimit,
+	) {
 		t.Fatalf("zero-limit read error = %v", limitErr)
 	}
 
@@ -344,7 +348,7 @@ func TestPendingDeviceFactsKeepOneEnqueueOrderAcrossFamilies(t *testing.T) {
 	if repeatErr := repository.DeleteDeviceFact(ctx, published); repeatErr != nil {
 		t.Fatalf("repeated delete = %v", repeatErr)
 	}
-	if unknownErr := repository.DeleteDeviceFact(ctx, DeviceFactID("not-a-fact")); unknownErr == nil {
+	if unknownErr := repository.DeleteDeviceFact(ctx, devices.DeviceFactID("not-a-fact")); unknownErr == nil {
 		t.Fatal("noncanonical fact ID was deleted")
 	}
 	if got := countPendingDeviceFacts(t, database); got != 2 {
@@ -482,15 +486,15 @@ func TestDeviceFactIdentityFailureRollsBackEvidence(t *testing.T) {
 	mintErr := errors.New("entropy unavailable")
 	tests := []struct {
 		name      string
-		generator func() (DeviceFactID, error)
+		generator func() (devices.DeviceFactID, error)
 	}{
 		{
 			name:      "mint failure",
-			generator: func() (DeviceFactID, error) { return "", mintErr },
+			generator: func() (devices.DeviceFactID, error) { return "", mintErr },
 		},
 		{
 			name:      "noncanonical identity",
-			generator: func() (DeviceFactID, error) { return DeviceFactID("not-a-fact-id"), nil },
+			generator: func() (devices.DeviceFactID, error) { return devices.DeviceFactID("not-a-fact-id"), nil },
 		},
 	}
 	for _, test := range tests {
@@ -498,9 +502,9 @@ func TestDeviceFactIdentityFailureRollsBackEvidence(t *testing.T) {
 			t.Parallel()
 			database := openRegistrationDatabase(t, filepath.Join(t.TempDir(), "hearth.db"))
 			catalog := firstLightCatalog(t)
-			repository := newSQLiteRepository(database, catalog, test.generator)
+			repository := newDeviceRepository(database, catalog, test.generator)
 			notifier := &recordingDeviceFactNotifier{}
-			service := newTestService(repository, nil, catalog, Dependencies{
+			service := newTestService(repository, nil, catalog, devices.Dependencies{
 				DeviceFacts: notifier,
 				Now:         func() time.Time { return observedAt },
 			})
@@ -510,7 +514,7 @@ func TestDeviceFactIdentityFailureRollsBackEvidence(t *testing.T) {
 			}
 			entityID := binding.Entities[0].EntityID
 			observation := newFactObservationWithTrace(
-				t, entityID, `true`, commandTestCorrelationID, observedAt, nil, DeviceFactTraceContext{},
+				t, entityID, `true`, commandTestCorrelationID, observedAt, nil, devices.DeviceFactTraceContext{},
 			)
 			if _, projectErr := service.ProjectObservation(
 				ctx, "simulator", testRuntimeID, observation, observedAt,
@@ -547,10 +551,10 @@ func TestDeviceFactIdentityFailureRollsBackEvidence(t *testing.T) {
 		t.Parallel()
 		database := openRegistrationDatabase(t, filepath.Join(t.TempDir(), "hearth.db"))
 		catalog := firstLightCatalog(t)
-		repository := newSQLiteRepository(database, catalog, func() (DeviceFactID, error) {
+		repository := newDeviceRepository(database, catalog, func() (devices.DeviceFactID, error) {
 			return "", mintErr
 		})
-		service := newTestService(repository, nil, catalog, Dependencies{
+		service := newTestService(repository, nil, catalog, devices.Dependencies{
 			Now: func() time.Time { return observedAt },
 		})
 		binding, err := service.Register(ctx, "simulator", testRuntimeID, validDomainRegistration())
@@ -559,7 +563,7 @@ func TestDeviceFactIdentityFailureRollsBackEvidence(t *testing.T) {
 		}
 		observation := newFactObservationWithTrace(
 			t, binding.Entities[0].EntityID, `true`, commandTestCorrelationID, observedAt, nil,
-			DeviceFactTraceContext{},
+			devices.DeviceFactTraceContext{},
 		)
 		_, err = service.ProjectObservation(ctx, "simulator", testRuntimeID, observation, observedAt)
 		if !errors.Is(err, mintErr) {
@@ -577,23 +581,24 @@ func TestCommandLifecycleQueuesNoDeviceFact(t *testing.T) {
 	ctx := context.Background()
 	database := openRegistrationDatabase(t, filepath.Join(t.TempDir(), "hearth.db"))
 	catalog := firstLightCatalog(t)
-	repository := NewSQLiteRepository(database, catalog)
+	repository := NewDeviceRepository(database, catalog)
 	notifier := &recordingDeviceFactNotifier{}
-	service := newTestService(repository, nil, catalog, Dependencies{DeviceFacts: notifier})
+	// Rejecting dispatch is what makes the Command terminal, so the sender seam
+	// is wired before the Service is built.
+	service := newTestService(repository, commandSenderFunc(func(
+		context.Context, string, devices.RuntimeID, devices.CommandRequest,
+	) (devices.CommandAcceptance, error) {
+		return devices.CommandAcceptance{Accepted: false}, nil
+	}), catalog, devices.Dependencies{DeviceFacts: notifier})
 	binding, err := service.Register(ctx, "simulator", testRuntimeID, validDomainRegistration())
 	if err != nil {
 		t.Fatal(err)
 	}
-	service.sender = commandSenderFunc(func(
-		context.Context, string, RuntimeID, CommandRequest,
-	) (CommandAcceptance, error) {
-		return CommandAcceptance{Accepted: false}, nil
+	_, err = service.ExecuteCommand(ctx, devices.CommandInput{
+		EntityID: binding.Entities[0].EntityID, OperationName: devices.OperationNameSet,
+		Parameters: devices.CommandParameters(`{"value":true}`),
 	})
-	_, err = service.ExecuteCommand(ctx, CommandInput{
-		EntityID: binding.Entities[0].EntityID, OperationName: OperationNameSet,
-		Parameters: CommandParameters(`{"value":true}`),
-	})
-	if !errors.Is(err, ErrUpstreamRejected) {
+	if !errors.Is(err, devices.ErrUpstreamRejected) {
 		t.Fatalf("command execution error = %v", err)
 	}
 	if got := countTable(t, database, "commands"); got != 1 {
@@ -623,7 +628,7 @@ func TestListPendingDeviceFactsFaultsCorruptRowAndRetriesReadFailure(t *testing.
 	t.Run("corrupt row is permanent and preserved", func(t *testing.T) {
 		t.Parallel()
 		database := openRegistrationDatabase(t, filepath.Join(t.TempDir(), "hearth.db"))
-		repository := NewSQLiteRepository(database, nil)
+		repository := NewDeviceRepository(database, nil)
 		observedAt := "2026-09-01T12:00:00Z"
 		if _, err := database.ExecContext(
 			context.Background(), insertStatement,
@@ -643,10 +648,10 @@ func TestListPendingDeviceFactsFaultsCorruptRowAndRetriesReadFailure(t *testing.
 		}
 
 		_, listErr := repository.ListPendingDeviceFacts(context.Background(), 10)
-		if !errors.Is(listErr, ErrInvalidDeviceFactRow) {
-			t.Fatalf("corrupt row error = %v, want %v", listErr, ErrInvalidDeviceFactRow)
+		if !errors.Is(listErr, devices.ErrInvalidDeviceFactRow) {
+			t.Fatalf("corrupt row error = %v, want %v", listErr, devices.ErrInvalidDeviceFactRow)
 		}
-		var rowErr *DeviceFactRowError
+		var rowErr *devices.DeviceFactRowError
 		if !errors.As(listErr, &rowErr) || rowErr.FactID != factID || rowErr.Cause == nil {
 			t.Fatalf("corrupt row error = %#v, want the stored identity and a cause", rowErr)
 		}
@@ -658,7 +663,7 @@ func TestListPendingDeviceFactsFaultsCorruptRowAndRetriesReadFailure(t *testing.
 	t.Run("storage read failure is transient", func(t *testing.T) {
 		t.Parallel()
 		database := openRegistrationDatabase(t, filepath.Join(t.TempDir(), "hearth.db"))
-		repository := NewSQLiteRepository(database, nil)
+		repository := NewDeviceRepository(database, nil)
 		if err := database.Close(); err != nil {
 			t.Fatal(err)
 		}
@@ -666,7 +671,7 @@ func TestListPendingDeviceFactsFaultsCorruptRowAndRetriesReadFailure(t *testing.
 		if listErr == nil {
 			t.Fatal("a closed outbox reported an empty pending set")
 		}
-		if errors.Is(listErr, ErrInvalidDeviceFactRow) {
+		if errors.Is(listErr, devices.ErrInvalidDeviceFactRow) {
 			t.Fatalf("transient read failure %v matched the permanent invalid-row class", listErr)
 		}
 	})
@@ -691,7 +696,7 @@ func TestListPendingDeviceFactsReturnsThePrefixOlderThanACorruptRow(t *testing.T
 		committedAt   = "2026-09-01T12:00:00Z"
 	)
 	database := openRegistrationDatabase(t, filepath.Join(t.TempDir(), "hearth.db"))
-	repository := NewSQLiteRepository(database, nil)
+	repository := NewDeviceRepository(database, nil)
 	insertRow := func(factID string, sourceID string) {
 		t.Helper()
 		if _, err := database.ExecContext(
@@ -714,10 +719,10 @@ func TestListPendingDeviceFactsReturnsThePrefixOlderThanACorruptRow(t *testing.T
 	}
 
 	facts, listErr := repository.ListPendingDeviceFacts(ctx, 10)
-	if !errors.Is(listErr, ErrInvalidDeviceFactRow) {
-		t.Fatalf("list error = %v, want %v", listErr, ErrInvalidDeviceFactRow)
+	if !errors.Is(listErr, devices.ErrInvalidDeviceFactRow) {
+		t.Fatalf("list error = %v, want %v", listErr, devices.ErrInvalidDeviceFactRow)
 	}
-	var rowErr *DeviceFactRowError
+	var rowErr *devices.DeviceFactRowError
 	if !errors.As(listErr, &rowErr) || rowErr.FactID != poison {
 		t.Fatalf("list error = %#v, want the corrupt row %s", rowErr, poison)
 	}
@@ -737,26 +742,26 @@ func TestListPendingDeviceFactsReturnsThePrefixOlderThanACorruptRow(t *testing.T
 
 func newFactObservationWithTrace(
 	t *testing.T,
-	entityID EntityID,
+	entityID devices.EntityID,
 	value string,
-	correlationID CorrelationID,
+	correlationID devices.CorrelationID,
 	adapterReceivedAt time.Time,
 	sourceUpdatedAt *time.Time,
-	trace DeviceFactTraceContext,
-) Observation {
+	trace devices.DeviceFactTraceContext,
+) devices.Observation {
 	t.Helper()
-	id, err := NewObservationID()
+	id, err := devices.NewObservationID()
 	if err != nil {
 		t.Fatal(err)
 	}
-	return Observation{
-		ID: id, EntityID: entityID, Value: Value(value), CorrelationID: correlationID,
+	return devices.Observation{
+		ID: id, EntityID: entityID, Value: devices.Value(value), CorrelationID: correlationID,
 		AdapterReceivedAt: adapterReceivedAt, SourceUpdatedAt: copyTimePointer(sourceUpdatedAt),
 		Trace: trace,
 	}
 }
 
-func listPendingDeviceFacts(t *testing.T, repository *SQLiteRepository) []PendingDeviceFact {
+func listPendingDeviceFacts(t *testing.T, repository *DeviceRepository) []devices.PendingDeviceFact {
 	t.Helper()
 	facts, err := repository.ListPendingDeviceFacts(context.Background(), 100)
 	if err != nil {
@@ -765,25 +770,25 @@ func listPendingDeviceFacts(t *testing.T, repository *SQLiteRepository) []Pendin
 	return facts
 }
 
-func requireObservationFact(t *testing.T, pending PendingDeviceFact) ObservationFact {
+func requireObservationFact(t *testing.T, pending devices.PendingDeviceFact) devices.ObservationFact {
 	t.Helper()
-	fact, ok := pending.Fact.(ObservationFact)
+	fact, ok := pending.Fact.(devices.ObservationFact)
 	if !ok {
 		t.Fatalf("pending fact %#v is not an ObservationFact", pending.Fact)
 	}
 	return fact
 }
 
-func requireEntityEventFact(t *testing.T, pending PendingDeviceFact) EntityEventFact {
+func requireEntityEventFact(t *testing.T, pending devices.PendingDeviceFact) devices.EntityEventFact {
 	t.Helper()
-	fact, ok := pending.Fact.(EntityEventFact)
+	fact, ok := pending.Fact.(devices.EntityEventFact)
 	if !ok {
 		t.Fatalf("pending fact %#v is not an EntityEventFact", pending.Fact)
 	}
 	return fact
 }
 
-func readCommittedStateValue(t *testing.T, database *sql.DB, entityID EntityID) string {
+func readCommittedStateValue(t *testing.T, database *sql.DB, entityID devices.EntityID) string {
 	t.Helper()
 	var value string
 	if err := database.QueryRowContext(

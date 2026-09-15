@@ -1,4 +1,4 @@
-package devices //nolint:testpackage // Tests exercise package-private domain seams and repository fixtures.
+package sqlite //nolint:testpackage // Tests exercise package-private SQLite persistence behavior.
 
 import (
 	"context"
@@ -7,16 +7,18 @@ import (
 	"path/filepath"
 	"testing"
 	"time"
+
+	"github.com/mholtzscher/hearth/internal/modules/devices"
 )
 
 const (
-	readDeviceA  = DeviceID("dev_01890f47-7a6b-7c4d-8e9f-0123456789aa")
-	readDeviceB  = DeviceID("dev_01890f47-7a6b-7c4d-8e9f-0123456789ab")
-	readEntityA  = EntityID("ent_01890f47-7a6b-7c4d-8e9f-0123456789a1")
-	readEntityB  = EntityID("ent_01890f47-7a6b-7c4d-8e9f-0123456789a2")
-	readEntityC  = EntityID("ent_01890f47-7a6b-7c4d-8e9f-0123456789a3")
-	readCommandA = CommandID("cmd_01890f47-7a6b-7c4d-8e9f-0123456789a1")
-	readCommandB = CommandID("cmd_01890f47-7a6b-7c4d-8e9f-0123456789a2")
+	readDeviceA  = devices.DeviceID("dev_01890f47-7a6b-7c4d-8e9f-0123456789aa")
+	readDeviceB  = devices.DeviceID("dev_01890f47-7a6b-7c4d-8e9f-0123456789ab")
+	readEntityA  = devices.EntityID("ent_01890f47-7a6b-7c4d-8e9f-0123456789a1")
+	readEntityB  = devices.EntityID("ent_01890f47-7a6b-7c4d-8e9f-0123456789a2")
+	readEntityC  = devices.EntityID("ent_01890f47-7a6b-7c4d-8e9f-0123456789a3")
+	readCommandA = devices.CommandID("cmd_01890f47-7a6b-7c4d-8e9f-0123456789a1")
+	readCommandB = devices.CommandID("cmd_01890f47-7a6b-7c4d-8e9f-0123456789a2")
 )
 
 //nolint:gocognit,gocyclo,cyclop // Related keyset pagination invariants are intentionally verified together.
@@ -24,21 +26,21 @@ func TestSQLiteResourceReadsUseDeterministicKeysetPages(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	database := openMigratedDatabase(t, filepath.Join(t.TempDir(), "hearth.db"))
-	repository := NewSQLiteRepository(database, nil)
+	repository := NewDeviceRepository(database, nil)
 	requestedAt := time.Date(2026, 8, 26, 12, 0, 0, 123, time.UTC)
 	seedResourceReads(t, database, requestedAt)
 	if _, err := database.ExecContext(ctx, "UPDATE entities SET enabled = 0 WHERE id = ?", readEntityC); err != nil {
 		t.Fatal(err)
 	}
 
-	devicesPage, err := repository.ListDevices(ctx, ListDevicesParams{Limit: 1})
+	devicesPage, err := repository.ListDevices(ctx, devices.ListDevicesParams{Limit: 1})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if len(devicesPage.Items) != 1 || devicesPage.Items[0].ID != readDeviceA || !devicesPage.HasMore {
 		t.Fatalf("first device page = %#v", devicesPage)
 	}
-	devicesPage, err = repository.ListDevices(ctx, ListDevicesParams{AfterID: new(readDeviceA), Limit: 1})
+	devicesPage, err = repository.ListDevices(ctx, devices.ListDevicesParams{AfterID: new(readDeviceA), Limit: 1})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -46,7 +48,7 @@ func TestSQLiteResourceReadsUseDeterministicKeysetPages(t *testing.T) {
 		t.Fatalf("second device page = %#v", devicesPage)
 	}
 
-	entitiesPage, err := repository.ListEntities(ctx, ListEntitiesParams{DeviceID: new(readDeviceA), Limit: 1})
+	entitiesPage, err := repository.ListEntities(ctx, devices.ListEntitiesParams{DeviceID: new(readDeviceA), Limit: 1})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -56,8 +58,8 @@ func TestSQLiteResourceReadsUseDeterministicKeysetPages(t *testing.T) {
 		!entitiesPage.HasMore {
 		t.Fatalf("filtered entities = %#v", entitiesPage)
 	}
-	unknownDevice := DeviceID("dev_01890f47-7a6b-7c4d-8e9f-0123456789ff")
-	empty, err := repository.ListEntities(ctx, ListEntitiesParams{DeviceID: &unknownDevice, Limit: 50})
+	unknownDevice := devices.DeviceID("dev_01890f47-7a6b-7c4d-8e9f-0123456789ff")
+	empty, err := repository.ListEntities(ctx, devices.ListEntitiesParams{DeviceID: &unknownDevice, Limit: 50})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -65,7 +67,7 @@ func TestSQLiteResourceReadsUseDeterministicKeysetPages(t *testing.T) {
 		t.Fatalf("unknown device entities = %#v", empty)
 	}
 
-	aggregate, err := repository.GetDevice(ctx, GetDeviceParams{ID: readDeviceA, EntityLimit: 1})
+	aggregate, err := repository.GetDevice(ctx, devices.GetDeviceParams{ID: readDeviceA, EntityLimit: 1})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -73,7 +75,7 @@ func TestSQLiteResourceReadsUseDeterministicKeysetPages(t *testing.T) {
 		aggregate.Entities.Items[0].Entity.ID != readEntityA || !aggregate.Entities.HasMore {
 		t.Fatalf("first device aggregate page = %#v", aggregate)
 	}
-	aggregate, err = repository.GetDevice(ctx, GetDeviceParams{
+	aggregate, err = repository.GetDevice(ctx, devices.GetDeviceParams{
 		ID: readDeviceA, AfterEntityID: new(readEntityA), EntityLimit: 1,
 	})
 	if err != nil {
@@ -85,22 +87,24 @@ func TestSQLiteResourceReadsUseDeterministicKeysetPages(t *testing.T) {
 	}
 	if _, getErr := repository.GetDevice(
 		ctx,
-		GetDeviceParams{ID: unknownDevice, EntityLimit: 50},
+		devices.GetDeviceParams{ID: unknownDevice, EntityLimit: 50},
 	); !errors.Is(
 		getErr,
-		ErrDeviceNotFound,
+		devices.ErrDeviceNotFound,
 	) {
 		t.Fatalf("unknown device error = %v", getErr)
 	}
 
-	history, err := repository.ListEntityCommands(ctx, ListEntityCommandsParams{EntityID: readEntityA, Limit: 1})
+	history, err := repository.ListEntityCommands(
+		ctx, devices.ListEntityCommandsParams{EntityID: readEntityA, Limit: 1},
+	)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if len(history.Items) != 1 || history.Items[0].ID != readCommandB || !history.HasMore {
 		t.Fatalf("first command page = %#v", history)
 	}
-	history, err = repository.ListEntityCommands(ctx, ListEntityCommandsParams{
+	history, err = repository.ListEntityCommands(ctx, devices.ListEntityCommandsParams{
 		EntityID: readEntityA, BeforeRequestedAt: &requestedAt, BeforeID: new(readCommandB), Limit: 1,
 	})
 	if err != nil {
@@ -115,7 +119,7 @@ func TestSQLiteCommandHistoryOrdersWholeAndFractionalSecondsChronologically(t *t
 	t.Parallel()
 	ctx := context.Background()
 	database := openMigratedDatabase(t, filepath.Join(t.TempDir(), "hearth.db"))
-	repository := NewSQLiteRepository(database, nil)
+	repository := NewDeviceRepository(database, nil)
 	exactSecond := time.Date(2026, 8, 26, 12, 0, 0, 0, time.UTC)
 	seedResourceReads(t, database, exactSecond)
 	if _, err := database.ExecContext(ctx, "DELETE FROM commands"); err != nil {
@@ -124,20 +128,20 @@ func TestSQLiteCommandHistoryOrdersWholeAndFractionalSecondsChronologically(t *t
 
 	earlier := newCommandRecord(t, readEntityA, exactSecond)
 	later := newCommandRecord(t, readEntityA, exactSecond.Add(100*time.Millisecond))
-	for _, command := range []CommandRecord{earlier, later} {
+	for _, command := range []devices.CommandRecord{earlier, later} {
 		if _, err := repository.CreateCommand(ctx, command); err != nil {
 			t.Fatal(err)
 		}
 	}
 
-	first, err := repository.ListEntityCommands(ctx, ListEntityCommandsParams{EntityID: readEntityA, Limit: 1})
+	first, err := repository.ListEntityCommands(ctx, devices.ListEntityCommandsParams{EntityID: readEntityA, Limit: 1})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if len(first.Items) != 1 || first.Items[0].ID != later.ID || !first.HasMore {
 		t.Fatalf("first command page = %#v", first)
 	}
-	second, err := repository.ListEntityCommands(ctx, ListEntityCommandsParams{
+	second, err := repository.ListEntityCommands(ctx, devices.ListEntityCommandsParams{
 		EntityID: readEntityA, BeforeRequestedAt: &later.RequestedAt, BeforeID: &later.ID, Limit: 1,
 	})
 	if err != nil {
@@ -162,7 +166,7 @@ func seedResourceReads(t *testing.T, database *sql.DB, requestedAt time.Time) {
 	ctx := context.Background()
 	timestamp := formatTime(requestedAt)
 	for _, device := range []struct {
-		id   DeviceID
+		id   devices.DeviceID
 		name string
 	}{{readDeviceA, "Alpha"}, {readDeviceB, "Beta"}} {
 		if _, err := database.ExecContext(ctx, `
@@ -178,10 +182,13 @@ func seedResourceReads(t *testing.T, database *sql.DB, requestedAt time.Time) {
 		}
 	}
 	for _, entity := range []struct {
-		id       EntityID
-		deviceID DeviceID
+		id       devices.EntityID
+		deviceID devices.DeviceID
 		key      string
-	}{{readEntityA, readDeviceA, "power-a"}, {readEntityB, readDeviceB, "power-b"}, {readEntityC, readDeviceA, "power-c"}} {
+	}{
+		{readEntityA, readDeviceA, "power-a"}, {readEntityB, readDeviceB, "power-b"},
+		{readEntityC, readDeviceA, "power-c"},
+	} {
 		if _, err := database.ExecContext(ctx, `
 			INSERT INTO entities (id, device_id, name, type_id, support_json, created_at, updated_at)
 			VALUES (?, ?, 'Power', 'hearth.power/v1', '{"state":{},"operations":{"set":{}}}', ?, ?)`,
@@ -217,7 +224,7 @@ func seedResourceReads(t *testing.T, database *sql.DB, requestedAt time.Time) {
 		readEntityA, observationID, timestamp, timestamp, observationID); err != nil {
 		t.Fatal(err)
 	}
-	for _, commandID := range []CommandID{readCommandA, readCommandB} {
+	for _, commandID := range []devices.CommandID{readCommandA, readCommandB} {
 		if _, err := database.ExecContext(ctx, `
 			INSERT INTO commands (
 				id, entity_id, adapter_id, operation, parameters_json, correlation_id,

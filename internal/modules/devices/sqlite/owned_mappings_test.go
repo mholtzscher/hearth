@@ -1,4 +1,4 @@
-package devices //nolint:testpackage // Tests exercise the concrete repository against SQLite.
+package sqlite //nolint:testpackage // Tests exercise package-private SQLite persistence behavior.
 
 import (
 	"context"
@@ -6,9 +6,11 @@ import (
 	"path/filepath"
 	"reflect"
 	"testing"
+
+	"github.com/mholtzscher/hearth/internal/modules/devices"
 )
 
-var ownedMappingsFixture = []OwnedMapping{ //nolint:gochecknoglobals // Handwritten repository oracle.
+var ownedMappingsFixture = []devices.OwnedMapping{ //nolint:gochecknoglobals // Handwritten repository oracle.
 	{
 		BindingKey: "light", DeviceID: "dev_01890f47-7a6b-7c4d-8e9f-012345678901",
 		EntityKey: "brightness", EntityID: "ent_01890f47-7a6b-7c4d-8e9f-012345678901",
@@ -33,10 +35,10 @@ func TestSQLiteListOwnedMappingsScopesOrdersAndPaginatesByCompositePosition(t *t
 	repository := seededOwnedMappingsRepository(t)
 
 	for _, limit := range []int{1, 2, 200} {
-		var got []OwnedMapping
-		var after *OwnedMappingPosition
+		var got []devices.OwnedMapping
+		var after *devices.OwnedMappingPosition
 		for {
-			page, err := repository.ListOwnedMappings(ctx, ListOwnedMappingsParams{
+			page, err := repository.ListOwnedMappings(ctx, devices.ListOwnedMappingsParams{
 				AdapterID: "homeassistant", After: after, Limit: limit,
 			})
 			if err != nil {
@@ -53,20 +55,20 @@ func TestSQLiteListOwnedMappingsScopesOrdersAndPaginatesByCompositePosition(t *t
 				t.Fatalf("limit %d non-terminal page = %#v", limit, page)
 			}
 			last := page.Items[len(page.Items)-1]
-			after = &OwnedMappingPosition{BindingKey: last.BindingKey, EntityKey: last.EntityKey}
+			after = &devices.OwnedMappingPosition{BindingKey: last.BindingKey, EntityKey: last.EntityKey}
 		}
 		if !reflect.DeepEqual(got, ownedMappingsFixture) {
 			t.Fatalf("limit %d mappings = %#v, want %#v", limit, got, ownedMappingsFixture)
 		}
 	}
 
-	other, err := repository.ListOwnedMappings(ctx, ListOwnedMappingsParams{
+	other, err := repository.ListOwnedMappings(ctx, devices.ListOwnedMappingsParams{
 		AdapterID: "simulator", Limit: 200,
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	wantOther := []OwnedMapping{{
+	wantOther := []devices.OwnedMapping{{
 		BindingKey: "light", DeviceID: "dev_01890f47-7a6b-7c4d-8e9f-012345678905",
 		EntityKey: "power", EntityID: "ent_01890f47-7a6b-7c4d-8e9f-012345678905",
 	}}
@@ -80,42 +82,42 @@ func TestSQLiteListOwnedMappingsAcceptsLexicalPositions(t *testing.T) {
 	repository := seededOwnedMappingsRepository(t)
 	tests := []struct {
 		name     string
-		position OwnedMappingPosition
-		want     []OwnedMapping
+		position devices.OwnedMappingPosition
+		want     []devices.OwnedMapping
 	}{
 		{
 			name: "within Binding",
-			position: OwnedMappingPosition{
+			position: devices.OwnedMappingPosition{
 				BindingKey: "light", EntityKey: "brightness",
 			},
 			want: ownedMappingsFixture[1:],
 		},
 		{
 			name: "Binding boundary",
-			position: OwnedMappingPosition{
+			position: devices.OwnedMappingPosition{
 				BindingKey: "light", EntityKey: "power",
 			},
 			want: ownedMappingsFixture[2:],
 		},
 		{
 			name: "nonexistent tuple",
-			position: OwnedMappingPosition{
+			position: devices.OwnedMappingPosition{
 				BindingKey: "light", EntityKey: "middle",
 			},
 			want: ownedMappingsFixture[1:],
 		},
 		{
 			name: "after final tuple",
-			position: OwnedMappingPosition{
+			position: devices.OwnedMappingPosition{
 				BindingKey: "light-10", EntityKey: "power",
 			},
-			want: []OwnedMapping{},
+			want: []devices.OwnedMapping{},
 		},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
-			page, err := repository.ListOwnedMappings(context.Background(), ListOwnedMappingsParams{
+			page, err := repository.ListOwnedMappings(context.Background(), devices.ListOwnedMappingsParams{
 				AdapterID: "homeassistant", After: &test.position, Limit: 200,
 			})
 			if err != nil {
@@ -128,27 +130,30 @@ func TestSQLiteListOwnedMappingsAcceptsLexicalPositions(t *testing.T) {
 	}
 }
 
-func seededOwnedMappingsRepository(t *testing.T) *SQLiteRepository {
+func seededOwnedMappingsRepository(t *testing.T) *DeviceRepository {
 	t.Helper()
 	database := openMigratedDatabase(t, filepath.Join(t.TempDir(), "hearth.db"))
-	for index, mapping := range append(append([]OwnedMapping(nil), ownedMappingsFixture...), OwnedMapping{
-		BindingKey: "light", DeviceID: "dev_01890f47-7a6b-7c4d-8e9f-012345678905",
-		EntityKey: "power", EntityID: "ent_01890f47-7a6b-7c4d-8e9f-012345678905",
-	}) {
+	for index, mapping := range append(
+		append([]devices.OwnedMapping(nil), ownedMappingsFixture...),
+		devices.OwnedMapping{
+			BindingKey: "light", DeviceID: "dev_01890f47-7a6b-7c4d-8e9f-012345678905",
+			EntityKey: "power", EntityID: "ent_01890f47-7a6b-7c4d-8e9f-012345678905",
+		},
+	) {
 		adapterID := "homeassistant"
 		if index == len(ownedMappingsFixture) {
 			adapterID = "simulator"
 		}
 		insertOwnedMappingFixture(t, database, adapterID, mapping)
 	}
-	return NewSQLiteRepository(database, firstLightCatalog(t))
+	return NewDeviceRepository(database, firstLightCatalog(t))
 }
 
 func insertOwnedMappingFixture(
 	t *testing.T,
 	database *sql.DB,
 	adapterID string,
-	mapping OwnedMapping,
+	mapping devices.OwnedMapping,
 ) {
 	t.Helper()
 	const timestamp = "2026-09-01T12:00:00Z"

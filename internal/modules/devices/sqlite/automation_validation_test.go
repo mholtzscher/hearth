@@ -1,4 +1,4 @@
-package devices //nolint:testpackage // Tests exercise the package-private devices automation seam through real migrated SQLite.
+package sqlite //nolint:testpackage // Tests exercise package-private SQLite persistence behavior.
 
 import (
 	"context"
@@ -6,12 +6,14 @@ import (
 	"path/filepath"
 	"testing"
 	"time"
+
+	"github.com/mholtzscher/hearth/internal/modules/devices"
 )
 
 // automationValidationFixture registers one stateful commandable Entity and one
 // stateless Entity Event source, which is exactly the kind split the automation
 // Trigger validation must distinguish.
-func automationValidationFixture(t *testing.T) (*Service, EntityID, EntityID) {
+func automationValidationFixture(t *testing.T) (*devices.Service, devices.EntityID, devices.EntityID) {
 	t.Helper()
 	database := openRegistrationDatabase(t, filepath.Join(t.TempDir(), "hearth.db"))
 	now := time.Date(2026, 9, 1, 12, 0, 0, 0, time.UTC)
@@ -39,15 +41,17 @@ func TestValidateObservationTriggerProtectsEntityKindAndStatefulness(t *testing.
 	if err := service.ValidateObservationTrigger(ctx, statefulID); err != nil {
 		t.Fatalf("stateful entity rejected: %v", err)
 	}
-	if err := service.ValidateObservationTrigger(ctx, eventSourceID); !errors.Is(err, ErrAutomationTriggerSource) {
+	if err := service.ValidateObservationTrigger(ctx, eventSourceID); !errors.Is(
+		err, devices.ErrAutomationTriggerSource,
+	) {
 		t.Fatalf("stateless entity error = %v, want ErrAutomationTriggerSource", err)
 	}
 	missingID := newTestEntityID(t)
-	if err := service.ValidateObservationTrigger(ctx, missingID); !errors.Is(err, ErrEntityNotFound) {
+	if err := service.ValidateObservationTrigger(ctx, missingID); !errors.Is(err, devices.ErrEntityNotFound) {
 		t.Fatalf("missing entity error = %v, want ErrEntityNotFound", err)
 	}
-	if err := service.ValidateObservationTrigger(ctx, EntityID("ent_not-a-uuid")); !errors.Is(
-		err, ErrAutomationTriggerSource,
+	if err := service.ValidateObservationTrigger(ctx, devices.EntityID("ent_not-a-uuid")); !errors.Is(
+		err, devices.ErrAutomationTriggerSource,
 	) {
 		t.Fatalf("malformed entity error = %v, want ErrAutomationTriggerSource", err)
 	}
@@ -93,23 +97,23 @@ func TestValidateEntityEventTriggerRequiresExactSupportedName(t *testing.T) {
 	}
 	if err := service.ValidateEntityEventTrigger(
 		ctx, eventSourceID, "long_press",
-	); !errors.Is(err, ErrAutomationTriggerSource) {
+	); !errors.Is(err, devices.ErrAutomationTriggerSource) {
 		t.Fatalf("unsupported event error = %v, want ErrAutomationTriggerSource", err)
 	}
 	if err := service.ValidateEntityEventTrigger(
 		ctx, eventSourceID, "Not A Slug",
-	); !errors.Is(err, ErrAutomationTriggerSource) {
+	); !errors.Is(err, devices.ErrAutomationTriggerSource) {
 		t.Fatalf("malformed event error = %v, want ErrAutomationTriggerSource", err)
 	}
 	if err := service.ValidateEntityEventTrigger(
 		ctx, statefulID, "single_press",
-	); !errors.Is(err, ErrAutomationTriggerSource) {
+	); !errors.Is(err, devices.ErrAutomationTriggerSource) {
 		t.Fatalf("stateful entity error = %v, want ErrAutomationTriggerSource", err)
 	}
 	missingID := newTestEntityID(t)
 	if err := service.ValidateEntityEventTrigger(
 		ctx, missingID, "single_press",
-	); !errors.Is(err, ErrEntityNotFound) {
+	); !errors.Is(err, devices.ErrEntityNotFound) {
 		t.Fatalf("missing entity error = %v, want ErrEntityNotFound", err)
 	}
 }
@@ -120,10 +124,10 @@ func TestValidateEntityEventTriggerRequiresExactSupportedName(t *testing.T) {
 func TestValidateCommandStaysTheExecutionEligibilityFreeSeam(t *testing.T) {
 	t.Parallel()
 	service, statefulID, _ := automationValidationFixture(t)
-	parameters, err := service.ValidateCommand(context.Background(), CommandInput{
+	parameters, err := service.ValidateCommand(context.Background(), devices.CommandInput{
 		EntityID:      statefulID,
-		OperationName: OperationNameSet,
-		Parameters:    CommandParameters(`{"value":true}`),
+		OperationName: devices.OperationNameSet,
+		Parameters:    devices.CommandParameters(`{"value":true}`),
 	})
 	if err != nil {
 		t.Fatal(err)

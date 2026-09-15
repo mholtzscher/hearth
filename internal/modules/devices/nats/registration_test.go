@@ -15,6 +15,7 @@ import (
 	contractsv1 "github.com/mholtzscher/hearth/contracts/v1"
 	"github.com/mholtzscher/hearth/internal/contracts/v1/natswire"
 	"github.com/mholtzscher/hearth/internal/modules/devices"
+	devicessqlite "github.com/mholtzscher/hearth/internal/modules/devices/sqlite"
 	platformdb "github.com/mholtzscher/hearth/internal/platform/db"
 	"github.com/mholtzscher/hearth/sdk/adapter"
 )
@@ -198,8 +199,8 @@ func TestStaleRuntimeInvalidRegistrationFencesSDKSession(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	repository := devices.NewSQLiteRepository(database, catalog)
-	service := devices.NewService(devices.SQLiteStores(repository), nil, catalog, devices.Dependencies{})
+	repository := devicessqlite.NewDeviceRepository(database, catalog)
+	service := devices.NewService(devicessqlite.DeviceStores(repository), nil, catalog, devices.Dependencies{})
 	sessions, err := StartSessionServer(connection, validator, service, service, slog.New(slog.DiscardHandler))
 	if err != nil {
 		t.Fatal(err)

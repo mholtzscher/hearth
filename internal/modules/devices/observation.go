@@ -136,7 +136,11 @@ func copyProjectionResult(result ProjectionResult) ProjectionResult {
 	return cloned
 }
 
-func copyEntityWithState(view EntityWithState) EntityWithState {
+// CopyEntityWithState returns an EntityWithState that shares no mutable memory
+// with view, so a caller cannot change a stored or returned Entity through its
+// support bytes, State value, availability reason, or timestamp pointers.
+// Persistence adapters return owned views through it.
+func CopyEntityWithState(view EntityWithState) EntityWithState {
 	cloned := view
 	cloned.Entity.Support = append(EntitySupport(nil), view.Entity.Support...)
 	if view.State != nil {
@@ -147,7 +151,7 @@ func copyEntityWithState(view EntityWithState) EntityWithState {
 		sourceObservedAt := *view.Availability.SourceObservedAt
 		cloned.Availability.SourceObservedAt = &sourceObservedAt
 	}
-	cloned.Availability.Reason = copyHealthReason(view.Availability.Reason)
+	cloned.Availability.Reason = CopyHealthReason(view.Availability.Reason)
 	return cloned
 }
 

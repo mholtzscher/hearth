@@ -6,7 +6,7 @@ import (
 )
 
 func (service *Service) ListDevices(ctx context.Context, params ListDevicesParams) (Page[Device], error) {
-	if !validPageLimit(params.Limit) {
+	if !ValidPageLimit(params.Limit) {
 		return Page[Device]{}, ErrInvalidPage
 	}
 	if params.AfterID != nil {
@@ -24,7 +24,7 @@ func (service *Service) ListDevices(ctx context.Context, params ListDevicesParam
 }
 
 func (service *Service) GetDevice(ctx context.Context, params GetDeviceParams) (DeviceAggregate, error) {
-	if !validPageLimit(params.EntityLimit) {
+	if !ValidPageLimit(params.EntityLimit) {
 		return DeviceAggregate{}, ErrInvalidPage
 	}
 	if _, err := ParseDeviceID(string(params.ID)); err != nil {
@@ -41,7 +41,7 @@ func (service *Service) GetDevice(ctx context.Context, params GetDeviceParams) (
 	}
 	items := make([]EntityWithState, len(aggregate.Entities.Items))
 	for index, entity := range aggregate.Entities.Items {
-		items[index] = copyEntityWithState(entity)
+		items[index] = CopyEntityWithState(entity)
 	}
 	return DeviceAggregate{
 		Device: aggregate.Device,
@@ -52,7 +52,7 @@ func (service *Service) GetDevice(ctx context.Context, params GetDeviceParams) (
 }
 
 func (service *Service) ListEntities(ctx context.Context, params ListEntitiesParams) (Page[EntityWithState], error) {
-	if !validPageLimit(params.Limit) {
+	if !ValidPageLimit(params.Limit) {
 		return Page[EntityWithState]{}, ErrInvalidPage
 	}
 	if params.DeviceID != nil {
@@ -71,7 +71,7 @@ func (service *Service) ListEntities(ctx context.Context, params ListEntitiesPar
 	}
 	items := make([]EntityWithState, len(page.Items))
 	for index, entity := range page.Items {
-		items[index] = copyEntityWithState(entity)
+		items[index] = CopyEntityWithState(entity)
 	}
 	return Page[EntityWithState]{Items: items, HasMore: page.HasMore}, nil
 }
@@ -84,7 +84,7 @@ func (service *Service) GetEntity(ctx context.Context, id EntityID) (EntityWithS
 	if err != nil {
 		return EntityWithState{}, err
 	}
-	return copyEntityWithState(view), nil
+	return CopyEntityWithState(view), nil
 }
 
 func (service *Service) GetCommand(ctx context.Context, id CommandID) (CommandRecord, error) {
@@ -95,14 +95,14 @@ func (service *Service) GetCommand(ctx context.Context, id CommandID) (CommandRe
 	if err != nil {
 		return CommandRecord{}, err
 	}
-	return copyCommandRecord(command), nil
+	return CopyCommandRecord(command), nil
 }
 
 func (service *Service) ListEntityCommands(
 	ctx context.Context,
 	params ListEntityCommandsParams,
 ) (Page[CommandRecord], error) {
-	if !validPageLimit(params.Limit) || (params.BeforeRequestedAt == nil) != (params.BeforeID == nil) {
+	if !ValidPageLimit(params.Limit) || (params.BeforeRequestedAt == nil) != (params.BeforeID == nil) {
 		return Page[CommandRecord]{}, ErrInvalidPage
 	}
 	if _, err := ParseEntityID(string(params.EntityID)); err != nil {
@@ -127,12 +127,22 @@ func (service *Service) ListEntityCommands(
 	}
 	items := make([]CommandRecord, len(page.Items))
 	for index, command := range page.Items {
-		items[index] = copyCommandRecord(command)
+		items[index] = CopyCommandRecord(command)
 	}
 	return Page[CommandRecord]{Items: items, HasMore: page.HasMore}, nil
 }
 
-func copyCommandRecord(command CommandRecord) CommandRecord {
+// ValidPageLimit reports whether limit is a page size Core serves: at least one
+// and at most 200 items. Services and persistence read guards share this policy.
+func ValidPageLimit(limit int) bool {
+	return limit >= 1 && limit <= 200
+}
+
+// CopyCommandRecord returns a CommandRecord that shares no mutable memory with
+// command, so a caller cannot change a stored or returned record through arrays
+// or pointers it still holds. Persistence adapters return owned records
+// through it.
+func CopyCommandRecord(command CommandRecord) CommandRecord {
 	cloned := command
 	cloned.Parameters = append(CommandParameters(nil), command.Parameters...)
 	if command.RuntimeID != nil {

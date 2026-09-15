@@ -25,6 +25,7 @@ import (
 	contractsv1 "github.com/mholtzscher/hearth/contracts/v1"
 	"github.com/mholtzscher/hearth/internal/modules/devices"
 	devicesnats "github.com/mholtzscher/hearth/internal/modules/devices/nats"
+	devicessqlite "github.com/mholtzscher/hearth/internal/modules/devices/sqlite"
 	platformdb "github.com/mholtzscher/hearth/internal/platform/db"
 	"github.com/mholtzscher/hearth/internal/testbroker"
 )
@@ -84,7 +85,7 @@ func TestRunConnectsNATSAndMosquitto(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	repository := devices.NewSQLiteRepository(database, catalog)
+	repository := devicessqlite.NewDeviceRepository(database, catalog)
 	validator, err := contractsv1.Compile()
 	if err != nil {
 		t.Fatal(err)
@@ -98,7 +99,7 @@ func TestRunConnectsNATSAndMosquitto(t *testing.T) {
 		t.Fatal(err)
 	}
 	service := devices.NewService(
-		devices.SQLiteStores(repository),
+		devicessqlite.DeviceStores(repository),
 		devicesnats.NewCommandSender(coreConnection, validator),
 		catalog,
 		devices.Dependencies{},

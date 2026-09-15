@@ -7,6 +7,10 @@ import (
 	"time"
 )
 
+// testRuntimeID is the simulator runtime the health and availability fixtures
+// claim before they act on an Entity.
+const testRuntimeID = RuntimeID("run_01890f47-7a6b-7c4d-8e9f-0123456789ab")
+
 type healthRepositoryStub struct {
 	claimWrites              []ClaimRuntimeWrite
 	heartbeatWrites          []HeartbeatWrite
@@ -166,7 +170,7 @@ func TestServiceAdapterReadsReturnOwnedCopiesAndValidatePages(t *testing.T) {
 	repository.adapter.Health.Reason = &HealthReason{Code: "hearth.network_unreachable"}
 	repository.adapterPage = Page[AdapterInstance]{Items: []AdapterInstance{repository.adapter}, HasMore: true}
 	repository.healthHistoryPage = Page[HealthTransition]{Items: []HealthTransition{{
-		ReceiveOrder: 4, Status: string(AdapterHealthUnhealthy), Source: healthSourceAdapter,
+		ReceiveOrder: 4, Status: string(AdapterHealthUnhealthy), Source: "adapter",
 		Reason:           &HealthReason{Code: "hearth.network_unreachable"},
 		SourceObservedAt: &sourceObservedAt, ObservedAt: now,
 	}}, HasMore: true}
@@ -234,10 +238,10 @@ func healthyAdapterFixture(at time.Time) AdapterInstance {
 	lastHeartbeatAt := at.Add(-time.Second)
 	sourceObservedAt := at.Add(-time.Second)
 	return AdapterInstance{ID: "simulator", Health: AdapterHealth{
-		Status: AdapterHealthHealthy, Source: healthSourceAdapter,
+		Status: AdapterHealthHealthy, Source: "adapter",
 		Since: at.Add(-time.Minute), EvidenceAt: at, SourceObservedAt: &sourceObservedAt,
 		Runtime: &RuntimeEvidence{
-			ID: testRuntimeID, Status: runtimeStatusOnline, SoftwareName: "hearth-simulator",
+			ID: testRuntimeID, Status: RuntimeStatusOnline, SoftwareName: "hearth-simulator",
 			SoftwareVersion: "0.1.0", ClaimedAt: at.Add(-time.Hour),
 			LastHeartbeatAt: &lastHeartbeatAt, LeaseExpiresAt: at.Add(adapterLeaseDuration),
 		},

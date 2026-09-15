@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/mholtzscher/hearth/internal/modules/devices"
+	devicessqlite "github.com/mholtzscher/hearth/internal/modules/devices/sqlite"
 	platformdb "github.com/mholtzscher/hearth/internal/platform/db"
 )
 
@@ -43,9 +44,9 @@ func newEntityEventAPIFixture(t *testing.T) entityEventAPIFixture {
 	if err != nil {
 		t.Fatal(err)
 	}
-	repository := devices.NewSQLiteRepository(database, catalog)
+	repository := devicessqlite.NewDeviceRepository(database, catalog)
 	now := time.Date(2026, 9, 10, 12, 0, 0, 0, time.UTC)
-	service := devices.NewService(devices.SQLiteStores(repository), nil, catalog, devices.Dependencies{
+	service := devices.NewService(devicessqlite.DeviceStores(repository), nil, catalog, devices.Dependencies{
 		Now: func() time.Time { return now },
 	})
 	if claimErr := repository.ClaimAdapterRuntime(ctx, devices.ClaimRuntimeWrite{

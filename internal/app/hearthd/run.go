@@ -17,6 +17,7 @@ import (
 	automationsnats "github.com/mholtzscher/hearth/internal/modules/automations/nats"
 	"github.com/mholtzscher/hearth/internal/modules/devices"
 	devicesnats "github.com/mholtzscher/hearth/internal/modules/devices/nats"
+	devicessqlite "github.com/mholtzscher/hearth/internal/modules/devices/sqlite"
 	platformdb "github.com/mholtzscher/hearth/internal/platform/db"
 )
 
@@ -94,7 +95,7 @@ func Run(
 		return failStage("migrate_database", err)
 	}
 	logStartupStage(ctx, coreLogger, "database_migrated")
-	repository := devices.NewSQLiteRepository(database, catalog)
+	repository := devicessqlite.NewDeviceRepository(database, catalog)
 	startupTime := time.Now().UTC()
 	// Interrupted records are committed before either transport opens; their
 	// Command history is authoritative and no Device Fact is published for Core's
@@ -149,7 +150,7 @@ func Run(
 	shutdown.relay = relay
 	commandSender := devicesnats.NewCommandSender(connection, validator)
 	service := devices.NewService(
-		devices.SQLiteStores(repository),
+		devicessqlite.DeviceStores(repository),
 		commandSender,
 		catalog,
 		devices.Dependencies{
