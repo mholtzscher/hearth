@@ -11,6 +11,7 @@ import (
 	"github.com/nats-io/nats.go/jetstream"
 
 	"github.com/mholtzscher/hearth/internal/modules/automations"
+	"github.com/mholtzscher/hearth/internal/modules/devices"
 )
 
 // recordingDeviceFactMsg records Ack, NakWithDelay, and Term without a broker.
@@ -169,6 +170,25 @@ func TestHandleDeviceFactMessageDisposition(t *testing.T) {
 			failNext:     context.DeadlineExceeded,
 			wantNakDelay: DeviceFactConsumerNakDelay, wantAdmitted: 1,
 		},
+		{
+			name: "unstable condition snapshot redelivered", message: validObservation,
+			failNext:     automations.ErrConditionSnapshotUnstable,
+			wantNakDelay: DeviceFactConsumerNakDelay, wantAdmitted: 1,
+		},
+		{
+			// Coverage recovery is internal orchestration; if it ever escapes it is
+			// transient, never a permanent malformed-Fact rejection.
+			name: "leaked coverage request redelivered", message: validObservation,
+			failNext:     automations.ErrConditionSnapshotRequired,
+			wantNakDelay: DeviceFactConsumerNakDelay, wantAdmitted: 1,
+		},
+		{
+			// Corrupt stored State must retain the Fact for repair instead of
+			// terminating it as a malformed payload.
+			name: "corrupt condition state redelivered", message: validObservation,
+			failNext:     devices.ErrEntityStateSnapshotCorrupt,
+			wantNakDelay: DeviceFactConsumerNakDelay, wantAdmitted: 1,
+		},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -213,6 +233,16 @@ func TestHandleDeviceFactMessageBoundsAdmission(t *testing.T) {
 	if deadlines[0] <= 0 || deadlines[0] > DeviceFactAdmissionTimeout {
 		t.Fatalf("admission deadline remaining = %s, want within (0, %s]",
 			deadlines[0], DeviceFactAdmissionTimeout)
+	}
+}
+
+// The NATS admission deadline must be the authoritative automations admission
+// budget, not a second duration literal that could drift from it.
+func TestDeviceFactAdmissionTimeoutAliasesAutomationBudget(t *testing.T) {
+	t.Parallel()
+	if DeviceFactAdmissionTimeout != automations.AutomationAdmissionTimeout {
+		t.Fatalf("DeviceFactAdmissionTimeout = %s, want the automations budget %s",
+			DeviceFactAdmissionTimeout, automations.AutomationAdmissionTimeout)
 	}
 }
 

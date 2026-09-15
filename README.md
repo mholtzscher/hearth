@@ -82,6 +82,12 @@ When a pending fact cannot be mapped to a valid message, the relay preserves the
 
 Anyone with broker access can read canonical State values, forge a fact or publish directly into `HEARTH_DEVICE_FACTS_V1`. Facts are unsigned, Hearth adds no fact authentication or authorization, and this feature widens no deployment boundary: trust the broker exactly as for the rest of Hearth's trusted network, and reserve `hearth.v1.core.fact.>` publish permission for Core when NATS authorization exists.
 
+### Automation Conditions
+
+An Automation may require current Entity State before it runs. A Trigger decides *when* an Automation is considered; an optional `conditions` tree decides *whether* that consideration may admit a Run, evaluated once at admission against a coherent batch of retained State. Nodes compose with `all`, `any`, and `not` under three-valued (`true`/`false`/`unknown`) logic, and only a true root admits. Missing, expired, or incompatible evidence is `unknown`, so absence is not permission; a false or unknown decision records an explainable Skip rather than silently doing nothing.
+
+Conditions are optional, and a definition without them keeps its existing unconditional-after-Trigger behavior. Manual invocation applies Conditions unless the operator explicitly requests `{"bypass_conditions": true}`, which bypasses only Conditions — never admission gates, busy checks, or execution-time Command validation. See [the Automation Conditions guide](docs/automation-conditions.md) for the definition field contract, a complete create request, manual and bypass requests, and history inspection.
+
 ### Home Assistant migration adapter
 
 Copy `configs/homeassistant.example.yaml` to the ignored `configs/homeassistant.yaml`, configure one Home Assistant light, and place a long-lived access token at the configured ignored `token_file` path. With NATS and `hearthd` running, start the disposable adapter:
@@ -255,6 +261,7 @@ See [the logging guide](docs/logging.md) for startup/failure diagnosis and safet
 - [`CONTEXT.md`](./CONTEXT.md): canonical project language
 - [`docs/product.md`](./docs/product.md): audience, goals, boundaries, and success
 - [`docs/architecture.md`](./docs/architecture.md): current accepted architectural constraints
+- [`docs/automation-conditions.md`](./docs/automation-conditions.md): Automation Conditions contract and operator examples
 - [`docs/logging.md`](./docs/logging.md): application logging and operator diagnosis
 - [`docs/adr/`](./docs/adr/): durable architectural decisions and their rationale
 - [`docs/plans/`](./docs/plans/): implementation plans

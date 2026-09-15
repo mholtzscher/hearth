@@ -58,3 +58,10 @@ ON CONFLICT (entity_id) DO UPDATE SET
     source_updated_at = excluded.source_updated_at,
     observed_at = excluded.observed_at,
     receive_order = excluded.receive_order;
+
+-- GetEntityStateSnapshot is deliberately hand-written in
+-- entity_state_snapshot.go instead of sqlc-generated here: sqlc v1.31.1 cannot
+-- parse SQLite table-valued functions such as json_each, and the coherent
+-- snapshot read needs json_each over one JSON array parameter so a
+-- cross-Automation Condition fan-out never spends one SQLite host parameter per
+-- Entity.

@@ -303,7 +303,8 @@ func TestMigrationEnforcesAutomationStorageInvariants(t *testing.T) {
 		runID,
 	)
 	mustExec(t, database, insertHistorySkipSQL,
-		skipID, automationID, migrationTimestamp, factID, factEntityID, factObservationID, `true`, migrationTimestamp)
+		skipID, automationID, migrationTimestamp, factID, factEntityID, factObservationID, `true`, migrationTimestamp,
+		matchedTriggerJSON(t), `{"mode":"not_configured","bypass_requested":false}`)
 	mustExec(t, database, `INSERT INTO automation_fact_receipts VALUES (?, ?, 'skip', ?)`,
 		factID, automationID, skipID)
 

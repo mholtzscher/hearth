@@ -8,6 +8,7 @@ import (
 
 	"github.com/mholtzscher/hearth/internal/modules/automations"
 	automationssqlite "github.com/mholtzscher/hearth/internal/modules/automations/sqlite"
+	"github.com/mholtzscher/hearth/internal/modules/devices"
 )
 
 // blockingAdmissionRepository holds admission before commit and worker registration.
@@ -31,22 +32,24 @@ func newBlockingAdmissionRepository(
 
 func (repository *blockingAdmissionRepository) AdmitManualRun(
 	ctx context.Context,
-	id automations.AutomationID,
+	input automations.ManualRunInput,
+	snapshot devices.EntityStateSnapshot,
 	now time.Time,
-) (automations.AutomationRun, error) {
+) (automations.ManualAdmissionResult, error) {
 	repository.enteredOnce.Do(func() { close(repository.entered) })
 	<-repository.release
-	return repository.AutomationRepository.AdmitManualRun(ctx, id, now)
+	return repository.AutomationRepository.AdmitManualRun(ctx, input, snapshot, now)
 }
 
 func (repository *blockingAdmissionRepository) AdmitDeviceFact(
 	ctx context.Context,
 	fact automations.DeviceFact,
+	snapshot devices.EntityStateSnapshot,
 	now time.Time,
 ) (automations.AdmissionResult, error) {
 	repository.enteredOnce.Do(func() { close(repository.entered) })
 	<-repository.release
-	return repository.AutomationRepository.AdmitDeviceFact(ctx, fact, now)
+	return repository.AutomationRepository.AdmitDeviceFact(ctx, fact, snapshot, now)
 }
 
 // Drain must track a manual admission before commit, then join its worker
@@ -65,7 +68,7 @@ func TestDrainJoinsManualAdmissionInFlightAtStop(t *testing.T) {
 	admitted := make(chan automations.AutomationRun, 1)
 	admitFailed := make(chan error, 1)
 	go func() {
-		run, err := service.StartManualRun(ctx, record.ID)
+		run, err := service.StartManualRun(ctx, automations.ManualRunInput{AutomationID: record.ID})
 		if err != nil {
 			admitFailed <- err
 			return
@@ -237,7 +240,9 @@ func TestDrainReturnsWhenRefusedAdmissionReservationReleases(t *testing.T) {
 	// The device gate is closed, so the admission reserves and then abandons its
 	// slot without committing a Run.
 	scripted.setCommandAdmissionOpen(false)
-	if _, err := service.StartManualRun(ctx, record.ID); err == nil {
+	if _, err := service.StartManualRun(
+		ctx, automations.ManualRunInput{AutomationID: record.ID},
+	); err == nil {
 		t.Fatal("StartManualRun with a closed device gate created a Run")
 	}
 	waiting, cancel := context.WithTimeout(context.Background(), 5*time.Second)

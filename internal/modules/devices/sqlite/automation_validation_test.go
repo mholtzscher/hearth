@@ -118,6 +118,68 @@ func TestValidateEntityEventTriggerRequiresExactSupportedName(t *testing.T) {
 	}
 }
 
+// TestValidateConditionEntitySharesTheStatefulReferenceRule protects the
+// devices seam A6 rule: a Condition Entity reference must currently exist and be
+// stateful, so a stateless Entity is the condition-specific permanent reference
+// error while a missing Entity stays distinguishable. Enablement is deliberately
+// not required, matching Observation Trigger validation.
+func TestValidateConditionEntitySharesTheStatefulReferenceRule(t *testing.T) {
+	t.Parallel()
+	service, statefulID, eventSourceID := automationValidationFixture(t)
+	ctx := context.Background()
+
+	if err := service.ValidateConditionEntity(ctx, statefulID); err != nil {
+		t.Fatalf("stateful entity rejected: %v", err)
+	}
+	if err := service.ValidateConditionEntity(ctx, eventSourceID); !errors.Is(
+		err, devices.ErrAutomationConditionEntity,
+	) {
+		t.Fatalf("stateless entity error = %v, want ErrAutomationConditionEntity", err)
+	}
+	if err := service.ValidateObservationTrigger(ctx, eventSourceID); !errors.Is(
+		err, devices.ErrAutomationTriggerSource,
+	) {
+		t.Fatalf("Trigger stateless entity error = %v, want ErrAutomationTriggerSource", err)
+	}
+	missingID := newTestEntityID(t)
+	if err := service.ValidateConditionEntity(ctx, missingID); !errors.Is(err, devices.ErrEntityNotFound) {
+		t.Fatalf("missing entity error = %v, want ErrEntityNotFound", err)
+	}
+	if err := service.ValidateConditionEntity(ctx, devices.EntityID("ent_not-a-uuid")); !errors.Is(
+		err, devices.ErrAutomationConditionEntity,
+	) {
+		t.Fatalf("malformed entity error = %v, want ErrAutomationConditionEntity", err)
+	}
+}
+
+// TestValidateConditionEntityAcceptsDisabledNeverObservedEntity protects that
+// a Condition reference is save-time valid even when the Entity is disabled and
+// has no accepted State, because availability and freshness are evaluation
+// results rather than definition errors.
+func TestValidateConditionEntityAcceptsDisabledNeverObservedEntity(t *testing.T) {
+	t.Parallel()
+	database := openRegistrationDatabase(t, filepath.Join(t.TempDir(), "hearth.db"))
+	now := time.Date(2026, 9, 1, 12, 0, 0, 0, time.UTC)
+	service, _ := newEntityEventTestService(t, database, &now)
+	disabled := false
+	registration := validDomainRegistration()
+	registration.Entities[0].InitiallyEnabled = &disabled
+	binding, registerErr := service.Register(
+		context.Background(), entityEventTestAdapter, entityEventTestRuntimeID, registration,
+	)
+	if registerErr != nil {
+		t.Fatal(registerErr)
+	}
+	if binding.Entities[0].Enabled {
+		t.Fatal("fixture entity is enabled, want disabled")
+	}
+	if validateErr := service.ValidateConditionEntity(
+		context.Background(), binding.Entities[0].EntityID,
+	); validateErr != nil {
+		t.Fatalf("disabled never-observed entity rejected: %v", validateErr)
+	}
+}
+
 // TestValidateCommandStaysTheExecutionEligibilityFreeSeam protects that the
 // devices seam exposes normalized parameters without requiring enablement or
 // availability, which is what the automation definition validator consumes.

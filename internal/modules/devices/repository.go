@@ -99,6 +99,7 @@ type ReadRepository interface {
 	GetDevice(context.Context, GetDeviceParams) (DeviceAggregate, error)
 	ListEntities(context.Context, ListEntitiesParams) (Page[EntityWithState], error)
 	GetEntity(context.Context, EntityID) (EntityWithState, error)
+	GetEntityStateSnapshot(context.Context, []EntityID) (EntityStateSnapshot, error)
 	GetCommand(context.Context, CommandID) (CommandRecord, error)
 	ListEntityCommands(context.Context, ListEntityCommandsParams) (Page[CommandRecord], error)
 	ListEntityStateHistory(context.Context, ListEntityStateHistoryParams) (Page[EntityStateHistoryEntry], error)

@@ -4,6 +4,7 @@
 **Supersedes:** [Entity Event automations](entity-event-automations.md).
 **Baseline:** `1f9a2b0`; Device Facts are implemented. Do not restore the automation module removed in `423addb` wholesale.
 **Effort:** XL, split into four ordered deliverables.
+**Follow-on:** [Automation Conditions](automation-conditions.md) specifies optional current-State Conditions, explicit manual bypass, and condition-blocked automatic/manual Skips. It amends §3.1's definition field list, §3.4–§3.5's admission contracts, §4's current-State lookup exclusion (history lookups remain excluded), and the `AutomationSkip`/`AutomationSkipReason` and manual-admission type/interface listings below. The original implementation baseline is retained here; use the follow-on spec for those changed contracts.
 
 ## 1. Problem statement
 
