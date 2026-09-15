@@ -235,8 +235,10 @@ func TestPruneHistoryKeepsRunningRunsAndFactReceipts(t *testing.T) {
 	}
 	<-started
 
-	cutoff := runtimeTestNow.Add(time.Second)
-	if _, err := service.PruneHistory(ctx, cutoff, 10); err != nil {
+	// A sweep one hour past the retention window makes the fixture's own
+	// terminal Run eligible while leaving the gated Run running.
+	sweepTime := runtimeTestNow.Add(runtimeTestHistoryRetention + time.Hour)
+	if err := service.PruneHistory(ctx, sweepTime); err != nil {
 		t.Fatal(err)
 	}
 	if history := listHistory(t, service, factAutomation.ID); len(history) != 0 {

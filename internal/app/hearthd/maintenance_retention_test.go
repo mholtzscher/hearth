@@ -13,11 +13,11 @@ import (
 	platformdb "github.com/mholtzscher/hearth/internal/platform/db"
 )
 
-// This test protects the single hourly maintenance pass and fails if Entity
-// Event retention is not wired into it, if Observation pruning stops running
-// beside it, or if the pass sweeps rows inside a window. The injected interval
-// keeps the pass testable without waiting an hour.
-func TestMaintenancePrunesBothRetentions(t *testing.T) {
+// This test protects the app wiring of device retention through the shared
+// history pruning worker and fails if Observation or Entity Event pruning is
+// dropped from a pass, uses the wrong window, or sweeps rows inside a window.
+// The services carry the retention windows, so a pass needs no window argument.
+func TestHistoryPruneSchedulerPrunesDeviceRetentions(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	databasePath := filepath.Join(t.TempDir(), "hearth.db")
@@ -43,7 +43,8 @@ func TestMaintenancePrunesBothRetentions(t *testing.T) {
 	}
 	service := devices.NewService(
 		devices.SQLiteStores(devices.NewSQLiteRepository(database, catalog)),
-		nil, catalog, devices.Dependencies{},
+		nil, catalog,
+		devices.Dependencies{ObservationRetention: 30 * 24 * time.Hour},
 	)
 	// The same pass bounds Automation history through the automations service.
 	// This fixture seeds no Automation rows, so the pass must not disturb the
@@ -51,27 +52,19 @@ func TestMaintenancePrunesBothRetentions(t *testing.T) {
 	automationService := automations.NewService(
 		automations.NewSQLiteRepository(database, automations.AutomationDependencies{}),
 		nil,
-		automations.AutomationDependencies{},
+		automations.AutomationDependencies{HistoryRetention: 30 * 24 * time.Hour},
 	)
 	runContext, cancelRun := context.WithCancel(ctx)
 	defer cancelRun()
-	workerStopped := make(chan struct{})
-	go func() {
-		defer close(workerStopped)
-		pruneRetainedHistory(
-			runContext, service, automationService, slog.New(slog.DiscardHandler),
-			30*24*time.Hour, 30*24*time.Hour, 5*time.Millisecond,
-		)
-	}()
+	worker := startHistoryPruning(
+		runContext, slog.New(slog.DiscardHandler), service, automationService,
+	)
 	waitForMatrixCondition(t, 10*time.Second, func() (bool, error) {
 		return countRetentionRows(ctx, database, "entity_events") == 1 &&
 			countRetentionRows(ctx, database, "observations") == 1, nil
 	})
-	cancelRun()
-	select {
-	case <-workerStopped:
-	case <-time.After(5 * time.Second):
-		t.Fatal("maintenance worker did not stop after cancellation")
+	if stopErr := worker.Stop(context.Background()); stopErr != nil {
+		t.Fatalf("stopping the history prune worker: %v", stopErr)
 	}
 
 	// Only the rows inside their window survive, and the worker touched both

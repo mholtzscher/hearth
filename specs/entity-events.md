@@ -166,7 +166,7 @@ Name, disposition, and timestamp columns are NOT NULL. `fingerprint` is a NOT NU
 
 **SQLite retains events for 30 days from `recorded_at`.** This exceeds the seven-day stream window, and events have no current-State anchor. Define internal constant `EntityEventHistoryRetention`; do not add Core configuration.
 
-The existing hourly maintenance worker calls `Service.DeleteExpiredEntityEvents`. The service deletes eligible events in batches of 500, using one transaction per batch, until a batch deletes fewer than 500 rows or the context ends. Use one cutoff per sweep, delete records strictly older than it, and release the connection between batches. Never prune at startup. Do not add another timer or change Observation retention.
+The shared startup and hourly maintenance worker calls devices' `Service.PruneHistory`, which invokes `Service.DeleteExpiredEntityEvents` alongside observation pruning. The service deletes eligible events in batches of 500, using one transaction per batch, until a batch deletes fewer than 500 rows or the context ends. Use one cutoff per sweep, delete records strictly older than it, and release the connection between batches. The startup sweep runs in the background after recovery and never gates readiness; subsequent passes start one hour after the preceding pass finishes. Do not add another timer or change Observation retention.
 
 The SQLite row provides duplicate protection only while retained. Database loss, clock anomalies that invalidate retention assumptions, or publication of an archived envelope after pruning can produce another first-seen record. Reading history never executes work.
 

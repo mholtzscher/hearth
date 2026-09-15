@@ -184,7 +184,7 @@ func (service *Service) RecordEntityEvent(
 // fixed retention window, in bounded batches of one transaction each. The
 // sweep uses one cutoff derived from the supplied Core now and deletes records
 // strictly older than it; history has no current-State anchor, so nothing is
-// exempt. Never prune at startup: the caller owns the maintenance schedule.
+// exempt. The caller owns the startup and periodic maintenance schedule.
 func (service *Service) DeleteExpiredEntityEvents(ctx context.Context, now time.Time) error {
 	if now.IsZero() {
 		return errors.New("entity event prune time is required")

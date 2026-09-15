@@ -1,10 +1,10 @@
 http_addr: 127.0.0.1:8080
 nats_url: nats://127.0.0.1:4222
 sqlite_path: .data/hearthd.db
-# Observation retention window (default 30d, minimum 8d). Applies on the next hourly prune pass.
+# Observation retention window (default 30d, minimum 8d). Applies on the startup prune pass.
 observation_retention: 720h
 # Automation history retention window for terminal Runs and Skips (default 30d, minimum 8d).
-# Applies on the next hourly prune pass; matched Device Fact receipts are retained.
+# Applies on the startup prune pass; matched Device Fact receipts are retained.
 automation_history_retention: 720h
 
 # IANA timezone; required, changes take effect after restart.

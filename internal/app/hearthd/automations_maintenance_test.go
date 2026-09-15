@@ -13,13 +13,13 @@ import (
 	platformdb "github.com/mholtzscher/hearth/internal/platform/db"
 )
 
-// TestMaintenancePrunesAutomationHistory protects the app wiring of Automation
-// retention: the single hourly pass must prune terminal Runs and Skips older
-// than the configured `automation_history_retention`, keep terminal rows inside
-// the window, never select a running Run, and leave matched-Fact receipts for
-// deduplication. It fails if Automation pruning is dropped from the pass, uses
-// the wrong window, or prunes work that must survive.
-func TestMaintenancePrunesAutomationHistory(t *testing.T) {
+// This test protects the app wiring of Automation retention through the shared
+// history pruning worker: a pass must prune terminal Runs and Skips older than
+// the injected `historyRetention`, keep terminal rows inside the window, never
+// select a running Run, and leave matched-Fact receipts for deduplication. It
+// fails if Automation pruning is dropped from a pass, uses the wrong window, or
+// prunes work that must survive.
+func TestHistoryPruneSchedulerPrunesAutomationHistory(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	databasePath := filepath.Join(t.TempDir(), "hearth.db")
@@ -42,32 +42,25 @@ func TestMaintenancePrunesAutomationHistory(t *testing.T) {
 	}
 	deviceService := devices.NewService(
 		devices.SQLiteStores(devices.NewSQLiteRepository(database, catalog)),
-		nil, catalog, devices.Dependencies{},
+		nil, catalog,
+		devices.Dependencies{ObservationRetention: 30 * 24 * time.Hour},
 	)
 	automationService := automations.NewService(
 		automations.NewSQLiteRepository(database, automations.AutomationDependencies{}),
 		nil,
-		automations.AutomationDependencies{},
+		automations.AutomationDependencies{HistoryRetention: 30 * 24 * time.Hour},
 	)
 
 	runContext, cancelRun := context.WithCancel(ctx)
 	defer cancelRun()
-	workerStopped := make(chan struct{})
-	go func() {
-		defer close(workerStopped)
-		pruneRetainedHistory(
-			runContext, deviceService, automationService, slog.New(slog.DiscardHandler),
-			30*24*time.Hour, 30*24*time.Hour, 5*time.Millisecond,
-		)
-	}()
+	worker := startHistoryPruning(
+		runContext, slog.New(slog.DiscardHandler), deviceService, automationService,
+	)
 	waitForMatrixCondition(t, 10*time.Second, func() (bool, error) {
 		return countRetentionRows(ctx, database, "automation_history") == 2, nil
 	})
-	cancelRun()
-	select {
-	case <-workerStopped:
-	case <-time.After(5 * time.Second):
-		t.Fatal("maintenance worker did not stop after cancellation")
+	if stopErr := worker.Stop(context.Background()); stopErr != nil {
+		t.Fatalf("stopping the history prune worker: %v", stopErr)
 	}
 
 	// The expired terminal Run is gone; the fresh terminal Run and the running

@@ -8,7 +8,6 @@ import (
 	"log/slog"
 	"net/http"
 	"slices"
-	"sync"
 
 	natsgo "github.com/nats-io/nats.go"
 	"github.com/nats-io/nats.go/jetstream"
@@ -17,6 +16,7 @@ import (
 	"github.com/mholtzscher/hearth/internal/modules/automations"
 	"github.com/mholtzscher/hearth/internal/modules/devices"
 	devicesnats "github.com/mholtzscher/hearth/internal/modules/devices/nats"
+	"github.com/mholtzscher/hearth/internal/platform/lifecycle"
 	platformnats "github.com/mholtzscher/hearth/internal/platform/nats"
 )
 
@@ -29,8 +29,9 @@ type registeredDrain struct {
 
 // coreShutdown owns every started resource. Run calls it once on cancellation
 // or error; nil fields represent resources that never started. Its explicit
-// order keeps dependencies alive until admitted work finishes, and keeps HTTP
-// serving draining readiness until then. Cleanup continues after errors.
+// order keeps dependencies alive until admitted work finishes, joins the
+// history pruning worker before SQLite closes, and keeps HTTP serving draining
+// readiness until then. Cleanup continues after errors.
 type coreShutdown struct {
 	runContext          context.Context
 	logger              *slog.Logger
@@ -42,7 +43,7 @@ type coreShutdown struct {
 	automationService   *automations.Service
 	deviceService       *devices.Service
 	cancelDependencies  context.CancelFunc
-	maintenance         sync.WaitGroup
+	historyPruneWorker  *lifecycle.WorkerHandle
 	healthSupervisor    *healthSupervisor
 	server              *http.Server
 	transports          []registeredDrain
@@ -79,7 +80,7 @@ func (shutdown *coreShutdown) run() error {
 	if shutdown.cancelDependencies != nil {
 		shutdown.cancelDependencies()
 	}
-	shutdown.maintenance.Wait()
+	fail("stop_history_pruning", shutdown.stopHistoryPruning())
 	if shutdown.healthSupervisor != nil {
 		shutdown.healthSupervisor.Stop()
 	}
@@ -113,6 +114,17 @@ func (shutdown *coreShutdown) run() error {
 		fail("close_database", shutdown.database.Close())
 	}
 	return firstErr
+}
+
+// stopHistoryPruning joins the retention worker before SQLite closes. Its
+// context is already canceled by run, and Stop waits unbounded so no pruning
+// transaction can be in flight once the database closes. A never-started worker
+// is a no-op.
+func (shutdown *coreShutdown) stopHistoryPruning() error {
+	if shutdown.historyPruneWorker == nil {
+		return nil
+	}
+	return shutdown.historyPruneWorker.Stop(context.Background())
 }
 
 // stopHTTP force-closes connections when graceful shutdown times out. An

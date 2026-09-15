@@ -21,10 +21,9 @@ import (
 )
 
 const (
-	retentionPruneInterval = time.Hour
-	shutdownTimeout        = 5 * time.Second
-	httpReadHeaderTimeout  = 5 * time.Second
-	natsReconnectWait      = 250 * time.Millisecond
+	shutdownTimeout       = 5 * time.Second
+	httpReadHeaderTimeout = 5 * time.Second
+	natsReconnectWait     = 250 * time.Millisecond
 )
 
 // runStageError identifies the startup stage that failed without echoing
@@ -117,9 +116,6 @@ func Run(
 		slog.String("reason", automations.AutomationFailureCoreRestarted),
 	)
 	logStartupStage(ctx, coreLogger, "active_automation_runs_interrupted")
-	// Observation and Entity Event pruning run only on the hourly pass below, so
-	// startup never sweeps retained history and uptime under one hour means no
-	// sweep yet.
 
 	connection, connectErr := connectCoreNATS(ctx, config.NATSURL, natsLogger)
 	if connectErr != nil {
@@ -156,7 +152,13 @@ func Run(
 		devices.SQLiteStores(repository),
 		commandSender,
 		catalog,
-		devices.Dependencies{Logger: devicesLogger, DeviceFacts: relay},
+		devices.Dependencies{
+			Logger:      devicesLogger,
+			DeviceFacts: relay,
+			// Retention policy is injected once here; the shared history pruning
+			// worker calls PruneHistory with a sweep time and no window.
+			ObservationRetention: config.EffectiveObservationRetention(),
+		},
 	)
 	shutdown.deviceService = service
 	// The devices service implements the read-only devices-facing seam the
@@ -164,7 +166,10 @@ func Run(
 	automationService := automations.NewService(
 		automationRepository,
 		service,
-		automations.AutomationDependencies{Logger: automationsLogger},
+		automations.AutomationDependencies{
+			Logger:           automationsLogger,
+			HistoryRetention: config.EffectiveAutomationHistoryRetention(),
+		},
 	)
 	shutdown.automationService = automationService
 	durable, provisionErr := devicesnats.ProvisionObservationResources(ctx, js)
@@ -193,6 +198,13 @@ func Run(
 	// own separate contexts because their callbacks drain after these dependencies.
 	dependencyContext, cancelDependencies := context.WithCancel(context.WithoutCancel(ctx))
 	shutdown.cancelDependencies = cancelDependencies
+	// Startup recovery has already interrupted stale Commands and Runs, so the
+	// shared retention worker can start. Its first pass runs inside the worker,
+	// not before readiness or serving, and later passes run hourly until
+	// shutdown joins the worker before SQLite closes.
+	shutdown.historyPruneWorker = startHistoryPruning(
+		dependencyContext, coreLogger, service, automationService,
+	)
 	consumers := newCoreConsumers(ctx)
 	shutdown.consumers = consumers
 	// Start automatic admission before inbound Fact producers. A new consumer
@@ -296,13 +308,6 @@ func Run(
 	go func() {
 		serverErrors <- server.Serve(listener)
 	}()
-	shutdown.maintenance.Go(func() {
-		pruneRetainedHistory(
-			dependencyContext, service, automationService, coreLogger,
-			config.EffectiveObservationRetention(), config.EffectiveAutomationHistoryRetention(),
-			retentionPruneInterval,
-		)
-	})
 
 	select {
 	case err := <-serverErrors:
@@ -420,65 +425,4 @@ func connectCoreNATS(
 		ctx, "NATS connected", slog.String("event", "dependency.connected"),
 	)
 	return connection, nil
-}
-
-// pruneRetainedHistory is the single hourly maintenance pass that bounds
-// retained history. Entity Event history is pruned with the fixed internal
-// EntityEventHistoryRetention window, not a Core setting, so the same pass
-// serves both retentions without adding a timer. Each pass derives one sweep
-// time; Service.DeleteExpiredEntityEvents then uses one cutoff strict-before
-// that instant and deletes in bounded batches. Automation history uses the
-// configured `automation_history_retention` window and the same sweep time, so
-// a shorter window takes effect on the next pass. Startup never calls it, so
-// uptime under one interval means no sweep has run yet.
-func pruneRetainedHistory(
-	ctx context.Context,
-	service *devices.Service,
-	automationService *automations.Service,
-	logger *slog.Logger,
-	observationRetention time.Duration,
-	automationRetention time.Duration,
-	interval time.Duration,
-) {
-	ticker := time.NewTicker(interval)
-	defer ticker.Stop()
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		case now := <-ticker.C:
-			sweepTime := now.UTC()
-			if err := service.DeleteExpiredObservations(ctx, sweepTime, observationRetention); err != nil {
-				logger.ErrorContext(
-					ctx,
-					"prune observations",
-					slog.String("event", "core.observations_prune_failed"),
-					slog.String("error_code", "observations_prune_failed"),
-				)
-			}
-			if err := service.DeleteExpiredEntityEvents(ctx, sweepTime); err != nil {
-				logger.ErrorContext(
-					ctx,
-					"prune entity events",
-					slog.String("event", "core.entity_events_prune_failed"),
-					slog.String("error_code", "entity_events_prune_failed"),
-				)
-			}
-			pruneAutomationHistory(ctx, automationService, sweepTime, automationRetention)
-		}
-	}
-}
-
-// pruneAutomationHistory bounds terminal Automation Runs and Skips. The zero
-// batch lets the automations service choose its own bounded batch size, active
-// Runs and matched-Fact receipts are never selected, and the service records
-// core.automation_history_prune_failed itself. A failed pass logs and retries
-// next hour; it never fails readiness.
-func pruneAutomationHistory(
-	ctx context.Context,
-	service *automations.Service,
-	sweepTime time.Time,
-	retention time.Duration,
-) {
-	_, _ = service.PruneHistory(ctx, sweepTime.Add(-retention), 0)
 }
