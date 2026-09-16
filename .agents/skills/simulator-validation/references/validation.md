@@ -9,7 +9,7 @@ these recipes. Resolve these repository paths from the worktree root. Consult
 ## Choose Device definitions
 
 Prefer the smallest Device list that exercises the change. Custom `--devices`
-files contain a YAML sequence of Devices; no top-level `devices:`, `scenario:`,
+files contain a YAML sequence of Devices; no top-level `devices:`,
 `adapter_id`, or transport settings. Startup embeds that sequence in a generated
 local-only simulator config without modifying the source file.
 
