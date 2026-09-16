@@ -79,16 +79,6 @@ const (
 	AutomationConditionUnknown AutomationConditionResult = "unknown"
 )
 
-// isKnown reports whether result is one of the three closed result values.
-func (result AutomationConditionResult) isKnown() bool {
-	switch result {
-	case AutomationConditionTrue, AutomationConditionFalse, AutomationConditionUnknown:
-		return true
-	default:
-		return false
-	}
-}
-
 // AutomationConditionUnknownReason explains why one leaf's evidence is unusable.
 // The listed order is the reason precedence when several apply.
 type AutomationConditionUnknownReason string
@@ -113,21 +103,6 @@ const (
 	// cannot be compared under the operator.
 	AutomationConditionUnknownTypeMismatch AutomationConditionUnknownReason = "type_mismatch"
 )
-
-// isKnown reports whether reason is one of the six closed unknown reasons.
-func (reason AutomationConditionUnknownReason) isKnown() bool {
-	switch reason {
-	case AutomationConditionUnknownEntityMissing,
-		AutomationConditionUnknownStateMissing,
-		AutomationConditionUnknownEvidenceInFuture,
-		AutomationConditionUnknownEvidenceExpired,
-		AutomationConditionUnknownPointerMissing,
-		AutomationConditionUnknownTypeMismatch:
-		return true
-	default:
-		return false
-	}
-}
 
 // AutomationConditionNodeResult records one evaluated node. SelectedValue is nil
 // when no value was selected and the JSON bytes "null" when a JSON null was

@@ -31,7 +31,10 @@ nodes compare selected current Entity State or compose with `all`, `any`, and
 `not`. Conditions are optional per definition and preserve omission. Evaluation
 is pure and three-valued over an immutable State snapshot; only a true root
 admits, and every node's evidence is recorded so history explains a decision
-after State or the definition changes. The transports, codecs, and persistence
+after State or the definition changes. A decision is validated once at write
+time for envelope coherence, and the history table's CHECK constraints are the
+remaining integrity guard, so reads decode retained decisions and trust them
+rather than re-deriving the evidence. The transports, codecs, and persistence
 shapes for definitions, evaluations, and decisions live with this module.
 
 Conditions never initiate execution and are evaluated once per admission.

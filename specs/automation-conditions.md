@@ -114,7 +114,10 @@ Also retain `bypass_requested` (false for automatic outcomes). With configured C
 
 An evaluation stores the root result, `evaluated_at`, and every node result in definition pre-order. Each leaf stores its selected value when the pointer resolves, its Observation ID and `observed_at` when State exists, result, and any unknown reason. Expired/future evidence still retains identities/times and the selected value if resolvable, but does not compare it for admission. Raw entire Entity State is not duplicated when a pointer selected only one member; selecting the root intentionally retains the entire value. Missing values are omitted; a selected JSON null is encoded as `null`. Composite nodes retain ID/result without fabricated Entity evidence.
 
-The decision validator must enforce these invariants, not merely decode JSON:
+The stored decision must satisfy these invariants. Write-time structural
+validation plus the history table's CHECK constraints are the integrity guard;
+reads decode the retained decision and trust it rather than re-deriving the
+evaluation evidence.
 
 - Empty/unknown mode values are invalid. Legacy SQL NULL is explicitly normalized to `not_configured`, never left as a zero-valued mode.
 - `not_configured` has neither snapshot nor evaluation. `not_evaluated` and `bypassed` have a snapshot but no evaluation. `evaluated` has both.
@@ -420,7 +423,7 @@ Explicit `IS NOT NULL` guards prevent SQLite's null-valued CHECK expressions fro
 
 Runs keep their existing required fields and null Skip fields. New automatic Skips require `skip_source='device_fact'`, complete Fact evidence, nonempty matched Trigger snapshots, and a decision. Manual Skips require `skip_source='manual'`, all Fact columns null, `skip_matched_triggers_json='[]'`, one of the two Condition reasons, and a decision. Skips have no Run fields or Step rows; the decision JSON holds their Condition snapshot.
 
-Legacy automatic Skips may have null `skip_source` and null decision only when complete Fact evidence exists and the reason is `stale_fact` or `automation_busy`. Domain validators may normalize consistent legacy unconditioned rows to `not_configured`. A Run snapshot containing Conditions without a decision, a Condition Skip with a null source or decision, and partial evidence are corruption. SQL provenance checks and domain validators enforce §2.6; SQL does not reproduce the recursive evaluator.
+Legacy automatic Skips may have null `skip_source` and null decision only when complete Fact evidence exists and the reason is `stale_fact` or `automation_busy`. Domain validators may normalize consistent legacy unconditioned rows to `not_configured`. A Run snapshot containing Conditions without a decision, a Condition Skip with a null source or decision, and partial evidence are corruption. Write-time structural validation plus the SQL provenance checks are the integrity guard; SQL does not reproduce the recursive evaluator, and reads decode and trust the retained evidence.
 
 Update explicit write/select queries and sqlc-generated models, mapping helpers, summaries, and pruning tests. No new table or index is needed; dropping `automation_history` in Goose Down already removes its new columns. Do not add destructive separate column-drop statements. Retention must delete the explanation atomically with its history row and leave matched-Fact receipts untouched.
 

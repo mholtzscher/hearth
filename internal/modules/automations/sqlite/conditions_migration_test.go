@@ -304,7 +304,7 @@ func TestConditionDecisionPreservesSelectedJSONNull(t *testing.T) {
 }
 
 // insertSummaryRunSQL inserts one Run with the full column set, so a test can
-// build a provenance/decision contradiction the SQL constraints do not model.
+// control the retained definition snapshot independently of the SQL constraints.
 const insertSummaryRunSQL = `INSERT INTO automation_history (
     id, automation_id, automation_name, kind, revision, recorded_at,
     fact_id, fact_family, fact_entity_id, fact_variant, fact_causation_id, fact_value_json, fact_emitted_at,
@@ -313,78 +313,38 @@ const insertSummaryRunSQL = `INSERT INTO automation_history (
 ) VALUES (?, ?, 'Office light', 'run', 1, ?, ?, 'observation', ?, 'applied', ?, 'true', ?,
     ?, ?, 'succeeded', ?, ?, '[]', ?)`
 
-// History summaries must enforce outcome-contextual decision consistency rather
-// than serving a contradiction the full history detail would reject. The listing
-// exposes no full tree, so it must reuse the same domain decoders on the retained
-// row columns.
-func TestHistorySummaryRejectsContradictoryDecisions(t *testing.T) {
+// A history summary needs only the decision envelope, so it must not decode the
+// retained definition snapshot. A malformed run_snapshot_json that still
+// satisfies the SQL CHECK is served as a summary, while the full history detail
+// fails to decode it.
+func TestHistorySummaryDoesNotDecodeRunSnapshot(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	database := openAutomationDatabase(t)
 	repository := newAutomationRepository(t, database)
 
-	conditionEntity := newEntityID(t)
-	conditions := conditionLeaf("dark", conditionEntity, automations.ComparisonLessThan, "30")
-	definition := conditionalDefinitionFor(t, newEntityID(t), conditions)
-	definitionJSON, err := automations.EncodeAutomationDefinition(definition)
-	if err != nil {
-		t.Fatal(err)
-	}
-	factID := newFactIDString(t)
-	factEntityID := string(newEntityID(t))
-	factObservationID := newObservationIDString(t)
-
-	// A configured Run snapshot with a not_configured decision contradicts the
-	// required decision/definition-snapshot equality.
-	mismatchedAutomation := newAutomationIDString(t)
+	automationID := newAutomationIDString(t)
+	runID := newRunIDString(t)
+	// This JSON object is well within the size limit, so it satisfies the storage
+	// CHECK, but it is not a decodable Automation definition.
 	mustExec(t, database, insertSummaryRunSQL,
-		newRunIDString(t), mismatchedAutomation, migrationTimestamp,
-		factID, factEntityID, factObservationID, migrationTimestamp,
-		string(definitionJSON), "device_fact", migrationTimestamp, migrationTimestamp,
+		runID, automationID, migrationTimestamp,
+		newFactIDString(t), string(newEntityID(t)), newObservationIDString(t), migrationTimestamp,
+		`{"name":"only a name"}`, "device_fact", migrationTimestamp, migrationTimestamp,
 		`{"mode":"not_configured","bypass_requested":false}`,
 	)
-	if _, listErr := repository.ListHistory(ctx, automations.ListHistoryParams{
-		AutomationID: automations.AutomationID(mismatchedAutomation),
-	}); !errors.Is(listErr, automations.ErrInvalidAutomation) {
-		t.Fatalf("mismatched Run summary error = %v, want ErrInvalidAutomation", listErr)
-	}
 
-	// A device-fact Run may never request a bypass, even when its decision
-	// snapshot matches the definition.
-	bypassDecision, err := automations.EncodeAutomationConditionDecision(automations.AutomationConditionDecision{
-		Mode:            automations.AutomationConditionDecisionBypassed,
-		BypassRequested: true,
-		Snapshot:        conditions,
-	})
-	if err != nil {
-		t.Fatal(err)
+	summaries := listHistory(t, repository, automations.AutomationID(automationID))
+	if len(summaries) != 1 || summaries[0].ID != runID {
+		t.Fatalf("history summaries = %#v, want the retained Run summary", summaries)
 	}
-	bypassAutomation := newAutomationIDString(t)
-	mustExec(t, database, insertSummaryRunSQL,
-		newRunIDString(t), bypassAutomation, migrationTimestamp,
-		factID, factEntityID, factObservationID, migrationTimestamp,
-		string(definitionJSON), "device_fact", migrationTimestamp, migrationTimestamp,
-		string(bypassDecision),
-	)
-	if _, listErr := repository.ListHistory(ctx, automations.ListHistoryParams{
-		AutomationID: automations.AutomationID(bypassAutomation),
-	}); !errors.Is(listErr, automations.ErrInvalidAutomation) {
-		t.Fatalf("automatic bypass Run summary error = %v, want ErrInvalidAutomation", listErr)
+	if summaries[0].Status != automations.RunSucceeded ||
+		summaries[0].ConditionMode != automations.AutomationConditionDecisionNotConfigured {
+		t.Fatalf("Run summary = %#v", summaries[0])
 	}
-
-	// A conditions_false Skip with a not_configured decision contradicts the
-	// reason/result rule.
-	skipAutomation := newAutomationIDString(t)
-	mustExec(t, database, insertSkipSQL, skipProvenanceArgs{
-		id: newSkipIDString(t), automation: skipAutomation, recordedAt: migrationTimestamp,
-		factID: factID, family: "observation", entityID: factEntityID, variant: "applied",
-		causationID: factObservationID, valueJSON: "true", emittedAt: migrationTimestamp,
-		triggers: matchedTriggerJSON(t), reason: "conditions_false", source: "device_fact",
-		decision: `{"mode":"not_configured","bypass_requested":false}`,
-	}.values()...)
-	if _, listErr := repository.ListHistory(ctx, automations.ListHistoryParams{
-		AutomationID: automations.AutomationID(skipAutomation),
-	}); !errors.Is(listErr, automations.ErrInvalidAutomation) {
-		t.Fatalf("contradictory Skip summary error = %v, want ErrInvalidAutomation", listErr)
+	if _, err := repository.GetHistoryEntry(
+		ctx, automations.AutomationID(automationID), runID,
+	); !errors.Is(err, automations.ErrInvalidAutomation) {
+		t.Fatalf("malformed Run snapshot detail error = %v, want ErrInvalidAutomation", err)
 	}
 }

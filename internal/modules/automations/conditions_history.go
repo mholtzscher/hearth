@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"reflect"
 	"time"
 
 	"github.com/mholtzscher/hearth/internal/modules/devices"
@@ -42,12 +41,10 @@ type automationConditionNodeJSON struct {
 	ObservedAt    json.RawMessage           `json:"observed_at,omitempty"`
 }
 
-// EncodeAutomationConditionDecision validates one decision and renders it in the
-// strict persisted shape. It never writes a partial or inconsistent decision.
+// EncodeAutomationConditionDecision renders one decision in the strict persisted
+// shape. It is a pure encoder: the write path validates a decision before
+// calling it, and no partial or inconsistent decision is written.
 func EncodeAutomationConditionDecision(decision AutomationConditionDecision) (json.RawMessage, error) {
-	if err := ValidateAutomationConditionDecision(decision); err != nil {
-		return nil, err
-	}
 	mode := decision.Mode
 	bypass := decision.BypassRequested
 	value := automationConditionDecisionJSON{
@@ -75,11 +72,12 @@ func EncodeAutomationConditionDecision(decision AutomationConditionDecision) (js
 	return raw, nil
 }
 
-// DecodeAutomationConditionDecision validates and normalizes one persisted
-// decision. An empty payload is the legacy unconditioned history row whose
-// decision column is SQL NULL; it is normalized to the explicit not_configured
-// mode rather than left as a zero-valued mode. Any other malformed decision is a
-// permanent [ErrInvalidAutomation].
+// DecodeAutomationConditionDecision normalizes one persisted decision. An empty
+// payload is the legacy unconditioned history row whose decision column is SQL
+// NULL; it is normalized to the explicit not_configured mode rather than left as
+// a zero-valued mode. Malformed decision JSON is a permanent
+// [ErrInvalidAutomation]. Retained snapshot and evaluation evidence is decoded
+// and trusted, never re-proven against the evaluator.
 func DecodeAutomationConditionDecision(raw json.RawMessage) (AutomationConditionDecision, error) {
 	if len(bytes.TrimSpace(raw)) == 0 {
 		return AutomationConditionDecision{Mode: AutomationConditionDecisionNotConfigured}, nil
@@ -104,15 +102,6 @@ func DecodeAutomationConditionDecision(raw json.RawMessage) (AutomationCondition
 		BypassRequested: *value.BypassRequested,
 	}
 	if len(bytes.TrimSpace(value.Snapshot)) > 0 {
-		codec, codecErr := automationDefinitionCodec()
-		if codecErr != nil {
-			return AutomationConditionDecision{}, codecErr
-		}
-		if validationErr := codec.ValidateCondition(value.Snapshot); validationErr != nil {
-			return AutomationConditionDecision{}, decisionInvalid(
-				"condition snapshot does not satisfy the strict schema",
-			)
-		}
 		var snapshotJSON automationConditionJSON
 		if bindErr := json.Unmarshal(value.Snapshot, &snapshotJSON); bindErr != nil {
 			return AutomationConditionDecision{}, decisionInvalid("condition snapshot cannot be bound")
@@ -131,16 +120,14 @@ func DecodeAutomationConditionDecision(raw json.RawMessage) (AutomationCondition
 		}
 		decision.Evaluation = &evaluation
 	}
-	if err := ValidateAutomationConditionDecision(decision); err != nil {
-		return AutomationConditionDecision{}, err
-	}
 	return decision, nil
 }
 
-// ValidateAutomationConditionDecision enforces the decision invariants that do
-// not depend on the enclosing Run or Skip: closed mode, snapshot/evaluation
-// presence, bypass coherence, and full evaluation evidence integrity against the
-// retained snapshot.
+// ValidateAutomationConditionDecision enforces the decision envelope invariants
+// that do not depend on the enclosing Run or Skip: closed mode, snapshot and
+// evaluation presence per mode, and bypass coherence with mode. The evaluator
+// produces evaluation evidence once at write time; this validator does not
+// re-derive it from the retained snapshot.
 func ValidateAutomationConditionDecision(decision AutomationConditionDecision) error {
 	if !decision.Mode.isKnown() {
 		return decisionInvalid(fmt.Sprintf("unknown mode %q", decision.Mode))
@@ -161,25 +148,15 @@ func ValidateAutomationConditionDecision(decision AutomationConditionDecision) e
 	default:
 		return decisionInvalid(fmt.Sprintf("unknown mode %q", decision.Mode))
 	}
-	if decision.Snapshot == nil {
-		return nil
-	}
-	if err := validateAutomationConditionTree(*decision.Snapshot); err != nil {
-		return err
-	}
-	if decision.BypassRequested != (decision.Mode == AutomationConditionDecisionBypassed) {
+	if decision.Snapshot != nil && decision.BypassRequested != (decision.Mode == AutomationConditionDecisionBypassed) {
 		return decisionInvalid("with configured conditions the bypass request matches the bypassed mode")
-	}
-	if decision.Evaluation != nil {
-		return validateConditionEvaluation(*decision.Snapshot, *decision.Evaluation)
 	}
 	return nil
 }
 
-// ValidateRunConditionDecision checks one Run's decision against its full
-// definition snapshot: a configured decision snapshot must equal the definition
-// snapshot's Conditions, a Run never records not_evaluated, bypass is manual
-// only, and an evaluated Run admitted on a true root.
+// ValidateRunConditionDecision checks one Run's decision against its admission
+// source and outcome: a Run never records not_evaluated, bypass is manual only,
+// and an evaluated Run is admitted on a true root.
 func ValidateRunConditionDecision(run AutomationRun) error {
 	decision := run.ConditionDecision
 	if err := ValidateAutomationConditionDecision(decision); err != nil {
@@ -187,9 +164,6 @@ func ValidateRunConditionDecision(run AutomationRun) error {
 	}
 	if decision.BypassRequested && run.Source != RunSourceManual {
 		return decisionInvalid("only a manual Run may request a bypass")
-	}
-	if !conditionsEqual(decision.Snapshot, run.Snapshot.Conditions) {
-		return decisionInvalid("a Run decision snapshot must equal the definition snapshot conditions")
 	}
 	switch decision.Mode {
 	case AutomationConditionDecisionNotEvaluated:
@@ -239,342 +213,6 @@ func ValidateSkipConditionDecision(skip AutomationSkip) error {
 		}
 	default:
 		return decisionInvalid(fmt.Sprintf("unknown skip reason %q", skip.Reason))
-	}
-	return nil
-}
-
-// validateConditionEvaluation verifies that evaluation nodes exactly match the
-// snapshot nodes in pre-order, that every composite result agrees with its
-// recorded children under the truth table, and that each leaf's evidence fits
-// its result. It never consults newer State.
-func validateConditionEvaluation(snapshot AutomationCondition, evaluation AutomationConditionEvaluation) error {
-	if evaluation.EvaluatedAt.IsZero() {
-		return decisionInvalid("evaluation requires an evaluated_at time")
-	}
-	if !evaluation.Result.isKnown() {
-		return decisionInvalid("evaluation result must be true, false, or unknown")
-	}
-	if len(evaluation.Nodes) == 0 {
-		return decisionInvalid("evaluation requires at least the root node")
-	}
-	cursor := 0
-	result, err := validateConditionEvaluationNode(&snapshot, evaluation.EvaluatedAt, evaluation.Nodes, &cursor)
-	if err != nil {
-		return err
-	}
-	if cursor != len(evaluation.Nodes) {
-		return decisionInvalid("evaluation nodes must exactly match the snapshot pre-order")
-	}
-	if result != evaluation.Result {
-		return decisionInvalid("the evaluation root result must equal the first node result")
-	}
-	return nil
-}
-
-func validateConditionEvaluationNode(
-	node *AutomationCondition,
-	evaluatedAt time.Time,
-	nodes []AutomationConditionNodeResult,
-	cursor *int,
-) (AutomationConditionResult, error) {
-	if *cursor >= len(nodes) {
-		return "", decisionInvalid("evaluation is missing a snapshot node")
-	}
-	recorded := nodes[*cursor]
-	if recorded.ID != node.ID {
-		return "", decisionInvalid("evaluation node IDs must match the snapshot pre-order")
-	}
-	*cursor++
-	if !recorded.Result.isKnown() {
-		return "", decisionInvalid("evaluation node result must be true, false, or unknown")
-	}
-	switch node.Kind {
-	case AutomationConditionEntityState:
-		return recorded.Result, validateConditionLeafEvidence(node, evaluatedAt, recorded)
-	case AutomationConditionAll, AutomationConditionAny:
-		return validateGroupEvaluation(node, evaluatedAt, nodes, cursor, recorded)
-	case AutomationConditionNot:
-		return validateNotEvaluation(node, evaluatedAt, nodes, cursor, recorded)
-	default:
-		return "", decisionInvalid(fmt.Sprintf("snapshot node %q has unknown kind %q", node.ID, node.Kind))
-	}
-}
-
-// validateGroupEvaluation checks one all/any node against its recorded children.
-func validateGroupEvaluation(
-	node *AutomationCondition,
-	evaluatedAt time.Time,
-	nodes []AutomationConditionNodeResult,
-	cursor *int,
-	recorded AutomationConditionNodeResult,
-) (AutomationConditionResult, error) {
-	if err := validateCompositeNodeEvidence(recorded); err != nil {
-		return "", err
-	}
-	childResults := make([]AutomationConditionResult, 0, len(node.Children))
-	for index := range node.Children {
-		child, err := validateConditionEvaluationNode(&node.Children[index], evaluatedAt, nodes, cursor)
-		if err != nil {
-			return "", err
-		}
-		childResults = append(childResults, child)
-	}
-	expected := combineConditionGroup(node.Kind, childResults)
-	if recorded.Result != expected {
-		return "", decisionInvalid("a composite result must agree with its recorded children")
-	}
-	return expected, nil
-}
-
-// validateNotEvaluation checks one not node against its recorded child.
-func validateNotEvaluation(
-	node *AutomationCondition,
-	evaluatedAt time.Time,
-	nodes []AutomationConditionNodeResult,
-	cursor *int,
-	recorded AutomationConditionNodeResult,
-) (AutomationConditionResult, error) {
-	if err := validateCompositeNodeEvidence(recorded); err != nil {
-		return "", err
-	}
-	child, err := validateConditionEvaluationNode(node.Child, evaluatedAt, nodes, cursor)
-	if err != nil {
-		return "", err
-	}
-	expected := negateConditionResult(child)
-	if recorded.Result != expected {
-		return "", decisionInvalid("a not result must negate its recorded child")
-	}
-	return expected, nil
-}
-
-// validateCompositeNodeEvidence rejects fabricated leaf evidence on a composite
-// node: composites retain only ID and result.
-func validateCompositeNodeEvidence(recorded AutomationConditionNodeResult) error {
-	if recorded.UnknownReason != nil || recorded.SelectedValue != nil ||
-		recorded.ObservationID != nil || recorded.ObservedAt != nil {
-		return decisionInvalid("a composite node carries no Entity evidence")
-	}
-	return nil
-}
-
-// validateConditionLeafEvidence enforces the leaf evidence rules of §2.6. Every
-// rule needs no newer State: it validates only the retained evidence shape
-// against the leaf's snapshot and the evaluation time.
-func validateConditionLeafEvidence(
-	node *AutomationCondition,
-	evaluatedAt time.Time,
-	recorded AutomationConditionNodeResult,
-) error {
-	if (recorded.ObservationID == nil) != (recorded.ObservedAt == nil) {
-		return decisionInvalid("Observation ID and observed time are present together")
-	}
-	if recorded.ObservationID != nil {
-		if _, err := devices.ParseObservationID(string(*recorded.ObservationID)); err != nil {
-			return decisionInvalid("Observation ID is not canonical")
-		}
-	}
-	if recorded.Result != AutomationConditionUnknown {
-		return validateDefiniteLeafEvidence(node, evaluatedAt, recorded)
-	}
-	if recorded.UnknownReason == nil || !recorded.UnknownReason.isKnown() {
-		return decisionInvalid("an unknown leaf requires exactly one listed reason")
-	}
-	return validateUnknownLeafEvidence(node, evaluatedAt, recorded, *recorded.UnknownReason)
-}
-
-// validateDefiniteLeafEvidence requires a true or false leaf to carry its
-// selected value, Observation identity, and evidence time, with no reason. It
-// then re-derives the result from the retained selection and the snapshot's
-// operator/operand: the selected value must be comparable, its exact comparison
-// must equal the recorded result, and bounded evidence must not be the future or
-// expired case that would have preempted a definite result.
-func validateDefiniteLeafEvidence(
-	node *AutomationCondition,
-	evaluatedAt time.Time,
-	recorded AutomationConditionNodeResult,
-) error {
-	if recorded.UnknownReason != nil {
-		return decisionInvalid("a true or false leaf carries no unknown reason")
-	}
-	if recorded.SelectedValue == nil || recorded.ObservationID == nil || recorded.ObservedAt == nil {
-		return decisionInvalid("a true or false leaf requires a selected value and Observation evidence")
-	}
-	if reason, bounded := leafFreshnessReason(node, evaluatedAt, recorded); bounded {
-		return decisionInvalid(fmt.Sprintf(
-			"a true or false leaf with %s evidence must be unknown", reason,
-		))
-	}
-	return validateExactLeafComparison(node, recorded)
-}
-
-// validateExactLeafComparison re-derives one definite leaf result from the
-// retained selected value and the snapshot's operator and operand. Only exact
-// comparison is accepted: a compatible selection whose verdict disagrees with
-// the recorded result is fabricated evidence.
-func validateExactLeafComparison(node *AutomationCondition, recorded AutomationConditionNodeResult) error {
-	selected, operand, err := decodeLeafComparison(node, recorded)
-	if err != nil {
-		return err
-	}
-	if !conditionComparisonCompatible(node.EntityState.Operator, selected, operand) {
-		return decisionInvalid("a true or false leaf requires a compatible selected value")
-	}
-	matched, err := compareJSONValues(node.EntityState.Operator, selected, operand)
-	if err != nil {
-		return decisionInvalid("a selected value cannot be compared")
-	}
-	if conditionResultFromMatch(matched) != recorded.Result {
-		return decisionInvalid("a true or false leaf result must equal its exact comparison")
-	}
-	return nil
-}
-
-// validateIncompatibleLeafSelection requires one type_mismatch leaf to have
-// actually selected a value that cannot be compared with the snapshot operand,
-// so an unknown leaf cannot mislabel a comparable selection.
-func validateIncompatibleLeafSelection(node *AutomationCondition, recorded AutomationConditionNodeResult) error {
-	selected, operand, err := decodeLeafComparison(node, recorded)
-	if err != nil {
-		return err
-	}
-	if conditionComparisonCompatible(node.EntityState.Operator, selected, operand) {
-		return decisionInvalid("type_mismatch requires an incompatible selected value")
-	}
-	return nil
-}
-
-// decodeLeafComparison decodes the retained selected value and the snapshot
-// operand for one entity_state leaf. Both must be exactly one JSON value.
-func decodeLeafComparison(node *AutomationCondition, recorded AutomationConditionNodeResult) (any, any, error) {
-	if node.EntityState == nil {
-		return nil, nil, decisionInvalid("leaf evidence requires an entity_state snapshot leaf")
-	}
-	selected, err := decodeJSONValue(recorded.SelectedValue)
-	if err != nil {
-		return nil, nil, decisionInvalid("a selected value must be exactly one JSON value")
-	}
-	operand, err := decodeJSONValue(node.EntityState.Operand)
-	if err != nil {
-		return nil, nil, decisionInvalid("a condition operand must be exactly one JSON value")
-	}
-	return selected, operand, nil
-}
-
-// leafFreshnessReason reports the freshness reason the leaf's retained
-// Observation time demands at the evaluation time. It is false when no age
-// bound applies or the evidence is inside the bound.
-func leafFreshnessReason(
-	node *AutomationCondition,
-	evaluatedAt time.Time,
-	recorded AutomationConditionNodeResult,
-) (AutomationConditionUnknownReason, bool) {
-	if node.EntityState == nil || recorded.ObservedAt == nil {
-		return "", false
-	}
-	return boundedEvidenceUnknownReason(*node.EntityState, *recorded.ObservedAt, evaluatedAt)
-}
-
-// validateUnknownLeafEvidence requires exactly the evidence one unknown reason
-// permits: missing Entity or State carries none, pointer_missing carries
-// Observation evidence only, type_mismatch additionally requires an actually
-// incompatible selected value, and the freshness reasons must be possible for the
-// leaf's configured age bound at the evaluation time.
-func validateUnknownLeafEvidence(
-	node *AutomationCondition,
-	evaluatedAt time.Time,
-	recorded AutomationConditionNodeResult,
-	reason AutomationConditionUnknownReason,
-) error {
-	switch reason {
-	case AutomationConditionUnknownEntityMissing, AutomationConditionUnknownStateMissing:
-		if recorded.SelectedValue != nil || recorded.ObservationID != nil || recorded.ObservedAt != nil {
-			return decisionInvalid("missing Entity or State carries no value or Observation evidence")
-		}
-	case AutomationConditionUnknownPointerMissing:
-		// The full State the pointer failed against is intentionally not retained,
-		// so the failed selection itself cannot be re-derived here.
-		if recorded.SelectedValue != nil {
-			return decisionInvalid("pointer_missing carries no selected value")
-		}
-		if recorded.ObservationID == nil || recorded.ObservedAt == nil {
-			return decisionInvalid("pointer_missing requires Observation evidence")
-		}
-		if err := rejectPreemptedFreshnessReason(node, evaluatedAt, recorded, reason); err != nil {
-			return err
-		}
-	case AutomationConditionUnknownTypeMismatch:
-		if recorded.ObservationID == nil || recorded.ObservedAt == nil {
-			return decisionInvalid("comparable leaf evidence requires Observation evidence")
-		}
-		if recorded.SelectedValue == nil {
-			return decisionInvalid("type_mismatch requires the selected value")
-		}
-		if err := rejectPreemptedFreshnessReason(node, evaluatedAt, recorded, reason); err != nil {
-			return err
-		}
-		return validateIncompatibleLeafSelection(node, recorded)
-	case AutomationConditionUnknownEvidenceInFuture:
-		return validateBoundedEvidenceReason(node, evaluatedAt, recorded, true)
-	case AutomationConditionUnknownEvidenceExpired:
-		return validateBoundedEvidenceReason(node, evaluatedAt, recorded, false)
-	default:
-		return decisionInvalid("unknown leaf has an unlisted reason")
-	}
-	return nil
-}
-
-// rejectPreemptedFreshnessReason rejects a pointer or type failure recorded for
-// bounded evidence that is actually future or expired. Freshness reasons take
-// precedence over pointer and type failures, so such a leaf must record the
-// corresponding freshness reason instead.
-func rejectPreemptedFreshnessReason(
-	node *AutomationCondition,
-	evaluatedAt time.Time,
-	recorded AutomationConditionNodeResult,
-	reason AutomationConditionUnknownReason,
-) error {
-	if freshness, bounded := leafFreshnessReason(node, evaluatedAt, recorded); bounded {
-		return decisionInvalid(fmt.Sprintf(
-			"%s evidence must record %s instead", reason, freshness,
-		))
-	}
-	return nil
-}
-
-// validateBoundedEvidenceReason rejects an impossible freshness reason. The leaf
-// must carry its configured age bound and Observation evidence, the evidence time
-// must actually be future or past the bound relative to evaluated_at, and the
-// exact bound stays allowed. The selected value is optional because a freshness
-// reason takes precedence over an unresolved pointer, but a present selection
-// must still be exactly one JSON value.
-func validateBoundedEvidenceReason(
-	node *AutomationCondition,
-	evaluatedAt time.Time,
-	recorded AutomationConditionNodeResult,
-	future bool,
-) error {
-	if node.Kind != AutomationConditionEntityState || node.EntityState == nil ||
-		node.EntityState.MaxAgeSeconds == nil {
-		return decisionInvalid("a freshness reason requires a max_age_seconds leaf")
-	}
-	if recorded.ObservationID == nil || recorded.ObservedAt == nil {
-		return decisionInvalid("bounded evidence requires Observation evidence")
-	}
-	if recorded.SelectedValue != nil {
-		if _, err := decodeJSONValue(recorded.SelectedValue); err != nil {
-			return decisionInvalid("a selected value must be exactly one JSON value")
-		}
-	}
-	age := evaluatedAt.UTC().Sub(recorded.ObservedAt.UTC())
-	if future {
-		if age >= 0 {
-			return decisionInvalid("evidence_in_future requires evidence observed after evaluated_at")
-		}
-		return nil
-	}
-	if age <= time.Duration(*node.EntityState.MaxAgeSeconds)*time.Second {
-		return decisionInvalid("evidence_expired requires evidence older than max_age_seconds")
 	}
 	return nil
 }
@@ -719,19 +357,6 @@ func decodeOptionalConditionMember[T any](raw json.RawMessage, field string) (*T
 // which an omitted member never is.
 func isExplicitJSONNull(raw json.RawMessage) bool {
 	return len(raw) > 0 && bytes.Equal(bytes.TrimSpace(raw), []byte("null"))
-}
-
-// conditionsEqual compares two optional Condition trees by their canonical
-// persisted shape, so a decision snapshot can be proven identical to a definition
-// snapshot regardless of pointer identity or operand byte aliasing.
-func conditionsEqual(left, right *AutomationCondition) bool {
-	if left == nil || right == nil {
-		return left == nil && right == nil
-	}
-	return reflect.DeepEqual(
-		encodeAutomationCondition(*left),
-		encodeAutomationCondition(*right),
-	)
 }
 
 // decodeStrictJSONObject decodes exactly one JSON object, rejects unknown fields

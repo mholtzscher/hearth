@@ -43,7 +43,7 @@ func historySummary(row dbsqlc.AutomationHistory) (automations.AutomationHistory
 	}
 	switch summary.Kind {
 	case automations.AutomationHistoryRun:
-		err = applyRunSummary(row, &summary, decision)
+		err = applyRunSummary(row, &summary)
 	case automations.AutomationHistorySkip:
 		err = applySkipSummary(row, &summary, decision)
 	default:
@@ -99,12 +99,10 @@ func newHistorySummaryBase(
 	return summary, decision, nil
 }
 
-// applyRunSummary decodes the Run-only source and Fact columns and enforces the
-// Run's outcome-contextual decision rules.
+// applyRunSummary decodes the Run-only source and Fact columns.
 func applyRunSummary(
 	row dbsqlc.AutomationHistory,
 	summary *automations.AutomationHistorySummary,
-	decision automations.AutomationConditionDecision,
 ) error {
 	if !row.RunStatus.Valid || !row.RunSource.Valid {
 		return fmt.Errorf(
@@ -118,11 +116,10 @@ func applyRunSummary(
 		return err
 	}
 	summary.Fact = fact
-	return validateRunSummaryDecision(row, *summary, decision)
+	return nil
 }
 
-// applySkipSummary decodes the Skip-only reason, provenance, and Fact columns and
-// enforces the Skip's outcome-contextual decision rules.
+// applySkipSummary decodes the Skip-only reason, provenance, and Fact columns.
 func applySkipSummary(
 	row dbsqlc.AutomationHistory,
 	summary *automations.AutomationHistorySummary,
@@ -145,75 +142,6 @@ func applySkipSummary(
 		return err
 	}
 	summary.Fact = fact
-	return validateSkipSummaryDecision(row, *summary, decision)
-}
-
-// validateRunSummaryDecision enforces a Run summary's outcome-contextual
-// decision consistency without exposing the tree: an evaluated/not_configured
-// decision must agree with the retained definition snapshot and admission
-// source, a Run never records not_evaluated, and only a manual Run may request a
-// bypass. It reuses the same domain validator the full Run detail uses.
-func validateRunSummaryDecision(
-	row dbsqlc.AutomationHistory,
-	summary automations.AutomationHistorySummary,
-	decision automations.AutomationConditionDecision,
-) error {
-	if !row.RunSnapshotJson.Valid {
-		return fmt.Errorf(
-			"%w: stored Run %q has no definition snapshot", automations.ErrInvalidAutomation, row.ID,
-		)
-	}
-	snapshot, err := automations.DecodeAutomationDefinition(json.RawMessage(row.RunSnapshotJson.String))
-	if err != nil {
-		return fmt.Errorf("stored Run %q snapshot: %w", row.ID, err)
-	}
-	if decisionErr := automations.ValidateRunConditionDecision(automations.AutomationRun{
-		Source:            summary.Source,
-		Snapshot:          snapshot,
-		ConditionDecision: decision,
-	}); decisionErr != nil {
-		return fmt.Errorf("stored Run %q condition decision: %w", row.ID, decisionErr)
-	}
-	return nil
-}
-
-// validateSkipSummaryDecision enforces a Skip summary's outcome-contextual
-// decision consistency: the evaluated reason and root result must agree, a Skip
-// never records a bypass, a manual Skip carries no Fact and only a Condition
-// reason, and a device-fact Skip carries complete Fact evidence. It reuses the
-// same domain validator the full Skip detail uses.
-func validateSkipSummaryDecision(
-	row dbsqlc.AutomationHistory,
-	summary automations.AutomationHistorySummary,
-	decision automations.AutomationConditionDecision,
-) error {
-	if decisionErr := automations.ValidateSkipConditionDecision(automations.AutomationSkip{
-		Reason:            summary.Reason,
-		ConditionDecision: decision,
-	}); decisionErr != nil {
-		return fmt.Errorf("stored Skip %q condition decision: %w", row.ID, decisionErr)
-	}
-	switch summary.Source {
-	case automations.RunSourceDeviceFact:
-		if summary.Fact == nil {
-			return fmt.Errorf(
-				"%w: stored Skip %q has no Fact summary", automations.ErrInvalidAutomation, row.ID,
-			)
-		}
-	case automations.RunSourceManual:
-		if summary.Fact != nil {
-			return fmt.Errorf(
-				"%w: stored Skip %q carries Fact evidence", automations.ErrInvalidAutomation, row.ID,
-			)
-		}
-		if summary.Reason != automations.AutomationSkipConditionsFalse &&
-			summary.Reason != automations.AutomationSkipConditionsUnknown {
-			return fmt.Errorf(
-				"%w: stored Skip %q manual reason is not a condition outcome",
-				automations.ErrInvalidAutomation, row.ID,
-			)
-		}
-	}
 	return nil
 }
 
@@ -280,9 +208,6 @@ func runFromRow(
 		CompletedAt:       completedAt,
 		Steps:             steps,
 	}
-	if err = automations.ValidateAutomationRun(run); err != nil {
-		return automations.AutomationRun{}, err
-	}
 	return run, nil
 }
 
@@ -339,9 +264,6 @@ func skipFromRow(row dbsqlc.AutomationHistory) (automations.AutomationSkip, erro
 		Reason:            automations.AutomationSkipReason(row.SkipReason.String),
 		ConditionDecision: decision,
 		SkippedAt:         skippedAt,
-	}
-	if err = automations.ValidateAutomationSkip(skip); err != nil {
-		return automations.AutomationSkip{}, err
 	}
 	return skip, nil
 }
