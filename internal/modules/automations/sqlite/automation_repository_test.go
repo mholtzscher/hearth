@@ -157,6 +157,39 @@ func TestSQLiteRepositoryListIsKeysetStable(t *testing.T) {
 	}
 }
 
+// ListEnabledAutomations must return only enabled current definitions in
+// ascending Automation ID order for the Service admission pre-read.
+func TestSQLiteRepositoryListEnabledAutomationsFiltersAndOrders(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	database := openAutomationDatabase(t)
+	repository := newAutomationRepository(t, database)
+	for index, enabled := range []bool{true, false, true} {
+		definition := validDomainDefinition(t)
+		definition.Name = fmt.Sprintf("Enabled filter %d", index)
+		definition.Enabled = enabled
+		if _, err := repository.CreateAutomation(ctx, definition); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	records, err := repository.ListEnabledAutomations(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(records) != 2 {
+		t.Fatalf("enabled records = %d, want 2", len(records))
+	}
+	for index, record := range records {
+		if !record.Definition.Enabled {
+			t.Fatalf("record %s is disabled", record.ID)
+		}
+		if index > 0 && records[index-1].ID >= record.ID {
+			t.Fatalf("records are not ascending: %s >= %s", records[index-1].ID, record.ID)
+		}
+	}
+}
+
 // Malformed stored JSON must return a permanent error, not a partially trusted definition.
 func TestSQLiteRepositoryRejectsMalformedStoredDefinition(t *testing.T) {
 	t.Parallel()

@@ -33,7 +33,7 @@ func (service *Service) StartManualRun(ctx context.Context, input ManualRunInput
 	if service.devices == nil || !service.devices.CommandAdmissionOpen() {
 		return AutomationRun{}, ErrAdmissionUnavailable
 	}
-	// The reservation spans every coverage attempt and State read.
+	// The reservation spans the definition pre-read, State read, and transaction.
 	result, err := service.admitManualRun(ctx, input)
 	if err != nil {
 		// Release before diagnostics so a blocked log sink cannot hold Drain.
@@ -81,8 +81,8 @@ func (service *Service) ReceiveDeviceFact(
 		return AdmissionOutcome{}, ErrAdmissionUnavailable
 	}
 	defer reservation.Release()
-	// The reservation spans every coverage attempt and State read, and only a
-	// committed outcome registers workers.
+	// The reservation spans the definition pre-read, State read, and transaction;
+	// only a committed outcome registers workers.
 	result, err := service.admitAutomaticFact(ctx, fact)
 	if err != nil {
 		// Release before diagnostics so a blocked log sink cannot hold Drain.

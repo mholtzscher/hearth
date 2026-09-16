@@ -61,6 +61,28 @@ func (repo *AutomationRepository) GetAutomation(
 	return automationRecord(row)
 }
 
+// ListEnabledAutomations reads every currently enabled definition in ascending
+// Automation ID order for the Service's admission State pre-read.
+func (repo *AutomationRepository) ListEnabledAutomations(
+	ctx context.Context,
+) ([]automations.AutomationRecord, error) {
+	rows, err := repo.queries.ListAllAutomations(ctx)
+	if err != nil {
+		return nil, err
+	}
+	records := make([]automations.AutomationRecord, 0, len(rows))
+	for _, row := range rows {
+		record, recordErr := automationRecord(row)
+		if recordErr != nil {
+			return nil, recordErr
+		}
+		if record.Definition.Enabled {
+			records = append(records, record)
+		}
+	}
+	return records, nil
+}
+
 // ListAutomations returns one ID-ascending keyset page. It reads limit+1 rows so
 // HasMore is exact without a second query or a total.
 func (repo *AutomationRepository) ListAutomations(

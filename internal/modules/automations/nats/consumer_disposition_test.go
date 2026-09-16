@@ -171,14 +171,9 @@ func TestHandleDeviceFactMessageDisposition(t *testing.T) {
 			wantNakDelay: DeviceFactConsumerNakDelay, wantAdmitted: 1,
 		},
 		{
-			name: "unstable condition snapshot redelivered", message: validObservation,
-			failNext:     automations.ErrConditionSnapshotUnstable,
-			wantNakDelay: DeviceFactConsumerNakDelay, wantAdmitted: 1,
-		},
-		{
-			// Coverage recovery is internal orchestration; if it ever escapes it is
-			// transient, never a permanent malformed-Fact rejection.
-			name: "leaked coverage request redelivered", message: validObservation,
+			// A definition edit can make the transaction require evidence absent
+			// from the Service pre-read; that race is transient, never malformed.
+			name: "condition snapshot race redelivered", message: validObservation,
 			failNext:     automations.ErrConditionSnapshotRequired,
 			wantNakDelay: DeviceFactConsumerNakDelay, wantAdmitted: 1,
 		},

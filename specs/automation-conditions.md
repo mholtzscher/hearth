@@ -70,13 +70,13 @@ This uses Core's broker-assigned Observation time, not Adapter acquisition time 
 
 Unavailable, unknown-availability, and disabled Entities may supply retained State. Availability, enablement, and State freshness are separate concepts. Command execution still enforces its own current rules.
 
-The batch read is coherent across all requested Entities, but it precedes the admission transaction. `evaluated_at` is the single Core admission-decision time supplied for the final repository attempt, used for both Fact freshness and all predicate ages. Refresh it before each repository attempt. It is not claimed to be the exact database snapshot timestamp. State may change between its read, admission, and any Command. Conditions are checked once for the committed admission, never before subsequent Steps; no lock or physical-state guarantee extends into execution. Incoming Observation Facts may be older than the current State snapshot, even for the same Entity.
+The batch read is coherent across all requested Entities, but it precedes the admission transaction. `evaluated_at` is the single Core admission-decision time supplied for the repository transaction, used for both Fact freshness and all predicate ages. It is not claimed to be the exact database snapshot timestamp. State may change between its read, admission, and any Command. Conditions are checked once for the committed admission, never before subsequent Steps; no lock or physical-state guarantee extends into execution. Incoming Observation Facts may be older than the current State snapshot, even for the same Entity.
 
 ### 2.4 Automatic admission and precedence
 
 Preserve current-definition matching, at most one active Run per Automation, and atomic outcomes for all matching Automations for one Fact. Disabled/unmatched Automations still record nothing. For each current matching Automation, in Automation ID order:
 
-1. Existing `(fact_id, automation_id)` receipt: duplicate; no State read or new decision for that Automation.
+1. Existing `(fact_id, automation_id)` receipt: duplicate; no new decision for that Automation.
 2. Fact older than 30 seconds: `stale_fact` Skip, Conditions not evaluated.
 3. Existing running Run: `automation_busy` Skip, Conditions not evaluated.
 4. Conditions omitted: ordinary Run.
@@ -302,11 +302,10 @@ Implement one statement over a requested-ID relation, left-joined to `entities` 
 // These sentinels live in automations/errors.go; typed errors preserve errors.Is.
 var (
     ErrConditionSnapshotRequired = errors.New("automation condition snapshot coverage is incomplete")
-    ErrConditionSnapshotUnstable = errors.New("automation condition snapshot could not stabilize")
     ErrAutomationConditionsBlocked = errors.New("automation conditions prevented manual admission")
 )
 
-// AutomationAdmissionTimeout bounds one automatic or manual admission, including reads.
+// AutomationAdmissionTimeout bounds one automatic or manual admission, including pre-reads and its transaction.
 const AutomationAdmissionTimeout = 2 * time.Second // conditions_admission.go
 
 // ManualRunInput carries explicit operator intent; no Command identities are accepted.
@@ -321,7 +320,7 @@ type ManualAdmissionResult struct {
     Skip *AutomationSkip
 }
 
-// ConditionSnapshotRequiredError requests a replacement snapshot, never partial admission.
+// ConditionSnapshotRequiredError reports an uncovered Entity from a definition edit race, never partial admission.
 type ConditionSnapshotRequiredError struct {
     RequiredEntityIDs []devices.EntityID // COMPLETE required set, sorted/deduplicated
 }
@@ -348,21 +347,20 @@ type AutomationConditionsBlockedError struct {
 
 `ReceiveDeviceFact` keeps its public signature. Change `automations/api/register.go`'s `Automations` interface to `StartManualRun(context.Context, automations.ManualRunInput) (automations.AutomationRun, error)`. D3 bridges the existing handler with a false bypass; D4 parses the body. Update every caller and fake, and preserve the compile-time assertion that `*devices.Service` implements `AutomationDevices`.
 
-### 3.5 Bounded, coverage-gated orchestration
+### 3.5 Pre-read, coverage-gated orchestration
 
 Transaction-loaded definitions are the admission authority. Automatic and manual admission use this protocol:
 
-1. Acquire the existing admission reservation and check existing gates. Keep the reservation through evidence collection and the final outcome.
-2. Start with an empty snapshot and invoke the repository with current Core decision time.
-3. Inside the repository transaction, load current definitions and plan **all** matching outcomes without writes or identity allocation. Apply duplicate/stale/busy precedence before gathering the Entity IDs required by eligible, non-bypassed Conditions.
-4. Return `ConditionSnapshotRequiredError` **if and only if** the complete required set is not a subset of the supplied snapshot's keys. Return the **entire current required set**, roll back, and return an empty result. A definition edit that only changes operands/pointers or reduces the required set cannot trigger a coverage error or an additional read. Do not persist even stale/busy/unconditional sibling outcomes on a coverage-error pass.
-5. Only after that transaction has closed, Service reads the complete set through devices in one coherent batch. Replace the previous snapshot; never merge samples from different reads.
-6. Retry with a fresh decision time. Re-load/re-match current definitions and re-check receipts/busy/coverage. Definitions added, removed, enabled, disabled, or changed between attempts are handled by these current reads. An operand/tree edit reusing covered IDs can use the same coherent evidence; a newly referenced ID requires another complete read. Known missing State counts as covered and does not loop.
-7. Allow at most **two batch reads and three repository attempts**, all within one **two-second admission budget**, shortened by the caller's earlier deadline. The initial empty-snapshot attempt counts as an attempt. Coverage still incomplete after the last attempt returns `ErrConditionSnapshotUnstable`; no outcomes commit. Do not loop indefinitely, sleep, or reset the deadline. Use the authoritative `automations.AutomationAdmissionTimeout` constant; define the existing NATS `DeviceFactAdmissionTimeout` as an alias of that constant, not a second duration literal. HTTP never imports NATS, and nested contexts always honor the earliest deadline.
-8. With full coverage, evaluate every eligible tree, validate all proposed decisions, then atomically persist all Fact outcomes and receipts (or one manual Run/Skip). Any error rolls the whole transaction back. Return only successfully committed results.
-9. Register Run workers or log Skips after commit. For a manual Skip, release the reservation and construct `AutomationConditionsBlockedError` after success, outside the transaction callback.
+1. Acquire the existing admission reservation and check existing gates. Keep the reservation through definition and evidence pre-reads and the final outcome.
+2. Wrap the pre-reads and one repository transaction in the two-second `automations.AutomationAdmissionTimeout`, shortened by the caller's earlier deadline. The NATS `DeviceFactAdmissionTimeout` remains an alias of that constant; HTTP never imports NATS.
+3. For automatic admission, Service reads every enabled definition, matches Triggers with the Fact, and computes the sorted, deduplicated Entity union required by matching configured Conditions. For manual admission, Service reads the requested definition and computes its required set only when Conditions are configured and bypass was not requested.
+4. Service reads that complete set through devices once in one coherent batch (or uses an empty snapshot when none is required), then invokes the repository exactly once. It never merges samples from different reads.
+5. Inside the repository transaction, load current definitions and plan **all** matching outcomes without writes or identity allocation. Apply duplicate/stale/busy precedence before evaluating eligible, non-bypassed Conditions.
+6. Return `ConditionSnapshotRequiredError` if the transaction's current eligible Conditions require an Entity absent from the supplied snapshot. Return the affected definition's complete sorted required set, roll back, and return an empty result. This is a rare definition-edit race; do not persist even stale/busy/unconditional sibling outcomes on that pass.
+7. With coverage, evaluate every eligible tree, validate all proposed decisions, then atomically persist all Fact outcomes and receipts (or one manual Run/Skip). Any error rolls the whole transaction back. Return only successfully committed results.
+8. Register Run workers or log Skips after commit. For a manual Skip, release the reservation and construct `AutomationConditionsBlockedError` after success, outside the transaction callback.
 
-The NATS consumer uses its existing negative-acknowledgement policy for uncommitted transient failures. `ErrConditionSnapshotRequired` stays inside Service. `ErrConditionSnapshotUnstable`, budget exhaustion, and snapshot acquisition cancellation or timeout map to safe HTTP 503 `condition_snapshot_unavailable` when the server can respond. Ordinary database errors retain the existing safe HTTP 500 mapping and automatic negative acknowledgement. Snapshot corruption follows §2.2.
+The NATS consumer uses its existing negative-acknowledgement policy for uncommitted transient failures, including `ErrConditionSnapshotRequired`. HTTP maps that error to safe 503 `condition_snapshot_unavailable`; ordinary database errors and snapshot acquisition failures retain the existing safe HTTP 500 mapping. Snapshot corruption follows §2.2.
 
 Cancellation before a known commit retains existing behavior. Clients must reconcile an ambiguous manual commit through history and must not retry it automatically. Evidence failures do not latch an executor fault or become Condition Skips. Malformed persisted data retains its existing error classification.
 
@@ -517,7 +515,7 @@ Summary DTO additions: `source`, `condition_mode`, optional `condition_result`, 
 | Missing Automation | Existing 404 |
 | Bad definition/bypass body | Existing transport/domain 4xx validation conventions; no admission writes |
 | Admission gate closed | Existing 503 `admission_unavailable` |
-| Repeated coverage churn / budget exhausted | 503 `condition_snapshot_unavailable`, no fabricated Skip |
+| Definition-edit coverage race | 503 `condition_snapshot_unavailable`, no fabricated Skip |
 | Unexpected storage failure | Existing safe 500; no fabricated Skip |
 
 A Condition-blocked 409 requires the JSON history reference. Errors do not require a new Location header. Fetching the reference immediately after a known successful response returns the committed Skip. No values or internal SQL errors appear in the Problem Details document.
@@ -534,7 +532,7 @@ This work adds no independent Conditions service, configuration setting, depende
 | --- | --- | --- | --- | --- | --- |
 | D2 | Devices-owned coherent batch State evidence and condition reference validation | M/L | `devices/entity_state_snapshot*`, `automation_validation.go`, `repository.go`, `sqlite/entity_state_snapshot*`, `dbqueries/state.sql`, generated devices output and affected read fakes | None | A5; devices seam portion of A6 |
 | D1 | Strict Condition model/codec, three-valued evaluation, and history evidence codec; existing Trigger semantics preserved | L | `automations/conditions*` excluding admission files; `comparison*`, definition schema/codec, model condition types, `errors.go` coverage type/sentinel | D2 | A1 through A4; pure codec portion of A8 |
-| D3 | Atomic condition-aware automatic/manual admission, bounded coverage recovery, durable Skip provenance/evidence | L | `automations/conditions_admission*`, `admission*`, repository/errors/model integration, SQLite/query/migration/history files, NATS budget/disposition tests, `api/register.go` signature bridge, all interface callers/fakes | D1, D2 | Service portion of A6; A7 through A13; A16 |
+| D3 | Atomic condition-aware automatic/manual admission, pre-read coverage, durable Skip provenance/evidence | L | `automations/conditions_admission*`, `admission*`, repository/errors/model integration, SQLite/query/migration/history files, NATS budget/disposition tests, `api/register.go` signature bridge, all interface callers/fakes | D1, D2 | Service portion of A6; A7 through A13; A16 |
 | D4 | Strict optional bypass body, Condition and history DTOs, 409 history references, and runtime OpenAPI | M/L | `automations/api/conditions*`, models/register/errors, and API tests | D3 | API portion of A6; A14, A15 |
 | D5 | End-to-end proof, operator examples, documentation, and repository checks | M/L | `app/hearthd/automations_conditions_integration_test.go`, lifecycle tests, `docs/automation-conditions.md`, `README.md`, `CONTEXT.md`, module README, ADR/architecture/spec links, root validation | D4 | A17, A18, and integration of A1 through A16 |
 
@@ -548,16 +546,16 @@ Execute D2, D1, D3, D4, then D5 because the evaluator needs D2's State snapshot 
 - **A4. Evidence age.** Controlled-clock tests cover no bound, the exact limit, one nanosecond past it, future evidence, and unchanged Observations that advance `observed_at`. Adapter and upstream timestamps, availability, and enablement do not alter the result.
 - **A5. Batch snapshot.** Real migrated SQLite distinguishes present, never-observed, and missing Entities in one owned, deduplicated snapshot; an empty request returns empty. With an independent writer atomically changing two rows, each statement sees the complete old or new pair, never a mix.
 - **A6. Reference validation.** Through the devices seam and definition API, save rejects unknown or stateless Entities, accepts stateful never-observed, unavailable, or disabled Entities, and preserves Trigger validation.
-- **A7. Atomic coverage.** An empty-snapshot pass for mixed unconditional and conditional matches writes no history, receipt, or Step. The required set includes only current eligible Conditions, and known absent State counts as covered. A covered final attempt commits every outcome together; injected storage failure rolls all writes back.
+- **A7. Atomic coverage.** An uncovered snapshot from a definition-edit race writes no history, receipt, or Step. The required set includes only current eligible Conditions, and known absent State counts as covered. One covered transaction commits mixed unconditional and conditional outcomes together; injected storage failure rolls all writes back.
 - **A8. Explanation integrity.** Every decision mode and evaluated result round-trips; selected JSON null remains distinct from missing. Leaf identity, time, and value survive State and definition changes, deletion, and device-history pruning. Domain and raw-SQL tests reject inconsistent IDs, results, provenance, reasons, modes, evidence, malformed decision JSON, Skip Fact fields, Run Skip fields, and new Skips with null source or decision. Valid manual and legacy automatic Skips decode.
 - **A9. Redelivery and pruning.** Changing State and redelivering a Fact after a Condition Skip starts no Run. Pruning that history still leaves the receipt to block later redelivery. Existing unconditional deduplication remains unchanged.
-- **A10. Definition races.** Barrier-controlled definition and busy races prove final definitions govern admission. Newly required IDs cause a complete replacement read; covered-ID operand edits reuse coherent evidence; batches never merge. Admission writes no partial outcomes and stops after two reads, three attempts, or the earlier two-second deadline without latching an executor fault.
-- **A11. Precedence and reads.** Duplicate, stale, busy, unconditioned, and explicit-bypass-only admissions do not read State. A Fact that becomes stale during retries records `stale_fact`. Mixed siblings may require a read, but stale or busy Conditions are not evaluated. No Fact route accepts bypass.
+- **A10. Definition races.** Barrier-controlled definition and busy races prove final definitions govern admission. Newly required IDs return `ErrConditionSnapshotRequired` after one pre-read and one transaction; covered-ID operand edits reuse coherent evidence. Admission writes no partial outcomes or starts workers, and does not latch an executor fault.
+- **A11. Precedence and reads.** Automatic admission reads State only when an enabled matching definition has Conditions, even if transaction precedence later yields duplicate, stale, or busy. Unconditioned automatic admissions and explicit-bypass or unconditioned manual admissions do not read State. Stale or busy Conditions are not evaluated. No Fact route accepts bypass.
 - **A12. Manual behavior.** False or unknown commits a manual Skip with no Fact, Step, or Command, then Service returns the typed history reference. Busy writes no Skip. Bypass records intent, skips State reads, and still applies gates and Command validation. Bodyless unconditioned calls preserve current behavior; repeated blocked calls create distinct Skips.
-- **A13. Failure and acknowledgement.** Snapshot failures commit nothing, start no worker, and trigger existing negative acknowledgement; committed automatic Skips are acknowledged. Storage failures never become unknown Conditions. One-connection SQLite completes without nested-read deadlock. Corrupt State logs the fixed diagnostic, retains the Fact, and writes nothing; repair reprocesses a still-fresh Fact, while a stale retry records `stale_fact`. Manual commit ambiguity is not retried.
-- **A14. HTTP contract.** `httptest` covers bodyless, `{}`, false, true, null body, null bypass, other invalid bodies, all Condition results, strict Condition JSON, 202 Location, and 409 history reference. Coverage churn or snapshot timeout returns safe 503; ordinary database errors and corruption return safe 500. Failed attempts create no Skip. The returned URL resolves to the committed Skip, and errors expose no values, operands, or internal text.
+- **A13. Failure and acknowledgement.** Snapshot failures and definition-edit coverage races commit nothing, start no worker, and trigger existing negative acknowledgement; committed automatic Skips are acknowledged. Storage failures never become unknown Conditions. One-connection SQLite completes without nested-read deadlock. Corrupt State logs the fixed diagnostic, retains the Fact, and writes nothing; repair reprocesses a still-fresh Fact. Manual commit ambiguity is not retried.
+- **A14. HTTP contract.** `httptest` covers bodyless, `{}`, false, true, null body, null bypass, other invalid bodies, all Condition results, strict Condition JSON, 202 Location, and 409 history reference. A definition-edit coverage race returns safe 503; snapshot acquisition, ordinary database errors, and corruption return safe 500. Failed admissions create no Skip. The returned URL resolves to the committed Skip, and errors expose no values, operands, or internal text.
 - **A15. Public schemas.** Runtime OpenAPI publishes the optional non-null manual body, Boolean bypass, recursive Conditions, decision modes and presence rules, manual Skip provenance, new reasons, and optional 409 history fields. Tests inspect runtime schemas and representative payloads.
-- **A16. Lifecycle.** Reservations cover State reads and retries; drain joins them before SQLite closes. Snapshot failure does not close the executor gate. Only committed true, bypassed, or unconditioned Runs start workers. Later Condition edits do not stop or recheck a Run. Restart interruption and no-replay tests remain green.
+- **A16. Lifecycle.** Reservations cover definition pre-reads, State reads, and the transaction; drain joins them before SQLite closes. Snapshot failure does not close the executor gate. Only committed true, bypassed, or unconditioned Runs start workers. Later Condition edits do not stop or recheck a Run. Restart interruption and no-replay tests remain green.
 - **A17. Vertical slice.** Real Core assembly uses numeric illuminance, binary occupancy, and controllable Entities. Fresh evidence plus a matching Fact dispatches the expected Command when dark and unoccupied; bright or unknown records a readable Skip and no Command; manual bypass is visible and follows normal Command outcomes. Use simulator or local brokers, not physical devices.
 - **A18. Integration quality.** The operator guide has complete valid examples, links resolve, generated code is clean, and `mise run validate` passes its required Mosquitto integration tests. The diff contains only intended documentation, formatting, and generated changes, with no new dependency or external contract.
 

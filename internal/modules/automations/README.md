@@ -38,19 +38,20 @@ rather than re-deriving the evidence. The transports, codecs, and persistence
 shapes for definitions, evaluations, and decisions live with this module.
 
 Conditions never initiate execution and are evaluated once per admission.
-Devices remains the authority for State: the Service reads one coherent batch
-through the devices seam outside the admission transaction, retries a bounded
-number of times when the transaction reports incomplete coverage, and never
+Devices remains the authority for State: the Service pre-reads one coherent
+batch through the devices seam outside the admission transaction and never
 merges samples from different reads. Transaction-loaded current definitions are
-the admission authority, so a definition edit between attempts is handled by the
-next read rather than cached.
+the admission authority; a definition edit that newly requires an uncovered
+Entity makes the transaction write nothing and return a retryable coverage error.
 
 Automatic and manual admissions share the protocol. Duplicate, stale, and busy
-precedence precedes any State read; false or unknown Conditions commit an
-explainable Skip and start no workers. Manual invocation may explicitly bypass
-Conditions, which is recorded in the admitted Run and bypasses nothing else. The
-Service turns a committed manual Condition Skip into a typed blocked error only
-after the transaction commits, so the required history is never rolled back.
+precedence precedes Condition evaluation in the transaction; automatic admission
+may have already pre-read State for enabled matching configured definitions. False
+or unknown Conditions commit an explainable Skip and start no workers. Manual
+invocation may explicitly bypass Conditions, which is recorded in the admitted Run
+and bypasses nothing else. The Service turns a committed manual Condition Skip
+into a typed blocked error only after the transaction commits, so the required
+history is never rolled back.
 
 See [the Conditions specification](../../../specs/automation-conditions.md) for
 the implementation contract and [the operator guide](../../../docs/automation-conditions.md)
@@ -63,9 +64,10 @@ File boundaries organize related code; they do not divide existing transactions.
 - Fact admission loads current definitions, matches Triggers, checks durable
   duplicate receipts, and commits every matching Run or Skip with its receipt,
   initial Steps, and Condition decision in one transaction. Stale-Fact
-  classification precedes busy classification, and only an eligible match reads
-  State. A missing-evidence pass writes nothing and returns the complete required
-  Entity set so the Service can replace the whole snapshot before retrying.
+  classification precedes busy classification, and the Service pre-reads State
+  only for enabled matching definitions with Conditions. A definition edit that
+  makes the supplied snapshot incomplete writes nothing and returns a coverage
+  error; the Service does not retry the admission.
 - Manual admission checks the current definition and active Run before recording
   one immutable Run snapshot, its Condition decision, and its initial Steps.
   Disabled Automations still permit manual invocation.

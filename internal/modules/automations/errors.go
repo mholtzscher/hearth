@@ -34,16 +34,11 @@ var (
 	// because a Step start, completion, or ownership check failed. It closes
 	// automation admission rather than guessing progress.
 	ErrExecutorFault = errors.New("automation executor fault")
-	// ErrConditionSnapshotRequired reports that the supplied State snapshot does
-	// not cover every Entity current eligible Conditions require. It is internal
-	// orchestration that requests a replacement snapshot, never a permanent input
-	// error and never a partial admission.
+	// ErrConditionSnapshotRequired reports that the transaction's current eligible
+	// Conditions need an Entity absent from the Service's pre-read State snapshot.
+	// It is a retryable definition-edit race, never a permanent input error and
+	// never a partial admission.
 	ErrConditionSnapshotRequired = errors.New("automation condition snapshot coverage is incomplete")
-	// ErrConditionSnapshotUnstable reports that one admission exhausted its
-	// bounded snapshot reads and repository attempts without ever covering the
-	// complete current required Entity set. Nothing commits, and the caller maps
-	// it to safe HTTP 503 condition_snapshot_unavailable.
-	ErrConditionSnapshotUnstable = errors.New("automation condition snapshot could not stabilize")
 	// ErrAutomationConditionsBlocked reports that manual admission committed a
 	// Condition Skip instead of a Run. It refers only to a successfully committed
 	// Skip, which is why the Service returns it after the transaction, never from
@@ -51,10 +46,11 @@ var (
 	ErrAutomationConditionsBlocked = errors.New("automation conditions prevented manual admission")
 )
 
-// ConditionSnapshotRequiredError requests a replacement State snapshot instead
-// of partial admission. RequiredEntityIDs is the complete required set, sorted
-// and deduplicated, so the caller can read exactly what the current definitions
-// need in one coherent batch. It is never a transport input error.
+// ConditionSnapshotRequiredError reports a definition-edit race between the
+// Service's State pre-read and the admission transaction. RequiredEntityIDs is
+// the affected Automation's complete sorted, deduplicated required set; the
+// transaction writes nothing, and transports treat the error as retryable rather
+// than input.
 type ConditionSnapshotRequiredError struct {
 	RequiredEntityIDs []devices.EntityID
 }

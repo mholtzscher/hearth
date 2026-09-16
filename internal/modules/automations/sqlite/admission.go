@@ -5,7 +5,6 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
-	"slices"
 	"time"
 
 	"github.com/mholtzscher/hearth/internal/modules/automations"
@@ -23,17 +22,15 @@ const (
 	plannedOutcomeDuplicate
 )
 
-// plannedAutomation carries one matching Automation's planned outcome. A
-// conditional plan is decided only after the complete current required Entity
-// set is covered, so no write happens on a coverage-error pass.
+// plannedAutomation carries one matching Automation's decided, still-unwritten
+// outcome. Condition evaluation happens during planning after coverage is
+// verified, so any definition-edit race returns before the transaction writes.
 type plannedAutomation struct {
-	record      automations.AutomationRecord
-	matched     []automations.TriggerID
-	kind        plannedOutcomeKind
-	reason      automations.AutomationSkipReason
-	decision    automations.AutomationConditionDecision
-	required    []devices.EntityID
-	conditional bool
+	record   automations.AutomationRecord
+	matched  []automations.TriggerID
+	kind     plannedOutcomeKind
+	reason   automations.AutomationSkipReason
+	decision automations.AutomationConditionDecision
 }
 
 // AdmitDeviceFact atomically commits matching enabled Automations' receipts,
@@ -42,12 +39,11 @@ type plannedAutomation struct {
 // Service read.
 //
 // The transaction plans every matching outcome without writes or identity
-// allocation, applies duplicate/stale/busy precedence before gathering the
-// Entities eligible Conditions require, and returns
-// [automations.ConditionSnapshotRequiredError] carrying the complete required set
-// when the supplied snapshot does not cover it. That coverage-error pass commits
-// nothing, including the otherwise-decided stale, busy, and unconditioned
-// siblings.
+// allocation, applies duplicate/stale/busy precedence before evaluating
+// Conditions, and returns [automations.ConditionSnapshotRequiredError] when a
+// definition changed after the Service pre-read and needs an uncovered Entity.
+// That rare coverage-error pass commits nothing, including otherwise-decided
+// stale, busy, and unconditioned siblings.
 func (repo *AutomationRepository) AdmitDeviceFact(
 	ctx context.Context,
 	fact automations.DeviceFact,
@@ -65,12 +61,9 @@ func (repo *AutomationRepository) AdmitDeviceFact(
 	summary := automations.NewDeviceFactSummary(fact)
 	var result automations.AdmissionResult
 	err := repo.transaction(ctx, func(queries *dbsqlc.Queries) error {
-		plans, required, err := repo.planDeviceFact(ctx, queries, fact, summary, snapshot, admittedAt)
+		plans, err := repo.planDeviceFact(ctx, queries, fact, summary, snapshot, admittedAt)
 		if err != nil {
 			return err
-		}
-		if len(required) > 0 {
-			return &automations.ConditionSnapshotRequiredError{RequiredEntityIDs: required}
 		}
 		return repo.commitDeviceFact(ctx, queries, plans, summary, admittedAt, &result)
 	})
@@ -173,9 +166,8 @@ func (repo *AutomationRepository) admitManualRun(
 
 // planDeviceFact loads current definitions and decides every matching
 // Automation's outcome without writing history, allocating identities, or
-// registering workers. It returns the complete current required Entity set when
-// the supplied snapshot does not cover all of it, so the caller reads one
-// replacement snapshot instead of admitting partially.
+// registering workers. A definition-edit race with the Service's pre-read
+// returns a coverage error before any planned outcome is committed.
 func (repo *AutomationRepository) planDeviceFact(
 	ctx context.Context,
 	queries *dbsqlc.Queries,
@@ -183,51 +175,36 @@ func (repo *AutomationRepository) planDeviceFact(
 	summary automations.DeviceFactSummary,
 	snapshot devices.EntityStateSnapshot,
 	admittedAt time.Time,
-) ([]plannedAutomation, []devices.EntityID, error) {
+) ([]plannedAutomation, error) {
 	rows, err := queries.ListAllAutomations(ctx)
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 	plans := make([]plannedAutomation, 0, len(rows))
-	required := map[devices.EntityID]struct{}{}
 	for _, row := range rows {
-		plan, planErr := repo.planAutomationOutcome(ctx, queries, row, fact, summary, admittedAt)
+		plan, planErr := repo.planAutomationOutcome(ctx, queries, row, fact, summary, snapshot, admittedAt)
 		if planErr != nil {
-			return nil, nil, planErr
+			return nil, planErr
 		}
-		if plan == nil {
-			continue
-		}
-		plans = append(plans, *plan)
-		for _, entityID := range plan.required {
-			required[entityID] = struct{}{}
+		if plan != nil {
+			plans = append(plans, *plan)
 		}
 	}
-	requiredIDs := sortedRequiredEntityIDs(required)
-	if missing := missingSnapshotCoverage(requiredIDs, snapshot); len(missing) > 0 {
-		return nil, missing, nil
-	}
-	for index := range plans {
-		if !plans[index].conditional {
-			continue
-		}
-		resolveErr := resolveConditionalOutcome(&plans[index], snapshot, admittedAt)
-		if resolveErr != nil {
-			return nil, nil, resolveErr
-		}
-	}
-	return plans, nil, nil
+	return plans, nil
 }
 
 // planAutomationOutcome decides one current definition's outcome without
 // writing history, allocating identities, or registering workers. It returns nil
 // for a disabled or unmatched Automation, which records nothing at all.
+//
+//nolint:funlen // Condition evaluation is intentionally resolved in this one-pass planner.
 func (repo *AutomationRepository) planAutomationOutcome(
 	ctx context.Context,
 	queries *dbsqlc.Queries,
 	row dbsqlc.Automation,
 	fact automations.DeviceFact,
 	summary automations.DeviceFactSummary,
+	snapshot devices.EntityStateSnapshot,
 	admittedAt time.Time,
 ) (*plannedAutomation, error) {
 	record, err := automationRecord(row)
@@ -295,27 +272,21 @@ func (repo *AutomationRepository) planAutomationOutcome(
 	if err != nil {
 		return nil, err
 	}
-	return &plannedAutomation{
-		record: record, matched: matched, conditional: true, required: entityIDs,
-	}, nil
-}
-
-// resolveConditionalOutcome evaluates one eligible configured Automation against
-// the covered snapshot and records its Run or Condition Skip decision.
-func resolveConditionalOutcome(
-	plan *plannedAutomation,
-	snapshot devices.EntityStateSnapshot,
-	admittedAt time.Time,
-) error {
-	conditions := plan.record.Definition.Conditions
+	if missing := missingSnapshotCoverage(entityIDs, snapshot); len(missing) > 0 {
+		return nil, &automations.ConditionSnapshotRequiredError{RequiredEntityIDs: missing}
+	}
 	evaluation, err := automations.EvaluateAutomationConditions(*conditions, snapshot, admittedAt)
 	if err != nil {
-		return err
+		return nil, err
 	}
-	plan.decision = automations.AutomationConditionDecision{
-		Mode:       automations.AutomationConditionDecisionEvaluated,
-		Snapshot:   conditions,
-		Evaluation: &evaluation,
+	plan := &plannedAutomation{
+		record:  record,
+		matched: matched,
+		decision: automations.AutomationConditionDecision{
+			Mode:       automations.AutomationConditionDecisionEvaluated,
+			Snapshot:   conditions,
+			Evaluation: &evaluation,
+		},
 	}
 	switch evaluation.Result {
 	case automations.AutomationConditionTrue:
@@ -327,12 +298,12 @@ func resolveConditionalOutcome(
 		plan.kind = plannedOutcomeSkip
 		plan.reason = automations.AutomationSkipConditionsUnknown
 	default:
-		return fmt.Errorf(
+		return nil, fmt.Errorf(
 			"%w: condition evaluation for automation %q has an unknown result",
-			automations.ErrInvalidAutomation, plan.record.ID,
+			automations.ErrInvalidAutomation, record.ID,
 		)
 	}
-	return nil
+	return plan, nil
 }
 
 // commitDeviceFact writes every planned outcome in Automation ID order. The
@@ -664,20 +635,6 @@ func notEvaluatedDecision(
 		Mode:     automations.AutomationConditionDecisionNotEvaluated,
 		Snapshot: conditions,
 	}
-}
-
-// sortedRequiredEntityIDs returns the sorted, deduplicated union of the Entity
-// IDs eligible Conditions require, or nil when none do.
-func sortedRequiredEntityIDs(required map[devices.EntityID]struct{}) []devices.EntityID {
-	if len(required) == 0 {
-		return nil
-	}
-	ids := make([]devices.EntityID, 0, len(required))
-	for id := range required {
-		ids = append(ids, id)
-	}
-	slices.Sort(ids)
-	return slices.Compact(ids)
 }
 
 // missingSnapshotCoverage returns the complete required set when the supplied

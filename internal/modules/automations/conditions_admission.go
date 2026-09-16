@@ -3,28 +3,19 @@ package automations
 import (
 	"context"
 	"errors"
-	"fmt"
 	"log/slog"
+	"slices"
 	"time"
 
 	"github.com/mholtzscher/hearth/internal/modules/devices"
 )
 
 // AutomationAdmissionTimeout bounds one automatic or manual admission,
-// including every Condition State snapshot read and every repository retry. The
-// NATS consumer exposes it as DeviceFactAdmissionTimeout rather than repeating
-// the duration, and HTTP never imports NATS.
+// including its definition pre-read, Condition State snapshot read, and
+// repository transaction. The NATS consumer exposes it as
+// DeviceFactAdmissionTimeout rather than repeating the duration, and HTTP
+// never imports NATS.
 const AutomationAdmissionTimeout = 2 * time.Second
-
-// Bounded Condition coverage recovery. The initial empty-snapshot attempt counts
-// as an attempt, so one admission performs at most two coherent batch reads and
-// three repository attempts inside AutomationAdmissionTimeout. An admission that
-// still lacks coverage returns [ErrConditionSnapshotUnstable] instead of looping,
-// sleeping, or resetting its deadline.
-const (
-	automationAdmissionAttempts      = 3
-	automationAdmissionSnapshotReads = 2
-)
 
 // ManualRunInput carries explicit operator intent for one manual admission. It
 // accepts no Command identities: Steps and Commands come from the transaction's
@@ -43,91 +34,107 @@ type ManualAdmissionResult struct {
 	Skip *AutomationSkip
 }
 
-// emptyEntityStateSnapshot is the first-attempt evidence: no requested Entity is
-// covered, which the repository reports as a coverage error rather than treating
-// a missing key as absent State.
+// emptyEntityStateSnapshot represents an admission that has no configured
+// Conditions to evaluate. It deliberately distinguishes no requested evidence
+// from an incomplete snapshot for a configured Condition.
 func emptyEntityStateSnapshot() devices.EntityStateSnapshot {
 	return devices.EntityStateSnapshot{Entries: map[devices.EntityID]devices.EntityStateSnapshotEntry{}}
 }
 
-// admitAutomaticFact runs one Device Fact admission to a committed result within
-// the bounded coverage protocol: the reservation already held by the caller
-// spans every attempt and snapshot read, each attempt uses a fresh decision time,
-// and each coverage error replaces the whole snapshot instead of merging samples.
+// admitAutomaticFact reads the State needed by enabled matching definitions
+// before opening the one admission transaction. The transaction remains the
+// authority for definitions: a newly required Entity from an intervening edit
+// returns ConditionSnapshotRequiredError without writing anything.
 func (service *Service) admitAutomaticFact(
 	ctx context.Context,
 	fact DeviceFact,
 ) (AdmissionResult, error) {
-	return admitWithCoverageRecovery(ctx, service, func(
-		attemptContext context.Context,
-		snapshot devices.EntityStateSnapshot,
-	) (AdmissionResult, error) {
-		return service.repository.AdmitDeviceFact(
-			attemptContext, fact, snapshot, service.dependencies.Now(),
-		)
-	})
+	admissionContext, cancel := context.WithTimeout(ctx, AutomationAdmissionTimeout)
+	defer cancel()
+	definitions, err := service.repository.ListEnabledAutomations(admissionContext)
+	if err != nil {
+		return AdmissionResult{}, err
+	}
+	required, err := requiredMatchingConditionEntityIDs(fact, definitions)
+	if err != nil {
+		return AdmissionResult{}, err
+	}
+	snapshot := emptyEntityStateSnapshot()
+	if len(required) > 0 {
+		snapshot, err = service.readConditionStateSnapshot(admissionContext, required)
+		if err != nil {
+			return AdmissionResult{}, err
+		}
+	}
+	return service.repository.AdmitDeviceFact(admissionContext, fact, snapshot, service.dependencies.Now())
 }
 
-// admitManualRun runs one manual admission under the same bounded coverage
-// protocol as an automatic Fact. A bypass or unconditioned definition never
-// requests coverage, so it reads no State at all.
+// admitManualRun reads the current definition before opening the one admission
+// transaction. A bypassed or unconditioned request deliberately uses no State
+// snapshot; an intervening definition edit is detected by the transaction's
+// coverage check.
 func (service *Service) admitManualRun(
 	ctx context.Context,
 	input ManualRunInput,
 ) (ManualAdmissionResult, error) {
-	return admitWithCoverageRecovery(ctx, service, func(
-		attemptContext context.Context,
-		snapshot devices.EntityStateSnapshot,
-	) (ManualAdmissionResult, error) {
-		return service.repository.AdmitManualRun(
-			attemptContext, input, snapshot, service.dependencies.Now(),
-		)
-	})
-}
-
-// admitWithCoverageRecovery runs the bounded Condition coverage protocol for one
-// admission: at most three repository attempts and two coherent replacement
-// reads inside the shared two-second budget, with each coverage error replaced
-// rather than merged. It returns the first committed outcome, or
-// [ErrConditionSnapshotUnstable] when coverage never stabilizes. The generic
-// result keeps automatic Fact and manual admission on one protocol without
-// duplicating the budget, retry, and error classification rules.
-func admitWithCoverageRecovery[T any](
-	ctx context.Context,
-	service *Service,
-	attempt func(context.Context, devices.EntityStateSnapshot) (T, error),
-) (T, error) {
-	var zero T
 	admissionContext, cancel := context.WithTimeout(ctx, AutomationAdmissionTimeout)
 	defer cancel()
+	record, err := service.repository.GetAutomation(admissionContext, input.AutomationID)
+	if err != nil {
+		return ManualAdmissionResult{}, err
+	}
 	snapshot := emptyEntityStateSnapshot()
-	reads := 0
-	for attemptIndex := 1; attemptIndex <= automationAdmissionAttempts; attemptIndex++ {
-		result, err := attempt(admissionContext, snapshot)
-		var coverage *ConditionSnapshotRequiredError
-		switch {
-		case errors.As(err, &coverage):
-			if reads >= automationAdmissionSnapshotReads {
-				return zero, ErrConditionSnapshotUnstable
-			}
-			reads++
-			snapshot, err = service.readConditionStateSnapshot(admissionContext, coverage.RequiredEntityIDs)
-			if err != nil {
-				return zero, classifyAdmissionError(ctx, admissionContext, err)
-			}
-		case err != nil:
-			return zero, classifyAdmissionError(ctx, admissionContext, err)
-		default:
-			return result, nil
+	if !input.BypassConditions && record.Definition.Conditions != nil {
+		required, requiredErr := RequiredConditionEntityIDs(*record.Definition.Conditions)
+		if requiredErr != nil {
+			return ManualAdmissionResult{}, requiredErr
+		}
+		snapshot, err = service.readConditionStateSnapshot(admissionContext, required)
+		if err != nil {
+			return ManualAdmissionResult{}, err
 		}
 	}
-	return zero, ErrConditionSnapshotUnstable
+	return service.repository.AdmitManualRun(admissionContext, input, snapshot, service.dependencies.Now())
 }
 
-// readConditionStateSnapshot reads one complete replacement snapshot through the
-// devices seam. It never merges a previous sample, and it preserves
-// [devices.ErrEntityStateSnapshotCorrupt] through the returned error so the
-// caller retains the Fact and negatively acknowledges it.
+// requiredMatchingConditionEntityIDs returns the sorted, deduplicated Entity
+// union every enabled definition matching fact requires for its Conditions.
+func requiredMatchingConditionEntityIDs(
+	fact DeviceFact,
+	definitions []AutomationRecord,
+) ([]devices.EntityID, error) {
+	required := make(map[devices.EntityID]struct{})
+	for _, record := range definitions {
+		conditions := record.Definition.Conditions
+		if conditions == nil {
+			continue
+		}
+		matched, err := MatchAutomationTriggers(fact, record.Definition)
+		if err != nil {
+			return nil, err
+		}
+		if len(matched) == 0 {
+			continue
+		}
+		entityIDs, err := RequiredConditionEntityIDs(*conditions)
+		if err != nil {
+			return nil, err
+		}
+		for _, entityID := range entityIDs {
+			required[entityID] = struct{}{}
+		}
+	}
+	ids := make([]devices.EntityID, 0, len(required))
+	for entityID := range required {
+		ids = append(ids, entityID)
+	}
+	slices.Sort(ids)
+	return ids, nil
+}
+
+// readConditionStateSnapshot reads one complete snapshot through the devices
+// seam. It preserves [devices.ErrEntityStateSnapshotCorrupt] through the
+// returned error so the caller retains the Fact and negatively acknowledges it.
 func (service *Service) readConditionStateSnapshot(
 	ctx context.Context,
 	ids []devices.EntityID,
@@ -136,23 +143,6 @@ func (service *Service) readConditionStateSnapshot(
 		return devices.EntityStateSnapshot{}, errors.New("automation condition state source is unavailable")
 	}
 	return service.devices.GetEntityStateSnapshot(ctx, ids)
-}
-
-// classifyAdmissionError maps a snapshot acquisition or repository deadline or
-// cancellation to [ErrConditionSnapshotUnstable] so transport callers can answer
-// a safe HTTP 503 condition_snapshot_unavailable. Caller cancellation and
-// deadline keep their own error because the server may no longer be able to
-// respond; corrupt and ordinary storage failures pass through unchanged so the
-// existing 500 mapping and diagnostics stay intact.
-func classifyAdmissionError(callerContext, admissionContext context.Context, err error) error {
-	if callerContext.Err() != nil {
-		return err
-	}
-	if admissionContext.Err() != nil || errors.Is(err, context.DeadlineExceeded) ||
-		errors.Is(err, context.Canceled) {
-		return fmt.Errorf("%w: %w", ErrConditionSnapshotUnstable, err)
-	}
-	return err
 }
 
 // logConditionStateCorrupt records the fixed, value-free diagnostic for unusable

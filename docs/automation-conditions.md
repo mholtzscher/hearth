@@ -404,13 +404,12 @@ evaluated, not State at the Fact's time and not a promise that Conditions still
 hold while Steps run.
 
 To keep module ownership and avoid nested reads, Hearth reads the batch outside
-the automation transaction and requires complete coverage before writing. If a
-newly eligible requirement is not covered, admission writes nothing, requests one
-bounded complete re-snapshot, and retries with a fresh decision time. An admission
-performs at most two batch reads and three attempts inside a two-second budget.
-Coverage that never stabilizes returns a safe HTTP `503` with code
-`condition_snapshot_unavailable`, and no fabricated Skip. Ordinary storage
-failures keep the existing safe `500` mapping.
+the automation transaction once, before it opens that transaction, and requires
+complete coverage before writing. If a definition edit makes a newly eligible
+requirement unavailable from that pre-read, admission writes nothing and returns a
+safe HTTP `503` with code `condition_snapshot_unavailable`; NATS redelivers the
+Fact. Ordinary snapshot acquisition and storage failures keep the existing safe
+`500` mapping.
 
 ## Related documentation
 

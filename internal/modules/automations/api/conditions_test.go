@@ -343,7 +343,7 @@ func TestManualRunOptionalBypassBodyIsStrict(t *testing.T) {
 	// A rejected body must not read State or write history; only the three
 	// blocked Condition requests read State and only four outcomes commit.
 	if reads := stub.snapshotRequests(); len(reads) != 3 {
-		t.Fatalf("state reads = %d, want one per blocked Condition attempt", len(reads))
+		t.Fatalf("state reads = %d, want one per blocked Condition admission", len(reads))
 	}
 	if ids := historyEntryIDs(t, router, automationID); len(ids) != 4 {
 		t.Fatalf("history ids = %v, want 4 committed outcomes", ids)
@@ -481,7 +481,7 @@ func TestManualRunConditionUnknownReturnsHistoryReference(t *testing.T) {
 	}
 }
 
-// Coverage that never stabilizes must return safe 503
+// An incomplete snapshot reaching the transaction must return safe 503
 // condition_snapshot_unavailable and commit no fabricated Skip.
 func TestManualRunSnapshotUnavailableIsSafe503(t *testing.T) {
 	t.Parallel()
@@ -493,24 +493,23 @@ func TestManualRunSnapshotUnavailableIsSafe503(t *testing.T) {
 
 	response := performJSON(router, http.MethodPost, "/v1/automations/"+automationID+"/runs", "")
 	if response.Code != http.StatusServiceUnavailable {
-		t.Fatalf("unstable snapshot status = %d, want 503: %s", response.Code, response.Body.String())
+		t.Fatalf("incomplete snapshot status = %d, want 503: %s", response.Code, response.Body.String())
 	}
 	problem := decodeAutomationProblem(t, response)
 	if problem.Code != "condition_snapshot_unavailable" {
-		t.Fatalf("unstable snapshot code = %q, want condition_snapshot_unavailable", problem.Code)
+		t.Fatalf("incomplete snapshot code = %q, want condition_snapshot_unavailable", problem.Code)
 	}
 	if problem.HistoryID != "" || problem.HistoryURL != "" {
-		t.Fatalf("unstable snapshot fabricated a history reference: %#v", problem)
+		t.Fatalf("incomplete snapshot fabricated a history reference: %#v", problem)
 	}
 	if ids := historyEntryIDs(t, router, automationID); len(ids) != 0 {
-		t.Fatalf("unstable snapshot wrote history: %v", ids)
+		t.Fatalf("incomplete snapshot wrote history: %v", ids)
 	}
 }
 
-// A snapshot acquisition deadline or cancellation must map to the same safe 503
-// as coverage churn, never the ordinary 500 storage-failure mapping. This covers
-// the actual context error path rather than only the unstable-snapshot sentinel.
-func TestManualRunSnapshotDeadlineIsSafe503(t *testing.T) {
+// A snapshot acquisition deadline or cancellation is not the definition-edit
+// coverage race and keeps the ordinary safe 500 mapping.
+func TestManualRunSnapshotDeadlineIsSafe500(t *testing.T) {
 	t.Parallel()
 	for _, test := range []struct {
 		name string
@@ -526,12 +525,12 @@ func TestManualRunSnapshotDeadlineIsSafe503(t *testing.T) {
 		stub.setEntityStateSnapshotError(test.err)
 
 		response := performJSON(router, http.MethodPost, "/v1/automations/"+automationID+"/runs", "")
-		if response.Code != http.StatusServiceUnavailable {
-			t.Fatalf("%s status = %d, want 503: %s", test.name, response.Code, response.Body.String())
+		if response.Code != http.StatusInternalServerError {
+			t.Fatalf("%s status = %d, want 500: %s", test.name, response.Code, response.Body.String())
 		}
 		problem := decodeAutomationProblem(t, response)
-		if problem.Code != "condition_snapshot_unavailable" {
-			t.Fatalf("%s code = %q, want condition_snapshot_unavailable", test.name, problem.Code)
+		if problem.Code == "condition_snapshot_unavailable" {
+			t.Fatalf("%s incorrectly mapped to a coverage race: %#v", test.name, problem)
 		}
 		if problem.HistoryID != "" || problem.HistoryURL != "" {
 			t.Fatalf("%s fabricated a history reference: %#v", test.name, problem)

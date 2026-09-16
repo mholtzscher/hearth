@@ -125,7 +125,7 @@ func mapDomainError(err error) error {
 			return newConditionBlockedProblem(blocked)
 		}
 		return newProblem(http.StatusConflict, "conditions_blocked", "automation conditions prevented manual admission")
-	case errors.Is(err, automations.ErrConditionSnapshotUnstable):
+	case errors.Is(err, automations.ErrConditionSnapshotRequired):
 		return newProblem(
 			http.StatusServiceUnavailable,
 			"condition_snapshot_unavailable",

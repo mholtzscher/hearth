@@ -50,18 +50,23 @@ type AutomationDefinitionRepository interface {
 type AutomationRepository interface {
 	AutomationDefinitionRepository
 
+	// ListEnabledAutomations reads every currently enabled definition in
+	// ascending Automation ID order for an admission State pre-read.
+	ListEnabledAutomations(context.Context) ([]AutomationRecord, error)
+
 	// AdmitDeviceFact evaluates one Device Fact against current enabled
 	// definitions and commits every matching outcome in one transaction. It
 	// registers no workers; the caller starts them only after the commit returns.
-	// The supplied snapshot must cover every Entity current eligible Conditions
-	// require; otherwise it returns [ConditionSnapshotRequiredError] carrying the
-	// complete required set and writes nothing.
+	// The supplied snapshot must cover every Entity the transaction's current
+	// eligible Conditions require. If a definition changed after the Service
+	// pre-read, it returns [ConditionSnapshotRequiredError] and writes nothing.
 	AdmitDeviceFact(
 		context.Context, DeviceFact, devices.EntityStateSnapshot, time.Time,
 	) (AdmissionResult, error)
 	// AdmitManualRun starts one Run, or commits one Condition Skip, from the
 	// current definition snapshot even when the Automation is disabled. The
-	// supplied snapshot follows the same coverage rule as AdmitDeviceFact.
+	// supplied snapshot follows the same definition-race coverage rule as
+	// AdmitDeviceFact and writes nothing when it is incomplete.
 	AdmitManualRun(
 		context.Context, ManualRunInput, devices.EntityStateSnapshot, time.Time,
 	) (ManualAdmissionResult, error)

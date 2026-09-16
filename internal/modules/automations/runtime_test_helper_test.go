@@ -68,7 +68,7 @@ func (scripted *scriptedDevices) GetEntityStateSnapshot(
 	onRead := scripted.onSnapshotRead
 	scripted.mu.Unlock()
 	// The hook runs without the lock so a test can advance its clock or install
-	// new definitions between two coverage attempts.
+	// a definition before the following admission transaction.
 	if onRead != nil {
 		onRead()
 	}

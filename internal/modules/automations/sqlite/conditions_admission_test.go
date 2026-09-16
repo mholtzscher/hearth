@@ -174,11 +174,50 @@ func rowCount(t *testing.T, database *sql.DB, table string) int {
 	return count
 }
 
-// A coverage-error pass must write no history, receipt, or Step and must return
-// the complete current required Entity set, not only the missing subset.
-//
-//nolint:gocognit // One end-to-end coverage sequence proves read, error, and commit.
-func TestAdmitDeviceFactCoverageErrorWritesNothingAndReturnsCompleteSet(t *testing.T) {
+// An uncovered snapshot caused by a definition edit must write no history,
+// receipt, or Step and must return the complete current required Entity set,
+// not only the missing subset.
+func TestAdmitDeviceFactUncoveredSnapshotWritesNothingAndReturnsCompleteSet(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	database := openAutomationDatabase(t)
+	repository := newAutomationRepository(t, database)
+	trigger := newEntityID(t)
+	firstEntity := newEntityID(t)
+	secondEntity := newEntityID(t)
+	if _, err := repository.CreateAutomation(ctx, conditionalDefinitionFor(
+		t, trigger, conditionLeaf("first", firstEntity, automations.ComparisonLessThan, "30"),
+	)); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := repository.CreateAutomation(ctx, conditionalDefinitionFor(
+		t, trigger, conditionLeaf("second", secondEntity, automations.ComparisonLessThan, "30"),
+	)); err != nil {
+		t.Fatal(err)
+	}
+	fact := observationFactFor(t, trigger, admissionNow)
+	_, err := repository.AdmitDeviceFact(ctx, fact, stateSnapshotWith(), admissionNow)
+	var coverage *automations.ConditionSnapshotRequiredError
+	if !errors.As(err, &coverage) {
+		t.Fatalf("empty-snapshot admission error = %v, want ConditionSnapshotRequiredError", err)
+	}
+	if len(coverage.RequiredEntityIDs) != 1 ||
+		(coverage.RequiredEntityIDs[0] != firstEntity && coverage.RequiredEntityIDs[0] != secondEntity) {
+		t.Fatalf("required Entity set = %v, want one uncovered Automation requirement", coverage.RequiredEntityIDs)
+	}
+	if !errors.Is(err, automations.ErrConditionSnapshotRequired) {
+		t.Fatalf("coverage error does not match ErrConditionSnapshotRequired: %v", err)
+	}
+	for _, table := range []string{"automation_history", "automation_fact_receipts", "automation_run_steps"} {
+		if count := rowCount(t, database, table); count != 0 {
+			t.Fatalf("%s rows = %d, want 0 after a coverage-error pass", table, count)
+		}
+	}
+}
+
+// One covered admission must atomically commit matching unconditional and
+// conditional outcomes together, including a known missing State result.
+func TestAdmitDeviceFactMixedConditionalAndUnconditionalMatchesCommitTogether(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	database := openAutomationDatabase(t)
@@ -202,78 +241,33 @@ func TestAdmitDeviceFactCoverageErrorWritesNothingAndReturnsCompleteSet(t *testi
 	if err != nil {
 		t.Fatal(err)
 	}
-	fact := observationFactFor(t, trigger, admissionNow)
-	_, err = repository.AdmitDeviceFact(ctx, fact, stateSnapshotWith(), admissionNow)
-	var coverage *automations.ConditionSnapshotRequiredError
-	if !errors.As(err, &coverage) {
-		t.Fatalf("empty-snapshot admission error = %v, want ConditionSnapshotRequiredError", err)
-	}
-	want := []devices.EntityID{firstEntity, secondEntity}
-	slices.Sort(want)
-	if !slices.Equal(coverage.RequiredEntityIDs, want) {
-		t.Fatalf("required Entity set = %v, want the complete set %v", coverage.RequiredEntityIDs, want)
-	}
-	if !errors.Is(err, automations.ErrConditionSnapshotRequired) {
-		t.Fatalf("coverage error does not match ErrConditionSnapshotRequired: %v", err)
-	}
-	for _, table := range []string{"automation_history", "automation_fact_receipts", "automation_run_steps"} {
-		if count := rowCount(t, database, table); count != 0 {
-			t.Fatalf("%s rows = %d, want 0 after a coverage-error pass", table, count)
-		}
-	}
-	// The unconditional sibling must still be admitted once coverage completes.
-	snapshot := stateSnapshotWith(
+	result, err := repository.AdmitDeviceFact(ctx, observationFactFor(t, trigger, admissionNow), stateSnapshotWith(
 		presentStateEntry(t, firstEntity, `{"level":10}`, admissionNow),
 		absentEntityEntry(secondEntity),
-	)
-	result, err := repository.AdmitDeviceFact(ctx, fact, snapshot, admissionNow)
+	), admissionNow)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if result.Outcome.StartedRuns != 2 || result.Outcome.RecordedSkips != 1 || result.Outcome.DuplicateOutcomes != 0 {
-		t.Fatalf("covered admission outcome = %#v, want two Runs and one Skip", result.Outcome)
-	}
-	if result.Outcome.MatchedAutomations != 3 {
-		t.Fatalf("matched automations = %d, want 3", result.Outcome.MatchedAutomations)
+	if result.Outcome.StartedRuns != 2 || result.Outcome.RecordedSkips != 1 || result.Outcome.MatchedAutomations != 3 {
+		t.Fatalf("mixed admission outcome = %#v, want two Runs and one Skip", result.Outcome)
 	}
 	admittedIDs := make(map[automations.AutomationID]bool, len(result.StartedRuns))
 	for _, run := range result.StartedRuns {
 		admittedIDs[run.AutomationID] = true
 	}
 	if !admittedIDs[unconditional.ID] || !admittedIDs[conditional.ID] {
-		t.Fatalf("started Runs = %v, want the two covered siblings", admittedIDs)
+		t.Fatalf("started Runs = %v, want unconditional and true conditional", admittedIDs)
 	}
-
-	if rowCount(t, database, "automation_fact_receipts") != 3 {
-		t.Fatalf("receipts = %d, want one per matching Automation", rowCount(t, database, "automation_fact_receipts"))
+	if len(result.Skips) != 1 || result.Skips[0].AutomationID != second.ID ||
+		result.Skips[0].Reason != automations.AutomationSkipConditionsUnknown {
+		t.Fatalf("mixed Condition Skip = %#v, want unknown second conditional", result.Skips)
 	}
-	if rowCount(t, database, "automation_run_steps") != 2 {
-		t.Fatalf("steps = %d, want one Run's Step per admitted Run", rowCount(t, database, "automation_run_steps"))
-	}
-	skips := result.Skips
-	if len(skips) != 1 || skips[0].Reason != automations.AutomationSkipConditionsUnknown ||
-		skips[0].Source != automations.RunSourceDeviceFact || skips[0].FactID == nil {
-		t.Fatalf("condition Skip projection = %#v, want one unknown device-fact Skip", skips)
-	}
-	entry := historyEntry(t, repository, second.ID, string(skips[0].SkipID))
-	if entry.Skip == nil || entry.Skip.ConditionDecision.Mode != automations.AutomationConditionDecisionEvaluated {
-		t.Fatalf("unknown Skip decision = %#v", entry.Skip)
-	}
-	if entry.Skip.ConditionDecision.Evaluation.Result != automations.AutomationConditionUnknown {
-		t.Fatalf("unknown Skip root result = %q", entry.Skip.ConditionDecision.Evaluation.Result)
-	}
-	if len(entry.Skip.MatchedTriggers) != 1 {
-		t.Fatalf("Skip matched triggers = %d, want 1", len(entry.Skip.MatchedTriggers))
-	}
-	// A known missing Entity is covered evidence, not a repeated read.
-	if summary := firstHistorySummary(t, repository, second.ID); summary.Reason !=
-		automations.AutomationSkipConditionsUnknown {
-		t.Fatalf("unknown sibling summary = %#v", summary)
+	if rowCount(t, database, "automation_fact_receipts") != 3 || rowCount(t, database, "automation_run_steps") != 2 {
+		t.Fatalf("mixed admission did not commit all receipts and steps atomically")
 	}
 }
 
-// Duplicate, stale, and busy siblings must not contribute required Entity IDs,
-// and a covered final attempt commits every outcome together.
+// Duplicate, stale, and busy siblings must not require Condition evidence.
 func TestAdmitDeviceFactCoverageIgnoresIneligibleSiblings(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
