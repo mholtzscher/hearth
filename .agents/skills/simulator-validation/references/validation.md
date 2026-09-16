@@ -40,6 +40,10 @@ Inside a Device's `entities` list:
 - Without outputs (or with no values), initial publishes once and stays silent.
 - Single-value sequences also publish only once; use `[21500, 21500]` for
   repeated identical Observations.
+- Clock-skew experiments: `source_time_offset: -24h` backdates `SourceUpdatedAt`
+  and `received_time_offset: +2m` shifts `AdapterReceivedAt` on every
+  Observation for that Entity. Unset leaves `SourceUpdatedAt` empty and
+  `AdapterReceivedAt` at now.
 - Temperature uses integer milli-Celsius, not degrees Celsius. Other types have
   their own support, units, ranges, and scalar/object shapes.
 - Test threshold crossings, repeated equal values, and boundaries separately.
@@ -61,6 +65,7 @@ commands:
 | `accept-no-publish` | Accept without outcome Observation; observed Commands finish `outcome_timeout` |
 | `reject`, optional `reason: simulated rejection` | Command finishes `rejected` with durable failure history |
 | `accept-and-publish`, `apply_parameters: false` | Republish unchanged State; test no-op/mismatched evidence |
+| `accept-and-publish`, `mark_available: true` | Re-report the Entity available before applying; start it `available: false`, dispatch, expect available State and a `satisfied` Command (rejected with the `reject` behavior) |
 
 Generic parameter application handles only `{"value": X}`: replace scalar State
 or an existing object's `value` member. It does not change `active`/`mode` or
@@ -84,8 +89,13 @@ rejection-before-dispatch. One unhealthy Device makes the whole Adapter
 unhealthy; isolate it from happy-path Commands.
 
 Entity availability defaults to available. Use `available: false` with a valid
-`availability_reason` to test advisory unavailability separately. State does
-not imply availability. The control API cannot change health or availability;
+`availability_reason` to test advisory unavailability separately. An
+unavailable Entity publishes no initial State; repair it with a
+`mark_available` Command and expect State plus a `satisfied` Command.
+State does not imply availability. For an unhealthy Device whose Entities
+should read effectively unavailable in Core, add
+`omit_availability_when_unhealthy: true` so no Entity availability report is
+sent (requires unhealthy health; otherwise the report still claims available). The control API cannot change health or availability;
 change the generated config and restart only the owned simulator for a new
 report. Reason codes must use the `hearth.` or `adapter.` namespace, for example
 `adapter.simulated_unavailable`. Preserve identities and data for recovery experiments.
