@@ -1,10 +1,22 @@
+# First-light simulator config: one scripted power Device. Copy to
+# configs/simulator.yaml (gitignored) and run:
+#   go run ./cmd/hearth-simulator -config configs/simulator.yaml
+#
+# Every Device and Entity is declared in the `devices` block; see
+# specs/simulator-harness.md for the full YAML surface and
+# configs/simulator.full.example.yaml for every harness feature.
 adapter_id: simulator
 nats_url: nats://127.0.0.1:4222
-binding_key: simulated-light
-# health scenarios: happy, adapter-unhealthy, entity-unavailable
-# command scenarios: delayed-source-time, future-clock-skew, upstream-rejection,
-#   no-op-refresh, overlapping-opposite-command, outcome-timeout,
-#   interrupted-command, restart-before-ack
-# entity-events additionally registers an event-source Entity and publishes
-#   synthetic reports for standard-input lines single_press and double_press
-scenario: happy
+devices:
+  - binding_key: simulated-light
+    name: Simulated light
+    kind: light
+    health: healthy
+    entities:
+      - key: power
+        name: Power
+        type: hearth.power/v1
+        support: {state: {}, operations: {set: {}}}
+        # false is the initial State; it publishes once at startup.
+        initial: false
+        commands: {set: {behavior: accept-and-publish}}

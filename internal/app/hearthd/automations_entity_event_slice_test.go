@@ -10,8 +10,6 @@ import (
 	"path/filepath"
 	"testing"
 	"time"
-
-	simulatoradapter "github.com/mholtzscher/hearth/internal/adapters/simulator"
 )
 
 // TestAutomationEntityEventFactDrivesCommandThroughCore protects A14's entity
@@ -50,7 +48,7 @@ func TestAutomationEntityEventFactDrivesCommandThroughCore(t *testing.T) {
 	automationID := createEntityEventAutomation(
 		ctx, t, httpAddress, adapter.eventEntityID, adapter.powerEntityID,
 	)
-	if err := adapter.emit(ctx, simulatoradapter.EntityEventSinglePress); err != nil {
+	if err := adapter.emit(ctx, sliceEntityEventSinglePress); err != nil {
 		t.Fatal(err)
 	}
 
@@ -180,7 +178,7 @@ func assertAcceptedEntityEventRecorded(
 	collection := getEntityEvents(ctx, t, http.DefaultClient, httpAddress, eventEntityID)
 	found := false
 	for _, item := range collection.Items {
-		if item.Name != simulatoradapter.EntityEventSinglePress {
+		if item.Name != sliceEntityEventSinglePress {
 			continue
 		}
 		if item.Disposition != "accepted" || item.RejectionCode != nil {
@@ -189,7 +187,7 @@ func assertAcceptedEntityEventRecorded(
 		found = true
 	}
 	if !found {
-		t.Fatalf("no accepted %q entity event was recorded", simulatoradapter.EntityEventSinglePress)
+		t.Fatalf("no accepted %q entity event was recorded", sliceEntityEventSinglePress)
 	}
 }
 

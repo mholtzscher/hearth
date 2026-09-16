@@ -10,15 +10,16 @@ import (
 	natsserver "github.com/nats-io/nats-server/v2/server"
 	natsgo "github.com/nats-io/nats.go"
 
+	"github.com/mholtzscher/hearth/internal/adapters/scripted"
 	"github.com/mholtzscher/hearth/internal/modules/devices"
 
-	simulatoradapter "github.com/mholtzscher/hearth/internal/adapters/simulator"
 	simulatorapp "github.com/mholtzscher/hearth/internal/app/simulator"
 )
 
-// This test protects the entity-events scenario assembly and fails if the
-// scenario drops the power Entity, omits the generated event-source Entity, or
-// reports the event source with State instead of Events support.
+// TestRunEntityEventsRegistersEventSourceBesidePower protects the scripted
+// entity-events Device assembly and fails if the Device drops the power Entity,
+// omits the declared event-source Entity, or reports the event source with
+// State instead of Events support.
 //
 //nolint:gocognit // One assembly sequence keeps registration and Entity reads causal.
 func TestRunEntityEventsRegistersEventSourceBesidePower(t *testing.T) {
@@ -53,20 +54,18 @@ func TestRunEntityEventsRegistersEventSourceBesidePower(t *testing.T) {
 	runErrors := make(chan error, 1)
 	go func() {
 		runErrors <- simulatorapp.Run(runContext, simulatorapp.Config{
-			AdapterID:  "simulator",
-			NATSURL:    server.ClientURL(),
-			BindingKey: "simulated-light",
-			Scenario:   simulatoradapter.ScenarioEntityEvents,
+			AdapterID: "simulator",
+			NATSURL:   server.ClientURL(),
+			Devices:   []scripted.DeviceSpec{entityEventsDevice()},
 		}, logger)
 	}()
 
 	initialized := waitForLifecycleEvent(t, recorder, "simulator.initialized", 10*time.Second)
-	if scenario, ok := lifecycleAttr(initialized, "scenario"); !ok ||
-		scenario.String() != simulatoradapter.ScenarioEntityEvents {
+	if mode, ok := lifecycleAttr(initialized, "mode"); !ok || mode.String() != "scripted" {
 		t.Fatalf("simulator.initialized = %#v", initialized)
 	}
-	if entityID, ok := lifecycleAttr(initialized, "entity_id"); !ok || entityID.String() == "" {
-		t.Fatalf("simulator.initialized omitted entity_id: %#v", initialized)
+	if entities, ok := lifecycleAttr(initialized, "entities"); !ok || entities.Int64() != 2 {
+		t.Fatalf("simulator.initialized entities = %#v, want 2", initialized)
 	}
 
 	page, err := service.ListEntities(ctx, devices.ListEntitiesParams{Limit: 50})
@@ -93,9 +92,7 @@ func TestRunEntityEventsRegistersEventSourceBesidePower(t *testing.T) {
 		t.Fatalf("event source Entity = %#v", events)
 	}
 	support := string(events.Entity.Support)
-	for _, name := range []string{
-		simulatoradapter.EntityEventSinglePress, simulatoradapter.EntityEventDoublePress,
-	} {
+	for _, name := range []string{"single_press", "double_press"} {
 		if !strings.Contains(support, name) {
 			t.Fatalf("event source support %s omitted %q", support, name)
 		}
@@ -112,5 +109,38 @@ func TestRunEntityEventsRegistersEventSourceBesidePower(t *testing.T) {
 		}
 	case <-ctx.Done():
 		t.Fatalf("Run did not stop after cancellation: %v", ctx.Err())
+	}
+}
+
+// entityEventsDevice is the scripted equivalent of the removed entity-events
+// scenario, as one Device registering the power State Entity beside an event
+// source Entity advertising the synthetic press names.
+func entityEventsDevice() scripted.DeviceSpec {
+	return scripted.DeviceSpec{
+		BindingKey: "simulated-light",
+		Name:       "Simulated light",
+		Kind:       "light",
+		Entities: []scripted.EntitySpec{
+			{
+				Key:  "power",
+				Name: "Power",
+				Type: "hearth.power/v1",
+				Support: map[string]any{
+					"state":      map[string]any{},
+					"operations": map[string]any{"set": map[string]any{}},
+				},
+				Initial: true,
+			},
+			{
+				Key:  "events",
+				Name: "Events",
+				Type: "hearth.enumevent/v1",
+				Support: map[string]any{
+					"state":      map[string]any{},
+					"operations": map[string]any{},
+					"events":     map[string]any{"names": []any{"single_press", "double_press"}},
+				},
+			},
+		},
 	}
 }

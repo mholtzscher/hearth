@@ -116,13 +116,10 @@ func TestRunInitializesAndStopsCleanly(t *testing.T) {
 
 	runContext, stopRun := context.WithCancel(ctx)
 	runErrors := make(chan error, 1)
+	config := scriptedConfig()
+	config.NATSURL = server.ClientURL()
 	go func() {
-		runErrors <- simulatorapp.Run(runContext, simulatorapp.Config{
-			AdapterID:  "simulator",
-			NATSURL:    server.ClientURL(),
-			BindingKey: "simulated-light",
-			Scenario:   "happy",
-		}, logger)
+		runErrors <- simulatorapp.Run(runContext, config, logger)
 	}()
 
 	initialized := waitForLifecycleEvent(t, recorder, "simulator.initialized", 10*time.Second)
@@ -203,11 +200,14 @@ func startSimulatorTestCore(
 
 func requireSimulatorInitialized(t *testing.T, initialized slog.Record) {
 	t.Helper()
-	if scenario, ok := lifecycleAttr(initialized, "scenario"); !ok || scenario.String() != "happy" {
-		t.Fatalf("simulator.initialized scenario = %#v, want happy", initialized)
+	if mode, ok := lifecycleAttr(initialized, "mode"); !ok || mode.String() != "scripted" {
+		t.Fatalf("simulator.initialized mode = %#v, want scripted", initialized)
 	}
-	if entityID, ok := lifecycleAttr(initialized, "entity_id"); !ok || entityID.String() == "" {
-		t.Fatalf("simulator.initialized omitted entity_id: %#v", initialized)
+	if devices, ok := lifecycleAttr(initialized, "devices"); !ok || devices.Int64() != 1 {
+		t.Fatalf("simulator.initialized devices = %#v, want 1", initialized)
+	}
+	if entities, ok := lifecycleAttr(initialized, "entities"); !ok || entities.Int64() != 1 {
+		t.Fatalf("simulator.initialized entities = %#v, want 1", initialized)
 	}
 	if component, ok := lifecycleAttr(initialized, "component"); !ok || component.String() != "simulator" {
 		t.Fatalf("simulator.initialized component = %#v, want simulator", initialized)

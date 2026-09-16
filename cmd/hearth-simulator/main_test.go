@@ -31,8 +31,16 @@ func TestMainLoggingFlagsAndConfigFailure(t *testing.T) {
 		configYAML :=
 			"adapter_id: \"test-simulator\"\n" +
 				"nats_url: \"" + natsURL + "\"\n" +
-				"binding_key: \"test-light\"\n" +
-				"scenario: \"happy\"\n"
+				"devices:\n" +
+				"  - binding_key: \"test-light\"\n" +
+				"    name: \"Test light\"\n" +
+				"    kind: \"light\"\n" +
+				"    entities:\n" +
+				"      - key: \"power\"\n" +
+				"        name: \"Power\"\n" +
+				"        type: \"hearth.power/v1\"\n" +
+				"        support: {state: {}, operations: {set: {}}}\n" +
+				"        initial: true\n"
 		cmdtest.CheckStartupCancellation(t, binary, configYAML, "hearth-simulator")
 	})
 }
