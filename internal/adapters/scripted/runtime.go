@@ -12,6 +12,11 @@ import (
 	"github.com/mholtzscher/hearth/sdk/adapter"
 )
 
+// availabilityBatchLimit mirrors the SDK's maximum reports per
+// ReportEntityAvailability call. A config may register 64 Entities on each of
+// any number of Devices, so Initialize pages availability reports at this size.
+const availabilityBatchLimit = 256
+
 // Session is the narrow SDK seam the scripted runtime needs. It mirrors the
 // surface the scenario simulator uses so both runtimes stay substitutable.
 type Session interface {
@@ -361,8 +366,11 @@ func (runtime *Runtime) Initialize(ctx context.Context) error {
 		}
 		reports = append(reports, report)
 	}
-	if err := runtime.session.ReportEntityAvailability(ctx, reports); err != nil {
-		return fmt.Errorf("report Entity availability: %w", err)
+	for start := 0; start < len(reports); start += availabilityBatchLimit {
+		end := min(start+availabilityBatchLimit, len(reports))
+		if err := runtime.session.ReportEntityAvailability(ctx, reports[start:end]); err != nil {
+			return fmt.Errorf("report Entity availability: %w", err)
+		}
 	}
 	for _, entity := range ordered {
 		if err := runtime.publishFirst(ctx, entity); err != nil {
@@ -408,6 +416,21 @@ func eventNameOf(raw json.RawMessage) string {
 	return name
 }
 
+// requireSupportedEventName fails when name is empty or absent from the
+// Entity's supported event names. It never mutates Entity state, so callers can
+// validate a requested name before recording anything.
+func (runtime *Runtime) requireSupportedEventName(entity *scriptedEntity, name string) error {
+	if name == "" {
+		return fmt.Errorf("event name is required")
+	}
+	runtime.mutex.Lock()
+	defer runtime.mutex.Unlock()
+	if _, supported := entity.eventNames[name]; !supported {
+		return fmt.Errorf("event name %q is not in the Entity support", name)
+	}
+	return nil
+}
+
 // publishEvent reports one supported Entity Event and returns the canonical
 // event ID the Session issued. Callers that only need the report to happen —
 // the script ticker and Initialize — discard the ID.
@@ -416,14 +439,8 @@ func (runtime *Runtime) publishEvent(
 	entity *scriptedEntity,
 	name string,
 ) (adapter.EntityEventID, error) {
-	if name == "" {
-		return "", fmt.Errorf("event name is required")
-	}
-	runtime.mutex.Lock()
-	_, supported := entity.eventNames[name]
-	runtime.mutex.Unlock()
-	if !supported {
-		return "", fmt.Errorf("event name %q is not in the Entity support", name)
+	if err := runtime.requireSupportedEventName(entity, name); err != nil {
+		return "", err
 	}
 	eventID, err := runtime.session.PublishEntityEvent(ctx, adapter.EntityEvent{
 		EntityID: entity.entityID,
@@ -446,8 +463,9 @@ func (runtime *Runtime) entityByID(entityID string) (*scriptedEntity, error) {
 }
 
 // CommandHandler returns one multiplexed handler covering every scripted
-// Entity. Operations without configured behavior accept, apply parameters,
-// and publish the current value.
+// Entity. Operations without configured behavior accept, apply parameters, and
+// publish the value those parameters produced, captured before Accept so a
+// concurrent writer cannot change what the Command reports.
 func (runtime *Runtime) CommandHandler() adapter.CommandHandler {
 	return func(ctx context.Context, command adapter.Command, responder adapter.Responder) error {
 		entity, err := runtime.entityByID(command.EntityID)
@@ -462,9 +480,7 @@ func (runtime *Runtime) CommandHandler() adapter.CommandHandler {
 			_, acceptErr := responder.Accept()
 			return acceptErr
 		default:
-			if applyParameters(behavior) {
-				runtime.applyCommandParameters(entity, command.Parameters)
-			}
+			current := runtime.commandPublishState(entity, behavior, command.Parameters)
 			evidence, acceptErr := responder.Accept()
 			if acceptErr != nil {
 				return acceptErr
@@ -472,9 +488,6 @@ func (runtime *Runtime) CommandHandler() adapter.CommandHandler {
 			if entity.codecs.EventSource {
 				return nil
 			}
-			runtime.mutex.Lock()
-			current := entity.current
-			runtime.mutex.Unlock()
 			_, err = evidence.PublishObservation(ctx, newObservation(entity, current))
 			return err
 		}
@@ -499,11 +512,29 @@ func applyParameters(behavior CommandBehavior) bool {
 	return behavior.ApplyParameters == nil || *behavior.ApplyParameters
 }
 
-// applyCommandParameters implements the documented generic rule: parameters
-// shaped {"value": X} replace a scalar State, or the "value" member of an
-// object State. Anything else leaves State unchanged. Values that fail schema
-// validation keep the previous State; Core remains the enforcing validator.
-func (runtime *Runtime) applyCommandParameters(entity *scriptedEntity, parameters json.RawMessage) {
+// commandPublishState applies the Command's parameter override when its
+// behavior allows it and returns the State this Command publishes. The
+// override and the capture share one lock acquisition, so a concurrent Tick or
+// Command cannot replace Entity state while the responder Accept blocks on I/O.
+func (runtime *Runtime) commandPublishState(
+	entity *scriptedEntity,
+	behavior CommandBehavior,
+	parameters json.RawMessage,
+) json.RawMessage {
+	runtime.mutex.Lock()
+	defer runtime.mutex.Unlock()
+	if applyParameters(behavior) {
+		applyCommandParametersLocked(entity, parameters)
+	}
+	return entity.current
+}
+
+// applyCommandParametersLocked implements the documented generic rule:
+// parameters shaped {"value": X} replace a scalar State, or the "value" member
+// of an object State. Anything else leaves State unchanged. Values that fail
+// schema validation keep the previous State; Core remains the enforcing
+// validator. The caller must hold runtime.mutex.
+func applyCommandParametersLocked(entity *scriptedEntity, parameters json.RawMessage) {
 	var decoded map[string]json.RawMessage
 	if err := json.Unmarshal(parameters, &decoded); err != nil {
 		return
@@ -512,8 +543,6 @@ func (runtime *Runtime) applyCommandParameters(entity *scriptedEntity, parameter
 	if !ok {
 		return
 	}
-	runtime.mutex.Lock()
-	defer runtime.mutex.Unlock()
 	var current any
 	if decodeErr := json.Unmarshal(entity.current, &current); decodeErr != nil {
 		return
@@ -588,6 +617,11 @@ func (runtime *Runtime) PublishNow(
 		}
 		if decodeErr := json.Unmarshal(value, &body); decodeErr != nil || body.Name == "" {
 			return PublicationResult{}, fmt.Errorf("event publish requires {\"name\": \"<event>\"}")
+		}
+		// Validate before mutating: an unsupported name must fail without
+		// leaving itself as the snapshot's current value.
+		if supportErr := runtime.requireSupportedEventName(entity, body.Name); supportErr != nil {
+			return PublicationResult{}, supportErr
 		}
 		runtime.mutex.Lock()
 		entity.current = json.RawMessage(fmt.Sprintf("%q", body.Name))

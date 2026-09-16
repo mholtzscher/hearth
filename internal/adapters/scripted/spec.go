@@ -6,6 +6,7 @@ import (
 	"regexp"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"gopkg.in/yaml.v3"
 
@@ -23,9 +24,18 @@ const (
 	CommandBehaviorReject = "reject"
 
 	maxRegistrationEntities = 64
+	// maxReasonCodeRunes matches the sdk/adapter limit, which accepts at most
+	// 128 runes for a health or availability reason code.
+	maxReasonCodeRunes = 128
 )
 
-var operationNamePattern = regexp.MustCompile(`^[a-z0-9][a-z0-9_-]{0,62}$`)
+var (
+	operationNamePattern = regexp.MustCompile(`^[a-z0-9][a-z0-9_-]{0,62}$`)
+	// reasonCodePattern mirrors the sdk/adapter rule for reason codes: a
+	// lowercase dotted identifier, never empty, at most 128 runes, such as
+	// "hearth.external_system_unavailable" or "adapter.node.measurement_stale".
+	reasonCodePattern = regexp.MustCompile(`^[a-z0-9][a-z0-9_-]*(\.[a-z0-9][a-z0-9_-]*)+$`)
+)
 
 // Duration is a YAML interval parsed with [time.ParseDuration] ("5s", "1m").
 type Duration time.Duration
@@ -87,7 +97,8 @@ type CommandBehavior struct {
 }
 
 // HealthStatus parses the device health shorthand: empty or "healthy" means
-// healthy, "unhealthy:<reason-code>" means unhealthy.
+// healthy, "unhealthy:<reason-code>" means unhealthy with a reason code that
+// must satisfy the sdk/adapter rule enforced on Session health reports.
 func (spec DeviceSpec) HealthStatus() (bool, string, error) {
 	trimmed := strings.TrimSpace(spec.Health)
 	if trimmed == "" || trimmed == "healthy" {
@@ -100,12 +111,47 @@ func (spec DeviceSpec) HealthStatus() (bool, string, error) {
 	if strings.TrimSpace(reason) == "" {
 		return false, "", fmt.Errorf("unhealthy health requires a reason code")
 	}
+	if err := validateReasonCode("health reason code", reason); err != nil {
+		return false, "", err
+	}
 	return false, reason, nil
 }
 
+// validateReasonCode mirrors the sdk/adapter rule for reason codes so an
+// invalid scripted reason fails at config load instead of the first health
+// report: valid UTF-8, at most 128 runes, a lowercase dotted identifier, and
+// inside the shared "hearth." or "adapter." namespace.
+func validateReasonCode(field, code string) error {
+	if !utf8.ValidString(code) ||
+		utf8.RuneCountInString(code) > maxReasonCodeRunes ||
+		!reasonCodePattern.MatchString(code) {
+		return fmt.Errorf(
+			"%s must be a lowercase dotted identifier of at most 128 characters, got %q",
+			field, code,
+		)
+	}
+	if strings.HasPrefix(code, "hearth.") || strings.HasPrefix(code, "adapter.") {
+		return nil
+	}
+	return fmt.Errorf("%s must use the hearth or adapter namespace, got %q", field, code)
+}
+
+// validateAvailabilityReason requires a reason code when an Entity is marked
+// unavailable and checks any configured reason code against the same rule the
+// Session enforces, so a bad availability_reason fails at config load.
+func validateAvailabilityReason(spec EntitySpec) error {
+	if strings.TrimSpace(spec.AvailabilityReason) == "" {
+		if spec.Available != nil && !*spec.Available {
+			return fmt.Errorf("availability_reason is required when available is false")
+		}
+		return nil
+	}
+	return validateReasonCode("availability_reason", spec.AvailabilityReason)
+}
+
 // Validate checks the device and entity configuration structurally. Value
-// schemas are validated later against the type registry when the runtime is
-// built, so config load fails fast with the Device, Entity, and value index.
+// schemas are validated separately by ValidateValues, which config load calls
+// before startup, and again when the runtime is built.
 func (spec DeviceSpec) Validate() error {
 	if err := platformconfig.ValidateSlug("binding_key", spec.BindingKey); err != nil {
 		return err
@@ -154,8 +200,8 @@ func (spec EntitySpec) validate() error {
 	if spec.Support == nil {
 		return fmt.Errorf("support is required")
 	}
-	if spec.Available != nil && !*spec.Available && strings.TrimSpace(spec.AvailabilityReason) == "" {
-		return fmt.Errorf("availability_reason is required when available is false")
+	if err := validateAvailabilityReason(spec); err != nil {
+		return err
 	}
 	for operation, behavior := range spec.Commands {
 		if !operationNamePattern.MatchString(operation) {
@@ -175,9 +221,11 @@ func (spec EntitySpec) validate() error {
 			)
 		}
 	}
-	if spec.Outputs != nil {
+	// Only a multi-value script is stepped by a ticker, so an interval is
+	// required exactly then; zero or one value publishes once and stays silent.
+	if spec.Outputs != nil && len(spec.Outputs.Values) > 1 {
 		if time.Duration(spec.Outputs.Interval) <= 0 {
-			return fmt.Errorf("outputs: interval is required and must be positive")
+			return fmt.Errorf("outputs: interval is required and must be positive for a multi-value script")
 		}
 	}
 	return nil

@@ -6,6 +6,7 @@ import (
 	"errors"
 	"log/slog"
 	"net"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -30,6 +31,7 @@ type fencingSession struct {
 	mutex               sync.Mutex
 	closed              bool
 	publishedAfterClose bool
+	publishCount        int
 	entered             chan struct{}
 	fence               chan struct{}
 }
@@ -89,6 +91,7 @@ func (session *fencingSession) PublishObservation(
 ) (adapter.ObservationID, error) {
 	session.mutex.Lock()
 	defer session.mutex.Unlock()
+	session.publishCount++
 	if session.closed {
 		session.publishedAfterClose = true
 	}
@@ -121,6 +124,14 @@ func (session *fencingSession) publishedAfterSessionClose() bool {
 	session.mutex.Lock()
 	defer session.mutex.Unlock()
 	return session.publishedAfterClose
+}
+
+// publishCount reports how many publications reached the Session. It must stop
+// growing once runScriptedSession returns: the ticker workers are joined first.
+func (session *fencingSession) publications() int {
+	session.mutex.Lock()
+	defer session.mutex.Unlock()
+	return session.publishCount
 }
 
 // tickingPowerDevice is one Entity with a multi-value output series, so
@@ -216,6 +227,58 @@ func runScriptedSessionUntilFenced(t *testing.T, controlAddr string) (*fencingSe
 	case <-time.After(sessionFailureWait):
 		t.Fatal("runScriptedSession did not return after the Session failed with a live caller context")
 		return session, nil
+	}
+}
+
+// This test protects startup failure when the configured control listener
+// cannot bind while the caller's context stays live. It fails if
+// runScriptedSession keeps serving Commands after the listener error: the
+// process then looks initialized without its requested control API and startup
+// waits out its whole readiness budget.
+func TestRunScriptedSessionReturnsControlListenerFailure(t *testing.T) {
+	t.Parallel()
+	// An address with no port fails to parse on every platform, so the listener
+	// failure is deterministic instead of racing another process for a port.
+	const invalidControlAddr = "invalid-control-address"
+	ctx := t.Context()
+	session := newFencingSession()
+	config := Config{
+		AdapterID:   "simulator",
+		NATSURL:     "nats://127.0.0.1:4222",
+		ControlAddr: invalidControlAddr,
+		Devices:     []scripted.DeviceSpec{tickingPowerDevice()},
+	}
+	runErrors := make(chan error, 1)
+	go func() {
+		runErrors <- runScriptedSession(ctx, config, session, slog.New(slog.DiscardHandler))
+	}()
+	var runErr error
+	select {
+	case runErr = <-runErrors:
+	case <-time.After(sessionFailureWait):
+		t.Fatal("runScriptedSession kept serving after the control listener failed")
+	}
+	if runErr == nil || !strings.Contains(runErr.Error(), "listen on control channel") {
+		t.Fatalf("runScriptedSession error = %v, want the control listener failure", runErr)
+	}
+	if !strings.Contains(runErr.Error(), invalidControlAddr) {
+		t.Fatalf("runScriptedSession error %q omits the control address %q", runErr, invalidControlAddr)
+	}
+	if ctx.Err() != nil {
+		t.Fatalf("shutdown cancelled the caller's context: %v", ctx.Err())
+	}
+	if !session.isClosed() {
+		t.Fatal("Session was not closed after shutdown")
+	}
+	if session.publishedAfterSessionClose() {
+		t.Fatal("publication reached the Session after it closed")
+	}
+	// runScriptedSession joins the ticker workers before returning, so no
+	// publication may follow the return.
+	published := session.publications()
+	time.Sleep(4 * tickInterval)
+	if after := session.publications(); after != published {
+		t.Fatalf("ticker published %d more values after shutdown returned", after-published)
 	}
 }
 

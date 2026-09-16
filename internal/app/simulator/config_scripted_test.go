@@ -3,7 +3,9 @@ package simulator_test
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
+	"time"
 
 	"github.com/mholtzscher/hearth/internal/adapters/scripted"
 	appsimulator "github.com/mholtzscher/hearth/internal/app/simulator"
@@ -63,6 +65,47 @@ func TestConfigRejectsLegacyBindingKeyWithDevices(t *testing.T) {
 	config.BindingKey = "simulated-light"
 	if err := config.Validate(); err == nil {
 		t.Fatal("legacy binding_key with devices accepted, want an error")
+	}
+}
+
+// TestConfigValidateRejectsInvalidScriptedValues protects fail-fast config
+// load: a Device whose support, initial, or outputs value does not match its
+// Entity type schema must be rejected by Validate, which runs before the
+// simulator connects to NATS. It fails if Validate only checks structure and
+// defers value schemas to scripted.New after the connection is established.
+func TestConfigValidateRejectsInvalidScriptedValues(t *testing.T) {
+	t.Parallel()
+	cases := map[string]func(*appsimulator.Config){
+		"invalid initial value": func(config *appsimulator.Config) {
+			config.Devices[0].Entities[0].Initial = "on"
+		},
+		"invalid outputs value": func(config *appsimulator.Config) {
+			config.Devices[0].Entities[0].Outputs = &scripted.OutputsSpec{
+				Interval: scripted.Duration(5 * time.Second),
+				Values:   []any{true, "on"},
+			}
+		},
+		"invalid support": func(config *appsimulator.Config) {
+			config.Devices[0].Entities[0].Support = map[string]any{
+				"state":      map[string]any{},
+				"operations": map[string]any{"set": "yes"},
+			}
+		},
+	}
+	for name, mutate := range cases {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			config := scriptedConfig()
+			mutate(&config)
+			err := config.Validate()
+			if err == nil {
+				t.Fatalf("config with %s accepted by Validate, want an error before startup", name)
+			}
+			// The index points the reader at the offending Device in the file.
+			if !strings.Contains(err.Error(), "devices[0]") {
+				t.Fatalf("Validate error %q does not name devices[0]", err)
+			}
+		})
 	}
 }
 

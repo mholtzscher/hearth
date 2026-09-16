@@ -77,6 +77,12 @@ func (value Config) validateScripted() error {
 			return fmt.Errorf("devices[%d]: %w", index, err)
 		}
 	}
+	// Structural checks pass above, but value schemas are only normalized
+	// against the Entity type registry by the scripted runtime. Validate them
+	// here too so a bad value fails at config load, before NATS is connected.
+	if err := scripted.ValidateValues(value.Devices); err != nil {
+		return err
+	}
 	return nil
 }
 

@@ -30,10 +30,16 @@ type fakeResponder struct {
 	session  *fakeSession
 	accepted bool
 	rejected string
+	// onAccept runs inside Accept, before the handler sees the outcome, so a
+	// test can land a concurrent write while the responder blocks the handler.
+	onAccept func()
 }
 
 func (responder *fakeResponder) Accept() (adapter.CommandEvidence, error) {
 	responder.accepted = true
+	if responder.onAccept != nil {
+		responder.onAccept()
+	}
 	return &fakeEvidence{session: responder.session}, nil
 }
 
@@ -133,6 +139,11 @@ func (session *fakeSession) SetHealth(
 	return nil
 }
 
+// fakeAvailabilityBatchLimit mirrors the SDK's per-call limit (1-256 reports),
+// so a runtime that sends every report in one batch fails here instead of
+// silently passing.
+const fakeAvailabilityBatchLimit = 256
+
 func (session *fakeSession) ReportEntityAvailability(
 	_ context.Context,
 	reports []adapter.EntityAvailabilityReport,
@@ -140,6 +151,9 @@ func (session *fakeSession) ReportEntityAvailability(
 	session.mu.Lock()
 	defer session.mu.Unlock()
 	session.availability = append(session.availability, reports)
+	if len(reports) < 1 || len(reports) > fakeAvailabilityBatchLimit {
+		return fmt.Errorf("entity availability batch must contain 1-256 reports, got %d", len(reports))
+	}
 	return nil
 }
 
@@ -149,7 +163,20 @@ func (session *fakeSession) dispatch(
 	entityID, operation string,
 	parameters json.RawMessage,
 ) *fakeResponder {
-	responder := &fakeResponder{session: session}
+	return session.dispatchDuringAccept(ctx, runtime, entityID, operation, parameters, nil)
+}
+
+// dispatchDuringAccept dispatches one Command and runs duringAccept while the
+// handler is blocked in the responder's Accept, so a test can interleave a
+// concurrent write with an in-flight Command.
+func (session *fakeSession) dispatchDuringAccept(
+	ctx context.Context,
+	runtime *scripted.Runtime,
+	entityID, operation string,
+	parameters json.RawMessage,
+	duringAccept func(),
+) *fakeResponder {
+	responder := &fakeResponder{session: session, onAccept: duringAccept}
 	session.mu.Lock()
 	session.lastResponder = responder
 	session.mu.Unlock()
@@ -163,6 +190,26 @@ func (session *fakeSession) dispatch(
 		panic(err)
 	}
 	return responder
+}
+
+// manyEntityDevice builds one Device holding entityCount Power Entities, so a
+// test can spread the spec maximum of 64 Entities across several Devices.
+func manyEntityDevice(deviceIndex, entityCount int) scripted.DeviceSpec {
+	device := scripted.DeviceSpec{
+		BindingKey: fmt.Sprintf("simulated-light-%d", deviceIndex),
+		Name:       fmt.Sprintf("Simulated light %d", deviceIndex),
+		Kind:       "light",
+	}
+	for entityIndex := range entityCount {
+		device.Entities = append(device.Entities, scripted.EntitySpec{
+			Key:     fmt.Sprintf("power-%d", entityIndex),
+			Name:    fmt.Sprintf("Power %d", entityIndex),
+			Type:    "hearth.power/v1",
+			Support: map[string]any{"state": map[string]any{}, "operations": map[string]any{"set": map[string]any{}}},
+			Initial: true,
+		})
+	}
+	return device
 }
 
 func powerDevice() scripted.DeviceSpec {
@@ -295,6 +342,155 @@ func TestRuntimeCommandAppliesParametersAndPublishes(t *testing.T) {
 	infos := runtime.Snapshot()
 	if len(infos) != 1 || string(infos[0].Current) != "false" {
 		t.Fatalf("snapshot = %+v, want current false", infos)
+	}
+}
+
+// TestRuntimeCommandPublishesValueCapturedBeforeAccept protects that a Command
+// observation carries the State its own parameters produced even when a
+// concurrent Tick replaces Entity state while the responder Accept blocks: the
+// value is captured with the parameter application, not reread after Accept.
+func TestRuntimeCommandPublishesValueCapturedBeforeAccept(t *testing.T) {
+	t.Parallel()
+	device := powerDevice()
+	// Every scripted step is true while the Command applies false, so a value
+	// reread after Accept is distinguishable from the Command's own value.
+	device.Entities[0].Outputs.Values = []any{true, true, true}
+	session := &fakeSession{}
+	runtime, err := scripted.New(session, []scripted.DeviceSpec{device})
+	if err != nil {
+		t.Fatal(err)
+	}
+	attachOne(t, runtime, "simulated-light", "power", "ent_power")
+	ctx := context.Background()
+	if initErr := runtime.Initialize(ctx); initErr != nil {
+		t.Fatal(initErr)
+	}
+	responder := session.dispatchDuringAccept(
+		ctx, runtime, "ent_power", "set", json.RawMessage(`{"value":false}`),
+		func() {
+			// The interloper: a Tick that lands while Accept is in flight.
+			if tickErr := runtime.Tick(ctx, "ent_power"); tickErr != nil {
+				t.Fatalf("interloping tick: %v", tickErr)
+			}
+		},
+	)
+	if !responder.accepted {
+		t.Fatal("set Command was not accepted")
+	}
+	if len(session.linked) != 1 {
+		t.Fatalf("linked observations = %+v, want 1", session.linked)
+	}
+	if got := string(session.linked[0].Value); got != "false" {
+		t.Fatalf("linked observation = %s, want false (the Command-applied value)", got)
+	}
+	// The interloper did land: the snapshot keeps the ticker's value while the
+	// Command outcome kept its own.
+	infos := runtime.Snapshot()
+	if len(infos) != 1 || string(infos[0].Current) != "true" {
+		t.Fatalf("snapshot = %+v, want the interloper current true", infos)
+	}
+}
+
+// TestRuntimePublishNowUnsupportedEventLeavesSnapshotUnchanged protects that a
+// rejected event publish does not record the unsupported name as the Entity's
+// snapshot current: the name is validated before state changes, and a
+// supported name still updates the snapshot.
+func TestRuntimePublishNowUnsupportedEventLeavesSnapshotUnchanged(t *testing.T) {
+	t.Parallel()
+	session := &fakeSession{}
+	runtime, err := scripted.New(session, []scripted.DeviceSpec{eventDevice()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	attachOne(t, runtime, "simulated-button", "events", "ent_events")
+	ctx := context.Background()
+	if initErr := runtime.Initialize(ctx); initErr != nil {
+		t.Fatal(initErr)
+	}
+	// Initialize published script values[0], which is also the snapshot current.
+	if _, publishErr := runtime.PublishNow(
+		ctx, "ent_events", json.RawMessage(`{"name":"triple_press"}`),
+	); publishErr == nil {
+		t.Fatal("unsupported event name published, want an error")
+	}
+	infos := runtime.Snapshot()
+	if len(infos) != 1 || string(infos[0].Current) != `"single_press"` {
+		t.Fatalf("snapshot after rejected event = %+v, want current \"single_press\"", infos)
+	}
+	if len(session.events) != 1 {
+		t.Fatalf("events = %+v, want only the Initialize event", session.events)
+	}
+	if _, publishErr := runtime.PublishNow(
+		ctx, "ent_events", json.RawMessage(`{"name":"double_press"}`),
+	); publishErr != nil {
+		t.Fatal(publishErr)
+	}
+	infos = runtime.Snapshot()
+	if len(infos) != 1 || string(infos[0].Current) != `"double_press"` {
+		t.Fatalf("snapshot after supported event = %+v, want current \"double_press\"", infos)
+	}
+}
+
+// TestRuntimeInitializePagesEntityAvailability protects that Initialize reports
+// availability in batches the SDK accepts, at most 256 reports per call. Specs
+// allow 64 Entities on each of any number of Devices, so 5 Devices with 64
+// Entities each must still deliver every one of their 320 reports.
+func TestRuntimeInitializePagesEntityAvailability(t *testing.T) {
+	t.Parallel()
+	const (
+		deviceCount       = 5
+		entitiesPerDevice = 64
+		wantReports       = deviceCount * entitiesPerDevice
+	)
+	devices := make([]scripted.DeviceSpec, 0, deviceCount)
+	for deviceIndex := range deviceCount {
+		devices = append(devices, manyEntityDevice(deviceIndex, entitiesPerDevice))
+	}
+	session := &fakeSession{}
+	runtime, err := scripted.New(session, devices)
+	if err != nil {
+		t.Fatal(err)
+	}
+	bindings := make([]adapter.Binding, 0, len(devices))
+	for _, device := range devices {
+		binding := adapter.Binding{BindingKey: device.BindingKey}
+		for _, entity := range device.Entities {
+			binding.Entities = append(binding.Entities, adapter.EntityBinding{
+				Key:      entity.Key,
+				EntityID: device.BindingKey + "." + entity.Key,
+			})
+		}
+		bindings = append(bindings, binding)
+	}
+	if attachErr := runtime.Attach(bindings); attachErr != nil {
+		t.Fatal(attachErr)
+	}
+	if initErr := runtime.Initialize(context.Background()); initErr != nil {
+		t.Fatal(initErr)
+	}
+	if len(session.availability) == 0 {
+		t.Fatal("Session saw no availability report call")
+	}
+	delivered := make(map[string]adapter.EntityAvailabilityStatus, wantReports)
+	for batchIndex, batch := range session.availability {
+		if len(batch) > fakeAvailabilityBatchLimit {
+			t.Fatalf("availability batch %d carried %d reports; the SDK accepts at most %d",
+				batchIndex, len(batch), fakeAvailabilityBatchLimit)
+		}
+		for _, report := range batch {
+			if _, duplicate := delivered[report.EntityID]; duplicate {
+				t.Fatalf("availability report for %s delivered twice", report.EntityID)
+			}
+			delivered[report.EntityID] = report.Status
+		}
+	}
+	if len(delivered) != wantReports {
+		t.Fatalf("delivered %d availability reports, want %d", len(delivered), wantReports)
+	}
+	for entityID, status := range delivered {
+		if status != adapter.AvailabilityAvailable {
+			t.Fatalf("availability for %s = %q, want available", entityID, status)
+		}
 	}
 }
 

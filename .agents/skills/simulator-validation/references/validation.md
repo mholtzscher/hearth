@@ -32,8 +32,9 @@ Inside a Device's `entities` list:
 ```
 
 - State Entities require a valid `initial`, even with an output sequence.
-- Whenever `outputs` is present, `interval` is required and must be a positive
-  duration string such as `2s`, even with empty or single-value `values`.
+- `interval` must be a positive duration string such as `2s` whenever more
+  than one output value needs a ticker. Empty or single-value `values` publish
+  once and need no interval.
 - With values, `values[0]` publishes at startup, then multi-value sequences
   advance and loop every positive `interval`.
 - Without outputs (or with no values), initial publishes once and stays silent.
@@ -218,7 +219,8 @@ may omit ignored `.data` files or return unrelated source matches.
 - Core not ready: inspect `core.err` and `core.out`, NATS reachability, migrations, and stream
   configuration. Do not start a second Core or purge streams.
 - Control unavailable: inspect `simulator.err` and `simulator.out` for config errors or
-  `simulator.control_failed`; control bind failure can leave the process alive.
+  `simulator.control_failed`; a control bind failure now stops the simulator
+  with `control channel <addr> failed` instead of running without its API.
 - Wrong/missing State: inspect units, support, dispositions, aggregate Adapter
   health, and availability. Simulator current values are not authoritative.
 - Unexpected timeout: inspect generic parameter-application limits, matching

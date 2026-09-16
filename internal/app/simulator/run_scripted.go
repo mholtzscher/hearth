@@ -84,16 +84,32 @@ func runScriptedSession(
 	// context is still live, so joining the workers on that context would block
 	// shutdown forever.
 	workerCtx, stopWorkers := context.WithCancel(ctx)
+	// Command serving runs on its own child context so a failed control listener
+	// can stop serving without cancelling the caller's context, which outlives
+	// this session.
+	serveCtx, stopServing := context.WithCancel(ctx)
+	defer stopServing()
 	joinScripts := runtime.StartScripts(workerCtx, logger)
+	// controlFailures carries the control listener's failure. It is buffered so
+	// the control worker never blocks when the Session fails first and the
+	// failure goes unread.
+	controlFailures := make(chan error, 1)
 	var controlDone sync.WaitGroup
 	if config.ControlAddr != "" {
 		controlDone.Go(func() {
-			if controlErr := ServeControl(workerCtx, config.ControlAddr, runtime, logger); controlErr != nil {
-				processLogger.ErrorContext(ctx, "simulator control channel failed",
-					slog.String("event", "simulator.control_failed"),
-					slog.String("error_code", "control_failed"),
-				)
+			controlErr := ServeControl(workerCtx, config.ControlAddr, runtime, logger)
+			if controlErr == nil || workerCtx.Err() != nil {
+				// A cancelled worker context is a listener stopped by shutdown,
+				// not a failed control channel.
+				return
 			}
+			processLogger.ErrorContext(ctx, "simulator control channel failed",
+				slog.String("event", "simulator.control_failed"),
+				slog.String("error_code", "control_failed"),
+			)
+			controlFailures <- controlErr
+			stopWorkers()
+			stopServing()
 		})
 	}
 	// Registered after the Session-close defer above, so it runs first and
@@ -112,7 +128,15 @@ func runScriptedSession(
 		slog.Int("devices", len(config.Devices)),
 		slog.Int("entities", len(runtime.Snapshot())),
 	)
-	serveErr := session.ServeCommands(ctx, runtime.CommandHandler())
+	serveErr := session.ServeCommands(serveCtx, runtime.CommandHandler())
+	// A failed control listener cancels serveCtx, which surfaces in serveErr as
+	// context.Canceled. Report the listener failure instead of returning nil, so
+	// a process without its requested control API never looks initialized.
+	select {
+	case controlErr := <-controlFailures:
+		return fmt.Errorf("control channel %s failed: %w", config.ControlAddr, controlErr)
+	default:
+	}
 	if serveErr != nil && !errors.Is(serveErr, context.Canceled) &&
 		!errors.Is(serveErr, adapter.ErrClosed) {
 		return serveErr
