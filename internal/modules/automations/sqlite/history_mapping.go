@@ -37,7 +37,7 @@ func historyEntry(
 }
 
 func historySummary(row dbsqlc.AutomationHistory) (automations.AutomationHistorySummary, error) {
-	summary, decision, err := newHistorySummaryBase(row)
+	summary, err := newHistorySummaryBase(row)
 	if err != nil {
 		return automations.AutomationHistorySummary{}, err
 	}
@@ -45,7 +45,7 @@ func historySummary(row dbsqlc.AutomationHistory) (automations.AutomationHistory
 	case automations.AutomationHistoryRun:
 		err = applyRunSummary(row, &summary)
 	case automations.AutomationHistorySkip:
-		err = applySkipSummary(row, &summary, decision)
+		err = applySkipSummary(row, &summary)
 	default:
 		return summary, fmt.Errorf(
 			"%w: stored history %q has unknown kind %q",
@@ -62,21 +62,19 @@ func historySummary(row dbsqlc.AutomationHistory) (automations.AutomationHistory
 // decision every summary shares, independent of the Run or Skip kind.
 func newHistorySummaryBase(
 	row dbsqlc.AutomationHistory,
-) (automations.AutomationHistorySummary, automations.AutomationConditionDecision, error) {
+) (automations.AutomationHistorySummary, error) {
 	automationID, err := automations.ParseAutomationID(row.AutomationID)
 	if err != nil {
-		return automations.AutomationHistorySummary{}, automations.AutomationConditionDecision{},
-			fmt.Errorf("stored history %q: %w", row.ID, err)
+		return automations.AutomationHistorySummary{}, fmt.Errorf("stored history %q: %w", row.ID, err)
 	}
 	if row.Revision < 1 {
-		return automations.AutomationHistorySummary{}, automations.AutomationConditionDecision{}, fmt.Errorf(
+		return automations.AutomationHistorySummary{}, fmt.Errorf(
 			"%w: stored history %q revision %d", automations.ErrInvalidAutomation, row.ID, row.Revision,
 		)
 	}
 	recordedAt, err := decodeAutomationTimestamp(row.RecordedAt)
 	if err != nil {
-		return automations.AutomationHistorySummary{}, automations.AutomationConditionDecision{},
-			fmt.Errorf("stored history %q recorded_at: %w", row.ID, err)
+		return automations.AutomationHistorySummary{}, fmt.Errorf("stored history %q recorded_at: %w", row.ID, err)
 	}
 	summary := automations.AutomationHistorySummary{
 		ID:             row.ID,
@@ -88,7 +86,7 @@ func newHistorySummaryBase(
 	}
 	decision, err := decodeConditionDecisionColumn(row)
 	if err != nil {
-		return summary, automations.AutomationConditionDecision{}, err
+		return summary, err
 	}
 	summary.ConditionMode = decision.Mode
 	summary.BypassRequested = decision.BypassRequested
@@ -96,7 +94,7 @@ func newHistorySummaryBase(
 		result := decision.Evaluation.Result
 		summary.ConditionResult = &result
 	}
-	return summary, decision, nil
+	return summary, nil
 }
 
 // applyRunSummary decodes the Run-only source and Fact columns.
@@ -123,20 +121,14 @@ func applyRunSummary(
 func applySkipSummary(
 	row dbsqlc.AutomationHistory,
 	summary *automations.AutomationHistorySummary,
-	decision automations.AutomationConditionDecision,
 ) error {
-	if !row.SkipReason.Valid {
+	if !row.SkipReason.Valid || !row.SkipSource.Valid {
 		return fmt.Errorf(
-			"%w: stored Skip %q has no reason", automations.ErrInvalidAutomation, row.ID,
+			"%w: stored Skip %q is incomplete", automations.ErrInvalidAutomation, row.ID,
 		)
 	}
 	summary.Reason = automations.AutomationSkipReason(row.SkipReason.String)
-	summary.Source = skipSource(row, decision)
-	if summary.Source == "" {
-		return fmt.Errorf(
-			"%w: stored Skip %q has no admission provenance", automations.ErrInvalidAutomation, row.ID,
-		)
-	}
+	summary.Source = automations.RunSource(row.SkipSource.String)
 	fact, err := factSummaryFromRow(row)
 	if err != nil {
 		return err
@@ -211,13 +203,11 @@ func runFromRow(
 	return run, nil
 }
 
-// skipFromRow decodes one retained Skip. A legacy row may carry SQL NULL
-// skip_source and condition_decision_json; that is normalized to a device-fact
-// Skip with the explicit not_configured decision only when complete Fact
-// evidence and an unconditional automatic reason make it consistent. Anything
-// else is corruption rather than a silently accepted zero value.
+// skipFromRow decodes one retained Skip. Every stored Skip carries an explicit
+// skip_source, so a row without one is corruption rather than a silently
+// accepted zero value.
 func skipFromRow(row dbsqlc.AutomationHistory) (automations.AutomationSkip, error) {
-	if !row.SkipMatchedTriggersJson.Valid || !row.SkipReason.Valid {
+	if !row.SkipMatchedTriggersJson.Valid || !row.SkipReason.Valid || !row.SkipSource.Valid {
 		return automations.AutomationSkip{}, fmt.Errorf(
 			"%w: stored Skip %q is incomplete", automations.ErrInvalidAutomation, row.ID,
 		)
@@ -247,12 +237,6 @@ func skipFromRow(row dbsqlc.AutomationHistory) (automations.AutomationSkip, erro
 	if err != nil {
 		return automations.AutomationSkip{}, err
 	}
-	if !row.SkipSource.Valid {
-		source, decision, err = normalizeLegacySkip(row, fact, decision)
-		if err != nil {
-			return automations.AutomationSkip{}, err
-		}
-	}
 	skip := automations.AutomationSkip{
 		ID:                skipID,
 		AutomationID:      automationID,
@@ -268,52 +252,14 @@ func skipFromRow(row dbsqlc.AutomationHistory) (automations.AutomationSkip, erro
 	return skip, nil
 }
 
-// normalizeLegacySkip maps one unconditioned legacy Skip row to the explicit
-// not_configured device-fact form. It accepts only complete Fact evidence with
-// matched Triggers and a stale_fact or automation_busy reason, so a Condition
-// Skip that lost its provenance stays corruption.
-func normalizeLegacySkip(
-	row dbsqlc.AutomationHistory,
-	fact *automations.DeviceFactSummary,
-	decision automations.AutomationConditionDecision,
-) (automations.RunSource, automations.AutomationConditionDecision, error) {
-	if fact == nil || row.ConditionDecisionJson.Valid {
-		return "", automations.AutomationConditionDecision{}, fmt.Errorf(
-			"%w: stored Skip %q has no admission provenance", automations.ErrInvalidAutomation, row.ID,
-		)
-	}
-	switch automations.AutomationSkipReason(row.SkipReason.String) {
-	case automations.AutomationSkipStaleFact, automations.AutomationSkipBusy:
-	case automations.AutomationSkipConditionsFalse, automations.AutomationSkipConditionsUnknown:
-		return "", automations.AutomationConditionDecision{}, fmt.Errorf(
-			"%w: stored Skip %q has no admission provenance", automations.ErrInvalidAutomation, row.ID,
-		)
-	default:
-		return "", automations.AutomationConditionDecision{}, fmt.Errorf(
-			"%w: stored Skip %q has no admission provenance", automations.ErrInvalidAutomation, row.ID,
-		)
-	}
-	if decision.Mode != automations.AutomationConditionDecisionNotConfigured {
-		return "", automations.AutomationConditionDecision{}, fmt.Errorf(
-			"%w: stored Skip %q has no admission provenance", automations.ErrInvalidAutomation, row.ID,
-		)
-	}
-	return automations.RunSourceDeviceFact, decision, nil
-}
-
-// decodeConditionDecisionColumn decodes one persisted Condition decision. SQL
-// NULL is the legacy unconditioned row and normalizes to not_configured, never a
+// decodeConditionDecisionColumn decodes one persisted Condition decision. The
+// column is NOT NULL, so a missing payload is corruption, never a normalized
 // zero-valued mode.
 func decodeConditionDecisionColumn(
 	row dbsqlc.AutomationHistory,
 ) (automations.AutomationConditionDecision, error) {
-	if !row.ConditionDecisionJson.Valid {
-		return automations.AutomationConditionDecision{
-			Mode: automations.AutomationConditionDecisionNotConfigured,
-		}, nil
-	}
 	decision, err := automations.DecodeAutomationConditionDecision(
-		json.RawMessage(row.ConditionDecisionJson.String),
+		json.RawMessage(row.ConditionDecisionJson),
 	)
 	if err != nil {
 		return automations.AutomationConditionDecision{}, fmt.Errorf(
@@ -321,28 +267,6 @@ func decodeConditionDecisionColumn(
 		)
 	}
 	return decision, nil
-}
-
-// skipSource reports the admission provenance of one row for a history summary.
-// A legacy row normalizes to device_fact exactly when skipFromRow would accept it.
-func skipSource(
-	row dbsqlc.AutomationHistory,
-	decision automations.AutomationConditionDecision,
-) automations.RunSource {
-	if row.SkipSource.Valid {
-		return automations.RunSource(row.SkipSource.String)
-	}
-	switch automations.AutomationSkipReason(row.SkipReason.String) {
-	case automations.AutomationSkipStaleFact, automations.AutomationSkipBusy:
-		if decision.Mode == automations.AutomationConditionDecisionNotConfigured {
-			return automations.RunSourceDeviceFact
-		}
-		return ""
-	case automations.AutomationSkipConditionsFalse, automations.AutomationSkipConditionsUnknown:
-		return ""
-	default:
-		return ""
-	}
 }
 
 func runSteps(

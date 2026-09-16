@@ -145,39 +145,18 @@ func TestAutomationConditionDecisionSelectedNullIsEvidence(t *testing.T) {
 	}
 }
 
-// A legacy SQL NULL decision column normalizes to the explicit not_configured
-// mode rather than a zero-valued mode.
-func TestDecodeAutomationConditionDecisionNormalizesLegacyNull(t *testing.T) {
-	t.Parallel()
-	for _, raw := range []json.RawMessage{nil, []byte("   ")} {
-		decision, err := automations.DecodeAutomationConditionDecision(raw)
-		if err != nil {
-			t.Fatal(err)
-		}
-		want := automations.AutomationConditionDecision{Mode: automations.AutomationConditionDecisionNotConfigured}
-		if !reflect.DeepEqual(decision, want) {
-			t.Fatalf("legacy decision = %#v, want %#v", decision, want)
-		}
-		encoded, err := automations.EncodeAutomationConditionDecision(decision)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if !bytes.Contains(encoded, []byte(`"not_configured"`)) {
-			t.Fatalf("legacy encode = %s, want explicit not_configured", encoded)
-		}
-	}
-}
-
-// Malformed decision JSON is a permanent invalid-input error. A well-formed
-// decision whose snapshot or evidence is merely unusual is deliberately
-// accepted: reads decode the retained decision and trust it rather than
-// re-proving it.
+// Malformed decision JSON, including an empty or whitespace-only payload, is a
+// permanent invalid-input error. A well-formed decision whose snapshot or
+// evidence is merely unusual is deliberately accepted: reads decode the
+// retained decision and trust it rather than re-proving it.
 func TestDecodeAutomationConditionDecisionRejectsMalformedJSON(t *testing.T) {
 	t.Parallel()
 	cases := []struct {
 		name string
 		raw  string
 	}{
+		{"empty", ""},
+		{"whitespace only", "   "},
 		{"array", `[]`},
 		{"unknown field", `{"mode":"not_configured","bypass_requested":false,"extra":1}`},
 		{"trailing content", `{"mode":"not_configured","bypass_requested":false} {}`},

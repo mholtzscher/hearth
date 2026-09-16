@@ -119,7 +119,7 @@ validation plus the history table's CHECK constraints are the integrity guard;
 reads decode the retained decision and trust it rather than re-deriving the
 evaluation evidence.
 
-- Empty/unknown mode values are invalid. Legacy SQL NULL is explicitly normalized to `not_configured`, never left as a zero-valued mode.
+- Empty/unknown mode values are invalid. `condition_decision_json` is `NOT NULL` and must be an explicit object; an empty payload is malformed, not an implicit `not_configured`.
 - `not_configured` has neither snapshot nor evaluation. `not_evaluated` and `bypassed` have a snapshot but no evaluation. `evaluated` has both.
 - `not_evaluated` occurs only on an automatic stale/busy Skip with configured Conditions; `bypassed` occurs only on a manual Run with `bypass_requested=true`. Automatic outcomes always have `bypass_requested=false`.
 - A manual Run without configured Conditions may have `not_configured` plus `bypass_requested=true`. No other non-bypassed configured decision may request bypass.
@@ -366,19 +366,18 @@ Cancellation before a known commit retains existing behavior. Clients must recon
 
 ## 4. Persistence contract
 
-Edit `internal/platform/db/migrations/00001_initial.sql` according to the existing development-only migration policy. Existing development databases must be recreated; no deployed database upgrade or old-binary/new-schema compatibility is promised. Old definition JSON and legacy history fixtures remain readable under the new schema.
+Edit `internal/platform/db/migrations/00001_initial.sql` according to the existing development-only migration policy. Existing development databases must be recreated; no deployed database upgrade or old-binary/new-schema compatibility is promised. Old definition JSON remains readable under the new schema.
 
 Add to `automation_history`:
 
 ```sql
 skip_source TEXT CHECK (skip_source IS NULL OR skip_source IN ('device_fact', 'manual')),
-condition_decision_json TEXT CHECK (
-    condition_decision_json IS NULL OR
-    (json_valid(condition_decision_json) AND json_type(condition_decision_json) = 'object')
+condition_decision_json TEXT NOT NULL CHECK (
+    json_valid(condition_decision_json) AND json_type(condition_decision_json) = 'object'
 )
 ```
 
-Extend `skip_reason`'s closed values with `conditions_false`, `conditions_unknown`. Keep existing Run source columns and partial unique index; do not rename the entire history schema. `condition_decision_json` is shared by Runs/Skips and encodes `AutomationConditionDecision` with snake_case fields. Every new row writes an explicit decision. SQL NULL is reserved for legacy unconditioned history.
+Extend `skip_reason`'s closed values with `conditions_false`, `conditions_unknown`. Keep existing Run source columns and partial unique index; do not rename the entire history schema. `condition_decision_json` is shared by Runs/Skips and encodes `AutomationConditionDecision` with snake_case fields. Every row writes an explicit decision; the column is `NOT NULL`.
 
 Replace the old unconditional Fact requirement in the history-kind CHECK; adding columns alone is insufficient. This focused SQL diff preserves the other existing Run/Skip and all-or-nothing Fact checks:
 
@@ -390,6 +389,7 @@ Replace the old unconditional Fact requirement in the history-kind CHECK; adding
          OR (kind = 'skip'
              AND skip_matched_triggers_json IS NOT NULL AND skip_reason IS NOT NULL
 -            AND fact_id IS NOT NULL
++            AND skip_source IS NOT NULL
 +            AND (
 +                (skip_source IS NOT NULL AND skip_source = 'device_fact'
 +                    AND fact_id IS NOT NULL
@@ -398,30 +398,15 @@ Replace the old unconditional Fact requirement in the history-kind CHECK; adding
 +                    AND fact_id IS NULL
 +                    AND json_array_length(skip_matched_triggers_json) = 0
 +                    AND skip_reason IN ('conditions_false', 'conditions_unknown'))
-+                OR (skip_source IS NULL AND condition_decision_json IS NULL
-+                    AND fact_id IS NOT NULL
-+                    AND skip_reason IN ('stale_fact', 'automation_busy')
-+                    AND json_array_length(skip_matched_triggers_json) > 0)
 +            )
              AND run_snapshot_json IS NULL AND run_source IS NULL AND run_status IS NULL
 ```
 
-Also add these table constraints:
-
-```sql
-CHECK (skip_source IS NULL OR condition_decision_json IS NOT NULL),
-CHECK (
-    skip_reason IS NULL
-    OR skip_reason NOT IN ('conditions_false', 'conditions_unknown')
-    OR condition_decision_json IS NOT NULL
-)
-```
-
-Explicit `IS NOT NULL` guards prevent SQLite's null-valued CHECK expressions from admitting invalid provenance. Keep `automation_history_fact_outcome_idx`'s `WHERE fact_id IS NOT NULL` predicate so repeated blocked manual POSTs remain distinct.
+Keep `automation_history_fact_outcome_idx`'s `WHERE fact_id IS NOT NULL` predicate so repeated blocked manual POSTs remain distinct.
 
 Runs keep their existing required fields and null Skip fields. New automatic Skips require `skip_source='device_fact'`, complete Fact evidence, nonempty matched Trigger snapshots, and a decision. Manual Skips require `skip_source='manual'`, all Fact columns null, `skip_matched_triggers_json='[]'`, one of the two Condition reasons, and a decision. Skips have no Run fields or Step rows; the decision JSON holds their Condition snapshot.
 
-Legacy automatic Skips may have null `skip_source` and null decision only when complete Fact evidence exists and the reason is `stale_fact` or `automation_busy`. Domain validators may normalize consistent legacy unconditioned rows to `not_configured`. A Run snapshot containing Conditions without a decision, a Condition Skip with a null source or decision, and partial evidence are corruption. Write-time structural validation plus the SQL provenance checks are the integrity guard; SQL does not reproduce the recursive evaluator, and reads decode and trust the retained evidence.
+A Run snapshot containing Conditions without a decision, a Skip with a null source or decision, and partial evidence are corruption. Write-time structural validation plus the SQL provenance checks are the integrity guard; SQL does not reproduce the recursive evaluator, and reads decode and trust the retained evidence.
 
 Update explicit write/select queries and sqlc-generated models, mapping helpers, summaries, and pruning tests. No new table or index is needed; dropping `automation_history` in Goose Down already removes its new columns. Do not add destructive separate column-drop statements. Retention must delete the explanation atomically with its history row and leave matched-Fact receipts untouched.
 
@@ -547,7 +532,7 @@ Execute D2, D1, D3, D4, then D5 because the evaluator needs D2's State snapshot 
 - **A5. Batch snapshot.** Real migrated SQLite distinguishes present, never-observed, and missing Entities in one owned, deduplicated snapshot; an empty request returns empty. With an independent writer atomically changing two rows, each statement sees the complete old or new pair, never a mix.
 - **A6. Reference validation.** Through the devices seam and definition API, save rejects unknown or stateless Entities, accepts stateful never-observed, unavailable, or disabled Entities, and preserves Trigger validation.
 - **A7. Atomic coverage.** An uncovered snapshot from a definition-edit race writes no history, receipt, or Step. The required set includes only current eligible Conditions, and known absent State counts as covered. One covered transaction commits mixed unconditional and conditional outcomes together; injected storage failure rolls all writes back.
-- **A8. Explanation integrity.** Every decision mode and evaluated result round-trips; selected JSON null remains distinct from missing. Leaf identity, time, and value survive State and definition changes, deletion, and device-history pruning. Domain and raw-SQL tests reject inconsistent IDs, results, provenance, reasons, modes, evidence, malformed decision JSON, Skip Fact fields, Run Skip fields, and new Skips with null source or decision. Valid manual and legacy automatic Skips decode.
+- **A8. Explanation integrity.** Every decision mode and evaluated result round-trips; selected JSON null remains distinct from missing. Leaf identity, time, and value survive State and definition changes, deletion, and device-history pruning. Domain and raw-SQL tests reject inconsistent IDs, results, provenance, reasons, modes, evidence, malformed decision JSON, Skip Fact fields, Run Skip fields, a Skip with a null source, and any row with a null decision. Valid manual Skips decode.
 - **A9. Redelivery and pruning.** Changing State and redelivering a Fact after a Condition Skip starts no Run. Pruning that history still leaves the receipt to block later redelivery. Existing unconditional deduplication remains unchanged.
 - **A10. Definition races.** Barrier-controlled definition and busy races prove final definitions govern admission. Newly required IDs return `ErrConditionSnapshotRequired` after one pre-read and one transaction; covered-ID operand edits reuse coherent evidence. Admission writes no partial outcomes or starts workers, and does not latch an executor fault.
 - **A11. Precedence and reads.** Automatic admission reads State only when an enabled matching definition has Conditions, even if transaction precedence later yields duplicate, stale, or busy. Unconditioned automatic admissions and explicit-bypass or unconditioned manual admissions do not read State. Stale or busy Conditions are not evaluated. No Fact route accepts bypass.

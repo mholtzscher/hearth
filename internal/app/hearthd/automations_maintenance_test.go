@@ -93,17 +93,20 @@ func seedAutomationHistoryRows(ctx context.Context, t *testing.T, database *sql.
 		INSERT INTO automation_history (
 			id, automation_id, automation_name, kind, revision, recorded_at,
 			run_snapshot_json, run_source, run_status, run_started_at, run_completed_at,
-			run_matched_trigger_ids_json
+			run_matched_trigger_ids_json, condition_decision_json
 		) VALUES
 			('arn_01890f47-7a6b-7c4d-8e9f-0123456789a1',
 				'aut_01890f47-7a6b-7c4d-8e9f-0123456789b0', 'Maintenance',
-				'run', 1, ?, ?, 'manual', 'succeeded', ?, ?, '[]'),
+				'run', 1, ?, ?, 'manual', 'succeeded', ?, ?, '[]',
+				'{"mode":"not_configured","bypass_requested":false}'),
 			('arn_01890f47-7a6b-7c4d-8e9f-0123456789a2',
 				'aut_01890f47-7a6b-7c4d-8e9f-0123456789b0', 'Maintenance',
-				'run', 1, ?, ?, 'manual', 'succeeded', ?, ?, '[]'),
+				'run', 1, ?, ?, 'manual', 'succeeded', ?, ?, '[]',
+				'{"mode":"not_configured","bypass_requested":false}'),
 			('arn_01890f47-7a6b-7c4d-8e9f-0123456789a3',
 				'aut_01890f47-7a6b-7c4d-8e9f-0123456789b0', 'Maintenance',
-				'run', 1, ?, ?, 'manual', 'running', ?, NULL, '[]')`,
+				'run', 1, ?, ?, 'manual', 'running', ?, NULL, '[]',
+				'{"mode":"not_configured","bypass_requested":false}')`,
 		expired, snapshot, expired, expired,
 		sortable(now), snapshot, sortable(now), sortable(now),
 		expired, snapshot, expired,

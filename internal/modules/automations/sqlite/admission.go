@@ -399,7 +399,7 @@ func (repo *AutomationRepository) persistRun(
 		RunSource:                sql.NullString{String: string(run.Source), Valid: true},
 		RunStartedAt:             sql.NullString{String: recordedAt, Valid: true},
 		RunMatchedTriggerIdsJson: sql.NullString{String: string(matched), Valid: true},
-		ConditionDecisionJson:    sql.NullString{String: string(decision), Valid: true},
+		ConditionDecisionJson:    string(decision),
 	}); err != nil {
 		return err
 	}
@@ -484,7 +484,7 @@ func (repo *AutomationRepository) persistDeviceFactSkip(
 		SkipMatchedTriggersJson: sql.NullString{String: string(encodedTriggers), Valid: true},
 		SkipReason:              sql.NullString{String: string(skip.Reason), Valid: true},
 		SkipSource:              sql.NullString{String: string(skip.Source), Valid: true},
-		ConditionDecisionJson:   sql.NullString{String: string(decision), Valid: true},
+		ConditionDecisionJson:   string(decision),
 	}); err != nil {
 		return automations.AdmissionSkip{}, err
 	}
@@ -551,7 +551,7 @@ func (repo *AutomationRepository) persistManualSkip(
 		SkipMatchedTriggersJson: sql.NullString{String: string(encodedTriggers), Valid: true},
 		SkipReason:              sql.NullString{String: string(skip.Reason), Valid: true},
 		SkipSource:              sql.NullString{String: string(skip.Source), Valid: true},
-		ConditionDecisionJson:   sql.NullString{String: string(encodedDecision), Valid: true},
+		ConditionDecisionJson:   string(encodedDecision),
 	}); err != nil {
 		return automations.AutomationSkip{}, err
 	}

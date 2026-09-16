@@ -189,7 +189,7 @@ type CreateHistoryRunParams struct {
 	RunSource                sql.NullString
 	RunStartedAt             sql.NullString
 	RunMatchedTriggerIdsJson sql.NullString
-	ConditionDecisionJson    sql.NullString
+	ConditionDecisionJson    string
 }
 
 func (q *Queries) CreateHistoryRun(ctx context.Context, arg CreateHistoryRunParams) error {
@@ -240,7 +240,7 @@ type CreateHistorySkipParams struct {
 	SkipMatchedTriggersJson sql.NullString
 	SkipReason              sql.NullString
 	SkipSource              sql.NullString
-	ConditionDecisionJson   sql.NullString
+	ConditionDecisionJson   string
 }
 
 func (q *Queries) CreateHistorySkip(ctx context.Context, arg CreateHistorySkipParams) error {

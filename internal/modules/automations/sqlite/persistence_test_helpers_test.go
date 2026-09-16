@@ -141,12 +141,16 @@ func newCorrelationIDString(t *testing.T) string {
 	return string(id)
 }
 
+// insertHistoryRunSQL inserts one valid Run with the full column set, so a test
+// can control Run status and outcome independently of the SQL constraints. The
+// literal Condition decision is the explicit envelope every row now requires.
 const insertHistoryRunSQL = `INSERT INTO automation_history (
     id, automation_id, automation_name, kind, revision, recorded_at,
     run_snapshot_json, run_source, run_status, run_failure_code, run_started_at,
-    run_completed_at, run_matched_trigger_ids_json
+    run_completed_at, run_matched_trigger_ids_json, condition_decision_json
 ) VALUES (?, ?, 'Office light', 'run', 1, '2026-09-01T00:00:00.000000000Z', '{}', 'manual', ?, ?,
-    '2026-09-01T00:00:00.000000000Z', ?, ?)`
+    '2026-09-01T00:00:00.000000000Z', ?, ?,
+    '{"mode":"not_configured","bypass_requested":false}')`
 
 // insertHistorySkipSQL inserts one valid device-fact Skip. The matched-Trigger
 // snapshot and the Condition decision are supplied so provenance tests can
@@ -157,15 +161,6 @@ const insertHistorySkipSQL = `INSERT INTO automation_history (
     skip_matched_triggers_json, skip_reason, skip_source, condition_decision_json
 ) VALUES (?, ?, 'Office light', 'skip', 1, ?, ?, 'observation', ?, 'applied', ?, ?, ?, ?, 'automation_busy',
     'device_fact', ?)`
-
-// legacyInsertHistorySkipSQL inserts one legacy unconditioned automatic Skip
-// with NULL skip_source and NULL condition_decision_json; domain decoding must
-// normalize it to the explicit not_configured device-fact form.
-const legacyInsertHistorySkipSQL = `INSERT INTO automation_history (
-    id, automation_id, automation_name, kind, revision, recorded_at,
-    fact_id, fact_family, fact_entity_id, fact_variant, fact_causation_id, fact_value_json, fact_emitted_at,
-    skip_matched_triggers_json, skip_reason
-) VALUES (?, ?, 'Office light', 'skip', 1, ?, ?, 'observation', ?, 'applied', ?, ?, ?, ?, 'stale_fact')`
 
 // matchedTriggerJSON renders one valid matched-Trigger snapshot so a stored Skip
 // decodes instead of failing trigger validation.

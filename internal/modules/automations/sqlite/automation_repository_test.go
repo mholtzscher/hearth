@@ -292,14 +292,18 @@ func TestMigrationEnforcesAutomationStorageInvariants(t *testing.T) {
 			[]any{runID, automationID, "failed", nil, migrationTimestamp, `[]`}},
 		{"skip without fact", `INSERT INTO automation_history (
 			id, automation_id, automation_name, kind, revision, recorded_at,
-			skip_matched_triggers_json, skip_reason) VALUES (?, ?, 'Office light', 'skip', 1, ?, '[]', 'stale_fact')`,
-			[]any{skipID, automationID, migrationTimestamp}},
+			skip_matched_triggers_json, skip_reason, skip_source, condition_decision_json)
+			VALUES (?, ?, 'Office light', 'skip', 1, ?, ?, 'stale_fact', 'device_fact',
+			'{"mode":"not_configured","bypass_requested":false}')`,
+			[]any{skipID, automationID, migrationTimestamp, matchedTriggerJSON(t)}},
 		{
 			"skip without reason",
 			`INSERT INTO automation_history (
 			id, automation_id, automation_name, kind, revision, recorded_at,
 			fact_id, fact_family, fact_entity_id, fact_variant, fact_causation_id, fact_value_json, fact_emitted_at,
-			skip_matched_triggers_json) VALUES (?, ?, 'Office light', 'skip', 1, ?, ?, 'observation', ?, 'applied', ?, 'true', ?, '[]')`,
+			skip_matched_triggers_json, skip_source, condition_decision_json)
+			VALUES (?, ?, 'Office light', 'skip', 1, ?, ?, 'observation', ?, 'applied', ?, 'true', ?,
+			?, 'device_fact', '{"mode":"not_configured","bypass_requested":false}')`,
 			[]any{
 				skipID,
 				automationID,
@@ -308,12 +312,15 @@ func TestMigrationEnforcesAutomationStorageInvariants(t *testing.T) {
 				factEntityID,
 				factObservationID,
 				migrationTimestamp,
+				matchedTriggerJSON(t),
 			},
 		},
 		{"run carries skip reason", `INSERT INTO automation_history (
 			id, automation_id, automation_name, kind, revision, recorded_at,
 			run_snapshot_json, run_source, run_status, run_started_at,
-			run_matched_trigger_ids_json, skip_reason) VALUES (?, ?, 'Office light', 'run', 1, ?, '{}', 'manual', 'running', ?, '[]', 'stale_fact')`,
+			run_matched_trigger_ids_json, skip_reason, condition_decision_json)
+			VALUES (?, ?, 'Office light', 'run', 1, ?, '{}', 'manual', 'running', ?, '[]', 'stale_fact',
+			'{"mode":"not_configured","bypass_requested":false}')`,
 			[]any{runID, automationID, migrationTimestamp, migrationTimestamp}},
 		{"receipt with unknown kind", `INSERT INTO automation_fact_receipts VALUES (?, ?, 'later', ?)`,
 			[]any{factID, automationID, runID}},

@@ -72,12 +72,17 @@ func TestMigrationEnforcesSkipProvenanceAndDecision(t *testing.T) {
 		name string
 		args skipProvenanceArgs
 	}{
-		{"new skip without a source", func() skipProvenanceArgs {
+		{"skip without a source", func() skipProvenanceArgs {
 			args := factBacked()
 			args.triggers, args.reason, args.decision = triggers, "automation_busy", decision
 			return args
 		}()},
-		{"new skip without a decision", func() skipProvenanceArgs {
+		{"skip without a source and a stale fact reason", func() skipProvenanceArgs {
+			args := factBacked()
+			args.triggers, args.reason, args.decision = triggers, "stale_fact", decision
+			return args
+		}()},
+		{"skip without a decision", func() skipProvenanceArgs {
 			args := factBacked()
 			args.triggers, args.reason, args.source = triggers, "automation_busy", "device_fact"
 			return args
@@ -129,27 +134,38 @@ func TestMigrationEnforcesSkipProvenanceAndDecision(t *testing.T) {
 		}
 	}
 
-	// A run row may not carry Skip provenance, and a legacy skip must carry
-	// complete Fact evidence with an unconditional automatic reason.
+	// A run row may not carry Skip provenance, and no row may omit its decision;
+	// a null-valued CHECK expression must never admit either.
 	if _, err := database.ExecContext(ctx, `INSERT INTO automation_history (
 		id, automation_id, automation_name, kind, revision, recorded_at,
 		run_snapshot_json, run_source, run_status, run_started_at,
-		run_matched_trigger_ids_json, skip_source)
-		VALUES (?, ?, 'Office light', 'run', 1, ?, '{}', 'manual', 'running', ?, '[]', 'manual')`,
-		newRunIDString(t), automationID, migrationTimestamp, migrationTimestamp,
+		run_matched_trigger_ids_json, skip_source, condition_decision_json)
+		VALUES (?, ?, 'Office light', 'run', 1, ?, '{}', 'manual', 'running', ?, '[]', 'manual', ?)`,
+		newRunIDString(t), automationID, migrationTimestamp, migrationTimestamp, decision,
 	); err == nil {
 		t.Fatal("a run row with skip provenance was accepted")
 	}
-	legacyConditionReason := func() skipProvenanceArgs {
+	if _, err := database.ExecContext(ctx, `INSERT INTO automation_history (
+		id, automation_id, automation_name, kind, revision, recorded_at,
+		run_snapshot_json, run_source, run_status, run_started_at,
+		run_matched_trigger_ids_json)
+		VALUES (?, ?, 'Office light', 'run', 1, ?, '{}', 'manual', 'running', ?, '[]')`,
+		newRunIDString(t), automationID, migrationTimestamp, migrationTimestamp,
+	); err == nil {
+		t.Fatal("a run row with a null condition decision was accepted")
+	}
+	conditionReasonWithoutProvenance := func() skipProvenanceArgs {
 		args := factBacked()
 		args.triggers, args.reason = triggers, "conditions_false"
 		return args
 	}()
-	if _, err := database.ExecContext(ctx, insertSkipSQL, legacyConditionReason.values()...); err == nil {
-		t.Fatal("a legacy skip with a Condition reason was accepted")
+	if _, err := database.ExecContext(
+		ctx, insertSkipSQL, conditionReasonWithoutProvenance.values()...,
+	); err == nil {
+		t.Fatal("a skip with a Condition reason and no provenance was accepted")
 	}
 
-	// A device-fact Skip, a manual Skip, and a legacy Skip all commit.
+	// A device-fact Skip and a manual Skip both commit.
 	deviceFact := factBacked()
 	deviceFact.triggers, deviceFact.reason = triggers, "automation_busy"
 	deviceFact.source, deviceFact.decision = "device_fact", decision
@@ -163,48 +179,15 @@ func TestMigrationEnforcesSkipProvenanceAndDecision(t *testing.T) {
 	if _, err := database.ExecContext(ctx, insertSkipSQL, manual.values()...); err != nil {
 		t.Fatalf("valid manual Skip: %v", err)
 	}
-	if _, err := database.ExecContext(ctx, legacyInsertHistorySkipSQL,
-		newSkipIDString(t), automationID, migrationTimestamp, newFactIDString(t), factEntityID, factObservationID,
-		"true", migrationTimestamp, triggers,
-	); err != nil {
-		t.Fatalf("valid legacy Skip: %v", err)
-	}
 }
 
-// Legacy unconditioned history and a manual Condition Skip must both decode:
-// the legacy row normalizes to device_fact/not_configured, and the manual row
-// keeps a null Fact with an evaluated false decision.
-func TestHistoryDecodesLegacyAndManualSkipProvenance(t *testing.T) {
+// A manual Condition Skip must decode with a null Fact and an evaluated false
+// decision.
+func TestHistoryDecodesManualSkipProvenance(t *testing.T) {
 	t.Parallel()
 	database := openAutomationDatabase(t)
 	repository := newAutomationRepository(t, database)
-	legacyAutomation := automations.AutomationID(newAutomationIDString(t))
 	manualAutomation := automations.AutomationID(newAutomationIDString(t))
-	factID := newFactIDString(t)
-	factEntityID := string(newEntityID(t))
-	factObservationID := newObservationIDString(t)
-	triggers := matchedTriggerJSON(t)
-
-	legacyID := newSkipIDString(t)
-	mustExec(t, database, legacyInsertHistorySkipSQL,
-		legacyID, string(legacyAutomation), migrationTimestamp, factID, factEntityID, factObservationID,
-		"true", migrationTimestamp, triggers,
-	)
-	legacy := historyEntry(t, repository, legacyAutomation, legacyID)
-	if legacy.Skip == nil {
-		t.Fatalf("legacy history entry = %#v, want a Skip", legacy)
-	}
-	if legacy.Skip.Source != automations.RunSourceDeviceFact || legacy.Skip.Fact == nil ||
-		legacy.Skip.ConditionDecision.Mode != automations.AutomationConditionDecisionNotConfigured ||
-		len(legacy.Skip.MatchedTriggers) != 1 {
-		t.Fatalf("legacy Skip = %#v", legacy.Skip)
-	}
-	legacySummary := firstHistorySummary(t, repository, legacyAutomation)
-	if legacySummary.Source != automations.RunSourceDeviceFact ||
-		legacySummary.ConditionMode != automations.AutomationConditionDecisionNotConfigured ||
-		legacySummary.ConditionResult != nil {
-		t.Fatalf("legacy summary = %#v", legacySummary)
-	}
 
 	// A manual Skip's decision must be the real evaluated false tree, so build it
 	// through the evaluator rather than fabricating JSON.

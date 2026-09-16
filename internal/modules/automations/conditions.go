@@ -132,7 +132,7 @@ type AutomationConditionDecisionMode string
 
 const (
 	// AutomationConditionDecisionNotConfigured marks a definition that omitted
-	// Conditions. It is also the normalized form of legacy unconditioned history.
+	// Conditions.
 	AutomationConditionDecisionNotConfigured AutomationConditionDecisionMode = "not_configured"
 	// AutomationConditionDecisionNotEvaluated marks an automatic stale or busy
 	// Skip of a configured definition.
@@ -158,8 +158,7 @@ func (mode AutomationConditionDecisionMode) isKnown() bool {
 }
 
 // AutomationConditionDecision is the immutable admission explanation retained
-// with a Run or Skip. It is evidence, not executable work. Legacy unconditioned
-// rows decode to the explicit not_configured mode rather than a zero value.
+// with a Run or Skip. It is evidence, not executable work.
 type AutomationConditionDecision struct {
 	Mode            AutomationConditionDecisionMode
 	BypassRequested bool

@@ -559,19 +559,16 @@ CREATE TABLE automation_history (
         skip_reason IS NULL
         OR skip_reason IN ('automation_busy', 'stale_fact', 'conditions_false', 'conditions_unknown')
     ),
-    -- Skip-only admission provenance. SQL NULL is reserved for legacy
-    -- unconditioned automatic Skips that still carry complete Fact evidence.
+    -- Skip-only admission provenance.
     skip_source                   TEXT CHECK (
         skip_source IS NULL OR skip_source IN ('device_fact', 'manual')
     ),
     -- Admission Condition decision, shared by Runs and Skips, encoded as the
-    -- strict snake_case AutomationConditionDecision object. SQL NULL is
-    -- reserved for legacy unconditioned history; every new row writes one.
-    condition_decision_json       TEXT CHECK (
-        condition_decision_json IS NULL OR (
-            json_valid(condition_decision_json)
-            AND json_type(condition_decision_json) = 'object'
-        )
+    -- strict snake_case AutomationConditionDecision object. Every row carries
+    -- one.
+    condition_decision_json       TEXT NOT NULL CHECK (
+        json_valid(condition_decision_json)
+        AND json_type(condition_decision_json) = 'object'
     ),
     CHECK (
         (fact_id IS NULL AND fact_family IS NULL AND fact_entity_id IS NULL
@@ -595,6 +592,7 @@ CREATE TABLE automation_history (
             AND (run_source = 'device_fact') = (fact_id IS NOT NULL))
         OR (kind = 'skip'
             AND skip_matched_triggers_json IS NOT NULL AND skip_reason IS NOT NULL
+            AND skip_source IS NOT NULL
             AND (
                 (skip_source IS NOT NULL AND skip_source = 'device_fact'
                     AND fact_id IS NOT NULL
@@ -603,22 +601,10 @@ CREATE TABLE automation_history (
                     AND fact_id IS NULL
                     AND json_array_length(skip_matched_triggers_json) = 0
                     AND skip_reason IN ('conditions_false', 'conditions_unknown'))
-                OR (skip_source IS NULL AND condition_decision_json IS NULL
-                    AND fact_id IS NOT NULL
-                    AND skip_reason IN ('stale_fact', 'automation_busy')
-                    AND json_array_length(skip_matched_triggers_json) > 0)
             )
             AND run_snapshot_json IS NULL AND run_source IS NULL AND run_status IS NULL
             AND run_failure_code IS NULL AND run_started_at IS NULL
             AND run_completed_at IS NULL AND run_matched_trigger_ids_json IS NULL)
-    ),
-    -- Explicit IS NOT NULL guards: a null-valued CHECK expression would
-    -- otherwise admit provenance SQLite treats as unknown rather than false.
-    CHECK (skip_source IS NULL OR condition_decision_json IS NOT NULL),
-    CHECK (
-        skip_reason IS NULL
-        OR skip_reason NOT IN ('conditions_false', 'conditions_unknown')
-        OR condition_decision_json IS NOT NULL
     )
 );
 

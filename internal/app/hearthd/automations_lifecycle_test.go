@@ -83,10 +83,11 @@ func seedRunningAutomationRun(ctx context.Context, t *testing.T, databasePath st
 		INSERT INTO automation_history (
 			id, automation_id, automation_name, kind, revision, recorded_at,
 			run_snapshot_json, run_source, run_status, run_started_at,
-			run_matched_trigger_ids_json
+			run_matched_trigger_ids_json, condition_decision_json
 		) VALUES (?, ?, 'Interrupted on restart', 'run', 1, ?,
 			'{"name":"Interrupted on restart","enabled":true,"triggers":[],"steps":[]}',
-			'manual', 'running', ?, '[]')`,
+			'manual', 'running', ?, '[]',
+			'{"mode":"not_configured","bypass_requested":false}')`,
 		seededRunningAutomationRunID, seededAutomationID, startedAt, startedAt,
 	); execErr != nil {
 		t.Fatal(execErr)

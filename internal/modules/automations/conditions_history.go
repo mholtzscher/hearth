@@ -72,16 +72,13 @@ func EncodeAutomationConditionDecision(decision AutomationConditionDecision) (js
 	return raw, nil
 }
 
-// DecodeAutomationConditionDecision normalizes one persisted decision. An empty
-// payload is the legacy unconditioned history row whose decision column is SQL
-// NULL; it is normalized to the explicit not_configured mode rather than left as
-// a zero-valued mode. Malformed decision JSON is a permanent
-// [ErrInvalidAutomation]. Retained snapshot and evaluation evidence is decoded
-// and trusted, never re-proven against the evaluator.
+// DecodeAutomationConditionDecision decodes one persisted decision. Every
+// automation_history row carries an explicit decision object, so an empty or
+// missing payload is malformed rather than an implicit not_configured mode.
+// Malformed decision JSON is a permanent [ErrInvalidAutomation]. Retained
+// snapshot and evaluation evidence is decoded and trusted, never re-proven
+// against the evaluator.
 func DecodeAutomationConditionDecision(raw json.RawMessage) (AutomationConditionDecision, error) {
-	if len(bytes.TrimSpace(raw)) == 0 {
-		return AutomationConditionDecision{Mode: AutomationConditionDecisionNotConfigured}, nil
-	}
 	var value automationConditionDecisionJSON
 	if err := decodeStrictJSONObject(raw, &value); err != nil {
 		return AutomationConditionDecision{}, decisionInvalid("condition decision is not a strict object")
