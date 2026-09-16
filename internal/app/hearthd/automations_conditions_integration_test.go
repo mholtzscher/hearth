@@ -13,11 +13,8 @@ import (
 
 	natsserver "github.com/nats-io/nats-server/v2/server"
 
-	simulatoradapter "github.com/mholtzscher/hearth/internal/adapters/simulator"
+	"github.com/mholtzscher/hearth/internal/adapters/scripted"
 	"github.com/mholtzscher/hearth/sdk/adapter"
-	sdkadapterbinarysensorv1 "github.com/mholtzscher/hearth/sdk/adapter/binarysensorv1"
-	sdkadapternumericsensorv1 "github.com/mholtzscher/hearth/sdk/adapter/numericsensorv1"
-	sdkpowerv1 "github.com/mholtzscher/hearth/sdk/adapter/powerv1"
 )
 
 // TestAutomationConditionsGateAdmissionThroughCore protects A17 at the app
@@ -247,44 +244,31 @@ type conditionsAdapter struct {
 	motionEntityID      string
 	illuminanceEntityID string
 	otherRoomEntityID   string
-	illuminanceSupport  sdkadapternumericsensorv1.Support
+	runtime             *scripted.Runtime
 	session             *adapter.Session
 	stop                func()
 }
 
 func (conditions conditionsAdapter) publishMotion(ctx context.Context) error {
-	observation, err := sdkadapterbinarysensorv1.NewObservation(sdkadapterbinarysensorv1.ObservationInput{
-		EntityID: conditions.motionEntityID, Support: sdkadapterbinarysensorv1.Support{},
-		State: true, AdapterReceivedAt: time.Now().UTC(),
-	})
-	if err != nil {
-		return err
-	}
-	_, err = conditions.session.PublishObservation(ctx, observation)
+	_, err := conditions.runtime.PublishEnvelope(
+		ctx, conditions.motionEntityID, json.RawMessage(`{"value":true}`),
+	)
 	return err
 }
 
 func (conditions conditionsAdapter) publishIlluminance(ctx context.Context, lux float64) error {
-	observation, err := sdkadapternumericsensorv1.NewObservation(sdkadapternumericsensorv1.ObservationInput{
-		EntityID: conditions.illuminanceEntityID, Support: conditions.illuminanceSupport,
-		State: sdkadapternumericsensorv1.State(lux), AdapterReceivedAt: time.Now().UTC(),
-	})
-	if err != nil {
-		return err
-	}
-	_, err = conditions.session.PublishObservation(ctx, observation)
+	_, err := conditions.runtime.PublishEnvelope(
+		ctx, conditions.illuminanceEntityID,
+		json.RawMessage(fmt.Sprintf(`{"value":%v}`, lux)),
+	)
 	return err
 }
 
 func (conditions conditionsAdapter) publishOtherRoomOccupied(ctx context.Context, occupied bool) error {
-	observation, err := sdkadapterbinarysensorv1.NewObservation(sdkadapterbinarysensorv1.ObservationInput{
-		EntityID: conditions.otherRoomEntityID, Support: sdkadapterbinarysensorv1.Support{},
-		State: sdkadapterbinarysensorv1.State(occupied), AdapterReceivedAt: time.Now().UTC(),
-	})
-	if err != nil {
-		return err
-	}
-	_, err = conditions.session.PublishObservation(ctx, observation)
+	_, err := conditions.runtime.PublishEnvelope(
+		ctx, conditions.otherRoomEntityID,
+		json.RawMessage(fmt.Sprintf(`{"value":%v}`, occupied)),
+	)
 	return err
 }
 
@@ -295,12 +279,10 @@ func (conditions conditionsAdapter) reportIlluminanceUnavailable(ctx context.Con
 	}})
 }
 
-// startConditionsAdapter wires one simulator-backed adapter to the running Core.
-// The power Entities use the generated power facade so a Run's Set Command is
-// answered with linked State evidence; the sensor Entities publish typed
-// Observations directly because they have no Operations.
-//
-//nolint:gocognit // Registration order and evidence wiring stay in one linear setup.
+// startConditionsAdapter wires one scripted adapter to the running Core.
+// The scripted runtime answers both power Entities' Set Commands with linked
+// State evidence; the sensor Entities publish Observations because they have
+// no Operations.
 func startConditionsAdapter(
 	ctx context.Context,
 	t *testing.T,
@@ -316,136 +298,116 @@ func startConditionsAdapter(
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = session.Close() })
-	lightSimulator, err := simulatoradapter.New(session, simulatoradapter.ScenarioHappy)
-	if err != nil {
-		t.Fatal(err)
-	}
-	fanSimulator, err := simulatoradapter.New(session, simulatoradapter.ScenarioHappy)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	lightDescriptor, err := sdkpowerv1.NewEntityDescriptor(adapter.EntityMetadata{
-		Key: "power", ExternalID: "office-light.power", Name: "Office light power",
-	}, lightSimulator.Support())
-	if err != nil {
-		t.Fatal(err)
-	}
-	lightDeviceExternalID := "office-light"
-	lightBinding, err := session.Register(ctx, adapter.Registration{
-		BindingKey: "office-light",
-		Device: adapter.DeviceDescriptor{
-			ExternalID: &lightDeviceExternalID, Name: "Office light", Kind: "light",
+	unavailable := false
+	scriptedRuntime, err := scripted.New(session, []scripted.DeviceSpec{
+		{
+			BindingKey: "office-light",
+			Name:       "Office light",
+			Kind:       "light",
+			Entities: []scripted.EntitySpec{
+				{
+					Key:  "power",
+					Name: "Office light power",
+					Type: "hearth.power/v1",
+					Support: map[string]any{
+						"state":      map[string]any{},
+						"operations": map[string]any{"set": map[string]any{}},
+					},
+					Initial: false,
+				},
+			},
 		},
-		Entities: []adapter.EntityDescriptor{lightDescriptor},
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	lightEntityID := string(bindingEntityID(t, lightBinding, "power"))
-
-	fanDescriptor, err := sdkpowerv1.NewEntityDescriptor(adapter.EntityMetadata{
-		Key: "power", ExternalID: "ceiling-fan.power", Name: "Ceiling fan relay",
-	}, fanSimulator.Support())
-	if err != nil {
-		t.Fatal(err)
-	}
-	fanDeviceExternalID := "ceiling-fan"
-	fanBinding, err := session.Register(ctx, adapter.Registration{
-		BindingKey: "ceiling-fan",
-		Device: adapter.DeviceDescriptor{
-			ExternalID: &fanDeviceExternalID, Name: "Ceiling fan", Kind: "relay",
+		{
+			BindingKey: "ceiling-fan",
+			Name:       "Ceiling fan",
+			Kind:       "relay",
+			Entities: []scripted.EntitySpec{
+				{
+					Key:  "power",
+					Name: "Ceiling fan relay",
+					Type: "hearth.power/v1",
+					Support: map[string]any{
+						"state":      map[string]any{},
+						"operations": map[string]any{"set": map[string]any{}},
+					},
+					Initial: false,
+				},
+			},
 		},
-		Entities: []adapter.EntityDescriptor{fanDescriptor},
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	fanEntityID := string(bindingEntityID(t, fanBinding, "power"))
-
-	illuminanceSupport := sdkadapternumericsensorv1.Support{
-		State: sdkadapternumericsensorv1.StateSupport{
-			Minimum: 0, Maximum: 1000000000, Unit: "lx",
-		},
-	}
-	illuminanceDescriptor, err := sdkadapternumericsensorv1.NewEntityDescriptor(adapter.EntityMetadata{
-		Key: "illuminance", ExternalID: "office-motion.illuminance", Name: "Office illuminance",
-	}, illuminanceSupport)
-	if err != nil {
-		t.Fatal(err)
-	}
-	motionDescriptor, err := sdkadapterbinarysensorv1.NewEntityDescriptor(adapter.EntityMetadata{
-		Key: "occupancy", ExternalID: "office-motion.occupancy", Name: "Office occupancy",
-	}, sdkadapterbinarysensorv1.Support{})
-	if err != nil {
-		t.Fatal(err)
-	}
-	otherRoomDescriptor, err := sdkadapterbinarysensorv1.NewEntityDescriptor(adapter.EntityMetadata{
-		Key: "bedroom-occupancy", ExternalID: "bedroom-motion.occupancy", Name: "Bedroom occupancy",
-	}, sdkadapterbinarysensorv1.Support{})
-	if err != nil {
-		t.Fatal(err)
-	}
-	sensorDeviceExternalID := "office-motion"
-	sensorBinding, err := session.Register(ctx, adapter.Registration{
-		BindingKey: "office-motion",
-		Device: adapter.DeviceDescriptor{
-			ExternalID: &sensorDeviceExternalID, Name: "Office and bedroom motion", Kind: "sensor",
-		},
-		Entities: []adapter.EntityDescriptor{
-			illuminanceDescriptor, motionDescriptor, otherRoomDescriptor,
+		{
+			BindingKey: "office-motion",
+			Name:       "Office and bedroom motion",
+			Kind:       "sensor",
+			Entities: []scripted.EntitySpec{
+				{
+					Key:  "illuminance",
+					Name: "Office illuminance",
+					Type: "hearth.numericsensor/v1",
+					Support: map[string]any{
+						"state": map[string]any{
+							"minimum": 0, "maximum": 1000000000, "unit": "lx",
+						},
+						"operations": map[string]any{},
+					},
+					Initial: 10,
+				},
+				{
+					Key:  "occupancy",
+					Name: "Office occupancy",
+					Type: "hearth.binarysensor/v1",
+					Support: map[string]any{
+						"state":      map[string]any{},
+						"operations": map[string]any{},
+					},
+					Initial: false,
+				},
+				{
+					Key:  "bedroom-occupancy",
+					Name: "Bedroom occupancy",
+					Type: "hearth.binarysensor/v1",
+					Support: map[string]any{
+						"state":      map[string]any{},
+						"operations": map[string]any{},
+					},
+					Initial:            false,
+					Available:          &unavailable,
+					AvailabilityReason: "adapter.hearth-test.operator_reported",
+				},
+			},
 		},
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	illuminanceEntityID := string(bindingEntityID(t, sensorBinding, "illuminance"))
-	motionEntityID := string(bindingEntityID(t, sensorBinding, "occupancy"))
-	otherRoomEntityID := string(bindingEntityID(t, sensorBinding, "bedroom-occupancy"))
-
-	// The bedroom occupancy Entity is deliberately never reported: its absent
-	// State is the unknown-evidence case. Reporting the sensors requires a
-	// healthy Adapter, so the simulator health report comes first.
-	if initializeErr := lightSimulator.Initialize(ctx, lightEntityID); initializeErr != nil {
-		t.Fatal(initializeErr)
-	}
-	if initializeErr := fanSimulator.Initialize(ctx, fanEntityID); initializeErr != nil {
-		t.Fatal(initializeErr)
-	}
-	for _, entityID := range []string{illuminanceEntityID, motionEntityID} {
-		if reportErr := session.ReportEntityAvailability(ctx, []adapter.EntityAvailabilityReport{{
-			EntityID: entityID, Status: adapter.AvailabilityAvailable, SourceObservedAt: time.Now().UTC(),
-		}}); reportErr != nil {
-			t.Fatal(reportErr)
+	registrations := scriptedRuntime.Registrations()
+	bindings := make([]adapter.Binding, 0, len(registrations))
+	for _, registration := range registrations {
+		binding, registerErr := session.Register(ctx, registration)
+		if registerErr != nil {
+			t.Fatal(registerErr)
 		}
+		bindings = append(bindings, binding)
 	}
+	if attachErr := scriptedRuntime.Attach(bindings); attachErr != nil {
+		t.Fatal(attachErr)
+	}
+	lightEntityID := string(bindingEntityID(t, bindings[0], "power"))
+	fanEntityID := string(bindingEntityID(t, bindings[1], "power"))
+	illuminanceEntityID := string(bindingEntityID(t, bindings[2], "illuminance"))
+	motionEntityID := string(bindingEntityID(t, bindings[2], "occupancy"))
+	otherRoomEntityID := string(bindingEntityID(t, bindings[2], "bedroom-occupancy"))
 
-	lightHandler, err := lightSimulator.CommandHandler(lightEntityID)
-	if err != nil {
-		t.Fatal(err)
-	}
-	fanHandler, err := fanSimulator.CommandHandler(fanEntityID)
-	if err != nil {
-		t.Fatal(err)
+	// The bedroom occupancy Entity starts unavailable with no State: its absent
+	// State is the unknown-evidence case. Initialize publishes the first value of
+	// every available Entity and reports health and availability.
+	if initializeErr := scriptedRuntime.Initialize(ctx); initializeErr != nil {
+		t.Fatal(initializeErr)
 	}
 	serveContext, stopServe := context.WithCancel(ctx)
 	served := make(chan struct{})
 	go func() {
 		defer close(served)
-		_ = session.ServeCommands(serveContext, func(
-			commandContext context.Context,
-			command adapter.Command,
-			responder adapter.Responder,
-		) error {
-			switch command.EntityID {
-			case lightEntityID:
-				return lightHandler(commandContext, command, responder)
-			case fanEntityID:
-				return fanHandler(commandContext, command, responder)
-			default:
-				return fmt.Errorf("unexpected command Entity %q", command.EntityID)
-			}
-		})
+		_ = session.ServeCommands(serveContext, scriptedRuntime.CommandHandler())
 	}()
 
 	runtimeID := waitForAdapterRuntime(ctx, t, httpAddress, sliceAdapterID)
@@ -457,7 +419,7 @@ func startConditionsAdapter(
 		motionEntityID:      motionEntityID,
 		illuminanceEntityID: illuminanceEntityID,
 		otherRoomEntityID:   otherRoomEntityID,
-		illuminanceSupport:  illuminanceSupport,
+		runtime:             scriptedRuntime,
 		session:             session,
 		stop: func() {
 			stopServe()
