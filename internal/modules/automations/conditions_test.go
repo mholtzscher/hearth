@@ -38,10 +38,10 @@ func conditionLeaf(
 	operator automations.ComparisonOperator,
 	operand string,
 	maxAge *int64,
-) automations.AutomationCondition {
-	return automations.AutomationCondition{
-		ID:   automations.AutomationConditionID(id),
-		Kind: automations.AutomationConditionEntityState,
+) automations.Condition {
+	return automations.Condition{
+		ID:   automations.ConditionID(id),
+		Kind: automations.ConditionEntityState,
 		EntityState: &automations.EntityStateCondition{
 			EntityID:      entity,
 			Pointer:       pointer,
@@ -53,20 +53,20 @@ func conditionLeaf(
 }
 
 func conditionGroup(
-	kind automations.AutomationConditionKind,
-	children ...automations.AutomationCondition,
-) automations.AutomationCondition {
-	return automations.AutomationCondition{
+	kind automations.ConditionKind,
+	children ...automations.Condition,
+) automations.Condition {
+	return automations.Condition{
 		ID:       "root",
 		Kind:     kind,
 		Children: children,
 	}
 }
 
-func conditionNot(id string, child automations.AutomationCondition) automations.AutomationCondition {
-	return automations.AutomationCondition{
-		ID:    automations.AutomationConditionID(id),
-		Kind:  automations.AutomationConditionNot,
+func conditionNot(id string, child automations.Condition) automations.Condition {
+	return automations.Condition{
+		ID:    automations.ConditionID(id),
+		Kind:  automations.ConditionNot,
 		Child: &child,
 	}
 }
@@ -111,12 +111,12 @@ func conditionSnapshot(entries ...devices.EntityStateSnapshotEntry) devices.Enti
 
 func mustEvaluateCondition(
 	t *testing.T,
-	root automations.AutomationCondition,
+	root automations.Condition,
 	snapshot devices.EntityStateSnapshot,
 	evaluatedAt time.Time,
-) automations.AutomationConditionEvaluation {
+) automations.ConditionEvaluation {
 	t.Helper()
-	evaluation, err := automations.EvaluateAutomationConditions(root, snapshot, evaluatedAt)
+	evaluation, err := automations.EvaluateConditions(root, snapshot, evaluatedAt)
 	if err != nil {
 		t.Fatalf("EvaluateAutomationConditions: %v", err)
 	}
@@ -127,11 +127,11 @@ func mustEvaluateCondition(
 // the requested three-valued leaf results, then returns the root result.
 func truthGroupResult(
 	t *testing.T,
-	kind automations.AutomationConditionKind,
-	results ...automations.AutomationConditionResult,
-) automations.AutomationConditionResult {
+	kind automations.ConditionKind,
+	results ...automations.ConditionResult,
+) automations.ConditionResult {
 	t.Helper()
-	children := make([]automations.AutomationCondition, 0, len(results))
+	children := make([]automations.Condition, 0, len(results))
 	entries := make([]devices.EntityStateSnapshotEntry, 0, len(results))
 	for index, want := range results {
 		entity := conditionEntity(index + 1)
@@ -139,11 +139,11 @@ func truthGroupResult(
 			fmt.Sprintf("leaf-%d", index), entity, "", automations.ComparisonEqual, "true", nil,
 		))
 		switch want {
-		case automations.AutomationConditionTrue:
+		case automations.ConditionTrue:
 			entries = append(entries, conditionState(entity, "true", conditionTime()))
-		case automations.AutomationConditionFalse:
+		case automations.ConditionFalse:
 			entries = append(entries, conditionState(entity, "false", conditionTime()))
-		case automations.AutomationConditionUnknown:
+		case automations.ConditionUnknown:
 			entries = append(entries, conditionMissingState(entity))
 		default:
 			t.Fatalf("unsupported leaf result %q", want)
@@ -158,55 +158,55 @@ func truthGroupResult(
 // derived from production helpers.
 func TestAutomationConditionTruthTable(t *testing.T) {
 	t.Parallel()
-	results := []automations.AutomationConditionResult{
-		automations.AutomationConditionTrue,
-		automations.AutomationConditionFalse,
-		automations.AutomationConditionUnknown,
+	results := []automations.ConditionResult{
+		automations.ConditionTrue,
+		automations.ConditionFalse,
+		automations.ConditionUnknown,
 	}
 	table := map[string]struct {
-		all automations.AutomationConditionResult
-		any automations.AutomationConditionResult
+		all automations.ConditionResult
+		any automations.ConditionResult
 	}{
-		"true,true":       {automations.AutomationConditionTrue, automations.AutomationConditionTrue},
-		"true,false":      {automations.AutomationConditionFalse, automations.AutomationConditionTrue},
-		"true,unknown":    {automations.AutomationConditionUnknown, automations.AutomationConditionTrue},
-		"false,true":      {automations.AutomationConditionFalse, automations.AutomationConditionTrue},
-		"false,false":     {automations.AutomationConditionFalse, automations.AutomationConditionFalse},
-		"false,unknown":   {automations.AutomationConditionFalse, automations.AutomationConditionUnknown},
-		"unknown,true":    {automations.AutomationConditionUnknown, automations.AutomationConditionTrue},
-		"unknown,false":   {automations.AutomationConditionFalse, automations.AutomationConditionUnknown},
-		"unknown,unknown": {automations.AutomationConditionUnknown, automations.AutomationConditionUnknown},
+		"true,true":       {automations.ConditionTrue, automations.ConditionTrue},
+		"true,false":      {automations.ConditionFalse, automations.ConditionTrue},
+		"true,unknown":    {automations.ConditionUnknown, automations.ConditionTrue},
+		"false,true":      {automations.ConditionFalse, automations.ConditionTrue},
+		"false,false":     {automations.ConditionFalse, automations.ConditionFalse},
+		"false,unknown":   {automations.ConditionFalse, automations.ConditionUnknown},
+		"unknown,true":    {automations.ConditionUnknown, automations.ConditionTrue},
+		"unknown,false":   {automations.ConditionFalse, automations.ConditionUnknown},
+		"unknown,unknown": {automations.ConditionUnknown, automations.ConditionUnknown},
 	}
 	for _, left := range results {
 		for _, right := range results {
 			key := fmt.Sprintf("%s,%s", left, right)
 			want := table[key]
-			if got := truthGroupResult(t, automations.AutomationConditionAll, left, right); got != want.all {
+			if got := truthGroupResult(t, automations.ConditionAll, left, right); got != want.all {
 				t.Errorf("all(%s) = %s, want %s", key, got, want.all)
 			}
-			if got := truthGroupResult(t, automations.AutomationConditionAny, left, right); got != want.any {
+			if got := truthGroupResult(t, automations.ConditionAny, left, right); got != want.any {
 				t.Errorf("any(%s) = %s, want %s", key, got, want.any)
 			}
 		}
 	}
 	// A true any admits despite an unknown sibling; an all with any false is false.
 	if got := truthGroupResult(
-		t, automations.AutomationConditionAny,
-		automations.AutomationConditionTrue, automations.AutomationConditionUnknown,
-	); got != automations.AutomationConditionTrue {
+		t, automations.ConditionAny,
+		automations.ConditionTrue, automations.ConditionUnknown,
+	); got != automations.ConditionTrue {
 		t.Errorf("any(true, unknown) = %s, want true", got)
 	}
 	if got := truthGroupResult(
-		t, automations.AutomationConditionAll,
-		automations.AutomationConditionUnknown, automations.AutomationConditionFalse,
-		automations.AutomationConditionTrue,
-	); got != automations.AutomationConditionFalse {
+		t, automations.ConditionAll,
+		automations.ConditionUnknown, automations.ConditionFalse,
+		automations.ConditionTrue,
+	); got != automations.ConditionFalse {
 		t.Errorf("all(unknown, false, true) = %s, want false", got)
 	}
 	if got := truthGroupResult(
-		t, automations.AutomationConditionAll,
-		automations.AutomationConditionUnknown, automations.AutomationConditionUnknown,
-	); got != automations.AutomationConditionUnknown {
+		t, automations.ConditionAll,
+		automations.ConditionUnknown, automations.ConditionUnknown,
+	); got != automations.ConditionUnknown {
 		t.Errorf("all(unknown, unknown) = %s, want unknown", got)
 	}
 }
@@ -216,19 +216,19 @@ func TestAutomationConditionTruthTable(t *testing.T) {
 func TestAutomationConditionNotTruthTable(t *testing.T) {
 	t.Parallel()
 	cases := []struct {
-		input automations.AutomationConditionResult
-		want  automations.AutomationConditionResult
+		input automations.ConditionResult
+		want  automations.ConditionResult
 	}{
-		{automations.AutomationConditionTrue, automations.AutomationConditionFalse},
-		{automations.AutomationConditionFalse, automations.AutomationConditionTrue},
-		{automations.AutomationConditionUnknown, automations.AutomationConditionUnknown},
+		{automations.ConditionTrue, automations.ConditionFalse},
+		{automations.ConditionFalse, automations.ConditionTrue},
+		{automations.ConditionUnknown, automations.ConditionUnknown},
 	}
 	for _, testCase := range cases {
 		got := truthNotResult(t, testCase.input)
 		if got != testCase.want {
 			t.Errorf("not(%s) = %s, want %s", testCase.input, got, testCase.want)
 		}
-		if testCase.input == automations.AutomationConditionUnknown && got == automations.AutomationConditionTrue {
+		if testCase.input == automations.ConditionUnknown && got == automations.ConditionTrue {
 			t.Error("not(unknown) must not admit")
 		}
 	}
@@ -237,18 +237,18 @@ func TestAutomationConditionNotTruthTable(t *testing.T) {
 // truthNotResult evaluates one not node around a leaf that produces input.
 func truthNotResult(
 	t *testing.T,
-	input automations.AutomationConditionResult,
-) automations.AutomationConditionResult {
+	input automations.ConditionResult,
+) automations.ConditionResult {
 	t.Helper()
 	entity := conditionEntity(1)
 	leaf := conditionLeaf("leaf", entity, "", automations.ComparisonEqual, "true", nil)
 	entry := conditionMissingState(entity)
 	switch input {
-	case automations.AutomationConditionTrue:
+	case automations.ConditionTrue:
 		entry = conditionState(entity, "true", conditionTime())
-	case automations.AutomationConditionFalse:
+	case automations.ConditionFalse:
 		entry = conditionState(entity, "false", conditionTime())
-	case automations.AutomationConditionUnknown:
+	case automations.ConditionUnknown:
 	default:
 		t.Fatalf("unsupported leaf result %q", input)
 	}
@@ -263,7 +263,7 @@ func TestAutomationConditionEvaluationIsFullPreOrder(t *testing.T) {
 	admitting := conditionEntity(1)
 	unknownEntity := conditionEntity(2)
 	tree := conditionGroup(
-		automations.AutomationConditionAny,
+		automations.ConditionAny,
 		conditionLeaf("first", admitting, "", automations.ComparisonEqual, "true", nil),
 		conditionLeaf("second", unknownEntity, "", automations.ComparisonEqual, "true", nil),
 	)
@@ -272,13 +272,13 @@ func TestAutomationConditionEvaluationIsFullPreOrder(t *testing.T) {
 		conditionMissingState(unknownEntity),
 	)
 	evaluation := mustEvaluateCondition(t, tree, snapshot, conditionTime())
-	if evaluation.Result != automations.AutomationConditionTrue {
+	if evaluation.Result != automations.ConditionTrue {
 		t.Fatalf("root result = %s, want true", evaluation.Result)
 	}
 	if len(evaluation.Nodes) != 3 {
 		t.Fatalf("node count = %d, want every node evaluated", len(evaluation.Nodes))
 	}
-	wantIDs := []automations.AutomationConditionID{"root", "first", "second"}
+	wantIDs := []automations.ConditionID{"root", "first", "second"}
 	for index, id := range wantIDs {
 		if evaluation.Nodes[index].ID != id {
 			t.Fatalf("node %d = %q, want %q", index, evaluation.Nodes[index].ID, id)
@@ -288,7 +288,7 @@ func TestAutomationConditionEvaluationIsFullPreOrder(t *testing.T) {
 		t.Error("a composite node must not invent an unknown reason")
 	}
 	second := evaluation.Nodes[2]
-	if second.UnknownReason == nil || *second.UnknownReason != automations.AutomationConditionUnknownStateMissing {
+	if second.UnknownReason == nil || *second.UnknownReason != automations.ConditionUnknownStateMissing {
 		t.Fatalf("unknown sibling reason = %v, want state_missing", second.UnknownReason)
 	}
 }
@@ -301,65 +301,65 @@ func TestAutomationConditionUnknownReasons(t *testing.T) {
 	entity := conditionEntity(1)
 	cases := []struct {
 		name      string
-		condition automations.AutomationCondition
+		condition automations.Condition
 		entry     devices.EntityStateSnapshotEntry
-		want      automations.AutomationConditionUnknownReason
+		want      automations.ConditionUnknownReason
 		metadata  bool
 	}{
 		{
 			"entity missing",
 			conditionLeaf("leaf", entity, "", automations.ComparisonEqual, "true", nil),
 			conditionAbsent(entity),
-			automations.AutomationConditionUnknownEntityMissing,
+			automations.ConditionUnknownEntityMissing,
 			false,
 		},
 		{
 			"state missing",
 			conditionLeaf("leaf", entity, "", automations.ComparisonEqual, "true", nil),
 			conditionMissingState(entity),
-			automations.AutomationConditionUnknownStateMissing,
+			automations.ConditionUnknownStateMissing,
 			false,
 		},
 		{
 			"future evidence",
 			conditionLeaf("leaf", entity, "", automations.ComparisonEqual, "true", conditionAge(300)),
 			conditionState(entity, "true", now.Add(time.Nanosecond)),
-			automations.AutomationConditionUnknownEvidenceInFuture,
+			automations.ConditionUnknownEvidenceInFuture,
 			true,
 		},
 		{
 			"expired evidence",
 			conditionLeaf("leaf", entity, "", automations.ComparisonEqual, "true", conditionAge(300)),
 			conditionState(entity, "true", now.Add(-time.Hour)),
-			automations.AutomationConditionUnknownEvidenceExpired,
+			automations.ConditionUnknownEvidenceExpired,
 			true,
 		},
 		{
 			"pointer missing",
 			conditionLeaf("leaf", entity, "/missing", automations.ComparisonEqual, "true", nil),
 			conditionState(entity, `{"present":true}`, now),
-			automations.AutomationConditionUnknownPointerMissing,
+			automations.ConditionUnknownPointerMissing,
 			true,
 		},
 		{
 			"type mismatch eq",
 			conditionLeaf("leaf", entity, "", automations.ComparisonEqual, `"true"`, nil),
 			conditionState(entity, "true", now),
-			automations.AutomationConditionUnknownTypeMismatch,
+			automations.ConditionUnknownTypeMismatch,
 			true,
 		},
 		{
 			"type mismatch ne is unknown not true",
 			conditionLeaf("leaf", entity, "", automations.ComparisonNotEqual, `"true"`, nil),
 			conditionState(entity, "true", now),
-			automations.AutomationConditionUnknownTypeMismatch,
+			automations.ConditionUnknownTypeMismatch,
 			true,
 		},
 		{
 			"non-numeric ordering",
 			conditionLeaf("leaf", entity, "", automations.ComparisonLessThan, "1", nil),
 			conditionState(entity, `"not-a-number"`, now),
-			automations.AutomationConditionUnknownTypeMismatch,
+			automations.ConditionUnknownTypeMismatch,
 			true,
 		},
 	}
@@ -367,7 +367,7 @@ func TestAutomationConditionUnknownReasons(t *testing.T) {
 		evaluation := mustEvaluateCondition(
 			t, testCase.condition, conditionSnapshot(testCase.entry), now,
 		)
-		if evaluation.Result != automations.AutomationConditionUnknown {
+		if evaluation.Result != automations.ConditionUnknown {
 			t.Errorf("%s: result = %s, want unknown", testCase.name, evaluation.Result)
 		}
 		node := evaluation.Nodes[len(evaluation.Nodes)-1]
@@ -389,7 +389,7 @@ func TestAutomationConditionSelectedNullAndContainers(t *testing.T) {
 	nullLeaf := conditionLeaf("leaf", entity, "", automations.ComparisonEqual, "null", nil)
 	evaluation := mustEvaluateCondition(t, nullLeaf, conditionSnapshot(conditionState(entity, "null", now)), now)
 	node := evaluation.Nodes[0]
-	if evaluation.Result != automations.AutomationConditionTrue {
+	if evaluation.Result != automations.ConditionTrue {
 		t.Fatalf("selected null eq null = %s, want true", evaluation.Result)
 	}
 	if node.SelectedValue == nil || string(node.SelectedValue) != "null" {
@@ -399,14 +399,14 @@ func TestAutomationConditionSelectedNullAndContainers(t *testing.T) {
 	arrayEvaluation := mustEvaluateCondition(
 		t, arrayLeaf, conditionSnapshot(conditionState(entity, "[1,2]", now)), now,
 	)
-	if arrayEvaluation.Result != automations.AutomationConditionFalse {
+	if arrayEvaluation.Result != automations.ConditionFalse {
 		t.Fatalf("unequal arrays = %s, want false", arrayEvaluation.Result)
 	}
 	objectLeaf := conditionLeaf("leaf", entity, "", automations.ComparisonEqual, `{"a":1}`, nil)
 	objectEvaluation := mustEvaluateCondition(
 		t, objectLeaf, conditionSnapshot(conditionState(entity, `{"a":1,"b":2}`, now)), now,
 	)
-	if objectEvaluation.Result != automations.AutomationConditionFalse {
+	if objectEvaluation.Result != automations.ConditionFalse {
 		t.Fatalf("differing objects = %s, want false", objectEvaluation.Result)
 	}
 }
@@ -421,29 +421,29 @@ func TestAutomationConditionNumericComparisons(t *testing.T) {
 		operator automations.ComparisonOperator
 		operand  string
 		value    string
-		want     automations.AutomationConditionResult
+		want     automations.ConditionResult
 	}{
-		{"ne 30 against 40", automations.ComparisonNotEqual, "30", "40", automations.AutomationConditionTrue},
+		{"ne 30 against 40", automations.ComparisonNotEqual, "30", "40", automations.ConditionTrue},
 		{
 			"exact decimal ordering",
 			automations.ComparisonGreaterThan,
 			"0.3",
 			"0.300000000000000000001",
-			automations.AutomationConditionTrue,
+			automations.ConditionTrue,
 		},
 		{
 			"large integers stay exact",
 			automations.ComparisonEqual,
 			"9007199254740993",
 			"9007199254740993",
-			automations.AutomationConditionTrue,
+			automations.ConditionTrue,
 		},
 		{
 			"large integers differ",
 			automations.ComparisonEqual,
 			"9007199254740993",
 			"9007199254740992",
-			automations.AutomationConditionFalse,
+			automations.ConditionFalse,
 		},
 	}
 	for _, testCase := range cases {
@@ -463,7 +463,7 @@ func TestAutomationConditionStoredStateCorruptionIsAnError(t *testing.T) {
 	t.Parallel()
 	entity := conditionEntity(1)
 	leaf := conditionLeaf("leaf", entity, "", automations.ComparisonEqual, "true", nil)
-	_, err := automations.EvaluateAutomationConditions(
+	_, err := automations.EvaluateConditions(
 		leaf, conditionSnapshot(conditionState(entity, "{not json", conditionTime())), conditionTime(),
 	)
 	if !errors.Is(err, devices.ErrEntityStateSnapshotCorrupt) {
@@ -484,13 +484,13 @@ func TestAutomationConditionEvidenceAge(t *testing.T) {
 	exact := mustEvaluateCondition(
 		t, bounded, conditionSnapshot(conditionState(entity, "true", now.Add(-300*time.Second))), now,
 	)
-	if exact.Result != automations.AutomationConditionTrue {
+	if exact.Result != automations.ConditionTrue {
 		t.Fatalf("age equal to the bound = %s, want true", exact.Result)
 	}
 	past := mustEvaluateCondition(
 		t, bounded, conditionSnapshot(conditionState(entity, "true", now.Add(-300*time.Second-time.Nanosecond))), now,
 	)
-	if past.Result != automations.AutomationConditionUnknown {
+	if past.Result != automations.ConditionUnknown {
 		t.Fatalf("age one nanosecond past the bound = %s, want unknown", past.Result)
 	}
 	if node := past.Nodes[0]; node.SelectedValue == nil || string(node.SelectedValue) != "true" {
@@ -502,13 +502,13 @@ func TestAutomationConditionEvidenceAge(t *testing.T) {
 	unboundedAncient := mustEvaluateCondition(
 		t, unbounded, conditionSnapshot(conditionState(entity, "true", now.Add(-100*time.Hour))), now,
 	)
-	if unboundedAncient.Result != automations.AutomationConditionTrue {
+	if unboundedAncient.Result != automations.ConditionTrue {
 		t.Fatalf("unbounded ancient evidence = %s, want compared normally", unboundedAncient.Result)
 	}
 	unboundedFuture := mustEvaluateCondition(
 		t, unbounded, conditionSnapshot(conditionState(entity, "true", now.Add(time.Hour))), now,
 	)
-	if unboundedFuture.Result != automations.AutomationConditionTrue {
+	if unboundedFuture.Result != automations.ConditionTrue {
 		t.Fatalf("unbounded future evidence = %s, want compare normally", unboundedFuture.Result)
 	}
 	// An unchanged Observation that refreshes observed_at moves back inside the
@@ -516,7 +516,7 @@ func TestAutomationConditionEvidenceAge(t *testing.T) {
 	refreshed := mustEvaluateCondition(
 		t, bounded, conditionSnapshot(conditionState(entity, "true", now.Add(-time.Minute))), now,
 	)
-	if refreshed.Result != automations.AutomationConditionTrue {
+	if refreshed.Result != automations.ConditionTrue {
 		t.Fatalf("refreshed unchanged Observation = %s, want true", refreshed.Result)
 	}
 }
@@ -538,13 +538,13 @@ func TestAutomationConditionEvidenceAgeIgnoresAdapterAndUpstreamTimes(t *testing
 	entry := devices.EntityStateSnapshotEntry{EntityID: entity, Exists: true, State: state}
 	bounded := conditionLeaf("leaf", entity, "", automations.ComparisonEqual, "true", conditionAge(300))
 	expired := mustEvaluateCondition(t, bounded, conditionSnapshot(entry), now)
-	if expired.Result != automations.AutomationConditionUnknown ||
-		*expired.Nodes[0].UnknownReason != automations.AutomationConditionUnknownEvidenceExpired {
+	if expired.Result != automations.ConditionUnknown ||
+		*expired.Nodes[0].UnknownReason != automations.ConditionUnknownEvidenceExpired {
 		t.Fatalf("bounded result = %#v, want evidence_expired from observed_at alone", expired.Nodes[0])
 	}
 	unbounded := conditionLeaf("leaf", entity, "", automations.ComparisonEqual, "true", nil)
 	matched := mustEvaluateCondition(t, unbounded, conditionSnapshot(entry), now)
-	if matched.Result != automations.AutomationConditionTrue {
+	if matched.Result != automations.ConditionTrue {
 		t.Fatalf("unbounded result = %s, want true", matched.Result)
 	}
 }
@@ -557,14 +557,14 @@ func TestEvaluateAutomationConditionsRequiresCompleteCoverage(t *testing.T) {
 	uncoveredLow := conditionEntity(2)
 	uncoveredHigh := conditionEntity(3)
 	tree := conditionGroup(
-		automations.AutomationConditionAll,
+		automations.ConditionAll,
 		conditionLeaf("covered", covered, "", automations.ComparisonEqual, "true", nil),
 		conditionLeaf("uncovered-low", uncoveredLow, "", automations.ComparisonEqual, "true", nil),
 		conditionLeaf("uncovered-high", uncoveredHigh, "", automations.ComparisonEqual, "true", nil),
 		conditionLeaf("uncovered-low-again", uncoveredLow, "", automations.ComparisonEqual, "true", nil),
 	)
 	snapshot := conditionSnapshot(conditionState(covered, "true", conditionTime()))
-	evaluation, err := automations.EvaluateAutomationConditions(tree, snapshot, conditionTime())
+	evaluation, err := automations.EvaluateConditions(tree, snapshot, conditionTime())
 	if !errors.Is(err, automations.ErrConditionSnapshotRequired) {
 		t.Fatalf("coverage error = %v, want ErrConditionSnapshotRequired", err)
 	}
@@ -587,7 +587,7 @@ func TestEvaluateAutomationConditionsRequiresCompleteCoverage(t *testing.T) {
 func TestRequiredConditionEntityIDsAreSortedAndDeduplicated(t *testing.T) {
 	t.Parallel()
 	tree := conditionGroup(
-		automations.AutomationConditionAll,
+		automations.ConditionAll,
 		conditionLeaf("b", conditionEntity(3), "", automations.ComparisonEqual, "true", nil),
 		conditionLeaf("a", conditionEntity(1), "", automations.ComparisonEqual, "true", nil),
 		conditionLeaf("c", conditionEntity(1), "", automations.ComparisonEqual, "true", nil),
@@ -600,7 +600,7 @@ func TestRequiredConditionEntityIDsAreSortedAndDeduplicated(t *testing.T) {
 	if !slices.Equal(ids, want) {
 		t.Fatalf("required IDs = %v, want %v", ids, want)
 	}
-	malformed := conditionGroup(automations.AutomationConditionAll)
+	malformed := conditionGroup(automations.ConditionAll)
 	if _, err = automations.RequiredConditionEntityIDs(malformed); !errors.Is(err, automations.ErrInvalidAutomation) {
 		t.Fatalf("malformed tree error = %v, want ErrInvalidAutomation", err)
 	}
@@ -609,10 +609,10 @@ func TestRequiredConditionEntityIDsAreSortedAndDeduplicated(t *testing.T) {
 // Typed trees reject depth and node overflows at the exact boundaries.
 func TestAutomationConditionTreeBounds(t *testing.T) {
 	t.Parallel()
-	if _, err := automations.NormalizeAutomationConditions(notChain(7)); err != nil {
+	if _, err := automations.NormalizeConditions(notChain(7)); err != nil {
 		t.Fatalf("depth 8 tree: %v", err)
 	}
-	if _, err := automations.NormalizeAutomationConditions(
+	if _, err := automations.NormalizeConditions(
 		notChain(8),
 	); !errors.Is(
 		err,
@@ -620,10 +620,10 @@ func TestAutomationConditionTreeBounds(t *testing.T) {
 	) {
 		t.Fatalf("depth 9 tree error = %v, want ErrInvalidAutomation", err)
 	}
-	if _, err := automations.NormalizeAutomationConditions(wideGroup(63)); err != nil {
+	if _, err := automations.NormalizeConditions(wideGroup(63)); err != nil {
 		t.Fatalf("64 node tree: %v", err)
 	}
-	if _, err := automations.NormalizeAutomationConditions(
+	if _, err := automations.NormalizeConditions(
 		wideGroup(64),
 	); !errors.Is(
 		err,
@@ -634,7 +634,7 @@ func TestAutomationConditionTreeBounds(t *testing.T) {
 }
 
 // notChain returns a not chain with count not nodes plus one leaf.
-func notChain(count int) automations.AutomationCondition {
+func notChain(count int) automations.Condition {
 	node := conditionLeaf(
 		fmt.Sprintf("leaf-%d", count),
 		conditionEntity(1),
@@ -650,16 +650,16 @@ func notChain(count int) automations.AutomationCondition {
 }
 
 // wideGroup returns one all group with count leaf children.
-func wideGroup(count int) automations.AutomationCondition {
-	children := make([]automations.AutomationCondition, 0, count)
+func wideGroup(count int) automations.Condition {
+	children := make([]automations.Condition, 0, count)
 	for index := range count {
 		children = append(children, conditionLeaf(
 			fmt.Sprintf("leaf-%d", index), conditionEntity(1), "", automations.ComparisonEqual, "true", nil,
 		))
 	}
-	return automations.AutomationCondition{
+	return automations.Condition{
 		ID:       "root",
-		Kind:     automations.AutomationConditionAll,
+		Kind:     automations.ConditionAll,
 		Children: children,
 	}
 }
@@ -671,45 +671,45 @@ func TestAutomationConditionTreeRejectsInvalidTypedTrees(t *testing.T) {
 	t.Parallel()
 	leaf := conditionLeaf("leaf", conditionEntity(1), "", automations.ComparisonEqual, "true", nil)
 
-	selfCycle := automations.AutomationCondition{ID: "self", Kind: automations.AutomationConditionNot}
+	selfCycle := automations.Condition{ID: "self", Kind: automations.ConditionNot}
 	selfCycle.Child = &selfCycle
 
-	children := make([]automations.AutomationCondition, 1)
-	sliceCycle := automations.AutomationCondition{
+	children := make([]automations.Condition, 1)
+	sliceCycle := automations.Condition{
 		ID:       "root",
-		Kind:     automations.AutomationConditionAll,
+		Kind:     automations.ConditionAll,
 		Children: children,
 	}
 	children[0] = sliceCycle
 
-	shared := []automations.AutomationCondition{leaf}
-	aliased := automations.AutomationCondition{
-		ID: "root", Kind: automations.AutomationConditionAll,
-		Children: []automations.AutomationCondition{
-			{ID: "left", Kind: automations.AutomationConditionAny, Children: shared},
-			{ID: "right", Kind: automations.AutomationConditionAny, Children: shared},
+	shared := []automations.Condition{leaf}
+	aliased := automations.Condition{
+		ID: "root", Kind: automations.ConditionAll,
+		Children: []automations.Condition{
+			{ID: "left", Kind: automations.ConditionAny, Children: shared},
+			{ID: "right", Kind: automations.ConditionAny, Children: shared},
 		},
 	}
 
-	duplicate := conditionGroup(automations.AutomationConditionAll,
+	duplicate := conditionGroup(automations.ConditionAll,
 		conditionLeaf("dup", conditionEntity(1), "", automations.ComparisonEqual, "true", nil),
 		conditionLeaf("dup", conditionEntity(2), "", automations.ComparisonEqual, "true", nil),
 	)
-	emptyGroup := conditionGroup(automations.AutomationConditionAny)
-	notWithChildren := automations.AutomationCondition{
-		ID: "root", Kind: automations.AutomationConditionNot,
-		Children: []automations.AutomationCondition{leaf}, Child: &leaf,
+	emptyGroup := conditionGroup(automations.ConditionAny)
+	notWithChildren := automations.Condition{
+		ID: "root", Kind: automations.ConditionNot,
+		Children: []automations.Condition{leaf}, Child: &leaf,
 	}
-	leafWithChildren := automations.AutomationCondition{
-		ID: "root", Kind: automations.AutomationConditionEntityState,
-		Children: []automations.AutomationCondition{leaf},
+	leafWithChildren := automations.Condition{
+		ID: "root", Kind: automations.ConditionEntityState,
+		Children: []automations.Condition{leaf},
 		EntityState: &automations.EntityStateCondition{
 			EntityID: conditionEntity(1), Operator: automations.ComparisonEqual, Operand: json.RawMessage("true"),
 		},
 	}
 	cases := []struct {
 		name string
-		root automations.AutomationCondition
+		root automations.Condition
 	}{
 		{"child cycle", selfCycle},
 		{"slice cycle", sliceCycle},
@@ -720,7 +720,7 @@ func TestAutomationConditionTreeRejectsInvalidTypedTrees(t *testing.T) {
 		{"leaf with children", leafWithChildren},
 		{
 			"non-slug ID",
-			automations.AutomationCondition{ID: "Root", Kind: automations.AutomationConditionNot, Child: &leaf},
+			automations.Condition{ID: "Root", Kind: automations.ConditionNot, Child: &leaf},
 		},
 		{
 			"pointer too long",
@@ -755,8 +755,8 @@ func TestAutomationConditionTreeRejectsInvalidTypedTrees(t *testing.T) {
 		},
 		{
 			"nil operand",
-			automations.AutomationCondition{
-				ID: "leaf", Kind: automations.AutomationConditionEntityState,
+			automations.Condition{
+				ID: "leaf", Kind: automations.ConditionEntityState,
 				EntityState: &automations.EntityStateCondition{
 					EntityID: conditionEntity(1), Operator: automations.ComparisonEqual,
 				},
@@ -764,7 +764,7 @@ func TestAutomationConditionTreeRejectsInvalidTypedTrees(t *testing.T) {
 		},
 	}
 	for _, testCase := range cases {
-		if _, err := automations.NormalizeAutomationConditions(
+		if _, err := automations.NormalizeConditions(
 			testCase.root,
 		); !errors.Is(
 			err,
@@ -783,7 +783,7 @@ func TestAutomationConditionTreeRejectsInvalidTypedTrees(t *testing.T) {
 			"true",
 			conditionAge(seconds),
 		)
-		if _, err := automations.NormalizeAutomationConditions(bounded); err != nil {
+		if _, err := automations.NormalizeConditions(bounded); err != nil {
 			t.Errorf("age %d: %v", seconds, err)
 		}
 	}
@@ -794,11 +794,11 @@ func TestAutomationConditionTreeRejectsInvalidTypedTrees(t *testing.T) {
 func TestNormalizeAutomationConditionsReturnsOwnedCopy(t *testing.T) {
 	t.Parallel()
 	operand := json.RawMessage(`{"a":1}`)
-	input := automations.AutomationCondition{
-		ID: "root", Kind: automations.AutomationConditionAll,
-		Children: []automations.AutomationCondition{
+	input := automations.Condition{
+		ID: "root", Kind: automations.ConditionAll,
+		Children: []automations.Condition{
 			{
-				ID: "leaf", Kind: automations.AutomationConditionEntityState,
+				ID: "leaf", Kind: automations.ConditionEntityState,
 				EntityState: &automations.EntityStateCondition{
 					EntityID: conditionEntity(1), Pointer: "", Operator: automations.ComparisonEqual,
 					Operand: operand, MaxAgeSeconds: conditionAge(60),
@@ -806,7 +806,7 @@ func TestNormalizeAutomationConditionsReturnsOwnedCopy(t *testing.T) {
 			},
 		},
 	}
-	normalized, err := automations.NormalizeAutomationConditions(input)
+	normalized, err := automations.NormalizeConditions(input)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -852,11 +852,11 @@ func TestAutomationConditionRapidProperties(t *testing.T) {
 		if permutedEvaluation.Result != evaluation.Result {
 			rapidT.Fatalf("permutation changed result: %s vs %s", permutedEvaluation.Result, evaluation.Result)
 		}
-		normalized, err := automations.NormalizeAutomationConditions(generated.tree)
+		normalized, err := automations.NormalizeConditions(generated.tree)
 		if err != nil {
 			rapidT.Fatal(err)
 		}
-		again, err := automations.NormalizeAutomationConditions(normalized)
+		again, err := automations.NormalizeConditions(normalized)
 		if err != nil {
 			rapidT.Fatal(err)
 		}
@@ -870,11 +870,11 @@ func TestAutomationConditionRapidProperties(t *testing.T) {
 // unexpected error.
 func evaluateOrFail(
 	rapidT *rapid.T,
-	root automations.AutomationCondition,
+	root automations.Condition,
 	snapshot devices.EntityStateSnapshot,
-) automations.AutomationConditionEvaluation {
+) automations.ConditionEvaluation {
 	rapidT.Helper()
-	evaluation, err := automations.EvaluateAutomationConditions(root, snapshot, conditionTime())
+	evaluation, err := automations.EvaluateConditions(root, snapshot, conditionTime())
 	if err != nil {
 		rapidT.Fatal(err)
 	}
@@ -882,18 +882,18 @@ func evaluateOrFail(
 }
 
 type conditionFixture struct {
-	tree     automations.AutomationCondition
-	kind     automations.AutomationConditionKind
-	children []automations.AutomationCondition
+	tree     automations.Condition
+	kind     automations.ConditionKind
+	children []automations.Condition
 	snapshot devices.EntityStateSnapshot
 }
 
 // drawConditionFixture generates a small valid group tree with a matching State
 // snapshot so generated results cover true, false, and unknown.
 func drawConditionFixture(rapidT *rapid.T) conditionFixture {
-	kind := rapid.SampledFrom([]automations.AutomationConditionKind{
-		automations.AutomationConditionAll,
-		automations.AutomationConditionAny,
+	kind := rapid.SampledFrom([]automations.ConditionKind{
+		automations.ConditionAll,
+		automations.ConditionAny,
 	}).Draw(rapidT, "kind")
 	type comparison struct {
 		operator automations.ComparisonOperator
@@ -908,7 +908,7 @@ func drawConditionFixture(rapidT *rapid.T) conditionFixture {
 		{automations.ComparisonGreaterThan, "5"},
 	}
 	count := rapid.IntRange(1, 5).Draw(rapidT, "child count")
-	children := make([]automations.AutomationCondition, 0, count)
+	children := make([]automations.Condition, 0, count)
 	entries := make([]devices.EntityStateSnapshotEntry, 0, count)
 	for index := range count {
 		entity := conditionEntity(index + 1)

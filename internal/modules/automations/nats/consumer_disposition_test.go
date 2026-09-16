@@ -235,9 +235,9 @@ func TestHandleDeviceFactMessageBoundsAdmission(t *testing.T) {
 // budget, not a second duration literal that could drift from it.
 func TestDeviceFactAdmissionTimeoutAliasesAutomationBudget(t *testing.T) {
 	t.Parallel()
-	if DeviceFactAdmissionTimeout != automations.AutomationAdmissionTimeout {
+	if DeviceFactAdmissionTimeout != automations.AdmissionTimeout {
 		t.Fatalf("DeviceFactAdmissionTimeout = %s, want the automations budget %s",
-			DeviceFactAdmissionTimeout, automations.AutomationAdmissionTimeout)
+			DeviceFactAdmissionTimeout, automations.AdmissionTimeout)
 	}
 }
 

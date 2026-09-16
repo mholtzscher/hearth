@@ -90,19 +90,19 @@ func fixedAutomationLogID(prefix string, ordinal int64) string {
 }
 
 // fixedAutomationLogDependencies fixes time and identities for log assertions.
-func fixedAutomationLogDependencies(logger *slog.Logger) automations.AutomationDependencies {
+func fixedAutomationLogDependencies(logger *slog.Logger) automations.Dependencies {
 	var automationOrdinal, runOrdinal, skipOrdinal, commandOrdinal, correlationOrdinal atomic.Int64
-	return automations.AutomationDependencies{
+	return automations.Dependencies{
 		Logger: logger,
 		Now:    func() time.Time { return runtimeTestNow },
 		NewAutomationID: func() (automations.AutomationID, error) {
 			return automations.AutomationID(fixedAutomationLogID("aut", automationOrdinal.Add(1))), nil
 		},
-		NewRunID: func() (automations.AutomationRunID, error) {
-			return automations.AutomationRunID(fixedAutomationLogID("arn", runOrdinal.Add(1))), nil
+		NewRunID: func() (automations.RunID, error) {
+			return automations.RunID(fixedAutomationLogID("arn", runOrdinal.Add(1))), nil
 		},
-		NewSkipID: func() (automations.AutomationSkipID, error) {
-			return automations.AutomationSkipID(fixedAutomationLogID("ask", skipOrdinal.Add(1))), nil
+		NewSkipID: func() (automations.SkipID, error) {
+			return automations.SkipID(fixedAutomationLogID("ask", skipOrdinal.Add(1))), nil
 		},
 		NewCommandID: func() (devices.CommandID, error) {
 			return devices.CommandID(fixedAutomationLogID("cmd", commandOrdinal.Add(1))), nil
@@ -224,7 +224,7 @@ func TestAutomationSkippedLogsExactBusyAndStaleReasons(t *testing.T) {
 	if !ok {
 		t.Fatalf("no busy skip for fact %s:\n%s", busyFact.Observation.FactID, writer.output())
 	}
-	requireAutomationLogField(t, busyRecord, "reason", string(automations.AutomationSkipBusy))
+	requireAutomationLogField(t, busyRecord, "reason", string(automations.SkipBusy))
 	requireAutomationLogField(t, busyRecord, "automation_id", string(record.ID))
 	requireAutomationLogField(t, busyRecord, "family", string(automations.DeviceFactObservation))
 	requireAutomationLogField(t, busyRecord, "variant", string(devices.DispositionApplied))
@@ -237,7 +237,7 @@ func TestAutomationSkippedLogsExactBusyAndStaleReasons(t *testing.T) {
 	if !ok {
 		t.Fatalf("no stale skip for fact %s:\n%s", staleFact.Observation.FactID, writer.output())
 	}
-	requireAutomationLogField(t, staleRecord, "reason", string(automations.AutomationSkipStaleFact))
+	requireAutomationLogField(t, staleRecord, "reason", string(automations.SkipStaleFact))
 	requireAutomationLogField(t, staleRecord, "automation_id", string(record.ID))
 
 	runStarted := automationLogEvents(writer.records(t), "automation.run_started")

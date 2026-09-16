@@ -10,12 +10,12 @@ import (
 	"github.com/mholtzscher/hearth/internal/modules/devices"
 )
 
-// AutomationAdmissionTimeout bounds one automatic or manual admission,
+// AdmissionTimeout bounds one automatic or manual admission,
 // including its definition pre-read, Condition State snapshot read, and
 // repository transaction. The NATS consumer exposes it as
 // DeviceFactAdmissionTimeout rather than repeating the duration, and HTTP
 // never imports NATS.
-const AutomationAdmissionTimeout = 2 * time.Second
+const AdmissionTimeout = 2 * time.Second
 
 // ManualRunInput carries explicit operator intent for one manual admission. It
 // accepts no Command identities: Steps and Commands come from the transaction's
@@ -30,8 +30,8 @@ type ManualRunInput struct {
 // register a Run worker or report a committed Condition Skip without risking a
 // rollback of the required history.
 type ManualAdmissionResult struct {
-	Run  *AutomationRun
-	Skip *AutomationSkip
+	Run  *Run
+	Skip *Skip
 }
 
 // emptyEntityStateSnapshot represents an admission that has no configured
@@ -49,7 +49,7 @@ func (service *Service) admitAutomaticFact(
 	ctx context.Context,
 	fact DeviceFact,
 ) (AdmissionResult, error) {
-	admissionContext, cancel := context.WithTimeout(ctx, AutomationAdmissionTimeout)
+	admissionContext, cancel := context.WithTimeout(ctx, AdmissionTimeout)
 	defer cancel()
 	definitions, err := service.repository.ListEnabledAutomations(admissionContext)
 	if err != nil {
@@ -77,7 +77,7 @@ func (service *Service) admitManualRun(
 	ctx context.Context,
 	input ManualRunInput,
 ) (ManualAdmissionResult, error) {
-	admissionContext, cancel := context.WithTimeout(ctx, AutomationAdmissionTimeout)
+	admissionContext, cancel := context.WithTimeout(ctx, AdmissionTimeout)
 	defer cancel()
 	record, err := service.repository.GetAutomation(admissionContext, input.AutomationID)
 	if err != nil {
@@ -101,7 +101,7 @@ func (service *Service) admitManualRun(
 // union every enabled definition matching fact requires for its Conditions.
 func requiredMatchingConditionEntityIDs(
 	fact DeviceFact,
-	definitions []AutomationRecord,
+	definitions []Record,
 ) ([]devices.EntityID, error) {
 	required := make(map[devices.EntityID]struct{})
 	for _, record := range definitions {
@@ -109,7 +109,7 @@ func requiredMatchingConditionEntityIDs(
 		if conditions == nil {
 			continue
 		}
-		matched, err := MatchAutomationTriggers(fact, record.Definition)
+		matched, err := MatchTriggers(fact, record.Definition)
 		if err != nil {
 			return nil, err
 		}

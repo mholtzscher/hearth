@@ -16,15 +16,15 @@ import (
 // BypassRequested are pointers so a missing or JSON-null scalar is rejected
 // instead of silently decoding to its zero value.
 type automationConditionDecisionJSON struct {
-	Mode            *AutomationConditionDecisionMode `json:"mode"`
-	BypassRequested *bool                            `json:"bypass_requested"`
-	Snapshot        json.RawMessage                  `json:"snapshot,omitempty"`
-	Evaluation      json.RawMessage                  `json:"evaluation,omitempty"`
+	Mode            *ConditionDecisionMode `json:"mode"`
+	BypassRequested *bool                  `json:"bypass_requested"`
+	Snapshot        json.RawMessage        `json:"snapshot,omitempty"`
+	Evaluation      json.RawMessage        `json:"evaluation,omitempty"`
 }
 
 type automationConditionEvaluationJSON struct {
 	EvaluatedAt time.Time                     `json:"evaluated_at"`
-	Result      AutomationConditionResult     `json:"result"`
+	Result      ConditionResult               `json:"result"`
 	Nodes       []automationConditionNodeJSON `json:"nodes"`
 }
 
@@ -33,18 +33,18 @@ type automationConditionEvaluationJSON struct {
 // JSON null. The other optional members are raw so an explicit JSON null is
 // distinguishable from an absent member and rejected as a placeholder.
 type automationConditionNodeJSON struct {
-	ID            AutomationConditionID     `json:"id"`
-	Result        AutomationConditionResult `json:"result"`
-	UnknownReason json.RawMessage           `json:"unknown_reason,omitempty"`
-	SelectedValue json.RawMessage           `json:"selected_value,omitempty"`
-	ObservationID json.RawMessage           `json:"observation_id,omitempty"`
-	ObservedAt    json.RawMessage           `json:"observed_at,omitempty"`
+	ID            ConditionID     `json:"id"`
+	Result        ConditionResult `json:"result"`
+	UnknownReason json.RawMessage `json:"unknown_reason,omitempty"`
+	SelectedValue json.RawMessage `json:"selected_value,omitempty"`
+	ObservationID json.RawMessage `json:"observation_id,omitempty"`
+	ObservedAt    json.RawMessage `json:"observed_at,omitempty"`
 }
 
-// EncodeAutomationConditionDecision renders one decision in the strict persisted
+// EncodeConditionDecision renders one decision in the strict persisted
 // shape. It is a pure encoder: the write path validates a decision before
 // calling it, and no partial or inconsistent decision is written.
-func EncodeAutomationConditionDecision(decision AutomationConditionDecision) (json.RawMessage, error) {
+func EncodeConditionDecision(decision ConditionDecision) (json.RawMessage, error) {
 	mode := decision.Mode
 	bypass := decision.BypassRequested
 	value := automationConditionDecisionJSON{
@@ -72,80 +72,80 @@ func EncodeAutomationConditionDecision(decision AutomationConditionDecision) (js
 	return raw, nil
 }
 
-// DecodeAutomationConditionDecision decodes one persisted decision. Every
+// DecodeConditionDecision decodes one persisted decision. Every
 // automation_history row carries an explicit decision object, so an empty or
 // missing payload is malformed rather than an implicit not_configured mode.
 // Malformed decision JSON is a permanent [ErrInvalidAutomation]. Retained
 // snapshot and evaluation evidence is decoded and trusted, never re-proven
 // against the evaluator.
-func DecodeAutomationConditionDecision(raw json.RawMessage) (AutomationConditionDecision, error) {
+func DecodeConditionDecision(raw json.RawMessage) (ConditionDecision, error) {
 	var value automationConditionDecisionJSON
 	if err := decodeStrictJSONObject(raw, &value); err != nil {
-		return AutomationConditionDecision{}, decisionInvalid("condition decision is not a strict object")
+		return ConditionDecision{}, decisionInvalid("condition decision is not a strict object")
 	}
 	if value.Mode == nil || value.BypassRequested == nil {
-		return AutomationConditionDecision{}, decisionInvalid(
+		return ConditionDecision{}, decisionInvalid(
 			"condition decision requires an explicit mode and bypass_requested",
 		)
 	}
 	if isExplicitJSONNull(value.Snapshot) {
-		return AutomationConditionDecision{}, decisionInvalid("condition decision snapshot must not be null")
+		return ConditionDecision{}, decisionInvalid("condition decision snapshot must not be null")
 	}
 	if isExplicitJSONNull(value.Evaluation) {
-		return AutomationConditionDecision{}, decisionInvalid("condition decision evaluation must not be null")
+		return ConditionDecision{}, decisionInvalid("condition decision evaluation must not be null")
 	}
-	decision := AutomationConditionDecision{
+	decision := ConditionDecision{
 		Mode:            *value.Mode,
 		BypassRequested: *value.BypassRequested,
 	}
 	if len(bytes.TrimSpace(value.Snapshot)) > 0 {
 		var snapshotJSON automationConditionJSON
 		if bindErr := json.Unmarshal(value.Snapshot, &snapshotJSON); bindErr != nil {
-			return AutomationConditionDecision{}, decisionInvalid("condition snapshot cannot be bound")
+			return ConditionDecision{}, decisionInvalid("condition snapshot cannot be bound")
 		}
 		snapshot := automationConditionFromJSON(snapshotJSON)
 		decision.Snapshot = &snapshot
 	}
 	evaluationJSON, decodeErr := decodeConditionEvaluationJSON(value.Evaluation)
 	if decodeErr != nil {
-		return AutomationConditionDecision{}, decodeErr
+		return ConditionDecision{}, decodeErr
 	}
 	if evaluationJSON != nil {
 		evaluation, evaluationErr := automationConditionEvaluationFromJSON(*evaluationJSON)
 		if evaluationErr != nil {
-			return AutomationConditionDecision{}, evaluationErr
+			return ConditionDecision{}, evaluationErr
 		}
 		decision.Evaluation = &evaluation
 	}
 	return decision, nil
 }
 
-// ValidateAutomationConditionDecision enforces the decision envelope invariants
+// ValidateConditionDecision enforces the decision envelope invariants
 // that do not depend on the enclosing Run or Skip: closed mode, snapshot and
 // evaluation presence per mode, and bypass coherence with mode. The evaluator
 // produces evaluation evidence once at write time; this validator does not
 // re-derive it from the retained snapshot.
-func ValidateAutomationConditionDecision(decision AutomationConditionDecision) error {
+func ValidateConditionDecision(decision ConditionDecision) error {
 	if !decision.Mode.isKnown() {
 		return decisionInvalid(fmt.Sprintf("unknown mode %q", decision.Mode))
 	}
 	switch decision.Mode {
-	case AutomationConditionDecisionNotConfigured:
+	case ConditionDecisionNotConfigured:
 		if decision.Snapshot != nil || decision.Evaluation != nil {
 			return decisionInvalid("not_configured carries a snapshot or evaluation")
 		}
-	case AutomationConditionDecisionNotEvaluated, AutomationConditionDecisionBypassed:
+	case ConditionDecisionNotEvaluated, ConditionDecisionBypassed:
 		if decision.Snapshot == nil || decision.Evaluation != nil {
 			return decisionInvalid("mode requires a snapshot and no evaluation")
 		}
-	case AutomationConditionDecisionEvaluated:
+	case ConditionDecisionEvaluated:
 		if decision.Snapshot == nil || decision.Evaluation == nil {
 			return decisionInvalid("evaluated requires a snapshot and evaluation")
 		}
 	default:
 		return decisionInvalid(fmt.Sprintf("unknown mode %q", decision.Mode))
 	}
-	if decision.Snapshot != nil && decision.BypassRequested != (decision.Mode == AutomationConditionDecisionBypassed) {
+	if decision.Snapshot != nil && decision.BypassRequested != (decision.Mode == ConditionDecisionBypassed) {
 		return decisionInvalid("with configured conditions the bypass request matches the bypassed mode")
 	}
 	return nil
@@ -154,26 +154,26 @@ func ValidateAutomationConditionDecision(decision AutomationConditionDecision) e
 // ValidateRunConditionDecision checks one Run's decision against its admission
 // source and outcome: a Run never records not_evaluated, bypass is manual only,
 // and an evaluated Run is admitted on a true root.
-func ValidateRunConditionDecision(run AutomationRun) error {
+func ValidateRunConditionDecision(run Run) error {
 	decision := run.ConditionDecision
-	if err := ValidateAutomationConditionDecision(decision); err != nil {
+	if err := ValidateConditionDecision(decision); err != nil {
 		return err
 	}
 	if decision.BypassRequested && run.Source != RunSourceManual {
 		return decisionInvalid("only a manual Run may request a bypass")
 	}
 	switch decision.Mode {
-	case AutomationConditionDecisionNotEvaluated:
+	case ConditionDecisionNotEvaluated:
 		return decisionInvalid("a Run never records a not_evaluated decision")
-	case AutomationConditionDecisionBypassed:
+	case ConditionDecisionBypassed:
 		if run.Source != RunSourceManual {
 			return decisionInvalid("only a manual Run may bypass conditions")
 		}
-	case AutomationConditionDecisionEvaluated:
-		if decision.Evaluation.Result != AutomationConditionTrue {
+	case ConditionDecisionEvaluated:
+		if decision.Evaluation.Result != ConditionTrue {
 			return decisionInvalid("an evaluated Run requires a true root result")
 		}
-	case AutomationConditionDecisionNotConfigured:
+	case ConditionDecisionNotConfigured:
 	default:
 		return decisionInvalid(fmt.Sprintf("unknown mode %q", decision.Mode))
 	}
@@ -184,26 +184,26 @@ func ValidateRunConditionDecision(run AutomationRun) error {
 // Skip never requests or records a bypass; stale and busy never evaluate
 // conditions, and a condition Skip must have evaluated false or unknown to match
 // its reason. This is the validator that rejects fabricated provenance.
-func ValidateSkipConditionDecision(skip AutomationSkip) error {
+func ValidateSkipConditionDecision(skip Skip) error {
 	decision := skip.ConditionDecision
-	if err := ValidateAutomationConditionDecision(decision); err != nil {
+	if err := ValidateConditionDecision(decision); err != nil {
 		return err
 	}
-	if decision.Mode == AutomationConditionDecisionBypassed || decision.BypassRequested {
+	if decision.Mode == ConditionDecisionBypassed || decision.BypassRequested {
 		return decisionInvalid("a Skip is never a bypass")
 	}
 	switch skip.Reason {
-	case AutomationSkipStaleFact, AutomationSkipBusy:
-		if decision.Mode == AutomationConditionDecisionEvaluated {
+	case SkipStaleFact, SkipBusy:
+		if decision.Mode == ConditionDecisionEvaluated {
 			return decisionInvalid("a stale or busy Skip does not evaluate conditions")
 		}
-	case AutomationSkipConditionsFalse, AutomationSkipConditionsUnknown:
-		if decision.Mode != AutomationConditionDecisionEvaluated {
+	case SkipConditionsFalse, SkipConditionsUnknown:
+		if decision.Mode != ConditionDecisionEvaluated {
 			return decisionInvalid("a condition Skip requires an evaluated decision")
 		}
-		want := AutomationConditionFalse
-		if skip.Reason == AutomationSkipConditionsUnknown {
-			want = AutomationConditionUnknown
+		want := ConditionFalse
+		if skip.Reason == SkipConditionsUnknown {
+			want = ConditionUnknown
 		}
 		if decision.Evaluation.Result != want {
 			return decisionInvalid("a condition Skip result matches its reason")
@@ -220,16 +220,16 @@ func ValidateSkipConditionDecision(skip AutomationSkip) error {
 // mistaken for an absent member.
 func automationConditionEvaluationFromJSON(
 	value automationConditionEvaluationJSON,
-) (AutomationConditionEvaluation, error) {
-	evaluation := AutomationConditionEvaluation{
+) (ConditionEvaluation, error) {
+	evaluation := ConditionEvaluation{
 		EvaluatedAt: value.EvaluatedAt.UTC(),
 		Result:      value.Result,
-		Nodes:       make([]AutomationConditionNodeResult, 0, len(value.Nodes)),
+		Nodes:       make([]ConditionNodeResult, 0, len(value.Nodes)),
 	}
 	for _, node := range value.Nodes {
 		decoded, err := node.toDomain()
 		if err != nil {
-			return AutomationConditionEvaluation{}, err
+			return ConditionEvaluation{}, err
 		}
 		evaluation.Nodes = append(evaluation.Nodes, decoded)
 	}
@@ -239,31 +239,31 @@ func automationConditionEvaluationFromJSON(
 // toDomain converts one persisted node. An explicit null placeholder on
 // unknown_reason, observation_id, or observed_at is rejected; selected_value
 // keeps JSON null as real evidence.
-func (node automationConditionNodeJSON) toDomain() (AutomationConditionNodeResult, error) {
-	decoded := AutomationConditionNodeResult{
+func (node automationConditionNodeJSON) toDomain() (ConditionNodeResult, error) {
+	decoded := ConditionNodeResult{
 		ID:            node.ID,
 		Result:        node.Result,
 		SelectedValue: node.SelectedValue,
 	}
-	reason, err := decodeOptionalConditionMember[AutomationConditionUnknownReason](
+	reason, err := decodeOptionalConditionMember[ConditionUnknownReason](
 		node.UnknownReason, "condition node unknown_reason",
 	)
 	if err != nil {
-		return AutomationConditionNodeResult{}, err
+		return ConditionNodeResult{}, err
 	}
 	decoded.UnknownReason = reason
 	observationID, err := decodeOptionalConditionMember[devices.ObservationID](
 		node.ObservationID, "condition node observation_id",
 	)
 	if err != nil {
-		return AutomationConditionNodeResult{}, err
+		return ConditionNodeResult{}, err
 	}
 	decoded.ObservationID = observationID
 	observedAt, err := decodeOptionalConditionMember[time.Time](
 		node.ObservedAt, "condition node observed_at",
 	)
 	if err != nil {
-		return AutomationConditionNodeResult{}, err
+		return ConditionNodeResult{}, err
 	}
 	if observedAt != nil {
 		normalized := observedAt.UTC()
@@ -275,7 +275,7 @@ func (node automationConditionNodeJSON) toDomain() (AutomationConditionNodeResul
 // encodeAutomationConditionEvaluation renders one evaluation in the strict
 // persisted shape. Pointer members are marshaled to raw JSON so an absent member
 // and an explicit null stay distinct on the wire.
-func encodeAutomationConditionEvaluation(evaluation AutomationConditionEvaluation) (json.RawMessage, error) {
+func encodeAutomationConditionEvaluation(evaluation ConditionEvaluation) (json.RawMessage, error) {
 	encoded := automationConditionEvaluationJSON{
 		EvaluatedAt: evaluation.EvaluatedAt.UTC(),
 		Result:      evaluation.Result,

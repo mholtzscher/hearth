@@ -133,7 +133,7 @@ func TestInterruptActiveRunsClassifiesUnfinishedWork(t *testing.T) {
 	}
 	entry := historyEntry(t, service, record.ID, string(run.ID))
 	if entry.Run == nil || entry.Run.Status != automations.RunInterrupted ||
-		entry.Run.FailureCode == nil || *entry.Run.FailureCode != automations.AutomationFailureCoreRestarted {
+		entry.Run.FailureCode == nil || *entry.Run.FailureCode != automations.FailureCoreRestarted {
 		t.Fatalf("interrupted Run = %#v", entry.Run)
 	}
 	for position, step := range entry.Run.Steps {
@@ -202,7 +202,7 @@ func TestCanceledDrainStopsRunBeforeNextStep(t *testing.T) {
 
 	entry := historyEntry(t, service, record.ID, string(run.ID))
 	if entry.Run == nil || entry.Run.Status != automations.RunInterrupted ||
-		entry.Run.FailureCode == nil || *entry.Run.FailureCode != automations.AutomationFailureCoreStopping {
+		entry.Run.FailureCode == nil || *entry.Run.FailureCode != automations.FailureCoreStopping {
 		t.Fatalf("drained Run = %#v", entry.Run)
 	}
 	if entry.Run.Steps[0].Status != automations.StepSatisfied {
@@ -210,7 +210,7 @@ func TestCanceledDrainStopsRunBeforeNextStep(t *testing.T) {
 	}
 	next := entry.Run.Steps[1]
 	if next.Status != automations.StepInterrupted || next.VerifiedCommandID != nil ||
-		next.FailureCode == nil || *next.FailureCode != automations.AutomationFailureCoreStopping {
+		next.FailureCode == nil || *next.FailureCode != automations.FailureCoreStopping {
 		t.Fatalf("next Step = %#v, want interrupted/core_stopping with no link", next)
 	}
 	if scripted.executionCount() != 1 {

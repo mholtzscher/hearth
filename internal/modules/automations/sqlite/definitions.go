@@ -14,22 +14,22 @@ import (
 // when the caller bypasses the service.
 func (repo *AutomationRepository) CreateAutomation(
 	ctx context.Context,
-	definition automations.AutomationDefinition,
-) (automations.AutomationRecord, error) {
-	normalized, err := automations.NormalizeAutomationDefinition(definition)
+	definition automations.Definition,
+) (automations.Record, error) {
+	normalized, err := automations.NormalizeDefinition(definition)
 	if err != nil {
-		return automations.AutomationRecord{}, err
+		return automations.Record{}, err
 	}
-	raw, err := automations.EncodeAutomationDefinition(normalized)
+	raw, err := automations.EncodeDefinition(normalized)
 	if err != nil {
-		return automations.AutomationRecord{}, err
+		return automations.Record{}, err
 	}
 	id, err := repo.newAutomationID()
 	if err != nil {
-		return automations.AutomationRecord{}, fmt.Errorf("allocate automation ID: %w", err)
+		return automations.Record{}, fmt.Errorf("allocate automation ID: %w", err)
 	}
 	now := encodeAutomationTimestamp(repo.now())
-	var record automations.AutomationRecord
+	var record automations.Record
 	err = repo.transaction(ctx, func(queries *dbsqlc.Queries) error {
 		row, createErr := queries.CreateAutomation(ctx, dbsqlc.CreateAutomationParams{
 			ID:             string(id),
@@ -50,13 +50,13 @@ func (repo *AutomationRepository) CreateAutomation(
 func (repo *AutomationRepository) GetAutomation(
 	ctx context.Context,
 	id automations.AutomationID,
-) (automations.AutomationRecord, error) {
+) (automations.Record, error) {
 	row, err := repo.queries.GetAutomation(ctx, dbsqlc.GetAutomationParams{ID: string(id)})
 	if errors.Is(err, sql.ErrNoRows) {
-		return automations.AutomationRecord{}, automations.ErrAutomationNotFound
+		return automations.Record{}, automations.ErrAutomationNotFound
 	}
 	if err != nil {
-		return automations.AutomationRecord{}, err
+		return automations.Record{}, err
 	}
 	return automationRecord(row)
 }
@@ -65,12 +65,12 @@ func (repo *AutomationRepository) GetAutomation(
 // Automation ID order for the Service's admission State pre-read.
 func (repo *AutomationRepository) ListEnabledAutomations(
 	ctx context.Context,
-) ([]automations.AutomationRecord, error) {
+) ([]automations.Record, error) {
 	rows, err := repo.queries.ListAllAutomations(ctx)
 	if err != nil {
 		return nil, err
 	}
-	records := make([]automations.AutomationRecord, 0, len(rows))
+	records := make([]automations.Record, 0, len(rows))
 	for _, row := range rows {
 		record, recordErr := automationRecord(row)
 		if recordErr != nil {
@@ -88,9 +88,9 @@ func (repo *AutomationRepository) ListEnabledAutomations(
 func (repo *AutomationRepository) ListAutomations(
 	ctx context.Context,
 	params automations.ListAutomationsParams,
-) (automations.AutomationPage[automations.AutomationRecord], error) {
-	page := automations.AutomationPage[automations.AutomationRecord]{Items: []automations.AutomationRecord{}}
-	limit, err := automations.AutomationPageLimit(params.Limit)
+) (automations.Page[automations.Record], error) {
+	page := automations.Page[automations.Record]{Items: []automations.Record{}}
+	limit, err := automations.PageLimit(params.Limit)
 	if err != nil {
 		return page, err
 	}
@@ -128,17 +128,17 @@ func (repo *AutomationRepository) ReplaceAutomation(
 	ctx context.Context,
 	id automations.AutomationID,
 	expectedRevision int64,
-	definition automations.AutomationDefinition,
-) (automations.AutomationRecord, error) {
-	normalized, err := automations.NormalizeAutomationDefinition(definition)
+	definition automations.Definition,
+) (automations.Record, error) {
+	normalized, err := automations.NormalizeDefinition(definition)
 	if err != nil {
-		return automations.AutomationRecord{}, err
+		return automations.Record{}, err
 	}
-	raw, err := automations.EncodeAutomationDefinition(normalized)
+	raw, err := automations.EncodeDefinition(normalized)
 	if err != nil {
-		return automations.AutomationRecord{}, err
+		return automations.Record{}, err
 	}
-	var record automations.AutomationRecord
+	var record automations.Record
 	err = repo.transaction(ctx, func(queries *dbsqlc.Queries) error {
 		if revisionErr := checkAutomationRevision(ctx, queries, id, expectedRevision); revisionErr != nil {
 			return revisionErr

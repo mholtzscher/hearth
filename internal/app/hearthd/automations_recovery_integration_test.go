@@ -98,7 +98,7 @@ func TestAutomationConsumerRecoversFreshFactAndSkipsStaleFactAcrossRestart(t *te
 	// Crash window: no Core process consumes. The fresh Fact stays inside the
 	// freshness bound; the stale Fact is one second past it.
 	freshEmittedAt := time.Now().UTC()
-	staleEmittedAt := freshEmittedAt.Add(-automations.AutomationFactMaximumAge - time.Second)
+	staleEmittedAt := freshEmittedAt.Add(-automations.FactMaximumAge - time.Second)
 	publishRecoveredObservationFact(ctx, t, js, validator, adapter.powerEntityID,
 		recoveryFreshFactID, recoveryFreshObsID, freshEmittedAt, "true")
 	publishRecoveredObservationFact(ctx, t, js, validator, adapter.powerEntityID,
@@ -329,7 +329,7 @@ func waitForRecoveredOutcomes(
 					runs++
 				}
 			case "skip":
-				if entry.Reason == string(automations.AutomationSkipStaleFact) {
+				if entry.Reason == string(automations.SkipStaleFact) {
 					skips++
 				}
 			}
@@ -443,8 +443,8 @@ func assertStaleSkip(
 		t.Fatalf("history entry = %#v", entry)
 	}
 	skip := entry.Skip
-	if skip.Reason != string(automations.AutomationSkipStaleFact) {
-		t.Fatalf("skip reason = %q, want %q", skip.Reason, automations.AutomationSkipStaleFact)
+	if skip.Reason != string(automations.SkipStaleFact) {
+		t.Fatalf("skip reason = %q, want %q", skip.Reason, automations.SkipStaleFact)
 	}
 	if skip.Fact.FactID != recoveryStaleFactID || skip.Fact.Family != "observation" ||
 		skip.Fact.Variant != "applied" {

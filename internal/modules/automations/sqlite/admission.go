@@ -26,11 +26,11 @@ const (
 // outcome. Condition evaluation happens during planning after coverage is
 // verified, so any definition-edit race returns before the transaction writes.
 type plannedAutomation struct {
-	record   automations.AutomationRecord
+	record   automations.Record
 	matched  []automations.TriggerID
 	kind     plannedOutcomeKind
-	reason   automations.AutomationSkipReason
-	decision automations.AutomationConditionDecision
+	reason   automations.SkipReason
+	decision automations.ConditionDecision
 }
 
 // AdmitDeviceFact atomically commits matching enabled Automations' receipts,
@@ -154,7 +154,7 @@ func (repo *AutomationRepository) admitManualRun(
 	if err != nil {
 		return fmt.Errorf("allocate automation run ID: %w", err)
 	}
-	run := automations.NewAutomationRunSnapshot(
+	run := automations.NewRunSnapshot(
 		record, runID, automations.RunSourceManual, nil, nil, decision, admittedAt,
 	)
 	if err = repo.persistRun(ctx, queries, run); err != nil {
@@ -214,7 +214,7 @@ func (repo *AutomationRepository) planAutomationOutcome(
 	if !record.Definition.Enabled {
 		return nil, nil //nolint:nilnil // A non-matching Automation plans no outcome.
 	}
-	matched, err := automations.MatchAutomationTriggers(fact, record.Definition)
+	matched, err := automations.MatchTriggers(fact, record.Definition)
 	if err != nil {
 		return nil, err
 	}
@@ -233,12 +233,12 @@ func (repo *AutomationRepository) planAutomationOutcome(
 	}
 	// Freshness precedes the busy check, so an old matching Fact records
 	// stale_fact even while another Run is active.
-	if admittedAt.Sub(summary.EmittedAt) > automations.AutomationFactMaximumAge {
+	if admittedAt.Sub(summary.EmittedAt) > automations.FactMaximumAge {
 		return &plannedAutomation{
 			record:   record,
 			matched:  matched,
 			kind:     plannedOutcomeSkip,
-			reason:   automations.AutomationSkipStaleFact,
+			reason:   automations.SkipStaleFact,
 			decision: notEvaluatedDecision(record.Definition.Conditions),
 		}, nil
 	}
@@ -253,7 +253,7 @@ func (repo *AutomationRepository) planAutomationOutcome(
 			record:   record,
 			matched:  matched,
 			kind:     plannedOutcomeSkip,
-			reason:   automations.AutomationSkipBusy,
+			reason:   automations.SkipBusy,
 			decision: notEvaluatedDecision(record.Definition.Conditions),
 		}, nil
 	}
@@ -263,8 +263,8 @@ func (repo *AutomationRepository) planAutomationOutcome(
 			record:  record,
 			matched: matched,
 			kind:    plannedOutcomeRun,
-			decision: automations.AutomationConditionDecision{
-				Mode: automations.AutomationConditionDecisionNotConfigured,
+			decision: automations.ConditionDecision{
+				Mode: automations.ConditionDecisionNotConfigured,
 			},
 		}, nil
 	}
@@ -275,28 +275,28 @@ func (repo *AutomationRepository) planAutomationOutcome(
 	if missing := missingSnapshotCoverage(entityIDs, snapshot); len(missing) > 0 {
 		return nil, &automations.ConditionSnapshotRequiredError{RequiredEntityIDs: missing}
 	}
-	evaluation, err := automations.EvaluateAutomationConditions(*conditions, snapshot, admittedAt)
+	evaluation, err := automations.EvaluateConditions(*conditions, snapshot, admittedAt)
 	if err != nil {
 		return nil, err
 	}
 	plan := &plannedAutomation{
 		record:  record,
 		matched: matched,
-		decision: automations.AutomationConditionDecision{
-			Mode:       automations.AutomationConditionDecisionEvaluated,
+		decision: automations.ConditionDecision{
+			Mode:       automations.ConditionDecisionEvaluated,
 			Snapshot:   conditions,
 			Evaluation: &evaluation,
 		},
 	}
 	switch evaluation.Result {
-	case automations.AutomationConditionTrue:
+	case automations.ConditionTrue:
 		plan.kind = plannedOutcomeRun
-	case automations.AutomationConditionFalse:
+	case automations.ConditionFalse:
 		plan.kind = plannedOutcomeSkip
-		plan.reason = automations.AutomationSkipConditionsFalse
-	case automations.AutomationConditionUnknown:
+		plan.reason = automations.SkipConditionsFalse
+	case automations.ConditionUnknown:
 		plan.kind = plannedOutcomeSkip
-		plan.reason = automations.AutomationSkipConditionsUnknown
+		plan.reason = automations.SkipConditionsUnknown
 	default:
 		return nil, fmt.Errorf(
 			"%w: condition evaluation for automation %q has an unknown result",
@@ -326,7 +326,7 @@ func (repo *AutomationRepository) commitDeviceFact(
 			if err != nil {
 				return fmt.Errorf("allocate automation run ID: %w", err)
 			}
-			run := automations.NewAutomationRunSnapshot(
+			run := automations.NewRunSnapshot(
 				plan.record,
 				runID,
 				automations.RunSourceDeviceFact,
@@ -340,7 +340,7 @@ func (repo *AutomationRepository) commitDeviceFact(
 			}
 			if err = repo.writeReceipt(
 				ctx, queries, summary.FactID, plan.record.ID,
-				automations.AutomationHistoryRun, string(run.ID),
+				automations.HistoryRun, string(run.ID),
 			); err != nil {
 				return err
 			}
@@ -363,12 +363,12 @@ func (repo *AutomationRepository) commitDeviceFact(
 func (repo *AutomationRepository) persistRun(
 	ctx context.Context,
 	queries *dbsqlc.Queries,
-	run automations.AutomationRun,
+	run automations.Run,
 ) error {
-	if err := automations.ValidateAutomationRun(run); err != nil {
+	if err := automations.ValidateRun(run); err != nil {
 		return err
 	}
-	snapshot, err := automations.EncodeAutomationDefinition(run.Snapshot)
+	snapshot, err := automations.EncodeDefinition(run.Snapshot)
 	if err != nil {
 		return err
 	}
@@ -376,7 +376,7 @@ func (repo *AutomationRepository) persistRun(
 	if err != nil {
 		return err
 	}
-	decision, err := automations.EncodeAutomationConditionDecision(run.ConditionDecision)
+	decision, err := automations.EncodeConditionDecision(run.ConditionDecision)
 	if err != nil {
 		return err
 	}
@@ -434,7 +434,7 @@ func (repo *AutomationRepository) recordSkip(
 	if err != nil {
 		return automations.AdmissionSkip{}, err
 	}
-	skip := automations.AutomationSkip{
+	skip := automations.Skip{
 		ID:                skipID,
 		AutomationID:      plan.record.ID,
 		AutomationName:    plan.record.Definition.Name,
@@ -454,16 +454,16 @@ func (repo *AutomationRepository) recordSkip(
 func (repo *AutomationRepository) persistDeviceFactSkip(
 	ctx context.Context,
 	queries *dbsqlc.Queries,
-	skip automations.AutomationSkip,
+	skip automations.Skip,
 ) (automations.AdmissionSkip, error) {
-	if err := automations.ValidateAutomationSkip(skip); err != nil {
+	if err := automations.ValidateSkip(skip); err != nil {
 		return automations.AdmissionSkip{}, err
 	}
 	encodedTriggers, err := automations.EncodeMatchedTriggers(skip.MatchedTriggers)
 	if err != nil {
 		return automations.AdmissionSkip{}, err
 	}
-	decision, err := automations.EncodeAutomationConditionDecision(skip.ConditionDecision)
+	decision, err := automations.EncodeConditionDecision(skip.ConditionDecision)
 	if err != nil {
 		return automations.AdmissionSkip{}, err
 	}
@@ -489,7 +489,7 @@ func (repo *AutomationRepository) persistDeviceFactSkip(
 		return automations.AdmissionSkip{}, err
 	}
 	if err = repo.writeReceipt(
-		ctx, queries, skip.Fact.FactID, skip.AutomationID, automations.AutomationHistorySkip, string(skip.ID),
+		ctx, queries, skip.Fact.FactID, skip.AutomationID, automations.HistorySkip, string(skip.ID),
 	); err != nil {
 		return automations.AdmissionSkip{}, err
 	}
@@ -511,36 +511,36 @@ func (repo *AutomationRepository) persistDeviceFactSkip(
 func (repo *AutomationRepository) persistManualSkip(
 	ctx context.Context,
 	queries *dbsqlc.Queries,
-	record automations.AutomationRecord,
-	reason automations.AutomationSkipReason,
-	decision automations.AutomationConditionDecision,
+	record automations.Record,
+	reason automations.SkipReason,
+	decision automations.ConditionDecision,
 	skippedAt time.Time,
-) (automations.AutomationSkip, error) {
+) (automations.Skip, error) {
 	skipID, err := repo.newSkipID()
 	if err != nil {
-		return automations.AutomationSkip{}, fmt.Errorf("allocate automation skip ID: %w", err)
+		return automations.Skip{}, fmt.Errorf("allocate automation skip ID: %w", err)
 	}
-	skip := automations.AutomationSkip{
+	skip := automations.Skip{
 		ID:                skipID,
 		AutomationID:      record.ID,
 		AutomationName:    record.Definition.Name,
 		Revision:          record.Revision,
 		Source:            automations.RunSourceManual,
-		MatchedTriggers:   []automations.AutomationTrigger{},
+		MatchedTriggers:   []automations.Trigger{},
 		Reason:            reason,
 		ConditionDecision: decision,
 		SkippedAt:         skippedAt.UTC(),
 	}
-	if err = automations.ValidateAutomationSkip(skip); err != nil {
-		return automations.AutomationSkip{}, err
+	if err = automations.ValidateSkip(skip); err != nil {
+		return automations.Skip{}, err
 	}
 	encodedTriggers, err := automations.EncodeMatchedTriggers(skip.MatchedTriggers)
 	if err != nil {
-		return automations.AutomationSkip{}, err
+		return automations.Skip{}, err
 	}
-	encodedDecision, err := automations.EncodeAutomationConditionDecision(decision)
+	encodedDecision, err := automations.EncodeConditionDecision(decision)
 	if err != nil {
-		return automations.AutomationSkip{}, err
+		return automations.Skip{}, err
 	}
 	if err = queries.CreateHistorySkip(ctx, dbsqlc.CreateHistorySkipParams{
 		ID:                      string(skip.ID),
@@ -553,7 +553,7 @@ func (repo *AutomationRepository) persistManualSkip(
 		SkipSource:              sql.NullString{String: string(skip.Source), Valid: true},
 		ConditionDecisionJson:   string(encodedDecision),
 	}); err != nil {
-		return automations.AutomationSkip{}, err
+		return automations.Skip{}, err
 	}
 	return skip, nil
 }
@@ -564,56 +564,56 @@ func (repo *AutomationRepository) persistManualSkip(
 // definition without Conditions records not_configured rather than a fabricated
 // evaluation.
 func manualConditionDecision(
-	conditions *automations.AutomationCondition,
+	conditions *automations.Condition,
 	bypass bool,
 	snapshot devices.EntityStateSnapshot,
 	admittedAt time.Time,
-) (automations.AutomationConditionDecision, automations.AutomationSkipReason, error) {
+) (automations.ConditionDecision, automations.SkipReason, error) {
 	if bypass {
 		if conditions == nil {
-			return automations.AutomationConditionDecision{
-				Mode:            automations.AutomationConditionDecisionNotConfigured,
+			return automations.ConditionDecision{
+				Mode:            automations.ConditionDecisionNotConfigured,
 				BypassRequested: true,
 			}, "", nil
 		}
-		return automations.AutomationConditionDecision{
-			Mode:            automations.AutomationConditionDecisionBypassed,
+		return automations.ConditionDecision{
+			Mode:            automations.ConditionDecisionBypassed,
 			BypassRequested: true,
 			Snapshot:        conditions,
 		}, "", nil
 	}
 	if conditions == nil {
-		return automations.AutomationConditionDecision{
-			Mode: automations.AutomationConditionDecisionNotConfigured,
+		return automations.ConditionDecision{
+			Mode: automations.ConditionDecisionNotConfigured,
 		}, "", nil
 	}
 	required, err := automations.RequiredConditionEntityIDs(*conditions)
 	if err != nil {
-		return automations.AutomationConditionDecision{}, "", err
+		return automations.ConditionDecision{}, "", err
 	}
 	if missing := missingSnapshotCoverage(required, snapshot); len(missing) > 0 {
-		return automations.AutomationConditionDecision{}, "", &automations.ConditionSnapshotRequiredError{
+		return automations.ConditionDecision{}, "", &automations.ConditionSnapshotRequiredError{
 			RequiredEntityIDs: missing,
 		}
 	}
-	evaluation, err := automations.EvaluateAutomationConditions(*conditions, snapshot, admittedAt)
+	evaluation, err := automations.EvaluateConditions(*conditions, snapshot, admittedAt)
 	if err != nil {
-		return automations.AutomationConditionDecision{}, "", err
+		return automations.ConditionDecision{}, "", err
 	}
-	decision := automations.AutomationConditionDecision{
-		Mode:       automations.AutomationConditionDecisionEvaluated,
+	decision := automations.ConditionDecision{
+		Mode:       automations.ConditionDecisionEvaluated,
 		Snapshot:   conditions,
 		Evaluation: &evaluation,
 	}
 	switch evaluation.Result {
-	case automations.AutomationConditionTrue:
+	case automations.ConditionTrue:
 		return decision, "", nil
-	case automations.AutomationConditionFalse:
-		return decision, automations.AutomationSkipConditionsFalse, nil
-	case automations.AutomationConditionUnknown:
-		return decision, automations.AutomationSkipConditionsUnknown, nil
+	case automations.ConditionFalse:
+		return decision, automations.SkipConditionsFalse, nil
+	case automations.ConditionUnknown:
+		return decision, automations.SkipConditionsUnknown, nil
 	default:
-		return automations.AutomationConditionDecision{}, "", fmt.Errorf(
+		return automations.ConditionDecision{}, "", fmt.Errorf(
 			"%w: manual condition evaluation has an unknown result", automations.ErrInvalidAutomation,
 		)
 	}
@@ -624,15 +624,15 @@ func manualConditionDecision(
 // an unconditioned definition records not_configured. A Skip never requests a
 // bypass, so automatic outcomes always log bypass_requested=false.
 func notEvaluatedDecision(
-	conditions *automations.AutomationCondition,
-) automations.AutomationConditionDecision {
+	conditions *automations.Condition,
+) automations.ConditionDecision {
 	if conditions == nil {
-		return automations.AutomationConditionDecision{
-			Mode: automations.AutomationConditionDecisionNotConfigured,
+		return automations.ConditionDecision{
+			Mode: automations.ConditionDecisionNotConfigured,
 		}
 	}
-	return automations.AutomationConditionDecision{
-		Mode:     automations.AutomationConditionDecisionNotEvaluated,
+	return automations.ConditionDecision{
+		Mode:     automations.ConditionDecisionNotEvaluated,
 		Snapshot: conditions,
 	}
 }
@@ -660,7 +660,7 @@ func (repo *AutomationRepository) writeReceipt(
 	queries *dbsqlc.Queries,
 	factID devices.DeviceFactID,
 	automationID automations.AutomationID,
-	kind automations.AutomationHistoryKind,
+	kind automations.HistoryKind,
 	historyID string,
 ) error {
 	return queries.CreateFactReceipt(ctx, dbsqlc.CreateFactReceiptParams{

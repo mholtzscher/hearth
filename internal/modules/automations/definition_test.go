@@ -63,9 +63,9 @@ func definitionFixture(
 }`, observationEntity, eventEntity, actionEntity)
 }
 
-func decodeDefinition(t *testing.T, raw string) (automations.AutomationDefinition, error) {
+func decodeDefinition(t *testing.T, raw string) (automations.Definition, error) {
 	t.Helper()
-	return automations.DecodeAutomationDefinition(json.RawMessage(raw))
+	return automations.DecodeDefinition(json.RawMessage(raw))
 }
 
 // Normalization trims names and orders dispositions without changing Trigger
@@ -121,15 +121,15 @@ func TestDecodeAutomationDefinitionIsStableUnderRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	firstRaw, err := automations.EncodeAutomationDefinition(first)
+	firstRaw, err := automations.EncodeDefinition(first)
 	if err != nil {
 		t.Fatal(err)
 	}
-	second, err := automations.DecodeAutomationDefinition(firstRaw)
+	second, err := automations.DecodeDefinition(firstRaw)
 	if err != nil {
 		t.Fatal(err)
 	}
-	secondRaw, err := automations.EncodeAutomationDefinition(second)
+	secondRaw, err := automations.EncodeDefinition(second)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -380,7 +380,7 @@ func TestDecodeAutomationDefinitionAcceptsEqualityOperandTypes(t *testing.T) {
 // The embedded schema must compile and require explicit enablement.
 func TestEmbeddedDefinitionSchemaCompiles(t *testing.T) {
 	t.Parallel()
-	codec, err := automations.NewAutomationDefinitionCodec()
+	codec, err := automations.NewDefinitionCodec()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -513,24 +513,24 @@ func TestNormalizeAutomationDefinitionRejectsContradictoryTriggerFamilies(t *tes
 	tests := []struct {
 		name   string
 		kind   automations.TriggerKind
-		mutate func(trigger *automations.AutomationTrigger)
+		mutate func(trigger *automations.Trigger)
 	}{
 		{
 			"observation carries event payload",
 			automations.TriggerKindObservation,
-			func(trigger *automations.AutomationTrigger) {
+			func(trigger *automations.Trigger) {
 				trigger.EntityEvent = typedEntityEventTrigger(t)
 			},
 		},
 		{
 			"observation without observation payload",
 			automations.TriggerKindObservation,
-			func(trigger *automations.AutomationTrigger) { trigger.Observation = nil },
+			func(trigger *automations.Trigger) { trigger.Observation = nil },
 		},
 		{
 			"entity event carries observation payload",
 			automations.TriggerKindEntityEvent,
-			func(trigger *automations.AutomationTrigger) {
+			func(trigger *automations.Trigger) {
 				trigger.EntityEvent = typedEntityEventTrigger(t)
 				trigger.Observation = typedObservationTrigger(t)
 			},
@@ -538,7 +538,7 @@ func TestNormalizeAutomationDefinitionRejectsContradictoryTriggerFamilies(t *tes
 		{
 			"entity event without event payload",
 			automations.TriggerKindEntityEvent,
-			func(trigger *automations.AutomationTrigger) {
+			func(trigger *automations.Trigger) {
 				trigger.Observation = nil
 				trigger.EntityEvent = nil
 			},
@@ -546,7 +546,7 @@ func TestNormalizeAutomationDefinitionRejectsContradictoryTriggerFamilies(t *tes
 		{
 			"unknown kind carries a payload",
 			automations.TriggerKind("cron"),
-			func(trigger *automations.AutomationTrigger) {
+			func(trigger *automations.Trigger) {
 				trigger.Observation = typedObservationTrigger(t)
 			},
 		},
@@ -557,7 +557,7 @@ func TestNormalizeAutomationDefinitionRejectsContradictoryTriggerFamilies(t *tes
 			definition := validDomainDefinition(t)
 			definition.Triggers[0].Kind = test.kind
 			test.mutate(&definition.Triggers[0])
-			_, err := automations.NormalizeAutomationDefinition(definition)
+			_, err := automations.NormalizeDefinition(definition)
 			if err == nil {
 				t.Fatal("contradictory typed trigger was normalized")
 			}
@@ -572,25 +572,25 @@ func TestNormalizeAutomationDefinitionRejectsContradictoryTriggerFamilies(t *tes
 // strict JSON decoding.
 func TestNormalizeAutomationDefinitionRejectsMalformedTypedDefinitions(t *testing.T) {
 	t.Parallel()
-	trigger := func(definition *automations.AutomationDefinition, mutate func(*automations.AutomationTrigger)) {
+	trigger := func(definition *automations.Definition, mutate func(*automations.Trigger)) {
 		mutate(&definition.Triggers[0])
 	}
 	tests := []struct {
 		name   string
-		mutate func(definition *automations.AutomationDefinition)
+		mutate func(definition *automations.Definition)
 	}{
-		{"empty name", func(definition *automations.AutomationDefinition) { definition.Name = "" }},
-		{"whitespace name", func(definition *automations.AutomationDefinition) { definition.Name = "   " }},
+		{"empty name", func(definition *automations.Definition) { definition.Name = "" }},
+		{"whitespace name", func(definition *automations.Definition) { definition.Name = "   " }},
 		{
 			"untrimmed name beyond bound",
-			func(definition *automations.AutomationDefinition) {
+			func(definition *automations.Definition) {
 				definition.Name = " " + strings.Repeat("x", 200)
 			},
 		},
-		{"no triggers", func(definition *automations.AutomationDefinition) { definition.Triggers = nil }},
+		{"no triggers", func(definition *automations.Definition) { definition.Triggers = nil }},
 		{
 			"too many triggers",
-			func(definition *automations.AutomationDefinition) {
+			func(definition *automations.Definition) {
 				definition.Triggers = slices.Repeat(definition.Triggers[:1], tooManyTriggersN)
 				for index := range definition.Triggers {
 					definition.Triggers[index].ID = automations.TriggerID(fmt.Sprintf("trigger_%d", index))
@@ -599,26 +599,26 @@ func TestNormalizeAutomationDefinitionRejectsMalformedTypedDefinitions(t *testin
 		},
 		{
 			"duplicate trigger ids",
-			func(definition *automations.AutomationDefinition) {
+			func(definition *automations.Definition) {
 				definition.Triggers = append(definition.Triggers, definition.Triggers[0])
 			},
 		},
 		{
 			"bad trigger slug",
-			func(definition *automations.AutomationDefinition) { definition.Triggers[0].ID = "Bad ID" },
+			func(definition *automations.Definition) { definition.Triggers[0].ID = "Bad ID" },
 		},
 		{
 			"no dispositions",
-			func(definition *automations.AutomationDefinition) {
-				trigger(definition, func(item *automations.AutomationTrigger) {
+			func(definition *automations.Definition) {
+				trigger(definition, func(item *automations.Trigger) {
 					item.Observation.Dispositions = nil
 				})
 			},
 		},
 		{
 			"duplicate dispositions",
-			func(definition *automations.AutomationDefinition) {
-				trigger(definition, func(item *automations.AutomationTrigger) {
+			func(definition *automations.Definition) {
+				trigger(definition, func(item *automations.Trigger) {
 					item.Observation.Dispositions = []devices.ObservationDisposition{
 						devices.DispositionApplied, devices.DispositionApplied,
 					}
@@ -627,8 +627,8 @@ func TestNormalizeAutomationDefinitionRejectsMalformedTypedDefinitions(t *testin
 		},
 		{
 			"unknown disposition",
-			func(definition *automations.AutomationDefinition) {
-				trigger(definition, func(item *automations.AutomationTrigger) {
+			func(definition *automations.Definition) {
+				trigger(definition, func(item *automations.Trigger) {
 					item.Observation.Dispositions = []devices.ObservationDisposition{
 						devices.ObservationDisposition("rejected"),
 					}
@@ -637,8 +637,8 @@ func TestNormalizeAutomationDefinitionRejectsMalformedTypedDefinitions(t *testin
 		},
 		{
 			"too many comparisons",
-			func(definition *automations.AutomationDefinition) {
-				trigger(definition, func(item *automations.AutomationTrigger) {
+			func(definition *automations.Definition) {
+				trigger(definition, func(item *automations.Trigger) {
 					item.Observation.Comparisons = nil
 					for index := range tooManyComparisonsN {
 						item.Observation.Comparisons = append(item.Observation.Comparisons, comparison(
@@ -650,8 +650,8 @@ func TestNormalizeAutomationDefinitionRejectsMalformedTypedDefinitions(t *testin
 		},
 		{
 			"bad pointer",
-			func(definition *automations.AutomationDefinition) {
-				trigger(definition, func(item *automations.AutomationTrigger) {
+			func(definition *automations.Definition) {
+				trigger(definition, func(item *automations.Trigger) {
 					item.Observation.Comparisons = []automations.ObservationComparison{
 						comparison("temperature", automations.ComparisonEqual, "1"),
 					}
@@ -660,8 +660,8 @@ func TestNormalizeAutomationDefinitionRejectsMalformedTypedDefinitions(t *testin
 		},
 		{
 			"unknown operator",
-			func(definition *automations.AutomationDefinition) {
-				trigger(definition, func(item *automations.AutomationTrigger) {
+			func(definition *automations.Definition) {
+				trigger(definition, func(item *automations.Trigger) {
 					item.Observation.Comparisons = []automations.ObservationComparison{
 						comparison("/a", automations.ComparisonOperator("between"), "1"),
 					}
@@ -670,8 +670,8 @@ func TestNormalizeAutomationDefinitionRejectsMalformedTypedDefinitions(t *testin
 		},
 		{
 			"ordering operand not numeric",
-			func(definition *automations.AutomationDefinition) {
-				trigger(definition, func(item *automations.AutomationTrigger) {
+			func(definition *automations.Definition) {
+				trigger(definition, func(item *automations.Trigger) {
 					item.Observation.Comparisons = []automations.ObservationComparison{
 						comparison("/a", automations.ComparisonGreaterThan, `"twenty"`),
 					}
@@ -680,16 +680,16 @@ func TestNormalizeAutomationDefinitionRejectsMalformedTypedDefinitions(t *testin
 		},
 		{
 			"bad observation entity id",
-			func(definition *automations.AutomationDefinition) {
-				trigger(definition, func(item *automations.AutomationTrigger) {
+			func(definition *automations.Definition) {
+				trigger(definition, func(item *automations.Trigger) {
 					item.Observation.EntityID = "ent_not-a-uuid"
 				})
 			},
 		},
 		{
 			"bad event name",
-			func(definition *automations.AutomationDefinition) {
-				definition.Triggers[0] = automations.AutomationTrigger{
+			func(definition *automations.Definition) {
+				definition.Triggers[0] = automations.Trigger{
 					ID: "press", Kind: automations.TriggerKindEntityEvent,
 					EntityEvent: &automations.EntityEventTrigger{
 						EntityID: newEntityID(t), EventName: "Bad Name",
@@ -697,10 +697,10 @@ func TestNormalizeAutomationDefinitionRejectsMalformedTypedDefinitions(t *testin
 				}
 			},
 		},
-		{"no steps", func(definition *automations.AutomationDefinition) { definition.Steps = nil }},
+		{"no steps", func(definition *automations.Definition) { definition.Steps = nil }},
 		{
 			"too many steps",
-			func(definition *automations.AutomationDefinition) {
+			func(definition *automations.Definition) {
 				definition.Steps = slices.Repeat(definition.Steps[:1], tooManyStepsN)
 				for index := range definition.Steps {
 					definition.Steps[index].ID = automations.StepID(fmt.Sprintf("step_%d", index))
@@ -709,50 +709,50 @@ func TestNormalizeAutomationDefinitionRejectsMalformedTypedDefinitions(t *testin
 		},
 		{
 			"duplicate step ids",
-			func(definition *automations.AutomationDefinition) {
+			func(definition *automations.Definition) {
 				definition.Steps = append(definition.Steps, definition.Steps[0])
 			},
 		},
-		{"bad step slug", func(definition *automations.AutomationDefinition) { definition.Steps[0].ID = "S" }},
+		{"bad step slug", func(definition *automations.Definition) { definition.Steps[0].ID = "S" }},
 		{
 			"bad operation slug",
-			func(definition *automations.AutomationDefinition) { definition.Steps[0].OperationName = "Set It" },
+			func(definition *automations.Definition) { definition.Steps[0].OperationName = "Set It" },
 		},
 		{
 			"bad step entity id",
-			func(definition *automations.AutomationDefinition) { definition.Steps[0].EntityID = "ent_not-a-uuid" },
+			func(definition *automations.Definition) { definition.Steps[0].EntityID = "ent_not-a-uuid" },
 		},
 		{
 			"parameters not an object",
-			func(definition *automations.AutomationDefinition) {
+			func(definition *automations.Definition) {
 				definition.Steps[0].Parameters = devices.CommandParameters(`true`)
 			},
 		},
 		{
 			"parameters are null",
-			func(definition *automations.AutomationDefinition) {
+			func(definition *automations.Definition) {
 				definition.Steps[0].Parameters = devices.CommandParameters(`null`)
 			},
 		},
 		{
 			"parameters are invalid json",
-			func(definition *automations.AutomationDefinition) {
+			func(definition *automations.Definition) {
 				definition.Steps[0].Parameters = devices.CommandParameters(`{"value":`)
 			},
 		},
 		{
 			"parameters are empty",
-			func(definition *automations.AutomationDefinition) { definition.Steps[0].Parameters = nil },
+			func(definition *automations.Definition) { definition.Steps[0].Parameters = nil },
 		},
 		{
 			"parameters carry trailing values",
-			func(definition *automations.AutomationDefinition) {
+			func(definition *automations.Definition) {
 				definition.Steps[0].Parameters = devices.CommandParameters(`{"value":true} false`)
 			},
 		},
 		{
 			"encoded definition too large",
-			func(definition *automations.AutomationDefinition) {
+			func(definition *automations.Definition) {
 				definition.Steps[0].Parameters = devices.CommandParameters(
 					fmt.Sprintf(`{"value":%q}`, tooLongParameter()),
 				)
@@ -764,7 +764,7 @@ func TestNormalizeAutomationDefinitionRejectsMalformedTypedDefinitions(t *testin
 			t.Parallel()
 			definition := validDomainDefinition(t)
 			test.mutate(&definition)
-			_, err := automations.NormalizeAutomationDefinition(definition)
+			_, err := automations.NormalizeDefinition(definition)
 			if err == nil {
 				t.Fatal("malformed typed definition was normalized")
 			}
@@ -779,19 +779,19 @@ func TestNormalizeAutomationDefinitionRejectsMalformedTypedDefinitions(t *testin
 func TestNormalizeAutomationDefinitionMatchesDecodedForm(t *testing.T) {
 	t.Parallel()
 	raw := definitionFixture(t, newEntityID(t), newEntityID(t), newEntityID(t))
-	decoded, err := automations.DecodeAutomationDefinition(json.RawMessage(raw))
+	decoded, err := automations.DecodeDefinition(json.RawMessage(raw))
 	if err != nil {
 		t.Fatal(err)
 	}
-	normalized, err := automations.NormalizeAutomationDefinition(decoded)
+	normalized, err := automations.NormalizeDefinition(decoded)
 	if err != nil {
 		t.Fatal(err)
 	}
-	decodedRaw, err := automations.EncodeAutomationDefinition(decoded)
+	decodedRaw, err := automations.EncodeDefinition(decoded)
 	if err != nil {
 		t.Fatal(err)
 	}
-	normalizedRaw, err := automations.EncodeAutomationDefinition(normalized)
+	normalizedRaw, err := automations.EncodeDefinition(normalized)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -806,10 +806,10 @@ func TestNormalizeAutomationDefinitionOwnsCallerMemory(t *testing.T) {
 	dispositions := []devices.ObservationDisposition{devices.DispositionUnchanged, devices.DispositionApplied}
 	operand := json.RawMessage(`{"occupied":true}`)
 	parameters := devices.CommandParameters(`{"value":true}`)
-	definition := automations.AutomationDefinition{
+	definition := automations.Definition{
 		Name:    "Office light",
 		Enabled: true,
-		Triggers: []automations.AutomationTrigger{{
+		Triggers: []automations.Trigger{{
 			ID:   "occupied",
 			Kind: automations.TriggerKindObservation,
 			Observation: &automations.ObservationTrigger{
@@ -822,18 +822,18 @@ func TestNormalizeAutomationDefinitionOwnsCallerMemory(t *testing.T) {
 				}},
 			},
 		}},
-		Steps: []automations.AutomationStep{{
+		Steps: []automations.Step{{
 			ID:            "light_on",
 			EntityID:      newEntityID(t),
 			OperationName: devices.OperationNameSet,
 			Parameters:    parameters,
 		}},
 	}
-	normalized, err := automations.NormalizeAutomationDefinition(definition)
+	normalized, err := automations.NormalizeDefinition(definition)
 	if err != nil {
 		t.Fatal(err)
 	}
-	before, err := automations.EncodeAutomationDefinition(normalized)
+	before, err := automations.EncodeDefinition(normalized)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -841,7 +841,7 @@ func TestNormalizeAutomationDefinitionOwnsCallerMemory(t *testing.T) {
 	operand[1] = 'x'
 	parameters[0] = ' '
 	definition.Triggers[0].Observation = nil
-	after, err := automations.EncodeAutomationDefinition(normalized)
+	after, err := automations.EncodeDefinition(normalized)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -253,7 +253,7 @@ func (fn drainFunc) Drain() error { return fn() }
 func startBlockedAutomationRun(
 	ctx context.Context,
 	t *testing.T,
-) (*automations.Service, *devices.Service, *blockingAutomationDevices, automations.AutomationRecord, automations.AutomationRun) {
+) (*automations.Service, *devices.Service, *blockingAutomationDevices, automations.Record, automations.Run) {
 	t.Helper()
 	database := openOrderingDatabase(ctx, t)
 	catalog, err := devices.NewBuiltinTypeCatalog()
@@ -266,9 +266,9 @@ func startBlockedAutomationRun(
 	)
 	seam := newBlockingAutomationDevices()
 	automationService := automations.NewService(
-		automationssqlite.NewAutomationRepository(database, automations.AutomationDependencies{}),
+		automationssqlite.NewAutomationRepository(database, automations.Dependencies{}),
 		seam,
-		automations.AutomationDependencies{Logger: slog.New(slog.DiscardHandler)},
+		automations.Dependencies{Logger: slog.New(slog.DiscardHandler)},
 	)
 	record := createOrderingAutomation(ctx, t, automationService)
 	run, err := automationService.StartManualRun(ctx, automations.ManualRunInput{AutomationID: record.ID})
@@ -341,16 +341,16 @@ func createOrderingAutomation(
 	ctx context.Context,
 	t *testing.T,
 	service *automations.Service,
-) automations.AutomationRecord {
+) automations.Record {
 	t.Helper()
 	entityID, err := devices.NewEntityID()
 	if err != nil {
 		t.Fatal(err)
 	}
-	record, err := service.CreateAutomation(ctx, automations.AutomationDefinition{
+	record, err := service.CreateAutomation(ctx, automations.Definition{
 		Name:    "Drain order",
 		Enabled: true,
-		Triggers: []automations.AutomationTrigger{{
+		Triggers: []automations.Trigger{{
 			ID:   "trigger",
 			Kind: automations.TriggerKindObservation,
 			Observation: &automations.ObservationTrigger{
@@ -358,7 +358,7 @@ func createOrderingAutomation(
 				Dispositions: []devices.ObservationDisposition{devices.DispositionApplied},
 			},
 		}},
-		Steps: []automations.AutomationStep{{
+		Steps: []automations.Step{{
 			ID:            "step_0",
 			EntityID:      entityID,
 			OperationName: devices.OperationNameSet,

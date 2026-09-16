@@ -142,7 +142,7 @@ func requireDrainedRun(
 	}
 	entry := historyEntry(t, service, automationID, history[0].ID)
 	if entry.Run == nil || entry.Run.FailureCode == nil ||
-		*entry.Run.FailureCode != automations.AutomationFailureCoreStopping {
+		*entry.Run.FailureCode != automations.FailureCoreStopping {
 		t.Fatalf("automation %s Run = %#v, want core_stopping", automationID, entry.Run)
 	}
 }
@@ -204,7 +204,7 @@ func TestDrainCompletesWhileSkippedLogBlocked(t *testing.T) {
 	record := createRuntimeAutomation(t, service, runtimeDefinitionFor(t, entity))
 
 	// A stale Fact records a Skip without starting a Run.
-	stale := newObservationFact(t, entity, runtimeTestNow.Add(-automations.AutomationFactMaximumAge-time.Second))
+	stale := newObservationFact(t, entity, runtimeTestNow.Add(-automations.FactMaximumAge-time.Second))
 	outcome := make(chan automations.AdmissionOutcome, 1)
 	admitFailed := make(chan error, 1)
 	go func() {
@@ -232,8 +232,8 @@ func TestDrainCompletesWhileSkippedLogBlocked(t *testing.T) {
 		t.Fatal("ReceiveDeviceFact did not return after the diagnostic sink was released")
 	}
 	history := listHistory(t, service, record.ID)
-	if len(history) != 1 || history[0].Kind != automations.AutomationHistorySkip ||
-		history[0].Reason != automations.AutomationSkipStaleFact {
+	if len(history) != 1 || history[0].Kind != automations.HistorySkip ||
+		history[0].Reason != automations.SkipStaleFact {
 		t.Fatalf("automation %s history = %#v, want one stale_fact Skip", record.ID, history)
 	}
 	requireLoggedEvents(t, writer, "automation.skipped", 1)

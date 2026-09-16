@@ -27,10 +27,10 @@ func conditionLeaf(
 	entityID devices.EntityID,
 	operator automations.ComparisonOperator,
 	operand string,
-) *automations.AutomationCondition {
-	return &automations.AutomationCondition{
-		ID:   automations.AutomationConditionID(id),
-		Kind: automations.AutomationConditionEntityState,
+) *automations.Condition {
+	return &automations.Condition{
+		ID:   automations.ConditionID(id),
+		Kind: automations.ConditionEntityState,
 		EntityState: &automations.EntityStateCondition{
 			EntityID: entityID,
 			Pointer:  "/level",
@@ -45,8 +45,8 @@ func conditionLeaf(
 func conditionalDefinitionFor(
 	t *testing.T,
 	triggerEntity devices.EntityID,
-	conditions *automations.AutomationCondition,
-) automations.AutomationDefinition {
+	conditions *automations.Condition,
+) automations.Definition {
 	t.Helper()
 	definition := validDomainDefinition(t)
 	definition.Triggers[0].Observation.EntityID = triggerEntity
@@ -123,7 +123,7 @@ func historyEntry(
 	repository *automationssqlite.AutomationRepository,
 	automationID automations.AutomationID,
 	entryID string,
-) automations.AutomationHistoryEntry {
+) automations.HistoryEntry {
 	t.Helper()
 	entry, err := repository.GetHistoryEntry(context.Background(), automationID, entryID)
 	if err != nil {
@@ -137,7 +137,7 @@ func listHistory(
 	t *testing.T,
 	repository *automationssqlite.AutomationRepository,
 	automationID automations.AutomationID,
-) []automations.AutomationHistorySummary {
+) []automations.HistorySummary {
 	t.Helper()
 	page, err := repository.ListHistory(context.Background(), automations.ListHistoryParams{
 		AutomationID: automationID,
@@ -153,7 +153,7 @@ func firstHistorySummary(
 	t *testing.T,
 	repository *automationssqlite.AutomationRepository,
 	automationID automations.AutomationID,
-) automations.AutomationHistorySummary {
+) automations.HistorySummary {
 	t.Helper()
 	summaries := listHistory(t, repository, automationID)
 	if len(summaries) != 1 {
@@ -259,7 +259,7 @@ func TestAdmitDeviceFactMixedConditionalAndUnconditionalMatchesCommitTogether(t 
 		t.Fatalf("started Runs = %v, want unconditional and true conditional", admittedIDs)
 	}
 	if len(result.Skips) != 1 || result.Skips[0].AutomationID != second.ID ||
-		result.Skips[0].Reason != automations.AutomationSkipConditionsUnknown {
+		result.Skips[0].Reason != automations.SkipConditionsUnknown {
 		t.Fatalf("mixed Condition Skip = %#v, want unknown second conditional", result.Skips)
 	}
 	if rowCount(t, database, "automation_fact_receipts") != 3 || rowCount(t, database, "automation_run_steps") != 2 {
@@ -304,11 +304,11 @@ func TestAdmitDeviceFactCoverageIgnoresIneligibleSiblings(t *testing.T) {
 	if first.Outcome.StartedRuns != 0 || first.Outcome.RecordedSkips != 1 {
 		t.Fatalf("busy admission outcome = %#v, want one busy Skip", first.Outcome)
 	}
-	if first.Skips[0].Reason != automations.AutomationSkipBusy {
+	if first.Skips[0].Reason != automations.SkipBusy {
 		t.Fatalf("busy Skip reason = %q", first.Skips[0].Reason)
 	}
 	entry := historyEntry(t, repository, conditional.ID, string(first.Skips[0].SkipID))
-	if entry.Skip == nil || entry.Skip.ConditionDecision.Mode != automations.AutomationConditionDecisionNotEvaluated {
+	if entry.Skip == nil || entry.Skip.ConditionDecision.Mode != automations.ConditionDecisionNotEvaluated {
 		t.Fatalf("busy Skip decision = %#v, want not_evaluated", entry.Skip)
 	}
 
@@ -347,9 +347,9 @@ func TestAdmitDeviceFactEvaluatedRunCommitsWithSnapshotDecision(t *testing.T) {
 		t.Fatalf("admission outcome = %#v", result.Outcome)
 	}
 	run := result.StartedRuns[0]
-	if run.ConditionDecision.Mode != automations.AutomationConditionDecisionEvaluated ||
+	if run.ConditionDecision.Mode != automations.ConditionDecisionEvaluated ||
 		run.ConditionDecision.Evaluation == nil ||
-		run.ConditionDecision.Evaluation.Result != automations.AutomationConditionTrue {
+		run.ConditionDecision.Evaluation.Result != automations.ConditionTrue {
 		t.Fatalf("Run decision = %#v, want an evaluated true decision", run.ConditionDecision)
 	}
 	entry := historyEntry(t, repository, record.ID, string(run.ID))
@@ -360,7 +360,7 @@ func TestAdmitDeviceFactEvaluatedRunCommitsWithSnapshotDecision(t *testing.T) {
 		t.Fatalf("stored matched triggers = %v", entry.Run.MatchedTriggerIDs)
 	}
 	if summary := firstHistorySummary(t, repository, record.ID); summary.ConditionMode !=
-		automations.AutomationConditionDecisionEvaluated || summary.Source != automations.RunSourceDeviceFact {
+		automations.ConditionDecisionEvaluated || summary.Source != automations.RunSourceDeviceFact {
 		t.Fatalf("history summary = %#v", summary)
 	}
 }
@@ -452,7 +452,7 @@ func TestAdmitDeviceFactRedeliveryAfterPruningStaysDuplicate(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if result.Outcome.RecordedSkips != 1 || result.Skips[0].Reason != automations.AutomationSkipConditionsFalse {
+	if result.Outcome.RecordedSkips != 1 || result.Skips[0].Reason != automations.SkipConditionsFalse {
 		t.Fatalf("false-Condition outcome = %#v", result.Outcome)
 	}
 	pruned, err := repository.DeleteHistoryBefore(ctx, admissionNow.Add(time.Hour), 10)
@@ -486,9 +486,9 @@ func requireManualSkipShape(
 	t *testing.T,
 	database *sql.DB,
 	repository *automationssqlite.AutomationRepository,
-	record automations.AutomationRecord,
+	record automations.Record,
 	result automations.ManualAdmissionResult,
-	wantReason automations.AutomationSkipReason,
+	wantReason automations.SkipReason,
 ) {
 	t.Helper()
 	skip := result.Skip
@@ -507,7 +507,7 @@ func requireManualSkipShape(
 	}
 	entry := historyEntry(t, repository, record.ID, string(skip.ID))
 	if entry.Skip == nil || entry.Skip.Fact != nil ||
-		entry.Skip.ConditionDecision.Mode != automations.AutomationConditionDecisionEvaluated {
+		entry.Skip.ConditionDecision.Mode != automations.ConditionDecisionEvaluated {
 		t.Fatalf("stored manual Skip = %#v", entry.Skip)
 	}
 	summary := firstHistorySummary(t, repository, record.ID)
@@ -527,8 +527,8 @@ func requireManualRunShape(t *testing.T, result automations.ManualAdmissionResul
 		len(result.Run.MatchedTriggerIDs) != 0 {
 		t.Fatalf("manual Run = %#v", result.Run)
 	}
-	if result.Run.ConditionDecision.Mode != automations.AutomationConditionDecisionEvaluated ||
-		result.Run.ConditionDecision.Evaluation.Result != automations.AutomationConditionTrue {
+	if result.Run.ConditionDecision.Mode != automations.ConditionDecisionEvaluated ||
+		result.Run.ConditionDecision.Evaluation.Result != automations.ConditionTrue {
 		t.Fatalf("manual Run decision = %#v", result.Run.ConditionDecision)
 	}
 }
@@ -540,11 +540,11 @@ func TestAdmitManualRunConditionOutcomesCommitOneOutcome(t *testing.T) {
 	tests := []struct {
 		name       string
 		value      string
-		wantReason automations.AutomationSkipReason
+		wantReason automations.SkipReason
 		wantSkip   bool
 	}{
-		{"false commits a Skip", `{"level":90}`, automations.AutomationSkipConditionsFalse, true},
-		{"unknown commits a Skip", `{"other":1}`, automations.AutomationSkipConditionsUnknown, true},
+		{"false commits a Skip", `{"level":90}`, automations.SkipConditionsFalse, true},
+		{"unknown commits a Skip", `{"other":1}`, automations.SkipConditionsUnknown, true},
 		{"true commits a Run", `{"level":10}`, "", false},
 	}
 	for _, test := range tests {
@@ -607,11 +607,11 @@ func TestAdmitManualRunBypassNeverReadsState(t *testing.T) {
 		t.Fatalf("bypass requested a State read: %v", err)
 	}
 	decision := bypassed.Run.ConditionDecision
-	if decision.Mode != automations.AutomationConditionDecisionBypassed || !decision.BypassRequested {
+	if decision.Mode != automations.ConditionDecisionBypassed || !decision.BypassRequested {
 		t.Fatalf("bypassed Run decision = %#v", decision)
 	}
 	entry := historyEntry(t, repository, configured.ID, string(bypassed.Run.ID))
-	if entry.Run == nil || entry.Run.ConditionDecision.Mode != automations.AutomationConditionDecisionBypassed {
+	if entry.Run == nil || entry.Run.ConditionDecision.Mode != automations.ConditionDecisionBypassed {
 		t.Fatalf("stored bypassed Run = %#v", entry.Run)
 	}
 
@@ -624,7 +624,7 @@ func TestAdmitManualRunBypassNeverReadsState(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if requested.Run.ConditionDecision.Mode != automations.AutomationConditionDecisionNotConfigured ||
+	if requested.Run.ConditionDecision.Mode != automations.ConditionDecisionNotConfigured ||
 		!requested.Run.ConditionDecision.BypassRequested {
 		t.Fatalf("unconditioned bypass decision = %#v", requested.Run.ConditionDecision)
 	}

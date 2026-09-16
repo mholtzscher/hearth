@@ -110,7 +110,7 @@ type AutomationConditionDecisionBody struct {
 // conditionBody maps one optional normalized domain Condition tree to its
 // transport form. A nil tree stays nil so an unconditioned decision emits no
 // fabricated snapshot.
-func conditionBody(condition *automations.AutomationCondition) *AutomationConditionBody {
+func conditionBody(condition *automations.Condition) *AutomationConditionBody {
 	if condition == nil {
 		return nil
 	}
@@ -120,10 +120,10 @@ func conditionBody(condition *automations.AutomationCondition) *AutomationCondit
 
 // conditionNodeBody maps one domain Condition node, emitting only the fields of
 // its own family.
-func conditionNodeBody(condition automations.AutomationCondition) AutomationConditionBody {
+func conditionNodeBody(condition automations.Condition) AutomationConditionBody {
 	body := AutomationConditionBody{ID: string(condition.ID), Kind: string(condition.Kind)}
 	switch condition.Kind {
-	case automations.AutomationConditionEntityState:
+	case automations.ConditionEntityState:
 		if condition.EntityState != nil {
 			pointer := condition.EntityState.Pointer
 			body.EntityID = string(condition.EntityState.EntityID)
@@ -135,12 +135,12 @@ func conditionNodeBody(condition automations.AutomationCondition) AutomationCond
 				body.MaxAgeSeconds = &age
 			}
 		}
-	case automations.AutomationConditionAll, automations.AutomationConditionAny:
+	case automations.ConditionAll, automations.ConditionAny:
 		body.Children = make([]AutomationConditionBody, 0, len(condition.Children))
 		for _, child := range condition.Children {
 			body.Children = append(body.Children, conditionNodeBody(child))
 		}
-	case automations.AutomationConditionNot:
+	case automations.ConditionNot:
 		body.Child = conditionBody(condition.Child)
 	default:
 	}
@@ -148,7 +148,7 @@ func conditionNodeBody(condition automations.AutomationCondition) AutomationCond
 }
 
 // conditionDecisionBody maps one retained decision to its transport form.
-func conditionDecisionBody(decision automations.AutomationConditionDecision) AutomationConditionDecisionBody {
+func conditionDecisionBody(decision automations.ConditionDecision) AutomationConditionDecisionBody {
 	body := AutomationConditionDecisionBody{
 		Mode:            string(decision.Mode),
 		BypassRequested: decision.BypassRequested,
@@ -164,7 +164,7 @@ func conditionDecisionBody(decision automations.AutomationConditionDecision) Aut
 // conditionEvaluationBody maps one evaluation, normalizing every retained time
 // to UTC so the RFC3339Nano rendering is canonical.
 func conditionEvaluationBody(
-	evaluation automations.AutomationConditionEvaluation,
+	evaluation automations.ConditionEvaluation,
 ) AutomationConditionEvaluationBody {
 	body := AutomationConditionEvaluationBody{
 		EvaluatedAt: evaluation.EvaluatedAt.UTC(),
@@ -180,7 +180,7 @@ func conditionEvaluationBody(
 // conditionNodeResultBody maps one evaluated node, preserving the missing versus
 // selected-null distinction and pairing Observation identity with its time.
 func conditionNodeResultBody(
-	node automations.AutomationConditionNodeResult,
+	node automations.ConditionNodeResult,
 ) AutomationConditionNodeResultBody {
 	body := AutomationConditionNodeResultBody{
 		ID:            string(node.ID),

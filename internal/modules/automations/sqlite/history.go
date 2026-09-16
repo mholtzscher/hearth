@@ -18,8 +18,8 @@ func (repo *AutomationRepository) GetHistoryEntry(
 	ctx context.Context,
 	automationID automations.AutomationID,
 	entryID string,
-) (automations.AutomationHistoryEntry, error) {
-	var entry automations.AutomationHistoryEntry
+) (automations.HistoryEntry, error) {
+	var entry automations.HistoryEntry
 	err := repo.transaction(ctx, func(queries *dbsqlc.Queries) error {
 		row, err := queries.GetHistoryEntry(ctx, dbsqlc.GetHistoryEntryParams{
 			AutomationID: string(automationID),
@@ -35,7 +35,7 @@ func (repo *AutomationRepository) GetHistoryEntry(
 		return err
 	})
 	if err != nil {
-		return automations.AutomationHistoryEntry{}, err
+		return automations.HistoryEntry{}, err
 	}
 	return entry, nil
 }
@@ -45,11 +45,11 @@ func (repo *AutomationRepository) GetHistoryEntry(
 func (repo *AutomationRepository) ListHistory(
 	ctx context.Context,
 	params automations.ListHistoryParams,
-) (automations.AutomationPage[automations.AutomationHistorySummary], error) {
-	page := automations.AutomationPage[automations.AutomationHistorySummary]{
-		Items: []automations.AutomationHistorySummary{},
+) (automations.Page[automations.HistorySummary], error) {
+	page := automations.Page[automations.HistorySummary]{
+		Items: []automations.HistorySummary{},
 	}
-	limit, err := automations.AutomationPageLimit(params.Limit)
+	limit, err := automations.PageLimit(params.Limit)
 	if err != nil {
 		return page, err
 	}

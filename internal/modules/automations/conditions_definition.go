@@ -14,8 +14,8 @@ import (
 // inapplicable fields stay absent, and the embedded definition schema closes
 // every family with oneOf plus additionalProperties:false.
 type automationConditionJSON struct {
-	ID            AutomationConditionID     `json:"id"`
-	Kind          AutomationConditionKind   `json:"kind"`
+	ID            ConditionID               `json:"id"`
+	Kind          ConditionKind             `json:"kind"`
 	EntityID      devices.EntityID          `json:"entity_id,omitempty"`
 	Pointer       *string                   `json:"pointer,omitempty"`
 	Operator      ComparisonOperator        `json:"operator,omitempty"`
@@ -29,7 +29,7 @@ type automationConditionJSON struct {
 // strict persisted form. It emits only the fields of the node's own family; the
 // empty pointer of an entity_state leaf is emitted explicitly because the schema
 // requires it.
-func encodeAutomationConditionTree(condition *AutomationCondition) *automationConditionJSON {
+func encodeAutomationConditionTree(condition *Condition) *automationConditionJSON {
 	if condition == nil {
 		return nil
 	}
@@ -37,10 +37,10 @@ func encodeAutomationConditionTree(condition *AutomationCondition) *automationCo
 	return &encoded
 }
 
-func encodeAutomationCondition(condition AutomationCondition) automationConditionJSON {
+func encodeAutomationCondition(condition Condition) automationConditionJSON {
 	encoded := automationConditionJSON{ID: condition.ID, Kind: condition.Kind}
 	switch condition.Kind {
-	case AutomationConditionEntityState:
+	case ConditionEntityState:
 		if condition.EntityState != nil {
 			encoded.EntityID = condition.EntityState.EntityID
 			pointer := condition.EntityState.Pointer
@@ -49,12 +49,12 @@ func encodeAutomationCondition(condition AutomationCondition) automationConditio
 			encoded.Operand = condition.EntityState.Operand
 			encoded.MaxAgeSeconds = condition.EntityState.MaxAgeSeconds
 		}
-	case AutomationConditionAll, AutomationConditionAny:
+	case ConditionAll, ConditionAny:
 		encoded.Children = make([]automationConditionJSON, 0, len(condition.Children))
 		for _, child := range condition.Children {
 			encoded.Children = append(encoded.Children, encodeAutomationCondition(child))
 		}
-	case AutomationConditionNot:
+	case ConditionNot:
 		if condition.Child != nil {
 			child := encodeAutomationCondition(*condition.Child)
 			encoded.Child = &child
@@ -67,10 +67,10 @@ func encodeAutomationCondition(condition AutomationCondition) automationConditio
 // automationConditionFromJSON maps a schema-validated persisted node to its
 // domain form. Structural family closure is enforced by the schema for decoded
 // documents and by validation for typed callers.
-func automationConditionFromJSON(value automationConditionJSON) AutomationCondition {
-	condition := AutomationCondition{ID: value.ID, Kind: value.Kind}
+func automationConditionFromJSON(value automationConditionJSON) Condition {
+	condition := Condition{ID: value.ID, Kind: value.Kind}
 	switch value.Kind {
-	case AutomationConditionEntityState:
+	case ConditionEntityState:
 		pointer := ""
 		if value.Pointer != nil {
 			pointer = *value.Pointer
@@ -82,14 +82,14 @@ func automationConditionFromJSON(value automationConditionJSON) AutomationCondit
 			Operand:       value.Operand,
 			MaxAgeSeconds: value.MaxAgeSeconds,
 		}
-	case AutomationConditionAll, AutomationConditionAny:
+	case ConditionAll, ConditionAny:
 		if len(value.Children) > 0 {
-			condition.Children = make([]AutomationCondition, 0, len(value.Children))
+			condition.Children = make([]Condition, 0, len(value.Children))
 			for _, child := range value.Children {
 				condition.Children = append(condition.Children, automationConditionFromJSON(child))
 			}
 		}
-	case AutomationConditionNot:
+	case ConditionNot:
 		if value.Child != nil {
 			child := automationConditionFromJSON(*value.Child)
 			condition.Child = &child
@@ -101,7 +101,7 @@ func automationConditionFromJSON(value automationConditionJSON) AutomationCondit
 
 // decodeConditionTree maps an optional persisted Condition tree to an owned
 // domain tree.
-func decodeConditionTree(value *automationConditionJSON) *AutomationCondition {
+func decodeConditionTree(value *automationConditionJSON) *Condition {
 	if value == nil {
 		return nil
 	}

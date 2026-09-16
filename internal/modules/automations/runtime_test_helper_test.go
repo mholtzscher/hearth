@@ -203,8 +203,8 @@ func (scripted *scriptedDevices) executionCount() int {
 // runtimeTestDependencies is a fixed clock and deterministic identity source so
 // tests never depend on wall time or random UUID ordering. The fixed retention
 // window lets retention tests prune against the same fixture clock.
-func runtimeTestDependencies() automations.AutomationDependencies {
-	return automations.AutomationDependencies{
+func runtimeTestDependencies() automations.Dependencies {
+	return automations.Dependencies{
 		Now:              func() time.Time { return runtimeTestNow },
 		HistoryRetention: runtimeTestHistoryRetention,
 	}
@@ -236,13 +236,13 @@ func openAutomationDatabase(t *testing.T) *sql.DB {
 // production-default dependencies.
 func newAutomationRepository(t *testing.T, database *sql.DB) *automationssqlite.AutomationRepository {
 	t.Helper()
-	return automationssqlite.NewAutomationRepository(database, automations.AutomationDependencies{})
+	return automationssqlite.NewAutomationRepository(database, automations.Dependencies{})
 }
 
 func newRuntimeService(
 	t *testing.T,
 	scripted *scriptedDevices,
-	dependencies automations.AutomationDependencies,
+	dependencies automations.Dependencies,
 ) (*automations.Service, *sql.DB) {
 	t.Helper()
 	database := openAutomationDatabase(t)
@@ -253,12 +253,12 @@ func newRuntimeService(
 
 // runtimeDefinition builds one enabled definition with the requested number of
 // ordered Steps and a single Observation Trigger.
-func runtimeDefinition(t *testing.T, stepCount int) automations.AutomationDefinition {
+func runtimeDefinition(t *testing.T, stepCount int) automations.Definition {
 	t.Helper()
-	definition := automations.AutomationDefinition{
+	definition := automations.Definition{
 		Name:    "Runtime automation",
 		Enabled: true,
-		Triggers: []automations.AutomationTrigger{{
+		Triggers: []automations.Trigger{{
 			ID:   "trigger",
 			Kind: automations.TriggerKindObservation,
 			Observation: &automations.ObservationTrigger{
@@ -271,7 +271,7 @@ func runtimeDefinition(t *testing.T, stepCount int) automations.AutomationDefini
 		}},
 	}
 	for index := range stepCount {
-		definition.Steps = append(definition.Steps, automations.AutomationStep{
+		definition.Steps = append(definition.Steps, automations.Step{
 			ID:            automations.StepID(fmt.Sprintf("step_%d", index)),
 			EntityID:      newEntityID(t),
 			OperationName: devices.OperationNameSet,
@@ -286,7 +286,7 @@ func runtimeDefinition(t *testing.T, stepCount int) automations.AutomationDefini
 func runtimeDefinitionFor(
 	t *testing.T,
 	triggerEntity devices.EntityID,
-) automations.AutomationDefinition {
+) automations.Definition {
 	t.Helper()
 	definition := runtimeDefinition(t, 1)
 	definition.Triggers[0].Observation.EntityID = triggerEntity
@@ -325,8 +325,8 @@ func newObservationFact(
 func createRuntimeAutomation(
 	t *testing.T,
 	service *automations.Service,
-	definition automations.AutomationDefinition,
-) automations.AutomationRecord {
+	definition automations.Definition,
+) automations.Record {
 	t.Helper()
 	record, err := service.CreateAutomation(context.Background(), definition)
 	if err != nil {
@@ -349,7 +349,7 @@ func historyEntry(
 	service *automations.Service,
 	automationID automations.AutomationID,
 	entryID string,
-) automations.AutomationHistoryEntry {
+) automations.HistoryEntry {
 	t.Helper()
 	entry, err := service.GetHistoryEntry(context.Background(), automationID, entryID)
 	if err != nil {
@@ -362,7 +362,7 @@ func listHistory(
 	t *testing.T,
 	service *automations.Service,
 	automationID automations.AutomationID,
-) []automations.AutomationHistorySummary {
+) []automations.HistorySummary {
 	t.Helper()
 	page, err := service.ListHistory(context.Background(), automations.ListHistoryParams{AutomationID: automationID})
 	if err != nil {

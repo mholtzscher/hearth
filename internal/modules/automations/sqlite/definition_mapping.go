@@ -10,29 +10,29 @@ import (
 
 // automationRecord decodes one stored row and rejects a malformed identity,
 // revision, timestamp, or definition instead of exposing partially trusted data.
-func automationRecord(row dbsqlc.Automation) (automations.AutomationRecord, error) {
+func automationRecord(row dbsqlc.Automation) (automations.Record, error) {
 	id, err := automations.ParseAutomationID(row.ID)
 	if err != nil {
-		return automations.AutomationRecord{}, fmt.Errorf("stored automation: %w", err)
+		return automations.Record{}, fmt.Errorf("stored automation: %w", err)
 	}
 	if row.Revision < 1 {
-		return automations.AutomationRecord{}, fmt.Errorf(
+		return automations.Record{}, fmt.Errorf(
 			"%w: stored automation %q revision %d", automations.ErrInvalidAutomation, id, row.Revision,
 		)
 	}
-	definition, err := automations.DecodeAutomationDefinition(json.RawMessage(row.DefinitionJson))
+	definition, err := automations.DecodeDefinition(json.RawMessage(row.DefinitionJson))
 	if err != nil {
-		return automations.AutomationRecord{}, fmt.Errorf("stored automation %q: %w", id, err)
+		return automations.Record{}, fmt.Errorf("stored automation %q: %w", id, err)
 	}
 	createdAt, err := decodeAutomationTimestamp(row.CreatedAt)
 	if err != nil {
-		return automations.AutomationRecord{}, fmt.Errorf("stored automation %q created_at: %w", id, err)
+		return automations.Record{}, fmt.Errorf("stored automation %q created_at: %w", id, err)
 	}
 	updatedAt, err := decodeAutomationTimestamp(row.UpdatedAt)
 	if err != nil {
-		return automations.AutomationRecord{}, fmt.Errorf("stored automation %q updated_at: %w", id, err)
+		return automations.Record{}, fmt.Errorf("stored automation %q updated_at: %w", id, err)
 	}
-	return automations.AutomationRecord{
+	return automations.Record{
 		ID:         id,
 		Revision:   row.Revision,
 		Definition: definition,

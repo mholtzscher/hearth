@@ -13,14 +13,14 @@ import (
 // canonical aut_-prefixed UUIDv7.
 type AutomationID string
 
-// AutomationRunID is the durable identity of one Automation Run: a canonical
+// RunID is the durable identity of one Automation Run: a canonical
 // arn_-prefixed UUIDv7. The arn_ prefix deliberately differs from the adapter
 // runtime identity, which uses run_.
-type AutomationRunID string
+type RunID string
 
-// AutomationSkipID is the durable identity of one recorded Skip: a canonical
+// SkipID is the durable identity of one recorded Skip: a canonical
 // ask_-prefixed UUIDv7.
-type AutomationSkipID string
+type SkipID string
 
 // TriggerID is an author-supplied subject-safe slug identifying one Trigger
 // within its own definition.
@@ -83,42 +83,42 @@ type EntityEventTrigger struct {
 	EventName devices.EntityEventName
 }
 
-// AutomationTrigger is one identified typed Trigger. Exactly one family payload
+// Trigger is one identified typed Trigger. Exactly one family payload
 // is set: Observation iff Kind is TriggerKindObservation, EntityEvent iff Kind
 // is TriggerKindEntityEvent.
-type AutomationTrigger struct {
+type Trigger struct {
 	ID          TriggerID
 	Kind        TriggerKind
 	Observation *ObservationTrigger
 	EntityEvent *EntityEventTrigger
 }
 
-// AutomationStep is one identified, execution-ordered Command: exact Entity,
+// Step is one identified, execution-ordered Command: exact Entity,
 // Operation, and normalized static JSON parameters.
-type AutomationStep struct {
+type Step struct {
 	ID            StepID
 	EntityID      devices.EntityID
 	OperationName devices.OperationName
 	Parameters    devices.CommandParameters
 }
 
-// AutomationDefinition is one complete, normalized Automation document.
+// Definition is one complete, normalized Automation document.
 // Conditions is optional: omission preserves unconditional-after-Trigger
 // behavior and explicit JSON null is invalid.
-type AutomationDefinition struct {
+type Definition struct {
 	Name       string // 1–200 runes, trimmed; not unique
 	Enabled    bool
-	Triggers   []AutomationTrigger // 1–32, IDs unique
-	Conditions *AutomationCondition
-	Steps      []AutomationStep // 1–32, IDs unique and execution ordered
+	Triggers   []Trigger // 1–32, IDs unique
+	Conditions *Condition
+	Steps      []Step // 1–32, IDs unique and execution ordered
 }
 
-// AutomationRecord is one live definition at its current revision. Revision
+// Record is one live definition at its current revision. Revision
 // starts at 1 and increments by one on replacement.
-type AutomationRecord struct {
+type Record struct {
 	ID         AutomationID
 	Revision   int64
-	Definition AutomationDefinition
+	Definition Definition
 	CreatedAt  time.Time
 	UpdatedAt  time.Time
 }
@@ -187,7 +187,7 @@ type AdmissionOutcome struct {
 // workers and log Skips only after the transaction commits.
 type AdmissionResult struct {
 	Outcome     AdmissionOutcome
-	StartedRuns []AutomationRun
+	StartedRuns []Run
 	Skips       []AdmissionSkip
 }
 
@@ -196,11 +196,11 @@ type AdmissionResult struct {
 // snapshots. FactID, Family, and Variant are set only for a device-fact Skip, so
 // a manual Skip never logs fabricated empty Fact fields.
 type AdmissionSkip struct {
-	SkipID       AutomationSkipID
+	SkipID       SkipID
 	AutomationID AutomationID
 	Revision     int64
 	Source       RunSource
-	Reason       AutomationSkipReason
+	Reason       SkipReason
 	FactID       *devices.DeviceFactID
 	Family       DeviceFactFamily
 	Variant      string
@@ -250,9 +250,9 @@ const (
 	StepInterrupted StepStatus = "interrupted"
 )
 
-// AutomationStepAttempt records an ordered Step's execution state.
+// StepAttempt records an ordered Step's execution state.
 // Reserved identities are private; only verified Command links are exposed.
-type AutomationStepAttempt struct {
+type StepAttempt struct {
 	Position              int
 	StepID                StepID
 	Status                StepStatus
@@ -264,92 +264,92 @@ type AutomationStepAttempt struct {
 	CompletedAt           *time.Time
 }
 
-// AutomationRun tracks execution of an immutable definition snapshot,
+// Run tracks execution of an immutable definition snapshot,
 // retaining admission provenance and ordered Step attempts.
-type AutomationRun struct {
-	ID                AutomationRunID
+type Run struct {
+	ID                RunID
 	AutomationID      AutomationID
 	AutomationName    string
 	Revision          int64
-	Snapshot          AutomationDefinition
+	Snapshot          Definition
 	Source            RunSource
 	Fact              *DeviceFactSummary // non-nil iff Source is RunSourceDeviceFact
 	MatchedTriggerIDs []TriggerID        // empty iff Source is RunSourceManual
-	ConditionDecision AutomationConditionDecision
+	ConditionDecision ConditionDecision
 	Status            RunStatus
 	FailureCode       *string
 	StartedAt         time.Time
 	CompletedAt       *time.Time
-	Steps             []AutomationStepAttempt
+	Steps             []StepAttempt
 }
 
-// AutomationSkipReason identifies why a matching Fact did not start a Run.
-type AutomationSkipReason string
+// SkipReason identifies why a matching Fact did not start a Run.
+type SkipReason string
 
 const (
-	// AutomationSkipBusy marks a matching Automation that already had a running Run.
-	AutomationSkipBusy AutomationSkipReason = "automation_busy"
-	// AutomationSkipStaleFact marks a matching Fact older than the freshness bound.
-	AutomationSkipStaleFact AutomationSkipReason = "stale_fact"
-	// AutomationSkipConditionsFalse marks a matching Automation whose Conditions
+	// SkipBusy marks a matching Automation that already had a running Run.
+	SkipBusy SkipReason = "automation_busy"
+	// SkipStaleFact marks a matching Fact older than the freshness bound.
+	SkipStaleFact SkipReason = "stale_fact"
+	// SkipConditionsFalse marks a matching Automation whose Conditions
 	// evaluated false.
-	AutomationSkipConditionsFalse AutomationSkipReason = "conditions_false"
-	// AutomationSkipConditionsUnknown marks a matching Automation whose Conditions
+	SkipConditionsFalse SkipReason = "conditions_false"
+	// SkipConditionsUnknown marks a matching Automation whose Conditions
 	// evaluated unknown.
-	AutomationSkipConditionsUnknown AutomationSkipReason = "conditions_unknown"
+	SkipConditionsUnknown SkipReason = "conditions_unknown"
 )
 
-// AutomationSkip is one recorded non-Run outcome with its admission provenance,
+// Skip is one recorded non-Run outcome with its admission provenance,
 // immutable matching Trigger snapshots, and an admission Condition decision. A
 // device-fact Skip carries complete Fact evidence and at least one matched
 // Trigger; a manual Skip carries neither and is scoped to the manual
 // Condition-blocked reasons.
-type AutomationSkip struct {
-	ID                AutomationSkipID
+type Skip struct {
+	ID                SkipID
 	AutomationID      AutomationID
 	AutomationName    string
 	Revision          int64
-	Source            RunSource           // device_fact or manual admission provenance
-	Fact              *DeviceFactSummary  // non-nil iff Source is RunSourceDeviceFact
-	MatchedTriggers   []AutomationTrigger // nonempty iff Source is RunSourceDeviceFact
-	Reason            AutomationSkipReason
-	ConditionDecision AutomationConditionDecision
+	Source            RunSource          // device_fact or manual admission provenance
+	Fact              *DeviceFactSummary // non-nil iff Source is RunSourceDeviceFact
+	MatchedTriggers   []Trigger          // nonempty iff Source is RunSourceDeviceFact
+	Reason            SkipReason
+	ConditionDecision ConditionDecision
 	SkippedAt         time.Time
 }
 
-// AutomationHistoryKind discriminates a retained Run from a retained Skip.
-type AutomationHistoryKind string
+// HistoryKind discriminates a retained Run from a retained Skip.
+type HistoryKind string
 
 const (
-	// AutomationHistoryRun identifies a retained Run.
-	AutomationHistoryRun AutomationHistoryKind = "run"
-	// AutomationHistorySkip identifies a retained Skip.
-	AutomationHistorySkip AutomationHistoryKind = "skip"
+	// HistoryRun identifies a retained Run.
+	HistoryRun HistoryKind = "run"
+	// HistorySkip identifies a retained Skip.
+	HistorySkip HistoryKind = "skip"
 )
 
-// AutomationHistoryEntry is exactly one retained history record.
-type AutomationHistoryEntry struct {
-	Kind AutomationHistoryKind
-	Run  *AutomationRun
-	Skip *AutomationSkip
+// HistoryEntry is exactly one retained history record.
+type HistoryEntry struct {
+	Kind HistoryKind
+	Run  *Run
+	Skip *Skip
 }
 
-// AutomationHistorySummary is the lightweight listing projection of one
+// HistorySummary is the lightweight listing projection of one
 // retained history record. It carries the admission source and Condition
 // decision mode, but never the full tree or predicate values.
-type AutomationHistorySummary struct {
+type HistorySummary struct {
 	ID              string
-	Kind            AutomationHistoryKind
+	Kind            HistoryKind
 	AutomationID    AutomationID
 	AutomationName  string
 	Revision        int64
 	RecordedAt      time.Time
-	Status          RunStatus            // set iff Kind is AutomationHistoryRun
-	Reason          AutomationSkipReason // set iff Kind is AutomationHistorySkip
-	Source          RunSource            // admission provenance
-	Fact            *DeviceFactSummary   // nil for a manual Run or manual Skip
-	ConditionMode   AutomationConditionDecisionMode
-	ConditionResult *AutomationConditionResult // set iff Conditions were evaluated
+	Status          RunStatus          // set iff Kind is HistoryRun
+	Reason          SkipReason         // set iff Kind is HistorySkip
+	Source          RunSource          // admission provenance
+	Fact            *DeviceFactSummary // nil for a manual Run or manual Skip
+	ConditionMode   ConditionDecisionMode
+	ConditionResult *ConditionResult // set iff Conditions were evaluated
 	BypassRequested bool
 }
 
@@ -368,8 +368,8 @@ type ListHistoryParams struct {
 	Limit            int
 }
 
-// AutomationPage is one keyset page of automation-owned records.
-type AutomationPage[T any] struct {
+// Page is one keyset page of automation-owned records.
+type Page[T any] struct {
 	Items   []T
 	HasMore bool
 }
@@ -381,12 +381,12 @@ const (
 	automationMaximumPageLimit = 200
 )
 
-// AutomationPageLimit resolves one requested page limit to the effective page
+// PageLimit resolves one requested page limit to the effective page
 // size: an omitted limit becomes automationDefaultPageLimit, and anything
 // outside 1 through automationMaximumPageLimit is an [ErrInvalidAutomation].
 // Persistence applies it so a direct repository caller gets the same bounded
 // page as one that arrived through the HTTP request schema's matching bounds.
-func AutomationPageLimit(limit int) (int, error) {
+func PageLimit(limit int) (int, error) {
 	switch {
 	case limit == 0:
 		return automationDefaultPageLimit, nil
@@ -402,7 +402,7 @@ func AutomationPageLimit(limit int) (int, error) {
 
 // StepStart reserves and records one Step's Command identity before execution.
 type StepStart struct {
-	RunID         AutomationRunID
+	RunID         RunID
 	Position      int
 	CommandID     devices.CommandID
 	CorrelationID devices.CorrelationID
@@ -410,7 +410,7 @@ type StepStart struct {
 
 // StepCompletion records one Step's established terminal outcome.
 type StepCompletion struct {
-	RunID             AutomationRunID
+	RunID             RunID
 	Position          int
 	Status            StepStatus
 	VerifiedCommandID *devices.CommandID
@@ -419,36 +419,36 @@ type StepCompletion struct {
 
 // RunCompletion records one Run's established terminal state.
 type RunCompletion struct {
-	RunID       AutomationRunID
+	RunID       RunID
 	Status      RunStatus
 	FailureCode *string
 }
 
-// NewAutomationRunSnapshot builds one Run from a persisted definition record, an
+// NewRunSnapshot builds one Run from a persisted definition record, an
 // identity the caller already minted, and its committed admission Condition
 // decision. It takes ownership of record.Definition and fact, which callers must
 // not mutate afterward, and copies matchedTriggerIDs. Every Step starts at
 // not_attempted in definition order. Persistence mints the Run identity inside
 // its admission transaction and then writes this snapshot; construction performs
 // no reads or writes of its own.
-func NewAutomationRunSnapshot(
-	record AutomationRecord,
-	runID AutomationRunID,
+func NewRunSnapshot(
+	record Record,
+	runID RunID,
 	source RunSource,
 	fact *DeviceFactSummary,
 	matchedTriggerIDs []TriggerID,
-	conditionDecision AutomationConditionDecision,
+	conditionDecision ConditionDecision,
 	admittedAt time.Time,
-) AutomationRun {
-	steps := make([]AutomationStepAttempt, len(record.Definition.Steps))
+) Run {
+	steps := make([]StepAttempt, len(record.Definition.Steps))
 	for position, step := range record.Definition.Steps {
-		steps[position] = AutomationStepAttempt{
+		steps[position] = StepAttempt{
 			Position: position,
 			StepID:   step.ID,
 			Status:   StepNotAttempted,
 		}
 	}
-	return AutomationRun{
+	return Run{
 		ID:                runID,
 		AutomationID:      record.ID,
 		AutomationName:    record.Definition.Name,
@@ -465,7 +465,7 @@ func NewAutomationRunSnapshot(
 }
 
 // EntityID reports the single Entity this Trigger constrains.
-func (trigger AutomationTrigger) EntityID() devices.EntityID {
+func (trigger Trigger) EntityID() devices.EntityID {
 	switch trigger.Kind {
 	case TriggerKindObservation:
 		if trigger.Observation != nil {
@@ -538,9 +538,9 @@ func ValidateDeviceFactSummary(summary DeviceFactSummary) error {
 	return nil
 }
 
-// ValidateAutomationTrigger rejects a Trigger whose identity, family payload,
+// ValidateTrigger rejects a Trigger whose identity, family payload,
 // or typed fields are impossible.
-func ValidateAutomationTrigger(trigger AutomationTrigger) error {
+func ValidateTrigger(trigger Trigger) error {
 	if _, err := ParseTriggerID(string(trigger.ID)); err != nil {
 		return err
 	}
@@ -560,10 +560,10 @@ func ValidateAutomationTrigger(trigger AutomationTrigger) error {
 	}
 }
 
-// ValidateAutomationRun rejects a Run whose identity, provenance, snapshot,
+// ValidateRun rejects a Run whose identity, provenance, snapshot,
 // status, timestamps, or ordered Steps are impossible.
-func ValidateAutomationRun(run AutomationRun) error {
-	if _, err := ParseAutomationRunID(string(run.ID)); err != nil {
+func ValidateRun(run Run) error {
+	if _, err := ParseRunID(string(run.ID)); err != nil {
 		return err
 	}
 	if _, err := ParseAutomationID(string(run.AutomationID)); err != nil {
@@ -572,7 +572,7 @@ func ValidateAutomationRun(run AutomationRun) error {
 	if run.Revision < 1 {
 		return invalidRun(run.ID, "revision must be at least 1")
 	}
-	if _, err := NormalizeAutomationDefinition(run.Snapshot); err != nil {
+	if _, err := NormalizeDefinition(run.Snapshot); err != nil {
 		return invalidRun(run.ID, "definition snapshot is invalid")
 	}
 	if err := validateRunProvenance(run); err != nil {
@@ -598,13 +598,13 @@ func ValidateAutomationRun(run AutomationRun) error {
 	return nil
 }
 
-// ValidateAutomationSkip rejects a Skip whose identity, admission provenance,
+// ValidateSkip rejects a Skip whose identity, admission provenance,
 // Fact evidence, matched Trigger snapshots, reason, Condition decision, or
 // timestamp is impossible. A device-fact Skip carries complete Fact evidence and
 // at least one matched Trigger; a manual Skip carries neither and records only a
 // manual Condition-blocked reason.
-func ValidateAutomationSkip(skip AutomationSkip) error {
-	if _, err := ParseAutomationSkipID(string(skip.ID)); err != nil {
+func ValidateSkip(skip Skip) error {
+	if _, err := ParseSkipID(string(skip.ID)); err != nil {
 		return err
 	}
 	if _, err := ParseAutomationID(string(skip.AutomationID)); err != nil {
@@ -617,7 +617,7 @@ func ValidateAutomationSkip(skip AutomationSkip) error {
 		return err
 	}
 	switch skip.Reason {
-	case AutomationSkipBusy, AutomationSkipStaleFact, AutomationSkipConditionsFalse, AutomationSkipConditionsUnknown:
+	case SkipBusy, SkipStaleFact, SkipConditionsFalse, SkipConditionsUnknown:
 	default:
 		return invalidSkip(skip.ID, fmt.Sprintf("unknown reason %q", skip.Reason))
 	}
@@ -630,7 +630,7 @@ func ValidateAutomationSkip(skip AutomationSkip) error {
 // validateSkipProvenance checks the Source-discriminated Skip family: complete
 // Fact evidence with matched Triggers for a device-fact Skip, and no Fact or
 // Trigger evidence for a manual Skip.
-func validateSkipProvenance(skip AutomationSkip) error {
+func validateSkipProvenance(skip Skip) error {
 	switch skip.Source {
 	case RunSourceDeviceFact:
 		if skip.Fact == nil {
@@ -649,7 +649,7 @@ func validateSkipProvenance(skip AutomationSkip) error {
 		if len(skip.MatchedTriggers) != 0 {
 			return invalidSkip(skip.ID, "manual Skip carries matched triggers")
 		}
-		if skip.Reason != AutomationSkipConditionsFalse && skip.Reason != AutomationSkipConditionsUnknown {
+		if skip.Reason != SkipConditionsFalse && skip.Reason != SkipConditionsUnknown {
 			return invalidSkip(skip.ID, "manual Skip reason must be a condition outcome")
 		}
 	default:
@@ -657,7 +657,7 @@ func validateSkipProvenance(skip AutomationSkip) error {
 	}
 	seen := make(map[TriggerID]bool, len(skip.MatchedTriggers))
 	for _, trigger := range skip.MatchedTriggers {
-		if err := ValidateAutomationTrigger(trigger); err != nil {
+		if err := ValidateTrigger(trigger); err != nil {
 			return err
 		}
 		if seen[trigger.ID] {
@@ -756,7 +756,7 @@ func validateEntityEventTrigger(trigger EntityEventTrigger) error {
 	return nil
 }
 
-func validateRunProvenance(run AutomationRun) error {
+func validateRunProvenance(run Run) error {
 	switch run.Source {
 	case RunSourceDeviceFact:
 		if run.Fact == nil {
@@ -778,7 +778,7 @@ func validateRunProvenance(run AutomationRun) error {
 	return validateMatchedTriggerIDs(run)
 }
 
-func validateMatchedTriggerIDs(run AutomationRun) error {
+func validateMatchedTriggerIDs(run Run) error {
 	seen := make(map[TriggerID]bool, len(run.MatchedTriggerIDs))
 	next := 0
 	for _, trigger := range run.Snapshot.Triggers {
@@ -796,7 +796,7 @@ func validateMatchedTriggerIDs(run AutomationRun) error {
 	return nil
 }
 
-func validateRunStatus(run AutomationRun) error {
+func validateRunStatus(run Run) error {
 	switch run.Status {
 	case RunRunning, RunSucceeded, RunFailed, RunInterrupted:
 	default:
@@ -817,7 +817,7 @@ func validateRunStatus(run AutomationRun) error {
 	return nil
 }
 
-func validateStepAttempt(run AutomationRun, position int, step AutomationStepAttempt) error {
+func validateStepAttempt(run Run, position int, step StepAttempt) error {
 	if step.Position != position {
 		return invalidRun(run.ID, "step positions must be contiguous and zero-based")
 	}
@@ -876,10 +876,10 @@ func invalidTrigger(id TriggerID, message string) error {
 	return fmt.Errorf("%w: trigger %q: %s", ErrInvalidAutomation, id, message)
 }
 
-func invalidRun(id AutomationRunID, message string) error {
+func invalidRun(id RunID, message string) error {
 	return fmt.Errorf("%w: run %q: %s", ErrInvalidAutomation, id, message)
 }
 
-func invalidSkip(id AutomationSkipID, message string) error {
+func invalidSkip(id SkipID, message string) error {
 	return fmt.Errorf("%w: skip %q: %s", ErrInvalidAutomation, id, message)
 }

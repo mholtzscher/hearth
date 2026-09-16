@@ -4,7 +4,7 @@
 **Supersedes:** [Entity Event automations](entity-event-automations.md).
 **Baseline:** `1f9a2b0`; Device Facts are implemented. Do not restore the automation module removed in `423addb` wholesale.
 **Effort:** XL, split into four ordered deliverables.
-**Follow-on:** [Automation Conditions](automation-conditions.md) specifies optional current-State Conditions, explicit manual bypass, and condition-blocked automatic/manual Skips. It amends §3.1's definition field list, §3.4–§3.5's admission contracts, §4's current-State lookup exclusion (history lookups remain excluded), and the `AutomationSkip`/`AutomationSkipReason` and manual-admission type/interface listings below. The original implementation baseline is retained here; use the follow-on spec for those changed contracts.
+**Follow-on:** [Automation Conditions](automation-conditions.md) specifies optional current-State Conditions, explicit manual bypass, and condition-blocked automatic/manual Skips. It amends §3.1's definition field list, §3.4–§3.5's admission contracts, §4's current-State lookup exclusion (history lookups remain excluded), and the `Skip`/`SkipReason` and manual-admission type/interface listings below. The original implementation baseline is retained here; use the follow-on spec for those changed contracts.
 
 ## 1. Problem statement
 
@@ -140,8 +140,8 @@ Owned by new files under `internal/modules/automations/`:
 
 ```go
 type AutomationID string     // aut_<UUIDv7>
-type AutomationRunID string  // arn_<UUIDv7>; run_ remains Adapter runtime
-type AutomationSkipID string // ask_<UUIDv7>
+type RunID string  // arn_<UUIDv7>; run_ remains Adapter runtime
+type SkipID string // ask_<UUIDv7>
 
 type TriggerID string // subject-safe slug, 1–63 bytes
 type StepID string    // subject-safe slug, 1–63 bytes
@@ -179,31 +179,31 @@ type EntityEventTrigger struct {
     EventName devices.EntityEventName
 }
 
-type AutomationTrigger struct {
+type Trigger struct {
     ID          TriggerID
     Kind        TriggerKind
     Observation *ObservationTrigger // set iff KindObservation
     EntityEvent *EntityEventTrigger // set iff KindEntityEvent
 }
 
-type AutomationStep struct {
+type Step struct {
     ID            StepID
     EntityID      devices.EntityID
     OperationName devices.OperationName
     Parameters    devices.CommandParameters // normalized static JSON object
 }
 
-type AutomationDefinition struct {
+type Definition struct {
     Name     string // 1–200 runes, trimmed; not unique
     Enabled  bool
-    Triggers []AutomationTrigger // 1–32, IDs unique
-    Steps    []AutomationStep    // 1–32, IDs unique and execution ordered
+    Triggers []Trigger // 1–32, IDs unique
+    Steps    []Step    // 1–32, IDs unique and execution ordered
 }
 
-type AutomationRecord struct {
+type Record struct {
     ID         AutomationID
     Revision   int64 // >=1
-    Definition AutomationDefinition
+    Definition Definition
     CreatedAt  time.Time
     UpdatedAt  time.Time
 }
@@ -325,7 +325,7 @@ const (
     StepInterrupted  StepStatus = "interrupted"
 )
 
-type AutomationStepAttempt struct {
+type StepAttempt struct {
     Position              int // zero-based, immutable
     StepID                StepID
     Status                StepStatus
@@ -337,12 +337,12 @@ type AutomationStepAttempt struct {
     CompletedAt           *time.Time
 }
 
-type AutomationRun struct {
-    ID                AutomationRunID
+type Run struct {
+    ID                RunID
     AutomationID      AutomationID
     AutomationName    string
     Revision          int64
-    Snapshot          AutomationDefinition
+    Snapshot          Definition
     Source            RunSource
     Fact              *DeviceFactSummary // non-nil iff source=device_fact
     MatchedTriggerIDs []TriggerID        // empty iff source=manual
@@ -350,23 +350,23 @@ type AutomationRun struct {
     FailureCode       *string
     StartedAt         time.Time
     CompletedAt       *time.Time
-    Steps             []AutomationStepAttempt
+    Steps             []StepAttempt
 }
 
-type AutomationSkipReason string
+type SkipReason string
 const (
-    AutomationSkipBusy      AutomationSkipReason = "automation_busy"
-    AutomationSkipStaleFact AutomationSkipReason = "stale_fact"
+    SkipBusy      SkipReason = "automation_busy"
+    SkipStaleFact SkipReason = "stale_fact"
 )
 
-type AutomationSkip struct {
-    ID              AutomationSkipID
+type Skip struct {
+    ID              SkipID
     AutomationID    AutomationID
     AutomationName  string
     Revision        int64
     Fact            DeviceFactSummary
-    MatchedTriggers []AutomationTrigger // immutable matching Trigger snapshots
-    Reason          AutomationSkipReason
+    MatchedTriggers []Trigger // immutable matching Trigger snapshots
+    Reason          SkipReason
     SkippedAt       time.Time
 }
 ```
@@ -389,7 +389,7 @@ Focused shape for `internal/app/hearthd/config.go`:
 +
 +const DefaultAutomationHistoryRetention = 30 * 24 * time.Hour
 +const MinimumAutomationHistoryRetention = 8 * 24 * time.Hour
-+const AutomationFactMaximumAge = 30 * time.Second
++const FactMaximumAge = 30 * time.Second
 ```
 
 `AutomationHistoryRetention == 0` selects 30 days; non-zero values below eight days fail config validation. Fact maximum age is deliberately a fixed semantic constant, not operator configuration. `configs/hearthd.example.yaml` documents the retention key.
@@ -442,48 +442,48 @@ Add the two read-only validation methods to `devices.Service`. Observation valid
 ### 8.2 Repository and service
 
 ```go
-type AutomationRepository interface {
-    CreateAutomation(context.Context, AutomationDefinition) (AutomationRecord, error)
-    GetAutomation(context.Context, AutomationID) (AutomationRecord, error)
-    ListAutomations(context.Context, ListAutomationsParams) (AutomationPage[AutomationRecord], error)
-    ReplaceAutomation(context.Context, AutomationID, int64, AutomationDefinition) (AutomationRecord, error)
+type Repository interface {
+    CreateAutomation(context.Context, Definition) (Record, error)
+    GetAutomation(context.Context, AutomationID) (Record, error)
+    ListAutomations(context.Context, ListAutomationsParams) (Page[Record], error)
+    ReplaceAutomation(context.Context, AutomationID, int64, Definition) (Record, error)
     DeleteAutomation(context.Context, AutomationID, int64) error
     AdmitDeviceFact(context.Context, DeviceFact, time.Time) (AdmissionResult, error)
-    AdmitManualRun(context.Context, AutomationID, time.Time) (AutomationRun, error)
+    AdmitManualRun(context.Context, AutomationID, time.Time) (Run, error)
     MarkStepRunning(context.Context, StepStart) error
     CompleteStep(context.Context, StepCompletion) error
     CompleteRun(context.Context, RunCompletion) error
-    GetHistoryEntry(context.Context, AutomationID, string) (AutomationHistoryEntry, error)
-    ListHistory(context.Context, ListHistoryParams) (AutomationPage[AutomationHistorySummary], error)
+    GetHistoryEntry(context.Context, AutomationID, string) (HistoryEntry, error)
+    ListHistory(context.Context, ListHistoryParams) (Page[HistorySummary], error)
     InterruptActiveRuns(context.Context, time.Time, string) error
     DeleteHistoryBefore(context.Context, time.Time, int) (int64, error)
 }
 
-type AutomationDependencies struct {
+type Dependencies struct {
     Logger           *slog.Logger
     Now              func() time.Time
     NewAutomationID  func() (AutomationID, error)
-    NewRunID         func() (AutomationRunID, error)
-    NewSkipID        func() (AutomationSkipID, error)
+    NewRunID         func() (RunID, error)
+    NewSkipID        func() (SkipID, error)
     NewCommandID     func() (devices.CommandID, error)
     NewCorrelationID func() (devices.CorrelationID, error)
 }
 
 func NewService(
-    repository AutomationRepository,
+    repository Repository,
     devices AutomationDevices,
-    dependencies AutomationDependencies,
+    dependencies Dependencies,
 ) *Service
 
-func (service *Service) CreateAutomation(context.Context, AutomationDefinition) (AutomationRecord, error)
-func (service *Service) GetAutomation(context.Context, AutomationID) (AutomationRecord, error)
-func (service *Service) ListAutomations(context.Context, ListAutomationsParams) (AutomationPage[AutomationRecord], error)
-func (service *Service) ReplaceAutomation(context.Context, AutomationID, int64, AutomationDefinition) (AutomationRecord, error)
+func (service *Service) CreateAutomation(context.Context, Definition) (Record, error)
+func (service *Service) GetAutomation(context.Context, AutomationID) (Record, error)
+func (service *Service) ListAutomations(context.Context, ListAutomationsParams) (Page[Record], error)
+func (service *Service) ReplaceAutomation(context.Context, AutomationID, int64, Definition) (Record, error)
 func (service *Service) DeleteAutomation(context.Context, AutomationID, int64) error
-func (service *Service) StartManualRun(context.Context, AutomationID) (AutomationRun, error)
+func (service *Service) StartManualRun(context.Context, AutomationID) (Run, error)
 func (service *Service) ReceiveDeviceFact(context.Context, DeviceFact) (AdmissionOutcome, error)
-func (service *Service) GetHistoryEntry(context.Context, AutomationID, string) (AutomationHistoryEntry, error)
-func (service *Service) ListHistory(context.Context, ListHistoryParams) (AutomationPage[AutomationHistorySummary], error)
+func (service *Service) GetHistoryEntry(context.Context, AutomationID, string) (HistoryEntry, error)
+func (service *Service) ListHistory(context.Context, ListHistoryParams) (Page[HistorySummary], error)
 func (service *Service) StopAdmission()
 func (service *Service) AdmissionOpen() bool
 func (service *Service) Drain(context.Context) error
@@ -600,7 +600,7 @@ The process-owned execution context outlives HTTP and NATS caller cancellation b
 
 ### 9.3 Retention
 
-`automation_history_retention` defaults to 30 days and must be at least eight days. App assembly injects the effective window through `AutomationDependencies.HistoryRetention`; the module enforces the eight-day minimum and derives the cutoff from the UTC sweep time passed to `PruneHistory`. The app-owned shared worker performs one background startup pass, then another pass one hour after each preceding pass completes, without overlapping or replaying missed ticks. The service prunes terminal Runs and Skips strictly older than `now-retention` in batches of 500, rechecking cancellation between batches. Active Runs and matched-Fact receipts are never selected. A newly configured window takes effect on the restart's startup pass. The service returns failures without logging; the app logs one safe `core.automation_history_prune_failed` record per failed module pass and retries next hour without failing readiness.
+`automation_history_retention` defaults to 30 days and must be at least eight days. App assembly injects the effective window through `Dependencies.HistoryRetention`; the module enforces the eight-day minimum and derives the cutoff from the UTC sweep time passed to `PruneHistory`. The app-owned shared worker performs one background startup pass, then another pass one hour after each preceding pass completes, without overlapping or replaying missed ticks. The service prunes terminal Runs and Skips strictly older than `now-retention` in batches of 500, rechecking cancellation between batches. Active Runs and matched-Fact receipts are never selected. A newly configured window takes effect on the restart's startup pass. The service returns failures without logging; the app logs one safe `core.automation_history_prune_failed` record per failed module pass and retries next hour without failing readiness.
 
 ### 9.4 Logging
 

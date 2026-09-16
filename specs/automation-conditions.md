@@ -140,25 +140,25 @@ Snippets define the implementation contract, not a demand for unrelated file reo
 ### 3.1 Condition domain in new `automations/conditions.go`
 
 ```go
-// AutomationConditionID identifies one node within a definition's Condition tree.
-type AutomationConditionID string
+// ConditionID identifies one node within a definition's Condition tree.
+type ConditionID string
 
-// AutomationConditionKind is the closed set of Condition node kinds.
-type AutomationConditionKind string
+// ConditionKind is the closed set of Condition node kinds.
+type ConditionKind string
 const (
-    AutomationConditionEntityState AutomationConditionKind = "entity_state"
-    AutomationConditionAll         AutomationConditionKind = "all"
-    AutomationConditionAny         AutomationConditionKind = "any"
-    AutomationConditionNot         AutomationConditionKind = "not"
+    ConditionEntityState ConditionKind = "entity_state"
+    ConditionAll         ConditionKind = "all"
+    ConditionAny         ConditionKind = "any"
+    ConditionNot         ConditionKind = "not"
 )
 
-// AutomationCondition is a bounded discriminated tree; Kind determines its payload.
-type AutomationCondition struct {
-    ID          AutomationConditionID
-    Kind        AutomationConditionKind
+// Condition is a bounded discriminated tree; Kind determines its payload.
+type Condition struct {
+    ID          ConditionID
+    Kind        ConditionKind
     EntityState *EntityStateCondition // entity_state only
-    Children    []AutomationCondition // all/any only, nonempty
-    Child       *AutomationCondition  // not only
+    Children    []Condition // all/any only, nonempty
+    Child       *Condition  // not only
 }
 
 // EntityStateCondition compares one retained State selection with a static operand.
@@ -170,52 +170,52 @@ type EntityStateCondition struct {
     MaxAgeSeconds *int64
 }
 
-// AutomationConditionResult preserves unknown through boolean negation.
-type AutomationConditionResult string
+// ConditionResult preserves unknown through boolean negation.
+type ConditionResult string
 const (
-    AutomationConditionTrue    AutomationConditionResult = "true"
-    AutomationConditionFalse   AutomationConditionResult = "false"
-    AutomationConditionUnknown AutomationConditionResult = "unknown"
+    ConditionTrue    ConditionResult = "true"
+    ConditionFalse   ConditionResult = "false"
+    ConditionUnknown ConditionResult = "unknown"
 )
 
-// AutomationConditionUnknownReason explains unusable predicate evidence.
-type AutomationConditionUnknownReason string
+// ConditionUnknownReason explains unusable predicate evidence.
+type ConditionUnknownReason string
 // Closed literals: entity_missing, state_missing, evidence_in_future,
 // evidence_expired, pointer_missing, type_mismatch; define one named constant each.
 
-// AutomationConditionNodeResult records one node, including selected JSON null.
-type AutomationConditionNodeResult struct {
-    ID            AutomationConditionID
-    Result        AutomationConditionResult
-    UnknownReason *AutomationConditionUnknownReason
+// ConditionNodeResult records one node, including selected JSON null.
+type ConditionNodeResult struct {
+    ID            ConditionID
+    Result        ConditionResult
+    UnknownReason *ConditionUnknownReason
     SelectedValue json.RawMessage // nil = not selected; []byte("null") = selected null
     ObservationID *devices.ObservationID
     ObservedAt    *time.Time
 }
 
-// AutomationConditionEvaluation contains every node in definition pre-order.
-type AutomationConditionEvaluation struct {
+// ConditionEvaluation contains every node in definition pre-order.
+type ConditionEvaluation struct {
     EvaluatedAt time.Time
-    Result      AutomationConditionResult
-    Nodes       []AutomationConditionNodeResult
+    Result      ConditionResult
+    Nodes       []ConditionNodeResult
 }
 
-// AutomationConditionDecisionMode distinguishes evidence from deliberate non-evaluation.
-type AutomationConditionDecisionMode string
+// ConditionDecisionMode distinguishes evidence from deliberate non-evaluation.
+type ConditionDecisionMode string
 // Closed literals: not_configured, not_evaluated, bypassed, evaluated.
 
-// AutomationConditionDecision is immutable admission explanation, not executable work.
-type AutomationConditionDecision struct {
-    Mode            AutomationConditionDecisionMode
+// ConditionDecision is immutable admission explanation, not executable work.
+type ConditionDecision struct {
+    Mode            ConditionDecisionMode
     BypassRequested bool
-    Snapshot        *AutomationCondition
-    Evaluation      *AutomationConditionEvaluation
+    Snapshot        *Condition
+    Evaluation      *ConditionEvaluation
 }
 
-func NormalizeAutomationConditions(root AutomationCondition) (AutomationCondition, error)
-func RequiredConditionEntityIDs(root AutomationCondition) ([]devices.EntityID, error)
-func EvaluateAutomationConditions(root AutomationCondition, snapshot devices.EntityStateSnapshot,
-    evaluatedAt time.Time) (AutomationConditionEvaluation, error)
+func NormalizeConditions(root Condition) (Condition, error)
+func RequiredConditionEntityIDs(root Condition) ([]devices.EntityID, error)
+func EvaluateConditions(root Condition, snapshot devices.EntityStateSnapshot,
+    evaluatedAt time.Time) (ConditionEvaluation, error)
 ```
 
 Evaluation, normalization, and required-ID collection are pure. Required IDs are sorted and deduplicated; malformed typed trees return an error. Evaluation first verifies complete coverage; a missing map key returns `ConditionSnapshotRequiredError` carrying the full tree's required Entity set and an empty evaluation. It never produces a leaf result for an uncovered key. Only a covered `Exists=false` entry produces `entity_missing`, and only a covered `Exists=true, State=nil` entry produces `state_missing`. Reuse internal JSON decoding/Pointer/equality/rational-number helpers in `comparison.go`; add an explicit type-compatibility check before comparing. Do not call the bool-only `MatchObservationComparison` to derive a three-valued result. Existing Trigger tests must remain unchanged and green.
@@ -225,28 +225,28 @@ The bounded discriminated JSON form lives in new `conditions_definition.go` and 
 ### 3.2 Existing automation types in `automations/model.go`
 
 ```diff
-@@ type AutomationDefinition struct {
-     Triggers []AutomationTrigger
-+    Conditions *AutomationCondition
-     Steps []AutomationStep
-@@ type AutomationRun struct {
-     Snapshot AutomationDefinition
-+    ConditionDecision AutomationConditionDecision
-@@ type AutomationSkip struct {
+@@ type Definition struct {
+     Triggers []Trigger
++    Conditions *Condition
+     Steps []Step
+@@ type Run struct {
+     Snapshot Definition
++    ConditionDecision ConditionDecision
+@@ type Skip struct {
 -    Fact DeviceFactSummary
 +    Source RunSource
 +    Fact *DeviceFactSummary
-     MatchedTriggers []AutomationTrigger
-+    ConditionDecision AutomationConditionDecision
-@@ type AutomationHistorySummary struct {
+     MatchedTriggers []Trigger
++    ConditionDecision ConditionDecision
+@@ type HistorySummary struct {
      Fact *DeviceFactSummary
 +    Source RunSource
-+    ConditionMode AutomationConditionDecisionMode
-+    ConditionResult *AutomationConditionResult
++    ConditionMode ConditionDecisionMode
++    ConditionResult *ConditionResult
 +    BypassRequested bool
 ```
 
-Reuse `RunSource`'s existing `device_fact`/`manual` values for Skip provenance; amend its comment to cover admission provenance rather than renaming it throughout the module. Add `AutomationSkipConditionsFalse = "conditions_false"` and `AutomationSkipConditionsUnknown = "conditions_unknown"` to `AutomationSkipReason`.
+Reuse `RunSource`'s existing `device_fact`/`manual` values for Skip provenance; amend its comment to cover admission provenance rather than renaming it throughout the module. Add `SkipConditionsFalse = "conditions_false"` and `SkipConditionsUnknown = "conditions_unknown"` to `SkipReason`.
 
 Extend `AdmissionSkip`'s safe logging projection with Source and nullable Fact identity so manual Skips never log fabricated empty Fact fields. Existing counters keep their meanings. `RecordedSkips` includes Condition Skips, duplicates remain duplicates, and no extra counter is required.
 
@@ -291,10 +291,10 @@ Implement one statement over a requested-ID relation, left-joined to `entities` 
 @@ type AutomationDevices interface {
 +    ValidateConditionEntity(context.Context, devices.EntityID) error
 +    GetEntityStateSnapshot(context.Context, []devices.EntityID) (devices.EntityStateSnapshot, error)
-@@ type AutomationRepository interface {
+@@ type Repository interface {
 -    AdmitDeviceFact(context.Context, DeviceFact, time.Time) (AdmissionResult, error)
 +    AdmitDeviceFact(context.Context, DeviceFact, devices.EntityStateSnapshot, time.Time) (AdmissionResult, error)
--    AdmitManualRun(context.Context, AutomationID, time.Time) (AutomationRun, error)
+-    AdmitManualRun(context.Context, AutomationID, time.Time) (Run, error)
 +    AdmitManualRun(context.Context, ManualRunInput, devices.EntityStateSnapshot, time.Time) (ManualAdmissionResult, error)
 ```
 
@@ -305,8 +305,8 @@ var (
     ErrAutomationConditionsBlocked = errors.New("automation conditions prevented manual admission")
 )
 
-// AutomationAdmissionTimeout bounds one automatic or manual admission, including pre-reads and its transaction.
-const AutomationAdmissionTimeout = 2 * time.Second // conditions_admission.go
+// AdmissionTimeout bounds one automatic or manual admission, including pre-reads and its transaction.
+const AdmissionTimeout = 2 * time.Second // conditions_admission.go
 
 // ManualRunInput carries explicit operator intent; no Command identities are accepted.
 type ManualRunInput struct {
@@ -316,8 +316,8 @@ type ManualRunInput struct {
 
 // ManualAdmissionResult is exactly one successfully committed Run or Skip.
 type ManualAdmissionResult struct {
-    Run  *AutomationRun
-    Skip *AutomationSkip
+    Run  *Run
+    Skip *Skip
 }
 
 // ConditionSnapshotRequiredError reports an uncovered Entity from a definition edit race, never partial admission.
@@ -327,11 +327,11 @@ type ConditionSnapshotRequiredError struct {
 // Error returns "automation condition snapshot coverage is incomplete".
 // Is matches ErrConditionSnapshotRequired; this is internal orchestration, not HTTP 400.
 
-// AutomationConditionsBlockedError refers only to a successfully committed manual Skip.
-type AutomationConditionsBlockedError struct {
+// ConditionsBlockedError refers only to a successfully committed manual Skip.
+type ConditionsBlockedError struct {
     AutomationID AutomationID
-    SkipID       AutomationSkipID
-    Reason       AutomationSkipReason
+    SkipID       SkipID
+    Reason       SkipReason
 }
 // Error returns "automation conditions prevented manual admission".
 // Is matches ErrAutomationConditionsBlocked; the API maps it to 409.
@@ -341,24 +341,24 @@ type AutomationConditionsBlockedError struct {
 --- a/internal/modules/automations/admission.go
 +++ b/internal/modules/automations/admission.go
 @@
--func (service *Service) StartManualRun(ctx context.Context, id AutomationID) (AutomationRun, error)
-+func (service *Service) StartManualRun(ctx context.Context, input ManualRunInput) (AutomationRun, error)
+-func (service *Service) StartManualRun(ctx context.Context, id AutomationID) (Run, error)
++func (service *Service) StartManualRun(ctx context.Context, input ManualRunInput) (Run, error)
 ```
 
-`ReceiveDeviceFact` keeps its public signature. Change `automations/api/register.go`'s `Automations` interface to `StartManualRun(context.Context, automations.ManualRunInput) (automations.AutomationRun, error)`. D3 bridges the existing handler with a false bypass; D4 parses the body. Update every caller and fake, and preserve the compile-time assertion that `*devices.Service` implements `AutomationDevices`.
+`ReceiveDeviceFact` keeps its public signature. Change `automations/api/register.go`'s `Automations` interface to `StartManualRun(context.Context, automations.ManualRunInput) (automations.Run, error)`. D3 bridges the existing handler with a false bypass; D4 parses the body. Update every caller and fake, and preserve the compile-time assertion that `*devices.Service` implements `AutomationDevices`.
 
 ### 3.5 Pre-read, coverage-gated orchestration
 
 Transaction-loaded definitions are the admission authority. Automatic and manual admission use this protocol:
 
 1. Acquire the existing admission reservation and check existing gates. Keep the reservation through definition and evidence pre-reads and the final outcome.
-2. Wrap the pre-reads and one repository transaction in the two-second `automations.AutomationAdmissionTimeout`, shortened by the caller's earlier deadline. The NATS `DeviceFactAdmissionTimeout` remains an alias of that constant; HTTP never imports NATS.
+2. Wrap the pre-reads and one repository transaction in the two-second `automations.AdmissionTimeout`, shortened by the caller's earlier deadline. The NATS `DeviceFactAdmissionTimeout` remains an alias of that constant; HTTP never imports NATS.
 3. For automatic admission, Service reads every enabled definition, matches Triggers with the Fact, and computes the sorted, deduplicated Entity union required by matching configured Conditions. For manual admission, Service reads the requested definition and computes its required set only when Conditions are configured and bypass was not requested.
 4. Service reads that complete set through devices once in one coherent batch (or uses an empty snapshot when none is required), then invokes the repository exactly once. It never merges samples from different reads.
 5. Inside the repository transaction, load current definitions and plan **all** matching outcomes without writes or identity allocation. Apply duplicate/stale/busy precedence before evaluating eligible, non-bypassed Conditions.
 6. Return `ConditionSnapshotRequiredError` if the transaction's current eligible Conditions require an Entity absent from the supplied snapshot. Return the affected definition's complete sorted required set, roll back, and return an empty result. This is a rare definition-edit race; do not persist even stale/busy/unconditional sibling outcomes on that pass.
 7. With coverage, evaluate every eligible tree, validate all proposed decisions, then atomically persist all Fact outcomes and receipts (or one manual Run/Skip). Any error rolls the whole transaction back. Return only successfully committed results.
-8. Register Run workers or log Skips after commit. For a manual Skip, release the reservation and construct `AutomationConditionsBlockedError` after success, outside the transaction callback.
+8. Register Run workers or log Skips after commit. For a manual Skip, release the reservation and construct `ConditionsBlockedError` after success, outside the transaction callback.
 
 The NATS consumer uses its existing negative-acknowledgement policy for uncommitted transient failures, including `ErrConditionSnapshotRequired`. HTTP maps that error to safe 503 `condition_snapshot_unavailable`; ordinary database errors and snapshot acquisition failures retain the existing safe HTTP 500 mapping. Snapshot corruption follows §2.2.
 
@@ -377,7 +377,7 @@ condition_decision_json TEXT NOT NULL CHECK (
 )
 ```
 
-Extend `skip_reason`'s closed values with `conditions_false`, `conditions_unknown`. Keep existing Run source columns and partial unique index; do not rename the entire history schema. `condition_decision_json` is shared by Runs/Skips and encodes `AutomationConditionDecision` with snake_case fields. Every row writes an explicit decision; the column is `NOT NULL`.
+Extend `skip_reason`'s closed values with `conditions_false`, `conditions_unknown`. Keep existing Run source columns and partial unique index; do not rename the entire history schema. `condition_decision_json` is shared by Runs/Skips and encodes `ConditionDecision` with snake_case fields. Every row writes an explicit decision; the column is `NOT NULL`.
 
 Replace the old unconditional Fact requirement in the history-kind CHECK; adding columns alone is insufficient. This focused SQL diff preserves the other existing Run/Skip and all-or-nothing Fact checks:
 

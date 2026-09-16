@@ -40,40 +40,40 @@ var automationDefinitionSchema []byte
 // per process.
 //
 //nolint:gochecknoglobals // One immutable compiled schema, never reassigned.
-var automationDefinitionCodec = sync.OnceValues(NewAutomationDefinitionCodec)
+var automationDefinitionCodec = sync.OnceValues(NewDefinitionCodec)
 
-// AutomationDefinitionIssue is one safe structural explanation at a JSON
+// DefinitionIssue is one safe structural explanation at a JSON
 // Pointer. It never contains definition payload values.
-type AutomationDefinitionIssue struct {
+type DefinitionIssue struct {
 	Path    string
 	Message string
 }
 
-// AutomationDefinitionError reports one or more structural definition failures.
+// DefinitionError reports one or more structural definition failures.
 // It matches ErrInvalidAutomation so transport boundaries map it as a permanent
 // input error.
-type AutomationDefinitionError struct {
-	Issues []AutomationDefinitionIssue
+type DefinitionError struct {
+	Issues []DefinitionIssue
 }
 
 // Error reports the fixed class message without echoing definition payloads.
-func (*AutomationDefinitionError) Error() string {
+func (*DefinitionError) Error() string {
 	return "automation definition does not satisfy the strict schema"
 }
 
 // Is classifies every structural definition failure as ErrInvalidAutomation.
-func (*AutomationDefinitionError) Is(target error) bool { return target == ErrInvalidAutomation }
+func (*DefinitionError) Is(target error) bool { return target == ErrInvalidAutomation }
 
-// AutomationDefinitionCodec owns the compiled strict definition schema and its
+// DefinitionCodec owns the compiled strict definition schema and its
 // reusable Condition subtree, so persisted Condition snapshots are validated by
 // exactly the same recursive family rules as a definition document.
-type AutomationDefinitionCodec struct {
+type DefinitionCodec struct {
 	schema    *jsonschema.Schema
 	condition *jsonschema.Schema
 }
 
-// NewAutomationDefinitionCodec compiles the canonical embedded schema.
-func NewAutomationDefinitionCodec() (*AutomationDefinitionCodec, error) {
+// NewDefinitionCodec compiles the canonical embedded schema.
+func NewDefinitionCodec() (*DefinitionCodec, error) {
 	document, err := jsonschema.UnmarshalJSON(bytes.NewReader(automationDefinitionSchema))
 	if err != nil {
 		return nil, fmt.Errorf("automation definition schema decode: %w", err)
@@ -91,11 +91,11 @@ func NewAutomationDefinitionCodec() (*AutomationDefinitionCodec, error) {
 	if err != nil {
 		return nil, fmt.Errorf("automation condition schema compile: %w", err)
 	}
-	return &AutomationDefinitionCodec{schema: compiled, condition: condition}, nil
+	return &DefinitionCodec{schema: compiled, condition: condition}, nil
 }
 
 // AutomationDefinitionSchema returns owned copies of the embedded strict shape.
-func (*AutomationDefinitionCodec) AutomationDefinitionSchema() json.RawMessage {
+func (*DefinitionCodec) AutomationDefinitionSchema() json.RawMessage {
 	return bytes.Clone(automationDefinitionSchema)
 }
 
@@ -105,7 +105,7 @@ func (*AutomationDefinitionCodec) AutomationDefinitionSchema() json.RawMessage {
 // unknown member, so a persisted decision snapshot can never be more permissive
 // than the definition it explains. A selected empty pointer stays valid because
 // the schema requires the member, not a nonempty value.
-func (codec *AutomationDefinitionCodec) ValidateCondition(raw json.RawMessage) error {
+func (codec *DefinitionCodec) ValidateCondition(raw json.RawMessage) error {
 	document, err := decodeJSONValue(raw)
 	if err != nil {
 		return definitionIssue("", "condition must be exactly one JSON value")
@@ -116,48 +116,48 @@ func (codec *AutomationDefinitionCodec) ValidateCondition(raw json.RawMessage) e
 	return nil
 }
 
-// DecodeAutomationDefinition validates and normalizes JSON against the strict
+// DecodeDefinition validates and normalizes JSON against the strict
 // schema and structural rules. Current device references are checked separately
-// by [ValidateAutomationDefinition].
-func DecodeAutomationDefinition(raw json.RawMessage) (AutomationDefinition, error) {
+// by [ValidateDefinition].
+func DecodeDefinition(raw json.RawMessage) (Definition, error) {
 	if len(raw) == 0 {
-		return AutomationDefinition{}, definitionIssue("", "definition is required")
+		return Definition{}, definitionIssue("", "definition is required")
 	}
 	if len(raw) > automationDefinitionMaxBytes {
-		return AutomationDefinition{}, definitionIssue(
+		return Definition{}, definitionIssue(
 			"", fmt.Sprintf("definition exceeds %d bytes", automationDefinitionMaxBytes),
 		)
 	}
 	codec, err := automationDefinitionCodec()
 	if err != nil {
-		return AutomationDefinition{}, err
+		return Definition{}, err
 	}
 	document, err := decodeJSONValue(raw)
 	if err != nil {
-		return AutomationDefinition{}, definitionIssue("", "definition must be exactly one JSON object")
+		return Definition{}, definitionIssue("", "definition must be exactly one JSON object")
 	}
 	if err = codec.schema.Validate(document); err != nil {
 		var validation *jsonschema.ValidationError
 		if !errors.As(err, &validation) {
-			return AutomationDefinition{}, definitionIssue("", "definition does not satisfy the strict schema")
+			return Definition{}, definitionIssue("", "definition does not satisfy the strict schema")
 		}
-		issues := make([]AutomationDefinitionIssue, 0, len(validation.Causes)+1)
+		issues := make([]DefinitionIssue, 0, len(validation.Causes)+1)
 		collectDefinitionIssues(validation, &issues)
-		return AutomationDefinition{}, &AutomationDefinitionError{Issues: issues}
+		return Definition{}, &DefinitionError{Issues: issues}
 	}
 	var value automationDefinitionJSON
 	if err = json.Unmarshal(raw, &value); err != nil {
-		return AutomationDefinition{}, definitionIssue("", "definition cannot be bound")
+		return Definition{}, definitionIssue("", "definition cannot be bound")
 	}
 	// The raw document passed the size check above; normalize its typed shape
 	// without serializing the whole definition again.
 	return normalizeAutomationDefinition(automationDefinitionFromJSON(value))
 }
 
-// EncodeAutomationDefinition renders one definition in the strict persisted
-// representation. It does not validate; call [NormalizeAutomationDefinition]
+// EncodeDefinition renders one definition in the strict persisted
+// representation. It does not validate; call [NormalizeDefinition]
 // before persisting caller-supplied values.
-func EncodeAutomationDefinition(definition AutomationDefinition) (json.RawMessage, error) {
+func EncodeDefinition(definition Definition) (json.RawMessage, error) {
 	value := automationDefinitionJSON{
 		Name:       definition.Name,
 		Enabled:    definition.Enabled,
@@ -186,7 +186,7 @@ func EncodeAutomationDefinition(definition AutomationDefinition) (json.RawMessag
 // EncodeMatchedTriggers renders matching Trigger snapshots in the same strict
 // persisted shape as a definition's Triggers, so a retained Skip stays
 // explainable after the definition is edited or deleted. It does not validate.
-func EncodeMatchedTriggers(triggers []AutomationTrigger) (json.RawMessage, error) {
+func EncodeMatchedTriggers(triggers []Trigger) (json.RawMessage, error) {
 	encoded := make([]automationTriggerJSON, 0, len(triggers))
 	for _, trigger := range triggers {
 		encoded = append(encoded, encodeAutomationTrigger(trigger))
@@ -200,12 +200,12 @@ func EncodeMatchedTriggers(triggers []AutomationTrigger) (json.RawMessage, error
 
 // DecodeMatchedTriggers validates and normalizes a persisted Trigger snapshot
 // list back into domain values.
-func DecodeMatchedTriggers(raw json.RawMessage) ([]AutomationTrigger, error) {
+func DecodeMatchedTriggers(raw json.RawMessage) ([]Trigger, error) {
 	var encoded []automationTriggerJSON
 	if err := json.Unmarshal(raw, &encoded); err != nil {
 		return nil, err
 	}
-	triggers := make([]AutomationTrigger, 0, len(encoded))
+	triggers := make([]Trigger, 0, len(encoded))
 	for _, item := range encoded {
 		trigger, err := normalizeAutomationTriggerValue(automationTriggerFromJSON(item))
 		if err != nil {
@@ -216,9 +216,9 @@ func DecodeMatchedTriggers(raw json.RawMessage) ([]AutomationTrigger, error) {
 	return triggers, nil
 }
 
-// NormalizeAutomationDefinition returns a structurally validated, canonical copy
+// NormalizeDefinition returns a structurally validated, canonical copy
 // without consulting devices. Its encoded form must fit the 64 KiB limit.
-func NormalizeAutomationDefinition(definition AutomationDefinition) (AutomationDefinition, error) {
+func NormalizeDefinition(definition Definition) (Definition, error) {
 	normalized, _, err := normalizeAndEncodeAutomationDefinition(definition)
 	return normalized, err
 }
@@ -226,35 +226,35 @@ func NormalizeAutomationDefinition(definition AutomationDefinition) (AutomationD
 // normalizeAndEncodeAutomationDefinition returns the normalized definition and
 // persisted bytes in one pass.
 func normalizeAndEncodeAutomationDefinition(
-	definition AutomationDefinition,
-) (AutomationDefinition, json.RawMessage, error) {
+	definition Definition,
+) (Definition, json.RawMessage, error) {
 	normalized, err := normalizeAutomationDefinition(definition)
 	if err != nil {
-		return AutomationDefinition{}, nil, err
+		return Definition{}, nil, err
 	}
-	raw, err := EncodeAutomationDefinition(normalized)
+	raw, err := EncodeDefinition(normalized)
 	if err != nil {
-		return AutomationDefinition{}, nil, err
+		return Definition{}, nil, err
 	}
 	if len(raw) > automationDefinitionMaxBytes {
-		return AutomationDefinition{}, nil, definitionIssue(
+		return Definition{}, nil, definitionIssue(
 			"", fmt.Sprintf("definition exceeds %d bytes", automationDefinitionMaxBytes),
 		)
 	}
 	return normalized, raw, nil
 }
 
-// ValidateAutomationDefinition normalizes a definition and validates its Entity,
+// ValidateDefinition normalizes a definition and validates its Entity,
 // event, Operation, and parameter references through devices. It returns normalized
 // Step parameters without requiring enablement, availability, or owner health.
-func ValidateAutomationDefinition(
+func ValidateDefinition(
 	ctx context.Context,
 	automationDevices AutomationDevices,
-	definition AutomationDefinition,
-) (AutomationDefinition, error) {
-	normalized, err := NormalizeAutomationDefinition(definition)
+	definition Definition,
+) (Definition, error) {
+	normalized, err := NormalizeDefinition(definition)
 	if err != nil {
-		return AutomationDefinition{}, err
+		return Definition{}, err
 	}
 	return validateAutomationReferences(ctx, automationDevices, normalized)
 }
@@ -262,20 +262,20 @@ func ValidateAutomationDefinition(
 func validateAutomationReferences(
 	ctx context.Context,
 	automationDevices AutomationDevices,
-	definition AutomationDefinition,
-) (AutomationDefinition, error) {
+	definition Definition,
+) (Definition, error) {
 	if automationDevices == nil {
-		return AutomationDefinition{}, fmt.Errorf("%w: device validation is not configured", ErrInvalidAutomation)
+		return Definition{}, fmt.Errorf("%w: device validation is not configured", ErrInvalidAutomation)
 	}
 	for _, trigger := range definition.Triggers {
 		if err := validateAutomationTriggerReference(ctx, automationDevices, trigger); err != nil {
-			return AutomationDefinition{}, err
+			return Definition{}, err
 		}
 	}
 	if err := validateAutomationConditionReferences(ctx, automationDevices, definition.Conditions); err != nil {
-		return AutomationDefinition{}, err
+		return Definition{}, err
 	}
-	steps := make([]AutomationStep, len(definition.Steps))
+	steps := make([]Step, len(definition.Steps))
 	copy(steps, definition.Steps)
 	for index, step := range definition.Steps {
 		parameters, err := automationDevices.ValidateCommand(ctx, devices.CommandInput{
@@ -284,7 +284,7 @@ func validateAutomationReferences(
 			Parameters:    step.Parameters,
 		})
 		if err != nil {
-			return AutomationDefinition{}, fmt.Errorf("%w: step %q: %w", ErrInvalidAutomation, step.ID, err)
+			return Definition{}, fmt.Errorf("%w: step %q: %w", ErrInvalidAutomation, step.ID, err)
 		}
 		steps[index].Parameters = parameters
 	}
@@ -295,7 +295,7 @@ func validateAutomationReferences(
 func validateAutomationTriggerReference(
 	ctx context.Context,
 	automationDevices AutomationDevices,
-	trigger AutomationTrigger,
+	trigger Trigger,
 ) error {
 	switch trigger.Kind {
 	case TriggerKindObservation:
@@ -323,7 +323,7 @@ func validateAutomationTriggerReference(
 func validateAutomationConditionReferences(
 	ctx context.Context,
 	automationDevices AutomationDevices,
-	conditions *AutomationCondition,
+	conditions *Condition,
 ) error {
 	if conditions == nil {
 		return nil
@@ -370,7 +370,7 @@ type automationStepJSON struct {
 	Parameters json.RawMessage       `json:"parameters"`
 }
 
-func encodeAutomationTrigger(trigger AutomationTrigger) automationTriggerJSON {
+func encodeAutomationTrigger(trigger Trigger) automationTriggerJSON {
 	encoded := automationTriggerJSON{ID: trigger.ID, Kind: trigger.Kind}
 	switch trigger.Kind {
 	case TriggerKindObservation:
@@ -393,53 +393,53 @@ func encodeAutomationTrigger(trigger AutomationTrigger) automationTriggerJSON {
 }
 
 // normalizeAutomationDefinition validates typed fields and returns an owned copy.
-// DecodeAutomationDefinition checks JSON field presence and unknown fields;
+// DecodeDefinition checks JSON field presence and unknown fields;
 // normalizeAndEncodeAutomationDefinition checks the encoded size.
-func normalizeAutomationDefinition(definition AutomationDefinition) (AutomationDefinition, error) {
+func normalizeAutomationDefinition(definition Definition) (Definition, error) {
 	trimmedName := strings.TrimSpace(definition.Name)
 	trimmedNameRunes := utf8.RuneCountInString(trimmedName)
 	rawNameRunes := utf8.RuneCountInString(definition.Name)
 	if rawNameRunes > automationNameMaxRunes || trimmedNameRunes < 1 || trimmedNameRunes > automationNameMaxRunes {
-		return AutomationDefinition{}, definitionIssue(
+		return Definition{}, definitionIssue(
 			"/name", fmt.Sprintf("name must be 1 to %d characters after trimming", automationNameMaxRunes),
 		)
 	}
 	if len(definition.Triggers) < 1 || len(definition.Triggers) > automationTriggerMaxCount {
-		return AutomationDefinition{}, definitionIssue(
+		return Definition{}, definitionIssue(
 			"/triggers", fmt.Sprintf("definition needs 1 to %d triggers", automationTriggerMaxCount),
 		)
 	}
 	if len(definition.Steps) < 1 || len(definition.Steps) > automationStepMaxCount {
-		return AutomationDefinition{}, definitionIssue(
+		return Definition{}, definitionIssue(
 			"/steps", fmt.Sprintf("definition needs 1 to %d steps", automationStepMaxCount),
 		)
 	}
-	triggers := make([]AutomationTrigger, 0, len(definition.Triggers))
+	triggers := make([]Trigger, 0, len(definition.Triggers))
 	seenTriggers := make(map[TriggerID]bool, len(definition.Triggers))
 	for _, item := range definition.Triggers {
 		trigger, err := normalizeAutomationTriggerValue(item)
 		if err != nil {
-			return AutomationDefinition{}, err
+			return Definition{}, err
 		}
 		if seenTriggers[trigger.ID] {
-			return AutomationDefinition{}, definitionIssue("/triggers", "trigger IDs must be unique")
+			return Definition{}, definitionIssue("/triggers", "trigger IDs must be unique")
 		}
 		seenTriggers[trigger.ID] = true
 		triggers = append(triggers, trigger)
 	}
 	steps, err := normalizeAutomationStepValues(definition.Steps)
 	if err != nil {
-		return AutomationDefinition{}, err
+		return Definition{}, err
 	}
 	conditions := definition.Conditions
 	if conditions != nil {
-		normalized, conditionErr := NormalizeAutomationConditions(*conditions)
+		normalized, conditionErr := NormalizeConditions(*conditions)
 		if conditionErr != nil {
-			return AutomationDefinition{}, conditionErr
+			return Definition{}, conditionErr
 		}
 		conditions = &normalized
 	}
-	return AutomationDefinition{
+	return Definition{
 		Name:       trimmedName,
 		Enabled:    definition.Enabled,
 		Triggers:   triggers,
@@ -450,11 +450,11 @@ func normalizeAutomationDefinition(definition AutomationDefinition) (AutomationD
 
 // normalizeAutomationTriggerValue returns a canonical copy, rejecting contradictory
 // family payloads before encoding could silently discard one.
-func normalizeAutomationTriggerValue(trigger AutomationTrigger) (AutomationTrigger, error) {
-	if err := ValidateAutomationTrigger(trigger); err != nil {
-		return AutomationTrigger{}, err
+func normalizeAutomationTriggerValue(trigger Trigger) (Trigger, error) {
+	if err := ValidateTrigger(trigger); err != nil {
+		return Trigger{}, err
 	}
-	normalized := AutomationTrigger{ID: trigger.ID, Kind: trigger.Kind}
+	normalized := Trigger{ID: trigger.ID, Kind: trigger.Kind}
 	switch trigger.Kind {
 	case TriggerKindObservation:
 		observation := trigger.Observation
@@ -473,8 +473,8 @@ func normalizeAutomationTriggerValue(trigger AutomationTrigger) (AutomationTrigg
 	return normalized, nil
 }
 
-func normalizeAutomationStepValues(steps []AutomationStep) ([]AutomationStep, error) {
-	normalized := make([]AutomationStep, 0, len(steps))
+func normalizeAutomationStepValues(steps []Step) ([]Step, error) {
+	normalized := make([]Step, 0, len(steps))
 	seen := make(map[StepID]bool, len(steps))
 	for _, item := range steps {
 		step, err := normalizeAutomationStepValue(item)
@@ -490,24 +490,24 @@ func normalizeAutomationStepValues(steps []AutomationStep) ([]AutomationStep, er
 	return normalized, nil
 }
 
-func normalizeAutomationStepValue(step AutomationStep) (AutomationStep, error) {
+func normalizeAutomationStepValue(step Step) (Step, error) {
 	id, err := ParseStepID(string(step.ID))
 	if err != nil {
-		return AutomationStep{}, err
+		return Step{}, err
 	}
 	entityID, err := devices.ParseEntityID(string(step.EntityID))
 	if err != nil {
-		return AutomationStep{}, fmt.Errorf("%w: step %q entity: %w", ErrInvalidAutomation, id, err)
+		return Step{}, fmt.Errorf("%w: step %q entity: %w", ErrInvalidAutomation, id, err)
 	}
 	if !subjectSlugPattern.MatchString(string(step.OperationName)) {
-		return AutomationStep{}, fmt.Errorf(
+		return Step{}, fmt.Errorf(
 			"%w: step %q operation is not a subject-safe slug", ErrInvalidAutomation, id,
 		)
 	}
 	if err = validateAutomationStepParameters(step.Parameters); err != nil {
-		return AutomationStep{}, fmt.Errorf("%w: step %q: %w", ErrInvalidAutomation, id, err)
+		return Step{}, fmt.Errorf("%w: step %q: %w", ErrInvalidAutomation, id, err)
 	}
-	return AutomationStep{
+	return Step{
 		ID:            id,
 		EntityID:      entityID,
 		OperationName: step.OperationName,
@@ -529,19 +529,19 @@ func validateAutomationStepParameters(parameters devices.CommandParameters) erro
 }
 
 // automationDefinitionFromJSON maps a schema-validated document to domain types.
-func automationDefinitionFromJSON(value automationDefinitionJSON) AutomationDefinition {
-	definition := AutomationDefinition{
+func automationDefinitionFromJSON(value automationDefinitionJSON) Definition {
+	definition := Definition{
 		Name:       value.Name,
 		Enabled:    value.Enabled,
-		Triggers:   make([]AutomationTrigger, 0, len(value.Triggers)),
+		Triggers:   make([]Trigger, 0, len(value.Triggers)),
 		Conditions: decodeConditionTree(value.Conditions),
-		Steps:      make([]AutomationStep, 0, len(value.Steps)),
+		Steps:      make([]Step, 0, len(value.Steps)),
 	}
 	for _, item := range value.Triggers {
 		definition.Triggers = append(definition.Triggers, automationTriggerFromJSON(item))
 	}
 	for _, item := range value.Steps {
-		definition.Steps = append(definition.Steps, AutomationStep{
+		definition.Steps = append(definition.Steps, Step{
 			ID:            item.ID,
 			EntityID:      item.EntityID,
 			OperationName: item.Operation,
@@ -551,8 +551,8 @@ func automationDefinitionFromJSON(value automationDefinitionJSON) AutomationDefi
 	return definition
 }
 
-func automationTriggerFromJSON(item automationTriggerJSON) AutomationTrigger {
-	trigger := AutomationTrigger{ID: item.ID, Kind: item.Kind}
+func automationTriggerFromJSON(item automationTriggerJSON) Trigger {
+	trigger := Trigger{ID: item.ID, Kind: item.Kind}
 	switch item.Kind {
 	case TriggerKindObservation:
 		observation := &ObservationTrigger{EntityID: item.EntityID, Dispositions: item.Dispositions}
@@ -593,10 +593,10 @@ func cloneObservationComparisons(comparisons []ObservationComparison) []Observat
 }
 
 func definitionIssue(path, message string) error {
-	return &AutomationDefinitionError{Issues: []AutomationDefinitionIssue{{Path: path, Message: message}}}
+	return &DefinitionError{Issues: []DefinitionIssue{{Path: path, Message: message}}}
 }
 
-func collectDefinitionIssues(validation *jsonschema.ValidationError, issues *[]AutomationDefinitionIssue) {
+func collectDefinitionIssues(validation *jsonschema.ValidationError, issues *[]DefinitionIssue) {
 	if len(validation.Causes) > 0 {
 		for _, cause := range validation.Causes {
 			collectDefinitionIssues(cause, issues)
@@ -607,7 +607,7 @@ func collectDefinitionIssues(validation *jsonschema.ValidationError, issues *[]A
 	for _, part := range validation.InstanceLocation {
 		pointer.WriteString("/" + strings.ReplaceAll(strings.ReplaceAll(part, "~", "~0"), "/", "~1"))
 	}
-	*issues = append(*issues, AutomationDefinitionIssue{
+	*issues = append(*issues, DefinitionIssue{
 		Path:    pointer.String(),
 		Message: "value does not satisfy the strict schema",
 	})

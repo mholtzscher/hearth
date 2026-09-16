@@ -10,9 +10,9 @@ import (
 	"github.com/mholtzscher/hearth/internal/modules/devices"
 )
 
-// AutomationFactMaximumAge is the fixed freshness limit measured from emitted_at.
+// FactMaximumAge is the fixed freshness limit measured from emitted_at.
 // Older matching Facts record stale_fact Skips instead of starting Runs.
-const AutomationFactMaximumAge = 30 * time.Second
+const FactMaximumAge = 30 * time.Second
 
 // StartManualRun admits one Run from the current definition snapshot, even when
 // the Automation is disabled. Conditions are evaluated unless
@@ -21,17 +21,17 @@ const AutomationFactMaximumAge = 30 * time.Second
 // so the Skip's history is never rolled back. A running Run returns
 // [ErrAutomationBusy] with no new Skip and a closed gate returns
 // [ErrAdmissionUnavailable].
-func (service *Service) StartManualRun(ctx context.Context, input ManualRunInput) (AutomationRun, error) {
+func (service *Service) StartManualRun(ctx context.Context, input ManualRunInput) (Run, error) {
 	reservation, admitted := service.admission.TryAcquire()
 	if !admitted {
-		return AutomationRun{}, ErrAdmissionUnavailable
+		return Run{}, ErrAdmissionUnavailable
 	}
 	// Track admission until the committed Run has a worker; release on errors too.
 	defer reservation.Release()
 	// The device gate is checked separately: automation admission closes first on
 	// shutdown, and the cross-module gates never claim an atomic check-and-admit.
 	if service.devices == nil || !service.devices.CommandAdmissionOpen() {
-		return AutomationRun{}, ErrAdmissionUnavailable
+		return Run{}, ErrAdmissionUnavailable
 	}
 	// The reservation spans the definition pre-read, State read, and transaction.
 	result, err := service.admitManualRun(ctx, input)
@@ -39,7 +39,7 @@ func (service *Service) StartManualRun(ctx context.Context, input ManualRunInput
 		// Release before diagnostics so a blocked log sink cannot hold Drain.
 		reservation.Release()
 		service.logConditionStateCorrupt(ctx, err)
-		return AutomationRun{}, err
+		return Run{}, err
 	}
 	if result.Skip != nil {
 		skip := *result.Skip
@@ -53,7 +53,7 @@ func (service *Service) StartManualRun(ctx context.Context, input ManualRunInput
 			Source:       skip.Source,
 			Reason:       skip.Reason,
 		})
-		return AutomationRun{}, &AutomationConditionsBlockedError{
+		return Run{}, &ConditionsBlockedError{
 			AutomationID: skip.AutomationID,
 			SkipID:       skip.ID,
 			Reason:       skip.Reason,
@@ -107,7 +107,7 @@ func (service *Service) ReceiveDeviceFact(
 
 // logRunStarted logs committed Run identity and Fact provenance, never definition
 // JSON or Command parameters.
-func (service *Service) logRunStarted(ctx context.Context, run AutomationRun) {
+func (service *Service) logRunStarted(ctx context.Context, run Run) {
 	attributes := []slog.Attr{
 		slog.String("event", "automation.run_started"),
 		slog.String("automation_id", string(run.AutomationID)),
@@ -170,12 +170,12 @@ func NewDeviceFactSummary(fact DeviceFact) DeviceFactSummary {
 	return summary
 }
 
-// MatchAutomationTriggers returns the IDs of every Trigger in one definition the
+// MatchTriggers returns the IDs of every Trigger in one definition the
 // Fact matches, in definition order. Triggers combine with OR and one Fact
 // creates at most one outcome per Automation. Persistence calls it with the
 // definitions it loaded inside its admission transaction; it performs no reads
 // or writes of its own.
-func MatchAutomationTriggers(fact DeviceFact, definition AutomationDefinition) ([]TriggerID, error) {
+func MatchTriggers(fact DeviceFact, definition Definition) ([]TriggerID, error) {
 	var matched []TriggerID
 	for _, trigger := range definition.Triggers {
 		matches, err := matchAutomationTrigger(fact, trigger)
@@ -190,18 +190,18 @@ func MatchAutomationTriggers(fact DeviceFact, definition AutomationDefinition) (
 }
 
 // MatchedTriggerSnapshots selects Triggers in the supplied match order so a
-// retained Skip can preserve the definition that matched. MatchAutomationTriggers
+// retained Skip can preserve the definition that matched. MatchTriggers
 // supplies IDs in definition order. Nested values remain shared with definition;
 // callers must not mutate them before persistence encodes the snapshots.
 func MatchedTriggerSnapshots(
-	definition AutomationDefinition,
+	definition Definition,
 	matched []TriggerID,
-) ([]AutomationTrigger, error) {
-	byID := make(map[TriggerID]AutomationTrigger, len(definition.Triggers))
+) ([]Trigger, error) {
+	byID := make(map[TriggerID]Trigger, len(definition.Triggers))
 	for _, trigger := range definition.Triggers {
 		byID[trigger.ID] = trigger
 	}
-	snapshots := make([]AutomationTrigger, 0, len(matched))
+	snapshots := make([]Trigger, 0, len(matched))
 	for _, id := range matched {
 		trigger, found := byID[id]
 		if !found {
@@ -212,7 +212,7 @@ func MatchedTriggerSnapshots(
 	return snapshots, nil
 }
 
-func matchAutomationTrigger(fact DeviceFact, trigger AutomationTrigger) (bool, error) {
+func matchAutomationTrigger(fact DeviceFact, trigger Trigger) (bool, error) {
 	switch trigger.Kind {
 	case TriggerKindObservation:
 		if fact.Family != DeviceFactObservation || fact.Observation == nil || trigger.Observation == nil {

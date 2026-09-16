@@ -108,16 +108,16 @@ func Run(
 	// Interrupt Automation Runs before opening transports, so stale Runs cannot
 	// advance. The service is constructed later; recovery needs only the repository.
 	automationRepository := automationssqlite.NewAutomationRepository(
-		database, automations.AutomationDependencies{},
+		database, automations.Dependencies{},
 	)
 	if err := automationRepository.InterruptActiveRuns(
-		ctx, startupTime, automations.AutomationFailureCoreRestarted,
+		ctx, startupTime, automations.FailureCoreRestarted,
 	); err != nil {
 		return failStage("interrupt_automations", fmt.Errorf("interrupt active automation runs: %w", err))
 	}
 	automationsLogger.WarnContext(ctx, "automation runs interrupted",
 		slog.String("event", "automation.run_interrupted"),
-		slog.String("reason", automations.AutomationFailureCoreRestarted),
+		slog.String("reason", automations.FailureCoreRestarted),
 	)
 	logStartupStage(ctx, coreLogger, "active_automation_runs_interrupted")
 
@@ -170,7 +170,7 @@ func Run(
 	automationService := automations.NewService(
 		automationRepository,
 		service,
-		automations.AutomationDependencies{
+		automations.Dependencies{
 			Logger:           automationsLogger,
 			HistoryRetention: config.EffectiveAutomationHistoryRetention(),
 		},

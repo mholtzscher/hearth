@@ -52,9 +52,9 @@ func TestHistoryPruneSchedulerPrunesDeviceRetentions(t *testing.T) {
 	// This fixture seeds no Automation rows, so the pass must not disturb the
 	// device retentions it also runs beside.
 	automationService := automations.NewService(
-		automationssqlite.NewAutomationRepository(database, automations.AutomationDependencies{}),
+		automationssqlite.NewAutomationRepository(database, automations.Dependencies{}),
 		nil,
-		automations.AutomationDependencies{HistoryRetention: 30 * 24 * time.Hour},
+		automations.Dependencies{HistoryRetention: 30 * 24 * time.Hour},
 	)
 	runContext, cancelRun := context.WithCancel(ctx)
 	defer cancelRun()

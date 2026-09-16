@@ -117,7 +117,7 @@ func TestDecodeAutomationDefinitionConditionsOmissionAndNull(t *testing.T) {
 	if omitted.Conditions != nil {
 		t.Fatalf("omitted conditions = %#v, want nil", omitted.Conditions)
 	}
-	raw, err := automations.EncodeAutomationDefinition(omitted)
+	raw, err := automations.EncodeDefinition(omitted)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -144,11 +144,11 @@ func TestDecodeAutomationDefinitionConditionsRoundTrip(t *testing.T) {
 		t.Fatal(err)
 	}
 	root := definition.Conditions
-	if root == nil || root.Kind != automations.AutomationConditionAll || len(root.Children) != 2 {
+	if root == nil || root.Kind != automations.ConditionAll || len(root.Children) != 2 {
 		t.Fatalf("conditions = %#v", root)
 	}
 	leaf := root.Children[0]
-	if leaf.Kind != automations.AutomationConditionEntityState || leaf.EntityState == nil ||
+	if leaf.Kind != automations.ConditionEntityState || leaf.EntityState == nil ||
 		leaf.EntityState.MaxAgeSeconds == nil || *leaf.EntityState.MaxAgeSeconds != 300 {
 		t.Fatalf("leaf = %#v", leaf)
 	}
@@ -156,11 +156,11 @@ func TestDecodeAutomationDefinitionConditionsRoundTrip(t *testing.T) {
 		t.Fatalf("empty pointer = %q, want preserved", leaf.EntityState.Pointer)
 	}
 	not := root.Children[1]
-	if not.Kind != automations.AutomationConditionNot || not.Child == nil ||
+	if not.Kind != automations.ConditionNot || not.Child == nil ||
 		not.Child.ID != "other-room-occupied" {
 		t.Fatalf("not node = %#v", not)
 	}
-	encoded, err := automations.EncodeAutomationDefinition(definition)
+	encoded, err := automations.EncodeDefinition(definition)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -168,7 +168,7 @@ func TestDecodeAutomationDefinitionConditionsRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	again, err := automations.EncodeAutomationDefinition(second)
+	again, err := automations.EncodeDefinition(second)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -309,27 +309,27 @@ func TestNormalizeAutomationDefinitionRejectsTypedConditionCycle(t *testing.T) {
 	t.Parallel()
 	triggerEntity := newEntityID(t)
 	stepEntity := newEntityID(t)
-	cycle := automations.AutomationCondition{ID: "cycle", Kind: automations.AutomationConditionNot}
+	cycle := automations.Condition{ID: "cycle", Kind: automations.ConditionNot}
 	cycle.Child = &cycle
 	conditions := conditionNot("root", cycle)
-	definition := automations.AutomationDefinition{
+	definition := automations.Definition{
 		Name:    "Cyclic",
 		Enabled: true,
-		Triggers: []automations.AutomationTrigger{
+		Triggers: []automations.Trigger{
 			{
 				ID: "press", Kind: automations.TriggerKindEntityEvent,
 				EntityEvent: &automations.EntityEventTrigger{EntityID: triggerEntity, EventName: "single_press"},
 			},
 		},
 		Conditions: &conditions,
-		Steps: []automations.AutomationStep{
+		Steps: []automations.Step{
 			{
 				ID: "light_on", EntityID: stepEntity, OperationName: devices.OperationNameSet,
 				Parameters: devices.CommandParameters(`{"value":true}`),
 			},
 		},
 	}
-	if _, err := automations.NormalizeAutomationDefinition(definition); !errors.Is(
+	if _, err := automations.NormalizeDefinition(definition); !errors.Is(
 		err, automations.ErrInvalidAutomation,
 	) {
 		t.Fatalf("typed cycle error = %v, want ErrInvalidAutomation", err)
@@ -346,24 +346,24 @@ func TestValidateAutomationDefinitionValidatesConditionEntities(t *testing.T) {
 	stepEntity := newEntityID(t)
 	conditionEntityID := newEntityID(t)
 	conditions := conditionLeaf("room-dark", conditionEntityID, "", automations.ComparisonEqual, "true", nil)
-	definition := automations.AutomationDefinition{
+	definition := automations.Definition{
 		Name:    "Conditional",
 		Enabled: true,
-		Triggers: []automations.AutomationTrigger{
+		Triggers: []automations.Trigger{
 			{
 				ID: "press", Kind: automations.TriggerKindEntityEvent,
 				EntityEvent: &automations.EntityEventTrigger{EntityID: triggerEntity, EventName: "single_press"},
 			},
 		},
 		Conditions: &conditions,
-		Steps: []automations.AutomationStep{
+		Steps: []automations.Step{
 			{
 				ID: "light_on", EntityID: stepEntity, OperationName: devices.OperationNameSet,
 				Parameters: devices.CommandParameters(`{"value":true}`),
 			},
 		},
 	}
-	if _, err := automations.ValidateAutomationDefinition(
+	if _, err := automations.ValidateDefinition(
 		context.Background(), stub, definition,
 	); err != nil {
 		t.Fatalf("valid definition: %v", err)
@@ -373,7 +373,7 @@ func TestValidateAutomationDefinitionValidatesConditionEntities(t *testing.T) {
 	}
 
 	stub.conditionError = errors.New("entity has no State")
-	if _, err := automations.ValidateAutomationDefinition(
+	if _, err := automations.ValidateDefinition(
 		context.Background(), stub, definition,
 	); !errors.Is(err, automations.ErrInvalidAutomation) {
 		t.Fatalf("condition reference failure = %v, want ErrInvalidAutomation", err)
@@ -383,7 +383,7 @@ func TestValidateAutomationDefinitionValidatesConditionEntities(t *testing.T) {
 	stub.conditionCalls = nil
 	unconditioned := definition
 	unconditioned.Conditions = nil
-	if _, err := automations.ValidateAutomationDefinition(
+	if _, err := automations.ValidateDefinition(
 		context.Background(), stub, unconditioned,
 	); err != nil {
 		t.Fatalf("unconditioned definition: %v", err)
@@ -402,19 +402,19 @@ func FuzzDecodeAutomationDefinitionConditions(fuzz *testing.F) {
 	fuzz.Add(conditionDefinitionJSON(entity, "null"))
 	fuzz.Add(conditionDefinitionJSON(entity, nestedNotConditionObject(entity, 7)))
 	fuzz.Fuzz(func(t *testing.T, raw string) {
-		definition, err := automations.DecodeAutomationDefinition(json.RawMessage(raw))
+		definition, err := automations.DecodeDefinition(json.RawMessage(raw))
 		if err != nil {
 			return
 		}
-		encoded, err := automations.EncodeAutomationDefinition(definition)
+		encoded, err := automations.EncodeDefinition(definition)
 		if err != nil {
 			t.Fatalf("accepted definition failed to encode: %v", err)
 		}
-		redecoded, err := automations.DecodeAutomationDefinition(encoded)
+		redecoded, err := automations.DecodeDefinition(encoded)
 		if err != nil {
 			t.Fatalf("accepted definition failed to re-decode: %v", err)
 		}
-		again, err := automations.EncodeAutomationDefinition(redecoded)
+		again, err := automations.EncodeDefinition(redecoded)
 		if err != nil {
 			t.Fatalf("re-decoded definition failed to encode: %v", err)
 		}

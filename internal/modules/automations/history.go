@@ -25,9 +25,9 @@ func (service *Service) GetHistoryEntry(
 	ctx context.Context,
 	automationID AutomationID,
 	entryID string,
-) (AutomationHistoryEntry, error) {
+) (HistoryEntry, error) {
 	if _, err := ParseAutomationID(string(automationID)); err != nil {
-		return AutomationHistoryEntry{}, err
+		return HistoryEntry{}, err
 	}
 	return service.repository.GetHistoryEntry(ctx, automationID, entryID)
 }
@@ -37,15 +37,15 @@ func (service *Service) GetHistoryEntry(
 func (service *Service) ListHistory(
 	ctx context.Context,
 	params ListHistoryParams,
-) (AutomationPage[AutomationHistorySummary], error) {
+) (Page[HistorySummary], error) {
 	if _, err := ParseAutomationID(string(params.AutomationID)); err != nil {
-		return AutomationPage[AutomationHistorySummary]{}, err
+		return Page[HistorySummary]{}, err
 	}
 	return service.repository.ListHistory(ctx, params)
 }
 
 // PruneHistory deletes terminal Runs and Skips older than the cutoff derived
-// from the injected AutomationDependencies.HistoryRetention window. Deletion
+// from the injected Dependencies.HistoryRetention window. Deletion
 // runs in batches of automationHistoryPruneBatch so one pass never holds a long
 // write lock, and the loop rechecks cancellation between batches. Running Runs
 // are never selected, and matched-Fact receipts are retained for

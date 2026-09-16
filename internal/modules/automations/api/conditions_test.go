@@ -759,7 +759,7 @@ func waitForNoActiveRuns(t *testing.T, service *automations.Service, automationI
 		}
 		active := false
 		for _, item := range page.Items {
-			if item.Kind == automations.AutomationHistoryRun && item.Status == automations.RunRunning {
+			if item.Kind == automations.HistoryRun && item.Status == automations.RunRunning {
 				active = true
 			}
 		}

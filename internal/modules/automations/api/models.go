@@ -226,7 +226,7 @@ type AutomationHistoryEntryOutput struct {
 	Body AutomationHistoryEntryBody
 }
 
-func automationDefinitionBody(definition automations.AutomationDefinition) AutomationDefinitionBody {
+func automationDefinitionBody(definition automations.Definition) AutomationDefinitionBody {
 	body := AutomationDefinitionBody{
 		Name:       definition.Name,
 		Enabled:    definition.Enabled,
@@ -248,7 +248,7 @@ func automationDefinitionBody(definition automations.AutomationDefinition) Autom
 	return body
 }
 
-func automationTriggerBody(trigger automations.AutomationTrigger) AutomationTriggerBody {
+func automationTriggerBody(trigger automations.Trigger) AutomationTriggerBody {
 	body := AutomationTriggerBody{ID: string(trigger.ID), Kind: string(trigger.Kind)}
 	switch trigger.Kind {
 	case automations.TriggerKindObservation:
@@ -274,7 +274,7 @@ func automationTriggerBody(trigger automations.AutomationTrigger) AutomationTrig
 	return body
 }
 
-func automationBody(record automations.AutomationRecord) AutomationBody {
+func automationBody(record automations.Record) AutomationBody {
 	return AutomationBody{
 		ID:         string(record.ID),
 		Revision:   record.Revision,
@@ -284,7 +284,7 @@ func automationBody(record automations.AutomationRecord) AutomationBody {
 	}
 }
 
-func automationRunBody(run automations.AutomationRun) AutomationRunBody {
+func automationRunBody(run automations.Run) AutomationRunBody {
 	body := AutomationRunBody{
 		ID:                string(run.ID),
 		AutomationID:      string(run.AutomationID),
@@ -313,7 +313,7 @@ func automationRunBody(run automations.AutomationRun) AutomationRunBody {
 	return body
 }
 
-func automationStepAttemptBody(step automations.AutomationStepAttempt) AutomationStepAttemptBody {
+func automationStepAttemptBody(step automations.StepAttempt) AutomationStepAttemptBody {
 	body := AutomationStepAttemptBody{
 		Position:    step.Position,
 		StepID:      string(step.StepID),
@@ -329,7 +329,7 @@ func automationStepAttemptBody(step automations.AutomationStepAttempt) Automatio
 	return body
 }
 
-func automationSkipBody(skip automations.AutomationSkip) AutomationSkipBody {
+func automationSkipBody(skip automations.Skip) AutomationSkipBody {
 	body := AutomationSkipBody{
 		ID:                string(skip.ID),
 		AutomationID:      string(skip.AutomationID),
@@ -366,7 +366,7 @@ func deviceFactSummaryBody(summary automations.DeviceFactSummary) DeviceFactSumm
 	return body
 }
 
-func historySummaryBody(summary automations.AutomationHistorySummary) AutomationHistorySummaryBody {
+func historySummaryBody(summary automations.HistorySummary) AutomationHistorySummaryBody {
 	body := AutomationHistorySummaryBody{
 		ID:              summary.ID,
 		Kind:            string(summary.Kind),
@@ -382,7 +382,7 @@ func historySummaryBody(summary automations.AutomationHistorySummary) Automation
 		result := string(*summary.ConditionResult)
 		body.ConditionResult = &result
 	}
-	if summary.Kind == automations.AutomationHistoryRun {
+	if summary.Kind == automations.HistoryRun {
 		body.Status = string(summary.Status)
 	} else {
 		body.Reason = string(summary.Reason)
@@ -394,7 +394,7 @@ func historySummaryBody(summary automations.AutomationHistorySummary) Automation
 	return body
 }
 
-func historyEntryBody(entry automations.AutomationHistoryEntry) AutomationHistoryEntryBody {
+func historyEntryBody(entry automations.HistoryEntry) AutomationHistoryEntryBody {
 	body := AutomationHistoryEntryBody{Kind: string(entry.Kind)}
 	if entry.Run != nil {
 		run := automationRunBody(*entry.Run)

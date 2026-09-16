@@ -25,7 +25,7 @@ const (
 	MinimumAutomationHistoryRetention = automations.MinimumAutomationHistoryRetention
 	// AutomationFactMaximumAge is the fixed semantic freshness bound for one
 	// Device Fact. It is deliberately not operator configuration.
-	AutomationFactMaximumAge = automations.AutomationFactMaximumAge
+	AutomationFactMaximumAge = automations.FactMaximumAge
 )
 
 type Config struct {

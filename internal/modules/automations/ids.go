@@ -27,22 +27,22 @@ func NewAutomationID() (AutomationID, error) {
 	return AutomationID("aut_" + value), nil
 }
 
-// NewAutomationRunID mints an arn_-prefixed UUIDv7, distinct from adapter run_ identities.
-func NewAutomationRunID() (AutomationRunID, error) {
+// NewRunID mints an arn_-prefixed UUIDv7, distinct from adapter run_ identities.
+func NewRunID() (RunID, error) {
 	value, err := newAutomationUUID("automation run")
 	if err != nil {
 		return "", err
 	}
-	return AutomationRunID("arn_" + value), nil
+	return RunID("arn_" + value), nil
 }
 
-// NewAutomationSkipID mints the durable identity of one recorded Skip.
-func NewAutomationSkipID() (AutomationSkipID, error) {
+// NewSkipID mints the durable identity of one recorded Skip.
+func NewSkipID() (SkipID, error) {
 	value, err := newAutomationUUID("automation skip")
 	if err != nil {
 		return "", err
 	}
-	return AutomationSkipID("ask_" + value), nil
+	return SkipID("ask_" + value), nil
 }
 
 // ParseAutomationID validates one canonical aut_-prefixed UUIDv7.
@@ -53,21 +53,21 @@ func ParseAutomationID(value string) (AutomationID, error) {
 	return AutomationID(value), nil
 }
 
-// ParseAutomationRunID validates one canonical arn_-prefixed UUIDv7 and rejects
+// ParseRunID validates one canonical arn_-prefixed UUIDv7 and rejects
 // adapter Runtime identities.
-func ParseAutomationRunID(value string) (AutomationRunID, error) {
+func ParseRunID(value string) (RunID, error) {
 	if err := validateAutomationUUID(value, "arn"); err != nil {
 		return "", fmt.Errorf("%w: automation run ID: %w", ErrInvalidAutomation, err)
 	}
-	return AutomationRunID(value), nil
+	return RunID(value), nil
 }
 
-// ParseAutomationSkipID validates one canonical ask_-prefixed UUIDv7.
-func ParseAutomationSkipID(value string) (AutomationSkipID, error) {
+// ParseSkipID validates one canonical ask_-prefixed UUIDv7.
+func ParseSkipID(value string) (SkipID, error) {
 	if err := validateAutomationUUID(value, "ask"); err != nil {
 		return "", fmt.Errorf("%w: automation skip ID: %w", ErrInvalidAutomation, err)
 	}
-	return AutomationSkipID(value), nil
+	return SkipID(value), nil
 }
 
 // ParseTriggerID validates a subject-safe slug; definition validation checks uniqueness.

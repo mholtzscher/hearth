@@ -36,23 +36,23 @@ type AutomationDevices interface {
 	GetCommand(context.Context, devices.CommandID) (devices.CommandRecord, error)
 }
 
-// AutomationDefinitionRepository manages definitions without admitting or executing Runs.
-type AutomationDefinitionRepository interface {
-	CreateAutomation(context.Context, AutomationDefinition) (AutomationRecord, error)
-	GetAutomation(context.Context, AutomationID) (AutomationRecord, error)
-	ListAutomations(context.Context, ListAutomationsParams) (AutomationPage[AutomationRecord], error)
-	ReplaceAutomation(context.Context, AutomationID, int64, AutomationDefinition) (AutomationRecord, error)
+// DefinitionRepository manages definitions without admitting or executing Runs.
+type DefinitionRepository interface {
+	CreateAutomation(context.Context, Definition) (Record, error)
+	GetAutomation(context.Context, AutomationID) (Record, error)
+	ListAutomations(context.Context, ListAutomationsParams) (Page[Record], error)
+	ReplaceAutomation(context.Context, AutomationID, int64, Definition) (Record, error)
 	DeleteAutomation(context.Context, AutomationID, int64) error
 }
 
-// AutomationRepository is the complete domain-oriented persistence seam. The
+// Repository is the complete domain-oriented persistence seam. The
 // SQLite adapter implements every method; generated types never cross this seam.
-type AutomationRepository interface {
-	AutomationDefinitionRepository
+type Repository interface {
+	DefinitionRepository
 
 	// ListEnabledAutomations reads every currently enabled definition in
 	// ascending Automation ID order for an admission State pre-read.
-	ListEnabledAutomations(context.Context) ([]AutomationRecord, error)
+	ListEnabledAutomations(context.Context) ([]Record, error)
 
 	// AdmitDeviceFact evaluates one Device Fact against current enabled
 	// definitions and commits every matching outcome in one transaction. It
@@ -77,9 +77,9 @@ type AutomationRepository interface {
 	// CompleteRun persists one Run's established terminal state.
 	CompleteRun(context.Context, RunCompletion) error
 	// GetHistoryEntry reads one retained Run or Skip scoped to its Automation.
-	GetHistoryEntry(context.Context, AutomationID, string) (AutomationHistoryEntry, error)
+	GetHistoryEntry(context.Context, AutomationID, string) (HistoryEntry, error)
 	// ListHistory pages retained Run and Skip summaries newest first.
-	ListHistory(context.Context, ListHistoryParams) (AutomationPage[AutomationHistorySummary], error)
+	ListHistory(context.Context, ListHistoryParams) (Page[HistorySummary], error)
 	// InterruptActiveRuns marks every running Step and Run as interrupted with
 	// the supplied reason; it never replays or infers success.
 	InterruptActiveRuns(context.Context, time.Time, string) error
@@ -88,14 +88,14 @@ type AutomationRepository interface {
 	DeleteHistoryBefore(context.Context, time.Time, int) (int64, error)
 }
 
-// AutomationDependencies supplies logging, time, and identity constructors.
+// Dependencies supplies logging, time, and identity constructors.
 // Zero-valued fields use production defaults except HistoryRetention.
-type AutomationDependencies struct {
+type Dependencies struct {
 	Logger           *slog.Logger
 	Now              func() time.Time
 	NewAutomationID  func() (AutomationID, error)
-	NewRunID         func() (AutomationRunID, error)
-	NewSkipID        func() (AutomationSkipID, error)
+	NewRunID         func() (RunID, error)
+	NewSkipID        func() (SkipID, error)
 	NewCommandID     func() (devices.CommandID, error)
 	NewCorrelationID func() (devices.CorrelationID, error)
 	// HistoryRetention is the terminal Automation history retention window
@@ -110,7 +110,7 @@ type AutomationDependencies struct {
 // Service and the SQLite adapter. HistoryRetention deliberately keeps zero:
 // an unconfigured retention must fail safely at prune time, never silently
 // become a deletion window.
-func (dependencies AutomationDependencies) WithDefaults() AutomationDependencies {
+func (dependencies Dependencies) WithDefaults() Dependencies {
 	logger := dependencies.Logger
 	if logger == nil {
 		logger = slog.Default().With(slog.String("component", "automations"))
@@ -123,10 +123,10 @@ func (dependencies AutomationDependencies) WithDefaults() AutomationDependencies
 		dependencies.NewAutomationID = NewAutomationID
 	}
 	if dependencies.NewRunID == nil {
-		dependencies.NewRunID = NewAutomationRunID
+		dependencies.NewRunID = NewRunID
 	}
 	if dependencies.NewSkipID == nil {
-		dependencies.NewSkipID = NewAutomationSkipID
+		dependencies.NewSkipID = NewSkipID
 	}
 	if dependencies.NewCommandID == nil {
 		dependencies.NewCommandID = devices.NewCommandID

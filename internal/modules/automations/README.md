@@ -15,7 +15,7 @@ parts of that module rather than independent packages or services.
 
 The HTTP, NATS, and SQLite packages depend on `automations`, not the reverse.
 Application assembly constructs the SQLite repository and injects it through the
-existing `AutomationRepository` interface. `AutomationDefinitionRepository`
+existing `Repository` interface. `DefinitionRepository`
 remains the narrower definition-management capability; there is no parallel
 store aggregate or generic transaction framework.
 

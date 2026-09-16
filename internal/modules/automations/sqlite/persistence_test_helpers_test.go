@@ -36,17 +36,17 @@ func openAutomationDatabase(t *testing.T) *sql.DB {
 // production-default dependencies.
 func newAutomationRepository(t *testing.T, database *sql.DB) *automationssqlite.AutomationRepository {
 	t.Helper()
-	return automationssqlite.NewAutomationRepository(database, automations.AutomationDependencies{})
+	return automationssqlite.NewAutomationRepository(database, automations.Dependencies{})
 }
 
 // validDomainDefinition builds one strict definition fixture that normalization
 // and persistence both accept.
-func validDomainDefinition(t *testing.T) automations.AutomationDefinition {
+func validDomainDefinition(t *testing.T) automations.Definition {
 	t.Helper()
-	return automations.AutomationDefinition{
+	return automations.Definition{
 		Name:    "Office light",
 		Enabled: true,
-		Triggers: []automations.AutomationTrigger{{
+		Triggers: []automations.Trigger{{
 			ID:   "occupied_and_warm",
 			Kind: automations.TriggerKindObservation,
 			Observation: &automations.ObservationTrigger{
@@ -59,7 +59,7 @@ func validDomainDefinition(t *testing.T) automations.AutomationDefinition {
 				}},
 			},
 		}},
-		Steps: []automations.AutomationStep{{
+		Steps: []automations.Step{{
 			ID:            "light_on",
 			EntityID:      newEntityID(t),
 			OperationName: devices.OperationNameSet,
@@ -89,7 +89,7 @@ func newAutomationIDString(t *testing.T) string {
 
 func newRunIDString(t *testing.T) string {
 	t.Helper()
-	id, err := automations.NewAutomationRunID()
+	id, err := automations.NewRunID()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -98,7 +98,7 @@ func newRunIDString(t *testing.T) string {
 
 func newSkipIDString(t *testing.T) string {
 	t.Helper()
-	id, err := automations.NewAutomationSkipID()
+	id, err := automations.NewSkipID()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -166,7 +166,7 @@ const insertHistorySkipSQL = `INSERT INTO automation_history (
 // decodes instead of failing trigger validation.
 func matchedTriggerJSON(t *testing.T) string {
 	t.Helper()
-	raw, err := automations.EncodeMatchedTriggers([]automations.AutomationTrigger{{
+	raw, err := automations.EncodeMatchedTriggers([]automations.Trigger{{
 		ID:   "occupied_and_warm",
 		Kind: automations.TriggerKindObservation,
 		Observation: &automations.ObservationTrigger{

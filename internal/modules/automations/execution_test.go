@@ -149,7 +149,7 @@ func TestRunLinksCommandOnlyAfterOwnershipVerification(t *testing.T) {
 	if entry.Run == nil || entry.Run.Status != automations.RunInterrupted {
 		t.Fatalf("Run = %#v, want interrupted", entry.Run)
 	}
-	if entry.Run.FailureCode == nil || *entry.Run.FailureCode != automations.AutomationFailureExecutorFault {
+	if entry.Run.FailureCode == nil || *entry.Run.FailureCode != automations.FailureExecutorFault {
 		t.Fatalf("Run failure code = %v, want executor_fault", entry.Run.FailureCode)
 	}
 	if entry.Run.Steps[0].Status != automations.StepInterrupted ||
@@ -213,7 +213,7 @@ func TestRunTreatsMissingOrNonterminalCommandAsFault(t *testing.T) {
 			entry := historyEntry(t, service, record.ID, string(run.ID))
 			if entry.Run == nil || entry.Run.Status != automations.RunInterrupted ||
 				entry.Run.FailureCode == nil ||
-				*entry.Run.FailureCode != automations.AutomationFailureExecutorFault {
+				*entry.Run.FailureCode != automations.FailureExecutorFault {
 				t.Fatalf("Run = %#v, want interrupted/executor_fault", entry.Run)
 			}
 			if entry.Run.Steps[1].Status != automations.StepNotAttempted {
@@ -249,7 +249,7 @@ func TestRunClassifiesPreCreationFailureWithoutFault(t *testing.T) {
 	}
 	if entry.Run.Steps[0].Status != automations.StepFailed ||
 		entry.Run.Steps[0].FailureCode == nil ||
-		*entry.Run.Steps[0].FailureCode != automations.AutomationFailureInvalidCommand {
+		*entry.Run.Steps[0].FailureCode != automations.FailureInvalidCommand {
 		t.Fatalf("Step 1 = %#v, want invalid_command failure", entry.Run.Steps[0])
 	}
 	if !service.AdmissionOpen() {

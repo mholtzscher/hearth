@@ -163,7 +163,7 @@ func TestDeviceFactConsumerLatchesAdmissionWhenConsumerIsDeleted(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	service := automations.NewService(nil, nil, automations.AutomationDependencies{})
+	service := automations.NewService(nil, nil, automations.Dependencies{})
 	if !service.AdmissionOpen() {
 		t.Fatal("a freshly assembled service reports admission closed")
 	}

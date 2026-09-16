@@ -158,7 +158,7 @@ func openAutomationTestDatabase(t *testing.T) *sql.DB {
 func newAutomationService(t *testing.T, stub *apiDevices) *automations.Service {
 	t.Helper()
 	database := openAutomationTestDatabase(t)
-	dependencies := automations.AutomationDependencies{}
+	dependencies := automations.Dependencies{}
 	repository := automationssqlite.NewAutomationRepository(database, dependencies)
 	service := automations.NewService(repository, stub, dependencies)
 	t.Cleanup(func() {

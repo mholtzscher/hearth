@@ -10,9 +10,9 @@ import (
 
 // Service manages automation definitions, Run admission, and execution.
 type Service struct {
-	repository   AutomationRepository
+	repository   Repository
 	devices      AutomationDevices
-	dependencies AutomationDependencies
+	dependencies Dependencies
 
 	// admission tracks both admission transactions and Run workers for Drain.
 	admission *lifecycle.AdmissionGroup
@@ -22,9 +22,9 @@ type Service struct {
 // devices-facing seam, and process-owned collaborators. Zero-valued dependency
 // fields fall back to production defaults.
 func NewService(
-	repository AutomationRepository,
+	repository Repository,
 	automationDevices AutomationDevices,
-	dependencies AutomationDependencies,
+	dependencies Dependencies,
 ) *Service {
 	return &Service{
 		repository:   repository,
@@ -56,21 +56,21 @@ func (service *Service) Drain(ctx context.Context) error {
 // InterruptActiveRuns marks running Runs and Steps interrupted on restart.
 // Call before opening transports; it never replays Commands or infers success.
 func (service *Service) InterruptActiveRuns(ctx context.Context, at time.Time) error {
-	if err := service.repository.InterruptActiveRuns(ctx, at, AutomationFailureCoreRestarted); err != nil {
+	if err := service.repository.InterruptActiveRuns(ctx, at, FailureCoreRestarted); err != nil {
 		return err
 	}
 	service.dependencies.Logger.WarnContext(
 		ctx,
 		"automation runs interrupted",
 		slog.String("event", "automation.run_interrupted"),
-		slog.String("reason", AutomationFailureCoreRestarted),
+		slog.String("reason", FailureCoreRestarted),
 	)
 	return nil
 }
 
 // latchExecutorFault closes admission until restart when Run progress cannot be
 // verified or persisted.
-func (service *Service) latchExecutorFault(ctx context.Context, runID AutomationRunID, position int) {
+func (service *Service) latchExecutorFault(ctx context.Context, runID RunID, position int) {
 	service.admission.CloseAdmission()
 	service.dependencies.Logger.ErrorContext(
 		ctx,
@@ -78,7 +78,7 @@ func (service *Service) latchExecutorFault(ctx context.Context, runID Automation
 		slog.String("event", "automation.executor_fault"),
 		slog.String("run_id", string(runID)),
 		slog.Int("step_position", position),
-		slog.String("error_code", AutomationFailureExecutorFault),
+		slog.String("error_code", FailureExecutorFault),
 	)
 }
 
@@ -86,22 +86,22 @@ func (service *Service) latchExecutorFault(ctx context.Context, runID Automation
 // definition at revision 1.
 func (service *Service) CreateAutomation(
 	ctx context.Context,
-	definition AutomationDefinition,
-) (AutomationRecord, error) {
-	validated, err := ValidateAutomationDefinition(ctx, service.devices, definition)
+	definition Definition,
+) (Record, error) {
+	validated, err := ValidateDefinition(ctx, service.devices, definition)
 	if err != nil {
-		return AutomationRecord{}, err
+		return Record{}, err
 	}
 	record, err := service.repository.CreateAutomation(ctx, validated)
 	if err != nil {
-		return AutomationRecord{}, err
+		return Record{}, err
 	}
 	service.logDefinition(ctx, "automation.created", record)
 	return record, nil
 }
 
 // GetAutomation returns one current definition or ErrAutomationNotFound.
-func (service *Service) GetAutomation(ctx context.Context, id AutomationID) (AutomationRecord, error) {
+func (service *Service) GetAutomation(ctx context.Context, id AutomationID) (Record, error) {
 	return service.repository.GetAutomation(ctx, id)
 }
 
@@ -109,7 +109,7 @@ func (service *Service) GetAutomation(ctx context.Context, id AutomationID) (Aut
 func (service *Service) ListAutomations(
 	ctx context.Context,
 	params ListAutomationsParams,
-) (AutomationPage[AutomationRecord], error) {
+) (Page[Record], error) {
 	return service.repository.ListAutomations(ctx, params)
 }
 
@@ -119,15 +119,15 @@ func (service *Service) ReplaceAutomation(
 	ctx context.Context,
 	id AutomationID,
 	expectedRevision int64,
-	definition AutomationDefinition,
-) (AutomationRecord, error) {
-	validated, err := ValidateAutomationDefinition(ctx, service.devices, definition)
+	definition Definition,
+) (Record, error) {
+	validated, err := ValidateDefinition(ctx, service.devices, definition)
 	if err != nil {
-		return AutomationRecord{}, err
+		return Record{}, err
 	}
 	record, err := service.repository.ReplaceAutomation(ctx, id, expectedRevision, validated)
 	if err != nil {
-		return AutomationRecord{}, err
+		return Record{}, err
 	}
 	service.logDefinition(ctx, "automation.replaced", record)
 	return record, nil
@@ -151,7 +151,7 @@ func (service *Service) DeleteAutomation(ctx context.Context, id AutomationID, e
 
 // logDefinition records one definition mutation using only safe structured
 // attributes: identity and revision, never definition JSON or names.
-func (service *Service) logDefinition(ctx context.Context, event string, record AutomationRecord) {
+func (service *Service) logDefinition(ctx context.Context, event string, record Record) {
 	service.dependencies.Logger.InfoContext(
 		ctx,
 		"automation definition changed",

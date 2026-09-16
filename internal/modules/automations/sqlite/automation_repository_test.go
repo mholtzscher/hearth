@@ -101,7 +101,7 @@ func TestSQLiteRepositoryListIsKeysetStable(t *testing.T) {
 		t.Fatalf("unpaged list = %d items, HasMore %v", len(all.Items), all.HasMore)
 	}
 
-	var paged []automations.AutomationRecord
+	var paged []automations.Record
 	var after *automations.AutomationID
 	pages := 0
 	for {
@@ -225,11 +225,11 @@ func TestSQLiteRepositoryRejectsMalformedTypedDefinitions(t *testing.T) {
 	}
 	for _, test := range []struct {
 		name   string
-		mutate func(definition *automations.AutomationDefinition)
+		mutate func(definition *automations.Definition)
 	}{
 		{
 			"observation trigger carries event payload",
-			func(definition *automations.AutomationDefinition) {
+			func(definition *automations.Definition) {
 				definition.Triggers[0].EntityEvent = &automations.EntityEventTrigger{
 					EntityID: newEntityID(t), EventName: "single_press",
 				}
@@ -237,7 +237,7 @@ func TestSQLiteRepositoryRejectsMalformedTypedDefinitions(t *testing.T) {
 		},
 		{
 			"parameters are not an object",
-			func(definition *automations.AutomationDefinition) {
+			func(definition *automations.Definition) {
 				definition.Steps[0].Parameters = devices.CommandParameters(`[]`)
 			},
 		},

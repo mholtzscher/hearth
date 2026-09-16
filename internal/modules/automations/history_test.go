@@ -18,7 +18,7 @@ const historyPruneBatch = 500
 // deletion count per call, so tests drive the batch loop without seeding a full
 // batch of rows per transaction.
 type scriptedHistoryPruner struct {
-	automations.AutomationRepository
+	automations.Repository
 
 	cutoffs []time.Time
 	batches []int
@@ -27,7 +27,7 @@ type scriptedHistoryPruner struct {
 	onCall  func(call int)
 }
 
-var _ automations.AutomationRepository = (*scriptedHistoryPruner)(nil)
+var _ automations.Repository = (*scriptedHistoryPruner)(nil)
 
 func (pruner *scriptedHistoryPruner) DeleteHistoryBefore(
 	_ context.Context,
@@ -50,8 +50,8 @@ func (pruner *scriptedHistoryPruner) DeleteHistoryBefore(
 }
 
 func newHistoryPruneService(
-	repository automations.AutomationRepository,
-	dependencies automations.AutomationDependencies,
+	repository automations.Repository,
+	dependencies automations.Dependencies,
 ) *automations.Service {
 	return automations.NewService(repository, nil, dependencies)
 }
@@ -63,7 +63,7 @@ func TestPruneHistoryDerivesCutoffFromInjectedRetention(t *testing.T) {
 	t.Parallel()
 	pruner := &scriptedHistoryPruner{}
 	retention := 10 * 24 * time.Hour
-	service := newHistoryPruneService(pruner, automations.AutomationDependencies{
+	service := newHistoryPruneService(pruner, automations.Dependencies{
 		HistoryRetention: retention,
 	})
 
@@ -95,7 +95,7 @@ func TestPruneHistoryDrainsBatchesUntilShortRead(t *testing.T) {
 	t.Parallel()
 	pruner := &scriptedHistoryPruner{counts: []int64{historyPruneBatch, historyPruneBatch, 1}}
 	retention := 10 * 24 * time.Hour
-	service := newHistoryPruneService(pruner, automations.AutomationDependencies{
+	service := newHistoryPruneService(pruner, automations.Dependencies{
 		HistoryRetention: retention,
 	})
 	sweepTime := time.Date(2026, 10, 2, 0, 0, 0, 0, time.UTC)
@@ -136,7 +136,7 @@ func TestPruneHistoryStopsBatchesOnCanceledSweep(t *testing.T) {
 			}
 		},
 	}
-	service := newHistoryPruneService(pruner, automations.AutomationDependencies{
+	service := newHistoryPruneService(pruner, automations.Dependencies{
 		HistoryRetention: runtimeTestHistoryRetention,
 	})
 
@@ -182,7 +182,7 @@ func TestPruneHistoryRejectsUnsafeRetentionAndMissingSweepTime(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
 			pruner := &scriptedHistoryPruner{}
-			service := newHistoryPruneService(pruner, automations.AutomationDependencies{
+			service := newHistoryPruneService(pruner, automations.Dependencies{
 				HistoryRetention: test.retention,
 			})
 
@@ -250,7 +250,7 @@ func TestPruneHistoryLogsNothingOnFailedPass(t *testing.T) {
 	pruneErr := errors.New("s3cr3t-history-prune-error")
 	pruner := &scriptedHistoryPruner{err: pruneErr}
 	writer, logger := newAutomationLogSink()
-	service := newHistoryPruneService(pruner, automations.AutomationDependencies{
+	service := newHistoryPruneService(pruner, automations.Dependencies{
 		Logger:           logger,
 		HistoryRetention: runtimeTestHistoryRetention,
 	})

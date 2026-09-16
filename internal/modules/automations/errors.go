@@ -65,22 +65,22 @@ func (*ConditionSnapshotRequiredError) Is(target error) bool {
 	return target == ErrConditionSnapshotRequired
 }
 
-// AutomationConditionsBlockedError refers only to a manual admission that
+// ConditionsBlockedError refers only to a manual admission that
 // already committed a Condition Skip. The Service constructs it after the
 // transaction commits, so returning it never rolls back the retained history.
 // The API maps it to 409 with the committed Skip's history reference.
-type AutomationConditionsBlockedError struct {
+type ConditionsBlockedError struct {
 	AutomationID AutomationID
-	SkipID       AutomationSkipID
-	Reason       AutomationSkipReason
+	SkipID       SkipID
+	Reason       SkipReason
 }
 
 // Error reports the fixed class message without echoing definitions or values.
-func (*AutomationConditionsBlockedError) Error() string {
+func (*ConditionsBlockedError) Error() string {
 	return "automation conditions prevented manual admission"
 }
 
 // Is matches [ErrAutomationConditionsBlocked] for [errors.Is].
-func (*AutomationConditionsBlockedError) Is(target error) bool {
+func (*ConditionsBlockedError) Is(target error) bool {
 	return target == ErrAutomationConditionsBlocked
 }

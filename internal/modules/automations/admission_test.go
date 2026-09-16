@@ -35,7 +35,7 @@ func TestStartManualRunCreatesDistinctRunsEvenWhenDisabled(t *testing.T) {
 	if first.ID == second.ID {
 		t.Fatalf("manual Runs share identity %s", first.ID)
 	}
-	for _, run := range []automations.AutomationRun{first, second} {
+	for _, run := range []automations.Run{first, second} {
 		if run.Source != automations.RunSourceManual {
 			t.Fatalf("run source = %q, want manual", run.Source)
 		}
@@ -51,7 +51,7 @@ func TestStartManualRunCreatesDistinctRunsEvenWhenDisabled(t *testing.T) {
 		t.Fatalf("history entries = %d, want 2", len(history))
 	}
 	for _, summary := range history {
-		if summary.Kind != automations.AutomationHistoryRun || summary.Status != automations.RunSucceeded {
+		if summary.Kind != automations.HistoryRun || summary.Status != automations.RunSucceeded {
 			t.Fatalf("history summary = %#v", summary)
 		}
 	}
@@ -80,7 +80,7 @@ func TestStartManualRunBusyReturns409WithoutHistory(t *testing.T) {
 		t.Fatalf("busy start error = %v, want ErrAutomationBusy", err)
 	}
 	history := listHistory(t, service, record.ID)
-	if len(history) != 1 || history[0].Kind != automations.AutomationHistoryRun {
+	if len(history) != 1 || history[0].Kind != automations.HistoryRun {
 		t.Fatalf("busy manual start wrote history: %#v", history)
 	}
 	close(gate)
@@ -207,17 +207,17 @@ func TestReceiveDeviceFactStaleBeforeBusy(t *testing.T) {
 	if len(history) != 2 {
 		t.Fatalf("history entries = %d, want run and skip", len(history))
 	}
-	var skip automations.AutomationHistorySummary
+	var skip automations.HistorySummary
 	for _, summary := range history {
-		if summary.Kind == automations.AutomationHistorySkip {
+		if summary.Kind == automations.HistorySkip {
 			skip = summary
 		}
 	}
-	if skip.Reason != automations.AutomationSkipStaleFact {
+	if skip.Reason != automations.SkipStaleFact {
 		t.Fatalf("stale skip = %#v", skip)
 	}
 	entry := historyEntry(t, service, record.ID, skip.ID)
-	if entry.Skip == nil || entry.Skip.Reason != automations.AutomationSkipStaleFact {
+	if entry.Skip == nil || entry.Skip.Reason != automations.SkipStaleFact {
 		t.Fatalf("skip detail = %#v", entry)
 	}
 	if len(entry.Skip.MatchedTriggers) != 1 || entry.Skip.MatchedTriggers[0].ID != "trigger" {

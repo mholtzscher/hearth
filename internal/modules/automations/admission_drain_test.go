@@ -13,7 +13,7 @@ import (
 
 // blockingAdmissionRepository holds admission before commit and worker registration.
 type blockingAdmissionRepository struct {
-	automations.AutomationRepository
+	automations.Repository
 
 	enteredOnce sync.Once
 	entered     chan struct{}
@@ -21,12 +21,12 @@ type blockingAdmissionRepository struct {
 }
 
 func newBlockingAdmissionRepository(
-	repository automations.AutomationRepository,
+	repository automations.Repository,
 ) *blockingAdmissionRepository {
 	return &blockingAdmissionRepository{
-		AutomationRepository: repository,
-		entered:              make(chan struct{}),
-		release:              make(chan struct{}),
+		Repository: repository,
+		entered:    make(chan struct{}),
+		release:    make(chan struct{}),
 	}
 }
 
@@ -38,7 +38,7 @@ func (repository *blockingAdmissionRepository) AdmitManualRun(
 ) (automations.ManualAdmissionResult, error) {
 	repository.enteredOnce.Do(func() { close(repository.entered) })
 	<-repository.release
-	return repository.AutomationRepository.AdmitManualRun(ctx, input, snapshot, now)
+	return repository.Repository.AdmitManualRun(ctx, input, snapshot, now)
 }
 
 func (repository *blockingAdmissionRepository) AdmitDeviceFact(
@@ -49,7 +49,7 @@ func (repository *blockingAdmissionRepository) AdmitDeviceFact(
 ) (automations.AdmissionResult, error) {
 	repository.enteredOnce.Do(func() { close(repository.entered) })
 	<-repository.release
-	return repository.AutomationRepository.AdmitDeviceFact(ctx, fact, snapshot, now)
+	return repository.Repository.AdmitDeviceFact(ctx, fact, snapshot, now)
 }
 
 // Drain must track a manual admission before commit, then join its worker
@@ -65,7 +65,7 @@ func TestDrainJoinsManualAdmissionInFlightAtStop(t *testing.T) {
 	service := automations.NewService(blocking, scripted, dependencies)
 	record := createRuntimeAutomation(t, service, runtimeDefinition(t, 1))
 
-	admitted := make(chan automations.AutomationRun, 1)
+	admitted := make(chan automations.Run, 1)
 	admitFailed := make(chan error, 1)
 	go func() {
 		run, err := service.StartManualRun(ctx, automations.ManualRunInput{AutomationID: record.ID})
@@ -104,7 +104,7 @@ func TestDrainJoinsManualAdmissionInFlightAtStop(t *testing.T) {
 		entry := historyEntry(t, service, record.ID, string(run.ID))
 		if entry.Run == nil || entry.Run.Status != automations.RunInterrupted ||
 			entry.Run.FailureCode == nil ||
-			*entry.Run.FailureCode != automations.AutomationFailureCoreStopping {
+			*entry.Run.FailureCode != automations.FailureCoreStopping {
 			t.Fatalf("in-flight manual Run = %#v, want interrupted/core_stopping", entry.Run)
 		}
 	case <-time.After(5 * time.Second):
@@ -162,7 +162,7 @@ func TestDrainJoinsFactAdmissionInFlightAtStop(t *testing.T) {
 	}
 	entry := historyEntry(t, service, record.ID, history[0].ID)
 	if entry.Run == nil || entry.Run.FailureCode == nil ||
-		*entry.Run.FailureCode != automations.AutomationFailureCoreStopping {
+		*entry.Run.FailureCode != automations.FailureCoreStopping {
 		t.Fatalf("in-flight fact Run = %#v, want core_stopping", entry.Run)
 	}
 	if scripted.executionCount() != 0 {
@@ -213,14 +213,14 @@ func TestDrainJoinsFactFanOutAdmissionInFlightAtStop(t *testing.T) {
 	if err := <-admitFailed; err != nil {
 		t.Fatalf("ReceiveDeviceFact = %v, want a committed admission", err)
 	}
-	for _, record := range []automations.AutomationRecord{first, second} {
+	for _, record := range []automations.Record{first, second} {
 		history := listHistory(t, service, record.ID)
 		if len(history) != 1 || history[0].Status != automations.RunInterrupted {
 			t.Fatalf("automation %s history = %#v, want one interrupted Run", record.ID, history)
 		}
 		entry := historyEntry(t, service, record.ID, history[0].ID)
 		if entry.Run == nil || entry.Run.FailureCode == nil ||
-			*entry.Run.FailureCode != automations.AutomationFailureCoreStopping {
+			*entry.Run.FailureCode != automations.FailureCoreStopping {
 			t.Fatalf("automation %s Run = %#v, want core_stopping", record.ID, entry.Run)
 		}
 	}

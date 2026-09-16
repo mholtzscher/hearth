@@ -254,8 +254,8 @@ New domain types in `internal/modules/automations/automation_model.go`:
 
 ```go
 type AutomationID string     // aut_<UUIDv7>
-type AutomationRunID string  // arn_<UUIDv7>; run_ identifies Adapter runtimes
-type AutomationSkipID string // ask_<UUIDv7>
+type RunID string  // arn_<UUIDv7>; run_ identifies Adapter runtimes
+type SkipID string // ask_<UUIDv7>
 
 type EntityEventTrigger struct {
     ID        string
@@ -264,24 +264,24 @@ type EntityEventTrigger struct {
     EventName devices.EntityEventName
 }
 
-type AutomationStep struct {
+type Step struct {
     ID            string
     EntityID      devices.EntityID
     Operation     devices.OperationName
     Parameters    devices.CommandParameters
 }
 
-type AutomationDefinition struct {
+type Definition struct {
     Name     string
     Enabled  bool
     Triggers []EntityEventTrigger
-    Steps    []AutomationStep
+    Steps    []Step
 }
 
-type AutomationRecord struct {
+type Record struct {
     ID         AutomationID
     Revision   int64
-    Definition AutomationDefinition
+    Definition Definition
     CreatedAt  time.Time
     UpdatedAt  time.Time
 }
@@ -293,7 +293,7 @@ type AutomationEventSummary struct {
     ReceivedAt time.Time // JetStream storage time
 }
 
-type AutomationStepAttempt struct {
+type StepAttempt struct {
     Position              int
     StepID                string
     Status                string // not_attempted | running | satisfied | dispatched | failed | interrupted
@@ -304,22 +304,22 @@ type AutomationStepAttempt struct {
     CompletedAt           *time.Time
 }
 
-type AutomationRun struct {
-    ID                AutomationRunID
+type Run struct {
+    ID                RunID
     AutomationID      AutomationID
     Revision          int64
-    Snapshot          AutomationDefinition
+    Snapshot          Definition
     Event             *AutomationEventSummary // nil for manual
     MatchedTriggerIDs []string                 // empty for manual
     Status            string                   // running | succeeded | failed | interrupted
     FailureCode       *string
     StartedAt         time.Time
     CompletedAt       *time.Time
-    Steps             []AutomationStepAttempt
+    Steps             []StepAttempt
 }
 
-type AutomationSkip struct {
-    ID                AutomationSkipID
+type Skip struct {
+    ID                SkipID
     AutomationID      AutomationID
     Revision          int64
     Event             AutomationEventSummary
@@ -353,10 +353,10 @@ type AutomationDevices interface {
     GetCommand(context.Context, devices.CommandID) (devices.CommandRecord, error)
 }
 
-func NewAutomationService(*SQLiteAutomationRepository, AutomationDevices, AutomationDependencies) *AutomationService
-func (service *AutomationService) CreateAutomation(context.Context, AutomationDefinition) (AutomationRecord, error)
-func (service *AutomationService) ReplaceAutomation(context.Context, AutomationID, int64, AutomationDefinition) (AutomationRecord, error)
-func (service *AutomationService) StartManualRun(context.Context, AutomationID) (AutomationRun, error)
+func NewAutomationService(*SQLiteAutomationRepository, AutomationDevices, Dependencies) *AutomationService
+func (service *AutomationService) CreateAutomation(context.Context, Definition) (Record, error)
+func (service *AutomationService) ReplaceAutomation(context.Context, AutomationID, int64, Definition) (Record, error)
+func (service *AutomationService) StartManualRun(context.Context, AutomationID) (Run, error)
 func (service *AutomationService) ReceiveEntityEventFact(context.Context, EntityEventFact) (AdmissionOutcome, error)
 func (service *AutomationService) StopAdmission()
 func (service *AutomationService) AdmissionOpen() bool

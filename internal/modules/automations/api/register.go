@@ -18,25 +18,25 @@ import (
 // Automations exposes definition management, manual admission, and history to
 // HTTP handlers, excluding Fact admission and execution-state writes.
 type Automations interface {
-	CreateAutomation(context.Context, automations.AutomationDefinition) (automations.AutomationRecord, error)
-	GetAutomation(context.Context, automations.AutomationID) (automations.AutomationRecord, error)
+	CreateAutomation(context.Context, automations.Definition) (automations.Record, error)
+	GetAutomation(context.Context, automations.AutomationID) (automations.Record, error)
 	ListAutomations(
 		context.Context,
 		automations.ListAutomationsParams,
-	) (automations.AutomationPage[automations.AutomationRecord], error)
+	) (automations.Page[automations.Record], error)
 	ReplaceAutomation(
 		context.Context,
 		automations.AutomationID,
 		int64,
-		automations.AutomationDefinition,
-	) (automations.AutomationRecord, error)
+		automations.Definition,
+	) (automations.Record, error)
 	DeleteAutomation(context.Context, automations.AutomationID, int64) error
-	StartManualRun(context.Context, automations.ManualRunInput) (automations.AutomationRun, error)
-	GetHistoryEntry(context.Context, automations.AutomationID, string) (automations.AutomationHistoryEntry, error)
+	StartManualRun(context.Context, automations.ManualRunInput) (automations.Run, error)
+	GetHistoryEntry(context.Context, automations.AutomationID, string) (automations.HistoryEntry, error)
 	ListHistory(
 		context.Context,
 		automations.ListHistoryParams,
-	) (automations.AutomationPage[automations.AutomationHistorySummary], error)
+	) (automations.Page[automations.HistorySummary], error)
 }
 
 // Handler owns the automation HTTP operations.
@@ -47,7 +47,7 @@ type Handler struct {
 // definitionCodec is the canonical strict definition schema, compiled once.
 //
 //nolint:gochecknoglobals // One immutable compiled schema, never reassigned.
-var definitionCodec = sync.OnceValues(automations.NewAutomationDefinitionCodec)
+var definitionCodec = sync.OnceValues(automations.NewDefinitionCodec)
 
 // manualRunMaximumBodyBytes bounds the optional manual bypass body to 1 KiB.
 // Huma rejects any body that reaches the limit with 413 before decoding.
@@ -368,15 +368,15 @@ func (handler *Handler) GetHistoryEntry(
 }
 
 // decodeDefinitionBody strictly decodes one definition payload.
-func decodeDefinitionBody(raw json.RawMessage) (automations.AutomationDefinition, error) {
+func decodeDefinitionBody(raw json.RawMessage) (automations.Definition, error) {
 	if len(bytes.TrimSpace(raw)) == 0 {
-		return automations.AutomationDefinition{}, newProblem(
+		return automations.Definition{}, newProblem(
 			http.StatusBadRequest, "invalid_definition", "definition body is required",
 		)
 	}
-	definition, err := automations.DecodeAutomationDefinition(raw)
+	definition, err := automations.DecodeDefinition(raw)
 	if err != nil {
-		return automations.AutomationDefinition{}, mapDomainError(err)
+		return automations.Definition{}, mapDomainError(err)
 	}
 	return definition, nil
 }
@@ -385,24 +385,24 @@ func decodeDefinitionBody(raw json.RawMessage) (automations.AutomationDefinition
 // nested strict definition.
 func decodeReplaceEnvelope(
 	raw json.RawMessage,
-) (int64, automations.AutomationDefinition, error) {
+) (int64, automations.Definition, error) {
 	var envelope struct {
 		ExpectedRevision int64           `json:"expected_revision"`
 		Definition       json.RawMessage `json:"definition"`
 	}
 	if err := decodeSingleJSONValue(raw, &envelope); err != nil {
-		return 0, automations.AutomationDefinition{}, newProblem(
+		return 0, automations.Definition{}, newProblem(
 			http.StatusBadRequest, "invalid_request_body", "replacement body is invalid",
 		)
 	}
 	if envelope.ExpectedRevision < 1 {
-		return 0, automations.AutomationDefinition{}, newProblem(
+		return 0, automations.Definition{}, newProblem(
 			http.StatusBadRequest, "invalid_revision", "expected_revision must be at least 1",
 		)
 	}
 	definition, err := decodeDefinitionBody(envelope.Definition)
 	if err != nil {
-		return 0, automations.AutomationDefinition{}, err
+		return 0, automations.Definition{}, err
 	}
 	return envelope.ExpectedRevision, definition, nil
 }
@@ -421,10 +421,10 @@ func decodeSingleJSONValue(raw json.RawMessage, target any) error {
 }
 
 func validEntryID(value string) bool {
-	if _, err := automations.ParseAutomationRunID(value); err == nil {
+	if _, err := automations.ParseRunID(value); err == nil {
 		return true
 	}
-	if _, err := automations.ParseAutomationSkipID(value); err == nil {
+	if _, err := automations.ParseSkipID(value); err == nil {
 		return true
 	}
 	return false

@@ -31,9 +31,9 @@ const (
 	DeviceFactConsumerUnlimitedRedelivery = -1
 	// DeviceFactAdmissionTimeout sets an admission deadline shorter than AckWait
 	// to allow a disposition before broker redelivery. It is an alias of the
-	// authoritative automations.AutomationAdmissionTimeout, which also covers
+	// authoritative automations.AdmissionTimeout, which also covers
 	// Condition State snapshot reads; the duration is never repeated here.
-	DeviceFactAdmissionTimeout = automations.AutomationAdmissionTimeout
+	DeviceFactAdmissionTimeout = automations.AdmissionTimeout
 )
 
 // ProvisionDeviceFactConsumer creates or validates a durable consumer on the

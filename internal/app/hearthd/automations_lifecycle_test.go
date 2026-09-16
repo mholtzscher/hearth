@@ -58,8 +58,8 @@ func TestCoreStartupInterruptsRunningAutomationRuns(t *testing.T) {
 	if status != string(automations.RunInterrupted) {
 		t.Fatalf("run status after restart = %q, want %q", status, automations.RunInterrupted)
 	}
-	if failureCode != automations.AutomationFailureCoreRestarted {
-		t.Fatalf("run failure code = %q, want %q", failureCode, automations.AutomationFailureCoreRestarted)
+	if failureCode != automations.FailureCoreRestarted {
+		t.Fatalf("run failure code = %q, want %q", failureCode, automations.FailureCoreRestarted)
 	}
 	if !completedAt.Valid || completedAt.String == "" {
 		t.Fatal("interrupted run has no completion time")

@@ -16,7 +16,7 @@ type definitionTestRepository struct {
 	*automationssqlite.AutomationRepository
 }
 
-var _ automations.AutomationRepository = (*definitionTestRepository)(nil)
+var _ automations.Repository = (*definitionTestRepository)(nil)
 
 // Catch devices/automations interface drift before application wiring.
 var _ automations.AutomationDevices = (*devices.Service)(nil)
@@ -47,14 +47,14 @@ func (*definitionTestRepository) CompleteRun(context.Context, automations.RunCom
 
 func (*definitionTestRepository) GetHistoryEntry(
 	context.Context, automations.AutomationID, string,
-) (automations.AutomationHistoryEntry, error) {
-	return automations.AutomationHistoryEntry{}, errRuntimePersistenceUnavailable
+) (automations.HistoryEntry, error) {
+	return automations.HistoryEntry{}, errRuntimePersistenceUnavailable
 }
 
 func (*definitionTestRepository) ListHistory(
 	context.Context, automations.ListHistoryParams,
-) (automations.AutomationPage[automations.AutomationHistorySummary], error) {
-	return automations.AutomationPage[automations.AutomationHistorySummary]{}, errRuntimePersistenceUnavailable
+) (automations.Page[automations.HistorySummary], error) {
+	return automations.Page[automations.HistorySummary]{}, errRuntimePersistenceUnavailable
 }
 
 func (*definitionTestRepository) InterruptActiveRuns(context.Context, time.Time, string) error {
@@ -135,7 +135,7 @@ func newAutomationService(
 	repository := &definitionTestRepository{
 		AutomationRepository: newAutomationRepository(t, openAutomationDatabase(t)),
 	}
-	return automations.NewService(repository, devicesStub, automations.AutomationDependencies{})
+	return automations.NewService(repository, devicesStub, automations.Dependencies{})
 }
 
 // Creation must validate all device references before persisting once, using
@@ -144,7 +144,7 @@ func TestServiceCreateAutomationValidatesEveryCurrentReference(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	definition := validDomainDefinition(t)
-	definition.Triggers = append(definition.Triggers, automations.AutomationTrigger{
+	definition.Triggers = append(definition.Triggers, automations.Trigger{
 		ID:          "single_press",
 		Kind:        automations.TriggerKindEntityEvent,
 		EntityEvent: &automations.EntityEventTrigger{EntityID: newEntityID(t), EventName: "single_press"},
@@ -198,7 +198,7 @@ func TestServiceCreateAutomationRejectsInvalidReferencesAtomically(t *testing.T)
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
 			definition := validDomainDefinition(t)
-			definition.Triggers = append(definition.Triggers, automations.AutomationTrigger{
+			definition.Triggers = append(definition.Triggers, automations.Trigger{
 				ID:          "single_press",
 				Kind:        automations.TriggerKindEntityEvent,
 				EntityEvent: &automations.EntityEventTrigger{EntityID: newEntityID(t), EventName: "single_press"},

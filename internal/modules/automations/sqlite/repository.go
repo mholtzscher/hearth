@@ -25,8 +25,8 @@ import (
 // domain-oriented persistence seam and its narrower definition-management
 // capability.
 var (
-	_ automations.AutomationRepository           = (*AutomationRepository)(nil)
-	_ automations.AutomationDefinitionRepository = (*AutomationRepository)(nil)
+	_ automations.Repository           = (*AutomationRepository)(nil)
+	_ automations.DefinitionRepository = (*AutomationRepository)(nil)
 )
 
 // AutomationRepository persists automation definitions, admission, execution,
@@ -37,15 +37,15 @@ type AutomationRepository struct {
 	queries         *dbsqlc.Queries
 	now             func() time.Time
 	newAutomationID func() (automations.AutomationID, error)
-	newRunID        func() (automations.AutomationRunID, error)
-	newSkipID       func() (automations.AutomationSkipID, error)
+	newRunID        func() (automations.RunID, error)
+	newSkipID       func() (automations.SkipID, error)
 }
 
 // NewAutomationRepository uses a migrated Core database. Zero-valued
 // dependencies default to the process clock and canonical identity constructors.
 func NewAutomationRepository(
 	database *sql.DB,
-	dependencies automations.AutomationDependencies,
+	dependencies automations.Dependencies,
 ) *AutomationRepository {
 	dependencies = dependencies.WithDefaults()
 	return &AutomationRepository{

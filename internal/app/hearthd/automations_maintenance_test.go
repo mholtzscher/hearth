@@ -48,9 +48,9 @@ func TestHistoryPruneSchedulerPrunesAutomationHistory(t *testing.T) {
 		devices.Dependencies{ObservationRetention: 30 * 24 * time.Hour},
 	)
 	automationService := automations.NewService(
-		automationssqlite.NewAutomationRepository(database, automations.AutomationDependencies{}),
+		automationssqlite.NewAutomationRepository(database, automations.Dependencies{}),
 		nil,
-		automations.AutomationDependencies{HistoryRetention: 30 * 24 * time.Hour},
+		automations.Dependencies{HistoryRetention: 30 * 24 * time.Hour},
 	)
 
 	runContext, cancelRun := context.WithCancel(ctx)

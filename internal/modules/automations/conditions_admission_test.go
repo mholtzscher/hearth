@@ -18,10 +18,10 @@ import (
 // admissionConditionTree builds one entity_state Condition leaf comparing
 // /level with a static operand, so a definition can be made conditional without
 // a full tree fixture.
-func admissionConditionTree(entityID devices.EntityID, operand string) *automations.AutomationCondition {
-	return &automations.AutomationCondition{
+func admissionConditionTree(entityID devices.EntityID, operand string) *automations.Condition {
+	return &automations.Condition{
 		ID:   "dark",
-		Kind: automations.AutomationConditionEntityState,
+		Kind: automations.ConditionEntityState,
 		EntityState: &automations.EntityStateCondition{
 			EntityID: entityID,
 			Pointer:  "/level",
@@ -36,8 +36,8 @@ func admissionConditionTree(entityID devices.EntityID, operand string) *automati
 func admissionDefinitionFor(
 	t *testing.T,
 	triggerEntity devices.EntityID,
-	conditions *automations.AutomationCondition,
-) automations.AutomationDefinition {
+	conditions *automations.Condition,
+) automations.Definition {
 	t.Helper()
 	definition := runtimeDefinitionFor(t, triggerEntity)
 	definition.Conditions = conditions
@@ -86,7 +86,7 @@ func TestAutomaticAdmissionReadsOneSnapshotForMatchingConditionUnion(t *testing.
 	scripted := newScriptedDevices()
 	database := openAutomationDatabase(t)
 	base := newAutomationRepository(t, database)
-	observing := &observingAdmissionRepository{AutomationRepository: base}
+	observing := &observingAdmissionRepository{Repository: base}
 	service := automations.NewService(observing, scripted, runtimeTestDependencies())
 	entity := newEntityID(t)
 	firstEntity := newEntityID(t)
@@ -132,8 +132,8 @@ func TestAutomaticAdmissionReadsOneSnapshotForMatchingConditionUnion(t *testing.
 		t.Fatalf("executed Commands = %d, want 4", scripted.executionCount())
 	}
 	history := listHistory(t, service, record.ID)
-	if len(history) != 1 || history[0].ConditionMode != automations.AutomationConditionDecisionEvaluated ||
-		history[0].ConditionResult == nil || *history[0].ConditionResult != automations.AutomationConditionTrue {
+	if len(history) != 1 || history[0].ConditionMode != automations.ConditionDecisionEvaluated ||
+		history[0].ConditionResult == nil || *history[0].ConditionResult != automations.ConditionTrue {
 		t.Fatalf("history summary = %#v", history)
 	}
 }
@@ -147,7 +147,7 @@ func TestAutomaticAdmissionMarksStaleWhenFactAgesBeforeTransaction(t *testing.T)
 	var aged atomic.Bool
 	dependencies.Now = func() time.Time {
 		if aged.Load() {
-			return runtimeTestNow.Add(automations.AutomationFactMaximumAge + time.Second)
+			return runtimeTestNow.Add(automations.FactMaximumAge + time.Second)
 		}
 		return runtimeTestNow
 	}
@@ -169,10 +169,10 @@ func TestAutomaticAdmissionMarksStaleWhenFactAgesBeforeTransaction(t *testing.T)
 		t.Fatalf("aged admission outcome = %#v, want one Skip", outcome)
 	}
 	history := listHistory(t, service, record.ID)
-	if len(history) != 1 || history[0].Reason != automations.AutomationSkipStaleFact {
+	if len(history) != 1 || history[0].Reason != automations.SkipStaleFact {
 		t.Fatalf("aged admission history = %#v, want stale_fact", history)
 	}
-	if history[0].ConditionMode != automations.AutomationConditionDecisionNotEvaluated {
+	if history[0].ConditionMode != automations.ConditionDecisionNotEvaluated {
 		t.Fatalf("stale Skip decision mode = %q, want not_evaluated", history[0].ConditionMode)
 	}
 	if len(scripted.snapshotRequests()) != 1 {
@@ -186,7 +186,7 @@ func TestUnconditionedAdmissionNeverReadsState(t *testing.T) {
 	scripted := newScriptedDevices()
 	database := openAutomationDatabase(t)
 	base := newAutomationRepository(t, database)
-	observing := &observingAdmissionRepository{AutomationRepository: base}
+	observing := &observingAdmissionRepository{Repository: base}
 	service := automations.NewService(observing, scripted, runtimeTestDependencies())
 	entity := newEntityID(t)
 	record := createRuntimeAutomation(t, service, runtimeDefinitionFor(t, entity))
@@ -208,18 +208,18 @@ func TestUnconditionedAdmissionNeverReadsState(t *testing.T) {
 		t.Fatalf("busy unconditioned outcome = %#v, want one Skip", busy)
 	}
 	stale, err := service.ReceiveDeviceFact(context.Background(),
-		newObservationFact(t, entity, runtimeTestNow.Add(-automations.AutomationFactMaximumAge-time.Second)))
+		newObservationFact(t, entity, runtimeTestNow.Add(-automations.FactMaximumAge-time.Second)))
 	if err != nil {
 		t.Fatal(err)
 	}
 	if stale.StartedRuns != 0 || stale.RecordedSkips != 1 {
 		t.Fatalf("stale unconditioned outcome = %#v, want one Skip", stale)
 	}
-	reasons := make(map[automations.AutomationSkipReason]int)
+	reasons := make(map[automations.SkipReason]int)
 	for _, summary := range listHistory(t, service, record.ID) {
 		reasons[summary.Reason]++
 	}
-	if reasons[automations.AutomationSkipBusy] != 1 || reasons[automations.AutomationSkipStaleFact] != 1 {
+	if reasons[automations.SkipBusy] != 1 || reasons[automations.SkipStaleFact] != 1 {
 		t.Fatalf("skip reasons = %v, want one busy and one stale_fact", reasons)
 	}
 	if reads := scripted.snapshotRequests(); len(reads) != 0 {
@@ -246,7 +246,7 @@ func TestManualAdmissionConditionBlockedReturnsTypedErrorAfterCommit(t *testing.
 	))
 
 	_, err := service.StartManualRun(context.Background(), automations.ManualRunInput{AutomationID: record.ID})
-	var blocked *automations.AutomationConditionsBlockedError
+	var blocked *automations.ConditionsBlockedError
 	if !errors.As(err, &blocked) {
 		t.Fatalf("manual blocked error = %v, want AutomationConditionsBlockedError", err)
 	}
@@ -254,11 +254,11 @@ func TestManualAdmissionConditionBlockedReturnsTypedErrorAfterCommit(t *testing.
 		t.Fatalf("blocked error does not match ErrAutomationConditionsBlocked: %v", err)
 	}
 	if blocked.AutomationID != record.ID || blocked.SkipID == "" ||
-		blocked.Reason != automations.AutomationSkipConditionsFalse {
+		blocked.Reason != automations.SkipConditionsFalse {
 		t.Fatalf("blocked error = %#v", blocked)
 	}
 	entry := historyEntry(t, service, record.ID, string(blocked.SkipID))
-	if entry.Skip == nil || entry.Skip.Reason != automations.AutomationSkipConditionsFalse ||
+	if entry.Skip == nil || entry.Skip.Reason != automations.SkipConditionsFalse ||
 		entry.Skip.Source != automations.RunSourceManual || entry.Skip.Fact != nil {
 		t.Fatalf("committed manual Skip = %#v", entry.Skip)
 	}
@@ -277,7 +277,7 @@ func TestManualAdmissionBypassSkipsStateAndRepeatsStayDistinct(t *testing.T) {
 	scripted := newScriptedDevices()
 	database := openAutomationDatabase(t)
 	base := newAutomationRepository(t, database)
-	observing := &observingAdmissionRepository{AutomationRepository: base}
+	observing := &observingAdmissionRepository{Repository: base}
 	service := automations.NewService(observing, scripted, runtimeTestDependencies())
 	entity := newEntityID(t)
 	conditionEntity := newEntityID(t)
@@ -292,7 +292,7 @@ func TestManualAdmissionBypassSkipsStateAndRepeatsStayDistinct(t *testing.T) {
 	if err != nil {
 		t.Fatalf("bypassed manual admission = %v, want a committed Run", err)
 	}
-	if run.ConditionDecision.Mode != automations.AutomationConditionDecisionBypassed ||
+	if run.ConditionDecision.Mode != automations.ConditionDecisionBypassed ||
 		!run.ConditionDecision.BypassRequested {
 		t.Fatalf("bypassed Run decision = %#v", run.ConditionDecision)
 	}
@@ -323,7 +323,7 @@ func TestManualAdmissionWithoutConditionsSkipsSnapshotAndEnabledList(t *testing.
 	scripted := newScriptedDevices()
 	database := openAutomationDatabase(t)
 	base := newAutomationRepository(t, database)
-	observing := &observingAdmissionRepository{AutomationRepository: base}
+	observing := &observingAdmissionRepository{Repository: base}
 	service := automations.NewService(observing, scripted, runtimeTestDependencies())
 	record := createRuntimeAutomation(t, service, runtimeDefinitionFor(t, newEntityID(t)))
 	scripted.setEntityStateSnapshotError(errors.New("State must not be read for unconditioned manual admission"))
@@ -347,10 +347,10 @@ func requireManualConditionBlock(
 	t *testing.T,
 	service *automations.Service,
 	id automations.AutomationID,
-) automations.AutomationSkipID {
+) automations.SkipID {
 	t.Helper()
 	_, err := service.StartManualRun(context.Background(), automations.ManualRunInput{AutomationID: id})
-	var blocked *automations.AutomationConditionsBlockedError
+	var blocked *automations.ConditionsBlockedError
 	if !errors.As(err, &blocked) {
 		t.Fatalf("manual admission = %v, want a committed Condition block", err)
 	}
@@ -413,16 +413,16 @@ func TestConditionStateCorruptionLogsFixedDiagnosticAndRetainsFact(t *testing.T)
 // observingAdmissionRepository records definition pre-reads while delegating
 // every admission operation to the real SQLite repository.
 type observingAdmissionRepository struct {
-	automations.AutomationRepository
+	automations.Repository
 
 	listEnabledCalls atomic.Int32
 }
 
 func (repository *observingAdmissionRepository) ListEnabledAutomations(
 	ctx context.Context,
-) ([]automations.AutomationRecord, error) {
+) ([]automations.Record, error) {
 	repository.listEnabledCalls.Add(1)
-	return repository.AutomationRepository.ListEnabledAutomations(ctx)
+	return repository.Repository.ListEnabledAutomations(ctx)
 }
 
 // replacingAdmissionRepository changes a definition after the Service pre-read
@@ -443,7 +443,7 @@ func (repository *replacingAdmissionRepository) AdmitDeviceFact(
 	if repository.attempts.Add(1) == 1 && repository.replace != nil {
 		repository.replace()
 	}
-	return repository.AutomationRepository.AdmitDeviceFact(ctx, fact, snapshot, now)
+	return repository.Repository.AdmitDeviceFact(ctx, fact, snapshot, now)
 }
 
 // A definition edit that adds a newly required Entity after the pre-read must
@@ -455,7 +455,7 @@ func TestDefinitionReplacementRequiresNewSnapshotReturnsCoverageError(t *testing
 	database := openAutomationDatabase(t)
 	base := newAutomationRepository(t, database)
 	racing := &replacingAdmissionRepository{
-		observingAdmissionRepository: &observingAdmissionRepository{AutomationRepository: base},
+		observingAdmissionRepository: &observingAdmissionRepository{Repository: base},
 	}
 	service := automations.NewService(racing, scripted, dependencies)
 	entity := newEntityID(t)
@@ -502,7 +502,7 @@ func TestDefinitionOperandEditReusesCoveredEvidence(t *testing.T) {
 	database := openAutomationDatabase(t)
 	base := newAutomationRepository(t, database)
 	racing := &replacingAdmissionRepository{
-		observingAdmissionRepository: &observingAdmissionRepository{AutomationRepository: base},
+		observingAdmissionRepository: &observingAdmissionRepository{Repository: base},
 	}
 	service := automations.NewService(racing, scripted, dependencies)
 	entity := newEntityID(t)
@@ -531,7 +531,7 @@ func TestDefinitionOperandEditReusesCoveredEvidence(t *testing.T) {
 		t.Fatalf("snapshot reads = %d, want the covered evidence reused", reads)
 	}
 	history := listHistory(t, service, record.ID)
-	if len(history) != 1 || history[0].Reason != automations.AutomationSkipConditionsFalse {
+	if len(history) != 1 || history[0].Reason != automations.SkipConditionsFalse {
 		t.Fatalf("history = %#v, want conditions_false from the replacement operand", history)
 	}
 	entry := historyEntry(t, service, record.ID, history[0].ID)

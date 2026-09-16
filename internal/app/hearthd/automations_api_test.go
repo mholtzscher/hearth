@@ -20,22 +20,22 @@ type stubAutomations struct {
 
 func (*stubAutomations) CreateAutomation(
 	context.Context,
-	automations.AutomationDefinition,
-) (automations.AutomationRecord, error) {
+	automations.Definition,
+) (automations.Record, error) {
 	panic("unexpected CreateAutomation call")
 }
 
 func (*stubAutomations) GetAutomation(
 	context.Context,
 	automations.AutomationID,
-) (automations.AutomationRecord, error) {
+) (automations.Record, error) {
 	panic("unexpected GetAutomation call")
 }
 
 func (*stubAutomations) ListAutomations(
 	context.Context,
 	automations.ListAutomationsParams,
-) (automations.AutomationPage[automations.AutomationRecord], error) {
+) (automations.Page[automations.Record], error) {
 	panic("unexpected ListAutomations call")
 }
 
@@ -43,8 +43,8 @@ func (*stubAutomations) ReplaceAutomation(
 	context.Context,
 	automations.AutomationID,
 	int64,
-	automations.AutomationDefinition,
-) (automations.AutomationRecord, error) {
+	automations.Definition,
+) (automations.Record, error) {
 	panic("unexpected ReplaceAutomation call")
 }
 
@@ -55,7 +55,7 @@ func (*stubAutomations) DeleteAutomation(context.Context, automations.Automation
 func (*stubAutomations) StartManualRun(
 	context.Context,
 	automations.ManualRunInput,
-) (automations.AutomationRun, error) {
+) (automations.Run, error) {
 	panic("unexpected StartManualRun call")
 }
 
@@ -63,14 +63,14 @@ func (*stubAutomations) GetHistoryEntry(
 	context.Context,
 	automations.AutomationID,
 	string,
-) (automations.AutomationHistoryEntry, error) {
+) (automations.HistoryEntry, error) {
 	panic("unexpected GetHistoryEntry call")
 }
 
 func (*stubAutomations) ListHistory(
 	context.Context,
 	automations.ListHistoryParams,
-) (automations.AutomationPage[automations.AutomationHistorySummary], error) {
+) (automations.Page[automations.HistorySummary], error) {
 	panic("unexpected ListHistory call")
 }
 

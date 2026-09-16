@@ -16,7 +16,7 @@ func (repo *AutomationRepository) MarkStepRunning(
 	ctx context.Context,
 	start automations.StepStart,
 ) error {
-	if _, err := automations.ParseAutomationRunID(string(start.RunID)); err != nil {
+	if _, err := automations.ParseRunID(string(start.RunID)); err != nil {
 		return err
 	}
 	if _, err := devices.ParseCommandID(string(start.CommandID)); err != nil {
@@ -52,7 +52,7 @@ func (repo *AutomationRepository) CompleteStep(
 	ctx context.Context,
 	completion automations.StepCompletion,
 ) error {
-	if _, err := automations.ParseAutomationRunID(string(completion.RunID)); err != nil {
+	if _, err := automations.ParseRunID(string(completion.RunID)); err != nil {
 		return err
 	}
 	if err := automations.ValidateStepCompletion(completion); err != nil {
@@ -87,7 +87,7 @@ func (repo *AutomationRepository) CompleteRun(
 	ctx context.Context,
 	completion automations.RunCompletion,
 ) error {
-	if _, err := automations.ParseAutomationRunID(string(completion.RunID)); err != nil {
+	if _, err := automations.ParseRunID(string(completion.RunID)); err != nil {
 		return err
 	}
 	switch completion.Status {

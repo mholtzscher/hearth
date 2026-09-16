@@ -46,13 +46,13 @@ func newProblem(status int, code, detail string) error {
 // conditionBlockedProblemCode maps one committed manual Condition Skip reason to
 // its stable problem code. Busy and stale reasons never reach a blocked manual
 // admission, so they fall back to the generic class code.
-func conditionBlockedProblemCode(reason automations.AutomationSkipReason) string {
+func conditionBlockedProblemCode(reason automations.SkipReason) string {
 	switch reason {
-	case automations.AutomationSkipConditionsFalse:
+	case automations.SkipConditionsFalse:
 		return "conditions_false"
-	case automations.AutomationSkipConditionsUnknown:
+	case automations.SkipConditionsUnknown:
 		return "conditions_unknown"
-	case automations.AutomationSkipBusy, automations.AutomationSkipStaleFact:
+	case automations.SkipBusy, automations.SkipStaleFact:
 		return "conditions_blocked"
 	}
 	return "conditions_blocked"
@@ -60,7 +60,7 @@ func conditionBlockedProblemCode(reason automations.AutomationSkipReason) string
 
 // newConditionBlockedProblem maps a committed manual Condition Skip to its 409
 // problem with the history reference callers fetch to read the retained Skip.
-func newConditionBlockedProblem(blocked *automations.AutomationConditionsBlockedError) error {
+func newConditionBlockedProblem(blocked *automations.ConditionsBlockedError) error {
 	return &automationProblemError{
 		Type:       "about:blank",
 		Title:      http.StatusText(http.StatusConflict),
@@ -121,7 +121,7 @@ func mapDomainError(err error) error {
 	case errors.Is(err, automations.ErrAutomationBusy):
 		return newProblem(http.StatusConflict, "automation_busy", "automation already has a running run")
 	case errors.Is(err, automations.ErrAutomationConditionsBlocked):
-		if blocked, ok := errors.AsType[*automations.AutomationConditionsBlockedError](err); ok {
+		if blocked, ok := errors.AsType[*automations.ConditionsBlockedError](err); ok {
 			return newConditionBlockedProblem(blocked)
 		}
 		return newProblem(http.StatusConflict, "conditions_blocked", "automation conditions prevented manual admission")

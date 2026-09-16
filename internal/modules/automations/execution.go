@@ -17,22 +17,22 @@ const automationPersistenceTimeout = 5 * time.Second
 
 // Stable Step and Run failure codes. They are fixed tokens, never upstream text.
 const (
-	// AutomationFailureCoreStopping marks a Step or Run stopped because Command
+	// FailureCoreStopping marks a Step or Run stopped because Command
 	// admission closed during drain.
-	AutomationFailureCoreStopping = "core_stopping"
-	// AutomationFailureCoreRestarted marks a Step or Run interrupted by restart.
-	AutomationFailureCoreRestarted = "core_restarted"
-	// AutomationFailureExecutorFault marks a Step or Run the executor could not
+	FailureCoreStopping = "core_stopping"
+	// FailureCoreRestarted marks a Step or Run interrupted by restart.
+	FailureCoreRestarted = "core_restarted"
+	// FailureExecutorFault marks a Step or Run the executor could not
 	// advance truthfully, such as an unverifiable or nonterminal Command.
-	AutomationFailureExecutorFault = "executor_fault"
-	// AutomationFailureInvalidCommand marks a Step rejected before Command creation.
-	AutomationFailureInvalidCommand = "invalid_command"
-	// AutomationFailureEntityNotFound marks a Step whose Entity vanished before
+	FailureExecutorFault = "executor_fault"
+	// FailureInvalidCommand marks a Step rejected before Command creation.
+	FailureInvalidCommand = "invalid_command"
+	// FailureEntityNotFound marks a Step whose Entity vanished before
 	// Command creation.
-	AutomationFailureEntityNotFound = "entity_not_found"
-	// AutomationFailureInternalError is the fallback for one confirmed Command
+	FailureEntityNotFound = "entity_not_found"
+	// FailureInternalError is the fallback for one confirmed Command
 	// failure with no more specific durable code.
-	AutomationFailureInternalError = "internal_error"
+	FailureInternalError = "internal_error"
 )
 
 // ValidateStepCompletion rejects a Step completion that is not a terminal
@@ -67,7 +67,7 @@ func ValidateStepCompletion(completion StepCompletion) error {
 // executeRun executes one immutable Run snapshot sequentially. The next Step
 // starts only after the prior Command reaches a successful terminal outcome, and
 // the first failure or interruption stops the Run without retry.
-func (service *Service) executeRun(ctx context.Context, run AutomationRun) {
+func (service *Service) executeRun(ctx context.Context, run Run) {
 	for position := range run.Snapshot.Steps {
 		step := run.Snapshot.Steps[position]
 		if !service.AdmissionOpen() || service.devices == nil || !service.devices.CommandAdmissionOpen() {
@@ -120,7 +120,7 @@ func (service *Service) executeRun(ctx context.Context, run AutomationRun) {
 // the still-running durable row for startup interruption to classify.
 func (service *Service) beginStep(
 	ctx context.Context,
-	runID AutomationRunID,
+	runID RunID,
 	position int,
 ) (StepStart, bool) {
 	commandID, err := service.dependencies.NewCommandID()
@@ -150,7 +150,7 @@ func (service *Service) beginStep(
 // return is verified against durable ownership before any link is exposed.
 func (service *Service) reconcileStep(
 	ctx context.Context,
-	step AutomationStep,
+	step Step,
 	start StepStart,
 	executionErr error,
 ) (StepCompletion, bool) {
@@ -189,7 +189,7 @@ func (service *Service) reconcileStep(
 	case devices.CommandStatusRequested, devices.CommandStatusAccepted:
 		return StepCompletion{}, false
 	default:
-		code := AutomationFailureInternalError
+		code := FailureInternalError
 		if record.FailureCode != nil {
 			code = string(*record.FailureCode)
 		}
@@ -203,23 +203,23 @@ func (service *Service) reconcileStep(
 func preCreationFailure(executionErr error) StepCompletion {
 	switch {
 	case errors.Is(executionErr, devices.ErrCommandUnavailable):
-		code := AutomationFailureCoreStopping
+		code := FailureCoreStopping
 		return StepCompletion{Status: StepInterrupted, FailureCode: &code}
 	case errors.Is(executionErr, devices.ErrInvalidCommand), errors.Is(executionErr, devices.ErrCommandIDConflict):
-		code := AutomationFailureInvalidCommand
+		code := FailureInvalidCommand
 		return StepCompletion{Status: StepFailed, FailureCode: &code}
 	case errors.Is(executionErr, devices.ErrEntityNotFound):
-		code := AutomationFailureEntityNotFound
+		code := FailureEntityNotFound
 		return StepCompletion{Status: StepFailed, FailureCode: &code}
 	default:
-		code := AutomationFailureInternalError
+		code := FailureInternalError
 		return StepCompletion{Status: StepFailed, FailureCode: &code}
 	}
 }
 
 // stepOwnsCommand verifies durable ownership: the created Command must carry
 // exactly the reserved identity, Entity, Operation, and normalized parameters.
-func stepOwnsCommand(step AutomationStep, start StepStart, record devices.CommandRecord) bool {
+func stepOwnsCommand(step Step, start StepStart, record devices.CommandRecord) bool {
 	return record.ID == start.CommandID &&
 		record.CorrelationID == start.CorrelationID &&
 		record.EntityID == step.EntityID &&
@@ -235,7 +235,7 @@ func (service *Service) completeStep(ctx context.Context, completion StepComplet
 
 func (service *Service) completeRun(
 	ctx context.Context,
-	runID AutomationRunID,
+	runID RunID,
 	status RunStatus,
 	failureCode *string,
 ) {
@@ -260,8 +260,8 @@ func (service *Service) completeRun(
 
 // stopRunForDrain marks one not-yet-started Step and its Run interrupted with
 // core_stopping and no Command link.
-func (service *Service) stopRunForDrain(ctx context.Context, runID AutomationRunID, position int) {
-	code := AutomationFailureCoreStopping
+func (service *Service) stopRunForDrain(ctx context.Context, runID RunID, position int) {
+	code := FailureCoreStopping
 	if err := service.completeStep(ctx, StepCompletion{
 		RunID:       runID,
 		Position:    position,
@@ -277,8 +277,8 @@ func (service *Service) stopRunForDrain(ctx context.Context, runID AutomationRun
 // recordExecutorFault persists the truthful interrupted/executor_fault outcome
 // when it can, without inventing a Command link. A failed write deliberately
 // leaves the running rows for startup interruption to classify.
-func (service *Service) recordExecutorFault(ctx context.Context, runID AutomationRunID, position int) {
-	code := AutomationFailureExecutorFault
+func (service *Service) recordExecutorFault(ctx context.Context, runID RunID, position int) {
+	code := FailureExecutorFault
 	if err := service.completeStep(ctx, StepCompletion{
 		RunID:       runID,
 		Position:    position,

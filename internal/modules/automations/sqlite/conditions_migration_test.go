@@ -193,7 +193,7 @@ func TestHistoryDecodesManualSkipProvenance(t *testing.T) {
 	// through the evaluator rather than fabricating JSON.
 	entityID := newEntityID(t)
 	conditions := conditionLeaf("dark", entityID, automations.ComparisonLessThan, "30")
-	evaluation, err := automations.EvaluateAutomationConditions(
+	evaluation, err := automations.EvaluateConditions(
 		*conditions,
 		stateSnapshotWith(presentStateEntry(t, entityID, `{"level":90}`, admissionNow)),
 		admissionNow,
@@ -201,8 +201,8 @@ func TestHistoryDecodesManualSkipProvenance(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	decision, err := automations.EncodeAutomationConditionDecision(automations.AutomationConditionDecision{
-		Mode:       automations.AutomationConditionDecisionEvaluated,
+	decision, err := automations.EncodeConditionDecision(automations.ConditionDecision{
+		Mode:       automations.ConditionDecisionEvaluated,
 		Snapshot:   conditions,
 		Evaluation: &evaluation,
 	})
@@ -221,8 +221,8 @@ func TestHistoryDecodesManualSkipProvenance(t *testing.T) {
 	}
 	if manual.Skip.Source != automations.RunSourceManual || manual.Skip.Fact != nil ||
 		len(manual.Skip.MatchedTriggers) != 0 ||
-		manual.Skip.ConditionDecision.Mode != automations.AutomationConditionDecisionEvaluated ||
-		manual.Skip.ConditionDecision.Evaluation.Result != automations.AutomationConditionFalse {
+		manual.Skip.ConditionDecision.Mode != automations.ConditionDecisionEvaluated ||
+		manual.Skip.ConditionDecision.Evaluation.Result != automations.ConditionFalse {
 		t.Fatalf("manual Skip = %#v", manual.Skip)
 	}
 	selected := manual.Skip.ConditionDecision.Evaluation.Nodes[0].SelectedValue
@@ -231,13 +231,13 @@ func TestHistoryDecodesManualSkipProvenance(t *testing.T) {
 	}
 	manualSummary := firstHistorySummary(t, repository, manualAutomation)
 	if manualSummary.Source != automations.RunSourceManual || manualSummary.Fact != nil ||
-		manualSummary.ConditionResult == nil || *manualSummary.ConditionResult != automations.AutomationConditionFalse {
+		manualSummary.ConditionResult == nil || *manualSummary.ConditionResult != automations.ConditionFalse {
 		t.Fatalf("manual summary = %#v", manualSummary)
 	}
 	if !slices.ContainsFunc(listHistory(t, repository, manualAutomation),
-		func(summary automations.AutomationHistorySummary) bool {
+		func(summary automations.HistorySummary) bool {
 			return summary.ID == manualID && summary.ConditionMode ==
-				automations.AutomationConditionDecisionEvaluated
+				automations.ConditionDecisionEvaluated
 		}) {
 		t.Fatal("manual summary is missing from the history page")
 	}
@@ -251,7 +251,7 @@ func TestConditionDecisionPreservesSelectedJSONNull(t *testing.T) {
 	entityID := newEntityID(t)
 	conditions := conditionLeaf("flag", entityID, automations.ComparisonEqual, `null`)
 	observedAt := admissionNow.Add(-time.Minute)
-	evaluation, err := automations.EvaluateAutomationConditions(
+	evaluation, err := automations.EvaluateConditions(
 		*conditions,
 		stateSnapshotWith(presentStateEntry(t, entityID, `{"level":null}`, observedAt)),
 		admissionNow,
@@ -262,15 +262,15 @@ func TestConditionDecisionPreservesSelectedJSONNull(t *testing.T) {
 	if len(evaluation.Nodes) != 1 || string(evaluation.Nodes[0].SelectedValue) != "null" {
 		t.Fatalf("selected-value evidence = %#v", evaluation.Nodes)
 	}
-	raw, err := automations.EncodeAutomationConditionDecision(automations.AutomationConditionDecision{
-		Mode:       automations.AutomationConditionDecisionEvaluated,
+	raw, err := automations.EncodeConditionDecision(automations.ConditionDecision{
+		Mode:       automations.ConditionDecisionEvaluated,
 		Snapshot:   conditions,
 		Evaluation: &evaluation,
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	decoded, err := automations.DecodeAutomationConditionDecision(raw)
+	decoded, err := automations.DecodeConditionDecision(raw)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -281,7 +281,7 @@ func TestConditionDecisionPreservesSelectedJSONNull(t *testing.T) {
 	if leaf.ObservationID == nil || leaf.ObservedAt == nil || !leaf.ObservedAt.Equal(observedAt) {
 		t.Fatalf("decoded leaf evidence = %#v", leaf)
 	}
-	if decoded.Evaluation.Result != automations.AutomationConditionTrue {
+	if decoded.Evaluation.Result != automations.ConditionTrue {
 		t.Fatalf("decoded root result = %q", decoded.Evaluation.Result)
 	}
 }
@@ -322,7 +322,7 @@ func TestHistorySummaryDoesNotDecodeRunSnapshot(t *testing.T) {
 		t.Fatalf("history summaries = %#v, want the retained Run summary", summaries)
 	}
 	if summaries[0].Status != automations.RunSucceeded ||
-		summaries[0].ConditionMode != automations.AutomationConditionDecisionNotConfigured {
+		summaries[0].ConditionMode != automations.ConditionDecisionNotConfigured {
 		t.Fatalf("Run summary = %#v", summaries[0])
 	}
 	if _, err := repository.GetHistoryEntry(
