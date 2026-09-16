@@ -36,22 +36,18 @@ const (
 //go:embed automation-definition.schema.json
 var automationDefinitionSchema []byte
 
-// automationDefinitionCodec compiles the embedded strict persisted shape once
-// per process.
+// automationDefinitionCodec compiles the embedded strict persisted shape once per process.
 //
 //nolint:gochecknoglobals // One immutable compiled schema, never reassigned.
 var automationDefinitionCodec = sync.OnceValues(NewDefinitionCodec)
 
-// DefinitionIssue is one safe structural explanation at a JSON
-// Pointer. It never contains definition payload values.
+// DefinitionIssue is one safe structural explanation at a JSON Pointer.
 type DefinitionIssue struct {
 	Path    string
 	Message string
 }
 
-// DefinitionError reports one or more structural definition failures.
-// It matches ErrInvalidAutomation so transport boundaries map it as a permanent
-// input error.
+// DefinitionError reports one or more structural definition failures matching [ErrInvalidAutomation].
 type DefinitionError struct {
 	Issues []DefinitionIssue
 }
@@ -64,9 +60,7 @@ func (*DefinitionError) Error() string {
 // Is classifies every structural definition failure as ErrInvalidAutomation.
 func (*DefinitionError) Is(target error) bool { return target == ErrInvalidAutomation }
 
-// DefinitionCodec owns the compiled strict definition schema and its
-// reusable Condition subtree, so persisted Condition snapshots are validated by
-// exactly the same recursive family rules as a definition document.
+// DefinitionCodec owns the compiled strict definition schema and its reusable Condition subtree.
 type DefinitionCodec struct {
 	schema    *jsonschema.Schema
 	condition *jsonschema.Schema
@@ -100,11 +94,8 @@ func (*DefinitionCodec) AutomationDefinitionSchema() json.RawMessage {
 }
 
 // ValidateCondition validates one raw flattened Condition node against the same
-// strict recursive schema a definition document uses. It rejects an omitted or
-// JSON-null required family field, a contradictory family payload, and any
-// unknown member, so a persisted decision snapshot can never be more permissive
-// than the definition it explains. A selected empty pointer stays valid because
-// the schema requires the member, not a nonempty value.
+// strict recursive schema a definition document uses, rejecting unknown or
+// contradictory family fields.
 func (codec *DefinitionCodec) ValidateCondition(raw json.RawMessage) error {
 	document, err := decodeJSONValue(raw)
 	if err != nil {
@@ -116,9 +107,7 @@ func (codec *DefinitionCodec) ValidateCondition(raw json.RawMessage) error {
 	return nil
 }
 
-// DecodeDefinition validates and normalizes JSON against the strict
-// schema and structural rules. Current device references are checked separately
-// by [ValidateDefinition].
+// DecodeDefinition validates and normalizes JSON against the strict schema and structural rules.
 func DecodeDefinition(raw json.RawMessage) (Definition, error) {
 	if len(raw) == 0 {
 		return Definition{}, definitionIssue("", "definition is required")
@@ -154,9 +143,8 @@ func DecodeDefinition(raw json.RawMessage) (Definition, error) {
 	return normalizeAutomationDefinition(automationDefinitionFromJSON(value))
 }
 
-// EncodeDefinition renders one definition in the strict persisted
-// representation. It does not validate; call [NormalizeDefinition]
-// before persisting caller-supplied values.
+// EncodeDefinition renders one definition in the strict persisted representation.
+// It does not validate.
 func EncodeDefinition(definition Definition) (json.RawMessage, error) {
 	value := automationDefinitionJSON{
 		Name:       definition.Name,
@@ -184,8 +172,7 @@ func EncodeDefinition(definition Definition) (json.RawMessage, error) {
 }
 
 // EncodeMatchedTriggers renders matching Trigger snapshots in the same strict
-// persisted shape as a definition's Triggers, so a retained Skip stays
-// explainable after the definition is edited or deleted. It does not validate.
+// persisted shape as a definition's Triggers.
 func EncodeMatchedTriggers(triggers []Trigger) (json.RawMessage, error) {
 	encoded := make([]automationTriggerJSON, 0, len(triggers))
 	for _, trigger := range triggers {
@@ -223,8 +210,7 @@ func NormalizeDefinition(definition Definition) (Definition, error) {
 	return normalized, err
 }
 
-// normalizeAndEncodeAutomationDefinition returns the normalized definition and
-// persisted bytes in one pass.
+// normalizeAndEncodeAutomationDefinition returns the normalized definition and persisted bytes.
 func normalizeAndEncodeAutomationDefinition(
 	definition Definition,
 ) (Definition, json.RawMessage, error) {
@@ -244,9 +230,8 @@ func normalizeAndEncodeAutomationDefinition(
 	return normalized, raw, nil
 }
 
-// ValidateDefinition normalizes a definition and validates its Entity,
-// event, Operation, and parameter references through devices. It returns normalized
-// Step parameters without requiring enablement, availability, or owner health.
+// ValidateDefinition normalizes a definition and validates its Entity, event,
+// Operation, and parameter references through devices.
 func ValidateDefinition(
 	ctx context.Context,
 	automationDevices AutomationDevices,
@@ -315,11 +300,9 @@ func validateAutomationTriggerReference(
 	return nil
 }
 
-// validateAutomationConditionReferences checks that every Entity a Condition tree
-// explicitly references currently exists and is stateful, reusing devices'
-// condition reference rule. Save-time validation deliberately does not require a
-// present State, a compatible selected value, availability, enablement, or a
-// healthy owner: those are evaluation results, not definition errors.
+// validateAutomationConditionReferences checks that every Entity a Condition
+// tree explicitly references currently exists and is stateful. Save-time
+// validation deliberately does not require a present State.
 func validateAutomationConditionReferences(
 	ctx context.Context,
 	automationDevices AutomationDevices,
@@ -393,8 +376,6 @@ func encodeAutomationTrigger(trigger Trigger) automationTriggerJSON {
 }
 
 // normalizeAutomationDefinition validates typed fields and returns an owned copy.
-// DecodeDefinition checks JSON field presence and unknown fields;
-// normalizeAndEncodeAutomationDefinition checks the encoded size.
 func normalizeAutomationDefinition(definition Definition) (Definition, error) {
 	trimmedName := strings.TrimSpace(definition.Name)
 	trimmedNameRunes := utf8.RuneCountInString(trimmedName)
@@ -515,8 +496,7 @@ func normalizeAutomationStepValue(step Step) (Step, error) {
 	}, nil
 }
 
-// validateAutomationStepParameters requires exactly one JSON object, matching
-// the definition schema and devices Command contract.
+// validateAutomationStepParameters requires exactly one JSON object.
 func validateAutomationStepParameters(parameters devices.CommandParameters) error {
 	value, err := decodeJSONValue(json.RawMessage(parameters))
 	if err != nil {
@@ -575,8 +555,7 @@ func canonicalDispositions(dispositions []devices.ObservationDisposition) []devi
 	return canonical
 }
 
-// cloneObservationComparisons copies comparisons and operand bytes without
-// aliasing caller memory. Empty sets canonicalize to nil.
+// cloneObservationComparisons copies comparisons and operand bytes without aliasing caller memory.
 func cloneObservationComparisons(comparisons []ObservationComparison) []ObservationComparison {
 	if len(comparisons) == 0 {
 		return nil

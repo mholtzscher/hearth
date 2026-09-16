@@ -36,16 +36,14 @@ type ListAutomationsInput struct {
 	Cursor string `query:"cursor"`
 }
 
-// StartAutomationRunInput never accepts caller-supplied Command identities. Body
-// is optional: an omitted body applies Conditions, and a present body must be
-// the strict StartAutomationRunBody object.
+// StartAutomationRunInput never accepts caller-supplied Command identities; an
+// omitted body applies Conditions.
 type StartAutomationRunInput struct {
 	AutomationID string                  `path:"automation_id" doc:"Canonical Hearth Automation ID"`
 	Body         *StartAutomationRunBody `                     doc:"Optional Condition bypass request"`
 }
 
-// ListHistoryInput pages newest-first history for one Automation, including a
-// hard-deleted one.
+// ListHistoryInput pages newest-first history for one Automation.
 type ListHistoryInput struct {
 	AutomationID string `path:"automation_id" doc:"Canonical Hearth Automation ID"`
 	Limit        int    `                                                          query:"limit"  default:"50" minimum:"1" maximum:"200"`
@@ -84,9 +82,8 @@ type AutomationStepBody struct {
 	Parameters json.RawMessage `json:"parameters"`
 }
 
-// AutomationDefinitionBody is the strict definition representation. Conditions
-// is absent when the definition omitted them, which preserves
-// unconditional-after-Trigger behavior.
+// AutomationDefinitionBody is the strict definition representation; an absent
+// Conditions field preserves unconditional-after-Trigger behavior.
 type AutomationDefinitionBody struct {
 	Name       string                   `json:"name"`
 	Enabled    bool                     `json:"enabled"`
@@ -133,7 +130,6 @@ type DeviceFactSummaryBody struct {
 }
 
 // AutomationStepAttemptBody exposes only ownership-verified Command evidence.
-// Reserved identities deliberately never appear.
 type AutomationStepAttemptBody struct {
 	Position          int        `json:"position"`
 	StepID            string     `json:"step_id"`
@@ -168,9 +164,8 @@ type AutomationRunOutput struct {
 	Body     AutomationRunBody
 }
 
-// AutomationSkipBody is one retained Skip with immutable matched Triggers. A
-// manual Skip carries no Fact body and no matched Triggers, so Source
-// discriminates the two families while Fact stays optional.
+// AutomationSkipBody is one retained Skip with immutable matched Triggers;
+// Source discriminates the manual and device-fact families.
 type AutomationSkipBody struct {
 	ID                string                          `json:"id"`
 	AutomationID      string                          `json:"automation_id"`
@@ -184,9 +179,8 @@ type AutomationSkipBody struct {
 	SkippedAt         time.Time                       `json:"skipped_at"`
 }
 
-// AutomationHistorySummaryBody is the lightweight history listing projection. It
-// carries admission provenance and the Condition decision mode, root result, and
-// bypass flag, but never the full tree or predicate values.
+// AutomationHistorySummaryBody is the lightweight history listing projection with
+// admission provenance and the Condition decision summary.
 type AutomationHistorySummaryBody struct {
 	ID              string                 `json:"id"`
 	Kind            string                 `json:"kind"                       enum:"run,skip"`

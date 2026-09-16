@@ -16,24 +16,19 @@ const FactMaximumAge = 30 * time.Second
 
 // StartManualRun admits one Run from the current definition snapshot, even when
 // the Automation is disabled. Conditions are evaluated unless
-// [ManualRunInput.BypassConditions] requests an explicit bypass. A committed
-// Condition Skip returns [ErrAutomationConditionsBlocked] after the transaction,
-// so the Skip's history is never rolled back. A running Run returns
-// [ErrAutomationBusy] with no new Skip and a closed gate returns
-// [ErrAdmissionUnavailable].
+// [ManualRunInput.BypassConditions] requests an explicit bypass; a committed
+// Condition Skip returns [ErrAutomationConditionsBlocked] after the transaction.
 func (service *Service) StartManualRun(ctx context.Context, input ManualRunInput) (Run, error) {
 	reservation, admitted := service.admission.TryAcquire()
 	if !admitted {
 		return Run{}, ErrAdmissionUnavailable
 	}
-	// Track admission until the committed Run has a worker; release on errors too.
 	defer reservation.Release()
 	// The device gate is checked separately: automation admission closes first on
 	// shutdown, and the cross-module gates never claim an atomic check-and-admit.
 	if service.devices == nil || !service.devices.CommandAdmissionOpen() {
 		return Run{}, ErrAdmissionUnavailable
 	}
-	// The reservation spans the definition pre-read, State read, and transaction.
 	result, err := service.admitManualRun(ctx, input)
 	if err != nil {
 		// Release before diagnostics so a blocked log sink cannot hold Drain.
@@ -43,8 +38,6 @@ func (service *Service) StartManualRun(ctx context.Context, input ManualRunInput
 	}
 	if result.Skip != nil {
 		skip := *result.Skip
-		// Release before logging so a blocked sink cannot hold Drain, then turn
-		// the committed Skip into the typed blocked error outside the transaction.
 		reservation.Release()
 		service.logSkipped(ctx, AdmissionSkip{
 			SkipID:       skip.ID,
@@ -63,15 +56,13 @@ func (service *Service) StartManualRun(ctx context.Context, input ManualRunInput
 	// Caller cancellation must not cancel an admitted Run.
 	workerContext := context.WithoutCancel(ctx)
 	reservation.Go(func() { service.executeRun(workerContext, run) })
-	// Release before logging so a blocked sink cannot hold Drain.
 	reservation.Release()
 	service.logRunStarted(ctx, run)
 	return run, nil
 }
 
-// ReceiveDeviceFact admits one Device Fact against current enabled definitions
-// and starts Run workers only after the admission transaction
-// commits.
+// ReceiveDeviceFact admits one Device Fact against current enabled definitions.
+// Run workers start only after the admission transaction commits.
 func (service *Service) ReceiveDeviceFact(
 	ctx context.Context,
 	fact DeviceFact,
@@ -81,16 +72,12 @@ func (service *Service) ReceiveDeviceFact(
 		return AdmissionOutcome{}, ErrAdmissionUnavailable
 	}
 	defer reservation.Release()
-	// The reservation spans the definition pre-read, State read, and transaction;
-	// only a committed outcome registers workers.
 	result, err := service.admitAutomaticFact(ctx, fact)
 	if err != nil {
-		// Release before diagnostics so a blocked log sink cannot hold Drain.
 		reservation.Release()
 		service.logConditionStateCorrupt(ctx, err)
 		return AdmissionOutcome{}, err
 	}
-	// Start all committed Runs before logging can block, then release admission.
 	workerContext := context.WithoutCancel(ctx)
 	for _, run := range result.StartedRuns {
 		reservation.Go(func() { service.executeRun(workerContext, run) })
@@ -105,8 +92,7 @@ func (service *Service) ReceiveDeviceFact(
 	return result.Outcome, nil
 }
 
-// logRunStarted logs committed Run identity and Fact provenance, never definition
-// JSON or Command parameters.
+// logRunStarted logs committed Run identity and Fact provenance.
 func (service *Service) logRunStarted(ctx context.Context, run Run) {
 	attributes := []slog.Attr{
 		slog.String("event", "automation.run_started"),
@@ -124,9 +110,7 @@ func (service *Service) logRunStarted(ctx context.Context, run Run) {
 	service.dependencies.Logger.LogAttrs(ctx, slog.LevelInfo, "automation run started", attributes...)
 }
 
-// logSkipped logs committed Skip identity, admission source, and reason without
-// payload values. A manual Skip has no Fact identity, so it logs no fabricated
-// empty Fact fields.
+// logSkipped logs committed Skip identity, admission source, and reason.
 func (service *Service) logSkipped(ctx context.Context, skip AdmissionSkip) {
 	attributes := []slog.Attr{
 		slog.String("event", "automation.skipped"),
@@ -147,9 +131,7 @@ func (service *Service) logSkipped(ctx context.Context, skip AdmissionSkip) {
 }
 
 // NewDeviceFactSummary copies one Device Fact into immutable history evidence so
-// a retained Run or Skip stays explainable after Fact and Observation history
-// are pruned. Persistence calls it on the validated inbound Fact before opening
-// its admission transaction; it performs no reads or writes of its own.
+// a retained Run or Skip stays explainable after Fact history is pruned.
 func NewDeviceFactSummary(fact DeviceFact) DeviceFactSummary {
 	summary := DeviceFactSummary{Family: fact.Family}
 	switch fact.Family {
@@ -170,11 +152,8 @@ func NewDeviceFactSummary(fact DeviceFact) DeviceFactSummary {
 	return summary
 }
 
-// MatchTriggers returns the IDs of every Trigger in one definition the
-// Fact matches, in definition order. Triggers combine with OR and one Fact
-// creates at most one outcome per Automation. Persistence calls it with the
-// definitions it loaded inside its admission transaction; it performs no reads
-// or writes of its own.
+// MatchTriggers returns the IDs of every Trigger in one definition the Fact
+// matches, in definition order.
 func MatchTriggers(fact DeviceFact, definition Definition) ([]TriggerID, error) {
 	var matched []TriggerID
 	for _, trigger := range definition.Triggers {
@@ -190,9 +169,8 @@ func MatchTriggers(fact DeviceFact, definition Definition) ([]TriggerID, error) 
 }
 
 // MatchedTriggerSnapshots selects Triggers in the supplied match order so a
-// retained Skip can preserve the definition that matched. MatchTriggers
-// supplies IDs in definition order. Nested values remain shared with definition;
-// callers must not mutate them before persistence encodes the snapshots.
+// retained Skip can preserve the definition that matched. Nested values remain
+// shared with definition; callers must not mutate them before persistence encodes.
 func MatchedTriggerSnapshots(
 	definition Definition,
 	matched []TriggerID,

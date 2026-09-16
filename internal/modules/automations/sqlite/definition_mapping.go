@@ -8,8 +8,8 @@ import (
 	"github.com/mholtzscher/hearth/internal/modules/automations/sqlite/dbsqlc"
 )
 
-// automationRecord decodes one stored row and rejects a malformed identity,
-// revision, timestamp, or definition instead of exposing partially trusted data.
+// automationRecord decodes one stored row, rejecting a malformed identity,
+// revision, timestamp, or definition.
 func automationRecord(row dbsqlc.Automation) (automations.Record, error) {
 	id, err := automations.ParseAutomationID(row.ID)
 	if err != nil {

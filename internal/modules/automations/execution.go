@@ -35,9 +35,7 @@ const (
 	FailureInternalError = "internal_error"
 )
 
-// ValidateStepCompletion rejects a Step completion that is not a terminal
-// outcome, or whose status does not carry the evidence it requires. Persistence
-// calls it before writing; it performs no reads or writes of its own.
+// ValidateStepCompletion rejects a Step completion that is not a terminal outcome or lacks its required evidence.
 func ValidateStepCompletion(completion StepCompletion) error {
 	switch completion.Status {
 	case StepNotAttempted, StepRunning:
@@ -64,9 +62,7 @@ func ValidateStepCompletion(completion StepCompletion) error {
 	return nil
 }
 
-// ValidateRunCompletion rejects a Run completion that is not a terminal
-// outcome, or whose status does not carry the evidence it requires. Persistence
-// calls it before writing; it performs no reads or writes of its own.
+// ValidateRunCompletion rejects a Run completion that is not a terminal outcome or lacks its required evidence.
 func ValidateRunCompletion(completion RunCompletion) error {
 	switch completion.Status {
 	case RunSucceeded:
@@ -136,9 +132,7 @@ func (service *Service) executeRun(ctx context.Context, run Run) {
 	service.completeRun(ctx, run.ID, RunSucceeded, nil)
 }
 
-// beginStep reserves and durably records one Step's Command identity before the
-// external call. It reports false when the write cannot be committed, leaving
-// the still-running durable row for startup interruption to classify.
+// beginStep reserves and durably records one Step's Command identity before the external call.
 func (service *Service) beginStep(
 	ctx context.Context,
 	runID RunID,
@@ -166,9 +160,8 @@ func (service *Service) beginStep(
 	return start, true
 }
 
-// reconcileStep establishes one Step's terminal outcome. A devices
-// CommandExecutionError proves a Command was created, but even a successful
-// return is verified against durable ownership before any link is exposed.
+// reconcileStep establishes one Step's terminal outcome, verifying durable
+// ownership even after a successful Command return.
 func (service *Service) reconcileStep(
 	ctx context.Context,
 	step Step,
@@ -218,9 +211,7 @@ func (service *Service) reconcileStep(
 	}
 }
 
-// preCreationFailure classifies one failure that created no Command. Command
-// admission closing is an interruption; a rejected definition or a vanished
-// Entity is a normal Step failure.
+// preCreationFailure classifies one failure that created no Command.
 func preCreationFailure(executionErr error) StepCompletion {
 	switch {
 	case errors.Is(executionErr, devices.ErrCommandUnavailable):
@@ -279,8 +270,7 @@ func (service *Service) completeRun(
 	)
 }
 
-// stopRunForDrain marks one not-yet-started Step and its Run interrupted with
-// core_stopping and no Command link.
+// stopRunForDrain marks one not-yet-started Step and its Run interrupted with core_stopping.
 func (service *Service) stopRunForDrain(ctx context.Context, runID RunID, position int) {
 	code := FailureCoreStopping
 	if err := service.completeStep(ctx, StepCompletion{
@@ -296,8 +286,7 @@ func (service *Service) stopRunForDrain(ctx context.Context, runID RunID, positi
 }
 
 // recordExecutorFault persists the truthful interrupted/executor_fault outcome
-// when it can, without inventing a Command link. A failed write deliberately
-// leaves the running rows for startup interruption to classify.
+// without inventing a Command link.
 func (service *Service) recordExecutorFault(ctx context.Context, runID RunID, position int) {
 	code := FailureExecutorFault
 	if err := service.completeStep(ctx, StepCompletion{

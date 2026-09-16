@@ -59,7 +59,7 @@ func historySummary(row dbsqlc.AutomationHistory) (automations.HistorySummary, e
 }
 
 // newHistorySummaryBase decodes the identity, revision, timestamp, and Condition
-// decision every summary shares, independent of the Run or Skip kind.
+// decision every summary shares.
 func newHistorySummaryBase(
 	row dbsqlc.AutomationHistory,
 ) (automations.HistorySummary, error) {
@@ -203,9 +203,8 @@ func runFromRow(
 	return run, nil
 }
 
-// skipFromRow decodes one retained Skip. Every stored Skip carries an explicit
-// skip_source, so a row without one is corruption rather than a silently
-// accepted zero value.
+// skipFromRow decodes one retained Skip; a row without an explicit skip_source is
+// corruption rather than a zero value.
 func skipFromRow(row dbsqlc.AutomationHistory) (automations.Skip, error) {
 	if !row.SkipMatchedTriggersJson.Valid || !row.SkipReason.Valid || !row.SkipSource.Valid {
 		return automations.Skip{}, fmt.Errorf(
@@ -252,9 +251,8 @@ func skipFromRow(row dbsqlc.AutomationHistory) (automations.Skip, error) {
 	return skip, nil
 }
 
-// decodeConditionDecisionColumn decodes one persisted Condition decision. The
-// column is NOT NULL, so a missing payload is corruption, never a normalized
-// zero-valued mode.
+// decodeConditionDecisionColumn decodes one persisted Condition decision; a
+// missing payload is corruption, never a zero-valued mode.
 func decodeConditionDecisionColumn(
 	row dbsqlc.AutomationHistory,
 ) (automations.ConditionDecision, error) {

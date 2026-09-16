@@ -12,9 +12,8 @@ import (
 	"github.com/mholtzscher/hearth/internal/modules/devices"
 )
 
-// observationFactData is the strict external Observation Fact payload. It
-// carries canonical committed data only: no Adapter or runtime identity, and no
-// rejected or duplicate input.
+// observationFactData is the strict external Observation Fact payload carrying
+// canonical committed data only.
 type observationFactData struct {
 	ObservationID     string          `json:"observation_id"`
 	EntityID          string          `json:"entity_id"`
@@ -35,8 +34,7 @@ type entityEventFactData struct {
 	RecordedAt string `json:"recorded_at"`
 }
 
-// Fixed wire-rejection codes keep diagnostics free of payloads and error text.
-// These failures are deterministic, so the consumer terminates rather than retries.
+// Fixed wire-rejection codes are deterministic, so the consumer terminates rather than retries.
 const (
 	wireCodeSubjectInvalid   = "fact_subject_invalid"
 	wireCodeFamilyInvalid    = "fact_family_invalid"
@@ -81,8 +79,7 @@ func asWireRejection(err error) *wireRejectionError {
 	return rejection
 }
 
-// rejectionCode returns the fixed code of one wire rejection, or the generic
-// fact-invalid code when the error is not a named rejection.
+// rejectionCode returns the fixed code of one wire rejection.
 func rejectionCode(err error) string {
 	if rejection := asWireRejection(err); rejection != nil {
 		return rejection.code
@@ -90,8 +87,8 @@ func rejectionCode(err error) string {
 	return wireCodeFactInvalid
 }
 
-// mapDeviceFactMessage validates the route, strict schema, and agreement of
-// subject, payload, Nats-Msg-Id, and causation before admission. Failures are permanent.
+// mapDeviceFactMessage validates the route, strict schema, and subject, payload,
+// Nats-Msg-Id, and causation agreement.
 func mapDeviceFactMessage(
 	validator *contractsv1.Validator,
 	wire deviceFactWireMessage,
@@ -126,10 +123,8 @@ type deviceFactEnvelope struct {
 	causationMessage string
 }
 
-// checkDeviceFactEnvelope verifies the Nats-Msg-Id, subject, and causation
-// agreement shared by both Device Fact families, then parses the shared
-// identities and emit time. Family-specific causation parsing stays in the
-// callers.
+// checkDeviceFactEnvelope verifies the agreement and shared identity fields
+// common to both Device Fact families.
 func checkDeviceFactEnvelope(
 	fields deviceFactEnvelope,
 ) (devices.DeviceFactID, devices.EntityID, time.Time, error) {

@@ -10,8 +10,7 @@ import (
 	"github.com/mholtzscher/hearth/internal/modules/devices"
 )
 
-// MarkStepRunning durably reserves one Step's Command identity before the
-// external call. The update only matches a still not-attempted Step.
+// MarkStepRunning durably reserves one Step's Command identity before the external call.
 func (repo *AutomationRepository) MarkStepRunning(
 	ctx context.Context,
 	start automations.StepStart,
@@ -46,8 +45,7 @@ func (repo *AutomationRepository) MarkStepRunning(
 	})
 }
 
-// CompleteStep records a terminal outcome. If the Step never started, its
-// started_at is set to the completion time.
+// CompleteStep records a terminal outcome, setting started_at when the Step never started.
 func (repo *AutomationRepository) CompleteStep(
 	ctx context.Context,
 	completion automations.StepCompletion,

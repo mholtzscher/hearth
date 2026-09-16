@@ -6,13 +6,8 @@ import (
 	"github.com/mholtzscher/hearth/internal/modules/devices"
 )
 
-// automationConditionJSON is the strict persisted, flattened Condition shape.
-// It is shared by an automation definition's optional conditions and by the
-// Condition snapshot retained in history, so both use the same leaf form: an
-// entity_state leaf carries entity_id, pointer, operator, operand, and optional
-// max_age_seconds directly rather than a nested payload object. Family
-// inapplicable fields stay absent, and the embedded definition schema closes
-// every family with oneOf plus additionalProperties:false.
+// automationConditionJSON is the strict persisted, flattened Condition shape
+// shared by definitions and retained Condition snapshots.
 type automationConditionJSON struct {
 	ID            ConditionID               `json:"id"`
 	Kind          ConditionKind             `json:"kind"`
@@ -25,10 +20,7 @@ type automationConditionJSON struct {
 	Child         *automationConditionJSON  `json:"child,omitempty"`
 }
 
-// encodeAutomationConditionTree renders one normalized Condition tree in the
-// strict persisted form. It emits only the fields of the node's own family; the
-// empty pointer of an entity_state leaf is emitted explicitly because the schema
-// requires it.
+// encodeAutomationConditionTree renders one normalized Condition tree in the strict persisted form.
 func encodeAutomationConditionTree(condition *Condition) *automationConditionJSON {
 	if condition == nil {
 		return nil
@@ -64,9 +56,7 @@ func encodeAutomationCondition(condition Condition) automationConditionJSON {
 	return encoded
 }
 
-// automationConditionFromJSON maps a schema-validated persisted node to its
-// domain form. Structural family closure is enforced by the schema for decoded
-// documents and by validation for typed callers.
+// automationConditionFromJSON maps a schema-validated persisted node to its domain form.
 func automationConditionFromJSON(value automationConditionJSON) Condition {
 	condition := Condition{ID: value.ID, Kind: value.Kind}
 	switch value.Kind {
@@ -99,8 +89,7 @@ func automationConditionFromJSON(value automationConditionJSON) Condition {
 	return condition
 }
 
-// decodeConditionTree maps an optional persisted Condition tree to an owned
-// domain tree.
+// decodeConditionTree maps an optional persisted Condition tree to an owned domain tree.
 func decodeConditionTree(value *automationConditionJSON) *Condition {
 	if value == nil {
 		return nil

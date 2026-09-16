@@ -1,5 +1,5 @@
 // Package nats owns the automation Device Fact consumer, strict wire decoding,
-// and message acknowledgements. Command execution belongs to Run workers.
+// and message acknowledgements.
 package nats
 
 import (
@@ -38,8 +38,7 @@ const (
 
 // ProvisionDeviceFactConsumer creates or validates a durable consumer on the
 // supplied devices-owned stream. New consumers start at the tail; existing ones
-// resume their acknowledgement floor. Configuration mismatches fail startup
-// rather than changing delivery semantics.
+// resume their acknowledgement floor.
 func ProvisionDeviceFactConsumer(
 	ctx context.Context,
 	js jetstream.JetStream,
@@ -65,8 +64,7 @@ func ProvisionDeviceFactConsumer(
 	return consumer, nil
 }
 
-// ValidateDeviceFactConsumer checks live configuration without changing it,
-// allowing readiness checks to preserve delivery policy.
+// ValidateDeviceFactConsumer checks live configuration without changing it.
 func ValidateDeviceFactConsumer(ctx context.Context, js jetstream.JetStream, streamName string) error {
 	if streamName == "" {
 		return errors.New("device fact stream name is required")
@@ -131,9 +129,8 @@ func validateDeviceFactConsumerConfig(config jetstream.ConsumerConfig) error {
 	return nil
 }
 
-// deviceFactConsumerDeliveryOverride names the first unexpected delivery override,
-// or returns empty. Ignore broker-populated Metadata and MaxWaiting; they need
-// not match absent defaults, and MaxAckPending already limits in-flight Facts.
+// deviceFactConsumerDeliveryOverride names the first unexpected delivery
+// override, ignoring broker-populated Metadata and MaxWaiting.
 func deviceFactConsumerDeliveryOverride(config jetstream.ConsumerConfig) string {
 	switch {
 	case config.HeadersOnly:

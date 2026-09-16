@@ -12,8 +12,7 @@ import (
 	"github.com/mholtzscher/hearth/internal/modules/devices"
 )
 
-// plannedOutcomeKind is the decided, still-unwritten outcome of one matching
-// Automation. Nothing here has allocated an identity or written a row.
+// plannedOutcomeKind is the decided, still-unwritten outcome of one matching Automation.
 type plannedOutcomeKind int
 
 const (
@@ -23,8 +22,7 @@ const (
 )
 
 // plannedAutomation carries one matching Automation's decided, still-unwritten
-// outcome. Condition evaluation happens during planning after coverage is
-// verified, so any definition-edit race returns before the transaction writes.
+// outcome. Nothing has allocated an identity or written a row.
 type plannedAutomation struct {
 	record   automations.Record
 	matched  []automations.TriggerID
@@ -34,16 +32,9 @@ type plannedAutomation struct {
 }
 
 // AdmitDeviceFact atomically commits matching enabled Automations' receipts,
-// Runs, Skips, and initial Steps. The caller starts workers only after commit.
-// Matching uses the definitions this transaction loaded, never a preliminary
-// Service read.
-//
-// The transaction plans every matching outcome without writes or identity
-// allocation, applies duplicate/stale/busy precedence before evaluating
-// Conditions, and returns [automations.ConditionSnapshotRequiredError] when a
-// definition changed after the Service pre-read and needs an uncovered Entity.
-// That rare coverage-error pass commits nothing, including otherwise-decided
-// stale, busy, and unconditioned siblings.
+// Runs, Skips, and initial Steps, planning every outcome with the definitions
+// this transaction loaded. It returns [automations.ConditionSnapshotRequiredError]
+// when a definition changed after the Service pre-read and commits nothing then.
 func (repo *AutomationRepository) AdmitDeviceFact(
 	ctx context.Context,
 	fact automations.DeviceFact,
@@ -74,14 +65,9 @@ func (repo *AutomationRepository) AdmitDeviceFact(
 }
 
 // AdmitManualRun commits exactly one manual Run or manual Condition Skip from
-// the current definition snapshot, even when the Automation is disabled. Manual
-// invocation ignores definition enablement and has no Trigger or Fact.
-//
-// A running Run for the same Automation returns [automations.ErrAutomationBusy]
-// without writing a Skip; a missing definition returns
-// [automations.ErrAutomationNotFound]. An explicit bypass never reads State or
-// evaluates a Condition. The result is returned only after commit, so the
-// Service can turn a committed Skip into its typed blocked error.
+// the current definition snapshot, even when the Automation is disabled. An
+// explicit bypass never reads State or evaluates a Condition, and the result is
+// returned only after commit.
 func (repo *AutomationRepository) AdmitManualRun(
 	ctx context.Context,
 	input automations.ManualRunInput,
@@ -164,10 +150,8 @@ func (repo *AutomationRepository) admitManualRun(
 	return nil
 }
 
-// planDeviceFact loads current definitions and decides every matching
-// Automation's outcome without writing history, allocating identities, or
-// registering workers. A definition-edit race with the Service's pre-read
-// returns a coverage error before any planned outcome is committed.
+// planDeviceFact loads current definitions and decides every matching Automation's
+// outcome without writing history or allocating identities.
 func (repo *AutomationRepository) planDeviceFact(
 	ctx context.Context,
 	queries *dbsqlc.Queries,
@@ -193,9 +177,8 @@ func (repo *AutomationRepository) planDeviceFact(
 	return plans, nil
 }
 
-// planAutomationOutcome decides one current definition's outcome without
-// writing history, allocating identities, or registering workers. It returns nil
-// for a disabled or unmatched Automation, which records nothing at all.
+// planAutomationOutcome decides one current definition's outcome, returning nil
+// for a disabled or unmatched Automation.
 func (repo *AutomationRepository) planAutomationOutcome(
 	ctx context.Context,
 	queries *dbsqlc.Queries,
@@ -296,8 +279,7 @@ func planConditionalOutcome(
 	return plan, nil
 }
 
-// commitDeviceFact writes every planned outcome in Automation ID order. The
-// caller owns the enclosing transaction, so one failure rolls back all writes.
+// commitDeviceFact writes every planned outcome in Automation ID order inside the caller's transaction.
 func (repo *AutomationRepository) commitDeviceFact(
 	ctx context.Context,
 	queries *dbsqlc.Queries,
@@ -348,8 +330,7 @@ func (repo *AutomationRepository) commitDeviceFact(
 	return nil
 }
 
-// persistRun writes one Run snapshot and its initial not_attempted Steps. The
-// caller owns the enclosing transaction.
+// persistRun writes one Run snapshot and its initial not_attempted Steps.
 func (repo *AutomationRepository) persistRun(
 	ctx context.Context,
 	queries *dbsqlc.Queries,
@@ -405,10 +386,9 @@ func (repo *AutomationRepository) persistRun(
 	return nil
 }
 
-// recordSkip records one matching Fact's non-Run outcome with its admission
-// provenance, Trigger snapshots, Condition decision, and deduplication receipt.
-// It validates the full Skip before writing, so a fabricated provenance never
-// reaches storage. The caller owns the transaction.
+// recordSkip records one matching Fact's non-Run outcome with its provenance,
+// Trigger snapshots, Condition decision, and deduplication receipt. It validates
+// the full Skip before writing.
 func (repo *AutomationRepository) recordSkip(
 	ctx context.Context,
 	queries *dbsqlc.Queries,
@@ -439,8 +419,7 @@ func (repo *AutomationRepository) recordSkip(
 	return repo.persistDeviceFactSkip(ctx, queries, skip)
 }
 
-// persistDeviceFactSkip writes one validated device-fact Skip and its
-// deduplication receipt.
+// persistDeviceFactSkip writes one validated device-fact Skip and its deduplication receipt.
 func (repo *AutomationRepository) persistDeviceFactSkip(
 	ctx context.Context,
 	queries *dbsqlc.Queries,
@@ -495,9 +474,8 @@ func (repo *AutomationRepository) persistDeviceFactSkip(
 	}, nil
 }
 
-// persistManualSkip writes one validated manual Condition Skip. It has no Fact,
-// no Trigger snapshots, no Steps, and no receipt, so repeated blocked manual
-// requests stay distinct.
+// persistManualSkip writes one validated manual Condition Skip with no Fact,
+// Trigger snapshots, Steps, or receipt.
 func (repo *AutomationRepository) persistManualSkip(
 	ctx context.Context,
 	queries *dbsqlc.Queries,
@@ -548,11 +526,7 @@ func (repo *AutomationRepository) persistManualSkip(
 	return skip, nil
 }
 
-// manualConditionDecision decides one manual admission's Condition decision. It
-// returns a non-empty blocked reason only when Conditions evaluated false or
-// unknown. An explicit bypass never reads State or evaluates a Condition, and a
-// definition without Conditions records not_configured rather than a fabricated
-// evaluation.
+// manualConditionDecision resolves the bypass and unconditioned manual decision branches.
 func manualConditionDecision(
 	conditions *automations.Condition,
 	bypass bool,
@@ -580,10 +554,8 @@ func manualConditionDecision(
 	return automations.DecideConditions(conditions, snapshot, admittedAt)
 }
 
-// notEvaluatedDecision records deliberate non-evaluation of a stale or busy Skip.
-// A configured definition retains its Condition snapshot without an evaluation;
-// an unconditioned definition records not_configured. A Skip never requests a
-// bypass, so automatic outcomes always log bypass_requested=false.
+// notEvaluatedDecision records deliberate non-evaluation of a stale or busy Skip
+// with the configured snapshot, or not_configured without one.
 func notEvaluatedDecision(
 	conditions *automations.Condition,
 ) automations.ConditionDecision {

@@ -47,9 +47,7 @@ func ValidateObservationComparison(comparison ObservationComparison) error {
 }
 
 // validateConditionComparison is the shared pointer, operator, and operand rule
-// for Observation Trigger comparisons and Entity State Condition leaves, so both
-// use the same JSON Pointer syntax, 256-byte limit, closed operator set, exact
-// single JSON operand, and ordering-requires-a-number compatibility check.
+// for Observation Trigger comparisons and Entity State Condition leaves.
 func validateConditionComparison(
 	pointer string,
 	operator ComparisonOperator,
@@ -78,8 +76,7 @@ func validateConditionComparison(
 }
 
 // MatchObservationComparison matches an Observation value against a comparison.
-// Missing paths, invalid array indices, and incompatible types return false even
-// for ne. Malformed JSON, pointer syntax, or operators can return an error.
+// Missing paths and incompatible types return false even for ne.
 func MatchObservationComparison(comparison ObservationComparison, value devices.Value) (bool, error) {
 	operand, err := decodeJSONValue(comparison.Operand)
 	if err != nil {
@@ -112,8 +109,7 @@ func (operator ComparisonOperator) isOrdering() bool {
 	}
 }
 
-// compareOrdering reports the ordering verdict for one exact rational
-// comparison. ok is false when operator is not an ordering operator.
+// compareOrdering reports the ordering verdict for one exact rational comparison.
 func (operator ComparisonOperator) compareOrdering(compared int) (bool, bool) {
 	switch operator {
 	case ComparisonLessThan:
@@ -244,8 +240,7 @@ func compareJSONValues(operator ComparisonOperator, left, right any) (bool, erro
 	}
 }
 
-// jsonValueKind groups decoded values by JSON type, treating [json.Number] and
-// float64 alike for equality and inequality.
+// jsonValueKind groups decoded values by JSON type for equality and inequality.
 func jsonValueKind(value any) string {
 	switch value.(type) {
 	case nil:
@@ -265,8 +260,7 @@ func jsonValueKind(value any) string {
 	}
 }
 
-// jsonValuesEqual compares JSON values recursively, requiring matching types
-// at every level, ignoring object key order, and preserving array order.
+// jsonValuesEqual compares JSON values recursively, ignoring object key order and preserving array order.
 func jsonValuesEqual(left, right any) (bool, error) {
 	if jsonValueKind(left) != jsonValueKind(right) {
 		return false, nil

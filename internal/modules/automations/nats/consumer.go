@@ -21,9 +21,8 @@ const (
 	transportErrorCodeKey = "error_code"
 )
 
-// Device Fact diagnostic stages and fixed codes. A diagnostic names the stage
-// that failed and one fixed code; it never carries a payload, a full subject, or
-// upstream error text.
+// Device Fact diagnostic stages and fixed codes; a diagnostic never carries a
+// payload, a full subject, or upstream error text.
 const (
 	transportStageConsume   = "consume"
 	transportStageMetadata  = "metadata"
@@ -43,22 +42,18 @@ const (
 	transportCodeTermFailed          = "term_failed"
 )
 
-// DeviceFactReceiver admits a mapped Fact synchronously. Implementations must
-// honor the context deadline and leave Command execution to detached workers.
+// DeviceFactReceiver admits a mapped Fact synchronously within the context deadline.
 type DeviceFactReceiver interface {
 	ReceiveDeviceFact(context.Context, automations.DeviceFact) (automations.AdmissionOutcome, error)
 }
 
-// AdmissionGate optionally lets the consumer close its receiver's admission
-// after unexpected termination. Receivers without it manage their own gate.
+// AdmissionGate optionally lets the consumer close its receiver's admission after unexpected termination.
 type AdmissionGate interface {
 	StopAdmission()
 }
 
-// StartDeviceFactConsumer subscribes with strict Fact decoding and trace propagation.
-// It acknowledges only after synchronous admission succeeds, using
-// DeviceFactAdmissionTimeout for each admission's context deadline.
-// Unexpected termination closes the optional AdmissionGate; intentional shutdown does not.
+// StartDeviceFactConsumer subscribes with strict Fact decoding and trace
+// propagation, acknowledging only after synchronous admission succeeds.
 func StartDeviceFactConsumer(
 	baseContext context.Context,
 	consumer jetstream.Consumer,
@@ -111,10 +106,8 @@ func StartDeviceFactConsumer(
 	return managed, nil
 }
 
-// handleDeviceFactMessage maps and admits exactly one received Device Fact. It
-// acknowledges only after successful admission, terminates deterministic
-// malformed wire input, and negatively acknowledges transient admission or
-// storage failures with a bounded delay.
+// handleDeviceFactMessage maps and admits exactly one received Device Fact,
+// terminating deterministic malformed input and negatively acknowledging transient failures.
 func handleDeviceFactMessage(
 	baseContext context.Context,
 	message jetstream.Msg,
@@ -164,8 +157,8 @@ func handleDeviceFactMessage(
 	}
 }
 
-// resolveDeviceFactAdmissionFailure terminates invalid Facts. Other failures,
-// including closed admission and timeouts, receive a delayed Nak for redelivery.
+// resolveDeviceFactAdmissionFailure terminates invalid Facts; other failures
+// receive a delayed Nak for redelivery.
 func resolveDeviceFactAdmissionFailure(
 	ctx context.Context,
 	message jetstream.Msg,
@@ -195,15 +188,13 @@ func resolveDeviceFactAdmissionFailure(
 }
 
 // isDeterministicDeviceFactFailure reports whether one admission error is
-// permanent for this Fact's bytes rather than a transient storage or gate
-// failure.
+// permanent for this Fact's bytes.
 func isDeterministicDeviceFactFailure(err error) bool {
 	return errors.Is(err, automations.ErrInvalidDeviceFact)
 }
 
 // terminateDeviceFactMessage terminates one deterministic malformed or
-// inadmissible message and records the fixed rejection code at Warn. Raw
-// payloads, subjects, and decode errors are never logged.
+// inadmissible message and records the fixed rejection code at Warn.
 func terminateDeviceFactMessage(
 	ctx context.Context,
 	message jetstream.Msg,
@@ -231,8 +222,7 @@ func terminateDeviceFactMessage(
 }
 
 // logDeviceFactFailure records one transient admission, ack, or nak failure with
-// the Fact's safe identity fields. It never logs a value, a parameter, or a
-// subject.
+// the Fact's safe identity fields.
 func logDeviceFactFailure(
 	ctx context.Context,
 	logger *slog.Logger,

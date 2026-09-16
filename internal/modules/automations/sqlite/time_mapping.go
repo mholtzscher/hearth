@@ -5,8 +5,7 @@ import (
 	"time"
 )
 
-// automationTimestampLayout is the fixed-width UTC layout every stored
-// automation timestamp uses, so retention cutoffs compare lexicographically.
+// automationTimestampLayout is the fixed-width UTC layout every stored automation timestamp uses.
 const automationTimestampLayout = "2006-01-02T15:04:05.000000000Z"
 
 func encodeAutomationTimestamp(value time.Time) string {

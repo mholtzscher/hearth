@@ -15,8 +15,7 @@ import (
 	"github.com/mholtzscher/hearth/internal/modules/automations"
 )
 
-// Automations exposes definition management, manual admission, and history to
-// HTTP handlers, excluding Fact admission and execution-state writes.
+// Automations exposes definition management, manual admission, and history to HTTP handlers.
 type Automations interface {
 	CreateAutomation(context.Context, automations.Definition) (automations.Record, error)
 	GetAutomation(context.Context, automations.AutomationID) (automations.Record, error)
@@ -50,11 +49,9 @@ type Handler struct {
 var definitionCodec = sync.OnceValues(automations.NewDefinitionCodec)
 
 // manualRunMaximumBodyBytes bounds the optional manual bypass body to 1 KiB.
-// Huma rejects any body that reaches the limit with 413 before decoding.
 const manualRunMaximumBodyBytes = 1024
 
-// Register installs the eight Automation operations and publishes the strict
-// definition schema as a reusable OpenAPI component.
+// Register installs the eight Automation operations and publishes the strict definition schema.
 func Register(api huma.API, service Automations) {
 	codec, err := definitionCodec()
 	if err != nil {
@@ -140,8 +137,7 @@ func operation(id, method, path, summary string, tags ...string) huma.Operation 
 	}
 }
 
-// publishDefinitionSchema preserves every canonical JSON Schema keyword as the
-// named component the request bodies reference.
+// publishDefinitionSchema preserves every canonical JSON Schema keyword as a named component.
 func publishDefinitionSchema(api huma.API, raw json.RawMessage) {
 	var document map[string]any
 	if err := json.Unmarshal(raw, &document); err != nil {
@@ -156,10 +152,8 @@ func definitionRequestBody() *huma.RequestBody {
 	}}
 }
 
-// manualRunRequestBody documents the optional, non-nullable manual bypass body.
-// It stays inline so the only accepted member and the closed
-// additionalProperties:false contract are visible on the operation itself. Huma
-// keeps validating the request body against this schema.
+// manualRunRequestBody documents the optional, non-nullable manual bypass body
+// inline so the accepted member and closed additionalProperties contract stay visible.
 func manualRunRequestBody() *huma.RequestBody {
 	return &huma.RequestBody{Required: false, Content: map[string]*huma.MediaType{
 		jsonContentType: {Schema: &huma.Schema{
@@ -172,8 +166,7 @@ func manualRunRequestBody() *huma.RequestBody {
 	}}
 }
 
-// publishReplacementSchema documents the required expected_revision/definition
-// envelope, not the bare definition accepted by create.
+// publishReplacementSchema documents the required expected_revision/definition envelope.
 func publishReplacementSchema(api huma.API) {
 	minimumRevision := float64(1)
 	api.OpenAPI().Components.Schemas.Map()["AutomationReplacement"] = &huma.Schema{
@@ -381,8 +374,7 @@ func decodeDefinitionBody(raw json.RawMessage) (automations.Definition, error) {
 	return definition, nil
 }
 
-// decodeReplaceEnvelope strictly decodes the expected-revision envelope and its
-// nested strict definition.
+// decodeReplaceEnvelope strictly decodes the expected-revision envelope and its nested definition.
 func decodeReplaceEnvelope(
 	raw json.RawMessage,
 ) (int64, automations.Definition, error) {

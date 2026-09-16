@@ -30,8 +30,7 @@ type automationConditionEvaluationJSON struct {
 
 // automationConditionNodeJSON keeps selected JSON null distinct from missing:
 // SelectedValue is absent for "not selected" and the bytes "null" for a selected
-// JSON null. The other optional members are raw so an explicit JSON null is
-// distinguishable from an absent member and rejected as a placeholder.
+// JSON null.
 type automationConditionNodeJSON struct {
 	ID            ConditionID     `json:"id"`
 	Result        ConditionResult `json:"result"`
@@ -41,9 +40,7 @@ type automationConditionNodeJSON struct {
 	ObservedAt    json.RawMessage `json:"observed_at,omitempty"`
 }
 
-// EncodeConditionDecision renders one decision in the strict persisted
-// shape. It is a pure encoder: the write path validates a decision before
-// calling it, and no partial or inconsistent decision is written.
+// EncodeConditionDecision renders one decision in the strict persisted shape.
 func EncodeConditionDecision(decision ConditionDecision) (json.RawMessage, error) {
 	mode := decision.Mode
 	bypass := decision.BypassRequested
@@ -72,12 +69,8 @@ func EncodeConditionDecision(decision ConditionDecision) (json.RawMessage, error
 	return raw, nil
 }
 
-// DecodeConditionDecision decodes one persisted decision. Every
-// automation_history row carries an explicit decision object, so an empty or
-// missing payload is malformed rather than an implicit not_configured mode.
-// Malformed decision JSON is a permanent [ErrInvalidAutomation]. Retained
-// snapshot and evaluation evidence is decoded and trusted, never re-proven
-// against the evaluator.
+// DecodeConditionDecision decodes one persisted decision, rejecting malformed
+// payloads as permanent [ErrInvalidAutomation] errors.
 func DecodeConditionDecision(raw json.RawMessage) (ConditionDecision, error) {
 	var value automationConditionDecisionJSON
 	if err := decodeStrictJSONObject(raw, &value); err != nil {
@@ -120,11 +113,9 @@ func DecodeConditionDecision(raw json.RawMessage) (ConditionDecision, error) {
 	return decision, nil
 }
 
-// ValidateConditionDecision enforces the decision envelope invariants
-// that do not depend on the enclosing Run or Skip: closed mode, snapshot and
-// evaluation presence per mode, and bypass coherence with mode. The evaluator
-// produces evaluation evidence once at write time; this validator does not
-// re-derive it from the retained snapshot.
+// ValidateConditionDecision enforces the decision envelope invariants that do
+// not depend on the enclosing Run or Skip: closed mode, snapshot and evaluation
+// presence per mode, and bypass coherence with mode.
 func ValidateConditionDecision(decision ConditionDecision) error {
 	switch decision.Mode {
 	case ConditionDecisionNotConfigured:
@@ -148,9 +139,7 @@ func ValidateConditionDecision(decision ConditionDecision) error {
 	return nil
 }
 
-// ValidateRunConditionDecision checks one Run's decision against its admission
-// source and outcome: a Run never records not_evaluated, bypass is manual only,
-// and an evaluated Run is admitted on a true root.
+// ValidateRunConditionDecision checks one Run's decision against its admission source and outcome.
 func ValidateRunConditionDecision(run Run) error {
 	decision := run.ConditionDecision
 	if err := ValidateConditionDecision(decision); err != nil {
@@ -178,9 +167,8 @@ func ValidateRunConditionDecision(run Run) error {
 }
 
 // ValidateSkipConditionDecision checks one Skip's decision against its reason. A
-// Skip never requests or records a bypass; stale and busy never evaluate
-// conditions, and a condition Skip must have evaluated false or unknown to match
-// its reason. This is the validator that rejects fabricated provenance.
+// Skip never requests or records a bypass; a condition Skip must have evaluated
+// false or unknown to match its reason.
 func ValidateSkipConditionDecision(skip Skip) error {
 	decision := skip.ConditionDecision
 	if err := ValidateConditionDecision(decision); err != nil {
@@ -212,9 +200,7 @@ func ValidateSkipConditionDecision(skip Skip) error {
 }
 
 // automationConditionEvaluationFromJSON maps one persisted evaluation to its
-// domain form, normalizing evidence times to UTC so decode is canonical. An
-// explicit JSON null on a non-evidence member is rejected before it can be
-// mistaken for an absent member.
+// domain form, normalizing evidence times to UTC.
 func automationConditionEvaluationFromJSON(
 	value automationConditionEvaluationJSON,
 ) (ConditionEvaluation, error) {
@@ -269,9 +255,7 @@ func (node automationConditionNodeJSON) toDomain() (ConditionNodeResult, error) 
 	return decoded, nil
 }
 
-// encodeAutomationConditionEvaluation renders one evaluation in the strict
-// persisted shape. Pointer members are marshaled to raw JSON so an absent member
-// and an explicit null stay distinct on the wire.
+// encodeAutomationConditionEvaluation renders one evaluation in the strict persisted shape.
 func encodeAutomationConditionEvaluation(evaluation ConditionEvaluation) (json.RawMessage, error) {
 	encoded := automationConditionEvaluationJSON{
 		EvaluatedAt: evaluation.EvaluatedAt.UTC(),
@@ -315,7 +299,6 @@ func encodeAutomationConditionEvaluation(evaluation ConditionEvaluation) (json.R
 }
 
 // decodeConditionEvaluationJSON strictly decodes one optional evaluation member.
-// An explicit null is rejected instead of being treated as absent.
 func decodeConditionEvaluationJSON(raw json.RawMessage) (*automationConditionEvaluationJSON, error) {
 	if isExplicitJSONNull(raw) {
 		return nil, invalid("condition decision: condition decision evaluation must not be null")
@@ -331,8 +314,7 @@ func decodeConditionEvaluationJSON(raw json.RawMessage) (*automationConditionEva
 }
 
 // decodeOptionalConditionMember decodes one optional decision member that must be
-// absent or a non-null JSON value of T. An explicit null is a placeholder, not
-// an omitted member, and is rejected with a fixed error.
+// absent or a non-null JSON value of T.
 func decodeOptionalConditionMember[T any](raw json.RawMessage, field string) (*T, error) {
 	if isExplicitJSONNull(raw) {
 		return nil, invalid("condition decision: %s must not be null", field)
@@ -347,14 +329,12 @@ func decodeOptionalConditionMember[T any](raw json.RawMessage, field string) (*T
 	return &value, nil
 }
 
-// isExplicitJSONNull reports whether one raw JSON member is the literal null,
-// which an omitted member never is.
+// isExplicitJSONNull reports whether one raw JSON member is the literal null.
 func isExplicitJSONNull(raw json.RawMessage) bool {
 	return len(raw) > 0 && bytes.Equal(bytes.TrimSpace(raw), []byte("null"))
 }
 
-// decodeStrictJSONObject decodes exactly one JSON object, rejects unknown fields
-// and trailing content, and never silently ignores a malformed payload.
+// decodeStrictJSONObject decodes exactly one JSON object, rejecting unknown fields and trailing content.
 func decodeStrictJSONObject(raw json.RawMessage, target any) error {
 	decoder := json.NewDecoder(bytes.NewReader(raw))
 	decoder.DisallowUnknownFields()

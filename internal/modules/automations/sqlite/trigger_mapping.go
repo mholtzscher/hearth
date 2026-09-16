@@ -7,8 +7,7 @@ import (
 	"github.com/mholtzscher/hearth/internal/modules/automations"
 )
 
-// encodeTriggerIDs renders the matched Trigger ID list of one Run as JSON. A
-// manual Run carries no matched IDs, which encodes as an empty array.
+// encodeTriggerIDs renders the matched Trigger ID list of one Run as JSON.
 func encodeTriggerIDs(ids []automations.TriggerID) (json.RawMessage, error) {
 	if ids == nil {
 		ids = []automations.TriggerID{}
@@ -22,8 +21,7 @@ func encodeTriggerIDs(ids []automations.TriggerID) (json.RawMessage, error) {
 	return raw, nil
 }
 
-// decodeTriggerIDs decodes a stored matched Trigger ID list, rejecting any
-// identity that is not a canonical Trigger ID.
+// decodeTriggerIDs decodes a stored matched Trigger ID list, rejecting non-canonical IDs.
 func decodeTriggerIDs(raw json.RawMessage) ([]automations.TriggerID, error) {
 	var ids []automations.TriggerID
 	if err := json.Unmarshal(raw, &ids); err != nil {

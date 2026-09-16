@@ -22,13 +22,11 @@ const (
 	automationConditionMaxAgeSeconds int64 = 2_592_000
 )
 
-// ConditionID identifies one node within a definition's Condition
-// tree. It uses the shared subject-safe slug grammar and is unique across the
-// whole tree; the Trigger, Step, and Condition ID namespaces are independent.
+// ConditionID identifies one node within a definition's Condition tree, unique
+// across the tree; the Trigger, Step, and Condition ID namespaces are independent.
 type ConditionID string
 
-// ConditionKind is the closed discriminated family of one Condition
-// node. Kind determines which payload field is meaningful.
+// ConditionKind is the closed discriminated family of one Condition node.
 type ConditionKind string
 
 const (
@@ -43,9 +41,8 @@ const (
 )
 
 // EntityStateCondition compares one retained State selection with a static
-// operand. Operand is exactly one normalized JSON value. Pointer is an RFC 6901
-// JSON Pointer relative to State.Value; the empty pointer selects the whole
-// value. MaxAgeSeconds is nil when no evidence age bound applies.
+// operand. Pointer is an RFC 6901 JSON Pointer relative to State.Value; the
+// empty pointer selects the whole value, and MaxAgeSeconds nil means unbounded.
 type EntityStateCondition struct {
 	EntityID      devices.EntityID
 	Pointer       string
@@ -54,10 +51,8 @@ type EntityStateCondition struct {
 	MaxAgeSeconds *int64
 }
 
-// Condition is one bounded, identified, discriminated Condition node.
-// Exactly one family payload is set: EntityState iff Kind is
-// ConditionEntityState, Children iff Kind is ConditionAll or
-// ConditionAny, and Child iff Kind is ConditionNot.
+// Condition is one bounded, identified, discriminated Condition node; exactly
+// one family payload is set matching Kind.
 type Condition struct {
 	ID          ConditionID
 	Kind        ConditionKind
@@ -66,8 +61,7 @@ type Condition struct {
 	Child       *Condition            // not only
 }
 
-// ConditionResult is the three-valued result of one Condition node or
-// tree. Only a true root admits a Run.
+// ConditionResult is the three-valued result of one Condition node or tree.
 type ConditionResult string
 
 const (
@@ -104,10 +98,9 @@ const (
 	ConditionUnknownTypeMismatch ConditionUnknownReason = "type_mismatch"
 )
 
-// ConditionNodeResult records one evaluated node. SelectedValue is nil
-// when no value was selected and the JSON bytes "null" when a JSON null was
-// selected, so missing and selected-null stay distinct. ObservationID and
-// ObservedAt are set together whenever State evidence existed.
+// ConditionNodeResult records one evaluated node. SelectedValue is nil when no
+// value was selected and the JSON bytes "null" when a JSON null was selected, so
+// missing and selected-null stay distinct.
 type ConditionNodeResult struct {
 	ID            ConditionID
 	Result        ConditionResult
@@ -117,17 +110,15 @@ type ConditionNodeResult struct {
 	ObservedAt    *time.Time              // State evidence time
 }
 
-// ConditionEvaluation contains every node result in definition
-// pre-order, so history explains every predicate rather than whichever branch
-// happened to short-circuit.
+// ConditionEvaluation contains every node result in definition pre-order, so
+// history explains every predicate.
 type ConditionEvaluation struct {
 	EvaluatedAt time.Time
 	Result      ConditionResult
 	Nodes       []ConditionNodeResult
 }
 
-// ConditionDecisionMode distinguishes retained evidence from
-// deliberate non-evaluation.
+// ConditionDecisionMode distinguishes retained evidence from deliberate non-evaluation.
 type ConditionDecisionMode string
 
 const (
@@ -144,8 +135,7 @@ const (
 	ConditionDecisionEvaluated ConditionDecisionMode = "evaluated"
 )
 
-// ConditionDecision is the immutable admission explanation retained
-// with a Run or Skip. It is evidence, not executable work.
+// ConditionDecision is the immutable admission explanation retained with a Run or Skip.
 type ConditionDecision struct {
 	Mode            ConditionDecisionMode
 	BypassRequested bool
@@ -153,11 +143,7 @@ type ConditionDecision struct {
 	Evaluation      *ConditionEvaluation
 }
 
-// NormalizeConditions validates one typed Condition tree and returns
-// an owned copy of it. It rejects cycles and slice-aliasing hazards before
-// unbounded recursion, plus over-depth trees, too many nodes, duplicate IDs,
-// contradictory family payloads, invalid pointers, operators, operands, and
-// evidence age bounds.
+// NormalizeConditions validates one typed Condition tree and returns an owned copy of it.
 func NormalizeConditions(root Condition) (Condition, error) {
 	if err := validateAutomationConditionTree(root); err != nil {
 		return Condition{}, err
@@ -166,8 +152,7 @@ func NormalizeConditions(root Condition) (Condition, error) {
 }
 
 // RequiredConditionEntityIDs returns the sorted, deduplicated Entity IDs every
-// entity_state leaf of one tree explicitly requests. A malformed typed tree
-// returns an error instead of a partial set.
+// entity_state leaf explicitly requests.
 func RequiredConditionEntityIDs(root Condition) ([]devices.EntityID, error) {
 	walk := newConditionTreeWalk()
 	if err := walk.visit(&root, 1); err != nil {
@@ -180,15 +165,12 @@ func RequiredConditionEntityIDs(root Condition) ([]devices.EntityID, error) {
 	return slices.Compact(walk.entityIDs), nil
 }
 
-// EvaluateConditions evaluates every node of one tree against a
-// coherent State snapshot in definition pre-order, without short-circuiting, at
-// the supplied admission-decision time.
-//
-// It first verifies complete coverage: a missing snapshot key returns a typed
-// [ConditionSnapshotRequiredError] carrying the whole tree's required Entity set
-// and an empty evaluation, and never a leaf result for the uncovered key. Only a
-// covered Exists=false entry produces entity_missing, and only a covered
-// Exists=true, State=nil entry produces state_missing.
+// EvaluateConditions evaluates every node of one tree against a coherent State
+// snapshot in definition pre-order, without short-circuiting. A missing snapshot
+// key returns a typed [ConditionSnapshotRequiredError] carrying the whole tree's
+// required Entity set, never a leaf result. Only a covered Exists=false entry
+// produces entity_missing; only a covered Exists=true, State=nil entry produces
+// state_missing.
 func EvaluateConditions(
 	root Condition,
 	snapshot devices.EntityStateSnapshot,
@@ -234,9 +216,7 @@ func newConditionTreeWalk() *conditionTreeWalk {
 	}
 }
 
-// validateAutomationConditionTree validates one typed tree without producing an
-// owned copy, so callers that only need integrity can share it with normalization
-// and evaluation.
+// validateAutomationConditionTree validates one typed tree without producing an owned copy.
 func validateAutomationConditionTree(root Condition) error {
 	return newConditionTreeWalk().visit(&root, 1)
 }
@@ -315,9 +295,7 @@ func (walk *conditionTreeWalk) visitNot(node *Condition, depth int) error {
 }
 
 // validateEntityStateConditionValue checks one leaf's Entity, pointer, operator,
-// operand, and optional evidence age bound. Pointer existence stays a runtime
-// result; only syntax, size, and operand/operator compatibility are definition
-// errors.
+// operand, and evidence age bound.
 func validateEntityStateConditionValue(condition EntityStateCondition) error {
 	if _, err := devices.ParseEntityID(string(condition.EntityID)); err != nil {
 		return fmt.Errorf("%w: condition entity: %w", ErrInvalidAutomation, err)
@@ -539,8 +517,7 @@ func conditionResultFromMatch(matched bool) ConditionResult {
 }
 
 // conditionComparisonCompatible reports whether two selected values can be
-// compared at all under the operator. eq and ne require the same top-level JSON
-// kind; ordering requires both sides to be JSON numbers.
+// compared under the operator.
 func conditionComparisonCompatible(operator ComparisonOperator, left, right any) bool {
 	if operator.isOrdering() {
 		_, leftNumeric := jsonNumberValue(left)
@@ -551,9 +528,6 @@ func conditionComparisonCompatible(operator ComparisonOperator, left, right any)
 }
 
 // combineConditionGroup applies the truth table for a nonempty child group.
-// all is false if any child is false, otherwise unknown if any child is unknown,
-// otherwise true. any is true if any child is true, otherwise unknown if any
-// child is unknown, otherwise false.
 func combineConditionGroup(
 	kind ConditionKind,
 	results []ConditionResult,

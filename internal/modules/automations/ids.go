@@ -9,13 +9,11 @@ import (
 	"github.com/google/uuid"
 )
 
-// canonicalUUIDVersion is the only UUID version accepted for durable automation
-// identities, matching the rest of Hearth's UUIDv7 identities.
+// canonicalUUIDVersion is the only UUID version accepted for durable automation identities.
 const canonicalUUIDVersion = 7
 
-// subjectSlugPattern is the one subject-safe slug shape shared by Trigger IDs,
-// Step IDs, and Entity Event names: 1–63 bytes, lowercase alphanumeric with
-// internal dashes and underscores.
+// subjectSlugPattern is the subject-safe slug shape shared by Trigger IDs, Step
+// IDs, and Entity Event names.
 var subjectSlugPattern = regexp.MustCompile(`^[a-z0-9][a-z0-9_-]{0,62}$`)
 
 // NewAutomationID mints the durable identity of one Automation definition.
@@ -53,8 +51,7 @@ func ParseAutomationID(value string) (AutomationID, error) {
 	return AutomationID(value), nil
 }
 
-// ParseRunID validates one canonical arn_-prefixed UUIDv7 and rejects
-// adapter Runtime identities.
+// ParseRunID validates one canonical arn_-prefixed UUIDv7.
 func ParseRunID(value string) (RunID, error) {
 	if err := validateAutomationUUID(value, "arn"); err != nil {
 		return "", fmt.Errorf("%w: automation run ID: %w", ErrInvalidAutomation, err)

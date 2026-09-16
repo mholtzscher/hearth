@@ -12,18 +12,13 @@ import (
 )
 
 // StartAutomationRunBody carries only the optional Condition bypass request for
-// a manual Run. An omitted request body leaves the input Body nil, which applies
-// Conditions exactly like an explicit false; a present body must be one strict
-// JSON object. Unknown members, JSON null, non-boolean bypass values, and
-// trailing JSON are rejected before admission.
+// a manual Run; an omitted body applies Conditions like an explicit false.
 type StartAutomationRunBody struct {
 	BypassConditions bool `json:"bypass_conditions,omitempty"`
 }
 
-// UnmarshalJSON enforces the strict optional manual bypass body. Huma owns body
-// size, schema validation, and error transport; this decoder closes the shapes a
-// generated object schema accepts but the product contract forbids, and it always
-// returns a fixed, payload-free error so a rejected body never echoes values.
+// UnmarshalJSON enforces the strict optional manual bypass body, closing the
+// shapes the generated object schema accepts but the product contract forbids.
 func (body *StartAutomationRunBody) UnmarshalJSON(data []byte) error {
 	decoder := json.NewDecoder(bytes.NewReader(data))
 	var members map[string]json.RawMessage
@@ -59,11 +54,9 @@ func (body *StartAutomationRunBody) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
-// AutomationConditionBody is one recursive, flattened Condition node. It mirrors
+// AutomationConditionBody is one recursive, flattened Condition node mirroring
 // the strict persisted definition shape: an entity_state leaf carries its family
-// fields directly, all/any carry children, and not carries one child. Every
-// family-inapplicable field stays absent rather than emitting a nullable
-// placeholder, and the empty pointer of a leaf is explicit.
+// fields directly, all/any carry children, and not carries one child.
 type AutomationConditionBody struct {
 	ID            string                    `json:"id"                        doc:"Node identifier, unique within the tree"`
 	Kind          string                    `json:"kind"                                                                                enum:"entity_state,all,any,not"`
@@ -77,9 +70,8 @@ type AutomationConditionBody struct {
 }
 
 // AutomationConditionNodeResultBody is one evaluated node's retained evidence.
-// SelectedValue is absent when the pointer selected nothing and the JSON bytes
-// "null" when it selected a JSON null, so missing and selected-null stay
-// distinct. ObservationID and ObservedAt are present together.
+// SelectedValue is absent when nothing was selected and the bytes "null" for a
+// selected JSON null, so missing and selected-null stay distinct.
 type AutomationConditionNodeResultBody struct {
 	ID            string          `json:"id"`
 	Result        string          `json:"result"                   enum:"true,false,unknown"`
@@ -89,17 +81,15 @@ type AutomationConditionNodeResultBody struct {
 	ObservedAt    *time.Time      `json:"observed_at,omitempty"`
 }
 
-// AutomationConditionEvaluationBody is one complete evaluation in definition
-// pre-order. It appears only for the evaluated decision mode.
+// AutomationConditionEvaluationBody is one complete evaluation in definition pre-order.
 type AutomationConditionEvaluationBody struct {
 	EvaluatedAt time.Time                           `json:"evaluated_at"`
 	Result      string                              `json:"result"       enum:"true,false,unknown"`
 	Nodes       []AutomationConditionNodeResultBody `json:"nodes"`
 }
 
-// AutomationConditionDecisionBody is the retained admission explanation. Mode
-// determines presence: not_configured carries neither snapshot nor evaluation,
-// not_evaluated and bypassed carry a snapshot only, and evaluated carries both.
+// AutomationConditionDecisionBody is the retained admission explanation; Mode
+// determines which of snapshot and evaluation are present.
 type AutomationConditionDecisionBody struct {
 	Mode            string                             `json:"mode"                 enum:"not_configured,not_evaluated,bypassed,evaluated"`
 	BypassRequested bool                               `json:"bypass_requested"`
@@ -108,8 +98,7 @@ type AutomationConditionDecisionBody struct {
 }
 
 // conditionBody maps one optional normalized domain Condition tree to its
-// transport form. A nil tree stays nil so an unconditioned decision emits no
-// fabricated snapshot.
+// transport form; a nil tree stays nil.
 func conditionBody(condition *automations.Condition) *AutomationConditionBody {
 	if condition == nil {
 		return nil
@@ -118,8 +107,7 @@ func conditionBody(condition *automations.Condition) *AutomationConditionBody {
 	return &body
 }
 
-// conditionNodeBody maps one domain Condition node, emitting only the fields of
-// its own family.
+// conditionNodeBody maps one domain Condition node, emitting only its own family fields.
 func conditionNodeBody(condition automations.Condition) AutomationConditionBody {
 	body := AutomationConditionBody{ID: string(condition.ID), Kind: string(condition.Kind)}
 	switch condition.Kind {
@@ -161,8 +149,7 @@ func conditionDecisionBody(decision automations.ConditionDecision) AutomationCon
 	return body
 }
 
-// conditionEvaluationBody maps one evaluation, normalizing every retained time
-// to UTC so the RFC3339Nano rendering is canonical.
+// conditionEvaluationBody maps one evaluation, normalizing every retained time to UTC.
 func conditionEvaluationBody(
 	evaluation automations.ConditionEvaluation,
 ) AutomationConditionEvaluationBody {
@@ -178,7 +165,7 @@ func conditionEvaluationBody(
 }
 
 // conditionNodeResultBody maps one evaluated node, preserving the missing versus
-// selected-null distinction and pairing Observation identity with its time.
+// selected-null distinction.
 func conditionNodeResultBody(
 	node automations.ConditionNodeResult,
 ) AutomationConditionNodeResultBody {

@@ -19,8 +19,7 @@ type Service struct {
 }
 
 // NewService assembles the automation service from its persistence seam, the
-// devices-facing seam, and process-owned collaborators. Zero-valued dependency
-// fields fall back to production defaults.
+// devices-facing seam, and process-owned collaborators.
 func NewService(
 	repository Repository,
 	automationDevices AutomationDevices,
@@ -34,8 +33,8 @@ func NewService(
 	}
 }
 
-// StopAdmission rejects new Runs with [ErrAdmissionUnavailable]. Admitted Runs
-// finish their current Command and drain. It is idempotent and does not wait.
+// StopAdmission rejects new Runs with [ErrAdmissionUnavailable] and lets admitted
+// Runs finish their current Command.
 func (service *Service) StopAdmission() {
 	service.admission.CloseAdmission()
 }
@@ -45,16 +44,14 @@ func (service *Service) AdmissionOpen() bool {
 	return service.admission.AdmissionOpen()
 }
 
-// Drain closes admission and joins admitted Runs without canceling Commands.
-// A context error stops waiting, not the Runs; admission stays closed.
-// Keep shared dependencies alive until a drain succeeds.
+// Drain closes admission and joins admitted Runs without canceling Commands. A
+// context error stops waiting, not the Runs.
 func (service *Service) Drain(ctx context.Context) error {
 	service.StopAdmission()
 	return service.admission.Wait(ctx)
 }
 
 // InterruptActiveRuns marks running Runs and Steps interrupted on restart.
-// Call before opening transports; it never replays Commands or infers success.
 func (service *Service) InterruptActiveRuns(ctx context.Context, at time.Time) error {
 	if err := service.repository.InterruptActiveRuns(ctx, at, FailureCoreRestarted); err != nil {
 		return err
@@ -68,8 +65,7 @@ func (service *Service) InterruptActiveRuns(ctx context.Context, at time.Time) e
 	return nil
 }
 
-// latchExecutorFault closes admission until restart when Run progress cannot be
-// verified or persisted.
+// latchExecutorFault closes admission until restart when Run progress cannot be persisted.
 func (service *Service) latchExecutorFault(ctx context.Context, runID RunID, position int) {
 	service.admission.CloseAdmission()
 	service.dependencies.Logger.ErrorContext(
@@ -82,8 +78,7 @@ func (service *Service) latchExecutorFault(ctx context.Context, runID RunID, pos
 	)
 }
 
-// CreateAutomation validates every current reference and persists one new
-// definition at revision 1.
+// CreateAutomation validates every current reference and persists one new definition.
 func (service *Service) CreateAutomation(
 	ctx context.Context,
 	definition Definition,
@@ -113,8 +108,8 @@ func (service *Service) ListAutomations(
 	return service.repository.ListAutomations(ctx, params)
 }
 
-// ReplaceAutomation validates every current reference and atomically replaces
-// one definition when the expected revision is still current.
+// ReplaceAutomation validates every current reference and replaces one definition
+// when the expected revision is still current.
 func (service *Service) ReplaceAutomation(
 	ctx context.Context,
 	id AutomationID,
@@ -133,8 +128,7 @@ func (service *Service) ReplaceAutomation(
 	return record, nil
 }
 
-// DeleteAutomation hard-deletes one definition under the expected revision. An
-// active Run continues from its snapshot and retained history stays queryable.
+// DeleteAutomation hard-deletes one definition under the expected revision.
 func (service *Service) DeleteAutomation(ctx context.Context, id AutomationID, expectedRevision int64) error {
 	if err := service.repository.DeleteAutomation(ctx, id, expectedRevision); err != nil {
 		return err
@@ -149,8 +143,7 @@ func (service *Service) DeleteAutomation(ctx context.Context, id AutomationID, e
 	return nil
 }
 
-// logDefinition records one definition mutation using only safe structured
-// attributes: identity and revision, never definition JSON or names.
+// logDefinition records one definition mutation with identity and revision only.
 func (service *Service) logDefinition(ctx context.Context, event string, record Record) {
 	service.dependencies.Logger.InfoContext(
 		ctx,

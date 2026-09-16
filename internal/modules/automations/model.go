@@ -8,25 +8,20 @@ import (
 	"github.com/mholtzscher/hearth/internal/modules/devices"
 )
 
-// AutomationID is the durable identity of one Automation definition: a
-// canonical aut_-prefixed UUIDv7.
+// AutomationID is the durable identity of one Automation definition (aut_ UUIDv7).
 type AutomationID string
 
-// RunID is the durable identity of one Automation Run: a canonical
-// arn_-prefixed UUIDv7. The arn_ prefix deliberately differs from the adapter
-// runtime identity, which uses run_.
+// RunID is the durable identity of one Automation Run (arn_ UUIDv7), distinct
+// from the adapter run_ identity.
 type RunID string
 
-// SkipID is the durable identity of one recorded Skip: a canonical
-// ask_-prefixed UUIDv7.
+// SkipID is the durable identity of one recorded Skip (ask_ UUIDv7).
 type SkipID string
 
-// TriggerID is an author-supplied subject-safe slug identifying one Trigger
-// within its own definition.
+// TriggerID is an author-supplied subject-safe slug identifying one Trigger within its own definition.
 type TriggerID string
 
-// StepID is an author-supplied subject-safe slug identifying one Step within
-// its own definition.
+// StepID is an author-supplied subject-safe slug identifying one Step within its own definition.
 type StepID string
 
 // TriggerKind is the closed discriminated family of one Automation Trigger.
@@ -58,33 +53,29 @@ const (
 )
 
 // ObservationComparison is one typed comparison against an Observation Fact's
-// data.value. Pointer is an RFC 6901 JSON Pointer relative to data.value; the
-// empty pointer selects the whole value. Operand is exactly one normalized JSON
-// value.
+// data.value. Pointer is an RFC 6901 JSON Pointer; the empty pointer selects the
+// whole value, and Operand is exactly one normalized JSON value.
 type ObservationComparison struct {
 	Pointer  string
 	Operator ComparisonOperator
 	Operand  json.RawMessage
 }
 
-// ObservationTrigger matches one Observation Fact by exact Entity ID, a
-// non-empty disposition set, and zero to eight comparisons that must all match.
+// ObservationTrigger matches one Observation Fact by exact Entity ID, a non-empty disposition set, and zero to eight comparisons.
 type ObservationTrigger struct {
 	EntityID     devices.EntityID
 	Dispositions []devices.ObservationDisposition
 	Comparisons  []ObservationComparison
 }
 
-// EntityEventTrigger matches one Entity Event Fact by exact Entity ID and exact
-// event name.
+// EntityEventTrigger matches one Entity Event Fact by exact Entity ID and event name.
 type EntityEventTrigger struct {
 	EntityID  devices.EntityID
 	EventName devices.EntityEventName
 }
 
-// Trigger is one identified typed Trigger. Exactly one family payload
-// is set: Observation iff Kind is TriggerKindObservation, EntityEvent iff Kind
-// is TriggerKindEntityEvent.
+// Trigger is one identified typed Trigger; exactly one family payload is set
+// matching Kind.
 type Trigger struct {
 	ID          TriggerID
 	Kind        TriggerKind
@@ -92,8 +83,7 @@ type Trigger struct {
 	EntityEvent *EntityEventTrigger
 }
 
-// Step is one identified, execution-ordered Command: exact Entity,
-// Operation, and normalized static JSON parameters.
+// Step is one identified, execution-ordered Command with exact Entity, Operation, and normalized static JSON parameters.
 type Step struct {
 	ID            StepID
 	EntityID      devices.EntityID
@@ -101,9 +91,8 @@ type Step struct {
 	Parameters    devices.CommandParameters
 }
 
-// Definition is one complete, normalized Automation document.
-// Conditions is optional: omission preserves unconditional-after-Trigger
-// behavior and explicit JSON null is invalid.
+// Definition is one complete, normalized Automation document. Conditions is
+// optional; explicit JSON null is invalid.
 type Definition struct {
 	Name       string // 1–200 runes, trimmed; not unique
 	Enabled    bool
@@ -112,8 +101,7 @@ type Definition struct {
 	Steps      []Step // 1–32, IDs unique and execution ordered
 }
 
-// Record is one live definition at its current revision. Revision
-// starts at 1 and increments by one on replacement.
+// Record is one live definition at its current revision, which starts at 1 and increments on replacement.
 type Record struct {
 	ID         AutomationID
 	Revision   int64
@@ -122,8 +110,7 @@ type Record struct {
 	UpdatedAt  time.Time
 }
 
-// DeviceFactFamily is the closed family of Device Fact evidence an automation
-// admits. The tokens match the durable history vocabulary.
+// DeviceFactFamily is the closed family of Device Fact evidence an automation admits.
 type DeviceFactFamily string
 
 const (
@@ -161,8 +148,7 @@ type DeviceFact struct {
 	EntityEvent *EntityEventFact
 }
 
-// DeviceFactSummary is the immutable evidence retained in history so a Run or
-// Skip stays explainable after Device Fact and Observation history are pruned.
+// DeviceFactSummary is the immutable evidence retained in history;
 // ObservationValue is non-nil only for Observation facts.
 type DeviceFactSummary struct {
 	FactID           devices.DeviceFactID
@@ -182,8 +168,7 @@ type AdmissionOutcome struct {
 	DuplicateOutcomes  int
 }
 
-// AdmissionResult contains committed admission outcomes. Register StartedRuns
-// workers and log Skips only after the transaction commits.
+// AdmissionResult contains committed admission outcomes.
 type AdmissionResult struct {
 	Outcome     AdmissionOutcome
 	StartedRuns []Run
@@ -191,9 +176,8 @@ type AdmissionResult struct {
 }
 
 // AdmissionSkip carries committed Skip identity, admission source, reason, and
-// nullable Fact identity for logging, without Fact values or definition
-// snapshots. FactID, Family, and Variant are set only for a device-fact Skip, so
-// a manual Skip never logs fabricated empty Fact fields.
+// nullable Fact identity for logging. FactID, Family, and Variant are set only
+// for a device-fact Skip.
 type AdmissionSkip struct {
 	SkipID       SkipID
 	AutomationID AutomationID
@@ -205,8 +189,7 @@ type AdmissionSkip struct {
 	Variant      string
 }
 
-// RunSource distinguishes how a Run was admitted and records the same admission
-// provenance on a Skip, so manual and Device Fact outcomes stay separable.
+// RunSource distinguishes how a Run was admitted and records the same provenance on a Skip.
 type RunSource string
 
 const (
@@ -263,8 +246,7 @@ type StepAttempt struct {
 	CompletedAt           *time.Time
 }
 
-// Run tracks execution of an immutable definition snapshot,
-// retaining admission provenance and ordered Step attempts.
+// Run tracks execution of an immutable definition snapshot with admission provenance and ordered Step attempts.
 type Run struct {
 	ID                RunID
 	AutomationID      AutomationID
@@ -301,8 +283,7 @@ const (
 // Skip is one recorded non-Run outcome with its admission provenance,
 // immutable matching Trigger snapshots, and an admission Condition decision. A
 // device-fact Skip carries complete Fact evidence and at least one matched
-// Trigger; a manual Skip carries neither and is scoped to the manual
-// Condition-blocked reasons.
+// Trigger; a manual Skip carries neither.
 type Skip struct {
 	ID                SkipID
 	AutomationID      AutomationID
@@ -333,9 +314,7 @@ type HistoryEntry struct {
 	Skip *Skip
 }
 
-// HistorySummary is the lightweight listing projection of one
-// retained history record. It carries the admission source and Condition
-// decision mode, but never the full tree or predicate values.
+// HistorySummary is the lightweight listing projection of one retained history record.
 type HistorySummary struct {
 	ID              string
 	Kind            HistoryKind
@@ -358,8 +337,7 @@ type ListAutomationsParams struct {
 	Limit   int
 }
 
-// ListHistoryParams is a descending (recorded_at, id) keyset position scoped to
-// one Automation, including one that has been hard-deleted.
+// ListHistoryParams is a descending (recorded_at, id) keyset position scoped to one Automation.
 type ListHistoryParams struct {
 	AutomationID     AutomationID
 	BeforeRecordedAt *time.Time
@@ -380,11 +358,9 @@ const (
 	automationMaximumPageLimit = 200
 )
 
-// PageLimit resolves one requested page limit to the effective page
-// size: an omitted limit becomes automationDefaultPageLimit, and anything
-// outside 1 through automationMaximumPageLimit is an [ErrInvalidAutomation].
-// Persistence applies it so a direct repository caller gets the same bounded
-// page as one that arrived through the HTTP request schema's matching bounds.
+// PageLimit resolves one requested page limit to the effective page size. An
+// omitted limit becomes automationDefaultPageLimit; anything outside 1 through
+// automationMaximumPageLimit is an [ErrInvalidAutomation].
 func PageLimit(limit int) (int, error) {
 	switch {
 	case limit == 0:
@@ -424,12 +400,9 @@ type RunCompletion struct {
 }
 
 // NewRunSnapshot builds one Run from a persisted definition record, an
-// identity the caller already minted, and its committed admission Condition
-// decision. It takes ownership of record.Definition and fact, which callers must
-// not mutate afterward, and copies matchedTriggerIDs. Every Step starts at
-// not_attempted in definition order. Persistence mints the Run identity inside
-// its admission transaction and then writes this snapshot; construction performs
-// no reads or writes of its own.
+// already-minted identity, and its committed admission Condition decision. It
+// takes ownership of record.Definition and fact, copies matchedTriggerIDs, and
+// starts every Step at not_attempted in definition order.
 func NewRunSnapshot(
 	record Record,
 	runID RunID,
@@ -478,8 +451,7 @@ func (trigger Trigger) EntityID() devices.EntityID {
 	return ""
 }
 
-// ValidateDeviceFact rejects a Device Fact whose family payload is missing,
-// contradictory, malformed, or unidentifiable.
+// ValidateDeviceFact rejects a Device Fact whose family payload is missing, contradictory, malformed, or unidentifiable.
 func ValidateDeviceFact(fact DeviceFact) error {
 	switch fact.Family {
 	case DeviceFactObservation:
@@ -497,8 +469,7 @@ func ValidateDeviceFact(fact DeviceFact) error {
 	}
 }
 
-// ValidateDeviceFactSummary rejects a retained Fact summary whose family,
-// identity, variant, causation, or timestamp is impossible.
+// ValidateDeviceFactSummary rejects an impossible retained Fact summary.
 func ValidateDeviceFactSummary(summary DeviceFactSummary) error {
 	if _, err := devices.ParseDeviceFactID(string(summary.FactID)); err != nil {
 		return invalid("fact summary: %s", err)
@@ -537,8 +508,7 @@ func ValidateDeviceFactSummary(summary DeviceFactSummary) error {
 	return nil
 }
 
-// ValidateTrigger rejects a Trigger whose identity, family payload,
-// or typed fields are impossible.
+// ValidateTrigger rejects an impossible Trigger identity, family payload, or typed fields.
 func ValidateTrigger(trigger Trigger) error {
 	if _, err := ParseTriggerID(string(trigger.ID)); err != nil {
 		return err
@@ -559,8 +529,7 @@ func ValidateTrigger(trigger Trigger) error {
 	}
 }
 
-// ValidateRun rejects a Run whose identity, provenance, snapshot,
-// status, timestamps, or ordered Steps are impossible.
+// ValidateRun rejects an impossible Run identity, provenance, snapshot, status, timestamps, or Steps.
 func ValidateRun(run Run) error {
 	if _, err := ParseRunID(string(run.ID)); err != nil {
 		return err
@@ -597,11 +566,8 @@ func ValidateRun(run Run) error {
 	return nil
 }
 
-// ValidateSkip rejects a Skip whose identity, admission provenance,
-// Fact evidence, matched Trigger snapshots, reason, Condition decision, or
-// timestamp is impossible. A device-fact Skip carries complete Fact evidence and
-// at least one matched Trigger; a manual Skip carries neither and records only a
-// manual Condition-blocked reason.
+// ValidateSkip rejects a Skip whose identity, provenance, evidence, reason,
+// Condition decision, or timestamp is impossible.
 func ValidateSkip(skip Skip) error {
 	if _, err := ParseSkipID(string(skip.ID)); err != nil {
 		return err
@@ -627,8 +593,8 @@ func ValidateSkip(skip Skip) error {
 }
 
 // validateSkipProvenance checks the Source-discriminated Skip family: complete
-// Fact evidence with matched Triggers for a device-fact Skip, and no Fact or
-// Trigger evidence for a manual Skip.
+// Fact evidence with matched Triggers for a device-fact Skip, and neither for a
+// manual Skip.
 func validateSkipProvenance(skip Skip) error {
 	switch skip.Source {
 	case RunSourceDeviceFact:
@@ -854,8 +820,8 @@ func invalidFact(message string) error {
 }
 
 // acceptedObservationDisposition reports whether one Observation disposition is
-// durable Device Fact evidence. Rejected and duplicate Observations are recorded
-// history but never facts, so they never match a Trigger.
+// durable Device Fact evidence; rejected and duplicate Observations are recorded
+// history but never facts.
 func acceptedObservationDisposition(disposition devices.ObservationDisposition) bool {
 	switch disposition {
 	case devices.DispositionApplied, devices.DispositionUnchanged:

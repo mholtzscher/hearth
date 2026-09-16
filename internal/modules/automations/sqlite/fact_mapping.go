@@ -9,9 +9,8 @@ import (
 	"github.com/mholtzscher/hearth/internal/modules/devices"
 )
 
-// factSummaryFromRow decodes the copied Fact summary that explains one outcome.
-// It returns nil when the row carries no Fact evidence, which only a manual Run
-// may do.
+// factSummaryFromRow decodes the copied Fact summary that explains one outcome,
+// returning nil when the row carries none.
 func factSummaryFromRow(row dbsqlc.AutomationHistory) (*automations.DeviceFactSummary, error) {
 	if !row.FactID.Valid {
 		return nil, nil //nolint:nilnil // An absent Fact summary is the manual-Run case.
@@ -54,8 +53,7 @@ type storedFact struct {
 	emittedAt   sql.NullString
 }
 
-// storedFactColumns encodes a Fact summary as history columns. A nil summary is
-// the manual-Run case and leaves every column NULL.
+// storedFactColumns encodes a Fact summary as history columns; a nil summary leaves every column NULL.
 func storedFactColumns(summary *automations.DeviceFactSummary) storedFact {
 	if summary == nil {
 		return storedFact{}

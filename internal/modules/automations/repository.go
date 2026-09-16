@@ -8,19 +8,16 @@ import (
 	"github.com/mholtzscher/hearth/internal/modules/devices"
 )
 
-// AutomationDevices provides reference validation, Command execution, and
-// ownership verification. Runtime eligibility stays with the devices Command path.
+// AutomationDevices provides reference validation, Command execution, and ownership verification.
 type AutomationDevices interface {
 	// ValidateObservationTrigger reports whether the Entity currently exists and
 	// can be the source of an Observation Trigger.
 	ValidateObservationTrigger(context.Context, devices.EntityID) error
 	// ValidateConditionEntity reports whether the Entity currently exists and is
-	// stateful, so a Condition may select its retained State. A present State is
-	// not required; compatibility and availability are evaluation results.
+	// stateful, so a Condition may select its retained State.
 	ValidateConditionEntity(context.Context, devices.EntityID) error
 	// GetEntityStateSnapshot reads one coherent State snapshot covering exactly
-	// the requested Entity IDs. Admission calls it outside its transaction with
-	// the complete set current Conditions require.
+	// the requested Entity IDs.
 	GetEntityStateSnapshot(context.Context, []devices.EntityID) (devices.EntityStateSnapshot, error)
 	// ValidateEntityEventTrigger reports whether the Entity currently exists and
 	// supports the exact Entity Event name.
@@ -45,28 +42,22 @@ type DefinitionRepository interface {
 	DeleteAutomation(context.Context, AutomationID, int64) error
 }
 
-// Repository is the complete domain-oriented persistence seam. The
-// SQLite adapter implements every method; generated types never cross this seam.
+// Repository is the complete domain-oriented persistence seam.
 type Repository interface {
 	DefinitionRepository
 
 	// ListEnabledAutomations reads every currently enabled definition in
-	// ascending Automation ID order for an admission State pre-read.
+	// ascending Automation ID order.
 	ListEnabledAutomations(context.Context) ([]Record, error)
 
-	// AdmitDeviceFact evaluates one Device Fact against current enabled
-	// definitions and commits every matching outcome in one transaction. It
-	// registers no workers; the caller starts them only after the commit returns.
-	// The supplied snapshot must cover every Entity the transaction's current
-	// eligible Conditions require. If a definition changed after the Service
-	// pre-read, it returns [ConditionSnapshotRequiredError] and writes nothing.
+	// AdmitDeviceFact commits every matching outcome in one transaction; the
+	// supplied snapshot must cover every Entity the transaction's current eligible
+	// Conditions require.
 	AdmitDeviceFact(
 		context.Context, DeviceFact, devices.EntityStateSnapshot, time.Time,
 	) (AdmissionResult, error)
 	// AdmitManualRun starts one Run, or commits one Condition Skip, from the
-	// current definition snapshot even when the Automation is disabled. The
-	// supplied snapshot follows the same definition-race coverage rule as
-	// AdmitDeviceFact and writes nothing when it is incomplete.
+	// current definition snapshot even when the Automation is disabled.
 	AdmitManualRun(
 		context.Context, ManualRunInput, devices.EntityStateSnapshot, time.Time,
 	) (ManualAdmissionResult, error)
@@ -80,16 +71,16 @@ type Repository interface {
 	GetHistoryEntry(context.Context, AutomationID, string) (HistoryEntry, error)
 	// ListHistory pages retained Run and Skip summaries newest first.
 	ListHistory(context.Context, ListHistoryParams) (Page[HistorySummary], error)
-	// InterruptActiveRuns marks every running Step and Run as interrupted with
-	// the supplied reason; it never replays or infers success.
+	// InterruptActiveRuns marks every running Step and Run as interrupted with the
+	// supplied reason.
 	InterruptActiveRuns(context.Context, time.Time, string) error
 	// DeleteHistoryBefore removes at most limit terminal history records older
-	// than the cutoff without touching running Runs or matched-Fact receipts.
+	// than the cutoff.
 	DeleteHistoryBefore(context.Context, time.Time, int) (int64, error)
 }
 
-// Dependencies supplies logging, time, and identity constructors.
-// Zero-valued fields use production defaults except HistoryRetention.
+// Dependencies supplies logging, time, and identity constructors; zero-valued
+// fields use production defaults except HistoryRetention.
 type Dependencies struct {
 	Logger           *slog.Logger
 	Now              func() time.Time
@@ -105,11 +96,9 @@ type Dependencies struct {
 	HistoryRetention time.Duration
 }
 
-// WithDefaults returns a copy that replaces every zero-valued collaborator
-// with its production default, so one shared normalization serves the domain
-// Service and the SQLite adapter. HistoryRetention deliberately keeps zero:
-// an unconfigured retention must fail safely at prune time, never silently
-// become a deletion window.
+// WithDefaults returns a copy with every zero-valued collaborator replaced by
+// its production default. HistoryRetention deliberately keeps zero so an
+// unconfigured retention fails safely at prune time.
 func (dependencies Dependencies) WithDefaults() Dependencies {
 	logger := dependencies.Logger
 	if logger == nil {

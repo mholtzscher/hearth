@@ -11,9 +11,8 @@ import (
 	"github.com/mholtzscher/hearth/internal/modules/automations/sqlite/dbsqlc"
 )
 
-// GetHistoryEntry reads one retained Run or Skip scoped to its former
-// Automation. A parent mismatch or unknown identity is
-// [automations.ErrHistoryNotFound].
+// GetHistoryEntry reads one retained Run or Skip scoped to its former Automation;
+// a parent mismatch or unknown identity is [automations.ErrHistoryNotFound].
 func (repo *AutomationRepository) GetHistoryEntry(
 	ctx context.Context,
 	automationID automations.AutomationID,
@@ -40,8 +39,7 @@ func (repo *AutomationRepository) GetHistoryEntry(
 	return entry, nil
 }
 
-// ListHistory pages retained Run and Skip summaries newest first for one
-// Automation, including one that has been hard-deleted.
+// ListHistory pages retained Run and Skip summaries newest first for one Automation.
 func (repo *AutomationRepository) ListHistory(
 	ctx context.Context,
 	params automations.ListHistoryParams,
@@ -93,8 +91,7 @@ func (repo *AutomationRepository) ListHistory(
 	return page, nil
 }
 
-// InterruptActiveRuns marks every running Step and Run as interrupted with the
-// supplied reason. It never replays, infers success, or touches a later Step.
+// InterruptActiveRuns marks every running Step and Run as interrupted with the supplied reason.
 func (repo *AutomationRepository) InterruptActiveRuns(
 	ctx context.Context,
 	at time.Time,
@@ -126,8 +123,7 @@ func (repo *AutomationRepository) InterruptActiveRuns(
 }
 
 // DeleteHistoryBefore removes at most limit terminal history records older than
-// the cutoff in one transaction. Running Runs are never selected, and matched
-// Fact receipts are deliberately retained.
+// the cutoff in one transaction, never selecting running Runs.
 func (repo *AutomationRepository) DeleteHistoryBefore(
 	ctx context.Context,
 	cutoff time.Time,

@@ -18,9 +18,7 @@ const (
 
 // automationProblemError is one RFC 9457 problem with a stable machine-readable
 // code. HistoryID and HistoryURL are set only for a Condition-blocked manual
-// admission and always reference the already-committed Skip. The document never
-// contains internal database or upstream error text, definition trees, operands,
-// or selected State values.
+// admission.
 type automationProblemError struct {
 	Type       string `json:"type"                  format:"uri" default:"about:blank"`
 	Title      string `json:"title"`
@@ -44,8 +42,7 @@ func newProblem(status int, code, detail string) error {
 }
 
 // conditionBlockedProblemCode maps one committed manual Condition Skip reason to
-// its stable problem code. Busy and stale reasons never reach a blocked manual
-// admission, so they fall back to the generic class code.
+// its stable problem code.
 func conditionBlockedProblemCode(reason automations.SkipReason) string {
 	switch reason {
 	case automations.SkipConditionsFalse:
@@ -58,8 +55,7 @@ func conditionBlockedProblemCode(reason automations.SkipReason) string {
 	return "conditions_blocked"
 }
 
-// newConditionBlockedProblem maps a committed manual Condition Skip to its 409
-// problem with the history reference callers fetch to read the retained Skip.
+// newConditionBlockedProblem maps a committed manual Condition Skip to its 409 problem.
 func newConditionBlockedProblem(blocked *automations.ConditionsBlockedError) error {
 	return &automationProblemError{
 		Type:       "about:blank",
@@ -87,8 +83,7 @@ func conditionBlockedProblemResponse(description string) *huma.Response {
 	}}
 }
 
-// problemSchema builds the closed problem document schema. History references
-// are published only where a committed Condition Skip can produce them.
+// problemSchema builds the closed problem document schema.
 func problemSchema(withHistoryReferences bool) *huma.Schema {
 	const stringType = "string"
 	properties := map[string]*huma.Schema{
@@ -109,9 +104,7 @@ func problemSchema(withHistoryReferences bool) *huma.Schema {
 	}
 }
 
-// mapDomainError translates one module error into an HTTP problem without
-// leaking internal text. Definition schema issues are already safe and
-// payload-free.
+// mapDomainError translates one module error into an HTTP problem without leaking internal text.
 func mapDomainError(err error) error {
 	switch {
 	case errors.Is(err, automations.ErrAutomationNotFound), errors.Is(err, automations.ErrHistoryNotFound):

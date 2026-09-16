@@ -10,8 +10,8 @@ import (
 	"github.com/mholtzscher/hearth/internal/modules/automations/sqlite/dbsqlc"
 )
 
-// CreateAutomation persists a definition at revision 1, normalizing it even
-// when the caller bypasses the service.
+// CreateAutomation persists a definition at revision 1, normalizing it even when
+// the caller bypasses the service.
 func (repo *AutomationRepository) CreateAutomation(
 	ctx context.Context,
 	definition automations.Definition,
@@ -61,8 +61,7 @@ func (repo *AutomationRepository) GetAutomation(
 	return automationRecord(row)
 }
 
-// ListEnabledAutomations reads every currently enabled definition in ascending
-// Automation ID order for the Service's admission State pre-read.
+// ListEnabledAutomations reads every currently enabled definition in ascending Automation ID order.
 func (repo *AutomationRepository) ListEnabledAutomations(
 	ctx context.Context,
 ) ([]automations.Record, error) {
@@ -83,8 +82,7 @@ func (repo *AutomationRepository) ListEnabledAutomations(
 	return records, nil
 }
 
-// ListAutomations returns one ID-ascending keyset page. It reads limit+1 rows so
-// HasMore is exact without a second query or a total.
+// ListAutomations returns one ID-ascending keyset page, reading limit+1 rows so HasMore is exact.
 func (repo *AutomationRepository) ListAutomations(
 	ctx context.Context,
 	params automations.ListAutomationsParams,
@@ -122,8 +120,7 @@ func (repo *AutomationRepository) ListAutomations(
 	return page, nil
 }
 
-// ReplaceAutomation normalizes and replaces the definition under the expected
-// revision, atomically incrementing the revision by one.
+// ReplaceAutomation normalizes and replaces the definition under the expected revision.
 func (repo *AutomationRepository) ReplaceAutomation(
 	ctx context.Context,
 	id automations.AutomationID,
@@ -158,9 +155,8 @@ func (repo *AutomationRepository) ReplaceAutomation(
 	return record, err
 }
 
-// DeleteAutomation hard-deletes one definition under the expected revision. An
-// active Run is untouched: it owns a snapshot and retained history does not
-// reference the definition row.
+// DeleteAutomation hard-deletes one definition under the expected revision; an
+// active Run is untouched because it owns a snapshot.
 func (repo *AutomationRepository) DeleteAutomation(
 	ctx context.Context,
 	id automations.AutomationID,
@@ -184,9 +180,9 @@ func (repo *AutomationRepository) DeleteAutomation(
 	})
 }
 
-// checkAutomationRevision reports the current revision mismatch as
-// [automations.ErrRevisionConflict], and a missing definition as
-// [automations.ErrAutomationNotFound], inside the caller's transaction.
+// checkAutomationRevision reports a current-revision mismatch as
+// [automations.ErrRevisionConflict] and a missing definition as
+// [automations.ErrAutomationNotFound].
 func checkAutomationRevision(
 	ctx context.Context,
 	queries *dbsqlc.Queries,

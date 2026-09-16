@@ -10,41 +10,31 @@ import (
 	"github.com/mholtzscher/hearth/internal/modules/devices"
 )
 
-// AdmissionTimeout bounds one automatic or manual admission,
-// including its definition pre-read, Condition State snapshot read, and
-// repository transaction. The NATS consumer exposes it as
-// DeviceFactAdmissionTimeout rather than repeating the duration, and HTTP
-// never imports NATS.
+// AdmissionTimeout bounds one automatic or manual admission, including its
+// definition pre-read, Condition State snapshot read, and repository transaction.
 const AdmissionTimeout = 2 * time.Second
 
-// ManualRunInput carries explicit operator intent for one manual admission. It
-// accepts no Command identities: Steps and Commands come from the transaction's
-// current definition snapshot alone.
+// ManualRunInput carries explicit operator intent for one manual admission; no
+// Command identities are accepted.
 type ManualRunInput struct {
 	AutomationID     AutomationID
 	BypassConditions bool
 }
 
-// ManualAdmissionResult is exactly one successfully committed Run or Skip. The
-// repository returns it only after the transaction commits, so the Service can
-// register a Run worker or report a committed Condition Skip without risking a
-// rollback of the required history.
+// ManualAdmissionResult is exactly one committed Run or Skip, returned only
+// after the transaction commits.
 type ManualAdmissionResult struct {
 	Run  *Run
 	Skip *Skip
 }
 
-// emptyEntityStateSnapshot represents an admission that has no configured
-// Conditions to evaluate. It deliberately distinguishes no requested evidence
-// from an incomplete snapshot for a configured Condition.
+// emptyEntityStateSnapshot represents an admission that has no configured Conditions to evaluate.
 func emptyEntityStateSnapshot() devices.EntityStateSnapshot {
 	return devices.EntityStateSnapshot{Entries: map[devices.EntityID]devices.EntityStateSnapshotEntry{}}
 }
 
 // admitAutomaticFact reads the State needed by enabled matching definitions
-// before opening the one admission transaction. The transaction remains the
-// authority for definitions: a newly required Entity from an intervening edit
-// returns ConditionSnapshotRequiredError without writing anything.
+// before opening the admission transaction.
 func (service *Service) admitAutomaticFact(
 	ctx context.Context,
 	fact DeviceFact,
@@ -69,10 +59,7 @@ func (service *Service) admitAutomaticFact(
 	return service.repository.AdmitDeviceFact(admissionContext, fact, snapshot, service.dependencies.Now())
 }
 
-// admitManualRun reads the current definition before opening the one admission
-// transaction. A bypassed or unconditioned request deliberately uses no State
-// snapshot; an intervening definition edit is detected by the transaction's
-// coverage check.
+// admitManualRun reads the current definition before opening the admission transaction.
 func (service *Service) admitManualRun(
 	ctx context.Context,
 	input ManualRunInput,
@@ -133,8 +120,7 @@ func requiredMatchingConditionEntityIDs(
 }
 
 // readConditionStateSnapshot reads one complete snapshot through the devices
-// seam. It preserves [devices.ErrEntityStateSnapshotCorrupt] through the
-// returned error so the caller retains the Fact and negatively acknowledges it.
+// seam, preserving [devices.ErrEntityStateSnapshotCorrupt].
 func (service *Service) readConditionStateSnapshot(
 	ctx context.Context,
 	ids []devices.EntityID,
@@ -145,9 +131,7 @@ func (service *Service) readConditionStateSnapshot(
 	return service.devices.GetEntityStateSnapshot(ctx, ids)
 }
 
-// logConditionStateCorrupt records the fixed, value-free diagnostic for unusable
-// stored State. It never logs a selected value, an operand, a definition, or raw
-// stored JSON, and it never turns corruption into an unknown Condition result.
+// logConditionStateCorrupt records the fixed, value-free diagnostic for unusable stored State.
 func (service *Service) logConditionStateCorrupt(ctx context.Context, err error) {
 	if !errors.Is(err, devices.ErrEntityStateSnapshotCorrupt) {
 		return
@@ -195,9 +179,7 @@ func DecideConditions(
 	}
 }
 
-// missingSnapshotCoverage returns the complete required set when the supplied
-// snapshot does not cover all of it, and nil when coverage is complete. A known
-// missing Entity is covered evidence, so it never triggers another read.
+// missingSnapshotCoverage returns the required set when the snapshot does not cover all of it.
 func missingSnapshotCoverage(
 	required []devices.EntityID,
 	snapshot devices.EntityStateSnapshot,

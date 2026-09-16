@@ -1,14 +1,9 @@
 // Package sqlite implements the automations persistence seams over one migrated
 // SQLite database: transaction boundaries, query execution, generated dbsqlc row
 // types, row mapping, and the query sources under dbqueries. It imports the
-// automations domain, never the reverse, so domain policy and the pure rules it
-// calls — definition normalization, trigger matching, Fact summaries, Run
-// snapshot construction, and completion validation — never depend on SQL row
-// types, database/sql, or a generated query package.
+// automations domain, never the reverse.
 //
-// Transactions never call devices, NATS, or workers. Admission commits matching
-// receipts, Runs, Skips, and initial Steps atomically, and the Service starts Run
-// workers only after that commit returns.
+// Transactions never call devices, NATS, or workers.
 package sqlite
 
 import (
@@ -21,17 +16,15 @@ import (
 	"github.com/mholtzscher/hearth/internal/modules/automations/sqlite/dbsqlc"
 )
 
-// Compile-time proof that one repository satisfies the complete
-// domain-oriented persistence seam and its narrower definition-management
-// capability.
+// Compile-time proof that one repository satisfies the complete persistence seam
+// and its narrower definition-management capability.
 var (
 	_ automations.Repository           = (*AutomationRepository)(nil)
 	_ automations.DefinitionRepository = (*AutomationRepository)(nil)
 )
 
-// AutomationRepository persists automation definitions, admission, execution,
-// and history. Run and Skip identities are minted inside their admission
-// transaction; definition identity is allocated before its creation transaction.
+// AutomationRepository persists automation definitions, admission, execution, and
+// history. Run and Skip identities are minted inside their admission transaction.
 type AutomationRepository struct {
 	database        *sql.DB
 	queries         *dbsqlc.Queries
@@ -41,8 +34,7 @@ type AutomationRepository struct {
 	newSkipID       func() (automations.SkipID, error)
 }
 
-// NewAutomationRepository uses a migrated Core database. Zero-valued
-// dependencies default to the process clock and canonical identity constructors.
+// NewAutomationRepository uses a migrated Core database.
 func NewAutomationRepository(
 	database *sql.DB,
 	dependencies automations.Dependencies,
@@ -58,8 +50,7 @@ func NewAutomationRepository(
 	}
 }
 
-// transaction is the single transaction owner. It runs one action against a
-// transaction-bound query set and commits only when the action returns nil.
+// transaction is the single transaction owner, committing only when the action returns nil.
 func (repo *AutomationRepository) transaction(
 	ctx context.Context,
 	action func(*dbsqlc.Queries) error,
