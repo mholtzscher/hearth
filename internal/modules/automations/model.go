@@ -2,7 +2,6 @@ package automations
 
 import (
 	"encoding/json"
-	"errors"
 	"fmt"
 	"time"
 
@@ -502,38 +501,38 @@ func ValidateDeviceFact(fact DeviceFact) error {
 // identity, variant, causation, or timestamp is impossible.
 func ValidateDeviceFactSummary(summary DeviceFactSummary) error {
 	if _, err := devices.ParseDeviceFactID(string(summary.FactID)); err != nil {
-		return invalidSummary(err)
+		return invalid("fact summary: %s", err)
 	}
 	if _, err := devices.ParseEntityID(string(summary.EntityID)); err != nil {
-		return invalidSummary(err)
+		return invalid("fact summary: %s", err)
 	}
 	if summary.EmittedAt.IsZero() {
-		return invalidSummary(errors.New("emit time is required"))
+		return invalid("fact summary: emit time is required")
 	}
 	switch summary.Family {
 	case DeviceFactObservation:
 		if summary.ObservationValue == nil {
-			return invalidSummary(errors.New("observation value is required"))
+			return invalid("fact summary: observation value is required")
 		}
 		if summary.Variant != string(devices.DispositionApplied) &&
 			summary.Variant != string(devices.DispositionUnchanged) {
-			return invalidSummary(fmt.Errorf("observation variant %q is not applied or unchanged", summary.Variant))
+			return invalid("fact summary: observation variant %q is not applied or unchanged", summary.Variant)
 		}
 		if _, err := devices.ParseObservationID(summary.CausationID); err != nil {
-			return invalidSummary(err)
+			return invalid("fact summary: %s", err)
 		}
 	case DeviceFactEntityEvent:
 		if summary.ObservationValue != nil {
-			return invalidSummary(errors.New("entity event summary carries an observation value"))
+			return invalid("fact summary: entity event summary carries an observation value")
 		}
 		if !subjectSlugPattern.MatchString(summary.Variant) {
-			return invalidSummary(errors.New("entity event name is not a subject-safe slug"))
+			return invalid("fact summary: entity event name is not a subject-safe slug")
 		}
 		if _, err := devices.ParseEntityEventID(summary.CausationID); err != nil {
-			return invalidSummary(err)
+			return invalid("fact summary: %s", err)
 		}
 	default:
-		return invalidSummary(errors.New("unknown family"))
+		return invalid("fact summary: unknown family")
 	}
 	return nil
 }
@@ -547,16 +546,16 @@ func ValidateTrigger(trigger Trigger) error {
 	switch trigger.Kind {
 	case TriggerKindObservation:
 		if trigger.Observation == nil || trigger.EntityEvent != nil {
-			return invalidTrigger(trigger.ID, "observation family payload mismatch")
+			return invalid("trigger %q: observation family payload mismatch", trigger.ID)
 		}
 		return validateObservationTrigger(*trigger.Observation)
 	case TriggerKindEntityEvent:
 		if trigger.EntityEvent == nil || trigger.Observation != nil {
-			return invalidTrigger(trigger.ID, "entity event family payload mismatch")
+			return invalid("trigger %q: entity event family payload mismatch", trigger.ID)
 		}
 		return validateEntityEventTrigger(*trigger.EntityEvent)
 	default:
-		return invalidTrigger(trigger.ID, fmt.Sprintf("unknown kind %q", trigger.Kind))
+		return invalid("trigger %q: unknown kind %q", trigger.ID, trigger.Kind)
 	}
 }
 
@@ -570,10 +569,10 @@ func ValidateRun(run Run) error {
 		return err
 	}
 	if run.Revision < 1 {
-		return invalidRun(run.ID, "revision must be at least 1")
+		return invalid("run %q: revision must be at least 1", run.ID)
 	}
 	if _, err := NormalizeDefinition(run.Snapshot); err != nil {
-		return invalidRun(run.ID, "definition snapshot is invalid")
+		return invalid("run %q: definition snapshot is invalid", run.ID)
 	}
 	if err := validateRunProvenance(run); err != nil {
 		return err
@@ -582,13 +581,13 @@ func ValidateRun(run Run) error {
 		return err
 	}
 	if run.StartedAt.IsZero() {
-		return invalidRun(run.ID, "start time is required")
+		return invalid("run %q: start time is required", run.ID)
 	}
 	if err := validateRunStatus(run); err != nil {
 		return err
 	}
 	if len(run.Steps) != len(run.Snapshot.Steps) {
-		return invalidRun(run.ID, "step count does not match the definition snapshot")
+		return invalid("run %q: step count does not match the definition snapshot", run.ID)
 	}
 	for position, step := range run.Steps {
 		if err := validateStepAttempt(run, position, step); err != nil {
@@ -611,7 +610,7 @@ func ValidateSkip(skip Skip) error {
 		return err
 	}
 	if skip.Revision < 1 {
-		return invalidSkip(skip.ID, "revision must be at least 1")
+		return invalid("skip %q: revision must be at least 1", skip.ID)
 	}
 	if err := validateSkipProvenance(skip); err != nil {
 		return err
@@ -619,10 +618,10 @@ func ValidateSkip(skip Skip) error {
 	switch skip.Reason {
 	case SkipBusy, SkipStaleFact, SkipConditionsFalse, SkipConditionsUnknown:
 	default:
-		return invalidSkip(skip.ID, fmt.Sprintf("unknown reason %q", skip.Reason))
+		return invalid("skip %q: unknown reason %q", skip.ID, skip.Reason)
 	}
 	if skip.SkippedAt.IsZero() {
-		return invalidSkip(skip.ID, "skip time is required")
+		return invalid("skip %q: skip time is required", skip.ID)
 	}
 	return ValidateSkipConditionDecision(skip)
 }
@@ -634,26 +633,26 @@ func validateSkipProvenance(skip Skip) error {
 	switch skip.Source {
 	case RunSourceDeviceFact:
 		if skip.Fact == nil {
-			return invalidSkip(skip.ID, "device fact Skip requires Fact evidence")
+			return invalid("skip %q: device fact Skip requires Fact evidence", skip.ID)
 		}
 		if err := ValidateDeviceFactSummary(*skip.Fact); err != nil {
 			return err
 		}
 		if len(skip.MatchedTriggers) == 0 {
-			return invalidSkip(skip.ID, "device fact Skip requires matched triggers")
+			return invalid("skip %q: device fact Skip requires matched triggers", skip.ID)
 		}
 	case RunSourceManual:
 		if skip.Fact != nil {
-			return invalidSkip(skip.ID, "manual Skip carries Fact evidence")
+			return invalid("skip %q: manual Skip carries Fact evidence", skip.ID)
 		}
 		if len(skip.MatchedTriggers) != 0 {
-			return invalidSkip(skip.ID, "manual Skip carries matched triggers")
+			return invalid("skip %q: manual Skip carries matched triggers", skip.ID)
 		}
 		if skip.Reason != SkipConditionsFalse && skip.Reason != SkipConditionsUnknown {
-			return invalidSkip(skip.ID, "manual Skip reason must be a condition outcome")
+			return invalid("skip %q: manual Skip reason must be a condition outcome", skip.ID)
 		}
 	default:
-		return invalidSkip(skip.ID, fmt.Sprintf("unknown source %q", skip.Source))
+		return invalid("skip %q: unknown source %q", skip.ID, skip.Source)
 	}
 	seen := make(map[TriggerID]bool, len(skip.MatchedTriggers))
 	for _, trigger := range skip.MatchedTriggers {
@@ -661,7 +660,7 @@ func validateSkipProvenance(skip Skip) error {
 			return err
 		}
 		if seen[trigger.ID] {
-			return invalidSkip(skip.ID, "matched trigger IDs must be unique")
+			return invalid("skip %q: matched trigger IDs must be unique", skip.ID)
 		}
 		seen[trigger.ID] = true
 	}
@@ -760,20 +759,20 @@ func validateRunProvenance(run Run) error {
 	switch run.Source {
 	case RunSourceDeviceFact:
 		if run.Fact == nil {
-			return invalidRun(run.ID, "device fact Run requires Fact evidence")
+			return invalid("run %q: device fact Run requires Fact evidence", run.ID)
 		}
 		if err := ValidateDeviceFactSummary(*run.Fact); err != nil {
 			return err
 		}
 	case RunSourceManual:
 		if run.Fact != nil {
-			return invalidRun(run.ID, "manual Run carries Fact evidence")
+			return invalid("run %q: manual Run carries Fact evidence", run.ID)
 		}
 	default:
-		return invalidRun(run.ID, fmt.Sprintf("unknown source %q", run.Source))
+		return invalid("run %q: unknown source %q", run.ID, run.Source)
 	}
 	if (run.Source == RunSourceManual) != (len(run.MatchedTriggerIDs) == 0) {
-		return invalidRun(run.ID, "matched trigger IDs must be empty iff the Run is manual")
+		return invalid("run %q: matched trigger IDs must be empty iff the Run is manual", run.ID)
 	}
 	return validateMatchedTriggerIDs(run)
 }
@@ -783,7 +782,7 @@ func validateMatchedTriggerIDs(run Run) error {
 	next := 0
 	for _, trigger := range run.Snapshot.Triggers {
 		if seen[trigger.ID] {
-			return invalidRun(run.ID, "snapshot trigger IDs must be unique")
+			return invalid("run %q: snapshot trigger IDs must be unique", run.ID)
 		}
 		seen[trigger.ID] = true
 		if next < len(run.MatchedTriggerIDs) && trigger.ID == run.MatchedTriggerIDs[next] {
@@ -791,7 +790,7 @@ func validateMatchedTriggerIDs(run Run) error {
 		}
 	}
 	if next != len(run.MatchedTriggerIDs) {
-		return invalidRun(run.ID, "matched trigger IDs must be a subset of the snapshot in definition order")
+		return invalid("run %q: matched trigger IDs must be a subset of the snapshot in definition order", run.ID)
 	}
 	return nil
 }
@@ -800,52 +799,52 @@ func validateRunStatus(run Run) error {
 	switch run.Status {
 	case RunRunning, RunSucceeded, RunFailed, RunInterrupted:
 	default:
-		return invalidRun(run.ID, fmt.Sprintf("unknown status %q", run.Status))
+		return invalid("run %q: unknown status %q", run.ID, run.Status)
 	}
 	if run.Status == RunRunning && run.CompletedAt != nil {
-		return invalidRun(run.ID, "running Run carries a completion time")
+		return invalid("run %q: running Run carries a completion time", run.ID)
 	}
 	if run.Status != RunRunning && run.CompletedAt == nil {
-		return invalidRun(run.ID, "terminal Run requires a completion time")
+		return invalid("run %q: terminal Run requires a completion time", run.ID)
 	}
 	if (run.Status == RunRunning || run.Status == RunSucceeded) && run.FailureCode != nil {
-		return invalidRun(run.ID, "non-failing Run carries a failure code")
+		return invalid("run %q: non-failing Run carries a failure code", run.ID)
 	}
 	if (run.Status == RunFailed || run.Status == RunInterrupted) && run.FailureCode == nil {
-		return invalidRun(run.ID, "failed or interrupted Run requires a failure code")
+		return invalid("run %q: failed or interrupted Run requires a failure code", run.ID)
 	}
 	return nil
 }
 
 func validateStepAttempt(run Run, position int, step StepAttempt) error {
 	if step.Position != position {
-		return invalidRun(run.ID, "step positions must be contiguous and zero-based")
+		return invalid("run %q: step positions must be contiguous and zero-based", run.ID)
 	}
 	if step.StepID != run.Snapshot.Steps[position].ID {
-		return invalidRun(run.ID, "step identity does not match the definition snapshot")
+		return invalid("run %q: step identity does not match the definition snapshot", run.ID)
 	}
 	switch step.Status {
 	case StepNotAttempted:
 		if step.ReservedCommandID != nil || step.ReservedCorrelationID != nil ||
 			step.VerifiedCommandID != nil || step.StartedAt != nil || step.CompletedAt != nil {
-			return invalidRun(run.ID, "not attempted step carries attempt evidence")
+			return invalid("run %q: not attempted step carries attempt evidence", run.ID)
 		}
 	case StepRunning:
 		if step.ReservedCommandID == nil || step.ReservedCorrelationID == nil ||
 			step.StartedAt == nil || step.CompletedAt != nil || step.VerifiedCommandID != nil {
-			return invalidRun(run.ID, "running step requires reserved identities and no verification")
+			return invalid("run %q: running step requires reserved identities and no verification", run.ID)
 		}
 	case StepSatisfied, StepDispatched:
 		if step.ReservedCommandID == nil || step.ReservedCorrelationID == nil ||
 			step.StartedAt == nil || step.CompletedAt == nil || step.VerifiedCommandID == nil {
-			return invalidRun(run.ID, "successful step requires verified Command evidence")
+			return invalid("run %q: successful step requires verified Command evidence", run.ID)
 		}
 	case StepFailed, StepInterrupted:
 		if step.StartedAt == nil || step.CompletedAt == nil || step.FailureCode == nil {
-			return invalidRun(run.ID, "terminal failure requires start, completion, and a failure code")
+			return invalid("run %q: terminal failure requires start, completion, and a failure code", run.ID)
 		}
 	default:
-		return invalidRun(run.ID, fmt.Sprintf("unknown step status %q", step.Status))
+		return invalid("run %q: unknown step status %q", run.ID, step.Status)
 	}
 	return nil
 }
@@ -868,18 +867,7 @@ func acceptedObservationDisposition(disposition devices.ObservationDisposition) 
 	}
 }
 
-func invalidSummary(err error) error {
-	return fmt.Errorf("%w: fact summary: %w", ErrInvalidAutomation, err)
-}
-
-func invalidTrigger(id TriggerID, message string) error {
-	return fmt.Errorf("%w: trigger %q: %s", ErrInvalidAutomation, id, message)
-}
-
-func invalidRun(id RunID, message string) error {
-	return fmt.Errorf("%w: run %q: %s", ErrInvalidAutomation, id, message)
-}
-
-func invalidSkip(id SkipID, message string) error {
-	return fmt.Errorf("%w: skip %q: %s", ErrInvalidAutomation, id, message)
+// invalid reports one invalid Automation value behind the shared class prefix.
+func invalid(format string, args ...any) error {
+	return fmt.Errorf("%w: "+format, append([]any{ErrInvalidAutomation}, args...)...)
 }

@@ -158,3 +158,54 @@ func (service *Service) logConditionStateCorrupt(ctx context.Context, err error)
 		slog.String("event", "automation.condition_state_corrupt"),
 	)
 }
+
+// DecideConditions evaluates one configured Condition tree against a covering
+// snapshot and reports the evaluated decision plus the Skip reason it implies
+// ("" admits).
+func DecideConditions(
+	conditions *Condition,
+	snapshot devices.EntityStateSnapshot,
+	at time.Time,
+) (ConditionDecision, SkipReason, error) {
+	required, err := RequiredConditionEntityIDs(*conditions)
+	if err != nil {
+		return ConditionDecision{}, "", err
+	}
+	if missing := missingSnapshotCoverage(required, snapshot); len(missing) > 0 {
+		return ConditionDecision{}, "", &ConditionSnapshotRequiredError{RequiredEntityIDs: missing}
+	}
+	evaluation, err := EvaluateConditions(*conditions, snapshot, at)
+	if err != nil {
+		return ConditionDecision{}, "", err
+	}
+	decision := ConditionDecision{
+		Mode:       ConditionDecisionEvaluated,
+		Snapshot:   conditions,
+		Evaluation: &evaluation,
+	}
+	switch evaluation.Result {
+	case ConditionTrue:
+		return decision, "", nil
+	case ConditionFalse:
+		return decision, SkipConditionsFalse, nil
+	case ConditionUnknown:
+		return decision, SkipConditionsUnknown, nil
+	default:
+		return ConditionDecision{}, "", invalid("condition evaluation has an unknown result")
+	}
+}
+
+// missingSnapshotCoverage returns the complete required set when the supplied
+// snapshot does not cover all of it, and nil when coverage is complete. A known
+// missing Entity is covered evidence, so it never triggers another read.
+func missingSnapshotCoverage(
+	required []devices.EntityID,
+	snapshot devices.EntityStateSnapshot,
+) []devices.EntityID {
+	for _, entityID := range required {
+		if _, covered := snapshot.Entries[entityID]; !covered {
+			return required
+		}
+	}
+	return nil
+}

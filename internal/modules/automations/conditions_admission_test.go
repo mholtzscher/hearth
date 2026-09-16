@@ -601,3 +601,84 @@ func TestDrainJoinsConditionSnapshotRead(t *testing.T) {
 		t.Fatalf("drain executed %d Commands", scripted.executionCount())
 	}
 }
+
+// DecideConditions maps a true, false, or unknown evaluation to the admission
+// decision and Skip reason it implies, and rejects an uncovered snapshot before
+// evaluating anything.
+func TestDecideConditionsOutcome(t *testing.T) {
+	t.Parallel()
+	entity := newEntityID(t)
+	tests := []struct {
+		name         string
+		snapshot     devices.EntityStateSnapshot
+		wantReason   automations.SkipReason
+		wantResult   automations.ConditionResult
+		wantCoverage bool
+	}{
+		{
+			name:       "true admits",
+			snapshot:   admissionSnapshot(admissionState(t, entity, `{"level":10}`, runtimeTestNow)),
+			wantResult: automations.ConditionTrue,
+		},
+		{
+			name:       "false blocks",
+			snapshot:   admissionSnapshot(admissionState(t, entity, `{"level":90}`, runtimeTestNow)),
+			wantReason: automations.SkipConditionsFalse,
+			wantResult: automations.ConditionFalse,
+		},
+		{
+			name:       "unknown blocks",
+			snapshot:   admissionSnapshot(admissionState(t, entity, `{"level":"high"}`, runtimeTestNow)),
+			wantReason: automations.SkipConditionsUnknown,
+			wantResult: automations.ConditionUnknown,
+		},
+		{name: "uncovered rejects", snapshot: admissionSnapshot(), wantCoverage: true},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			conditions := admissionConditionTree(entity, "30")
+			decision, reason, err := automations.DecideConditions(conditions, test.snapshot, runtimeTestNow)
+			if test.wantCoverage {
+				requireConditionCoverage(t, err, entity)
+				return
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			requireEvaluatedDecision(t, decision, conditions, test.wantResult)
+			if reason != test.wantReason {
+				t.Fatalf("skip reason = %q, want %q", reason, test.wantReason)
+			}
+		})
+	}
+}
+
+// requireConditionCoverage asserts one coverage rejection naming exactly the
+// requested Entity.
+func requireConditionCoverage(t *testing.T, err error, entity devices.EntityID) {
+	t.Helper()
+	coverage, found := errors.AsType[*automations.ConditionSnapshotRequiredError](err)
+	if !found {
+		t.Fatalf("error = %v, want ConditionSnapshotRequiredError", err)
+	}
+	if len(coverage.RequiredEntityIDs) != 1 || coverage.RequiredEntityIDs[0] != entity {
+		t.Fatalf("required entities = %v, want %v", coverage.RequiredEntityIDs, entity)
+	}
+}
+
+// requireEvaluatedDecision asserts one complete evaluated decision against the
+// evaluated tree and result.
+func requireEvaluatedDecision(
+	t *testing.T,
+	decision automations.ConditionDecision,
+	conditions *automations.Condition,
+	wantResult automations.ConditionResult,
+) {
+	t.Helper()
+	if decision.Mode != automations.ConditionDecisionEvaluated ||
+		decision.Snapshot != conditions || decision.Evaluation == nil ||
+		decision.Evaluation.Result != wantResult {
+		t.Fatalf("decision = %#v", decision)
+	}
+}

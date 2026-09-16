@@ -112,6 +112,53 @@ func mapDeviceFactMessage(
 	}
 }
 
+// deviceFactEnvelope carries the decoded fields the shared wire check needs.
+type deviceFactEnvelope struct {
+	messageID        string
+	envelopeID       string
+	causationID      *string
+	correlationID    string
+	emittedAt        string
+	route            natswire.DeviceFactRoute
+	payloadEntityID  string
+	payloadVariant   string
+	causationTarget  string
+	causationMessage string
+}
+
+// checkDeviceFactEnvelope verifies the Nats-Msg-Id, subject, and causation
+// agreement shared by both Device Fact families, then parses the shared
+// identities and emit time. Family-specific causation parsing stays in the
+// callers.
+func checkDeviceFactEnvelope(
+	fields deviceFactEnvelope,
+) (devices.DeviceFactID, devices.EntityID, time.Time, error) {
+	if fields.messageID != fields.envelopeID {
+		return "", "", time.Time{}, reject(
+			wireCodeMsgIDMismatch, errors.New("Nats-Msg-Id does not match the envelope identity"),
+		)
+	}
+	if fields.route.EntityID != fields.payloadEntityID || fields.route.Variant != fields.payloadVariant {
+		return "", "", time.Time{}, reject(
+			wireCodeSubjectMismatch, errors.New("device fact subject disagrees with its payload"),
+		)
+	}
+	if fields.causationID == nil || *fields.causationID != fields.causationTarget {
+		return "", "", time.Time{}, reject(wireCodeCausationMissing, errors.New(fields.causationMessage))
+	}
+	factID, factIDErr := devices.ParseDeviceFactID(fields.envelopeID)
+	entityID, entityIDErr := devices.ParseEntityID(fields.payloadEntityID)
+	_, correlationErr := devices.ParseCorrelationID(fields.correlationID)
+	if identityErr := errors.Join(factIDErr, entityIDErr, correlationErr); identityErr != nil {
+		return "", "", time.Time{}, reject(wireCodeIdentityInvalid, identityErr)
+	}
+	emittedAt, emittedAtErr := time.Parse(time.RFC3339Nano, fields.emittedAt)
+	if emittedAtErr != nil {
+		return "", "", time.Time{}, reject(wireCodeEmittedAtInvalid, emittedAtErr)
+	}
+	return factID, entityID, emittedAt.UTC(), nil
+}
+
 // mapObservationDeviceFact decodes against the route's strict Observation schema.
 func mapObservationDeviceFact(
 	validator *contractsv1.Validator,
@@ -124,33 +171,24 @@ func mapObservationDeviceFact(
 	if decodeErr != nil {
 		return automations.DeviceFact{}, reject(wireCodeDecodeFailed, decodeErr)
 	}
-	if wire.messageID != envelope.ID {
-		return automations.DeviceFact{}, reject(
-			wireCodeMsgIDMismatch, errors.New("Nats-Msg-Id does not match the envelope identity"),
-		)
+	factID, entityID, emittedAt, err := checkDeviceFactEnvelope(deviceFactEnvelope{
+		messageID:        wire.messageID,
+		envelopeID:       envelope.ID,
+		causationID:      envelope.CausationID,
+		correlationID:    envelope.CorrelationID,
+		emittedAt:        envelope.EmittedAt,
+		route:            route,
+		payloadEntityID:  envelope.Data.EntityID,
+		payloadVariant:   envelope.Data.Disposition,
+		causationTarget:  envelope.Data.ObservationID,
+		causationMessage: "observation fact causation does not name its observation",
+	})
+	if err != nil {
+		return automations.DeviceFact{}, err
 	}
-	if route.EntityID != envelope.Data.EntityID || route.Variant != envelope.Data.Disposition {
-		return automations.DeviceFact{}, reject(
-			wireCodeSubjectMismatch, errors.New("device fact subject disagrees with its payload"),
-		)
-	}
-	if envelope.CausationID == nil || *envelope.CausationID != envelope.Data.ObservationID {
-		return automations.DeviceFact{}, reject(
-			wireCodeCausationMissing,
-			errors.New("observation fact causation does not name its observation"),
-		)
-	}
-	factID, factIDErr := devices.ParseDeviceFactID(envelope.ID)
-	observationID, observationIDErr := devices.ParseObservationID(envelope.Data.ObservationID)
-	entityID, entityIDErr := devices.ParseEntityID(envelope.Data.EntityID)
-	_, correlationErr := devices.ParseCorrelationID(envelope.CorrelationID)
-	identityErr := errors.Join(factIDErr, observationIDErr, entityIDErr, correlationErr)
-	if identityErr != nil {
-		return automations.DeviceFact{}, reject(wireCodeIdentityInvalid, identityErr)
-	}
-	emittedAt, emittedAtErr := time.Parse(time.RFC3339Nano, envelope.EmittedAt)
-	if emittedAtErr != nil {
-		return automations.DeviceFact{}, reject(wireCodeEmittedAtInvalid, emittedAtErr)
+	observationID, err := devices.ParseObservationID(envelope.Data.ObservationID)
+	if err != nil {
+		return automations.DeviceFact{}, reject(wireCodeIdentityInvalid, err)
 	}
 	fact := automations.DeviceFact{
 		Family: automations.DeviceFactObservation,
@@ -160,7 +198,7 @@ func mapObservationDeviceFact(
 			EntityID:      entityID,
 			Disposition:   devices.ObservationDisposition(envelope.Data.Disposition),
 			Value:         append(devices.Value(nil), envelope.Data.Value...),
-			EmittedAt:     emittedAt.UTC(),
+			EmittedAt:     emittedAt,
 		},
 	}
 	if validationErr := automations.ValidateDeviceFact(fact); validationErr != nil {
@@ -181,33 +219,24 @@ func mapEntityEventDeviceFact(
 	if decodeErr != nil {
 		return automations.DeviceFact{}, reject(wireCodeDecodeFailed, decodeErr)
 	}
-	if wire.messageID != envelope.ID {
-		return automations.DeviceFact{}, reject(
-			wireCodeMsgIDMismatch, errors.New("Nats-Msg-Id does not match the envelope identity"),
-		)
+	factID, entityID, emittedAt, err := checkDeviceFactEnvelope(deviceFactEnvelope{
+		messageID:        wire.messageID,
+		envelopeID:       envelope.ID,
+		causationID:      envelope.CausationID,
+		correlationID:    envelope.CorrelationID,
+		emittedAt:        envelope.EmittedAt,
+		route:            route,
+		payloadEntityID:  envelope.Data.EntityID,
+		payloadVariant:   envelope.Data.Name,
+		causationTarget:  envelope.Data.EventID,
+		causationMessage: "entity event fact causation does not name its entity event",
+	})
+	if err != nil {
+		return automations.DeviceFact{}, err
 	}
-	if route.EntityID != envelope.Data.EntityID || route.Variant != envelope.Data.Name {
-		return automations.DeviceFact{}, reject(
-			wireCodeSubjectMismatch, errors.New("device fact subject disagrees with its payload"),
-		)
-	}
-	if envelope.CausationID == nil || *envelope.CausationID != envelope.Data.EventID {
-		return automations.DeviceFact{}, reject(
-			wireCodeCausationMissing,
-			errors.New("entity event fact causation does not name its entity event"),
-		)
-	}
-	factID, factIDErr := devices.ParseDeviceFactID(envelope.ID)
-	eventID, eventIDErr := devices.ParseEntityEventID(envelope.Data.EventID)
-	entityID, entityIDErr := devices.ParseEntityID(envelope.Data.EntityID)
-	_, correlationErr := devices.ParseCorrelationID(envelope.CorrelationID)
-	identityErr := errors.Join(factIDErr, eventIDErr, entityIDErr, correlationErr)
-	if identityErr != nil {
-		return automations.DeviceFact{}, reject(wireCodeIdentityInvalid, identityErr)
-	}
-	emittedAt, emittedAtErr := time.Parse(time.RFC3339Nano, envelope.EmittedAt)
-	if emittedAtErr != nil {
-		return automations.DeviceFact{}, reject(wireCodeEmittedAtInvalid, emittedAtErr)
+	eventID, err := devices.ParseEntityEventID(envelope.Data.EventID)
+	if err != nil {
+		return automations.DeviceFact{}, reject(wireCodeIdentityInvalid, err)
 	}
 	fact := automations.DeviceFact{
 		Family: automations.DeviceFactEntityEvent,
@@ -216,7 +245,7 @@ func mapEntityEventDeviceFact(
 			EventID:   eventID,
 			EntityID:  entityID,
 			Name:      devices.EntityEventName(envelope.Data.Name),
-			EmittedAt: emittedAt.UTC(),
+			EmittedAt: emittedAt,
 		},
 	}
 	if validationErr := automations.ValidateDeviceFact(fact); validationErr != nil {

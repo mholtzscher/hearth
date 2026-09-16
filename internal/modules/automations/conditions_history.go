@@ -81,18 +81,18 @@ func EncodeConditionDecision(decision ConditionDecision) (json.RawMessage, error
 func DecodeConditionDecision(raw json.RawMessage) (ConditionDecision, error) {
 	var value automationConditionDecisionJSON
 	if err := decodeStrictJSONObject(raw, &value); err != nil {
-		return ConditionDecision{}, decisionInvalid("condition decision is not a strict object")
+		return ConditionDecision{}, invalid("condition decision: condition decision is not a strict object")
 	}
 	if value.Mode == nil || value.BypassRequested == nil {
-		return ConditionDecision{}, decisionInvalid(
-			"condition decision requires an explicit mode and bypass_requested",
+		return ConditionDecision{}, invalid(
+			"condition decision: condition decision requires an explicit mode and bypass_requested",
 		)
 	}
 	if isExplicitJSONNull(value.Snapshot) {
-		return ConditionDecision{}, decisionInvalid("condition decision snapshot must not be null")
+		return ConditionDecision{}, invalid("condition decision: condition decision snapshot must not be null")
 	}
 	if isExplicitJSONNull(value.Evaluation) {
-		return ConditionDecision{}, decisionInvalid("condition decision evaluation must not be null")
+		return ConditionDecision{}, invalid("condition decision: condition decision evaluation must not be null")
 	}
 	decision := ConditionDecision{
 		Mode:            *value.Mode,
@@ -101,7 +101,7 @@ func DecodeConditionDecision(raw json.RawMessage) (ConditionDecision, error) {
 	if len(bytes.TrimSpace(value.Snapshot)) > 0 {
 		var snapshotJSON automationConditionJSON
 		if bindErr := json.Unmarshal(value.Snapshot, &snapshotJSON); bindErr != nil {
-			return ConditionDecision{}, decisionInvalid("condition snapshot cannot be bound")
+			return ConditionDecision{}, invalid("condition decision: condition snapshot cannot be bound")
 		}
 		snapshot := automationConditionFromJSON(snapshotJSON)
 		decision.Snapshot = &snapshot
@@ -126,27 +126,24 @@ func DecodeConditionDecision(raw json.RawMessage) (ConditionDecision, error) {
 // produces evaluation evidence once at write time; this validator does not
 // re-derive it from the retained snapshot.
 func ValidateConditionDecision(decision ConditionDecision) error {
-	if !decision.Mode.isKnown() {
-		return decisionInvalid(fmt.Sprintf("unknown mode %q", decision.Mode))
-	}
 	switch decision.Mode {
 	case ConditionDecisionNotConfigured:
 		if decision.Snapshot != nil || decision.Evaluation != nil {
-			return decisionInvalid("not_configured carries a snapshot or evaluation")
+			return invalid("condition decision: not_configured carries a snapshot or evaluation")
 		}
 	case ConditionDecisionNotEvaluated, ConditionDecisionBypassed:
 		if decision.Snapshot == nil || decision.Evaluation != nil {
-			return decisionInvalid("mode requires a snapshot and no evaluation")
+			return invalid("condition decision: mode requires a snapshot and no evaluation")
 		}
 	case ConditionDecisionEvaluated:
 		if decision.Snapshot == nil || decision.Evaluation == nil {
-			return decisionInvalid("evaluated requires a snapshot and evaluation")
+			return invalid("condition decision: evaluated requires a snapshot and evaluation")
 		}
 	default:
-		return decisionInvalid(fmt.Sprintf("unknown mode %q", decision.Mode))
+		return invalid("condition decision: unknown mode %q", decision.Mode)
 	}
 	if decision.Snapshot != nil && decision.BypassRequested != (decision.Mode == ConditionDecisionBypassed) {
-		return decisionInvalid("with configured conditions the bypass request matches the bypassed mode")
+		return invalid("condition decision: with configured conditions the bypass request matches the bypassed mode")
 	}
 	return nil
 }
@@ -160,22 +157,22 @@ func ValidateRunConditionDecision(run Run) error {
 		return err
 	}
 	if decision.BypassRequested && run.Source != RunSourceManual {
-		return decisionInvalid("only a manual Run may request a bypass")
+		return invalid("condition decision: only a manual Run may request a bypass")
 	}
 	switch decision.Mode {
 	case ConditionDecisionNotEvaluated:
-		return decisionInvalid("a Run never records a not_evaluated decision")
+		return invalid("condition decision: a Run never records a not_evaluated decision")
 	case ConditionDecisionBypassed:
 		if run.Source != RunSourceManual {
-			return decisionInvalid("only a manual Run may bypass conditions")
+			return invalid("condition decision: only a manual Run may bypass conditions")
 		}
 	case ConditionDecisionEvaluated:
 		if decision.Evaluation.Result != ConditionTrue {
-			return decisionInvalid("an evaluated Run requires a true root result")
+			return invalid("condition decision: an evaluated Run requires a true root result")
 		}
 	case ConditionDecisionNotConfigured:
 	default:
-		return decisionInvalid(fmt.Sprintf("unknown mode %q", decision.Mode))
+		return invalid("condition decision: unknown mode %q", decision.Mode)
 	}
 	return nil
 }
@@ -190,26 +187,26 @@ func ValidateSkipConditionDecision(skip Skip) error {
 		return err
 	}
 	if decision.Mode == ConditionDecisionBypassed || decision.BypassRequested {
-		return decisionInvalid("a Skip is never a bypass")
+		return invalid("condition decision: a Skip is never a bypass")
 	}
 	switch skip.Reason {
 	case SkipStaleFact, SkipBusy:
 		if decision.Mode == ConditionDecisionEvaluated {
-			return decisionInvalid("a stale or busy Skip does not evaluate conditions")
+			return invalid("condition decision: a stale or busy Skip does not evaluate conditions")
 		}
 	case SkipConditionsFalse, SkipConditionsUnknown:
 		if decision.Mode != ConditionDecisionEvaluated {
-			return decisionInvalid("a condition Skip requires an evaluated decision")
+			return invalid("condition decision: a condition Skip requires an evaluated decision")
 		}
 		want := ConditionFalse
 		if skip.Reason == SkipConditionsUnknown {
 			want = ConditionUnknown
 		}
 		if decision.Evaluation.Result != want {
-			return decisionInvalid("a condition Skip result matches its reason")
+			return invalid("condition decision: a condition Skip result matches its reason")
 		}
 	default:
-		return decisionInvalid(fmt.Sprintf("unknown skip reason %q", skip.Reason))
+		return invalid("condition decision: unknown skip reason %q", skip.Reason)
 	}
 	return nil
 }
@@ -321,14 +318,14 @@ func encodeAutomationConditionEvaluation(evaluation ConditionEvaluation) (json.R
 // An explicit null is rejected instead of being treated as absent.
 func decodeConditionEvaluationJSON(raw json.RawMessage) (*automationConditionEvaluationJSON, error) {
 	if isExplicitJSONNull(raw) {
-		return nil, decisionInvalid("condition decision evaluation must not be null")
+		return nil, invalid("condition decision: condition decision evaluation must not be null")
 	}
 	if len(bytes.TrimSpace(raw)) == 0 {
 		return nil, nil //nolint:nilnil // An absent evaluation is a valid not_evaluated/bypassed/snapshot-only decision.
 	}
 	var evaluation automationConditionEvaluationJSON
 	if err := decodeStrictJSONObject(raw, &evaluation); err != nil {
-		return nil, decisionInvalid("condition decision evaluation is not a strict object")
+		return nil, invalid("condition decision: condition decision evaluation is not a strict object")
 	}
 	return &evaluation, nil
 }
@@ -338,14 +335,14 @@ func decodeConditionEvaluationJSON(raw json.RawMessage) (*automationConditionEva
 // an omitted member, and is rejected with a fixed error.
 func decodeOptionalConditionMember[T any](raw json.RawMessage, field string) (*T, error) {
 	if isExplicitJSONNull(raw) {
-		return nil, decisionInvalid(field + " must not be null")
+		return nil, invalid("condition decision: %s must not be null", field)
 	}
 	if len(bytes.TrimSpace(raw)) == 0 {
 		return nil, nil //nolint:nilnil // An absent optional member is valid; present value is the pointer.
 	}
 	var value T
 	if err := json.Unmarshal(raw, &value); err != nil {
-		return nil, decisionInvalid(field + " is malformed")
+		return nil, invalid("condition decision: %s is malformed", field)
 	}
 	return &value, nil
 }
@@ -369,8 +366,4 @@ func decodeStrictJSONObject(raw json.RawMessage, target any) error {
 		return errors.New("trailing content after JSON object")
 	}
 	return nil
-}
-
-func decisionInvalid(message string) error {
-	return fmt.Errorf("%w: condition decision: %s", ErrInvalidAutomation, message)
 }

@@ -64,6 +64,27 @@ func ValidateStepCompletion(completion StepCompletion) error {
 	return nil
 }
 
+// ValidateRunCompletion rejects a Run completion that is not a terminal
+// outcome, or whose status does not carry the evidence it requires. Persistence
+// calls it before writing; it performs no reads or writes of its own.
+func ValidateRunCompletion(completion RunCompletion) error {
+	switch completion.Status {
+	case RunSucceeded:
+		if completion.FailureCode != nil {
+			return invalid("succeeded Run carries a failure code")
+		}
+	case RunFailed, RunInterrupted:
+		if completion.FailureCode == nil {
+			return invalid("failing Run requires a failure code")
+		}
+	case RunRunning:
+		return invalid("run completion status %q is not terminal", completion.Status)
+	default:
+		return invalid("run completion status %q is not terminal", completion.Status)
+	}
+	return nil
+}
+
 // executeRun executes one immutable Run snapshot sequentially. The next Step
 // starts only after the prior Command reaches a successful terminal outcome, and
 // the first failure or interruption stops the Run without retry.

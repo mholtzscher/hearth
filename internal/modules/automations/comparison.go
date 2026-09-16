@@ -58,17 +58,21 @@ func validateConditionComparison(
 	if err := ValidateJSONPointer(pointer); err != nil {
 		return err
 	}
-	if !operator.isKnown() {
-		return fmt.Errorf("%w: comparison operator %q is not supported", ErrInvalidAutomation, operator)
-	}
-	decoded, err := decodeJSONValue(operand)
-	if err != nil {
-		return fmt.Errorf("%w: comparison operand is not exactly one JSON value", ErrInvalidAutomation)
-	}
-	if operator.isOrdering() {
+	switch operator {
+	case ComparisonLessThan, ComparisonLessThanOrEqual, ComparisonGreaterThan, ComparisonGreaterThanOrEqual:
+		decoded, err := decodeJSONValue(operand)
+		if err != nil {
+			return fmt.Errorf("%w: comparison operand is not exactly one JSON value", ErrInvalidAutomation)
+		}
 		if _, numeric := jsonNumberValue(decoded); !numeric {
 			return fmt.Errorf("%w: ordering comparison requires a numeric operand", ErrInvalidAutomation)
 		}
+	case ComparisonEqual, ComparisonNotEqual:
+		if _, err := decodeJSONValue(operand); err != nil {
+			return fmt.Errorf("%w: comparison operand is not exactly one JSON value", ErrInvalidAutomation)
+		}
+	default:
+		return fmt.Errorf("%w: comparison operator %q is not supported", ErrInvalidAutomation, operator)
 	}
 	return nil
 }
@@ -103,17 +107,6 @@ func (operator ComparisonOperator) isOrdering() bool {
 		return true
 	case ComparisonEqual, ComparisonNotEqual:
 		return false
-	default:
-		return false
-	}
-}
-
-// isKnown reports whether operator is one of the six closed comparison operators.
-func (operator ComparisonOperator) isKnown() bool {
-	switch operator {
-	case ComparisonEqual, ComparisonNotEqual, ComparisonLessThan,
-		ComparisonLessThanOrEqual, ComparisonGreaterThan, ComparisonGreaterThanOrEqual:
-		return true
 	default:
 		return false
 	}
@@ -219,10 +212,8 @@ func decodeJSONValue(raw json.RawMessage) (any, error) {
 }
 
 func compareJSONValues(operator ComparisonOperator, left, right any) (bool, error) {
-	if !operator.isKnown() {
-		return false, fmt.Errorf("%w: comparison operator %q is not supported", ErrInvalidAutomation, operator)
-	}
-	if operator.isOrdering() {
+	switch operator {
+	case ComparisonLessThan, ComparisonLessThanOrEqual, ComparisonGreaterThan, ComparisonGreaterThanOrEqual:
 		leftNumber, leftNumeric := jsonNumberValue(left)
 		rightNumber, rightNumeric := jsonNumberValue(right)
 		if !leftNumeric || !rightNumeric {
@@ -233,21 +224,24 @@ func compareJSONValues(operator ComparisonOperator, left, right any) (bool, erro
 			return false, nil
 		}
 		return result, nil
+	case ComparisonEqual, ComparisonNotEqual:
+		// An incompatible top-level JSON type is false for eq and ne alike, unlike an
+		// unequal container whose contents simply differ, so it is rejected before
+		// equality is inverted for ne.
+		if jsonValueKind(left) != jsonValueKind(right) {
+			return false, nil
+		}
+		equal, err := jsonValuesEqual(left, right)
+		if err != nil {
+			return false, err
+		}
+		if operator == ComparisonNotEqual {
+			return !equal, nil
+		}
+		return equal, nil
+	default:
+		return false, fmt.Errorf("%w: comparison operator %q is not supported", ErrInvalidAutomation, operator)
 	}
-	// An incompatible top-level JSON type is false for eq and ne alike, unlike an
-	// unequal container whose contents simply differ, so it is rejected before
-	// equality is inverted for ne.
-	if jsonValueKind(left) != jsonValueKind(right) {
-		return false, nil
-	}
-	equal, err := jsonValuesEqual(left, right)
-	if err != nil {
-		return false, err
-	}
-	if operator == ComparisonNotEqual {
-		return !equal, nil
-	}
-	return equal, nil
 }
 
 // jsonValueKind groups decoded values by JSON type, treating [json.Number] and

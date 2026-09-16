@@ -90,27 +90,8 @@ func (repo *AutomationRepository) CompleteRun(
 	if _, err := automations.ParseRunID(string(completion.RunID)); err != nil {
 		return err
 	}
-	switch completion.Status {
-	case automations.RunSucceeded:
-		if completion.FailureCode != nil {
-			return fmt.Errorf(
-				"%w: succeeded Run carries a failure code", automations.ErrInvalidAutomation,
-			)
-		}
-	case automations.RunFailed, automations.RunInterrupted:
-		if completion.FailureCode == nil {
-			return fmt.Errorf("%w: failing Run requires a failure code", automations.ErrInvalidAutomation)
-		}
-	case automations.RunRunning:
-		return fmt.Errorf(
-			"%w: run completion status %q is not terminal",
-			automations.ErrInvalidAutomation, completion.Status,
-		)
-	default:
-		return fmt.Errorf(
-			"%w: run completion status %q is not terminal",
-			automations.ErrInvalidAutomation, completion.Status,
-		)
+	if err := automations.ValidateRunCompletion(completion); err != nil {
+		return err
 	}
 	return repo.transaction(ctx, func(queries *dbsqlc.Queries) error {
 		updated, err := queries.CompleteRun(ctx, dbsqlc.CompleteRunParams{

@@ -196,8 +196,6 @@ func (repo *AutomationRepository) planDeviceFact(
 // planAutomationOutcome decides one current definition's outcome without
 // writing history, allocating identities, or registering workers. It returns nil
 // for a disabled or unmatched Automation, which records nothing at all.
-//
-//nolint:funlen // Condition evaluation is intentionally resolved in this one-pass planner.
 func (repo *AutomationRepository) planAutomationOutcome(
 	ctx context.Context,
 	queries *dbsqlc.Queries,
@@ -268,40 +266,32 @@ func (repo *AutomationRepository) planAutomationOutcome(
 			},
 		}, nil
 	}
-	entityIDs, err := automations.RequiredConditionEntityIDs(*conditions)
-	if err != nil {
-		return nil, err
-	}
-	if missing := missingSnapshotCoverage(entityIDs, snapshot); len(missing) > 0 {
-		return nil, &automations.ConditionSnapshotRequiredError{RequiredEntityIDs: missing}
-	}
-	evaluation, err := automations.EvaluateConditions(*conditions, snapshot, admittedAt)
+	return planConditionalOutcome(record, matched, conditions, snapshot, admittedAt)
+}
+
+// planConditionalOutcome plans the admitted Run or Condition Skip that one
+// configured Condition tree implies.
+func planConditionalOutcome(
+	record automations.Record,
+	matched []automations.TriggerID,
+	conditions *automations.Condition,
+	snapshot devices.EntityStateSnapshot,
+	admittedAt time.Time,
+) (*plannedAutomation, error) {
+	decision, reason, err := automations.DecideConditions(conditions, snapshot, admittedAt)
 	if err != nil {
 		return nil, err
 	}
 	plan := &plannedAutomation{
-		record:  record,
-		matched: matched,
-		decision: automations.ConditionDecision{
-			Mode:       automations.ConditionDecisionEvaluated,
-			Snapshot:   conditions,
-			Evaluation: &evaluation,
-		},
+		record:   record,
+		matched:  matched,
+		decision: decision,
 	}
-	switch evaluation.Result {
-	case automations.ConditionTrue:
+	if reason == "" {
 		plan.kind = plannedOutcomeRun
-	case automations.ConditionFalse:
+	} else {
 		plan.kind = plannedOutcomeSkip
-		plan.reason = automations.SkipConditionsFalse
-	case automations.ConditionUnknown:
-		plan.kind = plannedOutcomeSkip
-		plan.reason = automations.SkipConditionsUnknown
-	default:
-		return nil, fmt.Errorf(
-			"%w: condition evaluation for automation %q has an unknown result",
-			automations.ErrInvalidAutomation, record.ID,
-		)
+		plan.reason = reason
 	}
 	return plan, nil
 }
@@ -587,36 +577,7 @@ func manualConditionDecision(
 			Mode: automations.ConditionDecisionNotConfigured,
 		}, "", nil
 	}
-	required, err := automations.RequiredConditionEntityIDs(*conditions)
-	if err != nil {
-		return automations.ConditionDecision{}, "", err
-	}
-	if missing := missingSnapshotCoverage(required, snapshot); len(missing) > 0 {
-		return automations.ConditionDecision{}, "", &automations.ConditionSnapshotRequiredError{
-			RequiredEntityIDs: missing,
-		}
-	}
-	evaluation, err := automations.EvaluateConditions(*conditions, snapshot, admittedAt)
-	if err != nil {
-		return automations.ConditionDecision{}, "", err
-	}
-	decision := automations.ConditionDecision{
-		Mode:       automations.ConditionDecisionEvaluated,
-		Snapshot:   conditions,
-		Evaluation: &evaluation,
-	}
-	switch evaluation.Result {
-	case automations.ConditionTrue:
-		return decision, "", nil
-	case automations.ConditionFalse:
-		return decision, automations.SkipConditionsFalse, nil
-	case automations.ConditionUnknown:
-		return decision, automations.SkipConditionsUnknown, nil
-	default:
-		return automations.ConditionDecision{}, "", fmt.Errorf(
-			"%w: manual condition evaluation has an unknown result", automations.ErrInvalidAutomation,
-		)
-	}
+	return automations.DecideConditions(conditions, snapshot, admittedAt)
 }
 
 // notEvaluatedDecision records deliberate non-evaluation of a stale or busy Skip.
@@ -635,21 +596,6 @@ func notEvaluatedDecision(
 		Mode:     automations.ConditionDecisionNotEvaluated,
 		Snapshot: conditions,
 	}
-}
-
-// missingSnapshotCoverage returns the complete required set when the supplied
-// snapshot does not cover all of it, and nil when coverage is complete. A known
-// missing Entity is covered evidence, so it never triggers another read.
-func missingSnapshotCoverage(
-	required []devices.EntityID,
-	snapshot devices.EntityStateSnapshot,
-) []devices.EntityID {
-	for _, entityID := range required {
-		if _, covered := snapshot.Entries[entityID]; !covered {
-			return required
-		}
-	}
-	return nil
 }
 
 // writeReceipt records one matched-Fact outcome so a redelivered Fact never

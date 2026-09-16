@@ -144,19 +144,6 @@ const (
 	ConditionDecisionEvaluated ConditionDecisionMode = "evaluated"
 )
 
-// isKnown reports whether mode is one of the four closed decision modes.
-func (mode ConditionDecisionMode) isKnown() bool {
-	switch mode {
-	case ConditionDecisionNotConfigured,
-		ConditionDecisionNotEvaluated,
-		ConditionDecisionBypassed,
-		ConditionDecisionEvaluated:
-		return true
-	default:
-		return false
-	}
-}
-
 // ConditionDecision is the immutable admission explanation retained
 // with a Run or Skip. It is evidence, not executable work.
 type ConditionDecision struct {
@@ -257,17 +244,17 @@ func validateAutomationConditionTree(root Condition) error {
 // visit validates one node and its descendants. depth is 1 for the root.
 func (walk *conditionTreeWalk) visit(node *Condition, depth int) error {
 	if depth > automationConditionMaxDepth {
-		return invalidCondition(node.ID, "tree exceeds the maximum depth")
+		return invalid("condition %q: tree exceeds the maximum depth", node.ID)
 	}
 	walk.nodes++
 	if walk.nodes > automationConditionMaxNodes {
-		return invalidCondition(node.ID, "tree exceeds the maximum node count")
+		return invalid("condition %q: tree exceeds the maximum node count", node.ID)
 	}
 	if !subjectSlugPattern.MatchString(string(node.ID)) {
 		return fmt.Errorf("%w: condition ID %q is not a subject-safe slug", ErrInvalidAutomation, node.ID)
 	}
 	if _, duplicate := walk.ids[node.ID]; duplicate {
-		return invalidCondition(node.ID, "condition IDs must be unique within a tree")
+		return invalid("condition %q: condition IDs must be unique within a tree", node.ID)
 	}
 	walk.ids[node.ID] = struct{}{}
 	switch node.Kind {
@@ -278,13 +265,13 @@ func (walk *conditionTreeWalk) visit(node *Condition, depth int) error {
 	case ConditionNot:
 		return walk.visitNot(node, depth)
 	default:
-		return invalidCondition(node.ID, fmt.Sprintf("unknown kind %q", node.Kind))
+		return invalid("condition %q: unknown kind %q", node.ID, node.Kind)
 	}
 }
 
 func (walk *conditionTreeWalk) visitEntityState(node *Condition) error {
 	if node.EntityState == nil || node.Children != nil || node.Child != nil {
-		return invalidCondition(node.ID, "entity_state family payload mismatch")
+		return invalid("condition %q: entity_state family payload mismatch", node.ID)
 	}
 	if err := validateEntityStateConditionValue(*node.EntityState); err != nil {
 		return err
@@ -295,14 +282,14 @@ func (walk *conditionTreeWalk) visitEntityState(node *Condition) error {
 
 func (walk *conditionTreeWalk) visitGroup(node *Condition, depth int) error {
 	if node.EntityState != nil || node.Child != nil {
-		return invalidCondition(node.ID, "all/any family payload mismatch")
+		return invalid("condition %q: all/any family payload mismatch", node.ID)
 	}
 	if len(node.Children) == 0 {
-		return invalidCondition(node.ID, "all/any requires a nonempty children array")
+		return invalid("condition %q: all/any requires a nonempty children array", node.ID)
 	}
 	pointer := reflect.ValueOf(node.Children).Pointer()
 	if _, aliased := walk.slices[pointer]; aliased {
-		return invalidCondition(node.ID, "children payload is shared or cyclic")
+		return invalid("condition %q: children payload is shared or cyclic", node.ID)
 	}
 	walk.slices[pointer] = struct{}{}
 	for index := range node.Children {
@@ -315,13 +302,13 @@ func (walk *conditionTreeWalk) visitGroup(node *Condition, depth int) error {
 
 func (walk *conditionTreeWalk) visitNot(node *Condition, depth int) error {
 	if node.EntityState != nil || node.Children != nil {
-		return invalidCondition(node.ID, "not family payload mismatch")
+		return invalid("condition %q: not family payload mismatch", node.ID)
 	}
 	if node.Child == nil {
-		return invalidCondition(node.ID, "not requires exactly one child")
+		return invalid("condition %q: not requires exactly one child", node.ID)
 	}
 	if _, cyclic := walk.childPtrs[node.Child]; cyclic {
-		return invalidCondition(node.ID, "child pointer creates a cycle or is shared")
+		return invalid("condition %q: child pointer creates a cycle or is shared", node.ID)
 	}
 	walk.childPtrs[node.Child] = struct{}{}
 	return walk.visit(node.Child, depth+1)
@@ -415,7 +402,7 @@ func evaluateConditionNode(
 		(*nodes)[position].Result = result
 		return result, nil
 	default:
-		return "", invalidCondition(node.ID, fmt.Sprintf("unknown kind %q", node.Kind))
+		return "", invalid("condition %q: unknown kind %q", node.ID, node.Kind)
 	}
 }
 
@@ -625,8 +612,4 @@ func negateConditionResult(result ConditionResult) ConditionResult {
 	default:
 		return result
 	}
-}
-
-func invalidCondition(id ConditionID, message string) error {
-	return fmt.Errorf("%w: condition %q: %s", ErrInvalidAutomation, id, message)
 }
