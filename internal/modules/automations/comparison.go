@@ -43,18 +43,30 @@ func ValidateJSONPointer(pointer string) error {
 // ValidateObservationComparison checks pointer syntax, operator, and operand.
 // Ordering requires a number; pointer existence is checked only at runtime.
 func ValidateObservationComparison(comparison ObservationComparison) error {
-	if err := ValidateJSONPointer(comparison.Pointer); err != nil {
+	return validateConditionComparison(comparison.Pointer, comparison.Operator, comparison.Operand)
+}
+
+// validateConditionComparison is the shared pointer, operator, and operand rule
+// for Observation Trigger comparisons and Entity State Condition leaves, so both
+// use the same JSON Pointer syntax, 256-byte limit, closed operator set, exact
+// single JSON operand, and ordering-requires-a-number compatibility check.
+func validateConditionComparison(
+	pointer string,
+	operator ComparisonOperator,
+	operand json.RawMessage,
+) error {
+	if err := ValidateJSONPointer(pointer); err != nil {
 		return err
 	}
-	if !comparison.Operator.isKnown() {
-		return fmt.Errorf("%w: comparison operator %q is not supported", ErrInvalidAutomation, comparison.Operator)
+	if !operator.isKnown() {
+		return fmt.Errorf("%w: comparison operator %q is not supported", ErrInvalidAutomation, operator)
 	}
-	operand, err := decodeJSONValue(comparison.Operand)
+	decoded, err := decodeJSONValue(operand)
 	if err != nil {
 		return fmt.Errorf("%w: comparison operand is not exactly one JSON value", ErrInvalidAutomation)
 	}
-	if comparison.Operator.isOrdering() {
-		if _, numeric := jsonNumberValue(operand); !numeric {
+	if operator.isOrdering() {
+		if _, numeric := jsonNumberValue(decoded); !numeric {
 			return fmt.Errorf("%w: ordering comparison requires a numeric operand", ErrInvalidAutomation)
 		}
 	}

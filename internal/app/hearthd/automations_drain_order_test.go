@@ -38,6 +38,16 @@ func (seam *blockingAutomationDevices) ValidateObservationTrigger(context.Contex
 	return nil
 }
 
+func (seam *blockingAutomationDevices) ValidateConditionEntity(context.Context, devices.EntityID) error {
+	return nil
+}
+
+func (seam *blockingAutomationDevices) GetEntityStateSnapshot(
+	context.Context, []devices.EntityID,
+) (devices.EntityStateSnapshot, error) {
+	return devices.EntityStateSnapshot{}, nil
+}
+
 func (seam *blockingAutomationDevices) ValidateEntityEventTrigger(
 	context.Context, devices.EntityID, devices.EntityEventName,
 ) error {
@@ -261,7 +271,7 @@ func startBlockedAutomationRun(
 		automations.AutomationDependencies{Logger: slog.New(slog.DiscardHandler)},
 	)
 	record := createOrderingAutomation(ctx, t, automationService)
-	run, err := automationService.StartManualRun(ctx, record.ID)
+	run, err := automationService.StartManualRun(ctx, automations.ManualRunInput{AutomationID: record.ID})
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -162,7 +162,7 @@ func TestDrainCompletesWhileManualRunStartedLogBlocked(t *testing.T) {
 
 	admitted := make(chan error, 1)
 	go func() {
-		_, err := service.StartManualRun(context.Background(), record.ID)
+		_, err := service.StartManualRun(context.Background(), automations.ManualRunInput{AutomationID: record.ID})
 		admitted <- err
 	}()
 	requireAdmissionInFlight(t, blocking)

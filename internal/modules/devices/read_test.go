@@ -21,11 +21,15 @@ type readRepository struct {
 	historyPage        Page[EntityStateHistoryEntry]
 	historyParams      ListEntityStateHistoryParams
 	historyErr         error
+	snapshot           EntityStateSnapshot
+	snapshotErr        error
+	snapshotIDs        []EntityID
 	getDeviceCalls     int
 	getEntityCalls     int
 	listEntityCalls    int
 	listCommandsCalls  int
 	historyCalls       int
+	snapshotCalls      int
 }
 
 func newReadRepository() *readRepository {
@@ -42,9 +46,21 @@ func (repository *readRepository) GetDevice(_ context.Context, params GetDeviceP
 	return repository.device, repository.deviceErr
 }
 
-func (repository *readRepository) GetEntity(context.Context, EntityID) (EntityWithState, error) {
+func (repository *readRepository) GetEntity(
+	context.Context,
+	EntityID,
+) (EntityWithState, error) {
 	repository.getEntityCalls++
 	return repository.entity, repository.entityErr
+}
+
+func (repository *readRepository) GetEntityStateSnapshot(
+	_ context.Context,
+	ids []EntityID,
+) (EntityStateSnapshot, error) {
+	repository.snapshotCalls++
+	repository.snapshotIDs = append([]EntityID(nil), ids...)
+	return repository.snapshot, repository.snapshotErr
 }
 
 func (repository *readRepository) ListEntities(

@@ -44,7 +44,7 @@ func TestRunExecutesStepsSequentially(t *testing.T) {
 	service, _ := newRuntimeService(t, scripted, runtimeTestDependencies())
 	record := createRuntimeAutomation(t, service, runtimeDefinition(t, 2))
 
-	run, err := service.StartManualRun(ctx, record.ID)
+	run, err := service.StartManualRun(ctx, automations.ManualRunInput{AutomationID: record.ID})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -94,7 +94,7 @@ func TestRunStopsAtFirstFailureWithoutRetry(t *testing.T) {
 	service, _ := newRuntimeService(t, scripted, runtimeTestDependencies())
 	record := createRuntimeAutomation(t, service, runtimeDefinition(t, 3))
 
-	run, err := service.StartManualRun(ctx, record.ID)
+	run, err := service.StartManualRun(ctx, automations.ManualRunInput{AutomationID: record.ID})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -139,7 +139,7 @@ func TestRunLinksCommandOnlyAfterOwnershipVerification(t *testing.T) {
 	service, _ := newRuntimeService(t, scripted, runtimeTestDependencies())
 	record := createRuntimeAutomation(t, service, runtimeDefinition(t, 1))
 
-	run, err := service.StartManualRun(ctx, record.ID)
+	run, err := service.StartManualRun(ctx, automations.ManualRunInput{AutomationID: record.ID})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -159,7 +159,7 @@ func TestRunLinksCommandOnlyAfterOwnershipVerification(t *testing.T) {
 	if service.AdmissionOpen() {
 		t.Fatal("executor fault left automation admission open")
 	}
-	if _, err = service.StartManualRun(ctx, record.ID); !errors.Is(
+	if _, err = service.StartManualRun(ctx, automations.ManualRunInput{AutomationID: record.ID}); !errors.Is(
 		err, automations.ErrAdmissionUnavailable,
 	) {
 		t.Fatalf("post-fault start error = %v, want ErrAdmissionUnavailable", err)
@@ -204,7 +204,7 @@ func TestRunTreatsMissingOrNonterminalCommandAsFault(t *testing.T) {
 			service, _ := newRuntimeService(t, scripted, runtimeTestDependencies())
 			record := createRuntimeAutomation(t, service, runtimeDefinition(t, 2))
 
-			run, err := service.StartManualRun(ctx, record.ID)
+			run, err := service.StartManualRun(ctx, automations.ManualRunInput{AutomationID: record.ID})
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -237,7 +237,7 @@ func TestRunClassifiesPreCreationFailureWithoutFault(t *testing.T) {
 	service, _ := newRuntimeService(t, scripted, runtimeTestDependencies())
 	record := createRuntimeAutomation(t, service, runtimeDefinition(t, 2))
 
-	run, err := service.StartManualRun(ctx, record.ID)
+	run, err := service.StartManualRun(ctx, automations.ManualRunInput{AutomationID: record.ID})
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -213,7 +213,7 @@ func TestPruneHistoryKeepsHistoryAtTheCutoffBoundary(t *testing.T) {
 	ctx := context.Background()
 	service, _ := newRuntimeService(t, newScriptedDevices(), runtimeTestDependencies())
 	record := createRuntimeAutomation(t, service, runtimeDefinitionFor(t, newEntityID(t)))
-	if _, err := service.StartManualRun(ctx, record.ID); err != nil {
+	if _, err := service.StartManualRun(ctx, automations.ManualRunInput{AutomationID: record.ID}); err != nil {
 		t.Fatal(err)
 	}
 	waitForRuns(t, service)

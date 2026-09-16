@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"slices"
 	"time"
 
 	"github.com/mholtzscher/hearth/internal/modules/automations"
@@ -12,13 +13,45 @@ import (
 	"github.com/mholtzscher/hearth/internal/modules/devices"
 )
 
+// plannedOutcomeKind is the decided, still-unwritten outcome of one matching
+// Automation. Nothing here has allocated an identity or written a row.
+type plannedOutcomeKind int
+
+const (
+	plannedOutcomeRun plannedOutcomeKind = iota
+	plannedOutcomeSkip
+	plannedOutcomeDuplicate
+)
+
+// plannedAutomation carries one matching Automation's planned outcome. A
+// conditional plan is decided only after the complete current required Entity
+// set is covered, so no write happens on a coverage-error pass.
+type plannedAutomation struct {
+	record      automations.AutomationRecord
+	matched     []automations.TriggerID
+	kind        plannedOutcomeKind
+	reason      automations.AutomationSkipReason
+	decision    automations.AutomationConditionDecision
+	required    []devices.EntityID
+	conditional bool
+}
+
 // AdmitDeviceFact atomically commits matching enabled Automations' receipts,
 // Runs, Skips, and initial Steps. The caller starts workers only after commit.
 // Matching uses the definitions this transaction loaded, never a preliminary
 // Service read.
+//
+// The transaction plans every matching outcome without writes or identity
+// allocation, applies duplicate/stale/busy precedence before gathering the
+// Entities eligible Conditions require, and returns
+// [automations.ConditionSnapshotRequiredError] carrying the complete required set
+// when the supplied snapshot does not cover it. That coverage-error pass commits
+// nothing, including the otherwise-decided stale, busy, and unconditioned
+// siblings.
 func (repo *AutomationRepository) AdmitDeviceFact(
 	ctx context.Context,
 	fact automations.DeviceFact,
+	snapshot devices.EntityStateSnapshot,
 	admittedAt time.Time,
 ) (automations.AdmissionResult, error) {
 	if err := automations.ValidateDeviceFact(fact); err != nil {
@@ -32,16 +65,14 @@ func (repo *AutomationRepository) AdmitDeviceFact(
 	summary := automations.NewDeviceFactSummary(fact)
 	var result automations.AdmissionResult
 	err := repo.transaction(ctx, func(queries *dbsqlc.Queries) error {
-		rows, err := queries.ListAllAutomations(ctx)
+		plans, required, err := repo.planDeviceFact(ctx, queries, fact, summary, snapshot, admittedAt)
 		if err != nil {
 			return err
 		}
-		for _, row := range rows {
-			if err = repo.admitAutomationRow(ctx, queries, row, fact, summary, admittedAt, &result); err != nil {
-				return err
-			}
+		if len(required) > 0 {
+			return &automations.ConditionSnapshotRequiredError{RequiredEntityIDs: required}
 		}
-		return nil
+		return repo.commitDeviceFact(ctx, queries, plans, summary, admittedAt, &result)
 	})
 	if err != nil {
 		return automations.AdmissionResult{}, err
@@ -49,161 +80,311 @@ func (repo *AutomationRepository) AdmitDeviceFact(
 	return result, nil
 }
 
-// AdmitManualRun starts one Run from the current definition snapshot even when
-// the Automation is disabled. A running Run for the same Automation returns
-// [automations.ErrAutomationBusy]; a missing definition returns
-// [automations.ErrAutomationNotFound].
+// AdmitManualRun commits exactly one manual Run or manual Condition Skip from
+// the current definition snapshot, even when the Automation is disabled. Manual
+// invocation ignores definition enablement and has no Trigger or Fact.
+//
+// A running Run for the same Automation returns [automations.ErrAutomationBusy]
+// without writing a Skip; a missing definition returns
+// [automations.ErrAutomationNotFound]. An explicit bypass never reads State or
+// evaluates a Condition. The result is returned only after commit, so the
+// Service can turn a committed Skip into its typed blocked error.
 func (repo *AutomationRepository) AdmitManualRun(
 	ctx context.Context,
-	id automations.AutomationID,
+	input automations.ManualRunInput,
+	snapshot devices.EntityStateSnapshot,
 	admittedAt time.Time,
-) (automations.AutomationRun, error) {
-	if _, err := automations.ParseAutomationID(string(id)); err != nil {
-		return automations.AutomationRun{}, err
+) (automations.ManualAdmissionResult, error) {
+	if _, err := automations.ParseAutomationID(string(input.AutomationID)); err != nil {
+		return automations.ManualAdmissionResult{}, err
 	}
 	if admittedAt.IsZero() {
-		return automations.AutomationRun{}, fmt.Errorf(
+		return automations.ManualAdmissionResult{}, fmt.Errorf(
 			"%w: admission time is required", automations.ErrInvalidAutomation,
 		)
 	}
-	var run automations.AutomationRun
+	var result automations.ManualAdmissionResult
 	err := repo.transaction(ctx, func(queries *dbsqlc.Queries) error {
-		row, err := queries.GetAutomation(ctx, dbsqlc.GetAutomationParams{ID: string(id)})
-		if errors.Is(err, sql.ErrNoRows) {
-			return automations.ErrAutomationNotFound
-		}
-		if err != nil {
-			return err
-		}
-		record, err := automationRecord(row)
-		if err != nil {
-			return err
-		}
-		running, err := queries.CountRunningRuns(ctx, dbsqlc.CountRunningRunsParams{
-			AutomationID: string(record.ID),
-		})
-		if err != nil {
-			return err
-		}
-		if running > 0 {
-			return automations.ErrAutomationBusy
-		}
-		runID, err := repo.newRunID()
-		if err != nil {
-			return fmt.Errorf("allocate automation run ID: %w", err)
-		}
-		run = automations.NewAutomationRunSnapshot(record, runID, automations.RunSourceManual, nil, nil, admittedAt)
-		return repo.persistRun(ctx, queries, run)
+		return repo.admitManualRun(ctx, queries, input, snapshot, admittedAt, &result)
 	})
 	if err != nil {
-		return automations.AutomationRun{}, err
+		return automations.ManualAdmissionResult{}, err
 	}
-	return run, nil
+	return result, nil
 }
 
-// admitAutomationRow evaluates one current definition and folds its single
-// outcome into the admission result.
-func (repo *AutomationRepository) admitAutomationRow(
+// admitManualRun decides and commits one manual admission inside the caller's
+// transaction. It writes either one Run or one manual Condition Skip.
+func (repo *AutomationRepository) admitManualRun(
+	ctx context.Context,
+	queries *dbsqlc.Queries,
+	input automations.ManualRunInput,
+	snapshot devices.EntityStateSnapshot,
+	admittedAt time.Time,
+	result *automations.ManualAdmissionResult,
+) error {
+	row, err := queries.GetAutomation(ctx, dbsqlc.GetAutomationParams{ID: string(input.AutomationID)})
+	if errors.Is(err, sql.ErrNoRows) {
+		return automations.ErrAutomationNotFound
+	}
+	if err != nil {
+		return err
+	}
+	record, err := automationRecord(row)
+	if err != nil {
+		return err
+	}
+	running, err := queries.CountRunningRuns(ctx, dbsqlc.CountRunningRunsParams{
+		AutomationID: string(record.ID),
+	})
+	if err != nil {
+		return err
+	}
+	if running > 0 {
+		return automations.ErrAutomationBusy
+	}
+	decision, blocked, err := manualConditionDecision(
+		record.Definition.Conditions, input.BypassConditions, snapshot, admittedAt,
+	)
+	if err != nil {
+		return err
+	}
+	if blocked != "" {
+		skip, persistErr := repo.persistManualSkip(ctx, queries, record, blocked, decision, admittedAt)
+		if persistErr != nil {
+			return persistErr
+		}
+		result.Skip = &skip
+		return nil
+	}
+	runID, err := repo.newRunID()
+	if err != nil {
+		return fmt.Errorf("allocate automation run ID: %w", err)
+	}
+	run := automations.NewAutomationRunSnapshot(
+		record, runID, automations.RunSourceManual, nil, nil, decision, admittedAt,
+	)
+	if err = repo.persistRun(ctx, queries, run); err != nil {
+		return err
+	}
+	result.Run = &run
+	return nil
+}
+
+// planDeviceFact loads current definitions and decides every matching
+// Automation's outcome without writing history, allocating identities, or
+// registering workers. It returns the complete current required Entity set when
+// the supplied snapshot does not cover all of it, so the caller reads one
+// replacement snapshot instead of admitting partially.
+func (repo *AutomationRepository) planDeviceFact(
+	ctx context.Context,
+	queries *dbsqlc.Queries,
+	fact automations.DeviceFact,
+	summary automations.DeviceFactSummary,
+	snapshot devices.EntityStateSnapshot,
+	admittedAt time.Time,
+) ([]plannedAutomation, []devices.EntityID, error) {
+	rows, err := queries.ListAllAutomations(ctx)
+	if err != nil {
+		return nil, nil, err
+	}
+	plans := make([]plannedAutomation, 0, len(rows))
+	required := map[devices.EntityID]struct{}{}
+	for _, row := range rows {
+		plan, planErr := repo.planAutomationOutcome(ctx, queries, row, fact, summary, admittedAt)
+		if planErr != nil {
+			return nil, nil, planErr
+		}
+		if plan == nil {
+			continue
+		}
+		plans = append(plans, *plan)
+		for _, entityID := range plan.required {
+			required[entityID] = struct{}{}
+		}
+	}
+	requiredIDs := sortedRequiredEntityIDs(required)
+	if missing := missingSnapshotCoverage(requiredIDs, snapshot); len(missing) > 0 {
+		return nil, missing, nil
+	}
+	for index := range plans {
+		if !plans[index].conditional {
+			continue
+		}
+		resolveErr := resolveConditionalOutcome(&plans[index], snapshot, admittedAt)
+		if resolveErr != nil {
+			return nil, nil, resolveErr
+		}
+	}
+	return plans, nil, nil
+}
+
+// planAutomationOutcome decides one current definition's outcome without
+// writing history, allocating identities, or registering workers. It returns nil
+// for a disabled or unmatched Automation, which records nothing at all.
+func (repo *AutomationRepository) planAutomationOutcome(
 	ctx context.Context,
 	queries *dbsqlc.Queries,
 	row dbsqlc.Automation,
 	fact automations.DeviceFact,
 	summary automations.DeviceFactSummary,
 	admittedAt time.Time,
-	result *automations.AdmissionResult,
-) error {
+) (*plannedAutomation, error) {
 	record, err := automationRecord(row)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	if !record.Definition.Enabled {
-		return nil
+		return nil, nil //nolint:nilnil // A non-matching Automation plans no outcome.
 	}
 	matched, err := automations.MatchAutomationTriggers(fact, record.Definition)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	if len(matched) == 0 {
-		return nil
+		return nil, nil //nolint:nilnil // A non-matching Automation plans no outcome.
 	}
-	result.Outcome.MatchedAutomations++
-	run, skip, err := repo.admitMatchedDeviceFact(ctx, queries, record, summary, matched, admittedAt)
-	if err != nil {
-		return err
-	}
-	switch {
-	case run != nil:
-		result.Outcome.StartedRuns++
-		result.StartedRuns = append(result.StartedRuns, *run)
-	case skip != nil:
-		result.Outcome.RecordedSkips++
-		result.Skips = append(result.Skips, *skip)
-	default:
-		result.Outcome.DuplicateOutcomes++
-	}
-	return nil
-}
-
-// admitMatchedDeviceFact records a Run or Skip, ignoring duplicate receipts.
-// Freshness precedes the busy check, so old matching Facts record stale_fact.
-func (repo *AutomationRepository) admitMatchedDeviceFact(
-	ctx context.Context,
-	queries *dbsqlc.Queries,
-	record automations.AutomationRecord,
-	summary automations.DeviceFactSummary,
-	matched []automations.TriggerID,
-	admittedAt time.Time,
-) (*automations.AutomationRun, *automations.AdmissionSkip, error) {
 	receipts, err := queries.CountFactReceipts(ctx, dbsqlc.CountFactReceiptsParams{
 		FactID:       string(summary.FactID),
 		AutomationID: string(record.ID),
 	})
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 	if receipts > 0 {
-		return nil, nil, nil
+		return &plannedAutomation{record: record, matched: matched, kind: plannedOutcomeDuplicate}, nil
+	}
+	// Freshness precedes the busy check, so an old matching Fact records
+	// stale_fact even while another Run is active.
+	if admittedAt.Sub(summary.EmittedAt) > automations.AutomationFactMaximumAge {
+		return &plannedAutomation{
+			record:   record,
+			matched:  matched,
+			kind:     plannedOutcomeSkip,
+			reason:   automations.AutomationSkipStaleFact,
+			decision: notEvaluatedDecision(record.Definition.Conditions),
+		}, nil
 	}
 	running, err := queries.CountRunningRuns(ctx, dbsqlc.CountRunningRunsParams{
 		AutomationID: string(record.ID),
 	})
 	if err != nil {
-		return nil, nil, err
-	}
-	if admittedAt.Sub(summary.EmittedAt) > automations.AutomationFactMaximumAge {
-		skip, recordErr := repo.recordSkip(
-			ctx, queries, record, summary, matched, automations.AutomationSkipStaleFact, admittedAt,
-		)
-		if recordErr != nil {
-			return nil, nil, recordErr
-		}
-		return nil, &skip, nil
+		return nil, err
 	}
 	if running > 0 {
-		skip, recordErr := repo.recordSkip(
-			ctx, queries, record, summary, matched, automations.AutomationSkipBusy, admittedAt,
-		)
-		if recordErr != nil {
-			return nil, nil, recordErr
-		}
-		return nil, &skip, nil
+		return &plannedAutomation{
+			record:   record,
+			matched:  matched,
+			kind:     plannedOutcomeSkip,
+			reason:   automations.AutomationSkipBusy,
+			decision: notEvaluatedDecision(record.Definition.Conditions),
+		}, nil
 	}
-	runID, err := repo.newRunID()
+	conditions := record.Definition.Conditions
+	if conditions == nil {
+		return &plannedAutomation{
+			record:  record,
+			matched: matched,
+			kind:    plannedOutcomeRun,
+			decision: automations.AutomationConditionDecision{
+				Mode: automations.AutomationConditionDecisionNotConfigured,
+			},
+		}, nil
+	}
+	entityIDs, err := automations.RequiredConditionEntityIDs(*conditions)
 	if err != nil {
-		return nil, nil, fmt.Errorf("allocate automation run ID: %w", err)
+		return nil, err
 	}
-	run := automations.NewAutomationRunSnapshot(
-		record, runID, automations.RunSourceDeviceFact, &summary, matched, admittedAt,
-	)
-	if err = repo.persistRun(ctx, queries, run); err != nil {
-		return nil, nil, err
+	return &plannedAutomation{
+		record: record, matched: matched, conditional: true, required: entityIDs,
+	}, nil
+}
+
+// resolveConditionalOutcome evaluates one eligible configured Automation against
+// the covered snapshot and records its Run or Condition Skip decision.
+func resolveConditionalOutcome(
+	plan *plannedAutomation,
+	snapshot devices.EntityStateSnapshot,
+	admittedAt time.Time,
+) error {
+	conditions := plan.record.Definition.Conditions
+	evaluation, err := automations.EvaluateAutomationConditions(*conditions, snapshot, admittedAt)
+	if err != nil {
+		return err
 	}
-	if err = repo.writeReceipt(
-		ctx, queries, summary.FactID, record.ID, automations.AutomationHistoryRun, string(run.ID),
-	); err != nil {
-		return nil, nil, err
+	plan.decision = automations.AutomationConditionDecision{
+		Mode:       automations.AutomationConditionDecisionEvaluated,
+		Snapshot:   conditions,
+		Evaluation: &evaluation,
 	}
-	return &run, nil, nil
+	switch evaluation.Result {
+	case automations.AutomationConditionTrue:
+		plan.kind = plannedOutcomeRun
+	case automations.AutomationConditionFalse:
+		plan.kind = plannedOutcomeSkip
+		plan.reason = automations.AutomationSkipConditionsFalse
+	case automations.AutomationConditionUnknown:
+		plan.kind = plannedOutcomeSkip
+		plan.reason = automations.AutomationSkipConditionsUnknown
+	default:
+		return fmt.Errorf(
+			"%w: condition evaluation for automation %q has an unknown result",
+			automations.ErrInvalidAutomation, plan.record.ID,
+		)
+	}
+	return nil
+}
+
+// commitDeviceFact writes every planned outcome in Automation ID order. The
+// caller owns the enclosing transaction, so one failure rolls back all writes.
+func (repo *AutomationRepository) commitDeviceFact(
+	ctx context.Context,
+	queries *dbsqlc.Queries,
+	plans []plannedAutomation,
+	summary automations.DeviceFactSummary,
+	admittedAt time.Time,
+	result *automations.AdmissionResult,
+) error {
+	for _, plan := range plans {
+		result.Outcome.MatchedAutomations++
+		switch plan.kind {
+		case plannedOutcomeDuplicate:
+			result.Outcome.DuplicateOutcomes++
+		case plannedOutcomeRun:
+			runID, err := repo.newRunID()
+			if err != nil {
+				return fmt.Errorf("allocate automation run ID: %w", err)
+			}
+			run := automations.NewAutomationRunSnapshot(
+				plan.record,
+				runID,
+				automations.RunSourceDeviceFact,
+				&summary,
+				plan.matched,
+				plan.decision,
+				admittedAt,
+			)
+			if err = repo.persistRun(ctx, queries, run); err != nil {
+				return err
+			}
+			if err = repo.writeReceipt(
+				ctx, queries, summary.FactID, plan.record.ID,
+				automations.AutomationHistoryRun, string(run.ID),
+			); err != nil {
+				return err
+			}
+			result.Outcome.StartedRuns++
+			result.StartedRuns = append(result.StartedRuns, run)
+		case plannedOutcomeSkip:
+			skip, err := repo.recordSkip(ctx, queries, plan, summary, admittedAt)
+			if err != nil {
+				return err
+			}
+			result.Outcome.RecordedSkips++
+			result.Skips = append(result.Skips, skip)
+		}
+	}
+	return nil
 }
 
 // persistRun writes one Run snapshot and its initial not_attempted Steps. The
@@ -221,6 +402,10 @@ func (repo *AutomationRepository) persistRun(
 		return err
 	}
 	matched, err := encodeTriggerIDs(run.MatchedTriggerIDs)
+	if err != nil {
+		return err
+	}
+	decision, err := automations.EncodeAutomationConditionDecision(run.ConditionDecision)
 	if err != nil {
 		return err
 	}
@@ -243,6 +428,7 @@ func (repo *AutomationRepository) persistRun(
 		RunSource:                sql.NullString{String: string(run.Source), Valid: true},
 		RunStartedAt:             sql.NullString{String: recordedAt, Valid: true},
 		RunMatchedTriggerIdsJson: sql.NullString{String: string(matched), Valid: true},
+		ConditionDecisionJson:    sql.NullString{String: string(decision), Valid: true},
 	}); err != nil {
 		return err
 	}
@@ -258,36 +444,65 @@ func (repo *AutomationRepository) persistRun(
 	return nil
 }
 
-// recordSkip records one matching Fact's busy or stale_fact outcome with its
-// Trigger snapshots and deduplication receipt. The caller owns the transaction.
+// recordSkip records one matching Fact's non-Run outcome with its admission
+// provenance, Trigger snapshots, Condition decision, and deduplication receipt.
+// It validates the full Skip before writing, so a fabricated provenance never
+// reaches storage. The caller owns the transaction.
 func (repo *AutomationRepository) recordSkip(
 	ctx context.Context,
 	queries *dbsqlc.Queries,
-	record automations.AutomationRecord,
+	plan plannedAutomation,
 	summary automations.DeviceFactSummary,
-	matched []automations.TriggerID,
-	reason automations.AutomationSkipReason,
 	skippedAt time.Time,
 ) (automations.AdmissionSkip, error) {
 	skipID, err := repo.newSkipID()
 	if err != nil {
 		return automations.AdmissionSkip{}, fmt.Errorf("allocate automation skip ID: %w", err)
 	}
-	triggers, err := automations.MatchedTriggerSnapshots(record.Definition, matched)
+	triggers, err := automations.MatchedTriggerSnapshots(plan.record.Definition, plan.matched)
 	if err != nil {
 		return automations.AdmissionSkip{}, err
 	}
-	encodedTriggers, err := automations.EncodeMatchedTriggers(triggers)
+	skip := automations.AutomationSkip{
+		ID:                skipID,
+		AutomationID:      plan.record.ID,
+		AutomationName:    plan.record.Definition.Name,
+		Revision:          plan.record.Revision,
+		Source:            automations.RunSourceDeviceFact,
+		Fact:              &summary,
+		MatchedTriggers:   triggers,
+		Reason:            plan.reason,
+		ConditionDecision: plan.decision,
+		SkippedAt:         skippedAt.UTC(),
+	}
+	return repo.persistDeviceFactSkip(ctx, queries, skip)
+}
+
+// persistDeviceFactSkip writes one validated device-fact Skip and its
+// deduplication receipt.
+func (repo *AutomationRepository) persistDeviceFactSkip(
+	ctx context.Context,
+	queries *dbsqlc.Queries,
+	skip automations.AutomationSkip,
+) (automations.AdmissionSkip, error) {
+	if err := automations.ValidateAutomationSkip(skip); err != nil {
+		return automations.AdmissionSkip{}, err
+	}
+	encodedTriggers, err := automations.EncodeMatchedTriggers(skip.MatchedTriggers)
 	if err != nil {
 		return automations.AdmissionSkip{}, err
 	}
-	fact := storedFactColumns(&summary)
+	decision, err := automations.EncodeAutomationConditionDecision(skip.ConditionDecision)
+	if err != nil {
+		return automations.AdmissionSkip{}, err
+	}
+	fact := storedFactColumns(skip.Fact)
 	if err = queries.CreateHistorySkip(ctx, dbsqlc.CreateHistorySkipParams{
-		ID:                      string(skipID),
-		AutomationID:            string(record.ID),
-		AutomationName:          record.Definition.Name,
-		Revision:                record.Revision,
-		RecordedAt:              encodeAutomationTimestamp(skippedAt),
+		ID:                      string(skip.ID),
+		AutomationID:            string(skip.AutomationID),
+		AutomationName:          skip.AutomationName,
+		Revision:                skip.Revision,
+		RecordedAt:              encodeAutomationTimestamp(skip.SkippedAt),
 		FactID:                  fact.id,
 		FactFamily:              fact.family,
 		FactEntityID:            fact.entityID,
@@ -296,28 +511,193 @@ func (repo *AutomationRepository) recordSkip(
 		FactValueJson:           fact.valueJSON,
 		FactEmittedAt:           fact.emittedAt,
 		SkipMatchedTriggersJson: sql.NullString{String: string(encodedTriggers), Valid: true},
-		SkipReason:              sql.NullString{String: string(reason), Valid: true},
+		SkipReason:              sql.NullString{String: string(skip.Reason), Valid: true},
+		SkipSource:              sql.NullString{String: string(skip.Source), Valid: true},
+		ConditionDecisionJson:   sql.NullString{String: string(decision), Valid: true},
 	}); err != nil {
 		return automations.AdmissionSkip{}, err
 	}
 	if err = repo.writeReceipt(
-		ctx, queries, summary.FactID, record.ID, automations.AutomationHistorySkip, string(skipID),
+		ctx, queries, skip.Fact.FactID, skip.AutomationID, automations.AutomationHistorySkip, string(skip.ID),
 	); err != nil {
 		return automations.AdmissionSkip{}, err
 	}
 	return automations.AdmissionSkip{
-		SkipID:       skipID,
-		AutomationID: record.ID,
-		Revision:     record.Revision,
-		Reason:       reason,
-		FactID:       summary.FactID,
-		Family:       summary.Family,
-		Variant:      summary.Variant,
+		SkipID:       skip.ID,
+		AutomationID: skip.AutomationID,
+		Revision:     skip.Revision,
+		Source:       skip.Source,
+		Reason:       skip.Reason,
+		FactID:       &skip.Fact.FactID,
+		Family:       skip.Fact.Family,
+		Variant:      skip.Fact.Variant,
 	}, nil
 }
 
+// persistManualSkip writes one validated manual Condition Skip. It has no Fact,
+// no Trigger snapshots, no Steps, and no receipt, so repeated blocked manual
+// requests stay distinct.
+func (repo *AutomationRepository) persistManualSkip(
+	ctx context.Context,
+	queries *dbsqlc.Queries,
+	record automations.AutomationRecord,
+	reason automations.AutomationSkipReason,
+	decision automations.AutomationConditionDecision,
+	skippedAt time.Time,
+) (automations.AutomationSkip, error) {
+	skipID, err := repo.newSkipID()
+	if err != nil {
+		return automations.AutomationSkip{}, fmt.Errorf("allocate automation skip ID: %w", err)
+	}
+	skip := automations.AutomationSkip{
+		ID:                skipID,
+		AutomationID:      record.ID,
+		AutomationName:    record.Definition.Name,
+		Revision:          record.Revision,
+		Source:            automations.RunSourceManual,
+		MatchedTriggers:   []automations.AutomationTrigger{},
+		Reason:            reason,
+		ConditionDecision: decision,
+		SkippedAt:         skippedAt.UTC(),
+	}
+	if err = automations.ValidateAutomationSkip(skip); err != nil {
+		return automations.AutomationSkip{}, err
+	}
+	encodedTriggers, err := automations.EncodeMatchedTriggers(skip.MatchedTriggers)
+	if err != nil {
+		return automations.AutomationSkip{}, err
+	}
+	encodedDecision, err := automations.EncodeAutomationConditionDecision(decision)
+	if err != nil {
+		return automations.AutomationSkip{}, err
+	}
+	if err = queries.CreateHistorySkip(ctx, dbsqlc.CreateHistorySkipParams{
+		ID:                      string(skip.ID),
+		AutomationID:            string(skip.AutomationID),
+		AutomationName:          skip.AutomationName,
+		Revision:                skip.Revision,
+		RecordedAt:              encodeAutomationTimestamp(skip.SkippedAt),
+		SkipMatchedTriggersJson: sql.NullString{String: string(encodedTriggers), Valid: true},
+		SkipReason:              sql.NullString{String: string(skip.Reason), Valid: true},
+		SkipSource:              sql.NullString{String: string(skip.Source), Valid: true},
+		ConditionDecisionJson:   sql.NullString{String: string(encodedDecision), Valid: true},
+	}); err != nil {
+		return automations.AutomationSkip{}, err
+	}
+	return skip, nil
+}
+
+// manualConditionDecision decides one manual admission's Condition decision. It
+// returns a non-empty blocked reason only when Conditions evaluated false or
+// unknown. An explicit bypass never reads State or evaluates a Condition, and a
+// definition without Conditions records not_configured rather than a fabricated
+// evaluation.
+func manualConditionDecision(
+	conditions *automations.AutomationCondition,
+	bypass bool,
+	snapshot devices.EntityStateSnapshot,
+	admittedAt time.Time,
+) (automations.AutomationConditionDecision, automations.AutomationSkipReason, error) {
+	if bypass {
+		if conditions == nil {
+			return automations.AutomationConditionDecision{
+				Mode:            automations.AutomationConditionDecisionNotConfigured,
+				BypassRequested: true,
+			}, "", nil
+		}
+		return automations.AutomationConditionDecision{
+			Mode:            automations.AutomationConditionDecisionBypassed,
+			BypassRequested: true,
+			Snapshot:        conditions,
+		}, "", nil
+	}
+	if conditions == nil {
+		return automations.AutomationConditionDecision{
+			Mode: automations.AutomationConditionDecisionNotConfigured,
+		}, "", nil
+	}
+	required, err := automations.RequiredConditionEntityIDs(*conditions)
+	if err != nil {
+		return automations.AutomationConditionDecision{}, "", err
+	}
+	if missing := missingSnapshotCoverage(required, snapshot); len(missing) > 0 {
+		return automations.AutomationConditionDecision{}, "", &automations.ConditionSnapshotRequiredError{
+			RequiredEntityIDs: missing,
+		}
+	}
+	evaluation, err := automations.EvaluateAutomationConditions(*conditions, snapshot, admittedAt)
+	if err != nil {
+		return automations.AutomationConditionDecision{}, "", err
+	}
+	decision := automations.AutomationConditionDecision{
+		Mode:       automations.AutomationConditionDecisionEvaluated,
+		Snapshot:   conditions,
+		Evaluation: &evaluation,
+	}
+	switch evaluation.Result {
+	case automations.AutomationConditionTrue:
+		return decision, "", nil
+	case automations.AutomationConditionFalse:
+		return decision, automations.AutomationSkipConditionsFalse, nil
+	case automations.AutomationConditionUnknown:
+		return decision, automations.AutomationSkipConditionsUnknown, nil
+	default:
+		return automations.AutomationConditionDecision{}, "", fmt.Errorf(
+			"%w: manual condition evaluation has an unknown result", automations.ErrInvalidAutomation,
+		)
+	}
+}
+
+// notEvaluatedDecision records deliberate non-evaluation of a stale or busy Skip.
+// A configured definition retains its Condition snapshot without an evaluation;
+// an unconditioned definition records not_configured. A Skip never requests a
+// bypass, so automatic outcomes always log bypass_requested=false.
+func notEvaluatedDecision(
+	conditions *automations.AutomationCondition,
+) automations.AutomationConditionDecision {
+	if conditions == nil {
+		return automations.AutomationConditionDecision{
+			Mode: automations.AutomationConditionDecisionNotConfigured,
+		}
+	}
+	return automations.AutomationConditionDecision{
+		Mode:     automations.AutomationConditionDecisionNotEvaluated,
+		Snapshot: conditions,
+	}
+}
+
+// sortedRequiredEntityIDs returns the sorted, deduplicated union of the Entity
+// IDs eligible Conditions require, or nil when none do.
+func sortedRequiredEntityIDs(required map[devices.EntityID]struct{}) []devices.EntityID {
+	if len(required) == 0 {
+		return nil
+	}
+	ids := make([]devices.EntityID, 0, len(required))
+	for id := range required {
+		ids = append(ids, id)
+	}
+	slices.Sort(ids)
+	return slices.Compact(ids)
+}
+
+// missingSnapshotCoverage returns the complete required set when the supplied
+// snapshot does not cover all of it, and nil when coverage is complete. A known
+// missing Entity is covered evidence, so it never triggers another read.
+func missingSnapshotCoverage(
+	required []devices.EntityID,
+	snapshot devices.EntityStateSnapshot,
+) []devices.EntityID {
+	for _, entityID := range required {
+		if _, covered := snapshot.Entries[entityID]; !covered {
+			return required
+		}
+	}
+	return nil
+}
+
 // writeReceipt records one matched-Fact outcome so a redelivered Fact never
-// creates a second Run or Skip for the same Automation.
+// creates a second Run or Skip for the same Automation, even after the
+// explanatory history row is pruned.
 func (repo *AutomationRepository) writeReceipt(
 	ctx context.Context,
 	queries *dbsqlc.Queries,
