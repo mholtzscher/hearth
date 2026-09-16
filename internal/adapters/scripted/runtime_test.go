@@ -66,6 +66,10 @@ type fakeSession struct {
 	lastResponder         *fakeResponder
 	observationPublishErr error
 	eventPublishErr       error
+	// rejectAvailabilityUnhealthy emulates Core: once the session holds an
+	// unhealthy health report, availability batches are rejected with
+	// adapter_unhealthy instead of recorded.
+	rejectAvailabilityUnhealthy bool
 }
 
 func (session *fakeSession) PublishObservation(
@@ -151,6 +155,13 @@ func (session *fakeSession) ReportEntityAvailability(
 ) error {
 	session.mu.Lock()
 	defer session.mu.Unlock()
+	if session.rejectAvailabilityUnhealthy && len(session.health) > 0 &&
+		session.health[len(session.health)-1].Status == adapter.HealthUnhealthy {
+		return &adapter.EntityAvailabilityRejectedError{
+			Code:    adapter.EntityAvailabilityAdapterUnhealthy,
+			Message: "Adapter is not healthy",
+		}
+	}
 	session.availability = append(session.availability, reports)
 	if len(reports) < 1 || len(reports) > fakeAvailabilityBatchLimit {
 		return fmt.Errorf("entity availability batch must contain 1-256 reports, got %d", len(reports))
@@ -902,6 +913,41 @@ func TestRuntimeInitializeOmitsAvailabilityForUnhealthyDevice(t *testing.T) {
 	}
 	// The flag suppresses availability only: both Entities still publish their
 	// initial Observation.
+	if len(session.observations) != 2 {
+		t.Fatalf("initial observations = %d, want 2", len(session.observations))
+	}
+}
+
+// TestRuntimeInitializeToleratesUnhealthyAvailabilityRejection protects
+// startup of a mixed config whose aggregate health is unhealthy: Core rejects
+// availability batches from an unhealthy Adapter by design, so Initialize
+// must tolerate that rejection and still publish first values instead of
+// failing. It fails if any other report error is tolerated or if startup
+// aborts on the expected rejection.
+func TestRuntimeInitializeToleratesUnhealthyAvailabilityRejection(t *testing.T) {
+	t.Parallel()
+	session := &fakeSession{rejectAvailabilityUnhealthy: true}
+	runtime, err := scripted.New(session, []scripted.DeviceSpec{unhealthyOmitDevice(), powerDevice()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if attachErr := runtime.Attach([]adapter.Binding{
+		{BindingKey: "simulated-broken", Entities: []adapter.EntityBinding{{Key: "power", EntityID: "ent_broken"}}},
+		{BindingKey: "simulated-light", Entities: []adapter.EntityBinding{{Key: "power", EntityID: "ent_power"}}},
+	}); attachErr != nil {
+		t.Fatal(attachErr)
+	}
+	if initErr := runtime.Initialize(context.Background()); initErr != nil {
+		t.Fatalf("Initialize with Core-like unhealthy rejection = %v, want nil", initErr)
+	}
+	if len(session.health) != 1 || session.health[0].Status != adapter.HealthUnhealthy {
+		t.Fatalf("health reports = %+v, want one unhealthy", session.health)
+	}
+	// Availability was attempted (and rejected by the Core-like fake), while
+	// both Entities still published their initial Observation.
+	if len(session.availability) != 0 {
+		t.Fatalf("availability batches recorded = %d, want 0 (all rejected)", len(session.availability))
+	}
 	if len(session.observations) != 2 {
 		t.Fatalf("initial observations = %d, want 2", len(session.observations))
 	}

@@ -3,6 +3,7 @@ package scripted
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"maps"
@@ -405,6 +406,17 @@ func (runtime *Runtime) Initialize(ctx context.Context) error {
 	for start := 0; start < len(reports); start += availabilityBatchLimit {
 		end := min(start+availabilityBatchLimit, len(reports))
 		if reportErr := runtime.session.ReportEntityAvailability(ctx, reports[start:end]); reportErr != nil {
+			// Core rejects availability batches from an unhealthy Adapter by
+			// design. An Adapter that just reported itself unhealthy keeps its
+			// Entities effectively unavailable through adapter health, so that
+			// rejection is not a startup failure. Every other report error
+			// still is.
+			var rejected *adapter.EntityAvailabilityRejectedError
+			if health.Status == adapter.HealthUnhealthy &&
+				errors.As(reportErr, &rejected) &&
+				rejected.Code == adapter.EntityAvailabilityAdapterUnhealthy {
+				continue
+			}
 			return fmt.Errorf("report Entity availability: %w", reportErr)
 		}
 	}
