@@ -14,14 +14,19 @@ import (
 
 	natsserver "github.com/nats-io/nats-server/v2/server"
 
-	simulatoradapter "github.com/mholtzscher/hearth/internal/adapters/simulator"
+	"github.com/mholtzscher/hearth/internal/adapters/scripted"
 	"github.com/mholtzscher/hearth/internal/contracts/v1/natswire"
 	"github.com/mholtzscher/hearth/sdk/adapter"
-	sdkadapterenumeventv1 "github.com/mholtzscher/hearth/sdk/adapter/enumeventv1"
-	sdkpowerv1 "github.com/mholtzscher/hearth/sdk/adapter/powerv1"
 )
 
-const sliceAdapterID = "simulator"
+const (
+	sliceAdapterID = "simulator"
+	// sliceEntityEventSinglePress and sliceEntityEventDoublePress are the
+	// synthetic Entity Event names the slice Devices advertise in support and
+	// tests report.
+	sliceEntityEventSinglePress = "single_press"
+	sliceEntityEventDoublePress = "double_press"
+)
 
 // TestAutomationFactDrivesCommandThroughCore protects A14's observation family
 // at the app boundary: one real SDK adapter publishes an accepted Observation,
@@ -69,7 +74,7 @@ type sliceAdapter struct {
 	powerEntityID string
 	eventEntityID string
 	session       *adapter.Session
-	simulated     *simulatoradapter.Adapter
+	runtime       *scripted.Runtime
 	stop          func()
 }
 
@@ -86,16 +91,54 @@ func (slice sliceAdapter) publish(ctx context.Context) error {
 // emit sends one accepted Entity Event for the event-source Entity, which the
 // Entity Event Trigger matches.
 func (slice sliceAdapter) emit(ctx context.Context, name string) error {
-	_, err := slice.simulated.EmitEntityEvent(ctx, name)
+	_, err := slice.runtime.PublishNow(
+		ctx, slice.eventEntityID, json.RawMessage(fmt.Sprintf(`{"name":%q}`, name)),
+	)
 	return err
 }
 
-// startSliceAdapter wires one simulator adapter to the running Core: it
-// registers a stateful power Entity and an event-source Entity, initializes
-// their health and availability, and serves the power Entity's set Command. The
-// entity-events scenario supplies both the power support and the synthetic
-// single_press/double_press event names, so one adapter proves both fact
-// families. The returned stop function joins the command subscription.
+// sliceEntityEventsDevice builds the scripted Device every adapter in these
+// slices registers: a stateful Power Entity that starts false and answers set
+// with the scripted default accept-and-publish behavior, plus an event-source
+// Entity advertising the synthetic single_press and double_press reports.
+func sliceEntityEventsDevice(bindingKey, name string) scripted.DeviceSpec {
+	return scripted.DeviceSpec{
+		BindingKey: bindingKey,
+		Name:       name,
+		Kind:       "light",
+		Entities: []scripted.EntitySpec{
+			{
+				Key:  "power",
+				Name: "Power",
+				Type: "hearth.power/v1",
+				Support: map[string]any{
+					"state":      map[string]any{},
+					"operations": map[string]any{"set": map[string]any{}},
+				},
+				Initial: false,
+			},
+			{
+				Key:  "events",
+				Name: "Events",
+				Type: "hearth.enumevent/v1",
+				Support: map[string]any{
+					"state":      map[string]any{},
+					"operations": map[string]any{},
+					"events": map[string]any{
+						"names": []any{sliceEntityEventSinglePress, sliceEntityEventDoublePress},
+					},
+				},
+			},
+		},
+	}
+}
+
+// startSliceAdapter wires one scripted adapter to the running Core: it registers
+// a stateful power Entity and an event-source Entity, initializes their health
+// and availability, and serves Commands for the power Entity. The Device script
+// supplies both the power support and the synthetic single_press/double_press
+// event names, so one adapter proves both fact families. The returned stop
+// function joins the command subscription.
 func startSliceAdapter(
 	ctx context.Context,
 	t *testing.T,
@@ -111,54 +154,37 @@ func startSliceAdapter(
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = session.Close() })
-	simulated, err := simulatoradapter.New(session, simulatoradapter.ScenarioEntityEvents)
-	if err != nil {
-		t.Fatal(err)
-	}
-	powerExternalID := "office-light.power"
-	powerDescriptor, err := sdkpowerv1.NewEntityDescriptor(adapter.EntityMetadata{
-		Key: "power", ExternalID: powerExternalID, Name: "Power",
-	}, simulated.Support())
-	if err != nil {
-		t.Fatal(err)
-	}
-	eventsDescriptor, err := sdkadapterenumeventv1.NewEntityDescriptor(adapter.EntityMetadata{
-		Key: "events", ExternalID: "office-light.events", Name: "Events",
-	}, simulated.EntityEventSupport())
-	if err != nil {
-		t.Fatal(err)
-	}
-	deviceExternalID := "office-light"
-	binding, err := session.Register(ctx, adapter.Registration{
-		BindingKey: "office-light",
-		Device: adapter.DeviceDescriptor{
-			ExternalID: &deviceExternalID, Name: "Office light", Kind: "light",
-		},
-		Entities: []adapter.EntityDescriptor{powerDescriptor, eventsDescriptor},
+	scriptedRuntime, err := scripted.New(session, []scripted.DeviceSpec{
+		sliceEntityEventsDevice("office-light", "Office light"),
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	powerEntityID := string(bindingEntityID(t, binding, "power"))
-	eventEntityID := string(bindingEntityID(t, binding, "events"))
+	registrations := scriptedRuntime.Registrations()
+	bindings := make([]adapter.Binding, 0, len(registrations))
+	for _, registration := range registrations {
+		binding, registerErr := session.Register(ctx, registration)
+		if registerErr != nil {
+			t.Fatal(registerErr)
+		}
+		bindings = append(bindings, binding)
+	}
+	if attachErr := scriptedRuntime.Attach(bindings); attachErr != nil {
+		t.Fatal(attachErr)
+	}
+	powerEntityID := string(bindingEntityID(t, bindings[0], "power"))
+	eventEntityID := string(bindingEntityID(t, bindings[0], "events"))
 	if powerEntityID == eventEntityID {
 		t.Fatalf("registration reused one Entity ID for power and events: %s", powerEntityID)
 	}
-	if initializeErr := simulated.Initialize(ctx, powerEntityID); initializeErr != nil {
+	if initializeErr := scriptedRuntime.Initialize(ctx); initializeErr != nil {
 		t.Fatal(initializeErr)
-	}
-	if initializeErr := simulated.InitializeEntityEventSource(ctx, eventEntityID); initializeErr != nil {
-		t.Fatal(initializeErr)
-	}
-	handler, err := simulated.CommandHandler(powerEntityID)
-	if err != nil {
-		t.Fatal(err)
 	}
 	serveContext, stopServe := context.WithCancel(ctx)
 	served := make(chan struct{})
 	go func() {
 		defer close(served)
-		_ = session.ServeCommands(serveContext, handler)
+		_ = session.ServeCommands(serveContext, scriptedRuntime.CommandHandler())
 	}()
 	// The command subject needs the Adapter runtime identity Core assigned, so
 	// the barrier reads it from the running Core instead of guessing.
@@ -168,7 +194,7 @@ func startSliceAdapter(
 		powerEntityID: powerEntityID,
 		eventEntityID: eventEntityID,
 		session:       session,
-		simulated:     simulated,
+		runtime:       scriptedRuntime,
 		stop: func() {
 			stopServe()
 			<-served

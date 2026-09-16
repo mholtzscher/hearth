@@ -22,7 +22,7 @@ Run a small mutation-testing trial with `mise run mutation-test -- ./contracts/v
 
 `hearthd` accepts any configured HTTP bind address. The example remains `127.0.0.1:8080`; bind to a non-loopback address only on a trusted network because the HTTP API has no authentication.
 
-Run the first-light simulator with `go run ./cmd/hearth-simulator -config configs/simulator.yaml` after copying `configs/simulator.example.yaml`. Its `scenario` may be `happy`, `adapter-unhealthy`, `entity-unavailable`, `delayed-source-time`, `future-clock-skew`, `upstream-rejection`, `no-op-refresh`, `overlapping-opposite-command`, `outcome-timeout`, `interrupted-command`, `restart-before-ack`, or `entity-events`. `happy` reports a healthy Adapter and available Entity before publishing State. `adapter-unhealthy` proves that Core rejects a Command before dispatch. `entity-unavailable` proves that availability is advisory: Core dispatches the Command, and the simulator reports the Entity available after the recovery attempt succeeds. Heartbeat expiry, takeover, stale-runtime isolation, Core readiness recovery overlays, and graceful release remain deterministic process-test scenarios. Raw duplicate and malformed Observation cases remain transport-test scenarios. For agent-driven validation against simulated Devices, copy `configs/simulator.scripted.example.yaml` instead: its `devices` block declares Devices and Entities of any built-in type with looping output values on an interval, per-operation Command behavior, and an optional loopback control channel for publishing, pausing, and resuming scripts; see `specs/simulator-harness.md`. `configs/simulator.full.example.yaml` exercises every harness feature across all sixteen built-in Entity types.
+Run the first-light simulator with `go run ./cmd/hearth-simulator -config configs/simulator.yaml` after copying `configs/simulator.example.yaml`: it declares one scripted `simulated-light` power Device that reports a healthy Adapter and available Entity before publishing State. Every Device and Entity is declared in the config's `devices` block with looping output values on an interval, per-operation Command behavior, and an optional loopback control channel for publishing, pausing, and resuming scripts; Device faults are config, not code: unhealthy health with omitted availability, initially unavailable Entities repaired by a `mark_available` Command, rejected or outcome-less Commands, and source and received clock offsets. See `specs/simulator-harness.md`; `configs/simulator.scripted.example.yaml` adds a second Device, and `configs/simulator.full.example.yaml` exercises every harness feature across all sixteen built-in Entity types. Heartbeat expiry, takeover, stale-runtime isolation, Core readiness recovery overlays, and graceful release remain deterministic process-test scenarios. Raw duplicate and malformed Observation cases remain transport-test scenarios.
 
 For automated simulator validation inside Herdr, run `mise run simulator-start`
 (or add `-- --dashboard`). It creates an isolated local NATS/JetStream, Core,
@@ -34,20 +34,20 @@ only that tab while preserving configs, logs, and data. See the
 
 ### Entity Event recovery recipe
 
-Entity Events are named occurrences, not State. `entity-events` registers an `events` Entity beside the unchanged `power` Entity and Binding key; `power` still accepts `set` Commands and reports State, while `events` advertises `single_press` and `double_press` and reads `state: null` forever. This is the proof recipe for the Core-offline guarantee and requires no hardware and no automations:
+Entity Events are named occurrences, not State. The scripted `simulated-button` Device in `configs/simulator.scripted.example.yaml` registers an `events` Entity beside the `simulated-light` power Device; `power` still accepts `set` Commands and reports State, while `events` advertises `single_press` and `double_press` and reads `state: null` forever. This is the proof recipe for the Core-offline guarantee and requires no hardware and no automations:
 
 ```sh
 cp configs/hearthd.example.yaml configs/hearthd.yaml
-cp configs/simulator.example.yaml configs/simulator.yaml
-# edit configs/simulator.yaml so that: scenario: entity-events
+cp configs/simulator.scripted.example.yaml configs/simulator.yaml
 mise run brokers
 go run ./cmd/hearthd -config configs/hearthd.yaml
 go run ./cmd/hearth-simulator -config configs/simulator.yaml
 ```
 
-Type `single_press` and `double_press` as separate lines on the simulator's standard input and press Enter for each. While the Session is connected, each accepted line publishes one synthetic report; a line typed while a report is still publishing is logged and dropped rather than queued, and end of input stops only input. Stop `hearthd` (Ctrl-C) with the simulator still running and connected, keep typing for a few reports, then start `hearthd` again with the same `sqlite_path`. After the restart, Core records the backlog and the history endpoint returns each report exactly once:
+Each loopback control-channel request publishes one report for the `events` Entity and returns its canonical publication ID. Stop `hearthd` (Ctrl-C) with the simulator still running and connected, publish a few more reports, then start `hearthd` again with the same `sqlite_path`. After the restart, Core records the backlog and the history endpoint returns each report exactly once:
 
 ```sh
+curl -X POST http://127.0.0.1:8181/v1/sim/entities/<events_ent_id>/publish -d '{"name":"single_press"}'
 curl http://127.0.0.1:8080/v1/entities/<power_ent_id>
 curl http://127.0.0.1:8080/v1/entities/<events_ent_id>
 curl 'http://127.0.0.1:8080/v1/entities/<events_ent_id>/events?limit=50'

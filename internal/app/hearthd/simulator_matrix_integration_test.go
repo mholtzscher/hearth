@@ -24,7 +24,7 @@ import (
 	"github.com/nats-io/nats.go/jetstream"
 
 	contractsv1 "github.com/mholtzscher/hearth/contracts/v1"
-	simulatoradapter "github.com/mholtzscher/hearth/internal/adapters/simulator"
+	"github.com/mholtzscher/hearth/internal/adapters/scripted"
 	simulatorapp "github.com/mholtzscher/hearth/internal/app/simulator"
 	"github.com/mholtzscher/hearth/internal/contracts/v1/natswire"
 	"github.com/mholtzscher/hearth/internal/modules/devices"
@@ -34,7 +34,6 @@ import (
 	platformdb "github.com/mholtzscher/hearth/internal/platform/db"
 	platformnats "github.com/mholtzscher/hearth/internal/platform/nats"
 	"github.com/mholtzscher/hearth/sdk/adapter"
-	sdkpowerv1 "github.com/mholtzscher/hearth/sdk/adapter/powerv1"
 )
 
 const (
@@ -54,7 +53,12 @@ type wireObservation struct {
 type simulatorMatrixOptions struct {
 	dependencies devices.Dependencies
 	manual       bool
-	ackWait      time.Duration
+	// observationFault makes the harness run a hand-rolled Adapter that
+	// publishes one raw-wire Observation fault instead of the scripted Devices:
+	// simulatorMatrixDuplicateFault or simulatorMatrixMalformedFault. The zero
+	// value runs the scripted Devices the harness was given.
+	observationFault string
+	ackWait          time.Duration
 	// logLevel selects the shared JSON log threshold; the zero value keeps
 	// Info so existing matrix tests never capture Debug transport progress.
 	logLevel             slog.Level
@@ -122,8 +126,12 @@ func (buffer *lockedBuffer) String() string {
 	return buffer.Buffer.String()
 }
 
-//nolint:gocognit,gocyclo,cyclop // Integration harness setup keeps resource ownership visible in one place.
-func newSimulatorMatrixHarness(t *testing.T, scenario string, options simulatorMatrixOptions) *simulatorMatrixHarness {
+//nolint:gocognit // Integration harness setup keeps resource ownership visible in one place.
+func newSimulatorMatrixHarness(
+	t *testing.T,
+	matrixDevices []scripted.DeviceSpec,
+	options simulatorMatrixOptions,
+) *simulatorMatrixHarness {
 	t.Helper()
 	// Every SDK call in a test shares this harness context, so the budget
 	// must cover a full takeover cycle (claim, expiry, replacement claim)
@@ -253,13 +261,13 @@ func newSimulatorMatrixHarness(t *testing.T, scenario string, options simulatorM
 	}
 	harness.hasSimulator = true
 	go func() {
-		if scenario == simulatorMatrixDuplicateFault || scenario == simulatorMatrixMalformedFault {
-			harness.simulatorErrors <- harness.runObservationFaultAdapter(ctx, scenario, logger)
+		if options.observationFault != "" {
+			harness.simulatorErrors <- harness.runObservationFaultAdapter(ctx, options.observationFault, logger)
 			return
 		}
 		harness.simulatorErrors <- simulatorapp.Run(ctx, simulatorapp.Config{
 			AdapterID: simulatorMatrixAdapterID, NATSURL: harness.server.ClientURL(),
-			BindingKey: "simulated-light", Scenario: scenario,
+			Devices: matrixDevices,
 		}, logger)
 	}()
 
@@ -275,6 +283,7 @@ func newSimulatorMatrixHarness(t *testing.T, scenario string, options simulatorM
 		harness.entityID = devices.EntityID(entityID)
 		return true, nil
 	})
+	wantHealth, wantAvailability := simulatorMatrixExpectedReadiness(t, matrixDevices)
 	waitForMatrixCondition(t, 5*time.Second, func() (bool, error) {
 		instance, adapterErr := harness.service.GetAdapter(harness.ctx, simulatorMatrixAdapterID)
 		if adapterErr != nil {
@@ -284,19 +293,12 @@ func newSimulatorMatrixHarness(t *testing.T, scenario string, options simulatorM
 		if entityErr != nil {
 			return false, entityErr
 		}
-		wantHealth := devices.AdapterHealthHealthy
-		wantAvailability := devices.EntityAvailabilityAvailable
-		switch scenario {
-		case simulatoradapter.ScenarioAdapterUnhealthy:
-			wantHealth = devices.AdapterHealthUnhealthy
-			wantAvailability = devices.EntityAvailabilityUnavailable
-		case simulatoradapter.ScenarioEntityUnavailable:
-			wantAvailability = devices.EntityAvailabilityUnavailable
-		}
 		return instance.Health.Status == wantHealth &&
 			entity.Availability.Status == wantAvailability, nil
 	})
-	if scenario != simulatoradapter.ScenarioAdapterUnhealthy {
+	// Core never dispatches a Command to an unhealthy Adapter, so its Command
+	// subscriptions are not part of the ready surface this harness waits for.
+	if wantHealth == devices.AdapterHealthHealthy {
 		runtimeID := currentMatrixRuntimeID(t, harness)
 		commandSubject, subjectErr := natswire.CommandSubject(
 			simulatorMatrixAdapterID, string(runtimeID), string(harness.entityID), "set",
@@ -368,9 +370,14 @@ func (harness *simulatorMatrixHarness) Close() {
 	})
 }
 
+// runObservationFaultAdapter runs the raw-wire fault Adapters: it registers the
+// matrix power Device, reports it healthy and available, publishes the
+// requested Observation fault, then serves Commands until ctx ends. It
+// deliberately skips Runtime.Initialize so the fault Observation is the only
+// publication the Entity ever makes.
 func (harness *simulatorMatrixHarness) runObservationFaultAdapter(
 	ctx context.Context,
-	scenario string,
+	fault string,
 	logger *slog.Logger,
 ) error {
 	session, err := adapter.Connect(ctx, adapter.Config{
@@ -381,26 +388,20 @@ func (harness *simulatorMatrixHarness) runObservationFaultAdapter(
 		return err
 	}
 	defer session.Close()
-	simulated, err := simulatoradapter.New(session, simulatoradapter.ScenarioHappy)
+	simulated, err := scripted.New(session, []scripted.DeviceSpec{simulatorMatrixPowerDevice()})
 	if err != nil {
 		return err
 	}
-	descriptor, err := sdkpowerv1.NewEntityDescriptor(adapter.EntityMetadata{
-		Key: "power", ExternalID: "simulated-light.power", Name: "Power",
-	}, simulated.Support())
+	registrations := simulated.Registrations()
+	if len(registrations) != 1 {
+		return fmt.Errorf("matrix power Device produced %d registrations, want 1", len(registrations))
+	}
+	binding, err := session.Register(ctx, registrations[0])
 	if err != nil {
 		return err
 	}
-	deviceExternalID := "simulated-light"
-	binding, err := session.Register(ctx, adapter.Registration{
-		BindingKey: "simulated-light",
-		Device: adapter.DeviceDescriptor{
-			ExternalID: &deviceExternalID, Name: "Simulated light", Kind: "light",
-		},
-		Entities: []adapter.EntityDescriptor{descriptor},
-	})
-	if err != nil {
-		return err
+	if attachErr := simulated.Attach([]adapter.Binding{binding}); attachErr != nil {
+		return attachErr
 	}
 	var entityID string
 	for _, entity := range binding.Entities {
@@ -423,14 +424,10 @@ func (harness *simulatorMatrixHarness) runObservationFaultAdapter(
 	}}); availabilityErr != nil {
 		return availabilityErr
 	}
-	if publishErr := harness.publishObservationFault(ctx, scenario, entityID); publishErr != nil {
+	if publishErr := harness.publishObservationFault(ctx, fault, entityID); publishErr != nil {
 		return publishErr
 	}
-	handler, err := simulated.CommandHandler(entityID)
-	if err != nil {
-		return err
-	}
-	serveErr := session.ServeCommands(ctx, handler)
+	serveErr := session.ServeCommands(ctx, simulated.CommandHandler())
 	if errors.Is(serveErr, context.Canceled) || errors.Is(serveErr, adapter.ErrClosed) {
 		return nil
 	}
@@ -439,7 +436,7 @@ func (harness *simulatorMatrixHarness) runObservationFaultAdapter(
 
 func (harness *simulatorMatrixHarness) publishObservationFault(
 	ctx context.Context,
-	scenario string,
+	fault string,
 	entityID string,
 ) error {
 	observationID, err := devices.NewObservationID()
@@ -447,7 +444,7 @@ func (harness *simulatorMatrixHarness) publishObservationFault(
 		return err
 	}
 	var payload []byte
-	switch scenario {
+	switch fault {
 	case simulatorMatrixDuplicateFault:
 		correlationID, correlationErr := devices.NewCorrelationID()
 		if correlationErr != nil {
@@ -469,7 +466,7 @@ func (harness *simulatorMatrixHarness) publishObservationFault(
 	case simulatorMatrixMalformedFault:
 		payload = []byte("{")
 	default:
-		return fmt.Errorf("unknown Observation fault %q", scenario)
+		return fmt.Errorf("unknown Observation fault %q", fault)
 	}
 	instance, err := harness.service.GetAdapter(ctx, simulatorMatrixAdapterID)
 	if err != nil {
@@ -489,7 +486,7 @@ func (harness *simulatorMatrixHarness) publishObservationFault(
 	if _, publishErr := harness.jetstream.PublishMsg(ctx, message); publishErr != nil {
 		return fmt.Errorf("publish simulator fault Observation: %w", publishErr)
 	}
-	if scenario != simulatorMatrixDuplicateFault {
+	if fault != simulatorMatrixDuplicateFault {
 		return nil
 	}
 	acknowledgement, err := harness.jetstream.PublishMsg(ctx, message)
@@ -541,12 +538,13 @@ func (harness *simulatorMatrixHarness) postCommand(ctx context.Context, value bo
 func TestSimulatorObservationFailureMatrix(t *testing.T) {
 	t.Parallel()
 	tests := []struct {
-		name     string
-		scenario string
-		assert   func(*testing.T, *simulatorMatrixHarness)
+		name    string
+		devices []scripted.DeviceSpec
+		fault   string
+		assert  func(*testing.T, *simulatorMatrixHarness)
 	}{
 		{
-			name: "duplicate", scenario: simulatorMatrixDuplicateFault,
+			name: "duplicate", fault: simulatorMatrixDuplicateFault,
 			assert: func(t *testing.T, harness *simulatorMatrixHarness) {
 				state := harness.waitForState(t)
 				if string(state.Value) != "false" {
@@ -567,7 +565,8 @@ func TestSimulatorObservationFailureMatrix(t *testing.T) {
 			},
 		},
 		{
-			name: "delayed source time", scenario: simulatoradapter.ScenarioDelayedSourceTime,
+			name:    "delayed source time",
+			devices: []scripted.DeviceSpec{simulatorMatrixDelayedSourceTimeDevice()},
 			assert: func(t *testing.T, harness *simulatorMatrixHarness) {
 				state := harness.waitForState(t)
 				if state.SourceUpdatedAt == nil ||
@@ -577,7 +576,8 @@ func TestSimulatorObservationFailureMatrix(t *testing.T) {
 			},
 		},
 		{
-			name: "future clock skew", scenario: simulatoradapter.ScenarioFutureClockSkew,
+			name:    "future clock skew",
+			devices: []scripted.DeviceSpec{simulatorMatrixFutureClockSkewDevice()},
 			assert: func(t *testing.T, harness *simulatorMatrixHarness) {
 				state := harness.waitForState(t)
 				if !state.AdapterReceivedAt.After(state.ObservedAt.Add(time.Minute)) {
@@ -589,7 +589,7 @@ func TestSimulatorObservationFailureMatrix(t *testing.T) {
 			},
 		},
 		{
-			name: "malformed", scenario: simulatorMatrixMalformedFault,
+			name: "malformed", fault: simulatorMatrixMalformedFault,
 			assert: func(t *testing.T, harness *simulatorMatrixHarness) {
 				waitForMatrixCondition(t, 3*time.Second, func() (bool, error) {
 					return strings.Contains(harness.logs.String(), "acknowledging invalid observation"), nil
@@ -608,7 +608,9 @@ func TestSimulatorObservationFailureMatrix(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
-			harness := newSimulatorMatrixHarness(t, test.scenario, simulatorMatrixOptions{})
+			harness := newSimulatorMatrixHarness(t, test.devices, simulatorMatrixOptions{
+				observationFault: test.fault,
+			})
 			test.assert(t, harness)
 		})
 	}
@@ -619,7 +621,7 @@ func TestSimulatorCommandHTTPFailureMatrix(t *testing.T) {
 	t.Parallel()
 	tests := []struct {
 		name        string
-		scenario    string
+		devices     []scripted.DeviceSpec
 		options     simulatorMatrixOptions
 		prepare     func(*testing.T, *simulatorMatrixHarness)
 		wantStatus  int
@@ -628,17 +630,20 @@ func TestSimulatorCommandHTTPFailureMatrix(t *testing.T) {
 		wantFailure devices.CommandFailureCode
 	}{
 		{
-			name: "unhealthy adapter", scenario: simulatoradapter.ScenarioAdapterUnhealthy,
+			name:       "unhealthy adapter",
+			devices:    []scripted.DeviceSpec{simulatorMatrixUnhealthyDevice()},
 			wantStatus: http.StatusServiceUnavailable, wantDetail: "adapter unhealthy",
 			wantCommand: devices.CommandStatusAdapterUnhealthy, wantFailure: devices.CommandFailureAdapterUnhealthy,
 		},
 		{
-			name: "upstream rejection", scenario: simulatoradapter.ScenarioUpstreamRejection,
+			name:       "upstream rejection",
+			devices:    []scripted.DeviceSpec{simulatorMatrixRejectingDevice()},
 			wantStatus: http.StatusBadGateway, wantDetail: "upstream rejected command",
 			wantCommand: devices.CommandStatusRejected, wantFailure: devices.CommandFailureUpstreamRejected,
 		},
 		{
-			name: "outcome timeout", scenario: simulatoradapter.ScenarioOutcomeTimeout,
+			name:    "outcome timeout",
+			devices: []scripted.DeviceSpec{simulatorMatrixAcceptSilentDevice()},
 			options: simulatorMatrixOptions{dependencies: devices.Dependencies{
 				Now: func() time.Time { return time.Now().UTC().Add(-9500 * time.Millisecond) },
 			}},
@@ -686,7 +691,7 @@ func TestSimulatorCommandHTTPFailureMatrix(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
-			harness := newSimulatorMatrixHarness(t, test.scenario, test.options)
+			harness := newSimulatorMatrixHarness(t, test.devices, test.options)
 			if test.prepare != nil {
 				test.prepare(t, harness)
 			}
@@ -727,7 +732,8 @@ func TestSimulatorCommandHTTPFailureMatrix(t *testing.T) {
 
 func TestSimulatorUnavailableEntityRecoversThroughDispatchedCommand(t *testing.T) {
 	t.Parallel()
-	harness := newSimulatorMatrixHarness(t, simulatoradapter.ScenarioEntityUnavailable, simulatorMatrixOptions{})
+	matrixDevices := []scripted.DeviceSpec{simulatorMatrixUnavailableEntityDevice()}
+	harness := newSimulatorMatrixHarness(t, matrixDevices, simulatorMatrixOptions{})
 	before, err := harness.service.GetEntity(harness.ctx, harness.entityID)
 	if err != nil {
 		t.Fatal(err)
@@ -757,7 +763,8 @@ func TestSimulatorNoOpAndOverlappingCommands(t *testing.T) {
 	t.Parallel()
 	t.Run("no-op refresh", func(t *testing.T) {
 		t.Parallel()
-		harness := newSimulatorMatrixHarness(t, simulatoradapter.ScenarioNoOpRefresh, simulatorMatrixOptions{})
+		matrixDevices := []scripted.DeviceSpec{simulatorMatrixPowerDevice()}
+		harness := newSimulatorMatrixHarness(t, matrixDevices, simulatorMatrixOptions{})
 		initial := harness.waitForState(t)
 		status, body, err := harness.postCommand(harness.ctx, false)
 		if err != nil {
@@ -792,7 +799,8 @@ func TestSimulatorNoOpAndOverlappingCommands(t *testing.T) {
 
 	t.Run("overlapping opposite commands", func(t *testing.T) {
 		t.Parallel()
-		harness := newSimulatorMatrixHarness(t, simulatoradapter.ScenarioOverlappingCommands, simulatorMatrixOptions{})
+		matrixDevices := []scripted.DeviceSpec{simulatorMatrixPowerDevice()}
+		harness := newSimulatorMatrixHarness(t, matrixDevices, simulatorMatrixOptions{})
 		harness.waitForState(t)
 		type outcome struct {
 			status int
@@ -848,7 +856,8 @@ func TestSimulatorNoOpAndOverlappingCommands(t *testing.T) {
 
 func TestHTTPDisconnectLeavesCommandLifecycleActive(t *testing.T) {
 	t.Parallel()
-	harness := newSimulatorMatrixHarness(t, simulatoradapter.ScenarioOutcomeTimeout, simulatorMatrixOptions{
+	matrixDevices := []scripted.DeviceSpec{simulatorMatrixAcceptSilentDevice()}
+	harness := newSimulatorMatrixHarness(t, matrixDevices, simulatorMatrixOptions{
 		dependencies: devices.Dependencies{
 			Now: func() time.Time { return time.Now().UTC().Add(-9 * time.Second) },
 		},
@@ -899,7 +908,8 @@ func TestHTTPDisconnectLeavesCommandLifecycleActive(t *testing.T) {
 
 func TestSimulatorInterruptedCommandSurvivesLateLinkedObservation(t *testing.T) {
 	t.Parallel()
-	harness := newSimulatorMatrixHarness(t, simulatoradapter.ScenarioInterruptedCommand, simulatorMatrixOptions{})
+	matrixDevices := []scripted.DeviceSpec{simulatorMatrixAcceptSilentDevice()}
+	harness := newSimulatorMatrixHarness(t, matrixDevices, simulatorMatrixOptions{})
 	harness.waitForState(t)
 	commandID, err := devices.NewCommandID()
 	if err != nil {
@@ -972,7 +982,8 @@ func TestSimulatorRestartBeforeAckRedeliversWithoutChangingStateOrCommand(t *tes
 	t.Parallel()
 	committed := make(chan struct{})
 	var failOnce atomic.Bool
-	harness := newSimulatorMatrixHarness(t, simulatoradapter.ScenarioRestartBeforeAck, simulatorMatrixOptions{
+	matrixDevices := []scripted.DeviceSpec{simulatorMatrixPowerDevice()}
+	harness := newSimulatorMatrixHarness(t, matrixDevices, simulatorMatrixOptions{
 		ackWait: 500 * time.Millisecond,
 		observationProjector: func(_ *devices.Service, base devicesnats.ObservationProjector) devicesnats.ObservationProjector {
 			return observationProjectorFunc(func(
@@ -1411,9 +1422,121 @@ func TestSimulatorExpiryTakeoverFencesOldTrafficAndCommands(t *testing.T) {
 	}
 }
 
+// simulatorMatrixPowerDevice is the scripted Device every Command-matrix test
+// runs: one Binding "simulated-light" whose single hearth.power/v1 Entity keyed
+// "power" starts false and answers set with the default accept-and-publish. The
+// constructors below adjust one fault knob each, so a test names only the
+// behavior it exercises.
+func simulatorMatrixPowerDevice() scripted.DeviceSpec {
+	return scripted.DeviceSpec{
+		BindingKey: "simulated-light",
+		Name:       "Simulated light",
+		Kind:       "light",
+		Entities: []scripted.EntitySpec{{
+			Key:     "power",
+			Name:    "Power",
+			Type:    "hearth.power/v1",
+			Support: map[string]any{"state": map[string]any{}, "operations": map[string]any{"set": map[string]any{}}},
+			Initial: false,
+		}},
+	}
+}
+
+// simulatorMatrixUnhealthyDevice is adapter-unhealthy: an unhealthy Device that
+// omits Entity availability, so its Entity stays effectively unavailable and
+// Core refuses to dispatch Commands to it.
+func simulatorMatrixUnhealthyDevice() scripted.DeviceSpec {
+	device := simulatorMatrixPowerDevice()
+	device.Health = "unhealthy:hearth.external_system_unavailable"
+	device.OmitAvailabilityWhenUnhealthy = true
+	return device
+}
+
+// simulatorMatrixUnavailableEntityDevice is entity-unavailable: the Entity
+// starts unavailable with the legacy reason code and publishes no initial
+// Observation until its set Command repairs availability and accepts.
+func simulatorMatrixUnavailableEntityDevice() scripted.DeviceSpec {
+	device := simulatorMatrixPowerDevice()
+	available := false
+	entity := &device.Entities[0]
+	entity.Available = &available
+	entity.AvailabilityReason = "adapter.hearth-simulator.entity_unavailable"
+	entity.Commands = map[string]scripted.CommandBehavior{"set": {MarkAvailable: true}}
+	return device
+}
+
+// simulatorMatrixRejectingDevice is upstream-rejection: set rejects every
+// Command with the legacy reason string.
+func simulatorMatrixRejectingDevice() scripted.DeviceSpec {
+	device := simulatorMatrixPowerDevice()
+	device.Entities[0].Commands = map[string]scripted.CommandBehavior{
+		"set": {Behavior: scripted.CommandBehaviorReject, Reason: "simulated upstream rejection"},
+	}
+	return device
+}
+
+// simulatorMatrixAcceptSilentDevice answers set with accept-no-publish, so a
+// Command bound to an observed outcome never receives one and runs to its
+// deadline.
+func simulatorMatrixAcceptSilentDevice() scripted.DeviceSpec {
+	device := simulatorMatrixPowerDevice()
+	device.Entities[0].Commands = map[string]scripted.CommandBehavior{
+		"set": {Behavior: scripted.CommandBehaviorAcceptSilent},
+	}
+	return device
+}
+
+// simulatorMatrixDelayedSourceTimeDevice is delayed-source-time: every
+// Observation carries a SourceUpdatedAt 24 hours behind the Adapter clock.
+func simulatorMatrixDelayedSourceTimeDevice() scripted.DeviceSpec {
+	device := simulatorMatrixPowerDevice()
+	device.Entities[0].SourceTimeOffset = scripted.Duration(-24 * time.Hour)
+	return device
+}
+
+// simulatorMatrixFutureClockSkewDevice is future-clock-skew: every Observation
+// claims an AdapterReceivedAt two minutes ahead of the Adapter clock.
+func simulatorMatrixFutureClockSkewDevice() scripted.DeviceSpec {
+	device := simulatorMatrixPowerDevice()
+	device.Entities[0].ReceivedTimeOffset = scripted.Duration(2 * time.Minute)
+	return device
+}
+
+// simulatorMatrixExpectedReadiness derives the Adapter health and Entity
+// availability the scripted Devices settle Core into: unhealthy health makes
+// the Adapter unhealthy, a Device that omits availability leaves its Entities
+// effectively unavailable, and an Entity marked available:false reports itself
+// unavailable.
+func simulatorMatrixExpectedReadiness(
+	t *testing.T,
+	matrixDevices []scripted.DeviceSpec,
+) (devices.AdapterHealthStatus, devices.EntityAvailabilityStatus) {
+	t.Helper()
+	wantHealth := devices.AdapterHealthHealthy
+	wantAvailability := devices.EntityAvailabilityAvailable
+	for _, device := range matrixDevices {
+		healthy, _, healthErr := device.HealthStatus()
+		if healthErr != nil {
+			t.Fatalf("matrix Device %q has an unparseable health string: %v", device.BindingKey, healthErr)
+		}
+		if !healthy {
+			wantHealth = devices.AdapterHealthUnhealthy
+			if device.OmitAvailabilityWhenUnhealthy {
+				wantAvailability = devices.EntityAvailabilityUnavailable
+			}
+		}
+		for _, entity := range device.Entities {
+			if entity.Available != nil && !*entity.Available {
+				wantAvailability = devices.EntityAvailabilityUnavailable
+			}
+		}
+	}
+	return wantHealth, wantAvailability
+}
+
 func newManualSimulatorMatrixHarness(t *testing.T) *simulatorMatrixHarness {
 	t.Helper()
-	return newSimulatorMatrixHarness(t, "", simulatorMatrixOptions{manual: true})
+	return newSimulatorMatrixHarness(t, nil, simulatorMatrixOptions{manual: true})
 }
 
 func connectMatrixSession(
@@ -1454,24 +1577,15 @@ func registerMatrixEntity(
 	session *adapter.Session,
 ) (devices.EntityID, adapter.Registration) {
 	t.Helper()
-	simulated, err := simulatoradapter.New(session, simulatoradapter.ScenarioHappy)
+	simulated, err := scripted.New(session, []scripted.DeviceSpec{simulatorMatrixPowerDevice()})
 	if err != nil {
 		t.Fatal(err)
 	}
-	descriptor, err := sdkpowerv1.NewEntityDescriptor(adapter.EntityMetadata{
-		Key: "power", ExternalID: "simulated-light.power", Name: "Power",
-	}, simulated.Support())
-	if err != nil {
-		t.Fatal(err)
+	registrations := simulated.Registrations()
+	if len(registrations) != 1 {
+		t.Fatalf("matrix power Device produced %d registrations, want 1", len(registrations))
 	}
-	deviceExternalID := "simulated-light"
-	registration := adapter.Registration{
-		BindingKey: "simulated-light",
-		Device: adapter.DeviceDescriptor{
-			ExternalID: &deviceExternalID, Name: "Simulated light", Kind: "light",
-		},
-		Entities: []adapter.EntityDescriptor{descriptor},
-	}
+	registration := registrations[0]
 	binding, err := session.Register(ctx, registration)
 	if err != nil {
 		t.Fatal(err)

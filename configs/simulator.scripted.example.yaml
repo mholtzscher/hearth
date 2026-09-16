@@ -2,8 +2,8 @@
 # then interact through hearthd (State, Commands, Device Facts) and through the
 # loopback control channel (publish now, pause/resume scripts).
 #
-# Either `scenario:` (legacy failure matrix) or `devices:` (this file) is
-# required; the two are mutually exclusive.
+# Every Device and Entity is declared in the `devices` block below. See
+# specs/simulator-harness.md.
 adapter_id: simulator
 nats_url: nats://127.0.0.1:4222
 # Optional agent control channel. Loopback only; omit to disable.

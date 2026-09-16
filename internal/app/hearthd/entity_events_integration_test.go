@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
@@ -17,7 +18,7 @@ import (
 	"github.com/nats-io/nats.go/jetstream"
 
 	contractsv1 "github.com/mholtzscher/hearth/contracts/v1"
-	simulatoradapter "github.com/mholtzscher/hearth/internal/adapters/simulator"
+	"github.com/mholtzscher/hearth/internal/adapters/scripted"
 	"github.com/mholtzscher/hearth/internal/contracts/v1/natswire"
 	"github.com/mholtzscher/hearth/internal/modules/devices"
 	devicesapi "github.com/mholtzscher/hearth/internal/modules/devices/api"
@@ -25,8 +26,6 @@ import (
 	devicessqlite "github.com/mholtzscher/hearth/internal/modules/devices/sqlite"
 	platformdb "github.com/mholtzscher/hearth/internal/platform/db"
 	"github.com/mholtzscher/hearth/sdk/adapter"
-	sdkadapterenumeventv1 "github.com/mholtzscher/hearth/sdk/adapter/enumeventv1"
-	sdkpowerv1 "github.com/mholtzscher/hearth/sdk/adapter/powerv1"
 )
 
 // entityEventWire is the test's own view of the entity-event payload, kept
@@ -75,42 +74,30 @@ func TestCoreOfflineEntityEventRecoveryVerticalSlice(t *testing.T) {
 			t.Errorf("close simulator Session: %v", closeErr)
 		}
 	})
-	simulated, err := simulatoradapter.New(session, simulatoradapter.ScenarioEntityEvents)
-	if err != nil {
-		t.Fatal(err)
-	}
-	powerDescriptor, err := sdkpowerv1.NewEntityDescriptor(adapter.EntityMetadata{
-		Key: "power", ExternalID: "simulated-light.power", Name: "Power",
-	}, simulated.Support())
-	if err != nil {
-		t.Fatal(err)
-	}
-	eventsDescriptor, err := sdkadapterenumeventv1.NewEntityDescriptor(adapter.EntityMetadata{
-		Key: "events", ExternalID: "simulated-light.events", Name: "Events",
-	}, simulated.EntityEventSupport())
-	if err != nil {
-		t.Fatal(err)
-	}
-	deviceExternalID := "simulated-light"
-	binding, err := session.Register(ctx, adapter.Registration{
-		BindingKey: "simulated-light",
-		Device: adapter.DeviceDescriptor{
-			ExternalID: &deviceExternalID, Name: "Simulated light", Kind: "light",
-		},
-		Entities: []adapter.EntityDescriptor{powerDescriptor, eventsDescriptor},
+	scriptedRuntime, err := scripted.New(session, []scripted.DeviceSpec{
+		sliceEntityEventsDevice("simulated-light", "Simulated light"),
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	powerEntityID := bindingEntityID(t, binding, "power")
-	eventsEntityID := bindingEntityID(t, binding, "events")
+	registrations := scriptedRuntime.Registrations()
+	bindings := make([]adapter.Binding, 0, len(registrations))
+	for _, registration := range registrations {
+		binding, registerErr := session.Register(ctx, registration)
+		if registerErr != nil {
+			t.Fatal(registerErr)
+		}
+		bindings = append(bindings, binding)
+	}
+	if attachErr := scriptedRuntime.Attach(bindings); attachErr != nil {
+		t.Fatal(attachErr)
+	}
+	powerEntityID := bindingEntityID(t, bindings[0], "power")
+	eventsEntityID := bindingEntityID(t, bindings[0], "events")
 	if powerEntityID == eventsEntityID {
 		t.Fatalf("registration reused one Entity ID for power and events: %s", powerEntityID)
 	}
-	if err = simulated.Initialize(ctx, string(powerEntityID)); err != nil {
-		t.Fatal(err)
-	}
-	if err = simulated.InitializeEntityEventSource(ctx, string(eventsEntityID)); err != nil {
+	if err = scriptedRuntime.Initialize(ctx); err != nil {
 		t.Fatal(err)
 	}
 	waitForCoreHTTPStatus(ctx, t, client, firstAddress, "/readyz", firstErrors)
@@ -129,16 +116,19 @@ func TestCoreOfflineEntityEventRecoveryVerticalSlice(t *testing.T) {
 	// durable stream and returns JetStream acknowledgements only.
 	expected := map[string]string{}
 	for _, name := range []string{
-		simulatoradapter.EntityEventSinglePress,
-		simulatoradapter.EntityEventDoublePress,
-		simulatoradapter.EntityEventSinglePress,
+		sliceEntityEventSinglePress,
+		sliceEntityEventDoublePress,
+		sliceEntityEventSinglePress,
 	} {
-		eventID, emitErr := simulated.EmitEntityEvent(ctx, name)
-		if emitErr != nil {
-			t.Fatalf("offline EmitEntityEvent(%q): %v", name, emitErr)
+		result, publishErr := scriptedRuntime.PublishNow(
+			ctx, string(eventsEntityID), json.RawMessage(fmt.Sprintf(`{"name":%q}`, name)),
+		)
+		if publishErr != nil {
+			t.Fatalf("offline PublishNow(%q): %v", name, publishErr)
 		}
+		eventID := result.EventID
 		if eventID == "" {
-			t.Fatalf("offline EmitEntityEvent(%q) returned no identity", name)
+			t.Fatalf("offline PublishNow(%q) returned no identity", name)
 		}
 		if _, duplicate := expected[string(eventID)]; duplicate {
 			t.Fatalf("offline reports reused event ID %s", eventID)
@@ -156,11 +146,14 @@ func TestCoreOfflineEntityEventRecoveryVerticalSlice(t *testing.T) {
 		}
 		return retries >= 2, nil
 	})
-	lateEventID, err := simulated.EmitEntityEvent(ctx, simulatoradapter.EntityEventSinglePress)
+	lateResult, err := scriptedRuntime.PublishNow(
+		ctx, string(eventsEntityID),
+		json.RawMessage(fmt.Sprintf(`{"name":%q}`, sliceEntityEventSinglePress)),
+	)
 	if err != nil {
-		t.Fatalf("EmitEntityEvent after missed heartbeats: %v", err)
+		t.Fatalf("PublishNow after missed heartbeats: %v", err)
 	}
-	expected[string(lateEventID)] = simulatoradapter.EntityEventSinglePress
+	expected[string(lateResult.EventID)] = sliceEntityEventSinglePress
 	if stopped := recordsWithEvent(sessionRecords.snapshot(), "adapter.heartbeat_stopped"); len(stopped) != 0 {
 		t.Fatalf("missed heartbeats stopped the Session: %#v", stopped)
 	}
