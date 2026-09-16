@@ -1,6 +1,6 @@
 ---
 name: real-device-validation
-description: Validate Hearth against REAL Zigbee devices through the homelab's shared NATS, Mosquitto, and Zigbee2MQTT dev environment, and collect real device payloads for fixtures. Use this skill whenever the user mentions real devices, real hardware, the homelab, physical lights or sensors, validating against Zigbee2MQTT, capturing live device data, or debugging behavior the simulator cannot reproduce. Do NOT use it for pure simulator runs, unit tests, or local-loopback development.
+description: Validate Hearth against REAL Zigbee devices through the homelab's shared NATS, Mosquitto, and Zigbee2MQTT dev environment, and collect real device payloads for fixtures. Use this skill whenever the user mentions real devices, real hardware, the homelab, physical lights or sensors, validating against Zigbee2MQTT, capturing live device data, or debugging behavior the simulator cannot reproduce. Do NOT use it for pure simulator runs (use simulator-validation instead), unit tests, or local-loopback development.
 ---
 
 # Real-Device Validation
