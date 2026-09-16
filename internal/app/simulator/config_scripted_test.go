@@ -42,29 +42,11 @@ func TestScriptedConfigValidates(t *testing.T) {
 	}
 }
 
-func TestConfigRejectsScenarioAndDevices(t *testing.T) {
-	t.Parallel()
-	config := scriptedConfig()
-	config.Scenario = "happy"
-	if err := config.Validate(); err == nil {
-		t.Fatal("scenario+devices accepted, want mutual exclusion")
-	}
-}
-
-func TestConfigRequiresScenarioOrDevices(t *testing.T) {
+func TestConfigRequiresDevices(t *testing.T) {
 	t.Parallel()
 	config := appsimulator.Config{AdapterID: "simulator", NATSURL: "nats://127.0.0.1:4222"}
 	if err := config.Validate(); err == nil {
-		t.Fatal("empty mode accepted, want an error")
-	}
-}
-
-func TestConfigRejectsLegacyBindingKeyWithDevices(t *testing.T) {
-	t.Parallel()
-	config := scriptedConfig()
-	config.BindingKey = "simulated-light"
-	if err := config.Validate(); err == nil {
-		t.Fatal("legacy binding_key with devices accepted, want an error")
+		t.Fatal("config without devices accepted, want an error")
 	}
 }
 
@@ -158,6 +140,66 @@ func TestLoadFullExampleFile(t *testing.T) {
 	}
 	if len(seen) != len(scripted.KnownTypes()) {
 		t.Fatalf("full example covers %d Entity types, want all %d", len(seen), len(scripted.KnownTypes()))
+	}
+}
+
+// TestLoadConfigAcceptsFaultPrimitiveKeys protects the strict config loader's
+// knowledge of the fault-primitive YAML keys: the loader rejects unknown
+// fields, so a missing yaml tag would fail to load a valid file. It also shows
+// the negative source offset and the omit/unavailable/repair combination pass
+// config validation end to end.
+func TestLoadConfigAcceptsFaultPrimitiveKeys(t *testing.T) {
+	t.Parallel()
+	yaml := `adapter_id: simulator
+nats_url: nats://127.0.0.1:4222
+devices:
+  - binding_key: simulated-broken
+    name: Simulated broken
+    kind: sensor
+    health: "unhealthy:hearth.external_system_unavailable"
+    omit_availability_when_unhealthy: true
+    entities:
+      - key: temperature
+        name: Temperature
+        type: hearth.temperature/v1
+        support: {state: {unit: mCel}, operations: {}}
+        initial: 20000
+        source_time_offset: -24h
+        received_time_offset: +2m
+  - binding_key: simulated-light
+    name: Simulated light
+    kind: light
+    entities:
+      - key: power
+        name: Power
+        type: hearth.power/v1
+        support: {state: {}, operations: {set: {}}}
+        initial: true
+        available: false
+        availability_reason: adapter.simulated-light.entity_unavailable
+        commands: {set: {behavior: accept-and-publish, mark_available: true}}
+`
+	path := filepath.Join(t.TempDir(), "simulator.yaml")
+	if writeErr := os.WriteFile(path, []byte(yaml), 0o600); writeErr != nil {
+		t.Fatal(writeErr)
+	}
+	value, err := appsimulator.LoadConfig(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !value.Devices[0].OmitAvailabilityWhenUnhealthy {
+		t.Fatal("omit_availability_when_unhealthy did not load")
+	}
+	sensor := value.Devices[0].Entities[0]
+	if got := time.Duration(sensor.SourceTimeOffset); got != -24*time.Hour {
+		t.Fatalf("source_time_offset = %s, want -24h", got)
+	}
+	if got := time.Duration(sensor.ReceivedTimeOffset); got != 2*time.Minute {
+		t.Fatalf("received_time_offset = %s, want 2m", got)
+	}
+	behavior := value.Devices[1].Entities[0].Commands["set"]
+	if !behavior.MarkAvailable {
+		t.Fatal("mark_available did not load")
 	}
 }
 

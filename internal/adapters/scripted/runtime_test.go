@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/mholtzscher/hearth/internal/adapters/scripted"
 	"github.com/mholtzscher/hearth/sdk/adapter"
@@ -157,6 +158,9 @@ func (session *fakeSession) ReportEntityAvailability(
 	return nil
 }
 
+// current caller addresses ent_power.
+//
+//nolint:unparam // Call sites keep the Entity ID explicit even though every
 func (session *fakeSession) dispatch(
 	ctx context.Context,
 	runtime *scripted.Runtime,
@@ -834,4 +838,276 @@ func TestRuntimeSnapshotCarriesNoPublicationIDs(t *testing.T) {
 			t.Fatalf("snapshot %s exposes publication ID field %s", encoded, field)
 		}
 	}
+}
+
+// unhealthyOmitDevice is one Device that reports unhealthy and omits Entity
+// availability reports for that Device.
+func unhealthyOmitDevice() scripted.DeviceSpec {
+	device := powerDevice()
+	device.BindingKey = "simulated-broken"
+	device.Name = "Simulated broken"
+	device.Health = "unhealthy:hearth.external_system_unavailable"
+	device.OmitAvailabilityWhenUnhealthy = true
+	return device
+}
+
+// availabilityByEntity flattens the fake Session's availability batches into
+// one report per Entity ID for assertions.
+func availabilityByEntity(session *fakeSession) map[string]adapter.EntityAvailabilityReport {
+	session.mu.Lock()
+	defer session.mu.Unlock()
+	reports := make(map[string]adapter.EntityAvailabilityReport)
+	for _, batch := range session.availability {
+		for _, report := range batch {
+			reports[report.EntityID] = report
+		}
+	}
+	return reports
+}
+
+// TestRuntimeInitializeOmitsAvailabilityForUnhealthyDevice protects the
+// omit_availability_when_unhealthy behavior: an unhealthy Device configured to
+// omit reports still reports health but sends no Entity availability report, so
+// Core materializes its Entities as effectively unavailable, while a healthy
+// Device on the same Session still reports its Entities available. It fails if
+// Initialize reports availability for every Device regardless of the flag.
+func TestRuntimeInitializeOmitsAvailabilityForUnhealthyDevice(t *testing.T) {
+	t.Parallel()
+	session := &fakeSession{}
+	runtime, err := scripted.New(session, []scripted.DeviceSpec{unhealthyOmitDevice(), powerDevice()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if attachErr := runtime.Attach([]adapter.Binding{
+		{BindingKey: "simulated-broken", Entities: []adapter.EntityBinding{{Key: "power", EntityID: "ent_broken"}}},
+		{BindingKey: "simulated-light", Entities: []adapter.EntityBinding{{Key: "power", EntityID: "ent_power"}}},
+	}); attachErr != nil {
+		t.Fatal(attachErr)
+	}
+	if initErr := runtime.Initialize(context.Background()); initErr != nil {
+		t.Fatal(initErr)
+	}
+	if len(session.health) != 1 || session.health[0].Status != adapter.HealthUnhealthy {
+		t.Fatalf("health reports = %+v, want one unhealthy", session.health)
+	}
+	if session.health[0].ReasonCode != "hearth.external_system_unavailable" {
+		t.Fatalf("health reason = %q, want the Device's unhealthy reason", session.health[0].ReasonCode)
+	}
+	reports := availabilityByEntity(session)
+	if report, present := reports["ent_broken"]; present {
+		t.Fatalf("omitting Device sent an availability report for ent_broken: %+v", report)
+	}
+	if reports["ent_power"].Status != adapter.AvailabilityAvailable {
+		t.Fatalf("healthy Device availability = %+v, want available", reports["ent_power"])
+	}
+	// The flag suppresses availability only: both Entities still publish their
+	// initial Observation.
+	if len(session.observations) != 2 {
+		t.Fatalf("initial observations = %d, want 2", len(session.observations))
+	}
+}
+
+// unavailableRepairDevice is one Device whose only Entity starts unavailable
+// with a repairing set Command.
+func unavailableRepairDevice() scripted.DeviceSpec {
+	device := powerDevice()
+	unavailable := false
+	device.Entities[0].Available = &unavailable
+	device.Entities[0].AvailabilityReason = "adapter.simulated-light.entity_unavailable"
+	device.Entities[0].Commands = map[string]scripted.CommandBehavior{
+		"set": {Behavior: scripted.CommandBehaviorAcceptPublish, MarkAvailable: true},
+	}
+	return device
+}
+
+// TestRuntimeUnavailableEntitySkipsInitialObservationAndRecoversViaMarkAvailable
+// protects the entity-unavailable scenario end to end: an Entity marked
+// available:false has no known State, so Initialize reports it unavailable and
+// publishes no Observation, and a dispatched accept Command with
+// mark_available re-reports it available before accepting and then publishes
+// its outcome. It fails if Initialize publishes the configured initial value
+// for an unavailable Entity, or if mark_available does not repair availability
+// before Accept.
+func TestRuntimeUnavailableEntitySkipsInitialObservationAndRecoversViaMarkAvailable(t *testing.T) {
+	t.Parallel()
+	session := &fakeSession{}
+	runtime, err := scripted.New(session, []scripted.DeviceSpec{unavailableRepairDevice()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	attachOne(t, runtime, "simulated-light", "power", "ent_power")
+	ctx := context.Background()
+	if initErr := runtime.Initialize(ctx); initErr != nil {
+		t.Fatal(initErr)
+	}
+	initialReport := availabilityByEntity(session)["ent_power"]
+	if initialReport.Status != adapter.AvailabilityUnavailable {
+		t.Fatalf("initial availability = %+v, want unavailable", initialReport)
+	}
+	if initialReport.ReasonCode != "adapter.simulated-light.entity_unavailable" {
+		t.Fatalf("initial availability reason = %q, want the configured reason", initialReport.ReasonCode)
+	}
+	if len(session.observations) != 0 {
+		t.Fatalf("unavailable Entity published %d initial observations, want 0", len(session.observations))
+	}
+	var availabilityDuringAccept int
+	responder := session.dispatchDuringAccept(
+		ctx, runtime, "ent_power", "set", json.RawMessage(`{"value":false}`),
+		func() {
+			session.mu.Lock()
+			availabilityDuringAccept = len(session.availability)
+			session.mu.Unlock()
+		},
+	)
+	if !responder.accepted {
+		t.Fatal("set Command was not accepted")
+	}
+	// The re-report happens before Accept: by the time the responder accepted,
+	// the Session had already seen the repairing availability report.
+	if availabilityDuringAccept != 2 {
+		t.Fatalf("availability calls during Accept = %d, want 2 (initialize then repair)", availabilityDuringAccept)
+	}
+	if len(session.availability) != 2 {
+		t.Fatalf("availability calls after Command = %d, want 2", len(session.availability))
+	}
+	requireAvailableRepair(t, session.availability[1])
+	if len(session.linked) != 1 || string(session.linked[0].Value) != "false" {
+		t.Fatalf("linked observations = %+v, want [false]", session.linked)
+	}
+}
+
+// requireAvailableRepair asserts one availability batch repairing ent_power.
+func requireAvailableRepair(t *testing.T, repaired []adapter.EntityAvailabilityReport) {
+	t.Helper()
+	if len(repaired) != 1 {
+		t.Fatalf("repair reports = %+v, want exactly one", repaired)
+	}
+	report := repaired[0]
+	if report.EntityID != "ent_power" || report.Status != adapter.AvailabilityAvailable {
+		t.Fatalf("repair report = %+v, want one available report for ent_power", report)
+	}
+}
+
+// offsetDevice is one Device whose first Entity carries source and received
+// clock offsets and whose second Entity carries none, so the offsets can be
+// shown to land on one Entity without leaking to another.
+func offsetDevice() scripted.DeviceSpec {
+	device := powerDevice()
+	device.Entities[0].SourceTimeOffset = scripted.Duration(-24 * time.Hour)
+	device.Entities[0].ReceivedTimeOffset = scripted.Duration(2 * time.Minute)
+	device.Entities = append(device.Entities, scripted.EntitySpec{
+		Key:     "plain",
+		Name:    "Plain",
+		Type:    "hearth.power/v1",
+		Support: map[string]any{"state": map[string]any{}, "operations": map[string]any{"set": map[string]any{}}},
+		Initial: true,
+	})
+	return device
+}
+
+// TestRuntimeObservationClockOffsetsApplyUniformly protects the offset surface:
+// source_time_offset shifts SourceUpdatedAt to now plus the offset and
+// received_time_offset shifts AdapterReceivedAt, on the initial, ticker, and
+// command-linked Observations alike, while an Entity with no offsets keeps
+// SourceUpdatedAt unset and AdapterReceivedAt at now. It fails if an offset is
+// dropped, applied only to the initial Observation, or leaked across Entities.
+const (
+	offsetTolerance = 5 * time.Second
+	offsetSourceGap = 24*time.Hour + 2*time.Minute
+)
+
+// startOffsetRuntime initializes the offset Device, advances its ticker once,
+// and dispatches one set Command, returning the Session and the start time
+// the clock assertions measure from.
+func startOffsetRuntime(t *testing.T) (*fakeSession, time.Time) {
+	t.Helper()
+	session := &fakeSession{}
+	runtime, err := scripted.New(session, []scripted.DeviceSpec{offsetDevice()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if attachErr := runtime.Attach([]adapter.Binding{{
+		BindingKey: "simulated-light",
+		Entities: []adapter.EntityBinding{
+			{Key: "power", EntityID: "ent_power"},
+			{Key: "plain", EntityID: "ent_plain"},
+		},
+	}}); attachErr != nil {
+		t.Fatal(attachErr)
+	}
+	ctx := context.Background()
+	start := time.Now()
+	if initErr := runtime.Initialize(ctx); initErr != nil {
+		t.Fatal(initErr)
+	}
+	if tickErr := runtime.Tick(ctx, "ent_power"); tickErr != nil {
+		t.Fatal(tickErr)
+	}
+	session.dispatch(ctx, runtime, "ent_power", "set", json.RawMessage(`{"value":false}`))
+	if len(session.observations) != 3 || len(session.linked) != 1 {
+		t.Fatalf("observations = %d, linked = %d, want 3 and 1", len(session.observations), len(session.linked))
+	}
+	return session, start
+}
+
+func parseObservationTime(t *testing.T, raw string) time.Time {
+	t.Helper()
+	parsed, parseErr := time.Parse(time.RFC3339Nano, raw)
+	if parseErr != nil {
+		t.Fatalf("parse observation time %q: %v", raw, parseErr)
+	}
+	return parsed
+}
+
+// checkOffsetObservation asserts one Observation carries the -24h source and
+// +2m received offsets.
+func checkOffsetObservation(t *testing.T, index int, observation adapter.Observation, start time.Time) {
+	t.Helper()
+	received := parseObservationTime(t, observation.AdapterReceivedAt)
+	if delta := received.Sub(start); delta < 2*time.Minute-offsetTolerance || delta > 2*time.Minute+offsetTolerance {
+		t.Fatalf("offset observation %d received_at delta = %s, want ~2m", index, delta)
+	}
+	if observation.SourceUpdatedAt == nil {
+		t.Fatalf("offset observation %d left SourceUpdatedAt nil, want now-24h", index)
+	}
+	source := parseObservationTime(t, *observation.SourceUpdatedAt)
+	if gap := received.Sub(source); gap < offsetSourceGap-offsetTolerance || gap > offsetSourceGap+offsetTolerance {
+		t.Fatalf("offset observation %d source gap = %s, want ~24h2m", index, gap)
+	}
+}
+
+// checkPlainObservation asserts the offset-free Entity publishes plain times:
+// no SourceUpdatedAt and AdapterReceivedAt at now.
+func checkPlainObservation(t *testing.T, plain adapter.Observation, start time.Time) {
+	t.Helper()
+	if plain.EntityID != "ent_plain" {
+		t.Fatalf("plain observation belongs to %q, want ent_plain", plain.EntityID)
+	}
+	if plain.SourceUpdatedAt != nil {
+		t.Fatalf("offset-free Entity SourceUpdatedAt = %q, want nil", *plain.SourceUpdatedAt)
+	}
+	delta := parseObservationTime(t, plain.AdapterReceivedAt).Sub(start)
+	if delta < -offsetTolerance || delta > offsetTolerance {
+		t.Fatalf("offset-free Entity received_at delta = %s, want ~0", delta)
+	}
+}
+
+func TestRuntimeObservationClockOffsetsApplyUniformly(t *testing.T) {
+	t.Parallel()
+	session, start := startOffsetRuntime(t)
+	// observations[0] is the offset Entity's initial value, observations[1] the
+	// offset-free Entity's initial value, observations[2] the offset Entity's
+	// ticker value; linked[0] is the offset Entity's command-linked outcome.
+	offsetObservations := []adapter.Observation{
+		session.observations[0],
+		session.observations[2],
+		session.linked[0],
+	}
+	for index, observation := range offsetObservations {
+		if observation.EntityID != "ent_power" {
+			t.Fatalf("offset observation %d belongs to %q, want ent_power", index, observation.EntityID)
+		}
+		checkOffsetObservation(t, index, observation, start)
+	}
+	checkPlainObservation(t, session.observations[1], start)
 }

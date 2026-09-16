@@ -17,6 +17,57 @@ import (
 // any number of Devices, so Initialize pages availability reports at this size.
 const availabilityBatchLimit = 256
 
+// aggregateDeviceHealth folds per-Device health into one process-level
+// report: the first unhealthy Device wins, and a fully healthy config reports
+// healthy once. It also returns the Binding keys whose Entities must not
+// receive an availability report: a Device configured to omit them while it
+// reports unhealthy leaves its Entities to Core as effectively unavailable.
+func aggregateDeviceHealth(
+	devices []scriptedDevice,
+) (adapter.HealthReport, map[string]struct{}, error) {
+	health := adapter.HealthReport{Status: adapter.HealthHealthy, SourceObservedAt: time.Now().UTC()}
+	omitAvailability := make(map[string]struct{}, len(devices))
+	for _, device := range devices {
+		healthy, reason, err := device.spec.HealthStatus()
+		if err != nil {
+			return adapter.HealthReport{}, nil, err
+		}
+		if !healthy && health.Status == adapter.HealthHealthy {
+			health.Status = adapter.HealthUnhealthy
+			health.ReasonCode = reason
+		}
+		if !healthy && device.spec.OmitAvailabilityWhenUnhealthy {
+			omitAvailability[device.spec.BindingKey] = struct{}{}
+		}
+	}
+	return health, omitAvailability, nil
+}
+
+// buildAvailabilityReports reports every Entity available unless its own
+// config marks it unavailable, skipping the Binding keys in omit.
+func buildAvailabilityReports(
+	ordered []*scriptedEntity,
+	omit map[string]struct{},
+) []adapter.EntityAvailabilityReport {
+	reports := make([]adapter.EntityAvailabilityReport, 0, len(ordered))
+	for _, entity := range ordered {
+		if _, skip := omit[entity.bindingKey]; skip {
+			continue
+		}
+		report := adapter.EntityAvailabilityReport{
+			EntityID:         entity.entityID,
+			Status:           adapter.AvailabilityAvailable,
+			SourceObservedAt: time.Now().UTC(),
+		}
+		if !entity.available {
+			report.Status = adapter.AvailabilityUnavailable
+			report.ReasonCode = entity.unavailabilityReason
+		}
+		reports = append(reports, report)
+	}
+	return reports
+}
+
 // Session is the narrow SDK seam the scripted runtime needs. It mirrors the
 // surface the scenario simulator uses so both runtimes stay substitutable.
 type Session interface {
@@ -76,6 +127,11 @@ type scriptedEntity struct {
 	// that start unavailable. Core requires a reason, and config validation
 	// rejects a missing one, so Initialize can report it directly.
 	unavailabilityReason string
+	// sourceTimeOffset and receivedTimeOffset shift each Observation's
+	// SourceUpdatedAt and AdapterReceivedAt to now plus the offset. A zero
+	// source offset leaves SourceUpdatedAt unset, as when it is not configured.
+	sourceTimeOffset   time.Duration
+	receivedTimeOffset time.Duration
 }
 
 type scriptedDevice struct {
@@ -178,6 +234,8 @@ func buildEntity(bindingKey string, spec *EntitySpec) (*scriptedEntity, error) {
 		commands:             spec.Commands,
 		available:            spec.Available == nil || *spec.Available,
 		unavailabilityReason: spec.AvailabilityReason,
+		sourceTimeOffset:     time.Duration(spec.SourceTimeOffset),
+		receivedTimeOffset:   time.Duration(spec.ReceivedTimeOffset),
 	}
 	if err := initEntityValue(entity, spec); err != nil {
 		return nil, err
@@ -336,45 +394,30 @@ func (runtime *Runtime) Initialize(ctx context.Context) error {
 	ordered := append([]*scriptedEntity(nil), runtime.ordered...)
 	devices := append([]scriptedDevice(nil), runtime.devices...)
 	runtime.mutex.Unlock()
-	// Adapter health is one process-level assessment shared by every Device on
-	// this Session, so per-Device health aggregates: the first unhealthy Device
-	// wins, and a fully healthy config reports healthy once.
-	health := adapter.HealthReport{Status: adapter.HealthHealthy, SourceObservedAt: time.Now().UTC()}
-	for _, device := range devices {
-		healthy, reason, err := device.spec.HealthStatus()
-		if err != nil {
-			return err
-		}
-		if !healthy && health.Status == adapter.HealthHealthy {
-			health.Status = adapter.HealthUnhealthy
-			health.ReasonCode = reason
-		}
+	health, omitAvailability, healthErr := aggregateDeviceHealth(devices)
+	if healthErr != nil {
+		return healthErr
 	}
-	if err := runtime.session.SetHealth(ctx, health); err != nil {
-		return fmt.Errorf("report Adapter health: %w", err)
+	if setErr := runtime.session.SetHealth(ctx, health); setErr != nil {
+		return fmt.Errorf("report Adapter health: %w", setErr)
 	}
-	reports := make([]adapter.EntityAvailabilityReport, 0, len(ordered))
-	for _, entity := range ordered {
-		report := adapter.EntityAvailabilityReport{
-			EntityID:         entity.entityID,
-			Status:           adapter.AvailabilityAvailable,
-			SourceObservedAt: time.Now().UTC(),
-		}
-		if !entity.available {
-			report.Status = adapter.AvailabilityUnavailable
-			report.ReasonCode = entity.unavailabilityReason
-		}
-		reports = append(reports, report)
-	}
+	reports := buildAvailabilityReports(ordered, omitAvailability)
 	for start := 0; start < len(reports); start += availabilityBatchLimit {
 		end := min(start+availabilityBatchLimit, len(reports))
-		if err := runtime.session.ReportEntityAvailability(ctx, reports[start:end]); err != nil {
-			return fmt.Errorf("report Entity availability: %w", err)
+		if reportErr := runtime.session.ReportEntityAvailability(ctx, reports[start:end]); reportErr != nil {
+			return fmt.Errorf("report Entity availability: %w", reportErr)
 		}
 	}
 	for _, entity := range ordered {
-		if err := runtime.publishFirst(ctx, entity); err != nil {
-			return err
+		// An Entity marked available:false has no known State, so publishing its
+		// configured initial value would materialize a State row for unknown
+		// State. It stays silent until a Command or control publish repairs it;
+		// nil or true still publishes exactly once.
+		if !entity.available {
+			continue
+		}
+		if firstErr := runtime.publishFirst(ctx, entity); firstErr != nil {
+			return firstErr
 		}
 	}
 	return nil
@@ -403,11 +446,17 @@ func (runtime *Runtime) publishFirst(ctx context.Context, entity *scriptedEntity
 }
 
 func newObservation(entity *scriptedEntity, value json.RawMessage) adapter.Observation {
-	return adapter.Observation{
+	now := time.Now().UTC()
+	observation := adapter.Observation{
 		EntityID:          entity.entityID,
 		Value:             value,
-		AdapterReceivedAt: time.Now().UTC().Format(time.RFC3339Nano),
+		AdapterReceivedAt: now.Add(entity.receivedTimeOffset).Format(time.RFC3339Nano),
 	}
+	if entity.sourceTimeOffset != 0 {
+		sourceUpdatedAt := now.Add(entity.sourceTimeOffset).Format(time.RFC3339Nano)
+		observation.SourceUpdatedAt = &sourceUpdatedAt
+	}
+	return observation
 }
 
 func eventNameOf(raw json.RawMessage) string {
@@ -473,9 +522,22 @@ func (runtime *Runtime) CommandHandler() adapter.CommandHandler {
 			return err
 		}
 		behavior := entity.commands[command.OperationName]
-		switch behaviorName(behavior) {
-		case CommandBehaviorReject:
+		if behaviorName(behavior) == CommandBehaviorReject {
 			return responder.Reject(rejectReason(behavior))
+		}
+		// mark_available repairs an Entity that started unavailable: report
+		// available before applying parameters or accepting, and surface a
+		// failed re-report as the Command's error.
+		if behavior.MarkAvailable {
+			if reportErr := runtime.session.ReportEntityAvailability(ctx, []adapter.EntityAvailabilityReport{{
+				EntityID:         entity.entityID,
+				Status:           adapter.AvailabilityAvailable,
+				SourceObservedAt: time.Now().UTC(),
+			}}); reportErr != nil {
+				return reportErr
+			}
+		}
+		switch behaviorName(behavior) {
 		case CommandBehaviorAcceptSilent:
 			_, acceptErr := responder.Accept()
 			return acceptErr

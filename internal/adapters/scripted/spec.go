@@ -37,22 +37,23 @@ var (
 	reasonCodePattern = regexp.MustCompile(`^[a-z0-9][a-z0-9_-]*(\.[a-z0-9][a-z0-9_-]*)+$`)
 )
 
-// Duration is a YAML interval parsed with [time.ParseDuration] ("5s", "1m").
+// Duration is a YAML duration parsed with [time.ParseDuration] ("5s", "1m").
+// Clock-offset fields accept negative values ("-24h"); an interval field must
+// still be positive, which EntitySpec.validate enforces where the interval is
+// used.
 type Duration time.Duration
 
 // UnmarshalYAML accepts a duration string and rejects every other YAML shape
-// so a bare number can never silently mean nanoseconds.
+// so a bare number can never silently mean nanoseconds. Negative durations are
+// accepted so a clock offset can point before now.
 func (value *Duration) UnmarshalYAML(node *yaml.Node) error {
 	var text string
 	if err := node.Decode(&text); err != nil {
-		return fmt.Errorf("interval must be a duration string like \"5s\": %w", err)
+		return fmt.Errorf("duration must be a duration string like \"5s\": %w", err)
 	}
 	parsed, err := time.ParseDuration(strings.TrimSpace(text))
 	if err != nil {
-		return fmt.Errorf("invalid interval %q: %w", text, err)
-	}
-	if parsed <= 0 {
-		return fmt.Errorf("interval %q must be positive", text)
+		return fmt.Errorf("invalid duration %q: %w", text, err)
 	}
 	*value = Duration(parsed)
 	return nil
@@ -60,11 +61,16 @@ func (value *Duration) UnmarshalYAML(node *yaml.Node) error {
 
 // DeviceSpec is one scripted Device: one Binding registration.
 type DeviceSpec struct {
-	BindingKey string       `yaml:"binding_key"`
-	Name       string       `yaml:"name"`
-	Kind       string       `yaml:"kind"`
-	Health     string       `yaml:"health"`
-	Entities   []EntitySpec `yaml:"entities"`
+	BindingKey string `yaml:"binding_key"`
+	Name       string `yaml:"name"`
+	Kind       string `yaml:"kind"`
+	Health     string `yaml:"health"`
+	// OmitAvailabilityWhenUnhealthy makes Initialize report Device health but
+	// skip Entity availability reports for this Device, so an unhealthy Device
+	// leaves its Entities effectively unavailable rather than available. It
+	// requires health that parses to unhealthy.
+	OmitAvailabilityWhenUnhealthy bool         `yaml:"omit_availability_when_unhealthy"`
+	Entities                      []EntitySpec `yaml:"entities"`
 }
 
 // EntitySpec is one scripted Entity with its emitted value series and Command
@@ -80,6 +86,13 @@ type EntitySpec struct {
 	Commands           map[string]CommandBehavior `yaml:"commands"`
 	Available          *bool                      `yaml:"available"`
 	AvailabilityReason string                     `yaml:"availability_reason"`
+	// SourceTimeOffset shifts each Observation's SourceUpdatedAt to now plus
+	// the offset; zero leaves SourceUpdatedAt unset. Negative offsets point the
+	// source clock behind the adapter.
+	SourceTimeOffset Duration `yaml:"source_time_offset"`
+	// ReceivedTimeOffset shifts each Observation's AdapterReceivedAt to now
+	// plus the offset; zero means now.
+	ReceivedTimeOffset Duration `yaml:"received_time_offset"`
 }
 
 // OutputsSpec is the looping value series for one Entity. Values are States
@@ -94,6 +107,11 @@ type CommandBehavior struct {
 	Behavior        string `yaml:"behavior"`
 	Reason          string `yaml:"reason"`
 	ApplyParameters *bool  `yaml:"apply_parameters"`
+	// MarkAvailable re-reports the Entity available before the accept behavior
+	// applies parameters and accepts, repairing an Entity that started
+	// unavailable. It is rejected with the reject behavior, where it would be
+	// silently inert.
+	MarkAvailable bool `yaml:"mark_available"`
 }
 
 // HealthStatus parses the device health shorthand: empty or "healthy" means
@@ -164,8 +182,15 @@ func (spec DeviceSpec) Validate() error {
 	default:
 		return fmt.Errorf("kind must be light, relay, or sensor")
 	}
-	if _, _, err := spec.HealthStatus(); err != nil {
+	healthy, _, err := spec.HealthStatus()
+	if err != nil {
 		return err
+	}
+	if spec.OmitAvailabilityWhenUnhealthy && healthy {
+		return fmt.Errorf(
+			"omit_availability_when_unhealthy requires unhealthy health, not %q",
+			spec.Health,
+		)
 	}
 	if len(spec.Entities) == 0 || len(spec.Entities) > maxRegistrationEntities {
 		return fmt.Errorf("entities must contain 1-%d entries", maxRegistrationEntities)
@@ -173,8 +198,8 @@ func (spec DeviceSpec) Validate() error {
 	seen := make(map[string]struct{}, len(spec.Entities))
 	for index := range spec.Entities {
 		entity := &spec.Entities[index]
-		if err := entity.validate(); err != nil {
-			return fmt.Errorf("entities[%d]: %w", index, err)
+		if validateErr := entity.validate(); validateErr != nil {
+			return fmt.Errorf("entities[%d]: %w", index, validateErr)
 		}
 		if _, duplicate := seen[entity.Key]; duplicate {
 			return fmt.Errorf("entities[%d]: duplicate Entity key %q", index, entity.Key)
@@ -194,8 +219,8 @@ func (spec EntitySpec) validate() error {
 	if strings.TrimSpace(spec.Type) == "" {
 		return fmt.Errorf("type is required")
 	}
-	if _, err := Lookup(spec.Type); err != nil {
-		return err
+	if _, lookupErr := Lookup(spec.Type); lookupErr != nil {
+		return lookupErr
 	}
 	if spec.Support == nil {
 		return fmt.Errorf("support is required")
@@ -203,7 +228,16 @@ func (spec EntitySpec) validate() error {
 	if err := validateAvailabilityReason(spec); err != nil {
 		return err
 	}
-	for operation, behavior := range spec.Commands {
+	if err := validateCommandBehaviors(spec.Commands); err != nil {
+		return err
+	}
+	return validateOutputsInterval(spec.Outputs)
+}
+
+// validateCommandBehaviors rejects unknown operations, reasons without the
+// reject behavior, mark_available on rejection, and unknown behaviors.
+func validateCommandBehaviors(commands map[string]CommandBehavior) error {
+	for operation, behavior := range commands {
 		if !operationNamePattern.MatchString(operation) {
 			return fmt.Errorf("commands: operation name %q is not subject-safe", operation)
 		}
@@ -213,6 +247,12 @@ func (spec EntitySpec) validate() error {
 				return fmt.Errorf("commands[%q]: reason requires the reject behavior", operation)
 			}
 		case CommandBehaviorReject:
+			if behavior.MarkAvailable {
+				return fmt.Errorf(
+					"commands[%q]: mark_available requires an accept behavior, not %q",
+					operation, CommandBehaviorReject,
+				)
+			}
 		default:
 			return fmt.Errorf(
 				"commands[%q]: behavior must be %q, %q, or %q",
@@ -221,12 +261,15 @@ func (spec EntitySpec) validate() error {
 			)
 		}
 	}
-	// Only a multi-value script is stepped by a ticker, so an interval is
-	// required exactly then; zero or one value publishes once and stays silent.
-	if spec.Outputs != nil && len(spec.Outputs.Values) > 1 {
-		if time.Duration(spec.Outputs.Interval) <= 0 {
-			return fmt.Errorf("outputs: interval is required and must be positive for a multi-value script")
-		}
+	return nil
+}
+
+// validateOutputsInterval requires a positive interval exactly when a
+// multi-value script needs a ticker; zero or one value publishes once and
+// stays silent.
+func validateOutputsInterval(outputs *OutputsSpec) error {
+	if outputs != nil && len(outputs.Values) > 1 && time.Duration(outputs.Interval) <= 0 {
+		return fmt.Errorf("outputs: interval is required and must be positive for a multi-value script")
 	}
 	return nil
 }
