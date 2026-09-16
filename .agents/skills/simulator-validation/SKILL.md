@@ -94,15 +94,19 @@ Allow startup enough time for compilation and optional dependency installation
 (e.g. a 240-second tool budget). The script:
 
 1. Checks local ports and Herdr context before creating services.
-2. Creates a unique ignored `.data/simulator-validation.*` run directory with
+2. Validates the generated simulator configuration, including the Device list
+   against the authoritative Entity-type schemas, before creating a run
+   directory or tab; an invalid `--devices` file fails immediately and names
+   the offending Device and Entity.
+3. Creates a unique ignored `.data/simulator-validation.*` run directory with
    generated configs, dedicated SQLite and JetStream storage, and logs.
    The similarly named `.data/simulator-validation.json` is an ownership record,
    not a run directory.
-3. Creates a dedicated owned Herdr tab without changing focus, with a pane per
+4. Creates a dedicated owned Herdr tab without changing focus, with a pane per
    service; persists ownership in `.data/simulator-validation.json`.
-4. Starts NATS → waits for JetStream → starts Core → waits for readiness →
+5. Starts NATS → waits for JetStream → starts Core → waits for readiness →
    starts the simulator → checks control inventory and online Adapter runtime.
-5. Optionally starts the dashboard and checks its local proxies.
+6. Optionally starts the dashboard and checks its local proxies.
 
 Default endpoints:
 

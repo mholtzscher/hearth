@@ -26,6 +26,12 @@ func TestMainLoggingFlagsAndConfigFailure(t *testing.T) {
 		t.Parallel()
 		cmdtest.CheckMissingConfigJSON(t, binary, "hearthd")
 	})
+	t.Run("invalid config detail", func(t *testing.T) {
+		t.Parallel()
+		cmdtest.CheckInvalidConfigDetail(t, binary, "hearthd",
+			"household_timezone: UTC\n"+
+				"http_addr: not-a-host-port\n")
+	})
 	t.Run("startup cancellation", func(t *testing.T) {
 		t.Parallel()
 		natsURL := cmdtest.StartProcessNATS(t)

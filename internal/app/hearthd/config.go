@@ -55,7 +55,7 @@ func LoadConfig(path string) (Config, error) {
 		value.AutomationHistoryRetention = DefaultAutomationHistoryRetention
 	}
 	if err := value.Validate(); err != nil {
-		return Config{}, fmt.Errorf("validate config %q: %w", path, err)
+		return Config{}, platformconfig.Invalid(path, err)
 	}
 	return value, nil
 }

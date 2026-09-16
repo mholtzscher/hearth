@@ -11,6 +11,7 @@ import (
 	"syscall"
 
 	"github.com/mholtzscher/hearth/internal/app/hearthd"
+	platformconfig "github.com/mholtzscher/hearth/internal/platform/config"
 	"github.com/mholtzscher/hearth/internal/platform/logging"
 )
 
@@ -43,6 +44,7 @@ func run() int {
 			slog.String("event", "process.failed"),
 			slog.String("error_code", "config_invalid"),
 			slog.String("stage", "load_config"),
+			slog.String("error", platformconfig.Reason(configErr)),
 		)
 		return 1
 	}

@@ -27,6 +27,12 @@ func TestMainLoggingFlagsAndConfigFailure(t *testing.T) {
 		t.Parallel()
 		cmdtest.CheckMissingConfigJSON(t, binary, "hearth-adapter-ecowitt")
 	})
+	t.Run("invalid config detail", func(t *testing.T) {
+		t.Parallel()
+		cmdtest.CheckInvalidConfigDetail(t, binary, "hearth-adapter-ecowitt",
+			"adapter_id: test-ecowitt\n"+
+				"nats_url: not-a-nats-url\n")
+	})
 	t.Run("startup cancellation", func(t *testing.T) {
 		t.Parallel()
 		natsURL := cmdtest.StartProcessNATS(t)

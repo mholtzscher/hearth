@@ -71,6 +71,8 @@ class SimulatorLifecycleTest(unittest.TestCase):
         self.stack.enter_context(redirect_stderr(self.output))
         self.run = self.stack.enter_context(patch.object(start, "run", return_value=""))
         self.ports = self.stack.enter_context(patch.object(start, "port_open", return_value=False))
+        self.validate_config = self.stack.enter_context(
+            patch.object(start, "validate_simulator_config", return_value=None))
         self.herdr = FakeHerdr()
         self.stack.enter_context(patch.object(start, "herdr", side_effect=self.herdr))
         self.stop_herdr = self.stack.enter_context(patch.object(stop, "herdr"))
@@ -155,6 +157,37 @@ class SimulatorLifecycleTest(unittest.TestCase):
             start.start("scripted", None, False)
         self.assertEqual(self.herdr.calls, [])
         self.assertFalse((self.root / ".data/simulator-validation.json").exists())
+
+    def test_invalid_device_list_fails_before_any_tab(self):
+        self.validate_config.side_effect = RuntimeError(
+            "simulator-start: simulator config is invalid:\n"
+            "validate config '/tmp/config.yaml': devices[0] entities[0]: "
+            "invalid support: missing property 'set'")
+        with self.assertRaisesRegex(RuntimeError, "invalid support"):
+            start.start("scripted", None, False)
+        self.assertEqual(self.herdr.calls, [])
+        self.assertFalse((self.root / ".data/simulator-validation.json").exists())
+        self.assertEqual(
+            [path for path in (self.root / ".data").glob("simulator-validation.*")
+             if path.suffix != ".lock"], [])
+
+    def test_generated_config_is_validated_before_the_tab(self):
+        devices = self.write_custom_devices(
+            "- binding_key: custom-light\n"
+            "  name: Custom light\n"
+            "  kind: light\n"
+            "  entities:\n"
+            "    - key: power\n"
+            "      name: Power\n"
+            "      type: hearth.power/v1\n"
+            "      support: {state: {}, operations: {set: {}}}\n"
+            "      initial: false\n")
+        self.start_successfully(devices_path=devices)
+        self.validate_config.assert_called_once()
+        validated_text = self.validate_config.call_args.args[0]
+        self.assertIn("binding_key: custom-light", validated_text)
+        self.assertEqual(validated_text, (self.run_dir_of() / "simulator.yaml").read_text())
+        self.assertEqual(self.herdr.calls[0][:2], ("tab", "create"))
 
     def test_existing_record_blocks_a_competing_start(self):
         record = {"version": 1, "status": "reserved", "worktree": str(self.root)}

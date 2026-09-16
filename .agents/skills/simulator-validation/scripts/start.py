@@ -341,6 +341,31 @@ def check_ignored_paths():
         run("git", "check-ignore", "-q", str(path))
 
 
+def validate_simulator_config(config_text):
+    """Reject an invalid Device list before any run directory or tab exists.
+
+    The simulator binary validates the generated configuration against the
+    authoritative Entity-type schemas, so a bad --devices file fails here with
+    its real reason instead of after NATS and Core are already running.
+    """
+    with tempfile.NamedTemporaryFile("w", suffix=".yaml", delete=False) as handle:
+        handle.write(config_text)
+        config_path = Path(handle.name)
+    try:
+        result = subprocess.run(
+            ["mise", "exec", "--", "go", "run", "./cmd/hearth-simulator",
+             "-config", str(config_path), "-validate-config"],
+            cwd=ROOT, text=True, capture_output=True, timeout=READINESS_TIMEOUT)
+    except subprocess.TimeoutExpired as error:
+        raise RuntimeError(
+            f"{FAULT}: simulator config validation timed out after {READINESS_TIMEOUT}s") from error
+    finally:
+        config_path.unlink(missing_ok=True)
+    if result.returncode != 0:
+        detail = result.stderr.strip() or result.stdout.strip()
+        raise RuntimeError(f"{FAULT}: simulator config is invalid:\n{detail}")
+
+
 def make_run_dir():
     """Create a unique ignored run directory under .data."""
     data_dir = ROOT / ".data"
@@ -473,10 +498,12 @@ def start_owned_stack(preset, devices_path, dashboard):
         check_ports_free(dashboard)
         check_required_tools(dashboard)
         devices_block = load_devices_block(preset, devices_path)
+        simulator_text = simulator_config_text(devices_block)
+        validate_simulator_config(simulator_text)
         run_dir = make_run_dir()
         (run_dir / "nats.conf").write_text(nats_config_text(run_dir))
         (run_dir / "hearthd.yaml").write_text(hearthd_config_text(run_dir))
-        (run_dir / "simulator.yaml").write_text(simulator_config_text(devices_block))
+        (run_dir / "simulator.yaml").write_text(simulator_text)
         commands = service_commands(run_dir, dashboard)
         if dashboard and not (ROOT / "web/node_modules").is_dir():
             run("mise", "run", "web-install")
