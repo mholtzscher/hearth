@@ -24,8 +24,8 @@ import EntityDetailPage from "./pages/EntityDetailPage.tsx";
 import NatsPage from "./pages/NatsPage.tsx";
 
 const NAV_ITEMS = [
-  { to: "/entities", label: "Entities" },
   { to: "/devices", label: "Devices" },
+  { to: "/entities", label: "Entities" },
   { to: "/adapters", label: "Adapters" },
   { to: "/automations", label: "Automations" },
   { to: "/commands", label: "Commands" },
@@ -151,7 +151,7 @@ function Shell() {
       </header>
       <main className="px-4 py-4">
         <Routes>
-          <Route path="/" element={<EntitiesPage />} />
+          <Route path="/" element={<DevicesPage />} />
           <Route path="/entities" element={<EntitiesPage />} />
           <Route path="/entities/:entityId" element={<EntityDetailPage />} />
           <Route path="/devices" element={<DevicesPage />} />
