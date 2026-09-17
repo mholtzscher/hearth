@@ -131,3 +131,31 @@ func mustDiscoveredFixtureDevice(testingT interface {
 	}
 	return result.Devices[0]
 }
+
+// editedFixtureInventory rewrites top-level string fields on every Device in a
+// captured inventory fixture while preserving every other upstream field, so a
+// test can model one metadata change without re-encoding the wire DTOs.
+func editedFixtureInventory(testingT interface {
+	Helper()
+	Fatal(...any)
+}, fixture string, edits map[string]string) []byte {
+	testingT.Helper()
+	var items []map[string]json.RawMessage
+	if err := json.Unmarshal(readFixture(testingT, fixture), &items); err != nil {
+		testingT.Fatal(err)
+	}
+	for _, item := range items {
+		for key, value := range edits {
+			encoded, err := json.Marshal(value)
+			if err != nil {
+				testingT.Fatal(err)
+			}
+			item[key] = encoded
+		}
+	}
+	payload, err := json.Marshal(items)
+	if err != nil {
+		testingT.Fatal(err)
+	}
+	return payload
+}

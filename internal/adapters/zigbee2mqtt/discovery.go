@@ -12,6 +12,7 @@ import (
 const (
 	ieeeAddressLength        = 18
 	maximumRouteSlugBytes    = 63
+	maximumFriendlyNameBytes = 255
 	maximumEntitiesPerDevice = 64
 	maximumDescriptorRunes   = 128
 	upstreamDeviceKindLight  = "light"
@@ -110,7 +111,7 @@ func discoverDevice(device upstreamDevice) (discoveredDevice, *deviceRejection) 
 		rejection.Code = rejectionMissingDefinition
 	case ieeeErr != nil:
 		rejection.Code = rejectionInvalidIEEE
-	case !validRouteSlug(device.FriendlyName):
+	case !validFriendlyName(device.FriendlyName):
 		rejection.Code = rejectionInvalidName
 	default:
 		return buildDiscoveredDevice(device, normalizedIEEE)
@@ -200,6 +201,23 @@ func validRouteSlug(value string) bool {
 
 func isLowerAlphaNumeric(character byte) bool {
 	return character >= 'a' && character <= 'z' || character >= '0' && character <= '9'
+}
+
+// validFriendlyName reports whether value can be one Zigbee2MQTT Device topic
+// level. MQTT reserves "/", "+", and "#", and Zigbee2MQTT reserves the bridge
+// route, so those stay excluded while spaces, uppercase, punctuation, and
+// non-ASCII text are allowed.
+func validFriendlyName(value string) bool {
+	if value == "" || value == "bridge" || len(value) > maximumFriendlyNameBytes || !utf8.ValidString(value) {
+		return false
+	}
+	for _, character := range value {
+		switch character {
+		case 0, '/', '+', '#':
+			return false
+		}
+	}
+	return true
 }
 
 func isolateDuplicateFriendlyNames(result *inventoryDiscovery) {

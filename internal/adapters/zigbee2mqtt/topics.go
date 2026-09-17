@@ -40,12 +40,17 @@ func parseDeviceTopic(base, topic string) (string, deviceTopic) {
 	if !ok {
 		return "", deviceTopicUnknown
 	}
-	if validRouteSlug(remainder) && remainder != "bridge" {
-		return remainder, deviceTopicState
+	// Friendly names are single topic levels, so only the exact availability
+	// suffix can follow one. The suffix is tested first because a Device name
+	// can never contain the separator that would make the two cases overlap.
+	if friendly, found := strings.CutSuffix(remainder, "/availability"); found {
+		if validFriendlyName(friendly) {
+			return friendly, deviceTopicAvailability
+		}
+		return "", deviceTopicUnknown
 	}
-	friendly, suffix, hasSuffix := strings.Cut(remainder, "/")
-	if hasSuffix && suffix == "availability" && validRouteSlug(friendly) && friendly != "bridge" {
-		return friendly, deviceTopicAvailability
+	if validFriendlyName(remainder) {
+		return remainder, deviceTopicState
 	}
 	return "", deviceTopicUnknown
 }

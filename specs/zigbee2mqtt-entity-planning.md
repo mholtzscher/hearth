@@ -650,7 +650,7 @@ Device-level eligibility checks remain before planning:
 - successful interview;
 - non-nil definition;
 - normalized IEEE address;
-- route-safe friendly name;
+- single-level MQTT friendly name;
 - valid Device descriptor name.
 
 After planners run:
