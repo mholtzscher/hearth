@@ -13,7 +13,7 @@ import (
 	"github.com/mholtzscher/hearth/entitytypes"
 	contractpowerv1 "github.com/mholtzscher/hearth/entitytypes/powerv1"
 	"github.com/mholtzscher/hearth/internal/modules/devices"
-	platformdb "github.com/mholtzscher/hearth/internal/platform/db"
+	"github.com/mholtzscher/hearth/internal/platform/db/dbtest"
 )
 
 func TestRegistrationWithoutAdapterRollsBackAndRetainsHistoryAfterClaim(t *testing.T) {
@@ -1155,15 +1155,10 @@ func TestCommandStatusFailureCodeCheckRejectsNullAndMismatch(t *testing.T) {
 
 func openMigratedDatabase(t *testing.T, path string) *sql.DB {
 	t.Helper()
-	database, openErr := platformdb.Open(context.Background(), path)
-	if openErr != nil {
-		t.Fatal(openErr)
-	}
-	t.Cleanup(func() { _ = database.Close() })
-	if err := platformdb.Migrate(context.Background(), database); err != nil {
-		t.Fatal(err)
-	}
-	return database
+	// Fresh paths start as a file copy of the shared dbtest template instead
+	// of replaying the migration history; reopened paths get a cheap
+	// version check inside dbtest.
+	return dbtest.OpenMigrated(t, path)
 }
 
 func openRegistrationDatabase(t *testing.T, path string) *sql.DB {

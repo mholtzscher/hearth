@@ -20,6 +20,7 @@ import (
 	devicesnats "github.com/mholtzscher/hearth/internal/modules/devices/nats"
 	devicessqlite "github.com/mholtzscher/hearth/internal/modules/devices/sqlite"
 	platformdb "github.com/mholtzscher/hearth/internal/platform/db"
+	"github.com/mholtzscher/hearth/internal/platform/db/dbtest"
 	"github.com/mholtzscher/hearth/sdk/adapter"
 	sdkpowerv1 "github.com/mholtzscher/hearth/sdk/adapter/powerv1"
 )
@@ -31,14 +32,7 @@ func TestCoreNATSTransportRegistersAndProjectsDurableObservation(t *testing.T) {
 	defer cancel()
 	logger := slog.New(slog.DiscardHandler)
 	databasePath := filepath.Join(t.TempDir(), "hearth.db")
-	database, err := platformdb.Open(ctx, databasePath)
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = database.Close() })
-	if migrateErr := platformdb.Migrate(ctx, database); migrateErr != nil {
-		t.Fatal(migrateErr)
-	}
+	database := dbtest.OpenMigrated(t, databasePath)
 	catalog, err := devices.NewBuiltinTypeCatalog()
 	if err != nil {
 		t.Fatal(err)
@@ -269,14 +263,7 @@ func TestCoreCommandRoundTripRequiresLinkedSimulatorObservation(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	logger := slog.New(slog.DiscardHandler)
-	database, err := platformdb.Open(ctx, filepath.Join(t.TempDir(), "hearth.db"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = database.Close() })
-	if migrateErr := platformdb.Migrate(ctx, database); migrateErr != nil {
-		t.Fatal(migrateErr)
-	}
+	database := dbtest.OpenMigrated(t, filepath.Join(t.TempDir(), "hearth.db"))
 	catalog, err := devices.NewBuiltinTypeCatalog()
 	if err != nil {
 		t.Fatal(err)

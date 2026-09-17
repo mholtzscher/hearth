@@ -10,6 +10,7 @@ import (
 
 	"github.com/mholtzscher/hearth/internal/modules/automations"
 	platformdb "github.com/mholtzscher/hearth/internal/platform/db"
+	"github.com/mholtzscher/hearth/internal/platform/db/dbtest"
 )
 
 const (
@@ -70,14 +71,8 @@ func TestCoreStartupInterruptsRunningAutomationRuns(t *testing.T) {
 // have left it. The Run is manual so no Fact summary is required.
 func seedRunningAutomationRun(ctx context.Context, t *testing.T, databasePath string) {
 	t.Helper()
-	database, err := platformdb.Open(ctx, databasePath)
-	if err != nil {
-		t.Fatal(err)
-	}
+	database := dbtest.OpenMigrated(t, databasePath)
 	defer func() { _ = database.Close() }()
-	if migrateErr := platformdb.Migrate(ctx, database); migrateErr != nil {
-		t.Fatal(migrateErr)
-	}
 	startedAt := time.Now().UTC().Add(-time.Hour).Format("2006-01-02T15:04:05.000000000Z")
 	if _, execErr := database.ExecContext(ctx, `
 		INSERT INTO automation_history (

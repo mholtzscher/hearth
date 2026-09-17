@@ -12,7 +12,7 @@ import (
 	"github.com/mholtzscher/hearth/internal/modules/automations"
 	automationssqlite "github.com/mholtzscher/hearth/internal/modules/automations/sqlite"
 	"github.com/mholtzscher/hearth/internal/modules/devices"
-	platformdb "github.com/mholtzscher/hearth/internal/platform/db"
+	"github.com/mholtzscher/hearth/internal/platform/db/dbtest"
 )
 
 // scriptedDevices is a controllable AutomationDevices seam. It records every
@@ -221,14 +221,7 @@ var runtimeTestNow = time.Date(2026, 9, 1, 12, 0, 0, 0, time.UTC)
 // directory, so Automation SQLite tests exercise the real schema.
 func openAutomationDatabase(t *testing.T) *sql.DB {
 	t.Helper()
-	database, err := platformdb.Open(context.Background(), filepath.Join(t.TempDir(), "hearth.db"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = database.Close() })
-	if err = platformdb.Migrate(context.Background(), database); err != nil {
-		t.Fatal(err)
-	}
+	database := dbtest.OpenMigrated(t, filepath.Join(t.TempDir(), "hearth.db"))
 	return database
 }
 

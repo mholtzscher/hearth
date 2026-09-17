@@ -19,7 +19,7 @@ import (
 	"github.com/mholtzscher/hearth/internal/contracts/v1/natswire"
 	"github.com/mholtzscher/hearth/internal/modules/devices"
 	devicessqlite "github.com/mholtzscher/hearth/internal/modules/devices/sqlite"
-	platformdb "github.com/mholtzscher/hearth/internal/platform/db"
+	"github.com/mholtzscher/hearth/internal/platform/db/dbtest"
 )
 
 const (
@@ -342,14 +342,7 @@ func openDeviceFactOutbox(
 	change *deviceFactChange,
 ) (*sql.DB, devices.DeviceFactOutbox) {
 	t.Helper()
-	database, openErr := platformdb.Open(context.Background(), filepath.Join(t.TempDir(), "hearth.db"))
-	if openErr != nil {
-		t.Fatal(openErr)
-	}
-	t.Cleanup(func() { _ = database.Close() })
-	if migrateErr := platformdb.Migrate(context.Background(), database); migrateErr != nil {
-		t.Fatal(migrateErr)
-	}
+	database := dbtest.OpenMigrated(t, filepath.Join(t.TempDir(), "hearth.db"))
 	repository := devicessqlite.NewDeviceRepository(database, nil)
 	return database, &observingDeviceFactOutbox{DeviceFactOutbox: repository, change: change}
 }

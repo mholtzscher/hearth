@@ -16,6 +16,7 @@ import (
 	"github.com/mholtzscher/hearth/internal/modules/devices"
 	devicessqlite "github.com/mholtzscher/hearth/internal/modules/devices/sqlite"
 	platformdb "github.com/mholtzscher/hearth/internal/platform/db"
+	"github.com/mholtzscher/hearth/internal/platform/db/dbtest"
 )
 
 //nolint:gocognit // The recovery lifecycle is clearer as one end-to-end integration test.
@@ -25,13 +26,7 @@ func TestCoreStartupInterruptsActiveCommandsWithoutRedispatch(t *testing.T) {
 	defer cancel()
 	logger, recorder := withRecording(slog.LevelInfo)
 	databasePath := filepath.Join(t.TempDir(), "hearth.db")
-	database, err := platformdb.Open(ctx, databasePath)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if migrateErr := platformdb.Migrate(ctx, database); migrateErr != nil {
-		t.Fatal(migrateErr)
-	}
+	database := dbtest.OpenMigrated(t, databasePath)
 	catalog, err := devices.NewBuiltinTypeCatalog()
 	if err != nil {
 		t.Fatal(err)

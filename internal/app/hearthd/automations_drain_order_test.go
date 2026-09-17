@@ -17,7 +17,7 @@ import (
 	automationssqlite "github.com/mholtzscher/hearth/internal/modules/automations/sqlite"
 	"github.com/mholtzscher/hearth/internal/modules/devices"
 	devicessqlite "github.com/mholtzscher/hearth/internal/modules/devices/sqlite"
-	platformdb "github.com/mholtzscher/hearth/internal/platform/db"
+	"github.com/mholtzscher/hearth/internal/platform/db/dbtest"
 )
 
 // blockingAutomationDevices holds a Command in flight while tests inspect shutdown.
@@ -192,7 +192,7 @@ func TestCoreShutdownDrainsWorkersBeforeWithdrawingResources(t *testing.T) {
 func TestCoreShutdownSkipsResourcesThatNeverStarted(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
-	database := openOrderingDatabase(ctx, t)
+	database := openOrderingDatabase(t)
 	shutdown := &coreShutdown{
 		runContext: ctx, logger: slog.New(slog.DiscardHandler), database: database,
 	}
@@ -209,7 +209,7 @@ func TestCoreShutdownSkipsResourcesThatNeverStarted(t *testing.T) {
 func TestCoreShutdownContinuesAfterAnIndividualCleanupFailure(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
-	database := openOrderingDatabase(ctx, t)
+	database := openOrderingDatabase(t)
 	logger, recorder := withRecording(slog.LevelWarn)
 	var withdrawn []string
 	shutdown := &coreShutdown{
@@ -255,7 +255,7 @@ func startBlockedAutomationRun(
 	t *testing.T,
 ) (*automations.Service, *devices.Service, *blockingAutomationDevices, automations.Record, automations.Run) {
 	t.Helper()
-	database := openOrderingDatabase(ctx, t)
+	database := openOrderingDatabase(t)
 	catalog, err := devices.NewBuiltinTypeCatalog()
 	if err != nil {
 		t.Fatal(err)
@@ -322,17 +322,10 @@ func TestRunStartupErrorTearsDownStartedDependencies(t *testing.T) {
 	})
 }
 
-// openOrderingDatabase opens and migrates one throwaway SQLite database.
-func openOrderingDatabase(ctx context.Context, t *testing.T) *sql.DB {
+// openOrderingDatabase opens one throwaway SQLite database from the shared migrated template.
+func openOrderingDatabase(t *testing.T) *sql.DB {
 	t.Helper()
-	database, err := platformdb.Open(ctx, filepath.Join(t.TempDir(), "hearth.db"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = database.Close() })
-	if migrateErr := platformdb.Migrate(ctx, database); migrateErr != nil {
-		t.Fatal(migrateErr)
-	}
+	database := dbtest.OpenMigrated(t, filepath.Join(t.TempDir(), "hearth.db"))
 	return database
 }
 

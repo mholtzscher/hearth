@@ -31,7 +31,7 @@ import (
 	devicesapi "github.com/mholtzscher/hearth/internal/modules/devices/api"
 	devicesnats "github.com/mholtzscher/hearth/internal/modules/devices/nats"
 	devicessqlite "github.com/mholtzscher/hearth/internal/modules/devices/sqlite"
-	platformdb "github.com/mholtzscher/hearth/internal/platform/db"
+	"github.com/mholtzscher/hearth/internal/platform/db/dbtest"
 	platformnats "github.com/mholtzscher/hearth/internal/platform/nats"
 	"github.com/mholtzscher/hearth/sdk/adapter"
 )
@@ -143,13 +143,7 @@ func newSimulatorMatrixHarness(
 	logger := slog.New(slog.NewJSONHandler(harness.logs, &slog.HandlerOptions{Level: options.logLevel}))
 
 	var err error
-	harness.database, err = platformdb.Open(ctx, t.TempDir()+"/hearth.db")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if migrateErr := platformdb.Migrate(ctx, harness.database); migrateErr != nil {
-		t.Fatal(migrateErr)
-	}
+	harness.database = dbtest.OpenMigrated(t, t.TempDir()+"/hearth.db")
 	catalog, err := devices.NewBuiltinTypeCatalog()
 	if err != nil {
 		t.Fatal(err)

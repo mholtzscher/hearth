@@ -26,7 +26,7 @@ import (
 	"github.com/mholtzscher/hearth/internal/modules/devices"
 	devicesnats "github.com/mholtzscher/hearth/internal/modules/devices/nats"
 	devicessqlite "github.com/mholtzscher/hearth/internal/modules/devices/sqlite"
-	platformdb "github.com/mholtzscher/hearth/internal/platform/db"
+	"github.com/mholtzscher/hearth/internal/platform/db/dbtest"
 	"github.com/mholtzscher/hearth/internal/testbroker"
 )
 
@@ -73,14 +73,7 @@ func TestRunConnectsNATSAndMosquitto(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
 
-	database, err := platformdb.Open(ctx, filepath.Join(t.TempDir(), "hearth.db"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = database.Close() })
-	if err = platformdb.Migrate(ctx, database); err != nil {
-		t.Fatal(err)
-	}
+	database := dbtest.OpenMigrated(t, filepath.Join(t.TempDir(), "hearth.db"))
 	catalog, err := devices.NewBuiltinTypeCatalog()
 	if err != nil {
 		t.Fatal(err)

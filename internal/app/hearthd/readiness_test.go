@@ -18,7 +18,7 @@ import (
 	"github.com/mholtzscher/hearth/internal/modules/devices"
 	devicesnats "github.com/mholtzscher/hearth/internal/modules/devices/nats"
 	devicessqlite "github.com/mholtzscher/hearth/internal/modules/devices/sqlite"
-	platformdb "github.com/mholtzscher/hearth/internal/platform/db"
+	"github.com/mholtzscher/hearth/internal/platform/db/dbtest"
 	platformnats "github.com/mholtzscher/hearth/internal/platform/nats"
 )
 
@@ -249,14 +249,7 @@ type readinessFixture struct {
 func newReadinessFixture(t *testing.T) readinessFixture {
 	t.Helper()
 	ctx := context.Background()
-	database, err := platformdb.Open(ctx, filepath.Join(t.TempDir(), "hearth.db"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = database.Close() })
-	if migrateErr := platformdb.Migrate(ctx, database); migrateErr != nil {
-		t.Fatal(migrateErr)
-	}
+	database := dbtest.OpenMigrated(t, filepath.Join(t.TempDir(), "hearth.db"))
 	server, err := natsserver.NewServer(&natsserver.Options{
 		Host: "127.0.0.1", Port: -1, JetStream: true, StoreDir: t.TempDir(), NoSigs: true,
 	})

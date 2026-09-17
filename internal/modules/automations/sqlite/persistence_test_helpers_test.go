@@ -10,7 +10,7 @@ import (
 	"github.com/mholtzscher/hearth/internal/modules/automations"
 	automationssqlite "github.com/mholtzscher/hearth/internal/modules/automations/sqlite"
 	"github.com/mholtzscher/hearth/internal/modules/devices"
-	platformdb "github.com/mholtzscher/hearth/internal/platform/db"
+	"github.com/mholtzscher/hearth/internal/platform/db/dbtest"
 )
 
 // migrationTimestamp is a fixed-width UTC stamp accepted by every automation
@@ -21,14 +21,7 @@ const migrationTimestamp = "2026-09-01T00:00:00.000000000Z"
 // directory, so persistence tests exercise the real automation schema.
 func openAutomationDatabase(t *testing.T) *sql.DB {
 	t.Helper()
-	database, err := platformdb.Open(context.Background(), filepath.Join(t.TempDir(), "hearth.db"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = database.Close() })
-	if err = platformdb.Migrate(context.Background(), database); err != nil {
-		t.Fatal(err)
-	}
+	database := dbtest.OpenMigrated(t, filepath.Join(t.TempDir(), "hearth.db"))
 	return database
 }
 

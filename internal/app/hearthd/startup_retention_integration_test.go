@@ -12,6 +12,7 @@ import (
 	natsserver "github.com/nats-io/nats-server/v2/server"
 
 	platformdb "github.com/mholtzscher/hearth/internal/platform/db"
+	"github.com/mholtzscher/hearth/internal/platform/db/dbtest"
 )
 
 // TestCoreStartupPrunesRetainedHistory proves the real startup path runs one
@@ -228,14 +229,8 @@ func blockExpiredObservationPrune(
 
 func seedStartupRetentionDatabase(ctx context.Context, t *testing.T, databasePath string) {
 	t.Helper()
-	database, err := platformdb.Open(ctx, databasePath)
-	if err != nil {
-		t.Fatal(err)
-	}
+	database := dbtest.OpenMigrated(t, databasePath)
 	defer func() { _ = database.Close() }()
-	if migrateErr := platformdb.Migrate(ctx, database); migrateErr != nil {
-		t.Fatal(migrateErr)
-	}
 	seededAt := time.Now().UTC()
 	seedTimestamp := seededAt.Format(time.RFC3339Nano)
 	// Production stores observed_at and recorded_at fixed-width so the retention

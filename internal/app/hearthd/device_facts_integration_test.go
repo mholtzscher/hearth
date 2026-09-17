@@ -27,6 +27,7 @@ import (
 	devicesnats "github.com/mholtzscher/hearth/internal/modules/devices/nats"
 	devicessqlite "github.com/mholtzscher/hearth/internal/modules/devices/sqlite"
 	platformdb "github.com/mholtzscher/hearth/internal/platform/db"
+	"github.com/mholtzscher/hearth/internal/platform/db/dbtest"
 	"github.com/mholtzscher/hearth/sdk/adapter"
 	sdkadapterenumeventv1 "github.com/mholtzscher/hearth/sdk/adapter/enumeventv1"
 	sdkpowerv1 "github.com/mholtzscher/hearth/sdk/adapter/powerv1"
@@ -712,13 +713,7 @@ func TestCoreErrorExitPublishesPendingFactsAndJoinsRelay(t *testing.T) {
 	server := startLifecycleNATSServer(t)
 	subscriber := newDeviceFactSubscriber(t, server.ClientURL())
 	databasePath := filepath.Join(t.TempDir(), "hearth.db")
-	database, err := platformdb.Open(ctx, databasePath)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if migrateErr := platformdb.Migrate(ctx, database); migrateErr != nil {
-		t.Fatal(migrateErr)
-	}
+	database := dbtest.OpenMigrated(t, databasePath)
 	// The row stands for one a previous Core process durably queued but did not
 	// publish, exactly what its bounded drain leaves behind for the next process.
 	observationID := insertPendingObservationFact(t, database, factsTraceparent, factsTracestate)
@@ -837,14 +832,8 @@ func seedDeviceFactsRegistration(
 	databasePath string,
 ) (devices.RuntimeID, devices.EntityID, devices.EntityID) {
 	t.Helper()
-	database, err := platformdb.Open(ctx, databasePath)
-	if err != nil {
-		t.Fatal(err)
-	}
+	database := dbtest.OpenMigrated(t, databasePath)
 	defer func() { _ = database.Close() }()
-	if migrateErr := platformdb.Migrate(ctx, database); migrateErr != nil {
-		t.Fatal(migrateErr)
-	}
 	catalog, err := devices.NewBuiltinTypeCatalog()
 	if err != nil {
 		t.Fatal(err)

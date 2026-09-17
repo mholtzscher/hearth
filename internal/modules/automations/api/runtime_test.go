@@ -14,7 +14,7 @@ import (
 	automationsapi "github.com/mholtzscher/hearth/internal/modules/automations/api"
 	automationssqlite "github.com/mholtzscher/hearth/internal/modules/automations/sqlite"
 	"github.com/mholtzscher/hearth/internal/modules/devices"
-	platformdb "github.com/mholtzscher/hearth/internal/platform/db"
+	"github.com/mholtzscher/hearth/internal/platform/db/dbtest"
 )
 
 // apiDevices is a minimal AutomationDevices seam for HTTP behavior tests. It
@@ -144,14 +144,7 @@ func (stub *apiDevices) GetCommand(
 
 func openAutomationTestDatabase(t *testing.T) *sql.DB {
 	t.Helper()
-	database, err := platformdb.Open(context.Background(), filepath.Join(t.TempDir(), "hearth.db"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = database.Close() })
-	if err = platformdb.Migrate(context.Background(), database); err != nil {
-		t.Fatal(err)
-	}
+	database := dbtest.OpenMigrated(t, filepath.Join(t.TempDir(), "hearth.db"))
 	return database
 }
 

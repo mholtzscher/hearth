@@ -24,7 +24,7 @@ import (
 	devicesapi "github.com/mholtzscher/hearth/internal/modules/devices/api"
 	devicesnats "github.com/mholtzscher/hearth/internal/modules/devices/nats"
 	devicessqlite "github.com/mholtzscher/hearth/internal/modules/devices/sqlite"
-	platformdb "github.com/mholtzscher/hearth/internal/platform/db"
+	"github.com/mholtzscher/hearth/internal/platform/db/dbtest"
 	"github.com/mholtzscher/hearth/sdk/adapter"
 )
 
@@ -240,14 +240,7 @@ func TestEntityEventDrainCommitsInFlightReportAndLeavesUnreadInputForNextProcess
 	if err != nil {
 		t.Fatal(err)
 	}
-	database, err := platformdb.Open(ctx, filepath.Join(t.TempDir(), "hearth.db"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = database.Close() })
-	if migrateErr := platformdb.Migrate(ctx, database); migrateErr != nil {
-		t.Fatal(migrateErr)
-	}
+	database := dbtest.OpenMigrated(t, filepath.Join(t.TempDir(), "hearth.db"))
 	catalog, err := devices.NewBuiltinTypeCatalog()
 	if err != nil {
 		t.Fatal(err)

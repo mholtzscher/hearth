@@ -12,7 +12,7 @@ import (
 	automationssqlite "github.com/mholtzscher/hearth/internal/modules/automations/sqlite"
 	"github.com/mholtzscher/hearth/internal/modules/devices"
 	devicessqlite "github.com/mholtzscher/hearth/internal/modules/devices/sqlite"
-	platformdb "github.com/mholtzscher/hearth/internal/platform/db"
+	"github.com/mholtzscher/hearth/internal/platform/db/dbtest"
 )
 
 // This test protects the app wiring of Automation retention through the shared
@@ -25,14 +25,8 @@ func TestHistoryPruneSchedulerPrunesAutomationHistory(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	databasePath := filepath.Join(t.TempDir(), "hearth.db")
-	database, err := platformdb.Open(ctx, databasePath)
-	if err != nil {
-		t.Fatal(err)
-	}
+	database := dbtest.OpenMigrated(t, databasePath)
 	defer func() { _ = database.Close() }()
-	if migrateErr := platformdb.Migrate(ctx, database); migrateErr != nil {
-		t.Fatal(migrateErr)
-	}
 	seedAutomationHistoryRows(ctx, t, database)
 	if count := countRetentionRows(ctx, database, "automation_history"); count != 3 {
 		t.Fatalf("seeded automation history = %d, want 3", count)

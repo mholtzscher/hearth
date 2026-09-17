@@ -10,6 +10,7 @@ import (
 
 	"github.com/mholtzscher/hearth/internal/modules/devices"
 	platformdb "github.com/mholtzscher/hearth/internal/platform/db"
+	"github.com/mholtzscher/hearth/internal/platform/db/dbtest"
 )
 
 type availabilityModelOperation uint8
@@ -338,23 +339,9 @@ func TestSQLiteEntityAvailabilityHistoryMatchesReferenceModel(t *testing.T) {
 
 func newAvailabilityPropertyDatabaseImage(t *testing.T) []byte {
 	t.Helper()
-	path := filepath.Join(t.TempDir(), "template.db")
-	database, err := platformdb.Open(t.Context(), path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if migrationErr := platformdb.Migrate(t.Context(), database); migrationErr != nil {
-		_ = database.Close()
-		t.Fatal(migrationErr)
-	}
-	if closeErr := database.Close(); closeErr != nil {
-		t.Fatal(closeErr)
-	}
-	image, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	return image
+	// The shared dbtest template is already a freshly migrated, empty
+	// database, so fixture copies start from it instead of migrating again.
+	return dbtest.Image(t)
 }
 
 func newAvailabilityPropertyFixture(
