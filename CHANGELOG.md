@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.11.0](https://github.com/mholtzscher/hearth/compare/v0.10.0...v0.11.0) (2026-09-17)
+
+
+### Features
+
+* **commands:** add household history and rework commands tab ([#122](https://github.com/mholtzscher/hearth/issues/122)) ([1598cdd](https://github.com/mholtzscher/hearth/commit/1598cddda86645dbd17e4692bd5cd64adf06e530))
+* **web:** make devices the default landing tab ([#125](https://github.com/mholtzscher/hearth/issues/125)) ([dc4d0d0](https://github.com/mholtzscher/hearth/commit/dc4d0d0bef9196498a77c1253dc56b18f9aaa704))
+
+
+### Bug Fixes
+
+* **zigbee2mqtt:** accept any single-level MQTT friendly name ([#123](https://github.com/mholtzscher/hearth/issues/123)) ([4556f56](https://github.com/mholtzscher/hearth/commit/4556f56a23646aa22d13c7d646cc061cc06db2be))
+
 ## [0.10.0](https://github.com/mholtzscher/hearth/compare/v0.9.0...v0.10.0) (2026-09-17)
 
 
