@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"reflect"
 	"slices"
+	"strings"
 	"testing"
 
 	"github.com/mholtzscher/hearth/sdk/adapter"
@@ -243,7 +244,7 @@ func TestNormalizeIEEEAddress(t *testing.T) {
 	}
 }
 
-// This test protects Device eligibility gates and fails if unsupported, disabled, incomplete, malformed, or route-unsafe
+// This test protects Device eligibility gates and fails if unsupported, disabled, incomplete, malformed, or topic-unsafe
 // inventory entries register.
 func TestDiscoveryDeviceEligibility(t *testing.T) {
 	t.Parallel()
@@ -257,13 +258,22 @@ func TestDiscoveryDeviceEligibility(t *testing.T) {
 		{name: "interview", edit: func(device *upstreamDevice) { device.InterviewState = "IN_PROGRESS" }, code: rejectionInterview},
 		{name: "definition", edit: func(device *upstreamDevice) { device.Definition = nil }, code: rejectionMissingDefinition},
 		{name: "ieee", edit: func(device *upstreamDevice) { device.IEEEAddress = "bad" }, code: rejectionInvalidIEEE},
-		{name: "friendly_name", edit: func(device *upstreamDevice) { device.FriendlyName = "bad/name" }, code: rejectionInvalidName},
+		{name: "spaced_name", edit: func(device *upstreamDevice) { device.FriendlyName = "bad name" }, code: ""},
+		{name: "slash", edit: func(device *upstreamDevice) { device.FriendlyName = "bad/name" }, code: rejectionInvalidName},
+		{name: "wildcard", edit: func(device *upstreamDevice) { device.FriendlyName = "bad+name" }, code: rejectionInvalidName},
+		{name: "bridge", edit: func(device *upstreamDevice) { device.FriendlyName = "bridge" }, code: rejectionInvalidName},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
 			device := eligibleDevice()
 			test.edit(&device)
 			_, rejection := discoverDevice(device)
+			if test.code == "" {
+				if rejection != nil {
+					t.Fatalf("rejection = %#v, want acceptance", rejection)
+				}
+				return
+			}
 			if rejection == nil || rejection.Code != test.code {
 				t.Fatalf("rejection = %#v, want code %q", rejection, test.code)
 			}
@@ -271,6 +281,69 @@ func TestDiscoveryDeviceEligibility(t *testing.T) {
 				t.Fatalf("disabled Device diagnostic IEEE = %q", rejection.IEEEAddress)
 			}
 		})
+	}
+}
+
+// This test protects the MQTT topic-level friendly-name rule and fails if
+// Zigbee2MQTT-valid names with spaces, case, punctuation, or non-ASCII text are
+// rejected while topic separators, wildcards, and the bridge route are allowed.
+func TestValidFriendlyName(t *testing.T) {
+	t.Parallel()
+	for _, test := range []struct {
+		name  string
+		value string
+		valid bool
+	}{
+		{name: "slug", value: "office-table-lamp", valid: true},
+		{name: "spaces_and_case", value: "Office Fan Button", valid: true},
+		{name: "punctuation", value: "Kitchen Light (2)", valid: true},
+		{name: "dot", value: "light.1", valid: true},
+		{name: "non_ascii", value: "Büro-Lampe", valid: true},
+		{name: "empty", value: ""},
+		{name: "bridge_reserved", value: "bridge"},
+		{name: "topic_separator", value: "kitchen/light"},
+		{name: "wildcard_plus", value: "bad+name"},
+		{name: "wildcard_hash", value: "bad#name"},
+		{name: "nul", value: "bad\x00name"},
+		{name: "invalid_utf8", value: "bad\xffname"},
+		{name: "too_long", value: strings.Repeat("a", maximumFriendlyNameBytes+1)},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			if got := validFriendlyName(test.value); got != test.valid {
+				t.Fatalf("validFriendlyName(%q) = %t, want %t", test.value, got, test.valid)
+			}
+		})
+	}
+}
+
+// This test protects canonical identity across a Zigbee2MQTT rename and fails
+// if a spaced display-style friendly_name isolates an otherwise eligible Device,
+// or if that rename changes its Binding key, external ID, or Entity keys.
+func TestDiscoverKeepsIdentityAcrossSpacedRename(t *testing.T) {
+	t.Parallel()
+	original := mustButtonDevice(t)
+	renamed, err := discoverInventory(editedFixtureInventory(t, buttonFixtureName, map[string]string{
+		"friendly_name": "Office Fan Button",
+		"description":   "",
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(renamed.Rejections) != 0 || len(renamed.Devices) != 1 {
+		t.Fatalf("renamed discovery = %#v", renamed)
+	}
+	device := renamed.Devices[0]
+	if device.FriendlyName != "Office Fan Button" || device.Registration.Device.Name != "Office Fan Button" {
+		t.Fatalf("renamed routing or name = %#v", device)
+	}
+	if device.Registration.BindingKey != original.Registration.BindingKey ||
+		device.Registration.Device.ExternalID == nil || original.Registration.Device.ExternalID == nil ||
+		*device.Registration.Device.ExternalID != *original.Registration.Device.ExternalID {
+		t.Fatalf("Device identity changed: %#v vs %#v", device.Registration, original.Registration)
+	}
+	if got, want := entityKeys(device.Entities), entityKeys(original.Entities); !slices.Equal(got, want) {
+		t.Fatalf("Entity keys changed: %v vs %v", got, want)
 	}
 }
 
@@ -390,7 +463,7 @@ func FuzzDiscoverInventory(fuzz *testing.F) {
 			return
 		}
 		for _, device := range result.Devices {
-			if !validRouteSlug(device.FriendlyName) {
+			if !validFriendlyName(device.FriendlyName) {
 				t.Fatalf("accepted invalid friendly name %q", device.FriendlyName)
 			}
 			seen := make(map[string]struct{}, len(device.Entities))

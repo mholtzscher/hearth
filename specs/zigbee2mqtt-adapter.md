@@ -73,15 +73,15 @@ device_options:
 
 Version 4 means MQTT 3.1.1. Zigbee2MQTT owns this configuration, and the Adapter never changes it. Missing or malformed `bridge/info`, another protocol version, disabled availability, or failure to prove global optimistic behavior false keeps the Adapter unhealthy. Command routes remain unusable, existing Core registrations remain intact, and the Adapter waits for compatible evidence.
 
-### Route-safe names and tested versions
+### Routed names and tested versions
 
-`mqtt.base_topic` and every v1 `friendly_name` must match:
+`mqtt.base_topic` must match:
 
 ```text
 ^[a-z0-9][a-z0-9_-]{0,62}$
 ```
 
-Whitespace, MQTT wildcards, slashes, dots, and ambiguous NATS topic conversions are invalid. One invalid Device is diagnosed and isolated. Other Devices remain usable. The first live Device uses:
+Every v1 `friendly_name` must be one MQTT topic level: 1 to 255 bytes of valid UTF-8 with no `/`, `+`, `#`, or NUL, and never `bridge`. Spaces, uppercase, punctuation, and non-ASCII text are supported, so a Zigbee2MQTT name routes verbatim. MQTT wildcards, topic separators, the reserved bridge route, and invalid UTF-8 are invalid. One invalid Device is diagnosed and isolated. Other Devices remain usable. The first live Device uses:
 
 ```yaml
 friendly_name: office-table-lamp
@@ -222,7 +222,7 @@ A Device is considered for registration only when:
 - `interview_state` is `SUCCESSFUL`;
 - `definition` is non-nil;
 - its normalized IEEE address is exactly `0x` plus 16 lowercase hexadecimal characters;
-- `friendly_name` satisfies the route-safe slug rule;
+- `friendly_name` is a valid single MQTT topic level;
 - at least one eligible Entity plan from the light, relay, sensor, link-quality, or button Event planners exists.
 
 A light expose may be unscoped or endpoint-scoped. Its nested features determine Entities.
@@ -730,7 +730,7 @@ The unfinished disposable Paho smoke test from discovery is not evidence. D1 rep
 
 - [ ] `hearth-adapter-zigbee2mqtt` follows existing config, signal, logging, and exit conventions.
 - [ ] MQTT URLs accept only explicit plain `mqtt://` or `tcp://` host and port values without credentials.
-- [ ] Base and friendly names require subject-safe slugs.
+- [ ] The base topic requires a subject-safe slug and every friendly name is a valid single MQTT topic level.
 - [ ] Client ID derivation is stable, bounded, and collision-tested for representative Adapter IDs.
 - [ ] Paho negotiates MQTT 3.1.1, clean session, and QoS 1 against Mosquitto 2.0.22.
 - [ ] Zigbee2MQTT traffic crosses MQTT, never native `nats.go` publication.
