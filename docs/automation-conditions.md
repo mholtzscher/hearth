@@ -206,7 +206,7 @@ Values are `true`, `false`, or `unknown`. Only a true root admits a Run.
 | all unknown | unknown | unknown |
 
 `not(true)` is `false`, `not(false)` is `true`, and `not(unknown)` remains
-`unknown`. Hearth evaluates every node, including branches that cannot change the
+`unknown`. Hearth evaluates every leaf, including branches that cannot change the
 root, so history explains every predicate rather than whichever branch happened
 to short-circuit. That is why `not(other-room-occupied)` is `unknown` — and
 therefore blocks the `all` example — when the adjacent occupancy Entity has no
@@ -307,7 +307,6 @@ and the retained value that did resolve (elided fields are marked `...`):
         "evaluated_at": "2026-09-15T12:34:56Z",
         "result": "unknown",
         "nodes": [
-          {"id": "dark-and-free", "result": "unknown"},
           {"id": "room-dark", "result": "true", "selected_value": 12,
            "observation_id": "obs_...", "observed_at": "2026-09-15T12:34:50Z"},
           {"id": "other-room-unoccupied", "result": "unknown"},
@@ -320,11 +319,12 @@ and the retained value that did resolve (elided fields are marked `...`):
 }
 ```
 
-Nodes appear once each in definition pre-order. A leaf stores its selected value
-when the pointer resolves, its Observation identity and observed time when State
-exists, and any unknown reason. A selected JSON `null` is encoded as `null`;
-missing evidence omits the value entirely. Composite nodes record only their ID
-and result. History detail includes the Condition tree, so a Skip stays
+Leaves appear once each in definition pre-order; the group and `not` results are
+derivable from the recorded children and are not duplicated. A leaf stores its
+selected value when the pointer resolves, its Observation identity and observed
+time when State exists, and any unknown reason. A selected JSON `null` is encoded
+as `null`; missing evidence omits the value entirely. History detail includes the
+Condition tree, so a Skip stays
 explainable after the definition is replaced or deleted; all of this evidence is
 pruned with the Row under the existing automation retention policy.
 
@@ -386,9 +386,9 @@ Run's `condition_decision` records `"mode": "bypassed"`, `"bypass_requested":
 true`, and the definition snapshot, with no evaluation. Bypass affects **only**
 Conditions: admission gates, the busy check, save-time definition integrity, and
 execution-time Command validation all still apply, and the Run's Commands must
-still satisfy normally. When a definition has no Conditions, a requested bypass is
-recorded but the decision is classified `not_configured`, not a fabricated
-evaluation.
+still satisfy normally. When a definition has no Conditions, the decision is
+classified `not_configured` — there is nothing to bypass, and `bypass_requested`
+is always derived from the mode.
 
 Bodies with unknown members, a JSON `null`, a non-boolean `bypass_conditions`, a
 non-object value, or trailing JSON are rejected before admission with no writes.

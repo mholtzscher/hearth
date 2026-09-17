@@ -91,6 +91,9 @@ type AutomationHistory struct {
 	SkipReason               sql.NullString
 	SkipSource               sql.NullString
 	ConditionDecisionJson    string
+	ConditionMode            string
+	ConditionBypassed        int64
+	ConditionResult          sql.NullString
 }
 
 type AutomationRunStep struct {

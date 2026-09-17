@@ -138,13 +138,13 @@ func conditionNodeBody(condition automations.Condition) AutomationConditionBody 
 // conditionDecisionBody maps one retained decision to its transport form.
 func conditionDecisionBody(decision automations.ConditionDecision) AutomationConditionDecisionBody {
 	body := AutomationConditionDecisionBody{
-		Mode:            string(decision.Mode),
-		BypassRequested: decision.BypassRequested,
-		Snapshot:        conditionBody(decision.Snapshot),
+		Mode:            string(decision.DecisionMode()),
+		BypassRequested: decision.BypassRequested(),
+		Snapshot:        conditionBody(decision.DecisionSnapshot()),
 	}
-	if decision.Evaluation != nil {
-		evaluation := conditionEvaluationBody(*decision.Evaluation)
-		body.Evaluation = &evaluation
+	if evaluation := decision.DecisionEvaluation(); evaluation != nil {
+		mapped := conditionEvaluationBody(*evaluation)
+		body.Evaluation = &mapped
 	}
 	return body
 }

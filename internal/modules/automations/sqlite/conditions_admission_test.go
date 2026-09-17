@@ -308,7 +308,8 @@ func TestAdmitDeviceFactCoverageIgnoresIneligibleSiblings(t *testing.T) {
 		t.Fatalf("busy Skip reason = %q", first.Skips[0].Reason)
 	}
 	entry := historyEntry(t, repository, conditional.ID, string(first.Skips[0].SkipID))
-	if entry.Skip == nil || entry.Skip.ConditionDecision.Mode != automations.ConditionDecisionNotEvaluated {
+	if entry.Skip == nil || entry.Skip.ConditionDecision.DecisionMode() !=
+		automations.ConditionDecisionNotEvaluated {
 		t.Fatalf("busy Skip decision = %#v, want not_evaluated", entry.Skip)
 	}
 
@@ -347,13 +348,13 @@ func TestAdmitDeviceFactEvaluatedRunCommitsWithSnapshotDecision(t *testing.T) {
 		t.Fatalf("admission outcome = %#v", result.Outcome)
 	}
 	run := result.StartedRuns[0]
-	if run.ConditionDecision.Mode != automations.ConditionDecisionEvaluated ||
-		run.ConditionDecision.Evaluation == nil ||
-		run.ConditionDecision.Evaluation.Result != automations.ConditionTrue {
+	if run.ConditionDecision.DecisionMode() != automations.ConditionDecisionEvaluated ||
+		run.ConditionDecision.DecisionEvaluation() == nil ||
+		run.ConditionDecision.DecisionEvaluation().Result != automations.ConditionTrue {
 		t.Fatalf("Run decision = %#v, want an evaluated true decision", run.ConditionDecision)
 	}
 	entry := historyEntry(t, repository, record.ID, string(run.ID))
-	if entry.Run == nil || entry.Run.ConditionDecision.Evaluation == nil {
+	if entry.Run == nil || entry.Run.ConditionDecision.DecisionEvaluation() == nil {
 		t.Fatalf("stored Run decision = %#v", entry.Run)
 	}
 	if !slices.Equal(entry.Run.MatchedTriggerIDs, []automations.TriggerID{"occupied_and_warm"}) {
@@ -507,7 +508,7 @@ func requireManualSkipShape(
 	}
 	entry := historyEntry(t, repository, record.ID, string(skip.ID))
 	if entry.Skip == nil || entry.Skip.Fact != nil ||
-		entry.Skip.ConditionDecision.Mode != automations.ConditionDecisionEvaluated {
+		entry.Skip.ConditionDecision.DecisionMode() != automations.ConditionDecisionEvaluated {
 		t.Fatalf("stored manual Skip = %#v", entry.Skip)
 	}
 	summary := firstHistorySummary(t, repository, record.ID)
@@ -527,8 +528,8 @@ func requireManualRunShape(t *testing.T, result automations.ManualAdmissionResul
 		len(result.Run.MatchedTriggerIDs) != 0 {
 		t.Fatalf("manual Run = %#v", result.Run)
 	}
-	if result.Run.ConditionDecision.Mode != automations.ConditionDecisionEvaluated ||
-		result.Run.ConditionDecision.Evaluation.Result != automations.ConditionTrue {
+	if result.Run.ConditionDecision.DecisionMode() != automations.ConditionDecisionEvaluated ||
+		result.Run.ConditionDecision.DecisionEvaluation().Result != automations.ConditionTrue {
 		t.Fatalf("manual Run decision = %#v", result.Run.ConditionDecision)
 	}
 }
@@ -607,11 +608,11 @@ func TestAdmitManualRunBypassNeverReadsState(t *testing.T) {
 		t.Fatalf("bypass requested a State read: %v", err)
 	}
 	decision := bypassed.Run.ConditionDecision
-	if decision.Mode != automations.ConditionDecisionBypassed || !decision.BypassRequested {
+	if decision.DecisionMode() != automations.ConditionDecisionBypassed || !decision.BypassRequested() {
 		t.Fatalf("bypassed Run decision = %#v", decision)
 	}
 	entry := historyEntry(t, repository, configured.ID, string(bypassed.Run.ID))
-	if entry.Run == nil || entry.Run.ConditionDecision.Mode != automations.ConditionDecisionBypassed {
+	if entry.Run == nil || entry.Run.ConditionDecision.DecisionMode() != automations.ConditionDecisionBypassed {
 		t.Fatalf("stored bypassed Run = %#v", entry.Run)
 	}
 
@@ -624,8 +625,7 @@ func TestAdmitManualRunBypassNeverReadsState(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if requested.Run.ConditionDecision.Mode != automations.ConditionDecisionNotConfigured ||
-		!requested.Run.ConditionDecision.BypassRequested {
+	if requested.Run.ConditionDecision.DecisionMode() != automations.ConditionDecisionNotConfigured {
 		t.Fatalf("unconditioned bypass decision = %#v", requested.Run.ConditionDecision)
 	}
 }

@@ -47,7 +47,7 @@ Values are `true`, `false`, and `unknown`. Only a true root admits a Run.
 
 For arbitrary nonempty groups: `all` is false if any child is false, otherwise unknown if any is unknown, otherwise true; `any` is true if any child is true, otherwise unknown if any is unknown, otherwise false. `not(true)=false`, `not(false)=true`, `not(unknown)=unknown`.
 
-Evaluate **every node**, including branches that cannot change the root result. History therefore explains every predicate, not whichever branch happened to short-circuit. A true `any` may legitimately admit despite an unknown sibling; that sibling's evidence remains visible.
+Evaluate **every leaf**, including branches that cannot change the root result (no short-circuiting). History therefore explains every predicate, not whichever branch happened to short-circuit. A true `any` may legitimately admit despite an unknown sibling; that sibling's leaf evidence remains visible. Only `entity_state` leaves are recorded as evidence; group and `not` results are derived from their children.
 
 Leaf unknown reasons, in precedence order:
 
@@ -58,7 +58,7 @@ Leaf unknown reasons, in precedence order:
 5. `pointer_missing`: the valid pointer cannot select a value, including a noncanonical runtime array index.
 6. `type_mismatch`: for `eq`/`ne`, selected value and operand have different top-level JSON kinds; for ordering, either side is not a JSON number. Same-kind containers with different members, nested member types, or element values are unequal, not type-mismatched.
 
-A comparison of valid same-type values produces true or false. JSON `null` is a real selected value, not missing evidence. `ne` on incompatible types is unknown, not true. Composite unknown nodes have no invented leaf reason; their children explain them.
+A comparison of valid same-type values produces true or false. JSON `null` is a real selected value, not missing evidence. `ne` on incompatible types is unknown, not true. An unknown group or `not` node has no invented leaf reason; its recorded children explain it.
 
 Corrupt stored JSON or definitions, impossible evidence identities, and infrastructure failures are errors, not unknown values. State corruption rolls back admission, negatively acknowledges the Fact, writes no outcome, and logs `automation.condition_state_corrupt` without values. This can block the single-pending-ack consumer until repair or stale classification. After 30 seconds, stale precedence records the usual Skips without reading State. Retention does not extend the execution window or promise later execution. Manual corruption returns safe HTTP 500. Existing Observation Triggers still return false for missing or incompatible values, including `ne`.
 
@@ -94,7 +94,7 @@ A Skip creates no Step rows, reserves no Command identities, and starts no worke
 - Existing admission gates, missing-definition checks, and busy checks precede Conditions. Manual busy remains HTTP 409 `automation_busy` with no new Skip.
 - Normal manual admission evaluates Conditions; false or unknown commits a manual Skip, no Run/Steps/Commands, then returns HTTP 409 with that Skip's history reference.
 - Explicit bypass does not read State or evaluate any Condition. It is recorded in the admitted Run. It bypasses **only** Conditions, never busy checks, gates, save-time definition integrity, or execution-time Command validation.
-- If Conditions are absent, record a requested bypass flag but classify the decision `not_configured`, not a fabricated evaluation.
+- If Conditions are absent, classify the decision `not_configured`. The bypass affects nothing to record; `bypass_requested` is derived from the mode, so an unconditioned bypass is indistinguishable from any other unconditioned Run.
 - There is no new manual idempotency key. Each completed manual condition-blocked request creates a distinct Skip. Never automatically repeat an ambiguous manual POST.
 
 The repository returns a successful committed Run-or-Skip result. Only the Service, **after commit**, turns a committed manual Skip into a typed blocked error. Returning that error from the transaction callback would roll back the required history and is forbidden.
@@ -110,9 +110,9 @@ All new Runs and Skips retain a Condition decision with one mode:
 | `bypassed` | present | absent | Explicit manual bypass of configured Conditions |
 | `evaluated` | present | present | Eligible automatic/manual admission with Conditions |
 
-Also retain `bypass_requested` (false for automatic outcomes). With configured Conditions it is true if and only if mode is bypassed. A Condition-blocked Skip cannot be bypassed. For a Run, the decision's Condition snapshot must equal its full definition snapshot's Conditions.
+`bypass_requested` is derived from the mode: true if and only if mode is `bypassed`, false otherwise, including for automatic outcomes and unconditioned definitions. It is written for wire compatibility and ignored when decoding. A Condition-blocked Skip cannot be bypassed. For a Run, the decision's Condition snapshot must equal its full definition snapshot's Conditions.
 
-An evaluation stores the root result, `evaluated_at`, and every node result in definition pre-order. Each leaf stores its selected value when the pointer resolves, its Observation ID and `observed_at` when State exists, result, and any unknown reason. Expired/future evidence still retains identities/times and the selected value if resolvable, but does not compare it for admission. Raw entire Entity State is not duplicated when a pointer selected only one member; selecting the root intentionally retains the entire value. Missing values are omitted; a selected JSON null is encoded as `null`. Composite nodes retain ID/result without fabricated Entity evidence.
+An evaluation stores the root result, `evaluated_at`, and every `entity_state` leaf result in definition pre-order; group and `not` results are derivable from their children and are not duplicated as evidence. Each leaf stores its selected value when the pointer resolves, its Observation ID and `observed_at` when State exists, result, and any unknown reason. Expired/future evidence still retains identities/times and the selected value if resolvable, but does not compare it for admission. Raw entire Entity State is not duplicated when a pointer selected only one member; selecting the root intentionally retains the entire value. Missing values are omitted; a selected JSON null is encoded as `null`.
 
 The stored decision must satisfy these invariants. Write-time structural
 validation plus the history table's CHECK constraints are the integrity guard;
@@ -122,10 +122,10 @@ evaluation evidence.
 - Empty/unknown mode values are invalid. `condition_decision_json` is `NOT NULL` and must be an explicit object; an empty payload is malformed, not an implicit `not_configured`.
 - `not_configured` has neither snapshot nor evaluation. `not_evaluated` and `bypassed` have a snapshot but no evaluation. `evaluated` has both.
 - `not_evaluated` occurs only on an automatic stale/busy Skip with configured Conditions; `bypassed` occurs only on a manual Run with `bypass_requested=true`. Automatic outcomes always have `bypass_requested=false`.
-- A manual Run without configured Conditions may have `not_configured` plus `bypass_requested=true`. No other non-bypassed configured decision may request bypass.
+- `bypass_requested` is false for every mode except `bypassed`; there is no separate requested-bypass record for unconditioned definitions.
 - An evaluated Run has a true root. A Condition Skip has an evaluated false or unknown root matching its reason. Manual Skips permit only these Condition reasons.
-- Evaluation nodes exactly match snapshot node IDs and pre-order; the root result equals the first node result; composite results agree with their recorded children under the truth table.
-- Composite nodes have no unknown reason or leaf evidence. A true/false leaf has selected value, Observation ID, and observed time, with no unknown reason. An unknown leaf has exactly one listed reason.
+- Evaluation leaves exactly match snapshot `entity_state` IDs and pre-order; the root result agrees with its recorded children under the truth table.
+- A true/false leaf has selected value, Observation ID, and observed time, with no unknown reason. An unknown leaf has exactly one listed reason.
 - `entity_missing`/`state_missing` leaves have neither selected value nor Observation metadata. `pointer_missing` has Observation metadata and no selected value. `type_mismatch` has both metadata and selected value. `evidence_expired`/`evidence_in_future` have metadata and retain a selected value if the pointer resolves; their earlier reason takes precedence over pointer/type failures.
 - Observation ID and observed time are always present together. A selected JSON null is present evidence. At admission, the selected value is captured if and only if a State exists and its pointer resolves; history validation never consults newer State to reinterpret that evidence.
 
@@ -193,7 +193,7 @@ type ConditionNodeResult struct {
     ObservedAt    *time.Time
 }
 
-// ConditionEvaluation contains every node in definition pre-order.
+// ConditionEvaluation contains every entity_state leaf in definition pre-order.
 type ConditionEvaluation struct {
     EvaluatedAt time.Time
     Result      ConditionResult
@@ -205,11 +205,14 @@ type ConditionDecisionMode string
 // Closed literals: not_configured, not_evaluated, bypassed, evaluated.
 
 // ConditionDecision is immutable admission explanation, not executable work.
-type ConditionDecision struct {
-    Mode            ConditionDecisionMode
-    BypassRequested bool
-    Snapshot        *Condition
-    Evaluation      *ConditionEvaluation
+// A sealed interface: exactly one of four explanations exists, built by the
+// NotConfiguredDecision, NotEvaluatedDecision, BypassedDecision, and
+// EvaluatedDecision constructors, so envelope coherence holds by construction.
+type ConditionDecision interface {
+    DecisionMode() ConditionDecisionMode
+    BypassRequested() bool // true if and only if the mode is bypassed
+    DecisionSnapshot() *Condition
+    DecisionEvaluation() *ConditionEvaluation
 }
 
 func NormalizeConditions(root Condition) (Condition, error)
@@ -379,6 +382,8 @@ condition_decision_json TEXT NOT NULL CHECK (
 
 Extend `skip_reason`'s closed values with `conditions_false`, `conditions_unknown`. Keep existing Run source columns and partial unique index; do not rename the entire history schema. `condition_decision_json` is shared by Runs/Skips and encodes `ConditionDecision` with snake_case fields. Every row writes an explicit decision; the column is `NOT NULL`.
 
+Each row also carries derived decision summary columns (`condition_mode`, `condition_bypassed`, `condition_result`) written from the decision at insert time and backfilled by migration for earlier rows, so the history listing projection never parses the full snapshot-and-evidence document. The decision document stays authoritative for detail reads.
+
 Replace the old unconditional Fact requirement in the history-kind CHECK; adding columns alone is insufficient. This focused SQL diff preserves the other existing Run/Skip and all-or-nothing Fact checks:
 
 ```diff
@@ -525,14 +530,14 @@ Execute D2, D1, D3, D4, then D5 because the evaluator needs D2's State snapshot 
 
 ## 7. Acceptance criteria and fault-oriented verification
 
-- **A1. Definition contract.** Omission round-trips without adding Conditions. Strict families accept valid trees and reject null, empty groups, contradictory fields, duplicate IDs, depth 9, node 65, bad age boundaries, invalid pointers/operators, and definitions over 64 KiB. Depth 8 and node 64 succeed. Typed cycles fail without runaway recursion. Old definitions and unconditioned Run snapshots decode.
-- **A2. Truth table.** The nine ordered pairs for binary `all` and `any`, plus all three `not` inputs, match §2.2. `any(true,unknown)` admits and `not(unknown)` does not. Evaluation records each node once in stable pre-order without short-circuiting.
+- **A1. Definition contract.** Omission round-trips without adding Conditions. Strict families accept valid trees and reject null, empty groups, contradictory fields, duplicate IDs, depth 9, node 65, bad age boundaries, invalid pointers/operators, and definitions over 64 KiB. Depth 8 and node 64 succeed. Old definitions and unconditioned Run snapshots decode.
+- **A2. Truth table.** The nine ordered pairs for binary `all` and `any`, plus all three `not` inputs, match §2.2. `any(true,unknown)` admits and `not(unknown)` does not. Evaluation records each `entity_state` leaf once in stable pre-order without short-circuiting.
 - **A3. Leaf semantics.** Tests cover every unknown reason, JSON null, same-kind unequal containers, exact rational numbers, and `ne 30` against 40. Uncovered keys return the typed coverage error and no evaluation; covered absent State returns unknown. Invalid stored JSON is an error. Existing Trigger missing/type mismatch behavior remains false.
 - **A4. Evidence age.** Controlled-clock tests cover no bound, the exact limit, one nanosecond past it, future evidence, and unchanged Observations that advance `observed_at`. Adapter and upstream timestamps, availability, and enablement do not alter the result.
 - **A5. Batch snapshot.** Real migrated SQLite distinguishes present, never-observed, and missing Entities in one owned, deduplicated snapshot; an empty request returns empty. With an independent writer atomically changing two rows, each statement sees the complete old or new pair, never a mix.
 - **A6. Reference validation.** Through the devices seam and definition API, save rejects unknown or stateless Entities, accepts stateful never-observed, unavailable, or disabled Entities, and preserves Trigger validation.
 - **A7. Atomic coverage.** An uncovered snapshot from a definition-edit race writes no history, receipt, or Step. The required set includes only current eligible Conditions, and known absent State counts as covered. One covered transaction commits mixed unconditional and conditional outcomes together; injected storage failure rolls all writes back.
-- **A8. Explanation integrity.** Every decision mode and evaluated result round-trips; selected JSON null remains distinct from missing. Leaf identity, time, and value survive State and definition changes, deletion, and device-history pruning. Domain and raw-SQL tests reject inconsistent IDs, results, provenance, reasons, modes, evidence, malformed decision JSON, Skip Fact fields, Run Skip fields, a Skip with a null source, and any row with a null decision. Valid manual Skips decode.
+- **A8. Explanation integrity.** Every decision mode and evaluated result round-trips; selected JSON null remains distinct from missing. Leaf identity, time, and value survive State and definition changes, deletion, and device-history pruning. Domain and raw-SQL tests reject inconsistent IDs, results, provenance, reasons, modes, evidence, malformed or envelope-incoherent decision JSON, Skip Fact fields, Run Skip fields, a Skip with a null source, and any row with a null decision. Valid manual Skips decode.
 - **A9. Redelivery and pruning.** Changing State and redelivering a Fact after a Condition Skip starts no Run. Pruning that history still leaves the receipt to block later redelivery. Existing unconditional deduplication remains unchanged.
 - **A10. Definition races.** Barrier-controlled definition and busy races prove final definitions govern admission. Newly required IDs return `ErrConditionSnapshotRequired` after one pre-read and one transaction; covered-ID operand edits reuse coherent evidence. Admission writes no partial outcomes or starts workers, and does not latch an executor fault.
 - **A11. Precedence and reads.** Automatic admission reads State only when an enabled matching definition has Conditions, even if transaction precedence later yields duplicate, stale, or busy. Unconditioned automatic admissions and explicit-bypass or unconditioned manual admissions do not read State. Stale or busy Conditions are not evaluated. No Fact route accepts bypass.
@@ -546,7 +551,7 @@ Execute D2, D1, D3, D4, then D5 because the evaluator needs D2's State snapshot 
 
 ### Test strategy
 
-Use the smallest boundary that can detect each defect. Domain tests derive truth-table, age, and numeric expectations from this contract rather than production helpers. Existing Trigger numeric tests guard shared comparison code. Add bounded Rapid properties for double negation, group permutation, root-result invariance, and normalization round trips. Compare evidence in definition order. Fuzz the bounded decoder for panic freedom and valid round trips; test typed cycles directly. Rapid is already available.
+Use the smallest boundary that can detect each defect. Domain tests derive truth-table, age, and numeric expectations from this contract rather than production helpers. Existing Trigger numeric tests guard shared comparison code. Add bounded Rapid properties for double negation, group permutation, root-result invariance, and normalization round trips. Compare evidence in definition order. Fuzz the bounded decoder for panic freedom and valid round trips. Rapid is already available.
 
 Use real migrated SQLite for constraints, atomic writes, coverage, receipts, and mapping. Use barriers, channels, and a controlled clock for concurrency tests, never sleeps. Transport tests inspect requests, responses, and runtime OpenAPI. Application tests cover the complete Device Fact, admission, Command, and history path.
 

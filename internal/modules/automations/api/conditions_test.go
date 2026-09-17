@@ -203,9 +203,9 @@ func TestAutomationDefinitionConditionsStrictJSONIsRejected(t *testing.T) {
 	}
 }
 
-// An unconditioned definition must classify its decision not_configured while
-// still recording whether the caller requested a bypass, and must never fabricate
-// a Condition snapshot.
+// An unconditioned definition must classify its decision not_configured whether
+// or not the caller requested a bypass (the flag is derived from the mode), and
+// must never fabricate a Condition snapshot.
 func TestManualRunUnconditionedBypassDecisionDTOs(t *testing.T) {
 	t.Parallel()
 	stub := newAPIDevices()
@@ -213,12 +213,11 @@ func TestManualRunUnconditionedBypassDecisionDTOs(t *testing.T) {
 	created := decodeAutomation(t, performJSON(router, http.MethodPost, "/v1/automations", definitionDocument(t, 1)))
 
 	for _, test := range []struct {
-		name   string
-		body   string
-		bypass bool
+		name string
+		body string
 	}{
-		{"omitted body", "", false},
-		{"explicit bypass", `{"bypass_conditions":true}`, true},
+		{"omitted body", ""},
+		{"explicit bypass", `{"bypass_conditions":true}`},
 	} {
 		response := performJSON(router, http.MethodPost, "/v1/automations/"+created.ID+"/runs", test.body)
 		if response.Code != http.StatusAccepted {
@@ -229,7 +228,7 @@ func TestManualRunUnconditionedBypassDecisionDTOs(t *testing.T) {
 			t.Fatal(err)
 		}
 		decision := run.ConditionDecision
-		if decision.Mode != "not_configured" || decision.BypassRequested != test.bypass ||
+		if decision.Mode != "not_configured" || decision.BypassRequested ||
 			decision.Snapshot != nil || decision.Evaluation != nil {
 			t.Fatalf("%s unconditioned decision = %#v", test.name, decision)
 		}

@@ -241,12 +241,10 @@ func (repo *AutomationRepository) planAutomationOutcome(
 	conditions := record.Definition.Conditions
 	if conditions == nil {
 		return &plannedAutomation{
-			record:  record,
-			matched: matched,
-			kind:    plannedOutcomeRun,
-			decision: automations.ConditionDecision{
-				Mode: automations.ConditionDecisionNotConfigured,
-			},
+			record:   record,
+			matched:  matched,
+			kind:     plannedOutcomeRun,
+			decision: automations.NotConfiguredDecision(),
 		}, nil
 	}
 	return planConditionalOutcome(record, matched, conditions, snapshot, admittedAt)
@@ -330,15 +328,14 @@ func (repo *AutomationRepository) commitDeviceFact(
 	return nil
 }
 
-// persistRun writes one Run snapshot and its initial not_attempted Steps.
+// persistRun writes one Run snapshot and its initial not_attempted Steps. The
+// Run was built by the domain from an already-normalized record, so it is
+// encoded and trusted rather than re-validated.
 func (repo *AutomationRepository) persistRun(
 	ctx context.Context,
 	queries *dbsqlc.Queries,
 	run automations.Run,
 ) error {
-	if err := automations.ValidateRun(run); err != nil {
-		return err
-	}
 	snapshot, err := automations.EncodeDefinition(run.Snapshot)
 	if err != nil {
 		return err
@@ -351,6 +348,7 @@ func (repo *AutomationRepository) persistRun(
 	if err != nil {
 		return err
 	}
+	conditionMode, conditionBypassed, conditionResult := decisionSummaryColumns(run.ConditionDecision)
 	fact := storedFactColumns(run.Fact)
 	recordedAt := encodeAutomationTimestamp(run.StartedAt)
 	if err = queries.CreateHistoryRun(ctx, dbsqlc.CreateHistoryRunParams{
@@ -370,6 +368,9 @@ func (repo *AutomationRepository) persistRun(
 		RunSource:                sql.NullString{String: string(run.Source), Valid: true},
 		RunStartedAt:             sql.NullString{String: recordedAt, Valid: true},
 		RunMatchedTriggerIdsJson: sql.NullString{String: string(matched), Valid: true},
+		ConditionMode:            conditionMode,
+		ConditionBypassed:        conditionBypassed,
+		ConditionResult:          conditionResult,
 		ConditionDecisionJson:    string(decision),
 	}); err != nil {
 		return err
@@ -419,45 +420,18 @@ func (repo *AutomationRepository) recordSkip(
 	return repo.persistDeviceFactSkip(ctx, queries, skip)
 }
 
-// persistDeviceFactSkip writes one validated device-fact Skip and its deduplication receipt.
+// persistDeviceFactSkip writes one device-fact Skip and its deduplication
+// receipt. The Skip was planned by the domain from an already-normalized record,
+// so it is encoded and trusted rather than re-validated.
 func (repo *AutomationRepository) persistDeviceFactSkip(
 	ctx context.Context,
 	queries *dbsqlc.Queries,
 	skip automations.Skip,
 ) (automations.AdmissionSkip, error) {
-	if err := automations.ValidateSkip(skip); err != nil {
+	if err := repo.persistHistorySkip(ctx, queries, skip); err != nil {
 		return automations.AdmissionSkip{}, err
 	}
-	encodedTriggers, err := automations.EncodeMatchedTriggers(skip.MatchedTriggers)
-	if err != nil {
-		return automations.AdmissionSkip{}, err
-	}
-	decision, err := automations.EncodeConditionDecision(skip.ConditionDecision)
-	if err != nil {
-		return automations.AdmissionSkip{}, err
-	}
-	fact := storedFactColumns(skip.Fact)
-	if err = queries.CreateHistorySkip(ctx, dbsqlc.CreateHistorySkipParams{
-		ID:                      string(skip.ID),
-		AutomationID:            string(skip.AutomationID),
-		AutomationName:          skip.AutomationName,
-		Revision:                skip.Revision,
-		RecordedAt:              encodeAutomationTimestamp(skip.SkippedAt),
-		FactID:                  fact.id,
-		FactFamily:              fact.family,
-		FactEntityID:            fact.entityID,
-		FactVariant:             fact.variant,
-		FactCausationID:         fact.causationID,
-		FactValueJson:           fact.valueJSON,
-		FactEmittedAt:           fact.emittedAt,
-		SkipMatchedTriggersJson: sql.NullString{String: string(encodedTriggers), Valid: true},
-		SkipReason:              sql.NullString{String: string(skip.Reason), Valid: true},
-		SkipSource:              sql.NullString{String: string(skip.Source), Valid: true},
-		ConditionDecisionJson:   string(decision),
-	}); err != nil {
-		return automations.AdmissionSkip{}, err
-	}
-	if err = repo.writeReceipt(
+	if err := repo.writeReceipt(
 		ctx, queries, skip.Fact.FactID, skip.AutomationID, automations.HistorySkip, string(skip.ID),
 	); err != nil {
 		return automations.AdmissionSkip{}, err
@@ -474,8 +448,48 @@ func (repo *AutomationRepository) persistDeviceFactSkip(
 	}, nil
 }
 
-// persistManualSkip writes one validated manual Condition Skip with no Fact,
-// Trigger snapshots, Steps, or receipt.
+// persistHistorySkip writes one Skip row with the shared provenance, evidence,
+// reason, and decision columns; a nil Fact summary leaves the Fact columns NULL.
+func (repo *AutomationRepository) persistHistorySkip(
+	ctx context.Context,
+	queries *dbsqlc.Queries,
+	skip automations.Skip,
+) error {
+	encodedTriggers, err := automations.EncodeMatchedTriggers(skip.MatchedTriggers)
+	if err != nil {
+		return err
+	}
+	decision, err := automations.EncodeConditionDecision(skip.ConditionDecision)
+	if err != nil {
+		return err
+	}
+	conditionMode, conditionBypassed, conditionResult := decisionSummaryColumns(skip.ConditionDecision)
+	fact := storedFactColumns(skip.Fact)
+	return queries.CreateHistorySkip(ctx, dbsqlc.CreateHistorySkipParams{
+		ID:                      string(skip.ID),
+		AutomationID:            string(skip.AutomationID),
+		AutomationName:          skip.AutomationName,
+		Revision:                skip.Revision,
+		RecordedAt:              encodeAutomationTimestamp(skip.SkippedAt),
+		FactID:                  fact.id,
+		FactFamily:              fact.family,
+		FactEntityID:            fact.entityID,
+		FactVariant:             fact.variant,
+		FactCausationID:         fact.causationID,
+		FactValueJson:           fact.valueJSON,
+		FactEmittedAt:           fact.emittedAt,
+		SkipMatchedTriggersJson: sql.NullString{String: string(encodedTriggers), Valid: true},
+		SkipReason:              sql.NullString{String: string(skip.Reason), Valid: true},
+		SkipSource:              sql.NullString{String: string(skip.Source), Valid: true},
+		ConditionMode:           conditionMode,
+		ConditionBypassed:       conditionBypassed,
+		ConditionResult:         conditionResult,
+		ConditionDecisionJson:   string(decision),
+	})
+}
+
+// persistManualSkip writes one manual Condition Skip with no Fact, Trigger
+// snapshots, Steps, or receipt.
 func (repo *AutomationRepository) persistManualSkip(
 	ctx context.Context,
 	queries *dbsqlc.Queries,
@@ -499,29 +513,8 @@ func (repo *AutomationRepository) persistManualSkip(
 		ConditionDecision: decision,
 		SkippedAt:         skippedAt.UTC(),
 	}
-	if err = automations.ValidateSkip(skip); err != nil {
-		return automations.Skip{}, err
-	}
-	encodedTriggers, err := automations.EncodeMatchedTriggers(skip.MatchedTriggers)
-	if err != nil {
-		return automations.Skip{}, err
-	}
-	encodedDecision, err := automations.EncodeConditionDecision(decision)
-	if err != nil {
-		return automations.Skip{}, err
-	}
-	if err = queries.CreateHistorySkip(ctx, dbsqlc.CreateHistorySkipParams{
-		ID:                      string(skip.ID),
-		AutomationID:            string(skip.AutomationID),
-		AutomationName:          skip.AutomationName,
-		Revision:                skip.Revision,
-		RecordedAt:              encodeAutomationTimestamp(skip.SkippedAt),
-		SkipMatchedTriggersJson: sql.NullString{String: string(encodedTriggers), Valid: true},
-		SkipReason:              sql.NullString{String: string(skip.Reason), Valid: true},
-		SkipSource:              sql.NullString{String: string(skip.Source), Valid: true},
-		ConditionDecisionJson:   string(encodedDecision),
-	}); err != nil {
-		return automations.Skip{}, err
+	if persistErr := repo.persistHistorySkip(ctx, queries, skip); persistErr != nil {
+		return automations.Skip{}, persistErr
 	}
 	return skip, nil
 }
@@ -533,23 +526,11 @@ func manualConditionDecision(
 	snapshot devices.EntityStateSnapshot,
 	admittedAt time.Time,
 ) (automations.ConditionDecision, automations.SkipReason, error) {
-	if bypass {
-		if conditions == nil {
-			return automations.ConditionDecision{
-				Mode:            automations.ConditionDecisionNotConfigured,
-				BypassRequested: true,
-			}, "", nil
-		}
-		return automations.ConditionDecision{
-			Mode:            automations.ConditionDecisionBypassed,
-			BypassRequested: true,
-			Snapshot:        conditions,
-		}, "", nil
+	if bypass && conditions != nil {
+		return automations.BypassedDecision(*conditions), "", nil
 	}
 	if conditions == nil {
-		return automations.ConditionDecision{
-			Mode: automations.ConditionDecisionNotConfigured,
-		}, "", nil
+		return automations.NotConfiguredDecision(), "", nil
 	}
 	return automations.DecideConditions(conditions, snapshot, admittedAt)
 }
@@ -560,14 +541,25 @@ func notEvaluatedDecision(
 	conditions *automations.Condition,
 ) automations.ConditionDecision {
 	if conditions == nil {
-		return automations.ConditionDecision{
-			Mode: automations.ConditionDecisionNotConfigured,
-		}
+		return automations.NotConfiguredDecision()
 	}
-	return automations.ConditionDecision{
-		Mode:     automations.ConditionDecisionNotEvaluated,
-		Snapshot: conditions,
+	return automations.NotEvaluatedDecision(*conditions)
+}
+
+// decisionSummaryColumns derives the listing summary columns from one decision.
+// The full decision document stays authoritative; the columns exist so history
+// listing never parses it.
+func decisionSummaryColumns(decision automations.ConditionDecision) (string, int64, sql.NullString) {
+	mode := string(decision.DecisionMode())
+	var bypassed int64
+	if decision.BypassRequested() {
+		bypassed = 1
 	}
+	var result sql.NullString
+	if evaluation := decision.DecisionEvaluation(); evaluation != nil {
+		result = sql.NullString{String: string(evaluation.Result), Valid: true}
+	}
+	return mode, bypassed, result
 }
 
 // writeReceipt records one matched-Fact outcome so a redelivered Fact never

@@ -4,9 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
-	"io"
 	"net/http"
 	"sync"
 
@@ -382,7 +380,7 @@ func decodeReplaceEnvelope(
 		ExpectedRevision int64           `json:"expected_revision"`
 		Definition       json.RawMessage `json:"definition"`
 	}
-	if err := decodeSingleJSONValue(raw, &envelope); err != nil {
+	if err := automations.DecodeStrictJSONObject(raw, &envelope); err != nil {
 		return 0, automations.Definition{}, newProblem(
 			http.StatusBadRequest, "invalid_request_body", "replacement body is invalid",
 		)
@@ -397,19 +395,6 @@ func decodeReplaceEnvelope(
 		return 0, automations.Definition{}, err
 	}
 	return envelope.ExpectedRevision, definition, nil
-}
-
-// decodeSingleJSONValue rejects unknown envelope fields and trailing content.
-func decodeSingleJSONValue(raw json.RawMessage, target any) error {
-	decoder := json.NewDecoder(bytes.NewReader(raw))
-	decoder.DisallowUnknownFields()
-	if err := decoder.Decode(target); err != nil {
-		return err
-	}
-	if err := decoder.Decode(&struct{}{}); !errors.Is(err, io.EOF) {
-		return errors.New("request body contains trailing JSON")
-	}
-	return nil
 }
 
 func validEntryID(value string) bool {

@@ -43,7 +43,8 @@ func conditionTreeAndEvaluation(
 }
 
 // Every decision mode round-trips through the strict codec unchanged, including
-// an evaluated tree.
+// an evaluated tree. bypass_requested is derived from the mode, so a bypassed
+// decision encodes true and every other mode encodes false.
 func TestAutomationConditionDecisionRoundTrip(t *testing.T) {
 	t.Parallel()
 	trueTree, trueEvaluation := conditionTreeAndEvaluation(
@@ -60,35 +61,21 @@ func TestAutomationConditionDecisionRoundTrip(t *testing.T) {
 		name     string
 		decision automations.ConditionDecision
 	}{
-		{"not configured", automations.ConditionDecision{
-			Mode: automations.ConditionDecisionNotConfigured,
-		}},
-		{"not configured with bypass requested", automations.ConditionDecision{
-			Mode: automations.ConditionDecisionNotConfigured, BypassRequested: true,
-		}},
-		{"not evaluated", automations.ConditionDecision{
-			Mode: automations.ConditionDecisionNotEvaluated, Snapshot: &trueTree,
-		}},
-		{"bypassed", automations.ConditionDecision{
-			Mode: automations.ConditionDecisionBypassed, BypassRequested: true, Snapshot: &unknownTree,
-		}},
-		{"evaluated true", automations.ConditionDecision{
-			Mode: automations.ConditionDecisionEvaluated, Snapshot: &trueTree, Evaluation: &trueEvaluation,
-		}},
-		{
-			"evaluated unknown",
-			automations.ConditionDecision{
-				Mode:       automations.ConditionDecisionEvaluated,
-				Snapshot:   &unknownTree,
-				Evaluation: &unknownEvaluation,
-			},
-		},
+		{"not configured", automations.NotConfiguredDecision()},
+		{"not evaluated", automations.NotEvaluatedDecision(trueTree)},
+		{"bypassed", automations.BypassedDecision(unknownTree)},
+		{"evaluated true", automations.EvaluatedDecision(trueTree, trueEvaluation)},
+		{"evaluated unknown", automations.EvaluatedDecision(unknownTree, unknownEvaluation)},
 	}
 	for _, testCase := range cases {
 		raw, err := automations.EncodeConditionDecision(testCase.decision)
 		if err != nil {
 			t.Errorf("%s: encode: %v", testCase.name, err)
 			continue
+		}
+		if wantBypass := testCase.decision.BypassRequested(); testCase.decision.DecisionMode() ==
+			automations.ConditionDecisionBypassed && !wantBypass {
+			t.Errorf("%s: bypassed decision does not report a bypass", testCase.name)
 		}
 		decoded, err := automations.DecodeConditionDecision(raw)
 		if err != nil {
@@ -98,6 +85,25 @@ func TestAutomationConditionDecisionRoundTrip(t *testing.T) {
 		if !reflect.DeepEqual(decoded, testCase.decision) {
 			t.Errorf("%s: decoded = %#v, want %#v", testCase.name, decoded, testCase.decision)
 		}
+	}
+}
+
+// bypass_requested is derived from the mode when encoding. Decoding ignores the
+// member, so decisions recorded before the flag became derived still decode.
+func TestAutomationConditionDecisionBypassFlagIsDerived(t *testing.T) {
+	t.Parallel()
+	raw := `{"mode":"not_configured","bypass_requested":true}`
+	decoded, err := automations.DecodeConditionDecision(json.RawMessage(raw))
+	if err != nil {
+		t.Fatalf("legacy bypass_requested=true: %v", err)
+	}
+	if decoded.DecisionMode() != automations.ConditionDecisionNotConfigured || decoded.BypassRequested() {
+		t.Fatalf("legacy not_configured decision = %#v", decoded)
+	}
+	if _, decodeErr := automations.DecodeConditionDecision(
+		json.RawMessage(`{"mode":"not_configured"}`),
+	); decodeErr != nil {
+		t.Fatalf("missing bypass_requested member: %v", decodeErr)
 	}
 }
 
@@ -114,12 +120,8 @@ func TestAutomationConditionDecisionSelectedNullIsEvidence(t *testing.T) {
 	missingEvaluation := mustEvaluateCondition(
 		t, missingTree, conditionSnapshot(conditionAbsent(entity)), conditionTime(),
 	)
-	nullDecision := automations.ConditionDecision{
-		Mode: automations.ConditionDecisionEvaluated, Snapshot: &nullTree, Evaluation: &nullEvaluation,
-	}
-	missingDecision := automations.ConditionDecision{
-		Mode: automations.ConditionDecisionEvaluated, Snapshot: &missingTree, Evaluation: &missingEvaluation,
-	}
+	nullDecision := automations.EvaluatedDecision(nullTree, nullEvaluation)
+	missingDecision := automations.EvaluatedDecision(missingTree, missingEvaluation)
 	raw, err := automations.EncodeConditionDecision(nullDecision)
 	if err != nil {
 		t.Fatal(err)
@@ -128,7 +130,7 @@ func TestAutomationConditionDecisionSelectedNullIsEvidence(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if value := decoded.Evaluation.Nodes[0].SelectedValue; value == nil || string(value) != "null" {
+	if value := decoded.DecisionEvaluation().Nodes[0].SelectedValue; value == nil || string(value) != "null" {
 		t.Fatalf("selected null = %q, want bytes null", value)
 	}
 	raw, err = automations.EncodeConditionDecision(missingDecision)
@@ -139,7 +141,7 @@ func TestAutomationConditionDecisionSelectedNullIsEvidence(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	node := decoded.Evaluation.Nodes[0]
+	node := decoded.DecisionEvaluation().Nodes[0]
 	if node.SelectedValue != nil || node.ObservationID != nil || node.ObservedAt != nil {
 		t.Fatalf("missing Entity evidence = %#v, want no value or Observation evidence", node)
 	}
@@ -161,8 +163,21 @@ func TestDecodeAutomationConditionDecisionRejectsMalformedJSON(t *testing.T) {
 		{"unknown field", `{"mode":"not_configured","bypass_requested":false,"extra":1}`},
 		{"trailing content", `{"mode":"not_configured","bypass_requested":false} {}`},
 		{"mode null", `{"mode":null,"bypass_requested":false}`},
-		{"bypass null", `{"mode":"not_configured","bypass_requested":null}`},
+		{"mode missing", `{"bypass_requested":false}`},
 		{"snapshot is not an object", `{"mode":"not_evaluated","bypass_requested":false,"snapshot":[]}`},
+		{"not_configured with a snapshot", `{"mode":"not_configured","bypass_requested":false,` +
+			`"snapshot":{"id":"root","kind":"all","children":[{"id":"leaf","kind":"entity_state",` +
+			`"entity_id":"ent_01890f47-7a6b-7c4d-8e9f-000000000001","pointer":"","operator":"eq",` +
+			`"operand":true}]}}`},
+		{"not_evaluated without a snapshot", `{"mode":"not_evaluated","bypass_requested":false}`},
+		{"not_evaluated with an evaluation", `{"mode":"not_evaluated","bypass_requested":false,` +
+			`"snapshot":{"id":"root","kind":"all","children":[{"id":"leaf","kind":"entity_state",` +
+			`"entity_id":"ent_01890f47-7a6b-7c4d-8e9f-000000000001","pointer":"","operator":"eq",` +
+			`"operand":true}]},"evaluation":{"evaluated_at":"2024-01-01T00:00:00Z",` +
+			`"result":"true","nodes":[]}}`},
+		{"evaluated without a snapshot", `{"mode":"evaluated","bypass_requested":false,` +
+			`"evaluation":{"evaluated_at":"2024-01-01T00:00:00Z","result":"true","nodes":[]}}`},
+		{"unknown mode", `{"mode":"mystery","bypass_requested":false}`},
 	}
 	for _, testCase := range cases {
 		if _, err := automations.DecodeConditionDecision(json.RawMessage(testCase.raw)); !errors.Is(
@@ -185,7 +200,7 @@ func TestDecodeAutomationConditionDecisionAcceptsSelectedEmptyPointer(t *testing
 	if err != nil {
 		t.Fatalf("selected empty pointer: %v", err)
 	}
-	leaf := decision.Snapshot.Children[0]
+	leaf := decision.DecisionSnapshot().Children[0]
 	if leaf.EntityState == nil || leaf.EntityState.Pointer != "" {
 		t.Fatalf("decoded empty pointer = %#v", leaf.EntityState)
 	}
@@ -266,8 +281,8 @@ func TestDecodeAutomationConditionDecisionRejectsExplicitNullPlaceholders(t *tes
 				t.Errorf("%s: %v, want a valid decision", testCase.name, err)
 				continue
 			}
-			if decision.Mode != automations.ConditionDecisionEvaluated {
-				t.Errorf("%s: mode = %q, want evaluated", testCase.name, decision.Mode)
+			if decision.DecisionMode() != automations.ConditionDecisionEvaluated {
+				t.Errorf("%s: mode = %q, want evaluated", testCase.name, decision.DecisionMode())
 			}
 			continue
 		}
@@ -278,7 +293,8 @@ func TestDecodeAutomationConditionDecisionRejectsExplicitNullPlaceholders(t *tes
 }
 
 // Run decisions never record not_evaluated, bypass only a manual Run, and
-// admit on a true root.
+// admit on a true root. Envelope-incoherent decisions are unrepresentable, so
+// only the record-kind rules remain testable.
 func TestValidateRunConditionDecision(t *testing.T) {
 	t.Parallel()
 	trueTree, trueEvaluation := conditionTreeAndEvaluation(
@@ -298,45 +314,29 @@ func TestValidateRunConditionDecision(t *testing.T) {
 			ConditionDecision: decision,
 		}
 	}
-	valid := run(&trueTree, automations.RunSourceManual, automations.ConditionDecision{
-		Mode: automations.ConditionDecisionEvaluated, Snapshot: &trueTree, Evaluation: &trueEvaluation,
-	})
+	valid := run(&trueTree, automations.RunSourceManual, automations.EvaluatedDecision(
+		trueTree, trueEvaluation,
+	))
 	if err := automations.ValidateRunConditionDecision(valid); err != nil {
 		t.Fatalf("valid evaluated Run: %v", err)
 	}
-	bypassed := run(&trueTree, automations.RunSourceManual, automations.ConditionDecision{
-		Mode: automations.ConditionDecisionBypassed, BypassRequested: true, Snapshot: &trueTree,
-	})
+	bypassed := run(&trueTree, automations.RunSourceManual, automations.BypassedDecision(trueTree))
 	if err := automations.ValidateRunConditionDecision(bypassed); err != nil {
 		t.Fatalf("valid bypassed Run: %v", err)
 	}
-	// A manual unconditioned Run may record a requested bypass; no automatic
-	// outcome ever may.
-	manualUnconditionedBypass := run(nil, automations.RunSourceManual, automations.ConditionDecision{
-		Mode: automations.ConditionDecisionNotConfigured, BypassRequested: true,
-	})
-	if err := automations.ValidateRunConditionDecision(manualUnconditionedBypass); err != nil {
-		t.Fatalf("valid manual unconditioned bypass Run: %v", err)
+	unconditioned := run(nil, automations.RunSourceDeviceFact, automations.NotConfiguredDecision())
+	if err := automations.ValidateRunConditionDecision(unconditioned); err != nil {
+		t.Fatalf("valid automatic unconditioned Run: %v", err)
 	}
 	cases := []struct {
 		name string
 		run  automations.Run
 	}{
-		{"not evaluated", run(&trueTree, automations.RunSourceManual, automations.ConditionDecision{
-			Mode: automations.ConditionDecisionNotEvaluated, Snapshot: &trueTree,
-		})},
-		{"automatic bypass", run(&trueTree, automations.RunSourceDeviceFact, automations.ConditionDecision{
-			Mode: automations.ConditionDecisionBypassed, BypassRequested: true, Snapshot: &trueTree,
-		})},
-		{
-			"automatic unconditioned bypass request",
-			run(nil, automations.RunSourceDeviceFact, automations.ConditionDecision{
-				Mode: automations.ConditionDecisionNotConfigured, BypassRequested: true,
-			}),
-		},
-		{"evaluated false root", run(&falseTree, automations.RunSourceManual, automations.ConditionDecision{
-			Mode: automations.ConditionDecisionEvaluated, Snapshot: &falseTree, Evaluation: &falseEvaluation,
-		})},
+		{"not evaluated", run(&trueTree, automations.RunSourceManual, automations.NotEvaluatedDecision(trueTree))},
+		{"automatic bypass", run(&trueTree, automations.RunSourceDeviceFact, automations.BypassedDecision(trueTree))},
+		{"evaluated false root", run(&falseTree, automations.RunSourceManual, automations.EvaluatedDecision(
+			falseTree, falseEvaluation,
+		))},
 	}
 	for _, testCase := range cases {
 		if err := automations.ValidateRunConditionDecision(testCase.run); !errors.Is(
@@ -363,21 +363,19 @@ func TestValidateSkipConditionDecision(t *testing.T) {
 	) automations.Skip {
 		return automations.Skip{Reason: reason, ConditionDecision: decision}
 	}
-	validFalse := skip(automations.SkipConditionsFalse, automations.ConditionDecision{
-		Mode: automations.ConditionDecisionEvaluated, Snapshot: &falseTree, Evaluation: &falseEvaluation,
-	})
+	validFalse := skip(automations.SkipConditionsFalse, automations.EvaluatedDecision(
+		falseTree, falseEvaluation,
+	))
 	if err := automations.ValidateSkipConditionDecision(validFalse); err != nil {
 		t.Fatalf("valid conditions_false Skip: %v", err)
 	}
-	validUnknown := skip(automations.SkipConditionsUnknown, automations.ConditionDecision{
-		Mode: automations.ConditionDecisionEvaluated, Snapshot: &unknownTree, Evaluation: &unknownEvaluation,
-	})
+	validUnknown := skip(automations.SkipConditionsUnknown, automations.EvaluatedDecision(
+		unknownTree, unknownEvaluation,
+	))
 	if err := automations.ValidateSkipConditionDecision(validUnknown); err != nil {
 		t.Fatalf("valid conditions_unknown Skip: %v", err)
 	}
-	validStale := skip(automations.SkipStaleFact, automations.ConditionDecision{
-		Mode: automations.ConditionDecisionNotEvaluated, Snapshot: &falseTree,
-	})
+	validStale := skip(automations.SkipStaleFact, automations.NotEvaluatedDecision(falseTree))
 	if err := automations.ValidateSkipConditionDecision(validStale); err != nil {
 		t.Fatalf("valid stale Skip: %v", err)
 	}
@@ -387,32 +385,20 @@ func TestValidateSkipConditionDecision(t *testing.T) {
 	}{
 		{
 			"reason result mismatch",
-			skip(automations.SkipConditionsFalse, automations.ConditionDecision{
-				Mode:       automations.ConditionDecisionEvaluated,
-				Snapshot:   &falseTree,
-				Evaluation: &unknownEvaluation,
-			}),
+			skip(automations.SkipConditionsFalse, automations.EvaluatedDecision(
+				falseTree, unknownEvaluation,
+			)),
 		},
 		{
 			"condition reason without evaluation",
-			skip(automations.SkipConditionsFalse, automations.ConditionDecision{
-				Mode: automations.ConditionDecisionNotEvaluated, Snapshot: &falseTree,
-			}),
+			skip(automations.SkipConditionsFalse, automations.NotEvaluatedDecision(falseTree)),
 		},
 		{
 			"stale Skip with evaluation",
-			skip(automations.SkipStaleFact, automations.ConditionDecision{
-				Mode:       automations.ConditionDecisionEvaluated,
-				Snapshot:   &falseTree,
-				Evaluation: &falseEvaluation,
-			}),
+			skip(automations.SkipStaleFact, automations.EvaluatedDecision(falseTree, falseEvaluation)),
 		},
-		{"busy Skip with bypass", skip(automations.SkipBusy, automations.ConditionDecision{
-			Mode: automations.ConditionDecisionBypassed, BypassRequested: true, Snapshot: &falseTree,
-		})},
-		{"unknown reason", skip(automations.SkipReason("mystery"), automations.ConditionDecision{
-			Mode: automations.ConditionDecisionNotEvaluated, Snapshot: &falseTree,
-		})},
+		{"busy Skip with bypass", skip(automations.SkipBusy, automations.BypassedDecision(falseTree))},
+		{"unknown reason", skip(automations.SkipReason("mystery"), automations.NotEvaluatedDecision(falseTree))},
 	}
 	for _, testCase := range cases {
 		if err := automations.ValidateSkipConditionDecision(testCase.skip); !errors.Is(
@@ -428,9 +414,7 @@ func TestValidateSkipConditionDecision(t *testing.T) {
 func TestAutomationConditionDecisionRetainsSnapshotAfterDefinitionChange(t *testing.T) {
 	t.Parallel()
 	tree, evaluation := conditionTreeAndEvaluation(t, automations.ConditionTrue)
-	decision := automations.ConditionDecision{
-		Mode: automations.ConditionDecisionEvaluated, Snapshot: &tree, Evaluation: &evaluation,
-	}
+	decision := automations.EvaluatedDecision(tree, evaluation)
 	raw, err := automations.EncodeConditionDecision(decision)
 	if err != nil {
 		t.Fatal(err)
@@ -442,11 +426,8 @@ func TestAutomationConditionDecisionRetainsSnapshotAfterDefinitionChange(t *test
 	if err != nil {
 		t.Fatal(err)
 	}
-	if decoded.Snapshot == nil || decoded.Snapshot.Children[0].ID != "leaf-a" {
-		t.Fatalf("retained snapshot = %#v", decoded.Snapshot)
-	}
-	if err = automations.ValidateConditionDecision(decoded); err != nil {
-		t.Fatalf("retained decision no longer validates: %v", err)
+	if decoded.DecisionSnapshot() == nil || decoded.DecisionSnapshot().Children[0].ID != "leaf-a" {
+		t.Fatalf("retained snapshot = %#v", decoded.DecisionSnapshot())
 	}
 }
 
@@ -482,9 +463,7 @@ func FuzzDecodeAutomationConditionDecision(fuzz *testing.F) {
 func TestEncodeAutomationConditionDecisionIsDeterministic(t *testing.T) {
 	t.Parallel()
 	tree, evaluation := conditionTreeAndEvaluation(t, automations.ConditionTrue)
-	decision := automations.ConditionDecision{
-		Mode: automations.ConditionDecisionEvaluated, Snapshot: &tree, Evaluation: &evaluation,
-	}
+	decision := automations.EvaluatedDecision(tree, evaluation)
 	first, err := automations.EncodeConditionDecision(decision)
 	if err != nil {
 		t.Fatal(err)
@@ -499,7 +478,7 @@ func TestEncodeAutomationConditionDecisionIsDeterministic(t *testing.T) {
 	if strings.Contains(string(first), `"steps"`) || strings.Contains(string(first), `"triggers"`) {
 		t.Fatalf("decision encoding embeds a definition: %s", first)
 	}
-	if observedAt := evaluation.Nodes[1].ObservedAt; observedAt == nil || !observedAt.Equal(conditionTime().UTC()) {
+	if observedAt := evaluation.Nodes[0].ObservedAt; observedAt == nil || !observedAt.Equal(conditionTime().UTC()) {
 		t.Fatalf("observed time = %v, want UTC evaluation time", observedAt)
 	}
 }

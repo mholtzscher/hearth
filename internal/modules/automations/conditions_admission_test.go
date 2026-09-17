@@ -292,8 +292,8 @@ func TestManualAdmissionBypassSkipsStateAndRepeatsStayDistinct(t *testing.T) {
 	if err != nil {
 		t.Fatalf("bypassed manual admission = %v, want a committed Run", err)
 	}
-	if run.ConditionDecision.Mode != automations.ConditionDecisionBypassed ||
-		!run.ConditionDecision.BypassRequested {
+	if run.ConditionDecision.DecisionMode() != automations.ConditionDecisionBypassed ||
+		!run.ConditionDecision.BypassRequested() {
 		t.Fatalf("bypassed Run decision = %#v", run.ConditionDecision)
 	}
 	if reads := scripted.snapshotRequests(); len(reads) != 0 {
@@ -535,7 +535,7 @@ func TestDefinitionOperandEditReusesCoveredEvidence(t *testing.T) {
 		t.Fatalf("history = %#v, want conditions_false from the replacement operand", history)
 	}
 	entry := historyEntry(t, service, record.ID, history[0].ID)
-	if got := string(entry.Skip.ConditionDecision.Snapshot.EntityState.Operand); got != "5" {
+	if got := string(entry.Skip.ConditionDecision.DecisionSnapshot().EntityState.Operand); got != "5" {
 		t.Fatalf("decided operand = %s, want the replacement definition's operand", got)
 	}
 }
@@ -646,7 +646,7 @@ func TestDecideConditionsOutcome(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			requireEvaluatedDecision(t, decision, conditions, test.wantResult)
+			requireEvaluatedDecision(t, decision, test.wantResult)
 			if reason != test.wantReason {
 				t.Fatalf("skip reason = %q, want %q", reason, test.wantReason)
 			}
@@ -672,13 +672,12 @@ func requireConditionCoverage(t *testing.T, err error, entity devices.EntityID) 
 func requireEvaluatedDecision(
 	t *testing.T,
 	decision automations.ConditionDecision,
-	conditions *automations.Condition,
 	wantResult automations.ConditionResult,
 ) {
 	t.Helper()
-	if decision.Mode != automations.ConditionDecisionEvaluated ||
-		decision.Snapshot != conditions || decision.Evaluation == nil ||
-		decision.Evaluation.Result != wantResult {
+	if decision.DecisionMode() != automations.ConditionDecisionEvaluated ||
+		decision.DecisionEvaluation() == nil ||
+		decision.DecisionEvaluation().Result != wantResult {
 		t.Fatalf("decision = %#v", decision)
 	}
 }

@@ -13,13 +13,14 @@ import (
 // skipProvenanceColumns is the shared column list of every provenance insert.
 const skipProvenanceColumns = `id, automation_id, automation_name, kind, revision, recorded_at,
     fact_id, fact_family, fact_entity_id, fact_variant, fact_causation_id, fact_value_json, fact_emitted_at,
-    skip_matched_triggers_json, skip_reason, skip_source, condition_decision_json`
+    skip_matched_triggers_json, skip_reason, skip_source,
+    condition_mode, condition_bypassed, condition_result, condition_decision_json`
 
 // insertSkipSQL inserts one Skip with an explicit provenance combination. It
 // deliberately spells out every nullable column so a test can build both valid
 // and contradictory rows without a second schema.
 const insertSkipSQL = `INSERT INTO automation_history (` + skipProvenanceColumns + `)
-    VALUES (?, ?, 'Office light', 'skip', 1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    VALUES (?, ?, 'Office light', 'skip', 1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
 
 // skipProvenanceArgs assembles one insert's bind arguments in column order.
 type skipProvenanceArgs struct {
@@ -36,6 +37,9 @@ type skipProvenanceArgs struct {
 	triggers    any
 	reason      any
 	source      any
+	mode        any
+	bypassed    any
+	result      any
 	decision    any
 }
 
@@ -44,7 +48,8 @@ func (args skipProvenanceArgs) values() []any {
 		args.id, args.automation, args.recordedAt,
 		args.factID, args.family, args.entityID, args.variant, args.causationID,
 		args.valueJSON, args.emittedAt,
-		args.triggers, args.reason, args.source, args.decision,
+		args.triggers, args.reason, args.source,
+		args.mode, args.bypassed, args.result, args.decision,
 	}
 }
 
@@ -66,6 +71,7 @@ func TestMigrationEnforcesSkipProvenanceAndDecision(t *testing.T) {
 			id: newSkipIDString(t), automation: automationID, recordedAt: migrationTimestamp,
 			factID: factID, family: "observation", entityID: factEntityID, variant: "applied",
 			causationID: factObservationID, valueJSON: "true", emittedAt: migrationTimestamp,
+			mode: "not_configured", bypassed: 0,
 		}
 	}
 	rejected := []struct {
@@ -174,7 +180,8 @@ func TestMigrationEnforcesSkipProvenanceAndDecision(t *testing.T) {
 	}
 	manual := skipProvenanceArgs{
 		id: newSkipIDString(t), automation: automationID, recordedAt: migrationTimestamp,
-		triggers: "[]", reason: "conditions_false", source: "manual", decision: decision,
+		triggers: "[]", reason: "conditions_false", source: "manual",
+		mode: "not_configured", bypassed: 0, decision: decision,
 	}
 	if _, err := database.ExecContext(ctx, insertSkipSQL, manual.values()...); err != nil {
 		t.Fatalf("valid manual Skip: %v", err)
@@ -201,18 +208,17 @@ func TestHistoryDecodesManualSkipProvenance(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	decision, err := automations.EncodeConditionDecision(automations.ConditionDecision{
-		Mode:       automations.ConditionDecisionEvaluated,
-		Snapshot:   conditions,
-		Evaluation: &evaluation,
-	})
+	decision, err := automations.EncodeConditionDecision(
+		automations.EvaluatedDecision(*conditions, evaluation),
+	)
 	if err != nil {
 		t.Fatal(err)
 	}
 	manualID := newSkipIDString(t)
 	mustExec(t, database, insertSkipSQL, skipProvenanceArgs{
 		id: manualID, automation: string(manualAutomation), recordedAt: migrationTimestamp,
-		triggers: "[]", reason: "conditions_false", source: "manual", decision: string(decision),
+		triggers: "[]", reason: "conditions_false", source: "manual",
+		mode: "evaluated", bypassed: 0, result: "false", decision: string(decision),
 	}.values()...)
 
 	manual := historyEntry(t, repository, manualAutomation, manualID)
@@ -221,11 +227,11 @@ func TestHistoryDecodesManualSkipProvenance(t *testing.T) {
 	}
 	if manual.Skip.Source != automations.RunSourceManual || manual.Skip.Fact != nil ||
 		len(manual.Skip.MatchedTriggers) != 0 ||
-		manual.Skip.ConditionDecision.Mode != automations.ConditionDecisionEvaluated ||
-		manual.Skip.ConditionDecision.Evaluation.Result != automations.ConditionFalse {
+		manual.Skip.ConditionDecision.DecisionMode() != automations.ConditionDecisionEvaluated ||
+		manual.Skip.ConditionDecision.DecisionEvaluation().Result != automations.ConditionFalse {
 		t.Fatalf("manual Skip = %#v", manual.Skip)
 	}
-	selected := manual.Skip.ConditionDecision.Evaluation.Nodes[0].SelectedValue
+	selected := manual.Skip.ConditionDecision.DecisionEvaluation().Nodes[0].SelectedValue
 	if string(selected) != "90" {
 		t.Fatalf("manual Skip selected value = %s", selected)
 	}
@@ -262,11 +268,9 @@ func TestConditionDecisionPreservesSelectedJSONNull(t *testing.T) {
 	if len(evaluation.Nodes) != 1 || string(evaluation.Nodes[0].SelectedValue) != "null" {
 		t.Fatalf("selected-value evidence = %#v", evaluation.Nodes)
 	}
-	raw, err := automations.EncodeConditionDecision(automations.ConditionDecision{
-		Mode:       automations.ConditionDecisionEvaluated,
-		Snapshot:   conditions,
-		Evaluation: &evaluation,
-	})
+	raw, err := automations.EncodeConditionDecision(
+		automations.EvaluatedDecision(*conditions, evaluation),
+	)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -274,15 +278,15 @@ func TestConditionDecisionPreservesSelectedJSONNull(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	leaf := decoded.Evaluation.Nodes[0]
+	leaf := decoded.DecisionEvaluation().Nodes[0]
 	if string(leaf.SelectedValue) != "null" {
 		t.Fatalf("decoded selected value = %q, want a selected JSON null", leaf.SelectedValue)
 	}
 	if leaf.ObservationID == nil || leaf.ObservedAt == nil || !leaf.ObservedAt.Equal(observedAt) {
 		t.Fatalf("decoded leaf evidence = %#v", leaf)
 	}
-	if decoded.Evaluation.Result != automations.ConditionTrue {
-		t.Fatalf("decoded root result = %q", decoded.Evaluation.Result)
+	if decoded.DecisionEvaluation().Result != automations.ConditionTrue {
+		t.Fatalf("decoded root result = %q", decoded.DecisionEvaluation().Result)
 	}
 }
 
