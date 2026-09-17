@@ -10,8 +10,6 @@ import (
 	"testing"
 	"time"
 
-	"pgregory.net/rapid"
-
 	"github.com/mholtzscher/hearth/internal/modules/automations"
 	"github.com/mholtzscher/hearth/internal/modules/devices"
 )
@@ -825,57 +823,142 @@ func TestNormalizeAutomationConditionsReturnsOwnedCopy(t *testing.T) {
 	}
 }
 
-// Random groups preserve double negation and child permutation, and normalization
-// is idempotent over generated valid trees.
-func TestAutomationConditionRapidProperties(t *testing.T) {
+// Fixed groups preserve double negation and child permutation, and
+// normalization is idempotent over representative valid trees. Each fixture
+// pairs one comparison style per leaf with one snapshot coverage outcome so
+// the results span true, false, and unknown without random generation.
+func TestAutomationConditionDeterministicProperties(t *testing.T) {
 	t.Parallel()
-	rapid.Check(t, func(rapidT *rapid.T) {
-		generated := drawConditionFixture(rapidT)
-		evaluation := evaluateOrFail(rapidT, generated.tree, generated.snapshot)
+	fixtures := []struct {
+		name   string
+		kind   automations.ConditionKind
+		leaves [][2]string
+		states []string
+	}{
+		{
+			name: "all booleans match", kind: automations.ConditionAll,
+			leaves: [][2]string{{"eq", "true"}, {"eq", "true"}},
+			states: []string{"true", "true"},
+		},
+		{
+			name: "all mixed types mismatch", kind: automations.ConditionAll,
+			leaves: [][2]string{{"eq", "true"}, {"eq", `"x"`}, {"ne", "0"}},
+			states: []string{"true", `"y"`, "0"},
+		},
+		{
+			name: "any numeric comparison", kind: automations.ConditionAny,
+			leaves: [][2]string{{"lt", "1"}, {"gt", "5"}},
+			states: []string{"0", "6"},
+		},
+		{
+			name: "any with missing and absent coverage", kind: automations.ConditionAny,
+			leaves: [][2]string{{"eq", "true"}, {"ne", `"x"`}, {"eq", `"x"`}},
+			states: []string{"missing", "absent", `[1,2]`},
+		},
+		{
+			name: "all with missing coverage", kind: automations.ConditionAll,
+			leaves: [][2]string{{"eq", "true"}, {"lt", "1"}},
+			states: []string{"missing", "0"},
+		},
+		{
+			name: "single child group", kind: automations.ConditionAll,
+			leaves: [][2]string{{"gt", "5"}},
+			states: []string{"false"},
+		},
+		{
+			name: "five children mixed outcomes", kind: automations.ConditionAny,
+			leaves: [][2]string{
+				{"eq", "true"}, {"eq", `"x"`}, {"ne", "0"}, {"ne", `"x"`}, {"lt", "1"},
+			},
+			states: []string{"false", `"x"`, "5", "absent", "missing"},
+		},
+	}
+	operators := map[string]automations.ComparisonOperator{
+		"eq": automations.ComparisonEqual,
+		"ne": automations.ComparisonNotEqual,
+		"lt": automations.ComparisonLessThan,
+		"gt": automations.ComparisonGreaterThan,
+	}
+	for fixtureIndex, fixture := range fixtures {
+		children := make([]automations.Condition, 0, len(fixture.leaves))
+		entries := make([]devices.EntityStateSnapshotEntry, 0, len(fixture.leaves))
+		for leafIndex := range fixture.leaves {
+			entity := conditionEntity(fixtureIndex*10 + leafIndex + 1)
+			operator, operand := fixture.leaves[leafIndex][0], fixture.leaves[leafIndex][1]
+			children = append(children, conditionLeaf(
+				fmt.Sprintf("leaf-%d", leafIndex), entity, "", operators[operator], operand, nil,
+			))
+			switch fixture.states[leafIndex] {
+			case "missing":
+				entries = append(entries, conditionMissingState(entity))
+			case "absent":
+				entries = append(entries, conditionAbsent(entity))
+			default:
+				entries = append(entries, conditionState(entity, fixture.states[leafIndex], conditionTime()))
+			}
+		}
+		generated := conditionFixture{
+			tree:     conditionGroup(fixture.kind, children...),
+			kind:     fixture.kind,
+			children: children,
+			snapshot: conditionSnapshot(entries...),
+		}
+		evaluation := evaluateOrFail(t, generated.tree, generated.snapshot)
 
 		wrapped := conditionNot("wrap-outer", conditionNot("wrap-inner", generated.tree))
-		wrappedEvaluation := evaluateOrFail(rapidT, wrapped, generated.snapshot)
+		wrappedEvaluation := evaluateOrFail(t, wrapped, generated.snapshot)
 		if wrappedEvaluation.Result != evaluation.Result {
-			rapidT.Fatalf("double negation changed result: %s vs %s", wrappedEvaluation.Result, evaluation.Result)
+			t.Fatalf(
+				"%s: double negation changed result: %s vs %s",
+				fixture.name,
+				wrappedEvaluation.Result,
+				evaluation.Result,
+			)
 		}
 		if len(wrappedEvaluation.Nodes) != len(evaluation.Nodes) {
-			rapidT.Fatalf(
-				"double negation leaf count = %d, want %d",
+			t.Fatalf(
+				"%s: double negation leaf count = %d, want %d",
+				fixture.name,
 				len(wrappedEvaluation.Nodes),
 				len(evaluation.Nodes),
 			)
 		}
 		permuted := conditionGroup(generated.kind, slices.Clone(generated.children)...)
 		slices.Reverse(permuted.Children)
-		permutedEvaluation := evaluateOrFail(rapidT, permuted, generated.snapshot)
+		permutedEvaluation := evaluateOrFail(t, permuted, generated.snapshot)
 		if permutedEvaluation.Result != evaluation.Result {
-			rapidT.Fatalf("permutation changed result: %s vs %s", permutedEvaluation.Result, evaluation.Result)
+			t.Fatalf(
+				"%s: permutation changed result: %s vs %s",
+				fixture.name,
+				permutedEvaluation.Result,
+				evaluation.Result,
+			)
 		}
 		normalized, err := automations.NormalizeConditions(generated.tree)
 		if err != nil {
-			rapidT.Fatal(err)
+			t.Fatal(err)
 		}
 		again, err := automations.NormalizeConditions(normalized)
 		if err != nil {
-			rapidT.Fatal(err)
+			t.Fatal(err)
 		}
 		if !reflect.DeepEqual(normalized, again) {
-			rapidT.Fatalf("normalization is not idempotent: %#v vs %#v", normalized, again)
+			t.Fatalf("%s: normalization is not idempotent: %#v vs %#v", fixture.name, normalized, again)
 		}
-	})
+	}
 }
 
-// evaluateOrFail evaluates one generated tree, failing the Rapid property on an
+// evaluateOrFail evaluates one fixture tree, failing the test on an
 // unexpected error.
 func evaluateOrFail(
-	rapidT *rapid.T,
+	t *testing.T,
 	root automations.Condition,
 	snapshot devices.EntityStateSnapshot,
 ) automations.ConditionEvaluation {
-	rapidT.Helper()
+	t.Helper()
 	evaluation, err := automations.EvaluateConditions(root, snapshot, conditionTime())
 	if err != nil {
-		rapidT.Fatal(err)
+		t.Fatal(err)
 	}
 	return evaluation
 }
@@ -885,50 +968,4 @@ type conditionFixture struct {
 	kind     automations.ConditionKind
 	children []automations.Condition
 	snapshot devices.EntityStateSnapshot
-}
-
-// drawConditionFixture generates a small valid group tree with a matching State
-// snapshot so generated results cover true, false, and unknown.
-func drawConditionFixture(rapidT *rapid.T) conditionFixture {
-	kind := rapid.SampledFrom([]automations.ConditionKind{
-		automations.ConditionAll,
-		automations.ConditionAny,
-	}).Draw(rapidT, "kind")
-	type comparison struct {
-		operator automations.ComparisonOperator
-		operand  string
-	}
-	comparisons := []comparison{
-		{automations.ComparisonEqual, "true"},
-		{automations.ComparisonEqual, `"x"`},
-		{automations.ComparisonNotEqual, "0"},
-		{automations.ComparisonNotEqual, `"x"`},
-		{automations.ComparisonLessThan, "1"},
-		{automations.ComparisonGreaterThan, "5"},
-	}
-	count := rapid.IntRange(1, 5).Draw(rapidT, "child count")
-	children := make([]automations.Condition, 0, count)
-	entries := make([]devices.EntityStateSnapshotEntry, 0, count)
-	for index := range count {
-		entity := conditionEntity(index + 1)
-		selected := rapid.SampledFrom(comparisons).Draw(rapidT, "comparison")
-		children = append(children, conditionLeaf(
-			fmt.Sprintf("leaf-%d", index), entity, "", selected.operator, selected.operand, nil,
-		))
-		state := rapid.SampledFrom([]string{"true", "false", "0", "5", `"x"`, `[1,2]`}).Draw(rapidT, "value")
-		switch rapid.IntRange(0, 3).Draw(rapidT, "coverage") {
-		case 0:
-			entries = append(entries, conditionMissingState(entity))
-		case 1:
-			entries = append(entries, conditionAbsent(entity))
-		default:
-			entries = append(entries, conditionState(entity, state, conditionTime()))
-		}
-	}
-	return conditionFixture{
-		tree:     conditionGroup(kind, children...),
-		kind:     kind,
-		children: children,
-		snapshot: conditionSnapshot(entries...),
-	}
 }

@@ -8,8 +8,6 @@ import (
 	"strings"
 	"testing"
 
-	"pgregory.net/rapid"
-
 	"github.com/mholtzscher/hearth/internal/modules/automations"
 	"github.com/mholtzscher/hearth/internal/modules/devices"
 )
@@ -246,9 +244,37 @@ func TestValidateObservationComparison(t *testing.T) {
 // 2^53 that binary floating point cannot distinguish.
 func TestObservationComparisonOrderingMatchesIntegerOracle(t *testing.T) {
 	t.Parallel()
-	rapid.Check(t, func(t *rapid.T) {
-		left := rapid.Int64().Draw(t, "left")
-		right := rapid.Int64().Draw(t, "right")
+	const maxInt64 = int64(9223372036854775807)
+	const minInt64 = int64(-9223372036854775808)
+	pairs := [][2]int64{
+		{0, 0},
+		{1, 1},
+		{-1, -1},
+		{0, 1},
+		{1, 0},
+		{-1, 0},
+		{0, -1},
+		{minInt64, minInt64},
+		{maxInt64, maxInt64},
+		{minInt64, maxInt64},
+		{maxInt64, minInt64},
+		{minInt64, minInt64 + 1},
+		{maxInt64 - 1, maxInt64},
+		{minInt64, 0},
+		{0, maxInt64},
+		// Values around 2^53, where binary floating point stops distinguishing integers.
+		{9007199254740991, 9007199254740991},
+		{9007199254740992, 9007199254740992},
+		{9007199254740992, 9007199254740993},
+		{9007199254740993, 9007199254740992},
+		{-9007199254740992, -9007199254740993},
+		{-9007199254740993, -9007199254740992},
+		{9007199254740993, 9007199254740994},
+		{42, -42},
+		{-7, 13},
+	}
+	for _, pair := range pairs {
+		left, right := pair[0], pair[1]
 		value := devices.Value(fmt.Sprintf(`{"v":%d}`, left))
 		operand := json.RawMessage(strconv.FormatInt(right, 10))
 		cases := []struct {
@@ -273,5 +299,5 @@ func TestObservationComparisonOrderingMatchesIntegerOracle(t *testing.T) {
 				t.Fatalf("left=%d right=%d operator=%s: got %v want %v", left, right, test.operator, got, test.want)
 			}
 		}
-	})
+	}
 }

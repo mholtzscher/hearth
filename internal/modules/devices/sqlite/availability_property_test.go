@@ -8,8 +8,6 @@ import (
 	"testing"
 	"time"
 
-	"pgregory.net/rapid"
-
 	"github.com/mholtzscher/hearth/internal/modules/devices"
 	platformdb "github.com/mholtzscher/hearth/internal/platform/db"
 )
@@ -220,65 +218,122 @@ func (model *availabilityHistoryModel) effectiveHistory() []availabilityModelTra
 	return newestFirst
 }
 
+// availabilityPropertyPrefixOperations is the fixed opening sequence every
+// history scenario replays before its own operations, so the reference model
+// and the repository agree on the baseline before the scenario diverges.
+func availabilityPropertyPrefixOperations() []availabilityModelOperation {
+	return []availabilityModelOperation{
+		modelHeartbeatHealthy,
+		modelReportUnavailableNetwork,
+		modelReportUnavailableNetwork,
+		modelHeartbeatUnhealthyNetwork,
+		modelHeartbeatUnhealthyAuthentication,
+		modelHeartbeatHealthy,
+	}
+}
+
+// Fixed operation sequences must keep the SQLite history identical to the
+// reference model, both unpaged and under every page limit. The scenarios
+// below replace the former random search: each one pins a behavior the
+// random walk only reached by chance (rejected reports, cleared reports,
+// collapsed repeats, reason changes, and interleaved operation families).
 func TestSQLiteEntityAvailabilityHistoryMatchesReferenceModel(t *testing.T) {
 	t.Parallel()
 	databaseImage := newAvailabilityPropertyDatabaseImage(t)
 	catalog := firstLightCatalog(t)
-	operations := []availabilityModelOperation{
-		modelHeartbeatHealthy,
-		modelHeartbeatUnhealthyNetwork,
-		modelHeartbeatUnhealthyAuthentication,
-		modelReportAvailable,
-		modelReportUnavailableNetwork,
-		modelReportUnavailableAuthentication,
+	sequences := []struct {
+		name       string
+		operations []availabilityModelOperation
+	}{
+		{
+			name:       "prefix only",
+			operations: nil,
+		},
+		{
+			name: "heartbeat flap clears report",
+			operations: []availabilityModelOperation{
+				modelReportAvailable,
+				modelHeartbeatUnhealthyNetwork,
+				modelHeartbeatHealthy,
+				modelReportAvailable,
+			},
+		},
+		{
+			name: "report rejected while unhealthy",
+			operations: []availabilityModelOperation{
+				modelHeartbeatUnhealthyAuthentication,
+				modelReportAvailable,
+				modelReportUnavailableNetwork,
+				modelHeartbeatHealthy,
+				modelReportUnavailableNetwork,
+			},
+		},
+		{
+			name: "repeated heartbeats collapse",
+			operations: []availabilityModelOperation{
+				modelHeartbeatHealthy,
+				modelHeartbeatHealthy,
+				modelHeartbeatUnhealthyNetwork,
+				modelHeartbeatUnhealthyNetwork,
+				modelHeartbeatHealthy,
+			},
+		},
+		{
+			name: "report changes append transitions",
+			operations: []availabilityModelOperation{
+				modelReportAvailable,
+				modelReportUnavailableNetwork,
+				modelReportUnavailableAuthentication,
+				modelReportAvailable,
+				modelReportAvailable,
+			},
+		},
+		{
+			name: "unhealthy reason change",
+			operations: []availabilityModelOperation{
+				modelHeartbeatUnhealthyNetwork,
+				modelHeartbeatUnhealthyAuthentication,
+				modelHeartbeatUnhealthyAuthentication,
+				modelHeartbeatHealthy,
+			},
+		},
+		{
+			name: "interleaved operations",
+			operations: []availabilityModelOperation{
+				modelReportAvailable,
+				modelHeartbeatHealthy,
+				modelReportUnavailableAuthentication,
+				modelHeartbeatUnhealthyNetwork,
+				modelReportAvailable,
+				modelHeartbeatUnhealthyAuthentication,
+				modelHeartbeatHealthy,
+				modelReportUnavailableNetwork,
+				modelHeartbeatHealthy,
+				modelReportAvailable,
+			},
+		},
 	}
-	preparedPath := filepath.Join(t.TempDir(), "prepared.db")
-	prepared := false
-	rapid.Check(t, func(t *rapid.T) {
-		generated := rapid.SliceOfN(rapid.SampledFrom(operations), 0, 24).Draw(t, "operations")
-		pageLimit := rapid.IntRange(1, 5).Draw(t, "page limit")
-		repository, entityID, claimedAt, registeredAt := newAvailabilityPropertyFixture(
-			t, databaseImage, catalog, prepared,
-		)
-		model := newAvailabilityHistoryModel(claimedAt, registeredAt)
+	for _, sequence := range sequences {
+		t.Run(sequence.name, func(t *testing.T) {
+			t.Parallel()
+			repository, entityID, claimedAt, registeredAt := newAvailabilityPropertyFixture(t, databaseImage, catalog)
+			model := newAvailabilityHistoryModel(claimedAt, registeredAt)
 
-		at := registeredAt
-		for _, operation := range []availabilityModelOperation{
-			modelHeartbeatHealthy,
-			modelReportUnavailableNetwork,
-			modelReportUnavailableNetwork,
-			modelHeartbeatUnhealthyNetwork,
-			modelHeartbeatUnhealthyAuthentication,
-			modelHeartbeatHealthy,
-		} {
-			at = at.Add(time.Second)
-			if prepared {
-				model.apply(operation, at)
-			} else {
+			at := registeredAt
+			for _, operation := range availabilityPropertyPrefixOperations() {
+				at = at.Add(time.Second)
 				applyAvailabilityPropertyOperation(t, repository, entityID, model, operation, at)
 			}
-		}
-		if !prepared {
-			// Check the fixed prefix once, then snapshot its committed database.
-			// Each generated sequence still gets an isolated database and model.
-			assertAvailabilityPropertyHistory(t, repository, entityID, model.effectiveHistory(), 1)
-			if _, err := repository.database.ExecContext(t.Context(), "VACUUM INTO ?", preparedPath); err != nil {
-				t.Fatal(err)
+			for _, operation := range sequence.operations {
+				at = at.Add(time.Second)
+				applyAvailabilityPropertyOperation(t, repository, entityID, model, operation, at)
 			}
-			image, err := os.ReadFile(preparedPath)
-			if err != nil {
-				t.Fatal(err)
-			}
-			databaseImage = image
-			prepared = true
-		}
-		for _, operation := range generated {
-			at = at.Add(time.Second)
-			applyAvailabilityPropertyOperation(t, repository, entityID, model, operation, at)
-		}
 
-		assertAvailabilityPropertyHistory(t, repository, entityID, model.effectiveHistory(), pageLimit)
-	})
+			for _, pageLimit := range []int{1, 2, 5} {
+				assertAvailabilityPropertyHistory(t, repository, entityID, model.effectiveHistory(), pageLimit)
+			}
+		})
+	}
 }
 
 func newAvailabilityPropertyDatabaseImage(t *testing.T) []byte {
@@ -303,17 +358,12 @@ func newAvailabilityPropertyDatabaseImage(t *testing.T) []byte {
 }
 
 func newAvailabilityPropertyFixture(
-	t *rapid.T,
+	t *testing.T,
 	databaseImage []byte,
 	catalog *devices.TypeCatalog,
-	prepared bool,
 ) (*DeviceRepository, devices.EntityID, time.Time, time.Time) {
 	t.Helper()
-	directory, err := os.MkdirTemp("", "hearth-availability-property-")
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = os.RemoveAll(directory) })
+	directory := t.TempDir()
 	path := filepath.Join(directory, "hearth.db")
 	if writeErr := os.WriteFile(path, databaseImage, 0o600); writeErr != nil {
 		t.Fatal(writeErr)
@@ -327,9 +377,6 @@ func newAvailabilityPropertyFixture(
 	claimedAt := time.Date(2026, 8, 29, 12, 0, 0, 0, time.UTC)
 	registeredAt := claimedAt.Add(time.Second)
 	entityID := devices.EntityID("ent_01890f47-7a6b-7c4d-8e9f-0123456789ae")
-	if prepared {
-		return repository, entityID, claimedAt, registeredAt
-	}
 	if claimErr := repository.ClaimAdapterRuntime(t.Context(), devices.ClaimRuntimeWrite{
 		RuntimeID: testRuntimeID, AdapterID: "simulator",
 		SoftwareName: "hearth-simulator", SoftwareVersion: "0.1.0",
@@ -354,7 +401,7 @@ func newAvailabilityPropertyFixture(
 }
 
 func applyAvailabilityPropertyOperation(
-	t *rapid.T,
+	t *testing.T,
 	repository *DeviceRepository,
 	entityID devices.EntityID,
 	model *availabilityHistoryModel,
@@ -394,7 +441,7 @@ func applyAvailabilityPropertyOperation(
 }
 
 func assertAvailabilityPropertyCurrent(
-	t *rapid.T,
+	t *testing.T,
 	operation availabilityModelOperation,
 	want devices.EntityAvailability,
 	got devices.EntityAvailability,
@@ -409,7 +456,7 @@ func assertAvailabilityPropertyCurrent(
 }
 
 func assertAvailabilityPropertyHistory(
-	t *rapid.T,
+	t *testing.T,
 	repository *DeviceRepository,
 	entityID devices.EntityID,
 	want []availabilityModelTransition,
@@ -450,7 +497,7 @@ func assertAvailabilityPropertyHistory(
 }
 
 func assertAvailabilityPropertyTransitions(
-	t *rapid.T,
+	t *testing.T,
 	got []devices.HealthTransition,
 	want []availabilityModelTransition,
 ) {

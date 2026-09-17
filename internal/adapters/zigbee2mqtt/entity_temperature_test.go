@@ -6,8 +6,6 @@ import (
 	"testing"
 	"time"
 
-	"pgregory.net/rapid"
-
 	contracttemperaturev1 "github.com/mholtzscher/hearth/entitytypes/temperaturev1"
 	"github.com/mholtzscher/hearth/sdk/adapter"
 	sdktemperaturev1 "github.com/mholtzscher/hearth/sdk/adapter/temperaturev1"
@@ -111,20 +109,44 @@ func TestTemperaturePlanStateRangeBoundary(t *testing.T) {
 	}
 }
 
-// This property test protects exact conversion over the whole supported range
-// and fails if any integer milli-Celsius value does not survive a Celsius
-// round trip. Expected values come from integer arithmetic, never the
-// production converter.
-func TestNormalizeTemperatureProperty(t *testing.T) {
+// This test protects exact conversion over the whole supported range and fails
+// if any integer milli-Celsius value does not survive a Celsius round trip.
+// Expected values come from integer arithmetic, never the production
+// converter. Boundaries are pinned exactly and the interior is swept on a
+// deterministic stride coprime to the range width so every residue class is
+// visited without enumerating all 1.3M values.
+func TestNormalizeTemperatureWholeRange(t *testing.T) {
 	t.Parallel()
-	rapid.Check(t, func(t *rapid.T) {
-		milli := rapid.Int64Range(temperatureMinimumMilliCelsius, temperatureMaximumMilliCelsius).Draw(t, "milli")
+	boundaries := []int64{
+		temperatureMinimumMilliCelsius,
+		temperatureMinimumMilliCelsius + 1,
+		temperatureMinimumMilliCelsius + 999,
+		-1,
+		0,
+		1,
+		999,
+		1000,
+		1001,
+		temperatureMaximumMilliCelsius - 999,
+		temperatureMaximumMilliCelsius - 1,
+		temperatureMaximumMilliCelsius,
+	}
+	for _, milli := range boundaries {
 		payload := formatCelsius(milli)
 		got, err := normalizeTemperature(json.RawMessage(payload))
 		if err != nil || got != milli {
 			t.Fatalf("normalizeTemperature(%s) = %d, %v; want %d", payload, got, err, milli)
 		}
-	})
+	}
+	width := temperatureMaximumMilliCelsius - temperatureMinimumMilliCelsius
+	for offset := int64(0); offset <= width; offset += 1009 {
+		milli := temperatureMinimumMilliCelsius + offset
+		payload := formatCelsius(milli)
+		got, err := normalizeTemperature(json.RawMessage(payload))
+		if err != nil || got != milli {
+			t.Fatalf("normalizeTemperature(%s) = %d, %v; want %d", payload, got, err, milli)
+		}
+	}
 }
 
 func formatCelsius(milli int64) string {

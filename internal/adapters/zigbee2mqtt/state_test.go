@@ -6,8 +6,6 @@ import (
 	"reflect"
 	"testing"
 	"time"
-
-	"pgregory.net/rapid"
 )
 
 // This test protects captured typed State projection and fails on integer-only brightness decoding, hard-coded ON/OFF
@@ -227,24 +225,28 @@ func TestBrightnessCommandRoundTripExhaustive(t *testing.T) {
 	}
 }
 
-// This property test protects round trips over a broad range of legal maxima and fails on floating-point order defects.
-func TestBrightnessCommandRoundTripProperty(t *testing.T) {
+// This test protects round trips over a broad range of legal maxima and fails on floating-point order defects.
+// Maxima pair small Zigbee-style ranges with large endpoints and fractional values; percentages pin the
+// boundaries and midpoints the exhaustive sweep already covers for the small maxima.
+func TestBrightnessCommandRoundTripBroadMaxima(t *testing.T) {
 	t.Parallel()
-	rapid.Check(t, func(t *rapid.T) {
-		maximum := float64(rapid.Int64Range(100, 1_000_000_000).Draw(t, "maximum"))
-		percentage := rapid.Int64Range(0, 100).Draw(t, "percentage")
-		encoded, err := scaleBrightnessCommand(percentage, maximum)
-		if err != nil {
-			t.Fatal(err)
+	maxima := []float64{100, 101, 127, 254, 255, 256, 1000, 65535, 100000.5, 1_000_000_000}
+	percentages := []int64{0, 1, 2, 25, 33, 50, 66, 99, 100}
+	for _, maximum := range maxima {
+		for _, percentage := range percentages {
+			encoded, err := scaleBrightnessCommand(percentage, maximum)
+			if err != nil {
+				t.Fatalf("scale %d/%v: %v", percentage, maximum, err)
+			}
+			got, err := normalizeBrightness(encoded, maximum)
+			if err != nil {
+				t.Fatalf("normalize %d/%v from %s: %v", percentage, maximum, encoded, err)
+			}
+			if got != percentage {
+				t.Fatalf("round trip %d/%v from %s = %d", percentage, maximum, encoded, got)
+			}
 		}
-		got, err := normalizeBrightness(encoded, maximum)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if got != percentage {
-			t.Fatalf("round trip %d/%v from %s = %d", percentage, maximum, encoded, got)
-		}
-	})
+	}
 }
 
 // This test protects typed command routing and fails if power values are hard-coded or command percentage bounds are skipped.

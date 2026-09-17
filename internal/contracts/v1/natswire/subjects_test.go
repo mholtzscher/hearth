@@ -3,8 +3,6 @@ package natswire //nolint:testpackage // Tests exercise package-private subject 
 import (
 	"strings"
 	"testing"
-
-	"pgregory.net/rapid"
 )
 
 const (
@@ -57,11 +55,44 @@ type subjectPropertyRoute struct {
 //nolint:gocognit // The table keeps the complete public route matrix auditable.
 func TestSubjectConstructorsAndParsersMatchProtocol(t *testing.T) {
 	t.Parallel()
-	rapid.Check(t, func(t *rapid.T) {
-		adapterID := subjectSlugGenerator().Draw(t, "adapter ID")
-		runtimeID := subjectResourceIDGenerator("run").Draw(t, "runtime ID")
-		entityID := subjectResourceIDGenerator("ent").Draw(t, "entity ID")
-		operationName := subjectSlugGenerator().Draw(t, "operation name")
+	cases := []struct {
+		name          string
+		adapterID     string
+		runtimeID     string
+		entityID      string
+		operationName string
+	}{
+		{
+			name: "typical", adapterID: "simulator",
+			runtimeID: "run_01890f47-7a6b-7c4d-8e9f-0123456789ab",
+			entityID:  "ent_01890f47-7a6b-7c4d-8e9f-0123456789ab", operationName: "set",
+		},
+		{
+			name: "minimal slugs", adapterID: "a",
+			runtimeID: "run_00000000-0000-7000-8000-000000000000",
+			entityID:  "ent_00000000-0000-7000-8000-000000000000", operationName: "0",
+		},
+		{
+			name: "punctuated slugs and variant 9", adapterID: "adapter_1-x",
+			runtimeID: "run_ffffffff-ffff-7fff-9fff-ffffffffffff",
+			entityID:  "ent_ffffffff-ffff-7fff-9fff-ffffffffffff", operationName: "toggle-state_2",
+		},
+		{
+			name: "max length slug and variant a", adapterID: "z" + strings.Repeat("a0_-b", 12) + "ab",
+			runtimeID: "run_12345678-1234-7abc-afff-123456789abc",
+			entityID:  "ent_12345678-1234-7abc-afff-123456789abc", operationName: "o" + strings.Repeat("p", 62),
+		},
+		{
+			name: "numeric slugs and variant b", adapterID: "0abc",
+			runtimeID: "run_abcdef01-2345-7def-b456-789abcdef012",
+			entityID:  "ent_abcdef01-2345-7def-b456-789abcdef012", operationName: "9-start",
+		},
+	}
+	for _, test := range cases {
+		adapterID := test.adapterID
+		runtimeID := test.runtimeID
+		entityID := test.entityID
+		operationName := test.operationName
 		prefix := "hearth.v1.adapter." + adapterID
 		runtimePrefix := prefix + ".runtime." + runtimeID
 		routes := []subjectPropertyRoute{
@@ -147,12 +178,19 @@ func TestSubjectConstructorsAndParsersMatchProtocol(t *testing.T) {
 		for _, route := range routes {
 			got, err := route.construct(runtimeID)
 			if err != nil || got != route.subject {
-				t.Fatalf("%s subject = %q, want %q, err = %v", route.name, got, route.subject, err)
+				t.Fatalf("%s/%s subject = %q, want %q, err = %v", test.name, route.name, got, route.subject, err)
 			}
 			if route.parse != nil {
 				parsed, parseErr := route.parse(got)
 				if parseErr != nil || parsed != route.wantRoute {
-					t.Fatalf("%s route = %#v, want %#v, err = %v", route.name, parsed, route.wantRoute, parseErr)
+					t.Fatalf(
+						"%s/%s route = %#v, want %#v, err = %v",
+						test.name,
+						route.name,
+						parsed,
+						route.wantRoute,
+						parseErr,
+					)
 				}
 			}
 			if !route.usesRuntime {
@@ -160,17 +198,17 @@ func TestSubjectConstructorsAndParsersMatchProtocol(t *testing.T) {
 			}
 			for _, invalidRuntimeID := range invalidRuntimeIDs {
 				if _, constructErr := route.construct(invalidRuntimeID); constructErr == nil {
-					t.Fatalf("%s constructor accepted runtime ID %q", route.name, invalidRuntimeID)
+					t.Fatalf("%s/%s constructor accepted runtime ID %q", test.name, route.name, invalidRuntimeID)
 				}
 				if route.parse != nil {
 					invalidSubject := strings.Replace(route.subject, runtimeID, invalidRuntimeID, 1)
 					if _, parseErr := route.parse(invalidSubject); parseErr == nil {
-						t.Fatalf("%s parser accepted runtime ID %q", route.name, invalidRuntimeID)
+						t.Fatalf("%s/%s parser accepted runtime ID %q", test.name, route.name, invalidRuntimeID)
 					}
 				}
 			}
 		}
-	})
+	}
 }
 
 func TestStrictParsersRejectStablePreCutoverSubjects(t *testing.T) {
@@ -231,27 +269,6 @@ func TestSubjectsRejectUnsafeTokens(t *testing.T) {
 	); err == nil {
 		t.Fatal("malformed command subject unexpectedly accepted")
 	}
-}
-
-func subjectSlugGenerator() *rapid.Generator[string] {
-	firstCharacters := []rune("abcdefghijklmnopqrstuvwxyz0123456789")
-	characters := append(append([]rune{}, firstCharacters...), '_', '-')
-	return rapid.Custom(func(t *rapid.T) string {
-		first := rapid.SampledFrom(firstCharacters).Draw(t, "first character")
-		rest := rapid.StringOfN(rapid.SampledFrom(characters), 0, 62, -1).Draw(t, "remaining characters")
-		return string(first) + rest
-	})
-}
-
-func subjectResourceIDGenerator(prefix string) *rapid.Generator[string] {
-	hexDigit := rapid.SampledFrom([]rune("0123456789abcdef"))
-	variant := rapid.SampledFrom([]rune("89ab"))
-	return rapid.Custom(func(t *rapid.T) string {
-		digits := rapid.StringOfN(hexDigit, 30, 30, -1).Draw(t, "hex digits")
-		variantDigit := variant.Draw(t, "variant")
-		return prefix + "_" + digits[:8] + "-" + digits[8:12] + "-7" + digits[12:15] +
-			"-" + string(variantDigit) + digits[15:18] + "-" + digits[18:]
-	})
 }
 
 func erasedSubjectParser[T any](parse func(string) (T, error)) func(string) (any, error) {
