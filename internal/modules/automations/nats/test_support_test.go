@@ -8,7 +8,6 @@ import (
 	"testing"
 	"time"
 
-	natsserver "github.com/nats-io/nats-server/v2/server"
 	natsgo "github.com/nats-io/nats.go"
 	"github.com/nats-io/nats.go/jetstream"
 
@@ -17,6 +16,7 @@ import (
 	"github.com/mholtzscher/hearth/internal/modules/automations"
 	"github.com/mholtzscher/hearth/internal/modules/devices"
 	platformnats "github.com/mholtzscher/hearth/internal/platform/nats"
+	"github.com/mholtzscher/hearth/internal/platform/nats/natstest"
 )
 
 const (
@@ -335,20 +335,7 @@ func (receiver *fakeDeviceFactReceiver) failNext(count int, err error) {
 // window these tests need. Devices owns the production stream configuration.
 func startDeviceFactServer(t *testing.T) jetstream.JetStream {
 	t.Helper()
-	server, err := natsserver.NewServer(&natsserver.Options{
-		Host: "127.0.0.1", Port: -1, JetStream: true, StoreDir: t.TempDir(), NoSigs: true,
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	go server.Start()
-	if !server.ReadyForConnections(testLiveness) {
-		t.Fatal("NATS server did not become ready")
-	}
-	t.Cleanup(func() {
-		server.Shutdown()
-		server.WaitForShutdown()
-	})
+	server := natstest.StartServer(t)
 	connection, err := natsgo.Connect(server.ClientURL())
 	if err != nil {
 		t.Fatal(err)

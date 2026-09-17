@@ -12,6 +12,8 @@ import (
 	"time"
 
 	natsserver "github.com/nats-io/nats-server/v2/server"
+
+	"github.com/mholtzscher/hearth/internal/platform/nats/natstest"
 )
 
 // recordStore holds lifecycle records shared by a recorder and its With-derived
@@ -217,21 +219,7 @@ func TestErrorStageReportsStartupStage(t *testing.T) {
 
 func startLifecycleNATSServer(t *testing.T) *natsserver.Server {
 	t.Helper()
-	server, err := natsserver.NewServer(&natsserver.Options{
-		Host: "127.0.0.1", Port: -1, JetStream: true, StoreDir: t.TempDir(), NoSigs: true,
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	go server.Start()
-	if !server.ReadyForConnections(10 * time.Second) {
-		t.Fatal("NATS server did not become ready")
-	}
-	t.Cleanup(func() {
-		server.Shutdown()
-		server.WaitForShutdown()
-	})
-	return server
+	return natstest.StartServer(t)
 }
 
 func freeLoopbackAddr(t *testing.T) string {

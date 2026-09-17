@@ -8,7 +8,6 @@ import (
 	"testing"
 	"time"
 
-	natsserver "github.com/nats-io/nats-server/v2/server"
 	natsgo "github.com/nats-io/nats.go"
 	"github.com/nats-io/nats.go/jetstream"
 
@@ -20,6 +19,7 @@ import (
 	devicessqlite "github.com/mholtzscher/hearth/internal/modules/devices/sqlite"
 	"github.com/mholtzscher/hearth/internal/platform/db/dbtest"
 	platformnats "github.com/mholtzscher/hearth/internal/platform/nats"
+	"github.com/mholtzscher/hearth/internal/platform/nats/natstest"
 )
 
 //nolint:gocognit // The required-dependency matrix is clearer as one table of subtests.
@@ -250,20 +250,7 @@ func newReadinessFixture(t *testing.T) readinessFixture {
 	t.Helper()
 	ctx := context.Background()
 	database := dbtest.OpenMigrated(t, filepath.Join(t.TempDir(), "hearth.db"))
-	server, err := natsserver.NewServer(&natsserver.Options{
-		Host: "127.0.0.1", Port: -1, JetStream: true, StoreDir: t.TempDir(), NoSigs: true,
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	go server.Start()
-	if !server.ReadyForConnections(10 * time.Second) {
-		t.Fatal("NATS server did not become ready")
-	}
-	t.Cleanup(func() {
-		server.Shutdown()
-		server.WaitForShutdown()
-	})
+	server := natstest.StartServer(t)
 	connection, err := natsgo.Connect(server.ClientURL())
 	if err != nil {
 		t.Fatal(err)

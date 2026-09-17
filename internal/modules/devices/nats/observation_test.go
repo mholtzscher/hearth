@@ -15,6 +15,7 @@ import (
 	contractsv1 "github.com/mholtzscher/hearth/contracts/v1"
 	"github.com/mholtzscher/hearth/internal/contracts/v1/natswire"
 	"github.com/mholtzscher/hearth/internal/modules/devices"
+	"github.com/mholtzscher/hearth/internal/platform/nats/natstest"
 )
 
 const (
@@ -331,20 +332,7 @@ func waitForConsumer(t *testing.T, consumer jetstream.Consumer, condition func(*
 
 func startJetStream(t *testing.T) (*natsserver.Server, *natsgo.Conn, jetstream.JetStream) {
 	t.Helper()
-	server, err := natsserver.NewServer(&natsserver.Options{
-		Host: "127.0.0.1", Port: -1, JetStream: true, StoreDir: t.TempDir(), NoSigs: true,
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	go server.Start()
-	if !server.ReadyForConnections(10 * time.Second) {
-		t.Fatal("NATS server did not become ready")
-	}
-	t.Cleanup(func() {
-		server.Shutdown()
-		server.WaitForShutdown()
-	})
+	server := natstest.StartServer(t)
 	connection, err := natsgo.Connect(server.ClientURL())
 	if err != nil {
 		t.Fatal(err)

@@ -11,6 +11,7 @@ import (
 	natsserver "github.com/nats-io/nats-server/v2/server"
 
 	"github.com/mholtzscher/hearth/internal/contracts/v1/natswire"
+	"github.com/mholtzscher/hearth/internal/platform/nats/natstest"
 	"github.com/mholtzscher/hearth/sdk/adapter"
 )
 
@@ -19,20 +20,7 @@ func TestRunListsOwnedMappingsAndDrainsEndpoint(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	server, err := natsserver.NewServer(&natsserver.Options{
-		Host: "127.0.0.1", Port: -1, JetStream: true, StoreDir: t.TempDir(), NoSigs: true,
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	go server.Start()
-	if !server.ReadyForConnections(5 * time.Second) {
-		t.Fatal("NATS server did not become ready")
-	}
-	t.Cleanup(func() {
-		server.Shutdown()
-		server.WaitForShutdown()
-	})
+	server := natstest.StartServer(t)
 
 	probeSubject, err := natswire.OwnedMappingsSubject(
 		"inventory-probe", "run_01890f47-7a6b-7c4d-8e9f-0123456789ab",

@@ -33,6 +33,7 @@ import (
 	devicessqlite "github.com/mholtzscher/hearth/internal/modules/devices/sqlite"
 	"github.com/mholtzscher/hearth/internal/platform/db/dbtest"
 	platformnats "github.com/mholtzscher/hearth/internal/platform/nats"
+	"github.com/mholtzscher/hearth/internal/platform/nats/natstest"
 	"github.com/mholtzscher/hearth/sdk/adapter"
 )
 
@@ -150,16 +151,7 @@ func newSimulatorMatrixHarness(
 	}
 	harness.repository = devicessqlite.NewDeviceRepository(harness.database, catalog)
 
-	harness.server, err = natsserver.NewServer(&natsserver.Options{
-		Host: "127.0.0.1", Port: -1, JetStream: true, StoreDir: t.TempDir(), NoSigs: true,
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	go harness.server.Start()
-	if !harness.server.ReadyForConnections(5 * time.Second) {
-		t.Fatal("NATS server did not become ready")
-	}
+	harness.server = natstest.StartServer(t)
 	harness.connection, err = natsgo.Connect(harness.server.ClientURL())
 	if err != nil {
 		t.Fatal(err)

@@ -9,10 +9,9 @@ import (
 	"testing"
 	"time"
 
-	natsserver "github.com/nats-io/nats-server/v2/server"
-
 	platformdb "github.com/mholtzscher/hearth/internal/platform/db"
 	"github.com/mholtzscher/hearth/internal/platform/db/dbtest"
+	"github.com/mholtzscher/hearth/internal/platform/nats/natstest"
 )
 
 // TestCoreStartupPrunesRetainedHistory proves the real startup path runs one
@@ -28,20 +27,7 @@ func TestCoreStartupPrunesRetainedHistory(t *testing.T) {
 	databasePath := filepath.Join(t.TempDir(), "hearth.db")
 	seedStartupRetentionDatabase(ctx, t, databasePath)
 
-	server, err := natsserver.NewServer(&natsserver.Options{
-		Host: "127.0.0.1", Port: -1, JetStream: true, StoreDir: t.TempDir(), NoSigs: true,
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	go server.Start()
-	if !server.ReadyForConnections(5 * time.Second) {
-		t.Fatal("NATS server did not become ready")
-	}
-	t.Cleanup(func() {
-		server.Shutdown()
-		server.WaitForShutdown()
-	})
+	server := natstest.StartServer(t)
 
 	httpAddress := unusedLoopbackAddress(t)
 	// A non-pooling client avoids leaving an idle keep-alive connection that the

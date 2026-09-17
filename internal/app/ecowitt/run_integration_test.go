@@ -27,6 +27,7 @@ import (
 	devicesnats "github.com/mholtzscher/hearth/internal/modules/devices/nats"
 	devicessqlite "github.com/mholtzscher/hearth/internal/modules/devices/sqlite"
 	"github.com/mholtzscher/hearth/internal/platform/db/dbtest"
+	"github.com/mholtzscher/hearth/internal/platform/nats/natstest"
 	"github.com/mholtzscher/hearth/internal/testbroker"
 )
 
@@ -719,28 +720,7 @@ func (capture *logCapture) output() string {
 // startTestNATSServer starts one embedded JetStream NATS server on loopback.
 func startTestNATSServer(t *testing.T) *natsserver.Server {
 	t.Helper()
-	server, err := natsserver.NewServer(&natsserver.Options{
-		ServerName: "hearth-ecowitt-process-test",
-		Host:       "127.0.0.1",
-		Port:       -1,
-		NoSigs:     true,
-		NoLog:      true,
-		JetStream:  true,
-		StoreDir:   t.TempDir(),
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	go server.Start()
-	if !server.ReadyForConnections(10 * time.Second) {
-		server.Shutdown()
-		t.Fatal("NATS server did not become ready")
-	}
-	t.Cleanup(func() {
-		server.Shutdown()
-		server.WaitForShutdown()
-	})
-	return server
+	return natstest.StartServer(t)
 }
 
 // startCoreTransports starts the Core-side NATS servers and the Observation

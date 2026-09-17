@@ -9,7 +9,6 @@ import (
 	"testing"
 	"time"
 
-	natsserver "github.com/nats-io/nats-server/v2/server"
 	natsgo "github.com/nats-io/nats.go"
 	"github.com/nats-io/nats.go/jetstream"
 
@@ -21,6 +20,7 @@ import (
 	devicessqlite "github.com/mholtzscher/hearth/internal/modules/devices/sqlite"
 	platformdb "github.com/mholtzscher/hearth/internal/platform/db"
 	"github.com/mholtzscher/hearth/internal/platform/db/dbtest"
+	"github.com/mholtzscher/hearth/internal/platform/nats/natstest"
 	"github.com/mholtzscher/hearth/sdk/adapter"
 	sdkpowerv1 "github.com/mholtzscher/hearth/sdk/adapter/powerv1"
 )
@@ -40,20 +40,7 @@ func TestCoreNATSTransportRegistersAndProjectsDurableObservation(t *testing.T) {
 	repository := devicessqlite.NewDeviceRepository(database, catalog)
 	service := devices.NewService(devicessqlite.DeviceStores(repository), nil, catalog, devices.Dependencies{})
 
-	server, err := natsserver.NewServer(&natsserver.Options{
-		Host: "127.0.0.1", Port: -1, JetStream: true, StoreDir: t.TempDir(), NoSigs: true,
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	go server.Start()
-	if !server.ReadyForConnections(10 * time.Second) {
-		t.Fatal("NATS server did not become ready")
-	}
-	t.Cleanup(func() {
-		server.Shutdown()
-		server.WaitForShutdown()
-	})
+	server := natstest.StartServer(t)
 	coreConnection, err := natsgo.Connect(server.ClientURL())
 	if err != nil {
 		t.Fatal(err)
@@ -270,20 +257,7 @@ func TestCoreCommandRoundTripRequiresLinkedSimulatorObservation(t *testing.T) {
 	}
 	repository := devicessqlite.NewDeviceRepository(database, catalog)
 
-	server, err := natsserver.NewServer(&natsserver.Options{
-		Host: "127.0.0.1", Port: -1, JetStream: true, StoreDir: t.TempDir(), NoSigs: true,
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	go server.Start()
-	if !server.ReadyForConnections(10 * time.Second) {
-		t.Fatal("NATS server did not become ready")
-	}
-	t.Cleanup(func() {
-		server.Shutdown()
-		server.WaitForShutdown()
-	})
+	server := natstest.StartServer(t)
 	coreConnection, err := natsgo.Connect(server.ClientURL())
 	if err != nil {
 		t.Fatal(err)
