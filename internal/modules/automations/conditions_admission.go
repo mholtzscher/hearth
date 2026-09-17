@@ -153,20 +153,16 @@ func DecideConditions(
 ) (ConditionDecision, SkipReason, error) {
 	required, err := RequiredConditionEntityIDs(*conditions)
 	if err != nil {
-		return ConditionDecision{}, "", err
+		return nil, "", err
 	}
 	if missing := missingSnapshotCoverage(required, snapshot); len(missing) > 0 {
-		return ConditionDecision{}, "", &ConditionSnapshotRequiredError{RequiredEntityIDs: missing}
+		return nil, "", &ConditionSnapshotRequiredError{RequiredEntityIDs: missing}
 	}
 	evaluation, err := EvaluateConditions(*conditions, snapshot, at)
 	if err != nil {
-		return ConditionDecision{}, "", err
+		return nil, "", err
 	}
-	decision := ConditionDecision{
-		Mode:       ConditionDecisionEvaluated,
-		Snapshot:   conditions,
-		Evaluation: &evaluation,
-	}
+	decision := EvaluatedDecision(*conditions, evaluation)
 	switch evaluation.Result {
 	case ConditionTrue:
 		return decision, "", nil
@@ -175,7 +171,7 @@ func DecideConditions(
 	case ConditionUnknown:
 		return decision, SkipConditionsUnknown, nil
 	default:
-		return ConditionDecision{}, "", invalid("condition evaluation has an unknown result")
+		return nil, "", invalid("condition evaluation has an unknown result")
 	}
 }
 

@@ -59,7 +59,7 @@ func historySummary(row dbsqlc.AutomationHistory) (automations.HistorySummary, e
 }
 
 // newHistorySummaryBase decodes the identity, revision, timestamp, and Condition
-// decision every summary shares.
+// decision summary every listing shares.
 func newHistorySummaryBase(
 	row dbsqlc.AutomationHistory,
 ) (automations.HistorySummary, error) {
@@ -84,14 +84,12 @@ func newHistorySummaryBase(
 		Revision:       row.Revision,
 		RecordedAt:     recordedAt,
 	}
-	decision, err := decodeConditionDecisionColumn(row)
-	if err != nil {
-		return summary, err
-	}
-	summary.ConditionMode = decision.Mode
-	summary.BypassRequested = decision.BypassRequested
-	if decision.Evaluation != nil {
-		result := decision.Evaluation.Result
+	// The decision summary columns are derived from the decision document at
+	// write time, so listing never parses the full snapshot-and-evidence JSON.
+	summary.ConditionMode = automations.ConditionDecisionMode(row.ConditionMode)
+	summary.BypassRequested = row.ConditionBypassed == 1
+	if row.ConditionResult.Valid {
+		result := automations.ConditionResult(row.ConditionResult.String)
 		summary.ConditionResult = &result
 	}
 	return summary, nil
@@ -260,7 +258,7 @@ func decodeConditionDecisionColumn(
 		json.RawMessage(row.ConditionDecisionJson),
 	)
 	if err != nil {
-		return automations.ConditionDecision{}, fmt.Errorf(
+		return nil, fmt.Errorf(
 			"stored history %q condition decision: %w", row.ID, err,
 		)
 	}

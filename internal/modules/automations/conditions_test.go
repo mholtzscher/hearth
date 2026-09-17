@@ -258,6 +258,8 @@ func truthNotResult(
 
 // Evaluation records every node in definition pre-order without short-circuiting,
 // so an admitting any still retains its unknown sibling's explanatory leaf.
+// Only entity_state leaves are recorded; a group result is derivable from its
+// children and is not duplicated as evidence.
 func TestAutomationConditionEvaluationIsFullPreOrder(t *testing.T) {
 	t.Parallel()
 	admitting := conditionEntity(1)
@@ -275,19 +277,16 @@ func TestAutomationConditionEvaluationIsFullPreOrder(t *testing.T) {
 	if evaluation.Result != automations.ConditionTrue {
 		t.Fatalf("root result = %s, want true", evaluation.Result)
 	}
-	if len(evaluation.Nodes) != 3 {
-		t.Fatalf("node count = %d, want every node evaluated", len(evaluation.Nodes))
+	if len(evaluation.Nodes) != 2 {
+		t.Fatalf("leaf count = %d, want every leaf evaluated", len(evaluation.Nodes))
 	}
-	wantIDs := []automations.ConditionID{"root", "first", "second"}
+	wantIDs := []automations.ConditionID{"first", "second"}
 	for index, id := range wantIDs {
 		if evaluation.Nodes[index].ID != id {
-			t.Fatalf("node %d = %q, want %q", index, evaluation.Nodes[index].ID, id)
+			t.Fatalf("leaf %d = %q, want %q", index, evaluation.Nodes[index].ID, id)
 		}
 	}
-	if evaluation.Nodes[0].UnknownReason != nil {
-		t.Error("a composite node must not invent an unknown reason")
-	}
-	second := evaluation.Nodes[2]
+	second := evaluation.Nodes[1]
 	if second.UnknownReason == nil || *second.UnknownReason != automations.ConditionUnknownStateMissing {
 		t.Fatalf("unknown sibling reason = %v, want state_missing", second.UnknownReason)
 	}
@@ -839,11 +838,11 @@ func TestAutomationConditionRapidProperties(t *testing.T) {
 		if wrappedEvaluation.Result != evaluation.Result {
 			rapidT.Fatalf("double negation changed result: %s vs %s", wrappedEvaluation.Result, evaluation.Result)
 		}
-		if len(wrappedEvaluation.Nodes) != len(evaluation.Nodes)+2 {
+		if len(wrappedEvaluation.Nodes) != len(evaluation.Nodes) {
 			rapidT.Fatalf(
-				"double negation node count = %d, want %d",
+				"double negation leaf count = %d, want %d",
 				len(wrappedEvaluation.Nodes),
-				len(evaluation.Nodes)+2,
+				len(evaluation.Nodes),
 			)
 		}
 		permuted := conditionGroup(generated.kind, slices.Clone(generated.children)...)

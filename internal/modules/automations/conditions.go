@@ -3,7 +3,6 @@ package automations
 import (
 	"encoding/json"
 	"fmt"
-	"reflect"
 	"slices"
 	"time"
 
@@ -98,9 +97,9 @@ const (
 	ConditionUnknownTypeMismatch ConditionUnknownReason = "type_mismatch"
 )
 
-// ConditionNodeResult records one evaluated node. SelectedValue is nil when no
-// value was selected and the JSON bytes "null" when a JSON null was selected, so
-// missing and selected-null stay distinct.
+// ConditionNodeResult records one evaluated entity_state leaf. SelectedValue is
+// nil when no value was selected and the JSON bytes "null" when a JSON null was
+// selected, so missing and selected-null stay distinct.
 type ConditionNodeResult struct {
 	ID            ConditionID
 	Result        ConditionResult
@@ -110,8 +109,8 @@ type ConditionNodeResult struct {
 	ObservedAt    *time.Time              // State evidence time
 }
 
-// ConditionEvaluation contains every node result in definition pre-order, so
-// history explains every predicate.
+// ConditionEvaluation contains every evaluated entity_state leaf result in
+// definition pre-order, so history explains the decision from its leaves.
 type ConditionEvaluation struct {
 	EvaluatedAt time.Time
 	Result      ConditionResult
@@ -135,12 +134,77 @@ const (
 	ConditionDecisionEvaluated ConditionDecisionMode = "evaluated"
 )
 
-// ConditionDecision is the immutable admission explanation retained with a Run or Skip.
-type ConditionDecision struct {
-	Mode            ConditionDecisionMode
-	BypassRequested bool
-	Snapshot        *Condition
-	Evaluation      *ConditionEvaluation
+// ConditionDecision is the immutable admission explanation retained with a Run
+// or Skip. Exactly one of the four explanations exists; build one with
+// [NotConfiguredDecision], [NotEvaluatedDecision], [BypassedDecision], or
+// [EvaluatedDecision], so the envelope invariants (which members accompany
+// which mode) hold by construction and need no runtime validation. The
+// persisted wire shape is unchanged: mode plus optional snapshot and
+// evaluation, with bypass_requested derived from the mode.
+type ConditionDecision interface {
+	// DecisionMode reports which explanation this decision carries.
+	DecisionMode() ConditionDecisionMode
+	// BypassRequested reports whether the decision records an explicit manual
+	// bypass; true if and only if the mode is bypassed.
+	BypassRequested() bool
+	// DecisionSnapshot returns the configured Condition tree, nil when the
+	// definition omitted Conditions.
+	DecisionSnapshot() *Condition
+	// DecisionEvaluation returns the recorded evaluation, non-nil only for an
+	// evaluated decision.
+	DecisionEvaluation() *ConditionEvaluation
+	isConditionDecision()
+}
+
+// conditionDecision is the single unexported implementation; the constructors
+// below are the only way to build one.
+type conditionDecision struct {
+	mode       ConditionDecisionMode
+	snapshot   *Condition
+	evaluation *ConditionEvaluation
+}
+
+func (decision conditionDecision) DecisionMode() ConditionDecisionMode { return decision.mode }
+
+func (decision conditionDecision) BypassRequested() bool {
+	return decision.mode == ConditionDecisionBypassed
+}
+
+func (decision conditionDecision) DecisionSnapshot() *Condition { return decision.snapshot }
+
+func (decision conditionDecision) DecisionEvaluation() *ConditionEvaluation {
+	return decision.evaluation
+}
+
+func (conditionDecision) isConditionDecision() {}
+
+// NotConfiguredDecision marks a definition that omitted Conditions. An explicit
+// manual bypass of an unconditioned definition records the same decision.
+func NotConfiguredDecision() ConditionDecision {
+	return conditionDecision{mode: ConditionDecisionNotConfigured}
+}
+
+// NotEvaluatedDecision marks an automatic stale or busy Skip of a configured
+// definition: the configured snapshot is retained without evaluation.
+func NotEvaluatedDecision(snapshot Condition) ConditionDecision {
+	return conditionDecision{mode: ConditionDecisionNotEvaluated, snapshot: &snapshot}
+}
+
+// BypassedDecision marks an explicit manual bypass of configured Conditions.
+func BypassedDecision(snapshot Condition) ConditionDecision {
+	return conditionDecision{mode: ConditionDecisionBypassed, snapshot: &snapshot}
+}
+
+// EvaluatedDecision marks an eligible admission whose Conditions were evaluated.
+func EvaluatedDecision(
+	snapshot Condition,
+	evaluation ConditionEvaluation,
+) ConditionDecision {
+	return conditionDecision{
+		mode:       ConditionDecisionEvaluated,
+		snapshot:   &snapshot,
+		evaluation: &evaluation,
+	}
 }
 
 // NormalizeConditions validates one typed Condition tree and returns an owned copy of it.
@@ -198,21 +262,17 @@ func EvaluateConditions(
 }
 
 // conditionTreeWalk validates one typed tree while collecting node IDs, entity
-// IDs, and the node count. Slice data pointers and Child pointers are tracked so
-// cycles and shared payloads are rejected before recursion can run unbounded.
+// IDs, and the node count. Depth and node-count bounds keep recursion safe;
+// trees originate from JSON decoding, so cycles and shared payloads cannot occur.
 type conditionTreeWalk struct {
 	ids       map[ConditionID]struct{}
-	slices    map[uintptr]struct{}
-	childPtrs map[*Condition]struct{}
 	entityIDs []devices.EntityID
 	nodes     int
 }
 
 func newConditionTreeWalk() *conditionTreeWalk {
 	return &conditionTreeWalk{
-		ids:       map[ConditionID]struct{}{},
-		slices:    map[uintptr]struct{}{},
-		childPtrs: map[*Condition]struct{}{},
+		ids: map[ConditionID]struct{}{},
 	}
 }
 
@@ -267,11 +327,6 @@ func (walk *conditionTreeWalk) visitGroup(node *Condition, depth int) error {
 	if len(node.Children) == 0 {
 		return invalid("condition %q: all/any requires a nonempty children array", node.ID)
 	}
-	pointer := reflect.ValueOf(node.Children).Pointer()
-	if _, aliased := walk.slices[pointer]; aliased {
-		return invalid("condition %q: children payload is shared or cyclic", node.ID)
-	}
-	walk.slices[pointer] = struct{}{}
 	for index := range node.Children {
 		if err := walk.visit(&node.Children[index], depth+1); err != nil {
 			return err
@@ -287,10 +342,6 @@ func (walk *conditionTreeWalk) visitNot(node *Condition, depth int) error {
 	if node.Child == nil {
 		return invalid("condition %q: not requires exactly one child", node.ID)
 	}
-	if _, cyclic := walk.childPtrs[node.Child]; cyclic {
-		return invalid("condition %q: child pointer creates a cycle or is shared", node.ID)
-	}
-	walk.childPtrs[node.Child] = struct{}{}
 	return walk.visit(node.Child, depth+1)
 }
 
@@ -351,8 +402,10 @@ func cloneEntityStateCondition(condition EntityStateCondition) *EntityStateCondi
 	return &cloned
 }
 
-// evaluateConditionNode evaluates one node and appends its result in pre-order,
-// returning the node's three-valued result.
+// evaluateConditionNode evaluates one node, appending a result for every
+// entity_state leaf in pre-order, and returns the node's three-valued result.
+// Group and not results are derivable from their children, so only leaves are
+// recorded as evidence.
 func evaluateConditionNode(
 	node *Condition,
 	snapshot devices.EntityStateSnapshot,
@@ -368,41 +421,24 @@ func evaluateConditionNode(
 		*nodes = append(*nodes, result)
 		return result.Result, nil
 	case ConditionAll, ConditionAny:
-		return evaluateConditionGroup(node, snapshot, evaluatedAt, nodes)
+		childResults := make([]ConditionResult, 0, len(node.Children))
+		for index := range node.Children {
+			child, err := evaluateConditionNode(&node.Children[index], snapshot, evaluatedAt, nodes)
+			if err != nil {
+				return "", err
+			}
+			childResults = append(childResults, child)
+		}
+		return combineConditionGroup(node.Kind, childResults), nil
 	case ConditionNot:
-		position := len(*nodes)
-		*nodes = append(*nodes, ConditionNodeResult{ID: node.ID})
 		child, err := evaluateConditionNode(node.Child, snapshot, evaluatedAt, nodes)
 		if err != nil {
 			return "", err
 		}
-		result := negateConditionResult(child)
-		(*nodes)[position].Result = result
-		return result, nil
+		return negateConditionResult(child), nil
 	default:
 		return "", invalid("condition %q: unknown kind %q", node.ID, node.Kind)
 	}
-}
-
-func evaluateConditionGroup(
-	node *Condition,
-	snapshot devices.EntityStateSnapshot,
-	evaluatedAt time.Time,
-	nodes *[]ConditionNodeResult,
-) (ConditionResult, error) {
-	position := len(*nodes)
-	*nodes = append(*nodes, ConditionNodeResult{ID: node.ID})
-	childResults := make([]ConditionResult, 0, len(node.Children))
-	for index := range node.Children {
-		child, err := evaluateConditionNode(&node.Children[index], snapshot, evaluatedAt, nodes)
-		if err != nil {
-			return "", err
-		}
-		childResults = append(childResults, child)
-	}
-	result := combineConditionGroup(node.Kind, childResults)
-	(*nodes)[position].Result = result
-	return result, nil
 }
 
 // evaluateEntityStateLeaf applies the unknown-reason precedence: missing Entity,

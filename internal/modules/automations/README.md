@@ -29,13 +29,16 @@ devices tables directly or maintain a second State projection.
 An Automation definition may carry one optional, bounded Condition tree whose
 nodes compare selected current Entity State or compose with `all`, `any`, and
 `not`. Conditions are optional per definition and preserve omission. Evaluation
-is pure and three-valued over an immutable State snapshot; only a true root
-admits, and every node's evidence is recorded so history explains a decision
-after State or the definition changes. A decision is validated once at write
-time for envelope coherence, and the history table's CHECK constraints are the
-remaining integrity guard, so reads decode retained decisions and trust them
-rather than re-deriving the evidence. The transports, codecs, and persistence
-shapes for definitions, evaluations, and decisions live with this module.
+is pure and three-valued over an immutable State snapshot without
+short-circuiting; only a true root admits, and every `entity_state` leaf's
+evidence is recorded so history explains a decision after State or the
+definition changes. Group and `not` results are derivable from their recorded
+children and are not duplicated as evidence. A decision is one of four
+explanations built through sealed constructors, so envelope coherence holds by
+construction; the history table's CHECK constraints are the remaining
+integrity guard, and reads decode retained decisions and trust them rather than
+re-deriving the evidence. The transports, codecs, and persistence shapes for
+definitions, evaluations, and decisions live with this module.
 
 Conditions never initiate execution and are evaluated once per admission.
 Devices remains the authority for State: the Service pre-reads one coherent

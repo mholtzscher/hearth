@@ -1,0 +1,20 @@
+# 2026/09/16 15:55:50.791213 [TestAutomationConditionRapidProperties] [rapid] draw kind: "all"
+# 2026/09/16 15:55:50.791227 [TestAutomationConditionRapidProperties] [rapid] draw child count: 1
+# 2026/09/16 15:55:50.791229 [TestAutomationConditionRapidProperties] [rapid] draw comparison: automations_test.comparison{operator:"eq", operand:"true"}
+# 2026/09/16 15:55:50.791232 [TestAutomationConditionRapidProperties] [rapid] draw value: "true"
+# 2026/09/16 15:55:50.791233 [TestAutomationConditionRapidProperties] [rapid] draw coverage: 0
+# 2026/09/16 15:55:50.791244 [TestAutomationConditionRapidProperties] double negation node count = 1, want 3
+# 
+v0.4.8#11914030948229291041
+0x0
+0x0
+0x0
+0x0
+0x0
+0x0
+0x0
+0x0
+0x0
+0x0
+0x0
+0x0

@@ -8,6 +8,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
+	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
@@ -146,6 +147,42 @@ func CheckMissingConfigJSON(t *testing.T, binary string, binaryName string) {
 	}
 	if starting["pid"] != failed["pid"] {
 		t.Fatalf("starting and failed pids differ: %#v vs %#v", starting, failed)
+	}
+}
+
+// CheckInvalidConfigDetail proves a configuration that was read but fails
+// static validation reports the actionable, path-free reason on
+// process.failed, so an operator sees which field or Device is wrong without
+// the process record echoing the configuration path.
+func CheckInvalidConfigDetail(t *testing.T, binary string, binaryName string, configYAML string) {
+	t.Helper()
+	path := filepath.Join(t.TempDir(), "invalid.yaml")
+	if err := os.WriteFile(path, []byte(configYAML), 0o600); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+	result := Run(t, binary, "--config", path, "--log-level", "info", "--log-format", "json")
+	if result.ExitCode == 0 {
+		t.Fatalf("invalid config exited 0: %q", result.Stderr)
+	}
+	if strings.Contains(result.Stderr, path) {
+		t.Fatalf("config failure repeated the path: %q", result.Stderr)
+	}
+	records := DecodeLogRecords(t, result.Stderr)
+	failed := FindEvent(records, "process.failed")
+	if failed == nil {
+		t.Fatalf("missing process.failed in %#v", records)
+	}
+	RequireField(t, failed, "app", binaryName)
+	RequireField(t, failed, "stage", "load_config")
+	reason, ok := failed["error"].(string)
+	if !ok || strings.TrimSpace(reason) == "" {
+		t.Fatalf("process.failed lacks an actionable reason: %#v", failed)
+	}
+	if strings.Contains(reason, path) {
+		t.Fatalf("error reason repeated the path: %q", reason)
+	}
+	if reason == "configuration could not be read or decoded" {
+		t.Fatalf("decodable YAML must report a validation reason, got %q", reason)
 	}
 }
 

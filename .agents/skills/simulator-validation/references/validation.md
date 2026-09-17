@@ -18,6 +18,11 @@ Each Device has a unique slug `binding_key`, `name`, `kind` (`light`, `relay`, o
 built-in `type`, and type-correct `support`. Copy support shapes and canonical
 units from `configs/simulator.full.example.yaml` or the type's schemas.
 
+`simulator-start` validates the generated configuration against the
+Entity-type schemas before it creates a run directory or tab, so a schema
+error in a custom file fails immediately and names the offending Device and
+Entity.
+
 ### State sequences
 
 Inside a Device's `entities` list:

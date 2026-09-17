@@ -72,7 +72,7 @@ func LoadConfig(path string) (Config, error) {
 		return Config{}, err
 	}
 	if err := value.Validate(); err != nil {
-		return Config{}, fmt.Errorf("validate config %q: %w", path, err)
+		return Config{}, platformconfig.Invalid(path, err)
 	}
 	value.MQTT.URL = normalizeMQTTURL(value.MQTT.URL)
 	return value, nil

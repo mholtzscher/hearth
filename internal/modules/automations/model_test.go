@@ -87,12 +87,10 @@ func validDomainRun(t *testing.T) automations.Run {
 		Source:            automations.RunSourceDeviceFact,
 		Fact:              &fact,
 		MatchedTriggerIDs: []automations.TriggerID{"occupied_and_warm"},
-		ConditionDecision: automations.ConditionDecision{
-			Mode: automations.ConditionDecisionNotConfigured,
-		},
-		Status:      automations.RunSucceeded,
-		StartedAt:   modelTestTime,
-		CompletedAt: &completedAt,
+		ConditionDecision: automations.NotConfiguredDecision(),
+		Status:            automations.RunSucceeded,
+		StartedAt:         modelTestTime,
+		CompletedAt:       &completedAt,
 		Steps: []automations.StepAttempt{{
 			Position:              0,
 			StepID:                "light_on",
@@ -201,11 +199,9 @@ func validDomainSkip(t *testing.T) automations.Skip {
 				Dispositions: []devices.ObservationDisposition{devices.DispositionApplied},
 			},
 		}},
-		Reason: automations.SkipBusy,
-		ConditionDecision: automations.ConditionDecision{
-			Mode: automations.ConditionDecisionNotConfigured,
-		},
-		SkippedAt: modelTestTime,
+		Reason:            automations.SkipBusy,
+		ConditionDecision: automations.NotConfiguredDecision(),
+		SkippedAt:         modelTestTime,
 	}
 }
 
@@ -229,7 +225,7 @@ func TestValidateAutomationSkipRejectsImpossibleCombinations(t *testing.T) {
 		}},
 		{"unknown source", func(skip *automations.Skip) { skip.Source = "later" }},
 		{"bypass decision", func(skip *automations.Skip) {
-			skip.ConditionDecision.BypassRequested = true
+			skip.ConditionDecision = automations.BypassedDecision(automations.Condition{})
 		}},
 		{"condition reason without evaluation", func(skip *automations.Skip) {
 			skip.Reason = automations.SkipConditionsFalse
