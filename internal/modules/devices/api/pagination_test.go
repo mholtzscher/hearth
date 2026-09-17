@@ -90,6 +90,45 @@ func TestCursorCodecsRoundTripAndEnforceScope(t *testing.T) {
 	}
 }
 
+func TestCommandListCursorRoundTripAndEnforcesScope(t *testing.T) {
+	t.Parallel()
+	requestedAt := time.Date(2026, 8, 26, 12, 0, 0, 123, time.UTC)
+	record := devices.CommandRecord{ID: apiCommandID, EntityID: apiEntityID, RequestedAt: requestedAt}
+	listCursor, err := encodeCommandListCursor(record, nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	decodedAt, commandID, err := decodeCommandListCursor(listCursor, nil, nil)
+	if err != nil || *commandID != apiCommandID || !decodedAt.Equal(requestedAt) {
+		t.Fatalf("command list cursor = %q, %v", listCursor, err)
+	}
+	if _, _, decodeErr := decodeCommandCursor(listCursor, apiEntityID); decodeErr == nil {
+		t.Fatal("household command cursor accepted by the per-Entity endpoint")
+	}
+	perEntity, err := encodeCommandCursor(record)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, _, decodeErr := decodeCommandListCursor(perEntity, nil, nil); decodeErr == nil {
+		t.Fatal("per-Entity command cursor accepted by the household endpoint")
+	}
+	listEntityID := apiEntityID
+	filteredCursor, err := encodeCommandListCursor(record, &listEntityID, new(devices.CommandStatusSatisfied))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, _, decodeErr := decodeCommandListCursor(filteredCursor, nil, nil); decodeErr == nil {
+		t.Fatal("filtered command cursor accepted without its filters")
+	}
+	if _, _, decodeErr := decodeCommandListCursor(filteredCursor, &listEntityID, nil); decodeErr == nil {
+		t.Fatal("filtered command cursor accepted with a dropped status filter")
+	}
+	status := devices.CommandStatusSatisfied
+	if _, _, decodeErr := decodeCommandListCursor(filteredCursor, &listEntityID, &status); decodeErr != nil {
+		t.Fatalf("filtered command cursor rejected under its filters: %v", decodeErr)
+	}
+}
+
 func TestCursorCodecsRejectMalformedDocuments(t *testing.T) {
 	t.Parallel()
 	unknownField := base64.RawURLEncoding.EncodeToString(

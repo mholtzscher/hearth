@@ -18,6 +18,7 @@ type readRepository struct {
 	command            CommandRecord
 	commandPage        Page[CommandRecord]
 	listCommandsParams ListEntityCommandsParams
+	listAllParams      ListCommandsParams
 	historyPage        Page[EntityStateHistoryEntry]
 	historyParams      ListEntityStateHistoryParams
 	historyErr         error
@@ -85,6 +86,15 @@ func (repository *readRepository) ListEntityCommands(
 	return repository.commandPage, nil
 }
 
+func (repository *readRepository) ListCommands(
+	_ context.Context,
+	params ListCommandsParams,
+) (Page[CommandRecord], error) {
+	repository.listCommandsCalls++
+	repository.listAllParams = params
+	return repository.commandPage, nil
+}
+
 func (repository *readRepository) ListEntityStateHistory(
 	_ context.Context,
 	params ListEntityStateHistoryParams,
@@ -135,6 +145,24 @@ func TestReadServiceValidatesPagesBeforeRepositoryCalls(t *testing.T) {
 		{"partial command position", func() error {
 			now := time.Now()
 			_, err := service.ListEntityCommands(context.Background(), ListEntityCommandsParams{EntityID: commandTestEntityID, BeforeRequestedAt: &now, Limit: 1})
+			return err
+		}},
+		{"partial household command position", func() error {
+			now := time.Now()
+			_, err := service.ListCommands(context.Background(), ListCommandsParams{BeforeRequestedAt: &now, Limit: 1})
+			return err
+		}},
+		{"household command entity filter", func() error {
+			_, err := service.ListCommands(context.Background(), ListCommandsParams{EntityID: &invalidEntityID, Limit: 1})
+			return err
+		}},
+		{"household command status filter", func() error {
+			status := CommandStatus("exploded")
+			_, err := service.ListCommands(context.Background(), ListCommandsParams{Status: &status, Limit: 1})
+			return err
+		}},
+		{"household command limit", func() error {
+			_, err := service.ListCommands(context.Background(), ListCommandsParams{Limit: 0})
 			return err
 		}},
 		{"invalid command position", func() error {
@@ -225,6 +253,49 @@ func TestReadServiceReturnsOwnedDataAndNormalizesCommandPosition(t *testing.T) {
 	if string(repository.command.Parameters) != `{"value":true}` || repository.command.CompletedAt.IsZero() ||
 		*repository.command.FailureCode != failure {
 		t.Fatal("ListEntityCommands result aliases repository data")
+	}
+}
+
+func TestListCommandsSkipsParentCheckAndReturnsOwnedData(t *testing.T) {
+	t.Parallel()
+	completedAt := time.Date(2026, 8, 25, 10, 0, 1, 0, time.UTC)
+	failure := CommandFailureOutcomeTimeout
+	repository := newReadRepository()
+	repository.command = CommandRecord{
+		ID: commandTestID, EntityID: commandTestEntityID, Parameters: CommandParameters(`{"value":true}`),
+		CompletedAt: &completedAt, FailureCode: &failure,
+	}
+	repository.commandPage = Page[CommandRecord]{Items: []CommandRecord{repository.command}}
+	service := newTestService(repository, nil, nil, Dependencies{})
+
+	position := time.Date(2026, 8, 25, 5, 0, 0, 0, time.FixedZone("offset", -5*60*60))
+	status := CommandStatusSatisfied
+	commands, err := service.ListCommands(context.Background(), ListCommandsParams{
+		EntityID: new(commandTestEntityID), Status: &status,
+		BeforeRequestedAt: &position, BeforeID: new(commandTestID), Limit: 1,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Household history never resolves the Entity filter: unknown Entities
+	// match nothing instead of failing, so no parent lookup happens.
+	if repository.getEntityCalls != 0 || repository.listAllParams.EntityID == nil ||
+		*repository.listAllParams.EntityID != commandTestEntityID ||
+		repository.listAllParams.Status == nil || *repository.listAllParams.Status != status ||
+		repository.listAllParams.BeforeRequestedAt.Location() != time.UTC ||
+		!repository.listAllParams.BeforeRequestedAt.Equal(position) {
+		t.Fatalf(
+			"household history params = %#v, entity calls = %d",
+			repository.listAllParams,
+			repository.getEntityCalls,
+		)
+	}
+	commands.Items[0].Parameters[0] = 'x'
+	*commands.Items[0].CompletedAt = time.Time{}
+	*commands.Items[0].FailureCode = CommandFailureInternalError
+	if string(repository.command.Parameters) != `{"value":true}` || repository.command.CompletedAt.IsZero() ||
+		*repository.command.FailureCode != failure {
+		t.Fatal("ListCommands result aliases repository data")
 	}
 }
 

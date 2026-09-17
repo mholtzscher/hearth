@@ -29,6 +29,20 @@ type commandCursor struct {
 	ID          string `json:"id"`
 }
 
+// commandListCursor positions a household-wide Command history page after the
+// last returned (requested_at, id). EntityID and Status copy the request
+// filters and are empty when unfiltered, so a cursor cannot move between
+// filtered and unfiltered reads. The resource name keeps these cursors
+// mutually incompatible with per-Entity history cursors.
+type commandListCursor struct {
+	Version     int    `json:"v"`
+	Resource    string `json:"resource"`
+	RequestedAt string `json:"requested_at"`
+	ID          string `json:"id"`
+	EntityID    string `json:"entity_id,omitempty"`
+	Status      string `json:"status,omitempty"`
+}
+
 type healthCursor struct {
 	Version      int    `json:"v"`
 	Resource     string `json:"resource"`
@@ -238,6 +252,66 @@ func encodeCommandCursor(command devices.CommandRecord) (string, error) {
 		Version: cursorVersion, Resource: "entity_commands", EntityID: string(command.EntityID),
 		RequestedAt: formatTime(command.RequestedAt), ID: string(command.ID),
 	})
+}
+
+func encodeCommandListCursor(
+	command devices.CommandRecord,
+	entityID *devices.EntityID,
+	status *devices.CommandStatus,
+) (string, error) {
+	cursor := commandListCursor{
+		Version: cursorVersion, Resource: "commands",
+		RequestedAt: formatTime(command.RequestedAt), ID: string(command.ID),
+	}
+	if entityID != nil {
+		cursor.EntityID = string(*entityID)
+	}
+	if status != nil {
+		cursor.Status = string(*status)
+	}
+	return encodeCursor(cursor)
+}
+
+func decodeCommandListCursor(
+	value string,
+	entityID *devices.EntityID,
+	status *devices.CommandStatus,
+) (*time.Time, *devices.CommandID, error) {
+	var cursor commandListCursor
+	if err := decodeCursor(value, &cursor); err != nil {
+		return nil, nil, err
+	}
+	if cursor.Version != cursorVersion || cursor.Resource != "commands" {
+		return nil, nil, errors.New("invalid command cursor scope")
+	}
+	wantEntityID := ""
+	if entityID != nil {
+		wantEntityID = string(*entityID)
+	}
+	wantStatus := ""
+	if status != nil {
+		wantStatus = string(*status)
+	}
+	if cursor.EntityID != wantEntityID || cursor.Status != wantStatus {
+		return nil, nil, errors.New("invalid command cursor scope")
+	}
+	if cursor.EntityID != "" {
+		if _, err := devices.ParseEntityID(cursor.EntityID); err != nil {
+			return nil, nil, fmt.Errorf("invalid command cursor entity ID: %w", err)
+		}
+	}
+	if cursor.Status != "" && !devices.ValidCommandStatus(devices.CommandStatus(cursor.Status)) {
+		return nil, nil, errors.New("invalid command cursor scope")
+	}
+	id, err := devices.ParseCommandID(cursor.ID)
+	if err != nil {
+		return nil, nil, fmt.Errorf("invalid command cursor ID: %w", err)
+	}
+	requestedAt, err := time.Parse(time.RFC3339Nano, cursor.RequestedAt)
+	if err != nil || requestedAt.IsZero() || cursor.RequestedAt != requestedAt.UTC().Format(time.RFC3339Nano) {
+		return nil, nil, errors.New("invalid command cursor requested_at")
+	}
+	return &requestedAt, &id, nil
 }
 
 func decodeCommandCursor(value string, entityID devices.EntityID) (*time.Time, *devices.CommandID, error) {

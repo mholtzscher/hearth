@@ -84,6 +84,13 @@ func (*stubDevices) ListEntityCommands(
 	panic("unexpected ListEntityCommands call")
 }
 
+func (*stubDevices) ListCommands(
+	context.Context,
+	devices.ListCommandsParams,
+) (devices.Page[devices.CommandRecord], error) {
+	panic("unexpected ListCommands call")
+}
+
 func (*stubDevices) ListAdapters(
 	context.Context,
 	devices.ListAdaptersParams,
@@ -212,7 +219,7 @@ func TestRuntimeOpenAPIContract(t *testing.T) {
 	if document.OpenAPI != "3.1.0" || document.Info.Title != "Hearth" || document.Info.Version != "1.0.0" {
 		t.Fatalf("OpenAPI metadata = %#v", document)
 	}
-	if len(document.Paths) != 17 {
+	if len(document.Paths) != 18 {
 		t.Fatalf("OpenAPI paths = %v", document.Paths)
 	}
 	assertRuntimeOpenAPIOperation(t, document.Paths["/v1/entities"].Get, "list-entities", "200", "400", "422", "500")
@@ -266,6 +273,7 @@ func TestRuntimeOpenAPIContract(t *testing.T) {
 		"422",
 		"500",
 	)
+	assertRuntimeOpenAPIOperation(t, document.Paths["/v1/commands"].Get, "list-commands", "200", "400", "422", "500")
 	assertRuntimeOpenAPIOperation(
 		t,
 		document.Paths["/v1/adapters"].Get,

@@ -115,6 +115,90 @@ func TestSQLiteResourceReadsUseDeterministicKeysetPages(t *testing.T) {
 	}
 }
 
+func TestSQLiteCommandHistoryListsHouseholdWide(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	database := openMigratedDatabase(t, filepath.Join(t.TempDir(), "hearth.db"))
+	repository := NewDeviceRepository(database, nil)
+	requestedAt := time.Date(2026, 8, 26, 12, 0, 0, 123, time.UTC)
+	seedResourceReads(t, database, requestedAt)
+	later := requestedAt.Add(time.Minute)
+	newerID := devices.CommandID("cmd_01890f47-7a6b-7c4d-8e9f-0123456789b1")
+	if _, err := database.ExecContext(ctx, `
+		INSERT INTO commands (
+			id, entity_id, adapter_id, operation, parameters_json, correlation_id,
+			status, requested_at, deadline_at, completed_at, outcome_observation_id
+		) VALUES (?, ?, 'simulator', 'set', '{"value":true}',
+			'cor_01890f47-7a6b-7c4d-8e9f-0123456789b1', 'satisfied', ?, ?, ?, ?)`,
+		newerID, readEntityB, formatSortableTime(later), formatTime(later.Add(10*time.Second)),
+		formatTime(later.Add(time.Second)), "obs_01890f47-7a6b-7c4d-8e9f-0123456789b1"); err != nil {
+		t.Fatal(err)
+	}
+
+	first, err := repository.ListCommands(ctx, devices.ListCommandsParams{Limit: 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(first.Items) != 1 || first.Items[0].ID != newerID || !first.HasMore {
+		t.Fatalf("first household page = %#v", first)
+	}
+	second, err := repository.ListCommands(ctx, devices.ListCommandsParams{
+		BeforeRequestedAt: &first.Items[0].RequestedAt, BeforeID: &first.Items[0].ID, Limit: 10,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(second.Items) != 2 || second.Items[0].EntityID != readEntityA || second.HasMore {
+		t.Fatalf("second household page = %#v", second)
+	}
+
+	byEntity, err := repository.ListCommands(ctx, devices.ListCommandsParams{
+		EntityID: new(readEntityB), Limit: 10,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(byEntity.Items) != 1 || byEntity.Items[0].ID != newerID || byEntity.HasMore {
+		t.Fatalf("entity-filtered household page = %#v", byEntity)
+	}
+	unknownEntity := devices.EntityID("ent_01890f47-7a6b-7c4d-8e9f-0123456789ff")
+	empty, err := repository.ListCommands(ctx, devices.ListCommandsParams{
+		EntityID: &unknownEntity, Limit: 10,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if empty.Items == nil || len(empty.Items) != 0 || empty.HasMore {
+		t.Fatalf("unknown entity household page = %#v", empty)
+	}
+
+	satisfied := devices.CommandStatusSatisfied
+	byStatus, err := repository.ListCommands(ctx, devices.ListCommandsParams{Status: &satisfied, Limit: 10})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(byStatus.Items) != 1 || byStatus.Items[0].ID != newerID || byStatus.HasMore {
+		t.Fatalf("status-filtered household page = %#v", byStatus)
+	}
+	requested := devices.CommandStatusRequested
+	both, err := repository.ListCommands(ctx, devices.ListCommandsParams{
+		EntityID: new(readEntityA), Status: &requested, Limit: 10,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(both.Items) != 2 || both.HasMore {
+		t.Fatalf("entity-and-status household page = %#v", both)
+	}
+	limitErr := func() error {
+		_, innerErr := repository.ListCommands(ctx, devices.ListCommandsParams{Limit: 0})
+		return innerErr
+	}()
+	if !errors.Is(limitErr, devices.ErrInvalidPage) {
+		t.Fatalf("invalid limit error = %v", limitErr)
+	}
+}
+
 func TestSQLiteCommandHistoryOrdersWholeAndFractionalSecondsChronologically(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()

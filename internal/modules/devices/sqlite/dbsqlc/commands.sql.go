@@ -133,6 +133,468 @@ func (q *Queries) InterruptActiveCommands(ctx context.Context, arg InterruptActi
 	return result.RowsAffected()
 }
 
+const listCommandsAfter = `-- name: ListCommandsAfter :many
+SELECT id, entity_id, adapter_id, runtime_id, operation, parameters_json,
+       correlation_id, status, requested_at, deadline_at, accepted_at,
+       completed_at, outcome_observation_id, failure_code
+FROM commands
+WHERE (requested_at < ? OR (requested_at = ? AND id < ?))
+ORDER BY requested_at DESC, id DESC
+LIMIT ?
+`
+
+type ListCommandsAfterParams struct {
+	RequestedAt   string
+	RequestedAt_2 string
+	ID            string
+	Limit         int64
+}
+
+func (q *Queries) ListCommandsAfter(ctx context.Context, arg ListCommandsAfterParams) ([]Command, error) {
+	rows, err := q.db.QueryContext(ctx, listCommandsAfter,
+		arg.RequestedAt,
+		arg.RequestedAt_2,
+		arg.ID,
+		arg.Limit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Command
+	for rows.Next() {
+		var i Command
+		if err := rows.Scan(
+			&i.ID,
+			&i.EntityID,
+			&i.AdapterID,
+			&i.RuntimeID,
+			&i.Operation,
+			&i.ParametersJson,
+			&i.CorrelationID,
+			&i.Status,
+			&i.RequestedAt,
+			&i.DeadlineAt,
+			&i.AcceptedAt,
+			&i.CompletedAt,
+			&i.OutcomeObservationID,
+			&i.FailureCode,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listCommandsByEntityAfter = `-- name: ListCommandsByEntityAfter :many
+SELECT id, entity_id, adapter_id, runtime_id, operation, parameters_json,
+       correlation_id, status, requested_at, deadline_at, accepted_at,
+       completed_at, outcome_observation_id, failure_code
+FROM commands
+WHERE entity_id = ?
+  AND (requested_at < ? OR (requested_at = ? AND id < ?))
+ORDER BY requested_at DESC, id DESC
+LIMIT ?
+`
+
+type ListCommandsByEntityAfterParams struct {
+	EntityID      string
+	RequestedAt   string
+	RequestedAt_2 string
+	ID            string
+	Limit         int64
+}
+
+func (q *Queries) ListCommandsByEntityAfter(ctx context.Context, arg ListCommandsByEntityAfterParams) ([]Command, error) {
+	rows, err := q.db.QueryContext(ctx, listCommandsByEntityAfter,
+		arg.EntityID,
+		arg.RequestedAt,
+		arg.RequestedAt_2,
+		arg.ID,
+		arg.Limit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Command
+	for rows.Next() {
+		var i Command
+		if err := rows.Scan(
+			&i.ID,
+			&i.EntityID,
+			&i.AdapterID,
+			&i.RuntimeID,
+			&i.Operation,
+			&i.ParametersJson,
+			&i.CorrelationID,
+			&i.Status,
+			&i.RequestedAt,
+			&i.DeadlineAt,
+			&i.AcceptedAt,
+			&i.CompletedAt,
+			&i.OutcomeObservationID,
+			&i.FailureCode,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listCommandsByEntityFirstPage = `-- name: ListCommandsByEntityFirstPage :many
+SELECT id, entity_id, adapter_id, runtime_id, operation, parameters_json,
+       correlation_id, status, requested_at, deadline_at, accepted_at,
+       completed_at, outcome_observation_id, failure_code
+FROM commands
+WHERE entity_id = ?
+ORDER BY requested_at DESC, id DESC
+LIMIT ?
+`
+
+type ListCommandsByEntityFirstPageParams struct {
+	EntityID string
+	Limit    int64
+}
+
+func (q *Queries) ListCommandsByEntityFirstPage(ctx context.Context, arg ListCommandsByEntityFirstPageParams) ([]Command, error) {
+	rows, err := q.db.QueryContext(ctx, listCommandsByEntityFirstPage, arg.EntityID, arg.Limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Command
+	for rows.Next() {
+		var i Command
+		if err := rows.Scan(
+			&i.ID,
+			&i.EntityID,
+			&i.AdapterID,
+			&i.RuntimeID,
+			&i.Operation,
+			&i.ParametersJson,
+			&i.CorrelationID,
+			&i.Status,
+			&i.RequestedAt,
+			&i.DeadlineAt,
+			&i.AcceptedAt,
+			&i.CompletedAt,
+			&i.OutcomeObservationID,
+			&i.FailureCode,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listCommandsByEntityStatusAfter = `-- name: ListCommandsByEntityStatusAfter :many
+SELECT id, entity_id, adapter_id, runtime_id, operation, parameters_json,
+       correlation_id, status, requested_at, deadline_at, accepted_at,
+       completed_at, outcome_observation_id, failure_code
+FROM commands
+WHERE entity_id = ? AND status = ?
+  AND (requested_at < ? OR (requested_at = ? AND id < ?))
+ORDER BY requested_at DESC, id DESC
+LIMIT ?
+`
+
+type ListCommandsByEntityStatusAfterParams struct {
+	EntityID      string
+	Status        string
+	RequestedAt   string
+	RequestedAt_2 string
+	ID            string
+	Limit         int64
+}
+
+func (q *Queries) ListCommandsByEntityStatusAfter(ctx context.Context, arg ListCommandsByEntityStatusAfterParams) ([]Command, error) {
+	rows, err := q.db.QueryContext(ctx, listCommandsByEntityStatusAfter,
+		arg.EntityID,
+		arg.Status,
+		arg.RequestedAt,
+		arg.RequestedAt_2,
+		arg.ID,
+		arg.Limit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Command
+	for rows.Next() {
+		var i Command
+		if err := rows.Scan(
+			&i.ID,
+			&i.EntityID,
+			&i.AdapterID,
+			&i.RuntimeID,
+			&i.Operation,
+			&i.ParametersJson,
+			&i.CorrelationID,
+			&i.Status,
+			&i.RequestedAt,
+			&i.DeadlineAt,
+			&i.AcceptedAt,
+			&i.CompletedAt,
+			&i.OutcomeObservationID,
+			&i.FailureCode,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listCommandsByEntityStatusFirstPage = `-- name: ListCommandsByEntityStatusFirstPage :many
+SELECT id, entity_id, adapter_id, runtime_id, operation, parameters_json,
+       correlation_id, status, requested_at, deadline_at, accepted_at,
+       completed_at, outcome_observation_id, failure_code
+FROM commands
+WHERE entity_id = ? AND status = ?
+ORDER BY requested_at DESC, id DESC
+LIMIT ?
+`
+
+type ListCommandsByEntityStatusFirstPageParams struct {
+	EntityID string
+	Status   string
+	Limit    int64
+}
+
+func (q *Queries) ListCommandsByEntityStatusFirstPage(ctx context.Context, arg ListCommandsByEntityStatusFirstPageParams) ([]Command, error) {
+	rows, err := q.db.QueryContext(ctx, listCommandsByEntityStatusFirstPage, arg.EntityID, arg.Status, arg.Limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Command
+	for rows.Next() {
+		var i Command
+		if err := rows.Scan(
+			&i.ID,
+			&i.EntityID,
+			&i.AdapterID,
+			&i.RuntimeID,
+			&i.Operation,
+			&i.ParametersJson,
+			&i.CorrelationID,
+			&i.Status,
+			&i.RequestedAt,
+			&i.DeadlineAt,
+			&i.AcceptedAt,
+			&i.CompletedAt,
+			&i.OutcomeObservationID,
+			&i.FailureCode,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listCommandsByStatusAfter = `-- name: ListCommandsByStatusAfter :many
+SELECT id, entity_id, adapter_id, runtime_id, operation, parameters_json,
+       correlation_id, status, requested_at, deadline_at, accepted_at,
+       completed_at, outcome_observation_id, failure_code
+FROM commands
+WHERE status = ?
+  AND (requested_at < ? OR (requested_at = ? AND id < ?))
+ORDER BY requested_at DESC, id DESC
+LIMIT ?
+`
+
+type ListCommandsByStatusAfterParams struct {
+	Status        string
+	RequestedAt   string
+	RequestedAt_2 string
+	ID            string
+	Limit         int64
+}
+
+func (q *Queries) ListCommandsByStatusAfter(ctx context.Context, arg ListCommandsByStatusAfterParams) ([]Command, error) {
+	rows, err := q.db.QueryContext(ctx, listCommandsByStatusAfter,
+		arg.Status,
+		arg.RequestedAt,
+		arg.RequestedAt_2,
+		arg.ID,
+		arg.Limit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Command
+	for rows.Next() {
+		var i Command
+		if err := rows.Scan(
+			&i.ID,
+			&i.EntityID,
+			&i.AdapterID,
+			&i.RuntimeID,
+			&i.Operation,
+			&i.ParametersJson,
+			&i.CorrelationID,
+			&i.Status,
+			&i.RequestedAt,
+			&i.DeadlineAt,
+			&i.AcceptedAt,
+			&i.CompletedAt,
+			&i.OutcomeObservationID,
+			&i.FailureCode,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listCommandsByStatusFirstPage = `-- name: ListCommandsByStatusFirstPage :many
+SELECT id, entity_id, adapter_id, runtime_id, operation, parameters_json,
+       correlation_id, status, requested_at, deadline_at, accepted_at,
+       completed_at, outcome_observation_id, failure_code
+FROM commands
+WHERE status = ?
+ORDER BY requested_at DESC, id DESC
+LIMIT ?
+`
+
+type ListCommandsByStatusFirstPageParams struct {
+	Status string
+	Limit  int64
+}
+
+func (q *Queries) ListCommandsByStatusFirstPage(ctx context.Context, arg ListCommandsByStatusFirstPageParams) ([]Command, error) {
+	rows, err := q.db.QueryContext(ctx, listCommandsByStatusFirstPage, arg.Status, arg.Limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Command
+	for rows.Next() {
+		var i Command
+		if err := rows.Scan(
+			&i.ID,
+			&i.EntityID,
+			&i.AdapterID,
+			&i.RuntimeID,
+			&i.Operation,
+			&i.ParametersJson,
+			&i.CorrelationID,
+			&i.Status,
+			&i.RequestedAt,
+			&i.DeadlineAt,
+			&i.AcceptedAt,
+			&i.CompletedAt,
+			&i.OutcomeObservationID,
+			&i.FailureCode,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listCommandsFirstPage = `-- name: ListCommandsFirstPage :many
+SELECT id, entity_id, adapter_id, runtime_id, operation, parameters_json,
+       correlation_id, status, requested_at, deadline_at, accepted_at,
+       completed_at, outcome_observation_id, failure_code
+FROM commands
+ORDER BY requested_at DESC, id DESC
+LIMIT ?
+`
+
+type ListCommandsFirstPageParams struct {
+	Limit int64
+}
+
+func (q *Queries) ListCommandsFirstPage(ctx context.Context, arg ListCommandsFirstPageParams) ([]Command, error) {
+	rows, err := q.db.QueryContext(ctx, listCommandsFirstPage, arg.Limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Command
+	for rows.Next() {
+		var i Command
+		if err := rows.Scan(
+			&i.ID,
+			&i.EntityID,
+			&i.AdapterID,
+			&i.RuntimeID,
+			&i.Operation,
+			&i.ParametersJson,
+			&i.CorrelationID,
+			&i.Status,
+			&i.RequestedAt,
+			&i.DeadlineAt,
+			&i.AcceptedAt,
+			&i.CompletedAt,
+			&i.OutcomeObservationID,
+			&i.FailureCode,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listEntityCommandsAfter = `-- name: ListEntityCommandsAfter :many
 SELECT id, entity_id, adapter_id, runtime_id, operation, parameters_json,
        correlation_id, status, requested_at, deadline_at, accepted_at,

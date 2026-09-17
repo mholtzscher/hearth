@@ -212,7 +212,8 @@ function AutomationStepTable({
 }
 
 /** Ordered Step attempts of one Run. Only ownership-verified Command IDs are
-    exposed, so an attempt with no verified Command shows a dash. */
+    exposed, so an attempt with no verified Command shows a dash. A verified
+    Command links to its durable audit record on the Commands tab. */
 function AutomationStepAttemptTable({ attempts }: { attempts: AutomationStepAttempt[] }) {
   return (
     <Table className="mt-1">
@@ -239,10 +240,17 @@ function AutomationStepAttemptTable({ attempts }: { attempts: AutomationStepAtte
               <StatusChip status={attempt.status} />
             </TableCell>
             <TableCell className="max-w-[16rem]">
-              <MonoId
-                value={attempt.verified_command_id ?? "—"}
-                className="text-muted-foreground"
-              />
+              {attempt.verified_command_id ? (
+                <RouterLink
+                  to={`/commands?command_id=${attempt.verified_command_id}`}
+                  className={linkClass}
+                  title={attempt.verified_command_id}
+                >
+                  <MonoId value={attempt.verified_command_id} className="text-muted-foreground" />
+                </RouterLink>
+              ) : (
+                <MonoId value="—" className="text-muted-foreground" />
+              )}
             </TableCell>
             <TableCell className="font-mono text-xs">{attempt.failure_code ?? "—"}</TableCell>
             <TableCell className="font-mono text-xs text-muted-foreground">

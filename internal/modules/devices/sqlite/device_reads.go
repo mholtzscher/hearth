@@ -136,6 +136,84 @@ func (repository *DeviceRepository) ListEntityCommands(
 	return pageFromExtra(items, params.Limit), nil
 }
 
+func (repository *DeviceRepository) ListCommands(
+	ctx context.Context,
+	params devices.ListCommandsParams,
+) (devices.Page[devices.CommandRecord], error) {
+	if !devices.ValidPageLimit(params.Limit) || (params.BeforeRequestedAt == nil) != (params.BeforeID == nil) {
+		return devices.Page[devices.CommandRecord]{}, devices.ErrInvalidPage
+	}
+	queries := repository.queries
+	limit := int64(params.Limit + 1)
+	var rows []dbsqlc.Command
+	var err error
+	entityID := ""
+	if params.EntityID != nil {
+		entityID = string(*params.EntityID)
+	}
+	status := ""
+	if params.Status != nil {
+		status = string(*params.Status)
+	}
+	if params.BeforeRequestedAt == nil {
+		switch {
+		case entityID != "" && status != "":
+			rows, err = queries.ListCommandsByEntityStatusFirstPage(
+				ctx,
+				dbsqlc.ListCommandsByEntityStatusFirstPageParams{
+					EntityID: entityID, Status: status, Limit: limit,
+				},
+			)
+		case entityID != "":
+			rows, err = queries.ListCommandsByEntityFirstPage(ctx, dbsqlc.ListCommandsByEntityFirstPageParams{
+				EntityID: entityID, Limit: limit,
+			})
+		case status != "":
+			rows, err = queries.ListCommandsByStatusFirstPage(ctx, dbsqlc.ListCommandsByStatusFirstPageParams{
+				Status: status, Limit: limit,
+			})
+		default:
+			rows, err = queries.ListCommandsFirstPage(ctx, dbsqlc.ListCommandsFirstPageParams{Limit: limit})
+		}
+	} else {
+		requestedAt := formatSortableTime(*params.BeforeRequestedAt)
+		beforeID := string(*params.BeforeID)
+		switch {
+		case entityID != "" && status != "":
+			rows, err = queries.ListCommandsByEntityStatusAfter(ctx, dbsqlc.ListCommandsByEntityStatusAfterParams{
+				EntityID: entityID, Status: status,
+				RequestedAt: requestedAt, RequestedAt_2: requestedAt, ID: beforeID, Limit: limit,
+			})
+		case entityID != "":
+			rows, err = queries.ListCommandsByEntityAfter(ctx, dbsqlc.ListCommandsByEntityAfterParams{
+				EntityID:    entityID,
+				RequestedAt: requestedAt, RequestedAt_2: requestedAt, ID: beforeID, Limit: limit,
+			})
+		case status != "":
+			rows, err = queries.ListCommandsByStatusAfter(ctx, dbsqlc.ListCommandsByStatusAfterParams{
+				Status:      status,
+				RequestedAt: requestedAt, RequestedAt_2: requestedAt, ID: beforeID, Limit: limit,
+			})
+		default:
+			rows, err = queries.ListCommandsAfter(ctx, dbsqlc.ListCommandsAfterParams{
+				RequestedAt: requestedAt, RequestedAt_2: requestedAt, ID: beforeID, Limit: limit,
+			})
+		}
+	}
+	if err != nil {
+		return devices.Page[devices.CommandRecord]{}, fmt.Errorf("list commands: %w", err)
+	}
+	items := make([]devices.CommandRecord, 0, len(rows))
+	for _, row := range rows {
+		command, mappingErr := commandFromRow(row)
+		if mappingErr != nil {
+			return devices.Page[devices.CommandRecord]{}, fmt.Errorf("map command: %w", mappingErr)
+		}
+		items = append(items, command)
+	}
+	return pageFromExtra(items, params.Limit), nil
+}
+
 func entityPageFromRows(rows []dbsqlc.EntityReadProjection, limit int) (devices.Page[devices.EntityWithState], error) {
 	items := make([]devices.EntityWithState, 0, len(rows))
 	for _, row := range rows {

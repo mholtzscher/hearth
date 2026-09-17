@@ -132,6 +132,45 @@ func (service *Service) ListEntityCommands(
 	return Page[CommandRecord]{Items: items, HasMore: page.HasMore}, nil
 }
 
+// ListCommands pages household-wide Command history newest-first. Unlike
+// ListEntityCommands it never 404s: an unknown but canonical Entity filter
+// matches nothing, mirroring the Entity list Device filter.
+func (service *Service) ListCommands(
+	ctx context.Context,
+	params ListCommandsParams,
+) (Page[CommandRecord], error) {
+	if !ValidPageLimit(params.Limit) || (params.BeforeRequestedAt == nil) != (params.BeforeID == nil) {
+		return Page[CommandRecord]{}, ErrInvalidPage
+	}
+	if params.EntityID != nil {
+		if _, err := ParseEntityID(string(*params.EntityID)); err != nil {
+			return Page[CommandRecord]{}, fmt.Errorf("%w: parse entity filter: %w", ErrInvalidPage, err)
+		}
+	}
+	if params.Status != nil && !ValidCommandStatus(*params.Status) {
+		return Page[CommandRecord]{}, fmt.Errorf("%w: unknown command status", ErrInvalidPage)
+	}
+	if params.BeforeRequestedAt != nil {
+		if params.BeforeRequestedAt.IsZero() {
+			return Page[CommandRecord]{}, fmt.Errorf("%w: command position timestamp is required", ErrInvalidPage)
+		}
+		if _, err := ParseCommandID(string(*params.BeforeID)); err != nil {
+			return Page[CommandRecord]{}, fmt.Errorf("%w: parse command position: %w", ErrInvalidPage, err)
+		}
+		utc := params.BeforeRequestedAt.UTC()
+		params.BeforeRequestedAt = &utc
+	}
+	page, err := service.stores.Reads.ListCommands(ctx, params)
+	if err != nil {
+		return Page[CommandRecord]{}, err
+	}
+	items := make([]CommandRecord, len(page.Items))
+	for index, command := range page.Items {
+		items[index] = CopyCommandRecord(command)
+	}
+	return Page[CommandRecord]{Items: items, HasMore: page.HasMore}, nil
+}
+
 // ValidPageLimit reports whether limit is a page size Core serves: at least one
 // and at most 200 items. Services and persistence read guards share this policy.
 func ValidPageLimit(limit int) bool {
