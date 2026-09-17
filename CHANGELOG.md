@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.10.0](https://github.com/mholtzscher/hearth/compare/v0.9.0...v0.10.0) (2026-09-17)
+
+
+### Features
+
+* **automations:** evaluate conditions from state snapshots ([#119](https://github.com/mholtzscher/hearth/issues/119)) ([d6933b2](https://github.com/mholtzscher/hearth/commit/d6933b210b40880314dbb840ea7f813a650f22d1))
+* **simulator:** add scripted validation harness and publication ids ([#120](https://github.com/mholtzscher/hearth/issues/120)) ([7928a4e](https://github.com/mholtzscher/hearth/commit/7928a4ed82a0c72cf1d40b9f812f82b31ce8b4dd))
+* **web:** add automations dashboard ([#117](https://github.com/mholtzscher/hearth/issues/117)) ([7e30017](https://github.com/mholtzscher/hearth/commit/7e300179f3555c3bd172b37b5c5c2b8ee8039b18))
+
+
+### Bug Fixes
+
+* **config:** report validation reasons and pre-validate devices ([#121](https://github.com/mholtzscher/hearth/issues/121)) ([ec19ed1](https://github.com/mholtzscher/hearth/commit/ec19ed154bc1728959024366b3192e4f77677d15))
+* **devices:** extend stale-runtime fencing test timeout to 30s ([18aac9a](https://github.com/mholtzscher/hearth/commit/18aac9a75dd0a1d81e55e3639e0fb03ea18e3ad5))
+
 ## [0.9.0](https://github.com/mholtzscher/hearth/compare/v0.8.1...v0.9.0) (2026-09-15)
 
 
