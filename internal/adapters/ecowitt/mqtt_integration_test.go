@@ -9,7 +9,7 @@ import (
 
 	paho "github.com/eclipse/paho.mqtt.golang"
 
-	"github.com/mholtzscher/hearth/internal/testbroker"
+	"github.com/mholtzscher/hearth/internal/platform/mosquitto/mosquittotest"
 )
 
 // TestPahoDialerAgainstMosquitto protects the real Paho MQTT 3.1.1 contract
@@ -21,7 +21,7 @@ import (
 func TestPahoDialerAgainstMosquitto(t *testing.T) {
 	t.Parallel()
 
-	broker := testbroker.StartMosquitto(t)
+	broker := mosquittotest.StartMosquitto(t)
 	ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
 	defer cancel()
 

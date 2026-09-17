@@ -8,7 +8,7 @@
 - After making any change, prefer `mise run validate`; it regenerates code, formats it, and tidies module metadata before running all checks.
 - Review the resulting diff and include intended generated or formatting changes.
 - To run the local NATS and Mosquitto brokers while developing: `mise run brokers`.
-- Real-Mosquitto integration tests skip when no Docker daemon is reachable; `mise run test` sets `HEARTH_REQUIRE_MOSQUITTO=1` so they must run.
+- Real-Mosquitto integration tests always require a reachable Docker daemon and fail without one.
 
 ## Commands
 

@@ -27,8 +27,8 @@ import (
 	devicesnats "github.com/mholtzscher/hearth/internal/modules/devices/nats"
 	devicessqlite "github.com/mholtzscher/hearth/internal/modules/devices/sqlite"
 	"github.com/mholtzscher/hearth/internal/platform/db/dbtest"
+	"github.com/mholtzscher/hearth/internal/platform/mosquitto/mosquittotest"
 	"github.com/mholtzscher/hearth/internal/platform/nats/natstest"
-	"github.com/mholtzscher/hearth/internal/testbroker"
 )
 
 // Constants shared with the sanitized real capture and the example config.
@@ -64,7 +64,7 @@ func TestRunConnectsNATSAndMosquitto(t *testing.T) {
 	logger := slog.New(logs)
 
 	server := startTestNATSServer(t)
-	brokerURL := testbroker.StartMosquitto(t).URL()
+	brokerURL := mosquittotest.StartMosquitto(t).URL()
 	proxy := startBrokerProxy(t, brokerURL)
 	coreConnection, err := natsgo.Connect(server.ClientURL())
 	if err != nil {

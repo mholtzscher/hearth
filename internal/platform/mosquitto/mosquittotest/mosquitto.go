@@ -1,7 +1,8 @@
-// Package testbroker starts disposable real broker containers for integration
-// tests. Tests that need a real MQTT broker call StartMosquitto: Testcontainers
-// isolates each broker on a random loopback host port and removes it afterward.
-package testbroker
+// Package mosquittotest starts disposable real broker containers for
+// integration tests, alongside the dbtest and natstest helpers. Tests that
+// need a real MQTT broker call StartMosquitto: Testcontainers isolates each
+// broker on a random loopback host port and removes it afterward.
+package mosquittotest
 
 import (
 	"context"
@@ -23,11 +24,6 @@ import (
 // same broker version. It must match the image in compose.yaml.
 const MosquittoImage = "eclipse-mosquitto:2.0.22"
 
-// RequireMosquittoEnv gates real-Mosquitto integration tests. When it is set to
-// "1", an unavailable container runtime fails the test instead of skipping it.
-// The mise test task sets it so `mise run test` always exercises a real broker.
-const RequireMosquittoEnv = "HEARTH_REQUIRE_MOSQUITTO"
-
 // MosquittoTestConfig is the checked-in Mosquitto config copied into each test
 // container. It keeps persistence disabled so containers stay disposable.
 const MosquittoTestConfig = "mosquitto.test.conf"
@@ -45,14 +41,11 @@ type Mosquitto struct {
 }
 
 // StartMosquitto starts a disposable Mosquitto container on a Docker-assigned
-// loopback host port and registers test cleanup. It skips when the container
-// provider is unavailable unless RequireMosquittoEnv requires broker coverage.
+// loopback host port and registers test cleanup. It always requires a working
+// container runtime: without one the test fails instead of skipping, so
+// real-broker coverage can never go silently unexercised.
 func StartMosquitto(t *testing.T) *Mosquitto {
 	t.Helper()
-	if os.Getenv(RequireMosquittoEnv) != "1" {
-		testcontainers.SkipIfProviderIsNotHealthy(t)
-	}
-
 	ctx, cancel := context.WithTimeout(t.Context(), containerStopTimeout)
 	defer cancel()
 	mosquittoContainer, err := testmosquitto.Run(
@@ -108,9 +101,11 @@ func repositoryConfigPath(t *testing.T, name string) string {
 	t.Helper()
 	_, sourceFile, _, ok := runtime.Caller(0)
 	if !ok {
-		t.Fatal("resolve testbroker source path")
+		t.Fatal("resolve mosquittotest source path")
 	}
-	repositoryRoot := filepath.Dir(filepath.Dir(filepath.Dir(sourceFile)))
+	// This file lives at internal/platform/mosquitto/mosquittotest, five
+	// levels below the repository root.
+	repositoryRoot := filepath.Dir(filepath.Dir(filepath.Dir(filepath.Dir(filepath.Dir(sourceFile)))))
 	path := filepath.Join(repositoryRoot, "configs", name)
 	if _, err := os.Stat(path); err != nil {
 		t.Fatalf("broker config %s: %v", path, err)

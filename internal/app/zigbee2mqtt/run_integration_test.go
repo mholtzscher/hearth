@@ -20,8 +20,8 @@ import (
 	devicesnats "github.com/mholtzscher/hearth/internal/modules/devices/nats"
 	devicessqlite "github.com/mholtzscher/hearth/internal/modules/devices/sqlite"
 	"github.com/mholtzscher/hearth/internal/platform/db/dbtest"
+	"github.com/mholtzscher/hearth/internal/platform/mosquitto/mosquittotest"
 	"github.com/mholtzscher/hearth/internal/platform/nats/natstest"
-	"github.com/mholtzscher/hearth/internal/testbroker"
 )
 
 // TestRunConnectsNATSAndMosquitto protects application assembly across an
@@ -36,7 +36,7 @@ func TestRunConnectsNATSAndMosquitto(t *testing.T) {
 	logger := slog.New(recordHandler{records: logRecords})
 
 	server := startTestNATSServer(t)
-	mqttURL := testbroker.StartMosquitto(t).URL()
+	mqttURL := mosquittotest.StartMosquitto(t).URL()
 	coreConnection, err := natsgo.Connect(server.ClientURL())
 	if err != nil {
 		t.Fatal(err)
@@ -377,7 +377,7 @@ func TestRunProjectsRelayAndTemperatureDevices(t *testing.T) {
 	logger := slog.New(slog.DiscardHandler)
 
 	server := startTestNATSServer(t)
-	mqttURL := testbroker.StartMosquitto(t).URL()
+	mqttURL := mosquittotest.StartMosquitto(t).URL()
 	coreConnection, err := natsgo.Connect(server.ClientURL())
 	if err != nil {
 		t.Fatal(err)

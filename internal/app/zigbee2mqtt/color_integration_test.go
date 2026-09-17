@@ -17,7 +17,7 @@ import (
 	devicesnats "github.com/mholtzscher/hearth/internal/modules/devices/nats"
 	devicessqlite "github.com/mholtzscher/hearth/internal/modules/devices/sqlite"
 	"github.com/mholtzscher/hearth/internal/platform/db/dbtest"
-	"github.com/mholtzscher/hearth/internal/testbroker"
+	"github.com/mholtzscher/hearth/internal/platform/mosquitto/mosquittotest"
 )
 
 // TestRunProjectsColorBulbAndLinksColorCommand protects the end-to-end color
@@ -33,7 +33,7 @@ func TestRunProjectsColorBulbAndLinksColorCommand(t *testing.T) {
 	logger := slog.New(slog.DiscardHandler)
 
 	server := startTestNATSServer(t)
-	mqttURL := testbroker.StartMosquitto(t).URL()
+	mqttURL := mosquittotest.StartMosquitto(t).URL()
 	coreConnection, err := natsgo.Connect(server.ClientURL())
 	if err != nil {
 		t.Fatal(err)
