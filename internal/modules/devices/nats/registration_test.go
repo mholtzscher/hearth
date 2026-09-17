@@ -180,7 +180,13 @@ func TestRegistrationServerMapsRuntimeFencingToTypedRejection(t *testing.T) {
 
 func TestStaleRuntimeInvalidRegistrationFencesSDKSession(t *testing.T) {
 	t.Parallel()
-	ctx, cancel := context.WithTimeout(context.Background(), 4*time.Second)
+	// The fencing flow spins up embedded NATS JetStream, SQLite, and two SDK
+	// sessions. Under race + full-suite load (-p 4) startup alone can consume
+	// multiple seconds, so a tight shared deadline flakes on
+	// ReleaseAdapterRuntime with "end released Adapter runtime: context
+	// deadline exceeded". Keep a generous overall bound so slow hosts fail
+	// on assertions, not on test harness timing.
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 	server, connection, _ := startJetStream(t)
 	validator, err := contractsv1.Compile()
