@@ -22,6 +22,7 @@ type Devices interface {
 	ListEntities(context.Context, devices.ListEntitiesParams) (devices.Page[devices.EntityWithState], error)
 	GetCommand(context.Context, devices.CommandID) (devices.CommandRecord, error)
 	ListEntityCommands(context.Context, devices.ListEntityCommandsParams) (devices.Page[devices.CommandRecord], error)
+	ListCommands(context.Context, devices.ListCommandsParams) (devices.Page[devices.CommandRecord], error)
 	ListAdapters(context.Context, devices.ListAdaptersParams) (devices.Page[devices.AdapterInstance], error)
 	GetAdapter(context.Context, string) (devices.AdapterInstance, error)
 	ListAdapterHealthHistory(
@@ -50,6 +51,7 @@ func Register(api huma.API, service Devices) {
 	const (
 		entitiesTag = "Entities"
 		adaptersTag = "Adapters"
+		commandsTag = "Commands"
 	)
 	handler := &Handler{devices: service}
 	disabledProblemSchema := huma.SchemaFromType(
@@ -88,7 +90,7 @@ func Register(api huma.API, service Devices) {
 	}, handler.ExecuteCommand)
 	huma.Register(api, huma.Operation{
 		OperationID: "list-entity-commands", Method: http.MethodGet, Path: "/entities/{entity_id}/commands",
-		Summary: "List an Entity's Command history", Tags: []string{"Commands"},
+		Summary: "List an Entity's Command history", Tags: []string{commandsTag},
 		Errors: []int{http.StatusBadRequest, http.StatusNotFound, http.StatusInternalServerError},
 	}, handler.ListEntityCommands)
 	huma.Register(api, huma.Operation{
@@ -103,9 +105,14 @@ func Register(api huma.API, service Devices) {
 	}, handler.GetDevice)
 	huma.Register(api, huma.Operation{
 		OperationID: "get-command", Method: http.MethodGet, Path: "/commands/{command_id}",
-		Summary: "Get a Command record", Tags: []string{"Commands"},
+		Summary: "Get a Command record", Tags: []string{commandsTag},
 		Errors: []int{http.StatusBadRequest, http.StatusNotFound, http.StatusInternalServerError},
 	}, handler.GetCommand)
+	huma.Register(api, huma.Operation{
+		OperationID: "list-commands", Method: http.MethodGet, Path: "/commands",
+		Summary: "List household Command history", Tags: []string{commandsTag},
+		Errors: []int{http.StatusBadRequest, http.StatusInternalServerError},
+	}, handler.ListCommands)
 	huma.Register(api, huma.Operation{
 		OperationID: "list-adapters", Method: http.MethodGet, Path: "/adapters",
 		Summary: "List Adapters and their current health", Tags: []string{adaptersTag},

@@ -86,7 +86,7 @@ the NATS page (stored in `localStorage`), so it needs no proxy.
   power/brightness presets, command history, availability history, raw JSON.
 - **Devices**: list + detail with embedded entities.
 - **Adapters**: list + detail with runtime evidence, health history, raw JSON.
-- **Commands**: lookup by `cmd_…` id (`GET /v1/commands/{id}`).
+- **Commands**: household history newest-first (`GET /v1/commands`) with entity/status filters, lookup by `cmd_…` id (`GET /v1/commands/{id}`) with shareable `?command_id=` links and recent IDs, outcome timeline with latency, and links to entity pages and automation step attempts.
 - **NATS**: live wire traffic (`hearth.v1.adapter.>` over websocket) with
   subject presets, pause/clear, and subject filter; plus server info from the
   NATS monitoring endpoint (connections with subscriptions, JetStream stream

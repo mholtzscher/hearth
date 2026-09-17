@@ -31,6 +31,80 @@ WHERE entity_id = ?
 ORDER BY requested_at DESC, id DESC
 LIMIT ?;
 
+-- name: ListCommandsFirstPage :many
+SELECT id, entity_id, adapter_id, runtime_id, operation, parameters_json,
+       correlation_id, status, requested_at, deadline_at, accepted_at,
+       completed_at, outcome_observation_id, failure_code
+FROM commands
+ORDER BY requested_at DESC, id DESC
+LIMIT ?;
+
+-- name: ListCommandsAfter :many
+SELECT id, entity_id, adapter_id, runtime_id, operation, parameters_json,
+       correlation_id, status, requested_at, deadline_at, accepted_at,
+       completed_at, outcome_observation_id, failure_code
+FROM commands
+WHERE (requested_at < ? OR (requested_at = ? AND id < ?))
+ORDER BY requested_at DESC, id DESC
+LIMIT ?;
+
+-- name: ListCommandsByEntityFirstPage :many
+SELECT id, entity_id, adapter_id, runtime_id, operation, parameters_json,
+       correlation_id, status, requested_at, deadline_at, accepted_at,
+       completed_at, outcome_observation_id, failure_code
+FROM commands
+WHERE entity_id = ?
+ORDER BY requested_at DESC, id DESC
+LIMIT ?;
+
+-- name: ListCommandsByEntityAfter :many
+SELECT id, entity_id, adapter_id, runtime_id, operation, parameters_json,
+       correlation_id, status, requested_at, deadline_at, accepted_at,
+       completed_at, outcome_observation_id, failure_code
+FROM commands
+WHERE entity_id = ?
+  AND (requested_at < ? OR (requested_at = ? AND id < ?))
+ORDER BY requested_at DESC, id DESC
+LIMIT ?;
+
+-- name: ListCommandsByStatusFirstPage :many
+SELECT id, entity_id, adapter_id, runtime_id, operation, parameters_json,
+       correlation_id, status, requested_at, deadline_at, accepted_at,
+       completed_at, outcome_observation_id, failure_code
+FROM commands
+WHERE status = ?
+ORDER BY requested_at DESC, id DESC
+LIMIT ?;
+
+-- name: ListCommandsByStatusAfter :many
+SELECT id, entity_id, adapter_id, runtime_id, operation, parameters_json,
+       correlation_id, status, requested_at, deadline_at, accepted_at,
+       completed_at, outcome_observation_id, failure_code
+FROM commands
+WHERE status = ?
+  AND (requested_at < ? OR (requested_at = ? AND id < ?))
+ORDER BY requested_at DESC, id DESC
+LIMIT ?;
+
+-- name: ListCommandsByEntityStatusFirstPage :many
+SELECT id, entity_id, adapter_id, runtime_id, operation, parameters_json,
+       correlation_id, status, requested_at, deadline_at, accepted_at,
+       completed_at, outcome_observation_id, failure_code
+FROM commands
+WHERE entity_id = ? AND status = ?
+ORDER BY requested_at DESC, id DESC
+LIMIT ?;
+
+-- name: ListCommandsByEntityStatusAfter :many
+SELECT id, entity_id, adapter_id, runtime_id, operation, parameters_json,
+       correlation_id, status, requested_at, deadline_at, accepted_at,
+       completed_at, outcome_observation_id, failure_code
+FROM commands
+WHERE entity_id = ? AND status = ?
+  AND (requested_at < ? OR (requested_at = ? AND id < ?))
+ORDER BY requested_at DESC, id DESC
+LIMIT ?;
+
 -- name: MarkCommandAccepted :execrows
 UPDATE commands
 SET accepted_at = COALESCE(accepted_at, ?),

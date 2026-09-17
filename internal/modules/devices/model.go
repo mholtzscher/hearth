@@ -119,6 +119,37 @@ type ListEntityCommandsParams struct {
 	Limit             int
 }
 
+// ListCommandsParams pages household-wide Command history newest-first.
+// Nil EntityID and Status mean no filter; an unknown but canonical EntityID
+// matches nothing rather than failing, mirroring the Entity list Device filter.
+type ListCommandsParams struct {
+	EntityID          *EntityID
+	Status            *CommandStatus
+	BeforeRequestedAt *time.Time
+	BeforeID          *CommandID
+	Limit             int
+}
+
+// ValidCommandStatus reports whether status is a persisted Command lifecycle value.
+func ValidCommandStatus(status CommandStatus) bool {
+	switch status {
+	case CommandStatusRequested,
+		CommandStatusAccepted,
+		CommandStatusSatisfied,
+		CommandStatusDispatched,
+		CommandStatusRejected,
+		CommandStatusAdapterUnhealthy,
+		CommandStatusEntityUnavailable,
+		CommandStatusOutcomeTimeout,
+		CommandStatusEntityDisabled,
+		CommandStatusInternalFailure,
+		CommandStatusInterrupted:
+		return true
+	default:
+		return false
+	}
+}
+
 type Page[T any] struct {
 	Items   []T
 	HasMore bool

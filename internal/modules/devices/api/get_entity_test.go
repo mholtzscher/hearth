@@ -30,6 +30,7 @@ type stubDevices struct {
 	listEntities             func(context.Context, devices.ListEntitiesParams) (devices.Page[devices.EntityWithState], error)
 	getCommand               func(context.Context, devices.CommandID) (devices.CommandRecord, error)
 	listEntityCommands       func(context.Context, devices.ListEntityCommandsParams) (devices.Page[devices.CommandRecord], error)
+	listCommands             func(context.Context, devices.ListCommandsParams) (devices.Page[devices.CommandRecord], error)
 	listAdapters             func(context.Context, devices.ListAdaptersParams) (devices.Page[devices.AdapterInstance], error)
 	getAdapter               func(context.Context, string) (devices.AdapterInstance, error)
 	listAdapterHealthHistory func(
@@ -117,6 +118,16 @@ func (stub *stubDevices) ListEntityCommands(
 		panic("unexpected ListEntityCommands call")
 	}
 	return stub.listEntityCommands(ctx, params)
+}
+
+func (stub *stubDevices) ListCommands(
+	ctx context.Context,
+	params devices.ListCommandsParams,
+) (devices.Page[devices.CommandRecord], error) {
+	if stub.listCommands == nil {
+		panic("unexpected ListCommands call")
+	}
+	return stub.listCommands(ctx, params)
 }
 
 func (stub *stubDevices) ListAdapters(

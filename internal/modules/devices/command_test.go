@@ -66,6 +66,10 @@ func (*commandRepository) ListEntityCommands(context.Context, ListEntityCommands
 	panic("unexpected ListEntityCommands call")
 }
 
+func (*commandRepository) ListCommands(context.Context, ListCommandsParams) (Page[CommandRecord], error) {
+	panic("unexpected ListCommands call")
+}
+
 func (*commandRepository) ListEntityStateHistory(
 	context.Context,
 	ListEntityStateHistoryParams,

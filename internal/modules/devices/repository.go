@@ -102,6 +102,7 @@ type ReadRepository interface {
 	GetEntityStateSnapshot(context.Context, []EntityID) (EntityStateSnapshot, error)
 	GetCommand(context.Context, CommandID) (CommandRecord, error)
 	ListEntityCommands(context.Context, ListEntityCommandsParams) (Page[CommandRecord], error)
+	ListCommands(context.Context, ListCommandsParams) (Page[CommandRecord], error)
 	ListEntityStateHistory(context.Context, ListEntityStateHistoryParams) (Page[EntityStateHistoryEntry], error)
 }
 
