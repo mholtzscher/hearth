@@ -25,6 +25,13 @@ import (
 // branch. Tools whose output type is any advertise no output schema, exactly as
 // the SDK does, so nothing constrains their content.
 //
+// The union carries a top-level "type": "object" because strict clients (the
+// Inspector, the Pi MCP gateway) require an output schema to be an object
+// schema and drop tools whose root has no object type. Every tool output is a
+// body struct and the failure shape is an object, so the conjunction keeps
+// exact semantics. A non-object success shape leaves the union unpinned rather
+// than advertising a schema its own outputs would violate.
+//
 // The union is normalized by [portableSchema] because the SDK derives nullable
 // members as array-valued `type` unions and unconstrained members as boolean
 // schemas, neither of which every client can read.
@@ -39,7 +46,11 @@ func portableOutputSchema[O any]() any {
 		// keeps that one error message authoritative.
 		return nil
 	}
-	return portableSchema(&jsonschema.Schema{AnyOf: []*jsonschema.Schema{success, toolErrorSchema()}})
+	union := &jsonschema.Schema{AnyOf: []*jsonschema.Schema{success, toolErrorSchema()}}
+	if success.Type == "" || success.Type == schemaTypeObject {
+		union.Type = schemaTypeObject
+	}
+	return portableSchema(union)
 }
 
 // successSchema derives the schema of O the way the SDK does: a pointer output

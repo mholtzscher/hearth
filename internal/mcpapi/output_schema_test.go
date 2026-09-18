@@ -61,6 +61,44 @@ func validateStructured(t *testing.T, schema *jsonschema.Schema, result *mcp.Cal
 	return schema.Validate(value)
 }
 
+// TestOutputSchemaRootIsObject proves every advertised output schema carries a
+// top-level type of object. Strict clients (the Inspector, the Pi MCP gateway)
+// drop tools whose output schema root has no object type; before the pin all
+// 23 production tools were dropped for exactly this reason.
+func TestOutputSchemaRootIsObject(t *testing.T) {
+	t.Parallel()
+	server := mcpapi.New(mcpapi.Config{Name: "hearth", Version: "1.0.0", Logger: discardLogger()})
+	mcpapi.Register(server, mcpapi.Tool[greetInput, greetOutput]{
+		Name:        "greet",
+		Description: "Greet one person",
+		Handler: func(_ context.Context, input greetInput) (greetOutput, error) {
+			return greetOutput{Greeting: "hello " + input.Name}, nil
+		},
+	})
+
+	session := connectSession(t, server.HTTPHandler())
+	listed, err := session.ListTools(t.Context(), nil)
+	if err != nil {
+		t.Fatalf("list tools: %v", err)
+	}
+	if len(listed.Tools) == 0 {
+		t.Fatal("no tools listed")
+	}
+	for _, tool := range listed.Tools {
+		raw, marshalErr := json.Marshal(tool.OutputSchema)
+		if marshalErr != nil {
+			t.Fatalf("marshal output schema for %q: %v", tool.Name, marshalErr)
+		}
+		var document map[string]any
+		if decodeErr := json.Unmarshal(raw, &document); decodeErr != nil {
+			t.Fatalf("decode output schema for %q: %v", tool.Name, decodeErr)
+		}
+		if document["type"] != "object" {
+			t.Errorf("tool %q output schema root type = %v, want %q", tool.Name, document["type"], "object")
+		}
+	}
+}
+
 // TestOutputSchemaAcceptsSuccessAndStructuredFailure proves the schema a tool
 // advertises is the union of the success body and the structured failure
 // object, so both a success result and a ToolError result validate against it.
