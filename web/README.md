@@ -19,7 +19,7 @@ pnpm install
 pnpm run dev
 ```
 
-Open http://127.0.0.1:5173. `/v1`, `/healthz`, `/readyz`, and `/openapi.json`
+Open http://127.0.0.1:5173. `/v1`, `/mcp`, `/healthz`, `/readyz`, and `/openapi.json`
 are proxied to `HEARTHD_URL` (default `http://127.0.0.1:8080`):
 
 ```sh
@@ -54,6 +54,20 @@ Only the dashboard port needs to be reachable: `hearthd` stays on
 `127.0.0.1:8080` because the proxy runs server-side. Neither the dashboard nor
 the HTTP API authenticates, so every device your tailnet ACLs allow can use it.
 
+## Chat prototype (rough, dev only)
+
+`/chat` is a browser-direct OpenAI agent over hearthd `/mcp` (Vercel AI SDK:
+`ai` + `@ai-sdk/openai` + `@ai-sdk/mcp`, one short-lived MCP client per
+message, up to 10 tool steps). It needs a key in the bundle:
+
+```sh
+cp web/.env.example web/.env   # fill in VITE_OPENAI_API_KEY
+```
+
+Then restart vite. Same loopback/trusted-network rules as above: the key and
+the unauthenticated `hearthd` must never face anything untrusted. No tests;
+see `web/src/pages/ChatPage.tsx`.
+
 ## Build
 
 ```sh
@@ -64,7 +78,7 @@ pnpm run preview
 ## Container image
 
 Releases publish `ghcr.io/mholtzscher/hearth/hearth-web:<tag>` (same tag as the
-`ko` Go images): a static build served by nginx, proxying `/v1`, `/healthz`,
+`ko` Go images): a static build served by nginx, proxying `/v1`, `/mcp`, `/healthz`,
 `/readyz`, `/openapi.json` to `HEARTHD_URL` and `/nats-monitor` to
 `NATS_MONITOR_URL` (same-origin, so no CORS setup is needed). Point it at
 `hearthd` at container start:
