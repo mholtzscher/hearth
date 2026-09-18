@@ -37,6 +37,103 @@ func decodeResourceInto[T any](t *testing.T, text string) T {
 	return value
 }
 
+// TestAutomationMCPCollectionResourceMatchesListTool proves the bare
+// hearth://automations collection reads the default first page through
+// ListAutomations with the same body as the list tool, and that the template
+// serves paged reads.
+func TestAutomationMCPCollectionResourceMatchesListTool(t *testing.T) {
+	t.Parallel()
+	service := newAutomationService(t, newAPIDevices())
+	session := connectAutomationMCP(t, service)
+
+	first := decodeStructuredInto[automationsapi.AutomationBody](t, callAutomationTool(
+		t, session, "create_automation",
+		map[string]any{"definition": definitionArguments(t, definitionDocument(t, 1))},
+	))
+	second := decodeStructuredInto[automationsapi.AutomationBody](t, callAutomationTool(
+		t, session, "create_automation",
+		map[string]any{"definition": definitionArguments(t, definitionDocument(t, 2))},
+	))
+
+	resource := decodeResourceInto[automationsapi.AutomationCollectionBody](
+		t, readAutomationResource(t, session, "hearth://automations"),
+	)
+	tool := decodeStructuredInto[automationsapi.AutomationCollectionBody](t, callAutomationTool(
+		t, session, "list_automations", map[string]any{},
+	))
+	if len(resource.Items) != 2 || len(tool.Items) != 2 {
+		t.Fatalf("resource items = %d, tool items = %d, want 2 and 2", len(resource.Items), len(tool.Items))
+	}
+	if resource.Items[0].ID != first.ID || resource.Items[1].ID != second.ID {
+		t.Fatalf("resource order = [%s %s], want creation order [%s %s]",
+			resource.Items[0].ID, resource.Items[1].ID, first.ID, second.ID)
+	}
+	if !reflect.DeepEqual(resource, tool) {
+		t.Fatalf("resource = %#v, tool = %#v, want equal", resource, tool)
+	}
+
+	paged := decodeResourceInto[automationsapi.AutomationCollectionBody](
+		t, readAutomationResource(t, session, "hearth://automations?limit=1"),
+	)
+	if len(paged.Items) != 1 || paged.Items[0].ID != first.ID || paged.NextCursor == nil {
+		t.Fatalf("paged collection = %#v, want oldest %s with a cursor", paged, first.ID)
+	}
+}
+
+// TestAutomationMCPCollectionIsListed proves resources/list carries the
+// concrete automations collection and the template catalog carries its
+// parameterized family.
+func TestAutomationMCPCollectionIsListed(t *testing.T) {
+	t.Parallel()
+	service := newAutomationService(t, newAPIDevices())
+	session := connectAutomationMCP(t, service)
+
+	listed, err := session.ListResources(t.Context(), nil)
+	if err != nil {
+		t.Fatalf("list resources: %v", err)
+	}
+	if len(listed.Resources) != 1 || listed.Resources[0].URI != "hearth://automations" {
+		t.Fatalf("resources = %#v, want exactly hearth://automations", listed.Resources)
+	}
+	if listed.Resources[0].MIMEType != "application/json" {
+		t.Fatalf("resource = %#v, want JSON contents", listed.Resources[0])
+	}
+
+	templates, err := session.ListResourceTemplates(t.Context(), nil)
+	if err != nil {
+		t.Fatalf("list resource templates: %v", err)
+	}
+	found := false
+	for _, template := range templates.ResourceTemplates {
+		if template.URITemplate == "hearth://automations{?cursor,limit}" {
+			found = true
+		}
+	}
+	if !found || len(templates.ResourceTemplates) != 3 {
+		t.Fatalf("templates = %#v, want 3 including the automations collection", templates.ResourceTemplates)
+	}
+}
+
+// TestAutomationMCPCollectionResourceQueryContract proves the collection
+// rejects unknown, repeated, and out-of-range parameters as invalid params.
+func TestAutomationMCPCollectionResourceQueryContract(t *testing.T) {
+	t.Parallel()
+	service := newAutomationService(t, newAPIDevices())
+	session := connectAutomationMCP(t, service)
+	for _, uri := range []string{
+		"hearth://automations?status=succeeded",
+		"hearth://automations?limit=lots",
+		"hearth://automations?limit=0",
+		"hearth://automations?cursor=not-a-cursor",
+	} {
+		if _, err := session.ReadResource(t.Context(), &mcp.ReadResourceParams{URI: uri}); err == nil {
+			t.Fatalf("read %s succeeded, want an error", uri)
+		} else if code := resourceErrorCode(t, err); code != jsonrpc.CodeInvalidParams {
+			t.Fatalf("read %s error code = %d, want %d (invalid params)", uri, code, jsonrpc.CodeInvalidParams)
+		}
+	}
+}
+
 // TestAutomationMCPDefinitionResourceMatchesToolRead proves the definition
 // resource reads through GetAutomation with the same body as the tool.
 func TestAutomationMCPDefinitionResourceMatchesToolRead(t *testing.T) {

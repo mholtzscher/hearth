@@ -172,8 +172,11 @@ Every Huma GET is additionally readable as an MCP resource so clients can attach
 | `hearth://devices{?cursor,limit}` | `ListDevices` |
 | `hearth://adapters{?cursor,limit}` | `ListAdapters` |
 | `hearth://automation/{automation_id}/history{?cursor,limit}` | `ListHistory` |
+| `hearth://automations{?cursor,limit}` | `ListAutomations` |
 
 Reads exist twice (tool and resource) by explicit decision. Both call the same service method with the same types, so the duplication stays transport-thin; §9 records the drift risk and A8 is the equivalence test. Filtered, paginated reads are natural tool arguments; their resource URIs exist for context attachment.
+
+The parameterless collections (`hearth://adapters`, `hearth://entities`, `hearth://devices`, `hearth://commands`, `hearth://automations`) are additionally served as concrete resources: templates alone leave `resources/list` empty, and clients that materialize resources as tools only see concrete resources. The bare URI reads the default first page through the same reader as its template; paged reads keep flowing through the template. Parameterized families stay template-only.
 
 v1 resources are read-only and poll-only. Clients poll; nothing bridges resource updates from NATS Device Facts (§2). The `hearth://` namespace is reserved for a future subscription design.
 

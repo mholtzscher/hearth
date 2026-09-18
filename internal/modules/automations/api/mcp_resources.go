@@ -2,7 +2,6 @@ package api
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"net/url"
@@ -22,7 +21,10 @@ import (
 const (
 	automationResourceScheme = "hearth"
 	automationResourceHost   = "automation"
-	automationResourceMIME   = "application/json"
+	// automationsCollectionResourceHost addresses the parameterless
+	// collection; every other automation address lives under "automation".
+	automationsCollectionResourceHost = "automations"
+	automationResourceMIME            = "application/json"
 )
 
 // automationResourceQuery* are the only query parameters an automation history
@@ -34,9 +36,14 @@ const (
 
 // automationResourceTemplates name the read-only automation resources the MCP
 // server publishes. Every read calls the same service method as its Huma GET.
+// The collection is served both as a template and as a concrete resource: the
+// bare URI reads the default first page (which resource-materializing clients
+// surface as a tool), while paged reads flow through the template.
 const (
-	automationDefinitionResourceTemplate = "hearth://automation/{automation_id}"
-	automationHistoryResourceTemplate    = "hearth://automation/{automation_id}/history{?cursor,limit}"
+	automationDefinitionResourceTemplate  = "hearth://automation/{automation_id}"
+	automationHistoryResourceTemplate     = "hearth://automation/{automation_id}/history{?cursor,limit}"
+	automationsCollectionResourceTemplate = "hearth://automations{?cursor,limit}"
+	automationsCollectionResourceURI      = "hearth://automations"
 )
 
 // automationResourceAddress is one parsed hearth:// automation resource URI.
@@ -50,30 +57,33 @@ type automationResourceAddress struct {
 	Query url.Values
 }
 
-// registerResources publishes the automation resource templates through the
-// official SDK, which the wrapper exposes via [mcpapi.Server.Raw].
+// registerResources publishes the automation resource templates and the
+// parameterless collection concrete resource through the shared wrapper.
 func (handler *Handler) registerResources(server *mcpapi.Server) {
-	raw := server.Raw()
-	raw.AddResourceTemplate(&mcp.ResourceTemplate{
-		URITemplate: automationDefinitionResourceTemplate,
-		Name:        "automation",
-		Description: "One current Automation definition with its revision and timestamps",
-		MIMEType:    automationResourceMIME,
-	}, handler.readAutomationResource)
-	raw.AddResourceTemplate(&mcp.ResourceTemplate{
-		URITemplate: automationHistoryResourceTemplate,
-		Name:        "automation history",
-		Description: "Newest-first retained Run and Skip history for one Automation",
-		MIMEType:    automationResourceMIME,
-	}, handler.readAutomationHistoryResource)
+	mcpapi.RegisterResourceTemplate(server,
+		"automation",
+		"One current Automation definition with its revision and timestamps",
+		automationDefinitionResourceTemplate, automationResourceMIME,
+		handler.automationDefinitionBody, automationResourceFailure)
+	mcpapi.RegisterResourceTemplate(server,
+		"automation history",
+		"Newest-first retained Run and Skip history for one Automation",
+		automationHistoryResourceTemplate, automationResourceMIME,
+		handler.automationHistoryBody, automationResourceFailure)
+	mcpapi.RegisterResourceTemplate(server,
+		"automations",
+		"Automations, one page",
+		automationsCollectionResourceTemplate, automationResourceMIME,
+		handler.automationsCollectionBody, automationResourceFailure)
+	mcpapi.RegisterResource(server,
+		"automations",
+		"Automations, one page",
+		automationsCollectionResourceURI, automationResourceMIME,
+		handler.automationsCollectionBody, automationResourceFailure)
 }
 
-// readAutomationResource reads one current Automation definition.
-func (handler *Handler) readAutomationResource(
-	ctx context.Context,
-	request *mcp.ReadResourceRequest,
-) (*mcp.ReadResourceResult, error) {
-	uri := request.Params.URI
+// automationDefinitionBody reads one current Automation definition.
+func (handler *Handler) automationDefinitionBody(ctx context.Context, uri string) (any, error) {
 	address, err := parseAutomationResourceAddress(uri)
 	if err != nil || address.History {
 		return nil, mcp.ResourceNotFoundError(uri)
@@ -92,15 +102,11 @@ func (handler *Handler) readAutomationResource(
 	if err != nil {
 		return nil, automationResourceFailure(uri, err)
 	}
-	return newResourceResult(uri, automationBody(record))
+	return automationBody(record), nil
 }
 
-// readAutomationHistoryResource reads one newest-first history page.
-func (handler *Handler) readAutomationHistoryResource(
-	ctx context.Context,
-	request *mcp.ReadResourceRequest,
-) (*mcp.ReadResourceResult, error) {
-	uri := request.Params.URI
+// automationHistoryBody reads one newest-first history page.
+func (handler *Handler) automationHistoryBody(ctx context.Context, uri string) (any, error) {
 	address, err := parseAutomationResourceAddress(uri)
 	if err != nil || !address.History {
 		return nil, mcp.ResourceNotFoundError(uri)
@@ -149,7 +155,72 @@ func (handler *Handler) readAutomationHistoryResource(
 		}
 		body.NextCursor = &nextCursor
 	}
-	return newResourceResult(uri, body)
+	return body, nil
+}
+
+// automationsCollectionBody reads one newest-first page of Automations,
+// addressed bare or through the collection template's cursor and limit.
+
+func (handler *Handler) automationsCollectionBody(ctx context.Context, uri string) (any, error) {
+	address, err := parseAutomationsCollectionAddress(uri)
+	if err != nil {
+		return nil, automationResourceFailure(uri, err)
+	}
+	if queryErr := address.only(automationResourceQueryCursor, automationResourceQueryLimit); queryErr != nil {
+		return nil, automationResourceFailure(uri, queryErr)
+	}
+	limit, err := address.pageLimit()
+	if err != nil {
+		return nil, automationResourceFailure(uri, err)
+	}
+	params := automations.ListAutomationsParams{Limit: limit}
+	cursor, present, err := address.single(automationResourceQueryCursor)
+	if err != nil {
+		return nil, automationResourceFailure(uri, err)
+	}
+	if present && cursor != "" {
+		afterID, cursorErr := decodeAutomationsCursor(cursor)
+		if cursorErr != nil {
+			return nil, automationResourceFailure(uri, &automationResourceInputError{
+				message: "automation cursor is invalid",
+			})
+		}
+		params.AfterID = afterID
+	}
+	page, err := handler.automations.ListAutomations(ctx, params)
+	if err != nil {
+		return nil, automationResourceFailure(uri, err)
+	}
+	body := AutomationCollectionBody{Items: make([]AutomationBody, len(page.Items))}
+	for index, record := range page.Items {
+		body.Items[index] = automationBody(record)
+	}
+	if page.HasMore && len(page.Items) > 0 {
+		nextCursor, cursorErr := encodeAutomationsCursor(page.Items[len(page.Items)-1].ID)
+		if cursorErr != nil {
+			return nil, automationResourceFailure(uri, cursorErr)
+		}
+		body.NextCursor = &nextCursor
+	}
+	return mcpCollectionOutput(body), nil
+}
+
+// parseAutomationsCollectionAddress splits the parameterless collection URI
+// into its query, rejecting any other scheme, host, or path shape.
+func parseAutomationsCollectionAddress(uri string) (automationResourceAddress, error) {
+	parsed, err := url.Parse(uri)
+	if err != nil {
+		return automationResourceAddress{}, fmt.Errorf("parse automations collection URI: %w", err)
+	}
+	if parsed.Scheme != automationResourceScheme || parsed.Host != automationsCollectionResourceHost ||
+		parsed.Fragment != "" || strings.Trim(parsed.Path, "/") != "" {
+		return automationResourceAddress{}, errors.New("automations collection URI has an unsupported shape")
+	}
+	query, err := url.ParseQuery(parsed.RawQuery)
+	if err != nil {
+		return automationResourceAddress{}, errors.New("automation resource URI has a malformed query")
+	}
+	return automationResourceAddress{Query: query}, nil
 }
 
 // parseAutomationResourceAddress splits one hearth:// automation URI into its
@@ -251,17 +322,4 @@ func automationResourceFailure(uri string, err error) error {
 		return mcp.ResourceNotFoundError(uri)
 	}
 	return &jsonrpc.Error{Code: jsonrpc.CodeInternalError, Message: "internal error"}
-}
-
-// newResourceResult marshals one Huma read body into a JSON resource content.
-func newResourceResult(uri string, payload any) (*mcp.ReadResourceResult, error) {
-	encoded, err := json.Marshal(payload)
-	if err != nil {
-		return nil, automationResourceFailure(uri, err)
-	}
-	return &mcp.ReadResourceResult{Contents: []*mcp.ResourceContents{{
-		URI:      uri,
-		MIMEType: automationResourceMIME,
-		Text:     string(encoded),
-	}}}, nil
 }

@@ -2,7 +2,6 @@ package api
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"net/url"
@@ -81,74 +80,67 @@ const (
 	mcpAdaptersURITemplate           = "hearth://adapters{?cursor,limit}"
 )
 
-// mcpResourceRead reads one resource URI into the body a client attaches as
-// context.
-type mcpResourceRead func(context.Context, string) (any, error)
+// mcpCollectionResourceURIs are the parameterless collection URIs served as
+// concrete resources alongside their templates. Templates alone leave
+// resources/list empty, and clients that materialize resources (such as the Pi
+// MCP adapter's read_* tools) only see concrete resources. The four
+// collections take no required parameters, so their bare URIs are stable
+// addresses for the default first page; paged reads keep flowing through the
+// templates. The SDK routes a bare URI to the concrete resource first, and
+// both entries dispatch to the same collection reader, so bodies are
+// identical. Parameterized families stay template-only: their URIs cannot name
+// one concrete resource.
+const (
+	mcpAdaptersURI = "hearth://adapters"
+	mcpEntitiesURI = "hearth://entities"
+	mcpDevicesURI  = "hearth://devices"
+	mcpCommandsURI = "hearth://commands"
+)
 
 // registerResources registers the devices-owned hearth:// resources.
 func (handler *Handler) registerResources(server *mcpapi.Server) {
-	raw := server.Raw()
-	registerResource(raw, "entity", "One Entity and its current State",
-		mcpEntityURITemplate, handler.mcpEntityResource)
-	registerResource(raw, "entity_state_history", "One Entity's retained State history page",
-		mcpEntityStateHistoryURITemplate, handler.mcpEntityResource)
-	registerResource(raw, "entity_events", "One Entity's Entity Event history page",
-		mcpEntityEventsURITemplate, handler.mcpEntityResource)
-	registerResource(raw, "entity_commands", "One Entity's Command history page",
-		mcpEntityCommandsURITemplate, handler.mcpEntityResource)
-	registerResource(raw, "entity_availability_history", "One Entity's availability history page",
-		mcpEntityAvailabilityURITemplate, handler.mcpEntityResource)
-	registerResource(raw, "device", "One Device and the first page of its Entities",
-		mcpDeviceURITemplate, handler.mcpDeviceResource)
-	registerResource(raw, "adapter", "One Adapter and its current health",
-		mcpAdapterURITemplate, handler.mcpAdapterResource)
-	registerResource(raw, "adapter_health_history", "One Adapter's health history page",
-		mcpAdapterHealthURITemplate, handler.mcpAdapterResource)
-	registerResource(raw, "command", "One Command record",
-		mcpCommandURITemplate, handler.mcpCommandResource)
-	registerResource(raw, "commands", "One page of household Command history",
-		mcpCommandsURITemplate, handler.mcpCollectionResource)
-	registerResource(raw, "entities", "One page of Entities and their current State",
-		mcpEntitiesURITemplate, handler.mcpCollectionResource)
-	registerResource(raw, "devices", "One page of Devices",
-		mcpDevicesURITemplate, handler.mcpCollectionResource)
-	registerResource(raw, "adapters", "One page of Adapters and their current health",
-		mcpAdaptersURITemplate, handler.mcpCollectionResource)
-}
-
-// registerResource registers one resource template whose read dispatches on the
-// requested URI.
-func registerResource(
-	raw *mcp.Server,
-	name string,
-	description string,
-	uriTemplate string,
-	read mcpResourceRead,
-) {
-	raw.AddResourceTemplate(
-		&mcp.ResourceTemplate{
-			Name: name, Description: description, URITemplate: uriTemplate, MIMEType: mcpResourceMIMEType,
-		},
-		func(ctx context.Context, request *mcp.ReadResourceRequest) (*mcp.ReadResourceResult, error) {
-			body, err := read(ctx, request.Params.URI)
-			if err != nil {
-				return nil, mcpResourceFailure(request.Params.URI, err)
-			}
-			return mcpResourceResult(request.Params.URI, body)
-		},
-	)
-}
-
-// mcpResourceResult encodes one read body as the JSON text a client attaches as
-// context.
-func mcpResourceResult(uri string, body any) (*mcp.ReadResourceResult, error) {
-	encoded, err := json.Marshal(body)
-	if err != nil {
-		return nil, mcpResourceInternalError()
+	register := func(name, description, uriTemplate string, read mcpapi.ResourceRead) {
+		mcpapi.RegisterResourceTemplate(server, name, description, uriTemplate,
+			mcpResourceMIMEType, read, mcpResourceFailure)
 	}
-	return &mcp.ReadResourceResult{Contents: []*mcp.ResourceContents{{
-		URI: uri, MIMEType: mcpResourceMIMEType, Text: string(encoded),
-	}}}, nil
+	registerConcrete := func(name, description, uri string, read mcpapi.ResourceRead) {
+		mcpapi.RegisterResource(server, name, description, uri,
+			mcpResourceMIMEType, read, mcpResourceFailure)
+	}
+	register("entity", "One Entity and its current State",
+		mcpEntityURITemplate, handler.mcpEntityResource)
+	register("entity_state_history", "One Entity's retained State history page",
+		mcpEntityStateHistoryURITemplate, handler.mcpEntityResource)
+	register("entity_events", "One Entity's Entity Event history page",
+		mcpEntityEventsURITemplate, handler.mcpEntityResource)
+	register("entity_commands", "One Entity's Command history page",
+		mcpEntityCommandsURITemplate, handler.mcpEntityResource)
+	register("entity_availability_history", "One Entity's availability history page",
+		mcpEntityAvailabilityURITemplate, handler.mcpEntityResource)
+	register("device", "One Device and the first page of its Entities",
+		mcpDeviceURITemplate, handler.mcpDeviceResource)
+	register("adapter", "One Adapter and its current health",
+		mcpAdapterURITemplate, handler.mcpAdapterResource)
+	register("adapter_health_history", "One Adapter's health history page",
+		mcpAdapterHealthURITemplate, handler.mcpAdapterResource)
+	register("command", "One Command record",
+		mcpCommandURITemplate, handler.mcpCommandResource)
+	register("commands", "One page of household Command history",
+		mcpCommandsURITemplate, handler.mcpCollectionResource)
+	register("entities", "One page of Entities and their current State",
+		mcpEntitiesURITemplate, handler.mcpCollectionResource)
+	register("devices", "One page of Devices",
+		mcpDevicesURITemplate, handler.mcpCollectionResource)
+	register("adapters", "One page of Adapters and their current health",
+		mcpAdaptersURITemplate, handler.mcpCollectionResource)
+	registerConcrete("adapters", "One page of Adapters and their current health",
+		mcpAdaptersURI, handler.mcpCollectionResource)
+	registerConcrete("entities", "One page of Entities and their current State",
+		mcpEntitiesURI, handler.mcpCollectionResource)
+	registerConcrete("devices", "One page of Devices",
+		mcpDevicesURI, handler.mcpCollectionResource)
+	registerConcrete("commands", "One page of household Command history",
+		mcpCommandsURI, handler.mcpCollectionResource)
 }
 
 // mcpEntityResource reads one hearth://entity/... resource: Entity metadata and

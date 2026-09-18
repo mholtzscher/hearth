@@ -148,6 +148,57 @@ func TestRegisterMCPRegistersEveryDeviceResourceTemplate(t *testing.T) {
 	}
 }
 
+// TestRegisterMCPRegistersCollectionResources proves the four parameterless
+// collections are also served as concrete resources, so resources/list is
+// non-empty for clients that materialize resources (such as the Pi MCP
+// adapter's read_* tools). Paged reads keep flowing through the templates.
+func TestRegisterMCPRegistersCollectionResources(t *testing.T) {
+	t.Parallel()
+	stub := mcpResourceFixtureDevices()
+	session := mcpSession(t, stub)
+	listed, err := session.ListResources(t.Context(), nil)
+	if err != nil {
+		t.Fatalf("list resources: %v", err)
+	}
+	want := []string{
+		"hearth://adapters",
+		"hearth://entities",
+		"hearth://devices",
+		"hearth://commands",
+	}
+	if len(listed.Resources) != len(want) {
+		t.Fatalf("resources = %d, want %d", len(listed.Resources), len(want))
+	}
+	registered := make(map[string]*mcp.Resource, len(listed.Resources))
+	for _, resource := range listed.Resources {
+		registered[resource.URI] = resource
+	}
+	for _, uri := range want {
+		resource, present := registered[uri]
+		if !present {
+			t.Fatalf("resource %q is missing", uri)
+		}
+		if resource.Name == "" || resource.Description == "" || resource.MIMEType != "application/json" {
+			t.Fatalf("resource %q = %#v", uri, resource)
+		}
+		read, readErr := session.ReadResource(t.Context(), &mcp.ReadResourceParams{URI: uri})
+		if readErr != nil {
+			t.Fatalf("read %s: %v", uri, readErr)
+		}
+		if len(read.Contents) != 1 || read.Contents[0].URI != uri ||
+			read.Contents[0].MIMEType != "application/json" {
+			t.Fatalf("content = %#v", read.Contents)
+		}
+		var body map[string]any
+		if decodeErr := json.Unmarshal([]byte(read.Contents[0].Text), &body); decodeErr != nil {
+			t.Fatalf("decode %s: %v", uri, decodeErr)
+		}
+		if _, hasItems := body["items"]; !hasItems {
+			t.Fatalf("resource %s body has no items page: %s", uri, read.Contents[0].Text)
+		}
+	}
+}
+
 // TestMCPResourcesReadTheSameBodiesAsTheHumaRoutes proves every device resource
 // reads through the same service method and returns the same JSON body as its
 // Huma GET counterpart.
