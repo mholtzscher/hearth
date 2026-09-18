@@ -66,13 +66,13 @@ func (handler *Handler) ListCommands(ctx context.Context, input *ListCommandsInp
 		return nil, apiError(http.StatusBadRequest, "invalid page")
 	}
 	if err != nil {
-		return nil, apiError(http.StatusInternalServerError, "internal error")
+		return nil, internalAPIError(err)
 	}
 	body := CommandCollectionBody{Items: make([]CommandRecordBody, len(page.Items))}
 	for index, command := range page.Items {
 		mapped, mappingErr := commandRecordBody(command)
 		if mappingErr != nil {
-			return nil, apiError(http.StatusInternalServerError, "internal error")
+			return nil, internalAPIError(mappingErr)
 		}
 		body.Items[index] = mapped
 	}
@@ -80,7 +80,7 @@ func (handler *Handler) ListCommands(ctx context.Context, input *ListCommandsInp
 		last := page.Items[len(page.Items)-1]
 		cursor, cursorErr := encodeCommandListCursor(last, params.EntityID, params.Status)
 		if cursorErr != nil {
-			return nil, apiError(http.StatusInternalServerError, "internal error")
+			return nil, internalAPIError(cursorErr)
 		}
 		body.NextCursor = &cursor
 	}
@@ -97,11 +97,11 @@ func (handler *Handler) GetCommand(ctx context.Context, input *GetCommandInput) 
 		return nil, apiError(http.StatusNotFound, "command not found")
 	}
 	if err != nil {
-		return nil, apiError(http.StatusInternalServerError, "internal error")
+		return nil, internalAPIError(err)
 	}
 	body, err := commandRecordBody(command)
 	if err != nil {
-		return nil, apiError(http.StatusInternalServerError, "internal error")
+		return nil, internalAPIError(err)
 	}
 	return &GetCommandOutput{Body: body}, nil
 }
@@ -130,20 +130,20 @@ func (handler *Handler) ListEntityCommands(
 	case errors.Is(err, devices.ErrEntityNotFound):
 		return nil, apiError(http.StatusNotFound, "entity not found")
 	case err != nil:
-		return nil, apiError(http.StatusInternalServerError, "internal error")
+		return nil, internalAPIError(err)
 	}
 	body := CommandCollectionBody{Items: make([]CommandRecordBody, len(page.Items))}
 	for index, command := range page.Items {
 		mapped, mappingErr := commandRecordBody(command)
 		if mappingErr != nil {
-			return nil, apiError(http.StatusInternalServerError, "internal error")
+			return nil, internalAPIError(mappingErr)
 		}
 		body.Items[index] = mapped
 	}
 	if page.HasMore && len(page.Items) > 0 {
 		cursor, cursorErr := encodeCommandCursor(page.Items[len(page.Items)-1])
 		if cursorErr != nil {
-			return nil, apiError(http.StatusInternalServerError, "internal error")
+			return nil, internalAPIError(cursorErr)
 		}
 		body.NextCursor = &cursor
 	}
