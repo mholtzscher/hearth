@@ -41,7 +41,7 @@ func (handler *Handler) ListDevices(ctx context.Context, input *ListDevicesInput
 		return nil, apiError(http.StatusBadRequest, "invalid page")
 	}
 	if err != nil {
-		return nil, apiError(http.StatusInternalServerError, "internal error")
+		return nil, internalAPIError(err)
 	}
 	body := DeviceCollectionBody{Items: make([]DeviceBody, len(page.Items))}
 	for index, device := range page.Items {
@@ -50,7 +50,7 @@ func (handler *Handler) ListDevices(ctx context.Context, input *ListDevicesInput
 	if page.HasMore && len(page.Items) > 0 {
 		cursor, cursorErr := encodeDevicesCursor(page.Items[len(page.Items)-1].ID)
 		if cursorErr != nil {
-			return nil, apiError(http.StatusInternalServerError, "internal error")
+			return nil, internalAPIError(cursorErr)
 		}
 		body.NextCursor = &cursor
 	}
@@ -77,18 +77,18 @@ func (handler *Handler) GetDevice(ctx context.Context, input *GetDeviceInput) (*
 	case errors.Is(err, devices.ErrDeviceNotFound):
 		return nil, apiError(http.StatusNotFound, "device not found")
 	case err != nil:
-		return nil, apiError(http.StatusInternalServerError, "internal error")
+		return nil, internalAPIError(err)
 	}
 	body, err := deviceDetailBody(aggregate)
 	if err != nil {
-		return nil, apiError(http.StatusInternalServerError, "internal error")
+		return nil, internalAPIError(err)
 	}
 	if aggregate.Entities.HasMore && len(aggregate.Entities.Items) > 0 {
 		cursor, cursorErr := encodeDeviceEntitiesCursor(
 			aggregate.Entities.Items[len(aggregate.Entities.Items)-1].Entity.ID, deviceID,
 		)
 		if cursorErr != nil {
-			return nil, apiError(http.StatusInternalServerError, "internal error")
+			return nil, internalAPIError(cursorErr)
 		}
 		body.NextEntityCursor = &cursor
 	}

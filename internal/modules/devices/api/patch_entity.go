@@ -27,11 +27,11 @@ func (handler *Handler) PatchEntity(ctx context.Context, input *PatchEntityInput
 	case errors.Is(err, devices.ErrEntityNotFound):
 		return nil, apiError(http.StatusNotFound, "entity not found")
 	case err != nil:
-		return nil, apiError(http.StatusInternalServerError, "internal error")
+		return nil, internalAPIError(err)
 	}
 	body, err := entityBody(view)
 	if err != nil {
-		return nil, apiError(http.StatusInternalServerError, "internal error")
+		return nil, internalAPIError(err)
 	}
 	return &PatchEntityOutput{Body: body}, nil
 }

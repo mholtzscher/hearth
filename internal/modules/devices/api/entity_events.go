@@ -97,7 +97,7 @@ func entityEventHistoryError(err error) error {
 	case errors.Is(err, devices.ErrEntityNotFound):
 		return apiError(http.StatusNotFound, "entity not found")
 	default:
-		return apiError(http.StatusInternalServerError, "internal error")
+		return internalAPIError(err)
 	}
 }
 
@@ -116,7 +116,7 @@ func entityEventHistoryPageBody(
 	}
 	cursor, err := encodeEntityEventCursor(entityID, page.Items[len(page.Items)-1].ReceiveOrder)
 	if err != nil {
-		return EntityEventCollectionBody{}, apiError(http.StatusInternalServerError, "internal error")
+		return EntityEventCollectionBody{}, internalAPIError(err)
 	}
 	body.NextCursor = &cursor
 	return body, nil

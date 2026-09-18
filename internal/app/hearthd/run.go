@@ -293,7 +293,9 @@ func Run(
 	)
 	healthSupervisor := startHealthSupervisor(dependencyContext, readiness, service, coreLogger)
 	shutdown.healthSupervisor = healthSupervisor
-	handler, _ := NewHTTPHandler(service, automationService, readiness, service, automationService)
+	handler, _, _ := newHTTPHandlerWithMCP(
+		service, automationService, readiness, service, automationService, coreLogger,
+	)
 	// Bind the socket explicitly so http_listening is only logged after the
 	// address is actually held; a bind failure never produces that event.
 	listener, listenErr := (&net.ListenConfig{}).Listen(ctx, "tcp", config.HTTPAddr)

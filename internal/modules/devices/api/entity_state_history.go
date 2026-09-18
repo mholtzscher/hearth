@@ -71,13 +71,13 @@ func (handler *Handler) ListEntityStateHistory(
 	case errors.Is(err, devices.ErrEntityNotFound):
 		return nil, apiError(http.StatusNotFound, "entity not found")
 	case err != nil:
-		return nil, apiError(http.StatusInternalServerError, "internal error")
+		return nil, internalAPIError(err)
 	}
 	body := EntityStateHistoryCollectionBody{Items: make([]EntityStateHistoryBody, len(page.Items))}
 	for index, entry := range page.Items {
 		mapped, mappingErr := entityStateHistoryBody(entry)
 		if mappingErr != nil {
-			return nil, apiError(http.StatusInternalServerError, "internal error")
+			return nil, internalAPIError(mappingErr)
 		}
 		body.Items[index] = mapped
 	}
@@ -88,7 +88,7 @@ func (handler *Handler) ListEntityStateHistory(
 			page.Items[len(page.Items)-1].ReceiveOrder,
 		)
 		if cursorErr != nil {
-			return nil, apiError(http.StatusInternalServerError, "internal error")
+			return nil, internalAPIError(cursorErr)
 		}
 		body.NextCursor = &cursor
 	}
