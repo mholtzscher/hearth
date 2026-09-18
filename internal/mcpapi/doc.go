@@ -20,6 +20,25 @@
 // through [Server.Raw], so no second MCP framework is built here. The SDK is
 // imported only by this package.
 //
+// # Advertised schemas are portable across clients
+//
+// The SDK derives argument and result schemas from Go types, and that derivation
+// emits two shapes strict MCP clients reject or silently drop: a boolean
+// subschema (`true` for an unconstrained value, which the Inspector reports as
+// an error) and an array-valued `type` (`["null", "string"]` for a nullable
+// value, which a client reading `type` as one string cannot represent).
+// [Register] therefore derives the argument schema itself when a Tool supplies
+// none, and rewrites that schema, an explicit [Tool.InputSchema] override, and
+// the advertised result union into a portable equivalent: an explicit union of
+// every JSON type for the always-true schema, an impossible typed schema for the
+// always-false one, and one `anyOf` type assertion per member of a union. Each
+// rewrite preserves what validates, including that an unconstrained value stays
+// unconstrained across every JSON type.
+//
+// Because the argument schema is always advertised as a decoded JSON document,
+// the SDK derives nothing behind the wrapper's back: it resolves and enforces
+// exactly the schema a client reads.
+//
 // # Automatic input rejection stays a tool result
 //
 // The SDK validates arguments before the typed handler runs and reports a

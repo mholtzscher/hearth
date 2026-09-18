@@ -6,8 +6,8 @@ import (
 	"github.com/google/jsonschema-go/jsonschema"
 )
 
-// outputSchema returns the JSON Schema a typed Tool advertises for its result,
-// or nil when the SDK advertises none.
+// portableOutputSchema returns the JSON Schema a typed Tool advertises for its
+// result, or nil when the SDK advertises none.
 //
 // The SDK derives an output schema from the success type alone, but this
 // wrapper also publishes a structured failure object in the result's
@@ -24,7 +24,11 @@ import (
 // otherwise fail its own successful outputs when they also matched the failure
 // branch. Tools whose output type is any advertise no output schema, exactly as
 // the SDK does, so nothing constrains their content.
-func outputSchema[O any]() any {
+//
+// The union is normalized by [portableSchema] because the SDK derives nullable
+// members as array-valued `type` unions and unconstrained members as boolean
+// schemas, neither of which every client can read.
+func portableOutputSchema[O any]() any {
 	if reflect.TypeFor[O]() == reflect.TypeFor[any]() {
 		return nil
 	}
@@ -35,7 +39,7 @@ func outputSchema[O any]() any {
 		// keeps that one error message authoritative.
 		return nil
 	}
-	return &jsonschema.Schema{AnyOf: []*jsonschema.Schema{success, toolErrorSchema()}}
+	return portableSchema(&jsonschema.Schema{AnyOf: []*jsonschema.Schema{success, toolErrorSchema()}})
 }
 
 // successSchema derives the schema of O the way the SDK does: a pointer output
@@ -58,10 +62,10 @@ func successSchema[O any]() *jsonschema.Schema {
 // stay permitted so a Code's Details fields validate beside them.
 func toolErrorSchema() *jsonschema.Schema {
 	return &jsonschema.Schema{
-		Type: "object",
+		Type: schemaTypeObject,
 		Properties: map[string]*jsonschema.Schema{
-			toolErrorCodeField:    {Type: "string"},
-			toolErrorMessageField: {Type: "string"},
+			toolErrorCodeField:    {Type: schemaTypeString},
+			toolErrorMessageField: {Type: schemaTypeString},
 		},
 		Required: []string{toolErrorCodeField, toolErrorMessageField},
 	}

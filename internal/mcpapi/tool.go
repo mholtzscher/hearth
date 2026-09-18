@@ -34,11 +34,14 @@ type Tool[I, O any] struct {
 
 // Register adds tool to server.
 //
-// The SDK derives the input and output JSON Schemas, decodes and validates the
-// arguments before invoking the handler, validates the handler's output, and
-// populates the result's structured content. A non-nil [Tool.InputSchema]
-// replaces the derived argument schema. Invalid arguments are rejected
-// automatically and the handler never runs.
+// The wrapper derives the argument schema when the Tool supplies none, and the
+// advertised argument and result schemas are rewritten into the portable shape
+// every MCP client can read (see the package documentation). The SDK then
+// decodes and validates the arguments against the advertised schema before
+// invoking the handler, validates the handler's output, and populates the
+// result's structured content. A non-nil [Tool.InputSchema] replaces the derived
+// argument schema, and is normalized the same way. Invalid arguments are
+// rejected automatically and the handler never runs.
 //
 // The advertised output schema is the union of the success type and the
 // structured failure object, so a success result and a [ToolError] result each
@@ -51,8 +54,8 @@ func Register[I, O any](server *Server, tool Tool[I, O]) {
 	mcp.AddTool(server.server, &mcp.Tool{
 		Name:         tool.Name,
 		Description:  tool.Description,
-		InputSchema:  tool.InputSchema,
-		OutputSchema: outputSchema[O](),
+		InputSchema:  portableInputSchema[I](tool.InputSchema),
+		OutputSchema: portableOutputSchema[O](),
 	}, func(ctx context.Context, _ *mcp.CallToolRequest, input I) (*mcp.CallToolResult, O, error) {
 		output, err := tool.Handler(ctx, input)
 		return nil, output, toolFailure(err)
@@ -92,8 +95,8 @@ func RegisterWithRequest[I, O any](server *Server, tool ToolWithRequest[I, O]) {
 	mcp.AddTool(server.server, &mcp.Tool{
 		Name:         tool.Name,
 		Description:  tool.Description,
-		InputSchema:  tool.InputSchema,
-		OutputSchema: outputSchema[O](),
+		InputSchema:  portableInputSchema[I](tool.InputSchema),
+		OutputSchema: portableOutputSchema[O](),
 	}, func(ctx context.Context, req *mcp.CallToolRequest, input I) (*mcp.CallToolResult, O, error) {
 		output, err := tool.Handler(ctx, req, input)
 		return nil, output, toolFailure(err)

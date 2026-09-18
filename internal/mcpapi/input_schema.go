@@ -8,6 +8,44 @@ import (
 	"github.com/google/jsonschema-go/jsonschema"
 )
 
+// portableInputSchema returns the argument JSON Schema a typed Tool advertises,
+// rewritten by [portableSchema].
+//
+// A non-nil override is normalized as given. A nil override asks for the schema
+// the SDK would derive from I, which the wrapper derives itself through
+// [defaultInputSchema] so it can normalize the same document the SDK would have
+// published; the SDK still resolves and enforces whichever schema is advertised.
+func portableInputSchema[I any](override any) any {
+	if override != nil {
+		return portableSchema(override)
+	}
+	return portableSchema(defaultInputSchema[I]())
+}
+
+// defaultInputSchema derives the argument schema the SDK derives from I.
+//
+// It mirrors the SDK's derivation exactly, so advertising the document changes
+// no constraint: a pointer argument describes its element type, and an untyped
+// `any` argument is an empty object rather than an unconstrained value, because
+// a tool's arguments are always an object.
+func defaultInputSchema[I any]() any {
+	if reflect.TypeFor[I]() == reflect.TypeFor[any]() {
+		return &jsonschema.Schema{Type: schemaTypeObject}
+	}
+	inputType := reflect.TypeFor[I]()
+	if inputType.Kind() == reflect.Pointer {
+		inputType = inputType.Elem()
+	}
+	schema, err := jsonschema.ForType(inputType, &jsonschema.ForOptions{})
+	if err != nil {
+		// The SDK derives the same schema in AddTool. If derivation fails here it
+		// fails there too, and AddTool reports it; returning nil keeps that one
+		// error message authoritative.
+		return nil
+	}
+	return schema
+}
+
 // InputSchemaWithProperty returns the argument schema for I with one declared
 // object property replaced by a canonical JSON Schema document.
 //

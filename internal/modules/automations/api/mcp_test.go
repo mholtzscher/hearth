@@ -756,7 +756,7 @@ func TestAutomationMCPDefinitionOutputSchemaDescribesTheDocument(t *testing.T) {
 			}
 		}
 		steps, ok := members["steps"].(map[string]any)
-		if !ok || !schemaAllowsArray(steps["type"]) {
+		if !ok || !schemaAllowsType(steps, "array") {
 			t.Fatalf("%s steps schema = %#v, want an array", tool.Name, members["steps"])
 		}
 	}
@@ -800,23 +800,34 @@ func outputSchemaProperties(t *testing.T, tool string, schema any) map[string]an
 	return properties
 }
 
-// schemaAllowsArray reports whether one decoded JSON Schema type member permits
-// an array. A Go slice derives the type list ["null","array"], while other
-// shapes derive the single string "array".
-func schemaAllowsArray(value any) bool {
-	if name, ok := value.(string); ok {
-		return name == "array"
+// schemaAllowsType reports whether one decoded JSON Schema node permits the
+// named type directly or through a portable anyOf branch.
+func schemaAllowsType(node map[string]any, expected string) bool {
+	if name, ok := node["type"].(string); ok && name == expected {
+		return true
 	}
-	names, ok := value.([]any)
+	branches, ok := node["anyOf"].([]any)
 	if !ok {
 		return false
 	}
-	for _, name := range names {
-		if name == "array" {
+	for _, branch := range branches {
+		object, objectOK := branch.(map[string]any)
+		if objectOK && schemaAllowsType(object, expected) {
 			return true
 		}
 	}
 	return false
+}
+
+// schemaRejectsEveryValue recognizes the portable always-false schema used for
+// closed-object additionalProperties constraints.
+func schemaRejectsEveryValue(value any) bool {
+	node, ok := value.(map[string]any)
+	if !ok || node["type"] != "null" {
+		return false
+	}
+	notNode, ok := node["not"].(map[string]any)
+	return ok && notNode["type"] == "null"
 }
 
 // TestAutomationMCPDefinitionInputSchemaExposesStrictConstraints proves the two
@@ -850,9 +861,9 @@ func assertDefinitionInputSchema(t *testing.T, name string, tool *mcp.Tool) {
 	t.Helper()
 	definition := inputSchemaDefinition(t, name, tool)
 
-	if value, present := definition["additionalProperties"]; !present || value != false {
+	if value, present := definition["additionalProperties"]; !present || !schemaRejectsEveryValue(value) {
 		t.Fatalf(
-			"%s definition schema additionalProperties = %#v, want false",
+			"%s definition schema additionalProperties = %#v, want an always-false schema",
 			name, definition["additionalProperties"],
 		)
 	}
@@ -930,8 +941,11 @@ func assertConditionInputConstraints(t *testing.T, name string, definition map[s
 func assertStepInputConstraints(t *testing.T, name string, steps map[string]any) {
 	t.Helper()
 	items := schemaObject(t, name+" steps items", steps["items"])
-	if value, present := items["additionalProperties"]; !present || value != false {
-		t.Fatalf("%s steps items additionalProperties = %#v, want false", name, items["additionalProperties"])
+	if value, present := items["additionalProperties"]; !present || !schemaRejectsEveryValue(value) {
+		t.Fatalf(
+			"%s steps items additionalProperties = %#v, want an always-false schema",
+			name, items["additionalProperties"],
+		)
 	}
 	required := schemaStringSet(t, name+" steps required", items["required"])
 	for _, member := range []string{"id", "entity_id", "operation", "parameters"} {
