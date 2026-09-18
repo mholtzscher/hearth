@@ -5,8 +5,6 @@ import (
 	"net/http"
 
 	"github.com/danielgtaylor/huma/v2"
-	"github.com/modelcontextprotocol/go-sdk/jsonrpc"
-	"github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/mholtzscher/hearth/internal/mcpapi"
 	"github.com/mholtzscher/hearth/internal/modules/devices"
@@ -205,61 +203,4 @@ func mcpFailedCommandID(err error) string {
 		return ""
 	}
 	return string(executionError.CommandID)
-}
-
-// mcpResourceInputError is an unreadable resource URI or query. It becomes a
-// JSON-RPC invalid-params error, mirroring the Huma 400 for a malformed
-// request.
-type mcpResourceInputError struct {
-	message string
-}
-
-// Error implements the error interface.
-func (err *mcpResourceInputError) Error() string {
-	return err.message
-}
-
-// mcpResourceNotFoundError reports a resource URI this server does not serve.
-// Read dispatchers return it so one place translates it to the SDK's
-// resource-not-found error.
-type mcpResourceNotFoundError struct{}
-
-// Error implements the error interface.
-func (mcpResourceNotFoundError) Error() string {
-	return "resource not found"
-}
-
-// mcpResourceFailure translates one failed resource read into the JSON-RPC error
-// a client sees: a missing parent becomes resource-not-found, unreadable input
-// becomes invalid params, and anything else stays internal without leaking
-// detail.
-func mcpResourceFailure(uri string, err error) error {
-	if inputError, ok := errors.AsType[*mcpResourceInputError](err); ok {
-		return mcpInvalidParamsError(inputError.message)
-	}
-	if _, ok := errors.AsType[mcpResourceNotFoundError](err); ok {
-		return mcp.ResourceNotFoundError(uri)
-	}
-	if toolError, ok := errors.AsType[*mcpapi.ToolError](err); ok {
-		switch toolError.Code {
-		case string(mcpFailureEntityNotFound), string(mcpFailureDeviceNotFound),
-			string(mcpFailureAdapterNotFound), string(mcpFailureCommandNotFound):
-			return mcp.ResourceNotFoundError(uri)
-		case string(mcpFailureInvalidRequest):
-			return mcpInvalidParamsError(toolError.Message)
-		}
-	}
-	return mcpResourceInternalError()
-}
-
-// mcpInvalidParamsError reports one unreadable resource request with the
-// JSON-RPC invalid-params code.
-func mcpInvalidParamsError(message string) error {
-	return &jsonrpc.Error{Code: jsonrpc.CodeInvalidParams, Message: message}
-}
-
-// mcpResourceInternalError reports a 500-class resource failure without leaking
-// detail to the client.
-func mcpResourceInternalError() error {
-	return &jsonrpc.Error{Code: jsonrpc.CodeInternalError, Message: "internal error"}
 }

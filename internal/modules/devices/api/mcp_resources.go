@@ -3,12 +3,14 @@ package api
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/url"
 	"slices"
 	"strconv"
 	"strings"
 
+	"github.com/modelcontextprotocol/go-sdk/jsonrpc"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/mholtzscher/hearth/internal/mcpapi"
@@ -81,44 +83,43 @@ const (
 
 // mcpResourceRead reads one resource URI into the body a client attaches as
 // context.
-type mcpResourceRead func(context.Context, *Handler, string) (any, error)
+type mcpResourceRead func(context.Context, string) (any, error)
 
-// registerMCPResources registers the devices-owned hearth:// resources.
-func registerMCPResources(server *mcpapi.Server, handler *Handler) {
+// registerResources registers the devices-owned hearth:// resources.
+func (handler *Handler) registerResources(server *mcpapi.Server) {
 	raw := server.Raw()
-	registerMCPResource(raw, handler, "entity", "One Entity and its current State",
-		mcpEntityURITemplate, mcpEntityResource)
-	registerMCPResource(raw, handler, "entity_state_history", "One Entity's retained State history page",
-		mcpEntityStateHistoryURITemplate, mcpEntityResource)
-	registerMCPResource(raw, handler, "entity_events", "One Entity's Entity Event history page",
-		mcpEntityEventsURITemplate, mcpEntityResource)
-	registerMCPResource(raw, handler, "entity_commands", "One Entity's Command history page",
-		mcpEntityCommandsURITemplate, mcpEntityResource)
-	registerMCPResource(raw, handler, "entity_availability_history", "One Entity's availability history page",
-		mcpEntityAvailabilityURITemplate, mcpEntityResource)
-	registerMCPResource(raw, handler, "device", "One Device and the first page of its Entities",
-		mcpDeviceURITemplate, mcpDeviceResource)
-	registerMCPResource(raw, handler, "adapter", "One Adapter and its current health",
-		mcpAdapterURITemplate, mcpAdapterResource)
-	registerMCPResource(raw, handler, "adapter_health_history", "One Adapter's health history page",
-		mcpAdapterHealthURITemplate, mcpAdapterResource)
-	registerMCPResource(raw, handler, "command", "One Command record",
-		mcpCommandURITemplate, mcpCommandResource)
-	registerMCPResource(raw, handler, "commands", "One page of household Command history",
-		mcpCommandsURITemplate, mcpCollectionResource)
-	registerMCPResource(raw, handler, "entities", "One page of Entities and their current State",
-		mcpEntitiesURITemplate, mcpCollectionResource)
-	registerMCPResource(raw, handler, "devices", "One page of Devices",
-		mcpDevicesURITemplate, mcpCollectionResource)
-	registerMCPResource(raw, handler, "adapters", "One page of Adapters and their current health",
-		mcpAdaptersURITemplate, mcpCollectionResource)
+	registerResource(raw, "entity", "One Entity and its current State",
+		mcpEntityURITemplate, handler.mcpEntityResource)
+	registerResource(raw, "entity_state_history", "One Entity's retained State history page",
+		mcpEntityStateHistoryURITemplate, handler.mcpEntityResource)
+	registerResource(raw, "entity_events", "One Entity's Entity Event history page",
+		mcpEntityEventsURITemplate, handler.mcpEntityResource)
+	registerResource(raw, "entity_commands", "One Entity's Command history page",
+		mcpEntityCommandsURITemplate, handler.mcpEntityResource)
+	registerResource(raw, "entity_availability_history", "One Entity's availability history page",
+		mcpEntityAvailabilityURITemplate, handler.mcpEntityResource)
+	registerResource(raw, "device", "One Device and the first page of its Entities",
+		mcpDeviceURITemplate, handler.mcpDeviceResource)
+	registerResource(raw, "adapter", "One Adapter and its current health",
+		mcpAdapterURITemplate, handler.mcpAdapterResource)
+	registerResource(raw, "adapter_health_history", "One Adapter's health history page",
+		mcpAdapterHealthURITemplate, handler.mcpAdapterResource)
+	registerResource(raw, "command", "One Command record",
+		mcpCommandURITemplate, handler.mcpCommandResource)
+	registerResource(raw, "commands", "One page of household Command history",
+		mcpCommandsURITemplate, handler.mcpCollectionResource)
+	registerResource(raw, "entities", "One page of Entities and their current State",
+		mcpEntitiesURITemplate, handler.mcpCollectionResource)
+	registerResource(raw, "devices", "One page of Devices",
+		mcpDevicesURITemplate, handler.mcpCollectionResource)
+	registerResource(raw, "adapters", "One page of Adapters and their current health",
+		mcpAdaptersURITemplate, handler.mcpCollectionResource)
 }
 
-// registerMCPResource registers one resource template whose read dispatches on
-// the requested URI.
-func registerMCPResource(
+// registerResource registers one resource template whose read dispatches on the
+// requested URI.
+func registerResource(
 	raw *mcp.Server,
-	handler *Handler,
 	name string,
 	description string,
 	uriTemplate string,
@@ -129,7 +130,7 @@ func registerMCPResource(
 			Name: name, Description: description, URITemplate: uriTemplate, MIMEType: mcpResourceMIMEType,
 		},
 		func(ctx context.Context, request *mcp.ReadResourceRequest) (*mcp.ReadResourceResult, error) {
-			body, err := read(ctx, handler, request.Params.URI)
+			body, err := read(ctx, request.Params.URI)
 			if err != nil {
 				return nil, mcpResourceFailure(request.Params.URI, err)
 			}
@@ -152,7 +153,7 @@ func mcpResourceResult(uri string, body any) (*mcp.ReadResourceResult, error) {
 
 // mcpEntityResource reads one hearth://entity/... resource: Entity metadata and
 // State, State history, Entity Events, Command history, or availability history.
-func mcpEntityResource(ctx context.Context, handler *Handler, uri string) (any, error) {
+func (handler *Handler) mcpEntityResource(ctx context.Context, uri string) (any, error) {
 	resource, err := parseMCPResourceURI(uri)
 	if err != nil {
 		return nil, err
@@ -166,24 +167,23 @@ func mcpEntityResource(ctx context.Context, handler *Handler, uri string) (any, 
 	}
 	switch strings.Join(resource.segments[1:], "/") {
 	case "":
-		return mcpEntityStateResource(ctx, handler, resource, entityID)
+		return handler.mcpEntityStateResource(ctx, resource, entityID)
 	case mcpResourceSuffixEvents:
-		return mcpEntityEventsResource(ctx, handler, resource, entityID)
+		return handler.mcpEntityEventsResource(ctx, resource, entityID)
 	case mcpResourceSuffixCommands:
-		return mcpEntityCommandsResource(ctx, handler, resource, entityID)
+		return handler.mcpEntityCommandsResource(ctx, resource, entityID)
 	case mcpResourceSuffixStateHistory:
-		return mcpEntityStateHistoryResource(ctx, handler, resource, entityID)
+		return handler.mcpEntityStateHistoryResource(ctx, resource, entityID)
 	case mcpResourceSuffixAvailability:
-		return mcpEntityAvailabilityResource(ctx, handler, resource, entityID)
+		return handler.mcpEntityAvailabilityResource(ctx, resource, entityID)
 	default:
 		return nil, mcpResourceNotFoundError{}
 	}
 }
 
 // mcpEntityStateResource reads one Entity's metadata and current State.
-func mcpEntityStateResource(
+func (handler *Handler) mcpEntityStateResource(
 	ctx context.Context,
-	handler *Handler,
 	resource mcpResourceURI,
 	entityID devices.EntityID,
 ) (any, error) {
@@ -199,9 +199,8 @@ func mcpEntityStateResource(
 }
 
 // mcpEntityEventsResource reads one page of an Entity's Entity Event history.
-func mcpEntityEventsResource(
+func (handler *Handler) mcpEntityEventsResource(
 	ctx context.Context,
-	handler *Handler,
 	resource mcpResourceURI,
 	entityID devices.EntityID,
 ) (any, error) {
@@ -233,9 +232,8 @@ func mcpEntityEventsResource(
 // read returns; the parent outcome stays independent of the status filter. A
 // status the Command model rejects is unreadable input, refused before either
 // read runs.
-func mcpEntityCommandsResource(
+func (handler *Handler) mcpEntityCommandsResource(
 	ctx context.Context,
-	handler *Handler,
 	resource mcpResourceURI,
 	entityID devices.EntityID,
 ) (any, error) {
@@ -277,9 +275,8 @@ func mcpEntityCommandsResource(
 
 // mcpEntityStateHistoryResource reads one page of an Entity's retained State
 // history. The filter query parameter maps onto the Huma disposition parameter.
-func mcpEntityStateHistoryResource(
+func (handler *Handler) mcpEntityStateHistoryResource(
 	ctx context.Context,
-	handler *Handler,
 	resource mcpResourceURI,
 	entityID devices.EntityID,
 ) (any, error) {
@@ -305,9 +302,8 @@ func mcpEntityStateHistoryResource(
 
 // mcpEntityAvailabilityResource reads one page of an Entity's availability
 // history.
-func mcpEntityAvailabilityResource(
+func (handler *Handler) mcpEntityAvailabilityResource(
 	ctx context.Context,
-	handler *Handler,
 	resource mcpResourceURI,
 	entityID devices.EntityID,
 ) (any, error) {
@@ -328,7 +324,7 @@ func mcpEntityAvailabilityResource(
 }
 
 // mcpDeviceResource reads one Device and the first page of its Entities.
-func mcpDeviceResource(ctx context.Context, handler *Handler, uri string) (any, error) {
+func (handler *Handler) mcpDeviceResource(ctx context.Context, uri string) (any, error) {
 	resource, err := parseMCPResourceURI(uri)
 	if err != nil {
 		return nil, err
@@ -354,7 +350,7 @@ func mcpDeviceResource(ctx context.Context, handler *Handler, uri string) (any, 
 
 // mcpAdapterResource reads one Adapter's health or one page of its health
 // history.
-func mcpAdapterResource(ctx context.Context, handler *Handler, uri string) (any, error) {
+func (handler *Handler) mcpAdapterResource(ctx context.Context, uri string) (any, error) {
 	resource, err := parseMCPResourceURI(uri)
 	if err != nil {
 		return nil, err
@@ -368,18 +364,17 @@ func mcpAdapterResource(ctx context.Context, handler *Handler, uri string) (any,
 	}
 	switch strings.Join(resource.segments[1:], "/") {
 	case "":
-		return mcpAdapterStateResource(ctx, handler, resource, adapterID)
+		return handler.mcpAdapterStateResource(ctx, resource, adapterID)
 	case mcpResourceSuffixHealth:
-		return mcpAdapterHealthResource(ctx, handler, resource, adapterID)
+		return handler.mcpAdapterHealthResource(ctx, resource, adapterID)
 	default:
 		return nil, mcpResourceNotFoundError{}
 	}
 }
 
 // mcpAdapterStateResource reads one Adapter's health and runtime evidence.
-func mcpAdapterStateResource(
+func (handler *Handler) mcpAdapterStateResource(
 	ctx context.Context,
-	handler *Handler,
 	resource mcpResourceURI,
 	adapterID string,
 ) (any, error) {
@@ -395,9 +390,8 @@ func mcpAdapterStateResource(
 }
 
 // mcpAdapterHealthResource reads one page of an Adapter's health history.
-func mcpAdapterHealthResource(
+func (handler *Handler) mcpAdapterHealthResource(
 	ctx context.Context,
-	handler *Handler,
 	resource mcpResourceURI,
 	adapterID string,
 ) (any, error) {
@@ -418,7 +412,7 @@ func mcpAdapterHealthResource(
 }
 
 // mcpCommandResource reads one Command record.
-func mcpCommandResource(ctx context.Context, handler *Handler, uri string) (any, error) {
+func (handler *Handler) mcpCommandResource(ctx context.Context, uri string) (any, error) {
 	resource, err := parseMCPResourceURI(uri)
 	if err != nil {
 		return nil, err
@@ -442,7 +436,7 @@ func mcpCommandResource(ctx context.Context, handler *Handler, uri string) (any,
 }
 
 // mcpCollectionResource reads one page of a household collection.
-func mcpCollectionResource(ctx context.Context, handler *Handler, uri string) (any, error) {
+func (handler *Handler) mcpCollectionResource(ctx context.Context, uri string) (any, error) {
 	resource, err := parseMCPResourceURI(uri)
 	if err != nil {
 		return nil, err
@@ -452,20 +446,20 @@ func mcpCollectionResource(ctx context.Context, handler *Handler, uri string) (a
 	}
 	switch resource.kind {
 	case mcpResourceKindEntities:
-		return mcpEntitiesResource(ctx, handler, resource)
+		return handler.mcpEntitiesResource(ctx, resource)
 	case mcpResourceKindDevices:
-		return mcpDevicesResource(ctx, handler, resource)
+		return handler.mcpDevicesResource(ctx, resource)
 	case mcpResourceKindAdapters:
-		return mcpAdaptersResource(ctx, handler, resource)
+		return handler.mcpAdaptersResource(ctx, resource)
 	case mcpResourceKindCommands:
-		return mcpCommandsResource(ctx, handler, resource)
+		return handler.mcpCommandsResource(ctx, resource)
 	default:
 		return nil, mcpResourceNotFoundError{}
 	}
 }
 
 // mcpEntitiesResource reads one page of Entities, optionally scoped to a Device.
-func mcpEntitiesResource(ctx context.Context, handler *Handler, resource mcpResourceURI) (any, error) {
+func (handler *Handler) mcpEntitiesResource(ctx context.Context, resource mcpResourceURI) (any, error) {
 	if err := resource.only(mcpQueryDeviceID, mcpQueryLimit, mcpQueryCursor); err != nil {
 		return nil, err
 	}
@@ -487,7 +481,7 @@ func mcpEntitiesResource(ctx context.Context, handler *Handler, resource mcpReso
 }
 
 // mcpDevicesResource reads one page of Devices.
-func mcpDevicesResource(ctx context.Context, handler *Handler, resource mcpResourceURI) (any, error) {
+func (handler *Handler) mcpDevicesResource(ctx context.Context, resource mcpResourceURI) (any, error) {
 	if err := resource.only(mcpQueryLimit, mcpQueryCursor); err != nil {
 		return nil, err
 	}
@@ -505,7 +499,7 @@ func mcpDevicesResource(ctx context.Context, handler *Handler, resource mcpResou
 }
 
 // mcpAdaptersResource reads one page of Adapters.
-func mcpAdaptersResource(ctx context.Context, handler *Handler, resource mcpResourceURI) (any, error) {
+func (handler *Handler) mcpAdaptersResource(ctx context.Context, resource mcpResourceURI) (any, error) {
 	if err := resource.only(mcpQueryLimit, mcpQueryCursor); err != nil {
 		return nil, err
 	}
@@ -524,7 +518,7 @@ func mcpAdaptersResource(ctx context.Context, handler *Handler, resource mcpReso
 
 // mcpCommandsResource reads one page of household Command history, optionally
 // filtered by Entity and status.
-func mcpCommandsResource(ctx context.Context, handler *Handler, resource mcpResourceURI) (any, error) {
+func (handler *Handler) mcpCommandsResource(ctx context.Context, resource mcpResourceURI) (any, error) {
 	if err := resource.only(mcpQueryEntityID, mcpQueryStatus, mcpQueryLimit, mcpQueryCursor); err != nil {
 		return nil, err
 	}
@@ -675,4 +669,61 @@ func (uri mcpResourceURI) page() (mcpPageQuery, error) {
 type mcpPageQuery struct {
 	Limit  int
 	Cursor string
+}
+
+// mcpResourceInputError is an unreadable resource URI or query. It becomes a
+// JSON-RPC invalid-params error, mirroring the Huma 400 for a malformed
+// request.
+type mcpResourceInputError struct {
+	message string
+}
+
+// Error implements the error interface.
+func (err *mcpResourceInputError) Error() string {
+	return err.message
+}
+
+// mcpResourceNotFoundError reports a resource URI this server does not serve.
+// Read dispatchers return it so one place translates it to the SDK's
+// resource-not-found error.
+type mcpResourceNotFoundError struct{}
+
+// Error implements the error interface.
+func (mcpResourceNotFoundError) Error() string {
+	return "resource not found"
+}
+
+// mcpResourceFailure translates one failed resource read into the JSON-RPC error
+// a client sees: a missing parent becomes resource-not-found, unreadable input
+// becomes invalid params, and anything else stays internal without leaking
+// detail.
+func mcpResourceFailure(uri string, err error) error {
+	if inputError, ok := errors.AsType[*mcpResourceInputError](err); ok {
+		return mcpInvalidParamsError(inputError.message)
+	}
+	if _, ok := errors.AsType[mcpResourceNotFoundError](err); ok {
+		return mcp.ResourceNotFoundError(uri)
+	}
+	if toolError, ok := errors.AsType[*mcpapi.ToolError](err); ok {
+		switch toolError.Code {
+		case string(mcpFailureEntityNotFound), string(mcpFailureDeviceNotFound),
+			string(mcpFailureAdapterNotFound), string(mcpFailureCommandNotFound):
+			return mcp.ResourceNotFoundError(uri)
+		case string(mcpFailureInvalidRequest):
+			return mcpInvalidParamsError(toolError.Message)
+		}
+	}
+	return mcpResourceInternalError()
+}
+
+// mcpInvalidParamsError reports one unreadable resource request with the
+// JSON-RPC invalid-params code.
+func mcpInvalidParamsError(message string) error {
+	return &jsonrpc.Error{Code: jsonrpc.CodeInvalidParams, Message: message}
+}
+
+// mcpResourceInternalError reports a 500-class resource failure without leaking
+// detail to the client.
+func mcpResourceInternalError() error {
+	return &jsonrpc.Error{Code: jsonrpc.CodeInternalError, Message: "internal error"}
 }
