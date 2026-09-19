@@ -68,6 +68,20 @@ Then restart vite. Same loopback/trusted-network rules as above: the key and
 the unauthenticated `hearthd` must never face anything untrusted. No tests;
 see `web/src/pages/ChatPage.tsx`.
 
+## Agent prototype (server-side, rough, dev only)
+
+`/agent` drives hearthd's experimental Go agent (`POST /v1/agent/conversations`,
+`POST .../{id}/messages`, `GET .../{id}/messages`): Eino ReAct in-process with
+SQLite conversation history. Turns stream over SSE (`POST
+.../{id}/messages/stream`: `turn.started`, `tool.started`, `tool.finished`,
+`turn.finished`/`turn.failed`) so tool activity renders incrementally; the page
+reconciles with history at turn end. The stream route is a plain Echo handler
+and stays out of `openapi.json`. The browser holds no model key; the
+conversation ID persists in `localStorage` while history is durable
+server-side. Requires Core started with `OPENAI_API_KEY` (plus `OPENAI_MODEL`,
+default `gpt-5.6-luna`); without it the page reports the routes unregistered.
+No tests; see `web/src/pages/AgentPage.tsx` and `internal/modules/agent`.
+
 ## Build
 
 ```sh

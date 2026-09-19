@@ -51,6 +51,19 @@ type AdapterRuntime struct {
 	EndReason       sql.NullString
 }
 
+type AgentConversation struct {
+	ID        string
+	CreatedAt string
+}
+
+type AgentMessage struct {
+	ID             int64
+	ConversationID string
+	Role           string
+	MessageJson    string
+	CreatedAt      string
+}
+
 type Automation struct {
 	ID             string
 	Revision       int64

@@ -2,17 +2,23 @@ package hearthd
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"fmt"
 	"log/slog"
 	"net"
 	"net/http"
+	"os"
 	"time"
 
+	"github.com/danielgtaylor/huma/v2"
+	"github.com/labstack/echo/v5"
 	natsgo "github.com/nats-io/nats.go"
 	"github.com/nats-io/nats.go/jetstream"
 
 	contractsv1 "github.com/mholtzscher/hearth/contracts/v1"
+	"github.com/mholtzscher/hearth/internal/mcpapi"
+	"github.com/mholtzscher/hearth/internal/modules/agent"
 	"github.com/mholtzscher/hearth/internal/modules/automations"
 	automationsnats "github.com/mholtzscher/hearth/internal/modules/automations/nats"
 	automationssqlite "github.com/mholtzscher/hearth/internal/modules/automations/sqlite"
@@ -40,6 +46,55 @@ func (err *runStageError) Error() string {
 }
 
 func (err *runStageError) Unwrap() error { return err.err }
+
+// startAgentService assembles the experimental household agent: MCP tools
+// over the application's MCP server, then the service and its routes. A
+// catalog problem fails startup loudly instead of serving a tool-less agent.
+func startAgentService(
+	ctx context.Context,
+	mcpServer *mcpapi.Server,
+	database *sql.DB,
+	handler http.Handler,
+	api huma.API,
+	logger *slog.Logger,
+	agentKey string,
+) (*agent.Service, error) {
+	agentTools, err := agent.MCPTools(ctx, mcpServer)
+	if err != nil {
+		return nil, err
+	}
+	service, err := agent.NewService(ctx, agent.Config{
+		DB:    database,
+		Tools: agentTools,
+		Model: agent.ModelConfig{
+			APIKey:          agentKey,
+			Model:           agentModelName(),
+			BaseURL:         os.Getenv("OPENAI_BASE_URL"),
+			ReasoningEffort: os.Getenv("OPENAI_REASONING_EFFORT"),
+		},
+		Logger: logger,
+	})
+	if err != nil {
+		return nil, err
+	}
+	agent.Register(huma.NewGroup(api, "/v1"), service)
+	// The turn stream needs the Echo router directly: Huma has no SSE
+	// primitive. The handler's dynamic type is *echo.Echo; a future
+	// transport change must revisit this assertion with it.
+	if echoRouter, ok := handler.(*echo.Echo); ok {
+		agent.RegisterStream(echoRouter, service)
+	}
+	return service, nil
+}
+
+// agentModelName selects the chat model for the experimental agent spike,
+// defaulting to the household model when the environment is silent.
+func agentModelName() string {
+	if model := os.Getenv("OPENAI_MODEL"); model != "" {
+		return model
+	}
+	return "gpt-5.6-luna"
+}
 
 // ErrorStage reports the failed startup stage carried by err, or "run" when
 // the error carries no stage. Executables use it for the process.failed stage
@@ -74,6 +129,7 @@ func Run(
 	coreLogger := logger.With(slog.String("component", "core"))
 	devicesLogger := logger.With(slog.String("component", "devices"))
 	automationsLogger := logger.With(slog.String("component", "automations"))
+	agentLogger := logger.With(slog.String("component", "agent"))
 	natsLogger := logger.With(slog.String("component", "nats"))
 	shutdown := &coreShutdown{runContext: ctx, logger: processLogger}
 	// Register resources as they start so this defer also handles partial startup.
@@ -293,9 +349,22 @@ func Run(
 	)
 	healthSupervisor := startHealthSupervisor(dependencyContext, readiness, service, coreLogger)
 	shutdown.healthSupervisor = healthSupervisor
-	handler, _, _ := newHTTPHandlerWithMCP(
+	handler, api, mcpServer := newHTTPHandlerWithMCP(
 		service, automationService, readiness, service, automationService, coreLogger,
 	)
+	// Experimental agent spike, env-gated with no config keys: without an
+	// OPENAI_API_KEY the /v1/agent routes stay unregistered and Core is
+	// otherwise unchanged.
+	if agentKey := os.Getenv("OPENAI_API_KEY"); agentKey != "" {
+		if _, agentErr := startAgentService(
+			ctx, mcpServer, database, handler, api, agentLogger, agentKey,
+		); agentErr != nil {
+			return failStage("start_agent", agentErr)
+		}
+		logStartupStage(ctx, coreLogger, "agent_registered")
+	} else {
+		coreLogger.InfoContext(ctx, "agent disabled: OPENAI_API_KEY is not set")
+	}
 	// Bind the socket explicitly so http_listening is only logged after the
 	// address is actually held; a bind failure never produces that event.
 	listener, listenErr := (&net.ListenConfig{}).Listen(ctx, "tcp", config.HTTPAddr)
