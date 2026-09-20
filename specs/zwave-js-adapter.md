@@ -1,12 +1,12 @@
 # Z-Wave JS Adapter implementation spec
 
-**Status:** Draft for review
+**Status:** Draft for review; D1-D5 implemented, and the schema-29 DTO assumptions were corrected against tagged upstream sources (see Evidence for source-derived DTO shapes)
 **Type:** Feature plan
 **Effort:** XL, approximately 5 to 8 focused days at 60% confidence
 **Date:** 2026-09-15
 **Baseline:** branch `zwave` at `c8abc58`
 **Depends on:** the existing Adapter SDK, Adapter-owned mapping inventory, multi-Entity registration, Adapter health, and Entity availability
-**Target evidence:** an existing household Z-Wave network managed by Z-Wave JS UI; one binary switch and one multilevel dimmer
+**Target evidence:** an existing household Z-Wave network managed by Z-Wave JS UI; one binary switch and one multilevel dimmer. Not yet collected: every shape in this spec is derived from upstream source and scripted fixtures, not from this household.
 
 ## Problem
 
@@ -24,7 +24,7 @@ Hearth HTTP -> hearthd -> native Core NATS -> Go Adapter SDK Session
     -> Z-Wave JS UI -> controller -> existing Z-Wave network -> device
 ```
 
-Use API schema version 29. It supplies endpoint state, string interview stages, endpoint labels, `node.poll_value`, `node.get_state`, and structured `node.set_value` results while avoiding dependence on newer unrelated fields. A server is compatible when its version frame contains `minSchemaVersion <= 29 <= maxSchemaVersion` and its `homeId` agrees with the start-listening snapshot.
+Use API schema version 29. It supplies endpoint state, string interview stages, endpoint labels, `node.poll_value`, `node.get_state`, and structured `node.set_value` results while avoiding dependence on newer unrelated fields. Z-Wave JS server 3.10.1 declares `minSchemaVersion` 0 and `maxSchemaVersion` 50, so schema 29 sits inside the range it advertises. A server is compatible when its version frame contains `minSchemaVersion <= 29 <= maxSchemaVersion` and its `homeId` agrees with the start-listening snapshot.
 
 The WebSocket boundary is preferred over Z-Wave JS UI's MQTT gateway because it provides:
 
@@ -125,8 +125,8 @@ type serverVersion struct {
     DriverVersion    string `json:"driverVersion"`
     ServerVersion    string `json:"serverVersion"`
     HomeID           *uint32 `json:"homeId"`
-    MinSchemaVersion int    `json:"minSchemaVersion"`
-    MaxSchemaVersion int    `json:"maxSchemaVersion"`
+    MinSchemaVersion *int   `json:"minSchemaVersion"`
+    MaxSchemaVersion *int   `json:"maxSchemaVersion"`
 }
 
 type requestEnvelope struct {
@@ -141,10 +141,14 @@ type resultEnvelope struct {
     Result            json.RawMessage `json:"result,omitempty"`
     ErrorCode         string          `json:"errorCode,omitempty"`
     ZWaveErrorCode    *int            `json:"zwaveErrorCode,omitempty"`
+    ZWaveErrorMessage string          `json:"zwaveErrorMessage,omitempty"`
+    // Emitted only from schema 32; decoded defensively and never required.
     ZWaveErrorCodeName string         `json:"zwaveErrorCodeName,omitempty"`
     Message           string          `json:"message,omitempty"`
 }
 ```
+
+**Corrected against source.** Schema 29 reports every failure through one shape only: `{"type":"result","success":false,"messageId":...,"errorCode":"zwave_error","zwaveErrorCode":<number>,"zwaveErrorMessage":"<text>"}`. `zwave-js-server@3.10.1` routes both `sendResultError` and `sendResultZWaveError` into that encoding while `schemaVersion <= 31`, so a schema-29 failure carries `zwaveErrorMessage` and never a bare `message`, and it carries no `zwaveErrorCodeName` (that field and the generic `message` field appear only from schema 32). A client must therefore read diagnostic text from `zwaveErrorMessage`.
 
 The client requires the first frame to be `type:"version"`, requires a non-nil Home ID, verifies schema 29 compatibility, sends `initialize` with schema 29 and `additionalUserAgentComponents:{"hearth":"0.1.0"}`, waits for success, then sends `start_listening` and waits for the complete snapshot result.
 
@@ -187,9 +191,17 @@ type endpointState struct {
 }
 
 type valueID struct {
-    CommandClass int    `json:"commandClass"`
-    Endpoint     int    `json:"endpoint,omitempty"`
-    Property     string `json:"property"`
+    CommandClass int             `json:"commandClass"`
+    Endpoint     int             `json:"endpoint,omitempty"`
+    Property     valueProperty   `json:"property"`
+    PropertyKey  json.RawMessage `json:"propertyKey,omitempty"`
+}
+
+// valueProperty records a string property name, or records that the upstream
+// name was a JSON number without failing the enclosing node frame.
+type valueProperty struct {
+    Name    string
+    Numeric bool
 }
 
 type valueMetadata struct {
@@ -227,7 +239,7 @@ type nodeSetValueRequest struct {
 
 type nodeSetValueResult struct {
     Result struct {
-        Status string `json:"status"`
+        Status json.RawMessage `json:"status"`
     } `json:"result"`
 }
 
@@ -251,7 +263,7 @@ type nodeGetStateResult struct {
 }
 ```
 
-Successful set statuses are the schema-29 encodings of `Working`, `Success`, and `SuccessUnsupervised`. Every other status or a successful envelope without a recognized status is an upstream rejection. Exact fixture values must be captured before implementation locks the string/number decoder; the decoder may accept the documented enum representation only, never infer success from a non-empty result.
+Successful set statuses are exactly the numeric schema-29 encodings of `Working` (`1`), `SuccessUnsupervised` (`254`), and `Success` (`255`). Every other status, no status at all, and a string status are upstream rejections; success is never inferred from a non-empty result. A successful `node.set_value` frame is doubly wrapped because `SetValueResultType` is itself `{result: SetValueResult}` and the transport envelope adds another `result`: `{"type":"result","success":true,"messageId":...,"result":{"result":{"status":255}}}`. A `remainingDuration` or `message` property may accompany the status and is ignored by v1.
 
 `node.poll_value` returns the freshly read value in its correlated result. It is the only upstream report eligible for Command-linked evidence. `node.get_state` refreshes one complete node plan after topology or metadata events; it is not a physical-value refresh and does not satisfy a Command.
 
@@ -275,6 +287,8 @@ type valueEventArgs struct {
     NewValue json.RawMessage `json:"newValue"`
 }
 ```
+
+**Corrected against source.** Controller `node added` and `node removed` carry no top-level `nodeId`: the payload embeds the whole node dump under `event.node`, so the node ID is read from `event.node.nodeId`. Node-sourced Events (`ready`, `value updated`, `sleep`, and the rest) do carry `nodeId`, which is why this DTO keeps the field optional. Schema 29 `node removed` carries `reason` (`RemoveNodeReason`); the `replaced` boolean it replaced belongs to schema 28 and earlier. The `ready` Event carries its refreshed dump under `event.nodeState`.
 
 V1 consumes controller `node added` and `node removed`, node `ready`, `interview completed`, `value added`, `value updated`, `value removed`, `metadata updated`, `wake up`, `sleep`, `alive`, and `dead`. Inventory-shape events trigger a correlated `node.get_state` and atomic re-plan. `sleep` immediately invalidates Command routes because v1 does not permit wake-up-queued writes; `wake up` refreshes node state before routes can return. Value updates are projected only after their Value ID resolves against the active immutable route snapshot. Unknown Events are ignored with bounded diagnostics.
 
@@ -514,8 +528,10 @@ internal/
 │       ├── observation.go              # new — current-value translation and typed Observations
 │       ├── observation_test.go         # new — binary, 0–99, invalid values, derived power
 │       ├── runtime.go                  # new — generations, routes, per-node queues, event/poll coordination
+│       ├── runtime_regression_test.go  # new — deadline and generation-boundary regressions
 │       ├── runtime_test.go             # new — reconnect and concurrency state-machine tests
 │       ├── testhelp_test.go            # new — fake Session, connection, and clock
+│       ├── fuzz_test.go                # new — bounded snapshot and Event decoder fuzz targets
 │       └── testdata/
 │           ├── switch-session.jsonl    # new — sanitized server transcript
 │           └── dimmer-session.jsonl    # new — sanitized server transcript
@@ -524,6 +540,7 @@ internal/
         ├── config.go                   # new — strict YAML and trusted ws:// validation
         ├── config_test.go              # new — config validation table
         ├── run.go                      # new — SDK and Adapter assembly/supervision
+        ├── run_test.go                 # new — cancellation and reject-before-connect tests (external test package)
         └── run_integration_test.go     # new — scripted WS + real NATS/Core public-boundary test
 docs/
 └── architecture.md                     # modify after approval — accepted Z-Wave JS Adapter constraint
@@ -583,7 +600,7 @@ Go tests should target fault detection: mutate Command Class/property matching, 
 
 | Risk | Likelihood | Impact | Mitigation |
 |---|---:|---:|---|
-| Actual server event or SetValue enum encoding differs from inferred DTOs | Medium | High | D6 captures sanitized real frames before decoder lock-in; scripted tests use captured shapes |
+| Actual server event or SetValue enum encoding differs from inferred DTOs | Low after source review | High | Schema-29 DTO shapes are now derived from the tagged `zwave-js-server@3.10.1` and `node-zwave-js` sources (see the evidence note), not inferred; D6 still captures the target network's real frames, versions, and frame size, and scripted tests use those shapes |
 | `emitValueUpdateAfterSetValue` creates optimistic reports | High | Medium | Never link Events to Commands; poll current Value ID and use the correlated result |
 | Full snapshot exceeds the fixed frame limit on a large network | Low | High | Measure target snapshot, keep a documented 16 MiB bound, fail/reconnect rather than truncate |
 | Node ID changes or is reused after re-inclusion | Medium | High | New Binding when the ID changes; define same-ID identity as a network slot; require disable-before-removal and defer explicit reconciliation |
@@ -606,12 +623,40 @@ Go tests should target fault detection: mutate Command Class/property matching, 
 - Z-Wave JS server API schema history: <https://github.com/zwave-js/zwave-js-server/blob/3.10.1/API_SCHEMA.md>
 - Z-Wave JS server snapshot shapes: <https://github.com/zwave-js/zwave-js-server/blob/3.10.1/src/lib/state.ts>
 - Z-Wave JS server request handling: <https://github.com/zwave-js/zwave-js-server/blob/3.10.1/src/lib/server.ts>
+- Z-Wave JS server schema range: <https://github.com/zwave-js/zwave-js-server/blob/3.10.1/src/lib/const.ts>
+- Z-Wave JS server failure encoding: <https://github.com/zwave-js/zwave-js-server/blob/3.10.1/src/lib/error.ts>
+- Z-Wave JS server event forwarding: <https://github.com/zwave-js/zwave-js-server/blob/3.10.1/src/lib/forward.ts>
+- Z-Wave JS server node commands and `SetValueResult` wrapping: <https://github.com/zwave-js/zwave-js-server/blob/3.10.1/src/lib/node/message_handler.ts> and <https://github.com/zwave-js/zwave-js-server/blob/3.10.1/src/lib/common.ts>
+- Z-Wave JS `SetValueStatus` enum: <https://github.com/zwave-js/node-zwave-js/blob/master/packages/cc/src/lib/SetValueResult.ts>
 - Binary Switch Command Class: <https://zwave-js.github.io/node-zwave-js/#/api/CCs/BinarySwitch>
 - Multilevel Switch Command Class: <https://zwave-js.github.io/node-zwave-js/#/api/CCs/MultilevelSwitch>
 - Z-Wave JS UI setup: <https://zwave-js.github.io/zwave-js-ui/#/usage/setup>
 
+## Evidence for source-derived DTO shapes
+
+This note records what has and has not been proved about the upstream wire shapes. It is a source review, **not** a real capture: no live Z-Wave JS UI instance, controller, or physical device was contacted while producing it, and no physical actuation was performed.
+
+Proved by reading tagged upstream sources at `zwave-js-server@3.10.1` and its `zwave-js` peer:
+
+| Claim | Source of truth |
+|---|---|
+| Server 3.10.1 advertises `minSchemaVersion` 0 and `maxSchemaVersion` 50, so schema 29 is in range | `src/lib/const.ts` |
+| Every schema-29 failure result is `{type:"result",success:false,messageId,errorCode:"zwave_error",zwaveErrorCode,zwaveErrorMessage}`; `zwaveErrorCodeName` and a generic `message` appear only from schema 32 | `src/lib/server.ts` `sendResultZWaveError`/`sendResultError`; `src/lib/error.ts` `ErrorCode.zwaveError = "zwave_error"` |
+| `node.set_value` returns `{result: SetValueResult}` from schema 29, so a successful frame is `result.result.status` | `src/lib/common.ts` `setValueOutgoingMessage`; `src/lib/node/outgoing_message.ts` |
+| `SetValueStatus` is numeric: `NoDeviceSupport` 0, `Working` 1, `Fail` 2, `EndpointNotFound` 3, `NotImplemented` 4, `InvalidValue` 5, `SuccessUnsupervised` 254, `Success` 255 | `node-zwave-js` `packages/cc/src/lib/SetValueResult.ts` |
+| `node.poll_value` returns `{value}` from the freshly read Value; `node.get_state` returns `{state: dumpNode(...)}` | `src/lib/node/message_handler.ts` |
+| `initialize` accepts `schemaVersion` and `additionalUserAgentComponents` and answers `{}`; `start_listening` answers `{state: ZwaveState}` | `src/lib/incoming_message.ts`; `src/lib/server.ts`; `src/lib/outgoing_message.ts`; `src/lib/state.ts` `dumpState` |
+| Controller `node added` and `node removed` put the node dump in `event.node` and send no top-level `nodeId`; schema-29 `node removed` sends `reason`, not `replaced` | `src/lib/forward.ts` |
+| `nodeState` carries `nodeId`, numeric `status`, string `interviewStage`, `isControllerNode`, `isListening`, `endpoints[].endpointLabel`, and `values[]` with `metadata` | `src/lib/state.ts` `dumpNode`/`dumpEndpoint`/`dumpValue` |
+
+Not proved, and not claimed: the target household's Z-Wave JS UI version, bundled server version, actual switch and dimmer models, endpoint layout, snapshot size, real Home ID, and real capture of SetValue status or poll results (A14), and any physical actuation (A15). Those remain D6 obligations. The checked-in `internal/adapters/zwavejs/testdata` JSONL files are sanitized fixtures, not captured household traffic.
+
+## Deliverable status
+
+D1 through D5 are implemented. A12 is proved by `TestRunAssemblesProcessAcrossScriptedServerAndCore` in `internal/app/zwavejs/run_integration_test.go`, which crosses a scripted WebSocket server, the Adapter, an SDK Session over embedded JetStream NATS, Core registration, Observation, and Command transports, and SQLite-backed reads for one Binary Switch and one Multilevel Switch. No acceptance criterion is marked complete here: A1-A13 require a full `mise run validate` pass on the integrated tree, and A14-A15 require D6 real-network evidence that has not been collected.
+
 ## Open questions before implementation
 
 - The target network's exact Z-Wave JS UI version, bundled server version, switch model, dimmer model, endpoint layout, and frame size must be captured in D6. This does not change the architecture unless schema 29 is unavailable.
-- The exact JSON representation of schema-29 SetValue statuses must be fixed from authoritative generated output or capture before production decoding; this is owned by D1, not left to runtime guessing.
-- Whether ordinary post-set Events expose a reliable source discriminator should be investigated from captured data. V1 remains correct without one because only poll results are linked.
+- The exact JSON representation of schema-29 SetValue statuses is resolved by the evidence note above: `{"result":{"result":{"status":<number>}}}` with the numeric `SetValueStatus` enum. A real capture may still confirm how the target firmware reports `Working` versus `Success`.
+- Ordinary post-set Events expose no reliable source discriminator: `zwave-js` removes the internal `source` field while translating value events. V1 therefore links only poll results and treats every value Event as ordinary evidence.

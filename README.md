@@ -280,6 +280,61 @@ For diagnostics, check adapter logs together with the adapter and Entity reads:
 
 Real evidence compatibility: the checked-in fixture `internal/adapters/ecowitt/testdata/gw2000-ws90-report.txt` preserves the field names and representative value shapes of a captured 712-byte GW2000B V3.3.2 report for a WS90 array, with the PASSKEY and source timestamp sanitized. The capture arrived roughly every eight seconds, unretained, at effective QoS 0 while the subscriber requested QoS 1; the example's 16-second upload interval is an operator cadence choice, and unknown firmware works only when it keeps the specified field semantics.
 
+### Z-Wave JS adapter
+
+`hearth-adapter-zwavejs` connects an operator-managed Z-Wave JS UI service to Hearth through the embedded Z-Wave JS server's WebSocket API. It targets API schema 29, and its wire shapes are derived from Z-Wave JS server 3.10.1 sources (driver 15.x, schema range 0–50); no live Z-Wave JS UI instance or physical device has been exercised yet. A server is compatible when its version frame contains `minSchemaVersion <= 29 <= maxSchemaVersion` and its Home ID agrees with the `start_listening` snapshot. The Adapter never reads or receives S0/S2 keys, never changes network membership, and never sends inclusion, exclusion, SmartStart, interview, healing, route-rebuild, association, configuration, firmware, or controller-backup operations.
+
+Enable the Z-Wave JS server in Z-Wave JS UI and point the adapter at it. The local Compose stack publishes NATS on loopback only; Z-Wave JS UI runs separately under the operator's normal supervision:
+
+```sh
+cp configs/hearthd.example.yaml configs/hearthd.yaml
+cp configs/zwavejs.example.yaml configs/zwavejs.yaml
+mise run brokers
+go run ./cmd/hearthd -config configs/hearthd.yaml
+go run ./cmd/hearth-adapter-zwavejs -config configs/zwavejs.yaml
+```
+
+The configuration accepts only an absolute lowercase `ws://` URL with an explicit host and port, no user info, query, or fragment, and an empty or root path. It has no credential, token, TLS, or certificate field at all: `wss://` is rejected. The embedded Z-Wave JS server offers no authentication and no TLS, so its listener, Hearth NATS, Hearth HTTP, and the Adapter must stay on loopback or a trusted private network. Exposing this configuration to an untrusted network is unsupported. Disabling optimistic value updates in Z-Wave JS UI is recommended but is not a correctness dependency.
+
+Discovery is automatic and needs no allowlist. Every ready, always-listening, completely interviewed non-controller node with a valid grounded Value pair registers one Device:
+
+- Binary Switch (Command Class 37) `currentValue`/`targetValue` registers `hearth.power/v1` with support `{"state":{},"operations":{"set":{}}}` and writes a boolean.
+- Multilevel Switch (Command Class 38) registers `hearth.brightness/v1` with support `{"state":{"maximum":99},"operations":{"set":{"step":1}}}` and writes the native 0–99 level, and also provides power when the endpoint has no valid Binary Switch pair. `off` writes `0` and `on` writes `255`, the Command Class restore-previous-level value.
+- Binary Switch owns power when both Command Classes are valid on one endpoint.
+
+Device kind is `light` when any brightness Entity exists and `relay` otherwise. One Z-Wave node is one Device; root Entities are named `Power` and `Brightness`, and endpoint Entities prefix a valid endpoint label with keys such as `power-ep1`. Sleeping and frequently-listening actuators are excluded because Z-Wave JS could defer a write into a wake-up queue beyond Hearth's deadline, and a `sleep` Event makes a node temporarily unroutable until `wake up` plus a fresh node state prove it eligible again.
+
+Identity is the network slot, not the hardware: the Binding key is `zwave-<homeId>-node-<nodeId>` and the Device external ID is `<homeId>/node/<nodeId>`. Node names, labels, locations, and manufacturer/product identifiers are mutable metadata and never enter identity. Re-inclusion normally assigns a new node ID and therefore a new Binding and Device, while the previous Device stays unavailable. A controller may reuse a removed node's ID, and Z-Wave exposes no universal immutable physical-device identifier, so **before removing a node, disable its Hearth Entities**; reusing that slot safely requires explicit reconciliation support, which v1 defers. If this Adapter ID's owned mappings carry a different Home ID than the connected controller, the Adapter registers nothing and reports `adapter.hearth-adapter-zwavejs.network_identity_mismatch` instead of silently reusing node-number-shaped identities.
+
+The Adapter remains `unknown` until it has connected, negotiated schema 29, validated one Home ID, received and reconciled a complete snapshot, and installed routes. An empty network with a valid snapshot is healthy. Entity availability is explicit and never inferred from State.
+
+Command evidence is poll-linked. A power or brightness `set` is accepted only after a recognized successful numeric `node.set_value` result and is satisfied only by a fresh correlated `node.poll_value` read; a post-set `value updated` event is at most a wake hint for an extra poll and is never linked evidence, because Z-Wave JS UI may emit that update optimistically. Z-Wave JS exposes no cancellation for a write already handed to the driver, so a timed-out write is reported as an ambiguous attempt rather than as proof that no physical effect can occur later.
+
+Use the HTTP API to inspect adapter health, Entity availability, and canonical IDs, then verify a Command:
+
+```sh
+curl http://127.0.0.1:8080/v1/adapters/zwavejs
+curl http://127.0.0.1:8080/v1/entities
+curl http://127.0.0.1:8080/v1/entities/ent_...
+curl -X POST http://127.0.0.1:8080/v1/entities/ent_.../commands \
+  -H 'content-type: application/json' \
+  -d '{"operation":"set","parameters":{"value":true}}'
+curl -X POST http://127.0.0.1:8080/v1/entities/ent_.../commands \
+  -H 'content-type: application/json' \
+  -d '{"operation":"set","parameters":{"value":99}}'
+```
+
+`99` is the native top of the Multilevel Switch range: brightness uses native 0–99 rather than percent 0–100 because Hearth observes exact equality and 101 canonical values cannot round-trip through 100 native levels.
+
+For diagnostics, check adapter logs together with the adapter and Entity reads:
+
+- `hearth.external_system_unavailable` indicates that the WebSocket endpoint cannot be reached or the connection was lost; verify the Z-Wave JS server listener, `zwave_js.url`, and the trusted-network boundary.
+- `adapter.hearth-adapter-zwavejs.incompatible_protocol` indicates a version frame whose schema range excludes 29; update Z-Wave JS UI or Z-Wave JS server, or extend the Adapter deliberately.
+- `adapter.hearth-adapter-zwavejs.invalid_snapshot` indicates a malformed version frame or snapshot; check the Z-Wave JS UI driver state and its logs.
+- `adapter.hearth-adapter-zwavejs.network_identity_mismatch` indicates that owned mappings and the connected controller describe different Z-Wave networks; restore the intended endpoint or configure a new `adapter_id` for the other network.
+- Unavailable reasons distinguish `adapter.hearth-adapter-zwavejs.node_dead`, `adapter.hearth-adapter-zwavejs.node_asleep`, `adapter.hearth-adapter-zwavejs.node_not_ready`, `adapter.hearth-adapter-zwavejs.node_missing`, `adapter.hearth-adapter-zwavejs.node_unknown`, and `adapter.hearth-adapter-zwavejs.capability_missing`. A node that returns to `Unknown` after being assessed reports unavailable rather than available.
+- A Command timeout means no fresh matching polled value arrived before the Entity-type deadline. Check that the node is always-listening and alive, that the device reports `currentValue`, and whether the physical device is slow enough to need a longer poll window. A timeout does not cancel radio work; re-read State before assuming the command had no effect.
+
 ## Application logs
 
 Hearth executables write to stderr with `--log-level info --log-format text` by default. Use `--log-format json` for filtering, or `--log-level debug` for Observation and Entity Event progress:
