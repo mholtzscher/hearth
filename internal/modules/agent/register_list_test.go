@@ -13,6 +13,7 @@ import (
 	"github.com/danielgtaylor/huma/v2/adapters/humaecho"
 	"github.com/labstack/echo/v5"
 
+	"github.com/mholtzscher/hearth/internal/modules/agent/sqlite/dbsqlc"
 	"github.com/mholtzscher/hearth/internal/platform/db/dbtest"
 )
 
@@ -21,7 +22,7 @@ import (
 func newListRouteFixture(t *testing.T) (*echo.Echo, *Service, context.Context) {
 	t.Helper()
 	database := dbtest.OpenMigrated(t, filepath.Join(t.TempDir(), "hearth.db"))
-	service := &Service{database: database}
+	service := &Service{database: database, queries: dbsqlc.New(database)}
 	router := echo.New()
 	openapi := humaecho.New(router, huma.DefaultConfig("Hearth", "1.0.0"))
 	Register(huma.NewGroup(openapi, "/v1"), service)

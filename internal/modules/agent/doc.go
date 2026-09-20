@@ -12,8 +12,9 @@
 // conversation only, never the outcome.
 //
 // Deliberate decisions, each still a graduation question:
-//   - History uses plain database/sql, not the sqlc pipeline the devices and
-//     automations modules use; the store is three statements.
+//   - Conversation history uses the sqlc pipeline the devices and automations
+//     modules use: generated statements in sqlite/dbqueries with generated Go
+//     in sqlite/dbsqlc, keeping the public service types unchanged.
 //   - Model selection, endpoint, reasoning level, and the API key file come
 //     from the required `agent` Core configuration block. The key is read from
 //     its own local secret file, and Core always constructs the agent, so the

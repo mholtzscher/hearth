@@ -12,6 +12,7 @@ import (
 	"github.com/cloudwego/eino/components/tool"
 	"github.com/cloudwego/eino/schema"
 
+	"github.com/mholtzscher/hearth/internal/modules/agent/sqlite/dbsqlc"
 	"github.com/mholtzscher/hearth/internal/platform/db/dbtest"
 )
 
@@ -92,7 +93,7 @@ func newTurnService(t *testing.T, chatModel model.ToolCallingChatModel) *Service
 func newConversationStore(t *testing.T, retention time.Duration) *Service {
 	t.Helper()
 	database := dbtest.OpenMigrated(t, filepath.Join(t.TempDir(), "hearth.db"))
-	return &Service{database: database, retention: retention}
+	return &Service{database: database, queries: dbsqlc.New(database), retention: retention}
 }
 
 // mustCreateConversation opens one conversation through the real path.

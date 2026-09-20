@@ -19,6 +19,7 @@ import (
 	"github.com/cloudwego/eino/schema"
 	"github.com/google/uuid"
 
+	"github.com/mholtzscher/hearth/internal/modules/agent/sqlite/dbsqlc"
 	"github.com/mholtzscher/hearth/internal/platform/lifecycle"
 )
 
@@ -132,6 +133,7 @@ var ErrAdmissionUnavailable = errors.New("agent admission is unavailable")
 // durable SQLite conversation history.
 type Service struct {
 	database  *sql.DB
+	queries   *dbsqlc.Queries
 	chatModel model.ToolCallingChatModel
 	tools     []tool.BaseTool
 	maxSteps  int
@@ -187,6 +189,7 @@ func NewService(ctx context.Context, config Config) (*Service, error) {
 	}
 	return &Service{
 		database:  config.DB,
+		queries:   dbsqlc.New(config.DB),
 		chatModel: chatModel,
 		tools:     config.Tools,
 		maxSteps:  maxSteps,
@@ -299,10 +302,10 @@ func (service *Service) CreateConversation(ctx context.Context) (Conversation, e
 		ID:        conversationIDPrefix + strings.ReplaceAll(raw.String(), "-", ""),
 		CreatedAt: time.Now().UTC(),
 	}
-	_, err = service.database.ExecContext(ctx,
-		`INSERT INTO agent_conversations(id, created_at) VALUES (?, ?)`,
-		conversation.ID, encodeAgentTimestamp(conversation.CreatedAt),
-	)
+	err = service.queries.CreateConversation(ctx, dbsqlc.CreateConversationParams{
+		ID:        conversation.ID,
+		CreatedAt: encodeAgentTimestamp(conversation.CreatedAt),
+	})
 	if err != nil {
 		return Conversation{}, fmt.Errorf("agent create conversation: %w", err)
 	}
@@ -314,40 +317,30 @@ func (service *Service) History(ctx context.Context, conversationID string) ([]S
 	if err := service.requireConversation(ctx, conversationID); err != nil {
 		return nil, err
 	}
-	rows, err := service.database.QueryContext(ctx,
-		`SELECT id, role, message_json, created_at FROM agent_messages
-		  WHERE conversation_id = ? ORDER BY id`,
-		conversationID,
-	)
+	rows, err := service.queries.ListMessages(ctx, dbsqlc.ListMessagesParams{ConversationID: conversationID})
 	if err != nil {
 		return nil, fmt.Errorf("agent history: %w", err)
 	}
-	defer func() { _ = rows.Close() }()
 	var history []StoredMessage
-	for rows.Next() {
-		var stored StoredMessage
-		var raw string
-		var createdAt string
-		if scanErr := rows.Scan(&stored.ID, &stored.Role, &raw, &createdAt); scanErr != nil {
-			return nil, fmt.Errorf("agent history: %w", scanErr)
-		}
+	for _, row := range rows {
 		var message schema.Message
-		if unmarshalErr := json.Unmarshal([]byte(raw), &message); unmarshalErr != nil {
+		if unmarshalErr := json.Unmarshal([]byte(row.MessageJson), &message); unmarshalErr != nil {
 			return nil, fmt.Errorf("agent history: %w", unmarshalErr)
 		}
-		stored.Content = message.Content
-		for _, call := range message.ToolCalls {
-			stored.ToolCalls = append(stored.ToolCalls, call.Function.Name)
-		}
-		parsed, parseErr := decodeAgentTimestamp(createdAt)
+		parsed, parseErr := decodeAgentTimestamp(row.CreatedAt)
 		if parseErr != nil {
 			return nil, fmt.Errorf("agent history: %w", parseErr)
 		}
-		stored.CreatedAt = parsed
+		stored := StoredMessage{
+			ID:        row.ID,
+			Role:      row.Role,
+			Content:   message.Content,
+			CreatedAt: parsed,
+		}
+		for _, call := range message.ToolCalls {
+			stored.ToolCalls = append(stored.ToolCalls, call.Function.Name)
+		}
 		history = append(history, stored)
-	}
-	if rows.Err() != nil {
-		return nil, fmt.Errorf("agent history: %w", rows.Err())
 	}
 	return history, nil
 }
@@ -369,46 +362,29 @@ const maxPreviewRunes = 80
 // ListConversations reads every conversation newest-activity-first for the
 // dashboard sidebar.
 func (service *Service) ListConversations(ctx context.Context) ([]ConversationSummary, error) {
-	rows, err := service.database.QueryContext(ctx,
-		`SELECT c.id, c.created_at, COUNT(m.id), MAX(m.created_at)
-		   FROM agent_conversations AS c
-		   LEFT JOIN agent_messages AS m ON m.conversation_id = c.id
-		   GROUP BY c.id
-		   ORDER BY COALESCE(MAX(m.created_at), c.created_at) DESC`,
-	)
+	rows, err := service.queries.ListConversationSummaries(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("agent list conversations: %w", err)
 	}
-	defer func() { _ = rows.Close() }()
 	var summaries []ConversationSummary
-	for rows.Next() {
-		var summary ConversationSummary
-		var createdAt string
-		var lastMessageAt sql.NullString
-		if scanErr := rows.Scan(&summary.ID, &createdAt, &summary.MessageCount, &lastMessageAt); scanErr != nil {
-			return nil, fmt.Errorf("agent list conversations: %w", scanErr)
-		}
-		parsed, parseErr := decodeAgentTimestamp(createdAt)
+	for _, row := range rows {
+		parsed, parseErr := decodeAgentTimestamp(row.CreatedAt)
 		if parseErr != nil {
 			return nil, fmt.Errorf("agent list conversations: %w", parseErr)
 		}
-		summary.CreatedAt = parsed
-		if lastMessageAt.Valid {
-			last, lastErr := decodeAgentTimestamp(lastMessageAt.String)
+		summary := ConversationSummary{
+			ID:           row.ID,
+			CreatedAt:    parsed,
+			MessageCount: int(row.MessageCount),
+		}
+		if row.LastMessageAt.Valid {
+			last, lastErr := decodeAgentTimestamp(row.LastMessageAt.String)
 			if lastErr != nil {
 				return nil, fmt.Errorf("agent list conversations: %w", lastErr)
 			}
 			summary.LastMessageAt = &last
 		}
 		summaries = append(summaries, summary)
-	}
-	if rows.Err() != nil {
-		return nil, fmt.Errorf("agent list conversations: %w", rows.Err())
-	}
-	// Close before the preview lookups below: the database opens a single
-	// connection, so a second query cannot run while these rows are open.
-	if closeErr := rows.Close(); closeErr != nil {
-		return nil, fmt.Errorf("agent list conversations: %w", closeErr)
 	}
 	for index := range summaries {
 		if previewErr := service.attachPreview(ctx, &summaries[index]); previewErr != nil {
@@ -420,12 +396,10 @@ func (service *Service) ListConversations(ctx context.Context) ([]ConversationSu
 
 // attachPreview fills the preview from the conversation's first user message.
 func (service *Service) attachPreview(ctx context.Context, summary *ConversationSummary) error {
-	var raw string
-	err := service.database.QueryRowContext(ctx,
-		`SELECT message_json FROM agent_messages
-		  WHERE conversation_id = ? AND role = ? ORDER BY id LIMIT 1`,
-		summary.ID, "user",
-	).Scan(&raw)
+	raw, err := service.queries.GetFirstUserMessage(ctx, dbsqlc.GetFirstUserMessageParams{
+		ConversationID: summary.ID,
+		Role:           "user",
+	})
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil
 	}
@@ -698,10 +672,7 @@ func (assembler *turnAssembler) storeToolPairLocked(call, result *schema.Message
 
 // requireConversation maps a missing conversation row to the 404 sentinel.
 func (service *Service) requireConversation(ctx context.Context, conversationID string) error {
-	var present int
-	if err := service.database.QueryRowContext(ctx,
-		`SELECT 1 FROM agent_conversations WHERE id = ?`, conversationID,
-	).Scan(&present); err != nil {
+	if _, err := service.queries.GetConversation(ctx, dbsqlc.GetConversationParams{ID: conversationID}); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return ErrConversationNotFound
 		}
@@ -715,47 +686,37 @@ func (service *Service) loadModelMessages(ctx context.Context, conversationID st
 	if err := service.requireConversation(ctx, conversationID); err != nil {
 		return nil, err
 	}
-	rows, err := service.database.QueryContext(ctx,
-		`SELECT message_json FROM agent_messages WHERE conversation_id = ? ORDER BY id`,
-		conversationID,
-	)
+	rows, err := service.queries.ListMessageJson(ctx, dbsqlc.ListMessageJsonParams{ConversationID: conversationID})
 	if err != nil {
 		return nil, fmt.Errorf("agent history: %w", err)
 	}
-	defer func() { _ = rows.Close() }()
 	var history []*schema.Message
-	for rows.Next() {
-		var raw string
-		if scanErr := rows.Scan(&raw); scanErr != nil {
-			return nil, fmt.Errorf("agent history: %w", scanErr)
-		}
+	for _, raw := range rows {
 		var message schema.Message
 		if unmarshalErr := json.Unmarshal([]byte(raw), &message); unmarshalErr != nil {
 			return nil, fmt.Errorf("agent history: %w", unmarshalErr)
 		}
 		history = append(history, &message)
 	}
-	if rows.Err() != nil {
-		return nil, fmt.Errorf("agent history: %w", rows.Err())
-	}
 	return history, nil
 }
 
-// agentMessageInsertArgs is the column count of one agent_messages value tuple.
-const agentMessageInsertArgs = 4
-
-// insertMessageOne and insertMessageTwo are the only writes the assembler
-// makes: a single message, or a tool call row paired with its result row.
-const (
-	insertMessageOne = `INSERT INTO agent_messages(conversation_id, role, message_json, created_at)
-	                   VALUES (?, ?, ?, ?)`
-	insertMessageTwo = `INSERT INTO agent_messages(conversation_id, role, message_json, created_at)
-	                   VALUES (?, ?, ?, ?), (?, ?, ?, ?)`
-)
-
 // persistMessage appends one message to a conversation.
 func (service *Service) persistMessage(ctx context.Context, conversationID string, message *schema.Message) error {
-	return service.insertMessages(ctx, conversationID, insertMessageOne, message)
+	raw, err := json.Marshal(message)
+	if err != nil {
+		return fmt.Errorf("agent persist message: %w", err)
+	}
+	err = service.queries.InsertMessage(ctx, dbsqlc.InsertMessageParams{
+		ConversationID: conversationID,
+		Role:           string(message.Role),
+		MessageJson:    string(raw),
+		CreatedAt:      encodeAgentTimestamp(time.Now()),
+	})
+	if err != nil {
+		return fmt.Errorf("agent persist message: %w", err)
+	}
+	return nil
 }
 
 // persistMessagePair appends a tool call row and its result row in one
@@ -766,26 +727,26 @@ func (service *Service) persistMessagePair(
 	conversationID string,
 	call, result *schema.Message,
 ) error {
-	return service.insertMessages(ctx, conversationID, insertMessageTwo, call, result)
-}
-
-// insertMessages runs one fixed multi-row insert; query is always one of the
-// package's constant statements, never caller input.
-func (service *Service) insertMessages(
-	ctx context.Context,
-	conversationID, query string,
-	messages ...*schema.Message,
-) error {
-	args := make([]any, 0, len(messages)*agentMessageInsertArgs)
-	createdAt := encodeAgentTimestamp(time.Now())
-	for _, message := range messages {
-		raw, err := json.Marshal(message)
-		if err != nil {
-			return fmt.Errorf("agent persist message: %w", err)
-		}
-		args = append(args, conversationID, string(message.Role), string(raw), createdAt)
+	callRaw, err := json.Marshal(call)
+	if err != nil {
+		return fmt.Errorf("agent persist message: %w", err)
 	}
-	if _, err := service.database.ExecContext(ctx, query, args...); err != nil {
+	resultRaw, err := json.Marshal(result)
+	if err != nil {
+		return fmt.Errorf("agent persist message: %w", err)
+	}
+	createdAt := encodeAgentTimestamp(time.Now())
+	err = service.queries.InsertMessagePair(ctx, dbsqlc.InsertMessagePairParams{
+		ConversationID:   conversationID,
+		Role:             string(call.Role),
+		MessageJson:      string(callRaw),
+		CreatedAt:        createdAt,
+		ConversationID_2: conversationID,
+		Role_2:           string(result.Role),
+		MessageJson_2:    string(resultRaw),
+		CreatedAt_2:      createdAt,
+	})
+	if err != nil {
 		return fmt.Errorf("agent persist message: %w", err)
 	}
 	return nil

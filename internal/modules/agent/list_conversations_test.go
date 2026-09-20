@@ -8,6 +8,7 @@ import (
 
 	"github.com/cloudwego/eino/schema"
 
+	"github.com/mholtzscher/hearth/internal/modules/agent/sqlite/dbsqlc"
 	"github.com/mholtzscher/hearth/internal/platform/db/dbtest"
 )
 
@@ -22,7 +23,11 @@ type listFixture struct {
 func newListFixture(t *testing.T) *listFixture {
 	t.Helper()
 	database := dbtest.OpenMigrated(t, filepath.Join(t.TempDir(), "hearth.db"))
-	return &listFixture{t: t, service: &Service{database: database}, ctx: context.Background()}
+	service := &Service{
+		database: database,
+		queries:  dbsqlc.New(database),
+	}
+	return &listFixture{t: t, service: service, ctx: context.Background()}
 }
 
 func (fix *listFixture) create() Conversation {
