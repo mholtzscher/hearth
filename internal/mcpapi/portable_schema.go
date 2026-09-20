@@ -32,30 +32,23 @@ const (
 //
 // The SDK derives schemas with github.com/google/jsonschema-go, whose output is
 // correct JSON Schema but not portable across MCP clients. Two shapes the
-// Inspector flags in strict mode come from that derivation:
+// Inspector flags in strict mode come from that derivation: an unconstrained Go
+// value (any) derives the empty schema, which jsonschema-go marshals as the
+// boolean `true` (and its negation as `false`), and a nullable Go value derives
+// a `type` union such as `["null", "string"]` that a client reading `type` as a
+// single string either rejects or drops.
 //
-//   - An unconstrained Go value (any) derives the empty schema, and
-//     jsonschema-go marshals an empty schema as the boolean `true` (and its
-//     negation as `false`). Strict clients reject a boolean where they expect an
-//     object.
-//   - A nullable Go value derives a `type` union such as `["null", "string"]`.
-//     Clients that read `type` as a single string either reject the tool or drop
-//     the constraint.
+// The rewrite preserves what validates: `true` becomes an explicit union of
+// every JSON instance type and `false` an impossible null schema (the object
+// forms avoid Inspector's untyped-schema warning without narrowing an
+// unconstrained value to an object), and a `type` union becomes one `anyOf`
+// branch per member type carrying the sibling constraints that apply to it.
 //
-// portableSchema rewrites both shapes without changing what validates:
-//
-//   - `true` becomes an explicit union of every JSON instance type and `false`
-//     becomes an impossible null schema. These object forms avoid Inspector's
-//     untyped-schema warning while preserving the accept-all and accept-none
-//     semantics; unconstrained values are never narrowed to objects.
-//   - A `type` union becomes one `anyOf` branch per member type, each branch
-//     carrying the sibling constraints that apply to its type.
-//
-// The result is a decoded JSON document rather than a *jsonschema.Schema
+// The result is a decoded JSON document rather than a *jsonschema.Schema,
 // because jsonschema-go marshals an empty schema back to the boolean `true`; the
 // wrapper hands the SDK a value it will not re-encode. The SDK remarshals the
 // document for validation, where the explicit unions enforce exactly what the
-// boolean schemas did, so enforcement is unchanged.
+// boolean schemas did.
 //
 // A schema that cannot be marshalled is returned unchanged: the SDK rejects the
 // same value in AddTool, so its failure stays the single authoritative report.
@@ -92,11 +85,10 @@ func normalizePortableSchema(schema any) (map[string]any, error) {
 	return normalized, nil
 }
 
-// portableSchemaNode rewrites one schema node in place and returns it.
-//
-// A boolean node is a schema that accepts everything or nothing; a JSON object
-// is rewritten keyword by keyword; an array is the value of a keyword whose
-// value is a list of schemas, so it is rewritten element by element.
+// portableSchemaNode rewrites one schema node in place and returns it. A boolean
+// node accepts everything or nothing; an object is rewritten keyword by keyword;
+// an array is the value of a list-of-schemas keyword, so it is rewritten element
+// by element.
 func portableSchemaNode(node any) any {
 	switch value := node.(type) {
 	case bool:
@@ -113,13 +105,12 @@ func portableSchemaNode(node any) any {
 	}
 }
 
-// portableBooleanSchema returns a typed object form of a boolean JSON Schema.
-//
-// The accept-all form enumerates every JSON instance type. Number includes
-// integers, so these six branches cover the complete JSON data model. The
-// accept-none form requires null and simultaneously rejects null, which no JSON
-// value can satisfy. Neither form contains the empty object schema that strict
-// MCP clients flag as untyped.
+// portableBooleanSchema returns a typed object form of a boolean JSON Schema:
+// the accept-all form enumerates every JSON instance type (Number includes
+// integers, so these six branches cover the complete JSON data model), and the
+// accept-none form requires null while rejecting it, which no JSON value can
+// satisfy. Neither form contains the empty object schema strict MCP clients flag
+// as untyped.
 func portableBooleanSchema(acceptsEverything bool) map[string]any {
 	if !acceptsEverything {
 		return map[string]any{
@@ -163,14 +154,13 @@ func portableSchemaObject(node map[string]any) any {
 	return portableSchemaTypeUnion(node, memberTypes)
 }
 
-// portableSchemaTypeUnion replaces only the array-valued "type" assertion with
-// a portable anyOf assertion and leaves every sibling at its original path.
-//
-// Keeping siblings on the parent preserves JSON Pointer targets, nested default
-// traversal, $id/$ref behavior, and unknown extension keywords. Type-specific
-// siblings remain semantics-equivalent because JSON Schema ignores them for
-// instances of other types. A union with one member becomes that single type;
-// an empty union accepts nothing.
+// portableSchemaTypeUnion replaces only the array-valued "type" assertion with a
+// portable anyOf assertion and leaves every sibling at its original path, which
+// preserves JSON Pointer targets, nested default traversal, $id/$ref behavior,
+// and unknown extension keywords. Type-specific siblings remain
+// semantics-equivalent because JSON Schema ignores them for instances of other
+// types. A union with one member becomes that single type; an empty union
+// accepts nothing.
 func portableSchemaTypeUnion(node map[string]any, memberTypes []string) any {
 	switch len(memberTypes) {
 	case 0:
@@ -200,8 +190,8 @@ func portableSchemaTypeUnion(node map[string]any, memberTypes []string) any {
 	return node
 }
 
-// portableSchemaSubschemaArray rewrites a keyword whose value is a list of
-// subschemas, such as "anyOf" or draft-07 tuple "items".
+// portableSchemaSubschemaArray rewrites a list-of-subschemas keyword such as
+// "anyOf" or draft-07 tuple "items".
 func portableSchemaSubschemaArray(value any) any {
 	elements, ok := value.([]any)
 	if !ok {
@@ -213,8 +203,8 @@ func portableSchemaSubschemaArray(value any) any {
 	return elements
 }
 
-// portableSchemaSubschemaMap rewrites a keyword whose value maps names to
-// subschemas, such as "properties" or "$defs".
+// portableSchemaSubschemaMap rewrites a name-to-subschema keyword such as
+// "properties" or "$defs".
 func portableSchemaSubschemaMap(value any) any {
 	entries, ok := value.(map[string]any)
 	if !ok {
@@ -261,8 +251,8 @@ func portableSchemaDependencies(value any) any {
 type schemaValueShape int
 
 const (
-	// schemaValueOther is a keyword whose value is a constant, an instance, a
-	// name, or a list of names: nothing to rewrite.
+	// schemaValueOther is a keyword holding a constant, an instance, a name, or a
+	// list of names: nothing to rewrite.
 	schemaValueOther schemaValueShape = iota
 	// schemaValueSubschema is a keyword whose value is one subschema.
 	schemaValueSubschema
@@ -278,11 +268,10 @@ const (
 )
 
 // schemaKeywordShape classifies one JSON Schema keyword by the shape of its value
-// for both draft-07 and draft 2020-12.
-//
-// It is deliberately a closed table rather than a search for subschema-looking
-// values: a keyword like "enum" or "const" holds instance values, and rewriting a
-// boolean instance there would change the accepted set.
+// for both draft-07 and draft 2020-12. It is deliberately a closed table rather
+// than a search for subschema-looking values: a keyword like "enum" or "const"
+// holds instance values, and rewriting a boolean instance there would change the
+// accepted set.
 func schemaKeywordShape(keyword string) schemaValueShape {
 	switch keyword {
 	case "additionalProperties", "additionalItems", "unevaluatedProperties", "unevaluatedItems",
@@ -301,11 +290,9 @@ func schemaKeywordShape(keyword string) schemaValueShape {
 }
 
 // schemaTypeUnion returns the member type names of an array-valued "type", and
-// whether the value is one.
-//
-// A "type" that is a single string is already portable and reports false, as does
-// a malformed union whose members are not all strings; a malformed union is
-// reported to the caller by the SDK instead.
+// whether the value is one. A single-string "type" is already portable and
+// reports false, as does a malformed union whose members are not all strings; a
+// malformed union is reported to the caller by the SDK instead.
 func schemaTypeUnion(value any) ([]string, bool) {
 	members, isArray := value.([]any)
 	if !isArray {

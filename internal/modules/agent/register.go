@@ -8,10 +8,25 @@ import (
 	"github.com/danielgtaylor/huma/v2"
 )
 
-// Register mounts the experimental agent operations on api. A nil service
-// registers nothing, so application assembly can wire it unconditionally next
-// to the env-gated construction.
-func Register(api huma.API, service *Service) {
+// Operations is the narrow agent surface the HTTP and SSE transports call.
+// Registration accepts it instead of *Service so application tests can stub it.
+type Operations interface {
+	CreateConversation(ctx context.Context) (Conversation, error)
+	ListConversations(ctx context.Context) ([]ConversationSummary, error)
+	SendMessage(ctx context.Context, conversationID, text string) (Turn, error)
+	SendMessageWithEvents(
+		ctx context.Context,
+		conversationID, text string,
+		emit func(TurnEvent),
+	) (Turn, error)
+	History(ctx context.Context, conversationID string) ([]StoredMessage, error)
+	ConversationExists(ctx context.Context, conversationID string) (bool, error)
+	AdmissionOpen() bool
+}
+
+// Register mounts the agent operations on api. A nil service registers
+// nothing, which keeps transport fixtures lightweight.
+func Register(api huma.API, service Operations) {
 	if service == nil {
 		return
 	}
@@ -30,7 +45,7 @@ func Register(api huma.API, service *Service) {
 		OperationID: "send-agent-message", Method: http.MethodPost, Path: "/agent/conversations/{id}/messages",
 		Summary: "Send one message and run one agent turn", Tags: []string{agentTag},
 		Errors: []int{
-			http.StatusBadRequest, http.StatusNotFound,
+			http.StatusBadRequest, http.StatusNotFound, http.StatusServiceUnavailable,
 			http.StatusBadGateway, http.StatusInternalServerError,
 		},
 	}, handler.SendMessage)
@@ -45,7 +60,7 @@ const agentTag = "Agent"
 
 // Handler is the Huma transport over the agent service.
 type Handler struct {
-	service *Service
+	service Operations
 }
 
 // CreateConversationInput opens a conversation; no body is needed.
@@ -57,9 +72,11 @@ type CreateConversationOutput struct {
 }
 
 // ConversationBody is the durable conversation identity.
+//
+//nolint:golines // Huma schema tags stay beside their fields.
 type ConversationBody struct {
 	ID        string `json:"id" doc:"Canonical agent conversation ID"`
-	CreatedAt string `json:"created_at" doc:"Creation time, RFC3339"`
+	CreatedAt string `json:"created_at" doc:"Creation time (RFC3339)"`
 }
 
 // CreateConversation opens one durable agent conversation.
@@ -76,8 +93,7 @@ func (handler *Handler) CreateConversation(
 	}}, nil
 }
 
-// ListConversationsInput lists conversations; no parameters: the spike owns
-// few enough rows that one page carries the sidebar.
+// ListConversationsInput has no parameters; one response carries the sidebar.
 type ListConversationsInput struct{}
 
 // ListConversationsOutput carries the conversation list newest-first.
@@ -91,6 +107,8 @@ type ListConversationsBody struct {
 }
 
 // ConversationSummaryBody is one conversation with sidebar display fields.
+//
+//nolint:golines // Huma schema tags stay beside their fields.
 type ConversationSummaryBody struct {
 	ID            string  `json:"id" doc:"Canonical agent conversation ID"`
 	CreatedAt     string  `json:"created_at" doc:"Creation time, RFC3339"`
@@ -140,6 +158,8 @@ type SendMessageOutput struct {
 }
 
 // TurnBody is one completed turn: reply text plus tool names in call order.
+//
+//nolint:golines // Huma schema tags stay beside their fields.
 type TurnBody struct {
 	Reply     string   `json:"reply" doc:"Assistant reply text"`
 	ToolCalls []string `json:"tool_calls" doc:"Tool names called this turn, in order"`
@@ -155,12 +175,16 @@ func (handler *Handler) SendMessage(
 	switch {
 	case errors.Is(err, ErrConversationNotFound):
 		return nil, huma.NewError(http.StatusNotFound, "agent conversation not found")
-	case errors.As(err, &modelFailure{}):
+	case errors.Is(err, ErrAdmissionUnavailable):
+		return nil, huma.NewError(http.StatusServiceUnavailable, "agent admission is unavailable")
+	case errors.Is(err, context.Canceled), errors.Is(err, context.DeadlineExceeded):
+		return nil, huma.NewError(http.StatusServiceUnavailable, "agent turn canceled")
+	case errors.As(err, &modelError{}):
 		return nil, huma.NewError(http.StatusBadGateway, "agent model call failed")
 	case err != nil:
 		return nil, internalError()
 	}
-	return &SendMessageOutput{Body: TurnBody{Reply: turn.Reply, ToolCalls: turn.ToolCalls}}, nil
+	return &SendMessageOutput{Body: TurnBody(turn)}, nil
 }
 
 // HistoryInput reads one conversation.
@@ -179,6 +203,8 @@ type HistoryBody struct {
 }
 
 // MessageBody is one persisted message with its tool-call trace.
+//
+//nolint:golines // Huma schema tags stay beside their fields.
 type MessageBody struct {
 	ID        int64    `json:"message_id" doc:"Persistence order key"`
 	Role      string   `json:"role" doc:"Eino message role"`
@@ -210,8 +236,7 @@ func (handler *Handler) History(
 }
 
 // internalError is the generic 500 problem: the cause never crosses the
-// boundary. Spike sibling of the devices api helper, without its unwrap
-// machinery.
+// boundary. Sibling of the devices api helper, without its unwrap machinery.
 func internalError() error {
 	return huma.NewError(http.StatusInternalServerError, "internal error")
 }

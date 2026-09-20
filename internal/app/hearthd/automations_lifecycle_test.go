@@ -38,6 +38,7 @@ func TestCoreStartupInterruptsRunningAutomationRuns(t *testing.T) {
 	go func() {
 		runErrors <- Run(runContext, Config{HouseholdTimezone: "UTC",
 			HTTPAddr: httpAddress, NATSURL: server.ClientURL(), SQLitePath: databasePath,
+			Agent: requiredAgentConfig(t),
 		}, slog.New(slog.DiscardHandler))
 	}()
 	// /healthz is served only after startup interruptions commit, so a 200

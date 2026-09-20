@@ -51,6 +51,7 @@ func TestHistoryPruneSchedulerPrunesAutomationHistory(t *testing.T) {
 	defer cancelRun()
 	worker := startHistoryPruning(
 		runContext, slog.New(slog.DiscardHandler), deviceService, automationService,
+		&stubHistoryPruner{name: agentHistoryPruneModule},
 	)
 	waitForMatrixCondition(t, 10*time.Second, func() (bool, error) {
 		return countRetentionRows(ctx, database, "automation_history") == 2, nil

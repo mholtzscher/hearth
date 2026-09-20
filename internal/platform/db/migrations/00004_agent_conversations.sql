@@ -1,6 +1,6 @@
 -- +goose Up
--- Spike (experimental in-process agent): conversation history for the Eino
--- ReAct agent. Each message persists as an Eino schema.Message JSON blob
+-- Conversation history for the in-process Eino ReAct agent. Each message
+-- persists as an Eino schema.Message JSON blob
 -- ordered by row id; a turn rebuilds by reading the stream back, Flue-style.
 -- Canonical household effects stay in the commands tables: this history owns
 -- the conversation only.

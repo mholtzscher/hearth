@@ -16,10 +16,10 @@ import (
 	"github.com/mholtzscher/hearth/internal/mcpapi"
 )
 
-// MCPTools exposes every tool on the MCP server as an Eino tool. The client
-// dials the server over an in-memory transport: one catalog, no sockets, no
-// self-address configuration, and the full protocol path (argument decoding,
-// input validation, error mapping) still runs per call.
+// MCPTools exposes every tool on the MCP server as an Eino tool, dialing it
+// over an in-memory transport: one catalog, no sockets, no self-address
+// configuration, and the full protocol path (argument decoding, input
+// validation, error mapping) still runs per call.
 //
 // The returned tools live as long as ctx: cancelling it closes the client and
 // server sessions. Pass the application's run context, not a request context.
@@ -58,10 +58,9 @@ func MCPTools(ctx context.Context, server *mcpapi.Server) ([]tool.BaseTool, erro
 	return bridged, nil
 }
 
-// mcpTool converts one advertised MCP tool into an invokable Eino tool. The
-// input JSON Schema the client read becomes the model's parameter schema, so
-// the model sees exactly what any other MCP client sees; the server
-// re-validates the arguments before the handler runs.
+// mcpTool converts one advertised MCP tool into an Eino tool. The advertised
+// input schema becomes the model's parameter schema, so the model sees what
+// any other MCP client sees; the server re-validates arguments per call.
 func mcpTool(advertised *mcp.Tool, session *mcp.ClientSession) (tool.BaseTool, error) {
 	params, err := mcpParams(advertised)
 	if err != nil {
@@ -81,9 +80,9 @@ func mcpTool(advertised *mcp.Tool, session *mcp.ClientSession) (tool.BaseTool, e
 	}, nil
 }
 
-// mcpParams decodes one advertised input schema into Eino parameters. Every
-// catalog tool must describe its inputs; a missing schema fails the bridge at
-// startup rather than admitting schemaless calls.
+// mcpParams decodes one advertised input schema into Eino parameters. A
+// missing schema fails the bridge at startup rather than admitting schemaless
+// calls.
 func mcpParams(advertised *mcp.Tool) (*schema.ParamsOneOf, error) {
 	if advertised.InputSchema == nil {
 		return nil, fmt.Errorf("agent MCP tool %s: missing input schema", advertised.Name)
@@ -120,9 +119,8 @@ func (native *mcpBridgeTool) InvokableRun(
 }
 
 // callMCPTool runs one tool call and renders its result as model text. An
-// isError result becomes a Go error so the turn records it exactly like a
-// native tool failure: an "error: ..." row the next model step can recover
-// from, never a failed turn.
+// isError result becomes a Go error so the turn records an "error: ..." row
+// the model can recover from, never a failed turn.
 func callMCPTool(
 	ctx context.Context,
 	session *mcp.ClientSession,
@@ -144,9 +142,7 @@ func callMCPTool(
 }
 
 // mcpResultText renders one result as model text: the concatenated text
-// parts, or the structured payload when the handler returned no text. The SDK
-// populates text from structured output, so the fallback only fires for
-// content shapes without text.
+// parts, or the structured payload when the handler returned no text.
 func mcpResultText(result *mcp.CallToolResult) string {
 	var parts []string
 	for _, content := range result.Content {
@@ -162,10 +158,10 @@ func mcpResultText(result *mcp.CallToolResult) string {
 	return strings.Join(parts, "\n")
 }
 
-// traced records one tool execution on the turn assembler carried by ctx.
-// The agent's turn loop exposes no per-tool stream, so without this the tool
-// trace would never reach the persisted history or the event stream. Outside
-// a turn the assembler is absent and the tool simply executes.
+// traced records one tool execution on the turn assembler carried by ctx. The
+// ReAct loop exposes no per-tool stream, so without this the trace would never
+// reach the persisted history or the event stream. Outside a turn the
+// assembler is absent and the tool simply executes.
 func traced[T any](name string, fn utils.InvokeFunc[T, string]) utils.InvokeFunc[T, string] {
 	return func(ctx context.Context, input T) (string, error) {
 		assembler := assemblerFrom(ctx)

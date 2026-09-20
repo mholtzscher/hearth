@@ -284,11 +284,17 @@ def start(host):
     stage("preflight passed")
 
     prepare_config(Path("configs/homelab-hearthd.yaml"),
-                   f"http_addr: 127.0.0.1:8080\nnats_url: nats://{host}:4222\nsqlite_path: .data/homelab-hearthd.db\nhousehold_timezone: UTC\n")
+                   f"http_addr: 127.0.0.1:8080\nnats_url: nats://{host}:4222\nsqlite_path: .data/homelab-hearthd.db\nhousehold_timezone: UTC\nagent:\n  api_key_file: .data/homelab-agent-api-key\n")
     prepare_config(Path("configs/homelab-zigbee2mqtt.yaml"),
                    f"adapter_id: zigbee2mqtt\nnats_url: nats://{host}:4222\nmqtt:\n  url: tcp://{host}:1883\n  base_topic: zigbee2mqtt\n")
     run("git", "check-ignore", "-q", str(STATE_RELPATH))
     (ROOT / ".data").mkdir(exist_ok=True)
+    # Core always constructs the required household agent, so startup needs a
+    # model key file. Write a placeholder only when none exists, so an operator
+    # can replace it with a real key to use /agent against the live model.
+    agent_key = ROOT / ".data/homelab-agent-api-key"
+    if not agent_key.exists():
+        agent_key.write_text("real-device-validation-placeholder\n")
     if not (ROOT / "web/node_modules").is_dir():
         subprocess.run(["mise", "run", "web-install"], cwd=ROOT, check=True)
     stage("local files prepared")

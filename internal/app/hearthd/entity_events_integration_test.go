@@ -59,6 +59,7 @@ func TestCoreOfflineEntityEventRecoveryVerticalSlice(t *testing.T) {
 		firstErrors <- Run(firstContext, Config{
 			HouseholdTimezone: "UTC", HTTPAddr: firstAddress,
 			NATSURL: server.ClientURL(), SQLitePath: databasePath,
+			Agent: requiredAgentConfig(t),
 		}, slog.New(slog.DiscardHandler))
 	}()
 	waitForCoreHTTPStatus(ctx, t, client, firstAddress, "/healthz", firstErrors)
@@ -167,6 +168,7 @@ func TestCoreOfflineEntityEventRecoveryVerticalSlice(t *testing.T) {
 		secondErrors <- Run(secondContext, Config{
 			HouseholdTimezone: "UTC", HTTPAddr: secondAddress,
 			NATSURL: server.ClientURL(), SQLitePath: databasePath,
+			Agent: requiredAgentConfig(t),
 		}, slog.New(slog.DiscardHandler))
 	}()
 	waitForCoreHTTPStatus(ctx, t, client, secondAddress, "/healthz", secondErrors)
@@ -410,6 +412,7 @@ func TestCoreStartupRejectsIncompatibleEntityEventResources(t *testing.T) {
 	runErr := Run(ctx, Config{
 		HouseholdTimezone: "UTC", HTTPAddr: unusedLoopbackAddress(t),
 		NATSURL: server.ClientURL(), SQLitePath: filepath.Join(t.TempDir(), "hearth.db"),
+		Agent: requiredAgentConfig(t),
 	}, slog.New(slog.DiscardHandler))
 	if runErr == nil {
 		t.Fatal("Run accepted an incompatible Entity Event stream")

@@ -11,19 +11,18 @@ import (
 )
 
 // mcpFailureCode is the stable, machine-readable code an agent branches on when
-// a Devices MCP Tool reports a domain failure.
-//
-// The code and a stable human summary cross the MCP boundary; the Hearth
-// outcome's HTTP status does not, because MCP has no status codes. Command
-// failure codes reuse the durable codes the Command record publishes, so the
-// tool error and `get_command` describe one failure the same way.
+// a Devices MCP Tool reports a domain failure. The code and a stable human
+// summary cross the MCP boundary; the Hearth outcome's HTTP status does not,
+// because MCP has no status codes. Command failure codes reuse the durable codes
+// the Command record publishes, so the tool error and `get_command` describe one
+// failure the same way.
 type mcpFailureCode string
 
 const (
 	// mcpFailureNone marks a read that has no missing-parent outcome.
 	mcpFailureNone mcpFailureCode = ""
-	// mcpFailureInvalidRequest reports client input the handler rejected, such
-	// as an opaque cursor this endpoint cannot interpret.
+	// mcpFailureInvalidRequest reports client input the handler rejected, such as
+	// an opaque cursor this endpoint cannot interpret.
 	mcpFailureInvalidRequest mcpFailureCode = "invalid_request"
 	// mcpFailureEntityNotFound is the missing-Entity outcome of one read.
 	mcpFailureEntityNotFound mcpFailureCode = "entity_not_found"
@@ -33,43 +32,42 @@ const (
 	mcpFailureAdapterNotFound mcpFailureCode = "adapter_not_found"
 	// mcpFailureCommandNotFound is the missing-Command outcome of one read.
 	mcpFailureCommandNotFound mcpFailureCode = "command_not_found"
-	// mcpFailureEntityDisabled is the durable Command failure code for a Command
-	// refused because its Entity is disabled.
+	// mcpFailureEntityDisabled is the durable code for a disabled Entity.
 	mcpFailureEntityDisabled = mcpFailureCode(devices.CommandFailureEntityDisabled)
-	// mcpFailureAdapterUnhealthy is the durable Command failure code for a
-	// Command refused because its Adapter is unhealthy.
+	// mcpFailureAdapterUnhealthy is the durable code for an unhealthy Adapter.
 	mcpFailureAdapterUnhealthy = mcpFailureCode(devices.CommandFailureAdapterUnhealthy)
-	// mcpFailureEntityUnavailable is the durable Command failure code for a
-	// Command refused because its Entity is unavailable.
+	// mcpFailureEntityUnavailable is the durable code for an unavailable Entity.
 	mcpFailureEntityUnavailable = mcpFailureCode(devices.CommandFailureEntityUnavailable)
-	// mcpFailureUpstreamRejected is the durable Command failure code for an
-	// Adapter that rejected the Command.
+	// mcpFailureUpstreamRejected is the durable code for an Adapter rejection.
 	mcpFailureUpstreamRejected = mcpFailureCode(devices.CommandFailureUpstreamRejected)
-	// mcpFailureOutcomeTimeout is the durable Command failure code for a Command
-	// whose outcome deadline expired.
+	// mcpFailureOutcomeTimeout is the durable code for an expired outcome deadline.
 	mcpFailureOutcomeTimeout = mcpFailureCode(devices.CommandFailureOutcomeTimeout)
 	// mcpFailureCommandUnavailable reports closed Command admission.
 	mcpFailureCommandUnavailable mcpFailureCode = "command_unavailable"
-	// mcpFailureInternalError is the generic 500-class result: the agent learns
-	// only that the call failed, and full detail stays in server logs. The code
-	// is shared with the mcpapi wrapper, whose middleware logs the cause a
-	// handler retained with mcpapi.ToolError.WithCause.
-	mcpFailureInternalError = mcpFailureCode(mcpapi.CodeInternalError)
 )
 
-// Structured error field names. mcpapi attaches a ToolError's Code and Details
-// as a structured isError result, so these keys are the machine-readable half of
-// the failure contract.
+// Decode-time malformed-argument codes. The SDK rejects a malformed scalar
+// before the handler runs and publishes no structured content, so the code must
+// lead the error text for a client to branch on.
+const (
+	// mcpFailureInvalidLimit is a page size outside the accepted range.
+	mcpFailureInvalidLimit mcpFailureCode = "invalid_limit"
+	// mcpFailureInvalidEntityID is a malformed Entity ID argument.
+	mcpFailureInvalidEntityID mcpFailureCode = "invalid_entity_id"
+	// mcpFailureInvalidDeviceID is a malformed Device ID argument.
+	mcpFailureInvalidDeviceID mcpFailureCode = "invalid_device_id"
+	// mcpFailureInvalidAdapterID is a malformed Adapter ID argument.
+	mcpFailureInvalidAdapterID mcpFailureCode = "invalid_adapter_id"
+	// mcpFailureInvalidCommandID is a malformed Command ID argument.
+	mcpFailureInvalidCommandID mcpFailureCode = "invalid_command_id"
+)
+
+// Structured error field names mcpapi attaches to a ToolError's structured
+// isError result, so these keys are the machine-readable half of the failure
+// contract.
 const (
 	mcpDetailStatus    = "status"
 	mcpDetailCommandID = "command_id"
-)
-
-// mcpTerminalCommandStatuses are the two terminal Command statuses a successful
-// execute_entity_command reports, mirroring the Huma response body.
-const (
-	mcpCommandStatusSatisfied  = "satisfied"
-	mcpCommandStatusDispatched = "dispatched"
 )
 
 // mcpToolError builds one domain failure result. Message is the stable human
@@ -79,61 +77,38 @@ func mcpToolError(code mcpFailureCode, message string) *mcpapi.ToolError {
 	return &mcpapi.ToolError{Code: string(code), Message: message}
 }
 
-// mcpInternalFailure is the 500-class result with no retained cause: the agent
-// learns only that the call failed, and the middleware logs nothing because
-// there is no server-side detail to record.
-func mcpInternalFailure() *mcpapi.ToolError {
-	return mcpToolError(mcpFailureInternalError, "internal error")
-}
-
-// mcpInternalFailureCause is the 500-class result that also retains cause for
-// the server-side diagnostic log. The client still sees only the generic
-// message; mcpapi.ToolError.WithCause keeps cause off Error and structured
-// content.
-func mcpInternalFailureCause(cause error) *mcpapi.ToolError {
-	return mcpInternalFailure().WithCause(cause)
-}
-
-// mcpInvalidRequestFailure reports client input the handler rejected.
 func mcpInvalidRequestFailure(message string) *mcpapi.ToolError {
 	return mcpToolError(mcpFailureInvalidRequest, message)
 }
 
-// mcpReadFailure translates one failed read into a ToolError.
-//
-// Reads reuse the shared Huma operation, so the HTTP status selects the failure
-// class and the operation supplies the one missing-parent code it can report. A
-// 404 without a code is an unpublished invariant and stays internal, and so
-// does any non-Huma failure. A non-Huma failure is the read's own error and
-// retains it directly. A Huma 500 also retains its cause: the shared operation
-// builds it with [internalAPIError] from the service, response-mapping, or
-// cursor-encoding failure it could not publish, so the MCP result logs the
-// original cause instead of the generic problem that veiled it.
+// mcpReadFailure translates one failed read into a ToolError. Reads reuse the
+// shared Huma operation, so the HTTP status selects the failure class and the
+// operation supplies the one missing-parent code it can report. A 404 without a
+// code is an unpublished invariant and stays internal, and so does any non-Huma
+// failure; both retain their cause so the MCP result logs the original cause
+// instead of the generic problem that veiled it.
 func mcpReadFailure(err error, missing mcpFailureCode) *mcpapi.ToolError {
 	var status huma.StatusError
 	if !errors.As(err, &status) {
-		return mcpInternalFailureCause(err)
+		return mcpapi.InternalToolError(err)
 	}
 	switch status.GetStatus() {
 	case http.StatusNotFound:
 		if missing == mcpFailureNone {
-			return mcpInternalFailure()
+			return mcpapi.InternalToolError(nil)
 		}
 		return mcpToolError(missing, status.Error())
 	case http.StatusBadRequest:
 		return mcpInvalidRequestFailure(status.Error())
 	default:
-		return mcpInternalFailureCause(mcpReadInternalCause(err))
+		return mcpapi.InternalToolError(mcpReadInternalCause(err))
 	}
 }
 
 // mcpReadInternalCause returns the server-side failure a shared read retained
-// with [internalAPIError], or nil when the problem carries no cause.
-//
-// [mcpapi.ToolError.WithCause] with a nil cause leaves the generic internal
-// result the client already branches on and gives the diagnostic log nothing to
-// report, which is exactly the behavior of an internal failure that never
-// retained a cause.
+// with [internalAPIError], or nil when the problem carries no cause. A nil cause
+// leaves the generic internal result the client already branches on and gives
+// the diagnostic log nothing to report.
 func mcpReadInternalCause(err error) error {
 	problem, ok := errors.AsType[*internalProblemError](err)
 	if !ok {
@@ -143,40 +118,18 @@ func mcpReadInternalCause(err error) error {
 }
 
 // mcpCommandFailure maps one failed execute_entity_command to the tool error the
-// agent branches on. The failure code and the durable Command status cross the
-// boundary; the HTTP status does not.
+// agent branches on, reading the same domain classification the HTTP route maps.
+// The failure code and the durable Command status cross the boundary; the HTTP
+// status does not.
 func mcpCommandFailure(err error) *mcpapi.ToolError {
-	commandID := mcpFailedCommandID(err)
-	switch {
-	case errors.Is(err, devices.ErrEntityDisabled):
-		return mcpCommandToolError(
-			mcpFailureEntityDisabled, "entity is disabled", commandID, devices.CommandStatusEntityDisabled,
-		)
-	case errors.Is(err, devices.ErrCommandUnavailable):
-		return mcpToolError(mcpFailureCommandUnavailable, "command admission is unavailable")
-	case errors.Is(err, devices.ErrInvalidCommand):
-		return mcpInvalidRequestFailure("invalid command")
-	case errors.Is(err, devices.ErrEntityNotFound):
-		return mcpToolError(mcpFailureEntityNotFound, "entity not found")
-	case errors.Is(err, devices.ErrAdapterUnhealthy):
-		return mcpCommandToolError(
-			mcpFailureAdapterUnhealthy, "adapter unhealthy", commandID, devices.CommandStatusAdapterUnhealthy,
-		)
-	case errors.Is(err, devices.ErrEntityUnavailable):
-		return mcpCommandToolError(
-			mcpFailureEntityUnavailable, "entity unavailable", commandID, devices.CommandStatusEntityUnavailable,
-		)
-	case errors.Is(err, devices.ErrUpstreamRejected):
-		return mcpCommandToolError(
-			mcpFailureUpstreamRejected, "upstream rejected command", commandID, devices.CommandStatusRejected,
-		)
-	case errors.Is(err, devices.ErrOutcomeTimeout):
-		return mcpCommandToolError(
-			mcpFailureOutcomeTimeout, "command outcome timed out", commandID, devices.CommandStatusOutcomeTimeout,
-		)
-	default:
-		return mcpInternalFailureCause(err)
+	failure, classified := classifyCommandFailure(err)
+	if !classified {
+		return mcpapi.InternalToolError(err)
 	}
+	if failure.durableStatus == "" {
+		return mcpToolError(failure.code, failure.message)
+	}
+	return mcpCommandToolError(failure.code, failure.message, mcpFailedCommandID(err), failure.durableStatus)
 }
 
 // mcpCommandToolError builds one Command failure result carrying the durable
@@ -195,8 +148,6 @@ func mcpCommandToolError(
 	return &mcpapi.ToolError{Code: string(code), Message: message, Details: details}
 }
 
-// mcpFailedCommandID returns the durable Command ID a failed execution was
-// created for, or the empty string when the failure preceded any record.
 func mcpFailedCommandID(err error) string {
 	var executionError *devices.CommandExecutionError
 	if !errors.As(err, &executionError) {

@@ -168,12 +168,20 @@ def nats_config_text(run_dir):
 
 
 def hearthd_config_text(run_dir):
-    """Render this run's loopback Core config with its own SQLite file and UTC."""
+    """Render this run's loopback Core config with its own SQLite file and UTC.
+
+    Core always constructs the required household agent, so the config names a
+    placeholder model key file beside the run's SQLite file. The simulator
+    exercises tools through MCP and never calls a live model, so the placeholder
+    only satisfies startup validation.
+    """
     return (
         f"http_addr: 127.0.0.1:{CORE_PORT}\n"
         f"nats_url: {NATS_URL}\n"
         f"sqlite_path: {run_dir}/hearthd.db\n"
         "household_timezone: UTC\n"
+        "agent:\n"
+        f"  api_key_file: {run_dir}/agent-api-key\n"
     )
 
 
@@ -503,6 +511,9 @@ def start_owned_stack(preset, devices_path, dashboard):
         run_dir = make_run_dir()
         (run_dir / "nats.conf").write_text(nats_config_text(run_dir))
         (run_dir / "hearthd.yaml").write_text(hearthd_config_text(run_dir))
+        # The required agent reads its model key from this file at startup; the
+        # simulator never calls the model, so a placeholder satisfies validation.
+        (run_dir / "agent-api-key").write_text("simulator-validation-placeholder\n")
         (run_dir / "simulator.yaml").write_text(simulator_text)
         commands = service_commands(run_dir, dashboard)
         if dashboard and not (ROOT / "web/node_modules").is_dir():

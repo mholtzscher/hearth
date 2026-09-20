@@ -13,7 +13,6 @@ import (
 	"github.com/mholtzscher/hearth/internal/mcpecho"
 )
 
-// tenantKey scopes the test context value to this package.
 type tenantKey struct{}
 
 const tenantID = "tenant-1"

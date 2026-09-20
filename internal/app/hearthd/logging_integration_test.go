@@ -137,6 +137,7 @@ func TestRunHTTPBindFailureEmitsNoListeningEvent(t *testing.T) {
 		HTTPAddr:   blocker.Addr().String(),
 		NATSURL:    server.ClientURL(),
 		SQLitePath: filepath.Join(t.TempDir(), "hearth.db"),
+		Agent:      requiredAgentConfig(t),
 	}, logger)
 	if runErr == nil {
 		t.Fatal("Run succeeded with a busy HTTP port")
@@ -175,6 +176,7 @@ func TestRunCancelsCleanlyAfterReady(t *testing.T) {
 			HTTPAddr:   freeLoopbackAddr(t),
 			NATSURL:    server.ClientURL(),
 			SQLitePath: filepath.Join(t.TempDir(), "hearth.db"),
+			Agent:      requiredAgentConfig(t),
 		}, logger)
 	}()
 

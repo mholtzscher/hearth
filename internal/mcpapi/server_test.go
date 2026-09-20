@@ -14,8 +14,8 @@ import (
 	"github.com/mholtzscher/hearth/internal/mcpapi"
 )
 
-// discardLogger returns a logger that swallows records, so a test that expects
-// an internal failure does not print the diagnostic it asserts elsewhere.
+// discardLogger returns a logger that swallows records, so a test does not print
+// the diagnostic it asserts elsewhere.
 func discardLogger() *slog.Logger {
 	return slog.New(slog.DiscardHandler)
 }
@@ -152,9 +152,8 @@ func TestRawExposesServedSDKServer(t *testing.T) {
 // TestHTTPHandlerPropagatesRequestCancellation proves the Streamable HTTP
 // handler ties an in-flight tool handler to the client request, so a dropped
 // client unwinds the handler exactly as it unwinds the matching REST handler.
-//
-// The SDK only applies the option to protocol 2026-07-28 and later, and the
-// official client negotiates that version by default.
+// The SDK only applies the option to protocol 2026-07-28 and later, which the
+// official client negotiates by default.
 func TestHTTPHandlerPropagatesRequestCancellation(t *testing.T) {
 	t.Parallel()
 	started := make(chan struct{})

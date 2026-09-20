@@ -29,53 +29,14 @@ const (
 	mcpToolListEntityEvents              = "list_entity_events"
 )
 
-// RegisterMCP registers every Devices MCP Tool and resource on server.
-//
-// It is the MCP counterpart of Register: the same Huma operations, reachable
-// over MCP with equal semantics. Each tool is a thin translation from its flat
-// MCP arguments to the shared Huma request, so a tool, its resource, and its
-// HTTP route read through one service call and one response mapping.
+// RegisterMCP registers every Devices MCP Tool and resource on server. It is the
+// MCP counterpart of Register: the same Huma operations, reachable over MCP with
+// equal semantics. Each tool is a thin translation from its flat MCP arguments
+// to the shared Huma request, so a tool, its resource, and its HTTP route read
+// through one service call and one response mapping.
 func RegisterMCP(server *mcpapi.Server, service Devices) {
 	handler := &Handler{devices: service}
-	handler.registerTools(server)
-	handler.registerResources(server)
-}
 
-// mcpRead calls one shared Huma read operation and maps a failure to the tool
-// error an agent branches on.
-//
-// Reusing the Huma handler keeps one translation per Hearth read: the tool, the
-// resource, and the HTTP route share the same cursor decode, page default, body
-// mapping, and failure classification. Only the missing-parent code differs per
-// read, because the domain sentinel is gone by the time Huma has mapped it.
-func mcpRead[I, O any](
-	ctx context.Context,
-	read func(context.Context, *I) (*O, error),
-	input *I,
-	missing mcpFailureCode,
-) (*O, error) {
-	output, err := read(ctx, input)
-	if err != nil {
-		return nil, mcpReadFailure(err, missing)
-	}
-	if output == nil {
-		return nil, mcpInternalFailure()
-	}
-	return output, nil
-}
-
-// registerTools registers the whole Devices tool catalog, grouped by the
-// Hearth read or action each tool exposes.
-func (handler *Handler) registerTools(server *mcpapi.Server) {
-	handler.registerEntityTools(server)
-	handler.registerEntityHistoryTools(server)
-	handler.registerDeviceTools(server)
-	handler.registerCommandTools(server)
-	handler.registerAdapterTools(server)
-}
-
-// registerEntityTools registers the Entity state and action tools.
-func (handler *Handler) registerEntityTools(server *mcpapi.Server) {
 	mcpapi.Register(server, mcpapi.Tool[mcpListEntitiesInput, EntityCollectionBody]{
 		Name: mcpToolListEntities, Description: "List Entities and their current State",
 		Handler: handler.listEntities,
@@ -92,10 +53,6 @@ func (handler *Handler) registerEntityTools(server *mcpapi.Server) {
 		Name: mcpToolExecuteEntityCommand, Description: "Execute an Entity Command",
 		Handler: handler.executeEntityCommand,
 	})
-}
-
-// registerEntityHistoryTools registers the Entity history read tools.
-func (handler *Handler) registerEntityHistoryTools(server *mcpapi.Server) {
 	mcpapi.Register(server, mcpapi.Tool[mcpListEntityCommandsInput, CommandCollectionBody]{
 		Name: mcpToolListEntityCommands, Description: "List an Entity's Command history",
 		Handler: handler.listEntityCommands,
@@ -113,10 +70,6 @@ func (handler *Handler) registerEntityHistoryTools(server *mcpapi.Server) {
 		Name: mcpToolListEntityAvailabilityHistory, Description: "List an Entity's availability history",
 		Handler: handler.listEntityAvailabilityHistory,
 	})
-}
-
-// registerDeviceTools registers the Device read tools.
-func (handler *Handler) registerDeviceTools(server *mcpapi.Server) {
 	mcpapi.Register(server, mcpapi.Tool[mcpListDevicesInput, DeviceCollectionBody]{
 		Name: mcpToolListDevices, Description: "List Devices",
 		Handler: handler.listDevices,
@@ -125,10 +78,6 @@ func (handler *Handler) registerDeviceTools(server *mcpapi.Server) {
 		Name: mcpToolGetDevice, Description: "Get a Device and its Entities",
 		Handler: handler.getDevice,
 	})
-}
-
-// registerCommandTools registers the household Command read tools.
-func (handler *Handler) registerCommandTools(server *mcpapi.Server) {
 	mcpapi.Register(server, mcpapi.Tool[mcpGetCommandInput, CommandRecordBody]{
 		Name: mcpToolGetCommand, Description: "Get a Command record",
 		Handler: handler.getCommand,
@@ -137,10 +86,6 @@ func (handler *Handler) registerCommandTools(server *mcpapi.Server) {
 		Name: mcpToolListCommands, Description: "List household Command history",
 		Handler: handler.listCommands,
 	})
-}
-
-// registerAdapterTools registers the Adapter read tools.
-func (handler *Handler) registerAdapterTools(server *mcpapi.Server) {
 	mcpapi.Register(server, mcpapi.Tool[mcpListAdaptersInput, AdapterCollectionBody]{
 		Name: mcpToolListAdapters, Description: "List Adapters and their current health",
 		Handler: handler.listAdapters,
@@ -153,9 +98,32 @@ func (handler *Handler) registerAdapterTools(server *mcpapi.Server) {
 		Name: mcpToolListAdapterHealthHistory, Description: "List an Adapter's health history",
 		Handler: handler.listAdapterHealthHistory,
 	})
+
+	handler.registerResources(server)
 }
 
-// listEntities lists one page of Entities, optionally scoped to a Device.
+// mcpRead calls one shared Huma read operation and maps a failure to the tool
+// error an agent branches on. Reusing the Huma handler keeps one translation per
+// Hearth read: the tool, the resource, and the HTTP route share the same cursor
+// decode, page default, body mapping, and failure classification. Only the
+// missing-parent code differs per read, because the domain sentinel is gone by
+// the time Huma has mapped it.
+func mcpRead[I, O any](
+	ctx context.Context,
+	read func(context.Context, *I) (*O, error),
+	input *I,
+	missing mcpFailureCode,
+) (*O, error) {
+	output, err := read(ctx, input)
+	if err != nil {
+		return nil, mcpReadFailure(err, missing)
+	}
+	if output == nil {
+		return nil, mcpapi.InternalToolError(nil)
+	}
+	return output, nil
+}
+
 func (handler *Handler) listEntities(
 	ctx context.Context,
 	input mcpListEntitiesInput,
@@ -169,7 +137,6 @@ func (handler *Handler) listEntities(
 	return output.Body, nil
 }
 
-// getEntity reads one Entity and its current State.
 func (handler *Handler) getEntity(ctx context.Context, input mcpGetEntityInput) (EntityBody, error) {
 	output, err := mcpRead(ctx, handler.GetEntity, &GetEntityInput{EntityID: string(input.EntityID)},
 		mcpFailureEntityNotFound)
@@ -179,7 +146,6 @@ func (handler *Handler) getEntity(ctx context.Context, input mcpGetEntityInput) 
 	return output.Body, nil
 }
 
-// updateEntity sets one Entity's enabled flag.
 func (handler *Handler) updateEntity(ctx context.Context, input mcpUpdateEntityInput) (EntityBody, error) {
 	output, err := mcpRead(ctx, handler.PatchEntity, &PatchEntityInput{
 		EntityID: string(input.EntityID), Body: PatchEntityBody{Enabled: input.Enabled},
@@ -191,13 +157,12 @@ func (handler *Handler) updateEntity(ctx context.Context, input mcpUpdateEntityI
 }
 
 // executeEntityCommand blocks until the Command reaches its terminal outcome or
-// the operation deadline fails it, exactly as
-// POST /v1/entities/{entity_id}/commands does, so a dropped call still leaves a
-// durable record readable with get_command.
+// the operation deadline fails it, exactly as POST /v1/entities/{entity_id}/commands
+// does, so a dropped call still leaves a durable record readable with get_command.
 //
-// Unlike the read tools it calls the service directly: the durable Command
-// failure code and status cross the MCP boundary as structured error fields, and
-// the Huma error mapping keeps only an HTTP status and prose.
+// Unlike the read tools it calls the service directly, because the durable
+// Command failure code and status must cross the MCP boundary as structured
+// error fields, which the Huma error mapping cannot carry.
 func (handler *Handler) executeEntityCommand(
 	ctx context.Context,
 	input mcpExecuteEntityCommandInput,
@@ -214,10 +179,13 @@ func (handler *Handler) executeEntityCommand(
 	if err != nil {
 		return CommandResultBody{}, mcpCommandFailure(err)
 	}
-	return mcpCommandResultBody(result)
+	body, bodyErr := commandResultBody(result)
+	if bodyErr != nil {
+		return CommandResultBody{}, mcpapi.InternalToolError(nil)
+	}
+	return body, nil
 }
 
-// listEntityCommands lists one page of an Entity's Command history.
 func (handler *Handler) listEntityCommands(
 	ctx context.Context,
 	input mcpListEntityCommandsInput,
@@ -231,7 +199,6 @@ func (handler *Handler) listEntityCommands(
 	return output.Body, nil
 }
 
-// listEntityStateHistory lists one page of an Entity's retained State history.
 func (handler *Handler) listEntityStateHistory(
 	ctx context.Context,
 	input mcpListEntityStateHistoryInput,
@@ -246,7 +213,6 @@ func (handler *Handler) listEntityStateHistory(
 	return output.Body, nil
 }
 
-// listEntityEvents lists one page of an Entity's Entity Event history.
 func (handler *Handler) listEntityEvents(
 	ctx context.Context,
 	input mcpListEntityEventsInput,
@@ -260,8 +226,6 @@ func (handler *Handler) listEntityEvents(
 	return output.Body, nil
 }
 
-// listEntityAvailabilityHistory lists one page of an Entity's availability
-// history.
 func (handler *Handler) listEntityAvailabilityHistory(
 	ctx context.Context,
 	input mcpListEntityAvailabilityHistoryInput,
@@ -275,7 +239,6 @@ func (handler *Handler) listEntityAvailabilityHistory(
 	return output.Body, nil
 }
 
-// listDevices lists one page of Devices.
 func (handler *Handler) listDevices(
 	ctx context.Context,
 	input mcpListDevicesInput,
@@ -289,7 +252,6 @@ func (handler *Handler) listDevices(
 	return output.Body, nil
 }
 
-// getDevice reads one Device and the first page of its Entities.
 func (handler *Handler) getDevice(ctx context.Context, input mcpGetDeviceInput) (DeviceDetailBody, error) {
 	output, err := mcpRead(ctx, handler.GetDevice, &GetDeviceInput{
 		DeviceID: string(input.DeviceID), EntityLimit: mcpPageSize(input.EntityLimit),
@@ -301,7 +263,6 @@ func (handler *Handler) getDevice(ctx context.Context, input mcpGetDeviceInput) 
 	return output.Body, nil
 }
 
-// getCommand reads one Command record.
 func (handler *Handler) getCommand(ctx context.Context, input mcpGetCommandInput) (CommandRecordBody, error) {
 	output, err := mcpRead(ctx, handler.GetCommand, &GetCommandInput{CommandID: string(input.CommandID)},
 		mcpFailureCommandNotFound)
@@ -311,7 +272,6 @@ func (handler *Handler) getCommand(ctx context.Context, input mcpGetCommandInput
 	return output.Body, nil
 }
 
-// listCommands lists one page of household Command history.
 func (handler *Handler) listCommands(
 	ctx context.Context,
 	input mcpListCommandsInput,
@@ -326,7 +286,6 @@ func (handler *Handler) listCommands(
 	return output.Body, nil
 }
 
-// listAdapters lists one page of Adapters and their current health.
 func (handler *Handler) listAdapters(
 	ctx context.Context,
 	input mcpListAdaptersInput,
@@ -340,7 +299,6 @@ func (handler *Handler) listAdapters(
 	return output.Body, nil
 }
 
-// getAdapter reads one Adapter and its current health.
 func (handler *Handler) getAdapter(ctx context.Context, input mcpGetAdapterInput) (AdapterBody, error) {
 	output, err := mcpRead(ctx, handler.GetAdapter, &GetAdapterInput{AdapterID: string(input.AdapterID)},
 		mcpFailureAdapterNotFound)
@@ -350,7 +308,6 @@ func (handler *Handler) getAdapter(ctx context.Context, input mcpGetAdapterInput
 	return output.Body, nil
 }
 
-// listAdapterHealthHistory lists one page of an Adapter's health history.
 func (handler *Handler) listAdapterHealthHistory(
 	ctx context.Context,
 	input mcpListAdapterHealthHistoryInput,
@@ -362,27 +319,4 @@ func (handler *Handler) listAdapterHealthHistory(
 		return HealthTransitionCollectionBody{}, err
 	}
 	return output.Body, nil
-}
-
-// mcpCommandResultBody maps one terminal Command result to the body the HTTP
-// route and the tool both return. The observed case carries the evidence; the
-// dispatched case omits it.
-func mcpCommandResultBody(result devices.CommandResult) (CommandResultBody, error) {
-	if result.Outcome == devices.OutcomeDispatched {
-		return CommandResultBody{
-			CommandID: string(result.CommandID), Status: mcpCommandStatusDispatched,
-		}, nil
-	}
-	if result.ObservationID == nil || result.Value == nil {
-		return CommandResultBody{}, mcpInternalFailure()
-	}
-	var value any
-	if err := decodeJSON(*result.Value, &value); err != nil {
-		return CommandResultBody{}, mcpInternalFailure()
-	}
-	observationID := string(*result.ObservationID)
-	return CommandResultBody{
-		CommandID: string(result.CommandID), Status: mcpCommandStatusSatisfied,
-		ObservationID: &observationID, Value: &value,
-	}, nil
 }

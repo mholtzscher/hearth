@@ -16,9 +16,9 @@ import (
 type ResourceRead func(context.Context, string) (any, error)
 
 // ResourceFailure maps one failed resource read onto the client-visible error:
-// a missing parent becomes resource-not-found, unreadable input becomes
-// invalid params, and anything else stays a generic internal error so no
-// server detail leaks.
+// a missing parent becomes resource-not-found, unreadable input becomes invalid
+// params, and anything else stays a generic internal error so no server detail
+// leaks.
 type ResourceFailure func(uri string, err error) error
 
 // RegisterResource publishes one parameterless collection URI as a concrete
@@ -63,9 +63,9 @@ func RegisterResourceTemplate(
 }
 
 // resourceHandler adapts a URI-keyed body reader onto the SDK's resource
-// handler contract. A reader returns domain failures for the failure mapper;
-// an SDK protocol error (such as resource-not-found) crosses unchanged, so
-// the mapper only ever sees failures it models.
+// handler contract. A reader returns domain failures for the failure mapper; an
+// SDK protocol error (such as resource-not-found) crosses unchanged, so the
+// mapper only ever sees failures it models.
 func resourceHandler(
 	mimeType string,
 	read ResourceRead,
@@ -84,8 +84,8 @@ func resourceHandler(
 }
 
 // ResourceResult encodes one read body as the JSON text a client attaches as
-// context. The mimeType rides the content beside the URI; a body that cannot
-// be marshalled is a generic internal error, never client-visible detail.
+// context. The mimeType rides the content beside the URI; a body that cannot be
+// marshalled is a generic internal error, never client-visible detail.
 func ResourceResult(uri string, mimeType string, body any) (*mcp.ReadResourceResult, error) {
 	encoded, err := json.Marshal(body)
 	if err != nil {

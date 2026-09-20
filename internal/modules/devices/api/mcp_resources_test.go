@@ -15,8 +15,6 @@ import (
 	"github.com/mholtzscher/hearth/internal/modules/devices"
 )
 
-// mcpResourceFixtureDevices serves one fixture from every device-backed
-// resource read, so the resource surface can be read end to end.
 func mcpResourceFixtureDevices() *stubDevices {
 	observedAt := time.Date(2026, 8, 29, 15, 0, 0, 0, time.UTC)
 	transition := devices.HealthTransition{
@@ -150,8 +148,8 @@ func TestRegisterMCPRegistersEveryDeviceResourceTemplate(t *testing.T) {
 
 // TestRegisterMCPRegistersCollectionResources proves the four parameterless
 // collections are also served as concrete resources, so resources/list is
-// non-empty for clients that materialize resources (such as the Pi MCP
-// adapter's read_* tools). Paged reads keep flowing through the templates.
+// non-empty for clients that materialize resources. Paged reads keep flowing
+// through the templates.
 func TestRegisterMCPRegistersCollectionResources(t *testing.T) {
 	t.Parallel()
 	stub := mcpResourceFixtureDevices()
@@ -365,8 +363,7 @@ func TestMCPResourcesForwardFiltersCursorsAndPageDefaults(t *testing.T) {
 // TestMCPResourcesFilterEntityCommandsByStatus proves the entity Command
 // resource honors the catalog's status filter: a filtered read proves the Entity
 // exists and then forwards the Entity and status to the household Command read,
-// while an unfiltered read stays on ListEntityCommands, which owns the
-// missing-Entity outcome.
+// while an unfiltered read stays on ListEntityCommands.
 func TestMCPResourcesFilterEntityCommandsByStatus(t *testing.T) {
 	t.Parallel()
 	var filtered devices.ListCommandsParams
@@ -404,9 +401,7 @@ func TestMCPResourcesFilterEntityCommandsByStatus(t *testing.T) {
 
 // TestMCPResourcesReportMissingParentForStatusFilteredEntityCommands proves the
 // status-filtered Entity Command resource keeps the unfiltered read's missing
-// parent outcome. The household Command read cannot report an unknown parent,
-// so the resource confirms the Entity exists first and returns resource-not-
-// found instead of an empty page.
+// parent outcome by confirming the Entity exists first.
 func TestMCPResourcesReportMissingParentForStatusFilteredEntityCommands(t *testing.T) {
 	t.Parallel()
 	var listCalled atomic.Bool
@@ -433,7 +428,6 @@ func TestMCPResourcesReportMissingParentForStatusFilteredEntityCommands(t *testi
 	}
 }
 
-// readMCPResource reads one resource and fails the test on any error.
 func readMCPResource(t *testing.T, session *mcp.ClientSession, uri string) *mcp.ReadResourceResult {
 	t.Helper()
 	read, err := session.ReadResource(t.Context(), &mcp.ReadResourceParams{URI: uri})

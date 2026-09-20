@@ -5,8 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"net/url"
-	"slices"
-	"strconv"
 	"strings"
 
 	"github.com/modelcontextprotocol/go-sdk/jsonrpc"
@@ -18,11 +16,10 @@ import (
 
 // The hearth:// namespace is read-only and poll-only: one template per catalog
 // entry, each reading through the same Huma handler the matching tool uses, so a
-// resource returns the exact JSON body the matching Huma GET returns.
+// resource returns the exact JSON body the matching Huma GET returns. The
+// scheme, JSON body MIME type, and page parameters that every resource module
+// shares come from mcpapi.
 const (
-	mcpResourceScheme   = "hearth"
-	mcpResourceMIMEType = "application/json"
-
 	// mcpResourceKind* are the URI hosts of the resources this package serves.
 	mcpResourceKindEntity   = "entity"
 	mcpResourceKindDevice   = "device"
@@ -40,9 +37,9 @@ const (
 	mcpResourceSuffixAvailability = "availability/history"
 	mcpResourceSuffixHealth       = "health/history"
 
-	// mcpQuery* are the query parameters the resource templates accept.
-	mcpQueryLimit    = "limit"
-	mcpQueryCursor   = "cursor"
+	// mcpQuery* are the query parameters the resource templates accept. The page
+	// parameters every paginated resource shares are mcpapi.ResourceQueryLimit and
+	// mcpapi.ResourceQueryCursor.
 	mcpQueryFilter   = "filter"
 	mcpQueryStatus   = "status"
 	mcpQueryEntityID = "entity_id"
@@ -51,15 +48,12 @@ const (
 
 // Resource templates as the MCP resource catalog lists them.
 //
-// Entity Command history accepts the catalog's `status` filter. ListEntityCommands
-// itself takes no status filter, so the unfiltered read stays on it while a
+// Entity Command history accepts the catalog's `status` filter, which
+// ListEntityCommands does not take: an unfiltered read stays on it while a
 // status-filtered read routes to the household ListCommands read, which already
 // scopes by Entity and status with the same ordering, page size, and opaque
 // cursor scheme. Widening the shared read interface instead would touch the
 // domain, repository, SQL, Huma route, and cursor for one resource filter.
-//
-// ListCommands scopes by Entity but never reports an unknown parent, so the
-// status-filtered read verifies the Entity first; see mcpEntityCommandsResource.
 //
 // The Device template carries no embedded-Entity paging parameters, so it reads
 // the default first page exactly as GET /v1/devices/{device_id} does; the
@@ -81,15 +75,11 @@ const (
 )
 
 // mcpCollectionResourceURIs are the parameterless collection URIs served as
-// concrete resources alongside their templates. Templates alone leave
-// resources/list empty, and clients that materialize resources (such as the Pi
-// MCP adapter's read_* tools) only see concrete resources. The four
-// collections take no required parameters, so their bare URIs are stable
-// addresses for the default first page; paged reads keep flowing through the
-// templates. The SDK routes a bare URI to the concrete resource first, and
-// both entries dispatch to the same collection reader, so bodies are
-// identical. Parameterized families stay template-only: their URIs cannot name
-// one concrete resource.
+// concrete resources alongside their templates, because clients that
+// materialize resources only see concrete resources. Each bare URI reads the
+// default first page; paged reads keep flowing through the templates, and both
+// entries dispatch to the same collection reader. Parameterized families stay
+// template-only, because their URIs cannot name one concrete resource.
 const (
 	mcpAdaptersURI = "hearth://adapters"
 	mcpEntitiesURI = "hearth://entities"
@@ -97,15 +87,14 @@ const (
 	mcpCommandsURI = "hearth://commands"
 )
 
-// registerResources registers the devices-owned hearth:// resources.
 func (handler *Handler) registerResources(server *mcpapi.Server) {
 	register := func(name, description, uriTemplate string, read mcpapi.ResourceRead) {
 		mcpapi.RegisterResourceTemplate(server, name, description, uriTemplate,
-			mcpResourceMIMEType, read, mcpResourceFailure)
+			mcpapi.ResourceMIMEType, read, mcpResourceFailure)
 	}
 	registerConcrete := func(name, description, uri string, read mcpapi.ResourceRead) {
 		mcpapi.RegisterResource(server, name, description, uri,
-			mcpResourceMIMEType, read, mcpResourceFailure)
+			mcpapi.ResourceMIMEType, read, mcpResourceFailure)
 	}
 	register("entity", "One Entity and its current State",
 		mcpEntityURITemplate, handler.mcpEntityResource)
@@ -173,13 +162,12 @@ func (handler *Handler) mcpEntityResource(ctx context.Context, uri string) (any,
 	}
 }
 
-// mcpEntityStateResource reads one Entity's metadata and current State.
 func (handler *Handler) mcpEntityStateResource(
 	ctx context.Context,
 	resource mcpResourceURI,
 	entityID devices.EntityID,
 ) (any, error) {
-	if queryErr := resource.only(); queryErr != nil {
+	if queryErr := resource.query.Only(); queryErr != nil {
 		return nil, queryErr
 	}
 	output, err := mcpRead(ctx, handler.GetEntity, &GetEntityInput{EntityID: string(entityID)},
@@ -190,16 +178,15 @@ func (handler *Handler) mcpEntityStateResource(
 	return output.Body, nil
 }
 
-// mcpEntityEventsResource reads one page of an Entity's Entity Event history.
 func (handler *Handler) mcpEntityEventsResource(
 	ctx context.Context,
 	resource mcpResourceURI,
 	entityID devices.EntityID,
 ) (any, error) {
-	if err := resource.only(mcpQueryLimit, mcpQueryCursor); err != nil {
+	if err := resource.query.Only(mcpapi.ResourceQueryLimit, mcpapi.ResourceQueryCursor); err != nil {
 		return nil, err
 	}
-	page, err := resource.page()
+	page, err := resource.query.Page()
 	if err != nil {
 		return nil, err
 	}
@@ -213,33 +200,28 @@ func (handler *Handler) mcpEntityEventsResource(
 }
 
 // mcpEntityCommandsResource reads one page of an Entity's Command history,
-// optionally filtered by Command status.
-//
-// Without a status filter it reads through ListEntityCommands, which owns the
-// missing-Entity outcome. With one it first confirms the Entity exists through
-// the service and then reads through ListCommands scoped to the Entity, because
-// ListEntityCommands has no status filter. ListCommands itself cannot report an
-// unknown parent, so without the confirming read a filtered read of a missing
-// Entity would return an empty page instead of the not-found the unfiltered
-// read returns; the parent outcome stays independent of the status filter. A
-// status the Command model rejects is unreadable input, refused before either
-// read runs.
+// optionally filtered by Command status. Without a status filter it reads
+// through ListEntityCommands, which owns the missing-Entity outcome. With one it
+// first confirms the Entity exists through the service and then reads through
+// ListCommands scoped to the Entity; the confirming read keeps the parent
+// outcome independent of the status filter. A status the Command model rejects
+// is refused before either read runs.
 func (handler *Handler) mcpEntityCommandsResource(
 	ctx context.Context,
 	resource mcpResourceURI,
 	entityID devices.EntityID,
 ) (any, error) {
-	if err := resource.only(mcpQueryStatus, mcpQueryLimit, mcpQueryCursor); err != nil {
+	if err := resource.query.Only(mcpQueryStatus, mcpapi.ResourceQueryLimit, mcpapi.ResourceQueryCursor); err != nil {
 		return nil, err
 	}
-	status, err := resource.value(mcpQueryStatus)
+	status, err := resource.query.Value(mcpQueryStatus)
 	if err != nil {
 		return nil, err
 	}
 	if status != "" && !devices.ValidCommandStatus(devices.CommandStatus(status)) {
-		return nil, &mcpResourceInputError{message: "invalid status"}
+		return nil, mcpapi.NewResourceInputError("invalid status")
 	}
-	page, err := resource.page()
+	page, err := resource.query.Page()
 	if err != nil {
 		return nil, err
 	}
@@ -265,21 +247,19 @@ func (handler *Handler) mcpEntityCommandsResource(
 	return output.Body, nil
 }
 
-// mcpEntityStateHistoryResource reads one page of an Entity's retained State
-// history. The filter query parameter maps onto the Huma disposition parameter.
 func (handler *Handler) mcpEntityStateHistoryResource(
 	ctx context.Context,
 	resource mcpResourceURI,
 	entityID devices.EntityID,
 ) (any, error) {
-	if err := resource.only(mcpQueryFilter, mcpQueryLimit, mcpQueryCursor); err != nil {
+	if err := resource.query.Only(mcpQueryFilter, mcpapi.ResourceQueryLimit, mcpapi.ResourceQueryCursor); err != nil {
 		return nil, err
 	}
-	filter, err := resource.value(mcpQueryFilter)
+	filter, err := resource.query.Value(mcpQueryFilter)
 	if err != nil {
 		return nil, err
 	}
-	page, err := resource.page()
+	page, err := resource.query.Page()
 	if err != nil {
 		return nil, err
 	}
@@ -292,17 +272,15 @@ func (handler *Handler) mcpEntityStateHistoryResource(
 	return output.Body, nil
 }
 
-// mcpEntityAvailabilityResource reads one page of an Entity's availability
-// history.
 func (handler *Handler) mcpEntityAvailabilityResource(
 	ctx context.Context,
 	resource mcpResourceURI,
 	entityID devices.EntityID,
 ) (any, error) {
-	if err := resource.only(mcpQueryLimit, mcpQueryCursor); err != nil {
+	if err := resource.query.Only(mcpapi.ResourceQueryLimit, mcpapi.ResourceQueryCursor); err != nil {
 		return nil, err
 	}
-	page, err := resource.page()
+	page, err := resource.query.Page()
 	if err != nil {
 		return nil, err
 	}
@@ -315,7 +293,6 @@ func (handler *Handler) mcpEntityAvailabilityResource(
 	return output.Body, nil
 }
 
-// mcpDeviceResource reads one Device and the first page of its Entities.
 func (handler *Handler) mcpDeviceResource(ctx context.Context, uri string) (any, error) {
 	resource, err := parseMCPResourceURI(uri)
 	if err != nil {
@@ -328,11 +305,11 @@ func (handler *Handler) mcpDeviceResource(ctx context.Context, uri string) (any,
 	if err != nil {
 		return nil, mcpResourceNotFoundError{}
 	}
-	if queryErr := resource.only(); queryErr != nil {
+	if queryErr := resource.query.Only(); queryErr != nil {
 		return nil, queryErr
 	}
 	output, err := mcpRead(ctx, handler.GetDevice, &GetDeviceInput{
-		DeviceID: string(deviceID), EntityLimit: mcpDefaultPageLimit,
+		DeviceID: string(deviceID), EntityLimit: mcpapi.ResourcePageDefaultLimit,
 	}, mcpFailureDeviceNotFound)
 	if err != nil {
 		return nil, err
@@ -340,8 +317,6 @@ func (handler *Handler) mcpDeviceResource(ctx context.Context, uri string) (any,
 	return output.Body, nil
 }
 
-// mcpAdapterResource reads one Adapter's health or one page of its health
-// history.
 func (handler *Handler) mcpAdapterResource(ctx context.Context, uri string) (any, error) {
 	resource, err := parseMCPResourceURI(uri)
 	if err != nil {
@@ -364,13 +339,12 @@ func (handler *Handler) mcpAdapterResource(ctx context.Context, uri string) (any
 	}
 }
 
-// mcpAdapterStateResource reads one Adapter's health and runtime evidence.
 func (handler *Handler) mcpAdapterStateResource(
 	ctx context.Context,
 	resource mcpResourceURI,
 	adapterID string,
 ) (any, error) {
-	if queryErr := resource.only(); queryErr != nil {
+	if queryErr := resource.query.Only(); queryErr != nil {
 		return nil, queryErr
 	}
 	output, err := mcpRead(ctx, handler.GetAdapter, &GetAdapterInput{AdapterID: adapterID},
@@ -381,16 +355,15 @@ func (handler *Handler) mcpAdapterStateResource(
 	return output.Body, nil
 }
 
-// mcpAdapterHealthResource reads one page of an Adapter's health history.
 func (handler *Handler) mcpAdapterHealthResource(
 	ctx context.Context,
 	resource mcpResourceURI,
 	adapterID string,
 ) (any, error) {
-	if err := resource.only(mcpQueryLimit, mcpQueryCursor); err != nil {
+	if err := resource.query.Only(mcpapi.ResourceQueryLimit, mcpapi.ResourceQueryCursor); err != nil {
 		return nil, err
 	}
-	page, err := resource.page()
+	page, err := resource.query.Page()
 	if err != nil {
 		return nil, err
 	}
@@ -403,7 +376,6 @@ func (handler *Handler) mcpAdapterHealthResource(
 	return output.Body, nil
 }
 
-// mcpCommandResource reads one Command record.
 func (handler *Handler) mcpCommandResource(ctx context.Context, uri string) (any, error) {
 	resource, err := parseMCPResourceURI(uri)
 	if err != nil {
@@ -416,7 +388,7 @@ func (handler *Handler) mcpCommandResource(ctx context.Context, uri string) (any
 	if err != nil {
 		return nil, mcpResourceNotFoundError{}
 	}
-	if queryErr := resource.only(); queryErr != nil {
+	if queryErr := resource.query.Only(); queryErr != nil {
 		return nil, queryErr
 	}
 	output, err := mcpRead(ctx, handler.GetCommand, &GetCommandInput{CommandID: string(commandID)},
@@ -427,7 +399,6 @@ func (handler *Handler) mcpCommandResource(ctx context.Context, uri string) (any
 	return output.Body, nil
 }
 
-// mcpCollectionResource reads one page of a household collection.
 func (handler *Handler) mcpCollectionResource(ctx context.Context, uri string) (any, error) {
 	resource, err := parseMCPResourceURI(uri)
 	if err != nil {
@@ -450,16 +421,15 @@ func (handler *Handler) mcpCollectionResource(ctx context.Context, uri string) (
 	}
 }
 
-// mcpEntitiesResource reads one page of Entities, optionally scoped to a Device.
 func (handler *Handler) mcpEntitiesResource(ctx context.Context, resource mcpResourceURI) (any, error) {
-	if err := resource.only(mcpQueryDeviceID, mcpQueryLimit, mcpQueryCursor); err != nil {
+	if err := resource.query.Only(mcpQueryDeviceID, mcpapi.ResourceQueryLimit, mcpapi.ResourceQueryCursor); err != nil {
 		return nil, err
 	}
-	deviceID, err := resource.value(mcpQueryDeviceID)
+	deviceID, err := resource.query.Value(mcpQueryDeviceID)
 	if err != nil {
 		return nil, err
 	}
-	page, err := resource.page()
+	page, err := resource.query.Page()
 	if err != nil {
 		return nil, err
 	}
@@ -472,12 +442,11 @@ func (handler *Handler) mcpEntitiesResource(ctx context.Context, resource mcpRes
 	return output.Body, nil
 }
 
-// mcpDevicesResource reads one page of Devices.
 func (handler *Handler) mcpDevicesResource(ctx context.Context, resource mcpResourceURI) (any, error) {
-	if err := resource.only(mcpQueryLimit, mcpQueryCursor); err != nil {
+	if err := resource.query.Only(mcpapi.ResourceQueryLimit, mcpapi.ResourceQueryCursor); err != nil {
 		return nil, err
 	}
-	page, err := resource.page()
+	page, err := resource.query.Page()
 	if err != nil {
 		return nil, err
 	}
@@ -490,12 +459,11 @@ func (handler *Handler) mcpDevicesResource(ctx context.Context, resource mcpReso
 	return output.Body, nil
 }
 
-// mcpAdaptersResource reads one page of Adapters.
 func (handler *Handler) mcpAdaptersResource(ctx context.Context, resource mcpResourceURI) (any, error) {
-	if err := resource.only(mcpQueryLimit, mcpQueryCursor); err != nil {
+	if err := resource.query.Only(mcpapi.ResourceQueryLimit, mcpapi.ResourceQueryCursor); err != nil {
 		return nil, err
 	}
-	page, err := resource.page()
+	page, err := resource.query.Page()
 	if err != nil {
 		return nil, err
 	}
@@ -508,21 +476,21 @@ func (handler *Handler) mcpAdaptersResource(ctx context.Context, resource mcpRes
 	return output.Body, nil
 }
 
-// mcpCommandsResource reads one page of household Command history, optionally
-// filtered by Entity and status.
 func (handler *Handler) mcpCommandsResource(ctx context.Context, resource mcpResourceURI) (any, error) {
-	if err := resource.only(mcpQueryEntityID, mcpQueryStatus, mcpQueryLimit, mcpQueryCursor); err != nil {
+	if err := resource.query.Only(
+		mcpQueryEntityID, mcpQueryStatus, mcpapi.ResourceQueryLimit, mcpapi.ResourceQueryCursor,
+	); err != nil {
 		return nil, err
 	}
-	entityID, err := resource.value(mcpQueryEntityID)
+	entityID, err := resource.query.Value(mcpQueryEntityID)
 	if err != nil {
 		return nil, err
 	}
-	status, err := resource.value(mcpQueryStatus)
+	status, err := resource.query.Value(mcpQueryStatus)
 	if err != nil {
 		return nil, err
 	}
-	page, err := resource.page()
+	page, err := resource.query.Page()
 	if err != nil {
 		return nil, err
 	}
@@ -536,11 +504,14 @@ func (handler *Handler) mcpCommandsResource(ctx context.Context, resource mcpRes
 }
 
 // mcpResourceURI is one parsed hearth:// resource URI: its kind (the URI host),
-// its decoded path segments, and its query parameters.
+// its decoded path segments, and its query parameters. The query is the shared
+// mcpapi.ResourceQuery, so this package decides only which query parameters its
+// own resources accept; rejection and page parsing cannot drift from the other
+// modules that serve hearth:// resources.
 type mcpResourceURI struct {
 	kind     string
 	segments []string
-	query    url.Values
+	query    mcpapi.ResourceQuery
 }
 
 // parseMCPResourceURI parses one hearth:// URI and rejects what this package
@@ -549,29 +520,29 @@ type mcpResourceURI struct {
 func parseMCPResourceURI(raw string) (mcpResourceURI, error) {
 	parsed, err := url.Parse(raw)
 	if err != nil {
-		return mcpResourceURI{}, &mcpResourceInputError{message: "malformed resource URI"}
+		return mcpResourceURI{}, mcpapi.NewResourceInputError("malformed resource URI")
 	}
-	if parsed.Scheme != mcpResourceScheme {
-		return mcpResourceURI{}, &mcpResourceInputError{
-			message: fmt.Sprintf("resource URI must use the %s:// scheme", mcpResourceScheme),
-		}
+	if parsed.Scheme != mcpapi.ResourceScheme {
+		return mcpResourceURI{}, mcpapi.NewResourceInputError(fmt.Sprintf(
+			"resource URI must use the %s:// scheme", mcpapi.ResourceScheme,
+		))
 	}
 	if parsed.Host == "" || parsed.Fragment != "" {
-		return mcpResourceURI{}, &mcpResourceInputError{message: "malformed resource URI"}
+		return mcpResourceURI{}, mcpapi.NewResourceInputError("malformed resource URI")
 	}
 	query, err := url.ParseQuery(parsed.RawQuery)
 	if err != nil {
-		return mcpResourceURI{}, &mcpResourceInputError{message: "malformed resource URI query"}
+		return mcpResourceURI{}, mcpapi.NewResourceInputError("malformed resource URI query")
 	}
 	segments, err := mcpResourcePathSegments(parsed.Path)
 	if err != nil {
 		return mcpResourceURI{}, err
 	}
-	return mcpResourceURI{kind: parsed.Host, segments: segments, query: query}, nil
+	return mcpResourceURI{
+		kind: parsed.Host, segments: segments, query: mcpapi.NewResourceQuery(query),
+	}, nil
 }
 
-// mcpResourcePathSegments splits one resource URI path, rejecting empty and
-// traversal segments so only literal path shapes match.
 func mcpResourcePathSegments(path string) ([]string, error) {
 	trimmed := strings.Trim(path, "/")
 	if trimmed == "" {
@@ -580,99 +551,10 @@ func mcpResourcePathSegments(path string) ([]string, error) {
 	segments := strings.Split(trimmed, "/")
 	for _, segment := range segments {
 		if segment == "" || segment == "." || segment == ".." {
-			return nil, &mcpResourceInputError{message: "malformed resource URI path"}
+			return nil, mcpapi.NewResourceInputError("malformed resource URI path")
 		}
 	}
 	return segments, nil
-}
-
-// only rejects a query parameter this resource does not accept. Silently
-// ignoring one would return a broader page than a client asked for.
-func (uri mcpResourceURI) only(allowed ...string) error {
-	for key := range uri.query {
-		if !slices.Contains(allowed, key) {
-			return &mcpResourceInputError{message: fmt.Sprintf("unsupported query parameter %q", key)}
-		}
-	}
-	return nil
-}
-
-// single returns one optional query parameter's value and whether it was
-// present. A repeated parameter is rejected rather than resolved arbitrarily.
-func (uri mcpResourceURI) single(key string) (string, bool, error) {
-	values, present := uri.query[key]
-	if !present {
-		return "", false, nil
-	}
-	if len(values) != 1 {
-		return "", false, &mcpResourceInputError{
-			message: fmt.Sprintf("query parameter %q must appear once", key),
-		}
-	}
-	return values[0], true, nil
-}
-
-// value returns one optional query parameter's value, or the empty string when
-// the URI omits it.
-func (uri mcpResourceURI) value(key string) (string, error) {
-	value, _, err := uri.single(key)
-	return value, err
-}
-
-// limit returns the page size this resource asks for, applying the default
-// shared with the Huma query parameter.
-func (uri mcpResourceURI) limit() (int, error) {
-	value, present, err := uri.single(mcpQueryLimit)
-	if err != nil {
-		return 0, err
-	}
-	if !present {
-		return mcpDefaultPageLimit, nil
-	}
-	parsed, parseErr := strconv.Atoi(value)
-	if parseErr != nil {
-		return 0, &mcpResourceInputError{message: "limit must be an integer"}
-	}
-	if _, rangeErr := mcpPageLimitValue(parsed); rangeErr != nil {
-		return 0, &mcpResourceInputError{message: rangeErr.Error()}
-	}
-	return parsed, nil
-}
-
-// cursor returns the opaque cursor this resource asks for, uninterpreted.
-func (uri mcpResourceURI) cursor() (string, error) {
-	return uri.value(mcpQueryCursor)
-}
-
-// page returns the parsed cursor and page size of one paginated resource.
-func (uri mcpResourceURI) page() (mcpPageQuery, error) {
-	limit, err := uri.limit()
-	if err != nil {
-		return mcpPageQuery{}, err
-	}
-	cursor, err := uri.cursor()
-	if err != nil {
-		return mcpPageQuery{}, err
-	}
-	return mcpPageQuery{Limit: limit, Cursor: cursor}, nil
-}
-
-// mcpPageQuery is the parsed cursor and page size of one paginated resource.
-type mcpPageQuery struct {
-	Limit  int
-	Cursor string
-}
-
-// mcpResourceInputError is an unreadable resource URI or query. It becomes a
-// JSON-RPC invalid-params error, mirroring the Huma 400 for a malformed
-// request.
-type mcpResourceInputError struct {
-	message string
-}
-
-// Error implements the error interface.
-func (err *mcpResourceInputError) Error() string {
-	return err.message
 }
 
 // mcpResourceNotFoundError reports a resource URI this server does not serve.
@@ -680,7 +562,6 @@ func (err *mcpResourceInputError) Error() string {
 // resource-not-found error.
 type mcpResourceNotFoundError struct{}
 
-// Error implements the error interface.
 func (mcpResourceNotFoundError) Error() string {
 	return "resource not found"
 }
@@ -690,8 +571,8 @@ func (mcpResourceNotFoundError) Error() string {
 // becomes invalid params, and anything else stays internal without leaking
 // detail.
 func mcpResourceFailure(uri string, err error) error {
-	if inputError, ok := errors.AsType[*mcpResourceInputError](err); ok {
-		return mcpInvalidParamsError(inputError.message)
+	if inputError, ok := errors.AsType[*mcpapi.ResourceInputError](err); ok {
+		return mcpapi.InvalidParamsError(inputError.Message)
 	}
 	if _, ok := errors.AsType[mcpResourceNotFoundError](err); ok {
 		return mcp.ResourceNotFoundError(uri)
@@ -702,20 +583,12 @@ func mcpResourceFailure(uri string, err error) error {
 			string(mcpFailureAdapterNotFound), string(mcpFailureCommandNotFound):
 			return mcp.ResourceNotFoundError(uri)
 		case string(mcpFailureInvalidRequest):
-			return mcpInvalidParamsError(toolError.Message)
+			return mcpapi.InvalidParamsError(toolError.Message)
 		}
 	}
 	return mcpResourceInternalError()
 }
 
-// mcpInvalidParamsError reports one unreadable resource request with the
-// JSON-RPC invalid-params code.
-func mcpInvalidParamsError(message string) error {
-	return &jsonrpc.Error{Code: jsonrpc.CodeInvalidParams, Message: message}
-}
-
-// mcpResourceInternalError reports a 500-class resource failure without leaking
-// detail to the client.
 func mcpResourceInternalError() error {
 	return &jsonrpc.Error{Code: jsonrpc.CodeInternalError, Message: "internal error"}
 }

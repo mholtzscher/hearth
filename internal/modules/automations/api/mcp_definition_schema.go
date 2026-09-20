@@ -7,13 +7,11 @@ import (
 )
 
 // mcpAutomationDefinitionInputSchema builds the argument schema for one
-// definition-bearing Automation tool.
-//
-// The definition property carries the same canonical strict schema the Huma
-// operations publish, so tools/list advertises the Trigger, Condition, and Step
-// constraints and the SDK rejects a schema-invalid definition before the handler
-// runs. The remaining properties keep the schema derived from the tool's input
-// struct, so this adds no hand-maintained copy of the canonical document.
+// definition-bearing Automation tool, so tools/list advertises the canonical
+// Trigger, Condition, and Step constraints and the SDK rejects a schema-invalid
+// definition before the handler runs. The remaining properties keep the schema
+// derived from the tool's input struct, so this adds no hand-maintained copy of
+// the canonical document.
 //
 // The compiled codec is shared with Register, so the MCP and Huma surfaces read
 // one schema authority; a codec failure is a startup invariant and panics, as it

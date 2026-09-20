@@ -13,6 +13,7 @@ import (
 	"github.com/nats-io/nats.go/jetstream"
 
 	contractsv1 "github.com/mholtzscher/hearth/contracts/v1"
+	"github.com/mholtzscher/hearth/internal/modules/agent"
 	"github.com/mholtzscher/hearth/internal/modules/automations"
 	"github.com/mholtzscher/hearth/internal/modules/devices"
 	devicesnats "github.com/mholtzscher/hearth/internal/modules/devices/nats"
@@ -42,6 +43,7 @@ type coreShutdown struct {
 	automationConsumers *automationConsumers
 	automationService   *automations.Service
 	deviceService       *devices.Service
+	agentService        *agent.Service
 	cancelDependencies  context.CancelFunc
 	historyPruneWorker  *lifecycle.WorkerHandle
 	healthSupervisor    *healthSupervisor
@@ -63,20 +65,12 @@ func (shutdown *coreShutdown) run() error {
 	if shutdown.automationConsumers != nil {
 		shutdown.automationConsumers.close()
 	}
-	if shutdown.automationService != nil {
-		shutdown.automationService.StopAdmission()
-	}
-	if shutdown.deviceService != nil {
-		shutdown.deviceService.StopAdmission()
-	}
-	// Ignore process cancellation: admitted work runs to its own deadline.
-	// Join Automation Runs first because their Steps depend on Commands.
-	if shutdown.automationService != nil {
-		_ = shutdown.automationService.Drain(context.Background())
-	}
-	if shutdown.deviceService != nil {
-		_ = shutdown.deviceService.Drain(context.Background())
-	}
+	// Close admission before joining work: a drained worker must not be able to
+	// admit new work, and a still-draining dependency must keep serving the
+	// workers that already hold a reservation.
+	shutdown.closeAdmissionAndJoinWorkers()
+	// Canceling the dependency context closes the agent's MCP client and server
+	// sessions: no joined turn can call a tool after this point.
 	if shutdown.cancelDependencies != nil {
 		shutdown.cancelDependencies()
 	}
@@ -114,6 +108,33 @@ func (shutdown *coreShutdown) run() error {
 		fail("close_database", shutdown.database.Close())
 	}
 	return firstErr
+}
+
+// closeAdmissionAndJoinWorkers closes every admission gate, then joins admitted
+// work in dependency order. The agent drains first because one of its turns
+// reaches Devices and Automations through the MCP catalog, so no turn may still
+// be running when those modules begin to drain. Process cancellation is
+// deliberately ignored: admitted work runs to its own deadline.
+func (shutdown *coreShutdown) closeAdmissionAndJoinWorkers() {
+	if shutdown.agentService != nil {
+		shutdown.agentService.StopAdmission()
+	}
+	if shutdown.automationService != nil {
+		shutdown.automationService.StopAdmission()
+	}
+	if shutdown.deviceService != nil {
+		shutdown.deviceService.StopAdmission()
+	}
+	if shutdown.agentService != nil {
+		_ = shutdown.agentService.Drain(context.Background())
+	}
+	// Join Automation Runs before Commands because their Steps depend on Commands.
+	if shutdown.automationService != nil {
+		_ = shutdown.automationService.Drain(context.Background())
+	}
+	if shutdown.deviceService != nil {
+		_ = shutdown.deviceService.Drain(context.Background())
+	}
 }
 
 // stopHistoryPruning joins the retention worker before SQLite closes. Its

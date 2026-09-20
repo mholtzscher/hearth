@@ -19,9 +19,9 @@ import (
 const sensitiveSentinel = "SENTINEL-secret-value-DEADBEEF"
 
 // TestUnmodelledFailureIsLoggedWithSafeMetadata proves a handler failure the
-// wrapper does not model keeps its fixed failure code, Go error type, and the
-// invoked tool name in one structured server record, while neither the client
-// nor the log sees the raw cause.
+// wrapper does not model keeps its fixed failure code, Go error type, and tool
+// name in one structured server record, while neither the client nor the log
+// sees the raw cause.
 func TestUnmodelledFailureIsLoggedWithSafeMetadata(t *testing.T) {
 	t.Parallel()
 	var logs bytes.Buffer
@@ -65,8 +65,7 @@ func TestUnmodelledFailureIsLoggedWithSafeMetadata(t *testing.T) {
 }
 
 // TestDomainFailureIsNotLoggedAsInternal proves an expected domain failure stays
-// silent in the diagnostic log: the client branches on it, so it is not a
-// server fault.
+// silent in the diagnostic log.
 func TestDomainFailureIsNotLoggedAsInternal(t *testing.T) {
 	t.Parallel()
 	var logs bytes.Buffer
@@ -94,9 +93,8 @@ func TestDomainFailureIsNotLoggedAsInternal(t *testing.T) {
 
 // TestInternalToolFailureIsLoggedWithSafeMetadata proves an internal failure
 // whose handler retains its cause records only the fixed failure code, Go error
-// type, and tool name while the client sees only the generic message and
-// machine-readable failure fields. The retained cause stays reachable to the
-// server but is never logged as text.
+// type, and tool name, while the client sees only the generic message and
+// machine-readable fields and the retained cause is never logged as text.
 func TestInternalToolFailureIsLoggedWithSafeMetadata(t *testing.T) {
 	t.Parallel()
 	var logs bytes.Buffer
@@ -106,9 +104,7 @@ func TestInternalToolFailureIsLoggedWithSafeMetadata(t *testing.T) {
 		Name:        "greet",
 		Description: "Greet one person",
 		Handler: func(context.Context, greetInput) (greetOutput, error) {
-			return greetOutput{}, (&mcpapi.ToolError{
-				Code: mcpapi.CodeInternalError, Message: "internal error",
-			}).WithCause(errors.New("SQLite unavailable: " + sensitiveSentinel))
+			return greetOutput{}, mcpapi.InternalToolError(errors.New("SQLite unavailable: " + sensitiveSentinel))
 		},
 	})
 
@@ -142,9 +138,8 @@ func TestInternalToolFailureIsLoggedWithSafeMetadata(t *testing.T) {
 	assertCauseAbsent(t, logs.Bytes())
 }
 
-// TestInternalToolFailureWithoutCauseIsNotLogged proves an internal failure
-// with no retained cause stays silent in the diagnostic log: there is no
-// server-side detail to report, and inventing one is not the wrapper's job.
+// TestInternalToolFailureWithoutCauseIsNotLogged proves an internal failure with
+// no retained cause stays silent: there is no server-side detail to report.
 func TestInternalToolFailureWithoutCauseIsNotLogged(t *testing.T) {
 	t.Parallel()
 	var logs bytes.Buffer
@@ -154,7 +149,7 @@ func TestInternalToolFailureWithoutCauseIsNotLogged(t *testing.T) {
 		Name:        "greet",
 		Description: "Greet one person",
 		Handler: func(context.Context, greetInput) (greetOutput, error) {
-			return greetOutput{}, &mcpapi.ToolError{Code: mcpapi.CodeInternalError, Message: "internal error"}
+			return greetOutput{}, mcpapi.InternalToolError(nil)
 		},
 	})
 
@@ -208,8 +203,8 @@ func assertSafeErrorType(t *testing.T, record map[string]any) {
 	}
 }
 
-// assertCauseAbsent proves no log byte carries the sensitive sentinel and no
-// raw error field was serialized at all.
+// assertCauseAbsent proves no log byte carries the sensitive sentinel and no raw
+// error field was serialized at all.
 func assertCauseAbsent(t *testing.T, raw []byte) {
 	t.Helper()
 	if strings.Contains(string(raw), sensitiveSentinel) {

@@ -3,6 +3,7 @@ package api
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 
 	"github.com/mholtzscher/hearth/internal/modules/automations"
@@ -10,15 +11,19 @@ import (
 
 // The argument types below mirror the Devices MCP custom scalars: a dedicated
 // type with an UnmarshalJSON decoder rejects a malformed scalar while the SDK
-// decodes tool arguments, so no automation handler or service call ever sees
-// one. The stable failure code the Huma handler would report prefixes every
-// message, because the SDK renders a decoding failure as the tool result text.
+// decodes tool arguments, so no automation handler or service call ever sees one.
+// The stable failure code the Huma handler would report prefixes every message,
+// because the SDK renders a decoding failure as the tool result text and that
+// text is the only place the code crosses the MCP boundary.
 
-// mcpArgumentString decodes one identifier-shaped JSON string argument.
-func mcpArgumentString(data []byte) (string, error) {
+// mcpArgumentString decodes one string-shaped argument. A non-string value is
+// rejected with the stable code and argument name of the scalar being decoded,
+// because the SDK renders the decoder error as prose the client cannot branch
+// on otherwise.
+func mcpArgumentString(data []byte, code, argument string) (string, error) {
 	var value string
 	if err := json.Unmarshal(data, &value); err != nil {
-		return "", errors.New("argument must be a JSON string")
+		return "", fmt.Errorf("%s: %s must be a JSON string", code, argument)
 	}
 	return value, nil
 }
@@ -26,9 +31,8 @@ func mcpArgumentString(data []byte) (string, error) {
 // mcpAutomationID is a canonical Hearth Automation ID argument.
 type mcpAutomationID string
 
-// UnmarshalJSON decodes and validates one Automation ID argument.
 func (id *mcpAutomationID) UnmarshalJSON(data []byte) error {
-	value, err := mcpArgumentString(data)
+	value, err := mcpArgumentString(data, "invalid_automation_id", "automation_id")
 	if err != nil {
 		return err
 	}
@@ -43,9 +47,8 @@ func (id *mcpAutomationID) UnmarshalJSON(data []byte) error {
 // mcpEntryID is a canonical Hearth Run or Skip ID argument.
 type mcpEntryID string
 
-// UnmarshalJSON decodes and validates one history entry ID argument.
 func (id *mcpEntryID) UnmarshalJSON(data []byte) error {
-	value, err := mcpArgumentString(data)
+	value, err := mcpArgumentString(data, "invalid_entry_id", "entry_id")
 	if err != nil {
 		return err
 	}
@@ -57,11 +60,10 @@ func (id *mcpEntryID) UnmarshalJSON(data []byte) error {
 }
 
 // mcpPageLimit is a page-size argument bounded to the range the Huma query
-// parameter accepts. Decoding rejects an out-of-range value; the zero value
-// means the argument was omitted.
+// parameter accepts. Decoding rejects an out-of-range value; the zero value means
+// the argument was omitted.
 type mcpPageLimit int
 
-// UnmarshalJSON decodes and range-checks one page-size argument.
 func (limit *mcpPageLimit) UnmarshalJSON(data []byte) error {
 	var value int
 	if err := json.Unmarshal(data, &value); err != nil {
@@ -74,8 +76,6 @@ func (limit *mcpPageLimit) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
-// pageSize returns the effective page size for one limit argument, applying the
-// default Huma and MCP share.
 func (limit mcpPageLimit) pageSize() int {
 	if limit == 0 {
 		return mcpPageDefaultLimit
@@ -86,7 +86,6 @@ func (limit mcpPageLimit) pageSize() int {
 // mcpExpectedRevision is a required optimistic-concurrency revision argument.
 type mcpExpectedRevision int64
 
-// UnmarshalJSON decodes and validates one expected revision argument.
 func (revision *mcpExpectedRevision) UnmarshalJSON(data []byte) error {
 	var value int64
 	if err := json.Unmarshal(data, &value); err != nil {
@@ -102,13 +101,12 @@ func (revision *mcpExpectedRevision) UnmarshalJSON(data []byte) error {
 // mcpDefinitionArgument extracts the exact strict definition document from one
 // raw tool request.
 //
-// The SDK's typed argument pipeline decodes every argument number through
-// float64 before a handler sees it, so it cannot carry a value above 2^53
-// unchanged. The untouched request bytes can: this reads the definition member
-// as a [json.RawMessage] and hands the canonical strict decoder the same raw JSON
-// the Huma request body carries, so the persisted document keeps its exact
-// literals. A literal outside the float64 range is still rejected by the SDK's
-// own argument validation before any handler runs.
+// The SDK's typed argument pipeline decodes every argument number through float64
+// before a handler sees it, so it cannot carry a value above 2^53 unchanged. The
+// untouched request bytes can: this reads the definition member as a
+// [json.RawMessage] and hands the canonical strict decoder the same raw JSON the
+// Huma request body carries. A literal outside the float64 range is still
+// rejected by the SDK's own argument validation before any handler runs.
 func mcpDefinitionArgument(arguments json.RawMessage) (automations.Definition, error) {
 	var envelope struct {
 		Definition json.RawMessage `json:"definition"`

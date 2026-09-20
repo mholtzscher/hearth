@@ -1,13 +1,20 @@
 package hearthd
 
 import (
+	"errors"
 	"fmt"
 	"net"
+	"net/url"
+	"os"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
 	_ "time/tzdata" // Embed household timezone rules instead of requiring host zoneinfo.
 
+	"github.com/cloudwego/eino/components/model"
+
+	"github.com/mholtzscher/hearth/internal/modules/agent"
 	"github.com/mholtzscher/hearth/internal/modules/automations"
 	"github.com/mholtzscher/hearth/internal/modules/devices"
 	platformconfig "github.com/mholtzscher/hearth/internal/platform/config"
@@ -26,7 +33,22 @@ const (
 	// AutomationFactMaximumAge is the fixed semantic freshness bound for one
 	// Device Fact. It is deliberately not operator configuration.
 	AutomationFactMaximumAge = automations.FactMaximumAge
+	// DefaultAgentModel is the household chat model the agent uses unless
+	// configured otherwise.
+	DefaultAgentModel = "gpt-5.6-luna"
+	// DefaultAgentHistoryRetention bounds how long Core keeps agent conversations.
+	DefaultAgentHistoryRetention = 30 * 24 * time.Hour
+	// MinimumAgentHistoryRetention keeps agent conversation retention at the
+	// module's own floor: a shorter window would delete more than intended.
+	MinimumAgentHistoryRetention = agent.MinimumConversationRetention
 )
+
+// agentReasoningEfforts lists the model reasoning levels Core forwards to the
+// provider verbatim; an empty setting selects the provider's own default. It is
+// a function, not package state, so the closed list has one owner.
+func agentReasoningEfforts() []string {
+	return []string{"none", "minimal", "low", "medium", "high"}
+}
 
 type Config struct {
 	HouseholdTimezone string `yaml:"household_timezone"`
@@ -41,6 +63,38 @@ type Config struct {
 	// Runs and Skips. Zero selects DefaultAutomationHistoryRetention; a restart
 	// applies policy changes on the startup prune pass.
 	AutomationHistoryRetention time.Duration `yaml:"automation_history_retention"`
+	// Agent is the required household agent configuration. Core always
+	// constructs the agent, so the block and its API key file are required.
+	Agent AgentConfig `yaml:"agent"`
+}
+
+// AgentConfig configures the required household agent. The secret lives in a
+// separate local file, and every other value is ordinary non-secret
+// configuration.
+type AgentConfig struct {
+	// APIKeyFile is the local secret file holding the model API key. Core
+	// requires it, never logs its path or contents, and never persists the key.
+	APIKeyFile string `yaml:"api_key_file"`
+	// Model names the chat model. Empty selects DefaultAgentModel; a restart
+	// applies a change to later turns.
+	Model string `yaml:"model"`
+	// BaseURL overrides the model provider endpoint. Empty uses the provider's
+	// own default; a set value must be an absolute http or https URL.
+	BaseURL string `yaml:"base_url"`
+	// ReasoningEffort selects the model's reasoning level from
+	// agentReasoningEfforts. Empty selects the provider's own default.
+	ReasoningEffort string `yaml:"reasoning_effort"`
+	// MaxSteps bounds one turn's model plus tools steps. Zero selects the agent
+	// module's own default.
+	MaxSteps int `yaml:"max_steps"`
+	// HistoryRetention bounds how long Core keeps whole agent conversations.
+	// Zero selects DefaultAgentHistoryRetention; a restart applies policy
+	// changes on the startup prune pass.
+	HistoryRetention time.Duration `yaml:"history_retention"`
+	// ChatModel replaces the provider chat model the agent would construct,
+	// which lets tests and embeddings run a turn without model credentials. It
+	// is deliberately not YAML configuration.
+	ChatModel model.ToolCallingChatModel `yaml:"-"`
 }
 
 func LoadConfig(path string) (Config, error) {
@@ -53,6 +107,12 @@ func LoadConfig(path string) (Config, error) {
 	}
 	if value.AutomationHistoryRetention == 0 {
 		value.AutomationHistoryRetention = DefaultAutomationHistoryRetention
+	}
+	if value.Agent.Model == "" {
+		value.Agent.Model = DefaultAgentModel
+	}
+	if value.Agent.HistoryRetention == 0 {
+		value.Agent.HistoryRetention = DefaultAgentHistoryRetention
 	}
 	if err := value.Validate(); err != nil {
 		return Config{}, platformconfig.Invalid(path, err)
@@ -76,6 +136,42 @@ func (value Config) EffectiveAutomationHistoryRetention() time.Duration {
 		return DefaultAutomationHistoryRetention
 	}
 	return value.AutomationHistoryRetention
+}
+
+// EffectiveAgentModel returns the configured agent model, or
+// DefaultAgentModel when the setting is unset.
+func (value Config) EffectiveAgentModel() string {
+	if value.Agent.Model == "" {
+		return DefaultAgentModel
+	}
+	return value.Agent.Model
+}
+
+// EffectiveAgentHistoryRetention returns the configured agent conversation
+// retention, or DefaultAgentHistoryRetention when the setting is unset.
+func (value Config) EffectiveAgentHistoryRetention() time.Duration {
+	if value.Agent.HistoryRetention == 0 {
+		return DefaultAgentHistoryRetention
+	}
+	return value.Agent.HistoryRetention
+}
+
+// LoadAgentAPIKey reads the model API key from the required agent secret file.
+// Its errors classify the failure without repeating the configured path or the
+// file's contents, so a process record can publish them safely.
+func (value Config) LoadAgentAPIKey() (string, error) {
+	contents, err := os.ReadFile(value.Agent.APIKeyFile)
+	if err != nil {
+		return "", errors.New("agent.api_key_file could not be read")
+	}
+	// The key string is a copy; clearing the file buffer shortens the window the
+	// secret spends in memory as bytes.
+	defer clear(contents)
+	apiKey := strings.TrimSpace(string(contents))
+	if apiKey == "" {
+		return "", errors.New("agent.api_key_file is empty")
+	}
+	return apiKey, nil
 }
 
 // LoadHouseholdTimezone loads an IANA location from embedded timezone data.
@@ -133,6 +229,37 @@ func (value Config) validateRuntimeSettings() error {
 		value.AutomationHistoryRetention < MinimumAutomationHistoryRetention {
 		return fmt.Errorf(
 			"automation_history_retention must be at least %s", MinimumAutomationHistoryRetention,
+		)
+	}
+	return value.validateAgent()
+}
+
+// validateAgent rejects an agent configuration Core cannot start the required
+// agent with. Validation stays static: it never reads the secret file, which
+// startup reports separately and without the configured path.
+func (value Config) validateAgent() error {
+	if strings.TrimSpace(value.Agent.APIKeyFile) == "" {
+		return errors.New("agent.api_key_file is required")
+	}
+	if value.Agent.BaseURL != "" {
+		parsed, err := url.Parse(value.Agent.BaseURL)
+		if err != nil || (parsed.Scheme != "http" && parsed.Scheme != "https") || parsed.Host == "" {
+			return errors.New("agent.base_url must be an absolute http or https URL")
+		}
+	}
+	efforts := agentReasoningEfforts()
+	if value.Agent.ReasoningEffort != "" && !slices.Contains(efforts, value.Agent.ReasoningEffort) {
+		return fmt.Errorf(
+			"agent.reasoning_effort must be one of %s", strings.Join(efforts, ", "),
+		)
+	}
+	if value.Agent.MaxSteps < 0 {
+		return errors.New("agent.max_steps must not be negative")
+	}
+	if value.Agent.HistoryRetention != 0 &&
+		value.Agent.HistoryRetention < MinimumAgentHistoryRetention {
+		return fmt.Errorf(
+			"agent.history_retention must be at least %s", MinimumAgentHistoryRetention,
 		)
 	}
 	return nil

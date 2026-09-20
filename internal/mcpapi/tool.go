@@ -10,12 +10,11 @@ import (
 // values set by the transport layer, such as Echo middleware.
 type Handler[I, O any] func(context.Context, I) (O, error)
 
-// Tool describes one typed MCP tool: its identity and its handler.
-//
-// The input and output JSON Schemas are derived from I and O, reading json and
-// jsonschema struct tags, so callers describe inputs with plain Go structs. The
-// advertised output schema is the union of the derived success schema and the
-// structured failure object [Register] can emit for a [ToolError].
+// Tool describes one typed MCP tool: its identity and its handler. The input and
+// output JSON Schemas are derived from I and O, reading json and jsonschema
+// struct tags, so callers describe inputs with plain Go structs. The advertised
+// output schema is the union of the derived success schema and the structured
+// failure object [Register] can emit for a [ToolError].
 type Tool[I, O any] struct {
 	// Name is the tool name clients call, mirroring the Huma operationId in
 	// snake_case.
@@ -34,18 +33,14 @@ type Tool[I, O any] struct {
 
 // Register adds tool to server.
 //
-// The wrapper derives the argument schema when the Tool supplies none, and the
-// advertised argument and result schemas are rewritten into the portable shape
-// every MCP client can read (see the package documentation). The SDK then
-// decodes and validates the arguments against the advertised schema before
+// The wrapper derives the argument schema when the Tool supplies none, then the
+// SDK decodes and validates the arguments against the advertised schema before
 // invoking the handler, validates the handler's output, and populates the
 // result's structured content. A non-nil [Tool.InputSchema] replaces the derived
-// argument schema, and is normalized the same way. Invalid arguments are
-// rejected automatically and the handler never runs.
-//
-// The advertised output schema is the union of the success type and the
-// structured failure object, so a success result and a [ToolError] result each
-// validate against it.
+// argument schema. Both advertised schemas are rewritten into the portable shape
+// every MCP client can read (see the package documentation), and the advertised
+// output schema is the union of the success type and the structured failure
+// object, so a success result and a [ToolError] result each validate against it.
 //
 // A returned [ToolError] reaches the client as an isError result whose text is
 // "<code>: <message>" and whose structured content carries the code, message,
@@ -85,12 +80,9 @@ type ToolWithRequest[I, O any] struct {
 }
 
 // RegisterWithRequest adds tool to server for handlers that need session or
-// request metadata. Use [Register] otherwise: this escape hatch exists only for
-// tools that genuinely need the raw request.
-//
-// The handler must still translate the request into plain domain values before
-// calling a service; no MCP request crosses the service boundary. Failures are
-// mapped exactly as [Register] maps them.
+// request metadata; use [Register] otherwise. The handler must still translate
+// the request into plain domain values before calling a service, and failures
+// are mapped exactly as [Register] maps them.
 func RegisterWithRequest[I, O any](server *Server, tool ToolWithRequest[I, O]) {
 	mcp.AddTool(server.server, &mcp.Tool{
 		Name:         tool.Name,
@@ -104,19 +96,28 @@ func RegisterWithRequest[I, O any](server *Server, tool ToolWithRequest[I, O]) {
 }
 
 // CodeInternalError is the stable failure code for a 500-class server failure
-// the wrapper hides from the client.
-//
-// The client learns only that the call failed. A handler that still holds the
-// server-side cause attaches it with [ToolError.WithCause]; that cause never
-// reaches the client and the tool middleware logs it for server diagnostics.
+// the wrapper hides from the client: the client learns only that the call
+// failed. A handler that still holds the server-side cause attaches it with
+// [ToolError.WithCause]; that cause never reaches the client and the tool
+// middleware logs it for server diagnostics.
 const CodeInternalError = "internal_error"
+
+// InternalToolError returns the generic internal failure exposed to a client.
+// A non-nil cause is retained for server diagnostics but is never published.
+func InternalToolError(cause error) *ToolError {
+	failure := &ToolError{Code: CodeInternalError, Message: "internal error"}
+	if cause != nil {
+		failure = failure.WithCause(cause)
+	}
+	return failure
+}
 
 // ToolError is a tool-domain failure that reaches the client as an MCP tool
 // result with isError set, rather than as a JSON-RPC protocol error the model
 // cannot recover from.
 //
-// A [Handler] returns a *ToolError to signal a recoverable failure the agent
-// can branch on. The result's text is "<code>: <message>", and its structured
+// A [Handler] returns a *ToolError to signal a recoverable failure the agent can
+// branch on. The result's text is "<code>: <message>", and its structured
 // content carries failure_code, message, and every Details field, so the agent
 // can branch on codes instead of parsing prose.
 type ToolError struct {
@@ -134,13 +135,11 @@ type ToolError struct {
 }
 
 // WithCause attaches the server-side failure this result hides from the client
-// and returns the same [ToolError].
-//
-// A handler retaining a cause keeps it reachable for server diagnostics without
-// widening the client contract: [ToolError.Error] and the structured content
-// still carry only Code, Message, and Details. The tool middleware logs the
-// cause only for an internal failure ([ToolError] with code
-// [CodeInternalError]), so a domain failure's cause stays silent.
+// and returns the same [ToolError]. It keeps the cause reachable for server
+// diagnostics without widening the client contract: [ToolError.Error] and the
+// structured content still carry only Code, Message, and Details. The tool
+// middleware logs the cause only for a [ToolError] with code
+// [CodeInternalError].
 func (e *ToolError) WithCause(cause error) *ToolError {
 	e.cause = cause
 	return e

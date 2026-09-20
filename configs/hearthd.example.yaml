@@ -7,5 +7,22 @@ observation_retention: 720h
 # Applies on the startup prune pass; matched Device Fact receipts are retained.
 automation_history_retention: 720h
 
+# The household agent is a required Core module: Core always constructs it, so
+# api_key_file must name an existing local secret file. The key is read once at
+# startup and never logged, persisted, or echoed in diagnostics.
+agent:
+  api_key_file: .data/agent-api-key
+  # Chat model name (default gpt-5.6-luna).
+  model: gpt-5.6-luna
+  # Provider endpoint override; empty uses the provider default. Absolute http or https only.
+  base_url: ""
+  # Reasoning level: none, minimal, low, medium, or high; empty uses the provider default.
+  # The default model rejects function tools unless this is none.
+  reasoning_effort: none
+  # Bounds one turn's model plus tools steps (default 20).
+  max_steps: 20
+  # Conversation retention window (default 30d, minimum 24h). Applies on the startup prune pass.
+  history_retention: 720h
+
 # IANA timezone; required, changes take effect after restart.
 household_timezone: UTC

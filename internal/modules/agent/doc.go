@@ -1,5 +1,7 @@
-// Package agent is an experimental spike: a server-side household agent built
-// on Eino's ReAct loop with conversation history in Core's SQLite.
+// Package agent is Core's household agent: a server-side ReAct loop over Eino
+// with conversation history in Core's SQLite. Core always constructs it, so it
+// is a required module beside devices and automations rather than an
+// environment-gated spike.
 //
 // A conversation is an append-only stream of Eino schema.Message JSON blobs
 // (user, assistant with tool calls, tool results), rebuilt on every turn. The
@@ -9,12 +11,13 @@
 // commands tables exactly as REST and MCP see them: this history owns the
 // conversation only, never the outcome.
 //
-// Deliberate spike decisions, each a graduation question:
+// Deliberate decisions, each still a graduation question:
 //   - History uses plain database/sql, not the sqlc pipeline the devices and
 //     automations modules use; the store is three statements.
-//   - Model credentials come from the environment (OPENAI_API_KEY,
-//     OPENAI_MODEL, OPENAI_BASE_URL) with no config-file keys; application
-//     assembly skips the /v1/agent routes when no key is present.
+//   - Model selection, endpoint, reasoning level, and the API key file come
+//     from the required `agent` Core configuration block. The key is read from
+//     its own local secret file, and Core always constructs the agent, so the
+//     module owns no environment gate and no disabled mode.
 //   - Only assistant-final text plus the tool-call trace cross the HTTP
 //     boundary; full message JSON stays server-side.
 //   - Eino is outside the fixed implementation stack docs/architecture.md

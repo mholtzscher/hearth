@@ -187,6 +187,77 @@ func TestCommandErrorMappingUsesStandardHumaErrors(t *testing.T) {
 	}
 }
 
+// TestCommandResultBodyMapsDispatchedOutcome proves the shared Command result
+// mapping omits the evidence fields for a dispatched outcome, as the Huma
+// response body does.
+func TestCommandResultBodyMapsDispatchedOutcome(t *testing.T) {
+	t.Parallel()
+	body, err := commandResultBody(devices.CommandResult{
+		CommandID: apiCommandID, Outcome: devices.OutcomeDispatched,
+	})
+	if err != nil {
+		t.Fatalf("commandResultBody error = %v", err)
+	}
+	if body.CommandID != string(apiCommandID) || body.Status != "dispatched" ||
+		body.ObservationID != nil || body.Value != nil {
+		t.Fatalf("body = %#v", body)
+	}
+}
+
+// TestCommandResultBodyMapsObservedOutcome proves the shared Command result
+// mapping carries the decoded evidence for an observed outcome.
+func TestCommandResultBodyMapsObservedOutcome(t *testing.T) {
+	t.Parallel()
+	observationID := apiObservationID
+	value := devices.Value(`{"level":3}`)
+	body, err := commandResultBody(devices.CommandResult{
+		CommandID: apiCommandID, Outcome: devices.OutcomeObserved,
+		ObservationID: &observationID, Value: &value,
+	})
+	if err != nil {
+		t.Fatalf("commandResultBody error = %v", err)
+	}
+	if body.CommandID != string(apiCommandID) || body.Status != "satisfied" ||
+		body.ObservationID == nil || *body.ObservationID != string(apiObservationID) || body.Value == nil {
+		t.Fatalf("body = %#v", body)
+	}
+	decoded, ok := (*body.Value).(map[string]any)
+	if !ok || decoded["level"] != json.Number("3") {
+		t.Fatalf("decoded value = %#v", body.Value)
+	}
+}
+
+// TestCommandResultBodyReportsUnrepresentableEvidence proves an observed result
+// whose evidence cannot be represented reports the shared mapping failure, so
+// each transport keeps its own internal-error rendering.
+func TestCommandResultBodyReportsUnrepresentableEvidence(t *testing.T) {
+	t.Parallel()
+	observationID := apiObservationID
+	malformed := devices.Value(`{`)
+	tests := []struct {
+		name   string
+		result devices.CommandResult
+	}{
+		{"missing evidence", devices.CommandResult{CommandID: apiCommandID, Outcome: devices.OutcomeObserved}},
+		{
+			"malformed evidence",
+			devices.CommandResult{
+				CommandID: apiCommandID, Outcome: devices.OutcomeObserved,
+				ObservationID: &observationID, Value: &malformed,
+			},
+		},
+	}
+	for _, test := range tests {
+		body, err := commandResultBody(test.result)
+		if !errors.Is(err, errCommandResultMapping) {
+			t.Errorf("%s error = %v, want errCommandResultMapping", test.name, err)
+		}
+		if body != (CommandResultBody{}) {
+			t.Errorf("%s body = %#v, want the zero body", test.name, body)
+		}
+	}
+}
+
 func TestExecuteCommandHTTPRejectsReservedIdentityFields(t *testing.T) {
 	t.Parallel()
 	for _, field := range []string{"id", "command_id", "correlation_id"} {

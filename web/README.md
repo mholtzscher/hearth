@@ -68,9 +68,9 @@ Then restart vite. Same loopback/trusted-network rules as above: the key and
 the unauthenticated `hearthd` must never face anything untrusted. No tests;
 see `web/src/pages/ChatPage.tsx`.
 
-## Agent prototype (server-side, rough, dev only)
+## Household agent
 
-`/agent` drives hearthd's experimental Go agent (`POST /v1/agent/conversations`,
+`/agent` drives hearthd's required household agent (`POST /v1/agent/conversations`,
 `POST .../{id}/messages`, `GET .../{id}/messages`): Eino ReAct in-process with
 SQLite conversation history. Turns stream over SSE (`POST
 .../{id}/messages/stream`: `turn.started`, `tool.started`, `tool.finished`,
@@ -78,9 +78,12 @@ SQLite conversation history. Turns stream over SSE (`POST
 reconciles with history at turn end. The stream route is a plain Echo handler
 and stays out of `openapi.json`. The browser holds no model key; the
 conversation ID persists in `localStorage` while history is durable
-server-side. Requires Core started with `OPENAI_API_KEY` (plus `OPENAI_MODEL`,
-default `gpt-5.6-luna`); without it the page reports the routes unregistered.
-No tests; see `web/src/pages/AgentPage.tsx` and `internal/modules/agent`.
+server-side. Core always registers these routes: the agent is a required module,
+configured by the `agent` block in `configs/hearthd.yaml` (an
+`agent.api_key_file` secret plus an optional `agent.model`, default
+`gpt-5.6-luna`), and Core fails startup when the secret file is missing. A 404
+from the page means the dashboard is connected to an older Core build. See
+`web/src/pages/AgentPage.tsx` and `internal/modules/agent`.
 
 ## Build
 

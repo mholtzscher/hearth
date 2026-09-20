@@ -26,14 +26,13 @@ type portabilityDerivedInput struct {
 	Path  []portabilityPoint `json:"path,omitempty"`
 }
 
-// portabilityPoint is the nullable object member of portabilityDerivedInput.
 type portabilityPoint struct {
 	Label    string `json:"label"`
 	Priority *int   `json:"priority,omitempty"`
 }
 
 // portabilityDerivedOutput mirrors the input shapes on the result side, so the
-// advertised success schema is validated against a body that carries an
+// advertised success schema is validated against a body carrying an
 // unconstrained member and nullable members.
 type portabilityDerivedOutput struct {
 	Points []portabilityPoint `json:"points"`
@@ -83,10 +82,9 @@ const portabilityOverrideSchema = `{
 // reaches a client free of the two shapes strict MCP clients reject: a boolean
 // subschema node and an array-valued `type`.
 //
-// It inspects the schemas tools/list actually publishes, so it covers the wire
-// document rather than the wrapper's internal representation, and it registers
-// one tool per path the wrapper can emit a schema from: a derived schema, an
-// explicit override, the request escape hatch, and an untyped argument.
+// It inspects the schemas tools/list actually publishes and registers one tool
+// per path the wrapper can emit a schema from: a derived schema, an explicit
+// override, the request escape hatch, and an untyped argument.
 func TestRegisteredToolSchemasArePortable(t *testing.T) {
 	t.Parallel()
 	server := mcpapi.New(mcpapi.Config{Name: "hearth", Version: "1.0.0"})
@@ -258,8 +256,8 @@ func TestDerivedSchemasBecomePortableShapes(t *testing.T) {
 // receives accepts exactly the argument documents the schema it replaced
 // accepted.
 //
-// Every case declares the outcome it expects, and the test checks the original
-// as well as the rewritten document against it, so a case that lost its
+// Every case declares its expected outcome, and the test checks the original as
+// well as the rewritten document against it, so a case that lost its
 // discriminating power fails instead of passing vacuously.
 func TestPortableInputSchemaPreservesValidation(t *testing.T) {
 	t.Parallel()
@@ -526,7 +524,6 @@ func TestPortableOutputSchemaValidatesSuccessAndFailure(t *testing.T) {
 // normalized derived schema, still accepts a null for a nullable member, and
 // still never runs the handler for an invalid argument.
 //
-// The null case matters most: it proves the `anyOf` split kept the null member
 // the SDK enforces with, not just the one clients read.
 func TestPortableInputSchemaStillRejectsBeforeTheHandler(t *testing.T) {
 	t.Parallel()
@@ -565,7 +562,7 @@ func TestPortableInputSchemaStillRejectsBeforeTheHandler(t *testing.T) {
 }
 
 // rejectionSession serves the derived-schema tool on its own server and reports
-// the inputs the handler received, so one subtest cannot see another's call.
+// the inputs the handler received.
 func rejectionSession(t *testing.T) (*mcp.ClientSession, chan portabilityDerivedInput) {
 	t.Helper()
 	handlerInputs := make(chan portabilityDerivedInput, 1)
@@ -581,7 +578,6 @@ func rejectionSession(t *testing.T) (*mcp.ClientSession, chan portabilityDerived
 	return connectSession(t, server.HTTPHandler()), handlerInputs
 }
 
-// callDerived invokes the derived-schema tool with arguments.
 func callDerived(t *testing.T, session *mcp.ClientSession, arguments map[string]any) *mcp.CallToolResult {
 	t.Helper()
 	result, err := session.CallTool(t.Context(), &mcp.CallToolParams{
@@ -593,7 +589,6 @@ func callDerived(t *testing.T, session *mcp.ClientSession, arguments map[string]
 	return result
 }
 
-// assertHandlerSkipped fails when the handler recorded an input.
 func assertHandlerSkipped(t *testing.T, handlerInputs chan portabilityDerivedInput) {
 	t.Helper()
 	select {
@@ -700,14 +695,11 @@ func TestPortableInputSchemaIsIdempotent(t *testing.T) {
 	}
 }
 
-// portabilityInstance is one argument document and whether a schema should
-// accept it.
 type portabilityInstance struct {
 	value string
 	valid bool
 }
 
-// listedTool returns the tool one session lists under name.
 func listedTool(t *testing.T, session *mcp.ClientSession, name string) *mcp.Tool {
 	t.Helper()
 	listed, err := session.ListTools(t.Context(), nil)
@@ -723,8 +715,6 @@ func listedTool(t *testing.T, session *mcp.ClientSession, name string) *mcp.Tool
 	return nil
 }
 
-// wireSchemaValue returns the JSON document a client receives for one schema,
-// decoded for structural inspection.
 func wireSchemaValue(t *testing.T, label string, schema any) any {
 	t.Helper()
 	raw, err := json.Marshal(schema)
@@ -738,8 +728,6 @@ func wireSchemaValue(t *testing.T, label string, schema any) any {
 	return value
 }
 
-// decodedJSONValue decodes one JSON document into the generic values a JSON
-// walk works on.
 func decodedJSONValue(t *testing.T, document string) any {
 	t.Helper()
 	var value any
@@ -766,7 +754,6 @@ func schemaAccepts(t *testing.T, label, schema, instance string) bool {
 	return resolved.Validate(value) == nil
 }
 
-// decodedObject asserts value is a decoded JSON object.
 func decodedObject(t *testing.T, label string, value any) map[string]any {
 	t.Helper()
 	object, ok := value.(map[string]any)
@@ -795,7 +782,6 @@ func assertTypeUnion(t *testing.T, label string, node map[string]any, memberType
 	}
 }
 
-// anyOfBranch returns the branch of a union whose single type is memberType.
 func anyOfBranch(t *testing.T, label string, node map[string]any, memberType string) map[string]any {
 	t.Helper()
 	for _, branch := range decodedArray(t, label+" anyOf", node["anyOf"]) {
@@ -808,7 +794,6 @@ func anyOfBranch(t *testing.T, label string, node map[string]any, memberType str
 	return nil
 }
 
-// decodedArray asserts value is a decoded JSON array.
 func decodedArray(t *testing.T, label string, value any) []any {
 	t.Helper()
 	array, ok := value.([]any)

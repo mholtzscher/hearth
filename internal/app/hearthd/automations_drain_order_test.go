@@ -308,6 +308,7 @@ func TestRunStartupErrorTearsDownStartedDependencies(t *testing.T) {
 		HTTPAddr:   held.Addr().String(),
 		NATSURL:    server.ClientURL(),
 		SQLitePath: filepath.Join(t.TempDir(), "hearth.db"),
+		Agent:      requiredAgentConfig(t),
 	}, slog.New(slog.DiscardHandler))
 	if stage := ErrorStage(runErr); stage != "http_listen" {
 		t.Fatalf("startup error stage = %q, want http_listen (error: %v)", stage, runErr)

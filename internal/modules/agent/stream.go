@@ -9,10 +9,10 @@ import (
 	"github.com/labstack/echo/v5"
 )
 
-// RegisterStream mounts the experimental turn-stream endpoint on the Echo
-// router directly: Huma v2 has no SSE primitive, so the stream bypasses the
-// OpenAPI group and does not appear in openapi.json. Spike seam.
-func RegisterStream(router *echo.Echo, service *Service) {
+// RegisterStream mounts the turn-stream endpoint on the Echo router directly:
+// Huma v2 has no SSE primitive, so it bypasses the OpenAPI group and does not
+// appear in openapi.json.
+func RegisterStream(router *echo.Echo, service Operations) {
 	if router == nil || service == nil {
 		return
 	}
@@ -21,32 +21,41 @@ func RegisterStream(router *echo.Echo, service *Service) {
 }
 
 type streamHandler struct {
-	service *Service
+	service Operations
 }
 
 type streamRequest struct {
 	Text string `json:"text"`
 }
 
+const streamErrorField = "error"
+
 // sendStream runs one turn and forwards its events as SSE frames. The
 // conversation is checked before headers flush so unknown IDs still return a
-// JSON 404; afterwards the turn outcome travels as turn.finished/turn.failed
-// and a client disconnect merely cancels the turn context. Persisted rows
-// stay readable either way.
+// JSON 404; afterwards the outcome travels as turn.finished/turn.failed, and a
+// client disconnect merely cancels the turn context. Persisted rows stay
+// readable either way.
 func (handler *streamHandler) sendStream(ctx *echo.Context) error {
 	var body streamRequest
 	if err := ctx.Bind(&body); err != nil {
-		return ctx.JSON(http.StatusBadRequest, map[string]string{"error": "invalid JSON body"})
+		return ctx.JSON(http.StatusBadRequest, map[string]string{streamErrorField: "invalid JSON body"})
 	}
 	if strings.TrimSpace(body.Text) == "" {
-		return ctx.JSON(http.StatusBadRequest, map[string]string{"error": "text is required"})
+		return ctx.JSON(http.StatusBadRequest, map[string]string{streamErrorField: "text is required"})
+	}
+	// Reject before headers flush so a drained agent still answers with JSON.
+	if !handler.service.AdmissionOpen() {
+		return ctx.JSON(
+			http.StatusServiceUnavailable,
+			map[string]string{streamErrorField: "agent admission is unavailable"},
+		)
 	}
 	exists, err := handler.service.ConversationExists(ctx.Request().Context(), ctx.Param("id"))
 	if err != nil {
-		return ctx.JSON(http.StatusInternalServerError, map[string]string{"error": "internal error"})
+		return ctx.JSON(http.StatusInternalServerError, map[string]string{streamErrorField: "internal error"})
 	}
 	if !exists {
-		return ctx.JSON(http.StatusNotFound, map[string]string{"error": "agent conversation not found"})
+		return ctx.JSON(http.StatusNotFound, map[string]string{streamErrorField: "agent conversation not found"})
 	}
 	writer := ctx.Response()
 	writer.Header().Set("Content-Type", "text/event-stream")
@@ -60,8 +69,8 @@ func (handler *streamHandler) sendStream(ctx *echo.Context) error {
 	}
 	flush()
 	emit := func(event TurnEvent) {
-		raw, err := json.Marshal(event)
-		if err != nil {
+		raw, marshalErr := json.Marshal(event)
+		if marshalErr != nil {
 			return
 		}
 		fmt.Fprintf(writer, "event: %s\ndata: %s\n\n", event.Type, raw)

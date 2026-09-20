@@ -6,10 +6,8 @@ import { Button } from "../components/ui/button.tsx";
 import { Card, CardContent } from "../components/ui/card.tsx";
 import { Textarea } from "../components/ui/textarea.tsx";
 
-// Server-side agent prototype: the browser talks to hearthd's /v1/agent
-// endpoints (Eino ReAct + SQLite history). No model key in the browser; the
-// conversation ID persists in localStorage while the history itself is
-// durable server-side.
+// The browser talks to hearthd's /v1/agent endpoints. The model key and durable
+// SQLite history stay server-side; only the conversation ID lives in localStorage.
 
 const CONV_KEY = "hearth.agentConversationId";
 
@@ -68,9 +66,9 @@ async function sendTurn(
   if (!res.ok || !res.body) {
     throw new ApiError(res.status, `${res.status} ${res.statusText}`);
   }
-  // Minimal SSE parse: frames are `event: <type>\ndata: <json>\n\n`.
-  // Text deltas don't exist (the turn emits tool events plus one final
-  // reply), so a split-buffer parse is plenty.
+  // Minimal SSE parse: frames are `event: <type>\ndata: <json>\n\n`. The turn
+  // emits tool events plus one final reply, never text deltas, so a
+  // split-buffer parse is plenty.
   const reader = res.body.getReader();
   const decoder = new TextDecoder();
   let buffer = "";
@@ -237,8 +235,8 @@ export default function AgentPage() {
         id,
         text,
         (event) => {
-          // Incremental tool activity straight from the turn; the final
-          // refresh() reconciles these temp rows with persisted history.
+          // Incremental tool activity from the turn; the final refresh()
+          // reconciles these temp rows with persisted history.
           if (event.type === "tool.started" && event.name) {
             const chipId = idRef.current--;
             setMessages((prev) => [
@@ -299,8 +297,8 @@ export default function AgentPage() {
         {busy && <span className="text-sm text-muted-foreground">Thinking + calling tools…</span>}
       </div>
       <p className="mt-1 text-sm text-muted-foreground">
-        Server-side prototype: Eino ReAct in hearthd with SQLite history (no key in the
-        browser).
+        Household agent: Eino ReAct in hearthd with durable SQLite history and no model
+        key in the browser.
         {conversationId ? (
           <>
             {" "}
@@ -313,8 +311,9 @@ export default function AgentPage() {
 
       {unavailable && (
         <div role="alert" className="my-2 rounded-lg border px-3 py-2 text-sm">
-          Agent routes are not registered: hearthd started without OPENAI_API_KEY. Restart
-          Core with a key (see web/README.md) or use the browser-direct Chat page.
+          Agent routes are unavailable: this Core build does not serve /v1/agent. The agent
+          is a required module, so update hearthd and reload (see web/README.md), or use the
+          browser-direct Chat page.
         </div>
       )}
       {error && <ErrorBox error={error} />}

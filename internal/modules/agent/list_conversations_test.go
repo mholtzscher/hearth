@@ -91,8 +91,7 @@ func TestListConversationsNewestActivityFirst(t *testing.T) {
 		t.Fatal("messaged last message is nil, want newest message time")
 	}
 
-	// New activity on the older conversation moves it back to the front,
-	// while the preview still comes from its first user message.
+	// The preview still comes from the first user message after new activity.
 	fix.persist(older.ID, schema.UserMessage("and now?"))
 	summaries = fix.list()
 	if summaries[0].ID != older.ID {

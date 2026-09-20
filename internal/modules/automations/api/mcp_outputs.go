@@ -24,19 +24,14 @@ import (
 // float64. That limit is an SDK property, not an omission here: a definition
 // number above 2^53 is preserved exactly on the way in (see
 // mcpDefinitionArgument), through persistence, and out of a hearth:// resource
-// read, but a typed tool result rounds it before the client sees it. Returning
-// an untyped any output would avoid that rounding only because the SDK skips
-// output validation when no schema is advertised, so this package keeps the
-// advertised typed schema and documents the rounding instead.
+// read, but a typed tool result rounds it before the client sees it.
 
-// mcpAutomationComparisonBody is one typed Observation comparison.
 type mcpAutomationComparisonBody struct {
 	Pointer  string `json:"pointer"`
 	Operator string `json:"operator"`
 	Operand  any    `json:"operand"`
 }
 
-// mcpAutomationTriggerBody mirrors the strict persisted Trigger shape.
 type mcpAutomationTriggerBody struct {
 	ID           string                        `json:"id"`
 	Kind         string                        `json:"kind"`
@@ -46,7 +41,6 @@ type mcpAutomationTriggerBody struct {
 	EventName    string                        `json:"event_name,omitempty"`
 }
 
-// mcpAutomationStepBody is one ordered Command with static parameters.
 type mcpAutomationStepBody struct {
 	ID         string `json:"id"`
 	EntityID   string `json:"entity_id"`
@@ -54,7 +48,6 @@ type mcpAutomationStepBody struct {
 	Parameters any    `json:"parameters"`
 }
 
-// mcpAutomationDefinitionBody is the strict definition representation.
 type mcpAutomationDefinitionBody struct {
 	Name       string                     `json:"name"`
 	Enabled    bool                       `json:"enabled"`
@@ -63,7 +56,6 @@ type mcpAutomationDefinitionBody struct {
 	Steps      []mcpAutomationStepBody    `json:"steps"`
 }
 
-// mcpAutomationBody is one current definition with its revision and timestamps.
 type mcpAutomationBody struct {
 	ID         string                      `json:"id"`
 	Revision   int64                       `json:"revision"`
@@ -72,13 +64,11 @@ type mcpAutomationBody struct {
 	Definition mcpAutomationDefinitionBody `json:"definition"`
 }
 
-// mcpAutomationCollectionBody always returns an array, including empty pages.
 type mcpAutomationCollectionBody struct {
 	Items      []mcpAutomationBody `json:"items"`
 	NextCursor *string             `json:"next_cursor,omitempty"`
 }
 
-// mcpDeviceFactSummaryBody is the immutable Fact evidence retained in history.
 type mcpDeviceFactSummaryBody struct {
 	FactID           string    `json:"fact_id"`
 	Family           string    `json:"family"`
@@ -89,7 +79,6 @@ type mcpDeviceFactSummaryBody struct {
 	EmittedAt        time.Time `json:"emitted_at"`
 }
 
-// mcpAutomationStepAttemptBody exposes only ownership-verified Command evidence.
 type mcpAutomationStepAttemptBody struct {
 	Position          int        `json:"position"`
 	StepID            string     `json:"step_id"`
@@ -100,7 +89,6 @@ type mcpAutomationStepAttemptBody struct {
 	CompletedAt       *time.Time `json:"completed_at,omitempty"`
 }
 
-// mcpAutomationConditionNodeResultBody is one evaluated node's retained evidence.
 type mcpAutomationConditionNodeResultBody struct {
 	ID            string     `json:"id"`
 	Result        string     `json:"result"`
@@ -110,14 +98,12 @@ type mcpAutomationConditionNodeResultBody struct {
 	ObservedAt    *time.Time `json:"observed_at,omitempty"`
 }
 
-// mcpAutomationConditionEvaluationBody is one complete evaluation in definition pre-order.
 type mcpAutomationConditionEvaluationBody struct {
 	EvaluatedAt time.Time                              `json:"evaluated_at"`
 	Result      string                                 `json:"result"`
 	Nodes       []mcpAutomationConditionNodeResultBody `json:"nodes"`
 }
 
-// mcpAutomationConditionDecisionBody is the retained admission explanation.
 type mcpAutomationConditionDecisionBody struct {
 	Mode            string                                `json:"mode"`
 	BypassRequested bool                                  `json:"bypass_requested"`
@@ -125,7 +111,6 @@ type mcpAutomationConditionDecisionBody struct {
 	Evaluation      *mcpAutomationConditionEvaluationBody `json:"evaluation,omitempty"`
 }
 
-// mcpAutomationRunBody exposes an immutable definition snapshot and Step attempts.
 type mcpAutomationRunBody struct {
 	ID                string                             `json:"id"`
 	AutomationID      string                             `json:"automation_id"`
@@ -143,7 +128,6 @@ type mcpAutomationRunBody struct {
 	Steps             []mcpAutomationStepAttemptBody     `json:"steps"`
 }
 
-// mcpAutomationSkipBody is one retained Skip with immutable matched Triggers.
 type mcpAutomationSkipBody struct {
 	ID                string                             `json:"id"`
 	AutomationID      string                             `json:"automation_id"`
@@ -157,7 +141,6 @@ type mcpAutomationSkipBody struct {
 	SkippedAt         time.Time                          `json:"skipped_at"`
 }
 
-// mcpAutomationHistorySummaryBody is the lightweight history listing projection.
 type mcpAutomationHistorySummaryBody struct {
 	ID              string                    `json:"id"`
 	Kind            string                    `json:"kind"`
@@ -174,13 +157,11 @@ type mcpAutomationHistorySummaryBody struct {
 	Fact            *mcpDeviceFactSummaryBody `json:"fact,omitempty"`
 }
 
-// mcpAutomationHistoryCollectionBody is one newest-first history page.
 type mcpAutomationHistoryCollectionBody struct {
 	Items      []mcpAutomationHistorySummaryBody `json:"items"`
 	NextCursor *string                           `json:"next_cursor,omitempty"`
 }
 
-// mcpAutomationHistoryEntryBody is exactly one Run snapshot or Skip detail.
 type mcpAutomationHistoryEntryBody struct {
 	Kind string                 `json:"kind"`
 	Run  *mcpAutomationRunBody  `json:"run,omitempty"`
@@ -188,7 +169,6 @@ type mcpAutomationHistoryEntryBody struct {
 }
 
 // mcpExactJSON returns one open JSON leaf as the value an MCP output marshals.
-//
 // The returned [json.RawMessage] marshals verbatim, and a nil value keeps an
 // optional member absent, so a selected JSON null stays distinct from an absent
 // member exactly as the Huma body does.
@@ -208,14 +188,12 @@ func mcpConditionTree(condition *AutomationConditionBody) any {
 	return condition
 }
 
-// mcpComparisonOutput converts one Huma comparison body.
 func mcpComparisonOutput(body AutomationComparisonBody) mcpAutomationComparisonBody {
 	return mcpAutomationComparisonBody{
 		Pointer: body.Pointer, Operator: body.Operator, Operand: mcpExactJSON(body.Operand),
 	}
 }
 
-// mcpTriggerOutput converts one Huma Trigger body.
 func mcpTriggerOutput(body AutomationTriggerBody) mcpAutomationTriggerBody {
 	output := mcpAutomationTriggerBody{
 		ID: body.ID, Kind: body.Kind, EntityID: body.EntityID,
@@ -230,7 +208,6 @@ func mcpTriggerOutput(body AutomationTriggerBody) mcpAutomationTriggerBody {
 	return output
 }
 
-// mcpStepOutput converts one Huma Step body.
 func mcpStepOutput(body AutomationStepBody) mcpAutomationStepBody {
 	return mcpAutomationStepBody{
 		ID: body.ID, EntityID: body.EntityID, Operation: body.Operation,
@@ -238,7 +215,6 @@ func mcpStepOutput(body AutomationStepBody) mcpAutomationStepBody {
 	}
 }
 
-// mcpDefinitionOutput converts one Huma definition body.
 func mcpDefinitionOutput(body AutomationDefinitionBody) mcpAutomationDefinitionBody {
 	output := mcpAutomationDefinitionBody{
 		Name: body.Name, Enabled: body.Enabled, Conditions: mcpConditionTree(body.Conditions),
@@ -254,7 +230,6 @@ func mcpDefinitionOutput(body AutomationDefinitionBody) mcpAutomationDefinitionB
 	return output
 }
 
-// mcpAutomationOutput converts one Huma Automation body.
 func mcpAutomationOutput(body AutomationBody) mcpAutomationBody {
 	return mcpAutomationBody{
 		ID: body.ID, Revision: body.Revision, CreatedAt: body.CreatedAt,
@@ -262,7 +237,6 @@ func mcpAutomationOutput(body AutomationBody) mcpAutomationBody {
 	}
 }
 
-// mcpCollectionOutput converts one Huma Automation page body.
 func mcpCollectionOutput(body AutomationCollectionBody) mcpAutomationCollectionBody {
 	output := mcpAutomationCollectionBody{
 		Items: make([]mcpAutomationBody, len(body.Items)), NextCursor: body.NextCursor,
@@ -273,7 +247,6 @@ func mcpCollectionOutput(body AutomationCollectionBody) mcpAutomationCollectionB
 	return output
 }
 
-// mcpFactOutput converts one Huma Fact summary body.
 func mcpFactOutput(body DeviceFactSummaryBody) mcpDeviceFactSummaryBody {
 	return mcpDeviceFactSummaryBody{
 		FactID: body.FactID, Family: body.Family, EntityID: body.EntityID,
@@ -282,14 +255,12 @@ func mcpFactOutput(body DeviceFactSummaryBody) mcpDeviceFactSummaryBody {
 	}
 }
 
-// mcpStepAttemptOutput converts one Huma Step attempt body.
 func mcpStepAttemptOutput(body AutomationStepAttemptBody) mcpAutomationStepAttemptBody {
 	// The two shapes have identical fields; only the Huma body's extra enum tags
 	// differ, and conversion ignores struct tags.
 	return mcpAutomationStepAttemptBody(body)
 }
 
-// mcpNodeResultOutput converts one Huma evaluated node body.
 func mcpNodeResultOutput(
 	body AutomationConditionNodeResultBody,
 ) mcpAutomationConditionNodeResultBody {
@@ -300,7 +271,6 @@ func mcpNodeResultOutput(
 	}
 }
 
-// mcpEvaluationOutput converts one Huma Condition evaluation body.
 func mcpEvaluationOutput(
 	body AutomationConditionEvaluationBody,
 ) mcpAutomationConditionEvaluationBody {
@@ -314,7 +284,6 @@ func mcpEvaluationOutput(
 	return output
 }
 
-// mcpConditionDecisionOutput converts one Huma Condition decision body.
 func mcpConditionDecisionOutput(
 	body AutomationConditionDecisionBody,
 ) mcpAutomationConditionDecisionBody {
@@ -329,7 +298,6 @@ func mcpConditionDecisionOutput(
 	return output
 }
 
-// mcpRunOutput converts one Huma Run body.
 func mcpRunOutput(body AutomationRunBody) mcpAutomationRunBody {
 	output := mcpAutomationRunBody{
 		ID: body.ID, AutomationID: body.AutomationID, AutomationName: body.AutomationName,
@@ -349,7 +317,6 @@ func mcpRunOutput(body AutomationRunBody) mcpAutomationRunBody {
 	return output
 }
 
-// mcpSkipOutput converts one Huma Skip body.
 func mcpSkipOutput(body AutomationSkipBody) mcpAutomationSkipBody {
 	output := mcpAutomationSkipBody{
 		ID: body.ID, AutomationID: body.AutomationID, AutomationName: body.AutomationName,
@@ -368,7 +335,6 @@ func mcpSkipOutput(body AutomationSkipBody) mcpAutomationSkipBody {
 	return output
 }
 
-// mcpHistorySummaryOutput converts one Huma history summary body.
 func mcpHistorySummaryOutput(
 	body AutomationHistorySummaryBody,
 ) mcpAutomationHistorySummaryBody {
@@ -386,7 +352,6 @@ func mcpHistorySummaryOutput(
 	return output
 }
 
-// mcpHistoryCollectionOutput converts one Huma history page body.
 func mcpHistoryCollectionOutput(
 	body AutomationHistoryCollectionBody,
 ) mcpAutomationHistoryCollectionBody {
@@ -399,7 +364,6 @@ func mcpHistoryCollectionOutput(
 	return output
 }
 
-// mcpHistoryEntryOutput converts one Huma history entry body.
 func mcpHistoryEntryOutput(body AutomationHistoryEntryBody) mcpAutomationHistoryEntryBody {
 	output := mcpAutomationHistoryEntryBody{Kind: body.Kind}
 	if body.Run != nil {

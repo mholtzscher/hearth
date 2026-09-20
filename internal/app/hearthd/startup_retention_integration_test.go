@@ -39,6 +39,7 @@ func TestCoreStartupPrunesRetainedHistory(t *testing.T) {
 	go func() {
 		runErrors <- Run(runContext, Config{HouseholdTimezone: "UTC",
 			HTTPAddr: httpAddress, NATSURL: server.ClientURL(), SQLitePath: databasePath,
+			Agent: requiredAgentConfig(t),
 		}, slog.New(slog.DiscardHandler))
 	}()
 	waitForCoreHTTPStatus(ctx, t, client, httpAddress, "/healthz", runErrors)
@@ -115,6 +116,7 @@ func TestCoreStartupPruneFailureKeepsReadiness(t *testing.T) {
 	go func() {
 		runErrors <- Run(runContext, Config{HouseholdTimezone: "UTC",
 			HTTPAddr: httpAddress, NATSURL: server.ClientURL(), SQLitePath: databasePath,
+			Agent: requiredAgentConfig(t),
 		}, logger)
 	}()
 	waitForCoreHTTPStatus(ctx, t, client, httpAddress, "/healthz", runErrors)

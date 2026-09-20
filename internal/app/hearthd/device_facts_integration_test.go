@@ -255,6 +255,7 @@ func startDeviceFactsCore(
 		runErrors <- Run(runContext, Config{
 			HouseholdTimezone: "UTC", HTTPAddr: httpAddress,
 			NATSURL: serverURL, SQLitePath: databasePath,
+			Agent: requiredAgentConfig(t),
 		}, slog.New(slog.DiscardHandler))
 	}()
 	return httpAddress, stopCore, runErrors
@@ -730,6 +731,7 @@ func TestCoreErrorExitPublishesPendingFactsAndJoinsRelay(t *testing.T) {
 	runErr := Run(ctx, Config{
 		HouseholdTimezone: "UTC", HTTPAddr: blocker.Addr().String(),
 		NATSURL: server.ClientURL(), SQLitePath: databasePath,
+		Agent: requiredAgentConfig(t),
 	}, logger)
 	if runErr == nil {
 		t.Fatal("Run succeeded with a busy HTTP port")

@@ -8,11 +8,8 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
-	"os"
 	"time"
 
-	"github.com/danielgtaylor/huma/v2"
-	"github.com/labstack/echo/v5"
 	natsgo "github.com/nats-io/nats.go"
 	"github.com/nats-io/nats.go/jetstream"
 
@@ -47,53 +44,40 @@ func (err *runStageError) Error() string {
 
 func (err *runStageError) Unwrap() error { return err.err }
 
-// startAgentService assembles the experimental household agent: MCP tools
-// over the application's MCP server, then the service and its routes. A
-// catalog problem fails startup loudly instead of serving a tool-less agent.
+// startAgentService builds the required household agent from the already-built
+// MCP catalog: its tools are that catalog, dialed over an in-memory transport.
+// It registers nothing; newHTTPHandler owns every route. A missing secret, a
+// catalog problem, or an unusable model configuration fails startup loudly
+// instead of serving a tool-less or credential-less agent.
 func startAgentService(
 	ctx context.Context,
+	config Config,
 	mcpServer *mcpapi.Server,
 	database *sql.DB,
-	handler http.Handler,
-	api huma.API,
 	logger *slog.Logger,
-	agentKey string,
 ) (*agent.Service, error) {
+	apiKey, keyErr := config.LoadAgentAPIKey()
+	if keyErr != nil {
+		return nil, keyErr
+	}
 	agentTools, err := agent.MCPTools(ctx, mcpServer)
 	if err != nil {
 		return nil, err
 	}
-	service, err := agent.NewService(ctx, agent.Config{
+	return agent.NewService(ctx, agent.Config{
 		DB:    database,
 		Tools: agentTools,
 		Model: agent.ModelConfig{
-			APIKey:          agentKey,
-			Model:           agentModelName(),
-			BaseURL:         os.Getenv("OPENAI_BASE_URL"),
-			ReasoningEffort: os.Getenv("OPENAI_REASONING_EFFORT"),
+			APIKey:          apiKey,
+			Model:           config.EffectiveAgentModel(),
+			BaseURL:         config.Agent.BaseURL,
+			ReasoningEffort: config.Agent.ReasoningEffort,
 		},
-		Logger: logger,
+		ChatModel: config.Agent.ChatModel,
+		MaxSteps:  config.Agent.MaxSteps,
+		Retention: config.EffectiveAgentHistoryRetention(),
+		Logger:    logger,
 	})
-	if err != nil {
-		return nil, err
-	}
-	agent.Register(huma.NewGroup(api, "/v1"), service)
-	// The turn stream needs the Echo router directly: Huma has no SSE
-	// primitive. The handler's dynamic type is *echo.Echo; a future
-	// transport change must revisit this assertion with it.
-	if echoRouter, ok := handler.(*echo.Echo); ok {
-		agent.RegisterStream(echoRouter, service)
-	}
-	return service, nil
-}
-
-// agentModelName selects the chat model for the experimental agent spike,
-// defaulting to the household model when the environment is silent.
-func agentModelName() string {
-	if model := os.Getenv("OPENAI_MODEL"); model != "" {
-		return model
-	}
-	return "gpt-5.6-luna"
 }
 
 // ErrorStage reports the failed startup stage carried by err, or "run" when
@@ -255,15 +239,29 @@ func Run(
 	}
 	logStartupStage(ctx, coreLogger, "jetstream_provisioned")
 	// Keep Command dependencies alive until admitted workers finish. Consumers
-	// own separate contexts because their callbacks drain after these dependencies.
+	// own separate contexts because their callbacks drain after these
+	// dependencies. The agent's MCP client and server sessions ride this context
+	// too, so they close after the agent drains and before SQLite closes.
 	dependencyContext, cancelDependencies := context.WithCancel(context.WithoutCancel(ctx))
 	shutdown.cancelDependencies = cancelDependencies
+	// Build the MCP catalog first, then the required agent from it, then HTTP:
+	// the agent's tools are the catalog the /mcp endpoint serves, and the agent
+	// contributes a retention task to the shared worker started below.
+	mcpServer := newMCPServer(service, automationService, coreLogger)
+	agentService, agentErr := startAgentService(
+		dependencyContext, config, mcpServer, database, agentLogger,
+	)
+	if agentErr != nil {
+		return mapStartupCancellation(ctx, failStage("start_agent", agentErr))
+	}
+	shutdown.agentService = agentService
+	logStartupStage(ctx, coreLogger, "agent_started")
 	// Startup recovery has already interrupted stale Commands and Runs, so the
 	// shared retention worker can start. Its first pass runs inside the worker,
 	// not before readiness or serving, and later passes run hourly until
 	// shutdown joins the worker before SQLite closes.
 	shutdown.historyPruneWorker = startHistoryPruning(
-		dependencyContext, coreLogger, service, automationService,
+		dependencyContext, coreLogger, service, automationService, agentService,
 	)
 	consumers := newCoreConsumers(ctx)
 	shutdown.consumers = consumers
@@ -349,29 +347,30 @@ func Run(
 	)
 	healthSupervisor := startHealthSupervisor(dependencyContext, readiness, service, coreLogger)
 	shutdown.healthSupervisor = healthSupervisor
-	handler, api, mcpServer := newHTTPHandlerWithMCP(
-		service, automationService, readiness, service, automationService, coreLogger,
+	handler, _ := newHTTPHandler(
+		service, automationService, agentService, readiness, service, automationService,
+		mcpServer,
 	)
-	// Experimental agent spike, env-gated with no config keys: without an
-	// OPENAI_API_KEY the /v1/agent routes stay unregistered and Core is
-	// otherwise unchanged.
-	if agentKey := os.Getenv("OPENAI_API_KEY"); agentKey != "" {
-		if _, agentErr := startAgentService(
-			ctx, mcpServer, database, handler, api, agentLogger, agentKey,
-		); agentErr != nil {
-			return failStage("start_agent", agentErr)
-		}
-		logStartupStage(ctx, coreLogger, "agent_registered")
-	} else {
-		coreLogger.InfoContext(ctx, "agent disabled: OPENAI_API_KEY is not set")
-	}
-	// Bind the socket explicitly so http_listening is only logged after the
-	// address is actually held; a bind failure never produces that event.
+	return serveHTTP(ctx, config, shutdown, handler, coreLogger)
+}
+
+// serveHTTP binds the configured address, serves the assembled handler, and
+// returns when the process context is canceled or the server stops. Binding
+// explicitly keeps http_listening truthful: a bind failure never produces that
+// event. Deferred shutdown keeps HTTP serving draining readiness until workers
+// finish, so cancellation is a clean stop rather than a staged failure.
+func serveHTTP(
+	ctx context.Context,
+	config Config,
+	shutdown *coreShutdown,
+	handler http.Handler,
+	logger *slog.Logger,
+) error {
 	listener, listenErr := (&net.ListenConfig{}).Listen(ctx, "tcp", config.HTTPAddr)
 	if listenErr != nil {
 		return failStage("http_listen", listenErr)
 	}
-	coreLogger.InfoContext(
+	logger.InfoContext(
 		ctx,
 		"core HTTP listening",
 		slog.String("event", "core.http_listening"),
@@ -391,7 +390,6 @@ func Run(
 		}
 		return nil
 	case <-ctx.Done():
-		// Deferred shutdown keeps HTTP serving draining readiness until workers finish.
 		return nil
 	}
 }

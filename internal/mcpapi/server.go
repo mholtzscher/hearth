@@ -14,8 +14,7 @@ type Config struct {
 	// Version is the implementation version.
 	Version string
 	// Logger receives the structured diagnostics for failures the wrapper does
-	// not model, such as an unexpected handler error. It is optional: a nil
-	// Logger selects [slog.Default].
+	// not model. Optional: a nil Logger selects [slog.Default].
 	Logger *slog.Logger
 }
 
@@ -29,11 +28,9 @@ type Server struct {
 	handler http.Handler
 }
 
-// New builds a stateless MCP server identified by config.
-//
-// The server is assembled with the wrapper's error mapping, so a domain
-// [ToolError] reaches clients as an isError result carrying both text and
-// machine-readable fields.
+// New builds a stateless MCP server identified by config, assembled with the
+// wrapper's error mapping so a domain [ToolError] reaches clients as an isError
+// result carrying both text and machine-readable fields.
 func New(config Config) *Server {
 	logger := config.Logger
 	if logger == nil {
@@ -50,11 +47,10 @@ func New(config Config) *Server {
 			func(*http.Request) *mcp.Server { return server },
 			&mcp.StreamableHTTPOptions{
 				Stateless: true,
-				// A dropped client stops the handler exactly as it stops the
-				// matching REST handler, so both transports unwind the same way.
-				// An admitted Command stays safe: the devices service detaches
-				// its worker before waiting, so cancellation stops only the wait
-				// and `get_command` still reads the durable record.
+				// A dropped client stops the handler exactly as it stops the matching
+				// REST handler. An admitted Command stays safe: the devices service
+				// detaches its worker before waiting, so cancellation stops only the
+				// wait and `get_command` still reads the durable record.
 				PropagateRequestCancellation: true,
 			},
 		),
@@ -67,10 +63,9 @@ func (s *Server) Raw() *mcp.Server {
 	return s.server
 }
 
-// HTTPHandler returns the Streamable HTTP handler for this server.
-//
-// The handler is stateless: every request carries its own full context and no
-// session affinity is required, so overlapping calls are safe.
+// HTTPHandler returns the Streamable HTTP handler for this server. It is
+// stateless: every request carries its own full context and no session affinity
+// is required, so overlapping calls are safe.
 func (s *Server) HTTPHandler() http.Handler {
 	return s.handler
 }

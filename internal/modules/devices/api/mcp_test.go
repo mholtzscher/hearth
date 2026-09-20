@@ -18,16 +18,11 @@ import (
 	"github.com/mholtzscher/hearth/internal/modules/devices"
 )
 
-// mcpSession serves a Devices MCP endpoint over HTTP and connects the official
-// MCP client to it, mirroring how a real client reaches Core.
 func mcpSession(t *testing.T, service Devices) *mcp.ClientSession {
 	t.Helper()
 	return mcpSessionWithServer(t, mcpapi.New(mcpapi.Config{Name: "hearth", Version: "1.0.0"}), service)
 }
 
-// mcpSessionWithLogs serves a Devices MCP endpoint whose server records
-// structured diagnostics into logs, so a test can assert the server-side half
-// of an internal failure beside the client-visible half.
 func mcpSessionWithLogs(t *testing.T, service Devices, logs *bytes.Buffer) *mcp.ClientSession {
 	t.Helper()
 	server := mcpapi.New(mcpapi.Config{
@@ -36,8 +31,6 @@ func mcpSessionWithLogs(t *testing.T, service Devices, logs *bytes.Buffer) *mcp.
 	return mcpSessionWithServer(t, server, service)
 }
 
-// mcpSessionWithServer registers service on server and connects the official
-// MCP client to its HTTP handler.
 func mcpSessionWithServer(t *testing.T, server *mcpapi.Server, service Devices) *mcp.ClientSession {
 	t.Helper()
 	RegisterMCP(server, service)
@@ -57,7 +50,6 @@ func mcpSessionWithServer(t *testing.T, server *mcpapi.Server, service Devices) 
 	return session
 }
 
-// mcpLogRecord decodes the single structured log record in raw.
 func mcpLogRecord(t *testing.T, raw []byte) map[string]any {
 	t.Helper()
 	line, _, _ := bytes.Cut(bytes.TrimSpace(raw), []byte("\n"))
@@ -71,7 +63,6 @@ func mcpLogRecord(t *testing.T, raw []byte) map[string]any {
 	return record
 }
 
-// mcpCallTool calls one tool and fails the test on a protocol error.
 func mcpCallTool(
 	t *testing.T,
 	session *mcp.ClientSession,
@@ -89,7 +80,6 @@ func mcpCallTool(
 	return result
 }
 
-// mcpBody decodes one successful tool result's structured content into target.
 func mcpBody(t *testing.T, result *mcp.CallToolResult, target any) {
 	t.Helper()
 	if result.IsError {
@@ -104,7 +94,6 @@ func mcpBody(t *testing.T, result *mcp.CallToolResult, target any) {
 	}
 }
 
-// mcpErrorText returns the text of one isError result.
 func mcpErrorText(t *testing.T, result *mcp.CallToolResult) string {
 	t.Helper()
 	if !result.IsError {
@@ -556,22 +545,45 @@ func TestMCPForwardsOpaqueCursorsAndAppliesTheSharedPageDefault(t *testing.T) {
 }
 
 // TestMCPRejectsMalformedArgumentsBeforeTheService proves decoding and schema
-// validation reject malformed tool input without reaching the service.
+// validation reject malformed tool input without reaching the service. A
+// malformed scalar the decode path rejects carries its stable failure code in
+// the error text, because decode rejection publishes no structured content.
 func TestMCPRejectsMalformedArgumentsBeforeTheService(t *testing.T) {
 	t.Parallel()
 	tests := []struct {
 		name      string
 		tool      string
 		arguments map[string]any
+		code      string
 	}{
-		{"malformed entity ID", "get_entity", map[string]any{"entity_id": "not-an-id"}},
-		{"missing required argument", "get_entity", map[string]any{}},
-		{"unknown argument", "get_entity", map[string]any{"entity_id": string(apiEntityID), "verbose": true}},
-		{"wrong argument type", "list_entities", map[string]any{"cursor": 5}},
-		{"limit above the range", "list_entities", map[string]any{"limit": 201}},
-		{"limit below the range", "list_entities", map[string]any{"limit": 0}},
-		{"malformed adapter ID", "get_adapter", map[string]any{"adapter_id": "Not A Slug"}},
-		{"malformed command ID", "get_command", map[string]any{"command_id": string(apiEntityID)}},
+		{"malformed entity ID", "get_entity", map[string]any{"entity_id": "not-an-id"}, "invalid_entity_id"},
+		{
+			"malformed entity ID in a command",
+			"execute_entity_command",
+			map[string]any{"entity_id": "not-an-id", "operation": "set", "parameters": map[string]any{"value": true}},
+			"invalid_entity_id",
+		},
+		{"malformed device ID", "get_device", map[string]any{"device_id": "not-a-device"}, "invalid_device_id"},
+		{"malformed adapter ID", "get_adapter", map[string]any{"adapter_id": "Not A Slug"}, "invalid_adapter_id"},
+		{
+			"malformed command ID",
+			"get_command",
+			map[string]any{"command_id": string(apiEntityID)},
+			"invalid_command_id",
+		},
+		{"limit above the range", "list_entities", map[string]any{"limit": 201}, "invalid_limit"},
+		{"limit below the range", "list_entities", map[string]any{"limit": 0}, "invalid_limit"},
+		{
+			"entity limit above the range",
+			"get_device",
+			map[string]any{"device_id": string(apiDeviceID), "entity_limit": 201},
+			"invalid_limit",
+		},
+		// The SDK schema rejects these before the decode path, so they have no
+		// field-specific code; they must still never reach the service.
+		{"missing required argument", "get_entity", map[string]any{}, ""},
+		{"unknown argument", "get_entity", map[string]any{"entity_id": string(apiEntityID), "verbose": true}, ""},
+		{"wrong argument type", "list_entities", map[string]any{"cursor": 5}, ""},
 		{
 			"reserved command identity",
 			"execute_entity_command",
@@ -579,6 +591,7 @@ func TestMCPRejectsMalformedArgumentsBeforeTheService(t *testing.T) {
 				"entity_id": string(apiEntityID), "operation": "set",
 				"parameters": map[string]any{"value": true}, "command_id": string(apiCommandID),
 			},
+			"",
 		},
 	}
 	for _, test := range tests {
@@ -587,8 +600,12 @@ func TestMCPRejectsMalformedArgumentsBeforeTheService(t *testing.T) {
 			// stubDevices panics on any call: invalid input must never reach it.
 			session := mcpSession(t, &stubDevices{})
 			result := mcpCallTool(t, session, test.tool, test.arguments)
-			if text := mcpErrorText(t, result); text == "" {
+			text := mcpErrorText(t, result)
+			if text == "" {
 				t.Fatalf("%s error text is empty", test.tool)
+			}
+			if test.code != "" && !strings.HasPrefix(text, test.code+": ") {
+				t.Fatalf("%s error = %q, want the %q failure code", test.tool, text, test.code)
 			}
 			if result.StructuredContent != nil {
 				t.Fatalf(
@@ -733,8 +750,8 @@ func TestMCPMapsEveryCommandFailureToItsDurableCode(t *testing.T) {
 
 // mcpAssertInternalFailureLogged proves one tool call failed the way an
 // unpublished internal failure must: the client receives only the generic
-// internal_error result with no server detail, and the server records exactly
-// one structured diagnostic with the fixed code and Go error type but never the
+// internal_error result with no server detail, and the server records exactly one
+// structured diagnostic with the fixed code and Go error type but never the
 // retained cause text.
 func mcpAssertInternalFailureLogged(
 	t *testing.T,
@@ -786,8 +803,7 @@ func mcpAssertInternalFailureLogged(
 
 // TestMCPExecuteEntityCommandLogsInternalCauseWithoutLeakingIt proves a
 // production internal failure emits one structured server diagnostic with safe
-// metadata while the client receives only the generic failure and the raw cause
-// never reaches the log.
+// metadata while the raw cause never reaches the client or the log.
 func TestMCPExecuteEntityCommandLogsInternalCauseWithoutLeakingIt(t *testing.T) {
 	t.Parallel()
 	const cause = "SQLite unavailable: /var/lib/hearth/hearth.db"
@@ -807,12 +823,10 @@ func TestMCPExecuteEntityCommandLogsInternalCauseWithoutLeakingIt(t *testing.T) 
 
 // TestMCPReadLogsInternalServiceCauseWithoutLeakingIt proves a production
 // internal failure on a Huma-backed read emits one structured server diagnostic
-// with safe metadata while the client receives only the generic failure; the
-// raw service cause stays out of both halves.
-//
-// The read reaches its service through the shared Huma operation, which maps an
-// unclassified service failure to a generic 500 problem. Retaining the cause is
-// what keeps the failure type diagnosable without logging the unknown message.
+// with safe metadata while the raw service cause stays out of both halves. The
+// shared Huma operation maps an unclassified service failure to a generic 500,
+// so retaining the cause keeps the failure type diagnosable without logging the
+// unknown message.
 func TestMCPReadLogsInternalServiceCauseWithoutLeakingIt(t *testing.T) {
 	t.Parallel()
 	const cause = "SQLite unavailable: /var/lib/hearth/hearth.db"
@@ -929,8 +943,8 @@ func TestMCPExecuteEntityCommandBlocksUntilTheTerminalOutcome(t *testing.T) {
 
 // TestMCPReadInternalProblemRendersTheGenericHumaProblem proves the cause a read
 // retains never changes the REST response: the shared read handlers still return
-// the same generic 500 problem document, content type, and schema link they
-// returned before the cause was retained, and the cause never appears in it.
+// the same generic 500 problem document, content type, and schema link, and the
+// cause never appears in it.
 func TestMCPReadInternalProblemRendersTheGenericHumaProblem(t *testing.T) {
 	t.Parallel()
 	const cause = "SQLite unavailable: /var/lib/hearth/hearth.db"

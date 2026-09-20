@@ -21,8 +21,6 @@ import (
 	"github.com/mholtzscher/hearth/internal/modules/devices"
 )
 
-// connectAutomationMCP serves a registered Automation MCP surface and returns
-// an official MCP client session connected to it.
 func connectAutomationMCP(t *testing.T, service automationsapi.Automations) *mcp.ClientSession {
 	t.Helper()
 	return connectAutomationMCPServer(
@@ -30,9 +28,6 @@ func connectAutomationMCP(t *testing.T, service automationsapi.Automations) *mcp
 	)
 }
 
-// connectAutomationMCPWithLogs serves a registered Automation MCP surface whose
-// server records structured diagnostics into logs, so a test can assert the
-// server-side half of an internal failure beside the client-visible half.
 func connectAutomationMCPWithLogs(
 	t *testing.T,
 	service automationsapi.Automations,
@@ -44,8 +39,6 @@ func connectAutomationMCPWithLogs(
 	}), service)
 }
 
-// connectAutomationMCPServer registers service on server and connects the
-// official MCP client to its HTTP handler.
 func connectAutomationMCPServer(
 	t *testing.T,
 	server *mcpapi.Server,
@@ -70,7 +63,6 @@ func connectAutomationMCPServer(
 	return session
 }
 
-// automationMCPLogRecord decodes the single structured log record in raw.
 func automationMCPLogRecord(t *testing.T, raw []byte) map[string]any {
 	t.Helper()
 	line, _, _ := bytes.Cut(bytes.TrimSpace(raw), []byte("\n"))
@@ -84,10 +76,9 @@ func automationMCPLogRecord(t *testing.T, raw []byte) map[string]any {
 	return record
 }
 
-// callAutomationTool invokes one tool and fails on transport errors.
-//
-// arguments is any because a test that must prove byte-exact JSON sends the
-// whole argument object as a [json.RawMessage] instead of a decoded map.
+// callAutomationTool invokes one tool and fails on transport errors. arguments is
+// any because a test that must prove byte-exact JSON sends the whole argument
+// object as a [json.RawMessage] instead of a decoded map.
 func callAutomationTool(
 	t *testing.T,
 	session *mcp.ClientSession,
@@ -102,7 +93,6 @@ func callAutomationTool(
 	return result
 }
 
-// decodeStructuredInto recovers one typed value from a tool's structured content.
 func decodeStructuredInto[T any](t *testing.T, result *mcp.CallToolResult) T {
 	t.Helper()
 	raw, err := json.Marshal(result.StructuredContent)
@@ -116,7 +106,6 @@ func decodeStructuredInto[T any](t *testing.T, result *mcp.CallToolResult) T {
 	return value
 }
 
-// toolErrorText fails unless result is an isError tool result and returns its text.
 func toolErrorText(t *testing.T, result *mcp.CallToolResult) string {
 	t.Helper()
 	if !result.IsError {
@@ -131,7 +120,6 @@ func toolErrorText(t *testing.T, result *mcp.CallToolResult) string {
 	return ""
 }
 
-// definitionArguments decodes one definition document into MCP tool arguments.
 func definitionArguments(t *testing.T, document string) map[string]any {
 	t.Helper()
 	var definition map[string]any
@@ -237,20 +225,78 @@ func TestAutomationMCPDefinitionLifecycle(t *testing.T) {
 	}
 
 	deleted := decodeStructuredInto[struct {
-		AutomationID string `json:"automation_id"`
-		Revision     int64  `json:"revision"`
-		Deleted      bool   `json:"deleted"`
+		AutomationID    string `json:"automation_id"`
+		DeletedRevision int64  `json:"deleted_revision"`
+		Deleted         bool   `json:"deleted"`
 	}](t, callAutomationTool(t, session, "delete_automation", map[string]any{
 		"automation_id":     created.ID,
 		"expected_revision": replaced.Revision,
 	}))
-	if !deleted.Deleted || deleted.AutomationID != created.ID || deleted.Revision != 2 {
+	if !deleted.Deleted || deleted.AutomationID != created.ID || deleted.DeletedRevision != 2 {
 		t.Fatalf("delete_automation = %#v", deleted)
 	}
 
 	missing := callAutomationTool(t, session, "get_automation", map[string]any{"automation_id": created.ID})
 	if text := toolErrorText(t, missing); !strings.Contains(text, "not_found") {
 		t.Fatalf("read-after-delete error = %q, want not_found", text)
+	}
+}
+
+// TestAutomationMCPDeleteOutputPublishesDeletedRevision proves delete_automation
+// names the revision it deleted deleted_revision in both its live body and its
+// published output schema, instead of the ambiguous revision a caller could read
+// as the revision the deletion produced.
+func TestAutomationMCPDeleteOutputPublishesDeletedRevision(t *testing.T) {
+	t.Parallel()
+	service := newAutomationService(t, newAPIDevices())
+	session := connectAutomationMCP(t, service)
+
+	tools, err := session.ListTools(t.Context(), nil)
+	if err != nil {
+		t.Fatalf("list tools: %v", err)
+	}
+	var published *mcp.Tool
+	for _, tool := range tools.Tools {
+		if tool.Name == "delete_automation" {
+			published = tool
+		}
+	}
+	if published == nil {
+		t.Fatal("delete_automation is not registered")
+	}
+	properties := outputSchemaProperties(t, "delete_automation", published.OutputSchema)
+	for _, member := range []string{"automation_id", "deleted_revision", "deleted"} {
+		if _, present := properties[member]; !present {
+			t.Fatalf("delete_automation output schema has no %q member: %#v", member, properties)
+		}
+	}
+	if _, present := properties["revision"]; present {
+		t.Fatalf("delete_automation output schema still publishes revision: %#v", properties)
+	}
+
+	created := decodeStructuredInto[automationsapi.AutomationBody](t, callAutomationTool(
+		t, session, "create_automation",
+		map[string]any{"definition": definitionArguments(t, definitionDocument(t, 1))},
+	))
+	replaced := decodeStructuredInto[automationsapi.AutomationBody](t, callAutomationTool(
+		t, session, "replace_automation", map[string]any{
+			"automation_id":     created.ID,
+			"expected_revision": created.Revision,
+			"definition":        definitionArguments(t, definitionDocument(t, 1)),
+		},
+	))
+	deleted := decodeStructuredInto[map[string]any](t, callAutomationTool(
+		t, session, "delete_automation", map[string]any{
+			"automation_id":     created.ID,
+			"expected_revision": replaced.Revision,
+		},
+	))
+	if deleted["deleted_revision"] != float64(replaced.Revision) {
+		t.Fatalf("delete_automation deleted_revision = %#v, want %d",
+			deleted["deleted_revision"], replaced.Revision)
+	}
+	if _, present := deleted["revision"]; present {
+		t.Fatalf("delete_automation body still carries revision: %#v", deleted)
 	}
 }
 
@@ -345,7 +391,9 @@ func TestAutomationMCPManualConditionBlockRetainsReadableSkip(t *testing.T) {
 }
 
 // TestAutomationMCPFailuresPreserveStableCodes proves domain failures cross as
-// isError tool results carrying the stable problem code.
+// isError tool results carrying the stable problem code, and that a missing
+// Automation and a missing history entry publish distinct not-found codes an
+// agent can branch on.
 func TestAutomationMCPFailuresPreserveStableCodes(t *testing.T) {
 	t.Parallel()
 	service := newAutomationService(t, newAPIDevices())
@@ -359,44 +407,95 @@ func TestAutomationMCPFailuresPreserveStableCodes(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	unknownEntry, err := automations.NewRunID()
+	if err != nil {
+		t.Fatal(err)
+	}
 	cases := []struct {
+		name      string
 		tool      string
 		arguments map[string]any
 		code      string
 	}{
 		{
-			tool:      "get_automation",
-			arguments: map[string]any{"automation_id": string(unknown)}, code: "not_found",
+			"get_automation with an unknown Automation",
+			"get_automation",
+			map[string]any{"automation_id": string(unknown)},
+			"automation_not_found",
 		},
 		{
-			tool: "replace_automation",
-			arguments: map[string]any{
+			"replace_automation with an unknown Automation",
+			"replace_automation",
+			map[string]any{
+				"automation_id":     string(unknown),
+				"expected_revision": 1,
+				"definition":        definitionArguments(t, definitionDocument(t, 1)),
+			},
+			"automation_not_found",
+		},
+		{
+			"delete_automation with an unknown Automation",
+			"delete_automation",
+			map[string]any{"automation_id": string(unknown), "expected_revision": 1},
+			"automation_not_found",
+		},
+		{
+			"start_automation_run with an unknown Automation",
+			"start_automation_run",
+			map[string]any{"automation_id": string(unknown)},
+			"automation_not_found",
+		},
+		{
+			"get_automation_history_entry with an unknown entry",
+			"get_automation_history_entry",
+			map[string]any{"automation_id": created.ID, "entry_id": string(unknownEntry)},
+			"automation_history_entry_not_found",
+		},
+		{
+			"get_automation_history_entry with an unknown Automation",
+			"get_automation_history_entry",
+			map[string]any{"automation_id": string(unknown), "entry_id": string(unknownEntry)},
+			"automation_history_entry_not_found",
+		},
+		{
+			"replace_automation with a stale revision",
+			"replace_automation",
+			map[string]any{
 				"automation_id":     created.ID,
 				"expected_revision": 99,
 				"definition":        definitionArguments(t, definitionDocument(t, 1)),
 			},
-			code: "revision_conflict",
-		},
-		{
-			tool:      "start_automation_run",
-			arguments: map[string]any{"automation_id": string(unknown)}, code: "not_found",
+			"revision_conflict",
 		},
 	}
 	for _, test := range cases {
-		result := callAutomationTool(t, session, test.tool, test.arguments)
-		if text := toolErrorText(t, result); !strings.Contains(text, test.code) {
-			t.Fatalf("%s error text = %q, want code %q", test.tool, text, test.code)
-		}
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			result := callAutomationTool(t, session, test.tool, test.arguments)
+			fields := decodeStructuredInto[struct {
+				FailureCode string `json:"failure_code"`
+				Message     string `json:"message"`
+			}](t, result)
+			if fields.FailureCode != test.code {
+				t.Fatalf("%s failure_code = %q, want %q", test.tool, fields.FailureCode, test.code)
+			}
+			if text := toolErrorText(t, result); !strings.HasPrefix(text, test.code+": ") {
+				t.Fatalf("%s error text = %q, want the %q prefix", test.tool, text, test.code)
+			}
+		})
 	}
 }
 
 // TestAutomationMCPRejectsMalformedScalarsWhileDecoding proves every malformed
-// scalar an automation tool accepts is rejected while the SDK decodes the
-// arguments, so neither the handler nor the service sees it.
+// scalar an automation tool accepts is rejected while the SDK decodes and
+// validates the arguments, so neither the handler nor the service sees it.
 //
 // A decoding failure crosses as a plain isError result with no structured
 // content, which is how this test distinguishes it from a handler-produced
-// ToolError. A ToolError always carries structured content.
+// ToolError. A ToolError always carries structured content. A malformed scalar
+// the decode path rejects carries its stable failure code as the message prefix;
+// a wrong JSON type is rejected by the advertised schema first, so it has no
+// field-specific code and is asserted to be an SDK schema rejection instead.
 func TestAutomationMCPRejectsMalformedScalarsWhileDecoding(t *testing.T) {
 	t.Parallel()
 	recorder := newRecordingAutomations()
@@ -414,20 +513,12 @@ func TestAutomationMCPRejectsMalformedScalarsWhileDecoding(t *testing.T) {
 			map[string]any{"automation_id": "not-an-id"}, "invalid_automation_id",
 		},
 		{
-			"get_automation with a non-string ID", "get_automation",
-			map[string]any{"automation_id": 7}, "automation_id",
-		},
-		{
 			"list_automations below the limit range", "list_automations",
 			map[string]any{"limit": 0}, "invalid_limit",
 		},
 		{
 			"list_automations above the limit range", "list_automations",
 			map[string]any{"limit": 201}, "invalid_limit",
-		},
-		{
-			"list_automations with a non-integer limit", "list_automations",
-			map[string]any{"limit": "lots"}, "limit",
 		},
 		{
 			"list_automation_history below the limit range", "list_automation_history",
@@ -443,10 +534,6 @@ func TestAutomationMCPRejectsMalformedScalarsWhileDecoding(t *testing.T) {
 			map[string]any{"automation_id": id, "expected_revision": 0}, "invalid_revision",
 		},
 		{
-			"delete_automation without the required revision", "delete_automation",
-			map[string]any{"automation_id": id}, "expected_revision",
-		},
-		{
 			"get_automation_history_entry with a malformed entry ID", "get_automation_history_entry",
 			map[string]any{"automation_id": id, "entry_id": "not-an-id"}, "invalid_entry_id",
 		},
@@ -454,13 +541,42 @@ func TestAutomationMCPRejectsMalformedScalarsWhileDecoding(t *testing.T) {
 			"start_automation_run with a malformed ID", "start_automation_run",
 			map[string]any{"automation_id": "not-an-id"}, "invalid_automation_id",
 		},
+		// A wrong JSON type never reaches the Go decoder: the advertised schema,
+		// which derives a string for every ID and an integer for every boundary,
+		// rejects it first. These carry no field-specific code and must still never
+		// reach the service.
+		{
+			"get_automation with a non-string ID", "get_automation",
+			map[string]any{"automation_id": 7}, "",
+		},
+		{
+			"get_automation_history_entry with a non-string entry ID", "get_automation_history_entry",
+			map[string]any{"automation_id": id, "entry_id": 7}, "",
+		},
+		{
+			"list_automations with a non-integer limit", "list_automations",
+			map[string]any{"limit": "lots"}, "",
+		},
+		{
+			"delete_automation with a non-integer revision", "delete_automation",
+			map[string]any{"automation_id": id, "expected_revision": "one"}, "",
+		},
+		{
+			"delete_automation without the required revision", "delete_automation",
+			map[string]any{"automation_id": id}, "",
+		},
 	}
 	for _, test := range cases {
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
 			result := callAutomationTool(t, session, test.tool, test.arguments)
-			if text := toolErrorText(t, result); !strings.Contains(text, test.code) {
-				t.Fatalf("%s error text = %q, want %q", test.tool, text, test.code)
+			text := toolErrorText(t, result)
+			if test.code != "" {
+				if !strings.HasPrefix(text, test.code+": ") {
+					t.Fatalf("%s error text = %q, want the %q failure code", test.tool, text, test.code)
+				}
+			} else if !strings.Contains(text, "validating") {
+				t.Fatalf("%s error text = %q, want an SDK schema rejection", test.tool, text)
 			}
 			if result.StructuredContent != nil {
 				t.Fatalf(
@@ -478,14 +594,12 @@ func TestAutomationMCPRejectsMalformedScalarsWhileDecoding(t *testing.T) {
 
 // TestAutomationMCPRejectsSchemaInvalidDefinitionBeforeHandler proves the two
 // definition-bearing tools reject a definition the canonical schema forbids
-// while the SDK validates the arguments, before any handler runs and without
-// reaching the service.
+// while the SDK validates the arguments, before any handler runs.
 //
 // Each case violates a Trigger, Condition, or Step constraint inside definition,
 // covering the canonical subtree a derived map schema cannot express. A
 // validation rejection crosses as an isError result with no structured content,
-// which distinguishes it from a handler-produced ToolError: a ToolError always
-// carries structured content.
+// which distinguishes it from a handler-produced ToolError.
 func TestAutomationMCPRejectsSchemaInvalidDefinitionBeforeHandler(t *testing.T) {
 	t.Parallel()
 	automationID := createdIDForInput(t)
@@ -529,7 +643,7 @@ func TestAutomationMCPRejectsSchemaInvalidDefinitionBeforeHandler(t *testing.T) 
 }
 
 // schemaInvalidDefinitionDocuments returns definition documents the canonical
-// Automation schema rejects, keyed by the constraint each violates. The cases
+// Automation schema rejects, keyed by the constraint each violates; the cases
 // span the Trigger, Condition, and Step subtrees.
 func schemaInvalidDefinitionDocuments() map[string]string {
 	const (
@@ -558,10 +672,10 @@ func schemaInvalidDefinitionDocuments() map[string]string {
 }
 
 // TestAutomationMCPMapsStructurallyInvalidDefinitionToToolError proves the
-// canonical schema is a pre-filter, not a replacement for the strict decoder:
-// a definition the JSON Schema cannot reject — a whitespace-only name or a
-// repeated Trigger or Step ID — still fails in the handler, crosses as a
-// structured isError ToolError, and never reaches the service.
+// canonical schema is a pre-filter, not a replacement for the strict decoder: a
+// definition the JSON Schema cannot reject — a whitespace-only name or a repeated
+// Trigger or Step ID — still fails in the handler, crosses as a structured
+// isError ToolError, and never reaches the service.
 func TestAutomationMCPMapsStructurallyInvalidDefinitionToToolError(t *testing.T) {
 	t.Parallel()
 	for name, document := range structurallyInvalidDefinitionDocuments() {
@@ -762,10 +876,6 @@ func TestAutomationMCPDefinitionOutputSchemaDescribesTheDocument(t *testing.T) {
 	}
 }
 
-// outputSchemaProperties returns the union of the top-level properties an
-// advertised output schema declares. The SDK publishes each tool output as an
-// anyOf of the success body and the structured failure body, so the properties
-// of every object branch are merged.
 func outputSchemaProperties(t *testing.T, tool string, schema any) map[string]any {
 	t.Helper()
 	encoded, err := json.Marshal(schema)
@@ -960,8 +1070,6 @@ func assertStepInputConstraints(t *testing.T, name string, steps map[string]any)
 	}
 }
 
-// inputSchemaDefinition returns the definition sub-schema one definition-bearing
-// tool advertises.
 func inputSchemaDefinition(t *testing.T, name string, tool *mcp.Tool) map[string]any {
 	t.Helper()
 	input := schemaObject(t, name+" input schema", tool.InputSchema)
@@ -969,7 +1077,6 @@ func inputSchemaDefinition(t *testing.T, name string, tool *mcp.Tool) map[string
 	return schemaObject(t, name+" definition schema", properties["definition"])
 }
 
-// schemaObject asserts value is a decoded JSON object schema.
 func schemaObject(t *testing.T, label string, value any) map[string]any {
 	t.Helper()
 	object, ok := value.(map[string]any)
@@ -979,7 +1086,6 @@ func schemaObject(t *testing.T, label string, value any) map[string]any {
 	return object
 }
 
-// schemaArray asserts value is a decoded JSON array.
 func schemaArray(t *testing.T, label string, value any) []any {
 	t.Helper()
 	array, ok := value.([]any)
@@ -989,7 +1095,6 @@ func schemaArray(t *testing.T, label string, value any) []any {
 	return array
 }
 
-// schemaStringSet collects the string members of one decoded JSON array.
 func schemaStringSet(t *testing.T, label string, value any) map[string]bool {
 	t.Helper()
 	set := make(map[string]bool)
@@ -1060,7 +1165,6 @@ func TestAutomationMCPForwardsReplacement(t *testing.T) {
 	}
 }
 
-// createdIDForInput mints one canonical Automation ID for argument-shape tests.
 func createdIDForInput(t *testing.T) string {
 	t.Helper()
 	id, err := automations.NewAutomationID()
@@ -1078,7 +1182,7 @@ type replacementCall struct {
 }
 
 // recordingAutomations is an [automationsapi.Automations] seam that records what
-// the MCP handlers pass through. It returns scripted minimal values so handler
+// the MCP handlers pass through, returning scripted minimal values so handler
 // output mapping is exercised without persistence.
 type recordingAutomations struct {
 	callCount      int
@@ -1198,8 +1302,7 @@ var _ automationsapi.Automations = (*recordingAutomations)(nil)
 
 // TestAutomationMCPToolLogsInternalCauseWithoutLeakingIt proves a production
 // internal failure on an Automation tool emits one structured server diagnostic
-// with safe metadata while the client receives only the generic failure and the
-// raw service cause stays out of both halves.
+// with safe metadata while the raw service cause stays out of both halves.
 func TestAutomationMCPToolLogsInternalCauseWithoutLeakingIt(t *testing.T) {
 	t.Parallel()
 	const cause = "sqlite: database is locked by /var/lib/hearth/hearth.db"

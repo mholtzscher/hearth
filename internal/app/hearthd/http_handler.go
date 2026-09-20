@@ -10,6 +10,7 @@ import (
 
 	"github.com/mholtzscher/hearth/internal/mcpapi"
 	"github.com/mholtzscher/hearth/internal/mcpecho"
+	"github.com/mholtzscher/hearth/internal/modules/agent"
 	automationsapi "github.com/mholtzscher/hearth/internal/modules/automations/api"
 	devicesapi "github.com/mholtzscher/hearth/internal/modules/devices/api"
 )
@@ -36,67 +37,52 @@ type AutomationAdmissionChecker interface {
 	AdmissionOpen() bool
 }
 
-// NewHTTPHandler builds the Core HTTP handler.
-func NewHTTPHandler(
+// newMCPServer builds the Core MCP catalog. Application assembly builds it
+// before the agent, so the agent bridges exactly the catalog the /mcp endpoint
+// serves and a catalog problem fails startup instead of serving a tool-less
+// agent. A nil logger routes MCP diagnostics to [slog.Default].
+func newMCPServer(
 	devices devicesapi.Devices,
 	automations automationsapi.Automations,
-	readiness ReadinessChecker,
-	commandAdmission CommandAdmissionChecker,
-	automationAdmission AutomationAdmissionChecker,
-) (http.Handler, huma.API) {
-	handler, api, _ := NewHTTPHandlerWithMCP(
-		devices, automations, readiness, commandAdmission, automationAdmission,
-	)
-	return handler, api
-}
-
-// NewHTTPHandlerWithMCP builds the Core HTTP handler and returns its MCP server
-// so callers can register extra tools before serving.
-//
-// The MCP endpoint is always mounted at mcpPath on the same listener with the
-// full Devices and Automations catalog registered; it adds no configuration
-// keys. Callers may register further tools through the returned
-// [mcpapi.Server], which the mounted handler serves even when registration
-// happens after this function returns.
-//
-// The MCP server diagnostics go to the global default logger; use
-// [newHTTPHandlerWithMCP] to inject the application logger.
-func NewHTTPHandlerWithMCP(
-	devices devicesapi.Devices,
-	automations automationsapi.Automations,
-	readiness ReadinessChecker,
-	commandAdmission CommandAdmissionChecker,
-	automationAdmission AutomationAdmissionChecker,
-) (http.Handler, huma.API, *mcpapi.Server) {
-	return newHTTPHandlerWithMCP(
-		devices, automations, readiness, commandAdmission, automationAdmission, nil,
-	)
-}
-
-// newHTTPHandlerWithMCP builds the Core HTTP handler and returns its MCP server,
-// routing MCP diagnostics to logger. A nil logger selects the global default,
-// which keeps the exported constructors' behavior unchanged.
-func newHTTPHandlerWithMCP(
-	devices devicesapi.Devices,
-	automations automationsapi.Automations,
-	readiness ReadinessChecker,
-	commandAdmission CommandAdmissionChecker,
-	automationAdmission AutomationAdmissionChecker,
 	logger *slog.Logger,
-) (http.Handler, huma.API, *mcpapi.Server) {
+) *mcpapi.Server {
+	mcpServer := mcpapi.New(mcpapi.Config{Name: mcpName, Version: mcpVersion, Logger: logger})
+	// Every Huma operation is reachable over MCP with equal semantics: each
+	// module owns the thin tool and resource adapters over its own service.
+	devicesapi.RegisterMCP(mcpServer, devices)
+	automationsapi.RegisterMCP(mcpServer, automations)
+	return mcpServer
+}
+
+// newHTTPHandler assembles the Core HTTP, Huma, SSE, and MCP surfaces from the
+// services and the already-built MCP catalog. It is the single place any
+// transport registers routes, so the HTTP, OpenAPI, and MCP surfaces cannot
+// drift apart. A nil agent registers no agent routes and keeps readiness
+// closed; production always builds the required agent.
+func newHTTPHandler(
+	devices devicesapi.Devices,
+	automations automationsapi.Automations,
+	agentOperations agent.Operations,
+	readiness ReadinessChecker,
+	commandAdmission CommandAdmissionChecker,
+	automationAdmission AutomationAdmissionChecker,
+	mcpServer *mcpapi.Server,
+) (http.Handler, huma.API) {
 	const statusField = "status"
 	router := echo.New()
 	router.GET("/healthz", func(ctx *echo.Context) error {
 		return ctx.JSON(http.StatusOK, map[string]string{statusField: "ok"})
 	})
 	// Readiness requires the broker and persistence resources, both consumer
-	// lifecycles, and both admission gates. Automation admission is checked
+	// lifecycles, and every admission gate. Automation admission is checked
 	// beside Command admission because a manual or fact-driven Run needs a
-	// device Command to take effect.
+	// device Command to take effect, and Agent admission is checked because an
+	// agent turn drives those same Device Commands through the MCP catalog.
 	router.GET("/readyz", func(ctx *echo.Context) error {
 		if readiness == nil || readiness.Check(ctx.Request().Context()) != nil || commandAdmission == nil ||
 			!commandAdmission.CommandAdmissionOpen() || automationAdmission == nil ||
-			!automationAdmission.AdmissionOpen() {
+			!automationAdmission.AdmissionOpen() || agentOperations == nil ||
+			!agentOperations.AdmissionOpen() {
 			return ctx.JSON(http.StatusServiceUnavailable, map[string]string{statusField: "not_ready"})
 		}
 		return ctx.JSON(http.StatusOK, map[string]string{statusField: "ready"})
@@ -106,12 +92,10 @@ func newHTTPHandlerWithMCP(
 	v1 := huma.NewGroup(api, "/v1")
 	devicesapi.Register(v1, devices)
 	automationsapi.Register(v1, automations)
-
-	mcpServer := mcpapi.New(mcpapi.Config{Name: mcpName, Version: mcpVersion, Logger: logger})
-	// Every Huma operation is reachable over MCP with equal semantics: each
-	// module owns the thin tool and resource adapters over its own service.
-	devicesapi.RegisterMCP(mcpServer, devices)
-	automationsapi.RegisterMCP(mcpServer, automations)
+	agent.Register(v1, agentOperations)
+	// The turn stream needs the Echo router directly: Huma has no SSE primitive,
+	// so it stays out of openapi.json while sharing this handler's listener.
+	agent.RegisterStream(router, agentOperations)
 	mcpecho.Mount(router, mcpPath, mcpServer)
-	return router, api, mcpServer
+	return router, api
 }

@@ -14,7 +14,6 @@ import (
 	automationsapi "github.com/mholtzscher/hearth/internal/modules/automations/api"
 )
 
-// readAutomationResource reads one resource URI and returns its JSON text.
 func readAutomationResource(t *testing.T, session *mcp.ClientSession, uri string) string {
 	t.Helper()
 	result, err := session.ReadResource(t.Context(), &mcp.ReadResourceParams{URI: uri})
@@ -27,7 +26,6 @@ func readAutomationResource(t *testing.T, session *mcp.ClientSession, uri string
 	return result.Contents[0].Text
 }
 
-// decodeResourceInto unmarshals one resource JSON text into a typed body.
 func decodeResourceInto[T any](t *testing.T, text string) T {
 	t.Helper()
 	var value T
@@ -80,9 +78,9 @@ func TestAutomationMCPCollectionResourceMatchesListTool(t *testing.T) {
 	}
 }
 
-// TestAutomationMCPCollectionIsListed proves resources/list carries the
-// concrete automations collection and the template catalog carries its
-// parameterized family.
+// TestAutomationMCPCollectionIsListed proves resources/list carries the concrete
+// automations collection and the template catalog carries its parameterized
+// family under the client-visible names the MCP spec lists.
 func TestAutomationMCPCollectionIsListed(t *testing.T) {
 	t.Parallel()
 	service := newAutomationService(t, newAPIDevices())
@@ -103,14 +101,26 @@ func TestAutomationMCPCollectionIsListed(t *testing.T) {
 	if err != nil {
 		t.Fatalf("list resource templates: %v", err)
 	}
-	found := false
-	for _, template := range templates.ResourceTemplates {
-		if template.URITemplate == "hearth://automations{?cursor,limit}" {
-			found = true
-		}
+	want := map[string]string{
+		"automation":         "hearth://automation/{automation_id}",
+		"automation_history": "hearth://automation/{automation_id}/history{?cursor,limit}",
+		"automations":        "hearth://automations{?cursor,limit}",
 	}
-	if !found || len(templates.ResourceTemplates) != 3 {
-		t.Fatalf("templates = %#v, want 3 including the automations collection", templates.ResourceTemplates)
+	if len(templates.ResourceTemplates) != len(want) {
+		t.Fatalf("templates = %#v, want %d templates", templates.ResourceTemplates, len(want))
+	}
+	for _, template := range templates.ResourceTemplates {
+		templateURI, expected := want[template.Name]
+		if !expected {
+			t.Fatalf("template name %q is not one of %#v", template.Name, want)
+		}
+		if template.URITemplate != templateURI {
+			t.Fatalf("template %q URI = %q, want %q", template.Name, template.URITemplate, templateURI)
+		}
+		delete(want, template.Name)
+	}
+	if len(want) != 0 {
+		t.Fatalf("templates with no matching name: %#v", want)
 	}
 }
 
@@ -251,7 +261,7 @@ func TestAutomationMCPResourceQueryContract(t *testing.T) {
 		{"non-numeric limit", history + "?limit=lots", "limit must be an integer"},
 		{"limit below the range", history + "?limit=0", "limit must be between 1 and 200"},
 		{"limit above the range", history + "?limit=201", "limit must be between 1 and 200"},
-		{"malformed cursor", history + "?cursor=not-a-cursor", "automation history cursor is invalid"},
+		{"malformed cursor", history + "?cursor=not-a-cursor", "history cursor is invalid"},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -329,13 +339,11 @@ func TestAutomationMCPResourceInternalFailuresStayGeneric(t *testing.T) {
 }
 
 // TestAutomationMCPDefinitionNumberSurvivesCreateAndResourceRead proves one
-// definition number above 2^53 is unchanged end to end: create_automation sends
-// it exactly, the repository stores it exactly, and the hearth:// definition
-// resource returns it verbatim.
-//
-// The resource read is the path that proves client-visible parity, because a
-// resource read returns its own bytes while the SDK re-marshals a typed tool
-// result through float64 (see mcp_outputs.go).
+// definition number above 2^53 is unchanged end to end: create_automation sends it
+// exactly, the repository stores it exactly, and the hearth:// definition
+// resource returns it verbatim. The resource read is the path that proves
+// client-visible parity, because the SDK re-marshals a typed tool result through
+// float64 (see mcp_outputs.go).
 func TestAutomationMCPDefinitionNumberSurvivesCreateAndResourceRead(t *testing.T) {
 	t.Parallel()
 	service := newAutomationService(t, newAPIDevices())
@@ -355,7 +363,6 @@ func TestAutomationMCPDefinitionNumberSurvivesCreateAndResourceRead(t *testing.T
 	}
 }
 
-// resourceErrorCode returns the JSON-RPC code one resource read failure carries.
 func resourceErrorCode(t *testing.T, err error) int64 {
 	t.Helper()
 	var rpcErr *jsonrpc.Error

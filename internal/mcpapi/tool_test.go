@@ -171,8 +171,8 @@ func TestToolErrorSurfacesAsIsErrorResult(t *testing.T) {
 	}
 }
 
-// TestToolErrorPublishesStructuredFailureFields proves the machine-readable
-// half of a domain failure reaches the client beside the human text: the stable
+// TestToolErrorPublishesStructuredFailureFields proves the machine-readable half
+// of a domain failure reaches the client beside the human text: the stable
 // failure code, the summary, and every detail the handler attached.
 func TestToolErrorPublishesStructuredFailureFields(t *testing.T) {
 	t.Parallel()

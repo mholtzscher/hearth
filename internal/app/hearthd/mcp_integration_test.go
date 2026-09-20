@@ -48,8 +48,6 @@ func mcpCatalogToolNames() []string {
 	}
 }
 
-// connectAssembledMCP serves the assembled Core handler and connects the
-// official MCP client to its /mcp endpoint.
 func connectAssembledMCP(t *testing.T, handler http.Handler) *mcp.ClientSession {
 	t.Helper()
 	httpServer := httptest.NewServer(handler)
@@ -69,7 +67,6 @@ func connectAssembledMCP(t *testing.T, handler http.Handler) *mcp.ClientSession 
 	return session
 }
 
-// mcpCallTool calls one tool and fails the test on a protocol error.
 func mcpCallTool(t *testing.T, session *mcp.ClientSession, name string, arguments map[string]any) *mcp.CallToolResult {
 	t.Helper()
 	result, err := session.CallTool(t.Context(), &mcp.CallToolParams{Name: name, Arguments: arguments})
@@ -82,8 +79,6 @@ func mcpCallTool(t *testing.T, session *mcp.ClientSession, name string, argument
 	return result
 }
 
-// mcpStructuredFields decodes one result's structured content into a generic
-// object, the shape a branching agent reads.
 func mcpStructuredFields(t *testing.T, result *mcp.CallToolResult) map[string]any {
 	t.Helper()
 	raw, err := json.Marshal(result.StructuredContent)
@@ -97,7 +92,6 @@ func mcpStructuredFields(t *testing.T, result *mcp.CallToolResult) map[string]an
 	return fields
 }
 
-// mcpErrorText returns the text of one isError result.
 func mcpErrorText(t *testing.T, result *mcp.CallToolResult) string {
 	t.Helper()
 	if !result.IsError {
@@ -112,7 +106,6 @@ func mcpErrorText(t *testing.T, result *mcp.CallToolResult) string {
 	return ""
 }
 
-// decodeMCPLogRecord decodes the single JSON log record in raw.
 func decodeMCPLogRecord(t *testing.T, raw []byte) map[string]any {
 	t.Helper()
 	line, _, _ := bytes.Cut(bytes.TrimSpace(raw), []byte("\n"))
@@ -128,11 +121,10 @@ func decodeMCPLogRecord(t *testing.T, raw []byte) map[string]any {
 
 // TestMCPInternalFailureLogsToTheInjectedLogger proves assembly routes MCP
 // diagnostics to the application logger it was given: the injected logger
-// receives one safe record, the global default receives nothing, and the raw
-// cause never reaches either.
+// receives one safe record and the raw cause never reaches it.
 //
 // This test mutates the global logger, so it deliberately does not run in
-// parallel: sequential tests never overlap the package's parallel tests.
+// parallel.
 //
 //nolint:paralleltest // Mutates the process-wide default logger to prove isolation.
 func TestMCPInternalFailureLogsToTheInjectedLogger(t *testing.T) {
@@ -148,9 +140,10 @@ func TestMCPInternalFailureLogsToTheInjectedLogger(t *testing.T) {
 	) (devices.CommandResult, error) {
 		return devices.CommandResult{}, errors.New("upstream rejected: " + sentinel)
 	}}
-	handler, _, _ := newHTTPHandlerWithMCP(
-		stub, &stubAutomations{}, &testReadiness{}, stub, &stubAutomations{},
-		slog.New(slog.NewJSONHandler(&injected, nil)),
+	injectedLogger := slog.New(slog.NewJSONHandler(&injected, nil))
+	handler, _ := newHTTPHandler(
+		stub, &stubAutomations{}, &stubAgent{}, &testReadiness{}, stub, &stubAutomations{},
+		newMCPServer(stub, &stubAutomations{}, injectedLogger),
 	)
 	session := connectAssembledMCP(t, handler)
 
@@ -184,8 +177,10 @@ func TestMCPInternalFailureLogsToTheInjectedLogger(t *testing.T) {
 // assembly cannot silently drop a module's tools.
 func TestMCPEndpointExposesTheFullCatalog(t *testing.T) {
 	t.Parallel()
-	handler, _, _ := NewHTTPHandlerWithMCP(
-		&stubDevices{}, &stubAutomations{}, &testReadiness{}, &stubDevices{}, &stubAutomations{},
+	handler, _ := newHTTPHandler(
+		&stubDevices{}, &stubAutomations{}, &stubAgent{}, &testReadiness{},
+		&stubDevices{}, &stubAutomations{},
+		newMCPServer(&stubDevices{}, &stubAutomations{}, nil),
 	)
 	session := connectAssembledMCP(t, handler)
 
@@ -225,8 +220,9 @@ func TestMCPEndpointReturnsTypedStructuredOutput(t *testing.T) {
 			TypeID: devices.EntityTypePowerV1, Support: devices.EntitySupport(`{"state":{},"operations":{"set":{}}}`),
 		}}, nil
 	}}
-	handler, _, _ := NewHTTPHandlerWithMCP(
-		stub, &stubAutomations{}, &testReadiness{}, stub, &stubAutomations{},
+	handler, _ := newHTTPHandler(
+		stub, &stubAutomations{}, &stubAgent{}, &testReadiness{}, stub, &stubAutomations{},
+		newMCPServer(stub, &stubAutomations{}, nil),
 	)
 	session := connectAssembledMCP(t, handler)
 
@@ -261,8 +257,9 @@ func TestMCPEndpointMapsToolErrorToStructuredFailure(t *testing.T) {
 			CommandID: commandID, Err: devices.ErrEntityDisabled,
 		}
 	}}
-	handler, _, _ := NewHTTPHandlerWithMCP(
-		stub, &stubAutomations{}, &testReadiness{}, stub, &stubAutomations{},
+	handler, _ := newHTTPHandler(
+		stub, &stubAutomations{}, &stubAgent{}, &testReadiness{}, stub, &stubAutomations{},
+		newMCPServer(stub, &stubAutomations{}, nil),
 	)
 	session := connectAssembledMCP(t, handler)
 
@@ -292,8 +289,10 @@ func TestMCPEndpointRejectsInvalidInputBeforeTheHandler(t *testing.T) {
 	t.Parallel()
 	// stubDevices panics on any ExecuteCommand call, so a handler that ran for
 	// invalid input fails the test instead of reaching the service.
-	handler, _, _ := NewHTTPHandlerWithMCP(
-		&stubDevices{}, &stubAutomations{}, &testReadiness{}, &stubDevices{}, &stubAutomations{},
+	handler, _ := newHTTPHandler(
+		&stubDevices{}, &stubAutomations{}, &stubAgent{}, &testReadiness{},
+		&stubDevices{}, &stubAutomations{},
+		newMCPServer(&stubDevices{}, &stubAutomations{}, nil),
 	)
 	session := connectAssembledMCP(t, handler)
 

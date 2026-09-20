@@ -13,8 +13,8 @@ import (
 )
 
 // advertisedOutputSchema returns the compiled output schema the client sees for
-// name, so a test can validate a result's structured content against the
-// contract the server publishes.
+// name, so a test can validate a result against the contract the server
+// publishes.
 func advertisedOutputSchema(t *testing.T, session *mcp.ClientSession, name string) *jsonschema.Schema {
 	t.Helper()
 	listed, err := session.ListTools(t.Context(), nil)
@@ -63,8 +63,8 @@ func validateStructured(t *testing.T, schema *jsonschema.Schema, result *mcp.Cal
 
 // TestOutputSchemaRootIsObject proves every advertised output schema carries a
 // top-level type of object. Strict clients (the Inspector, the Pi MCP gateway)
-// drop tools whose output schema root has no object type; before the pin all
-// 23 production tools were dropped for exactly this reason.
+// drop tools whose output schema root has no object type; before the pin all 23
+// production tools were dropped for exactly this reason.
 func TestOutputSchemaRootIsObject(t *testing.T) {
 	t.Parallel()
 	server := mcpapi.New(mcpapi.Config{Name: "hearth", Version: "1.0.0", Logger: discardLogger()})
@@ -99,9 +99,9 @@ func TestOutputSchemaRootIsObject(t *testing.T) {
 	}
 }
 
-// TestOutputSchemaAcceptsSuccessAndStructuredFailure proves the schema a tool
-// advertises is the union of the success body and the structured failure
-// object, so both a success result and a ToolError result validate against it.
+// TestOutputSchemaAcceptsSuccessAndStructuredFailure proves the advertised
+// schema is the union of the success body and the structured failure object, so
+// both a success result and a ToolError result validate against it.
 func TestOutputSchemaAcceptsSuccessAndStructuredFailure(t *testing.T) {
 	t.Parallel()
 	server := mcpapi.New(mcpapi.Config{Name: "hearth", Version: "1.0.0", Logger: discardLogger()})
