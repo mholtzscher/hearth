@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.12.0](https://github.com/mholtzscher/hearth/compare/v0.11.0...v0.12.0) (2026-09-21)
+
+
+### Features
+
+* **agent:** promote household agent to core module ([#128](https://github.com/mholtzscher/hearth/issues/128)) ([e4405bd](https://github.com/mholtzscher/hearth/commit/e4405bd1b7fa3bd21e6b7e4d7d6b93eb5085546a))
+
 ## [0.11.0](https://github.com/mholtzscher/hearth/compare/v0.10.0...v0.11.0) (2026-09-17)
 
 
