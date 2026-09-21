@@ -20,6 +20,8 @@ Run a small mutation-testing trial with `mise run mutation-test -- ./contracts/v
 
 `hearthd` requires `household_timezone` (an IANA name such as `America/New_York`, or `UTC`); timezone changes require restart.
 
+`hearthd` also requires the household agent's model API key at the configured `agent.api_key_file` path. The agent is a required Core module, so Core fails startup when that secret file is missing or empty; see [Agent](#agent) for the configuration block.
+
 `hearthd` accepts any configured HTTP bind address. The example remains `127.0.0.1:8080`; bind to a non-loopback address only on a trusted network because the HTTP API has no authentication.
 
 Run the first-light simulator with `go run ./cmd/hearth-simulator -config configs/simulator.yaml` after copying `configs/simulator.example.yaml`: it declares one scripted `simulated-light` power Device that reports a healthy Adapter and available Entity before publishing State. Every Device and Entity is declared in the config's `devices` block with looping output values on an interval, per-operation Command behavior, and an optional loopback control channel for publishing, pausing, and resuming scripts; Device faults are config, not code: unhealthy health with omitted availability, initially unavailable Entities repaired by a `mark_available` Command, rejected or outcome-less Commands, and source and received clock offsets. See `specs/simulator-harness.md`; `configs/simulator.scripted.example.yaml` adds a second Device, and `configs/simulator.full.example.yaml` exercises every harness feature across all sixteen built-in Entity types. Heartbeat expiry, takeover, stale-runtime isolation, Core readiness recovery overlays, and graceful release remain deterministic process-test scenarios. Raw duplicate and malformed Observation cases remain transport-test scenarios.
@@ -39,6 +41,8 @@ Entity Events are named occurrences, not State. The scripted `simulated-button` 
 ```sh
 cp configs/hearthd.example.yaml configs/hearthd.yaml
 cp configs/simulator.scripted.example.yaml configs/simulator.yaml
+mkdir -p .data
+printf '%s\n' '<model-api-key>' > .data/agent-api-key   # ignored; the required agent secret
 mise run brokers
 go run ./cmd/hearthd -config configs/hearthd.yaml
 go run ./cmd/hearth-simulator -config configs/simulator.yaml
@@ -96,6 +100,26 @@ An Automation may require current Entity State before it runs. A Trigger decides
 
 Conditions are optional, and a definition without them keeps its existing unconditional-after-Trigger behavior. Manual invocation applies Conditions unless the operator explicitly requests `{"bypass_conditions": true}`, which bypasses only Conditions — never admission gates, busy checks, or execution-time Command validation. See [the Automation Conditions guide](docs/automation-conditions.md) for the definition field contract, a complete create request, manual and bypass requests, and history inspection.
 
+### Agent
+
+The household agent is a required Core module beside Devices and Automations: Core always constructs it, serves `/v1/agent` on the same listener, and fails startup rather than running without it. Configure it in `configs/hearthd.yaml`:
+
+```yaml
+agent:
+  api_key_file: .data/agent-api-key   # required local secret file
+  model: gpt-5.6-luna                 # default
+  base_url: ""                        # provider default; absolute http(s) when set
+  reasoning_effort: none              # none, minimal, low, medium, or high; empty selects none for this default model
+  max_steps: 20                       # bounds one turn's model plus tools steps
+  history_retention: 720h             # conversation retention (default 30d, minimum 24h)
+```
+
+Write the model API key to `agent.api_key_file` before starting Core. The key is read once at startup and never logged, persisted, or echoed in diagnostics; the file path and contents stay out of process records. A missing or empty file fails startup at the agent stage. `reasoning_effort: none` matters for the default model, which rejects function tools at higher reasoning levels.
+
+Conversations are durable in Core's SQLite. `POST /v1/agent/conversations` opens one, `POST /v1/agent/conversations/{id}/messages` runs one turn synchronously, `GET /v1/agent/conversations/{id}/messages` reads it back, and `POST /v1/agent/conversations/{id}/messages/stream` streams the same turn as SSE (`turn.started`, `tool.started`, `tool.finished`, `turn.finished`/`turn.failed`). The stream route is a plain Echo handler and stays out of `openapi.json`. The agent's tools are the `/mcp` catalog, so a turn executes the same Commands REST and MCP do. `/readyz` requires open agent admission, and shutdown closes admission, cancels and joins running turns, then closes the agent's MCP sessions before SQLite. The shared history pruning worker deletes whole conversations past `agent.history_retention` in the same pass as Devices and Automations retention.
+
+The dashboard's `/agent` page drives these routes server-side; the browser holds no model key. Each turn rebuilds only the newest complete turns inside a fixed history budget, so an active conversation cannot grow until the provider rejects it. See `internal/modules/agent`.
+
 ### Home Assistant migration adapter
 
 Copy `configs/homeassistant.example.yaml` to the ignored `configs/homeassistant.yaml`, configure one Home Assistant light, and place a long-lived access token at the configured ignored `token_file` path. With NATS and `hearthd` running, start the disposable adapter:
@@ -140,6 +164,8 @@ The local Compose stack runs file-backed JetStream on NATS and Mosquitto for MQT
 ```sh
 cp configs/hearthd.example.yaml configs/hearthd.yaml
 cp configs/zigbee2mqtt.example.yaml configs/zigbee2mqtt.yaml
+mkdir -p .data
+printf '%s\n' '<model-api-key>' > .data/agent-api-key   # ignored; the required agent secret
 mise run brokers
 go run ./cmd/hearthd -config configs/hearthd.yaml
 go run ./cmd/hearth-adapter-zigbee2mqtt -config configs/zigbee2mqtt.yaml
@@ -214,6 +240,8 @@ cp configs/hearthd.example.yaml configs/hearthd.yaml
 cp configs/ecowitt.example.yaml configs/ecowitt.yaml
 mkdir -p .secrets
 printf '%s\n' '<32-hex-passkey>' > .secrets/ecowitt-passkey   # ignored; never commit a real PASSKEY
+mkdir -p .data
+printf '%s\n' '<model-api-key>' > .data/agent-api-key   # ignored; the required agent secret
 # edit configs/ecowitt.yaml: set station.passkey_file to .secrets/ecowitt-passkey
 mise run brokers
 go run ./cmd/hearthd -config configs/hearthd.yaml

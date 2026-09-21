@@ -22,6 +22,7 @@ func TestRunCanceledContextReturnsCancellation(t *testing.T) {
 	config := Config{HouseholdTimezone: "UTC",
 		HTTPAddr: "127.0.0.1:4222", NATSURL: "nats://127.0.0.1:4222",
 		SQLitePath: filepath.Join(t.TempDir(), "hearth.db"),
+		Agent:      requiredAgentConfig(t),
 	}
 	if err := Run(ctx, config, nil); !errors.Is(err, context.Canceled) {
 		t.Fatalf("Run with canceled context = %v, want context.Canceled", err)
@@ -45,6 +46,7 @@ func TestRunCancellationForceClosesUnfinishedClientConnection(t *testing.T) {
 	config := Config{HouseholdTimezone: "UTC",
 		HTTPAddr: address, NATSURL: server.ClientURL(),
 		SQLitePath: filepath.Join(t.TempDir(), "hearth.db"),
+		Agent:      requiredAgentConfig(t),
 	}
 
 	runContext, stopCore := context.WithCancel(ctx)

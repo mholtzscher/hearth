@@ -16,6 +16,7 @@ import {
 import AdaptersPage from "./pages/AdaptersPage.tsx";
 import AutomationDetailPage from "./pages/AutomationDetailPage.tsx";
 import AutomationsPage from "./pages/AutomationsPage.tsx";
+import AgentPage from "./pages/AgentPage.tsx";
 import CommandsPage from "./pages/CommandsPage.tsx";
 import DevicesPage from "./pages/DevicesPage.tsx";
 import DeviceFactsPage from "./pages/DeviceFactsPage.tsx";
@@ -31,6 +32,7 @@ const NAV_ITEMS = [
   { to: "/commands", label: "Commands" },
   { to: "/nats", label: "NATS" },
   { to: "/device-facts", label: "Device facts" },
+  { to: "/agent", label: "Agent" },
 ];
 
 function HealthBadges() {
@@ -161,6 +163,7 @@ function Shell() {
           <Route path="/commands" element={<CommandsPage />} />
           <Route path="/nats" element={<NatsPage />} />
           <Route path="/device-facts" element={<DeviceFactsPage />} />
+          <Route path="/agent" element={<AgentPage />} />
         </Routes>
       </main>
     </div>

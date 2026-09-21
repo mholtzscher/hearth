@@ -2,6 +2,7 @@ package hearthd
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -13,6 +14,8 @@ import (
 	"github.com/nats-io/nats.go/jetstream"
 
 	contractsv1 "github.com/mholtzscher/hearth/contracts/v1"
+	"github.com/mholtzscher/hearth/internal/mcpapi"
+	"github.com/mholtzscher/hearth/internal/modules/agent"
 	"github.com/mholtzscher/hearth/internal/modules/automations"
 	automationsnats "github.com/mholtzscher/hearth/internal/modules/automations/nats"
 	automationssqlite "github.com/mholtzscher/hearth/internal/modules/automations/sqlite"
@@ -40,6 +43,42 @@ func (err *runStageError) Error() string {
 }
 
 func (err *runStageError) Unwrap() error { return err.err }
+
+// startAgentService builds the required household agent from the already-built
+// MCP catalog: its tools are that catalog, dialed over an in-memory transport.
+// It registers nothing; newHTTPHandler owns every route. A missing secret, a
+// catalog problem, or an unusable model configuration fails startup loudly
+// instead of serving a tool-less or credential-less agent.
+func startAgentService(
+	ctx context.Context,
+	config Config,
+	mcpServer *mcpapi.Server,
+	database *sql.DB,
+	logger *slog.Logger,
+) (*agent.Service, error) {
+	apiKey, keyErr := config.LoadAgentAPIKey()
+	if keyErr != nil {
+		return nil, keyErr
+	}
+	agentTools, err := agent.MCPTools(ctx, mcpServer)
+	if err != nil {
+		return nil, err
+	}
+	return agent.NewService(ctx, agent.Config{
+		DB:    database,
+		Tools: agentTools,
+		Model: agent.ModelConfig{
+			APIKey:          apiKey,
+			Model:           config.EffectiveAgentModel(),
+			BaseURL:         config.Agent.BaseURL,
+			ReasoningEffort: config.Agent.ReasoningEffort,
+		},
+		ChatModel: config.Agent.ChatModel,
+		MaxSteps:  config.Agent.MaxSteps,
+		Retention: config.EffectiveAgentHistoryRetention(),
+		Logger:    logger,
+	})
+}
 
 // ErrorStage reports the failed startup stage carried by err, or "run" when
 // the error carries no stage. Executables use it for the process.failed stage
@@ -74,6 +113,7 @@ func Run(
 	coreLogger := logger.With(slog.String("component", "core"))
 	devicesLogger := logger.With(slog.String("component", "devices"))
 	automationsLogger := logger.With(slog.String("component", "automations"))
+	agentLogger := logger.With(slog.String("component", "agent"))
 	natsLogger := logger.With(slog.String("component", "nats"))
 	shutdown := &coreShutdown{runContext: ctx, logger: processLogger}
 	// Register resources as they start so this defer also handles partial startup.
@@ -199,15 +239,29 @@ func Run(
 	}
 	logStartupStage(ctx, coreLogger, "jetstream_provisioned")
 	// Keep Command dependencies alive until admitted workers finish. Consumers
-	// own separate contexts because their callbacks drain after these dependencies.
+	// own separate contexts because their callbacks drain after these
+	// dependencies. The agent's MCP client and server sessions ride this context
+	// too, so they close after the agent drains and before SQLite closes.
 	dependencyContext, cancelDependencies := context.WithCancel(context.WithoutCancel(ctx))
 	shutdown.cancelDependencies = cancelDependencies
+	// Build the MCP catalog first, then the required agent from it, then HTTP:
+	// the agent's tools are the catalog the /mcp endpoint serves, and the agent
+	// contributes a retention task to the shared worker started below.
+	mcpServer := newMCPServer(service, automationService, coreLogger)
+	agentService, agentErr := startAgentService(
+		dependencyContext, config, mcpServer, database, agentLogger,
+	)
+	if agentErr != nil {
+		return mapStartupCancellation(ctx, failStage("start_agent", agentErr))
+	}
+	shutdown.agentService = agentService
+	logStartupStage(ctx, coreLogger, "agent_started")
 	// Startup recovery has already interrupted stale Commands and Runs, so the
 	// shared retention worker can start. Its first pass runs inside the worker,
 	// not before readiness or serving, and later passes run hourly until
 	// shutdown joins the worker before SQLite closes.
 	shutdown.historyPruneWorker = startHistoryPruning(
-		dependencyContext, coreLogger, service, automationService,
+		dependencyContext, coreLogger, service, automationService, agentService,
 	)
 	consumers := newCoreConsumers(ctx)
 	shutdown.consumers = consumers
@@ -293,14 +347,30 @@ func Run(
 	)
 	healthSupervisor := startHealthSupervisor(dependencyContext, readiness, service, coreLogger)
 	shutdown.healthSupervisor = healthSupervisor
-	handler, _ := NewHTTPHandler(service, automationService, readiness, service, automationService)
-	// Bind the socket explicitly so http_listening is only logged after the
-	// address is actually held; a bind failure never produces that event.
+	handler, _ := newHTTPHandler(
+		service, automationService, agentService, readiness, service, automationService,
+		mcpServer,
+	)
+	return serveHTTP(ctx, config, shutdown, handler, coreLogger)
+}
+
+// serveHTTP binds the configured address, serves the assembled handler, and
+// returns when the process context is canceled or the server stops. Binding
+// explicitly keeps http_listening truthful: a bind failure never produces that
+// event. Deferred shutdown keeps HTTP serving draining readiness until workers
+// finish, so cancellation is a clean stop rather than a staged failure.
+func serveHTTP(
+	ctx context.Context,
+	config Config,
+	shutdown *coreShutdown,
+	handler http.Handler,
+	logger *slog.Logger,
+) error {
 	listener, listenErr := (&net.ListenConfig{}).Listen(ctx, "tcp", config.HTTPAddr)
 	if listenErr != nil {
 		return failStage("http_listen", listenErr)
 	}
-	coreLogger.InfoContext(
+	logger.InfoContext(
 		ctx,
 		"core HTTP listening",
 		slog.String("event", "core.http_listening"),
@@ -320,7 +390,6 @@ func Run(
 		}
 		return nil
 	case <-ctx.Done():
-		// Deferred shutdown keeps HTTP serving draining readiness until workers finish.
 		return nil
 	}
 }

@@ -84,12 +84,14 @@ func (stub *stubAutomations) AdmissionOpen() bool {
 // if registration is dropped or an operation is renamed.
 func TestRuntimeExposesAutomationOperations(t *testing.T) {
 	t.Parallel()
-	handler, _ := NewHTTPHandler(
+	handler, _ := newHTTPHandler(
 		&stubDevices{},
 		&stubAutomations{},
+		&stubAgent{},
 		&testReadiness{},
 		&stubDevices{},
 		&stubAutomations{},
+		newMCPServer(&stubDevices{}, &stubAutomations{}, nil),
 	)
 	response := appRequest(handler, "/openapi.json")
 	if response.Code != http.StatusOK {
@@ -162,12 +164,14 @@ func TestRuntimeExposesAutomationOperations(t *testing.T) {
 // manual body becomes required, accepts unknown members, or is not boolean.
 func TestRuntimeOpenAPIPublishesManualBypassAndConditionContract(t *testing.T) {
 	t.Parallel()
-	handler, _ := NewHTTPHandler(
+	handler, _ := newHTTPHandler(
 		&stubDevices{},
 		&stubAutomations{},
+		&stubAgent{},
 		&testReadiness{},
 		&stubDevices{},
 		&stubAutomations{},
+		newMCPServer(&stubDevices{}, &stubAutomations{}, nil),
 	)
 	response := appRequest(handler, "/openapi.json")
 	if response.Code != http.StatusOK {
@@ -274,12 +278,14 @@ func assertRuntimeConflictHistoryReference(t *testing.T, operation map[string]an
 func TestRuntimeReadinessRequiresOpenAutomationAdmission(t *testing.T) {
 	t.Parallel()
 	admission := &stubAutomations{}
-	handler, _ := NewHTTPHandler(
+	handler, _ := newHTTPHandler(
 		&stubDevices{},
 		&stubAutomations{},
+		&stubAgent{},
 		&testReadiness{},
 		&stubDevices{},
 		admission,
+		newMCPServer(&stubDevices{}, &stubAutomations{}, nil),
 	)
 	if response := appRequest(handler, "/readyz"); response.Code != http.StatusOK {
 		t.Fatalf("ready status = %d, body = %s", response.Code, response.Body.String())

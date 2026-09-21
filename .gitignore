@@ -18,4 +18,5 @@ configs/*.yaml
 # Web dashboard build/runtime artifacts
 web/node_modules/
 web/dist/
+web/.env
 /.agents/skills/simulator-validation/scripts/__pycache__

@@ -32,17 +32,22 @@ const (
 	devicesHistoryPruneModule = "devices"
 	// automationsHistoryPruneModule names the automations module in retention logs.
 	automationsHistoryPruneModule = "automations"
+	// agentHistoryPruneModule names the agent module in retention logs.
+	agentHistoryPruneModule = "agent"
 )
 
-// newHistoryPruneTasks returns the retention tasks in devices-then-automations
-// order; the passes share a schedule, not a transaction or data dependency.
+// newHistoryPruneTasks returns the retention tasks in
+// devices-then-automations-then-agent order; the passes share a schedule, not a
+// transaction or data dependency.
 func newHistoryPruneTasks(
 	devicePruner HistoryPruner,
 	automationPruner HistoryPruner,
+	agentPruner HistoryPruner,
 ) []historyPruneTask {
 	return []historyPruneTask{
 		{name: devicesHistoryPruneModule, pruner: devicePruner},
 		{name: automationsHistoryPruneModule, pruner: automationPruner},
+		{name: agentHistoryPruneModule, pruner: agentPruner},
 	}
 }
 
@@ -54,9 +59,10 @@ func startHistoryPruning(
 	logger *slog.Logger,
 	devicePruner HistoryPruner,
 	automationPruner HistoryPruner,
+	agentPruner HistoryPruner,
 ) *lifecycle.WorkerHandle {
 	scheduler := newHistoryPruneScheduler(
-		logger, newHistoryPruneTasks(devicePruner, automationPruner),
+		logger, newHistoryPruneTasks(devicePruner, automationPruner, agentPruner),
 	)
 	return lifecycle.StartWorker(ctx, scheduler.run)
 }
@@ -153,6 +159,8 @@ func historyPruneFailureCodes(module string) (string, string) {
 		return "core.devices_history_prune_failed", "devices_history_prune_failed"
 	case automationsHistoryPruneModule:
 		return "core.automation_history_prune_failed", "automation_history_prune_failed"
+	case agentHistoryPruneModule:
+		return "core.agent_history_prune_failed", "agent_history_prune_failed"
 	default:
 		return "core.history_prune_failed", "history_prune_failed"
 	}

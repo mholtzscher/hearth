@@ -96,6 +96,7 @@ func TestCoreStartupInterruptsActiveCommandsWithoutRedispatch(t *testing.T) {
 	go func() {
 		runErrors <- Run(runContext, Config{HouseholdTimezone: "UTC",
 			HTTPAddr: httpAddress, NATSURL: server.ClientURL(), SQLitePath: databasePath,
+			Agent: requiredAgentConfig(t),
 		}, logger)
 	}()
 
@@ -183,6 +184,7 @@ func TestRunReturnsCancellationWhenStartupNATSConnectCancelled(t *testing.T) {
 	go func() {
 		runErrors <- Run(runContext, Config{HouseholdTimezone: "UTC",
 			HTTPAddr: httpAddress, NATSURL: "nats://" + blocker.Addr().String(), SQLitePath: databasePath,
+			Agent: requiredAgentConfig(t),
 		}, slog.New(slog.DiscardHandler))
 	}()
 	select {

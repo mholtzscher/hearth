@@ -54,6 +54,23 @@ Only the dashboard port needs to be reachable: `hearthd` stays on
 `127.0.0.1:8080` because the proxy runs server-side. Neither the dashboard nor
 the HTTP API authenticates, so every device your tailnet ACLs allow can use it.
 
+## Household agent
+
+`/agent` drives hearthd's required household agent (`POST /v1/agent/conversations`,
+`POST .../{id}/messages`, `GET .../{id}/messages`): Eino ReAct in-process with
+SQLite conversation history. Turns stream over SSE (`POST
+.../{id}/messages/stream`: `turn.started`, `tool.started`, `tool.finished`,
+`turn.finished`/`turn.failed`) so tool activity renders incrementally; the page
+reconciles with history at turn end. The stream route is a plain Echo handler
+and stays out of `openapi.json`. The browser holds no model key; the
+conversation ID persists in `localStorage` while history is durable
+server-side. Core always registers these routes: the agent is a required module,
+configured by the `agent` block in `configs/hearthd.yaml` (an
+`agent.api_key_file` secret plus an optional `agent.model`, default
+`gpt-5.6-luna`), and Core fails startup when the secret file is missing. A 404
+from the page means the dashboard is connected to an older Core build. See
+`web/src/pages/AgentPage.tsx` and `internal/modules/agent`.
+
 ## Build
 
 ```sh

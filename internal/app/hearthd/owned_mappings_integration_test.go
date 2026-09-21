@@ -37,6 +37,7 @@ func TestRunListsOwnedMappingsAndDrainsEndpoint(t *testing.T) {
 			HTTPAddr:   unusedLoopbackAddress(t),
 			NATSURL:    server.ClientURL(),
 			SQLitePath: filepath.Join(t.TempDir(), "hearth.db"),
+			Agent:      requiredAgentConfig(t),
 		}, slog.New(slog.DiscardHandler))
 	}()
 	t.Cleanup(func() {

@@ -38,6 +38,7 @@ func TestAutomationEntityEventFactDrivesCommandThroughCore(t *testing.T) {
 		runErrors <- Run(runContext, Config{HouseholdTimezone: "UTC",
 			HTTPAddr: httpAddress, NATSURL: server.ClientURL(),
 			SQLitePath: filepath.Join(t.TempDir(), "hearth.db"),
+			Agent:      requiredAgentConfig(t),
 		}, slog.New(slog.DiscardHandler))
 	}()
 	waitForCoreHealthz(ctx, t, httpAddress, runErrors)

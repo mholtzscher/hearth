@@ -50,7 +50,7 @@ func (handler *Handler) ListAdapterHealthHistory(
 	case errors.Is(err, devices.ErrAdapterNotFound):
 		return nil, apiError(http.StatusNotFound, "adapter not found")
 	case err != nil:
-		return nil, apiError(http.StatusInternalServerError, "internal error")
+		return nil, internalAPIError(err)
 	}
 	body := HealthTransitionCollectionBody{Items: make([]HealthTransitionBody, len(page.Items))}
 	for index, transition := range page.Items {
@@ -62,7 +62,7 @@ func (handler *Handler) ListAdapterHealthHistory(
 			page.Items[len(page.Items)-1].ReceiveOrder,
 		)
 		if cursorErr != nil {
-			return nil, apiError(http.StatusInternalServerError, "internal error")
+			return nil, internalAPIError(cursorErr)
 		}
 		body.NextCursor = &cursor
 	}
@@ -92,7 +92,7 @@ func (handler *Handler) ListEntityAvailabilityHistory(
 	case errors.Is(err, devices.ErrEntityNotFound):
 		return nil, apiError(http.StatusNotFound, "entity not found")
 	case err != nil:
-		return nil, apiError(http.StatusInternalServerError, "internal error")
+		return nil, internalAPIError(err)
 	}
 	body := HealthTransitionCollectionBody{Items: make([]HealthTransitionBody, len(page.Items))}
 	for index, transition := range page.Items {
@@ -104,7 +104,7 @@ func (handler *Handler) ListEntityAvailabilityHistory(
 			page.Items[len(page.Items)-1].ReceiveOrder,
 		)
 		if cursorErr != nil {
-			return nil, apiError(http.StatusInternalServerError, "internal error")
+			return nil, internalAPIError(cursorErr)
 		}
 		body.NextCursor = &cursor
 	}

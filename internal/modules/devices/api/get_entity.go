@@ -26,11 +26,11 @@ func (handler *Handler) GetEntity(ctx context.Context, input *GetEntityInput) (*
 		return nil, apiError(http.StatusNotFound, "entity not found")
 	}
 	if err != nil {
-		return nil, apiError(http.StatusInternalServerError, "internal error")
+		return nil, internalAPIError(err)
 	}
 	body, err := entityBody(view)
 	if err != nil {
-		return nil, apiError(http.StatusInternalServerError, "internal error")
+		return nil, internalAPIError(err)
 	}
 	return &GetEntityOutput{Body: body}, nil
 }

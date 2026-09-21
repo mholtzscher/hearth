@@ -232,12 +232,14 @@ func newSimulatorMatrixHarness(
 	if err != nil {
 		t.Fatal(err)
 	}
-	httpHandler, _ := NewHTTPHandler(
+	httpHandler, _ := newHTTPHandler(
 		harness.service,
 		&stubAutomations{},
+		&stubAgent{},
 		nil,
 		harness.service,
 		&stubAutomations{},
+		newMCPServer(harness.service, &stubAutomations{}, nil),
 	)
 	harness.httpServer = httptest.NewServer(httpHandler)
 

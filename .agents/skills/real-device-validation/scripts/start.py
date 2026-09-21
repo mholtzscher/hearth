@@ -283,8 +283,9 @@ def start(host):
     dashboard_serve_plan(FAULT)
     stage("preflight passed")
 
+    agent_api_key = Path.home() / ".local/share/agenix/hearth-openai-api-key"
     prepare_config(Path("configs/homelab-hearthd.yaml"),
-                   f"http_addr: 127.0.0.1:8080\nnats_url: nats://{host}:4222\nsqlite_path: .data/homelab-hearthd.db\nhousehold_timezone: UTC\n")
+                   f"http_addr: 127.0.0.1:8080\nnats_url: nats://{host}:4222\nsqlite_path: .data/homelab-hearthd.db\nhousehold_timezone: UTC\nagent:\n  api_key_file: {agent_api_key}\n  reasoning_effort: none\n")
     prepare_config(Path("configs/homelab-zigbee2mqtt.yaml"),
                    f"adapter_id: zigbee2mqtt\nnats_url: nats://{host}:4222\nmqtt:\n  url: tcp://{host}:1883\n  base_topic: zigbee2mqtt\n")
     run("git", "check-ignore", "-q", str(STATE_RELPATH))

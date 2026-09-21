@@ -169,11 +169,15 @@ def nats_config_text(run_dir):
 
 def hearthd_config_text(run_dir):
     """Render this run's loopback Core config with its own SQLite file and UTC."""
+    agent_api_key = Path.home() / ".local/share/agenix/hearth-openai-api-key"
     return (
         f"http_addr: 127.0.0.1:{CORE_PORT}\n"
         f"nats_url: {NATS_URL}\n"
         f"sqlite_path: {run_dir}/hearthd.db\n"
         "household_timezone: UTC\n"
+        "agent:\n"
+        f"  api_key_file: {agent_api_key}\n"
+        "  reasoning_effort: none\n"
     )
 
 

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"os"
 	"path/filepath"
 	"testing"
 
@@ -35,10 +36,15 @@ func TestMainLoggingFlagsAndConfigFailure(t *testing.T) {
 	t.Run("startup cancellation", func(t *testing.T) {
 		t.Parallel()
 		natsURL := cmdtest.StartProcessNATS(t)
+		apiKeyPath := filepath.Join(t.TempDir(), "agent-api-key")
+		if err := os.WriteFile(apiKeyPath, []byte("test-model-api-key\n"), 0o600); err != nil {
+			t.Fatal(err)
+		}
 		configYAML :=
 			"http_addr: \"127.0.0.1:" + cmdtest.FreeLoopbackPort(t) + "\"\n" +
 				"nats_url: \"" + natsURL + "\"\n" +
-				"household_timezone: UTC\nsqlite_path: \"" + filepath.Join(t.TempDir(), "hearth.db") + "\"\n"
+				"household_timezone: UTC\nsqlite_path: \"" + filepath.Join(t.TempDir(), "hearth.db") + "\"\n" +
+				"agent:\n  api_key_file: \"" + apiKeyPath + "\"\n"
 		cmdtest.CheckStartupCancellation(t, binary, configYAML, "hearthd")
 	})
 }

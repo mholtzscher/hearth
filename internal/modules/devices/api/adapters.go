@@ -45,7 +45,7 @@ func (handler *Handler) ListAdapters(
 		return nil, apiError(http.StatusBadRequest, "invalid page")
 	}
 	if err != nil {
-		return nil, apiError(http.StatusInternalServerError, "internal error")
+		return nil, internalAPIError(err)
 	}
 	body := AdapterCollectionBody{Items: make([]AdapterBody, len(page.Items))}
 	for index, adapter := range page.Items {
@@ -54,7 +54,7 @@ func (handler *Handler) ListAdapters(
 	if page.HasMore && len(page.Items) > 0 {
 		cursor, cursorErr := encodeAdaptersCursor(page.Items[len(page.Items)-1].ID)
 		if cursorErr != nil {
-			return nil, apiError(http.StatusInternalServerError, "internal error")
+			return nil, internalAPIError(cursorErr)
 		}
 		body.NextCursor = &cursor
 	}
@@ -70,7 +70,7 @@ func (handler *Handler) GetAdapter(ctx context.Context, input *GetAdapterInput) 
 	case errors.Is(err, devices.ErrAdapterNotFound):
 		return nil, apiError(http.StatusNotFound, "adapter not found")
 	case err != nil:
-		return nil, apiError(http.StatusInternalServerError, "internal error")
+		return nil, internalAPIError(err)
 	}
 	return &GetAdapterOutput{Body: adapterBody(adapter)}, nil
 }

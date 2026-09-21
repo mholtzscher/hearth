@@ -81,14 +81,15 @@ func TestHistoryPruneSchedulerRunsStartupPassThenHourlyTicks(t *testing.T) {
 		order := &historyPruneOrderLog{}
 		devicePruner := &stubHistoryPruner{name: devicesHistoryPruneModule, order: order}
 		automationPruner := &stubHistoryPruner{name: automationsHistoryPruneModule, order: order}
+		agentPruner := &stubHistoryPruner{name: agentHistoryPruneModule, order: order}
 		scheduler := newHistoryPruneScheduler(
 			slog.New(slog.DiscardHandler),
-			newHistoryPruneTasks(devicePruner, automationPruner),
+			newHistoryPruneTasks(devicePruner, automationPruner, agentPruner),
 		)
 		worker := lifecycle.StartWorker(t.Context(), scheduler.run)
 		synctest.Wait()
 
-		startup := requireHistoryPrunePass(t, devicePruner, automationPruner, order, 1)
+		startup := requireHistoryPrunePass(t, devicePruner, automationPruner, agentPruner, order, 1)
 		if startup.Location() != time.UTC {
 			t.Fatalf("startup sweep location = %v, want UTC", startup.Location())
 		}
@@ -101,7 +102,7 @@ func TestHistoryPruneSchedulerRunsStartupPassThenHourlyTicks(t *testing.T) {
 		// The first tick starts exactly one more pass with a newer shared time.
 		time.Sleep(time.Second)
 		synctest.Wait()
-		tick := requireHistoryPrunePass(t, devicePruner, automationPruner, order, 2)
+		tick := requireHistoryPrunePass(t, devicePruner, automationPruner, agentPruner, order, 2)
 		if !tick.After(startup) {
 			t.Fatalf("tick sweep %v is not after startup sweep %v", tick, startup)
 		}
@@ -113,32 +114,36 @@ func TestHistoryPruneSchedulerRunsStartupPassThenHourlyTicks(t *testing.T) {
 }
 
 // requireHistoryPrunePass fails unless each pruner recorded exactly want sweeps,
-// the latest sweep is one shared UTC instant, and the latest pass ran devices
-// before automations. It returns the shared sweep time.
+// the latest sweep is one shared UTC instant, and the latest pass ran devices,
+// then automations, then agent. It returns the shared sweep time.
 func requireHistoryPrunePass(
 	t *testing.T,
-	devicePruner, automationPruner *stubHistoryPruner,
+	devicePruner, automationPruner, agentPruner *stubHistoryPruner,
 	order *historyPruneOrderLog,
 	want int,
 ) time.Time {
 	t.Helper()
 	requireHistoryPruneSweeps(t, devicePruner, want, "in pass")
 	requireHistoryPruneSweeps(t, automationPruner, want, "in pass")
+	requireHistoryPruneSweeps(t, agentPruner, want, "in pass")
 	deviceSweeps := devicePruner.recorded()
 	sweep := deviceSweeps[want-1]
-	if automationSweep := automationPruner.recorded()[want-1]; !sweep.Equal(automationSweep) {
-		t.Fatalf(
-			"pass %d sweeps differ: devices %v, automations %v",
-			want, sweep, automationSweep,
-		)
+	for _, pruner := range []*stubHistoryPruner{automationPruner, agentPruner} {
+		if moduleSweep := pruner.recorded()[want-1]; !sweep.Equal(moduleSweep) {
+			t.Fatalf(
+				"pass %d sweeps differ: devices %v, %s %v",
+				want, sweep, pruner.name, moduleSweep,
+			)
+		}
 	}
 	steps := order.recorded()
-	if len(steps) != want*2 {
-		t.Fatalf("task order after pass %d = %v, want %d entries", want, steps, want*2)
+	if len(steps) != want*3 {
+		t.Fatalf("task order after pass %d = %v, want %d entries", want, steps, want*3)
 	}
-	lastPass := steps[len(steps)-2:]
-	if lastPass[0] != devicesHistoryPruneModule || lastPass[1] != automationsHistoryPruneModule {
-		t.Fatalf("pass %d task order = %v, want devices then automations", want, lastPass)
+	lastPass := steps[len(steps)-3:]
+	if lastPass[0] != devicesHistoryPruneModule || lastPass[1] != automationsHistoryPruneModule ||
+		lastPass[2] != agentHistoryPruneModule {
+		t.Fatalf("pass %d task order = %v, want devices then automations then agent", want, lastPass)
 	}
 	return sweep
 }
@@ -153,17 +158,20 @@ func requireHistoryPruneSweeps(t *testing.T, pruner *stubHistoryPruner, want int
 
 // This test protects the non-overlapping, no-backlog schedule and fails if a
 // tick starts a second pass while one is running, if the startup pass runs
-// concurrently with automations, or if a pass that overran its interval replays
+// concurrently with its siblings, or if a pass that overran its interval replays
 // the missed ticks as catch-up passes.
+//
+//nolint:gocognit // The schedule matrix is intentionally asserted in one place.
 func TestHistoryPruneSchedulerSkipsTicksMissedBySlowPass(t *testing.T) {
 	t.Parallel()
 	synctest.Test(t, func(t *testing.T) {
 		permits := make(chan struct{})
 		devicePruner := &stubHistoryPruner{name: devicesHistoryPruneModule, permits: permits}
 		automationPruner := &stubHistoryPruner{name: automationsHistoryPruneModule}
+		agentPruner := &stubHistoryPruner{name: agentHistoryPruneModule}
 		scheduler := newHistoryPruneScheduler(
 			slog.New(slog.DiscardHandler),
-			newHistoryPruneTasks(devicePruner, automationPruner),
+			newHistoryPruneTasks(devicePruner, automationPruner, agentPruner),
 		)
 		worker := lifecycle.StartWorker(t.Context(), scheduler.run)
 
@@ -174,6 +182,9 @@ func TestHistoryPruneSchedulerSkipsTicksMissedBySlowPass(t *testing.T) {
 		}
 		if sweeps := automationPruner.recorded(); len(sweeps) != 0 {
 			t.Fatalf("automation sweeps before devices finished = %d, want 0", len(sweeps))
+		}
+		if sweeps := agentPruner.recorded(); len(sweeps) != 0 {
+			t.Fatalf("agent sweeps before devices finished = %d, want 0", len(sweeps))
 		}
 
 		// Ticks that elapse during the startup pass cannot run: the hour ticker
@@ -186,12 +197,19 @@ func TestHistoryPruneSchedulerSkipsTicksMissedBySlowPass(t *testing.T) {
 		if sweeps := automationPruner.recorded(); len(sweeps) != 0 {
 			t.Fatalf("a tick overlapped the startup pass: automation sweeps = %d", len(sweeps))
 		}
+		if sweeps := agentPruner.recorded(); len(sweeps) != 0 {
+			t.Fatalf("a tick overlapped the startup pass: agent sweeps = %d", len(sweeps))
+		}
 
-		// Releasing the startup pass lets automations run in the same pass.
+		// Releasing the startup pass lets automations and the agent run in the
+		// same pass, in order.
 		permits <- struct{}{}
 		synctest.Wait()
 		if sweeps := automationPruner.recorded(); len(sweeps) != 1 {
 			t.Fatalf("automation sweeps after the startup pass = %d, want 1", len(sweeps))
+		}
+		if sweeps := agentPruner.recorded(); len(sweeps) != 1 {
+			t.Fatalf("agent sweeps after the startup pass = %d, want 1", len(sweeps))
 		}
 
 		// The next pass starts one interval after the previous pass completed and
@@ -220,6 +238,9 @@ func TestHistoryPruneSchedulerSkipsTicksMissedBySlowPass(t *testing.T) {
 		if sweeps := automationPruner.recorded(); len(sweeps) != 2 {
 			t.Fatalf("automation sweeps after releasing a late pass = %d, want 2", len(sweeps))
 		}
+		if sweeps := agentPruner.recorded(); len(sweeps) != 2 {
+			t.Fatalf("agent sweeps after releasing a late pass = %d, want 2", len(sweeps))
+		}
 
 		if stopErr := worker.Stop(context.Background()); stopErr != nil {
 			t.Fatalf("stopping the scheduler returned %v", stopErr)
@@ -228,43 +249,60 @@ func TestHistoryPruneSchedulerSkipsTicksMissedBySlowPass(t *testing.T) {
 }
 
 // historyPruneFailureCase names one failing module plus the fixed event, error
-// code, and other-module event its failed pass must log under.
+// code, and the sibling-module events its failed pass must not log.
 type historyPruneFailureCase struct {
-	name             string
-	failingModule    string
-	secret           string
-	wantEvent        string
-	wantErrorCode    string
-	otherModuleEvent string
+	name                string
+	failingModule       string
+	secret              string
+	wantEvent           string
+	wantErrorCode       string
+	siblingModuleEvents []string
 }
 
-// historyPruneFailureCases tables both modules so each module's preserved event
-// and error code stay asserted together.
+// historyPruneFailureCases tables every module so each module's event and error
+// code stay asserted together.
 func historyPruneFailureCases() []historyPruneFailureCase {
 	return []historyPruneFailureCase{
 		{
-			name:             "devices",
-			failingModule:    devicesHistoryPruneModule,
-			secret:           "s3cr3t-devices-detail",
-			wantEvent:        "core.devices_history_prune_failed",
-			wantErrorCode:    "devices_history_prune_failed",
-			otherModuleEvent: "core.automation_history_prune_failed",
+			name:          "devices",
+			failingModule: devicesHistoryPruneModule,
+			secret:        "s3cr3t-devices-detail",
+			wantEvent:     "core.devices_history_prune_failed",
+			wantErrorCode: "devices_history_prune_failed",
+			siblingModuleEvents: []string{
+				"core.automation_history_prune_failed",
+				"core.agent_history_prune_failed",
+			},
 		},
 		{
-			name:             "automations",
-			failingModule:    automationsHistoryPruneModule,
-			secret:           "s3cr3t-automations-detail",
-			wantEvent:        "core.automation_history_prune_failed",
-			wantErrorCode:    "automation_history_prune_failed",
-			otherModuleEvent: "core.devices_history_prune_failed",
+			name:          "automations",
+			failingModule: automationsHistoryPruneModule,
+			secret:        "s3cr3t-automations-detail",
+			wantEvent:     "core.automation_history_prune_failed",
+			wantErrorCode: "automation_history_prune_failed",
+			siblingModuleEvents: []string{
+				"core.devices_history_prune_failed",
+				"core.agent_history_prune_failed",
+			},
+		},
+		{
+			name:          "agent",
+			failingModule: agentHistoryPruneModule,
+			secret:        "s3cr3t-agent-detail",
+			wantEvent:     "core.agent_history_prune_failed",
+			wantErrorCode: "agent_history_prune_failed",
+			siblingModuleEvents: []string{
+				"core.devices_history_prune_failed",
+				"core.automation_history_prune_failed",
+			},
 		},
 	}
 }
 
 // This test protects module failure isolation and safe failure logging for each
-// module. It fails if a failed module pass suppresses the other module, logs
-// more than once per failed module pass, leaks raw error text, or omits the
-// fixed event, error code, or module name.
+// module. It fails if a failed module pass suppresses its siblings, logs more
+// than once per failed module pass, leaks raw error text, or omits the fixed
+// event, error code, or module name.
 func TestHistoryPruneSchedulerContinuesAfterModuleFailure(t *testing.T) {
 	t.Parallel()
 	for _, testCase := range historyPruneFailureCases() {
@@ -282,12 +320,13 @@ type historyPruneFailureRun struct {
 	recorder         *recordingHandler
 	devicePruner     *stubHistoryPruner
 	automationPruner *stubHistoryPruner
+	agentPruner      *stubHistoryPruner
 	worker           *lifecycle.WorkerHandle
 }
 
 // runHistoryPruneFailureCase drives one failing module through a startup pass
 // and a retry pass inside its own synctest bubble, asserting the failed pass,
-// its single fixed log record, the untouched other module, and the retry.
+// its single fixed log record, the untouched sibling modules, and the retry.
 func runHistoryPruneFailureCase(t *testing.T, testCase historyPruneFailureCase) {
 	t.Helper()
 	synctest.Test(t, func(t *testing.T) {
@@ -316,10 +355,11 @@ func startFailingHistoryPruneRun(
 		recorder:         recorder,
 		devicePruner:     &stubHistoryPruner{name: devicesHistoryPruneModule},
 		automationPruner: &stubHistoryPruner{name: automationsHistoryPruneModule},
+		agentPruner:      &stubHistoryPruner{name: agentHistoryPruneModule},
 	}
 	run.failedPruner().fail = errors.New("sweep failed " + testCase.secret)
 	scheduler := newHistoryPruneScheduler(
-		logger, newHistoryPruneTasks(run.devicePruner, run.automationPruner),
+		logger, newHistoryPruneTasks(run.devicePruner, run.automationPruner, run.agentPruner),
 	)
 	run.worker = lifecycle.StartWorker(t.Context(), scheduler.run)
 	return run
@@ -327,31 +367,38 @@ func startFailingHistoryPruneRun(
 
 // failedPruner returns the pruner for the module this run expects to fail.
 func (run historyPruneFailureRun) failedPruner() *stubHistoryPruner {
-	if run.testCase.failingModule == automationsHistoryPruneModule {
+	switch run.testCase.failingModule {
+	case automationsHistoryPruneModule:
 		return run.automationPruner
+	case agentHistoryPruneModule:
+		return run.agentPruner
+	default:
+		return run.devicePruner
 	}
-	return run.devicePruner
 }
 
 // requireHistoryPruneFailureLogged fails unless the failed startup pass swept
-// both modules once at one shared instant and logged exactly one error record
+// every module once at one shared instant and logged exactly one error record
 // for the failing module that carries its fixed error code and module name, no
-// raw upstream text, and no record for the other module.
+// raw upstream text, and no record for any sibling module.
 func requireHistoryPruneFailureLogged(t *testing.T, run historyPruneFailureRun) {
 	t.Helper()
 	deviceSweeps := run.devicePruner.recorded()
 	automationSweeps := run.automationPruner.recorded()
-	if len(deviceSweeps) != 1 || len(automationSweeps) != 1 {
+	agentSweeps := run.agentPruner.recorded()
+	if len(deviceSweeps) != 1 || len(automationSweeps) != 1 || len(agentSweeps) != 1 {
 		t.Fatalf(
-			"sweeps after a failing %s pass = %d devices, %d automations, want 1 each",
-			run.testCase.failingModule, len(deviceSweeps), len(automationSweeps),
+			"sweeps after a failing %s pass = %d devices, %d automations, %d agent, want 1 each",
+			run.testCase.failingModule, len(deviceSweeps), len(automationSweeps), len(agentSweeps),
 		)
 	}
-	if !automationSweeps[0].Equal(deviceSweeps[0]) {
-		t.Fatalf(
-			"modules did not share the failed pass sweep time: %v vs %v",
-			automationSweeps[0], deviceSweeps[0],
-		)
+	for _, sweep := range []time.Time{automationSweeps[0], agentSweeps[0]} {
+		if !sweep.Equal(deviceSweeps[0]) {
+			t.Fatalf(
+				"modules did not share the failed pass sweep time: %v vs %v",
+				sweep, deviceSweeps[0],
+			)
+		}
 	}
 	failures := recordsWithEvent(run.recorder.snapshot(), run.testCase.wantEvent)
 	if len(failures) != 1 {
@@ -363,13 +410,15 @@ func requireHistoryPruneFailureLogged(t *testing.T, run historyPruneFailureRun) 
 	requireRecordAttr(t, failures[0], "error_code", run.testCase.wantErrorCode)
 	requireRecordAttr(t, failures[0], "module", run.testCase.failingModule)
 	requireNoRawHistoryPruneError(t, failures[0], run.testCase.secret)
-	if got := len(recordsWithEvent(run.recorder.snapshot(), run.testCase.otherModuleEvent)); got != 0 {
-		t.Fatalf("%s records = %d, want 0", run.testCase.otherModuleEvent, got)
+	for _, event := range run.testCase.siblingModuleEvents {
+		if got := len(recordsWithEvent(run.recorder.snapshot(), event)); got != 0 {
+			t.Fatalf("%s records = %d, want 0", event, got)
+		}
 	}
 }
 
-// requireHistoryPruneFailureRetried advances one interval and fails unless both
-// modules ran another pass and the failing module logged exactly one more
+// requireHistoryPruneFailureRetried advances one interval and fails unless every
+// module ran another pass and the failing module logged exactly one more
 // record.
 func requireHistoryPruneFailureRetried(t *testing.T, run historyPruneFailureRun) {
 	t.Helper()
@@ -380,6 +429,9 @@ func requireHistoryPruneFailureRetried(t *testing.T, run historyPruneFailureRun)
 	}
 	if sweeps := run.automationPruner.recorded(); len(sweeps) != 2 {
 		t.Fatalf("automation sweeps on the retry pass = %d, want 2", len(sweeps))
+	}
+	if sweeps := run.agentPruner.recorded(); len(sweeps) != 2 {
+		t.Fatalf("agent sweeps on the retry pass = %d, want 2", len(sweeps))
 	}
 	retried := recordsWithEvent(run.recorder.snapshot(), run.testCase.wantEvent)
 	if len(retried) != 2 {
@@ -397,8 +449,9 @@ func TestHistoryPruneSchedulerCancellationPreventsTaskAndLogsNoFailure(t *testin
 		permits := make(chan struct{})
 		devicePruner := &stubHistoryPruner{name: devicesHistoryPruneModule, permits: permits}
 		automationPruner := &stubHistoryPruner{name: automationsHistoryPruneModule}
+		agentPruner := &stubHistoryPruner{name: agentHistoryPruneModule}
 		scheduler := newHistoryPruneScheduler(
-			logger, newHistoryPruneTasks(devicePruner, automationPruner),
+			logger, newHistoryPruneTasks(devicePruner, automationPruner, agentPruner),
 		)
 		ctx, cancel := context.WithCancel(context.Background())
 		worker := lifecycle.StartWorker(ctx, scheduler.run)
@@ -411,6 +464,9 @@ func TestHistoryPruneSchedulerCancellationPreventsTaskAndLogsNoFailure(t *testin
 		synctest.Wait()
 		if sweeps := automationPruner.recorded(); len(sweeps) != 0 {
 			t.Fatalf("cancellation did not prevent the automations task: sweeps = %d", len(sweeps))
+		}
+		if sweeps := agentPruner.recorded(); len(sweeps) != 0 {
+			t.Fatalf("cancellation did not prevent the agent task: sweeps = %d", len(sweeps))
 		}
 		if records := recorder.snapshot(); len(records) != 0 {
 			t.Fatalf("shutdown cancellation logged pruning failures: %#v", records)

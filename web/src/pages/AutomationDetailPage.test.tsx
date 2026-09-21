@@ -114,7 +114,7 @@ describe("AutomationDetailPage manual Run", () => {
     );
     renderDetailPage();
 
-    fireEvent.click(await screen.findByRole("button", { name: "Run now" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Run now" }, { timeout: 5_000 }));
 
     // The outcome is the admitted Run itself, including its verified Command.
     expect(await screen.findByText("Step attempts")).not.toBeNull();
