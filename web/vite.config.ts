@@ -62,7 +62,6 @@ export default defineConfig({
     allowedHosts: resolveAllowedHosts(),
     proxy: {
       "/v1": HEARTHD,
-      "/mcp": HEARTHD,
       "/healthz": HEARTHD,
       "/readyz": HEARTHD,
       "/openapi.json": HEARTHD,

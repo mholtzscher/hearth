@@ -343,6 +343,43 @@ func TestLoadConfigDefaultsAgentSettings(t *testing.T) {
 	}
 }
 
+// TestAgentReasoningEffortDefaultsForTheDefaultModel protects the documented
+// pairing: the default model rejects function tools unless the effort is none,
+// so an omitted reasoning_effort must not leave it unset. It fails if the
+// default drifts or a non-default model loses the provider default.
+func TestAgentReasoningEffortDefaultsForTheDefaultModel(t *testing.T) {
+	t.Parallel()
+	value := loadRetentionConfig(t, "")
+	if hearthd.DefaultAgentReasoningEffort != "none" {
+		t.Fatalf("default agent reasoning effort = %q, want none", hearthd.DefaultAgentReasoningEffort)
+	}
+	if value.Agent.ReasoningEffort != hearthd.DefaultAgentReasoningEffort {
+		t.Fatalf(
+			"omitted reasoning effort = %q, want %q",
+			value.Agent.ReasoningEffort, hearthd.DefaultAgentReasoningEffort,
+		)
+	}
+
+	// An explicit non-default model keeps the provider's own default.
+	contents := "http_addr: 127.0.0.1:8080\nnats_url: nats://127.0.0.1:4222\n" +
+		"sqlite_path: hearth.db\nhousehold_timezone: UTC\n" +
+		"agent:\n  api_key_file: " + testAgentAPIKeyFile + "\n  model: other-household-model\n"
+	path := filepath.Join(t.TempDir(), "hearth.yaml")
+	if err := os.WriteFile(path, []byte(contents), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	other, err := hearthd.LoadConfig(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if other.Agent.ReasoningEffort != "" {
+		t.Fatalf(
+			"non-default model reasoning effort = %q, want the provider default",
+			other.Agent.ReasoningEffort,
+		)
+	}
+}
+
 // TestAgentHistoryRetentionRejectsBelowMinimum protects the module floor: a
 // shorter window would delete more conversation history than the module
 // intends, so it is invalid configuration rather than a silent clamp.

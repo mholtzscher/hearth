@@ -2,9 +2,10 @@ package agent
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
-	"strings"
+	"sync"
 
 	"github.com/labstack/echo/v5"
 )
@@ -30,18 +31,34 @@ type streamRequest struct {
 
 const streamErrorField = "error"
 
+// maxStreamBodyBytes bounds the decoded SSE request body. A message at
+// maxMessageRunes stays well inside it even when every character arrives as a
+// six-byte JSON escape.
+const maxStreamBodyBytes = 64 << 10
+
 // sendStream runs one turn and forwards its events as SSE frames. The
 // conversation is checked before headers flush so unknown IDs still return a
 // JSON 404; afterwards the outcome travels as turn.finished/turn.failed, and a
 // client disconnect merely cancels the turn context. Persisted rows stay
 // readable either way.
 func (handler *streamHandler) sendStream(ctx *echo.Context) error {
+	// The JSON serializer reads the whole body before decoding, so the bound has
+	// to be installed on the request first.
+	ctx.Request().Body = http.MaxBytesReader(ctx.Response(), ctx.Request().Body, maxStreamBodyBytes)
 	var body streamRequest
 	if err := ctx.Bind(&body); err != nil {
+		if _, tooLarge := errors.AsType[*http.MaxBytesError](err); tooLarge {
+			return ctx.JSON(
+				http.StatusRequestEntityTooLarge,
+				map[string]string{streamErrorField: "request body is too large"},
+			)
+		}
 		return ctx.JSON(http.StatusBadRequest, map[string]string{streamErrorField: "invalid JSON body"})
 	}
-	if strings.TrimSpace(body.Text) == "" {
-		return ctx.JSON(http.StatusBadRequest, map[string]string{streamErrorField: "text is required"})
+	// This route has no Huma schema, so shared validation is its only bound on
+	// message text.
+	if err := validateMessageText(body.Text); err != nil {
+		return ctx.JSON(http.StatusBadRequest, map[string]string{streamErrorField: err.Error()})
 	}
 	// Reject before headers flush so a drained agent still answers with JSON.
 	if !handler.service.AdmissionOpen() {
@@ -61,6 +78,9 @@ func (handler *streamHandler) sendStream(ctx *echo.Context) error {
 	writer.Header().Set("Content-Type", "text/event-stream")
 	writer.Header().Set("Cache-Control", "no-cache")
 	writer.Header().Set("Connection", "keep-alive")
+	// nginx buffers proxied responses by default, which would hold every event
+	// until the turn ended and defeat the incremental stream.
+	writer.Header().Set("X-Accel-Buffering", "no")
 	writer.WriteHeader(http.StatusOK)
 	flush := func() {
 		if flusher, ok := writer.(http.Flusher); ok {
@@ -68,11 +88,18 @@ func (handler *streamHandler) sendStream(ctx *echo.Context) error {
 		}
 	}
 	flush()
+	// Tool executions run on graph goroutines and emit outside the turn lock, so
+	// one mutex covers the whole marshal/write/flush sequence: http.ResponseWriter
+	// is not safe for concurrent use, and interleaved frames would corrupt the
+	// stream.
+	var writeMu sync.Mutex
 	emit := func(event TurnEvent) {
 		raw, marshalErr := json.Marshal(event)
 		if marshalErr != nil {
 			return
 		}
+		writeMu.Lock()
+		defer writeMu.Unlock()
 		fmt.Fprintf(writer, "event: %s\ndata: %s\n\n", event.Type, raw)
 		flush()
 	}

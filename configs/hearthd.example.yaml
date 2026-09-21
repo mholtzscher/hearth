@@ -16,8 +16,9 @@ agent:
   model: gpt-5.6-luna
   # Provider endpoint override; empty uses the provider default. Absolute http or https only.
   base_url: ""
-  # Reasoning level: none, minimal, low, medium, or high; empty uses the provider default.
-  # The default model rejects function tools unless this is none.
+  # Reasoning level: none, minimal, low, medium, or high; empty selects the provider default,
+  # except for the default model where it selects none. The default model rejects function
+  # tools at any other level.
   reasoning_effort: none
   # Bounds one turn's model plus tools steps (default 20).
   max_steps: 20

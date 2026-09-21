@@ -129,3 +129,39 @@ func TestListConversationsPreviewTruncates(t *testing.T) {
 		t.Fatalf("preview = %q, want leading message text", preview)
 	}
 }
+
+// TestListConversationsPreviewUsesTheFirstUserMessage protects the sidebar
+// preview source now that the summary query supplies it: the preview is the
+// conversation's first user message, not its first row, and later user messages
+// never replace it. It fails if the preview is selected without the user-role
+// filter or by newest row.
+func TestListConversationsPreviewUsesTheFirstUserMessage(t *testing.T) {
+	t.Parallel()
+	fix := newListFixture(t)
+
+	conversation := fix.create()
+	fix.persist(conversation.ID, schema.AssistantMessage("answer without a question", nil))
+	fix.persist(conversation.ID, schema.UserMessage("first user question"))
+	fix.persist(conversation.ID, schema.UserMessage("second user question"))
+
+	summaries := fix.list()
+	if len(summaries) != 1 {
+		t.Fatalf("ListConversations returned %d conversations, want 1", len(summaries))
+	}
+	if summaries[0].Preview != "first user question" {
+		t.Fatalf("preview = %q, want the first user message", summaries[0].Preview)
+	}
+	if summaries[0].MessageCount != 3 {
+		t.Fatalf("message count = %d, want 3", summaries[0].MessageCount)
+	}
+
+	// A conversation without a user message keeps an empty preview.
+	quiet := fix.create()
+	fix.persist(quiet.ID, schema.AssistantMessage("still no question", nil))
+	summaries = fix.list()
+	for _, summary := range summaries {
+		if summary.ID == quiet.ID && summary.Preview != "" {
+			t.Fatalf("preview = %q, want empty without a user message", summary.Preview)
+		}
+	}
+}

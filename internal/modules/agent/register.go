@@ -147,7 +147,9 @@ type SendMessageInput struct {
 	Body SendMessageBody
 }
 
-// SendMessageBody is the user text for one turn.
+// SendMessageBody is the user text for one turn. Its minLength/maxLength tags
+// restate the bounds validateMessageText enforces, so the schema-backed route
+// and the schema-less SSE route reject the same input.
 type SendMessageBody struct {
 	Text string `json:"text" minLength:"1" maxLength:"4000" doc:"User message text"`
 }
@@ -172,6 +174,7 @@ func (handler *Handler) SendMessage(
 	input *SendMessageInput,
 ) (*SendMessageOutput, error) {
 	turn, err := handler.service.SendMessage(ctx, input.ID, input.Body.Text)
+	var invalidText messageTextError
 	switch {
 	case errors.Is(err, ErrConversationNotFound):
 		return nil, huma.NewError(http.StatusNotFound, "agent conversation not found")
@@ -179,6 +182,8 @@ func (handler *Handler) SendMessage(
 		return nil, huma.NewError(http.StatusServiceUnavailable, "agent admission is unavailable")
 	case errors.Is(err, context.Canceled), errors.Is(err, context.DeadlineExceeded):
 		return nil, huma.NewError(http.StatusServiceUnavailable, "agent turn canceled")
+	case errors.As(err, &invalidText):
+		return nil, huma.NewError(http.StatusBadRequest, invalidText.detail)
 	case errors.As(err, &modelError{}):
 		return nil, huma.NewError(http.StatusBadGateway, "agent model call failed")
 	case err != nil:

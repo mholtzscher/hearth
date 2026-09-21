@@ -36,6 +36,11 @@ const (
 	// DefaultAgentModel is the household chat model the agent uses unless
 	// configured otherwise.
 	DefaultAgentModel = "gpt-5.6-luna"
+	// DefaultAgentReasoningEffort is the reasoning level Core selects for
+	// DefaultAgentModel when agent.reasoning_effort is unset: that model rejects
+	// function tools at any other level, and a turn without its tool catalog
+	// cannot do household work.
+	DefaultAgentReasoningEffort = "none"
 	// DefaultAgentHistoryRetention bounds how long Core keeps agent conversations.
 	DefaultAgentHistoryRetention = 30 * 24 * time.Hour
 	// MinimumAgentHistoryRetention keeps agent conversation retention at the
@@ -82,7 +87,8 @@ type AgentConfig struct {
 	// own default; a set value must be an absolute http or https URL.
 	BaseURL string `yaml:"base_url"`
 	// ReasoningEffort selects the model's reasoning level from
-	// agentReasoningEfforts. Empty selects the provider's own default.
+	// agentReasoningEfforts. Empty selects DefaultAgentReasoningEffort for
+	// DefaultAgentModel and the provider's own default for any other model.
 	ReasoningEffort string `yaml:"reasoning_effort"`
 	// MaxSteps bounds one turn's model plus tools steps. Zero selects the agent
 	// module's own default.
@@ -110,6 +116,9 @@ func LoadConfig(path string) (Config, error) {
 	}
 	if value.Agent.Model == "" {
 		value.Agent.Model = DefaultAgentModel
+	}
+	if value.Agent.ReasoningEffort == "" && value.Agent.Model == DefaultAgentModel {
+		value.Agent.ReasoningEffort = DefaultAgentReasoningEffort
 	}
 	if value.Agent.HistoryRetention == 0 {
 		value.Agent.HistoryRetention = DefaultAgentHistoryRetention

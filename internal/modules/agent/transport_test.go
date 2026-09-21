@@ -113,6 +113,31 @@ func TestSendMessageRouteMapsAdmissionAndCancellation(t *testing.T) {
 	}
 }
 
+func TestSendMessageRouteMapsInvalidTextToBadRequest(t *testing.T) {
+	t.Parallel()
+	service := &stubOperations{
+		sendMessage: func(context.Context, string, string) (Turn, error) {
+			return Turn{}, messageTextError{detail: "agent message text is required"}
+		},
+	}
+	router := newOperationsRouter(service)
+	request := httptest.NewRequest(
+		http.MethodPost,
+		"/v1/agent/conversations/aconv_test/messages",
+		strings.NewReader(`{"text":"   "}`),
+	)
+	request.Header.Set("Content-Type", "application/json")
+	recorder := httptest.NewRecorder()
+	router.ServeHTTP(recorder, request)
+
+	if recorder.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want %d: %s", recorder.Code, http.StatusBadRequest, recorder.Body.String())
+	}
+	if !strings.Contains(recorder.Body.String(), "agent message text is required") {
+		t.Fatalf("body = %s, want the validation detail", recorder.Body.String())
+	}
+}
+
 func TestStreamRouteRejectsClosedAdmission(t *testing.T) {
 	t.Parallel()
 	service := &stubOperations{admissionOpen: func() bool { return false }}
@@ -167,6 +192,11 @@ func TestStreamRouteForwardsTurnEvents(t *testing.T) {
 	if recorder.Code != http.StatusOK {
 		t.Fatalf("status = %d, want %d: %s", recorder.Code, http.StatusOK, recorder.Body.String())
 	}
+	// nginx buffers proxied responses unless the response opts out, which would
+	// hold every event until the turn ended.
+	if buffering := recorder.Header().Get("X-Accel-Buffering"); buffering != "no" {
+		t.Fatalf("X-Accel-Buffering = %q, want no", buffering)
+	}
 	body := recorder.Body.String()
 	if !strings.Contains(body, "event: "+EventTurnFinished) {
 		t.Fatalf("body = %s, want the turn.finished event", body)
@@ -178,10 +208,16 @@ func TestStreamRouteForwardsTurnEvents(t *testing.T) {
 
 func postStream(t *testing.T, router *echo.Echo) *httptest.ResponseRecorder {
 	t.Helper()
+	return postStreamBody(t, router, `{"text":"hello"}`)
+}
+
+// postStreamBody posts one raw JSON body to the stream route.
+func postStreamBody(t *testing.T, router *echo.Echo, body string) *httptest.ResponseRecorder {
+	t.Helper()
 	request := httptest.NewRequest(
 		http.MethodPost,
 		"/v1/agent/conversations/aconv_test/messages/stream",
-		strings.NewReader(`{"text":"hello"}`),
+		strings.NewReader(body),
 	)
 	request.Header.Set("Content-Type", "application/json")
 	recorder := httptest.NewRecorder()

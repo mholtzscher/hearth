@@ -118,9 +118,11 @@ func (native *mcpBridgeTool) InvokableRun(
 	return native.invoke(ctx, argumentsInJSON)
 }
 
-// callMCPTool runs one tool call and renders its result as model text. An
-// isError result becomes a Go error so the turn records an "error: ..." row
-// the model can recover from, never a failed turn.
+// callMCPTool runs one tool call and renders its result as model text. A
+// modeled domain failure stays a successful tool output so the ReAct loop hands
+// it back to the model as another step to explain or recover from; a transport
+// error, unparseable arguments, or an unmodelled isError result still ends the
+// tool with a Go error.
 func callMCPTool(
 	ctx context.Context,
 	session *mcp.ClientSession,
@@ -135,14 +137,21 @@ func callMCPTool(
 		return "", fmt.Errorf("agent tool %s: %w", name, err)
 	}
 	text := mcpResultText(result)
-	if result.IsError {
+	// The wrapper publishes the structured half only for a domain ToolError, so
+	// it marks the modeled failure the model can act on; an input rejection or
+	// unmodelled server fault keeps none and stays a failed turn.
+	if result.IsError && result.StructuredContent == nil {
 		return "", errors.New(text)
 	}
 	return text, nil
 }
 
-// mcpResultText renders one result as model text: the concatenated text
-// parts, or the structured payload when the handler returned no text.
+// mcpResultText renders one result as model text: the concatenated text parts,
+// plus the structured payload of a modeled failure. The SDK renders a success
+// output as both halves, but a failure's structured fields exist only in the
+// structured half, so the model and the persisted trace need them appended to
+// read the failure code, a Command's durable status and Command ID, or an
+// Automation failure's history coordinates.
 func mcpResultText(result *mcp.CallToolResult) string {
 	var parts []string
 	for _, content := range result.Content {
@@ -150,32 +159,41 @@ func mcpResultText(result *mcp.CallToolResult) string {
 			parts = append(parts, text.Text)
 		}
 	}
-	if len(parts) == 0 && result.StructuredContent != nil {
-		if raw, err := json.Marshal(result.StructuredContent); err == nil {
-			return string(raw)
-		}
+	text := strings.Join(parts, "\n")
+	if result.StructuredContent == nil {
+		return text
 	}
-	return strings.Join(parts, "\n")
+	raw, err := json.Marshal(result.StructuredContent)
+	if err != nil {
+		return text
+	}
+	switch {
+	case text == "":
+		return string(raw)
+	case result.IsError:
+		return text + "\n" + string(raw)
+	default:
+		return text
+	}
 }
 
 // traced records one tool execution on the turn assembler carried by ctx. The
 // ReAct loop exposes no per-tool stream, so without this the trace would never
 // reach the persisted history or the event stream. Outside a turn the
 // assembler is absent and the tool simply executes.
-func traced[T any](name string, fn utils.InvokeFunc[T, string]) utils.InvokeFunc[T, string] {
-	return func(ctx context.Context, input T) (string, error) {
+//
+// The bridged tool receives its arguments as the raw JSON string the model
+// sent, so they are recorded verbatim: marshalling that string again would
+// persist an escaped JSON string literal instead of the argument object.
+func traced(name string, fn utils.InvokeFunc[string, string]) utils.InvokeFunc[string, string] {
+	return func(ctx context.Context, argsJSON string) (string, error) {
 		assembler := assemblerFrom(ctx)
-		var args string
-		if assembler != nil {
-			raw, _ := json.Marshal(input)
-			args = string(raw)
-			assembler.emitEvent(TurnEvent{Type: EventToolStarted, Name: name, Arguments: args})
-		}
-		output, err := fn(ctx, input)
 		if assembler == nil {
-			return output, err
+			return fn(ctx, argsJSON)
 		}
-		if traceErr := assembler.recordToolCall(name, args, output, err); traceErr != nil {
+		assembler.emitEvent(TurnEvent{Type: EventToolStarted, Name: name, Arguments: argsJSON})
+		output, err := fn(ctx, argsJSON)
+		if traceErr := assembler.recordToolCall(name, argsJSON, output, err); traceErr != nil {
 			return "", traceErr
 		}
 		return output, err

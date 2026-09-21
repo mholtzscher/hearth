@@ -109,7 +109,7 @@ agent:
   api_key_file: .data/agent-api-key   # required local secret file
   model: gpt-5.6-luna                 # default
   base_url: ""                        # provider default; absolute http(s) when set
-  reasoning_effort: none              # none, minimal, low, medium, or high; empty uses the provider default
+  reasoning_effort: none              # none, minimal, low, medium, or high; empty selects none for this default model
   max_steps: 20                       # bounds one turn's model plus tools steps
   history_retention: 720h             # conversation retention (default 30d, minimum 24h)
 ```
@@ -118,7 +118,7 @@ Write the model API key to `agent.api_key_file` before starting Core. The key is
 
 Conversations are durable in Core's SQLite. `POST /v1/agent/conversations` opens one, `POST /v1/agent/conversations/{id}/messages` runs one turn synchronously, `GET /v1/agent/conversations/{id}/messages` reads it back, and `POST /v1/agent/conversations/{id}/messages/stream` streams the same turn as SSE (`turn.started`, `tool.started`, `tool.finished`, `turn.finished`/`turn.failed`). The stream route is a plain Echo handler and stays out of `openapi.json`. The agent's tools are the `/mcp` catalog, so a turn executes the same Commands REST and MCP do. `/readyz` requires open agent admission, and shutdown closes admission, cancels and joins running turns, then closes the agent's MCP sessions before SQLite. The shared history pruning worker deletes whole conversations past `agent.history_retention` in the same pass as Devices and Automations retention.
 
-The dashboard's `/agent` page drives these routes server-side; the browser holds no model key. See `internal/modules/agent`.
+The dashboard's `/agent` page drives these routes server-side; the browser holds no model key. Each turn rebuilds only the newest complete turns inside a fixed history budget, so an active conversation cannot grow until the provider rejects it. See `internal/modules/agent`.
 
 ### Home Assistant migration adapter
 

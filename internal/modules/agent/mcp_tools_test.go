@@ -2,10 +2,12 @@ package agent //nolint:testpackage // Tests exercise the in-memory MCP bridge in
 
 import (
 	"context"
+	"encoding/json"
 	"strings"
 	"testing"
 
 	"github.com/cloudwego/eino/components/tool"
+	"github.com/cloudwego/eino/schema"
 
 	"github.com/mholtzscher/hearth/internal/mcpapi"
 )
@@ -38,7 +40,11 @@ func newBridgeTestServer() *mcpapi.Server {
 	mcpapi.Register(server, mcpapi.Tool[bridgeEchoInput, bridgeEchoOutput]{
 		Name: "fail_example", Description: "Always fail with a domain error",
 		Handler: func(_ context.Context, _ bridgeEchoInput) (bridgeEchoOutput, error) {
-			return bridgeEchoOutput{}, &mcpapi.ToolError{Code: "example_disabled", Message: "turned off"}
+			return bridgeEchoOutput{}, &mcpapi.ToolError{
+				Code:    "example_disabled",
+				Message: "turned off",
+				Details: map[string]any{"command_id": "cmd-1", "status": "failed"},
+			}
 		},
 	})
 	mcpapi.Register(server, mcpapi.Tool[bridgeCountInput, bridgeCountOutput]{
@@ -120,17 +126,67 @@ func TestMCPToolsBridgeInvoke(t *testing.T) {
 	}
 }
 
-func TestMCPToolsBridgeDomainError(t *testing.T) {
+// TestMCPToolsBridgeDomainFailureStaysRecoverable proves a modeled MCP failure
+// reaches the model instead of ending the turn: the tool returns no Go error,
+// and the structured failure payload (the stable code and the handler's
+// details) survives beside the human-readable text.
+func TestMCPToolsBridgeDomainFailureStaysRecoverable(t *testing.T) {
 	t.Parallel()
 	bridged := mustBridgeTools(t, newBridgeTestServer())
 
 	failing := bridgeToolByName(t, bridged, "fail_example")
-	_, err := failing.InvokableRun(t.Context(), `{"text":"hi"}`)
-	if err == nil {
-		t.Fatal("isError result produced no error")
+	out, err := failing.InvokableRun(t.Context(), `{"text":"hi"}`)
+	if err != nil {
+		t.Fatalf("modeled failure returned error %v, want a recoverable tool output", err)
 	}
-	if !strings.Contains(err.Error(), "example_disabled") {
-		t.Fatalf("error = %q, want the domain failure code", err.Error())
+	for _, want := range []string{
+		"example_disabled",
+		`"failure_code":"example_disabled"`,
+		`"command_id":"cmd-1"`,
+		`"status":"failed"`,
+	} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("result = %q, want the structured failure field %s preserved", out, want)
+		}
+	}
+}
+
+// TestTracedToolRecordsRawArgumentObject proves the persisted tool call keeps the
+// model's argument object: Function.Arguments must unmarshal as a JSON object,
+// not the escaped JSON string literal a second marshal would produce.
+func TestTracedToolRecordsRawArgumentObject(t *testing.T) {
+	t.Parallel()
+	service := newConversationStore(t, MinimumConversationRetention)
+	conversation := mustCreateConversation(t, service)
+	echo := bridgeToolByName(t, mustBridgeTools(t, newBridgeTestServer()), "echo_text")
+
+	assembler := newTurnAssembler(context.Background(), service, conversation.ID, nil)
+	ctx := withAssembler(context.Background(), assembler)
+	if _, err := echo.InvokableRun(ctx, `{"text":"hi"}`); err != nil {
+		t.Fatal(err)
+	}
+
+	var stored string
+	if err := service.database.QueryRow(
+		`SELECT message_json FROM agent_messages WHERE conversation_id = ? AND role = ?`,
+		conversation.ID, string(schema.Assistant),
+	).Scan(&stored); err != nil {
+		t.Fatal(err)
+	}
+	var call schema.Message
+	if err := json.Unmarshal([]byte(stored), &call); err != nil {
+		t.Fatal(err)
+	}
+	if len(call.ToolCalls) != 1 {
+		t.Fatalf("stored tool calls = %d, want one", len(call.ToolCalls))
+	}
+	arguments := call.ToolCalls[0].Function.Arguments
+	var object map[string]any
+	if err := json.Unmarshal([]byte(arguments), &object); err != nil {
+		t.Fatalf("Function.Arguments = %q, want a JSON argument object: %v", arguments, err)
+	}
+	if object["text"] != "hi" {
+		t.Fatalf("Function.Arguments = %q, want the model's argument object", arguments)
 	}
 }
 

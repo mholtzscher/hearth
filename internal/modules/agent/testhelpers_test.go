@@ -72,6 +72,30 @@ func (stub stubTool) InvokableRun(context.Context, string, ...tool.Option) (stri
 	return "", nil
 }
 
+// failingChatModel fails every model call with a caller-supplied error, standing
+// in for a provider or upstream rejection whose text must stay out of logs.
+type failingChatModel struct{ err error }
+
+func (model failingChatModel) Generate(
+	context.Context,
+	[]*schema.Message,
+	...model.Option,
+) (*schema.Message, error) {
+	return nil, model.err
+}
+
+func (model failingChatModel) Stream(
+	context.Context,
+	[]*schema.Message,
+	...model.Option,
+) (*schema.StreamReader[*schema.Message], error) {
+	return nil, model.err
+}
+
+func (model failingChatModel) WithTools([]*schema.ToolInfo) (model.ToolCallingChatModel, error) {
+	return model, nil
+}
+
 // newTurnService builds a real service over real SQLite with an injected model.
 func newTurnService(t *testing.T, chatModel model.ToolCallingChatModel) *Service {
 	t.Helper()

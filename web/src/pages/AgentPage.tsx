@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { cn } from "cn";
 import { apiFetch, ApiError, getBaseUrl } from "../api/client.ts";
-import { ErrorBox, RawJson } from "../components/common.tsx";
+import { ErrorBox } from "../components/common.tsx";
 import { Button } from "../components/ui/button.tsx";
 import { Card, CardContent } from "../components/ui/card.tsx";
 import { Textarea } from "../components/ui/textarea.tsx";
@@ -32,21 +32,26 @@ function agentUrl(path: string): string {
   return `${base}/v1/agent${path}`;
 }
 
-async function createConversation(): Promise<string> {
-  const body = await apiFetch<{ id: string }>(agentUrl("/conversations"), { method: "POST" });
+async function createConversation(signal?: AbortSignal): Promise<string> {
+  const body = await apiFetch<{ id: string }>(agentUrl("/conversations"), {
+    method: "POST",
+    signal,
+  });
   return body.id;
 }
 
-async function listConversations(): Promise<ConversationSummary[]> {
+async function listConversations(signal?: AbortSignal): Promise<ConversationSummary[]> {
   const body = await apiFetch<{ conversations: ConversationSummary[] }>(
     agentUrl("/conversations"),
+    { signal },
   );
   return body.conversations;
 }
 
-async function loadHistory(conversationId: string): Promise<AgentMessage[]> {
+async function loadHistory(conversationId: string, signal?: AbortSignal): Promise<AgentMessage[]> {
   const body = await apiFetch<{ messages: AgentMessage[] }>(
     agentUrl(`/conversations/${conversationId}/messages`),
+    { signal },
   );
   return body.messages;
 }
@@ -123,23 +128,35 @@ export default function AgentPage() {
   const [unavailable, setUnavailable] = useState(false);
   const idRef = useRef(-1);
   const abortRef = useRef<AbortController | null>(null);
+  // StrictMode runs this effect twice in development. Each run takes a
+  // generation, and a run whose generation is gone is stale.
+  const initGenerationRef = useRef(0);
 
-  const refresh = useCallback(async (id: string) => {
-    setMessages(await loadHistory(id));
+  const refresh = useCallback(async (id: string, signal?: AbortSignal) => {
+    setMessages(await loadHistory(id, signal));
   }, []);
 
-  const refreshList = useCallback(async () => {
-    setConversations(await listConversations());
+  const refreshList = useCallback(async (signal?: AbortSignal) => {
+    setConversations(await listConversations(signal));
   }, []);
 
   useEffect(() => {
+    const generation = ++initGenerationRef.current;
+    const controller = new AbortController();
+    // Teardown or a newer run makes this one stale: its requests are aborted,
+    // and every step below re-checks before touching state, so only the current
+    // run may create, select, or persist a conversation.
+    const stale = () => controller.signal.aborted || initGenerationRef.current !== generation;
+
     async function init() {
       try {
         let list: ConversationSummary[] = [];
         try {
-          list = await listConversations();
+          list = await listConversations(controller.signal);
+          if (stale()) return;
           setConversations(list);
         } catch (err) {
+          if (stale()) return;
           if (isUnavailable(err)) {
             setUnavailable(true);
             return;
@@ -149,29 +166,34 @@ export default function AgentPage() {
         let id = localStorage.getItem(CONV_KEY);
         if (id) {
           try {
-            await loadHistory(id);
+            await loadHistory(id, controller.signal);
           } catch (err) {
+            if (stale()) return;
             if (!isUnavailable(err)) throw err;
+            // Retention or another database removed the stored conversation:
+            // it is unusable, so fall back to the list below.
             id = null;
           }
-          // A stored ID from another browser/database is unusable: fall
-          // back to the newest listed conversation or a fresh one.
-          if (id && !list.some((c) => c.id === id)) {
-            id = list[0]?.id ?? null;
-          }
-        } else {
+        }
+        if (stale()) return;
+        // An unusable or unknown stored ID falls back to the newest listed
+        // conversation instead of creating another empty one.
+        if (!id || !list.some((c) => c.id === id)) {
           id = list[0]?.id ?? null;
         }
         if (!id) {
-          id = await createConversation();
+          id = await createConversation(controller.signal);
+          if (stale()) return;
           localStorage.setItem(CONV_KEY, id);
-          await refreshList();
+          await refreshList(controller.signal);
         } else {
           localStorage.setItem(CONV_KEY, id);
         }
+        if (stale()) return;
         setConversationId(id);
-        await refresh(id);
+        await refresh(id, controller.signal);
       } catch (err) {
+        if (stale()) return;
         if (isUnavailable(err)) {
           setUnavailable(true);
         } else {
@@ -180,7 +202,12 @@ export default function AgentPage() {
       }
     }
     void init();
-    return () => abortRef.current?.abort();
+    return () => {
+      // Cancel this run's initialization; a streaming turn keeps its own
+      // controller in abortRef.
+      controller.abort();
+      abortRef.current?.abort();
+    };
   }, [refresh, refreshList]);
 
   async function selectConversation(id: string) {
@@ -296,24 +323,10 @@ export default function AgentPage() {
         </Button>
         {busy && <span className="text-sm text-muted-foreground">Thinking + calling tools…</span>}
       </div>
-      <p className="mt-1 text-sm text-muted-foreground">
-        Household agent: Eino ReAct in hearthd with durable SQLite history and no model
-        key in the browser.
-        {conversationId ? (
-          <>
-            {" "}
-            Conversation <span className="font-mono text-xs">{conversationId}</span>
-          </>
-        ) : (
-          " Connecting…"
-        )}
-      </p>
-
       {unavailable && (
         <div role="alert" className="my-2 rounded-lg border px-3 py-2 text-sm">
           Agent routes are unavailable: this Core build does not serve /v1/agent. The agent
-          is a required module, so update hearthd and reload (see web/README.md), or use the
-          browser-direct Chat page.
+          is a required module, so update hearthd and reload (see web/README.md).
         </div>
       )}
       {error && <ErrorBox error={error} />}
@@ -449,10 +462,6 @@ export default function AgentPage() {
         </div>
       )}
 
-      <RawJson
-        value={{ endpoint: agentUrl("/conversations"), conversationId }}
-        title="Agent config JSON"
-      />
     </div>
   );
 }

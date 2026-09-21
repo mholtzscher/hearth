@@ -62,6 +62,22 @@ const (
 // maxEventResult bounds tool result bytes per stream event.
 const maxEventResult = 4000
 
+// maxMessageRunes bounds one user message. The blocking transport repeats the
+// same 4000 in its Huma maxLength tag, which cannot reference a constant.
+const maxMessageRunes = 4000
+
+// historyRowBudget bounds how many persisted rows one turn rebuilds from a
+// conversation. One turn writes a user row, a tool call and tool result row per
+// tool call, and a final assistant row, so this admits roughly the newest
+// twenty tool-using turns.
+const historyRowBudget = 200
+
+// historyByteBudget bounds the newest persisted rows one turn rebuilds. Bytes,
+// not tokens, keep the bound provider-independent, and JSON overhead makes the
+// count conservative. Only whole recent turns inside it are kept, so an active
+// conversation cannot grow until the provider rejects every later turn.
+const historyByteBudget = 256 * 1024
+
 // TurnEvent is one streamed turn update.
 type TurnEvent struct {
 	Type      string   `json:"type"`
@@ -84,6 +100,31 @@ func truncateEventResult(result string) string {
 // ErrConversationNotFound is returned when a turn or read names an unknown
 // conversation.
 var ErrConversationNotFound = errors.New("agent conversation not found")
+
+// messageTextError marks user text rejected before any work: empty after
+// trimming, or longer than maxMessageRunes. Its detail is fixed client-facing
+// text, so transports map it to a 400 problem without echoing the rejected
+// value and malformed input is never reported as a server fault.
+type messageTextError struct{ detail string }
+
+func (invalid messageTextError) Error() string { return invalid.detail }
+
+// validateMessageText rejects the user text neither transport accepts as a
+// message. The blocking route's Huma schema declares the same empty and length
+// bounds; this check backs it up and is the only bound the schema-less SSE
+// route has.
+func validateMessageText(text string) error {
+	trimmed := strings.TrimSpace(text)
+	switch {
+	case trimmed == "":
+		return messageTextError{detail: "agent message text is required"}
+	case len([]rune(trimmed)) > maxMessageRunes:
+		return messageTextError{
+			detail: fmt.Sprintf("agent message text must be at most %d characters", maxMessageRunes),
+		}
+	}
+	return nil
+}
 
 // modelError marks turn-execution failures (agent build, model stream) so the
 // transport can map them to a 502 without leaking the cause. Tool and
@@ -147,6 +188,19 @@ type Service struct {
 	turnsMu  sync.Mutex
 	turns    map[uint64]context.CancelFunc
 	nextTurn uint64
+
+	// gatesMu guards gates, which serialize turns per conversation so two
+	// clients cannot build the same history snapshot or interleave rows.
+	gatesMu sync.Mutex
+	gates   map[string]*conversationGate
+}
+
+// conversationGate is one conversation's turn semaphore: token admits one turn,
+// and refs counts the turns holding or waiting on it so an idle conversation
+// drops its entry instead of accumulating state.
+type conversationGate struct {
+	token chan struct{}
+	refs  int
 }
 
 // NewService builds the agent service and its chat model.
@@ -197,6 +251,7 @@ func NewService(ctx context.Context, config Config) (*Service, error) {
 		logger:    logger,
 		admission: lifecycle.NewAdmissionGroup(),
 		turns:     make(map[uint64]context.CancelFunc),
+		gates:     make(map[string]*conversationGate),
 	}, nil
 }
 
@@ -267,6 +322,49 @@ func (service *Service) cancelActiveTurns() {
 	service.turnsMu.Unlock()
 	for _, cancel := range cancels {
 		cancel()
+	}
+}
+
+// acquireConversationTurn waits for the conversation's turn slot and returns
+// its release function. Waiting honors ctx, so Drain cancels a queued turn
+// instead of letting it start after the running turn ends.
+func (service *Service) acquireConversationTurn(ctx context.Context, conversationID string) (func(), error) {
+	service.gatesMu.Lock()
+	if service.gates == nil {
+		service.gates = make(map[string]*conversationGate)
+	}
+	gate := service.gates[conversationID]
+	if gate == nil {
+		gate = &conversationGate{token: make(chan struct{}, 1)}
+		service.gates[conversationID] = gate
+	}
+	gate.refs++
+	service.gatesMu.Unlock()
+
+	select {
+	case gate.token <- struct{}{}:
+		return func() { service.releaseConversationTurn(conversationID, gate) }, nil
+	case <-ctx.Done():
+		service.releaseConversationRef(conversationID, gate)
+		return nil, ctx.Err()
+	}
+}
+
+// releaseConversationTurn frees the slot and forgets this turn's interest in
+// the conversation.
+func (service *Service) releaseConversationTurn(conversationID string, gate *conversationGate) {
+	<-gate.token
+	service.releaseConversationRef(conversationID, gate)
+}
+
+// releaseConversationRef drops one turn's interest in a conversation gate and
+// removes the gate when no turn holds or waits on it.
+func (service *Service) releaseConversationRef(conversationID string, gate *conversationGate) {
+	service.gatesMu.Lock()
+	defer service.gatesMu.Unlock()
+	gate.refs--
+	if gate.refs == 0 && service.gates[conversationID] == gate {
+		delete(service.gates, conversationID)
 	}
 }
 
@@ -384,38 +482,30 @@ func (service *Service) ListConversations(ctx context.Context) ([]ConversationSu
 			}
 			summary.LastMessageAt = &last
 		}
-		summaries = append(summaries, summary)
-	}
-	for index := range summaries {
-		if previewErr := service.attachPreview(ctx, &summaries[index]); previewErr != nil {
-			return nil, previewErr
+		if row.FirstUserMessageJson.Valid {
+			preview, previewErr := previewFromMessageJSON(row.FirstUserMessageJson.String)
+			if previewErr != nil {
+				return nil, previewErr
+			}
+			summary.Preview = preview
 		}
+		summaries = append(summaries, summary)
 	}
 	return summaries, nil
 }
 
-// attachPreview fills the preview from the conversation's first user message.
-func (service *Service) attachPreview(ctx context.Context, summary *ConversationSummary) error {
-	raw, err := service.queries.GetFirstUserMessage(ctx, dbsqlc.GetFirstUserMessageParams{
-		ConversationID: summary.ID,
-		Role:           "user",
-	})
-	if errors.Is(err, sql.ErrNoRows) {
-		return nil
-	}
-	if err != nil {
-		return fmt.Errorf("agent list conversations: %w", err)
-	}
+// previewFromMessageJSON renders the sidebar preview from a persisted message
+// row: its content with whitespace collapsed and bounded by maxPreviewRunes.
+func previewFromMessageJSON(raw string) (string, error) {
 	var message schema.Message
-	if unmarshalErr := json.Unmarshal([]byte(raw), &message); unmarshalErr != nil {
-		return fmt.Errorf("agent list conversations: %w", unmarshalErr)
+	if err := json.Unmarshal([]byte(raw), &message); err != nil {
+		return "", fmt.Errorf("agent list conversations: %w", err)
 	}
 	preview := strings.Join(strings.Fields(message.Content), " ")
 	if len([]rune(preview)) > maxPreviewRunes {
 		preview = string([]rune(preview)[:maxPreviewRunes]) + "…"
 	}
-	summary.Preview = preview
-	return nil
+	return preview, nil
 }
 
 // SendMessage runs one turn over the conversation without streaming events.
@@ -432,17 +522,15 @@ func (service *Service) SendMessageWithEvents(
 	conversationID, text string,
 	emit func(TurnEvent),
 ) (Turn, error) {
-	trimmed := strings.TrimSpace(text)
-	if trimmed == "" {
-		return Turn{}, errors.New("agent message text is required")
+	if err := validateMessageText(text); err != nil {
+		return Turn{}, err
 	}
+	trimmed := strings.TrimSpace(text)
 	reservation, admitted := service.acquireTurn()
 	if !admitted {
 		// Close the streamed turn even if admission closed after the transport
 		// pre-check, so an SSE client always sees a terminal event.
-		if emit != nil {
-			emit(TurnEvent{Type: EventTurnFailed, Error: turnFailureText(ErrAdmissionUnavailable)})
-		}
+		emitTurnFailed(emit, ErrAdmissionUnavailable)
 		return Turn{}, ErrAdmissionUnavailable
 	}
 	defer reservation.Release()
@@ -459,20 +547,26 @@ func (service *Service) SendMessageWithEvents(
 	if !service.AdmissionOpen() {
 		cancelTurn()
 	}
-	fail := func(err error) (Turn, error) {
-		service.logTurnFailure(turnCtx, conversationID, err)
-		if emit != nil {
-			emit(TurnEvent{Type: EventTurnFailed, Error: turnFailureText(err)})
-		}
+	fail := func(stage string, err error) (Turn, error) {
+		service.logTurnFailure(turnCtx, conversationID, stage, err)
+		emitTurnFailed(emit, err)
 		return Turn{}, err
 	}
+	// Serialize turns within one conversation: two clients submitting at once
+	// would otherwise rebuild the same history snapshot and interleave their
+	// user, tool, and assistant rows.
+	releaseTurn, gateErr := service.acquireConversationTurn(turnCtx, conversationID)
+	if gateErr != nil {
+		return fail(turnStageQueue, gateErr)
+	}
+	defer releaseTurn()
 	history, err := service.loadModelMessages(turnCtx, conversationID)
 	if err != nil {
-		return fail(err)
+		return fail(turnStageHistory, err)
 	}
 	userMessage := schema.UserMessage(trimmed)
 	if persistErr := service.persistMessage(turnCtx, conversationID, userMessage); persistErr != nil {
-		return fail(persistErr)
+		return fail(turnStagePersist, persistErr)
 	}
 	if emit != nil {
 		emit(TurnEvent{Type: EventTurnStarted})
@@ -483,7 +577,34 @@ func (service *Service) SendMessageWithEvents(
 	assembler := newTurnAssembler(turnCtx, service, conversationID, emit)
 	graphCtx := withAssembler(turnCtx, assembler)
 
-	agentRunner, err := react.NewAgent(turnCtx, &react.AgentConfig{
+	agentRunner, err := service.newAgentRunner(turnCtx)
+	if err != nil {
+		return fail(turnStageModel, turnError(err))
+	}
+	// Generate, not Stream: the turn needs one final message, and tool
+	// executions record their own rows at call time through the turn context.
+	// The message stream's chunk deltas are not reassembled.
+	final, err := agentRunner.Generate(graphCtx, input)
+	if err != nil {
+		return fail(turnStageModel, turnError(err))
+	}
+	if final == nil {
+		return fail(turnStageModel, errors.New("agent turn: empty model response"))
+	}
+	turn, err := assembler.finishFinal(final)
+	if err != nil {
+		return fail(turnStagePersist, err)
+	}
+	if emit != nil {
+		emit(TurnEvent{Type: EventTurnFinished, Reply: turn.Reply, ToolCalls: turn.ToolCalls})
+	}
+	return turn, nil
+}
+
+// newAgentRunner builds the ReAct graph for one turn: the shared chat model and
+// MCP tool catalog, with the household system prompt ahead of the messages.
+func (service *Service) newAgentRunner(ctx context.Context) (*react.Agent, error) {
+	return react.NewAgent(ctx, &react.AgentConfig{
 		ToolCallingModel: service.chatModel,
 		ToolsConfig:      compose.ToolsNodeConfig{Tools: service.tools},
 		MaxStep:          service.maxSteps,
@@ -493,27 +614,16 @@ func (service *Service) SendMessageWithEvents(
 			return append(withSystem, messages...)
 		},
 	})
-	if err != nil {
-		return fail(turnError(err))
+}
+
+// emitTurnFailed closes a streamed turn with the opaque text for err, so an SSE
+// client always sees a terminal event even when the turn never ran. A nil emit
+// disables events.
+func emitTurnFailed(emit func(TurnEvent), err error) {
+	if emit == nil {
+		return
 	}
-	// Generate, not Stream: the turn needs one final message, and tool
-	// executions record their own rows at call time through the turn context.
-	// The message stream's chunk deltas are not reassembled.
-	final, err := agentRunner.Generate(graphCtx, input)
-	if err != nil {
-		return fail(turnError(err))
-	}
-	if final == nil {
-		return fail(errors.New("agent turn: empty model response"))
-	}
-	turn, err := assembler.finishFinal(final)
-	if err != nil {
-		return fail(err)
-	}
-	if emit != nil {
-		emit(TurnEvent{Type: EventTurnFinished, Reply: turn.Reply, ToolCalls: turn.ToolCalls})
-	}
-	return turn, nil
+	emit(TurnEvent{Type: EventTurnFailed, Error: turnFailureText(err)})
 }
 
 // turnFailureText maps a turn error to client text, mirroring the Huma
@@ -544,13 +654,44 @@ func (service *Service) ConversationExists(ctx context.Context, conversationID s
 	return true, nil
 }
 
+// Turn failure stages recorded with agent.turn_failed: the fixed operation
+// that failed, so a log reader never needs the raw error text.
+const (
+	turnStageQueue   = "queue"
+	turnStageHistory = "history"
+	turnStagePersist = "persist"
+	turnStageModel   = "model"
+)
+
+// turnFailureCode classifies one turn failure for logs. Provider, tool, and
+// persistence error text can carry prompts, arguments, or rejected household
+// values, so only this fixed code and the stage cross into a log record.
+func turnFailureCode(err error) string {
+	switch {
+	case errors.Is(err, ErrConversationNotFound):
+		return "conversation_not_found"
+	case errors.Is(err, ErrAdmissionUnavailable):
+		return "admission_unavailable"
+	case errors.Is(err, context.Canceled):
+		return "canceled"
+	case errors.Is(err, context.DeadlineExceeded):
+		return "deadline_exceeded"
+	case errors.As(err, &modelError{}):
+		return "model_call_failed"
+	default:
+		return "turn_failed"
+	}
+}
+
 // logTurnFailure records the cause server-side only; it never crosses the
-// HTTP boundary, mirroring the MCP error-mapping posture.
-func (service *Service) logTurnFailure(ctx context.Context, conversationID string, err error) {
+// HTTP boundary, mirroring the MCP error-mapping posture. docs/logging.md
+// forbids raw error strings here, so the record carries fixed codes instead.
+func (service *Service) logTurnFailure(ctx context.Context, conversationID, stage string, err error) {
 	service.logger.ErrorContext(ctx, "agent turn failed",
 		slog.String("event", "agent.turn_failed"),
 		slog.String("conversation_id", conversationID),
-		slog.String("error", err.Error()),
+		slog.String("stage", stage),
+		slog.String("error_code", turnFailureCode(err)),
 	)
 }
 
@@ -681,24 +822,73 @@ func (service *Service) requireConversation(ctx context.Context, conversationID 
 	return nil
 }
 
-// loadModelMessages rebuilds one conversation oldest-first for the next turn.
+// historyRow is one decoded persisted message plus the room it took in the
+// database, so the history budget is measured without re-marshaling.
+type historyRow struct {
+	role    string
+	bytes   int
+	message *schema.Message
+}
+
+// loadModelMessages rebuilds the next turn's input from the newest complete
+// turns inside the history budgets. Whole-conversation retention prunes only
+// idle conversations, so an active conversation needs this bound of its own:
+// without it every turn resends every row and full tool result until the provider
+// rejects the request, after which that conversation can never finish a turn.
 func (service *Service) loadModelMessages(ctx context.Context, conversationID string) ([]*schema.Message, error) {
 	if err := service.requireConversation(ctx, conversationID); err != nil {
 		return nil, err
 	}
-	rows, err := service.queries.ListMessageJson(ctx, dbsqlc.ListMessageJsonParams{ConversationID: conversationID})
+	rows, err := service.queries.ListRecentMessageJson(ctx, dbsqlc.ListRecentMessageJsonParams{
+		ConversationID: conversationID,
+		Limit:          historyRowBudget,
+	})
 	if err != nil {
 		return nil, fmt.Errorf("agent history: %w", err)
 	}
-	var history []*schema.Message
-	for _, raw := range rows {
+	// Rows arrive newest-first so the budget can be applied without loading the
+	// whole conversation.
+	decoded := make([]historyRow, 0, len(rows))
+	for _, row := range rows {
 		var message schema.Message
-		if unmarshalErr := json.Unmarshal([]byte(raw), &message); unmarshalErr != nil {
+		if unmarshalErr := json.Unmarshal([]byte(row.MessageJson), &message); unmarshalErr != nil {
 			return nil, fmt.Errorf("agent history: %w", unmarshalErr)
 		}
-		history = append(history, &message)
+		decoded = append(decoded, historyRow{role: row.Role, bytes: len(row.MessageJson), message: &message})
 	}
-	return history, nil
+	return boundConversationHistory(decoded), nil
+}
+
+// boundConversationHistory selects the newest rows inside historyByteBudget and
+// returns them oldest-first for the model. It drops any window without a user
+// message: the turn appends its own user message, and history that opened with
+// a tool result whose assistant tool call was cut would be rejected as an
+// incomplete sequence.
+func boundConversationHistory(rows []historyRow) []*schema.Message {
+	kept := 0
+	var bytes int
+	for kept < len(rows) {
+		next := bytes + rows[kept].bytes
+		if next > historyByteBudget && kept > 0 {
+			break
+		}
+		bytes = next
+		kept++
+	}
+	start := -1
+	for index := range kept {
+		if rows[index].role == string(schema.User) {
+			start = index
+		}
+	}
+	if start < 0 {
+		return nil
+	}
+	history := make([]*schema.Message, 0, start+1)
+	for index := start; index >= 0; index-- {
+		history = append(history, rows[index].message)
+	}
+	return history
 }
 
 // persistMessage appends one message to a conversation.

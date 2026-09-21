@@ -9,26 +9,6 @@ import (
 	"context"
 )
 
-const getFirstUserMessage = `-- name: GetFirstUserMessage :one
-SELECT message_json
-FROM agent_messages
-WHERE conversation_id = ? AND role = ?
-ORDER BY id
-LIMIT 1
-`
-
-type GetFirstUserMessageParams struct {
-	ConversationID string
-	Role           string
-}
-
-func (q *Queries) GetFirstUserMessage(ctx context.Context, arg GetFirstUserMessageParams) (string, error) {
-	row := q.db.QueryRowContext(ctx, getFirstUserMessage, arg.ConversationID, arg.Role)
-	var message_json string
-	err := row.Scan(&message_json)
-	return message_json, err
-}
-
 const insertMessage = `-- name: InsertMessage :exec
 INSERT INTO agent_messages (conversation_id, role, message_json, created_at)
 VALUES (?, ?, ?, ?)
@@ -81,40 +61,6 @@ func (q *Queries) InsertMessagePair(ctx context.Context, arg InsertMessagePairPa
 	return err
 }
 
-const listMessageJson = `-- name: ListMessageJson :many
-SELECT message_json
-FROM agent_messages
-WHERE conversation_id = ?
-ORDER BY id
-`
-
-type ListMessageJsonParams struct {
-	ConversationID string
-}
-
-func (q *Queries) ListMessageJson(ctx context.Context, arg ListMessageJsonParams) ([]string, error) {
-	rows, err := q.db.QueryContext(ctx, listMessageJson, arg.ConversationID)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var items []string
-	for rows.Next() {
-		var message_json string
-		if err := rows.Scan(&message_json); err != nil {
-			return nil, err
-		}
-		items = append(items, message_json)
-	}
-	if err := rows.Close(); err != nil {
-		return nil, err
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
 const listMessages = `-- name: ListMessages :many
 SELECT id, role, message_json, created_at
 FROM agent_messages
@@ -148,6 +94,47 @@ func (q *Queries) ListMessages(ctx context.Context, arg ListMessagesParams) ([]L
 			&i.MessageJson,
 			&i.CreatedAt,
 		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listRecentMessageJson = `-- name: ListRecentMessageJson :many
+SELECT role, message_json
+FROM agent_messages
+WHERE conversation_id = ?
+ORDER BY id DESC
+LIMIT ?
+`
+
+type ListRecentMessageJsonParams struct {
+	ConversationID string
+	Limit          int64
+}
+
+type ListRecentMessageJsonRow struct {
+	Role        string
+	MessageJson string
+}
+
+func (q *Queries) ListRecentMessageJson(ctx context.Context, arg ListRecentMessageJsonParams) ([]ListRecentMessageJsonRow, error) {
+	rows, err := q.db.QueryContext(ctx, listRecentMessageJson, arg.ConversationID, arg.Limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListRecentMessageJsonRow
+	for rows.Next() {
+		var i ListRecentMessageJsonRow
+		if err := rows.Scan(&i.Role, &i.MessageJson); err != nil {
 			return nil, err
 		}
 		items = append(items, i)
