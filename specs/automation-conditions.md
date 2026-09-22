@@ -4,6 +4,7 @@
 **Effort:** XL overall, split into ordered, independently testable deliverables.
 **Extends:** [Fact-driven automations](automations.md). This spec supersedes its current-State exclusion, section 15's rejection of Boolean Conditions, manual admission outcome shape, and Skip provenance. The exclusion of multi-Device-Fact correlation and all other guarantees remain.
 **Decision:** [ADR 0022](../docs/adr/0022-evaluate-conditions-from-state-snapshots.md).
+**Related follow-on:** [Observation Trigger transitions](observation-trigger-transitions.md) compares the incoming Observation and its projection-time predecessor carried by one Fact. That evidence is distinct from the current-State snapshot used by Conditions.
 
 ## 1. Problem and recommendation
 
