@@ -24,8 +24,8 @@ import (
 
 const (
 	// fixtureHomeIDText is the normalized network identity every transcript
-	// fixture and builder shares. It is the sanitized Home ID of client_test.go,
-	// not a real household Home ID.
+	// fixture and builder shares. It is a synthetic, sanitized Home ID shared
+	// with client_test.go, not a real household Home ID.
 	fixtureHomeIDText = "1a2b3c4d"
 
 	// fixtureStatusAlive is the schema-29 node status of an alive or awake node.
@@ -178,10 +178,12 @@ func snapshotFixture(homeID uint32, nodes ...nodeState) networkSnapshot {
 	return snapshot
 }
 
-// loadTranscriptSnapshot reads one sanitized JSONL server transcript from
+// loadTranscriptSnapshot reads one synthetic JSONL server transcript from
 // testdata and returns its version frame and its start_listening snapshot. The
-// transcript is the frame sequence a real Z-Wave JS server sends, so planning
-// tests run against captured shapes instead of hand-built Go values.
+// fixture is source-derived and sanitized: it mirrors the frame shapes a
+// Z-Wave JS schema-29 server emits for a made-up network, not a household
+// capture, so planning tests run against realistic wire shapes instead of
+// hand-built Go values.
 func loadTranscriptSnapshot(t *testing.T, name string) (serverVersion, networkSnapshot) {
 	t.Helper()
 	payload, err := os.ReadFile(filepath.Join("testdata", name))
@@ -1189,6 +1191,12 @@ func dimmerNodeAtLevel(nodeID int, level string) nodeState {
 
 // valueUpdatedEvent builds one node value update Event for the fixture node.
 func valueUpdatedEvent(id valueID, newValue string) serverEvent {
+	return valueUpdatedEventForNode(testNodeID, id, newValue)
+}
+
+// valueUpdatedEventForNode builds one node value update Event for one node, so a
+// test can deliver the same Value ID from two different nodes.
+func valueUpdatedEventForNode(nodeID int, id valueID, newValue string) serverEvent {
 	args, err := json.Marshal(map[string]any{
 		"commandClass": id.CommandClass,
 		"endpoint":     id.Endpoint,
@@ -1202,7 +1210,7 @@ func valueUpdatedEvent(id valueID, newValue string) serverEvent {
 	event.Type = frameTypeEvent
 	event.Event.Source = eventSourceNode
 	event.Event.Event = eventValueUpdated
-	event.Event.NodeID = testNodeID
+	event.Event.NodeID = nodeID
 	event.Event.Args = args
 	return event
 }

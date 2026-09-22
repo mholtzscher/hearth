@@ -111,11 +111,11 @@ const maximumEndpointValues = 4
 // can provide: power and brightness.
 const maximumEndpointCapabilities = 2
 
-// endpointCandidates holds one endpoint's structurally valid Value candidates.
-// ambiguous records a repeated Value ID for one slot: the Value ID set can no
-// longer be routed unambiguously, so the endpoint is isolated entirely.
+// endpointCandidates holds one endpoint's structurally valid Value candidates. A
+// repeated Value ID for one slot clears that slot only: the slot can no longer be
+// routed unambiguously, so the capability that depends on it is isolated while
+// every sibling capability of the endpoint stays plannable.
 type endpointCandidates struct {
-	ambiguous         bool
 	binaryCurrent     *valueState
 	binaryTarget      *valueState
 	multilevelCurrent *valueState
@@ -454,9 +454,6 @@ func planNodeEndpoints(home string, node nodeState) ([]entityPlan, error) {
 			continue
 		}
 		candidates := collectEndpointCandidates(node.Values, endpoint)
-		if candidates.ambiguous {
-			continue
-		}
 		endpointPlans, err := planEndpointCapabilities(
 			home,
 			node.NodeID,
@@ -559,9 +556,12 @@ func candidateEndpoints(values []valueState) []int {
 	return slices.Sorted(maps.Keys(endpoints))
 }
 
-// collectEndpointCandidates gathers one endpoint's candidates and records
-// whether one slot was reported twice. A repeated Value ID for one slot isolates
-// the endpoint.
+// collectEndpointCandidates gathers one endpoint's candidates. A repeated Value
+// ID for one slot clears that slot, because its Value ID set can no longer be
+// routed unambiguously. Only the capability that reads the cleared slot is
+// isolated: a duplicate Binary Switch pair cannot suppress a valid Multilevel
+// Switch brightness or derived power on the same endpoint, and a duplicate
+// Multilevel Switch pair cannot suppress a valid Binary Switch power.
 func collectEndpointCandidates(values []valueState, endpoint int) endpointCandidates {
 	candidates := endpointCandidates{}
 	seen := make(map[valueSlot]struct{}, maximumEndpointValues)
@@ -571,7 +571,7 @@ func collectEndpointCandidates(values []valueState, endpoint int) endpointCandid
 			continue
 		}
 		if _, duplicate := seen[slot]; duplicate {
-			candidates.ambiguous = true
+			candidates.clear(slot)
 			continue
 		}
 		seen[slot] = struct{}{}
@@ -591,6 +591,21 @@ func (candidates *endpointCandidates) assign(slot valueSlot, value *valueState) 
 		candidates.multilevelCurrent = value
 	case slotMultilevelTarget:
 		candidates.multilevelTarget = value
+	}
+}
+
+// clear removes one slot's candidate because its Value ID was reported more than
+// once on the endpoint and can no longer be routed unambiguously.
+func (candidates *endpointCandidates) clear(slot valueSlot) {
+	switch slot {
+	case slotBinaryCurrent:
+		candidates.binaryCurrent = nil
+	case slotBinaryTarget:
+		candidates.binaryTarget = nil
+	case slotMultilevelCurrent:
+		candidates.multilevelCurrent = nil
+	case slotMultilevelTarget:
+		candidates.multilevelTarget = nil
 	}
 }
 
@@ -676,11 +691,12 @@ func plannedValueSlot(value valueState, endpoint int) (valueSlot, bool) {
 }
 
 // plannedValueProperty maps one Value ID property to the property v1 plans, and
-// false for every other property, a numeric property name, or a propertyKey. A
-// keyed Value is a different Value than the unkeyed one, so it is never a
-// candidate.
+// false for every other property, a numeric property name, an invalid (null)
+// property, or a propertyKey. A keyed Value is a different Value than the
+// unkeyed one, so it is never a candidate.
 func plannedValueProperty(id valueID) (plannedProperty, bool) {
-	if id.Property.Numeric || id.Property.Name == "" || valueIDHasPropertyKey(id) {
+	if id.Property.Numeric || id.Property.Invalid || id.Property.Name == "" ||
+		valueIDHasPropertyKey(id) {
 		return 0, false
 	}
 	switch id.Property.Name {

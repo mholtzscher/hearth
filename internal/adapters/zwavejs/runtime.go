@@ -634,17 +634,19 @@ func (coordinator *runtimeCoordinator) activateReconciliation(event reconciliati
 			present:  true,
 			assessed: coordinator.nodeHasMappings(node.nodeID),
 			state:    node.state,
-			routes:   node.routes,
 		}
 	}
 	for _, node := range event.nodes {
+		// Record only the filtered routable routes, so an ineligible node keeps
+		// its facts and mappings but installs no route and publishes no snapshot
+		// State.
 		routes := routableRoutes(node.state, node.routes)
+		coordinator.nodes[node.nodeID].routes = routes
 		if len(routes) == 0 {
 			continue
 		}
 		coordinator.routeRevision++
 		coordinator.nodes[node.nodeID].revision = coordinator.routeRevision
-		coordinator.nodes[node.nodeID].routes = routes
 	}
 	if err := coordinator.rebuildSnapshot(); err != nil {
 		coordinator.reconciling = false
@@ -932,17 +934,21 @@ func sameRoutes(current, next []entityRoute) bool {
 
 // snapshotObservations translates every planned node's snapshot Values into
 // typed Observations in registration order, power before brightness per
-// endpoint.
+// endpoint. It reads each node's active routes from the coordinator, so only the
+// filtered routable route set produces State: an ineligible node that retains
+// facts and mappings but installs no route never publishes a snapshot
+// Observation.
 func (coordinator *runtimeCoordinator) snapshotObservations(
 	nodes []reconciledNode,
 	observedAt time.Time,
 ) []entityObservation {
 	observations := make([]entityObservation, 0)
 	for _, node := range nodes {
-		if len(node.routes) == 0 {
+		record := coordinator.nodes[node.nodeID]
+		if record == nil || len(record.routes) == 0 {
 			continue
 		}
-		published, issues := translateNodeValues(node.routes, observedAt, node.state.Values)
+		published, issues := translateNodeValues(record.routes, observedAt, record.state.Values)
 		observations = append(observations, published...)
 		for _, issue := range issues {
 			coordinator.logStateUnrepresentable(issue)
@@ -1074,15 +1080,11 @@ func (coordinator *runtimeCoordinator) handleValueAdded(received receivedEvent) 
 }
 
 // routeProjectsValue reports whether an active route of one node already
-// projects one Value. A Value the active routes do not plan is the only case a
-// value added frame must wait for a refresh.
+// projects one Value. The node ID is part of the route lookup, so a Value that
+// another node projects never counts. A Value the active routes do not plan is
+// the only case a value added frame must wait for a refresh.
 func (coordinator *runtimeCoordinator) routeProjectsValue(nodeID int, id valueID) bool {
-	for _, route := range coordinator.snapshot.routesForValue(id) {
-		if route.Plan.NodeID == nodeID {
-			return true
-		}
-	}
-	return false
+	return len(coordinator.snapshot.routesForValue(nodeID, id)) > 0
 }
 
 // queueValueAddedReplay remembers one value added frame until a refresh installs
@@ -1206,10 +1208,7 @@ func (coordinator *runtimeCoordinator) publishValueObservationFor(
 ) {
 	nodeID := received.Event.Event.NodeID
 	observations := make([]adapter.Observation, 0, maximumEndpointCapabilities)
-	for _, route := range coordinator.snapshot.routesForValue(args.valueID) {
-		if route.Plan.NodeID != nodeID {
-			continue
-		}
+	for _, route := range coordinator.snapshot.routesForValue(nodeID, args.valueID) {
 		observation, err := route.Plan.observe(route.EntityID, received.ReceivedAt, args.NewValue)
 		if err != nil {
 			coordinator.logStateUnrepresentable(entityStateIssue{

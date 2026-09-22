@@ -56,6 +56,54 @@ func runCommand(
 	}
 }
 
+// enqueueCommand places one Command on the runtime's event channel
+// synchronously, so a test can order its admission against another event.
+// Unlike submitCommand it does not race a goroutine against the caller, which
+// lets a test guarantee that a follower is queued before a failure is produced.
+func enqueueCommand(
+	t *testing.T,
+	zwave *Adapter,
+	command adapter.Command,
+	responder adapter.Responder,
+) chan error {
+	t.Helper()
+	result := make(chan error, 1)
+	event := commandSubmitted{
+		ctx:       t.Context(),
+		command:   command,
+		responder: responder,
+		result:    result,
+	}
+	select {
+	case zwave.runtimeEvents <- event:
+	case <-t.Context().Done():
+		t.Fatal("the runtime event channel is closed")
+	}
+	return result
+}
+
+// recordingRejectionResponder records whether a Command was rejected
+// deterministically or as an unavailable Entity, which the shared fakeResponder
+// does not distinguish.
+type recordingRejectionResponder struct {
+	rejected    int
+	unavailable int
+}
+
+func (*recordingRejectionResponder) Accept() (adapter.CommandEvidence, error) {
+	return nil, adapter.ErrAlreadyResponded
+}
+
+func (responder *recordingRejectionResponder) Reject(string) error {
+	responder.rejected++
+	return nil
+}
+
+func (responder *recordingRejectionResponder) RejectUnavailable(string) error {
+	responder.unavailable++
+	return nil
+}
+
 // plannedCommandCase is one expected Command translation.
 type plannedCommandCase struct {
 	name                 string
@@ -1397,6 +1445,159 @@ func TestCommandUpstreamPollRejectionKeepsTheGenerationHealthy(t *testing.T) {
 	time.Sleep(testQuietPeriod)
 	assertHealthyGeneration(t, session)
 	assertSingleAcceptance(t, firstResponder, secondResponder)
+}
+
+// scriptSetValueRejectionThenSecondCommand rejects the first node.set_value and
+// then serves a second Command on the same generation.
+func scriptSetValueRejectionThenSecondCommand(session *scriptedSession) {
+	if !session.completeHandshake() {
+		return
+	}
+	firstSet, ok := awaitScriptedCommand(session, commandSetValue)
+	if !ok {
+		return
+	}
+	session.replyRejection(firstSet.messageID(), "The node did not respond")
+
+	secondSet, ok := awaitScriptedCommand(session, commandSetValue)
+	if !ok {
+		return
+	}
+	session.replySuccess(secondSet.messageID(), setValueSuccessResult())
+	secondPoll, ok := awaitScriptedCommand(session, commandPollValue)
+	if !ok {
+		return
+	}
+	session.replySuccess(secondPoll.messageID(), map[string]any{"value": 40})
+	session.waitForClose()
+}
+
+// This test protects the SetValue classification end to end and fails if a
+// deterministic upstream SetValue result-envelope rejection ends the whole
+// generation, or rejects the Command as an unavailable Entity, instead of
+// rejecting only the Command.
+func TestCommandUpstreamSetValueRejectionKeepsTheGenerationHealthy(t *testing.T) {
+	t.Parallel()
+	server := startScriptedServer(t, scriptSetValueRejectionThenSecondCommand)
+	session, recorder, zwave := startScriptedAdapter(t, server)
+	waitForRoutesActivated(t, session)
+
+	entityID := routeEntityID(testNodeID, "brightness")
+	rejectedResponder := &recordingRejectionResponder{}
+	rejected := submitCommand(
+		t,
+		zwave,
+		commandFixture(entityID, `{"value":40}`, time.Now().Add(time.Minute)),
+		rejectedResponder,
+	)
+	if err := awaitCommandHandler(t, rejected); err != nil {
+		t.Fatalf("rejected Command error = %v, want a plain rejection", err)
+	}
+	if rejectedResponder.rejected != 1 || rejectedResponder.unavailable != 0 {
+		t.Fatalf(
+			"rejected Command responses = rejected %d unavailable %d, want a deterministic rejection",
+			rejectedResponder.rejected, rejectedResponder.unavailable,
+		)
+	}
+
+	secondResponder := newFakeResponder(recorder, session)
+	second := submitCommand(
+		t,
+		zwave,
+		commandFixture(entityID, `{"value":40}`, time.Now().Add(time.Minute)),
+		secondResponder,
+	)
+	if err := awaitCommandHandler(t, second); err != nil {
+		t.Fatalf("second Command error = %v, want the generation to keep serving", err)
+	}
+	waitFor(t, "second linked evidence", func() bool { return len(session.recordedLinked()) == 1 })
+	time.Sleep(testQuietPeriod)
+	assertHealthyGeneration(t, session)
+	accepted, rejectedCount, total := responderCounts(secondResponder)
+	if accepted != 1 || rejectedCount != 0 || total != 1 {
+		t.Fatalf("second Command responses = %d/%d/%d, want a single acceptance", accepted, rejectedCount, total)
+	}
+}
+
+// This test protects the transport-failure boundary of SetValue dispatch and
+// fails if an ordinary write failure aborts only the in-flight attempt, which
+// releases the node's FIFO slot and writes the queued follower through the
+// generation that is about to be dropped.
+func TestCommandTransportFailureNeverWritesQueuedFollower(t *testing.T) {
+	t.Parallel()
+	recorder := &runtimeRecorder{}
+	session := newRuntimeSession(recorder)
+	connection := newFakeConnection(
+		recorder,
+		versionFixture(),
+		snapshotFixture(testHomeID, dimmerNodeFixture(23, "Hallway Dimmer")),
+	)
+	entered := make(chan struct{})
+	release := make(chan struct{})
+	connection.setValueHook = func(
+		ctx context.Context,
+		_ int,
+		_ valueID,
+		_ json.RawMessage,
+	) (setValueStatus, error) {
+		select {
+		case <-entered:
+		default:
+			close(entered)
+		}
+		select {
+		case <-release:
+		case <-ctx.Done():
+			return setValueStatusUnrecognized, ctx.Err()
+		}
+		return setValueStatusUnrecognized, errors.New("socket closed")
+	}
+	zwave := newRuntimeAdapter(t, session, &fakeDialer{connections: []*fakeConnection{connection}})
+	startRuntime(t, zwave)
+	waitForRoutesActivated(t, session)
+
+	entityID := routeEntityID(testNodeID, "brightness")
+	firstResponder := newFakeResponder(recorder, session)
+	first := enqueueCommand(
+		t,
+		zwave,
+		commandFixture(entityID, `{"value":15}`, time.Now().Add(time.Minute)),
+		firstResponder,
+	)
+	awaitSignal(t, entered, "the first write to reach the wire")
+
+	// The follower is admitted synchronously, so it occupies the node's FIFO
+	// behind the blocked first write before the failure is produced.
+	secondResponder := newFakeResponder(recorder, session)
+	second := enqueueCommand(
+		t,
+		zwave,
+		commandFixture(entityID, `{"value":20}`, time.Now().Add(time.Minute)),
+		secondResponder,
+	)
+	close(release)
+
+	waitFor(t, "the transport failure to invalidate the generation", func() bool {
+		return recorder.has("health:unhealthy:" + externalSystemUnavailableReason)
+	})
+	if got := writeCountFor(connection, testNodeID); got != 1 {
+		t.Fatalf("writes = %d, want 1 (a transport failure must not dispatch the queued follower)", got)
+	}
+	if err := awaitCommandHandler(t, first); err == nil {
+		t.Fatal("the failed write reported no error")
+	}
+	if err := awaitCommandHandler(t, second); err == nil {
+		t.Fatal("the queued follower reported no error")
+	}
+	for index, responder := range []*fakeResponder{firstResponder, secondResponder} {
+		accepted, rejectedCount, total := responderCounts(responder)
+		if accepted != 0 || rejectedCount != 1 || total != 1 {
+			t.Fatalf("responder %d responses = %d/%d/%d, want 0/1/1", index, accepted, rejectedCount, total)
+		}
+	}
+	if got := len(session.recordedLinked()); got != 0 {
+		t.Fatalf("linked Observations = %d, want 0", got)
+	}
 }
 
 // This test protects the keyed Event boundary at the runtime, and fails if a

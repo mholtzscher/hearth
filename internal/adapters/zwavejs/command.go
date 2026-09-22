@@ -365,13 +365,20 @@ func (coordinator *runtimeCoordinator) logAmbiguousSetValue(attempt *commandAtte
 }
 
 // failSetValue classifies one failed node.set_value. A deterministic upstream
-// value rejection is a Command rejection; a timed-out or deadline-canceled
-// request is diagnosed as an ambiguous write and closes its generation; every
-// other failure invalidates the generation and rejects the unaccepted Command.
+// value rejection, whether a refused status or a refused result envelope, is a
+// Command rejection; a timed-out or deadline-canceled request is diagnosed as an
+// ambiguous write and closes its generation; every other failure invalidates the
+// generation and rejects the unaccepted Command.
 func (coordinator *runtimeCoordinator) failSetValue(attempt *commandAttempt, cause error) {
 	switch {
 	case isSetValueRefused(cause):
 		coordinator.rejectAttempt(attempt, "Z-Wave JS refused the value")
+	case isUpstreamRejection(cause):
+		// A failed result envelope is an ordinary upstream rejection, like the
+		// client reports for any other refused request. It is not a transport
+		// failure, so the generation stays healthy and only this Command is
+		// rejected.
+		coordinator.rejectAttempt(attempt, "Z-Wave JS rejected the request")
 	case isRequestTimeout(cause):
 		coordinator.failAmbiguousSetValue(attempt, cause)
 	case errors.Is(cause, context.DeadlineExceeded), errors.Is(cause, context.Canceled):
@@ -381,7 +388,11 @@ func (coordinator *runtimeCoordinator) failSetValue(attempt *commandAttempt, cau
 		// server-side request timeout.
 		coordinator.failAmbiguousSetValue(attempt, errSetValuePastDeadline)
 	default:
-		coordinator.abortAttempt(attempt, cause)
+		// A transport failure ends the generation before the node's FIFO can
+		// advance: dropping the generation aborts this attempt together with
+		// every queued follower, so no follower is ever written through a
+		// generation that is about to be torn down. Aborting this attempt first
+		// would release its FIFO slot for exactly that.
 		coordinator.dropGeneration(cause)
 	}
 }
