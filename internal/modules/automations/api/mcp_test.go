@@ -181,6 +181,31 @@ func TestAutomationMCPExposesExactToolNames(t *testing.T) {
 	}
 }
 
+// This test protects the agent-facing comparison guidance and fails if the MCP
+// catalog again exposes pointer as an unexplained string.
+func TestAutomationMCPExplainsObservationComparisonPointers(t *testing.T) {
+	t.Parallel()
+	session := connectAutomationMCP(t, newRecordingAutomations())
+	tools, err := session.ListTools(t.Context(), nil)
+	if err != nil {
+		t.Fatalf("list tools: %v", err)
+	}
+	for _, tool := range tools.Tools {
+		if tool.Name != "create_automation" && tool.Name != "replace_automation" {
+			continue
+		}
+		schema, marshalErr := json.Marshal(tool.InputSchema)
+		if marshalErr != nil {
+			t.Fatalf("marshal %s input schema: %v", tool.Name, marshalErr)
+		}
+		for _, guidance := range []string{"Observation value itself", "scalar values", "/state/value"} {
+			if !strings.Contains(tool.Description+string(schema), guidance) {
+				t.Fatalf("%s does not publish %q pointer guidance", tool.Name, guidance)
+			}
+		}
+	}
+}
+
 // TestAutomationMCPDefinitionLifecycle proves create, list, get, replace, and
 // delete call the Automations service over a live MCP session.
 func TestAutomationMCPDefinitionLifecycle(t *testing.T) {
@@ -666,7 +691,7 @@ func schemaInvalidDefinitionDocuments() map[string]string {
 			`{"id":"c","kind":"all","children":[]},"triggers":[` + observationTrigger +
 			`],"steps":[` + step + `]}`,
 		"Condition with an unknown member": `{"name":"x","enabled":true,"conditions":` +
-			`{"id":"c","kind":"entity_state","entity_id":"e","pointer":"/x","operator":"eq",` +
+			`{"id":"c","kind":"entity_state","entity_id":"e","value_pointer":"/x","operator":"eq",` +
 			`"operand":1,"unexpected":true},"triggers":[` + observationTrigger + `],"steps":[` + step + `]}`,
 	}
 }

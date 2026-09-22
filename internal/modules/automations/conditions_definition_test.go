@@ -52,7 +52,7 @@ func conditionObjectJSON(entity devices.EntityID) string {
         "id": "room-dark",
         "kind": "entity_state",
         "entity_id": %q,
-        "pointer": "",
+        "value_pointer": "",
         "operator": "lt",
         "operand": 30,
         "max_age_seconds": 300
@@ -64,7 +64,7 @@ func conditionObjectJSON(entity devices.EntityID) string {
           "id": "other-room-occupied",
           "kind": "entity_state",
           "entity_id": %q,
-          "pointer": "",
+          "value_pointer": "",
           "operator": "eq",
           "operand": true
         }
@@ -77,7 +77,7 @@ func conditionObjectJSON(entity devices.EntityID) string {
 // entity_state leaf, so the node count is notCount+1 and the depth is notCount+1.
 func nestedNotConditionObject(entity devices.EntityID, notCount int) string {
 	value := fmt.Sprintf(
-		`{"id":"n%d","kind":"entity_state","entity_id":%q,"pointer":"","operator":"eq","operand":true}`,
+		`{"id":"n%d","kind":"entity_state","entity_id":%q,"value_pointer":"","operator":"eq","operand":true}`,
 		notCount, entity,
 	)
 	for level := notCount - 1; level >= 0; level-- {
@@ -92,7 +92,7 @@ func wideConditionObject(entity devices.EntityID, childCount int) string {
 	children := make([]string, 0, childCount)
 	for index := range childCount {
 		children = append(children, fmt.Sprintf(
-			`{"id":"c%d","kind":"entity_state","entity_id":%q,"pointer":"","operator":"eq","operand":true}`,
+			`{"id":"c%d","kind":"entity_state","entity_id":%q,"value_pointer":"","operator":"eq","operand":true}`,
 			index, entity,
 		))
 	}
@@ -101,7 +101,7 @@ func wideConditionObject(entity devices.EntityID, childCount int) string {
 
 func conditionLeafJSON(entity devices.EntityID, fields string) string {
 	return fmt.Sprintf(
-		`{"id":"room-dark","kind":"entity_state","entity_id":%q,"pointer":"","operator":"eq","operand":true%s}`,
+		`{"id":"room-dark","kind":"entity_state","entity_id":%q,"value_pointer":"","operator":"eq","operand":true%s}`,
 		entity, fields,
 	)
 }
@@ -177,6 +177,28 @@ func TestDecodeAutomationDefinitionConditionsRoundTrip(t *testing.T) {
 	}
 }
 
+// This test protects stored Condition trees written before value_pointer was
+// introduced and fails if they become unreadable or remain legacy-shaped.
+func TestConditionDefinitionCanonicalizesLegacyPointer(t *testing.T) {
+	t.Parallel()
+	entity := newEntityID(t)
+	conditions := strings.ReplaceAll(conditionObjectJSON(entity), `"value_pointer"`, `"pointer"`)
+	definition, err := decodeDefinition(t, conditionDefinitionJSON(entity, conditions))
+	if err != nil {
+		t.Fatal(err)
+	}
+	encoded, err := automations.EncodeDefinition(definition)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(encoded), `"pointer"`) {
+		t.Fatalf("encoded definition retained legacy pointer: %s", encoded)
+	}
+	if !strings.Contains(string(encoded), `"value_pointer"`) {
+		t.Fatalf("encoded definition omitted value_pointer: %s", encoded)
+	}
+}
+
 // Every strict family, bound, and shape violation is rejected as a permanent
 // invalid definition.
 func TestDecodeAutomationDefinitionConditionsRejections(t *testing.T) {
@@ -192,7 +214,7 @@ func TestDecodeAutomationDefinitionConditionsRejections(t *testing.T) {
 		{
 			"entity state with children",
 			fmt.Sprintf(
-				`{"id":"s","kind":"entity_state","entity_id":%q,"pointer":"","operator":"eq","operand":true,"children":[%s]}`,
+				`{"id":"s","kind":"entity_state","entity_id":%q,"value_pointer":"","operator":"eq","operand":true,"children":[%s]}`,
 				entity,
 				conditionLeafJSON(entity, ""),
 			),
@@ -226,34 +248,34 @@ func TestDecodeAutomationDefinitionConditionsRejections(t *testing.T) {
 		{
 			"pointer without slash",
 			fmt.Sprintf(
-				`{"id":"s","kind":"entity_state","entity_id":%q,"pointer":"a","operator":"eq","operand":true}`,
+				`{"id":"s","kind":"entity_state","entity_id":%q,"value_pointer":"a","operator":"eq","operand":true}`,
 				entity,
 			),
 		},
 		{
 			"unknown operator",
 			fmt.Sprintf(
-				`{"id":"s","kind":"entity_state","entity_id":%q,"pointer":"","operator":"like","operand":true}`,
+				`{"id":"s","kind":"entity_state","entity_id":%q,"value_pointer":"","operator":"like","operand":true}`,
 				entity,
 			),
 		},
 		{
 			"missing operand",
 			fmt.Sprintf(
-				`{"id":"s","kind":"entity_state","entity_id":%q,"pointer":"","operator":"eq"}`, entity,
+				`{"id":"s","kind":"entity_state","entity_id":%q,"value_pointer":"","operator":"eq"}`, entity,
 			),
 		},
 		{
 			"ordering operand not numeric",
 			fmt.Sprintf(
-				`{"id":"s","kind":"entity_state","entity_id":%q,"pointer":"","operator":"lt","operand":"30"}`,
+				`{"id":"s","kind":"entity_state","entity_id":%q,"value_pointer":"","operator":"lt","operand":"30"}`,
 				entity,
 			),
 		},
 		{
 			"operand is not one JSON value",
 			fmt.Sprintf(
-				`{"id":"s","kind":"entity_state","entity_id":%q,"pointer":"","operator":"eq","operand":true false}`,
+				`{"id":"s","kind":"entity_state","entity_id":%q,"value_pointer":"","operator":"eq","operand":true false}`,
 				entity,
 			),
 		},
@@ -293,7 +315,7 @@ func TestDecodeAutomationDefinitionConditionsRejectsOversizeDefinition(t *testin
 	t.Parallel()
 	entity := newEntityID(t)
 	huge := fmt.Sprintf(
-		`{"id":"s","kind":"entity_state","entity_id":%q,"pointer":"","operator":"eq","operand":%q}`,
+		`{"id":"s","kind":"entity_state","entity_id":%q,"value_pointer":"","operator":"eq","operand":%q}`,
 		entity, strings.Repeat("a", 70_000),
 	)
 	if _, err := decodeDefinition(t, conditionDefinitionJSON(entity, huge)); !errors.Is(

@@ -12,7 +12,8 @@ type automationConditionJSON struct {
 	ID            ConditionID               `json:"id"`
 	Kind          ConditionKind             `json:"kind"`
 	EntityID      devices.EntityID          `json:"entity_id,omitempty"`
-	Pointer       *string                   `json:"pointer,omitempty"`
+	ValuePointer  *string                   `json:"value_pointer,omitempty"`
+	LegacyPointer *string                   `json:"pointer,omitempty"`
 	Operator      ComparisonOperator        `json:"operator,omitempty"`
 	Operand       json.RawMessage           `json:"operand,omitempty"`
 	MaxAgeSeconds *int64                    `json:"max_age_seconds,omitempty"`
@@ -36,7 +37,7 @@ func encodeAutomationCondition(condition Condition) automationConditionJSON {
 		if condition.EntityState != nil {
 			encoded.EntityID = condition.EntityState.EntityID
 			pointer := condition.EntityState.Pointer
-			encoded.Pointer = &pointer
+			encoded.ValuePointer = &pointer
 			encoded.Operator = condition.EntityState.Operator
 			encoded.Operand = condition.EntityState.Operand
 			encoded.MaxAgeSeconds = condition.EntityState.MaxAgeSeconds
@@ -62,8 +63,11 @@ func automationConditionFromJSON(value automationConditionJSON) Condition {
 	switch value.Kind {
 	case ConditionEntityState:
 		pointer := ""
-		if value.Pointer != nil {
-			pointer = *value.Pointer
+		if value.LegacyPointer != nil {
+			pointer = *value.LegacyPointer
+		}
+		if value.ValuePointer != nil {
+			pointer = *value.ValuePointer
 		}
 		condition.EntityState = &EntityStateCondition{
 			EntityID:      value.EntityID,

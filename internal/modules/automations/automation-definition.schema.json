@@ -51,11 +51,23 @@
                 "items": {
                   "type": "object",
                   "additionalProperties": false,
-                  "required": ["pointer", "operator", "operand"],
+                  "required": ["operator", "operand"],
+                  "oneOf": [
+                    { "required": ["value_pointer"], "not": { "required": ["pointer"] } },
+                    { "required": ["pointer"], "not": { "required": ["value_pointer"] } }
+                  ],
                   "properties": {
+                    "value_pointer": {
+                      "type": "string",
+                      "maxLength": 256,
+                      "description": "RFC 6901 JSON Pointer into the Observation value itself, not the Entity API response. Use an empty string for scalar values such as numbers, booleans, and strings. For example, temperature 21600 uses value_pointer \"\"; an object value {\"temperature\":21600} uses value_pointer \"/temperature\". Never use /state/value to select the Entity response wrapper.",
+                      "examples": ["", "/temperature"]
+                    },
                     "pointer": {
                       "type": "string",
-                      "maxLength": 256
+                      "maxLength": 256,
+                      "deprecated": true,
+                      "description": "Deprecated alias for value_pointer."
                     },
                     "operator": {
                       "enum": ["eq", "ne", "lt", "lte", "gt", "gte"]
@@ -144,7 +156,11 @@
     "entityStateCondition": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["id", "kind", "entity_id", "pointer", "operator", "operand"],
+      "required": ["id", "kind", "entity_id", "operator", "operand"],
+      "oneOf": [
+        { "required": ["value_pointer"], "not": { "required": ["pointer"] } },
+        { "required": ["pointer"], "not": { "required": ["value_pointer"] } }
+      ],
       "properties": {
         "id": { "$ref": "#/$defs/conditionID" },
         "kind": { "const": "entity_state" },
@@ -152,9 +168,16 @@
           "type": "string",
           "minLength": 1
         },
+        "value_pointer": {
+          "type": "string",
+          "maxLength": 256,
+          "description": "RFC 6901 JSON Pointer into the selected State value."
+        },
         "pointer": {
           "type": "string",
-          "maxLength": 256
+          "maxLength": 256,
+          "deprecated": true,
+          "description": "Deprecated alias for value_pointer."
         },
         "operator": {
           "enum": ["eq", "ne", "lt", "lte", "gt", "gte"]

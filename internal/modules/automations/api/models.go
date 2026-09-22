@@ -58,7 +58,8 @@ type GetHistoryEntryInput struct {
 
 // AutomationComparisonBody is one typed Observation comparison.
 type AutomationComparisonBody struct {
-	Pointer  string          `json:"pointer"`
+	Pointer string `json:"value_pointer"`
+	// Huma reads the closed operator set from this field tag.
 	Operator string          `json:"operator" enum:"eq,ne,lt,lte,gt,gte"`
 	Operand  json.RawMessage `json:"operand"`
 }

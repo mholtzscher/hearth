@@ -284,7 +284,13 @@ func validateAutomationTriggerReference(
 ) error {
 	switch trigger.Kind {
 	case TriggerKindObservation:
-		if err := automationDevices.ValidateObservationTrigger(ctx, trigger.Observation.EntityID); err != nil {
+		pointers := make([]string, len(trigger.Observation.Comparisons))
+		for index, comparison := range trigger.Observation.Comparisons {
+			pointers[index] = comparison.Pointer
+		}
+		if err := automationDevices.ValidateObservationTrigger(
+			ctx, trigger.Observation.EntityID, pointers,
+		); err != nil {
 			return fmt.Errorf("%w: trigger %q: %w", ErrInvalidAutomation, trigger.ID, err)
 		}
 	case TriggerKindEntityEvent:
@@ -341,9 +347,10 @@ type automationTriggerJSON struct {
 }
 
 type observationComparisonJSON struct {
-	Pointer  string             `json:"pointer"`
-	Operator ComparisonOperator `json:"operator"`
-	Operand  json.RawMessage    `json:"operand"`
+	ValuePointer  *string            `json:"value_pointer,omitempty"`
+	LegacyPointer *string            `json:"pointer,omitempty"`
+	Operator      ComparisonOperator `json:"operator"`
+	Operand       json.RawMessage    `json:"operand"`
 }
 
 type automationStepJSON struct {
@@ -361,8 +368,13 @@ func encodeAutomationTrigger(trigger Trigger) automationTriggerJSON {
 			encoded.EntityID = trigger.Observation.EntityID
 			encoded.Dispositions = trigger.Observation.Dispositions
 			for _, comparison := range trigger.Observation.Comparisons {
+				valuePointer := comparison.Pointer
 				encoded.Comparisons = append(
-					encoded.Comparisons, observationComparisonJSON(comparison),
+					encoded.Comparisons, observationComparisonJSON{
+						ValuePointer: &valuePointer,
+						Operator:     comparison.Operator,
+						Operand:      comparison.Operand,
+					},
 				)
 			}
 		}
@@ -537,7 +549,15 @@ func automationTriggerFromJSON(item automationTriggerJSON) Trigger {
 	case TriggerKindObservation:
 		observation := &ObservationTrigger{EntityID: item.EntityID, Dispositions: item.Dispositions}
 		for _, comparison := range item.Comparisons {
-			observation.Comparisons = append(observation.Comparisons, ObservationComparison(comparison))
+			valuePointer := comparison.LegacyPointer
+			if comparison.ValuePointer != nil {
+				valuePointer = comparison.ValuePointer
+			}
+			observation.Comparisons = append(observation.Comparisons, ObservationComparison{
+				Pointer:  *valuePointer,
+				Operator: comparison.Operator,
+				Operand:  comparison.Operand,
+			})
 		}
 		trigger.Observation = observation
 	case TriggerKindEntityEvent:

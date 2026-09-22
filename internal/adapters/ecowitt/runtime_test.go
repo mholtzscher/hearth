@@ -785,13 +785,11 @@ func TestRunRegistersBothSlotsBeforeConnectingMQTT(t *testing.T) {
 		t.Fatalf("dial configuration = %#v, want the validated Adapter configuration", dial)
 	}
 	connection := dialer.connection
-	connection.mutex.Lock()
-	subscribedTopic, subscribedQoS := connection.topic, connection.qos
-	connection.mutex.Unlock()
-	if subscribedTopic != fixtureTopic || subscribedQoS != mqttQoS {
-		t.Fatalf("subscription = %q at QoS %d, want the exact configured topic at QoS 1",
-			subscribedTopic, subscribedQoS)
-	}
+	eventually(t, "the exact configured MQTT subscription", func() bool {
+		connection.mutex.Lock()
+		defer connection.mutex.Unlock()
+		return connection.topic == fixtureTopic && connection.qos == mqttQoS
+	})
 
 	dialer.push(fixtureMessage(t))
 	eventually(t, "a healthy transition", func() bool {

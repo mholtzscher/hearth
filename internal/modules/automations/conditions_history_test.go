@@ -167,12 +167,12 @@ func TestDecodeAutomationConditionDecisionRejectsMalformedJSON(t *testing.T) {
 		{"snapshot is not an object", `{"mode":"not_evaluated","bypass_requested":false,"snapshot":[]}`},
 		{"not_configured with a snapshot", `{"mode":"not_configured","bypass_requested":false,` +
 			`"snapshot":{"id":"root","kind":"all","children":[{"id":"leaf","kind":"entity_state",` +
-			`"entity_id":"ent_01890f47-7a6b-7c4d-8e9f-000000000001","pointer":"","operator":"eq",` +
+			`"entity_id":"ent_01890f47-7a6b-7c4d-8e9f-000000000001","value_pointer":"","operator":"eq",` +
 			`"operand":true}]}}`},
 		{"not_evaluated without a snapshot", `{"mode":"not_evaluated","bypass_requested":false}`},
 		{"not_evaluated with an evaluation", `{"mode":"not_evaluated","bypass_requested":false,` +
 			`"snapshot":{"id":"root","kind":"all","children":[{"id":"leaf","kind":"entity_state",` +
-			`"entity_id":"ent_01890f47-7a6b-7c4d-8e9f-000000000001","pointer":"","operator":"eq",` +
+			`"entity_id":"ent_01890f47-7a6b-7c4d-8e9f-000000000001","value_pointer":"","operator":"eq",` +
 			`"operand":true}]},"evaluation":{"evaluated_at":"2024-01-01T00:00:00Z",` +
 			`"result":"true","nodes":[]}}`},
 		{"evaluated without a snapshot", `{"mode":"evaluated","bypass_requested":false,` +
@@ -188,17 +188,17 @@ func TestDecodeAutomationConditionDecisionRejectsMalformedJSON(t *testing.T) {
 	}
 }
 
-// The strict snapshot decoder must still accept a selected empty pointer: the
+// The strict snapshot decoder must still accept a selected empty value_pointer: the
 // schema requires the pointer member, not a nonempty value.
 func TestDecodeAutomationConditionDecisionAcceptsSelectedEmptyPointer(t *testing.T) {
 	t.Parallel()
 	raw := `{"mode":"not_evaluated","bypass_requested":false,"snapshot":` +
 		`{"id":"root","kind":"all","children":[` +
 		`{"id":"leaf","kind":"entity_state","entity_id":"` + string(conditionEntity(1)) +
-		`","pointer":"","operator":"eq","operand":true}]}}`
+		`","value_pointer":"","operator":"eq","operand":true}]}}`
 	decision, err := automations.DecodeConditionDecision(json.RawMessage(raw))
 	if err != nil {
-		t.Fatalf("selected empty pointer: %v", err)
+		t.Fatalf("selected empty value_pointer: %v", err)
 	}
 	leaf := decision.DecisionSnapshot().Children[0]
 	if leaf.EntityState == nil || leaf.EntityState.Pointer != "" {
@@ -215,9 +215,9 @@ func TestDecodeAutomationConditionDecisionRejectsExplicitNullPlaceholders(t *tes
 	observation := string(conditionObservationID(conditionEntity(1)))
 	evaluatedAt := conditionTime().Format(time.RFC3339Nano)
 	leafSnapshot := `{"id":"leaf","kind":"entity_state","entity_id":"` + entity +
-		`","pointer":"","operator":"eq","operand":true}`
+		`","value_pointer":"","operator":"eq","operand":true}`
 	nullOperandSnapshot := `{"id":"leaf","kind":"entity_state","entity_id":"` + entity +
-		`","pointer":"","operator":"eq","operand":null}`
+		`","value_pointer":"","operator":"eq","operand":null}`
 	evaluatedDecision := func(snapshot, result, nodes string) string {
 		return `{"mode":"evaluated","bypass_requested":false,"snapshot":` + snapshot +
 			`,"evaluation":{"evaluated_at":"` + evaluatedAt + `","result":"` + result + `","nodes":` + nodes + `}}`
@@ -438,7 +438,7 @@ func FuzzDecodeAutomationConditionDecision(fuzz *testing.F) {
 	fuzz.Add(`{"mode":"not_evaluated","bypass_requested":false,"snapshot":` +
 		`{"id":"root","kind":"all","children":[` +
 		`{"id":"leaf","kind":"entity_state","entity_id":"ent_01890f47-7a6b-7c4d-8e9f-000000000001",` +
-		`"pointer":"","operator":"eq","operand":true}]}}`)
+		`"value_pointer":"","operator":"eq","operand":true}]}}`)
 	fuzz.Fuzz(func(t *testing.T, raw string) {
 		decision, err := automations.DecodeConditionDecision(json.RawMessage(raw))
 		if err != nil {

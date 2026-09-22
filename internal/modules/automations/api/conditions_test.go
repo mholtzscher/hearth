@@ -57,7 +57,7 @@ func conditionalDefinitionDocument(t *testing.T, conditionEntity devices.EntityI
 			{"id":"trigger","kind":"observation","entity_id":%q,"dispositions":["applied"]}
 		],
 		"conditions": {
-			"id":"mode-allowed","kind":"entity_state","entity_id":%q,"pointer":"/mode",
+			"id":"mode-allowed","kind":"entity_state","entity_id":%q,"value_pointer":"/mode",
 			"operator":"eq","operand":"allowed","max_age_seconds":300
 		},
 		"steps": [{"id":"step_0","entity_id":%q,"operation":"set","parameters":{"value":true}}]
@@ -147,7 +147,7 @@ func TestAutomationDefinitionConditionsStrictJSONIsRejected(t *testing.T) {
 		t.Fatal(err)
 	}
 	leaf := fmt.Sprintf(
-		`{"id":"leaf","kind":"entity_state","entity_id":%q,"pointer":"","operator":"eq","operand":1}`,
+		`{"id":"leaf","kind":"entity_state","entity_id":%q,"value_pointer":"","operator":"eq","operand":1}`,
 		string(entity),
 	)
 
@@ -168,7 +168,7 @@ func TestAutomationDefinitionConditionsStrictJSONIsRejected(t *testing.T) {
 		},
 		{
 			"invalid operator",
-			fmt.Sprintf(`{"id":"root","kind":"entity_state","entity_id":%q,"pointer":"","operator":"within","operand":1}`, string(entity)),
+			fmt.Sprintf(`{"id":"root","kind":"entity_state","entity_id":%q,"value_pointer":"","operator":"within","operand":1}`, string(entity)),
 		},
 		{
 			"missing pointer",
@@ -176,10 +176,10 @@ func TestAutomationDefinitionConditionsStrictJSONIsRejected(t *testing.T) {
 		},
 		{
 			"missing operand",
-			fmt.Sprintf(`{"id":"root","kind":"entity_state","entity_id":%q,"pointer":"","operator":"eq"}`, string(entity)),
+			fmt.Sprintf(`{"id":"root","kind":"entity_state","entity_id":%q,"value_pointer":"","operator":"eq"}`, string(entity)),
 		},
 		{"not with a children array", fmt.Sprintf(`{"id":"root","kind":"not","children":[%s]}`, leaf)},
-		{"over-age bound", fmt.Sprintf(`{"id":"root","kind":"entity_state","entity_id":%q,"pointer":"","operator":"eq","operand":1,"max_age_seconds":0}`, string(entity))},
+		{"over-age bound", fmt.Sprintf(`{"id":"root","kind":"entity_state","entity_id":%q,"value_pointer":"","operator":"eq","operand":1,"max_age_seconds":0}`, string(entity))},
 	} {
 		response := performJSON(
 			router,
@@ -708,7 +708,7 @@ func conditionDefinitionWithOperand(
 			{"id":"trigger","kind":"observation","entity_id":%q,"dispositions":["applied"]}
 		],
 		"conditions": {
-			"id":"leaf","kind":"entity_state","entity_id":%q,"pointer":%s,
+			"id":"leaf","kind":"entity_state","entity_id":%q,"value_pointer":%s,
 			"operator":%q,"operand":%s
 		},
 		"steps": [{"id":"step_0","entity_id":%q,"operation":"set","parameters":{"value":true}}]

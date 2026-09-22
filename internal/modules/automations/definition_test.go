@@ -41,8 +41,8 @@ func definitionFixture(
       "entity_id": %q,
       "dispositions": ["unchanged", "applied"],
       "comparisons": [
-        {"pointer": "/temperature", "operator": "gt", "operand": 20},
-        {"pointer": "", "operator": "eq", "operand": {"occupied": true}}
+        {"value_pointer": "/temperature", "operator": "gt", "operand": 20},
+        {"value_pointer": "", "operator": "eq", "operand": {"occupied": true}}
       ]
     },
     {
@@ -138,6 +138,28 @@ func TestDecodeAutomationDefinitionIsStableUnderRoundTrip(t *testing.T) {
 	}
 }
 
+// This test protects existing stored definitions during the public field rename
+// and fails if the decoder drops the old pointer alias or the encoder restores it.
+func TestAutomationDefinitionCanonicalizesLegacyPointer(t *testing.T) {
+	t.Parallel()
+	raw := definitionFixture(t, newEntityID(t), newEntityID(t), newEntityID(t))
+	raw = strings.ReplaceAll(raw, `"value_pointer"`, `"pointer"`)
+	definition, err := decodeDefinition(t, raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	encoded, err := automations.EncodeDefinition(definition)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(encoded), `"pointer"`) {
+		t.Fatalf("encoded definition retained legacy pointer: %s", encoded)
+	}
+	if !strings.Contains(string(encoded), `"value_pointer"`) {
+		t.Fatalf("encoded definition omitted value_pointer: %s", encoded)
+	}
+}
+
 // Malformed definitions must fail as permanent input errors before persistence.
 func TestDecodeAutomationDefinitionRejectsInvalidDocuments(t *testing.T) {
 	t.Parallel()
@@ -184,7 +206,9 @@ func TestDecodeAutomationDefinitionRejectsInvalidDocuments(t *testing.T) {
 		},
 		{
 			"unknown comparison field",
-			triggers(observationTrigger(`"comparisons":[{"pointer":"/a","operator":"eq","operand":1,"extra":1}]`)),
+			triggers(observationTrigger(
+				`"comparisons":[{"value_pointer":"/a","operator":"eq","operand":1,"extra":1}]`,
+			)),
 		},
 		{
 			"unknown kind",
@@ -257,26 +281,28 @@ func TestDecodeAutomationDefinitionRejectsInvalidDocuments(t *testing.T) {
 		{"too many comparisons", triggers(observationTrigger("\"comparisons\":" + tooManyComparisons()))},
 		{
 			"pointer without slash",
-			triggers(observationTrigger(`"comparisons":[{"pointer":"temperature","operator":"eq","operand":1}]`)),
+			triggers(observationTrigger(`"comparisons":[{"value_pointer":"temperature","operator":"eq","operand":1}]`)),
 		},
 		{
 			"pointer bad escape",
-			triggers(observationTrigger(`"comparisons":[{"pointer":"/bad~2escape","operator":"eq","operand":1}]`)),
+			triggers(observationTrigger(
+				`"comparisons":[{"value_pointer":"/bad~2escape","operator":"eq","operand":1}]`,
+			)),
 		},
 		{
 			"pointer trailing escape",
-			triggers(observationTrigger(`"comparisons":[{"pointer":"/trailing~","operator":"eq","operand":1}]`)),
+			triggers(observationTrigger(`"comparisons":[{"value_pointer":"/trailing~","operator":"eq","operand":1}]`)),
 		},
 		{"pointer too long", triggers(observationTrigger(tooLongPointer()))},
 		{
 			"ordering operand not numeric",
-			triggers(observationTrigger(`"comparisons":[{"pointer":"/a","operator":"gt","operand":"twenty"}]`)),
+			triggers(observationTrigger(`"comparisons":[{"value_pointer":"/a","operator":"gt","operand":"twenty"}]`)),
 		},
 		{
 			"unknown operator",
-			triggers(observationTrigger(`"comparisons":[{"pointer":"/a","operator":"between","operand":1}]`)),
+			triggers(observationTrigger(`"comparisons":[{"value_pointer":"/a","operator":"between","operand":1}]`)),
 		},
-		{"missing operand", triggers(observationTrigger(`"comparisons":[{"pointer":"/a","operator":"eq"}]`))},
+		{"missing operand", triggers(observationTrigger(`"comparisons":[{"value_pointer":"/a","operator":"eq"}]`))},
 		{
 			"bad entity id",
 			triggers(
@@ -366,7 +392,7 @@ func TestDecodeAutomationDefinitionAcceptsEqualityOperandTypes(t *testing.T) {
 	actionEntity := newEntityID(t)
 	for _, operand := range []string{`"text"`, `true`, `null`, `[1,2]`, `{"a":1}`, `1e1000`, `-0.5`} {
 		raw := fmt.Sprintf(
-			`{"name":"n","enabled":true,"triggers":[{"id":"t","kind":"observation","entity_id":%q,"dispositions":["applied"],"comparisons":[{"pointer":"/value","operator":"eq","operand":%s}]}],"steps":[{"id":"s","entity_id":%q,"operation":"set","parameters":{}}]}`,
+			`{"name":"n","enabled":true,"triggers":[{"id":"t","kind":"observation","entity_id":%q,"dispositions":["applied"],"comparisons":[{"value_pointer":"/value","operator":"eq","operand":%s}]}],"steps":[{"id":"s","entity_id":%q,"operation":"set","parameters":{}}]}`,
 			observationEntity,
 			operand,
 			actionEntity,
@@ -447,7 +473,7 @@ func tooLongParameter() string { return strings.Repeat("a", 70*1024) }
 func tooManyComparisons() string {
 	entries := make([]string, 0, tooManyComparisonsN)
 	for index := range tooManyComparisonsN {
-		entries = append(entries, fmt.Sprintf(`{"pointer":"/c%d","operator":"eq","operand":%d}`, index, index))
+		entries = append(entries, fmt.Sprintf(`{"value_pointer":"/c%d","operator":"eq","operand":%d}`, index, index))
 	}
 	return "[" + strings.Join(entries, ",") + "]"
 }
@@ -455,7 +481,7 @@ func tooManyComparisons() string {
 // tooLongPointer renders one comparison with a 257-byte pointer.
 func tooLongPointer() string {
 	return fmt.Sprintf(
-		`"comparisons":[{"pointer":"/%s","operator":"eq","operand":1}]`,
+		`"comparisons":[{"value_pointer":"/%s","operator":"eq","operand":1}]`,
 		strings.Repeat("a", 257),
 	)
 }

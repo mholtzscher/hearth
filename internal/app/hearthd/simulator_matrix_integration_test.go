@@ -1219,9 +1219,8 @@ func TestSimulatorGracefulReleaseAllowsImmediateReplacement(t *testing.T) {
 	}
 }
 
-//nolint:gocognit,gocyclo,cyclop // This process scenario keeps takeover and every stale-runtime effect in one causal sequence.
+//nolint:gocognit,gocyclo,cyclop,paralleltest // Process-level scenario is serialized on constrained CI runners.
 func TestSimulatorExpiryTakeoverFencesOldTrafficAndCommands(t *testing.T) {
-	t.Parallel()
 	harness := newManualSimulatorMatrixHarness(t)
 	oldSession, oldRuntimeID := connectMatrixSession(t, harness)
 	entityID, registration := registerMatrixEntity(harness.ctx, t, oldSession)

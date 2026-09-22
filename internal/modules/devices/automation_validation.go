@@ -1,9 +1,13 @@
 package devices
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"strconv"
+	"strings"
 )
 
 // ErrAutomationTriggerSource is the permanent classification for one Entity that
@@ -31,7 +35,11 @@ var errStatefulEntityRequired = errors.New("entity has no State")
 // availability, and owner health are deliberately not required, because
 // save-time validation proves current references while normal Command
 // execution-time validation handles control eligibility.
-func (service *Service) ValidateObservationTrigger(ctx context.Context, entityID EntityID) error {
+func (service *Service) ValidateObservationTrigger(
+	ctx context.Context,
+	entityID EntityID,
+	pointers []string,
+) error {
 	if _, err := ParseEntityID(string(entityID)); err != nil {
 		return fmt.Errorf("%w: parse entity ID: %w", ErrAutomationTriggerSource, err)
 	}
@@ -44,7 +52,77 @@ func (service *Service) ValidateObservationTrigger(ctx context.Context, entityID
 		}
 		return err
 	}
+	if len(pointers) == 0 {
+		return nil
+	}
+	view, err := service.stores.Reads.GetEntity(ctx, entityID)
+	if err != nil {
+		return err
+	}
+	if view.State == nil {
+		return nil
+	}
+	var value any
+	decoder := json.NewDecoder(bytes.NewReader(view.State.Value))
+	decoder.UseNumber()
+	if err = decoder.Decode(&value); err != nil {
+		return fmt.Errorf("read current Observation value for entity %q: %w", entityID, err)
+	}
+	for _, pointer := range pointers {
+		if observationValuePointerExists(value, pointer) {
+			continue
+		}
+		return fmt.Errorf(
+			"%w: entity %q comparison pointer %q cannot select from the current Observation value; "+
+				"value_pointer addresses the value directly, so use an empty value_pointer for a scalar and never /state/value",
+			ErrAutomationTriggerSource, entityID, pointer,
+		)
+	}
 	return nil
+}
+
+// observationValuePointerExists reports whether a validated RFC 6901 pointer
+// selects a member of one decoded Observation value.
+func observationValuePointerExists(value any, pointer string) bool {
+	if pointer == "" {
+		return true
+	}
+	current := value
+	for encoded := range strings.SplitSeq(pointer[1:], "/") {
+		token := strings.ReplaceAll(strings.ReplaceAll(encoded, "~1", "/"), "~0", "~")
+		switch typed := current.(type) {
+		case map[string]any:
+			var exists bool
+			current, exists = typed[token]
+			if !exists {
+				return false
+			}
+		case []any:
+			index, valid := observationArrayIndex(token)
+			if !valid || index >= len(typed) {
+				return false
+			}
+			current = typed[index]
+		default:
+			return false
+		}
+	}
+	return true
+}
+
+// observationArrayIndex parses the same canonical non-negative decimal token
+// accepted by runtime Observation comparison matching.
+func observationArrayIndex(token string) (int, bool) {
+	if token == "" || (len(token) > 1 && token[0] == '0') {
+		return 0, false
+	}
+	for index := range len(token) {
+		if token[index] < '0' || token[index] > '9' {
+			return 0, false
+		}
+	}
+	value, err := strconv.Atoi(token)
+	return value, err == nil
 }
 
 // ValidateConditionEntity reports whether one Entity can be the source of an

@@ -10,7 +10,7 @@ permissions:
   contents: read
 
 jobs:
-  test:
+  backend:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -37,18 +37,27 @@ jobs:
       - name: Pre-pull broker image
         run: mise run --skip-deps broker-images-pull
       - name: Run checks
-        run: mise run validate
+        run: mise run validate-backend
       - name: Verify clean working tree
         run: |
           git diff --exit-code
           test -z "$(git ls-files --others --exclude-standard)"
 
-  web-image:
+  web:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
+      - uses: jdx/mise-action@v4
+        with:
+          cache: true
+      - name: Run dashboard tests
+        run: mise run web-test
       - name: Build dashboard image
         run: docker build ./web --tag hearth-web:ci
+      - name: Verify clean working tree
+        run: |
+          git diff --exit-code
+          test -z "$(git ls-files --others --exclude-standard)"
 
   fuzz:
     runs-on: ubuntu-latest

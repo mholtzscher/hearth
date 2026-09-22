@@ -34,7 +34,7 @@ func newBlockingAutomationDevices() *blockingAutomationDevices {
 	}
 }
 
-func (seam *blockingAutomationDevices) ValidateObservationTrigger(context.Context, devices.EntityID) error {
+func (seam *blockingAutomationDevices) ValidateObservationTrigger(context.Context, devices.EntityID, []string) error {
 	return nil
 }
 

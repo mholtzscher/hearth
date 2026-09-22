@@ -41,7 +41,7 @@ func newScriptedDevices() *scriptedDevices {
 	return &scriptedDevices{admissionOpen: true, commands: map[devices.CommandID]devices.CommandRecord{}}
 }
 
-func (scripted *scriptedDevices) ValidateObservationTrigger(context.Context, devices.EntityID) error {
+func (scripted *scriptedDevices) ValidateObservationTrigger(context.Context, devices.EntityID, []string) error {
 	return scripted.observationErr
 }
 

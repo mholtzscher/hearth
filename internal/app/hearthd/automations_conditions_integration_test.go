@@ -438,16 +438,16 @@ func conditionsAllDefinition(conditions conditionsAdapter) string {
 		"enabled": true,
 		"triggers": [{"id":"motion","kind":"observation","entity_id":%q,
 			"dispositions":["applied","unchanged"],
-			"comparisons":[{"pointer":"","operator":"eq","operand":true}]}],
+			"comparisons":[{"value_pointer":"","operator":"eq","operand":true}]}],
 		"conditions": {
 			"id": "dark-and-free",
 			"kind": "all",
 			"children": [
 				{"id":"room-dark","kind":"entity_state","entity_id":%q,
-					"pointer":"","operator":"lt","operand":30,"max_age_seconds":300},
+					"value_pointer":"","operator":"lt","operand":30,"max_age_seconds":300},
 				{"id":"other-room-unoccupied","kind":"not","child":{
 					"id":"other-room-occupied","kind":"entity_state","entity_id":%q,
-					"pointer":"","operator":"eq","operand":true,"max_age_seconds":120}}
+					"value_pointer":"","operator":"eq","operand":true,"max_age_seconds":120}}
 			]
 		},
 		"steps": [{"id":"turn_on","entity_id":%q,"operation":"set","parameters":{"value":true}}]
@@ -463,16 +463,16 @@ func conditionsAnyDefinition(conditions conditionsAdapter) string {
 		"enabled": true,
 		"triggers": [{"id":"motion","kind":"observation","entity_id":%q,
 			"dispositions":["applied","unchanged"],
-			"comparisons":[{"pointer":"","operator":"eq","operand":true}]}],
+			"comparisons":[{"value_pointer":"","operator":"eq","operand":true}]}],
 		"conditions": {
 			"id": "any-permission",
 			"kind": "any",
 			"children": [
 				{"id":"room-dark-any","kind":"entity_state","entity_id":%q,
-					"pointer":"","operator":"lt","operand":30,"max_age_seconds":300},
+					"value_pointer":"","operator":"lt","operand":30,"max_age_seconds":300},
 				{"id":"other-room-unoccupied-any","kind":"not","child":{
 					"id":"other-room-occupied-any","kind":"entity_state","entity_id":%q,
-					"pointer":"","operator":"eq","operand":true,"max_age_seconds":120}}
+					"value_pointer":"","operator":"eq","operand":true,"max_age_seconds":120}}
 			]
 		},
 		"steps": [{"id":"turn_on_fan","entity_id":%q,"operation":"set","parameters":{"value":true}}]
