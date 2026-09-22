@@ -38,19 +38,19 @@ func TestValidateObservationTriggerProtectsEntityKindAndStatefulness(t *testing.
 	service, statefulID, eventSourceID := automationValidationFixture(t)
 	ctx := context.Background()
 
-	if err := service.ValidateObservationTrigger(ctx, statefulID); err != nil {
+	if err := service.ValidateObservationTrigger(ctx, statefulID, nil); err != nil {
 		t.Fatalf("stateful entity rejected: %v", err)
 	}
-	if err := service.ValidateObservationTrigger(ctx, eventSourceID); !errors.Is(
+	if err := service.ValidateObservationTrigger(ctx, eventSourceID, nil); !errors.Is(
 		err, devices.ErrAutomationTriggerSource,
 	) {
 		t.Fatalf("stateless entity error = %v, want ErrAutomationTriggerSource", err)
 	}
 	missingID := newTestEntityID(t)
-	if err := service.ValidateObservationTrigger(ctx, missingID); !errors.Is(err, devices.ErrEntityNotFound) {
+	if err := service.ValidateObservationTrigger(ctx, missingID, nil); !errors.Is(err, devices.ErrEntityNotFound) {
 		t.Fatalf("missing entity error = %v, want ErrEntityNotFound", err)
 	}
-	if err := service.ValidateObservationTrigger(ctx, devices.EntityID("ent_not-a-uuid")); !errors.Is(
+	if err := service.ValidateObservationTrigger(ctx, devices.EntityID("ent_not-a-uuid"), nil); !errors.Is(
 		err, devices.ErrAutomationTriggerSource,
 	) {
 		t.Fatalf("malformed entity error = %v, want ErrAutomationTriggerSource", err)
@@ -78,7 +78,7 @@ func TestValidateObservationTriggerAllowsDisabledEntity(t *testing.T) {
 	if binding.Entities[0].Enabled {
 		t.Fatal("fixture entity is enabled, want disabled")
 	}
-	if err = service.ValidateObservationTrigger(context.Background(), binding.Entities[0].EntityID); err != nil {
+	if err = service.ValidateObservationTrigger(context.Background(), binding.Entities[0].EntityID, nil); err != nil {
 		t.Fatalf("disabled entity rejected: %v", err)
 	}
 }
@@ -136,7 +136,7 @@ func TestValidateConditionEntitySharesTheStatefulReferenceRule(t *testing.T) {
 	) {
 		t.Fatalf("stateless entity error = %v, want ErrAutomationConditionEntity", err)
 	}
-	if err := service.ValidateObservationTrigger(ctx, eventSourceID); !errors.Is(
+	if err := service.ValidateObservationTrigger(ctx, eventSourceID, nil); !errors.Is(
 		err, devices.ErrAutomationTriggerSource,
 	) {
 		t.Fatalf("Trigger stateless entity error = %v, want ErrAutomationTriggerSource", err)

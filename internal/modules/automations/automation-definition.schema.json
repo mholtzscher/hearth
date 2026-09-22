@@ -55,7 +55,9 @@
                   "properties": {
                     "pointer": {
                       "type": "string",
-                      "maxLength": 256
+                      "maxLength": 256,
+                      "description": "RFC 6901 JSON Pointer into the Observation value itself, not the Entity API response. Use an empty string for scalar values such as numbers, booleans, and strings. For example, temperature 21600 uses pointer \"\"; an object value {\"temperature\":21600} uses pointer \"/temperature\". Never use /state/value to select the Entity response wrapper.",
+                      "examples": ["", "/temperature"]
                     },
                     "operator": {
                       "enum": ["eq", "ne", "lt", "lte", "gt", "gte"]

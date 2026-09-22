@@ -36,7 +36,9 @@ func newAPIDevices() *apiDevices {
 	return &apiDevices{admissionOpen: true, commands: map[devices.CommandID]devices.CommandRecord{}}
 }
 
-func (*apiDevices) ValidateObservationTrigger(context.Context, devices.EntityID) error { return nil }
+func (*apiDevices) ValidateObservationTrigger(context.Context, devices.EntityID, []string) error {
+	return nil
+}
 
 func (*apiDevices) ValidateConditionEntity(context.Context, devices.EntityID) error { return nil }
 

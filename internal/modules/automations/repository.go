@@ -11,8 +11,9 @@ import (
 // AutomationDevices provides reference validation, Command execution, and ownership verification.
 type AutomationDevices interface {
 	// ValidateObservationTrigger reports whether the Entity currently exists and
-	// can be the source of an Observation Trigger.
-	ValidateObservationTrigger(context.Context, devices.EntityID) error
+	// can be the source of an Observation Trigger and whether each comparison
+	// pointer can select from its current State value when one is present.
+	ValidateObservationTrigger(context.Context, devices.EntityID, []string) error
 	// ValidateConditionEntity reports whether the Entity currently exists and is
 	// stateful, so a Condition may select its retained State.
 	ValidateConditionEntity(context.Context, devices.EntityID) error

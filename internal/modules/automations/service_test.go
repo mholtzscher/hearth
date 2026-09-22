@@ -3,6 +3,8 @@ package automations_test
 import (
 	"context"
 	"errors"
+	"fmt"
+	"strings"
 	"testing"
 	"time"
 
@@ -77,10 +79,24 @@ type stubAutomationDevices struct {
 	conditionCalls    []devices.EntityID
 	entityEventCalls  []string
 	commandCalls      []devices.CommandInput
+	observationValue  devices.Value
 }
 
-func (stub *stubAutomationDevices) ValidateObservationTrigger(_ context.Context, entityID devices.EntityID) error {
+func (stub *stubAutomationDevices) ValidateObservationTrigger(
+	_ context.Context, entityID devices.EntityID, pointers []string,
+) error {
 	stub.observationCalls = append(stub.observationCalls, entityID)
+	if stub.observationError == nil && string(stub.observationValue) == "21600" {
+		for _, pointer := range pointers {
+			if pointer != "" {
+				return fmt.Errorf(
+					"%w: comparison pointer %q cannot select from the current Observation value; "+
+						"pointers address the value directly, so use an empty pointer for a scalar and never /state/value",
+					devices.ErrAutomationTriggerSource, pointer,
+				)
+			}
+		}
+	}
 	return stub.observationError
 }
 
@@ -89,10 +105,22 @@ func (stub *stubAutomationDevices) ValidateConditionEntity(_ context.Context, en
 	return stub.conditionError
 }
 
-func (*stubAutomationDevices) GetEntityStateSnapshot(
-	context.Context, []devices.EntityID,
+func (stub *stubAutomationDevices) GetEntityStateSnapshot(
+	_ context.Context, entityIDs []devices.EntityID,
 ) (devices.EntityStateSnapshot, error) {
-	return devices.EntityStateSnapshot{}, errors.New("GetEntityStateSnapshot is not available in D1 tests")
+	value := stub.observationValue
+	if value == nil {
+		value = devices.Value(`{"temperature":21}`)
+	}
+	entries := make(map[devices.EntityID]devices.EntityStateSnapshotEntry, len(entityIDs))
+	for _, entityID := range entityIDs {
+		entries[entityID] = devices.EntityStateSnapshotEntry{
+			EntityID: entityID,
+			Exists:   true,
+			State:    &devices.State{EntityID: entityID, Value: value},
+		}
+	}
+	return devices.EntityStateSnapshot{Entries: entries}, nil
 }
 
 func (stub *stubAutomationDevices) ValidateEntityEventTrigger(
@@ -215,6 +243,37 @@ func TestServiceCreateAutomationRejectsInvalidReferencesAtomically(t *testing.T)
 				t.Fatalf("invalid definition persisted %d automations", len(page.Items))
 			}
 		})
+	}
+}
+
+// This regression test protects save-time pointer validation and fails if an
+// API-response path such as /state/value can silently target a scalar value.
+func TestServiceCreateAutomationRejectsPointerOutsideCurrentObservationValue(t *testing.T) {
+	t.Parallel()
+	definition := validDomainDefinition(t)
+	definition.Triggers[0].Observation.Comparisons[0].Pointer = "/state/value"
+	stub := &stubAutomationDevices{observationValue: devices.Value(`21600`)}
+	service := newAutomationService(t, stub)
+
+	_, err := service.CreateAutomation(context.Background(), definition)
+	if !errors.Is(err, automations.ErrInvalidAutomation) {
+		t.Fatalf("error = %v, want ErrInvalidAutomation", err)
+	}
+	if err == nil || !strings.Contains(err.Error(), "use an empty pointer for a scalar") {
+		t.Fatalf("error = %v, want scalar pointer guidance", err)
+	}
+}
+
+// Object-valued Observations still support RFC 6901 paths that select a nested
+// member; validation must not collapse every comparison to the scalar form.
+func TestServiceCreateAutomationAcceptsPointerInsideCurrentObservationValue(t *testing.T) {
+	t.Parallel()
+	definition := validDomainDefinition(t)
+	stub := &stubAutomationDevices{observationValue: devices.Value(`{"temperature":21}`)}
+	service := newAutomationService(t, stub)
+
+	if _, err := service.CreateAutomation(context.Background(), definition); err != nil {
+		t.Fatal(err)
 	}
 }
 

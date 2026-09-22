@@ -284,7 +284,13 @@ func validateAutomationTriggerReference(
 ) error {
 	switch trigger.Kind {
 	case TriggerKindObservation:
-		if err := automationDevices.ValidateObservationTrigger(ctx, trigger.Observation.EntityID); err != nil {
+		pointers := make([]string, len(trigger.Observation.Comparisons))
+		for index, comparison := range trigger.Observation.Comparisons {
+			pointers[index] = comparison.Pointer
+		}
+		if err := automationDevices.ValidateObservationTrigger(
+			ctx, trigger.Observation.EntityID, pointers,
+		); err != nil {
 			return fmt.Errorf("%w: trigger %q: %w", ErrInvalidAutomation, trigger.ID, err)
 		}
 	case TriggerKindEntityEvent:
