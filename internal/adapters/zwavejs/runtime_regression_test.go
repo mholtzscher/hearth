@@ -19,6 +19,8 @@ package zwavejs //nolint:testpackage // Regression tests exercise the private co
 //	                       TestValueAddedCarriesStateOnlyPlannedCurrentValues
 //	9 status supersede     TestRuntimeStatusEventSchedulesReplacementRefreshAfterSupersededRegistration
 //	10 stale replay        TestRuntimeValueUpdatedSupersedesQueuedValueAddedBeforeRegistration
+//	11 node-scoped routes  TestRuntimeValueReportResolvesOnlyItsOwnNodesRoute
+//	12 snapshot filter     TestRuntimeStartupSkipsStateForUnroutableAsleepSnapshot
 
 import (
 	"context"
@@ -635,6 +637,90 @@ func TestResolveCurrentValueRequiresExactUnkeyedIdentity(t *testing.T) {
 	numeric := numericPropertyValueFixture(commandClassBinarySwitch, 0, "true")
 	if numericOnly, found := resolveCurrentValue([]valueState{numeric}, planned); found {
 		t.Fatalf("resolveCurrentValue(numeric) = %q, want no resolution", numericOnly)
+	}
+}
+
+// This test characterizes the runtime invariant that one node's Value report
+// projects only onto that node's State. It is a structural check, not a fault
+// detector for the node-scoped route key: the runtime already filtered routes by
+// NodeID at the call site before the key carried a node, so this test passes with
+// or without node-scoped lookup. TestNewRouteSnapshotScopesValuesToTheirNode is
+// the fault detector for the node-scoped key.
+func TestRuntimeValueReportResolvesOnlyItsOwnNodesRoute(t *testing.T) {
+	t.Parallel()
+	recorder := &runtimeRecorder{}
+	session := newRuntimeSession(recorder)
+	const garageNodeID = testNodeID + 1
+	connection := newFakeConnection(
+		recorder,
+		versionFixture(),
+		snapshotFixture(
+			testHomeID,
+			switchNodeFixture(testNodeID, "Kitchen Switch"),
+			switchNodeFixture(garageNodeID, "Garage Switch"),
+		),
+	)
+	reconciledRuntime(t, session, connection)
+	waitForRoutesActivated(t, session)
+	waitFor(t, "both snapshot Observations", func() bool {
+		return recorder.count("observation:") == 2
+	})
+	kitchenPowerID := routeEntityID(testNodeID, "power")
+	garagePowerID := routeEntityID(garageNodeID, "power")
+
+	// An update for the kitchen node's Binary current Value must project only
+	// onto the kitchen node, even though the garage node reports the same Value
+	// ID on the same endpoint.
+	connection.events <- receivedEvent{
+		Event: valueUpdatedEventForNode(
+			testNodeID,
+			testValueID(commandClassBinarySwitch, 0, valuePropertyCurrentValue),
+			"false",
+		),
+		ReceivedAt: time.Date(2026, time.February, 3, 4, 5, 6, 0, time.UTC),
+	}
+	waitFor(t, "the kitchen node's updated State", func() bool {
+		observation, ok := observationForEntity(session, kitchenPowerID)
+		return ok && string(observation.Value) == "false"
+	})
+	garage, ok := observationForEntity(session, garagePowerID)
+	if !ok || string(garage.Value) != "true" {
+		t.Fatalf("garage State = %q, %t, want its own unchanged true State", garage.Value, ok)
+	}
+	if got := len(session.recordedObservations()); got != 3 {
+		t.Fatalf("Observations = %d, want 3 (one update for the reporting node only)", got)
+	}
+}
+
+// This test protects the startup snapshot's routable-route filter, and fails if
+// an inconsistent snapshot that is asleep yet advertises listening publishes
+// State from a node v1 refuses to route, or reports that node available.
+func TestRuntimeStartupSkipsStateForUnroutableAsleepSnapshot(t *testing.T) {
+	t.Parallel()
+	recorder := &runtimeRecorder{}
+	session := newRuntimeSession(recorder)
+	node := switchNodeFixture(testNodeID, "Sleeping Switch")
+	// Inconsistent upstream state: the node is asleep but still reports itself as
+	// listening. v1 trusts the asleep status, so the node keeps its registration
+	// and mappings but installs no route.
+	node.Status = nodeStatusAsleep
+	node.IsListening = true
+	connection := newFakeConnection(
+		recorder,
+		versionFixture(),
+		snapshotFixture(testHomeID, node),
+	)
+	reconciledRuntime(t, session, connection)
+	waitForRoutesActivated(t, session)
+
+	powerID := routeEntityID(testNodeID, "power")
+	waitFor(t, "the asleep availability", func() bool {
+		report, ok := session.lastAvailability(powerID)
+		return ok && report.Status == adapter.AvailabilityUnavailable &&
+			report.ReasonCode == nodeAsleepReason
+	})
+	if got := len(session.recordedObservations()); got != 0 {
+		t.Fatalf("Observations = %d, want 0 from an unroutable asleep snapshot", got)
 	}
 }
 

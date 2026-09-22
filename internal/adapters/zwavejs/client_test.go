@@ -1370,6 +1370,120 @@ func TestSnapshotDecodesNumericAndAmbiguousValues(t *testing.T) {
 	}
 }
 
+// This test protects value property decoding, and fails if an explicit JSON null
+// property is classified as numeric, if a numeric property name stops being
+// recorded for per-capability isolation, or if either shape makes the enclosing
+// snapshot undecodable.
+func TestValuePropertyClassifiesNullAndNumeric(t *testing.T) {
+	t.Parallel()
+	var numeric valueProperty
+	if err := json.Unmarshal([]byte(`9`), &numeric); err != nil {
+		t.Fatalf("numeric property: %v", err)
+	}
+	if !numeric.Numeric || numeric.Invalid || numeric.Name != "" {
+		t.Fatalf("numeric property = %#v, want a recorded numeric name", numeric)
+	}
+	var named valueProperty
+	if err := json.Unmarshal([]byte(`"currentValue"`), &named); err != nil {
+		t.Fatalf("string property: %v", err)
+	}
+	if named.Numeric || named.Invalid || named.Name != "currentValue" {
+		t.Fatalf("string property = %#v, want currentValue", named)
+	}
+	var null valueProperty
+	if err := json.Unmarshal([]byte(`null`), &null); err != nil {
+		t.Fatalf("null property did not decode: %v", err)
+	}
+	if !null.Invalid || null.Numeric || null.Name != "" {
+		t.Fatalf("null property = %#v, want a recorded invalid property", null)
+	}
+	// A null property is invalid, not fatal: it is confined to its own Value
+	// instead of failing the enclosing snapshot or its siblings.
+	frame := `{"state":{"controller":{"homeId":439041101},"nodes":[{"nodeId":23,"values":[` +
+		`{"commandClass":37,"property":null,"metadata":{"type":"boolean"},"value":true},` +
+		`{"commandClass":37,"property":"currentValue","metadata":{"type":"boolean"},"value":true}]}]}}`
+	var snapshot networkSnapshot
+	if err := json.Unmarshal([]byte(frame), &snapshot); err != nil {
+		t.Fatalf("snapshot with a null property did not decode: %v", err)
+	}
+	values := snapshot.State.Nodes[0].Values
+	if len(values) != 2 {
+		t.Fatalf("values = %d, want 2", len(values))
+	}
+	if !values[0].Property.Invalid {
+		t.Fatalf("null property = %#v, want an invalid property", values[0].Property)
+	}
+	if values[1].Property.Name != "currentValue" || values[1].Property.Invalid {
+		t.Fatalf("sibling property = %#v, want currentValue", values[1].Property)
+	}
+}
+
+// This test protects the local planned-Value-ID guard, and fails if a Value ID
+// this Adapter never plans (a numeric property name, a null/empty property, or a
+// propertyKey) is written upstream.
+func TestValidatePlannedValueIDRejectsUnplannableValues(t *testing.T) {
+	t.Parallel()
+	planned := testValueID(testCommandClassBinarySwitch, 0, valuePropertyTargetValue)
+	if err := validatePlannedValueID(planned); err != nil {
+		t.Fatalf("planned Value ID rejected: %v", err)
+	}
+	keyed := planned
+	keyed.PropertyKey = json.RawMessage("2")
+	if err := validatePlannedValueID(keyed); err == nil {
+		t.Fatal("a propertyKey-bearing Value ID was accepted")
+	}
+	numeric := valueID{
+		CommandClass: testCommandClassMultilevelSwitch,
+		Property:     valueProperty{Numeric: true},
+	}
+	if err := validatePlannedValueID(numeric); err == nil {
+		t.Fatal("a numeric property Value ID was accepted")
+	}
+	// A caller-built null property, whether it records an explicit null or is an
+	// unfilled zero value, must still be refused.
+	nullProperty := planned
+	nullProperty.Property = valueProperty{Invalid: true}
+	if err := validatePlannedValueID(nullProperty); err == nil {
+		t.Fatal("a null property Value ID was accepted")
+	}
+	emptyProperty := planned
+	emptyProperty.Property = valueProperty{}
+	if err := validatePlannedValueID(emptyProperty); err == nil {
+		t.Fatal("an empty property Value ID was accepted")
+	}
+	// An explicit JSON null key counts as absent, exactly as it does during
+	// planning and Event decoding.
+	nullKeyed := planned
+	nullKeyed.PropertyKey = json.RawMessage("null")
+	if err := validatePlannedValueID(nullKeyed); err != nil {
+		t.Fatalf("an explicit null key was rejected: %v", err)
+	}
+}
+
+// This test protects rejection diagnostics, and fails if a schema-29 Z-Wave
+// error reports the generic message instead of its specific zwaveErrorMessage, or
+// if a rejection without a Z-Wave detail loses its generic message.
+func TestUpstreamRejectionPrefersZWaveErrorMessage(t *testing.T) {
+	t.Parallel()
+	withZWave := resultEnvelope{
+		ErrorCode:         "zwave_error",
+		ZWaveErrorMessage: "The node did not respond",
+		Message:           "generic detail",
+	}.rejection()
+	if !strings.Contains(withZWave.Error(), "The node did not respond") ||
+		strings.Contains(withZWave.Error(), "generic detail") {
+		t.Fatalf("rejection = %q, want the zwaveErrorMessage detail", withZWave)
+	}
+	genericOnly := resultEnvelope{ErrorCode: "unknown", Message: "generic detail"}.rejection()
+	if !strings.Contains(genericOnly.Error(), "generic detail") {
+		t.Fatalf("rejection = %q, want the generic message fallback", genericOnly)
+	}
+	noDetail := resultEnvelope{ErrorCode: "unknown"}.rejection()
+	if !strings.Contains(noDetail.Error(), "no detail") {
+		t.Fatalf("rejection = %q, want the no-detail fallback", noDetail)
+	}
+}
+
 // This test protects fresh poll evidence and fails if a poll result loses its
 // value, or if an unusable poll result corrupts routing instead of ending the
 // generation.

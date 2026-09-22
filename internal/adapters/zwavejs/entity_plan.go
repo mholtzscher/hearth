@@ -158,22 +158,36 @@ type entityPlan struct {
 	Matches func(parameters json.RawMessage, state json.RawMessage) bool
 }
 
-// upstreamValueKey is the exact upstream Value ID identity used to resolve
-// snapshot and Event values against planned Entities. Property is the string
-// property name, which excludes numeric properties by construction.
+// upstreamValueKey is the exact upstream Value identity used to resolve snapshot
+// and Event values against planned Entities. NodeID scopes route lookup to the
+// node that reported the Value, because one Value ID can exist on several nodes.
+// Property is the string property name, which excludes numeric properties by
+// construction.
 type upstreamValueKey struct {
+	NodeID       int
 	CommandClass int
 	Endpoint     int
 	Property     string
 }
 
-// valueKey is the resolution key of one Value ID.
+// valueKey is the node-independent identity of one Value ID. It is used to
+// compare Value identities within one node, for example when deciding whether a
+// plan reads and writes the same Value.
 func (id valueID) valueKey() upstreamValueKey {
 	return upstreamValueKey{
 		CommandClass: id.CommandClass,
 		Endpoint:     id.Endpoint,
 		Property:     id.Property.Name,
 	}
+}
+
+// routeKey is the route lookup key of one Value ID reported by one node. It
+// includes the node ID, so a Value ID that exists on several nodes resolves only
+// against the reporting node's routes and never needs consumer re-filtering.
+func (id valueID) routeKey(nodeID int) upstreamValueKey {
+	key := id.valueKey()
+	key.NodeID = nodeID
+	return key
 }
 
 // entityRoute is one planned Entity bound to the canonical Hearth Entity ID
@@ -195,17 +209,21 @@ type routeSnapshot struct {
 	Revision uint64
 	// ByEntityID resolves one canonical Entity ID to its route.
 	ByEntityID map[string]entityRoute
-	// ByValueID resolves one current Value ID to every route that projects it, in
-	// plan order. A Multilevel Switch that owns both power and brightness
-	// resolves one Value to two routes with power first.
+	// ByValueID resolves one node's current Value ID to every route of that node
+	// that projects it, in plan order. The node ID is part of the key, so two
+	// nodes that report the same Value ID never share routes. A Multilevel Switch
+	// that owns both power and brightness resolves one Value to two routes with
+	// power first.
 	ByValueID map[upstreamValueKey][]entityRoute
 }
 
-// routesForValue returns every planned Entity that projects one current Value,
-// in plan order. An empty result means the Value ID is not planned, so a
-// targetValue report or an unplanned Command Class is never State.
-func (snapshot routeSnapshot) routesForValue(id valueID) []entityRoute {
-	return snapshot.ByValueID[id.valueKey()]
+// routesForValue returns every planned Entity of one node that projects one
+// current Value, in plan order. The node ID is part of the lookup key, so a
+// Value ID that exists on several nodes never resolves against a different
+// node's route. An empty result means the Value ID is not planned for that node,
+// so a targetValue report or an unplanned Command Class is never State.
+func (snapshot routeSnapshot) routesForValue(nodeID int, id valueID) []entityRoute {
+	return snapshot.ByValueID[id.routeKey(nodeID)]
 }
 
 // powerPlanInput is the shared construction input of the Binary Switch power
@@ -492,7 +510,7 @@ func newRouteSnapshot(generation, revision uint64, routes []entityRoute) (routeS
 			return routeSnapshot{}, errors.New("zwavejs: duplicate route for Entity " + route.EntityID)
 		}
 		snapshot.ByEntityID[route.EntityID] = route
-		key := route.Plan.CurrentValueID.valueKey()
+		key := route.Plan.CurrentValueID.routeKey(route.Plan.NodeID)
 		snapshot.ByValueID[key] = append(snapshot.ByValueID[key], route)
 	}
 	return snapshot, nil

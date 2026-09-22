@@ -196,31 +196,42 @@ type valueID struct {
 }
 
 // valueProperty is a Value ID property name. Z-Wave JS uses numeric property
-// names for some Command Classes, so decoding records a numeric name instead of
-// failing a whole node frame. A numeric name never produces a plan and is never
-// written upstream.
+// names for some Command Classes and can report an explicit JSON null, so
+// decoding records those shapes instead of failing a whole node frame. Neither a
+// numeric nor a null property produces a plan or is written upstream.
 type valueProperty struct {
-	// Name is the property name, empty when the upstream name was numeric.
+	// Name is the property name, empty when the upstream name was numeric or
+	// null.
 	Name string
 
 	// Numeric records that the upstream property was a JSON number.
 	Numeric bool
+
+	// Invalid records that the upstream property was an explicit JSON null. A
+	// null property names no Value, so it is never a plan candidate and never a
+	// Command target.
+	Invalid bool
 }
 
-// UnmarshalJSON accepts the documented string property name and records a
-// numeric property name without failing the enclosing frame.
+// UnmarshalJSON accepts the documented string property name, records a numeric
+// property name, and classifies an explicit JSON null as invalid, without
+// failing the enclosing frame in any of those cases.
 func (property *valueProperty) UnmarshalJSON(data []byte) error {
 	trimmed := bytes.TrimSpace(data)
-	if len(trimmed) == 0 {
+	switch {
+	case len(trimmed) == 0:
 		return errors.New("zwavejs: value ID property is empty")
-	}
-	if trimmed[0] == '"' {
+	case bytes.Equal(trimmed, []byte("null")):
+		*property = valueProperty{Invalid: true}
+		return nil
+	case trimmed[0] == '"':
 		var name string
 		if err := json.Unmarshal(trimmed, &name); err != nil {
 			return errors.New("zwavejs: value ID property is not a JSON string")
 		}
 		property.Name = name
 		property.Numeric = false
+		property.Invalid = false
 		return nil
 	}
 	var number json.Number
@@ -229,14 +240,15 @@ func (property *valueProperty) UnmarshalJSON(data []byte) error {
 	}
 	property.Name = ""
 	property.Numeric = true
+	property.Invalid = false
 	return nil
 }
 
-// MarshalJSON writes the documented string property name. A numeric property
-// name has no upstream request encoding, so marshalling one fails loudly
+// MarshalJSON writes the documented string property name. A numeric or invalid
+// property has no upstream request encoding, so marshalling one fails loudly
 // instead of sending a silently different Value ID.
 func (property valueProperty) MarshalJSON() ([]byte, error) {
-	if property.Numeric || property.Name == "" {
+	if property.Numeric || property.Invalid || property.Name == "" {
 		return nil, errors.New("zwavejs: value ID property is not a usable property name")
 	}
 	return json.Marshal(property.Name)
@@ -705,15 +717,20 @@ func (connection *websocketConnection) GetNodeState(ctx context.Context, nodeID 
 }
 
 // validatePlannedValueID refuses a Value ID this client cannot write. A local
-// caller bug must not end the generation through a failed JSON encode.
+// caller bug must not end the generation through a failed JSON encode. v1 never
+// plans an invalid (null) property or a propertyKey, so both are refused
+// defensively: an explicit JSON null key counts as absent, exactly as it does
+// during planning.
 func validatePlannedValueID(id valueID) error {
 	switch {
 	case id.CommandClass <= 0:
 		return &invalidRequestError{Reason: "the Value ID needs a Command Class"}
 	case id.Endpoint < 0:
 		return &invalidRequestError{Reason: "the Value ID endpoint cannot be negative"}
-	case id.Property.Numeric || id.Property.Name == "":
+	case id.Property.Numeric || id.Property.Invalid || id.Property.Name == "":
 		return &invalidRequestError{Reason: "the Value ID needs a string property name"}
+	case valueIDHasPropertyKey(id):
+		return &invalidRequestError{Reason: "the Value ID cannot carry a property key"}
 	default:
 		return nil
 	}
@@ -1503,9 +1520,13 @@ type upstreamRejectionError struct {
 }
 
 func (err *upstreamRejectionError) Error() string {
-	detail := err.Message
+	// Schema 29 reports Z-Wave failures with zwaveErrorMessage, which is more
+	// specific than the generic message field. Prefer it, and fall back to the
+	// generic message so a rejection without a Z-Wave error still reports what
+	// detail the server sent.
+	detail := err.ZWaveErrorMessage
 	if detail == "" {
-		detail = err.ZWaveErrorMessage
+		detail = err.Message
 	}
 	if detail == "" {
 		detail = "the server reported no detail"

@@ -27,7 +27,7 @@ const (
 	commandClassBasic = 32
 
 	// fixtureSwitchNodeID, fixtureDimmerNodeID, and fixtureScaledNodeID are the
-	// nodes of the sanitized transcript fixtures.
+	// nodes of the synthetic, sanitized transcript fixtures.
 	fixtureSwitchNodeID = 4
 	fixtureDimmerNodeID = 23
 	fixtureScaledNodeID = 30
@@ -262,8 +262,9 @@ func TestEntityIdentityChangesWithHomeIDAndNodeID(t *testing.T) {
 	}
 }
 
-// This test protects A3 for a captured Binary Switch transcript, and fails if
-// endpoint ordering, names, keys, external IDs, or Device kind drift.
+// This test protects A3 for a synthetic, source-derived Binary Switch
+// transcript, and fails if endpoint ordering, names, keys, external IDs, or
+// Device kind drift.
 func TestPlanSwitchTranscriptRegistration(t *testing.T) {
 	t.Parallel()
 	version, snapshot := loadTranscriptSnapshot(t, "switch-session.jsonl")
@@ -306,8 +307,8 @@ func TestPlanSwitchTranscriptRegistration(t *testing.T) {
 	}
 }
 
-// This test protects A3 for a captured dimmer transcript, including derived
-// power, native bounds rejection, and labelled endpoints.
+// This test protects A3 for a synthetic, source-derived dimmer transcript,
+// including derived power, native bounds rejection, and labelled endpoints.
 func TestPlanDimmerTranscriptRegistration(t *testing.T) {
 	t.Parallel()
 	version, snapshot := loadTranscriptSnapshot(t, "dimmer-session.jsonl")
@@ -878,11 +879,18 @@ func TestPlanNetworkIsolatesNegativeEndpointValues(t *testing.T) {
 	})
 }
 
-// This test protects structural endpoint isolation, and fails if a repeated Value
-// ID or endpoint index silently plans an ambiguous endpoint or discards a sibling
-// endpoint.
+// This test protects structural endpoint isolation, and fails if a repeated
+// endpoint index is planned. A repeated Value ID no longer isolates a whole
+// endpoint, so its duplicate_value_id case only asserts that the duplicated slot
+// stops planning; TestPlanNetworkDuplicateValueIsolatesOnlyAffectedCapability is
+// the fault detector for sibling-capability preservation.
 func TestPlanNetworkIsolatesAmbiguousEndpoints(t *testing.T) {
 	t.Parallel()
+	// duplicate_value_id confirms a duplicated Value ID is not planned against
+	// its ambiguous slot. It cannot distinguish clearing that slot from isolating
+	// the whole endpoint, because both drop the affected power Entity, so it does
+	// not detect a regression to whole-endpoint isolation; the dedicated
+	// sibling-capability test below is the oracle for that distinction.
 	t.Run("duplicate_value_id", func(t *testing.T) {
 		t.Parallel()
 		duplicate := snapshotValueFixture(
@@ -911,6 +919,92 @@ func TestPlanNetworkIsolatesAmbiguousEndpoints(t *testing.T) {
 		plan := planNetwork(testHomeID, snapshotFixture(testHomeID, node))
 		requirePlanKeys(t, requireOnlyNode(t, plan), []string{"power"})
 	})
+}
+
+// This test protects the adapter spec rule that a duplicate Value ID isolates
+// only the affected endpoint capability, and fails if a repeated Value ID for one
+// Command Class suppresses a valid sibling capability on the same endpoint.
+func TestPlanNetworkDuplicateValueIsolatesOnlyAffectedCapability(t *testing.T) {
+	t.Parallel()
+
+	// A duplicate Binary Switch pair invalidates Binary power only. The endpoint's
+	// valid Multilevel Switch pair still plans derived power and brightness.
+	t.Run("duplicate_binary_keeps_multilevel", func(t *testing.T) {
+		t.Parallel()
+		values := slices.Concat(binaryPairFixture(0), binaryPairFixture(0), levelPairFixture(0))
+		node := nodeFixture(fixtureDimmerNodeID, []endpointState{rootEndpointFixture()}, values)
+		plan := planNetwork(testHomeID, snapshotFixture(testHomeID, node))
+		planned := requireOnlyNode(t, plan)
+		requirePlanKeys(t, planned, []string{"power", "brightness"})
+		power := requirePlan(t, planned, "power")
+		if !power.PowerFromMultilevel {
+			t.Fatal("power did not derive from the valid Multilevel Switch pair")
+		}
+		requireValueID(
+			t, power.CurrentValueID,
+			commandClassMultilevelSwitch, 0, valuePropertyCurrentValue,
+		)
+	})
+
+	// A duplicate Multilevel Switch pair invalidates brightness and derived power
+	// only. The endpoint's valid Binary Switch pair still owns power.
+	t.Run("duplicate_multilevel_keeps_binary", func(t *testing.T) {
+		t.Parallel()
+		values := slices.Concat(binaryPairFixture(0), levelPairFixture(0), levelPairFixture(0))
+		node := nodeFixture(fixtureDimmerNodeID, []endpointState{rootEndpointFixture()}, values)
+		plan := planNetwork(testHomeID, snapshotFixture(testHomeID, node))
+		planned := requireOnlyNode(t, plan)
+		requirePlanKeys(t, planned, []string{"power"})
+		power := requirePlan(t, planned, "power")
+		if power.PowerFromMultilevel {
+			t.Fatal("power derived from an invalidated Multilevel Switch pair")
+		}
+		requireValueID(
+			t, power.CurrentValueID,
+			commandClassBinarySwitch, 0, valuePropertyCurrentValue,
+		)
+	})
+}
+
+// This test protects per-capability isolation for an explicit JSON null
+// property Value, and fails if one such Value makes the enclosing snapshot or
+// node unplannable, or suppresses a valid sibling capability or endpoint.
+func TestPlanNetworkIsolatesNullPropertyValue(t *testing.T) {
+	t.Parallel()
+	// The null-property Value shares its endpoint and Command Class with a valid
+	// Binary Switch pair, and a second endpoint carries a valid pair of its own.
+	frame := `{"state":{"controller":{"homeId":439041101},"nodes":[{"nodeId":23,` +
+		`"ready":true,"status":4,"interviewStage":"Complete","isListening":true,` +
+		`"name":"Null Property Switch","endpoints":[{"index":0},{"index":1}],` +
+		`"values":[` +
+		`{"commandClass":37,"endpoint":0,"property":null,` +
+		`"metadata":{"type":"boolean","readable":true},"value":true},` +
+		`{"commandClass":37,"endpoint":0,"property":"currentValue",` +
+		`"metadata":{"type":"boolean","readable":true},"value":true},` +
+		`{"commandClass":37,"endpoint":0,"property":"targetValue",` +
+		`"metadata":{"type":"boolean","writeable":true},"value":true},` +
+		`{"commandClass":37,"endpoint":1,"property":"currentValue",` +
+		`"metadata":{"type":"boolean","readable":true},"value":false},` +
+		`{"commandClass":37,"endpoint":1,"property":"targetValue",` +
+		`"metadata":{"type":"boolean","writeable":true},"value":false}` +
+		`]}]}}`
+	var snapshot networkSnapshot
+	if err := json.Unmarshal([]byte(frame), &snapshot); err != nil {
+		t.Fatalf("snapshot with a null property did not decode: %v", err)
+	}
+	if !snapshot.State.Nodes[0].Values[0].Property.Invalid {
+		t.Fatalf("null property = %#v, want an invalid property", snapshot.State.Nodes[0].Values[0].Property)
+	}
+	planned := requireOnlyNode(t, planNetwork(testHomeID, snapshot))
+	requirePlanKeys(t, planned, []string{"power", "power-ep1"})
+	requireValueID(
+		t, requirePlan(t, planned, "power").CurrentValueID,
+		commandClassBinarySwitch, 0, valuePropertyCurrentValue,
+	)
+	requireValueID(
+		t, requirePlan(t, planned, "power-ep1").CurrentValueID,
+		commandClassBinarySwitch, 1, valuePropertyCurrentValue,
+	)
 }
 
 // This test protects A3 ordering, and fails if endpoints are planned out of
@@ -1249,7 +1343,7 @@ func TestNewRouteSnapshotIndexesValuesInPlanOrder(t *testing.T) {
 	if snapshotRoutes.Generation != 7 || snapshotRoutes.Revision != 3 {
 		t.Fatalf("route snapshot = %#v", snapshotRoutes)
 	}
-	shared := snapshotRoutes.routesForValue(testValueID(
+	shared := snapshotRoutes.routesForValue(fixtureDimmerNodeID, testValueID(
 		testCommandClassMultilevelSwitch, 0, valuePropertyCurrentValue,
 	))
 	if len(shared) != 2 {
@@ -1258,7 +1352,7 @@ func TestNewRouteSnapshotIndexesValuesInPlanOrder(t *testing.T) {
 	if shared[0].Plan.Kind != entityKindPower || shared[1].Plan.Kind != entityKindBrightness {
 		t.Fatalf("shared routes = %#v, want power then brightness", shared)
 	}
-	if targetRoutes := snapshotRoutes.routesForValue(testValueID(
+	if targetRoutes := snapshotRoutes.routesForValue(fixtureDimmerNodeID, testValueID(
 		testCommandClassMultilevelSwitch, 0, valuePropertyTargetValue,
 	)); len(targetRoutes) != 0 {
 		t.Fatalf("target Value resolved to %d routes, want none", len(targetRoutes))
@@ -1276,6 +1370,48 @@ func TestNewRouteSnapshotIndexesValuesInPlanOrder(t *testing.T) {
 	}
 	if len(empty.ByEntityID) != 0 {
 		t.Fatalf("empty route snapshot = %#v", empty)
+	}
+}
+
+// This test protects the node-scoped route index, and fails if two planned nodes
+// that report an identical Value ID resolve to each other's routes instead of
+// their own.
+func TestNewRouteSnapshotScopesValuesToTheirNode(t *testing.T) {
+	t.Parallel()
+	const garageNodeID = testNodeID + 1
+	plan := planNetwork(testHomeID, snapshotFixture(
+		testHomeID,
+		switchNodeFixture(testNodeID, "Kitchen Switch"),
+		switchNodeFixture(garageNodeID, "Garage Switch"),
+	))
+	if len(plan.Nodes) != 2 {
+		t.Fatalf("planned nodes = %d, want 2", len(plan.Nodes))
+	}
+	session := newRuntimeSession(&runtimeRecorder{})
+	var routes []entityRoute
+	for _, node := range plan.Nodes {
+		binding, err := session.Register(t.Context(), node.Registration)
+		if err != nil {
+			t.Fatal(err)
+		}
+		bound, err := bindEntityRoutes(binding, node)
+		if err != nil {
+			t.Fatal(err)
+		}
+		routes = append(routes, bound...)
+	}
+	snapshotRoutes, err := newRouteSnapshot(1, 1, routes)
+	if err != nil {
+		t.Fatal(err)
+	}
+	id := testValueID(testCommandClassBinarySwitch, 0, valuePropertyCurrentValue)
+	first := snapshotRoutes.routesForValue(testNodeID, id)
+	if len(first) != 1 || first[0].Plan.NodeID != testNodeID {
+		t.Fatalf("routes for node %d = %#v, want only that node's route", testNodeID, first)
+	}
+	second := snapshotRoutes.routesForValue(garageNodeID, id)
+	if len(second) != 1 || second[0].Plan.NodeID != garageNodeID {
+		t.Fatalf("routes for node %d = %#v, want only that node's route", garageNodeID, second)
 	}
 }
 
