@@ -2,6 +2,7 @@ package nats //nolint:testpackage // Tests exercise package-private strict mappi
 
 import (
 	"bytes"
+	"encoding/json"
 	"testing"
 	"time"
 
@@ -45,6 +46,39 @@ func TestMapObservationDeviceFactMapsExactEvidence(t *testing.T) {
 		t.Fatalf("value = %s", observation.Value)
 	case !observation.EmittedAt.Equal(emittedAt):
 		t.Fatalf("emitted at = %s, want %s", observation.EmittedAt, emittedAt)
+	}
+}
+
+func TestMapObservationDeviceFactPreservesAbsentAndNullPredecessors(t *testing.T) {
+	t.Parallel()
+	validator := testValidator(t)
+	for _, test := range []struct {
+		name     string
+		previous json.RawMessage
+		want     []byte
+	}{
+		{name: "absent"},
+		{name: "JSON null", previous: json.RawMessage("null"), want: []byte("null")},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			input := defaultObservationFactInput()
+			input.previousValue = test.previous
+			message := observationFactMessage(t, validator, input)
+			fact, err := mapDeviceFactMessage(validator, message.asWire())
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !bytes.Equal(fact.Observation.PreviousValue, test.want) {
+				t.Fatalf("previous value = %q, want %q", fact.Observation.PreviousValue, test.want)
+			}
+			if (fact.Observation.PreviousValue == nil) != (test.previous == nil) {
+				t.Fatalf(
+					"previous value presence = %v, want %v",
+					fact.Observation.PreviousValue != nil, test.previous != nil,
+				)
+			}
+		})
 	}
 }
 

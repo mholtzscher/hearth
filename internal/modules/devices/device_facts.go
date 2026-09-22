@@ -123,6 +123,7 @@ type ObservationFact struct {
 	EntityID          EntityID
 	Disposition       ObservationDisposition
 	Value             Value // normalized State JSON committed with the Observation
+	PreviousValue     Value // nil means no preceding State; JSON null is the bytes "null"
 	CorrelationID     CorrelationID
 	AdapterReceivedAt time.Time
 	SourceUpdatedAt   *time.Time

@@ -806,9 +806,13 @@ func assertObservationDeviceFactMessage(
 		data.EntityID != string(fact.EntityID) ||
 		data.Disposition != string(fact.Disposition) ||
 		string(data.Value) != string(fact.Value) ||
+		string(data.PreviousValue) != string(fact.PreviousValue) ||
 		data.AdapterReceivedAt != fact.AdapterReceivedAt.UTC().Format(time.RFC3339Nano) ||
 		data.ObservedAt != fact.ObservedAt.UTC().Format(time.RFC3339Nano) {
 		t.Fatalf("observation fact data = %#v", data)
+	}
+	if len(fact.PreviousValue) == 0 && data.PreviousValue != nil {
+		t.Fatalf("absent previous_value encoded as %s", data.PreviousValue)
 	}
 	if fact.SourceUpdatedAt == nil || data.SourceUpdatedAt == nil ||
 		*data.SourceUpdatedAt != fact.SourceUpdatedAt.UTC().Format(time.RFC3339Nano) {

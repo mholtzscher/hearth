@@ -67,12 +67,17 @@ type AutomationComparisonBody struct {
 // AutomationTriggerBody mirrors the strict persisted Trigger shape with a
 // discriminator and family-specific fields, never nullable placeholders.
 type AutomationTriggerBody struct {
-	ID           string                     `json:"id"`
-	Kind         string                     `json:"kind"                   enum:"observation,entity_event"`
-	EntityID     string                     `json:"entity_id"`
-	Dispositions []string                   `json:"dispositions,omitempty"`
-	Comparisons  []AutomationComparisonBody `json:"comparisons,omitempty"`
-	EventName    string                     `json:"event_name,omitempty"`
+	ID string `json:"id"`
+
+	Kind string `json:"kind" enum:"observation,entity_event"`
+
+	EntityID            string                     `json:"entity_id"`
+	Dispositions        []string                   `json:"dispositions,omitempty"`
+	PreviousComparisons []AutomationComparisonBody `json:"previous_comparisons,omitempty" maxItems:"8"`
+
+	Comparisons []AutomationComparisonBody `json:"comparisons,omitempty" maxItems:"8"`
+
+	EventName string `json:"event_name,omitempty"`
 }
 
 // AutomationStepBody is one ordered Command with static parameters.
@@ -121,13 +126,16 @@ type AutomationCollectionOutput struct {
 
 // DeviceFactSummaryBody is the immutable Fact evidence retained in history.
 type DeviceFactSummaryBody struct {
-	FactID           string          `json:"fact_id"`
-	Family           string          `json:"family"                      enum:"observation,entity_event"`
-	EntityID         string          `json:"entity_id"`
-	Variant          string          `json:"variant"`
-	CausationID      string          `json:"causation_id"`
-	ObservationValue json.RawMessage `json:"observation_value,omitempty"`
-	EmittedAt        time.Time       `json:"emitted_at"`
+	FactID string `json:"fact_id"`
+
+	Family string `json:"family" enum:"observation,entity_event"`
+
+	EntityID           string          `json:"entity_id"`
+	Variant            string          `json:"variant"`
+	CausationID        string          `json:"causation_id"`
+	ObservationValue   json.RawMessage `json:"observation_value,omitempty"`
+	PreviousStateValue json.RawMessage `json:"previous_state_value,omitempty"`
+	EmittedAt          time.Time       `json:"emitted_at"`
 }
 
 // AutomationStepAttemptBody exposes only ownership-verified Command evidence.
@@ -259,6 +267,12 @@ func automationTriggerBody(trigger automations.Trigger) AutomationTriggerBody {
 					Operand:  append(json.RawMessage(nil), comparison.Operand...),
 				})
 			}
+			for _, comparison := range trigger.Observation.PreviousComparisons {
+				body.PreviousComparisons = append(body.PreviousComparisons, AutomationComparisonBody{
+					Pointer: comparison.Pointer, Operator: string(comparison.Operator),
+					Operand: append(json.RawMessage(nil), comparison.Operand...),
+				})
+			}
 		}
 	case automations.TriggerKindEntityEvent:
 		if trigger.EntityEvent != nil {
@@ -357,6 +371,9 @@ func deviceFactSummaryBody(summary automations.DeviceFactSummary) DeviceFactSumm
 	}
 	if summary.ObservationValue != nil {
 		body.ObservationValue = append(json.RawMessage(nil), summary.ObservationValue...)
+	}
+	if summary.PreviousStateValue != nil {
+		body.PreviousStateValue = append(json.RawMessage(nil), summary.PreviousStateValue...)
 	}
 	return body
 }

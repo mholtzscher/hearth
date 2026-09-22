@@ -64,6 +64,7 @@ type observationFactInput struct {
 	disposition     string
 	subjectVariant  string
 	value           string
+	previousValue   json.RawMessage
 	emittedAt       time.Time
 	correlationID   string
 	causationID     *string
@@ -159,6 +160,7 @@ func observationFactMessage(
 				EntityID:          input.payloadEntityID,
 				Disposition:       input.disposition,
 				Value:             json.RawMessage(input.value),
+				PreviousValue:     input.previousValue,
 				AdapterReceivedAt: emittedAt,
 				ObservedAt:        emittedAt,
 			},

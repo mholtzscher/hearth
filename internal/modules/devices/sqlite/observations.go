@@ -70,6 +70,12 @@ func (repository *DeviceRepository) ProjectObservation(
 			return devices.ProjectionResult{}, err
 		}
 	}
+	var previousValue devices.Value
+	if disposition == devices.DispositionApplied || disposition == devices.DispositionUnchanged {
+		if view.State != nil {
+			previousValue = append(devices.Value(nil), view.State.Value...)
+		}
+	}
 
 	receiveOrder, err := observationQueries.InsertObservation(ctx, dbsqlc.InsertObservationParams{
 		ObservationID:     string(params.Observation.ID),
@@ -97,7 +103,7 @@ func (repository *DeviceRepository) ProjectObservation(
 	// The device fact is queued inside this transaction, after every sibling
 	// write, so the committed evidence and its pending fact are one atomic unit.
 	pendingFactID, err := repository.queueAcceptedObservationDeviceFact(
-		ctx, stateQueries, params, disposition, normalized,
+		ctx, stateQueries, params, disposition, normalized, previousValue,
 	)
 	if err != nil {
 		return devices.ProjectionResult{}, err

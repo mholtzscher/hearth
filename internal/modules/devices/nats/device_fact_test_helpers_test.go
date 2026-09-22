@@ -364,15 +364,19 @@ func insertObservationDeviceFact(
 	fact devices.ObservationFact,
 ) error {
 	var sourceUpdatedAt any
+	var previousValue any
 	if fact.SourceUpdatedAt != nil {
 		sourceUpdatedAt = fact.SourceUpdatedAt.UTC().Format(time.RFC3339Nano)
+	}
+	if fact.PreviousValue != nil {
+		previousValue = string(fact.PreviousValue)
 	}
 	_, err := database.ExecContext(
 		ctx,
 		`INSERT INTO device_facts_outbox (
 			fact_id, family, entity_id, variant, source_id, correlation_id, created_at,
-			traceparent, tracestate, value_json, adapter_received_at, source_updated_at, observed_at
-		) VALUES (?, 'observation', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			traceparent, tracestate, value_json, previous_value_json, adapter_received_at, source_updated_at, observed_at
+		) VALUES (?, 'observation', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		string(fact.ID),
 		string(fact.EntityID),
 		string(fact.Disposition),
@@ -382,6 +386,7 @@ func insertObservationDeviceFact(
 		fact.Trace.Traceparent,
 		fact.Trace.Tracestate,
 		string(fact.Value),
+		previousValue,
 		fact.AdapterReceivedAt.UTC().Format(time.RFC3339Nano),
 		sourceUpdatedAt,
 		fact.ObservedAt.UTC().Format(time.RFC3339Nano),
@@ -584,6 +589,7 @@ func testObservationFact(
 		EntityID:          entityID,
 		Disposition:       disposition,
 		Value:             devices.Value(value),
+		PreviousValue:     devices.Value(`null`),
 		CorrelationID:     mustCorrelationID(t),
 		AdapterReceivedAt: observedAt.Add(-2 * time.Second),
 		SourceUpdatedAt:   &sourceUpdatedAt,

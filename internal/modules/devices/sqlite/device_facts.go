@@ -155,6 +155,7 @@ func observationFactFromRow(
 		EntityID:          identity.entityID,
 		Disposition:       disposition,
 		Value:             devices.Value(row.ValueJson.String),
+		PreviousValue:     deviceFactValue(row.PreviousValueJson),
 		CorrelationID:     identity.correlationID,
 		AdapterReceivedAt: adapterReceivedAt,
 		SourceUpdatedAt:   sourceUpdatedAt,
@@ -162,6 +163,13 @@ func observationFactFromRow(
 		CreatedAt:         identity.createdAt,
 		Trace:             identity.trace,
 	}, nil
+}
+
+func deviceFactValue(value sql.NullString) devices.Value {
+	if !value.Valid {
+		return nil
+	}
+	return append(devices.Value(nil), value.String...)
 }
 
 func entityEventFactFromRow(
@@ -218,6 +226,7 @@ func (repository *DeviceRepository) queueAcceptedObservationDeviceFact(
 	params devices.ProjectObservationParams,
 	disposition devices.ObservationDisposition,
 	value devices.Value,
+	previousValue devices.Value,
 ) (*devices.DeviceFactID, error) {
 	if disposition != devices.DispositionApplied && disposition != devices.DispositionUnchanged {
 		return nil, nil //nolint:nilnil // No pending fact is a successful projection.
@@ -244,6 +253,7 @@ func (repository *DeviceRepository) queueAcceptedObservationDeviceFact(
 			Traceparent:       params.Observation.Trace.Traceparent,
 			Tracestate:        params.Observation.Trace.Tracestate,
 			ValueJson:         sql.NullString{String: string(value), Valid: true},
+			PreviousValueJson: nullableDeviceFactValue(previousValue),
 			AdapterReceivedAt: sql.NullString{String: formatTime(params.Observation.AdapterReceivedAt), Valid: true},
 			SourceUpdatedAt:   nullableTime(params.Observation.SourceUpdatedAt),
 			ObservedAt:        sql.NullString{String: formatTime(params.ObservedAt), Valid: true},
@@ -252,6 +262,13 @@ func (repository *DeviceRepository) queueAcceptedObservationDeviceFact(
 		return nil, fmt.Errorf("insert observation device fact: %w", insertErr)
 	}
 	return &factID, nil
+}
+
+func nullableDeviceFactValue(value devices.Value) sql.NullString {
+	if value == nil {
+		return sql.NullString{}
+	}
+	return sql.NullString{String: string(value), Valid: true}
 }
 
 // queueAcceptedEntityEventDeviceFact durably enqueues the pending Device Fact

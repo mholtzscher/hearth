@@ -93,6 +93,21 @@ func TestOpenAPIPublishesGeneratedConditionDTOs(t *testing.T) {
 	}
 }
 
+func TestOpenAPIAdvertisesIndependentObservationComparisonLimits(t *testing.T) {
+	t.Parallel()
+	_, openapi, _ := newAutomationHTTP(t, newAPIDevices())
+	document := runtimeOpenAPIMap(t, openapi)
+	schemas := document["components"].(map[string]any)["schemas"].(map[string]any)
+	trigger := schemas["AutomationTriggerBody"].(map[string]any)
+	properties := trigger["properties"].(map[string]any)
+	for _, property := range []string{"previous_comparisons", "comparisons"} {
+		array := properties[property].(map[string]any)
+		if maximum, ok := array["maxItems"].(float64); !ok || maximum != 8 {
+			t.Errorf("%s maxItems = %v, want 8", property, array["maxItems"])
+		}
+	}
+}
+
 // The documented 409 problem must carry the optional history reference so a
 // blocked manual admission is discoverable from the schema alone.
 func TestManualRunOpenAPIDocumentsHistoryReferenceOnConflict(t *testing.T) {

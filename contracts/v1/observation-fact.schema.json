@@ -27,6 +27,7 @@
         "entity_id": { "$ref": "urn:hearth:schema:common:v1#/$defs/ent_id" },
         "disposition": { "enum": ["applied", "unchanged"] },
         "value": true,
+        "previous_value": true,
         "adapter_received_at": { "$ref": "urn:hearth:schema:common:v1#/$defs/utc_timestamp" },
         "source_updated_at": { "$ref": "urn:hearth:schema:common:v1#/$defs/utc_timestamp" },
         "observed_at": { "$ref": "urn:hearth:schema:common:v1#/$defs/utc_timestamp" }

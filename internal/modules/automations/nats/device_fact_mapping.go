@@ -19,6 +19,7 @@ type observationFactData struct {
 	EntityID          string          `json:"entity_id"`
 	Disposition       string          `json:"disposition"`
 	Value             json.RawMessage `json:"value"`
+	PreviousValue     json.RawMessage `json:"previous_value,omitempty"`
 	AdapterReceivedAt string          `json:"adapter_received_at"`
 	SourceUpdatedAt   *string         `json:"source_updated_at,omitempty"`
 	ObservedAt        string          `json:"observed_at"`
@@ -193,6 +194,7 @@ func mapObservationDeviceFact(
 			EntityID:      entityID,
 			Disposition:   devices.ObservationDisposition(envelope.Data.Disposition),
 			Value:         append(devices.Value(nil), envelope.Data.Value...),
+			PreviousValue: append(devices.Value(nil), envelope.Data.PreviousValue...),
 			EmittedAt:     emittedAt,
 		},
 	}
