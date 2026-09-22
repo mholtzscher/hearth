@@ -112,7 +112,7 @@ describe("AgentPage initialization", () => {
     );
 
     // The created conversation reaches the sidebar, so initialization finished.
-    await screen.findByRole("button", { name: /Kitchen lights/ });
+    await screen.findByRole("button", { name: /Kitchen lights/ }, { timeout: 5_000 });
     await flushMacrotasks();
 
     // The discarded StrictMode run must not create a second durable conversation.

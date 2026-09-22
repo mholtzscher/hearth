@@ -24,6 +24,8 @@ func TestObservationValuePointerExists(t *testing.T) {
 		},
 		{name: "array member", value: []any{"off", "on"}, pointer: "/1", want: true},
 		{name: "noncanonical array index", value: []any{"off", "on"}, pointer: "/01", want: false},
+		{name: "signed positive array index", value: []any{"off", "on"}, pointer: "/+1", want: false},
+		{name: "signed negative zero array index", value: []any{"off", "on"}, pointer: "/-0", want: false},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {

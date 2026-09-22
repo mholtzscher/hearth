@@ -98,11 +98,8 @@ func observationValuePointerExists(value any, pointer string) bool {
 				return false
 			}
 		case []any:
-			if token == "" || (len(token) > 1 && token[0] == '0') {
-				return false
-			}
-			index, err := strconv.Atoi(token)
-			if err != nil || index < 0 || index >= len(typed) {
+			index, valid := observationArrayIndex(token)
+			if !valid || index >= len(typed) {
 				return false
 			}
 			current = typed[index]
@@ -111,6 +108,21 @@ func observationValuePointerExists(value any, pointer string) bool {
 		}
 	}
 	return true
+}
+
+// observationArrayIndex parses the same canonical non-negative decimal token
+// accepted by runtime Observation comparison matching.
+func observationArrayIndex(token string) (int, bool) {
+	if token == "" || (len(token) > 1 && token[0] == '0') {
+		return 0, false
+	}
+	for index := range len(token) {
+		if token[index] < '0' || token[index] > '9' {
+			return 0, false
+		}
+	}
+	value, err := strconv.Atoi(token)
+	return value, err == nil
 }
 
 // ValidateConditionEntity reports whether one Entity can be the source of an
