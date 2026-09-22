@@ -27,9 +27,9 @@ import (
 // read, but a typed tool result rounds it before the client sees it.
 
 type mcpAutomationComparisonBody struct {
-	Pointer  string `json:"pointer"`
-	Operator string `json:"operator"`
-	Operand  any    `json:"operand"`
+	ValuePointer string `json:"value_pointer"`
+	Operator     string `json:"operator"`
+	Operand      any    `json:"operand"`
 }
 
 type mcpAutomationTriggerBody struct {
@@ -190,7 +190,7 @@ func mcpConditionTree(condition *AutomationConditionBody) any {
 
 func mcpComparisonOutput(body AutomationComparisonBody) mcpAutomationComparisonBody {
 	return mcpAutomationComparisonBody{
-		Pointer: body.Pointer, Operator: body.Operator, Operand: mcpExactJSON(body.Operand),
+		ValuePointer: body.Pointer, Operator: body.Operator, Operand: mcpExactJSON(body.Operand),
 	}
 }
 

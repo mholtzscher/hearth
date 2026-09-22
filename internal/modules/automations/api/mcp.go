@@ -102,7 +102,7 @@ func RegisterMCP(server *mcpapi.Server, service Automations) {
 	// values while advertising its canonical schema.
 	mcpapi.RegisterWithRequest(server, mcpapi.ToolWithRequest[createAutomationToolInput, mcpAutomationBody]{
 		Name:        mcpCreateAutomationTool,
-		Description: "Create an Automation. Observation comparisons address the Observation value directly: use pointer \"\" for scalar values and never /state/value.",
+		Description: "Create an Automation. Observation comparisons address the Observation value directly: use value_pointer \"\" for scalar values and never /state/value.",
 		InputSchema: mcpAutomationDefinitionInputSchema[createAutomationToolInput](),
 		Handler:     handler.createAutomation,
 	})
@@ -118,7 +118,7 @@ func RegisterMCP(server *mcpapi.Server, service Automations) {
 	})
 	mcpapi.RegisterWithRequest(server, mcpapi.ToolWithRequest[replaceAutomationToolInput, mcpAutomationBody]{
 		Name:        mcpReplaceAutomationTool,
-		Description: "Replace an Automation. Observation comparisons address the Observation value directly: use pointer \"\" for scalar values and never /state/value.",
+		Description: "Replace an Automation. Observation comparisons address the Observation value directly: use value_pointer \"\" for scalar values and never /state/value.",
 		InputSchema: mcpAutomationDefinitionInputSchema[replaceAutomationToolInput](),
 		Handler:     handler.replaceAutomation,
 	})

@@ -228,8 +228,8 @@ The definition's strict JSON representation uses a discriminator and family-spec
       "entity_id": "ent_<sensor>",
       "dispositions": ["applied"],
       "comparisons": [
-        {"pointer": "/temperature", "operator": "gt", "operand": 20},
-        {"pointer": "/occupied", "operator": "eq", "operand": true}
+        {"value_pointer": "/temperature", "operator": "gt", "operand": 20},
+        {"value_pointer": "/occupied", "operator": "eq", "operand": true}
       ]
     }
   ],

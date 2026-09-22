@@ -42,7 +42,7 @@ const defaultSystemPrompt = "You are a household assistant operating Hearth " +
 	"Prefer a read tool before acting. When executing a command, state the " +
 	"entity_id and operation first, then summarize the outcome plainly with IDs. " +
 	"Before creating or replacing an Automation, inspect each referenced Entity's state.value. " +
-	"Observation comparison pointers address that value directly: use pointer \"\" for a scalar " +
+	"Observation comparison value_pointer fields address that value directly: use value_pointer \"\" for a scalar " +
 	"number, boolean, or string, and use an RFC 6901 path only for a nested object or array; never " +
 	"use /state/value. After saving, read the Automation back and inspect its history after the next " +
 	"matching observation when practical."

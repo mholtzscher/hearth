@@ -91,7 +91,7 @@ func (stub *stubAutomationDevices) ValidateObservationTrigger(
 			if pointer != "" {
 				return fmt.Errorf(
 					"%w: comparison pointer %q cannot select from the current Observation value; "+
-						"pointers address the value directly, so use an empty pointer for a scalar and never /state/value",
+						"value_pointer addresses the value directly, so use an empty value_pointer for a scalar and never /state/value",
 					devices.ErrAutomationTriggerSource, pointer,
 				)
 			}
@@ -259,7 +259,7 @@ func TestServiceCreateAutomationRejectsPointerOutsideCurrentObservationValue(t *
 	if !errors.Is(err, automations.ErrInvalidAutomation) {
 		t.Fatalf("error = %v, want ErrInvalidAutomation", err)
 	}
-	if err == nil || !strings.Contains(err.Error(), "use an empty pointer for a scalar") {
+	if err == nil || !strings.Contains(err.Error(), "use an empty value_pointer for a scalar") {
 		t.Fatalf("error = %v, want scalar pointer guidance", err)
 	}
 }

@@ -74,7 +74,7 @@ func (service *Service) ValidateObservationTrigger(
 		}
 		return fmt.Errorf(
 			"%w: entity %q comparison pointer %q cannot select from the current Observation value; "+
-				"pointers address the value directly, so use an empty pointer for a scalar and never /state/value",
+				"value_pointer addresses the value directly, so use an empty value_pointer for a scalar and never /state/value",
 			ErrAutomationTriggerSource, entityID, pointer,
 		)
 	}

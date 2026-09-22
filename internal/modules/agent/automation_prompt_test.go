@@ -11,7 +11,7 @@ func TestDefaultSystemPromptGuidesAutomationCreation(t *testing.T) {
 	t.Parallel()
 	for _, guidance := range []string{
 		"inspect each referenced Entity's state.value",
-		"use pointer \"\" for a scalar",
+		"use value_pointer \"\" for a scalar",
 		"never use /state/value",
 		"read the Automation back",
 		"inspect its history",

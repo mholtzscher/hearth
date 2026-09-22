@@ -31,7 +31,7 @@ function secondAutomation(): Automation {
           kind: "observation",
           entity_id: ENTITY_ID,
           dispositions: ["applied", "unchanged"],
-          comparisons: [{ pointer: "value", operator: "eq", operand: true }],
+          comparisons: [{ value_pointer: "value", operator: "eq", operand: true }],
         },
       ],
       steps: [

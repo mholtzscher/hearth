@@ -119,7 +119,7 @@ export interface Collection<T> {
 
 /** One typed Observation comparison inside an Observation Trigger. */
 export interface AutomationComparison {
-  pointer: string;
+  value_pointer: string;
   operator: "eq" | "ne" | "lt" | "lte" | "gt" | "gte";
   operand: unknown;
 }

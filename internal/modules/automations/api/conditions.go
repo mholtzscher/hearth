@@ -61,7 +61,7 @@ type AutomationConditionBody struct {
 	ID            string                    `json:"id"                        doc:"Node identifier, unique within the tree"`
 	Kind          string                    `json:"kind"                                                                                enum:"entity_state,all,any,not"`
 	EntityID      string                    `json:"entity_id,omitempty"`
-	Pointer       *string                   `json:"pointer,omitempty"         doc:"RFC 6901 JSON Pointer into the selected State value"`
+	ValuePointer  *string                   `json:"value_pointer,omitempty"   doc:"RFC 6901 JSON Pointer into the selected State value"`
 	Operator      string                    `json:"operator,omitempty"                                                                  enum:"eq,ne,lt,lte,gt,gte"`
 	Operand       json.RawMessage           `json:"operand,omitempty"         doc:"Exactly one static JSON operand"`
 	MaxAgeSeconds *int64                    `json:"max_age_seconds,omitempty"`
@@ -115,7 +115,7 @@ func conditionNodeBody(condition automations.Condition) AutomationConditionBody 
 		if condition.EntityState != nil {
 			pointer := condition.EntityState.Pointer
 			body.EntityID = string(condition.EntityState.EntityID)
-			body.Pointer = &pointer
+			body.ValuePointer = &pointer
 			body.Operator = string(condition.EntityState.Operator)
 			body.Operand = append(json.RawMessage(nil), condition.EntityState.Operand...)
 			if condition.EntityState.MaxAgeSeconds != nil {

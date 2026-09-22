@@ -433,7 +433,7 @@ The following `conditions` object can be added to any otherwise valid existing d
         "id": "room-dark",
         "kind": "entity_state",
         "entity_id": "ent_01950000-0000-7000-8000-000000000001",
-        "pointer": "",
+        "value_pointer": "",
         "operator": "lt",
         "operand": 30,
         "max_age_seconds": 300
@@ -445,7 +445,7 @@ The following `conditions` object can be added to any otherwise valid existing d
           "id": "other-room-occupied",
           "kind": "entity_state",
           "entity_id": "ent_01950000-0000-7000-8000-000000000002",
-          "pointer": "",
+          "value_pointer": "",
           "operator": "eq",
           "operand": true,
           "max_age_seconds": 120

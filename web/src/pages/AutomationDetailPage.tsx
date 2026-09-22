@@ -115,7 +115,7 @@ function AutomationEntityLink({
 
 /** One comparison as `pointer operator operand`, e.g. `value eq true`. */
 function comparisonText(comparison: AutomationComparison): string {
-  return `${comparison.pointer} ${comparison.operator} ${JSON.stringify(comparison.operand)}`;
+  return `${comparison.value_pointer} ${comparison.operator} ${JSON.stringify(comparison.operand)}`;
 }
 
 /** Static Step parameters as JSON text; absent or malformed values stay visible. */

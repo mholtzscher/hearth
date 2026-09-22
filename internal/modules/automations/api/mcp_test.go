@@ -691,7 +691,7 @@ func schemaInvalidDefinitionDocuments() map[string]string {
 			`{"id":"c","kind":"all","children":[]},"triggers":[` + observationTrigger +
 			`],"steps":[` + step + `]}`,
 		"Condition with an unknown member": `{"name":"x","enabled":true,"conditions":` +
-			`{"id":"c","kind":"entity_state","entity_id":"e","pointer":"/x","operator":"eq",` +
+			`{"id":"c","kind":"entity_state","entity_id":"e","value_pointer":"/x","operator":"eq",` +
 			`"operand":1,"unexpected":true},"triggers":[` + observationTrigger + `],"steps":[` + step + `]}`,
 	}
 }

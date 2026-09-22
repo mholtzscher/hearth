@@ -86,7 +86,7 @@ curl -X POST http://127.0.0.1:8080/v1/automations \
         "kind": "observation",
         "entity_id": "ent_01950000-0000-7000-8000-000000000010",
         "dispositions": ["applied", "unchanged"],
-        "comparisons": [{"pointer": "", "operator": "eq", "operand": true}]
+        "comparisons": [{"value_pointer": "", "operator": "eq", "operand": true}]
       }
     ],
     "conditions": {
@@ -97,7 +97,7 @@ curl -X POST http://127.0.0.1:8080/v1/automations \
           "id": "room-dark",
           "kind": "entity_state",
           "entity_id": "ent_01950000-0000-7000-8000-000000000001",
-          "pointer": "",
+          "value_pointer": "",
           "operator": "lt",
           "operand": 30,
           "max_age_seconds": 300
@@ -109,7 +109,7 @@ curl -X POST http://127.0.0.1:8080/v1/automations \
             "id": "other-room-occupied",
             "kind": "entity_state",
             "entity_id": "ent_01950000-0000-7000-8000-000000000002",
-            "pointer": "",
+            "value_pointer": "",
             "operator": "eq",
             "operand": true,
             "max_age_seconds": 120
@@ -163,7 +163,7 @@ the room is dark or the adjacent room is unoccupied:
         "id": "room-dark-any",
         "kind": "entity_state",
         "entity_id": "ent_01950000-0000-7000-8000-000000000001",
-        "pointer": "",
+        "value_pointer": "",
         "operator": "lt",
         "operand": 30,
         "max_age_seconds": 300
@@ -175,7 +175,7 @@ the room is dark or the adjacent room is unoccupied:
           "id": "other-room-occupied-any",
           "kind": "entity_state",
           "entity_id": "ent_01950000-0000-7000-8000-000000000002",
-          "pointer": "",
+          "value_pointer": "",
           "operator": "eq",
           "operand": true,
           "max_age_seconds": 120

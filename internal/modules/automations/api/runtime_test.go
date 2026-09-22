@@ -194,7 +194,7 @@ func definitionDocument(t *testing.T, stepCount int) string {
 		"enabled": true,
 		"triggers": [
 			{"id":"warm","kind":"observation","entity_id":%q,"dispositions":["applied"],
-			 "comparisons":[{"pointer":"/temperature","operator":"gt","operand":20}]}
+			 "comparisons":[{"value_pointer":"/temperature","operator":"gt","operand":20}]}
 		],
 		"steps": [%s]
 	}`, string(triggerEntity), steps.String())
