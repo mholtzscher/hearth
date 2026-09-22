@@ -232,6 +232,29 @@ run = '''pnpm --dir web run dev --host 127.0.0.1 --strictPort'''
 description = "Run the dashboard dev server against a remote hearthd (override with HEARTHD_URL and NATS_MONITOR_URL)"
 run = '''HEARTHD_URL="${HEARTHD_URL:-http://wanda:8081}" NATS_MONITOR_URL="${NATS_MONITOR_URL:-http://wanda:8222}" pnpm --dir web run dev'''
 
+[tasks."flue-agent-install"]
+description = "Install the isolated Flue agent spike dependencies"
+run = '''pnpm --dir agent-flue install --frozen-lockfile'''
+
+[tasks."flue-agent-build"]
+description = "Typecheck and build the isolated Flue agent spike"
+depends = ["flue-agent-install"]
+run = '''pnpm --dir agent-flue run build'''
+
+[tasks."flue-agent-test"]
+description = "Run the isolated Flue agent spike tests"
+depends = ["flue-agent-install"]
+run = '''pnpm --dir agent-flue run test'''
+
+[tasks."flue-agent-dev"]
+description = "Run the Flue agent spike on 127.0.0.1:5174"
+run = '''pnpm --dir agent-flue run dev --port 5174'''
+
+[tasks."flue-agent-start"]
+description = "Run the built Flue agent spike on 127.0.0.1:5174"
+depends = ["flue-agent-build"]
+run = '''pnpm --dir agent-flue run start'''
+
 [tasks."mutation-test"]
 description = "Run Gremlins mutation testing (pass package paths after --)"
 run = '''gremlins unleash'''
@@ -240,6 +263,8 @@ run = '''gremlins unleash'''
 description = "Run all validation"
 depends = [
   "format-check",
+  "flue-agent-build",
+  "flue-agent-test",
   "generate-check",
   "real-device-start-test",
   "simulator-start-test",

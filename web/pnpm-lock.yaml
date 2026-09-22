@@ -8,6 +8,12 @@ importers:
 
   .:
     dependencies:
+      '@flue/react':
+        specifier: 2.1.0
+        version: 2.1.0(@flue/sdk@2.1.0)(react@19.2.8)
+      '@flue/sdk':
+        specifier: 2.1.0
+        version: 2.1.0
       '@fontsource-variable/geist':
         specifier: ^5.3.0
         version: 5.3.0
@@ -284,6 +290,11 @@ packages:
   '@dotenvx/primitives@0.8.0':
     resolution: {integrity: sha512-VYJy0uhFm9zTJ1TxBaW/pA8bjbOM/OttaNMwZ1RHG4JKyRG7DhSdiqD1ipQoAyoD22olUtxbP78W9xY3Wd11bg==}
 
+  '@durable-streams/client@0.2.7':
+    resolution: {integrity: sha512-oxWbPEo8NO1Ruv9UgUVu3OswdE2z5ERhjccaujlpwe4tWuVd+Y/kdx+HtrkOnwN+bnRHTlxKYUNY8JTyrnhKew==}
+    engines: {node: '>=18.0.0'}
+    hasBin: true
+
   '@esbuild/aix-ppc64@0.28.2':
     resolution: {integrity: sha512-XExcO+dvLKvVtNTibSTBej1NCAbaGhWn9Ww1ZPx80qsahhPFe/8jgWP0IchNe0F3HwkU7n8ejhH8bjonqht8mQ==}
     engines: {node: '>=18'}
@@ -464,6 +475,15 @@ packages:
   '@floating-ui/utils@0.2.12':
     resolution: {integrity: sha512-HpCo8tmWzLVad5s2d19EhAz5zqrrQ6s69qd6moPMQvkOuSwDT1YgRfWSVuc4ennqrgv3OHppiOGMQ7oC13yIww==}
 
+  '@flue/react@2.1.0':
+    resolution: {integrity: sha512-pGrVgwbxYPF1iYcZCyzQ1XGbFy6oOGjJQpl7cNepjqxFN/gGUd46hkqMAsTRJA6IbkPkqKXE/8BVJVADuxWwaA==}
+    peerDependencies:
+      '@flue/sdk': 2.1.0
+      react: '>=18'
+
+  '@flue/sdk@2.1.0':
+    resolution: {integrity: sha512-SZTrvxn9pqflPphZ18Lc3YV3GINK42WiHu06/Ndue+eWmzmhu0AwWNrwk7pmGFW/a6AWl1M2l3gKbQBHJQHOQA==}
+
   '@fontsource-variable/geist@5.3.0':
     resolution: {integrity: sha512-j0m+vLQuG5XAYoHtGCVu0spvlGreR3EzpECUVzkFmI1mTVnAO38l/NEPDCFgZ177JxzYJCLSmTQibIiYPilGrA==}
 
@@ -488,6 +508,9 @@ packages:
 
   '@jridgewell/trace-mapping@0.3.31':
     resolution: {integrity: sha512-zzNR+SdQSDJzc8joaeP8QQoCQr8NuYx2dIIytl1QeBEZHJ9uW6hebsrYgbz8hJwUQao3TWCMtmfV8Nu1twOLAw==}
+
+  '@microsoft/fetch-event-source@2.0.1':
+    resolution: {integrity: sha512-W6CLUJ2eBMw3Rec70qrsEW0jOm/3twwJv21mrmj2yORiaVmVYGS4sSS5yUwvQc1ZlDLYGPnClVWmUUMagKNsfA==}
 
   '@modelcontextprotocol/sdk@1.30.0':
     resolution: {integrity: sha512-xKd8OIzlqNzcqcNumGAa6g+PW2kjD5vrpcKOnfldAUPP3j7lnqMPwlTXQm8gF+UwH72z0lqaRbjr9hqGz0eITA==}
@@ -3426,6 +3449,10 @@ snapshots:
 
   '@dotenvx/primitives@0.8.0': {}
 
+  '@durable-streams/client@0.2.7':
+    dependencies:
+      '@microsoft/fetch-event-source': 2.0.1
+
   '@esbuild/aix-ppc64@0.28.2':
     optional: true
 
@@ -3523,6 +3550,15 @@ snapshots:
 
   '@floating-ui/utils@0.2.12': {}
 
+  '@flue/react@2.1.0(@flue/sdk@2.1.0)(react@19.2.8)':
+    dependencies:
+      '@flue/sdk': 2.1.0
+      react: 19.2.8
+
+  '@flue/sdk@2.1.0':
+    dependencies:
+      '@durable-streams/client': 0.2.7
+
   '@fontsource-variable/geist@5.3.0': {}
 
   '@hono/node-server@2.1.1(hono@4.13.5)':
@@ -3547,6 +3583,8 @@ snapshots:
     dependencies:
       '@jridgewell/resolve-uri': 3.1.2
       '@jridgewell/sourcemap-codec': 1.6.0
+
+  '@microsoft/fetch-event-source@2.0.1': {}
 
   '@modelcontextprotocol/sdk@1.30.0(zod@3.25.76)':
     dependencies:

@@ -11,6 +11,9 @@ import { defineConfig } from "vite";
 // (default bind 127.0.0.1:8080), then `npm run dev`.
 const HEARTHD = process.env.HEARTHD_URL ?? "http://127.0.0.1:8080";
 const NATS_MONITOR = process.env.NATS_MONITOR_URL ?? "http://127.0.0.1:8222";
+// agent-flue's dev/start server listens on 127.0.0.1:5174; `/flue` is stripped
+// so the same-origin path mirrors the nginx image (see nginx.conf.template).
+const FLUE = process.env.FLUE_URL ?? "http://127.0.0.1:5174";
 
 /**
  * Hosts allowed to reach the dev server. Vite only answers `localhost` and
@@ -68,6 +71,14 @@ export default defineConfig({
       "/nats-monitor": {
         target: NATS_MONITOR,
         rewrite: (path) => path.replace(/^\/nats-monitor/, ""),
+      },
+      // Same-origin path to the Flue app. The sdk reads Flue's SSE updates
+      // view directly; vite streams proxied responses through (the nginx
+      // image disables buffering to match).
+      "/flue/": {
+        target: FLUE,
+        changeOrigin: true,
+        rewrite: (path) => path.replace(/^\/flue(?=\/)/, ""),
       },
     },
   },

@@ -15,5 +15,6 @@ FROM nginx:1.29-alpine
 COPY nginx.conf.template /etc/nginx/templates/default.conf.template
 COPY --from=build /app/dist /usr/share/nginx/html
 ENV HEARTHD_URL=http://127.0.0.1:8080 \
-    NATS_MONITOR_URL=http://127.0.0.1:8222
+    NATS_MONITOR_URL=http://127.0.0.1:8222 \
+    FLUE_URL=http://127.0.0.1:5174
 EXPOSE 80

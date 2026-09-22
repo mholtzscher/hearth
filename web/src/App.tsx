@@ -22,6 +22,7 @@ import DevicesPage from "./pages/DevicesPage.tsx";
 import DeviceFactsPage from "./pages/DeviceFactsPage.tsx";
 import EntitiesPage from "./pages/EntitiesPage.tsx";
 import EntityDetailPage from "./pages/EntityDetailPage.tsx";
+import FlueAgentPage from "./pages/FlueAgentPage.tsx";
 import NatsPage from "./pages/NatsPage.tsx";
 
 const NAV_ITEMS = [
@@ -33,6 +34,7 @@ const NAV_ITEMS = [
   { to: "/nats", label: "NATS" },
   { to: "/device-facts", label: "Device facts" },
   { to: "/agent", label: "Agent" },
+  { to: "/agent-flue", label: "Flue agent" },
 ];
 
 function HealthBadges() {
@@ -164,6 +166,7 @@ function Shell() {
           <Route path="/nats" element={<NatsPage />} />
           <Route path="/device-facts" element={<DeviceFactsPage />} />
           <Route path="/agent" element={<AgentPage />} />
+          <Route path="/agent-flue" element={<FlueAgentPage />} />
         </Routes>
       </main>
     </div>

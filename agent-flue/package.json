@@ -1,0 +1,25 @@
+{
+  "name": "hearth-agent-flue-spike",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Isolated Flue spike for Hearth's household agent",
+  "scripts": {
+    "build": "tsc --noEmit && vite build",
+    "dev": "vite dev --host 127.0.0.1 --strictPort",
+    "start": "node server.mjs",
+    "test": "node --import tsx --test src/**/*.test.ts"
+  },
+  "dependencies": {
+    "@flue/runtime": "2.1.0",
+    "@flue/vite": "2.1.0",
+    "@hono/node-server": "2.0.3",
+    "hono": "4.12.32"
+  },
+  "devDependencies": {
+    "@types/node": "^26.0.0",
+    "tsx": "^4.20.0",
+    "typescript": "~5.9.0",
+    "vite": "^8.0.0"
+  }
+}
