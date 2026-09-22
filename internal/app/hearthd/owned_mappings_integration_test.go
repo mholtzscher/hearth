@@ -15,8 +15,7 @@ import (
 	"github.com/mholtzscher/hearth/sdk/adapter"
 )
 
-func TestRunListsOwnedMappingsAndDrainsEndpoint(t *testing.T) {
-	t.Parallel()
+func TestRunListsOwnedMappingsAndDrainsEndpoint(t *testing.T) { //nolint:paralleltest // Runs a complete Core process.
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 

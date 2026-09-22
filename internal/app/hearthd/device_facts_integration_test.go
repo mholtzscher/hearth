@@ -364,9 +364,8 @@ func assertDeviceFactStreamSet(ctx context.Context, t *testing.T, js jetstream.J
 // restored. Commands are no longer evidence, so no Command fact exists, and the
 // authoritative SQLite records agree with what the facts reported.
 //
-//nolint:gocognit,gocyclo,cyclop // The end-to-end fact slice is clearer as one integration test.
+//nolint:gocognit,gocyclo,cyclop,paralleltest // Process-level integration tests share constrained CI resources.
 func TestCorePublishesDurableDeviceFactsForSDKAndHTTPActivity(t *testing.T) {
-	t.Parallel()
 	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
 	defer cancel()
 	server := startLifecycleNATSServer(t)

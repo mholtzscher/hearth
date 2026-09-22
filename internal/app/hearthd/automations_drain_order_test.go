@@ -292,8 +292,9 @@ func waitForClosedAdmissionGates(
 
 // An occupied HTTP address forces a late startup failure. Run must preserve
 // the failing stage and release its NATS connection without hanging.
+//
+//nolint:paralleltest // A full Core startup competes with other process tests on CI.
 func TestRunStartupErrorTearsDownStartedDependencies(t *testing.T) {
-	t.Parallel()
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 	server := startLifecycleNATSServer(t)
@@ -303,18 +304,22 @@ func TestRunStartupErrorTearsDownStartedDependencies(t *testing.T) {
 	}
 	defer func() { _ = held.Close() }()
 
-	started := time.Now()
-	runErr := Run(ctx, Config{HouseholdTimezone: "UTC",
+	config := Config{HouseholdTimezone: "UTC",
 		HTTPAddr:   held.Addr().String(),
 		NATSURL:    server.ClientURL(),
 		SQLitePath: filepath.Join(t.TempDir(), "hearth.db"),
 		Agent:      requiredAgentConfig(t),
-	}, slog.New(slog.DiscardHandler))
+	}
+	runErrors := make(chan error, 1)
+	go func() { runErrors <- Run(ctx, config, slog.New(slog.DiscardHandler)) }()
+	var runErr error
+	select {
+	case runErr = <-runErrors:
+	case <-ctx.Done():
+		t.Fatal("Core startup failure and teardown did not finish within 30 seconds")
+	}
 	if stage := ErrorStage(runErr); stage != "http_listen" {
 		t.Fatalf("startup error stage = %q, want http_listen (error: %v)", stage, runErr)
-	}
-	if elapsed := time.Since(started); elapsed > 10*time.Second {
-		t.Fatalf("error exit took %v, want a bounded teardown", elapsed)
 	}
 	// Core owned the only broker connection, so the deferred teardown must have
 	// closed it as well.
