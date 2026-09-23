@@ -300,6 +300,14 @@ func validateAutomationTriggerReference(
 		if err != nil {
 			return fmt.Errorf("%w: trigger %q: %w", ErrInvalidAutomation, trigger.ID, err)
 		}
+	case TriggerKindHeldState:
+		pointers := make([]string, len(trigger.HeldState.Comparisons))
+		for index, comparison := range trigger.HeldState.Comparisons {
+			pointers[index] = comparison.Pointer
+		}
+		if err := automationDevices.ValidateObservationTrigger(ctx, trigger.HeldState.EntityID, pointers); err != nil {
+			return fmt.Errorf("%w: trigger %q: %w", ErrInvalidAutomation, trigger.ID, err)
+		}
 	default:
 		return fmt.Errorf("%w: trigger %q has unknown kind %q", ErrInvalidAutomation, trigger.ID, trigger.Kind)
 	}
@@ -345,6 +353,7 @@ type automationTriggerJSON struct {
 	PreviousComparisons []observationComparisonJSON      `json:"previous_comparisons,omitempty"`
 	Comparisons         []observationComparisonJSON      `json:"comparisons,omitempty"`
 	EventName           devices.EntityEventName          `json:"event_name,omitempty"`
+	ForSeconds          *int64                           `json:"for_seconds,omitempty"`
 }
 
 type observationComparisonJSON struct {
@@ -391,6 +400,17 @@ func encodeAutomationTrigger(trigger Trigger) automationTriggerJSON {
 		if trigger.EntityEvent != nil {
 			encoded.EntityID = trigger.EntityEvent.EntityID
 			encoded.EventName = trigger.EntityEvent.EventName
+		}
+	case TriggerKindHeldState:
+		if trigger.HeldState != nil {
+			encoded.EntityID = trigger.HeldState.EntityID
+			encoded.ForSeconds = &trigger.HeldState.ForSeconds
+			for _, comparison := range trigger.HeldState.Comparisons {
+				valuePointer := comparison.Pointer
+				encoded.Comparisons = append(encoded.Comparisons, observationComparisonJSON{
+					ValuePointer: &valuePointer, Operator: comparison.Operator, Operand: comparison.Operand,
+				})
+			}
 		}
 	}
 	return encoded
@@ -471,6 +491,12 @@ func normalizeAutomationTriggerValue(trigger Trigger) (Trigger, error) {
 		normalized.EntityEvent = &EntityEventTrigger{
 			EntityID:  entityEvent.EntityID,
 			EventName: entityEvent.EventName,
+		}
+	case TriggerKindHeldState:
+		heldState := trigger.HeldState
+		normalized.HeldState = &HeldStateTrigger{
+			EntityID: heldState.EntityID, Comparisons: cloneObservationComparisons(heldState.Comparisons),
+			ForSeconds: heldState.ForSeconds,
 		}
 	}
 	return normalized, nil
@@ -581,6 +607,24 @@ func automationTriggerFromJSON(item automationTriggerJSON) Trigger {
 		trigger.Observation = observation
 	case TriggerKindEntityEvent:
 		trigger.EntityEvent = &EntityEventTrigger{EntityID: item.EntityID, EventName: item.EventName}
+	case TriggerKindHeldState:
+		heldState := &HeldStateTrigger{
+			EntityID:    item.EntityID,
+			Comparisons: make([]ObservationComparison, 0, len(item.Comparisons)),
+		}
+		if item.ForSeconds != nil {
+			heldState.ForSeconds = *item.ForSeconds
+		}
+		for _, comparison := range item.Comparisons {
+			valuePointer := comparison.LegacyPointer
+			if comparison.ValuePointer != nil {
+				valuePointer = comparison.ValuePointer
+			}
+			heldState.Comparisons = append(heldState.Comparisons, ObservationComparison{
+				Pointer: *valuePointer, Operator: comparison.Operator, Operand: comparison.Operand,
+			})
+		}
+		trigger.HeldState = heldState
 	}
 	return trigger
 }

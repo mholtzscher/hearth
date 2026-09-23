@@ -31,6 +31,10 @@ SET revision = revision + 1,
 WHERE id = ? AND revision = ?
 RETURNING id, revision, definition_json, created_at, updated_at;
 
+-- name: DeleteAutomationHolds :exec
+DELETE FROM automation_holds
+WHERE automation_id = ?;
+
 -- name: DeleteAutomation :execrows
 DELETE FROM automations
 WHERE id = ? AND revision = ?;
@@ -55,19 +59,20 @@ INSERT INTO automation_history (
     id, automation_id, automation_name, kind, revision, recorded_at,
     fact_id, fact_family, fact_entity_id, fact_variant, fact_causation_id,
     fact_value_json, fact_previous_value_json, fact_emitted_at,
+    hold_trigger_id, hold_started_at, hold_due_at,
     run_snapshot_json, run_source, run_status, run_started_at,
     run_matched_trigger_ids_json,
     condition_mode, condition_bypassed, condition_result, condition_decision_json
-) VALUES (?, ?, ?, 'run', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'running', ?, ?, ?, ?, ?, ?);
+) VALUES (?, ?, ?, 'run', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'running', ?, ?, ?, ?, ?, ?);
 
 -- name: CreateHistorySkip :exec
 INSERT INTO automation_history (
     id, automation_id, automation_name, kind, revision, recorded_at,
     fact_id, fact_family, fact_entity_id, fact_variant, fact_causation_id,
     fact_value_json, fact_previous_value_json, fact_emitted_at, skip_matched_triggers_json, skip_reason,
-    skip_source,
+    skip_source, hold_trigger_id, hold_started_at, hold_due_at,
     condition_mode, condition_bypassed, condition_result, condition_decision_json
-) VALUES (?, ?, ?, 'skip', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+) VALUES (?, ?, ?, 'skip', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
 
 -- name: CreateRunStep :exec
 INSERT INTO automation_run_steps (run_id, position, step_id, status)

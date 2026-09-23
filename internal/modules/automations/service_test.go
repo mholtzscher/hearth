@@ -24,7 +24,7 @@ var _ automations.Repository = (*definitionTestRepository)(nil)
 var _ automations.AutomationDevices = (*devices.Service)(nil)
 
 func (*definitionTestRepository) AdmitDeviceFact(
-	context.Context, automations.DeviceFact, devices.EntityStateSnapshot, time.Time,
+	context.Context, automations.DeviceFact, devices.EntityStateSnapshot, time.Time, time.Time,
 ) (automations.AdmissionResult, error) {
 	return automations.AdmissionResult{}, errRuntimePersistenceUnavailable
 }

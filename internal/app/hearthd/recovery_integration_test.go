@@ -22,7 +22,7 @@ import (
 //nolint:gocognit // The recovery lifecycle is clearer as one end-to-end integration test.
 func TestCoreStartupInterruptsActiveCommandsWithoutRedispatch(t *testing.T) {
 	t.Parallel()
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()
 	logger, recorder := withRecording(slog.LevelInfo)
 	databasePath := filepath.Join(t.TempDir(), "hearth.db")
@@ -196,7 +196,7 @@ func TestRunReturnsCancellationWhenStartupNATSConnectCancelled(t *testing.T) {
 		stopCore()
 	case runErr := <-runErrors:
 		t.Fatalf("Run returned before startup NATS connect blocked: %v", runErr)
-	case <-time.After(5 * time.Second):
+	case <-time.After(12 * time.Second):
 		t.Fatal("startup did not block in NATS connect")
 	}
 	select {

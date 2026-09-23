@@ -107,6 +107,11 @@ func applyRunSummary(
 	}
 	summary.Status = automations.RunStatus(row.RunStatus.String)
 	summary.Source = automations.RunSource(row.RunSource.String)
+	heldState, err := heldStateEvidenceFromRow(row)
+	if err != nil {
+		return err
+	}
+	summary.HeldState = heldState
 	fact, err := factSummaryFromRow(row)
 	if err != nil {
 		return err
@@ -127,6 +132,11 @@ func applySkipSummary(
 	}
 	summary.Reason = automations.SkipReason(row.SkipReason.String)
 	summary.Source = automations.RunSource(row.SkipSource.String)
+	heldState, err := heldStateEvidenceFromRow(row)
+	if err != nil {
+		return err
+	}
+	summary.HeldState = heldState
 	fact, err := factSummaryFromRow(row)
 	if err != nil {
 		return err
@@ -174,6 +184,10 @@ func runFromRow(
 	if err != nil {
 		return automations.Run{}, err
 	}
+	heldState, err := heldStateEvidenceFromRow(row)
+	if err != nil {
+		return automations.Run{}, err
+	}
 	decision, err := decodeConditionDecisionColumn(row)
 	if err != nil {
 		return automations.Run{}, err
@@ -190,6 +204,7 @@ func runFromRow(
 		Snapshot:          snapshot,
 		Source:            automations.RunSource(row.RunSource.String),
 		Fact:              fact,
+		HeldState:         heldState,
 		MatchedTriggerIDs: matched,
 		ConditionDecision: decision,
 		Status:            automations.RunStatus(row.RunStatus.String),
@@ -221,6 +236,10 @@ func skipFromRow(row dbsqlc.AutomationHistory) (automations.Skip, error) {
 	if err != nil {
 		return automations.Skip{}, err
 	}
+	heldState, err := heldStateEvidenceFromRow(row)
+	if err != nil {
+		return automations.Skip{}, err
+	}
 	triggers, err := automations.DecodeMatchedTriggers(json.RawMessage(row.SkipMatchedTriggersJson.String))
 	if err != nil {
 		return automations.Skip{}, fmt.Errorf("stored Skip %q matched triggers: %w", row.ID, err)
@@ -241,12 +260,43 @@ func skipFromRow(row dbsqlc.AutomationHistory) (automations.Skip, error) {
 		Revision:          row.Revision,
 		Source:            source,
 		Fact:              fact,
+		HeldState:         heldState,
 		MatchedTriggers:   triggers,
 		Reason:            automations.SkipReason(row.SkipReason.String),
 		ConditionDecision: decision,
 		SkippedAt:         skippedAt,
 	}
 	return skip, nil
+}
+
+// heldStateEvidenceFromRow decodes the optional held-state provenance columns;
+// partially stored evidence is corruption rather than an absent hold.
+func heldStateEvidenceFromRow(row dbsqlc.AutomationHistory) (*automations.HeldStateEvidence, error) {
+	if !row.HoldTriggerID.Valid && !row.HoldStartedAt.Valid && !row.HoldDueAt.Valid {
+		return nil, nil //nolint:nilnil // Absence of optional hold evidence is not an error.
+	}
+	if !row.HoldTriggerID.Valid || !row.HoldStartedAt.Valid || !row.HoldDueAt.Valid {
+		return nil, fmt.Errorf("%w: stored history %q has incomplete held-state evidence",
+			automations.ErrInvalidAutomation, row.ID)
+	}
+	triggerID, err := automations.ParseTriggerID(row.HoldTriggerID.String)
+	if err != nil {
+		return nil, fmt.Errorf("stored history %q hold trigger: %w", row.ID, err)
+	}
+	startedAt, err := decodeAutomationTimestamp(row.HoldStartedAt.String)
+	if err != nil {
+		return nil, fmt.Errorf("stored history %q hold started_at: %w", row.ID, err)
+	}
+	dueAt, err := decodeAutomationTimestamp(row.HoldDueAt.String)
+	if err != nil {
+		return nil, fmt.Errorf("stored history %q hold due_at: %w", row.ID, err)
+	}
+	evidence := &automations.HeldStateEvidence{TriggerID: triggerID, StartedAt: startedAt, DueAt: dueAt}
+	if !dueAt.After(startedAt) {
+		return nil, fmt.Errorf("%w: stored history %q held-state due time is not after its start",
+			automations.ErrInvalidAutomation, row.ID)
+	}
+	return evidence, nil
 }
 
 // decodeConditionDecisionColumn decodes one persisted Condition decision; a

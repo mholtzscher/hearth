@@ -55,12 +55,21 @@ func (repo *AutomationRepository) transaction(
 	ctx context.Context,
 	action func(*dbsqlc.Queries) error,
 ) error {
+	return repo.transactionWithTx(ctx, func(queries *dbsqlc.Queries, _ *sql.Tx) error {
+		return action(queries)
+	})
+}
+
+func (repo *AutomationRepository) transactionWithTx(
+	ctx context.Context,
+	action func(*dbsqlc.Queries, *sql.Tx) error,
+) error {
 	transaction, err := repo.database.BeginTx(ctx, nil)
 	if err != nil {
 		return fmt.Errorf("automation transaction begin: %w", err)
 	}
 	defer func() { _ = transaction.Rollback() }()
-	if err = action(repo.queries.WithTx(transaction)); err != nil {
+	if err = action(repo.queries.WithTx(transaction), transaction); err != nil {
 		return err
 	}
 	if err = transaction.Commit(); err != nil {

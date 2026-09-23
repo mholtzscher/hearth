@@ -57,7 +57,7 @@ func assertStoredObservationTransition(
 	fact := observationFactFor(t, definition.Triggers[0].Observation.EntityID, admissionNow)
 	fact.Observation.PreviousValue = append(devices.Value(nil), previousValue...)
 	snapshot := transitionHistorySnapshot(t, definition, condition)
-	admitted, err := repository.AdmitDeviceFact(ctx, fact, snapshot, admissionNow)
+	admitted, err := repository.AdmitDeviceFact(ctx, fact, snapshot, admissionNow, admissionNow.Add(-1))
 	if err != nil {
 		t.Fatal(err)
 	}

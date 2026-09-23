@@ -19,6 +19,9 @@ Hearth currently supports:
   `ne`, `lt`, `lte`, `gt`, or `gte`.
 - Numeric ranges expressed as multiple comparisons against one Observation.
 - Entity Event Triggers that match an exact Entity and event name.
+- Held-State Triggers that admit once after a value predicate has remained
+  satisfied for its configured duration, subject to the lifecycle and
+  continuity limits below.
 - Multiple alternative Triggers in one Automation.
 - Optional current-State Conditions composed with `all`, `any`, and `not`.
 - Static Entity Operation Steps executed in order.
@@ -96,9 +99,16 @@ should own behavior such as "above 25 for ten minutes."
 
 ### Temporal evaluation
 
-One durable temporal engine should support:
+The implemented Held-State Trigger provides a narrow form of temporal
+evaluation: it tracks matching State from an eligible Observation and checks
+current State at the deadline. It does not verify every Observation between
+start and expiry, so a brief nonmatch hidden by Fact backlog can be missed.
+Pending time is discarded on Core restart, and a silent Entity does not cause a
+new hold to start after restart. Holds are also cleared by definition
+replacement. This is not a general durable scheduler.
 
-- Held-State and held-threshold duration with `for`.
+Remaining temporal capabilities include:
+
 - Delay Steps.
 - Wait timeouts.
 - Daily and weekday Time Triggers.
@@ -282,7 +292,7 @@ also need support for:
 | Capability | Current Home Assistant examples |
 | --- | --- |
 | State transition or threshold crossing | Air Purifier Auto Shutoff, Laundry Notifications, Backyard Light Toggle |
-| Held predicate with `for` | Apollo OTA Mode, Deep Freezer Notifications, Laundry Notifications, Potted Plant Moisture Alarm, Run HVAC Fan |
+| Held predicate with `for` (partially supported by Held-State Triggers; see limits above) | Apollo OTA Mode, Deep Freezer Notifications, Laundry Notifications, Potted Plant Moisture Alarm, Run HVAC Fan |
 | Clock or sun occurrence | Evening Lighting, Daily Allergy Report, Daily Battery checks, Purge The Air |
 | Trigger-based branching | Air Purifier Auto Shutoff, Deep Freezer Notifications, Evening Lighting, Laundry Notifications, Office Air CO2 Light, Office Control Dial, Shit Box Notifications |
 | Delay or wait | Open/Close Doors, Backyard Light Toggle, Heading Out Button, Run HVAC Fan |
@@ -296,7 +306,8 @@ also need support for:
 ## Suggested implementation order
 
 1. Add State Transitions with exact changes and numeric crossings.
-2. Add durable held predicates with `for`.
+2. Implemented: add Held-State Triggers with `for`; broader durable temporal
+   evaluation remains future work.
 3. Add Trigger-ID branching with `if` and `choose`.
 4. Add a notification provider.
 5. Add the fan, climate, media, select, and helper Operations used by the
