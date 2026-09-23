@@ -436,11 +436,6 @@ type runtimeSession struct {
 	batches           [][]adapter.EntityAvailabilityReport
 	availability      []adapter.EntityAvailabilityReport
 	availabilityError error
-	// availabilityHook intercepts one availability batch before it is answered,
-	// so a test can block a report, fail it, or return the cancellation a
-	// torn-down generation produces. A hook that returns an error answers exactly
-	// as that error would, after the batch is recorded.
-	availabilityHook func(context.Context, []adapter.EntityAvailabilityReport) error
 
 	observations []adapter.Observation
 	linked       []adapter.Observation
@@ -531,7 +526,7 @@ func (session *runtimeSession) SetHealth(ctx context.Context, report adapter.Hea
 
 // ReportEntityAvailability records one availability batch.
 func (session *runtimeSession) ReportEntityAvailability(
-	ctx context.Context,
+	_ context.Context,
 	reports []adapter.EntityAvailabilityReport,
 ) error {
 	session.recorder.add("availability")
@@ -539,21 +534,8 @@ func (session *runtimeSession) ReportEntityAvailability(
 	session.batches = append(session.batches, slices.Clone(reports))
 	session.availability = append(session.availability, reports...)
 	err := session.availabilityError
-	hook := session.availabilityHook
 	session.mutex.Unlock()
-	if hook != nil {
-		return hook(ctx, reports)
-	}
 	return err
-}
-
-// setAvailabilityHook installs one availability interceptor.
-func (session *runtimeSession) setAvailabilityHook(
-	hook func(context.Context, []adapter.EntityAvailabilityReport) error,
-) {
-	session.mutex.Lock()
-	session.availabilityHook = hook
-	session.mutex.Unlock()
 }
 
 // PublishObservation records one ordinary Observation.
@@ -774,12 +756,10 @@ type fakeConnection struct {
 
 	setValueHook  func(context.Context, int, valueID, json.RawMessage) (setValueStatus, error)
 	pollValueHook func(context.Context, int, valueID) (json.RawMessage, time.Time, error)
-	getStateHook  func(context.Context, int) (nodeState, error)
 
 	setCalls  []setValueCall
 	pollCalls []valueID
 	pollTimes []time.Time
-	getCalls  []int
 
 	events    chan receivedEvent
 	lost      chan error
@@ -810,8 +790,8 @@ func newFakeConnection(
 	}
 }
 
-// setNodeState replaces the node state a refresh returns.
-func (connection *fakeConnection) setNodeState(node nodeState) {
+// setPolledNodeState changes the State returned by scripted PollValue calls.
+func (connection *fakeConnection) setPolledNodeState(node nodeState) {
 	connection.mutex.Lock()
 	connection.nodeStates[node.NodeID] = node
 	connection.mutex.Unlock()
@@ -881,26 +861,6 @@ func (connection *fakeConnection) PollValue(
 	return value, time.Now().UTC(), nil
 }
 
-// GetNodeState records and answers one correlated inventory refresh.
-func (connection *fakeConnection) GetNodeState(ctx context.Context, nodeID int) (nodeState, error) {
-	connection.recorder.add("get_state")
-	connection.mutex.Lock()
-	connection.getCalls = append(connection.getCalls, nodeID)
-	hook := connection.getStateHook
-	state, known := connection.nodeStates[nodeID]
-	connection.mutex.Unlock()
-	if hook != nil {
-		return hook(ctx, nodeID)
-	}
-	if err := ctx.Err(); err != nil {
-		return nodeState{}, err
-	}
-	if !known {
-		return nodeState{}, &upstreamRejectionError{ErrorCode: "zwave_error", Message: "no such node"}
-	}
-	return state, nil
-}
-
 // Events delivers validated Events to the runtime pump.
 func (connection *fakeConnection) Events() <-chan receivedEvent { return connection.events }
 
@@ -950,13 +910,6 @@ func (connection *fakeConnection) recordedPollTimes() []time.Time {
 	connection.mutex.Lock()
 	defer connection.mutex.Unlock()
 	return slices.Clone(connection.pollTimes)
-}
-
-// recordedGetCalls returns a copy of every recorded refresh.
-func (connection *fakeConnection) recordedGetCalls() []int {
-	connection.mutex.Lock()
-	defer connection.mutex.Unlock()
-	return slices.Clone(connection.getCalls)
 }
 
 // fakeDialer answers each dial with the next scripted connection generation.
@@ -1055,21 +1008,6 @@ func (recorder *logRecorder) has(name string) bool {
 	recorder.mutex.Lock()
 	defer recorder.mutex.Unlock()
 	return slices.Contains(recorder.events, name)
-}
-
-// count reports how many diagnostics one event name produced, so a test can use
-// a later diagnostic as an ordered barrier behind an Event with no Session
-// boundary.
-func (recorder *logRecorder) count(name string) int {
-	recorder.mutex.Lock()
-	defer recorder.mutex.Unlock()
-	total := 0
-	for _, event := range recorder.events {
-		if event == name {
-			total++
-		}
-	}
-	return total
 }
 
 // startRuntime runs one Adapter and stops it at test cleanup.

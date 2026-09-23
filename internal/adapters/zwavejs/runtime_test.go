@@ -12,7 +12,6 @@ import (
 	"runtime"
 	"slices"
 	"strconv"
-	"sync/atomic"
 	"testing"
 	"time"
 
@@ -104,6 +103,82 @@ func TestRuntimeReportsHealthyBeforeAvailabilityAndObservations(t *testing.T) {
 		if report.Status != adapter.AvailabilityAvailable || report.ReasonCode != "" {
 			t.Fatalf("availability %s = %s/%s, want available", report.EntityID, report.Status, report.ReasonCode)
 		}
+	}
+}
+
+// This test protects reconnect backoff after an interrupted reconciliation and
+// fails if a connection lost during health reporting resets the accumulated delay.
+func TestReconnectBackoffResetsOnlyAfterReconciliationCompletes(t *testing.T) {
+	t.Parallel()
+	recorder := &runtimeRecorder{}
+	session := newRuntimeSession(recorder)
+	node := dimmerNodeFixture(testNodeID, "Hallway Dimmer")
+	failed := newFakeConnection(recorder, versionFixture(), snapshotFixture(testHomeID, node))
+	failed.startErr = errors.New("first generation failed before reconciliation")
+	incomplete := newFakeConnection(recorder, versionFixture(), snapshotFixture(testHomeID, node))
+	healthStarted := make(chan struct{})
+	releaseHealth := make(chan struct{})
+	session.setHealthHook(func(ctx context.Context, report adapter.HealthReport) error {
+		if report.Status != adapter.HealthHealthy {
+			return nil
+		}
+		close(healthStarted)
+		select {
+		case <-releaseHealth:
+			return nil
+		case <-ctx.Done():
+			return ctx.Err()
+		}
+	})
+
+	dialer := &fakeDialer{connections: []*fakeConnection{failed, incomplete}}
+	zwave := newRuntimeAdapter(t, session, dialer)
+	delays := make(chan time.Duration, 4)
+	zwave.retryDelay = func(delay time.Duration) time.Duration {
+		delays <- delay
+		return 0
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() { done <- zwave.Run(ctx) }()
+	t.Cleanup(func() {
+		close(releaseHealth)
+		cancel()
+	})
+
+	var delay time.Duration
+	select {
+	case delay = <-delays:
+	case <-time.After(harnessTimeout):
+		t.Fatal("first connection did not request a retry")
+	}
+	if delay != reconnectMinimum {
+		t.Fatalf("first reconnect delay = %v, want %v", delay, reconnectMinimum)
+	}
+	select {
+	case <-healthStarted:
+	case <-time.After(harnessTimeout):
+		t.Fatal("second generation did not begin healthy reconciliation")
+	}
+	incomplete.fail(errors.New("connection ended before reconciliation completed"))
+	select {
+	case delay = <-delays:
+	case <-time.After(harnessTimeout):
+		t.Fatal("interrupted reconciliation did not request a retry")
+	}
+	if delay != 2*reconnectMinimum {
+		t.Fatalf("interrupted reconciliation retry delay = %v, want %v", delay, 2*reconnectMinimum)
+	}
+
+	cancel()
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatalf("Run returned %v", err)
+		}
+	case <-time.After(harnessTimeout):
+		t.Fatal("Run did not stop")
 	}
 }
 
@@ -254,159 +329,6 @@ func TestRuntimeReportsMissingCapabilityAndNodeStatesUnavailable(t *testing.T) {
 		if registration.BindingKey == nodeBindingKey(fixtureHomeIDText, 31) {
 			t.Fatal("sleeping node was registered")
 		}
-	}
-}
-
-func TestRuntimeSleepInvalidatesRoutesAndWakeUpRestoresThem(t *testing.T) {
-	t.Parallel()
-	recorder := &runtimeRecorder{}
-	session := newRuntimeSession(recorder)
-	node := dimmerNodeFixture(23, "Hallway Dimmer")
-	connection := newFakeConnection(
-		recorder,
-		versionFixture(),
-		snapshotFixture(testHomeID, node),
-	)
-	zwave, _ := reconciledRuntime(t, session, connection)
-	waitForRoutesActivated(t, session)
-
-	powerID := routeEntityID(testNodeID, "power")
-	command := commandFixture(powerID, `{"value":true}`, time.Now().Add(time.Minute))
-	responder := newFakeResponder(recorder, session)
-	if err := <-submitCommand(t, zwave, command, responder); err != nil {
-		t.Fatalf("first Command error: %v", err)
-	}
-	if _, _, total := responderCounts(responder); total != 1 {
-		t.Fatalf("first Command responses = %d, want 1", total)
-	}
-	if got := len(connection.recordedSetCalls()); got != 1 {
-		t.Fatalf("writes = %d, want 1", got)
-	}
-
-	connection.emit(nodeEvent(eventSleep))
-	waitFor(t, "sleep availability", func() bool {
-		report, ok := session.lastAvailability(powerID)
-		return ok && report.Status == adapter.AvailabilityUnavailable && report.ReasonCode == nodeAsleepReason
-	})
-
-	// A sleeping node has no route, so a new Command is rejected without a write.
-	asleepResponder := newFakeResponder(recorder, session)
-	asleepResult := submitCommand(t, zwave, command, asleepResponder)
-	select {
-	case err := <-asleepResult:
-		if err != nil {
-			t.Fatalf("sleeping Command error: %v", err)
-		}
-	case <-time.After(harnessTimeout):
-		t.Fatal("sleeping Command did not respond")
-	}
-	if accepted, rejected, total := responderCounts(asleepResponder); accepted != 0 || rejected != 1 || total != 1 {
-		t.Fatalf("sleeping Command responses = accepted %d rejected %d total %d", accepted, rejected, total)
-	}
-	if got := len(connection.recordedSetCalls()); got != 1 {
-		t.Fatalf("writes while asleep = %d, want 1", got)
-	}
-
-	connection.emit(nodeEvent(eventWakeUp))
-	waitFor(t, "wake up availability", func() bool {
-		report, ok := session.lastAvailability(powerID)
-		return ok && report.Status == adapter.AvailabilityAvailable
-	})
-	if got := len(connection.recordedGetCalls()); got != 1 {
-		t.Fatalf("node refreshes = %d, want 1", got)
-	}
-
-	awakeResponder := newFakeResponder(recorder, session)
-	if err := <-submitCommand(t, zwave, command, awakeResponder); err != nil {
-		t.Fatalf("awake Command error: %v", err)
-	}
-	if accepted, _, _ := responderCounts(awakeResponder); accepted != 1 {
-		t.Fatalf("awake Command accepted = %d, want 1", accepted)
-	}
-	waitFor(t, "second write", func() bool { return len(connection.recordedSetCalls()) == 2 })
-}
-
-func TestRuntimeZeroEntityRefreshInvalidatesRoutesWithoutRegistering(t *testing.T) {
-	t.Parallel()
-	recorder := &runtimeRecorder{}
-	session := newRuntimeSession(recorder)
-	node := dimmerNodeFixture(23, "Hallway Dimmer")
-	connection := newFakeConnection(
-		recorder,
-		versionFixture(),
-		snapshotFixture(testHomeID, node),
-	)
-	zwave, _ := reconciledRuntime(t, session, connection)
-	waitForRoutesActivated(t, session)
-	registrationsBefore := len(session.recordedRegistrations())
-
-	// The refreshed node keeps its identity but loses every planned capability.
-	stripped := dimmerNodeFixture(23, "Hallway Dimmer")
-	stripped.Values = []valueState{
-		snapshotValueFixture(37, 0, "duration", numberMetadata(true, false), "0"),
-	}
-	connection.setNodeState(stripped)
-	connection.emit(nodeEvent(eventValueRemoved))
-
-	powerID := routeEntityID(testNodeID, "power")
-	brightnessID := routeEntityID(testNodeID, "brightness")
-	waitFor(t, "capability removed availability", func() bool {
-		report, ok := session.lastAvailability(brightnessID)
-		return ok && report.ReasonCode == capabilityMissingReason
-	})
-	if got, want := len(session.recordedRegistrations()), registrationsBefore; got != want {
-		t.Fatalf("registrations = %d, want %d (no zero-Entity registration)", got, want)
-	}
-
-	// Routes were invalidated, so a new Command is rejected as unavailable.
-	responder := newFakeResponder(recorder, session)
-	if err := <-submitCommand(
-		t,
-		zwave,
-		commandFixture(powerID, `{"value":true}`, time.Now().Add(time.Minute)),
-		responder,
-	); err != nil {
-		t.Fatalf("Command error: %v", err)
-	}
-	if accepted, rejected, _ := responderCounts(responder); accepted != 0 || rejected != 1 {
-		t.Fatalf("Command responses = accepted %d rejected %d, want 0/1", accepted, rejected)
-	}
-	if got := len(connection.recordedSetCalls()); got != 0 {
-		t.Fatalf("writes = %d, want 0", got)
-	}
-}
-
-func TestRuntimeNodeRemovedReportsNodeMissing(t *testing.T) {
-	t.Parallel()
-	recorder := &runtimeRecorder{}
-	session := newRuntimeSession(recorder)
-	node := dimmerNodeFixture(23, "Hallway Dimmer")
-	connection := newFakeConnection(
-		recorder,
-		versionFixture(),
-		snapshotFixture(testHomeID, node),
-	)
-	zwave, _ := reconciledRuntime(t, session, connection)
-	waitForRoutesActivated(t, session)
-
-	connection.emit(controllerNodeEvent(eventNodeRemoved, node))
-	powerID := routeEntityID(testNodeID, "power")
-	waitFor(t, "node missing availability", func() bool {
-		report, ok := session.lastAvailability(powerID)
-		return ok && report.ReasonCode == nodeMissingReason
-	})
-
-	responder := newFakeResponder(recorder, session)
-	if err := <-submitCommand(
-		t,
-		zwave,
-		commandFixture(powerID, `{"value":true}`, time.Now().Add(time.Minute)),
-		responder,
-	); err != nil {
-		t.Fatalf("Command error: %v", err)
-	}
-	if accepted, rejected, _ := responderCounts(responder); accepted != 0 || rejected != 1 {
-		t.Fatalf("Command responses = accepted %d rejected %d, want 0/1", accepted, rejected)
 	}
 }
 
@@ -689,144 +611,6 @@ func equalStrings(got, want []string) bool {
 	return true
 }
 
-func TestRuntimeIdenticalRefreshKeepsAQueuedAttempt(t *testing.T) {
-	t.Parallel()
-	recorder := &runtimeRecorder{}
-	session := newRuntimeSession(recorder)
-	node := switchNodeFixture(testNodeID, "Kitchen Switch")
-	connection := newFakeConnection(
-		recorder,
-		versionFixture(),
-		snapshotFixture(testHomeID, node),
-	)
-	gate := make(chan struct{})
-	connection.setValueHook = func(
-		ctx context.Context,
-		_ int,
-		_ valueID,
-		_ json.RawMessage,
-	) (setValueStatus, error) {
-		select {
-		case <-gate:
-		case <-ctx.Done():
-			return setValueStatusUnrecognized, ctx.Err()
-		}
-		return setValueStatusSuccess, nil
-	}
-	zwave, _ := reconciledRuntime(t, session, connection)
-	waitForRoutesActivated(t, session)
-
-	entityID := routeEntityID(testNodeID, "power")
-	firstResponder := newFakeResponder(recorder, session)
-	secondResponder := newFakeResponder(recorder, session)
-	first := submitCommand(t, zwave, commandFixture(
-		entityID, `{"value":true}`, time.Now().Add(time.Minute),
-	), firstResponder)
-	waitFor(t, "first write", func() bool { return len(connection.recordedSetCalls()) == 1 })
-	second := submitCommand(t, zwave, commandFixture(
-		entityID, `{"value":false}`, time.Now().Add(time.Minute),
-	), secondResponder)
-
-	// An inventory Event that replans to exactly the same routes must not
-	// invalidate the queued attempt.
-	connection.emit(nodeEvent(eventMetadataUpdated))
-	waitFor(t, "refresh availability", func() bool { return recorder.count("availability") == 2 })
-
-	close(gate)
-	for index, result := range []chan error{first, second} {
-		select {
-		case err := <-result:
-			if err != nil {
-				t.Fatalf("Command %d error: %v", index, err)
-			}
-		case <-time.After(harnessTimeout):
-			t.Fatalf("Command %d did not respond", index)
-		}
-	}
-	if got, want := writeValuesFor(connection, testNodeID), []string{"true", "false"}; !equalStrings(got, want) {
-		t.Fatalf("write values = %v, want %v", got, want)
-	}
-	for index, responder := range []*fakeResponder{firstResponder, secondResponder} {
-		if accepted, rejected, total := responderCounts(responder); accepted != 1 || rejected != 0 || total != 1 {
-			t.Fatalf("Command %d responses = %d/%d/%d, want 1/0/1", index, accepted, rejected, total)
-		}
-	}
-}
-
-func TestRuntimeRouteChangeNeverDispatchesThroughAStaleRevision(t *testing.T) {
-	t.Parallel()
-	recorder := &runtimeRecorder{}
-	session := newRuntimeSession(recorder)
-	node := nodeFixture(testNodeID, []endpointState{rootEndpointFixture(), {
-		Index:         1,
-		EndpointLabel: "Second",
-	}}, binaryPairFixture(0))
-	node.Name = "Kitchen Switch"
-	node.Label = ""
-	node.Values = append(node.Values, levelPairFixture(1)...)
-	connection := newFakeConnection(
-		recorder,
-		versionFixture(),
-		snapshotFixture(testHomeID, node),
-	)
-	gate := make(chan struct{})
-	connection.setValueHook = func(
-		ctx context.Context,
-		_ int,
-		_ valueID,
-		_ json.RawMessage,
-	) (setValueStatus, error) {
-		select {
-		case <-gate:
-		case <-ctx.Done():
-			return setValueStatusUnrecognized, ctx.Err()
-		}
-		return setValueStatusSuccess, nil
-	}
-	zwave, _ := reconciledRuntime(t, session, connection)
-	waitForRoutesActivated(t, session)
-
-	// The root power Command occupies the node's FIFO slot while an endpoint-1
-	// brightness Command waits behind it. Endpoint 1 is the capability the
-	// refreshed plan removes.
-	powerID := routeEntityID(testNodeID, "power")
-	brightnessID := routeEntityID(testNodeID, "brightness-ep1")
-	firstResponder := newFakeResponder(recorder, session)
-	secondResponder := newFakeResponder(recorder, session)
-	first := submitCommand(t, zwave, commandFixture(
-		powerID, `{"value":true}`, time.Now().Add(time.Minute),
-	), firstResponder)
-	waitFor(t, "first write", func() bool { return len(connection.recordedSetCalls()) == 1 })
-	second := submitCommand(t, zwave, commandFixture(
-		brightnessID, `{"value":15}`, time.Now().Add(time.Minute),
-	), secondResponder)
-
-	// Endpoint 1 loses its Multilevel Switch capability, so the node's route set
-	// actually changes.
-	stripped := nodeFixture(testNodeID, []endpointState{rootEndpointFixture()}, binaryPairFixture(0))
-	stripped.Name = "Kitchen Switch"
-	connection.setNodeState(stripped)
-	connection.emit(nodeEvent(eventValueRemoved))
-	waitFor(t, "refresh availability", func() bool { return recorder.count("availability") == 2 })
-
-	close(gate)
-	for index, result := range []chan error{first, second} {
-		select {
-		case <-result:
-		case <-time.After(harnessTimeout):
-			t.Fatalf("Command %d did not respond", index)
-		}
-	}
-	if got := writeCountFor(connection, testNodeID); got != 1 {
-		t.Fatalf("writes = %d, want 1 (the stale queued attempt must not dispatch)", got)
-	}
-	for index, responder := range []*fakeResponder{firstResponder, secondResponder} {
-		if accepted, rejected, total := responderCounts(responder); accepted != 0 || rejected != 1 || total != 1 {
-			t.Fatalf("Command %d responses = %d/%d/%d, want 0/1/1", index, accepted, rejected, total)
-		}
-	}
-}
-
 func TestAdapterBatchesAvailabilityAtTheSDKLimit(t *testing.T) {
 	t.Parallel()
 	recorder := &runtimeRecorder{}
@@ -854,36 +638,39 @@ func TestAdapterBatchesAvailabilityAtTheSDKLimit(t *testing.T) {
 	}
 }
 
-func TestRuntimeNodeAddedRefreshesAndRegistersANewNode(t *testing.T) {
+func TestRuntimeTopologyEventReconnectsAndReconcilesFullSnapshot(t *testing.T) {
 	t.Parallel()
 	recorder := &runtimeRecorder{}
 	session := newRuntimeSession(recorder)
-	connection := newFakeConnection(
+	first := newFakeConnection(
 		recorder,
 		versionFixture(),
 		snapshotFixture(testHomeID),
 	)
-	zwave, _ := reconciledRuntime(t, session, connection)
-	waitForRoutesActivated(t, session)
-
 	added := switchNodeFixture(testNodeID, "New Kitchen Switch")
-	connection.setNodeState(added)
-	connection.emit(controllerNodeEvent(eventNodeAdded, added))
+	second := newFakeConnection(
+		recorder,
+		versionFixture(),
+		snapshotFixture(testHomeID, added),
+	)
+	dialer := &fakeDialer{connections: []*fakeConnection{first, second}}
+	zwave := newRuntimeAdapter(t, session, dialer)
+	zwave.retryDelay = func(time.Duration) time.Duration { return 0 }
+	startRuntime(t, zwave)
+	waitForRoutesActivated(t, session)
+	first.emit(controllerNodeEvent(eventNodeAdded, added))
 
 	powerID := routeEntityID(testNodeID, "power")
-	waitFor(t, "node added availability", func() bool {
+	waitFor(t, "full snapshot availability after reconnect", func() bool {
 		report, ok := session.lastAvailability(powerID)
-		return ok && report.Status == adapter.AvailabilityAvailable
+		return dialer.dialCount() >= 2 && ok && report.Status == adapter.AvailabilityAvailable
 	})
-	if got := len(connection.recordedGetCalls()); got != 1 {
-		t.Fatalf("node refreshes = %d, want 1", got)
-	}
 	registrations := session.recordedRegistrations()
 	if len(registrations) != 1 || registrations[0].BindingKey != nodeBindingKey(fixtureHomeIDText, testNodeID) {
-		t.Fatalf("registrations = %+v, want the added node", registrations)
+		t.Fatalf("registrations = %+v, want registration from the replacement snapshot", registrations)
 	}
 
-	// The refreshed node's routes are live, so a Command dispatches.
+	// The replacement snapshot's routes are live, so a Command dispatches.
 	responder := newFakeResponder(recorder, session)
 	if err := runCommand(
 		t,
@@ -896,6 +683,30 @@ func TestRuntimeNodeAddedRefreshesAndRegistersANewNode(t *testing.T) {
 	if accepted, rejected, total := responderCounts(responder); accepted != 1 || rejected != 0 || total != 1 {
 		t.Fatalf("responses = %d/%d/%d, want 1/0/1", accepted, rejected, total)
 	}
+}
+
+// This test protects removed-node reconciliation and fails if a removed node's
+// previously owned Entity remains available after the replacement snapshot.
+func TestRuntimeNodeRemovalReconcilesMissingEntity(t *testing.T) {
+	t.Parallel()
+	recorder := &runtimeRecorder{}
+	session := newRuntimeSession(recorder)
+	node := switchNodeFixture(testNodeID, "Kitchen Switch")
+	first := newFakeConnection(recorder, versionFixture(), snapshotFixture(testHomeID, node))
+	second := newFakeConnection(recorder, versionFixture(), snapshotFixture(testHomeID))
+	dialer := &fakeDialer{connections: []*fakeConnection{first, second}}
+	zwave := newRuntimeAdapter(t, session, dialer)
+	zwave.retryDelay = func(time.Duration) time.Duration { return 0 }
+	startRuntime(t, zwave)
+	waitForRoutesActivated(t, session)
+
+	powerID := routeEntityID(testNodeID, "power")
+	first.emit(controllerNodeEvent(eventNodeRemoved, node))
+	waitFor(t, "removed Entity unavailable from the replacement snapshot", func() bool {
+		report, ok := session.lastAvailability(powerID)
+		return dialer.dialCount() >= 2 && ok &&
+			report.Status == adapter.AvailabilityUnavailable && report.ReasonCode == nodeMissingReason
+	})
 }
 
 // This test protects the failed-generation recovery ordering and fails if an
@@ -953,134 +764,8 @@ func TestRuntimeConnectionLossDuringReconciliationDropsStaleRecovery(t *testing.
 	assertNotBefore(t, recorder, "health:unhealthy:", "health:healthy")
 }
 
-// This test protects the failed-generation refresh boundary and fails if an
-// in-flight node refresh can still Register, install routes, or report fresh
-// availability after its generation was reported unhealthy.
-func TestRuntimeConnectionLossDuringRefreshNeverRegistersOrReportsAvailability(t *testing.T) {
-	t.Parallel()
-	recorder := &runtimeRecorder{}
-	session := newRuntimeSession(recorder)
-	node := switchNodeFixture(testNodeID, "Kitchen Switch")
-	connection := newFakeConnection(
-		recorder,
-		versionFixture(),
-		snapshotFixture(testHomeID, node),
-	)
-	entered := make(chan struct{}, 1)
-	release := make(chan struct{})
-	connection.getStateHook = func(ctx context.Context, _ int) (nodeState, error) {
-		select {
-		case entered <- struct{}{}:
-		default:
-		}
-		select {
-		case <-ctx.Done():
-			return nodeState{}, ctx.Err()
-		case <-release:
-			return node, nil
-		}
-	}
-	reconciledRuntime(t, session, connection)
-	waitForRoutesActivated(t, session)
-	registrationsBefore := len(session.recordedRegistrations())
-	availabilityBefore := len(session.recordedAvailability())
-
-	connection.emit(nodeEvent(eventMetadataUpdated))
-	select {
-	case <-entered:
-	case <-time.After(harnessTimeout):
-		t.Fatal("the refresh never started")
-	}
-	connection.fail(errors.New("socket closed"))
-	waitFor(t, "unhealthy report", func() bool {
-		return recorder.has("health:unhealthy:" + externalSystemUnavailableReason)
-	})
-
-	// Release the blocked refresh. A generation that already failed must never
-	// register the refreshed node or report its availability.
-	close(release)
-	time.Sleep(testQuietPeriod)
-	if got := len(session.recordedRegistrations()); got != registrationsBefore {
-		t.Fatalf("registrations after loss = %d, want %d", got, registrationsBefore)
-	}
-	if got := len(session.recordedAvailability()); got != availabilityBefore {
-		t.Fatalf("availability reports after loss = %d, want %d", got, availabilityBefore)
-	}
-}
-
-// This test protects the failed-refresh boundary and fails if a refresh that
-// fails unexpectedly reports availability after its generation was dropped,
-// which would describe a route that no longer exists as healthy.
-func TestRuntimeUnexpectedRefreshFailureReportsNoStaleAvailability(t *testing.T) {
-	t.Parallel()
-	recorder := &runtimeRecorder{}
-	session := newRuntimeSession(recorder)
-	node := switchNodeFixture(testNodeID, "Kitchen Switch")
-	connection := newFakeConnection(
-		recorder,
-		versionFixture(),
-		snapshotFixture(testHomeID, node),
-	)
-	connection.getStateHook = func(context.Context, int) (nodeState, error) {
-		return nodeState{}, errors.New("socket read failed")
-	}
-	reconciledRuntime(t, session, connection)
-	waitForRoutesActivated(t, session)
-	availabilityBefore := len(session.recordedAvailability())
-
-	connection.emit(nodeEvent(eventMetadataUpdated))
-	waitFor(t, "the failed refresh to drop the generation", func() bool {
-		return recorder.has("health:unhealthy:" + externalSystemUnavailableReason)
-	})
-	time.Sleep(testQuietPeriod)
-
-	if !session.logs.has("adapter.node_refresh_failed") {
-		t.Fatalf("logs = %v, want a failed refresh diagnosis", session.logs.events)
-	}
-	if got := len(session.recordedAvailability()); got != availabilityBefore {
-		t.Fatalf(
-			"availability reports after the failed refresh = %d, want %d",
-			got, availabilityBefore,
-		)
-	}
-}
-
-// This test protects the node life-cycle event paths and fails if alive or dead
-// events stop updating availability.
-func TestRuntimeAliveAndDeadEventsUpdateAvailability(t *testing.T) {
-	t.Parallel()
-	recorder := &runtimeRecorder{}
-	session := newRuntimeSession(recorder)
-	node := switchNodeFixture(testNodeID, "Kitchen Switch")
-	connection := newFakeConnection(
-		recorder,
-		versionFixture(),
-		snapshotFixture(testHomeID, node),
-	)
-	reconciledRuntime(t, session, connection)
-	waitForRoutesActivated(t, session)
-	powerID := routeEntityID(testNodeID, "power")
-	waitFor(t, "initial availability", func() bool {
-		report, ok := session.lastAvailability(powerID)
-		return ok && report.Status == adapter.AvailabilityAvailable
-	})
-
-	connection.emit(nodeEvent(eventDead))
-	waitFor(t, "dead availability", func() bool {
-		report, ok := session.lastAvailability(powerID)
-		return ok && report.Status == adapter.AvailabilityUnavailable &&
-			report.ReasonCode == nodeDeadReason
-	})
-
-	connection.emit(nodeEvent(eventAlive))
-	waitFor(t, "alive availability", func() bool {
-		report, ok := session.lastAvailability(powerID)
-		return ok && report.Status == adapter.AvailabilityAvailable
-	})
-}
-
-// This test protects the assessed-unknown availability path and fails if a node
-// that was previously known and returns to Unknown is reported available.
+// This test protects assessed-unknown snapshot handling and fails if an unknown
+// node is reported available or retains a Command route from its capabilities.
 func TestRuntimeAssessedNodeUnknownReportsUnavailable(t *testing.T) {
 	t.Parallel()
 	recorder := &runtimeRecorder{}
@@ -1093,244 +778,93 @@ func TestRuntimeAssessedNodeUnknownReportsUnavailable(t *testing.T) {
 		versionFixture(),
 		snapshotFixture(testHomeID, node),
 	)
-	reconciledRuntime(t, session, connection)
+	zwave, _ := reconciledRuntime(t, session, connection)
 
 	waitFor(t, "unknown availability", func() bool {
 		report, ok := session.lastAvailability("ent-23-power")
 		return ok && report.Status == adapter.AvailabilityUnavailable &&
 			report.ReasonCode == nodeUnknownReason
 	})
-}
+	if got := len(session.recordedObservations()); got != 0 {
+		t.Fatalf("snapshot Observations = %d, want none for an unroutable unknown node", got)
+	}
 
-// This test protects the value added path and fails if an added Value stops
-// publishing an ordinary Observation or stops refreshing the node inventory.
-func TestRuntimeValueAddedPublishesObservationAndRefreshes(t *testing.T) {
-	t.Parallel()
-	recorder := &runtimeRecorder{}
-	session := newRuntimeSession(recorder)
-	node := dimmerNodeFixture(testNodeID, "Hallway Dimmer")
-	connection := newFakeConnection(
-		recorder,
-		versionFixture(),
-		snapshotFixture(testHomeID, node),
-	)
-	reconciledRuntime(t, session, connection)
-	waitFor(t, "snapshot Observations", func() bool { return recorder.count("observation:") == 2 })
-
-	added := valueUpdatedEvent(testValueID(commandClassMultilevelSwitch, 0, valuePropertyCurrentValue), "40")
-	added.Event.Event = eventValueAdded
-	connection.emit(added)
-	waitFor(t, "value added Observations", func() bool { return recorder.count("observation:") == 4 })
-	waitFor(t, "value added refresh", func() bool {
-		return len(connection.recordedGetCalls()) == 1
-	})
-	if got, want := observationValues(session.recordedObservations()),
-		[]string{"true", "15", "true", "40"}; !equalStrings(got, want) {
-		t.Fatalf("Observation values = %v, want %v", got, want)
+	responder := newFakeResponder(recorder, session)
+	if err := runCommand(t, zwave, commandFixture(
+		routeEntityID(testNodeID, "power"), `{"value":true}`, time.Now().Add(time.Minute),
+	), responder); err != nil {
+		t.Fatalf("unknown-node Command error: %v", err)
+	}
+	if accepted, rejected, total := responderCounts(responder); accepted != 0 || rejected != 1 || total != 1 {
+		t.Fatalf("unknown-node Command responses = %d/%d/%d, want 0/1/1", accepted, rejected, total)
+	}
+	if got := len(connection.recordedSetCalls()); got != 0 {
+		t.Fatalf("unknown-node writes = %d, want 0", got)
 	}
 }
 
-// This test protects the interview completed path and fails if a completed
-// interview stops refreshing and re-registering an eligible node.
-func TestRuntimeInterviewCompletedRefreshesAndReRegisters(t *testing.T) {
+// This test protects dead-node snapshot handling and fails if a dead node's
+// otherwise valid capabilities are installed as Command routes.
+func TestRuntimeDeadSnapshotDoesNotInstallCommandRoutes(t *testing.T) {
+	t.Parallel()
+	recorder := &runtimeRecorder{}
+	session := newRuntimeSession(recorder)
+	node := switchNodeFixture(testNodeID, "Dead Switch")
+	node.Status = nodeStatusDead
+	session.setMappings(ownedMappingFixture(testNodeID, "power", "ent-23-power"))
+	connection := newFakeConnection(recorder, versionFixture(), snapshotFixture(testHomeID, node))
+	zwave, _ := reconciledRuntime(t, session, connection)
+	waitForRoutesActivated(t, session)
+
+	waitFor(t, "dead availability", func() bool {
+		report, ok := session.lastAvailability("ent-23-power")
+		return ok && report.Status == adapter.AvailabilityUnavailable && report.ReasonCode == nodeDeadReason
+	})
+	if got := len(session.recordedObservations()); got != 0 {
+		t.Fatalf("snapshot Observations = %d, want none for a dead node", got)
+	}
+
+	responder := newFakeResponder(recorder, session)
+	if err := runCommand(t, zwave, commandFixture(
+		routeEntityID(testNodeID, "power"), `{"value":true}`, time.Now().Add(time.Minute),
+	), responder); err != nil {
+		t.Fatalf("dead-node Command error: %v", err)
+	}
+	if accepted, rejected, total := responderCounts(responder); accepted != 0 || rejected != 1 || total != 1 {
+		t.Fatalf("dead-node Command responses = %d/%d/%d, want 0/1/1", accepted, rejected, total)
+	}
+	if got := len(connection.recordedSetCalls()); got != 0 {
+		t.Fatalf("dead-node writes = %d, want 0", got)
+	}
+}
+
+// This test protects immediate dead-event invalidation and fails if a route
+// remains dispatchable between the dead Event and the replacement snapshot.
+func TestRuntimeDeadEventClearsRoutesBeforeReconnect(t *testing.T) {
 	t.Parallel()
 	recorder := &runtimeRecorder{}
 	session := newRuntimeSession(recorder)
 	node := switchNodeFixture(testNodeID, "Kitchen Switch")
-	connection := newFakeConnection(
-		recorder,
-		versionFixture(),
-		snapshotFixture(testHomeID, node),
-	)
-	reconciledRuntime(t, session, connection)
+	connection := newFakeConnection(recorder, versionFixture(), snapshotFixture(testHomeID, node))
+	zwave, dialer := reconciledRuntime(t, session, connection)
 	waitForRoutesActivated(t, session)
 
-	connection.emit(nodeEvent(eventInterviewCompleted))
-	waitFor(t, "interview completed refresh", func() bool {
-		return len(connection.recordedGetCalls()) == 1
-	})
-	waitFor(t, "interview completed re-registration", func() bool {
-		return len(session.recordedRegistrations()) == 2
-	})
-	powerID := routeEntityID(testNodeID, "power")
-	waitFor(t, "post-refresh availability", func() bool {
-		report, ok := session.lastAvailability(powerID)
-		return ok && report.Status == adapter.AvailabilityAvailable
-	})
-}
-
-// This test protects the same-generation refresh boundary and fails if an
-// in-flight node.get_state whose inventory a later sleep or removal Event
-// superseded still re-registers the node, reinstalls its routes, and reports it
-// available again.
-func TestRuntimeSupersededRefreshNeverRestoresRoutes(t *testing.T) {
-	t.Parallel()
-	cases := []struct {
-		name       string
-		event      serverEvent
-		reasonCode string
-	}{
-		{"sleep", nodeEvent(eventSleep), nodeAsleepReason},
-		{
-			"removal",
-			controllerNodeEvent(eventNodeRemoved, dimmerNodeFixture(testNodeID, "Hallway Dimmer")),
-			nodeMissingReason,
-		},
-	}
-	for _, testCase := range cases {
-		t.Run(testCase.name, func(t *testing.T) {
-			t.Parallel()
-			requireSupersededRefreshInstallsNothing(t, testCase.event, testCase.reasonCode)
-		})
-	}
-}
-
-// requireSupersededRefreshInstallsNothing starts one held refresh, applies one
-// superseding Event, then proves that releasing the stale read changes nothing.
-func requireSupersededRefreshInstallsNothing(
-	t *testing.T,
-	event serverEvent,
-	reasonCode string,
-) {
-	t.Helper()
-	recorder := &runtimeRecorder{}
-	session := newRuntimeSession(recorder)
-	node := dimmerNodeFixture(testNodeID, "Hallway Dimmer")
-	connection := newFakeConnection(
-		recorder,
-		versionFixture(),
-		snapshotFixture(testHomeID, node),
-	)
-	entered := make(chan struct{}, 1)
-	release := make(chan struct{})
-	connection.getStateHook = func(ctx context.Context, _ int) (nodeState, error) {
-		select {
-		case entered <- struct{}{}:
-		default:
-		}
-		select {
-		case <-ctx.Done():
-			return nodeState{}, ctx.Err()
-		case <-release:
-			// The read was issued before the superseding Event, so it still
-			// describes the node as awake and eligible.
-			return node, nil
-		}
-	}
-	zwave, _ := reconciledRuntime(t, session, connection)
-	waitForRoutesActivated(t, session)
-
-	// A topology Event starts a refresh whose inventory still describes the
-	// node as awake and eligible.
-	connection.emit(nodeEvent(eventMetadataUpdated))
-	select {
-	case <-entered:
-	case <-time.After(harnessTimeout):
-		t.Fatal("the refresh never started")
-	}
-	connection.emit(event)
-	powerID := routeEntityID(testNodeID, "power")
-	waitFor(t, "the superseding availability", func() bool {
-		report, ok := session.lastAvailability(powerID)
-		return ok && report.Status == adapter.AvailabilityUnavailable &&
-			report.ReasonCode == reasonCode
-	})
-	registrationsBefore := len(session.recordedRegistrations())
-	availabilityBefore := len(session.recordedAvailability())
-
-	// Releasing the superseded read must change nothing: no re-registration,
-	// no fresh availability, and no restored routes.
-	close(release)
-	time.Sleep(testQuietPeriod)
-	if got := len(session.recordedRegistrations()); got != registrationsBefore {
-		t.Fatalf("registrations = %d, want %d", got, registrationsBefore)
-	}
-	if got := len(session.recordedAvailability()); got != availabilityBefore {
-		t.Fatalf("availability reports = %d, want %d", got, availabilityBefore)
-	}
+	connection.emit(nodeEvent(eventDead))
+	waitFor(t, "dead Event generation recycle", func() bool { return dialer.dialCount() >= 2 })
 	responder := newFakeResponder(recorder, session)
-	if err := runCommand(
-		t,
-		zwave,
-		commandFixture(powerID, `{"value":true}`, time.Now().Add(time.Minute)),
-		responder,
-	); err != nil {
-		t.Fatalf("Command error: %v", err)
+	if err := runCommand(t, zwave, commandFixture(
+		routeEntityID(testNodeID, "power"), `{"value":true}`, time.Now().Add(time.Minute),
+	), responder); err != nil {
+		t.Fatalf("Command after dead Event: %v", err)
 	}
 	if accepted, rejected, total := responderCounts(responder); accepted != 0 || rejected != 1 || total != 1 {
-		t.Fatalf("responses = %d/%d/%d, want 0/1/1", accepted, rejected, total)
+		t.Fatalf("post-dead Command responses = %d/%d/%d, want 0/1/1", accepted, rejected, total)
 	}
-	if got := writeCountFor(connection, testNodeID); got != 0 {
-		t.Fatalf("writes = %d, want 0 (a superseded refresh must not restore routes)", got)
-	}
-}
-
-// This test protects the coalesced refresh rule and fails if a superseded
-// completion stops the pending refresh from running, or if the pending refresh
-// reuses the superseded read instead of reading the node again.
-func TestRuntimeCoalescedRefreshRunsAfterASupersededRead(t *testing.T) {
-	t.Parallel()
-	recorder := &runtimeRecorder{}
-	session := newRuntimeSession(recorder)
-	node := dimmerNodeFixture(testNodeID, "Hallway Dimmer")
-	connection := newFakeConnection(
-		recorder,
-		versionFixture(),
-		snapshotFixture(testHomeID, node),
-	)
-	// The first read is held, so a second Event coalesces a pending refresh. The
-	// first read still describes the full dimmer; only the second read observes
-	// the stripped node.
-	stripped := switchNodeFixture(testNodeID, "Hallway Dimmer")
-	var calls atomic.Int64
-	entered := make(chan struct{}, 1)
-	release := make(chan struct{})
-	connection.getStateHook = func(ctx context.Context, _ int) (nodeState, error) {
-		if calls.Add(1) == 1 {
-			select {
-			case entered <- struct{}{}:
-			default:
-			}
-			select {
-			case <-ctx.Done():
-				return nodeState{}, ctx.Err()
-			case <-release:
-				return node, nil
-			}
-		}
-		return stripped, nil
-	}
-	reconciledRuntime(t, session, connection)
-	waitForRoutesActivated(t, session)
-
-	connection.emit(nodeEvent(eventMetadataUpdated))
-	select {
-	case <-entered:
-	case <-time.After(harnessTimeout):
-		t.Fatal("the first refresh never started")
-	}
-	connection.emit(nodeEvent(eventValueRemoved))
-
-	// Releasing the superseded read must not install it; the pending refresh
-	// then runs and installs the stripped node.
-	close(release)
-	brightnessID := routeEntityID(testNodeID, "brightness")
-	waitFor(t, "the pending refresh to remove the capability", func() bool {
-		report, ok := session.lastAvailability(brightnessID)
-		return ok && report.ReasonCode == capabilityMissingReason
-	})
-	if got := len(connection.recordedGetCalls()); got != 2 {
-		t.Fatalf("node refreshes = %d, want 2 (the coalesced refresh must run)", got)
-	}
-	if got := writeCountFor(connection, testNodeID); got != 0 {
-		t.Fatalf("writes = %d, want 0", got)
+	if got := len(connection.recordedSetCalls()); got != 0 {
+		t.Fatalf("writes after dead Event = %d, want 0", got)
 	}
 }
 
-// This test protects the terminal-event classification and fails if an
-// availability completion from another generation, or one that only reports a
-// canceled operation, is treated as a Session failure. A canceled availability
-// report is exactly what tearing a generation down produces.
 func TestTaskCompletedStaleScopeOrCancellationIsIgnored(t *testing.T) {
 	t.Parallel()
 	zwave := newRuntimeAdapter(t, newRuntimeSession(&runtimeRecorder{}), &fakeDialer{})
@@ -1368,41 +902,3 @@ func TestTaskCompletedStaleScopeOrCancellationIsIgnored(t *testing.T) {
 // This test protects the runtime against a generation-scoped availability report
 // that returns a cancellation and fails if that completion stops the runtime
 // instead of being ignored as teardown.
-func TestRuntimeCanceledAvailabilityCompletionKeepsRunning(t *testing.T) {
-	t.Parallel()
-	recorder := &runtimeRecorder{}
-	session := newRuntimeSession(recorder)
-	node := switchNodeFixture(testNodeID, "Kitchen Switch")
-	connection := newFakeConnection(
-		recorder,
-		versionFixture(),
-		snapshotFixture(testHomeID, node),
-	)
-	zwave, _ := reconciledRuntime(t, session, connection)
-	waitForRoutesActivated(t, session)
-
-	var canceled atomic.Int64
-	session.setAvailabilityHook(func(context.Context, []adapter.EntityAvailabilityReport) error {
-		canceled.Add(1)
-		return context.Canceled
-	})
-	connection.emit(nodeEvent(eventAlive))
-	waitFor(t, "the canceled availability report", func() bool { return canceled.Load() >= 1 })
-	// The runtime must still serve the node: a canceled completion is not a
-	// Session failure, and its generation is still the active one.
-	time.Sleep(testQuietPeriod)
-	session.setAvailabilityHook(nil)
-	powerID := routeEntityID(testNodeID, "power")
-	responder := newFakeResponder(recorder, session)
-	if err := runCommand(
-		t,
-		zwave,
-		commandFixture(powerID, `{"value":true}`, time.Now().Add(time.Minute)),
-		responder,
-	); err != nil {
-		t.Fatalf("Command after a canceled availability report: %v", err)
-	}
-	if accepted, rejected, total := responderCounts(responder); accepted != 1 || rejected != 0 || total != 1 {
-		t.Fatalf("responses = %d/%d/%d, want 1/0/1", accepted, rejected, total)
-	}
-}

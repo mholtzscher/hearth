@@ -18,7 +18,6 @@ import (
 	"slices"
 	"strconv"
 	"sync"
-	"sync/atomic"
 	"time"
 
 	"github.com/mholtzscher/hearth/sdk/adapter"
@@ -44,24 +43,11 @@ const (
 // never drive polls faster than this.
 const defaultPollHintInterval = 250 * time.Millisecond
 
-// defaultNodeRefreshTimeout bounds one correlated node.get_state inventory read.
-//
-// A refresh serializes one node's routes: while it is unanswered, the node keeps
-// whatever routes it already had, so a server that never answers would preserve
-// stale routes for the whole lifetime of the generation. The bound is
-// deliberately generous for a loopback WebSocket inventory read, because a
-// timeout ends the generation instead of leaving the node in doubt. Only the
-// inventory read is bounded by this elapsed timeout: an SDK Register call has no
-// similar per-request deadline, because a first registration may legitimately
-// outlive one node read and its own lifetime is the generation.
-const defaultNodeRefreshTimeout = 10 * time.Second
-
 // Fixed attempt-abort classifications. None of them reaches a Hearth reason
 // code; each is a local transition cause.
 var (
 	errStaleGeneration  = errors.New("stale Z-Wave runtime generation")
 	errStaleRoute       = errors.New("stale Z-Wave route revision")
-	errNodeUnroutable   = errors.New("Z-Wave node is not routable")
 	errGenerationClosed = errors.New("Z-Wave connection generation is closed")
 )
 
@@ -130,6 +116,7 @@ type reconciliationCompleted struct {
 	scope      *generationScope
 	generation uint64
 	err        error
+	result     chan error
 }
 
 func (reconciliationCompleted) runtimeEvent() {}
@@ -142,26 +129,6 @@ type generationInvalidated struct {
 }
 
 func (generationInvalidated) runtimeEvent() {}
-
-// nodeRefreshCompleted reports one correlated node.get_state refresh and, when
-// the refreshed node is still eligible, its successful re-registration.
-// Revision is the node's refresh revision when the refresh was dispatched: a
-// refresh whose revision a later Event or invalidation superseded describes
-// inventory that is no longer authoritative and must not install routes.
-type nodeRefreshCompleted struct {
-	scope      *generationScope
-	generation uint64
-	nodeID     int
-	revision   uint64
-	observedAt time.Time
-	state      nodeState
-	deviceID   string
-	routes     []entityRoute
-	rejection  *nodeRejection
-	err        error
-}
-
-func (nodeRefreshCompleted) runtimeEvent() {}
 
 // taskCompleted reports one tracked background effect. Scope and Generation
 // identify the generation that started it, so a completion that outlived its
@@ -194,8 +161,7 @@ type nodeRecord struct {
 	state    nodeState
 	routes   []entityRoute
 	// revision is the route revision this node's routes were installed under.
-	// It changes only when the route set actually changes, so an identical
-	// refresh never invalidates a queued attempt.
+	// Reconciliation assigns it once per connection generation.
 	revision uint64
 }
 
@@ -260,27 +226,9 @@ type runtimeCoordinator struct {
 	attemptsByValue map[attemptValueKey]*commandAttempt
 	nextAttemptID   uint64
 
-	refreshInFlight map[int]bool
-	refreshPending  map[int]bool
-
-	// nodeRefreshRevision holds one atomic refresh revision per node. Every Event
-	// or invalidation that supersedes an in-flight refresh advances it, so a
-	// completion can be recognized as stale even inside one generation: a
-	// node.get_state issued before a sleep, removal, or topology Event must not
-	// reinstall routes afterwards. The counter is atomic because a refresh effect
-	// reads it, before it registers and reports its outcome, while the
-	// coordinator may advance it.
-	nodeRefreshRevision map[int]*atomic.Uint64
-
-	// availabilityChain serializes one node's availability reports: each
-	// request waits for the previous one to finish, so a later report always
-	// lands after an earlier one.
-	availabilityChain map[int]chan struct{}
-
-	// publishTail is the tail of the ordinary Observation publication chain. One
-	// frame's Observations are published together and the next frame waits for
-	// the previous one, so Core sees live State in receive order while power
-	// still precedes brightness within one frame.
+	// publishTail is the tail of the shared ordinary and linked Observation
+	// publication chain. Each frame's Observations stay together, and later
+	// publications wait for earlier ones so Core sees State in receive order.
 	publishTail chan struct{}
 
 	buffered []upstreamEvent
@@ -289,14 +237,6 @@ type runtimeCoordinator struct {
 	// overflowed the runtime. Such a generation is already ended, so a late
 	// reconciliation must be refused instead of installing its stale snapshot.
 	terminatedGenerations map[uint64]struct{}
-
-	// pendingValueAdded holds, per node, the newest value added or value updated
-	// report of every Value that arrived before any active route could project it.
-	// A frame that creates a new plan is replayed only after a successful refresh
-	// installs the route it needs, so its State is not lost and its Adapter
-	// receive time is preserved. A newer report of the same exact unkeyed Value
-	// supersedes the queued one, so replay never publishes stale State.
-	pendingValueAdded map[int][]receivedEvent
 
 	effects sync.WaitGroup
 }
@@ -313,12 +253,7 @@ func newRuntimeCoordinator(ctx context.Context, zwave *Adapter) *runtimeCoordina
 		queues:                make(map[int]*nodeCommandQueue),
 		attempts:              make(map[uint64]*commandAttempt),
 		attemptsByValue:       make(map[attemptValueKey]*commandAttempt),
-		refreshInFlight:       make(map[int]bool),
-		refreshPending:        make(map[int]bool),
-		nodeRefreshRevision:   make(map[int]*atomic.Uint64),
-		availabilityChain:     make(map[int]chan struct{}),
 		terminatedGenerations: make(map[uint64]struct{}),
-		pendingValueAdded:     make(map[int][]receivedEvent),
 	}
 }
 
@@ -353,7 +288,6 @@ func (coordinator *runtimeCoordinator) shutdown(cause error) {
 	coordinator.clearRoutes()
 	coordinator.connection = nil
 	coordinator.disconnect = nil
-	clear(coordinator.pendingValueAdded)
 	coordinator.endGenerationScope()
 	if cause == nil {
 		cause = errGenerationClosed
@@ -475,19 +409,7 @@ func (coordinator *runtimeCoordinator) handle(event runtimeEvent) error {
 	case reconciliationSubmitted:
 		coordinator.activateReconciliation(event)
 	case reconciliationCompleted:
-		if event.scope != coordinator.scope || event.generation != coordinator.generation {
-			return nil
-		}
-		coordinator.reconciling = false
-		if event.err != nil {
-			return event.err
-		}
-		coordinator.dispatchable = true
-		coordinator.replayBuffered()
-		// The reconciliation is only complete once health, availability, and
-		// snapshot State are acknowledged and live Events and Commands are
-		// activated.
-		coordinator.logReconcileCompleted()
+		return coordinator.finishReconciliation(event)
 	case generationInvalidated:
 		coordinator.invalidateGeneration(event)
 	case commandSubmitted:
@@ -498,8 +420,6 @@ func (coordinator *runtimeCoordinator) handle(event runtimeEvent) error {
 		coordinator.finishPollValue(event)
 	case linkedPublishCompleted:
 		coordinator.finishLinkedPublish(event)
-	case nodeRefreshCompleted:
-		return coordinator.applyNodeRefresh(event)
 	case attemptDeadlineReached:
 		coordinator.reachDeadline(event.attemptID)
 	case pollTimerFired:
@@ -515,6 +435,35 @@ func (coordinator *runtimeCoordinator) handle(event runtimeEvent) error {
 		if event.err != nil && !isContextCancellation(event.err) {
 			return event.err
 		}
+	}
+	return nil
+}
+
+// finishReconciliation acknowledges recovery only after reports and buffered
+// Events have left the generation dispatchable.
+func (coordinator *runtimeCoordinator) finishReconciliation(event reconciliationCompleted) error {
+	if event.scope != coordinator.scope || event.generation != coordinator.generation {
+		return nil
+	}
+	coordinator.reconciling = false
+	if event.err != nil {
+		if event.result != nil {
+			event.result <- event.err
+		}
+		return event.err
+	}
+	coordinator.dispatchable = true
+	coordinator.replayBuffered()
+	if !coordinator.dispatchable {
+		// A buffered topology Event invalidated the snapshot before recovery.
+		if event.result != nil {
+			event.result <- errStaleGeneration
+		}
+		return nil
+	}
+	coordinator.logReconcileCompleted()
+	if event.result != nil {
+		event.result <- nil
 	}
 	return nil
 }
@@ -620,11 +569,6 @@ func (coordinator *runtimeCoordinator) activateReconciliation(event reconciliati
 	coordinator.routeRevision = 0
 	coordinator.snapshot = routeSnapshot{}
 	coordinator.queues = make(map[int]*nodeCommandQueue)
-	coordinator.refreshInFlight = make(map[int]bool)
-	coordinator.refreshPending = make(map[int]bool)
-	coordinator.nodeRefreshRevision = make(map[int]*atomic.Uint64)
-	coordinator.availabilityChain = make(map[int]chan struct{})
-	coordinator.pendingValueAdded = make(map[int][]receivedEvent)
 
 	coordinator.rememberMappings(event.mappings)
 	coordinator.nodes = make(map[int]*nodeRecord, len(event.nodes))
@@ -658,8 +602,13 @@ func (coordinator *runtimeCoordinator) activateReconciliation(event reconciliati
 	}
 	observations := coordinator.snapshotObservations(event.nodes, event.observedAt)
 	reports := coordinator.availabilityReports(event.observedAt)
-	event.result <- nil
-	coordinator.startReconciliationEffect(coordinator.scope, event.generation, reports, observations)
+	coordinator.startReconciliationEffect(
+		coordinator.scope,
+		event.generation,
+		reports,
+		observations,
+		event.result,
+	)
 }
 
 // startReconciliationEffect performs one generation's startup Session calls in
@@ -672,6 +621,7 @@ func (coordinator *runtimeCoordinator) startReconciliationEffect(
 	generation uint64,
 	reports []adapter.EntityAvailabilityReport,
 	observations []entityObservation,
+	result chan error,
 ) {
 	coordinator.startGenerationEffect(scope, func() runtimeEvent {
 		ctx := coordinator.effectContext(scope)
@@ -679,32 +629,38 @@ func (coordinator *runtimeCoordinator) startReconciliationEffect(
 			Status:           adapter.HealthHealthy,
 			SourceObservedAt: time.Now().UTC(),
 		}); err != nil {
-			return reconciliationCompleted{scope: scope, generation: generation, err: &sessionOperationError{
-				operation: "report healthy Z-Wave JS connection",
-				err:       err,
-			}}
+			return reconciliationCompleted{
+				scope: scope, generation: generation, result: result,
+				err: &sessionOperationError{
+					operation: "report healthy Z-Wave JS connection",
+					err:       err,
+				},
+			}
 		}
 		if scope.ended() {
-			return reconciliationCompleted{scope: scope, generation: generation}
+			return reconciliationCompleted{scope: scope, generation: generation, result: result}
 		}
 		if err := coordinator.adapter.reportAvailability(ctx, reports); err != nil {
-			return reconciliationCompleted{scope: scope, generation: generation, err: err}
+			return reconciliationCompleted{scope: scope, generation: generation, result: result, err: err}
 		}
 		for _, observation := range observations {
 			if scope.ended() {
-				return reconciliationCompleted{scope: scope, generation: generation}
+				return reconciliationCompleted{scope: scope, generation: generation, result: result}
 			}
 			if _, err := coordinator.adapter.session.PublishObservation(
 				ctx,
 				observation.Observation,
 			); err != nil {
-				return reconciliationCompleted{scope: scope, generation: generation, err: &sessionOperationError{
-					operation: "publish Z-Wave Observation",
-					err:       err,
-				}}
+				return reconciliationCompleted{
+					scope: scope, generation: generation, result: result,
+					err: &sessionOperationError{
+						operation: "publish Z-Wave Observation",
+						err:       err,
+					},
+				}
 			}
 		}
-		return reconciliationCompleted{scope: scope, generation: generation}
+		return reconciliationCompleted{scope: scope, generation: generation, result: result}
 	})
 }
 
@@ -723,7 +679,6 @@ func (coordinator *runtimeCoordinator) invalidateGeneration(event generationInva
 	coordinator.disconnect = nil
 	coordinator.generation = event.generation
 	coordinator.dropBufferedEvents(event.generation)
-	clear(coordinator.pendingValueAdded)
 	cause := event.cause
 	if cause == nil {
 		cause = errGenerationClosed
@@ -740,7 +695,6 @@ func (coordinator *runtimeCoordinator) dropGeneration(cause error) {
 	disconnect := coordinator.disconnect
 	coordinator.disconnect = nil
 	coordinator.clearRoutes()
-	clear(coordinator.pendingValueAdded)
 	coordinator.endGenerationScope()
 	if disconnect != nil {
 		disconnect(cause)
@@ -766,56 +720,27 @@ func (coordinator *runtimeCoordinator) invalidateAllAttempts(cause error) {
 	}
 }
 
-// invalidateNodeAttempts ends every attempt of one node that can no longer rely
-// on its route. A queued attempt is rejected as unavailable while its deadline
-// is still open. An attempt whose node.set_value is already in flight is decided
-// by its own completion, because cancelling a request that is already on the
-// wire would end the whole connection generation. An accepted attempt receives
-// no second response: it stops publishing linked evidence and any in-flight
-// linked publication is cancelled, so a route change, removal, or sleep can
-// never leave stale linked evidence behind.
-func (coordinator *runtimeCoordinator) invalidateNodeAttempts(nodeID int, cause error) {
-	for _, attempt := range slices.Collect(maps.Values(coordinator.attempts)) {
-		if attempt.nodeID != nodeID || attempt.phase == phaseTerminal {
-			continue
-		}
-		switch attempt.phase {
-		case phaseQueued:
-			coordinator.abortAttempt(attempt, cause)
-		case phaseSetting:
-			// The node.set_value of this attempt is already on the wire, so its
-			// own completion decides it.
-		case phaseAccepted, phaseTerminal:
-			coordinator.finishAttempt(attempt, cause)
-		}
-	}
-	coordinator.revalidateQueuedAttempts(nodeID)
-}
-
-// revalidateQueuedAttempts rejects queued attempts of one node whose route is no
-// longer current, and advances the node's queue.
-func (coordinator *runtimeCoordinator) revalidateQueuedAttempts(nodeID int) {
-	for _, attempt := range slices.Collect(maps.Values(coordinator.attempts)) {
-		if attempt.nodeID != nodeID || attempt.phase != phaseQueued {
-			continue
-		}
-		if !coordinator.attemptRouteIsCurrent(attempt) {
-			coordinator.abortAttempt(attempt, errStaleRoute)
-		}
-	}
-	coordinator.startNext(nodeID)
-}
-
 // abortAttempt ends one attempt, responding unavailable only while it has not
 // been accepted and its deadline is still open.
 func (coordinator *runtimeCoordinator) abortAttempt(attempt *commandAttempt, cause error) {
+	coordinator.abortAttemptInternal(attempt, cause, true)
+}
+
+// abortAttemptInternal ends one attempt and optionally advances its node FIFO.
+// Queue draining disables nested advancement so a long run of expired attempts
+// cannot recurse once per entry.
+func (coordinator *runtimeCoordinator) abortAttemptInternal(
+	attempt *commandAttempt,
+	cause error,
+	advance bool,
+) {
 	if !attempt.accepted && !attempt.handlerDone && time.Now().Before(attempt.deadline) {
 		if err := attempt.responder.RejectUnavailable("Z-Wave Entity is unavailable"); err != nil {
-			coordinator.finishAttempt(attempt, err)
+			coordinator.finishAttemptInternal(attempt, err, advance)
 			return
 		}
 	}
-	coordinator.finishAttempt(attempt, cause)
+	coordinator.finishAttemptInternal(attempt, cause, advance)
 }
 
 // attemptRouteIsCurrent reports whether one attempt may still dispatch through
@@ -835,70 +760,14 @@ func (coordinator *runtimeCoordinator) attemptRouteIsCurrent(attempt *commandAtt
 	return current.Plan.TargetValueID.valueKey() == attempt.route.Plan.TargetValueID.valueKey()
 }
 
-// routableRoutes applies v1 route eligibility. A node that is sleeping never
-// receives routes, because the upstream could defer a write past Hearth's
-// deadline. The node's Entities are still registered and reported unavailable.
+// routableRoutes applies v1 route eligibility. Only Awake and Alive nodes
+// receive Command routes; every other status keeps its mappings for availability
+// reporting but cannot accept Commands through a stale or non-live route.
 func routableRoutes(state nodeState, routes []entityRoute) []entityRoute {
-	if state.Status == nodeStatusAsleep {
+	if state.Status != nodeStatusAwake && state.Status != nodeStatusAlive {
 		return nil
 	}
 	return routes
-}
-
-// replaceNodeRoutes atomically replaces one node's routes. An identical route
-// set keeps its revision, so an unchanged refresh never invalidates an
-// unaccepted Command.
-func (coordinator *runtimeCoordinator) replaceNodeRoutes(nodeID int, routes []entityRoute) error {
-	record := coordinator.nodes[nodeID]
-	if record == nil {
-		record = &nodeRecord{nodeID: nodeID, present: true}
-		coordinator.nodes[nodeID] = record
-	}
-	if sameRoutes(record.routes, routes) {
-		return nil
-	}
-	coordinator.routeRevision++
-	record.routes = routes
-	record.revision = coordinator.routeRevision
-	if len(routes) > 0 {
-		record.assessed = true
-	}
-	return coordinator.rebuildSnapshot()
-}
-
-// dropNodeRoutes invalidates one node's routes without touching its facts. A
-// queued value report still waiting for a route from this node is dropped with
-// it, because the node is no longer eligible to project it.
-func (coordinator *runtimeCoordinator) dropNodeRoutes(nodeID int) {
-	delete(coordinator.pendingValueAdded, nodeID)
-	coordinator.clearNodeRoutes(nodeID)
-}
-
-// clearNodeRoutes invalidates one node's routes without touching its facts or
-// its queued value reports. An intermediate refresh that still cannot project a
-// queued current Value uses this instead of dropNodeRoutes, so the State that
-// report carried survives until a later refresh completes the plan.
-func (coordinator *runtimeCoordinator) clearNodeRoutes(nodeID int) {
-	record := coordinator.nodes[nodeID]
-	if record == nil || len(record.routes) == 0 {
-		return
-	}
-	record.routes = nil
-	record.revision = 0
-	_ = coordinator.rebuildSnapshot()
-}
-
-// markNodeMissing reports one node as absent from the active generation.
-func (coordinator *runtimeCoordinator) markNodeMissing(nodeID int) {
-	record := coordinator.nodes[nodeID]
-	if record == nil {
-		record = &nodeRecord{nodeID: nodeID}
-		coordinator.nodes[nodeID] = record
-	}
-	record.present = false
-	coordinator.invalidateNodeRefresh(nodeID)
-	coordinator.dropNodeRoutes(nodeID)
-	coordinator.invalidateNodeAttempts(nodeID, errStaleRoute)
 }
 
 // rebuildSnapshot reindexes the immutable route table from the node records.
@@ -913,23 +782,6 @@ func (coordinator *runtimeCoordinator) rebuildSnapshot() error {
 	}
 	coordinator.snapshot = snapshot
 	return nil
-}
-
-// sameRoutes reports whether two route sets are identical in Entity identity,
-// plan key, and read and write Value IDs.
-func sameRoutes(current, next []entityRoute) bool {
-	if len(current) != len(next) {
-		return false
-	}
-	for index := range current {
-		if current[index].EntityID != next[index].EntityID ||
-			current[index].Plan.Key != next[index].Plan.Key ||
-			current[index].Plan.CurrentValueID.valueKey() != next[index].Plan.CurrentValueID.valueKey() ||
-			current[index].Plan.TargetValueID.valueKey() != next[index].Plan.TargetValueID.valueKey() {
-			return false
-		}
-	}
-	return true
 }
 
 // snapshotObservations translates every planned node's snapshot Values into
@@ -998,180 +850,76 @@ func (coordinator *runtimeCoordinator) nodeHasMappings(nodeID int) bool {
 	return false
 }
 
-// handleUpstreamEvent applies one validated Event to the active generation.
+// handleUpstreamEvent keeps ordinary value updates live and recycles the
+// connection for every known topology or node-state Event. A fresh
+// start_listening snapshot is the only authority for routes and availability.
 func (coordinator *runtimeCoordinator) handleUpstreamEvent(received receivedEvent) {
 	event := received.Event
-	switch event.Event.Source {
-	case eventSourceController:
-		switch event.Event.Event {
-		case eventNodeAdded:
-			coordinator.requestNodeRefresh(event.Event.NodeID)
-		case eventNodeRemoved:
-			coordinator.markNodeMissing(event.Event.NodeID)
-			coordinator.startNodeAvailabilityEffect(event.Event.NodeID, received.ReceivedAt)
-		default:
-			coordinator.logIgnoredEvent(event)
-		}
-	case eventSourceNode:
-		coordinator.handleNodeEvent(received)
-	case eventSourceDriver, eventSourceZniffer:
-		coordinator.logIgnoredEvent(event)
-	default:
-		coordinator.logIgnoredEvent(event)
-	}
-}
-
-// handleNodeEvent applies one node-sourced Event.
-func (coordinator *runtimeCoordinator) handleNodeEvent(received receivedEvent) {
-	event := received.Event
-	nodeID := event.Event.NodeID
-	if nodeID <= 0 {
-		coordinator.logIgnoredEvent(event)
-		return
-	}
-	switch event.Event.Event {
-	case eventReady, eventInterviewCompleted, eventValueRemoved, eventMetadataUpdated:
-		coordinator.requestNodeRefresh(nodeID)
-	case eventValueAdded:
-		coordinator.handleValueAdded(received)
-	case eventValueUpdated:
+	if event.Event.Source == eventSourceNode && event.Event.Event == eventValueUpdated {
 		coordinator.handleValueUpdated(received)
-	case eventWakeUp:
-		coordinator.handleWakeUp(nodeID, received.ReceivedAt)
-	case eventSleep:
-		coordinator.handleSleep(nodeID, received.ReceivedAt)
-	case eventAlive:
-		coordinator.handleNodeStatus(nodeID, nodeStatusAlive, received.ReceivedAt)
-	case eventDead:
-		coordinator.handleNodeStatus(nodeID, nodeStatusDead, received.ReceivedAt)
-	default:
-		coordinator.logIgnoredEvent(event)
-	}
-}
-
-// handleValueAdded applies one value added Event. A frame that already resolves
-// against an active route is an ordinary Observation now. A state-eligible
-// current Value that creates a new plan has no route yet, so it is queued and
-// replayed only after a refresh installs the route it needs; publishing it now
-// would lose its State. A target Value or an unrelated Value is never State, so
-// it is never queued, but the refresh is requested either way because a new
-// Value may still complete a plan.
-func (coordinator *runtimeCoordinator) handleValueAdded(received receivedEvent) {
-	nodeID := received.Event.Event.NodeID
-	args, ok := decodeValueEventArgs(received.Event.Event.Args)
-	if !ok || len(args.NewValue) == 0 {
-		coordinator.requestNodeRefresh(nodeID)
 		return
 	}
-	if coordinator.routeProjectsValue(nodeID, args.valueID) {
-		// A route already exists, so the frame is projected now and is never
-		// replayed: replaying it after the refresh would publish it twice.
-		coordinator.publishValueObservationFor(received, args)
-		coordinator.requestNodeRefresh(nodeID)
-		return
-	}
-	if valueAddedCarriesState(args.valueID) {
-		if !coordinator.queueValueAddedReplay(nodeID, received) {
-			coordinator.dropGeneration(&eventBufferOverflowError{Limit: bufferedEventLimit})
+	if event.Event.Source == eventSourceNode && event.Event.Event == eventValueAdded {
+		args, ok := decodeValueEventArgs(event.Event.Args)
+		if ok && valueAddedChangesSupportedPlan(args.valueID) && event.Event.NodeID > 0 {
+			coordinator.recycleGeneration(event)
 			return
 		}
+		coordinator.logIgnoredEvent(event)
+		return
 	}
-	coordinator.requestNodeRefresh(nodeID)
+	switch event.Event.Source {
+	case eventSourceController:
+		if event.Event.Event == eventNodeAdded || event.Event.Event == eventNodeRemoved {
+			coordinator.recycleGeneration(event)
+			return
+		}
+	case eventSourceNode:
+		if event.Event.NodeID > 0 {
+			switch event.Event.Event {
+			case eventReady, eventInterviewCompleted, eventValueRemoved,
+				eventMetadataUpdated, eventWakeUp, eventSleep, eventAlive, eventDead:
+				coordinator.recycleGeneration(event)
+				return
+			}
+		}
+	}
+	coordinator.logIgnoredEvent(event)
 }
 
-// routeProjectsValue reports whether an active route of one node already
-// projects one Value. The node ID is part of the route lookup, so a Value that
-// another node projects never counts. A Value the active routes do not plan is
-// the only case a value added frame must wait for a refresh.
-func (coordinator *runtimeCoordinator) routeProjectsValue(nodeID int, id valueID) bool {
-	return len(coordinator.snapshot.routesForValue(nodeID, id)) > 0
-}
-
-// queueValueAddedReplay remembers one value added frame until a refresh installs
-// the route that can project it. The queue is bounded by the same Event limit
-// that bounds pre-activation buffering, so a burst ends the generation instead
-// of silently dropping State. It reports false when the node's queue is full.
-func (coordinator *runtimeCoordinator) queueValueAddedReplay(nodeID int, received receivedEvent) bool {
-	pending := coordinator.pendingValueAdded[nodeID]
-	if len(pending) >= bufferedEventLimit {
+// valueAddedChangesSupportedPlan reports whether one value added Event can add
+// a slot to a supported Binary Switch or Multilevel Switch plan. Either slot
+// can matter on its own because a later Event may complete the pair. Numeric,
+// keyed, malformed, and negative-endpoint Value IDs cannot be planned.
+func valueAddedChangesSupportedPlan(id valueID) bool {
+	if id.Endpoint < 0 {
 		return false
 	}
-	coordinator.pendingValueAdded[nodeID] = append(pending, received)
-	return true
+	if _, ok := plannedValueProperty(id); !ok {
+		return false
+	}
+	switch id.CommandClass {
+	case commandClassBinarySwitch, commandClassMultilevelSwitch:
+		return true
+	default:
+		return false
+	}
 }
 
-// replayPendingValueAdded publishes every queued value report of one node
-// that its refreshed routes can now project, in receive order and through the
-// node's ordinary-publication chain, so the State a report carried is not lost
-// and its Adapter receive time is preserved. A report whose Value the refreshed
-// routes still cannot project is retained instead of deleted: an intermediate
-// refresh may install a plan that does not yet cover it, and only a later
-// refresh that completes the plan may publish it. The retained queue stays
-// bounded by the same Event limit that bounds pre-activation buffering.
-func (coordinator *runtimeCoordinator) replayPendingValueAdded(nodeID int) {
-	pending := coordinator.pendingValueAdded[nodeID]
-	if len(pending) == 0 {
-		return
-	}
-	retained := make([]receivedEvent, 0, len(pending))
-	for _, received := range pending {
-		args, ok := decodeValueEventArgs(received.Event.Event.Args)
-		if !ok || !coordinator.routeProjectsValue(nodeID, args.valueID) {
-			retained = append(retained, received)
-			continue
-		}
-		coordinator.publishValueObservationFor(received, args)
-	}
-	if len(retained) == 0 {
-		delete(coordinator.pendingValueAdded, nodeID)
-		return
-	}
-	coordinator.pendingValueAdded[nodeID] = retained
+// recycleGeneration closes the active connection and invalidates its routes
+// before queued Commands can be dispatched against a topology that changed.
+func (coordinator *runtimeCoordinator) recycleGeneration(event serverEvent) {
+	coordinator.adapter.logger.DebugContext(
+		coordinator.ctx,
+		"recycling Z-Wave JS generation after topology Event",
+		slog.String(eventKey, "adapter.topology_changed"),
+		slog.String("event_source", event.Event.Source),
+	)
+	coordinator.dropGeneration(errors.New("Z-Wave JS topology changed"))
 }
 
-// supersedePendingValueReplay replaces the queued replay report of one exact
-// unkeyed Value with a newer report of the same Value, preserving the newer
-// report's receive time. It acts only when a report for that Value is already
-// waiting for its route: an update with no queued report is never queued, because
-// no known plan needs it and the refresh that installs its route reads the
-// current value anyway. Later duplicates of the same Value collapse into the one
-// superseding report, so replay publishes that Value exactly once.
-func (coordinator *runtimeCoordinator) supersedePendingValueReplay(
-	nodeID int,
-	received receivedEvent,
-	args valueEventArgs,
-) {
-	pending := coordinator.pendingValueAdded[nodeID]
-	if len(pending) == 0 {
-		return
-	}
-	key := args.valueID.valueKey()
-	replaced := false
-	retained := pending[:0]
-	for _, queued := range pending {
-		queuedArgs, ok := decodeValueEventArgs(queued.Event.Event.Args)
-		if ok && queuedArgs.valueID.valueKey() == key {
-			if replaced {
-				continue
-			}
-			retained = append(retained, received)
-			replaced = true
-			continue
-		}
-		retained = append(retained, queued)
-	}
-	if !replaced {
-		return
-	}
-	coordinator.pendingValueAdded[nodeID] = retained
-}
-
-// handleValueUpdated publishes one ordinary Observation per planned Entity that
-// projects the Value, then treats the frame as a coalesced poll hint for an
-// accepted Command on the same Value. The Event itself is never linked evidence.
-// A report whose Value no route can project yet supersedes any queued report of
-// the same Value instead of being discarded, so a replay publishes the newest
-// State rather than the stale value added frame it replaced.
+// handleValueUpdated publishes ordinary State and uses matching updates only as
+// coalesced poll hints for accepted Commands. The Event is never linked evidence.
 func (coordinator *runtimeCoordinator) handleValueUpdated(received receivedEvent) {
 	args, ok := decodeValueEventArgs(received.Event.Event.Args)
 	if !ok {
@@ -1179,16 +927,8 @@ func (coordinator *runtimeCoordinator) handleValueUpdated(received receivedEvent
 		return
 	}
 	nodeID := received.Event.Event.NodeID
-	switch {
-	case len(args.NewValue) == 0:
-		// A report without a new value is not State. It never publishes and never
-		// supersedes a queued report.
-	case coordinator.routeProjectsValue(nodeID, args.valueID):
-		// A route already projects this Value, so the frame publishes now and is
-		// never queued.
+	if len(args.NewValue) > 0 {
 		coordinator.publishValueObservationFor(received, args)
-	default:
-		coordinator.supersedePendingValueReplay(nodeID, received, args)
 	}
 	attempt := coordinator.attemptsByValue[attemptValueKey{nodeID: nodeID, value: args.valueID.valueKey()}]
 	if attempt == nil || attempt.phase != phaseAccepted {
@@ -1233,17 +973,11 @@ func (coordinator *runtimeCoordinator) publishValueObservationFor(
 func (coordinator *runtimeCoordinator) publishOrdinary(observations []adapter.Observation) {
 	scope := coordinator.scope
 	ctx := coordinator.effectContext(scope)
-	previous := coordinator.publishTail
-	next := make(chan struct{})
-	coordinator.publishTail = next
+	previous, next := coordinator.reserveObservationPublication()
 	coordinator.startGenerationTask(scope, func() {
 		defer close(next)
-		if previous != nil {
-			select {
-			case <-previous:
-			case <-ctx.Done():
-				return
-			}
+		if !waitForObservationPublication(ctx, previous) {
+			return
 		}
 		for _, observation := range observations {
 			if scope != nil && scope.ended() {
@@ -1265,341 +999,27 @@ func (coordinator *runtimeCoordinator) publishOrdinary(observations []adapter.Ob
 	})
 }
 
-// handleNodeStatus updates one node's status and reports fresh availability.
-// The status Event is authoritative for the node's status, and it supersedes an
-// in-flight inventory read so that read cannot restore the status it replaced.
-func (coordinator *runtimeCoordinator) handleNodeStatus(nodeID, status int, observedAt time.Time) {
-	record := coordinator.nodes[nodeID]
-	if record == nil {
-		return
-	}
-	record.present = true
-	record.state.Status = status
-	// A status Event does not itself read the node's inventory, so a
-	// Registration that is already in flight must be followed by a fresh read:
-	// its committed mappings exist in Core but only a current refresh can install
-	// their routes. Marking the replacement pending keeps convergence even when
-	// the stale Register commits after this Event.
-	coordinator.supersedeNodeRefreshWithReplacement(nodeID)
-	coordinator.startNodeAvailabilityEffect(nodeID, observedAt)
-}
-
-// handleSleep invalidates one node's Command routes immediately, then reports
-// every owned Entity of that node unavailable. v1 never queues a write for a
-// sleeping node, so recovery needs a wake up Event and a fresh node state.
-func (coordinator *runtimeCoordinator) handleSleep(nodeID int, observedAt time.Time) {
-	record := coordinator.nodeRecordFor(nodeID)
-	record.state.Status = nodeStatusAsleep
-	record.state.IsListening = false
-	coordinator.invalidateNodeRefresh(nodeID)
-	coordinator.dropNodeRoutes(nodeID)
-	coordinator.invalidateNodeAttempts(nodeID, errNodeUnroutable)
-	coordinator.startNodeAvailabilityEffect(nodeID, observedAt)
-}
-
-// handleWakeUp marks one node awake and refreshes its state. Routes return only
-// after the refreshed state proves the node eligible again.
-func (coordinator *runtimeCoordinator) handleWakeUp(nodeID int, observedAt time.Time) {
-	record := coordinator.nodeRecordFor(nodeID)
-	record.state.Status = nodeStatusAwake
-	record.state.IsListening = false
-	coordinator.invalidateNodeRefresh(nodeID)
-	coordinator.dropNodeRoutes(nodeID)
-	coordinator.invalidateNodeAttempts(nodeID, errNodeUnroutable)
-	coordinator.startNodeAvailabilityEffect(nodeID, observedAt)
-	coordinator.requestNodeRefresh(nodeID)
-}
-
-// invalidateNodeRefresh advances one node's refresh revision, so every refresh
-// completion already in flight for that node is recognized as superseded: it
-// installs nothing and does not re-register the node. The node's coalesced
-// pending refresh is dropped with it, because this Event already carries a
-// fresher fact than the abandoned read; convergence comes from the Event that
-// asks for a new read, which requests its own refresh.
-func (coordinator *runtimeCoordinator) invalidateNodeRefresh(nodeID int) {
-	coordinator.refreshRevisionFor(nodeID).Add(1)
-	delete(coordinator.refreshPending, nodeID)
-}
-
-// supersedeNodeRefreshWithReplacement advances one node's refresh revision like
-// invalidateNodeRefresh, but preserves the node's coalesced pending replacement
-// instead of clearing it. A status Event (alive or dead) carries the node's
-// status authority without reading its inventory, so a Registration that commits
-// after it would otherwise be remembered with no following refresh to install
-// its routes. Marking pending makes applyNodeRefresh start that fresh read once
-// the superseded completion is dropped, while the superseded read's state is
-// never installed and cannot overwrite the status the Event just set.
-func (coordinator *runtimeCoordinator) supersedeNodeRefreshWithReplacement(nodeID int) {
-	coordinator.refreshRevisionFor(nodeID).Add(1)
-	if coordinator.refreshInFlight[nodeID] {
-		coordinator.refreshPending[nodeID] = true
-	}
-}
-
-// refreshRevisionFor returns one node's refresh revision counter, creating it on
-// first use. Only the coordinator adds to the map; a refresh effect holds the
-// pointer it was started with and reads it.
-func (coordinator *runtimeCoordinator) refreshRevisionFor(nodeID int) *atomic.Uint64 {
-	revision := coordinator.nodeRefreshRevision[nodeID]
-	if revision == nil {
-		revision = &atomic.Uint64{}
-		coordinator.nodeRefreshRevision[nodeID] = revision
-	}
-	return revision
-}
-
-// nodeRecordFor returns the record of one node, creating an absent one so an
-// Event about a node the snapshot omitted is still reported.
-func (coordinator *runtimeCoordinator) nodeRecordFor(nodeID int) *nodeRecord {
-	record := coordinator.nodes[nodeID]
-	if record == nil {
-		record = &nodeRecord{nodeID: nodeID, present: true}
-		coordinator.nodes[nodeID] = record
-	}
-	record.present = true
-	return record
-}
-
-// startNodeAvailabilityEffect reports fresh availability for one node's owned
-// mappings in owned-mapping order. Reports for one node are chained so a later
-// report always lands after an earlier one: a wake up's stale unavailable batch
-// can never overwrite the availability its refresh already reported. Every
-// completion carries the generation that started it, so a report whose
-// generation ended is ignored instead of being mistaken for a Session failure.
-func (coordinator *runtimeCoordinator) startNodeAvailabilityEffect(nodeID int, observedAt time.Time) {
-	reports := coordinator.nodeAvailabilityReports(nodeID, observedAt)
-	if len(reports) == 0 {
-		return
-	}
-	scope := coordinator.scope
-	generation := coordinator.generation
-	if scope == nil {
-		coordinator.startEffect(func() runtimeEvent {
-			return taskCompleted{
-				generation: generation,
-				err:        coordinator.adapter.reportAvailability(coordinator.ctx, reports),
-			}
-		})
-		return
-	}
-	previous := coordinator.availabilityChain[nodeID]
+// reserveObservationPublication adds one ordinary or command-linked
+// Observation effect to the active generation's shared FIFO publication chain.
+func (coordinator *runtimeCoordinator) reserveObservationPublication() (<-chan struct{}, chan struct{}) {
+	previous := coordinator.publishTail
 	next := make(chan struct{})
-	coordinator.availabilityChain[nodeID] = next
-	coordinator.startGenerationEffect(scope, func() runtimeEvent {
-		defer close(next)
-		if previous != nil {
-			select {
-			case <-previous:
-			case <-scope.ctx.Done():
-				return taskCompleted{scope: scope, generation: generation}
-			}
-		}
-		return taskCompleted{
-			scope:      scope,
-			generation: generation,
-			err:        coordinator.adapter.reportAvailability(scope.ctx, reports),
-		}
-	})
+	coordinator.publishTail = next
+	return previous, next
 }
 
-// requestNodeRefresh refreshes one node's inventory through a correlated
-// node.get_state and, when it is still eligible, re-registers it. Refreshes for
-// the same node are coalesced: at most one is in flight and at most one is
-// pending, and the pending one re-reads the node after the superseded
-// completion is dropped. Every request advances the node's refresh revision, so
-// an in-flight completion that a later Event superseded is recognized as stale
-// instead of reinstalling routes.
-func (coordinator *runtimeCoordinator) requestNodeRefresh(nodeID int) {
-	if nodeID <= 0 {
-		return
+// waitForObservationPublication waits for the previous serialized publication,
+// or reports that this effect's lifetime ended before it could publish.
+func waitForObservationPublication(ctx context.Context, previous <-chan struct{}) bool {
+	if previous == nil {
+		return ctx.Err() == nil
 	}
-	coordinator.invalidateNodeRefresh(nodeID)
-	if coordinator.refreshInFlight[nodeID] {
-		coordinator.refreshPending[nodeID] = true
-		return
+	select {
+	case <-previous:
+		return ctx.Err() == nil
+	case <-ctx.Done():
+		return false
 	}
-	connection := coordinator.connection
-	if !coordinator.dispatchable || connection == nil {
-		return
-	}
-	coordinator.refreshInFlight[nodeID] = true
-	generation := coordinator.generation
-	refreshed := coordinator.refreshRevisionFor(nodeID)
-	refreshedAt := refreshed.Load()
-	homeID := coordinator.homeID
-	home := coordinator.home
-	scope := coordinator.scope
-	refreshTimeout := coordinator.adapter.refreshTimeout
-	coordinator.startGenerationEffect(scope, func() runtimeEvent {
-		ctx := coordinator.effectContext(scope)
-		outcome := nodeRefreshCompleted{
-			scope:      scope,
-			generation: generation,
-			nodeID:     nodeID,
-			revision:   refreshedAt,
-			observedAt: time.Now().UTC(),
-		}
-		// The inventory read is bounded so an unanswered request can never hold
-		// this node's routes for the whole generation. The bound is applied only
-		// here: Register below runs under the generation's own lifetime, because
-		// a first registration may legitimately outlive one node read.
-		refreshContext, cancelRefresh := context.WithTimeout(ctx, refreshTimeout)
-		state, err := connection.GetNodeState(refreshContext, nodeID)
-		cancelRefresh()
-		if err != nil {
-			outcome.err = err
-			return outcome
-		}
-		outcome.state = state
-		planned, rejection := planNodeState(homeID, state)
-		if rejection != nil {
-			outcome.rejection = rejection
-			return outcome
-		}
-		// Register only while this generation is still the active one, and only
-		// while this read is still the node's newest one. A read that a later
-		// Event superseded must not re-register the node it describes.
-		if scope.ended() || refreshed.Load() != refreshedAt {
-			return outcome
-		}
-		binding, err := coordinator.adapter.session.Register(ctx, planned.Registration)
-		if err != nil {
-			if _, rejected := errors.AsType[*adapter.RegistrationRejectedError](err); rejected {
-				outcome.rejection = &nodeRejection{
-					HomeID: home,
-					NodeID: nodeID,
-					Code:   rejectionNodeInvalidDescriptor,
-				}
-				return outcome
-			}
-			outcome.err = &sessionOperationError{operation: "register refreshed Z-Wave Device", err: err}
-			return outcome
-		}
-		routes, err := bindEntityRoutes(binding, planned)
-		if err != nil {
-			outcome.rejection = &nodeRejection{
-				HomeID: home,
-				NodeID: nodeID,
-				Code:   rejectionNodeInvalidDescriptor,
-			}
-			return outcome
-		}
-		outcome.deviceID = binding.DeviceID
-		outcome.routes = routes
-		return outcome
-	})
-}
-
-// applyNodeRefresh installs the result of one node refresh. Only a successful
-// re-registration may change routes; a rejected refresh invalidates them
-// without attempting a zero-Entity registration. A refresh whose revision a
-// later Event or invalidation superseded installs nothing, but a Registration
-// that committed after the revision check cannot be recalled, so its bindings
-// are still remembered.
-func (coordinator *runtimeCoordinator) applyNodeRefresh(event nodeRefreshCompleted) error {
-	if event.scope != coordinator.scope || event.generation != coordinator.generation {
-		return nil
-	}
-	delete(coordinator.refreshInFlight, event.nodeID)
-	var err error
-	if event.revision == coordinator.refreshRevisionFor(event.nodeID).Load() {
-		err = coordinator.installNodeRefresh(event)
-	} else {
-		coordinator.rememberSupersededRefresh(event)
-	}
-	if coordinator.refreshPending[event.nodeID] {
-		delete(coordinator.refreshPending, event.nodeID)
-		coordinator.requestNodeRefresh(event.nodeID)
-	}
-	return err
-}
-
-// installNodeRefresh applies one refresh outcome and reports that node's fresh
-// availability.
-func (coordinator *runtimeCoordinator) installNodeRefresh(event nodeRefreshCompleted) error {
-	replayValueAdded := false
-	switch {
-	case isSessionOperationFailed(event.err):
-		return event.err
-	case event.err != nil && isUpstreamRejection(event.err):
-		coordinator.markNodeMissing(event.nodeID)
-	case event.err != nil:
-		coordinator.adapter.logger.WarnContext(
-			coordinator.ctx,
-			"Z-Wave node refresh failed",
-			slog.String(eventKey, "adapter.node_refresh_failed"),
-			slog.String("error_code", codeUpstreamConnectionFailed),
-		)
-		coordinator.dropGeneration(event.err)
-		// The generation is gone, so its routes are gone with it. Reporting the
-		// refreshed node's availability now would describe a generation that no
-		// longer exists, so the failed refresh ends here.
-		return nil //nolint:nilerr // The refresh failure already dropped the generation; it is not terminal.
-	case event.rejection != nil:
-		record := coordinator.nodeRecordFor(event.nodeID)
-		record.state = event.state
-		// The refreshed plan still rejects this node, so its routes are dropped.
-		// A value added frame that already waits for a route is kept: a later
-		// refresh may complete the plan that projects it.
-		coordinator.clearNodeRoutes(event.nodeID)
-		coordinator.invalidateNodeAttempts(event.nodeID, errStaleRoute)
-	default:
-		record := coordinator.nodeRecordFor(event.nodeID)
-		record.state = event.state
-		next := routableRoutes(event.state, event.routes)
-		changed := !sameRoutes(record.routes, next)
-		if err := coordinator.replaceNodeRoutes(event.nodeID, next); err != nil {
-			return err
-		}
-		coordinator.rememberNodeRoutes(reconciledNode{
-			nodeID:   event.nodeID,
-			deviceID: event.deviceID,
-			routes:   event.routes,
-		})
-		if changed {
-			// A real route change rejects every attempt that was never accepted.
-			// An identical refresh changes nothing and must keep queued attempts.
-			coordinator.invalidateNodeAttempts(event.nodeID, errStaleRoute)
-		} else {
-			coordinator.revalidateQueuedAttempts(event.nodeID)
-		}
-		replayValueAdded = true
-	}
-	coordinator.startNodeAvailabilityEffect(event.nodeID, event.observedAt)
-	if replayValueAdded {
-		// A queued value report that waited for this refresh now has the route it
-		// needed, so it is replayed with its original receive time instead of
-		// being lost with the inventory read that created its plan.
-		coordinator.replayPendingValueAdded(event.nodeID)
-	}
-	return nil
-}
-
-// rememberSupersededRefresh records the bindings a superseded refresh committed.
-// A Registration that started before a later Event advanced the node's refresh
-// revision cannot be recalled, so its canonical Entities exist in Core whether
-// or not their routes are installed. The stale routes are never installed: the
-// node's current state and Event authority stay authoritative, and the newly
-// known Entities are reported unavailable until a current refresh proves them
-// routable.
-func (coordinator *runtimeCoordinator) rememberSupersededRefresh(event nodeRefreshCompleted) {
-	if event.deviceID == "" || len(event.routes) == 0 {
-		return
-	}
-	coordinator.rememberNodeRoutes(reconciledNode{
-		nodeID:   event.nodeID,
-		deviceID: event.deviceID,
-		routes:   event.routes,
-	})
-	coordinator.adapter.logger.DebugContext(
-		coordinator.ctx,
-		"superseded Z-Wave node refresh kept its committed mappings",
-		slog.String(eventKey, "adapter.node_refresh_superseded"),
-	)
-	// The new mappings are known but unroutable in the current generation, so
-	// their current status is resolved from the node's live state and installed
-	// routes, which never include the stale route set.
-	coordinator.startNodeAvailabilityEffect(event.nodeID, event.observedAt)
 }
 
 // logReconcileCompleted summarizes one activated connection generation. Counts

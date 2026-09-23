@@ -200,12 +200,15 @@ func TestCommandPublishesExactPlannedSetValue(t *testing.T) {
 			if linked[0].EntityID != entityID {
 				t.Fatalf("linked Entity = %s, want %s", linked[0].EntityID, entityID)
 			}
-			// A poll result is linked evidence, never an ordinary Observation: the
-			// only ordinary Observations are the snapshot Observations published
-			// during reconciliation, and no further State report exists.
-			if got := len(session.recordedObservations()); got != testCase.snapshotObservations {
-				t.Fatalf("ordinary Observations = %d, want %d snapshot Observations",
-					got, testCase.snapshotObservations)
+			// The Command Entity is linked. A Multilevel Switch poll also publishes
+			// the sibling Entity's State as an ordinary Observation.
+			wantOrdinary := testCase.snapshotObservations
+			if testCase.snapshotObservations == 2 {
+				wantOrdinary++
+			}
+			if got := len(session.recordedObservations()); got != wantOrdinary {
+				t.Fatalf("ordinary Observations = %d, want %d including poll siblings",
+					got, wantOrdinary)
 			}
 		})
 	}
@@ -340,9 +343,19 @@ func scriptedStatusHook(
 	}
 }
 
-func TestCommandPollMismatchWaitsForHintsAndEventsAreNeverLinked(t *testing.T) {
+func TestCommandPollMismatchFollowUpsAndEventsAreNeverLinked(t *testing.T) {
 	t.Parallel()
-	recorder, session, connection, zwave := startCommandRuntime(t, dimmerNodeFixture(23, "Hallway Dimmer"))
+	recorder := &runtimeRecorder{}
+	session := newRuntimeSession(recorder)
+	connection := newFakeConnection(
+		recorder,
+		versionFixture(),
+		snapshotFixture(testHomeID, dimmerNodeFixture(23, "Hallway Dimmer")),
+	)
+	zwave := newRuntimeAdapter(t, session, &fakeDialer{connections: []*fakeConnection{connection}})
+	zwave.pollHintInterval = 300 * time.Millisecond
+	startRuntime(t, zwave)
+	waitForRoutesActivated(t, session)
 	entityID := routeEntityID(testNodeID, "brightness")
 	responder := newFakeResponder(recorder, session)
 	current := testValueID(commandClassMultilevelSwitch, 0, valuePropertyCurrentValue)
@@ -356,20 +369,20 @@ func TestCommandPollMismatchWaitsForHintsAndEventsAreNeverLinked(t *testing.T) {
 		t.Fatalf("Command error: %v", err)
 	}
 	waitFor(t, "first linked poll", func() bool {
-		return len(session.recordedLinked()) == 1 && len(session.recordedObservations()) == 2
+		return len(session.recordedLinked()) == 1 && len(session.recordedObservations()) == 3
 	})
 
-	// A hint whose value does not match the refreshed State is ordinary evidence
-	// only, and drives exactly one further poll.
+	// The Event remains ordinary evidence and may accelerate the next correlated
+	// poll, but the mismatch also guarantees a follow-up without another Event.
 	connection.emit(valueUpdatedEvent(current, "70"))
 	waitFor(t, "second linked poll", func() bool {
-		return len(session.recordedLinked()) == 2 && len(session.recordedObservations()) == 4
+		return len(session.recordedLinked()) == 2 && len(session.recordedObservations()) == 6
 	})
 
-	connection.setNodeState(dimmerNodeAtLevel(23, "40"))
+	connection.setPolledNodeState(dimmerNodeAtLevel(23, "40"))
 	connection.emit(valueUpdatedEvent(current, "40"))
 	waitFor(t, "matching linked poll", func() bool {
-		return len(session.recordedLinked()) == 3 && len(session.recordedObservations()) == 6
+		return len(session.recordedLinked()) == 3 && len(session.recordedObservations()) == 9
 	})
 
 	if got, want := linkedValues(session.recordedLinked()), []string{"15", "15", "40"}; !equalStrings(got, want) {
@@ -381,7 +394,7 @@ func TestCommandPollMismatchWaitsForHintsAndEventsAreNeverLinked(t *testing.T) {
 		}
 	}
 	if got, want := observationValues(session.recordedObservations()),
-		[]string{"true", "15", "true", "70", "true", "40"}; !equalStrings(got, want) {
+		[]string{"true", "15", "true", "true", "70", "true", "true", "40", "true"}; !equalStrings(got, want) {
 		t.Fatalf("ordinary Observation values = %v, want %v", got, want)
 	}
 	if got := len(connection.recordedSetCalls()); got != 1 {
@@ -703,10 +716,10 @@ func TestCommandRejectedParameterRejectionNeverWrites(t *testing.T) {
 	}
 }
 
-// This test protects the route-invalidation boundary of an accepted Command and
-// fails if a node that fell asleep can still satisfy that Command with linked
-// poll evidence, or if the sleep produces a second Hearth response.
-func TestCommandSleepInvalidatesAcceptedAttemptBeforeLinkedEvidence(t *testing.T) {
+// This test protects the topology-recycle boundary of an accepted Command and
+// fails if a stale generation can satisfy it with linked poll evidence, or if
+// recycling produces a second Hearth response.
+func TestCommandTopologyRecycleInvalidatesAcceptedAttemptBeforeLinkedEvidence(t *testing.T) {
 	t.Parallel()
 	recorder, session, connection, zwave := startCommandRuntime(t, dimmerNodeFixture(23, "Hallway Dimmer"))
 	entityID := routeEntityID(testNodeID, "brightness")
@@ -732,10 +745,9 @@ func TestCommandSleepInvalidatesAcceptedAttemptBeforeLinkedEvidence(t *testing.T
 	)
 	awaitSignal(t, entered, "the accepted Command to poll")
 
-	connection.emit(nodeEvent(eventSleep))
-	waitFor(t, "sleep availability", func() bool {
-		report, ok := session.lastAvailability(entityID)
-		return ok && report.ReasonCode == nodeAsleepReason
+	connection.emit(nodeEvent(eventMetadataUpdated))
+	waitFor(t, "topology recycle health", func() bool {
+		return recorder.has("health:unhealthy:" + externalSystemUnavailableReason)
 	})
 	close(release)
 	time.Sleep(testQuietPeriod)
@@ -749,13 +761,12 @@ func TestCommandSleepInvalidatesAcceptedAttemptBeforeLinkedEvidence(t *testing.T
 	if err := awaitCommandHandler(t, result); err != nil {
 		t.Fatalf("accepted Command error = %v, want nil", err)
 	}
-	assertHealthyGeneration(t, session)
 }
 
 // This test protects an in-flight command-linked publication and fails if a
 // route invalidation leaves it running, which would publish linked evidence for
 // a route that no longer exists.
-func TestCommandSleepCancelsAnInFlightLinkedPublication(t *testing.T) {
+func TestCommandTopologyRecycleCancelsAnInFlightLinkedPublication(t *testing.T) {
 	t.Parallel()
 	recorder, session, connection, zwave := startCommandRuntime(t, dimmerNodeFixture(23, "Hallway Dimmer"))
 	entityID := routeEntityID(testNodeID, "brightness")
@@ -782,7 +793,7 @@ func TestCommandSleepCancelsAnInFlightLinkedPublication(t *testing.T) {
 	}
 	awaitSignal(t, linkedEntered, "the linked publication to start")
 
-	connection.emit(nodeEvent(eventSleep))
+	connection.emit(nodeEvent(eventMetadataUpdated))
 	awaitSignal(t, linkedCancelled, "the in-flight linked publication to be cancelled")
 	time.Sleep(testQuietPeriod)
 
@@ -792,7 +803,9 @@ func TestCommandSleepCancelsAnInFlightLinkedPublication(t *testing.T) {
 	if accepted, rejected, total := responderCounts(responder); accepted != 1 || rejected != 0 || total != 1 {
 		t.Fatalf("responses = %d/%d/%d, want a single acceptance and no second response", accepted, rejected, total)
 	}
-	assertHealthyGeneration(t, session)
+	waitFor(t, "topology recycle health", func() bool {
+		return recorder.has("health:unhealthy:" + externalSystemUnavailableReason)
+	})
 }
 
 // This test protects the absolute deadline of a write that is already on the
@@ -1612,7 +1625,7 @@ func TestCommandKeyedValueEventIsNotProjectedOrHinted(t *testing.T) {
 	if err := runCommand(
 		t,
 		zwave,
-		commandFixture(entityID, `{"value":40}`, time.Now().Add(time.Minute)),
+		commandFixture(entityID, `{"value":15}`, time.Now().Add(time.Minute)),
 		responder,
 	); err != nil {
 		t.Fatalf("Command error: %v", err)
@@ -1627,10 +1640,252 @@ func TestCommandKeyedValueEventIsNotProjectedOrHinted(t *testing.T) {
 	if got := len(connection.recordedPollCalls()); got != pollsBefore {
 		t.Fatalf("polls = %d, want %d (a keyed Event must not drive a hint)", got, pollsBefore)
 	}
-	if got := len(session.recordedObservations()); got != 2 {
-		t.Fatalf("Observations = %d, want 2 (a keyed Event is not State)", got)
+	if got := len(session.recordedObservations()); got != 3 {
+		t.Fatalf("Observations = %d, want 3 including one polled sibling (a keyed Event is not State)", got)
 	}
 	if got := len(session.recordedLinked()); got != 1 {
 		t.Fatalf("linked Observations = %d, want 1", got)
+	}
+}
+
+// This test protects poll-driven follow-up and fails if an accepted Command
+// stops polling after one mismatching result unless another Event arrives.
+func TestCommandPollMismatchSchedulesFollowUpWithoutEvent(t *testing.T) {
+	t.Parallel()
+	recorder, session, _, zwave := startCommandRuntime(t, dimmerNodeFixture(23, "Hallway Dimmer"))
+	zwave.pollHintInterval = 25 * time.Millisecond
+	responder := newFakeResponder(recorder, session)
+	command := commandFixture(
+		routeEntityID(testNodeID, "brightness"), `{"value":40}`, time.Now().Add(time.Second),
+	)
+	if err := runCommand(t, zwave, command, responder); err != nil {
+		t.Fatalf("Command error: %v", err)
+	}
+	waitFor(t, "automatic follow-up poll", func() bool { return len(session.recordedLinked()) >= 2 })
+}
+
+// This test protects the poll observation fan-out and fails if a brightness
+// poll drops the power sibling that projects the same Multilevel Switch Value.
+func TestCommandPollPublishesSiblingObservation(t *testing.T) {
+	t.Parallel()
+	recorder, session, _, zwave := startCommandRuntime(t, dimmerNodeFixture(23, "Hallway Dimmer"))
+	responder := newFakeResponder(recorder, session)
+	command := commandFixture(
+		routeEntityID(testNodeID, "brightness"), `{"value":15}`, time.Now().Add(time.Minute),
+	)
+	if err := runCommand(t, zwave, command, responder); err != nil {
+		t.Fatalf("Command error: %v", err)
+	}
+	waitFor(t, "linked poll and sibling Observation", func() bool {
+		return len(session.recordedLinked()) == 1 && len(session.recordedObservations()) == 3
+	})
+	got := observationValues(session.recordedObservations())
+	want := []string{"true", "15", "true"}
+	if !equalStrings(got, want) {
+		t.Fatalf("ordinary Observation values = %v, want startup State plus polled power sibling %v", got, want)
+	}
+	linked := linkedValues(session.recordedLinked())
+	if !equalStrings(linked, []string{"15"}) {
+		t.Fatalf("linked Observation values = %v, want only the Command Entity value", linked)
+	}
+}
+
+// This test protects FIFO ownership after a failed linked publication and fails
+// if the next node Command dispatches before fresh linked evidence succeeds.
+func TestCommandLinkedPublicationErrorKeepsNodeFIFO(t *testing.T) {
+	t.Parallel()
+	recorder, session, connection, zwave := startCommandRuntime(t, dimmerNodeFixture(23, "Hallway Dimmer"))
+	var linkedCalls atomic.Int32
+	failedPublication := make(chan struct{})
+	session.setLinkedPublishHook(func(context.Context, adapter.Observation) error {
+		if linkedCalls.Add(1) == 1 {
+			close(failedPublication)
+			return errors.New("temporary linked publication failure")
+		}
+		return nil
+	})
+	first := newFakeResponder(recorder, session)
+	firstCommand := commandFixture(
+		routeEntityID(testNodeID, "brightness"), `{"value":40}`, time.Now().Add(time.Minute),
+	)
+	if err := runCommand(t, zwave, firstCommand, first); err != nil {
+		t.Fatalf("first Command error: %v", err)
+	}
+	awaitSignal(t, failedPublication, "the first linked publication failure")
+	follower := newFakeResponder(recorder, session)
+	followerCommand := commandFixture(
+		routeEntityID(testNodeID, "brightness"), `{"value":15}`, time.Now().Add(time.Minute),
+	)
+	followerResult := submitCommand(t, zwave, followerCommand, follower)
+	time.Sleep(testQuietPeriod)
+	if got := len(connection.recordedSetCalls()); got != 1 {
+		t.Fatalf("SetValue calls after linked publication failure = %d, want 1 while the first attempt owns FIFO", got)
+	}
+	connection.setPolledNodeState(dimmerNodeAtLevel(23, "40"))
+	connection.emit(valueUpdatedEvent(testValueID(commandClassMultilevelSwitch, 0, valuePropertyCurrentValue), "40"))
+	waitFor(t, "second SetValue after linked evidence", func() bool { return len(connection.recordedSetCalls()) == 2 })
+	select {
+	case err := <-followerResult:
+		if err != nil {
+			t.Fatalf("follower Command error: %v", err)
+		}
+	case <-time.After(harnessTimeout):
+		t.Fatal("follower Command did not receive its acceptance")
+	}
+}
+
+// This test protects cross-path Observation order and fails if a later ordinary
+// report reaches Session while an earlier linked poll publication is blocked.
+func TestCommandLinkedAndOrdinaryObservationsSharePublicationOrder(t *testing.T) {
+	t.Parallel()
+	recorder := &runtimeRecorder{}
+	session := newRuntimeSession(recorder)
+	firstNode := dimmerNodeFixture(23, "First Dimmer")
+	secondNode := dimmerNodeFixture(24, "Second Dimmer")
+	connection := newFakeConnection(recorder, versionFixture(), snapshotFixture(testHomeID, firstNode, secondNode))
+	zwave, _ := reconciledRuntime(t, session, connection)
+	waitForRoutesActivated(t, session)
+	linkedEntered := make(chan struct{})
+	allowLinked := make(chan struct{})
+	ordinaryEntered := make(chan struct{}, 1)
+	session.setLinkedPublishHook(func(ctx context.Context, _ adapter.Observation) error {
+		close(linkedEntered)
+		select {
+		case <-allowLinked:
+			return nil
+		case <-ctx.Done():
+			return ctx.Err()
+		}
+	})
+	secondEntityID := routeEntityID(24, "power")
+	session.setPublishHook(func(_ context.Context, observation adapter.Observation) error {
+		if observation.EntityID == secondEntityID {
+			ordinaryEntered <- struct{}{}
+		}
+		return nil
+	})
+	responder := newFakeResponder(recorder, session)
+	command := commandFixture(
+		routeEntityID(testNodeID, "brightness"), `{"value":15}`, time.Now().Add(time.Minute),
+	)
+	if err := runCommand(t, zwave, command, responder); err != nil {
+		t.Fatalf("Command error: %v", err)
+	}
+	awaitSignal(t, linkedEntered, "linked publication to block")
+	secondCurrent := testValueID(commandClassMultilevelSwitch, 0, valuePropertyCurrentValue)
+	connection.emit(valueUpdatedEventForNode(24, secondCurrent, "30"))
+	select {
+	case <-ordinaryEntered:
+		t.Fatal("ordinary Observation overtook the blocked linked publication")
+	case <-time.After(25 * time.Millisecond):
+	}
+	close(allowLinked)
+	select {
+	case <-ordinaryEntered:
+	case <-time.After(harnessTimeout):
+		t.Fatal("ordinary Observation did not publish after linked publication")
+	}
+}
+
+// This test protects linked-publication supersession and fails if a canceled
+// older completion releases the node FIFO while the replacement publication is
+// still pending.
+func TestCommandSupersededLinkedCompletionDoesNotReleaseFIFO(t *testing.T) {
+	t.Parallel()
+	recorder, session, connection, zwave := startCommandRuntime(t, dimmerNodeFixture(23, "Hallway Dimmer"))
+	firstEntered := make(chan struct{})
+	firstCanceled := make(chan struct{})
+	secondEntered := make(chan struct{})
+	allowSecond := make(chan struct{})
+	var calls atomic.Int32
+	session.setLinkedPublishHook(func(ctx context.Context, _ adapter.Observation) error {
+		switch calls.Add(1) {
+		case 1:
+			close(firstEntered)
+			<-ctx.Done()
+			close(firstCanceled)
+			return ctx.Err()
+		case 2:
+			close(secondEntered)
+			select {
+			case <-allowSecond:
+				return nil
+			case <-ctx.Done():
+				return ctx.Err()
+			}
+		default:
+			return nil
+		}
+	})
+	first := newFakeResponder(recorder, session)
+	firstCommand := commandFixture(
+		routeEntityID(testNodeID, "brightness"), `{"value":40}`, time.Now().Add(time.Minute),
+	)
+	if err := runCommand(t, zwave, firstCommand, first); err != nil {
+		t.Fatalf("first Command error: %v", err)
+	}
+	awaitSignal(t, firstEntered, "initial linked publication")
+	connection.setPolledNodeState(dimmerNodeAtLevel(23, "40"))
+	current := testValueID(commandClassMultilevelSwitch, 0, valuePropertyCurrentValue)
+	connection.emit(valueUpdatedEvent(current, "40"))
+	awaitSignal(t, secondEntered, "replacement linked publication")
+	awaitSignal(t, firstCanceled, "superseded linked publication cancellation")
+	follower := newFakeResponder(recorder, session)
+	followerCommand := commandFixture(
+		routeEntityID(testNodeID, "brightness"), `{"value":15}`, time.Now().Add(time.Minute),
+	)
+	followerResult := submitCommand(t, zwave, followerCommand, follower)
+	time.Sleep(testQuietPeriod)
+	if got := len(connection.recordedSetCalls()); got != 1 {
+		t.Fatalf("SetValue calls before replacement publication = %d, want 1", got)
+	}
+	close(allowSecond)
+	waitFor(t, "follower dispatch after replacement evidence", func() bool {
+		return len(connection.recordedSetCalls()) == 2
+	})
+	select {
+	case err := <-followerResult:
+		if err != nil {
+			t.Fatalf("follower Command error: %v", err)
+		}
+	case <-time.After(harnessTimeout):
+		t.Fatal("follower Command did not receive its acceptance")
+	}
+}
+
+// This test protects iterative FIFO draining and fails if expired queued
+// attempts recursively call startNext until the goroutine stack grows per item.
+func TestCommandStartNextDrainsExpiredFIFOIteratively(t *testing.T) {
+	t.Parallel()
+	const queuedCount = 10000
+	coordinator := &runtimeCoordinator{
+		attempts:        make(map[uint64]*commandAttempt, queuedCount),
+		attemptsByValue: make(map[attemptValueKey]*commandAttempt),
+		queues:          make(map[int]*nodeCommandQueue),
+	}
+	queue := &nodeCommandQueue{}
+	results := make([]chan error, 0, queuedCount)
+	for id := uint64(1); id <= queuedCount; id++ {
+		result := make(chan error, 1)
+		attempt := &commandAttempt{
+			id: id, nodeID: 23, deadline: time.Now().Add(-time.Second),
+			phase: phaseQueued, handlerResult: result,
+		}
+		coordinator.attempts[id] = attempt
+		queue.queued = append(queue.queued, attempt)
+		results = append(results, result)
+	}
+	coordinator.queues[23] = queue
+	coordinator.startNext(23)
+	if len(coordinator.attempts) != 0 || len(coordinator.queues) != 0 {
+		t.Fatalf(
+			"expired FIFO drain left %d attempts and %d queues",
+			len(coordinator.attempts), len(coordinator.queues),
+		)
+	}
+	for index, result := range results {
+		if err := <-result; !errors.Is(err, context.DeadlineExceeded) {
+			t.Fatalf("queued Command %d result = %v, want deadline exceeded", index, err)
+		}
 	}
 }

@@ -1569,33 +1569,22 @@ func TestValidEntityKeyMatchesHearthSlugRule(t *testing.T) {
 	}
 }
 
-// This test protects the single-node reconciliation seam, and fails if a
-// refreshed node plans differently than the same node inside a snapshot, or if
-// an ineligible refresh silently keeps planning.
-func TestPlanNodeStateAgreesWithSnapshotPlanning(t *testing.T) {
+// This test protects shared node planning and fails if planning one snapshot
+// node differs from planning the same node in the full network inventory.
+func TestPlanNodeMatchesSnapshotPlanning(t *testing.T) {
 	t.Parallel()
 	node := nodeFixture(fixtureDimmerNodeID, []endpointState{rootEndpointFixture()}, levelPairFixture(0))
-	refreshed, rejection := planNodeState(testHomeID, node)
+	planned, rejection := planNode(normalizedHomeID(testHomeID), node)
 	if rejection != nil {
-		t.Fatalf("planNodeState rejected an eligible node: %#v", rejection)
+		t.Fatalf("planNode rejected an eligible node: %#v", rejection)
 	}
 	fromSnapshot := requireOnlyNode(t, planNetwork(testHomeID, snapshotFixture(testHomeID, node)))
-	if refreshed.Registration.BindingKey != fromSnapshot.Registration.BindingKey {
-		t.Fatalf("refreshed Binding key = %q, want %q",
-			refreshed.Registration.BindingKey, fromSnapshot.Registration.BindingKey)
+	if planned.Registration.BindingKey != fromSnapshot.Registration.BindingKey {
+		t.Fatalf("planned Binding key = %q, want %q",
+			planned.Registration.BindingKey, fromSnapshot.Registration.BindingKey)
 	}
-	requirePlanKeys(t, refreshed, []string{"power", "brightness"})
+	requirePlanKeys(t, planned, []string{"power", "brightness"})
 	requirePlanKeys(t, fromSnapshot, []string{"power", "brightness"})
-
-	sleeping := node
-	sleeping.IsListening = false
-	slept, code := planNodeState(testHomeID, sleeping)
-	if code == nil || code.Code != rejectionNodeSleeping {
-		t.Fatalf("planNodeState(sleeping) rejection = %#v, want %q", code, rejectionNodeSleeping)
-	}
-	if len(slept.Plans) != 0 || slept.Registration.BindingKey != "" {
-		t.Fatalf("a rejected refresh still produced a plan: %#v", slept)
-	}
 }
 
 // nodeStateValues returns the snapshot Values of one node of a planned snapshot.

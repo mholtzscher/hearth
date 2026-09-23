@@ -66,6 +66,7 @@ func (pollValueCompleted) runtimeEvent() {}
 // linkedPublishCompleted reports one command-linked Observation publication.
 type linkedPublishCompleted struct {
 	attemptID uint64
+	linkToken uint64
 	matched   bool
 	err       error
 }
@@ -133,6 +134,7 @@ type commandAttempt struct {
 	// attempt, so a route change, removal, or sleep cannot leave stale linked
 	// evidence behind.
 	cancelLink context.CancelFunc
+	linkToken  uint64
 
 	pollInFlight bool
 	hintPending  bool
@@ -259,11 +261,11 @@ func (coordinator *runtimeCoordinator) startNext(nodeID int) {
 		attempt := queue.queued[0]
 		queue.queued = queue.queued[1:]
 		if !time.Now().Before(attempt.deadline) {
-			coordinator.finishAttempt(attempt, context.DeadlineExceeded)
+			coordinator.finishAttemptInternal(attempt, context.DeadlineExceeded, false)
 			continue
 		}
 		if !coordinator.attemptRouteIsCurrent(attempt) {
-			coordinator.abortAttempt(attempt, errStaleRoute)
+			coordinator.abortAttemptInternal(attempt, errStaleRoute, false)
 			continue
 		}
 
@@ -470,6 +472,7 @@ func (coordinator *runtimeCoordinator) finishPollValue(event pollValueCompleted)
 			EntityID: attempt.route.EntityID,
 			Err:      err,
 		})
+		attempt.hintPending = true
 		coordinator.scheduleHintPoll(attempt)
 		return
 	}
@@ -482,27 +485,53 @@ func (coordinator *runtimeCoordinator) finishPollValue(event pollValueCompleted)
 	matched := attempt.matches(attempt.parameters, observation.Value)
 	evidence := attempt.evidence
 	scope := coordinator.scope
+	// A poll is fresh State for every Entity projecting the same current Value.
+	// Keep this attempt's Entity linked and publish its sibling Entities normally.
+	var siblings []adapter.Observation
+	for _, route := range coordinator.snapshot.routesForValue(attempt.nodeID, attempt.route.Plan.CurrentValueID) {
+		if route.EntityID == attempt.entityID {
+			continue
+		}
+		sibling, siblingErr := route.Plan.observe(route.EntityID, event.receivedAt, event.value)
+		if siblingErr != nil {
+			coordinator.logStateUnrepresentable(entityStateIssue{
+				Key: route.Plan.Key, EntityID: route.EntityID, Err: siblingErr,
+			})
+			continue
+		}
+		siblings = append(siblings, sibling)
+	}
+	if len(siblings) > 0 {
+		coordinator.publishOrdinary(siblings)
+	}
 	// Linked publication runs under its own cancelable lifetime so a route
 	// change, removal, or sleep stops it before it can report stale evidence.
 	// Only the newest linked publication of one attempt may be in flight.
 	if attempt.cancelLink != nil {
 		attempt.cancelLink()
 	}
+	attempt.linkToken++
+	linkToken := attempt.linkToken
 	linkContext, cancelLink := context.WithCancel(coordinator.effectContext(scope))
 	attempt.cancelLink = cancelLink
+	previous, next := coordinator.reserveObservationPublication()
 	coordinator.startGenerationEffect(scope, func() runtimeEvent {
+		defer close(next)
 		defer cancelLink()
+		if !waitForObservationPublication(linkContext, previous) {
+			return linkedPublishCompleted{attemptID: attempt.id, linkToken: linkToken}
+		}
 		_, publishErr := evidence.PublishObservation(linkContext, observation)
-		return linkedPublishCompleted{attemptID: attempt.id, matched: matched, err: publishErr}
+		return linkedPublishCompleted{attemptID: attempt.id, linkToken: linkToken, matched: matched, err: publishErr}
 	})
 }
 
-// finishLinkedPublish ends a satisfied attempt, or waits for the next coalesced
-// hint after a mismatching result. A failed linked publication is a diagnostic:
-// the accepted Command simply receives no linked evidence and times out.
+// finishLinkedPublish ends a satisfied attempt, or schedules another poll after
+// a mismatch. A failed publication is diagnostic and leaves the accepted attempt
+// holding its node FIFO slot until evidence arrives or its deadline passes.
 func (coordinator *runtimeCoordinator) finishLinkedPublish(event linkedPublishCompleted) {
 	attempt := coordinator.attempts[event.attemptID]
-	if attempt == nil || attempt.phase != phaseAccepted {
+	if attempt == nil || attempt.phase != phaseAccepted || event.linkToken != attempt.linkToken {
 		return
 	}
 	if event.err != nil {
@@ -515,18 +544,22 @@ func (coordinator *runtimeCoordinator) finishLinkedPublish(event linkedPublishCo
 				slog.String("error_code", codeLinkedPublishFailed),
 			)
 		}
-		coordinator.finishAttempt(attempt, nil)
+		// The accepted Command still has no linked evidence. Keep its FIFO slot
+		// until evidence is published or its absolute deadline ends the attempt.
 		return
 	}
 	if event.matched {
 		coordinator.finishAttempt(attempt, nil)
 		return
 	}
+	// A mismatch is itself a reason to verify again; polling need not wait for a
+	// new value update Event.
+	attempt.hintPending = true
 	coordinator.scheduleHintPoll(attempt)
 }
 
-// scheduleHintPoll issues one coalesced poll no faster than the hint interval
-// after the previous poll started.
+// scheduleHintPoll issues one coalesced hint or verification poll no faster than
+// the configured interval after the previous poll started.
 func (coordinator *runtimeCoordinator) scheduleHintPoll(attempt *commandAttempt) {
 	if attempt.phase != phaseAccepted || !attempt.hintPending || attempt.pollInFlight {
 		return
@@ -587,6 +620,16 @@ func (coordinator *runtimeCoordinator) rejectAttempt(attempt *commandAttempt, me
 // advances its node's queue. A response is delivered only to an attempt that
 // never accepted.
 func (coordinator *runtimeCoordinator) finishAttempt(attempt *commandAttempt, handlerErr error) {
+	coordinator.finishAttemptInternal(attempt, handlerErr, true)
+}
+
+// finishAttemptInternal ends one attempt exactly once and optionally advances
+// its node FIFO. The non-advancing form is used while startNext drains entries.
+func (coordinator *runtimeCoordinator) finishAttemptInternal(
+	attempt *commandAttempt,
+	handlerErr error,
+	advance bool,
+) {
 	if attempt.phase == phaseTerminal {
 		return
 	}
@@ -621,7 +664,7 @@ func (coordinator *runtimeCoordinator) finishAttempt(attempt *commandAttempt, ha
 		}
 	}
 	coordinator.finishHandler(attempt, handlerErr)
-	if queue != nil {
+	if queue != nil && advance {
 		coordinator.startNext(attempt.nodeID)
 	}
 }

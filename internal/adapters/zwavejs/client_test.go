@@ -473,8 +473,41 @@ func TestStartListeningNegotiatesSchema29AndReturnsSnapshot(t *testing.T) {
 
 	requireCompatibleVersion(t, version)
 	requireSnapshotNode(t, snapshot)
+	if snapshot.receivedAt.IsZero() || snapshot.receivedAt.Location() != time.UTC {
+		t.Fatalf("snapshot receive time = %v, want a non-zero UTC result-frame time", snapshot.receivedAt)
+	}
 	requireInitializeRequest(t, server.nextRequest())
 	requireStartListeningRequest(t, server.nextRequest())
+}
+
+// This test protects an empty but complete network inventory and fails if
+// explicit nodes: [] is treated like a missing or null node inventory.
+func TestSnapshotAllowsAnEmptyNodeInventory(t *testing.T) {
+	t.Parallel()
+	server := startScriptedServer(t, func(session *scriptedSession) {
+		session.sendJSON(compatibleVersionFrame())
+		initialize, ok := session.awaitRequest()
+		if !ok {
+			return
+		}
+		session.replySuccess(initialize.messageID(), map[string]any{})
+		startListening, ok := session.awaitRequest()
+		if !ok {
+			return
+		}
+		session.replySuccess(startListening.messageID(), map[string]any{
+			"state": map[string]any{
+				"controller": map[string]any{"homeId": testHomeID},
+				"nodes":      []any{},
+			},
+		})
+		session.waitForClose()
+	})
+	connection := dialConnection(t, server)
+	_, snapshot := startListening(t, connection)
+	if snapshot.State.Nodes == nil || len(snapshot.State.Nodes) != 0 {
+		t.Fatalf("snapshot nodes = %#v, want a present empty inventory", snapshot.State.Nodes)
+	}
 }
 
 // requireCompatibleVersion asserts the consumed version-frame fields.
@@ -593,8 +626,6 @@ func TestConcurrentRequestsCorrelateOutOfOrderResults(t *testing.T) {
 
 	currentDone := make(chan polledValue, 1)
 	targetDone := make(chan polledValue, 1)
-	stateDone := make(chan nodeState, 1)
-	stateErr := make(chan error, 1)
 	go func() {
 		value, at, err := connection.PollValue(
 			ctx, testNodeID, testValueID(testCommandClassMultilevelSwitch, 0, "currentValue"),
@@ -607,14 +638,8 @@ func TestConcurrentRequestsCorrelateOutOfOrderResults(t *testing.T) {
 		)
 		targetDone <- polledValue{value: value, at: at, err: err}
 	}()
-	go func() {
-		state, err := connection.GetNodeState(ctx, testNodeID)
-		stateDone <- state
-		stateErr <- err
-	}()
-
-	requireCorrelatedResults(t, <-currentDone, <-targetDone, <-stateDone, <-stateErr)
-	requireRequestMessageIDs(t, server, []string{"3", "4", "5"})
+	requireCorrelatedResults(t, <-currentDone, <-targetDone)
+	requireRequestMessageIDs(t, server, []string{"3", "4"})
 	requireInterleavedEvent(t, connection)
 }
 
@@ -625,14 +650,14 @@ type polledValue struct {
 	err   error
 }
 
-// scriptOutOfOrderReplies answers three concurrent requests in the reverse order
+// scriptOutOfOrderReplies answers two concurrent requests in the reverse order
 // they arrived and interleaves an unrelated Event.
 func scriptOutOfOrderReplies(session *scriptedSession) {
 	if !session.completeHandshake() {
 		return
 	}
-	batch := make([]scriptedRequest, 0, 3)
-	for range 3 {
+	batch := make([]scriptedRequest, 0, 2)
+	for range 2 {
 		request, ok := session.awaitRequest()
 		if !ok {
 			return
@@ -660,10 +685,6 @@ func scriptOutOfOrderReplies(session *scriptedSession) {
 // so a result routed by anything but its message ID is visible in the caller's
 // value.
 func replyToScriptedRequest(session *scriptedSession, request scriptedRequest) {
-	if request.command() == commandGetState {
-		session.replySuccess(request.messageID(), map[string]any{"state": testNodeState()})
-		return
-	}
 	var valueIdentifier struct {
 		Property string `json:"property"`
 	}
@@ -680,19 +701,13 @@ func replyToScriptedRequest(session *scriptedSession, request scriptedRequest) {
 
 // requireCorrelatedResults asserts each concurrent caller received its own
 // result.
-func requireCorrelatedResults(t *testing.T, current, target polledValue, state nodeState, stateErr error) {
+func requireCorrelatedResults(t *testing.T, current, target polledValue) {
 	t.Helper()
-	if stateErr != nil {
-		t.Fatalf("GetNodeState: %v", stateErr)
-	}
 	if current.err != nil || string(current.value) != "15" {
 		t.Fatalf("currentValue poll = %s (%v), want 15", current.value, current.err)
 	}
 	if target.err != nil || string(target.value) != "80" {
 		t.Fatalf("targetValue poll = %s (%v), want 80", target.value, target.err)
-	}
-	if state.NodeID != testNodeID || state.Name != "Hallway Dimmer" || len(state.Values) != 2 {
-		t.Fatalf("node state = %#v, want the test node state", state)
 	}
 	if current.at.IsZero() || current.at.Location() != time.UTC {
 		t.Fatalf("poll receive time = %v, want a UTC receive time", current.at)
@@ -923,6 +938,9 @@ func TestMalformedFramesEndGeneration(t *testing.T) {
 		{"controller event with conflicting node ids",
 			`{"type":"event","event":{"source":"controller","event":"node removed","nodeId":7,"node":{"nodeId":23}}}`,
 			&malformedFrameError{}},
+		{"node event without node id",
+			`{"type":"event","event":{"source":"node","event":"value updated","args":{"newValue":15}}}`,
+			&malformedFrameError{}},
 	}
 	for _, testCase := range cases {
 		t.Run(testCase.name, func(t *testing.T) {
@@ -1071,6 +1089,16 @@ func TestSnapshotFailuresEndHandshake(t *testing.T) {
 			&malformedSnapshotError{},
 		},
 		{
+			"missing node inventory",
+			`{"type":"result","messageId":"%s","success":true,"result":{"state":{"controller":{"homeId":439041101}}}}`,
+			&malformedSnapshotError{},
+		},
+		{
+			"null node inventory",
+			`{"type":"result","messageId":"%s","success":true,"result":{"state":{"controller":{"homeId":439041101},"nodes":null}}}`,
+			&malformedSnapshotError{},
+		},
+		{
 			"non object state",
 			`{"type":"result","messageId":"%s","success":true,"result":{"state":"ready"}}`,
 			&malformedSnapshotError{},
@@ -1112,6 +1140,30 @@ func TestSnapshotFailuresEndHandshake(t *testing.T) {
 			requireErrorSameType(t, awaitLost(t, connection), testCase.want, "lost error")
 		})
 	}
+}
+
+// This test protects the full WebSocket handshake deadline and fails if a peer
+// that never sends its version frame can hold StartListening beyond its bound.
+func TestHandshakeTimeoutEndsGeneration(t *testing.T) {
+	t.Parallel()
+	server := startScriptedServer(t, func(session *scriptedSession) {
+		session.waitForClose()
+	})
+	connection := dialConnection(t, server)
+	internal := productionConnection(t, connection)
+	internal.handshakeTimeout = testRequestDeadline
+
+	startedAt := time.Now()
+	_, _, err := connection.StartListening(context.Background())
+	if !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("StartListening error = %v, want handshake deadline", err)
+	}
+	requireErrorSameType(t, err, &requestTimeoutError{}, "handshake")
+	if time.Since(startedAt) > testTimeout {
+		t.Fatal("StartListening exceeded the test bound")
+	}
+	requireErrorSameType(t, awaitLost(t, connection), &requestTimeoutError{}, "lost error")
+	server.expectNoRequest()
 }
 
 // This test protects the schema-29 error shape: a rejection must be classified
@@ -1554,34 +1606,6 @@ func runPollValueCase(t *testing.T, reply, wantValue string, fatal bool) {
 	}
 }
 
-// This test protects node-plan refresh correlation and fails if a node state for
-// another node is accepted as the requested node's plan.
-func TestGetNodeStateRejectsADifferentNode(t *testing.T) {
-	t.Parallel()
-	server := startScriptedServer(t, func(session *scriptedSession) {
-		if !session.completeHandshake() {
-			return
-		}
-		request, ok := session.awaitRequest()
-		if !ok {
-			return
-		}
-		other := testNodeState()
-		other["nodeId"] = testNodeID + 1
-		session.replySuccess(request.messageID(), map[string]any{"state": other})
-		session.waitForClose()
-	})
-	connection := dialConnection(t, server)
-	startListening(t, connection)
-
-	state, err := connection.GetNodeState(testContext(t), testNodeID)
-	if state.NodeID != 0 || err == nil {
-		t.Fatalf("node state = %#v (%v), want a routing failure", state, err)
-	}
-	requireErrorSameType(t, err, &malformedResultError{}, "get node state")
-	requireErrorSameType(t, awaitLost(t, connection), &malformedResultError{}, "lost error")
-}
-
 // This test protects the bounded waiter pool and fails if the bound is missing,
 // off by one, or lets an over-limit request reach the server.
 func TestInFlightRequestLimitIsExact(t *testing.T) {
@@ -1606,7 +1630,8 @@ func TestInFlightRequestLimitIsExact(t *testing.T) {
 	var waitGroup sync.WaitGroup
 	for range maximumInFlightRequests {
 		waitGroup.Go(func() {
-			_, _ = connection.GetNodeState(ctx, testNodeID)
+			_, _ = connection.SetValue(ctx, testNodeID,
+				testValueID(testCommandClassBinarySwitch, 0, "targetValue"), json.RawMessage("true"))
 		})
 	}
 	for range maximumInFlightRequests {
@@ -1617,7 +1642,8 @@ func TestInFlightRequestLimitIsExact(t *testing.T) {
 		}
 	}
 
-	_, err := connection.GetNodeState(ctx, testNodeID)
+	_, err := connection.SetValue(ctx, testNodeID,
+		testValueID(testCommandClassBinarySwitch, 0, "targetValue"), json.RawMessage("true"))
 	requireErrorSameType(t, err, &inFlightRequestLimitError{}, "request above the limit")
 	select {
 	case <-received:
@@ -1748,7 +1774,8 @@ func TestWriteGateWaitIsContextBounded(t *testing.T) {
 	defer cancelWaiting()
 	waiting := make(chan error, 1)
 	go func() {
-		_, err := connection.GetNodeState(waitingContext, testNodeID)
+		_, err := connection.SetValue(waitingContext, testNodeID,
+			testValueID(testCommandClassBinarySwitch, 0, "targetValue"), json.RawMessage("true"))
 		waiting <- err
 	}()
 
@@ -1789,7 +1816,8 @@ func TestWriteGateWaitEndsWithTheConnection(t *testing.T) {
 	internal.writeGate <- struct{}{}
 	waiting := make(chan error, 1)
 	go func() {
-		_, err := connection.GetNodeState(testContext(t), testNodeID)
+		_, err := connection.SetValue(testContext(t), testNodeID,
+			testValueID(testCommandClassBinarySwitch, 0, "targetValue"), json.RawMessage("true"))
 		waiting <- err
 	}()
 	select {
@@ -2301,9 +2329,6 @@ func TestInvalidRequestsAreRefusedLocally(t *testing.T) {
 		ctx, testNodeID, testValueID(testCommandClassBinarySwitch, 0, "currentValue"),
 	); err != nil {
 		t.Errorf("poll with a node ID unexpectedly rejected: %v", err)
-	}
-	if _, err := connection.GetNodeState(ctx, -1); err == nil {
-		t.Error("node state without a node ID unexpectedly accepted")
 	}
 	_, err := connection.SetValue(
 		ctx, testNodeID, testValueID(testCommandClassBinarySwitch, 0, "targetValue"), nil,
