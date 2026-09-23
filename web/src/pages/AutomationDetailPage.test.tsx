@@ -6,6 +6,7 @@ import {
   AUTOMATION_ID,
   AUTOMATION_NAME,
   AUTOMATION_REVISION,
+  ENTITY_ID,
   ENTITY_NAME,
   RUN_ID,
   SKIP_ID,
@@ -310,6 +311,45 @@ describe("AutomationDetailPage scope changes", () => {
 });
 
 describe("AutomationDetailPage history", () => {
+  it("shows held-State duration and comparisons in the definition and matched Trigger", async () => {
+    const heldTrigger = {
+      id: "light_on",
+      kind: "held_state" as const,
+      entity_id: ENTITY_ID,
+      comparisons: [{ value_pointer: "", operator: "eq" as const, operand: true }],
+      for_seconds: 60,
+    };
+    installAutomationFetch(
+      detailRoutes([
+        {
+          method: "GET",
+          path: DEFINITION_PATH,
+          respond: () => ({
+            body: automationFixture({
+              definition: { ...automationFixture().definition, triggers: [heldTrigger] },
+            }),
+          }),
+        },
+        { method: "GET", path: HISTORY_PATH, respond: () => ({ body: { items: [skipSummary()] } }) },
+        {
+          method: "GET",
+          path: HISTORY_ENTRY_PATTERN,
+          respond: () => ({
+            body: { kind: "skip", skip: skipFixture({ matched_triggers: [heldTrigger] }) },
+          }),
+        },
+      ]),
+    );
+    renderDetailPage();
+
+    expect(await screen.findByText("60 seconds")).not.toBeNull();
+    fireEvent.click(await screen.findByRole("button", { name: SKIP_ID }));
+    await screen.findByText("Matched Triggers");
+    expect(screen.getAllByText("60 seconds")).toHaveLength(2);
+    expect(screen.getAllByText("eq true")).toHaveLength(2);
+    expect(screen.queryByText(/dispositions/)).toBeNull();
+  });
+
   it("pages with an encoded cursor and loads a selected Run's step attempts", async () => {
     const requests = installAutomationFetch(
       detailRoutes([

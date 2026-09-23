@@ -112,6 +112,60 @@ func TestHeldStateOlderOutOfOrderFactDoesNotRewindHold(t *testing.T) {
 	}
 }
 
+// This test protects consumption against a delayed off/on Fact backlog: State
+// already incorporates those reports at expiry, so neither may re-arm the hold.
+func TestDueHeldStateConsumesCurrentStateReceiveOrder(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	database := openAutomationDatabase(t)
+	installHeldStateAdmissionSchema(t, database)
+	at := time.Now().UTC().Add(-time.Minute).Truncate(time.Second)
+	repository := automationssqlite.NewAutomationRepository(
+		database, automations.Dependencies{Now: func() time.Time { return at }},
+	)
+	entityID := newEntityID(t)
+	if _, err := repository.CreateAutomation(ctx, heldStateDefinition(t, entityID, nil)); err != nil {
+		t.Fatal(err)
+	}
+	first, _ := heldObservationFact(t, entityID, at.Add(time.Second), `true`, 1)
+	seedHeldStateEntity(t, database, entityID, first, 1)
+	if _, err := repository.AdmitDeviceFact(
+		ctx, first, stateSnapshotWith(), at.Add(2*time.Second), at,
+	); err != nil {
+		t.Fatal(err)
+	}
+
+	delayedOff, _ := heldObservationFact(t, entityID, at.Add(2*time.Second), `false`, 2)
+	seedHeldStateEntity(t, database, entityID, delayedOff, 2)
+	delayedOn, _ := heldObservationFact(t, entityID, at.Add(3*time.Second), `true`, 3)
+	seedHeldStateEntity(t, database, entityID, delayedOn, 3)
+	dueAt := at.Add(11 * time.Second)
+	result, processed, err := repository.AdmitDueHeldStates(ctx, stateSnapshotWith(), dueAt, 100)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if processed != 1 || result.Outcome.StartedRuns != 1 {
+		t.Fatalf("due admission processed=%d outcome=%#v, want one Run", processed, result.Outcome)
+	}
+	assertHeldState(t, database, "consumed", 3, "", "")
+
+	for _, fact := range []automations.DeviceFact{delayedOff, delayedOn} {
+		if _, err = repository.AdmitDeviceFact(
+			ctx, fact, stateSnapshotWith(), dueAt.Add(time.Second), at,
+		); err != nil {
+			t.Fatal(err)
+		}
+		assertHeldState(t, database, "consumed", 3, "", "")
+	}
+	result, processed, err = repository.AdmitDueHeldStates(ctx, stateSnapshotWith(), dueAt.Add(20*time.Second), 100)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if processed != 0 || result.Outcome.StartedRuns != 0 || result.Outcome.RecordedSkips != 0 {
+		t.Fatalf("backlogged Facts created a second outcome: processed=%d outcome=%#v", processed, result.Outcome)
+	}
+}
+
 // This test protects the due-time State recheck; it fails if an expired hold
 // starts a Run or records a Skip after current State has become nonmatching.
 func TestDueHeldStateCurrentNonmatchCancelsWithoutSkip(t *testing.T) {
