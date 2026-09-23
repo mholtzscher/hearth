@@ -81,7 +81,7 @@ A named definition containing one or more Triggers, optional Conditions, and an 
 _Avoid_: Rule, workflow, scene
 
 **Trigger**:
-One identified matcher for one Device Fact that can automatically start an Automation. Multiple Triggers are alternative reasons, while manual invocation requests admission without one; an Entity Operation named `trigger` is a separate device-control concept.
+One identified reason that can automatically start an Automation, either by matching a Device Fact or by completing a held-State requirement. Multiple Triggers are alternative reasons, while manual invocation requests admission without one; an Entity Operation named `trigger` is a separate device-control concept.
 _Avoid_: Command, invocation, condition
 
 **Condition**:
@@ -96,6 +96,14 @@ _Avoid_: Entity Event, event handler
 A Trigger that matches one accepted Observation fact by exact Entity, accepted disposition, and configured comparisons against its reported value and, optionally, the State immediately preceding that Observation's acceptance. Same-value Observations may match when their `unchanged` disposition is allowed.
 _Avoid_: State Trigger, State query
 
+**Held-State Trigger**:
+A Trigger that starts an Automation once when an Entity's accepted State has satisfied a configured value predicate for a specified duration. A matching Observation begins a hold, matching re-reports preserve its start, and a nonmatching accepted State ends it; availability and enablement alone do not end it. A new definition or Core restart requires a subsequent matching Observation to begin a new hold.
+_Avoid_: Duration Condition, delayed Observation Trigger
+
+**Hold**:
+One stretch of matching accepted State tracked for a Held-State Trigger from Core's first accepted matching Observation rather than an upstream timestamp. A nonmatching accepted State or Core restart cancels a pending hold; reaching the duration while State still matches permits one admission decision, which consumes the hold even if it produces an Automation Skip.
+_Avoid_: Timer, delay, queued Run
+
 **Step**:
 One Entity Operation request in an Automation's ordered sequence. Attempting a Step creates a Command only if execution-time validation and durable creation succeed; the Step is the definition, not the Command attempt or its outcome.
 _Avoid_: Action, Command
@@ -105,7 +113,7 @@ One recorded execution of an Automation using a snapshot of its definition, star
 _Avoid_: Command, occurrence
 
 **Automation Skip**:
-One recorded outcome in which a matching Device Fact or a manual invocation started no Run; automatic matches may be stale or busy, and either source may be prevented by false or unknown Conditions. A Skip never queues execution.
+One recorded outcome in which a matching Device Fact, a completed held-State requirement, or a manual invocation started no Run; automatic admission may be prevented by freshness or concurrency rules, and any source may be prevented by false or unknown Conditions. A Skip never queues execution.
 _Avoid_: Run, failure, ignored fact
 
 **Canonical ID**:
