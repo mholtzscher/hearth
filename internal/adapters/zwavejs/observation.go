@@ -210,23 +210,6 @@ func resolveCurrentValue(values []valueState, id valueID) (json.RawMessage, bool
 	return nil, false
 }
 
-// valueAddedCarriesState reports whether one value added frame can ever become a
-// typed State Observation. Only a planned current Value of a planned Command
-// Class is read as State. A target Value is a Command target, a numeric property
-// has no planned name, and every other Command Class is unrelated noise, so none
-// of them is ever queued for replay.
-func valueAddedCarriesState(id valueID) bool {
-	if id.Property.Numeric || id.Property.Name == "" || valueIDHasPropertyKey(id) {
-		return false
-	}
-	switch id.CommandClass {
-	case commandClassBinarySwitch, commandClassMultilevelSwitch:
-		return id.Property.Name == valuePropertyCurrentValue
-	default:
-		return false
-	}
-}
-
 // translateNodeValues translates the current Values of one node snapshot into
 // typed Observations in route order. Because plans order power before brightness
 // per endpoint, one frame that maps to both publishes power first. One Entity's

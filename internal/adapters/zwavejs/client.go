@@ -25,7 +25,7 @@ import (
 const (
 	// schemaVersion29 is the Z-Wave JS server API schema this Adapter
 	// negotiates. Schema 29 supplies string interview stages, endpoint state,
-	// node.poll_value, node.get_state, and structured node.set_value results.
+	// node.poll_value and structured node.set_value results.
 	schemaVersion29 = 29
 
 	// maximumFrameBytes is the WebSocket read limit in bytes: 16 MiB. A larger
@@ -50,6 +50,9 @@ const (
 	// otherwise no longer be told apart from an unknown result.
 	maximumAbandonedRequests = 128
 
+	// handshakeTimeout bounds the full initialize and start_listening exchange.
+	handshakeTimeout = 10 * time.Second
+
 	// maximumQueuedEvents bounds validated Events waiting for the runtime
 	// coordinator. An overflow ends the connection generation rather than
 	// dropping an Event silently.
@@ -71,7 +74,6 @@ const (
 	commandStartListening = "start_listening"
 	commandSetValue       = "node.set_value"
 	commandPollValue      = "node.poll_value"
-	commandGetState       = "node.get_state"
 
 	// frame types sent by the Z-Wave JS server.
 	frameTypeVersion = "version"
@@ -111,16 +113,15 @@ type zwaveDialer interface {
 // generation. Close ends the generation deliberately; Lost reports the error
 // that ended it.
 //
-// SetValue and GetNodeState are owned requests: ending their context before the
-// result arrives ends the whole generation, because a late result could no
-// longer be routed. PollValue is abandonable: ending its context releases its
+// SetValue is an owned request: ending its context before the result arrives
+// ends the whole generation, because a late result could no longer be routed.
+// PollValue is abandonable: ending its context releases its
 // waiter, keeps the generation usable, and makes a late result recognizably
 // ignorable.
 type zwaveConnection interface {
 	StartListening(ctx context.Context) (serverVersion, networkSnapshot, error)
 	SetValue(ctx context.Context, nodeID int, id valueID, value json.RawMessage) (setValueStatus, error)
 	PollValue(ctx context.Context, nodeID int, id valueID) (json.RawMessage, time.Time, error)
-	GetNodeState(ctx context.Context, nodeID int) (nodeState, error)
 	Events() <-chan receivedEvent
 	Lost() <-chan error
 	Close()
@@ -153,6 +154,34 @@ type networkSnapshot struct {
 		Controller controllerState `json:"controller"`
 		Nodes      []nodeState     `json:"nodes"`
 	} `json:"state"`
+	// receivedAt is the adapter-owned receive time of the start_listening result.
+	receivedAt time.Time
+	// nodesPresent distinguishes an explicit empty inventory from an omitted one.
+	nodesPresent bool
+}
+
+// UnmarshalJSON requires the snapshot's node inventory to be a JSON array.
+func (snapshot *networkSnapshot) UnmarshalJSON(data []byte) error {
+	type snapshotAlias networkSnapshot
+	var decoded snapshotAlias
+	if err := json.Unmarshal(data, &decoded); err != nil {
+		return err
+	}
+	var shape struct {
+		State struct {
+			Nodes json.RawMessage `json:"nodes"`
+		} `json:"state"`
+	}
+	if err := json.Unmarshal(data, &shape); err != nil {
+		return err
+	}
+	nodes := bytes.TrimSpace(shape.State.Nodes)
+	if len(nodes) == 0 || bytes.Equal(nodes, []byte("null")) || nodes[0] != '[' {
+		return errors.New("zwavejs: snapshot nodes are missing or are not an array")
+	}
+	*snapshot = networkSnapshot(decoded)
+	snapshot.nodesPresent = true
+	return nil
 }
 
 // controllerState is the consumed part of the controller state dump.
@@ -448,18 +477,6 @@ type nodePollValueResult struct {
 	Value json.RawMessage `json:"value,omitempty"`
 }
 
-// nodeGetStateRequest refreshes one complete node plan.
-type nodeGetStateRequest struct {
-	requestEnvelope
-
-	NodeID int `json:"nodeId"`
-}
-
-// nodeGetStateResult is the node.get_state result payload.
-type nodeGetStateResult struct {
-	State nodeState `json:"state"`
-}
-
 // websocketDialer is the production zwaveDialer.
 type websocketDialer struct{}
 
@@ -496,6 +513,7 @@ type websocketConnection struct {
 	schemaVersion       int
 	userAgentComponents map[string]string
 	readContext         context.Context
+	handshakeTimeout    time.Duration
 
 	// writeGate is the single request-writer slot. Exactly one request holds it
 	// while its frame is written, so message IDs increase in send order. It is a
@@ -549,6 +567,7 @@ func newWebsocketConnection(
 		schemaVersion:       schemaVersion,
 		userAgentComponents: maps.Clone(userAgentComponents),
 		readContext:         context.WithoutCancel(ctx),
+		handshakeTimeout:    handshakeTimeout,
 		pending:             make(map[uint64]chan resultEnvelope),
 		abandoned:           make(map[uint64]struct{}),
 		writeGate:           make(chan struct{}, 1),
@@ -588,14 +607,16 @@ func (connection *websocketConnection) StartListening(
 	if err := connection.markHandshakeStarted(); err != nil {
 		return serverVersion{}, networkSnapshot{}, err
 	}
-	version, err := connection.awaitVersionFrame(ctx)
+	handshakeContext, cancelHandshake := context.WithTimeout(ctx, connection.handshakeTimeout)
+	defer cancelHandshake()
+	version, err := connection.awaitVersionFrame(handshakeContext)
 	if err != nil {
 		return serverVersion{}, networkSnapshot{}, err
 	}
-	if err = connection.initializeSession(ctx); err != nil {
+	if err = connection.initializeSession(handshakeContext); err != nil {
 		return serverVersion{}, networkSnapshot{}, err
 	}
-	snapshot, err := connection.awaitSnapshot(ctx, version)
+	snapshot, err := connection.awaitSnapshot(handshakeContext, version)
 	if err != nil {
 		return serverVersion{}, networkSnapshot{}, err
 	}
@@ -685,37 +706,6 @@ func (connection *websocketConnection) PollValue(
 	return payload.Value, result.receivedAt, nil
 }
 
-// GetNodeState refreshes one complete node plan. It refreshes inventory, not a
-// physical value, and never satisfies a Command.
-func (connection *websocketConnection) GetNodeState(ctx context.Context, nodeID int) (nodeState, error) {
-	if nodeID <= 0 {
-		return nodeState{}, &invalidRequestError{
-			Reason: "node.get_state requires a positive node ID",
-		}
-	}
-	result, err := connection.requestSuccess(ctx, &nodeGetStateRequest{
-		Command: commandGetState,
-		NodeID:  nodeID,
-	})
-	if err != nil {
-		return nodeState{}, err
-	}
-	var payload nodeGetStateResult
-	if err = json.Unmarshal(result.Result, &payload); err != nil {
-		return nodeState{}, connection.fatalResult(&malformedResultError{
-			Command: commandGetState,
-			Reason:  "the result carried no decodable node state",
-		})
-	}
-	if payload.State.NodeID != nodeID {
-		return nodeState{}, connection.fatalResult(&malformedResultError{
-			Command: commandGetState,
-			Reason:  "the result carried a different node",
-		})
-	}
-	return payload.State, nil
-}
-
 // validatePlannedValueID refuses a Value ID this client cannot write. A local
 // caller bug must not end the generation through a failed JSON encode. v1 never
 // plans an invalid (null) property or a propertyKey, so both are refused
@@ -797,6 +787,12 @@ func (connection *websocketConnection) awaitSnapshot(
 		connection.terminate(failure)
 		return networkSnapshot{}, failure
 	}
+	if !snapshot.nodesPresent {
+		failure := &malformedSnapshotError{Reason: "the snapshot carried no node inventory"}
+		connection.terminate(failure)
+		return networkSnapshot{}, failure
+	}
+	snapshot.receivedAt = result.receivedAt
 	homeID := snapshot.State.Controller.HomeID
 	if homeID == nil {
 		failure := &malformedSnapshotError{Reason: "the snapshot carried no controller Home ID"}
@@ -912,6 +908,14 @@ func (connection *websocketConnection) requestAbandonable(
 	if abandonErr := connection.abandonRequest(id); abandonErr != nil {
 		connection.terminate(abandonErr)
 		return resultEnvelope{}, abandonErr
+	}
+	// Delivery and tombstone installation share the connection mutex. Checking
+	// after installing the tombstone closes the window where delivery removed the
+	// waiter but had not yet made its buffered result visible.
+	select {
+	case late := <-answer:
+		return late, nil
+	default:
 	}
 	return resultEnvelope{}, err
 }
@@ -1172,8 +1176,8 @@ func (connection *websocketConnection) deliverResult(id uint64, result resultEnv
 	connection.mutex.Lock()
 	if waiter, found := connection.pending[id]; found {
 		delete(connection.pending, id)
-		connection.mutex.Unlock()
 		waiter <- result
+		connection.mutex.Unlock()
 		return nil
 	}
 	if _, abandoned := connection.abandoned[id]; abandoned {
@@ -1264,6 +1268,9 @@ func validateServerEvent(event *serverEvent) error {
 	}
 	if event.Event.Event == "" {
 		return &malformedFrameError{Reason: "the event name is empty"}
+	}
+	if event.Event.Source == eventSourceNode && event.Event.NodeID <= 0 {
+		return &malformedFrameError{Reason: "the node event carried no node ID"}
 	}
 	if event.Event.Source != eventSourceController {
 		return nil

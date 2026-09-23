@@ -24,7 +24,7 @@ Hearth HTTP -> hearthd -> native Core NATS -> Go Adapter SDK Session
     -> Z-Wave JS UI -> controller -> existing Z-Wave network -> device
 ```
 
-Use API schema version 29. It supplies endpoint state, string interview stages, endpoint labels, `node.poll_value`, `node.get_state`, and structured `node.set_value` results while avoiding dependence on newer unrelated fields. Z-Wave JS server 3.10.1 declares `minSchemaVersion` 0 and `maxSchemaVersion` 50, so schema 29 sits inside the range it advertises. A server is compatible when its version frame contains `minSchemaVersion <= 29 <= maxSchemaVersion` and its `homeId` agrees with the start-listening snapshot.
+Use API schema version 29. It supplies endpoint state, string interview stages, endpoint labels, `node.poll_value`, and structured `node.set_value` results while avoiding dependence on newer unrelated fields. Z-Wave JS server 3.10.1 declares `minSchemaVersion` 0 and `maxSchemaVersion` 50, so schema 29 sits inside the range it advertises. A server is compatible when its version frame contains `minSchemaVersion <= 29 <= maxSchemaVersion` and its `homeId` agrees with the start-listening snapshot.
 
 The WebSocket boundary is preferred over Z-Wave JS UI's MQTT gateway because it provides:
 
@@ -152,7 +152,7 @@ type resultEnvelope struct {
 
 The client requires the first frame to be `type:"version"`, requires a non-nil Home ID, verifies schema 29 compatibility, sends `initialize` with schema 29 and `additionalUserAgentComponents:{"hearth":"0.1.0"}`, waits for success, then sends `start_listening` and waits for the complete snapshot result.
 
-Every request has a monotonically increasing decimal `messageId` unique within the connection. One reader goroutine owns frame reads, routes results to bounded one-shot waiters, and sends validated Events to the runtime coordinator. Unknown result IDs, duplicate results, malformed frames, unexpected binary frames, and event-queue overflow terminate the connection rather than silently losing protocol state.
+Every request has a monotonically increasing decimal `messageId` unique within the connection. One reader goroutine owns frame reads, routes results to bounded one-shot waiters, and sends validated Events to the runtime coordinator. Unknown result IDs, duplicate results, malformed frames (including missing node inventories and consumed node Events without a positive node ID), unexpected binary frames, and event-queue overflow terminate the connection rather than silently losing protocol state. An explicit empty `nodes` array is valid; missing or `null` is not. The initial version frame and `initialize`/`start_listening` handshake have a bounded timeout so a silent peer enters the reconnect loop.
 
 ### Snapshot and node/value shapes
 
@@ -253,19 +253,11 @@ type nodePollValueResult struct {
     Value json.RawMessage `json:"value,omitempty"`
 }
 
-type nodeGetStateRequest struct {
-    requestEnvelope
-    NodeID int `json:"nodeId"`
-}
-
-type nodeGetStateResult struct {
-    State nodeState `json:"state"`
-}
 ```
 
 Successful set statuses are exactly the numeric schema-29 encodings of `Working` (`1`), `SuccessUnsupervised` (`254`), and `Success` (`255`). Every other status, no status at all, and a string status are upstream rejections; success is never inferred from a non-empty result. A successful `node.set_value` frame is doubly wrapped because `SetValueResultType` is itself `{result: SetValueResult}` and the transport envelope adds another `result`: `{"type":"result","success":true,"messageId":...,"result":{"result":{"status":255}}}`. A `remainingDuration` or `message` property may accompany the status and is ignored by v1.
 
-`node.poll_value` returns the freshly read value in its correlated result. It is the only upstream report eligible for Command-linked evidence. `node.get_state` refreshes one complete node plan after topology or metadata events; it is not a physical-value refresh and does not satisfy a Command.
+`node.poll_value` returns the freshly read value in its correlated result. It is the only upstream report eligible for Command-linked evidence. Topology changes are reconciled from a new `start_listening` snapshot on a new connection; the Adapter does not request `node.get_state`.
 
 ### Consumed events
 
@@ -290,7 +282,7 @@ type valueEventArgs struct {
 
 **Corrected against source.** Controller `node added` and `node removed` carry no top-level `nodeId`: the payload embeds the whole node dump under `event.node`, so the node ID is read from `event.node.nodeId`. Node-sourced Events (`ready`, `value updated`, `sleep`, and the rest) do carry `nodeId`, which is why this DTO keeps the field optional. Schema 29 `node removed` carries `reason` (`RemoveNodeReason`); the `replaced` boolean it replaced belongs to schema 28 and earlier. The `ready` Event carries its refreshed dump under `event.nodeState`.
 
-V1 consumes controller `node added` and `node removed`, node `ready`, `interview completed`, `value added`, `value updated`, `value removed`, `metadata updated`, `wake up`, `sleep`, `alive`, and `dead`. Inventory-shape events trigger a correlated `node.get_state` and atomic re-plan. `sleep` immediately invalidates Command routes because v1 does not permit wake-up-queued writes; `wake up` refreshes node state before routes can return. Value updates are projected only after their Value ID resolves against the active immutable route snapshot. Unknown Events are ignored with bounded diagnostics.
+V1 consumes controller `node added` and `node removed`, node `ready`, `interview completed`, `value added`, `value updated`, `value removed`, `metadata updated`, `wake up`, `sleep`, `alive`, and `dead`. Node add/remove, ready/interview, removal/metadata, and status Events end the current connection generation; reconnect obtains a complete `start_listening` snapshot before restoring routes. A `value added` Event triggers this only for an unkeyed Binary Switch or Multilevel Switch `currentValue` or `targetValue`, including either half of an incomplete pair; unrelated values do not interrupt the connection. `value updated` Events project ordinary State and hint accepted Command polls without reconnecting. A `sleep` Event immediately invalidates all routes while reconciling so v1 cannot send wake-up-queued writes. Unknown Events are ignored with bounded diagnostics.
 
 ## Discovery, identity, and reconciliation
 
@@ -321,7 +313,7 @@ Exclusion/re-inclusion normally assigns a different node ID. When it does, v1 cr
 
 ### Eligibility and planning
 
-A node is eligible when it is not the controller, `isListening` is true, `ready` is true, `interviewStage` is `Complete`, and at least one endpoint produces a valid plan. V1 excludes sleeping and frequently-listening actuators so Z-Wave JS cannot place a Hearth write into a wake-up queue that may execute after the Command deadline. A `sleep` Event makes a previously planned node temporarily unroutable until a `wake up` Event and fresh `node.get_state` prove it eligible again.
+A node is eligible when it is not the controller, `isListening` is true, `ready` is true, `interviewStage` is `Complete`, and at least one endpoint produces a valid plan. Command routes require `Awake` or `Alive` status. V1 excludes sleeping and frequently-listening actuators so Z-Wave JS cannot place a Hearth write into a wake-up queue that may execute after the Command deadline. A `sleep` or `dead` Event invalidates the current connection's routes; a new snapshot must prove eligibility before routing resumes.
 
 Command Class constants are:
 
@@ -360,11 +352,11 @@ The start-listening snapshot is the complete inventory authority for one connect
 
 The server's `start_listening` implementation sends the state result and enables Events synchronously without an intervening await. The Adapter still queues frames received while reconciliation is in progress. A bounded queue overflow fails the connection; no Event is silently dropped.
 
-A later node-added, ready, interview-completed, value-added, value-removed, or metadata-updated Event causes one `node.get_state` refresh and replaces only that node's routes. If the refreshed node remains eligible, routes change only after successful registration. If it has no eligible plan, the Adapter immediately invalidates its prior routes and reports every owned mapping for that node unavailable without attempting an invalid zero-Entity registration. A node-removed or sleep Event also immediately invalidates routes and reports all known Entities unavailable. Omission never deletes a Hearth Device, Entity, State, history, or Binding.
+A later node-added, node-removed, ready, interview-completed, value-removed, metadata-updated, wake-up, sleep, alive, or dead Event ends the current generation. A relevant Binary Switch or Multilevel Switch `value added` Event does the same; unrelated Values do not. The Adapter invalidates every route before reconnecting and rebuilds registration, routes, and availability from a new complete snapshot. Nodes without eligible plans receive no zero-Entity registration; their owned mappings report unavailable. This interrupts Commands for other nodes during reconciliation and adds a reconnect delay and full snapshot read for each relevant change. Omission never deletes a Hearth Device, Entity, State, history, or Binding.
 
 ## State projection
 
-Snapshot `currentValue` fields and live `value added` or `value updated` events produce ordinary typed Observations. Each frame receives one Adapter-owned UTC receive time. Z-Wave JS server supplies no source timestamp used by this schema, so `SourceUpdatedAt` is nil.
+Snapshot `currentValue` fields and live `value updated` events produce ordinary typed Observations. A relevant `value added` event instead causes a fresh snapshot reconciliation. Each snapshot or event frame receives one Adapter-owned UTC receive time at the WebSocket boundary, before SDK registration. Z-Wave JS server supplies no source timestamp used by this schema, so `SourceUpdatedAt` is nil.
 
 - Binary Switch `currentValue` JSON `true`/`false` maps directly to Hearth power.
 - Multilevel Switch integral `currentValue` from 0 through 99 maps directly to Hearth brightness.
@@ -389,7 +381,7 @@ adapter.hearth-adapter-zwavejs.invalid_snapshot
 adapter.hearth-adapter-zwavejs.network_identity_mismatch
 ```
 
-Connection refusal, WebSocket close including server code 1013 while the driver is not ready, read/write failure, and request timeout use `hearth.external_system_unavailable`. A schema range excluding 29 uses `incompatible_protocol`. Malformed version/snapshot data uses `invalid_snapshot`. An unhealthy transition invalidates routes before reporting health and clears active connection work. Static configuration failures and terminal SDK fencing terminate the process; upstream failures reconnect with bounded exponential backoff and jitter.
+Connection refusal, WebSocket close including server code 1013 while the driver is not ready, read/write failure, and handshake or connection-owned request timeout use `hearth.external_system_unavailable`. An unanswered, abandonable `node.poll_value` ends only its Command attempt, not the connection generation. A schema range excluding 29 uses `incompatible_protocol`. Malformed version/snapshot data uses `invalid_snapshot`. An unhealthy transition invalidates routes before reporting health and clears active connection work. Static configuration failures and terminal SDK fencing terminate the process; upstream failures reconnect with bounded exponential backoff and jitter, reset only after completed reconciliation.
 
 Node status values follow Z-Wave JS `Unknown`, `Asleep`, `Awake`, `Dead`, and `Alive` semantics. For each current Entity:
 
@@ -401,7 +393,7 @@ Node status values follow Z-Wave JS `Unknown`, `Asleep`, `Awake`, `Dead`, and `A
 - a previously known Entity absent from the current plan reports unavailable with `adapter.hearth-adapter-zwavejs.capability_missing`;
 - a new node with `Unknown` status remains unknown; a previously assessed node returning to `Unknown` reports unavailable with `adapter.hearth-adapter-zwavejs.node_unknown`.
 
-Availability itself is advisory and never gates Command dispatch. Independently, v1 route eligibility excludes a node while it is sleeping because the upstream may defer a write beyond Hearth's deadline; recovery requires `wake up` plus a fresh eligible node state. Recovery reports healthy first, then sends fresh availability batches of at most 256 in owned-mapping order.
+Availability itself is advisory and never gates Command dispatch. Independently, v1 route eligibility permits only `Awake` or `Alive` nodes; recovery requires a fresh eligible snapshot. Status Events recycle the entire connection rather than issuing immediate per-node availability reports. Recovery reports healthy first, then sends fresh availability batches of at most 256 in owned-mapping order.
 
 ## Command runtime and correlation
 
@@ -415,8 +407,8 @@ For power or brightness `set`:
 4. A transport failure or missing node invalidates the generation and rejects the unaccepted Command as unavailable. A deterministic upstream value rejection uses `Responder.Reject`.
 5. Require a recognized successful SetValue status, then call `Responder.Accept` and retain its `CommandEvidence` beyond handler return.
 6. Immediately send correlated `node.poll_value` for the planned current Value ID.
-7. Decode every successful poll result through the same State translator and publish it through `CommandEvidence.PublishObservation`, even when it does not yet match. A matching polled value satisfies the Command in Core.
-8. If the first poll does not match, a later relevant `value updated` event is only a wake hint: coalesce hints and issue another poll no more often than once per 250 ms. The Event itself remains ordinary evidence. Stop after a matching linked Observation, route/generation invalidation, or the absolute deadline.
+7. Decode every successful poll result through the same State translator and publish the commanded Entity through `CommandEvidence.PublishObservation`, even when it does not yet match. Publish ordinary Observations for sibling Entities derived from that same current Value ID. Linked and ordinary publications share one ordered per-generation chain so a newer update cannot be overwritten by an older delayed poll. A matching linked value satisfies the Command in Core.
+8. If a poll does not match, schedule another bounded poll without depending on an upstream Event. A relevant `value updated` event can accelerate verification, but is never Command-linked evidence. Coalesce polls to at most one per 250 ms. Stop after matching linked evidence, route/generation invalidation, or the absolute deadline. A failed linked publication keeps the accepted attempt's node FIFO slot until evidence or its deadline; superseded publication completions cannot end a newer attempt.
 
 The Adapter never claims that SetValue acceptance, supervision success, a target value, or an emitted post-set update proves the physical result. A SetValue status `Working` may therefore remain active until polling reaches the requested value or Core's ten-second Entity-type deadline expires.
 
@@ -461,7 +453,6 @@ type zwaveConnection interface {
     StartListening(context.Context) (serverVersion, networkSnapshot, error)
     SetValue(context.Context, int, valueID, json.RawMessage) (setValueStatus, error)
     PollValue(context.Context, int, valueID) (json.RawMessage, time.Time, error)
-    GetNodeState(context.Context, int) (nodeState, error)
     Events() <-chan receivedEvent
     Lost() <-chan error
     Close()
@@ -560,7 +551,7 @@ No changes are expected in `contracts/v1`, `entitytypes`, `sdk/adapter`, `intern
 |---|---|---:|---|---|---|
 | D1 | Schema-29 client and strict config can connect, negotiate, atomically receive a snapshot, route concurrent results, and fail safely | L | `internal/adapters/zwavejs/client.go`, `internal/app/zwavejs/config.go`, tests | — | A1, A2 |
 | D2 | Complete snapshot planning preserves network/node/endpoint identity and registers all valid power/brightness Entities | L | `discovery.go`, `entity_plan.go`, `observation.go`, tests/fixtures | D1 | A3, A4, A5 |
-| D3 | Runtime reconciliation, health, availability, reconnect, and topology changes preserve owned mappings without stale routes | L | `adapter.go`, `availability.go`, `runtime.go`, tests | D1, D2 | A6, A7, A8 |
+| D3 | Snapshot-based reconciliation, health, availability, reconnect, and topology changes preserve owned mappings without stale routes | L | `adapter.go`, `availability.go`, `runtime.go`, tests | D1, D2 | A6, A7, A8 |
 | D4 | Per-node serialized power/brightness Commands use correlated SetValue plus fresh poll evidence under deadline and disconnect races | XL | `command.go`, `runtime.go`, tests | D2, D3 | A9, A10, A11 |
 | D5 | Process assembly, packaging, operator documentation, and repository tasks ship the Adapter consistently | M | `cmd/hearth-adapter-zwavejs`, `internal/app/zwavejs`, config, README, `.ko.yaml`, release workflow, `mise.toml` | D1–D4 | A12, A13 |
 | D6 | Sanitized real network evidence verifies snapshot/event shapes and one approved switch and dimmer round trip without modifying network membership | M | `internal/adapters/zwavejs/testdata`, spec evidence section | D1–D5 | A14, A15 |
@@ -573,10 +564,10 @@ No changes are expected in `contracts/v1`, `entitytypes`, `sdk/adapter`, `intern
 - [ ] **A4:** Binary power, native 0–99 brightness, and Multilevel-derived power Observations decode exactly; malformed one-Entity values never suppress valid siblings.
 - [ ] **A5:** Restart and rename preserve canonical IDs; a different Home ID under an existing Adapter ID is rejected as a network identity mismatch; a changed node ID creates a new Binding, while same-slot node-ID reuse follows the documented disable-and-reconcile operator safety limitation.
 - [ ] **A6:** Startup lists all owned mappings, marks missing/incomplete/capability-removed resources unavailable, reports healthy before fresh availability, and publishes snapshot State only after registration.
-- [ ] **A7:** Node add/remove/ready/interview/value/metadata/status Events atomically replace affected routes, invalidate zero-Entity and sleeping plans without registration, recover on the exact `wake up` event, isolate malformed nodes, and never dispatch through a stale generation or revision.
-- [ ] **A8:** Connection loss invalidates routes, reports unhealthy, clears in-flight unaccepted work, reconnects with bounded backoff, and requires full fresh reconciliation before recovery reports.
+- [ ] **A7:** Node add/remove/ready/interview/value-remove/metadata/status Events and relevant Binary/Multilevel current/target additions end the active generation and reconcile all routes and availability from a new snapshot. Unrelated Value additions leave Commands and the connection undisturbed; incomplete current/target pairs still trigger reconciliation. Sleeping and zero-Entity plans never receive routes or invalid registration; stale generations never dispatch.
+- [ ] **A8:** Connection loss invalidates routes, reports unhealthy, clears in-flight unaccepted work, reconnects with bounded backoff, and requires full fresh reconciliation before recovery reports; a silent handshake times out and backoff resets only after reconciliation completes.
 - [ ] **A9:** Binary and multilevel power and brightness Commands publish the exact planned Value ID/value, accept only a documented successful SetValue status, and never use target or value-update events as linked evidence.
-- [ ] **A10:** A fresh correlated poll result publishes through the accepted Command's evidence capability; matching State satisfies, mismatching State does not, and later event-triggered polls may satisfy before the absolute deadline.
+- [ ] **A10:** A fresh correlated poll result publishes the commanded Entity through its evidence capability and sibling State as ordinary Observations; matching State satisfies, mismatching State does not, and follow-up polls can satisfy without another Event before the absolute deadline.
 - [ ] **A11:** Commands are FIFO per node, concurrent across nodes, consume deadline while queued, never dispatch to a sleeping route, and handle set/poll/result/disconnect/route-change/deadline races without duplicate responses, leaked goroutines, or ordinary/linked double publication; a timed-out in-flight SetValue is recorded as ambiguous rather than accepted.
 - [ ] **A12:** A process integration test crosses scripted WebSocket, Adapter, SDK NATS, Core registration/Observation/Command paths, and SQLite-backed reads for one switch and one dimmer.
 - [ ] **A13:** The executable, example config, release image lists, README, format, generation, lint, tidy, race tests, and vet pass through `mise run validate`.
@@ -589,7 +580,7 @@ No changes are expected in `contracts/v1`, `entitytypes`, `sdk/adapter`, `intern
 |---|---|---|
 | Unit | Config, IDs, plans, metadata, State decoders, set encoders, status mapping | Table tests plus property tests for node/endpoint ordering and level round trips |
 | Protocol | Handshake, schema negotiation, request correlation, event routing, read limits, closes | Scripted `coder/websocket` server and JSONL transcripts |
-| Runtime | Generations, route revisions, per-node FIFO, deadline, reconnect, poll hints, health/availability order | Deterministic fake connection, fake Session, fake clock; race detector |
+| Runtime | Generations, full-snapshot reconciliation, per-node FIFO, deadline, reconnect, poll hints, health/availability order | Deterministic fake connection, fake Session, fake clock; race detector |
 | Integration | Public registration, Observation, Command, and read behavior | Scripted WebSocket server + embedded NATS/Core + SQLite repository |
 | Fuzz | Snapshot/event decoding and result-envelope classification | Bounded `FuzzZWaveJSSnapshot` and `FuzzZWaveJSEvent` campaigns in `mise.toml` |
 | Real device | Existing-network preservation and physical round trip | Read-only capture first; announce exact Commands and obtain explicit approval before actuation |
@@ -605,7 +596,7 @@ Go tests should target fault detection: mutate Command Class/property matching, 
 | Full snapshot exceeds the fixed frame limit on a large network | Low | High | Measure target snapshot, keep a documented 16 MiB bound, fail/reconnect rather than truncate |
 | Node ID changes or is reused after re-inclusion | Medium | High | New Binding when the ID changes; define same-ID identity as a network slot; require disable-before-removal and defer explicit reconciliation |
 | Same Adapter ID points at another controller | Low | High | Home ID in every Binding plus owned-mapping mismatch gate |
-| Polling adds Z-Wave mesh traffic or misses slow transitions | Medium | Medium | Serialize per node, poll immediately and only on coalesced hints, cap at one per 250 ms, obey ten-second deadline |
+| Polling adds Z-Wave mesh traffic or misses slow transitions | Medium | Medium | Serialize per node, poll immediately and after mismatches, coalesce event hints, cap at one per 250 ms, obey ten-second deadline |
 | A SetValue already handed to the server may complete after local timeout | Low for always-listening nodes | High | Exclude sleeping nodes, close the failed generation, classify the attempt as ambiguous, and never claim the deadline proves cancellation of radio work |
 | WebSocket has no auth/TLS | High | High on untrusted network | Accept plain `ws://` only and document loopback/trusted-private deployment as mandatory |
 | Node/endpoint metadata is incomplete or vendor-specific | Medium | Low | Require only exact standard CC/value pairs; isolate malformed capabilities; use deterministic fallback names |

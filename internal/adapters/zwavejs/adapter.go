@@ -85,11 +85,6 @@ type Adapter struct {
 	// never change production behavior.
 	retryDelay       func(time.Duration) time.Duration
 	pollHintInterval time.Duration
-
-	// refreshTimeout bounds one node.get_state inventory read. It is a seam for
-	// deterministic tests so a test can prove the bound without waiting for the
-	// conservative production value.
-	refreshTimeout time.Duration
 }
 
 // sessionOperationError reports a failed SDK Session call. It is terminal:
@@ -134,7 +129,6 @@ func newAdapter(
 		runtimeDone:      make(chan struct{}),
 		retryDelay:       jitterReconnect,
 		pollHintInterval: defaultPollHintInterval,
-		refreshTimeout:   defaultNodeRefreshTimeout,
 	}, nil
 }
 
@@ -276,7 +270,12 @@ func (zwave *Adapter) runConnection(ctx context.Context, generation uint64) (boo
 	if err != nil {
 		return false, preferConnectionError(ctx, connectionContext, err)
 	}
-	observedAt := time.Now().UTC()
+	observedAt := snapshot.receivedAt
+	if observedAt.IsZero() {
+		// Scripted connections may construct snapshots without protocol receive
+		// metadata. Production snapshots always carry the result-frame time.
+		observedAt = time.Now().UTC()
+	}
 	err = zwave.activateReconciliation(
 		connectionContext,
 		generation,

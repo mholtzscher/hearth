@@ -373,14 +373,6 @@ func nodeIneligibleReason(node nodeState) (nodeRejectionCode, bool) {
 	}
 }
 
-// planNodeState plans one refreshed node after a topology, ready, or metadata
-// Event. It is the single-node reconciliation entry point and applies exactly the
-// same eligibility, endpoint, identity, and Entity-bound rules as the snapshot
-// planner, so a refresh can never diverge from startup.
-func planNodeState(homeID uint32, node nodeState) (discoveredNode, *nodeRejection) {
-	return planNode(normalizedHomeID(homeID), node)
-}
-
 // planNode builds the one registration and the typed Entity plans of a single
 // Z-Wave node. It returns a rejection instead of an error so one unplannable
 // node can never discard its siblings.

@@ -58,8 +58,8 @@ func bindingKeyNodeID(bindingKey string) (int, bool) {
 	return nodeID, true
 }
 
-// nodeAvailability resolves the availability of every Entity of one node from
-// the facts of the active connection generation.
+// nodeAvailability resolves an Entity's node availability from the complete
+// start_listening snapshot for its active connection generation.
 //
 // The third result reports whether the node has an availability opinion at all:
 // a newly discovered node that is still Unknown stays unknown rather than being
@@ -134,29 +134,6 @@ func (coordinator *runtimeCoordinator) availabilityReports(
 	for _, key := range coordinator.order {
 		report, ok := coordinator.availabilityReport(coordinator.mappings[key], observedAt)
 		if !ok {
-			continue
-		}
-		reports = append(reports, report)
-	}
-	return reports
-}
-
-// nodeAvailabilityReports resolves only the owned mappings of one node, in
-// owned-mapping order. A topology Event refreshes one node, so it reports only
-// that node's Entities.
-func (coordinator *runtimeCoordinator) nodeAvailabilityReports(
-	nodeID int,
-	observedAt time.Time,
-) []adapter.EntityAvailabilityReport {
-	reports := make([]adapter.EntityAvailabilityReport, 0)
-	for _, key := range coordinator.order {
-		mapping := coordinator.mappings[key]
-		mappingNodeID, ok := bindingKeyNodeID(mapping.BindingKey)
-		if !ok || mappingNodeID != nodeID {
-			continue
-		}
-		report, reportable := coordinator.availabilityReport(mapping, observedAt)
-		if !reportable {
 			continue
 		}
 		reports = append(reports, report)
