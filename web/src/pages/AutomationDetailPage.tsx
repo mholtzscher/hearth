@@ -269,9 +269,10 @@ function AutomationStepAttemptTable({ attempts }: { attempts: AutomationStepAtte
 /** Retained Fact evidence rows, shared by a Run and a Skip. An Entity Event
     Fact reports a variant name and carries no Observation value. */
 function deviceFactRows(
-  fact: DeviceFactSummary,
+  fact: DeviceFactSummary | undefined,
   labels: ReadonlyMap<string, string>,
 ): [string, ReactNode][] {
+  if (!fact) return [];
   return [
     ["Fact id", fact.fact_id],
     ["Fact family", `${fact.family} / ${fact.variant}`],

@@ -124,14 +124,15 @@ export interface AutomationComparison {
   operand: unknown;
 }
 
-/** One Trigger: an Observation matcher or an Entity Event matcher, never both. */
+/** One Trigger: an immediate matcher or a held State predicate. */
 export interface AutomationTrigger {
   id: string;
-  kind: "observation" | "entity_event";
+  kind: "observation" | "entity_event" | "held_state";
   entity_id: string;
   dispositions?: ("applied" | "unchanged")[];
   comparisons?: AutomationComparison[];
   event_name?: string;
+  for_seconds?: number;
 }
 
 /** One ordered Step: an Entity Operation request with static parameters. */
@@ -172,7 +173,13 @@ export interface DeviceFactSummary {
 
 export type AutomationRunStatus = "running" | "succeeded" | "failed" | "interrupted";
 
-export type AutomationRunSource = "device_fact" | "manual";
+export type AutomationRunSource = "device_fact" | "manual" | "held_state";
+
+export interface HeldStateEvidence {
+  trigger_id: string;
+  started_at: string;
+  due_at: string;
+}
 
 export type AutomationStepStatus =
   | "not_attempted"
@@ -205,6 +212,7 @@ export interface AutomationRun {
   revision: number;
   source: AutomationRunSource;
   fact?: DeviceFactSummary;
+  held_state?: HeldStateEvidence;
   matched_trigger_ids: string[];
   status: AutomationRunStatus;
   failure_code?: string;
@@ -221,7 +229,8 @@ export interface AutomationSkip {
   automation_id: string;
   automation_name: string;
   revision: number;
-  fact: DeviceFactSummary;
+  fact?: DeviceFactSummary;
+  held_state?: HeldStateEvidence;
   matched_triggers: AutomationTrigger[];
   reason: AutomationSkipReason;
   skipped_at: string;
@@ -238,6 +247,7 @@ export interface AutomationHistorySummary {
   status?: AutomationRunStatus;
   reason?: AutomationSkipReason;
   fact?: DeviceFactSummary;
+  held_state?: HeldStateEvidence;
 }
 
 /** Exactly one retained Run snapshot or Skip detail; the other side is absent. */

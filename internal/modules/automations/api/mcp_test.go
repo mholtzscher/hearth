@@ -1020,13 +1020,12 @@ func assertDefinitionInputSchema(t *testing.T, name string, tool *mcp.Tool) {
 	assertStepInputConstraints(t, name, schemaObject(t, name+" steps", properties["steps"]))
 }
 
-// assertTriggerInputConstraints checks the Triggers member advertises the closed
-// Observation and Entity Event branches and the disposition enumeration.
+// assertTriggerInputConstraints checks the closed Trigger branches and their family fields.
 func assertTriggerInputConstraints(t *testing.T, name string, triggers map[string]any) {
 	t.Helper()
 	items := schemaObject(t, name+" triggers items", triggers["items"])
 	branches := schemaArray(t, name+" triggers oneOf", items["oneOf"])
-	observation, entityEvent := false, false
+	observation, entityEvent, heldState := false, false, false
 	for _, branch := range branches {
 		branchProperties := schemaObject(
 			t, name+" trigger branch properties",
@@ -1046,9 +1045,20 @@ func assertTriggerInputConstraints(t *testing.T, name string, triggers map[strin
 		if _, present := branchProperties["event_name"]; present {
 			entityEvent = true
 		}
+		if _, present := branchProperties["for_seconds"]; present {
+			heldState = true
+			forSeconds := schemaObject(t, name+" for_seconds", branchProperties["for_seconds"])
+			if forSeconds["minimum"] != float64(1) || forSeconds["maximum"] != float64(2592000) {
+				t.Fatalf("%s held duration schema = %#v", name, forSeconds)
+			}
+			kind := schemaObject(t, name+" held kind", branchProperties["kind"])
+			if kind["const"] != "held_state" {
+				t.Fatalf("%s held kind schema = %#v", name, kind)
+			}
+		}
 	}
-	if !observation || !entityEvent {
-		t.Fatalf("%s triggers schema branches = %#v, want Observation and Entity Event", name, branches)
+	if !observation || !entityEvent || !heldState || len(branches) != 3 {
+		t.Fatalf("%s triggers schema branches = %#v, want Observation, Entity Event, and held state", name, branches)
 	}
 }
 

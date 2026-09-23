@@ -97,11 +97,11 @@ A Trigger that matches one accepted Observation fact by exact Entity, accepted d
 _Avoid_: State Trigger, State query
 
 **Held-State Trigger**:
-A Trigger that starts an Automation once when an Entity's accepted State has satisfied a configured value predicate for a specified duration. A matching Observation begins a hold, matching re-reports preserve its start, and a nonmatching accepted State ends it; availability and enablement alone do not end it. A new definition or Core restart requires a subsequent matching Observation to begin a new hold.
+A Trigger that starts an Automation once when an Entity's accepted State has satisfied a configured value predicate for a specified duration. An eligible matching Observation begins a hold at Core's receive time; matching re-reports preserve its start, and a later processed nonmatching accepted State ends it. At the deadline, current State is checked before one admission decision; Conditions and the ordinary busy rule still apply, and that decision consumes the hold even if it produces a Skip. Availability and enablement alone do not end a hold. Holds are not verified against every intervening Observation, so Fact backlog can hide a brief nonmatch. Definition replacement removes its holds, and Core restart resets pending holds; either requires a subsequent eligible matching Observation to begin a new hold. A consumed hold requires a later accepted nonmatching Observation to re-arm.
 _Avoid_: Duration Condition, delayed Observation Trigger
 
 **Hold**:
-One stretch of matching accepted State tracked for a Held-State Trigger from Core's first accepted matching Observation rather than an upstream timestamp. A nonmatching accepted State or Core restart cancels a pending hold; reaching the duration while State still matches permits one admission decision, which consumes the hold even if it produces an Automation Skip.
+One stretch of matching accepted State tracked for a Held-State Trigger from the first eligible matching Observation's Core receive time rather than an upstream timestamp. A nonmatching accepted State or Core restart cancels a pending hold; reaching the duration while current State still matches permits one admission decision, which consumes the hold even if it produces an Automation Skip. Pending time is not recovered after restart, and Fact backlog can conceal an intervening nonmatching State.
 _Avoid_: Timer, delay, queued Run
 
 **Step**:

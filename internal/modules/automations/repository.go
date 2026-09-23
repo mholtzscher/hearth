@@ -55,8 +55,14 @@ type Repository interface {
 	// supplied snapshot must cover every Entity the transaction's current eligible
 	// Conditions require.
 	AdmitDeviceFact(
-		context.Context, DeviceFact, devices.EntityStateSnapshot, time.Time,
+		context.Context, DeviceFact, devices.EntityStateSnapshot, time.Time, time.Time,
 	) (AdmissionResult, error)
+	// ListDueHeldStates returns at most limit pending holds ordered by deadline and identity.
+	ListDueHeldStates(context.Context, time.Time, int) ([]HeldStateCandidate, error)
+	// AdmitDueHeldStates rechecks current definitions and State while atomically recording outcomes.
+	AdmitDueHeldStates(context.Context, devices.EntityStateSnapshot, time.Time, int) (AdmissionResult, int, error)
+	// ResetPendingHeldStates clears pending deadlines while retaining receive-order watermarks.
+	ResetPendingHeldStates(context.Context) error
 	// AdmitManualRun starts one Run, or commits one Condition Skip, from the
 	// current definition snapshot even when the Automation is disabled.
 	AdmitManualRun(
@@ -78,6 +84,14 @@ type Repository interface {
 	// DeleteHistoryBefore removes at most limit terminal history records older
 	// than the cutoff.
 	DeleteHistoryBefore(context.Context, time.Time, int) (int64, error)
+}
+
+// HeldStateCandidate identifies one due hold whose Condition entities the service must snapshot.
+type HeldStateCandidate struct {
+	AutomationID AutomationID
+	Revision     int64
+	TriggerID    TriggerID
+	DueAt        time.Time
 }
 
 // Dependencies supplies logging, time, and identity constructors; zero-valued

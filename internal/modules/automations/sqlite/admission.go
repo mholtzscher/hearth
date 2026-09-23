@@ -40,6 +40,7 @@ func (repo *AutomationRepository) AdmitDeviceFact(
 	fact automations.DeviceFact,
 	snapshot devices.EntityStateSnapshot,
 	admittedAt time.Time,
+	startupAt time.Time,
 ) (automations.AdmissionResult, error) {
 	if err := automations.ValidateDeviceFact(fact); err != nil {
 		return automations.AdmissionResult{}, err
@@ -49,10 +50,15 @@ func (repo *AutomationRepository) AdmitDeviceFact(
 			"%w: admission time is required", automations.ErrInvalidDeviceFact,
 		)
 	}
+	if startupAt.IsZero() {
+		return automations.AdmissionResult{}, fmt.Errorf(
+			"%w: Core startup time is required", automations.ErrInvalidDeviceFact,
+		)
+	}
 	summary := automations.NewDeviceFactSummary(fact)
 	var result automations.AdmissionResult
-	err := repo.transaction(ctx, func(queries *dbsqlc.Queries) error {
-		plans, err := repo.planDeviceFact(ctx, queries, fact, summary, snapshot, admittedAt)
+	err := repo.transactionWithTx(ctx, func(queries *dbsqlc.Queries, tx *sql.Tx) error {
+		plans, err := repo.planDeviceFact(ctx, tx, queries, fact, summary, snapshot, admittedAt, startupAt)
 		if err != nil {
 			return err
 		}
@@ -154,11 +160,13 @@ func (repo *AutomationRepository) admitManualRun(
 // outcome without writing history or allocating identities.
 func (repo *AutomationRepository) planDeviceFact(
 	ctx context.Context,
+	tx *sql.Tx,
 	queries *dbsqlc.Queries,
 	fact automations.DeviceFact,
 	summary automations.DeviceFactSummary,
 	snapshot devices.EntityStateSnapshot,
 	admittedAt time.Time,
+	startupAt time.Time,
 ) ([]plannedAutomation, error) {
 	rows, err := queries.ListAllAutomations(ctx)
 	if err != nil {
@@ -166,7 +174,9 @@ func (repo *AutomationRepository) planDeviceFact(
 	}
 	plans := make([]plannedAutomation, 0, len(rows))
 	for _, row := range rows {
-		plan, planErr := repo.planAutomationOutcome(ctx, queries, row, fact, summary, snapshot, admittedAt)
+		plan, planErr := repo.planAutomationOutcome(
+			ctx, tx, queries, row, fact, summary, snapshot, admittedAt, startupAt,
+		)
 		if planErr != nil {
 			return nil, planErr
 		}
@@ -181,12 +191,14 @@ func (repo *AutomationRepository) planDeviceFact(
 // for a disabled or unmatched Automation.
 func (repo *AutomationRepository) planAutomationOutcome(
 	ctx context.Context,
+	tx *sql.Tx,
 	queries *dbsqlc.Queries,
 	row dbsqlc.Automation,
 	fact automations.DeviceFact,
 	summary automations.DeviceFactSummary,
 	snapshot devices.EntityStateSnapshot,
 	admittedAt time.Time,
+	startupAt time.Time,
 ) (*plannedAutomation, error) {
 	record, err := automationRecord(row)
 	if err != nil {
@@ -194,6 +206,13 @@ func (repo *AutomationRepository) planAutomationOutcome(
 	}
 	if !record.Definition.Enabled {
 		return nil, nil //nolint:nilnil // A non-matching Automation plans no outcome.
+	}
+	if fact.Family == automations.DeviceFactObservation {
+		if updateErr := repo.updateHeldStateFacts(
+			ctx, tx, record, fact.Observation, admittedAt, startupAt,
+		); updateErr != nil {
+			return nil, updateErr
+		}
 	}
 	matched, err := automations.MatchTriggers(fact, record.Definition)
 	if err != nil {
@@ -350,6 +369,7 @@ func (repo *AutomationRepository) persistRun(
 	}
 	conditionMode, conditionBypassed, conditionResult := decisionSummaryColumns(run.ConditionDecision)
 	fact := storedFactColumns(run.Fact)
+	heldState := storedHeldStateColumns(run.HeldState)
 	recordedAt := encodeAutomationTimestamp(run.StartedAt)
 	if err = queries.CreateHistoryRun(ctx, dbsqlc.CreateHistoryRunParams{
 		ID:                       string(run.ID),
@@ -365,6 +385,9 @@ func (repo *AutomationRepository) persistRun(
 		FactValueJson:            fact.valueJSON,
 		FactPreviousValueJson:    fact.previousValueJSON,
 		FactEmittedAt:            fact.emittedAt,
+		HoldTriggerID:            heldState.triggerID,
+		HoldStartedAt:            heldState.startedAt,
+		HoldDueAt:                heldState.dueAt,
 		RunSnapshotJson:          sql.NullString{String: string(snapshot), Valid: true},
 		RunSource:                sql.NullString{String: string(run.Source), Valid: true},
 		RunStartedAt:             sql.NullString{String: recordedAt, Valid: true},
@@ -466,6 +489,7 @@ func (repo *AutomationRepository) persistHistorySkip(
 	}
 	conditionMode, conditionBypassed, conditionResult := decisionSummaryColumns(skip.ConditionDecision)
 	fact := storedFactColumns(skip.Fact)
+	heldState := storedHeldStateColumns(skip.HeldState)
 	return queries.CreateHistorySkip(ctx, dbsqlc.CreateHistorySkipParams{
 		ID:                      string(skip.ID),
 		AutomationID:            string(skip.AutomationID),
@@ -480,6 +504,9 @@ func (repo *AutomationRepository) persistHistorySkip(
 		FactValueJson:           fact.valueJSON,
 		FactPreviousValueJson:   fact.previousValueJSON,
 		FactEmittedAt:           fact.emittedAt,
+		HoldTriggerID:           heldState.triggerID,
+		HoldStartedAt:           heldState.startedAt,
+		HoldDueAt:               heldState.dueAt,
 		SkipMatchedTriggersJson: sql.NullString{String: string(encodedTriggers), Valid: true},
 		SkipReason:              sql.NullString{String: string(skip.Reason), Valid: true},
 		SkipSource:              sql.NullString{String: string(skip.Source), Valid: true},

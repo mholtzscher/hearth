@@ -10,6 +10,7 @@ import (
 
 	automationsnats "github.com/mholtzscher/hearth/internal/modules/automations/nats"
 	devicesnats "github.com/mholtzscher/hearth/internal/modules/devices/nats"
+	"github.com/mholtzscher/hearth/internal/platform/lifecycle"
 	platformnats "github.com/mholtzscher/hearth/internal/platform/nats"
 )
 
@@ -27,6 +28,7 @@ type RuntimeReadiness struct {
 	entityEventConsumer *platformnats.Consumer
 	relay               *devicesnats.DeviceFactRelay
 	automationConsumer  automationActivity
+	heldStateWorker     *lifecycle.WorkerHandle
 }
 
 // NewRuntimeReadiness assembles the readiness dependencies. One shared NATS
@@ -41,12 +43,17 @@ func NewRuntimeReadiness(
 	entityEventConsumer *platformnats.Consumer,
 	relay *devicesnats.DeviceFactRelay,
 	automationConsumer automationActivity,
+	heldStateWorkers ...*lifecycle.WorkerHandle,
 ) *RuntimeReadiness {
-	return &RuntimeReadiness{
+	readiness := &RuntimeReadiness{
 		database: database, connection: connection, jetstream: js,
 		observationConsumer: observationConsumer, entityEventConsumer: entityEventConsumer,
 		relay: relay, automationConsumer: automationConsumer,
 	}
+	if len(heldStateWorkers) > 0 {
+		readiness.heldStateWorker = heldStateWorkers[0]
+	}
+	return readiness
 }
 
 // Check verifies every dependency required for Core readiness in dependency order.
@@ -54,6 +61,13 @@ func (readiness *RuntimeReadiness) Check(ctx context.Context) error {
 	if readiness == nil || readiness.database == nil || readiness.connection == nil ||
 		readiness.jetstream == nil || readiness.relay == nil || readiness.automationConsumer == nil {
 		return errors.New("runtime dependencies are not initialized")
+	}
+	if readiness.heldStateWorker != nil {
+		select {
+		case <-readiness.heldStateWorker.Closed():
+			return errors.New("held-state scheduler is inactive")
+		default:
+		}
 	}
 	if err := readiness.database.PingContext(ctx); err != nil {
 		return errors.New("SQLite is unavailable")

@@ -196,7 +196,7 @@ func TestAdmitDeviceFactUncoveredSnapshotWritesNothingAndReturnsCompleteSet(t *t
 		t.Fatal(err)
 	}
 	fact := observationFactFor(t, trigger, admissionNow)
-	_, err := repository.AdmitDeviceFact(ctx, fact, stateSnapshotWith(), admissionNow)
+	_, err := repository.AdmitDeviceFact(ctx, fact, stateSnapshotWith(), admissionNow, admissionNow.Add(-time.Minute))
 	var coverage *automations.ConditionSnapshotRequiredError
 	if !errors.As(err, &coverage) {
 		t.Fatalf("empty-snapshot admission error = %v, want ConditionSnapshotRequiredError", err)
@@ -244,7 +244,7 @@ func TestAdmitDeviceFactMixedConditionalAndUnconditionalMatchesCommitTogether(t 
 	result, err := repository.AdmitDeviceFact(ctx, observationFactFor(t, trigger, admissionNow), stateSnapshotWith(
 		presentStateEntry(t, firstEntity, `{"level":10}`, admissionNow),
 		absentEntityEntry(secondEntity),
-	), admissionNow)
+	), admissionNow, admissionNow.Add(-time.Minute))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -297,7 +297,9 @@ func TestAdmitDeviceFactCoverageIgnoresIneligibleSiblings(t *testing.T) {
 	}
 
 	fact := observationFactFor(t, trigger, admissionNow)
-	first, err := repository.AdmitDeviceFact(ctx, fact, stateSnapshotWith(), admissionNow)
+	first, err := repository.AdmitDeviceFact(
+		ctx, fact, stateSnapshotWith(), admissionNow, admissionNow.Add(-time.Minute),
+	)
 	if err != nil {
 		t.Fatalf("busy sibling forced a coverage error: %v", err)
 	}
@@ -314,7 +316,9 @@ func TestAdmitDeviceFactCoverageIgnoresIneligibleSiblings(t *testing.T) {
 	}
 
 	// A duplicate redelivery is decided before Conditions too.
-	second, err := repository.AdmitDeviceFact(ctx, fact, stateSnapshotWith(), admissionNow)
+	second, err := repository.AdmitDeviceFact(
+		ctx, fact, stateSnapshotWith(), admissionNow, admissionNow.Add(-time.Minute),
+	)
 	if err != nil {
 		t.Fatalf("duplicate redelivery forced a coverage error: %v", err)
 	}
@@ -340,7 +344,7 @@ func TestAdmitDeviceFactEvaluatedRunCommitsWithSnapshotDecision(t *testing.T) {
 	}
 	fact := observationFactFor(t, trigger, admissionNow)
 	snapshot := stateSnapshotWith(presentStateEntry(t, conditionEntity, `{"level":10}`, admissionNow))
-	result, err := repository.AdmitDeviceFact(ctx, fact, snapshot, admissionNow)
+	result, err := repository.AdmitDeviceFact(ctx, fact, snapshot, admissionNow, admissionNow.Add(-time.Minute))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -382,7 +386,7 @@ func TestAdmitDeviceFactCorruptStateWritesNothing(t *testing.T) {
 	}
 	fact := observationFactFor(t, trigger, admissionNow)
 	snapshot := stateSnapshotWith(presentStateEntry(t, conditionEntity, `{"level":`, admissionNow))
-	_, err := repository.AdmitDeviceFact(ctx, fact, snapshot, admissionNow)
+	_, err := repository.AdmitDeviceFact(ctx, fact, snapshot, admissionNow, admissionNow.Add(-time.Minute))
 	if !errors.Is(err, devices.ErrEntityStateSnapshotCorrupt) {
 		t.Fatalf("corrupt State error = %v, want ErrEntityStateSnapshotCorrupt", err)
 	}
@@ -419,7 +423,9 @@ func TestAdmitDeviceFactStorageFailureRollsBackEveryWrite(t *testing.T) {
 		BEGIN SELECT RAISE(ABORT, 'injected storage failure'); END`, higher.ID))
 
 	fact := observationFactFor(t, trigger, admissionNow)
-	if _, err = repository.AdmitDeviceFact(ctx, fact, stateSnapshotWith(), admissionNow); err == nil {
+	if _, err = repository.AdmitDeviceFact(
+		ctx, fact, stateSnapshotWith(), admissionNow, admissionNow.Add(-time.Minute),
+	); err == nil {
 		t.Fatal("injected storage failure did not fail the admission")
 	}
 	for _, table := range []string{"automation_history", "automation_fact_receipts", "automation_run_steps"} {
@@ -449,7 +455,7 @@ func TestAdmitDeviceFactRedeliveryAfterPruningStaysDuplicate(t *testing.T) {
 	}
 	fact := observationFactFor(t, trigger, admissionNow)
 	snapshot := stateSnapshotWith(presentStateEntry(t, conditionEntity, `{"level":90}`, admissionNow))
-	result, err := repository.AdmitDeviceFact(ctx, fact, snapshot, admissionNow)
+	result, err := repository.AdmitDeviceFact(ctx, fact, snapshot, admissionNow, admissionNow.Add(-time.Minute))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -468,7 +474,11 @@ func TestAdmitDeviceFactRedeliveryAfterPruningStaysDuplicate(t *testing.T) {
 	}
 	// State is now true, but the retained receipt must still decide duplicate.
 	replay, err := repository.AdmitDeviceFact(
-		ctx, fact, stateSnapshotWith(presentStateEntry(t, conditionEntity, `{"level":5}`, admissionNow)), admissionNow,
+		ctx,
+		fact,
+		stateSnapshotWith(presentStateEntry(t, conditionEntity, `{"level":5}`, admissionNow)),
+		admissionNow,
+		admissionNow.Add(-time.Minute),
 	)
 	if err != nil {
 		t.Fatal(err)

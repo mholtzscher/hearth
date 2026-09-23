@@ -93,6 +93,7 @@ type AutomationHistory struct {
 	FactCausationID          sql.NullString
 	FactValueJson            sql.NullString
 	FactEmittedAt            sql.NullString
+	FactPreviousValueJson    sql.NullString
 	RunSnapshotJson          sql.NullString
 	RunSource                sql.NullString
 	RunStatus                sql.NullString
@@ -103,11 +104,23 @@ type AutomationHistory struct {
 	SkipMatchedTriggersJson  sql.NullString
 	SkipReason               sql.NullString
 	SkipSource               sql.NullString
+	HoldTriggerID            sql.NullString
+	HoldStartedAt            sql.NullString
+	HoldDueAt                sql.NullString
 	ConditionDecisionJson    string
 	ConditionMode            string
 	ConditionBypassed        int64
 	ConditionResult          sql.NullString
-	FactPreviousValueJson    sql.NullString
+}
+
+type AutomationHold struct {
+	AutomationID     string
+	Revision         int64
+	TriggerID        string
+	LastReceiveOrder int64
+	Phase            string
+	StartedAt        sql.NullString
+	DueAt            sql.NullString
 }
 
 type AutomationRunStep struct {

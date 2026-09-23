@@ -2,9 +2,13 @@ package automations
 
 import (
 	"context"
+	"errors"
 	"log/slog"
+	"slices"
+	"sync"
 	"time"
 
+	"github.com/mholtzscher/hearth/internal/modules/devices"
 	"github.com/mholtzscher/hearth/internal/platform/lifecycle"
 )
 
@@ -16,6 +20,9 @@ type Service struct {
 
 	// admission tracks both admission transactions and Run workers for Drain.
 	admission *lifecycle.AdmissionGroup
+
+	heldStateStartupMu sync.RWMutex
+	heldStateStartupAt time.Time
 }
 
 // NewService assembles the automation service from its persistence seam, the
@@ -25,12 +32,139 @@ func NewService(
 	automationDevices AutomationDevices,
 	dependencies Dependencies,
 ) *Service {
-	return &Service{
+	service := &Service{
 		repository:   repository,
 		devices:      automationDevices,
 		dependencies: dependencies.WithDefaults(),
 		admission:    lifecycle.NewAdmissionGroup(),
 	}
+	service.heldStateStartupAt = service.dependencies.Now().UTC()
+	return service
+}
+
+// SetHeldStateStartupAt sets the Core startup cutoff used to reject buffered pre-startup Facts.
+func (service *Service) SetHeldStateStartupAt(at time.Time) error {
+	if at.IsZero() {
+		return invalid("Core startup time is required")
+	}
+	service.heldStateStartupMu.Lock()
+	service.heldStateStartupAt = at.UTC()
+	service.heldStateStartupMu.Unlock()
+	return nil
+}
+
+func (service *Service) heldStateStartupCutoff() time.Time {
+	service.heldStateStartupMu.RLock()
+	defer service.heldStateStartupMu.RUnlock()
+	return service.heldStateStartupAt
+}
+
+// ResetPendingHeldStates discards pre-restart elapsed time while preserving hold cursors.
+func (service *Service) ResetPendingHeldStates(ctx context.Context) error {
+	return service.repository.ResetPendingHeldStates(ctx)
+}
+
+// ProcessDueHeldStates commits due held-state Runs or Skips and starts committed Run workers.
+func (service *Service) ProcessDueHeldStates(ctx context.Context, at time.Time, limit int) (int, error) {
+	reservation, admitted := service.admission.TryAcquire()
+	if !admitted {
+		return 0, ErrAdmissionUnavailable
+	}
+	defer reservation.Release()
+	if service.devices == nil || !service.devices.CommandAdmissionOpen() {
+		return 0, ErrAdmissionUnavailable
+	}
+
+	deadline := time.Now().Add(AdmissionTimeout)
+	result, processed, err := service.admitDueHeldStates(ctx, at, limit, deadline)
+	if err != nil {
+		return 0, err
+	}
+	workerContext := context.WithoutCancel(ctx)
+	for _, run := range result.StartedRuns {
+		reservation.Go(func() { service.executeRun(workerContext, run) })
+	}
+	reservation.Release()
+	for _, run := range result.StartedRuns {
+		service.logRunStarted(ctx, run)
+	}
+	for _, skip := range result.Skips {
+		service.logSkipped(ctx, skip)
+	}
+	return processed, nil
+}
+
+func (service *Service) admitDueHeldStates(
+	ctx context.Context,
+	at time.Time,
+	limit int,
+	deadline time.Time,
+) (AdmissionResult, int, error) {
+	for {
+		admissionContext, cancel := context.WithDeadline(ctx, deadline)
+		candidates, err := service.repository.ListDueHeldStates(admissionContext, at, limit)
+		if err != nil {
+			cancel()
+			return AdmissionResult{}, 0, err
+		}
+		required, err := service.dueConditionEntityIDs(admissionContext, candidates)
+		if err != nil {
+			cancel()
+			return AdmissionResult{}, 0, err
+		}
+		snapshot := emptyEntityStateSnapshot()
+		if len(required) > 0 {
+			snapshot, err = service.readConditionStateSnapshot(admissionContext, required)
+			if err != nil {
+				cancel()
+				return AdmissionResult{}, 0, err
+			}
+		}
+		result, processed, err := service.repository.AdmitDueHeldStates(admissionContext, snapshot, at, limit)
+		cancel()
+		if errors.Is(err, ErrConditionSnapshotRequired) {
+			if time.Now().After(deadline) {
+				return AdmissionResult{}, 0, context.DeadlineExceeded
+			}
+			continue
+		}
+		if err != nil {
+			return AdmissionResult{}, 0, err
+		}
+		return result, processed, nil
+	}
+}
+
+func (service *Service) dueConditionEntityIDs(
+	ctx context.Context,
+	candidates []HeldStateCandidate,
+) ([]devices.EntityID, error) {
+	ids := make(map[devices.EntityID]struct{})
+	for _, candidate := range candidates {
+		record, err := service.repository.GetAutomation(ctx, candidate.AutomationID)
+		if err != nil {
+			if errors.Is(err, ErrAutomationNotFound) {
+				continue
+			}
+			return nil, err
+		}
+		if record.Revision != candidate.Revision || record.Definition.Conditions == nil {
+			continue
+		}
+		conditionIDs, err := RequiredConditionEntityIDs(*record.Definition.Conditions)
+		if err != nil {
+			return nil, err
+		}
+		for _, id := range conditionIDs {
+			ids[id] = struct{}{}
+		}
+	}
+	result := make([]devices.EntityID, 0, len(ids))
+	for id := range ids {
+		result = append(result, id)
+	}
+	slices.Sort(result)
+	return result, nil
 }
 
 // StopAdmission rejects new Runs with [ErrAdmissionUnavailable] and lets admitted
