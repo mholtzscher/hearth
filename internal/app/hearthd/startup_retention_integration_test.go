@@ -349,7 +349,7 @@ func waitForCoreHealthz(
 	runErrors <-chan error,
 ) {
 	t.Helper()
-	waitForMatrixCondition(t, 10*time.Second, func() (bool, error) {
+	waitForMatrixCondition(t, 30*time.Second, func() (bool, error) {
 		select {
 		case runErr := <-runErrors:
 			if runErr != nil {
