@@ -312,9 +312,10 @@ func (repo *AutomationRepository) admitDueHeldState(
 		return err
 	}
 	result.Outcome.MatchedAutomations++
-	_, err = tx.ExecContext(ctx, `UPDATE automation_holds SET phase = 'consumed', started_at = NULL, due_at = NULL
+	_, err = tx.ExecContext(ctx, `UPDATE automation_holds SET phase = 'consumed', started_at = NULL, due_at = NULL,
+		last_receive_order = MAX(last_receive_order, ?)
 		WHERE automation_id = ? AND trigger_id = ? AND revision = ? AND phase = 'pending'
-		AND due_at <= ?`, hold.automationID, hold.triggerID, hold.revision, encodeAutomationTimestamp(at))
+		AND due_at <= ?`, receiveOrder, hold.automationID, hold.triggerID, hold.revision, encodeAutomationTimestamp(at))
 	return err
 }
 

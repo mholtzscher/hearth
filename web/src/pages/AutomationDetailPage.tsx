@@ -155,8 +155,16 @@ function AutomationTriggerList({
             </p>
           ) : (
             <p className="mt-1 text-xs text-muted-foreground">
-              dispositions{" "}
-              <span className="font-mono">{(trigger.dispositions ?? []).join(", ") || "—"}</span>
+              {trigger.kind === "held_state" ? (
+                <>
+                  held for <span className="font-mono">{trigger.for_seconds} seconds</span>
+                </>
+              ) : (
+                <>
+                  dispositions{" "}
+                  <span className="font-mono">{(trigger.dispositions ?? []).join(", ") || "—"}</span>
+                </>
+              )}
               {(trigger.comparisons?.length ?? 0) > 0 && (
                 <>
                   {" · comparisons "}
