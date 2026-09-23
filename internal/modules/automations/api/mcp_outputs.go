@@ -33,12 +33,13 @@ type mcpAutomationComparisonBody struct {
 }
 
 type mcpAutomationTriggerBody struct {
-	ID           string                        `json:"id"`
-	Kind         string                        `json:"kind"`
-	EntityID     string                        `json:"entity_id"`
-	Dispositions []string                      `json:"dispositions,omitempty"`
-	Comparisons  []mcpAutomationComparisonBody `json:"comparisons,omitempty"`
-	EventName    string                        `json:"event_name,omitempty"`
+	ID                  string                        `json:"id"`
+	Kind                string                        `json:"kind"`
+	EntityID            string                        `json:"entity_id"`
+	Dispositions        []string                      `json:"dispositions,omitempty"`
+	PreviousComparisons []mcpAutomationComparisonBody `json:"previous_comparisons,omitempty"`
+	Comparisons         []mcpAutomationComparisonBody `json:"comparisons,omitempty"`
+	EventName           string                        `json:"event_name,omitempty"`
 }
 
 type mcpAutomationStepBody struct {
@@ -70,13 +71,14 @@ type mcpAutomationCollectionBody struct {
 }
 
 type mcpDeviceFactSummaryBody struct {
-	FactID           string    `json:"fact_id"`
-	Family           string    `json:"family"`
-	EntityID         string    `json:"entity_id"`
-	Variant          string    `json:"variant"`
-	CausationID      string    `json:"causation_id"`
-	ObservationValue any       `json:"observation_value,omitempty"`
-	EmittedAt        time.Time `json:"emitted_at"`
+	FactID             string    `json:"fact_id"`
+	Family             string    `json:"family"`
+	EntityID           string    `json:"entity_id"`
+	Variant            string    `json:"variant"`
+	CausationID        string    `json:"causation_id"`
+	ObservationValue   any       `json:"observation_value,omitempty"`
+	PreviousStateValue any       `json:"previous_state_value,omitempty"`
+	EmittedAt          time.Time `json:"emitted_at"`
 }
 
 type mcpAutomationStepAttemptBody struct {
@@ -205,6 +207,12 @@ func mcpTriggerOutput(body AutomationTriggerBody) mcpAutomationTriggerBody {
 			output.Comparisons[index] = mcpComparisonOutput(comparison)
 		}
 	}
+	if len(body.PreviousComparisons) > 0 {
+		output.PreviousComparisons = make([]mcpAutomationComparisonBody, len(body.PreviousComparisons))
+		for index, comparison := range body.PreviousComparisons {
+			output.PreviousComparisons[index] = mcpComparisonOutput(comparison)
+		}
+	}
 	return output
 }
 
@@ -251,7 +259,8 @@ func mcpFactOutput(body DeviceFactSummaryBody) mcpDeviceFactSummaryBody {
 	return mcpDeviceFactSummaryBody{
 		FactID: body.FactID, Family: body.Family, EntityID: body.EntityID,
 		Variant: body.Variant, CausationID: body.CausationID,
-		ObservationValue: mcpExactJSON(body.ObservationValue), EmittedAt: body.EmittedAt,
+		ObservationValue:   mcpExactJSON(body.ObservationValue),
+		PreviousStateValue: mcpExactJSON(body.PreviousStateValue), EmittedAt: body.EmittedAt,
 	}
 }
 

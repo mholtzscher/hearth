@@ -141,6 +141,7 @@ func NewDeviceFactSummary(fact DeviceFact) DeviceFactSummary {
 		summary.Variant = string(fact.Observation.Disposition)
 		summary.CausationID = string(fact.Observation.ObservationID)
 		summary.ObservationValue = append(devices.Value(nil), fact.Observation.Value...)
+		summary.PreviousStateValue = append(devices.Value(nil), fact.Observation.PreviousValue...)
 		summary.EmittedAt = fact.Observation.EmittedAt
 	case DeviceFactEntityEvent:
 		summary.FactID = fact.EntityEvent.FactID
@@ -214,6 +215,18 @@ func matchObservationTrigger(fact *ObservationFact, trigger *ObservationTrigger)
 	}
 	if !slices.Contains(trigger.Dispositions, fact.Disposition) {
 		return false, nil
+	}
+	if len(trigger.PreviousComparisons) > 0 && fact.PreviousValue == nil {
+		return false, nil
+	}
+	for _, comparison := range trigger.PreviousComparisons {
+		matches, err := MatchObservationComparison(comparison, fact.PreviousValue)
+		if err != nil {
+			return false, err
+		}
+		if !matches {
+			return false, nil
+		}
 	}
 	for _, comparison := range trigger.Comparisons {
 		matches, err := MatchObservationComparison(comparison, fact.Value)

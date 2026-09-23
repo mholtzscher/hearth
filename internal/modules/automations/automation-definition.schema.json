@@ -75,6 +75,11 @@
                     "operand": {}
                   }
                 }
+              },
+              "previous_comparisons": {
+                "type": "array",
+                "maxItems": 8,
+                "items": { "$ref": "#/$defs/observationComparison" }
               }
             }
           },
@@ -135,6 +140,21 @@
     }
   },
   "$defs": {
+    "observationComparison": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["operator", "operand"],
+      "oneOf": [
+        { "required": ["value_pointer"], "not": { "required": ["pointer"] } },
+        { "required": ["pointer"], "not": { "required": ["value_pointer"] } }
+      ],
+      "properties": {
+        "value_pointer": { "type": "string", "maxLength": 256 },
+        "pointer": { "type": "string", "maxLength": 256, "deprecated": true },
+        "operator": { "enum": ["eq", "ne", "lt", "lte", "gt", "gte"] },
+        "operand": {}
+      }
+    },
     "condition": {
       "oneOf": [
         { "$ref": "#/$defs/entityStateCondition" },

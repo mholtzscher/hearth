@@ -43,6 +43,38 @@ evaluation results, not definition errors.
 
 ## Definition contract
 
+### Observation transitions
+
+An Observation Trigger can compare the accepted value with `comparisons` and the
+State immediately preceding acceptance with `previous_comparisons`. Each group
+accepts up to eight comparisons and uses the same `value_pointer`, `operator`,
+and `operand` fields. All entries in both groups must match the same Observation
+Fact. For example, this Trigger matches a temperature crossing above 25:
+
+```json
+{
+  "id": "temperature-rises",
+  "kind": "observation",
+  "entity_id": "ent_01950000-0000-7000-8000-000000000001",
+  "dispositions": ["applied"],
+  "previous_comparisons": [{"value_pointer": "", "operator": "lte", "operand": 25}],
+  "comparisons": [{"value_pointer": "", "operator": "gt", "operand": 25}]
+}
+```
+
+Reverse the operators for a downward crossing. A first accepted Observation
+has no preceding State, so it cannot match a nonempty `previous_comparisons`
+group. A preceding JSON `null` is a value and can match `eq` with a null
+operand. Missing pointers and incompatible types do not match, even with `ne`.
+An `unchanged` report can match if the Trigger permits that disposition. The
+preceding value comes from the Devices projection transaction, while Conditions
+still read current State at admission time. Automatic Run and Skip history
+includes `fact.previous_state_value` when that predecessor exists; a real JSON
+null appears as `null`, and absent evidence omits the field.
+
+See [Observation Trigger transitions](../specs/observation-trigger-transitions.md)
+for delivery and redelivery behavior.
+
 `conditions` is one optional root node, not an array. Every node has an
 author-supplied `id` that is unique across the whole tree, uses the same
 subject-safe slug grammar as Trigger and Step IDs (1–63 bytes,

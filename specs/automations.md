@@ -5,6 +5,7 @@
 **Baseline:** `1f9a2b0`; Device Facts are implemented. Do not restore the automation module removed in `423addb` wholesale.
 **Effort:** XL, split into four ordered deliverables.
 **Follow-on:** [Automation Conditions](automation-conditions.md) specifies optional current-State Conditions, explicit manual bypass, and condition-blocked automatic/manual Skips. It amends §3.1's definition field list, §3.4–§3.5's admission contracts, §4's current-State lookup exclusion (history lookups remain excluded), and the `Skip`/`SkipReason` and manual-admission type/interface listings below. The original implementation baseline is retained here; use the follow-on spec for those changed contracts.
+**Follow-on:** [Observation Trigger transitions](observation-trigger-transitions.md) adds optional comparisons against the State immediately preceding an accepted Observation, carried as immutable evidence on that Observation Fact. It amends §3.2, §4's new-Fact-schema exclusion, and the Observation Fact/Trigger/history contracts while preserving admission and execution semantics.
 
 ## 1. Problem statement
 
@@ -47,6 +48,8 @@ An **Observation Trigger** matches one Observation Fact by:
 2. a non-empty set containing `applied`, `unchanged`, or both; and
 3. zero to eight comparisons against that Fact's `data.value`, all of which must match.
 
+The transition follow-on additionally permits zero to eight `previous_comparisons` against optional `data.previous_value`; see that spec for precedence, compatibility, and evidence rules.
+
 Each comparison uses an RFC 6901 JSON Pointer relative to `data.value`. The empty pointer selects the whole value. A pointer is at most 256 UTF-8 bytes and must use valid `~0` and `~1` escaping. Arrays use canonical non-negative decimal indices without leading zeroes except `0`; `-` is invalid for reads.
 
 Operators are closed to `eq`, `ne`, `lt`, `lte`, `gt`, and `gte`:
@@ -54,7 +57,7 @@ Operators are closed to `eq`, `ne`, `lt`, `lte`, `gt`, and `gte`:
 - `eq` and `ne` accept any JSON operand. Values must have the same JSON type; JSON numbers compare by mathematical value, object member order is irrelevant, and array order is significant.
 - ordering operators require both selected value and operand to be finite JSON numbers and compare them without binary floating-point loss.
 - a missing pointer, invalid runtime array index, or incompatible runtime type makes the comparison false, including `ne`; it is not an admission error.
-- comparisons never read another Fact, current State, Entity metadata, history, time, or a Command outcome.
+- comparisons never read another Fact, admission-time State, Entity metadata, history, time, or a Command outcome. The transition follow-on permits comparisons against the projection-time predecessor carried by the same Fact.
 
 ### 3.3 Steps and Commands
 
@@ -111,7 +114,7 @@ Disabled and unmatched Automations write no history. A Skip is not a Run and nev
 - Manual-run idempotency keys.
 - Replaying retained Facts after definition edits or intentionally scanning Observation/Entity Event history.
 - Authentication or authorization changes; the API retains Hearth's current deployment boundary.
-- New Device Fact schemas, subjects, streams, outbox behavior, or publisher changes.
+- Except for the additive optional predecessor evidence defined by the transition follow-on: new Device Fact schemas, subjects, streams, outbox behavior, or publisher changes.
 
 ## 5. Ownership and dependencies
 

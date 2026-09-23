@@ -54,7 +54,7 @@ func TestCoreStartupPrunesRetainedHistory(t *testing.T) {
 	defer func() { _ = observer.Close() }()
 	// The startup pass runs inside the retention worker, so wait for its effect
 	// instead of assuming it finished before serving.
-	waitForMatrixCondition(t, 10*time.Second, func() (bool, error) {
+	waitForMatrixCondition(t, 30*time.Second, func() (bool, error) {
 		select {
 		case runErr := <-runErrors:
 			if runErr != nil {

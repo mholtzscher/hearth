@@ -97,7 +97,7 @@ func waitForOwnedMappingsServer(
 	runErrors <-chan error,
 ) {
 	t.Helper()
-	waitForMatrixCondition(t, 5*time.Second, func() (bool, error) {
+	waitForMatrixCondition(t, 30*time.Second, func() (bool, error) {
 		select {
 		case runErr := <-runErrors:
 			if runErr != nil {

@@ -338,12 +338,13 @@ type automationDefinitionJSON struct {
 }
 
 type automationTriggerJSON struct {
-	ID           TriggerID                        `json:"id"`
-	Kind         TriggerKind                      `json:"kind"`
-	EntityID     devices.EntityID                 `json:"entity_id"`
-	Dispositions []devices.ObservationDisposition `json:"dispositions,omitempty"`
-	Comparisons  []observationComparisonJSON      `json:"comparisons,omitempty"`
-	EventName    devices.EntityEventName          `json:"event_name,omitempty"`
+	ID                  TriggerID                        `json:"id"`
+	Kind                TriggerKind                      `json:"kind"`
+	EntityID            devices.EntityID                 `json:"entity_id"`
+	Dispositions        []devices.ObservationDisposition `json:"dispositions,omitempty"`
+	PreviousComparisons []observationComparisonJSON      `json:"previous_comparisons,omitempty"`
+	Comparisons         []observationComparisonJSON      `json:"comparisons,omitempty"`
+	EventName           devices.EntityEventName          `json:"event_name,omitempty"`
 }
 
 type observationComparisonJSON struct {
@@ -367,6 +368,14 @@ func encodeAutomationTrigger(trigger Trigger) automationTriggerJSON {
 		if trigger.Observation != nil {
 			encoded.EntityID = trigger.Observation.EntityID
 			encoded.Dispositions = trigger.Observation.Dispositions
+			for _, comparison := range trigger.Observation.PreviousComparisons {
+				valuePointer := comparison.Pointer
+				encoded.PreviousComparisons = append(encoded.PreviousComparisons, observationComparisonJSON{
+					ValuePointer: &valuePointer,
+					Operator:     comparison.Operator,
+					Operand:      comparison.Operand,
+				})
+			}
 			for _, comparison := range trigger.Observation.Comparisons {
 				valuePointer := comparison.Pointer
 				encoded.Comparisons = append(
@@ -452,9 +461,10 @@ func normalizeAutomationTriggerValue(trigger Trigger) (Trigger, error) {
 	case TriggerKindObservation:
 		observation := trigger.Observation
 		normalized.Observation = &ObservationTrigger{
-			EntityID:     observation.EntityID,
-			Dispositions: canonicalDispositions(observation.Dispositions),
-			Comparisons:  cloneObservationComparisons(observation.Comparisons),
+			EntityID:            observation.EntityID,
+			Dispositions:        canonicalDispositions(observation.Dispositions),
+			PreviousComparisons: cloneObservationComparisons(observation.PreviousComparisons),
+			Comparisons:         cloneObservationComparisons(observation.Comparisons),
 		}
 	case TriggerKindEntityEvent:
 		entityEvent := trigger.EntityEvent
@@ -548,6 +558,15 @@ func automationTriggerFromJSON(item automationTriggerJSON) Trigger {
 	switch item.Kind {
 	case TriggerKindObservation:
 		observation := &ObservationTrigger{EntityID: item.EntityID, Dispositions: item.Dispositions}
+		for _, comparison := range item.PreviousComparisons {
+			valuePointer := comparison.LegacyPointer
+			if comparison.ValuePointer != nil {
+				valuePointer = comparison.ValuePointer
+			}
+			observation.PreviousComparisons = append(observation.PreviousComparisons, ObservationComparison{
+				Pointer: *valuePointer, Operator: comparison.Operator, Operand: comparison.Operand,
+			})
+		}
 		for _, comparison := range item.Comparisons {
 			valuePointer := comparison.LegacyPointer
 			if comparison.ValuePointer != nil {

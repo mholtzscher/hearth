@@ -69,6 +69,7 @@ func TestAcceptedObservationCommitsExactlyOnePendingDeviceFact(t *testing.T) {
 	fact := requireObservationFact(t, pending[0])
 	if fact.ID != *result.PendingFactID || fact.ObservationID != applied.ID || fact.EntityID != entityID ||
 		fact.Disposition != devices.DispositionApplied || string(fact.Value) != committedValue ||
+		fact.PreviousValue != nil ||
 		fact.CorrelationID != correlationID ||
 		!fact.AdapterReceivedAt.Equal(adapterReceivedAt) ||
 		fact.SourceUpdatedAt == nil || !fact.SourceUpdatedAt.Equal(sourceUpdatedAt) ||
@@ -113,14 +114,33 @@ func TestAcceptedObservationCommitsExactlyOnePendingDeviceFact(t *testing.T) {
 	if unchangedFact.Disposition != devices.DispositionUnchanged || unchangedFact.ID != *unchanged.PendingFactID ||
 		unchangedFact.ObservationID != unchangedObservation.ID ||
 		string(unchangedFact.Value) != committedValue ||
+		string(unchangedFact.PreviousValue) != committedValue ||
 		!unchangedFact.ObservedAt.Equal(observedAt.Add(2*time.Second)) ||
 		!unchangedFact.CreatedAt.Equal(coreCommitTime) {
 		t.Fatalf("unchanged observation fact = %#v", unchangedFact)
 	}
 
+	updatedObservation := newFactObservationWithTrace(
+		t, entityID, `false`, correlationID, adapterReceivedAt, &sourceUpdatedAt, trace,
+	)
+	updated, err := service.ProjectObservation(
+		ctx, "simulator", testRuntimeID, updatedObservation, observedAt.Add(3*time.Second),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if updated.Disposition != devices.DispositionApplied || updated.PendingFactID == nil {
+		t.Fatalf("updated projection result = %#v", updated)
+	}
+	pending = listPendingDeviceFacts(t, repository)
+	updatedFact := requireObservationFact(t, pending[2])
+	if string(updatedFact.PreviousValue) != committedValue || string(updatedFact.Value) != "false" {
+		t.Fatalf("updated observation fact = %#v, want preceding value %q", updatedFact, committedValue)
+	}
+
 	rejected := newFactObservationWithTrace(t, entityID, `1`, correlationID, adapterReceivedAt, nil, trace)
 	result, err = service.ProjectObservation(
-		ctx, "simulator", testRuntimeID, rejected, observedAt.Add(3*time.Second),
+		ctx, "simulator", testRuntimeID, rejected, observedAt.Add(4*time.Second),
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -129,15 +149,15 @@ func TestAcceptedObservationCommitsExactlyOnePendingDeviceFact(t *testing.T) {
 		*result.Rejection != devices.RejectionInvalidValue || result.PendingFactID != nil {
 		t.Fatalf("rejected projection result = %#v", result)
 	}
-	if got := countPendingDeviceFacts(t, database); got != 2 {
-		t.Fatalf("a rejected Observation queued a fact: rows = %d, want 2", got)
+	if got := countPendingDeviceFacts(t, database); got != 3 {
+		t.Fatalf("a rejected Observation queued a fact: rows = %d, want 3", got)
 	}
-	if notifier.count() != 2 {
+	if notifier.count() != 3 {
 		t.Fatalf("notifications = %d, want one per queued fact", notifier.count())
 	}
 	// Every attempt is still durable history; only the accepted ones are facts.
-	if got := countTable(t, database, "observations"); got != 3 {
-		t.Fatalf("observation rows = %d, want 3", got)
+	if got := countTable(t, database, "observations"); got != 4 {
+		t.Fatalf("observation rows = %d, want 4", got)
 	}
 }
 

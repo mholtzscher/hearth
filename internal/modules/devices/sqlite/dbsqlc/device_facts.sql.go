@@ -65,9 +65,9 @@ func (q *Queries) InsertEntityEventDeviceFact(ctx context.Context, arg InsertEnt
 const insertObservationDeviceFact = `-- name: InsertObservationDeviceFact :exec
 INSERT INTO device_facts_outbox (
     fact_id, family, entity_id, variant, source_id, correlation_id, created_at,
-    traceparent, tracestate, value_json, adapter_received_at, source_updated_at,
+    traceparent, tracestate, value_json, previous_value_json, adapter_received_at, source_updated_at,
     observed_at
-) VALUES (?, 'observation', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+) VALUES (?, 'observation', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 `
 
 type InsertObservationDeviceFactParams struct {
@@ -80,6 +80,7 @@ type InsertObservationDeviceFactParams struct {
 	Traceparent       string
 	Tracestate        string
 	ValueJson         sql.NullString
+	PreviousValueJson sql.NullString
 	AdapterReceivedAt sql.NullString
 	SourceUpdatedAt   sql.NullString
 	ObservedAt        sql.NullString
@@ -96,6 +97,7 @@ func (q *Queries) InsertObservationDeviceFact(ctx context.Context, arg InsertObs
 		arg.Traceparent,
 		arg.Tracestate,
 		arg.ValueJson,
+		arg.PreviousValueJson,
 		arg.AdapterReceivedAt,
 		arg.SourceUpdatedAt,
 		arg.ObservedAt,
@@ -104,10 +106,7 @@ func (q *Queries) InsertObservationDeviceFact(ctx context.Context, arg InsertObs
 }
 
 const listPendingDeviceFacts = `-- name: ListPendingDeviceFacts :many
-SELECT enqueue_order, fact_id, family, entity_id, variant, source_id,
-       correlation_id, created_at, traceparent, tracestate,
-       value_json, adapter_received_at, source_updated_at, observed_at,
-       reported_at, received_at, recorded_at
+SELECT enqueue_order, fact_id, family, entity_id, variant, source_id, correlation_id, created_at, traceparent, tracestate, value_json, adapter_received_at, source_updated_at, observed_at, reported_at, received_at, recorded_at, previous_value_json
 FROM device_facts_outbox
 ORDER BY enqueue_order
 LIMIT ?
@@ -144,6 +143,7 @@ func (q *Queries) ListPendingDeviceFacts(ctx context.Context, arg ListPendingDev
 			&i.ReportedAt,
 			&i.ReceivedAt,
 			&i.RecordedAt,
+			&i.PreviousValueJson,
 		); err != nil {
 			return nil, err
 		}

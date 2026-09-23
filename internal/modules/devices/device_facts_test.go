@@ -178,6 +178,7 @@ func deviceFactAgreementCases() []deviceFactAgreementCase {
 				"entity_id":           factTestEntityID,
 				"disposition":         string(devices.DispositionApplied),
 				"value":               map[string]any{"on": true},
+				"previous_value":      nil,
 				"adapter_received_at": "2026-08-20T12:34:55Z",
 				"observed_at":         "2026-08-20T12:34:56Z",
 			}),

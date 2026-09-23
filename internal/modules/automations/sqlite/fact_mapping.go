@@ -36,6 +36,9 @@ func factSummaryFromRow(row dbsqlc.AutomationHistory) (*automations.DeviceFactSu
 	if row.FactValueJson.Valid {
 		summary.ObservationValue = devices.Value(row.FactValueJson.String)
 	}
+	if row.FactPreviousValueJson.Valid {
+		summary.PreviousStateValue = devices.Value(row.FactPreviousValueJson.String)
+	}
 	if err = automations.ValidateDeviceFactSummary(*summary); err != nil {
 		return nil, err
 	}
@@ -44,13 +47,14 @@ func factSummaryFromRow(row dbsqlc.AutomationHistory) (*automations.DeviceFactSu
 
 // storedFact holds the nullable Fact evidence columns one history row carries.
 type storedFact struct {
-	id          sql.NullString
-	family      sql.NullString
-	entityID    sql.NullString
-	variant     sql.NullString
-	causationID sql.NullString
-	valueJSON   sql.NullString
-	emittedAt   sql.NullString
+	id                sql.NullString
+	family            sql.NullString
+	entityID          sql.NullString
+	variant           sql.NullString
+	causationID       sql.NullString
+	valueJSON         sql.NullString
+	previousValueJSON sql.NullString
+	emittedAt         sql.NullString
 }
 
 // storedFactColumns encodes a Fact summary as history columns; a nil summary leaves every column NULL.
@@ -68,6 +72,9 @@ func storedFactColumns(summary *automations.DeviceFactSummary) storedFact {
 	}
 	if summary.ObservationValue != nil {
 		stored.valueJSON = sql.NullString{String: string(summary.ObservationValue), Valid: true}
+	}
+	if summary.PreviousStateValue != nil {
+		stored.previousValueJSON = sql.NullString{String: string(summary.PreviousStateValue), Valid: true}
 	}
 	return stored
 }

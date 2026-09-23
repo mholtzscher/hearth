@@ -107,6 +107,7 @@ type AutomationHistory struct {
 	ConditionMode            string
 	ConditionBypassed        int64
 	ConditionResult          sql.NullString
+	FactPreviousValueJson    sql.NullString
 }
 
 type AutomationRunStep struct {
@@ -165,6 +166,7 @@ type DeviceFactsOutbox struct {
 	ReportedAt        sql.NullString
 	ReceivedAt        sql.NullString
 	RecordedAt        sql.NullString
+	PreviousValueJson sql.NullString
 }
 
 type Entity struct {

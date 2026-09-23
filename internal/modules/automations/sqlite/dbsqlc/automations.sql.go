@@ -166,11 +166,11 @@ const createHistoryRun = `-- name: CreateHistoryRun :exec
 INSERT INTO automation_history (
     id, automation_id, automation_name, kind, revision, recorded_at,
     fact_id, fact_family, fact_entity_id, fact_variant, fact_causation_id,
-    fact_value_json, fact_emitted_at,
+    fact_value_json, fact_previous_value_json, fact_emitted_at,
     run_snapshot_json, run_source, run_status, run_started_at,
     run_matched_trigger_ids_json,
     condition_mode, condition_bypassed, condition_result, condition_decision_json
-) VALUES (?, ?, ?, 'run', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'running', ?, ?, ?, ?, ?, ?)
+) VALUES (?, ?, ?, 'run', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'running', ?, ?, ?, ?, ?, ?)
 `
 
 type CreateHistoryRunParams struct {
@@ -185,6 +185,7 @@ type CreateHistoryRunParams struct {
 	FactVariant              sql.NullString
 	FactCausationID          sql.NullString
 	FactValueJson            sql.NullString
+	FactPreviousValueJson    sql.NullString
 	FactEmittedAt            sql.NullString
 	RunSnapshotJson          sql.NullString
 	RunSource                sql.NullString
@@ -209,6 +210,7 @@ func (q *Queries) CreateHistoryRun(ctx context.Context, arg CreateHistoryRunPara
 		arg.FactVariant,
 		arg.FactCausationID,
 		arg.FactValueJson,
+		arg.FactPreviousValueJson,
 		arg.FactEmittedAt,
 		arg.RunSnapshotJson,
 		arg.RunSource,
@@ -226,10 +228,10 @@ const createHistorySkip = `-- name: CreateHistorySkip :exec
 INSERT INTO automation_history (
     id, automation_id, automation_name, kind, revision, recorded_at,
     fact_id, fact_family, fact_entity_id, fact_variant, fact_causation_id,
-    fact_value_json, fact_emitted_at, skip_matched_triggers_json, skip_reason,
+    fact_value_json, fact_previous_value_json, fact_emitted_at, skip_matched_triggers_json, skip_reason,
     skip_source,
     condition_mode, condition_bypassed, condition_result, condition_decision_json
-) VALUES (?, ?, ?, 'skip', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+) VALUES (?, ?, ?, 'skip', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 `
 
 type CreateHistorySkipParams struct {
@@ -244,6 +246,7 @@ type CreateHistorySkipParams struct {
 	FactVariant             sql.NullString
 	FactCausationID         sql.NullString
 	FactValueJson           sql.NullString
+	FactPreviousValueJson   sql.NullString
 	FactEmittedAt           sql.NullString
 	SkipMatchedTriggersJson sql.NullString
 	SkipReason              sql.NullString
@@ -267,6 +270,7 @@ func (q *Queries) CreateHistorySkip(ctx context.Context, arg CreateHistorySkipPa
 		arg.FactVariant,
 		arg.FactCausationID,
 		arg.FactValueJson,
+		arg.FactPreviousValueJson,
 		arg.FactEmittedAt,
 		arg.SkipMatchedTriggersJson,
 		arg.SkipReason,
@@ -361,7 +365,7 @@ func (q *Queries) GetAutomation(ctx context.Context, arg GetAutomationParams) (A
 }
 
 const getHistoryEntry = `-- name: GetHistoryEntry :one
-SELECT id, automation_id, automation_name, kind, revision, recorded_at, fact_id, fact_family, fact_entity_id, fact_variant, fact_causation_id, fact_value_json, fact_emitted_at, run_snapshot_json, run_source, run_status, run_failure_code, run_started_at, run_completed_at, run_matched_trigger_ids_json, skip_matched_triggers_json, skip_reason, skip_source, condition_decision_json, condition_mode, condition_bypassed, condition_result FROM automation_history
+SELECT id, automation_id, automation_name, kind, revision, recorded_at, fact_id, fact_family, fact_entity_id, fact_variant, fact_causation_id, fact_value_json, fact_emitted_at, run_snapshot_json, run_source, run_status, run_failure_code, run_started_at, run_completed_at, run_matched_trigger_ids_json, skip_matched_triggers_json, skip_reason, skip_source, condition_decision_json, condition_mode, condition_bypassed, condition_result, fact_previous_value_json FROM automation_history
 WHERE automation_id = ? AND id = ?
 `
 
@@ -401,6 +405,7 @@ func (q *Queries) GetHistoryEntry(ctx context.Context, arg GetHistoryEntryParams
 		&i.ConditionMode,
 		&i.ConditionBypassed,
 		&i.ConditionResult,
+		&i.FactPreviousValueJson,
 	)
 	return i, err
 }
@@ -567,7 +572,7 @@ func (q *Queries) ListAutomationsFirstPage(ctx context.Context, arg ListAutomati
 }
 
 const listHistoryAfter = `-- name: ListHistoryAfter :many
-SELECT id, automation_id, automation_name, kind, revision, recorded_at, fact_id, fact_family, fact_entity_id, fact_variant, fact_causation_id, fact_value_json, fact_emitted_at, run_snapshot_json, run_source, run_status, run_failure_code, run_started_at, run_completed_at, run_matched_trigger_ids_json, skip_matched_triggers_json, skip_reason, skip_source, condition_decision_json, condition_mode, condition_bypassed, condition_result FROM automation_history
+SELECT id, automation_id, automation_name, kind, revision, recorded_at, fact_id, fact_family, fact_entity_id, fact_variant, fact_causation_id, fact_value_json, fact_emitted_at, run_snapshot_json, run_source, run_status, run_failure_code, run_started_at, run_completed_at, run_matched_trigger_ids_json, skip_matched_triggers_json, skip_reason, skip_source, condition_decision_json, condition_mode, condition_bypassed, condition_result, fact_previous_value_json FROM automation_history
 WHERE automation_id = ?
   AND (recorded_at < ? OR (recorded_at = ? AND id < ?))
 ORDER BY recorded_at DESC, id DESC
@@ -625,6 +630,7 @@ func (q *Queries) ListHistoryAfter(ctx context.Context, arg ListHistoryAfterPara
 			&i.ConditionMode,
 			&i.ConditionBypassed,
 			&i.ConditionResult,
+			&i.FactPreviousValueJson,
 		); err != nil {
 			return nil, err
 		}
@@ -640,7 +646,7 @@ func (q *Queries) ListHistoryAfter(ctx context.Context, arg ListHistoryAfterPara
 }
 
 const listHistoryFirstPage = `-- name: ListHistoryFirstPage :many
-SELECT id, automation_id, automation_name, kind, revision, recorded_at, fact_id, fact_family, fact_entity_id, fact_variant, fact_causation_id, fact_value_json, fact_emitted_at, run_snapshot_json, run_source, run_status, run_failure_code, run_started_at, run_completed_at, run_matched_trigger_ids_json, skip_matched_triggers_json, skip_reason, skip_source, condition_decision_json, condition_mode, condition_bypassed, condition_result FROM automation_history
+SELECT id, automation_id, automation_name, kind, revision, recorded_at, fact_id, fact_family, fact_entity_id, fact_variant, fact_causation_id, fact_value_json, fact_emitted_at, run_snapshot_json, run_source, run_status, run_failure_code, run_started_at, run_completed_at, run_matched_trigger_ids_json, skip_matched_triggers_json, skip_reason, skip_source, condition_decision_json, condition_mode, condition_bypassed, condition_result, fact_previous_value_json FROM automation_history
 WHERE automation_id = ?
 ORDER BY recorded_at DESC, id DESC
 LIMIT ?
@@ -688,6 +694,7 @@ func (q *Queries) ListHistoryFirstPage(ctx context.Context, arg ListHistoryFirst
 			&i.ConditionMode,
 			&i.ConditionBypassed,
 			&i.ConditionResult,
+			&i.FactPreviousValueJson,
 		); err != nil {
 			return nil, err
 		}

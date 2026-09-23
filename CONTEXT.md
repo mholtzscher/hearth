@@ -93,7 +93,7 @@ A Trigger that matches one accepted Entity Event fact by exact Entity and event 
 _Avoid_: Entity Event, event handler
 
 **Observation Trigger**:
-A Trigger that matches one accepted Observation fact by exact Entity, accepted disposition, and configured comparisons against that one reported value.
+A Trigger that matches one accepted Observation fact by exact Entity, accepted disposition, and configured comparisons against its reported value and, optionally, the State immediately preceding that Observation's acceptance. Same-value Observations may match when their `unchanged` disposition is allowed.
 _Avoid_: State Trigger, State query
 
 **Step**:

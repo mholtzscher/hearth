@@ -52,20 +52,22 @@ const (
 	ComparisonGreaterThanOrEqual ComparisonOperator = "gte"
 )
 
-// ObservationComparison is one typed comparison against an Observation Fact's
-// data.value. Pointer is an RFC 6901 JSON Pointer; the empty pointer selects the
-// whole value, and Operand is exactly one normalized JSON value.
+// ObservationComparison is one typed comparison against an Observation Fact
+// value. Pointer is RFC 6901; the empty pointer selects the whole value, and
+// Operand is exactly one normalized JSON value.
 type ObservationComparison struct {
 	Pointer  string
 	Operator ComparisonOperator
 	Operand  json.RawMessage
 }
 
-// ObservationTrigger matches one Observation Fact by exact Entity ID, a non-empty disposition set, and zero to eight comparisons.
+// ObservationTrigger matches an Observation Fact by Entity, disposition, and up
+// to eight independent comparisons against each side of the transition.
 type ObservationTrigger struct {
-	EntityID     devices.EntityID
-	Dispositions []devices.ObservationDisposition
-	Comparisons  []ObservationComparison
+	EntityID            devices.EntityID
+	Dispositions        []devices.ObservationDisposition
+	PreviousComparisons []ObservationComparison
+	Comparisons         []ObservationComparison
 }
 
 // EntityEventTrigger matches one Entity Event Fact by exact Entity ID and event name.
@@ -128,6 +130,7 @@ type ObservationFact struct {
 	EntityID      devices.EntityID
 	Disposition   devices.ObservationDisposition
 	Value         devices.Value
+	PreviousValue devices.Value // nil means absent; bytes containing null are a real predecessor.
 	EmittedAt     time.Time
 }
 
@@ -148,16 +151,17 @@ type DeviceFact struct {
 	EntityEvent *EntityEventFact
 }
 
-// DeviceFactSummary is the immutable evidence retained in history;
-// ObservationValue is non-nil only for Observation facts.
+// DeviceFactSummary is immutable history evidence; the two value fields are
+// present only for Observation Facts and PreviousStateValue may be JSON null.
 type DeviceFactSummary struct {
-	FactID           devices.DeviceFactID
-	Family           DeviceFactFamily
-	EntityID         devices.EntityID
-	Variant          string // observation disposition or Entity Event name
-	CausationID      string // obs_ or evt_
-	ObservationValue devices.Value
-	EmittedAt        time.Time
+	FactID             devices.DeviceFactID
+	Family             DeviceFactFamily
+	EntityID           devices.EntityID
+	Variant            string // observation disposition or Entity Event name
+	CausationID        string // obs_ or evt_
+	ObservationValue   devices.Value
+	PreviousStateValue devices.Value
+	EmittedAt          time.Time
 }
 
 // AdmissionOutcome reports what one Device Fact admission decided.
@@ -471,6 +475,20 @@ func ValidateDeviceFact(fact DeviceFact) error {
 
 // ValidateDeviceFactSummary rejects an impossible retained Fact summary.
 func ValidateDeviceFactSummary(summary DeviceFactSummary) error {
+	if err := validateDeviceFactSummaryIdentity(summary); err != nil {
+		return err
+	}
+	switch summary.Family {
+	case DeviceFactObservation:
+		return validateObservationFactSummary(summary)
+	case DeviceFactEntityEvent:
+		return validateEntityEventFactSummary(summary)
+	default:
+		return invalid("fact summary: unknown family")
+	}
+}
+
+func validateDeviceFactSummaryIdentity(summary DeviceFactSummary) error {
 	if _, err := devices.ParseDeviceFactID(string(summary.FactID)); err != nil {
 		return invalid("fact summary: %s", err)
 	}
@@ -480,30 +498,37 @@ func ValidateDeviceFactSummary(summary DeviceFactSummary) error {
 	if summary.EmittedAt.IsZero() {
 		return invalid("fact summary: emit time is required")
 	}
-	switch summary.Family {
-	case DeviceFactObservation:
-		if summary.ObservationValue == nil {
-			return invalid("fact summary: observation value is required")
+	return nil
+}
+
+func validateObservationFactSummary(summary DeviceFactSummary) error {
+	if summary.ObservationValue == nil {
+		return invalid("fact summary: observation value is required")
+	}
+	if summary.PreviousStateValue != nil {
+		if _, err := decodeJSONValue(json.RawMessage(summary.PreviousStateValue)); err != nil {
+			return invalid("fact summary: previous state value must be exactly one JSON value")
 		}
-		if summary.Variant != string(devices.DispositionApplied) &&
-			summary.Variant != string(devices.DispositionUnchanged) {
-			return invalid("fact summary: observation variant %q is not applied or unchanged", summary.Variant)
-		}
-		if _, err := devices.ParseObservationID(summary.CausationID); err != nil {
-			return invalid("fact summary: %s", err)
-		}
-	case DeviceFactEntityEvent:
-		if summary.ObservationValue != nil {
-			return invalid("fact summary: entity event summary carries an observation value")
-		}
-		if !subjectSlugPattern.MatchString(summary.Variant) {
-			return invalid("fact summary: entity event name is not a subject-safe slug")
-		}
-		if _, err := devices.ParseEntityEventID(summary.CausationID); err != nil {
-			return invalid("fact summary: %s", err)
-		}
-	default:
-		return invalid("fact summary: unknown family")
+	}
+	if summary.Variant != string(devices.DispositionApplied) &&
+		summary.Variant != string(devices.DispositionUnchanged) {
+		return invalid("fact summary: observation variant %q is not applied or unchanged", summary.Variant)
+	}
+	if _, err := devices.ParseObservationID(summary.CausationID); err != nil {
+		return invalid("fact summary: %s", err)
+	}
+	return nil
+}
+
+func validateEntityEventFactSummary(summary DeviceFactSummary) error {
+	if summary.ObservationValue != nil || summary.PreviousStateValue != nil {
+		return invalid("fact summary: entity event summary carries observation values")
+	}
+	if !subjectSlugPattern.MatchString(summary.Variant) {
+		return invalid("fact summary: entity event name is not a subject-safe slug")
+	}
+	if _, err := devices.ParseEntityEventID(summary.CausationID); err != nil {
+		return invalid("fact summary: %s", err)
 	}
 	return nil
 }
@@ -649,6 +674,11 @@ func validateObservationFact(fact ObservationFact) error {
 	if len(fact.Value) == 0 {
 		return invalidFact("observation value is required")
 	}
+	if fact.PreviousValue != nil {
+		if _, err := decodeJSONValue(json.RawMessage(fact.PreviousValue)); err != nil {
+			return invalidFact("previous observation value must be exactly one JSON value")
+		}
+	}
 	if fact.EmittedAt.IsZero() {
 		return invalidFact("emit time is required")
 	}
@@ -702,6 +732,17 @@ func validateObservationTrigger(trigger ObservationTrigger) error {
 			"%w: observation trigger has more than %d comparisons",
 			ErrInvalidAutomation, automationComparisonMaxCount,
 		)
+	}
+	if len(trigger.PreviousComparisons) > automationComparisonMaxCount {
+		return fmt.Errorf(
+			"%w: observation trigger has more than %d previous comparisons",
+			ErrInvalidAutomation, automationComparisonMaxCount,
+		)
+	}
+	for _, comparison := range trigger.PreviousComparisons {
+		if err := ValidateObservationComparison(comparison); err != nil {
+			return err
+		}
 	}
 	for _, comparison := range trigger.Comparisons {
 		if err := ValidateObservationComparison(comparison); err != nil {
