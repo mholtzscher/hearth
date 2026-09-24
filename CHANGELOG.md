@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.13.0](https://github.com/mholtzscher/hearth/compare/v0.12.0...v0.13.0) (2026-09-24)
+
+
+### Features
+
+* **simulator:** support multiple adapters per config ([#137](https://github.com/mholtzscher/hearth/issues/137)) ([1c9505d](https://github.com/mholtzscher/hearth/commit/1c9505d4a0f62eed2d1aa0d4800a421399a135d7))
+
+
+### Bug Fixes
+
+* **automations:** validate observation pointers ([#131](https://github.com/mholtzscher/hearth/issues/131)) ([1a2a6b0](https://github.com/mholtzscher/hearth/commit/1a2a6b0aa7c4d35fd6c7c40458ac87d904870b72))
+
 ## [0.12.0](https://github.com/mholtzscher/hearth/compare/v0.11.0...v0.12.0) (2026-09-21)
 
 
