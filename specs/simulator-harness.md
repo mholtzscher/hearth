@@ -40,37 +40,34 @@ An agent can, with no Go changes:
 ## Configuration
 
 ```yaml
-adapter_id: simulator
 nats_url: nats://127.0.0.1:4222
 control_addr: 127.0.0.1:8181   # optional; loopback only; absent disables control
-devices:
-  - binding_key: simulated-light
-    name: Simulated light
-    kind: light
-    health: healthy              # | unhealthy:<reason-code>
-    entities:
-      - key: power
-        name: Power
-        type: hearth.power/v1
-        support: {state: {}, operations: {set: {}}}
-        initial: true
-        outputs: {interval: 5s, values: [true, false]}
-        commands: {set: {behavior: accept-and-publish, apply_parameters: true}}
-      - key: temperature
-        name: Temperature
-        type: hearth.temperature/v1
-        support: {state: {unit: mCel}, operations: {}}
-        initial: 21500
-        outputs: {interval: 10s, values: [21500, 21600, 21400]}
-  - binding_key: simulated-button
-    name: Simulated button
-    kind: sensor
-    entities:
-      - key: events
-        name: Events
-        type: hearth.enumevent/v1
-        support: {state: {}, operations: {}, events: {names: [single_press, double_press]}}
-        outputs: {interval: 30s, values: [single_press, double_press]}
+adapters:
+  - adapter_id: simulator
+    devices:
+      - binding_key: simulated-light
+        name: Simulated light
+        kind: light
+        entities:
+          - key: power
+            name: Power
+            type: hearth.power/v1
+            support: {state: {}, operations: {set: {}}}
+            initial: true
+            outputs: {interval: 5s, values: [true, false]}
+            commands: {set: {behavior: accept-and-publish, apply_parameters: true}}
+  - adapter_id: simulator-unhealthy
+    devices:
+      - binding_key: broken-sensor
+        name: Broken sensor
+        kind: sensor
+        health: "unhealthy:hearth.external_system_unavailable"
+        entities:
+          - key: temperature
+            name: Temperature
+            type: hearth.temperature/v1
+            support: {state: {unit: mCel}, operations: {}}
+            initial: 21500
 ```
 
 Rules:

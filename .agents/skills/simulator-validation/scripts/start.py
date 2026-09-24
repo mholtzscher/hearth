@@ -92,27 +92,6 @@ def read_json(url, timeout=2):
 # --- config generation -----------------------------------------------------
 
 
-def extract_devices_block(text):
-    """Return the indented `devices:` body from a trusted checked-in preset.
-
-    Only checked-in presets are read this way; operator-supplied device files
-    never pass through block extraction.
-    """
-    lines = text.splitlines()
-    start = next((index for index, line in enumerate(lines) if line.rstrip() == "devices:"), None)
-    if start is None:
-        raise RuntimeError(f"{FAULT}: trusted simulator preset has no devices block")
-    block = []
-    for line in lines[start + 1:]:
-        # A non-blank line at column zero starts the next top-level key or comment.
-        if line.strip() and not line[:1].isspace():
-            break
-        block.append(line)
-    if not any(line.strip() for line in block):
-        raise RuntimeError(f"{FAULT}: trusted simulator preset has an empty devices block")
-    return "\n".join(block) + "\n"
-
-
 def indent_devices_block(text):
     """Indent a custom YAML sequence of Device specs to sit beneath `devices:`.
 
@@ -132,14 +111,6 @@ def indent_devices_block(text):
                 f"{FAULT}: custom devices file must be a YAML sequence of Device specs, "
                 f"not a full config (unexpected top-level line {stripped!r})")
     return "".join(("  " + line if line.strip() else "") + "\n" for line in lines)
-
-
-def load_devices_block(preset, devices_path):
-    """Return the devices block for a trusted preset name or a custom sequence file."""
-    if devices_path is not None:
-        return indent_devices_block(Path(devices_path).read_text())
-    preset_path = ROOT / "configs" / f"simulator.{preset}.example.yaml"
-    return extract_devices_block(preset_path.read_text())
 
 
 def simulator_config_text(devices_block):
@@ -519,10 +490,11 @@ def start_owned_stack(preset, devices_path, dashboard, config_path=None):
     try:
         check_ports_free(dashboard)
         check_required_tools(dashboard)
-        if config_path:
-            simulator_text, adapter_ids = load_simulator_config(config_path)
+        if config_path or devices_path is None:
+            source = config_path or ROOT / "configs" / f"simulator.{preset}.example.yaml"
+            simulator_text, adapter_ids = load_simulator_config(source)
         else:
-            devices_block = load_devices_block(preset, devices_path)
+            devices_block = indent_devices_block(Path(devices_path).read_text())
             simulator_text = simulator_config_text(devices_block)
             adapter_ids = [ADAPTER_ID]
         validate_simulator_config(simulator_text)

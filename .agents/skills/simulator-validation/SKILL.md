@@ -40,7 +40,7 @@ and assertions. Keep planning brief.
 
 ## Start
 
-Default: the Device list from `configs/simulator.scripted.example.yaml`—one
+Default: `configs/simulator.scripted.example.yaml`—one healthy Adapter with a
 scripted light (power and temperature) and an event source:
 
 ```sh
@@ -91,10 +91,10 @@ For complete Device/type examples, read
 For value sequences, failure behaviors, health, events, and assertion recipes,
 read `references/validation.md` relative to this skill directory.
 
-**Full preset warning:** it intentionally contains an unhealthy Device, which
-makes the entire Adapter unhealthy and blocks Command dispatch. Startup treats
-this as a valid ready scenario, not a startup failure. Use a focused custom
-Device list without the unhealthy Device for happy-path Commands.
+**Full preset:** `configs/simulator.full.example.yaml` covers the built-in
+Entity types on the healthy `simulator` Adapter and puts unhealthy,
+unavailable, and Command-fault Devices on separate Adapters. The unhealthy
+Adapter does not block Commands to the healthy one.
 
 Allow startup enough time for compilation and optional dependency installation
 (e.g. a 240-second tool budget). The script:

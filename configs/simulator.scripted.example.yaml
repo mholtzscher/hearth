@@ -2,41 +2,42 @@
 # then interact through hearthd (State, Commands, Device Facts) and through the
 # loopback control channel (publish now, pause/resume scripts).
 #
-# Every Device and Entity is declared in the `devices` block below. See
+# Every Device and Entity is declared under an Adapter below. See
 # specs/simulator-harness.md.
-adapter_id: simulator
 nats_url: nats://127.0.0.1:4222
 # Optional agent control channel. Loopback only; omit to disable.
 control_addr: 127.0.0.1:8181
-devices:
-  - binding_key: simulated-light
-    name: Simulated light
-    kind: light
-    health: healthy
-    entities:
-      - key: power
-        name: Power
-        type: hearth.power/v1
-        support: {state: {}, operations: {set: {}}}
-        initial: true
-        # First value publishes at startup, then one entry per interval, looping.
-        outputs: {interval: 5s, values: [true, false]}
-        commands: {set: {behavior: accept-and-publish, apply_parameters: true}}
-      - key: temperature
-        name: Temperature
-        type: hearth.temperature/v1
-        support: {state: {unit: mCel}, operations: {}}
-        initial: 21500
-        outputs: {interval: 10s, values: [21500, 21600, 21400]}
-  - binding_key: simulated-button
-    name: Simulated button
-    kind: sensor
-    entities:
-      - key: events
-        name: Events
-        type: hearth.enumevent/v1
-        support: {state: {}, operations: {}, events: {names: [single_press, double_press]}}
-        outputs: {interval: 30s, values: [single_press, double_press]}
+adapters:
+  - adapter_id: simulator
+    devices:
+      - binding_key: simulated-light
+        name: Simulated light
+        kind: light
+        health: healthy
+        entities:
+          - key: power
+            name: Power
+            type: hearth.power/v1
+            support: {state: {}, operations: {set: {}}}
+            initial: true
+            # First value publishes at startup, then one entry per interval, looping.
+            outputs: {interval: 5s, values: [true, false]}
+            commands: {set: {behavior: accept-and-publish, apply_parameters: true}}
+          - key: temperature
+            name: Temperature
+            type: hearth.temperature/v1
+            support: {state: {unit: mCel}, operations: {}}
+            initial: 21500
+            outputs: {interval: 10s, values: [21500, 21600, 21400]}
+      - binding_key: simulated-button
+        name: Simulated button
+        kind: sensor
+        entities:
+          - key: events
+            name: Events
+            type: hearth.enumevent/v1
+            support: {state: {}, operations: {}, events: {names: [single_press, double_press]}}
+            outputs: {interval: 30s, values: [single_press, double_press]}
 
 # Command behaviors per operation: accept-and-publish (default, with
 # apply_parameters: true), accept-no-publish (accepted, no outcome Observation,
