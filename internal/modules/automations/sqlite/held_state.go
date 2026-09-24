@@ -12,16 +12,6 @@ import (
 	"github.com/mholtzscher/hearth/internal/modules/devices"
 )
 
-type heldStateRow struct {
-	automationID     string
-	revision         int64
-	triggerID        string
-	lastReceiveOrder int64
-	phase            string
-	startedAt        sql.NullString
-	dueAt            sql.NullString
-}
-
 type storedHeldState struct {
 	triggerID sql.NullString
 	startedAt sql.NullString
@@ -42,7 +32,7 @@ func storedHeldStateColumns(evidence *automations.HeldStateEvidence) storedHeldS
 // updateHeldStateFacts advances receive-order cursors and updates matching holds in the Fact transaction.
 func (repo *AutomationRepository) updateHeldStateFacts(
 	ctx context.Context,
-	tx *sql.Tx,
+	queries *dbsqlc.Queries,
 	record automations.Record,
 	fact *automations.ObservationFact,
 	admittedAt time.Time,
@@ -55,10 +45,11 @@ func (repo *AutomationRepository) updateHeldStateFacts(
 	if len(triggers) == 0 {
 		return nil
 	}
-	var receiveOrder int64
-	if err := tx.QueryRowContext(ctx,
-		`SELECT receive_order FROM observations WHERE observation_id = ?`, string(fact.ObservationID),
-	).Scan(&receiveOrder); err != nil {
+	observation := dbsqlc.GetHeldStateObservationReceiveOrderParams{
+		ObservationID: string(fact.ObservationID),
+	}
+	receiveOrder, err := queries.GetHeldStateObservationReceiveOrder(ctx, observation)
+	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			// Observation history may be pruned before a delayed Fact is delivered.
 			// Without its receive order it cannot safely advance a hold cursor;
@@ -68,10 +59,10 @@ func (repo *AutomationRepository) updateHeldStateFacts(
 		return err
 	}
 	for _, trigger := range triggers {
-		if err := repo.updateHeldStateFact(
-			ctx, tx, record, trigger, fact, admittedAt, startupAt, receiveOrder,
-		); err != nil {
-			return err
+		if updateErr := repo.updateHeldStateFact(
+			ctx, queries, record, trigger, fact, admittedAt, startupAt, receiveOrder,
+		); updateErr != nil {
+			return updateErr
 		}
 	}
 	return nil
@@ -90,7 +81,7 @@ func heldStateTriggersForEntity(triggers []automations.Trigger, entityID devices
 
 func (repo *AutomationRepository) updateHeldStateFact(
 	ctx context.Context,
-	tx *sql.Tx,
+	queries *dbsqlc.Queries,
 	record automations.Record,
 	trigger automations.Trigger,
 	fact *automations.ObservationFact,
@@ -104,52 +95,28 @@ func (repo *AutomationRepository) updateHeldStateFact(
 	}
 	eligible := matched && admittedAt.Sub(fact.EmittedAt) <= automations.FactMaximumAge &&
 		fact.EmittedAt.After(record.UpdatedAt) && fact.EmittedAt.After(startupAt)
-	initialPhase, initialStart, initialDue, err := initialHeldStateValues(trigger, fact, eligible)
-	if err != nil {
-		return err
+	if !matched {
+		return queries.CancelHeldStateFact(ctx, dbsqlc.CancelHeldStateFactParams{
+			AutomationID: string(record.ID), Revision: record.Revision,
+			TriggerID: string(trigger.ID), LastReceiveOrder: receiveOrder,
+		})
 	}
-	_, err = tx.ExecContext(ctx, `INSERT INTO automation_holds (
-			automation_id, revision, trigger_id, last_receive_order, phase, started_at, due_at
-		) VALUES (?, ?, ?, ?, ?, ?, ?)
-		ON CONFLICT (automation_id, trigger_id) DO UPDATE SET
-			revision = excluded.revision,
-			last_receive_order = excluded.last_receive_order,
-			phase = CASE WHEN ? = 0 THEN 'idle'
-				WHEN automation_holds.phase = 'idle' AND ? = 1 THEN 'pending'
-				ELSE automation_holds.phase END,
-			started_at = CASE WHEN ? = 0 THEN NULL
-				WHEN automation_holds.phase = 'idle' AND ? = 1 THEN excluded.started_at
-				ELSE automation_holds.started_at END,
-			due_at = CASE WHEN ? = 0 THEN NULL
-				WHEN automation_holds.phase = 'idle' AND ? = 1 THEN excluded.due_at
-				ELSE automation_holds.due_at END
-		WHERE excluded.last_receive_order > automation_holds.last_receive_order`,
-		string(record.ID), record.Revision, string(trigger.ID), receiveOrder, initialPhase, initialStart, initialDue,
-		boolInt(matched), boolInt(eligible), boolInt(matched), boolInt(eligible), boolInt(matched), boolInt(eligible))
-	return err
-}
-
-func initialHeldStateValues(
-	trigger automations.Trigger,
-	fact *automations.ObservationFact,
-	eligible bool,
-) (string, any, any, error) {
 	if !eligible {
-		return "idle", nil, nil, nil
+		return queries.AdvanceStaleHeldStateFact(ctx, dbsqlc.AdvanceStaleHeldStateFactParams{
+			AutomationID: string(record.ID), Revision: record.Revision,
+			TriggerID: string(trigger.ID), LastReceiveOrder: receiveOrder,
+		})
 	}
 	duration, err := automations.HeldStateDuration(trigger.HeldState.ForSeconds)
 	if err != nil {
-		return "", nil, nil, err
+		return err
 	}
-	return "pending", encodeAutomationTimestamp(fact.EmittedAt),
-		encodeAutomationTimestamp(fact.EmittedAt.Add(duration)), nil
-}
-
-func boolInt(value bool) int {
-	if value {
-		return 1
-	}
-	return 0
+	return queries.StartHeldStateFact(ctx, dbsqlc.StartHeldStateFactParams{
+		AutomationID: string(record.ID), Revision: record.Revision,
+		TriggerID: string(trigger.ID), LastReceiveOrder: receiveOrder,
+		StartedAt: sql.NullString{String: encodeAutomationTimestamp(fact.EmittedAt), Valid: true},
+		DueAt:     sql.NullString{String: encodeAutomationTimestamp(fact.EmittedAt.Add(duration)), Valid: true},
+	})
 }
 
 // ListDueHeldStates returns up to limit pending holds ordered by deadline and identity.
@@ -161,29 +128,25 @@ func (repo *AutomationRepository) ListDueHeldStates(
 	if at.IsZero() || limit < 1 {
 		return nil, fmt.Errorf("%w: due time and positive limit are required", automations.ErrInvalidAutomation)
 	}
-	rows, err := repo.database.QueryContext(ctx, `SELECT automation_id, revision, trigger_id, due_at
-		FROM automation_holds WHERE phase = 'pending' AND due_at <= ?
-		ORDER BY due_at, automation_id, trigger_id LIMIT ?`, encodeAutomationTimestamp(at), limit)
+	rows, err := repo.queries.ListDueHeldStateCandidates(ctx, dbsqlc.ListDueHeldStateCandidatesParams{
+		DueAt: sql.NullString{String: encodeAutomationTimestamp(at), Valid: true}, Limit: int64(limit),
+	})
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
 	candidates := make([]automations.HeldStateCandidate, 0, limit)
-	for rows.Next() {
+	for _, row := range rows {
 		var candidate automations.HeldStateCandidate
-		var automationID, triggerID, dueAt string
-		if err = rows.Scan(&automationID, &candidate.Revision, &triggerID, &dueAt); err != nil {
-			return nil, err
-		}
-		candidate.AutomationID = automations.AutomationID(automationID)
-		candidate.TriggerID = automations.TriggerID(triggerID)
-		candidate.DueAt, err = decodeAutomationTimestamp(dueAt)
+		candidate.AutomationID = automations.AutomationID(row.AutomationID)
+		candidate.Revision = row.Revision
+		candidate.TriggerID = automations.TriggerID(row.TriggerID)
+		candidate.DueAt, err = decodeAutomationTimestamp(row.DueAt.String)
 		if err != nil {
 			return nil, err
 		}
 		candidates = append(candidates, candidate)
 	}
-	return candidates, rows.Err()
+	return candidates, nil
 }
 
 // AdmitDueHeldStates rechecks due holds, definitions, current State, and busy/Condition outcomes atomically.
@@ -200,14 +163,16 @@ func (repo *AutomationRepository) AdmitDueHeldStates(
 	}
 	var result automations.AdmissionResult
 	processed := 0
-	err := repo.transactionWithTx(ctx, func(queries *dbsqlc.Queries, tx *sql.Tx) error {
-		holds, queryErr := listDueHeldStateRows(ctx, tx, at, limit)
+	err := repo.transaction(ctx, func(queries *dbsqlc.Queries) error {
+		holds, queryErr := queries.ListDueHeldStateRows(ctx, dbsqlc.ListDueHeldStateRowsParams{
+			DueAt: sql.NullString{String: encodeAutomationTimestamp(at), Valid: true}, Limit: int64(limit),
+		})
 		if queryErr != nil {
 			return queryErr
 		}
 		for _, hold := range holds {
 			processed++
-			if err := repo.admitDueHeldState(ctx, tx, queries, hold, snapshot, at, &result); err != nil {
+			if err := repo.admitDueHeldState(ctx, queries, hold, snapshot, at, &result); err != nil {
 				return err
 			}
 		}
@@ -219,44 +184,17 @@ func (repo *AutomationRepository) AdmitDueHeldStates(
 	return result, processed, nil
 }
 
-func listDueHeldStateRows(
-	ctx context.Context,
-	tx *sql.Tx,
-	at time.Time,
-	limit int,
-) ([]heldStateRow, error) {
-	rows, err := tx.QueryContext(ctx, `SELECT automation_id, revision, trigger_id,
-		last_receive_order, phase, started_at, due_at FROM automation_holds
-		WHERE phase = 'pending' AND due_at <= ?
-		ORDER BY due_at, automation_id, trigger_id LIMIT ?`, encodeAutomationTimestamp(at), limit)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var holds []heldStateRow
-	for rows.Next() {
-		var hold heldStateRow
-		if scanErr := rows.Scan(&hold.automationID, &hold.revision, &hold.triggerID,
-			&hold.lastReceiveOrder, &hold.phase, &hold.startedAt, &hold.dueAt); scanErr != nil {
-			return nil, scanErr
-		}
-		holds = append(holds, hold)
-	}
-	return holds, rows.Err()
-}
-
 func (repo *AutomationRepository) admitDueHeldState(
 	ctx context.Context,
-	tx *sql.Tx,
 	queries *dbsqlc.Queries,
-	hold heldStateRow,
+	hold dbsqlc.AutomationHold,
 	snapshot devices.EntityStateSnapshot,
 	at time.Time,
 	result *automations.AdmissionResult,
 ) error {
-	row, err := queries.GetAutomation(ctx, dbsqlc.GetAutomationParams{ID: hold.automationID})
+	row, err := queries.GetAutomation(ctx, dbsqlc.GetAutomationParams{ID: hold.AutomationID})
 	if errors.Is(err, sql.ErrNoRows) {
-		return deleteHeldState(ctx, tx, hold)
+		return deleteHeldState(ctx, queries, hold)
 	}
 	if err != nil {
 		return err
@@ -265,7 +203,7 @@ func (repo *AutomationRepository) admitDueHeldState(
 	if err != nil {
 		return err
 	}
-	triggerID := automations.TriggerID(hold.triggerID)
+	triggerID := automations.TriggerID(hold.TriggerID)
 	var trigger *automations.Trigger
 	for i := range record.Definition.Triggers {
 		if record.Definition.Triggers[i].ID == triggerID {
@@ -273,28 +211,27 @@ func (repo *AutomationRepository) admitDueHeldState(
 			break
 		}
 	}
-	if record.Revision != hold.revision || !record.Definition.Enabled || trigger == nil ||
+	if record.Revision != hold.Revision || !record.Definition.Enabled || trigger == nil ||
 		trigger.Kind != automations.TriggerKindHeldState || trigger.HeldState == nil {
-		return deleteHeldState(ctx, tx, hold)
+		return deleteHeldState(ctx, queries, hold)
 	}
-	var value string
-	var receiveOrder int64
-	err = tx.QueryRowContext(ctx, `SELECT value_json, receive_order FROM entity_states WHERE entity_id = ?`,
-		string(trigger.HeldState.EntityID)).Scan(&value, &receiveOrder)
+	state, err := queries.GetHeldStateEntityState(ctx, dbsqlc.GetHeldStateEntityStateParams{
+		EntityID: string(trigger.HeldState.EntityID),
+	})
 	if errors.Is(err, sql.ErrNoRows) {
-		return cancelHeldState(ctx, tx, hold, nil)
+		return cancelHeldState(ctx, queries, hold, nil)
 	}
 	if err != nil {
 		return err
 	}
-	matched, err := automations.MatchHeldState(*trigger.HeldState, devices.Value(value))
+	matched, err := automations.MatchHeldState(*trigger.HeldState, devices.Value(state.ValueJson))
 	if err != nil {
 		return fmt.Errorf("decode current held-state Entity State: %w", err)
 	}
 	if !matched {
-		return cancelHeldState(ctx, tx, hold, &receiveOrder)
+		return cancelHeldState(ctx, queries, hold, &state.ReceiveOrder)
 	}
-	running, err := queries.CountRunningRuns(ctx, dbsqlc.CountRunningRunsParams{AutomationID: hold.automationID})
+	running, err := queries.CountRunningRuns(ctx, dbsqlc.CountRunningRunsParams{AutomationID: hold.AutomationID})
 	if err != nil {
 		return err
 	}
@@ -312,11 +249,11 @@ func (repo *AutomationRepository) admitDueHeldState(
 		return err
 	}
 	result.Outcome.MatchedAutomations++
-	_, err = tx.ExecContext(ctx, `UPDATE automation_holds SET phase = 'consumed', started_at = NULL, due_at = NULL,
-		last_receive_order = MAX(last_receive_order, ?)
-		WHERE automation_id = ? AND trigger_id = ? AND revision = ? AND phase = 'pending'
-		AND due_at <= ?`, receiveOrder, hold.automationID, hold.triggerID, hold.revision, encodeAutomationTimestamp(at))
-	return err
+	return queries.ConsumeDueHeldState(ctx, dbsqlc.ConsumeDueHeldStateParams{
+		MAX: state.ReceiveOrder, AutomationID: hold.AutomationID,
+		TriggerID: hold.TriggerID, Revision: hold.Revision,
+		DueAt: sql.NullString{String: encodeAutomationTimestamp(at), Valid: true},
+	})
 }
 
 func dueHeldStateDecision(
@@ -387,17 +324,17 @@ func (repo *AutomationRepository) persistDueHeldStateOutcome(
 	return nil
 }
 
-func heldEvidence(hold heldStateRow) (automations.HeldStateEvidence, error) {
-	started, err := decodeAutomationTimestamp(hold.startedAt.String)
+func heldEvidence(hold dbsqlc.AutomationHold) (automations.HeldStateEvidence, error) {
+	started, err := decodeAutomationTimestamp(hold.StartedAt.String)
 	if err != nil {
 		return automations.HeldStateEvidence{}, err
 	}
-	due, err := decodeAutomationTimestamp(hold.dueAt.String)
+	due, err := decodeAutomationTimestamp(hold.DueAt.String)
 	if err != nil {
 		return automations.HeldStateEvidence{}, err
 	}
 	return automations.HeldStateEvidence{
-		TriggerID: automations.TriggerID(hold.triggerID),
+		TriggerID: automations.TriggerID(hold.TriggerID),
 		StartedAt: started,
 		DueAt:     due,
 	}, nil
@@ -410,28 +347,29 @@ func heldNotEvaluatedDecision(conditions *automations.Condition) automations.Con
 	return automations.NotEvaluatedDecision(*conditions)
 }
 
-func cancelHeldState(ctx context.Context, tx *sql.Tx, hold heldStateRow, receiveOrder *int64) error {
+func cancelHeldState(
+	ctx context.Context,
+	queries *dbsqlc.Queries,
+	hold dbsqlc.AutomationHold,
+	receiveOrder *int64,
+) error {
 	if receiveOrder == nil {
-		_, err := tx.ExecContext(ctx, `UPDATE automation_holds SET phase = 'idle', started_at = NULL,
-		due_at = NULL WHERE automation_id = ? AND trigger_id = ?`, hold.automationID, hold.triggerID)
-		return err
+		return queries.CancelHeldStateWithoutState(ctx, dbsqlc.CancelHeldStateWithoutStateParams{
+			AutomationID: hold.AutomationID, TriggerID: hold.TriggerID,
+		})
 	}
-	_, err := tx.ExecContext(ctx, `UPDATE automation_holds SET phase = 'idle', started_at = NULL,
-		due_at = NULL, last_receive_order = MAX(last_receive_order, ?)
-		WHERE automation_id = ? AND trigger_id = ?`, *receiveOrder, hold.automationID, hold.triggerID)
-	return err
+	return queries.CancelHeldStateWithReceiveOrder(ctx, dbsqlc.CancelHeldStateWithReceiveOrderParams{
+		MAX: *receiveOrder, AutomationID: hold.AutomationID, TriggerID: hold.TriggerID,
+	})
 }
 
-func deleteHeldState(ctx context.Context, tx *sql.Tx, hold heldStateRow) error {
-	_, err := tx.ExecContext(ctx, `DELETE FROM automation_holds WHERE automation_id = ? AND trigger_id = ?`,
-		hold.automationID, hold.triggerID)
-	return err
+func deleteHeldState(ctx context.Context, queries *dbsqlc.Queries, hold dbsqlc.AutomationHold) error {
+	return queries.DeleteHeldState(ctx, dbsqlc.DeleteHeldStateParams{
+		AutomationID: hold.AutomationID, TriggerID: hold.TriggerID,
+	})
 }
 
 // ResetPendingHeldStates clears deadlines after restart while preserving cursor watermarks and consumed holds.
 func (repo *AutomationRepository) ResetPendingHeldStates(ctx context.Context) error {
-	_, err := repo.database.ExecContext(ctx, `UPDATE automation_holds
-		SET phase = 'idle', started_at = NULL, due_at = NULL
-		WHERE phase = 'pending'`)
-	return err
+	return repo.queries.ResetPendingHeldStates(ctx)
 }

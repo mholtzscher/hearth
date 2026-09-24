@@ -5,7 +5,6 @@ import (
 	"errors"
 	"log/slog"
 	"slices"
-	"sync"
 	"time"
 
 	"github.com/mholtzscher/hearth/internal/modules/devices"
@@ -21,7 +20,6 @@ type Service struct {
 	// admission tracks both admission transactions and Run workers for Drain.
 	admission *lifecycle.AdmissionGroup
 
-	heldStateStartupMu sync.RWMutex
 	heldStateStartupAt time.Time
 }
 
@@ -32,31 +30,19 @@ func NewService(
 	automationDevices AutomationDevices,
 	dependencies Dependencies,
 ) *Service {
+	dependencies = dependencies.WithDefaults()
+	startupAt := dependencies.HeldStateStartupAt
+	if startupAt.IsZero() {
+		startupAt = dependencies.Now()
+	}
 	service := &Service{
-		repository:   repository,
-		devices:      automationDevices,
-		dependencies: dependencies.WithDefaults(),
-		admission:    lifecycle.NewAdmissionGroup(),
+		repository:         repository,
+		devices:            automationDevices,
+		dependencies:       dependencies,
+		admission:          lifecycle.NewAdmissionGroup(),
+		heldStateStartupAt: startupAt.UTC(),
 	}
-	service.heldStateStartupAt = service.dependencies.Now().UTC()
 	return service
-}
-
-// SetHeldStateStartupAt sets the Core startup cutoff used to reject buffered pre-startup Facts.
-func (service *Service) SetHeldStateStartupAt(at time.Time) error {
-	if at.IsZero() {
-		return invalid("Core startup time is required")
-	}
-	service.heldStateStartupMu.Lock()
-	service.heldStateStartupAt = at.UTC()
-	service.heldStateStartupMu.Unlock()
-	return nil
-}
-
-func (service *Service) heldStateStartupCutoff() time.Time {
-	service.heldStateStartupMu.RLock()
-	defer service.heldStateStartupMu.RUnlock()
-	return service.heldStateStartupAt
 }
 
 // ResetPendingHeldStates discards pre-restart elapsed time while preserving hold cursors.

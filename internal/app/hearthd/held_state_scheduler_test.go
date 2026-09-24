@@ -7,6 +7,8 @@ import (
 	"log/slog"
 	"testing"
 	"time"
+
+	"github.com/mholtzscher/hearth/internal/modules/automations"
 )
 
 type heldStateProcessorStub struct {
@@ -105,5 +107,45 @@ func TestHeldStateSchedulerFailureStopsAdmissionAndTerminates(t *testing.T) {
 	}
 	if err := worker.Wait(context.Background()); !errors.Is(err, wantErr) {
 		t.Fatalf("worker Wait() error = %v, want %v", err, wantErr)
+	}
+}
+
+// Closing automation admission elsewhere leaves Core serving while the
+// scheduler waits for ticks; it must not report a second worker fault.
+func TestHeldStateSchedulerWaitsWhenAdmissionIsUnavailable(t *testing.T) {
+	t.Parallel()
+	ticks := make(chan time.Time)
+	processor := &heldStateProcessorStub{
+		results: make(chan heldStateProcessResult, 2),
+		calls:   make(chan heldStateProcessCall, 2),
+		stopped: make(chan struct{}),
+	}
+	for range 2 {
+		processor.results <- heldStateProcessResult{err: automations.ErrAdmissionUnavailable}
+	}
+	worker := startHeldStateScheduling(
+		context.Background(), slog.New(slog.DiscardHandler), processor, time.Now,
+		func() (<-chan time.Time, func()) { return ticks, func() {} },
+	)
+	t.Cleanup(func() { _ = worker.Stop(context.Background()) })
+	for range 2 {
+		select {
+		case ticks <- time.Now():
+		case <-time.After(time.Second):
+			t.Fatal("scheduler stopped before the next tick")
+		}
+		select {
+		case <-processor.calls:
+		case <-time.After(time.Second):
+			t.Fatal("scheduler did not process a tick")
+		}
+	}
+	if err := worker.Stop(context.Background()); err != nil {
+		t.Fatalf("unavailable admission terminated scheduler: %v", err)
+	}
+	select {
+	case <-processor.stopped:
+		t.Fatal("scheduler closed an already-unavailable admission gate")
+	default:
 	}
 }

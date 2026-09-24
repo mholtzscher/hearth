@@ -2,6 +2,7 @@ package hearthd
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 	"time"
 
@@ -69,17 +70,26 @@ func (scheduler *heldStateScheduler) run(ctx context.Context) error {
 		if ctx.Err() != nil {
 			return nil
 		}
-		for {
-			processed, err := scheduler.processor.ProcessDueHeldStates(ctx, scheduler.now().UTC(), heldStateBatchLimit)
-			if err != nil {
-				if ctx.Err() != nil {
-					return nil
-				}
-				return scheduler.fail(ctx, err)
+		if err := scheduler.processDueBatches(ctx); err != nil {
+			if ctx.Err() != nil {
+				return nil
 			}
-			if processed < heldStateBatchLimit {
-				break
-			}
+			return scheduler.fail(ctx, err)
+		}
+	}
+}
+
+func (scheduler *heldStateScheduler) processDueBatches(ctx context.Context) error {
+	for {
+		processed, err := scheduler.processor.ProcessDueHeldStates(ctx, scheduler.now().UTC(), heldStateBatchLimit)
+		if errors.Is(err, automations.ErrAdmissionUnavailable) {
+			return nil
+		}
+		if err != nil {
+			return err
+		}
+		if processed < heldStateBatchLimit {
+			return nil
 		}
 	}
 }

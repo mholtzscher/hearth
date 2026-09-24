@@ -189,7 +189,11 @@ export type AutomationStepStatus =
   | "failed"
   | "interrupted";
 
-export type AutomationSkipReason = "automation_busy" | "stale_fact";
+export type AutomationSkipReason =
+  | "automation_busy"
+  | "stale_fact"
+  | "conditions_false"
+  | "conditions_unknown";
 
 /** One Step attempt. Only ownership-verified Command evidence is exposed, and
     reserved identities never appear. `position` is zero-based and immutable. */

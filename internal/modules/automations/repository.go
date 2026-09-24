@@ -97,13 +97,16 @@ type HeldStateCandidate struct {
 // Dependencies supplies logging, time, and identity constructors; zero-valued
 // fields use production defaults except HistoryRetention.
 type Dependencies struct {
-	Logger           *slog.Logger
-	Now              func() time.Time
-	NewAutomationID  func() (AutomationID, error)
-	NewRunID         func() (RunID, error)
-	NewSkipID        func() (SkipID, error)
-	NewCommandID     func() (devices.CommandID, error)
-	NewCorrelationID func() (devices.CorrelationID, error)
+	Logger *slog.Logger
+	Now    func() time.Time
+	// HeldStateStartupAt is the Core startup cutoff for buffered held-state Facts.
+	// When unset, NewService uses Now at construction time.
+	HeldStateStartupAt time.Time
+	NewAutomationID    func() (AutomationID, error)
+	NewRunID           func() (RunID, error)
+	NewSkipID          func() (SkipID, error)
+	NewCommandID       func() (devices.CommandID, error)
+	NewCorrelationID   func() (devices.CorrelationID, error)
 	// HistoryRetention is the terminal Automation history retention window
 	// PruneHistory applies. It must be at least
 	// MinimumAutomationHistoryRetention; zero is unconfigured and fails safely

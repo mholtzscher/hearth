@@ -35,6 +35,78 @@ RETURNING id, revision, definition_json, created_at, updated_at;
 DELETE FROM automation_holds
 WHERE automation_id = ?;
 
+-- Held-state cursor and deadline transitions run inside automation-owned transactions.
+
+-- name: GetHeldStateObservationReceiveOrder :one
+SELECT receive_order FROM observations WHERE observation_id = ?;
+
+-- name: StartHeldStateFact :exec
+INSERT INTO automation_holds (
+    automation_id, revision, trigger_id, last_receive_order, phase, started_at, due_at
+) VALUES (?, ?, ?, ?, 'pending', ?, ?)
+ON CONFLICT (automation_id, trigger_id) DO UPDATE SET
+    revision = excluded.revision,
+    last_receive_order = excluded.last_receive_order,
+    phase = CASE WHEN automation_holds.phase = 'idle' THEN 'pending'
+        ELSE automation_holds.phase END,
+    started_at = CASE WHEN automation_holds.phase = 'idle' THEN excluded.started_at
+        ELSE automation_holds.started_at END,
+    due_at = CASE WHEN automation_holds.phase = 'idle' THEN excluded.due_at
+        ELSE automation_holds.due_at END
+WHERE excluded.last_receive_order > automation_holds.last_receive_order;
+
+-- name: AdvanceStaleHeldStateFact :exec
+INSERT INTO automation_holds (automation_id, revision, trigger_id, last_receive_order, phase)
+VALUES (?, ?, ?, ?, 'idle')
+ON CONFLICT (automation_id, trigger_id) DO UPDATE SET
+    revision = excluded.revision,
+    last_receive_order = excluded.last_receive_order
+WHERE excluded.last_receive_order > automation_holds.last_receive_order;
+
+-- name: CancelHeldStateFact :exec
+INSERT INTO automation_holds (automation_id, revision, trigger_id, last_receive_order, phase)
+VALUES (?, ?, ?, ?, 'idle')
+ON CONFLICT (automation_id, trigger_id) DO UPDATE SET
+    revision = excluded.revision,
+    last_receive_order = excluded.last_receive_order,
+    phase = 'idle', started_at = NULL, due_at = NULL
+WHERE excluded.last_receive_order > automation_holds.last_receive_order;
+
+-- name: ListDueHeldStateCandidates :many
+SELECT automation_id, revision, trigger_id, due_at
+FROM automation_holds WHERE phase = 'pending' AND due_at <= ?
+ORDER BY due_at, automation_id, trigger_id LIMIT ?;
+
+-- name: ListDueHeldStateRows :many
+SELECT automation_id, revision, trigger_id, last_receive_order, phase, started_at, due_at
+FROM automation_holds WHERE phase = 'pending' AND due_at <= ?
+ORDER BY due_at, automation_id, trigger_id LIMIT ?;
+
+-- name: GetHeldStateEntityState :one
+SELECT value_json, receive_order FROM entity_states WHERE entity_id = ?;
+
+-- name: ConsumeDueHeldState :exec
+UPDATE automation_holds SET phase = 'consumed', started_at = NULL, due_at = NULL,
+    last_receive_order = MAX(last_receive_order, ?)
+WHERE automation_id = ? AND trigger_id = ? AND revision = ? AND phase = 'pending'
+    AND due_at <= ?;
+
+-- name: CancelHeldStateWithoutState :exec
+UPDATE automation_holds SET phase = 'idle', started_at = NULL, due_at = NULL
+WHERE automation_id = ? AND trigger_id = ?;
+
+-- name: CancelHeldStateWithReceiveOrder :exec
+UPDATE automation_holds SET phase = 'idle', started_at = NULL, due_at = NULL,
+    last_receive_order = MAX(last_receive_order, ?)
+WHERE automation_id = ? AND trigger_id = ?;
+
+-- name: DeleteHeldState :exec
+DELETE FROM automation_holds WHERE automation_id = ? AND trigger_id = ?;
+
+-- name: ResetPendingHeldStates :exec
+UPDATE automation_holds SET phase = 'idle', started_at = NULL, due_at = NULL
+WHERE phase = 'pending';
+
 -- name: DeleteAutomation :execrows
 DELETE FROM automations
 WHERE id = ? AND revision = ?;

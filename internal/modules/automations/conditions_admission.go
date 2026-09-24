@@ -57,7 +57,7 @@ func (service *Service) admitAutomaticFact(
 		}
 	}
 	return service.repository.AdmitDeviceFact(
-		admissionContext, fact, snapshot, service.dependencies.Now(), service.heldStateStartupCutoff(),
+		admissionContext, fact, snapshot, service.dependencies.Now(), service.heldStateStartupAt,
 	)
 }
 
