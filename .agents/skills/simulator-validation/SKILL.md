@@ -40,7 +40,7 @@ and assertions. Keep planning brief.
 
 ## Start
 
-Default: the Device list from `configs/simulator.scripted.example.yaml`—one
+Default: `configs/simulator.scripted.example.yaml`—one healthy Adapter with a
 scripted light (power and temperature) and an event source:
 
 ```sh
@@ -60,6 +60,12 @@ mise run simulator-start -- --preset full
 mise run simulator-start -- --devices .data/my-simulator-devices.yaml
 mise run simulator-start -- --devices .data/my-simulator-devices.yaml --dashboard
 ```
+
+For a complete multi-adapter scenario file, use
+`mise run simulator-start -- --config configs/simulator.multi-adapter.example.yaml`.
+The config must use the stack's loopback `nats_url` and `control_addr`; startup
+checks every listed Adapter runtime is online. `simulator-smoke` only supports
+the default single-adapter preset, so use the HTTP control API for this case.
 
 `--devices` and `--preset` are alternatives. A custom file contains **only a
 YAML sequence of Devices**, not a complete simulator config. The launcher owns
@@ -85,10 +91,10 @@ For complete Device/type examples, read
 For value sequences, failure behaviors, health, events, and assertion recipes,
 read `references/validation.md` relative to this skill directory.
 
-**Full preset warning:** it intentionally contains an unhealthy Device, which
-makes the entire Adapter unhealthy and blocks Command dispatch. Startup treats
-this as a valid ready scenario, not a startup failure. Use a focused custom
-Device list without the unhealthy Device for happy-path Commands.
+**Full preset:** `configs/simulator.full.example.yaml` covers the built-in
+Entity types on the healthy `simulator` Adapter and puts unhealthy,
+unavailable, and Command-fault Devices on separate Adapters. The unhealthy
+Adapter does not block Commands to the healthy one.
 
 Allow startup enough time for compilation and optional dependency installation
 (e.g. a 240-second tool budget). The script:

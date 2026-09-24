@@ -20,6 +20,9 @@ Snapshots include `entity_id`, `binding_key`, `key`, `entity_type`,
 `event_source`, `paused`, and `current`. They are **not Core State**. An event
 snapshot may have `current: "double_press"` while Core correctly has
 `state: null`. Publish does not change pause state or sequence position.
+For multi-adapter configs, snapshots also include `adapter_id`. Discover by
+`adapter_id` + `binding_key` + `key`, since binding keys can repeat between
+Adapters. Publish, pause, and resume responses include the owning Adapter ID.
 
 On successful publish, exactly one publication-ID field is present in the
 same flat object. It is the canonical ID assigned by the SDK and carried on

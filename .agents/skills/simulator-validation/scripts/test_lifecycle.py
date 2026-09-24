@@ -53,6 +53,18 @@ class FakeHerdr:
 
 
 class SimulatorLifecycleTest(unittest.TestCase):
+    def test_complete_config_checks_owned_ports_and_adapter_ids(self):
+        example = REPO_ROOT / "configs/simulator.multi-adapter.example.yaml"
+        text, ids = start.load_simulator_config(example)
+        self.assertEqual(ids, ["simulator-healthy", "simulator-unhealthy",
+                               "simulator-command-faults"])
+        self.assertIn("adapters:", text)
+        with tempfile.TemporaryDirectory() as temporary:
+            path = Path(temporary) / "unsafe.yaml"
+            path.write_text(text.replace(start.NATS_URL, "nats://example.com:4222"))
+            with self.assertRaisesRegex(RuntimeError, "requires nats_url"):
+                start.load_simulator_config(path)
+
     def setUp(self):
         self.stack = ExitStack()
         self.addCleanup(self.stack.close)
@@ -206,11 +218,15 @@ class SimulatorLifecycleTest(unittest.TestCase):
                 self.start_successfully(preset=preset)
                 run_dir = self.run_dir_of()
                 simulator = (run_dir / "simulator.yaml").read_text()
-                self.assertTrue(simulator.startswith(
-                    "adapter_id: simulator\nnats_url: nats://127.0.0.1:4222\n"
-                    "control_addr: 127.0.0.1:8181\ndevices:\n"))
+                self.assertIn("nats_url: nats://127.0.0.1:4222\n", simulator)
+                self.assertIn("control_addr: 127.0.0.1:8181\n", simulator)
+                self.assertIn("adapters:\n  - adapter_id: simulator\n    devices:\n", simulator)
                 self.assertIn(marker, simulator)
                 self.assertEqual(self.read_state()["mode"], preset)
+                expected_ids = (["simulator", "simulator-unavailable",
+                                 "simulator-command-faults", "simulator-unhealthy"]
+                                if preset == "full" else ["simulator"])
+                self.assertEqual(self.read_state()["adapter_ids"], expected_ids)
 
     def test_generated_configs_use_only_owned_loopback_infrastructure(self):
         self.start_successfully()

@@ -1,22 +1,23 @@
-# First-light simulator config: one scripted power Device. Copy to
+# First-light simulator config: one Adapter with one scripted power Device. Copy to
 # configs/simulator.yaml (gitignored) and run:
 #   go run ./cmd/hearth-simulator -config configs/simulator.yaml
 #
-# Every Device and Entity is declared in the `devices` block; see
+# Every Device and Entity is declared under an Adapter; see
 # specs/simulator-harness.md for the full YAML surface and
 # configs/simulator.full.example.yaml for every harness feature.
-adapter_id: simulator
 nats_url: nats://127.0.0.1:4222
-devices:
-  - binding_key: simulated-light
-    name: Simulated light
-    kind: light
-    health: healthy
-    entities:
-      - key: power
-        name: Power
-        type: hearth.power/v1
-        support: {state: {}, operations: {set: {}}}
-        # false is the initial State; it publishes once at startup.
-        initial: false
-        commands: {set: {behavior: accept-and-publish}}
+adapters:
+  - adapter_id: simulator
+    devices:
+      - binding_key: simulated-light
+        name: Simulated light
+        kind: light
+        health: healthy
+        entities:
+          - key: power
+            name: Power
+            type: hearth.power/v1
+            support: {state: {}, operations: {set: {}}}
+            # false is the initial State; it publishes once at startup.
+            initial: false
+            commands: {set: {behavior: accept-and-publish}}

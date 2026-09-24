@@ -27,6 +27,9 @@ func runScripted(ctx context.Context, config Config, logger *slog.Logger) error 
 	if logger == nil {
 		logger = slog.Default()
 	}
+	if len(config.Adapters) != 0 {
+		return runMultipleScriptedAdapters(ctx, config, logger)
+	}
 	session, connectErr := adapter.Connect(ctx, adapter.Config{
 		AdapterID:       config.AdapterID,
 		SoftwareName:    "hearth-simulator",
@@ -47,6 +50,16 @@ func runScriptedSession(
 	config Config,
 	session scriptedSession,
 	logger *slog.Logger,
+) error {
+	return runScriptedSessionReady(ctx, config, session, logger, nil)
+}
+
+func runScriptedSessionReady(
+	ctx context.Context,
+	config Config,
+	session scriptedSession,
+	logger *slog.Logger,
+	ready func(*scripted.Runtime),
 ) error {
 	processLogger := logger.With(slog.String("component", "process"))
 	defer func() {
@@ -77,6 +90,9 @@ func runScriptedSession(
 	}
 	if initializeErr := runtime.Initialize(ctx); initializeErr != nil {
 		return fmt.Errorf("initialize scripted health, availability, and first values: %w", initializeErr)
+	}
+	if ready != nil {
+		ready(runtime)
 	}
 	// Scripts, Entity tickers, and the optional control channel all run on one
 	// worker context so they can be stopped independently of the caller's

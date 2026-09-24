@@ -42,6 +42,56 @@ func TestScriptedConfigValidates(t *testing.T) {
 	}
 }
 
+// TestMultipleAdapterConfig protects independent adapter identity and rejects
+// ambiguous or duplicate ownership before connecting to the broker.
+func TestMultipleAdapterConfig(t *testing.T) {
+	t.Parallel()
+	base := scriptedConfig()
+	config := appsimulator.Config{
+		NATSURL: base.NATSURL,
+		Adapters: []appsimulator.ScriptedAdapterConfig{
+			{AdapterID: "healthy", Devices: base.Devices},
+			{AdapterID: "faulted", Devices: base.Devices},
+		},
+	}
+	if err := config.Validate(); err != nil {
+		t.Fatalf("same binding key in separate adapters rejected: %v", err)
+	}
+	config.Adapters[1].AdapterID = "healthy"
+	if err := config.Validate(); err == nil || !strings.Contains(err.Error(), "duplicate adapter_id") {
+		t.Fatalf("duplicate adapter ID: got %v", err)
+	}
+	config.Adapters[1].AdapterID = "faulted"
+	config.AdapterID = "legacy"
+	if err := config.Validate(); err == nil || !strings.Contains(err.Error(), "cannot be combined") {
+		t.Fatalf("mixed config forms: got %v", err)
+	}
+}
+
+func TestMultiAdapterExampleConfig(t *testing.T) {
+	t.Parallel()
+	for _, example := range []struct {
+		name     string
+		adapters int
+	}{
+		{"simulator.example.yaml", 1},
+		{"simulator.scripted.example.yaml", 1},
+		{"simulator.full.example.yaml", 4},
+		{"simulator.multi-adapter.example.yaml", 3},
+	} {
+		t.Run(example.name, func(t *testing.T) {
+			t.Parallel()
+			config, err := appsimulator.LoadConfig("../../../configs/" + example.name)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(config.Adapters) != example.adapters {
+				t.Fatalf("example has %d adapters, want %d", len(config.Adapters), example.adapters)
+			}
+		})
+	}
+}
+
 func TestConfigRequiresDevices(t *testing.T) {
 	t.Parallel()
 	config := appsimulator.Config{AdapterID: "simulator", NATSURL: "nats://127.0.0.1:4222"}
@@ -115,11 +165,15 @@ func TestLoadScriptedExampleFile(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if valuesErr := scripted.ValidateValues(value.Devices); valuesErr != nil {
+	if len(value.Adapters) != 1 || value.Adapters[0].AdapterID != "simulator" {
+		t.Fatalf("scripted example adapters = %#v, want simulator", value.Adapters)
+	}
+	devices := value.Adapters[0].Devices
+	if valuesErr := scripted.ValidateValues(devices); valuesErr != nil {
 		t.Fatalf("scripted example values invalid: %v", valuesErr)
 	}
-	if len(value.Devices) != 2 {
-		t.Fatalf("scripted example devices = %d, want 2", len(value.Devices))
+	if len(devices) != 2 {
+		t.Fatalf("scripted example devices = %d, want 2", len(devices))
 	}
 }
 
@@ -129,12 +183,18 @@ func TestLoadFullExampleFile(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if valuesErr := scripted.ValidateValues(value.Devices); valuesErr != nil {
-		t.Fatalf("full example values invalid: %v", valuesErr)
+	if len(value.Adapters) != 4 || value.Adapters[0].AdapterID != "simulator" {
+		t.Fatalf("full example adapters = %#v, want healthy simulator and three fault adapters", value.Adapters)
 	}
 	seen := make(map[string]struct{})
-	for _, device := range value.Devices {
+	for _, device := range value.Adapters[0].Devices {
+		if device.Health != "" && device.Health != "healthy" {
+			t.Fatalf("healthy adapter contains unhealthy Device %q", device.BindingKey)
+		}
 		for _, entity := range device.Entities {
+			if entity.Available != nil && !*entity.Available {
+				t.Fatalf("healthy adapter contains unavailable Entity %q", entity.Key)
+			}
 			seen[entity.Type] = struct{}{}
 		}
 	}

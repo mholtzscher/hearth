@@ -12,6 +12,7 @@ import fcntl
 import json
 import os
 from pathlib import Path
+import re
 import secrets
 import shlex
 import socket
@@ -91,27 +92,6 @@ def read_json(url, timeout=2):
 # --- config generation -----------------------------------------------------
 
 
-def extract_devices_block(text):
-    """Return the indented `devices:` body from a trusted checked-in preset.
-
-    Only checked-in presets are read this way; operator-supplied device files
-    never pass through block extraction.
-    """
-    lines = text.splitlines()
-    start = next((index for index, line in enumerate(lines) if line.rstrip() == "devices:"), None)
-    if start is None:
-        raise RuntimeError(f"{FAULT}: trusted simulator preset has no devices block")
-    block = []
-    for line in lines[start + 1:]:
-        # A non-blank line at column zero starts the next top-level key or comment.
-        if line.strip() and not line[:1].isspace():
-            break
-        block.append(line)
-    if not any(line.strip() for line in block):
-        raise RuntimeError(f"{FAULT}: trusted simulator preset has an empty devices block")
-    return "\n".join(block) + "\n"
-
-
 def indent_devices_block(text):
     """Indent a custom YAML sequence of Device specs to sit beneath `devices:`.
 
@@ -133,14 +113,6 @@ def indent_devices_block(text):
     return "".join(("  " + line if line.strip() else "") + "\n" for line in lines)
 
 
-def load_devices_block(preset, devices_path):
-    """Return the devices block for a trusted preset name or a custom sequence file."""
-    if devices_path is not None:
-        return indent_devices_block(Path(devices_path).read_text())
-    preset_path = ROOT / "configs" / f"simulator.{preset}.example.yaml"
-    return extract_devices_block(preset_path.read_text())
-
-
 def simulator_config_text(devices_block):
     """Prefix trusted local transport lines to an already-indented devices block."""
     return (
@@ -150,6 +122,22 @@ def simulator_config_text(devices_block):
         "devices:\n"
         f"{devices_block}"
     )
+
+
+def load_simulator_config(config_path):
+    """Read a complete config only when it targets this stack's owned loopback ports."""
+    text = Path(config_path).read_text()
+    for key, expected in (("nats_url", NATS_URL), ("control_addr", CONTROL_ADDR)):
+        values = re.findall(rf"^{key}:\s*(.*?)\s*$", text, re.MULTILINE)
+        if values != [expected]:
+            raise RuntimeError(f"{FAULT}: --config requires {key}: {expected}")
+    ids = re.findall(r"^  - adapter_id:\s*([a-z0-9_-]+)\s*$", text, re.MULTILINE)
+    if not ids:
+        values = re.findall(r"^adapter_id:\s*([a-z0-9_-]+)\s*$", text, re.MULTILINE)
+        if len(values) != 1:
+            raise RuntimeError(f"{FAULT}: --config requires adapter_id or adapters")
+        ids = values
+    return text, ids
 
 
 def nats_config_text(run_dir):
@@ -229,14 +217,15 @@ def adapter_runtime_online(adapter_body):
     return bool(runtime.get("id")) and runtime.get("status") == "online"
 
 
-def core_adapter_runtime_online():
-    return adapter_runtime_online(read_json(f"{CORE_URL}/v1/adapters/{ADAPTER_ID}"))
+def core_adapter_runtime_online(adapter_id=ADAPTER_ID):
+    return adapter_runtime_online(read_json(f"{CORE_URL}/v1/adapters/{adapter_id}"))
 
 
-def simulator_ready():
+def simulator_ready(adapter_ids=None):
     """The control inventory is non-empty and Core has an online Adapter runtime."""
     inventory = read_json(SIM_URL + "/v1/sim/entities")
-    return isinstance(inventory, list) and len(inventory) > 0 and core_adapter_runtime_online()
+    return (isinstance(inventory, list) and len(inventory) > 0 and
+            all(core_adapter_runtime_online(adapter_id) for adapter_id in (adapter_ids or [ADAPTER_ID])))
 
 
 def dashboard_ready():
@@ -478,7 +467,7 @@ def start(preset, devices_path, dashboard):
         return start_owned_stack(preset, devices_path, dashboard)
 
 
-def start_owned_stack(preset, devices_path, dashboard):
+def start_owned_stack(preset, devices_path, dashboard, config_path=None):
     """Record ownership before each service launch while holding lifecycle_lock."""
     started = time.monotonic()
     tab_id = None
@@ -501,8 +490,13 @@ def start_owned_stack(preset, devices_path, dashboard):
     try:
         check_ports_free(dashboard)
         check_required_tools(dashboard)
-        devices_block = load_devices_block(preset, devices_path)
-        simulator_text = simulator_config_text(devices_block)
+        if config_path or devices_path is None:
+            source = config_path or ROOT / "configs" / f"simulator.{preset}.example.yaml"
+            simulator_text, adapter_ids = load_simulator_config(source)
+        else:
+            devices_block = indent_devices_block(Path(devices_path).read_text())
+            simulator_text = simulator_config_text(devices_block)
+            adapter_ids = [ADAPTER_ID]
         validate_simulator_config(simulator_text)
         run_dir = make_run_dir()
         (run_dir / "nats.conf").write_text(nats_config_text(run_dir))
@@ -521,9 +515,11 @@ def start_owned_stack(preset, devices_path, dashboard):
             "version": 1, "status": "running", "worktree": str(ROOT),
             "session_socket": session_socket(), "workspace_id": created["tab"]["workspace_id"],
             "tab_id": tab_id, "tab_label": label, "run_dir": str(run_dir),
-            "mode": "custom" if devices_path else preset,
+            "mode": "config" if config_path else ("custom" if devices_path else preset),
             "devices_path": str(Path(devices_path).resolve()) if devices_path else None,
-            "dashboard": bool(dashboard), "adapter_id": ADAPTER_ID, "panes": {}, "pane_ids": [],
+            "config_path": str(Path(config_path).resolve()) if config_path else None,
+            "dashboard": bool(dashboard), "adapter_id": adapter_ids[0],
+            "adapter_ids": adapter_ids, "panes": {}, "pane_ids": [],
             "root_pane_id": created["root_pane"]["pane_id"], "commands": commands,
             "created_at": current_time(),
         }
@@ -546,7 +542,7 @@ def start_owned_stack(preset, devices_path, dashboard):
                                "--cwd", str(ROOT), "--no-focus")["pane"]["pane_id"]
         record_pane(record, "simulator", simulator_pane)
         launch(simulator_pane, "simulator", commands["simulator"], run_dir)
-        wait_ready("simulator registration", simulator_ready,
+        wait_ready("simulator registration", lambda: simulator_ready(adapter_ids),
                    [(core_pane, EXIT_MARKERS["core"]), (simulator_pane, EXIT_MARKERS["simulator"])],
                    run_dir=run_dir)
         stage("simulator registered")
@@ -603,17 +599,24 @@ def parse_args(argv):
                         help="checked-in devices preset (default: scripted)")
     parser.add_argument("--devices", default=None,
                         help="YAML file containing only a sequence of Device specs")
+    parser.add_argument("--config", default=None,
+                        help="complete simulator YAML config using this stack's loopback NATS and control ports")
     parser.add_argument("--dashboard", action="store_true",
                         help="also start the dashboard dev server on loopback 5173")
     args = parser.parse_args(argv)
-    if args.devices and args.preset:
-        parser.error("--devices is mutually exclusive with an explicit --preset")
+    if sum(bool(value) for value in (args.devices, args.preset, args.config)) > 1:
+        parser.error("--devices, --preset, and --config are mutually exclusive")
     return args
 
 
 def main(argv=None):
     args = parse_args(argv)
-    start(args.preset or "scripted", Path(args.devices) if args.devices else None, args.dashboard)
+    if args.config:
+        check_herdr_context()
+        with lifecycle_lock():
+            start_owned_stack("scripted", None, args.dashboard, Path(args.config))
+    else:
+        start(args.preset or "scripted", Path(args.devices) if args.devices else None, args.dashboard)
 
 
 if __name__ == "__main__":

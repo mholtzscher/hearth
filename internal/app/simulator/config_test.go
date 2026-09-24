@@ -18,13 +18,17 @@ func TestLoadExampleConfig(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if valuesErr := scripted.ValidateValues(value.Devices); valuesErr != nil {
+	if len(value.Adapters) != 1 || value.Adapters[0].AdapterID != "simulator" {
+		t.Fatalf("first-light example adapters = %#v, want simulator", value.Adapters)
+	}
+	devices := value.Adapters[0].Devices
+	if valuesErr := scripted.ValidateValues(devices); valuesErr != nil {
 		t.Fatalf("example values invalid: %v", valuesErr)
 	}
-	if len(value.Devices) != 1 {
-		t.Fatalf("example devices = %d, want 1", len(value.Devices))
+	if len(devices) != 1 {
+		t.Fatalf("example devices = %d, want 1", len(devices))
 	}
-	device := value.Devices[0]
+	device := devices[0]
 	if device.BindingKey != "simulated-light" {
 		t.Fatalf("example binding_key = %q, want simulated-light", device.BindingKey)
 	}

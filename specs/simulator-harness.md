@@ -40,43 +40,43 @@ An agent can, with no Go changes:
 ## Configuration
 
 ```yaml
-adapter_id: simulator
 nats_url: nats://127.0.0.1:4222
 control_addr: 127.0.0.1:8181   # optional; loopback only; absent disables control
-devices:
-  - binding_key: simulated-light
-    name: Simulated light
-    kind: light
-    health: healthy              # | unhealthy:<reason-code>
-    entities:
-      - key: power
-        name: Power
-        type: hearth.power/v1
-        support: {state: {}, operations: {set: {}}}
-        initial: true
-        outputs: {interval: 5s, values: [true, false]}
-        commands: {set: {behavior: accept-and-publish, apply_parameters: true}}
-      - key: temperature
-        name: Temperature
-        type: hearth.temperature/v1
-        support: {state: {unit: mCel}, operations: {}}
-        initial: 21500
-        outputs: {interval: 10s, values: [21500, 21600, 21400]}
-  - binding_key: simulated-button
-    name: Simulated button
-    kind: sensor
-    entities:
-      - key: events
-        name: Events
-        type: hearth.enumevent/v1
-        support: {state: {}, operations: {}, events: {names: [single_press, double_press]}}
-        outputs: {interval: 30s, values: [single_press, double_press]}
+adapters:
+  - adapter_id: simulator
+    devices:
+      - binding_key: simulated-light
+        name: Simulated light
+        kind: light
+        entities:
+          - key: power
+            name: Power
+            type: hearth.power/v1
+            support: {state: {}, operations: {set: {}}}
+            initial: true
+            outputs: {interval: 5s, values: [true, false]}
+            commands: {set: {behavior: accept-and-publish, apply_parameters: true}}
+  - adapter_id: simulator-unhealthy
+    devices:
+      - binding_key: broken-sensor
+        name: Broken sensor
+        kind: sensor
+        health: "unhealthy:hearth.external_system_unavailable"
+        entities:
+          - key: temperature
+            name: Temperature
+            type: hearth.temperature/v1
+            support: {state: {unit: mCel}, operations: {}}
+            initial: 21500
 ```
 
 Rules:
 
-- Exactly one of `scenario:` and `devices:` is required. Both or neither is a
-  config error.
+- The existing top-level `adapter_id` + `devices` form remains valid. Alternatively,
+  use `adapters:` with entries containing `adapter_id` and `devices`; see
+  `configs/simulator.multi-adapter.example.yaml`. Do not combine the two forms.
+  Adapter IDs must be unique, while Device binding keys can repeat across
+  different Adapters.
 - `binding_key`, `key`, and `adapter_id` follow the existing slug rules;
   `type` must be a known built-in Entity type, else load fails.
 - `support`, `initial`, and every `outputs.values` entry are validated against
@@ -97,9 +97,10 @@ Rules:
 
 ## Runtime semantics
 
-- One `Register` per Device. Health defaults to healthy per Device and
-  aggregates to the one process-level Adapter report the SDK Session owns:
-  the first unhealthy Device wins. Entity availability defaults to available;
+- One `Register` per Device. Each configured Adapter owns its own SDK Session,
+  runtime, and health report. Health defaults to healthy per Device and
+  aggregates within its Adapter: the first unhealthy Device wins. A faulted
+  Adapter does not change the health of another Adapter. Entity availability defaults to available;
   both are reported explicitly at startup.
 - State Entities publish Observations with the normalized configured value.
   Event-source Entities publish Entity Events with the configured name, which
@@ -122,7 +123,9 @@ Optional stdlib HTTP server on `control_addr` (loopback only; non-loopback is a
 config error):
 
 - `GET /v1/sim/entities` lists every Entity with its canonical ID, type,
-  paused flag, and current value/name.
+  paused flag, and current value/name. Multi-adapter configurations also include
+  `adapter_id` in list, publish, pause, and resume responses. Select a scenario
+  by `(adapter_id, binding_key, key)`; binding keys may repeat across Adapters.
 - `POST /v1/sim/entities/{entity_id}/publish` with `{"value": <json>}` publishes
   one Observation now (State Entities), or `{"name": "<event>"}` publishes one
   Entity Event now (event sources). A successful response retains the flat
