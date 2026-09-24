@@ -33,6 +33,12 @@ type controlPublishResponse struct {
 	scripted.PublicationResult
 }
 
+type controlEntityInfo struct {
+	scripted.EntityInfo
+
+	AdapterID string `json:"adapter_id"`
+}
+
 // ServeControl runs the optional loopback control channel for one scripted
 // runtime until ctx ends. It is a scripting aid for agents: the primary
 // validation path stays hearthd's HTTP API and Device Facts.
@@ -45,17 +51,55 @@ func ServeControl(
 	if runtime == nil {
 		return errors.New("control channel runtime is required")
 	}
+	return ServeAdapterControl(ctx, addr, map[string]*scripted.Runtime{"": runtime}, logger)
+}
+
+// ServeAdapterControl exposes all simulated Adapters on one loopback listener.
+//
+//nolint:gocognit,funlen // Related control routes share lookup and listener lifecycle.
+func ServeAdapterControl(
+	ctx context.Context,
+	addr string,
+	runtimes map[string]*scripted.Runtime,
+	logger *slog.Logger,
+) error {
+	if len(runtimes) == 0 {
+		return errors.New("control channel requires an adapter runtime")
+	}
 	if logger == nil {
 		logger = slog.Default()
 	}
+	lookup := func(entityID string) (*scripted.Runtime, string) {
+		for adapterID, runtime := range runtimes {
+			if _, err := runtime.SnapshotFor(entityID); err == nil {
+				return runtime, adapterID
+			}
+		}
+		return nil, ""
+	}
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /v1/sim/entities", func(writer http.ResponseWriter, _ *http.Request) {
-		writeControlJSON(writer, http.StatusOK, runtime.Snapshot())
+		if runtime, single := runtimes[""]; single {
+			writeControlJSON(writer, http.StatusOK, runtime.Snapshot())
+			return
+		}
+		entities := make([]controlEntityInfo, 0)
+		for adapterID, runtime := range runtimes {
+			for _, info := range runtime.Snapshot() {
+				entities = append(entities, controlEntityInfo{EntityInfo: info, AdapterID: adapterID})
+			}
+		}
+		writeControlJSON(writer, http.StatusOK, entities)
 	})
 	mux.HandleFunc(
 		"POST /v1/sim/entities/{entity_id}/publish",
 		func(writer http.ResponseWriter, request *http.Request) {
 			entityID := request.PathValue("entity_id")
+			runtime, adapterID := lookup(entityID)
+			if runtime == nil {
+				writeControlError(writer, http.StatusNotFound, "unknown scripted Entity")
+				return
+			}
 			body, readErr := io.ReadAll(http.MaxBytesReader(writer, request.Body, controlMaxBody))
 			if readErr != nil {
 				writeControlError(writer, http.StatusBadRequest, "unreadable publish body")
@@ -75,6 +119,14 @@ func ServeControl(
 				writeControlError(writer, controlStatus(snapshotErr), snapshotErr.Error())
 				return
 			}
+			if adapterID != "" {
+				writeControlJSON(writer, http.StatusOK, struct {
+					controlPublishResponse
+
+					AdapterID string `json:"adapter_id"`
+				}{controlPublishResponse{EntityInfo: info, PublicationResult: result}, adapterID})
+				return
+			}
 			writeControlJSON(writer, http.StatusOK, controlPublishResponse{
 				EntityInfo:        info,
 				PublicationResult: result,
@@ -83,19 +135,29 @@ func ServeControl(
 	)
 	mux.HandleFunc("POST /v1/sim/entities/{entity_id}/pause", func(writer http.ResponseWriter, request *http.Request) {
 		entityID := request.PathValue("entity_id")
+		runtime, adapterID := lookup(entityID)
+		if runtime == nil {
+			writeControlError(writer, http.StatusNotFound, "unknown scripted Entity")
+			return
+		}
 		if pauseErr := runtime.SetPaused(entityID, true); pauseErr != nil {
 			writeControlError(writer, controlStatus(pauseErr), pauseErr.Error())
 			return
 		}
-		writeControlEntity(writer, runtime, entityID)
+		writeAdapterControlEntity(writer, runtime, entityID, adapterID)
 	})
 	mux.HandleFunc("POST /v1/sim/entities/{entity_id}/resume", func(writer http.ResponseWriter, request *http.Request) {
 		entityID := request.PathValue("entity_id")
+		runtime, adapterID := lookup(entityID)
+		if runtime == nil {
+			writeControlError(writer, http.StatusNotFound, "unknown scripted Entity")
+			return
+		}
 		if resumeErr := runtime.SetPaused(entityID, false); resumeErr != nil {
 			writeControlError(writer, controlStatus(resumeErr), resumeErr.Error())
 			return
 		}
-		writeControlEntity(writer, runtime, entityID)
+		writeAdapterControlEntity(writer, runtime, entityID, adapterID)
 	})
 	listener, listenErr := (&net.ListenConfig{}).Listen(ctx, "tcp", addr)
 	if listenErr != nil {
@@ -131,10 +193,14 @@ func controlStatus(err error) int {
 	return http.StatusBadRequest
 }
 
-func writeControlEntity(writer http.ResponseWriter, runtime *scripted.Runtime, entityID string) {
+func writeAdapterControlEntity(writer http.ResponseWriter, runtime *scripted.Runtime, entityID, adapterID string) {
 	info, err := runtime.SnapshotFor(entityID)
 	if err != nil {
 		writeControlError(writer, controlStatus(err), err.Error())
+		return
+	}
+	if adapterID != "" {
+		writeControlJSON(writer, http.StatusOK, controlEntityInfo{EntityInfo: info, AdapterID: adapterID})
 		return
 	}
 	writeControlJSON(writer, http.StatusOK, info)

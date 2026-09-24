@@ -179,6 +179,7 @@ func startControlServer(
 	}
 }
 
+//nolint:unparam // Path is retained for other control GET endpoints.
 func controlGet(t *testing.T, base, path string) (int, []byte) {
 	t.Helper()
 	response, getErr := http.Get(base + path)
@@ -205,6 +206,69 @@ func controlPost(t *testing.T, base, path, body string) (int, []byte) {
 		t.Fatal(readErr)
 	}
 	return response.StatusCode, payload
+}
+
+//nolint:gocognit // Checks inventory ownership and publication routing in one scenario.
+func TestControlChannelRoutesAcrossAdapters(t *testing.T) {
+	t.Parallel()
+	runtimes := make(map[string]*scripted.Runtime)
+	sessions := make(map[string]*controlFakeSession)
+	for _, id := range []string{"healthy", "faulted"} {
+		session := &controlFakeSession{}
+		runtime, err := scripted.New(session, []scripted.DeviceSpec{controlPowerDevice()})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if attachErr := runtime.Attach([]adapter.Binding{{
+			BindingKey: "simulated-light",
+			Entities:   []adapter.EntityBinding{{Key: "power", EntityID: "ent_" + id}},
+		}}); attachErr != nil {
+			t.Fatal(attachErr)
+		}
+		if initializeErr := runtime.Initialize(context.Background()); initializeErr != nil {
+			t.Fatal(initializeErr)
+		}
+		runtimes[id], sessions[id] = runtime, session
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
+	base := "http://127.0.0.1:18091"
+	go func() { _ = appsimulator.ServeAdapterControl(ctx, "127.0.0.1:18091", runtimes, nil) }()
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		response, err := http.Get(base + "/v1/sim/entities")
+		if err == nil {
+			response.Body.Close()
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("multi-adapter control listener did not start")
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	_, body := controlGet(t, base, "/v1/sim/entities")
+	var inventory []map[string]json.RawMessage
+	if err := json.Unmarshal(body, &inventory); err != nil {
+		t.Fatal(err)
+	}
+	if len(inventory) != 2 {
+		t.Fatalf("inventory = %s, want both adapters", body)
+	}
+	for _, entry := range inventory {
+		var id, entityID string
+		_ = json.Unmarshal(entry["adapter_id"], &id)
+		_ = json.Unmarshal(entry["entity_id"], &entityID)
+		if entityID != "ent_"+id || (id != "healthy" && id != "faulted") {
+			t.Fatalf("incorrect adapter ownership: %s", body)
+		}
+	}
+	status, published := controlPost(t, base, "/v1/sim/entities/ent_faulted/publish", `{"value":false}`)
+	if status != http.StatusOK || !strings.Contains(string(published), `"adapter_id":"faulted"`) {
+		t.Fatalf("faulted adapter publish: status=%d body=%s", status, published)
+	}
+	if len(sessions["faulted"].issuedObservationIDs()) != 2 || len(sessions["healthy"].issuedObservationIDs()) != 1 {
+		t.Fatal("publish crossed adapter session boundary")
+	}
 }
 
 // controlPublishBody decodes a control publish response. The ID fields are

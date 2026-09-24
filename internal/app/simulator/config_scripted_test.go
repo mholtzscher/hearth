@@ -42,6 +42,43 @@ func TestScriptedConfigValidates(t *testing.T) {
 	}
 }
 
+// TestMultipleAdapterConfig protects independent adapter identity and rejects
+// ambiguous or duplicate ownership before connecting to the broker.
+func TestMultipleAdapterConfig(t *testing.T) {
+	t.Parallel()
+	base := scriptedConfig()
+	config := appsimulator.Config{
+		NATSURL: base.NATSURL,
+		Adapters: []appsimulator.ScriptedAdapterConfig{
+			{AdapterID: "healthy", Devices: base.Devices},
+			{AdapterID: "faulted", Devices: base.Devices},
+		},
+	}
+	if err := config.Validate(); err != nil {
+		t.Fatalf("same binding key in separate adapters rejected: %v", err)
+	}
+	config.Adapters[1].AdapterID = "healthy"
+	if err := config.Validate(); err == nil || !strings.Contains(err.Error(), "duplicate adapter_id") {
+		t.Fatalf("duplicate adapter ID: got %v", err)
+	}
+	config.Adapters[1].AdapterID = "faulted"
+	config.AdapterID = "legacy"
+	if err := config.Validate(); err == nil || !strings.Contains(err.Error(), "cannot be combined") {
+		t.Fatalf("mixed config forms: got %v", err)
+	}
+}
+
+func TestMultiAdapterExampleConfig(t *testing.T) {
+	t.Parallel()
+	config, err := appsimulator.LoadConfig("../../../configs/simulator.multi-adapter.example.yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(config.Adapters) != 3 {
+		t.Fatalf("example has %d adapters, want 3", len(config.Adapters))
+	}
+}
+
 func TestConfigRequiresDevices(t *testing.T) {
 	t.Parallel()
 	config := appsimulator.Config{AdapterID: "simulator", NATSURL: "nats://127.0.0.1:4222"}

@@ -61,6 +61,12 @@ mise run simulator-start -- --devices .data/my-simulator-devices.yaml
 mise run simulator-start -- --devices .data/my-simulator-devices.yaml --dashboard
 ```
 
+For a complete multi-adapter scenario file, use
+`mise run simulator-start -- --config configs/simulator.multi-adapter.example.yaml`.
+The config must use the stack's loopback `nats_url` and `control_addr`; startup
+checks every listed Adapter runtime is online. `simulator-smoke` only supports
+the default single-adapter preset, so use the HTTP control API for this case.
+
 `--devices` and `--preset` are alternatives. A custom file contains **only a
 YAML sequence of Devices**, not a complete simulator config. The launcher owns
 transport addresses, Adapter ID, and the control listener. For example, create

@@ -53,6 +53,18 @@ class FakeHerdr:
 
 
 class SimulatorLifecycleTest(unittest.TestCase):
+    def test_complete_config_checks_owned_ports_and_adapter_ids(self):
+        example = REPO_ROOT / "configs/simulator.multi-adapter.example.yaml"
+        text, ids = start.load_simulator_config(example)
+        self.assertEqual(ids, ["simulator-healthy", "simulator-unhealthy",
+                               "simulator-command-faults"])
+        self.assertIn("adapters:", text)
+        with tempfile.TemporaryDirectory() as temporary:
+            path = Path(temporary) / "unsafe.yaml"
+            path.write_text(text.replace(start.NATS_URL, "nats://example.com:4222"))
+            with self.assertRaisesRegex(RuntimeError, "requires nats_url"):
+                start.load_simulator_config(path)
+
     def setUp(self):
         self.stack = ExitStack()
         self.addCleanup(self.stack.close)
