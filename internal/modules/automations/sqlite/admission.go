@@ -57,8 +57,8 @@ func (repo *AutomationRepository) AdmitDeviceFact(
 	}
 	summary := automations.NewDeviceFactSummary(fact)
 	var result automations.AdmissionResult
-	err := repo.transactionWithTx(ctx, func(queries *dbsqlc.Queries, tx *sql.Tx) error {
-		plans, err := repo.planDeviceFact(ctx, tx, queries, fact, summary, snapshot, admittedAt, startupAt)
+	err := repo.transaction(ctx, func(queries *dbsqlc.Queries) error {
+		plans, err := repo.planDeviceFact(ctx, queries, fact, summary, snapshot, admittedAt, startupAt)
 		if err != nil {
 			return err
 		}
@@ -160,7 +160,6 @@ func (repo *AutomationRepository) admitManualRun(
 // outcome without writing history or allocating identities.
 func (repo *AutomationRepository) planDeviceFact(
 	ctx context.Context,
-	tx *sql.Tx,
 	queries *dbsqlc.Queries,
 	fact automations.DeviceFact,
 	summary automations.DeviceFactSummary,
@@ -175,7 +174,7 @@ func (repo *AutomationRepository) planDeviceFact(
 	plans := make([]plannedAutomation, 0, len(rows))
 	for _, row := range rows {
 		plan, planErr := repo.planAutomationOutcome(
-			ctx, tx, queries, row, fact, summary, snapshot, admittedAt, startupAt,
+			ctx, queries, row, fact, summary, snapshot, admittedAt, startupAt,
 		)
 		if planErr != nil {
 			return nil, planErr
@@ -191,7 +190,6 @@ func (repo *AutomationRepository) planDeviceFact(
 // for a disabled or unmatched Automation.
 func (repo *AutomationRepository) planAutomationOutcome(
 	ctx context.Context,
-	tx *sql.Tx,
 	queries *dbsqlc.Queries,
 	row dbsqlc.Automation,
 	fact automations.DeviceFact,
@@ -209,7 +207,7 @@ func (repo *AutomationRepository) planAutomationOutcome(
 	}
 	if fact.Family == automations.DeviceFactObservation {
 		if updateErr := repo.updateHeldStateFacts(
-			ctx, tx, record, fact.Observation, admittedAt, startupAt,
+			ctx, queries, record, fact.Observation, admittedAt, startupAt,
 		); updateErr != nil {
 			return nil, updateErr
 		}

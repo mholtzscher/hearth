@@ -419,6 +419,30 @@ describe("AutomationDetailPage history", () => {
     expect(screen.getByText(/an Entity Event Fact carries no value/)).not.toBeNull();
   });
 
+  it.each([
+    ["conditions_false", "Conditions were false, so no Run started."],
+    ["conditions_unknown", "Conditions could not be confirmed, so no Run started."],
+  ] as const)("explains a held-State %s Skip without Fact evidence", async (reason, explanation) => {
+    installAutomationFetch(
+      detailRoutes([
+        { method: "GET", path: HISTORY_PATH, respond: () => ({ body: { items: [skipSummary()] } }) },
+        {
+          method: "GET",
+          path: HISTORY_ENTRY_PATTERN,
+          respond: () => ({
+            body: { kind: "skip", skip: skipFixture({ reason, fact: undefined }) },
+          }),
+        },
+      ]),
+    );
+    renderDetailPage();
+
+    fireEvent.click(await screen.findByRole("button", { name: SKIP_ID }));
+    expect(await screen.findByText(explanation)).not.toBeNull();
+    expect(screen.queryByText(/Fact that was already too old/)).toBeNull();
+    expect(screen.queryByText("Fact id")).toBeNull();
+  });
+
   it("refetches the selected entry's detail when history is refreshed", async () => {
     let entryReads = 0;
     const requests = installAutomationFetch(

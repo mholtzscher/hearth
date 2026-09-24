@@ -214,14 +214,12 @@ func Run(
 		automationRepository,
 		service,
 		automations.Dependencies{
-			Logger:           automationsLogger,
-			HistoryRetention: config.EffectiveAutomationHistoryRetention(),
+			Logger:             automationsLogger,
+			HistoryRetention:   config.EffectiveAutomationHistoryRetention(),
+			HeldStateStartupAt: startupTime,
 		},
 	)
 	shutdown.automationService = automationService
-	if err := automationService.SetHeldStateStartupAt(startupTime); err != nil {
-		return failStage("set_held_state_startup", err)
-	}
 	durable, provisionErr := devicesnats.ProvisionObservationResources(ctx, js)
 	if provisionErr != nil {
 		return mapStartupCancellation(ctx, failStage("provision_jetstream", provisionErr))
