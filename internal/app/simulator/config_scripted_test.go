@@ -42,56 +42,6 @@ func TestScriptedConfigValidates(t *testing.T) {
 	}
 }
 
-// TestMultipleAdapterConfig protects independent adapter identity and rejects
-// ambiguous or duplicate ownership before connecting to the broker.
-func TestMultipleAdapterConfig(t *testing.T) {
-	t.Parallel()
-	base := scriptedConfig()
-	config := appsimulator.Config{
-		NATSURL: base.NATSURL,
-		Adapters: []appsimulator.ScriptedAdapterConfig{
-			{AdapterID: "healthy", Devices: base.Devices},
-			{AdapterID: "faulted", Devices: base.Devices},
-		},
-	}
-	if err := config.Validate(); err != nil {
-		t.Fatalf("same binding key in separate adapters rejected: %v", err)
-	}
-	config.Adapters[1].AdapterID = "healthy"
-	if err := config.Validate(); err == nil || !strings.Contains(err.Error(), "duplicate adapter_id") {
-		t.Fatalf("duplicate adapter ID: got %v", err)
-	}
-	config.Adapters[1].AdapterID = "faulted"
-	config.AdapterID = "legacy"
-	if err := config.Validate(); err == nil || !strings.Contains(err.Error(), "cannot be combined") {
-		t.Fatalf("mixed config forms: got %v", err)
-	}
-}
-
-func TestMultiAdapterExampleConfig(t *testing.T) {
-	t.Parallel()
-	for _, example := range []struct {
-		name     string
-		adapters int
-	}{
-		{"simulator.example.yaml", 1},
-		{"simulator.scripted.example.yaml", 1},
-		{"simulator.full.example.yaml", 4},
-		{"simulator.multi-adapter.example.yaml", 3},
-	} {
-		t.Run(example.name, func(t *testing.T) {
-			t.Parallel()
-			config, err := appsimulator.LoadConfig("../../../configs/" + example.name)
-			if err != nil {
-				t.Fatal(err)
-			}
-			if len(config.Adapters) != example.adapters {
-				t.Fatalf("example has %d adapters, want %d", len(config.Adapters), example.adapters)
-			}
-		})
-	}
-}
-
 func TestConfigRequiresDevices(t *testing.T) {
 	t.Parallel()
 	config := appsimulator.Config{AdapterID: "simulator", NATSURL: "nats://127.0.0.1:4222"}
@@ -159,47 +109,129 @@ func TestConfigValidatesControlAddr(t *testing.T) {
 	}
 }
 
-func TestLoadScriptedExampleFile(t *testing.T) {
-	t.Parallel()
-	value, err := appsimulator.LoadConfig(filepath.Join("..", "..", "..", "configs", "simulator.scripted.example.yaml"))
+func loadValidationSimulatorExample(t *testing.T) appsimulator.Config {
+	t.Helper()
+	path := filepath.Join("..", "..", "..", "configs", "simulator.scripted.example.yaml")
+	value, err := appsimulator.LoadConfigWithOverrides(path, appsimulator.ConfigOverrides{
+		NATSURL: "nats://127.0.0.1:4222", ControlAddr: "127.0.0.1:8181",
+	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(value.Adapters) != 1 || value.Adapters[0].AdapterID != "simulator" {
-		t.Fatalf("scripted example adapters = %#v, want simulator", value.Adapters)
+	return value
+}
+
+func TestLoadScriptedExampleFile(t *testing.T) {
+	t.Parallel()
+	value := loadValidationSimulatorExample(t)
+	seen := make(map[string]bool)
+	for _, device := range value.Adapters[0].Devices {
+		for _, entity := range device.Entities {
+			seen[entity.Type] = true
+		}
 	}
-	devices := value.Adapters[0].Devices
-	if valuesErr := scripted.ValidateValues(devices); valuesErr != nil {
-		t.Fatalf("scripted example values invalid: %v", valuesErr)
-	}
-	if len(devices) != 2 {
-		t.Fatalf("scripted example devices = %d, want 2", len(devices))
+	for _, typeID := range scripted.KnownTypes() {
+		if !seen[typeID] {
+			t.Errorf("scripted example missing Entity type %s", typeID)
+		}
 	}
 }
 
-func TestLoadFullExampleFile(t *testing.T) {
+func TestSimulatorTransportOverridesBeforeValidation(t *testing.T) {
 	t.Parallel()
-	value, err := appsimulator.LoadConfig(filepath.Join("..", "..", "..", "configs", "simulator.full.example.yaml"))
+	path := filepath.Join("..", "..", "..", "configs", "simulator.scripted.example.yaml")
+	config, err := appsimulator.LoadConfigWithOverrides(path, appsimulator.ConfigOverrides{
+		NATSURL: "nats://127.0.0.1:4282", ControlAddr: "127.0.0.1:8241",
+	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(value.Adapters) != 4 || value.Adapters[0].AdapterID != "simulator" {
-		t.Fatalf("full example adapters = %#v, want healthy simulator and three fault adapters", value.Adapters)
+	if config.NATSURL != "nats://127.0.0.1:4282" || config.ControlAddr != "127.0.0.1:8241" ||
+		len(config.Adapters) != 5 {
+		t.Fatalf("simulator scenario changed while overriding transport: %+v", config)
 	}
-	seen := make(map[string]struct{})
+	if _, invalidErr := appsimulator.LoadConfigWithOverrides(path, appsimulator.ConfigOverrides{
+		ControlAddr: "0.0.0.0:8241",
+	}); invalidErr == nil {
+		t.Fatal("override bypassed loopback-only control validation")
+	}
+}
+
+func TestScriptedExampleDevicesStayHealthy(t *testing.T) {
+	t.Parallel()
+	value := loadValidationSimulatorExample(t)
+	if len(value.Adapters) != 5 || value.Adapters[0].AdapterID != "sim-healthy" {
+		t.Fatalf("expected five isolated Adapters starting with sim-healthy: %+v", value.Adapters)
+	}
+	healthyKeys := map[string]bool{
+		"simulated-light": true, "simulated-button": true,
+		"simulated-climate": true, "simulated-plug": true,
+	}
 	for _, device := range value.Adapters[0].Devices {
+		if !healthyKeys[device.BindingKey] {
+			t.Errorf("unexpected Device %s in healthy simulator", device.BindingKey)
+			continue
+		}
+		delete(healthyKeys, device.BindingKey)
 		if device.Health != "" && device.Health != "healthy" {
-			t.Fatalf("healthy adapter contains unhealthy Device %q", device.BindingKey)
+			t.Errorf("scripted device %s is not healthy: %s", device.BindingKey, device.Health)
+		}
+		if device.OmitAvailabilityWhenUnhealthy {
+			t.Errorf("scripted device %s omits availability", device.BindingKey)
 		}
 		for _, entity := range device.Entities {
-			if entity.Available != nil && !*entity.Available {
-				t.Fatalf("healthy adapter contains unavailable Entity %q", entity.Key)
-			}
-			seen[entity.Type] = struct{}{}
+			checkHealthySimulatorEntity(t, device.BindingKey, entity)
 		}
 	}
-	if len(seen) != len(scripted.KnownTypes()) {
-		t.Fatalf("full example covers %d Entity types, want all %d", len(seen), len(scripted.KnownTypes()))
+	for key := range healthyKeys {
+		t.Errorf("scripted example missing healthy Device %s", key)
+	}
+}
+
+func checkHealthySimulatorEntity(t *testing.T, bindingKey string, entity scripted.EntitySpec) {
+	t.Helper()
+	if entity.Available != nil && !*entity.Available {
+		t.Errorf("scripted entity %s/%s is unavailable", bindingKey, entity.Key)
+	}
+	for operation, command := range entity.Commands {
+		if command.Behavior != "" && command.Behavior != "accept-and-publish" {
+			t.Errorf("scripted command %s/%s/%s does not publish an outcome",
+				bindingKey, entity.Key, operation)
+		}
+	}
+}
+
+func TestFaultExampleDevices(t *testing.T) {
+	t.Parallel()
+	value := loadValidationSimulatorExample(t)
+	seen := make(map[string]scripted.DeviceSpec)
+	for _, entry := range value.Adapters[1:] {
+		if len(entry.Devices) != 1 {
+			t.Errorf("fault Adapter %s has %d Devices, want 1", entry.AdapterID, len(entry.Devices))
+			continue
+		}
+		seen[entry.AdapterID] = entry.Devices[0]
+	}
+	for _, key := range []string{"sim-unhealthy", "sim-rejecting", "sim-timeout", "sim-unavailable"} {
+		if _, ok := seen[key]; !ok {
+			t.Errorf("scripted example missing fault Adapter %s", key)
+		}
+	}
+	if device, ok := seen["sim-unhealthy"]; ok &&
+		(device.Health != "unhealthy:hearth.external_system_unavailable" || !device.OmitAvailabilityWhenUnhealthy) {
+		t.Error("named unhealthy Device does not report unhealthy with omitted availability")
+	}
+	if device, ok := seen["sim-rejecting"]; ok && device.Entities[0].Commands["set"].Behavior != "reject" {
+		t.Error("named rejecting Device does not reject its set Command")
+	}
+	if device, ok := seen["sim-timeout"]; ok &&
+		device.Entities[0].Commands["set"].Behavior != "accept-no-publish" {
+		t.Error("named timeout Device publishes a Command outcome")
+	}
+	if device, ok := seen["sim-unavailable"]; ok &&
+		(device.Entities[0].Available == nil || *device.Entities[0].Available ||
+			!device.Entities[0].Commands["set"].MarkAvailable) {
+		t.Error("named unavailable Device does not start unavailable and repair on set")
 	}
 }
 

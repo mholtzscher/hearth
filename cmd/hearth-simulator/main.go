@@ -21,12 +21,16 @@ func main() {
 
 func run() int {
 	configPath := flag.String("config", "configs/simulator.yaml", "path to the simulator YAML configuration")
+	natsURL := flag.String("nats-url", "", "override the NATS connection URL")
+	controlAddr := flag.String("control-addr", "", "override the simulator control listen address")
 	validateConfig := flag.Bool("validate-config", false, "validate the configuration and exit")
 	logLevel := flag.String("log-level", "info", "log level: debug, info, warn, or error")
 	logFormat := flag.String("log-format", "text", "log format: text or json")
 	flag.Parse()
 	if *validateConfig {
-		return validateConfigOnly(*configPath)
+		return validateConfigWithOverrides(*configPath, simulator.ConfigOverrides{
+			NATSURL: *natsURL, ControlAddr: *controlAddr,
+		})
 	}
 	logger, loggerErr := logging.NewApplicationLogger(os.Stderr, "hearth-simulator", logging.LogOptions{
 		Level: *logLevel, Format: *logFormat,
@@ -40,7 +44,9 @@ func run() int {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	processLogger.InfoContext(ctx, "hearth-simulator starting", slog.String("event", "process.starting"))
-	config, configErr := simulator.LoadConfig(*configPath)
+	config, configErr := simulator.LoadConfigWithOverrides(*configPath, simulator.ConfigOverrides{
+		NATSURL: *natsURL, ControlAddr: *controlAddr,
+	})
 	if configErr != nil {
 		processLogger.ErrorContext(
 			ctx,
@@ -69,13 +75,9 @@ func run() int {
 	return 0
 }
 
-// validateConfigOnly reports whether the configuration at path loads and
-// validates, without starting the process lifecycle. Launchers call it before
-// creating services, so an invalid Device list fails with its real reason
-// instead of leaving a partially started stack behind. It prints the
-// path-free reason, matching the process-record convention.
-func validateConfigOnly(path string) int {
-	if _, err := simulator.LoadConfig(path); err != nil {
+// validateConfigWithOverrides reports validation errors without starting the simulator.
+func validateConfigWithOverrides(path string, overrides simulator.ConfigOverrides) int {
+	if _, err := simulator.LoadConfigWithOverrides(path, overrides); err != nil {
 		fmt.Fprintln(os.Stderr, platformconfig.Reason(err))
 		return 1
 	}

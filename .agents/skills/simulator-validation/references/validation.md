@@ -8,20 +8,19 @@ these recipes. Resolve these repository paths from the worktree root. Consult
 
 ## Choose Device definitions
 
-Prefer the smallest Device list that exercises the change. Custom `--devices`
-files contain a YAML sequence of Devices; no top-level `devices:`,
-`adapter_id`, or transport settings. Startup embeds that sequence in a generated
-local-only simulator config without modifying the source file.
+The default `configs/simulator.scripted.example.yaml` covers all built-in
+Entity types and separate fault Adapters. For a custom scenario, copy it to an
+ignored file and pass that file to `hearth-simulator -config` with worktree
+`-nats-url` and `-control-addr` flags. The public start task always uses the
+checked-in example and does not generate or modify a config.
 
 Each Device has a unique slug `binding_key`, `name`, `kind` (`light`, `relay`, or
 `sensor`), and `entities`. Each Entity has a Device-local unique `key`, `name`,
 built-in `type`, and type-correct `support`. Copy support shapes and canonical
-units from `configs/simulator.full.example.yaml` or the type's schemas.
+units from `configs/simulator.scripted.example.yaml` or the type's schemas.
 
-`simulator-start` validates the generated configuration against the
-Entity-type schemas before it creates a run directory or tab, so a schema
-error in a custom file fails immediately and names the offending Device and
-Entity.
+The simulator validates the YAML against Entity-type schemas before connecting
+to NATS; a bad Device or Entity fails startup with its actual validation error.
 
 ### State sequences
 
@@ -101,7 +100,7 @@ State does not imply availability. For an unhealthy Device whose Entities
 should read effectively unavailable in Core, add
 `omit_availability_when_unhealthy: true` so no Entity availability report is
 sent (requires unhealthy health; otherwise the report still claims available). The control API cannot change health or availability;
-change the generated config and restart only the owned simulator for a new
+change a copied scenario config and restart the simulator for a new
 report. Reason codes must use the `hearth.` or `adapter.` namespace, for example
 `adapter.simulated_unavailable`. Preserve identities and data for recovery experiments.
 
@@ -121,17 +120,17 @@ verify Entity Event history rather than State history.
 
 ## Drive input and assert Core evidence
 
-Use `curl` and `jq` for these examples. Set `run_dir` to the absolute evidence
-path printed by startup, not a new directory:
+Use `curl` and `jq` for these examples. Set `run_dir=.data/validation-stack`:
 
 ```sh
-core_url=http://127.0.0.1:8080
-sim_url=http://127.0.0.1:8181
+run_dir=.data/validation-stack
+core_url="http://127.0.0.1:$(mise env --json | jq -r .SIM_CORE_PORT)"
+sim_url="http://127.0.0.1:$(mise env --json | jq -r .SIMULATOR_PORT)"
 curl -fsS "$sim_url/v1/sim/entities" >"$run_dir/sim-entities.json"
 # Default preset identities; adjust keys for your custom Device list.
 power_id=$(jq -er '.[] | select(.binding_key == "simulated-light" and .key == "power") | .entity_id' "$run_dir/sim-entities.json")
 events_id=$(jq -er '.[] | select(.binding_key == "simulated-button" and .key == "events") | .entity_id' "$run_dir/sim-entities.json")
-curl -fsS "$core_url/v1/adapters/simulator"
+curl -fsS "$core_url/v1/adapters/sim-healthy"
 curl -fsS "$core_url/v1/entities/$power_id"
 ```
 
@@ -200,18 +199,16 @@ authority; README documents JetStream catch-up.
 
 ## Core-offline recovery
 
-Read the lifecycle record `.data/simulator-validation.json` to locate this run's
-Core pane and launch command. Load the `herdr` skill before manual control.
-Do not run the full stop task or start a new environment for this experiment.
+Use `mise daemons stop sim-core` and `mise daemons start sim-core` for an
+in-place Core outage. Do not stop NATS or start a fresh environment.
 
 1. Register while Core is online. Save current event IDs/history and pause
    unrelated output.
-2. Interrupt only the owned Core with `herdr pane send-keys <core-pane> ctrl+c`.
-   Confirm the process and compiled child exited, leaving its shell available.
-   Keep the simulator and NATS/JetStream alive.
+2. Stop only Core with `mise daemons stop sim-core`. Keep the simulator and
+   NATS/JetStream alive.
 3. Publish a bounded number of events through the simulator control API. Count
    only broker-acknowledged reports as expected durable input.
-4. Restart Core in that pane using its recorded launch command and the same
+4. Restart Core with `mise daemons start sim-core` using the same
    SQLite/config paths. Wait for readiness, then separately poll for backlog;
    readiness does not wait for backlog completion.
 5. Check new reports are recorded once by event ID and event State is null.
@@ -224,16 +221,14 @@ tasks, not invented YAML options.
 
 ## Diagnose
 
-Logs are `<service>.out` and `<service>.err` under the printed run directory
-(`core`, `simulator`, `nats`, optional `dashboard`). Use the file reader with
-these exact paths, or shell `grep` scoped to them. Repository-indexed search
-may omit ignored `.data` files or return unrelated source matches.
+Inspect logs with `mise daemons logs sim-core`, `mise daemons logs simulator`,
+`mise daemons logs sim-nats`, or `mise daemons logs sim-web`.
 
 - Startup refusal: inspect occupied ports and saved ownership; never kill other
   sessions or purge a record to force startup.
-- Core not ready: inspect `core.err` and `core.out`, NATS reachability, migrations, and stream
+- Core not ready: inspect `mise daemons logs sim-core`, NATS reachability, migrations, and stream
   configuration. Do not start a second Core or purge streams.
-- Control unavailable: inspect `simulator.err` and `simulator.out` for config errors or
+- Control unavailable: inspect `mise daemons logs simulator` for config errors or
   `simulator.control_failed`; a control bind failure now stops the simulator
   with `control channel <addr> failed` instead of running without its API.
 - Wrong/missing State: inspect units, support, dispositions, aggregate Adapter

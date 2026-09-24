@@ -10,8 +10,9 @@ device name: entity names such as `Power` alone do not identify hardware.
 
 ```sh
 mkdir -p .data
-curl -fsS http://127.0.0.1:8080/v1/devices > .data/homelab-devices.json
-curl -fsS http://127.0.0.1:8080/v1/entities > .data/homelab-entities.json
+core_url="http://127.0.0.1:$(mise env --json | jq -r .REAL_CORE_PORT)"
+curl -fsS "$core_url/v1/devices" > .data/homelab-devices.json
+curl -fsS "$core_url/v1/entities" > .data/homelab-entities.json
 python3 - <<'PY'
 import json
 with open('.data/homelab-devices.json') as stream:
@@ -22,8 +23,8 @@ for entity in entities:
     print(devices.get(entity['device_id'], entity['device_id']), entity['id'],
           entity['type'], entity['name'], (entity.get('state') or {}).get('value'))
 PY
-curl -fsS http://127.0.0.1:8080/v1/devices/dev_<id>
-curl -fsS http://127.0.0.1:8080/v1/entities/ent_<id>
+curl -fsS "$core_url/v1/devices/dev_<id>"
+curl -fsS "$core_url/v1/entities/ent_<id>"
 ```
 
 For browser smoke tests, inspect the entity/device/adapter views and NATS
@@ -39,11 +40,11 @@ Execute one capability at a time, re-read its entity, and verify that the comman
 is satisfied by a fresh, non-retained device report matching the request.
 
 ```sh
-curl -X POST http://127.0.0.1:8080/v1/entities/ent_<power-id>/commands \
+curl -X POST "$core_url/v1/entities/ent_<power-id>/commands" \
   -H 'content-type: application/json' -d '{"operation":"set","parameters":{"value":true}}'
-curl -X POST http://127.0.0.1:8080/v1/entities/ent_<brightness-id>/commands \
+curl -X POST "$core_url/v1/entities/ent_<brightness-id>/commands" \
   -H 'content-type: application/json' -d '{"operation":"set","parameters":{"value":50}}'
-curl -X POST http://127.0.0.1:8080/v1/entities/ent_<colortemp-id>/commands \
+curl -X POST "$core_url/v1/entities/ent_<colortemp-id>/commands" \
   -H 'content-type: application/json' -d '{"operation":"set","parameters":{"value":370}}'
 ```
 
@@ -52,11 +53,11 @@ surprising state in the Z2M frontend at `http://HOMELAB:8082/` (read-only).
 
 ## Collect minimal evidence
 
-Reuse ignored `.data/homelab-*` snapshots; overwriting them is safe. Pull logs
-from the task's pane IDs, using redirects in your own shell, not Nushell panes:
+Reuse ignored `.data/homelab-*` snapshots; overwriting them is safe. Pull
+adapter logs from Mise:
 
 ```sh
-herdr pane read <pane-id> --source recent-unwrapped --lines 500 > .data/homelab-adapter.log
+mise daemons logs real-adapter > .data/homelab-adapter.log
 ```
 
 `mqtt_sub` is available through mise (`npm:mqtt`). Subscribe only; `mqtt_pub`

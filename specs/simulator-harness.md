@@ -74,7 +74,7 @@ Rules:
 
 - The existing top-level `adapter_id` + `devices` form remains valid. Alternatively,
   use `adapters:` with entries containing `adapter_id` and `devices`; see
-  `configs/simulator.multi-adapter.example.yaml`. Do not combine the two forms.
+  `configs/simulator.scripted.example.yaml`. Do not combine the two forms.
   Adapter IDs must be unique, while Device binding keys can repeat across
   different Adapters.
 - `binding_key`, `key`, and `adapter_id` follow the existing slug rules;

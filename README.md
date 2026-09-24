@@ -24,15 +24,17 @@ Run a small mutation-testing trial with `mise run mutation-test -- ./contracts/v
 
 `hearthd` accepts any configured HTTP bind address. The example remains `127.0.0.1:8080`; bind to a non-loopback address only on a trusted network because the HTTP API has no authentication.
 
-Run the first-light simulator with `go run ./cmd/hearth-simulator -config configs/simulator.yaml` after copying `configs/simulator.example.yaml`: it declares one scripted `simulated-light` power Device that reports a healthy Adapter and available Entity before publishing State. Devices and Entities are grouped under `adapters:`; each Adapter has independent health, and the optional loopback control channel can publish, pause, and resume scripts. Device faults are config, not code: unhealthy health with omitted availability, initially unavailable Entities, rejected or outcome-less Commands, and source and received clock offsets. See `specs/simulator-harness.md`; `configs/simulator.scripted.example.yaml` adds a second Device, and `configs/simulator.full.example.yaml` covers all sixteen built-in Entity types on a healthy Adapter while isolating faults on separate Adapters. Heartbeat expiry, takeover, stale-runtime isolation, Core readiness recovery overlays, and graceful release remain deterministic process-test scenarios. Raw duplicate and malformed Observation cases remain transport-test scenarios.
+The default simulator validation example, `configs/simulator.scripted.example.yaml`, runs five Adapters in one process. `sim-healthy` covers all sixteen built-in Entity types; `sim-unhealthy`, `sim-rejecting`, `sim-timeout`, and `sim-unavailable` isolate fault scenarios so unhealthy health cannot mask the others. Each Device and Entity is declared under its Adapter in YAML. For a minimal first-light example, see `configs/simulator.example.yaml`. See `specs/simulator-harness.md` for scripted output, Command, and control behavior. Heartbeat expiry, takeover, stale-runtime isolation, Core readiness recovery overlays, and graceful release remain deterministic process-test scenarios. Raw duplicate and malformed Observation cases remain transport-test scenarios.
 
-For automated simulator validation inside Herdr, run `mise run simulator-start`
-(or add `-- --dashboard`). It creates an isolated local NATS/JetStream, Core,
-and scripted simulator stack in an owned tab; Docker and Mosquitto are not
-needed. Use `-- --preset full` for the broad inventory or `-- --devices PATH`
-for a YAML sequence of custom Devices. Run `mise run simulator-stop` to close
-only that tab while preserving configs, logs, and data. See the
-[simulator validation skill](.agents/skills/simulator-validation/SKILL.md).
+For automated simulator validation, run `mise run simulator-start`.
+Mise/Pitchfork supervises an isolated local NATS/JetStream, Core, scripted
+simulator, and dashboard stack; Docker and Mosquitto are
+not needed. Mise passes worktree-specific addresses directly as CLI flags;
+no simulator config is generated. Run `mise run simulator-stop` to stop
+only this worktree's daemons while preserving configs and data. See
+[worktree-local validation stacks](docs/validation-stacks.md).
+It supports both simulator and real-device modes with resolved per-worktree
+local ports; the real-device daemon mode does not publish a tailnet dashboard.
 
 ### Entity Event recovery recipe
 
@@ -45,7 +47,7 @@ mkdir -p .data
 printf '%s\n' '<model-api-key>' > .data/agent-api-key   # ignored; the required agent secret
 mise run brokers
 go run ./cmd/hearthd -config configs/hearthd.yaml
-go run ./cmd/hearth-simulator -config configs/simulator.yaml
+go run ./cmd/hearth-simulator -config configs/simulator.yaml -nats-url nats://127.0.0.1:4222 -control-addr 127.0.0.1:8181
 ```
 
 Each loopback control-channel request publishes one report for the `events` Entity and returns its canonical publication ID. Stop `hearthd` (Ctrl-C) with the simulator still running and connected, publish a few more reports, then start `hearthd` again with the same `sqlite_path`. After the restart, Core records the backlog and the history endpoint returns each report exactly once:

@@ -79,10 +79,8 @@ func TestMainLoggingFlagsAndConfigFailure(t *testing.T) {
 	})
 }
 
-// This test protects the pre-launch configuration check the simulator
-// validation harness calls before creating a Herdr tab: a valid Device list
-// exits zero, and an invalid one exits nonzero naming the offending Device and
-// Entity without starting the process lifecycle.
+// This test protects pre-launch config validation with or without CLI address
+// overrides: bad Devices fail before the process lifecycle starts.
 func TestValidateConfigFlag(t *testing.T) {
 	t.Parallel()
 	binary := cmdtest.Build(t, ".")
@@ -96,6 +94,16 @@ func TestValidateConfigFlag(t *testing.T) {
 		}
 		if !strings.Contains(result.Stdout, "configuration valid") {
 			t.Fatalf("valid config stdout = %q", result.Stdout)
+		}
+	})
+	t.Run("deployment addresses from flags", func(t *testing.T) {
+		t.Parallel()
+		path := writeConfig(t, strings.Replace(validDevicesConfig,
+			"nats_url: \"nats://127.0.0.1:4222\"\n", "", 1))
+		result := cmdtest.Run(t, binary, "--config", path, "--validate-config",
+			"--nats-url", "nats://127.0.0.1:4282", "--control-addr", "127.0.0.1:8241")
+		if result.ExitCode != 0 {
+			t.Fatalf("CLI addresses rejected: %q", result.Stderr)
 		}
 	})
 	t.Run("invalid devices", func(t *testing.T) {
