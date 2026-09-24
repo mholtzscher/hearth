@@ -45,7 +45,7 @@ depends = ["sim-core"]
 ready_cmd = "curl -fsS http://127.0.0.1:$PORT/v1/sim/entities >/dev/null"
 
 [daemons.sim-web]
-run = "HEARTHD_URL=http://127.0.0.1:$SIM_CORE_PORT NATS_MONITOR_URL=http://127.0.0.1:$(($SIM_NATS_PORT + 4000)) HEARTH_WEB_PORT=$SIM_WEB_PORT exec pnpm --dir web run dev --host 127.0.0.1 --strictPort"
+run = "HEARTHD_URL=http://127.0.0.1:$SIM_CORE_PORT NATS_MONITOR_URL=http://127.0.0.1:$(($SIM_NATS_PORT + 4000)) VITE_NATS_WS_URL=ws://127.0.0.1:$(($SIM_NATS_PORT + 1)) HEARTH_WEB_PORT=$SIM_WEB_PORT exec pnpm --dir web run dev --host 127.0.0.1 --strictPort"
 port = { auto = true, base = 5173, stride = 10 }
 proxy = false
 depends = ["simulator"]
