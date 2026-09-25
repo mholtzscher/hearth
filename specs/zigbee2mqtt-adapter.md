@@ -520,48 +520,25 @@ Assembly validates config, derives the client ID, creates one SDK Session with s
 
 ## Local operation and project layout
 
-The local Compose stack (`compose.yaml`) runs loopback-only, file-backed
-`configs/nats-server.conf` for native NATS and `configs/mosquitto.conf` for
-Mosquitto:
-
-```hcl
-# configs/nats-server.conf
-listen: 0.0.0.0:4222
-jetstream {
-  store_dir: "/data/nats"
-}
-websocket {
-  listen: 0.0.0.0:4223
-  no_tls: true
-}
-http: 0.0.0.0:8222
-```
-
-```
-# configs/mosquitto.conf
-listener 1883
-allow_anonymous true
-persistence true
-persistence_location /mosquitto/data/
-```
-
-`mise run brokers` publishes every broker port on host loopback only:
-
-```sh
-docker compose up
-```
+Simulator validation uses a worktree-local NATS/JetStream daemon through
+`mise run simulator-start` and does not start MQTT. Real-device validation
+uses operator-managed NATS and Mosquitto; `mise run real-device-start -- HOMELAB`
+checks broker and Zigbee2MQTT reachability before starting local Core and the
+adapter. The `configs/zigbee2mqtt.example.yaml` loopback broker URLs are
+placeholders for manual setups, not listeners started by this repository.
+Real-Mosquitto integration tests use disposable containers and their own
+`configs/mosquitto.test.conf`.
 
 Generic docs may show an equivalent trusted-private-network fragment for a separately supervised deployment. They must not include household hosts, Docker network names, destructive cutover, or reconstruction rollback scripts.
 
-README instructions cover copying the example config; required Zigbee2MQTT version, availability, optimistic, slug, and description settings; starting the local brokers, `hearthd`, and the Adapter; discovering Entities; checking health and availability; issuing power, brightness, color-temperature, color, setting, and effect Commands; and diagnosing bridge config, invalid topics, missing availability, unsupported exposes, and timeouts.
+README instructions cover operator-managed broker and Zigbee2MQTT prerequisites; required Zigbee2MQTT version, availability, optimistic, slug, and description settings; starting local Core and the Adapter through the real-device validation task; discovering Entities; checking health and availability; issuing approved power, brightness, color-temperature, color, setting, and effect Commands; and diagnosing bridge config, invalid topics, missing availability, unsupported exposes, and timeouts.
 
 ```text
 cmd/
 └── hearth-adapter-zigbee2mqtt/
     └── main.go
 configs/
-├── nats-server.conf
-├── mosquitto.conf
+├── mosquitto.test.conf
 └── zigbee2mqtt.example.yaml
 internal/app/
 └── zigbee2mqtt/
@@ -709,7 +686,7 @@ After adding tests, run Gremlins against `./internal/adapters/zigbee2mqtt` and t
 
 Against the shared file-backed NATS server and Mosquitto broker, Zigbee2MQTT 2.13.0, and Third Reality 3RCB01057Z:
 
-1. Stop Home Assistant, then start the brokers, `hearthd`, Zigbee2MQTT, and the Adapter with required config.
+1. Stop Home Assistant, confirm the operator-managed brokers and Zigbee2MQTT are available, then start local Core and the Adapter with required config.
 2. Verify the light remains discoverable, observable, and controllable, with healthy Adapter status and one Device containing power, brightness, color-temperature, link-quality, startup-temperature, power-on-behavior, and effect Entities.
 3. Verify `GET /v1/entities` shows display name, support, availability, and current State.
 4. Issue power off and on Commands and require linked post-dispatch satisfaction.
@@ -718,7 +695,7 @@ Against the shared file-backed NATS server and Mosquitto broker, Zigbee2MQTT 2.1
 7. Mark or observe the Device offline and prove Core still dispatches while the Adapter attempts MQTT.
 8. Restart the Adapter and verify clean-session inventory, availability, and State recovery.
 9. Remove or hide a capability during downtime in a controlled fixture or process test. Owned mappings must become unavailable rather than unknown.
-10. Restart the brokers and Zigbee2MQTT. Recovery must transition unhealthy to healthy and require fresh availability.
+10. With operator approval, restart the shared brokers and Zigbee2MQTT. Recovery must transition unhealthy to healthy and require fresh availability.
 11. Verify normal logs contain no raw household inventory, credentials, or payload dumps.
 12. Passive evidence only: the sanitized Third Reality 3RSNL02043Z night-light fixtures (`testdata/bridge-devices-3rsnl02043z.json`, `testdata/state-3rsnl02043z.json`) record the 2026-09-11 capture on host Wanda (firmware `v1.00.86`) for illuminance and occupancy discovery and State; no physical command was exercised against that Device and both Entities are read-only.
 
@@ -786,7 +763,7 @@ The unfinished disposable Paho smoke test from discovery is not evidence. D1 rep
 
 #### Delivery
 
-- [ ] `mise run brokers` starts a loopback Compose stack with a file-backed NATS listener and a separate Mosquitto MQTT broker.
+- [ ] `mise run real-device-start -- HOMELAB` checks operator-managed NATS and MQTT endpoints without starting or changing shared brokers.
 - [ ] README and example YAML document trusted-network and Zigbee2MQTT prerequisites.
 - [ ] The repository contains no host-specific destructive cutover or rollback artifacts.
 - [ ] Sanitized fixtures preserve payload shape without household IEEE addresses or friendly names.

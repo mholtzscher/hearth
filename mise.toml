@@ -255,16 +255,8 @@ description = "Vet"
 depends = ["tidy"]
 run = '''go vet ./...'''
 
-[tasks."brokers"]
-description = "Start local NATS and Mosquitto brokers with Docker Compose (data in .data)"
-run = '''docker compose up'''
-
-[tasks."brokers-down"]
-description = "Stop local NATS and Mosquitto brokers and remove their containers"
-run = '''docker compose down'''
-
 [tasks."broker-images-pull"]
-description = "Pre-pull the pinned Mosquitto image used by tests and the local stack"
+description = "Pre-pull the pinned Mosquitto image used by integration tests"
 run = '''docker pull eclipse-mosquitto:2.0.22'''
 
 [tasks."web-install"]

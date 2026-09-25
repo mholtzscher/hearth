@@ -12,7 +12,7 @@ Hearth's first vertical slice observes and controls one Home Assistant-managed l
 
 ## Development
 
-Install tools with `mise install` and start the local NATS/JetStream and Mosquitto brokers with `mise run brokers`. The validation gate is `mise run validate`; it regenerates checked-in code, formats Go files, tidies module metadata, and then checks generation, formatting, module tidiness, linting, all authoritative schemas and cross-binary fixtures, race-enabled tests (including runtime OpenAPI and recovery), and vetting. Run `mise run ko-build` for no-push multi-platform release container builds. Regenerate checked-in Entity-type and database access code after changing its inputs with `mise run generate`.
+Install tools with `mise install`. Use `mise run simulator-start` for local NATS/JetStream and simulated Devices; it needs no Mosquitto broker. Real-device validation connects to operator-managed NATS and MQTT brokers. The validation gate is `mise run validate`; it regenerates checked-in code, formats Go files, tidies module metadata, and then checks generation, formatting, module tidiness, linting, all authoritative schemas and cross-binary fixtures, race-enabled tests (including runtime OpenAPI and recovery), and vetting. Run `mise run ko-build` for no-push multi-platform release container builds. Regenerate checked-in Entity-type and database access code after changing its inputs with `mise run generate`.
 
 The checked-in golangci-lint config tracks [maratori/golangci-lint-config](https://github.com/maratori/golangci-lint-config) at the version of golangci-lint locked by mise. Existing findings are baselined at the commit recorded in the lint task, while validation rejects findings introduced afterward. Update the tool and config together with `mise upgrade golangci-lint && mise run update-lint-config`, then review and validate the resulting changes.
 
@@ -38,25 +38,24 @@ local ports; the real-device daemon mode does not publish a tailnet dashboard.
 
 ### Entity Event recovery recipe
 
-Entity Events are named occurrences, not State. The scripted `simulated-button` Device in `configs/simulator.scripted.example.yaml` registers an `events` Entity beside the `simulated-light` power Device; `power` still accepts `set` Commands and reports State, while `events` advertises `single_press` and `double_press` and reads `state: null` forever. This is the proof recipe for the Core-offline guarantee and requires no hardware and no automations:
+Entity Events are named occurrences, not State. The scripted `simulated-button` Device in `configs/simulator.scripted.example.yaml` registers an `events` Entity beside the `simulated-light` power Device; `power` still accepts `set` Commands and reports State, while `events` advertises `single_press` and `double_press` and reads `state: null` forever. This is the proof recipe for the Core-offline guarantee and requires no hardware and no automations. Start the stack, discover the worktree ports, then stop **only** Core while leaving NATS and the simulator running:
 
 ```sh
-cp configs/hearthd.example.yaml configs/hearthd.yaml
-cp configs/simulator.scripted.example.yaml configs/simulator.yaml
-mkdir -p .data
-printf '%s\n' '<model-api-key>' > .data/agent-api-key   # ignored; the required agent secret
-mise run brokers
-go run ./cmd/hearthd -config configs/hearthd.yaml
-go run ./cmd/hearth-simulator -config configs/simulator.yaml -nats-url nats://127.0.0.1:4222 -control-addr 127.0.0.1:8181
+mise run simulator-start
+sim_port=$(mise env --json | jq -r .SIMULATOR_PORT)
+core_port=$(mise env --json | jq -r .SIM_CORE_PORT)
+mise daemons stop sim-core
 ```
 
-Each loopback control-channel request publishes one report for the `events` Entity and returns its canonical publication ID. Stop `hearthd` (Ctrl-C) with the simulator still running and connected, publish a few more reports, then start `hearthd` again with the same `sqlite_path`. After the restart, Core records the backlog and the history endpoint returns each report exactly once:
+Each loopback control-channel request publishes one report for the `events` Entity and returns its canonical publication ID. Publish a few reports while Core is stopped, then run `mise daemons start sim-core` with the same SQLite path. After the restart, Core records the backlog and the history endpoint returns each report exactly once:
 
 ```sh
-curl -X POST http://127.0.0.1:8181/v1/sim/entities/<events_ent_id>/publish -d '{"name":"single_press"}'
-curl http://127.0.0.1:8080/v1/entities/<power_ent_id>
-curl http://127.0.0.1:8080/v1/entities/<events_ent_id>
-curl 'http://127.0.0.1:8080/v1/entities/<events_ent_id>/events?limit=50'
+curl -X POST "http://127.0.0.1:$sim_port/v1/sim/entities/<events_ent_id>/publish" -d '{"name":"single_press"}'
+mise daemons start sim-core
+curl "http://127.0.0.1:$core_port/v1/entities/<power_ent_id>"
+curl "http://127.0.0.1:$core_port/v1/entities/<events_ent_id>"
+curl "http://127.0.0.1:$core_port/v1/entities/<events_ent_id>/events?limit=50"
+mise run simulator-stop
 ```
 
 The registration log reports both canonical Entity IDs. The event history response shows the schema-constrained reported name together with whether Core recorded the report (`accepted`) or why Core rejected it (`stale_runtime`, `unknown_entity`, `wrong_adapter`, `entity_disabled`, or `unsupported_event`). It never proves that a physical press happened, and it is not State history: `GET /v1/entities/{entity_id}/state/history` never contains events. Readiness covers the session, the Observation consumer, the Entity Event stream and consumer configuration, and both consumers' activity; it never waits for unread backlog. The guarantee covers broker-acknowledged input only while NATS and JetStream remain available and the Adapter process is alive: initial claim and registration need Core, an Adapter restart during a Core outage loses unacknowledged work, a NATS process loss is not covered, and stream limits can discard old input during a long outage. Reports are not replayed into Commands, and nothing in this path executes work.
@@ -161,19 +160,15 @@ device_options:
 
 Every Zigbee2MQTT `friendly_name` considered by the adapter must be a single MQTT topic level: 1 to 255 bytes of valid UTF-8 containing no `/`, `+`, `#`, or NUL, and never `bridge`. Spaces, uppercase, punctuation, and non-ASCII text are supported. `mqtt.base_topic` remains a subject-safe slug matching `^[a-z0-9][a-z0-9_-]{0,62}$`. Set a human-readable Zigbee2MQTT `description` when a display name distinct from the routed friendly name is wanted.
 
-The local Compose stack runs file-backed JetStream on NATS and Mosquitto for MQTT 1883, publishing every broker port on loopback only. MQTT is not a NATS listener. Copy the adapter example, then verify that its MQTT URL, base topic, and Zigbee2MQTT broker settings refer to the Mosquitto listener:
+NATS and the Zigbee2MQTT MQTT broker are separate operator-managed services. The real-device validation task checks their reachability, generates worktree-local Core and adapter configs, and starts no brokers. Review [real-device safety](.agents/skills/real-device-validation/SKILL.md) and obtain an approved homelab host first:
 
 ```sh
-cp configs/hearthd.example.yaml configs/hearthd.yaml
-cp configs/zigbee2mqtt.example.yaml configs/zigbee2mqtt.yaml
-mkdir -p .data
-printf '%s\n' '<model-api-key>' > .data/agent-api-key   # ignored; the required agent secret
-mise run brokers
-go run ./cmd/hearthd -config configs/hearthd.yaml
-go run ./cmd/hearth-adapter-zigbee2mqtt -config configs/zigbee2mqtt.yaml
+mise run real-device-start -- HOMELAB
+# After approved read-only validation, stop only this worktree's local processes:
+mise run real-device-stop
 ```
 
-Run Zigbee2MQTT separately under the operator's normal supervision. The adapter configuration accepts only plain `mqtt://` or `tcp://` endpoints with an explicit host and port. It has no MQTT username, password, TLS, or certificate settings. The NATS listener, Mosquitto MQTT, Hearth HTTP, and Zigbee2MQTT management endpoints must remain on loopback or a trusted private network; exposing this configuration to an untrusted network is unsupported.
+Run Zigbee2MQTT separately under the operator's normal supervision. For a manual deployment instead of the validation task, copy the example configs and replace their loopback broker addresses with the approved NATS and MQTT endpoints before starting Core or the adapter; localhost defaults are not a provisioned broker. The adapter configuration accepts only plain `mqtt://` or `tcp://` endpoints with an explicit host and port. It has no MQTT username, password, TLS, or certificate settings. The NATS listener, Mosquitto MQTT, Hearth HTTP, and Zigbee2MQTT management endpoints must remain on loopback or a trusted private network; exposing this configuration to an untrusted network is unsupported.
 
 The adapter remains `unknown` until it has claimed a Hearth session, connected and subscribed to MQTT, received retained `bridge/state`, `bridge/info`, and `bridge/devices`, and completed registration. It becomes healthy after an online bridge and compatible configuration are reconciled. Device availability comes only from explicit `<friendly_name>/availability` messages; State does not imply availability.
 
@@ -235,7 +230,7 @@ Upload interval: exact value from station.upload_interval_seconds
 
 Store the 32-character hexadecimal PASSKEY in a separate secret file and point `station.passkey_file` at it. The adapter reads the PASSKEY only at startup, compares it in constant time, and never logs, exports, persists, or writes it into Device or Entity identity. The gateway chooses its own MQTT client ID and keepalive; a subscriber cannot observe those portably, so v1 does not gate them, and gateway publish QoS and retain behavior are otherwise not assumed.
 
-The local Compose stack runs Mosquitto for MQTT 1883 on loopback only. Copy the example, keeping its loopback broker URL, fake two-segment topic, and non-secret placeholders:
+The Ecowitt gateway must reach an operator-managed MQTT listener on a trusted private network; a loopback-only broker cannot receive its uploads. Copy the examples, replace the loopback NATS and MQTT URLs with approved endpoints, and keep the example topic and non-secret placeholders until configured:
 
 ```sh
 cp configs/hearthd.example.yaml configs/hearthd.yaml
@@ -245,7 +240,9 @@ printf '%s\n' '<32-hex-passkey>' > .secrets/ecowitt-passkey   # ignored; never c
 mkdir -p .data
 printf '%s\n' '<model-api-key>' > .data/agent-api-key   # ignored; the required agent secret
 # edit configs/ecowitt.yaml: set station.passkey_file to .secrets/ecowitt-passkey
-mise run brokers
+# edit configs/hearthd.yaml and configs/ecowitt.yaml: use the approved NATS URL
+# edit configs/ecowitt.yaml: use the operator-managed MQTT URL and gateway topic
+# start the operator-managed brokers and gateway through their own supervision
 go run ./cmd/hearthd -config configs/hearthd.yaml
 go run ./cmd/hearth-adapter-ecowitt -config configs/ecowitt.yaml
 ```

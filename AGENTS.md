@@ -7,7 +7,8 @@
 - For focused formatting, generation, module tidying, linting, testing, and vetting, always use the mise tasks below instead of invoking the underlying tools directly.
 - After making any change, prefer `mise run validate`; it regenerates code, formats it, and tidies module metadata before running all checks.
 - Review the resulting diff and include intended generated or formatting changes.
-- To run the local NATS and Mosquitto brokers while developing: `mise run brokers`.
+- For simulator development, start worktree-local NATS with `mise run simulator-start`; stop it with `mise run simulator-stop`.
+- Real-device validation uses operator-managed NATS and MQTT brokers; never start a local MQTT broker as a substitute.
 - Real-Mosquitto integration tests always require a reachable Docker daemon and fail without one.
 
 ## Commands
@@ -25,8 +26,8 @@
 | Run real-Mosquitto integration | `mise run --skip-deps test-brokers`   |
 | Vet                            | `mise run --skip-deps vet`            |
 | Run all validation (preferred) | `mise run validate`                   |
-| Start local NATS and Mosquitto | `mise run brokers`                    |
-| Stop local NATS and Mosquitto  | `mise run brokers-down`               |
+| Start simulator stack          | `mise run simulator-start`           |
+| Stop simulator stack           | `mise run simulator-stop`            |
 
 ## External References
 
