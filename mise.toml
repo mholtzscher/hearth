@@ -80,7 +80,7 @@ depends = ["tidy"]
 run = '''
 KO_DOCKER_REPO=example.invalid/hearth ko build --base-import-paths --tags validation --push=false \
   ./cmd/hearthd ./cmd/hearth-adapter-homeassistant ./cmd/hearth-adapter-zigbee2mqtt \
-  ./cmd/hearth-adapter-ecowitt ./cmd/hearth-simulator
+  ./cmd/hearth-adapter-ecowitt ./cmd/hearth-adapter-zwavejs ./cmd/hearth-simulator
 '''
 
 [tasks."web-docker-build"]
@@ -147,6 +147,14 @@ run = '''go test ./internal/adapters/ecowitt -run='^$' -fuzz='^FuzzParseStationR
 description = "Run a bounded Ecowitt Observation projection fuzz campaign"
 run = '''go test ./internal/adapters/ecowitt -run='^$' -fuzz='^FuzzProjectReport$' -fuzztime="${FUZZTIME:-5s}"'''
 
+[tasks."fuzz-zwavejs-snapshot"]
+description = "Run a bounded Z-Wave JS snapshot decoder fuzz campaign"
+run = '''go test ./internal/adapters/zwavejs -run='^$' -fuzz='^FuzzZWaveJSSnapshot$' -fuzztime="${FUZZTIME:-5s}"'''
+
+[tasks."fuzz-zwavejs-event"]
+description = "Run a bounded Z-Wave JS event decoder fuzz campaign"
+run = '''go test ./internal/adapters/zwavejs -run='^$' -fuzz='^FuzzZWaveJSEvent$' -fuzztime="${FUZZTIME:-5s}"'''
+
 [tasks."fuzz"]
 description = "Run all bounded fuzz campaigns"
 run = '''
@@ -157,6 +165,8 @@ mise run fuzz-zigbee2mqtt-discovery
 mise run fuzz-zigbee2mqtt-state
 mise run fuzz-ecowitt-report
 mise run fuzz-ecowitt-projection
+mise run fuzz-zwavejs-snapshot
+mise run fuzz-zwavejs-event
 '''
 
 [tasks."test-entitytype-fixtures"]

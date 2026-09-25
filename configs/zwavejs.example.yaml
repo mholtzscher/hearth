@@ -1,0 +1,4 @@
+adapter_id: zwavejs
+nats_url: nats://127.0.0.1:4222
+zwave_js:
+  url: ws://127.0.0.1:3000
