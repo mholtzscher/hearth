@@ -56,7 +56,9 @@ func (service *Service) admitAutomaticFact(
 			return AdmissionResult{}, err
 		}
 	}
-	return service.repository.AdmitDeviceFact(admissionContext, fact, snapshot, service.dependencies.Now())
+	return service.repository.AdmitDeviceFact(
+		admissionContext, fact, snapshot, service.dependencies.Now(), service.heldStateStartupAt,
+	)
 }
 
 // admitManualRun reads the current definition before opening the admission transaction.

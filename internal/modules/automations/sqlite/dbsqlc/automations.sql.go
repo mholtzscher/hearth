@@ -10,6 +10,91 @@ import (
 	"database/sql"
 )
 
+const advanceStaleHeldStateFact = `-- name: AdvanceStaleHeldStateFact :exec
+INSERT INTO automation_holds (automation_id, revision, trigger_id, last_receive_order, phase)
+VALUES (?, ?, ?, ?, 'idle')
+ON CONFLICT (automation_id, trigger_id) DO UPDATE SET
+    revision = excluded.revision,
+    last_receive_order = excluded.last_receive_order
+WHERE excluded.last_receive_order > automation_holds.last_receive_order
+`
+
+type AdvanceStaleHeldStateFactParams struct {
+	AutomationID     string
+	Revision         int64
+	TriggerID        string
+	LastReceiveOrder int64
+}
+
+func (q *Queries) AdvanceStaleHeldStateFact(ctx context.Context, arg AdvanceStaleHeldStateFactParams) error {
+	_, err := q.db.ExecContext(ctx, advanceStaleHeldStateFact,
+		arg.AutomationID,
+		arg.Revision,
+		arg.TriggerID,
+		arg.LastReceiveOrder,
+	)
+	return err
+}
+
+const cancelHeldStateFact = `-- name: CancelHeldStateFact :exec
+INSERT INTO automation_holds (automation_id, revision, trigger_id, last_receive_order, phase)
+VALUES (?, ?, ?, ?, 'idle')
+ON CONFLICT (automation_id, trigger_id) DO UPDATE SET
+    revision = excluded.revision,
+    last_receive_order = excluded.last_receive_order,
+    phase = 'idle', started_at = NULL, due_at = NULL
+WHERE excluded.last_receive_order > automation_holds.last_receive_order
+`
+
+type CancelHeldStateFactParams struct {
+	AutomationID     string
+	Revision         int64
+	TriggerID        string
+	LastReceiveOrder int64
+}
+
+func (q *Queries) CancelHeldStateFact(ctx context.Context, arg CancelHeldStateFactParams) error {
+	_, err := q.db.ExecContext(ctx, cancelHeldStateFact,
+		arg.AutomationID,
+		arg.Revision,
+		arg.TriggerID,
+		arg.LastReceiveOrder,
+	)
+	return err
+}
+
+const cancelHeldStateWithReceiveOrder = `-- name: CancelHeldStateWithReceiveOrder :exec
+UPDATE automation_holds SET phase = 'idle', started_at = NULL, due_at = NULL,
+    last_receive_order = MAX(last_receive_order, ?)
+WHERE automation_id = ? AND trigger_id = ?
+`
+
+type CancelHeldStateWithReceiveOrderParams struct {
+	MAX          interface{}
+	AutomationID string
+	TriggerID    string
+}
+
+func (q *Queries) CancelHeldStateWithReceiveOrder(ctx context.Context, arg CancelHeldStateWithReceiveOrderParams) error {
+	_, err := q.db.ExecContext(ctx, cancelHeldStateWithReceiveOrder, arg.MAX, arg.AutomationID, arg.TriggerID)
+	return err
+}
+
+const cancelHeldStateWithoutState = `-- name: CancelHeldStateWithoutState :exec
+UPDATE automation_holds SET phase = 'idle', started_at = NULL, due_at = NULL
+WHERE automation_id = ? AND trigger_id = ?
+`
+
+type CancelHeldStateWithoutStateParams struct {
+	AutomationID string
+	TriggerID    string
+}
+
+func (q *Queries) CancelHeldStateWithoutState(ctx context.Context, arg CancelHeldStateWithoutStateParams) error {
+	_, err := q.db.ExecContext(ctx, cancelHeldStateWithoutState, arg.AutomationID, arg.TriggerID)
+	return err
+}
+
 const completeRun = `-- name: CompleteRun :execrows
 UPDATE automation_history
 SET run_status = ?,
@@ -72,6 +157,32 @@ func (q *Queries) CompleteStep(ctx context.Context, arg CompleteStepParams) (int
 		return 0, err
 	}
 	return result.RowsAffected()
+}
+
+const consumeDueHeldState = `-- name: ConsumeDueHeldState :exec
+UPDATE automation_holds SET phase = 'consumed', started_at = NULL, due_at = NULL,
+    last_receive_order = MAX(last_receive_order, ?)
+WHERE automation_id = ? AND trigger_id = ? AND revision = ? AND phase = 'pending'
+    AND due_at <= ?
+`
+
+type ConsumeDueHeldStateParams struct {
+	MAX          interface{}
+	AutomationID string
+	TriggerID    string
+	Revision     int64
+	DueAt        sql.NullString
+}
+
+func (q *Queries) ConsumeDueHeldState(ctx context.Context, arg ConsumeDueHeldStateParams) error {
+	_, err := q.db.ExecContext(ctx, consumeDueHeldState,
+		arg.MAX,
+		arg.AutomationID,
+		arg.TriggerID,
+		arg.Revision,
+		arg.DueAt,
+	)
+	return err
 }
 
 const countFactReceipts = `-- name: CountFactReceipts :one
@@ -167,10 +278,11 @@ INSERT INTO automation_history (
     id, automation_id, automation_name, kind, revision, recorded_at,
     fact_id, fact_family, fact_entity_id, fact_variant, fact_causation_id,
     fact_value_json, fact_previous_value_json, fact_emitted_at,
+    hold_trigger_id, hold_started_at, hold_due_at,
     run_snapshot_json, run_source, run_status, run_started_at,
     run_matched_trigger_ids_json,
     condition_mode, condition_bypassed, condition_result, condition_decision_json
-) VALUES (?, ?, ?, 'run', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'running', ?, ?, ?, ?, ?, ?)
+) VALUES (?, ?, ?, 'run', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'running', ?, ?, ?, ?, ?, ?)
 `
 
 type CreateHistoryRunParams struct {
@@ -187,6 +299,9 @@ type CreateHistoryRunParams struct {
 	FactValueJson            sql.NullString
 	FactPreviousValueJson    sql.NullString
 	FactEmittedAt            sql.NullString
+	HoldTriggerID            sql.NullString
+	HoldStartedAt            sql.NullString
+	HoldDueAt                sql.NullString
 	RunSnapshotJson          sql.NullString
 	RunSource                sql.NullString
 	RunStartedAt             sql.NullString
@@ -212,6 +327,9 @@ func (q *Queries) CreateHistoryRun(ctx context.Context, arg CreateHistoryRunPara
 		arg.FactValueJson,
 		arg.FactPreviousValueJson,
 		arg.FactEmittedAt,
+		arg.HoldTriggerID,
+		arg.HoldStartedAt,
+		arg.HoldDueAt,
 		arg.RunSnapshotJson,
 		arg.RunSource,
 		arg.RunStartedAt,
@@ -229,9 +347,9 @@ INSERT INTO automation_history (
     id, automation_id, automation_name, kind, revision, recorded_at,
     fact_id, fact_family, fact_entity_id, fact_variant, fact_causation_id,
     fact_value_json, fact_previous_value_json, fact_emitted_at, skip_matched_triggers_json, skip_reason,
-    skip_source,
+    skip_source, hold_trigger_id, hold_started_at, hold_due_at,
     condition_mode, condition_bypassed, condition_result, condition_decision_json
-) VALUES (?, ?, ?, 'skip', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+) VALUES (?, ?, ?, 'skip', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 `
 
 type CreateHistorySkipParams struct {
@@ -251,6 +369,9 @@ type CreateHistorySkipParams struct {
 	SkipMatchedTriggersJson sql.NullString
 	SkipReason              sql.NullString
 	SkipSource              sql.NullString
+	HoldTriggerID           sql.NullString
+	HoldStartedAt           sql.NullString
+	HoldDueAt               sql.NullString
 	ConditionMode           string
 	ConditionBypassed       int64
 	ConditionResult         sql.NullString
@@ -275,6 +396,9 @@ func (q *Queries) CreateHistorySkip(ctx context.Context, arg CreateHistorySkipPa
 		arg.SkipMatchedTriggersJson,
 		arg.SkipReason,
 		arg.SkipSource,
+		arg.HoldTriggerID,
+		arg.HoldStartedAt,
+		arg.HoldDueAt,
 		arg.ConditionMode,
 		arg.ConditionBypassed,
 		arg.ConditionResult,
@@ -315,6 +439,34 @@ func (q *Queries) DeleteAutomation(ctx context.Context, arg DeleteAutomationPara
 		return 0, err
 	}
 	return result.RowsAffected()
+}
+
+const deleteAutomationHolds = `-- name: DeleteAutomationHolds :exec
+DELETE FROM automation_holds
+WHERE automation_id = ?
+`
+
+type DeleteAutomationHoldsParams struct {
+	AutomationID string
+}
+
+func (q *Queries) DeleteAutomationHolds(ctx context.Context, arg DeleteAutomationHoldsParams) error {
+	_, err := q.db.ExecContext(ctx, deleteAutomationHolds, arg.AutomationID)
+	return err
+}
+
+const deleteHeldState = `-- name: DeleteHeldState :exec
+DELETE FROM automation_holds WHERE automation_id = ? AND trigger_id = ?
+`
+
+type DeleteHeldStateParams struct {
+	AutomationID string
+	TriggerID    string
+}
+
+func (q *Queries) DeleteHeldState(ctx context.Context, arg DeleteHeldStateParams) error {
+	_, err := q.db.ExecContext(ctx, deleteHeldState, arg.AutomationID, arg.TriggerID)
+	return err
 }
 
 const deleteHistoryBefore = `-- name: DeleteHistoryBefore :execrows
@@ -364,8 +516,45 @@ func (q *Queries) GetAutomation(ctx context.Context, arg GetAutomationParams) (A
 	return i, err
 }
 
+const getHeldStateEntityState = `-- name: GetHeldStateEntityState :one
+SELECT value_json, receive_order FROM entity_states WHERE entity_id = ?
+`
+
+type GetHeldStateEntityStateParams struct {
+	EntityID string
+}
+
+type GetHeldStateEntityStateRow struct {
+	ValueJson    string
+	ReceiveOrder int64
+}
+
+func (q *Queries) GetHeldStateEntityState(ctx context.Context, arg GetHeldStateEntityStateParams) (GetHeldStateEntityStateRow, error) {
+	row := q.db.QueryRowContext(ctx, getHeldStateEntityState, arg.EntityID)
+	var i GetHeldStateEntityStateRow
+	err := row.Scan(&i.ValueJson, &i.ReceiveOrder)
+	return i, err
+}
+
+const getHeldStateObservationReceiveOrder = `-- name: GetHeldStateObservationReceiveOrder :one
+
+SELECT receive_order FROM observations WHERE observation_id = ?
+`
+
+type GetHeldStateObservationReceiveOrderParams struct {
+	ObservationID string
+}
+
+// Held-state cursor and deadline transitions run inside automation-owned transactions.
+func (q *Queries) GetHeldStateObservationReceiveOrder(ctx context.Context, arg GetHeldStateObservationReceiveOrderParams) (int64, error) {
+	row := q.db.QueryRowContext(ctx, getHeldStateObservationReceiveOrder, arg.ObservationID)
+	var receive_order int64
+	err := row.Scan(&receive_order)
+	return receive_order, err
+}
+
 const getHistoryEntry = `-- name: GetHistoryEntry :one
-SELECT id, automation_id, automation_name, kind, revision, recorded_at, fact_id, fact_family, fact_entity_id, fact_variant, fact_causation_id, fact_value_json, fact_emitted_at, run_snapshot_json, run_source, run_status, run_failure_code, run_started_at, run_completed_at, run_matched_trigger_ids_json, skip_matched_triggers_json, skip_reason, skip_source, condition_decision_json, condition_mode, condition_bypassed, condition_result, fact_previous_value_json FROM automation_history
+SELECT id, automation_id, automation_name, kind, revision, recorded_at, fact_id, fact_family, fact_entity_id, fact_variant, fact_causation_id, fact_value_json, fact_emitted_at, fact_previous_value_json, run_snapshot_json, run_source, run_status, run_failure_code, run_started_at, run_completed_at, run_matched_trigger_ids_json, skip_matched_triggers_json, skip_reason, skip_source, hold_trigger_id, hold_started_at, hold_due_at, condition_decision_json, condition_mode, condition_bypassed, condition_result FROM automation_history
 WHERE automation_id = ? AND id = ?
 `
 
@@ -391,6 +580,7 @@ func (q *Queries) GetHistoryEntry(ctx context.Context, arg GetHistoryEntryParams
 		&i.FactCausationID,
 		&i.FactValueJson,
 		&i.FactEmittedAt,
+		&i.FactPreviousValueJson,
 		&i.RunSnapshotJson,
 		&i.RunSource,
 		&i.RunStatus,
@@ -401,11 +591,13 @@ func (q *Queries) GetHistoryEntry(ctx context.Context, arg GetHistoryEntryParams
 		&i.SkipMatchedTriggersJson,
 		&i.SkipReason,
 		&i.SkipSource,
+		&i.HoldTriggerID,
+		&i.HoldStartedAt,
+		&i.HoldDueAt,
 		&i.ConditionDecisionJson,
 		&i.ConditionMode,
 		&i.ConditionBypassed,
 		&i.ConditionResult,
-		&i.FactPreviousValueJson,
 	)
 	return i, err
 }
@@ -571,8 +763,96 @@ func (q *Queries) ListAutomationsFirstPage(ctx context.Context, arg ListAutomati
 	return items, nil
 }
 
+const listDueHeldStateCandidates = `-- name: ListDueHeldStateCandidates :many
+SELECT automation_id, revision, trigger_id, due_at
+FROM automation_holds WHERE phase = 'pending' AND due_at <= ?
+ORDER BY due_at, automation_id, trigger_id LIMIT ?
+`
+
+type ListDueHeldStateCandidatesParams struct {
+	DueAt sql.NullString
+	Limit int64
+}
+
+type ListDueHeldStateCandidatesRow struct {
+	AutomationID string
+	Revision     int64
+	TriggerID    string
+	DueAt        sql.NullString
+}
+
+func (q *Queries) ListDueHeldStateCandidates(ctx context.Context, arg ListDueHeldStateCandidatesParams) ([]ListDueHeldStateCandidatesRow, error) {
+	rows, err := q.db.QueryContext(ctx, listDueHeldStateCandidates, arg.DueAt, arg.Limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListDueHeldStateCandidatesRow
+	for rows.Next() {
+		var i ListDueHeldStateCandidatesRow
+		if err := rows.Scan(
+			&i.AutomationID,
+			&i.Revision,
+			&i.TriggerID,
+			&i.DueAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listDueHeldStateRows = `-- name: ListDueHeldStateRows :many
+SELECT automation_id, revision, trigger_id, last_receive_order, phase, started_at, due_at
+FROM automation_holds WHERE phase = 'pending' AND due_at <= ?
+ORDER BY due_at, automation_id, trigger_id LIMIT ?
+`
+
+type ListDueHeldStateRowsParams struct {
+	DueAt sql.NullString
+	Limit int64
+}
+
+func (q *Queries) ListDueHeldStateRows(ctx context.Context, arg ListDueHeldStateRowsParams) ([]AutomationHold, error) {
+	rows, err := q.db.QueryContext(ctx, listDueHeldStateRows, arg.DueAt, arg.Limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []AutomationHold
+	for rows.Next() {
+		var i AutomationHold
+		if err := rows.Scan(
+			&i.AutomationID,
+			&i.Revision,
+			&i.TriggerID,
+			&i.LastReceiveOrder,
+			&i.Phase,
+			&i.StartedAt,
+			&i.DueAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listHistoryAfter = `-- name: ListHistoryAfter :many
-SELECT id, automation_id, automation_name, kind, revision, recorded_at, fact_id, fact_family, fact_entity_id, fact_variant, fact_causation_id, fact_value_json, fact_emitted_at, run_snapshot_json, run_source, run_status, run_failure_code, run_started_at, run_completed_at, run_matched_trigger_ids_json, skip_matched_triggers_json, skip_reason, skip_source, condition_decision_json, condition_mode, condition_bypassed, condition_result, fact_previous_value_json FROM automation_history
+SELECT id, automation_id, automation_name, kind, revision, recorded_at, fact_id, fact_family, fact_entity_id, fact_variant, fact_causation_id, fact_value_json, fact_emitted_at, fact_previous_value_json, run_snapshot_json, run_source, run_status, run_failure_code, run_started_at, run_completed_at, run_matched_trigger_ids_json, skip_matched_triggers_json, skip_reason, skip_source, hold_trigger_id, hold_started_at, hold_due_at, condition_decision_json, condition_mode, condition_bypassed, condition_result FROM automation_history
 WHERE automation_id = ?
   AND (recorded_at < ? OR (recorded_at = ? AND id < ?))
 ORDER BY recorded_at DESC, id DESC
@@ -616,6 +896,7 @@ func (q *Queries) ListHistoryAfter(ctx context.Context, arg ListHistoryAfterPara
 			&i.FactCausationID,
 			&i.FactValueJson,
 			&i.FactEmittedAt,
+			&i.FactPreviousValueJson,
 			&i.RunSnapshotJson,
 			&i.RunSource,
 			&i.RunStatus,
@@ -626,11 +907,13 @@ func (q *Queries) ListHistoryAfter(ctx context.Context, arg ListHistoryAfterPara
 			&i.SkipMatchedTriggersJson,
 			&i.SkipReason,
 			&i.SkipSource,
+			&i.HoldTriggerID,
+			&i.HoldStartedAt,
+			&i.HoldDueAt,
 			&i.ConditionDecisionJson,
 			&i.ConditionMode,
 			&i.ConditionBypassed,
 			&i.ConditionResult,
-			&i.FactPreviousValueJson,
 		); err != nil {
 			return nil, err
 		}
@@ -646,7 +929,7 @@ func (q *Queries) ListHistoryAfter(ctx context.Context, arg ListHistoryAfterPara
 }
 
 const listHistoryFirstPage = `-- name: ListHistoryFirstPage :many
-SELECT id, automation_id, automation_name, kind, revision, recorded_at, fact_id, fact_family, fact_entity_id, fact_variant, fact_causation_id, fact_value_json, fact_emitted_at, run_snapshot_json, run_source, run_status, run_failure_code, run_started_at, run_completed_at, run_matched_trigger_ids_json, skip_matched_triggers_json, skip_reason, skip_source, condition_decision_json, condition_mode, condition_bypassed, condition_result, fact_previous_value_json FROM automation_history
+SELECT id, automation_id, automation_name, kind, revision, recorded_at, fact_id, fact_family, fact_entity_id, fact_variant, fact_causation_id, fact_value_json, fact_emitted_at, fact_previous_value_json, run_snapshot_json, run_source, run_status, run_failure_code, run_started_at, run_completed_at, run_matched_trigger_ids_json, skip_matched_triggers_json, skip_reason, skip_source, hold_trigger_id, hold_started_at, hold_due_at, condition_decision_json, condition_mode, condition_bypassed, condition_result FROM automation_history
 WHERE automation_id = ?
 ORDER BY recorded_at DESC, id DESC
 LIMIT ?
@@ -680,6 +963,7 @@ func (q *Queries) ListHistoryFirstPage(ctx context.Context, arg ListHistoryFirst
 			&i.FactCausationID,
 			&i.FactValueJson,
 			&i.FactEmittedAt,
+			&i.FactPreviousValueJson,
 			&i.RunSnapshotJson,
 			&i.RunSource,
 			&i.RunStatus,
@@ -690,11 +974,13 @@ func (q *Queries) ListHistoryFirstPage(ctx context.Context, arg ListHistoryFirst
 			&i.SkipMatchedTriggersJson,
 			&i.SkipReason,
 			&i.SkipSource,
+			&i.HoldTriggerID,
+			&i.HoldStartedAt,
+			&i.HoldDueAt,
 			&i.ConditionDecisionJson,
 			&i.ConditionMode,
 			&i.ConditionBypassed,
 			&i.ConditionResult,
-			&i.FactPreviousValueJson,
 		); err != nil {
 			return nil, err
 		}
@@ -816,4 +1102,51 @@ func (q *Queries) ReplaceAutomation(ctx context.Context, arg ReplaceAutomationPa
 		&i.UpdatedAt,
 	)
 	return i, err
+}
+
+const resetPendingHeldStates = `-- name: ResetPendingHeldStates :exec
+UPDATE automation_holds SET phase = 'idle', started_at = NULL, due_at = NULL
+WHERE phase = 'pending'
+`
+
+func (q *Queries) ResetPendingHeldStates(ctx context.Context) error {
+	_, err := q.db.ExecContext(ctx, resetPendingHeldStates)
+	return err
+}
+
+const startHeldStateFact = `-- name: StartHeldStateFact :exec
+INSERT INTO automation_holds (
+    automation_id, revision, trigger_id, last_receive_order, phase, started_at, due_at
+) VALUES (?, ?, ?, ?, 'pending', ?, ?)
+ON CONFLICT (automation_id, trigger_id) DO UPDATE SET
+    revision = excluded.revision,
+    last_receive_order = excluded.last_receive_order,
+    phase = CASE WHEN automation_holds.phase = 'idle' THEN 'pending'
+        ELSE automation_holds.phase END,
+    started_at = CASE WHEN automation_holds.phase = 'idle' THEN excluded.started_at
+        ELSE automation_holds.started_at END,
+    due_at = CASE WHEN automation_holds.phase = 'idle' THEN excluded.due_at
+        ELSE automation_holds.due_at END
+WHERE excluded.last_receive_order > automation_holds.last_receive_order
+`
+
+type StartHeldStateFactParams struct {
+	AutomationID     string
+	Revision         int64
+	TriggerID        string
+	LastReceiveOrder int64
+	StartedAt        sql.NullString
+	DueAt            sql.NullString
+}
+
+func (q *Queries) StartHeldStateFact(ctx context.Context, arg StartHeldStateFactParams) error {
+	_, err := q.db.ExecContext(ctx, startHeldStateFact,
+		arg.AutomationID,
+		arg.Revision,
+		arg.TriggerID,
+		arg.LastReceiveOrder,
+		arg.StartedAt,
+		arg.DueAt,
+	)
+	return err
 }

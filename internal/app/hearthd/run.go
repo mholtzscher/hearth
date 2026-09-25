@@ -150,6 +150,9 @@ func Run(
 	automationRepository := automationssqlite.NewAutomationRepository(
 		database, automations.Dependencies{},
 	)
+	if err := automationRepository.ResetPendingHeldStates(ctx); err != nil {
+		return failStage("reset_held_states", fmt.Errorf("reset pending held states: %w", err))
+	}
 	if err := automationRepository.InterruptActiveRuns(
 		ctx, startupTime, automations.FailureCoreRestarted,
 	); err != nil {
@@ -211,8 +214,9 @@ func Run(
 		automationRepository,
 		service,
 		automations.Dependencies{
-			Logger:           automationsLogger,
-			HistoryRetention: config.EffectiveAutomationHistoryRetention(),
+			Logger:             automationsLogger,
+			HistoryRetention:   config.EffectiveAutomationHistoryRetention(),
+			HeldStateStartupAt: startupTime,
 		},
 	)
 	shutdown.automationService = automationService
@@ -262,6 +266,9 @@ func Run(
 	// shutdown joins the worker before SQLite closes.
 	shutdown.historyPruneWorker = startHistoryPruning(
 		dependencyContext, coreLogger, service, automationService, agentService,
+	)
+	shutdown.heldStateWorker = startHeldStateScheduling(
+		dependencyContext, automationsLogger, automationService, nil, nil,
 	)
 	consumers := newCoreConsumers(ctx)
 	shutdown.consumers = consumers
@@ -344,6 +351,7 @@ func Run(
 		database, connection, js,
 		consumers.observations, consumers.entityEvents, relay,
 		automationFactConsumers,
+		shutdown.heldStateWorker,
 	)
 	healthSupervisor := startHealthSupervisor(dependencyContext, readiness, service, coreLogger)
 	shutdown.healthSupervisor = healthSupervisor
@@ -389,6 +397,12 @@ func serveHTTP(
 			return failStage("serve_http", fmt.Errorf("serve HTTP: %w", err))
 		}
 		return nil
+	case <-shutdown.heldStateWorker.Closed():
+		workerErr := shutdown.heldStateWorker.Wait(context.Background())
+		if workerErr == nil {
+			workerErr = errors.New("held-state scheduler stopped unexpectedly")
+		}
+		return failStage("held_state_scheduler", workerErr)
 	case <-ctx.Done():
 		return nil
 	}

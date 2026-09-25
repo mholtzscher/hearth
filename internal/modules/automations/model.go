@@ -32,6 +32,8 @@ const (
 	TriggerKindObservation TriggerKind = "observation"
 	// TriggerKindEntityEvent matches one accepted Entity Event Fact.
 	TriggerKindEntityEvent TriggerKind = "entity_event"
+	// TriggerKindHeldState starts an Automation after State has matched for a duration.
+	TriggerKindHeldState TriggerKind = "held_state"
 )
 
 // ComparisonOperator is the closed set of typed Observation comparisons.
@@ -76,6 +78,14 @@ type EntityEventTrigger struct {
 	EventName devices.EntityEventName
 }
 
+// HeldStateTrigger matches the current State value while it remains equal to
+// every configured comparison for ForSeconds.
+type HeldStateTrigger struct {
+	EntityID    devices.EntityID
+	Comparisons []ObservationComparison
+	ForSeconds  int64
+}
+
 // Trigger is one identified typed Trigger; exactly one family payload is set
 // matching Kind.
 type Trigger struct {
@@ -83,6 +93,7 @@ type Trigger struct {
 	Kind        TriggerKind
 	Observation *ObservationTrigger
 	EntityEvent *EntityEventTrigger
+	HeldState   *HeldStateTrigger
 }
 
 // Step is one identified, execution-ordered Command with exact Entity, Operation, and normalized static JSON parameters.
@@ -201,7 +212,16 @@ const (
 	RunSourceDeviceFact RunSource = "device_fact"
 	// RunSourceManual marks a Run admitted by an operator request.
 	RunSourceManual RunSource = "manual"
+	// RunSourceHeldState marks a Run admitted when a State predicate elapsed.
+	RunSourceHeldState RunSource = "held_state"
 )
+
+// HeldStateEvidence records the scheduled window for a held-state outcome.
+type HeldStateEvidence struct {
+	TriggerID TriggerID
+	StartedAt time.Time
+	DueAt     time.Time
+}
 
 // RunStatus is the durable state of one Automation Run.
 type RunStatus string
@@ -259,6 +279,7 @@ type Run struct {
 	Snapshot          Definition
 	Source            RunSource
 	Fact              *DeviceFactSummary // non-nil iff Source is RunSourceDeviceFact
+	HeldState         *HeldStateEvidence // non-nil iff Source is RunSourceHeldState
 	MatchedTriggerIDs []TriggerID        // empty iff Source is RunSourceManual
 	ConditionDecision ConditionDecision
 	Status            RunStatus
@@ -286,15 +307,16 @@ const (
 
 // Skip is one recorded non-Run outcome with its admission provenance,
 // immutable matching Trigger snapshots, and an admission Condition decision. A
-// device-fact Skip carries complete Fact evidence and at least one matched
-// Trigger; a manual Skip carries neither.
+// device-fact Skip carries complete Fact evidence; a held-state Skip carries
+// hold evidence and one matched Trigger; a manual Skip carries neither.
 type Skip struct {
 	ID                SkipID
 	AutomationID      AutomationID
 	AutomationName    string
 	Revision          int64
-	Source            RunSource          // device_fact or manual admission provenance
+	Source            RunSource          // device_fact, manual, or held_state admission provenance
 	Fact              *DeviceFactSummary // non-nil iff Source is RunSourceDeviceFact
+	HeldState         *HeldStateEvidence // non-nil iff Source is RunSourceHeldState
 	MatchedTriggers   []Trigger          // nonempty iff Source is RunSourceDeviceFact
 	Reason            SkipReason
 	ConditionDecision ConditionDecision
@@ -330,6 +352,7 @@ type HistorySummary struct {
 	Reason          SkipReason         // set iff Kind is HistorySkip
 	Source          RunSource          // admission provenance
 	Fact            *DeviceFactSummary // nil for a manual Run or manual Skip
+	HeldState       *HeldStateEvidence // set iff Source is RunSourceHeldState
 	ConditionMode   ConditionDecisionMode
 	ConditionResult *ConditionResult // set iff Conditions were evaluated
 	BypassRequested bool
@@ -451,6 +474,10 @@ func (trigger Trigger) EntityID() devices.EntityID {
 		if trigger.EntityEvent != nil {
 			return trigger.EntityEvent.EntityID
 		}
+	case TriggerKindHeldState:
+		if trigger.HeldState != nil {
+			return trigger.HeldState.EntityID
+		}
 	}
 	return ""
 }
@@ -540,15 +567,20 @@ func ValidateTrigger(trigger Trigger) error {
 	}
 	switch trigger.Kind {
 	case TriggerKindObservation:
-		if trigger.Observation == nil || trigger.EntityEvent != nil {
+		if trigger.Observation == nil || trigger.EntityEvent != nil || trigger.HeldState != nil {
 			return invalid("trigger %q: observation family payload mismatch", trigger.ID)
 		}
 		return validateObservationTrigger(*trigger.Observation)
 	case TriggerKindEntityEvent:
-		if trigger.EntityEvent == nil || trigger.Observation != nil {
+		if trigger.EntityEvent == nil || trigger.Observation != nil || trigger.HeldState != nil {
 			return invalid("trigger %q: entity event family payload mismatch", trigger.ID)
 		}
 		return validateEntityEventTrigger(*trigger.EntityEvent)
+	case TriggerKindHeldState:
+		if trigger.HeldState == nil || trigger.Observation != nil || trigger.EntityEvent != nil {
+			return invalid("trigger %q: held state family payload mismatch", trigger.ID)
+		}
+		return validateHeldStateTrigger(*trigger.HeldState)
 	default:
 		return invalid("trigger %q: unknown kind %q", trigger.ID, trigger.Kind)
 	}
@@ -623,24 +655,16 @@ func ValidateSkip(skip Skip) error {
 func validateSkipProvenance(skip Skip) error {
 	switch skip.Source {
 	case RunSourceDeviceFact:
-		if skip.Fact == nil {
-			return invalid("skip %q: device fact Skip requires Fact evidence", skip.ID)
-		}
-		if err := ValidateDeviceFactSummary(*skip.Fact); err != nil {
+		if err := validateDeviceFactSkipProvenance(skip); err != nil {
 			return err
 		}
-		if len(skip.MatchedTriggers) == 0 {
-			return invalid("skip %q: device fact Skip requires matched triggers", skip.ID)
-		}
 	case RunSourceManual:
-		if skip.Fact != nil {
-			return invalid("skip %q: manual Skip carries Fact evidence", skip.ID)
+		if err := validateManualSkipProvenance(skip); err != nil {
+			return err
 		}
-		if len(skip.MatchedTriggers) != 0 {
-			return invalid("skip %q: manual Skip carries matched triggers", skip.ID)
-		}
-		if skip.Reason != SkipConditionsFalse && skip.Reason != SkipConditionsUnknown {
-			return invalid("skip %q: manual Skip reason must be a condition outcome", skip.ID)
+	case RunSourceHeldState:
+		if err := validateHeldStateSkipProvenance(skip); err != nil {
+			return err
 		}
 	default:
 		return invalid("skip %q: unknown source %q", skip.ID, skip.Source)
@@ -654,6 +678,58 @@ func validateSkipProvenance(skip Skip) error {
 			return invalid("skip %q: matched trigger IDs must be unique", skip.ID)
 		}
 		seen[trigger.ID] = true
+	}
+	return nil
+}
+
+func validateDeviceFactSkipProvenance(skip Skip) error {
+	if skip.Fact == nil || skip.HeldState != nil {
+		return invalid("skip %q: device fact Skip requires Fact evidence", skip.ID)
+	}
+	if err := ValidateDeviceFactSummary(*skip.Fact); err != nil {
+		return err
+	}
+	if len(skip.MatchedTriggers) == 0 {
+		return invalid("skip %q: device fact Skip requires matched triggers", skip.ID)
+	}
+	return nil
+}
+
+func validateManualSkipProvenance(skip Skip) error {
+	if skip.Fact != nil || skip.HeldState != nil {
+		return invalid("skip %q: manual Skip carries admission evidence", skip.ID)
+	}
+	if len(skip.MatchedTriggers) != 0 {
+		return invalid("skip %q: manual Skip carries matched triggers", skip.ID)
+	}
+	if skip.Reason != SkipConditionsFalse && skip.Reason != SkipConditionsUnknown {
+		return invalid("skip %q: manual Skip reason must be a condition outcome", skip.ID)
+	}
+	return nil
+}
+
+func validateHeldStateSkipProvenance(skip Skip) error {
+	if skip.Fact != nil || skip.HeldState == nil || len(skip.MatchedTriggers) != 1 {
+		return invalid("skip %q: held-state Skip requires one matched Trigger and hold evidence, without Fact", skip.ID)
+	}
+	if err := validateHeldStateEvidence(*skip.HeldState); err != nil {
+		return err
+	}
+	if skip.Reason == SkipStaleFact {
+		return invalid("skip %q: held-state Skip cannot be stale_fact", skip.ID)
+	}
+	if skip.MatchedTriggers[0].ID != skip.HeldState.TriggerID || skip.MatchedTriggers[0].Kind != TriggerKindHeldState {
+		return invalid("skip %q: held-state evidence does not match its Trigger", skip.ID)
+	}
+	return nil
+}
+
+func validateHeldStateEvidence(evidence HeldStateEvidence) error {
+	if _, err := ParseTriggerID(string(evidence.TriggerID)); err != nil {
+		return err
+	}
+	if evidence.StartedAt.IsZero() || evidence.DueAt.IsZero() || !evidence.DueAt.After(evidence.StartedAt) {
+		return invalid("held-state evidence requires a due time after its start time")
 	}
 	return nil
 }
@@ -762,26 +838,89 @@ func validateEntityEventTrigger(trigger EntityEventTrigger) error {
 	return nil
 }
 
+func validateHeldStateTrigger(trigger HeldStateTrigger) error {
+	if _, err := devices.ParseEntityID(string(trigger.EntityID)); err != nil {
+		return fmt.Errorf("%w: held state trigger entity: %w", ErrInvalidAutomation, err)
+	}
+	if len(trigger.Comparisons) < 1 || len(trigger.Comparisons) > automationComparisonMaxCount {
+		return fmt.Errorf(
+			"%w: held state trigger needs 1 to %d comparisons",
+			ErrInvalidAutomation, automationComparisonMaxCount,
+		)
+	}
+	if trigger.ForSeconds < 1 || trigger.ForSeconds > 2_592_000 {
+		return fmt.Errorf("%w: held state duration must be between 1 and 2592000 seconds", ErrInvalidAutomation)
+	}
+	for _, comparison := range trigger.Comparisons {
+		if err := ValidateObservationComparison(comparison); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func validateRunProvenance(run Run) error {
 	switch run.Source {
 	case RunSourceDeviceFact:
-		if run.Fact == nil {
-			return invalid("run %q: device fact Run requires Fact evidence", run.ID)
-		}
-		if err := ValidateDeviceFactSummary(*run.Fact); err != nil {
+		if err := validateDeviceFactRunProvenance(run); err != nil {
 			return err
 		}
 	case RunSourceManual:
-		if run.Fact != nil {
-			return invalid("run %q: manual Run carries Fact evidence", run.ID)
+		if err := validateManualRunProvenance(run); err != nil {
+			return err
+		}
+	case RunSourceHeldState:
+		if err := validateHeldStateRunProvenance(run); err != nil {
+			return err
 		}
 	default:
 		return invalid("run %q: unknown source %q", run.ID, run.Source)
 	}
-	if (run.Source == RunSourceManual) != (len(run.MatchedTriggerIDs) == 0) {
+	if invalidMatchedTriggerCount(run) {
 		return invalid("run %q: matched trigger IDs must be empty iff the Run is manual", run.ID)
 	}
-	return validateMatchedTriggerIDs(run)
+	if err := validateMatchedTriggerIDs(run); err != nil {
+		return err
+	}
+	if run.Source == RunSourceHeldState {
+		if run.MatchedTriggerIDs[0] != run.HeldState.TriggerID {
+			return invalid("run %q: held-state evidence trigger does not match admission trigger", run.ID)
+		}
+		for _, trigger := range run.Snapshot.Triggers {
+			if trigger.ID == run.HeldState.TriggerID && trigger.Kind == TriggerKindHeldState {
+				return nil
+			}
+		}
+		return invalid("run %q: held-state evidence trigger is absent from snapshot", run.ID)
+	}
+	return nil
+}
+
+func validateDeviceFactRunProvenance(run Run) error {
+	if run.Fact == nil || run.HeldState != nil {
+		return invalid("run %q: device fact Run requires Fact evidence", run.ID)
+	}
+	return ValidateDeviceFactSummary(*run.Fact)
+}
+
+func validateManualRunProvenance(run Run) error {
+	if run.Fact != nil || run.HeldState != nil {
+		return invalid("run %q: manual Run carries admission evidence", run.ID)
+	}
+	return nil
+}
+
+func validateHeldStateRunProvenance(run Run) error {
+	if run.Fact != nil || run.HeldState == nil {
+		return invalid("run %q: held-state Run requires hold evidence and no Fact", run.ID)
+	}
+	return validateHeldStateEvidence(*run.HeldState)
+}
+
+func invalidMatchedTriggerCount(run Run) bool {
+	return run.Source == RunSourceManual && len(run.MatchedTriggerIDs) != 0 ||
+		run.Source == RunSourceDeviceFact && len(run.MatchedTriggerIDs) == 0 ||
+		run.Source == RunSourceHeldState && len(run.MatchedTriggerIDs) != 1
 }
 
 func validateMatchedTriggerIDs(run Run) error {

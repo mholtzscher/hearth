@@ -46,6 +46,7 @@ type coreShutdown struct {
 	agentService        *agent.Service
 	cancelDependencies  context.CancelFunc
 	historyPruneWorker  *lifecycle.WorkerHandle
+	heldStateWorker     *lifecycle.WorkerHandle
 	healthSupervisor    *healthSupervisor
 	server              *http.Server
 	transports          []registeredDrain
@@ -62,6 +63,9 @@ func (shutdown *coreShutdown) run() error {
 		}
 	}
 
+	if shutdown.heldStateWorker != nil {
+		fail("stop_held_state_scheduler", shutdown.heldStateWorker.Stop(context.Background()))
+	}
 	if shutdown.automationConsumers != nil {
 		shutdown.automationConsumers.close()
 	}

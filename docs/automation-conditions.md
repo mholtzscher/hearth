@@ -6,10 +6,12 @@ consideration may admit a Run.
 
 Conditions are optional. A definition that omits `conditions` keeps its existing
 behavior: any matching Trigger admits unconditionally. A Condition is evaluated
-exactly once, when Hearth decides admission for one Device Fact or one manual
-invocation, against a coherent batch of current State evidence read through the
-devices module. State changes never start an Automation, and a later State change
-never re-opens a decision that already committed.
+exactly once, when Hearth decides admission for one Device Fact, one completed
+Held-State Trigger, or one manual invocation, against a coherent batch of
+current State evidence read through the devices module. State changes do not
+start an Automation except when an eligible Observation starts or updates a
+Held-State Trigger; a later State change never re-opens a decision that already
+committed.
 
 This guide is the operator-facing contract for the feature specified in
 [Automation Conditions](../specs/automation-conditions.md) and decided in
@@ -74,6 +76,37 @@ null appears as `null`, and absent evidence omits the field.
 
 See [Observation Trigger transitions](../specs/observation-trigger-transitions.md)
 for delivery and redelivery behavior.
+
+### Held-State Triggers
+
+A `held_state` Trigger uses one to eight comparisons against the accepted State
+value, all of which must match, and a `for_seconds` duration from 1 second to 30
+days. A matching Observation starts a hold only when its Device Fact is at most
+30 seconds old and its Core receive time is later than both the current
+definition's update time and Core's startup time. The hold starts at that
+receive time; matching re-reports, including `unchanged`, do not restart it. A
+processed accepted nonmatching value ends a pending hold. A held Trigger is not an
+immediate Device Fact match: after the deadline, a worker rechecks the current
+State and starts one admission decision only if it still matches. See the
+[Held-State Triggers specification](../specs/held-state-triggers.md) for
+eligibility, persistence, and timing details.
+
+After confirming current State still matches at expiry, Hearth applies the
+ordinary busy check. If the Automation is busy, it records an `automation_busy`
+Skip without evaluating Conditions. Otherwise Conditions are evaluated once
+using the same coherent current-State snapshot semantics described below. A
+false or unknown root records the corresponding Condition Skip; a true or absent
+root admits the Run. Any such outcome consumes the hold, so a Conditions Skip
+does not retry at the next scheduler tick. No `stale_fact` Skip is created for
+an expired hold.
+
+Holds are intentionally limited. Core restart clears pending deadlines, so a
+subsequent eligible matching Observation must begin a full new hold; consumed
+holds remain consumed. Definition replacement, including a Step-only edit or
+enablement change, clears that Automation's holds. The expiry check verifies
+current State, not every Observation since the hold began, so a brief
+nonmatching value hidden by Fact-delivery backlog can be missed. Availability or
+enablement changes alone neither cancel a hold nor remove retained State.
 
 `conditions` is one optional root node, not an array. Every node has an
 author-supplied `id` that is unique across the whole tree, uses the same

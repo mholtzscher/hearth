@@ -31,6 +31,82 @@ SET revision = revision + 1,
 WHERE id = ? AND revision = ?
 RETURNING id, revision, definition_json, created_at, updated_at;
 
+-- name: DeleteAutomationHolds :exec
+DELETE FROM automation_holds
+WHERE automation_id = ?;
+
+-- Held-state cursor and deadline transitions run inside automation-owned transactions.
+
+-- name: GetHeldStateObservationReceiveOrder :one
+SELECT receive_order FROM observations WHERE observation_id = ?;
+
+-- name: StartHeldStateFact :exec
+INSERT INTO automation_holds (
+    automation_id, revision, trigger_id, last_receive_order, phase, started_at, due_at
+) VALUES (?, ?, ?, ?, 'pending', ?, ?)
+ON CONFLICT (automation_id, trigger_id) DO UPDATE SET
+    revision = excluded.revision,
+    last_receive_order = excluded.last_receive_order,
+    phase = CASE WHEN automation_holds.phase = 'idle' THEN 'pending'
+        ELSE automation_holds.phase END,
+    started_at = CASE WHEN automation_holds.phase = 'idle' THEN excluded.started_at
+        ELSE automation_holds.started_at END,
+    due_at = CASE WHEN automation_holds.phase = 'idle' THEN excluded.due_at
+        ELSE automation_holds.due_at END
+WHERE excluded.last_receive_order > automation_holds.last_receive_order;
+
+-- name: AdvanceStaleHeldStateFact :exec
+INSERT INTO automation_holds (automation_id, revision, trigger_id, last_receive_order, phase)
+VALUES (?, ?, ?, ?, 'idle')
+ON CONFLICT (automation_id, trigger_id) DO UPDATE SET
+    revision = excluded.revision,
+    last_receive_order = excluded.last_receive_order
+WHERE excluded.last_receive_order > automation_holds.last_receive_order;
+
+-- name: CancelHeldStateFact :exec
+INSERT INTO automation_holds (automation_id, revision, trigger_id, last_receive_order, phase)
+VALUES (?, ?, ?, ?, 'idle')
+ON CONFLICT (automation_id, trigger_id) DO UPDATE SET
+    revision = excluded.revision,
+    last_receive_order = excluded.last_receive_order,
+    phase = 'idle', started_at = NULL, due_at = NULL
+WHERE excluded.last_receive_order > automation_holds.last_receive_order;
+
+-- name: ListDueHeldStateCandidates :many
+SELECT automation_id, revision, trigger_id, due_at
+FROM automation_holds WHERE phase = 'pending' AND due_at <= ?
+ORDER BY due_at, automation_id, trigger_id LIMIT ?;
+
+-- name: ListDueHeldStateRows :many
+SELECT automation_id, revision, trigger_id, last_receive_order, phase, started_at, due_at
+FROM automation_holds WHERE phase = 'pending' AND due_at <= ?
+ORDER BY due_at, automation_id, trigger_id LIMIT ?;
+
+-- name: GetHeldStateEntityState :one
+SELECT value_json, receive_order FROM entity_states WHERE entity_id = ?;
+
+-- name: ConsumeDueHeldState :exec
+UPDATE automation_holds SET phase = 'consumed', started_at = NULL, due_at = NULL,
+    last_receive_order = MAX(last_receive_order, ?)
+WHERE automation_id = ? AND trigger_id = ? AND revision = ? AND phase = 'pending'
+    AND due_at <= ?;
+
+-- name: CancelHeldStateWithoutState :exec
+UPDATE automation_holds SET phase = 'idle', started_at = NULL, due_at = NULL
+WHERE automation_id = ? AND trigger_id = ?;
+
+-- name: CancelHeldStateWithReceiveOrder :exec
+UPDATE automation_holds SET phase = 'idle', started_at = NULL, due_at = NULL,
+    last_receive_order = MAX(last_receive_order, ?)
+WHERE automation_id = ? AND trigger_id = ?;
+
+-- name: DeleteHeldState :exec
+DELETE FROM automation_holds WHERE automation_id = ? AND trigger_id = ?;
+
+-- name: ResetPendingHeldStates :exec
+UPDATE automation_holds SET phase = 'idle', started_at = NULL, due_at = NULL
+WHERE phase = 'pending';
+
 -- name: DeleteAutomation :execrows
 DELETE FROM automations
 WHERE id = ? AND revision = ?;
@@ -55,19 +131,20 @@ INSERT INTO automation_history (
     id, automation_id, automation_name, kind, revision, recorded_at,
     fact_id, fact_family, fact_entity_id, fact_variant, fact_causation_id,
     fact_value_json, fact_previous_value_json, fact_emitted_at,
+    hold_trigger_id, hold_started_at, hold_due_at,
     run_snapshot_json, run_source, run_status, run_started_at,
     run_matched_trigger_ids_json,
     condition_mode, condition_bypassed, condition_result, condition_decision_json
-) VALUES (?, ?, ?, 'run', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'running', ?, ?, ?, ?, ?, ?);
+) VALUES (?, ?, ?, 'run', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'running', ?, ?, ?, ?, ?, ?);
 
 -- name: CreateHistorySkip :exec
 INSERT INTO automation_history (
     id, automation_id, automation_name, kind, revision, recorded_at,
     fact_id, fact_family, fact_entity_id, fact_variant, fact_causation_id,
     fact_value_json, fact_previous_value_json, fact_emitted_at, skip_matched_triggers_json, skip_reason,
-    skip_source,
+    skip_source, hold_trigger_id, hold_started_at, hold_due_at,
     condition_mode, condition_bypassed, condition_result, condition_decision_json
-) VALUES (?, ?, ?, 'skip', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+) VALUES (?, ?, ?, 'skip', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
 
 -- name: CreateRunStep :exec
 INSERT INTO automation_run_steps (run_id, position, step_id, status)

@@ -150,6 +150,57 @@ func TestAutomationAPIRevisionedCRUDAndStrictDTOs(t *testing.T) {
 	}
 }
 
+func TestAutomationAPIHeldStateDefinitionCRUDRoundTripsPredicates(t *testing.T) {
+	t.Parallel()
+	entity := func() devices.EntityID {
+		id, err := devices.NewEntityID()
+		if err != nil {
+			t.Fatal(err)
+		}
+		return id
+	}
+	triggerEntity, actionEntity := entity(), entity()
+	document := fmt.Sprintf(`{"name":"Held predicates","enabled":true,"triggers":[
+		{"id":"light_on","kind":"held_state","entity_id":%q,"comparisons":[{"value_pointer":"","operator":"eq","operand":true}],"for_seconds":60},
+		{"id":"warm","kind":"held_state","entity_id":%q,"comparisons":[{"value_pointer":"/temperature","operator":"gt","operand":21.5}],"for_seconds":3600}
+	],"steps":[{"id":"step","entity_id":%q,"operation":"set","parameters":{"value":true}}]}`,
+		triggerEntity, triggerEntity, actionEntity)
+	router, _, _ := newAutomationHTTP(t, newAPIDevices())
+	createdResponse := performJSON(router, http.MethodPost, "/v1/automations", document)
+	if createdResponse.Code != http.StatusCreated {
+		t.Fatalf("create status %d: %s", createdResponse.Code, createdResponse.Body.String())
+	}
+	created := decodeAutomation(t, createdResponse)
+	assertHeldDefinition(t, created.Definition)
+	getResponse := performJSON(router, http.MethodGet, "/v1/automations/"+created.ID, "")
+	if getResponse.Code != http.StatusOK {
+		t.Fatalf("get status %d: %s", getResponse.Code, getResponse.Body.String())
+	}
+	assertHeldDefinition(t, decodeAutomation(t, getResponse).Definition)
+	updatedResponse := performJSON(router, http.MethodPut, "/v1/automations/"+created.ID,
+		fmt.Sprintf(`{"expected_revision":1,"definition":%s}`, document))
+	if updatedResponse.Code != http.StatusOK {
+		t.Fatalf("replace status %d: %s", updatedResponse.Code, updatedResponse.Body.String())
+	}
+	assertHeldDefinition(t, decodeAutomation(t, updatedResponse).Definition)
+}
+
+func assertHeldDefinition(t *testing.T, definition automationsapi.AutomationDefinitionBody) {
+	t.Helper()
+	if len(definition.Triggers) != 2 {
+		t.Fatalf("held triggers = %#v", definition.Triggers)
+	}
+	boolean, numeric := definition.Triggers[0], definition.Triggers[1]
+	if boolean.Kind != "held_state" || boolean.ForSeconds == nil || *boolean.ForSeconds != 60 ||
+		len(boolean.Comparisons) != 1 || string(boolean.Comparisons[0].Operand) != "true" {
+		t.Errorf("boolean held predicate = %#v", boolean)
+	}
+	if numeric.Kind != "held_state" || numeric.ForSeconds == nil || *numeric.ForSeconds != 3600 ||
+		len(numeric.Comparisons) != 1 || string(numeric.Comparisons[0].Operand) != "21.5" {
+		t.Errorf("numeric held predicate = %#v", numeric)
+	}
+}
+
 // automationOpenAPIDocument is the published-document subset the replacement
 // request-body tests inspect.
 type automationOpenAPIDocument struct {

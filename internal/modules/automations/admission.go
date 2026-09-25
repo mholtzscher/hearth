@@ -204,6 +204,10 @@ func matchAutomationTrigger(fact DeviceFact, trigger Trigger) (bool, error) {
 		}
 		return fact.EntityEvent.EntityID == trigger.EntityEvent.EntityID &&
 			fact.EntityEvent.Name == trigger.EntityEvent.EventName, nil
+	case TriggerKindHeldState:
+		// Held-state Triggers are evaluated by the deadline worker, never by
+		// immediate Device Fact admission.
+		return false, nil
 	default:
 		return false, fmt.Errorf("%w: trigger %q has unknown kind %q", ErrInvalidAutomation, trigger.ID, trigger.Kind)
 	}
