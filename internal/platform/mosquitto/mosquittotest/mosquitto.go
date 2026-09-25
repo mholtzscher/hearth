@@ -21,7 +21,7 @@ import (
 )
 
 // MosquittoImage pins the disposable MQTT test broker image so local and CI
-// integration tests exercise the same version as broker-images-pull.
+// integration tests exercise the same version.
 const MosquittoImage = "eclipse-mosquitto:2.0.22"
 
 // MosquittoTestConfig is the checked-in Mosquitto config copied into each test

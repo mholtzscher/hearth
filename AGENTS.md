@@ -23,7 +23,6 @@
 | Tidy module metadata           | `mise run --skip-deps tidy`           |
 | Check module tidiness          | `mise run --skip-deps tidy-check`     |
 | Test with the race detector    | `mise run --skip-deps test`           |
-| Run real-Mosquitto integration | `mise run --skip-deps test-brokers`   |
 | Vet                            | `mise run --skip-deps vet`            |
 | Run all validation (preferred) | `mise run validate`                   |
 | Start simulator stack          | `mise run simulator-start`           |

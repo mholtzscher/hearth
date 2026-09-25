@@ -201,10 +201,6 @@ depends = ["tidy"]
 # high-core development hosts while disposable broker containers start.
 run = '''go test -race -count=1 -p 4 ./...'''
 
-[tasks."test-brokers"]
-description = "Run the real-Mosquitto integration tests with the race detector"
-run = '''go test -race -count=1 ./internal/adapters/zigbee2mqtt ./internal/app/zigbee2mqtt ./internal/adapters/ecowitt ./internal/app/ecowitt'''
-
 [tasks."fuzz-entitytypes-json-codec"]
 description = "Run a bounded JSONCodec fuzz campaign"
 run = '''go test ./entitytypes -run='^$' -fuzz='^FuzzJSONCodecDecodeStability$' -fuzztime="${FUZZTIME:-5s}"'''
@@ -254,10 +250,6 @@ run = '''HEARTH_FIXTURE_EXEC=1 go test ./internal/cmd/entitytypegen -run='^TestF
 description = "Vet"
 depends = ["tidy"]
 run = '''go vet ./...'''
-
-[tasks."broker-images-pull"]
-description = "Pre-pull the pinned Mosquitto image used by integration tests"
-run = '''docker pull eclipse-mosquitto:2.0.22'''
 
 [tasks."web-install"]
 description = "Install dashboard dependencies"
