@@ -8,6 +8,9 @@ on:
 permissions:
   contents: read
 
+env:
+  MISE_JOBS: 1
+
 jobs:
   fuzz:
     runs-on: ubuntu-latest

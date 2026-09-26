@@ -9,6 +9,9 @@ on:
 permissions:
   contents: read
 
+env:
+  MISE_JOBS: 1
+
 jobs:
   backend:
     runs-on: ubuntu-latest
