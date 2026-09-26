@@ -55,10 +55,10 @@ experiments, not an unbounded high-volume run.
 
 ## Discover and drive State
 
-Bash examples (`curl` and `jq`), with `run_dir=.data/validation-stack`:
+Bash examples (`curl` and `jq`), with `run_dir=.data/simulator-stack`:
 
 ```sh
-run_dir=.data/validation-stack
+run_dir=.data/simulator-stack
 core_url="http://127.0.0.1:$(mise env --json | jq -r .SIM_CORE_PORT)"
 sim_url="http://127.0.0.1:$(mise env --json | jq -r .SIMULATOR_PORT)"
 curl -fsS --max-time 2 "$sim_url/v1/sim/entities" >"$run_dir/inventory.json"

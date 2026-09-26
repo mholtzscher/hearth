@@ -123,7 +123,7 @@ Health (`/healthz`) and readiness (`/readyz`) poll every 10s in the header.
 ## NATS debugging prerequisites
 
 The simulator stack configures loopback WebSocket and monitoring listeners in
-`configs/nats.validation.conf` on `SIM_NATS_PORT + 1` and `SIM_NATS_PORT + 4000`.
+`configs/nats.simulator.conf` on `SIM_NATS_PORT + 1` and `SIM_NATS_PORT + 4000`.
 `mise run simulator-start` passes the WebSocket URL to Vite as
 `VITE_NATS_WS_URL` and the monitoring URL as `NATS_MONITOR_URL`. For a separate
 NATS deployment, supply both URLs when starting Vite. The WebSocket URL is

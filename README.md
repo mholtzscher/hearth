@@ -12,7 +12,7 @@ Hearth's first vertical slice observes and controls one Home Assistant-managed l
 
 ## Development
 
-Install tools with `mise install`. Use `mise run simulator-start` for local NATS/JetStream and simulated Devices; it needs no Mosquitto broker. Real-device validation connects to operator-managed NATS and MQTT brokers. The validation gate is `mise run validate`; it regenerates checked-in code, formats Go files, tidies module metadata, and then checks generation, formatting, module tidiness, linting, all authoritative schemas and cross-binary fixtures, race-enabled tests (including runtime OpenAPI and recovery), and vetting. Run `mise run ko-build` for no-push multi-platform release container builds. Regenerate checked-in Entity-type and database access code after changing its inputs with `mise run generate`.
+Install tools with `mise install`. Use `mise run simulator-start` for local NATS/JetStream and simulated Devices; it needs no Mosquitto broker. The validation gate is `mise run validate`; it regenerates checked-in code, formats Go files, tidies module metadata, and then checks generation, formatting, module tidiness, linting, all authoritative schemas and cross-binary fixtures, race-enabled tests (including runtime OpenAPI and recovery), and vetting. Run `mise run ko-build` for no-push multi-platform release container builds. Regenerate checked-in Entity-type and database access code after changing its inputs with `mise run generate`.
 
 The checked-in golangci-lint config tracks [maratori/golangci-lint-config](https://github.com/maratori/golangci-lint-config) at the version of golangci-lint locked by mise. Existing findings are baselined at the commit recorded in the lint task, while validation rejects findings introduced afterward. Update the tool and config together with `mise upgrade golangci-lint && mise run update-lint-config`, then review and validate the resulting changes.
 
@@ -31,10 +31,7 @@ Mise/Pitchfork supervises an isolated local NATS/JetStream, Core, scripted
 simulator, and dashboard stack; Docker and Mosquitto are
 not needed. Mise passes worktree-specific addresses directly as CLI flags;
 no simulator config is generated. Run `mise run simulator-stop` to stop
-only this worktree's daemons while preserving configs and data. See
-[worktree-local validation stacks](docs/validation-stacks.md).
-It supports both simulator and real-device modes with resolved per-worktree
-local ports; the real-device daemon mode does not publish a tailnet dashboard.
+only this worktree's daemons while preserving configs and data.
 
 ### Entity Event recovery recipe
 
@@ -160,15 +157,9 @@ device_options:
 
 Every Zigbee2MQTT `friendly_name` considered by the adapter must be a single MQTT topic level: 1 to 255 bytes of valid UTF-8 containing no `/`, `+`, `#`, or NUL, and never `bridge`. Spaces, uppercase, punctuation, and non-ASCII text are supported. `mqtt.base_topic` remains a subject-safe slug matching `^[a-z0-9][a-z0-9_-]{0,62}$`. Set a human-readable Zigbee2MQTT `description` when a display name distinct from the routed friendly name is wanted.
 
-NATS and the Zigbee2MQTT MQTT broker are separate operator-managed services. The real-device validation task checks their reachability, generates worktree-local Core and adapter configs, and starts no brokers. Review [real-device safety](.agents/skills/real-device-validation/SKILL.md) and obtain an approved homelab host first:
+NATS and the Zigbee2MQTT MQTT broker are separate operator-managed services; the simulator task does not start an MQTT broker.
 
-```sh
-mise run real-device-start -- HOMELAB
-# After approved read-only validation, stop only this worktree's local processes:
-mise run real-device-stop
-```
-
-Run Zigbee2MQTT separately under the operator's normal supervision. For a manual deployment instead of the validation task, copy the example configs and replace their loopback broker addresses with the approved NATS and MQTT endpoints before starting Core or the adapter; localhost defaults are not a provisioned broker. The adapter configuration accepts only plain `mqtt://` or `tcp://` endpoints with an explicit host and port. It has no MQTT username, password, TLS, or certificate settings. The NATS listener, Mosquitto MQTT, Hearth HTTP, and Zigbee2MQTT management endpoints must remain on loopback or a trusted private network; exposing this configuration to an untrusted network is unsupported.
+Run Zigbee2MQTT separately under the operator's normal supervision. For a manual deployment, copy the example configs and replace their loopback broker addresses with the approved NATS and MQTT endpoints before starting Core or the adapter; localhost defaults are not a provisioned broker. The adapter configuration accepts only plain `mqtt://` or `tcp://` endpoints with an explicit host and port. It has no MQTT username, password, TLS, or certificate settings. The NATS listener, Mosquitto MQTT, Hearth HTTP, and Zigbee2MQTT management endpoints must remain on loopback or a trusted private network; exposing this configuration to an untrusted network is unsupported.
 
 The adapter remains `unknown` until it has claimed a Hearth session, connected and subscribed to MQTT, received retained `bridge/state`, `bridge/info`, and `bridge/devices`, and completed registration. It becomes healthy after an online bridge and compatible configuration are reconciled. Device availability comes only from explicit `<friendly_name>/availability` messages; State does not imply availability.
 

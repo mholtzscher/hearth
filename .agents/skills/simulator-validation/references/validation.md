@@ -120,10 +120,10 @@ verify Entity Event history rather than State history.
 
 ## Drive input and assert Core evidence
 
-Use `curl` and `jq` for these examples. Set `run_dir=.data/validation-stack`:
+Use `curl` and `jq` for these examples. Set `run_dir=.data/simulator-stack`:
 
 ```sh
-run_dir=.data/validation-stack
+run_dir=.data/simulator-stack
 core_url="http://127.0.0.1:$(mise env --json | jq -r .SIM_CORE_PORT)"
 sim_url="http://127.0.0.1:$(mise env --json | jq -r .SIMULATOR_PORT)"
 curl -fsS "$sim_url/v1/sim/entities" >"$run_dir/sim-entities.json"

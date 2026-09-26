@@ -521,17 +521,16 @@ Assembly validates config, derives the client ID, creates one SDK Session with s
 ## Local operation and project layout
 
 Simulator validation uses a worktree-local NATS/JetStream daemon through
-`mise run simulator-start` and does not start MQTT. Real-device validation
-uses operator-managed NATS and Mosquitto; `mise run real-device-start -- HOMELAB`
-checks broker and Zigbee2MQTT reachability before starting local Core and the
-adapter. The `configs/zigbee2mqtt.example.yaml` loopback broker URLs are
-placeholders for manual setups, not listeners started by this repository.
+`mise run simulator-start` and does not start MQTT. Manual Zigbee2MQTT operation
+uses operator-managed NATS and Mosquitto. The
+`configs/zigbee2mqtt.example.yaml` loopback broker URLs are placeholders for
+manual setups, not listeners started by this repository.
 Real-Mosquitto integration tests use disposable containers and their own
 `configs/mosquitto.test.conf`.
 
 Generic docs may show an equivalent trusted-private-network fragment for a separately supervised deployment. They must not include household hosts, Docker network names, destructive cutover, or reconstruction rollback scripts.
 
-README instructions cover operator-managed broker and Zigbee2MQTT prerequisites; required Zigbee2MQTT version, availability, optimistic, slug, and description settings; starting local Core and the Adapter through the real-device validation task; discovering Entities; checking health and availability; issuing approved power, brightness, color-temperature, color, setting, and effect Commands; and diagnosing bridge config, invalid topics, missing availability, unsupported exposes, and timeouts.
+README instructions cover operator-managed broker and Zigbee2MQTT prerequisites; required Zigbee2MQTT version, availability, optimistic, slug, and description settings; manually starting Core and the Adapter; discovering Entities; checking health and availability; issuing approved power, brightness, color-temperature, color, setting, and effect Commands; and diagnosing bridge config, invalid topics, missing availability, unsupported exposes, and timeouts.
 
 ```text
 cmd/
@@ -763,7 +762,6 @@ The unfinished disposable Paho smoke test from discovery is not evidence. D1 rep
 
 #### Delivery
 
-- [ ] `mise run real-device-start -- HOMELAB` checks operator-managed NATS and MQTT endpoints without starting or changing shared brokers.
 - [ ] README and example YAML document trusted-network and Zigbee2MQTT prerequisites.
 - [ ] The repository contains no host-specific destructive cutover or rollback artifacts.
 - [ ] Sanitized fixtures preserve payload shape without household IEEE addresses or friendly names.

@@ -17,20 +17,19 @@ sqlc = "latest"
 [settings]
 experimental = true
 
-# Keep both modes explicit: `mise daemons start` must not start physical devices.
+# `mise daemons start` defaults to the simulator stack.
 [daemon_groups]
 default = ["simulator-stack"]
 simulator-stack = ["sim-nats", "sim-core", "simulator", "sim-web"]
-real-device = ["real-core", "real-adapter", "real-web"]
 
 [daemons.sim-nats]
-run = "SIM_NATS_LISTEN=127.0.0.1:$SIM_NATS_PORT SIM_NATS_STORE=$PWD/.data/validation-stack/storage/nats SIM_NATS_WS_LISTEN=127.0.0.1:$(($SIM_NATS_PORT + 1)) SIM_NATS_MONITOR_LISTEN=127.0.0.1:$(($SIM_NATS_PORT + 4000)) exec nats-server -c configs/nats.validation.conf"
+run = "SIM_NATS_LISTEN=127.0.0.1:$SIM_NATS_PORT SIM_NATS_STORE=$PWD/.data/simulator-stack/storage/nats SIM_NATS_WS_LISTEN=127.0.0.1:$(($SIM_NATS_PORT + 1)) SIM_NATS_MONITOR_LISTEN=127.0.0.1:$(($SIM_NATS_PORT + 4000)) exec nats-server -c configs/nats.simulator.conf"
 port = { auto = true, base = 4222, stride = 10 }
 proxy = false
 ready_cmd = "curl -fsS http://127.0.0.1:$(($PORT + 4000))/healthz?js-enabled-only=true"
 
 [daemons.sim-core]
-run = "exec go run ./cmd/hearthd -config configs/hearthd.validation.yaml -http-addr 127.0.0.1:$SIM_CORE_PORT -nats-url nats://127.0.0.1:$SIM_NATS_PORT -sqlite-path .data/validation-stack/storage/hearthd.db -agent-api-key-file $HOME/.local/share/agenix/hearth-openai-api-key"
+run = "exec go run ./cmd/hearthd -config configs/hearthd.simulator.yaml -http-addr 127.0.0.1:$SIM_CORE_PORT -nats-url nats://127.0.0.1:$SIM_NATS_PORT -sqlite-path .data/simulator-stack/storage/hearthd.db -agent-api-key-file $HOME/.local/share/agenix/hearth-openai-api-key"
 port = { auto = true, base = 8080, stride = 10 }
 proxy = false
 depends = ["sim-nats"]
@@ -51,28 +50,10 @@ proxy = false
 depends = ["simulator"]
 ready_cmd = "curl -fsS http://127.0.0.1:$PORT/ >/dev/null && curl -fsS http://127.0.0.1:$PORT/readyz >/dev/null && curl -fsS http://127.0.0.1:$PORT/nats-monitor/varz >/dev/null"
 
-[daemons.real-core]
-run = "exec go run ./cmd/hearthd -config .data/validation-stack/real-hearthd.yaml"
-port = { auto = true, base = 18080, stride = 10 }
-proxy = false
-ready_cmd = "curl -fsS http://127.0.0.1:$PORT/readyz"
-
-[daemons.real-adapter]
-run = "exec go run ./cmd/hearth-adapter-zigbee2mqtt -config .data/validation-stack/real-zigbee2mqtt.yaml"
-depends = ["real-core"]
-ready_cmd = ".data/validation-stack/validation-stack ready-real-adapter"
-
-[daemons.real-web]
-run = "set -a; . .data/validation-stack/real-web.env; set +a; HEARTHD_URL=http://127.0.0.1:$REAL_CORE_PORT HEARTH_WEB_PORT=$REAL_WEB_PORT exec pnpm --dir web run dev --host 127.0.0.1 --strictPort"
-port = { auto = true, base = 15173, stride = 10 }
-proxy = false
-depends = ["real-adapter"]
-ready_cmd = ".data/validation-stack/validation-stack ready-dashboard real-web"
-
 [tasks."simulator-start"]
 description = "Start worktree-local NATS, Core, the multi-Adapter simulator, and dashboard"
 run = '''
-mkdir -p .data/validation-stack/storage
+mkdir -p .data/simulator-stack/storage
 if [ ! -d web/node_modules ]; then mise run web-install; fi
 mise daemons start simulator-stack
 '''
@@ -80,24 +61,6 @@ mise daemons start simulator-stack
 [tasks."simulator-stop"]
 description = "Stop this worktree's simulator daemons without deleting evidence"
 run = '''mise daemons stop sim-web simulator sim-core sim-nats'''
-
-[tasks."real-device-start"]
-description = "Prepare and start local real-device daemons against the named homelab (no tailnet publication)"
-usage = 'arg "<host>" help="Homelab hostname"'
-depends = ["validation-stack-build"]
-run = '''.data/validation-stack/validation-stack start-real "$usage_host"'''
-
-[tasks."real-device-stop"]
-description = "Stop this worktree's real-device daemons without changing the homelab"
-run = '''.data/validation-stack/validation-stack stop-real'''
-
-[tasks."validation-stack-build"]
-description = "Build the real-device validation safety helper before startup"
-run = '''mkdir -p .data/validation-stack && go build -o .data/validation-stack/validation-stack ./cmd/validation-stack'''
-
-[tasks."validation-stack-test"]
-description = "Test real-device validation safety and ownership without starting services"
-run = '''go test ./cmd/validation-stack'''
 
 [tasks."generate"]
 description = "Regenerate checked-in code"
@@ -282,7 +245,6 @@ description = "Run Go and validation-script checks"
 depends = [
   "format-check",
   "generate-check",
-  "validation-stack-test",
   "lint",
   "tidy-check",
   "test",

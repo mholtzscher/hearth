@@ -30,21 +30,21 @@ func TestLoadExampleConfig(t *testing.T) {
 	}
 }
 
-func TestValidationCoreConfigAcceptsCLIOverridesBeforeValidation(t *testing.T) {
+func TestSimulatorCoreConfigAcceptsCLIOverridesBeforeValidation(t *testing.T) {
 	t.Parallel()
-	path := filepath.Join("..", "..", "..", "configs", "hearthd.validation.yaml")
+	path := filepath.Join("..", "..", "..", "configs", "hearthd.simulator.yaml")
 	if _, err := hearthd.LoadConfig(path); err == nil {
-		t.Fatal("incomplete validation Core config passed without deployment overrides")
+		t.Fatal("incomplete simulator Core config passed without deployment overrides")
 	}
 	config, err := hearthd.LoadConfigWithOverrides(path, hearthd.ConfigOverrides{
 		HTTPAddr: "127.0.0.1:8140", NATSURL: "nats://127.0.0.1:4282",
-		SQLitePath: ".data/validation-stack/storage/hearthd.db", APIKeyFile: "agent-api-key",
+		SQLitePath: ".data/simulator-stack/storage/hearthd.db", APIKeyFile: "agent-api-key",
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if config.HTTPAddr != "127.0.0.1:8140" || config.NATSURL != "nats://127.0.0.1:4282" ||
-		config.SQLitePath != ".data/validation-stack/storage/hearthd.db" || config.Agent.APIKeyFile != "agent-api-key" {
+		config.SQLitePath != ".data/simulator-stack/storage/hearthd.db" || config.Agent.APIKeyFile != "agent-api-key" {
 		t.Fatalf("worktree overrides were not applied: %+v", config)
 	}
 }

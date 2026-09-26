@@ -419,7 +419,7 @@ export default function NatsPage() {
       <h1 className="text-lg font-semibold">NATS</h1>
       <p className="mt-1 text-sm text-muted-foreground">
         Live wire traffic and server introspection. Requires NATS WebSocket and monitoring listeners;
-        the simulator stack supplies both through configs/nats.validation.conf.
+        the simulator stack supplies both through configs/nats.simulator.conf.
       </p>
       <Section title="Live messages (websocket)">
         <LiveMessages />

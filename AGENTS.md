@@ -8,7 +8,6 @@
 - After making any change, prefer `mise run validate`; it regenerates code, formats it, and tidies module metadata before running all checks.
 - Review the resulting diff and include intended generated or formatting changes.
 - For simulator development, start worktree-local NATS with `mise run simulator-start`; stop it with `mise run simulator-stop`.
-- Real-device validation uses operator-managed NATS and MQTT brokers; never start a local MQTT broker as a substitute.
 - Real-Mosquitto integration tests always require a reachable Docker daemon and fail without one.
 
 ## Commands
