@@ -111,7 +111,7 @@ func TestConfigValidatesControlAddr(t *testing.T) {
 
 func loadValidationSimulatorExample(t *testing.T) appsimulator.Config {
 	t.Helper()
-	path := filepath.Join("..", "..", "..", "configs", "simulator.scripted.example.yaml")
+	path := filepath.Join("..", "..", "..", "configs", "scripted.simulator.yaml")
 	value, err := appsimulator.LoadConfigWithOverrides(path, appsimulator.ConfigOverrides{
 		NATSURL: "nats://127.0.0.1:4222", ControlAddr: "127.0.0.1:8181",
 	})
@@ -139,7 +139,7 @@ func TestLoadScriptedExampleFile(t *testing.T) {
 
 func TestSimulatorTransportOverridesBeforeValidation(t *testing.T) {
 	t.Parallel()
-	path := filepath.Join("..", "..", "..", "configs", "simulator.scripted.example.yaml")
+	path := filepath.Join("..", "..", "..", "configs", "scripted.simulator.yaml")
 	config, err := appsimulator.LoadConfigWithOverrides(path, appsimulator.ConfigOverrides{
 		NATSURL: "nats://127.0.0.1:4282", ControlAddr: "127.0.0.1:8241",
 	})

@@ -36,7 +36,7 @@ depends = ["sim-nats"]
 ready_cmd = "curl -fsS http://127.0.0.1:$PORT/readyz"
 
 [daemons.simulator]
-run = "exec go run ./cmd/hearth-simulator -config configs/simulator.scripted.example.yaml -nats-url nats://127.0.0.1:$SIM_NATS_PORT -control-addr 127.0.0.1:$SIMULATOR_PORT"
+run = "exec go run ./cmd/hearth-simulator -config configs/scripted.simulator.yaml -nats-url nats://127.0.0.1:$SIM_NATS_PORT -control-addr 127.0.0.1:$SIMULATOR_PORT"
 port = { auto = true, base = 8181, stride = 10 }
 proxy = false
 depends = ["sim-core"]
@@ -53,6 +53,11 @@ ready_cmd = "curl -fsS http://127.0.0.1:$PORT/ >/dev/null && curl -fsS http://12
 [tasks."simulator-start"]
 description = "Start worktree-local NATS, Core, the multi-Adapter simulator, and dashboard"
 run = '''
+agent_api_key_file="$HOME/.local/share/agenix/hearth-openai-api-key"
+if [ ! -f "$agent_api_key_file" ] || [ ! -r "$agent_api_key_file" ] || ! grep -q '[^[:space:]]' "$agent_api_key_file" 2>/dev/null; then
+  printf '%s\n' "simulator-start: a readable, nonempty agent key file is required at $agent_api_key_file" >&2
+  exit 1
+fi
 mkdir -p .data/simulator-stack/storage
 if [ ! -d web/node_modules ]; then mise run web-install; fi
 mise daemons start simulator-stack

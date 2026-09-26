@@ -1,9 +1,5 @@
 # Direct HTTP control of the running simulator
 
-Use `mise run simulator-start` for setup and `mise run simulator-stop` for
-cleanup. Between them, make direct HTTP requests for your experiment. You do
-not need the Go implementation to discover this API.
-
 ## API at a glance
 
 All simulated Adapters share `http://127.0.0.1:$SIMULATOR_PORT` (from
@@ -55,15 +51,20 @@ experiments, not an unbounded high-volume run.
 
 ## Discover and drive State
 
-Bash examples (`curl` and `jq`), with `run_dir=.data/simulator-stack`:
+Run the examples in one noninteractive Bash script with `curl`, `jq`, and
+`set -euo pipefail`. Failed requests or assertions must stop later mutations.
+Polling allows at most 30 attempts, each with a two-second HTTP timeout and a
+one-second sleep, a budget of about 90 seconds. After failure, inspect saved
+evidence before sending further input; do not blindly retry a POST.
 
 ```sh
+set -euo pipefail
 run_dir=.data/simulator-stack
-core_url="http://127.0.0.1:$(mise env --json | jq -r .SIM_CORE_PORT)"
-sim_url="http://127.0.0.1:$(mise env --json | jq -r .SIMULATOR_PORT)"
+core_url="http://127.0.0.1:$(mise env --json | jq -er .SIM_CORE_PORT)"
+sim_url="http://127.0.0.1:$(mise env --json | jq -er .SIMULATOR_PORT)"
 curl -fsS --max-time 2 "$sim_url/v1/sim/entities" >"$run_dir/inventory.json"
-temperature_id=$(jq -er '.[] | select(.binding_key == "simulated-light" and .key == "temperature") | .entity_id' "$run_dir/inventory.json")
-events_id=$(jq -er '.[] | select(.binding_key == "simulated-button" and .key == "events") | .entity_id' "$run_dir/inventory.json")
+temperature_id=$(jq -er '.[] | select(.adapter_id == "sim-healthy" and .binding_key == "simulated-light" and .key == "temperature") | .entity_id' "$run_dir/inventory.json")
+events_id=$(jq -er '.[] | select(.adapter_id == "sim-healthy" and .binding_key == "simulated-button" and .key == "events") | .entity_id' "$run_dir/inventory.json")
 
 curl -fsS --max-time 2 -X POST "$sim_url/v1/sim/entities/$temperature_id/pause"
 curl -fsS --max-time 2 -X POST "$sim_url/v1/sim/entities/$temperature_id/publish" \
