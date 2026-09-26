@@ -1,12 +1,9 @@
 # Direct HTTP control of the running simulator
 
-Use `mise run simulator-start` for setup and `mise run simulator-stop` for
-cleanup. Between them, make direct HTTP requests for your experiment. You do
-not need `simulator-smoke` or the Go implementation to discover this API.
-
 ## API at a glance
 
-All control endpoints are at `http://127.0.0.1:8181`:
+All simulated Adapters share `http://127.0.0.1:$SIMULATOR_PORT` (from
+`mise env --json`). Snapshots include `adapter_id` for disambiguation:
 
 | Method / path | Body | Response / effect |
 | --- | --- | --- |
@@ -35,7 +32,7 @@ Core may record a rejected disposition or not yet have processed the report.
 Error responses contain no success ID. A transport failure can be ambiguous;
 do not assume nothing was published or blindly retry the POST.
 
-Read Core at `http://127.0.0.1:8080`:
+Read Core at `http://127.0.0.1:$SIM_CORE_PORT`:
 
 | GET path | JSON shape / evidence |
 | --- | --- |
@@ -54,14 +51,20 @@ experiments, not an unbounded high-volume run.
 
 ## Discover and drive State
 
-Bash examples (`curl` and `jq`), with `run_dir` set to the printed run directory:
+Run the examples in one noninteractive Bash script with `curl`, `jq`, and
+`set -euo pipefail`. Failed requests or assertions must stop later mutations.
+Polling allows at most 30 attempts, each with a two-second HTTP timeout and a
+one-second sleep, a budget of about 90 seconds. After failure, inspect saved
+evidence before sending further input; do not blindly retry a POST.
 
 ```sh
-core_url=http://127.0.0.1:8080
-sim_url=http://127.0.0.1:8181
+set -euo pipefail
+run_dir=.data/simulator-stack
+core_url="http://127.0.0.1:$(mise env --json | jq -er .SIM_CORE_PORT)"
+sim_url="http://127.0.0.1:$(mise env --json | jq -er .SIMULATOR_PORT)"
 curl -fsS --max-time 2 "$sim_url/v1/sim/entities" >"$run_dir/inventory.json"
-temperature_id=$(jq -er '.[] | select(.binding_key == "simulated-light" and .key == "temperature") | .entity_id' "$run_dir/inventory.json")
-events_id=$(jq -er '.[] | select(.binding_key == "simulated-button" and .key == "events") | .entity_id' "$run_dir/inventory.json")
+temperature_id=$(jq -er '.[] | select(.adapter_id == "sim-healthy" and .binding_key == "simulated-light" and .key == "temperature") | .entity_id' "$run_dir/inventory.json")
+events_id=$(jq -er '.[] | select(.adapter_id == "sim-healthy" and .binding_key == "simulated-button" and .key == "events") | .entity_id' "$run_dir/inventory.json")
 
 curl -fsS --max-time 2 -X POST "$sim_url/v1/sim/entities/$temperature_id/pause"
 curl -fsS --max-time 2 -X POST "$sim_url/v1/sim/entities/$temperature_id/publish" \

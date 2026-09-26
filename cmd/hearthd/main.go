@@ -21,6 +21,10 @@ func main() {
 
 func run() int {
 	configPath := flag.String("config", "configs/hearthd.yaml", "path to the hearthd YAML configuration")
+	httpAddr := flag.String("http-addr", "", "override the Core HTTP listen address")
+	natsURL := flag.String("nats-url", "", "override the NATS connection URL")
+	sqlitePath := flag.String("sqlite-path", "", "override the local SQLite path")
+	agentKeyFile := flag.String("agent-api-key-file", "", "override the agent API key file path")
 	logLevel := flag.String("log-level", "info", "log level: debug, info, warn, or error")
 	logFormat := flag.String("log-format", "text", "log format: text or json")
 	flag.Parse()
@@ -36,7 +40,9 @@ func run() int {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	processLogger.InfoContext(ctx, "hearthd starting", slog.String("event", "process.starting"))
-	config, configErr := hearthd.LoadConfig(*configPath)
+	config, configErr := hearthd.LoadConfigWithOverrides(*configPath, hearthd.ConfigOverrides{
+		HTTPAddr: *httpAddr, NATSURL: *natsURL, SQLitePath: *sqlitePath, APIKeyFile: *agentKeyFile,
+	})
 	if configErr != nil {
 		processLogger.ErrorContext(
 			ctx,

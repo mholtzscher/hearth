@@ -32,10 +32,28 @@ func (value Config) scriptedAdapters() []ScriptedAdapterConfig {
 	return []ScriptedAdapterConfig{{AdapterID: value.AdapterID, Devices: value.Devices}}
 }
 
+// ConfigOverrides replaces the simulator's transport addresses before validation.
+// Empty fields leave the YAML value unchanged.
+type ConfigOverrides struct {
+	NATSURL     string
+	ControlAddr string
+}
+
 func LoadConfig(path string) (Config, error) {
+	return LoadConfigWithOverrides(path, ConfigOverrides{})
+}
+
+// LoadConfigWithOverrides loads simulator YAML and applies CLI addresses before validation.
+func LoadConfigWithOverrides(path string, overrides ConfigOverrides) (Config, error) {
 	var value Config
 	if err := platformconfig.LoadFile(path, &value); err != nil {
 		return Config{}, err
+	}
+	if overrides.NATSURL != "" {
+		value.NATSURL = overrides.NATSURL
+	}
+	if overrides.ControlAddr != "" {
+		value.ControlAddr = overrides.ControlAddr
 	}
 	if err := value.Validate(); err != nil {
 		return Config{}, platformconfig.Invalid(path, err)

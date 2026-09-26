@@ -1,0 +1,5 @@
+# Simulator stack settings shared across worktrees. The Core command supplies
+# the HTTP address, NATS URL, SQLite path, and agent key-file path as flags.
+household_timezone: UTC
+agent:
+  reasoning_effort: none

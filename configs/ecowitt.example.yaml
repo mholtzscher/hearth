@@ -1,3 +1,5 @@
+# Manual deployment placeholders: use operator-managed NATS and MQTT endpoints.
+# The Ecowitt gateway must be able to reach the MQTT listener.
 adapter_id: ecowitt
 nats_url: nats://127.0.0.1:4222
 mqtt:

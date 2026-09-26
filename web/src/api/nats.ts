@@ -10,9 +10,13 @@ export interface NatsMessage {
 
 export type { Subscription };
 
-/** Websocket URL for NATS. Defaults to the loopback listener in configs/nats-server.conf. */
+/** NATS WebSocket URL: a saved browser override wins over the Vite stack default. */
 export function getNatsWsUrl(): string {
-  return localStorage.getItem("hearth.natsWsUrl") ?? "ws://127.0.0.1:4223";
+  return (
+    localStorage.getItem("hearth.natsWsUrl") ??
+    import.meta.env.VITE_NATS_WS_URL ??
+    "ws://127.0.0.1:4223"
+  );
 }
 
 export function setNatsWsUrl(value: string): void {

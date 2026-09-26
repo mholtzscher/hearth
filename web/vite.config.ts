@@ -58,7 +58,7 @@ export default defineConfig({
     environment: "jsdom",
   },
   server: {
-    port: 5173,
+    port: Number(process.env.HEARTH_WEB_PORT ?? 5173),
     allowedHosts: resolveAllowedHosts(),
     proxy: {
       "/v1": HEARTHD,
