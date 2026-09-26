@@ -1,14 +1,8 @@
-# Scripted simulator harness: declare Devices in YAML, launch the simulator,
-# then interact through hearthd (State, Commands, Device Facts) and through the
-# loopback control channel (publish now, pause/resume scripts).
-#
-# Every Device and Entity is declared under an Adapter below. See
-# specs/simulator-harness.md.
-nats_url: nats://127.0.0.1:4222
-# Optional agent control channel. Loopback only; omit to disable.
-control_addr: 127.0.0.1:8181
+# One simulator process with independent Adapters for healthy coverage and faults.
+# Each fault has its own Adapter so unhealthy health cannot mask other cases.
+# Worktree-specific NATS and control addresses are CLI flags supplied by Mise.
 adapters:
-  - adapter_id: simulator
+  - adapter_id: sim-healthy
     devices:
       - binding_key: simulated-light
         name: Simulated light
@@ -29,6 +23,94 @@ adapters:
             support: {state: {unit: mCel}, operations: {}}
             initial: 21500
             outputs: {interval: 10s, values: [21500, 21600, 21400]}
+          - key: brightness
+            name: Brightness
+            type: hearth.brightness/v1
+            support: {state: {maximum: 100}, operations: {set: {step: 5}}}
+            initial: 80
+            outputs: {interval: 7s, values: [80, 20, 60]}
+          - key: colortemp
+            name: Color temperature
+            type: hearth.colortemp/v1
+            support: {state: {minimum: 153, maximum: 500}, operations: {set: {step: 1}}}
+            initial: {active: true, value: 370}
+            outputs: {interval: 11s, values: [{active: true, value: 370}, {active: true, value: 153}]}
+          - key: colorxy
+            name: Color XY
+            type: hearth.colorxy/v1
+            support: {state: {}, operations: {set: {}}}
+            initial: {active: true, x: 3125, y: 3291}
+            outputs: {interval: 13s, values: [{active: true, x: 3125, y: 3291}, {active: false, x: 0, y: 0}]}
+            commands: {set: {behavior: accept-and-publish, apply_parameters: false}}
+          - key: colorhs
+            name: Color HS
+            type: hearth.colorhs/v1
+            support: {state: {}, operations: {set: {}}}
+            initial: {active: true, hue: 120, saturation: 80}
+            outputs: {interval: 17s, values: [{active: true, hue: 120, saturation: 80}, {active: false, hue: 0, saturation: 0}]}
+          - key: colormode
+            name: Color mode
+            type: hearth.colormode/v1
+            support: {state: {}, operations: {}}
+            initial: xy
+            outputs: {interval: 19s, values: [xy, hs]}
+          - key: effect
+            name: Effect
+            type: hearth.enumaction/v1
+            support: {state: {}, operations: {trigger: {values: [blink, breathe, stop_effect]}}}
+            initial: {}
+      - binding_key: simulated-climate
+        name: Simulated climate
+        kind: sensor
+        health: healthy
+        entities:
+          - key: humidity
+            name: Humidity
+            type: hearth.relativehumidity/v1
+            support: {state: {unit: "%"}, operations: {}}
+            initial: 45
+            outputs: {interval: 12s, values: [45, 46.5]}
+          - key: pressure
+            name: Pressure
+            type: hearth.pressure/v1
+            support: {state: {unit: hPa}, operations: {}}
+            initial: 1013
+            outputs: {interval: 15s, values: [1013, 1013.25]}
+          - key: linkquality
+            name: Link quality
+            type: hearth.numericsensor/v1
+            support: {state: {minimum: 0, maximum: 255, unit: lqi}, operations: {}}
+            initial: 18
+            outputs: {interval: 23s, values: [18, 120, 200]}
+          - key: occupancy
+            name: Occupancy
+            type: hearth.binarysensor/v1
+            support: {state: {}, operations: {}}
+            initial: false
+            outputs: {interval: 29s, values: [false, true]}
+          - key: wind
+            name: Wind speed
+            type: hearth.speed/v1
+            support: {state: {unit: m/s}, operations: {}}
+            initial: 0
+            outputs: {interval: 31s, values: [0, 3.58]}
+      - binding_key: simulated-plug
+        name: Simulated plug
+        kind: relay
+        health: healthy
+        entities:
+          - key: mode
+            name: Power-on mode
+            type: hearth.enumsetting/v1
+            support: {state: {choices: ["on", "off", "previous"]}, operations: {set: {}}}
+            initial: previous
+            outputs: {interval: 9s, values: [previous, "on"]}
+          - key: countdown
+            name: Countdown
+            type: hearth.numericsetting/v1
+            support: {state: {minimum: 142, maximum: 454, unit: mired, choices: [previous]}, operations: {set: {}}}
+            initial: {mode: value, value: 250}
+            outputs: {interval: 21s, values: [{mode: value, value: 250}, {mode: choice, choice: previous}]}
       - binding_key: simulated-button
         name: Simulated button
         kind: sensor
@@ -39,16 +121,61 @@ adapters:
             support: {state: {}, operations: {}, events: {names: [single_press, double_press]}}
             outputs: {interval: 30s, values: [single_press, double_press]}
 
-# Command behaviors per operation: accept-and-publish (default, with
-# apply_parameters: true), accept-no-publish (accepted, no outcome Observation,
-# so the Command times out), or reject (with optional reason).
-#
-# Control channel (when enabled):
-#   GET  /v1/sim/entities                        # canonical IDs, types, current values
-#   POST /v1/sim/entities/{id}/publish {"value": <json>}   # State Entities
-#   POST /v1/sim/entities/{id}/publish {"name": "<event>"} # event sources
-#   POST /v1/sim/entities/{id}/pause
-#   POST /v1/sim/entities/{id}/resume
-#
-# Agent recipe: pause an Entity's script for stable State, send Commands
-# through hearthd, assert outcomes, then resume the script.
+
+  - adapter_id: sim-unhealthy
+    devices:
+      - binding_key: simulated-unhealthy-sensor
+        name: Simulated unhealthy sensor
+        kind: sensor
+        health: "unhealthy:hearth.external_system_unavailable"
+        omit_availability_when_unhealthy: true
+        entities:
+          - key: temperature
+            name: Temperature
+            type: hearth.temperature/v1
+            support: {state: {unit: mCel}, operations: {}}
+            initial: 20000
+            source_time_offset: -24h
+            received_time_offset: +2m
+
+  - adapter_id: sim-rejecting
+    devices:
+      - binding_key: simulated-rejecting-plug
+        name: Simulated rejecting plug
+        kind: relay
+        entities:
+          - key: power
+            name: Power
+            type: hearth.power/v1
+            support: {state: {}, operations: {set: {}}}
+            initial: true
+            outputs: {interval: 5s, values: [true]}
+            commands: {set: {behavior: reject, reason: simulated upstream rejection}}
+
+  - adapter_id: sim-timeout
+    devices:
+      - binding_key: simulated-timeout-plug
+        name: Simulated timeout plug
+        kind: relay
+        entities:
+          - key: countdown
+            name: Countdown
+            type: hearth.numericsetting/v1
+            support: {state: {minimum: 142, maximum: 454, unit: mired, choices: [previous]}, operations: {set: {}}}
+            initial: {mode: value, value: 250}
+            commands: {set: {behavior: accept-no-publish}}
+
+  - adapter_id: sim-unavailable
+    devices:
+      - binding_key: simulated-unavailable-light
+        name: Simulated unavailable light
+        kind: light
+        entities:
+          - key: power
+            name: Power
+            type: hearth.power/v1
+            support: {state: {}, operations: {set: {}}}
+            initial: true
+            available: false
+            availability_reason: adapter.simulated-unavailable-light.measurement_stale
+            commands: {set: {behavior: accept-and-publish, apply_parameters: true, mark_available: true}}

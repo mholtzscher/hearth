@@ -103,10 +103,36 @@ type AgentConfig struct {
 	ChatModel model.ToolCallingChatModel `yaml:"-"`
 }
 
+// ConfigOverrides replaces deployment addresses and local paths before validation.
+// Empty fields leave the YAML value unchanged; APIKeyFile is a path, not a secret.
+type ConfigOverrides struct {
+	HTTPAddr   string
+	NATSURL    string
+	SQLitePath string
+	APIKeyFile string
+}
+
 func LoadConfig(path string) (Config, error) {
+	return LoadConfigWithOverrides(path, ConfigOverrides{})
+}
+
+// LoadConfigWithOverrides loads Core YAML and applies CLI deployment overrides before validation.
+func LoadConfigWithOverrides(path string, overrides ConfigOverrides) (Config, error) {
 	var value Config
 	if err := platformconfig.LoadFile(path, &value); err != nil {
 		return Config{}, err
+	}
+	if overrides.HTTPAddr != "" {
+		value.HTTPAddr = overrides.HTTPAddr
+	}
+	if overrides.NATSURL != "" {
+		value.NATSURL = overrides.NATSURL
+	}
+	if overrides.SQLitePath != "" {
+		value.SQLitePath = overrides.SQLitePath
+	}
+	if overrides.APIKeyFile != "" {
+		value.Agent.APIKeyFile = overrides.APIKeyFile
 	}
 	if value.ObservationRetention == 0 {
 		value.ObservationRetention = DefaultObservationRetention

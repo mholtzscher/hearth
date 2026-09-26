@@ -2,11 +2,12 @@
 
 Use `mise run simulator-start` for setup and `mise run simulator-stop` for
 cleanup. Between them, make direct HTTP requests for your experiment. You do
-not need `simulator-smoke` or the Go implementation to discover this API.
+not need the Go implementation to discover this API.
 
 ## API at a glance
 
-All control endpoints are at `http://127.0.0.1:8181`:
+All simulated Adapters share `http://127.0.0.1:$SIMULATOR_PORT` (from
+`mise env --json`). Snapshots include `adapter_id` for disambiguation:
 
 | Method / path | Body | Response / effect |
 | --- | --- | --- |
@@ -35,7 +36,7 @@ Core may record a rejected disposition or not yet have processed the report.
 Error responses contain no success ID. A transport failure can be ambiguous;
 do not assume nothing was published or blindly retry the POST.
 
-Read Core at `http://127.0.0.1:8080`:
+Read Core at `http://127.0.0.1:$SIM_CORE_PORT`:
 
 | GET path | JSON shape / evidence |
 | --- | --- |
@@ -54,11 +55,12 @@ experiments, not an unbounded high-volume run.
 
 ## Discover and drive State
 
-Bash examples (`curl` and `jq`), with `run_dir` set to the printed run directory:
+Bash examples (`curl` and `jq`), with `run_dir=.data/simulator-stack`:
 
 ```sh
-core_url=http://127.0.0.1:8080
-sim_url=http://127.0.0.1:8181
+run_dir=.data/simulator-stack
+core_url="http://127.0.0.1:$(mise env --json | jq -r .SIM_CORE_PORT)"
+sim_url="http://127.0.0.1:$(mise env --json | jq -r .SIMULATOR_PORT)"
 curl -fsS --max-time 2 "$sim_url/v1/sim/entities" >"$run_dir/inventory.json"
 temperature_id=$(jq -er '.[] | select(.binding_key == "simulated-light" and .key == "temperature") | .entity_id' "$run_dir/inventory.json")
 events_id=$(jq -er '.[] | select(.binding_key == "simulated-button" and .key == "events") | .entity_id' "$run_dir/inventory.json")

@@ -1,3 +1,5 @@
+# For manual deployment, replace nats_url with your operator-managed NATS endpoint.
+# The simulator stack supplies its own worktree-specific address by CLI flag.
 http_addr: 127.0.0.1:8080
 nats_url: nats://127.0.0.1:4222
 sqlite_path: .data/hearthd.db

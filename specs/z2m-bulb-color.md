@@ -362,7 +362,7 @@ Tests demonstrate fault detection, not just successful serialization.
 
 ### Real-device acceptance
 
-Implementation-time validation follows `.agents/skills/real-device-validation/SKILL.md`. Discovery runs read-only first and records exposed modes, endpoints, model, firmware when available, and the Zigbee2MQTT version. The existing Third Reality fixture is minimal with an empty color child list and is not authoritative evidence of installed capabilities. Installed converters and firmware may differ from current upstream source, and observed fixture facts stay as observed.
+Implementation-time discovery runs read-only first and records exposed modes, endpoints, model, firmware when available, and the Zigbee2MQTT version. The existing Third Reality fixture is minimal with an empty color child list and is not authoritative evidence of installed capabilities. Installed converters and firmware may differ from current upstream source, and observed fixture facts stay as observed.
 
 Minimal realistic fixtures are hand-modeled from observed shapes without secrets, labeled synthetic where synthetic, with source, version, and firmware gaps on record.
 

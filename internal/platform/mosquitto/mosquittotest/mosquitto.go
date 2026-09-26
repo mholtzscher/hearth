@@ -20,8 +20,8 @@ import (
 	testmosquitto "github.com/testcontainers/testcontainers-go/modules/mosquitto"
 )
 
-// MosquittoImage pins the MQTT broker image so local and CI runs exercise the
-// same broker version. It must match the image in compose.yaml.
+// MosquittoImage pins the disposable MQTT test broker image so local and CI
+// integration tests exercise the same version.
 const MosquittoImage = "eclipse-mosquitto:2.0.22"
 
 // MosquittoTestConfig is the checked-in Mosquitto config copied into each test

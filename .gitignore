@@ -14,6 +14,7 @@ devenv.local.yaml
 .secrets/
 configs/*.yaml
 !configs/*.example.yaml
+!configs/hearthd.simulator.yaml
 
 # Web dashboard build/runtime artifacts
 web/node_modules/
