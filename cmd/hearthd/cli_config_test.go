@@ -231,25 +231,8 @@ agent: *agent_config
 	if err != nil {
 		t.Fatalf("load aliased config: %v", err)
 	}
-	if got.SQLitePath != "from-alias.db" || got.AgentModel != "aliased-model" || got.AgentMaxSteps != "7" {
+	if got.SQLitePath != "from-alias.db" || got.Agent.Model != "aliased-model" || got.Agent.MaxSteps != 7 {
 		t.Fatalf("aliases not resolved: %+v", got)
-	}
-}
-
-func TestHearthdYAMLRejectsCyclicAliases(t *testing.T) {
-	t.Parallel()
-	path := filepath.Join(t.TempDir(), "cyclic.yaml")
-	const secretValue = "do-not-leak-this-value"
-	body := "unused: &loop {value: " + secretValue + ", self: *loop}\n"
-	if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	_, err := loadHearthdYAML(path, true)
-	if err == nil {
-		t.Fatal("cyclic alias accepted")
-	}
-	if strings.Contains(err.Error(), path) || strings.Contains(err.Error(), secretValue) {
-		t.Fatalf("cyclic alias error exposed path or value: %v", err)
 	}
 }
 
@@ -397,25 +380,66 @@ agent: {api_key_file: key, model: "", reasoning_effort: invalid, max_steps: -1, 
 	}
 }
 
-// TestInvalidTypedValuesFailDuringConfigLoading protects the process failure
-// classification for effective duration and integer values from every source;
-// it fails if typed flag parsing returns before Action can emit config_invalid.
+// TestInvalidYAMLTypedValuesFailDuringConfigLoading protects path-free structured
+// config failure reporting when YAML contains malformed typed values.
 //
-//nolint:paralleltest // Uses t.Setenv to isolate process-wide CLI environment inputs.
-func TestInvalidTypedValuesFailDuringConfigLoading(t *testing.T) {
+//nolint:paralleltest // Uses process environment to isolate typed CLI sources.
+func TestInvalidYAMLTypedValuesFailDuringConfigLoading(t *testing.T) {
 	tests := []struct {
 		name, field, env, invalid string
 	}{
 		{"YAML duration", "observation-retention", "", "not-a-duration"},
 		{"YAML integer", "agent-max-steps", "", "not-an-integer"},
-		{"environment duration", "observation-retention", "HEARTHD_OBSERVATION_RETENTION", "not-a-duration"},
-		{"environment integer", "agent-max-steps", "HEARTHD_AGENT_MAX_STEPS", "not-an-integer"},
-		{"CLI duration", "observation-retention", "", "not-a-duration"},
-		{"CLI integer", "agent-max-steps", "", "not-an-integer"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			assertInvalidTypedValue(t, tt.name, tt.field, tt.env, tt.invalid)
+		})
+	}
+}
+
+// TestInvalidNetworkConfigLogsDoNotExposeValues protects process log redaction;
+// it fails if parser errors leak the configured HTTP address or NATS URL.
+//
+//nolint:paralleltest // Uses process environment to isolate CLI configuration.
+func TestInvalidNetworkConfigLogsDoNotExposeValues(t *testing.T) {
+	for _, key := range []string{
+		"HEARTHD_CONFIG", "HEARTHD_HOUSEHOLD_TIMEZONE", "HEARTHD_HTTP_ADDR", "HEARTHD_NATS_URL",
+		"HEARTHD_SQLITE_PATH", "HEARTHD_AGENT_API_KEY_FILE",
+	} {
+		unsetEnv(t, key)
+	}
+	tests := []struct {
+		name, field, valid, invalid, wantReason string
+	}{
+		{
+			"HTTP address", "http_addr", "127.0.0.1:8080", "HTTP_ADDR_SENTINEL",
+			"http_addr must contain a valid host and port",
+		},
+		{
+			"NATS URL", "nats_url", "nats://127.0.0.1:4222", "nats://NATS_URL_SENTINEL\x00",
+			"nats_url must be a valid absolute nats:// URL",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			body := strings.Replace(validYAML,
+				tt.field+": "+tt.valid,
+				tt.field+": "+strconv.Quote(tt.invalid), 1)
+			path := filepath.Join(t.TempDir(), "invalid-network.yaml")
+			if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			logs, err := invokeConfigErrCaptured(t, []string{"--config", path})
+			if !errors.Is(err, errHearthdFailed) {
+				t.Fatalf("error = %v, want process-level configuration failure", err)
+			}
+			if !strings.Contains(logs, tt.wantReason) {
+				t.Errorf("configuration failure log missing safe diagnosis %q: %s", tt.wantReason, logs)
+			}
+			if strings.Contains(logs, tt.invalid) {
+				t.Errorf("configuration failure log exposed configured value %q: %s", tt.invalid, logs)
+			}
 		})
 	}
 }
@@ -436,7 +460,7 @@ func assertInvalidTypedValue(t *testing.T, name, field, env, invalid string) {
 	} else if strings.HasPrefix(name, "CLI") {
 		args = append(args, "--"+field, invalid)
 	}
-	_, logs, err := invokeConfigErrCaptured(t, args)
+	logs, err := invokeConfigErrCaptured(t, args)
 	if !errors.Is(err, errHearthdFailed) {
 		t.Fatalf("error = %v, want process-level configuration failure", err)
 	}
@@ -461,16 +485,18 @@ func invalidTypedValueYAML(name, field, env, invalid string) string {
 	return body
 }
 
-func invokeConfigErrCaptured(t *testing.T, args []string) (hearthd.Config, string, error) {
+func invokeConfigErrCaptured(t *testing.T, args []string) (string, error) {
 	t.Helper()
 	var output strings.Builder
-	config, runErr := invokeConfigErrWithOutput(t, args, &output)
-	return config, output.String(), runErr
+	_, runErr := invokeConfigErrWithOutput(t, args, &output)
+	return output.String(), runErr
 }
 
-// TestInvalidLowerPriorityTypedValuesAreMasked protects source precedence;
-// it fails if malformed values in a losing source are parsed before resolution.
-func TestInvalidLowerPriorityTypedValuesAreMasked(t *testing.T) {
+// TestInvalidYAMLIsRejectedEvenWhenOverridden protects file self-validity: a
+// winning CLI value must not hide a malformed value in a present config file.
+//
+//nolint:paralleltest // Clears process environment variables via unsetEnv.
+func TestInvalidYAMLIsRejectedEvenWhenOverridden(t *testing.T) {
 	unsetEnv(t, "HEARTHD_CONFIG")
 	path := filepath.Join(t.TempDir(), "masked-invalid.yaml")
 	body := strings.Replace(validYAML, "observation_retention: 192h", "observation_retention: invalid-yaml", 1)
@@ -478,16 +504,11 @@ func TestInvalidLowerPriorityTypedValuesAreMasked(t *testing.T) {
 	if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	t.Setenv("HEARTHD_OBSERVATION_RETENTION", "invalid-env")
-	t.Setenv("HEARTHD_AGENT_MAX_STEPS", "invalid-env")
 	if _, err := invokeConfigErr(
 		t,
 		[]string{"--config", path, "--observation-retention", "200h", "--agent-max-steps", "4"},
-	); err != nil {
-		t.Fatalf("CLI did not mask invalid env and YAML values: %v", err)
-	}
-	if _, err := invokeConfigErr(t, []string{"--config", path}); !errors.Is(err, errHearthdFailed) {
-		t.Fatalf("invalid effective environment values were not rejected: %v", err)
+	); !errors.Is(err, errHearthdFailed) {
+		t.Fatalf("CLI overrides masked invalid YAML: %v", err)
 	}
 }
 

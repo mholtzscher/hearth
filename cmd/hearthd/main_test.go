@@ -63,3 +63,21 @@ func TestMainHelpDoesNotLoadConfiguration(t *testing.T) {
 		t.Fatalf("help output did not describe hearthd: stdout=%q stderr=%q", result.Stdout, result.Stderr)
 	}
 }
+
+// TestMainTypedFlagErrorsPrecedeStructuredLogging protects urfave's typed
+// flag parsing: malformed CLI durations must stop before the application
+// logger starts or configuration is loaded.
+func TestMainTypedFlagErrorsPrecedeStructuredLogging(t *testing.T) {
+	t.Parallel()
+	binary := cmdtest.Build(t, ".")
+	result := cmdtest.Run(t, binary, "--observation-retention", "not-a-duration")
+	if result.ExitCode == 0 {
+		t.Fatalf("malformed duration exited 0: %q", result.Stderr)
+	}
+	if !strings.Contains(result.Stderr, "duration") {
+		t.Fatalf("typed flag diagnostic missing: %q", result.Stderr)
+	}
+	if strings.Contains(result.Stderr, "process.starting") || strings.Contains(result.Stderr, "load_config") {
+		t.Fatalf("typed flag error reached application logging: %q", result.Stderr)
+	}
+}

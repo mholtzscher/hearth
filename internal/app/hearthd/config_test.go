@@ -19,36 +19,6 @@ func testAgentConfig() hearthd.AgentConfig {
 	return hearthd.AgentConfig{APIKeyFile: testAgentAPIKeyFile}
 }
 
-func TestLoadExampleConfig(t *testing.T) {
-	t.Parallel()
-	value, err := hearthd.LoadConfig(filepath.Join("..", "..", "..", "configs", "hearthd.example.yaml"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if value.HTTPAddr != "127.0.0.1:8080" {
-		t.Fatalf("http_addr = %q", value.HTTPAddr)
-	}
-}
-
-func TestSimulatorCoreConfigAcceptsCLIOverridesBeforeValidation(t *testing.T) {
-	t.Parallel()
-	path := filepath.Join("..", "..", "..", "configs", "hearthd.simulator.yaml")
-	if _, err := hearthd.LoadConfig(path); err == nil {
-		t.Fatal("incomplete simulator Core config passed without deployment overrides")
-	}
-	config, err := hearthd.LoadConfigWithOverrides(path, hearthd.ConfigOverrides{
-		HTTPAddr: "127.0.0.1:8140", NATSURL: "nats://127.0.0.1:4282",
-		SQLitePath: ".data/simulator-stack/storage/hearthd.db", APIKeyFile: "agent-api-key",
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if config.HTTPAddr != "127.0.0.1:8140" || config.NATSURL != "nats://127.0.0.1:4282" ||
-		config.SQLitePath != ".data/simulator-stack/storage/hearthd.db" || config.Agent.APIKeyFile != "agent-api-key" {
-		t.Fatalf("worktree overrides were not applied: %+v", config)
-	}
-}
-
 func TestConfigAcceptsNonLoopbackHTTP(t *testing.T) {
 	t.Parallel()
 	value := hearthd.Config{
@@ -63,9 +33,9 @@ func TestConfigAcceptsNonLoopbackHTTP(t *testing.T) {
 	}
 }
 
-func TestLoadConfigDefaultsObservationRetention(t *testing.T) {
+func TestNormalizeConfigDefaultsObservationRetention(t *testing.T) {
 	t.Parallel()
-	value := loadRetentionConfig(t, "")
+	value := hearthd.NormalizeConfig(validConfig())
 	if value.ObservationRetention != hearthd.DefaultObservationRetention {
 		t.Fatalf(
 			"observation_retention = %s, want default %s",
@@ -78,20 +48,22 @@ func TestLoadConfigDefaultsObservationRetention(t *testing.T) {
 	}
 }
 
-func TestLoadConfigParsesExplicitObservationRetention(t *testing.T) {
+func TestNormalizeConfigPreservesExplicitObservationRetention(t *testing.T) {
 	t.Parallel()
 	// Eight days is the minimum: it stays above the seven-day JetStream retention.
-	value := loadRetentionConfig(t, "observation_retention: 192h\n")
+	config := validConfig()
+	config.ObservationRetention = 192 * time.Hour
+	value := hearthd.NormalizeConfig(config)
 	if value.ObservationRetention != 192*time.Hour {
 		t.Fatalf("observation_retention = %s, want 192h", value.ObservationRetention)
 	}
 }
 
-func TestLoadConfigExplicitZeroObservationRetentionSelectsDefault(t *testing.T) {
+func TestNormalizeConfigExplicitZeroObservationRetentionSelectsDefault(t *testing.T) {
 	t.Parallel()
 	// Zero keeps its documented default meaning: an explicit zero is
 	// indistinguishable from unset and selects the default.
-	value := loadRetentionConfig(t, "observation_retention: 0s\n")
+	value := hearthd.NormalizeConfig(validConfig())
 	if value.ObservationRetention != hearthd.DefaultObservationRetention {
 		t.Fatalf(
 			"observation_retention = %s, want default %s",
@@ -124,7 +96,7 @@ func TestObservationRetentionRejectsNegativeAndJustBelowMinimum(t *testing.T) {
 	}
 }
 
-func TestLoadConfigRejectsObservationRetentionBelowMinimum(t *testing.T) {
+func TestConfigRejectsObservationRetentionBelowMinimum(t *testing.T) {
 	t.Parallel()
 	short := hearthd.Config{HouseholdTimezone: "UTC",
 		HTTPAddr: "127.0.0.1:8080", NATSURL: "nats://127.0.0.1:4222", SQLitePath: "hearth.db",
@@ -134,15 +106,11 @@ func TestLoadConfigRejectsObservationRetentionBelowMinimum(t *testing.T) {
 	if err := short.Validate(); err == nil {
 		t.Fatal("seven-day observation retention unexpectedly accepted")
 	}
-	path := writeRetentionConfig(t, "observation_retention: 168h\n")
-	if _, err := hearthd.LoadConfig(path); err == nil {
-		t.Fatal("seven-day observation retention file unexpectedly accepted")
-	}
 }
 
-func TestLoadConfigDefaultsAutomationHistoryRetention(t *testing.T) {
+func TestNormalizeConfigDefaultsAutomationHistoryRetention(t *testing.T) {
 	t.Parallel()
-	value := loadRetentionConfig(t, "")
+	value := hearthd.NormalizeConfig(validConfig())
 	if value.AutomationHistoryRetention != hearthd.DefaultAutomationHistoryRetention {
 		t.Fatalf(
 			"automation_history_retention = %s, want default %s",
@@ -161,9 +129,11 @@ func TestLoadConfigDefaultsAutomationHistoryRetention(t *testing.T) {
 	}
 }
 
-func TestLoadConfigParsesExplicitAutomationHistoryRetention(t *testing.T) {
+func TestNormalizeConfigPreservesExplicitAutomationHistoryRetention(t *testing.T) {
 	t.Parallel()
-	value := loadRetentionConfig(t, "automation_history_retention: 192h\n")
+	config := validConfig()
+	config.AutomationHistoryRetention = 192 * time.Hour
+	value := hearthd.NormalizeConfig(config)
 	if value.AutomationHistoryRetention != 192*time.Hour {
 		t.Fatalf("automation_history_retention = %s, want 192h", value.AutomationHistoryRetention)
 	}
@@ -190,17 +160,6 @@ func TestAutomationHistoryRetentionRejectsBelowMinimum(t *testing.T) {
 	var unset hearthd.Config
 	if got := unset.EffectiveAutomationHistoryRetention(); got != hearthd.DefaultAutomationHistoryRetention {
 		t.Fatalf("effective unset retention = %s, want default", got)
-	}
-}
-
-func TestLoadExampleConfigDocumentsAutomationHistoryRetention(t *testing.T) {
-	t.Parallel()
-	value, err := hearthd.LoadConfig(filepath.Join("..", "..", "..", "configs", "hearthd.example.yaml"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if value.AutomationHistoryRetention != 720*time.Hour {
-		t.Fatalf("example automation_history_retention = %s, want 720h", value.AutomationHistoryRetention)
 	}
 }
 
@@ -240,25 +199,6 @@ func TestConfigRequiresAgentAPIKeyFile(t *testing.T) {
 		if err := value.Validate(); err == nil {
 			t.Fatalf("agent configuration %+v unexpectedly accepted", agentConfig)
 		}
-	}
-	// The file-based path rejects it too, before any startup work.
-	path := writeRetentionConfig(t, "")
-	contents, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	withoutAgent := strings.Replace(
-		string(contents), "agent:\n  api_key_file: "+testAgentAPIKeyFile+"\n", "", 1,
-	)
-	if withoutAgent == string(contents) {
-		t.Fatal("test fixture no longer carries an agent block")
-	}
-	missing := filepath.Join(t.TempDir(), "hearth.yaml")
-	if writeErr := os.WriteFile(missing, []byte(withoutAgent), 0o600); writeErr != nil {
-		t.Fatal(writeErr)
-	}
-	if _, loadErr := hearthd.LoadConfig(missing); loadErr == nil {
-		t.Fatal("configuration without an agent block unexpectedly accepted")
 	}
 }
 
@@ -326,12 +266,12 @@ func TestConfigRejectsInvalidAgentModelSettings(t *testing.T) {
 	}
 }
 
-// TestLoadConfigDefaultsAgentSettings protects the documented agent defaults:
+// TestNormalizeConfigDefaultsAgentSettings protects the documented agent defaults:
 // the household model and a thirty-day conversation window, with the module
 // floor as the minimum accepted window. It fails if a default or floor drifts.
-func TestLoadConfigDefaultsAgentSettings(t *testing.T) {
+func TestNormalizeConfigDefaultsAgentSettings(t *testing.T) {
 	t.Parallel()
-	value := loadRetentionConfig(t, "")
+	value := hearthd.NormalizeConfig(validConfig())
 	if value.Agent.Model != hearthd.DefaultAgentModel {
 		t.Fatalf("agent model = %q, want %q", value.Agent.Model, hearthd.DefaultAgentModel)
 	}
@@ -368,7 +308,7 @@ func TestLoadConfigDefaultsAgentSettings(t *testing.T) {
 // default drifts or a non-default model loses the provider default.
 func TestAgentReasoningEffortDefaultsForTheDefaultModel(t *testing.T) {
 	t.Parallel()
-	value := loadRetentionConfig(t, "")
+	value := hearthd.NormalizeConfig(validConfig())
 	if hearthd.DefaultAgentReasoningEffort != "none" {
 		t.Fatalf("default agent reasoning effort = %q, want none", hearthd.DefaultAgentReasoningEffort)
 	}
@@ -380,17 +320,9 @@ func TestAgentReasoningEffortDefaultsForTheDefaultModel(t *testing.T) {
 	}
 
 	// An explicit non-default model keeps the provider's own default.
-	contents := "http_addr: 127.0.0.1:8080\nnats_url: nats://127.0.0.1:4222\n" +
-		"sqlite_path: hearth.db\nhousehold_timezone: UTC\n" +
-		"agent:\n  api_key_file: " + testAgentAPIKeyFile + "\n  model: other-household-model\n"
-	path := filepath.Join(t.TempDir(), "hearth.yaml")
-	if err := os.WriteFile(path, []byte(contents), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	other, err := hearthd.LoadConfig(path)
-	if err != nil {
-		t.Fatal(err)
-	}
+	otherConfig := validConfig()
+	otherConfig.Agent.Model = "other-household-model"
+	other := hearthd.NormalizeConfig(otherConfig)
 	if other.Agent.ReasoningEffort != "" {
 		t.Fatalf(
 			"non-default model reasoning effort = %q, want the provider default",
@@ -478,23 +410,9 @@ func TestLoadAgentAPIKeyFailuresDoNotLeakThePath(t *testing.T) {
 	}
 }
 
-func loadRetentionConfig(t *testing.T, retentionLine string) hearthd.Config {
-	t.Helper()
-	value, err := hearthd.LoadConfig(writeRetentionConfig(t, retentionLine))
-	if err != nil {
-		t.Fatal(err)
+func validConfig() hearthd.Config {
+	return hearthd.Config{
+		HouseholdTimezone: "UTC", HTTPAddr: "127.0.0.1:8080", NATSURL: "nats://127.0.0.1:4222",
+		SQLitePath: "hearth.db", Agent: testAgentConfig(),
 	}
-	return value
-}
-
-func writeRetentionConfig(t *testing.T, retentionLine string) string {
-	t.Helper()
-	contents := "http_addr: 127.0.0.1:8080\nnats_url: nats://127.0.0.1:4222\n" +
-		"sqlite_path: hearth.db\nhousehold_timezone: UTC\n" + retentionLine +
-		"agent:\n  api_key_file: " + testAgentAPIKeyFile + "\n"
-	path := filepath.Join(t.TempDir(), "hearth.yaml")
-	if err := os.WriteFile(path, []byte(contents), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	return path
 }

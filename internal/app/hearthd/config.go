@@ -103,44 +103,6 @@ type AgentConfig struct {
 	ChatModel model.ToolCallingChatModel `yaml:"-"`
 }
 
-// ConfigOverrides replaces deployment addresses and local paths before validation.
-// Empty fields leave the YAML value unchanged; APIKeyFile is a path, not a secret.
-type ConfigOverrides struct {
-	HTTPAddr   string
-	NATSURL    string
-	SQLitePath string
-	APIKeyFile string
-}
-
-func LoadConfig(path string) (Config, error) {
-	return LoadConfigWithOverrides(path, ConfigOverrides{})
-}
-
-// LoadConfigWithOverrides loads Core YAML and applies CLI deployment overrides before validation.
-func LoadConfigWithOverrides(path string, overrides ConfigOverrides) (Config, error) {
-	var value Config
-	if err := platformconfig.LoadFile(path, &value); err != nil {
-		return Config{}, err
-	}
-	if overrides.HTTPAddr != "" {
-		value.HTTPAddr = overrides.HTTPAddr
-	}
-	if overrides.NATSURL != "" {
-		value.NATSURL = overrides.NATSURL
-	}
-	if overrides.SQLitePath != "" {
-		value.SQLitePath = overrides.SQLitePath
-	}
-	if overrides.APIKeyFile != "" {
-		value.Agent.APIKeyFile = overrides.APIKeyFile
-	}
-	value = NormalizeConfig(value)
-	if err := value.Validate(); err != nil {
-		return Config{}, platformconfig.Invalid(path, err)
-	}
-	return value, nil
-}
-
 // NormalizeConfig applies Core's post-resolution defaults. Call after all
 // configuration sources have been resolved and before validation.
 func NormalizeConfig(value Config) Config {
@@ -250,7 +212,7 @@ func (value Config) validateAndLoadHouseholdTimezone() (*time.Location, error) {
 func (value Config) validateRuntimeSettings() error {
 	_, portText, err := net.SplitHostPort(value.HTTPAddr)
 	if err != nil {
-		return fmt.Errorf("http_addr must contain a host and port: %w", err)
+		return errors.New("http_addr must contain a valid host and port")
 	}
 	port, err := strconv.Atoi(portText)
 	if err != nil || port < 1 || port > 65535 {
