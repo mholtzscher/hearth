@@ -72,9 +72,9 @@ adapters:
 
 Rules:
 
-- The existing top-level `adapter_id` + `devices` form remains valid. Alternatively,
-  use `adapters:` with entries containing `adapter_id` and `devices`; see
-  `configs/scripted.simulator.yaml`. Do not combine the two forms.
+- Use `adapters:` with at least one entry containing `adapter_id` and `devices`;
+  see `configs/scripted.simulator.yaml`. There are no top-level `adapter_id` or
+  `devices` settings, and no `--adapter-id` or `HEARTH_SIMULATOR_ADAPTER_ID` override.
   Adapter IDs must be unique, while Device binding keys can repeat across
   different Adapters.
 - `binding_key`, `key`, and `adapter_id` follow the existing slug rules;

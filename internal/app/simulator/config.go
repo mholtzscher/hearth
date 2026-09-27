@@ -11,12 +11,10 @@ import (
 )
 
 type Config struct {
-	AdapterID string `yaml:"adapter_id"`
-	NATSURL   string `yaml:"nats_url"`
+	NATSURL string `yaml:"nats_url"`
 	// ControlAddr optionally enables the loopback control channel
 	// (for example "127.0.0.1:8181"). Absent disables it.
 	ControlAddr string                  `yaml:"control_addr"`
-	Devices     []scripted.DeviceSpec   `yaml:"devices"`
 	Adapters    []ScriptedAdapterConfig `yaml:"adapters"`
 }
 
@@ -26,17 +24,7 @@ type ScriptedAdapterConfig struct {
 	Devices   []scripted.DeviceSpec `yaml:"devices"`
 }
 
-func (value Config) scriptedAdapters() []ScriptedAdapterConfig {
-	if len(value.Adapters) != 0 {
-		return value.Adapters
-	}
-	return []ScriptedAdapterConfig{{AdapterID: value.AdapterID, Devices: value.Devices}}
-}
-
 func (value Config) Validate() error {
-	if len(value.Adapters) != 0 && (value.AdapterID != "" || value.Devices != nil) {
-		return fmt.Errorf("adapters cannot be combined with adapter_id or devices")
-	}
 	if err := platformconfig.ValidateNATSURL(value.NATSURL); err != nil {
 		return err
 	}
@@ -45,8 +33,11 @@ func (value Config) Validate() error {
 			return err
 		}
 	}
+	if len(value.Adapters) == 0 {
+		return fmt.Errorf("adapters requires at least one Adapter")
+	}
 	seen := make(map[string]bool)
-	for index, entry := range value.scriptedAdapters() {
+	for index, entry := range value.Adapters {
 		if err := platformconfig.ValidateSlug("adapter_id", entry.AdapterID); err != nil {
 			return fmt.Errorf("adapters[%d]: %w", index, err)
 		}

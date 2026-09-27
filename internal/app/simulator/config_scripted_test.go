@@ -15,9 +15,8 @@ import (
 
 func scriptedConfig() appsimulator.Config {
 	return appsimulator.Config{
-		AdapterID: "simulator",
-		NATSURL:   "nats://127.0.0.1:4222",
-		Devices: []scripted.DeviceSpec{{
+		NATSURL: "nats://127.0.0.1:4222",
+		Adapters: []appsimulator.ScriptedAdapterConfig{{AdapterID: "simulator", Devices: []scripted.DeviceSpec{{
 			BindingKey: "simulated-light",
 			Name:       "Simulated light",
 			Kind:       "light",
@@ -33,7 +32,7 @@ func scriptedConfig() appsimulator.Config {
 					Initial: true,
 				},
 			},
-		}},
+		}}}},
 	}
 }
 
@@ -46,7 +45,10 @@ func TestScriptedConfigValidates(t *testing.T) {
 
 func TestConfigRequiresDevices(t *testing.T) {
 	t.Parallel()
-	config := appsimulator.Config{AdapterID: "simulator", NATSURL: "nats://127.0.0.1:4222"}
+	config := appsimulator.Config{
+		NATSURL:  "nats://127.0.0.1:4222",
+		Adapters: []appsimulator.ScriptedAdapterConfig{{AdapterID: "simulator"}},
+	}
 	if err := config.Validate(); err == nil {
 		t.Fatal("config without devices accepted, want an error")
 	}
@@ -61,16 +63,16 @@ func TestConfigValidateRejectsInvalidScriptedValues(t *testing.T) {
 	t.Parallel()
 	cases := map[string]func(*appsimulator.Config){
 		"invalid initial value": func(config *appsimulator.Config) {
-			config.Devices[0].Entities[0].Initial = "on"
+			config.Adapters[0].Devices[0].Entities[0].Initial = "on"
 		},
 		"invalid outputs value": func(config *appsimulator.Config) {
-			config.Devices[0].Entities[0].Outputs = &scripted.OutputsSpec{
+			config.Adapters[0].Devices[0].Entities[0].Outputs = &scripted.OutputsSpec{
 				Interval: scripted.Duration(5 * time.Second),
 				Values:   []any{true, "on"},
 			}
 		},
 		"invalid support": func(config *appsimulator.Config) {
-			config.Devices[0].Entities[0].Support = map[string]any{
+			config.Adapters[0].Devices[0].Entities[0].Support = map[string]any{
 				"state":      map[string]any{},
 				"operations": map[string]any{"set": "yes"},
 			}
@@ -238,34 +240,35 @@ func TestFaultExampleDevices(t *testing.T) {
 // config validation end to end.
 func TestLoadConfigAcceptsFaultPrimitiveKeys(t *testing.T) {
 	t.Parallel()
-	yaml := `adapter_id: simulator
-nats_url: nats://127.0.0.1:4222
-devices:
-  - binding_key: simulated-broken
-    name: Simulated broken
-    kind: sensor
-    health: "unhealthy:hearth.external_system_unavailable"
-    omit_availability_when_unhealthy: true
-    entities:
-      - key: temperature
-        name: Temperature
-        type: hearth.temperature/v1
-        support: {state: {unit: mCel}, operations: {}}
-        initial: 20000
-        source_time_offset: -24h
-        received_time_offset: +2m
-  - binding_key: simulated-light
-    name: Simulated light
-    kind: light
-    entities:
-      - key: power
-        name: Power
-        type: hearth.power/v1
-        support: {state: {}, operations: {set: {}}}
-        initial: true
-        available: false
-        availability_reason: adapter.simulated-light.entity_unavailable
-        commands: {set: {behavior: accept-and-publish, mark_available: true}}
+	yaml := `nats_url: nats://127.0.0.1:4222
+adapters:
+  - adapter_id: simulator
+    devices:
+      - binding_key: simulated-broken
+        name: Simulated broken
+        kind: sensor
+        health: "unhealthy:hearth.external_system_unavailable"
+        omit_availability_when_unhealthy: true
+        entities:
+          - key: temperature
+            name: Temperature
+            type: hearth.temperature/v1
+            support: {state: {unit: mCel}, operations: {}}
+            initial: 20000
+            source_time_offset: -24h
+            received_time_offset: +2m
+      - binding_key: simulated-light
+        name: Simulated light
+        kind: light
+        entities:
+          - key: power
+            name: Power
+            type: hearth.power/v1
+            support: {state: {}, operations: {set: {}}}
+            initial: true
+            available: false
+            availability_reason: adapter.simulated-light.entity_unavailable
+            commands: {set: {behavior: accept-and-publish, mark_available: true}}
 `
 	path := filepath.Join(t.TempDir(), "simulator.yaml")
 	if writeErr := os.WriteFile(path, []byte(yaml), 0o600); writeErr != nil {
@@ -275,17 +278,18 @@ devices:
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !value.Devices[0].OmitAvailabilityWhenUnhealthy {
+	devices := value.Adapters[0].Devices
+	if !devices[0].OmitAvailabilityWhenUnhealthy {
 		t.Fatal("omit_availability_when_unhealthy did not load")
 	}
-	sensor := value.Devices[0].Entities[0]
+	sensor := devices[0].Entities[0]
 	if got := time.Duration(sensor.SourceTimeOffset); got != -24*time.Hour {
 		t.Fatalf("source_time_offset = %s, want -24h", got)
 	}
 	if got := time.Duration(sensor.ReceivedTimeOffset); got != 2*time.Minute {
 		t.Fatalf("received_time_offset = %s, want 2m", got)
 	}
-	behavior := value.Devices[1].Entities[0].Commands["set"]
+	behavior := devices[1].Entities[0].Commands["set"]
 	if !behavior.MarkAvailable {
 		t.Fatal("mark_available did not load")
 	}
@@ -293,21 +297,22 @@ devices:
 
 func TestLoadScriptedExampleConfig(t *testing.T) {
 	t.Parallel()
-	yaml := `adapter_id: simulator
-nats_url: nats://127.0.0.1:4222
+	yaml := `nats_url: nats://127.0.0.1:4222
 control_addr: 127.0.0.1:8181
-devices:
-  - binding_key: simulated-light
-    name: Simulated light
-    kind: light
-    entities:
-      - key: power
-        name: Power
-        type: hearth.power/v1
-        support: {state: {}, operations: {set: {}}}
-        initial: true
-        outputs: {interval: 5s, values: [true, false]}
-        commands: {set: {behavior: accept-and-publish}}
+adapters:
+  - adapter_id: simulator
+    devices:
+      - binding_key: simulated-light
+        name: Simulated light
+        kind: light
+        entities:
+          - key: power
+            name: Power
+            type: hearth.power/v1
+            support: {state: {}, operations: {set: {}}}
+            initial: true
+            outputs: {interval: 5s, values: [true, false]}
+            commands: {set: {behavior: accept-and-publish}}
 `
 	path := filepath.Join(t.TempDir(), "simulator.yaml")
 	if writeErr := os.WriteFile(path, []byte(yaml), 0o600); writeErr != nil {
@@ -317,14 +322,15 @@ devices:
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(value.Devices) != 1 || len(value.Devices[0].Entities) != 1 {
-		t.Fatalf("loaded devices = %+v, want one Device with one Entity", value.Devices)
+	devices := value.Adapters[0].Devices
+	if len(devices) != 1 || len(devices[0].Entities) != 1 {
+		t.Fatalf("loaded devices = %+v, want one Device with one Entity", devices)
 	}
-	entity := value.Devices[0].Entities[0]
+	entity := devices[0].Entities[0]
 	if entity.Outputs == nil || len(entity.Outputs.Values) != 2 {
 		t.Fatalf("loaded outputs = %+v, want two scripted values", entity.Outputs)
 	}
-	if _, newErr := scripted.New(nil, value.Devices); newErr == nil {
+	if _, newErr := scripted.New(nil, devices); newErr == nil {
 		t.Fatal("scripted.New with nil Session succeeded, want an error")
 	}
 }

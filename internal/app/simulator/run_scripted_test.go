@@ -199,15 +199,10 @@ func runScriptedSessionUntilFenced(t *testing.T, controlAddr string) (*fencingSe
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	session := newFencingSession()
-	config := Config{
-		AdapterID:   "simulator",
-		NATSURL:     "nats://127.0.0.1:4222",
-		ControlAddr: controlAddr,
-		Devices:     []scripted.DeviceSpec{tickingPowerDevice()},
-	}
+	entry := ScriptedAdapterConfig{AdapterID: "simulator", Devices: []scripted.DeviceSpec{tickingPowerDevice()}}
 	runErrors := make(chan error, 1)
 	go func() {
-		runErrors <- runScriptedSession(ctx, config, session, slog.New(slog.DiscardHandler))
+		runErrors <- runScriptedSession(ctx, entry, session, slog.New(slog.DiscardHandler), controlAddr)
 	}()
 	if controlAddr != "" {
 		waitForControlListening(t, controlAddr)
@@ -242,15 +237,10 @@ func TestRunScriptedSessionReturnsControlListenerFailure(t *testing.T) {
 	const invalidControlAddr = "invalid-control-address"
 	ctx := t.Context()
 	session := newFencingSession()
-	config := Config{
-		AdapterID:   "simulator",
-		NATSURL:     "nats://127.0.0.1:4222",
-		ControlAddr: invalidControlAddr,
-		Devices:     []scripted.DeviceSpec{tickingPowerDevice()},
-	}
+	entry := ScriptedAdapterConfig{AdapterID: "simulator", Devices: []scripted.DeviceSpec{tickingPowerDevice()}}
 	runErrors := make(chan error, 1)
 	go func() {
-		runErrors <- runScriptedSession(ctx, config, session, slog.New(slog.DiscardHandler))
+		runErrors <- runScriptedSession(ctx, entry, session, slog.New(slog.DiscardHandler), invalidControlAddr)
 	}()
 	var runErr error
 	select {

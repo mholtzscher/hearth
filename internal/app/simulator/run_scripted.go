@@ -21,44 +21,31 @@ type scriptedSession interface {
 	Close() error
 }
 
-// runScripted connects one Session and runs one scripted process on it until
-// ctx ends.
 func runScripted(ctx context.Context, config Config, logger *slog.Logger) error {
 	if logger == nil {
 		logger = slog.Default()
 	}
-	if len(config.Adapters) != 0 {
-		return runMultipleScriptedAdapters(ctx, config, logger)
-	}
-	session, connectErr := adapter.Connect(ctx, adapter.Config{
-		AdapterID:       config.AdapterID,
-		SoftwareName:    "hearth-simulator",
-		SoftwareVersion: "0.1.0",
-		NATSURL:         config.NATSURL,
-		Logger:          logger,
-	})
-	if connectErr != nil {
-		return connectErr
-	}
-	return runScriptedSession(ctx, config, session, logger)
+	return runMultipleScriptedAdapters(ctx, config, logger)
 }
 
 // runScriptedSession owns one connected Session: registration, scripted
 // startup, Command serving, and shutdown ordering. logger must be non-nil.
 func runScriptedSession(
 	ctx context.Context,
-	config Config,
+	entry ScriptedAdapterConfig,
 	session scriptedSession,
 	logger *slog.Logger,
+	controlAddr string,
 ) error {
-	return runScriptedSessionReady(ctx, config, session, logger, nil)
+	return runScriptedSessionReady(ctx, entry, session, logger, controlAddr, nil)
 }
 
 func runScriptedSessionReady(
 	ctx context.Context,
-	config Config,
+	entry ScriptedAdapterConfig,
 	session scriptedSession,
 	logger *slog.Logger,
+	controlAddr string,
 	ready func(*scripted.Runtime),
 ) error {
 	processLogger := logger.With(slog.String("component", "process"))
@@ -73,11 +60,11 @@ func runScriptedSessionReady(
 			)
 		}
 	}()
-	runtime, runtimeErr := scripted.New(session, config.Devices)
+	runtime, runtimeErr := scripted.New(session, entry.Devices)
 	if runtimeErr != nil {
 		return runtimeErr
 	}
-	bindings := make([]adapter.Binding, 0, len(config.Devices))
+	bindings := make([]adapter.Binding, 0, len(entry.Devices))
 	for _, registration := range runtime.Registrations() {
 		binding, registrationErr := session.Register(ctx, registration)
 		if registrationErr != nil {
@@ -111,9 +98,9 @@ func runScriptedSessionReady(
 	// failure goes unread.
 	controlFailures := make(chan error, 1)
 	var controlDone sync.WaitGroup
-	if config.ControlAddr != "" {
+	if controlAddr != "" {
 		controlDone.Go(func() {
-			controlErr := ServeControl(workerCtx, config.ControlAddr, runtime, logger)
+			controlErr := ServeControl(workerCtx, controlAddr, runtime, logger)
 			if controlErr == nil || workerCtx.Err() != nil {
 				// A cancelled worker context is a listener stopped by shutdown,
 				// not a failed control channel.
@@ -141,7 +128,7 @@ func runScriptedSessionReady(
 		slog.String("component", "simulator"),
 		slog.String("event", "simulator.initialized"),
 		slog.String("mode", "scripted"),
-		slog.Int("devices", len(config.Devices)),
+		slog.Int("devices", len(entry.Devices)),
 		slog.Int("entities", len(runtime.Snapshot())),
 	)
 	serveErr := session.ServeCommands(serveCtx, runtime.CommandHandler())
@@ -150,7 +137,7 @@ func runScriptedSessionReady(
 	// a process without its requested control API never looks initialized.
 	select {
 	case controlErr := <-controlFailures:
-		return fmt.Errorf("control channel %s failed: %w", config.ControlAddr, controlErr)
+		return fmt.Errorf("control channel %s failed: %w", controlAddr, controlErr)
 	default:
 	}
 	if serveErr != nil && !errors.Is(serveErr, context.Canceled) &&
