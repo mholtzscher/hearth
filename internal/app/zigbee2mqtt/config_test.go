@@ -7,12 +7,13 @@ import (
 	"testing"
 
 	appzigbee2mqtt "github.com/mholtzscher/hearth/internal/app/zigbee2mqtt"
+	platformconfig "github.com/mholtzscher/hearth/internal/platform/config"
 )
 
 func TestLoadExampleConfig(t *testing.T) {
 	t.Parallel()
 
-	value, err := appzigbee2mqtt.LoadConfig(filepath.Join("..", "..", "..", "configs", "zigbee2mqtt.example.yaml"))
+	value, err := loadConfig(filepath.Join("..", "..", "..", "configs", "zigbee2mqtt.example.yaml"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -170,7 +171,7 @@ mqtt:
   url: mqtt://127.0.0.1:1883
   base_topic: zigbee2mqtt
 `)
-	value, err := appzigbee2mqtt.LoadConfig(path)
+	value, err := loadConfig(path)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -198,7 +199,7 @@ mqtt:
   url: tcp://127.0.0.1:1883
   base_topic: zigbee2mqtt
 `+field)
-			if _, err := appzigbee2mqtt.LoadConfig(path); err != nil {
+			if _, err := loadConfig(path); err != nil {
 				t.Fatalf("LoadConfig() rejected unknown field %q: %v", strings.TrimSpace(field), err)
 			}
 		})
@@ -254,4 +255,12 @@ func writeConfig(t *testing.T, contents string) string {
 		t.Fatal(err)
 	}
 	return path
+}
+
+func loadConfig(path string) (appzigbee2mqtt.Config, error) {
+	value, err := platformconfig.LoadYAML[appzigbee2mqtt.Config](path, true)
+	if err != nil {
+		return appzigbee2mqtt.Config{}, err
+	}
+	return appzigbee2mqtt.ValidateConfig(value, path)
 }

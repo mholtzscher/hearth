@@ -5,11 +5,8 @@ import (
 	"errors"
 	"io"
 	"log/slog"
-	"os"
-	"strings"
 
 	"github.com/urfave/cli/v3"
-	"gopkg.in/yaml.v3"
 
 	"github.com/mholtzscher/hearth/internal/app/zigbee2mqtt"
 	platformconfig "github.com/mholtzscher/hearth/internal/platform/config"
@@ -21,17 +18,27 @@ const defaultConfigPath = "configs/zigbee2mqtt.yaml"
 var errAdapterFailed = errors.New("hearth-adapter-zigbee2mqtt failed")
 
 func newCommand(run func(context.Context, zigbee2mqtt.Config, *slog.Logger) error, stderr io.Writer) *cli.Command {
-	str := func(name string) *cli.StringFlag {
-		return &cli.StringFlag{
-			Name: name, Sources: cli.NewValueSourceChain(cli.EnvVar("HEARTH_ADAPTER_ZIGBEE2MQTT_" + envName(name))),
-		}
-	}
 	return &cli.Command{Name: "hearth-adapter-zigbee2mqtt", Writer: stderr, ErrWriter: stderr, Flags: []cli.Flag{
 		&cli.StringFlag{
 			Name: "config", Value: defaultConfigPath,
 			Sources: cli.NewValueSourceChain(cli.EnvVar("HEARTH_ADAPTER_ZIGBEE2MQTT_CONFIG")),
 		},
-		str("adapter-id"), str("nats-url"), str("mqtt-url"), str("mqtt-base-topic"),
+		&cli.StringFlag{
+			Name:    "adapter-id",
+			Sources: cli.NewValueSourceChain(cli.EnvVar("HEARTH_ADAPTER_ZIGBEE2MQTT_ADAPTER_ID")),
+		},
+		&cli.StringFlag{
+			Name:    "nats-url",
+			Sources: cli.NewValueSourceChain(cli.EnvVar("HEARTH_ADAPTER_ZIGBEE2MQTT_NATS_URL")),
+		},
+		&cli.StringFlag{
+			Name:    "mqtt-url",
+			Sources: cli.NewValueSourceChain(cli.EnvVar("HEARTH_ADAPTER_ZIGBEE2MQTT_MQTT_URL")),
+		},
+		&cli.StringFlag{
+			Name:    "mqtt-base-topic",
+			Sources: cli.NewValueSourceChain(cli.EnvVar("HEARTH_ADAPTER_ZIGBEE2MQTT_MQTT_BASE_TOPIC")),
+		},
 		&cli.StringFlag{
 			Name: "log-level", Value: "info",
 			Sources: cli.NewValueSourceChain(cli.EnvVar("HEARTH_ADAPTER_ZIGBEE2MQTT_LOG_LEVEL")),
@@ -85,7 +92,7 @@ func newCommand(run func(context.Context, zigbee2mqtt.Config, *slog.Logger) erro
 
 func resolvedConfig(cmd *cli.Command) (zigbee2mqtt.Config, error) {
 	path, explicit := cmd.String("config"), cmd.IsSet("config")
-	c, err := readYAML(path, explicit)
+	c, err := platformconfig.LoadYAML[zigbee2mqtt.Config](path, explicit)
 	if err != nil {
 		return c, err
 	}
@@ -99,29 +106,4 @@ func resolvedConfig(cmd *cli.Command) (zigbee2mqtt.Config, error) {
 	set("mqtt-url", &c.MQTT.URL)
 	set("mqtt-base-topic", &c.MQTT.BaseTopic)
 	return zigbee2mqtt.ValidateConfig(c, "")
-}
-
-func readYAML(path string, explicit bool) (zigbee2mqtt.Config, error) {
-	var c zigbee2mqtt.Config
-	f, err := os.Open(path)
-	if err != nil {
-		if !explicit && errors.Is(err, os.ErrNotExist) {
-			return c, nil
-		}
-		return c, errors.New("configuration file could not be read")
-	}
-	defer f.Close()
-	d := yaml.NewDecoder(f)
-	if decodeErr := d.Decode(&c); decodeErr != nil && !errors.Is(decodeErr, io.EOF) {
-		return c, errors.New("configuration file contains invalid YAML")
-	}
-	var extra any
-	if decodeErr := d.Decode(&extra); !errors.Is(decodeErr, io.EOF) {
-		return c, errors.New("configuration file must contain a single YAML document")
-	}
-	return c, nil
-}
-
-func envName(flag string) string {
-	return strings.ToUpper(strings.ReplaceAll(flag, "-", "_"))
 }

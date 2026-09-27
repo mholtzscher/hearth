@@ -6,10 +6,8 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
-	"os"
 
 	"github.com/urfave/cli/v3"
-	"gopkg.in/yaml.v3"
 
 	"github.com/mholtzscher/hearth/internal/app/simulator"
 	platformconfig "github.com/mholtzscher/hearth/internal/platform/config"
@@ -92,7 +90,7 @@ func simulatorEnvFlag(name string) *cli.StringFlag {
 }
 
 func resolvedSimulatorConfig(cmd *cli.Command) (simulator.Config, error) {
-	config, err := loadSimulatorYAML(cmd.String("config"), cmd.IsSet("config"))
+	config, err := platformconfig.LoadYAML[simulator.Config](cmd.String("config"), cmd.IsSet("config"))
 	if err != nil {
 		return simulator.Config{}, err
 	}
@@ -112,23 +110,3 @@ func resolvedSimulatorConfig(cmd *cli.Command) (simulator.Config, error) {
 }
 
 // Unknown fields are allowed; collections are supplied only by YAML.
-func loadSimulatorYAML(path string, explicit bool) (simulator.Config, error) {
-	file, err := os.Open(path)
-	if err != nil {
-		if !explicit && errors.Is(err, os.ErrNotExist) {
-			return simulator.Config{}, nil
-		}
-		return simulator.Config{}, errors.New("configuration file could not be read")
-	}
-	defer file.Close()
-	decoder := yaml.NewDecoder(file)
-	var config simulator.Config
-	if err = decoder.Decode(&config); err != nil && !errors.Is(err, io.EOF) {
-		return simulator.Config{}, errors.New("configuration file contains invalid YAML")
-	}
-	var extra any
-	if err = decoder.Decode(&extra); !errors.Is(err, io.EOF) {
-		return simulator.Config{}, errors.New("configuration file must contain a single YAML document")
-	}
-	return config, nil
-}

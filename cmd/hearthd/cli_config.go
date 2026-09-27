@@ -5,10 +5,8 @@ import (
 	"errors"
 	"io"
 	"log/slog"
-	"os"
 
 	"github.com/urfave/cli/v3"
-	"gopkg.in/yaml.v3"
 
 	"github.com/mholtzscher/hearth/internal/app/hearthd"
 	platformconfig "github.com/mholtzscher/hearth/internal/platform/config"
@@ -101,7 +99,7 @@ func hearthdEnvFlag(name, env string) *cli.StringFlag {
 }
 
 func resolvedHearthdConfig(cmd *cli.Command) (hearthd.Config, error) {
-	config, err := loadHearthdYAML(cmd.String("config"), cmd.IsSet("config"))
+	config, err := platformconfig.LoadYAML[hearthd.Config](cmd.String("config"), cmd.IsSet("config"))
 	if err != nil {
 		return hearthd.Config{}, err
 	}
@@ -144,27 +142,6 @@ func resolvedHearthdConfig(cmd *cli.Command) (hearthd.Config, error) {
 	config = hearthd.NormalizeConfig(config)
 	if validationErr := config.Validate(); validationErr != nil {
 		return hearthd.Config{}, platformconfig.Invalid("", validationErr)
-	}
-	return config, nil
-}
-
-func loadHearthdYAML(path string, explicit bool) (hearthd.Config, error) {
-	file, err := os.Open(path)
-	if err != nil {
-		if !explicit && errors.Is(err, os.ErrNotExist) {
-			return hearthd.Config{}, nil
-		}
-		return hearthd.Config{}, errors.New("configuration file could not be read")
-	}
-	defer file.Close()
-	decoder := yaml.NewDecoder(file)
-	var config hearthd.Config
-	if decodeErr := decoder.Decode(&config); decodeErr != nil && !errors.Is(decodeErr, io.EOF) {
-		return hearthd.Config{}, errors.New("configuration file contains invalid YAML")
-	}
-	var extra any
-	if decodeErr := decoder.Decode(&extra); !errors.Is(decodeErr, io.EOF) {
-		return hearthd.Config{}, errors.New("configuration file must contain a single YAML document")
 	}
 	return config, nil
 }

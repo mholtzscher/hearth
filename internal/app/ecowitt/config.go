@@ -9,15 +9,12 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
-	"io"
 	"net/url"
 	"os"
 	"regexp"
 	"strconv"
 	"strings"
 	"unicode/utf8"
-
-	"gopkg.in/yaml.v3"
 
 	platformconfig "github.com/mholtzscher/hearth/internal/platform/config"
 )
@@ -63,28 +60,6 @@ type StationConfig struct {
 	OutdoorArrayName      string `yaml:"outdoor_array_name"`
 	PasskeyFile           string `yaml:"passkey_file"`
 	UploadIntervalSeconds int    `yaml:"upload_interval_seconds"`
-}
-
-// LoadConfig strictly decodes one Ecowitt YAML file, validates static A3
-// constraint, and normalizes mqtt:// to Paho's tcp://. It does not read the
-// PASSKEY itself: Run loads the secret at process start so a static file that
-// only describes the path stays free of secret material.
-func LoadConfig(path string) (Config, error) {
-	var value Config
-	file, err := os.Open(path)
-	if err != nil {
-		return Config{}, errors.New("configuration file could not be read")
-	}
-	defer file.Close()
-	decoder := yaml.NewDecoder(file)
-	if decodeErr := decoder.Decode(&value); decodeErr != nil && !errors.Is(decodeErr, io.EOF) {
-		return Config{}, errors.New("configuration file contains invalid YAML")
-	}
-	var extra any
-	if decodeErr := decoder.Decode(&extra); !errors.Is(decodeErr, io.EOF) {
-		return Config{}, errors.New("configuration file must contain a single YAML document")
-	}
-	return ValidateConfig(value, path)
 }
 
 func ValidateConfig(value Config, path string) (Config, error) {

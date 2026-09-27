@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	appecowitt "github.com/mholtzscher/hearth/internal/app/ecowitt"
+	platformconfig "github.com/mholtzscher/hearth/internal/platform/config"
 )
 
 // validPasskeyHex is the sanitized fixture PASSKEY. It is not a real secret.
@@ -26,7 +27,7 @@ func TestLoadExampleConfig(t *testing.T) {
 	contents := strings.Replace(
 		string(example), "/run/secrets/ecowitt-passkey", writePasskeyFile(t, validPasskeyHex), 1,
 	)
-	value, err := appecowitt.LoadConfig(writeConfig(t, contents))
+	value, err := loadConfig(writeConfig(t, contents))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -150,7 +151,7 @@ func TestConfigValidateRejectsCaseVariantMQTTSchemes(t *testing.T) {
 			t.Run("load "+variant, func(t *testing.T) {
 				t.Parallel()
 				path := writeConfig(t, validConfigYAML(t, mqttURL, "ecowitt/943cc64457a7"))
-				if _, err := appecowitt.LoadConfig(path); err == nil {
+				if _, err := loadConfig(path); err == nil {
 					t.Fatalf("LoadConfig() accepted case-variant scheme %q", variant+"://")
 				}
 			})
@@ -308,7 +309,7 @@ func TestConfigValidatePasskeyFile(t *testing.T) {
 		"mqtt: {url: tcp://127.0.0.1:1883, topic: ecowitt/943cc64457a7}\n"+
 		"station: {gateway_name: Gateway, outdoor_array_name: Array, passkey_file: %s, upload_interval_seconds: 16}\n",
 		valid.Station.PasskeyFile)
-	if _, err := appecowitt.LoadConfig(writeConfig(t, yaml)); err != nil {
+	if _, err := loadConfig(writeConfig(t, yaml)); err != nil {
 		t.Fatalf("LoadConfig() rejected missing PASSKEY file: %v", err)
 	}
 	valid.Station.PasskeyFile = "  "
@@ -380,7 +381,7 @@ func TestLoadPasskeyFile(t *testing.T) {
 func TestLoadConfigNormalizesMQTTURL(t *testing.T) {
 	t.Parallel()
 	path := writeConfig(t, validConfigYAML(t, "mqtt://127.0.0.1:1883", "ecowitt/943cc64457a7"))
-	value, err := appecowitt.LoadConfig(path)
+	value, err := loadConfig(path)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -419,7 +420,7 @@ func TestLoadConfigIgnoresUnknownFields(t *testing.T) {
 				"  passkey_file: "+writePasskeyFile(t, validPasskeyHex)+"\n"+
 				"  upload_interval_seconds: 16\n"+
 				"unknown: true\n")
-			if _, err := appecowitt.LoadConfig(path); err != nil {
+			if _, err := loadConfig(path); err != nil {
 				t.Fatalf("LoadConfig() rejected unknown field %q: %v", test.name, err)
 			}
 		})
@@ -560,4 +561,12 @@ func writePasskeyFile(t *testing.T, contents string) string {
 		t.Fatal(err)
 	}
 	return path
+}
+
+func loadConfig(path string) (appecowitt.Config, error) {
+	value, err := platformconfig.LoadYAML[appecowitt.Config](path, true)
+	if err != nil {
+		return appecowitt.Config{}, err
+	}
+	return appecowitt.ValidateConfig(value, path)
 }

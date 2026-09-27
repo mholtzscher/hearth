@@ -5,11 +5,8 @@ import (
 	"errors"
 	"io"
 	"log/slog"
-	"os"
-	"strings"
 
 	"github.com/urfave/cli/v3"
-	"gopkg.in/yaml.v3"
 
 	"github.com/mholtzscher/hearth/internal/app/ecowitt"
 	platformconfig "github.com/mholtzscher/hearth/internal/platform/config"
@@ -21,24 +18,40 @@ const defaultConfigPath = "configs/ecowitt.yaml"
 var errAdapterFailed = errors.New("hearth-adapter-ecowitt failed")
 
 func newCommand(run func(context.Context, ecowitt.Config, *slog.Logger) error, stderr io.Writer) *cli.Command {
-	str := func(name string) *cli.StringFlag {
-		return &cli.StringFlag{
-			Name: name, Sources: cli.NewValueSourceChain(cli.EnvVar("HEARTH_ADAPTER_ECOWITT_" + envName(name))),
-		}
-	}
 	return &cli.Command{Name: "hearth-adapter-ecowitt", Writer: stderr, ErrWriter: stderr, Flags: []cli.Flag{
 		&cli.StringFlag{
 			Name:    "config",
 			Value:   defaultConfigPath,
 			Sources: cli.NewValueSourceChain(cli.EnvVar("HEARTH_ADAPTER_ECOWITT_CONFIG")),
 		},
-		str("adapter-id"),
-		str("nats-url"),
-		str("mqtt-url"),
-		str("mqtt-topic"),
-		str("station-gateway-name"),
-		str("station-outdoor-array-name"),
-		str("station-passkey-file"),
+		&cli.StringFlag{
+			Name:    "adapter-id",
+			Sources: cli.NewValueSourceChain(cli.EnvVar("HEARTH_ADAPTER_ECOWITT_ADAPTER_ID")),
+		},
+		&cli.StringFlag{
+			Name:    "nats-url",
+			Sources: cli.NewValueSourceChain(cli.EnvVar("HEARTH_ADAPTER_ECOWITT_NATS_URL")),
+		},
+		&cli.StringFlag{
+			Name:    "mqtt-url",
+			Sources: cli.NewValueSourceChain(cli.EnvVar("HEARTH_ADAPTER_ECOWITT_MQTT_URL")),
+		},
+		&cli.StringFlag{
+			Name:    "mqtt-topic",
+			Sources: cli.NewValueSourceChain(cli.EnvVar("HEARTH_ADAPTER_ECOWITT_MQTT_TOPIC")),
+		},
+		&cli.StringFlag{
+			Name:    "station-gateway-name",
+			Sources: cli.NewValueSourceChain(cli.EnvVar("HEARTH_ADAPTER_ECOWITT_STATION_GATEWAY_NAME")),
+		},
+		&cli.StringFlag{
+			Name:    "station-outdoor-array-name",
+			Sources: cli.NewValueSourceChain(cli.EnvVar("HEARTH_ADAPTER_ECOWITT_STATION_OUTDOOR_ARRAY_NAME")),
+		},
+		&cli.StringFlag{
+			Name:    "station-passkey-file",
+			Sources: cli.NewValueSourceChain(cli.EnvVar("HEARTH_ADAPTER_ECOWITT_STATION_PASSKEY_FILE")),
+		},
 		&cli.IntFlag{
 			Name:    "station-upload-interval-seconds",
 			Sources: cli.NewValueSourceChain(cli.EnvVar("HEARTH_ADAPTER_ECOWITT_STATION_UPLOAD_INTERVAL_SECONDS")),
@@ -95,7 +108,7 @@ func newCommand(run func(context.Context, ecowitt.Config, *slog.Logger) error, s
 }
 func resolvedConfig(cmd *cli.Command) (ecowitt.Config, error) {
 	path, explicit := cmd.String("config"), cmd.IsSet("config")
-	c, err := readYAML(path, explicit)
+	c, err := platformconfig.LoadYAML[ecowitt.Config](path, explicit)
 	if err != nil {
 		return c, err
 	}
@@ -115,27 +128,4 @@ func resolvedConfig(cmd *cli.Command) (ecowitt.Config, error) {
 		c.Station.UploadIntervalSeconds = cmd.Int("station-upload-interval-seconds")
 	}
 	return ecowitt.ValidateConfig(c, "")
-}
-func readYAML(path string, explicit bool) (ecowitt.Config, error) {
-	var c ecowitt.Config
-	f, err := os.Open(path)
-	if err != nil {
-		if !explicit && errors.Is(err, os.ErrNotExist) {
-			return c, nil
-		}
-		return c, errors.New("configuration file could not be read")
-	}
-	defer f.Close()
-	d := yaml.NewDecoder(f)
-	if decodeErr := d.Decode(&c); decodeErr != nil && !errors.Is(decodeErr, io.EOF) {
-		return c, errors.New("configuration file contains invalid YAML")
-	}
-	var extra any
-	if decodeErr := d.Decode(&extra); !errors.Is(decodeErr, io.EOF) {
-		return c, errors.New("configuration file must contain a single YAML document")
-	}
-	return c, nil
-}
-func envName(flag string) string {
-	return strings.ToUpper(strings.ReplaceAll(flag, "-", "_"))
 }

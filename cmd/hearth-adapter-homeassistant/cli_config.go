@@ -5,11 +5,8 @@ import (
 	"errors"
 	"io"
 	"log/slog"
-	"os"
-	"strings"
 
 	"github.com/urfave/cli/v3"
-	"gopkg.in/yaml.v3"
 
 	"github.com/mholtzscher/hearth/internal/app/homeassistant"
 	platformconfig "github.com/mholtzscher/hearth/internal/platform/config"
@@ -21,11 +18,6 @@ const defaultConfigPath = "configs/homeassistant.yaml"
 var errAdapterFailed = errors.New("hearth-adapter-homeassistant failed")
 
 func newCommand(run func(context.Context, homeassistant.Config, *slog.Logger) error, stderr io.Writer) *cli.Command {
-	str := func(name string) *cli.StringFlag {
-		return &cli.StringFlag{
-			Name: name, Sources: cli.NewValueSourceChain(cli.EnvVar("HEARTH_ADAPTER_HOMEASSISTANT_" + envName(name))),
-		}
-	}
 	return &cli.Command{
 		Name: "hearth-adapter-homeassistant", Writer: stderr, ErrWriter: stderr,
 		Flags: []cli.Flag{
@@ -33,9 +25,42 @@ func newCommand(run func(context.Context, homeassistant.Config, *slog.Logger) er
 				Name: "config", Value: defaultConfigPath,
 				Sources: cli.NewValueSourceChain(cli.EnvVar("HEARTH_ADAPTER_HOMEASSISTANT_CONFIG")),
 			},
-			str("adapter-id"), str("nats-url"), str("binding-key"), str("binding-device-external-id"),
-			str("binding-device-name"), str("binding-entity-id"), str("binding-entity-name"),
-			str("home-assistant-url"), str("home-assistant-token-file"),
+			&cli.StringFlag{
+				Name:    "adapter-id",
+				Sources: cli.NewValueSourceChain(cli.EnvVar("HEARTH_ADAPTER_HOMEASSISTANT_ADAPTER_ID")),
+			},
+			&cli.StringFlag{
+				Name:    "nats-url",
+				Sources: cli.NewValueSourceChain(cli.EnvVar("HEARTH_ADAPTER_HOMEASSISTANT_NATS_URL")),
+			},
+			&cli.StringFlag{
+				Name:    "binding-key",
+				Sources: cli.NewValueSourceChain(cli.EnvVar("HEARTH_ADAPTER_HOMEASSISTANT_BINDING_KEY")),
+			},
+			&cli.StringFlag{
+				Name:    "binding-device-external-id",
+				Sources: cli.NewValueSourceChain(cli.EnvVar("HEARTH_ADAPTER_HOMEASSISTANT_BINDING_DEVICE_EXTERNAL_ID")),
+			},
+			&cli.StringFlag{
+				Name:    "binding-device-name",
+				Sources: cli.NewValueSourceChain(cli.EnvVar("HEARTH_ADAPTER_HOMEASSISTANT_BINDING_DEVICE_NAME")),
+			},
+			&cli.StringFlag{
+				Name:    "binding-entity-id",
+				Sources: cli.NewValueSourceChain(cli.EnvVar("HEARTH_ADAPTER_HOMEASSISTANT_BINDING_ENTITY_ID")),
+			},
+			&cli.StringFlag{
+				Name:    "binding-entity-name",
+				Sources: cli.NewValueSourceChain(cli.EnvVar("HEARTH_ADAPTER_HOMEASSISTANT_BINDING_ENTITY_NAME")),
+			},
+			&cli.StringFlag{
+				Name:    "home-assistant-url",
+				Sources: cli.NewValueSourceChain(cli.EnvVar("HEARTH_ADAPTER_HOMEASSISTANT_HOME_ASSISTANT_URL")),
+			},
+			&cli.StringFlag{
+				Name:    "home-assistant-token-file",
+				Sources: cli.NewValueSourceChain(cli.EnvVar("HEARTH_ADAPTER_HOMEASSISTANT_HOME_ASSISTANT_TOKEN_FILE")),
+			},
 			&cli.StringFlag{
 				Name: "log-level", Value: "info",
 				Sources: cli.NewValueSourceChain(cli.EnvVar("HEARTH_ADAPTER_HOMEASSISTANT_LOG_LEVEL")),
@@ -89,13 +114,9 @@ func newCommand(run func(context.Context, homeassistant.Config, *slog.Logger) er
 	}
 }
 
-func envName(flag string) string {
-	return strings.ToUpper(strings.ReplaceAll(flag, "-", "_"))
-}
-
 func resolvedConfig(cmd *cli.Command) (homeassistant.Config, error) {
 	path, explicit := cmd.String("config"), cmd.IsSet("config")
-	config, err := readYAML(path, explicit)
+	config, err := platformconfig.LoadYAML[homeassistant.Config](path, explicit)
 	if err != nil {
 		return homeassistant.Config{}, err
 	}
@@ -117,25 +138,4 @@ func resolvedConfig(cmd *cli.Command) (homeassistant.Config, error) {
 		config.Binding.DeviceExternalID = &v
 	}
 	return homeassistant.ValidateConfig(config, "")
-}
-
-func readYAML(path string, explicit bool) (homeassistant.Config, error) {
-	var config homeassistant.Config
-	f, err := os.Open(path)
-	if err != nil {
-		if !explicit && errors.Is(err, os.ErrNotExist) {
-			return config, nil
-		}
-		return config, errors.New("configuration file could not be read")
-	}
-	defer f.Close()
-	d := yaml.NewDecoder(f)
-	if decodeErr := d.Decode(&config); decodeErr != nil && !errors.Is(decodeErr, io.EOF) {
-		return config, errors.New("configuration file contains invalid YAML")
-	}
-	var extra any
-	if decodeErr := d.Decode(&extra); !errors.Is(decodeErr, io.EOF) {
-		return config, errors.New("configuration file must contain a single YAML document")
-	}
-	return config, nil
 }
