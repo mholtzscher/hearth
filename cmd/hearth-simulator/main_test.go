@@ -79,55 +79,12 @@ func TestMainLoggingFlagsAndConfigFailure(t *testing.T) {
 	})
 }
 
-// This test protects pre-launch config validation with or without CLI address
-// overrides: bad Devices fail before the process lifecycle starts.
-func TestValidateConfigFlag(t *testing.T) {
+// The old mode switch is no longer a supported CLI option.
+func TestValidateConfigFlagRejected(t *testing.T) {
 	t.Parallel()
 	binary := cmdtest.Build(t, ".")
-
-	t.Run("valid devices", func(t *testing.T) {
-		t.Parallel()
-		path := writeConfig(t, validDevicesConfig)
-		result := cmdtest.Run(t, binary, "--config", path, "--validate-config")
-		if result.ExitCode != 0 {
-			t.Fatalf("valid config exited %d: %q", result.ExitCode, result.Stderr)
-		}
-		if !strings.Contains(result.Stdout, "configuration valid") {
-			t.Fatalf("valid config stdout = %q", result.Stdout)
-		}
-	})
-	t.Run("deployment addresses from flags", func(t *testing.T) {
-		t.Parallel()
-		path := writeConfig(t, strings.Replace(validDevicesConfig,
-			"nats_url: \"nats://127.0.0.1:4222\"\n", "", 1))
-		result := cmdtest.Run(t, binary, "--config", path, "--validate-config",
-			"--nats-url", "nats://127.0.0.1:4282", "--control-addr", "127.0.0.1:8241")
-		if result.ExitCode != 0 {
-			t.Fatalf("CLI addresses rejected: %q", result.Stderr)
-		}
-	})
-	t.Run("invalid devices", func(t *testing.T) {
-		t.Parallel()
-		path := writeConfig(t, invalidDevicesConfig)
-		result := cmdtest.Run(t, binary, "--config", path, "--validate-config")
-		if result.ExitCode == 0 {
-			t.Fatalf("invalid config exited 0: %q", result.Stdout)
-		}
-		for _, want := range []string{"devices[0] entities[0]", "invalid support"} {
-			if !strings.Contains(result.Stderr, want) {
-				t.Fatalf("stderr lacks %q: %q", want, result.Stderr)
-			}
-		}
-		if strings.Contains(result.Stderr, "process.starting") {
-			t.Fatalf("validation started the process lifecycle: %q", result.Stderr)
-		}
-	})
-	t.Run("missing file", func(t *testing.T) {
-		t.Parallel()
-		missing := filepath.Join(t.TempDir(), "missing.yaml")
-		result := cmdtest.Run(t, binary, "--config", missing, "--validate-config")
-		if result.ExitCode == 0 {
-			t.Fatalf("missing config exited 0: %q", result.Stdout)
-		}
-	})
+	result := cmdtest.Run(t, binary, "--validate-config")
+	if result.ExitCode == 0 || !strings.Contains(result.Stderr, "validate-config") {
+		t.Fatalf("removed flag accepted or not reported: exit %d, stderr %q", result.ExitCode, result.Stderr)
+	}
 }
