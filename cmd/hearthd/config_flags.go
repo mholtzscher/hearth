@@ -9,7 +9,6 @@ import (
 	"os"
 	"slices"
 	"strconv"
-	"strings"
 	"time"
 
 	"github.com/urfave/cli/v3"
@@ -26,7 +25,6 @@ var errHearthdFailed = errors.New("hearthd failed")
 
 func newHearthdCommand(
 	run func(context.Context, hearthd.Config, *slog.Logger) error,
-	args []string,
 	stderr io.Writer,
 ) *cli.Command {
 	flags := []cli.Flag{
@@ -57,12 +55,6 @@ func newHearthdCommand(
 	}
 	return &cli.Command{
 		Name: "hearthd", Usage: "run Hearth Core", Flags: flags, Writer: stderr, ErrWriter: stderr,
-		Before: func(ctx context.Context, _ *cli.Command) (context.Context, error) {
-			if err := rejectSingleDashLongFlags(args[1:], hearthdLongFlagNames(flags)); err != nil {
-				return ctx, err
-			}
-			return ctx, nil
-		},
 		Action: func(ctx context.Context, cmd *cli.Command) error {
 			logger, err := logging.NewApplicationLogger(stderr, "hearthd", logging.LogOptions{
 				Level: cmd.String("log-level"), Format: cmd.String("log-format"),
@@ -96,32 +88,6 @@ func newHearthdCommand(
 
 func hearthdEnvFlag(name, env string) *cli.StringFlag {
 	return &cli.StringFlag{Name: name, Sources: cli.NewValueSourceChain(cli.EnvVar(env))}
-}
-
-func hearthdLongFlagNames(flags []cli.Flag) map[string]struct{} {
-	names := make(map[string]struct{}, len(flags))
-	for _, flag := range flags {
-		for _, name := range flag.Names() {
-			names[name] = struct{}{}
-		}
-	}
-	return names
-}
-
-func rejectSingleDashLongFlags(args []string, names map[string]struct{}) error {
-	for _, arg := range args {
-		if arg == "--" {
-			return nil
-		}
-		if !strings.HasPrefix(arg, "-") || strings.HasPrefix(arg, "--") {
-			continue
-		}
-		name, _, _ := strings.Cut(strings.TrimPrefix(arg, "-"), "=")
-		if _, ok := names[name]; ok {
-			return fmt.Errorf("-%s is not supported; use --%s", name, name)
-		}
-	}
-	return nil
 }
 
 func resolvedHearthdConfig(cmd *cli.Command) (hearthd.Config, error) {

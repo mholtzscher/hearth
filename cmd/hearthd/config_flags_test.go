@@ -182,6 +182,7 @@ func TestConfigFileSelectionAndPolicy(t *testing.T) {
 	for _, args := range [][]string{
 		{"--config", path, "--nats-url", "nats://127.0.0.1:4223"},
 		{"--nats-url", "nats://127.0.0.1:4223", "--config", path},
+		{"-nats-url", "nats://127.0.0.1:4223", "-config", path},
 	} {
 		got := invokeConfig(t, args)
 		if got.NATSURL != "nats://127.0.0.1:4223" {
@@ -292,40 +293,6 @@ func assertHearthdYAMLPolicy(t *testing.T) {
 	}
 	if _, err := invokeConfigErr(t, []string{"--config", unknown}); err != nil {
 		t.Fatalf("unknown YAML keys rejected: %v", err)
-	}
-}
-
-// TestOneDashLongFlagsAreRejected protects the documented double-dash-only
-// CLI syntax; it fails if urfave/cli accepts a one-dash spelling and reaches
-// configuration loading. Negative values and ordinary positional paths are
-// not flag spellings and must remain unaffected.
-//
-//nolint:paralleltest // Uses process-wide environment for CLI input.
-func TestOneDashLongFlagsAreRejected(t *testing.T) {
-	unsetEnv(t, "HEARTHD_CONFIG")
-	called := false
-	args := []string{"hearthd", "-nats-url", "nats://example.test"}
-	command := newHearthdCommand(func(context.Context, hearthd.Config, *slog.Logger) error {
-		called = true
-		return nil
-	}, args, io.Discard)
-	if err := command.Run(context.Background(), args); err == nil {
-		t.Fatal("one-dash long flag accepted")
-	}
-	if called {
-		t.Fatal("one-dash long flag reached application startup")
-	}
-
-	names := map[string]struct{}{"agent-max-steps": {}, "config": {}}
-	for _, arg := range []string{"-1", "-1s", "settings.yaml", "--"} {
-		if err := rejectSingleDashLongFlags([]string{arg}, names); err != nil {
-			t.Errorf("valid value or positional path %q rejected: %v", arg, err)
-		}
-	}
-	for _, arg := range []string{"-config", "-agent-max-steps=-1"} {
-		if err := rejectSingleDashLongFlags([]string{arg}, names); err == nil {
-			t.Errorf("one-dash long flag %q accepted", arg)
-		}
 	}
 }
 
@@ -544,7 +511,6 @@ func invokeConfigErrWithOutput(t *testing.T, args []string, output io.Writer) (h
 	full := append([]string{"hearthd"}, args...)
 	command := newHearthdCommand(
 		func(_ context.Context, got hearthd.Config, _ *slog.Logger) error { config = got; return nil },
-		full,
 		output,
 	)
 	if err := command.Run(context.Background(), full); err != nil {

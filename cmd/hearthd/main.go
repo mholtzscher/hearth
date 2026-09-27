@@ -16,7 +16,7 @@ func main() {
 }
 
 func run() int {
-	command := newHearthdCommand(hearthd.Run, os.Args, os.Stderr)
+	command := newHearthdCommand(hearthd.Run, os.Stderr)
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	if err := command.Run(ctx, os.Args); err != nil {
