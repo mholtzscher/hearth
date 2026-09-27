@@ -675,8 +675,7 @@ func generatedImportPaths(t *testing.T, source []byte) []string {
 // TestFormatGeneratedOutputsRemovesUnusedImports pins the contract renderers
 // rely on: a renderer may declare an import block without hand-tuning it,
 // because the central formatting stage keeps exactly the imports the generated
-// code uses. Generated packages therefore compile, and generate-check stays
-// byte-stable.
+// code uses. Generated packages therefore compile with stable formatting.
 func TestFormatGeneratedOutputsRemovesUnusedImports(t *testing.T) {
 	t.Parallel()
 	generated := output{path: testGeneratedPath(t, "zz_generated_example.go"), content: []byte(`package example
