@@ -1,4 +1,4 @@
-package powerv1_test
+package entitytypes_test
 
 import (
 	"sync"
