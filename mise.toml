@@ -29,7 +29,7 @@ proxy = false
 ready_cmd = "curl -fsS http://127.0.0.1:$(($PORT + 4000))/healthz?js-enabled-only=true"
 
 [daemons.sim-core]
-run = "exec go run ./cmd/hearthd -config configs/hearthd.simulator.yaml -http-addr 127.0.0.1:$SIM_CORE_PORT -nats-url nats://127.0.0.1:$SIM_NATS_PORT -sqlite-path .data/simulator-stack/storage/hearthd.db -agent-api-key-file $HOME/.local/share/agenix/hearth-openai-api-key"
+run = "exec go run ./cmd/hearthd --config configs/hearthd.simulator.yaml --http-addr 127.0.0.1:$SIM_CORE_PORT --nats-url nats://127.0.0.1:$SIM_NATS_PORT --sqlite-path .data/simulator-stack/storage/hearthd.db --agent-api-key-file $HOME/.local/share/agenix/hearth-openai-api-key"
 port = { auto = true, base = 8080, stride = 10 }
 proxy = false
 depends = ["sim-nats"]

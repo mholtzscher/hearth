@@ -3,6 +3,7 @@ package main
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/mholtzscher/hearth/cmd/internal/cmdtest"
@@ -47,4 +48,18 @@ func TestMainLoggingFlagsAndConfigFailure(t *testing.T) {
 				"agent:\n  api_key_file: \"" + apiKeyPath + "\"\n"
 		cmdtest.CheckStartupCancellation(t, binary, configYAML, "hearthd")
 	})
+}
+
+// TestMainHelpDoesNotLoadConfiguration protects the standard help path; it
+// fails if startup or config-file validation runs before help is rendered.
+func TestMainHelpDoesNotLoadConfiguration(t *testing.T) {
+	t.Parallel()
+	binary := cmdtest.Build(t, ".")
+	result := cmdtest.Run(t, binary, "--help")
+	if result.ExitCode != 0 {
+		t.Fatalf("help exited %d: %s", result.ExitCode, result.Stderr)
+	}
+	if !strings.Contains(result.Stdout+result.Stderr, "run Hearth Core") {
+		t.Fatalf("help output did not describe hearthd: stdout=%q stderr=%q", result.Stdout, result.Stderr)
+	}
 }

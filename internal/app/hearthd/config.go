@@ -134,6 +134,16 @@ func LoadConfigWithOverrides(path string, overrides ConfigOverrides) (Config, er
 	if overrides.APIKeyFile != "" {
 		value.Agent.APIKeyFile = overrides.APIKeyFile
 	}
+	value = NormalizeConfig(value)
+	if err := value.Validate(); err != nil {
+		return Config{}, platformconfig.Invalid(path, err)
+	}
+	return value, nil
+}
+
+// NormalizeConfig applies Core's post-resolution defaults. Call after all
+// configuration sources have been resolved and before validation.
+func NormalizeConfig(value Config) Config {
 	if value.ObservationRetention == 0 {
 		value.ObservationRetention = DefaultObservationRetention
 	}
@@ -149,10 +159,7 @@ func LoadConfigWithOverrides(path string, overrides ConfigOverrides) (Config, er
 	if value.Agent.HistoryRetention == 0 {
 		value.Agent.HistoryRetention = DefaultAgentHistoryRetention
 	}
-	if err := value.Validate(); err != nil {
-		return Config{}, platformconfig.Invalid(path, err)
-	}
-	return value, nil
+	return value
 }
 
 // EffectiveObservationRetention returns the configured observation retention,

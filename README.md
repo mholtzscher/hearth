@@ -24,6 +24,16 @@ Run a small mutation-testing trial with `mise run mutation-test -- ./contracts/v
 
 `hearthd` accepts any configured HTTP bind address. The example remains `127.0.0.1:8080`; bind to a non-loopback address only on a trusted network because the HTTP API has no authentication.
 
+Core settings can come from `--` flags, `HEARTHD_` environment variables, or YAML, in that order of precedence; built-in defaults apply last. Every key in `configs/hearthd.example.yaml` has a corresponding flag and environment variable: for example, `nats_url` maps to `--nats-url` and `HEARTHD_NATS_URL`, while `agent.api_key_file` maps to `--agent-api-key-file` and `HEARTHD_AGENT_API_KEY_FILE`. Durations use Go syntax such as `720h`. Logging is process-only: `--log-level` / `HEARTHD_LOG_LEVEL` and `--log-format` / `HEARTHD_LOG_FORMAT` are not YAML keys.
+
+Core reads `configs/hearthd.yaml` by default if it exists; without it, supply all required settings through flags or environment variables. An explicit `--config` or `HEARTHD_CONFIG` path must exist and contain valid YAML, even when its settings are overridden. Keep the API key itself in a separate secret file: configure only its path, never its value, in flags, environment, or YAML. For example:
+
+```sh
+HEARTHD_HOUSEHOLD_TIMEZONE=UTC HEARTHD_HTTP_ADDR=127.0.0.1:8080 \
+  HEARTHD_NATS_URL=nats://127.0.0.1:4222 HEARTHD_SQLITE_PATH=.data/hearthd.db \
+  HEARTHD_AGENT_API_KEY_FILE=.data/agent-api-key go run ./cmd/hearthd
+```
+
 The default simulator stack config, `configs/scripted.simulator.yaml`, runs five Adapters in one process. `sim-healthy` covers all sixteen built-in Entity types; `sim-unhealthy`, `sim-rejecting`, `sim-timeout`, and `sim-unavailable` isolate fault scenarios so unhealthy health cannot mask the others. Each Device and Entity is declared under its Adapter in YAML. For a minimal first-light example, see `configs/simulator.example.yaml`. See `specs/simulator-harness.md` for scripted output, Command, and control behavior. Heartbeat expiry, takeover, stale-runtime isolation, Core readiness recovery overlays, and graceful release remain deterministic process-test scenarios. Raw duplicate and malformed Observation cases remain transport-test scenarios.
 
 For automated simulator validation, run `mise run simulator-start`.
@@ -234,7 +244,7 @@ printf '%s\n' '<model-api-key>' > .data/agent-api-key   # ignored; the required 
 # edit configs/hearthd.yaml and configs/ecowitt.yaml: use the approved NATS URL
 # edit configs/ecowitt.yaml: use the operator-managed MQTT URL and gateway topic
 # start the operator-managed brokers and gateway through their own supervision
-go run ./cmd/hearthd -config configs/hearthd.yaml
+go run ./cmd/hearthd --config configs/hearthd.yaml
 go run ./cmd/hearth-adapter-ecowitt -config configs/ecowitt.yaml
 ```
 
