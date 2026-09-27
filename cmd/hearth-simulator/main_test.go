@@ -11,32 +11,34 @@ import (
 
 // validDevicesConfig is a minimal scripted Device list that satisfies the
 // authoritative Entity-type schemas, so it only fails when it should.
-const validDevicesConfig = "adapter_id: \"test-simulator\"\n" +
-	"nats_url: \"nats://127.0.0.1:4222\"\n" +
-	"devices:\n" +
-	"  - binding_key: \"test-light\"\n" +
-	"    name: \"Test light\"\n" +
-	"    kind: \"light\"\n" +
-	"    entities:\n" +
-	"      - key: \"power\"\n" +
-	"        name: \"Power\"\n" +
-	"        type: \"hearth.power/v1\"\n" +
-	"        support: {state: {}, operations: {set: {}}}\n" +
-	"        initial: true\n"
+const validDevicesConfig = "nats_url: \"nats://127.0.0.1:4222\"\n" +
+	"adapters:\n" +
+	"  - adapter_id: \"test-simulator\"\n" +
+	"    devices:\n" +
+	"      - binding_key: \"test-light\"\n" +
+	"        name: \"Test light\"\n" +
+	"        kind: \"light\"\n" +
+	"        entities:\n" +
+	"          - key: \"power\"\n" +
+	"            name: \"Power\"\n" +
+	"            type: \"hearth.power/v1\"\n" +
+	"            support: {state: {}, operations: {set: {}}}\n" +
+	"            initial: true\n"
 
 // invalidDevicesConfig omits the colorhs set operation the type requires.
-const invalidDevicesConfig = "adapter_id: \"test-simulator\"\n" +
-	"nats_url: \"nats://127.0.0.1:4222\"\n" +
-	"devices:\n" +
-	"  - binding_key: \"test-light\"\n" +
-	"    name: \"Test light\"\n" +
-	"    kind: \"light\"\n" +
-	"    entities:\n" +
-	"      - key: \"color\"\n" +
-	"        name: \"Color\"\n" +
-	"        type: \"hearth.colorhs/v1\"\n" +
-	"        support: {state: {}, operations: {}}\n" +
-	"        initial: {active: true, hue: 120, saturation: 80}\n"
+const invalidDevicesConfig = "nats_url: \"nats://127.0.0.1:4222\"\n" +
+	"adapters:\n" +
+	"  - adapter_id: \"test-simulator\"\n" +
+	"    devices:\n" +
+	"      - binding_key: \"test-light\"\n" +
+	"        name: \"Test light\"\n" +
+	"        kind: \"light\"\n" +
+	"        entities:\n" +
+	"          - key: \"color\"\n" +
+	"            name: \"Color\"\n" +
+	"            type: \"hearth.colorhs/v1\"\n" +
+	"            support: {state: {}, operations: {}}\n" +
+	"            initial: {active: true, hue: 120, saturation: 80}\n"
 
 func writeConfig(t *testing.T, content string) string {
 	t.Helper()

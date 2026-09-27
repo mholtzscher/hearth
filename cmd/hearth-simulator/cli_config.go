@@ -24,7 +24,6 @@ func newSimulatorCommand(
 	flags := []cli.Flag{
 		&cli.StringFlag{Name: "config", Value: defaultSimulatorConfigPath,
 			Sources: cli.NewValueSourceChain(cli.EnvVar("HEARTH_SIMULATOR_CONFIG"))},
-		simulatorEnvFlag("adapter-id"),
 		simulatorEnvFlag("nats-url"),
 		simulatorEnvFlag("control-addr"),
 		&cli.StringFlag{Name: "log-level", Value: "info",
@@ -72,7 +71,7 @@ func newSimulatorCommand(
 
 func simulatorEnvFlag(name string) *cli.StringFlag {
 	env := "HEARTH_SIMULATOR_" + map[string]string{
-		"adapter-id": "ADAPTER_ID", "nats-url": "NATS_URL", "control-addr": "CONTROL_ADDR",
+		"nats-url": "NATS_URL", "control-addr": "CONTROL_ADDR",
 	}[name]
 	return &cli.StringFlag{Name: name, Sources: cli.NewValueSourceChain(cli.EnvVar(env))}
 }
@@ -81,9 +80,6 @@ func resolvedSimulatorConfig(cmd *cli.Command) (simulator.Config, error) {
 	config, err := platformconfig.LoadYAML[simulator.Config](cmd.String("config"), cmd.IsSet("config"))
 	if err != nil {
 		return simulator.Config{}, err
-	}
-	if cmd.IsSet("adapter-id") {
-		config.AdapterID = cmd.String("adapter-id")
 	}
 	if cmd.IsSet("nats-url") {
 		config.NATSURL = cmd.String("nats-url")

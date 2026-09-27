@@ -32,7 +32,7 @@ func runMultipleScriptedAdapters(ctx context.Context, config Config, logger *slo
 			})
 			if err == nil {
 				err = runScriptedSessionReady(
-					ctx, Config{AdapterID: entry.AdapterID, Devices: entry.Devices}, session, logger,
+					ctx, entry, session, logger, "",
 					func(runtime *scripted.Runtime) { ready <- started{entry.AdapterID, runtime} },
 				)
 			}

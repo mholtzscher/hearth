@@ -13,19 +13,20 @@ import (
 	"github.com/mholtzscher/hearth/internal/app/simulator"
 )
 
-const simulatorYAML = `adapter_id: yaml-adapter
-nats_url: nats://127.0.0.1:4222
+const simulatorYAML = `nats_url: nats://127.0.0.1:4222
 control_addr: 127.0.0.1:8181
-devices:
-  - binding_key: test-light
-    name: Test light
-    kind: light
-    entities:
-      - key: power
-        name: Power
-        type: hearth.power/v1
-        support: {state: {}, operations: {set: {}}}
-        initial: true
+adapters:
+  - adapter_id: yaml-adapter
+    devices:
+      - binding_key: test-light
+        name: Test light
+        kind: light
+        entities:
+          - key: power
+            name: Power
+            type: hearth.power/v1
+            support: {state: {}, operations: {set: {}}}
+            initial: true
 future_setting: ignored
 `
 
@@ -33,25 +34,24 @@ future_setting: ignored
 // simulator scalar settings; it fails if any source order is changed or omitted.
 func TestSimulatorConfigSourcePrecedence(t *testing.T) {
 	path := writeConfig(t, simulatorYAML)
-	t.Setenv("HEARTH_SIMULATOR_ADAPTER_ID", "env-adapter")
 	t.Setenv("HEARTH_SIMULATOR_NATS_URL", "nats://127.0.0.1:4223")
 	t.Setenv("HEARTH_SIMULATOR_CONTROL_ADDR", "127.0.0.1:8182")
 	t.Setenv("HEARTH_SIMULATOR_CONFIG", path)
 
-	got := invokeSimulatorConfig(t, []string{"--adapter-id", "flag-adapter", "--nats-url", "nats://127.0.0.1:4224"})
-	if got.AdapterID != "flag-adapter" || got.NATSURL != "nats://127.0.0.1:4224" ||
-		got.ControlAddr != "127.0.0.1:8182" || len(got.Devices) != 1 {
+	got := invokeSimulatorConfig(t, []string{"--nats-url", "nats://127.0.0.1:4224"})
+	if got.Adapters[0].AdapterID != "yaml-adapter" || got.NATSURL != "nats://127.0.0.1:4224" ||
+		got.ControlAddr != "127.0.0.1:8182" || len(got.Adapters[0].Devices) != 1 {
 		t.Fatalf("CLI/env result = %#v", got)
 	}
 	got = invokeSimulatorConfig(t, nil)
-	if got.AdapterID != "env-adapter" || got.NATSURL != "nats://127.0.0.1:4223" || got.ControlAddr != "127.0.0.1:8182" {
+	if got.Adapters[0].AdapterID != "yaml-adapter" || got.NATSURL != "nats://127.0.0.1:4223" ||
+		got.ControlAddr != "127.0.0.1:8182" {
 		t.Fatalf("env result = %#v", got)
 	}
-	unsetSimulatorEnv(t, "HEARTH_SIMULATOR_ADAPTER_ID")
 	unsetSimulatorEnv(t, "HEARTH_SIMULATOR_NATS_URL")
 	unsetSimulatorEnv(t, "HEARTH_SIMULATOR_CONTROL_ADDR")
 	got = invokeSimulatorConfig(t, nil)
-	if got.AdapterID != "yaml-adapter" || got.NATSURL != "nats://127.0.0.1:4222" ||
+	if got.Adapters[0].AdapterID != "yaml-adapter" || got.NATSURL != "nats://127.0.0.1:4222" ||
 		got.ControlAddr != "127.0.0.1:8181" {
 		t.Fatalf("YAML result = %#v", got)
 	}
@@ -61,7 +61,7 @@ func TestSimulatorConfigSourcePrecedence(t *testing.T) {
 // errors, permissive unknown keys, and parsing before overrides are applied.
 func TestSimulatorConfigFilePolicy(t *testing.T) {
 	for _, key := range []string{
-		"HEARTH_SIMULATOR_CONFIG", "HEARTH_SIMULATOR_ADAPTER_ID",
+		"HEARTH_SIMULATOR_CONFIG",
 		"HEARTH_SIMULATOR_NATS_URL", "HEARTH_SIMULATOR_CONTROL_ADDR",
 	} {
 		t.Setenv(key, "")
@@ -71,9 +71,12 @@ func TestSimulatorConfigFilePolicy(t *testing.T) {
 	}
 	// An implicit missing file is tolerated, then validation reports the
 	// missing YAML-only scripted Device rather than a file-read failure.
-	t.Setenv("HEARTH_SIMULATOR_ADAPTER_ID", "env-adapter")
 	t.Setenv("HEARTH_SIMULATOR_NATS_URL", "nats://127.0.0.1:4222")
-	if _, err := invokeSimulatorConfigErr(t, nil); err == nil || strings.Contains(err.Error(), "could not be read") {
+	if _, err := invokeSimulatorConfigErr(
+		t,
+		nil,
+	); err == nil || !strings.Contains(err.Error(), "adapters") ||
+		strings.Contains(err.Error(), "could not be read") {
 		t.Fatalf("implicit absent YAML was treated as a file error: %v", err)
 	}
 	missing := filepath.Join(t.TempDir(), "missing.yaml")
@@ -89,6 +92,31 @@ func TestSimulatorConfigFilePolicy(t *testing.T) {
 	unknown := writeConfig(t, simulatorYAML)
 	if _, err := invokeSimulatorConfigErr(t, []string{"--config", unknown}); err != nil {
 		t.Fatalf("unknown YAML field rejected: %v", err)
+	}
+}
+
+// A legacy single-Adapter file cannot start a process without an adapters collection.
+func TestSimulatorRejectsLegacyConfig(t *testing.T) {
+	t.Parallel()
+	path := writeConfig(t, "nats_url: nats://127.0.0.1:4222\nadapter_id: old-adapter\ndevices: []\n")
+	if _, err := invokeSimulatorConfigErr(
+		t,
+		[]string{"--config", path},
+	); err == nil ||
+		!strings.Contains(err.Error(), "adapters") {
+		t.Fatalf("legacy config not rejected for missing adapters: %v", err)
+	}
+}
+
+func TestSimulatorAdapterIDFlagRemoved(t *testing.T) {
+	path := writeConfig(t, simulatorYAML)
+	if _, err := invokeSimulatorConfigErr(t, []string{"--config", path, "--adapter-id", "other"}); err == nil {
+		t.Fatal("removed adapter-id flag accepted")
+	}
+	t.Setenv("HEARTH_SIMULATOR_ADAPTER_ID", "other")
+	got := invokeSimulatorConfig(t, []string{"--config", path})
+	if got.Adapters[0].AdapterID != "yaml-adapter" {
+		t.Fatalf("removed adapter-id environment source changed YAML: %#v", got.Adapters)
 	}
 }
 
@@ -108,7 +136,8 @@ func TestSimulatorStartupValidatesBeforeRun(t *testing.T) {
 		"--nats-url", "nats://127.0.0.1:4282", "--control-addr", "127.0.0.1:8241"}); err != nil {
 		t.Fatalf("valid config with overrides: %v (%s)", err, stderr.String())
 	}
-	if got.NATSURL != "nats://127.0.0.1:4282" || got.ControlAddr != "127.0.0.1:8241" || len(got.Devices) != 1 {
+	if got.NATSURL != "nats://127.0.0.1:4282" || got.ControlAddr != "127.0.0.1:8241" || len(got.Adapters) != 1 ||
+		len(got.Adapters[0].Devices) != 1 {
 		t.Fatalf("run received config %#v", got)
 	}
 
@@ -165,7 +194,7 @@ func unsetSimulatorEnv(t *testing.T, key string) {
 
 func TestSimulatorValidationOutputDoesNotExposeInvalidValue(t *testing.T) {
 	t.Parallel()
-	path := writeConfig(t, "adapter_id: secret-adapter\nnats_url: invalid-secret-url\n")
+	path := writeConfig(t, "adapters:\n  - adapter_id: secret-adapter\nnats_url: invalid-secret-url\n")
 	var stderr strings.Builder
 	command := newSimulatorCommand(
 		func(context.Context, simulator.Config, *slog.Logger) error { return nil }, io.Discard, &stderr,
@@ -185,9 +214,9 @@ func TestSimulatorValidationRedactsConfiguredValues(t *testing.T) {
 	base := "nats_url: nats://127.0.0.1:4222\n"
 	for _, tc := range []struct{ name, yaml, secret string }{
 		{"duplicate adapter", base + "adapters:\n  - adapter_id: private-adapter\n  - adapter_id: private-adapter\n", "private-adapter"},
-		{"device", base + "adapter_id: private-adapter\ndevices:\n  - binding_key: private-device\n    name: private-device\n    kind: invalid-kind\n", "private-device"},
-		{"malformed control", base + "control_addr: private-host:invalid-port:extra\nadapter_id: simulator\n", "private-host"},
-		{"nonloopback control", base + "control_addr: private-host:8181\nadapter_id: simulator\n", "private-host"},
+		{"device", base + "adapters:\n  - adapter_id: private-adapter\n    devices:\n      - binding_key: private-device\n        name: private-device\n        kind: invalid-kind\n", "private-device"},
+		{"malformed control", base + "control_addr: private-host:invalid-port:extra\nadapters:\n  - adapter_id: simulator\n", "private-host"},
+		{"nonloopback control", base + "control_addr: private-host:8181\nadapters:\n  - adapter_id: simulator\n", "private-host"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()

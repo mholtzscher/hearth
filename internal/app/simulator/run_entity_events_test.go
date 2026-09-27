@@ -39,9 +39,10 @@ func TestRunEntityEventsRegistersEventSourceBesidePower(t *testing.T) {
 	runErrors := make(chan error, 1)
 	go func() {
 		runErrors <- simulatorapp.Run(runContext, simulatorapp.Config{
-			AdapterID: "simulator",
-			NATSURL:   server.ClientURL(),
-			Devices:   []scripted.DeviceSpec{entityEventsDevice()},
+			NATSURL: server.ClientURL(),
+			Adapters: []simulatorapp.ScriptedAdapterConfig{{
+				AdapterID: "simulator", Devices: []scripted.DeviceSpec{entityEventsDevice()},
+			}},
 		}, logger)
 	}()
 
