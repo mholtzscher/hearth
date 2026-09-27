@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"sync"
 
 	"github.com/santhosh-tekuri/jsonschema/v6"
 )
@@ -14,8 +15,19 @@ type Validator struct {
 	schemas map[string]*jsonschema.Schema
 }
 
-// Compile compiles every embedded v1 schema into a validator.
+//nolint:gochecknoglobals // Embedded schemas are immutable; only compiled schemas, not callers' wrappers, are shared.
+var sharedSchemas = sync.OnceValues(compileSchemas)
+
+// Compile returns a new validator over the compiled embedded v1 schemas.
 func Compile() (*Validator, error) {
+	schemas, err := sharedSchemas()
+	if err != nil {
+		return nil, err
+	}
+	return &Validator{schemas: schemas}, nil
+}
+
+func compileSchemas() (map[string]*jsonschema.Schema, error) {
 	compiler := jsonschema.NewCompiler()
 	compiler.AssertFormat()
 	files := SchemaFiles()
@@ -41,7 +53,7 @@ func Compile() (*Validator, error) {
 		}
 		schemas[schemaID] = schema
 	}
-	return &Validator{schemas: schemas}, nil
+	return schemas, nil
 }
 
 // Validate checks that payload is one JSON value conforming to schemaID.

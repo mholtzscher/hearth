@@ -30,16 +30,16 @@ func TestCoreStartupInterruptsRunningAutomationRuns(t *testing.T) {
 	databasePath := filepath.Join(t.TempDir(), "hearth.db")
 	seedRunningAutomationRun(ctx, t, databasePath)
 	server := startLifecycleNATSServer(t)
-	httpAddress := unusedLoopbackAddress(t)
+	httpAddress, httpOptions := reserveLoopbackListener(t)
 
 	runContext, stopCore := context.WithCancel(ctx)
 	defer stopCore()
 	runErrors := make(chan error, 1)
 	go func() {
-		runErrors <- Run(runContext, Config{HouseholdTimezone: "UTC",
+		runErrors <- runWithOptions(runContext, Config{HouseholdTimezone: "UTC",
 			HTTPAddr: httpAddress, NATSURL: server.ClientURL(), SQLitePath: databasePath,
 			Agent: requiredAgentConfig(t),
-		}, slog.New(slog.DiscardHandler))
+		}, slog.New(slog.DiscardHandler), httpOptions)
 	}()
 	// /healthz is served only after startup interruptions commit, so a 200
 	// proves the classification ran before Core accepted traffic.

@@ -169,15 +169,16 @@ func TestRunCancelsCleanlyAfterReady(t *testing.T) {
 	logger, recorder := withRecording(slog.LevelInfo)
 
 	server := startLifecycleNATSServer(t)
+	httpAddress, httpOptions := reserveLoopbackListener(t)
 	runContext, stopRun := context.WithCancel(ctx)
 	runErrors := make(chan error, 1)
 	go func() {
-		runErrors <- Run(runContext, Config{HouseholdTimezone: "UTC",
-			HTTPAddr:   freeLoopbackAddr(t),
+		runErrors <- runWithOptions(runContext, Config{HouseholdTimezone: "UTC",
+			HTTPAddr:   httpAddress,
 			NATSURL:    server.ClientURL(),
 			SQLitePath: filepath.Join(t.TempDir(), "hearth.db"),
 			Agent:      requiredAgentConfig(t),
-		}, logger)
+		}, logger, httpOptions)
 	}()
 
 	listening := waitForRecord(t, recorder, "core.http_listening", 15*time.Second)
@@ -222,19 +223,6 @@ func TestErrorStageReportsStartupStage(t *testing.T) {
 func startLifecycleNATSServer(t *testing.T) *natsserver.Server {
 	t.Helper()
 	return natstest.StartServer(t)
-}
-
-func freeLoopbackAddr(t *testing.T) string {
-	t.Helper()
-	listener, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatal(err)
-	}
-	addr := listener.Addr().String()
-	if closeErr := listener.Close(); closeErr != nil {
-		t.Fatal(closeErr)
-	}
-	return addr
 }
 
 func pollReadyz(ctx context.Context, t *testing.T, url string) {

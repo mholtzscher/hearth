@@ -107,11 +107,21 @@ func TestObservationConsumerMapsProjectsAndAcknowledgesByFailureClass(t *testing
 	waitForConsumer(t, consumer, func(info *jetstream.ConsumerInfo) bool {
 		return info.AckFloor.Consumer >= 1 && info.NumAckPending == 0
 	})
+	// The consumer acknowledges before emitting diagnostics, so the AckFloor
+	// alone does not establish that the clock-skew record has been written.
+	clockSkewDeadline := time.Now().Add(3 * time.Second)
+	var clockSkew []map[string]any
+	for time.Now().Before(clockSkewDeadline) {
+		clockSkew = logEvents(logs.records(t), "observation.clock_skew")
+		if len(clockSkew) == 1 {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
 	if output := logs.output(); !strings.Contains(output, "adapter observation clock is ahead") ||
 		!strings.Contains(output, testObservationID) || !strings.Contains(output, testEntityID) {
 		t.Fatalf("clock-skew log = %s", output)
 	}
-	clockSkew := logEvents(logs.records(t), "observation.clock_skew")
 	if len(clockSkew) != 1 {
 		t.Fatalf("observation.clock_skew events = %d, want 1:\n%s", len(clockSkew), logs.output())
 	}
@@ -152,13 +162,21 @@ func TestObservationConsumerMapsProjectsAndAcknowledgesByFailureClass(t *testing
 		t.Fatalf("unparseable source_updated_at reached projector: %#v", unexpected)
 	default:
 	}
+	invalidDeadline := time.Now().Add(3 * time.Second)
+	var invalid []map[string]any
+	for time.Now().Before(invalidDeadline) {
+		invalid = logEvents(logs.records(t), "observation.invalid")
+		if len(invalid) >= 2 {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
 	if output := logs.output(); !strings.Contains(output, "source_updated_at_parse_failed") ||
 		!strings.Contains(output, testThirdObservationID) {
 		t.Fatalf("source_updated_at log = %s", output)
 	}
-	invalid := logEvents(logs.records(t), "observation.invalid")
-	if len(invalid) == 0 {
-		t.Fatalf("observation.invalid events = 0, want at least 2:\n%s", logs.output())
+	if len(invalid) < 2 {
+		t.Fatalf("observation.invalid events = %d, want at least 2:\n%s", len(invalid), logs.output())
 	}
 	for _, record := range invalid {
 		if record["level"] != "WARN" {

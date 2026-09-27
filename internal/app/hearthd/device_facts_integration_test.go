@@ -248,15 +248,15 @@ func startDeviceFactsCore(
 	databasePath string,
 ) (string, context.CancelFunc, <-chan error) {
 	t.Helper()
-	httpAddress := unusedLoopbackAddress(t)
+	httpAddress, httpOptions := reserveLoopbackListener(t)
 	runContext, stopCore := context.WithCancel(ctx)
 	runErrors := make(chan error, 1)
 	go func() {
-		runErrors <- Run(runContext, Config{
+		runErrors <- runWithOptions(runContext, Config{
 			HouseholdTimezone: "UTC", HTTPAddr: httpAddress,
 			NATSURL: serverURL, SQLitePath: databasePath,
 			Agent: requiredAgentConfig(t),
-		}, slog.New(slog.DiscardHandler))
+		}, slog.New(slog.DiscardHandler), httpOptions)
 	}()
 	return httpAddress, stopCore, runErrors
 }

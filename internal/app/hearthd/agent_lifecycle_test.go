@@ -28,7 +28,7 @@ func TestRunFailsAtTheAgentStageWithoutLeakingTheSecretPath(t *testing.T) {
 	secretPath := filepath.Join(t.TempDir(), "absent-secret", "agent-api-key")
 	runErr := Run(ctx, Config{
 		HouseholdTimezone: "UTC",
-		HTTPAddr:          unusedLoopbackAddress(t),
+		HTTPAddr:          "127.0.0.1:8080",
 		NATSURL:           server.ClientURL(),
 		SQLitePath:        filepath.Join(t.TempDir(), "hearth.db"),
 		Agent:             AgentConfig{APIKeyFile: secretPath},

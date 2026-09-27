@@ -34,8 +34,9 @@ jobs:
           path: |
             ${{ steps.go-cache-paths.outputs.build }}
             ${{ steps.go-cache-paths.outputs.modules }}
-          key: go-${{ runner.os }}-${{ runner.arch }}-${{ steps.go-cache-paths.outputs.version }}-${{ hashFiles('go.sum') }}
+          key: go-${{ runner.os }}-${{ runner.arch }}-${{ steps.go-cache-paths.outputs.version }}-${{ hashFiles('go.sum') }}-${{ github.sha }}
           restore-keys: |
+            go-${{ runner.os }}-${{ runner.arch }}-${{ steps.go-cache-paths.outputs.version }}-${{ hashFiles('go.sum') }}-
             go-${{ runner.os }}-${{ runner.arch }}-${{ steps.go-cache-paths.outputs.version }}-
       - name: Run checks
         run: mise run validate-backend
@@ -79,9 +80,11 @@ jobs:
           path: |
             ${{ steps.go-cache-paths.outputs.build }}
             ${{ steps.go-cache-paths.outputs.modules }}
-          key: go-fuzz-${{ runner.os }}-${{ runner.arch }}-${{ steps.go-cache-paths.outputs.version }}-${{ hashFiles('go.sum') }}
+          key: go-fuzz-${{ runner.os }}-${{ runner.arch }}-${{ steps.go-cache-paths.outputs.version }}-${{ hashFiles('go.sum') }}-${{ github.sha }}
           restore-keys: |
+            go-fuzz-${{ runner.os }}-${{ runner.arch }}-${{ steps.go-cache-paths.outputs.version }}-${{ hashFiles('go.sum') }}-
             go-fuzz-${{ runner.os }}-${{ runner.arch }}-${{ steps.go-cache-paths.outputs.version }}-
+            go-${{ runner.os }}-${{ runner.arch }}-${{ steps.go-cache-paths.outputs.version }}-${{ hashFiles('go.sum') }}-
             go-${{ runner.os }}-${{ runner.arch }}-${{ steps.go-cache-paths.outputs.version }}-
       - name: Run bounded fuzz campaigns
         run: mise run fuzz
