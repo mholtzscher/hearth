@@ -6,9 +6,9 @@ import (
 	"strings"
 	"testing"
 
-	contractsv1 "github.com/mholtzscher/hearth/contracts/v1"
-
 	"github.com/santhosh-tekuri/jsonschema/v6"
+
+	contractsv1 "github.com/mholtzscher/hearth/contracts/v1"
 )
 
 func TestEmbeddedSchemasCompile(t *testing.T) {
