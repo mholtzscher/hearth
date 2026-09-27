@@ -22,12 +22,9 @@ type MQTTConfig struct {
 	BaseTopic string `yaml:"base_topic"`
 }
 
-func ValidateConfig(value Config, path string) (Config, error) {
-	if err := value.Validate(); err != nil {
-		return Config{}, platformconfig.Invalid(path, err)
-	}
+func NormalizeConfig(value Config) Config {
 	value.MQTT.URL = normalizeMQTTURL(value.MQTT.URL)
-	return value, nil
+	return value
 }
 
 func (value Config) Validate() error {

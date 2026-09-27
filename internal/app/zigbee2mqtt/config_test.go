@@ -262,5 +262,9 @@ func loadConfig(path string) (appzigbee2mqtt.Config, error) {
 	if err != nil {
 		return appzigbee2mqtt.Config{}, err
 	}
-	return appzigbee2mqtt.ValidateConfig(value, path)
+	value = appzigbee2mqtt.NormalizeConfig(value)
+	if validationErr := value.Validate(); validationErr != nil {
+		return appzigbee2mqtt.Config{}, platformconfig.Invalid(path, validationErr)
+	}
+	return value, nil
 }

@@ -66,6 +66,32 @@ func TestCLIResolvesMissingPasskeyFile(t *testing.T) {
 		t.Fatalf("passkey path = %q, want %q", got.Station.PasskeyFile, path)
 	}
 }
+func TestMQTTOverrideNormalizationDoesNotAcceptCaseVariant(t *testing.T) {
+	t.Parallel()
+	args := []string{
+		"--adapter-id", "ecowitt", "--nats-url", "nats://127.0.0.1:4222",
+		"--mqtt-url", "mqtt://127.0.0.1:1883", "--mqtt-topic", "ecowitt/station",
+		"--station-gateway-name", "Gateway", "--station-outdoor-array-name", "Array",
+		"--station-passkey-file", filepath.Join(t.TempDir(), "missing-passkey"),
+		"--station-upload-interval-seconds", "16",
+	}
+	got := invoke(t, args)
+	if got.MQTT.URL != "tcp://127.0.0.1:1883" {
+		t.Fatalf("mqtt.url = %q", got.MQTT.URL)
+	}
+	for _, scheme := range []string{"MQTT://127.0.0.1:1883", "TCP://127.0.0.1:1883"} {
+		args[5] = scheme
+		called := false
+		cmd := newCommand(func(_ context.Context, _ ecowitt.Config, _ *slog.Logger) error {
+			called = true
+			return nil
+		}, io.Discard)
+		if err := cmd.Run(context.Background(), append([]string{"app"}, args...)); err == nil || called {
+			t.Fatalf("scheme %q: err = %v, run called = %v", scheme, err, called)
+		}
+	}
+}
+
 func invoke(t *testing.T, args []string) ecowitt.Config {
 	t.Helper()
 	var got ecowitt.Config

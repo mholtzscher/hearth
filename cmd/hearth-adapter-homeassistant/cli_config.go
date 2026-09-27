@@ -137,5 +137,8 @@ func resolvedConfig(cmd *cli.Command) (homeassistant.Config, error) {
 		v := cmd.String("binding-device-external-id")
 		config.Binding.DeviceExternalID = &v
 	}
-	return homeassistant.ValidateConfig(config, "")
+	if validationErr := config.Validate(); validationErr != nil {
+		return homeassistant.Config{}, platformconfig.Invalid("", validationErr)
+	}
+	return config, nil
 }

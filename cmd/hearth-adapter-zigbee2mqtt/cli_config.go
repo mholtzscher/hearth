@@ -105,5 +105,9 @@ func resolvedConfig(cmd *cli.Command) (zigbee2mqtt.Config, error) {
 	set("nats-url", &c.NATSURL)
 	set("mqtt-url", &c.MQTT.URL)
 	set("mqtt-base-topic", &c.MQTT.BaseTopic)
-	return zigbee2mqtt.ValidateConfig(c, "")
+	c = zigbee2mqtt.NormalizeConfig(c)
+	if validationErr := c.Validate(); validationErr != nil {
+		return zigbee2mqtt.Config{}, platformconfig.Invalid("", validationErr)
+	}
+	return c, nil
 }

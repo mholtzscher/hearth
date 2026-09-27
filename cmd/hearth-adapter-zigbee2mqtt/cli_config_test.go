@@ -27,6 +27,26 @@ func TestEnvAndFlagOverrideYAML(t *testing.T) {
 		t.Fatalf("flag override = %q", got.MQTT.BaseTopic)
 	}
 }
+func TestMQTTOverrideNormalizedBeforeRun(t *testing.T) {
+	t.Parallel()
+	got := invoke(
+		t,
+		[]string{
+			"--adapter-id",
+			"zigbee2mqtt",
+			"--nats-url",
+			"nats://127.0.0.1:4222",
+			"--mqtt-url",
+			"mqtt://127.0.0.1:1883",
+			"--mqtt-base-topic",
+			"zigbee2mqtt",
+		},
+	)
+	if got.MQTT.URL != "tcp://127.0.0.1:1883" {
+		t.Fatalf("mqtt.url = %q", got.MQTT.URL)
+	}
+}
+
 func invoke(t *testing.T, args []string) zigbee2mqtt.Config {
 	t.Helper()
 	var got zigbee2mqtt.Config

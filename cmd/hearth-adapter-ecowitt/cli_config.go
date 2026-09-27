@@ -127,5 +127,9 @@ func resolvedConfig(cmd *cli.Command) (ecowitt.Config, error) {
 	if cmd.IsSet("station-upload-interval-seconds") {
 		c.Station.UploadIntervalSeconds = cmd.Int("station-upload-interval-seconds")
 	}
-	return ecowitt.ValidateConfig(c, "")
+	c = ecowitt.NormalizeConfig(c)
+	if validationErr := c.Validate(); validationErr != nil {
+		return ecowitt.Config{}, platformconfig.Invalid("", validationErr)
+	}
+	return c, nil
 }

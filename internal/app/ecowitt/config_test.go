@@ -568,5 +568,9 @@ func loadConfig(path string) (appecowitt.Config, error) {
 	if err != nil {
 		return appecowitt.Config{}, err
 	}
-	return appecowitt.ValidateConfig(value, path)
+	value = appecowitt.NormalizeConfig(value)
+	if validationErr := value.Validate(); validationErr != nil {
+		return appecowitt.Config{}, platformconfig.Invalid(path, validationErr)
+	}
+	return value, nil
 }

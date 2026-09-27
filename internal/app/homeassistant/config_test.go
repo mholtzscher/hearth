@@ -24,5 +24,8 @@ func loadConfig(path string) (apphomeassistant.Config, error) {
 	if err != nil {
 		return apphomeassistant.Config{}, err
 	}
-	return apphomeassistant.ValidateConfig(value, path)
+	if validationErr := value.Validate(); validationErr != nil {
+		return apphomeassistant.Config{}, platformconfig.Invalid(path, validationErr)
+	}
+	return value, nil
 }

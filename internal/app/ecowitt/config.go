@@ -62,12 +62,9 @@ type StationConfig struct {
 	UploadIntervalSeconds int    `yaml:"upload_interval_seconds"`
 }
 
-func ValidateConfig(value Config, path string) (Config, error) {
-	if err := value.Validate(); err != nil {
-		return Config{}, platformconfig.Invalid(path, err)
-	}
+func NormalizeConfig(value Config) Config {
 	value.MQTT.URL = normalizeMQTTURL(value.MQTT.URL)
-	return value, nil
+	return value
 }
 
 // Validate enforces the complete static configuration contract. Every failure
