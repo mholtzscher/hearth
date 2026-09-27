@@ -1,5 +1,11 @@
+# Core reads configs/hearthd.yaml when present; an explicit --config or
+# HEARTHD_CONFIG path must exist. Flags override environment variables, which
+# override YAML, which overrides built-in defaults. Each key has a --kebab-case
+# flag and HEARTHD_UPPER_SNAKE_CASE variable (nested agent keys use agent- /
+# AGENT_); for example --nats-url / HEARTHD_NATS_URL and
+# --agent-api-key-file / HEARTHD_AGENT_API_KEY_FILE.
 # For manual deployment, replace nats_url with your operator-managed NATS endpoint.
-# The simulator stack supplies its own worktree-specific address by CLI flag.
+# The simulator stack supplies its worktree-specific settings with -- flags.
 http_addr: 127.0.0.1:8080
 nats_url: nats://127.0.0.1:4222
 sqlite_path: .data/hearthd.db
@@ -10,7 +16,8 @@ observation_retention: 720h
 automation_history_retention: 720h
 
 # The household agent is a required Core module: Core always constructs it, so
-# api_key_file must name an existing local secret file. The key is read once at
+# api_key_file must name an existing local secret file. Never put the key value
+# in YAML, flags, or environment variables. The key is read once at
 # startup and never logged, persisted, or echoed in diagnostics.
 agent:
   api_key_file: .data/agent-api-key
