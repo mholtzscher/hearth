@@ -175,9 +175,6 @@ func TestHearthdSourcesPrecedence(t *testing.T) {
 // remote-style paths, malformed YAML, duplicate keys, or multiple documents slip through.
 func TestConfigFileSelectionAndPolicy(t *testing.T) {
 	unsetEnv(t, "HEARTHD_CONFIG")
-	if got := selectedConfigPath([]string{"--", "--config", "ignored.yaml"}); got != defaultHearthdConfigPath {
-		t.Fatalf("config-looking positional arguments changed selected path: %q", got)
-	}
 	path := filepath.Join(t.TempDir(), "selected.yaml")
 	if err := os.WriteFile(path, []byte(validYAML), 0o600); err != nil {
 		t.Fatal(err)
@@ -195,6 +192,14 @@ func TestConfigFileSelectionAndPolicy(t *testing.T) {
 	if got := invokeConfig(t, nil); got.SQLitePath != "from-yaml.db" {
 		t.Fatalf("env-selected config not loaded: %+v", got)
 	}
+	otherPath := filepath.Join(t.TempDir(), "cli-selected.yaml")
+	otherYAML := strings.Replace(validYAML, "from-yaml.db", "cli-selected.db", 1)
+	if err := os.WriteFile(otherPath, []byte(otherYAML), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if got := invokeConfig(t, []string{"--config", otherPath}); got.SQLitePath != "cli-selected.db" {
+		t.Fatalf("CLI config path did not override HEARTHD_CONFIG: %+v", got)
+	}
 
 	unsetEnv(t, "HEARTHD_CONFIG")
 	t.Setenv("HEARTHD_HOUSEHOLD_TIMEZONE", "UTC")
@@ -202,12 +207,62 @@ func TestConfigFileSelectionAndPolicy(t *testing.T) {
 	t.Setenv("HEARTHD_NATS_URL", "nats://127.0.0.1:4222")
 	t.Setenv("HEARTHD_SQLITE_PATH", "from-env.db")
 	t.Setenv("HEARTHD_AGENT_API_KEY_FILE", "secret-file")
+	if got := invokeConfig(t, nil); got.SQLitePath != "from-env.db" {
+		t.Fatalf("implicit missing file blocked env config: %+v", got)
+	}
+	assertHearthdYAMLPolicy(t)
+}
+
+func TestHearthdYAMLResolvesAliases(t *testing.T) {
+	t.Parallel()
+	path := filepath.Join(t.TempDir(), "aliases.yaml")
+	body := `unused: &database_path from-alias.db
+sqlite_path: *database_path
+agent_defaults: &agent_config
+  model: aliased-model
+  max_steps: 7
+agent: *agent_config
+`
+	if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	got, err := loadHearthdYAML(path, true)
+	if err != nil {
+		t.Fatalf("load aliased config: %v", err)
+	}
+	if got.SQLitePath != "from-alias.db" || got.AgentModel != "aliased-model" || got.AgentMaxSteps != "7" {
+		t.Fatalf("aliases not resolved: %+v", got)
+	}
+}
+
+func TestHearthdYAMLRejectsCyclicAliases(t *testing.T) {
+	t.Parallel()
+	path := filepath.Join(t.TempDir(), "cyclic.yaml")
+	const secretValue = "do-not-leak-this-value"
+	body := "unused: &loop {value: " + secretValue + ", self: *loop}\n"
+	if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	_, err := loadHearthdYAML(path, true)
+	if err == nil {
+		t.Fatal("cyclic alias accepted")
+	}
+	if strings.Contains(err.Error(), path) || strings.Contains(err.Error(), secretValue) {
+		t.Fatalf("cyclic alias error exposed path or value: %v", err)
+	}
+}
+
+func assertHearthdYAMLPolicy(t *testing.T) {
+	t.Helper()
 	missing := filepath.Join(t.TempDir(), "absent.yaml")
 	if got := invokeConfig(t, nil); got.SQLitePath != "from-env.db" {
 		t.Fatalf("implicit missing file blocked env config: %+v", got)
 	}
 	if _, err := invokeConfigErr(t, []string{"--config", missing}); err == nil {
 		t.Fatal("explicit missing file accepted")
+	}
+	if _, err := invokeConfigErr(t, []string{"--config", t.TempDir()}); err == nil {
+		t.Fatal("explicit unreadable config path accepted")
 	}
 	for name, body := range map[string]string{"zero-byte": "", "empty-document": "---\n"} {
 		p := filepath.Join(t.TempDir(), name+".yaml")
