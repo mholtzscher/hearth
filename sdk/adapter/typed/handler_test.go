@@ -8,9 +8,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/mholtzscher/hearth/sdk/adapter/typed"
-
 	"github.com/mholtzscher/hearth/sdk/adapter"
+	"github.com/mholtzscher/hearth/sdk/adapter/typed"
 )
 
 type parameters struct {

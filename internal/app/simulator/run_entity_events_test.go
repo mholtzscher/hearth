@@ -10,10 +10,9 @@ import (
 	natsgo "github.com/nats-io/nats.go"
 
 	"github.com/mholtzscher/hearth/internal/adapters/scripted"
+	simulatorapp "github.com/mholtzscher/hearth/internal/app/simulator"
 	"github.com/mholtzscher/hearth/internal/modules/devices"
 	"github.com/mholtzscher/hearth/internal/platform/nats/natstest"
-
-	simulatorapp "github.com/mholtzscher/hearth/internal/app/simulator"
 )
 
 // TestRunEntityEventsRegistersEventSourceBesidePower protects the scripted
