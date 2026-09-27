@@ -1,6 +1,6 @@
 # First-light simulator config: one Adapter with one scripted power Device. Copy to
 # configs/simulator.yaml (gitignored) and run:
-#   go run ./cmd/hearth-simulator -config configs/simulator.yaml
+#   go run ./cmd/hearth-simulator --config configs/simulator.yaml
 #
 # Every Device and Entity is declared under an Adapter; see
 # specs/simulator-harness.md for the full YAML surface and

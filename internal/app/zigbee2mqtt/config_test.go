@@ -181,7 +181,7 @@ mqtt:
 
 // This test protects the no-secrets and derived-client-ID contract and fails
 // if either unsupported field is accidentally added to static YAML.
-func TestLoadConfigRejectsSecretAndClientIDFields(t *testing.T) {
+func TestLoadConfigIgnoresUnknownFields(t *testing.T) {
 	t.Parallel()
 
 	fields := []string{
@@ -198,8 +198,8 @@ mqtt:
   url: tcp://127.0.0.1:1883
   base_topic: zigbee2mqtt
 `+field)
-			if _, err := appzigbee2mqtt.LoadConfig(path); err == nil {
-				t.Fatalf("LoadConfig() accepted unsupported field %q", strings.TrimSpace(field))
+			if _, err := appzigbee2mqtt.LoadConfig(path); err != nil {
+				t.Fatalf("LoadConfig() rejected unknown field %q: %v", strings.TrimSpace(field), err)
 			}
 		})
 	}

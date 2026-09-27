@@ -1,9 +1,14 @@
 package homeassistant
 
 import (
+	"errors"
 	"fmt"
+	"io"
 	"net/url"
+	"os"
 	"strings"
+
+	"gopkg.in/yaml.v3"
 
 	platformconfig "github.com/mholtzscher/hearth/internal/platform/config"
 )
@@ -30,9 +35,23 @@ type UpstreamConfig struct {
 
 func LoadConfig(path string) (Config, error) {
 	var value Config
-	if err := platformconfig.LoadFile(path, &value); err != nil {
-		return Config{}, err
+	file, err := os.Open(path)
+	if err != nil {
+		return Config{}, errors.New("configuration file could not be read")
 	}
+	defer file.Close()
+	decoder := yaml.NewDecoder(file)
+	if decodeErr := decoder.Decode(&value); decodeErr != nil && !errors.Is(decodeErr, io.EOF) {
+		return Config{}, errors.New("configuration file contains invalid YAML")
+	}
+	var extra any
+	if decodeErr := decoder.Decode(&extra); !errors.Is(decodeErr, io.EOF) {
+		return Config{}, errors.New("configuration file must contain a single YAML document")
+	}
+	return ValidateConfig(value, path)
+}
+
+func ValidateConfig(value Config, path string) (Config, error) {
 	if err := value.Validate(); err != nil {
 		return Config{}, platformconfig.Invalid(path, err)
 	}

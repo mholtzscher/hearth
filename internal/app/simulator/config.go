@@ -1,12 +1,17 @@
 package simulator
 
 import (
+	"errors"
 	"fmt"
+	"io"
 	"net"
+	"os"
 	"strings"
 
 	"github.com/mholtzscher/hearth/internal/adapters/scripted"
 	platformconfig "github.com/mholtzscher/hearth/internal/platform/config"
+
+	"gopkg.in/yaml.v3"
 )
 
 type Config struct {
@@ -32,33 +37,70 @@ func (value Config) scriptedAdapters() []ScriptedAdapterConfig {
 	return []ScriptedAdapterConfig{{AdapterID: value.AdapterID, Devices: value.Devices}}
 }
 
-// ConfigOverrides replaces the simulator's transport addresses before validation.
-// Empty fields leave the YAML value unchanged.
+// ConfigOverrides replaces scalar simulator settings before validation.
+// Unset empty fields leave their YAML values unchanged.
 type ConfigOverrides struct {
-	NATSURL     string
-	ControlAddr string
+	AdapterID      string
+	NATSURL        string
+	ControlAddr    string
+	AdapterIDSet   bool
+	NATSURLSet     bool
+	ControlAddrSet bool
 }
 
 func LoadConfig(path string) (Config, error) {
 	return LoadConfigWithOverrides(path, ConfigOverrides{})
 }
 
-// LoadConfigWithOverrides loads simulator YAML and applies CLI addresses before validation.
+// LoadConfigWithOverrides loads a required simulator YAML file and applies overrides.
 func LoadConfigWithOverrides(path string, overrides ConfigOverrides) (Config, error) {
+	return LoadConfigFromSources(path, true, overrides)
+}
+
+// LoadConfigFromSources loads optional implicit YAML, applies explicitly set
+// scalar values, then validates the resulting simulator configuration.
+func LoadConfigFromSources(path string, explicit bool, overrides ConfigOverrides) (Config, error) {
 	var value Config
-	if err := platformconfig.LoadFile(path, &value); err != nil {
+	if err := loadYAML(path, explicit, &value); err != nil {
 		return Config{}, err
 	}
-	if overrides.NATSURL != "" {
+	if overrides.AdapterIDSet || overrides.AdapterID != "" {
+		value.AdapterID = overrides.AdapterID
+	}
+	if overrides.NATSURLSet || overrides.NATSURL != "" {
 		value.NATSURL = overrides.NATSURL
 	}
-	if overrides.ControlAddr != "" {
+	if overrides.ControlAddrSet || overrides.ControlAddr != "" {
 		value.ControlAddr = overrides.ControlAddr
 	}
 	if err := value.Validate(); err != nil {
 		return Config{}, platformconfig.Invalid(path, err)
 	}
 	return value, nil
+}
+
+// loadYAML intentionally does not enable KnownFields: simulator config is
+// extensible and unknown YAML fields are ignored, but syntax and documents are checked.
+func loadYAML(path string, explicit bool, destination *Config) error {
+	file, err := os.Open(path)
+	if err != nil {
+		if !explicit && errors.Is(err, os.ErrNotExist) {
+			return nil
+		}
+		return errors.New("configuration file could not be read")
+	}
+	defer file.Close()
+	decoder := yaml.NewDecoder(file)
+	decodeErr := decoder.Decode(destination)
+	if decodeErr != nil && !errors.Is(decodeErr, io.EOF) {
+		return errors.New("configuration file contains invalid YAML")
+	}
+	var extra any
+	decodeErr = decoder.Decode(&extra)
+	if !errors.Is(decodeErr, io.EOF) {
+		return errors.New("configuration file must contain a single YAML document")
+	}
+	return nil
 }
 
 func (value Config) Validate() error {

@@ -34,6 +34,8 @@ HEARTHD_HOUSEHOLD_TIMEZONE=UTC HEARTHD_HTTP_ADDR=127.0.0.1:8080 \
   HEARTHD_AGENT_API_KEY_FILE=.data/agent-api-key go run ./cmd/hearthd
 ```
 
+The three adapters and simulator use the same flag > environment > YAML precedence. Their environment prefixes are `HEARTH_ADAPTER_HOMEASSISTANT_`, `HEARTH_ADAPTER_ZIGBEE2MQTT_`, `HEARTH_ADAPTER_ECOWITT_`, and `HEARTH_SIMULATOR_`. For example, `mqtt.base_topic` maps to `--mqtt-base-topic` and `HEARTH_ADAPTER_ZIGBEE2MQTT_MQTT_BASE_TOPIC`. Use `--config` or the corresponding `<PREFIX>CONFIG` to select a YAML file; an explicitly selected file must exist, while a missing implicit default is allowed if the remaining settings suffice. Unknown YAML keys are ignored, but malformed YAML, duplicate keys, and multiple documents fail even when overridden. Logging options are flags or environment variables only. Secret values stay in separate files; expose only their paths. Simulator `devices` and `adapters` remain YAML-only.
+
 The default simulator stack config, `configs/scripted.simulator.yaml`, runs five Adapters in one process. `sim-healthy` covers all sixteen built-in Entity types; `sim-unhealthy`, `sim-rejecting`, `sim-timeout`, and `sim-unavailable` isolate fault scenarios so unhealthy health cannot mask the others. Each Device and Entity is declared under its Adapter in YAML. For a minimal first-light example, see `configs/simulator.example.yaml`. See `specs/simulator-harness.md` for scripted output, Command, and control behavior. Heartbeat expiry, takeover, stale-runtime isolation, Core readiness recovery overlays, and graceful release remain deterministic process-test scenarios. Raw duplicate and malformed Observation cases remain transport-test scenarios.
 
 For automated simulator validation, run `mise run simulator-start`.
@@ -133,7 +135,7 @@ The dashboard's `/agent` page drives these routes server-side; the browser holds
 Copy `configs/homeassistant.example.yaml` to the ignored `configs/homeassistant.yaml`, configure one Home Assistant light, and place a long-lived access token at the configured ignored `token_file` path. With NATS and `hearthd` running, start the disposable adapter:
 
 ```sh
-go run ./cmd/hearth-adapter-homeassistant -config configs/homeassistant.yaml
+go run ./cmd/hearth-adapter-homeassistant --config configs/homeassistant.yaml
 ```
 
 The registration log reports the canonical Entity ID. The Adapter reports healthy only after its WebSocket subscription, snapshot, and buffered-event reconciliation are ready. Home Assistant `on` and `off` values report the Entity available and publish State. `unavailable` and `unknown` report it unavailable without replacing the last State.
@@ -245,7 +247,7 @@ printf '%s\n' '<model-api-key>' > .data/agent-api-key   # ignored; the required 
 # edit configs/ecowitt.yaml: use the operator-managed MQTT URL and gateway topic
 # start the operator-managed brokers and gateway through their own supervision
 go run ./cmd/hearthd --config configs/hearthd.yaml
-go run ./cmd/hearth-adapter-ecowitt -config configs/ecowitt.yaml
+go run ./cmd/hearth-adapter-ecowitt --config configs/ecowitt.yaml
 ```
 
 The adapter registers both Device slots before it connects MQTT, so identity exists before any report arrives:

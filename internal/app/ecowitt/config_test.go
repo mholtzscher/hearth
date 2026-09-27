@@ -376,7 +376,7 @@ func TestLoadConfigNormalizesMQTTURL(t *testing.T) {
 // This test protects the no-secrets and derived-client-ID contract and fails
 // if unsupported fields, including MQTT credentials or a manual client ID, are
 // accepted in static YAML.
-func TestLoadConfigRejectsUnsupportedFields(t *testing.T) {
+func TestLoadConfigIgnoresUnknownFields(t *testing.T) {
 	t.Parallel()
 	tests := []struct {
 		name     string
@@ -403,8 +403,8 @@ func TestLoadConfigRejectsUnsupportedFields(t *testing.T) {
 				"  passkey_file: "+writePasskeyFile(t, validPasskeyHex)+"\n"+
 				"  upload_interval_seconds: 16\n"+
 				"unknown: true\n")
-			if _, err := appecowitt.LoadConfig(path); err == nil {
-				t.Fatalf("LoadConfig() accepted unsupported field %q", test.name)
+			if _, err := appecowitt.LoadConfig(path); err != nil {
+				t.Fatalf("LoadConfig() rejected unknown field %q: %v", test.name, err)
 			}
 		})
 	}
