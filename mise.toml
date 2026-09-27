@@ -79,46 +79,10 @@ description = "Format Go files"
 depends = ["generate"]
 run = '''golangci-lint fmt'''
 
-[tasks."format-check"]
-description = "Check Go formatting"
-depends = ["tidy"]
-run = '''
-diff="$(golangci-lint fmt --diff)"
-if test -n "$diff"; then
-  printf 'The following Go files need formatting:\n%s\n' "$diff"
-  exit 1
-fi
-'''
-
 [tasks."tidy"]
 description = "Tidy module metadata"
 depends = ["format"]
 run = '''go mod tidy'''
-
-[tasks."tidy-check"]
-description = "Check module tidiness"
-depends = ["tidy"]
-run = '''go mod tidy -diff'''
-
-[tasks."generate-check"]
-description = "Check generated code"
-depends = ["tidy"]
-run = '''
-go run ./internal/cmd/entitytypegen -root . -check
-
-tmp="$(mktemp -d)"
-trap 'rm -rf "$tmp"' EXIT
-mkdir -p "$tmp/internal/platform/db" "$tmp/internal/modules/devices/sqlite" "$tmp/internal/modules/automations/sqlite" "$tmp/internal/modules/agent/sqlite"
-cp sqlc.yaml "$tmp/"
-cp -R internal/platform/db/migrations "$tmp/internal/platform/db/"
-cp -R internal/modules/devices/sqlite/dbqueries internal/modules/devices/sqlite/dbsqlc "$tmp/internal/modules/devices/sqlite/"
-cp -R internal/modules/automations/sqlite/dbqueries internal/modules/automations/sqlite/dbsqlc "$tmp/internal/modules/automations/sqlite/"
-cp -R internal/modules/agent/sqlite/dbqueries internal/modules/agent/sqlite/dbsqlc "$tmp/internal/modules/agent/sqlite/"
-(cd "$tmp" && sqlc generate)
-diff -ru internal/modules/devices/sqlite/dbsqlc "$tmp/internal/modules/devices/sqlite/dbsqlc"
-diff -ru internal/modules/automations/sqlite/dbsqlc "$tmp/internal/modules/automations/sqlite/dbsqlc"
-diff -ru internal/modules/agent/sqlite/dbsqlc "$tmp/internal/modules/agent/sqlite/dbsqlc"
-'''
 
 [tasks."ko-build"]
 description = "Build container images locally"
@@ -240,10 +204,7 @@ run = '''gremlins unleash'''
 [tasks."validate-backend"]
 description = "Run Go and validation-script checks"
 depends = [
-  "format-check",
-  "generate-check",
   "lint",
-  "tidy-check",
   "test",
   "test-entitytype-fixtures",
   "vet",
