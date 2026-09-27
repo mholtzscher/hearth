@@ -89,15 +89,15 @@ func TestCoreStartupInterruptsActiveCommandsWithoutRedispatch(t *testing.T) {
 		t.Fatal(flushErr)
 	}
 
-	httpAddress := unusedLoopbackAddress(t)
+	httpAddress, httpOptions := reserveLoopbackListener(t)
 	runContext, stopCore := context.WithCancel(ctx)
 	defer stopCore()
 	runErrors := make(chan error, 1)
 	go func() {
-		runErrors <- Run(runContext, Config{HouseholdTimezone: "UTC",
+		runErrors <- runWithOptions(runContext, Config{HouseholdTimezone: "UTC",
 			HTTPAddr: httpAddress, NATSURL: server.ClientURL(), SQLitePath: databasePath,
 			Agent: requiredAgentConfig(t),
-		}, logger)
+		}, logger, httpOptions)
 	}()
 
 	observerDatabase, err := platformdb.Open(ctx, databasePath)
@@ -177,15 +177,15 @@ func TestRunReturnsCancellationWhenStartupNATSConnectCancelled(t *testing.T) {
 		}
 		accepted <- connection
 	}()
-	httpAddress := unusedLoopbackAddress(t)
+	httpAddress, httpOptions := reserveLoopbackListener(t)
 	runContext, stopCore := context.WithCancel(ctx)
 	defer stopCore()
 	runErrors := make(chan error, 1)
 	go func() {
-		runErrors <- Run(runContext, Config{HouseholdTimezone: "UTC",
+		runErrors <- runWithOptions(runContext, Config{HouseholdTimezone: "UTC",
 			HTTPAddr: httpAddress, NATSURL: "nats://" + blocker.Addr().String(), SQLitePath: databasePath,
 			Agent: requiredAgentConfig(t),
-		}, slog.New(slog.DiscardHandler))
+		}, slog.New(slog.DiscardHandler), httpOptions)
 	}()
 	select {
 	case connection := <-accepted:
@@ -227,15 +227,12 @@ func recoveryCommandRecord(t *testing.T, entityID devices.EntityID, requestedAt 
 	}
 }
 
-func unusedLoopbackAddress(t *testing.T) string {
+func reserveLoopbackListener(t *testing.T) (string, runOptions) {
 	t.Helper()
 	listener, listenErr := net.Listen("tcp", "127.0.0.1:0")
 	if listenErr != nil {
 		t.Fatal(listenErr)
 	}
-	address := listener.Addr().String()
-	if err := listener.Close(); err != nil {
-		t.Fatal(err)
-	}
-	return address
+	t.Cleanup(func() { _ = listener.Close() })
+	return listener.Addr().String(), runOptions{httpListener: listener}
 }

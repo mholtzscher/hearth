@@ -29,7 +29,7 @@ func TestCoreStartupPrunesRetainedHistory(t *testing.T) {
 
 	server := natstest.StartServer(t)
 
-	httpAddress := unusedLoopbackAddress(t)
+	httpAddress, httpOptions := reserveLoopbackListener(t)
 	// A non-pooling client avoids leaving an idle keep-alive connection that the
 	// HTTP server would wait on until its read-header timeout at shutdown.
 	client := newNonPoolingHTTPClient(t)
@@ -37,10 +37,10 @@ func TestCoreStartupPrunesRetainedHistory(t *testing.T) {
 	defer stopCore()
 	runErrors := make(chan error, 1)
 	go func() {
-		runErrors <- Run(runContext, Config{HouseholdTimezone: "UTC",
+		runErrors <- runWithOptions(runContext, Config{HouseholdTimezone: "UTC",
 			HTTPAddr: httpAddress, NATSURL: server.ClientURL(), SQLitePath: databasePath,
 			Agent: requiredAgentConfig(t),
-		}, slog.New(slog.DiscardHandler))
+		}, slog.New(slog.DiscardHandler), httpOptions)
 	}()
 	waitForCoreHTTPStatus(ctx, t, client, httpAddress, "/healthz", runErrors)
 	// Readiness must not wait for the startup sweep: the HTTP readiness surface
@@ -105,7 +105,7 @@ func TestCoreStartupPruneFailureKeepsReadiness(t *testing.T) {
 	blockExpiredObservationPrune(ctx, t, databasePath, startupPruneBlockerSecret)
 
 	server := startLifecycleNATSServer(t)
-	httpAddress := freeLoopbackAddr(t)
+	httpAddress, httpOptions := reserveLoopbackListener(t)
 	// A non-pooling client avoids leaving an idle keep-alive connection that the
 	// HTTP server would wait on until its read-header timeout at shutdown.
 	client := newNonPoolingHTTPClient(t)
@@ -114,10 +114,10 @@ func TestCoreStartupPruneFailureKeepsReadiness(t *testing.T) {
 	defer stopCore()
 	runErrors := make(chan error, 1)
 	go func() {
-		runErrors <- Run(runContext, Config{HouseholdTimezone: "UTC",
+		runErrors <- runWithOptions(runContext, Config{HouseholdTimezone: "UTC",
 			HTTPAddr: httpAddress, NATSURL: server.ClientURL(), SQLitePath: databasePath,
 			Agent: requiredAgentConfig(t),
-		}, logger)
+		}, logger, httpOptions)
 	}()
 	waitForCoreHTTPStatus(ctx, t, client, httpAddress, "/healthz", runErrors)
 	// The failed startup sweep must not make Core unready: /readyz serves OK

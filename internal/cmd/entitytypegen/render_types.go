@@ -200,7 +200,7 @@ func renderCodecs(model entityTypeModel) output {
 	generatedHeader(&source)
 	fmt.Fprintf(&source, "package %s\n\n", model.Package)
 	source.WriteString(
-		"import (\n\t\"embed\"\n\t\"encoding/json\"\n\t\"fmt\"\n\n\t\"github.com/mholtzscher/hearth/entitytypes\"\n)\n\n",
+		"import (\n\t\"embed\"\n\t\"encoding/json\"\n\t\"fmt\"\n\t\"sync\"\n\n\t\"github.com/mholtzscher/hearth/entitytypes\"\n)\n\n",
 	)
 	source.WriteString("const (\n")
 	fmt.Fprintf(&source, "\tStateSchemaID = %s\n", strconv.Quote(model.StateSchema.ID))
@@ -253,7 +253,8 @@ func renderCodecs(model entityTypeModel) output {
 		)
 	}
 	source.WriteString("}\n\n")
-	source.WriteString("func Compile() (*Codecs, error) {\n")
+	renderCachedCodecs(&source, model)
+	source.WriteString("func compileCodecs() (*Codecs, error) {\n")
 	source.WriteString(
 		"\tstate, err := compileCodec[State](StateSchemaID, SchemaFiles()[StateSchemaID])\n\tif err != nil { return nil, err }\n",
 	)
@@ -284,4 +285,20 @@ func renderCodecs(model entityTypeModel) output {
 		path:    filepath.Join(model.Directory, "zz_generated_codecs.go"),
 		content: []byte(source.String()),
 	}
+}
+
+func renderCachedCodecs(source *strings.Builder, model entityTypeModel) {
+	source.WriteString(
+		"//nolint:gochecknoglobals // Only this package's immutable embedded schemas are compiled once.\nvar sharedCodecs = sync.OnceValues(compileCodecs)\n\n",
+	)
+	source.WriteString(
+		"func Compile() (*Codecs, error) {\n\tshared, err := sharedCodecs()\n\tif err != nil { return nil, err }\n\treturn &Codecs{State: cloneCodec(shared.State), Support: cloneCodec(shared.Support)",
+	)
+	for _, operation := range model.Operations {
+		fmt.Fprintf(source, ", %sParameters: cloneCodec(shared.%sParameters)", operation.GoName, operation.GoName)
+	}
+	source.WriteString("}, nil\n}\n\n")
+	source.WriteString(
+		"func cloneCodec[T any](codec *entitytypes.JSONCodec[T]) *entitytypes.JSONCodec[T] {\n\tclone := *codec\n\treturn &clone\n}\n\n",
+	)
 }

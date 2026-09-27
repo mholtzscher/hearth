@@ -43,9 +43,12 @@ jobs:
           path: |
             ${{ steps.go-cache-paths.outputs.build }}
             ${{ steps.go-cache-paths.outputs.modules }}
-          key: go-fuzz-${{ matrix.task }}-${{ runner.os }}-${{ runner.arch }}-${{ steps.go-cache-paths.outputs.version }}-${{ hashFiles('go.sum') }}
+          # A campaign can grow the corpus even when the source revision is unchanged.
+          key: go-fuzz-${{ matrix.task }}-${{ runner.os }}-${{ runner.arch }}-${{ steps.go-cache-paths.outputs.version }}-${{ hashFiles('go.sum') }}-${{ github.sha }}-${{ github.run_id }}
           restore-keys: |
+            go-fuzz-${{ matrix.task }}-${{ runner.os }}-${{ runner.arch }}-${{ steps.go-cache-paths.outputs.version }}-${{ hashFiles('go.sum') }}-
             go-fuzz-${{ matrix.task }}-${{ runner.os }}-${{ runner.arch }}-${{ steps.go-cache-paths.outputs.version }}-
+            go-${{ runner.os }}-${{ runner.arch }}-${{ steps.go-cache-paths.outputs.version }}-${{ hashFiles('go.sum') }}-
             go-${{ runner.os }}-${{ runner.arch }}-${{ steps.go-cache-paths.outputs.version }}-
       - name: Run fuzz campaign
         run: mise run ${{ matrix.task }}

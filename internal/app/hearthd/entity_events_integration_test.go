@@ -51,16 +51,16 @@ func TestCoreOfflineEntityEventRecoveryVerticalSlice(t *testing.T) {
 	databasePath := filepath.Join(t.TempDir(), "hearth.db")
 	server := startCoreNATSServer(t)
 
-	firstAddress := unusedLoopbackAddress(t)
+	firstAddress, firstOptions := reserveLoopbackListener(t)
 	firstContext, stopFirstCore := context.WithCancel(ctx)
 	defer stopFirstCore()
 	firstErrors := make(chan error, 1)
 	go func() {
-		firstErrors <- Run(firstContext, Config{
+		firstErrors <- runWithOptions(firstContext, Config{
 			HouseholdTimezone: "UTC", HTTPAddr: firstAddress,
 			NATSURL: server.ClientURL(), SQLitePath: databasePath,
 			Agent: requiredAgentConfig(t),
-		}, slog.New(slog.DiscardHandler))
+		}, slog.New(slog.DiscardHandler), firstOptions)
 	}()
 	waitForCoreHTTPStatus(ctx, t, client, firstAddress, "/healthz", firstErrors)
 
@@ -137,6 +137,14 @@ func TestCoreOfflineEntityEventRecoveryVerticalSlice(t *testing.T) {
 		}
 		expected[string(eventID)] = name
 	}
+	// Wake the heartbeat loop now instead of waiting for its periodic timer.
+	// SetHealth waits for Core acknowledgement, so it completes after restart.
+	healthErrors := make(chan error, 1)
+	go func() {
+		healthErrors <- session.SetHealth(ctx, adapter.HealthReport{
+			Status: adapter.HealthHealthy, SourceObservedAt: time.Now().UTC(),
+		})
+	}()
 	// Heartbeat retries must not end the Session: wait for more than one
 	// missed heartbeat, then prove the Session still publishes.
 	waitForMatrixCondition(t, 25*time.Second, func() (bool, error) {
@@ -160,19 +168,27 @@ func TestCoreOfflineEntityEventRecoveryVerticalSlice(t *testing.T) {
 		t.Fatalf("missed heartbeats stopped the Session: %#v", stopped)
 	}
 
-	secondAddress := unusedLoopbackAddress(t)
+	secondAddress, secondOptions := reserveLoopbackListener(t)
 	secondContext, stopSecondCore := context.WithCancel(ctx)
 	defer stopSecondCore()
 	secondErrors := make(chan error, 1)
 	go func() {
-		secondErrors <- Run(secondContext, Config{
+		secondErrors <- runWithOptions(secondContext, Config{
 			HouseholdTimezone: "UTC", HTTPAddr: secondAddress,
 			NATSURL: server.ClientURL(), SQLitePath: databasePath,
 			Agent: requiredAgentConfig(t),
-		}, slog.New(slog.DiscardHandler))
+		}, slog.New(slog.DiscardHandler), secondOptions)
 	}()
 	waitForCoreHTTPStatus(ctx, t, client, secondAddress, "/healthz", secondErrors)
 	waitForCoreHTTPStatus(ctx, t, client, secondAddress, "/readyz", secondErrors)
+	select {
+	case healthErr := <-healthErrors:
+		if healthErr != nil {
+			t.Fatalf("SetHealth after Core restart: %v", healthErr)
+		}
+	case <-ctx.Done():
+		t.Fatal("heartbeat was not acknowledged after Core restart")
+	}
 
 	// Every broker-acknowledged report is recorded exactly once after restart.
 	var collection devicesapi.EntityEventCollectionBody
@@ -410,7 +426,7 @@ func TestCoreStartupRejectsIncompatibleEntityEventResources(t *testing.T) {
 		t.Fatal(infoErr)
 	}
 	runErr := Run(ctx, Config{
-		HouseholdTimezone: "UTC", HTTPAddr: unusedLoopbackAddress(t),
+		HouseholdTimezone: "UTC", HTTPAddr: "127.0.0.1:8080",
 		NATSURL: server.ClientURL(), SQLitePath: filepath.Join(t.TempDir(), "hearth.db"),
 		Agent: requiredAgentConfig(t),
 	}, slog.New(slog.DiscardHandler))

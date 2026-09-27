@@ -97,12 +97,33 @@ func failStage(stage string, err error) error {
 	return &runStageError{stage: stage, err: err}
 }
 
-//nolint:funlen,gocognit // Linear startup keeps dependency order explicit.
 func Run(
 	ctx context.Context,
 	config Config,
 	logger *slog.Logger,
+) error {
+	return runWithOptions(ctx, config, logger, runOptions{})
+}
+
+// runOptions supplies per-instance lifecycle dependencies for process tests.
+// Run uses the configured address and the production shutdown deadline.
+type runOptions struct {
+	httpListener        net.Listener
+	httpShutdownTimeout time.Duration
+}
+
+//nolint:funlen,gocognit // Linear startup keeps dependency order explicit.
+func runWithOptions(
+	ctx context.Context,
+	config Config,
+	logger *slog.Logger,
+	options runOptions,
 ) (runErr error) {
+	// Take ownership before validation so even early startup failures release
+	// a listener supplied by the caller.
+	if options.httpListener != nil {
+		defer func() { _ = options.httpListener.Close() }()
+	}
 	if err := config.Validate(); err != nil {
 		return failStage("validate_config", err)
 	}
@@ -115,7 +136,9 @@ func Run(
 	automationsLogger := logger.With(slog.String("component", "automations"))
 	agentLogger := logger.With(slog.String("component", "agent"))
 	natsLogger := logger.With(slog.String("component", "nats"))
-	shutdown := &coreShutdown{runContext: ctx, logger: processLogger}
+	shutdown := &coreShutdown{
+		runContext: ctx, logger: processLogger, httpShutdownTimeout: options.httpShutdownTimeout,
+	}
 	// Register resources as they start so this defer also handles partial startup.
 	// Preserve the original failure; shutdown logs any cleanup failures.
 	defer func() {
@@ -351,7 +374,7 @@ func Run(
 		service, automationService, agentService, readiness, service, automationService,
 		mcpServer,
 	)
-	return serveHTTP(ctx, config, shutdown, handler, coreLogger)
+	return serveHTTP(ctx, config, shutdown, handler, coreLogger, options.httpListener)
 }
 
 // serveHTTP binds the configured address, serves the assembled handler, and
@@ -365,10 +388,14 @@ func serveHTTP(
 	shutdown *coreShutdown,
 	handler http.Handler,
 	logger *slog.Logger,
+	listener net.Listener,
 ) error {
-	listener, listenErr := (&net.ListenConfig{}).Listen(ctx, "tcp", config.HTTPAddr)
-	if listenErr != nil {
-		return failStage("http_listen", listenErr)
+	if listener == nil {
+		var listenErr error
+		listener, listenErr = (&net.ListenConfig{}).Listen(ctx, "tcp", config.HTTPAddr)
+		if listenErr != nil {
+			return failStage("http_listen", listenErr)
+		}
 	}
 	logger.InfoContext(
 		ctx,

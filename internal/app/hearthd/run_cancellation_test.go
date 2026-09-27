@@ -29,9 +29,47 @@ func TestRunCanceledContextReturnsCancellation(t *testing.T) {
 	}
 }
 
+// A supplied listener belongs to Run even if startup fails before HTTP serving.
+func TestRunClosesSuppliedListenerOnStartupFailure(t *testing.T) {
+	t.Parallel()
+	for _, validConfig := range []bool{false, true} {
+		name := "invalid_config"
+		if validConfig {
+			name = "canceled_startup"
+		}
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			listener, err := (&net.ListenConfig{}).Listen(t.Context(), "tcp", "127.0.0.1:0")
+			if err != nil {
+				t.Fatal(err)
+			}
+			t.Cleanup(func() { _ = listener.Close() })
+			var config Config
+			if validConfig {
+				config = Config{
+					HouseholdTimezone: "UTC", HTTPAddr: listener.Addr().String(),
+					NATSURL: "nats://127.0.0.1:4222", SQLitePath: filepath.Join(t.TempDir(), "hearth.db"),
+					Agent: requiredAgentConfig(t),
+				}
+				if validateErr := config.Validate(); validateErr != nil {
+					t.Fatal(validateErr)
+				}
+			}
+			ctx, cancel := context.WithCancel(t.Context())
+			cancel()
+			if runErr := runWithOptions(ctx, config, nil, runOptions{httpListener: listener}); runErr == nil {
+				t.Fatal("Run succeeded, want startup failure")
+			}
+			if closeErr := listener.Close(); !errors.Is(closeErr, net.ErrClosed) {
+				t.Fatalf("listener Close = %v, want already closed after startup failure", closeErr)
+			}
+		})
+	}
+}
+
 // This test protects the bounded shutdown contract and fails if a client that
 // connected without completing a request turns a clean cancellation into a
-// staged failure or delays teardown past the five-second HTTP window. net/http
+// staged failure or delays teardown past the configured HTTP window. net/http
 // cannot reclaim such a socket inside that window: it is indistinguishable from
 // a slow client, and freeing it needs ReadHeaderTimeout plus a shutdown poll
 // interval. The connection also stays open, so a bounded window must force it
@@ -42,7 +80,9 @@ func TestRunCancellationForceClosesUnfinishedClientConnection(t *testing.T) {
 	defer cancel()
 	server := startLifecycleNATSServer(t)
 	client := newNonPoolingHTTPClient(t)
-	address := unusedLoopbackAddress(t)
+	address, options := reserveLoopbackListener(t)
+	const testShutdownTimeout = 100 * time.Millisecond
+	options.httpShutdownTimeout = testShutdownTimeout
 	config := Config{HouseholdTimezone: "UTC",
 		HTTPAddr: address, NATSURL: server.ClientURL(),
 		SQLitePath: filepath.Join(t.TempDir(), "hearth.db"),
@@ -53,7 +93,7 @@ func TestRunCancellationForceClosesUnfinishedClientConnection(t *testing.T) {
 	defer stopCore()
 	runErrors := make(chan error, 1)
 	go func() {
-		runErrors <- Run(runContext, config, slog.New(slog.DiscardHandler))
+		runErrors <- runWithOptions(runContext, config, slog.New(slog.DiscardHandler), options)
 	}()
 	waitForCoreHTTPStatus(ctx, t, client, address, "/healthz", runErrors)
 	waitForCoreHTTPStatus(ctx, t, client, address, "/readyz", runErrors)
@@ -77,8 +117,8 @@ func TestRunCancellationForceClosesUnfinishedClientConnection(t *testing.T) {
 	case <-time.After(10 * time.Second):
 		t.Fatal("Run did not stop")
 	}
-	if elapsed := time.Since(started); elapsed > shutdownTimeout+2*time.Second {
-		t.Fatalf("cancellation took %v, want within the %v HTTP shutdown window", elapsed, shutdownTimeout)
+	if elapsed := time.Since(started); elapsed > testShutdownTimeout+2*time.Second {
+		t.Fatalf("cancellation took %v, want within the %v HTTP shutdown window", elapsed, testShutdownTimeout)
 	}
 	unfinished.SetReadDeadline(time.Now().Add(2 * time.Second))
 	if _, readErr := unfinished.Read(make([]byte, 1)); readErr == nil || errors.Is(readErr, os.ErrDeadlineExceeded) {
@@ -87,11 +127,18 @@ func TestRunCancellationForceClosesUnfinishedClientConnection(t *testing.T) {
 
 	// The forced close still releases the address, database, and NATS
 	// connection, so the same configuration starts again and stops cleanly.
+	secondListener, err := (&net.ListenConfig{}).Listen(ctx, "tcp", address)
+	if err != nil {
+		t.Fatalf("rebind HTTP address after shutdown: %v", err)
+	}
+	t.Cleanup(func() { _ = secondListener.Close() })
 	secondContext, stopSecondCore := context.WithCancel(ctx)
 	defer stopSecondCore()
 	secondErrors := make(chan error, 1)
 	go func() {
-		secondErrors <- Run(secondContext, config, slog.New(slog.DiscardHandler))
+		secondErrors <- runWithOptions(secondContext, config, slog.New(slog.DiscardHandler), runOptions{
+			httpListener: secondListener, httpShutdownTimeout: testShutdownTimeout,
+		})
 	}()
 	waitForCoreHTTPStatus(ctx, t, client, address, "/healthz", secondErrors)
 	waitForCoreHTTPStatus(ctx, t, client, address, "/readyz", secondErrors)

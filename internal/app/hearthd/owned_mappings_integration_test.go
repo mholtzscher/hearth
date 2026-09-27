@@ -28,16 +28,19 @@ func TestRunListsOwnedMappingsAndDrainsEndpoint(t *testing.T) { //nolint:paralle
 		t.Fatal(err)
 	}
 	runContext, stopCore := context.WithCancel(ctx)
+	httpAddress, httpOptions := reserveLoopbackListener(t)
+	databasePath := filepath.Join(t.TempDir(), "hearth.db")
+	agentConfig := requiredAgentConfig(t)
 	runErrors := make(chan error, 1)
 	runDone := make(chan struct{})
 	go func() {
 		defer close(runDone)
-		runErrors <- Run(runContext, Config{HouseholdTimezone: "UTC",
-			HTTPAddr:   unusedLoopbackAddress(t),
+		runErrors <- runWithOptions(runContext, Config{HouseholdTimezone: "UTC",
+			HTTPAddr:   httpAddress,
 			NATSURL:    server.ClientURL(),
-			SQLitePath: filepath.Join(t.TempDir(), "hearth.db"),
-			Agent:      requiredAgentConfig(t),
-		}, slog.New(slog.DiscardHandler))
+			SQLitePath: databasePath,
+			Agent:      agentConfig,
+		}, slog.New(slog.DiscardHandler), httpOptions)
 	}()
 	t.Cleanup(func() {
 		stopCore()

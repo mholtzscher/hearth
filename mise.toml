@@ -120,10 +120,26 @@ run = '''golangci-lint run ./...'''
 
 [tasks."test"]
 description = "Test with the race detector against a real Mosquitto broker"
-depends = ["tidy"]
-# Bound package parallelism so race-enabled timing tests remain stable on
-# high-core development hosts while disposable broker containers start.
-run = '''go test -race -count=1 -p 4 ./...'''
+# Standalone tests skip preparation; validation schedules tidy through its other checks.
+wait_for = ["tidy"]
+# Remove the race detector's one-second exit sleep from each test binary.
+run = '''GORACE="${GORACE:-} atexit_sleep_ms=0" go test -race ./...'''
+
+[tasks."test-profile"]
+description = "Profile one Go test package (TEST_PACKAGE and PROFILE_DIR override defaults)"
+wait_for = ["tidy"]
+run = '''
+set -eu
+profile_dir="${PROFILE_DIR:-$PWD/.data/test-profile}"
+mkdir -p "$profile_dir"
+GORACE="${GORACE:-} atexit_sleep_ms=0" go test -race -count=1 -json \
+  -o "$profile_dir/tests.test" -cpuprofile "$profile_dir/cpu.pprof" \
+  -trace "$profile_dir/trace.out" \
+  "${TEST_PACKAGE:-./internal/app/hearthd}" > "$profile_dir/tests.jsonl"
+# Embedded NATS resets the runtime block-profile rate; derive waits from the trace instead.
+go tool trace -pprof=sync "$profile_dir/trace.out" > "$profile_dir/block.pprof"
+go tool pprof -top -nodecount=20 "$profile_dir/tests.test" "$profile_dir/cpu.pprof"
+'''
 
 [tasks."fuzz-entitytypes-json-codec"]
 description = "Run a bounded JSONCodec fuzz campaign"

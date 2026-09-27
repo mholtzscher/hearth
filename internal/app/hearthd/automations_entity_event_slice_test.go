@@ -29,17 +29,17 @@ func TestAutomationEntityEventFactDrivesCommandThroughCore(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
 	server := startLifecycleNATSServer(t)
-	httpAddress := unusedLoopbackAddress(t)
+	httpAddress, httpOptions := reserveLoopbackListener(t)
 
 	runContext, stopCore := context.WithCancel(ctx)
 	defer stopCore()
 	runErrors := make(chan error, 1)
 	go func() {
-		runErrors <- Run(runContext, Config{HouseholdTimezone: "UTC",
+		runErrors <- runWithOptions(runContext, Config{HouseholdTimezone: "UTC",
 			HTTPAddr: httpAddress, NATSURL: server.ClientURL(),
 			SQLitePath: filepath.Join(t.TempDir(), "hearth.db"),
 			Agent:      requiredAgentConfig(t),
-		}, slog.New(slog.DiscardHandler))
+		}, slog.New(slog.DiscardHandler), httpOptions)
 	}()
 	waitForCoreHealthz(ctx, t, httpAddress, runErrors)
 
