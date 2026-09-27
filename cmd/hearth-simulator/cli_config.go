@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"errors"
-	"fmt"
 	"io"
 	"log/slog"
 
@@ -28,7 +27,6 @@ func newSimulatorCommand(
 		simulatorEnvFlag("adapter-id"),
 		simulatorEnvFlag("nats-url"),
 		simulatorEnvFlag("control-addr"),
-		&cli.BoolFlag{Name: "validate-config"},
 		&cli.StringFlag{Name: "log-level", Value: "info",
 			Sources: cli.NewValueSourceChain(cli.EnvVar("HEARTH_SIMULATOR_LOG_LEVEL"))},
 		&cli.StringFlag{Name: "log-format", Value: "text",
@@ -38,36 +36,26 @@ func newSimulatorCommand(
 		Name: "hearth-simulator", Usage: "run the Hearth simulator", Flags: flags,
 		Writer: stdout, ErrWriter: stderr,
 		Action: func(ctx context.Context, cmd *cli.Command) error {
-			var logger *slog.Logger
-			if !cmd.Bool("validate-config") {
-				var err error
-				logger, err = logging.NewApplicationLogger(stderr, "hearth-simulator", logging.LogOptions{
-					Level: cmd.String("log-level"), Format: cmd.String("log-format"),
-				})
-				if err != nil {
-					return err
-				}
-				logger.With(slog.String("component", "process")).InfoContext(
-					ctx, "hearth-simulator starting", slog.String("event", "process.starting"),
-				)
-			}
-			config, err := resolvedSimulatorConfig(cmd)
+			logger, err := logging.NewApplicationLogger(stderr, "hearth-simulator", logging.LogOptions{
+				Level: cmd.String("log-level"), Format: cmd.String("log-format"),
+			})
 			if err != nil {
-				if cmd.Bool("validate-config") {
-					fmt.Fprintln(stderr, platformconfig.Reason(err))
-				} else if logger != nil {
-					logger.With(slog.String("component", "process")).ErrorContext(ctx,
-						"hearth-simulator configuration failed", slog.String("event", "process.failed"),
-						slog.String("error_code", "config_invalid"), slog.String("stage", "load_config"),
-						slog.String("error", platformconfig.Reason(err)))
-				}
-				return errSimulatorFailed
-			}
-			if cmd.Bool("validate-config") {
-				fmt.Fprintln(stdout, "configuration valid:", cmd.String("config"))
-				return nil
+				return err
 			}
 			process := logger.With(slog.String("component", "process"))
+			process.InfoContext(ctx, "hearth-simulator starting", slog.String("event", "process.starting"))
+			config, err := resolvedSimulatorConfig(cmd)
+			if err != nil {
+				process.ErrorContext(
+					ctx,
+					"hearth-simulator configuration failed",
+					slog.String("event", "process.failed"),
+					slog.String("error_code", "config_invalid"),
+					slog.String("stage", "load_config"),
+					slog.String("error", platformconfig.Reason(err)),
+				)
+				return errSimulatorFailed
+			}
 			process.InfoContext(
 				ctx, "hearth-simulator configuration loaded", slog.String("event", "process.config_loaded"),
 			)

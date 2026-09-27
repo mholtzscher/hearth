@@ -92,6 +92,44 @@ func TestSimulatorConfigFilePolicy(t *testing.T) {
 	}
 }
 
+// Startup resolves address overrides and validates the complete config before
+// calling run (which would connect to NATS in the executable).
+func TestSimulatorStartupValidatesBeforeRun(t *testing.T) {
+	t.Parallel()
+	path := writeConfig(t, strings.Replace(validDevicesConfig,
+		"nats_url: \"nats://127.0.0.1:4222\"\n", "", 1))
+	var got simulator.Config
+	var stderr strings.Builder
+	command := newSimulatorCommand(func(_ context.Context, config simulator.Config, _ *slog.Logger) error {
+		got = config
+		return nil
+	}, io.Discard, &stderr)
+	if err := command.Run(context.Background(), []string{"hearth-simulator", "--config", path,
+		"--nats-url", "nats://127.0.0.1:4282", "--control-addr", "127.0.0.1:8241"}); err != nil {
+		t.Fatalf("valid config with overrides: %v (%s)", err, stderr.String())
+	}
+	if got.NATSURL != "nats://127.0.0.1:4282" || got.ControlAddr != "127.0.0.1:8241" || len(got.Devices) != 1 {
+		t.Fatalf("run received config %#v", got)
+	}
+
+	path = writeConfig(t, invalidDevicesConfig)
+	called := false
+	stderr.Reset()
+	command = newSimulatorCommand(func(context.Context, simulator.Config, *slog.Logger) error {
+		called = true
+		return nil
+	}, io.Discard, &stderr)
+	if err := command.Run(context.Background(), []string{"hearth-simulator", "--config", path,
+		"--nats-url", "nats://127.0.0.1:4282"}); err == nil || called {
+		t.Fatalf("invalid devices reached run: err %v, called %v", err, called)
+	}
+	for _, want := range []string{"devices[0] entities[0]", "invalid support", "process.failed"} {
+		if !strings.Contains(stderr.String(), want) {
+			t.Fatalf("stderr lacks %q: %q", want, stderr.String())
+		}
+	}
+}
+
 func invokeSimulatorConfig(t *testing.T, args []string) simulator.Config {
 	t.Helper()
 	config, err := invokeSimulatorConfigErr(t, args)
@@ -132,7 +170,7 @@ func TestSimulatorValidationOutputDoesNotExposeInvalidValue(t *testing.T) {
 	command := newSimulatorCommand(
 		func(context.Context, simulator.Config, *slog.Logger) error { return nil }, io.Discard, &stderr,
 	)
-	err := command.Run(context.Background(), []string{"hearth-simulator", "--config", path, "--validate-config"})
+	err := command.Run(context.Background(), []string{"hearth-simulator", "--config", path})
 	if err == nil {
 		t.Fatal("invalid config accepted")
 	}
@@ -161,24 +199,18 @@ func TestSimulatorValidationRedactsConfiguredValues(t *testing.T) {
 func checkSimulatorValidationRedaction(t *testing.T, name, yamlContent, secret string) {
 	t.Helper()
 	path := writeConfig(t, yamlContent)
-	for _, validate := range []bool{false, true} {
-		var stderr strings.Builder
-		command := newSimulatorCommand(func(context.Context, simulator.Config, *slog.Logger) error {
-			t.Fatal("run called on invalid configuration")
-			return nil
-		}, io.Discard, &stderr)
-		args := []string{"hearth-simulator", "--config", path}
-		if validate {
-			args = append(args, "--validate-config")
-		}
-		if err := command.Run(context.Background(), args); err == nil {
-			t.Fatal("invalid configuration accepted")
-		}
-		if strings.Contains(stderr.String(), secret) || strings.Contains(stderr.String(), path) {
-			t.Fatalf("stderr leaked configured value: %q", stderr.String())
-		}
-		if name == "duplicate adapter" && !strings.Contains(stderr.String(), "adapters[") {
-			t.Fatalf("missing index context: %q", stderr.String())
-		}
+	var stderr strings.Builder
+	command := newSimulatorCommand(func(context.Context, simulator.Config, *slog.Logger) error {
+		t.Fatal("run called on invalid configuration")
+		return nil
+	}, io.Discard, &stderr)
+	if err := command.Run(context.Background(), []string{"hearth-simulator", "--config", path}); err == nil {
+		t.Fatal("invalid configuration accepted")
+	}
+	if strings.Contains(stderr.String(), secret) || strings.Contains(stderr.String(), path) {
+		t.Fatalf("stderr leaked configured value: %q", stderr.String())
+	}
+	if name == "duplicate adapter" && !strings.Contains(stderr.String(), "adapters[") {
+		t.Fatalf("missing index context: %q", stderr.String())
 	}
 }
