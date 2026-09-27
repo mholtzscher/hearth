@@ -6,8 +6,10 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"os"
 
 	"github.com/urfave/cli/v3"
+	"gopkg.in/yaml.v3"
 
 	"github.com/mholtzscher/hearth/internal/app/simulator"
 	platformconfig "github.com/mholtzscher/hearth/internal/platform/config"
@@ -90,15 +92,43 @@ func simulatorEnvFlag(name string) *cli.StringFlag {
 }
 
 func resolvedSimulatorConfig(cmd *cli.Command) (simulator.Config, error) {
-	overrides := simulator.ConfigOverrides{}
+	config, err := loadSimulatorYAML(cmd.String("config"), cmd.IsSet("config"))
+	if err != nil {
+		return simulator.Config{}, err
+	}
 	if cmd.IsSet("adapter-id") {
-		overrides.AdapterID, overrides.AdapterIDSet = cmd.String("adapter-id"), true
+		config.AdapterID = cmd.String("adapter-id")
 	}
 	if cmd.IsSet("nats-url") {
-		overrides.NATSURL, overrides.NATSURLSet = cmd.String("nats-url"), true
+		config.NATSURL = cmd.String("nats-url")
 	}
 	if cmd.IsSet("control-addr") {
-		overrides.ControlAddr, overrides.ControlAddrSet = cmd.String("control-addr"), true
+		config.ControlAddr = cmd.String("control-addr")
 	}
-	return simulator.LoadConfigFromSources(cmd.String("config"), cmd.IsSet("config"), overrides)
+	if err = config.Validate(); err != nil {
+		return simulator.Config{}, platformconfig.Invalid("", err)
+	}
+	return config, nil
+}
+
+// Unknown fields are allowed; collections are supplied only by YAML.
+func loadSimulatorYAML(path string, explicit bool) (simulator.Config, error) {
+	file, err := os.Open(path)
+	if err != nil {
+		if !explicit && errors.Is(err, os.ErrNotExist) {
+			return simulator.Config{}, nil
+		}
+		return simulator.Config{}, errors.New("configuration file could not be read")
+	}
+	defer file.Close()
+	decoder := yaml.NewDecoder(file)
+	var config simulator.Config
+	if err = decoder.Decode(&config); err != nil && !errors.Is(err, io.EOF) {
+		return simulator.Config{}, errors.New("configuration file contains invalid YAML")
+	}
+	var extra any
+	if err = decoder.Decode(&extra); !errors.Is(err, io.EOF) {
+		return simulator.Config{}, errors.New("configuration file must contain a single YAML document")
+	}
+	return config, nil
 }

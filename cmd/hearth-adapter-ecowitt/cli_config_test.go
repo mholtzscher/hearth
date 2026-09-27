@@ -51,6 +51,21 @@ func TestTypedUploadIntervalSources(t *testing.T) {
 		t.Fatalf("CLI parsing failure emitted structured process.failed: %s", stderr.String())
 	}
 }
+
+// CLI resolution must not access the PASSKEY before Run starts.
+func TestCLIResolvesMissingPasskeyFile(t *testing.T) {
+	t.Parallel()
+	path := filepath.Join(t.TempDir(), "missing-passkey")
+	got := invoke(t, []string{
+		"--adapter-id", "ecowitt", "--nats-url", "nats://127.0.0.1:4222",
+		"--mqtt-url", "tcp://127.0.0.1:1883", "--mqtt-topic", "ecowitt/station",
+		"--station-gateway-name", "Gateway", "--station-outdoor-array-name", "Array",
+		"--station-passkey-file", path, "--station-upload-interval-seconds", "16",
+	})
+	if got.Station.PasskeyFile != path {
+		t.Fatalf("passkey path = %q, want %q", got.Station.PasskeyFile, path)
+	}
+}
 func invoke(t *testing.T, args []string) ecowitt.Config {
 	t.Helper()
 	var got ecowitt.Config

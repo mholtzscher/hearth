@@ -140,3 +140,45 @@ func TestSimulatorValidationOutputDoesNotExposeInvalidValue(t *testing.T) {
 		t.Fatalf("validation output leaked value or path: %q", stderr.String())
 	}
 }
+
+// Validation failures must not publish configured values through either output path.
+func TestSimulatorValidationRedactsConfiguredValues(t *testing.T) {
+	t.Parallel()
+	base := "nats_url: nats://127.0.0.1:4222\n"
+	for _, tc := range []struct{ name, yaml, secret string }{
+		{"duplicate adapter", base + "adapters:\n  - adapter_id: private-adapter\n  - adapter_id: private-adapter\n", "private-adapter"},
+		{"device", base + "adapter_id: private-adapter\ndevices:\n  - binding_key: private-device\n    name: private-device\n    kind: invalid-kind\n", "private-device"},
+		{"malformed control", base + "control_addr: private-host:invalid-port:extra\nadapter_id: simulator\n", "private-host"},
+		{"nonloopback control", base + "control_addr: private-host:8181\nadapter_id: simulator\n", "private-host"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			checkSimulatorValidationRedaction(t, tc.name, tc.yaml, tc.secret)
+		})
+	}
+}
+
+func checkSimulatorValidationRedaction(t *testing.T, name, yamlContent, secret string) {
+	t.Helper()
+	path := writeConfig(t, yamlContent)
+	for _, validate := range []bool{false, true} {
+		var stderr strings.Builder
+		command := newSimulatorCommand(func(context.Context, simulator.Config, *slog.Logger) error {
+			t.Fatal("run called on invalid configuration")
+			return nil
+		}, io.Discard, &stderr)
+		args := []string{"hearth-simulator", "--config", path}
+		if validate {
+			args = append(args, "--validate-config")
+		}
+		if err := command.Run(context.Background(), args); err == nil {
+			t.Fatal("invalid configuration accepted")
+		}
+		if strings.Contains(stderr.String(), secret) || strings.Contains(stderr.String(), path) {
+			t.Fatalf("stderr leaked configured value: %q", stderr.String())
+		}
+		if name == "duplicate adapter" && !strings.Contains(stderr.String(), "adapters[") {
+			t.Fatalf("missing index context: %q", stderr.String())
+		}
+	}
+}

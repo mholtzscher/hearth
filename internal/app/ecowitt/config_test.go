@@ -292,14 +292,32 @@ func TestConfigValidateUploadInterval(t *testing.T) {
 	}
 }
 
-// This test protects PASSKEY-file handling and fails if the Adapter accepts a
-// missing, non-regular, empty, wrong-length, or non-hexadecimal secret.
+// Static validation requires a path but must not inspect the secret file.
 func TestConfigValidatePasskeyFile(t *testing.T) {
 	t.Parallel()
 	valid := validConfig(t)
 	if err := valid.Validate(); err != nil {
-		t.Fatalf("valid PASSKEY file rejected: %v", err)
+		t.Fatalf("valid PASSKEY path rejected: %v", err)
 	}
+	valid.Station.PasskeyFile = filepath.Join(t.TempDir(), "absent")
+	if err := valid.Validate(); err != nil {
+		t.Fatalf("missing PASSKEY file rejected during static validation: %v", err)
+	}
+	// The YAML loader must also defer file existence and content checks.
+	yaml := fmt.Sprintf("adapter_id: ecowitt\nnats_url: nats://127.0.0.1:4222\n"+
+		"mqtt: {url: tcp://127.0.0.1:1883, topic: ecowitt/943cc64457a7}\n"+
+		"station: {gateway_name: Gateway, outdoor_array_name: Array, passkey_file: %s, upload_interval_seconds: 16}\n",
+		valid.Station.PasskeyFile)
+	if _, err := appecowitt.LoadConfig(writeConfig(t, yaml)); err != nil {
+		t.Fatalf("LoadConfig() rejected missing PASSKEY file: %v", err)
+	}
+	valid.Station.PasskeyFile = "  "
+	assertValidationError(t, valid, "station.passkey_file")
+}
+
+// Secret loading rejects missing, non-regular, or malformed PASSKEY files.
+func TestLoadPasskeyFile(t *testing.T) {
+	t.Parallel()
 
 	trailingNewline := writePasskeyFile(t, validPasskeyHex+"\n")
 	if _, err := appecowitt.LoadPasskeyFile(trailingNewline); err != nil {
@@ -342,10 +360,7 @@ func TestConfigValidatePasskeyFile(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
-			value := validConfig(t)
-			value.Station.PasskeyFile = test.prepare(t)
-			assertValidationError(t, value, "station.passkey_file")
-			if _, err := appecowitt.LoadPasskeyFile(value.Station.PasskeyFile); err == nil {
+			if _, err := appecowitt.LoadPasskeyFile(test.prepare(t)); err == nil {
 				t.Fatal("LoadPasskeyFile unexpectedly accepted an invalid file")
 			}
 		})
@@ -353,9 +368,10 @@ func TestConfigValidatePasskeyFile(t *testing.T) {
 
 	t.Run("empty path", func(t *testing.T) {
 		t.Parallel()
-		value := validConfig(t)
-		value.Station.PasskeyFile = "  "
-		assertValidationError(t, value, "station.passkey_file")
+		if _, err := appecowitt.LoadPasskeyFile("  "); err == nil ||
+			!strings.Contains(err.Error(), "station.passkey_file") {
+			t.Fatalf("empty path error = %v", err)
+		}
 	})
 }
 
@@ -463,9 +479,9 @@ func TestValidationErrorsNeverExposeSecrets(t *testing.T) {
 	badPath := writePasskeyFile(t, passkeySentinel)
 	value = validConfig(t)
 	value.Station.PasskeyFile = badPath
-	err = value.Validate()
+	_, err = appecowitt.LoadPasskeyFile(badPath)
 	if err == nil {
-		t.Fatal("Validate() unexpectedly accepted a non-hexadecimal PASSKEY")
+		t.Fatal("LoadPasskeyFile() unexpectedly accepted a non-hexadecimal PASSKEY")
 	}
 	assertNoSentinel(t, err.Error(), topicSentinel, passkeySentinel)
 }
