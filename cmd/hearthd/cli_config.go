@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"errors"
-	"fmt"
 	"io"
 	"log/slog"
 	"os"
@@ -72,7 +71,6 @@ func newHearthdCommand(
 				Level: cmd.String("log-level"), Format: cmd.String("log-format"),
 			})
 			if err != nil {
-				fmt.Fprintln(stderr, err)
 				return err
 			}
 			processLogger := logger.With(slog.String("component", "process"))
