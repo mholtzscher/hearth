@@ -28,17 +28,6 @@ type UpstreamConfig struct {
 	TokenFile string `yaml:"token_file"`
 }
 
-func LoadConfig(path string) (Config, error) {
-	var value Config
-	if err := platformconfig.LoadFile(path, &value); err != nil {
-		return Config{}, err
-	}
-	if err := value.Validate(); err != nil {
-		return Config{}, platformconfig.Invalid(path, err)
-	}
-	return value, nil
-}
-
 func (value Config) Validate() error {
 	if err := platformconfig.ValidateSlug("adapter_id", value.AdapterID); err != nil {
 		return err

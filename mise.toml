@@ -76,24 +76,16 @@ sqlc generate
 
 [tasks."format"]
 description = "Format Go files"
-shell = "bash -e -o pipefail -c"
 depends = ["generate"]
-run = '''
-git ls-files -z --cached --others --exclude-standard -- '*.go' |
-  xargs -0 -r sh -c 'for file do test -f "$file" && gofmt -w "$file"; done' _
-'''
+run = '''golangci-lint fmt'''
 
 [tasks."format-check"]
 description = "Check Go formatting"
-shell = "bash -e -o pipefail -c"
 depends = ["tidy"]
 run = '''
-unformatted="$(
-  git ls-files -z --cached --others --exclude-standard -- '*.go' |
-    xargs -0 -r sh -c 'for file do test -f "$file" && gofmt -l "$file"; done' _
-)"
-if test -n "$unformatted"; then
-  printf 'The following Go files need formatting:\n%s\n' "$unformatted"
+diff="$(golangci-lint fmt --diff)"
+if test -n "$diff"; then
+  printf 'The following Go files need formatting:\n%s\n' "$diff"
   exit 1
 fi
 '''

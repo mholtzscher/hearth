@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/mholtzscher/hearth/internal/app/hearthd"
+	platformconfig "github.com/mholtzscher/hearth/internal/platform/config"
 )
 
 const validYAML = `household_timezone: UTC
@@ -227,7 +228,7 @@ agent: *agent_config
 	if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	got, err := loadHearthdYAML(path, true)
+	got, err := platformconfig.LoadYAML[hearthd.Config](path, true)
 	if err != nil {
 		t.Fatalf("load aliased config: %v", err)
 	}

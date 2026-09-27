@@ -3,6 +3,7 @@ package simulator
 import (
 	"fmt"
 	"net"
+	"regexp"
 	"strings"
 
 	"github.com/mholtzscher/hearth/internal/adapters/scripted"
@@ -32,35 +33,6 @@ func (value Config) scriptedAdapters() []ScriptedAdapterConfig {
 	return []ScriptedAdapterConfig{{AdapterID: value.AdapterID, Devices: value.Devices}}
 }
 
-// ConfigOverrides replaces the simulator's transport addresses before validation.
-// Empty fields leave the YAML value unchanged.
-type ConfigOverrides struct {
-	NATSURL     string
-	ControlAddr string
-}
-
-func LoadConfig(path string) (Config, error) {
-	return LoadConfigWithOverrides(path, ConfigOverrides{})
-}
-
-// LoadConfigWithOverrides loads simulator YAML and applies CLI addresses before validation.
-func LoadConfigWithOverrides(path string, overrides ConfigOverrides) (Config, error) {
-	var value Config
-	if err := platformconfig.LoadFile(path, &value); err != nil {
-		return Config{}, err
-	}
-	if overrides.NATSURL != "" {
-		value.NATSURL = overrides.NATSURL
-	}
-	if overrides.ControlAddr != "" {
-		value.ControlAddr = overrides.ControlAddr
-	}
-	if err := value.Validate(); err != nil {
-		return Config{}, platformconfig.Invalid(path, err)
-	}
-	return value, nil
-}
-
 func (value Config) Validate() error {
 	if len(value.Adapters) != 0 && (value.AdapterID != "" || value.Devices != nil) {
 		return fmt.Errorf("adapters cannot be combined with adapter_id or devices")
@@ -79,11 +51,11 @@ func (value Config) Validate() error {
 			return fmt.Errorf("adapters[%d]: %w", index, err)
 		}
 		if seen[entry.AdapterID] {
-			return fmt.Errorf("adapters[%d]: duplicate adapter_id %q", index, entry.AdapterID)
+			return fmt.Errorf("adapters[%d]: duplicate adapter_id", index)
 		}
 		seen[entry.AdapterID] = true
 		if err := validateScriptedDevices(entry.Devices); err != nil {
-			return fmt.Errorf("adapter %q: %w", entry.AdapterID, err)
+			return fmt.Errorf("adapters[%d]: %w", index, err)
 		}
 	}
 	return nil
@@ -96,21 +68,30 @@ func (value Config) Validate() error {
 func validateScriptedDevices(devices []scripted.DeviceSpec) error {
 	for index := range devices {
 		if err := devices[index].Validate(); err != nil {
-			return fmt.Errorf("devices[%d]: %w", index, err)
+			return fmt.Errorf("devices[%d]: invalid Device configuration", index)
 		}
 	}
 	if err := scripted.ValidateValues(devices); err != nil {
-		return err
+		category := "invalid scripted Device values"
+		if strings.Contains(err.Error(), ": invalid support:") {
+			category = "invalid support"
+		}
+		if location := scriptedValueLocation.FindString(err.Error()); location != "" {
+			return fmt.Errorf("%s: %s", location, category)
+		}
+		return fmt.Errorf("%s", category)
 	}
 	return nil
 }
+
+var scriptedValueLocation = regexp.MustCompile(`^devices\[[0-9]+\](?: entities\[[0-9]+\])?`)
 
 // validateLoopbackAddr keeps the agent control channel off the network: only
 // loopback hosts with an explicit port are accepted.
 func validateLoopbackAddr(addr string) error {
 	host, port, err := net.SplitHostPort(addr)
 	if err != nil {
-		return fmt.Errorf("control_addr must be host:port: %w", err)
+		return fmt.Errorf("control_addr must be host:port")
 	}
 	if port == "" || port == "0" {
 		return fmt.Errorf("control_addr requires an explicit port")
@@ -120,7 +101,7 @@ func validateLoopbackAddr(addr string) error {
 	}
 	parsed := net.ParseIP(host)
 	if parsed == nil || !parsed.IsLoopback() {
-		return fmt.Errorf("control_addr must be loopback, got %q", host)
+		return fmt.Errorf("control_addr must be loopback")
 	}
 	return nil
 }

@@ -7,6 +7,8 @@ import (
 	"testing"
 	"time"
 
+	"gopkg.in/yaml.v3"
+
 	"github.com/mholtzscher/hearth/internal/adapters/scripted"
 	appsimulator "github.com/mholtzscher/hearth/internal/app/simulator"
 )
@@ -112,9 +114,7 @@ func TestConfigValidatesControlAddr(t *testing.T) {
 func loadValidationSimulatorExample(t *testing.T) appsimulator.Config {
 	t.Helper()
 	path := filepath.Join("..", "..", "..", "configs", "scripted.simulator.yaml")
-	value, err := appsimulator.LoadConfigWithOverrides(path, appsimulator.ConfigOverrides{
-		NATSURL: "nats://127.0.0.1:4222", ControlAddr: "127.0.0.1:8181",
-	})
+	value, err := loadTestConfig(t, path, "nats://127.0.0.1:4222", "127.0.0.1:8181")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -140,9 +140,7 @@ func TestLoadScriptedExampleFile(t *testing.T) {
 func TestSimulatorTransportOverridesBeforeValidation(t *testing.T) {
 	t.Parallel()
 	path := filepath.Join("..", "..", "..", "configs", "scripted.simulator.yaml")
-	config, err := appsimulator.LoadConfigWithOverrides(path, appsimulator.ConfigOverrides{
-		NATSURL: "nats://127.0.0.1:4282", ControlAddr: "127.0.0.1:8241",
-	})
+	config, err := loadTestConfig(t, path, "nats://127.0.0.1:4282", "127.0.0.1:8241")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -150,9 +148,7 @@ func TestSimulatorTransportOverridesBeforeValidation(t *testing.T) {
 		len(config.Adapters) != 5 {
 		t.Fatalf("simulator scenario changed while overriding transport: %+v", config)
 	}
-	if _, invalidErr := appsimulator.LoadConfigWithOverrides(path, appsimulator.ConfigOverrides{
-		ControlAddr: "0.0.0.0:8241",
-	}); invalidErr == nil {
+	if _, invalidErr := loadTestConfig(t, path, "", "0.0.0.0:8241"); invalidErr == nil {
 		t.Fatal("override bypassed loopback-only control validation")
 	}
 }
@@ -275,7 +271,7 @@ devices:
 	if writeErr := os.WriteFile(path, []byte(yaml), 0o600); writeErr != nil {
 		t.Fatal(writeErr)
 	}
-	value, err := appsimulator.LoadConfig(path)
+	value, err := loadTestConfig(t, path, "", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -317,7 +313,7 @@ devices:
 	if writeErr := os.WriteFile(path, []byte(yaml), 0o600); writeErr != nil {
 		t.Fatal(writeErr)
 	}
-	value, err := appsimulator.LoadConfig(path)
+	value, err := loadTestConfig(t, path, "", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -331,4 +327,24 @@ devices:
 	if _, newErr := scripted.New(nil, value.Devices); newErr == nil {
 		t.Fatal("scripted.New with nil Session succeeded, want an error")
 	}
+}
+
+// loadTestConfig decodes fixtures for app validation tests; production loading lives in the CLI.
+func loadTestConfig(t *testing.T, path, natsURL, controlAddr string) (appsimulator.Config, error) {
+	t.Helper()
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return appsimulator.Config{}, err
+	}
+	var config appsimulator.Config
+	if err = yaml.Unmarshal(data, &config); err != nil {
+		return appsimulator.Config{}, err
+	}
+	if natsURL != "" {
+		config.NATSURL = natsURL
+	}
+	if controlAddr != "" {
+		config.ControlAddr = controlAddr
+	}
+	return config, config.Validate()
 }
