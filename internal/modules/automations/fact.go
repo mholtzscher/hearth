@@ -153,6 +153,9 @@ func validateObservationFact(fact ObservationFact) error {
 	if len(fact.Value) == 0 {
 		return invalidFact("observation value is required")
 	}
+	if _, err := decodeJSONValue(json.RawMessage(fact.Value)); err != nil {
+		return invalidFact("observation value must be exactly one JSON value")
+	}
 	if fact.PreviousValue != nil {
 		if _, err := decodeJSONValue(json.RawMessage(fact.PreviousValue)); err != nil {
 			return invalidFact("previous observation value must be exactly one JSON value")

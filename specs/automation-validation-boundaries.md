@@ -1,7 +1,7 @@
 # Automation validation boundaries
 
-Status: proposed implementation list. The rule is adopted in
-[CODING_STANDARDS.md](../CODING_STANDARDS.md); the Go changes below are pending.
+Status: implemented. The rule is adopted in
+[CODING_STANDARDS.md](../CODING_STANDARDS.md); D1–D6 describe the completed Go changes.
 
 ## Decision and scope
 
@@ -20,7 +20,7 @@ Public HTTP, MCP, NATS, persisted JSON, and database schemas stay compatible.
 Other modules are outside this implementation scope. No compiled-definition
 cache or new package is needed.
 
-## Current evidence
+## Pre-implementation evidence
 
 - `DecodeDefinition` performs schema validation and typed normalization.
   `ValidateDefinition` normalizes before Devices checks. SQLite independently
@@ -181,29 +181,26 @@ All paths below are relative to the repository. Existing files retain their
 responsibilities; no production package split is proposed.
 
 ```text
-CODING_STANDARDS.md                         # modified now: validation rule
+CODING_STANDARDS.md                         # validation rule
 specs/
-  automation-validation-boundaries.md      # new now: implementation list
+  automation-validation-boundaries.md      # implementation record
 internal/modules/automations/
-  README.md                                # modify D1: boundary map
-  repository.go                            # modify D1: input contracts
-  definition_validation.go                 # modify D2/D3: preparation and references
-  definition_codec.go                      # modify D5: remove unused subtree API
-  conditions_validation.go                 # modify D3: validated-tree collection
-  conditions_decision.go                   # modify D3: use evaluation's checks
-  fact_processing.go                       # modify D4: Service input boundary
-  run.go                                   # modify D5: active construction/completion only
-  skip.go                                  # modify D5: Skip model
-  held_state.go                            # modify D5: remove unused evidence check
-  run_model_test.go                        # modify D5: active invariant coverage
-  skip_model_test.go                       # modify D5: active invariant coverage
-  fact_processing_validation_test.go        # new D4: direct Service rejection
-  definition_validation_test.go             # modify as needed D2/D3: preparation behavior
+  README.md                                # D1: boundary map
+  repository.go                            # D1: input contracts
+  definition_validation.go                 # D2/D3: preparation and references
+  definition_codec.go                      # D5: remove unused subtree API
+  conditions_validation.go                 # D3: validated-tree collection
+  conditions_decision.go                   # D3: use evaluation's checks
+  fact_processing.go                       # D4: Service input boundary
+  fact.go                                  # D4: fact integrity
+  run.go                                   # D5: active construction/completion only
+  skip.go                                  # D5: Skip model
+  held_state.go                            # D5: remove unused evidence check
+  run_model_test.go                        # D5: active invariant coverage
+  fact_processing_validation_test.go       # D4: direct Service rejection
   sqlite/
-    definitions.go                         # modify D2: reuse prepared bytes
-    automation_repository_test.go          # modify as needed D5/D6: write/transition contracts
-    conditions_admission_test.go           # modify as needed D5/D6: decision outcomes
-    held_state_admission_test.go           # modify as needed D5/D6: hold provenance
+    definitions.go                         # D2: reuse prepared bytes
+    conditions_admission_test.go           # D5/D6: decision outcomes
 ```
 
 ## Risks and completion
@@ -219,7 +216,5 @@ internal/modules/automations/
   continue to validate independent inputs; no shared cache or unchecked public
   prepared-value wrapper is introduced.
 
-Estimated total effort: L, roughly one to two days including invariant tracing
-and validation. The two boundary/scope decisions are settled. Implementation is
-complete when D1-D6 and A1-A6 are satisfied; this document does not claim the Go
-changes have been implemented.
+The boundary and scope decisions are settled. D1–D6 were implemented and
+validated with `mise run validate`.
