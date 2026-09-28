@@ -14,13 +14,6 @@ func DecideConditions(
 	snapshot devices.EntityStateSnapshot,
 	at time.Time,
 ) (ConditionDecision, SkipReason, error) {
-	required, err := RequiredConditionEntityIDs(*conditions)
-	if err != nil {
-		return nil, "", err
-	}
-	if missing := missingSnapshotCoverage(required, snapshot); len(missing) > 0 {
-		return nil, "", &ConditionSnapshotRequiredError{RequiredEntityIDs: missing}
-	}
 	evaluation, err := EvaluateConditions(*conditions, snapshot, at)
 	if err != nil {
 		return nil, "", err
@@ -36,17 +29,4 @@ func DecideConditions(
 	default:
 		return nil, "", invalid("condition evaluation has an unknown result")
 	}
-}
-
-// missingSnapshotCoverage returns the required set when the snapshot does not cover all of it.
-func missingSnapshotCoverage(
-	required []devices.EntityID,
-	snapshot devices.EntityStateSnapshot,
-) []devices.EntityID {
-	for _, entityID := range required {
-		if _, covered := snapshot.Entries[entityID]; !covered {
-			return required
-		}
-	}
-	return nil
 }

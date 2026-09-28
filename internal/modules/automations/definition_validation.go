@@ -50,12 +50,13 @@ func (*DefinitionError) Is(target error) bool { return target == ErrInvalidAutom
 // NormalizeDefinition returns a structurally validated, canonical copy
 // without consulting devices. Its encoded form must fit the 64 KiB limit.
 func NormalizeDefinition(definition Definition) (Definition, error) {
-	normalized, _, err := normalizeAndEncodeAutomationDefinition(definition)
+	normalized, _, err := NormalizeAndEncodeDefinition(definition)
 	return normalized, err
 }
 
-// normalizeAndEncodeAutomationDefinition returns the normalized definition and persisted bytes.
-func normalizeAndEncodeAutomationDefinition(
+// NormalizeAndEncodeDefinition returns an owned, structurally valid canonical
+// definition and its size-checked encoding without consulting Devices.
+func NormalizeAndEncodeDefinition(
 	definition Definition,
 ) (Definition, json.RawMessage, error) {
 	normalized, err := normalizeAutomationDefinition(definition)
@@ -169,10 +170,8 @@ func validateAutomationConditionReferences(
 	if conditions == nil {
 		return nil
 	}
-	entityIDs, err := RequiredConditionEntityIDs(*conditions)
-	if err != nil {
-		return err
-	}
+	// This tree was normalized before reference validation.
+	entityIDs := requiredValidatedConditionEntityIDs(*conditions)
 	for _, entityID := range entityIDs {
 		if validationErr := automationDevices.ValidateConditionEntity(ctx, entityID); validationErr != nil {
 			return fmt.Errorf("%w: conditions: %w", ErrInvalidAutomation, validationErr)

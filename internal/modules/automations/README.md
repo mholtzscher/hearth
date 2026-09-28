@@ -27,11 +27,32 @@ Observation identity and `receive_order` during Fact processing, and
 `entity_states` for current State at expiry, inside the shared SQLite transaction.
 It does not write device tables or maintain a second State projection.
 
+## Validation boundaries
+
+| Entry point | Owns |
+| --- | --- |
+| Definition JSON decoding | Strict wire shape, bounds, typed structure, owned normalized values |
+| Service create/replace | Typed structure and current Devices references |
+| Repository create/replace | Typed structure, encoded size, revision concurrency |
+| NATS fact decoding | Wire contract and mapped fact integrity |
+| Service fact receipt | Fact integrity before matching or dependency reads |
+| Repository fact admission | Fact integrity and transaction-local eligibility |
+| Public condition helpers | Structural safety for freely constructed trees |
+| Condition evaluation | Snapshot coverage and evaluation of supplied evidence |
+| Step/Run completion | Terminal outcome input and legal persisted transition |
+| Persistence decoding | Decode retained representation; preserve existing corruption checks |
+
+Pure matching helpers operate on validated definitions and facts; export alone
+does not make them independent input boundaries. JSON, pointer, and duration
+handling still parses defensively.
+
 ## File responsibilities
 
 - `definition.go`, `definition_codec.go`, `definition_validation.go`, and
   `definition_management.go` own definition types, encoding, validation, and
-  service operations respectively; `conditions_codec.go` handles Condition trees.
+  service operations respectively; `definition_validation.go` also prepares
+  normalized, size-checked bytes for repository writes. `conditions_codec.go`
+  handles Condition trees.
 - `fact_processing.go`, `manual_runs.go`, and `held_state_processing.go` own the
   three admission workflows. `conditions_snapshot.go` reads Condition State;
   `conditions_decision.go` decides from that snapshot.

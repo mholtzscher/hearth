@@ -23,6 +23,9 @@ func (service *Service) ReceiveDeviceFact(
 		return AdmissionOutcome{}, ErrAdmissionUnavailable
 	}
 	defer reservation.Release()
+	if err := ValidateDeviceFact(fact); err != nil {
+		return AdmissionOutcome{}, err
+	}
 	result, err := service.admitAutomaticFact(ctx, fact)
 	if err != nil {
 		reservation.Release()

@@ -21,16 +21,6 @@ type HeldStateEvidence struct {
 	DueAt     time.Time
 }
 
-func validateHeldStateEvidence(evidence HeldStateEvidence) error {
-	if _, err := ParseTriggerID(string(evidence.TriggerID)); err != nil {
-		return err
-	}
-	if evidence.StartedAt.IsZero() || evidence.DueAt.IsZero() || !evidence.DueAt.After(evidence.StartedAt) {
-		return invalid("held-state evidence requires a due time after its start time")
-	}
-	return nil
-}
-
 // HeldStateDuration converts a validated held-state duration without allowing
 // an integer overflow in [time.Duration]'s nanosecond representation.
 func HeldStateDuration(seconds int64) (time.Duration, error) {

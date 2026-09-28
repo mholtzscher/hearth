@@ -22,10 +22,9 @@ var automationDefinitionSchema []byte
 //nolint:gochecknoglobals // One immutable compiled schema, never reassigned.
 var automationDefinitionCodec = sync.OnceValues(NewDefinitionCodec)
 
-// DefinitionCodec owns the compiled strict definition schema and its reusable Condition subtree.
+// DefinitionCodec owns the compiled strict definition schema.
 type DefinitionCodec struct {
-	schema    *jsonschema.Schema
-	condition *jsonschema.Schema
+	schema *jsonschema.Schema
 }
 
 // NewDefinitionCodec compiles the canonical embedded schema.
@@ -43,30 +42,12 @@ func NewDefinitionCodec() (*DefinitionCodec, error) {
 	if err != nil {
 		return nil, fmt.Errorf("automation definition schema compile: %w", err)
 	}
-	condition, err := compiler.Compile(schemaID + "#/$defs/condition")
-	if err != nil {
-		return nil, fmt.Errorf("automation condition schema compile: %w", err)
-	}
-	return &DefinitionCodec{schema: compiled, condition: condition}, nil
+	return &DefinitionCodec{schema: compiled}, nil
 }
 
 // AutomationDefinitionSchema returns owned copies of the embedded strict shape.
 func (*DefinitionCodec) AutomationDefinitionSchema() json.RawMessage {
 	return bytes.Clone(automationDefinitionSchema)
-}
-
-// ValidateCondition validates one raw flattened Condition node against the same
-// strict recursive schema a definition document uses, rejecting unknown or
-// contradictory family fields.
-func (codec *DefinitionCodec) ValidateCondition(raw json.RawMessage) error {
-	document, err := decodeJSONValue(raw)
-	if err != nil {
-		return definitionIssue("", "condition must be exactly one JSON value")
-	}
-	if validationErr := codec.condition.Validate(document); validationErr != nil {
-		return definitionIssue("", "condition does not satisfy the strict schema")
-	}
-	return nil
 }
 
 // DecodeDefinition validates and normalizes JSON against the strict schema and structural rules.

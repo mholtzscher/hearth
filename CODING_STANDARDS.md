@@ -5,6 +5,26 @@ rules; this document covers judgments about readability and responsibility.
 Read the affected module's ownership documentation before recommending a change
 to its organization.
 
+## Validation boundaries
+
+Validate external or freely constructed input at an explicit entry point. Inside
+a workflow, reuse that validated result. Recheck changing facts at the operation
+that depends on them.
+
+- Name each entry point's accepted input and validation responsibility. A
+  repository that accepts arbitrary domain values is an independent boundary,
+  even when a service usually calls it with validated values.
+- Keep structural checks separate from checks against current external state.
+  Perform transactional eligibility checks against the transaction's current data.
+- Share preparation results within a boundary, including normalized values,
+  encoded bytes, and collected references. Add a prepared type only when its
+  consumer and ownership contract justify it.
+- Give every production validator a production enforcement point. Test the
+  constructor, decoder, operation, or persistence constraint that actually owns
+  the invariant; put assertion-only helpers in test files.
+- Before removing a check, identify its input contract and the remaining
+  enforcement point. Preserve independent entry-point safety and error semantics.
+
 ## Structural review
 
 Apply this section when a change creates, renames, moves, or splits files or

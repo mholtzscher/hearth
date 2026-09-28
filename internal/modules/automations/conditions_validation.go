@@ -30,6 +30,28 @@ func RequiredConditionEntityIDs(root Condition) ([]devices.EntityID, error) {
 	return slices.Compact(walk.entityIDs), nil
 }
 
+// requiredValidatedConditionEntityIDs collects references from a freshly
+// normalized tree; unlike the public helper it does not validate arbitrary input.
+func requiredValidatedConditionEntityIDs(root Condition) []devices.EntityID {
+	ids := make([]devices.EntityID, 0)
+	var collect func(Condition)
+	collect = func(node Condition) {
+		switch node.Kind {
+		case ConditionEntityState:
+			ids = append(ids, node.EntityState.EntityID)
+		case ConditionAll, ConditionAny:
+			for _, child := range node.Children {
+				collect(child)
+			}
+		case ConditionNot:
+			collect(*node.Child)
+		}
+	}
+	collect(root)
+	slices.Sort(ids)
+	return slices.Compact(ids)
+}
+
 // conditionTreeWalk validates one typed tree while collecting node IDs, entity
 // IDs, and the node count. Depth and node-count bounds keep recursion safe;
 // trees originate from JSON decoding, so cycles and shared payloads cannot occur.
