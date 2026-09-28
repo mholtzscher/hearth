@@ -2,8 +2,23 @@ package automations
 
 import (
 	"context"
+	"errors"
 	"log/slog"
+
+	"github.com/mholtzscher/hearth/internal/modules/devices"
 )
+
+// logConditionStateCorrupt records the fixed, value-free diagnostic for unusable stored State.
+func (service *Service) logConditionStateCorrupt(ctx context.Context, err error) {
+	if !errors.Is(err, devices.ErrEntityStateSnapshotCorrupt) {
+		return
+	}
+	service.dependencies.Logger.ErrorContext(
+		ctx,
+		"automation condition state is corrupt",
+		slog.String("event", "automation.condition_state_corrupt"),
+	)
+}
 
 // logRunStarted logs committed Run identity and Fact provenance.
 func (service *Service) logRunStarted(ctx context.Context, run Run) {

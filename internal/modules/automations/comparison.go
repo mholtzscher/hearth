@@ -1,17 +1,41 @@
 package automations
 
 import (
-	"bytes"
 	"encoding/json"
-	"errors"
 	"fmt"
-	"io"
 	"math/big"
 	"strconv"
 	"strings"
 
 	"github.com/mholtzscher/hearth/internal/modules/devices"
 )
+
+// ComparisonOperator is the closed set of typed Observation comparisons.
+type ComparisonOperator string
+
+const (
+	// ComparisonEqual requires equal JSON type and equal JSON value.
+	ComparisonEqual ComparisonOperator = "eq"
+	// ComparisonNotEqual requires equal JSON type and a different value.
+	ComparisonNotEqual ComparisonOperator = "ne"
+	// ComparisonLessThan requires two finite JSON numbers with left < right.
+	ComparisonLessThan ComparisonOperator = "lt"
+	// ComparisonLessThanOrEqual requires two finite JSON numbers with left <= right.
+	ComparisonLessThanOrEqual ComparisonOperator = "lte"
+	// ComparisonGreaterThan requires two finite JSON numbers with left > right.
+	ComparisonGreaterThan ComparisonOperator = "gt"
+	// ComparisonGreaterThanOrEqual requires two finite JSON numbers with left >= right.
+	ComparisonGreaterThanOrEqual ComparisonOperator = "gte"
+)
+
+// ObservationComparison is one typed comparison against an Observation Fact
+// value. Pointer is RFC 6901; the empty pointer selects the whole value, and
+// Operand is exactly one normalized JSON value.
+type ObservationComparison struct {
+	Pointer  string
+	Operator ComparisonOperator
+	Operand  json.RawMessage
+}
 
 // automationPointerMaxBytes bounds one comparison pointer in UTF-8 bytes.
 const automationPointerMaxBytes = 256
@@ -191,36 +215,6 @@ func canonicalArrayIndex(token string) (int, bool) {
 		return 0, false
 	}
 	return value, true
-}
-
-func decodeJSONValue(raw json.RawMessage) (any, error) {
-	decoder := json.NewDecoder(bytes.NewReader(raw))
-	decoder.UseNumber()
-	var value any
-	if err := decoder.Decode(&value); err != nil {
-		return nil, err
-	}
-	var trailing any
-	if err := decoder.Decode(&trailing); !errors.Is(err, io.EOF) {
-		return nil, errors.New("trailing content after JSON value")
-	}
-	return value, nil
-}
-
-// DecodeStrictJSONObject decodes exactly one JSON object, rejecting unknown
-// fields and trailing content. It is the module's shared strict-envelope
-// decoder for persisted documents and transport bodies.
-func DecodeStrictJSONObject(raw json.RawMessage, target any) error {
-	decoder := json.NewDecoder(bytes.NewReader(raw))
-	decoder.DisallowUnknownFields()
-	if err := decoder.Decode(target); err != nil {
-		return err
-	}
-	var trailing any
-	if err := decoder.Decode(&trailing); !errors.Is(err, io.EOF) {
-		return errors.New("trailing content after JSON object")
-	}
-	return nil
 }
 
 func compareJSONValues(operator ComparisonOperator, left, right any) (bool, error) {

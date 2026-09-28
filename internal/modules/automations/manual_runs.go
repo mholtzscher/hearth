@@ -2,6 +2,13 @@ package automations
 
 import "context"
 
+// ManualRunInput carries explicit operator intent for one manual admission; no
+// Command identities are accepted.
+type ManualRunInput struct {
+	AutomationID     AutomationID
+	BypassConditions bool
+}
+
 // StartManualRun admits one Run from the current definition snapshot, even when
 // the Automation is disabled. Conditions are evaluated unless
 // [ManualRunInput.BypassConditions] requests an explicit bypass; a committed
@@ -47,4 +54,29 @@ func (service *Service) StartManualRun(ctx context.Context, input ManualRunInput
 	reservation.Release()
 	service.logRunStarted(ctx, run)
 	return run, nil
+}
+
+// admitManualRun reads the current definition before opening the admission transaction.
+func (service *Service) admitManualRun(
+	ctx context.Context,
+	input ManualRunInput,
+) (ManualAdmissionResult, error) {
+	admissionContext, cancel := context.WithTimeout(ctx, AdmissionTimeout)
+	defer cancel()
+	record, err := service.repository.GetAutomation(admissionContext, input.AutomationID)
+	if err != nil {
+		return ManualAdmissionResult{}, err
+	}
+	snapshot := emptyEntityStateSnapshot()
+	if !input.BypassConditions && record.Definition.Conditions != nil {
+		required, requiredErr := RequiredConditionEntityIDs(*record.Definition.Conditions)
+		if requiredErr != nil {
+			return ManualAdmissionResult{}, requiredErr
+		}
+		snapshot, err = service.readConditionStateSnapshot(admissionContext, required)
+		if err != nil {
+			return ManualAdmissionResult{}, err
+		}
+	}
+	return service.repository.AdmitManualRun(admissionContext, input, snapshot, service.dependencies.Now())
 }

@@ -134,58 +134,6 @@ func decodeOptionalDecisionSnapshot(raw json.RawMessage) (*Condition, error) {
 	return &snapshot, nil
 }
 
-// ValidateRunConditionDecision checks one Run's decision against its admission
-// source and outcome. Envelope coherence holds by construction; only the
-// record-kind rules remain.
-func ValidateRunConditionDecision(run Run) error {
-	decision := run.ConditionDecision
-	switch decision.DecisionMode() {
-	case ConditionDecisionNotConfigured, ConditionDecisionEvaluated:
-	case ConditionDecisionBypassed:
-		if run.Source != RunSourceManual {
-			return invalid("condition decision: only a manual Run may bypass conditions")
-		}
-	case ConditionDecisionNotEvaluated:
-		return invalid("condition decision: a Run never records a not_evaluated decision")
-	default:
-		return invalid("condition decision: unknown mode %q", decision.DecisionMode())
-	}
-	if evaluation := decision.DecisionEvaluation(); evaluation != nil && evaluation.Result != ConditionTrue {
-		return invalid("condition decision: an evaluated Run requires a true root result")
-	}
-	return nil
-}
-
-// ValidateSkipConditionDecision checks one Skip's decision against its reason. A
-// Skip never records a bypass; a condition Skip must have evaluated false or
-// unknown to match its reason.
-func ValidateSkipConditionDecision(skip Skip) error {
-	decision := skip.ConditionDecision
-	if decision.DecisionMode() == ConditionDecisionBypassed {
-		return invalid("condition decision: a Skip is never a bypass")
-	}
-	switch skip.Reason {
-	case SkipStaleFact, SkipBusy:
-		if decision.DecisionMode() == ConditionDecisionEvaluated {
-			return invalid("condition decision: a stale or busy Skip does not evaluate conditions")
-		}
-	case SkipConditionsFalse, SkipConditionsUnknown:
-		if decision.DecisionMode() != ConditionDecisionEvaluated {
-			return invalid("condition decision: a condition Skip requires an evaluated decision")
-		}
-		want := ConditionFalse
-		if skip.Reason == SkipConditionsUnknown {
-			want = ConditionUnknown
-		}
-		if decision.DecisionEvaluation().Result != want {
-			return invalid("condition decision: a condition Skip result matches its reason")
-		}
-	default:
-		return invalid("condition decision: unknown skip reason %q", skip.Reason)
-	}
-	return nil
-}
-
 // automationConditionEvaluationFromJSON maps one persisted evaluation to its
 // domain form, normalizing evidence times to UTC.
 func automationConditionEvaluationFromJSON(

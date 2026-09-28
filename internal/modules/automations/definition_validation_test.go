@@ -1,6 +1,7 @@
 package automations_test
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -351,5 +352,41 @@ func TestNormalizeAutomationDefinitionOwnsCallerMemory(t *testing.T) {
 	}
 	if string(before) != string(after) {
 		t.Fatalf("normalized definition aliases caller memory:\n%s\n%s", before, after)
+	}
+}
+
+func TestValidateAutomationDefinitionValidatesHeldStateEntityAndPointers(t *testing.T) {
+	t.Parallel()
+	stub := &stubAutomationDevices{}
+	triggerEntity := newEntityID(t)
+	stepEntity := newEntityID(t)
+	definition := automations.Definition{
+		Name:    "Held",
+		Enabled: true,
+		Triggers: []automations.Trigger{{
+			ID: "held", Kind: automations.TriggerKindHeldState,
+			HeldState: &automations.HeldStateTrigger{
+				EntityID: triggerEntity, ForSeconds: 60,
+				Comparisons: []automations.ObservationComparison{{
+					Pointer: "/on", Operator: automations.ComparisonEqual, Operand: json.RawMessage(`true`),
+				}},
+			},
+		}},
+		Steps: []automations.Step{{
+			ID: "step", EntityID: stepEntity, OperationName: devices.OperationNameSet,
+			Parameters: devices.CommandParameters(`{"value":true}`),
+		}},
+	}
+	if _, err := automations.ValidateDefinition(context.Background(), stub, definition); err != nil {
+		t.Fatalf("stateful held trigger should validate: %v", err)
+	}
+	if len(stub.observationCalls) != 1 || stub.observationCalls[0] != triggerEntity {
+		t.Fatalf("held trigger reference calls = %v, want entity pointer validation", stub.observationCalls)
+	}
+	stub.observationError = errors.New("stateless entity")
+	if _, err := automations.ValidateDefinition(
+		context.Background(), stub, definition,
+	); !errors.Is(err, automations.ErrInvalidAutomation) {
+		t.Fatalf("stateless held trigger error = %v, want invalid automation", err)
 	}
 }

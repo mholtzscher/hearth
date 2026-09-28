@@ -17,6 +17,13 @@ type AdmissionResult struct {
 	Skips       []AdmissionSkip
 }
 
+// ManualAdmissionResult is exactly one committed Run or Skip, returned only
+// after the transaction commits.
+type ManualAdmissionResult struct {
+	Run  *Run
+	Skip *Skip
+}
+
 // AdmissionSkip carries committed Skip identity, admission source, reason, and
 // nullable Fact identity for logging. FactID, Family, and Variant are set only
 // for a device-fact Skip.

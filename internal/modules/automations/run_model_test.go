@@ -1,6 +1,7 @@
 package automations_test
 
 import (
+	"errors"
 	"testing"
 	"time"
 
@@ -170,5 +171,60 @@ func TestValidateAutomationRunRejectsImpossibleCombinations(t *testing.T) {
 				t.Fatal("impossible run was accepted")
 			}
 		})
+	}
+}
+
+// Run decisions never record not_evaluated, bypass only a manual Run, and
+// admit on a true root. Envelope-incoherent decisions are unrepresentable, so
+// only the record-kind rules remain testable.
+func TestValidateRunConditionDecision(t *testing.T) {
+	t.Parallel()
+	trueTree, trueEvaluation := conditionTreeAndEvaluation(
+		t, automations.ConditionTrue, automations.ConditionTrue,
+	)
+	falseTree, falseEvaluation := conditionTreeAndEvaluation(
+		t, automations.ConditionTrue, automations.ConditionFalse,
+	)
+	run := func(
+		conditions *automations.Condition,
+		source automations.RunSource,
+		decision automations.ConditionDecision,
+	) automations.Run {
+		return automations.Run{
+			Source:            source,
+			Snapshot:          automations.Definition{Conditions: conditions},
+			ConditionDecision: decision,
+		}
+	}
+	valid := run(&trueTree, automations.RunSourceManual, automations.EvaluatedDecision(
+		trueTree, trueEvaluation,
+	))
+	if err := automations.ValidateRunConditionDecision(valid); err != nil {
+		t.Fatalf("valid evaluated Run: %v", err)
+	}
+	bypassed := run(&trueTree, automations.RunSourceManual, automations.BypassedDecision(trueTree))
+	if err := automations.ValidateRunConditionDecision(bypassed); err != nil {
+		t.Fatalf("valid bypassed Run: %v", err)
+	}
+	unconditioned := run(nil, automations.RunSourceDeviceFact, automations.NotConfiguredDecision())
+	if err := automations.ValidateRunConditionDecision(unconditioned); err != nil {
+		t.Fatalf("valid automatic unconditioned Run: %v", err)
+	}
+	cases := []struct {
+		name string
+		run  automations.Run
+	}{
+		{"not evaluated", run(&trueTree, automations.RunSourceManual, automations.NotEvaluatedDecision(trueTree))},
+		{"automatic bypass", run(&trueTree, automations.RunSourceDeviceFact, automations.BypassedDecision(trueTree))},
+		{"evaluated false root", run(&falseTree, automations.RunSourceManual, automations.EvaluatedDecision(
+			falseTree, falseEvaluation,
+		))},
+	}
+	for _, testCase := range cases {
+		if err := automations.ValidateRunConditionDecision(testCase.run); !errors.Is(
+			err, automations.ErrInvalidAutomation,
+		) {
+			t.Errorf("%s: error = %v, want ErrInvalidAutomation", testCase.name, err)
+		}
 	}
 }

@@ -581,28 +581,6 @@ func TestEvaluateAutomationConditionsRequiresCompleteCoverage(t *testing.T) {
 	}
 }
 
-func TestRequiredConditionEntityIDsAreSortedAndDeduplicated(t *testing.T) {
-	t.Parallel()
-	tree := conditionGroup(
-		automations.ConditionAll,
-		conditionLeaf("b", conditionEntity(3), "", automations.ComparisonEqual, "true", nil),
-		conditionLeaf("a", conditionEntity(1), "", automations.ComparisonEqual, "true", nil),
-		conditionLeaf("c", conditionEntity(1), "", automations.ComparisonEqual, "true", nil),
-	)
-	ids, err := automations.RequiredConditionEntityIDs(tree)
-	if err != nil {
-		t.Fatal(err)
-	}
-	want := []devices.EntityID{conditionEntity(1), conditionEntity(3)}
-	if !slices.Equal(ids, want) {
-		t.Fatalf("required IDs = %v, want %v", ids, want)
-	}
-	malformed := conditionGroup(automations.ConditionAll)
-	if _, err = automations.RequiredConditionEntityIDs(malformed); !errors.Is(err, automations.ErrInvalidAutomation) {
-		t.Fatalf("malformed tree error = %v, want ErrInvalidAutomation", err)
-	}
-}
-
 // Typed trees reject depth and node overflows at the exact boundaries.
 func TestAutomationConditionDeterministicProperties(t *testing.T) {
 	t.Parallel()

@@ -1,6 +1,7 @@
 package automations
 
 import (
+	"fmt"
 	"time"
 
 	"github.com/mholtzscher/hearth/internal/modules/devices"
@@ -9,6 +10,74 @@ import (
 // RunID is the durable identity of one Automation Run (arn_ UUIDv7), distinct
 // from the adapter run_ identity.
 type RunID string
+
+// ValidateRunConditionDecision checks one Run's decision against its admission
+// source and outcome. Envelope coherence holds by construction; only the
+// record-kind rules remain.
+func ValidateRunConditionDecision(run Run) error {
+	decision := run.ConditionDecision
+	switch decision.DecisionMode() {
+	case ConditionDecisionNotConfigured, ConditionDecisionEvaluated:
+	case ConditionDecisionBypassed:
+		if run.Source != RunSourceManual {
+			return invalid("condition decision: only a manual Run may bypass conditions")
+		}
+	case ConditionDecisionNotEvaluated:
+		return invalid("condition decision: a Run never records a not_evaluated decision")
+	default:
+		return invalid("condition decision: unknown mode %q", decision.DecisionMode())
+	}
+	if evaluation := decision.DecisionEvaluation(); evaluation != nil && evaluation.Result != ConditionTrue {
+		return invalid("condition decision: an evaluated Run requires a true root result")
+	}
+	return nil
+}
+
+// ValidateStepCompletion rejects a Step completion that is not a terminal outcome or lacks its required evidence.
+func ValidateStepCompletion(completion StepCompletion) error {
+	switch completion.Status {
+	case StepNotAttempted, StepRunning:
+		return fmt.Errorf("%w: step completion status %q is not terminal", ErrInvalidAutomation, completion.Status)
+	case StepSatisfied, StepDispatched:
+		if completion.VerifiedCommandID == nil || completion.FailureCode != nil {
+			return fmt.Errorf(
+				"%w: successful step requires a verified Command and no failure code",
+				ErrInvalidAutomation,
+			)
+		}
+	case StepFailed, StepInterrupted:
+		if completion.FailureCode == nil {
+			return fmt.Errorf("%w: failing step requires a failure code", ErrInvalidAutomation)
+		}
+	default:
+		return fmt.Errorf("%w: unknown step completion status %q", ErrInvalidAutomation, completion.Status)
+	}
+	if completion.VerifiedCommandID != nil {
+		if _, err := devices.ParseCommandID(string(*completion.VerifiedCommandID)); err != nil {
+			return fmt.Errorf("%w: verified command ID: %w", ErrInvalidAutomation, err)
+		}
+	}
+	return nil
+}
+
+// ValidateRunCompletion rejects a Run completion that is not a terminal outcome or lacks its required evidence.
+func ValidateRunCompletion(completion RunCompletion) error {
+	switch completion.Status {
+	case RunSucceeded:
+		if completion.FailureCode != nil {
+			return invalid("succeeded Run carries a failure code")
+		}
+	case RunFailed, RunInterrupted:
+		if completion.FailureCode == nil {
+			return invalid("failing Run requires a failure code")
+		}
+	case RunRunning:
+		return invalid("run completion status %q is not terminal", completion.Status)
+	default:
+		return invalid("run completion status %q is not terminal", completion.Status)
+	}
+	return nil
+}
 
 // RunSource distinguishes how a Run was admitted and records the same provenance on a Skip.
 type RunSource string
@@ -21,13 +90,6 @@ const (
 	// RunSourceHeldState marks a Run admitted when a State predicate elapsed.
 	RunSourceHeldState RunSource = "held_state"
 )
-
-// HeldStateEvidence records the scheduled window for a held-state outcome.
-type HeldStateEvidence struct {
-	TriggerID TriggerID
-	StartedAt time.Time
-	DueAt     time.Time
-}
 
 // RunStatus is the durable state of one Automation Run.
 type RunStatus string
@@ -189,15 +251,6 @@ func ValidateRun(run Run) error {
 		if err := validateStepAttempt(run, position, step); err != nil {
 			return err
 		}
-	}
-	return nil
-}
-func validateHeldStateEvidence(evidence HeldStateEvidence) error {
-	if _, err := ParseTriggerID(string(evidence.TriggerID)); err != nil {
-		return err
-	}
-	if evidence.StartedAt.IsZero() || evidence.DueAt.IsZero() || !evidence.DueAt.After(evidence.StartedAt) {
-		return invalid("held-state evidence requires a due time after its start time")
 	}
 	return nil
 }

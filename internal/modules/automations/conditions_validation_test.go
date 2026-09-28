@@ -4,9 +4,11 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"slices"
 	"testing"
 
 	"github.com/mholtzscher/hearth/internal/modules/automations"
+	"github.com/mholtzscher/hearth/internal/modules/devices"
 )
 
 func TestAutomationConditionTreeBounds(t *testing.T) {
@@ -232,3 +234,25 @@ func TestNormalizeAutomationConditionsReturnsOwnedCopy(t *testing.T) {
 // normalization is idempotent over representative valid trees. Each fixture
 // pairs one comparison style per leaf with one snapshot coverage outcome so
 // the results span true, false, and unknown without random generation.
+
+func TestRequiredConditionEntityIDsAreSortedAndDeduplicated(t *testing.T) {
+	t.Parallel()
+	tree := conditionGroup(
+		automations.ConditionAll,
+		conditionLeaf("b", conditionEntity(3), "", automations.ComparisonEqual, "true", nil),
+		conditionLeaf("a", conditionEntity(1), "", automations.ComparisonEqual, "true", nil),
+		conditionLeaf("c", conditionEntity(1), "", automations.ComparisonEqual, "true", nil),
+	)
+	ids, err := automations.RequiredConditionEntityIDs(tree)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []devices.EntityID{conditionEntity(1), conditionEntity(3)}
+	if !slices.Equal(ids, want) {
+		t.Fatalf("required IDs = %v, want %v", ids, want)
+	}
+	malformed := conditionGroup(automations.ConditionAll)
+	if _, err = automations.RequiredConditionEntityIDs(malformed); !errors.Is(err, automations.ErrInvalidAutomation) {
+		t.Fatalf("malformed tree error = %v, want ErrInvalidAutomation", err)
+	}
+}

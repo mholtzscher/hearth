@@ -9,20 +9,39 @@ parts of that module rather than independent packages or services.
 | Package | Owns |
 | --- | --- |
 | `automations` | Definitions, Trigger matching, Condition definitions and three-valued evaluation, admission and execution use cases, retention policy, domain types, repository interfaces, and Run worker lifecycle |
-| `automations/api` | HTTP operations, transport models, cursors, and error mapping |
+| `automations/api` | HTTP operations, MCP tools and resources, transport models, cursors, and error mapping |
 | `automations/nats` | Device Fact wire decoding, consumer resources, and acknowledgement policy |
 | `automations/sqlite` | Atomic persistence operations, query selection, row mapping, query sources, and generated query code |
 
-The HTTP, NATS, and SQLite packages depend on `automations`, not the reverse.
+The API, NATS, and SQLite packages depend on `automations`, not the reverse.
 Application assembly constructs the SQLite repository and injects it through the
 existing `Repository` interface. `DefinitionRepository`
 remains the narrower definition-management capability; there is no parallel
 store aggregate or generic transaction framework.
 
 The devices-facing `AutomationDevices` seam stays in the domain. SQLite never
-executes device Commands, publishes NATS messages, or starts Run workers. State
-evidence reaches the module only through that seam: automations never read
-devices tables directly or maintain a second State projection.
+executes device Commands, publishes NATS messages, or starts Run workers.
+Conditions read a coherent State snapshot through that seam. Held-state admission
+is the narrow exception: its repository reads device-owned `observations` for
+Observation identity and `receive_order` during Fact processing, and
+`entity_states` for current State at expiry, inside the shared SQLite transaction.
+It does not write device tables or maintain a second State projection.
+
+## File responsibilities
+
+- `definition.go`, `definition_codec.go`, `definition_validation.go`, and
+  `definition_management.go` own definition types, encoding, validation, and
+  service operations respectively; `conditions_codec.go` handles Condition trees.
+- `fact_processing.go`, `manual_runs.go`, and `held_state_processing.go` own the
+  three admission workflows. `conditions_snapshot.go` reads Condition State;
+  `conditions_decision.go` decides from that snapshot.
+- `repository.go` defines persistence contracts; `dependencies.go` defines the
+  Devices seam and service configuration. `admission_results.go` carries outcomes.
+- `comparison.go` owns State comparisons; `json_codec.go` owns strict JSON
+  decoding helpers; `pagination.go` owns shared page limits.
+- `api/conditions.go` maps Conditions; `api/manual_run_body.go` decodes manual
+  requests. `sqlite/held_state.go` persists holds and due outcomes, while
+  `sqlite/execution.go` owns Run and Step transitions, including interruption.
 
 ## Conditions
 
@@ -71,16 +90,25 @@ File boundaries organize related code; they do not divide existing transactions.
   only for enabled matching definitions with Conditions. A definition edit that
   makes the supplied snapshot incomplete writes nothing and returns a coverage
   error; the Service does not retry the admission.
+- Held-state Fact processing advances each hold's Observation receive-order
+  cursor in the admission transaction. At expiry, the transaction rechecks the
+  hold, definition, and current State before committing one Run or Skip and
+  consuming the hold. If Condition snapshot coverage is incomplete, the Service
+  rereads the candidates and evidence and retries within its two-second admission
+  bound. Ordinary Fact and manual coverage errors are returned without retry.
 - Manual admission checks the current definition and active Run before recording
   one immutable Run snapshot, its Condition decision, and its initial Steps.
   Disabled Automations still permit manual invocation.
 - Definition replacement and deletion enforce the expected revision atomically.
+  They also remove that Automation's held-state rows.
 - Step and Run writes preserve terminal-outcome checks. Startup interruption
   records interruption; it does not replay execution or infer Command success.
 - History pruning leaves running Runs and matched-Fact receipts intact.
 
 Only after successful admission commits does the Service start Run workers.
 Consumer acknowledgement follows durable admission, not worker completion.
+See [the held-state specification](../../../specs/held-state-triggers.md) for
+the hold cursor, expiry, and restart rules.
 
 Pure domain decisions and snapshot construction operate on domain values. SQL
 encoding, generated row types, and transaction orchestration stay in SQLite.

@@ -8,6 +8,10 @@ import (
 	"github.com/mholtzscher/hearth/internal/platform/lifecycle"
 )
 
+// AdmissionTimeout bounds one automatic or manual admission, including its
+// definition pre-read, Condition State snapshot read, and repository transaction.
+const AdmissionTimeout = 2 * time.Second
+
 // Service manages automation definitions, Run admission, and execution.
 type Service struct {
 	repository   Repository
@@ -58,6 +62,11 @@ func (service *Service) AdmissionOpen() bool {
 func (service *Service) Drain(ctx context.Context) error {
 	service.StopAdmission()
 	return service.admission.Wait(ctx)
+}
+
+// ResetPendingHeldStates discards pre-restart elapsed time while preserving hold cursors.
+func (service *Service) ResetPendingHeldStates(ctx context.Context) error {
+	return service.repository.ResetPendingHeldStates(ctx)
 }
 
 // InterruptActiveRuns marks running Runs and Steps interrupted on restart.

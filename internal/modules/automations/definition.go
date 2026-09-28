@@ -1,7 +1,6 @@
 package automations
 
 import (
-	"fmt"
 	"time"
 
 	"github.com/mholtzscher/hearth/internal/modules/devices"
@@ -44,9 +43,4 @@ type Record struct {
 type ListAutomationsParams struct {
 	AfterID *AutomationID
 	Limit   int
-}
-
-// invalid reports one invalid Automation value behind the shared class prefix.
-func invalid(format string, args ...any) error {
-	return fmt.Errorf("%w: "+format, append([]any{ErrInvalidAutomation}, args...)...)
 }

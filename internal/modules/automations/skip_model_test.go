@@ -1,6 +1,7 @@
 package automations_test
 
 import (
+	"errors"
 	"testing"
 	"time"
 
@@ -78,5 +79,67 @@ func TestValidateAutomationSkipRejectsImpossibleCombinations(t *testing.T) {
 				t.Fatal("impossible skip was accepted")
 			}
 		})
+	}
+}
+
+// Skip decisions must match their reason and never record a bypass or evaluation
+// for stale and busy outcomes.
+func TestValidateSkipConditionDecision(t *testing.T) {
+	t.Parallel()
+	falseTree, falseEvaluation := conditionTreeAndEvaluation(
+		t, automations.ConditionTrue, automations.ConditionFalse,
+	)
+	unknownTree, unknownEvaluation := conditionTreeAndEvaluation(
+		t, automations.ConditionTrue, automations.ConditionUnknown,
+	)
+	skip := func(
+		reason automations.SkipReason,
+		decision automations.ConditionDecision,
+	) automations.Skip {
+		return automations.Skip{Reason: reason, ConditionDecision: decision}
+	}
+	validFalse := skip(automations.SkipConditionsFalse, automations.EvaluatedDecision(
+		falseTree, falseEvaluation,
+	))
+	if err := automations.ValidateSkipConditionDecision(validFalse); err != nil {
+		t.Fatalf("valid conditions_false Skip: %v", err)
+	}
+	validUnknown := skip(automations.SkipConditionsUnknown, automations.EvaluatedDecision(
+		unknownTree, unknownEvaluation,
+	))
+	if err := automations.ValidateSkipConditionDecision(validUnknown); err != nil {
+		t.Fatalf("valid conditions_unknown Skip: %v", err)
+	}
+	validStale := skip(automations.SkipStaleFact, automations.NotEvaluatedDecision(falseTree))
+	if err := automations.ValidateSkipConditionDecision(validStale); err != nil {
+		t.Fatalf("valid stale Skip: %v", err)
+	}
+	cases := []struct {
+		name string
+		skip automations.Skip
+	}{
+		{
+			"reason result mismatch",
+			skip(automations.SkipConditionsFalse, automations.EvaluatedDecision(
+				falseTree, unknownEvaluation,
+			)),
+		},
+		{
+			"condition reason without evaluation",
+			skip(automations.SkipConditionsFalse, automations.NotEvaluatedDecision(falseTree)),
+		},
+		{
+			"stale Skip with evaluation",
+			skip(automations.SkipStaleFact, automations.EvaluatedDecision(falseTree, falseEvaluation)),
+		},
+		{"busy Skip with bypass", skip(automations.SkipBusy, automations.BypassedDecision(falseTree))},
+		{"unknown reason", skip(automations.SkipReason("mystery"), automations.NotEvaluatedDecision(falseTree))},
+	}
+	for _, testCase := range cases {
+		if err := automations.ValidateSkipConditionDecision(testCase.skip); !errors.Is(
+			err, automations.ErrInvalidAutomation,
+		) {
+			t.Errorf("%s: error = %v, want ErrInvalidAutomation", testCase.name, err)
+		}
 	}
 }

@@ -9,11 +9,6 @@ import (
 	"github.com/mholtzscher/hearth/internal/modules/devices"
 )
 
-// ResetPendingHeldStates discards pre-restart elapsed time while preserving hold cursors.
-func (service *Service) ResetPendingHeldStates(ctx context.Context) error {
-	return service.repository.ResetPendingHeldStates(ctx)
-}
-
 // ProcessDueHeldStates commits due held-state Runs or Skips and starts committed Run workers.
 func (service *Service) ProcessDueHeldStates(ctx context.Context, at time.Time, limit int) (int, error) {
 	reservation, admitted := service.admission.TryAcquire()
@@ -26,7 +21,7 @@ func (service *Service) ProcessDueHeldStates(ctx context.Context, at time.Time, 
 	}
 
 	deadline := time.Now().Add(AdmissionTimeout)
-	result, processed, err := service.admitDueHeldStates(ctx, at, limit, deadline)
+	result, processed, err := service.processDueHeldStateBatch(ctx, at, limit, deadline)
 	if err != nil {
 		return 0, err
 	}
@@ -44,7 +39,7 @@ func (service *Service) ProcessDueHeldStates(ctx context.Context, at time.Time, 
 	return processed, nil
 }
 
-func (service *Service) admitDueHeldStates(
+func (service *Service) processDueHeldStateBatch(
 	ctx context.Context,
 	at time.Time,
 	limit int,

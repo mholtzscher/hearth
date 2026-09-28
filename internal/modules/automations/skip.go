@@ -7,6 +7,36 @@ import (
 // SkipID is the durable identity of one recorded Skip (ask_ UUIDv7).
 type SkipID string
 
+// ValidateSkipConditionDecision checks one Skip's decision against its reason. A
+// Skip never records a bypass; a condition Skip must have evaluated false or
+// unknown to match its reason.
+func ValidateSkipConditionDecision(skip Skip) error {
+	decision := skip.ConditionDecision
+	if decision.DecisionMode() == ConditionDecisionBypassed {
+		return invalid("condition decision: a Skip is never a bypass")
+	}
+	switch skip.Reason {
+	case SkipStaleFact, SkipBusy:
+		if decision.DecisionMode() == ConditionDecisionEvaluated {
+			return invalid("condition decision: a stale or busy Skip does not evaluate conditions")
+		}
+	case SkipConditionsFalse, SkipConditionsUnknown:
+		if decision.DecisionMode() != ConditionDecisionEvaluated {
+			return invalid("condition decision: a condition Skip requires an evaluated decision")
+		}
+		want := ConditionFalse
+		if skip.Reason == SkipConditionsUnknown {
+			want = ConditionUnknown
+		}
+		if decision.DecisionEvaluation().Result != want {
+			return invalid("condition decision: a condition Skip result matches its reason")
+		}
+	default:
+		return invalid("condition decision: unknown skip reason %q", skip.Reason)
+	}
+	return nil
+}
+
 // SkipReason identifies why a matching Fact did not start a Run.
 type SkipReason string
 

@@ -1,7 +1,6 @@
 package automations
 
 import (
-	"encoding/json"
 	"fmt"
 
 	"github.com/mholtzscher/hearth/internal/modules/devices"
@@ -21,33 +20,6 @@ const (
 	// TriggerKindHeldState starts an Automation after State has matched for a duration.
 	TriggerKindHeldState TriggerKind = "held_state"
 )
-
-// ComparisonOperator is the closed set of typed Observation comparisons.
-type ComparisonOperator string
-
-const (
-	// ComparisonEqual requires equal JSON type and equal JSON value.
-	ComparisonEqual ComparisonOperator = "eq"
-	// ComparisonNotEqual requires equal JSON type and a different value.
-	ComparisonNotEqual ComparisonOperator = "ne"
-	// ComparisonLessThan requires two finite JSON numbers with left < right.
-	ComparisonLessThan ComparisonOperator = "lt"
-	// ComparisonLessThanOrEqual requires two finite JSON numbers with left <= right.
-	ComparisonLessThanOrEqual ComparisonOperator = "lte"
-	// ComparisonGreaterThan requires two finite JSON numbers with left > right.
-	ComparisonGreaterThan ComparisonOperator = "gt"
-	// ComparisonGreaterThanOrEqual requires two finite JSON numbers with left >= right.
-	ComparisonGreaterThanOrEqual ComparisonOperator = "gte"
-)
-
-// ObservationComparison is one typed comparison against an Observation Fact
-// value. Pointer is RFC 6901; the empty pointer selects the whole value, and
-// Operand is exactly one normalized JSON value.
-type ObservationComparison struct {
-	Pointer  string
-	Operator ComparisonOperator
-	Operand  json.RawMessage
-}
 
 // ObservationTrigger matches an Observation Fact by Entity, disposition, and up
 // to eight independent comparisons against each side of the transition.
