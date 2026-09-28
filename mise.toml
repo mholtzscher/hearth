@@ -53,7 +53,7 @@ ready_cmd = "curl -fsS http://127.0.0.1:$PORT/ >/dev/null && curl -fsS http://12
 [daemons.zwave-adapter]
 run = "mkdir -p .data/simulator-stack && sed 's|^nats_url:.*$|nats_url: nats://127.0.0.1:'\"$SIM_NATS_PORT\"'|' configs/zwavejs.yaml > .data/simulator-stack/zwavejs.yaml && exec go run ./cmd/hearth-adapter-zwavejs -config .data/simulator-stack/zwavejs.yaml"
 depends = ["sim-core"]
-ready_cmd = "curl -fsS http://127.0.0.1:$SIM_CORE_PORT/v1/adapters/zwavejs >/dev/null"
+ready_cmd = "bash cmd/hearth-adapter-zwavejs/ready.sh"
 
 [tasks."simulator-start"]
 description = "Start worktree-local NATS, Core, the multi-Adapter simulator, and dashboard"

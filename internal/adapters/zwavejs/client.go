@@ -127,11 +127,14 @@ type zwaveConnection interface {
 	Close()
 }
 
-// receivedEvent is one validated upstream Event together with the Adapter-owned
-// receive time. Z-Wave JS supplies no source timestamp for schema 29.
+// receivedEvent is a validated upstream Event with its Adapter-owned receive
+// time, or a poll-result marker in the same reader-ordered stream. Z-Wave JS
+// supplies no source timestamp for schema 29.
 type receivedEvent struct {
 	Event      serverEvent
 	ReceivedAt time.Time
+	// A poll-result marker blocks later frames until its publication is ordered.
+	receipt <-chan struct{}
 }
 
 // serverVersion is the first frame the Z-Wave JS server sends. A compatible
@@ -372,6 +375,7 @@ type resultEnvelope struct {
 
 	// receivedAt is the Adapter-owned UTC receive time of this frame.
 	receivedAt time.Time
+	receipt    chan struct{}
 }
 
 // serverEvent is one upstream Event frame. Controller node added and node
@@ -478,17 +482,23 @@ type nodePollValueResult struct {
 }
 
 // websocketDialer is the production zwaveDialer.
-type websocketDialer struct{}
+type websocketDialer struct{ timeout time.Duration }
 
 // Dial opens one WebSocket connection generation, sets the 16 MiB read limit,
 // and starts the single frame reader.
-func (websocketDialer) Dial(
+func (dialer websocketDialer) Dial(
 	ctx context.Context,
 	url string,
 	schemaVersion int,
 	userAgentComponents map[string]string,
 ) (zwaveConnection, error) {
-	socket, response, err := websocket.Dial(ctx, url, nil)
+	timeout := handshakeTimeout
+	if dialer.timeout > 0 {
+		timeout = dialer.timeout
+	}
+	dialContext, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+	socket, response, err := websocket.Dial(dialContext, url, nil)
 	if response != nil && response.Body != nil {
 		_ = response.Body.Close()
 	}
@@ -530,7 +540,7 @@ type websocketConnection struct {
 	// nextMessageID is the last decimal message ID allocated.
 	nextMessageID uint64
 	// pending holds the one-shot waiter of every request awaiting a result.
-	pending map[uint64]chan resultEnvelope
+	pending map[uint64]pendingRequest
 	// abandoned remembers message IDs whose owner stopped waiting before the
 	// result arrived. Their late result is recognized and ignored once instead of
 	// ending the generation, and it is bounded by maximumAbandonedRequests.
@@ -555,6 +565,11 @@ type websocketConnection struct {
 	versionSeen bool
 }
 
+type pendingRequest struct {
+	answer  chan resultEnvelope
+	command string
+}
+
 // newWebsocketConnection starts the reader for an established socket.
 func newWebsocketConnection(
 	ctx context.Context,
@@ -568,7 +583,7 @@ func newWebsocketConnection(
 		userAgentComponents: maps.Clone(userAgentComponents),
 		readContext:         context.WithoutCancel(ctx),
 		handshakeTimeout:    handshakeTimeout,
-		pending:             make(map[uint64]chan resultEnvelope),
+		pending:             make(map[uint64]pendingRequest),
 		abandoned:           make(map[uint64]struct{}),
 		writeGate:           make(chan struct{}, 1),
 		versionFrames:       make(chan serverVersion, 1),
@@ -623,9 +638,9 @@ func (connection *websocketConnection) StartListening(
 	return version, snapshot, nil
 }
 
-// SetValue writes one planned Value and returns its exact schema-29 status. An
-// unrecognized or unsuccessful status is a typed upstream rejection, not a
-// transport failure.
+// SetValue writes one planned Value and returns its exact schema-29 status. A
+// recognized failure rejects the Value; an undecodable status closes the
+// generation because the write may still be executing.
 func (connection *websocketConnection) SetValue(
 	ctx context.Context,
 	nodeID int,
@@ -656,12 +671,17 @@ func (connection *websocketConnection) SetValue(
 	}
 	var payload nodeSetValueResult
 	if err = json.Unmarshal(result.Result, &payload); err != nil {
-		return setValueStatusUnrecognized, &setValueRefusedError{
-			Status: setValueStatusUnrecognized,
-		}
+		return setValueStatusUnrecognized, connection.fatalResult(&malformedResultError{
+			Command: commandSetValue, Reason: "the result carried no decodable set payload",
+		})
 	}
 	status, ok := decodeSetValueStatus(payload.Result.Status)
-	if !ok || !status.accepted() {
+	if !ok {
+		return setValueStatusUnrecognized, connection.fatalResult(&malformedResultError{
+			Command: commandSetValue, Reason: "the result carried no recognized set status",
+		})
+	}
+	if !status.accepted() {
 		return setValueStatusUnrecognized, &setValueRefusedError{Status: status}
 	}
 	return status, nil
@@ -680,13 +700,27 @@ func (connection *websocketConnection) PollValue(
 	nodeID int,
 	id valueID,
 ) (json.RawMessage, time.Time, error) {
+	value, receivedAt, receipt, err := connection.pollValueWithReceipt(ctx, nodeID, id)
+	if receipt != nil {
+		close(receipt)
+	}
+	return value, receivedAt, err
+}
+
+// pollValueWithReceipt leaves the reader's frame marker open until the runtime
+// coordinator reserves publication of this poll ahead of later Event frames.
+func (connection *websocketConnection) pollValueWithReceipt(
+	ctx context.Context,
+	nodeID int,
+	id valueID,
+) (json.RawMessage, time.Time, chan struct{}, error) {
 	if nodeID <= 0 {
-		return nil, time.Time{}, &invalidRequestError{
+		return nil, time.Time{}, nil, &invalidRequestError{
 			Reason: "node.poll_value requires a positive node ID",
 		}
 	}
 	if err := validatePlannedValueID(id); err != nil {
-		return nil, time.Time{}, err
+		return nil, time.Time{}, nil, err
 	}
 	result, err := connection.requestSuccessAbandonable(ctx, &nodePollValueRequest{
 		Command: commandPollValue,
@@ -694,16 +728,16 @@ func (connection *websocketConnection) PollValue(
 		ValueID: id,
 	})
 	if err != nil {
-		return nil, time.Time{}, err
+		return nil, time.Time{}, result.receipt, err
 	}
 	var payload nodePollValueResult
 	if err = json.Unmarshal(result.Result, &payload); err != nil {
-		return nil, time.Time{}, connection.fatalResult(&malformedResultError{
+		return nil, time.Time{}, result.receipt, connection.fatalResult(&malformedResultError{
 			Command: commandPollValue,
 			Reason:  "the result carried no decodable poll payload",
 		})
 	}
-	return payload.Value, result.receivedAt, nil
+	return payload.Value, result.receivedAt, result.receipt, nil
 }
 
 // validatePlannedValueID refuses a Value ID this client cannot write. A local
@@ -883,6 +917,11 @@ func (connection *websocketConnection) requestAbandonable(
 	if arrived {
 		return result, nil
 	}
+	select {
+	case late := <-answer:
+		return late, nil
+	default:
+	}
 	if connection.terminated() {
 		connection.removeRequest(id)
 		return resultEnvelope{}, connection.failure()
@@ -929,10 +968,10 @@ func (connection *websocketConnection) requestSuccessAbandonable(
 ) (resultEnvelope, error) {
 	result, err := connection.requestAbandonable(ctx, request)
 	if err != nil {
-		return resultEnvelope{}, err
+		return result, err
 	}
 	if !result.Success {
-		return resultEnvelope{}, result.rejection()
+		return result, result.rejection()
 	}
 	return result, nil
 }
@@ -973,7 +1012,7 @@ func (connection *websocketConnection) registerRequest(
 		return 0, nil, connection.failure()
 	}
 	answer := make(chan resultEnvelope, 1)
-	id, err := connection.addRequest(answer)
+	id, err := connection.addRequest(answer, request.requestFields().Command)
 	if err != nil {
 		return 0, nil, err
 	}
@@ -1022,7 +1061,7 @@ func (connection *websocketConnection) releaseWriteGate() {
 }
 
 // addRequest reserves one bounded waiter slot and the next message ID.
-func (connection *websocketConnection) addRequest(answer chan resultEnvelope) (uint64, error) {
+func (connection *websocketConnection) addRequest(answer chan resultEnvelope, command string) (uint64, error) {
 	connection.mutex.Lock()
 	defer connection.mutex.Unlock()
 	if len(connection.pending) >= maximumInFlightRequests {
@@ -1030,7 +1069,7 @@ func (connection *websocketConnection) addRequest(answer chan resultEnvelope) (u
 	}
 	connection.nextMessageID++
 	id := connection.nextMessageID
-	connection.pending[id] = answer
+	connection.pending[id] = pendingRequest{answer: answer, command: command}
 	return id, nil
 }
 
@@ -1078,8 +1117,12 @@ func (connection *websocketConnection) awaitResult(
 	case result := <-answer:
 		return result, true
 	case <-connection.done:
-		return resultEnvelope{}, false
 	case <-ctx.Done():
+	}
+	select {
+	case result := <-answer:
+		return result, true
+	default:
 		return resultEnvelope{}, false
 	}
 }
@@ -1176,8 +1219,18 @@ func (connection *websocketConnection) deliverResult(id uint64, result resultEnv
 	connection.mutex.Lock()
 	if waiter, found := connection.pending[id]; found {
 		delete(connection.pending, id)
-		waiter <- result
+		if waiter.command == commandPollValue {
+			result.receipt = make(chan struct{})
+		}
+		waiter.answer <- result
 		connection.mutex.Unlock()
+		if result.receipt != nil {
+			select {
+			case connection.events <- receivedEvent{receipt: result.receipt}:
+			default:
+				return &eventQueueOverflowError{Capacity: maximumQueuedEvents}
+			}
+		}
 		return nil
 	}
 	if _, abandoned := connection.abandoned[id]; abandoned {

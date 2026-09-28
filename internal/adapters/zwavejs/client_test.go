@@ -1283,6 +1283,37 @@ func TestSetValueAcceptsOnlyDocumentedSuccessStatuses(t *testing.T) {
 	}
 }
 
+// A buffered answer must win when the connection closes immediately after
+// routing it, even if the terminating select chooses the closed channel first.
+func TestAwaitResultPrefersAnswerAfterTermination(t *testing.T) {
+	t.Parallel()
+	connection := &websocketConnection{done: make(chan struct{})}
+	close(connection.done)
+	for range 1000 {
+		answer := make(chan resultEnvelope, 1)
+		answer <- resultEnvelope{Success: true}
+		result, arrived := connection.awaitResult(context.Background(), answer)
+		if !arrived || !result.Success {
+			t.Fatal("discarded the already-delivered answer")
+		}
+	}
+}
+
+// A peer that accepts HTTP but never upgrades must not hold the dial forever.
+func TestDialTimesOutBeforeUpgrade(t *testing.T) {
+	t.Parallel()
+	server := httptest.NewServer(http.HandlerFunc(func(_ http.ResponseWriter, request *http.Request) {
+		<-request.Context().Done()
+	}))
+	defer server.Close()
+	_, err := (websocketDialer{timeout: 50 * time.Millisecond}).Dial(
+		context.Background(), "ws"+strings.TrimPrefix(server.URL, "http"), schemaVersion29, nil,
+	)
+	if !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("dial error = %v, want deadline exceeded", err)
+	}
+}
+
 // runSetValueStatusCase answers one node.set_value with one raw status and
 // asserts both the wire shape of the write and the classification of the reply.
 func runSetValueStatusCase(t *testing.T, rawStatus string, accepted bool, want setValueStatus) {
@@ -1311,6 +1342,15 @@ func runSetValueStatusCase(t *testing.T, rawStatus string, accepted bool, want s
 	)
 	requireSetValueWireShape(t, server.nextRequest())
 	if !accepted {
+		if want == setValueStatusUnrecognized {
+			requireErrorSameType(t, err, &malformedResultError{}, "set value")
+			select {
+			case <-connection.Lost():
+			default:
+				t.Fatal("unknown status did not end the connection")
+			}
+			return
+		}
 		requireRefusedStatus(t, err, want)
 		return
 	}
@@ -1604,6 +1644,65 @@ func runPollValueCase(t *testing.T, reply, wantValue string, fatal bool) {
 	if at.Before(before) || at.After(time.Now().UTC()) {
 		t.Fatalf("poll receive time = %v, want the frame receive time", at)
 	}
+}
+
+// The reader must queue a poll marker before the following Event, even if the
+// request waiter has not yet delivered its result to the runtime coordinator.
+func TestPollReceiptMarkerPrecedesLaterEvent(t *testing.T) {
+	t.Parallel()
+	for _, rejected := range []bool{false, true} {
+		t.Run(map[bool]string{false: "success", true: "rejected"}[rejected], func(t *testing.T) {
+			t.Parallel()
+			checkPollReceiptMarker(t, rejected)
+		})
+	}
+}
+
+func checkPollReceiptMarker(t *testing.T, rejected bool) {
+	t.Helper()
+	server := startScriptedServer(t, func(session *scriptedSession) {
+		if !session.completeHandshake() {
+			return
+		}
+		poll, ok := session.awaitRequest()
+		if !ok {
+			return
+		}
+		if rejected {
+			session.replyRejection(poll.messageID(), "Node is not responding")
+		} else {
+			session.sendRaw(
+				`{"type":"result","messageId":"` + poll.messageID() + `","success":true,"result":{"value":42}}`,
+			)
+		}
+		session.sendRaw(
+			`{"type":"event","event":{"source":"node","event":"value updated","nodeId":23,"args":{"commandClass":38,"property":"currentValue","newValue":43}}}`,
+		)
+		session.waitForClose()
+	})
+	connection := dialConnection(t, server)
+	startListening(t, connection)
+	_, _, receipt, err := connection.(*websocketConnection).pollValueWithReceipt(
+		testContext(t), testNodeID, testValueID(testCommandClassMultilevelSwitch, 0, "currentValue"),
+	)
+	if rejected != isUpstreamRejection(err) {
+		t.Fatalf("poll rejection = %v, want rejected = %t", err, rejected)
+	}
+	if receipt == nil {
+		t.Fatal("poll result has no receipt marker")
+	}
+	var first, second receivedEvent
+	for _, frame := range []*receivedEvent{&first, &second} {
+		select {
+		case *frame = <-connection.Events():
+		case <-time.After(testTimeout):
+			t.Fatal("poll marker or following Event never arrived")
+		}
+	}
+	if first.receipt != receipt || second.receipt != nil || second.Event.Event.Event != "value updated" {
+		t.Fatalf("frame order = marker %#v, Event %#v", first, second)
+	}
+	close(receipt)
 }
 
 // This test protects the bounded waiter pool and fails if the bound is missing,

@@ -1403,7 +1403,9 @@ func scriptPollRejectionThenSecondCommand(session *scriptedSession) {
 	if !ok {
 		return
 	}
-	session.replySuccess(setRequest.messageID(), setValueSuccessResult())
+	session.replySuccess(setRequest.messageID(), map[string]any{
+		"result": map[string]any{"status": setValueStatusWorking},
+	})
 	pollRequest, ok := awaitScriptedCommand(session, commandPollValue)
 	if !ok {
 		return
@@ -1423,9 +1425,8 @@ func scriptPollRejectionThenSecondCommand(session *scriptedSession) {
 	session.waitForClose()
 }
 
-// This test protects the poll-rejection classification end to end and fails if a
-// deterministic upstream poll rejection ends the whole generation instead of
-// only the accepted attempt's linked evidence.
+// A rejected poll is not evidence that a Working write finished. The next
+// write must wait for the first attempt's deadline without losing the connection.
 func TestCommandUpstreamPollRejectionKeepsTheGenerationHealthy(t *testing.T) {
 	t.Parallel()
 	server := startScriptedServer(t, scriptPollRejectionThenSecondCommand)
@@ -1437,7 +1438,7 @@ func TestCommandUpstreamPollRejectionKeepsTheGenerationHealthy(t *testing.T) {
 	first := submitCommand(
 		t,
 		zwave,
-		commandFixture(entityID, `{"value":40}`, time.Now().Add(time.Minute)),
+		commandFixture(entityID, `{"value":40}`, time.Now().Add(350*time.Millisecond)),
 		firstResponder,
 	)
 	if err := awaitCommandHandler(t, first); err != nil {
@@ -1451,6 +1452,11 @@ func TestCommandUpstreamPollRejectionKeepsTheGenerationHealthy(t *testing.T) {
 		commandFixture(entityID, `{"value":40}`, time.Now().Add(time.Minute)),
 		secondResponder,
 	)
+	select {
+	case err := <-second:
+		t.Fatalf("second Command advanced past rejected poll before deadline: %v", err)
+	case <-time.After(100 * time.Millisecond):
+	}
 	if err := awaitCommandHandler(t, second); err != nil {
 		t.Fatalf("second Command error: %v", err)
 	}
@@ -1458,6 +1464,41 @@ func TestCommandUpstreamPollRejectionKeepsTheGenerationHealthy(t *testing.T) {
 	time.Sleep(testQuietPeriod)
 	assertHealthyGeneration(t, session)
 	assertSingleAcceptance(t, firstResponder, secondResponder)
+}
+
+type failedAcceptResponder struct{ adapter.Responder }
+
+func (*failedAcceptResponder) Accept() (adapter.CommandEvidence, error) {
+	return nil, errors.New("accept response could not be published")
+}
+
+// A failed acceptance response cannot prove a Working write finished. The
+// follower must not dispatch until the first attempt's absolute deadline.
+func TestCommandFailedAcceptHoldsNodeFIFO(t *testing.T) {
+	t.Parallel()
+	recorder, session, connection, zwave := startCommandRuntime(t, dimmerNodeFixture(23, "Dimmer"))
+	connection.setValueHook = func(context.Context, int, valueID, json.RawMessage) (setValueStatus, error) {
+		return setValueStatusWorking, nil
+	}
+	entityID := routeEntityID(testNodeID, "brightness")
+	first := commandFixture(entityID, `{"value":40}`, time.Now().Add(350*time.Millisecond))
+	if err := runCommand(t, zwave, first, &failedAcceptResponder{newFakeResponder(recorder, session)}); err == nil {
+		t.Fatal("failed acceptance returned success")
+	}
+	second := submitCommand(t, zwave,
+		commandFixture(entityID, `{"value":20}`, time.Now().Add(time.Minute)),
+		newFakeResponder(recorder, session))
+	select {
+	case err := <-second:
+		t.Fatalf("follower advanced before first deadline: %v", err)
+	case <-time.After(100 * time.Millisecond):
+	}
+	if calls := len(connection.recordedSetCalls()); calls != 1 {
+		t.Fatalf("SetValue calls before deadline = %d, want 1", calls)
+	}
+	if err := awaitCommandHandler(t, second); err != nil {
+		t.Fatalf("follower after deadline: %v", err)
+	}
 }
 
 // scriptSetValueRejectionThenSecondCommand rejects the first node.set_value and

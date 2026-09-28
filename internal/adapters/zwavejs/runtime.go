@@ -341,26 +341,6 @@ func (coordinator *runtimeCoordinator) startGenerationEffect(
 	})
 }
 
-// startGenerationTask runs one tracked generation-scoped task that needs no
-// coordinator transition.
-func (coordinator *runtimeCoordinator) startGenerationTask(
-	scope *generationScope,
-	task func(),
-) {
-	if scope == nil {
-		coordinator.startTask(task)
-		return
-	}
-	scope.effects.Add(1)
-	coordinator.effects.Go(func() {
-		defer scope.effects.Done()
-		if scope.ended() {
-			return
-		}
-		task()
-	})
-}
-
 // sendScopedCompletion delivers one generation-scoped completion, unless the
 // generation ended first. Giving up on a canceled scope is what keeps
 // endGenerationScope from deadlocking on a full event queue.
@@ -382,13 +362,6 @@ func (coordinator *runtimeCoordinator) startEffect(effect func() runtimeEvent) {
 	coordinator.effects.Go(func() {
 		coordinator.sendCompletion(effect())
 	})
-}
-
-// startTask runs one tracked background effect that needs no coordinator
-// transition. It is used for ordinary Observation publication, where a failure
-// is a diagnostic rather than protocol state.
-func (coordinator *runtimeCoordinator) startTask(task func()) {
-	coordinator.effects.Go(task)
 }
 
 // sendCompletion delivers one effect completion unless the runtime already
@@ -475,7 +448,8 @@ func (coordinator *runtimeCoordinator) acceptUpstreamEvent(event upstreamEvent) 
 	if event.generation < coordinator.generation {
 		return nil
 	}
-	if !coordinator.dispatchable || event.generation > coordinator.generation {
+	if !coordinator.dispatchable || event.generation > coordinator.generation ||
+		event.event.receipt != nil || len(coordinator.buffered) > 0 {
 		if len(coordinator.buffered) >= bufferedEventLimit {
 			coordinator.adapter.logger.WarnContext(
 				coordinator.ctx,
@@ -488,6 +462,9 @@ func (coordinator *runtimeCoordinator) acceptUpstreamEvent(event upstreamEvent) 
 			return nil
 		}
 		coordinator.buffered = append(coordinator.buffered, event)
+		if coordinator.dispatchable && event.generation == coordinator.generation {
+			coordinator.replayBuffered()
+		}
 		return nil
 	}
 	coordinator.handleUpstreamEvent(event.event)
@@ -515,16 +492,27 @@ func (coordinator *runtimeCoordinator) overflowBufferedEvents(event upstreamEven
 	coordinator.dropGeneration(cause)
 }
 
-// replayBuffered handles every Event that arrived while reconciliation was in
-// progress, in arrival order, and drops anything from an older generation.
+// replayBuffered handles Events in reader order after reconciliation or a poll
+// receipt. A poll marker holds later Events until the linked publication has
+// reserved its place in the same publication chain.
 func (coordinator *runtimeCoordinator) replayBuffered() {
-	buffered := coordinator.buffered
-	coordinator.buffered = nil
-	for _, event := range buffered {
+	for coordinator.dispatchable && len(coordinator.buffered) > 0 {
+		event := coordinator.buffered[0]
+		if event.event.receipt != nil {
+			select {
+			case <-event.event.receipt:
+			default:
+				return
+			}
+		}
+		coordinator.buffered[0] = upstreamEvent{}
+		coordinator.buffered = coordinator.buffered[1:]
 		if event.generation != coordinator.generation {
 			continue
 		}
-		coordinator.handleUpstreamEvent(event.event)
+		if event.event.receipt == nil {
+			coordinator.handleUpstreamEvent(event.event)
+		}
 	}
 }
 
@@ -691,6 +679,7 @@ func (coordinator *runtimeCoordinator) invalidateGeneration(event generationInva
 // example after a write or read failure.
 func (coordinator *runtimeCoordinator) dropGeneration(cause error) {
 	coordinator.dispatchable = false
+	coordinator.dropBufferedEvents(coordinator.generation)
 	coordinator.connection = nil
 	disconnect := coordinator.disconnect
 	coordinator.disconnect = nil
@@ -967,35 +956,31 @@ func (coordinator *runtimeCoordinator) publishValueObservationFor(
 }
 
 // publishOrdinary publishes one frame's Observations in order. One frame shares
-// one tracked effect, so power still precedes brightness, and every later frame
-// waits for the previous frame's publication, so Core observes live State in
-// receive order even when the first publication is slow.
+// one tracked effect, and publication failures end the runtime via taskCompleted.
 func (coordinator *runtimeCoordinator) publishOrdinary(observations []adapter.Observation) {
 	scope := coordinator.scope
 	ctx := coordinator.effectContext(scope)
 	previous, next := coordinator.reserveObservationPublication()
-	coordinator.startGenerationTask(scope, func() {
+	generation := coordinator.generation
+	coordinator.startGenerationEffect(scope, func() runtimeEvent {
 		defer close(next)
 		if !waitForObservationPublication(ctx, previous) {
-			return
+			return taskCompleted{scope: scope, generation: generation}
 		}
 		for _, observation := range observations {
 			if scope != nil && scope.ended() {
-				return
+				return taskCompleted{scope: scope, generation: generation}
 			}
 			if _, err := coordinator.adapter.session.PublishObservation(
 				ctx,
 				observation,
-			); err != nil && !errors.Is(err, context.Canceled) && !errors.Is(err, context.DeadlineExceeded) {
-				coordinator.adapter.logger.WarnContext(
-					coordinator.ctx,
-					"Z-Wave Observation publication failed",
-					slog.String(eventKey, "adapter.observation_failed"),
-					slog.String("entity_id", observation.EntityID),
-					slog.String("error_code", codeSessionOperationFailed),
-				)
+			); err != nil {
+				return taskCompleted{scope: scope, generation: generation, err: &sessionOperationError{
+					operation: "publish live Z-Wave Observation", err: err,
+				}}
 			}
 		}
+		return taskCompleted{scope: scope, generation: generation}
 	})
 }
 

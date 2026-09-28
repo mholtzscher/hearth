@@ -411,6 +411,48 @@ func TestRuntimePublishesValueUpdatesInReceiveOrder(t *testing.T) {
 	}
 }
 
+// A poll receipt reaches the reader before a later Event, but its waiter may
+// reach the coordinator second. Hold the Event until the poll's publication is
+// reserved, rather than using goroutine completion order as wire order.
+func TestRuntimeWaitsForEarlierPollReceiptBeforePublishingEvent(t *testing.T) {
+	t.Parallel()
+	recorder := &runtimeRecorder{}
+	session := newRuntimeSession(recorder)
+	connection := newFakeConnection(recorder, versionFixture(),
+		snapshotFixture(testHomeID, dimmerNodeFixture(23, "Dimmer")))
+	zwave, _ := reconciledRuntime(t, session, connection)
+	waitForRoutesActivated(t, session)
+	baseline := len(session.recordedObservations())
+	receipt := make(chan struct{})
+	connection.events <- receivedEvent{receipt: receipt}
+	connection.emit(valueUpdatedEvent(testValueID(commandClassMultilevelSwitch, 0, valuePropertyCurrentValue), "45"))
+	time.Sleep(testQuietPeriod)
+	if got := len(session.recordedObservations()); got != baseline {
+		t.Fatalf("later Event published before earlier poll completion: got %d, want %d", got, baseline)
+	}
+	zwave.runtimeEvents <- pollValueCompleted{receipt: receipt}
+	waitFor(t, "later Event after poll receipt", func() bool {
+		return len(session.recordedObservations()) == baseline+2
+	})
+}
+
+// A nontransient live publication failure must stop the runtime rather than
+// leave Commands enabled while State is silently lost.
+func TestRuntimeStopsOnLiveObservationFailure(t *testing.T) {
+	t.Parallel()
+	recorder := &runtimeRecorder{}
+	session := newRuntimeSession(recorder)
+	connection := newFakeConnection(recorder, versionFixture(),
+		snapshotFixture(testHomeID, dimmerNodeFixture(23, "Dimmer")))
+	zwave, _ := reconciledRuntime(t, session, connection)
+	waitForRoutesActivated(t, session)
+	session.setPublishHook(func(context.Context, adapter.Observation) error {
+		return errors.New("permanent publication failure")
+	})
+	connection.emit(valueUpdatedEvent(testValueID(commandClassMultilevelSwitch, 0, valuePropertyCurrentValue), "45"))
+	awaitSignal(t, zwave.runtimeDone, "runtime stop after live publication failure")
+}
+
 func TestRuntimeConnectionLossInvalidatesRoutesBeforeUnhealthy(t *testing.T) {
 	t.Parallel()
 	recorder := &runtimeRecorder{}

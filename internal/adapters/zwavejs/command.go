@@ -58,6 +58,7 @@ type pollValueCompleted struct {
 	attemptID  uint64
 	value      json.RawMessage
 	receivedAt time.Time
+	receipt    chan struct{}
 	err        error
 }
 
@@ -332,7 +333,10 @@ func (coordinator *runtimeCoordinator) finishSetValue(event setValueCompleted) {
 	}
 	evidence, err := attempt.responder.Accept()
 	if err != nil {
-		coordinator.finishAttempt(attempt, err)
+		// The server may still be executing a Working result. Do not release
+		// this node's FIFO slot after a failed acceptance publication.
+		attempt.phase = phaseAccepted
+		coordinator.finishHandler(attempt, err)
 		return
 	}
 	attempt.evidence = evidence
@@ -430,11 +434,26 @@ func (coordinator *runtimeCoordinator) pollNow(attempt *commandAttempt) {
 		// the absolute deadline cancels an unanswered poll, which releases its
 		// waiter and its goroutine without ending a healthy generation. A poll
 		// result that arrives first is still correlated normally.
-		value, receivedAt, err := connection.PollValue(attempt.attemptContext, attempt.nodeID, current)
+		var value json.RawMessage
+		var receivedAt time.Time
+		var receipt chan struct{}
+		var err error
+		if ordered, ok := connection.(interface {
+			pollValueWithReceipt(context.Context, int, valueID) (json.RawMessage, time.Time, chan struct{}, error)
+		}); ok {
+			value, receivedAt, receipt, err = ordered.pollValueWithReceipt(
+				attempt.attemptContext,
+				attempt.nodeID,
+				current,
+			)
+		} else {
+			value, receivedAt, err = connection.PollValue(attempt.attemptContext, attempt.nodeID, current)
+		}
 		return pollValueCompleted{
 			attemptID:  attempt.id,
 			value:      value,
 			receivedAt: receivedAt.UTC(),
+			receipt:    receipt,
 			err:        err,
 		}
 	})
@@ -444,6 +463,12 @@ func (coordinator *runtimeCoordinator) pollNow(attempt *commandAttempt) {
 // Command's evidence capability, whether or not it matches. A matching linked
 // Observation satisfies the Command in Core.
 func (coordinator *runtimeCoordinator) finishPollValue(event pollValueCompleted) {
+	if event.receipt != nil {
+		defer func() {
+			close(event.receipt)
+			coordinator.replayBuffered()
+		}()
+	}
 	attempt := coordinator.attempts[event.attemptID]
 	if attempt == nil || attempt.phase != phaseAccepted {
 		return
@@ -456,9 +481,9 @@ func (coordinator *runtimeCoordinator) finishPollValue(event pollValueCompleted)
 			errors.Is(event.err, context.DeadlineExceeded):
 			// The generation already ended, or the attempt's own lifetime did.
 		case isUpstreamRejection(event.err):
-			// A deterministic poll rejection ends linked evidence for this one
-			// accepted attempt. It is not a transport failure, so the generation
-			// stays healthy and keeps serving its other Entities.
+			// A rejected read does not prove the accepted write finished. Keep
+			// this node's FIFO slot until the attempt deadline.
+			return
 		default:
 			coordinator.dropGeneration(event.err)
 		}
