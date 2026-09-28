@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"errors"
-	"fmt"
 	"log/slog"
 	"time"
 
@@ -34,52 +33,6 @@ const (
 	// failure with no more specific durable code.
 	FailureInternalError = "internal_error"
 )
-
-// ValidateStepCompletion rejects a Step completion that is not a terminal outcome or lacks its required evidence.
-func ValidateStepCompletion(completion StepCompletion) error {
-	switch completion.Status {
-	case StepNotAttempted, StepRunning:
-		return fmt.Errorf("%w: step completion status %q is not terminal", ErrInvalidAutomation, completion.Status)
-	case StepSatisfied, StepDispatched:
-		if completion.VerifiedCommandID == nil || completion.FailureCode != nil {
-			return fmt.Errorf(
-				"%w: successful step requires a verified Command and no failure code",
-				ErrInvalidAutomation,
-			)
-		}
-	case StepFailed, StepInterrupted:
-		if completion.FailureCode == nil {
-			return fmt.Errorf("%w: failing step requires a failure code", ErrInvalidAutomation)
-		}
-	default:
-		return fmt.Errorf("%w: unknown step completion status %q", ErrInvalidAutomation, completion.Status)
-	}
-	if completion.VerifiedCommandID != nil {
-		if _, err := devices.ParseCommandID(string(*completion.VerifiedCommandID)); err != nil {
-			return fmt.Errorf("%w: verified command ID: %w", ErrInvalidAutomation, err)
-		}
-	}
-	return nil
-}
-
-// ValidateRunCompletion rejects a Run completion that is not a terminal outcome or lacks its required evidence.
-func ValidateRunCompletion(completion RunCompletion) error {
-	switch completion.Status {
-	case RunSucceeded:
-		if completion.FailureCode != nil {
-			return invalid("succeeded Run carries a failure code")
-		}
-	case RunFailed, RunInterrupted:
-		if completion.FailureCode == nil {
-			return invalid("failing Run requires a failure code")
-		}
-	case RunRunning:
-		return invalid("run completion status %q is not terminal", completion.Status)
-	default:
-		return invalid("run completion status %q is not terminal", completion.Status)
-	}
-	return nil
-}
 
 // executeRun executes one immutable Run snapshot sequentially. The next Step
 // starts only after the prior Command reaches a successful terminal outcome, and

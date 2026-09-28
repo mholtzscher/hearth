@@ -149,6 +149,11 @@ func (repo *AutomationRepository) ReplaceAutomation(
 		if replaceErr != nil {
 			return replaceErr
 		}
+		if replaceErr = queries.DeleteAutomationHolds(ctx, dbsqlc.DeleteAutomationHoldsParams{
+			AutomationID: string(id),
+		}); replaceErr != nil {
+			return replaceErr
+		}
 		record, replaceErr = automationRecord(row)
 		return replaceErr
 	})

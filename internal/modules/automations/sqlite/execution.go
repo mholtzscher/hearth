@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"time"
 
 	"github.com/mholtzscher/hearth/internal/modules/automations"
 	"github.com/mholtzscher/hearth/internal/modules/automations/sqlite/dbsqlc"
@@ -105,6 +106,37 @@ func (repo *AutomationRepository) CompleteRun(
 			return fmt.Errorf(
 				"%w: run %s is not completable", automations.ErrInvalidAutomation, completion.RunID,
 			)
+		}
+		return nil
+	})
+}
+
+// InterruptActiveRuns marks every running Step and Run as interrupted with the supplied reason.
+func (repo *AutomationRepository) InterruptActiveRuns(
+	ctx context.Context,
+	at time.Time,
+	reason string,
+) error {
+	if at.IsZero() {
+		return fmt.Errorf("%w: interruption time is required", automations.ErrInvalidAutomation)
+	}
+	if reason == "" {
+		return fmt.Errorf("%w: interruption reason is required", automations.ErrInvalidAutomation)
+	}
+	completedAt := sql.NullString{String: encodeAutomationTimestamp(at), Valid: true}
+	failureCode := sql.NullString{String: reason, Valid: true}
+	return repo.transaction(ctx, func(queries *dbsqlc.Queries) error {
+		if _, err := queries.InterruptRunningRuns(ctx, dbsqlc.InterruptRunningRunsParams{
+			RunFailureCode: failureCode,
+			RunCompletedAt: completedAt,
+		}); err != nil {
+			return err
+		}
+		if _, err := queries.InterruptRunningSteps(ctx, dbsqlc.InterruptRunningStepsParams{
+			FailureCode: failureCode,
+			CompletedAt: completedAt,
+		}); err != nil {
+			return err
 		}
 		return nil
 	})

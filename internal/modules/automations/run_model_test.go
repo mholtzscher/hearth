@@ -1,6 +1,7 @@
 package automations_test
 
 import (
+	"errors"
 	"testing"
 	"time"
 
@@ -173,116 +174,57 @@ func TestValidateAutomationRunRejectsImpossibleCombinations(t *testing.T) {
 	}
 }
 
-func validDomainSkip(t *testing.T) automations.Skip {
-	t.Helper()
-	skipID, err := automations.NewSkipID()
-	if err != nil {
-		t.Fatal(err)
-	}
-	automationID, err := automations.NewAutomationID()
-	if err != nil {
-		t.Fatal(err)
-	}
-	fact := newObservationFactSummary(t)
-	return automations.Skip{
-		ID:             skipID,
-		AutomationID:   automationID,
-		AutomationName: "Office light",
-		Revision:       3,
-		Source:         automations.RunSourceDeviceFact,
-		Fact:           &fact,
-		MatchedTriggers: []automations.Trigger{{
-			ID:   "occupied_and_warm",
-			Kind: automations.TriggerKindObservation,
-			Observation: &automations.ObservationTrigger{
-				EntityID:     newEntityID(t),
-				Dispositions: []devices.ObservationDisposition{devices.DispositionApplied},
-			},
-		}},
-		Reason:            automations.SkipBusy,
-		ConditionDecision: automations.NotConfiguredDecision(),
-		SkippedAt:         modelTestTime,
-	}
-}
-
-// Retained Skips require Fact evidence, matched Trigger snapshots, a valid reason, and time.
-func TestValidateAutomationSkipRejectsImpossibleCombinations(t *testing.T) {
+// Run decisions never record not_evaluated, bypass only a manual Run, and
+// admit on a true root. Envelope-incoherent decisions are unrepresentable, so
+// only the record-kind rules remain testable.
+func TestValidateRunConditionDecision(t *testing.T) {
 	t.Parallel()
-	if err := automations.ValidateSkip(validDomainSkip(t)); err != nil {
-		t.Fatalf("valid skip rejected: %v", err)
+	trueTree, trueEvaluation := conditionTreeAndEvaluation(
+		t, automations.ConditionTrue, automations.ConditionTrue,
+	)
+	falseTree, falseEvaluation := conditionTreeAndEvaluation(
+		t, automations.ConditionTrue, automations.ConditionFalse,
+	)
+	run := func(
+		conditions *automations.Condition,
+		source automations.RunSource,
+		decision automations.ConditionDecision,
+	) automations.Run {
+		return automations.Run{
+			Source:            source,
+			Snapshot:          automations.Definition{Conditions: conditions},
+			ConditionDecision: decision,
+		}
 	}
-	tests := []struct {
-		name   string
-		mutate func(skip *automations.Skip)
+	valid := run(&trueTree, automations.RunSourceManual, automations.EvaluatedDecision(
+		trueTree, trueEvaluation,
+	))
+	if err := automations.ValidateRunConditionDecision(valid); err != nil {
+		t.Fatalf("valid evaluated Run: %v", err)
+	}
+	bypassed := run(&trueTree, automations.RunSourceManual, automations.BypassedDecision(trueTree))
+	if err := automations.ValidateRunConditionDecision(bypassed); err != nil {
+		t.Fatalf("valid bypassed Run: %v", err)
+	}
+	unconditioned := run(nil, automations.RunSourceDeviceFact, automations.NotConfiguredDecision())
+	if err := automations.ValidateRunConditionDecision(unconditioned); err != nil {
+		t.Fatalf("valid automatic unconditioned Run: %v", err)
+	}
+	cases := []struct {
+		name string
+		run  automations.Run
 	}{
-		{"no matched triggers", func(skip *automations.Skip) { skip.MatchedTriggers = nil }},
-		{"unknown reason", func(skip *automations.Skip) { skip.Reason = "later" }},
-		{"zero skip time", func(skip *automations.Skip) { skip.SkippedAt = time.Time{} }},
-		{"zero revision", func(skip *automations.Skip) { skip.Revision = 0 }},
-		{"missing fact", func(skip *automations.Skip) { skip.Fact = nil }},
-		{"manual source with fact", func(skip *automations.Skip) {
-			skip.Source = automations.RunSourceManual
-		}},
-		{"unknown source", func(skip *automations.Skip) { skip.Source = "later" }},
-		{"bypass decision", func(skip *automations.Skip) {
-			skip.ConditionDecision = automations.BypassedDecision(automations.Condition{})
-		}},
-		{"condition reason without evaluation", func(skip *automations.Skip) {
-			skip.Reason = automations.SkipConditionsFalse
-		}},
-		{"duplicate matched trigger", func(skip *automations.Skip) {
-			skip.MatchedTriggers = append(skip.MatchedTriggers, skip.MatchedTriggers[0])
-		}},
+		{"not evaluated", run(&trueTree, automations.RunSourceManual, automations.NotEvaluatedDecision(trueTree))},
+		{"automatic bypass", run(&trueTree, automations.RunSourceDeviceFact, automations.BypassedDecision(trueTree))},
+		{"evaluated false root", run(&falseTree, automations.RunSourceManual, automations.EvaluatedDecision(
+			falseTree, falseEvaluation,
+		))},
 	}
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			t.Parallel()
-			skip := validDomainSkip(t)
-			test.mutate(&skip)
-			if err := automations.ValidateSkip(skip); err == nil {
-				t.Fatal("impossible skip was accepted")
-			}
-		})
-	}
-}
-
-// A Fact must carry exactly the payload its family names.
-func TestValidateDeviceFactRejectsMismatchedFamilies(t *testing.T) {
-	t.Parallel()
-	observationID, observationErr := devices.NewObservationID()
-	if observationErr != nil {
-		t.Fatal(observationErr)
-	}
-	factID, factErr := devices.NewDeviceFactID()
-	if factErr != nil {
-		t.Fatal(factErr)
-	}
-	observation := &automations.ObservationFact{
-		FactID:        factID,
-		ObservationID: observationID,
-		EntityID:      newEntityID(t),
-		Disposition:   devices.DispositionApplied,
-		Value:         devices.Value(`true`),
-		EmittedAt:     modelTestTime,
-	}
-	if err := automations.ValidateDeviceFact(automations.DeviceFact{
-		Family: automations.DeviceFactObservation, Observation: observation,
-	}); err != nil {
-		t.Fatalf("valid observation fact rejected: %v", err)
-	}
-	mismatched := []automations.DeviceFact{
-		{Family: automations.DeviceFactObservation},
-		{
-			Family:      automations.DeviceFactObservation,
-			Observation: observation,
-			EntityEvent: &automations.EntityEventFact{},
-		},
-		{Family: automations.DeviceFactEntityEvent, Observation: observation},
-		{Family: automations.DeviceFactFamily("unknown")},
-	}
-	for _, fact := range mismatched {
-		if err := automations.ValidateDeviceFact(fact); err == nil {
-			t.Fatalf("mismatched fact %+v was accepted", fact)
+	for _, testCase := range cases {
+		if err := automations.ValidateRunConditionDecision(testCase.run); !errors.Is(
+			err, automations.ErrInvalidAutomation,
+		) {
+			t.Errorf("%s: error = %v, want ErrInvalidAutomation", testCase.name, err)
 		}
 	}
 }

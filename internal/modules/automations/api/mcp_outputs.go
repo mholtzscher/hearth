@@ -40,6 +40,7 @@ type mcpAutomationTriggerBody struct {
 	PreviousComparisons []mcpAutomationComparisonBody `json:"previous_comparisons,omitempty"`
 	Comparisons         []mcpAutomationComparisonBody `json:"comparisons,omitempty"`
 	EventName           string                        `json:"event_name,omitempty"`
+	ForSeconds          *int64                        `json:"for_seconds,omitempty"`
 }
 
 type mcpAutomationStepBody struct {
@@ -120,6 +121,7 @@ type mcpAutomationRunBody struct {
 	Revision          int64                              `json:"revision"`
 	Source            string                             `json:"source"`
 	Fact              *mcpDeviceFactSummaryBody          `json:"fact,omitempty"`
+	HeldState         *HeldStateEvidenceBody             `json:"held_state,omitempty"`
 	MatchedTriggerIDs []string                           `json:"matched_trigger_ids"`
 	Status            string                             `json:"status"`
 	FailureCode       *string                            `json:"failure_code,omitempty"`
@@ -137,6 +139,7 @@ type mcpAutomationSkipBody struct {
 	Revision          int64                              `json:"revision"`
 	Source            string                             `json:"source"`
 	Fact              *mcpDeviceFactSummaryBody          `json:"fact,omitempty"`
+	HeldState         *HeldStateEvidenceBody             `json:"held_state,omitempty"`
 	MatchedTriggers   []mcpAutomationTriggerBody         `json:"matched_triggers"`
 	Reason            string                             `json:"reason"`
 	ConditionDecision mcpAutomationConditionDecisionBody `json:"condition_decision"`
@@ -157,6 +160,7 @@ type mcpAutomationHistorySummaryBody struct {
 	ConditionResult *string                   `json:"condition_result,omitempty"`
 	BypassRequested bool                      `json:"bypass_requested"`
 	Fact            *mcpDeviceFactSummaryBody `json:"fact,omitempty"`
+	HeldState       *HeldStateEvidenceBody    `json:"held_state,omitempty"`
 }
 
 type mcpAutomationHistoryCollectionBody struct {
@@ -200,6 +204,7 @@ func mcpTriggerOutput(body AutomationTriggerBody) mcpAutomationTriggerBody {
 	output := mcpAutomationTriggerBody{
 		ID: body.ID, Kind: body.Kind, EntityID: body.EntityID,
 		Dispositions: body.Dispositions, EventName: body.EventName,
+		ForSeconds: body.ForSeconds,
 	}
 	if len(body.Comparisons) > 0 {
 		output.Comparisons = make([]mcpAutomationComparisonBody, len(body.Comparisons))
@@ -320,6 +325,10 @@ func mcpRunOutput(body AutomationRunBody) mcpAutomationRunBody {
 		fact := mcpFactOutput(*body.Fact)
 		output.Fact = &fact
 	}
+	if body.HeldState != nil {
+		evidence := *body.HeldState
+		output.HeldState = &evidence
+	}
 	for index, step := range body.Steps {
 		output.Steps[index] = mcpStepAttemptOutput(step)
 	}
@@ -337,6 +346,10 @@ func mcpSkipOutput(body AutomationSkipBody) mcpAutomationSkipBody {
 	if body.Fact != nil {
 		fact := mcpFactOutput(*body.Fact)
 		output.Fact = &fact
+	}
+	if body.HeldState != nil {
+		evidence := *body.HeldState
+		output.HeldState = &evidence
 	}
 	for index, trigger := range body.MatchedTriggers {
 		output.MatchedTriggers[index] = mcpTriggerOutput(trigger)
@@ -357,6 +370,10 @@ func mcpHistorySummaryOutput(
 	if body.Fact != nil {
 		fact := mcpFactOutput(*body.Fact)
 		output.Fact = &fact
+	}
+	if body.HeldState != nil {
+		evidence := *body.HeldState
+		output.HeldState = &evidence
 	}
 	return output
 }

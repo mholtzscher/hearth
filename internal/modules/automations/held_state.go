@@ -1,0 +1,57 @@
+package automations
+
+import (
+	"time"
+
+	"github.com/mholtzscher/hearth/internal/modules/devices"
+)
+
+// HeldStateCandidate identifies one due hold whose Condition entities the service must snapshot.
+type HeldStateCandidate struct {
+	AutomationID AutomationID
+	Revision     int64
+	TriggerID    TriggerID
+	DueAt        time.Time
+}
+
+// HeldStateEvidence records the scheduled window for a held-state outcome.
+type HeldStateEvidence struct {
+	TriggerID TriggerID
+	StartedAt time.Time
+	DueAt     time.Time
+}
+
+func validateHeldStateEvidence(evidence HeldStateEvidence) error {
+	if _, err := ParseTriggerID(string(evidence.TriggerID)); err != nil {
+		return err
+	}
+	if evidence.StartedAt.IsZero() || evidence.DueAt.IsZero() || !evidence.DueAt.After(evidence.StartedAt) {
+		return invalid("held-state evidence requires a due time after its start time")
+	}
+	return nil
+}
+
+// HeldStateDuration converts a validated held-state duration without allowing
+// an integer overflow in [time.Duration]'s nanosecond representation.
+func HeldStateDuration(seconds int64) (time.Duration, error) {
+	if seconds < 1 || seconds > 2_592_000 {
+		return 0, invalid("held state duration must be between 1 and 2592000 seconds")
+	}
+	return time.Duration(seconds) * time.Second, nil
+}
+
+// MatchHeldState compares a retained State value with every predicate in one
+// held-state Trigger. Missing/incompatible selected values are non-matches;
+// malformed stored JSON remains a comparison error.
+func MatchHeldState(trigger HeldStateTrigger, value devices.Value) (bool, error) {
+	if err := validateHeldStateTrigger(trigger); err != nil {
+		return false, err
+	}
+	for _, comparison := range trigger.Comparisons {
+		matched, err := MatchObservationComparison(comparison, value)
+		if err != nil || !matched {
+			return false, err
+		}
+	}
+	return true, nil
+}

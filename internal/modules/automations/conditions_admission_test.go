@@ -439,11 +439,12 @@ func (repository *replacingAdmissionRepository) AdmitDeviceFact(
 	fact automations.DeviceFact,
 	snapshot devices.EntityStateSnapshot,
 	now time.Time,
+	startupAt time.Time,
 ) (automations.AdmissionResult, error) {
 	if repository.attempts.Add(1) == 1 && repository.replace != nil {
 		repository.replace()
 	}
-	return repository.Repository.AdmitDeviceFact(ctx, fact, snapshot, now)
+	return repository.Repository.AdmitDeviceFact(ctx, fact, snapshot, now, startupAt)
 }
 
 // A definition edit that adds a newly required Entity after the pre-read must
