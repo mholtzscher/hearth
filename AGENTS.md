@@ -7,6 +7,7 @@
 - For focused formatting, generation, module tidying, linting, testing, and vetting, always use the mise tasks below instead of invoking the underlying tools directly.
 - During iteration, use the relevant focused mise tasks for feedback. After integrating the final changes, run `mise run validate` and review any generated, formatting, or module changes before committing.
 - Review the resulting diff and include intended generated or formatting changes.
+- When reviewing a change, read `CODING_STANDARDS.md` before reporting findings.
 - For simulator development, start worktree-local NATS with `mise run simulator-start`; stop it with `mise run simulator-stop`.
 - Real-Mosquitto integration tests always require a reachable Docker daemon and fail without one.
 
