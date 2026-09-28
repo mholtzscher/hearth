@@ -1,11 +1,10 @@
-// Package zwavejs assembles the hearth-adapter-zwavejs process: it loads and
-// validates the trusted Z-Wave JS server endpoint and supervises the Z-Wave JS
+// Package zwavejs assembles the hearth-adapter-zwavejs process: it validates
+// the trusted Z-Wave JS server endpoint and supervises the Z-Wave JS
 // Adapter and its SDK Session under one lifecycle.
 package zwavejs
 
 import (
 	"errors"
-	"fmt"
 	"net/url"
 	"strconv"
 	"strings"
@@ -28,19 +27,6 @@ type Config struct {
 //nolint:revive // ZWaveJSConfig keeps the upstream Z-Wave JS product name from the Adapter specification.
 type ZWaveJSConfig struct {
 	URL string `yaml:"url"`
-}
-
-// LoadConfig strictly decodes one Z-Wave JS YAML file and validates every
-// trusted-endpoint constraint.
-func LoadConfig(path string) (Config, error) {
-	var value Config
-	if err := platformconfig.LoadFile(path, &value); err != nil {
-		return Config{}, err
-	}
-	if err := value.Validate(); err != nil {
-		return Config{}, fmt.Errorf("validate config %q: %w", path, err)
-	}
-	return value, nil
 }
 
 // Validate enforces the complete static configuration contract. Every failure

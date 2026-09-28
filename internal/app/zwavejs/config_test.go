@@ -1,23 +1,11 @@
 package zwavejs_test
 
 import (
-	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 
 	appzwavejs "github.com/mholtzscher/hearth/internal/app/zwavejs"
 )
-
-// writeConfigFile writes one YAML document to a temporary file.
-func writeConfigFile(t *testing.T, contents string) string {
-	t.Helper()
-	path := filepath.Join(t.TempDir(), "zwavejs.yaml")
-	if err := os.WriteFile(path, []byte(contents), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	return path
-}
 
 // validConfig is the smallest accepted configuration, so each table case can
 // vary exactly one field.
@@ -26,26 +14,6 @@ func validConfig() appzwavejs.Config {
 		AdapterID: "zwavejs",
 		NATSURL:   "nats://127.0.0.1:4222",
 		ZWaveJS:   appzwavejs.ZWaveJSConfig{URL: "ws://127.0.0.1:3000"},
-	}
-}
-
-// This test protects the checked-in example and fails if it stops naming a
-// loopback Z-Wave JS server, because v1 has no authentication or TLS and the
-// endpoint must never be exposed to an untrusted network.
-func TestLoadExampleConfig(t *testing.T) {
-	t.Parallel()
-	value, err := appzwavejs.LoadConfig(filepath.Join("..", "..", "..", "configs", "zwavejs.example.yaml"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if value.AdapterID != "zwavejs" {
-		t.Fatalf("adapter_id = %q, want zwavejs", value.AdapterID)
-	}
-	if value.NATSURL != "nats://127.0.0.1:4222" {
-		t.Fatalf("nats_url = %q, want nats://127.0.0.1:4222", value.NATSURL)
-	}
-	if value.ZWaveJS.URL != "ws://127.0.0.1:3000" {
-		t.Fatalf("zwave_js.url = %q, want ws://127.0.0.1:3000", value.ZWaveJS.URL)
 	}
 }
 
@@ -140,45 +108,5 @@ func TestConfigValidateRequiresNATSURL(t *testing.T) {
 		if err := value.Validate(); err == nil {
 			t.Errorf("nats_url %q unexpectedly accepted", natsURL)
 		}
-	}
-}
-
-// This test protects the strict YAML contract and fails if an unknown field or a
-// second document is silently ignored.
-func TestLoadConfigIsStrict(t *testing.T) {
-	t.Parallel()
-	valid := "adapter_id: zwavejs\nnats_url: nats://127.0.0.1:4222\nzwave_js:\n  url: ws://127.0.0.1:3000\n"
-	loaded, err := appzwavejs.LoadConfig(writeConfigFile(t, valid))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if loaded != validConfig() {
-		t.Fatalf("loaded config = %#v, want %#v", loaded, validConfig())
-	}
-
-	invalid := []string{
-		valid + "unknown: true\n",
-		valid + "zwave_js:\n  url: ws://127.0.0.1:3000\n  token: secret\n",
-		valid + "---\n" + valid,
-		"adapter_id: zwavejs\nnats_url: nats://127.0.0.1:4222\n",
-	}
-	for _, contents := range invalid {
-		if _, err = appzwavejs.LoadConfig(writeConfigFile(t, contents)); err == nil {
-			t.Errorf("config unexpectedly accepted: %q", contents)
-		}
-	}
-}
-
-// This test protects the load-time validation path and fails if a syntactically
-// valid file with an unusable endpoint is loaded.
-func TestLoadConfigValidatesEndpoint(t *testing.T) {
-	t.Parallel()
-	contents := "adapter_id: zwavejs\nnats_url: nats://127.0.0.1:4222\nzwave_js:\n  url: wss://zwavejs-ui.lan:3000\n"
-	_, err := appzwavejs.LoadConfig(writeConfigFile(t, contents))
-	if err == nil {
-		t.Fatal("TLS endpoint unexpectedly accepted")
-	}
-	if !strings.Contains(err.Error(), "zwave_js.url") {
-		t.Fatalf("error %v does not name zwave_js.url", err)
 	}
 }

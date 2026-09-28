@@ -25,6 +25,11 @@ func TestMainLoggingFlagsAndConfigFailure(t *testing.T) {
 		t.Parallel()
 		cmdtest.CheckMissingConfigJSON(t, binary, "hearth-adapter-zwavejs")
 	})
+	t.Run("invalid config detail", func(t *testing.T) {
+		t.Parallel()
+		cmdtest.CheckInvalidConfigDetail(t, binary, "hearth-adapter-zwavejs",
+			"adapter_id: zwavejs\nnats_url: nats://127.0.0.1:4222\nzwave_js: {url: wss://user:secret@127.0.0.1:3000}\n")
+	})
 	t.Run("startup cancellation", func(t *testing.T) {
 		t.Parallel()
 		natsURL := cmdtest.StartProcessNATS(t)
