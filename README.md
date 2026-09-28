@@ -288,17 +288,19 @@ Real evidence compatibility: the checked-in fixture `internal/adapters/ecowitt/t
 
 ### Z-Wave JS adapter
 
-`hearth-adapter-zwavejs` connects an operator-managed Z-Wave JS UI service to Hearth through the embedded Z-Wave JS server's WebSocket API. It targets API schema 29, and its wire shapes are derived from Z-Wave JS server 3.10.1 sources (driver 15.x, schema range 0–50); no live Z-Wave JS UI instance or physical device has been exercised yet. A server is compatible when its version frame contains `minSchemaVersion <= 29 <= maxSchemaVersion` and its Home ID agrees with the `start_listening` snapshot. The Adapter never reads or receives S0/S2 keys, never changes network membership, and never sends inclusion, exclusion, SmartStart, interview, healing, route-rebuild, association, configuration, firmware, or controller-backup operations.
+`hearth-adapter-zwavejs` connects an operator-managed Z-Wave JS UI service to Hearth through the embedded Z-Wave JS server's WebSocket API. It targets API schema 29, and its wire shapes are derived from Z-Wave JS server 3.10.1 sources (driver 15.x, schema range 0–50). Read-only discovery and State projection have been smoke-tested against a live Home Assistant Z-Wave JS app; physical Commands have not yet been validated. A server is compatible when its version frame contains `minSchemaVersion <= 29 <= maxSchemaVersion` and its Home ID agrees with the `start_listening` snapshot. The Adapter never reads or receives S0/S2 keys, never changes network membership, and never sends inclusion, exclusion, SmartStart, interview, healing, route-rebuild, association, configuration, firmware, or controller-backup operations.
 
-Enable the Z-Wave JS server in Z-Wave JS UI and point the adapter at it. The local Compose stack publishes NATS on loopback only; Z-Wave JS UI runs separately under the operator's normal supervision:
+Enable the Z-Wave JS server in Z-Wave JS UI (including the Z-Wave JS UI bundled with the Home Assistant Z-Wave JS app) and expose its WebSocket port only on a trusted private network. Keep the USB controller with the existing server. The Z-Wave adapter is an optional daemon alongside the simulator. It shares the simulator's Core, NATS, database, and dashboard:
 
 ```sh
-cp configs/hearthd.example.yaml configs/hearthd.yaml
-cp configs/zwavejs.example.yaml configs/zwavejs.yaml
-mise run brokers
-go run ./cmd/hearthd -config configs/hearthd.yaml
-go run ./cmd/hearth-adapter-zwavejs -config configs/zwavejs.yaml
+cp -n configs/zwavejs.example.yaml configs/zwavejs.yaml
+# Set zwave_js.url in configs/zwavejs.yaml to your existing ws://host:3000 endpoint.
+mise run zwave-start # starts the simulator stack if needed, then the Z-Wave adapter
+mise daemons status zwave-adapter
+# When finished: mise run zwave-stop; mise run simulator-stop
 ```
+
+`zwave-start` checks for `configs/zwavejs.yaml` and runs `simulator-start`, which requires `$HOME/.local/share/agenix/hearth-openai-api-key`. The Z-Wave daemon substitutes the worktree's assigned NATS port into a runtime copy under `.data/simulator-stack/`; leave the source file's `nats_url` at its example value. Both files are ignored by Git. The adapter is not in the default simulator daemon group: `mise run simulator-start` runs without it, and `mise run zwave-stop` stops only the adapter. Use `mise env --json` to find `SIM_CORE_PORT` and `SIM_WEB_PORT`; the dashboard runs at `http://127.0.0.1:$SIM_WEB_PORT/`. Physical and simulated Devices share the simulator database. Their records remain after the adapter stops. Starting the Adapter discovers eligible nodes but sends no device Commands until one is explicitly requested.
 
 The configuration accepts only an absolute lowercase `ws://` URL with an explicit host and port, no user info, query, or fragment, and an empty or root path. It has no credential, token, TLS, or certificate field at all: `wss://` is rejected. The embedded Z-Wave JS server offers no authentication and no TLS, so its listener, Hearth NATS, Hearth HTTP, and the Adapter must stay on loopback or a trusted private network. Exposing this configuration to an untrusted network is unsupported. Disabling optimistic value updates in Z-Wave JS UI is recommended but is not a correctness dependency.
 
@@ -319,13 +321,14 @@ Command evidence is poll-linked. A power or brightness `set` is accepted only af
 Use the HTTP API to inspect adapter health, Entity availability, and canonical IDs, then verify a Command:
 
 ```sh
-curl http://127.0.0.1:8080/v1/adapters/zwavejs
-curl http://127.0.0.1:8080/v1/entities
-curl http://127.0.0.1:8080/v1/entities/ent_...
-curl -X POST http://127.0.0.1:8080/v1/entities/ent_.../commands \
+eval "$(mise env -s bash)" # or use your shell's equivalent
+curl "http://127.0.0.1:$SIM_CORE_PORT/v1/adapters/zwavejs"
+curl "http://127.0.0.1:$SIM_CORE_PORT/v1/entities"
+curl "http://127.0.0.1:$SIM_CORE_PORT/v1/entities/ent_..."
+curl -X POST "http://127.0.0.1:$SIM_CORE_PORT/v1/entities/ent_.../commands" \
   -H 'content-type: application/json' \
   -d '{"operation":"set","parameters":{"value":true}}'
-curl -X POST http://127.0.0.1:8080/v1/entities/ent_.../commands \
+curl -X POST "http://127.0.0.1:$SIM_CORE_PORT/v1/entities/ent_.../commands" \
   -H 'content-type: application/json' \
   -d '{"operation":"set","parameters":{"value":99}}'
 ```
