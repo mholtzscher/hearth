@@ -153,10 +153,11 @@ func (repo *AutomationRepository) ListDueHeldStates(
 func (repo *AutomationRepository) AdmitDueHeldStates(
 	ctx context.Context,
 	snapshot devices.EntityStateSnapshot,
-	at time.Time,
+	dueCutoff time.Time,
+	evaluatedAt time.Time,
 	limit int,
 ) (automations.AdmissionResult, int, error) {
-	if at.IsZero() || limit < 1 {
+	if dueCutoff.IsZero() || evaluatedAt.IsZero() || limit < 1 {
 		return automations.AdmissionResult{}, 0, fmt.Errorf(
 			"%w: due time and positive limit are required", automations.ErrInvalidAutomation,
 		)
@@ -165,14 +166,22 @@ func (repo *AutomationRepository) AdmitDueHeldStates(
 	processed := 0
 	err := repo.transaction(ctx, func(queries *dbsqlc.Queries) error {
 		holds, queryErr := queries.ListDueHeldStateRows(ctx, dbsqlc.ListDueHeldStateRowsParams{
-			DueAt: sql.NullString{String: encodeAutomationTimestamp(at), Valid: true}, Limit: int64(limit),
+			DueAt: sql.NullString{String: encodeAutomationTimestamp(dueCutoff), Valid: true}, Limit: int64(limit),
 		})
 		if queryErr != nil {
 			return queryErr
 		}
 		for _, hold := range holds {
 			processed++
-			if err := repo.admitDueHeldState(ctx, queries, hold, snapshot, at, &result); err != nil {
+			if err := repo.admitDueHeldState(
+				ctx,
+				queries,
+				hold,
+				snapshot,
+				dueCutoff,
+				evaluatedAt,
+				&result,
+			); err != nil {
 				return err
 			}
 		}
@@ -189,7 +198,8 @@ func (repo *AutomationRepository) admitDueHeldState(
 	queries *dbsqlc.Queries,
 	hold dbsqlc.AutomationHold,
 	snapshot devices.EntityStateSnapshot,
-	at time.Time,
+	dueCutoff time.Time,
+	evaluatedAt time.Time,
 	result *automations.AdmissionResult,
 ) error {
 	row, err := queries.GetAutomation(ctx, dbsqlc.GetAutomationParams{ID: hold.AutomationID})
@@ -239,12 +249,12 @@ func (repo *AutomationRepository) admitDueHeldState(
 	if err != nil {
 		return err
 	}
-	decision, reason, err := dueHeldStateDecision(record.Definition.Conditions, running, snapshot, at)
+	decision, reason, err := dueHeldStateDecision(record.Definition.Conditions, running, snapshot, evaluatedAt)
 	if err != nil {
 		return err
 	}
 	if err = repo.persistDueHeldStateOutcome(
-		ctx, queries, record, triggerID, evidence, decision, reason, at, result,
+		ctx, queries, record, triggerID, evidence, decision, reason, evaluatedAt, result,
 	); err != nil {
 		return err
 	}
@@ -252,7 +262,7 @@ func (repo *AutomationRepository) admitDueHeldState(
 	return queries.ConsumeDueHeldState(ctx, dbsqlc.ConsumeDueHeldStateParams{
 		MAX: state.ReceiveOrder, AutomationID: hold.AutomationID,
 		TriggerID: hold.TriggerID, Revision: hold.Revision,
-		DueAt: sql.NullString{String: encodeAutomationTimestamp(at), Valid: true},
+		DueAt: sql.NullString{String: encodeAutomationTimestamp(dueCutoff), Valid: true},
 	})
 }
 

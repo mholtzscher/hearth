@@ -122,12 +122,12 @@ diff --git a/internal/modules/automations/repository.go b/internal/modules/autom
 +    time.Time, time.Time) (AdmissionResult, error) // admission time, Core startup instant
 +  ListDueHeldStates(context.Context, time.Time, int) ([]HeldStateCandidate, error)
 +  AdmitDueHeldStates(context.Context, devices.EntityStateSnapshot,
-+    time.Time, int) (AdmissionResult, int, error) // outcomes, processed rows, error
++    time.Time, time.Time, int) (AdmissionResult, int, error) // due cutoff, evaluation time; outcomes, processed rows, error
 +  ResetPendingHeldStates(context.Context) error
  }
 ```
 
-`HeldStateCandidate` carries Automation ID and revision for the service to collect current Condition Entity IDs; the repository rechecks both inside admission. `ListDueHeldStates` returns at most 100 rows ordered by `(due_at, automation_id, trigger_id)`. The service takes one Condition snapshot via `AutomationDevices.GetEntityStateSnapshot` for the candidate union and retries stale revision or missing snapshot coverage within the existing two-second admission timeout. `AdmitDueHeldStates` reads current definition, hold row, and State in one transaction, commits the Run/Skip plus `consumed` state, and returns committed Runs for the existing executor. Its processed-row count includes cancellations so the worker knows whether to scan another batch. It treats a missing Entity/State as cancellation, but propagates storage or State-decoding errors. The Fact consumer keeps its two-second bound and Naks transient transaction failures. All timestamps use fixed-width UTC encoding.
+`HeldStateCandidate` carries Automation ID and revision for the service to collect current Condition Entity IDs; the repository rechecks both inside admission. `ListDueHeldStates` returns at most 100 rows ordered by `(due_at, automation_id, trigger_id)`. The service takes one Condition snapshot via `AutomationDevices.GetEntityStateSnapshot` for the candidate union and retries stale revision or missing snapshot coverage within the existing two-second admission timeout. Each attempt samples the clock after the snapshot; `AdmitDueHeldStates` uses the original due cutoff to select and consume holds, but the later time to evaluate Conditions and timestamp outcomes. It reads current definition, hold row, and State in one transaction, commits the Run/Skip plus `consumed` state, and returns committed Runs for the existing executor. Its processed-row count includes cancellations so the worker knows whether to scan another batch. It treats a missing Entity/State as cancellation, but propagates storage or State-decoding errors. The Fact consumer keeps its two-second bound and Naks transient transaction failures. All timestamps use fixed-width UTC encoding.
 
 ### Worker and lifecycle
 

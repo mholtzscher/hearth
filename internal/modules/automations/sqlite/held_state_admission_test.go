@@ -140,7 +140,7 @@ func TestDueHeldStateConsumesCurrentStateReceiveOrder(t *testing.T) {
 	delayedOn, _ := heldObservationFact(t, entityID, at.Add(3*time.Second), `true`, 3)
 	seedHeldStateEntity(t, database, entityID, delayedOn, 3)
 	dueAt := at.Add(11 * time.Second)
-	result, processed, err := repository.AdmitDueHeldStates(ctx, stateSnapshotWith(), dueAt, 100)
+	result, processed, err := repository.AdmitDueHeldStates(ctx, stateSnapshotWith(), dueAt, dueAt, 100)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -157,7 +157,13 @@ func TestDueHeldStateConsumesCurrentStateReceiveOrder(t *testing.T) {
 		}
 		assertHeldState(t, database, "consumed", 3, "", "")
 	}
-	result, processed, err = repository.AdmitDueHeldStates(ctx, stateSnapshotWith(), dueAt.Add(20*time.Second), 100)
+	result, processed, err = repository.AdmitDueHeldStates(
+		ctx,
+		stateSnapshotWith(),
+		dueAt.Add(20*time.Second),
+		dueAt.Add(20*time.Second),
+		100,
+	)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -195,7 +201,7 @@ func TestDueHeldStateCurrentNonmatchCancelsWithoutSkip(t *testing.T) {
 	nonmatch, _ := heldObservationFact(t, entityID, at.Add(time.Second), `false`, 2)
 	seedHeldStateEntity(t, database, entityID, nonmatch, 2)
 	dueAt := firstAt.Add(10 * time.Second)
-	result, processed, err := repository.AdmitDueHeldStates(ctx, stateSnapshotWith(), dueAt, 10)
+	result, processed, err := repository.AdmitDueHeldStates(ctx, stateSnapshotWith(), dueAt, dueAt, 10)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -251,6 +257,66 @@ func TestDueHeldStateFalseAndUnknownConditionsRecordOneSkip(t *testing.T) {
 	}
 }
 
+// A snapshot observed after the scheduler cutoff is valid at admission, but
+// evaluating it at the cutoff would incorrectly skip and consume the hold.
+func TestDueHeldStateEvaluatesFreshSnapshotWithoutMovingDueCutoff(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	database := openAutomationDatabase(t)
+	installHeldStateAdmissionSchema(t, database)
+	base := time.Now().UTC().Add(-time.Minute).Truncate(time.Second)
+	repository := automationssqlite.NewAutomationRepository(database,
+		automations.Dependencies{Now: func() time.Time { return base }})
+	heldEntity, conditionEntity := newEntityID(t), newEntityID(t)
+	maxAgeSeconds := int64(1)
+	condition := &automations.Condition{
+		ID: "level_above_ten", Kind: automations.ConditionEntityState,
+		EntityState: &automations.EntityStateCondition{
+			EntityID: conditionEntity, Pointer: "/level", Operator: automations.ComparisonGreaterThan,
+			Operand: json.RawMessage(`10`), MaxAgeSeconds: &maxAgeSeconds,
+		},
+	}
+	record, err := repository.CreateAutomation(ctx, heldStateDefinition(t, heldEntity, condition))
+	if err != nil {
+		t.Fatal(err)
+	}
+	fact, _ := heldObservationFact(t, heldEntity, base.Add(time.Second), `true`, 1)
+	seedHeldStateEntity(t, database, heldEntity, fact, 1)
+	if _, err = repository.AdmitDeviceFact(ctx, fact, stateSnapshotWith(), base.Add(2*time.Second), base); err != nil {
+		t.Fatal(err)
+	}
+	due := base.Add(11 * time.Second)
+	evaluatedAt := due.Add(2 * time.Second)
+	snapshot := stateSnapshotWith(presentStateEntry(t, conditionEntity, `{"level":15}`, evaluatedAt))
+	result, processed, err := repository.AdmitDueHeldStates(ctx, snapshot, due.Add(-time.Second), evaluatedAt, 10)
+	if err != nil || processed != 0 || len(result.StartedRuns) != 0 || len(result.Skips) != 0 {
+		t.Fatalf("early cutoff processed=%d result=%#v err=%v", processed, result, err)
+	}
+	assertHeldState(t, database, "pending", 1, encodeStoredTimestamp(fact.Observation.EmittedAt),
+		encodeStoredTimestamp(due))
+	result, processed, err = repository.AdmitDueHeldStates(ctx, snapshot, due, evaluatedAt, 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if processed != 1 || len(result.StartedRuns) != 1 || len(result.Skips) != 0 ||
+		!result.StartedRuns[0].StartedAt.Equal(evaluatedAt) {
+		t.Fatalf("fresh snapshot admission processed=%d result=%#v", processed, result)
+	}
+	entry, err := repository.GetHistoryEntry(ctx, record.ID, string(result.StartedRuns[0].ID))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if entry.Run == nil || !entry.Run.StartedAt.Equal(evaluatedAt) {
+		t.Fatalf("persisted Run = %#v, want start at %s", entry, evaluatedAt)
+	}
+	evaluation := entry.Run.ConditionDecision.DecisionEvaluation()
+	if evaluation == nil || evaluation.Result != automations.ConditionTrue ||
+		!evaluation.EvaluatedAt.Equal(evaluatedAt) {
+		t.Fatalf("persisted Condition evaluation = %#v, want true at %s", evaluation, evaluatedAt)
+	}
+	assertHeldState(t, database, "consumed", 1, "", "")
+}
+
 type dueHeldStateConditionCase struct {
 	name       string
 	snapshot   func(*testing.T, devices.EntityID, time.Time) devices.EntityStateSnapshot
@@ -291,7 +357,7 @@ func assertDueHeldStateConditionSkip(t *testing.T, test dueHeldStateConditionCas
 	}
 	dueAt := firstAt.Add(10 * time.Second)
 	snapshot := test.snapshot(t, conditionEntity, dueAt)
-	result, processed, err := repository.AdmitDueHeldStates(ctx, snapshot, dueAt, 10)
+	result, processed, err := repository.AdmitDueHeldStates(ctx, snapshot, dueAt, dueAt, 10)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -307,7 +373,7 @@ func assertDueHeldStateConditionSkip(t *testing.T, test dueHeldStateConditionCas
 	if evaluation == nil || evaluation.Result != test.wantResult {
 		t.Fatalf("stored condition result = %#v, want %q", evaluation, test.wantResult)
 	}
-	repeated, processed, err := repository.AdmitDueHeldStates(ctx, snapshot, dueAt, 10)
+	repeated, processed, err := repository.AdmitDueHeldStates(ctx, snapshot, dueAt, dueAt, 10)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -357,7 +423,7 @@ func TestResetPendingHeldStatesPreservesConsumedAndRestartsPendingDuration(t *te
 	}
 	due := postStartup.Add(10 * time.Second)
 	assertHeldState(t, database, "pending", 2, encodeStoredTimestamp(postStartup), encodeStoredTimestamp(due))
-	if _, _, err := repository.AdmitDueHeldStates(ctx, stateSnapshotWith(), due, 10); err != nil {
+	if _, _, err := repository.AdmitDueHeldStates(ctx, stateSnapshotWith(), due, due, 10); err != nil {
 		t.Fatal(err)
 	}
 	if err := repository.ResetPendingHeldStates(ctx); err != nil {
@@ -428,7 +494,7 @@ func verifyDueHeldStateAdmission(
 	if len(candidates) != 1 {
 		t.Fatalf("due candidates = %d, want one", len(candidates))
 	}
-	result, processed, err := repository.AdmitDueHeldStates(ctx, stateSnapshotWith(), dueAt, 100)
+	result, processed, err := repository.AdmitDueHeldStates(ctx, stateSnapshotWith(), dueAt, dueAt, 100)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -65,7 +65,9 @@ func (service *Service) processDueHeldStateBatch(
 				return AdmissionResult{}, 0, err
 			}
 		}
-		result, processed, err := service.repository.AdmitDueHeldStates(admissionContext, snapshot, at, limit)
+		result, processed, err := service.repository.AdmitDueHeldStates(
+			admissionContext, snapshot, at, service.dependencies.Now(), limit,
+		)
 		cancel()
 		if errors.Is(err, ErrConditionSnapshotRequired) {
 			if time.Now().After(deadline) {

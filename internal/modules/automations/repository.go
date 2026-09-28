@@ -32,8 +32,14 @@ type Repository interface {
 	) (AdmissionResult, error)
 	// ListDueHeldStates returns at most limit pending holds ordered by deadline and identity.
 	ListDueHeldStates(context.Context, time.Time, int) ([]HeldStateCandidate, error)
-	// AdmitDueHeldStates rechecks current definitions and State while atomically recording outcomes.
-	AdmitDueHeldStates(context.Context, devices.EntityStateSnapshot, time.Time, int) (AdmissionResult, int, error)
+	// AdmitDueHeldStates uses due cutoff for selection and evaluatedAt for Conditions and outcomes.
+	AdmitDueHeldStates(
+		context.Context,
+		devices.EntityStateSnapshot,
+		time.Time,
+		time.Time,
+		int,
+	) (AdmissionResult, int, error)
 	// ResetPendingHeldStates clears pending deadlines while retaining receive-order watermarks.
 	ResetPendingHeldStates(context.Context) error
 	// AdmitManualRun starts one Run, or commits one Condition Skip, from the
