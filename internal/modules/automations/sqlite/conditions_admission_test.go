@@ -314,6 +314,11 @@ func TestAdmitDeviceFactCoverageIgnoresIneligibleSiblings(t *testing.T) {
 		automations.ConditionDecisionNotEvaluated {
 		t.Fatalf("busy Skip decision = %#v, want not_evaluated", entry.Skip)
 	}
+	if entry.Skip.Source != automations.RunSourceDeviceFact || entry.Skip.Fact == nil ||
+		entry.Skip.Fact.FactID != fact.Observation.FactID || entry.Skip.HeldState != nil ||
+		len(entry.Skip.MatchedTriggers) != 1 || entry.Skip.MatchedTriggers[0].ID != "occupied_and_warm" {
+		t.Fatalf("busy Skip provenance = %#v", entry.Skip)
+	}
 
 	// A duplicate redelivery is decided before Conditions too.
 	second, err := repository.AdmitDeviceFact(
@@ -324,6 +329,49 @@ func TestAdmitDeviceFactCoverageIgnoresIneligibleSiblings(t *testing.T) {
 	}
 	if second.Outcome.DuplicateOutcomes != 1 {
 		t.Fatalf("duplicate outcome = %#v, want one duplicate", second.Outcome)
+	}
+}
+
+// An old Fact is stale even while the Automation is busy; neither eligibility
+// outcome evaluates Conditions or requests an otherwise missing snapshot.
+func TestAdmitDeviceFactStalePrecedesBusyAndConditions(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	database := openAutomationDatabase(t)
+	repository := newAutomationRepository(t, database)
+	trigger, conditionEntity := newEntityID(t), newEntityID(t)
+	record, err := repository.CreateAutomation(ctx, conditionalDefinitionFor(
+		t, trigger, conditionLeaf("dark", conditionEntity, automations.ComparisonLessThan, "30"),
+	))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = repository.AdmitManualRun(ctx,
+		automations.ManualRunInput{AutomationID: record.ID, BypassConditions: true},
+		stateSnapshotWith(), admissionNow); err != nil {
+		t.Fatal(err)
+	}
+	fact := observationFactFor(t, trigger, admissionNow.Add(-automations.FactMaximumAge-time.Second))
+	result, err := repository.AdmitDeviceFact(
+		ctx,
+		fact,
+		stateSnapshotWith(),
+		admissionNow,
+		admissionNow.Add(-time.Hour),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(result.Skips) != 1 || result.Skips[0].Reason != automations.SkipStaleFact {
+		t.Fatalf("old busy Fact outcome = %#v, want stale Skip", result)
+	}
+	entry := historyEntry(t, repository, record.ID, string(result.Skips[0].SkipID))
+	if entry.Skip == nil || entry.Skip.Source != automations.RunSourceDeviceFact ||
+		entry.Skip.Fact == nil || entry.Skip.Fact.FactID != fact.Observation.FactID ||
+		entry.Skip.HeldState != nil || len(entry.Skip.MatchedTriggers) != 1 ||
+		entry.Skip.MatchedTriggers[0].ID != "occupied_and_warm" ||
+		entry.Skip.ConditionDecision.DecisionMode() != automations.ConditionDecisionNotEvaluated {
+		t.Fatalf("stored stale Skip = %#v", entry.Skip)
 	}
 }
 
@@ -363,6 +411,11 @@ func TestAdmitDeviceFactEvaluatedRunCommitsWithSnapshotDecision(t *testing.T) {
 	}
 	if !slices.Equal(entry.Run.MatchedTriggerIDs, []automations.TriggerID{"occupied_and_warm"}) {
 		t.Fatalf("stored matched triggers = %v", entry.Run.MatchedTriggerIDs)
+	}
+	if entry.Run.Source != automations.RunSourceDeviceFact || entry.Run.Fact == nil ||
+		entry.Run.Fact.FactID != fact.Observation.FactID || entry.Run.HeldState != nil ||
+		entry.Run.Snapshot.Triggers[0].ID != entry.Run.MatchedTriggerIDs[0] {
+		t.Fatalf("stored Run provenance = %#v", entry.Run)
 	}
 	if summary := firstHistorySummary(t, repository, record.ID); summary.ConditionMode !=
 		automations.ConditionDecisionEvaluated || summary.Source != automations.RunSourceDeviceFact {
@@ -518,6 +571,7 @@ func requireManualSkipShape(
 	}
 	entry := historyEntry(t, repository, record.ID, string(skip.ID))
 	if entry.Skip == nil || entry.Skip.Fact != nil ||
+		entry.Skip.HeldState != nil || len(entry.Skip.MatchedTriggers) != 0 ||
 		entry.Skip.ConditionDecision.DecisionMode() != automations.ConditionDecisionEvaluated {
 		t.Fatalf("stored manual Skip = %#v", entry.Skip)
 	}
@@ -535,7 +589,7 @@ func requireManualRunShape(t *testing.T, result automations.ManualAdmissionResul
 		t.Fatalf("manual result = %#v, want exactly one Run", result)
 	}
 	if result.Run.Source != automations.RunSourceManual || result.Run.Fact != nil ||
-		len(result.Run.MatchedTriggerIDs) != 0 {
+		result.Run.HeldState != nil || len(result.Run.MatchedTriggerIDs) != 0 {
 		t.Fatalf("manual Run = %#v", result.Run)
 	}
 	if result.Run.ConditionDecision.DecisionMode() != automations.ConditionDecisionEvaluated ||
@@ -624,6 +678,10 @@ func TestAdmitManualRunBypassNeverReadsState(t *testing.T) {
 	entry := historyEntry(t, repository, configured.ID, string(bypassed.Run.ID))
 	if entry.Run == nil || entry.Run.ConditionDecision.DecisionMode() != automations.ConditionDecisionBypassed {
 		t.Fatalf("stored bypassed Run = %#v", entry.Run)
+	}
+	if entry.Run.Source != automations.RunSourceManual || entry.Run.Fact != nil ||
+		entry.Run.HeldState != nil || len(entry.Run.MatchedTriggerIDs) != 0 {
+		t.Fatalf("stored bypassed Run provenance = %#v", entry.Run)
 	}
 
 	requested, err := repository.AdmitManualRun(

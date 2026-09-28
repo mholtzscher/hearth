@@ -8,6 +8,8 @@ import (
 )
 
 // DefinitionRepository manages definitions without admitting or executing Runs.
+// Writes accept arbitrary typed definitions and validate structural integrity
+// and encoded size; current Devices reference validation belongs to the Service.
 type DefinitionRepository interface {
 	CreateAutomation(context.Context, Definition) (Record, error)
 	GetAutomation(context.Context, AutomationID) (Record, error)
@@ -16,7 +18,9 @@ type DefinitionRepository interface {
 	DeleteAutomation(context.Context, AutomationID, int64) error
 }
 
-// Repository is the complete domain-oriented persistence seam.
+// Repository is the complete domain-oriented persistence seam. Admission
+// validates facts independently and checks eligibility against transaction-local
+// state, even when callers bypass the Service.
 type Repository interface {
 	DefinitionRepository
 
