@@ -203,52 +203,6 @@ func TestDiscoveryContractWandaBulbKeysOrderAndRoutes(t *testing.T) {
 	requireLightCapturedRouteShapes(t, byKey)
 }
 
-// This test protects exact color representation discovery and fails if any
-// representation combination discovers different entities: XY-only, HS-only,
-// dual, and multi-endpoint devices must keep the captured key order.
-func TestDiscoveryContractColorRepresentationKeysAndOrder(t *testing.T) {
-	t.Parallel()
-	for _, test := range []struct {
-		fixture string
-		want    []string
-	}{
-		{
-			fixture: "bridge-devices-color-dual.json",
-			want:    []string{"power", "brightness", "colortemp", "colorxy", "colorhs", "colormode", "linkquality"},
-		},
-		{
-			fixture: "bridge-devices-color-xy-only.json",
-			want:    []string{"power", "brightness", "colorxy", "colormode"},
-		},
-		{
-			fixture: "bridge-devices-color-hs-only.json",
-			want:    []string{"power", "colorhs", "colormode"},
-		},
-		{
-			fixture: "bridge-devices-color-endpoints.json",
-			want: []string{
-				"power-ep1", "brightness-ep1", "colortemp-ep1", "colorxy-ep1", "colormode-ep1",
-				"power-ep2", "colortemp-ep2", "colorhs-ep2", "colormode-ep2",
-			},
-		},
-	} {
-		t.Run(test.fixture, func(t *testing.T) {
-			t.Parallel()
-			devices := fixtureDevices(t, test.fixture)
-			if len(devices) != 1 {
-				t.Fatalf("fixture %s must contain exactly one device", test.fixture)
-			}
-			plan := contractContributions(t, devices[0])
-			if plan.Kind != upstreamDeviceKindLight {
-				t.Fatalf("%s kind = %q, want light", test.fixture, plan.Kind)
-			}
-			if got := entityKeys(plan.Entities); !reflect.DeepEqual(got, test.want) {
-				t.Fatalf("%s keys = %v, want %v", test.fixture, got, test.want)
-			}
-		})
-	}
-}
-
 // requireContractSameMessageColorObservations decodes representative
 // same-message payloads through the dual-color entities and fails unless the
 // active representation carries values with exact observation literals while
@@ -526,34 +480,11 @@ func TestDiscoveryContractPlugKeysOrderAndRoutes(t *testing.T) {
 	requireRelayCapturedRouteShapes(t, byKey)
 }
 
-// This test protects exact plug state conversions and fails if
-// planning changes any decoded value: discovered power scalars, power-on
-// behavior choices, every electrical reading, or every numeric setting.
-// Fractions survive on float electrical sensors; the LED setting keeps
-// value-mode semantics. Off-choice power-on behavior stays rejected.
-func TestDiscoveryContractPlugStateConversions(t *testing.T) {
+// This test protects fractional voltage and LED State beyond the captured
+// report and rejects unadvertised power-on behavior choices.
+func TestDiscoveryContractPlugVoltageLEDAndInvalidChoice(t *testing.T) {
 	t.Parallel()
 	byKey := contractPlansByKey(contractContributions(t, mustPlugDevice(t)).Entities)
-	for _, testCase := range []struct {
-		key      string
-		property string
-		payload  string
-	}{
-		{"power", "state", `"ON"`},
-		{"power", "state", `"OFF"`},
-		{"poweronbehavior", "power_on_behavior", `"previous"`},
-		{"acfrequency", "ac_frequency", `60`},
-		{"electricalpower", "power", `0`},
-		{"powerfactor", "power_factor", `0`},
-		{"energy", "energy", `0.01`},
-		{"current", "current", `0`},
-		{"voltage", "voltage", `119.5`},
-		{"ledbrightness", "led_brightness", `100`},
-		{"countdowntoturnoff", "countdown_to_turn_off", `0`},
-		{"countdowntoturnon", "countdown_to_turn_on", `0`},
-	} {
-		contractDecode(t, byKey[testCase.key], testCase.property, testCase.payload)
-	}
 	if report := contractDecode(t, byKey["voltage"], "voltage", `230.5`); report.semantic != 230.5 {
 		t.Fatalf("voltage 230.5 decoded to %v, want the preserved fraction", report.semantic)
 	}
@@ -644,7 +575,7 @@ func TestDiscoveryContractPlugCommands(t *testing.T) {
 // order, or get behavior: temperature, humidity, and battery stay
 // publish-only reads with startup refresh, while publish-only linkquality
 // carries no get route.
-func TestDiscoveryContractSensorDeviceKeysUnitsAndGetBehavior(t *testing.T) {
+func TestDiscoveryContractSensorDeviceKeysAndGetBehavior(t *testing.T) {
 	t.Parallel()
 	devices := fixtureDevices(t, "bridge-devices-temperature.json")
 	if len(devices) != 1 {

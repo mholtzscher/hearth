@@ -395,14 +395,22 @@ func TestColorCommandTimesOutWithoutReports(t *testing.T) {
 	connection.onPublish = func(context.Context, *fakeConnection, string, []byte) error { return nil }
 	responder := newFakeResponder(recorder, session)
 	command := testCommand(entityByKey(device, "colorxy").entityID, `{"x":3125,"y":3291}`)
-	command.Deadline = time.Now().Add(50 * time.Millisecond).UTC().Format(time.RFC3339Nano)
+	deadline := time.Now().Add(2 * time.Second)
+	command.Deadline = deadline.UTC().Format(time.RFC3339Nano)
 	if err := z2m.HandleCommand(context.Background(), command, responder); err != nil {
 		t.Fatal(err)
 	}
 	if responder.accepted != 1 {
 		t.Fatalf("accepted = %d", responder.accepted)
 	}
-	time.Sleep(300 * time.Millisecond)
+	if !time.Now().Before(deadline) {
+		t.Fatal("command was not accepted before its deadline")
+	}
+	// Acceptance must happen before the deadline; wait until it has actually
+	// expired before delivering the otherwise matching report.
+	if remaining := time.Until(deadline); remaining > 0 {
+		time.Sleep(remaining)
+	}
 	if err := publishState(
 		context.Background(),
 		z2m,
@@ -412,7 +420,11 @@ func TestColorCommandTimesOutWithoutReports(t *testing.T) {
 	); err != nil {
 		t.Fatal(err)
 	}
-	time.Sleep(100 * time.Millisecond)
+	waitFor(t, func() bool {
+		session.mutex.Lock()
+		defer session.mutex.Unlock()
+		return len(session.observations) == 2
+	})
 	session.mutex.Lock()
 	defer session.mutex.Unlock()
 	if len(session.linked) != 0 {

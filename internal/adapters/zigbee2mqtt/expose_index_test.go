@@ -1,7 +1,6 @@
 package zigbee2mqtt //nolint:testpackage // Tests exercise package-private expose normalization.
 
 import (
-	"encoding/json"
 	"reflect"
 	"testing"
 )
@@ -87,7 +86,7 @@ func TestExposeIndexUniqueFeatureRequiresOneMatch(t *testing.T) {
 
 // This test protects tolerant unit decoding and fails if a malformed unit
 // discards sibling exposes or a valid unit is lost.
-func TestExposeIndexRetainsUnitIndependently(t *testing.T) {
+func TestDiscoveryIsolatesMalformedUnitFromValidSensor(t *testing.T) {
 	t.Parallel()
 	payload := []byte(`[{
 		"ieee_address": "0x00124b0024abcdef", "type": "Router", "supported": true,
@@ -105,21 +104,9 @@ func TestExposeIndexRetainsUnitIndependently(t *testing.T) {
 	if len(result.Devices) != 1 || len(result.Rejections) != 0 {
 		t.Fatalf("discovery = %#v", result)
 	}
-	index := newExposeIndex(eligibleSensorDevice("temperature", 1))
-	for _, root := range index.roots {
-		if root.expose.Name == "temperature" && root.expose.Unit != "°C" {
-			t.Fatalf("temperature unit = %q", root.expose.Unit)
-		}
-	}
-	var decoded []upstreamDevice
-	if unmarshalErr := json.Unmarshal(payload, &decoded); unmarshalErr != nil {
-		t.Fatal(unmarshalErr)
-	}
-	units := make(map[string]string)
-	for _, expose := range decoded[0].Definition.Exposes {
-		units[expose.Name] = expose.Unit
-	}
-	if units["temperature"] != "°C" || units["humidity"] != "" {
-		t.Fatalf("units = %#v", units)
+	entities := result.Devices[0].Registration.Entities
+	if len(entities) != 1 || entities[0].Key != "temperature" ||
+		string(entities[0].Support) != `{"state":{"unit":"mCel"},"operations":{}}` {
+		t.Fatalf("entities after malformed humidity unit = %#v", entities)
 	}
 }
