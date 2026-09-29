@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.14.0](https://github.com/mholtzscher/hearth/compare/v0.13.0...v0.14.0) (2026-09-29)
+
+
+### Features
+
+* **skills:** add show-complexity skill ([0a9ebac](https://github.com/mholtzscher/hearth/commit/0a9ebac3f257f8e7f1cea216e862a77bc29470a5))
+* **skills:** add test-audit skill with campaign workflow ([c57c357](https://github.com/mholtzscher/hearth/commit/c57c357b1b2e8988b6d06dbff458558cf215dd48))
+* **zwave:** add Z-Wave JS adapter ([#113](https://github.com/mholtzscher/hearth/issues/113)) ([d07b9c8](https://github.com/mholtzscher/hearth/commit/d07b9c851798929689b9b553b884dc1f34ace2f9))
+
 ## [0.13.0](https://github.com/mholtzscher/hearth/compare/v0.12.0...v0.13.0) (2026-09-28)
 
 
