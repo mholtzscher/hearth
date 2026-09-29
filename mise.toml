@@ -118,16 +118,16 @@ description = "Build the dashboard container image locally"
 run = '''docker build ./web --tag hearth-web:dev'''
 
 [tasks."lint"]
-description = "Lint"
+description = "Lint (GO_PACKAGES selects space-separated packages; defaults to ./...)"
 depends = ["tidy"]
-run = '''golangci-lint run ./...'''
+run = '''set -f; golangci-lint run ${GO_PACKAGES:-./...}'''
 
 [tasks."test"]
-description = "Test with the race detector against a real Mosquitto broker"
+description = "Test with the race detector (GO_PACKAGES selects space-separated packages; defaults to ./...)"
 # Standalone tests skip preparation; validation schedules tidy through its other checks.
 wait_for = ["tidy"]
 # Remove the race detector's one-second exit sleep from each test binary.
-run = '''GORACE="${GORACE:-} atexit_sleep_ms=0" go test -race ./...'''
+run = '''set -f; GORACE="${GORACE:-} atexit_sleep_ms=0" go test -race ${GO_PACKAGES:-./...}'''
 
 [tasks."test-profile"]
 description = "Profile one Go test package (TEST_PACKAGE and PROFILE_DIR override defaults)"
@@ -183,17 +183,11 @@ run = '''go test ./internal/adapters/zwavejs -run='^$' -fuzz='^FuzzZWaveJSEvent$
 
 [tasks."fuzz"]
 description = "Run all bounded fuzz campaigns"
-run = '''
-mise run fuzz-natswire-subjects
-mise run fuzz-entitytypes-json-codec
-mise run fuzz-natswire-codec
-mise run fuzz-zigbee2mqtt-discovery
-mise run fuzz-zigbee2mqtt-state
-mise run fuzz-ecowitt-report
-mise run fuzz-ecowitt-projection
-mise run fuzz-zwavejs-snapshot
-mise run fuzz-zwavejs-event
-'''
+run = '''mise run --jobs 1 'fuzz-*' '''
+
+[tasks."list-fuzz-tasks"]
+description = "List fuzz campaign tasks as a JSON array for the scheduled CI matrix"
+run = '''python -c 'import json, tomllib; print(json.dumps(sorted(name for name in tomllib.load(open("mise.toml", "rb"))["tasks"] if name.startswith("fuzz-"))))' '''
 
 [tasks."test-entitytype-fixtures"]
 description = "Compile and execute generated entity-type fixtures in an isolated module"
@@ -201,9 +195,9 @@ depends = ["tidy"]
 run = '''HEARTH_FIXTURE_EXEC=1 go test ./internal/cmd/entitytypegen -run='^TestFixtureExecution$' -count=1 -v'''
 
 [tasks."vet"]
-description = "Vet"
+description = "Vet (GO_PACKAGES selects space-separated packages; defaults to ./...)"
 depends = ["tidy"]
-run = '''go vet ./...'''
+run = '''set -f; go vet ${GO_PACKAGES:-./...}'''
 
 [tasks."web-install"]
 description = "Install dashboard dependencies"

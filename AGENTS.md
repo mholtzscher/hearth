@@ -25,6 +25,8 @@
 | Start simulator stack          | `mise run simulator-start`           |
 | Stop simulator stack           | `mise run simulator-stop`            |
 
+For package-scoped iteration, set `GO_PACKAGES` to space-separated Go package paths when running `lint`, `test`, or `vet` with `--skip-deps`, for example `GO_PACKAGES='./internal/adapters/zwavejs ./internal/app/zwavejs' mise run --skip-deps test`. Unset it for full validation.
+
 ## External References
 
 | Need                           | File                   |
