@@ -444,13 +444,26 @@ func TestRuntimeStopsOnLiveObservationFailure(t *testing.T) {
 	session := newRuntimeSession(recorder)
 	connection := newFakeConnection(recorder, versionFixture(),
 		snapshotFixture(testHomeID, dimmerNodeFixture(23, "Dimmer")))
-	zwave, _ := reconciledRuntime(t, session, connection)
+	zwave := newRuntimeAdapter(t, session, &fakeDialer{connections: []*fakeConnection{connection}})
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	result := make(chan error, 1)
+	go func() { result <- zwave.Run(ctx) }()
 	waitForRoutesActivated(t, session)
+	failure := errors.New("permanent publication failure")
 	session.setPublishHook(func(context.Context, adapter.Observation) error {
-		return errors.New("permanent publication failure")
+		return failure
 	})
 	connection.emit(valueUpdatedEvent(testValueID(commandClassMultilevelSwitch, 0, valuePropertyCurrentValue), "45"))
 	awaitSignal(t, zwave.runtimeDone, "runtime stop after live publication failure")
+	select {
+	case err := <-result:
+		if !errors.Is(err, failure) {
+			t.Fatalf("Run error = %v, want publication failure", err)
+		}
+	case <-time.After(harnessTimeout):
+		t.Fatal("Run did not return after publication failure")
+	}
 }
 
 func TestRuntimeConnectionLossInvalidatesRoutesBeforeUnhealthy(t *testing.T) {

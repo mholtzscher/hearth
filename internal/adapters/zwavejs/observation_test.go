@@ -172,14 +172,14 @@ func TestObserveProducesTypedObservations(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
 			observation, err := test.plan.observe(
-				canonicalEntityID(test.plan.Key),
+				canonicalEntityID(test.plan.Descriptor.Key),
 				fixtureReceivedAt(),
 				[]byte(test.current),
 			)
 			if err != nil {
 				t.Fatal(err)
 			}
-			if observation.EntityID != canonicalEntityID(test.plan.Key) {
+			if observation.EntityID != canonicalEntityID(test.plan.Descriptor.Key) {
 				t.Fatalf("observation entity = %q", observation.EntityID)
 			}
 			if string(observation.Value) != test.want {
@@ -190,9 +190,6 @@ func TestObserveProducesTypedObservations(t *testing.T) {
 			}
 			if observation.SourceUpdatedAt != nil {
 				t.Fatalf("observation source time = %v, want nil", observation.SourceUpdatedAt)
-			}
-			if _, err = test.plan.DecodeState([]byte(test.current)); err != nil {
-				t.Fatalf("DecodeState(%q) = %v", test.current, err)
 			}
 		})
 	}
@@ -336,20 +333,18 @@ func TestEncodeSetWritesExactUpstreamValues(t *testing.T) {
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
-			command := probeSetCommand([]byte(test.parameters))
-			command.EntityID = canonicalEntityID(test.plan.Key)
-			got, err := test.plan.EncodeSet(command)
+			prepared, err := test.plan.PrepareSet([]byte(test.parameters))
 			if !test.ok {
 				if err == nil {
-					t.Fatalf("EncodeSet(%s) = %s, want an error", test.parameters, got)
+					t.Fatalf("PrepareSet(%s) = %s, want an error", test.parameters, prepared.Value)
 				}
 				return
 			}
 			if err != nil {
-				t.Fatalf("EncodeSet(%s) = %v", test.parameters, err)
+				t.Fatalf("PrepareSet(%s) = %v", test.parameters, err)
 			}
-			if string(got) != test.want {
-				t.Fatalf("EncodeSet(%s) = %s, want %s", test.parameters, got, test.want)
+			if string(prepared.Value) != test.want {
+				t.Fatalf("PrepareSet(%s) = %s, want %s", test.parameters, prepared.Value, test.want)
 			}
 		})
 	}
@@ -379,7 +374,8 @@ func TestMatchesComparesTypedParametersAndState(t *testing.T) {
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
-			got := test.plan.Matches([]byte(test.parameters), []byte(test.state))
+			prepared, err := test.plan.PrepareSet([]byte(test.parameters))
+			got := err == nil && prepared.Matches([]byte(test.state))
 			if got != test.want {
 				t.Fatalf("Matches(%s, %s) = %t, want %t", test.parameters, test.state, got, test.want)
 			}
@@ -419,12 +415,13 @@ func TestEncodedSetMatchesItsOwnDecodedState(t *testing.T) {
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
-			state, err := test.plan.DecodeState([]byte(test.upstream))
+			observation, err := test.plan.observe("test", fixtureReceivedAt(), []byte(test.upstream))
 			if err != nil {
 				t.Fatal(err)
 			}
-			if !test.plan.Matches([]byte(test.parameters), state) {
-				t.Fatalf("encoded %s did not match decoded state %s", test.parameters, state)
+			prepared, err := test.plan.PrepareSet([]byte(test.parameters))
+			if err != nil || !prepared.Matches(observation.Value) {
+				t.Fatalf("encoded %s did not match decoded state %s: %v", test.parameters, observation.Value, err)
 			}
 		})
 	}

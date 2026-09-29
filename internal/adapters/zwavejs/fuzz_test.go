@@ -34,7 +34,8 @@ func FuzzZWaveJSSnapshot(fuzz *testing.F) {
 				t.Fatalf("registration has %d Entities for %d plans", len(node.Registration.Entities), len(node.Plans))
 			}
 			for index, entity := range node.Registration.Entities {
-				if entity.Key != node.Plans[index].Key || entity.ExternalID != node.Plans[index].ExternalID {
+				if entity.Key != node.Plans[index].Descriptor.Key ||
+					entity.ExternalID != node.Plans[index].Descriptor.ExternalID {
 					t.Fatalf("registration Entity %d disagrees with its plan", index)
 				}
 			}

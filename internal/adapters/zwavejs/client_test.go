@@ -627,13 +627,13 @@ func TestConcurrentRequestsCorrelateOutOfOrderResults(t *testing.T) {
 	currentDone := make(chan polledValue, 1)
 	targetDone := make(chan polledValue, 1)
 	go func() {
-		value, at, err := connection.PollValue(
+		value, at, err := pollValueForTest(connection,
 			ctx, testNodeID, testValueID(testCommandClassMultilevelSwitch, 0, "currentValue"),
 		)
 		currentDone <- polledValue{value: value, at: at, err: err}
 	}()
 	go func() {
-		value, at, err := connection.PollValue(
+		value, at, err := pollValueForTest(connection,
 			ctx, testNodeID, testValueID(testCommandClassMultilevelSwitch, 0, "targetValue"),
 		)
 		targetDone <- polledValue{value: value, at: at, err: err}
@@ -641,6 +641,23 @@ func TestConcurrentRequestsCorrelateOutOfOrderResults(t *testing.T) {
 	requireCorrelatedResults(t, <-currentDone, <-targetDone)
 	requireRequestMessageIDs(t, server, []string{"3", "4"})
 	requireInterleavedEvent(t, connection)
+}
+
+// pollValueForTest acknowledges the reader marker when a test consumes a poll
+// outside the coordinator. Ordering tests use PollValue directly instead.
+//
+//nolint:revive // Keep the connection first for the test's method-like call sites.
+func pollValueForTest(
+	connection zwaveConnection,
+	ctx context.Context,
+	nodeID int,
+	id valueID,
+) (json.RawMessage, time.Time, error) {
+	result, err := connection.PollValue(ctx, nodeID, id)
+	if result.Receipt != nil {
+		close(result.Receipt)
+	}
+	return result.Value, result.ReceivedAt, err
 }
 
 // polledValue is one PollValue outcome collected from a concurrent call.
@@ -781,7 +798,7 @@ func TestUnknownResultMessageIDEndsGeneration(t *testing.T) {
 	connection := dialConnection(t, server)
 	startListening(t, connection)
 
-	_, _, err := connection.PollValue(
+	_, _, err := pollValueForTest(connection,
 		testContext(t), testNodeID, testValueID(testCommandClassMultilevelSwitch, 0, "currentValue"),
 	)
 	requireErrorSameType(t, err, &unknownResultMessageIDError{}, "pending poll")
@@ -808,7 +825,7 @@ func TestDuplicateResultMessageIDEndsGeneration(t *testing.T) {
 	connection := dialConnection(t, server)
 	startListening(t, connection)
 
-	value, _, err := connection.PollValue(
+	value, _, err := pollValueForTest(connection,
 		testContext(t), testNodeID, testValueID(testCommandClassMultilevelSwitch, 0, "currentValue"),
 	)
 	if err != nil || string(value) != "15" {
@@ -838,7 +855,7 @@ func TestZeroResultMessageIDIsUnknownNotDuplicate(t *testing.T) {
 	if !errors.As(lost, &unknown) || unknown.MessageID != 0 {
 		t.Fatalf("lost error = %#v (%v), want unknown message ID 0", unknown, lost)
 	}
-	_, _, err := connection.PollValue(
+	_, _, err := pollValueForTest(connection,
 		testContext(t), testNodeID, testValueID(testCommandClassMultilevelSwitch, 0, "currentValue"),
 	)
 	requireErrorSameType(t, err, &unknownResultMessageIDError{}, "request after a zero message ID")
@@ -897,7 +914,7 @@ func TestCompletedIDsRemainDuplicatesWithoutResolvedMap(t *testing.T) {
 	ctx := testContext(t)
 	current := testValueID(testCommandClassMultilevelSwitch, 0, "currentValue")
 	for index := range completions {
-		if _, _, err := connection.PollValue(ctx, testNodeID, current); err != nil {
+		if _, _, err := pollValueForTest(connection, ctx, testNodeID, current); err != nil {
 			t.Fatalf("poll %d: %v", index, err)
 		}
 	}
@@ -956,7 +973,7 @@ func TestMalformedFramesEndGeneration(t *testing.T) {
 			startListening(t, connection)
 
 			requireErrorSameType(t, awaitLost(t, connection), testCase.want, "lost error")
-			_, _, err := connection.PollValue(
+			_, _, err := pollValueForTest(connection,
 				testContext(t), testNodeID, testValueID(testCommandClassMultilevelSwitch, 0, "currentValue"),
 			)
 			requireErrorSameType(t, err, testCase.want, "request after malformed frame")
@@ -1241,7 +1258,7 @@ func TestRejectedRequestKeepsGenerationUsable(t *testing.T) {
 	)
 	requireErrorSameType(t, err, &upstreamRejectionError{}, "set value")
 
-	value, at, err := connection.PollValue(
+	value, at, err := pollValueForTest(connection,
 		ctx, testNodeID, testValueID(testCommandClassMultilevelSwitch, 0, "currentValue"),
 	)
 	if err != nil || string(value) != "42" {
@@ -1627,7 +1644,7 @@ func runPollValueCase(t *testing.T, reply, wantValue string, fatal bool) {
 	startListening(t, connection)
 
 	before := time.Now().UTC()
-	value, at, err := connection.PollValue(
+	value, at, err := pollValueForTest(connection,
 		testContext(t), testNodeID, testValueID(testCommandClassBinarySwitch, 0, "currentValue"),
 	)
 	if fatal {
@@ -1682,9 +1699,10 @@ func checkPollReceiptMarker(t *testing.T, rejected bool) {
 	})
 	connection := dialConnection(t, server)
 	startListening(t, connection)
-	_, _, receipt, err := connection.(*websocketConnection).pollValueWithReceipt(
+	result, err := connection.PollValue(
 		testContext(t), testNodeID, testValueID(testCommandClassMultilevelSwitch, 0, "currentValue"),
 	)
+	receipt := result.Receipt
 	if rejected != isUpstreamRejection(err) {
 		t.Fatalf("poll rejection = %v, want rejected = %t", err, rejected)
 	}
@@ -1954,7 +1972,7 @@ func TestAbandonablePollWriteSurvivesCommandCancellation(t *testing.T) {
 	hugeValueID := hugePropertyValueID()
 	done := make(chan error, 1)
 	go func() {
-		_, _, err := connection.PollValue(ctx, testNodeID, hugeValueID)
+		_, _, err := pollValueForTest(connection, ctx, testNodeID, hugeValueID)
 		done <- err
 	}()
 	requireWaiterReserved(t, internal)
@@ -2040,7 +2058,7 @@ func TestAbandonedPollKeepsTheGenerationUsable(t *testing.T) {
 
 	ctx, cancel := context.WithTimeout(t.Context(), testRequestDeadline)
 	defer cancel()
-	if _, _, err := connection.PollValue(ctx, testNodeID, current); !errors.Is(err, context.DeadlineExceeded) {
+	if _, _, err := pollValueForTest(connection, ctx, testNodeID, current); !errors.Is(err, context.DeadlineExceeded) {
 		t.Fatalf("abandoned poll error = %v, want the context deadline cause", err)
 	}
 	pending, abandoned := internal.connectionCorrelations()
@@ -2053,7 +2071,7 @@ func TestAbandonedPollKeepsTheGenerationUsable(t *testing.T) {
 
 	// The generation stays usable, and the late result of the abandoned poll is
 	// recognized and ignored instead of ending it.
-	value, _, err := connection.PollValue(testContext(t), testNodeID, current)
+	value, _, err := pollValueForTest(connection, testContext(t), testNodeID, current)
 	if err != nil {
 		t.Fatalf("second poll: %v", err)
 	}
@@ -2090,10 +2108,10 @@ func TestAbandonedPollRejectsADuplicateLateResult(t *testing.T) {
 
 	ctx, cancel := context.WithTimeout(t.Context(), testRequestDeadline)
 	defer cancel()
-	if _, _, err := connection.PollValue(ctx, testNodeID, current); !errors.Is(err, context.DeadlineExceeded) {
+	if _, _, err := pollValueForTest(connection, ctx, testNodeID, current); !errors.Is(err, context.DeadlineExceeded) {
 		t.Fatalf("abandoned poll error = %v, want the context deadline cause", err)
 	}
-	if _, _, err := connection.PollValue(testContext(t), testNodeID, current); err == nil {
+	if _, _, err := pollValueForTest(connection, testContext(t), testNodeID, current); err == nil {
 		t.Fatal("poll after a duplicate result reported success")
 	}
 	requireErrorSameType(
@@ -2132,7 +2150,7 @@ func TestAbandonedPollLimitEndsTheGeneration(t *testing.T) {
 		ctx, cancel := context.WithCancel(t.Context())
 		done := make(chan error, 1)
 		go func() {
-			_, _, err := connection.PollValue(ctx, testNodeID, current)
+			_, _, err := pollValueForTest(connection, ctx, testNodeID, current)
 			done <- err
 		}()
 		select {
@@ -2161,7 +2179,7 @@ func TestAbandonedPollLimitEndsTheGeneration(t *testing.T) {
 	defer cancel()
 	done := make(chan error, 1)
 	go func() {
-		_, _, err := connection.PollValue(ctx, testNodeID, current)
+		_, _, err := pollValueForTest(connection, ctx, testNodeID, current)
 		done <- err
 	}()
 	if request := server.nextRequest(); request.command() != commandPollValue {
@@ -2219,7 +2237,7 @@ func TestCloseEndsGenerationWithoutFailure(t *testing.T) {
 	if _, ok = <-connection.Lost(); ok {
 		t.Fatal("Lost reported a second terminal error")
 	}
-	_, _, err = connection.PollValue(
+	_, _, err = pollValueForTest(connection,
 		testContext(t), testNodeID, testValueID(testCommandClassMultilevelSwitch, 0, "currentValue"),
 	)
 	requireErrorSameType(t, err, &connectionClosedError{}, "request after close")
@@ -2419,12 +2437,12 @@ func TestInvalidRequestsAreRefusedLocally(t *testing.T) {
 	server.drainHandshake()
 	ctx := testContext(t)
 
-	if _, _, err := connection.PollValue(
+	if _, _, err := pollValueForTest(connection,
 		ctx, 0, testValueID(testCommandClassBinarySwitch, 0, "currentValue"),
 	); err == nil {
 		t.Error("poll without a node ID unexpectedly accepted")
 	}
-	if _, _, err := connection.PollValue(
+	if _, _, err := pollValueForTest(connection,
 		ctx, testNodeID, testValueID(testCommandClassBinarySwitch, 0, "currentValue"),
 	); err != nil {
 		t.Errorf("poll with a node ID unexpectedly rejected: %v", err)
@@ -2442,14 +2460,14 @@ func TestInvalidRequestsAreRefusedLocally(t *testing.T) {
 	// property has no request encoding, so writing one would corrupt the write
 	// or end the generation on an encode failure.
 	numeric := valueID{CommandClass: testCommandClassMultilevelSwitch, Property: valueProperty{Numeric: true}}
-	if _, _, err = connection.PollValue(ctx, testNodeID, numeric); err == nil {
+	if _, _, err = pollValueForTest(connection, ctx, testNodeID, numeric); err == nil {
 		t.Error("poll with a numeric property unexpectedly accepted")
 	}
 	if _, err = connection.SetValue(ctx, testNodeID, numeric, json.RawMessage("42")); err == nil {
 		t.Error("set with a numeric property unexpectedly accepted")
 	}
 	// None of the refusals above is a generation failure.
-	if _, _, err = connection.PollValue(
+	if _, _, err = pollValueForTest(connection,
 		ctx, testNodeID, testValueID(testCommandClassBinarySwitch, 0, "currentValue"),
 	); err != nil {
 		t.Fatalf("poll after local refusals: %v", err)

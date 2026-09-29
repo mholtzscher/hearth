@@ -834,7 +834,7 @@ func (connection *fakeConnection) PollValue(
 	ctx context.Context,
 	nodeID int,
 	id valueID,
-) (json.RawMessage, time.Time, error) {
+) (pollValueResult, error) {
 	// The poll start time is stamped before any bookkeeping so a test can assert
 	// the coalescing floor from the request itself.
 	startedAt := time.Now()
@@ -846,19 +846,42 @@ func (connection *fakeConnection) PollValue(
 	state, known := connection.nodeStates[nodeID]
 	connection.mutex.Unlock()
 	if hook != nil {
-		return hook(ctx, nodeID, id)
+		value, at, err := hook(ctx, nodeID, id)
+		if err != nil && !isUpstreamRejection(err) {
+			return pollValueResult{}, err
+		}
+		result, orderErr := connection.orderedPollResult(ctx, value, at)
+		if orderErr != nil {
+			return pollValueResult{}, orderErr
+		}
+		return result, err
 	}
 	if err := ctx.Err(); err != nil {
-		return nil, time.Time{}, err
+		return pollValueResult{}, err
 	}
 	if !known {
-		return nil, time.Time{}, errors.New("zwavejs: no such node")
+		return pollValueResult{}, errors.New("zwavejs: no such node")
 	}
 	value, found := resolveCurrentValue(state.Values, id)
 	if !found {
-		return nil, time.Time{}, errors.New("zwavejs: node does not report that Value")
+		return pollValueResult{}, errors.New("zwavejs: node does not report that Value")
 	}
-	return value, time.Now().UTC(), nil
+	return connection.orderedPollResult(ctx, value, time.Now().UTC())
+}
+
+// orderedPollResult uses the same poll-marker contract as the WebSocket reader.
+func (connection *fakeConnection) orderedPollResult(
+	ctx context.Context,
+	value json.RawMessage,
+	at time.Time,
+) (pollValueResult, error) {
+	receipt := make(chan struct{})
+	select {
+	case connection.events <- receivedEvent{receipt: receipt}:
+		return pollValueResult{Value: value, ReceivedAt: at, Receipt: receipt}, nil
+	case <-ctx.Done():
+		return pollValueResult{}, ctx.Err()
+	}
 }
 
 // Events delivers validated Events to the runtime pump.

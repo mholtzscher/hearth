@@ -401,13 +401,13 @@ A private serial runtime coordinator owns connection generations, immutable rout
 
 For power or brightness `set`:
 
-1. Resolve the canonical Entity against the current connection generation and route revision.
-2. Decode parameters with the generated `powerv1` or `brightnessv1` facade.
+1. Resolve the canonical Entity against the current connection generation's immutable routes.
+2. Decode parameters once with the generated `powerv1` or `brightnessv1` codec and validate against the Entity's support.
 3. Send correlated `node.set_value` to the planned target Value ID. Binary power sends a boolean; multilevel brightness sends 0–99; multilevel power sends 0 for off or 255 for on.
 4. A transport failure or missing node invalidates the generation and rejects the unaccepted Command as unavailable. A deterministic upstream value rejection uses `Responder.Reject`.
 5. Require a recognized successful SetValue status, then call `Responder.Accept` and retain its `CommandEvidence` beyond handler return.
 6. Immediately send correlated `node.poll_value` for the planned current Value ID.
-7. Decode every successful poll result through the same State translator and publish the commanded Entity through `CommandEvidence.PublishObservation`, even when it does not yet match. Publish ordinary Observations for sibling Entities derived from that same current Value ID. Linked and ordinary publications share one ordered per-generation chain so a newer update cannot be overwritten by an older delayed poll. A matching linked value satisfies the Command in Core.
+7. Decode every successful poll result through the same State translator and publish the commanded Entity through `CommandEvidence.PublishObservation`, even when it does not yet match. Publish ordinary Observations for sibling Entities derived from that same current Value ID. Linked and ordinary publications share one per-generation FIFO worker so a newer update cannot be overwritten by an older delayed poll. The queue holds at most 1024 pending batches plus one active batch. Overflow invalidates routes, cancels and joins the worker, discards pending batches, and reconnects for a fresh snapshot. Startup snapshot publication remains separate while live Events are buffered. A matching linked value satisfies the Command in Core.
 8. If a poll does not match, schedule another bounded poll without depending on an upstream Event. A relevant `value updated` event can accelerate verification, but is never Command-linked evidence. Coalesce polls to at most one per 250 ms. Stop after matching linked evidence, route/generation invalidation, or the absolute deadline. A failed linked publication keeps the accepted attempt's node FIFO slot until evidence or its deadline; superseded publication completions cannot end a newer attempt.
 
 The Adapter never claims that SetValue acceptance, supervision success, a target value, or an emitted post-set update proves the physical result. A SetValue status `Working` may therefore remain active until polling reaches the requested value or Core's ten-second Entity-type deadline expires.
@@ -452,7 +452,7 @@ type zwaveDialer interface {
 type zwaveConnection interface {
     StartListening(context.Context) (serverVersion, networkSnapshot, error)
     SetValue(context.Context, int, valueID, json.RawMessage) (setValueStatus, error)
-    PollValue(context.Context, int, valueID) (json.RawMessage, time.Time, error)
+    PollValue(context.Context, int, valueID) (pollValueResult, error)
     Events() <-chan receivedEvent
     Lost() <-chan error
     Close()
@@ -461,8 +461,17 @@ type zwaveConnection interface {
 type receivedEvent struct {
     Event      serverEvent
     ReceivedAt time.Time
+    receipt    <-chan struct{}
+}
+
+type pollValueResult struct {
+    Value      json.RawMessage
+    ReceivedAt time.Time
+    Receipt    chan struct{}
 }
 ```
+
+The client puts a receipt marker in the reader-ordered Event stream for each delivered poll result, including upstream rejections. The coordinator closes that receipt after enqueueing the poll's publications or discarding an unusable result, then resumes buffered Events. A request that fails before a result arrives has no receipt. Production and scripted connections implement this same ordering contract.
 
 The concrete implementation uses the existing `github.com/coder/websocket` dependency and `wsjson`; no Socket.IO or vendor Go client dependency is added.
 
@@ -472,27 +481,21 @@ Owner: `internal/adapters/zwavejs/entity_plan.go`.
 
 ```go
 type entityPlan struct {
-    Key            string
-    ExternalID     string
-    Name           string
     Endpoint       int
     CurrentValueID valueID
     TargetValueID  valueID
     Descriptor     adapter.EntityDescriptor
-    DecodeState    func(json.RawMessage) (json.RawMessage, error)
-    EncodeSet      func(adapter.Command) (json.RawMessage, error)
-    Matches        func(parameters json.RawMessage, state json.RawMessage) bool
+    Observe        func(string, time.Time, json.RawMessage) (adapter.Observation, error)
+    PrepareSet     func(json.RawMessage) (preparedSet, error)
 }
 
 type routeSnapshot struct {
-    Generation uint64
-    Revision   uint64
     ByEntityID map[string]entityRoute
     ByValueID  map[upstreamValueKey][]entityRoute
 }
 ```
 
-Concrete plan construction uses generated `sdk/adapter/powerv1` and `sdk/adapter/brightnessv1` descriptors, observations, and command handlers. Vendor JSON does not cross this package boundary.
+Concrete plan construction uses generated `sdk/adapter/powerv1` and `sdk/adapter/brightnessv1` descriptors and observations. Command admission uses the generated codecs and support validators; the prepared matcher closes over the typed target. Vendor JSON does not cross this package boundary.
 
 ## Project layout
 
@@ -518,6 +521,8 @@ internal/
 │       ├── logging.go                  # new — safe event/error classifications
 │       ├── observation.go              # new — current-value translation and typed Observations
 │       ├── observation_test.go         # new — binary, 0–99, invalid values, derived power
+│       ├── publication.go              # bounded generation-scoped Observation FIFO worker
+│       ├── publication_test.go         # overflow cancellation and fresh-snapshot recovery
 │       ├── runtime.go                  # new — generations, routes, per-node queues, event/poll coordination
 │       ├── runtime_regression_test.go  # new — deadline and generation-boundary regressions
 │       ├── runtime_test.go             # new — reconnect and concurrency state-machine tests

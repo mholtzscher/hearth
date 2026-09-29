@@ -1,5 +1,5 @@
 // runtime.go owns the private serial runtime coordinator: connection
-// generations, immutable route revisions, per-node FIFO queues, active
+// generations, immutable routes, per-node FIFO queues, active
 // attempts, protocol request completions, buffered Events, and deadline timers.
 //
 // The coordinator is the only owner of that state, so one goroutine decides
@@ -47,7 +47,7 @@ const defaultPollHintInterval = 250 * time.Millisecond
 // code; each is a local transition cause.
 var (
 	errStaleGeneration  = errors.New("stale Z-Wave runtime generation")
-	errStaleRoute       = errors.New("stale Z-Wave route revision")
+	errStaleRoute       = errors.New("stale Z-Wave route")
 	errGenerationClosed = errors.New("Z-Wave connection generation is closed")
 )
 
@@ -160,9 +160,6 @@ type nodeRecord struct {
 	assessed bool
 	state    nodeState
 	routes   []entityRoute
-	// revision is the route revision this node's routes were installed under.
-	// Reconciliation assigns it once per connection generation.
-	revision uint64
 }
 
 // generationScope is the lifetime of one connection generation. Generation-
@@ -171,15 +168,19 @@ type nodeRecord struct {
 // ended the generation, so a stale healthy report, availability batch,
 // Observation, or topology update can never follow the unhealthy report.
 type generationScope struct {
-	ctx     context.Context
-	cancel  context.CancelFunc
-	effects sync.WaitGroup
+	ctx          context.Context
+	cancel       context.CancelFunc
+	effects      sync.WaitGroup
+	publications chan func() runtimeEvent
 }
 
 // newGenerationScope derives one generation's lifetime from the runtime.
 func newGenerationScope(parent context.Context) *generationScope {
 	ctx, cancel := context.WithCancel(parent)
-	return &generationScope{ctx: ctx, cancel: cancel}
+	return &generationScope{
+		ctx: ctx, cancel: cancel,
+		publications: make(chan func() runtimeEvent, publicationQueueLimit),
+	}
 }
 
 // ended reports whether the generation has been torn down.
@@ -200,7 +201,6 @@ type runtimeCoordinator struct {
 
 	generation   uint64
 	dispatchable bool
-	reconciling  bool
 	connection   zwaveConnection
 	disconnect   context.CancelCauseFunc
 	homeID       uint32
@@ -219,17 +219,10 @@ type runtimeCoordinator struct {
 	nodes    map[int]*nodeRecord
 	snapshot routeSnapshot
 
-	routeRevision uint64
-
 	queues          map[int]*nodeCommandQueue
 	attempts        map[uint64]*commandAttempt
 	attemptsByValue map[attemptValueKey]*commandAttempt
 	nextAttemptID   uint64
-
-	// publishTail is the tail of the shared ordinary and linked Observation
-	// publication chain. Each frame's Observations stay together, and later
-	// publications wait for earlier ones so Core sees State in receive order.
-	publishTail chan struct{}
 
 	buffered []upstreamEvent
 
@@ -284,7 +277,6 @@ func (coordinator *runtimeCoordinator) stop(err error) error {
 // shutdown ends every route and every attempt without waiting on the network.
 func (coordinator *runtimeCoordinator) shutdown(cause error) {
 	coordinator.dispatchable = false
-	coordinator.reconciling = false
 	coordinator.clearRoutes()
 	coordinator.connection = nil
 	coordinator.disconnect = nil
@@ -297,14 +289,11 @@ func (coordinator *runtimeCoordinator) shutdown(cause error) {
 }
 
 // endGenerationScope tears down the active generation's effects and forgets the
-// scope, so a result they already queued is dropped by its scope comparison. The
-// ordinary-publication chain also starts over: a frame whose task was skipped
-// because the generation ended may never close its link, and a later generation
-// must never wait on it.
+// scope, so a result they already queued is dropped by its scope comparison.
+// The publication worker stops before another generation can publish.
 func (coordinator *runtimeCoordinator) endGenerationScope() {
 	scope := coordinator.scope
 	coordinator.scope = nil
-	coordinator.publishTail = nil
 	if scope != nil {
 		scope.end()
 	}
@@ -418,7 +407,6 @@ func (coordinator *runtimeCoordinator) finishReconciliation(event reconciliation
 	if event.scope != coordinator.scope || event.generation != coordinator.generation {
 		return nil
 	}
-	coordinator.reconciling = false
 	if event.err != nil {
 		if event.result != nil {
 			event.result <- event.err
@@ -546,15 +534,14 @@ func (coordinator *runtimeCoordinator) activateReconciliation(event reconciliati
 	coordinator.terminatedGenerations = make(map[uint64]struct{})
 	coordinator.endGenerationScope()
 	coordinator.scope = newGenerationScope(coordinator.ctx)
+	coordinator.startPublicationWorker(coordinator.scope)
 	coordinator.dispatchable = false
-	coordinator.reconciling = true
 	coordinator.generation = event.generation
 	coordinator.connection = event.connection
 	coordinator.disconnect = event.disconnect
 	coordinator.homeID = event.homeID
 	coordinator.home = normalizedHomeID(event.homeID)
 	coordinator.invalidateAllAttempts(errStaleGeneration)
-	coordinator.routeRevision = 0
 	coordinator.snapshot = routeSnapshot{}
 	coordinator.queues = make(map[int]*nodeCommandQueue)
 
@@ -577,11 +564,8 @@ func (coordinator *runtimeCoordinator) activateReconciliation(event reconciliati
 		if len(routes) == 0 {
 			continue
 		}
-		coordinator.routeRevision++
-		coordinator.nodes[node.nodeID].revision = coordinator.routeRevision
 	}
 	if err := coordinator.rebuildSnapshot(); err != nil {
-		coordinator.reconciling = false
 		event.result <- err
 		return
 	}
@@ -661,7 +645,6 @@ func (coordinator *runtimeCoordinator) invalidateGeneration(event generationInva
 	}
 	coordinator.endGenerationScope()
 	coordinator.dispatchable = false
-	coordinator.reconciling = false
 	coordinator.clearRoutes()
 	coordinator.connection = nil
 	coordinator.disconnect = nil
@@ -695,7 +678,6 @@ func (coordinator *runtimeCoordinator) dropGeneration(cause error) {
 func (coordinator *runtimeCoordinator) clearRoutes() {
 	for _, record := range coordinator.nodes {
 		record.routes = nil
-		record.revision = 0
 	}
 	coordinator.snapshot = routeSnapshot{}
 }
@@ -733,13 +715,13 @@ func (coordinator *runtimeCoordinator) abortAttemptInternal(
 }
 
 // attemptRouteIsCurrent reports whether one attempt may still dispatch through
-// its recorded generation and route revision.
+// its recorded generation and installed route.
 func (coordinator *runtimeCoordinator) attemptRouteIsCurrent(attempt *commandAttempt) bool {
 	if !coordinator.dispatchable || attempt.generation != coordinator.generation {
 		return false
 	}
 	record := coordinator.nodes[attempt.nodeID]
-	if record == nil || record.revision != attempt.routeRevision {
+	if record == nil || len(record.routes) == 0 {
 		return false
 	}
 	current, exists := coordinator.snapshot.ByEntityID[attempt.entityID]
@@ -765,7 +747,7 @@ func (coordinator *runtimeCoordinator) rebuildSnapshot() error {
 	for _, nodeID := range slices.Sorted(maps.Keys(coordinator.nodes)) {
 		routes = append(routes, coordinator.nodes[nodeID].routes...)
 	}
-	snapshot, err := newRouteSnapshot(coordinator.generation, coordinator.routeRevision, routes)
+	snapshot, err := newRouteSnapshot(routes)
 	if err != nil {
 		return err
 	}
@@ -822,7 +804,7 @@ func (coordinator *runtimeCoordinator) rememberNodeRoutes(node reconciledNode) {
 		coordinator.rememberMapping(adapter.OwnedMapping{
 			BindingKey: binding,
 			DeviceID:   node.deviceID,
-			EntityKey:  route.Plan.Key,
+			EntityKey:  route.Plan.Descriptor.Key,
 			EntityID:   route.EntityID,
 		})
 	}
@@ -941,7 +923,7 @@ func (coordinator *runtimeCoordinator) publishValueObservationFor(
 		observation, err := route.Plan.observe(route.EntityID, received.ReceivedAt, args.NewValue)
 		if err != nil {
 			coordinator.logStateUnrepresentable(entityStateIssue{
-				Key:      route.Plan.Key,
+				Key:      route.Plan.Descriptor.Key,
 				EntityID: route.EntityID,
 				Err:      err,
 			})
@@ -955,18 +937,13 @@ func (coordinator *runtimeCoordinator) publishValueObservationFor(
 	coordinator.publishOrdinary(observations)
 }
 
-// publishOrdinary publishes one frame's Observations in order. One frame shares
-// one tracked effect, and publication failures end the runtime via taskCompleted.
-func (coordinator *runtimeCoordinator) publishOrdinary(observations []adapter.Observation) {
+// publishOrdinary queues one frame's Observations in order. Publication failures
+// end the runtime via taskCompleted. False means the generation ended.
+func (coordinator *runtimeCoordinator) publishOrdinary(observations []adapter.Observation) bool {
 	scope := coordinator.scope
 	ctx := coordinator.effectContext(scope)
-	previous, next := coordinator.reserveObservationPublication()
 	generation := coordinator.generation
-	coordinator.startGenerationEffect(scope, func() runtimeEvent {
-		defer close(next)
-		if !waitForObservationPublication(ctx, previous) {
-			return taskCompleted{scope: scope, generation: generation}
-		}
+	return coordinator.enqueuePublication(scope, func() runtimeEvent {
 		for _, observation := range observations {
 			if scope != nil && scope.ended() {
 				return taskCompleted{scope: scope, generation: generation}
@@ -982,29 +959,6 @@ func (coordinator *runtimeCoordinator) publishOrdinary(observations []adapter.Ob
 		}
 		return taskCompleted{scope: scope, generation: generation}
 	})
-}
-
-// reserveObservationPublication adds one ordinary or command-linked
-// Observation effect to the active generation's shared FIFO publication chain.
-func (coordinator *runtimeCoordinator) reserveObservationPublication() (<-chan struct{}, chan struct{}) {
-	previous := coordinator.publishTail
-	next := make(chan struct{})
-	coordinator.publishTail = next
-	return previous, next
-}
-
-// waitForObservationPublication waits for the previous serialized publication,
-// or reports that this effect's lifetime ended before it could publish.
-func waitForObservationPublication(ctx context.Context, previous <-chan struct{}) bool {
-	if previous == nil {
-		return ctx.Err() == nil
-	}
-	select {
-	case <-previous:
-		return ctx.Err() == nil
-	case <-ctx.Done():
-		return false
-	}
 }
 
 // logReconcileCompleted summarizes one activated connection generation. Counts

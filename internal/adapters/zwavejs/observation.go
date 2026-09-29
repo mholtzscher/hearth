@@ -15,11 +15,7 @@ import (
 	"strconv"
 	"time"
 
-	contractbrightnessv1 "github.com/mholtzscher/hearth/entitytypes/brightnessv1"
-	contractpowerv1 "github.com/mholtzscher/hearth/entitytypes/powerv1"
 	"github.com/mholtzscher/hearth/sdk/adapter"
-	sdkbrightnessv1 "github.com/mholtzscher/hearth/sdk/adapter/brightnessv1"
-	sdkpowerv1 "github.com/mholtzscher/hearth/sdk/adapter/powerv1"
 )
 
 const (
@@ -155,39 +151,7 @@ func (plan entityPlan) observe(
 	receivedAt time.Time,
 	current json.RawMessage,
 ) (adapter.Observation, error) {
-	state, err := plan.DecodeState(current)
-	if err != nil {
-		return adapter.Observation{}, err
-	}
-	switch plan.Kind {
-	case entityKindPower:
-		var value contractpowerv1.State
-		if err = json.Unmarshal(state, &value); err != nil {
-			return adapter.Observation{}, fmt.Errorf("zwavejs: power State is unusable: %w", err)
-		}
-		return sdkpowerv1.NewObservation(sdkpowerv1.ObservationInput{
-			EntityID:          entityID,
-			Support:           powerSupport(),
-			State:             value,
-			AdapterReceivedAt: receivedAt,
-		})
-	case entityKindBrightness:
-		var value contractbrightnessv1.State
-		if err = json.Unmarshal(state, &value); err != nil {
-			return adapter.Observation{}, fmt.Errorf("zwavejs: brightness State is unusable: %w", err)
-		}
-		return sdkbrightnessv1.NewObservation(sdkbrightnessv1.ObservationInput{
-			EntityID:          entityID,
-			Support:           brightnessSupport(),
-			State:             value,
-			AdapterReceivedAt: receivedAt,
-		})
-	default:
-		return adapter.Observation{}, fmt.Errorf(
-			"zwavejs: Entity %q has no Entity kind",
-			plan.Key,
-		)
-	}
+	return plan.Observe(entityID, receivedAt, current)
 }
 
 // resolveCurrentValue finds the snapshot Value of one planned current Value ID.
@@ -229,14 +193,14 @@ func translateNodeValues(
 		observation, err := route.Plan.observe(route.EntityID, receivedAt, current)
 		if err != nil {
 			issues = append(issues, entityStateIssue{
-				Key:      route.Plan.Key,
+				Key:      route.Plan.Descriptor.Key,
 				EntityID: route.EntityID,
 				Err:      err,
 			})
 			continue
 		}
 		observations = append(observations, entityObservation{
-			Key:         route.Plan.Key,
+			Key:         route.Plan.Descriptor.Key,
 			EntityID:    route.EntityID,
 			Observation: observation,
 		})

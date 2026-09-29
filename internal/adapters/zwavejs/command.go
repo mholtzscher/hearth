@@ -101,22 +101,18 @@ type attemptValueKey struct {
 type commandAttempt struct {
 	id         uint64
 	generation uint64
-	// routeRevision is the route revision this attempt dispatches through. It is
-	// rechecked before every dispatch and poll.
-	routeRevision uint64
-	entityID      string
-	nodeID        int
+	entityID   string
+	nodeID     int
 
-	command    adapter.Command
-	parameters json.RawMessage
-	responder  adapter.Responder
+	command   adapter.Command
+	responder adapter.Responder
 
 	handlerResult chan error
 	handlerDone   bool
 
 	route    entityRoute
 	setValue json.RawMessage
-	matches  func(parameters json.RawMessage, state json.RawMessage) bool
+	matches  func(state json.RawMessage) bool
 	deadline time.Time
 	// deadlineElapsed records that the absolute deadline passed while
 	// node.set_value was still unresolved. Such an attempt keeps its FIFO slot
@@ -175,8 +171,8 @@ func (zwave *Adapter) HandleCommand(
 	}
 }
 
-// submitCommand resolves one Command against the active generation and route
-// revision, decodes its parameters, and queues it behind its node's FIFO.
+// submitCommand resolves one Command against the active generation's routes,
+// decodes its parameters, and queues it behind its node's FIFO.
 func (coordinator *runtimeCoordinator) submitCommand(event commandSubmitted) {
 	if err := event.ctx.Err(); err != nil {
 		event.result <- err
@@ -204,13 +200,13 @@ func (coordinator *runtimeCoordinator) submitCommand(event commandSubmitted) {
 		event.result <- context.DeadlineExceeded
 		return
 	}
-	setValue, err := route.Plan.EncodeSet(event.command)
+	prepared, err := route.Plan.PrepareSet(event.command.Parameters)
 	if err != nil {
 		event.result <- event.responder.Reject("Z-Wave set parameters are invalid")
 		return
 	}
 	record := coordinator.nodes[route.Plan.NodeID]
-	if record == nil || record.revision == 0 {
+	if record == nil || len(record.routes) == 0 {
 		event.result <- event.responder.RejectUnavailable("Z-Wave Entity is unavailable")
 		return
 	}
@@ -220,16 +216,14 @@ func (coordinator *runtimeCoordinator) submitCommand(event commandSubmitted) {
 	attempt := &commandAttempt{
 		id:             coordinator.nextAttemptID,
 		generation:     coordinator.generation,
-		routeRevision:  record.revision,
 		entityID:       route.EntityID,
 		nodeID:         route.Plan.NodeID,
 		command:        event.command,
-		parameters:     event.command.Parameters,
 		responder:      event.responder,
 		handlerResult:  event.result,
 		route:          route,
-		setValue:       setValue,
-		matches:        route.Plan.Matches,
+		setValue:       prepared.Value,
+		matches:        prepared.Matches,
 		deadline:       deadline,
 		phase:          phaseQueued,
 		valueKey:       attemptValueKey{nodeID: route.Plan.NodeID, value: route.Plan.CurrentValueID.valueKey()},
@@ -324,7 +318,7 @@ func (coordinator *runtimeCoordinator) finishSetValue(event setValueCompleted) {
 		return
 	}
 	// A write that raced a route change must never be accepted through the stale
-	// generation or revision it was dispatched under. The value may already have
+	// generation it was dispatched under. The value may already have
 	// reached the radio, so the Command is rejected as unavailable rather than
 	// claimed.
 	if !coordinator.attemptRouteIsCurrent(attempt) {
@@ -434,26 +428,12 @@ func (coordinator *runtimeCoordinator) pollNow(attempt *commandAttempt) {
 		// the absolute deadline cancels an unanswered poll, which releases its
 		// waiter and its goroutine without ending a healthy generation. A poll
 		// result that arrives first is still correlated normally.
-		var value json.RawMessage
-		var receivedAt time.Time
-		var receipt chan struct{}
-		var err error
-		if ordered, ok := connection.(interface {
-			pollValueWithReceipt(context.Context, int, valueID) (json.RawMessage, time.Time, chan struct{}, error)
-		}); ok {
-			value, receivedAt, receipt, err = ordered.pollValueWithReceipt(
-				attempt.attemptContext,
-				attempt.nodeID,
-				current,
-			)
-		} else {
-			value, receivedAt, err = connection.PollValue(attempt.attemptContext, attempt.nodeID, current)
-		}
+		result, err := connection.PollValue(attempt.attemptContext, attempt.nodeID, current)
 		return pollValueCompleted{
 			attemptID:  attempt.id,
-			value:      value,
-			receivedAt: receivedAt.UTC(),
-			receipt:    receipt,
+			value:      result.Value,
+			receivedAt: result.ReceivedAt.UTC(),
+			receipt:    result.Receipt,
 			err:        err,
 		}
 	})
@@ -493,7 +473,7 @@ func (coordinator *runtimeCoordinator) finishPollValue(event pollValueCompleted)
 	observation, err := attempt.route.Plan.observe(attempt.route.EntityID, event.receivedAt, event.value)
 	if err != nil {
 		coordinator.logStateUnrepresentable(entityStateIssue{
-			Key:      attempt.route.Plan.Key,
+			Key:      attempt.route.Plan.Descriptor.Key,
 			EntityID: attempt.route.EntityID,
 			Err:      err,
 		})
@@ -507,7 +487,7 @@ func (coordinator *runtimeCoordinator) finishPollValue(event pollValueCompleted)
 		coordinator.finishAttempt(attempt, errStaleRoute)
 		return
 	}
-	matched := attempt.matches(attempt.parameters, observation.Value)
+	matched := attempt.matches(observation.Value)
 	evidence := attempt.evidence
 	scope := coordinator.scope
 	// A poll is fresh State for every Entity projecting the same current Value.
@@ -520,14 +500,14 @@ func (coordinator *runtimeCoordinator) finishPollValue(event pollValueCompleted)
 		sibling, siblingErr := route.Plan.observe(route.EntityID, event.receivedAt, event.value)
 		if siblingErr != nil {
 			coordinator.logStateUnrepresentable(entityStateIssue{
-				Key: route.Plan.Key, EntityID: route.EntityID, Err: siblingErr,
+				Key: route.Plan.Descriptor.Key, EntityID: route.EntityID, Err: siblingErr,
 			})
 			continue
 		}
 		siblings = append(siblings, sibling)
 	}
-	if len(siblings) > 0 {
-		coordinator.publishOrdinary(siblings)
+	if len(siblings) > 0 && !coordinator.publishOrdinary(siblings) {
+		return
 	}
 	// Linked publication runs under its own cancelable lifetime so a route
 	// change, removal, or sleep stops it before it can report stale evidence.
@@ -539,12 +519,10 @@ func (coordinator *runtimeCoordinator) finishPollValue(event pollValueCompleted)
 	linkToken := attempt.linkToken
 	linkContext, cancelLink := context.WithCancel(coordinator.effectContext(scope))
 	attempt.cancelLink = cancelLink
-	previous, next := coordinator.reserveObservationPublication()
-	coordinator.startGenerationEffect(scope, func() runtimeEvent {
-		defer close(next)
+	coordinator.enqueuePublication(scope, func() runtimeEvent {
 		defer cancelLink()
-		if !waitForObservationPublication(linkContext, previous) {
-			return linkedPublishCompleted{attemptID: attempt.id, linkToken: linkToken}
+		if linkErr := linkContext.Err(); linkErr != nil {
+			return linkedPublishCompleted{attemptID: attempt.id, linkToken: linkToken, err: linkErr}
 		}
 		_, publishErr := evidence.PublishObservation(linkContext, observation)
 		return linkedPublishCompleted{attemptID: attempt.id, linkToken: linkToken, matched: matched, err: publishErr}

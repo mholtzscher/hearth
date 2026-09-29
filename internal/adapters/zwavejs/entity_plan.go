@@ -1,17 +1,17 @@
 // entity_plan.go owns the private typed Entity plans and the immutable route
 // snapshot. One plan binds a planned Hearth Entity to the exact upstream Value
-// IDs it reads and writes, the typed State decoder, the Command encoder, and
-// the outcome matcher. Concrete construction goes through the generated
+// IDs it reads and writes, the typed State observer, and Command preparation.
+// Concrete construction goes through the generated
 // sdk/adapter/powerv1 and sdk/adapter/brightnessv1 facades, so vendor JSON never
 // crosses this boundary without a typed Entity-type hop.
 
 package zwavejs
 
 import (
-	"context"
 	"encoding/json"
 	"errors"
 	"strconv"
+	"time"
 	"unicode/utf8"
 
 	contractbrightnessv1 "github.com/mholtzscher/hearth/entitytypes/brightnessv1"
@@ -19,7 +19,6 @@ import (
 	"github.com/mholtzscher/hearth/sdk/adapter"
 	sdkbrightnessv1 "github.com/mholtzscher/hearth/sdk/adapter/brightnessv1"
 	sdkpowerv1 "github.com/mholtzscher/hearth/sdk/adapter/powerv1"
-	"github.com/mholtzscher/hearth/sdk/adapter/typed"
 )
 
 const (
@@ -64,14 +63,6 @@ const (
 
 	// interviewStageComplete is the only node interview stage v1 plans.
 	interviewStageComplete = "Complete"
-
-	// probeSetEntityID, probeSetOperation, and probeSetDeadline are the synthetic
-	// correlation fields used to drive one generated facade command handler for
-	// parameter decoding only. Nothing is dispatched: the handler captures the
-	// decoded parameters, and the synthetic identity never reaches a Responder.
-	probeSetEntityID  = "probe"
-	probeSetOperation = "set"
-	probeSetDeadline  = "1970-01-01T00:00:00Z"
 )
 
 // entityKind names the Hearth Entity type one plan provides. The zero value is
@@ -115,7 +106,7 @@ func (kind entityKind) displayName() string {
 // endpoint: its stable Hearth identity plus the typed translation of the exact
 // upstream Value IDs it reads and writes.
 //
-// A plan holds no cache. DecodeState evaluates exactly the frame it is given, so
+// A plan holds no cache. Observe evaluates exactly the frame it is given, so
 // no State is assembled across frames.
 type entityPlan struct {
 	// NodeID is the Z-Wave node ID that owns this Entity.
@@ -124,14 +115,6 @@ type entityPlan struct {
 	Endpoint int
 	// Kind is the Hearth Entity type this plan provides.
 	Kind entityKind
-	// Key is the Hearth Entity key within the node's one registration. It equals
-	// Descriptor.Key.
-	Key string
-	// ExternalID is the stable Hearth Entity external ID. It equals
-	// Descriptor.ExternalID.
-	ExternalID string
-	// Name is the Entity display name. It equals Descriptor.Name.
-	Name string
 	// PowerFromMultilevel records that this power Entity is derived from
 	// Multilevel Switch state because the endpoint has no valid Binary Switch
 	// pair.
@@ -143,19 +126,15 @@ type entityPlan struct {
 	CurrentValueID valueID
 	// TargetValueID is the Value ID that receives Command writes.
 	TargetValueID valueID
-	// DecodeState translates one upstream current Value into the typed State JSON
-	// of this Entity's Hearth type. An error means the value is not a
-	// representable State for this Entity alone.
-	DecodeState func(current json.RawMessage) (json.RawMessage, error)
-	// EncodeSet translates one Hearth set Command into the exact upstream JSON
-	// value written to TargetValueID. It validates the parameters through the
-	// same generated facade the production dispatch path uses.
-	EncodeSet func(command adapter.Command) (json.RawMessage, error)
-	// Matches reports whether one translated typed State satisfies one Hearth set
-	// Command. State is the exact typed State JSON one Observation carries, so a
-	// caller can match a published or polled Observation without re-deriving it. A
-	// decode error is never a match.
-	Matches func(parameters json.RawMessage, state json.RawMessage) bool
+	// Observe translates one current Value directly into a typed Observation.
+	Observe func(entityID string, receivedAt time.Time, current json.RawMessage) (adapter.Observation, error)
+	// PrepareSet validates parameters once and binds the upstream value and matcher.
+	PrepareSet func(parameters json.RawMessage) (preparedSet, error)
+}
+
+type preparedSet struct {
+	Value   json.RawMessage
+	Matches func(state json.RawMessage) bool
 }
 
 // upstreamValueKey is the exact upstream Value identity used to resolve snapshot
@@ -199,14 +178,9 @@ type entityRoute struct {
 	EntityID string
 }
 
-// routeSnapshot is the immutable route table for one connection generation and
-// one plan revision. It is built once, never mutated, and replaced wholesale, so
-// a live Event can only resolve against routes that were active when it arrived.
+// routeSnapshot indexes the immutable routes installed for the active generation.
+// The coordinator replaces the table when that generation ends.
 type routeSnapshot struct {
-	// Generation is the connection generation that produced the routes.
-	Generation uint64
-	// Revision increases with every route replacement within one generation.
-	Revision uint64
 	// ByEntityID resolves one canonical Entity ID to its route.
 	ByEntityID map[string]entityRoute
 	// ByValueID resolves one node's current Value ID to every route of that node
@@ -271,28 +245,34 @@ func newPowerEntityPlan(input powerPlanInput) (entityPlan, error) {
 		NodeID:              input.NodeID,
 		Endpoint:            input.Endpoint,
 		Kind:                entityKindPower,
-		Key:                 metadata.Key,
-		ExternalID:          metadata.ExternalID,
-		Name:                metadata.Name,
 		PowerFromMultilevel: input.FromMultilevel,
 		Descriptor:          descriptor,
 		CurrentValueID:      input.Current.valueID,
 		TargetValueID:       input.Target.valueID,
-		DecodeState: func(current json.RawMessage) (json.RawMessage, error) {
+		Observe: func(entityID string, receivedAt time.Time, current json.RawMessage) (adapter.Observation, error) {
 			value, decodeErr := input.DecodeCurrent(current)
 			if decodeErr != nil {
-				return nil, decodeErr
+				return adapter.Observation{}, decodeErr
 			}
-			return encodePowerState(value), nil
+			return sdkpowerv1.NewObservation(
+				sdkpowerv1.ObservationInput{
+					EntityID:          entityID,
+					Support:           powerSupport(),
+					State:             contractpowerv1.State(value),
+					AdapterReceivedAt: receivedAt,
+				},
+			)
 		},
-		EncodeSet: func(command adapter.Command) (json.RawMessage, error) {
-			parameters, decodeErr := decodePowerSetParameters(command.Parameters)
+		PrepareSet: func(raw json.RawMessage) (preparedSet, error) {
+			parameters, decodeErr := decodePowerSetParameters(raw)
 			if decodeErr != nil {
-				return nil, decodeErr
+				return preparedSet{}, decodeErr
 			}
-			return input.EncodeValue(parameters.Value), nil
+			return preparedSet{Value: input.EncodeValue(parameters.Value), Matches: func(state json.RawMessage) bool {
+				observed, stateErr := decodeBooleanStateJSON(state)
+				return stateErr == nil && contractpowerv1.SetSatisfied(parameters, contractpowerv1.State(observed))
+			}}, nil
 		},
-		Matches: powerSetMatcher(),
 	}, nil
 }
 
@@ -308,27 +288,37 @@ func newBrightnessEntityPlan(input brightnessPlanInput) (entityPlan, error) {
 		NodeID:         input.NodeID,
 		Endpoint:       input.Endpoint,
 		Kind:           entityKindBrightness,
-		Key:            metadata.Key,
-		ExternalID:     metadata.ExternalID,
-		Name:           metadata.Name,
 		Descriptor:     descriptor,
 		CurrentValueID: input.Current.valueID,
 		TargetValueID:  input.Target.valueID,
-		DecodeState: func(current json.RawMessage) (json.RawMessage, error) {
+		Observe: func(entityID string, receivedAt time.Time, current json.RawMessage) (adapter.Observation, error) {
 			level, decodeErr := decodeZwaveLevel(current)
 			if decodeErr != nil {
-				return nil, decodeErr
+				return adapter.Observation{}, decodeErr
 			}
-			return encodeBrightnessState(level), nil
+			return sdkbrightnessv1.NewObservation(
+				sdkbrightnessv1.ObservationInput{
+					EntityID:          entityID,
+					Support:           brightnessSupport(),
+					State:             contractbrightnessv1.State(level),
+					AdapterReceivedAt: receivedAt,
+				},
+			)
 		},
-		EncodeSet: func(command adapter.Command) (json.RawMessage, error) {
-			parameters, decodeErr := decodeBrightnessSetParameters(command.Parameters)
+		PrepareSet: func(raw json.RawMessage) (preparedSet, error) {
+			parameters, decodeErr := decodeBrightnessSetParameters(raw)
 			if decodeErr != nil {
-				return nil, decodeErr
+				return preparedSet{}, decodeErr
 			}
-			return encodeBrightnessState(parameters.Value), nil
+			return preparedSet{
+				Value: encodeBrightnessState(parameters.Value),
+				Matches: func(state json.RawMessage) bool {
+					observed, stateErr := decodeZwaveLevel(state)
+					return stateErr == nil &&
+						contractbrightnessv1.SetSatisfied(parameters, contractbrightnessv1.State(observed))
+				},
+			}, nil
 		},
-		Matches: brightnessSetMatcher(),
 	}, nil
 }
 
@@ -350,98 +340,42 @@ func brightnessSupport() sdkbrightnessv1.Support {
 	}
 }
 
-// powerSetMatcher is the outcome predicate shared by both power plan shapes.
-func powerSetMatcher() func(parameters, state json.RawMessage) bool {
-	return func(parameters, state json.RawMessage) bool {
-		set, err := decodePowerSetParameters(parameters)
-		if err != nil {
-			return false
-		}
-		observed, err := decodeBooleanStateJSON(state)
-		if err != nil {
-			return false
-		}
-		return contractpowerv1.SetSatisfied(set, contractpowerv1.State(observed))
-	}
-}
-
-// brightnessSetMatcher is the outcome predicate of every brightness plan.
-func brightnessSetMatcher() func(parameters, state json.RawMessage) bool {
-	return func(parameters, state json.RawMessage) bool {
-		set, err := decodeBrightnessSetParameters(parameters)
-		if err != nil {
-			return false
-		}
-		observed, err := decodeZwaveLevel(state)
-		if err != nil {
-			return false
-		}
-		return contractbrightnessv1.SetSatisfied(set, contractbrightnessv1.State(observed))
-	}
-}
-
 // decodePowerSetParameters decodes one hearth.power/v1 set Command's parameters
-// through the generated powerv1 command handler, so plan translation and
-// production dispatch accept exactly the same parameters.
+// through the generated schema codec and validates its support.
 func decodePowerSetParameters(parameters json.RawMessage) (contractpowerv1.SetParameters, error) {
-	var decoded contractpowerv1.SetParameters
-	handler, err := sdkpowerv1.NewCommandHandler(probeSetEntityID, powerSupport(), sdkpowerv1.Handlers{
-		Set: func(
-			_ context.Context,
-			command typed.Command[contractpowerv1.SetParameters],
-			_ adapter.Responder,
-		) error {
-			decoded = command.Parameters
-			return nil
-		},
-	})
+	codecs, err := contractpowerv1.Compile()
 	if err != nil {
 		return contractpowerv1.SetParameters{}, err
 	}
-	if err = handler(context.Background(), probeSetCommand(parameters), nil); err != nil {
-		return contractpowerv1.SetParameters{}, err
+	decoded, _, err := codecs.SetParameters.Decode(parameters)
+	if err == nil {
+		err = contractpowerv1.ValidateSetParameters(
+			powerSupport(),
+			contractpowerv1.SetSupport{},
+			decoded,
+		)
 	}
-	return decoded, nil
+	return decoded, err
 }
 
 // decodeBrightnessSetParameters decodes one hearth.brightness/v1 set Command's
-// parameters through the generated brightnessv1 command handler, including the
+// parameters through the generated brightnessv1 codec, including the
 // maximum and step validation.
 func decodeBrightnessSetParameters(parameters json.RawMessage) (contractbrightnessv1.SetParameters, error) {
-	var decoded contractbrightnessv1.SetParameters
-	handler, err := sdkbrightnessv1.NewCommandHandler(
-		probeSetEntityID,
-		brightnessSupport(),
-		sdkbrightnessv1.Handlers{
-			Set: func(
-				_ context.Context,
-				command typed.Command[contractbrightnessv1.SetParameters],
-				_ adapter.Responder,
-			) error {
-				decoded = command.Parameters
-				return nil
-			},
-		},
-	)
+	codecs, err := contractbrightnessv1.Compile()
 	if err != nil {
 		return contractbrightnessv1.SetParameters{}, err
 	}
-	if err = handler(context.Background(), probeSetCommand(parameters), nil); err != nil {
-		return contractbrightnessv1.SetParameters{}, err
+	decoded, _, err := codecs.SetParameters.Decode(parameters)
+	if err == nil {
+		support := brightnessSupport()
+		err = contractbrightnessv1.ValidateSetParameters(
+			support,
+			support.Operations.Set,
+			decoded,
+		)
 	}
-	return decoded, nil
-}
-
-// probeSetCommand wraps one parameter payload as the synthetic Command a facade
-// command handler decodes. Only Parameters reaches the handler.
-func probeSetCommand(parameters json.RawMessage) adapter.Command {
-	return adapter.Command{
-		ID:            probeSetEntityID,
-		EntityID:      probeSetEntityID,
-		OperationName: probeSetOperation,
-		Parameters:    parameters,
-		Deadline:      probeSetDeadline,
-	}
+	return decoded, err
 }
 
 // bindEntityRoutes pairs the plans of one node with the canonical Entity IDs of
@@ -474,9 +408,9 @@ func bindEntityRoutes(binding adapter.Binding, node discoveredNode) ([]entityRou
 	routes := make([]entityRoute, 0, len(node.Plans))
 	bound := make(map[string]struct{}, len(node.Plans))
 	for _, plan := range node.Plans {
-		entity, found := byKey[plan.Key]
+		entity, found := byKey[plan.Descriptor.Key]
 		if !found {
-			return nil, errors.New("zwavejs: registration omitted planned Entity key " + plan.Key)
+			return nil, errors.New("zwavejs: registration omitted planned Entity key " + plan.Descriptor.Key)
 		}
 		if _, duplicate := bound[entity.EntityID]; duplicate {
 			return nil, errors.New("zwavejs: registration repeated Entity ID " + entity.EntityID)
@@ -492,10 +426,8 @@ func bindEntityRoutes(binding adapter.Binding, node discoveredNode) ([]entityRou
 // plan without an Entity key, so a partial registration can never install a
 // route table. An empty route set is valid: a network with no eligible node is
 // healthy.
-func newRouteSnapshot(generation, revision uint64, routes []entityRoute) (routeSnapshot, error) {
+func newRouteSnapshot(routes []entityRoute) (routeSnapshot, error) {
 	snapshot := routeSnapshot{
-		Generation: generation,
-		Revision:   revision,
 		ByEntityID: make(map[string]entityRoute, len(routes)),
 		ByValueID:  make(map[upstreamValueKey][]entityRoute, len(routes)),
 	}
@@ -503,7 +435,7 @@ func newRouteSnapshot(generation, revision uint64, routes []entityRoute) (routeS
 		if route.EntityID == "" {
 			return routeSnapshot{}, errors.New("zwavejs: route has no canonical Entity ID")
 		}
-		if route.Plan.Key == "" {
+		if route.Plan.Descriptor.Key == "" {
 			return routeSnapshot{}, errors.New("zwavejs: route plan has no Entity key")
 		}
 		if _, duplicate := snapshot.ByEntityID[route.EntityID]; duplicate {
@@ -526,40 +458,35 @@ func validateEntityPlans(plans []entityPlan) error {
 		if err := validateEntityPlan(plan); err != nil {
 			return err
 		}
-		if _, duplicate := keys[plan.Key]; duplicate {
-			return errors.New("zwavejs: duplicate Entity key " + plan.Key)
+		if _, duplicate := keys[plan.Descriptor.Key]; duplicate {
+			return errors.New("zwavejs: duplicate Entity key " + plan.Descriptor.Key)
 		}
-		keys[plan.Key] = struct{}{}
-		if _, duplicate := externalIDs[plan.ExternalID]; duplicate {
-			return errors.New("zwavejs: duplicate Entity external ID " + plan.ExternalID)
+		keys[plan.Descriptor.Key] = struct{}{}
+		if _, duplicate := externalIDs[plan.Descriptor.ExternalID]; duplicate {
+			return errors.New("zwavejs: duplicate Entity external ID " + plan.Descriptor.ExternalID)
 		}
-		externalIDs[plan.ExternalID] = struct{}{}
+		externalIDs[plan.Descriptor.ExternalID] = struct{}{}
 	}
 	return nil
 }
 
 // validateEntityPlan enforces the invariants of one plan. The descriptor must
-// agree with the plan identity so a registration can never diverge from the
-// route table it installs.
+// be the sole identity used by registration and routes.
 func validateEntityPlan(plan entityPlan) error {
 	switch {
 	case plan.Kind != entityKindPower && plan.Kind != entityKindBrightness:
 		return errors.New("zwavejs: Entity plan has no Entity kind")
-	case !validEntityKey(plan.Key):
+	case !validEntityKey(plan.Descriptor.Key):
 		return errors.New("zwavejs: Entity plan has an invalid Entity key")
-	case plan.Name == "" || utf8.RuneCountInString(plan.Name) > maximumDescriptorRunes:
+	case plan.Descriptor.Name == "" || utf8.RuneCountInString(plan.Descriptor.Name) > maximumDescriptorRunes:
 		return errors.New("zwavejs: Entity plan has an out-of-bounds Entity name")
-	case plan.ExternalID == "":
+	case plan.Descriptor.ExternalID == "":
 		return errors.New("zwavejs: Entity plan has no Entity external ID")
-	case plan.Descriptor.Key != plan.Key ||
-		plan.Descriptor.ExternalID != plan.ExternalID ||
-		plan.Descriptor.Name != plan.Name:
-		return errors.New("zwavejs: Entity plan descriptor disagrees with its identity")
 	case plan.Descriptor.Type == "" || len(plan.Descriptor.Support) == 0:
 		return errors.New("zwavejs: Entity plan descriptor is incomplete")
 	case plan.CurrentValueID.valueKey() == plan.TargetValueID.valueKey():
 		return errors.New("zwavejs: Entity plan reads and writes the same Value")
-	case plan.DecodeState == nil || plan.EncodeSet == nil || plan.Matches == nil:
+	case plan.Observe == nil || plan.PrepareSet == nil:
 		return errors.New("zwavejs: Entity plan is missing a translator")
 	default:
 		return nil

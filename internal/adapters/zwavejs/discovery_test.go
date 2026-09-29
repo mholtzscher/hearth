@@ -105,7 +105,7 @@ func requireRegistrationIdentity(
 func requirePlan(t *testing.T, node discoveredNode, key string) entityPlan {
 	t.Helper()
 	for _, plan := range node.Plans {
-		if plan.Key == key {
+		if plan.Descriptor.Key == key {
 			return plan
 		}
 	}
@@ -118,7 +118,7 @@ func requirePlanKeys(t *testing.T, node discoveredNode, want []string) {
 	t.Helper()
 	got := make([]string, 0, len(node.Plans))
 	for _, plan := range node.Plans {
-		got = append(got, plan.Key)
+		got = append(got, plan.Descriptor.Key)
 	}
 	if !slices.Equal(got, want) {
 		t.Fatalf("node %d plans = %v, want %v", node.NodeID, got, want)
@@ -1134,10 +1134,10 @@ func TestPlanNetworkFallsBackToDeterministicNames(t *testing.T) {
 			if planned.Registration.Device.Name != test.wantDevice {
 				t.Fatalf("Device name = %q, want %q", planned.Registration.Device.Name, test.wantDevice)
 			}
-			if name := requirePlan(t, planned, "power-ep1").Name; name != test.wantEntity {
+			if name := requirePlan(t, planned, "power-ep1").Descriptor.Name; name != test.wantEntity {
 				t.Fatalf("endpoint Entity name = %q, want %q", name, test.wantEntity)
 			}
-			if name := requirePlan(t, planned, "power").Name; name != "Power" {
+			if name := requirePlan(t, planned, "power").Descriptor.Name; name != "Power" {
 				t.Fatalf("root Entity name = %q, want Power", name)
 			}
 		})
@@ -1284,10 +1284,10 @@ func TestBindEntityRoutesBindsCanonicalEntityIDs(t *testing.T) {
 	if len(routes) != 2 {
 		t.Fatalf("bound routes = %d, want 2", len(routes))
 	}
-	if routes[0].Plan.Key != "power" || routes[0].EntityID != canonicalEntityID("power") {
+	if routes[0].Plan.Descriptor.Key != "power" || routes[0].EntityID != canonicalEntityID("power") {
 		t.Fatalf("first route = %#v", routes[0])
 	}
-	if routes[1].Plan.Key != "brightness" || routes[1].EntityID != canonicalEntityID("brightness") {
+	if routes[1].Plan.Descriptor.Key != "brightness" || routes[1].EntityID != canonicalEntityID("brightness") {
 		t.Fatalf("second route = %#v", routes[1])
 	}
 
@@ -1336,12 +1336,9 @@ func TestNewRouteSnapshotIndexesValuesInPlanOrder(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	snapshotRoutes, err := newRouteSnapshot(7, 3, routes)
+	snapshotRoutes, err := newRouteSnapshot(routes)
 	if err != nil {
 		t.Fatal(err)
-	}
-	if snapshotRoutes.Generation != 7 || snapshotRoutes.Revision != 3 {
-		t.Fatalf("route snapshot = %#v", snapshotRoutes)
 	}
 	shared := snapshotRoutes.routesForValue(fixtureDimmerNodeID, testValueID(
 		testCommandClassMultilevelSwitch, 0, valuePropertyCurrentValue,
@@ -1358,13 +1355,13 @@ func TestNewRouteSnapshotIndexesValuesInPlanOrder(t *testing.T) {
 		t.Fatalf("target Value resolved to %d routes, want none", len(targetRoutes))
 	}
 
-	if _, err = newRouteSnapshot(1, 1, []entityRoute{routes[0], routes[0]}); err == nil {
+	if _, err = newRouteSnapshot([]entityRoute{routes[0], routes[0]}); err == nil {
 		t.Fatal("newRouteSnapshot accepted a duplicate canonical Entity ID")
 	}
-	if _, err = newRouteSnapshot(1, 1, []entityRoute{{Plan: routes[0].Plan}}); err == nil {
+	if _, err = newRouteSnapshot([]entityRoute{{Plan: routes[0].Plan}}); err == nil {
 		t.Fatal("newRouteSnapshot accepted a route without an Entity ID")
 	}
-	empty, err := newRouteSnapshot(1, 1, nil)
+	empty, err := newRouteSnapshot(nil)
 	if err != nil {
 		t.Fatalf("empty route snapshot = %v, want a healthy empty network", err)
 	}
@@ -1400,7 +1397,7 @@ func TestNewRouteSnapshotScopesValuesToTheirNode(t *testing.T) {
 		}
 		routes = append(routes, bound...)
 	}
-	snapshotRoutes, err := newRouteSnapshot(1, 1, routes)
+	snapshotRoutes, err := newRouteSnapshot(routes)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1489,24 +1486,15 @@ func TestValidateEntityPlansRejectsDivergentPlans(t *testing.T) {
 		edit func(plans *[]entityPlan)
 	}{
 		{name: "unset_kind", edit: func(plans *[]entityPlan) { (*plans)[0].Kind = 0 }},
-		{name: "invalid_key", edit: func(plans *[]entityPlan) { (*plans)[0].Key = "Power" }},
+		{name: "invalid_key", edit: func(plans *[]entityPlan) { (*plans)[0].Descriptor.Key = "Power" }},
 		{name: "overlong_key", edit: func(plans *[]entityPlan) {
-			(*plans)[0].Key = strings.Repeat("a", maximumEntityKeyBytes+1)
+			(*plans)[0].Descriptor.Key = strings.Repeat("a", maximumEntityKeyBytes+1)
 		}},
-		{name: "empty_name", edit: func(plans *[]entityPlan) { (*plans)[0].Name = "" }},
+		{name: "empty_name", edit: func(plans *[]entityPlan) { (*plans)[0].Descriptor.Name = "" }},
 		{name: "overlong_name", edit: func(plans *[]entityPlan) {
-			(*plans)[0].Name = strings.Repeat("a", fixtureNameOverBound)
+			(*plans)[0].Descriptor.Name = strings.Repeat("a", fixtureNameOverBound)
 		}},
-		{name: "empty_external_id", edit: func(plans *[]entityPlan) { (*plans)[0].ExternalID = "" }},
-		{name: "descriptor_key_diverges", edit: func(plans *[]entityPlan) {
-			(*plans)[0].Descriptor.Key = "other"
-		}},
-		{name: "descriptor_external_id_diverges", edit: func(plans *[]entityPlan) {
-			(*plans)[0].Descriptor.ExternalID = "other"
-		}},
-		{name: "descriptor_name_diverges", edit: func(plans *[]entityPlan) {
-			(*plans)[0].Descriptor.Name = "Other"
-		}},
+		{name: "empty_external_id", edit: func(plans *[]entityPlan) { (*plans)[0].Descriptor.ExternalID = "" }},
 		{name: "descriptor_type_missing", edit: func(plans *[]entityPlan) {
 			(*plans)[0].Descriptor.Type = ""
 		}},
@@ -1516,19 +1504,16 @@ func TestValidateEntityPlansRejectsDivergentPlans(t *testing.T) {
 		{name: "same_read_and_write_value", edit: func(plans *[]entityPlan) {
 			(*plans)[0].TargetValueID = (*plans)[0].CurrentValueID
 		}},
-		{name: "missing_state_decoder", edit: func(plans *[]entityPlan) { (*plans)[0].DecodeState = nil }},
-		{name: "missing_set_encoder", edit: func(plans *[]entityPlan) { (*plans)[0].EncodeSet = nil }},
-		{name: "missing_matcher", edit: func(plans *[]entityPlan) { (*plans)[0].Matches = nil }},
+		{name: "missing_observer", edit: func(plans *[]entityPlan) { (*plans)[0].Observe = nil }},
+		{name: "missing_set_preparer", edit: func(plans *[]entityPlan) { (*plans)[0].PrepareSet = nil }},
 		{name: "duplicate_key", edit: func(plans *[]entityPlan) {
 			duplicate := (*plans)[0]
-			duplicate.ExternalID += "-copy"
-			duplicate.Descriptor.ExternalID = duplicate.ExternalID
+			duplicate.Descriptor.ExternalID += "-copy"
 			*plans = append(*plans, duplicate)
 		}},
 		{name: "duplicate_external_id", edit: func(plans *[]entityPlan) {
 			duplicate := (*plans)[0]
-			duplicate.Key = "brightness"
-			duplicate.Descriptor.Key = duplicate.Key
+			duplicate.Descriptor.Key = "brightness"
 			*plans = append(*plans, duplicate)
 		}},
 	} {

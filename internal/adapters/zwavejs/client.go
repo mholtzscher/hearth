@@ -121,7 +121,7 @@ type zwaveDialer interface {
 type zwaveConnection interface {
 	StartListening(ctx context.Context) (serverVersion, networkSnapshot, error)
 	SetValue(ctx context.Context, nodeID int, id valueID, value json.RawMessage) (setValueStatus, error)
-	PollValue(ctx context.Context, nodeID int, id valueID) (json.RawMessage, time.Time, error)
+	PollValue(ctx context.Context, nodeID int, id valueID) (pollValueResult, error)
 	Events() <-chan receivedEvent
 	Lost() <-chan error
 	Close()
@@ -135,6 +135,14 @@ type receivedEvent struct {
 	ReceivedAt time.Time
 	// A poll-result marker blocks later frames until its publication is ordered.
 	receipt <-chan struct{}
+}
+
+// pollValueResult carries the value, receive time, and reader-order marker.
+// The coordinator closes Receipt after reserving the poll's publication slot.
+type pollValueResult struct {
+	Value      json.RawMessage
+	ReceivedAt time.Time
+	Receipt    chan struct{}
 }
 
 // serverVersion is the first frame the Z-Wave JS server sends. A compatible
@@ -699,28 +707,14 @@ func (connection *websocketConnection) PollValue(
 	ctx context.Context,
 	nodeID int,
 	id valueID,
-) (json.RawMessage, time.Time, error) {
-	value, receivedAt, receipt, err := connection.pollValueWithReceipt(ctx, nodeID, id)
-	if receipt != nil {
-		close(receipt)
-	}
-	return value, receivedAt, err
-}
-
-// pollValueWithReceipt leaves the reader's frame marker open until the runtime
-// coordinator reserves publication of this poll ahead of later Event frames.
-func (connection *websocketConnection) pollValueWithReceipt(
-	ctx context.Context,
-	nodeID int,
-	id valueID,
-) (json.RawMessage, time.Time, chan struct{}, error) {
+) (pollValueResult, error) {
 	if nodeID <= 0 {
-		return nil, time.Time{}, nil, &invalidRequestError{
+		return pollValueResult{}, &invalidRequestError{
 			Reason: "node.poll_value requires a positive node ID",
 		}
 	}
 	if err := validatePlannedValueID(id); err != nil {
-		return nil, time.Time{}, nil, err
+		return pollValueResult{}, err
 	}
 	result, err := connection.requestSuccessAbandonable(ctx, &nodePollValueRequest{
 		Command: commandPollValue,
@@ -728,16 +722,16 @@ func (connection *websocketConnection) pollValueWithReceipt(
 		ValueID: id,
 	})
 	if err != nil {
-		return nil, time.Time{}, result.receipt, err
+		return pollValueResult{Receipt: result.receipt}, err
 	}
 	var payload nodePollValueResult
 	if err = json.Unmarshal(result.Result, &payload); err != nil {
-		return nil, time.Time{}, result.receipt, connection.fatalResult(&malformedResultError{
+		return pollValueResult{Receipt: result.receipt}, connection.fatalResult(&malformedResultError{
 			Command: commandPollValue,
 			Reason:  "the result carried no decodable poll payload",
 		})
 	}
-	return payload.Value, result.receivedAt, result.receipt, nil
+	return pollValueResult{Value: payload.Value, ReceivedAt: result.receivedAt, Receipt: result.receipt}, nil
 }
 
 // validatePlannedValueID refuses a Value ID this client cannot write. A local
